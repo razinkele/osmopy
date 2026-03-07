@@ -90,3 +90,30 @@ def test_missing_subfile_ignored():
     result = reader.read(path)
     assert result["simulation.nspecies"] == "1"
     path.unlink()
+
+
+def test_circular_reference_does_not_recurse(tmp_path):
+    """Circular sub-file references should not cause infinite recursion."""
+    file_a = tmp_path / "a.csv"
+    file_b = tmp_path / "b.csv"
+    file_a.write_text(f"osmose.configuration.b ; {file_b.name}\nfoo ; bar\n")
+    file_b.write_text(f"osmose.configuration.a ; {file_a.name}\nbaz ; qux\n")
+
+    reader = OsmoseConfigReader()
+    result = reader.read(file_a)
+    assert result["foo"] == "bar"
+    assert result["baz"] == "qux"
+
+
+def test_missing_subfile_logs_warning(tmp_path, caplog):
+    """Missing sub-config files should log a warning."""
+    import logging
+
+    master = tmp_path / "master.csv"
+    master.write_text("osmose.configuration.sub ; nonexistent.csv\nfoo ; bar\n")
+
+    reader = OsmoseConfigReader()
+    with caplog.at_level(logging.WARNING):
+        result = reader.read(master)
+    assert result["foo"] == "bar"
+    assert "nonexistent" in caplog.text

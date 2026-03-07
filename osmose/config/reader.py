@@ -28,14 +28,25 @@ class OsmoseConfigReader:
         self._read_recursive(master_file, flat)
         return flat
 
-    def _read_recursive(self, filepath: Path, flat: dict[str, str]) -> None:
+    def _read_recursive(
+        self, filepath: Path, flat: dict[str, str], _seen: set[Path] | None = None
+    ) -> None:
+        if _seen is None:
+            _seen = set()
+        resolved = filepath.resolve()
+        if resolved in _seen:
+            _log.warning("Circular config reference skipped: %s", filepath)
+            return
+        _seen.add(resolved)
         file_params = self.read_file(filepath)
         flat.update(file_params)
         for key, value in file_params.items():
             if key.startswith("osmose.configuration."):
                 sub_path = filepath.parent / value.strip()
                 if sub_path.exists():
-                    self._read_recursive(sub_path, flat)
+                    self._read_recursive(sub_path, flat, _seen)
+                else:
+                    _log.warning("Referenced sub-config not found: %s (from key %s)", sub_path, key)
 
     def read_file(self, filepath: Path) -> dict[str, str]:
         """Parse a single OSMOSE config file into a flat key-value dict."""
