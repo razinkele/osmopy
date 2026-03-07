@@ -8,6 +8,10 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
+from osmose.logging import setup_logging
+
+_log = setup_logging("osmose.grid")
+
 
 def create_grid_csv(
     nrows: int,
@@ -81,6 +85,7 @@ def csv_maps_to_netcdf(
     for csv_file in sorted(csv_dir.glob("*.csv")):
         arr = np.loadtxt(csv_file, delimiter=",")
         if arr.shape != (nlat, nlon):
+            _log.warning("Skipping %s: shape %s != (%d, %d)", csv_file.name, arr.shape, nlat, nlon)
             continue
         var_name = csv_file.stem
         data_vars[var_name] = xr.DataArray(

@@ -23,6 +23,8 @@ class OsmoseResults:
 
     def list_outputs(self) -> list[str]:
         """List all output files in the output directory."""
+        if not self.output_dir.exists():
+            return []
         files = []
         for f in sorted(self.output_dir.iterdir()):
             if f.suffix in (".csv", ".nc"):

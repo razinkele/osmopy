@@ -55,6 +55,14 @@ def output_dir(tmp_path):
     return tmp_path
 
 
+def test_list_outputs_missing_dir_returns_empty():
+    """list_outputs on non-existent dir should return empty list."""
+    from pathlib import Path
+
+    res = OsmoseResults(Path("/nonexistent/xyz_not_here"))
+    assert res.list_outputs() == []
+
+
 def test_list_outputs(output_dir):
     results = OsmoseResults(output_dir)
     files = results.list_outputs()

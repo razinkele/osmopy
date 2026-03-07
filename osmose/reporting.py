@@ -9,7 +9,7 @@ import pandas as pd
 from osmose.results import OsmoseResults
 
 
-def summary_table(results: OsmoseResults) -> pd.DataFrame:
+def report_summary_table(results: OsmoseResults) -> pd.DataFrame:
     """Create a summary table with mean/std per species per output type."""
     rows: list[dict] = []
     bio = results.biomass()
@@ -60,8 +60,11 @@ def generate_report(
     """
     output_path = Path(output_path)
 
+    if fmt != "html":
+        raise NotImplementedError(f"Report format '{fmt}' is not supported. Use 'html'.")
+
     # Build summary
-    table = summary_table(results)
+    table = report_summary_table(results)
     table_html = (
         table.to_html(index=False, classes="table") if not table.empty else "<p>No data</p>"
     )

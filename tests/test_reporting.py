@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from osmose.reporting import generate_report, summary_table
+from osmose.reporting import generate_report, report_summary_table
 
 
 @pytest.fixture
@@ -22,7 +22,7 @@ def test_summary_table(mock_results):
     from osmose.results import OsmoseResults
 
     res = OsmoseResults(mock_results)
-    table = summary_table(res)
+    table = report_summary_table(res)
     assert not table.empty
     assert "species" in table.columns
     assert "biomass_mean" in table.columns
@@ -49,3 +49,12 @@ def test_generate_report_empty(tmp_path):
     output_path = tmp_path / "report.html"
     generate_report(res, {}, output_path, fmt="html")
     assert output_path.exists()
+
+
+def test_generate_report_rejects_unsupported_format(mock_results):
+    """Non-html format should raise NotImplementedError."""
+    from osmose.results import OsmoseResults
+
+    res = OsmoseResults(mock_results)
+    with pytest.raises(NotImplementedError, match="csv"):
+        generate_report(res, {}, mock_results / "report.csv", fmt="csv")
