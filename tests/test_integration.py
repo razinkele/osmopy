@@ -9,40 +9,10 @@ from pathlib import Path
 
 from osmose.config.reader import OsmoseConfigReader
 from osmose.config.writer import OsmoseConfigWriter
+from osmose.schema import build_registry
 from osmose.schema.base import ParamType
-from osmose.schema.registry import ParameterRegistry
-from osmose.schema.simulation import SIMULATION_FIELDS
-from osmose.schema.species import SPECIES_FIELDS
-from osmose.schema.grid import GRID_FIELDS
-from osmose.schema.predation import PREDATION_FIELDS
-from osmose.schema.fishing import FISHING_FIELDS
-from osmose.schema.movement import MOVEMENT_FIELDS
-from osmose.schema.ltl import LTL_FIELDS
-from osmose.schema.output import OUTPUT_FIELDS
-from osmose.schema.bioenergetics import BIOENERGETICS_FIELDS
-from osmose.schema.economics import ECONOMICS_FIELDS
 
 EXAMPLES = Path(__file__).parent.parent / "data" / "examples"
-
-
-def _build_full_registry() -> ParameterRegistry:
-    """Build a registry with all known OSMOSE parameter definitions."""
-    reg = ParameterRegistry()
-    for fields in [
-        SIMULATION_FIELDS,
-        SPECIES_FIELDS,
-        GRID_FIELDS,
-        PREDATION_FIELDS,
-        FISHING_FIELDS,
-        MOVEMENT_FIELDS,
-        LTL_FIELDS,
-        OUTPUT_FIELDS,
-        BIOENERGETICS_FIELDS,
-        ECONOMICS_FIELDS,
-    ]:
-        for f in fields:
-            reg.register(f)
-    return reg
 
 
 # --------------------------------------------------------------------------
@@ -87,8 +57,8 @@ class TestLoadExampleConfig:
         assert "grid.nline" in config
         # Output keys
         assert "output.dir.path" in config
-        # Fishing keys
-        assert "mortality.fishing.rate.sp0" in config
+        # Fishing keys (per-fishery rates)
+        assert "mortality.fishing.rate.bydt.fsh0.sp0" in config
         # Movement keys
         assert "movement.distribution.method.sp0" in config
         # LTL keys
@@ -97,15 +67,16 @@ class TestLoadExampleConfig:
     def test_reader_loads_correct_values(self):
         reader = OsmoseConfigReader()
         config = reader.read(EXAMPLES / "osm_all-parameters.csv")
-        assert config["simulation.nspecies"] == "3"
+        assert config["simulation.nspecies"] == "8"
         assert config["species.name.sp0"] == "Anchovy"
         assert config["species.name.sp1"] == "Sardine"
-        assert config["species.name.sp2"] == "Hake"
+        assert config["species.name.sp5"] == "Hake"
+        assert config["species.name.sp7"] == "BlueWhiting"
         assert config["species.linf.sp0"] == "19.5"
-        assert config["species.linf.sp2"] == "110.0"
+        assert config["species.linf.sp5"] == "110.0"
         assert config["grid.ncolumn"] == "30"
         assert config["grid.upleft.lat"] == "48.0"
-        assert config["mortality.fishing.rate.sp2"] == "0.4"
+        assert config["mortality.fishing.rate.bydt.fsh1.sp5"] == "0.40"
 
     def test_reader_loads_expected_key_count(self):
         reader = OsmoseConfigReader()
@@ -131,7 +102,7 @@ class TestSchemaMapping:
     def test_known_keys_match_schema(self):
         reader = OsmoseConfigReader()
         reader.read(EXAMPLES / "osm_all-parameters.csv")
-        registry = _build_full_registry()
+        registry = build_registry()
 
         # These keys must be recognized by the schema
         must_match = [
@@ -151,7 +122,7 @@ class TestSchemaMapping:
             assert field is not None, f"Schema field not found for key: {key}"
 
     def test_species_indexed_fields_match(self):
-        registry = _build_full_registry()
+        registry = build_registry()
         # All sp0/sp1/sp2 species keys should match an indexed field
         for idx in range(3):
             field = registry.match_field(f"species.linf.sp{idx}")
@@ -161,7 +132,7 @@ class TestSchemaMapping:
     def test_validation_passes_for_numeric_keys(self):
         reader = OsmoseConfigReader()
         config = reader.read(EXAMPLES / "osm_all-parameters.csv")
-        registry = _build_full_registry()
+        registry = build_registry()
 
         # Build a typed subset for validation (only numeric keys with known schema)
         typed_config = {}
@@ -183,7 +154,7 @@ class TestSchemaMapping:
         assert errors == [], f"Validation errors for example config: {errors}"
 
     def test_registry_covers_all_categories(self):
-        registry = _build_full_registry()
+        registry = build_registry()
         categories = registry.categories()
         expected = {"simulation", "growth", "grid", "output"}
         # At minimum these categories should be present
@@ -284,16 +255,17 @@ class TestFullRoundtrip:
 
             result = reader.read(Path(tmpdir) / "osm_all-parameters.csv")
 
-            # All 3 species should survive
+            # All 8 species should survive
             assert result["species.name.sp0"] == "Anchovy"
             assert result["species.name.sp1"] == "Sardine"
-            assert result["species.name.sp2"] == "Hake"
+            assert result["species.name.sp5"] == "Hake"
+            assert result["species.name.sp7"] == "BlueWhiting"
             assert result["species.linf.sp0"] == "19.5"
             assert result["species.linf.sp1"] == "23.0"
-            assert result["species.linf.sp2"] == "110.0"
+            assert result["species.linf.sp5"] == "110.0"
             assert result["species.k.sp0"] == "0.364"
-            assert result["species.k.sp1"] == "0.28"
-            assert result["species.k.sp2"] == "0.106"
+            assert result["species.k.sp1"] == "0.280"
+            assert result["species.k.sp5"] == "0.106"
 
     def test_roundtrip_preserves_grid_data(self):
         reader = OsmoseConfigReader()

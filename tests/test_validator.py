@@ -10,9 +10,9 @@ from osmose.config.validator import (
 
 @pytest.fixture
 def registry():
-    from ui.state import _build_registry
+    from osmose.schema import build_registry
 
-    return _build_registry()
+    return build_registry()
 
 
 def test_validate_config_valid(registry):

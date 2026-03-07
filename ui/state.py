@@ -7,40 +7,9 @@ from pathlib import Path
 from shiny import reactive
 
 from osmose.runner import RunResult
-from osmose.schema.bioenergetics import BIOENERGETICS_FIELDS
-from osmose.schema.economics import ECONOMICS_FIELDS
-from osmose.schema.fishing import FISHING_FIELDS
-from osmose.schema.grid import GRID_FIELDS
-from osmose.schema.ltl import LTL_FIELDS
-from osmose.schema.movement import MOVEMENT_FIELDS
-from osmose.schema.output import OUTPUT_FIELDS
-from osmose.schema.predation import PREDATION_FIELDS
-from osmose.schema.registry import ParameterRegistry
-from osmose.schema.simulation import SIMULATION_FIELDS
-from osmose.schema.species import SPECIES_FIELDS
+from osmose.schema import build_registry
 
-
-def _build_registry() -> ParameterRegistry:
-    """Build the full parameter registry (cached at module level)."""
-    reg = ParameterRegistry()
-    for fields in [
-        SIMULATION_FIELDS,
-        SPECIES_FIELDS,
-        GRID_FIELDS,
-        PREDATION_FIELDS,
-        FISHING_FIELDS,
-        MOVEMENT_FIELDS,
-        LTL_FIELDS,
-        OUTPUT_FIELDS,
-        BIOENERGETICS_FIELDS,
-        ECONOMICS_FIELDS,
-    ]:
-        for f in fields:
-            reg.register(f)
-    return reg
-
-
-REGISTRY = _build_registry()
+REGISTRY = build_registry()
 
 
 class AppState:
@@ -57,10 +26,17 @@ class AppState:
         self.scenarios_dir: Path = scenarios_dir
         self.registry = REGISTRY
         self.jar_path: reactive.Value[str] = reactive.Value("osmose-java/osmose.jar")
+        self.loading: reactive.Value[bool] = reactive.Value(False)
 
     def update_config(self, key: str, value: str) -> None:
-        """Update a single key in the config dict."""
-        cfg = dict(self.config.get())
+        """Update a single key in the config dict.
+
+        Uses reactive.isolate to read current config without taking a
+        reactive dependency — prevents infinite reactive loops when called
+        from effects that also depend on inputs.
+        """
+        with reactive.isolate():
+            cfg = dict(self.config.get())
         cfg[key] = value
         self.config.set(cfg)
 
@@ -93,9 +69,14 @@ def sync_inputs(
     For each key, computes the input ID via key.replace(".", "_"), reads the
     value from input, and calls state.update_config() if non-None.
 
+    Batches all updates into a single config.set() to avoid repeated
+    reactive invalidations.
+
     Returns:
         Dict of keys that were actually updated with their new values.
     """
+    if state.loading.get():
+        return {}
     changed: dict[str, str] = {}
     for key in keys:
         input_id = key.replace(".", "_")
@@ -104,7 +85,10 @@ def sync_inputs(
         except (AttributeError, TypeError):
             continue
         if val is not None:
-            str_val = str(val)
-            changed[key] = str_val
-            state.update_config(key, str_val)
+            changed[key] = str(val)
+    if changed:
+        with reactive.isolate():
+            cfg = dict(state.config.get())
+        cfg.update(changed)
+        state.config.set(cfg)
     return changed
