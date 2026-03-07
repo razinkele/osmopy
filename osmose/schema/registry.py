@@ -13,10 +13,18 @@ class ParameterRegistry:
     def __init__(self):
         self._fields: list[OsmoseField] = []
         self._by_pattern: dict[str, OsmoseField] = {}
+        self._compiled: list[tuple[re.Pattern, OsmoseField]] = []
+        self._match_cache: dict[str, OsmoseField | None] = {}
+        self._categories: list[str] = []
 
     def register(self, field: OsmoseField) -> None:
         self._fields.append(field)
         self._by_pattern[field.key_pattern] = field
+        regex_str = re.escape(field.key_pattern).replace(r"\{idx\}", r"\d+")
+        self._compiled.append((re.compile(regex_str), field))
+        self._match_cache.clear()
+        if field.category not in self._categories:
+            self._categories.append(field.category)
 
     def all_fields(self) -> list[OsmoseField]:
         return list(self._fields)
@@ -28,18 +36,17 @@ class ParameterRegistry:
         return self._by_pattern.get(key_pattern)
 
     def categories(self) -> list[str]:
-        seen = []
-        for f in self._fields:
-            if f.category not in seen:
-                seen.append(f.category)
-        return seen
+        return list(self._categories)
 
     def match_field(self, concrete_key: str) -> OsmoseField | None:
         """Match a concrete key like 'species.k.sp0' to its field pattern."""
-        for pattern, field in self._by_pattern.items():
-            regex = re.escape(pattern).replace(r"\{idx\}", r"\d+")
-            if re.fullmatch(regex, concrete_key):
+        if concrete_key in self._match_cache:
+            return self._match_cache[concrete_key]
+        for compiled_re, field in self._compiled:
+            if compiled_re.fullmatch(concrete_key):
+                self._match_cache[concrete_key] = field
                 return field
+        self._match_cache[concrete_key] = None
         return None
 
     def validate(self, config: dict[str, object]) -> list[str]:

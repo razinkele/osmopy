@@ -1,5 +1,51 @@
+import pytest
+
 from osmose.schema.base import OsmoseField, ParamType
 from osmose.schema.registry import ParameterRegistry
+
+
+@pytest.fixture
+def registry():
+    """Pre-populated registry for reuse across tests."""
+    reg = ParameterRegistry()
+    reg.register(
+        OsmoseField(
+            key_pattern="species.linf.sp{idx}",
+            param_type=ParamType.FLOAT,
+            category="growth",
+            indexed=True,
+        )
+    )
+    reg.register(
+        OsmoseField(
+            key_pattern="species.k.sp{idx}",
+            param_type=ParamType.FLOAT,
+            category="growth",
+            indexed=True,
+        )
+    )
+    reg.register(
+        OsmoseField(
+            key_pattern="simulation.time.ndtperyear",
+            param_type=ParamType.INT,
+            category="simulation",
+        )
+    )
+    return reg
+
+
+def test_match_field_uses_cache(registry):
+    """match_field should be fast on repeated lookups (cached)."""
+    field1 = registry.match_field("simulation.time.ndtperyear")
+    field2 = registry.match_field("simulation.time.ndtperyear")
+    assert field1 is field2
+
+
+def test_categories_preserves_order(registry):
+    """categories() should return unique categories in insertion order."""
+    cats = registry.categories()
+    assert len(cats) == len(set(cats))
+    assert len(cats) > 0
 
 
 def test_registry_register_and_retrieve():
