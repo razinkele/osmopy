@@ -227,3 +227,46 @@ def test_evaluate_parallel(tmp_path):
     assert mock_run.call_count == 3
     assert out["F"].shape == (3, 2)
     assert np.array_equal(out["F"], np.array([[1.0, 2.0], [1.0, 2.0], [1.0, 2.0]]))
+
+
+def test_evaluate_logs_candidate_failure(tmp_path, caplog):
+    """Silent except:pass should now log failures."""
+    import logging
+
+    fp = FreeParameter(key="species.k.sp0", lower_bound=0.1, upper_bound=1.0)
+    problem = OsmoseCalibrationProblem(
+        free_params=[fp],
+        objective_fns=[lambda r: 1.0],
+        base_config_path=tmp_path / "config.csv",
+        jar_path=tmp_path / "fake.jar",
+        work_dir=tmp_path,
+    )
+    with patch.object(problem, "_evaluate_candidate", side_effect=RuntimeError("boom")):
+        X = np.array([[0.5]])
+        out = {}
+        with caplog.at_level(logging.WARNING):
+            problem._evaluate(X, out)
+        assert np.isinf(out["F"][0, 0])
+        assert "boom" in caplog.text
+
+
+def test_run_single_logs_subprocess_stderr(tmp_path, caplog):
+    """Subprocess failures should log stderr content."""
+    import logging
+
+    fp = FreeParameter(key="species.k.sp0", lower_bound=0.1, upper_bound=1.0)
+    problem = OsmoseCalibrationProblem(
+        free_params=[fp],
+        objective_fns=[lambda r: 1.0],
+        base_config_path=tmp_path / "config.csv",
+        jar_path=tmp_path / "fake.jar",
+        work_dir=tmp_path,
+    )
+    mock_result = MagicMock()
+    mock_result.returncode = 1
+    mock_result.stderr = b"Java OutOfMemoryError"
+    with patch("subprocess.run", return_value=mock_result):
+        with caplog.at_level(logging.WARNING):
+            result = problem._run_single({}, run_id=0)
+        assert result == [float("inf")]
+        assert "OutOfMemoryError" in caplog.text

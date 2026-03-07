@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -85,16 +86,16 @@ class OsmoseCalibrationProblem(Problem):
                         objectives = future.result()
                         for k, obj_val in enumerate(objectives):
                             F[i, k] = obj_val
-                    except Exception:
-                        pass  # Leave as inf
+                    except Exception as exc:
+                        _log.warning("Candidate %d failed: %s", i, exc)
         else:
             for i, params in enumerate(X):
                 try:
                     objectives = self._evaluate_candidate(i, params)
                     for k, obj_val in enumerate(objectives):
                         F[i, k] = obj_val
-                except Exception:
-                    pass  # Leave as inf
+                except Exception as exc:
+                    _log.warning("Candidate %d failed: %s", i, exc)
 
         out["F"] = F
 
@@ -114,8 +115,6 @@ class OsmoseCalibrationProblem(Problem):
 
         Uses subprocess (synchronous) since pymoo evaluates in a loop.
         """
-        import subprocess
-
         # Create isolated output directory
         run_dir = self.work_dir / f"run_{run_id}"
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -129,6 +128,10 @@ class OsmoseCalibrationProblem(Problem):
         result = subprocess.run(cmd, capture_output=True, timeout=3600)
 
         if result.returncode != 0:
+            stderr_msg = result.stderr.decode(errors="replace")[:500] if result.stderr else ""
+            _log.warning(
+                "OSMOSE run %d failed (exit %d): %s", run_id, result.returncode, stderr_msg
+            )
             return [float("inf")] * self.n_obj
 
         # Compute objectives

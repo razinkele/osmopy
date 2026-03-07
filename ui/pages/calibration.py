@@ -12,9 +12,12 @@ import plotly.graph_objects as go
 from shiny import reactive, render, ui
 from shinywidgets import output_widget, render_plotly
 
+from osmose.logging import setup_logging
 from osmose.schema.base import ParamType
 from osmose.schema.registry import ParameterRegistry
 from ui.styles import STYLE_EMPTY
+
+_log = setup_logging("osmose.calibration.ui")
 
 
 def _make_progress_callback(cal_history_append, cancel_check):
@@ -89,22 +92,22 @@ def build_free_params(selected: list[dict]) -> list:
     ]
 
 
-def make_convergence_chart(history: list[float]) -> go.Figure:
+def make_convergence_chart(history: list[float], tmpl: str = "osmose") -> go.Figure:
     """Line chart of best objective value per generation."""
     if not history:
-        return go.Figure().update_layout(title="Convergence", template="osmose")
+        return go.Figure().update_layout(title="Convergence", template=tmpl)
     import plotly.express as px
 
     fig = px.line(x=list(range(len(history))), y=history, title="Convergence")
     fig.update_layout(
         xaxis_title="Generation",
         yaxis_title="Best Objective",
-        template="osmose",
+        template=tmpl,
     )
     return fig
 
 
-def make_pareto_chart(F: np.ndarray, obj_names: list[str]) -> go.Figure:
+def make_pareto_chart(F: np.ndarray, obj_names: list[str], tmpl: str = "osmose") -> go.Figure:
     """Scatter plot of Pareto front (2 objectives)."""
     import plotly.express as px
 
@@ -112,12 +115,12 @@ def make_pareto_chart(F: np.ndarray, obj_names: list[str]) -> go.Figure:
     fig.update_layout(
         xaxis_title=obj_names[0] if len(obj_names) > 0 else "Obj 1",
         yaxis_title=obj_names[1] if len(obj_names) > 1 else "Obj 2",
-        template="osmose",
+        template=tmpl,
     )
     return fig
 
 
-def make_sensitivity_chart(result: dict) -> go.Figure:
+def make_sensitivity_chart(result: dict, tmpl: str = "osmose") -> go.Figure:
     """Bar chart of Sobol sensitivity indices."""
     names = result["param_names"]
     fig = go.Figure()
@@ -126,7 +129,7 @@ def make_sensitivity_chart(result: dict) -> go.Figure:
     fig.update_layout(
         title="Sobol Sensitivity Indices",
         barmode="group",
-        template="osmose",
+        template=tmpl,
     )
     return fig
 
@@ -216,6 +219,12 @@ def calibration_server(input, output, session, state):
     cancel_flag = reactive.value(False)
     surrogate_status = reactive.value("")
 
+    def _tmpl() -> str:
+        try:
+            return "osmose" if input.theme_mode() == "dark" else "osmose-light"
+        except Exception:
+            return "osmose-light"
+
     @render.text
     def cal_status():
         surr = surrogate_status.get()
@@ -248,15 +257,18 @@ def calibration_server(input, output, session, state):
         selected = collect_selected_params(input, state)
         if not selected:
             cal_history.set([])
+            ui.notification_show("Select at least one parameter to calibrate.", type="warning")
             return
 
         jar_path = Path(state.jar_path.get())
         if not jar_path.exists():
+            ui.notification_show(f"JAR not found: {jar_path}", type="error")
             return
 
         obs_bio = input.observed_biomass()
         obs_diet = input.observed_diet()
         if not obs_bio and not obs_diet:
+            ui.notification_show("Upload observed data (biomass or diet CSV).", type="warning")
             return
 
         import pandas as pd
@@ -361,34 +373,37 @@ def calibration_server(input, output, session, state):
         else:
             # NSGA-II (default)
             def run_optimization():
-                from pymoo.algorithms.moo.nsga2 import NSGA2
-                from pymoo.optimize import minimize
-                from pymoo.termination import get_termination
+                try:
+                    from pymoo.algorithms.moo.nsga2 import NSGA2
+                    from pymoo.optimize import minimize
+                    from pymoo.termination import get_termination
 
-                algorithm = NSGA2(pop_size=pop_size)
-                termination = get_termination("n_gen", generations)
+                    algorithm = NSGA2(pop_size=pop_size)
+                    termination = get_termination("n_gen", generations)
 
-                def append_history(val):
-                    current = cal_history.get()
-                    cal_history.set(current + [val])
+                    def append_history(val):
+                        current = cal_history.get()
+                        cal_history.set(current + [val])
 
-                callback = _make_progress_callback(
-                    cal_history_append=append_history,
-                    cancel_check=cancel_flag.get,
-                )
+                    callback = _make_progress_callback(
+                        cal_history_append=append_history,
+                        cancel_check=cancel_flag.get,
+                    )
 
-                res = minimize(
-                    problem,
-                    algorithm,
-                    termination,
-                    seed=42,
-                    verbose=False,
-                    callback=callback,
-                )
+                    res = minimize(
+                        problem,
+                        algorithm,
+                        termination,
+                        seed=42,
+                        verbose=False,
+                        callback=callback,
+                    )
 
-                if res.F is not None:
-                    cal_F.set(res.F)
-                    cal_X.set(res.X)
+                    if res.F is not None:
+                        cal_F.set(res.F)
+                        cal_X.set(res.X)
+                except Exception as exc:
+                    surrogate_status.set(f"Calibration failed: {exc}")
 
             thread = threading.Thread(target=run_optimization, daemon=True)
             thread.start()
@@ -411,10 +426,12 @@ def calibration_server(input, output, session, state):
 
         selected = collect_selected_params(input, state)
         if not selected:
+            ui.notification_show("Select at least one parameter for sensitivity.", type="warning")
             return
 
         jar_path = Path(state.jar_path.get())
         if not jar_path.exists():
+            ui.notification_show(f"JAR not found: {jar_path}", type="error")
             return
 
         param_names = [p["key"] for p in selected]
@@ -423,6 +440,7 @@ def calibration_server(input, output, session, state):
 
         obs_bio = input.observed_biomass()
         if not obs_bio:
+            ui.notification_show("Upload observed biomass CSV.", type="warning")
             return
         obs_bio_df = pd.read_csv(obs_bio[0]["datapath"])
 
@@ -447,7 +465,8 @@ def calibration_server(input, output, session, state):
                     )
                     result = prob._run_single(overrides, run_id=idx)
                     Y[idx] = result[0]
-                except Exception:
+                except Exception as exc:
+                    _log.warning("Sensitivity sample %d failed: %s", idx, exc)
                     Y[idx] = float("inf")
 
             sens_result = analyzer.analyze(Y)
@@ -458,16 +477,16 @@ def calibration_server(input, output, session, state):
 
     @render_plotly
     def convergence_chart():
-        return make_convergence_chart(cal_history.get())
+        return make_convergence_chart(cal_history.get(), tmpl=_tmpl())
 
     @render_plotly
     def pareto_chart():
         F = cal_F.get()
         if F is None:
             return go.Figure().update_layout(
-                title="Pareto Front (run calibration first)", template="osmose"
+                title="Pareto Front (run calibration first)", template=_tmpl()
             )
-        return make_pareto_chart(F, ["Biomass RMSE", "Diet Distance"])
+        return make_pareto_chart(F, ["Biomass RMSE", "Diet Distance"], tmpl=_tmpl())
 
     @render.ui
     def best_params_table():
@@ -497,5 +516,5 @@ def calibration_server(input, output, session, state):
     def sensitivity_chart():
         result = sensitivity_result.get()
         if result is None:
-            return go.Figure().update_layout(title="Sensitivity (click Run)", template="osmose")
-        return make_sensitivity_chart(result)
+            return go.Figure().update_layout(title="Sensitivity (click Run)", template=_tmpl())
+        return make_sensitivity_chart(result, tmpl=_tmpl())
