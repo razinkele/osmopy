@@ -71,7 +71,9 @@ def scenarios_server(input, output, session, state):
 
     def _bump():
         """Increment the refresh trigger to force re-render of scenario list."""
-        refresh_trigger.set(refresh_trigger.get() + 1)
+        with reactive.isolate():
+            current = refresh_trigger.get()
+        refresh_trigger.set(current + 1)
 
     def _scenario_names() -> list[str]:
         """Return a sorted list of scenario names."""

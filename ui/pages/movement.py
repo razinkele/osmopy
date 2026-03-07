@@ -33,7 +33,8 @@ def movement_server(input, output, session, state):
     @render.ui
     def species_movement_panels():
         per_species = [f for f in MOVEMENT_FIELDS if f.indexed and "map" not in f.key_pattern]
-        n_species = int(state.config.get().get("simulation.nspecies", "3"))
+        with reactive.isolate():
+            n_species = int(state.config.get().get("simulation.nspecies", "3"))
         panels = []
         for i in range(n_species):
             panels.extend([render_field(f, species_idx=i) for f in per_species])
@@ -59,7 +60,8 @@ def movement_server(input, output, session, state):
     @reactive.effect
     def sync_species_movement_inputs():
         per_species = [f for f in MOVEMENT_FIELDS if f.indexed and "map" not in f.key_pattern]
-        n_species = int(state.config.get().get("simulation.nspecies", "3"))
+        with reactive.isolate():
+            n_species = int(state.config.get().get("simulation.nspecies", "3"))
         for i in range(n_species):
             keys = [f.resolve_key(i) for f in per_species]
             sync_inputs(input, state, keys)

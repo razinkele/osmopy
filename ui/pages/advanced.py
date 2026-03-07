@@ -85,9 +85,10 @@ def advanced_server(input, output, session, state):
         if not pending:
             return ui.div()
 
-        diff = compute_import_diff(state.config.get(), pending)
+        with reactive.isolate():
+            current_cfg = state.config.get()
+        diff = compute_import_diff(current_cfg, pending)
         if not diff:
-            import_pending.set({})
             return ui.div(
                 ui.p("No changes detected in imported file.", style=COLOR_MUTED),
             )
@@ -120,7 +121,7 @@ def advanced_server(input, output, session, state):
                     ui.tags.tbody(*rows),
                     class_="table table-striped table-sm",
                 ),
-                style="max-height: 200px; overflow-y: auto;",
+                style=STYLE_SCROLL_TABLE,
             ),
             ui.input_action_button(
                 "confirm_import", "Confirm Import", class_="btn-success w-100 mt-2"
@@ -128,12 +129,25 @@ def advanced_server(input, output, session, state):
         )
 
     @reactive.effect
+    def _clear_empty_import():
+        """Clear import_pending when diff is empty (moved out of render)."""
+        pending = import_pending.get()
+        if not pending:
+            return
+        with reactive.isolate():
+            current_cfg = state.config.get()
+        diff = compute_import_diff(current_cfg, pending)
+        if not diff:
+            import_pending.set({})
+
+    @reactive.effect
     @reactive.event(input.confirm_import)
     def confirm_import():
         pending = import_pending.get()
         if not pending:
             return
-        cfg = dict(state.config.get())
+        with reactive.isolate():
+            cfg = dict(state.config.get())
         cfg.update(pending)
         state.config.set(cfg)
         import_pending.set({})
