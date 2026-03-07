@@ -183,7 +183,7 @@ class TestSizeSpectrumSlope:
         slope_true = -1.5
         intercept_true = 10.0
         sizes = np.array([1, 2, 4, 8, 16, 32], dtype=float)
-        abundances = np.exp(intercept_true + slope_true * np.log(sizes))
+        abundances = 10**intercept_true * sizes**slope_true
         df = pd.DataFrame({"size": sizes, "abundance": abundances})
         slope, intercept, r_sq = size_spectrum_slope(df)
         assert slope == pytest.approx(slope_true, rel=1e-6)
@@ -201,3 +201,16 @@ class TestSizeSpectrumSlope:
         df = pd.DataFrame({"size": [1, 10, 100], "abundance": [1000, 100, 10]})
         slope, _, _ = size_spectrum_slope(df)
         assert slope < 0
+
+    def test_size_spectrum_slope_uses_log10(self):
+        """Slope should be computed with log10 to match plotting convention."""
+        # Known power law: abundance = 1000 * size^-2
+        sizes = np.array([1, 10, 100, 1000], dtype=float)
+        abundances = 1000 * sizes**-2.0
+
+        df = pd.DataFrame({"size": sizes, "abundance": abundances})
+        slope, intercept, r2 = size_spectrum_slope(df)
+
+        # With log10: slope should be exactly -2.0
+        assert abs(slope - (-2.0)) < 0.01
+        assert r2 > 0.99

@@ -131,8 +131,8 @@ def size_spectrum_slope(
     Returns:
         Tuple of (slope, intercept, r_squared).
     """
-    log_size = np.log(spectrum_df["size"].values.astype(float))
-    log_abundance = np.log(spectrum_df["abundance"].values.astype(float))
+    log_size = np.log10(spectrum_df["size"].values.astype(float))
+    log_abundance = np.log10(spectrum_df["abundance"].values.astype(float))
 
     # Linear regression: log(abundance) = slope * log(size) + intercept
     coeffs = np.polyfit(log_size, log_abundance, 1)
