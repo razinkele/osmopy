@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
 
 import numpy as np
@@ -31,7 +32,8 @@ class MultiPhaseCalibrator:
 
     def run(
         self,
-        work_dir: str,
+        work_dir: Path | str,
+        objective_fn: Callable[[np.ndarray], float] | None = None,
         on_progress: Callable[[str], None] | None = None,
     ) -> list[dict[str, float]]:
         """Run all phases sequentially.
@@ -52,7 +54,7 @@ class MultiPhaseCalibrator:
             if on_progress:
                 on_progress(f"Starting phase {i + 1}/{len(self.phases)}: {phase.name}")
 
-            optimized = self._optimize_phase(phase, fixed_params, work_dir)
+            optimized = self._optimize_phase(phase, fixed_params, work_dir, objective_fn)
             results.append(optimized)
             fixed_params.update(optimized)
 
@@ -65,7 +67,8 @@ class MultiPhaseCalibrator:
         self,
         phase: CalibrationPhase,
         fixed_params: dict[str, float],
-        work_dir: str,
+        work_dir: Path | str,
+        objective_fn: Callable[[np.ndarray], float] | None = None,
     ) -> dict[str, float]:
         """Optimize a single phase using scipy.optimize.
 
@@ -80,9 +83,13 @@ class MultiPhaseCalibrator:
         bounds = [(fp.lower_bound, fp.upper_bound) for fp in phase.free_params]
         x0 = np.array([(b[0] + b[1]) / 2 for b in bounds])
 
+        if objective_fn is None:
+            raise ValueError(
+                "objective_fn is required. Pass a callable that maps parameter vector to scalar."
+            )
+
         def objective(x):
-            # Placeholder — subclasses or mocks override this
-            return float(np.sum(x**2))
+            return objective_fn(x)
 
         if phase.algorithm == "differential_evolution":
             result = differential_evolution(objective, bounds, maxiter=phase.max_iter)
