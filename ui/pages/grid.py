@@ -1,5 +1,6 @@
 """Grid configuration page."""
 
+import math
 from pathlib import Path
 
 import numpy as np
@@ -9,7 +10,6 @@ from shiny import ui, reactive, render
 from shiny_deckgl import (
     MapWidget,
     polygon_layer,
-    geojson_layer,
     CARTO_POSITRON,
     CARTO_DARK,
     zoom_widget,
@@ -108,18 +108,18 @@ def _build_grid_layers(
                 lon1 = lon0 + dx
                 lat0 = ul_lat - row * dy
                 lat1 = lat0 - dy
-                cell = {
-                    "polygon": [[lon0, lat0], [lon1, lat0], [lon1, lat1], [lon0, lat1]],
-                    "row": row,
-                    "col": col,
-                }
-
                 is_land = (
                     mask is not None
                     and row < mask.shape[0]
                     and col < mask.shape[1]
                     and mask[row, col] <= 0
                 )
+                cell = {
+                    "polygon": [[lon0, lat0], [lon1, lat0], [lon1, lat1], [lon0, lat1]],
+                    "row": row,
+                    "col": col,
+                    "type": "land" if is_land else "ocean",
+                }
                 if is_land:
                     land_cells.append(cell)
                 else:
@@ -245,11 +245,10 @@ def grid_server(input, output, session, state):
         lr_lon = float(input.grid_lowright_lon() or 0)
         nx = int(input.grid_ncolumn() or 0)
         ny = int(input.grid_nline() or 0)
-        print(f"[GRID DEBUG] ul=({ul_lat},{ul_lon}) lr=({lr_lat},{lr_lon}) nx={nx} ny={ny}")
 
         try:
             is_dark = input.theme_mode() == "dark"
-        except Exception:
+        except (AttributeError, TypeError):
             is_dark = False
 
         # Load land-sea mask from config if available
@@ -258,7 +257,6 @@ def grid_server(input, output, session, state):
         mask = _load_mask(cfg)
 
         layers = _build_grid_layers(ul_lat, ul_lon, lr_lat, lr_lon, nx, ny, is_dark, mask)
-        print(f"[GRID DEBUG] layers={len(layers)}, mask={'yes' if mask is not None else 'no'}")
 
         # Compute view state to fit grid bounds
         if ul_lat != 0 or ul_lon != 0 or lr_lat != 0 or lr_lon != 0:
@@ -268,8 +266,6 @@ def grid_server(input, output, session, state):
             lon_span = abs(lr_lon - ul_lon)
             span = max(lat_span, lon_span)
             if span > 0:
-                import math
-
                 zoom = max(1, min(15, math.log2(360 / span) - 0.5))
             else:
                 zoom = 5

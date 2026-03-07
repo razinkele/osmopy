@@ -222,7 +222,7 @@ def calibration_server(input, output, session, state):
     def _tmpl() -> str:
         try:
             return "osmose" if input.theme_mode() == "dark" else "osmose-light"
-        except Exception:
+        except (AttributeError, TypeError):
             return "osmose-light"
 
     @render.text

@@ -15,33 +15,42 @@ from shinywidgets import output_widget, render_plotly
 # ---------------------------------------------------------------------------
 
 
+def _tpl(input=None) -> str:
+    """Return the Plotly template name for the current theme."""
+    try:
+        return "osmose" if input and input.theme_mode() == "dark" else "osmose-light"
+    except (AttributeError, TypeError):
+        return "osmose-light"
+
+
 def make_timeseries_chart(
     df: pd.DataFrame,
     value_col: str,
     title: str,
     species: str | None = None,
+    template: str = "osmose",
 ) -> go.Figure:
     """Create a time series line chart from OSMOSE output."""
     if df.empty:
-        return go.Figure().update_layout(title=title)
+        return go.Figure().update_layout(title=title, template=template)
     if species and "species" in df.columns:
         df = df[df["species"] == species]
     if df.empty:
-        return go.Figure().update_layout(title=title)
+        return go.Figure().update_layout(title=title, template=template)
     import plotly.express as px
 
     fig = px.line(df, x="time", y=value_col, color="species", title=title)
-    fig.update_layout(template="osmose")
+    fig.update_layout(template=template)
     return fig
 
 
-def make_diet_heatmap(df: pd.DataFrame) -> go.Figure:
+def make_diet_heatmap(df: pd.DataFrame, template: str = "osmose") -> go.Figure:
     """Create a diet composition heatmap."""
     if df.empty:
-        return go.Figure().update_layout(title="Diet Composition")
+        return go.Figure().update_layout(title="Diet Composition", template=template)
     prey_cols = [c for c in df.columns if c.startswith("prey_")]
     if not prey_cols:
-        return go.Figure().update_layout(title="Diet Composition (no prey data)")
+        return go.Figure().update_layout(title="Diet Composition (no prey data)", template=template)
     import plotly.express as px
 
     if "species" in df.columns:
@@ -57,7 +66,7 @@ def make_diet_heatmap(df: pd.DataFrame) -> go.Figure:
         color_continuous_scale="YlOrRd",
         labels={"x": "Prey", "y": "Predator", "color": "Proportion"},
     )
-    fig.update_layout(template="osmose")
+    fig.update_layout(template=template)
     return fig
 
 
@@ -66,6 +75,7 @@ def make_spatial_map(
     var_name: str,
     time_idx: int = 0,
     title: str | None = None,
+    template: str = "osmose",
 ) -> go.Figure:
     """Create a spatial heatmap from NetCDF data."""
     import plotly.express as px
@@ -82,7 +92,7 @@ def make_spatial_map(
         labels={"x": "Longitude", "y": "Latitude", "color": var_name},
         title=title or f"{var_name} (t={time_idx})",
     )
-    fig.update_layout(template="osmose")
+    fig.update_layout(template=template)
     return fig
 
 
@@ -236,6 +246,7 @@ def results_server(input, output, session, state):
         data = results_data.get()
         rtype = input.result_type()
         species_filter = input.result_species()
+        tmpl = _tpl(input)
 
         # Map result types to their value column names
         col_map = {
@@ -279,7 +290,7 @@ def results_server(input, output, session, state):
         if rtype == "diet":
             return go.Figure().update_layout(
                 title="Diet data shown in heatmap below",
-                template="osmose",
+                template=tmpl,
             )
 
         # Structured output types use stacked area charts
@@ -296,19 +307,25 @@ def results_server(input, output, session, state):
             from osmose.plotting import make_stacked_area
 
             df = data.get(rtype, pd.DataFrame())
-            return make_stacked_area(df, title=title_map.get(rtype, rtype), species=sp)
+            fig = make_stacked_area(df, title=title_map.get(rtype, rtype), species=sp)
+            fig.update_layout(template=tmpl)
+            return fig
 
         if rtype == "mortality_rate":
             from osmose.plotting import make_mortality_breakdown
 
             df = data.get(rtype, pd.DataFrame())
-            return make_mortality_breakdown(df, species=sp)
+            fig = make_mortality_breakdown(df, species=sp)
+            fig.update_layout(template=tmpl)
+            return fig
 
         if rtype == "size_spectrum":
             from osmose.plotting import make_size_spectrum_plot
 
             df = data.get(rtype, pd.DataFrame())
-            return make_size_spectrum_plot(df)
+            fig = make_size_spectrum_plot(df)
+            fig.update_layout(template=tmpl)
+            return fig
 
         df = data.get(rtype, pd.DataFrame())
         value_col = col_map.get(rtype, rtype)
@@ -321,21 +338,23 @@ def results_server(input, output, session, state):
             if non_time:
                 value_col = non_time[0]
 
-        return make_timeseries_chart(df, value_col, title, species=sp)
+        return make_timeseries_chart(df, value_col, title, species=sp, template=tmpl)
 
     @render_plotly
     def diet_chart():
+        tmpl = _tpl(input)
         data = results_data.get()
         df = data.get("diet", pd.DataFrame())
-        return make_diet_heatmap(df)
+        return make_diet_heatmap(df, template=tmpl)
 
     @render_plotly
     def spatial_chart():
+        tmpl = _tpl(input)
         ds = spatial_ds.get()
         if ds is None:
             return go.Figure().update_layout(
                 title="No spatial data loaded",
-                template="osmose",
+                template=tmpl,
             )
         time_idx = input.spatial_time_idx()
         # Find a suitable variable (prefer 'biomass')
@@ -343,9 +362,9 @@ def results_server(input, output, session, state):
         if not var_names:
             return go.Figure().update_layout(
                 title="No spatial variables found",
-                template="osmose",
+                template=tmpl,
             )
         var_name = "biomass" if "biomass" in var_names else var_names[0]
         max_t = ds.sizes.get("time", 1) - 1
         safe_idx = min(time_idx, max_t)
-        return make_spatial_map(ds, var_name, time_idx=safe_idx)
+        return make_spatial_map(ds, var_name, time_idx=safe_idx, template=tmpl)

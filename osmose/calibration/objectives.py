@@ -7,46 +7,37 @@ import numpy as np
 import pandas as pd
 
 
-def biomass_rmse(
-    simulated: pd.DataFrame, observed: pd.DataFrame, species: str | None = None
+def _timeseries_rmse(
+    simulated: pd.DataFrame,
+    observed: pd.DataFrame,
+    value_col: str,
+    species: str | None = None,
 ) -> float:
-    """Root mean square error of biomass time series.
-
-    Args:
-        simulated: DataFrame with 'time' and 'biomass' columns (and optionally 'species').
-        observed: DataFrame with 'time' and 'biomass' columns (and optionally 'species').
-        species: If specified, filter to this species.
-
-    Returns:
-        RMSE value.
-    """
+    """Generic RMSE for aligned time series with an optional species filter."""
     if species:
         simulated = simulated[simulated["species"] == species]
         observed = observed[observed["species"] == species]
 
-    # Merge on time to align
     merged = pd.merge(simulated, observed, on="time", suffixes=("_sim", "_obs"))
     if merged.empty:
         return float("inf")
 
-    diff = merged["biomass_sim"] - merged["biomass_obs"]
+    diff = merged[f"{value_col}_sim"] - merged[f"{value_col}_obs"]
     return float(np.sqrt(np.mean(diff**2)))
+
+
+def biomass_rmse(
+    simulated: pd.DataFrame, observed: pd.DataFrame, species: str | None = None
+) -> float:
+    """Root mean square error of biomass time series."""
+    return _timeseries_rmse(simulated, observed, "biomass", species)
 
 
 def abundance_rmse(
     simulated: pd.DataFrame, observed: pd.DataFrame, species: str | None = None
 ) -> float:
     """RMSE for abundance time series."""
-    if species:
-        simulated = simulated[simulated["species"] == species]
-        observed = observed[observed["species"] == species]
-
-    merged = pd.merge(simulated, observed, on="time", suffixes=("_sim", "_obs"))
-    if merged.empty:
-        return float("inf")
-
-    diff = merged["abundance_sim"] - merged["abundance_obs"]
-    return float(np.sqrt(np.mean(diff**2)))
+    return _timeseries_rmse(simulated, observed, "abundance", species)
 
 
 def diet_distance(simulated: pd.DataFrame, observed: pd.DataFrame) -> float:
@@ -67,42 +58,26 @@ def yield_rmse(
     simulated: pd.DataFrame, observed: pd.DataFrame, species: str | None = None
 ) -> float:
     """RMSE for yield time series."""
-    if species:
-        simulated = simulated[simulated["species"] == species]
-        observed = observed[observed["species"] == species]
+    return _timeseries_rmse(simulated, observed, "yield", species)
 
-    merged = pd.merge(simulated, observed, on="time", suffixes=("_sim", "_obs"))
+
+def _binned_rmse(simulated: pd.DataFrame, observed: pd.DataFrame) -> float:
+    """RMSE for 2D binned outputs (catch-at-size, size-at-age)."""
+    merged = pd.merge(simulated, observed, on=["time", "bin"], suffixes=("_sim", "_obs"))
     if merged.empty:
         return float("inf")
-
-    diff = merged["yield_sim"] - merged["yield_obs"]
+    diff = merged["value_sim"] - merged["value_obs"]
     return float(np.sqrt(np.mean(diff**2)))
 
 
 def catch_at_size_distance(simulated: pd.DataFrame, observed: pd.DataFrame) -> float:
-    """RMSE between 2D catch-at-size outputs.
-
-    Both DataFrames should have 'time', 'bin', and 'value' columns.
-    """
-    merged = pd.merge(simulated, observed, on=["time", "bin"], suffixes=("_sim", "_obs"))
-    if merged.empty:
-        return float("inf")
-
-    diff = merged["value_sim"] - merged["value_obs"]
-    return float(np.sqrt(np.mean(diff**2)))
+    """RMSE between 2D catch-at-size outputs."""
+    return _binned_rmse(simulated, observed)
 
 
 def size_at_age_rmse(simulated: pd.DataFrame, observed: pd.DataFrame) -> float:
-    """RMSE between 2D size-at-age outputs.
-
-    Both DataFrames should have 'time', 'bin', and 'value' columns.
-    """
-    merged = pd.merge(simulated, observed, on=["time", "bin"], suffixes=("_sim", "_obs"))
-    if merged.empty:
-        return float("inf")
-
-    diff = merged["value_sim"] - merged["value_obs"]
-    return float(np.sqrt(np.mean(diff**2)))
+    """RMSE between 2D size-at-age outputs."""
+    return _binned_rmse(simulated, observed)
 
 
 def weighted_multi_objective(objectives: list[float], weights: list[float]) -> float:
