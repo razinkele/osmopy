@@ -118,6 +118,16 @@ def results_ui():
                         "mortality": "Mortality",
                         "diet": "Diet Matrix",
                         "trophic": "Trophic Level",
+                        "biomass_by_age": "Biomass by Age",
+                        "biomass_by_size": "Biomass by Size",
+                        "biomass_by_tl": "Biomass by TL",
+                        "abundance_by_age": "Abundance by Age",
+                        "abundance_by_size": "Abundance by Size",
+                        "yield_by_age": "Yield by Age",
+                        "yield_by_size": "Yield by Size",
+                        "yield_n": "Catch Numbers",
+                        "mortality_rate": "Mortality by Source",
+                        "size_spectrum": "Size Spectrum",
                     },
                     selected="biomass",
                 ),
@@ -188,6 +198,16 @@ def results_server(input, output, session, state):
         data["mortality"] = res.mortality()
         data["diet"] = res.diet_matrix()
         data["trophic"] = res.mean_trophic_level()
+        data["biomass_by_age"] = res.biomass_by_age()
+        data["biomass_by_size"] = res.biomass_by_size()
+        data["biomass_by_tl"] = res.biomass_by_tl()
+        data["abundance_by_age"] = res.abundance_by_age()
+        data["abundance_by_size"] = res.abundance_by_size()
+        data["yield_by_age"] = res.yield_by_age()
+        data["yield_by_size"] = res.yield_by_size()
+        data["yield_n"] = res.yield_abundance()
+        data["mortality_rate"] = res.mortality_rate()
+        data["size_spectrum"] = res.size_spectrum()
         results_data.set(data)
 
         # Update output dir in shared state
@@ -224,6 +244,16 @@ def results_server(input, output, session, state):
             "yield": "yield",
             "mortality": "mortality",
             "trophic": "meanTL",
+            "biomass_by_age": "value",
+            "biomass_by_size": "value",
+            "biomass_by_tl": "value",
+            "abundance_by_age": "value",
+            "abundance_by_size": "value",
+            "yield_by_age": "value",
+            "yield_by_size": "value",
+            "yield_n": "yieldN",
+            "mortality_rate": "value",
+            "size_spectrum": "abundance",
         }
         title_map = {
             "biomass": "Biomass",
@@ -231,7 +261,19 @@ def results_server(input, output, session, state):
             "yield": "Yield (Catch)",
             "mortality": "Mortality",
             "trophic": "Mean Trophic Level",
+            "biomass_by_age": "Biomass by Age",
+            "biomass_by_size": "Biomass by Size",
+            "biomass_by_tl": "Biomass by Trophic Level",
+            "abundance_by_age": "Abundance by Age",
+            "abundance_by_size": "Abundance by Size",
+            "yield_by_age": "Yield by Age",
+            "yield_by_size": "Yield by Size",
+            "yield_n": "Catch Numbers",
+            "mortality_rate": "Mortality by Source",
+            "size_spectrum": "Size Spectrum",
         }
+
+        sp = species_filter if species_filter != "all" else None
 
         # If diet is selected, show a placeholder message in time series
         if rtype == "diet":
@@ -240,10 +282,37 @@ def results_server(input, output, session, state):
                 template="osmose",
             )
 
+        # Structured output types use stacked area charts
+        structured_types = {
+            "biomass_by_age",
+            "biomass_by_size",
+            "biomass_by_tl",
+            "abundance_by_age",
+            "abundance_by_size",
+            "yield_by_age",
+            "yield_by_size",
+        }
+        if rtype in structured_types:
+            from osmose.plotting import make_stacked_area
+
+            df = data.get(rtype, pd.DataFrame())
+            return make_stacked_area(df, title=title_map.get(rtype, rtype), species=sp)
+
+        if rtype == "mortality_rate":
+            from osmose.plotting import make_mortality_breakdown
+
+            df = data.get(rtype, pd.DataFrame())
+            return make_mortality_breakdown(df, species=sp)
+
+        if rtype == "size_spectrum":
+            from osmose.plotting import make_size_spectrum_plot
+
+            df = data.get(rtype, pd.DataFrame())
+            return make_size_spectrum_plot(df)
+
         df = data.get(rtype, pd.DataFrame())
         value_col = col_map.get(rtype, rtype)
         title = title_map.get(rtype, rtype.title())
-        sp = species_filter if species_filter != "all" else None
 
         # If the expected value column doesn't exist, try first numeric column
         if not df.empty and value_col not in df.columns:

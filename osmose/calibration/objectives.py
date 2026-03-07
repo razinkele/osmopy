@@ -63,6 +63,53 @@ def diet_distance(simulated: pd.DataFrame, observed: pd.DataFrame) -> float:
     return float(np.linalg.norm(sim_vals - obs_vals, "fro"))
 
 
+def yield_rmse(
+    simulated: pd.DataFrame, observed: pd.DataFrame, species: str | None = None
+) -> float:
+    """RMSE for yield time series."""
+    if species:
+        simulated = simulated[simulated["species"] == species]
+        observed = observed[observed["species"] == species]
+
+    merged = pd.merge(simulated, observed, on="time", suffixes=("_sim", "_obs"))
+    if merged.empty:
+        return float("inf")
+
+    diff = merged["yield_sim"] - merged["yield_obs"]
+    return float(np.sqrt(np.mean(diff**2)))
+
+
+def catch_at_size_distance(simulated: pd.DataFrame, observed: pd.DataFrame) -> float:
+    """RMSE between 2D catch-at-size outputs.
+
+    Both DataFrames should have 'time', 'bin', and 'value' columns.
+    """
+    merged = pd.merge(simulated, observed, on=["time", "bin"], suffixes=("_sim", "_obs"))
+    if merged.empty:
+        return float("inf")
+
+    diff = merged["value_sim"] - merged["value_obs"]
+    return float(np.sqrt(np.mean(diff**2)))
+
+
+def size_at_age_rmse(simulated: pd.DataFrame, observed: pd.DataFrame) -> float:
+    """RMSE between 2D size-at-age outputs.
+
+    Both DataFrames should have 'time', 'bin', and 'value' columns.
+    """
+    merged = pd.merge(simulated, observed, on=["time", "bin"], suffixes=("_sim", "_obs"))
+    if merged.empty:
+        return float("inf")
+
+    diff = merged["value_sim"] - merged["value_obs"]
+    return float(np.sqrt(np.mean(diff**2)))
+
+
+def weighted_multi_objective(objectives: list[float], weights: list[float]) -> float:
+    """Weighted dot product of objective values."""
+    return float(np.dot(objectives, weights))
+
+
 def normalized_rmse(simulated: np.ndarray, observed: np.ndarray) -> float:
     """RMSE normalized by the mean of observed values."""
     obs_mean = np.mean(observed)

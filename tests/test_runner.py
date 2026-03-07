@@ -226,3 +226,114 @@ async def test_run_handles_none_stream(fake_config: Path, tmp_path: Path) -> Non
     assert result.returncode == 0
     assert result.stdout == ""
     assert result.stderr == ""
+
+
+# ---------------------------------------------------------------------------
+# run_ensemble tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def ensemble_jar(tmp_path: Path) -> Path:
+    """Create a fake JAR that writes a marker file in the output directory.
+
+    It parses -Poutput.dir.path=<dir> and -Psimulation.random.seed=<seed>
+    from the command-line arguments, creates the output dir, and writes
+    seed.txt inside it so the test can verify each replicate was invoked.
+    """
+    script = tmp_path / "ensemble_osmose.py"
+    script.write_text(
+        "import sys, os, pathlib\n"
+        "output_dir = None\n"
+        "seed = None\n"
+        "for arg in sys.argv[1:]:\n"
+        '    if arg.startswith("-Poutput.dir.path="):\n'
+        '        output_dir = arg.split("=", 1)[1]\n'
+        '    if arg.startswith("-Psimulation.random.seed="):\n'
+        '        seed = arg.split("=", 1)[1]\n'
+        "if output_dir:\n"
+        "    pathlib.Path(output_dir).mkdir(parents=True, exist_ok=True)\n"
+        '    (pathlib.Path(output_dir) / "seed.txt").write_text(seed or "")\n'
+        'print("done")\n'
+    )
+    return script
+
+
+async def test_run_ensemble_creates_replicate_dirs(
+    ensemble_jar: Path, fake_config: Path, tmp_path: Path
+) -> None:
+    runner = _ScriptRunner(jar_path=ensemble_jar, java_cmd=sys.executable)
+    out = tmp_path / "ensemble_out"
+    results = await runner.run_ensemble(config_path=fake_config, output_dir=out, n_replicates=3)
+    assert len(results) == 3
+    for i, result in enumerate(results):
+        assert result.returncode == 0
+        rep_dir = out / f"rep_{i}"
+        assert rep_dir.exists()
+        seed_file = rep_dir / "seed.txt"
+        assert seed_file.exists()
+        assert seed_file.read_text() == str(i)
+
+
+async def test_run_ensemble_merges_overrides(
+    ensemble_jar: Path, fake_config: Path, tmp_path: Path
+) -> None:
+    """Overrides should be passed through, with seed added."""
+    # Use args-printing script to verify
+    script = tmp_path / "args_ens.py"
+    script.write_text(
+        "import sys, pathlib\n"
+        "output_dir = None\n"
+        "for arg in sys.argv[1:]:\n"
+        '    if arg.startswith("-Poutput.dir.path="):\n'
+        '        output_dir = arg.split("=", 1)[1]\n'
+        "if output_dir:\n"
+        "    pathlib.Path(output_dir).mkdir(parents=True, exist_ok=True)\n"
+        "for arg in sys.argv[1:]:\n"
+        "    print(arg)\n"
+    )
+    config = tmp_path / "config2.csv"
+    config.write_text("x ; 1\n")
+    runner = _ScriptRunner(jar_path=script, java_cmd=sys.executable)
+    out = tmp_path / "ens_out2"
+    results = await runner.run_ensemble(
+        config_path=config,
+        output_dir=out,
+        n_replicates=2,
+        overrides={"simulation.nspecies": "3"},
+    )
+    assert len(results) == 2
+    # Check both custom override and seed are present
+    assert "-Psimulation.nspecies=3" in results[0].stdout
+    assert "-Psimulation.random.seed=0" in results[0].stdout
+    assert "-Psimulation.random.seed=1" in results[1].stdout
+
+
+async def test_run_ensemble_progress_callback(
+    ensemble_jar: Path, fake_config: Path, tmp_path: Path
+) -> None:
+    """on_progress callback receives replicate index and line."""
+    progress: list[tuple[int, str]] = []
+    runner = _ScriptRunner(jar_path=ensemble_jar, java_cmd=sys.executable)
+    out = tmp_path / "ens_progress"
+    await runner.run_ensemble(
+        config_path=fake_config,
+        output_dir=out,
+        n_replicates=2,
+        on_progress=lambda i, line: progress.append((i, line)),
+    )
+    assert len(progress) > 0
+    # Each entry should have the replicate index
+    indices = {p[0] for p in progress}
+    assert 0 in indices
+    assert 1 in indices
+
+
+async def test_run_ensemble_default_replicates(
+    ensemble_jar: Path, fake_config: Path, tmp_path: Path
+) -> None:
+    """Default n_replicates=5."""
+    runner = _ScriptRunner(jar_path=ensemble_jar, java_cmd=sys.executable)
+    out = tmp_path / "ens_default"
+    results = await runner.run_ensemble(config_path=fake_config, output_dir=out)
+    assert len(results) == 5

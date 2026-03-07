@@ -119,6 +119,57 @@ class OsmoseRunner:
             self._process.terminate()
             _log.info("OSMOSE run cancelled")
 
+    async def run_ensemble(
+        self,
+        config_path: Path,
+        output_dir: Path,
+        n_replicates: int = 5,
+        java_opts: list[str] | None = None,
+        overrides: dict[str, str] | None = None,
+        on_progress: Callable[[int, str], None] | None = None,
+    ) -> list[RunResult]:
+        """Run multiple replicates sequentially with different random seeds.
+
+        Args:
+            config_path: Path to the master OSMOSE config file.
+            output_dir: Base output directory; replicates go into rep_0/, rep_1/, etc.
+            n_replicates: Number of replicates to run.
+            java_opts: Extra JVM options.
+            overrides: Extra parameter overrides (seed is added automatically).
+            on_progress: Callback ``(replicate_index, line)`` for each output line.
+
+        Returns:
+            List of RunResult, one per replicate.
+        """
+        results: list[RunResult] = []
+        output_dir = Path(output_dir)
+
+        for i in range(n_replicates):
+            rep_dir = output_dir / f"rep_{i}"
+            rep_overrides = dict(overrides) if overrides else {}
+            rep_overrides["simulation.random.seed"] = str(i)
+
+            _log.info("Starting replicate %d/%d", i + 1, n_replicates)
+
+            progress_cb: Callable[[str], None] | None = None
+            if on_progress:
+                # Capture i by default-arg binding
+                def _make_cb(idx: int) -> Callable[[str], None]:
+                    return lambda line: on_progress(idx, line)
+
+                progress_cb = _make_cb(i)
+
+            result = await self.run(
+                config_path=config_path,
+                output_dir=rep_dir,
+                java_opts=java_opts,
+                overrides=rep_overrides,
+                on_progress=progress_cb,
+            )
+            results.append(result)
+
+        return results
+
     @staticmethod
     def get_java_version(java_cmd: str = "java") -> str | None:
         """Check if Java is installed and return version string."""
