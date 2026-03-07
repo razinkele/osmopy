@@ -46,21 +46,18 @@ def scenarios_ui():
             ),
             col_widths=[3, 5, 4],
         ),
-        ui.layout_columns(
-            ui.card(
-                ui.card_header("Bulk Operations"),
-                ui.download_button(
-                    "export_all_scenarios",
-                    "Export All (ZIP)",
-                    class_="btn-primary w-100",
-                ),
-                ui.input_file(
-                    "import_scenarios_zip",
-                    "Import Scenarios (ZIP)",
-                    accept=[".zip"],
-                ),
+        ui.card(
+            ui.card_header("Bulk Operations"),
+            ui.download_button(
+                "export_all_scenarios",
+                "Export All (ZIP)",
+                class_="btn-primary w-100",
             ),
-            col_widths=[12],
+            ui.input_file(
+                "import_scenarios_zip",
+                "Import Scenarios (ZIP)",
+                accept=[".zip"],
+            ),
         ),
     )
 
@@ -207,7 +204,8 @@ def scenarios_server(input, output, session, state):
     def export_all_scenarios():
         import tempfile
 
-        zip_path = Path(tempfile.mktemp(suffix=".zip"))
+        tmp_dir = Path(tempfile.mkdtemp(prefix="osmose_export_"))
+        zip_path = tmp_dir / "osmose_scenarios.zip"
         mgr.export_all(zip_path)
         return str(zip_path)
 
