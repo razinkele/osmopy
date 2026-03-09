@@ -1,13 +1,19 @@
 """Run control page - execute OSMOSE simulations."""
 
+import logging
+import shutil
 import tempfile
 from pathlib import Path
 
 from shiny import ui, reactive, render
 
+JAR_DIR = Path("osmose-java")
+
 from osmose.config.writer import OsmoseConfigWriter
 from osmose.runner import OsmoseRunner
 from ui.styles import STYLE_CONSOLE
+
+_log = logging.getLogger("osmose.run")
 
 
 def parse_overrides(text: str) -> dict[str, str]:
@@ -22,10 +28,55 @@ def parse_overrides(text: str) -> dict[str, str]:
     return result
 
 
-def write_temp_config(config: dict[str, str], output_dir: Path) -> Path:
-    """Write config to a directory and return the master file path."""
+def copy_data_files(
+    config: dict[str, str], source_dir: Path, dest_dir: Path
+) -> list[str]:
+    """Copy ancillary data files referenced in config from source_dir to dest_dir.
+
+    Returns list of file paths that were missing or failed to copy.
+    """
+    skipped: list[str] = []
+    source_resolved = source_dir.resolve()
+    dest_resolved = dest_dir.resolve()
+    for key, value in config.items():
+        if key.startswith("osmose.configuration."):
+            continue
+        if "/" not in value and not value.endswith(
+            (".csv", ".nc", ".txt", ".dat", ".json", ".properties")
+        ):
+            continue
+        src = (source_dir / value).resolve()
+        if not src.is_relative_to(source_resolved):
+            _log.warning("Skipping path traversal in config key %s: %s", key, value)
+            skipped.append(value)
+            continue
+        if not src.exists():
+            _log.warning("Referenced data file not found: %s (key: %s)", src, key)
+            skipped.append(value)
+            continue
+        dst = (dest_dir / value).resolve()
+        if not dst.is_relative_to(dest_resolved):
+            _log.warning("Skipping path traversal in dest for key %s: %s", key, value)
+            skipped.append(value)
+            continue
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            if src.is_file():
+                shutil.copy2(src, dst)
+        except OSError as exc:
+            _log.error("Failed to copy %s -> %s: %s", src, dst, exc)
+            skipped.append(value)
+    return skipped
+
+
+def write_temp_config(
+    config: dict[str, str], output_dir: Path, source_dir: Path | None = None
+) -> Path:
+    """Write config to a directory, copy data files, and return the master file path."""
     writer = OsmoseConfigWriter()
     writer.write(config, output_dir)
+    if source_dir and source_dir.is_dir():
+        copy_data_files(config, source_dir, output_dir)
     return output_dir / "osm_all-parameters.csv"
 
 
@@ -34,7 +85,7 @@ def run_ui():
         # Left: Run controls
         ui.card(
             ui.card_header("Run Configuration"),
-            ui.input_text("jar_path", "OSMOSE JAR path", value="osmose-java/osmose.jar"),
+            ui.output_ui("jar_selector"),
             ui.input_text("java_opts", "Java options", value="-Xmx2g", placeholder="-Xmx4g -Xms1g"),
             ui.input_text_area(
                 "param_overrides", "Parameter overrides (key=value, one per line)", rows=4
@@ -63,9 +114,22 @@ def run_server(input, output, session, state):
     status = reactive.value("Idle")
     runner_ref = reactive.value(None)
 
+    @render.ui
+    def jar_selector():
+        jars = sorted(JAR_DIR.glob("*.jar")) if JAR_DIR.is_dir() else []
+        if jars:
+            choices = {str(j): j.name for j in jars}
+            default = str(jars[0])
+        else:
+            choices = {"": "— No JAR files found in osmose-java/ —"}
+            default = ""
+        return ui.input_select("jar_path", "OSMOSE JAR file", choices=choices, selected=default)
+
     @reactive.effect
     def sync_jar_path():
-        state.jar_path.set(input.jar_path())
+        val = input.jar_path()
+        if val:
+            state.jar_path.set(val)
 
     @render.text
     def run_status():
@@ -91,10 +155,11 @@ def run_server(input, output, session, state):
         status.set("Writing config...")
         run_log.set([])
 
-        # Write config to temp directory
+        # Write config to temp directory, copying data files from source
         config = state.config.get()
         work_dir = Path(tempfile.mkdtemp(prefix="osmose_run_"))
-        config_path = write_temp_config(config, work_dir)
+        source_dir = state.config_dir.get()
+        config_path = write_temp_config(config, work_dir, source_dir)
 
         # Parse overrides and java opts
         overrides = parse_overrides(input.param_overrides() or "")

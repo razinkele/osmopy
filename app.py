@@ -1,12 +1,15 @@
-"""OSMOSE Python Interface - main Shiny application."""
+"""OSMOPY - Python Interface for OSMOSE marine ecosystem simulator."""
 
 from pathlib import Path
 
 from shiny import App, ui
 
 from ui.state import AppState
+from ui.components.help_modal import about_modal, help_modal
 from ui.theme import THEME
 import ui.charts as _charts  # noqa: F401 — registers custom plotly template
+
+from shiny_deckgl import head_includes as _deckgl_head
 
 from ui.pages.setup import setup_ui, setup_server
 from ui.pages.grid import grid_ui, grid_server
@@ -30,19 +33,69 @@ def _nav_section(label: str):
 
 
 app_ui = ui.page_fillable(
-    # ── Custom CSS ──────────────────────────────────────────────
+    # ── Custom CSS + theme toggle JS ────────────────────────────
     ui.head_content(ui.include_css(_WWW / "osmose.css")),
+    # ── deck.gl JS/CSS dependencies (needed for grid map) ──────
+    _deckgl_head(),
+    ui.head_content(ui.tags.script("""
+        function toggleTheme() {
+            var html = document.documentElement;
+            var current = html.getAttribute('data-theme');
+            var next = current === 'light' ? 'dark' : 'light';
+            html.setAttribute('data-theme', next);
+            localStorage.setItem('osmose-theme', next);
+            if (typeof Shiny !== 'undefined' && Shiny.setInputValue) {
+                Shiny.setInputValue('theme_mode', next);
+            }
+        }
+        // Restore saved theme on page load
+        (function() {
+            var saved = localStorage.getItem('osmose-theme') || 'light';
+            document.documentElement.setAttribute('data-theme', saved);
+            // Notify Shiny once connected
+            if (typeof Shiny !== 'undefined') {
+                Shiny.addCustomMessageHandler('_noop', function(){});
+            }
+            document.addEventListener('shiny:connected', function() {
+                var theme = localStorage.getItem('osmose-theme') || 'light';
+                Shiny.setInputValue('theme_mode', theme);
+            });
+        })();
+    """)),
     # ── App header ──────────────────────────────────────────────
     ui.div(
         ui.tags.h4(
-            "OSMOSE",
-            ui.tags.span(" | Python Interface", class_="subtitle"),
+            "OSMOPY",
+            ui.tags.span(" | Marine Ecosystem Simulator", class_="subtitle"),
             class_="osmose-logo",
         ),
         ui.tags.span(
             ui.tags.span(class_="dot"),
             "Marine Ecosystem Simulator",
             class_="osmose-badge",
+        ),
+        ui.div(
+            ui.tags.button(
+                ui.tags.span("\u2600\ufe0f", class_="icon-sun"),
+                ui.tags.span("\u263e", class_="icon-moon"),
+                class_="osmose-theme-toggle",
+                id="themeToggle",
+                title="Toggle light/dark theme",
+                onclick="toggleTheme()",
+            ),
+            ui.tags.a(
+                "About",
+                class_="osmose-header-btn",
+                href="#",
+                **{"data-bs-toggle": "modal", "data-bs-target": "#aboutModal"},
+            ),
+            ui.tags.a(
+                "Help",
+                class_="osmose-header-btn",
+                href="#",
+                **{"data-bs-toggle": "modal", "data-bs-target": "#helpModal"},
+            ),
+            class_="osmose-header-actions",
         ),
         class_="osmose-header",
     ),
@@ -71,6 +124,9 @@ app_ui = ui.page_fillable(
         widths=(2, 10),
         well=False,
     ),
+    # ── Modals (static HTML, triggered client-side) ─────────────
+    about_modal(),
+    help_modal(),
     theme=THEME,
 )
 

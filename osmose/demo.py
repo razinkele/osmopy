@@ -10,6 +10,8 @@ from pathlib import Path
 _MIGRATIONS: dict[str, dict[str, str]] = {
     "4.3.0": {
         "simulation.nplankton": "simulation.nresource",
+        "grid.nlon": "grid.ncolumn",
+        "grid.nlat": "grid.nline",
     },
 }
 

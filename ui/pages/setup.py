@@ -4,7 +4,7 @@ from pathlib import Path
 
 from shiny import ui, reactive, render
 
-from osmose.demo import list_demos
+from osmose.demo import list_demos, migrate_config
 from osmose.logging import setup_logging
 from osmose.schema.simulation import SIMULATION_FIELDS
 from osmose.schema.species import SPECIES_FIELDS
@@ -102,8 +102,9 @@ def setup_server(input, output, session, state):
 
         try:
             reader = OsmoseConfigReader()
-            cfg = reader.read(master)
+            cfg = migrate_config(reader.read(master))
             state.config.set(cfg)
+            state.config_dir.set(examples_dir)
 
             # Update species count
             n_species = int(cfg.get("simulation.nspecies", "3"))
