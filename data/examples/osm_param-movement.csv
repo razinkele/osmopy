@@ -1,13 +1,18 @@
-# Movement parameters
-movement.distribution.method.sp0 ; maps
-movement.distribution.method.sp1 ; maps
+# Movement parameters — 8 species (random walk for all)
+movement.distribution.method.sp0 ; random
+movement.distribution.method.sp1 ; random
 movement.distribution.method.sp2 ; random
+movement.distribution.method.sp3 ; random
+movement.distribution.method.sp4 ; random
+movement.distribution.method.sp5 ; random
+movement.distribution.method.sp6 ; random
+movement.distribution.method.sp7 ; random
+# Random walk range (cells per timestep)
 movement.randomwalk.range.sp0 ; 1
 movement.randomwalk.range.sp1 ; 1
-movement.randomwalk.range.sp2 ; 2
-movement.map0.species ; sp0
-movement.map0.file ; maps/anchovy_season0.csv
-movement.map0.season ; 0
-movement.map1.species ; sp1
-movement.map1.file ; maps/sardine_season0.csv
-movement.map1.season ; 0
+movement.randomwalk.range.sp2 ; 1
+movement.randomwalk.range.sp3 ; 2
+movement.randomwalk.range.sp4 ; 3
+movement.randomwalk.range.sp5 ; 2
+movement.randomwalk.range.sp6 ; 1
+movement.randomwalk.range.sp7 ; 2

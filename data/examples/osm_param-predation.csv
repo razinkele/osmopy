@@ -1,15 +1,47 @@
-# Predation parameters
+# Predation parameters — 8 species + 6 resources
 predation.accessibility.file ; predation/accessibility_matrix.csv
 predation.accessibility.stage.structure ; age
+predation.accessibility.stage.threshold.sp0 ; 0.0
+predation.accessibility.stage.threshold.sp1 ; 0.0
+predation.accessibility.stage.threshold.sp2 ; 0.0
+predation.accessibility.stage.threshold.sp3 ; 0.0
+predation.accessibility.stage.threshold.sp4 ; 0.0
+predation.accessibility.stage.threshold.sp5 ; 0.0
+predation.accessibility.stage.threshold.sp6 ; 0.0
+predation.accessibility.stage.threshold.sp7 ; 0.0
+predation.predPrey.stage.structure ; size
+# Maximum ingestion rate (grams of food per gram of predator per year)
 predation.ingestion.rate.max.sp0 ; 3.5
 predation.ingestion.rate.max.sp1 ; 3.2
-predation.ingestion.rate.max.sp2 ; 6.0
+predation.ingestion.rate.max.sp2 ; 4.0
+predation.ingestion.rate.max.sp3 ; 3.5
+predation.ingestion.rate.max.sp4 ; 3.8
+predation.ingestion.rate.max.sp5 ; 6.0
+predation.ingestion.rate.max.sp6 ; 2.5
+predation.ingestion.rate.max.sp7 ; 3.0
+# Critical predation efficiency
 predation.efficiency.critical.sp0 ; 0.57
 predation.efficiency.critical.sp1 ; 0.57
 predation.efficiency.critical.sp2 ; 0.57
-predation.predprey.sizeratio.max.sp0 ; 3.0
-predation.predprey.sizeratio.max.sp1 ; 3.0
-predation.predprey.sizeratio.max.sp2 ; 5.0
-predation.predprey.sizeratio.min.sp0 ; 1.0
-predation.predprey.sizeratio.min.sp1 ; 1.0
-predation.predprey.sizeratio.min.sp2 ; 1.5
+predation.efficiency.critical.sp3 ; 0.57
+predation.efficiency.critical.sp4 ; 0.57
+predation.efficiency.critical.sp5 ; 0.57
+predation.efficiency.critical.sp6 ; 0.57
+predation.efficiency.critical.sp7 ; 0.57
+# Predator-prey size ratio range
+predation.predPrey.sizeRatio.max.sp0 ; 3.0
+predation.predPrey.sizeRatio.max.sp1 ; 3.0
+predation.predPrey.sizeRatio.max.sp2 ; 3.0
+predation.predPrey.sizeRatio.max.sp3 ; 3.5
+predation.predPrey.sizeRatio.max.sp4 ; 3.5
+predation.predPrey.sizeRatio.max.sp5 ; 5.0
+predation.predPrey.sizeRatio.max.sp6 ; 2.5
+predation.predPrey.sizeRatio.max.sp7 ; 3.5
+predation.predPrey.sizeRatio.min.sp0 ; 1.0
+predation.predPrey.sizeRatio.min.sp1 ; 1.0
+predation.predPrey.sizeRatio.min.sp2 ; 1.0
+predation.predPrey.sizeRatio.min.sp3 ; 1.2
+predation.predPrey.sizeRatio.min.sp4 ; 1.2
+predation.predPrey.sizeRatio.min.sp5 ; 1.5
+predation.predPrey.sizeRatio.min.sp6 ; 1.0
+predation.predPrey.sizeRatio.min.sp7 ; 1.2

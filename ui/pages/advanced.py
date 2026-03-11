@@ -129,6 +129,7 @@ def advanced_server(input, output, session, state):
         )
 
     @reactive.effect
+    @reactive.event(import_pending)
     def _clear_empty_import():
         """Clear import_pending when diff is empty (moved out of render)."""
         pending = import_pending.get()

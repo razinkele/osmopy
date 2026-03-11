@@ -1,14 +1,57 @@
-# Lower Trophic Level (plankton) parameters
-ltl.java.classname ; fr.ird.osmose.ltl.LTLFastForcing
-ltl.netcdf.file ; ltl/plankton_biscay.nc
-ltl.nstep ; 365
-ltl.name.rsc0 ; SmallPhytoplankton
-ltl.name.rsc1 ; LargeZooplankton
+# Low Trophic Level — ROMS-N2P2Z2D2 model forcing
+# 2 Nutrients (NO3, NH4) drive phytoplankton but are not consumed by fish
+# 2 Phytoplankton, 2 Zooplankton, 2 Detritus = 6 resources
+# Resource indices continue after nspecies: rsc0=sp8 .. rsc5=sp13
+# Osmose 4.2.4 - Deprecated parameter ltl.java.classname
+# ltl.java.classname ; fr.ird.osmose.ltl.LTLFastForcing
+ltl.netcdf.file ; ltl/roms_n2p2z2d2_biscay.nc
+# Osmose 4.2.3 - Deprecated parameter ltl.nstep
+# ltl.nstep ; 365
+#
+# Resource 0: Small Phytoplankton (nanophytoplankton)
+ltl.name.rsc0 ; SmallPhyto
 ltl.tl.rsc0 ; 1.0
-ltl.tl.rsc1 ; 2.0
 ltl.size.min.rsc0 ; 0.0002
-ltl.size.min.rsc1 ; 0.02
 ltl.size.max.rsc0 ; 0.002
-ltl.size.max.rsc1 ; 0.2
 ltl.accessibility2fish.rsc0 ; 0.01
-ltl.accessibility2fish.rsc1 ; 0.05
+ltl.conversion2tons.rsc0 ; 1.0
+#
+# Resource 1: Large Phytoplankton (diatoms)
+ltl.name.rsc1 ; LargePhyto
+ltl.tl.rsc1 ; 1.0
+ltl.size.min.rsc1 ; 0.002
+ltl.size.max.rsc1 ; 0.02
+ltl.accessibility2fish.rsc1 ; 0.02
+ltl.conversion2tons.rsc1 ; 1.0
+#
+# Resource 2: Small Zooplankton (copepods, ciliates)
+ltl.name.rsc2 ; SmallZoo
+ltl.tl.rsc2 ; 2.0
+ltl.size.min.rsc2 ; 0.02
+ltl.size.max.rsc2 ; 0.2
+ltl.accessibility2fish.rsc2 ; 0.05
+ltl.conversion2tons.rsc2 ; 1.0
+#
+# Resource 3: Large Zooplankton (euphausiids, chaetognaths)
+ltl.name.rsc3 ; LargeZoo
+ltl.tl.rsc3 ; 2.5
+ltl.size.min.rsc3 ; 0.2
+ltl.size.max.rsc3 ; 2.0
+ltl.accessibility2fish.rsc3 ; 0.10
+ltl.conversion2tons.rsc3 ; 1.0
+#
+# Resource 4: Small Detritus (particulate organic matter)
+ltl.name.rsc4 ; SmallDetritus
+ltl.tl.rsc4 ; 1.0
+ltl.size.min.rsc4 ; 0.001
+ltl.size.max.rsc4 ; 0.01
+ltl.accessibility2fish.rsc4 ; 0.001
+ltl.conversion2tons.rsc4 ; 1.0
+#
+# Resource 5: Large Detritus (marine snow, fecal pellets)
+ltl.name.rsc5 ; LargeDetritus
+ltl.tl.rsc5 ; 1.0
+ltl.size.min.rsc5 ; 0.01
+ltl.size.max.rsc5 ; 0.1
+ltl.accessibility2fish.rsc5 ; 0.005
+ltl.conversion2tons.rsc5 ; 1.0

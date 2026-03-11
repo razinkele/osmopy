@@ -58,6 +58,13 @@ GRID_FIELDS: list[OsmoseField] = [
         unit="degrees",
     ),
     OsmoseField(
+        key_pattern="grid.mask.file",
+        param_type=ParamType.FILE_PATH,
+        description="Land-sea mask CSV file",
+        category="grid",
+        required=False,
+    ),
+    OsmoseField(
         key_pattern="grid.netcdf.file",
         param_type=ParamType.FILE_PATH,
         description="Grid NetCDF file",

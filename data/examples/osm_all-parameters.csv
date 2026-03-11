@@ -1,22 +1,44 @@
-# OSMOSE example configuration - Bay of Biscay
-# Master parameter file with references to sub-configs
+# OSMOSE Bay of Biscay — 8-species configuration
+# 5 pelagic + 3 demersal species, ROMS-N2P2Z2D2 LTL forcing
 simulation.time.ndtperyear ; 24
 simulation.time.nyear ; 50
-simulation.nspecies ; 3
-simulation.nresource ; 2
+simulation.nspecies ; 8
+simulation.nresource ; 6
 simulation.ncpu ; 4
 simulation.nsimulation ; 1
 simulation.nschool ; 20
 simulation.fishing.mortality.enabled ; true
-simulation.nfisheries ; 1
+simulation.nfisheries ; 3
+simulation.restart.enabled ; false
 mortality.subdt ; 10
-mortality.natural.rate.sp0 ; 0.2
-mortality.natural.rate.sp1 ; 0.18
-mortality.natural.rate.sp2 ; 0.15
+stochastic.mortality.randomseed.fixed ; false
+# Natural mortality rates (year^-1)
+# Osmose 4.2.5 - Renamed parameter mortality.natural.rate.sp0 into mortality.additional.rate.sp0
+mortality.additional.rate.sp0 ; 0.80
+# Osmose 4.2.5 - Renamed parameter mortality.natural.rate.sp1 into mortality.additional.rate.sp1
+mortality.additional.rate.sp1 ; 0.40
+# Osmose 4.2.5 - Renamed parameter mortality.natural.rate.sp2 into mortality.additional.rate.sp2
+mortality.additional.rate.sp2 ; 1.20
+# Osmose 4.2.5 - Renamed parameter mortality.natural.rate.sp3 into mortality.additional.rate.sp3
+mortality.additional.rate.sp3 ; 0.25
+# Osmose 4.2.5 - Renamed parameter mortality.natural.rate.sp4 into mortality.additional.rate.sp4
+mortality.additional.rate.sp4 ; 0.30
+# Osmose 4.2.5 - Renamed parameter mortality.natural.rate.sp5 into mortality.additional.rate.sp5
+mortality.additional.rate.sp5 ; 0.20
+# Osmose 4.2.5 - Renamed parameter mortality.natural.rate.sp6 into mortality.additional.rate.sp6
+mortality.additional.rate.sp6 ; 0.15
+# Osmose 4.2.5 - Renamed parameter mortality.natural.rate.sp7 into mortality.additional.rate.sp7
+mortality.additional.rate.sp7 ; 0.35
+# Starvation mortality max
 mortality.starvation.rate.max.sp0 ; 0.5
 mortality.starvation.rate.max.sp1 ; 0.4
-mortality.starvation.rate.max.sp2 ; 0.3
-stochastic.mortality.randomseed.fixed ; false
+mortality.starvation.rate.max.sp2 ; 0.6
+mortality.starvation.rate.max.sp3 ; 0.3
+mortality.starvation.rate.max.sp4 ; 0.3
+mortality.starvation.rate.max.sp5 ; 0.3
+mortality.starvation.rate.max.sp6 ; 0.2
+mortality.starvation.rate.max.sp7 ; 0.4
+# Sub-config references
 osmose.configuration.species ; osm_param-species.csv
 osmose.configuration.grid ; osm_param-grid.csv
 osmose.configuration.output ; osm_param-output.csv
@@ -24,3 +46,86 @@ osmose.configuration.predation ; osm_param-predation.csv
 osmose.configuration.fishing ; osm_param-fishing.csv
 osmose.configuration.ltl ; osm_param-ltl.csv
 osmose.configuration.movement ; osm_param-movement.csv
+output.restart.enabled ; false
+# Osmose 3.1.0 - Added parameter osmose.version;3.1.0
+# Osmose 3.2.0 - Updated parameter osmose.version to 3.2.0
+# Osmose 3.3.0 - Updated parameter osmose.version to 3.3.0
+# Osmose 3.3.3 - Updated parameter osmose.version to 3.3.3
+# Osmose 4.2.1 - Updated parameter osmose.version to 4.2.1
+# Osmose 4.2.2 - Updated parameter osmose.version to 4.2.2
+# Osmose 4.2.3 - Updated parameter osmose.version to 4.2.3
+# Osmose 4.2.4 - Updated parameter osmose.version to 4.2.4
+# Osmose 4.2.5 - Updated parameter osmose.version to 4.2.5
+# Osmose 4.2.6 - Updated parameter osmose.version to 4.2.6
+# Osmose 4.3.0 - Updated parameter osmose.version to 4.3.0
+# Osmose 4.3.1 - Updated parameter osmose.version to 4.3.1
+# Osmose 4.3.2 - Updated parameter osmose.version to 4.3.2
+# Osmose 4.3.3 - Updated parameter osmose.version to 4.3.3
+osmose.version;4.3.3
+# Osmose 4.3.0 - Added parameter species.type.sp0;focal
+species.type.sp0;focal
+# Osmose 4.3.0 - Added parameter species.type.sp1;focal
+species.type.sp1;focal
+# Osmose 4.3.0 - Added parameter species.type.sp2;focal
+species.type.sp2;focal
+# Osmose 4.3.0 - Added parameter species.type.sp3;focal
+species.type.sp3;focal
+# Osmose 4.3.0 - Added parameter species.type.sp4;focal
+species.type.sp4;focal
+# Osmose 4.3.0 - Added parameter species.type.sp5;focal
+species.type.sp5;focal
+# Osmose 4.3.0 - Added parameter species.type.sp6;focal
+species.type.sp6;focal
+# Osmose 4.3.0 - Added parameter species.type.sp7;focal
+species.type.sp7;focal
+# Osmose 4.3.0 - Added parameter species.type.sp8;resource
+species.type.sp8;resource
+# Osmose 4.3.0 - Added parameter species.type.sp9;resource
+species.type.sp9;resource
+# Osmose 4.3.0 - Added parameter species.type.sp10;resource
+species.type.sp10;resource
+# Osmose 4.3.0 - Added parameter species.type.sp11;resource
+species.type.sp11;resource
+# Osmose 4.3.0 - Added parameter species.type.sp12;resource
+species.type.sp12;resource
+# Osmose 4.3.0 - Added parameter species.type.sp13;resource
+species.type.sp13;resource
+# Resource species names (sp8-sp13 = rsc0-rsc5)
+species.name.sp8 ; SmallPhyto
+species.name.sp9 ; LargePhyto
+species.name.sp10 ; SmallZoo
+species.name.sp11 ; LargeZoo
+species.name.sp12 ; SmallDetritus
+species.name.sp13 ; LargeDetritus
+# Resource species parameters (mapped from ltl.* to species.*)
+# sp8=SmallPhyto, sp9=LargePhyto, sp10=SmallZoo, sp11=LargeZoo, sp12=SmallDetritus, sp13=LargeDetritus
+species.size.min.sp8 ; 0.0002
+species.size.max.sp8 ; 0.002
+species.size.min.sp9 ; 0.002
+species.size.max.sp9 ; 0.02
+species.size.min.sp10 ; 0.02
+species.size.max.sp10 ; 0.2
+species.size.min.sp11 ; 0.2
+species.size.max.sp11 ; 2.0
+species.size.min.sp12 ; 0.001
+species.size.max.sp12 ; 0.01
+species.size.min.sp13 ; 0.01
+species.size.max.sp13 ; 0.1
+species.tl.sp8 ; 1.0
+species.tl.sp9 ; 1.0
+species.tl.sp10 ; 2.0
+species.tl.sp11 ; 2.5
+species.tl.sp12 ; 1.0
+species.tl.sp13 ; 1.0
+species.accessibility2fish.sp8 ; 0.01
+species.accessibility2fish.sp9 ; 0.02
+species.accessibility2fish.sp10 ; 0.05
+species.accessibility2fish.sp11 ; 0.10
+species.accessibility2fish.sp12 ; 0.001
+species.accessibility2fish.sp13 ; 0.005
+species.conversion2tons.sp8 ; 1.0
+species.conversion2tons.sp9 ; 1.0
+species.conversion2tons.sp10 ; 1.0
+species.conversion2tons.sp11 ; 1.0
+species.conversion2tons.sp12 ; 1.0
+species.conversion2tons.sp13 ; 1.0

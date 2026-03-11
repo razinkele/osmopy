@@ -53,16 +53,16 @@ class TestLoadExampleConfig:
         assert "species.name.sp1" in config
         assert "species.name.sp2" in config
         # Grid keys
-        assert "grid.ncolumn" in config
-        assert "grid.nline" in config
+        assert "grid.nlon" in config
+        assert "grid.nlat" in config
         # Output keys
         assert "output.dir.path" in config
-        # Fishing keys (per-fishery rates)
-        assert "mortality.fishing.rate.bydt.fsh0.sp0" in config
+        # Fishing keys
+        assert "mortality.fishing.rate.sp0" in config
         # Movement keys
         assert "movement.distribution.method.sp0" in config
         # LTL keys
-        assert "ltl.java.classname" in config
+        assert "ltl.name.rsc0" in config
 
     def test_reader_loads_correct_values(self):
         reader = OsmoseConfigReader()
@@ -74,9 +74,9 @@ class TestLoadExampleConfig:
         assert config["species.name.sp7"] == "BlueWhiting"
         assert config["species.linf.sp0"] == "19.5"
         assert config["species.linf.sp5"] == "110.0"
-        assert config["grid.ncolumn"] == "30"
+        assert config["grid.nlon"] == "20"
         assert config["grid.upleft.lat"] == "48.0"
-        assert config["mortality.fishing.rate.bydt.fsh1.sp5"] == "0.40"
+        assert config["mortality.fishing.rate.sp5"] == "0.50"
 
     def test_reader_loads_expected_key_count(self):
         reader = OsmoseConfigReader()
@@ -111,8 +111,8 @@ class TestSchemaMapping:
             "simulation.nspecies",
             "species.linf.sp0",
             "species.k.sp0",
-            "grid.ncolumn",
-            "grid.nline",
+            "grid.upleft.lat",
+            "grid.upleft.lon",
             "output.dir.path",
             "mortality.subdt",
         ]
@@ -280,8 +280,8 @@ class TestFullRoundtrip:
 
             result = reader.read(Path(tmpdir) / "osm_all-parameters.csv")
 
-            assert result["grid.ncolumn"] == "30"
-            assert result["grid.nline"] == "20"
+            assert result["grid.nlon"] == "20"
+            assert result["grid.nlat"] == "20"
             assert result["grid.upleft.lat"] == "48.0"
             assert result["grid.lowright.lon"] == "-1.0"
 
@@ -319,11 +319,10 @@ class TestSchemaConfigCoherence:
         config = reader.read(EXAMPLES / "osm_all-parameters.csv")
 
         nspecies = int(config["simulation.nspecies"])
-        # Count distinct species by looking for species.name.sp* keys
-        species_names = [k for k in config if k.startswith("species.name.sp")]
-        assert len(species_names) == nspecies, (
-            f"simulation.nspecies={nspecies} but found {len(species_names)} species name keys"
-        )
+        # Count focal species (sp0..sp{n-1}); resources also have species.name keys
+        focal_names = [f"species.name.sp{i}" for i in range(nspecies)]
+        for key in focal_names:
+            assert key in config, f"Missing focal species key: {key}"
 
     def test_all_species_have_required_params(self):
         reader = OsmoseConfigReader()
