@@ -286,3 +286,28 @@ class TestMakePredationRanges:
         trace = fig.data[0]
         # x value should be the range width (0.8)
         assert abs(trace.x[0] - 0.8) < 1e-6
+
+
+# ---------------------------------------------------------------------------
+# Column guard tests
+# ---------------------------------------------------------------------------
+
+import pytest
+
+
+def test_make_stacked_area_rejects_missing_columns():
+    df = pd.DataFrame({"time": [1], "wrong": [10]})
+    with pytest.raises(ValueError, match="missing columns"):
+        make_stacked_area(df, "Title")
+
+
+def test_make_mortality_breakdown_rejects_missing_columns():
+    df = pd.DataFrame({"time": [1], "predation": [0.1]})
+    with pytest.raises(ValueError, match="missing columns"):
+        make_mortality_breakdown(df)
+
+
+def test_make_size_spectrum_plot_rejects_missing_columns():
+    df = pd.DataFrame({"size": [1, 2], "wrong": [10, 20]})
+    with pytest.raises(ValueError, match="missing columns"):
+        make_size_spectrum_plot(df)
