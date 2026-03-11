@@ -7,9 +7,10 @@ from typing import Sequence
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-import plotly.io as pio
 
-TEMPLATE = "osmose"
+from osmose.plotly_theme import PLOTLY_TEMPLATE as TEMPLATE, ensure_templates
+
+ensure_templates()
 
 
 def _require_columns(df: pd.DataFrame, *cols: str, context: str = "") -> None:
@@ -17,33 +18,6 @@ def _require_columns(df: pd.DataFrame, *cols: str, context: str = "") -> None:
     if missing:
         raise ValueError(f"{context}: missing columns {sorted(missing)}, got {sorted(df.columns)}")
 
-
-def _ensure_template() -> None:
-    """Register the osmose template if not already present."""
-    if TEMPLATE in pio.templates:
-        return
-    pio.templates[TEMPLATE] = go.layout.Template(
-        layout=go.Layout(
-            paper_bgcolor="rgba(15, 25, 35, 0)",
-            plot_bgcolor="rgba(15, 25, 35, 0.6)",
-            font=dict(family="Plus Jakarta Sans, -apple-system, sans-serif", color="#e2e8f0"),
-            colorway=[
-                "#e8a838",
-                "#38c9b1",
-                "#3498db",
-                "#e74c3c",
-                "#9b59b6",
-                "#2ecc71",
-                "#f39c12",
-                "#1abc9c",
-            ],
-            legend=dict(bgcolor="rgba(0, 0, 0, 0.2)"),
-            margin=dict(l=50, r=20, t=40, b=40),
-        ),
-    )
-
-
-_ensure_template()
 
 # Mortality source colors
 _MORT_COLORS = {
