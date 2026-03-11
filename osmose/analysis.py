@@ -7,6 +7,12 @@ import pandas as pd
 from numpy.typing import NDArray
 
 
+def _require_columns(df: pd.DataFrame, *cols: str, context: str = "") -> None:
+    missing = set(cols) - set(df.columns)
+    if missing:
+        raise ValueError(f"{context}: missing columns {sorted(missing)}, got {sorted(df.columns)}")
+
+
 def ensemble_stats(
     replicate_dfs: list[pd.DataFrame],
     value_col: str,
@@ -29,6 +35,7 @@ def ensemble_stats(
         group_cols = ["time"]
 
     combined = pd.concat(replicate_dfs, ignore_index=True)
+    _require_columns(combined, *group_cols, value_col, context="ensemble_stats")
     grouped = combined.groupby(group_cols, sort=True)[value_col]
 
     result = grouped.agg(["mean", "std"]).reset_index()
@@ -60,6 +67,7 @@ def summary_table(
         return pd.DataFrame()
 
     combined = pd.concat(replicate_dfs, ignore_index=True)
+    _require_columns(combined, "species", value_col, context="summary_table")
     result = (
         combined.groupby("species")[value_col]
         .agg(["mean", "std", "min", "max", "median"])
@@ -79,6 +87,7 @@ def shannon_diversity(biomass_df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         DataFrame with columns: time, shannon.
     """
+    _require_columns(biomass_df, "time", "biomass", context="shannon_diversity")
 
     def _shannon(group: pd.DataFrame) -> float:
         biomass: NDArray[np.floating] = group["biomass"].values.astype(float)
@@ -108,6 +117,7 @@ def mean_tl_catch(
         DataFrame with columns: time, mean_tl.
     """
     merged = yield_df.merge(tl_df, on="species", how="left")
+    _require_columns(merged, "time", "species", "yield", "tl", context="mean_tl_catch")
 
     def _weighted_tl(group: pd.DataFrame) -> float:
         total_yield = group["yield"].sum()
@@ -131,8 +141,13 @@ def size_spectrum_slope(
     Returns:
         Tuple of (slope, intercept, r_squared).
     """
-    log_size = np.log10(spectrum_df["size"].values.astype(float))
-    log_abundance = np.log10(spectrum_df["abundance"].values.astype(float))
+    _require_columns(spectrum_df, "size", "abundance", context="size_spectrum_slope")
+    positive = spectrum_df[(spectrum_df["size"] > 0) & (spectrum_df["abundance"] > 0)]
+    if len(positive) < 2:
+        raise ValueError("Need at least 2 positive size/abundance pairs for regression.")
+
+    log_size = np.log10(positive["size"].values.astype(float))
+    log_abundance = np.log10(positive["abundance"].values.astype(float))
 
     # Linear regression: log(abundance) = slope * log(size) + intercept
     coeffs = np.polyfit(log_size, log_abundance, 1)

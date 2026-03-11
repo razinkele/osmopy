@@ -214,3 +214,26 @@ class TestSizeSpectrumSlope:
         # With log10: slope should be exactly -2.0
         assert abs(slope - (-2.0)) < 0.01
         assert r2 > 0.99
+
+
+# ---------------------------------------------------------------------------
+# Column guard tests
+# ---------------------------------------------------------------------------
+
+
+def test_ensemble_stats_rejects_missing_value_col():
+    df = pd.DataFrame({"time": [1, 2], "wrong_col": [10, 20]})
+    with pytest.raises(ValueError, match="missing columns.*biomass"):
+        ensemble_stats([df], value_col="biomass")
+
+
+def test_shannon_diversity_rejects_missing_columns():
+    df = pd.DataFrame({"time": [1], "wrong": [10]})
+    with pytest.raises(ValueError, match="missing columns"):
+        shannon_diversity(df)
+
+
+def test_summary_table_rejects_missing_species_col():
+    df = pd.DataFrame({"wrong": [1], "biomass": [10]})
+    with pytest.raises(ValueError, match="missing columns.*species"):
+        summary_table([df], value_col="biomass")

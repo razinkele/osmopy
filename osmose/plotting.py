@@ -12,6 +12,12 @@ import plotly.io as pio
 TEMPLATE = "osmose"
 
 
+def _require_columns(df: pd.DataFrame, *cols: str, context: str = "") -> None:
+    missing = set(cols) - set(df.columns)
+    if missing:
+        raise ValueError(f"{context}: missing columns {sorted(missing)}, got {sorted(df.columns)}")
+
+
 def _ensure_template() -> None:
     """Register the osmose template if not already present."""
     if TEMPLATE in pio.templates:
@@ -71,6 +77,8 @@ def make_stacked_area(
     if df.empty:
         return _empty_figure(title)
 
+    _require_columns(df, "time", "bin", "value", context="make_stacked_area")
+
     if species is not None:
         df = df[df["species"] == species]
         if df.empty:
@@ -108,6 +116,16 @@ def make_mortality_breakdown(
     if df.empty:
         return _empty_figure("Mortality Breakdown")
 
+    _require_columns(
+        df,
+        "time",
+        "predation",
+        "starvation",
+        "fishing",
+        "natural",
+        context="make_mortality_breakdown",
+    )
+
     if species is not None:
         df = df[df["species"] == species]
         if df.empty:
@@ -141,6 +159,8 @@ def make_size_spectrum_plot(df: pd.DataFrame) -> go.Figure:
     title = "Size Spectrum"
     if df.empty:
         return _empty_figure(title)
+
+    _require_columns(df, "size", "abundance", context="make_size_spectrum_plot")
 
     # Filter out non-positive values for log transform
     df = df[(df["size"] > 0) & (df["abundance"] > 0)].copy()
