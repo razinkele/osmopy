@@ -17,10 +17,12 @@ from shinywidgets import output_widget, render_plotly
 
 def _tpl(input=None) -> str:
     """Return the Plotly template name for the current theme."""
-    try:
-        return "osmose" if input and input.theme_mode() == "dark" else "osmose-light"
-    except (AttributeError, TypeError):
-        return "osmose-light"
+    if input is None:
+        return "osmose"
+    from ui.state import get_theme_mode
+
+    mode = get_theme_mode(input)
+    return "osmose" if mode == "dark" else "osmose-light"
 
 
 def make_timeseries_chart(
@@ -34,7 +36,7 @@ def make_timeseries_chart(
     if df.empty:
         return go.Figure().update_layout(title=title, template=template)
     if species and "species" in df.columns:
-        df = df[df["species"] == species]
+        df = df[df["species"] == species]  # type: ignore[assignment]
     if df.empty:
         return go.Figure().update_layout(title=title, template=template)
     import plotly.express as px
@@ -56,7 +58,7 @@ def make_diet_heatmap(df: pd.DataFrame, template: str = "osmose") -> go.Figure:
     if "species" in df.columns:
         matrix = df.groupby("species")[prey_cols].mean()
     else:
-        matrix = df[prey_cols].mean().to_frame().T
+        matrix = df[prey_cols].mean().to_frame().T  # type: ignore[union-attr]
     prey_names = [c.replace("prey_", "") for c in prey_cols]
     fig = px.imshow(
         matrix.values,
@@ -307,7 +309,7 @@ def results_server(input, output, session, state):
             from osmose.plotting import make_stacked_area
 
             df = data.get(rtype, pd.DataFrame())
-            fig = make_stacked_area(df, title=title_map.get(rtype, rtype), species=sp)
+            fig = make_stacked_area(df, title=title_map.get(rtype, rtype), species=sp)  # type: ignore[arg-type]
             fig.update_layout(template=tmpl)
             return fig
 
@@ -338,7 +340,7 @@ def results_server(input, output, session, state):
             if non_time:
                 value_col = non_time[0]
 
-        return make_timeseries_chart(df, value_col, title, species=sp, template=tmpl)
+        return make_timeseries_chart(df, value_col, title, species=sp, template=tmpl)  # type: ignore[arg-type]
 
     @render_plotly
     def diet_chart():

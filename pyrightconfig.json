@@ -1,0 +1,8 @@
+{
+    "typeCheckingMode": "basic",
+    "include": ["osmose", "ui"],
+    "exclude": ["tests"],
+    "pythonVersion": "3.12",
+    "reportMissingImports": true,
+    "reportMissingTypeStubs": false
+}

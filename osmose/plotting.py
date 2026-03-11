@@ -7,37 +7,18 @@ from typing import Sequence
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-import plotly.io as pio
+from plotly.subplots import make_subplots
 
-TEMPLATE = "osmose"
+from osmose.plotly_theme import PLOTLY_TEMPLATE as TEMPLATE, ensure_templates
 
-
-def _ensure_template() -> None:
-    """Register the osmose template if not already present."""
-    if TEMPLATE in pio.templates:
-        return
-    pio.templates[TEMPLATE] = go.layout.Template(
-        layout=go.Layout(
-            paper_bgcolor="rgba(15, 25, 35, 0)",
-            plot_bgcolor="rgba(15, 25, 35, 0.6)",
-            font=dict(family="Plus Jakarta Sans, -apple-system, sans-serif", color="#e2e8f0"),
-            colorway=[
-                "#e8a838",
-                "#38c9b1",
-                "#3498db",
-                "#e74c3c",
-                "#9b59b6",
-                "#2ecc71",
-                "#f39c12",
-                "#1abc9c",
-            ],
-            legend=dict(bgcolor="rgba(0, 0, 0, 0.2)"),
-            margin=dict(l=50, r=20, t=40, b=40),
-        ),
-    )
+ensure_templates()
 
 
-_ensure_template()
+def _require_columns(df: pd.DataFrame, *cols: str, context: str = "") -> None:
+    missing = set(cols) - set(df.columns)
+    if missing:
+        raise ValueError(f"{context}: missing columns {sorted(missing)}, got {sorted(df.columns)}")
+
 
 # Mortality source colors
 _MORT_COLORS = {
@@ -71,8 +52,10 @@ def make_stacked_area(
     if df.empty:
         return _empty_figure(title)
 
+    _require_columns(df, "time", "bin", "value", context="make_stacked_area")
+
     if species is not None:
-        df = df[df["species"] == species]
+        df = df[df["species"] == species]  # type: ignore[assignment]
         if df.empty:
             return _empty_figure(title)
 
@@ -108,8 +91,18 @@ def make_mortality_breakdown(
     if df.empty:
         return _empty_figure("Mortality Breakdown")
 
+    _require_columns(
+        df,
+        "time",
+        "predation",
+        "starvation",
+        "fishing",
+        "natural",
+        context="make_mortality_breakdown",
+    )
+
     if species is not None:
-        df = df[df["species"] == species]
+        df = df[df["species"] == species]  # type: ignore[assignment]
         if df.empty:
             return _empty_figure("Mortality Breakdown")
 
@@ -142,8 +135,10 @@ def make_size_spectrum_plot(df: pd.DataFrame) -> go.Figure:
     if df.empty:
         return _empty_figure(title)
 
+    _require_columns(df, "size", "abundance", context="make_size_spectrum_plot")
+
     # Filter out non-positive values for log transform
-    df = df[(df["size"] > 0) & (df["abundance"] > 0)].copy()
+    df = df[(df["size"] > 0) & (df["abundance"] > 0)].copy()  # type: ignore[assignment]
     if df.empty:
         return _empty_figure(title)
 
@@ -321,4 +316,138 @@ def make_predation_ranges(species_params: list[dict]) -> go.Figure:
         xaxis=dict(title="Prey/Predator Size Ratio"),
         template=TEMPLATE,
     )
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# 7. Food web Sankey diagram
+# ---------------------------------------------------------------------------
+
+
+def make_food_web(
+    diet_df: pd.DataFrame,
+    threshold: float = 0.01,
+) -> go.Figure:
+    """Sankey diagram of predator-prey relationships.
+
+    Columns: predator, prey, proportion.
+    Filters links below threshold.
+    """
+    title = "Food Web"
+    if diet_df.empty:
+        return _empty_figure(title)
+
+    _require_columns(diet_df, "predator", "prey", "proportion", context="make_food_web")
+
+    # Filter weak links
+    diet_df = diet_df[diet_df["proportion"] >= threshold]
+    if diet_df.empty:
+        return _empty_figure(title)
+
+    # Build node list
+    all_species = sorted(set(diet_df["predator"]) | set(diet_df["prey"]))
+    node_idx = {sp: i for i, sp in enumerate(all_species)}
+
+    fig = go.Figure(
+        go.Sankey(
+            node=dict(label=all_species, pad=15, thickness=20),
+            link=dict(
+                source=[node_idx[p] for p in diet_df["predator"]],
+                target=[node_idx[p] for p in diet_df["prey"]],
+                value=diet_df["proportion"].tolist(),
+            ),
+        )
+    )
+    fig.update_layout(title=dict(text=title), template=TEMPLATE)
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# 8. Run comparison grouped bar chart
+# ---------------------------------------------------------------------------
+
+
+def make_run_comparison(
+    records: list,
+    metrics: list[str] | None = None,
+) -> go.Figure:
+    """Grouped bar chart comparing summary stats across runs.
+
+    Args:
+        records: List of RunRecord objects with .summary and .timestamp attrs.
+        metrics: Which keys to compare. None = all keys from first record.
+    """
+    title = "Run Comparison"
+    if not records:
+        return _empty_figure(title)
+
+    if metrics is None:
+        metrics = sorted(records[0].summary.keys()) if records[0].summary else []
+    if not metrics:
+        return _empty_figure(title)
+
+    fig = go.Figure()
+    for record in records:
+        label = record.timestamp[:19] if hasattr(record, "timestamp") else "Run"
+        values = [record.summary.get(m, 0) for m in metrics]
+        fig.add_trace(go.Bar(name=label, x=metrics, y=values))
+
+    fig.update_layout(
+        title=dict(text=title),
+        barmode="group",
+        template=TEMPLATE,
+    )
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# 9. Species dashboard (small multiples)
+# ---------------------------------------------------------------------------
+
+
+def make_species_dashboard(
+    biomass_df: pd.DataFrame,
+    yield_df: pd.DataFrame,
+) -> go.Figure:
+    """Small multiples: one row per species with biomass + yield lines.
+
+    biomass_df columns: time, species, biomass
+    yield_df columns: time, species, yield
+    """
+    title = "Species Dashboard"
+    if biomass_df.empty:
+        return _empty_figure(title)
+
+    _require_columns(biomass_df, "time", "species", "biomass", context="make_species_dashboard")
+
+    species_list = sorted(biomass_df["species"].unique())
+    n = len(species_list)
+    if n == 0:
+        return _empty_figure(title)
+
+    fig = make_subplots(rows=n, cols=1, subplot_titles=species_list, shared_xaxes=True)
+
+    for i, sp in enumerate(species_list, 1):
+        sp_bio = biomass_df[biomass_df["species"] == sp]
+        fig.add_trace(
+            go.Scatter(x=sp_bio["time"], y=sp_bio["biomass"], name=f"{sp} biomass", mode="lines"),
+            row=i,
+            col=1,
+        )
+        if not yield_df.empty and "species" in yield_df.columns:
+            sp_yield = yield_df[yield_df["species"] == sp]
+            if not sp_yield.empty:
+                fig.add_trace(
+                    go.Scatter(
+                        x=sp_yield["time"],
+                        y=sp_yield["yield"],
+                        name=f"{sp} yield",
+                        mode="lines",
+                        line=dict(dash="dash"),
+                    ),
+                    row=i,
+                    col=1,
+                )
+
+    fig.update_layout(title=dict(text=title), template=TEMPLATE, height=300 * n)
     return fig

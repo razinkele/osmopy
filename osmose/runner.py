@@ -60,6 +60,7 @@ class OsmoseRunner:
         java_opts: list[str] | None = None,
         overrides: dict[str, str] | None = None,
         on_progress: Callable[[str], None] | None = None,
+        timeout_sec: int | None = None,
     ) -> RunResult:
         """Run the OSMOSE engine asynchronously.
 
@@ -69,6 +70,7 @@ class OsmoseRunner:
             java_opts: Extra JVM options (e.g., ["-Xmx4g"]).
             overrides: Extra parameter overrides (passed as -Pkey=value).
             on_progress: Callback for each line of stdout/stderr.
+            timeout_sec: Maximum run time in seconds. None means no limit.
 
         Returns:
             RunResult with returncode, stdout, stderr.
@@ -92,22 +94,46 @@ class OsmoseRunner:
             if stream is None:
                 return
             async for line in stream:
-                text = line.decode().rstrip()
+                text = line.decode(errors="replace").rstrip()
                 lines_list.append(text)
                 if on_progress:
                     on_progress(text)
 
-        await asyncio.gather(
-            read_stream(self._process.stdout, stdout_lines),
-            read_stream(self._process.stderr, stderr_lines),
-        )
+        result_output_dir = output_dir or config_path.parent / "output"
+
+        try:
+            if timeout_sec is not None:
+                await asyncio.wait_for(
+                    asyncio.gather(
+                        read_stream(self._process.stdout, stdout_lines),
+                        read_stream(self._process.stderr, stderr_lines),
+                    ),
+                    timeout=timeout_sec,
+                )
+            else:
+                await asyncio.gather(
+                    read_stream(self._process.stdout, stdout_lines),
+                    read_stream(self._process.stderr, stderr_lines),
+                )
+        except asyncio.TimeoutError:
+            _log.warning("OSMOSE run timed out after %ds, killing process", timeout_sec)
+            try:
+                self._process.kill()
+            except ProcessLookupError:
+                pass  # Process already exited
+            await self._process.wait()
+            return RunResult(
+                returncode=-1,
+                output_dir=result_output_dir,
+                stdout="\n".join(stdout_lines),
+                stderr=f"Run timed out after {timeout_sec}s (process killed)",
+            )
 
         await self._process.wait()
         _log.info("OSMOSE finished with exit code %d", self._process.returncode)
-        result_output_dir = output_dir or config_path.parent / "output"
 
         return RunResult(
-            returncode=self._process.returncode,
+            returncode=self._process.returncode or 0,
             output_dir=result_output_dir,
             stdout="\n".join(stdout_lines),
             stderr="\n".join(stderr_lines),

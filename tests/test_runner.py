@@ -337,3 +337,15 @@ async def test_run_ensemble_default_replicates(
     out = tmp_path / "ens_default"
     results = await runner.run_ensemble(config_path=fake_config, output_dir=out)
     assert len(results) == 5
+
+
+async def test_run_timeout_kills_process(tmp_path: Path) -> None:
+    """run() with timeout_sec kills a slow process and returns returncode=-1."""
+    script = tmp_path / "slow_timeout.py"
+    script.write_text('import time\nprint("starting", flush=True)\ntime.sleep(60)\nprint("done")\n')
+    config = tmp_path / "config.csv"
+    config.write_text("x ; 1\n")
+    runner = _ScriptRunner(jar_path=script, java_cmd=sys.executable)
+    result = await runner.run(config_path=config, timeout_sec=1)
+    assert result.returncode == -1
+    assert "timed out" in result.stderr.lower()

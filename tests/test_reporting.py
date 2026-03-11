@@ -58,3 +58,26 @@ def test_generate_report_rejects_unsupported_format(mock_results):
     res = OsmoseResults(mock_results)
     with pytest.raises(NotImplementedError, match="csv"):
         generate_report(res, {}, mock_results / "report.csv", fmt="csv")
+
+
+def test_generate_report_returns_path(mock_results, tmp_path):
+    from osmose.results import OsmoseResults
+
+    res = OsmoseResults(mock_results)
+    config = {"simulation.nspecies": "2", "simulation.time.nyear": "10"}
+    output_path = tmp_path / "report.html"
+    result = generate_report(res, config, output_path)
+    assert result == output_path
+    assert result.exists()
+
+
+def test_generate_report_uses_jinja2(mock_results, tmp_path):
+    from osmose.results import OsmoseResults
+
+    res = OsmoseResults(mock_results)
+    config = {"simulation.nspecies": "2"}
+    output_path = tmp_path / "report.html"
+    generate_report(res, config, output_path)
+    content = output_path.read_text()
+    assert "OSMOSE Simulation Report" in content
+    assert "Species" in content

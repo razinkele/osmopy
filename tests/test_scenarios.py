@@ -131,3 +131,66 @@ def test_import_all_from_zip(tmp_path):
     assert count == 1
     loaded = dst_mgr.load("gamma")
     assert loaded.config == {"z": "3"}
+
+
+def test_save_overwrites_existing_scenario(tmp_path):
+    manager = ScenarioManager(tmp_path)
+    s1 = Scenario(name="test", config={"a": "1"})
+    manager.save(s1)
+    s2 = Scenario(name="test", config={"a": "2"})
+    manager.save(s2)
+    loaded = manager.load("test")
+    assert loaded.config["a"] == "2"
+
+
+def test_save_creates_new_scenario(tmp_path):
+    manager = ScenarioManager(tmp_path)
+    s = Scenario(name="brand_new", config={"x": "1"})
+    manager.save(s)
+    loaded = manager.load("brand_new")
+    assert loaded.config["x"] == "1"
+
+
+def test_save_backup_survives_rename_failure(tmp_path):
+    """If os.rename fails putting new data in place, backup should survive."""
+    import os
+    from unittest.mock import patch
+
+    manager = ScenarioManager(tmp_path)
+    s1 = Scenario(name="test", config={"a": "original"})
+    manager.save(s1)
+
+    call_count = 0
+    original_rename = os.rename
+
+    def failing_rename(src, dst):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:  # fail on the second rename (new -> target)
+            raise OSError("Simulated failure")
+        return original_rename(src, dst)
+
+    s2 = Scenario(name="test", config={"a": "updated"})
+    with patch("os.rename", side_effect=failing_rename):
+        with pytest.raises(OSError, match="Simulated failure"):
+            manager.save(s2)
+
+    # Backup (.bak) should still exist with original data
+    backup = tmp_path / "test.bak" / "scenario.json"
+    assert backup.exists()
+
+
+def test_save_with_existing_stale_backup(tmp_path):
+    """Save should handle leftover backup from a previous failure."""
+    manager = ScenarioManager(tmp_path)
+    manager.save(Scenario(name="test", config={"a": "1"}))
+    # Simulate leftover backup from previous crash
+    stale = tmp_path / "test.bak"
+    stale.mkdir()
+    (stale / "scenario.json").write_text("{}")
+
+    # Second save should succeed despite stale backup
+    manager.save(Scenario(name="test", config={"a": "2"}))
+    loaded = manager.load("test")
+    assert loaded.config["a"] == "2"
+    assert not stale.exists()

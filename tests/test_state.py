@@ -75,7 +75,7 @@ def test_appstate_reset_to_defaults():
 def test_appstate_jar_path_default():
     state = AppState()
     with reactive.isolate():
-        assert state.jar_path.get() == "osmose-java/osmose.jar"
+        assert state.jar_path.get() == "osmose-java/osmose_4.3.3-jar-with-dependencies.jar"
 
 
 def test_appstate_jar_path_set():
@@ -112,6 +112,12 @@ def test_sync_inputs_updates_config():
         assert state.config.get()["simulation.nspecies"] == "5"
 
 
+def test_appstate_has_busy_field():
+    state = AppState()
+    with reactive.isolate():
+        assert state.busy.get() is None
+
+
 def test_sync_inputs_skips_none():
     """sync_inputs should skip keys where the input value is None."""
     from ui.state import sync_inputs
@@ -126,3 +132,16 @@ def test_sync_inputs_skips_none():
 
         changed = sync_inputs(FakeInput(), state, ["simulation.nspecies"])
         assert changed == {}
+
+
+def test_appstate_has_dirty_field():
+    state = AppState()
+    with reactive.isolate():
+        assert state.dirty.get() is False
+
+
+def test_update_config_sets_dirty():
+    state = AppState()
+    with reactive.isolate():
+        state.update_config("simulation.nspecies", "5")
+        assert state.dirty.get() is True

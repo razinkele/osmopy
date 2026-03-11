@@ -1,5 +1,6 @@
 """Tests for auto-generated parameter form components."""
 
+from osmose.config.validator import validate_field
 from osmose.schema.base import OsmoseField, ParamType
 from ui.components.param_form import render_field, render_category, _guess_step, constraint_hint
 
@@ -208,3 +209,31 @@ def test_render_int_field_with_hint():
     html = str(widget)
     assert "Range:" in html
     assert "50" in html
+
+
+def test_validate_field_rejects_out_of_bounds():
+    field = OsmoseField(
+        key_pattern="species.linf.sp{idx}",
+        param_type=ParamType.FLOAT,
+        default=50.0,
+        min_val=1.0,
+        max_val=200.0,
+        description="L-infinity",
+        category="growth",
+    )
+    error = validate_field("species.linf.sp0", "500.0", field)
+    assert error is not None
+    assert "above maximum" in error
+
+
+def test_validate_field_accepts_valid_value():
+    field = OsmoseField(
+        key_pattern="species.linf.sp{idx}",
+        param_type=ParamType.FLOAT,
+        default=50.0,
+        min_val=1.0,
+        max_val=200.0,
+        description="L-infinity",
+        category="growth",
+    )
+    assert validate_field("species.linf.sp0", "100.0", field) is None

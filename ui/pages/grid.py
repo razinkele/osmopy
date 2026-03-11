@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from shiny import ui, reactive, render
 
-from shiny_deckgl import (
+from shiny_deckgl import (  # type: ignore[import-untyped]
     MapWidget,
     polygon_layer,
     CARTO_POSITRON,
@@ -21,27 +21,43 @@ from shiny_deckgl import (
 from osmose.logging import setup_logging
 from osmose.schema.grid import GRID_FIELDS
 from ui.components.param_form import render_field
-from ui.state import sync_inputs
+from ui.state import get_theme_mode, sync_inputs
 
 _log = setup_logging("osmose.grid.ui")
 
 GRID_GLOBAL_KEYS: list[str] = [f.key_pattern for f in GRID_FIELDS if not f.indexed]
 
 
-def _load_mask(config: dict[str, str]) -> np.ndarray | None:
+def _load_mask(config: dict[str, str], config_dir: Path | None = None) -> np.ndarray | None:
     """Load a grid mask CSV from the config if available."""
     mask_path = config.get("grid.mask.file", "")
     if not mask_path:
         return None
 
-    examples_dir = Path(__file__).parent.parent.parent / "data" / "examples"
-    full_path = examples_dir / mask_path
-    if not full_path.exists():
+    # Try config_dir first, fall back to examples directory
+    search_dirs = []
+    if config_dir and config_dir.is_dir():
+        search_dirs.append(config_dir)
+    search_dirs.append(Path(__file__).parent.parent.parent / "data" / "examples")
+
+    full_path = None
+    for d in search_dirs:
+        candidate = d / mask_path
+        if candidate.exists():
+            full_path = candidate
+            break
+
+    if full_path is None:
+        _log.debug("Mask file not found: %s", mask_path)
         return None
 
     try:
         return pd.read_csv(full_path, header=None).values
-    except (FileNotFoundError, pd.errors.ParserError, pd.errors.EmptyDataError):
+    except (pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
+        _log.warning("Mask file %s could not be parsed: %s", full_path, exc)
+        return None
+    except FileNotFoundError:
+        _log.debug("Mask file not found: %s", full_path)
         return None
     except Exception as exc:
         _log.warning("Failed to load mask %s: %s", full_path, exc)
@@ -246,15 +262,13 @@ def grid_server(input, output, session, state):
         nx = int(input.grid_ncolumn() or 0)
         ny = int(input.grid_nline() or 0)
 
-        try:
-            is_dark = input.theme_mode() == "dark"
-        except (AttributeError, TypeError):
-            is_dark = False
+        is_dark = get_theme_mode(input) == "dark"
 
         # Load land-sea mask from config if available
         with reactive.isolate():
             cfg = state.config.get()
-        mask = _load_mask(cfg)
+            cfg_dir = state.config_dir.get()
+        mask = _load_mask(cfg, config_dir=cfg_dir)
 
         layers = _build_grid_layers(ul_lat, ul_lon, lr_lat, lr_lon, nx, ny, is_dark, mask)
 

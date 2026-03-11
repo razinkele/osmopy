@@ -157,6 +157,167 @@ body {
   50% { opacity: 1; transform: scale(1.1); }
 }
 
+/* ── Header Actions (About / Help) ────────────────────────────────── */
+.osmose-header-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.osmose-header-btn {
+  color: var(--osm-text-muted) !important;
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  padding: 5px 12px;
+  border-radius: 6px;
+  text-decoration: none !important;
+  transition: all var(--osm-transition);
+  cursor: pointer;
+}
+
+.osmose-header-btn:hover {
+  color: var(--osm-accent) !important;
+  background: var(--osm-accent-dim);
+}
+
+/* ── About Version Badge ─────────────────────────────────────────── */
+.osmose-about-version {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.osmose-version-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  background: var(--osm-accent-dim);
+  border: 1px solid var(--osm-border-accent);
+  border-radius: 20px;
+  font-family: var(--osm-font-mono);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--osm-accent);
+}
+
+.osmose-version-label {
+  font-size: 0.8rem;
+  color: var(--osm-text-muted);
+  font-weight: 400;
+}
+
+/* ── Modal Theming ───────────────────────────────────────────────── */
+.modal-content {
+  background: var(--osm-bg-surface) !important;
+  border: 1px solid var(--osm-border) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 16px 64px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.modal-header {
+  border-bottom: 1px solid var(--osm-border-accent) !important;
+  padding: 16px 24px !important;
+}
+
+.modal-header .modal-title {
+  font-weight: 700;
+  font-size: 1.1rem;
+  letter-spacing: -0.01em;
+  color: var(--osm-text-primary);
+}
+
+.modal-header .btn-close {
+  filter: invert(0.7);
+  opacity: 0.6;
+  transition: opacity var(--osm-transition);
+}
+
+.modal-header .btn-close:hover {
+  opacity: 1;
+}
+
+.modal-body {
+  padding: 24px !important;
+  color: var(--osm-text-primary);
+  font-size: 0.88rem;
+  line-height: 1.7;
+}
+
+.modal-body h3 {
+  color: var(--osm-accent);
+  font-size: 1rem;
+  margin-top: 4px;
+  margin-bottom: 12px;
+}
+
+.modal-body h4 {
+  color: var(--osm-teal);
+  font-size: 0.9rem;
+  margin-top: 14px;
+  margin-bottom: 8px;
+}
+
+.modal-body hr {
+  border-color: var(--osm-border) !important;
+  margin: 18px 0;
+}
+
+.modal-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.83rem;
+  margin: 10px 0;
+}
+
+.modal-body th {
+  text-align: left;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--osm-text-secondary);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--osm-border-accent);
+}
+
+.modal-body td {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--osm-border);
+  color: var(--osm-text-primary);
+}
+
+.modal-body a {
+  color: var(--osm-teal);
+  text-decoration: none;
+}
+
+.modal-body a:hover {
+  color: var(--osm-accent);
+  text-decoration: underline;
+}
+
+.modal-footer {
+  border-top: 1px solid var(--osm-border) !important;
+  padding: 12px 24px !important;
+}
+
+/* Help modal pills */
+.modal-body .nav-pills .nav-link {
+  font-size: 0.8rem !important;
+  padding: 6px 14px !important;
+  border-radius: 20px !important;
+  box-shadow: none;
+}
+
+.modal-body .nav-pills .nav-link.active {
+  box-shadow: none;
+  border-radius: 20px !important;
+}
+
 /* ── Navigation Sidebar ───────────────────────────────────────────── */
 
 /* Sidebar column background */
@@ -673,6 +834,282 @@ hr {
   to { opacity: 1; }
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   LIGHT THEME — Ocean Blue-White
+   Activated via data-theme="light" on <html>
+   ═══════════════════════════════════════════════════════════════════ */
+
+[data-theme="light"] {
+  /* Ocean blue-white palette */
+  --osm-bg-deep:       #f0f4f8;
+  --osm-bg-mid:        #e8edf2;
+  --osm-bg-surface:    #ffffff;
+  --osm-bg-card:       rgba(255, 255, 255, 0.95);
+  --osm-bg-card-hover: rgba(255, 255, 255, 1);
+
+  /* Accent: darkened amber for contrast on light */
+  --osm-accent:        #d4942e;
+  --osm-accent-dim:    rgba(212, 148, 46, 0.1);
+  --osm-accent-glow:   rgba(212, 148, 46, 0.2);
+
+  /* Secondary: darkened teal */
+  --osm-teal:          #2ba89e;
+  --osm-teal-dim:      rgba(43, 168, 158, 0.08);
+
+  /* Text hierarchy */
+  --osm-text-primary:  #1a2a3a;
+  --osm-text-secondary:#4a5a6a;
+  --osm-text-muted:    #8a95a0;
+
+  /* Borders & surfaces */
+  --osm-border:        rgba(0, 0, 0, 0.08);
+  --osm-border-accent: rgba(212, 148, 46, 0.25);
+
+  color-scheme: light;
+}
+
+/* ── Light: Page background ──────────────────────────────────────── */
+[data-theme="light"] body {
+  background: var(--osm-bg-deep) !important;
+  background-image:
+    radial-gradient(ellipse at 20% 50%, rgba(43, 168, 158, 0.04) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 20%, rgba(212, 148, 46, 0.03) 0%, transparent 50%) !important;
+}
+
+/* ── Light: Header ───────────────────────────────────────────────── */
+[data-theme="light"] .osmose-header {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.97) 0%,
+    rgba(240, 244, 248, 0.98) 100%
+  ) !important;
+  border-bottom-color: rgba(0, 0, 0, 0.06) !important;
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.06) !important;
+}
+
+[data-theme="light"] .osmose-logo {
+  color: #1a2a3a !important;
+}
+
+/* ── Light: Cards ────────────────────────────────────────────────── */
+[data-theme="light"] .card {
+  background: var(--osm-bg-card) !important;
+  border: 1px solid rgba(0, 0, 0, 0.06) !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(0, 0, 0, 0.02) !important;
+  backdrop-filter: none !important;
+}
+
+[data-theme="light"] .card:hover {
+  border-color: rgba(0, 0, 0, 0.1) !important;
+}
+
+[data-theme="light"] .card-header {
+  background: rgba(0, 0, 0, 0.02) !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06) !important;
+  color: var(--osm-text-primary) !important;
+}
+
+/* ── Light: Form inputs ──────────────────────────────────────────── */
+[data-theme="light"] .form-control,
+[data-theme="light"] .form-select {
+  background: #ffffff !important;
+  border: 1px solid rgba(0, 0, 0, 0.12) !important;
+  color: var(--osm-text-primary) !important;
+}
+
+[data-theme="light"] .form-control:focus,
+[data-theme="light"] .form-select:focus {
+  border-color: var(--osm-accent) !important;
+  box-shadow: 0 0 0 2px var(--osm-accent-dim) !important;
+}
+
+[data-theme="light"] .form-control::placeholder {
+  color: var(--osm-text-muted) !important;
+}
+
+[data-theme="light"] .form-select option {
+  background: #ffffff;
+  color: var(--osm-text-primary);
+}
+
+/* ── Light: Navigation sidebar ───────────────────────────────────── */
+[data-theme="light"] .nav-pills .nav-link {
+  color: var(--osm-text-secondary) !important;
+}
+
+[data-theme="light"] .nav-pills .nav-link:hover {
+  color: var(--osm-text-primary) !important;
+  background: rgba(0, 0, 0, 0.03) !important;
+}
+
+[data-theme="light"] .nav-pills .nav-link.active {
+  color: var(--osm-accent) !important;
+  background: var(--osm-accent-dim) !important;
+}
+
+/* ── Light: Buttons ──────────────────────────────────────────────── */
+[data-theme="light"] .btn::after {
+  background: linear-gradient(180deg, rgba(255,255,255,0.15) 0%, transparent 100%);
+}
+
+/* ── Light: Tables ───────────────────────────────────────────────── */
+[data-theme="light"] .table {
+  color: var(--osm-text-primary) !important;
+}
+
+[data-theme="light"] .table thead th {
+  background: rgba(0, 0, 0, 0.03) !important;
+  color: var(--osm-text-secondary) !important;
+  border-bottom-color: rgba(0, 0, 0, 0.1) !important;
+}
+
+[data-theme="light"] .table td {
+  border-color: rgba(0, 0, 0, 0.05) !important;
+}
+
+[data-theme="light"] .table-striped > tbody > tr:nth-of-type(odd) > td {
+  background: rgba(0, 0, 0, 0.015) !important;
+}
+
+[data-theme="light"] .table-hover > tbody > tr:hover > td {
+  background: var(--osm-accent-dim) !important;
+}
+
+/* ── Light: Accordion ────────────────────────────────────────────── */
+[data-theme="light"] .accordion-item {
+  border-color: rgba(0, 0, 0, 0.08) !important;
+}
+
+[data-theme="light"] .accordion-button {
+  background: rgba(0, 0, 0, 0.02) !important;
+  color: var(--osm-text-primary) !important;
+}
+
+[data-theme="light"] .accordion-button:not(.collapsed) {
+  background: var(--osm-accent-dim) !important;
+  color: var(--osm-accent) !important;
+}
+
+[data-theme="light"] .accordion-button::after {
+  filter: none;
+}
+
+[data-theme="light"] .accordion-body {
+  background: rgba(0, 0, 0, 0.01);
+}
+
+/* ── Light: Tabs ─────────────────────────────────────────────────── */
+[data-theme="light"] .nav-tabs {
+  border-bottom-color: rgba(0, 0, 0, 0.08) !important;
+}
+
+[data-theme="light"] .nav-tabs .nav-link {
+  color: var(--osm-text-secondary) !important;
+}
+
+[data-theme="light"] .nav-tabs .nav-link:hover {
+  color: var(--osm-text-primary) !important;
+  background: rgba(0, 0, 0, 0.02);
+}
+
+[data-theme="light"] .nav-tabs .nav-link.active {
+  background: #ffffff !important;
+  color: var(--osm-accent) !important;
+}
+
+/* ── Light: Console ──────────────────────────────────────────────── */
+[data-theme="light"] pre {
+  background: #1a2a3a !important;
+  color: #38c9b1 !important;
+}
+
+/* ── Light: Modals ───────────────────────────────────────────────── */
+[data-theme="light"] .modal-content {
+  background: #ffffff !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+  box-shadow: 0 16px 64px rgba(0, 0, 0, 0.15) !important;
+  backdrop-filter: none !important;
+}
+
+[data-theme="light"] .modal-header {
+  border-bottom-color: rgba(0, 0, 0, 0.08) !important;
+}
+
+[data-theme="light"] .modal-header .btn-close {
+  filter: none;
+}
+
+[data-theme="light"] .modal-body th {
+  background: rgba(0, 0, 0, 0.03);
+  color: var(--osm-text-secondary);
+}
+
+[data-theme="light"] .modal-footer {
+  border-top-color: rgba(0, 0, 0, 0.06) !important;
+}
+
+/* ── Light: Notifications ────────────────────────────────────────── */
+[data-theme="light"] .shiny-notification {
+  background: #ffffff !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+  color: var(--osm-text-primary) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* ── Light: Scrollbar ────────────────────────────────────────────── */
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+[data-theme="light"] * {
+  scrollbar-color: rgba(0, 0, 0, 0.12) transparent;
+}
+
+/* ── Light: Misc ─────────────────────────────────────────────────── */
+[data-theme="light"] .form-check-input[type="radio"] {
+  border-color: var(--osm-text-muted) !important;
+}
+
+[data-theme="light"] .form-check:hover {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+/* ── Theme Toggle Button ─────────────────────────────────────────── */
+.osmose-theme-toggle {
+  background: none;
+  border: 1px solid var(--osm-border);
+  border-radius: 8px;
+  padding: 5px 10px;
+  cursor: pointer;
+  color: var(--osm-text-muted);
+  font-size: 1rem;
+  line-height: 1;
+  transition: all var(--osm-transition);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.osmose-theme-toggle:hover {
+  color: var(--osm-accent);
+  border-color: var(--osm-border-accent);
+  background: var(--osm-accent-dim);
+}
+
+/* Icon visibility: show the icon for what you switch TO */
+.osmose-theme-toggle .icon-sun { display: inline; }
+.osmose-theme-toggle .icon-moon { display: none; }
+
+[data-theme="dark"] .osmose-theme-toggle .icon-sun { display: inline; }
+[data-theme="dark"] .osmose-theme-toggle .icon-moon { display: none; }
+
+[data-theme="light"] .osmose-theme-toggle .icon-sun { display: none; }
+[data-theme="light"] .osmose-theme-toggle .icon-moon { display: inline; }
+
 /* ── Responsive ───────────────────────────────────────────────────── */
 @media (max-width: 768px) {
   .osmose-header {
@@ -692,4 +1129,56 @@ hr {
     font-size: 0.8rem !important;
     padding: 6px 10px !important;
   }
+}
+
+/* ── Loading overlay ────────────────────────────────────────── */
+.osm-loading-overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(15, 25, 35, 0.85);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 9999;
+}
+.osm-loading-content { text-align: center; color: #e2e8f0; }
+.osm-loading-content p { margin-top: 1rem; font-size: 1.1rem; }
+.osm-spinner {
+    width: 48px; height: 48px;
+    border: 4px solid rgba(232, 168, 56, 0.2);
+    border-top-color: #e8a838;
+    border-radius: 50%;
+    animation: osm-spin 0.8s linear infinite;
+    margin: 0 auto;
+}
+@keyframes osm-spin { to { transform: rotate(360deg); } }
+
+/* ── Dirty changes banner ───────────────────────────────────── */
+.osm-dirty-banner {
+    background: rgba(232, 168, 56, 0.15);
+    border-left: 3px solid #e8a838;
+    color: #e8a838;
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem; font-weight: 500; text-align: center;
+}
+[data-theme="light"] .osm-dirty-banner {
+    background: rgba(212, 148, 46, 0.1);
+    border-left-color: #d4942e; color: #d4942e;
+}
+
+/* ── Field validation errors ────────────────────────────────── */
+.field-error-msg {
+    color: #e74c3c; font-size: 0.75rem; margin-top: 0.25rem;
+    padding-left: 0.5rem; border-left: 2px solid #e74c3c;
+}
+[data-theme="light"] .field-error-msg { color: #c0392b; border-left-color: #c0392b; }
+
+/* ── Responsive / mobile ────────────────────────────────────── */
+@media (max-width: 768px) {
+    .nav-pills { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; white-space: nowrap; padding-bottom: 0.5rem; }
+    .nav-pills .nav-item { flex-shrink: 0; }
+    .osmose-badge { display: none; }
+    .osmose-logo { font-size: 1.1rem; }
+    .osmose-header { padding: 0.5rem 1rem; }
+    .modal-dialog { width: 95vw; max-width: 95vw; margin: 1rem auto; }
+    .modal-body { max-height: 70vh; overflow-y: auto; }
+    .card-body { padding: 0.75rem; }
+    .osmose-section-label { font-size: 0.7rem; }
 }

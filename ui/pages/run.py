@@ -7,13 +7,18 @@ from pathlib import Path
 
 from shiny import ui, reactive, render
 
-JAR_DIR = Path("osmose-java")
-
+from osmose.config.validator import (
+    check_file_references,
+    check_species_consistency,
+    validate_config,
+)
 from osmose.config.writer import OsmoseConfigWriter
 from osmose.runner import OsmoseRunner
 from ui.styles import STYLE_CONSOLE
 
 _log = logging.getLogger("osmose.run")
+
+JAR_DIR = Path("osmose-java")
 
 
 def parse_overrides(text: str) -> dict[str, str]:
@@ -28,9 +33,7 @@ def parse_overrides(text: str) -> dict[str, str]:
     return result
 
 
-def copy_data_files(
-    config: dict[str, str], source_dir: Path, dest_dir: Path
-) -> list[str]:
+def copy_data_files(config: dict[str, str], source_dir: Path, dest_dir: Path) -> list[str]:
     """Copy ancillary data files referenced in config from source_dir to dest_dir.
 
     Returns list of file paths that were missing or failed to copy.
@@ -87,6 +90,7 @@ def run_ui():
             ui.card_header("Run Configuration"),
             ui.output_ui("jar_selector"),
             ui.input_text("java_opts", "Java options", value="-Xmx2g", placeholder="-Xmx4g -Xms1g"),
+            ui.input_numeric("run_timeout", "Timeout (seconds)", value=3600, min=60, max=86400),
             ui.input_text_area(
                 "param_overrides", "Parameter overrides (key=value, one per line)", rows=4
             ),
@@ -152,11 +156,35 @@ def run_server(input, output, session, state):
             status.set(f"Error: JAR not found at {jar_path}")
             return
 
+        # Validate config before run
+        config = state.config.get()
+        errors, warnings = validate_config(config, state.registry)
+        source_dir = state.config_dir.get()
+        if source_dir:
+            file_errors = check_file_references(config, str(source_dir))
+            errors.extend(file_errors)
+        species_warnings = check_species_consistency(config)
+        warnings.extend(species_warnings)
+
+        if errors:
+            log_lines = ["--- VALIDATION ERRORS (run blocked) ---"]
+            log_lines.extend(errors)
+            if warnings:
+                log_lines.append("--- WARNINGS ---")
+                log_lines.extend(warnings)
+            run_log.set(log_lines)
+            status.set(f"Validation failed: {len(errors)} error(s)")
+            return
+
+        if warnings:
+            log_lines = ["--- WARNINGS (continuing anyway) ---"]
+            log_lines.extend(warnings)
+            run_log.set(log_lines)
+
         status.set("Writing config...")
         run_log.set([])
 
         # Write config to temp directory, copying data files from source
-        config = state.config.get()
         work_dir = Path(tempfile.mkdtemp(prefix="osmose_run_"))
         source_dir = state.config_dir.get()
         config_path = write_temp_config(config, work_dir, source_dir)
@@ -168,7 +196,7 @@ def run_server(input, output, session, state):
 
         # Create runner
         runner = OsmoseRunner(jar_path=jar_path)
-        runner_ref.set(runner)
+        runner_ref.set(runner)  # type: ignore[arg-type]
 
         status.set("Running...")
 
@@ -177,19 +205,39 @@ def run_server(input, output, session, state):
             lines.append(line)
             run_log.set(lines)
 
-        result = await runner.run(
-            config_path=config_path,
-            output_dir=work_dir / "output",
-            java_opts=java_opts,
-            overrides=overrides,
-            on_progress=on_progress,
-        )
+        timeout_sec = input.run_timeout()
+
+        state.busy.set("Running simulation...")
+        try:
+            result = await runner.run(
+                config_path=config_path,
+                output_dir=work_dir / "output",
+                java_opts=java_opts,  # type: ignore[arg-type]
+                overrides=overrides,
+                on_progress=on_progress,
+                timeout_sec=timeout_sec,
+            )
+        finally:
+            state.busy.set(None)
 
         state.run_result.set(result)
         state.output_dir.set(result.output_dir)
 
         if result.returncode == 0:
             status.set(f"Complete. Output: {result.output_dir}")
+            try:
+                from osmose.history import RunRecord, RunHistory
+
+                history = RunHistory(Path("data/history"))
+                record = RunRecord(
+                    config_snapshot=config,
+                    duration_sec=0,  # Would need timing in a real implementation
+                    output_dir=str(result.output_dir),
+                    summary={},
+                )
+                history.save(record)
+            except Exception:
+                _log.debug("Failed to save run history", exc_info=True)
         else:
             status.set(f"Failed (exit code {result.returncode})")
             if result.stderr:

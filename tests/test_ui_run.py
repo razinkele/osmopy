@@ -1,5 +1,7 @@
 """Tests for run page logic -- config writing, override parsing, status flow."""
 
+from osmose.config.validator import validate_config
+from osmose.schema import build_registry
 from ui.pages.run import parse_overrides, write_temp_config
 
 
@@ -34,3 +36,17 @@ def test_write_temp_config(tmp_path):
     assert config_path.name == "osm_all-parameters.csv"
     content = config_path.read_text()
     assert "simulation.nspecies" in content
+
+
+def test_prerun_validation_blocks_on_errors():
+    registry = build_registry()
+    config = {"species.linf.sp0": "not_a_number", "simulation.nspecies": "2"}
+    errors, warnings = validate_config(config, registry)
+    assert len(errors) > 0
+
+
+def test_prerun_validation_passes_valid_config():
+    registry = build_registry()
+    config = {"simulation.nspecies": "3", "species.linf.sp0": "50.0"}
+    errors, warnings = validate_config(config, registry)
+    assert len(errors) == 0

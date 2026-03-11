@@ -41,6 +41,25 @@ def validate_config(config: dict[str, str], registry) -> tuple[list[str], list[s
     return errors, warnings
 
 
+def validate_field(key: str, value: str, field) -> str | None:
+    """Validate a single field value. Returns error message or None."""
+    from osmose.schema.base import ParamType
+
+    if field.param_type in (ParamType.FLOAT, ParamType.INT):
+        try:
+            num = float(value)
+        except (ValueError, TypeError):
+            return f"Expected number, got '{value}'"
+        if field.min_val is not None and num < field.min_val:
+            return f"Value {num} below minimum {field.min_val}"
+        if field.max_val is not None and num > field.max_val:
+            return f"Value {num} above maximum {field.max_val}"
+    elif field.param_type == ParamType.BOOL:
+        if value.lower() not in ("true", "false", "0", "1"):
+            return f"Expected boolean, got '{value}'"
+    return None
+
+
 def check_file_references(config: dict[str, str], base_dir: str) -> list[str]:
     """Check that all file-referencing parameters point to existing files.
 

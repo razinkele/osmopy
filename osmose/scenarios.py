@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 import shutil
+import tempfile
 import zipfile
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path
+
+_log = logging.getLogger("osmose.scenarios")
 
 
 @dataclass
@@ -47,14 +52,31 @@ class ScenarioManager:
         self.storage_dir.mkdir(parents=True, exist_ok=True)
 
     def save(self, scenario: Scenario) -> Path:
-        """Save a scenario to disk as JSON."""
+        """Save a scenario to disk using atomic write pattern."""
         scenario.modified_at = datetime.now().isoformat()
-        scenario_dir = self.storage_dir / scenario.name
-        scenario_dir.mkdir(parents=True, exist_ok=True)
+        target = self.storage_dir / scenario.name
+
+        tmp_dir = Path(tempfile.mkdtemp(dir=self.storage_dir))
         data = asdict(scenario)
-        with open(scenario_dir / "scenario.json", "w") as f:
-            json.dump(data, f, indent=2)
-        return scenario_dir
+        try:
+            with open(tmp_dir / "scenario.json", "w") as f:
+                json.dump(data, f, indent=2)
+
+            backup = None
+            if target.exists():
+                backup = target.with_suffix(".bak")
+                if backup.exists():
+                    shutil.rmtree(backup)
+                os.rename(target, backup)
+            os.rename(tmp_dir, target)
+            if backup and backup.exists():
+                shutil.rmtree(backup)
+        except Exception:
+            if tmp_dir.exists():
+                shutil.rmtree(tmp_dir)
+            raise
+
+        return target
 
     def load(self, name: str) -> Scenario:
         """Load a named scenario from disk."""
@@ -130,13 +152,20 @@ class ScenarioManager:
     def import_all(self, zip_path: Path) -> int:
         """Import scenarios from a ZIP file. Returns count of imported scenarios."""
         count = 0
+        storage_resolved = self.storage_dir.resolve()
         with zipfile.ZipFile(zip_path, "r") as zf:
             for name in zf.namelist():
                 if not name.endswith(".json"):
                     continue
                 data = json.loads(zf.read(name))
+                scenario_name = data["name"]
+                # Validate name does not escape storage directory
+                target = (self.storage_dir / scenario_name).resolve()
+                if not target.is_relative_to(storage_resolved):
+                    _log.warning("Skipping scenario with unsafe name: %s", scenario_name)
+                    continue
                 scenario = Scenario(
-                    name=data["name"],
+                    name=scenario_name,
                     description=data.get("description", ""),
                     config=data.get("config", {}),
                     tags=data.get("tags", []),

@@ -217,9 +217,9 @@ class OsmoseResults:
                 var_name="bin",
                 value_name="value",
             )
-            melted = melted.rename(columns={time_col: "time"})
+            melted = melted.rename(columns={time_col: "time"})  # type: ignore[assignment]
             melted["species"] = sp_name
-            melted = melted[["time", "species", "bin", "value"]]
+            melted = melted[["time", "species", "bin", "value"]]  # type: ignore[assignment]
             frames.append(melted)
 
         if not frames:
@@ -227,8 +227,8 @@ class OsmoseResults:
 
         combined = pd.concat(frames, ignore_index=True)
         if species:
-            combined = combined[combined["species"] == species]
-        return combined
+            combined = combined[combined["species"] == species]  # type: ignore[assignment]
+        return combined  # type: ignore[return-value]
 
     def _read_species_output(self, output_type: str, species: str | None) -> pd.DataFrame:
         """Read CSV output files for a given output type.
@@ -251,8 +251,8 @@ class OsmoseResults:
 
         combined = pd.concat(frames, ignore_index=True)
         if species:
-            combined = combined[combined["species"] == species]
-        return combined
+            combined = combined[combined["species"] == species]  # type: ignore[assignment]
+        return combined  # type: ignore[return-value]
 
     def close(self) -> None:
         """Close any cached NetCDF datasets."""
