@@ -28,9 +28,7 @@ def parse_overrides(text: str) -> dict[str, str]:
     return result
 
 
-def copy_data_files(
-    config: dict[str, str], source_dir: Path, dest_dir: Path
-) -> list[str]:
+def copy_data_files(config: dict[str, str], source_dir: Path, dest_dir: Path) -> list[str]:
     """Copy ancillary data files referenced in config from source_dir to dest_dir.
 
     Returns list of file paths that were missing or failed to copy.
@@ -87,6 +85,7 @@ def run_ui():
             ui.card_header("Run Configuration"),
             ui.output_ui("jar_selector"),
             ui.input_text("java_opts", "Java options", value="-Xmx2g", placeholder="-Xmx4g -Xms1g"),
+            ui.input_numeric("run_timeout", "Timeout (seconds)", value=3600, min=60, max=86400),
             ui.input_text_area(
                 "param_overrides", "Parameter overrides (key=value, one per line)", rows=4
             ),
@@ -177,12 +176,15 @@ def run_server(input, output, session, state):
             lines.append(line)
             run_log.set(lines)
 
+        timeout_sec = int(input.run_timeout()) if input.run_timeout() else None
+
         result = await runner.run(
             config_path=config_path,
             output_dir=work_dir / "output",
             java_opts=java_opts,
             overrides=overrides,
             on_progress=on_progress,
+            timeout_sec=timeout_sec,
         )
 
         state.run_result.set(result)
