@@ -29,6 +29,9 @@ dev = [
     "pyright>=1.1.350",
 ]
 
+[project.scripts]
+osmose = "osmose.cli:main"
+
 [tool.setuptools.packages.find]
 include = ["osmose*"]
 
