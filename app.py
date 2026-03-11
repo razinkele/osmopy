@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from shiny import App, ui
+from shiny import App, render, ui
 
 from ui.state import AppState
 from ui.components.help_modal import about_modal, help_modal
@@ -37,7 +37,8 @@ app_ui = ui.page_fillable(
     ui.head_content(ui.include_css(_WWW / "osmose.css")),
     # ── deck.gl JS/CSS dependencies (needed for grid map) ──────
     _deckgl_head(),
-    ui.head_content(ui.tags.script("""
+    ui.head_content(
+        ui.tags.script("""
         function toggleTheme() {
             var html = document.documentElement;
             var current = html.getAttribute('data-theme');
@@ -61,7 +62,8 @@ app_ui = ui.page_fillable(
                 Shiny.setInputValue('theme_mode', theme);
             });
         })();
-    """)),
+    """)
+    ),
     # ── App header ──────────────────────────────────────────────
     ui.div(
         ui.tags.h4(
@@ -99,6 +101,8 @@ app_ui = ui.page_fillable(
         ),
         class_="osmose-header",
     ),
+    # ── Global loading overlay ───────────────────────────────────
+    ui.output_ui("loading_overlay"),
     # ── Left pill navigation with grouped sections ──────────────
     ui.navset_pill_list(
         # Configure
@@ -134,6 +138,16 @@ app_ui = ui.page_fillable(
 def server(input, output, session):
     state = AppState()
     state.reset_to_defaults()
+
+    @render.ui
+    def loading_overlay():
+        msg = state.busy.get()
+        if msg is None:
+            return ui.div()
+        return ui.div(
+            ui.div(ui.div(class_="osm-spinner"), ui.p(msg), class_="osm-loading-content"),
+            class_="osm-loading-overlay",
+        )
 
     setup_server(input, output, session, state)
     grid_server(input, output, session, state)

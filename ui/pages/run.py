@@ -178,14 +178,18 @@ def run_server(input, output, session, state):
 
         timeout_sec = input.run_timeout()
 
-        result = await runner.run(
-            config_path=config_path,
-            output_dir=work_dir / "output",
-            java_opts=java_opts,
-            overrides=overrides,
-            on_progress=on_progress,
-            timeout_sec=timeout_sec,
-        )
+        state.busy.set("Running simulation...")
+        try:
+            result = await runner.run(
+                config_path=config_path,
+                output_dir=work_dir / "output",
+                java_opts=java_opts,
+                overrides=overrides,
+                on_progress=on_progress,
+                timeout_sec=timeout_sec,
+            )
+        finally:
+            state.busy.set(None)
 
         state.run_result.set(result)
         state.output_dir.set(result.output_dir)
