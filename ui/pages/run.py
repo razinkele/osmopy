@@ -7,13 +7,18 @@ from pathlib import Path
 
 from shiny import ui, reactive, render
 
-JAR_DIR = Path("osmose-java")
-
+from osmose.config.validator import (
+    check_file_references,
+    check_species_consistency,
+    validate_config,
+)
 from osmose.config.writer import OsmoseConfigWriter
 from osmose.runner import OsmoseRunner
 from ui.styles import STYLE_CONSOLE
 
 _log = logging.getLogger("osmose.run")
+
+JAR_DIR = Path("osmose-java")
 
 
 def parse_overrides(text: str) -> dict[str, str]:
@@ -151,11 +156,35 @@ def run_server(input, output, session, state):
             status.set(f"Error: JAR not found at {jar_path}")
             return
 
+        # Validate config before run
+        config = state.config.get()
+        errors, warnings = validate_config(config, state.registry)
+        source_dir = state.config_dir.get()
+        if source_dir:
+            file_errors = check_file_references(config, str(source_dir))
+            errors.extend(file_errors)
+        species_warnings = check_species_consistency(config)
+        warnings.extend(species_warnings)
+
+        if errors:
+            log_lines = ["--- VALIDATION ERRORS (run blocked) ---"]
+            log_lines.extend(errors)
+            if warnings:
+                log_lines.append("--- WARNINGS ---")
+                log_lines.extend(warnings)
+            run_log.set(log_lines)
+            status.set(f"Validation failed: {len(errors)} error(s)")
+            return
+
+        if warnings:
+            log_lines = ["--- WARNINGS (continuing anyway) ---"]
+            log_lines.extend(warnings)
+            run_log.set(log_lines)
+
         status.set("Writing config...")
         run_log.set([])
 
         # Write config to temp directory, copying data files from source
-        config = state.config.get()
         work_dir = Path(tempfile.mkdtemp(prefix="osmose_run_"))
         source_dir = state.config_dir.get()
         config_path = write_temp_config(config, work_dir, source_dir)
