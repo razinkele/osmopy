@@ -35,6 +35,7 @@ def _nav_section(label: str):
 app_ui = ui.page_fillable(
     # ── Custom CSS + theme toggle JS ────────────────────────────
     ui.head_content(ui.include_css(_WWW / "osmose.css")),
+    ui.head_content(ui.tags.meta(name="viewport", content="width=device-width, initial-scale=1")),
     # ── deck.gl JS/CSS dependencies (needed for grid map) ──────
     _deckgl_head(),
     ui.head_content(
