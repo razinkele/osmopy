@@ -31,7 +31,26 @@ def export_dataframe(self, output_type: str, species: str | None = None) -> pd.D
     """Return the DataFrame for any supported output type."""
 ```
 
-This delegates to the existing `_read_species_output()` or `_read_2d_output()` based on a type map. Special cases: `diet` returns `diet_matrix()`, `size_spectrum` returns `size_spectrum()`.
+This delegates to the existing `_read_species_output()` or `_read_2d_output()` based on a type map:
+
+| Output type | Method | Value column |
+|---|---|---|
+| `biomass` | `_read_species_output("biomass")` | biomass |
+| `abundance` | `_read_species_output("abundance")` | abundance |
+| `yield` | `_read_species_output("yield")` | yield |
+| `mortality` | `_read_species_output("mortality")` | mortality |
+| `trophic` | `_read_species_output("meanTL")` | meanTL |
+| `yield_n` | `_read_species_output("yieldN")` | yieldN |
+| `mortality_rate` | `_read_species_output("mortalityRate")` | value |
+| `biomass_by_age` | `_read_2d_output("biomassByAge")` | value |
+| `biomass_by_size` | `_read_2d_output("biomassBySize")` | value |
+| `biomass_by_tl` | `_read_2d_output("biomassByTL")` | value |
+| `abundance_by_age` | `_read_2d_output("abundanceByAge")` | value |
+| `abundance_by_size` | `_read_2d_output("abundanceBySize")` | value |
+| `yield_by_age` | `_read_2d_output("yieldByAge")` | value |
+| `yield_by_size` | `_read_2d_output("yieldBySize")` | value |
+| `diet` | `diet_matrix()` | wide format (prey columns) |
+| `size_spectrum` | `size_spectrum()` | abundance (species filter ignored) |
 
 ### UI
 
@@ -52,7 +71,9 @@ def download_results_csv():
 ### Edge cases
 
 - Empty results (no data loaded): button disabled via `ui.update_action_button` after load
-- Large DataFrames: streaming via `yield` in the download handler (Shiny handles this natively)
+- Large DataFrames: write to temp file, return path (matches existing pattern in `advanced.py` and `scenarios.py`)
+- Species filter on `size_spectrum`: ignored (size_spectrum() has no species parameter)
+- Species="all": filename uses `osmose_biomass.csv` (omit "all" suffix)
 
 ---
 
@@ -81,9 +102,11 @@ def aggregate_replicates(
 
 Implementation:
 1. For each `rep_dir`, create `OsmoseResults(rep_dir)` and call `export_dataframe(output_type, species)`
-2. Align all DataFrames by time column
-3. At each time step, compute `mean`, 2.5th percentile (`lower`), 97.5th percentile (`upper`) across replicates
+2. Align all DataFrames by inner join on time column (truncate to the shortest replicate's time range)
+3. At each time step, compute `mean`, 2.5th percentile (`lower`), 97.5th percentile (`upper`) across replicates using `np.nanpercentile`
 4. Return dict suitable for `make_ci_timeseries()`
+
+Replicate naming convention: `rep_0/`, `rep_1/`, ... (standard OSMOSE `run_ensemble()` output from `osmose/runner.py`).
 
 Handles 1D output types only (biomass, abundance, yield, mortality, trophic, yieldN, mortalityRate). For 2D types (byAge, bySize), ensemble mode is not supported — the toggle is hidden.
 
@@ -95,8 +118,20 @@ Add to the Results sidebar (below species filter, above download button):
 ui.input_switch("ensemble_mode", "Ensemble view", value=False)
 ```
 
+The ensemble toggle is rendered conditionally using `ui.output_ui()`:
+
+```python
+ui.output_ui("ensemble_toggle")  # in sidebar
+
+@render.ui
+def ensemble_toggle():
+    if rep_dirs.get():  # non-empty list of rep dirs
+        return ui.input_switch("ensemble_mode", "Ensemble view", value=True)
+    return ui.div()  # hidden when no replicates
+```
+
 Server logic:
-- On `btn_load_results`: detect `rep_*/` subdirectories in output dir. If found, store `rep_dirs` list in a `reactive.Value` and auto-enable ensemble toggle. If not found, hide the toggle.
+- On `btn_load_results`: detect `rep_*/` subdirectories in output dir via `sorted(out_dir.glob("rep_*"))`. If found, store in `rep_dirs: reactive.Value[list[Path]]`.
 - When ensemble mode is on and a 1D output type is selected: call `aggregate_replicates()`, render with `make_ci_timeseries()` from `osmose/plotting.py`.
 - When ensemble mode is off: render as today (single time series).
 
@@ -116,11 +151,15 @@ A new tab on the Results page ("Compare Runs") that lets users select 2+ previou
 
 ### Backend
 
-No new backend code. Uses existing:
+Modify `osmose/history.py`:
+- Add `compare_runs_multi(timestamps: list[str]) -> list[dict]` — N-way config diff. Returns list of `{"key": str, "values": list[str | None]}` for each parameter that differs across any of the selected runs. This replaces the 2-run-only `compare_runs()` for the comparison UI.
+
+Uses existing:
 - `RunHistory.list_runs() -> list[RunRecord]` — discovers saved runs
 - `RunHistory.load_run(timestamp) -> RunRecord` — loads a specific run
-- `RunHistory.compare_runs(records) -> dict` — returns config diffs
 - `make_run_comparison(records) -> go.Figure` — grouped bar chart
+
+**RunRecord.summary population:** The Run page already does a best-effort history save after successful runs. The summary dict is populated from `OsmoseResults` at save time with keys: `biomass` (total final biomass), `yield` (total final yield), `abundance` (total final abundance). If summary is empty (old runs), the comparison chart shows "No summary data" placeholder.
 
 ### UI Changes
 
@@ -152,7 +191,7 @@ ui.navset_card_tab(
 Server logic:
 - On `btn_load_results`: populate `compare_runs_select` choices from `RunHistory(state.output_dir).list_runs()`, using timestamps as keys and formatted labels as values.
 - `comparison_chart`: when 2+ runs selected, load their `RunRecord`s, call `make_run_comparison()`.
-- `config_diff_table`: call `RunHistory.compare_runs()`, render as an HTML table showing only parameters that differ between selected runs.
+- `config_diff_table`: call `RunHistory.compare_runs_multi()`, render as an HTML table with columns: Parameter, Run 1, Run 2, ..., showing only parameters that differ.
 
 ### Edge cases
 
@@ -169,8 +208,10 @@ Server logic:
 | Create | `osmose/ensemble.py` | Replicate aggregation (mean + CI) |
 | Create | `tests/test_ensemble.py` | Tests for aggregation logic |
 | Modify | `osmose/results.py` | Add `export_dataframe()` method |
+| Modify | `osmose/history.py` | Add `compare_runs_multi()` for N-way diffs |
 | Modify | `ui/pages/results.py` | Download button, ensemble toggle, Compare Runs tab |
 | Modify | `tests/test_results.py` | Tests for `export_dataframe()` |
+| Modify | `tests/test_history.py` | Tests for `compare_runs_multi()` |
 
 ## Not In Scope
 
