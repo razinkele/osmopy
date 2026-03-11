@@ -463,3 +463,70 @@ class TestSpatialMethods:
         ds = r.spatial_ltl("osm_spatial_biomass.nc")
         assert isinstance(ds, xr.Dataset)
         r.close()
+
+
+# ---------------------------------------------------------------------------
+# Tests for export_dataframe
+# ---------------------------------------------------------------------------
+
+
+class TestExportDataframe:
+    def test_biomass(self, output_dir):
+        r = OsmoseResults(output_dir)
+        df = r.export_dataframe("biomass")
+        assert not df.empty
+        assert "species" in df.columns
+        assert "biomass" in df.columns
+
+    def test_biomass_species_filter(self, output_dir):
+        r = OsmoseResults(output_dir)
+        df = r.export_dataframe("biomass", species="Anchovy")
+        assert set(df["species"].unique()) == {"Anchovy"}
+
+    def test_abundance(self, output_dir):
+        r = OsmoseResults(output_dir)
+        df = r.export_dataframe("abundance")
+        assert not df.empty
+
+    def test_yield(self, output_dir):
+        r = OsmoseResults(output_dir)
+        df = r.export_dataframe("yield")
+        assert not df.empty
+
+    def test_biomass_by_age_2d(self, output_dir_2d):
+        r = OsmoseResults(output_dir_2d)
+        df = r.export_dataframe("biomass_by_age")
+        assert not df.empty
+        assert list(df.columns) == ["time", "species", "bin", "value"]
+
+    def test_diet(self, output_dir):
+        r = OsmoseResults(output_dir)
+        df = r.export_dataframe("diet")
+        # diet_matrix returns empty when no files — that's fine
+        assert isinstance(df, pd.DataFrame)
+
+    def test_size_spectrum_ignores_species(self, output_dir_2d):
+        r = OsmoseResults(output_dir_2d)
+        df = r.export_dataframe("size_spectrum", species="Anchovy")
+        assert "species" not in df.columns
+
+    def test_trophic(self, output_dir):
+        r = OsmoseResults(output_dir)
+        df = r.export_dataframe("trophic")
+        assert isinstance(df, pd.DataFrame)
+
+    def test_unknown_type_returns_empty(self, output_dir):
+        r = OsmoseResults(output_dir)
+        df = r.export_dataframe("nonexistent_type")
+        assert df.empty
+        assert isinstance(df, pd.DataFrame)
+
+    def test_yield_n(self, output_dir_2d):
+        r = OsmoseResults(output_dir_2d)
+        df = r.export_dataframe("yield_n")
+        assert not df.empty
+
+    def test_mortality_rate(self, output_dir_2d):
+        r = OsmoseResults(output_dir_2d)
+        df = r.export_dataframe("mortality_rate")
+        assert not df.empty

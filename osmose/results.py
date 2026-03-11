@@ -254,6 +254,57 @@ class OsmoseResults:
             combined = combined[combined["species"] == species]  # type: ignore[assignment]
         return combined  # type: ignore[return-value]
 
+    # Type-to-method mapping for export_dataframe
+    _EXPORT_MAP: dict[str, tuple[str, str]] = {
+        # 1D types: (internal_output_type, method_type)
+        "biomass": ("biomass", "1d"),
+        "abundance": ("abundance", "1d"),
+        "yield": ("yield", "1d"),
+        "mortality": ("mortality", "1d"),
+        "trophic": ("meanTL", "1d"),
+        "yield_n": ("yieldN", "1d"),
+        "mortality_rate": ("mortalityRate", "1d"),
+        # 2D types
+        "biomass_by_age": ("biomassByAge", "2d"),
+        "biomass_by_size": ("biomassBySize", "2d"),
+        "biomass_by_tl": ("biomassByTL", "2d"),
+        "abundance_by_age": ("abundanceByAge", "2d"),
+        "abundance_by_size": ("abundanceBySize", "2d"),
+        "yield_by_age": ("yieldByAge", "2d"),
+        "yield_by_size": ("yieldBySize", "2d"),
+        # Special types
+        "diet": ("dietMatrix", "special_diet"),
+        "size_spectrum": ("sizeSpectrum", "special_spectrum"),
+    }
+
+    def export_dataframe(self, output_type: str, species: str | None = None) -> pd.DataFrame:
+        """Return the DataFrame for any supported output type.
+
+        Args:
+            output_type: One of the keys from the Results page dropdown
+                (e.g., 'biomass', 'biomass_by_age', 'diet', 'size_spectrum').
+            species: Optional species filter. Ignored for size_spectrum.
+
+        Returns:
+            DataFrame with the requested data, or empty DataFrame if unknown type.
+        """
+        entry = self._EXPORT_MAP.get(output_type)
+        if entry is None:
+            return pd.DataFrame()
+
+        internal_type, method_type = entry
+
+        if method_type == "1d":
+            return self._read_species_output(internal_type, species)
+        elif method_type == "2d":
+            return self._read_2d_output(internal_type, species)
+        elif method_type == "special_diet":
+            return self._read_species_output(internal_type, species)
+        elif method_type == "special_spectrum":
+            return self.size_spectrum()
+
+        return pd.DataFrame()
+
     def close(self) -> None:
         """Close any cached NetCDF datasets."""
         for ds in self._nc_cache.values():
