@@ -143,6 +143,7 @@ def results_ui():
                     },
                     selected="biomass",
                 ),
+                ui.output_ui("ensemble_toggle"),
                 ui.hr(),
                 ui.download_button(
                     "download_results_csv", "Download CSV", class_="btn-outline-primary w-100"
@@ -192,6 +193,7 @@ def results_server(input, output, session, state):
     results_obj: reactive.Value = reactive.Value(None)
     results_data: reactive.Value[dict[str, pd.DataFrame]] = reactive.Value({})
     spatial_ds: reactive.Value = reactive.Value(None)
+    rep_dirs: reactive.Value[list[Path]] = reactive.Value([])
 
     @reactive.effect
     @reactive.event(input.btn_load_results)
@@ -226,6 +228,10 @@ def results_server(input, output, session, state):
         data["size_spectrum"] = res.size_spectrum()
         results_data.set(data)
 
+        # Detect ensemble replicate directories
+        reps = sorted(out_dir.glob("rep_*"))
+        rep_dirs.set([r for r in reps if r.is_dir()])
+
         # Update output dir in shared state
         if state is not None:
             state.output_dir.set(out_dir)
@@ -246,6 +252,13 @@ def results_server(input, output, session, state):
             ui.update_slider("spatial_time_idx", max=max(max_t, 0))
 
         ui.notification_show("Results loaded successfully.", type="message", duration=3)
+
+    @render.ui
+    def ensemble_toggle():
+        dirs = rep_dirs.get()
+        if dirs:
+            return ui.input_switch("ensemble_mode", f"Ensemble view ({len(dirs)} replicates)", value=True)
+        return ui.div()
 
     @render_plotly
     def results_chart():
@@ -291,6 +304,28 @@ def results_server(input, output, session, state):
         }
 
         sp = species_filter if species_filter != "all" else None
+
+        # Ensemble mode: show CI bands for 1D types
+        from osmose.ensemble import ENSEMBLE_OUTPUT_TYPES
+        ensemble_on = False
+        try:
+            ensemble_on = bool(input.ensemble_mode()) and bool(rep_dirs.get())
+        except Exception:
+            pass
+
+        if ensemble_on and rtype in ENSEMBLE_OUTPUT_TYPES:
+            from osmose.ensemble import aggregate_replicates
+            from osmose.plotting import make_ci_timeseries
+
+            agg = aggregate_replicates(rep_dirs.get(), rtype, species=sp)
+            if agg["time"]:
+                title = title_map.get(rtype, rtype.title())
+                fig = make_ci_timeseries(
+                    agg["time"], agg["mean"], agg["lower"], agg["upper"],
+                    title=f"{title} (ensemble)", y_label=col_map.get(rtype, rtype),
+                )
+                fig.update_layout(template=tmpl)
+                return fig
 
         # If diet is selected, show a placeholder message in time series
         if rtype == "diet":
