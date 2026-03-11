@@ -65,6 +65,8 @@ class ScenarioManager:
             backup = None
             if target.exists():
                 backup = target.with_suffix(".bak")
+                if backup.exists():
+                    shutil.rmtree(backup)
                 os.rename(target, backup)
             os.rename(tmp_dir, target)
             if backup and backup.exists():

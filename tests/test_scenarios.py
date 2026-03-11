@@ -178,3 +178,19 @@ def test_save_backup_survives_rename_failure(tmp_path):
     # Backup (.bak) should still exist with original data
     backup = tmp_path / "test.bak" / "scenario.json"
     assert backup.exists()
+
+
+def test_save_with_existing_stale_backup(tmp_path):
+    """Save should handle leftover backup from a previous failure."""
+    manager = ScenarioManager(tmp_path)
+    manager.save(Scenario(name="test", config={"a": "1"}))
+    # Simulate leftover backup from previous crash
+    stale = tmp_path / "test.bak"
+    stale.mkdir()
+    (stale / "scenario.json").write_text("{}")
+
+    # Second save should succeed despite stale backup
+    manager.save(Scenario(name="test", config={"a": "2"}))
+    loaded = manager.load("test")
+    assert loaded.config["a"] == "2"
+    assert not stale.exists()
