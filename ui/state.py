@@ -31,6 +31,7 @@ class AppState:
         self.config_dir: reactive.Value[Path | None] = reactive.Value(None)
         self.loading: reactive.Value[bool] = reactive.Value(False)
         self.busy: reactive.Value[str | None] = reactive.Value(None)
+        self.dirty: reactive.Value[bool] = reactive.Value(False)
 
     def update_config(self, key: str, value: str) -> None:
         """Update a single key in the config dict.
@@ -43,6 +44,7 @@ class AppState:
             cfg = dict(self.config.get())
         cfg[key] = value
         self.config.set(cfg)
+        self.dirty.set(True)
 
     def reset_to_defaults(self) -> None:
         """Reset config to default values from the schema registry.

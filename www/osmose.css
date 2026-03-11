@@ -1149,3 +1149,16 @@ hr {
     margin: 0 auto;
 }
 @keyframes osm-spin { to { transform: rotate(360deg); } }
+
+/* ── Dirty changes banner ───────────────────────────────────── */
+.osm-dirty-banner {
+    background: rgba(232, 168, 56, 0.15);
+    border-left: 3px solid #e8a838;
+    color: #e8a838;
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem; font-weight: 500; text-align: center;
+}
+[data-theme="light"] .osm-dirty-banner {
+    background: rgba(212, 148, 46, 0.1);
+    border-left-color: #d4942e; color: #d4942e;
+}

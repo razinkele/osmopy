@@ -67,7 +67,11 @@ def setup_server(input, output, session, state):
         n = input.n_species()
         show_adv = input.show_advanced_species()
         panels = []
-        cfg = state.config.get()
+        # Isolate config read to avoid reactive loop:
+        # sync_species_inputs writes config → config.set() would
+        # re-trigger this render → new inputs → re-trigger sync → ∞
+        with reactive.isolate():
+            cfg = state.config.get()
         for i in range(n):
             name = cfg.get(f"species.name.sp{i}", f"Species {i}")
             panels.append(
@@ -140,6 +144,7 @@ def setup_server(input, output, session, state):
                 type="message",
                 duration=3,
             )
+            state.dirty.set(False)
         finally:
             state.loading.set(False)
 

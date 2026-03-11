@@ -107,6 +107,7 @@ def scenarios_server(input, output, session, state):
             tags=tags,
         )
         mgr.save(scenario)
+        state.dirty.set(False)
         _bump()
 
     # --- Load ---

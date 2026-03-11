@@ -132,3 +132,16 @@ def test_sync_inputs_skips_none():
 
         changed = sync_inputs(FakeInput(), state, ["simulation.nspecies"])
         assert changed == {}
+
+
+def test_appstate_has_dirty_field():
+    state = AppState()
+    with reactive.isolate():
+        assert state.dirty.get() is False
+
+
+def test_update_config_sets_dirty():
+    state = AppState()
+    with reactive.isolate():
+        state.update_config("simulation.nspecies", "5")
+        assert state.dirty.get() is True

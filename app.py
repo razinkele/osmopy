@@ -62,6 +62,13 @@ app_ui = ui.page_fillable(
                 Shiny.setInputValue('theme_mode', theme);
             });
         })();
+        window.addEventListener('beforeunload', function(e) {
+            if (typeof Shiny !== 'undefined' && Shiny.shinyapp &&
+                Shiny.shinyapp.$inputValues && Shiny.shinyapp.$inputValues.is_dirty) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        });
     """)
     ),
     # ── App header ──────────────────────────────────────────────
@@ -102,6 +109,7 @@ app_ui = ui.page_fillable(
         class_="osmose-header",
     ),
     # ── Global loading overlay ───────────────────────────────────
+    ui.output_ui("dirty_banner"),
     ui.output_ui("loading_overlay"),
     # ── Left pill navigation with grouped sections ──────────────
     ui.navset_pill_list(
@@ -138,6 +146,12 @@ app_ui = ui.page_fillable(
 def server(input, output, session):
     state = AppState()
     state.reset_to_defaults()
+
+    @render.ui
+    def dirty_banner():
+        if not state.dirty.get():
+            return ui.div()
+        return ui.div("You have unsaved changes", class_="osm-dirty-banner")
 
     @render.ui
     def loading_overlay():
