@@ -117,13 +117,16 @@ class OsmoseRunner:
                 )
         except asyncio.TimeoutError:
             _log.warning("OSMOSE run timed out after %ds, killing process", timeout_sec)
-            self._process.kill()
+            try:
+                self._process.kill()
+            except ProcessLookupError:
+                pass  # Process already exited
             await self._process.wait()
             return RunResult(
                 returncode=-1,
                 output_dir=result_output_dir,
                 stdout="\n".join(stdout_lines),
-                stderr=f"Run timed out after {timeout_sec}s",
+                stderr=f"Run timed out after {timeout_sec}s (process killed)",
             )
 
         await self._process.wait()

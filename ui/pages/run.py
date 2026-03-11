@@ -176,7 +176,7 @@ def run_server(input, output, session, state):
             lines.append(line)
             run_log.set(lines)
 
-        timeout_sec = int(input.run_timeout()) if input.run_timeout() else None
+        timeout_sec = input.run_timeout()
 
         result = await runner.run(
             config_path=config_path,
