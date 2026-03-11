@@ -3,13 +3,17 @@
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+import pytest
 
 from osmose.plotting import (
     make_ci_timeseries,
+    make_food_web,
     make_growth_curves,
     make_mortality_breakdown,
     make_predation_ranges,
+    make_run_comparison,
     make_size_spectrum_plot,
+    make_species_dashboard,
     make_stacked_area,
 )
 
@@ -292,8 +296,6 @@ class TestMakePredationRanges:
 # Column guard tests
 # ---------------------------------------------------------------------------
 
-import pytest
-
 
 def test_make_stacked_area_rejects_missing_columns():
     df = pd.DataFrame({"time": [1], "wrong": [10]})
@@ -311,3 +313,78 @@ def test_make_size_spectrum_plot_rejects_missing_columns():
     df = pd.DataFrame({"size": [1, 2], "wrong": [10, 20]})
     with pytest.raises(ValueError, match="missing columns"):
         make_size_spectrum_plot(df)
+
+
+# ---------------------------------------------------------------------------
+# make_food_web
+# ---------------------------------------------------------------------------
+
+
+def test_make_food_web_returns_figure():
+    diet_df = pd.DataFrame(
+        {
+            "predator": ["A", "A", "B", "B"],
+            "prey": ["B", "C", "C", "D"],
+            "proportion": [0.6, 0.4, 0.7, 0.3],
+        }
+    )
+    fig = make_food_web(diet_df)
+    assert isinstance(fig, go.Figure)
+    assert len(fig.data) > 0
+
+
+def test_make_food_web_empty():
+    fig = make_food_web(pd.DataFrame())
+    assert isinstance(fig, go.Figure)
+    assert len(fig.data) == 0
+
+
+# ---------------------------------------------------------------------------
+# make_run_comparison
+# ---------------------------------------------------------------------------
+
+
+def test_make_run_comparison_returns_figure():
+    from osmose.history import RunRecord
+
+    records = [
+        RunRecord(config_snapshot={}, summary={"biomass": 100, "yield": 50}),
+        RunRecord(config_snapshot={}, summary={"biomass": 120, "yield": 55}),
+    ]
+    fig = make_run_comparison(records)
+    assert isinstance(fig, go.Figure)
+
+
+def test_make_run_comparison_empty():
+    fig = make_run_comparison([])
+    assert isinstance(fig, go.Figure)
+    assert len(fig.data) == 0
+
+
+# ---------------------------------------------------------------------------
+# make_species_dashboard
+# ---------------------------------------------------------------------------
+
+
+def test_make_species_dashboard_returns_figure():
+    biomass_df = pd.DataFrame(
+        {
+            "time": [1, 2, 1, 2],
+            "species": ["A", "A", "B", "B"],
+            "biomass": [100, 110, 200, 190],
+        }
+    )
+    yield_df = pd.DataFrame(
+        {
+            "time": [1, 2, 1, 2],
+            "species": ["A", "A", "B", "B"],
+            "yield": [50, 55, 100, 95],
+        }
+    )
+    fig = make_species_dashboard(biomass_df, yield_df)
+    assert isinstance(fig, go.Figure)
+
+
+def test_make_species_dashboard_empty():
+    fig = make_species_dashboard(pd.DataFrame(), pd.DataFrame())
+    assert isinstance(fig, go.Figure)
