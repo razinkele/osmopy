@@ -60,7 +60,9 @@ def test_compare_runs(tmp_path):
 def test_compare_runs_multi_two_runs(tmp_path):
     history = RunHistory(tmp_path)
     r1 = RunRecord(config_snapshot={"a": "1", "b": "2"}, duration_sec=10, output_dir="", summary={})
-    r2 = RunRecord(config_snapshot={"a": "1", "b": "3", "c": "4"}, duration_sec=20, output_dir="", summary={})
+    r2 = RunRecord(
+        config_snapshot={"a": "1", "b": "3", "c": "4"}, duration_sec=20, output_dir="", summary={}
+    )
     history.save(r1)
     history.save(r2)
     records = history.list_runs()
@@ -83,7 +85,9 @@ def test_compare_runs_multi_three_runs(tmp_path):
     r2 = RunRecord(config_snapshot={"a": "1", "b": "3"}, duration_sec=20, output_dir="", summary={})
     history.save(r2)
     time_mod.sleep(0.01)
-    r3 = RunRecord(config_snapshot={"a": "1", "b": "2", "d": "5"}, duration_sec=30, output_dir="", summary={})
+    r3 = RunRecord(
+        config_snapshot={"a": "1", "b": "2", "d": "5"}, duration_sec=30, output_dir="", summary={}
+    )
     history.save(r3)
     records = history.list_runs()
     timestamps = [r.timestamp for r in records]

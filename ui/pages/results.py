@@ -277,6 +277,7 @@ def results_server(input, output, session, state):
 
         # Populate run comparison choices from history
         from osmose.history import RunHistory
+
         history_dir = out_dir.parent / ".osmose_history"
         if history_dir.is_dir():
             history = RunHistory(history_dir)
@@ -290,7 +291,9 @@ def results_server(input, output, session, state):
     def ensemble_toggle():
         dirs = rep_dirs.get()
         if dirs:
-            return ui.input_switch("ensemble_mode", f"Ensemble view ({len(dirs)} replicates)", value=True)
+            return ui.input_switch(
+                "ensemble_mode", f"Ensemble view ({len(dirs)} replicates)", value=True
+            )
         return ui.div()
 
     @render_plotly
@@ -340,6 +343,7 @@ def results_server(input, output, session, state):
 
         # Ensemble mode: show CI bands for 1D types
         from osmose.ensemble import ENSEMBLE_OUTPUT_TYPES
+
         ensemble_on = False
         try:
             ensemble_on = bool(input.ensemble_mode()) and bool(rep_dirs.get())
@@ -354,8 +358,12 @@ def results_server(input, output, session, state):
             if agg["time"]:
                 title = title_map.get(rtype, rtype.title())
                 fig = make_ci_timeseries(
-                    agg["time"], agg["mean"], agg["lower"], agg["upper"],
-                    title=f"{title} (ensemble)", y_label=col_map.get(rtype, rtype),
+                    agg["time"],
+                    agg["mean"],
+                    agg["lower"],
+                    agg["upper"],
+                    title=f"{title} (ensemble)",
+                    y_label=col_map.get(rtype, rtype),
                 )
                 fig.update_layout(template=tmpl)
                 return fig
@@ -448,9 +456,7 @@ def results_server(input, output, session, state):
         tmpl = _tpl(input)
         selected = input.compare_runs_select()
         if not selected or len(selected) < 1:
-            return go.Figure().update_layout(
-                title="Select runs to compare", template=tmpl
-            )
+            return go.Figure().update_layout(title="Select runs to compare", template=tmpl)
 
         from osmose.history import RunHistory
         from osmose.plotting import make_run_comparison
@@ -458,9 +464,7 @@ def results_server(input, output, session, state):
         out_dir = Path(input.output_dir())
         history_dir = out_dir.parent / ".osmose_history"
         if not history_dir.is_dir():
-            return go.Figure().update_layout(
-                title="No run history found", template=tmpl
-            )
+            return go.Figure().update_layout(title="No run history found", template=tmpl)
 
         history = RunHistory(history_dir)
         records = [history.load_run(ts) for ts in selected]
@@ -473,7 +477,9 @@ def results_server(input, output, session, state):
     def config_diff_table():
         selected = input.compare_runs_select()
         if not selected or len(selected) < 2:
-            return ui.div("Select 2+ runs to see config differences.", style="color: #999; padding: 1rem;")
+            return ui.div(
+                "Select 2+ runs to see config differences.", style="color: #999; padding: 1rem;"
+            )
 
         from osmose.history import RunHistory
 
@@ -508,9 +514,11 @@ def results_server(input, output, session, state):
         )
 
     @render.download(
-        filename=lambda: f"osmose_{input.result_type()}"
-        + (f"_{input.result_species()}" if input.result_species() != "all" else "")
-        + ".csv"
+        filename=lambda: (
+            f"osmose_{input.result_type()}"
+            + (f"_{input.result_species()}" if input.result_species() != "all" else "")
+            + ".csv"
+        )
     )
     def download_results_csv():
         from osmose.results import OsmoseResults

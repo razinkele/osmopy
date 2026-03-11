@@ -10,15 +10,17 @@ import pandas as pd
 from osmose.results import OsmoseResults
 
 # Output types suitable for ensemble aggregation (1D time series only).
-ENSEMBLE_OUTPUT_TYPES = frozenset({
-    "biomass",
-    "abundance",
-    "yield",
-    "mortality",
-    "trophic",
-    "yield_n",
-    "mortality_rate",
-})
+ENSEMBLE_OUTPUT_TYPES = frozenset(
+    {
+        "biomass",
+        "abundance",
+        "yield",
+        "mortality",
+        "trophic",
+        "yield_n",
+        "mortality_rate",
+    }
+)
 
 # Map output_type to the value column name in the resulting DataFrame.
 _VALUE_COL: dict[str, str] = {

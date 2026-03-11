@@ -14,17 +14,21 @@ def rep_dirs(tmp_path):
         rep_dir = tmp_path / f"rep_{i}"
         rep_dir.mkdir()
         for sp in ["Anchovy", "Sardine"]:
-            df = pd.DataFrame({
-                "time": range(5),
-                "biomass": np.random.rand(5) * 1000 + i * 100,
-            })
+            df = pd.DataFrame(
+                {
+                    "time": range(5),
+                    "biomass": np.random.rand(5) * 1000 + i * 100,
+                }
+            )
             df.to_csv(rep_dir / f"osm_biomass_{sp}.csv", index=False)
         # Also create abundance
-        df = pd.DataFrame({
-            "time": range(5),
-            "abundance": np.random.randint(100, 1000, 5),
-        })
-        df.to_csv(rep_dir / f"osm_abundance_Anchovy.csv", index=False)
+        df = pd.DataFrame(
+            {
+                "time": range(5),
+                "abundance": np.random.randint(100, 1000, 5),
+            }
+        )
+        df.to_csv(rep_dir / "osm_abundance_Anchovy.csv", index=False)
     return [tmp_path / f"rep_{i}" for i in range(3)]
 
 
@@ -62,6 +66,7 @@ class TestAggregateReplicates:
     def test_missing_output_in_some_reps(self, rep_dirs):
         # rep_0 has abundance, but delete from rep_1 and rep_2
         import os
+
         for i in [1, 2]:
             for f in (rep_dirs[i]).glob("osm_abundance_*.csv"):
                 os.remove(f)
@@ -75,10 +80,12 @@ class TestAggregateReplicates:
             rep_dir = tmp_path / f"rep_{i}"
             rep_dir.mkdir()
             n_steps = 5 if i == 0 else 3  # rep_0 has 5, rep_1 has 3
-            df = pd.DataFrame({
-                "time": range(n_steps),
-                "biomass": [100.0] * n_steps,
-            })
+            df = pd.DataFrame(
+                {
+                    "time": range(n_steps),
+                    "biomass": [100.0] * n_steps,
+                }
+            )
             df.to_csv(rep_dir / "osm_biomass_Anchovy.csv", index=False)
         dirs = [tmp_path / f"rep_{i}" for i in range(2)]
         result = aggregate_replicates(dirs, "biomass")
