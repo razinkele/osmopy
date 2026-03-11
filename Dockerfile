@@ -12,6 +12,7 @@ ENV PATH="${JAVA_HOME}/bin:${PATH}"
 # System dependencies for scientific Python packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libhdf5-dev \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
@@ -36,5 +37,8 @@ RUN chown -R osmose:osmose /app
 USER osmose
 
 EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD curl -f http://localhost:8000/ || exit 1
 
 CMD ["shiny", "run", "app.py", "--host", "0.0.0.0", "--port", "8000"]
