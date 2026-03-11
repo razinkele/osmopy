@@ -68,3 +68,29 @@ class RunHistory:
             if va != vb:
                 diffs.append({"key": key, "value_a": va, "value_b": vb})
         return diffs
+
+    def compare_runs_multi(self, timestamps: list[str]) -> list[dict]:
+        """Compare N runs by config snapshot, return parameters that differ.
+
+        Args:
+            timestamps: List of run timestamps to compare.
+
+        Returns:
+            List of {"key": str, "values": list[str | None]} for each
+            parameter that differs across any of the selected runs.
+        """
+        if len(timestamps) < 2:
+            return []
+
+        records = [self.load_run(ts) for ts in timestamps]
+        all_keys: set[str] = set()
+        for r in records:
+            all_keys |= set(r.config_snapshot)
+
+        diffs = []
+        for key in sorted(all_keys):
+            values = [r.config_snapshot.get(key) for r in records]
+            if len(set(values)) > 1:
+                diffs.append({"key": key, "values": values})
+
+        return diffs
