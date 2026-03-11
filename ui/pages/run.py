@@ -225,6 +225,19 @@ def run_server(input, output, session, state):
 
         if result.returncode == 0:
             status.set(f"Complete. Output: {result.output_dir}")
+            try:
+                from osmose.history import RunRecord, RunHistory
+
+                history = RunHistory(Path("data/history"))
+                record = RunRecord(
+                    config_snapshot=config,
+                    duration_sec=0,  # Would need timing in a real implementation
+                    output_dir=str(result.output_dir),
+                    summary={},
+                )
+                history.save(record)
+            except Exception:
+                _log.debug("Failed to save run history", exc_info=True)
         else:
             status.set(f"Failed (exit code {result.returncode})")
             if result.stderr:
