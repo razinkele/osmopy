@@ -156,13 +156,13 @@ def results_ui():
             ),
             col_widths=[3, 9],
         ),
-        ui.layout_columns(
-            ui.card(
-                ui.card_header("Diet Composition Matrix"),
+        ui.navset_card_tab(
+            ui.nav_panel(
+                "Diet Composition",
                 output_widget("diet_chart"),
             ),
-            ui.card(
-                ui.card_header("Spatial Distribution"),
+            ui.nav_panel(
+                "Spatial Distribution",
                 ui.input_slider(
                     "spatial_time_idx",
                     "Time step",
@@ -179,7 +179,31 @@ def results_ui():
                 ),
                 output_widget("spatial_chart"),
             ),
-            col_widths=[6, 6],
+            ui.nav_panel(
+                "Compare Runs",
+                ui.layout_columns(
+                    ui.div(
+                        ui.input_selectize(
+                            "compare_runs_select",
+                            "Select runs to compare",
+                            choices={},
+                            multiple=True,
+                        ),
+                        ui.input_select(
+                            "compare_metric",
+                            "Metric",
+                            choices={
+                                "biomass": "Biomass",
+                                "yield": "Yield",
+                                "abundance": "Abundance",
+                            },
+                        ),
+                    ),
+                    col_widths=[12],
+                ),
+                output_widget("comparison_chart"),
+                ui.output_ui("config_diff_table"),
+            ),
         ),
     )
 
@@ -250,6 +274,15 @@ def results_server(input, output, session, state):
             spatial_ds.set(res.read_netcdf(nc_files[0]))
             max_t = spatial_ds.get().sizes.get("time", 1) - 1
             ui.update_slider("spatial_time_idx", max=max(max_t, 0))
+
+        # Populate run comparison choices from history
+        from osmose.history import RunHistory
+        history_dir = out_dir.parent / ".osmose_history"
+        if history_dir.is_dir():
+            history = RunHistory(history_dir)
+            runs = history.list_runs()
+            choices = {r.timestamp: f"{r.timestamp[:19]} ({r.duration_sec:.0f}s)" for r in runs}
+            ui.update_selectize("compare_runs_select", choices=choices)
 
         ui.notification_show("Results loaded successfully.", type="message", duration=3)
 
@@ -409,6 +442,70 @@ def results_server(input, output, session, state):
         max_t = ds.sizes.get("time", 1) - 1
         safe_idx = min(time_idx, max_t)
         return make_spatial_map(ds, var_name, time_idx=safe_idx, template=tmpl)
+
+    @render_plotly
+    def comparison_chart():
+        tmpl = _tpl(input)
+        selected = input.compare_runs_select()
+        if not selected or len(selected) < 1:
+            return go.Figure().update_layout(
+                title="Select runs to compare", template=tmpl
+            )
+
+        from osmose.history import RunHistory
+        from osmose.plotting import make_run_comparison
+
+        out_dir = Path(input.output_dir())
+        history_dir = out_dir.parent / ".osmose_history"
+        if not history_dir.is_dir():
+            return go.Figure().update_layout(
+                title="No run history found", template=tmpl
+            )
+
+        history = RunHistory(history_dir)
+        records = [history.load_run(ts) for ts in selected]
+        metric = input.compare_metric()
+        fig = make_run_comparison(records, metrics=[metric])
+        fig.update_layout(template=tmpl)
+        return fig
+
+    @render.ui
+    def config_diff_table():
+        selected = input.compare_runs_select()
+        if not selected or len(selected) < 2:
+            return ui.div("Select 2+ runs to see config differences.", style="color: #999; padding: 1rem;")
+
+        from osmose.history import RunHistory
+
+        out_dir = Path(input.output_dir())
+        history_dir = out_dir.parent / ".osmose_history"
+        if not history_dir.is_dir():
+            return ui.div("No run history found.")
+
+        history = RunHistory(history_dir)
+        diffs = history.compare_runs_multi(list(selected))
+
+        if not diffs:
+            return ui.div("No config differences found.", style="color: #999; padding: 1rem;")
+
+        # Build table header: Parameter | Run 1 | Run 2 | ...
+        headers = [ui.tags.th("Parameter")]
+        for i in range(len(selected)):
+            headers.append(ui.tags.th(f"Run {i + 1}"))
+
+        rows = []
+        for diff in diffs:
+            cells = [ui.tags.td(diff["key"], style="font-family: monospace; font-size: 12px;")]
+            for val in diff["values"]:
+                cells.append(ui.tags.td(str(val) if val is not None else "—"))
+            rows.append(ui.tags.tr(*cells))
+
+        return ui.tags.table(
+            ui.tags.thead(ui.tags.tr(*headers)),
+            ui.tags.tbody(*rows),
+            class_="table table-sm table-striped",
+            style="font-size: 13px;",
+        )
 
     @render.download(
         filename=lambda: f"osmose_{input.result_type()}"
