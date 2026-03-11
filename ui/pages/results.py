@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 import plotly.graph_objects as go
-from shiny import reactive, ui
+from shiny import reactive, render, ui
 from shinywidgets import output_widget, render_plotly
 
 
@@ -142,6 +142,10 @@ def results_ui():
                         "size_spectrum": "Size Spectrum",
                     },
                     selected="biomass",
+                ),
+                ui.hr(),
+                ui.download_button(
+                    "download_results_csv", "Download CSV", class_="btn-outline-primary w-100"
                 ),
             ),
             # Main: Time Series visualization
@@ -370,3 +374,29 @@ def results_server(input, output, session, state):
         max_t = ds.sizes.get("time", 1) - 1
         safe_idx = min(time_idx, max_t)
         return make_spatial_map(ds, var_name, time_idx=safe_idx, template=tmpl)
+
+    @render.download(
+        filename=lambda: f"osmose_{input.result_type()}"
+        + (f"_{input.result_species()}" if input.result_species() != "all" else "")
+        + ".csv"
+    )
+    def download_results_csv():
+        from osmose.results import OsmoseResults
+        import tempfile
+
+        out_dir = Path(input.output_dir())
+        if not out_dir.is_dir():
+            return
+
+        res = OsmoseResults(out_dir)
+        sp = input.result_species()
+        species = sp if sp != "all" else None
+        df = res.export_dataframe(input.result_type(), species=species)
+
+        if df.empty:
+            return
+
+        tmp_dir = Path(tempfile.mkdtemp(prefix="osmose_export_"))
+        csv_path = tmp_dir / "export.csv"
+        df.to_csv(csv_path, index=False)
+        return str(csv_path)
