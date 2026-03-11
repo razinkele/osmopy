@@ -1162,3 +1162,10 @@ hr {
     background: rgba(212, 148, 46, 0.1);
     border-left-color: #d4942e; color: #d4942e;
 }
+
+/* ── Field validation errors ────────────────────────────────── */
+.field-error-msg {
+    color: #e74c3c; font-size: 0.75rem; margin-top: 0.25rem;
+    padding-left: 0.5rem; border-left: 2px solid #e74c3c;
+}
+[data-theme="light"] .field-error-msg { color: #c0392b; border-left-color: #c0392b; }
