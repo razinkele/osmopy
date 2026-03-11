@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Callable
 
 import numpy as np
-from pymoo.core.problem import Problem
+from pymoo.core.problem import Problem  # type: ignore[import-untyped]
 
 from osmose.logging import setup_logging
 

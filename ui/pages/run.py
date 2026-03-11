@@ -196,7 +196,7 @@ def run_server(input, output, session, state):
 
         # Create runner
         runner = OsmoseRunner(jar_path=jar_path)
-        runner_ref.set(runner)
+        runner_ref.set(runner)  # type: ignore[arg-type]
 
         status.set("Running...")
 
@@ -212,7 +212,7 @@ def run_server(input, output, session, state):
             result = await runner.run(
                 config_path=config_path,
                 output_dir=work_dir / "output",
-                java_opts=java_opts,
+                java_opts=java_opts,  # type: ignore[arg-type]
                 overrides=overrides,
                 on_progress=on_progress,
                 timeout_sec=timeout_sec,

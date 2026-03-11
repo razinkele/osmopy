@@ -4,8 +4,8 @@
 from __future__ import annotations
 
 import numpy as np
-from SALib.sample import sobol as sobol_sample
-from SALib.analyze import sobol as sobol_analyze
+from SALib.sample import sobol as sobol_sample  # type: ignore[import-untyped]
+from SALib.analyze import sobol as sobol_analyze  # type: ignore[import-untyped]
 
 
 class SensitivityAnalyzer:

@@ -54,7 +54,7 @@ def make_stacked_area(
     _require_columns(df, "time", "bin", "value", context="make_stacked_area")
 
     if species is not None:
-        df = df[df["species"] == species]
+        df = df[df["species"] == species]  # type: ignore[assignment]
         if df.empty:
             return _empty_figure(title)
 
@@ -101,7 +101,7 @@ def make_mortality_breakdown(
     )
 
     if species is not None:
-        df = df[df["species"] == species]
+        df = df[df["species"] == species]  # type: ignore[assignment]
         if df.empty:
             return _empty_figure("Mortality Breakdown")
 
@@ -137,7 +137,7 @@ def make_size_spectrum_plot(df: pd.DataFrame) -> go.Figure:
     _require_columns(df, "size", "abundance", context="make_size_spectrum_plot")
 
     # Filter out non-positive values for log transform
-    df = df[(df["size"] > 0) & (df["abundance"] > 0)].copy()
+    df = df[(df["size"] > 0) & (df["abundance"] > 0)].copy()  # type: ignore[assignment]
     if df.empty:
         return _empty_figure(title)
 

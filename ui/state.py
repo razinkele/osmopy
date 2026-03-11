@@ -106,7 +106,7 @@ def get_theme_mode(input: object) -> str:
     Default matches the JS localStorage fallback in osmose.css toggleTheme().
     """
     try:
-        mode = input.theme_mode()
+        mode = input.theme_mode()  # type: ignore[attr-defined]
         return mode if mode in ("dark", "light") else "light"
     except (AttributeError, TypeError):
         return "light"

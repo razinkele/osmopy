@@ -146,8 +146,8 @@ def size_spectrum_slope(
     if len(positive) < 2:
         raise ValueError("Need at least 2 positive size/abundance pairs for regression.")
 
-    log_size = np.log10(positive["size"].values.astype(float))
-    log_abundance = np.log10(positive["abundance"].values.astype(float))
+    log_size = np.log10(np.asarray(positive["size"], dtype=float))
+    log_abundance = np.log10(np.asarray(positive["abundance"], dtype=float))
 
     # Linear regression: log(abundance) = slope * log(size) + intercept
     coeffs = np.polyfit(log_size, log_abundance, 1)

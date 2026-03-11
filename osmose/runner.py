@@ -133,7 +133,7 @@ class OsmoseRunner:
         _log.info("OSMOSE finished with exit code %d", self._process.returncode)
 
         return RunResult(
-            returncode=self._process.returncode,
+            returncode=self._process.returncode or 0,
             output_dir=result_output_dir,
             stdout="\n".join(stdout_lines),
             stderr="\n".join(stderr_lines),

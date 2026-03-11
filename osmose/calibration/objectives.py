@@ -15,8 +15,8 @@ def _timeseries_rmse(
 ) -> float:
     """Generic RMSE for aligned time series with an optional species filter."""
     if species:
-        simulated = simulated[simulated["species"] == species]
-        observed = observed[observed["species"] == species]
+        simulated = simulated[simulated["species"] == species]  # type: ignore[assignment]
+        observed = observed[observed["species"] == species]  # type: ignore[assignment]
 
     merged = pd.merge(simulated, observed, on="time", suffixes=("_sim", "_obs"))
     if merged.empty:
@@ -91,4 +91,4 @@ def normalized_rmse(simulated: np.ndarray, observed: np.ndarray) -> float:
     if obs_mean == 0:
         return float("inf")
     rmse = float(np.sqrt(np.mean((simulated - observed) ** 2)))
-    return rmse / obs_mean
+    return float(rmse / obs_mean)

@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import logging
+
 from shiny import ui
 from osmose.schema.base import OsmoseField, ParamType
 from ui.styles import STYLE_HINT
+
+_log = logging.getLogger("osmose.param_form")
 
 
 def constraint_hint(field: OsmoseField) -> str:
@@ -24,22 +28,61 @@ def constraint_hint(field: OsmoseField) -> str:
     return " | ".join(parts)
 
 
-def render_field(field: OsmoseField, species_idx: int | None = None, prefix: str = "") -> ui.Tag:
+def render_field(
+    field: OsmoseField,
+    species_idx: int | None = None,
+    prefix: str = "",
+    config: dict[str, str] | None = None,
+) -> ui.Tag:
     """Generate a Shiny input widget from an OsmoseField.
 
     Args:
         field: The schema field definition.
         species_idx: Species index for indexed fields (required if field.indexed).
         prefix: Optional prefix for the input ID (for namespacing).
+        config: Optional config dict to read initial values from (overrides field.default).
 
     Returns:
         A Shiny UI element (input widget).
     """
-    # Build unique input ID
+    # Build unique input ID and config key
     if field.indexed and species_idx is not None:
-        input_id = f"{prefix}{field.resolve_key(species_idx)}".replace(".", "_")
+        config_key = field.resolve_key(species_idx)
+        input_id = f"{prefix}{config_key}".replace(".", "_")
     else:
-        input_id = f"{prefix}{field.key_pattern}".replace(".", "_").replace("{idx}", "")
+        config_key = field.key_pattern
+        input_id = f"{prefix}{config_key}".replace(".", "_").replace("{idx}", "")
+
+    # Resolve initial value: config takes priority over field.default
+    default = field.default
+    if config is not None and config_key in config:
+        raw = config[config_key]
+        if field.param_type == ParamType.FLOAT:
+            try:
+                default = float(raw)
+            except (ValueError, TypeError):
+                _log.warning(
+                    "Config value for %s is not a valid float: %r, using default %s",
+                    config_key,
+                    raw,
+                    field.default,
+                )
+                default = field.default
+        elif field.param_type == ParamType.INT:
+            try:
+                default = int(raw)
+            except (ValueError, TypeError):
+                _log.warning(
+                    "Config value for %s is not a valid int: %r, using default %s",
+                    config_key,
+                    raw,
+                    field.default,
+                )
+                default = field.default
+        elif field.param_type == ParamType.BOOL:
+            default = str(raw).lower() in ("true", "1", "yes")
+        else:
+            default = raw
 
     label = field.description or field.key_pattern
     if field.unit:
@@ -50,7 +93,7 @@ def render_field(field: OsmoseField, species_idx: int | None = None, prefix: str
             widget = ui.input_numeric(
                 input_id,
                 label,
-                value=field.default if field.default is not None else 0.0,
+                value=default if default is not None else 0.0,  # type: ignore[arg-type]
                 min=field.min_val,
                 max=field.max_val,
                 step=_guess_step(field),
@@ -66,7 +109,7 @@ def render_field(field: OsmoseField, species_idx: int | None = None, prefix: str
             widget = ui.input_numeric(
                 input_id,
                 label,
-                value=field.default if field.default is not None else 0,
+                value=default if default is not None else 0,  # type: ignore[arg-type]
                 min=int(field.min_val) if field.min_val is not None else None,
                 max=int(field.max_val) if field.max_val is not None else None,
                 step=1,
@@ -82,13 +125,13 @@ def render_field(field: OsmoseField, species_idx: int | None = None, prefix: str
             return ui.input_switch(
                 input_id,
                 label,
-                value=bool(field.default) if field.default is not None else False,
+                value=bool(default) if default is not None else False,
             )
         case ParamType.STRING:
             return ui.input_text(
                 input_id,
                 label,
-                value=str(field.default) if field.default is not None else "",
+                value=str(default) if default is not None else "",
             )
         case ParamType.ENUM:
             choices = {c: c for c in (field.choices or [])}
@@ -96,7 +139,7 @@ def render_field(field: OsmoseField, species_idx: int | None = None, prefix: str
                 input_id,
                 label,
                 choices=choices,
-                selected=field.default,
+                selected=default,  # type: ignore[arg-type]
             )
         case ParamType.FILE_PATH:
             return ui.input_file(
@@ -112,7 +155,7 @@ def render_field(field: OsmoseField, species_idx: int | None = None, prefix: str
                 accept=[".csv"],
             )
         case _:
-            return ui.input_text(input_id, label, value=str(field.default or ""))
+            return ui.input_text(input_id, label, value=str(default or ""))
 
 
 def render_category(
@@ -120,6 +163,7 @@ def render_category(
     species_idx: int | None = None,
     prefix: str = "",
     show_advanced: bool = False,
+    config: dict[str, str] | None = None,
 ) -> ui.Tag:
     """Generate a form section for a group of fields.
 
@@ -128,6 +172,7 @@ def render_category(
         species_idx: Species index for indexed fields.
         prefix: Input ID prefix.
         show_advanced: Whether to include advanced fields.
+        config: Optional config dict to read initial values from.
 
     Returns:
         A Shiny UI div containing all the input widgets.
@@ -136,7 +181,7 @@ def render_category(
     for field in fields:
         if field.advanced and not show_advanced:
             continue
-        widgets.append(render_field(field, species_idx, prefix))
+        widgets.append(render_field(field, species_idx, prefix, config=config))
     return ui.div(*widgets)
 
 
@@ -145,6 +190,7 @@ def render_species_params(
     species_idx: int,
     species_name: str,
     show_advanced: bool = False,
+    config: dict[str, str] | None = None,
 ) -> ui.Tag:
     """Render parameters for a single species inside an accordion panel.
 
@@ -153,6 +199,7 @@ def render_species_params(
         species_idx: The species index (0-based).
         species_name: Display name of the species.
         show_advanced: Whether to include advanced fields.
+        config: Optional config dict to read initial values from.
     """
     # Group fields by category
     categories: dict[str, list[OsmoseField]] = {}
@@ -166,7 +213,12 @@ def render_species_params(
     for cat_name, cat_fields in categories.items():
         filtered = [f for f in cat_fields if show_advanced or not f.advanced]
         if filtered:
-            panel_content = render_category(filtered, species_idx, show_advanced=show_advanced)
+            panel_content = render_category(
+                filtered,
+                species_idx,
+                show_advanced=show_advanced,
+                config=config,
+            )
             panels.append(
                 ui.accordion_panel(
                     cat_name.replace("_", " ").title(),

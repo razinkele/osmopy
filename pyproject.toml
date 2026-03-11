@@ -26,6 +26,7 @@ dev = [
     "pytest-cov>=4.1",
     "ruff>=0.3",
     "pre-commit>=3.5",
+    "pyright>=1.1.350",
 ]
 
 [tool.setuptools.packages.find]

@@ -191,15 +191,15 @@ def calibration_server(input, output, session, state):
                 "Run calibration to see best parameters.",
                 style=STYLE_EMPTY,
             )
-        order = np.argsort(F.sum(axis=1))[:10]
+        order = np.argsort(F.sum(axis=1))[:10]  # type: ignore[union-attr]
         with reactive.isolate():
             cfg = state.config.get()
         selected = collect_selected_params(input, state, config=cfg)
         headers = [ui.tags.th(p["key"].split(".")[-1]) for p in selected]
         headers.append(ui.tags.th("Total Obj"))
         rows = []
-        for idx in order:
-            cells = [ui.tags.td(f"{v:.4f}") for v in X[idx]]
+        for idx in order:  # type: ignore[union-attr]
+            cells = [ui.tags.td(f"{v:.4f}") for v in X[idx]]  # type: ignore[index]
             cells.append(ui.tags.td(f"{F[idx].sum():.4f}"))
             rows.append(ui.tags.tr(*cells))
         return ui.tags.table(

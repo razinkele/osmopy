@@ -19,7 +19,7 @@ _log = setup_logging("osmose.calibration.ui")
 
 def _make_progress_callback(cal_history_append, cancel_check):
     """Create a pymoo callback (lazy import to avoid loading pymoo at startup)."""
-    from pymoo.core.callback import Callback
+    from pymoo.core.callback import Callback  # type: ignore[import-untyped]
 
     class _ProgressCallback(Callback):
         def __init__(self):
@@ -239,9 +239,9 @@ def register_calibration_handlers(
             # NSGA-II (default)
             def run_optimization():
                 try:
-                    from pymoo.algorithms.moo.nsga2 import NSGA2
-                    from pymoo.optimize import minimize
-                    from pymoo.termination import get_termination
+                    from pymoo.algorithms.moo.nsga2 import NSGA2  # type: ignore[import-untyped]
+                    from pymoo.optimize import minimize  # type: ignore[import-untyped]
+                    from pymoo.termination import get_termination  # type: ignore[import-untyped]
 
                     algorithm = NSGA2(pop_size=pop_size)
                     termination = get_termination("n_gen", generations)

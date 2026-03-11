@@ -4,8 +4,8 @@
 from __future__ import annotations
 
 import numpy as np
-from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import Matern
+from sklearn.gaussian_process import GaussianProcessRegressor  # type: ignore[import-untyped]
+from sklearn.gaussian_process.kernels import Matern  # type: ignore[import-untyped]
 from scipy.stats.qmc import LatinHypercube
 
 
@@ -33,7 +33,7 @@ class SurrogateCalibrator:
         Returns:
             Array of shape (n_samples, n_params) with values in parameter bounds.
         """
-        sampler = LatinHypercube(d=self.n_params, seed=seed)
+        sampler = LatinHypercube(d=self.n_params, seed=seed)  # type: ignore[call-arg]
         unit_samples = sampler.random(n=n_samples)
         # Scale to parameter bounds
         lower = np.array([b[0] for b in self.param_bounds])
