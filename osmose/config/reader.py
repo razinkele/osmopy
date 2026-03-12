@@ -60,5 +60,7 @@ class OsmoseConfigReader:
                 if len(parts) == 2:
                     key = parts[0].strip().lower()
                     value = parts[1].strip()
+                    # Strip trailing separators (e.g., "true," → "true")
+                    value = value.rstrip(";,:\t =")
                     result[key] = value
         return result

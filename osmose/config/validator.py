@@ -20,6 +20,14 @@ def validate_config(config: dict[str, str], registry) -> tuple[list[str], list[s
         if field is None:
             continue
 
+        # Skip null/none/empty values — these are optional unset params
+        if not value or value.lower() in ("null", "none"):
+            continue
+
+        # Skip multi-value params (semicolon-separated stage values)
+        if ";" in value:
+            continue
+
         # Type check
         if field.param_type in (ParamType.FLOAT, ParamType.INT):
             try:
