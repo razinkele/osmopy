@@ -9,6 +9,7 @@ import plotly.graph_objects as go
 from shiny import reactive, render, ui
 from shinywidgets import output_widget, render_plotly
 
+from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.styles import STYLE_EMPTY, STYLE_MONO_KEY
 
 
@@ -107,56 +108,61 @@ def make_spatial_map(
 
 def results_ui():
     return ui.div(
-        ui.layout_columns(
-            # Sidebar: Controls
-            ui.card(
-                ui.card_header("Output Controls"),
-                ui.output_ui("output_dir_input"),
-                ui.input_action_button(
-                    "btn_load_results", "Load Results", class_="btn-primary w-100"
+        ui.div(
+            expand_tab("Output Controls", "results"),
+            ui.layout_columns(
+                # Sidebar: Controls
+                ui.card(
+                    collapsible_card_header("Output Controls", "results"),
+                    ui.output_ui("output_dir_input"),
+                    ui.input_action_button(
+                        "btn_load_results", "Load Results", class_="btn-primary w-100"
+                    ),
+                    ui.hr(),
+                    ui.input_select(
+                        "result_species",
+                        "Species filter",
+                        choices={"all": "All species"},
+                        selected="all",
+                    ),
+                    ui.input_select(
+                        "result_type",
+                        "Output type",
+                        choices={
+                            "biomass": "Biomass",
+                            "abundance": "Abundance",
+                            "yield": "Yield",
+                            "mortality": "Mortality",
+                            "diet": "Diet Matrix",
+                            "trophic": "Trophic Level",
+                            "biomass_by_age": "Biomass by Age",
+                            "biomass_by_size": "Biomass by Size",
+                            "biomass_by_tl": "Biomass by TL",
+                            "abundance_by_age": "Abundance by Age",
+                            "abundance_by_size": "Abundance by Size",
+                            "yield_by_age": "Yield by Age",
+                            "yield_by_size": "Yield by Size",
+                            "yield_n": "Catch Numbers",
+                            "mortality_rate": "Mortality by Source",
+                            "size_spectrum": "Size Spectrum",
+                        },
+                        selected="biomass",
+                    ),
+                    ui.output_ui("ensemble_toggle"),
+                    ui.hr(),
+                    ui.download_button(
+                        "download_results_csv", "Download CSV", class_="btn-outline-primary w-100"
+                    ),
                 ),
-                ui.hr(),
-                ui.input_select(
-                    "result_species",
-                    "Species filter",
-                    choices={"all": "All species"},
-                    selected="all",
+                # Main: Time Series visualization
+                ui.card(
+                    ui.card_header("Time Series"),
+                    output_widget("results_chart"),
                 ),
-                ui.input_select(
-                    "result_type",
-                    "Output type",
-                    choices={
-                        "biomass": "Biomass",
-                        "abundance": "Abundance",
-                        "yield": "Yield",
-                        "mortality": "Mortality",
-                        "diet": "Diet Matrix",
-                        "trophic": "Trophic Level",
-                        "biomass_by_age": "Biomass by Age",
-                        "biomass_by_size": "Biomass by Size",
-                        "biomass_by_tl": "Biomass by TL",
-                        "abundance_by_age": "Abundance by Age",
-                        "abundance_by_size": "Abundance by Size",
-                        "yield_by_age": "Yield by Age",
-                        "yield_by_size": "Yield by Size",
-                        "yield_n": "Catch Numbers",
-                        "mortality_rate": "Mortality by Source",
-                        "size_spectrum": "Size Spectrum",
-                    },
-                    selected="biomass",
-                ),
-                ui.output_ui("ensemble_toggle"),
-                ui.hr(),
-                ui.download_button(
-                    "download_results_csv", "Download CSV", class_="btn-outline-primary w-100"
-                ),
+                col_widths=[3, 9],
             ),
-            # Main: Time Series visualization
-            ui.card(
-                ui.card_header("Time Series"),
-                output_widget("results_chart"),
-            ),
-            col_widths=[3, 9],
+            class_="osm-split-layout",
+            id="split_results",
         ),
         ui.navset_card_tab(
             ui.nav_panel(
