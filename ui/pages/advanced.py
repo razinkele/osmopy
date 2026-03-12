@@ -7,6 +7,7 @@ from shiny import reactive, render, ui
 
 from osmose.config.reader import OsmoseConfigReader
 from osmose.config.writer import OsmoseConfigWriter
+from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.state import REGISTRY
 from ui.styles import COLOR_DANGER, COLOR_MUTED, COLOR_SUCCESS, STYLE_MONO_KEY, STYLE_SCROLL_TABLE
 
@@ -30,10 +31,11 @@ def advanced_ui():
     categories = ["all"] + REGISTRY.categories()
 
     return ui.div(
+        expand_tab("Config I/O", "advanced"),
         ui.layout_columns(
             # Controls
             ui.card(
-                ui.card_header("Config I/O"),
+                collapsible_card_header("Config I/O", "advanced"),
                 ui.input_file(
                     "import_config", "Import OSMOSE config", accept=[".csv", ".properties"]
                 ),
@@ -61,6 +63,8 @@ def advanced_ui():
             ui.card_header("All Parameters"),
             ui.output_ui("param_table"),
         ),
+        class_="osm-split-layout",
+        id="split_advanced",
     )
 
 
