@@ -22,6 +22,7 @@ from shiny_deckgl import (  # type: ignore[import-untyped]
 
 from osmose.logging import setup_logging
 from osmose.schema.grid import GRID_FIELDS
+from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.components.param_form import render_field
 from ui.state import get_theme_mode, sync_inputs
 
@@ -548,18 +549,23 @@ def grid_ui():
         controls=[],
     )
 
-    return ui.layout_columns(
-        ui.card(
-            ui.card_header("Grid Type"),
-            ui.output_ui("grid_fields"),
+    return ui.div(
+        expand_tab("Grid Type", "grid"),
+        ui.layout_columns(
+            ui.card(
+                collapsible_card_header("Grid Type", "grid"),
+                ui.output_ui("grid_fields"),
+            ),
+            ui.card(
+                ui.card_header("Grid Preview"),
+                ui.output_ui("grid_overlay_selector"),
+                ui.output_ui("grid_hint"),
+                grid_map.ui(height="500px"),
+            ),
+            col_widths=[6, 6],
         ),
-        ui.card(
-            ui.card_header("Grid Preview"),
-            ui.output_ui("grid_overlay_selector"),
-            ui.output_ui("grid_hint"),
-            grid_map.ui(height="500px"),
-        ),
-        col_widths=[6, 6],
+        class_="osm-split-layout",
+        id="split_grid",
     )
 
 
