@@ -95,6 +95,66 @@ app_ui = ui.page_fillable(
                 document.body.classList.add('show-all-help');
             }
         })();
+
+        // ── Nav collapse ──────────────────────────────────
+        function toggleNav() {
+            var html = document.documentElement;
+            var collapsed = html.classList.toggle('nav-collapsed');
+            localStorage.setItem('osmose-nav-collapsed', collapsed ? '1' : '0');
+        }
+        // Restore nav state immediately (before render)
+        (function() {
+            if (localStorage.getItem('osmose-nav-collapsed') === '1') {
+                document.documentElement.classList.add('nav-collapsed');
+            }
+        })();
+
+        // ── Panel collapse ────────────────────────────────
+        function togglePanel(pageId) {
+            var container = document.getElementById('split_' + pageId);
+            if (!container) return;
+            var row = container.querySelector('.row');
+            if (!row) return;
+            var left = row.children[0];
+            var tab = document.getElementById('expand_' + pageId);
+
+            var collapsed = left.classList.toggle('collapsed');
+            if (tab) tab.classList.toggle('visible', collapsed);
+            localStorage.setItem('osmose-panel-collapsed-' + pageId, collapsed ? '1' : '0');
+        }
+
+        // ── Restore panel states on tab activation ────────
+        (function() {
+            var restoredPanels = {};
+            function restorePanelIfNeeded(pageId) {
+                if (restoredPanels[pageId]) return;
+                restoredPanels[pageId] = true;
+                if (localStorage.getItem('osmose-panel-collapsed-' + pageId) === '1') {
+                    setTimeout(function() { togglePanel(pageId); }, 100);
+                }
+            }
+            var pageIds = ['setup','grid','forcing','fishing','movement',
+                           'run','results','calibration','scenarios','advanced'];
+
+            document.addEventListener('DOMContentLoaded', function() {
+                // Restore the initially active tab's panel
+                var activeLink = document.querySelector('.nav-pills .nav-link.active');
+                if (activeLink) {
+                    var val = activeLink.getAttribute('data-value') || '';
+                    pageIds.forEach(function(pid) {
+                        if (val.indexOf(pid) !== -1) restorePanelIfNeeded(pid);
+                    });
+                }
+                // Restore panels as tabs are activated (lazy rendering)
+                document.addEventListener('shown.bs.tab', function(e) {
+                    var val = e.target.getAttribute('data-value') ||
+                              e.target.getAttribute('href') || '';
+                    pageIds.forEach(function(pid) {
+                        if (val.indexOf(pid) !== -1) restorePanelIfNeeded(pid);
+                    });
+                });
+            });
+        })();
     """)
     ),
     # ── App header ──────────────────────────────────────────────
@@ -146,6 +206,15 @@ app_ui = ui.page_fillable(
     ui.output_ui("loading_overlay"),
     # ── Left pill navigation with grouped sections ──────────────
     ui.navset_pill_list(
+        # Hamburger toggle for collapsible nav
+        ui.nav_control(
+            ui.tags.button(
+                ui.tags.span(class_="osm-hamburger-icon"),
+                class_="osm-hamburger",
+                onclick="toggleNav()",
+                title="Toggle navigation",
+            ),
+        ),
         # Configure
         _nav_section("Configure"),
         ui.nav_panel("Setup", setup_ui(), value="setup"),
