@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import xarray as xr
 from shiny import ui, reactive, render
 
 from shiny_deckgl import (  # type: ignore[import-untyped]
@@ -182,6 +183,169 @@ def _build_grid_layers(
     return layers
 
 
+def _load_netcdf_grid(
+    config: dict[str, str],
+    config_dir: Path | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+    """Load lat, lon, mask arrays from a NetCDF grid file.
+
+    Returns (lat, lon, mask) 2D arrays or None if unavailable.
+    """
+    nc_path = config.get("grid.netcdf.file", "")
+    if not nc_path:
+        return None
+
+    search_dirs = []
+    if config_dir and config_dir.is_dir():
+        search_dirs.append(config_dir)
+    search_dirs.append(Path(__file__).parent.parent.parent / "data" / "examples")
+
+    full_path = None
+    for d in search_dirs:
+        candidate = d / nc_path
+        if candidate.exists():
+            full_path = candidate
+            break
+
+    if full_path is None:
+        _log.debug("NetCDF grid file not found: %s", nc_path)
+        return None
+
+    try:
+        var_lat = config.get("grid.var.lat", "lat")
+        var_lon = config.get("grid.var.lon", "lon")
+        var_mask = config.get("grid.var.mask", "mask")
+        ds = xr.open_dataset(full_path)
+        lat = ds[var_lat].values
+        lon = ds[var_lon].values
+        mask = ds[var_mask].values
+        ds.close()
+        return lat, lon, mask
+    except Exception as exc:
+        _log.warning("Failed to load NetCDF grid %s: %s", full_path, exc)
+        return None
+
+
+def _build_netcdf_grid_layers(
+    lat: np.ndarray,
+    lon: np.ndarray,
+    mask: np.ndarray,
+    is_dark: bool = False,
+) -> tuple[list[dict], dict]:
+    """Build deck.gl layers from 2D NetCDF grid arrays.
+
+    Returns (layers, view_state) tuple.
+    """
+    ny, nx = lat.shape
+    layers = []
+
+    # Compute cell boundaries from center points (half-step between neighbors)
+    def _cell_polygon(row: int, col: int) -> list[list[float]]:
+        """Build polygon corners for a cell from neighboring center points."""
+        clat = float(lat[row, col])
+        clon = float(lon[row, col])
+        # Half-step to neighbors (or mirror at edges)
+        dlat = float(lat[min(row + 1, ny - 1), col] - lat[max(row - 1, 0), col]) / 2
+        dlon = float(lon[row, min(col + 1, nx - 1)] - lon[row, max(col - 1, 0)]) / 2
+        if row == 0 or row == ny - 1:
+            dlat *= 2
+        if col == 0 or col == nx - 1:
+            dlon *= 2
+        hlat = abs(dlat) / 2
+        hlon = abs(dlon) / 2
+        return [
+            [clon - hlon, clat + hlat],
+            [clon + hlon, clat + hlat],
+            [clon + hlon, clat - hlat],
+            [clon - hlon, clat - hlat],
+        ]
+
+    # Grid boundary from outer edges
+    ul_lat = float(lat.max()) + abs(float(lat[0, 0] - lat[min(1, ny - 1), 0])) / 2
+    ul_lon = float(lon.min()) - abs(float(lon[0, 0] - lon[0, min(1, nx - 1)])) / 2
+    lr_lat = float(lat.min()) - abs(float(lat[0, 0] - lat[min(1, ny - 1), 0])) / 2
+    lr_lon = float(lon.max()) + abs(float(lon[0, 0] - lon[0, min(1, nx - 1)])) / 2
+
+    boundary = [{"polygon": [
+        [ul_lon, ul_lat], [lr_lon, ul_lat], [lr_lon, lr_lat], [ul_lon, lr_lat],
+    ]}]
+    layers.append(
+        polygon_layer(
+            "grid-extent",
+            data=boundary,
+            get_polygon="@@=d.polygon",
+            get_fill_color=[0, 0, 0, 0],
+            get_line_color=[232, 168, 56, 220],
+            get_line_width=2,
+            line_width_min_pixels=2,
+            filled=False,
+            stroked=True,
+            pickable=False,
+        )
+    )
+
+    ocean_cells = []
+    land_cells = []
+
+    for row in range(ny):
+        for col in range(nx):
+            is_ocean = mask[row, col] > 0
+            cell = {
+                "polygon": _cell_polygon(row, col),
+                "row": row,
+                "col": col,
+                "type": "ocean" if is_ocean else "land",
+            }
+            if is_ocean:
+                ocean_cells.append(cell)
+            else:
+                land_cells.append(cell)
+
+    if ocean_cells:
+        fill = [30, 120, 180, 90] if is_dark else [20, 100, 180, 70]
+        stroke = [56, 201, 177, 140] if is_dark else [43, 168, 158, 120]
+        layers.append(
+            polygon_layer(
+                "grid-ocean",
+                data=ocean_cells,
+                get_polygon="@@=d.polygon",
+                get_fill_color=fill,
+                get_line_color=stroke,
+                get_line_width=1,
+                line_width_min_pixels=1,
+                filled=True,
+                stroked=True,
+                pickable=True,
+            )
+        )
+
+    if land_cells:
+        fill = [80, 65, 45, 100] if is_dark else [190, 170, 140, 90]
+        stroke = [100, 80, 60, 100] if is_dark else [160, 140, 110, 80]
+        layers.append(
+            polygon_layer(
+                "grid-land",
+                data=land_cells,
+                get_polygon="@@=d.polygon",
+                get_fill_color=fill,
+                get_line_color=stroke,
+                get_line_width=1,
+                line_width_min_pixels=1,
+                filled=True,
+                stroked=True,
+                pickable=True,
+            )
+        )
+
+    center_lat = (ul_lat + lr_lat) / 2
+    center_lon = (ul_lon + lr_lon) / 2
+    span = max(abs(ul_lat - lr_lat), abs(lr_lon - ul_lon))
+    zoom = max(1, min(15, math.log2(360 / span) - 0.5)) if span > 0 else 5
+    view_state = {"latitude": center_lat, "longitude": center_lon, "zoom": zoom}
+
+    return layers, view_state
+
+
 def grid_ui():
     grid_map = MapWidget(
         "grid_map",
@@ -266,8 +430,8 @@ def grid_server(input, output, session, state):
             ul_lon = float(input.grid_upleft_lon() or 0)
             lr_lat = float(input.grid_lowright_lat() or 0)
             lr_lon = float(input.grid_lowright_lon() or 0)
-            nx = int(input.grid_ncolumn() or 0)
-            ny = int(input.grid_nline() or 0)
+            nx = int(input.grid_nlon() or 0)
+            ny = int(input.grid_nlat() or 0)
         except (AttributeError, TypeError):
             ul_lat = ul_lon = lr_lat = lr_lon = 0.0
             nx = ny = 0
@@ -288,9 +452,19 @@ def grid_server(input, output, session, state):
     @render.ui
     def grid_hint():
         ul_lat, ul_lon, lr_lat, lr_lon, _, _ = _read_grid_values()
-        if ul_lat == 0 and ul_lon == 0 and lr_lat == 0 and lr_lon == 0:
+        with reactive.isolate():
+            cfg = state.config.get()
+        is_ncgrid = "NcGrid" in cfg.get("grid.java.classname", "")
+        if not is_ncgrid and ul_lat == 0 and ul_lon == 0 and lr_lat == 0 and lr_lon == 0:
             return ui.p("Configure coordinates or load an example to see a preview.")
         return ui.div()
+
+    @reactive.effect
+    @reactive.event(input.deckgl_ready)
+    def _handle_deckgl_ready():
+        """Bump load_trigger so update_grid_map re-sends layers after late init."""
+        with reactive.isolate():
+            state.load_trigger.set(state.load_trigger.get() + 1)
 
     @reactive.effect
     async def update_grid_map():
@@ -298,38 +472,49 @@ def grid_server(input, output, session, state):
 
         is_dark = get_theme_mode(input) == "dark"
 
-        # Load land-sea mask from config if available
         with reactive.isolate():
             cfg = state.config.get()
             cfg_dir = state.config_dir.get()
-        mask = _load_mask(cfg, config_dir=cfg_dir)
 
-        layers = _build_grid_layers(ul_lat, ul_lon, lr_lat, lr_lon, nx, ny, is_dark, mask)
+        # Detect grid type: NcGrid uses NetCDF file, OriginalGrid uses bounds
+        is_ncgrid = "NcGrid" in cfg.get("grid.java.classname", "")
+        nc_data = _load_netcdf_grid(cfg, config_dir=cfg_dir) if is_ncgrid else None
 
-        # Compute view state to fit grid bounds
-        if ul_lat != 0 or ul_lon != 0 or lr_lat != 0 or lr_lon != 0:
-            center_lat = (ul_lat + lr_lat) / 2
-            center_lon = (ul_lon + lr_lon) / 2
-            lat_span = abs(ul_lat - lr_lat)
-            lon_span = abs(lr_lon - ul_lon)
-            span = max(lat_span, lon_span)
-            if span > 0:
-                zoom = max(1, min(15, math.log2(360 / span) - 0.5))
-            else:
-                zoom = 5
-            view_state = {
-                "latitude": center_lat,
-                "longitude": center_lon,
-                "zoom": zoom,
-            }
+        if nc_data is not None:
+            nc_lat, nc_lon, nc_mask = nc_data
+            layers, view_state = _build_netcdf_grid_layers(
+                nc_lat, nc_lon, nc_mask, is_dark
+            )
         else:
-            view_state = {"latitude": 46.0, "longitude": -4.5, "zoom": 5}
+            mask = _load_mask(cfg, config_dir=cfg_dir)
+            layers = _build_grid_layers(
+                ul_lat, ul_lon, lr_lat, lr_lon, nx, ny, is_dark, mask
+            )
+
+            # Compute view state to fit grid bounds
+            if ul_lat != 0 or ul_lon != 0 or lr_lat != 0 or lr_lon != 0:
+                center_lat = (ul_lat + lr_lat) / 2
+                center_lon = (ul_lon + lr_lon) / 2
+                lat_span = abs(ul_lat - lr_lat)
+                lon_span = abs(lr_lon - ul_lon)
+                span = max(lat_span, lon_span)
+                if span > 0:
+                    zoom = max(1, min(15, math.log2(360 / span) - 0.5))
+                else:
+                    zoom = 5
+                view_state = {
+                    "latitude": center_lat,
+                    "longitude": center_lon,
+                    "zoom": zoom,
+                }
+            else:
+                view_state = {"latitude": 46.0, "longitude": -4.5, "zoom": 5}
 
         # Update map style based on theme
         style = CARTO_DARK if is_dark else CARTO_POSITRON
         if style != _map.style:
             _map.style = style
-            _map.set_style(session, style)
+            await _map.set_style(session, style)
 
         # Build legend entries based on which layers are present
         legend_entries = []

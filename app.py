@@ -144,6 +144,31 @@ app_ui = ui.page_fillable(
     # ── Modals (static HTML, triggered client-side) ─────────────
     about_modal(),
     help_modal(),
+    # ── deck.gl init fallback ─────────────────────────────────────
+    # CDN scripts may finish loading after shiny:connected fires,
+    # leaving MapWidget divs uninitialized.  Poll until deps are
+    # ready, then re-dispatch the event so deckgl-init.js catches up.
+    ui.tags.script("""
+    (function() {
+        var t = setInterval(function() {
+            if (typeof maplibregl === 'undefined' || typeof deck === 'undefined') return;
+            if (!window.__deckgl_instances) return;
+            var maps = document.querySelectorAll('.deckgl-map');
+            if (!maps.length) { clearInterval(t); return; }
+            var need = false;
+            maps.forEach(function(el) {
+                if (!window.__deckgl_instances[el.id]) need = true;
+            });
+            if (!need) { clearInterval(t); return; }
+            document.dispatchEvent(new Event('shiny:connected'));
+            // Nudge server to re-send map updates now that widgets are ready
+            if (typeof Shiny !== 'undefined' && Shiny.setInputValue) {
+                Shiny.setInputValue('deckgl_ready', Date.now(), {priority: 'event'});
+            }
+            clearInterval(t);
+        }, 300);
+    })();
+    """),
     theme=THEME,
 )
 
