@@ -5,15 +5,17 @@ from pathlib import Path
 from shiny import reactive, render, ui
 
 from osmose.scenarios import Scenario, ScenarioManager
+from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.styles import STYLE_DIFF_ROW, STYLE_EMPTY
 
 
 def scenarios_ui():
     return ui.div(
+        expand_tab("Save Scenario", "scenarios"),
         ui.layout_columns(
             # Left: Save & manage
             ui.card(
-                ui.card_header("Save Scenario"),
+                collapsible_card_header("Save Scenario", "scenarios"),
                 ui.input_text("scenario_name", "Scenario name"),
                 ui.input_text("scenario_desc", "Description"),
                 ui.input_text("scenario_tags", "Tags (comma-separated)"),
@@ -59,6 +61,8 @@ def scenarios_ui():
                 accept=[".zip"],
             ),
         ),
+        class_="osm-split-layout",
+        id="split_scenarios",
     )
 
 
