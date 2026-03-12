@@ -111,7 +111,7 @@ def results_ui():
             # Sidebar: Controls
             ui.card(
                 ui.card_header("Output Controls"),
-                ui.input_text("output_dir", "Output directory", value="output/"),
+                ui.output_ui("output_dir_input"),
                 ui.input_action_button(
                     "btn_load_results", "Load Results", class_="btn-primary w-100"
                 ),
@@ -221,15 +221,31 @@ def results_server(input, output, session, state):
     spatial_ds: reactive.Value = reactive.Value(None)
     rep_dirs: reactive.Value[list[Path]] = reactive.Value([])
 
-    @reactive.effect
-    @reactive.event(input.btn_load_results)
-    def _load_results():
-        from osmose.results import OsmoseResults
+    @render.ui
+    def output_dir_input():
+        with reactive.isolate():
+            out = state.output_dir.get()
+        default_val = str(out) if out else ""
+        return ui.div(
+            ui.input_text("output_dir", "Output directory", value=default_val),
+            ui.output_ui("output_dir_status"),
+        )
 
-        out_dir = Path(input.output_dir())
-        if not out_dir.is_dir():
-            ui.notification_show(f"Directory not found: {out_dir}", type="error", duration=5)
-            return
+    @render.ui
+    def output_dir_status():
+        path_str = input.output_dir()
+        if not path_str:
+            return ui.div()
+        p = Path(path_str)
+        if not p.is_dir():
+            return ui.tags.small("Directory not found", style="color: #e74c3c;")
+        csvs = list(p.glob("*.csv"))
+        if not csvs:
+            return ui.tags.small("No results found in this directory", style="color: #e67e22;")
+        return ui.tags.small(f"Found {len(csvs)} output files", style="color: #2ecc71;")
+
+    def _do_load_results(out_dir: Path):
+        from osmose.results import OsmoseResults
 
         res = OsmoseResults(out_dir)
         results_obj.set(res)
@@ -262,12 +278,16 @@ def results_server(input, output, session, state):
         if state is not None:
             state.output_dir.set(out_dir)
 
-        # Discover species from biomass data and update dropdown
+        # Discover species from biomass data, falling back to state
         species_choices: dict[str, str] = {"all": "All species"}
         bio_df = data.get("biomass", pd.DataFrame())
         if not bio_df.empty and "species" in bio_df.columns:
             for sp in sorted(bio_df["species"].unique()):
                 species_choices[sp] = sp
+        elif state is not None:
+            with reactive.isolate():
+                for sp in state.species_names.get():
+                    species_choices[sp] = sp
         ui.update_select("result_species", choices=species_choices)
 
         # Look for NetCDF files for spatial data
@@ -288,6 +308,36 @@ def results_server(input, output, session, state):
             ui.update_selectize("compare_runs_select", choices=choices)
 
         ui.notification_show("Results loaded successfully.", type="message", duration=3)
+
+        state.results_loaded.set(True)
+
+    @reactive.effect
+    @reactive.event(input.btn_load_results)
+    def _load_results():
+        out_dir = Path(input.output_dir())
+        if not out_dir.is_dir():
+            ui.notification_show(f"Directory not found: {out_dir}", type="error", duration=5)
+            return
+        _do_load_results(out_dir)
+
+    @reactive.effect
+    def _auto_load_results():
+        """Auto-load results when navigating to Results tab after a run."""
+        nav = input.main_nav()
+        if nav != "results":
+            return
+        with reactive.isolate():
+            out = state.output_dir.get()
+            loaded = state.results_loaded.get()
+        if out and not loaded and Path(str(out)).is_dir():
+            ui.update_text("output_dir", value=str(out))
+            _do_load_results(Path(str(out)))
+
+    @reactive.effect
+    def _reset_results_loaded():
+        """Reset loaded flag when output directory changes."""
+        state.output_dir.get()  # take dependency
+        state.results_loaded.set(False)
 
     @render.ui
     def ensemble_toggle():
