@@ -145,3 +145,81 @@ def test_update_config_sets_dirty():
     with reactive.isolate():
         state.update_config("simulation.nspecies", "5")
         assert state.dirty.get() is True
+
+
+def test_appstate_has_config_name():
+    state = AppState()
+    with reactive.isolate():
+        assert state.config_name.get() == ""
+
+
+def test_appstate_has_species_names():
+    state = AppState()
+    with reactive.isolate():
+        assert state.species_names.get() == []
+
+
+def test_appstate_has_results_loaded():
+    state = AppState()
+    with reactive.isolate():
+        assert state.results_loaded.get() is False
+
+
+def test_config_header_shows_name_and_count():
+    state = AppState()
+    with reactive.isolate():
+        state.config_name.set("Eec Full")
+        state.config.set({"a": "1", "b": "2"})
+        assert state.config_name.get() == "Eec Full"
+        assert len(state.config.get()) == 2
+
+
+def test_config_header_empty_when_no_config():
+    state = AppState()
+    with reactive.isolate():
+        assert state.config_name.get() == ""
+
+
+def test_species_names_extracted_from_config():
+    state = AppState()
+    with reactive.isolate():
+        state.config.set({
+            "simulation.nspecies": "3",
+            "species.name.sp0": "Anchovy",
+            "species.name.sp1": "Sardine",
+            "species.name.sp2": "Hake",
+        })
+        cfg = state.config.get()
+        n = int(cfg.get("simulation.nspecies", "0"))
+        names = [cfg.get(f"species.name.sp{i}", f"Species {i}") for i in range(n)]
+        assert names == ["Anchovy", "Sardine", "Hake"]
+
+
+def test_species_names_fallback_for_missing():
+    state = AppState()
+    with reactive.isolate():
+        state.config.set({"simulation.nspecies": "2"})
+        cfg = state.config.get()
+        n = int(cfg.get("simulation.nspecies", "0"))
+        names = [cfg.get(f"species.name.sp{i}", f"Species {i}") for i in range(n)]
+        assert names == ["Species 0", "Species 1"]
+
+
+def test_species_names_zero_species():
+    state = AppState()
+    with reactive.isolate():
+        state.config.set({"simulation.nspecies": "0"})
+        cfg = state.config.get()
+        n = int(cfg.get("simulation.nspecies", "0"))
+        names = [cfg.get(f"species.name.sp{i}", f"Species {i}") for i in range(n)]
+        assert names == []
+
+
+def test_results_loaded_flag():
+    state = AppState()
+    with reactive.isolate():
+        assert state.results_loaded.get() is False
+        state.results_loaded.set(True)
+        assert state.results_loaded.get() is True
+        state.results_loaded.set(False)
+        assert state.results_loaded.get() is False

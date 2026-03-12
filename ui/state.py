@@ -33,6 +33,9 @@ class AppState:
         self.busy: reactive.Value[str | None] = reactive.Value(None)
         self.dirty: reactive.Value[bool] = reactive.Value(False)
         self.load_trigger: reactive.Value[int] = reactive.Value(0)
+        self.config_name: reactive.Value[str] = reactive.Value("")
+        self.species_names: reactive.Value[list[str]] = reactive.Value([])
+        self.results_loaded: reactive.Value[bool] = reactive.Value(False)
 
     def update_config(self, key: str, value: str) -> None:
         """Update a single key in the config dict.
