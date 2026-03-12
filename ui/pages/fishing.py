@@ -3,6 +3,7 @@
 from shiny import ui, reactive, render
 
 from osmose.schema.fishing import FISHING_FIELDS
+from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.components.param_form import render_field
 from ui.state import sync_inputs
 
@@ -10,9 +11,11 @@ FISHING_GLOBAL_KEYS: list[str] = [f.key_pattern for f in FISHING_FIELDS if not f
 
 
 def fishing_ui():
-    return ui.layout_columns(
-        ui.card(
-            ui.card_header("Fisheries Module"),
+    return ui.div(
+        expand_tab("Fisheries Module", "fishing"),
+        ui.layout_columns(
+            ui.card(
+                collapsible_card_header("Fisheries Module", "fishing"),
             ui.output_ui("fishing_global_fields"),
             ui.hr(),
             ui.input_numeric("n_fisheries", "Number of fisheries", value=1, min=0, max=20),
@@ -24,6 +27,9 @@ def fishing_ui():
             ui.output_ui("mpa_panels"),
         ),
         col_widths=[8, 4],
+        ),
+        class_="osm-split-layout",
+        id="split_fishing",
     )
 
 
