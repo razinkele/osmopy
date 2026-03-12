@@ -3,6 +3,7 @@
 from shiny import ui, reactive, render
 
 from osmose.schema.movement import MOVEMENT_FIELDS
+from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.components.param_form import render_field
 from ui.state import sync_inputs
 
@@ -10,9 +11,11 @@ MOVEMENT_GLOBAL_KEYS: list[str] = [f.key_pattern for f in MOVEMENT_FIELDS if not
 
 
 def movement_ui():
-    return ui.layout_columns(
-        ui.card(
-            ui.card_header("Movement Settings"),
+    return ui.div(
+        expand_tab("Movement Settings", "movement"),
+        ui.layout_columns(
+            ui.card(
+                collapsible_card_header("Movement Settings", "movement"),
             ui.output_ui("movement_global_fields"),
             ui.hr(),
             ui.h5("Per-Species Distribution Method"),
@@ -24,6 +27,9 @@ def movement_ui():
             ui.output_ui("map_panels"),
         ),
         col_widths=[5, 7],
+        ),
+        class_="osm-split-layout",
+        id="split_movement",
     )
 
 
