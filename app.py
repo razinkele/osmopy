@@ -7,6 +7,7 @@ from shiny import App, render, ui
 from ui.state import AppState
 from ui.components.help_modal import about_modal, help_modal
 from ui.theme import THEME
+from ui.styles import STYLE_CONFIG_HEADER
 import ui.charts as _charts  # noqa: F401 — registers custom plotly template
 
 from shiny_deckgl import head_includes as _deckgl_head
@@ -114,7 +115,7 @@ app_ui = ui.page_fillable(
         class_="osmose-header",
     ),
     # ── Global loading overlay ───────────────────────────────────
-    ui.output_ui("dirty_banner"),
+    ui.output_ui("config_header"),
     ui.output_ui("loading_overlay"),
     # ── Left pill navigation with grouped sections ──────────────
     ui.navset_pill_list(
@@ -178,10 +179,28 @@ def server(input, output, session):
     state.reset_to_defaults()
 
     @render.ui
-    def dirty_banner():
-        if not state.dirty.get():
+    def config_header():
+        name = state.config_name.get()
+        if not name:
             return ui.div()
-        return ui.div("You have unsaved changes", class_="osm-dirty-banner")
+        cfg = state.config.get()
+        n_species = int(cfg.get("simulation.nspecies", "0"))
+        n_params = len(cfg)
+        is_dirty = state.dirty.get()
+        return ui.div(
+            ui.div(
+                ui.tags.span(name, style="color: #d4a017; font-weight: 600;"),
+                ui.tags.span(
+                    f" {n_species} species \u2022 {n_params} parameters",
+                    style="color: #5a6a7a; font-size: 12px; margin-left: 8px;",
+                ),
+            ),
+            ui.tags.span(
+                "modified" if is_dirty else "",
+                style="color: #e67e22; font-size: 11px; font-style: italic;",
+            ),
+            style=STYLE_CONFIG_HEADER,
+        )
 
     @render.ui
     def loading_overlay():

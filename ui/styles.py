@@ -31,3 +31,9 @@ STYLE_HINT_BLOCK = "padding: 0 20px; color: #5a6a7a; font-size: 13px;"
 
 # Diff row highlight (amber tint)
 STYLE_DIFF_ROW = "background: rgba(232, 168, 56, 0.12);"
+
+# Config header bar
+STYLE_CONFIG_HEADER = (
+    "display: flex; justify-content: space-between; align-items: center; "
+    "padding: 8px 16px; border-bottom: 1px solid var(--osm-border, #2d3d50);"
+)
