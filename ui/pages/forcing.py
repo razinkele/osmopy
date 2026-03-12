@@ -4,7 +4,7 @@ from shiny import ui, reactive, render
 
 from osmose.schema.bioenergetics import BIOENERGETICS_FIELDS
 from osmose.schema.ltl import LTL_FIELDS
-from ui.components.param_form import render_field
+from ui.components.param_form import render_field, render_species_table
 from ui.state import sync_inputs
 
 FORCING_GLOBAL_KEYS: list[str] = [f.key_pattern for f in LTL_FIELDS if not f.indexed]
@@ -67,15 +67,13 @@ def forcing_server(input, output, session, state):
         n = input.n_resources()
         with reactive.isolate():
             cfg = state.config.get()
-        panels = []
-        for i in range(n):
-            resource_fields = [f for f in LTL_FIELDS if f.indexed]
-            card = ui.card(
-                ui.card_header(f"Resource Group {i}"),
-                *[render_field(f, species_idx=i, config=cfg) for f in resource_fields],
-            )
-            panels.append(card)
-        return ui.div(*panels)
+        n_focal = int(cfg.get("simulation.nspecies", "0"))
+        indexed_fields = [f for f in LTL_FIELDS if f.indexed]
+        names = [cfg.get(f"species.name.sp{n_focal + i}", f"Resource {i}") for i in range(n)]
+        return render_species_table(
+            indexed_fields, n_species=n, species_names=names,
+            start_idx=n_focal, config=cfg,
+        )
 
     @reactive.effect
     def sync_forcing_inputs():
@@ -84,7 +82,21 @@ def forcing_server(input, output, session, state):
     @reactive.effect
     def sync_resource_inputs():
         n = input.n_resources()
+        with reactive.isolate():
+            if state.loading.get():
+                return
+            cfg = state.config.get()
+        n_focal = int(cfg.get("simulation.nspecies", "0"))
         indexed_fields = [f for f in LTL_FIELDS if f.indexed]
         for i in range(n):
-            keys = [f.resolve_key(i) for f in indexed_fields]
-            sync_inputs(input, state, keys)
+            sp_idx = n_focal + i
+            for field in indexed_fields:
+                config_key = field.resolve_key(sp_idx)
+                base_key = field.key_pattern.replace(".sp{idx}", "").replace("{idx}", "").replace(".", "_")
+                input_id = f"spt_{base_key}_{sp_idx}"
+                try:
+                    val = getattr(input, input_id)()
+                except (AttributeError, TypeError):
+                    continue
+                if val is not None:
+                    state.update_config(config_key, str(val))
