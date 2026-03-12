@@ -161,7 +161,7 @@ def run_server(input, output, session, state):
         errors, warnings = validate_config(config, state.registry)
         source_dir = state.config_dir.get()
         if source_dir:
-            file_errors = check_file_references(config, str(source_dir))
+            file_errors = check_file_references(config, str(source_dir), state.registry)
             errors.extend(file_errors)
         species_warnings = check_species_consistency(config)
         warnings.extend(species_warnings)

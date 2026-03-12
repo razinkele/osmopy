@@ -27,7 +27,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
     registry = build_registry()
 
     errors, warnings = validate_config(config, registry)
-    file_errors = check_file_references(config, str(config_path.parent))
+    file_errors = check_file_references(config, str(config_path.parent), registry)
     errors.extend(file_errors)
     species_warnings = check_species_consistency(config)
     warnings.extend(species_warnings)
