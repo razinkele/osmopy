@@ -6,14 +6,58 @@ import shutil
 from pathlib import Path
 
 
-# Key renames between OSMOSE versions
-_MIGRATIONS: dict[str, dict[str, str]] = {
-    "4.3.0": {
-        "simulation.nplankton": "simulation.nresource",
-        "grid.nlon": "grid.ncolumn",
-        "grid.nlat": "grid.nline",
-    },
-}
+# Migration chain: each entry is (introduced_in_version, {old_prefix: new_prefix})
+# Renames are applied sequentially for configs older than each step version.
+_MIGRATION_CHAIN: list[tuple[str, dict[str, str]]] = [
+    (
+        "3.2",
+        {
+            "population.initialization.biomass": "population.seeding.biomass",
+            "population.initialization.abundance": "population.seeding.abundance",
+        },
+    ),
+    (
+        "3.3.3",
+        {
+            "grid.ncolumn": "grid.nlon",
+            "grid.nline": "grid.nlat",
+        },
+    ),
+    (
+        "4.2.3",
+        {
+            "simulation.nplankton": "simulation.nresource",
+            "plankton.name": "resource.name",
+            "plankton.tl": "resource.tl",
+            "plankton.size.min": "resource.size.min",
+            "plankton.size.max": "resource.size.max",
+            "plankton.accessibility2fish": "resource.accessibility2fish",
+            "plankton.conversion2tons": "resource.conversion2tons",
+            "plankton.file": "resource.file",
+        },
+    ),
+    (
+        "4.2.5",
+        {
+            "mortality.natural.rate": "mortality.additional.rate",
+            "mortality.natural.larva.rate": "mortality.additional.larva.rate",
+        },
+    ),
+    (
+        "4.3.0",
+        {
+            "simulation.restart.enabled": "simulation.restart.enabled",
+        },
+    ),
+]
+
+
+def _version_tuple(v: str) -> tuple[int, ...]:
+    """Parse version string to tuple for comparison."""
+    try:
+        return tuple(int(x) for x in v.split("."))
+    except (ValueError, AttributeError):
+        return (0,)
 
 
 def list_demos() -> list[str]:
@@ -40,24 +84,23 @@ def osmose_demo(scenario: str, output_dir: Path) -> dict:
 
 
 def _generate_bay_of_biscay(output_dir: Path) -> dict:
-    """Generate Bay of Biscay 3-species demo."""
+    """Generate Bay of Biscay 8-species demo."""
     # Copy from bundled examples if available
     examples_dir = Path(__file__).parent.parent / "data" / "examples"
     config_dir = output_dir / "config"
-    config_dir.mkdir(parents=True, exist_ok=True)
     sim_output = output_dir / "output"
     sim_output.mkdir(parents=True, exist_ok=True)
 
     if examples_dir.exists():
-        for f in examples_dir.glob("osm_*"):
-            shutil.copy2(f, config_dir / f.name)
+        shutil.copytree(examples_dir, config_dir, dirs_exist_ok=True)
     else:
         # Generate minimal config
+        config_dir.mkdir(parents=True, exist_ok=True)
         master = config_dir / "osm_all-parameters.csv"
         master.write_text(
             "simulation.time.ndtperyear ; 24\n"
             "simulation.time.nyear ; 50\n"
-            "simulation.nspecies ; 3\n"
+            "simulation.nspecies ; 8\n"
             "simulation.nschool ; 20\n"
             "simulation.ncpu ; 1\n"
         )
@@ -68,21 +111,35 @@ def _generate_bay_of_biscay(output_dir: Path) -> dict:
 
 def migrate_config(
     config: dict[str, str],
-    target_version: str = "4.3.0",
+    target_version: str = "4.3.3",
 ) -> dict[str, str]:
     """Migrate config parameter names to a target OSMOSE version.
 
-    Applies key renames for version compatibility.
+    Applies key renames sequentially from the config's current version
+    through to target_version, following the Java engine's Releases.java chain.
     """
     current = config.get("osmose.version", "")
     if current == target_version:
         return dict(config)
 
+    current_tuple = _version_tuple(current)
+    target_tuple = _version_tuple(target_version)
+
     result = dict(config)
-    renames = _MIGRATIONS.get(target_version, {})
-    for old_key, new_key in renames.items():
-        if old_key in result:
-            result[new_key] = result.pop(old_key)
+
+    for step_version, renames in _MIGRATION_CHAIN:
+        step_tuple = _version_tuple(step_version)
+        if current and current_tuple >= step_tuple:
+            continue
+        if step_tuple > target_tuple:
+            break
+        for old_prefix, new_prefix in renames.items():
+            if old_prefix == new_prefix:
+                continue
+            keys_to_rename = [k for k in result if k == old_prefix or k.startswith(old_prefix + ".")]
+            for key in keys_to_rename:
+                new_key = new_prefix + key[len(old_prefix):]
+                result[new_key] = result.pop(key)
 
     result["osmose.version"] = target_version
     return result
