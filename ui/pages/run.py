@@ -12,7 +12,6 @@ from osmose.config.validator import (
     check_species_consistency,
     validate_config,
 )
-from osmose.config.writer import OsmoseConfigWriter
 from osmose.runner import OsmoseRunner
 from ui.styles import STYLE_CONSOLE
 
@@ -78,16 +77,26 @@ def write_temp_config(
     """Write config to a directory, copy data files, and return the master file path.
 
     If source_dir is provided, copies the entire directory tree first so that
-    all ancillary files (sub-configs, NetCDF grids, movement maps, etc.) are
-    available to the Java engine. Then writes the (possibly modified) config
-    on top.
+    all ancillary files (NetCDF grids, movement maps, etc.) are available to
+    the Java engine.  Then writes a single flat master config containing ALL
+    parameters — without ``osmose.configuration.*`` sub-file references — so
+    the Java engine reads only this one file and ignores any copied sub-configs.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     if source_dir and source_dir.is_dir():
         shutil.copytree(source_dir, output_dir, dirs_exist_ok=True)
-    writer = OsmoseConfigWriter()
-    writer.write(config, output_dir)
-    return output_dir / "osm_all-parameters.csv"
+
+    # Write a single flat master file with all params, stripping sub-config
+    # references to avoid the Java engine loading duplicate parameters from
+    # both the master and the copied sub-config files.
+    master = output_dir / "osm_all-parameters.csv"
+    lines = []
+    for key, value in sorted(config.items()):
+        if key.startswith("osmose.configuration."):
+            continue
+        lines.append(f"{key} ; {value}\n")
+    master.write_text("".join(lines))
+    return master
 
 
 def run_ui():
