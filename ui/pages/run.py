@@ -75,11 +75,18 @@ def copy_data_files(config: dict[str, str], source_dir: Path, dest_dir: Path) ->
 def write_temp_config(
     config: dict[str, str], output_dir: Path, source_dir: Path | None = None
 ) -> Path:
-    """Write config to a directory, copy data files, and return the master file path."""
+    """Write config to a directory, copy data files, and return the master file path.
+
+    If source_dir is provided, copies the entire directory tree first so that
+    all ancillary files (sub-configs, NetCDF grids, movement maps, etc.) are
+    available to the Java engine. Then writes the (possibly modified) config
+    on top.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    if source_dir and source_dir.is_dir():
+        shutil.copytree(source_dir, output_dir, dirs_exist_ok=True)
     writer = OsmoseConfigWriter()
     writer.write(config, output_dir)
-    if source_dir and source_dir.is_dir():
-        copy_data_files(config, source_dir, output_dir)
     return output_dir / "osm_all-parameters.csv"
 
 
