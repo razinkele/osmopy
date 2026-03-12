@@ -65,3 +65,52 @@ def test_check_file_references(tmp_path):
     missing = check_file_references(config, str(tmp_path))
     assert len(missing) == 1
     assert "missing.csv" in missing[0]
+
+
+def test_check_file_references_uses_schema(tmp_path):
+    """check_file_references should use FILE_PATH schema type, not string heuristic."""
+    from osmose.config.validator import check_file_references
+    from osmose.schema import build_registry
+    registry = build_registry()
+    config = {
+        "reproduction.season.file.sp0": "nonexistent.csv",
+        "grid.netcdf.file": "nonexistent.nc",
+        "species.name.sp0": "Anchovy",
+    }
+    missing = check_file_references(config, str(tmp_path), registry)
+    assert len(missing) == 2
+    assert any("reproduction.season.file.sp0" in m for m in missing)
+    assert any("grid.netcdf.file" in m for m in missing)
+
+
+def test_check_species_consistency_checks_resources():
+    from osmose.config.validator import check_species_consistency
+    config = {
+        "simulation.nspecies": "2",
+        "simulation.nresource": "2",
+        "species.name.sp0": "Anchovy",
+        "species.name.sp1": "Sardine",
+    }
+    warnings = check_species_consistency(config)
+    assert len(warnings) == 2
+    assert any("sp2" in w for w in warnings)
+    assert any("sp3" in w for w in warnings)
+
+
+def test_validate_config_checks_enum_values():
+    from osmose.config.validator import validate_config
+    from osmose.schema import build_registry
+    registry = build_registry()
+    config = {"species.type.sp0": "invalid_type"}
+    errors, _ = validate_config(config, registry)
+    assert len(errors) >= 1
+    assert any("invalid_type" in e for e in errors)
+
+
+def test_validate_config_accepts_valid_enum():
+    from osmose.config.validator import validate_config
+    from osmose.schema import build_registry
+    registry = build_registry()
+    config = {"species.type.sp0": "focal"}
+    errors, _ = validate_config(config, registry)
+    assert errors == []

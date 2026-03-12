@@ -38,6 +38,13 @@ def validate_config(config: dict[str, str], registry) -> tuple[list[str], list[s
             if value.lower() not in ("true", "false", "0", "1"):
                 errors.append(f"{key}: expected boolean, got '{value}'")
 
+        elif field.param_type == ParamType.ENUM:
+            if field.choices and value not in field.choices:
+                errors.append(
+                    f"Invalid value for '{key}': '{value}' "
+                    f"(expected one of {field.choices})"
+                )
+
     return errors, warnings
 
 
@@ -60,41 +67,46 @@ def validate_field(key: str, value: str, field) -> str | None:
     return None
 
 
-def check_file_references(config: dict[str, str], base_dir: str) -> list[str]:
-    """Check that all file-referencing parameters point to existing files.
-
-    Returns list of error messages for missing files.
-    """
-    missing: list[str] = []
-    file_keys = [k for k in config if "file" in k.lower()]
+def check_file_references(
+    config: dict[str, str],
+    base_dir: str,
+    registry=None,
+) -> list[str]:
+    """Check that file-referencing parameters point to existing files."""
+    missing = []
     base = Path(base_dir)
-
-    for key in file_keys:
-        value = config[key]
-        if not value or value.lower() in ("null", "none", ""):
+    for key, value in config.items():
+        is_file_param = False
+        if registry is not None:
+            field = registry.match_field(key)
+            if field is not None and field.param_type == ParamType.FILE_PATH:
+                is_file_param = True
+        else:
+            is_file_param = "file" in key.lower()
+        if not is_file_param:
             continue
-        path = Path(value)
-        if not path.is_absolute():
-            path = base / path
-        if not path.exists():
-            missing.append(f"{key}: file not found: {path}")
-
+        if not value or value.lower() in ("null", "none"):
+            continue
+        ref = Path(value)
+        if not ref.is_absolute():
+            ref = base / ref
+        if not ref.exists():
+            missing.append(f"File not found for '{key}': {ref}")
     return missing
 
 
 def check_species_consistency(config: dict[str, str]) -> list[str]:
-    """Check that nspecies matches the number of indexed species params."""
-    warnings: list[str] = []
-    nspecies_str = config.get("simulation.nspecies", "0")
-    try:
-        nspecies = int(nspecies_str)
-    except ValueError:
-        return [f"simulation.nspecies is not a number: {nspecies_str}"]
-
-    # Check species.name.spN exists for all N
+    """Check that species.name keys exist for all declared species and resources."""
+    warnings = []
+    nspecies = int(config.get("simulation.nspecies", "0"))
+    nresource = int(config.get("simulation.nresource", "0"))
     for i in range(nspecies):
         key = f"species.name.sp{i}"
         if key not in config:
-            warnings.append(f"Missing {key} (expected {nspecies} species)")
-
+            warnings.append(f"Missing focal species name: {key}")
+    for i in range(nresource):
+        idx = nspecies + i
+        key = f"species.name.sp{idx}"
+        if key not in config:
+            warnings.append(f"Missing resource species name: {key}")
     return warnings
