@@ -9,6 +9,8 @@ import plotly.graph_objects as go
 from shiny import reactive, render, ui
 from shinywidgets import output_widget, render_plotly
 
+from ui.styles import COLOR_MUTED, STYLE_EMPTY, STYLE_MONO_KEY
+
 
 # ---------------------------------------------------------------------------
 # Pure chart-generation functions (testable without Shiny)
@@ -478,7 +480,7 @@ def results_server(input, output, session, state):
         selected = input.compare_runs_select()
         if not selected or len(selected) < 2:
             return ui.div(
-                "Select 2+ runs to see config differences.", style="color: #999; padding: 1rem;"
+                "Select 2+ runs to see config differences.", style=STYLE_EMPTY
             )
 
         from osmose.history import RunHistory
@@ -492,7 +494,7 @@ def results_server(input, output, session, state):
         diffs = history.compare_runs_multi(list(selected))
 
         if not diffs:
-            return ui.div("No config differences found.", style="color: #999; padding: 1rem;")
+            return ui.div("No config differences found.", style=STYLE_EMPTY)
 
         # Build table header: Parameter | Run 1 | Run 2 | ...
         headers = [ui.tags.th("Parameter")]
@@ -501,7 +503,7 @@ def results_server(input, output, session, state):
 
         rows = []
         for diff in diffs:
-            cells = [ui.tags.td(diff["key"], style="font-family: monospace; font-size: 12px;")]
+            cells = [ui.tags.td(diff["key"], style=STYLE_MONO_KEY)]
             for val in diff["values"]:
                 cells.append(ui.tags.td(str(val) if val is not None else "—"))
             rows.append(ui.tags.tr(*cells))

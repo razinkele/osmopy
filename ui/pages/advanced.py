@@ -52,7 +52,7 @@ def advanced_ui():
                 ui.input_text("adv_search", "Search parameters", placeholder="Type to filter..."),
                 ui.p(
                     f"Total parameters in registry: {len(REGISTRY.all_fields())}",
-                    style="color: #999; font-size: 12px;",
+                    style=COLOR_MUTED + " font-size: 12px;",
                 ),
             ),
             col_widths=[4, 8],
@@ -179,7 +179,7 @@ def advanced_server(input, output, session, state):
             ]
 
         if not fields:
-            return ui.div("No parameters match your filter.", style="padding: 20px; color: #999;")
+            return ui.div("No parameters match your filter.", style=STYLE_EMPTY)
 
         # Show current config values
         cfg = state.config.get()

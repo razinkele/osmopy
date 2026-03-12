@@ -10,12 +10,10 @@ MOVEMENT_GLOBAL_KEYS: list[str] = [f.key_pattern for f in MOVEMENT_FIELDS if not
 
 
 def movement_ui():
-    global_fields = [f for f in MOVEMENT_FIELDS if not f.indexed]
-
     return ui.layout_columns(
         ui.card(
             ui.card_header("Movement Settings"),
-            *[render_field(f) for f in global_fields if not f.advanced],
+            ui.output_ui("movement_global_fields"),
             ui.hr(),
             ui.h5("Per-Species Distribution Method"),
             ui.output_ui("species_movement_panels"),
@@ -30,25 +28,39 @@ def movement_ui():
 
 
 def movement_server(input, output, session, state):
+    global_fields = [f for f in MOVEMENT_FIELDS if not f.indexed]
+
+    @render.ui
+    def movement_global_fields():
+        state.load_trigger.get()
+        with reactive.isolate():
+            cfg = state.config.get()
+        return ui.div(*[render_field(f, config=cfg) for f in global_fields if not f.advanced])
+
     @render.ui
     def species_movement_panels():
+        state.load_trigger.get()
         per_species = [f for f in MOVEMENT_FIELDS if f.indexed and "map" not in f.key_pattern]
         with reactive.isolate():
-            n_species = int(state.config.get().get("simulation.nspecies", "3"))
+            cfg = state.config.get()
+            n_species = int(cfg.get("simulation.nspecies", "3"))
         panels = []
         for i in range(n_species):
-            panels.extend([render_field(f, species_idx=i) for f in per_species])
+            panels.extend([render_field(f, species_idx=i, config=cfg) for f in per_species])
         return ui.div(*panels)
 
     @render.ui
     def map_panels():
+        state.load_trigger.get()
         n = input.n_maps()
+        with reactive.isolate():
+            cfg = state.config.get()
         map_fields = [f for f in MOVEMENT_FIELDS if f.indexed and "map" in f.key_pattern]
         panels = []
         for i in range(n):
             card = ui.card(
                 ui.card_header(f"Map {i}"),
-                *[render_field(f, species_idx=i) for f in map_fields],
+                *[render_field(f, species_idx=i, config=cfg) for f in map_fields],
             )
             panels.append(card)
         return ui.div(*panels)

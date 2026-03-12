@@ -26,5 +26,8 @@ STYLE_EMPTY = "padding: 20px; text-align: center; color: #5a6a7a;"
 # Scrollable table container
 STYLE_SCROLL_TABLE = "max-height: 600px; overflow-y: auto;"
 
+# Inline hint text (like "Select parameters to optimize:")
+STYLE_HINT_BLOCK = "padding: 0 20px; color: #5a6a7a; font-size: 13px;"
+
 # Diff row highlight (amber tint)
 STYLE_DIFF_ROW = "background: rgba(232, 168, 56, 0.12);"

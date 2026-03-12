@@ -32,6 +32,7 @@ class AppState:
         self.loading: reactive.Value[bool] = reactive.Value(False)
         self.busy: reactive.Value[str | None] = reactive.Value(None)
         self.dirty: reactive.Value[bool] = reactive.Value(False)
+        self.load_trigger: reactive.Value[int] = reactive.Value(0)
 
     def update_config(self, key: str, value: str) -> None:
         """Update a single key in the config dict.
@@ -39,9 +40,12 @@ class AppState:
         Uses reactive.isolate to read current config without taking a
         reactive dependency — prevents infinite reactive loops when called
         from effects that also depend on inputs.
+        Only marks dirty when the value actually changes.
         """
         with reactive.isolate():
             cfg = dict(self.config.get())
+        if cfg.get(key) == value:
+            return
         cfg[key] = value
         self.config.set(cfg)
         self.dirty.set(True)
@@ -63,6 +67,7 @@ class AppState:
                 else:
                     cfg[field.key_pattern] = str(field.default)
         self.config.set(cfg)
+        self.dirty.set(False)
 
 
 def sync_inputs(
@@ -81,8 +86,13 @@ def sync_inputs(
     Returns:
         Dict of keys that were actually updated with their new values.
     """
-    if state.loading.get():
-        return {}
+    # Check loading flag without creating a reactive dependency —
+    # prevents sync effects from re-running when loading toggles,
+    # which would overwrite config with stale input values before
+    # ui.update_* messages reach the client.
+    with reactive.isolate():
+        if state.loading.get():
+            return {}
     changed: dict[str, str] = {}
     for key in keys:
         input_id = key.replace(".", "_")
@@ -95,8 +105,11 @@ def sync_inputs(
     if changed:
         with reactive.isolate():
             cfg = dict(state.config.get())
-        cfg.update(changed)
-        state.config.set(cfg)
+        # Only set config if values actually differ
+        actual_changes = {k: v for k, v in changed.items() if cfg.get(k) != v}
+        if actual_changes:
+            cfg.update(actual_changes)
+            state.config.set(cfg)
     return changed
 
 

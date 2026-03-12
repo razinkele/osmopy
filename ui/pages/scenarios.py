@@ -97,6 +97,7 @@ def scenarios_server(input, output, session, state):
     def handle_save():
         name = input.scenario_name().strip()
         if not name:
+            ui.notification_show("Enter a scenario name.", type="warning", duration=3)
             return
         tags_raw = input.scenario_tags().strip()
         tags = [t.strip() for t in tags_raw.split(",") if t.strip()] if tags_raw else []

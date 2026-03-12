@@ -10,12 +10,10 @@ FISHING_GLOBAL_KEYS: list[str] = [f.key_pattern for f in FISHING_FIELDS if not f
 
 
 def fishing_ui():
-    global_fields = [f for f in FISHING_FIELDS if not f.indexed]
-
     return ui.layout_columns(
         ui.card(
             ui.card_header("Fisheries Module"),
-            *[render_field(f) for f in global_fields],
+            ui.output_ui("fishing_global_fields"),
             ui.hr(),
             ui.input_numeric("n_fisheries", "Number of fisheries", value=1, min=0, max=20),
             ui.output_ui("fishery_panels"),
@@ -30,28 +28,43 @@ def fishing_ui():
 
 
 def fishing_server(input, output, session, state):
+    global_fields = [f for f in FISHING_FIELDS if not f.indexed]
+
+    @render.ui
+    def fishing_global_fields():
+        state.load_trigger.get()
+        with reactive.isolate():
+            cfg = state.config.get()
+        return ui.div(*[render_field(f, config=cfg) for f in global_fields])
+
     @render.ui
     def fishery_panels():
+        state.load_trigger.get()
         n = input.n_fisheries()
+        with reactive.isolate():
+            cfg = state.config.get()
         fishery_fields = [f for f in FISHING_FIELDS if f.indexed and "fsh" in f.key_pattern]
         panels = []
         for i in range(n):
             card = ui.card(
                 ui.card_header(f"Fishery {i}"),
-                *[render_field(f, species_idx=i) for f in fishery_fields],
+                *[render_field(f, species_idx=i, config=cfg) for f in fishery_fields],
             )
             panels.append(card)
         return ui.div(*panels)
 
     @render.ui
     def mpa_panels():
+        state.load_trigger.get()
         n = input.n_mpas()
+        with reactive.isolate():
+            cfg = state.config.get()
         mpa_fields = [f for f in FISHING_FIELDS if f.indexed and "mpa" in f.key_pattern]
         panels = []
         for i in range(n):
             card = ui.card(
                 ui.card_header(f"MPA {i}"),
-                *[render_field(f, species_idx=i) for f in mpa_fields],
+                *[render_field(f, species_idx=i, config=cfg) for f in mpa_fields],
             )
             panels.append(card)
         return ui.div(*panels)

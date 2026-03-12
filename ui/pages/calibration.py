@@ -22,7 +22,7 @@ from ui.pages.calibration_handlers import (
 )
 from ui.pages.run import copy_data_files
 from ui.state import get_theme_mode
-from ui.styles import STYLE_EMPTY
+from ui.styles import STYLE_EMPTY, STYLE_HINT_BLOCK
 
 # Re-export for backward compatibility (tests import these from calibration)
 __all__ = [
@@ -61,7 +61,7 @@ def calibration_ui():
             ui.h5("Free Parameters"),
             ui.p(
                 "Select parameters to optimize:",
-                style="color: #999; font-size: 13px;",
+                style=STYLE_HINT_BLOCK,
             ),
             ui.output_ui("free_param_selector"),
             ui.hr(),

@@ -183,6 +183,8 @@ def run_server(input, output, session, state):
 
         status.set("Writing config...")
         run_log.set([])
+        ui.update_action_button("btn_run", disabled=True, session=session)
+        ui.update_action_button("btn_cancel", disabled=False, session=session)
 
         # Write config to temp directory, copying data files from source
         work_dir = Path(tempfile.mkdtemp(prefix="osmose_run_"))
@@ -219,6 +221,7 @@ def run_server(input, output, session, state):
             )
         finally:
             state.busy.set(None)
+            ui.update_action_button("btn_run", disabled=False, session=session)
 
         state.run_result.set(result)
         state.output_dir.set(result.output_dir)

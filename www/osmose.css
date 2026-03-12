@@ -498,6 +498,7 @@ input[type="number"] {
   border: none !important;
   position: relative;
   overflow: hidden;
+  white-space: nowrap;
 }
 
 .btn::after {
@@ -1021,6 +1022,9 @@ hr {
 [data-theme="light"] pre {
   background: #1a2a3a !important;
   color: #38c9b1 !important;
+}
+[data-theme="light"] pre::before {
+  display: none;
 }
 
 /* ── Light: Modals ───────────────────────────────────────────────── */

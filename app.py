@@ -35,7 +35,10 @@ def _nav_section(label: str):
 app_ui = ui.page_fillable(
     # ── Custom CSS + theme toggle JS ────────────────────────────
     ui.head_content(ui.include_css(_WWW / "osmose.css")),
+    ui.head_content(ui.include_css(_WWW / "deckgl-widgets.css")),
+    ui.head_content(ui.include_css(_WWW / "maplibre-gl-opacity.css")),
     ui.head_content(ui.tags.meta(name="viewport", content="width=device-width, initial-scale=1")),
+    ui.head_content(ui.tags.link(rel="icon", type="image/svg+xml", href="favicon.svg")),
     # ── deck.gl JS/CSS dependencies (needed for grid map) ──────
     _deckgl_head(),
     ui.head_content(
@@ -92,6 +95,7 @@ app_ui = ui.page_fillable(
                 id="themeToggle",
                 title="Toggle light/dark theme",
                 onclick="toggleTheme()",
+                **{"aria-label": "Toggle light/dark theme"},
             ),
             ui.tags.a(
                 "About",
@@ -176,4 +180,4 @@ def server(input, output, session):
     advanced_server(input, output, session, state)
 
 
-app = App(app_ui, server)
+app = App(app_ui, server, static_assets=_WWW)
