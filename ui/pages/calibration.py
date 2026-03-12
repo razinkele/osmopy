@@ -21,6 +21,7 @@ from ui.pages.calibration_handlers import (
     register_calibration_handlers,
 )
 from ui.pages.run import copy_data_files
+from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.state import get_theme_mode
 from ui.styles import STYLE_EMPTY, STYLE_HINT_BLOCK
 
@@ -42,10 +43,12 @@ __all__ = [
 
 
 def calibration_ui():
-    return ui.layout_columns(
+    return ui.div(
+        expand_tab("Calibration Setup", "calibration"),
+        ui.layout_columns(
         # Left: Configuration
         ui.card(
-            ui.card_header("Calibration Setup"),
+            collapsible_card_header("Calibration Setup", "calibration"),
             ui.input_select(
                 "cal_algorithm",
                 "Algorithm",
@@ -111,6 +114,9 @@ def calibration_ui():
             ),
         ),
         col_widths=[4, 8],
+        ),
+        class_="osm-split-layout",
+        id="split_calibration",
     )
 
 
