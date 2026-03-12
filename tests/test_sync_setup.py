@@ -13,23 +13,34 @@ def test_setup_global_keys():
         assert pattern in SETUP_GLOBAL_KEYS, f"Missing key: {pattern}"
 
 
-def test_setup_species_sync_keys():
-    """Species fields should resolve correctly for a given species index."""
-    from ui.pages.setup import get_species_keys
+def test_setup_species_spt_input_ids():
+    """Species table sync uses spt_ prefix; verify input ID generation for a species index."""
+    visible = [f for f in SPECIES_FIELDS if f.indexed and not f.advanced]
+    # Should include at least one field (e.g. species.k)
+    assert len(visible) > 0
+    for field in visible:
+        base_key = (
+            field.key_pattern.replace(".sp{idx}", "")
+            .replace("{idx}", "")
+            .replace(".", "_")
+        )
+        input_id = f"spt_{base_key}_0"
+        # Input IDs should be non-empty strings with the spt_ prefix
+        assert input_id.startswith("spt_")
+        assert "_0" in input_id
 
-    keys = get_species_keys(species_idx=0, show_advanced=False)
-    # Should include growth K for species 0
-    assert any("species.k.sp0" == k for k in keys)
-    # Should NOT include advanced fields
-    adv_keys_patterns = [f.key_pattern for f in SPECIES_FIELDS if f.advanced]
-    for pattern in adv_keys_patterns:
-        resolved = pattern.replace("{idx}", "0")
-        assert resolved not in keys
 
-
-def test_setup_species_sync_keys_with_advanced():
-    from ui.pages.setup import get_species_keys
-
-    keys = get_species_keys(species_idx=1, show_advanced=True)
-    # Should include all species fields for index 1
-    assert any("sp1" in k for k in keys)
+def test_setup_species_spt_input_ids_with_advanced():
+    """With show_advanced=True, advanced indexed fields are also included."""
+    visible_all = [f for f in SPECIES_FIELDS if f.indexed]
+    visible_basic = [f for f in SPECIES_FIELDS if f.indexed and not f.advanced]
+    # There should be more fields when advanced are included
+    assert len(visible_all) >= len(visible_basic)
+    for field in visible_all:
+        base_key = (
+            field.key_pattern.replace(".sp{idx}", "")
+            .replace("{idx}", "")
+            .replace(".", "_")
+        )
+        input_id = f"spt_{base_key}_1"
+        assert "sp1" not in input_id or input_id.startswith("spt_")

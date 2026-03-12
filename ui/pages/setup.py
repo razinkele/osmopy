@@ -8,23 +8,13 @@ from osmose.demo import list_demos, migrate_config, osmose_demo
 from osmose.logging import setup_logging
 from osmose.schema.simulation import SIMULATION_FIELDS
 from osmose.schema.species import SPECIES_FIELDS
-from ui.components.param_form import render_category, render_species_params
+from ui.components.param_form import render_category, render_species_table
 from ui.state import sync_inputs
 
 _log = setup_logging("osmose.setup")
 
 # Keys for non-indexed simulation fields (synced automatically)
 SETUP_GLOBAL_KEYS: list[str] = [f.key_pattern for f in SIMULATION_FIELDS if not f.advanced]
-
-
-def get_species_keys(species_idx: int, show_advanced: bool = False) -> list[str]:
-    """Return resolved OSMOSE keys for one species."""
-    keys = []
-    for f in SPECIES_FIELDS:
-        if f.advanced and not show_advanced:
-            continue
-        keys.append(f.resolve_key(species_idx))
-    return keys
 
 
 def setup_ui():
@@ -80,24 +70,13 @@ def setup_server(input, output, session, state):
         state.load_trigger.get()
         n = input.n_species()
         show_adv = input.show_advanced_species()
-        panels = []
-        # Isolate config read to avoid reactive loop:
-        # sync_species_inputs writes config → config.set() would
-        # re-trigger this render → new inputs → re-trigger sync → ∞
         with reactive.isolate():
             cfg = state.config.get()
-        for i in range(n):
-            name = cfg.get(f"species.name.sp{i}", f"Species {i}")
-            panels.append(
-                render_species_params(
-                    SPECIES_FIELDS,
-                    species_idx=i,
-                    species_name=name,
-                    show_advanced=show_adv,
-                    config=cfg,
-                )
-            )
-        return ui.div(*panels)
+        names = [cfg.get(f"species.name.sp{i}", f"Species {i}") for i in range(n)]
+        return render_species_table(
+            SPECIES_FIELDS, n_species=n, species_names=names,
+            show_advanced=show_adv, config=cfg,
+        )
 
     @reactive.effect
     @reactive.event(input.btn_load_example)
@@ -161,15 +140,23 @@ def setup_server(input, output, session, state):
 
     @reactive.effect
     def sync_species_inputs():
-        """Auto-sync species fields to state.config."""
+        """Auto-sync species table cells to state.config."""
         with reactive.isolate():
             if state.loading.get():
                 return
         n = input.n_species()
         show_adv = input.show_advanced_species()
-        # Update nspecies in config
         state.update_config("simulation.nspecies", str(n))
-        # Sync each species' fields
+
+        visible = [f for f in SPECIES_FIELDS if f.indexed and (show_adv or not f.advanced)]
         for i in range(n):
-            keys = get_species_keys(i, show_adv)
-            sync_inputs(input, state, keys)
+            for field in visible:
+                config_key = field.resolve_key(i)
+                base_key = field.key_pattern.replace(".sp{idx}", "").replace("{idx}", "").replace(".", "_")
+                input_id = f"spt_{base_key}_{i}"
+                try:
+                    val = getattr(input, input_id)()
+                except (AttributeError, TypeError):
+                    continue
+                if val is not None:
+                    state.update_config(config_key, str(val))
