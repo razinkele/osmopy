@@ -13,6 +13,7 @@ from osmose.config.validator import (
     validate_config,
 )
 from osmose.runner import OsmoseRunner
+from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.styles import STYLE_CONSOLE
 
 _log = logging.getLogger("osmose.run")
@@ -100,10 +101,12 @@ def write_temp_config(
 
 
 def run_ui():
-    return ui.layout_columns(
+    return ui.div(
+        expand_tab("Run Configuration", "run"),
+        ui.layout_columns(
         # Left: Run controls
         ui.card(
-            ui.card_header("Run Configuration"),
+            collapsible_card_header("Run Configuration", "run"),
             ui.output_ui("jar_selector"),
             ui.input_text("java_opts", "Java options", value="-Xmx2g", placeholder="-Xmx4g -Xms1g"),
             ui.input_numeric("run_timeout", "Timeout (seconds)", value=3600, min=60, max=86400),
@@ -126,6 +129,9 @@ def run_ui():
             ui.output_ui("run_console"),
         ),
         col_widths=[4, 8],
+        ),
+        class_="osm-split-layout",
+        id="split_run",
     )
 
 
