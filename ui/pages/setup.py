@@ -4,7 +4,7 @@ from pathlib import Path
 
 from shiny import ui, reactive, render
 
-from osmose.demo import list_demos, migrate_config
+from osmose.demo import list_demos, migrate_config, osmose_demo
 from osmose.logging import setup_logging
 from osmose.schema.simulation import SIMULATION_FIELDS
 from osmose.schema.species import SPECIES_FIELDS
@@ -45,9 +45,7 @@ def setup_ui():
                 ),
             ),
             ui.hr(),
-            render_category(
-                [f for f in SIMULATION_FIELDS if not f.advanced],
-            ),
+            ui.output_ui("simulation_fields"),
         ),
         # Right column: Species configuration (dynamic)
         ui.card(
@@ -62,7 +60,18 @@ def setup_ui():
 
 def setup_server(input, output, session, state):
     @render.ui
+    def simulation_fields():
+        state.load_trigger.get()
+        with reactive.isolate():
+            cfg = state.config.get()
+        return render_category(
+            [f for f in SIMULATION_FIELDS if not f.advanced],
+            config=cfg,
+        )
+
+    @render.ui
     def species_panels():
+        state.load_trigger.get()
         n = input.n_species()
         show_adv = input.show_advanced_species()
         panels = []
@@ -87,63 +96,58 @@ def setup_server(input, output, session, state):
     @reactive.effect
     def handle_load_example():
         """Load a bundled example config when dropdown selection changes."""
+        import tempfile
+
         from osmose.config.reader import OsmoseConfigReader
-        from osmose.schema.base import ParamType
 
         example = input.load_example()
         if not example:
             return
 
-        examples_dir = Path(__file__).parent.parent.parent / "data" / "examples"
-        master = examples_dir / "osm_all-parameters.csv"
+        # Generate demo into a temp directory, then read the config
+        try:
+            tmp = Path(tempfile.mkdtemp(prefix="osmose_demo_"))
+            result = osmose_demo(example, tmp)
+        except ValueError as exc:
+            ui.notification_show(str(exc), type="error", duration=5)
+            return
+
+        master = result["config_file"]
         if not master.exists():
             ui.notification_show(f"Example not found: {master}", type="error", duration=5)
             return
 
-        # Guard: prevent sync effects from overwriting config while we push values
+        config_dir = master.parent
+
+        # Guard: prevent sync effects from overwriting config while we load
         state.loading.set(True)
 
         try:
             reader = OsmoseConfigReader()
             cfg = migrate_config(reader.read(master))
             state.config.set(cfg)
-            state.config_dir.set(examples_dir)
+            state.config_dir.set(config_dir)
 
-            # Update species count
+            # Update species count input
             n_species = int(cfg.get("simulation.nspecies", "3"))
             ui.update_numeric("n_species", value=n_species)
 
-            # Push simulation-level values into existing UI inputs
-            updated = 0
-            for key, val in cfg.items():
-                if key.startswith("osmose.configuration."):
-                    continue
-                field = state.registry.match_field(key)
-                input_id = key.replace(".", "_")
-                if field is None:
-                    continue
-                try:
-                    if field.param_type in (ParamType.FLOAT, ParamType.INT):
-                        numeric_val = (
-                            float(val) if field.param_type == ParamType.FLOAT else int(val)
-                        )
-                        ui.update_numeric(input_id, value=numeric_val)
-                    elif field.param_type == ParamType.BOOL:
-                        ui.update_switch(input_id, value=val.lower() in ("true", "1", "yes"))
-                    elif field.param_type == ParamType.ENUM:
-                        ui.update_select(input_id, selected=val)
-                    else:
-                        ui.update_text(input_id, value=val)
-                    updated += 1
-                except Exception as exc:
-                    _log.debug("Could not update input %s: %s", input_id, exc)
+            # Force re-render of dynamic panels with the loaded config.
+            # This replaces the old ui.update_* loop — panels re-render
+            # directly from state.config, no async client round-trip needed.
+            # Isolate the read so the handler doesn't depend on load_trigger
+            # (otherwise setting it would re-trigger this handler → loop).
+            with reactive.isolate():
+                state.load_trigger.set(state.load_trigger.get() + 1)
 
             ui.notification_show(
-                f"Loaded '{example}' ({updated} parameters applied).",
+                f"Loaded '{example}' ({len(cfg)} parameters).",
                 type="message",
                 duration=3,
             )
             state.dirty.set(False)
+            # Reset dropdown so the same example can be re-loaded
+            ui.update_select("load_example", selected="")
         finally:
             state.loading.set(False)
 
@@ -155,8 +159,9 @@ def setup_server(input, output, session, state):
     @reactive.effect
     def sync_species_inputs():
         """Auto-sync species fields to state.config."""
-        if state.loading.get():
-            return
+        with reactive.isolate():
+            if state.loading.get():
+                return
         n = input.n_species()
         show_adv = input.show_advanced_species()
         # Update nspecies in config
