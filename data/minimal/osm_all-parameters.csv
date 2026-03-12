@@ -25,3 +25,4 @@ osmose.configuration.grid ; osm_param-grid.csv
 osmose.configuration.output ; osm_param-output.csv
 osmose.configuration.predation ; osm_param-predation.csv
 output.restart.enabled ; false
+osmose.configuration.movement ; osm_param-movement.csv

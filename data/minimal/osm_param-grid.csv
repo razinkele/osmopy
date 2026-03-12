@@ -5,3 +5,7 @@ grid.upleft.lat ; 45.0
 grid.upleft.lon ; -3.0
 grid.lowright.lat ; 44.0
 grid.lowright.lon ; -2.0
+grid.netcdf.file ; grid/minimal_grid.nc
+grid.var.lat ; lat
+grid.var.lon ; lon
+grid.var.mask ; mask

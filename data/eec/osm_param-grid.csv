@@ -5,4 +5,7 @@ grid.upleft.lat ; 51.5
 grid.upleft.lon ; -2.0
 grid.lowright.lat ; 49.0
 grid.lowright.lon ; 2.5
-grid.mask.file ; grid/eec_mask.csv
+grid.netcdf.file ; grid/eec_grid.nc
+grid.var.lat ; lat
+grid.var.lon ; lon
+grid.var.mask ; mask

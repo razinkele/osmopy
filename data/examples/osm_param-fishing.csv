@@ -1,5 +1,4 @@
 # Fishing parameters — 8 species (OSMOSE 3 format)
-fisheries.enabled ; false
 # Annual fishing mortality rate (year^-1)
 mortality.fishing.rate.sp0 ; 0.35
 mortality.fishing.rate.sp1 ; 0.30
