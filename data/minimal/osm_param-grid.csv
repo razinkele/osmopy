@@ -1,0 +1,7 @@
+# Grid parameters — Minimal (10x10 abstract grid)
+grid.nlon ; 10
+grid.nlat ; 10
+grid.upleft.lat ; 45.0
+grid.upleft.lon ; -3.0
+grid.lowright.lat ; 44.0
+grid.lowright.lon ; -2.0

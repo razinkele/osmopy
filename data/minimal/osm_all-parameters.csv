@@ -1,0 +1,27 @@
+# OSMOSE Minimal — 2-species toy configuration
+# One predator (Hake) + one prey (Anchovy), no LTL forcing
+simulation.time.ndtperyear ; 12
+simulation.time.nyear ; 10
+simulation.nspecies ; 2
+simulation.nresource ; 0
+simulation.ncpu ; 1
+simulation.nsimulation ; 1
+simulation.nschool ; 10
+simulation.fishing.mortality.enabled ; false
+simulation.restart.enabled ; false
+mortality.subdt ; 10
+mortality.additional.rate.sp0 ; 0.80
+mortality.additional.rate.sp1 ; 0.25
+mortality.starvation.rate.max.sp0 ; 0.5
+mortality.starvation.rate.max.sp1 ; 0.3
+mortality.additional.larva.rate.sp0 ; 0.0
+mortality.additional.larva.rate.sp1 ; 0.0
+osmose.version ; 4.3.3
+species.type.sp0 ; focal
+species.type.sp1 ; focal
+# Sub-config references
+osmose.configuration.species ; osm_param-species.csv
+osmose.configuration.grid ; osm_param-grid.csv
+osmose.configuration.output ; osm_param-output.csv
+osmose.configuration.predation ; osm_param-predation.csv
+output.restart.enabled ; false

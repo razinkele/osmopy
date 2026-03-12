@@ -1,0 +1,37 @@
+# Species parameters — Minimal 2-species model
+# Species 0: Anchovy (prey)
+species.name.sp0 ; Anchovy
+species.linf.sp0 ; 19.5
+species.k.sp0 ; 0.364
+species.t0.sp0 ; -0.70
+species.maturity.size.sp0 ; 12.0
+species.sexratio.sp0 ; 0.50
+species.lifespan.sp0 ; 4
+species.lw.condition.factor.sp0 ; 0.0060
+species.lw.allpower.sp0 ; 3.06
+species.vonbertalanffy.threshold.age.sp0 ; 0
+species.egg.size.sp0 ; 0.1
+species.egg.weight.sp0 ; 0.0005
+species.relativefecundity.sp0 ; 800
+species.length2weight.condition.factor.sp0 ; 0.0060
+species.length2weight.allometric.power.sp0 ; 3.06
+population.seeding.biomass.sp0 ; 110000
+population.initialization.method.sp0 ; biomass
+# Species 1: Hake (predator)
+species.name.sp1 ; Hake
+species.linf.sp1 ; 110.0
+species.k.sp1 ; 0.106
+species.t0.sp1 ; -0.17
+species.maturity.size.sp1 ; 40.0
+species.sexratio.sp1 ; 0.50
+species.lifespan.sp1 ; 12
+species.lw.condition.factor.sp1 ; 0.0050
+species.lw.allpower.sp1 ; 3.14
+species.vonbertalanffy.threshold.age.sp1 ; 0
+species.egg.size.sp1 ; 0.1
+species.egg.weight.sp1 ; 0.0005
+species.relativefecundity.sp1 ; 200
+species.length2weight.condition.factor.sp1 ; 0.0050
+species.length2weight.allometric.power.sp1 ; 3.14
+population.seeding.biomass.sp1 ; 120000
+population.initialization.method.sp1 ; biomass

@@ -63,14 +63,14 @@ def _version_tuple(v: str) -> tuple[int, ...]:
 
 def list_demos() -> list[str]:
     """List available demo scenarios."""
-    return ["bay_of_biscay"]
+    return ["bay_of_biscay", "eec", "minimal"]
 
 
 def osmose_demo(scenario: str, output_dir: Path) -> dict:
     """Generate a demo OSMOSE configuration.
 
     Args:
-        scenario: Demo name (e.g., "bay_of_biscay").
+        scenario: Demo name (e.g., "bay_of_biscay", "eec", "minimal").
         output_dir: Directory to write demo files.
 
     Returns:
@@ -78,10 +78,15 @@ def osmose_demo(scenario: str, output_dir: Path) -> dict:
     """
     output_dir = Path(output_dir)
 
-    if scenario == "bay_of_biscay":
-        return _generate_bay_of_biscay(output_dir)
-    else:
+    generators = {
+        "bay_of_biscay": _generate_bay_of_biscay,
+        "eec": _generate_eec,
+        "minimal": _generate_minimal,
+    }
+    gen = generators.get(scenario)
+    if gen is None:
         raise ValueError(f"Unknown scenario: {scenario}. Available: {list_demos()}")
+    return gen(output_dir)
 
 
 def _generate_bay_of_biscay(output_dir: Path) -> dict:
@@ -103,6 +108,54 @@ def _generate_bay_of_biscay(output_dir: Path) -> dict:
             "simulation.time.nyear ; 50\n"
             "simulation.nspecies ; 8\n"
             "simulation.nschool ; 20\n"
+            "simulation.ncpu ; 1\n"
+        )
+
+    config_file = config_dir / "osm_all-parameters.csv"
+    return {"config_file": config_file, "output_dir": sim_output}
+
+
+def _generate_eec(output_dir: Path) -> dict:
+    """Generate Eastern English Channel 6-species demo."""
+    data_dir = Path(__file__).parent.parent / "data" / "eec"
+    config_dir = output_dir / "config"
+    sim_output = output_dir / "output"
+    sim_output.mkdir(parents=True, exist_ok=True)
+
+    if data_dir.exists():
+        shutil.copytree(data_dir, config_dir, dirs_exist_ok=True)
+    else:
+        config_dir.mkdir(parents=True, exist_ok=True)
+        master = config_dir / "osm_all-parameters.csv"
+        master.write_text(
+            "simulation.time.ndtperyear ; 24\n"
+            "simulation.time.nyear ; 30\n"
+            "simulation.nspecies ; 6\n"
+            "simulation.nschool ; 20\n"
+            "simulation.ncpu ; 1\n"
+        )
+
+    config_file = config_dir / "osm_all-parameters.csv"
+    return {"config_file": config_file, "output_dir": sim_output}
+
+
+def _generate_minimal(output_dir: Path) -> dict:
+    """Generate minimal 2-species demo for testing and tutorials."""
+    data_dir = Path(__file__).parent.parent / "data" / "minimal"
+    config_dir = output_dir / "config"
+    sim_output = output_dir / "output"
+    sim_output.mkdir(parents=True, exist_ok=True)
+
+    if data_dir.exists():
+        shutil.copytree(data_dir, config_dir, dirs_exist_ok=True)
+    else:
+        config_dir.mkdir(parents=True, exist_ok=True)
+        master = config_dir / "osm_all-parameters.csv"
+        master.write_text(
+            "simulation.time.ndtperyear ; 12\n"
+            "simulation.time.nyear ; 10\n"
+            "simulation.nspecies ; 2\n"
+            "simulation.nschool ; 10\n"
             "simulation.ncpu ; 1\n"
         )
 

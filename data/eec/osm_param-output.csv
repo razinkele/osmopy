@@ -1,0 +1,24 @@
+# Output parameters — EEC
+output.dir.path ; output
+output.file.prefix ; eec
+output.biomass.enabled ; true
+output.abundance.enabled ; true
+output.yield.biomass.enabled ; true
+output.yield.abundance.enabled ; true
+output.diet.composition.enabled ; true
+output.trophiclevel.enabled ; true
+output.meansize.enabled ; true
+output.mortality.enabled ; true
+output.spatial.enabled ; false
+output.start.year ; 10
+output.frequency.ndtperyear ; 24
+output.recordfrequency.ndt ; 1
+output.bysize.enabled ; true
+output.byage.enabled ; true
+output.diet.stage.structure ; age
+output.diet.stage.threshold.sp0 ; 0
+output.diet.stage.threshold.sp1 ; 0
+output.diet.stage.threshold.sp2 ; 0
+output.diet.stage.threshold.sp3 ; 0
+output.diet.stage.threshold.sp4 ; 0
+output.diet.stage.threshold.sp5 ; 0

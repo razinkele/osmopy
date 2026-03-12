@@ -1,0 +1,14 @@
+# Predation parameters — Minimal 2-species
+predation.ingestion.rate.max.sp0 ; 3.5
+predation.ingestion.rate.max.sp1 ; 3.5
+predation.efficiency.critical.sp0 ; 0.57
+predation.efficiency.critical.sp1 ; 0.57
+predation.predPrey.sizeRatio.max.sp0 ; 3.5
+predation.predPrey.sizeRatio.max.sp1 ; 3.5
+predation.predPrey.sizeRatio.min.sp0 ; 0.0
+predation.predPrey.sizeRatio.min.sp1 ; 0.0
+# Accessibility matrix (2x2: Anchovy, Hake)
+predation.accessibility.stage.structure ; size
+predation.accessibility.stage.threshold.sp0 ; 0
+predation.accessibility.stage.threshold.sp1 ; 0
+predation.accessibility.matrix.file ; predation/accessibility_matrix.csv

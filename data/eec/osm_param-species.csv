@@ -1,0 +1,126 @@
+# Species parameters — EEC 6-species model
+# Eastern English Channel: Herring, Sprat, Whiting, Sole, Plaice, Cod
+#
+# === PELAGIC SPECIES ===
+#
+# Species 0: Atlantic Herring (Clupea harengus)
+species.name.sp0 ; Herring
+species.linf.sp0 ; 30.0
+species.k.sp0 ; 0.300
+species.t0.sp0 ; -0.80
+species.maturity.size.sp0 ; 20.0
+species.sexratio.sp0 ; 0.50
+species.lifespan.sp0 ; 10
+species.lw.condition.factor.sp0 ; 0.0065
+species.lw.allpower.sp0 ; 3.05
+species.vonbertalanffy.threshold.age.sp0 ; 0
+species.egg.size.sp0 ; 0.15
+species.egg.weight.sp0 ; 0.0008
+species.relativefecundity.sp0 ; 600
+species.length2weight.condition.factor.sp0 ; 0.0065
+species.length2weight.allometric.power.sp0 ; 3.05
+population.seeding.biomass.sp0 ; 200000
+population.initialization.method.sp0 ; biomass
+reproduction.season.file.sp0 ; reproduction/reprod_herring.csv
+#
+# Species 1: European Sprat (Sprattus sprattus)
+species.name.sp1 ; Sprat
+species.linf.sp1 ; 14.5
+species.k.sp1 ; 0.500
+species.t0.sp1 ; -0.50
+species.maturity.size.sp1 ; 9.0
+species.sexratio.sp1 ; 0.50
+species.lifespan.sp1 ; 5
+species.lw.condition.factor.sp1 ; 0.0055
+species.lw.allpower.sp1 ; 3.08
+species.vonbertalanffy.threshold.age.sp1 ; 0
+species.egg.size.sp1 ; 0.1
+species.egg.weight.sp1 ; 0.0005
+species.relativefecundity.sp1 ; 1000
+species.length2weight.condition.factor.sp1 ; 0.0055
+species.length2weight.allometric.power.sp1 ; 3.08
+population.seeding.biomass.sp1 ; 60000
+population.initialization.method.sp1 ; biomass
+reproduction.season.file.sp1 ; reproduction/reprod_sprat.csv
+#
+# Species 2: Whiting (Merlangius merlangus)
+species.name.sp2 ; Whiting
+species.linf.sp2 ; 50.0
+species.k.sp2 ; 0.200
+species.t0.sp2 ; -0.60
+species.maturity.size.sp2 ; 20.0
+species.sexratio.sp2 ; 0.50
+species.lifespan.sp2 ; 10
+species.lw.condition.factor.sp2 ; 0.0058
+species.lw.allpower.sp2 ; 3.10
+species.vonbertalanffy.threshold.age.sp2 ; 0
+species.egg.size.sp2 ; 0.12
+species.egg.weight.sp2 ; 0.0006
+species.relativefecundity.sp2 ; 400
+species.length2weight.condition.factor.sp2 ; 0.0058
+species.length2weight.allometric.power.sp2 ; 3.10
+population.seeding.biomass.sp2 ; 150000
+population.initialization.method.sp2 ; biomass
+reproduction.season.file.sp2 ; reproduction/reprod_whiting.csv
+#
+# === DEMERSAL SPECIES ===
+#
+# Species 3: Common Sole (Solea solea)
+species.name.sp3 ; Sole
+species.linf.sp3 ; 39.0
+species.k.sp3 ; 0.280
+species.t0.sp3 ; -0.50
+species.maturity.size.sp3 ; 24.0
+species.sexratio.sp3 ; 0.50
+species.lifespan.sp3 ; 15
+species.lw.condition.factor.sp3 ; 0.0085
+species.lw.allpower.sp3 ; 3.05
+species.vonbertalanffy.threshold.age.sp3 ; 0
+species.egg.size.sp3 ; 0.1
+species.egg.weight.sp3 ; 0.0005
+species.relativefecundity.sp3 ; 250
+species.length2weight.condition.factor.sp3 ; 0.0085
+species.length2weight.allometric.power.sp3 ; 3.05
+population.seeding.biomass.sp3 ; 12000
+population.initialization.method.sp3 ; biomass
+reproduction.season.file.sp3 ; reproduction/reprod_sole.csv
+#
+# Species 4: European Plaice (Pleuronectes platessa)
+species.name.sp4 ; Plaice
+species.linf.sp4 ; 50.0
+species.k.sp4 ; 0.100
+species.t0.sp4 ; -1.50
+species.maturity.size.sp4 ; 25.0
+species.sexratio.sp4 ; 0.50
+species.lifespan.sp4 ; 20
+species.lw.condition.factor.sp4 ; 0.0090
+species.lw.allpower.sp4 ; 3.02
+species.vonbertalanffy.threshold.age.sp4 ; 0
+species.egg.size.sp4 ; 0.2
+species.egg.weight.sp4 ; 0.001
+species.relativefecundity.sp4 ; 200
+species.length2weight.condition.factor.sp4 ; 0.0090
+species.length2weight.allometric.power.sp4 ; 3.02
+population.seeding.biomass.sp4 ; 80000
+population.initialization.method.sp4 ; biomass
+reproduction.season.file.sp4 ; reproduction/reprod_plaice.csv
+#
+# Species 5: Atlantic Cod (Gadus morhua)
+species.name.sp5 ; Cod
+species.linf.sp5 ; 120.0
+species.k.sp5 ; 0.130
+species.t0.sp5 ; -0.20
+species.maturity.size.sp5 ; 50.0
+species.sexratio.sp5 ; 0.50
+species.lifespan.sp5 ; 15
+species.lw.condition.factor.sp5 ; 0.0075
+species.lw.allpower.sp5 ; 3.00
+species.vonbertalanffy.threshold.age.sp5 ; 0
+species.egg.size.sp5 ; 0.15
+species.egg.weight.sp5 ; 0.0008
+species.relativefecundity.sp5 ; 300
+species.length2weight.condition.factor.sp5 ; 0.0075
+species.length2weight.allometric.power.sp5 ; 3.00
+population.seeding.biomass.sp5 ; 100000
+population.initialization.method.sp5 ; biomass
+reproduction.season.file.sp5 ; reproduction/reprod_cod.csv

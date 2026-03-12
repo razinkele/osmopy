@@ -1,0 +1,8 @@
+# Grid parameters — Eastern English Channel
+grid.nlon ; 15
+grid.nlat ; 12
+grid.upleft.lat ; 51.5
+grid.upleft.lon ; -2.0
+grid.lowright.lat ; 49.0
+grid.lowright.lon ; 2.5
+grid.mask.file ; grid/eec_mask.csv

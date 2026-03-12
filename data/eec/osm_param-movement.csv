@@ -1,0 +1,13 @@
+# Movement parameters — EEC 6 species (random walk)
+movement.distribution.method.sp0 ; random
+movement.distribution.method.sp1 ; random
+movement.distribution.method.sp2 ; random
+movement.distribution.method.sp3 ; random
+movement.distribution.method.sp4 ; random
+movement.distribution.method.sp5 ; random
+movement.randomwalk.range.sp0 ; 2
+movement.randomwalk.range.sp1 ; 1
+movement.randomwalk.range.sp2 ; 2
+movement.randomwalk.range.sp3 ; 1
+movement.randomwalk.range.sp4 ; 1
+movement.randomwalk.range.sp5 ; 3

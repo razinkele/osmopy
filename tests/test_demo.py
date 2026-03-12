@@ -25,6 +25,61 @@ def test_osmose_demo_list():
 
     demos = list_demos()
     assert "bay_of_biscay" in demos
+    assert "eec" in demos
+    assert "minimal" in demos
+
+
+def test_osmose_demo_eec(tmp_path):
+    result = osmose_demo("eec", tmp_path)
+    assert result["config_file"].exists()
+    assert result["output_dir"].exists()
+    csv_files = list(result["config_file"].parent.glob("*.csv"))
+    assert len(csv_files) >= 2
+
+
+def test_osmose_demo_eec_config_is_loadable(tmp_path):
+    from osmose.config.reader import OsmoseConfigReader
+
+    result = osmose_demo("eec", tmp_path)
+    reader = OsmoseConfigReader()
+    config = reader.read(result["config_file"])
+    assert int(config["simulation.nspecies"]) == 6
+    assert config["species.name.sp0"] == "Herring"
+    assert config["species.name.sp5"] == "Cod"
+
+
+def test_osmose_demo_eec_copies_support_dirs(tmp_path):
+    result = osmose_demo("eec", tmp_path)
+    config_dir = result["config_file"].parent
+    assert (config_dir / "reproduction" / "reprod_herring.csv").exists()
+    assert (config_dir / "reproduction" / "reprod_cod.csv").exists()
+    assert (config_dir / "grid" / "eec_mask.csv").exists()
+    assert (config_dir / "predation" / "accessibility_matrix.csv").exists()
+
+
+def test_osmose_demo_minimal(tmp_path):
+    result = osmose_demo("minimal", tmp_path)
+    assert result["config_file"].exists()
+    assert result["output_dir"].exists()
+    csv_files = list(result["config_file"].parent.glob("*.csv"))
+    assert len(csv_files) >= 2
+
+
+def test_osmose_demo_minimal_config_is_loadable(tmp_path):
+    from osmose.config.reader import OsmoseConfigReader
+
+    result = osmose_demo("minimal", tmp_path)
+    reader = OsmoseConfigReader()
+    config = reader.read(result["config_file"])
+    assert int(config["simulation.nspecies"]) == 2
+    assert config["species.name.sp0"] == "Anchovy"
+    assert config["species.name.sp1"] == "Hake"
+
+
+def test_osmose_demo_minimal_has_predation(tmp_path):
+    result = osmose_demo("minimal", tmp_path)
+    config_dir = result["config_file"].parent
+    assert (config_dir / "predation" / "accessibility_matrix.csv").exists()
 
 
 def test_migrate_config_noop():
