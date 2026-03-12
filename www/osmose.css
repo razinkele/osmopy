@@ -1202,6 +1202,186 @@ body.show-all-help .field-help-text {
     display: block;
 }
 
+/* ── Collapsible nav sidebar ──────────────────────────────────── */
+.osm-hamburger {
+    display: block;
+    width: 100%;
+    background: none;
+    border: 1px solid var(--osm-border);
+    border-radius: 6px;
+    color: var(--osm-text-secondary);
+    cursor: pointer;
+    padding: 8px;
+    margin-bottom: 8px;
+    font-size: 16px;
+    line-height: 1;
+    text-align: center;
+    transition: all var(--osm-transition);
+}
+.osm-hamburger:hover {
+    color: var(--osm-accent);
+    background: var(--osm-accent-dim);
+}
+.osm-hamburger-icon {
+    display: inline-block;
+    width: 18px;
+    height: 2px;
+    background: currentColor;
+    position: relative;
+    vertical-align: middle;
+}
+.osm-hamburger-icon::before,
+.osm-hamburger-icon::after {
+    content: '';
+    display: block;
+    width: 18px;
+    height: 2px;
+    background: currentColor;
+    position: absolute;
+    left: 0;
+}
+.osm-hamburger-icon::before { top: -6px; }
+.osm-hamburger-icon::after { top: 6px; }
+
+/* Nav column transitions */
+.nav-pills {
+    transition: width var(--osm-transition-slow), padding var(--osm-transition-slow);
+}
+
+/* Collapsed nav — scoped to navset_pill_list container */
+html.nav-collapsed .bslib-navs-pill-list > .row > [class*="col-"]:first-child {
+    width: 42px !important;
+    min-width: 42px !important;
+    max-width: 42px !important;
+    padding-left: 4px !important;
+    padding-right: 4px !important;
+    transition: width var(--osm-transition-slow), min-width var(--osm-transition-slow);
+}
+html.nav-collapsed .bslib-navs-pill-list > .row > [class*="col-"]:last-child {
+    flex: 1;
+    max-width: 100% !important;
+    transition: max-width var(--osm-transition-slow);
+}
+html.nav-collapsed .osmose-section-label {
+    display: none;
+}
+html.nav-collapsed .nav-pills .nav-link {
+    font-size: 0 !important;
+    padding: 8px 6px !important;
+    text-align: center;
+    overflow: hidden;
+    white-space: nowrap;
+}
+html.nav-collapsed .nav-pills .nav-link.active {
+    box-shadow: none;
+    border-radius: 6px !important;
+}
+html.nav-collapsed .osm-hamburger {
+    font-size: 16px !important;
+}
+
+/* ── Collapsible page panels ──────────────────────────────────── */
+.osm-split-layout {
+    display: flex;
+    height: 100%;
+}
+.osm-split-layout > .row {
+    flex: 1;
+    flex-wrap: nowrap;
+}
+.osm-split-layout > .row > div:first-child {
+    transition: width var(--osm-transition-slow),
+                opacity var(--osm-transition),
+                padding var(--osm-transition-slow),
+                min-width var(--osm-transition-slow);
+}
+.osm-split-layout > .row > div:first-child.collapsed {
+    width: 0 !important;
+    flex: 0 !important;
+    min-width: 0 !important;
+    overflow: hidden;
+    opacity: 0;
+    padding: 0 !important;
+}
+.osm-split-layout > .row > div:first-child.collapsed ~ div {
+    flex: 1;
+    max-width: 100%;
+}
+
+/* ── Expand tab ───────────────────────────────────────────────── */
+.osm-expand-tab {
+    display: none;
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    background: var(--osm-bg-card);
+    border: 1px solid var(--osm-border);
+    border-left: 3px solid var(--osm-accent);
+    padding: 12px 6px;
+    border-radius: 0 8px 8px 0;
+    cursor: pointer;
+    color: var(--osm-text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    align-self: center;
+    flex-shrink: 0;
+    transition: all var(--osm-transition);
+}
+.osm-expand-tab:hover {
+    color: var(--osm-accent);
+    background: var(--osm-bg-card-hover);
+}
+.osm-expand-tab.visible {
+    display: block;
+}
+
+/* ── Collapse button in card header ───────────────────────────── */
+.osm-collapse-btn {
+    background: none;
+    border: none;
+    color: var(--osm-text-muted);
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 16px;
+    line-height: 1;
+    margin-left: auto;
+    transition: all var(--osm-transition);
+}
+.osm-collapse-btn:hover {
+    color: var(--osm-accent);
+    background: var(--osm-accent-dim);
+}
+.card-header:has(.osm-collapse-btn) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+/* ── Light theme overrides for collapsible components ─────────── */
+[data-theme="light"] .osm-expand-tab {
+    background: var(--osm-bg-card);
+    border-color: var(--osm-border);
+    border-left-color: var(--osm-accent);
+    color: var(--osm-text-secondary);
+}
+[data-theme="light"] .osm-expand-tab:hover {
+    color: var(--osm-accent);
+    background: var(--osm-bg-card-hover);
+}
+[data-theme="light"] .osm-collapse-btn {
+    color: var(--osm-text-muted);
+}
+[data-theme="light"] .osm-collapse-btn:hover {
+    color: var(--osm-accent);
+    background: var(--osm-accent-dim);
+}
+[data-theme="light"] .osm-hamburger {
+    color: var(--osm-text-secondary);
+}
+[data-theme="light"] .osm-hamburger:hover {
+    color: var(--osm-accent);
+}
+
 /* ── Responsive / mobile ────────────────────────────────────── */
 @media (max-width: 768px) {
     .nav-pills { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; white-space: nowrap; padding-bottom: 0.5rem; }
