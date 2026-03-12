@@ -37,11 +37,17 @@ def setup_ui():
         ui.card(
             ui.card_header("Simulation Settings"),
             ui.div(
-                ui.input_select(
-                    "load_example",
-                    "Load bundled example",
-                    choices=demo_choices,
-                    selected="",
+                ui.layout_columns(
+                    ui.input_select(
+                        "load_example",
+                        "Example configuration",
+                        choices=demo_choices,
+                        selected="",
+                    ),
+                    ui.input_action_button(
+                        "btn_load_example", "Load", class_="btn-primary mt-4"
+                    ),
+                    col_widths=[8, 4],
                 ),
             ),
             ui.hr(),
@@ -94,17 +100,18 @@ def setup_server(input, output, session, state):
         return ui.div(*panels)
 
     @reactive.effect
+    @reactive.event(input.btn_load_example)
     def handle_load_example():
-        """Load a bundled example config when dropdown selection changes."""
+        """Load a bundled example config when Load button is clicked."""
         import tempfile
 
         from osmose.config.reader import OsmoseConfigReader
 
         example = input.load_example()
         if not example:
+            ui.notification_show("Select an example first.", type="warning", duration=3)
             return
 
-        # Generate demo into a temp directory, then read the config
         try:
             tmp = Path(tempfile.mkdtemp(prefix="osmose_demo_"))
             result = osmose_demo(example, tmp)
@@ -119,24 +126,21 @@ def setup_server(input, output, session, state):
 
         config_dir = master.parent
 
-        # Guard: prevent sync effects from overwriting config while we load
         state.loading.set(True)
-
         try:
             reader = OsmoseConfigReader()
             cfg = migrate_config(reader.read(master))
             state.config.set(cfg)
             state.config_dir.set(config_dir)
+            state.config_name.set(example.replace("_", " ").title())
 
-            # Update species count input
-            n_species = int(cfg.get("simulation.nspecies", "3"))
+            # Extract species names
+            n_species = int(cfg.get("simulation.nspecies", "0"))
+            names = [cfg.get(f"species.name.sp{i}", f"Species {i}") for i in range(n_species)]
+            state.species_names.set(names)
+
             ui.update_numeric("n_species", value=n_species)
 
-            # Force re-render of dynamic panels with the loaded config.
-            # This replaces the old ui.update_* loop — panels re-render
-            # directly from state.config, no async client round-trip needed.
-            # Isolate the read so the handler doesn't depend on load_trigger
-            # (otherwise setting it would re-trigger this handler → loop).
             with reactive.isolate():
                 state.load_trigger.set(state.load_trigger.get() + 1)
 
@@ -146,8 +150,7 @@ def setup_server(input, output, session, state):
                 duration=3,
             )
             state.dirty.set(False)
-            # Reset dropdown so the same example can be re-loaded
-            ui.update_select("load_example", selected="")
+            # Do NOT reset dropdown — keep selection visible
         finally:
             state.loading.set(False)
 
