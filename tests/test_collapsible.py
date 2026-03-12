@@ -47,3 +47,9 @@ def test_expand_tab_different_pages():
     t2 = _to_html(expand_tab("Fishing", "fishing"))
     assert "expand_forcing" in t1
     assert "expand_fishing" in t2
+
+
+def test_grid_has_fullscreen_widget_import():
+    """grid.py imports fullscreen_widget from shiny_deckgl."""
+    from ui.pages import grid
+    assert hasattr(grid, 'fullscreen_widget') or 'fullscreen_widget' in dir(grid)

@@ -15,6 +15,7 @@ from shiny_deckgl import (  # type: ignore[import-untyped]
     CARTO_DARK,
     zoom_widget,
     compass_widget,
+    fullscreen_widget,
     scale_widget,
     deck_legend_control,
 )
@@ -818,6 +819,7 @@ def grid_server(input, output, session, state):
                         })
 
         widgets = [
+            fullscreen_widget(placement="top-left"),
             zoom_widget(placement="top-right"),
             compass_widget(placement="top-right"),
             scale_widget(placement="bottom-right"),
