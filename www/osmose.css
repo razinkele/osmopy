@@ -1174,6 +1174,34 @@ hr {
 }
 [data-theme="light"] .field-error-msg { color: #c0392b; border-left-color: #c0392b; }
 
+/* Tooltip (?) icon */
+.osm-tooltip-icon {
+    color: #5a6a7a;
+    font-size: 11px;
+    cursor: help;
+    border: 1px solid #5a6a7a;
+    border-radius: 50%;
+    padding: 0 4px;
+    margin-left: 4px;
+    display: inline-block;
+    line-height: 1.3;
+}
+.osm-tooltip-icon:hover {
+    color: #d4a017;
+    border-color: #d4a017;
+}
+
+/* Hidden help text — shown via "Show Help" toggle */
+.field-help-text {
+    display: none;
+    color: #5a6a7a;
+    font-size: 11px;
+    margin-top: 2px;
+}
+body.show-all-help .field-help-text {
+    display: block;
+}
+
 /* ── Responsive / mobile ────────────────────────────────────── */
 @media (max-width: 768px) {
     .nav-pills { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; white-space: nowrap; padding-bottom: 0.5rem; }

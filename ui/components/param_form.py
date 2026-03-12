@@ -11,6 +11,45 @@ from ui.styles import STYLE_HINT
 _log = logging.getLogger("osmose.param_form")
 
 
+def _tooltip_content(field: OsmoseField) -> str:
+    """Build tooltip HTML content from field metadata."""
+    parts = [f"<strong>{field.description}</strong>"]
+    if field.min_val is not None or field.max_val is not None:
+        range_str = constraint_hint(field)
+        if range_str:
+            parts.append(f"<br>{range_str}")
+    if field.default is not None:
+        parts.append(f"<br>Default: {field.default}")
+    parts.append(f"<br><code>{field.key_pattern}</code>")
+    return "".join(parts)
+
+
+def _wrap_with_tooltip(label: str, field: OsmoseField) -> ui.Tag:
+    """Wrap a label string with a (?) tooltip icon."""
+    content = _tooltip_content(field)
+    return ui.tags.span(
+        label,
+        " ",
+        ui.tags.span(
+            "(?)",
+            class_="osm-tooltip-icon",
+            tabindex="0",
+            **{
+                "data-bs-toggle": "popover",
+                "data-bs-trigger": "hover focus",
+                "data-bs-html": "true",
+                "data-bs-content": content,
+                "data-bs-placement": "top",
+            },
+        ),
+        # Hidden help text shown when "Show Help" toggle is active
+        ui.tags.span(
+            field.description or "",
+            class_="field-help-text",
+        ),
+    )
+
+
 def constraint_hint(field: OsmoseField) -> str:
     """Generate a constraint hint string for a field.
 
@@ -84,9 +123,10 @@ def render_field(
         else:
             default = raw
 
-    label = field.description or field.key_pattern
+    label_text = field.description or field.key_pattern
     if field.unit:
-        label = f"{label} ({field.unit})"
+        label_text = f"{label_text} ({field.unit})"
+    label = _wrap_with_tooltip(label_text, field)
 
     match field.param_type:
         case ParamType.FLOAT:
@@ -308,9 +348,24 @@ def render_species_table(
         for field in cat_fields:
             label = field.description or field.key_pattern
             unit_text = f" ({field.unit})" if field.unit else ""
+            tooltip_html = _tooltip_content(field)
             param_cell = ui.tags.td(
                 ui.tags.span(label),
                 ui.tags.span(unit_text, style="color: #5a6a7a;"),
+                " ",
+                ui.tags.span(
+                    "(?)",
+                    class_="osm-tooltip-icon",
+                    tabindex="0",
+                    **{
+                        "data-bs-toggle": "popover",
+                        "data-bs-trigger": "hover focus",
+                        "data-bs-html": "true",
+                        "data-bs-content": tooltip_html,
+                        "data-bs-placement": "right",
+                    },
+                ),
+                ui.tags.span(field.description or "", class_="field-help-text"),
                 style="padding: 5px 12px; position: sticky; left: 0; z-index: 1; background: var(--osm-bg-card, #0f1923);",
             )
 

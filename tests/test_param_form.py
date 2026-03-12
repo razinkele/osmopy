@@ -306,3 +306,22 @@ def test_render_species_table_with_start_idx():
     html = str(result)
     assert "spt_" in html
     assert "Phyto" in html
+
+
+def test_tooltip_markup_in_render_field():
+    """render_field should include tooltip (?) icon."""
+    field = OsmoseField(
+        key_pattern="species.linf.sp{idx}",
+        param_type=ParamType.FLOAT,
+        default=100.0,
+        min_val=1.0,
+        max_val=500.0,
+        description="L-infinity",
+        unit="cm",
+        indexed=True,
+    )
+    widget = render_field(field, species_idx=0)
+    html = str(widget)
+    assert "osm-tooltip-icon" in html
+    assert "data-bs-toggle" in html
+    assert "field-help-text" in html
