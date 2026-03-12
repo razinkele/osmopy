@@ -8,6 +8,7 @@ from osmose.demo import list_demos, migrate_config, osmose_demo
 from osmose.logging import setup_logging
 from osmose.schema.simulation import SIMULATION_FIELDS
 from osmose.schema.species import SPECIES_FIELDS
+from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.components.param_form import render_category, render_species_table
 from ui.state import sync_inputs
 
@@ -22,10 +23,12 @@ def setup_ui():
         "": "— Select example —",
         **{d: d.replace("_", " ").title() for d in list_demos()},
     }
-    return ui.layout_columns(
-        # Left column: Simulation settings
-        ui.card(
-            ui.card_header("Simulation Settings"),
+    return ui.div(
+        expand_tab("Simulation Settings", "setup"),
+        ui.layout_columns(
+            # Left column: Simulation settings
+            ui.card(
+                collapsible_card_header("Simulation Settings", "setup"),
             ui.div(
                 ui.layout_columns(
                     ui.input_select(
@@ -51,6 +54,9 @@ def setup_ui():
             ui.output_ui("species_panels"),
         ),
         col_widths=[4, 8],
+        ),
+        class_="osm-split-layout",
+        id="split_setup",
     )
 
 
