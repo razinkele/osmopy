@@ -32,6 +32,7 @@ class _ScriptRunner(OsmoseRunner):
         output_dir: Path | None = None,
         java_opts: list[str] | None = None,
         overrides: dict[str, str] | None = None,
+        **kwargs,
     ) -> list[str]:
         cmd = [self.java_cmd, str(self.jar_path), str(config_path)]
         if output_dir:
@@ -196,10 +197,10 @@ def test_build_cmd_includes_jar_flag() -> None:
 
 
 def test_build_cmd_minimal() -> None:
-    """Verify _build_cmd with no optional arguments."""
+    """Verify _build_cmd with no optional arguments includes default -Xmx2g."""
     runner = OsmoseRunner(jar_path=Path("/path/to/osmose.jar"))
     cmd = runner._build_cmd(config_path=Path("/data/config.csv"))
-    assert cmd == ["java", "-jar", "/path/to/osmose.jar", "/data/config.csv"]
+    assert cmd == ["java", "-Xmx2g", "-jar", "/path/to/osmose.jar", "/data/config.csv"]
 
 
 def test_get_java_version_not_found() -> None:
@@ -349,3 +350,66 @@ async def test_run_timeout_kills_process(tmp_path: Path) -> None:
     result = await runner.run(config_path=config, timeout_sec=1)
     assert result.returncode == -1
     assert "timed out" in result.stderr.lower()
+
+
+def test_build_cmd_includes_verbose_flag(tmp_path):
+    jar = tmp_path / "osmose.jar"
+    jar.touch()
+    config = tmp_path / "config.csv"
+    config.touch()
+    runner = OsmoseRunner(jar_path=jar)
+    cmd = runner._build_cmd(config, verbose=True)
+    assert "-verbose" in cmd
+
+
+def test_build_cmd_includes_quiet_flag(tmp_path):
+    jar = tmp_path / "osmose.jar"
+    jar.touch()
+    config = tmp_path / "config.csv"
+    config.touch()
+    runner = OsmoseRunner(jar_path=jar)
+    cmd = runner._build_cmd(config, quiet=True)
+    assert "-quiet" in cmd
+
+
+def test_build_cmd_includes_xmx_default(tmp_path):
+    jar = tmp_path / "osmose.jar"
+    jar.touch()
+    config = tmp_path / "config.csv"
+    config.touch()
+    runner = OsmoseRunner(jar_path=jar)
+    cmd = runner._build_cmd(config)
+    assert any(opt.startswith("-Xmx") for opt in cmd)
+
+
+def test_build_cmd_xmx_override(tmp_path):
+    jar = tmp_path / "osmose.jar"
+    jar.touch()
+    config = tmp_path / "config.csv"
+    config.touch()
+    runner = OsmoseRunner(jar_path=jar)
+    cmd = runner._build_cmd(config, java_opts=["-Xmx4g"])
+    xmx_opts = [o for o in cmd if o.startswith("-Xmx")]
+    assert len(xmx_opts) == 1
+    assert xmx_opts[0] == "-Xmx4g"
+
+
+def test_build_cmd_update_flag(tmp_path):
+    jar = tmp_path / "osmose.jar"
+    jar.touch()
+    config = tmp_path / "config.csv"
+    config.touch()
+    runner = OsmoseRunner(jar_path=jar)
+    cmd = runner._build_cmd(config, update=True)
+    assert "-update" in cmd
+
+
+def test_build_cmd_update_force_flag(tmp_path):
+    jar = tmp_path / "osmose.jar"
+    jar.touch()
+    config = tmp_path / "config.csv"
+    config.touch()
+    runner = OsmoseRunner(jar_path=jar)
+    cmd = runner._build_cmd(config, update=True, force=True)
+    assert "-update" in cmd
+    assert "-force" in cmd

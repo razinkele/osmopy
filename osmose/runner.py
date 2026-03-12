@@ -37,17 +37,26 @@ class OsmoseRunner:
         output_dir: Path | None = None,
         java_opts: list[str] | None = None,
         overrides: dict[str, str] | None = None,
+        verbose: bool = False,
+        quiet: bool = False,
+        update: bool = False,
+        force: bool = False,
     ) -> list[str]:
-        """Build the command list for executing the OSMOSE engine.
-
-        Subclasses or tests may override this to adjust command construction.
-        """
-        cmd = [self.java_cmd]
-        if java_opts:
-            cmd.extend(java_opts)
-        cmd.extend(["-jar", str(self.jar_path), str(config_path)])
+        """Build the command list for executing the OSMOSE engine."""
+        opts = list(java_opts or [])
+        if not any(o.startswith("-Xmx") for o in opts):
+            opts.append("-Xmx2g")
+        cmd = [self.java_cmd, *opts, "-jar", str(self.jar_path), str(config_path)]
         if output_dir:
             cmd.append(f"-Poutput.dir.path={output_dir}")
+        if verbose:
+            cmd.append("-verbose")
+        if quiet:
+            cmd.append("-quiet")
+        if update:
+            cmd.append("-update")
+        if force:
+            cmd.append("-force")
         if overrides:
             for key, value in overrides.items():
                 cmd.append(f"-P{key}={value}")
@@ -61,6 +70,10 @@ class OsmoseRunner:
         overrides: dict[str, str] | None = None,
         on_progress: Callable[[str], None] | None = None,
         timeout_sec: int | None = None,
+        verbose: bool = False,
+        quiet: bool = False,
+        update: bool = False,
+        force: bool = False,
     ) -> RunResult:
         """Run the OSMOSE engine asynchronously.
 
@@ -71,11 +84,18 @@ class OsmoseRunner:
             overrides: Extra parameter overrides (passed as -Pkey=value).
             on_progress: Callback for each line of stdout/stderr.
             timeout_sec: Maximum run time in seconds. None means no limit.
+            verbose: Pass -verbose flag to the OSMOSE engine.
+            quiet: Pass -quiet flag to the OSMOSE engine.
+            update: Pass -update flag to trigger config version migration.
+            force: Pass -force flag (used with update to overwrite).
 
         Returns:
             RunResult with returncode, stdout, stderr.
         """
-        cmd = self._build_cmd(config_path, output_dir, java_opts, overrides)
+        cmd = self._build_cmd(
+            config_path, output_dir, java_opts, overrides,
+            verbose=verbose, quiet=quiet, update=update, force=force,
+        )
         _log.info("Starting OSMOSE: %s", " ".join(cmd))
 
         self._process = await asyncio.create_subprocess_exec(
@@ -144,6 +164,17 @@ class OsmoseRunner:
         if self._process and self._process.returncode is None:
             self._process.terminate()
             _log.info("OSMOSE run cancelled")
+
+    async def migrate(
+        self,
+        config_path: Path,
+        force: bool = False,
+        timeout_sec: int | None = 120,
+    ) -> RunResult:
+        """Run the Java engine's built-in config version migration."""
+        return await self.run(
+            config_path, java_opts=[], update=True, force=force, timeout_sec=timeout_sec,
+        )
 
     async def run_ensemble(
         self,
