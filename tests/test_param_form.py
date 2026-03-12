@@ -2,7 +2,7 @@
 
 from osmose.config.validator import validate_field
 from osmose.schema.base import OsmoseField, ParamType
-from ui.components.param_form import render_field, render_category, _guess_step, constraint_hint
+from ui.components.param_form import render_field, render_category, _guess_step, constraint_hint, render_species_table
 
 
 def test_render_float_field():
@@ -237,3 +237,72 @@ def test_validate_field_accepts_valid_value():
         category="growth",
     )
     assert validate_field("species.linf.sp0", "100.0", field) is None
+
+
+def test_render_species_table_zero_species():
+    """0 species shows placeholder message."""
+    from osmose.schema.species import SPECIES_FIELDS
+    result = render_species_table(SPECIES_FIELDS, n_species=0, species_names=[])
+    html = str(result)
+    assert "Load a configuration" in html
+
+
+def test_render_species_table_one_species():
+    """1 species renders table with header + data column."""
+    from osmose.schema.species import SPECIES_FIELDS
+    result = render_species_table(
+        SPECIES_FIELDS, n_species=1, species_names=["Anchovy"],
+    )
+    html = str(result)
+    assert "Anchovy" in html
+    assert "Growth" in html  # Category header
+
+
+def test_render_species_table_multiple_species():
+    """Multiple species render as columns."""
+    from osmose.schema.species import SPECIES_FIELDS
+    result = render_species_table(
+        SPECIES_FIELDS, n_species=3,
+        species_names=["Anchovy", "Sardine", "Hake"],
+    )
+    html = str(result)
+    assert "Anchovy" in html
+    assert "Sardine" in html
+    assert "Hake" in html
+
+
+def test_render_species_table_hides_advanced():
+    """Advanced fields hidden by default."""
+    from osmose.schema.species import SPECIES_FIELDS
+    result_basic = render_species_table(
+        SPECIES_FIELDS, n_species=1, species_names=["A"],
+        show_advanced=False,
+    )
+    result_adv = render_species_table(
+        SPECIES_FIELDS, n_species=1, species_names=["A"],
+        show_advanced=True,
+    )
+    assert len(str(result_adv)) > len(str(result_basic))
+
+
+def test_render_species_table_uses_spt_prefix():
+    """Input IDs use spt_ prefix to avoid collision."""
+    from osmose.schema.species import SPECIES_FIELDS
+    result = render_species_table(
+        SPECIES_FIELDS, n_species=1, species_names=["A"],
+    )
+    html = str(result)
+    assert "spt_" in html
+
+
+def test_render_species_table_with_start_idx():
+    """start_idx offsets species indexing for LTL resources."""
+    from osmose.schema.ltl import LTL_FIELDS
+    indexed = [f for f in LTL_FIELDS if f.indexed]
+    result = render_species_table(
+        indexed, n_species=2, species_names=["Phyto", "Zoo"],
+        start_idx=8,
+    )
+    html = str(result)
+    assert "spt_" in html
+    assert "Phyto" in html

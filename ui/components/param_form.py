@@ -232,6 +232,175 @@ def render_species_params(
     )
 
 
+def render_species_table(
+    fields: list[OsmoseField],
+    n_species: int,
+    species_names: list[str],
+    start_idx: int = 0,
+    show_advanced: bool = False,
+    config: dict[str, str] | None = None,
+) -> ui.Tag:
+    """Render a spreadsheet-style table: params as rows, species as columns.
+
+    Args:
+        fields: Schema fields to display (must be indexed).
+        n_species: Number of species columns.
+        species_names: Display names for each species.
+        start_idx: Starting species index (for LTL resources offset by nspecies).
+        show_advanced: Whether to include advanced fields.
+        config: Optional config dict for initial values.
+    """
+    if n_species == 0:
+        return ui.div(
+            "Load a configuration to view species parameters.",
+            style="padding: 20px; text-align: center; color: #5a6a7a;",
+        )
+
+    # Filter to indexed, non-advanced fields
+    visible = [f for f in fields if f.indexed and (show_advanced or not f.advanced)]
+
+    # Group by category
+    categories: dict[str, list[OsmoseField]] = {}
+    for f in visible:
+        cat = f.category or "other"
+        categories.setdefault(cat, []).append(f)
+
+    # Build header row: Parameter | Species0 | Species1 | ...
+    header_cells = [
+        ui.tags.th(
+            "Parameter",
+            style="position: sticky; left: 0; z-index: 2; background: var(--osm-bg-card, #162232); min-width: 200px; padding: 8px 12px;",
+        )
+    ]
+    for i, name in enumerate(species_names):
+        header_cells.append(ui.tags.th(name, style="text-align: center; min-width: 90px; padding: 8px;"))
+    header = ui.tags.thead(
+        ui.tags.tr(*header_cells, style="border-bottom: 2px solid var(--osm-border, #2d3d50);")
+    )
+
+    # Build body rows grouped by category
+    rows = []
+    for cat_name, cat_fields in categories.items():
+        display_cat = cat_name.replace("_", " ").title()
+        n_fields = len(cat_fields)
+        # Category group header row (collapsible via JS)
+        cat_id = f"spt_cat_{cat_name}"
+        rows.append(
+            ui.tags.tr(
+                ui.tags.td(
+                    ui.tags.span(
+                        f"\u25bc {display_cat} ",
+                        ui.tags.span(
+                            f"({n_fields} params)",
+                            style="color: #5a6a7a; font-weight: 400; font-size: 10px;",
+                        ),
+                        style="cursor: pointer;",
+                    ),
+                    colspan=str(n_species + 1),
+                    style="padding: 6px 12px; font-weight: 700; color: #d4a017; background: var(--osm-bg-section, #1a2a3a);",
+                ),
+                **{"data-spt-cat": cat_id, "onclick": f"toggleSptCategory('{cat_id}')"},
+                style="cursor: pointer;",
+            )
+        )
+
+        # Parameter rows
+        for field in cat_fields:
+            label = field.description or field.key_pattern
+            unit_text = f" ({field.unit})" if field.unit else ""
+            param_cell = ui.tags.td(
+                ui.tags.span(label),
+                ui.tags.span(unit_text, style="color: #5a6a7a;"),
+                style="padding: 5px 12px; position: sticky; left: 0; z-index: 1; background: var(--osm-bg-card, #0f1923);",
+            )
+
+            value_cells = []
+            for i in range(n_species):
+                sp_idx = start_idx + i
+                config_key = field.resolve_key(sp_idx)
+                # Input ID: spt_{key_without_sp_idx}_{species_idx}
+                base_key = (
+                    field.key_pattern.replace(".sp{idx}", "")
+                    .replace("{idx}", "")
+                    .replace(".", "_")
+                )
+                input_id = f"spt_{base_key}_{sp_idx}"
+
+                # Resolve value from config or default
+                val = field.default
+                if config and config_key in config:
+                    raw = config[config_key]
+                    if field.param_type in (ParamType.FLOAT, ParamType.INT):
+                        try:
+                            val = float(raw) if field.param_type == ParamType.FLOAT else int(raw)
+                        except (ValueError, TypeError):
+                            val = field.default
+                    elif field.param_type == ParamType.BOOL:
+                        val = str(raw).lower() in ("true", "1", "yes")
+                    else:
+                        val = raw
+
+                cell_style = "text-align: center; padding: 4px;"
+                if field.param_type in (ParamType.FLOAT, ParamType.INT):
+                    widget = ui.input_numeric(
+                        input_id,
+                        "",
+                        value=val if val is not None else 0,
+                        min=field.min_val,
+                        max=field.max_val,
+                        step=_guess_step(field) if field.param_type == ParamType.FLOAT else 1,
+                        width="90px",
+                    )
+                elif field.param_type == ParamType.BOOL:
+                    widget = ui.input_switch(input_id, "", value=bool(val) if val is not None else False)
+                elif field.param_type == ParamType.ENUM:
+                    choices = {c: c for c in (field.choices or [])}
+                    widget = ui.input_select(input_id, "", choices=choices, selected=val, width="90px")
+                elif field.param_type in (ParamType.FILE_PATH, ParamType.MATRIX):
+                    widget = ui.tags.span("file", style="color: #5a6a7a; font-size: 11px;")
+                else:
+                    widget = ui.input_text(input_id, "", value=str(val or ""), width="90px")
+
+                value_cells.append(ui.tags.td(widget, style=cell_style))
+
+            rows.append(
+                ui.tags.tr(
+                    param_cell,
+                    *value_cells,
+                    **{"data-spt-group": cat_id},
+                    style="border-bottom: 1px solid var(--osm-border-dim, #1a2a3a);",
+                )
+            )
+
+    body = ui.tags.tbody(*rows)
+    table = ui.tags.table(
+        header,
+        body,
+        class_="table table-sm",
+        style="width: 100%; border-collapse: collapse; font-size: 12px;",
+    )
+
+    # Client-side JS for collapsing categories (no server round-trip)
+    collapse_js = ui.tags.script("""
+    function toggleSptCategory(catId) {
+        var rows = document.querySelectorAll('[data-spt-group="' + catId + '"]');
+        var header = document.querySelector('[data-spt-cat="' + catId + '"]');
+        var visible = rows.length > 0 && rows[0].style.display !== 'none';
+        rows.forEach(function(r) { r.style.display = visible ? 'none' : ''; });
+        var span = header.querySelector('span');
+        if (span) {
+            var text = span.textContent;
+            span.textContent = visible ? text.replace('\u25bc', '\u25b6') : text.replace('\u25b6', '\u25bc');
+        }
+    }
+    """)
+
+    return ui.div(
+        ui.div(table, style="max-height: 600px; overflow: auto;"),
+        collapse_js,
+    )
+
+
 def _guess_step(field: OsmoseField) -> float:
     """Guess an appropriate step value for a numeric input."""
     if field.max_val is not None and field.min_val is not None:
