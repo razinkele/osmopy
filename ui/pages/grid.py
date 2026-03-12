@@ -183,21 +183,6 @@ def _build_grid_layers(
 
 
 def grid_ui():
-    grid_type_field = next((f for f in GRID_FIELDS if "classname" in f.key_pattern), None)
-    regular_fields = [
-        f
-        for f in GRID_FIELDS
-        if (
-            f.key_pattern.startswith("grid.n")
-            or f.key_pattern.startswith("grid.up")
-            or f.key_pattern.startswith("grid.low")
-        )
-        and "netcdf" not in f.key_pattern
-    ]
-    netcdf_fields = [
-        f for f in GRID_FIELDS if "netcdf" in f.key_pattern or f.key_pattern.startswith("grid.var")
-    ]
-
     grid_map = MapWidget(
         "grid_map",
         view_state={
@@ -218,13 +203,7 @@ def grid_ui():
     return ui.layout_columns(
         ui.card(
             ui.card_header("Grid Type"),
-            render_field(grid_type_field) if grid_type_field else ui.div(),
-            ui.hr(),
-            ui.h5("Regular Grid Settings"),
-            *[render_field(f) for f in regular_fields],
-            ui.hr(),
-            ui.h5("NetCDF Grid Settings"),
-            *[render_field(f) for f in netcdf_fields if not f.advanced],
+            ui.output_ui("grid_fields"),
         ),
         ui.card(
             ui.card_header("Grid Preview"),
@@ -236,31 +215,86 @@ def grid_ui():
 
 
 def grid_server(input, output, session, state):
-    # Create a per-session map widget with the same ID
+    grid_type_field = next((f for f in GRID_FIELDS if "classname" in f.key_pattern), None)
+    regular_fields = [
+        f
+        for f in GRID_FIELDS
+        if (
+            f.key_pattern.startswith("grid.n")
+            or f.key_pattern.startswith("grid.up")
+            or f.key_pattern.startswith("grid.low")
+        )
+        and "netcdf" not in f.key_pattern
+    ]
+    netcdf_fields = [
+        f for f in GRID_FIELDS if "netcdf" in f.key_pattern or f.key_pattern.startswith("grid.var")
+    ]
+
+    @render.ui
+    def grid_fields():
+        state.load_trigger.get()
+        with reactive.isolate():
+            cfg = state.config.get()
+        return ui.div(
+            render_field(grid_type_field, config=cfg) if grid_type_field else ui.div(),
+            ui.hr(),
+            ui.h5("Regular Grid Settings"),
+            *[render_field(f, config=cfg) for f in regular_fields],
+            ui.hr(),
+            ui.h5("NetCDF Grid Settings"),
+            *[render_field(f, config=cfg) for f in netcdf_fields if not f.advanced],
+        )
+
+    # Lightweight handle to the widget rendered in grid_ui().
+    # shiny_deckgl routes .update() messages by widget ID ("grid_map").
     _map = MapWidget(
         "grid_map",
         view_state={"latitude": 46.0, "longitude": -4.5, "zoom": 5},
         style=CARTO_POSITRON,
     )
 
+    def _read_grid_values() -> tuple[float, float, float, float, int, int]:
+        """Read grid bounds from inputs, falling back to config.
+
+        After example loading, grid_fields re-renders with new inputs, but
+        the new values may not have round-tripped through the client yet.
+        Fall back to config so the preview works immediately.
+        """
+        state.load_trigger.get()  # re-run when example loads
+        try:
+            ul_lat = float(input.grid_upleft_lat() or 0)
+            ul_lon = float(input.grid_upleft_lon() or 0)
+            lr_lat = float(input.grid_lowright_lat() or 0)
+            lr_lon = float(input.grid_lowright_lon() or 0)
+            nx = int(input.grid_ncolumn() or 0)
+            ny = int(input.grid_nline() or 0)
+        except (AttributeError, TypeError):
+            ul_lat = ul_lon = lr_lat = lr_lon = 0.0
+            nx = ny = 0
+
+        # Fall back to config if inputs haven't populated yet
+        if ul_lat == 0 and ul_lon == 0 and lr_lat == 0 and lr_lon == 0:
+            with reactive.isolate():
+                cfg = state.config.get()
+            ul_lat = float(cfg.get("grid.upleft.lat", 0))
+            ul_lon = float(cfg.get("grid.upleft.lon", 0))
+            lr_lat = float(cfg.get("grid.lowright.lat", 0))
+            lr_lon = float(cfg.get("grid.lowright.lon", 0))
+            nx = int(float(cfg.get("grid.nlon", 0)))
+            ny = int(float(cfg.get("grid.nlat", 0)))
+
+        return ul_lat, ul_lon, lr_lat, lr_lon, nx, ny
+
     @render.ui
     def grid_hint():
-        ul_lat = float(input.grid_upleft_lat() or 0)
-        ul_lon = float(input.grid_upleft_lon() or 0)
-        lr_lat = float(input.grid_lowright_lat() or 0)
-        lr_lon = float(input.grid_lowright_lon() or 0)
+        ul_lat, ul_lon, lr_lat, lr_lon, _, _ = _read_grid_values()
         if ul_lat == 0 and ul_lon == 0 and lr_lat == 0 and lr_lon == 0:
             return ui.p("Configure coordinates or load an example to see a preview.")
         return ui.div()
 
     @reactive.effect
     async def update_grid_map():
-        ul_lat = float(input.grid_upleft_lat() or 0)
-        ul_lon = float(input.grid_upleft_lon() or 0)
-        lr_lat = float(input.grid_lowright_lat() or 0)
-        lr_lon = float(input.grid_lowright_lon() or 0)
-        nx = int(input.grid_ncolumn() or 0)
-        ny = int(input.grid_nline() or 0)
+        ul_lat, ul_lon, lr_lat, lr_lon, nx, ny = _read_grid_values()
 
         is_dark = get_theme_mode(input) == "dark"
 

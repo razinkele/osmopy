@@ -43,6 +43,7 @@ _MIGRATION_CHAIN: list[tuple[str, dict[str, str]]] = [
             "mortality.natural.larva.rate": "mortality.additional.larva.rate",
         },
     ),
+    # No-op sentinel: marks the v4.3.0 version boundary without renaming any keys.
     (
         "4.3.0",
         {

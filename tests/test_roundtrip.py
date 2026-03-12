@@ -54,8 +54,8 @@ def _full_config() -> dict[str, str]:
         "population.seeding.biomass.sp0": "10000",
         "population.seeding.biomass.sp1": "15000",
         # ---- grid ----
-        "grid.ncolumn": "30",
-        "grid.nline": "20",
+        "grid.nlon": "30",
+        "grid.nlat": "20",
         "grid.upleft.lat": "44.0",
         "grid.upleft.lon": "-2.0",
         "grid.lowright.lat": "43.0",

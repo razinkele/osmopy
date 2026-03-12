@@ -36,7 +36,7 @@ def test_master_references_subfiles():
     config = {
         "simulation.nspecies": 2,
         "species.name.sp0": "Anchovy",
-        "grid.ncolumn": 30,
+        "grid.nlon": 30,
     }
     with tempfile.TemporaryDirectory() as tmpdir:
         writer = OsmoseConfigWriter()
@@ -53,7 +53,7 @@ def test_roundtrip_basic():
         "simulation.nspecies": "2",
         "species.name.sp0": "Anchovy",
         "species.linf.sp0": "19.5",
-        "grid.ncolumn": "30",
+        "grid.nlon": "30",
     }
     with tempfile.TemporaryDirectory() as tmpdir:
         writer = OsmoseConfigWriter()
