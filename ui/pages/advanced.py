@@ -9,7 +9,14 @@ from osmose.config.reader import OsmoseConfigReader
 from osmose.config.writer import OsmoseConfigWriter
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.state import REGISTRY
-from ui.styles import COLOR_DANGER, COLOR_MUTED, COLOR_SUCCESS, STYLE_MONO_KEY, STYLE_SCROLL_TABLE
+from ui.styles import (
+    COLOR_DANGER,
+    COLOR_MUTED,
+    COLOR_SUCCESS,
+    STYLE_EMPTY,
+    STYLE_MONO_KEY,
+    STYLE_SCROLL_TABLE,
+)
 
 
 def compute_import_diff(
