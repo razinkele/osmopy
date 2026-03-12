@@ -45,7 +45,7 @@ class OsmoseConfigWriter:
     MASTER_PREFIXES: tuple[str, ...] = (
         "simulation.",
         "mortality.subdt",
-        "mortality.natural",
+        "mortality.additional",
         "mortality.starvation",
         "stochastic.",
     )

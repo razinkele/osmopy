@@ -103,3 +103,14 @@ def test_grid_nlon_matches_schema():
     field2 = registry.match_field("grid.nlat")
     assert field2 is not None, "grid.nlat must match a schema field"
     assert field2.param_type.value == "int"
+
+
+def test_mortality_additional_matches_schema():
+    """Post-v4.2.5 mortality.additional keys must match schema."""
+    from osmose.schema import build_registry
+    registry = build_registry()
+    field = registry.match_field("mortality.additional.rate.sp0")
+    assert field is not None, "mortality.additional.rate.sp0 must match schema"
+    assert field.indexed is True
+    field2 = registry.match_field("mortality.additional.larva.rate.sp0")
+    assert field2 is not None, "mortality.additional.larva.rate.sp0 must match schema"
