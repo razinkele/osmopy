@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 from shiny import reactive, render, ui
 from shinywidgets import output_widget, render_plotly
 
-from ui.styles import COLOR_MUTED, STYLE_EMPTY, STYLE_MONO_KEY
+from ui.styles import STYLE_EMPTY, STYLE_MONO_KEY
 
 
 # ---------------------------------------------------------------------------
