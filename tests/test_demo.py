@@ -26,6 +26,7 @@ def test_osmose_demo_list():
     demos = list_demos()
     assert "bay_of_biscay" in demos
     assert "eec" in demos
+    assert "eec_full" in demos
     assert "minimal" in demos
 
 
@@ -55,6 +56,38 @@ def test_osmose_demo_eec_copies_support_dirs(tmp_path):
     assert (config_dir / "reproduction" / "reprod_cod.csv").exists()
     assert (config_dir / "grid" / "eec_mask.csv").exists()
     assert (config_dir / "predation" / "accessibility_matrix.csv").exists()
+
+
+def test_osmose_demo_eec_full(tmp_path):
+    result = osmose_demo("eec_full", tmp_path)
+    assert result["config_file"].exists()
+    assert result["output_dir"].exists()
+    assert result["config_file"].name == "eec_all-parameters.csv"
+
+
+def test_osmose_demo_eec_full_config_is_loadable(tmp_path):
+    from osmose.config.reader import OsmoseConfigReader
+
+    result = osmose_demo("eec_full", tmp_path)
+    reader = OsmoseConfigReader()
+    config = reader.read(result["config_file"])
+    assert int(config["simulation.nspecies"]) == 14
+    assert int(config["simulation.nresource"]) == 10
+    assert config["species.name.sp0"] == "lesserSpottedDogfish"
+    assert config["species.name.sp13"] == "squids"
+
+
+def test_osmose_demo_eec_full_has_netcdf_and_maps(tmp_path):
+    result = osmose_demo("eec_full", tmp_path)
+    config_dir = result["config_file"].parent
+    assert (config_dir / "eec_grid-mask.nc").exists()
+    assert (config_dir / "eec_ltlbiomassTons.nc").exists()
+    assert (config_dir / "maps").is_dir()
+    map_files = list((config_dir / "maps").glob("*.csv"))
+    assert len(map_files) >= 35
+    assert (config_dir / "reproduction").is_dir()
+    reprod_files = list((config_dir / "reproduction").glob("*.csv"))
+    assert len(reprod_files) == 14
 
 
 def test_osmose_demo_minimal(tmp_path):

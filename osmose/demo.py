@@ -63,7 +63,7 @@ def _version_tuple(v: str) -> tuple[int, ...]:
 
 def list_demos() -> list[str]:
     """List available demo scenarios."""
-    return ["bay_of_biscay", "eec", "minimal"]
+    return ["bay_of_biscay", "eec", "eec_full", "minimal"]
 
 
 def osmose_demo(scenario: str, output_dir: Path) -> dict:
@@ -81,6 +81,7 @@ def osmose_demo(scenario: str, output_dir: Path) -> dict:
     generators = {
         "bay_of_biscay": _generate_bay_of_biscay,
         "eec": _generate_eec,
+        "eec_full": _generate_eec_full,
         "minimal": _generate_minimal,
     }
     gen = generators.get(scenario)
@@ -136,6 +137,35 @@ def _generate_eec(output_dir: Path) -> dict:
         )
 
     config_file = config_dir / "osm_all-parameters.csv"
+    return {"config_file": config_file, "output_dir": sim_output}
+
+
+def _generate_eec_full(output_dir: Path) -> dict:
+    """Generate full EEC 14-species + 10 LTL research configuration.
+
+    Based on GhassenH/OSMOSE_EEC — a calibrated Eastern English Channel model
+    with 14 focal species, 10 plankton/benthos resource groups, 42 movement maps,
+    and NetCDF LTL forcing.
+    """
+    data_dir = Path(__file__).parent.parent / "data" / "eec_full"
+    config_dir = output_dir / "config"
+    sim_output = output_dir / "output"
+    sim_output.mkdir(parents=True, exist_ok=True)
+
+    if data_dir.exists():
+        shutil.copytree(data_dir, config_dir, dirs_exist_ok=True)
+    else:
+        config_dir.mkdir(parents=True, exist_ok=True)
+        master = config_dir / "eec_all-parameters.csv"
+        master.write_text(
+            "simulation.time.ndtperyear ; 24\n"
+            "simulation.time.nyear ; 70\n"
+            "simulation.nspecies ; 14\n"
+            "simulation.nresource ; 10\n"
+            "simulation.ncpu ; 1\n"
+        )
+
+    config_file = config_dir / "eec_all-parameters.csv"
     return {"config_file": config_file, "output_dir": sim_output}
 
 
