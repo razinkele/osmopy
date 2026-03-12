@@ -4,6 +4,7 @@ from shiny import ui, reactive, render
 
 from osmose.schema.bioenergetics import BIOENERGETICS_FIELDS
 from osmose.schema.ltl import LTL_FIELDS
+from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.components.param_form import render_field, render_species_table
 from ui.state import sync_inputs
 
@@ -16,9 +17,11 @@ _TEMP_KEYS: list[str] = [
 
 
 def forcing_ui():
-    return ui.layout_columns(
-        ui.card(
-            ui.card_header("Lower Trophic Level (Plankton)"),
+    return ui.div(
+        expand_tab("Lower Trophic Level (Plankton)", "forcing"),
+        ui.layout_columns(
+            ui.card(
+                collapsible_card_header("Lower Trophic Level (Plankton)", "forcing"),
             ui.output_ui("forcing_global_fields"),
             ui.hr(),
             ui.input_numeric("n_resources", "Number of resource groups", value=3, min=0, max=20),
@@ -34,6 +37,9 @@ def forcing_ui():
             ),
         ),
         col_widths=[7, 5],
+        ),
+        class_="osm-split-layout",
+        id="split_forcing",
     )
 
 
