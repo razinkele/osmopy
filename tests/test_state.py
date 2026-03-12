@@ -67,7 +67,7 @@ def test_appstate_reset_to_defaults():
         assert "simulation.nspecies" in cfg
         assert cfg["simulation.nspecies"] == "3"
         # Should have grid params
-        assert "grid.ncolumn" in cfg
+        assert "grid.nlon" in cfg
         # Should have species-indexed params expanded for 3 species
         assert "species.linf.sp0" in cfg
 

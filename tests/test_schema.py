@@ -91,3 +91,15 @@ def test_param_type_enum():
     assert ParamType.FLOAT.value == "float"
     assert ParamType.MATRIX.value == "matrix"
     assert ParamType.FILE_PATH.value == "file_path"
+
+
+def test_grid_nlon_matches_schema():
+    """Post-v3.3.3 grid keys must match schema fields."""
+    from osmose.schema import build_registry
+    registry = build_registry()
+    field = registry.match_field("grid.nlon")
+    assert field is not None, "grid.nlon must match a schema field"
+    assert field.param_type.value == "int"
+    field2 = registry.match_field("grid.nlat")
+    assert field2 is not None, "grid.nlat must match a schema field"
+    assert field2.param_type.value == "int"
