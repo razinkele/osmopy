@@ -160,3 +160,11 @@ def setup_server(input, output, session, state):
                     continue
                 if val is not None:
                     state.update_config(config_key, str(val))
+
+        # Update global species names list
+        names = []
+        with reactive.isolate():
+            cfg = state.config.get()
+        for i in range(n):
+            names.append(cfg.get(f"species.name.sp{i}", f"Species {i}"))
+        state.species_names.set(names)
