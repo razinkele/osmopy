@@ -346,6 +346,126 @@ def _build_netcdf_grid_layers(
     return layers, view_state
 
 
+def _load_csv_overlay(
+    file_path: Path,
+    ul_lat: float,
+    ul_lon: float,
+    lr_lat: float,
+    lr_lon: float,
+    nx: int,
+    ny: int,
+    nc_data: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None,
+) -> list[dict] | None:
+    """Load a CSV spatial file and map values onto grid cells for deck.gl.
+
+    OSMOSE CSV spatial files are typically 2D matrices (ny x nx) with one value
+    per grid cell, or 1D column vectors with one value per cell in row-major order.
+    Values are mapped onto the regular grid defined by the bounding box.
+    """
+    try:
+        df = pd.read_csv(file_path, header=None)
+        data = df.values
+
+        # Determine grid dimensions to use
+        if nc_data is not None:
+            lat, lon = nc_data[0], nc_data[1]
+            g_ny, g_nx = lat.shape
+        elif nx > 0 and ny > 0:
+            lat, lon = None, None
+            g_ny, g_nx = ny, nx
+        else:
+            return None
+
+        # Reshape 1D data to 2D if needed
+        if data.ndim == 1 or (data.ndim == 2 and data.shape[1] == 1):
+            flat = data.flatten()
+            if len(flat) == g_ny * g_nx:
+                data = flat.reshape(g_ny, g_nx)
+            else:
+                _log.warning(
+                    "CSV %s has %d values but grid is %dx%d",
+                    file_path, len(flat), g_ny, g_nx,
+                )
+                return None
+        elif data.shape != (g_ny, g_nx):
+            # Try transposing
+            if data.shape == (g_nx, g_ny):
+                data = data.T
+            else:
+                _log.warning(
+                    "CSV %s shape %s doesn't match grid %dx%d",
+                    file_path, data.shape, g_ny, g_nx,
+                )
+                return None
+
+        # Compute value range for color scaling
+        numeric = data.astype(float)
+        valid = numeric[~np.isnan(numeric)]
+        if len(valid) == 0:
+            return None
+        vmin, vmax = float(valid.min()), float(valid.max())
+        vrange = vmax - vmin if vmax != vmin else 1.0
+
+        cells = []
+        for r in range(g_ny):
+            for c in range(g_nx):
+                v = float(numeric[r, c])
+                if np.isnan(v):
+                    continue
+                # Compute cell polygon from grid coordinates
+                if nc_data is not None and lat is not None and lon is not None:
+                    clat = float(lat[r, c] if lat.ndim == 2 else lat[r])
+                    clon = float(lon[r, c] if lon.ndim == 2 else lon[c])
+                    if lat.ndim == 2:
+                        dlat = abs(float(
+                            lat[min(r + 1, g_ny - 1), c] - lat[max(r - 1, 0), c]
+                        )) / 2
+                        dlon = abs(float(
+                            lon[r, min(c + 1, g_nx - 1)] - lon[r, max(c - 1, 0)]
+                        )) / 2
+                    else:
+                        dlat = abs(float(
+                            lat[min(r + 1, len(lat) - 1)] - lat[max(r - 1, 0)]
+                        )) / 2
+                        dlon = abs(float(
+                            lon[min(c + 1, len(lon) - 1)] - lon[max(c - 1, 0)]
+                        )) / 2
+                    if r == 0 or r == g_ny - 1:
+                        dlat *= 2
+                    if c == 0 or c == g_nx - 1:
+                        dlon *= 2
+                    hlat, hlon = dlat / 2, dlon / 2
+                else:
+                    # Regular grid from bounding box
+                    dx = (lr_lon - ul_lon) / g_nx
+                    dy = (ul_lat - lr_lat) / g_ny
+                    clon = ul_lon + (c + 0.5) * dx
+                    clat = ul_lat - (r + 0.5) * dy
+                    hlon, hlat = dx / 2, dy / 2
+
+                # Color: scale 0→1 to amber palette (dark→bright)
+                t = (v - vmin) / vrange
+                red = int(180 + 75 * t)
+                green = int(80 + 60 * t)
+                blue = 0
+                alpha = int(100 + 100 * t)
+
+                cells.append({
+                    "polygon": [
+                        [clon - hlon, clat + hlat],
+                        [clon + hlon, clat + hlat],
+                        [clon + hlon, clat - hlat],
+                        [clon - hlon, clat - hlat],
+                    ],
+                    "value": v,
+                    "fill": [red, green, blue, alpha],
+                })
+        return cells if cells else None
+    except Exception as exc:
+        _log.warning("Failed to load CSV overlay %s: %s", file_path, exc)
+        return None
+
+
 def _load_netcdf_overlay(
     file_path: Path,
     fallback_lat: np.ndarray | None = None,
@@ -479,33 +599,26 @@ def grid_server(input, output, session, state):
         with reactive.isolate():
             cfg = state.config.get()
         choices: dict[str, str] = {"grid_extent": "Grid extent"}
-        # Scan schema fields for spatial file references
-        from osmose.schema.base import ParamType
-        from osmose.schema.species import SPECIES_FIELDS
-        from osmose.schema.ltl import LTL_FIELDS
+        # Keys that define the base grid itself — not useful as overlays
+        skip_prefixes = ("grid.", "osmose.configuration.", "simulation.restart")
 
-        all_fields = list(SPECIES_FIELDS) + list(LTL_FIELDS) + list(GRID_FIELDS)
-
-        for field in all_fields:
-            if field.param_type != ParamType.FILE_PATH:
+        # Scan config directly for any key whose value is a .nc or .csv file
+        for key, val in sorted(cfg.items()):
+            if not val or not isinstance(val, str):
                 continue
-            if field.indexed:
-                n_sp = int(cfg.get("simulation.nspecies", "0"))
-                n_res = int(cfg.get("simulation.nresource", "0"))
-                for idx in range(n_sp + n_res):
-                    key = field.resolve_key(idx)
-                    val = cfg.get(key, "")
-                    if val and (val.endswith(".nc") or val.endswith(".csv")):
-                        sp_name = cfg.get(f"species.name.sp{idx}", f"sp{idx}")
-                        label = f"{field.description}: {sp_name}"
-                        choices[key] = label
-            else:
-                val = cfg.get(field.key_pattern, "")
-                if val and (val.endswith(".nc") or val.endswith(".csv")):
-                    choices[field.key_pattern] = field.description or field.key_pattern
+            if not (val.endswith(".nc") or val.endswith(".csv")):
+                continue
+            if any(key.startswith(p) for p in skip_prefixes):
+                continue
+            # Build a readable label from the config key
+            label = key.replace(".", " ").replace("_", " ").title()
+            choices[key] = label
+
         if len(choices) <= 1:
             return ui.div()
-        return ui.input_select("grid_overlay", "Overlay data", choices=choices, selected="grid_extent")
+        return ui.input_select(
+            "grid_overlay", "Overlay data", choices=choices, selected="grid_extent"
+        )
 
     # Lightweight handle to the widget rendered in grid_ui().
     # shiny_deckgl routes .update() messages by widget ID ("grid_map").
@@ -647,12 +760,12 @@ def grid_server(input, output, session, state):
                 )
 
         # Load overlay data if selected
-        try:
-            overlay = input.grid_overlay()
-        except Exception:
+        # Read outside isolate so reactive dependency is established
+        overlay = input.grid_overlay() if hasattr(input, "grid_overlay") else None
+        if not overlay:
             overlay = "grid_extent"
 
-        if overlay and overlay != "grid_extent":
+        if overlay != "grid_extent":
             overlay_path_str = cfg.get(overlay, "")
             if overlay_path_str and cfg_dir:
                 overlay_file = (cfg_dir / overlay_path_str).resolve()
@@ -682,7 +795,27 @@ def grid_server(input, output, session, state):
                             "shape": "rect",
                         })
                 elif overlay_file.suffix == ".csv":
-                    _log.info("CSV overlay support deferred: %s", overlay_path_str)
+                    csv_cells = _load_csv_overlay(
+                        overlay_file, ul_lat, ul_lon, lr_lat, lr_lon, nx, ny,
+                        nc_data=nc_data,
+                    )
+                    if csv_cells:
+                        layers.append(polygon_layer(
+                            "grid-overlay",
+                            data=csv_cells,
+                            get_polygon="@@=d.polygon",
+                            get_fill_color="@@=d.fill",
+                            get_line_color=[0, 0, 0, 0],
+                            filled=True,
+                            stroked=False,
+                            pickable=True,
+                        ))
+                        legend_entries.append({
+                            "layer_id": "grid-overlay",
+                            "label": "Overlay Data",
+                            "color": [255, 140, 0],
+                            "shape": "rect",
+                        })
 
         widgets = [
             zoom_widget(placement="top-right"),
