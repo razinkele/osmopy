@@ -156,6 +156,30 @@ class OsmoseResults:
         """Read mortality rate time series."""
         return self._read_species_output("mortalityRate", species)
 
+    def fishery_yield(self, species: str | None = None) -> pd.DataFrame:
+        """Read fishery-specific yield (biomass)."""
+        return self._read_species_output("fisheryYieldBiomass", species)
+
+    def fishery_yield_by_age(self, species: str | None = None) -> pd.DataFrame:
+        """Read fishery yield by age class."""
+        return self._read_2d_output("fisheryYieldByAge", species)
+
+    def fishery_yield_by_size(self, species: str | None = None) -> pd.DataFrame:
+        """Read fishery yield by size class."""
+        return self._read_2d_output("fisheryYieldBySize", species)
+
+    def bioen_ingestion(self, species: str | None = None) -> pd.DataFrame:
+        """Read bioenergetics ingestion rate."""
+        return self._read_species_output("bioenIngestion", species)
+
+    def bioen_maintenance(self, species: str | None = None) -> pd.DataFrame:
+        """Read bioenergetics maintenance cost."""
+        return self._read_species_output("bioenMaintenance", species)
+
+    def bioen_net_energy(self, species: str | None = None) -> pd.DataFrame:
+        """Read bioenergetics net energy."""
+        return self._read_species_output("bioenEnet", species)
+
     # --- Special outputs ---
 
     def size_spectrum(self) -> pd.DataFrame:
@@ -264,14 +288,26 @@ class OsmoseResults:
         "trophic": ("meanTL", "1d"),
         "yield_n": ("yieldN", "1d"),
         "mortality_rate": ("mortalityRate", "1d"),
+        "fishery_yield": ("fisheryYieldBiomass", "1d"),
+        "bioen_ingestion": ("bioenIngestion", "1d"),
+        "bioen_maintenance": ("bioenMaintenance", "1d"),
+        "bioen_net_energy": ("bioenEnet", "1d"),
         # 2D types
         "biomass_by_age": ("biomassByAge", "2d"),
         "biomass_by_size": ("biomassBySize", "2d"),
         "biomass_by_tl": ("biomassByTL", "2d"),
         "abundance_by_age": ("abundanceByAge", "2d"),
         "abundance_by_size": ("abundanceBySize", "2d"),
+        "abundance_by_tl": ("abundanceByTL", "2d"),
         "yield_by_age": ("yieldByAge", "2d"),
         "yield_by_size": ("yieldBySize", "2d"),
+        "yield_n_by_age": ("yieldNByAge", "2d"),
+        "yield_n_by_size": ("yieldNBySize", "2d"),
+        "mean_size_by_age": ("meanSizeByAge", "2d"),
+        "mean_tl_by_age": ("meanTLByAge", "2d"),
+        "mean_tl_by_size": ("meanTLBySize", "2d"),
+        "fishery_yield_by_age": ("fisheryYieldByAge", "2d"),
+        "fishery_yield_by_size": ("fisheryYieldBySize", "2d"),
         # Special types
         "diet": ("dietMatrix", "special_diet"),
         "size_spectrum": ("sizeSpectrum", "special_spectrum"),
