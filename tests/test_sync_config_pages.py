@@ -45,7 +45,6 @@ def test_movement_uses_dynamic_species_count(tmp_path):
     simulation.nspecies changes in state.  Source inspection is avoided because
     it tests implementation details rather than observable behavior.
     """
-    from unittest.mock import MagicMock, patch
     from ui.pages.movement import MOVEMENT_GLOBAL_KEYS
 
     # MOVEMENT_GLOBAL_KEYS should not include any hardcoded species-indexed keys —
