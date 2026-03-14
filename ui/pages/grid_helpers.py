@@ -548,7 +548,7 @@ def parse_movement_steps(raw: str | None) -> set[int]:
             try:
                 steps.add(int(part))
             except ValueError:
-                pass
+                _log.debug("Skipping non-integer step value: %r", part)
     return steps
 
 
@@ -634,6 +634,7 @@ def build_movement_cache(
 
         steps = parse_movement_steps(cfg.get(f"movement.steps.map{idx}"))
         if not steps:
+            _log.debug("Movement map%s has no valid time steps, skipping", idx)
             continue
 
         cells = load_csv_overlay(file_path, ul_lat, ul_lon, lr_lat, lr_lon, nx, ny)

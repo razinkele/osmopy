@@ -115,7 +115,7 @@ app_ui = ui.page_fillable(
             var container = document.getElementById('split_' + pageId);
             if (!container) return;
             var row = container.querySelector('.row') || container.querySelector('.bslib-grid');
-            if (!row) return;
+            if (!row) { console.warn('togglePanel: no .row or .bslib-grid in', pageId); return; }
             var left = row.children[0];
             var tab = document.getElementById('expand_' + pageId);
 

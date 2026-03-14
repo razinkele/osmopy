@@ -3,6 +3,7 @@
 import math
 
 from shiny import ui, reactive, render
+from shiny.types import SilentException
 
 from shiny_deckgl import (  # type: ignore[import-untyped]
     MapWidget,
@@ -139,7 +140,7 @@ def grid_server(input, output, session, state):
         """Show species/speed/slider when Movement Animation is selected."""
         try:
             overlay_val = input.grid_overlay()
-        except Exception:
+        except SilentException:
             return ui.div()
 
         if overlay_val != "__movement_animation__":
@@ -165,12 +166,12 @@ def grid_server(input, output, session, state):
 
         try:
             interval = int(input.movement_speed())
-        except Exception:
+        except (SilentException, ValueError, TypeError):
             interval = 1000
 
         try:
             current_step = input.movement_step()
-        except Exception:
+        except SilentException:
             current_step = 0
 
         return ui.div(
@@ -261,7 +262,7 @@ def grid_server(input, output, session, state):
         state.load_trigger.get()
         try:
             overlay = input.grid_overlay()
-        except Exception:
+        except SilentException:
             return
         if overlay != "__movement_animation__":
             _movement_cache.set({})
@@ -269,7 +270,7 @@ def grid_server(input, output, session, state):
             return
         try:
             species = input.movement_species()
-        except Exception:
+        except SilentException:
             return
         if not species:
             return
@@ -278,7 +279,8 @@ def grid_server(input, output, session, state):
             cfg = state.config.get()
             cfg_dir = state.config_dir.get()
 
-        ul_lat, ul_lon, lr_lat, lr_lon, nx, ny = _read_grid_values()
+        with reactive.isolate():
+            ul_lat, ul_lon, lr_lat, lr_lon, nx, ny = _read_grid_values()
         grid_params = (ul_lat, ul_lon, lr_lat, lr_lon, nx, ny)
 
         cache = build_movement_cache(cfg, cfg_dir, grid_params, species=species)
@@ -378,7 +380,7 @@ def grid_server(input, output, session, state):
             if cache:
                 try:
                     step = input.movement_step()
-                except Exception:
+                except SilentException:
                     step = 0
                 active_ids = frozenset(
                     mid for mid, m in cache.items() if step in m["steps"]
