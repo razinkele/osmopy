@@ -40,9 +40,18 @@ class OsmoseConfigReader:
         _seen.add(resolved)
         file_params = self.read_file(filepath)
         flat.update(file_params)
+        config_dir = filepath.parent.resolve()
         for key, value in file_params.items():
             if key.startswith("osmose.configuration."):
                 sub_path = filepath.parent / value.strip()
+                resolved_sub = sub_path.resolve()
+                if not resolved_sub.is_relative_to(config_dir):
+                    _log.warning(
+                        "Sub-file path escapes config directory, skipping: %s (from key %s)",
+                        sub_path,
+                        key,
+                    )
+                    continue
                 if sub_path.exists():
                     self._read_recursive(sub_path, flat, _seen)
                 else:
