@@ -346,8 +346,12 @@ class OsmoseResults:
 
         return pd.DataFrame()
 
-    def close(self) -> None:
-        """Close any cached NetCDF datasets."""
+    def close_cache(self) -> None:
+        """Close all open NetCDF datasets in the cache and clear it."""
         for ds in self._nc_cache.values():
             ds.close()
         self._nc_cache.clear()
+
+    def close(self) -> None:
+        """Close any cached NetCDF datasets."""
+        self.close_cache()
