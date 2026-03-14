@@ -300,6 +300,11 @@ def run_server(input, output, session, state):
                 history.save(record)
             except Exception as exc:
                 _log.warning("Failed to save run history: %s", exc)
+                ui.notification_show(
+                    f"Run completed but history could not be saved: {exc}",
+                    type="warning",
+                    duration=8,
+                )
         else:
             status.set(f"Failed (exit code {result.returncode})")
             if result.stderr:
