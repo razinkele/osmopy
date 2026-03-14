@@ -6,6 +6,7 @@ independently of the Shiny runtime.
 """
 
 import math
+import re
 from pathlib import Path
 
 import numpy as np
@@ -519,3 +520,33 @@ def load_netcdf_overlay(
     except (OSError, KeyError, ValueError) as exc:
         _log.warning("Failed to load overlay %s: %s", file_path, exc)
         return None
+
+
+_LABEL_RE = re.compile(r"^\d+[A-Za-z]+_(.+)$")
+
+
+def derive_map_label(filename: str, map_index: int) -> str:
+    """Derive a human-readable label from an OSMOSE movement map filename."""
+    stem = Path(filename).stem
+    m = _LABEL_RE.match(stem)
+    if not m:
+        return f"Map {map_index}"
+    label_part = m.group(1).replace("_", " ").title()
+    if label_part.strip().isdigit():
+        return f"Map {map_index}"
+    return label_part
+
+
+def parse_movement_steps(raw: str | None) -> set[int]:
+    """Parse a semicolon-separated list of time step indices into a set."""
+    if not raw:
+        return set()
+    steps = set()
+    for part in raw.split(";"):
+        part = part.strip()
+        if part:
+            try:
+                steps.add(int(part))
+            except ValueError:
+                pass
+    return steps

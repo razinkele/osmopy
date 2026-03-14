@@ -188,3 +188,45 @@ def test_build_netcdf_grid_layers_view_state_values():
     assert 40.0 <= view_state["latitude"] <= 42.0
     assert 1.0 <= view_state["longitude"] <= 3.0
     assert view_state["zoom"] >= 1
+
+
+def test_derive_map_label_spawning():
+    from ui.pages.grid_helpers import derive_map_label
+    assert derive_map_label("maps/6cod_spawning.csv", 17) == "Spawning"
+
+def test_derive_map_label_multiword():
+    from ui.pages.grid_helpers import derive_map_label
+    assert derive_map_label("maps/3tacaud_spawners_printemps.csv", 5) == "Spawners Printemps"
+
+def test_derive_map_label_numeric_fallback():
+    from ui.pages.grid_helpers import derive_map_label
+    assert derive_map_label("maps/1Roussette_01.csv", 0) == "Map 0"
+
+def test_derive_map_label_no_underscore():
+    from ui.pages.grid_helpers import derive_map_label
+    assert derive_map_label("maps/empty.csv", 3) == "Map 3"
+
+def test_derive_map_label_1plus():
+    from ui.pages.grid_helpers import derive_map_label
+    assert derive_map_label("maps/6cod_1plus.csv", 16) == "1Plus"
+
+
+def test_parse_movement_steps_basic():
+    from ui.pages.grid_helpers import parse_movement_steps
+    assert parse_movement_steps("0;1;2;3") == {0, 1, 2, 3}
+
+def test_parse_movement_steps_trailing_semicolon():
+    from ui.pages.grid_helpers import parse_movement_steps
+    assert parse_movement_steps("6;7;8;") == {6, 7, 8}
+
+def test_parse_movement_steps_whitespace():
+    from ui.pages.grid_helpers import parse_movement_steps
+    assert parse_movement_steps(" 0 ; 1 ; 2 ") == {0, 1, 2}
+
+def test_parse_movement_steps_empty():
+    from ui.pages.grid_helpers import parse_movement_steps
+    assert parse_movement_steps("") == set()
+
+def test_parse_movement_steps_none():
+    from ui.pages.grid_helpers import parse_movement_steps
+    assert parse_movement_steps(None) == set()
