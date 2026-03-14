@@ -556,11 +556,15 @@ def test_export_map_includes_additional_distributions():
     assert "mean_tl_by_size" in OsmoseResults._EXPORT_MAP
 
 
-def test_fishery_yield_method_exists():
-    from osmose.results import OsmoseResults
-    assert hasattr(OsmoseResults, "fishery_yield")
+def test_fishery_yield_returns_dataframe(tmp_path):
+    """fishery_yield() is callable and returns a DataFrame (empty when no files)."""
+    r = OsmoseResults(tmp_path)
+    df = r.fishery_yield()
+    assert isinstance(df, pd.DataFrame)
 
 
-def test_bioen_ingestion_method_exists():
-    from osmose.results import OsmoseResults
-    assert hasattr(OsmoseResults, "bioen_ingestion")
+def test_bioen_ingestion_returns_dataframe(tmp_path):
+    """bioen_ingestion() is callable and returns a DataFrame (empty when no files)."""
+    r = OsmoseResults(tmp_path)
+    df = r.bioen_ingestion()
+    assert isinstance(df, pd.DataFrame)
