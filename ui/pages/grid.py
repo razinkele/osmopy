@@ -280,7 +280,9 @@ def grid_server(input, output, session, state):
             overlay_path_str = cfg.get(overlay, "")
             if overlay_path_str and cfg_dir:
                 overlay_file = (cfg_dir / overlay_path_str).resolve()
-                if not overlay_file.exists():
+                if not overlay_file.is_relative_to(cfg_dir.resolve()):
+                    _log.warning("Skipping path traversal in overlay: %s", overlay_path_str)
+                elif not overlay_file.exists():
                     ui.notification_show(
                         f"File not found: {overlay_path_str}", type="warning", duration=3
                     )
