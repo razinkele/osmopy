@@ -1254,7 +1254,6 @@ body > .row > [class*="col-"]:first-child {
     transition: width var(--osm-transition-slow),
                 min-width var(--osm-transition-slow),
                 max-width var(--osm-transition-slow),
-                opacity var(--osm-transition),
                 padding var(--osm-transition-slow),
                 flex var(--osm-transition-slow);
     overflow: hidden;
@@ -1266,18 +1265,18 @@ html.nav-collapsed body > .row > [class*="col-"]:first-child {
     flex: 0 0 0 !important;
     padding-left: 0 !important;
     padding-right: 0 !important;
-    opacity: 0;
+    overflow: visible !important;
+}
+html.nav-collapsed body > .row > [class*="col-"]:first-child .nav-pills {
+    visibility: hidden;
+    width: 0;
     overflow: hidden;
 }
-html.nav-collapsed body > .row > [class*="col-"]:last-child {
-    flex: 1;
-    max-width: 100% !important;
-    transition: max-width var(--osm-transition-slow);
-}
-html.nav-collapsed .osm-hamburger {
-    /* Place hamburger button at fixed position when nav hidden */
+html.nav-collapsed body > .row > [class*="col-"]:first-child .osm-hamburger {
+    /* Keep hamburger visible and clickable when nav is collapsed */
+    visibility: visible;
     position: fixed;
-    top: 120px;
+    top: 140px;
     left: 0;
     z-index: 1050;
     width: 36px;
@@ -1288,7 +1287,11 @@ html.nav-collapsed .osm-hamburger {
     border: 1px solid var(--osm-border);
     border-left: none;
     box-shadow: 2px 0 8px rgba(0, 0, 0, 0.15);
-    opacity: 1;
+}
+html.nav-collapsed body > .row > [class*="col-"]:last-child {
+    flex: 1;
+    max-width: 100% !important;
+    transition: max-width var(--osm-transition-slow);
 }
 
 /* ── Collapsible page panels ──────────────────────────────────── */
@@ -1322,6 +1325,12 @@ html.nav-collapsed .osm-hamburger {
     flex: 1;
     max-width: 100%;
 }
+/* When panel is collapsed, the bslib-grid sibling should not squeeze the expand tab */
+.osm-split-layout > .osm-expand-tab.visible + .bslib-grid,
+.osm-split-layout > .osm-expand-tab.visible + .row {
+    flex: 1;
+    min-width: 0;
+}
 
 /* ── Expand tab ───────────────────────────────────────────────── */
 .osm-expand-tab {
@@ -1337,8 +1346,12 @@ html.nav-collapsed .osm-hamburger {
     color: var(--osm-text-secondary);
     font-size: 12px;
     font-weight: 600;
-    align-self: center;
+    align-self: flex-start;
     flex-shrink: 0;
+    min-width: 28px;
+    z-index: 10;
+    position: sticky;
+    top: 140px;
     transition: all var(--osm-transition);
 }
 .osm-expand-tab:hover {
@@ -1346,7 +1359,9 @@ html.nav-collapsed .osm-hamburger {
     background: var(--osm-bg-card-hover);
 }
 .osm-expand-tab.visible {
-    display: block;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 /* ── Collapse button in card header ───────────────────────────── */

@@ -96,11 +96,12 @@ app_ui = ui.page_fillable(
             }
         })();
 
-        // ── Nav collapse ──────────────────────────────────
+        // ── Nav collapse (horizontal slide) ──────────────
         function toggleNav() {
             var html = document.documentElement;
-            var collapsed = html.classList.toggle('nav-collapsed');
-            localStorage.setItem('osmose-nav-collapsed', collapsed ? '1' : '0');
+            html.classList.toggle('nav-collapsed');
+            localStorage.setItem('osmose-nav-collapsed',
+                html.classList.contains('nav-collapsed') ? '1' : '0');
         }
         // Restore nav state immediately (before render)
         (function() {
@@ -113,7 +114,7 @@ app_ui = ui.page_fillable(
         function togglePanel(pageId) {
             var container = document.getElementById('split_' + pageId);
             if (!container) return;
-            var row = container.querySelector('.row');
+            var row = container.querySelector('.row') || container.querySelector('.bslib-grid');
             if (!row) return;
             var left = row.children[0];
             var tab = document.getElementById('expand_' + pageId);
