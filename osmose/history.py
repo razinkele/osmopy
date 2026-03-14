@@ -7,6 +7,10 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path
 
+from osmose.logging import setup_logging
+
+_log = setup_logging("osmose.history")
+
 
 @dataclass
 class RunRecord:
@@ -42,9 +46,12 @@ class RunHistory:
         """List all run records, sorted newest first."""
         records = []
         for path in self.history_dir.glob("run_*.json"):
-            with open(path) as f:
-                data = json.load(f)
-            records.append(RunRecord(**data))
+            try:
+                with open(path) as f:
+                    data = json.load(f)
+                records.append(RunRecord(**data))
+            except (json.JSONDecodeError, TypeError, KeyError) as exc:
+                _log.warning("Corrupt history file %s: %s", path, exc)
         records.sort(key=lambda r: r.timestamp, reverse=True)
         return records
 
