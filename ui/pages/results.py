@@ -405,7 +405,7 @@ def results_server(input, output, session, state):
         ensemble_on = False
         try:
             ensemble_on = bool(input.ensemble_mode()) and bool(rep_dirs.get())
-        except Exception:
+        except (AttributeError, TypeError):
             pass
 
         if ensemble_on and rtype in ENSEMBLE_OUTPUT_TYPES:
