@@ -226,6 +226,7 @@ def results_server(input, output, session, state):
     results_data: reactive.Value[dict[str, pd.DataFrame]] = reactive.Value({})
     spatial_ds: reactive.Value = reactive.Value(None)
     rep_dirs: reactive.Value[list[Path]] = reactive.Value([])
+    _prev_output_dir: reactive.Value[str] = reactive.Value("")
 
     @render.ui
     def output_dir_input():
@@ -252,6 +253,10 @@ def results_server(input, output, session, state):
 
     def _do_load_results(out_dir: Path):
         from osmose.results import OsmoseResults
+
+        # Pre-register this dir so _reset_results_loaded won't fire when
+        # state.output_dir.set(out_dir) is called later in this function.
+        _prev_output_dir.set(str(out_dir))
 
         res = OsmoseResults(out_dir)
         results_obj.set(res)
@@ -341,8 +346,17 @@ def results_server(input, output, session, state):
 
     @reactive.effect
     def _reset_results_loaded():
-        """Reset loaded flag when output directory changes."""
-        state.output_dir.get()  # take dependency
+        """Reset loaded flag only when output directory changes to a new, unloaded path.
+
+        _do_load_results pre-sets _prev_output_dir before calling state.output_dir.set(),
+        so this effect is a no-op during the load cycle (new_dir == prev).
+        """
+        new_dir = str(state.output_dir.get() or "")
+        with reactive.isolate():
+            prev = _prev_output_dir.get()
+        if new_dir == prev:
+            return  # same dir — either no change or triggered by _do_load_results
+        _prev_output_dir.set(new_dir)
         state.results_loaded.set(False)
 
     @render.ui
