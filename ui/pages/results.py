@@ -605,6 +605,11 @@ def results_server(input, output, session, state):
 
         out_dir = Path(input.output_dir())
         if not out_dir.is_dir():
+            ui.notification_show(
+                "No output directory selected. Load results first.",
+                type="warning",
+                duration=5,
+            )
             return
 
         res = OsmoseResults(out_dir)
@@ -613,6 +618,11 @@ def results_server(input, output, session, state):
         df = res.export_dataframe(input.result_type(), species=species)
 
         if df.empty:
+            ui.notification_show(
+                "No data available for the selected output type and species filter.",
+                type="warning",
+                duration=5,
+            )
             return
 
         tmp_dir = Path(tempfile.mkdtemp(prefix="osmose_export_"))
