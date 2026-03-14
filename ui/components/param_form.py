@@ -41,11 +41,6 @@ def _wrap_with_tooltip(label: str, field: OsmoseField) -> ui.Tag:
                 "data-bs-placement": "top",
             },
         ),
-        # Hidden help text shown when "Show Help" toggle is active
-        ui.tags.span(
-            field.description or "",
-            class_="field-help-text",
-        ),
     )
 
 
@@ -364,7 +359,6 @@ def render_species_table(
                         "data-bs-placement": "right",
                     },
                 ),
-                ui.tags.span(field.description or "", class_="field-help-text"),
                 style="padding: 5px 12px; position: sticky; left: 0; z-index: 1; background: var(--osm-bg-card, #0f1923);",
             )
 

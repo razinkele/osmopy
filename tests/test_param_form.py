@@ -337,4 +337,4 @@ def test_tooltip_markup_in_render_field():
     html = str(widget)
     assert "osm-tooltip-icon" in html
     assert "data-bs-toggle" in html
-    assert "field-help-text" in html
+    assert "data-bs-content" in html

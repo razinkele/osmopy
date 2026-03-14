@@ -76,27 +76,12 @@ app_ui = ui.page_fillable(
                 Shiny.setInputValue('theme_mode', theme);
             });
         })();
-        // Initialize Bootstrap popovers on dynamic content
+        // Initialize Bootstrap 5 popovers on dynamic content
         document.addEventListener('shiny:value', function() {
             document.querySelectorAll('[data-bs-toggle="popover"]').forEach(function(el) {
-                if (!el._bsPopover) new bootstrap.Popover(el);
+                if (!bootstrap.Popover.getInstance(el)) new bootstrap.Popover(el);
             });
         });
-
-        // Show Help toggle
-        function toggleHelpMode() {
-            document.body.classList.toggle('show-all-help');
-            var active = document.body.classList.contains('show-all-help');
-            localStorage.setItem('osmose-show-help', active ? '1' : '0');
-            var btn = document.getElementById('helpToggle');
-            if (btn) btn.textContent = active ? 'Hide Help' : 'Show Help';
-        }
-        // Restore help mode
-        (function() {
-            if (localStorage.getItem('osmose-show-help') === '1') {
-                document.body.classList.add('show-all-help');
-            }
-        })();
 
         // ── Nav collapse (horizontal slide) ──────────────
         function toggleNav() {
@@ -181,12 +166,6 @@ app_ui = ui.page_fillable(
                 title="Toggle light/dark theme",
                 onclick="toggleTheme()",
                 **{"aria-label": "Toggle light/dark theme"},
-            ),
-            ui.tags.button(
-                "Show Help",
-                class_="osmose-header-btn",
-                id="helpToggle",
-                onclick="toggleHelpMode()",
             ),
             ui.tags.a(
                 "About",

@@ -1191,17 +1191,6 @@ hr {
     border-color: #d4a017;
 }
 
-/* Hidden help text — shown via "Show Help" toggle */
-.field-help-text {
-    display: none;
-    color: #5a6a7a;
-    font-size: 11px;
-    margin-top: 2px;
-}
-body.show-all-help .field-help-text {
-    display: block;
-}
-
 /* ── Collapsible nav sidebar ──────────────────────────────────── */
 .osm-hamburger {
     display: block;
