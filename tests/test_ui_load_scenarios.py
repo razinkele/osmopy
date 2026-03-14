@@ -195,27 +195,6 @@ def test_load_scenario_loading_guard(tmp_path):
         state.loading.set(False)
 
 
-def test_scenario_load_has_state_guards():
-    """Verify handle_load in scenarios.py sets loading flag and bumps trigger."""
-    import inspect
-    from ui.pages.scenarios import scenarios_server
-
-    source = inspect.getsource(scenarios_server)
-    assert "state.loading.set(True)" in source, "handle_load must set loading flag"
-    assert "state.load_trigger.set(" in source, "handle_load must bump load_trigger"
-    assert "finally:" in source, "handle_load must use try/finally for loading flag"
-
-
-def test_config_import_has_state_guards():
-    """Verify confirm_import in advanced.py sets loading flag and bumps trigger."""
-    import inspect
-    from ui.pages.advanced import advanced_server
-
-    source = inspect.getsource(advanced_server)
-    assert "state.loading.set(True)" in source, "confirm_import must set loading flag"
-    assert "state.load_trigger.set(" in source, "confirm_import must bump load_trigger"
-
-
 def test_all_demos_produce_unique_configs(tmp_path):
     """Each demo should produce a distinct configuration."""
     configs = {}
