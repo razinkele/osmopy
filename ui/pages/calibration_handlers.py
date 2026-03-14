@@ -240,52 +240,56 @@ def register_calibration_handlers(
         if algorithm_choice == "surrogate":
 
             def run_surrogate():
-                from osmose.calibration.surrogate import SurrogateCalibrator
+                try:
+                    from osmose.calibration.surrogate import SurrogateCalibrator
 
-                bounds = [(fp.lower_bound, fp.upper_bound) for fp in free_params]
-                n_obj = len(objective_fns)
-                calibrator = SurrogateCalibrator(param_bounds=bounds, n_objectives=n_obj)
+                    bounds = [(fp.lower_bound, fp.upper_bound) for fp in free_params]
+                    n_obj = len(objective_fns)
+                    calibrator = SurrogateCalibrator(param_bounds=bounds, n_objectives=n_obj)
 
-                n_samples = pop_size
-                msg_queue.post_status(f"Generating {n_samples} Latin hypercube samples...")
-                samples = calibrator.generate_samples(n_samples=n_samples)
+                    n_samples = pop_size
+                    msg_queue.post_status(f"Generating {n_samples} Latin hypercube samples...")
+                    samples = calibrator.generate_samples(n_samples=n_samples)
 
-                # Evaluate OSMOSE for each sample
-                Y = np.zeros((n_samples, n_obj))
-                for idx in range(n_samples):
+                    # Evaluate OSMOSE for each sample
+                    Y = np.zeros((n_samples, n_obj))
+                    for idx in range(n_samples):
+                        if cancel_event.is_set():
+                            msg_queue.post_status("Cancelled.")
+                            return
+
+                        msg_queue.post_status(f"Evaluating sample {idx + 1}/{n_samples}...")
+                        overrides = {fp.key: str(samples[idx, j]) for j, fp in enumerate(free_params)}
+                        try:
+                            result = problem._run_single(overrides, run_id=idx)
+                            for k in range(n_obj):
+                                Y[idx, k] = result[k]
+                        except Exception as exc:
+                            _log.error("Surrogate sample %d/%d failed: %s", idx + 1, n_samples, exc)
+                            Y[idx, :] = float("inf")
+                            msg_queue.post_status(f"Sample {idx + 1}/{n_samples} failed: {exc}")
+
                     if cancel_event.is_set():
                         msg_queue.post_status("Cancelled.")
                         return
 
-                    msg_queue.post_status(f"Evaluating sample {idx + 1}/{n_samples}...")
-                    overrides = {fp.key: str(samples[idx, j]) for j, fp in enumerate(free_params)}
-                    try:
-                        result = problem._run_single(overrides, run_id=idx)
-                        for k in range(n_obj):
-                            Y[idx, k] = result[k]
-                    except Exception as exc:
-                        _log.error("Surrogate sample %d/%d failed: %s", idx + 1, n_samples, exc)
-                        Y[idx, :] = float("inf")
-                        msg_queue.post_status(f"Sample {idx + 1}/{n_samples} failed: {exc}")
+                    msg_queue.post_status("Fitting GP model...")
+                    calibrator.fit(samples, Y)
 
-                if cancel_event.is_set():
-                    msg_queue.post_status("Cancelled.")
-                    return
+                    msg_queue.post_status("Finding optimum on surrogate...")
+                    optimum = calibrator.find_optimum()
 
-                msg_queue.post_status("Fitting GP model...")
-                calibrator.fit(samples, Y)
-
-                msg_queue.post_status("Finding optimum on surrogate...")
-                optimum = calibrator.find_optimum()
-
-                # Set results for the UI
-                msg_queue.post_results(X=samples, F=Y)
-                history = [float(np.min(Y[: i + 1].sum(axis=1))) for i in range(n_samples)]
-                for val in history:
-                    msg_queue.post_history_append(val)
-                msg_queue.post_status(
-                    f"Done. Best predicted objective: {optimum['predicted_objectives']}"
-                )
+                    # Set results for the UI
+                    msg_queue.post_results(X=samples, F=Y)
+                    history = [float(np.min(Y[: i + 1].sum(axis=1))) for i in range(n_samples)]
+                    for val in history:
+                        msg_queue.post_history_append(val)
+                    msg_queue.post_status(
+                        f"Done. Best predicted objective: {optimum['predicted_objectives']}"
+                    )
+                except Exception as exc:
+                    _log.error("Surrogate calibration failed: %s", exc, exc_info=True)
+                    msg_queue.post_error(f"Surrogate calibration failed: {exc}")
 
             thread = threading.Thread(target=run_surrogate, daemon=True)
             thread.start()

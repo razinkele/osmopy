@@ -162,3 +162,25 @@ def test_calibration_message_queue_drain_empties():
     q.post_status("hello")
     assert len(q.drain()) == 1
     assert len(q.drain()) == 0  # second drain is empty
+
+
+def test_surrogate_error_relayed_to_queue():
+    """If surrogate calibration raises, error must be posted to queue."""
+    from ui.pages.calibration_handlers import CalibrationMessageQueue
+
+    q = CalibrationMessageQueue()
+
+    def fake_surrogate_with_handler():
+        try:
+            raise RuntimeError("GP fit singular matrix")
+        except Exception as exc:
+            q.post_error(f"Surrogate calibration failed: {exc}")
+
+    t = threading.Thread(target=fake_surrogate_with_handler)
+    t.start()
+    t.join()
+
+    msgs = q.drain()
+    assert len(msgs) == 1
+    assert msgs[0][0] == "error"
+    assert "singular matrix" in msgs[0][1]
