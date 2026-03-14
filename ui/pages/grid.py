@@ -22,7 +22,9 @@ from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.components.param_form import render_field
 from ui.pages.grid_helpers import (
     build_grid_layers,
+    build_movement_cache,
     build_netcdf_grid_layers,
+    list_movement_species,
     load_csv_overlay,
     load_mask,
     load_netcdf_grid,
@@ -58,15 +60,15 @@ def grid_ui():
         ui.layout_columns(
             ui.card(
                 collapsible_card_header("Grid Type", "grid"),
+                ui.output_ui("grid_overlay_selector"),
                 ui.output_ui("grid_fields"),
             ),
-            ui.card(
-                ui.card_header("Grid Preview"),
-                ui.output_ui("grid_overlay_selector"),
+            ui.div(
                 ui.output_ui("grid_hint"),
-                grid_map.ui(height="500px"),
+                grid_map.ui(height="100%"),
+                class_="osm-grid-map-container",
             ),
-            col_widths=[6, 6],
+            col_widths=[5, 7],
         ),
         class_="osm-split-layout",
         id="split_grid",
@@ -110,10 +112,8 @@ def grid_server(input, output, session, state):
         with reactive.isolate():
             cfg = state.config.get()
         choices: dict[str, str] = {"grid_extent": "Grid extent"}
-        # Keys that define the base grid itself — not useful as overlays
         skip_prefixes = ("grid.", "osmose.configuration.", "simulation.restart")
 
-        # Scan config directly for any key whose value is a .nc or .csv file
         for key, val in sorted(cfg.items()):
             if not val or not isinstance(val, str):
                 continue
@@ -121,15 +121,79 @@ def grid_server(input, output, session, state):
                 continue
             if any(key.startswith(p) for p in skip_prefixes):
                 continue
-            # Build a readable label from the config key
             label = key.replace(".", " ").replace("_", " ").title()
             choices[key] = label
 
+        # Add Movement Animation entry
+        choices["__movement_animation__"] = "Movement Animation"
+
         if len(choices) <= 1:
             return ui.div()
-        return ui.input_select(
-            "grid_overlay", "Overlay data", choices=choices, selected="grid_extent"
-        )
+
+        elements = [
+            ui.input_select(
+                "grid_overlay", "Overlay data", choices=choices, selected="grid_extent"
+            ),
+        ]
+
+        # Show animation controls only when Movement Animation is selected
+        try:
+            overlay_val = input.grid_overlay()
+        except Exception:
+            overlay_val = "grid_extent"
+
+        if overlay_val == "__movement_animation__":
+            species_list = list_movement_species(cfg)
+            if species_list:
+                species_choices = {s: s for s in species_list}
+                speed_choices = {"2000": "0.5x", "1000": "1x", "500": "2x", "250": "4x"}
+
+                try:
+                    nsteps = int(
+                        float(cfg.get("simulation.time.ndtPerYear", "24") or "24")
+                    )
+                except (ValueError, TypeError):
+                    nsteps = 24
+
+                try:
+                    interval = int(input.movement_speed())
+                except Exception:
+                    interval = 1000
+
+                try:
+                    current_step = input.movement_step()
+                except Exception:
+                    current_step = 0
+
+                elements.extend([
+                    ui.input_select(
+                        "movement_species", "Species",
+                        choices=species_choices, selected=species_list[0],
+                    ),
+                    ui.input_select(
+                        "movement_speed", "Speed",
+                        choices=speed_choices, selected=str(interval),
+                    ),
+                    ui.input_slider(
+                        "movement_step", "Time step",
+                        min=0, max=nsteps - 1, value=current_step, step=1,
+                        animate=ui.AnimationOptions(
+                            interval=interval, loop=True,
+                            play_button="Play", pause_button="Pause",
+                        ),
+                    ),
+                ])
+            else:
+                elements.append(
+                    ui.p(
+                        "No movement maps configured. "
+                        "Define maps in the Movement tab.",
+                        style="color: var(--osm-text-muted); "
+                        "font-size: 12px; margin-top: 8px;",
+                    )
+                )
+
+        return ui.div(*elements, class_="osm-movement-controls")
 
     # Lightweight handle to the widget rendered in grid_ui().
     # shiny_deckgl routes .update() messages by widget ID ("grid_map").
@@ -138,6 +202,10 @@ def grid_server(input, output, session, state):
         view_state={"latitude": 46.0, "longitude": -4.5, "zoom": 5},
         style=CARTO_POSITRON,
     )
+
+    # Movement animation state
+    _movement_cache: reactive.Value[dict[str, dict]] = reactive.Value({})
+    _prev_active_maps: reactive.Value[frozenset[str]] = reactive.Value(frozenset())
 
     def _read_grid_values() -> tuple[float, float, float, float, int, int]:
         """Read grid bounds from inputs, falling back to config.
@@ -188,6 +256,36 @@ def grid_server(input, output, session, state):
         """Bump load_trigger so update_grid_map re-sends layers after late init."""
         with reactive.isolate():
             state.load_trigger.set(state.load_trigger.get() + 1)
+
+    @reactive.effect
+    def _rebuild_movement_cache():
+        """Rebuild the movement map cache when species or config changes."""
+        state.load_trigger.get()
+        try:
+            overlay = input.grid_overlay()
+        except Exception:
+            return
+        if overlay != "__movement_animation__":
+            _movement_cache.set({})
+            _prev_active_maps.set(frozenset())
+            return
+        try:
+            species = input.movement_species()
+        except Exception:
+            return
+        if not species:
+            return
+
+        with reactive.isolate():
+            cfg = state.config.get()
+            cfg_dir = state.config_dir.get()
+
+        ul_lat, ul_lon, lr_lat, lr_lon, nx, ny = _read_grid_values()
+        grid_params = (ul_lat, ul_lon, lr_lat, lr_lon, nx, ny)
+
+        cache = build_movement_cache(cfg, cfg_dir, grid_params, species=species)
+        _movement_cache.set(cache)
+        _prev_active_maps.set(frozenset())
 
     @reactive.effect
     async def update_grid_map():
@@ -272,20 +370,60 @@ def grid_server(input, output, session, state):
                 )
 
         # Load overlay data if selected
-        # Read outside isolate so reactive dependency is established
         overlay = input.grid_overlay() if hasattr(input, "grid_overlay") else None
         if not overlay:
             overlay = "grid_extent"
 
-        if overlay != "grid_extent":
+        if overlay == "__movement_animation__":
+            # Movement animation mode — use cached maps
+            cache = _movement_cache.get()
+            if cache:
+                try:
+                    step = input.movement_step()
+                except Exception:
+                    step = 0
+                active_ids = frozenset(
+                    mid for mid, m in cache.items() if step in m["steps"]
+                )
+                prev = _prev_active_maps.get()
+                if active_ids == prev and prev:
+                    return  # skip update — no visual change
+                _prev_active_maps.set(active_ids)
+
+                for mid in sorted(active_ids):
+                    m = cache[mid]
+                    layer_id = f"movement-{mid}"
+                    layers.append(polygon_layer(
+                        layer_id,
+                        data=m["cells"],
+                        get_polygon="@@=d.polygon",
+                        get_fill_color=m["color"],
+                        get_line_color=[0, 0, 0, 0],
+                        filled=True,
+                        stroked=False,
+                        pickable=True,
+                    ))
+                    age_suffix = f" ({m['age_range']})" if m["age_range"] else ""
+                    legend_entries.append({
+                        "layer_id": layer_id,
+                        "label": f"{m['label']}{age_suffix}",
+                        "color": m["color"][:3],
+                        "shape": "rect",
+                    })
+
+        elif overlay != "grid_extent":
             overlay_path_str = cfg.get(overlay, "")
             if overlay_path_str and cfg_dir:
                 overlay_file = (cfg_dir / overlay_path_str).resolve()
                 if not overlay_file.is_relative_to(cfg_dir.resolve()):
-                    _log.warning("Skipping path traversal in overlay: %s", overlay_path_str)
+                    _log.warning(
+                        "Skipping path traversal in overlay: %s", overlay_path_str
+                    )
                 elif not overlay_file.exists():
                     ui.notification_show(
-                        f"File not found: {overlay_path_str}", type="warning", duration=3
+                        f"File not found: {overlay_path_str}",
+                        type="warning",
+                        duration=3,
                     )
                 elif overlay_file.suffix == ".nc":
                     fb_lat = nc_data[0] if nc_data else None
