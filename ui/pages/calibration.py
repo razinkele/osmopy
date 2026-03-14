@@ -159,7 +159,9 @@ def calibration_server(input, output, session, state):
 
     @render.ui
     def free_param_selector():
-        cfg = state.config.get()
+        state.load_trigger.get()  # Only re-render on config load, not every change
+        with reactive.isolate():
+            cfg = state.config.get()
         n_str = cfg.get("simulation.nspecies", "3")
         n_species = int(n_str) if n_str else 3
         params = get_calibratable_params(state.registry, n_species)
