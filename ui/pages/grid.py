@@ -61,6 +61,7 @@ def grid_ui():
             ui.card(
                 collapsible_card_header("Grid Type", "grid"),
                 ui.output_ui("grid_overlay_selector"),
+                ui.output_ui("movement_controls"),
                 ui.output_ui("grid_fields"),
             ),
             ui.div(
@@ -129,71 +130,68 @@ def grid_server(input, output, session, state):
 
         if len(choices) <= 1:
             return ui.div()
+        return ui.input_select(
+            "grid_overlay", "Overlay data", choices=choices, selected="grid_extent"
+        )
 
-        elements = [
-            ui.input_select(
-                "grid_overlay", "Overlay data", choices=choices, selected="grid_extent"
-            ),
-        ]
-
-        # Show animation controls only when Movement Animation is selected
+    @render.ui
+    def movement_controls():
+        """Show species/speed/slider when Movement Animation is selected."""
         try:
             overlay_val = input.grid_overlay()
         except Exception:
-            overlay_val = "grid_extent"
+            return ui.div()
 
-        if overlay_val == "__movement_animation__":
-            species_list = list_movement_species(cfg)
-            if species_list:
-                species_choices = {s: s for s in species_list}
-                speed_choices = {"2000": "0.5x", "1000": "1x", "500": "2x", "250": "4x"}
+        if overlay_val != "__movement_animation__":
+            return ui.div()
 
-                try:
-                    nsteps = int(
-                        float(cfg.get("simulation.time.ndtPerYear", "24") or "24")
-                    )
-                except (ValueError, TypeError):
-                    nsteps = 24
+        with reactive.isolate():
+            cfg = state.config.get()
 
-                try:
-                    interval = int(input.movement_speed())
-                except Exception:
-                    interval = 1000
+        species_list = list_movement_species(cfg)
+        if not species_list:
+            return ui.p(
+                "No movement maps configured. Define maps in the Movement tab.",
+                style="color: var(--osm-text-muted); font-size: 12px; margin-top: 8px;",
+            )
 
-                try:
-                    current_step = input.movement_step()
-                except Exception:
-                    current_step = 0
+        species_choices = {s: s for s in species_list}
+        speed_choices = {"2000": "0.5x", "1000": "1x", "500": "2x", "250": "4x"}
 
-                elements.extend([
-                    ui.input_select(
-                        "movement_species", "Species",
-                        choices=species_choices, selected=species_list[0],
-                    ),
-                    ui.input_select(
-                        "movement_speed", "Speed",
-                        choices=speed_choices, selected=str(interval),
-                    ),
-                    ui.input_slider(
-                        "movement_step", "Time step",
-                        min=0, max=nsteps - 1, value=current_step, step=1,
-                        animate=ui.AnimationOptions(
-                            interval=interval, loop=True,
-                            play_button="Play", pause_button="Pause",
-                        ),
-                    ),
-                ])
-            else:
-                elements.append(
-                    ui.p(
-                        "No movement maps configured. "
-                        "Define maps in the Movement tab.",
-                        style="color: var(--osm-text-muted); "
-                        "font-size: 12px; margin-top: 8px;",
-                    )
-                )
+        try:
+            nsteps = int(float(cfg.get("simulation.time.ndtPerYear", "24") or "24"))
+        except (ValueError, TypeError):
+            nsteps = 24
 
-        return ui.div(*elements, class_="osm-movement-controls")
+        try:
+            interval = int(input.movement_speed())
+        except Exception:
+            interval = 1000
+
+        try:
+            current_step = input.movement_step()
+        except Exception:
+            current_step = 0
+
+        return ui.div(
+            ui.input_select(
+                "movement_species", "Species",
+                choices=species_choices, selected=species_list[0],
+            ),
+            ui.input_select(
+                "movement_speed", "Speed",
+                choices=speed_choices, selected=str(interval),
+            ),
+            ui.input_slider(
+                "movement_step", "Time step",
+                min=0, max=nsteps - 1, value=current_step, step=1,
+                animate=ui.AnimationOptions(
+                    interval=interval, loop=True,
+                    play_button="Play", pause_button="Pause",
+                ),
+            ),
+            class_="osm-movement-controls",
+        )
 
     # Lightweight handle to the widget rendered in grid_ui().
     # shiny_deckgl routes .update() messages by widget ID ("grid_map").
