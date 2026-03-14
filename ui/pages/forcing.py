@@ -90,16 +90,24 @@ def forcing_server(input, output, session, state):
 
     @reactive.effect
     def sync_resource_inputs():
+        """Auto-sync resource table cells to state.config.
+
+        Collects all per-resource parameter updates into a single dict, then
+        calls state.config.set() once instead of once per parameter.
+        """
         n = input.n_resources()
         with reactive.isolate():
             if state.loading.get():
                 return
-            cfg = state.config.get()
+            cfg = dict(state.config.get())
         try:
             n_focal = int(float(cfg.get("simulation.nspecies", "0") or "0"))
         except (ValueError, TypeError):
             n_focal = 0
         indexed_fields = [f for f in LTL_FIELDS if f.indexed]
+
+        # Collect all updates before touching reactive state.
+        updates: dict[str, str] = {}
         for i in range(n):
             sp_idx = n_focal + i
             for field in indexed_fields:
@@ -111,4 +119,12 @@ def forcing_server(input, output, session, state):
                 except (AttributeError, TypeError):
                     continue
                 if val is not None:
-                    state.update_config(config_key, str(val))
+                    updates[config_key] = str(val)
+
+        # Apply all updates in a single config.set() call.
+        actual_changes = {k: v for k, v in updates.items() if cfg.get(k) != v}
+        if actual_changes:
+            cfg.update(actual_changes)
+            with reactive.isolate():
+                state.config.set(cfg)
+            state.dirty.set(True)
