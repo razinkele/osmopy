@@ -151,9 +151,10 @@ def test_save_creates_new_scenario(tmp_path):
     assert loaded.config["x"] == "1"
 
 
-def test_save_backup_survives_rename_failure(tmp_path):
-    """If os.rename fails putting new data in place, backup should survive."""
+def test_save_backup_restored_on_rename_failure(tmp_path):
+    """If os.rename fails putting new data in place, backup is restored to target."""
     import os
+    import json as _json
     from unittest.mock import patch
 
     manager = ScenarioManager(tmp_path)
@@ -175,9 +176,12 @@ def test_save_backup_survives_rename_failure(tmp_path):
         with pytest.raises(OSError, match="Simulated failure"):
             manager.save(s2)
 
-    # Backup (.bak) should still exist with original data
-    backup = tmp_path / "test.bak" / "scenario.json"
-    assert backup.exists()
+    # Backup should be restored to target so original data is accessible
+    target = tmp_path / "test" / "scenario.json"
+    assert target.exists(), "Target should be restored from backup after failure"
+    with open(target) as f:
+        restored = _json.load(f)
+    assert restored["config"]["a"] == "original"
 
 
 def test_save_with_existing_stale_backup(tmp_path):

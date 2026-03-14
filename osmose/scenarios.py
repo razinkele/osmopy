@@ -67,11 +67,11 @@ class ScenarioManager:
 
         tmp_dir = Path(tempfile.mkdtemp(dir=self.storage_dir))
         data = asdict(scenario)
+        backup = None
         try:
             with open(tmp_dir / "scenario.json", "w") as f:
                 json.dump(data, f, indent=2)
 
-            backup = None
             if target.exists():
                 backup = target.with_suffix(".bak")
                 if backup.exists():
@@ -83,6 +83,8 @@ class ScenarioManager:
         except Exception:
             if tmp_dir.exists():
                 shutil.rmtree(tmp_dir)
+            if backup is not None and backup.exists() and not target.exists():
+                backup.rename(target)
             raise
 
         return target
