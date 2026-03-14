@@ -1192,92 +1192,38 @@ hr {
 }
 
 /* ── Collapsible nav sidebar ──────────────────────────────────── */
-.osm-hamburger {
+/* Nav collapse button (« in the pill list) */
+.osm-nav-collapse-btn {
     display: block;
     width: 100%;
-    background: none;
-    border: 1px solid var(--osm-border);
-    border-radius: 6px;
-    color: var(--osm-text-secondary);
-    cursor: pointer;
-    padding: 8px;
-    margin-bottom: 8px;
-    font-size: 16px;
-    line-height: 1;
-    text-align: center;
-    transition: all var(--osm-transition);
-}
-.osm-hamburger:hover {
-    color: var(--osm-accent);
-    background: var(--osm-accent-dim);
-}
-.osm-hamburger-icon {
-    display: inline-block;
-    width: 18px;
-    height: 2px;
-    background: currentColor;
-    position: relative;
-    vertical-align: middle;
-}
-.osm-hamburger-icon::before,
-.osm-hamburger-icon::after {
-    content: '';
-    display: block;
-    width: 18px;
-    height: 2px;
-    background: currentColor;
-    position: absolute;
-    left: 0;
-}
-.osm-hamburger-icon::before { top: -6px; }
-.osm-hamburger-icon::after { top: 6px; }
-
-/* Nav column transitions */
-.nav-pills {
-    transition: width var(--osm-transition-slow), padding var(--osm-transition-slow);
+    text-align: right;
+    margin-bottom: 4px;
 }
 
-/* Collapsed nav — slides out horizontally to the left */
-/* Nav pill column: body > .row > .col-sm-2 > .nav-pills */
+/* Nav column: transition for collapse animation */
+body > .row {
+    display: flex;
+    flex-wrap: nowrap;
+}
 body > .row > [class*="col-"]:first-child {
     transition: width var(--osm-transition-slow),
                 min-width var(--osm-transition-slow),
                 max-width var(--osm-transition-slow),
-                padding var(--osm-transition-slow),
-                flex var(--osm-transition-slow);
-    overflow: hidden;
+                opacity var(--osm-transition),
+                padding var(--osm-transition-slow);
 }
-html.nav-collapsed body > .row > [class*="col-"]:first-child {
+/* Collapsed nav column — same pattern as panel collapse */
+body > .row > .nav-col-collapsed {
     width: 0 !important;
     min-width: 0 !important;
     max-width: 0 !important;
-    flex: 0 0 0 !important;
-    padding-left: 0 !important;
-    padding-right: 0 !important;
-    overflow: visible !important;
-}
-html.nav-collapsed body > .row > [class*="col-"]:first-child .nav-pills {
-    visibility: hidden;
-    width: 0;
+    flex: 0 !important;
     overflow: hidden;
+    opacity: 0;
+    padding: 0 !important;
 }
-html.nav-collapsed body > .row > [class*="col-"]:first-child .osm-hamburger {
-    /* Keep hamburger visible and clickable when nav is collapsed */
-    visibility: visible;
-    position: fixed;
-    top: 140px;
-    left: 0;
-    z-index: 1050;
-    width: 36px;
-    min-width: 36px;
-    padding: 10px 6px;
-    border-radius: 0 6px 6px 0;
-    background: var(--osm-bg-card);
-    border: 1px solid var(--osm-border);
-    border-left: none;
-    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.15);
-}
-html.nav-collapsed body > .row > [class*="col-"]:last-child {
+/* Content column expands when nav is collapsed */
+body > .row > .nav-col-collapsed ~ [class*="col-"] {
     flex: 1;
     max-width: 100% !important;
     transition: max-width var(--osm-transition-slow);
@@ -1337,7 +1283,10 @@ html.nav-collapsed body > .row > [class*="col-"]:last-child {
     font-weight: 600;
     align-self: flex-start;
     flex-shrink: 0;
+    flex-grow: 0;
+    width: 28px;
     min-width: 28px;
+    max-width: 28px;
     z-index: 10;
     position: sticky;
     top: 140px;

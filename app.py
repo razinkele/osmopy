@@ -78,19 +78,18 @@ app_ui = ui.page_fillable(
         })();
         // Bootstrap popover init is at end of body (after dependencies load)
 
-        // ── Nav collapse (horizontal slide) ──────────────
+        // ── Nav collapse (same pattern as panel collapse) ─
         function toggleNav() {
-            var html = document.documentElement;
-            html.classList.toggle('nav-collapsed');
-            localStorage.setItem('osmose-nav-collapsed',
-                html.classList.contains('nav-collapsed') ? '1' : '0');
+            var row = document.querySelector('body > .row');
+            if (!row) return;
+            var navCol = row.children[0];
+            var collapsed = navCol.classList.toggle('nav-col-collapsed');
+            // Show/hide the expand tab
+            var tab = document.getElementById('nav-expand-tab');
+            if (tab) tab.classList.toggle('visible', collapsed);
+            localStorage.setItem('osmose-nav-collapsed', collapsed ? '1' : '0');
         }
-        // Restore nav state immediately (before render)
-        (function() {
-            if (localStorage.getItem('osmose-nav-collapsed') === '1') {
-                document.documentElement.classList.add('nav-collapsed');
-            }
-        })();
+        // Nav expand tab is created at end of body (after DOM renders)
 
         // ── Panel collapse ────────────────────────────────
         function togglePanel(pageId) {
@@ -183,13 +182,13 @@ app_ui = ui.page_fillable(
     ui.output_ui("loading_overlay"),
     # ── Left pill navigation with grouped sections ──────────────
     ui.navset_pill_list(
-        # Hamburger toggle for collapsible nav
+        # Collapse button for nav sidebar
         ui.nav_control(
             ui.tags.button(
-                ui.tags.span(class_="osm-hamburger-icon"),
-                class_="osm-hamburger",
+                "\u00ab",
+                class_="osm-collapse-btn osm-nav-collapse-btn",
                 onclick="toggleNav()",
-                title="Toggle navigation",
+                title="Collapse menu",
             ),
         ),
         # Configure
@@ -243,16 +242,37 @@ app_ui = ui.page_fillable(
         }, 300);
     })();
     """),
-    # Bootstrap 5 popover initialization — must be at end of body after
-    # bootstrap.js loads. Polls every 500ms for new popover elements
-    # (Shiny renders fields dynamically after connection).
+    # End-of-body scripts — must run after Shiny renders the DOM.
+    # 1. Create nav expand tab (inserted between nav and content columns)
+    # 2. Initialize Bootstrap 5 popovers (poll for dynamically rendered fields)
     ui.tags.script("""
-    setInterval(function() {
-        if (typeof bootstrap === 'undefined' || !bootstrap.Popover) return;
-        document.querySelectorAll('[data-bs-toggle="popover"]').forEach(function(el) {
-            if (!bootstrap.Popover.getInstance(el)) new bootstrap.Popover(el);
-        });
-    }, 500);
+    (function() {
+        // Create nav expand tab once the row exists
+        var navPoll = setInterval(function() {
+            var row = document.querySelector('body > .row');
+            if (!row || row.children.length < 2) return;
+            if (document.getElementById('nav-expand-tab')) { clearInterval(navPoll); return; }
+            clearInterval(navPoll);
+            var tab = document.createElement('div');
+            tab.id = 'nav-expand-tab';
+            tab.className = 'osm-expand-tab';
+            tab.textContent = 'Menu';
+            tab.onclick = function() { toggleNav(); };
+            row.insertBefore(tab, row.children[1]);
+            // Restore collapsed state
+            if (localStorage.getItem('osmose-nav-collapsed') === '1') {
+                toggleNav();
+            }
+        }, 200);
+
+        // Initialize Bootstrap 5 popovers
+        setInterval(function() {
+            if (typeof bootstrap === 'undefined' || !bootstrap.Popover) return;
+            document.querySelectorAll('[data-bs-toggle="popover"]').forEach(function(el) {
+                if (!bootstrap.Popover.getInstance(el)) new bootstrap.Popover(el);
+            });
+        }, 500);
+    })();
     """),
     theme=THEME,
 )

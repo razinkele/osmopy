@@ -49,10 +49,10 @@ def test_section_headers_present():
         assert header in html, f"Missing section header: {header}"
 
 
-def test_hamburger_toggle_present():
-    """Hamburger nav toggle button is in the rendered HTML."""
+def test_nav_collapse_toggle_present():
+    """Nav collapse button is in the rendered HTML."""
     from app import app_ui
 
     html = str(app_ui)
-    assert "osm-hamburger" in html
+    assert "osm-nav-collapse-btn" in html
     assert "toggleNav()" in html
