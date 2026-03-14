@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.3.0] - 2026-03-15
+
+### Features
+
+- add OSMOSE Model scientific description to Help modal (bb0d019)
+
+### Bug Fixes
+
+- move popover init to end of body, use setInterval polling (d5eeadc)
+- remove Show Help button, fix Bootstrap 5 popover initialization (7ad76d0)
+
+### Documentation
+
+- expand OSMOSE Model help with extensions, applications, and 30+ references (b9f699d)
+
 ## [0.2.0] - 2026-03-14
 
 ### Features
@@ -169,6 +184,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ### Other
 
+- v0.2.0 — movement visualization, collapsible panels, codebase fixes (639ca24)
 - Merge branch 'enhancement-sprint-2026-03-11': 18 enhancement tasks (production hardening, UX polish, new capabilities, dev experience) (ee1520c)
 
 ### Refactoring
