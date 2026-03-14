@@ -105,6 +105,30 @@ def make_spatial_map(
 
 
 # ---------------------------------------------------------------------------
+# Result method mapping — explicit lookup replaces fragile getattr
+# ---------------------------------------------------------------------------
+
+_RESULT_METHODS: dict[str, str] = {
+    "biomass": "biomass",
+    "abundance": "abundance",
+    "yield": "yield_biomass",
+    "mortality": "mortality",
+    "diet": "diet_matrix",
+    "trophic": "mean_trophic_level",
+    "biomass_by_age": "biomass_by_age",
+    "biomass_by_size": "biomass_by_size",
+    "biomass_by_tl": "biomass_by_tl",
+    "abundance_by_age": "abundance_by_age",
+    "abundance_by_size": "abundance_by_size",
+    "yield_by_age": "yield_by_age",
+    "yield_by_size": "yield_by_size",
+    "yield_n": "yield_abundance",
+    "mortality_rate": "mortality_rate",
+    "size_spectrum": "size_spectrum",
+}
+
+
+# ---------------------------------------------------------------------------
 # Shiny UI
 # ---------------------------------------------------------------------------
 
@@ -326,13 +350,13 @@ def results_server(input, output, session, state):
         res = results_obj.get()
         if res is None:
             return pd.DataFrame()
-        # Load the requested type
-        method = getattr(res, output_type, None)
-        if method is None:
-            # Try the export_dataframe fallback
-            df = res.export_dataframe(output_type)
+        # Use explicit method mapping; fall back to export_dataframe for unknowns.
+        method_name = _RESULT_METHODS.get(output_type)
+        if method_name:
+            method = getattr(res, method_name, None)
+            df = method() if method is not None else res.export_dataframe(output_type)
         else:
-            df = method()
+            df = res.export_dataframe(output_type)
         # Cache it
         data = dict(data)
         data[output_type] = df
