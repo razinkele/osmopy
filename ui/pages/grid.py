@@ -114,7 +114,12 @@ def grid_server(input, output, session, state):
         with reactive.isolate():
             cfg = state.config.get()
         choices: dict[str, str] = {"grid_extent": "Grid extent"}
-        skip_prefixes = ("grid.", "osmose.configuration.", "simulation.restart")
+        # Keys whose .csv/.nc values are NOT spatial grids
+        skip_prefixes = (
+            "grid.", "osmose.configuration.", "simulation.restart",
+            "predation.accessibility", "fisheries.catchability",
+            "fisheries.discards",
+        )
 
         for key, val in sorted(cfg.items()):
             if not val or not isinstance(val, str):
@@ -122,6 +127,8 @@ def grid_server(input, output, session, state):
             if not (val.endswith(".nc") or val.endswith(".csv")):
                 continue
             if any(key.startswith(p) for p in skip_prefixes):
+                continue
+            if "season" in key:
                 continue
             label = key.replace(".", " ").replace("_", " ").title()
             choices[key] = label
