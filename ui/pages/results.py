@@ -343,6 +343,9 @@ def results_server(input, output, session, state):
     @reactive.event(input.btn_load_results)
     def _load_results():
         out_dir = Path(input.output_dir())
+        if ".." in out_dir.parts:
+            ui.notification_show("Invalid output directory path.", type="error")
+            return
         if not out_dir.is_dir():
             ui.notification_show(f"Directory not found: {out_dir}", type="error", duration=5)
             return
@@ -612,6 +615,9 @@ def results_server(input, output, session, state):
         import tempfile
 
         out_dir = Path(input.output_dir())
+        if ".." in out_dir.parts:
+            ui.notification_show("Invalid output directory path.", type="error")
+            return
         if not out_dir.is_dir():
             ui.notification_show(
                 "No output directory selected. Load results first.",
