@@ -94,7 +94,9 @@ def csv_maps_to_netcdf(
             coords={"lat": lat, "lon": lon},
         )
 
-    if data_vars:
-        ds = xr.Dataset(data_vars)
-        ds.to_netcdf(output)
-        ds.close()
+    if not data_vars:
+        raise ValueError(f"No valid CSV files found in {csv_dir}")
+
+    ds = xr.Dataset(data_vars)
+    ds.to_netcdf(output)
+    ds.close()

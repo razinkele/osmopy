@@ -46,6 +46,48 @@ def test_create_grid_netcdf(tmp_path):
     ds.close()
 
 
+def test_csv_maps_to_netcdf_raises_when_no_valid_files(tmp_path):
+    """csv_maps_to_netcdf raises ValueError when no valid CSV files are found."""
+    import pytest
+
+    empty_dir = tmp_path / "empty_maps"
+    empty_dir.mkdir()
+    output = tmp_path / "maps.nc"
+
+    with pytest.raises(ValueError, match="No valid CSV files"):
+        csv_maps_to_netcdf(
+            csv_dir=empty_dir,
+            output=output,
+            nlat=5,
+            nlon=10,
+            lat_bounds=(43.0, 48.0),
+            lon_bounds=(-6.0, -1.0),
+        )
+
+
+def test_csv_maps_to_netcdf_raises_when_all_files_have_wrong_shape(tmp_path):
+    """csv_maps_to_netcdf raises ValueError when all CSV files fail shape validation."""
+    import pytest
+
+    csv_dir = tmp_path / "bad_maps"
+    csv_dir.mkdir()
+    # Write a CSV with wrong shape (3x4 instead of 5x10)
+    import numpy as np
+
+    np.savetxt(csv_dir / "wrong.csv", np.random.rand(3, 4), delimiter=",")
+
+    output = tmp_path / "maps.nc"
+    with pytest.raises(ValueError, match="No valid CSV files"):
+        csv_maps_to_netcdf(
+            csv_dir=csv_dir,
+            output=output,
+            nlat=5,
+            nlon=10,
+            lat_bounds=(43.0, 48.0),
+            lon_bounds=(-6.0, -1.0),
+        )
+
+
 def test_csv_maps_to_netcdf(tmp_path):
     # Create a CSV map
     csv_dir = tmp_path / "maps_csv"
