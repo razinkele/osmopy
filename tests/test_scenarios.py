@@ -225,6 +225,25 @@ def test_fork_rejects_path_traversal(tmp_path):
         mgr.fork("../../etc/passwd", "new_name")
 
 
+def test_import_all_rejects_path_traversal_in_zip(tmp_path):
+    """ZIP containing scenario with traversal name should be skipped."""
+    import zipfile
+    import json
+    from osmose.scenarios import ScenarioManager
+
+    mgr = ScenarioManager(tmp_path / "scenarios")
+    zip_path = tmp_path / "evil.zip"
+
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        # The scenario name inside the JSON is what's validated — use a traversal name.
+        data = json.dumps({"name": "../escape", "config": {}, "description": ""})
+        zf.writestr("escape.json", data)
+
+    count = mgr.import_all(zip_path)
+    assert count == 0
+    assert not (tmp_path / "escape").exists()
+
+
 def test_save_rejects_empty_name(tmp_path):
     from osmose.scenarios import Scenario, ScenarioManager
     mgr = ScenarioManager(tmp_path / "scenarios")
