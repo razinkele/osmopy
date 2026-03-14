@@ -23,6 +23,13 @@ from ui.pages.calibration import calibration_ui, calibration_server
 from ui.pages.scenarios import scenarios_ui, scenarios_server
 from ui.pages.advanced import advanced_ui, advanced_server
 
+from osmose.cleanup import cleanup_old_temp_dirs, register_cleanup
+
+# Clean stale osmose temp dirs from previous sessions and register atexit
+# handler so current-session dirs are removed on normal shutdown.
+cleanup_old_temp_dirs()
+register_cleanup()
+
 _WWW = Path(__file__).parent / "www"
 
 
