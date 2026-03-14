@@ -118,7 +118,7 @@ def collect_selected_params(
         try:
             if val():
                 selected.append(p)
-        except (TypeError, RuntimeError):
+        except Exception:
             continue
     return selected
 

@@ -462,7 +462,7 @@ def results_server(input, output, session, state):
         ensemble_on = False
         try:
             ensemble_on = bool(input.ensemble_mode()) and bool(rep_dirs.get())
-        except (AttributeError, TypeError):
+        except Exception:
             pass
 
         if ensemble_on and rtype in ENSEMBLE_OUTPUT_TYPES:

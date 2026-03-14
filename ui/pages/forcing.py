@@ -116,7 +116,7 @@ def forcing_server(input, output, session, state):
                 input_id = f"spt_{base_key}_{sp_idx}"
                 try:
                     val = getattr(input, input_id)()
-                except (AttributeError, TypeError):
+                except Exception:
                     continue
                 if val is not None:
                     updates[config_key] = str(val)

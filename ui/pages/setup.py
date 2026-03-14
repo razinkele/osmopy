@@ -37,8 +37,11 @@ def setup_ui():
                         choices=demo_choices,
                         selected="",
                     ),
-                    ui.input_action_button(
-                        "btn_load_example", "Load", class_="btn-primary mt-4"
+                    ui.div(
+                        ui.input_action_button(
+                            "btn_load_example", "Load", class_="btn-primary w-100"
+                        ),
+                        style="display: flex; align-items: flex-end; height: 100%;",
                     ),
                     col_widths=[8, 4],
                 ),
@@ -172,7 +175,7 @@ def setup_server(input, output, session, state):
                 input_id = f"spt_{base_key}_{i}"
                 try:
                     val = getattr(input, input_id)()
-                except (AttributeError, TypeError):
+                except Exception:
                     continue
                 if val is not None:
                     updates[config_key] = str(val)

@@ -166,7 +166,7 @@ app_ui = ui.page_fillable(
         ),
         ui.tags.span(
             ui.tags.span(class_="dot"),
-            "Marine Ecosystem Simulator",
+            "v0.1.0",
             class_="osmose-badge",
         ),
         ui.div(
