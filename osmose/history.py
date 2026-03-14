@@ -51,7 +51,12 @@ class RunHistory:
     def load_run(self, timestamp: str) -> RunRecord:
         """Load a specific run record by timestamp."""
         safe_ts = timestamp.replace(":", "-")
-        path = self.history_dir / f"run_{safe_ts}.json"
+        raw = Path(f"run_{safe_ts}.json")
+        if any(part == ".." for part in raw.parts) or raw.is_absolute():
+            raise ValueError(f"Unsafe timestamp: {timestamp!r}")
+        path = (self.history_dir / raw).resolve()
+        if not path.is_relative_to(self.history_dir.resolve()):
+            raise ValueError(f"Unsafe timestamp: {timestamp!r}")
         with open(path) as f:
             data = json.load(f)
         return RunRecord(**data)

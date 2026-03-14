@@ -194,3 +194,40 @@ def test_save_with_existing_stale_backup(tmp_path):
     loaded = manager.load("test")
     assert loaded.config["a"] == "2"
     assert not stale.exists()
+
+
+def test_save_rejects_path_traversal(tmp_path):
+    from osmose.scenarios import Scenario, ScenarioManager
+    mgr = ScenarioManager(tmp_path / "scenarios")
+    scenario = Scenario(name="../../etc/evil", config={})
+    with pytest.raises(ValueError, match="[Uu]nsafe"):
+        mgr.save(scenario)
+
+
+def test_delete_rejects_path_traversal(tmp_path):
+    from osmose.scenarios import ScenarioManager
+    mgr = ScenarioManager(tmp_path / "scenarios")
+    with pytest.raises(ValueError, match="[Uu]nsafe"):
+        mgr.delete("../../etc")
+
+
+def test_load_rejects_path_traversal(tmp_path):
+    from osmose.scenarios import ScenarioManager
+    mgr = ScenarioManager(tmp_path / "scenarios")
+    with pytest.raises(ValueError, match="[Uu]nsafe"):
+        mgr.load("../../etc/passwd")
+
+
+def test_fork_rejects_path_traversal(tmp_path):
+    from osmose.scenarios import ScenarioManager
+    mgr = ScenarioManager(tmp_path / "scenarios")
+    with pytest.raises(ValueError, match="[Uu]nsafe"):
+        mgr.fork("../../etc/passwd", "new_name")
+
+
+def test_save_rejects_empty_name(tmp_path):
+    from osmose.scenarios import Scenario, ScenarioManager
+    mgr = ScenarioManager(tmp_path / "scenarios")
+    scenario = Scenario(name="", config={})
+    with pytest.raises(ValueError, match="[Ii]nvalid"):
+        mgr.save(scenario)

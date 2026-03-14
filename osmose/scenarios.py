@@ -51,10 +51,19 @@ class ScenarioManager:
         self.storage_dir = Path(storage_dir)
         self.storage_dir.mkdir(parents=True, exist_ok=True)
 
+    def _validate_path(self, name: str) -> Path:
+        """Validate a scenario name resolves within storage_dir."""
+        if not name or not name.strip():
+            raise ValueError(f"Invalid scenario name: {name!r}")
+        target = (self.storage_dir / name).resolve()
+        if not target.is_relative_to(self.storage_dir.resolve()):
+            raise ValueError(f"Unsafe scenario name: {name!r}")
+        return target
+
     def save(self, scenario: Scenario) -> Path:
         """Save a scenario to disk using atomic write pattern."""
         scenario.modified_at = datetime.now().isoformat()
-        target = self.storage_dir / scenario.name
+        target = self._validate_path(scenario.name)
 
         tmp_dir = Path(tempfile.mkdtemp(dir=self.storage_dir))
         data = asdict(scenario)
@@ -80,7 +89,8 @@ class ScenarioManager:
 
     def load(self, name: str) -> Scenario:
         """Load a named scenario from disk."""
-        path = self.storage_dir / name / "scenario.json"
+        target = self._validate_path(name)
+        path = target / "scenario.json"
         with open(path) as f:
             data = json.load(f)
         return Scenario(**data)
@@ -105,7 +115,7 @@ class ScenarioManager:
 
     def delete(self, name: str) -> None:
         """Delete a saved scenario."""
-        path = self.storage_dir / name
+        path = self._validate_path(name)
         if path.exists():
             shutil.rmtree(path)
 
@@ -124,6 +134,8 @@ class ScenarioManager:
 
     def fork(self, source_name: str, new_name: str, description: str = "") -> Scenario:
         """Create a new scenario based on an existing one."""
+        self._validate_path(source_name)
+        self._validate_path(new_name)
         source = self.load(source_name)
         forked = Scenario(
             name=new_name,

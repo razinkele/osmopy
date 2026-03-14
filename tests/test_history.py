@@ -1,3 +1,5 @@
+import pytest
+
 from osmose.history import RunRecord, RunHistory
 
 
@@ -130,3 +132,10 @@ def test_compare_runs_multi_single_run(tmp_path):
     records = history.list_runs()
     diffs = history.compare_runs_multi([records[0].timestamp])
     assert diffs == []  # Nothing to compare
+
+
+def test_load_run_rejects_path_traversal(tmp_path):
+    from osmose.history import RunHistory
+    history = RunHistory(tmp_path / "history")
+    with pytest.raises(ValueError, match="[Uu]nsafe"):
+        history.load_run("../../etc/passwd")
