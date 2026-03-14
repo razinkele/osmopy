@@ -238,6 +238,8 @@ def _build_netcdf_grid_layers(
 
     Returns (layers, view_state) tuple.
     """
+    if lat.ndim == 1 and lon.ndim == 1:
+        lon, lat = np.meshgrid(lon, lat)
     ny, nx = lat.shape
     layers = []
 
