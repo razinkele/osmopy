@@ -106,8 +106,15 @@ def check_file_references(
 def check_species_consistency(config: dict[str, str]) -> list[str]:
     """Check that species.name keys exist for all declared species and resources."""
     warnings = []
-    nspecies = int(config.get("simulation.nspecies", "0"))
-    nresource = int(config.get("simulation.nresource", "0"))
+    try:
+        nspecies = int(float(config.get("simulation.nspecies", "0")))
+    except (ValueError, TypeError):
+        warnings.append("simulation.nspecies has non-numeric value")
+        return warnings
+    try:
+        nresource = int(float(config.get("simulation.nresource", "0")))
+    except (ValueError, TypeError):
+        nresource = 0
     for i in range(nspecies):
         key = f"species.name.sp{i}"
         if key not in config:

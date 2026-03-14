@@ -280,7 +280,10 @@ def server(input, output, session):
         if not name:
             return ui.div()
         cfg = state.config.get()
-        n_species = int(cfg.get("simulation.nspecies", "0"))
+        try:
+            n_species = int(float(cfg.get("simulation.nspecies", "0")))
+        except (ValueError, TypeError):
+            n_species = 0
         n_params = len(cfg)
         is_dirty = state.dirty.get()
         return ui.div(
