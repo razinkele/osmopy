@@ -413,3 +413,24 @@ def test_build_cmd_update_force_flag(tmp_path):
     cmd = runner._build_cmd(config, update=True, force=True)
     assert "-update" in cmd
     assert "-force" in cmd
+
+
+def test_validate_java_opts_allows_safe_flags():
+    from osmose.runner import validate_java_opts
+
+    validate_java_opts(["-Xmx2g", "-Xms512m", "-Xss1m"])
+    validate_java_opts(["-Dfoo.bar=baz"])
+    validate_java_opts(["-XX:+UseG1GC"])
+    validate_java_opts(["-server"])
+    validate_java_opts(["-ea"])
+    validate_java_opts([])
+
+
+def test_validate_java_opts_rejects_unsafe_flags():
+    from osmose.runner import validate_java_opts
+
+    with pytest.raises(ValueError, match="[Uu]nsafe"):
+        validate_java_opts(["-javaagent:/tmp/evil.jar"])
+
+    with pytest.raises(ValueError, match="[Uu]nsafe"):
+        validate_java_opts(["-agentlib:jdwp=transport=dt_socket"])

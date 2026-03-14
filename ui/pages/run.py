@@ -12,7 +12,7 @@ from osmose.config.validator import (
     check_species_consistency,
     validate_config,
 )
-from osmose.runner import OsmoseRunner
+from osmose.runner import OsmoseRunner, validate_java_opts
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.styles import STYLE_CONSOLE
 
@@ -244,7 +244,16 @@ def run_server(input, output, session, state):
         # Parse overrides and java opts
         overrides = parse_overrides(input.param_overrides() or "")
         java_opts_text = input.java_opts() or ""
-        java_opts = java_opts_text.split() if java_opts_text.strip() else None
+        java_opts = java_opts_text.split() if java_opts_text.strip() else []
+        try:
+            validate_java_opts(java_opts)
+        except ValueError as exc:
+            ui.notification_show(str(exc), type="error", duration=5)
+            ui.update_action_button("btn_run", disabled=False, session=session)
+            ui.update_action_button("btn_cancel", disabled=True, session=session)
+            status.set(f"Error: {exc}")
+            return
+        java_opts = java_opts or None
 
         # Create runner
         runner = OsmoseRunner(jar_path=jar_path)

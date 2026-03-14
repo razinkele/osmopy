@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,6 +12,29 @@ from typing import Callable
 from osmose.logging import setup_logging
 
 _log = setup_logging("osmose.runner")
+
+_SAFE_JVM_PATTERNS = [
+    re.compile(r"^-X(mx|ms|ss)\d+[kmgKMG]?$"),           # memory flags
+    re.compile(r"^-D[\w.]+=[^;|&`$()]*$"),                 # system properties
+    re.compile(r"^-XX:[+-]?\w+(=[\w.]+)?$"),               # XX flags
+    re.compile(r"^-server$"),                               # JVM mode
+    re.compile(r"^-client$"),
+    re.compile(r"^-verbose:(gc|class|jni)$"),              # verbose modes
+    re.compile(r"^-ea$"),                                   # enable assertions
+    re.compile(r"^-da$"),                                   # disable assertions
+]
+
+
+def validate_java_opts(opts: list[str]) -> None:
+    """Validate JVM options against a whitelist of safe patterns.
+
+    Raises ValueError for any option that doesn't match a known-safe pattern.
+    """
+    for opt in opts:
+        if not any(p.match(opt) for p in _SAFE_JVM_PATTERNS):
+            raise ValueError(
+                f"Unsafe JVM option: {opt!r}. Only memory, GC, and -D flags are allowed."
+            )
 
 
 @dataclass
