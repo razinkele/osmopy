@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pandas as pd
 import xarray as xr
+
+_log = logging.getLogger("osmose.results")
 
 
 class OsmoseResults:
@@ -326,6 +329,7 @@ class OsmoseResults:
         """
         entry = self._EXPORT_MAP.get(output_type)
         if entry is None:
+            _log.warning("Unknown output type for export_dataframe: %r", output_type)
             return pd.DataFrame()
 
         internal_type, method_type = entry
