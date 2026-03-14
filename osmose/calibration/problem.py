@@ -3,11 +3,14 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
+
+_OSMOSE_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9._]*$")
 
 import numpy as np
 from pymoo.core.problem import Problem  # type: ignore[import-untyped]
@@ -122,6 +125,11 @@ class OsmoseCalibrationProblem(Problem):
 
         Uses subprocess (synchronous) since pymoo evaluates in a loop.
         """
+        # Validate override keys before constructing the command
+        for key in overrides:
+            if not _OSMOSE_KEY_PATTERN.match(key):
+                raise ValueError(f"Invalid override key: {key!r}")
+
         # Create isolated output directory
         run_dir = self.work_dir / f"run_{run_id}"
         run_dir.mkdir(parents=True, exist_ok=True)

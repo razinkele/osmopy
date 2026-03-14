@@ -320,6 +320,40 @@ def test_evaluate_parallel_handles_mixed_failures(tmp_path):
     assert not np.isinf(out["F"][2, 0])
 
 
+def test_run_single_rejects_invalid_override_keys(tmp_path):
+    """_run_single raises ValueError for keys that don't match the OSMOSE pattern."""
+    import pytest
+
+    fp = FreeParameter(key="valid.key", lower_bound=0, upper_bound=1)
+    problem = OsmoseCalibrationProblem(
+        free_params=[fp],
+        objective_fns=[lambda r: 1.0],
+        base_config_path=tmp_path / "config.csv",
+        jar_path=tmp_path / "fake.jar",
+        work_dir=tmp_path,
+    )
+    with pytest.raises(ValueError, match="[Ii]nvalid"):
+        problem._run_single({"../evil": "1.0"}, run_id=0)
+
+
+def test_run_single_accepts_valid_override_keys(tmp_path):
+    """_run_single accepts keys that match the OSMOSE pattern."""
+    fp = FreeParameter(key="species.k.sp0", lower_bound=0.1, upper_bound=0.5)
+    problem = OsmoseCalibrationProblem(
+        free_params=[fp],
+        objective_fns=[lambda r: 0.5],
+        base_config_path=tmp_path / "config.csv",
+        jar_path=tmp_path / "fake.jar",
+        work_dir=tmp_path,
+    )
+    mock_result = MagicMock()
+    mock_result.returncode = 0
+    with patch("subprocess.run", return_value=mock_result):
+        with patch("osmose.results.OsmoseResults", return_value=MagicMock()):
+            result = problem._run_single({"species.k.sp0": "0.3"}, run_id=0)
+    assert result == [0.5]
+
+
 def test_run_single_logs_subprocess_stderr(tmp_path, caplog):
     """Subprocess failures should log stderr content."""
     import logging
