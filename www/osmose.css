@@ -1248,36 +1248,47 @@ body.show-all-help .field-help-text {
     transition: width var(--osm-transition-slow), padding var(--osm-transition-slow);
 }
 
-/* Collapsed nav — scoped to navset_pill_list container */
-html.nav-collapsed .bslib-navs-pill-list > .row > [class*="col-"]:first-child {
-    width: 42px !important;
-    min-width: 42px !important;
-    max-width: 42px !important;
-    padding-left: 4px !important;
-    padding-right: 4px !important;
-    transition: width var(--osm-transition-slow), min-width var(--osm-transition-slow);
+/* Collapsed nav — slides out horizontally to the left */
+/* Nav pill column: body > .row > .col-sm-2 > .nav-pills */
+body > .row > [class*="col-"]:first-child {
+    transition: width var(--osm-transition-slow),
+                min-width var(--osm-transition-slow),
+                max-width var(--osm-transition-slow),
+                opacity var(--osm-transition),
+                padding var(--osm-transition-slow),
+                flex var(--osm-transition-slow);
+    overflow: hidden;
 }
-html.nav-collapsed .bslib-navs-pill-list > .row > [class*="col-"]:last-child {
+html.nav-collapsed body > .row > [class*="col-"]:first-child {
+    width: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
+    flex: 0 0 0 !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    opacity: 0;
+    overflow: hidden;
+}
+html.nav-collapsed body > .row > [class*="col-"]:last-child {
     flex: 1;
     max-width: 100% !important;
     transition: max-width var(--osm-transition-slow);
 }
-html.nav-collapsed .osmose-section-label {
-    display: none;
-}
-html.nav-collapsed .nav-pills .nav-link {
-    font-size: 0 !important;
-    padding: 8px 6px !important;
-    text-align: center;
-    overflow: hidden;
-    white-space: nowrap;
-}
-html.nav-collapsed .nav-pills .nav-link.active {
-    box-shadow: none;
-    border-radius: 6px !important;
-}
 html.nav-collapsed .osm-hamburger {
-    font-size: 16px !important;
+    /* Place hamburger button at fixed position when nav hidden */
+    position: fixed;
+    top: 120px;
+    left: 0;
+    z-index: 1050;
+    width: 36px;
+    min-width: 36px;
+    padding: 10px 6px;
+    border-radius: 0 6px 6px 0;
+    background: var(--osm-bg-card);
+    border: 1px solid var(--osm-border);
+    border-left: none;
+    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.15);
+    opacity: 1;
 }
 
 /* ── Collapsible page panels ──────────────────────────────────── */
@@ -1285,17 +1296,20 @@ html.nav-collapsed .osm-hamburger {
     display: flex;
     height: 100%;
 }
-.osm-split-layout > .row {
+.osm-split-layout > .row,
+.osm-split-layout > .bslib-grid {
     flex: 1;
     flex-wrap: nowrap;
 }
-.osm-split-layout > .row > div:first-child {
+.osm-split-layout > .row > div:first-child,
+.osm-split-layout > .bslib-grid > div:first-child {
     transition: width var(--osm-transition-slow),
                 opacity var(--osm-transition),
                 padding var(--osm-transition-slow),
                 min-width var(--osm-transition-slow);
 }
-.osm-split-layout > .row > div:first-child.collapsed {
+.osm-split-layout > .row > div:first-child.collapsed,
+.osm-split-layout > .bslib-grid > div:first-child.collapsed {
     width: 0 !important;
     flex: 0 !important;
     min-width: 0 !important;
@@ -1303,7 +1317,8 @@ html.nav-collapsed .osm-hamburger {
     opacity: 0;
     padding: 0 !important;
 }
-.osm-split-layout > .row > div:first-child.collapsed ~ div {
+.osm-split-layout > .row > div:first-child.collapsed ~ div,
+.osm-split-layout > .bslib-grid > div:first-child.collapsed ~ div {
     flex: 1;
     max-width: 100%;
 }
@@ -1380,6 +1395,28 @@ html.nav-collapsed .osm-hamburger {
 }
 [data-theme="light"] .osm-hamburger:hover {
     color: var(--osm-accent);
+}
+
+/* ── Grid map container (plain map, no card) ─────────────────── */
+.osm-grid-map-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 500px;
+    border-radius: 8px;
+    overflow: hidden;
+}
+.osm-grid-map-container .deckgl-map {
+    flex: 1;
+    border-radius: 8px;
+}
+
+/* ── Movement animation controls ─────────────────────────── */
+.osm-movement-controls .shiny-input-container {
+    margin-bottom: 8px;
+}
+.osm-movement-controls .irs {
+    margin-top: 4px;
 }
 
 /* ── Responsive / mobile ────────────────────────────────────── */
