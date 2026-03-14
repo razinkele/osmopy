@@ -124,5 +124,5 @@ def get_theme_mode(input: object) -> str:
     try:
         mode = input.theme_mode()  # type: ignore[attr-defined]
         return mode if mode in ("dark", "light") else "light"
-    except Exception:
+    except (AttributeError, TypeError):
         return "light"
