@@ -218,7 +218,12 @@ def advanced_server(input, output, session, state):
 
         rows = []
         for f in fields[:100]:
-            current_val = cfg.get(f.key_pattern, "-")
+            # For indexed fields key_pattern contains literal "{idx}" which
+            # never appears in the config dict.  Show the sp0 value instead.
+            if f.indexed:
+                current_val = cfg.get(f.resolve_key(0), "-")
+            else:
+                current_val = cfg.get(f.key_pattern, "-")
             rows.append(
                 ui.tags.tr(
                     ui.tags.td(f.key_pattern, style=STYLE_MONO_KEY),
