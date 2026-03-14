@@ -126,7 +126,6 @@ def calibration_server(input, output, session, state):
     cal_X = reactive.value(None)
     sensitivity_result = reactive.value(None)
     cal_thread = reactive.value(None)
-    cancel_flag = reactive.value(False)
     surrogate_status = reactive.value("")
 
     def _tmpl() -> str:
@@ -144,7 +143,6 @@ def calibration_server(input, output, session, state):
         cal_X=cal_X,
         sensitivity_result=sensitivity_result,
         cal_thread=cal_thread,
-        cancel_flag=cancel_flag,
         surrogate_status=surrogate_status,
         copy_data_files=copy_data_files,
     )

@@ -14,6 +14,15 @@ MOVEMENT_FIELDS: list[OsmoseField] = [
         indexed=True,
     ),
     OsmoseField(
+        key_pattern="movement.distribution.ncell.sp{idx}",
+        param_type=ParamType.INT,
+        default=None,
+        description="Number of cells for random distribution (whole domain if omitted)",
+        category="movement",
+        indexed=True,
+        advanced=True,
+    ),
+    OsmoseField(
         key_pattern="movement.randomwalk.range.sp{idx}",
         param_type=ParamType.INT,
         default=1,

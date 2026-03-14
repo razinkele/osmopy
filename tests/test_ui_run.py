@@ -2,7 +2,7 @@
 
 from osmose.config.validator import validate_config
 from osmose.schema import build_registry
-from ui.pages.run import parse_overrides, write_temp_config
+from ui.pages.run import _inject_random_movement_ncell, parse_overrides, write_temp_config
 
 
 def test_parse_overrides_empty():
@@ -36,6 +36,31 @@ def test_write_temp_config(tmp_path):
     assert config_path.name == "osm_all-parameters.csv"
     content = config_path.read_text()
     assert "simulation.nspecies" in content
+
+
+def test_inject_ncell_for_random_movement():
+    config = {
+        "grid.nlon": "15",
+        "grid.nlat": "12",
+        "movement.distribution.method.sp0": "random",
+        "movement.distribution.method.sp1": "maps",
+        "movement.distribution.method.sp2": "random",
+    }
+    _inject_random_movement_ncell(config)
+    assert config["movement.distribution.ncell.sp0"] == "180"
+    assert "movement.distribution.ncell.sp1" not in config
+    assert config["movement.distribution.ncell.sp2"] == "180"
+
+
+def test_inject_ncell_preserves_existing():
+    config = {
+        "grid.nlon": "15",
+        "grid.nlat": "12",
+        "movement.distribution.method.sp0": "random",
+        "movement.distribution.ncell.sp0": "50",
+    }
+    _inject_random_movement_ncell(config)
+    assert config["movement.distribution.ncell.sp0"] == "50"
 
 
 def test_prerun_validation_blocks_on_errors():

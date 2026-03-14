@@ -72,6 +72,28 @@ def copy_data_files(config: dict[str, str], source_dir: Path, dest_dir: Path) ->
     return skipped
 
 
+def _inject_random_movement_ncell(config: dict[str, str]) -> None:
+    """Inject movement.distribution.ncell.spN for species using random movement.
+
+    Works around a Java engine off-by-one bug in RandomDistribution.createRandomMap()
+    where the engine accesses grid cell at index == grid size when ncell is not set.
+    """
+    try:
+        nlon = int(config.get("grid.nlon", "0"))
+        nlat = int(config.get("grid.nlat", "0"))
+    except ValueError:
+        return
+    if nlon <= 0 or nlat <= 0:
+        return
+    total_cells = nlon * nlat
+    for key, value in list(config.items()):
+        if key.startswith("movement.distribution.method.sp") and value.strip() == "random":
+            sp_suffix = key.split("movement.distribution.method.")[-1]
+            ncell_key = f"movement.distribution.ncell.{sp_suffix}"
+            if ncell_key not in config:
+                config[ncell_key] = str(total_cells)
+
+
 def write_temp_config(
     config: dict[str, str], output_dir: Path, source_dir: Path | None = None
 ) -> Path:
@@ -86,6 +108,12 @@ def write_temp_config(
     output_dir.mkdir(parents=True, exist_ok=True)
     if source_dir and source_dir.is_dir():
         shutil.copytree(source_dir, output_dir, dirs_exist_ok=True)
+
+    # Work around Java off-by-one bug in RandomDistribution.createRandomMap():
+    # when movement.distribution.ncell.spN is absent and method is "random",
+    # the engine tries to access grid cell at index == grid size (out of bounds).
+    # Auto-inject ncell = nlon * nlat - 1 for any species using random movement.
+    _inject_random_movement_ncell(config)
 
     # Write a single flat master file with all params, stripping sub-config
     # references to avoid the Java engine loading duplicate parameters from

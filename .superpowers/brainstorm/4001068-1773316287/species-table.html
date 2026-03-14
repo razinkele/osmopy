@@ -1,0 +1,118 @@
+<h2>Species Table: Spreadsheet Layout Options</h2>
+<p class="subtitle">Parameters as rows, species as columns. How should grouping and editing work?</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Collapsible Category Groups + Inline Editing</h3>
+      <p>Rows grouped by category (Growth, Reproduction, etc.) with collapse/expand toggles. Click any cell to edit in-place. Validation shown as red cell borders.</p>
+      <div class="mockup" style="margin-top:12px">
+        <div class="mockup-body" style="padding:0;background:#0f1923;font-size:12px;overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;color:#c8d6e5">
+            <thead>
+              <tr style="background:#162232;border-bottom:2px solid #2d3d50">
+                <th style="padding:8px 12px;text-align:left;position:sticky;left:0;background:#162232;min-width:200px">Parameter</th>
+                <th style="padding:8px 12px;text-align:center;min-width:90px">Anchovy</th>
+                <th style="padding:8px 12px;text-align:center;min-width:90px">Sardine</th>
+                <th style="padding:8px 12px;text-align:center;min-width:90px">Sprat</th>
+                <th style="padding:8px 12px;text-align:center;min-width:90px">Hake</th>
+                <th style="padding:8px 12px;text-align:center;min-width:90px">Sole</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="background:#1a2a3a;cursor:pointer">
+                <td colspan="6" style="padding:6px 12px;font-weight:700;color:#d4a017">&#9660; Growth <span style="color:#5a6a7a;font-weight:400;font-size:10px">(7 params)</span></td>
+              </tr>
+              <tr style="border-bottom:1px solid #1a2a3a">
+                <td style="padding:5px 12px;position:sticky;left:0;background:#0f1923">L-infinity <span style="color:#5a6a7a">(cm)</span></td>
+                <td style="padding:5px 8px;text-align:center"><input style="width:70px;background:#162232;border:1px solid #2d3d50;color:#c8d6e5;text-align:center;padding:3px;border-radius:3px" value="19.47"></td>
+                <td style="padding:5px 8px;text-align:center"><input style="width:70px;background:#162232;border:1px solid #2d3d50;color:#c8d6e5;text-align:center;padding:3px;border-radius:3px" value="23.7"></td>
+                <td style="padding:5px 8px;text-align:center"><input style="width:70px;background:#162232;border:1px solid #2d3d50;color:#c8d6e5;text-align:center;padding:3px;border-radius:3px" value="16.0"></td>
+                <td style="padding:5px 8px;text-align:center"><input style="width:70px;background:#162232;border:1px solid #2d3d50;color:#c8d6e5;text-align:center;padding:3px;border-radius:3px" value="130.0"></td>
+                <td style="padding:5px 8px;text-align:center"><input style="width:70px;background:#162232;border:1px solid #2d3d50;color:#c8d6e5;text-align:center;padding:3px;border-radius:3px" value="45.0"></td>
+              </tr>
+              <tr style="border-bottom:1px solid #1a2a3a">
+                <td style="padding:5px 12px;position:sticky;left:0;background:#0f1923">Growth coeff K <span style="color:#5a6a7a">(yr⁻¹)</span></td>
+                <td style="padding:5px 8px;text-align:center"><input style="width:70px;background:#162232;border:1px solid #2d3d50;color:#c8d6e5;text-align:center;padding:3px;border-radius:3px" value="0.54"></td>
+                <td style="padding:5px 8px;text-align:center"><input style="width:70px;background:#162232;border:1px solid #2d3d50;color:#c8d6e5;text-align:center;padding:3px;border-radius:3px" value="0.42"></td>
+                <td style="padding:5px 8px;text-align:center"><input style="width:70px;background:#162232;border:1px solid #2d3d50;color:#c8d6e5;text-align:center;padding:3px;border-radius:3px" value="0.60"></td>
+                <td style="padding:5px 8px;text-align:center"><input style="width:70px;background:#162232;border:1px solid #2d3d50;color:#c8d6e5;text-align:center;padding:3px;border-radius:3px" value="0.13"></td>
+                <td style="padding:5px 8px;text-align:center"><input style="width:70px;background:#162232;border:1px solid #2d3d50;color:#c8d6e5;text-align:center;padding:3px;border-radius:3px" value="0.28"></td>
+              </tr>
+              <tr style="border-bottom:1px solid #1a2a3a">
+                <td style="padding:5px 12px;position:sticky;left:0;background:#0f1923">Age at zero length <span style="color:#5a6a7a">(yr)</span></td>
+                <td style="padding:5px 8px;text-align:center"><input style="width:70px;background:#162232;border:1px solid #2d3d50;color:#c8d6e5;text-align:center;padding:3px;border-radius:3px" value="-0.30"></td>
+                <td style="padding:5px 8px;text-align:center"><input style="width:70px;background:#162232;border:1px solid #2d3d50;color:#c8d6e5;text-align:center;padding:3px;border-radius:3px" value="-0.44"></td>
+                <td style="padding:5px 8px;text-align:center"><input style="width:70px;background:#162232;border:1px solid #2d3d50;color:#c8d6e5;text-align:center;padding:3px;border-radius:3px" value="-0.20"></td>
+                <td style="padding:5px 8px;text-align:center"><input style="width:70px;background:#162232;border:1px solid #2d3d50;color:#c8d6e5;text-align:center;padding:3px;border-radius:3px" value="-0.10"></td>
+                <td style="padding:5px 8px;text-align:center"><input style="width:70px;background:#162232;border:1px solid #2d3d50;color:#c8d6e5;text-align:center;padding:3px;border-radius:3px" value="-0.50"></td>
+              </tr>
+              <tr style="background:#1a2a3a;cursor:pointer">
+                <td colspan="6" style="padding:6px 12px;font-weight:700;color:#d4a017">&#9654; Reproduction <span style="color:#5a6a7a;font-weight:400;font-size:10px">(6 params)</span></td>
+              </tr>
+              <tr style="background:#1a2a3a;cursor:pointer">
+                <td colspan="6" style="padding:6px 12px;font-weight:700;color:#d4a017">&#9654; Predation <span style="color:#5a6a7a;font-weight:400;font-size:10px">(4 params)</span></td>
+              </tr>
+              <tr style="background:#1a2a3a;cursor:pointer">
+                <td colspan="6" style="padding:6px 12px;font-weight:700;color:#d4a017">&#9654; Mortality <span style="color:#5a6a7a;font-weight:400;font-size:10px">(3 params)</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Same Table + Category Filter Tabs Above</h3>
+      <p>Same spreadsheet but with horizontal filter tabs above (All | Growth | Reproduction | ...) to show only one category at a time. Avoids long scroll. Plus a search box to jump to any parameter.</p>
+      <div class="mockup" style="margin-top:12px">
+        <div class="mockup-body" style="padding:0;background:#0f1923;font-size:12px">
+          <div style="padding:8px 12px;background:#162232;border-bottom:1px solid #2d3d50;display:flex;gap:4px;flex-wrap:wrap;align-items:center">
+            <span style="padding:4px 10px;background:#d4a017;color:#000;border-radius:12px;font-size:11px;font-weight:600">All</span>
+            <span style="padding:4px 10px;background:#1a2a3a;color:#8899aa;border-radius:12px;font-size:11px;cursor:pointer">Growth</span>
+            <span style="padding:4px 10px;background:#1a2a3a;color:#8899aa;border-radius:12px;font-size:11px;cursor:pointer">Reproduction</span>
+            <span style="padding:4px 10px;background:#1a2a3a;color:#8899aa;border-radius:12px;font-size:11px;cursor:pointer">Predation</span>
+            <span style="padding:4px 10px;background:#1a2a3a;color:#8899aa;border-radius:12px;font-size:11px;cursor:pointer">Mortality</span>
+            <span style="padding:4px 10px;background:#1a2a3a;color:#8899aa;border-radius:12px;font-size:11px;cursor:pointer">Fishing</span>
+            <div style="margin-left:auto"><input placeholder="Search parameters..." style="padding:4px 8px;background:#0f1923;border:1px solid #2d3d50;color:#c8d6e5;border-radius:4px;font-size:11px;width:160px"></div>
+          </div>
+          <div style="padding:8px 12px;color:#5a6a7a;font-size:11px">Showing all 30 parameters across 6 categories</div>
+          <table style="width:100%;border-collapse:collapse;color:#c8d6e5">
+            <thead>
+              <tr style="background:#162232;border-bottom:2px solid #2d3d50">
+                <th style="padding:6px 12px;text-align:left;min-width:200px">Parameter</th>
+                <th style="padding:6px 8px;text-align:center;min-width:80px">Anchovy</th>
+                <th style="padding:6px 8px;text-align:center;min-width:80px">Sardine</th>
+                <th style="padding:6px 8px;text-align:center;min-width:80px">Sprat</th>
+                <th style="padding:6px 8px;text-align:center;min-width:80px">Hake</th>
+                <th style="padding:6px 8px;text-align:center;min-width:80px">Sole</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="border-bottom:1px solid #1a2a3a">
+                <td style="padding:5px 12px">L-infinity <span style="color:#5a6a7a">(cm)</span></td>
+                <td style="text-align:center"><input style="width:65px;background:#162232;border:1px solid #2d3d50;color:#c8d6e5;text-align:center;padding:3px;border-radius:3px" value="19.47"></td>
+                <td style="text-align:center"><input style="width:65px;background:#162232;border:1px solid #2d3d50;color:#c8d6e5;text-align:center;padding:3px;border-radius:3px" value="23.7"></td>
+                <td style="text-align:center"><input style="width:65px;background:#162232;border:1px solid #2d3d50;color:#c8d6e5;text-align:center;padding:3px;border-radius:3px" value="16.0"></td>
+                <td style="text-align:center"><input style="width:65px;background:#162232;border:1px solid #2d3d50;color:#c8d6e5;text-align:center;padding:3px;border-radius:3px" value="130.0"></td>
+                <td style="text-align:center"><input style="width:65px;background:#162232;border:1px solid #2d3d50;color:#c8d6e5;text-align:center;padding:3px;border-radius:3px" value="45.0"></td>
+              </tr>
+              <tr style="border-bottom:1px solid #1a2a3a">
+                <td style="padding:5px 12px">Growth coeff K <span style="color:#5a6a7a">(yr⁻¹)</span></td>
+                <td style="text-align:center"><input style="width:65px;background:#162232;border:1px solid #2d3d50;color:#c8d6e5;text-align:center;padding:3px;border-radius:3px" value="0.54"></td>
+                <td style="text-align:center"><input style="width:65px;background:#162232;border:1px solid #2d3d50;color:#c8d6e5;text-align:center;padding:3px;border-radius:3px" value="0.42"></td>
+                <td style="text-align:center"><input style="width:65px;background:#162232;border:1px solid #2d3d50;color:#c8d6e5;text-align:center;padding:3px;border-radius:3px" value="0.60"></td>
+                <td style="text-align:center"><input style="width:65px;background:#162232;border:1px solid #2d3d50;color:#c8d6e5;text-align:center;padding:3px;border-radius:3px" value="0.13"></td>
+                <td style="text-align:center"><input style="width:65px;background:#162232;border:1px solid #2d3d50;color:#c8d6e5;text-align:center;padding:3px;border-radius:3px" value="0.28"></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

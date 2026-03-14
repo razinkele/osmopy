@@ -1,0 +1,5 @@
+# Movement parameters — Minimal 2 species (random walk)
+movement.distribution.method.sp0 ; random
+movement.distribution.method.sp1 ; random
+movement.randomwalk.range.sp0 ; 1
+movement.randomwalk.range.sp1 ; 2

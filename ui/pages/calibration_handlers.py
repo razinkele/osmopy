@@ -3,8 +3,10 @@
 
 from __future__ import annotations
 
+import queue as _queue_mod
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 import numpy as np
@@ -15,6 +17,37 @@ from osmose.schema.base import ParamType
 from osmose.schema.registry import ParameterRegistry
 
 _log = setup_logging("osmose.calibration.ui")
+
+
+class CalibrationMessageQueue:
+    """Thread-safe message queue for calibration thread -> UI communication."""
+
+    def __init__(self):
+        self._q: _queue_mod.Queue = _queue_mod.Queue()
+
+    def post_status(self, msg: str) -> None:
+        self._q.put(("status", msg))
+
+    def post_history_append(self, value: float) -> None:
+        self._q.put(("history_append", value))
+
+    def post_results(self, X, F) -> None:
+        self._q.put(("results", (X, F)))
+
+    def post_error(self, msg: str) -> None:
+        self._q.put(("error", msg))
+
+    def post_sensitivity(self, result) -> None:
+        self._q.put(("sensitivity", result))
+
+    def drain(self) -> list[tuple]:
+        msgs = []
+        while True:
+            try:
+                msgs.append(self._q.get_nowait())
+            except _queue_mod.Empty:
+                break
+        return msgs
 
 
 def _make_progress_callback(cal_history_append, cancel_check):
@@ -106,11 +139,34 @@ def register_calibration_handlers(
     cal_X,
     sensitivity_result,
     cal_thread,
-    cancel_flag,
     surrogate_status,
     copy_data_files,
 ):
     """Register all reactive event handlers for the calibration page."""
+
+    msg_queue = CalibrationMessageQueue()
+    cancel_event = threading.Event()
+
+    @reactive.poll(lambda: time.time(), interval_secs=0.5)
+    def _poll_cal_messages():
+        msgs = msg_queue.drain()
+        for kind, payload in msgs:
+            if kind == "status":
+                surrogate_status.set(payload)
+            elif kind == "history_append":
+                current = cal_history.get()
+                cal_history.set(current + [payload])
+            elif kind == "results":
+                X, F = payload
+                cal_X.set(X)
+                cal_F.set(F)
+            elif kind == "error":
+                surrogate_status.set(f"Failed: {payload}")
+                ui.notification_show(
+                    f"Calibration error: {payload}", type="error", duration=10
+                )
+            elif kind == "sensitivity":
+                sensitivity_result.set(payload)
 
     @reactive.effect
     @reactive.event(input.btn_start_cal)
@@ -171,7 +227,7 @@ def register_calibration_handlers(
             n_parallel=n_parallel,
         )
 
-        cancel_flag.set(False)
+        cancel_event.clear()
         cal_history.set([])
         cal_F.set(None)
         cal_X.set(None)
@@ -191,17 +247,17 @@ def register_calibration_handlers(
                 calibrator = SurrogateCalibrator(param_bounds=bounds, n_objectives=n_obj)
 
                 n_samples = pop_size
-                surrogate_status.set(f"Generating {n_samples} Latin hypercube samples...")
+                msg_queue.post_status(f"Generating {n_samples} Latin hypercube samples...")
                 samples = calibrator.generate_samples(n_samples=n_samples)
 
                 # Evaluate OSMOSE for each sample
                 Y = np.zeros((n_samples, n_obj))
                 for idx in range(n_samples):
-                    if cancel_flag.get():
-                        surrogate_status.set("Cancelled.")
+                    if cancel_event.is_set():
+                        msg_queue.post_status("Cancelled.")
                         return
 
-                    surrogate_status.set(f"Evaluating sample {idx + 1}/{n_samples}...")
+                    msg_queue.post_status(f"Evaluating sample {idx + 1}/{n_samples}...")
                     overrides = {fp.key: str(samples[idx, j]) for j, fp in enumerate(free_params)}
                     try:
                         result = problem._run_single(overrides, run_id=idx)
@@ -210,24 +266,24 @@ def register_calibration_handlers(
                     except Exception as exc:
                         _log.error("Surrogate sample %d/%d failed: %s", idx + 1, n_samples, exc)
                         Y[idx, :] = float("inf")
-                        surrogate_status.set(f"Sample {idx + 1}/{n_samples} failed: {exc}")
+                        msg_queue.post_status(f"Sample {idx + 1}/{n_samples} failed: {exc}")
 
-                if cancel_flag.get():
-                    surrogate_status.set("Cancelled.")
+                if cancel_event.is_set():
+                    msg_queue.post_status("Cancelled.")
                     return
 
-                surrogate_status.set("Fitting GP model...")
+                msg_queue.post_status("Fitting GP model...")
                 calibrator.fit(samples, Y)
 
-                surrogate_status.set("Finding optimum on surrogate...")
+                msg_queue.post_status("Finding optimum on surrogate...")
                 optimum = calibrator.find_optimum()
 
                 # Set results for the UI
-                cal_X.set(samples)
-                cal_F.set(Y)
+                msg_queue.post_results(X=samples, F=Y)
                 history = [float(np.min(Y[: i + 1].sum(axis=1))) for i in range(n_samples)]
-                cal_history.set(history)
-                surrogate_status.set(
+                for val in history:
+                    msg_queue.post_history_append(val)
+                msg_queue.post_status(
                     f"Done. Best predicted objective: {optimum['predicted_objectives']}"
                 )
 
@@ -246,13 +302,9 @@ def register_calibration_handlers(
                     algorithm = NSGA2(pop_size=pop_size)
                     termination = get_termination("n_gen", generations)
 
-                    def append_history(val):
-                        current = cal_history.get()
-                        cal_history.set(current + [val])
-
                     callback = _make_progress_callback(
-                        cal_history_append=append_history,
-                        cancel_check=cancel_flag.get,
+                        cal_history_append=msg_queue.post_history_append,
+                        cancel_check=cancel_event.is_set,
                     )
 
                     res = minimize(
@@ -264,12 +316,13 @@ def register_calibration_handlers(
                         callback=callback,
                     )
 
-                    if res.F is not None:
-                        cal_F.set(res.F)
-                        cal_X.set(res.X)
+                    if cancel_event.is_set():
+                        msg_queue.post_status("Cancelled.")
+                    elif res.F is not None:
+                        msg_queue.post_results(X=res.X, F=res.F)
                 except Exception as exc:
                     _log.error("Calibration failed: %s", exc, exc_info=True)
-                    surrogate_status.set(f"Calibration failed: {exc}")
+                    msg_queue.post_error(str(exc))
 
             thread = threading.Thread(target=run_optimization, daemon=True)
             thread.start()
@@ -278,7 +331,7 @@ def register_calibration_handlers(
     @reactive.effect
     @reactive.event(input.btn_stop_cal)
     def handle_stop_cal():
-        cancel_flag.set(True)
+        cancel_event.set()
 
     @reactive.effect
     @reactive.event(input.btn_sensitivity)
@@ -343,10 +396,10 @@ def register_calibration_handlers(
                         Y[idx] = float("inf")
 
                 sens_result = analyzer.analyze(Y)
-                sensitivity_result.set(sens_result)
+                msg_queue.post_sensitivity(sens_result)
             except Exception as exc:
                 _log.error("Sensitivity analysis failed: %s", exc, exc_info=True)
-                surrogate_status.set(f"Sensitivity failed: {exc}")
+                msg_queue.post_error(f"Sensitivity: {exc}")
 
         thread = threading.Thread(target=run_sensitivity, daemon=True)
         thread.start()

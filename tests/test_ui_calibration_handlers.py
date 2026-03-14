@@ -1,5 +1,7 @@
 """Tests for calibration page handler helper functions."""
 
+import threading
+
 from shiny import reactive
 
 from ui.pages.calibration import collect_selected_params, build_free_params
@@ -122,3 +124,41 @@ def test_run_surrogate_workflow_multi_objective():
 
     result = cal.find_optimum(n_candidates=500)
     assert result["predicted_objectives"].shape == (2,)
+
+
+def test_calibration_message_queue():
+    """Thread-safe message queue relays updates without reactive writes."""
+    from ui.pages.calibration_handlers import CalibrationMessageQueue
+
+    q = CalibrationMessageQueue()
+
+    def worker():
+        q.post_status("Fitting GP model...")
+        q.post_history_append(0.5)
+        q.post_history_append(0.3)
+        q.post_results(X=[[1, 2]], F=[[0.5]])
+        q.post_error("Something broke")
+        q.post_sensitivity({"S1": [0.5]})
+
+    t = threading.Thread(target=worker)
+    t.start()
+    t.join()
+
+    msgs = q.drain()
+    assert len(msgs) == 6
+    assert msgs[0] == ("status", "Fitting GP model...")
+    assert msgs[1] == ("history_append", 0.5)
+    assert msgs[2] == ("history_append", 0.3)
+    assert msgs[3][0] == "results"
+    assert msgs[4] == ("error", "Something broke")
+    assert msgs[5][0] == "sensitivity"
+
+
+def test_calibration_message_queue_drain_empties():
+    """Second drain returns empty list after first drain consumes all messages."""
+    from ui.pages.calibration_handlers import CalibrationMessageQueue
+
+    q = CalibrationMessageQueue()
+    q.post_status("hello")
+    assert len(q.drain()) == 1
+    assert len(q.drain()) == 0  # second drain is empty

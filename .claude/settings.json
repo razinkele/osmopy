@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "command": "cd /home/razinka/osmose/osmose-python && .venv/bin/ruff format --quiet \"$CLAUDE_FILE_PATH\" 2>/dev/null; .venv/bin/ruff check --fix --quiet \"$CLAUDE_FILE_PATH\" 2>/dev/null; true"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "command": "echo \"$CLAUDE_FILE_PATH\" | grep -qE '\\.(env|lock)$' && echo 'BLOCKED: Do not edit .env or lock files directly' && exit 1; true"
+      }
+    ]
+  }
+}

@@ -1,0 +1,5 @@
+{"type":"server-started","port":60726,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:60726","screen_dir":"/home/razinka/osmose/osmose-python/.superpowers/brainstorm/4001068-1773316287"}
+{"type":"screen-added","file":"/home/razinka/osmose/osmose-python/.superpowers/brainstorm/4001068-1773316287/example-loading.html"}
+{"type":"screen-added","file":"/home/razinka/osmose/osmose-python/.superpowers/brainstorm/4001068-1773316287/species-table.html"}
+{"type":"screen-added","file":"/home/razinka/osmose/osmose-python/.superpowers/brainstorm/4001068-1773316287/waiting.html"}
+{"type":"server-stopped","reason":"idle timeout"}

@@ -1,0 +1,73 @@
+<h2>Example Loading: Which pattern feels right?</h2>
+<p class="subtitle">Currently the dropdown resets after load, losing context. Here are 3 approaches:</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Dropdown + Load Button + Status Badge</h3>
+      <p>Keep the dropdown selector but add an explicit "Load Example" button next to it. After loading, show a persistent badge/chip like <code style="background:#d4a017;color:#000;padding:2px 8px;border-radius:12px;font-size:12px;">Eec Full loaded</code> below the dropdown. Dropdown stays on the selected value.</p>
+      <div class="mockup" style="margin-top:12px">
+        <div class="mockup-body" style="padding:16px;background:#1a2332">
+          <div style="margin-bottom:8px;color:#8899aa;font-size:12px;text-transform:uppercase">Load Example Configuration</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select style="flex:1;padding:8px;background:#0f1923;color:#c8d6e5;border:1px solid #2d3d50;border-radius:4px">
+              <option>Eec Full</option>
+            </select>
+            <button style="padding:8px 16px;background:#198754;color:#fff;border:none;border-radius:4px;white-space:nowrap">Load</button>
+          </div>
+          <div style="margin-top:8px">
+            <span style="background:#d4a017;color:#000;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600">Eec Full loaded</span>
+            <span style="color:#5a6a7a;font-size:11px;margin-left:8px">142 parameters</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Card Grid with Load Buttons</h3>
+      <p>Replace the dropdown with clickable example cards showing name + brief description + species count. Each card has a "Load" button. The loaded card gets a highlighted border.</p>
+      <div class="mockup" style="margin-top:12px">
+        <div class="mockup-body" style="padding:16px;background:#1a2332">
+          <div style="margin-bottom:12px;color:#8899aa;font-size:12px;text-transform:uppercase">Example Configurations</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div style="border:2px solid #d4a017;background:#0f1923;border-radius:6px;padding:12px;position:relative">
+              <div style="position:absolute;top:6px;right:6px;background:#d4a017;color:#000;padding:1px 6px;border-radius:8px;font-size:10px">LOADED</div>
+              <div style="color:#c8d6e5;font-weight:600;font-size:14px">Eec Full</div>
+              <div style="color:#5a6a7a;font-size:11px;margin-top:4px">8 species, Bay of Biscay</div>
+            </div>
+            <div style="border:1px solid #2d3d50;background:#0f1923;border-radius:6px;padding:12px">
+              <div style="color:#c8d6e5;font-weight:600;font-size:14px">Minimal</div>
+              <div style="color:#5a6a7a;font-size:11px;margin-top:4px">2 species, simple grid</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Dropdown + Load Button + Persistent Header Bar</h3>
+      <p>Same dropdown+button but instead of a small badge, show a full-width header bar at the top of the Setup page: <em>"Configuration: Eec Full (modified)"</em> that persists across all tabs, showing the active config source and dirty state.</p>
+      <div class="mockup" style="margin-top:12px">
+        <div class="mockup-body" style="padding:0;background:#1a2332">
+          <div style="background:#162232;padding:10px 16px;border-bottom:1px solid #2d3d50;display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <span style="color:#d4a017;font-weight:600">Eec Full</span>
+              <span style="color:#5a6a7a;font-size:12px;margin-left:8px">8 species &bull; 142 parameters</span>
+            </div>
+            <span style="color:#e67e22;font-size:11px;font-style:italic">modified</span>
+          </div>
+          <div style="padding:16px">
+            <div style="color:#5a6a7a;font-size:11px">Example selector and other controls below...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
