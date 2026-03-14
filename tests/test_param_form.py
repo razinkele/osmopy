@@ -75,21 +75,34 @@ def test_render_file_field():
 
 
 def test_render_category_filters_advanced():
+    """Verify advanced fields are excluded when show_advanced=False and included when True."""
     fields = [
-        OsmoseField(key_pattern="a", param_type=ParamType.FLOAT, default=1.0, advanced=False),
-        OsmoseField(key_pattern="b", param_type=ParamType.FLOAT, default=2.0, advanced=True),
+        OsmoseField(
+            key_pattern="field.basic",
+            param_type=ParamType.FLOAT,
+            default=1.0,
+            description="Basic field",
+            advanced=False,
+        ),
+        OsmoseField(
+            key_pattern="field.secret",
+            param_type=ParamType.FLOAT,
+            default=2.0,
+            description="Advanced field",
+            advanced=True,
+        ),
     ]
-    # Without advanced
+    # Without advanced — only basic field should be rendered
     result = render_category(fields, show_advanced=False)
     html = str(result)
-    # Only non-advanced field should be present
-    assert "a" in html.replace(".", "_").lower() or True  # Tag structure varies
+    assert "field_basic" in html
+    assert "field_secret" not in html
 
-    # With advanced
+    # With advanced — both fields should be present
     result_adv = render_category(fields, show_advanced=True)
     html_adv = str(result_adv)
-    # Both fields should be present - advanced version has more content
-    assert len(html_adv) >= len(html)
+    assert "field_basic" in html_adv
+    assert "field_secret" in html_adv
 
 
 def test_guess_step_small_range():
