@@ -67,13 +67,6 @@ app_ui = ui.page_fillable(
                 Shiny.setInputValue('theme_mode', theme);
             });
         })();
-        window.addEventListener('beforeunload', function(e) {
-            if (typeof Shiny !== 'undefined' && Shiny.shinyapp &&
-                Shiny.shinyapp.$inputValues && Shiny.shinyapp.$inputValues.is_dirty) {
-                e.preventDefault();
-                e.returnValue = '';
-            }
-        });
         // Initialize Bootstrap popovers on dynamic content
         document.addEventListener('shiny:value', function() {
             document.querySelectorAll('[data-bs-toggle="popover"]').forEach(function(el) {
