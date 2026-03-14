@@ -9,8 +9,11 @@ import plotly.graph_objects as go
 from shiny import reactive, render, ui
 from shinywidgets import output_widget, render_plotly
 
+from osmose.logging import setup_logging
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.styles import STYLE_EMPTY, STYLE_MONO_KEY
+
+_log = setup_logging("osmose.results.ui")
 
 
 # ---------------------------------------------------------------------------
@@ -252,75 +255,79 @@ def results_server(input, output, session, state):
         return ui.tags.small(f"Found {len(csvs)} output files", style="color: #2ecc71;")
 
     def _do_load_results(out_dir: Path):
-        from osmose.results import OsmoseResults
+        try:
+            from osmose.results import OsmoseResults
 
-        # Pre-register this dir so _reset_results_loaded won't fire when
-        # state.output_dir.set(out_dir) is called later in this function.
-        _prev_output_dir.set(str(out_dir))
+            # Pre-register this dir so _reset_results_loaded won't fire when
+            # state.output_dir.set(out_dir) is called later in this function.
+            _prev_output_dir.set(str(out_dir))
 
-        res = OsmoseResults(out_dir)
-        results_obj.set(res)
+            res = OsmoseResults(out_dir)
+            results_obj.set(res)
 
-        # Load all output types
-        data: dict[str, pd.DataFrame] = {}
-        data["biomass"] = res.biomass()
-        data["abundance"] = res.abundance()
-        data["yield"] = res.yield_biomass()
-        data["mortality"] = res.mortality()
-        data["diet"] = res.diet_matrix()
-        data["trophic"] = res.mean_trophic_level()
-        data["biomass_by_age"] = res.biomass_by_age()
-        data["biomass_by_size"] = res.biomass_by_size()
-        data["biomass_by_tl"] = res.biomass_by_tl()
-        data["abundance_by_age"] = res.abundance_by_age()
-        data["abundance_by_size"] = res.abundance_by_size()
-        data["yield_by_age"] = res.yield_by_age()
-        data["yield_by_size"] = res.yield_by_size()
-        data["yield_n"] = res.yield_abundance()
-        data["mortality_rate"] = res.mortality_rate()
-        data["size_spectrum"] = res.size_spectrum()
-        results_data.set(data)
+            # Load all output types
+            data: dict[str, pd.DataFrame] = {}
+            data["biomass"] = res.biomass()
+            data["abundance"] = res.abundance()
+            data["yield"] = res.yield_biomass()
+            data["mortality"] = res.mortality()
+            data["diet"] = res.diet_matrix()
+            data["trophic"] = res.mean_trophic_level()
+            data["biomass_by_age"] = res.biomass_by_age()
+            data["biomass_by_size"] = res.biomass_by_size()
+            data["biomass_by_tl"] = res.biomass_by_tl()
+            data["abundance_by_age"] = res.abundance_by_age()
+            data["abundance_by_size"] = res.abundance_by_size()
+            data["yield_by_age"] = res.yield_by_age()
+            data["yield_by_size"] = res.yield_by_size()
+            data["yield_n"] = res.yield_abundance()
+            data["mortality_rate"] = res.mortality_rate()
+            data["size_spectrum"] = res.size_spectrum()
+            results_data.set(data)
 
-        # Detect ensemble replicate directories
-        reps = sorted(out_dir.glob("rep_*"))
-        rep_dirs.set([r for r in reps if r.is_dir()])
+            # Detect ensemble replicate directories
+            reps = sorted(out_dir.glob("rep_*"))
+            rep_dirs.set([r for r in reps if r.is_dir()])
 
-        # Update output dir in shared state
-        if state is not None:
-            state.output_dir.set(out_dir)
+            # Update output dir in shared state
+            if state is not None:
+                state.output_dir.set(out_dir)
 
-        # Discover species from biomass data, falling back to state
-        species_choices: dict[str, str] = {"all": "All species"}
-        bio_df = data.get("biomass", pd.DataFrame())
-        if not bio_df.empty and "species" in bio_df.columns:
-            for sp in sorted(bio_df["species"].unique()):
-                species_choices[sp] = sp
-        elif state is not None:
-            with reactive.isolate():
-                for sp in state.species_names.get():
+            # Discover species from biomass data, falling back to state
+            species_choices: dict[str, str] = {"all": "All species"}
+            bio_df = data.get("biomass", pd.DataFrame())
+            if not bio_df.empty and "species" in bio_df.columns:
+                for sp in sorted(bio_df["species"].unique()):
                     species_choices[sp] = sp
-        ui.update_select("result_species", choices=species_choices)
+            elif state is not None:
+                with reactive.isolate():
+                    for sp in state.species_names.get():
+                        species_choices[sp] = sp
+            ui.update_select("result_species", choices=species_choices)
 
-        # Look for NetCDF files for spatial data
-        nc_files = [f for f in res.list_outputs() if f.endswith(".nc")]
-        if nc_files:
-            spatial_ds.set(res.read_netcdf(nc_files[0]))
-            max_t = spatial_ds.get().sizes.get("time", 1) - 1
-            ui.update_slider("spatial_time_idx", max=max(max_t, 0))
+            # Look for NetCDF files for spatial data
+            nc_files = [f for f in res.list_outputs() if f.endswith(".nc")]
+            if nc_files:
+                spatial_ds.set(res.read_netcdf(nc_files[0]))
+                max_t = spatial_ds.get().sizes.get("time", 1) - 1
+                ui.update_slider("spatial_time_idx", max=max(max_t, 0))
 
-        # Populate run comparison choices from history
-        from osmose.history import RunHistory
+            # Populate run comparison choices from history
+            from osmose.history import RunHistory
 
-        history_dir = out_dir.parent / ".osmose_history"
-        if history_dir.is_dir():
-            history = RunHistory(history_dir)
-            runs = history.list_runs()
-            choices = {r.timestamp: f"{r.timestamp[:19]} ({r.duration_sec:.0f}s)" for r in runs}
-            ui.update_selectize("compare_runs_select", choices=choices)
+            history_dir = out_dir.parent / ".osmose_history"
+            if history_dir.is_dir():
+                history = RunHistory(history_dir)
+                runs = history.list_runs()
+                choices = {r.timestamp: f"{r.timestamp[:19]} ({r.duration_sec:.0f}s)" for r in runs}
+                ui.update_selectize("compare_runs_select", choices=choices)
 
-        ui.notification_show("Results loaded successfully.", type="message", duration=3)
+            ui.notification_show("Results loaded successfully.", type="message", duration=3)
 
-        state.results_loaded.set(True)
+            state.results_loaded.set(True)
+        except Exception as exc:
+            _log.error("Failed to load results: %s", exc, exc_info=True)
+            ui.notification_show(f"Error loading results: {exc}", type="error", duration=10)
 
     @reactive.effect
     @reactive.event(input.btn_load_results)
