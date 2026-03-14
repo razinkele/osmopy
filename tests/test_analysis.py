@@ -221,6 +221,55 @@ class TestSizeSpectrumSlope:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# NaN / edge-case tests (H14)
+# ---------------------------------------------------------------------------
+
+
+def test_ensemble_stats_with_nan():
+    """NaN values in biomass should be handled gracefully (pandas skips NaN in mean/std)."""
+    df1 = pd.DataFrame({"time": [0, 1, 2], "biomass": [100.0, np.nan, 200.0]})
+    df2 = pd.DataFrame({"time": [0, 1, 2], "biomass": [150.0, 180.0, np.nan]})
+    result = ensemble_stats([df1, df2], value_col="biomass")
+    assert isinstance(result, pd.DataFrame)
+    assert not result.empty
+    assert set(result.columns) == {"time", "mean", "std", "ci_lower", "ci_upper"}
+
+
+def test_shannon_diversity_with_zero_biomass():
+    """Zero biomass for a species should not cause log(0) crash; result >= 0."""
+    df = pd.DataFrame(
+        {
+            "time": [1, 1, 1],
+            "species": ["A", "B", "C"],
+            "biomass": [100.0, 0.0, 50.0],
+        }
+    )
+    result = shannon_diversity(df)
+    assert isinstance(result, pd.DataFrame)
+    assert list(result.columns) == ["time", "shannon"]
+    assert result.iloc[0]["shannon"] >= 0.0
+
+
+def test_size_spectrum_slope_insufficient_points():
+    """Should raise ValueError when fewer than 2 positive size/abundance pairs exist."""
+    df = pd.DataFrame({"size": [1.0], "abundance": [10.0]})
+    with pytest.raises(ValueError):
+        size_spectrum_slope(df)
+
+
+def test_size_spectrum_slope_all_zero_abundance():
+    """All-zero abundance leaves no positive pairs → ValueError."""
+    df = pd.DataFrame({"size": [1.0, 2.0, 4.0], "abundance": [0.0, 0.0, 0.0]})
+    with pytest.raises(ValueError):
+        size_spectrum_slope(df)
+
+
+# ---------------------------------------------------------------------------
+# Column guard tests
+# ---------------------------------------------------------------------------
+
+
 def test_ensemble_stats_rejects_missing_value_col():
     df = pd.DataFrame({"time": [1, 2], "wrong_col": [10, 20]})
     with pytest.raises(ValueError, match="missing columns.*biomass"):

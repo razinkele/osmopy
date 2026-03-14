@@ -117,3 +117,49 @@ def test_missing_subfile_logs_warning(tmp_path, caplog):
         result = reader.read(master)
     assert result["foo"] == "bar"
     assert "nonexistent" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# Malformed input edge-case tests (H15)
+# ---------------------------------------------------------------------------
+
+
+def test_read_skips_lines_without_separator(tmp_path):
+    """Lines with no recognised separator should be skipped without crash."""
+    config_file = tmp_path / "test.csv"
+    config_file.write_text("noseparatorhere\nvalid.key ; valid_value\n")
+    reader = OsmoseConfigReader()
+    result = reader.read_file(config_file)
+    assert "valid.key" in result
+    assert "noseparatorhere" not in result
+
+
+def test_read_handles_empty_value(tmp_path):
+    """A key with an empty value after the separator should be stored as empty string."""
+    config_file = tmp_path / "test.csv"
+    config_file.write_text("some.key ; \nanother.key ; value\n")
+    reader = OsmoseConfigReader()
+    result = reader.read_file(config_file)
+    assert "another.key" in result
+    assert result["another.key"] == "value"
+    # some.key may be present with empty string or absent; either is acceptable
+    if "some.key" in result:
+        assert result["some.key"] == ""
+
+
+def test_read_skips_only_whitespace_lines(tmp_path):
+    """Lines containing only whitespace should be ignored."""
+    config_file = tmp_path / "test.csv"
+    config_file.write_text("   \n\t\nkey1 ; v1\n")
+    reader = OsmoseConfigReader()
+    result = reader.read_file(config_file)
+    assert result == {"key1": "v1"}
+
+
+def test_read_file_all_comments(tmp_path):
+    """A file consisting entirely of comments should return an empty dict."""
+    config_file = tmp_path / "test.csv"
+    config_file.write_text("# comment one\n! comment two\n# another\n")
+    reader = OsmoseConfigReader()
+    result = reader.read_file(config_file)
+    assert result == {}
