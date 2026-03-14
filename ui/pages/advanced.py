@@ -187,6 +187,12 @@ def advanced_server(input, output, session, state):
 
     @render.ui
     def param_table():
+        # Use load_trigger as the reactive dependency so the table only
+        # re-renders on explicit config loads, not on every keystroke.
+        # Filter inputs (category, search) still re-render normally because
+        # they are read directly above.  Config is read in isolate() to avoid
+        # taking a full dependency on every config change.
+        state.load_trigger.get()
         category = input.adv_category()
         search = input.adv_search().lower() if input.adv_search() else ""
 
@@ -205,8 +211,10 @@ def advanced_server(input, output, session, state):
         if not fields:
             return ui.div("No parameters match your filter.", style=STYLE_EMPTY)
 
-        # Show current config values
-        cfg = state.config.get()
+        # Show current config values — read with isolate() to avoid re-rendering
+        # on every incremental config change (e.g. during species sync).
+        with reactive.isolate():
+            cfg = state.config.get()
 
         rows = []
         for f in fields[:100]:
