@@ -1,9 +1,7 @@
 """Grid configuration page."""
 
 import math
-from pathlib import Path
 
-import numpy as np
 from shiny import ui, reactive, render
 
 from shiny_deckgl import (  # type: ignore[import-untyped]

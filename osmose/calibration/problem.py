@@ -10,12 +10,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-_OSMOSE_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9._]*$")
-
 import numpy as np
 from pymoo.core.problem import Problem  # type: ignore[import-untyped]
 
 from osmose.logging import setup_logging
+
+_OSMOSE_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9._]*$")
 
 _log = setup_logging("osmose.calibration")
 
