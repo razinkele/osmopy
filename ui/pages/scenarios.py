@@ -124,7 +124,30 @@ def scenarios_server(input, output, session, state):
         if not selected:
             return
         loaded = mgr.load(selected)
-        state.config.set(loaded.config)
+        state.loading.set(True)
+        try:
+            state.config.set(loaded.config)
+            state.config_name.set(selected)
+            state.dirty.set(False)
+
+            n_species = int(loaded.config.get("simulation.nspecies", "3"))
+            names = [
+                loaded.config.get(f"species.name.sp{i}", f"Species {i}")
+                for i in range(n_species)
+            ]
+            state.species_names.set(names)
+            ui.update_numeric("n_species", value=n_species)
+
+            with reactive.isolate():
+                state.load_trigger.set(state.load_trigger.get() + 1)
+
+            ui.notification_show(
+                f"Loaded scenario '{selected}' ({len(loaded.config)} parameters).",
+                type="message",
+                duration=3,
+            )
+        finally:
+            state.loading.set(False)
 
     # --- Fork ---
 

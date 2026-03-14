@@ -158,11 +158,24 @@ def advanced_server(input, output, session, state):
         pending = import_pending.get()
         if not pending:
             return
-        with reactive.isolate():
-            cfg = dict(state.config.get())
-        cfg.update(pending)
-        state.config.set(cfg)
-        import_pending.set({})
+        state.loading.set(True)
+        try:
+            with reactive.isolate():
+                cfg = dict(state.config.get())
+            cfg.update(pending)
+            state.config.set(cfg)
+            import_pending.set({})
+
+            with reactive.isolate():
+                state.load_trigger.set(state.load_trigger.get() + 1)
+
+            ui.notification_show(
+                f"Imported {len(pending)} parameter(s).",
+                type="message",
+                duration=3,
+            )
+        finally:
+            state.loading.set(False)
 
     @render.download(filename="osm_all-parameters.csv")
     def export_config():
