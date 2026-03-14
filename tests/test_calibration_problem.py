@@ -160,14 +160,14 @@ def test_evaluate_multiple_candidates(tmp_path):
 
 
 def test_evaluate_exception_leaves_inf(tmp_path):
-    """If _run_single raises, that candidate gets inf objectives."""
+    """If _run_single raises an expected error, that candidate gets inf objectives."""
     problem = _make_problem(tmp_path)
     X = np.array([[0.3, 100.0], [0.4, 150.0]])
     out = {}
 
     def side_effect(overrides, run_id):
         if run_id == 0:
-            raise RuntimeError("Java crashed")
+            raise OSError("disk full")
         return [1.0, 2.0]
 
     with patch.object(problem, "_run_single", side_effect=side_effect):
@@ -241,13 +241,54 @@ def test_evaluate_logs_candidate_failure(tmp_path, caplog):
         jar_path=tmp_path / "fake.jar",
         work_dir=tmp_path,
     )
-    with patch.object(problem, "_evaluate_candidate", side_effect=RuntimeError("boom")):
+    with patch.object(problem, "_evaluate_candidate", side_effect=OSError("boom")):
         X = np.array([[0.5]])
         out = {}
         with caplog.at_level(logging.WARNING):
             problem._evaluate(X, out)
         assert np.isinf(out["F"][0, 0])
         assert "boom" in caplog.text
+
+
+def test_evaluate_propagates_unexpected_exceptions(tmp_path):
+    """Unexpected errors (TypeError, etc.) should propagate, not be swallowed."""
+    import pytest
+
+    fp = FreeParameter(key="test.param", lower_bound=0, upper_bound=1)
+    problem = OsmoseCalibrationProblem(
+        free_params=[fp],
+        objective_fns=[lambda r: 1.0],
+        base_config_path=tmp_path / "config.csv",
+        jar_path=tmp_path / "fake.jar",
+        work_dir=tmp_path,
+    )
+
+    X = np.array([[0.1], [0.5], [0.9]])
+    out = {}
+
+    with patch.object(problem, "_evaluate_candidate", side_effect=TypeError("bad objective")):
+        with pytest.raises(TypeError):
+            problem._evaluate(X, out)
+
+
+def test_evaluate_tolerates_expected_failures(tmp_path):
+    """Expected failures (OSError, etc.) are scored as inf, not propagated."""
+    fp = FreeParameter(key="test.param", lower_bound=0, upper_bound=1)
+    problem = OsmoseCalibrationProblem(
+        free_params=[fp],
+        objective_fns=[lambda r: 1.0],
+        base_config_path=tmp_path / "config.csv",
+        jar_path=tmp_path / "fake.jar",
+        work_dir=tmp_path,
+    )
+
+    X = np.array([[0.1], [0.5], [0.9]])
+    out = {}
+
+    with patch.object(problem, "_evaluate_candidate", side_effect=OSError("disk full")):
+        problem._evaluate(X, out)
+
+    assert np.all(np.isinf(out["F"]))
 
 
 def test_run_single_logs_subprocess_stderr(tmp_path, caplog):

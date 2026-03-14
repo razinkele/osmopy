@@ -399,6 +399,14 @@ def register_calibration_handlers(
                         _log.warning("Sensitivity sample %d failed: %s", idx, exc)
                         Y[idx] = float("inf")
 
+                n_inf = int(np.isinf(Y).sum())
+                if n_inf > len(Y) * 0.1:
+                    msg_queue.post_error(
+                        f"Sensitivity aborted: {n_inf}/{len(Y)} samples failed "
+                        f"(>10% threshold)"
+                    )
+                    return
+
                 sens_result = analyzer.analyze(Y)
                 msg_queue.post_sensitivity(sens_result)
             except Exception as exc:

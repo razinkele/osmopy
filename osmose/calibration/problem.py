@@ -16,6 +16,13 @@ from osmose.logging import setup_logging
 
 _log = setup_logging("osmose.calibration")
 
+_expected_errors = (
+    subprocess.TimeoutExpired,
+    subprocess.CalledProcessError,
+    FileNotFoundError,
+    OSError,
+)
+
 
 @dataclass
 class FreeParameter:
@@ -86,16 +93,16 @@ class OsmoseCalibrationProblem(Problem):
                         objectives = future.result()
                         for k, obj_val in enumerate(objectives):
                             F[i, k] = obj_val
-                    except Exception as exc:
-                        _log.warning("Candidate %d failed: %s", i, exc)
+                    except _expected_errors as exc:
+                        _log.warning("Candidate %d failed (expected): %s", i, exc)
         else:
             for i, params in enumerate(X):
                 try:
                     objectives = self._evaluate_candidate(i, params)
                     for k, obj_val in enumerate(objectives):
                         F[i, k] = obj_val
-                except Exception as exc:
-                    _log.warning("Candidate %d failed: %s", i, exc)
+                except _expected_errors as exc:
+                    _log.warning("Candidate %d failed (expected): %s", i, exc)
 
         out["F"] = F
 
