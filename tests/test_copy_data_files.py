@@ -1,6 +1,4 @@
 """Tests for copy_data_files helper."""
-import pytest
-from pathlib import Path
 from ui.pages.run import copy_data_files
 
 
