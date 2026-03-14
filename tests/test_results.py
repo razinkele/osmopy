@@ -11,6 +11,7 @@ from osmose.results import OsmoseResults
 @pytest.fixture
 def output_dir(tmp_path):
     """Create a fake OSMOSE output directory with test files."""
+    np.random.seed(42)
     # Create biomass CSVs
     for sp_name in ["Anchovy", "Sardine"]:
         df = pd.DataFrame(

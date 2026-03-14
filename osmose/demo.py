@@ -58,7 +58,7 @@ def _version_tuple(v: str) -> tuple[int, ...]:
     try:
         return tuple(int(x) for x in v.split("."))
     except (ValueError, AttributeError):
-        return (0,)
+        return (999,)
 
 
 def list_demos() -> list[str]:

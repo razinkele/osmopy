@@ -186,7 +186,10 @@ class OsmoseRunner:
     def cancel(self) -> None:
         """Terminate the running OSMOSE process."""
         if self._process and self._process.returncode is None:
-            self._process.terminate()
+            try:
+                self._process.terminate()
+            except ProcessLookupError:
+                pass  # Process already exited between the returncode check and terminate()
             _log.info("OSMOSE run cancelled")
 
     async def migrate(

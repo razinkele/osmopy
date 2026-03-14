@@ -123,8 +123,10 @@ class ScenarioManager:
     def delete(self, name: str) -> None:
         """Delete a saved scenario."""
         path = self._validate_path(name)
-        if path.exists():
-            shutil.rmtree(path)
+        if not path.exists():
+            _log.warning("Cannot delete scenario %r: path does not exist (%s)", name, path)
+            return
+        shutil.rmtree(path)
 
     def compare(self, name_a: str, name_b: str) -> list[ParamDiff]:
         """Compare two scenarios and return parameter differences."""
