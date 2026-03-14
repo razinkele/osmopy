@@ -62,7 +62,7 @@ def _load_mask(config: dict[str, str], config_dir: Path | None = None) -> np.nda
     except FileNotFoundError:
         _log.debug("Mask file not found: %s", full_path)
         return None
-    except Exception as exc:
+    except (OSError, ValueError) as exc:
         _log.warning("Failed to load mask %s: %s", full_path, exc)
         return None
 
@@ -223,7 +223,7 @@ def _load_netcdf_grid(
         mask = ds[var_mask].values
         ds.close()
         return lat, lon, mask
-    except Exception as exc:
+    except (OSError, KeyError, ValueError) as exc:
         _log.warning("Failed to load NetCDF grid %s: %s", full_path, exc)
         return None
 
@@ -465,7 +465,7 @@ def _load_csv_overlay(
                     "fill": [red, green, blue, alpha],
                 })
         return cells if cells else None
-    except Exception as exc:
+    except (OSError, pd.errors.ParserError, ValueError) as exc:
         _log.warning("Failed to load CSV overlay %s: %s", file_path, exc)
         return None
 
@@ -528,7 +528,7 @@ def _load_netcdf_overlay(
                     "value": v,
                 })
         return cells if cells else None
-    except Exception as exc:
+    except (OSError, KeyError, ValueError) as exc:
         _log.warning("Failed to load overlay %s: %s", file_path, exc)
         return None
 
