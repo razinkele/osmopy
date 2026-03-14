@@ -72,4 +72,8 @@ class OsmoseConfigReader:
                     # Strip trailing separators (e.g., "true," → "true")
                     value = value.rstrip(";,:\t =")
                     result[key] = value
+                else:
+                    _log.debug(
+                        "Skipping unparseable line in %s: %r", filepath.name, line
+                    )
         return result

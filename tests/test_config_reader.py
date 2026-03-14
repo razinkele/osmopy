@@ -163,3 +163,15 @@ def test_read_file_all_comments(tmp_path):
     reader = OsmoseConfigReader()
     result = reader.read_file(config_file)
     assert result == {}
+
+
+def test_unparseable_line_is_logged(tmp_path, caplog):
+    """Lines without a recognised separator must be logged at DEBUG level."""
+    import logging
+
+    config_file = tmp_path / "test.csv"
+    config_file.write_text("noseparatorhere\nvalid.key ; valid_value\n")
+    reader = OsmoseConfigReader()
+    with caplog.at_level(logging.DEBUG, logger="osmose.config"):
+        reader.read_file(config_file)
+    assert "noseparatorhere" in caplog.text
