@@ -76,12 +76,7 @@ app_ui = ui.page_fillable(
                 Shiny.setInputValue('theme_mode', theme);
             });
         })();
-        // Initialize Bootstrap 5 popovers on dynamic content
-        document.addEventListener('shiny:value', function() {
-            document.querySelectorAll('[data-bs-toggle="popover"]').forEach(function(el) {
-                if (!bootstrap.Popover.getInstance(el)) new bootstrap.Popover(el);
-            });
-        });
+        // Bootstrap popover init is at end of body (after dependencies load)
 
         // ── Nav collapse (horizontal slide) ──────────────
         function toggleNav() {
@@ -247,6 +242,17 @@ app_ui = ui.page_fillable(
             clearInterval(t);
         }, 300);
     })();
+    """),
+    # Bootstrap 5 popover initialization — must be at end of body after
+    # bootstrap.js loads. Polls every 500ms for new popover elements
+    # (Shiny renders fields dynamically after connection).
+    ui.tags.script("""
+    setInterval(function() {
+        if (typeof bootstrap === 'undefined' || !bootstrap.Popover) return;
+        document.querySelectorAll('[data-bs-toggle="popover"]').forEach(function(el) {
+            if (!bootstrap.Popover.getInstance(el)) new bootstrap.Popover(el);
+        });
+    }, 500);
     """),
     theme=THEME,
 )
