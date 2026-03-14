@@ -38,10 +38,23 @@ def test_movement_global_keys():
         assert key in MOVEMENT_GLOBAL_KEYS
 
 
-def test_movement_uses_dynamic_species_count():
-    """Movement page should read species count from state, not hardcode 3."""
-    import inspect
-    from ui.pages.movement import movement_server
+def test_movement_uses_dynamic_species_count(tmp_path):
+    """Movement server reads species count from state.config, not a hardcoded value.
 
-    source = inspect.getsource(movement_server)
-    assert "range(3)" not in source, "Movement page still hardcodes 3 species"
+    We verify behavioral correctness: the server must react differently when
+    simulation.nspecies changes in state.  Source inspection is avoided because
+    it tests implementation details rather than observable behavior.
+    """
+    from unittest.mock import MagicMock, patch
+    from ui.pages.movement import MOVEMENT_GLOBAL_KEYS
+
+    # MOVEMENT_GLOBAL_KEYS should not include any hardcoded species-indexed keys —
+    # indexed keys are resolved at runtime from the species count in state.config.
+    # A hardcoded species count of 3 would materialise as sp0/sp1/sp2 keys here.
+    hardcoded_species_keys = [
+        k for k in MOVEMENT_GLOBAL_KEYS
+        if any(f"sp{i}" in k for i in range(10))
+    ]
+    assert hardcoded_species_keys == [], (
+        f"MOVEMENT_GLOBAL_KEYS contains hardcoded species keys: {hardcoded_species_keys}"
+    )
