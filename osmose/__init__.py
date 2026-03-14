@@ -1,3 +1,5 @@
 """OSMOSE Python - orchestration layer for the OSMOSE marine ecosystem simulator."""
 
-__version__ = "0.1.0"
+from osmose.__version__ import __version__
+
+__all__ = ["__version__"]

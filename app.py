@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+from osmose import __version__
+
 from shiny import App, render, ui
 
 from ui.state import AppState
@@ -167,7 +169,7 @@ app_ui = ui.page_fillable(
         ),
         ui.tags.span(
             ui.tags.span(class_="dot"),
-            "v0.1.0",
+            f"v{__version__}",
             class_="osmose-badge",
         ),
         ui.div(
