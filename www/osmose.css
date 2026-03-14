@@ -1224,7 +1224,7 @@ body > .row > .nav-col-collapsed {
 }
 /* Content column expands when nav is collapsed */
 body > .row > .nav-col-collapsed ~ [class*="col-"] {
-    flex: 1;
+    flex: 1 !important;
     max-width: 100% !important;
     transition: max-width var(--osm-transition-slow);
 }
@@ -1259,6 +1259,17 @@ body > .row > .nav-col-collapsed ~ [class*="col-"] {
 .osm-split-layout > .bslib-grid > div:first-child.collapsed ~ div {
     flex: 1;
     max-width: 100%;
+}
+/* When first child is collapsed on a CSS Grid container, give all columns to second child */
+.osm-split-layout > .bslib-grid:has(> div:first-child.collapsed) {
+    grid-template-columns: repeat(12, 1fr) !important;
+}
+.osm-split-layout > .bslib-grid > div:first-child.collapsed {
+    grid-column: span 0 !important;
+    display: none !important;
+}
+.osm-split-layout > .bslib-grid > div:first-child.collapsed ~ div {
+    grid-column: 1 / -1 !important;
 }
 /* When panel is collapsed, the bslib-grid sibling should not squeeze the expand tab */
 .osm-split-layout > .osm-expand-tab.visible + .bslib-grid,
