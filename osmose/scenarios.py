@@ -101,8 +101,12 @@ class ScenarioManager:
         for d in sorted(self.storage_dir.iterdir()):
             json_path = d / "scenario.json"
             if d.is_dir() and json_path.exists():
-                with open(json_path) as f:
-                    data = json.load(f)
+                try:
+                    with open(json_path) as f:
+                        data = json.load(f)
+                except (json.JSONDecodeError, KeyError) as exc:
+                    _log.warning("Corrupt scenario file %s: %s", json_path, exc)
+                    continue
                 results.append(
                     {
                         "name": data["name"],
