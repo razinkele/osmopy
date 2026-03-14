@@ -120,7 +120,10 @@ def setup_server(input, output, session, state):
             state.config_name.set(example.replace("_", " ").title())
 
             # Extract species names
-            n_species = int(cfg.get("simulation.nspecies", "0"))
+            try:
+                n_species = int(float(cfg.get("simulation.nspecies", "0") or "0"))
+            except (ValueError, TypeError):
+                n_species = 0
             names = [cfg.get(f"species.name.sp{i}", f"Species {i}") for i in range(n_species)]
             state.species_names.set(names)
 

@@ -73,7 +73,10 @@ def forcing_server(input, output, session, state):
         n = input.n_resources()
         with reactive.isolate():
             cfg = state.config.get()
-        n_focal = int(cfg.get("simulation.nspecies", "0"))
+        try:
+            n_focal = int(float(cfg.get("simulation.nspecies", "0") or "0"))
+        except (ValueError, TypeError):
+            n_focal = 0
         indexed_fields = [f for f in LTL_FIELDS if f.indexed]
         names = [cfg.get(f"species.name.sp{n_focal + i}", f"Resource {i}") for i in range(n)]
         return render_species_table(
@@ -92,7 +95,10 @@ def forcing_server(input, output, session, state):
             if state.loading.get():
                 return
             cfg = state.config.get()
-        n_focal = int(cfg.get("simulation.nspecies", "0"))
+        try:
+            n_focal = int(float(cfg.get("simulation.nspecies", "0") or "0"))
+        except (ValueError, TypeError):
+            n_focal = 0
         indexed_fields = [f for f in LTL_FIELDS if f.indexed]
         for i in range(n):
             sp_idx = n_focal + i

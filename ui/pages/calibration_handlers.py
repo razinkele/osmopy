@@ -102,7 +102,10 @@ def collect_selected_params(
         config: If provided, use this instead of reading state.config (for thread safety).
     """
     cfg = config if config is not None else state.config.get()
-    n_species = int(cfg.get("simulation.nspecies", "3"))
+    try:
+        n_species = int(float(cfg.get("simulation.nspecies", "3") or "3"))
+    except (ValueError, TypeError):
+        n_species = 3
     all_params = get_calibratable_params(state.registry, n_species)
     selected = []
     for p in all_params:
