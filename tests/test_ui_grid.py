@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from ui.pages.grid import _build_grid_layers
+from ui.pages.grid_helpers import build_grid_layers as _build_grid_layers
 
 
 def test_grid_layers_with_coords():
