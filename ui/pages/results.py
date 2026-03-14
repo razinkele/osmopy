@@ -262,27 +262,16 @@ def results_server(input, output, session, state):
             # state.output_dir.set(out_dir) is called later in this function.
             _prev_output_dir.set(str(out_dir))
 
+            old_res = results_obj.get()
+            if old_res is not None and hasattr(old_res, "close_cache"):
+                old_res.close_cache()
+
             res = OsmoseResults(out_dir)
             results_obj.set(res)
 
-            # Load all output types
+            # Load only biomass eagerly (needed for species discovery)
             data: dict[str, pd.DataFrame] = {}
             data["biomass"] = res.biomass()
-            data["abundance"] = res.abundance()
-            data["yield"] = res.yield_biomass()
-            data["mortality"] = res.mortality()
-            data["diet"] = res.diet_matrix()
-            data["trophic"] = res.mean_trophic_level()
-            data["biomass_by_age"] = res.biomass_by_age()
-            data["biomass_by_size"] = res.biomass_by_size()
-            data["biomass_by_tl"] = res.biomass_by_tl()
-            data["abundance_by_age"] = res.abundance_by_age()
-            data["abundance_by_size"] = res.abundance_by_size()
-            data["yield_by_age"] = res.yield_by_age()
-            data["yield_by_size"] = res.yield_by_size()
-            data["yield_n"] = res.yield_abundance()
-            data["mortality_rate"] = res.mortality_rate()
-            data["size_spectrum"] = res.size_spectrum()
             results_data.set(data)
 
             # Detect ensemble replicate directories
@@ -328,6 +317,27 @@ def results_server(input, output, session, state):
         except Exception as exc:
             _log.error("Failed to load results: %s", exc, exc_info=True)
             ui.notification_show(f"Error loading results: {exc}", type="error", duration=10)
+
+    def _get_result_data(output_type: str) -> pd.DataFrame:
+        """Load result data lazily — only when requested."""
+        data = results_data.get()
+        if output_type in data:
+            return data[output_type]
+        res = results_obj.get()
+        if res is None:
+            return pd.DataFrame()
+        # Load the requested type
+        method = getattr(res, output_type, None)
+        if method is None:
+            # Try the export_dataframe fallback
+            df = res.export_dataframe(output_type)
+        else:
+            df = method()
+        # Cache it
+        data = dict(data)
+        data[output_type] = df
+        results_data.set(data)
+        return df
 
     @reactive.effect
     @reactive.event(input.btn_load_results)
@@ -377,7 +387,6 @@ def results_server(input, output, session, state):
 
     @render_plotly
     def results_chart():
-        data = results_data.get()
         rtype = input.result_type()
         species_filter = input.result_species()
         tmpl = _tpl(input)
@@ -467,7 +476,7 @@ def results_server(input, output, session, state):
         if rtype in structured_types:
             from osmose.plotting import make_stacked_area
 
-            df = data.get(rtype, pd.DataFrame())
+            df = _get_result_data(rtype)
             fig = make_stacked_area(df, title=title_map.get(rtype, rtype), species=sp)  # type: ignore[arg-type]
             fig.update_layout(template=tmpl)
             return fig
@@ -475,7 +484,7 @@ def results_server(input, output, session, state):
         if rtype == "mortality_rate":
             from osmose.plotting import make_mortality_breakdown
 
-            df = data.get(rtype, pd.DataFrame())
+            df = _get_result_data(rtype)
             fig = make_mortality_breakdown(df, species=sp)
             fig.update_layout(template=tmpl)
             return fig
@@ -483,12 +492,12 @@ def results_server(input, output, session, state):
         if rtype == "size_spectrum":
             from osmose.plotting import make_size_spectrum_plot
 
-            df = data.get(rtype, pd.DataFrame())
+            df = _get_result_data(rtype)
             fig = make_size_spectrum_plot(df)
             fig.update_layout(template=tmpl)
             return fig
 
-        df = data.get(rtype, pd.DataFrame())
+        df = _get_result_data(rtype)
         value_col = col_map.get(rtype, rtype)
         title = title_map.get(rtype, rtype.title())
 
@@ -504,8 +513,7 @@ def results_server(input, output, session, state):
     @render_plotly
     def diet_chart():
         tmpl = _tpl(input)
-        data = results_data.get()
-        df = data.get("diet", pd.DataFrame())
+        df = _get_result_data("diet")
         return make_diet_heatmap(df, template=tmpl)
 
     @render_plotly
