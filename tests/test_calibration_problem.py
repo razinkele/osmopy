@@ -291,6 +291,35 @@ def test_evaluate_tolerates_expected_failures(tmp_path):
     assert np.all(np.isinf(out["F"]))
 
 
+def test_evaluate_parallel_handles_mixed_failures(tmp_path):
+    """Parallel evaluation: one candidate fails, others succeed."""
+    fp = FreeParameter(key="test.param", lower_bound=0, upper_bound=1)
+    problem = OsmoseCalibrationProblem(
+        free_params=[fp],
+        objective_fns=[lambda r: 1.0],
+        base_config_path=tmp_path / "config.csv",
+        jar_path=tmp_path / "fake.jar",
+        work_dir=tmp_path,
+        n_parallel=2,
+    )
+
+    X = np.array([[0.1], [0.5], [0.9]])
+    out = {}
+
+    def mock_evaluate_candidate(i, params):
+        if i == 1:
+            raise OSError("disk full")
+        return [float(params[0])]
+
+    with patch.object(problem, "_evaluate_candidate", side_effect=mock_evaluate_candidate):
+        problem._evaluate(X, out)
+
+    # Candidate 1 should be inf, others should have values
+    assert np.isinf(out["F"][1, 0])
+    assert not np.isinf(out["F"][0, 0])
+    assert not np.isinf(out["F"][2, 0])
+
+
 def test_run_single_logs_subprocess_stderr(tmp_path, caplog):
     """Subprocess failures should log stderr content."""
     import logging
