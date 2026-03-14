@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -111,6 +113,18 @@ class OsmoseConfigWriter:
 
     @staticmethod
     def _write_file(filepath: Path, params: dict[str, str]) -> None:
-        """Write *params* to *filepath* as sorted ``key ; value`` lines."""
-        lines = [f"{k} ; {v}\n" for k, v in sorted(params.items())]
-        filepath.write_text("".join(lines))
+        """Write *params* to *filepath* as sorted ``key ; value`` lines.
+
+        Uses a temp-file + os.replace() pattern so the target file is
+        never left in a partially-written state if the process is
+        interrupted mid-write.
+        """
+        content = "".join(f"{k} ; {v}\n" for k, v in sorted(params.items()))
+        tmp_fd, tmp_path = tempfile.mkstemp(dir=filepath.parent, suffix=".tmp")
+        try:
+            with os.fdopen(tmp_fd, "w") as f:
+                f.write(content)
+            os.replace(tmp_path, filepath)
+        except Exception:
+            os.unlink(tmp_path)
+            raise
