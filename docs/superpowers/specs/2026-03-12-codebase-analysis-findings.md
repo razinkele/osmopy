@@ -8,10 +8,12 @@
 
 | Severity | Count |
 |----------|-------|
-| Critical | 6 |
-| High | 16 |
-| Medium | 22 |
+| Critical | 7 |
+| High | 18 |
+| Medium | 27 |
 | Low | 25+ |
+
+> **Updated 2026-03-14:** Added findings from second-round deep analysis (C7, H17-H18, M23-M27). Elevated M1 (java_opts) to C7.
 
 ---
 
@@ -77,9 +79,19 @@ assert "a" in html.replace(".", "_").lower() or True  # always True
 
 **Fix:** Remove `or True`, write proper assertion checking advanced field filtering.
 
+### C7. Command injection via unvalidated `java_opts` (elevated from M1)
+**Source:** Agent 2 (Security), 2026-03-14 deep analysis
+**Files:** `ui/pages/run.py:247`, `osmose/runner.py:49`
+
+User types arbitrary text into the "Java options" text field, which is split on whitespace and passed directly to `subprocess.create_subprocess_exec`. While not shell-invoked, unvalidated JVM flags like `-javaagent:/path/to/malicious.jar` or `-agentlib` enable arbitrary code execution on the server. On a server-deployed instance (via deploy.sh), any user with browser access can exploit this.
+
+**Elevated from M1** because the app is server-deployed and accessible to non-technical users.
+
+**Fix:** Validate `java_opts` against a whitelist of safe JVM flag patterns (memory: `-Xmx`, `-Xms`, `-Xss`; GC flags; system properties `-D`). Reject anything else.
+
 ---
 
-## HIGH Findings (16)
+## HIGH Findings (18)
 
 ### H1. Path traversal in scenario save/delete via user-supplied name
 **Source:** Agent 2 (Security)
@@ -174,9 +186,25 @@ Missing: no separator, multiple separators, BOM, binary content.
 
 UI tests only test extracted helper functions, not actual Shiny reactive behavior. The critical `reactive.isolate()` patterns have no automated verification.
 
+### H17. `int()` crash on non-integer nspecies/nresource in validator and app header
+**Source:** 2026-03-14 deep analysis
+**Files:** `osmose/config/validator.py:109-110`, `app.py:283`
+
+`int(config.get("simulation.nspecies", "0"))` crashes with `ValueError` if the config value is a float string like `"3.0"` or non-numeric. In `app.py:283` this crashes the render on every reactive update, leaving the UI permanently broken. In `validator.py` it crashes the validation function (whose purpose is to gracefully handle malformed input).
+
+**Fix:** Use `int(float(...))` with try/except fallback.
+
+### H18. `_build_netcdf_grid_layers` crashes on 1D lat/lon arrays
+**Source:** 2026-03-14 deep analysis
+**Files:** `ui/pages/grid.py:241`
+
+`ny, nx = lat.shape` assumes `lat` is always 2D, but xarray returns 1D coordinate arrays for regularly-gridded NetCDF files. 1D `lat.shape` returns `(ny,)`, causing `ValueError: not enough values to unpack`. The `except Exception` in `update_grid_map` catches this silently, leaving the map empty with no explanation.
+
+**Fix:** Check `lat.ndim` and broadcast 1D to 2D with `np.meshgrid`.
+
 ---
 
-## MEDIUM Findings (22)
+## MEDIUM Findings (27)
 
 ### Security (5)
 - **M1.** Unvalidated `java_opts` from UI — could open debug ports (`ui/pages/run.py:246`)
@@ -207,10 +235,22 @@ UI tests only test extracted helper functions, not actual Shiny reactive behavio
 - **M18.** `csv_maps_to_netcdf` silently produces nothing on invalid input (`osmose/grid.py:97-100`)
 - **M19.** Download handler returns None with no user feedback (`ui/pages/results.py:585-600`)
 
+### Data Integrity (5)
+- **M23.** Scenario backup not restored on save failure — if `os.rename(tmp_dir, target)` fails after backup was moved, original data left in backup only (`osmose/scenarios.py:65-77`)
+- **M24.** Non-atomic config writes — `filepath.write_text()` can produce truncated files on crash/kill, especially dangerous during calibration (`osmose/config/writer.py:116`)
+- **M25.** `_read_grid_values` missing `ValueError` catch — user typing "abc" into numeric grid field crashes the grid preview (`ui/pages/grid.py:647-654`)
+- **M26.** Advanced param table shows "-" for all indexed fields — `cfg.get(f.key_pattern, "-")` looks up literal `{idx}` placeholder which never matches (`ui/pages/advanced.py:200`)
+- **M27.** `export_dataframe` silently returns empty for unknown output types — typos invisible (`osmose/results.py:328-329`)
+
 ### Test Quality (3)
 - **M20.** No parallel execution test for calibration (`tests/test_calibration_problem.py`)
 - **M21.** Source code inspection test is brittle (`tests/test_sync_config_pages.py:41-47`)
 - **M22.** Limited integration test scope — no runner→results→analysis pipeline test
+
+### Test Coverage Gaps (3 — new 2026-03-14)
+- **M28.** Path traversal rejection in `import_all` is untested — security-critical check has no test
+- **M29.** CLI `cmd_run` and `cmd_report` have zero test coverage
+- **M30.** 5 vacuous `hasattr`/`in _EXPORT_MAP` tests in `test_results.py` that can never fail
 
 ---
 
@@ -237,37 +277,47 @@ Test Quality: smoke-only assertions in plotting tests, exact color hex assertion
 | 4 | Narrow calibration exception + failure tracking | C4, H12 | Medium |
 | 5 | Path traversal protection (scenarios, history) | H1, M3, M5 | Low |
 | 6 | Fix vacuous test assertion | C6 | Trivial |
+| 7 | Validate java_opts against allowlist | C7 (was M1) | Low |
 
 ### Phase 2: High-Priority Hardening
 | # | Fix | Findings | Complexity |
 |---|-----|----------|------------|
-| 7 | HTML escape in report template | H2 | Trivial |
-| 8 | Calibration checkbox reactive fix | H3 | Low |
-| 9 | Results loading race fix | H4, M8 | Low |
-| 10 | Add user notifications to grid loading failures | H7-H10 | Low |
-| 11 | Add error handling to results loading | H6 | Low |
-| 12 | Narrow ensemble mode exception | H11 | Trivial |
-| 13 | Fix run history logging level | H13 | Trivial |
+| 8 | HTML escape in report template | H2 | Trivial |
+| 9 | Calibration checkbox reactive fix | H3 | Low |
+| 10 | Results loading race fix | H4, M8 | Low |
+| 11 | Add user notifications to grid loading failures | H7-H10 | Low |
+| 12 | Add error handling to results loading | H6 | Low |
+| 13 | Narrow ensemble mode exception | H11 | Trivial |
+| 14 | Fix run history logging level | H13 | Trivial |
+| 15 | Fix `int()` crash on non-integer nspecies | H17 | Trivial |
+| 16 | Fix grid crash on 1D lat/lon arrays | H18 | Low |
 
 ### Phase 3: Test Quality
 | # | Fix | Findings | Complexity |
 |---|-----|----------|------------|
-| 14 | Add NaN/malformed input edge case tests | H14, H15 | Medium |
-| 15 | Add reactive UI integration test | H16 | High |
-| 16 | Fix brittle tests (source inspection, colors) | M21 | Low |
-| 17 | Add parallel calibration test | M20 | Medium |
+| 17 | Add NaN/malformed input edge case tests | H14, H15 | Medium |
+| 18 | Add path traversal rejection test for import_all | M28 | Low |
+| 19 | Add reactive UI integration test | H16 | High |
+| 20 | Fix brittle tests (source inspection, colors) | M21 | Low |
+| 21 | Add parallel calibration test | M20 | Medium |
+| 22 | Replace vacuous hasattr tests with behavioral tests | M30 | Low |
+| 23 | Add CLI cmd_run/cmd_report tests | M29 | Medium |
 
 ### Phase 4: Medium-Priority Improvements
 | # | Fix | Findings | Complexity |
 |---|-----|----------|------------|
-| 18 | Validate java_opts against allowlist | M1 | Low |
-| 19 | Config reader sub-file path validation | M4 | Low |
-| 20 | Batch species sync, fix param_table reactivity | M6, M7 | Medium |
-| 21 | Lazy results loading | M13 | Medium |
-| 22 | Close NetCDF cache on directory switch | M14 | Low |
-| 23 | Standardize logging initialization | M10 | Medium |
-| 24 | Extract grid.py helpers | M9, M12 | Medium |
-| 25 | Resilient scenario listing (skip corrupt) | M17 | Low |
+| 24 | Config reader sub-file path validation | M4 | Low |
+| 25 | Batch species sync, fix param_table reactivity | M6, M7 | Medium |
+| 26 | Lazy results loading | M13 | Medium |
+| 27 | Close NetCDF cache on directory switch | M14 | Low |
+| 28 | Standardize logging initialization | M10 | Medium |
+| 29 | Extract grid.py helpers | M9, M12 | Medium |
+| 30 | Resilient scenario listing (skip corrupt) | M17 | Low |
+| 31 | Fix scenario backup restore on save failure | M23 | Low |
+| 32 | Atomic config file writes | M24 | Low |
+| 33 | Fix missing ValueError catch in grid inputs | M25 | Trivial |
+| 34 | Fix advanced param table for indexed fields | M26 | Low |
+| 35 | Log warning for unknown export_dataframe types | M27 | Trivial |
 
 ### Phase 5: Low-Priority Polish
 Remaining Low findings — address opportunistically during related work.

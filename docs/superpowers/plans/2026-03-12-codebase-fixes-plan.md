@@ -10,12 +10,14 @@
 
 **Spec:** `docs/superpowers/specs/2026-03-12-codebase-analysis-findings.md`
 
+**Updated 2026-03-14:** Added 10 new tasks from second-round deep analysis. M1 (java_opts) elevated to C7 and moved to Phase 1. New findings: C7, H17, H18, M23-M30.
+
 **Deferred findings (Phase 5 — address opportunistically):**
 M2 (override key injection), M9/M12 (grid.py extraction), M11 (error handling style), M13 (lazy results loading), M15 (docstrings), M16 (unparseable config lines), M18 (csv_maps_to_netcdf silent failure), M22 (integration test scope), H16 (reactive UI integration tests — high complexity, requires Playwright/ShinyTestClient infrastructure), and all Low findings.
 
 ---
 
-## Chunk 1: Phase 1 — Critical Safety (Tasks 1-6)
+## Chunk 1: Phase 1 — Critical Safety (Tasks 1-7)
 
 ### Task 1: Thread-safe calibration communication (C1, H5)
 
@@ -793,9 +795,121 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 
 ---
 
-## Chunk 2: Phase 2 — High-Priority Hardening (Tasks 7-13)
+### Task 7: Validate java_opts against allowlist (C7, was M1)
 
-### Task 7: HTML escape in report template (H2)
+**Findings:** C7 (command injection via unvalidated java_opts — elevated from M1 for server-deployed app)
+
+**Files:**
+- Modify: `osmose/runner.py` (add validation function)
+- Modify: `ui/pages/run.py` (validate before passing to runner)
+- Test: `tests/test_runner.py`
+
+- [ ] **Step 1: Write failing test for java_opts validation**
+
+```python
+# tests/test_runner.py — add at end
+import pytest
+
+
+def test_validate_java_opts_allows_safe_flags():
+    from osmose.runner import validate_java_opts
+
+    # These should all pass validation
+    validate_java_opts(["-Xmx2g", "-Xms512m", "-Xss1m"])
+    validate_java_opts(["-Dfoo.bar=baz"])
+    validate_java_opts(["-XX:+UseG1GC"])
+    validate_java_opts([])  # empty is fine
+
+
+def test_validate_java_opts_rejects_unsafe_flags():
+    from osmose.runner import validate_java_opts
+
+    with pytest.raises(ValueError, match="[Uu]nsafe"):
+        validate_java_opts(["-javaagent:/tmp/evil.jar"])
+
+    with pytest.raises(ValueError, match="[Uu]nsafe"):
+        validate_java_opts(["-agentlib:jdwp=transport=dt_socket"])
+
+    with pytest.raises(ValueError, match="[Uu]nsafe"):
+        validate_java_opts(["--add-opens=java.base/java.lang=ALL-UNNAMED"])
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `.venv/bin/python -m pytest tests/test_runner.py::test_validate_java_opts_allows_safe_flags -v`
+Expected: FAIL — `validate_java_opts` not defined
+
+- [ ] **Step 3: Implement `validate_java_opts` in runner.py**
+
+Add to `osmose/runner.py` (before the `OsmoseRunner` class):
+
+```python
+import re
+
+_SAFE_JVM_PATTERNS = [
+    re.compile(r"^-X(mx|ms|ss)\d+[kmgKMG]?$"),           # memory flags
+    re.compile(r"^-D[\w.]+=[^;|&`$()]*$"),                 # system properties
+    re.compile(r"^-XX:[+-]?\w+(=[\w.]+)?$"),               # XX flags
+    re.compile(r"^-server$"),                               # JVM mode
+    re.compile(r"^-client$"),
+    re.compile(r"^-verbose:(gc|class|jni)$"),              # verbose modes
+    re.compile(r"^-ea$"),                                   # enable assertions
+    re.compile(r"^-da$"),                                   # disable assertions
+]
+
+
+def validate_java_opts(opts: list[str]) -> None:
+    """Validate JVM options against a whitelist of safe patterns.
+
+    Raises ValueError for any option that doesn't match a known-safe pattern.
+    """
+    for opt in opts:
+        if not any(p.match(opt) for p in _SAFE_JVM_PATTERNS):
+            raise ValueError(f"Unsafe JVM option: {opt!r}. Only memory, GC, and -D flags are allowed.")
+```
+
+Then in `ui/pages/run.py`, in `handle_run()`, add validation before calling the runner:
+
+```python
+from osmose.runner import validate_java_opts
+
+# Before creating the runner, validate java_opts:
+java_opts_str = input.java_opts()
+java_opts = java_opts_str.split() if java_opts_str else []
+try:
+    validate_java_opts(java_opts)
+except ValueError as exc:
+    ui.notification_show(str(exc), type="error", duration=5)
+    return
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `.venv/bin/python -m pytest tests/test_runner.py::test_validate_java_opts_allows_safe_flags tests/test_runner.py::test_validate_java_opts_rejects_unsafe_flags -v`
+Expected: PASS
+
+- [ ] **Step 5: Run full test suite**
+
+Run: `.venv/bin/python -m pytest -x -q`
+Expected: All tests pass
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add osmose/runner.py ui/pages/run.py tests/test_runner.py
+git commit -m "fix: validate java_opts against safe JVM flag whitelist
+
+Reject unsafe JVM flags like -javaagent and -agentlib that could enable
+arbitrary code execution on the server. Fixes C7 (was M1).
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
+```
+
+---
+
+## Chunk 2: Phase 2 — High-Priority Hardening (Tasks 8-16)
+
+### Task 8: HTML escape in report template (H2)
 
 **Files:**
 - Modify: `osmose/reporting.py:75-76`
@@ -869,7 +983,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 
 ---
 
-### Task 8: Fix calibration checkbox reactive dependency (H3)
+### Task 9: Fix calibration checkbox reactive dependency (H3)
 
 **Files:**
 - Modify: `ui/pages/calibration.py:162-176`
@@ -914,7 +1028,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 
 ---
 
-### Task 9: Fix results loading race (H4, M8)
+### Task 10: Fix results loading race (H4, M8)
 
 **Files:**
 - Modify: `ui/pages/results.py:342-346`
@@ -959,7 +1073,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 
 ---
 
-### Task 10: Add user notifications to grid loading failures (H7-H10)
+### Task 11: Add user notifications to grid loading failures (H7-H10)
 
 **Files:**
 - Modify: `ui/pages/grid.py:58-67, 216-228, 466-468, 529-531, 688-710`
@@ -1030,7 +1144,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 
 ---
 
-### Task 11: Add error handling to results loading (H6)
+### Task 12: Add error handling to results loading (H6)
 
 **Files:**
 - Modify: `ui/pages/results.py:253-318` (_do_load_results)
@@ -1086,7 +1200,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 
 ---
 
-### Task 12: Narrow ensemble mode exception (H11)
+### Task 13: Narrow ensemble mode exception (H11)
 
 **Files:**
 - Modify: `ui/pages/results.py:405-409`
@@ -1119,7 +1233,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 
 ---
 
-### Task 13: Fix run history logging level (H13)
+### Task 14: Fix run history logging level (H13)
 
 **Files:**
 - Modify: `ui/pages/run.py:292-293`
@@ -1151,9 +1265,111 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 
 ---
 
-## Chunk 3: Phase 3 — Test Quality + Minor Fixes (Tasks 14-17)
+### Task 15: Fix `int()` crash on non-integer nspecies (H17)
 
-### Task 14: Add NaN/malformed input edge case tests (H14, H15)
+**Findings:** H17 (`int()` crash on float/non-numeric nspecies in validator and app header)
+
+**Files:**
+- Modify: `osmose/config/validator.py:109-110`
+- Modify: `app.py:283` (config header render)
+- Test: `tests/test_validator.py`
+
+- [ ] **Step 1: Write failing test**
+
+```python
+# tests/test_validator.py — add
+def test_check_species_consistency_float_nspecies():
+    """Float nspecies value like '3.0' should not crash."""
+    from osmose.config.validator import check_species_consistency
+
+    config = {"simulation.nspecies": "3.0", "simulation.nresource": "1.0"}
+    warnings = check_species_consistency(config)
+    # Should not raise — may return warnings but not crash
+    assert isinstance(warnings, list)
+
+
+def test_check_species_consistency_nonnumeric_nspecies():
+    """Non-numeric nspecies should produce a warning, not crash."""
+    from osmose.config.validator import check_species_consistency
+
+    config = {"simulation.nspecies": "three"}
+    warnings = check_species_consistency(config)
+    assert any("nspecies" in w.lower() for w in warnings)
+```
+
+- [ ] **Step 2: Run test — expect FAIL (ValueError)**
+
+- [ ] **Step 3: Fix validator.py**
+
+Replace `int(config.get(...))` with safe parsing:
+
+```python
+    try:
+        nspecies = int(float(config.get("simulation.nspecies", "0")))
+    except (ValueError, TypeError):
+        warnings.append("simulation.nspecies has non-numeric value")
+        return warnings
+    try:
+        nresource = int(float(config.get("simulation.nresource", "0")))
+    except (ValueError, TypeError):
+        nresource = 0
+```
+
+Apply same fix in `app.py:283` for the config header render.
+
+- [ ] **Step 4: Run tests — expect PASS**
+- [ ] **Step 5: Run full test suite**
+- [ ] **Step 6: Commit**
+
+---
+
+### Task 16: Fix grid crash on 1D lat/lon arrays (H18)
+
+**Findings:** H18 (`ny, nx = lat.shape` crashes on 1D coordinate arrays)
+
+**Files:**
+- Modify: `ui/pages/grid.py:241` (`_build_netcdf_grid_layers`)
+- Test: `tests/test_ui_grid.py` or inline in existing grid tests
+
+- [ ] **Step 1: Write failing test**
+
+```python
+# tests/test_ui_grid.py — add
+import numpy as np
+
+
+def test_build_netcdf_grid_layers_1d_coords():
+    """1D lat/lon coordinate arrays should be handled without crash."""
+    from ui.pages.grid import _build_netcdf_grid_layers
+
+    lat = np.array([40.0, 41.0, 42.0])  # 1D
+    lon = np.array([1.0, 2.0, 3.0])     # 1D
+    # Should not raise ValueError
+    layers = _build_netcdf_grid_layers(lat, lon)
+    assert isinstance(layers, list)
+```
+
+- [ ] **Step 2: Run test — expect FAIL**
+
+- [ ] **Step 3: Fix `_build_netcdf_grid_layers`**
+
+At the start of the function, after receiving lat/lon arrays, add:
+
+```python
+    if lat.ndim == 1 and lon.ndim == 1:
+        lon, lat = np.meshgrid(lon, lat)
+    ny, nx = lat.shape
+```
+
+- [ ] **Step 4: Run tests — expect PASS**
+- [ ] **Step 5: Run full test suite**
+- [ ] **Step 6: Commit**
+
+---
+
+## Chunk 3: Phase 3 — Test Quality + Minor Fixes (Tasks 17-23)
+
+### Task 17: Add NaN/malformed input edge case tests (H14, H15)
 
 **Files:**
 - Modify: `tests/test_analysis.py` (already imports `import pandas as pd` at top)
@@ -1270,7 +1486,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 
 ---
 
-### Task 15: Fix brittle source inspection test (M21)
+### Task 18: Fix brittle source inspection test (M21)
 
 **Files:**
 - Modify: `tests/test_sync_config_pages.py:41-47`
@@ -1309,7 +1525,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 
 ---
 
-### Task 16: Add parallel calibration test (M20)
+### Task 19: Add parallel calibration test (M20)
 
 **Files:**
 - Modify: `tests/test_calibration_problem.py`
@@ -1368,7 +1584,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 
 ---
 
-### Task 17: Narrow `get_theme_mode` exception
+### Task 20: Narrow `get_theme_mode` exception
 
 **Files:**
 - Modify: `ui/state.py:119-128`
@@ -1402,9 +1618,95 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 
 ---
 
-## Chunk 4: Phase 4 — Medium-Priority Improvements (Tasks 18-25)
+### Task 21: Add path traversal rejection test for import_all (M28)
 
-### Task 18: Validate java_opts against allowlist (M1)
+**Findings:** M28 (security-critical check in `import_all` has no test)
+
+**Files:**
+- Test: `tests/test_scenarios.py`
+
+- [ ] **Step 1: Write test**
+
+```python
+# tests/test_scenarios.py — add
+def test_import_all_rejects_path_traversal_in_zip(tmp_path):
+    """ZIP containing scenario with traversal name should be skipped."""
+    import zipfile, json
+
+    mgr = ScenarioManager(tmp_path / "scenarios")
+    zip_path = tmp_path / "evil.zip"
+
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        data = json.dumps({"name": "../escape", "config": {}, "description": ""})
+        zf.writestr("../escape/scenario.json", data)
+
+    count = mgr.import_all(zip_path)
+    assert count == 0
+    # Verify nothing was created outside storage_dir
+    assert not (tmp_path / "escape").exists()
+```
+
+- [ ] **Step 2: Run test — expect PASS (validates existing guard)**
+- [ ] **Step 3: Commit**
+
+---
+
+### Task 22: Replace vacuous hasattr tests with behavioral tests (M30)
+
+**Findings:** M30 (5 vacuous `hasattr`/`in _EXPORT_MAP` tests that can never fail)
+
+**Files:**
+- Modify: `tests/test_results.py` (lines 535-566)
+
+- [ ] **Step 1: Replace hasattr tests with actual method calls**
+
+The existing tests only check `hasattr(OsmoseResults, "method_name")`. Replace with tests that actually call the method with fixture data and verify the return type.
+
+- [ ] **Step 2: Run tests — expect PASS**
+- [ ] **Step 3: Commit**
+
+---
+
+### Task 23: Add CLI cmd_run/cmd_report tests (M29)
+
+**Findings:** M29 (zero test coverage for CLI run and report subcommands)
+
+**Files:**
+- Test: `tests/test_cli.py`
+
+- [ ] **Step 1: Add tests for missing CLI subcommands**
+
+```python
+# tests/test_cli.py — add
+def test_cmd_run_missing_jar(tmp_path):
+    """cmd_run with non-existent JAR should exit 1."""
+    import sys
+    sys.argv = ["osmose", "run", str(tmp_path / "config.csv"),
+                "--jar", str(tmp_path / "nonexistent.jar")]
+    try:
+        main()
+    except SystemExit as e:
+        assert e.code != 0
+
+
+def test_cmd_report_missing_dir(tmp_path):
+    """cmd_report with non-existent output dir should exit 1."""
+    import sys
+    sys.argv = ["osmose", "report", str(tmp_path / "nonexistent")]
+    try:
+        main()
+    except SystemExit as e:
+        assert e.code != 0
+```
+
+- [ ] **Step 2: Run tests — expect PASS**
+- [ ] **Step 3: Commit**
+
+---
+
+## Chunk 4: Phase 4 — Medium-Priority Improvements (Tasks 24-35)
+
+### Task 24: (Moved to Task 7 — java_opts validation elevated to Phase 1)
 
 **Files:**
 - Modify: `ui/pages/run.py:246-247`
@@ -1490,7 +1792,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 
 ---
 
-### Task 19: Config reader sub-file path validation (M4)
+### Task 25: Config reader sub-file path validation (M4)
 
 **Files:**
 - Modify: `osmose/config/reader.py:44-48`
@@ -1547,7 +1849,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 
 ---
 
-### Task 20: Batch species sync (M7)
+### Task 26: Batch species sync (M7)
 
 **Files:**
 - Modify: `ui/pages/setup.py:147-176`
@@ -1614,7 +1916,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 
 ---
 
-### Task 21: Fix param_table reactivity in Advanced page (M6)
+### Task 27: Fix param_table reactivity in Advanced page (M6)
 
 **Files:**
 - Modify: `ui/pages/advanced.py:175-228`
@@ -1697,7 +1999,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 
 ---
 
-### Task 22: Resilient scenario listing — skip corrupt JSON (M17)
+### Task 28: Resilient scenario listing — skip corrupt JSON (M17)
 
 **Files:**
 - Modify: `osmose/scenarios.py:88-104`
@@ -1772,7 +2074,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 
 ---
 
-### Task 23: Standardize logging initialization (M10)
+### Task 29: Standardize logging initialization (M10)
 
 **Files:**
 - Modify: `osmose/scenarios.py:15` — uses `logging.getLogger`
@@ -1819,7 +2121,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 
 ---
 
-### Task 24: Download handler user feedback (M19)
+### Task 30: Download handler user feedback (M19)
 
 **Files:**
 - Modify: `ui/pages/results.py:581-600`
@@ -1859,9 +2161,113 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 
 ---
 
-### Task 25: Config reader sub-file path validation (M4)
+### Task 31: Fix scenario backup restore on save failure (M23)
 
-Covered in Task 19 above.
+**Findings:** M23 (if `os.rename(tmp_dir, target)` fails after backup was moved, original data is lost)
+
+**Files:**
+- Modify: `osmose/scenarios.py:65-77`
+- Test: `tests/test_scenarios.py`
+
+- [ ] **Step 1: Write test for backup restore on failure**
+- [ ] **Step 2: Fix `save()` — restore backup in except block**
+
+In the `except` block of `save()`, add:
+```python
+except Exception:
+    if backup.exists() and not target.exists():
+        backup.rename(target)  # Restore original
+    raise
+```
+
+- [ ] **Step 3: Run tests**
+- [ ] **Step 4: Commit**
+
+---
+
+### Task 32: Atomic config file writes (M24)
+
+**Findings:** M24 (non-atomic `filepath.write_text()` can corrupt config during calibration)
+
+**Files:**
+- Modify: `osmose/config/writer.py:116`
+
+- [ ] **Step 1: Replace `write_text` with atomic write pattern**
+
+```python
+import tempfile, os
+
+tmp_fd, tmp_path = tempfile.mkstemp(dir=filepath.parent, suffix=".tmp")
+try:
+    with os.fdopen(tmp_fd, "w") as f:
+        f.write(content)
+    os.replace(tmp_path, filepath)  # atomic on POSIX
+except Exception:
+    os.unlink(tmp_path)
+    raise
+```
+
+- [ ] **Step 2: Run tests**
+- [ ] **Step 3: Commit**
+
+---
+
+### Task 33: Fix missing ValueError catch in grid inputs (M25)
+
+**Findings:** M25 (`float("abc")` crashes grid preview)
+
+**Files:**
+- Modify: `ui/pages/grid.py:647-654`
+
+- [ ] **Step 1: Add `ValueError` to the except clause**
+
+```python
+except (AttributeError, TypeError, ValueError):
+```
+
+- [ ] **Step 2: Run tests**
+- [ ] **Step 3: Commit**
+
+---
+
+### Task 34: Fix advanced param table for indexed fields (M26)
+
+**Findings:** M26 (`cfg.get(f.key_pattern, "-")` shows "-" for all indexed params)
+
+**Files:**
+- Modify: `ui/pages/advanced.py:200`
+
+- [ ] **Step 1: Fix lookup for indexed fields**
+
+```python
+if f.indexed:
+    current_val = cfg.get(f.resolve_key(0), "-")
+else:
+    current_val = cfg.get(f.key_pattern, "-")
+```
+
+- [ ] **Step 2: Run tests**
+- [ ] **Step 3: Commit**
+
+---
+
+### Task 35: Log warning for unknown export_dataframe types (M27)
+
+**Findings:** M27 (typos in output type names invisible)
+
+**Files:**
+- Modify: `osmose/results.py:328-329`
+
+- [ ] **Step 1: Add warning log**
+
+```python
+if entry is None:
+    _log.warning("Unknown output type: '%s'. Valid: %s", output_type, list(self._EXPORT_MAP))
+    return pd.DataFrame()
+```
+
+- [ ] **Step 2: Run tests**
+- [ ] **Step 3: Commit**
 
 ---
 
@@ -1873,7 +2279,7 @@ After all tasks are complete:
 - [ ] **Run linter:** `.venv/bin/ruff check osmose/ ui/ tests/`
 - [ ] **Run formatter:** `.venv/bin/ruff format osmose/ ui/ tests/`
 - [ ] **Verify findings addressed:**
-  - Critical: C1 (Task 1), C2 (Task 2), C3 (Task 3), C4 (Task 4), C5 (Task 2), C6 (Task 6)
-  - High: H1 (Task 5), H2 (Task 7), H3 (Task 8), H4 (Task 9), H5 (Task 1), H6 (Task 11), H7-H10 (Task 10), H11 (Task 12), H12 (Task 4), H13 (Task 13), H14-H15 (Task 14)
-  - Medium: M1 (Task 18), M3 (Task 5), M4 (Task 19), M5 (Task 5), M6 (Task 21), M7 (Task 20), M8 (Task 9), M10 (Task 23), M14 (Task 11), M17 (Task 22), M19 (Task 24), M20 (Task 16), M21 (Task 15)
+  - Critical: C1 (Task 1), C2 (Task 2), C3 (Task 3), C4 (Task 4), C5 (Task 2), C6 (Task 6), C7 (Task 7)
+  - High: H1 (Task 5), H2 (Task 8), H3 (Task 9), H4 (Task 10), H5 (Task 1), H6 (Task 12), H7-H10 (Task 11), H11 (Task 13), H12 (Task 4), H13 (Task 14), H14-H15 (Task 17), H17 (Task 15), H18 (Task 16)
+  - Medium: M3 (Task 5), M4 (Task 25), M5 (Task 5), M6 (Task 27), M7 (Task 26), M8 (Task 10), M10 (Task 29), M17 (Task 28), M19 (Task 30), M20 (Task 19), M21 (Task 18), M23 (Task 31), M24 (Task 32), M25 (Task 33), M26 (Task 34), M27 (Task 35), M28 (Task 21), M29 (Task 23), M30 (Task 22)
   - Deferred to Phase 5: M2, M9, M11, M12, M13, M15, M16, M18, M22, H16, all Low findings
