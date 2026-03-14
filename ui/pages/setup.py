@@ -146,13 +146,20 @@ def setup_server(input, output, session, state):
 
     @reactive.effect
     def sync_species_inputs():
-        """Auto-sync species table cells to state.config."""
+        """Auto-sync species table cells to state.config.
+
+        Collects all per-species parameter updates into a single dict, then
+        calls state.config.set() once instead of once per parameter.  With
+        20 species × 30+ fields this avoids 600+ individual reactive updates.
+        """
         with reactive.isolate():
             if state.loading.get():
                 return
         n = input.n_species()
         show_adv = input.show_advanced_species()
-        state.update_config("simulation.nspecies", str(n))
+
+        # Collect all updates before touching reactive state.
+        updates: dict[str, str] = {"simulation.nspecies": str(n)}
 
         visible = [f for f in SPECIES_FIELDS if f.indexed and (show_adv or not f.advanced)]
         for i in range(n):
@@ -165,12 +172,17 @@ def setup_server(input, output, session, state):
                 except (AttributeError, TypeError):
                     continue
                 if val is not None:
-                    state.update_config(config_key, str(val))
+                    updates[config_key] = str(val)
 
-        # Update global species names list
-        names = []
+        # Apply all updates in a single config.set() call.
         with reactive.isolate():
-            cfg = state.config.get()
-        for i in range(n):
-            names.append(cfg.get(f"species.name.sp{i}", f"Species {i}"))
+            cfg = dict(state.config.get())
+        actual_changes = {k: v for k, v in updates.items() if cfg.get(k) != v}
+        if actual_changes:
+            cfg.update(actual_changes)
+            state.config.set(cfg)
+            state.dirty.set(True)
+
+        # Update global species names list (read from freshly updated cfg).
+        names = [cfg.get(f"species.name.sp{i}", f"Species {i}") for i in range(n)]
         state.species_names.set(names)
