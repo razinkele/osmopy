@@ -230,3 +230,137 @@ def test_parse_movement_steps_empty():
 def test_parse_movement_steps_none():
     from ui.pages.grid_helpers import parse_movement_steps
     assert parse_movement_steps(None) == set()
+
+
+def test_build_movement_cache_basic(tmp_path):
+    from ui.pages.grid_helpers import build_movement_cache
+
+    (tmp_path / "maps").mkdir()
+    (tmp_path / "maps" / "1sp_nurseries.csv").write_text("0,1,0\n1,0,1\n0,1,0\n")
+    (tmp_path / "maps" / "1sp_spawning.csv").write_text("1,0,1\n0,1,0\n1,0,1\n")
+
+    cfg = {
+        "movement.species.map0": "speciesA",
+        "movement.file.map0": "maps/1sp_nurseries.csv",
+        "movement.steps.map0": "0;1;2;3",
+        "movement.initialAge.map0": "0",
+        "movement.lastAge.map0": "1",
+        "movement.species.map1": "speciesA",
+        "movement.file.map1": "maps/1sp_spawning.csv",
+        "movement.steps.map1": "4;5;6;7",
+        "movement.initialAge.map1": "1",
+        "movement.lastAge.map1": "5",
+    }
+    grid_params = (48.0, -6.0, 43.0, -1.0, 3, 3)
+
+    cache = build_movement_cache(cfg, tmp_path, grid_params, species="speciesA")
+    assert len(cache) == 2
+    assert "map0" in cache
+    assert "map1" in cache
+    assert cache["map0"]["steps"] == {0, 1, 2, 3}
+    assert cache["map1"]["steps"] == {4, 5, 6, 7}
+    assert cache["map0"]["label"] == "Nurseries"
+    assert cache["map1"]["label"] == "Spawning"
+    assert cache["map0"]["age_range"] == "0-1 yr"
+    assert cache["map1"]["age_range"] == "1-5 yr"
+    assert cache["map0"]["cells"] is not None
+    assert cache["map1"]["cells"] is not None
+    assert cache["map0"]["color"] != cache["map1"]["color"]
+
+
+def test_build_movement_cache_no_maps():
+    from ui.pages.grid_helpers import build_movement_cache
+
+    cfg = {"simulation.nspecies": "3"}
+    cache = build_movement_cache(cfg, None, (0, 0, 0, 0, 10, 10), species="cod")
+    assert cache == {}
+
+
+def test_build_movement_cache_missing_file(tmp_path):
+    from ui.pages.grid_helpers import build_movement_cache
+
+    cfg = {
+        "movement.species.map0": "cod",
+        "movement.file.map0": "maps/nonexistent.csv",
+        "movement.steps.map0": "0;1",
+        "movement.initialAge.map0": "0",
+        "movement.lastAge.map0": "2",
+    }
+    cache = build_movement_cache(cfg, tmp_path, (48.0, -6.0, 43.0, -1.0, 3, 3), species="cod")
+    assert cache == {}
+
+
+def test_build_movement_cache_null_file(tmp_path):
+    from ui.pages.grid_helpers import build_movement_cache
+
+    cfg = {
+        "movement.species.map0": "cod",
+        "movement.file.map0": "null",
+        "movement.steps.map0": "0;1",
+        "movement.initialAge.map0": "0",
+        "movement.lastAge.map0": "2",
+    }
+    cache = build_movement_cache(cfg, tmp_path, (48.0, -6.0, 43.0, -1.0, 3, 3), species="cod")
+    assert cache == {}
+
+
+def test_build_movement_cache_color_cycling(tmp_path):
+    from ui.pages.grid_helpers import build_movement_cache
+
+    (tmp_path / "maps").mkdir()
+    cfg = {}
+    for i in range(9):
+        fname = f"maps/1sp_map{i}.csv"
+        (tmp_path / fname).write_text("0,1,0\n1,0,1\n0,1,0\n")
+        cfg[f"movement.species.map{i}"] = "cod"
+        cfg[f"movement.file.map{i}"] = fname
+        cfg[f"movement.steps.map{i}"] = str(i)
+        cfg[f"movement.initialAge.map{i}"] = "0"
+        cfg[f"movement.lastAge.map{i}"] = "10"
+
+    cache = build_movement_cache(cfg, tmp_path, (48.0, -6.0, 43.0, -1.0, 3, 3), species="cod")
+    assert len(cache) == 9
+    assert cache["map0"]["color"][:3] == cache["map8"]["color"][:3]
+
+
+def test_build_movement_cache_filters_species(tmp_path):
+    from ui.pages.grid_helpers import build_movement_cache
+
+    (tmp_path / "maps").mkdir()
+    (tmp_path / "maps" / "a.csv").write_text("0,1,0\n1,0,1\n0,1,0\n")
+    (tmp_path / "maps" / "b.csv").write_text("1,0,1\n0,1,0\n1,0,1\n")
+
+    cfg = {
+        "movement.species.map0": "cod",
+        "movement.file.map0": "maps/a.csv",
+        "movement.steps.map0": "0;1",
+        "movement.initialAge.map0": "0",
+        "movement.lastAge.map0": "2",
+        "movement.species.map1": "herring",
+        "movement.file.map1": "maps/b.csv",
+        "movement.steps.map1": "2;3",
+        "movement.initialAge.map1": "0",
+        "movement.lastAge.map1": "5",
+    }
+    cache = build_movement_cache(cfg, tmp_path, (48.0, -6.0, 43.0, -1.0, 3, 3), species="cod")
+    assert len(cache) == 1
+    assert "map0" in cache
+
+
+def test_list_movement_species():
+    from ui.pages.grid_helpers import list_movement_species
+
+    cfg = {
+        "movement.species.map0": "cod",
+        "movement.species.map1": "cod",
+        "movement.species.map2": "herring",
+        "movement.species.map3": "sole",
+    }
+    result = list_movement_species(cfg)
+    assert result == ["cod", "herring", "sole"]
+
+
+def test_list_movement_species_empty():
+    from ui.pages.grid_helpers import list_movement_species
+
+    assert list_movement_species({}) == []

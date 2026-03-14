@@ -550,3 +550,118 @@ def parse_movement_steps(raw: str | None) -> set[int]:
             except ValueError:
                 pass
     return steps
+
+
+MOVEMENT_PALETTE: list[list[int]] = [
+    [30, 120, 200, 140],   # Blue
+    [220, 60, 60, 140],    # Red
+    [40, 180, 80, 140],    # Green
+    [240, 150, 30, 140],   # Orange
+    [160, 60, 200, 140],   # Purple
+    [30, 190, 200, 140],   # Cyan
+    [220, 100, 160, 140],  # Pink
+    [200, 200, 40, 140],   # Yellow
+]
+
+
+def _format_age_range(min_age: str | None, max_age: str | None) -> str:
+    """Format age range for legend labels."""
+    try:
+        lo = float(min_age) if min_age else 0
+        hi = float(max_age) if max_age else None
+    except (ValueError, TypeError):
+        return ""
+    if hi is None:
+        return f"{lo:.0f}+ yr"
+    return f"{lo:.0f}-{hi:.0f} yr"
+
+
+def build_movement_cache(
+    cfg: dict[str, str],
+    config_dir: Path | None,
+    grid_params: tuple[float, float, float, float, int, int],
+    species: str,
+) -> dict[str, dict]:
+    """Pre-read all movement maps for a species and return a cache dict.
+
+    Parameters
+    ----------
+    cfg
+        Raw config dict (key -> value strings).
+    config_dir
+        Directory containing the config files (for resolving relative paths).
+    grid_params
+        Tuple of (ul_lat, ul_lon, lr_lat, lr_lon, nx, ny) for grid bounds.
+    species
+        Species name to filter maps for.
+
+    Returns
+    -------
+    dict
+        Map ID -> {"label", "steps", "age_range", "color", "cells"} for each valid map.
+    """
+    ul_lat, ul_lon, lr_lat, lr_lon, nx, ny = grid_params
+
+    map_indices: list[str] = []
+    for key, val in cfg.items():
+        if key.startswith("movement.species.map") and val == species:
+            idx = key[len("movement.species.map"):]
+            map_indices.append(idx)
+
+    if map_indices and len(map_indices) > len(MOVEMENT_PALETTE):
+        _log.warning(
+            "Species %s has %d maps but palette has %d colors; colors will cycle",
+            species, len(map_indices), len(MOVEMENT_PALETTE),
+        )
+
+    cache: dict[str, dict] = {}
+    color_idx = 0
+    for idx in sorted(map_indices, key=lambda x: int(x) if x.isdigit() else 0):
+        file_val = cfg.get(f"movement.file.map{idx}", "")
+        if not file_val or file_val in ("null", "None"):
+            continue
+
+        if config_dir:
+            file_path = (config_dir / file_val).resolve()
+            if not file_path.is_relative_to(config_dir.resolve()):
+                _log.warning("Path traversal in movement map: %s", file_val)
+                continue
+            if not file_path.exists():
+                _log.warning("Movement map file not found: %s", file_val)
+                continue
+        else:
+            continue
+
+        steps = parse_movement_steps(cfg.get(f"movement.steps.map{idx}"))
+        if not steps:
+            continue
+
+        cells = load_csv_overlay(file_path, ul_lat, ul_lon, lr_lat, lr_lon, nx, ny)
+        if not cells:
+            continue
+
+        label = derive_map_label(file_val, int(idx) if idx.isdigit() else 0)
+        age_range = _format_age_range(
+            cfg.get(f"movement.initialAge.map{idx}"),
+            cfg.get(f"movement.lastAge.map{idx}"),
+        )
+
+        cache[f"map{idx}"] = {
+            "label": label,
+            "steps": steps,
+            "age_range": age_range,
+            "color": list(MOVEMENT_PALETTE[color_idx % len(MOVEMENT_PALETTE)]),
+            "cells": cells,
+        }
+        color_idx += 1
+
+    return cache
+
+
+def list_movement_species(cfg: dict[str, str]) -> list[str]:
+    """Return sorted list of unique species names that have movement maps defined."""
+    species: set[str] = set()
+    for key, val in cfg.items():
+        if key.startswith("movement.species.map") and val:
+            species.add(val)
+    return sorted(species)
