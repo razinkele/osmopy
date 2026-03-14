@@ -141,7 +141,10 @@ class OsmoseRunner:
                 text = line.decode(errors="replace").rstrip()
                 lines_list.append(text)
                 if on_progress:
-                    on_progress(text)
+                    try:
+                        on_progress(text)
+                    except Exception:
+                        _log.warning("Progress callback failed", exc_info=True)
 
         result_output_dir = output_dir or config_path.parent / "output"
 
