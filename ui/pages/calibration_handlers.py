@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import queue as _queue_mod
+import subprocess
 import tempfile
 import threading
 import time
@@ -267,7 +268,7 @@ def register_calibration_handlers(
                             result = problem._run_single(overrides, run_id=idx)
                             for k in range(n_obj):
                                 Y[idx, k] = result[k]
-                        except Exception as exc:
+                        except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError, OSError) as exc:
                             _log.error("Surrogate sample %d/%d failed: %s", idx + 1, n_samples, exc)
                             Y[idx, :] = float("inf")
                             msg_queue.post_status(f"Sample {idx + 1}/{n_samples} failed: {exc}")
@@ -398,7 +399,7 @@ def register_calibration_handlers(
                         )
                         result = prob._run_single(overrides, run_id=idx)
                         Y[idx] = result[0]
-                    except Exception as exc:
+                    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError, OSError) as exc:
                         _log.warning("Sensitivity sample %d failed: %s", idx, exc)
                         Y[idx] = float("inf")
 
