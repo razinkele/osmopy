@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import logging
 import os
 import shutil
 import tempfile
@@ -12,7 +11,9 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path
 
-_log = logging.getLogger("osmose.scenarios")
+from osmose.logging import setup_logging
+
+_log = setup_logging("osmose.scenarios")
 
 
 @dataclass

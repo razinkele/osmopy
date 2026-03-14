@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 
 import pandas as pd
 import xarray as xr
 
-_log = logging.getLogger("osmose.results")
+from osmose.logging import setup_logging
+
+_log = setup_logging("osmose.results")
 
 
 class OsmoseResults:

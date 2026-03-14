@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import logging
-
 from shiny import ui
+from osmose.logging import setup_logging
 from osmose.schema.base import OsmoseField, ParamType
 from ui.styles import STYLE_HINT
 
-_log = logging.getLogger("osmose.param_form")
+_log = setup_logging("osmose.param_form")
 
 
 def _tooltip_content(field: OsmoseField) -> str:

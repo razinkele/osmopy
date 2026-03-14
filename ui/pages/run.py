@@ -1,6 +1,5 @@
 """Run control page - execute OSMOSE simulations."""
 
-import logging
 import shutil
 import tempfile
 from pathlib import Path
@@ -12,11 +11,12 @@ from osmose.config.validator import (
     check_species_consistency,
     validate_config,
 )
+from osmose.logging import setup_logging
 from osmose.runner import OsmoseRunner, validate_java_opts
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.styles import STYLE_CONSOLE
 
-_log = logging.getLogger("osmose.run")
+_log = setup_logging("osmose.run")
 
 JAR_DIR = Path("osmose-java")
 
