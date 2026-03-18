@@ -53,6 +53,9 @@ def write_outputs(
         abundance_data,
     )
 
+    # Write mortality CSVs per species
+    _write_mortality_csvs(output_dir, prefix, outputs, config)
+
 
 def _write_species_csv(
     path: Path,
@@ -68,3 +71,30 @@ def _write_species_csv(
     with open(path, "w") as f:
         f.write(f'"{description}"\n')
         df.to_csv(f, index=False)
+
+
+def _write_mortality_csvs(
+    output_dir: Path,
+    prefix: str,
+    outputs: list[StepOutput],
+    config: EngineConfig,
+) -> None:
+    """Write per-species mortality rate CSVs matching Java format."""
+    from osmose.engine.state import MortalityCause
+
+    times = np.array([o.step / config.n_dt_per_year for o in outputs])
+    cause_names = [c.name.capitalize() for c in MortalityCause]
+
+    mort_dir = output_dir / "Mortality"
+    mort_dir.mkdir(exist_ok=True)
+
+    for sp_idx, sp_name in enumerate(config.species_names):
+        # Extract mortality data for this species across all timesteps
+        data = np.array([o.mortality_by_cause[sp_idx] for o in outputs])
+        df = pd.DataFrame(data, columns=cause_names)
+        df.insert(0, "Time", times)
+
+        path = mort_dir / f"{prefix}_mortalityRate-{sp_name}_Simu0.csv"
+        with open(path, "w") as f:
+            f.write(f'"Mortality rates per time step for {sp_name}"\n')
+            df.to_csv(f, index=False)

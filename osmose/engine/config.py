@@ -140,6 +140,7 @@ class EngineConfig:
     # Fishing
     fishing_enabled: bool  # global fishing toggle
     fishing_rate: NDArray[np.float64]  # annual fishing mortality rate per species
+    fishing_selectivity_l50: NDArray[np.float64]  # length at 50% selectivity
 
     # Predation accessibility
     accessibility_matrix: NDArray[np.float64] | None  # (n_pred, n_prey) or None
@@ -229,6 +230,9 @@ class EngineConfig:
             fishing_enabled=cfg.get("simulation.fishing.mortality.enabled", "true").lower()
             == "true",
             fishing_rate=fishing,
+            fishing_selectivity_l50=_species_float_optional(
+                cfg, "fishing.selectivity.l50.sp{i}", n_sp, default=0.0
+            ),
             movement_method=[
                 cfg.get(f"movement.distribution.method.sp{i}", "random") for i in range(n_sp)
             ],
