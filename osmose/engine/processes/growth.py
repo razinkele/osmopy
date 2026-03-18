@@ -36,7 +36,8 @@ def expected_length_vb(
     l_thres = linf * (1 - np.exp(-k * (threshold_years - t0)))
 
     # Linear phase for young-of-year
-    frac = np.where(threshold_years > 0, age_years / threshold_years, 1.0)
+    safe_threshold = np.where(threshold_years > 0, threshold_years, 1.0)
+    frac = np.where(threshold_years > 0, age_years / safe_threshold, 1.0)
     l_linear = egg_size + (l_thres - egg_size) * frac
 
     # Select phase
