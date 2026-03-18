@@ -362,7 +362,14 @@ class TestGrowthGating:
         )
         rng = np.random.default_rng(42)
         new_state = growth(state, cfg, rng)
-        assert new_state.length[0] > 0.1  # grew despite zero success
+        # Egg gets exactly delta_L = L_expected(1) - L_expected(0) = L_expected(1) - L_egg
+        from osmose.engine.processes.growth import expected_length_vb
+        l_next = expected_length_vb(
+            np.array([1], dtype=np.int32), np.array([30.0]), np.array([0.3]),
+            np.array([-0.1]), np.array([0.1]), np.array([1.0]), 24,
+        )
+        expected = 0.1 + (l_next[0] - 0.1)
+        np.testing.assert_allclose(new_state.length[0], expected, atol=1e-10)
 
     def test_weight_updated_after_growth(self):
         """Weight must be recalculated from new length via W = c * L^b."""
@@ -438,7 +445,8 @@ def growth(state: SchoolState, config: EngineConfig, rng: np.random.Generator) -
     bypass = (state.age_dt == 0) | state.is_out
     growth_factor = np.where(bypass, delta_l, growth_factor)
 
-    # Apply growth, cap at L_inf (as proxy for L_max)
+    # Apply growth, cap at L_inf. Design decision: L_inf is used as L_max because
+    # OSMOSE does not define a separate lmax parameter distinct from linf.
     new_length = np.minimum(state.length + growth_factor, config.linf[sp])
 
     # Update weight from new length: W = c * L^b
@@ -460,6 +468,137 @@ Expected: All 8 PASSED
 ```bash
 git add osmose/engine/processes/growth.py tests/test_engine_growth.py
 git commit -m "feat(engine): add growth function with predation-success gating"
+```
+
+---
+
+### Task 3b: Gompertz growth (alternative model)
+
+**Files:**
+- Modify: `osmose/engine/processes/growth.py`
+- Modify: `tests/test_engine_growth.py`
+
+The spec requires Gompertz as an alternative growth model. It has four phases:
+egg size, exponential, linear transition, Gompertz curve.
+
+- [ ] **Step 1: Write failing tests for Gompertz expected length**
+
+Append to `tests/test_engine_growth.py`:
+
+```python
+from osmose.engine.processes.growth import expected_length_gompertz
+
+
+class TestExpectedLengthGompertz:
+    """Verify Gompertz expected length against known formula."""
+
+    def test_age_zero_returns_egg_size(self):
+        result = expected_length_gompertz(
+            age_dt=np.array([0]),
+            linf=np.array([30.0]),
+            k_gom=np.array([0.5]),
+            t_gom=np.array([1.5]),
+            k_exp=np.array([2.0]),
+            a_exp_dt=np.array([6]),
+            a_gom_dt=np.array([12]),
+            egg_size=np.array([0.1]),
+            n_dt_per_year=24,
+        )
+        np.testing.assert_allclose(result, [0.1], atol=1e-10)
+
+    def test_gompertz_phase(self):
+        """Above a_gom, should follow Gompertz curve: L_inf * exp(-exp(-K_g * (a - t_g)))."""
+        linf, k_g, t_g = 30.0, 0.5, 1.5
+        n_dt = 24
+        age_years = 3.0
+        age_dt = int(age_years * n_dt)
+        result = expected_length_gompertz(
+            age_dt=np.array([age_dt]),
+            linf=np.array([linf]),
+            k_gom=np.array([k_g]),
+            t_gom=np.array([t_g]),
+            k_exp=np.array([2.0]),
+            a_exp_dt=np.array([6]),
+            a_gom_dt=np.array([12]),
+            egg_size=np.array([0.1]),
+            n_dt_per_year=n_dt,
+        )
+        expected = linf * np.exp(-np.exp(-k_g * (age_years - t_g)))
+        np.testing.assert_allclose(result, [expected], atol=1e-10)
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `.venv/bin/python -m pytest tests/test_engine_growth.py::TestExpectedLengthGompertz -v`
+Expected: FAIL with `ImportError`
+
+- [ ] **Step 3: Implement `expected_length_gompertz`**
+
+Add to `osmose/engine/processes/growth.py`:
+
+```python
+def expected_length_gompertz(
+    age_dt: NDArray[np.int32],
+    linf: NDArray[np.float64],
+    k_gom: NDArray[np.float64],
+    t_gom: NDArray[np.float64],
+    k_exp: NDArray[np.float64],
+    a_exp_dt: NDArray[np.int32],
+    a_gom_dt: NDArray[np.int32],
+    egg_size: NDArray[np.float64],
+    n_dt_per_year: int,
+) -> NDArray[np.float64]:
+    """Compute Gompertz expected length at a given age.
+
+    Four phases:
+      age == 0:                L_egg
+      0 < age < a_exp:         L_start * exp(K_exp * age)  (exponential)
+      a_exp <= age < a_gom:    linear transition
+      age >= a_gom:            L_inf * exp(-exp(-K_gom * (age - t_gom)))
+    """
+    age_years = age_dt.astype(np.float64) / n_dt_per_year
+    a_exp_years = a_exp_dt.astype(np.float64) / n_dt_per_year
+    a_gom_years = a_gom_dt.astype(np.float64) / n_dt_per_year
+
+    # Gompertz formula (used for age >= a_gom and to compute boundary values)
+    l_gom = linf * np.exp(-np.exp(-k_gom * (age_years - t_gom)))
+    l_gom_at_boundary = linf * np.exp(-np.exp(-k_gom * (a_gom_years - t_gom)))
+
+    # Exponential phase
+    l_exp_at_boundary = egg_size * np.exp(k_exp * a_exp_years)
+    l_exp = egg_size * np.exp(k_exp * age_years)
+
+    # Linear transition between exponential and Gompertz boundaries
+    frac_linear = np.where(
+        a_gom_years > a_exp_years,
+        (age_years - a_exp_years) / (a_gom_years - a_exp_years),
+        1.0,
+    )
+    l_linear = l_exp_at_boundary + (l_gom_at_boundary - l_exp_at_boundary) * frac_linear
+
+    # Select phase
+    result = np.where(
+        age_dt == 0,
+        egg_size,
+        np.where(
+            age_years < a_exp_years,
+            l_exp,
+            np.where(age_years < a_gom_years, l_linear, l_gom),
+        ),
+    )
+    return result
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `.venv/bin/python -m pytest tests/test_engine_growth.py -v`
+Expected: All PASSED (previous 8 + 2 new)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add osmose/engine/processes/growth.py tests/test_engine_growth.py
+git commit -m "feat(engine): add Gompertz expected length function"
 ```
 
 ---
@@ -657,18 +796,38 @@ git commit -m "feat(engine): add additional mortality and aging mortality proces
 Append to `tests/test_engine_simulate.py`:
 
 ```python
-    def test_aging_mortality_kills_old_schools(self, minimal_config):
-        """Schools should die when they reach lifespan."""
-        # 1 species, lifespan=3yr, 24 dt/yr => 72 dt lifespan
-        # Run for 4 years (96 steps) — schools initialized at age 0 should die
-        minimal_config["simulation.time.nyear"] = "4"
-        minimal_config["mortality.additional.rate.sp0"] = "0.0"
-        cfg = EngineConfig.from_dict(minimal_config)
-        grid = Grid.from_dimensions(ny=3, nx=3)
-        rng = np.random.default_rng(42)
-        outputs = simulate(cfg, grid, rng)
-        # After 4 years, all schools should have been killed by aging
-        assert outputs[-1].abundance[0] == 0.0
+    def test_aging_mortality_kills_old_schools(self):
+        """Aging mortality should kill a school at lifespan - 1."""
+        from osmose.engine.processes.natural import aging_mortality as _aging
+
+        cfg_dict = {
+            "simulation.time.ndtperyear": "24",
+            "simulation.time.nyear": "1",
+            "simulation.nspecies": "1",
+            "simulation.nschool.sp0": "1",
+            "species.name.sp0": "TestFish",
+            "species.linf.sp0": "20.0",
+            "species.k.sp0": "0.3",
+            "species.t0.sp0": "-0.1",
+            "species.egg.size.sp0": "0.1",
+            "species.length2weight.condition.factor.sp0": "0.006",
+            "species.length2weight.allometric.power.sp0": "3.0",
+            "species.lifespan.sp0": "3",
+            "species.vonbertalanffy.threshold.age.sp0": "1.0",
+            "mortality.subdt": "10",
+            "predation.ingestion.rate.max.sp0": "3.5",
+            "predation.efficiency.critical.sp0": "0.57",
+        }
+        cfg = EngineConfig.from_dict(cfg_dict)
+        # Create school at age 71 dt (lifespan=72, threshold=71)
+        from osmose.engine.state import SchoolState
+        state = SchoolState.create(n_schools=1, species_id=np.array([0], dtype=np.int32))
+        state = state.replace(
+            abundance=np.array([100.0]),
+            age_dt=np.array([71], dtype=np.int32),
+        )
+        new_state = _aging(state, cfg)
+        assert new_state.abundance[0] == 0.0
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -754,5 +913,7 @@ git commit -m "style: lint and format engine Phase 2 code"
 - [ ] **Step 5: Tag Phase 2 milestone**
 
 ```bash
-git tag -a engine-phase2 -m "Python engine Phase 2: Von Bertalanffy growth, additional mortality, aging mortality"
+git tag -a engine-phase2 -m "Python engine Phase 2: VB/Gompertz growth, additional mortality, aging mortality"
 ```
+
+**Note — Tier 1.5 (Java comparison) deferred:** The spec requires Tier 1.5 growth-only comparison with Java. This requires running the Java engine with predation/fishing disabled and comparing length trajectories. This is deferred to Phase 7 when the automated validation pipeline (`scripts/validate_engines.py`) is built, as it needs Java JAR execution infrastructure. All Tier 1 analytical tests are covered above.
