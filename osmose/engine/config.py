@@ -113,7 +113,10 @@ class EngineConfig:
             n_dt_per_year=n_dt,
             n_year=n_yr,
             n_steps=n_dt * n_yr,
-            n_schools=_species_int(cfg, "simulation.nschool.sp{i}", n_sp),
+            n_schools=_species_int_optional(
+                cfg, "simulation.nschool.sp{i}", n_sp,
+                default=int(cfg.get("simulation.nschool", "20")),
+            ),
             species_names=_species_str(cfg, "species.name.sp{i}", n_sp),
             linf=_species_float(cfg, "species.linf.sp{i}", n_sp),
             k=_species_float(cfg, "species.k.sp{i}", n_sp),
