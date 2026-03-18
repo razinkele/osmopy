@@ -42,10 +42,29 @@ class PythonEngine:
         from osmose.engine.simulate import simulate
 
         engine_config = EngineConfig.from_dict(config)
-        # Phase 7: simple rectangular grid. Future: load from NetCDF
-        nx = int(config.get("grid.ncol", "10"))
-        ny = int(config.get("grid.nrow", "10"))
-        grid = Grid.from_dimensions(ny=ny, nx=nx)
+
+        # Try loading real grid from NetCDF, fall back to simple rectangular
+        grid_file = config.get("grid.netcdf.file", "")
+        mask_var = config.get("grid.var.mask", "mask")
+        lat_var = config.get("grid.var.lat", "latitude")
+        lon_var = config.get("grid.var.lon", "longitude")
+
+        grid = None
+        if grid_file:
+            from pathlib import Path as P
+
+            for base in [P("."), P("data/examples")]:
+                path = base / grid_file
+                if path.exists():
+                    grid = Grid.from_netcdf(
+                        path, mask_var=mask_var, lat_dim=lat_var, lon_dim=lon_var
+                    )
+                    break
+
+        if grid is None:
+            nx = int(config.get("grid.nlon", config.get("grid.ncol", "10")))
+            ny = int(config.get("grid.nlat", config.get("grid.nrow", "10")))
+            grid = Grid.from_dimensions(ny=ny, nx=nx)
         rng = np.random.default_rng(seed)
 
         outputs = simulate(engine_config, grid, rng)

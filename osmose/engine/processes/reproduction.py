@@ -32,9 +32,12 @@ def reproduction(
     if mature.any():
         np.add.at(ssb, state.species_id[mature], state.abundance[mature] * state.weight[mature])
 
-    # Season factor: uniform 1/n_dt_per_year for now (Phase 3 stub)
-    # Full seasonal CSV loading deferred to later
-    season_factor = 1.0 / config.n_dt_per_year
+    # Season factor from loaded CSV or uniform
+    step_in_year = step % config.n_dt_per_year
+    if config.spawning_season is not None:
+        season_factor = config.spawning_season[:, step_in_year]
+    else:
+        season_factor = np.full(n_sp, 1.0 / config.n_dt_per_year)
 
     # Seeding: if SSB is zero and within seeding period, use seeding biomass
     # Seeding period is typically the first `lifespan` years
