@@ -89,6 +89,13 @@ class EngineConfig:
     size_ratio_min: NDArray[np.float64]  # max pred/prey ratio per species (Java naming)
     size_ratio_max: NDArray[np.float64]  # min pred/prey ratio per species
 
+    # Starvation
+    starvation_rate_max: NDArray[np.float64]  # max starvation mortality rate
+
+    # Fishing
+    fishing_enabled: bool  # global fishing toggle
+    fishing_rate: NDArray[np.float64]  # annual fishing mortality rate per species
+
     # Movement
     movement_method: list[str]
     random_walk_range: NDArray[np.int32]
@@ -150,6 +157,12 @@ class EngineConfig:
             size_ratio_max=_species_float_optional(
                 cfg, "predation.predPrey.sizeRatio.max.sp{i}", n_sp, default=3.5
             ),
+            starvation_rate_max=_species_float_optional(
+                cfg, "mortality.starvation.rate.max.sp{i}", n_sp, default=0.0
+            ),
+            fishing_enabled=cfg.get("simulation.fishing.mortality.enabled", "true").lower()
+            == "true",
+            fishing_rate=_species_float_optional(cfg, "fishing.rate.sp{i}", n_sp, default=0.0),
             movement_method=[
                 cfg.get(f"movement.distribution.method.sp{i}", "random") for i in range(n_sp)
             ],
