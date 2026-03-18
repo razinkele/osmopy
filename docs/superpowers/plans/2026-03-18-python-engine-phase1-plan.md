@@ -22,7 +22,7 @@ osmose/engine/                  # NEW package — Python simulation engine
     grid.py                     # Grid class (NetCDF loading, cell count, land mask)
     resources.py                # ResourceState placeholder (LTL forcing)
     simulate.py                 # Main simulation loop + stub process functions
-osmose/runner.py                # MODIFY — re-export RunResult for engine protocol
+osmose/runner.py                # REFERENCE — RunResult imported by engine protocol
 tests/test_engine_state.py      # NEW — SchoolState tests
 tests/test_engine_config.py     # NEW — EngineConfig tests
 tests/test_engine_grid.py       # NEW — Engine Grid tests
@@ -688,6 +688,20 @@ class TestGrid:
         grid = Grid.from_netcdf(simple_grid_ds)
         assert grid.yx_to_cell(0, 0) == 0
         assert grid.yx_to_cell(1, 1) == 6
+
+    def test_neighbors_corner(self):
+        grid = Grid.from_dimensions(ny=3, nx=3)
+        nbrs = grid.neighbors(0, 0)
+        # Top-left corner: only right, below, and diagonal
+        assert (0, 1) in nbrs
+        assert (1, 0) in nbrs
+        assert (1, 1) in nbrs
+        assert len(nbrs) == 3
+
+    def test_neighbors_center(self):
+        grid = Grid.from_dimensions(ny=3, nx=3)
+        nbrs = grid.neighbors(1, 1)
+        assert len(nbrs) == 8  # all 8 surrounding cells
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -748,6 +762,18 @@ class Grid:
     def yx_to_cell(self, y: int, x: int) -> int:
         """Convert (y, x) grid coordinates to flat cell ID."""
         return y * self.nx + x
+
+    def neighbors(self, y: int, x: int) -> list[tuple[int, int]]:
+        """Return (y, x) coordinates of all valid neighboring cells (8-connected)."""
+        result = []
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                if dy == 0 and dx == 0:
+                    continue
+                ny, nx = y + dy, x + dx
+                if 0 <= ny < self.ny and 0 <= nx < self.nx:
+                    result.append((ny, nx))
+        return result
 
     @classmethod
     def from_netcdf(
@@ -813,12 +839,12 @@ from osmose.engine.grid import Grid
 class TestResourceState:
     def test_create_placeholder(self):
         grid = Grid.from_dimensions(ny=4, nx=5)
-        rs = ResourceState(grid=grid)
+        rs = ResourceState(config={}, grid=grid)
         assert rs.grid is grid
 
     def test_update_is_noop(self):
         grid = Grid.from_dimensions(ny=4, nx=5)
-        rs = ResourceState(grid=grid)
+        rs = ResourceState(config={}, grid=grid)
         rs.update(step=0)  # should not raise
 ```
 
@@ -848,7 +874,8 @@ class ResourceState:
     from NetCDF forcing files. Phase 1 is a no-op placeholder.
     """
 
-    def __init__(self, grid: Grid) -> None:
+    def __init__(self, config: dict[str, str], grid: Grid) -> None:
+        self.config = config
         self.grid = grid
 
     def update(self, step: int) -> None:
@@ -1007,6 +1034,7 @@ def _incoming_flux(
 def _reset_step_variables(state: SchoolState) -> SchoolState:
     """Reset per-step tracking variables at the start of each timestep."""
     return state.replace(
+        abundance=state.abundance.copy(),   # snapshot for instantaneous tracking
         n_dead=np.zeros_like(state.n_dead),
         pred_success_rate=np.zeros(len(state), dtype=np.float64),
         preyed_biomass=np.zeros(len(state), dtype=np.float64),
@@ -1064,7 +1092,7 @@ def _collect_outputs(state: SchoolState, config: EngineConfig, step: int) -> Ste
     biomass = np.zeros(config.n_species, dtype=np.float64)
     abundance = np.zeros(config.n_species, dtype=np.float64)
     if len(state) > 0:
-        np.add.at(biomass, state.species_id, state.abundance * state.weight)
+        np.add.at(biomass, state.species_id, state.biomass)
         np.add.at(abundance, state.species_id, state.abundance)
     return StepOutput(step=step, biomass=biomass, abundance=abundance)
 
@@ -1094,7 +1122,7 @@ def simulate(
     Process ordering matches Java's SimulationStep.step().
     """
     state = initialize(config, grid, rng)
-    resources = ResourceState(grid=grid)
+    resources = ResourceState(config={}, grid=grid)
     outputs: list[StepOutput] = []
 
     for step in range(config.n_steps):
@@ -1141,12 +1169,6 @@ from osmose.engine import PythonEngine
 
 
 class TestPythonEngineIntegration:
-    def test_run_raises_not_implemented_without_config(self):
-        """PythonEngine.run() should attempt simulation but fail on bad config."""
-        engine = PythonEngine()
-        with pytest.raises(KeyError):
-            engine.run(config={}, output_dir=Path("/tmp/test"), seed=42)
-
     def test_run_with_minimal_config(self, tmp_path):
         """PythonEngine.run() should complete with a minimal config."""
         config = {
