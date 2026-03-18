@@ -85,6 +85,10 @@ class EngineConfig:
     seeding_biomass: NDArray[np.float64]  # initial biomass for seeding (tonnes)
     larva_mortality_rate: NDArray[np.float64]  # additional mortality for eggs/larvae
 
+    # Predation
+    size_ratio_min: NDArray[np.float64]  # max pred/prey ratio per species (Java naming)
+    size_ratio_max: NDArray[np.float64]  # min pred/prey ratio per species
+
     # Movement
     movement_method: list[str]
     random_walk_range: NDArray[np.int32]
@@ -139,6 +143,12 @@ class EngineConfig:
             ),
             larva_mortality_rate=_species_float_optional(
                 cfg, "mortality.additional.larva.rate.sp{i}", n_sp, default=0.0
+            ),
+            size_ratio_min=_species_float_optional(
+                cfg, "predation.predPrey.sizeRatio.min.sp{i}", n_sp, default=1.0
+            ),
+            size_ratio_max=_species_float_optional(
+                cfg, "predation.predPrey.sizeRatio.max.sp{i}", n_sp, default=3.5
             ),
             movement_method=[
                 cfg.get(f"movement.distribution.method.sp{i}", "random") for i in range(n_sp)
