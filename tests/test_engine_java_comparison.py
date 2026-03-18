@@ -41,31 +41,101 @@ EXAMPLES_CONFIG = EXAMPLES_DIR / "osm_all-parameters.csv"
 
 # Check if Java and the JAR are available
 _java_available = shutil.which("java") is not None and JAR_PATH.exists()
-java_required = pytest.mark.skipif(
-    not _java_available, reason="Java or OSMOSE JAR not available"
-)
+java_required = pytest.mark.skipif(not _java_available, reason="Java or OSMOSE JAR not available")
 
 # ---------------------------------------------------------------------------
 # Example species parameters (from data/examples/osm_param-species.csv)
 # ---------------------------------------------------------------------------
 
 SPECIES = [
-    {"name": "Anchovy", "linf": 19.5, "k": 0.364, "t0": -0.70, "c": 0.0060, "b": 3.06,
-     "lifespan": 4, "egg_size": 0.1, "vb_threshold_age": 0},
-    {"name": "Sardine", "linf": 23.0, "k": 0.280, "t0": -0.90, "c": 0.0072, "b": 3.10,
-     "lifespan": 8, "egg_size": 0.1, "vb_threshold_age": 0},
-    {"name": "Sprat", "linf": 14.5, "k": 0.500, "t0": -0.50, "c": 0.0055, "b": 3.08,
-     "lifespan": 5, "egg_size": 0.1, "vb_threshold_age": 0},
-    {"name": "HorseMackerel", "linf": 40.0, "k": 0.160, "t0": -1.20, "c": 0.0068, "b": 3.05,
-     "lifespan": 15, "egg_size": 0.1, "vb_threshold_age": 0},
-    {"name": "Mackerel", "linf": 42.0, "k": 0.190, "t0": -1.00, "c": 0.0040, "b": 3.20,
-     "lifespan": 12, "egg_size": 0.1, "vb_threshold_age": 0},
-    {"name": "Hake", "linf": 110.0, "k": 0.106, "t0": -0.17, "c": 0.0050, "b": 3.14,
-     "lifespan": 12, "egg_size": 0.1, "vb_threshold_age": 0},
-    {"name": "Sole", "linf": 39.0, "k": 0.280, "t0": -0.50, "c": 0.0085, "b": 3.05,
-     "lifespan": 15, "egg_size": 0.1, "vb_threshold_age": 0},
-    {"name": "BlueWhiting", "linf": 34.0, "k": 0.200, "t0": -0.80, "c": 0.0038, "b": 3.18,
-     "lifespan": 10, "egg_size": 0.1, "vb_threshold_age": 0},
+    {
+        "name": "Anchovy",
+        "linf": 19.5,
+        "k": 0.364,
+        "t0": -0.70,
+        "c": 0.0060,
+        "b": 3.06,
+        "lifespan": 4,
+        "egg_size": 0.1,
+        "vb_threshold_age": 0,
+    },
+    {
+        "name": "Sardine",
+        "linf": 23.0,
+        "k": 0.280,
+        "t0": -0.90,
+        "c": 0.0072,
+        "b": 3.10,
+        "lifespan": 8,
+        "egg_size": 0.1,
+        "vb_threshold_age": 0,
+    },
+    {
+        "name": "Sprat",
+        "linf": 14.5,
+        "k": 0.500,
+        "t0": -0.50,
+        "c": 0.0055,
+        "b": 3.08,
+        "lifespan": 5,
+        "egg_size": 0.1,
+        "vb_threshold_age": 0,
+    },
+    {
+        "name": "HorseMackerel",
+        "linf": 40.0,
+        "k": 0.160,
+        "t0": -1.20,
+        "c": 0.0068,
+        "b": 3.05,
+        "lifespan": 15,
+        "egg_size": 0.1,
+        "vb_threshold_age": 0,
+    },
+    {
+        "name": "Mackerel",
+        "linf": 42.0,
+        "k": 0.190,
+        "t0": -1.00,
+        "c": 0.0040,
+        "b": 3.20,
+        "lifespan": 12,
+        "egg_size": 0.1,
+        "vb_threshold_age": 0,
+    },
+    {
+        "name": "Hake",
+        "linf": 110.0,
+        "k": 0.106,
+        "t0": -0.17,
+        "c": 0.0050,
+        "b": 3.14,
+        "lifespan": 12,
+        "egg_size": 0.1,
+        "vb_threshold_age": 0,
+    },
+    {
+        "name": "Sole",
+        "linf": 39.0,
+        "k": 0.280,
+        "t0": -0.50,
+        "c": 0.0085,
+        "b": 3.05,
+        "lifespan": 15,
+        "egg_size": 0.1,
+        "vb_threshold_age": 0,
+    },
+    {
+        "name": "BlueWhiting",
+        "linf": 34.0,
+        "k": 0.200,
+        "t0": -0.80,
+        "c": 0.0038,
+        "b": 3.18,
+        "lifespan": 10,
+        "egg_size": 0.1,
+        "vb_threshold_age": 0,
+    },
 ]
 
 N_DT_PER_YEAR = 24  # examples config uses 24
@@ -105,8 +175,9 @@ class TestVBGrowthCurvesAllSpecies:
 
         # Since vb_threshold_age=0 for all species, all ages use VB formula
         expected = sp["linf"] * (1 - np.exp(-sp["k"] * (ages_years - sp["t0"])))
-        np.testing.assert_allclose(result, expected, rtol=1e-10,
-                                   err_msg=f"VB curve mismatch for {sp['name']}")
+        np.testing.assert_allclose(
+            result, expected, rtol=1e-10, err_msg=f"VB curve mismatch for {sp['name']}"
+        )
 
     @pytest.mark.parametrize("sp", SPECIES, ids=[s["name"] for s in SPECIES])
     def test_weight_length_conversion(self, sp):
@@ -127,8 +198,9 @@ class TestVBGrowthCurvesAllSpecies:
 
         weights = sp["c"] * lengths ** sp["b"]
         expected_weights = sp["c"] * lengths ** sp["b"]
-        np.testing.assert_allclose(weights, expected_weights, rtol=1e-12,
-                                   err_msg=f"W-L mismatch for {sp['name']}")
+        np.testing.assert_allclose(
+            weights, expected_weights, rtol=1e-12, err_msg=f"W-L mismatch for {sp['name']}"
+        )
 
     @pytest.mark.parametrize("sp", SPECIES, ids=[s["name"] for s in SPECIES])
     def test_growth_monotonically_increasing(self, sp):
@@ -167,8 +239,9 @@ class TestVBGrowthCurvesAllSpecies:
             n_dt_per_year=N_DT_PER_YEAR,
         )
 
-        assert np.all(lengths <= sp["linf"] + 1e-10), \
+        assert np.all(lengths <= sp["linf"] + 1e-10), (
             f"Length exceeds L_inf for {sp['name']}: max={lengths.max()}, L_inf={sp['linf']}"
+        )
 
 
 # ===========================================================================
@@ -182,28 +255,30 @@ class TestMortalityWithRealParams:
     def _make_config_for_species(self, sp_idx: int) -> EngineConfig:
         """Build a 1-species EngineConfig from examples species data."""
         sp = SPECIES[sp_idx]
-        return EngineConfig.from_dict({
-            "simulation.time.ndtperyear": str(N_DT_PER_YEAR),
-            "simulation.time.nyear": "1",
-            "simulation.nspecies": "1",
-            "simulation.nschool.sp0": "10",
-            "species.name.sp0": sp["name"],
-            "species.linf.sp0": str(sp["linf"]),
-            "species.k.sp0": str(sp["k"]),
-            "species.t0.sp0": str(sp["t0"]),
-            "species.egg.size.sp0": str(sp["egg_size"]),
-            "species.length2weight.condition.factor.sp0": str(sp["c"]),
-            "species.length2weight.allometric.power.sp0": str(sp["b"]),
-            "species.lifespan.sp0": str(sp["lifespan"]),
-            "species.vonbertalanffy.threshold.age.sp0": str(sp["vb_threshold_age"]),
-            "mortality.subdt": "10",
-            "predation.ingestion.rate.max.sp0": "3.5",
-            "predation.efficiency.critical.sp0": "0.57",
-            "mortality.additional.rate.sp0": "0.4",
-        })
+        return EngineConfig.from_dict(
+            {
+                "simulation.time.ndtperyear": str(N_DT_PER_YEAR),
+                "simulation.time.nyear": "1",
+                "simulation.nspecies": "1",
+                "simulation.nschool.sp0": "10",
+                "species.name.sp0": sp["name"],
+                "species.linf.sp0": str(sp["linf"]),
+                "species.k.sp0": str(sp["k"]),
+                "species.t0.sp0": str(sp["t0"]),
+                "species.egg.size.sp0": str(sp["egg_size"]),
+                "species.length2weight.condition.factor.sp0": str(sp["c"]),
+                "species.length2weight.allometric.power.sp0": str(sp["b"]),
+                "species.lifespan.sp0": str(sp["lifespan"]),
+                "species.vonbertalanffy.threshold.age.sp0": str(sp["vb_threshold_age"]),
+                "mortality.subdt": "10",
+                "predation.ingestion.rate.max.sp0": "3.5",
+                "predation.efficiency.critical.sp0": "0.57",
+                "mortality.additional.rate.sp0": "0.4",
+            }
+        )
 
     def test_additional_mortality_single_substep(self):
-        """Single sub-step: N_dead = N * (1 - exp(-M_annual / n_subdt))."""
+        """Single sub-step: D = M_annual / (n_dt_per_year * n_subdt)."""
         cfg = self._make_config_for_species(0)  # Anchovy
         m_rate = 0.4
         n_subdt = 10
@@ -217,15 +292,18 @@ class TestMortalityWithRealParams:
 
         new_state = additional_mortality(state, cfg, n_subdt)
 
-        # After 1 sub-step: N_surviving = N * exp(-M / n_subdt)
-        expected_survivors = 10000.0 * np.exp(-m_rate / n_subdt)
+        # Java: D = (M_annual / n_dt_per_year) / n_subdt
+        d = m_rate / (N_DT_PER_YEAR * n_subdt)
+        expected_survivors = 10000.0 * np.exp(-d)
         np.testing.assert_allclose(
-            new_state.abundance[0], expected_survivors, rtol=1e-10,
-            err_msg="Single sub-step mortality doesn't match formula"
+            new_state.abundance[0],
+            expected_survivors,
+            rtol=1e-10,
+            err_msg="Single sub-step mortality doesn't match Java formula",
         )
 
-    def test_additional_mortality_full_main_step(self):
-        """After n_subdt sub-steps (1 main timestep), verify compounding."""
+    def test_additional_mortality_full_year(self):
+        """After n_dt * n_subdt applications, total ≈ exp(-M_annual)."""
         cfg = self._make_config_for_species(0)  # Anchovy
         m_rate = 0.4
         n_subdt = 10
@@ -237,16 +315,18 @@ class TestMortalityWithRealParams:
             biomass=np.array([50000.0]),
         )
 
-        # Apply n_subdt sub-steps (= 1 main timestep)
-        for _sub in range(n_subdt):
-            state = additional_mortality(state, cfg, n_subdt)
+        # Apply for full year: n_dt timesteps * n_subdt sub-steps
+        for _step in range(N_DT_PER_YEAR):
+            for _sub in range(n_subdt):
+                state = additional_mortality(state, cfg, n_subdt)
 
-        # Each sub-step applies 1 - exp(-M/n_subdt), so after n_subdt:
-        # N_surviving = N * exp(-M/n_subdt)^n_subdt = N * exp(-M)
-        expected_survivors = 10000.0 * np.exp(-m_rate / n_subdt) ** n_subdt
+        # Should give approximately exp(-M_annual) = exp(-0.4)
+        expected_survivors = 10000.0 * np.exp(-m_rate)
         np.testing.assert_allclose(
-            state.abundance[0], expected_survivors, rtol=1e-6,
-            err_msg="Full main-step mortality compounding doesn't match"
+            state.abundance[0],
+            expected_survivors,
+            rtol=1e-4,
+            err_msg="Annual mortality doesn't match exp(-M)",
         )
 
     @pytest.mark.parametrize("sp_idx", range(8), ids=[s["name"] for s in SPECIES])
@@ -264,10 +344,12 @@ class TestMortalityWithRealParams:
 
         new_state = aging_mortality(state, cfg)
         # First school (lifespan - 2) survives, second (lifespan - 1) dies
-        np.testing.assert_allclose(new_state.abundance[0], 100.0,
-                                   err_msg=f"{sp['name']}: young school died")
-        np.testing.assert_allclose(new_state.abundance[1], 0.0,
-                                   err_msg=f"{sp['name']}: old school survived")
+        np.testing.assert_allclose(
+            new_state.abundance[0], 100.0, err_msg=f"{sp['name']}: young school died"
+        )
+        np.testing.assert_allclose(
+            new_state.abundance[1], 0.0, err_msg=f"{sp['name']}: old school survived"
+        )
 
 
 # ===========================================================================
@@ -288,7 +370,10 @@ class TestJavaEngineComparison:
         """Run Java engine once for the entire test class."""
         output_dir = tmp_path_factory.mktemp("java_output")
         cmd = [
-            "java", "-Xmx2g", "-jar", str(JAR_PATH),
+            "java",
+            "-Xmx2g",
+            "-jar",
+            str(JAR_PATH),
             str(EXAMPLES_CONFIG),
             f"-Poutput.dir.path={output_dir}",
             "-Psimulation.time.nyear=30",
@@ -361,6 +446,5 @@ class TestJavaEngineComparison:
                 # (Anchovy, Sprat) can have high CV due to recruitment pulses.
                 # Use a generous bound that catches only true divergence.
                 assert cv < 5.0, (
-                    f"{col} has CV={cv:.2f} after year 15 — "
-                    "may not be reaching quasi-steady state"
+                    f"{col} has CV={cv:.2f} after year 15 — may not be reaching quasi-steady state"
                 )

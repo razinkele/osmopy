@@ -30,7 +30,8 @@ def _make_mortality_config() -> dict[str, str]:
 
 
 class TestAdditionalMortality:
-    def test_mortality_reduces_abundance(self):
+    def test_mortality_per_substep(self):
+        """Per sub-step: D = M_annual / (n_dt_per_year * n_subdt)."""
         cfg = EngineConfig.from_dict(_make_mortality_config())
         state = SchoolState.create(n_schools=1, species_id=np.array([0], dtype=np.int32))
         state = state.replace(
@@ -40,11 +41,34 @@ class TestAdditionalMortality:
         )
         n_subdt = 10
         new_state = additional_mortality(state, cfg, n_subdt)
-        m = 0.2
-        expected_dead = 1000.0 * (1 - np.exp(-m / n_subdt))
+        # D = 0.2 / (24 * 10) = 0.000833...
+        d = 0.2 / (24 * 10)
+        expected_dead = 1000.0 * (1 - np.exp(-d))
         actual_dead = new_state.n_dead[0, MortalityCause.ADDITIONAL]
         np.testing.assert_allclose(actual_dead, expected_dead, rtol=1e-10)
         np.testing.assert_allclose(new_state.abundance[0], 1000.0 - expected_dead, rtol=1e-10)
+
+    def test_annual_decay_after_full_year(self):
+        """After n_dt * n_subdt applications, total ≈ 1 - exp(-M_annual)."""
+        cfg = EngineConfig.from_dict(_make_mortality_config())
+        n_subdt = 10
+        n_dt = 24  # timesteps per year
+
+        state = SchoolState.create(n_schools=1, species_id=np.array([0], dtype=np.int32))
+        state = state.replace(
+            abundance=np.array([10000.0]),
+            weight=np.array([6.0]),
+            biomass=np.array([60000.0]),
+        )
+
+        # Apply for a full year: n_dt timesteps, each with n_subdt sub-steps
+        for _step in range(n_dt):
+            for _sub in range(n_subdt):
+                state = additional_mortality(state, cfg, n_subdt)
+
+        # Should approximate exp(-M_annual) = exp(-0.2)
+        expected = 10000.0 * np.exp(-0.2)
+        np.testing.assert_allclose(state.abundance[0], expected, rtol=1e-4)
 
     def test_zero_rate_no_mortality(self):
         cfg_dict = _make_mortality_config()
@@ -59,7 +83,6 @@ class TestAdditionalMortality:
 class TestAgingMortality:
     def test_kills_old_schools(self):
         cfg = EngineConfig.from_dict(_make_mortality_config())
-        # lifespan = 3 years * 24 dt = 72 dt. Aging kills at age_dt >= 71.
         state = SchoolState.create(n_schools=3, species_id=np.zeros(3, dtype=np.int32))
         state = state.replace(
             abundance=np.array([100.0, 100.0, 100.0]),
@@ -93,10 +116,8 @@ class TestLarvaMortality:
             weight=np.array([0.001, 6.0]),
             is_egg=np.array([True, False]),
         )
-        new_state = larva_mortality(state, cfg, n_subdt=10)
-        # Egg school should have reduced abundance
+        new_state = larva_mortality(state, cfg)
         assert new_state.abundance[0] < 1000.0
-        # Non-egg school should be unchanged
         np.testing.assert_allclose(new_state.abundance[1], 1000.0)
 
     def test_zero_rate_no_mortality(self):
@@ -106,11 +127,11 @@ class TestLarvaMortality:
             abundance=np.array([1000.0]),
             is_egg=np.array([True]),
         )
-        new_state = larva_mortality(state, cfg, n_subdt=10)
+        new_state = larva_mortality(state, cfg)
         np.testing.assert_allclose(new_state.abundance[0], 1000.0)
 
     def test_larva_mortality_formula(self):
-        """N_dead = N * (1 - exp(-M_larva / n_subdt)) for eggs only."""
+        """D = M_larva / n_dt_per_year, applied once per timestep."""
         cfg_dict = _make_mortality_config()
         cfg_dict["mortality.additional.larva.rate.sp0"] = "2.0"
         cfg = EngineConfig.from_dict(cfg_dict)
@@ -120,8 +141,10 @@ class TestLarvaMortality:
             weight=np.array([0.001]),
             is_egg=np.array([True]),
         )
-        new_state = larva_mortality(state, cfg, n_subdt=10)
-        expected_dead = 5000.0 * (1 - np.exp(-2.0 / 10))
+        new_state = larva_mortality(state, cfg)
+        # D = 2.0 / 24 = 0.08333...
+        d = 2.0 / 24
+        expected_dead = 5000.0 * (1 - np.exp(-d))
         np.testing.assert_allclose(
             new_state.n_dead[0, MortalityCause.ADDITIONAL], expected_dead, rtol=1e-10
         )

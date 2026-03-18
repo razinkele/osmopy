@@ -13,16 +13,22 @@ from osmose.engine.state import MortalityCause, SchoolState
 
 
 def additional_mortality(state: SchoolState, config: EngineConfig, n_subdt: int) -> SchoolState:
-    """Apply additional (background) mortality.
+    """Apply additional (background) mortality per sub-timestep.
 
-    N_dead = N * (1 - exp(-M_annual / n_subdt))
+    Java converts: D = (M_annual / n_dt_per_year) / n_subdt
+    Then applies: N_dead = N * (1 - exp(-D))
+
+    This gives the correct annual decay: after n_dt_per_year * n_subdt
+    applications, total mortality ≈ 1 - exp(-M_annual).
     """
     if len(state) == 0:
         return state
 
     sp = state.species_id
     m_rate = config.additional_mortality_rate[sp]
-    mortality_fraction = 1 - np.exp(-m_rate / n_subdt)
+    # Match Java: rate per sub-step = M_annual / (n_dt_per_year * n_subdt)
+    d = m_rate / (config.n_dt_per_year * n_subdt)
+    mortality_fraction = 1 - np.exp(-d)
     n_dead = state.abundance * mortality_fraction
 
     new_abundance = state.abundance - n_dead
@@ -33,11 +39,12 @@ def additional_mortality(state: SchoolState, config: EngineConfig, n_subdt: int)
     return state.replace(abundance=new_abundance, biomass=new_biomass, n_dead=new_n_dead)
 
 
-def larva_mortality(state: SchoolState, config: EngineConfig, n_subdt: int) -> SchoolState:
+def larva_mortality(state: SchoolState, config: EngineConfig) -> SchoolState:
     """Apply additional mortality to eggs/larvae before the main mortality loop.
 
-    Only affects schools where is_egg is True. Uses the separate larva
-    mortality rate instead of the regular additional mortality rate.
+    Only affects schools where is_egg is True. Applied ONCE per main
+    timestep (not per sub-step), matching Java's egg mortality handling.
+    Java rate: M_larva / n_dt_per_year (per-timestep rate).
     """
     if len(state) == 0:
         return state
@@ -48,7 +55,9 @@ def larva_mortality(state: SchoolState, config: EngineConfig, n_subdt: int) -> S
 
     sp = state.species_id
     m_rate = config.larva_mortality_rate[sp]
-    mortality_fraction = 1 - np.exp(-m_rate / n_subdt)
+    # Match Java: rate per timestep = M_larva / n_dt_per_year
+    d = m_rate / config.n_dt_per_year
+    mortality_fraction = 1 - np.exp(-d)
 
     n_dead = np.zeros_like(state.abundance)
     n_dead[eggs] = state.abundance[eggs] * mortality_fraction[eggs]

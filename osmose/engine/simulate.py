@@ -74,7 +74,7 @@ def _mortality(
     n_subdt = config.mortality_subdt
 
     # Pre-pass: larva mortality on eggs (before main loop)
-    state = larva_mortality(state, config, n_subdt)
+    state = larva_mortality(state, config)
 
     # Main mortality sub-timestep loop
     for _sub in range(n_subdt):
