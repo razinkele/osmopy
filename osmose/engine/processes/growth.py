@@ -105,3 +105,55 @@ def growth(state: SchoolState, config: EngineConfig, rng: np.random.Generator) -
     new_biomass = state.abundance * new_weight
 
     return state.replace(length=new_length, weight=new_weight, biomass=new_biomass)
+
+
+def expected_length_gompertz(
+    age_dt: NDArray[np.int32],
+    linf: NDArray[np.float64],
+    k_gom: NDArray[np.float64],
+    t_gom: NDArray[np.float64],
+    k_exp: NDArray[np.float64],
+    a_exp_dt: NDArray[np.int32],
+    a_gom_dt: NDArray[np.int32],
+    egg_size: NDArray[np.float64],
+    n_dt_per_year: int,
+) -> NDArray[np.float64]:
+    """Compute Gompertz expected length at a given age.
+
+    Four phases:
+      age == 0:                L_egg
+      0 < age < a_exp:         L_egg * exp(K_exp * age)  (exponential)
+      a_exp <= age < a_gom:    linear transition between exponential and Gompertz
+      age >= a_gom:            L_inf * exp(-exp(-K_gom * (age - t_gom)))
+    """
+    age_years = age_dt.astype(np.float64) / n_dt_per_year
+    a_exp_years = a_exp_dt.astype(np.float64) / n_dt_per_year
+    a_gom_years = a_gom_dt.astype(np.float64) / n_dt_per_year
+
+    # Gompertz formula
+    l_gom = linf * np.exp(-np.exp(-k_gom * (age_years - t_gom)))
+    l_gom_at_boundary = linf * np.exp(-np.exp(-k_gom * (a_gom_years - t_gom)))
+
+    # Exponential phase
+    l_exp = egg_size * np.exp(k_exp * age_years)
+    l_exp_at_boundary = egg_size * np.exp(k_exp * a_exp_years)
+
+    # Linear transition between exponential and Gompertz boundaries
+    frac_linear = np.where(
+        a_gom_years > a_exp_years,
+        (age_years - a_exp_years) / (a_gom_years - a_exp_years),
+        1.0,
+    )
+    l_linear = l_exp_at_boundary + (l_gom_at_boundary - l_exp_at_boundary) * frac_linear
+
+    # Select phase
+    result = np.where(
+        age_dt == 0,
+        egg_size,
+        np.where(
+            age_years < a_exp_years,
+            l_exp,
+            np.where(age_years < a_gom_years, l_linear, l_gom),
+        ),
+    )
+    return result

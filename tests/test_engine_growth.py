@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from osmose.engine.processes.growth import expected_length_vb, growth
+from osmose.engine.processes.growth import expected_length_gompertz, expected_length_vb, growth
 from osmose.engine.config import EngineConfig
 from osmose.engine.state import SchoolState
 
@@ -163,3 +163,39 @@ class TestGrowthGating:
         new_state = growth(state, cfg, np.random.default_rng(42))
         expected_weight = 0.006 * new_state.length[0] ** 3.0
         np.testing.assert_allclose(new_state.weight[0], expected_weight, rtol=1e-10)
+
+
+class TestExpectedLengthGompertz:
+    def test_age_zero_returns_egg_size(self):
+        result = expected_length_gompertz(
+            age_dt=np.array([0]),
+            linf=np.array([30.0]),
+            k_gom=np.array([0.5]),
+            t_gom=np.array([1.5]),
+            k_exp=np.array([2.0]),
+            a_exp_dt=np.array([6]),
+            a_gom_dt=np.array([12]),
+            egg_size=np.array([0.1]),
+            n_dt_per_year=24,
+        )
+        np.testing.assert_allclose(result, [0.1], atol=1e-10)
+
+    def test_gompertz_phase(self):
+        """Above a_gom, should follow Gompertz curve."""
+        linf, k_g, t_g = 30.0, 0.5, 1.5
+        n_dt = 24
+        age_years = 3.0
+        age_dt = int(age_years * n_dt)
+        result = expected_length_gompertz(
+            age_dt=np.array([age_dt]),
+            linf=np.array([linf]),
+            k_gom=np.array([k_g]),
+            t_gom=np.array([t_g]),
+            k_exp=np.array([2.0]),
+            a_exp_dt=np.array([6]),
+            a_gom_dt=np.array([12]),
+            egg_size=np.array([0.1]),
+            n_dt_per_year=n_dt,
+        )
+        expected = linf * np.exp(-np.exp(-k_g * (age_years - t_g)))
+        np.testing.assert_allclose(result, [expected], atol=1e-10)
