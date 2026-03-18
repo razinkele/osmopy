@@ -46,74 +46,74 @@ def calibration_ui():
     return ui.div(
         expand_tab("Calibration Setup", "calibration"),
         ui.layout_columns(
-        # Left: Configuration
-        ui.card(
-            collapsible_card_header("Calibration Setup", "calibration"),
-            ui.input_select(
-                "cal_algorithm",
-                "Algorithm",
-                choices={
-                    "nsga2": "NSGA-II (Direct)",
-                    "surrogate": "GP Surrogate",
-                },
-            ),
-            ui.input_numeric("cal_pop_size", "Population size", value=50, min=10, max=500),
-            ui.input_numeric("cal_generations", "Generations", value=100, min=10, max=1000),
-            ui.input_numeric("cal_n_parallel", "Parallel workers", value=4, min=1, max=32),
-            ui.hr(),
-            ui.h5("Free Parameters"),
-            ui.p(
-                "Select parameters to optimize:",
-                style=STYLE_HINT_BLOCK,
-            ),
-            ui.output_ui("free_param_selector"),
-            ui.hr(),
-            ui.h5("Objectives"),
-            ui.input_file("observed_biomass", "Upload observed biomass CSV", accept=[".csv"]),
-            ui.input_file("observed_diet", "Upload observed diet matrix CSV", accept=[".csv"]),
-            ui.hr(),
-            ui.layout_columns(
-                ui.input_action_button(
-                    "btn_start_cal", "Start Calibration", class_="btn-success w-100"
+            # Left: Configuration
+            ui.card(
+                collapsible_card_header("Calibration Setup", "calibration"),
+                ui.input_select(
+                    "cal_algorithm",
+                    "Algorithm",
+                    choices={
+                        "nsga2": "NSGA-II (Direct)",
+                        "surrogate": "GP Surrogate",
+                    },
                 ),
-                ui.input_action_button("btn_stop_cal", "Stop", class_="btn-danger w-100"),
-                col_widths=[8, 4],
-            ),
-        ),
-        # Right: Results
-        ui.navset_card_tab(
-            ui.nav_panel(
-                "Progress",
-                ui.div(
-                    ui.output_text("cal_status"),
-                    output_widget("convergence_chart"),
+                ui.input_numeric("cal_pop_size", "Population size", value=50, min=10, max=500),
+                ui.input_numeric("cal_generations", "Generations", value=100, min=10, max=1000),
+                ui.input_numeric("cal_n_parallel", "Parallel workers", value=4, min=1, max=32),
+                ui.hr(),
+                ui.h5("Free Parameters"),
+                ui.p(
+                    "Select parameters to optimize:",
+                    style=STYLE_HINT_BLOCK,
                 ),
-            ),
-            ui.nav_panel(
-                "Pareto Front",
-                ui.div(
-                    output_widget("pareto_chart"),
-                ),
-            ),
-            ui.nav_panel(
-                "Best Parameters",
-                ui.div(
-                    ui.output_ui("best_params_table"),
-                ),
-            ),
-            ui.nav_panel(
-                "Sensitivity",
-                ui.div(
+                ui.output_ui("free_param_selector"),
+                ui.hr(),
+                ui.h5("Objectives"),
+                ui.input_file("observed_biomass", "Upload observed biomass CSV", accept=[".csv"]),
+                ui.input_file("observed_diet", "Upload observed diet matrix CSV", accept=[".csv"]),
+                ui.hr(),
+                ui.layout_columns(
                     ui.input_action_button(
-                        "btn_sensitivity",
-                        "Run Sensitivity Analysis",
-                        class_="btn-info w-100",
+                        "btn_start_cal", "Start Calibration", class_="btn-success w-100"
                     ),
-                    output_widget("sensitivity_chart"),
+                    ui.input_action_button("btn_stop_cal", "Stop", class_="btn-danger w-100"),
+                    col_widths=[8, 4],
                 ),
             ),
-        ),
-        col_widths=[4, 8],
+            # Right: Results
+            ui.navset_card_tab(
+                ui.nav_panel(
+                    "Progress",
+                    ui.div(
+                        ui.output_text("cal_status"),
+                        output_widget("convergence_chart"),
+                    ),
+                ),
+                ui.nav_panel(
+                    "Pareto Front",
+                    ui.div(
+                        output_widget("pareto_chart"),
+                    ),
+                ),
+                ui.nav_panel(
+                    "Best Parameters",
+                    ui.div(
+                        ui.output_ui("best_params_table"),
+                    ),
+                ),
+                ui.nav_panel(
+                    "Sensitivity",
+                    ui.div(
+                        ui.input_action_button(
+                            "btn_sensitivity",
+                            "Run Sensitivity Analysis",
+                            class_="btn-info w-100",
+                        ),
+                        output_widget("sensitivity_chart"),
+                    ),
+                ),
+            ),
+            col_widths=[4, 8],
         ),
         class_="osm-split-layout",
         id="split_calibration",

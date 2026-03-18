@@ -307,7 +307,9 @@ def render_species_table(
         )
     ]
     for i, name in enumerate(species_names):
-        header_cells.append(ui.tags.th(name, style="text-align: center; min-width: 90px; padding: 8px;"))
+        header_cells.append(
+            ui.tags.th(name, style="text-align: center; min-width: 90px; padding: 8px;")
+        )
     header = ui.tags.thead(
         ui.tags.tr(*header_cells, style="border-bottom: 2px solid var(--osm-border, #2d3d50);")
     )
@@ -368,9 +370,7 @@ def render_species_table(
                 config_key = field.resolve_key(sp_idx)
                 # Input ID: spt_{key_without_sp_idx}_{species_idx}
                 base_key = (
-                    field.key_pattern.replace(".sp{idx}", "")
-                    .replace("{idx}", "")
-                    .replace(".", "_")
+                    field.key_pattern.replace(".sp{idx}", "").replace("{idx}", "").replace(".", "_")
                 )
                 input_id = f"spt_{base_key}_{sp_idx}"
 
@@ -400,10 +400,14 @@ def render_species_table(
                         width="90px",
                     )
                 elif field.param_type == ParamType.BOOL:
-                    widget = ui.input_switch(input_id, "", value=bool(val) if val is not None else False)
+                    widget = ui.input_switch(
+                        input_id, "", value=bool(val) if val is not None else False
+                    )
                 elif field.param_type == ParamType.ENUM:
                     choices = {c: c for c in (field.choices or [])}
-                    widget = ui.input_select(input_id, "", choices=choices, selected=val, width="90px")
+                    widget = ui.input_select(
+                        input_id, "", choices=choices, selected=val, width="90px"
+                    )
                 elif field.param_type in (ParamType.FILE_PATH, ParamType.MATRIX):
                     widget = ui.tags.span("file", style="color: #5a6a7a; font-size: 11px;")
                 else:

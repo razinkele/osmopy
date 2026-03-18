@@ -116,8 +116,11 @@ def grid_server(input, output, session, state):
         choices: dict[str, str] = {"grid_extent": "Grid extent"}
         # Keys whose .csv/.nc values are NOT spatial grids
         skip_prefixes = (
-            "grid.", "osmose.configuration.", "simulation.restart",
-            "predation.accessibility", "fisheries.catchability",
+            "grid.",
+            "osmose.configuration.",
+            "simulation.restart",
+            "predation.accessibility",
+            "fisheries.catchability",
             "fisheries.discards",
         )
 
@@ -183,19 +186,29 @@ def grid_server(input, output, session, state):
 
         return ui.div(
             ui.input_select(
-                "movement_species", "Species",
-                choices=species_choices, selected=species_list[0],
+                "movement_species",
+                "Species",
+                choices=species_choices,
+                selected=species_list[0],
             ),
             ui.input_select(
-                "movement_speed", "Speed",
-                choices=speed_choices, selected=str(interval),
+                "movement_speed",
+                "Speed",
+                choices=speed_choices,
+                selected=str(interval),
             ),
             ui.input_slider(
-                "movement_step", "Time step",
-                min=0, max=nsteps - 1, value=current_step, step=1,
+                "movement_step",
+                "Time step",
+                min=0,
+                max=nsteps - 1,
+                value=current_step,
+                step=1,
                 animate=ui.AnimationOptions(
-                    interval=interval, loop=True,
-                    play_button="Play", pause_button="Pause",
+                    interval=interval,
+                    loop=True,
+                    play_button="Play",
+                    pause_button="Pause",
                 ),
             ),
             class_="osm-movement-controls",
@@ -310,14 +323,10 @@ def grid_server(input, output, session, state):
 
         if nc_data is not None:
             nc_lat, nc_lon, nc_mask = nc_data
-            layers, view_state = build_netcdf_grid_layers(
-                nc_lat, nc_lon, nc_mask, is_dark
-            )
+            layers, view_state = build_netcdf_grid_layers(nc_lat, nc_lon, nc_mask, is_dark)
         else:
             mask = load_mask(cfg, config_dir=cfg_dir)
-            layers = build_grid_layers(
-                ul_lat, ul_lon, lr_lat, lr_lon, nx, ny, is_dark, mask
-            )
+            layers = build_grid_layers(ul_lat, ul_lon, lr_lat, lr_lon, nx, ny, is_dark, mask)
 
             # Compute view state to fit grid bounds
             if ul_lat != 0 or ul_lon != 0 or lr_lat != 0 or lr_lon != 0:
@@ -389,9 +398,7 @@ def grid_server(input, output, session, state):
                     step = input.movement_step()
                 except SilentException:
                     step = 0
-                active_ids = frozenset(
-                    mid for mid, m in cache.items() if step in m["steps"]
-                )
+                active_ids = frozenset(mid for mid, m in cache.items() if step in m["steps"])
                 prev = _prev_active_maps.get()
                 if active_ids == prev and prev:
                     return  # skip update — no visual change
@@ -400,32 +407,34 @@ def grid_server(input, output, session, state):
                 for mid in sorted(active_ids):
                     m = cache[mid]
                     layer_id = f"movement-{mid}"
-                    layers.append(polygon_layer(
-                        layer_id,
-                        data=m["cells"],
-                        get_polygon="@@=d.polygon",
-                        get_fill_color=m["color"],
-                        get_line_color=[0, 0, 0, 0],
-                        filled=True,
-                        stroked=False,
-                        pickable=True,
-                    ))
+                    layers.append(
+                        polygon_layer(
+                            layer_id,
+                            data=m["cells"],
+                            get_polygon="@@=d.polygon",
+                            get_fill_color=m["color"],
+                            get_line_color=[0, 0, 0, 0],
+                            filled=True,
+                            stroked=False,
+                            pickable=True,
+                        )
+                    )
                     age_suffix = f" ({m['age_range']})" if m["age_range"] else ""
-                    legend_entries.append({
-                        "layer_id": layer_id,
-                        "label": f"{m['label']}{age_suffix}",
-                        "color": m["color"][:3],
-                        "shape": "rect",
-                    })
+                    legend_entries.append(
+                        {
+                            "layer_id": layer_id,
+                            "label": f"{m['label']}{age_suffix}",
+                            "color": m["color"][:3],
+                            "shape": "rect",
+                        }
+                    )
 
         elif overlay != "grid_extent":
             overlay_path_str = cfg.get(overlay, "")
             if overlay_path_str and cfg_dir:
                 overlay_file = (cfg_dir / overlay_path_str).resolve()
                 if not overlay_file.is_relative_to(cfg_dir.resolve()):
-                    _log.warning(
-                        "Skipping path traversal in overlay: %s", overlay_path_str
-                    )
+                    _log.warning("Skipping path traversal in overlay: %s", overlay_path_str)
                 elif not overlay_file.exists():
                     ui.notification_show(
                         f"File not found: {overlay_path_str}",
@@ -437,44 +446,58 @@ def grid_server(input, output, session, state):
                     fb_lon = nc_data[1] if nc_data else None
                     cells = load_netcdf_overlay(overlay_file, fb_lat, fb_lon)
                     if cells:
-                        layers.append(polygon_layer(
-                            "grid-overlay",
-                            data=cells,
-                            get_polygon="@@=d.polygon",
-                            get_fill_color=[255, 140, 0, 150],
-                            get_line_color=[0, 0, 0, 0],
-                            filled=True,
-                            stroked=False,
-                            pickable=True,
-                        ))
-                        legend_entries.append({
-                            "layer_id": "grid-overlay",
-                            "label": "Overlay Data",
-                            "color": [255, 140, 0],
-                            "shape": "rect",
-                        })
+                        layers.append(
+                            polygon_layer(
+                                "grid-overlay",
+                                data=cells,
+                                get_polygon="@@=d.polygon",
+                                get_fill_color=[255, 140, 0, 150],
+                                get_line_color=[0, 0, 0, 0],
+                                filled=True,
+                                stroked=False,
+                                pickable=True,
+                            )
+                        )
+                        legend_entries.append(
+                            {
+                                "layer_id": "grid-overlay",
+                                "label": "Overlay Data",
+                                "color": [255, 140, 0],
+                                "shape": "rect",
+                            }
+                        )
                 elif overlay_file.suffix == ".csv":
                     csv_cells = load_csv_overlay(
-                        overlay_file, ul_lat, ul_lon, lr_lat, lr_lon, nx, ny,
+                        overlay_file,
+                        ul_lat,
+                        ul_lon,
+                        lr_lat,
+                        lr_lon,
+                        nx,
+                        ny,
                         nc_data=nc_data,
                     )
                     if csv_cells:
-                        layers.append(polygon_layer(
-                            "grid-overlay",
-                            data=csv_cells,
-                            get_polygon="@@=d.polygon",
-                            get_fill_color="@@=d.fill",
-                            get_line_color=[0, 0, 0, 0],
-                            filled=True,
-                            stroked=False,
-                            pickable=True,
-                        ))
-                        legend_entries.append({
-                            "layer_id": "grid-overlay",
-                            "label": "Overlay Data",
-                            "color": [255, 140, 0],
-                            "shape": "rect",
-                        })
+                        layers.append(
+                            polygon_layer(
+                                "grid-overlay",
+                                data=csv_cells,
+                                get_polygon="@@=d.polygon",
+                                get_fill_color="@@=d.fill",
+                                get_line_color=[0, 0, 0, 0],
+                                filled=True,
+                                stroked=False,
+                                pickable=True,
+                            )
+                        )
+                        legend_entries.append(
+                            {
+                                "layer_id": "grid-overlay",
+                                "label": "Overlay Data",
+                                "color": [255, 140, 0],
+                                "shape": "rect",
+                            }
+                        )
 
         widgets = [
             fullscreen_widget(placement="top-left"),

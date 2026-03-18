@@ -96,6 +96,7 @@ def test_param_type_enum():
 def test_grid_nlon_matches_schema():
     """Post-v3.3.3 grid keys must match schema fields."""
     from osmose.schema import build_registry
+
     registry = build_registry()
     field = registry.match_field("grid.nlon")
     assert field is not None, "grid.nlon must match a schema field"
@@ -108,6 +109,7 @@ def test_grid_nlon_matches_schema():
 def test_mortality_additional_matches_schema():
     """Post-v4.2.5 mortality.additional keys must match schema."""
     from osmose.schema import build_registry
+
     registry = build_registry()
     field = registry.match_field("mortality.additional.rate.sp0")
     assert field is not None, "mortality.additional.rate.sp0 must match schema"

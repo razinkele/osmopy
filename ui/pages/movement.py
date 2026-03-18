@@ -16,17 +16,17 @@ def movement_ui():
         ui.layout_columns(
             ui.card(
                 collapsible_card_header("Movement Settings", "movement"),
-            ui.output_ui("movement_global_fields"),
-            ui.hr(),
-            ui.h5("Per-Species Distribution Method"),
-            ui.output_ui("species_movement_panels"),
-        ),
-        ui.card(
-            ui.card_header("Distribution Maps"),
-            ui.input_numeric("n_maps", "Number of distribution maps", value=1, min=0, max=50),
-            ui.output_ui("map_panels"),
-        ),
-        col_widths=[5, 7],
+                ui.output_ui("movement_global_fields"),
+                ui.hr(),
+                ui.h5("Per-Species Distribution Method"),
+                ui.output_ui("species_movement_panels"),
+            ),
+            ui.card(
+                ui.card_header("Distribution Maps"),
+                ui.input_numeric("n_maps", "Number of distribution maps", value=1, min=0, max=50),
+                ui.output_ui("map_panels"),
+            ),
+            col_widths=[5, 7],
         ),
         class_="osm-split-layout",
         id="split_movement",

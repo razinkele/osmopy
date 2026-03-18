@@ -49,8 +49,7 @@ def validate_config(config: dict[str, str], registry) -> tuple[list[str], list[s
         elif field.param_type == ParamType.ENUM:
             if field.choices and value not in field.choices:
                 errors.append(
-                    f"Invalid value for '{key}': '{value}' "
-                    f"(expected one of {field.choices})"
+                    f"Invalid value for '{key}': '{value}' (expected one of {field.choices})"
                 )
 
     return errors, warnings

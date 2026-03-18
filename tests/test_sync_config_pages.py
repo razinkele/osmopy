@@ -51,8 +51,7 @@ def test_movement_uses_dynamic_species_count(tmp_path):
     # indexed keys are resolved at runtime from the species count in state.config.
     # A hardcoded species count of 3 would materialise as sp0/sp1/sp2 keys here.
     hardcoded_species_keys = [
-        k for k in MOVEMENT_GLOBAL_KEYS
-        if any(f"sp{i}" in k for i in range(10))
+        k for k in MOVEMENT_GLOBAL_KEYS if any(f"sp{i}" in k for i in range(10))
     ]
     assert hardcoded_species_keys == [], (
         f"MOVEMENT_GLOBAL_KEYS contains hardcoded species keys: {hardcoded_species_keys}"

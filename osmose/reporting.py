@@ -73,7 +73,9 @@ def generate_report(
     # Build data
     table = report_summary_table(results)
     summary_html = (
-        table.to_html(index=False, classes="table", escape=True) if not table.empty else "<p>No data</p>"
+        table.to_html(index=False, classes="table", escape=True)
+        if not table.empty
+        else "<p>No data</p>"
     )
 
     metadata = {

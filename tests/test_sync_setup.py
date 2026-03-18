@@ -19,11 +19,7 @@ def test_setup_species_spt_input_ids():
     # Should include at least one field (e.g. species.k)
     assert len(visible) > 0
     for field in visible:
-        base_key = (
-            field.key_pattern.replace(".sp{idx}", "")
-            .replace("{idx}", "")
-            .replace(".", "_")
-        )
+        base_key = field.key_pattern.replace(".sp{idx}", "").replace("{idx}", "").replace(".", "_")
         input_id = f"spt_{base_key}_0"
         # Input IDs should be non-empty strings with the spt_ prefix
         assert input_id.startswith("spt_")
@@ -37,10 +33,6 @@ def test_setup_species_spt_input_ids_with_advanced():
     # There should be more fields when advanced are included
     assert len(visible_all) >= len(visible_basic)
     for field in visible_all:
-        base_key = (
-            field.key_pattern.replace(".sp{idx}", "")
-            .replace("{idx}", "")
-            .replace(".", "_")
-        )
+        base_key = field.key_pattern.replace(".sp{idx}", "").replace("{idx}", "").replace(".", "_")
         input_id = f"spt_{base_key}_1"
         assert "sp1" not in input_id or input_id.startswith("spt_")

@@ -67,8 +67,8 @@ class TestAgingMortality:
         )
         new_state = aging_mortality(state, cfg)
         np.testing.assert_allclose(new_state.abundance, [100.0, 0.0, 0.0])
-        assert new_state.n_dead[1, MortalityCause.AGING] == 100.0
-        assert new_state.n_dead[2, MortalityCause.AGING] == 100.0
+        np.testing.assert_allclose(new_state.n_dead[1, MortalityCause.AGING], 100.0)
+        np.testing.assert_allclose(new_state.n_dead[2, MortalityCause.AGING], 100.0)
 
     def test_young_schools_survive(self):
         cfg = EngineConfig.from_dict(_make_mortality_config())

@@ -183,12 +183,14 @@ def test_config_header_empty_when_no_config():
 def test_species_names_extracted_from_config():
     state = AppState()
     with reactive.isolate():
-        state.config.set({
-            "simulation.nspecies": "3",
-            "species.name.sp0": "Anchovy",
-            "species.name.sp1": "Sardine",
-            "species.name.sp2": "Hake",
-        })
+        state.config.set(
+            {
+                "simulation.nspecies": "3",
+                "species.name.sp0": "Anchovy",
+                "species.name.sp1": "Sardine",
+                "species.name.sp2": "Hake",
+            }
+        )
         cfg = state.config.get()
         n = int(cfg.get("simulation.nspecies", "0"))
         names = [cfg.get(f"species.name.sp{i}", f"Species {i}") for i in range(n)]

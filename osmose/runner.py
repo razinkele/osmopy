@@ -14,14 +14,14 @@ from osmose.logging import setup_logging
 _log = setup_logging("osmose.runner")
 
 _SAFE_JVM_PATTERNS = [
-    re.compile(r"^-X(mx|ms|ss)\d+[kmgKMG]?$"),           # memory flags
-    re.compile(r"^-D[\w.]+=[^;|&`$()]*$"),                 # system properties
-    re.compile(r"^-XX:[+-]?\w+(=[\w.]+)?$"),               # XX flags
-    re.compile(r"^-server$"),                               # JVM mode
+    re.compile(r"^-X(mx|ms|ss)\d+[kmgKMG]?$"),  # memory flags
+    re.compile(r"^-D[\w.]+=[^;|&`$()]*$"),  # system properties
+    re.compile(r"^-XX:[+-]?\w+(=[\w.]+)?$"),  # XX flags
+    re.compile(r"^-server$"),  # JVM mode
     re.compile(r"^-client$"),
-    re.compile(r"^-verbose:(gc|class|jni)$"),              # verbose modes
-    re.compile(r"^-ea$"),                                   # enable assertions
-    re.compile(r"^-da$"),                                   # disable assertions
+    re.compile(r"^-verbose:(gc|class|jni)$"),  # verbose modes
+    re.compile(r"^-ea$"),  # enable assertions
+    re.compile(r"^-da$"),  # disable assertions
 ]
 
 
@@ -117,8 +117,14 @@ class OsmoseRunner:
             RunResult with returncode, stdout, stderr.
         """
         cmd = self._build_cmd(
-            config_path, output_dir, java_opts, overrides,
-            verbose=verbose, quiet=quiet, update=update, force=force,
+            config_path,
+            output_dir,
+            java_opts,
+            overrides,
+            verbose=verbose,
+            quiet=quiet,
+            update=update,
+            force=force,
         )
         _log.info("Starting OSMOSE: %s", " ".join(cmd))
 
@@ -203,7 +209,11 @@ class OsmoseRunner:
     ) -> RunResult:
         """Run the Java engine's built-in config version migration."""
         return await self.run(
-            config_path, java_opts=[], update=True, force=force, timeout_sec=timeout_sec,
+            config_path,
+            java_opts=[],
+            update=True,
+            force=force,
+            timeout_sec=timeout_sec,
         )
 
     async def run_ensemble(

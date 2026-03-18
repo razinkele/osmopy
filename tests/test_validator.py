@@ -71,6 +71,7 @@ def test_check_file_references_uses_schema(tmp_path):
     """check_file_references should use FILE_PATH schema type, not string heuristic."""
     from osmose.config.validator import check_file_references
     from osmose.schema import build_registry
+
     registry = build_registry()
     config = {
         "reproduction.season.file.sp0": "nonexistent.csv",
@@ -85,6 +86,7 @@ def test_check_file_references_uses_schema(tmp_path):
 
 def test_check_species_consistency_checks_resources():
     from osmose.config.validator import check_species_consistency
+
     config = {
         "simulation.nspecies": "2",
         "simulation.nresource": "2",
@@ -100,6 +102,7 @@ def test_check_species_consistency_checks_resources():
 def test_validate_config_checks_enum_values():
     from osmose.config.validator import validate_config
     from osmose.schema import build_registry
+
     registry = build_registry()
     config = {"species.type.sp0": "invalid_type"}
     errors, _ = validate_config(config, registry)
@@ -110,6 +113,7 @@ def test_validate_config_checks_enum_values():
 def test_validate_config_accepts_valid_enum():
     from osmose.config.validator import validate_config
     from osmose.schema import build_registry
+
     registry = build_registry()
     config = {"species.type.sp0": "focal"}
     errors, _ = validate_config(config, registry)
@@ -118,6 +122,7 @@ def test_validate_config_accepts_valid_enum():
 
 def test_check_species_consistency_nonnumeric():
     from osmose.config.validator import check_species_consistency
+
     config = {"simulation.nspecies": "three"}
     warnings = check_species_consistency(config)
     assert any("nspecies" in w.lower() or "non-numeric" in w.lower() for w in warnings)
@@ -125,6 +130,7 @@ def test_check_species_consistency_nonnumeric():
 
 def test_check_species_consistency_float():
     from osmose.config.validator import check_species_consistency
+
     config = {"simulation.nspecies": "3.0", "simulation.nresource": "1.0"}
     warnings = check_species_consistency(config)
     assert isinstance(warnings, list)  # should not crash

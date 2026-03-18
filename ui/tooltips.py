@@ -4,8 +4,7 @@
 # Keys match the input IDs or descriptive labels used in the UI.
 MANUAL_TOOLTIPS: dict[str, str] = {
     "jar_path": (
-        "Path to the OSMOSE Java JAR file. "
-        "Place JAR files in the osmose-java/ directory."
+        "Path to the OSMOSE Java JAR file. Place JAR files in the osmose-java/ directory."
     ),
     "java_opts": (
         "JVM options passed to the Java process. "
@@ -32,7 +31,6 @@ MANUAL_TOOLTIPS: dict[str, str] = {
         "These are forced from external data, not dynamically modeled."
     ),
     "load_example": (
-        "Select a bundled example configuration to load. "
-        "This replaces the current configuration."
+        "Select a bundled example configuration to load. This replaces the current configuration."
     ),
 }

@@ -591,9 +591,7 @@ def results_server(input, output, session, state):
     def config_diff_table():
         selected = input.compare_runs_select()
         if not selected or len(selected) < 2:
-            return ui.div(
-                "Select 2+ runs to see config differences.", style=STYLE_EMPTY
-            )
+            return ui.div("Select 2+ runs to see config differences.", style=STYLE_EMPTY)
 
         from osmose.history import RunHistory
 

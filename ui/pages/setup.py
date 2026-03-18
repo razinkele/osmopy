@@ -29,34 +29,34 @@ def setup_ui():
             # Left column: Simulation settings
             ui.card(
                 collapsible_card_header("Simulation Settings", "setup"),
-            ui.div(
-                ui.layout_columns(
-                    ui.input_select(
-                        "load_example",
-                        "Example configuration",
-                        choices=demo_choices,
-                        selected="",
-                    ),
-                    ui.div(
-                        ui.input_action_button(
-                            "btn_load_example", "Load", class_="btn-primary w-100"
+                ui.div(
+                    ui.layout_columns(
+                        ui.input_select(
+                            "load_example",
+                            "Example configuration",
+                            choices=demo_choices,
+                            selected="",
                         ),
-                        style="display: flex; align-items: flex-end; height: 100%;",
+                        ui.div(
+                            ui.input_action_button(
+                                "btn_load_example", "Load", class_="btn-primary w-100"
+                            ),
+                            style="display: flex; align-items: flex-end; height: 100%;",
+                        ),
+                        col_widths=[8, 4],
                     ),
-                    col_widths=[8, 4],
                 ),
+                ui.hr(),
+                ui.output_ui("simulation_fields"),
             ),
-            ui.hr(),
-            ui.output_ui("simulation_fields"),
-        ),
-        # Right column: Species configuration (dynamic)
-        ui.card(
-            ui.card_header("Species Configuration"),
-            ui.input_numeric("n_species", "Number of focal species", value=3, min=1, max=20),
-            ui.input_switch("show_advanced_species", "Show advanced parameters", value=False),
-            ui.output_ui("species_panels"),
-        ),
-        col_widths=[4, 8],
+            # Right column: Species configuration (dynamic)
+            ui.card(
+                ui.card_header("Species Configuration"),
+                ui.input_numeric("n_species", "Number of focal species", value=3, min=1, max=20),
+                ui.input_switch("show_advanced_species", "Show advanced parameters", value=False),
+                ui.output_ui("species_panels"),
+            ),
+            col_widths=[4, 8],
         ),
         class_="osm-split-layout",
         id="split_setup",
@@ -83,8 +83,11 @@ def setup_server(input, output, session, state):
             cfg = state.config.get()
         names = [cfg.get(f"species.name.sp{i}", f"Species {i}") for i in range(n)]
         return render_species_table(
-            SPECIES_FIELDS, n_species=n, species_names=names,
-            show_advanced=show_adv, config=cfg,
+            SPECIES_FIELDS,
+            n_species=n,
+            species_names=names,
+            show_advanced=show_adv,
+            config=cfg,
         )
 
     @reactive.effect
@@ -171,7 +174,9 @@ def setup_server(input, output, session, state):
         for i in range(n):
             for field in visible:
                 config_key = field.resolve_key(i)
-                base_key = field.key_pattern.replace(".sp{idx}", "").replace("{idx}", "").replace(".", "_")
+                base_key = (
+                    field.key_pattern.replace(".sp{idx}", "").replace("{idx}", "").replace(".", "_")
+                )
                 input_id = f"spt_{base_key}_{i}"
                 try:
                     val = getattr(input, input_id)()

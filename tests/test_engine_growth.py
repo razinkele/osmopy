@@ -122,7 +122,18 @@ class TestGrowthGating:
             pred_success_rate=np.array([1.0]),
         )
         new_state = growth(state, cfg, np.random.default_rng(42))
-        assert new_state.length[0] > 10.0
+        # At sr=1.0, growth_factor = delta_lmax_factor * delta_L
+        l_cur = expected_length_vb(
+            np.array([48], dtype=np.int32), np.array([30.0]), np.array([0.3]),
+            np.array([-0.1]), np.array([0.1]), np.array([1.0]), 24,
+        )
+        l_nxt = expected_length_vb(
+            np.array([49], dtype=np.int32), np.array([30.0]), np.array([0.3]),
+            np.array([-0.1]), np.array([0.1]), np.array([1.0]), 24,
+        )
+        max_delta = 2.0 * (l_nxt[0] - l_cur[0])
+        expected = min(10.0 + max_delta, 30.0)
+        np.testing.assert_allclose(new_state.length[0], expected, atol=1e-10)
 
     def test_egg_always_grows(self):
         cfg = EngineConfig.from_dict(_make_growth_config())
@@ -163,6 +174,35 @@ class TestGrowthGating:
         new_state = growth(state, cfg, np.random.default_rng(42))
         expected_weight = 0.006 * new_state.length[0] ** 3.0
         np.testing.assert_allclose(new_state.weight[0], expected_weight, rtol=1e-10)
+
+
+    def test_csr_equals_one_full_success_gets_max_delta(self):
+        """When critical success rate = 1.0 and sr = 1.0, growth = max_delta."""
+        cfg_dict = _make_growth_config()
+        cfg_dict["predation.efficiency.critical.sp0"] = "1.0"
+        cfg = EngineConfig.from_dict(cfg_dict)
+        state = SchoolState.create(n_schools=1, species_id=np.array([0], dtype=np.int32))
+        state = state.replace(
+            length=np.array([10.0]),
+            weight=np.array([6.0]),
+            age_dt=np.array([48], dtype=np.int32),
+            abundance=np.array([100.0]),
+            biomass=np.array([600.0]),
+            pred_success_rate=np.array([1.0]),
+        )
+        new_state = growth(state, cfg, np.random.default_rng(42))
+        # Should get max_delta = delta_lmax_factor * delta_L
+        l_cur = expected_length_vb(
+            np.array([48], dtype=np.int32), np.array([30.0]), np.array([0.3]),
+            np.array([-0.1]), np.array([0.1]), np.array([1.0]), 24,
+        )
+        l_nxt = expected_length_vb(
+            np.array([49], dtype=np.int32), np.array([30.0]), np.array([0.3]),
+            np.array([-0.1]), np.array([0.1]), np.array([1.0]), 24,
+        )
+        max_delta = 2.0 * (l_nxt[0] - l_cur[0])
+        expected = min(10.0 + max_delta, 30.0)
+        np.testing.assert_allclose(new_state.length[0], expected, atol=1e-10)
 
 
 class TestExpectedLengthGompertz:

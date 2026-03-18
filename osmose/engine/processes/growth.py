@@ -84,11 +84,10 @@ def growth(state: SchoolState, config: EngineConfig, rng: np.random.Generator) -
     max_delta = config.delta_lmax_factor[sp] * delta_l
 
     # Gated growth: 0 below critical, linear scaling above
-    growth_factor = np.where(
-        sr >= csr,
-        max_delta * (sr - csr) / np.where(csr < 1.0, 1.0 - csr, 1.0),
-        0.0,
-    )
+    denom = np.where(csr < 1.0, 1.0 - csr, 1.0)
+    raw_factor = np.where(sr >= csr, max_delta * (sr - csr) / denom, 0.0)
+    # When csr == 1.0, only sr == 1.0 passes the gate; give max_delta directly
+    growth_factor = np.where((csr >= 1.0) & (sr >= 1.0), max_delta, raw_factor)
 
     # Special cases: eggs and out-of-domain always get mean delta_L
     bypass = (state.age_dt == 0) | state.is_out

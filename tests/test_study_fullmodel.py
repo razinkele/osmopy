@@ -168,8 +168,7 @@ class TestDemoLoading:
         for idx, expected_name in spec["species_names"].items():
             key = f"species.name.sp{idx}"
             assert config.get(key) == expected_name, (
-                f"{name}: expected species.name.sp{idx}={expected_name}, "
-                f"got {config.get(key)!r}"
+                f"{name}: expected species.name.sp{idx}={expected_name}, got {config.get(key)!r}"
             )
 
 
@@ -214,9 +213,7 @@ class TestSchemaValidation:
         """At least 50% of content keys should match a schema field."""
         name, _, config = study_demo
         content_keys = [
-            k for k in config
-            if not k.startswith("osmose.configuration.")
-            and not k.startswith("#")
+            k for k in config if not k.startswith("osmose.configuration.") and not k.startswith("#")
         ]
         matched = sum(1 for k in content_keys if registry.match_field(k) is not None)
         ratio = matched / max(len(content_keys), 1)
@@ -350,10 +347,7 @@ class TestConfigRoundtrip:
 
     def test_roundtrip_preserves_all_content_keys(self, study_demo):
         name, _, config = study_demo
-        content = {
-            k: v for k, v in config.items()
-            if not k.startswith("osmose.configuration.")
-        }
+        content = {k: v for k, v in config.items() if not k.startswith("osmose.configuration.")}
         with tempfile.TemporaryDirectory() as tmpdir:
             writer = OsmoseConfigWriter()
             writer.write(content, Path(tmpdir))
@@ -365,10 +359,7 @@ class TestConfigRoundtrip:
 
     def test_roundtrip_preserves_values(self, study_demo):
         name, _, config = study_demo
-        content = {
-            k: v for k, v in config.items()
-            if not k.startswith("osmose.configuration.")
-        }
+        content = {k: v for k, v in config.items() if not k.startswith("osmose.configuration.")}
         with tempfile.TemporaryDirectory() as tmpdir:
             writer = OsmoseConfigWriter()
             writer.write(content, Path(tmpdir))
@@ -495,7 +486,7 @@ def _create_mock_output(output_dir: Path, species_names: list[str], n_timesteps:
 
     # Size spectrum (no species column)
     sizes = [2**i for i in range(1, 15)]
-    abundances = [rng.exponential(scale=10**(7 - 0.3 * i)) for i in range(14)]
+    abundances = [rng.exponential(scale=10 ** (7 - 0.3 * i)) for i in range(14)]
     pd.DataFrame({"size": sizes, "abundance": abundances}).to_csv(
         output_dir / "osm_sizeSpectrum.csv", index=False
     )
@@ -627,11 +618,15 @@ class TestAnalysisPipeline:
             frames = []
             for sp in species:
                 n_time = 50
-                frames.append(pd.DataFrame({
-                    "time": range(n_time),
-                    "species": sp,
-                    "biomass": rng.exponential(scale=50000, size=n_time),
-                }))
+                frames.append(
+                    pd.DataFrame(
+                        {
+                            "time": range(n_time),
+                            "species": sp,
+                            "biomass": rng.exponential(scale=50000, size=n_time),
+                        }
+                    )
+                )
             replicates.append(pd.concat(frames, ignore_index=True))
         return name, species, replicates
 
@@ -755,10 +750,7 @@ class TestFullPipeline:
         spec = STUDY_SPECS[name]
 
         # Write config to a fresh directory
-        content = {
-            k: v for k, v in config.items()
-            if not k.startswith("osmose.configuration.")
-        }
+        content = {k: v for k, v in config.items() if not k.startswith("osmose.configuration.")}
         config_dir = tmp_path / "roundtrip_config"
         config_dir.mkdir()
         writer = OsmoseConfigWriter()
@@ -905,9 +897,7 @@ class TestCrossStudyConsistency:
             ndtperyear = int(config["simulation.time.ndtperyear"])
             assert nyear > 0, f"{name}: nyear must be positive"
             assert ndtperyear > 0, f"{name}: ndtperyear must be positive"
-            assert ndtperyear in (6, 12, 24, 52, 365), (
-                f"{name}: unusual ndtperyear={ndtperyear}"
-            )
+            assert ndtperyear in (6, 12, 24, 52, 365), f"{name}: unusual ndtperyear={ndtperyear}"
 
     def test_all_studies_have_mortality_subdt(self, all_configs):
         for name, config in all_configs.items():
@@ -917,10 +907,7 @@ class TestCrossStudyConsistency:
 
     def test_species_count_increases_with_complexity(self, all_configs):
         """Studies should be ordered: minimal < eec < bay_of_biscay < eec_full."""
-        counts = {
-            name: int(config["simulation.nspecies"])
-            for name, config in all_configs.items()
-        }
+        counts = {name: int(config["simulation.nspecies"]) for name, config in all_configs.items()}
         assert counts["minimal"] < counts["eec"]
         assert counts["eec"] < counts["bay_of_biscay"]
         assert counts["bay_of_biscay"] < counts["eec_full"]
@@ -942,12 +929,10 @@ class TestCrossStudyConsistency:
             migrated = migrate_config(config, target_version="4.3.3")
             # Content keys should be identical
             content_orig = {
-                k: v for k, v in config.items()
-                if not k.startswith("osmose.configuration.")
+                k: v for k, v in config.items() if not k.startswith("osmose.configuration.")
             }
             content_migrated = {
-                k: v for k, v in migrated.items()
-                if not k.startswith("osmose.configuration.")
+                k: v for k, v in migrated.items() if not k.startswith("osmose.configuration.")
             }
             assert content_orig == content_migrated, (
                 f"{name}: migration changed already-current config"

@@ -202,6 +202,7 @@ def test_save_with_existing_stale_backup(tmp_path):
 
 def test_save_rejects_path_traversal(tmp_path):
     from osmose.scenarios import Scenario, ScenarioManager
+
     mgr = ScenarioManager(tmp_path / "scenarios")
     scenario = Scenario(name="../../etc/evil", config={})
     with pytest.raises(ValueError, match="[Uu]nsafe"):
@@ -210,6 +211,7 @@ def test_save_rejects_path_traversal(tmp_path):
 
 def test_delete_rejects_path_traversal(tmp_path):
     from osmose.scenarios import ScenarioManager
+
     mgr = ScenarioManager(tmp_path / "scenarios")
     with pytest.raises(ValueError, match="[Uu]nsafe"):
         mgr.delete("../../etc")
@@ -217,6 +219,7 @@ def test_delete_rejects_path_traversal(tmp_path):
 
 def test_load_rejects_path_traversal(tmp_path):
     from osmose.scenarios import ScenarioManager
+
     mgr = ScenarioManager(tmp_path / "scenarios")
     with pytest.raises(ValueError, match="[Uu]nsafe"):
         mgr.load("../../etc/passwd")
@@ -224,6 +227,7 @@ def test_load_rejects_path_traversal(tmp_path):
 
 def test_fork_rejects_path_traversal(tmp_path):
     from osmose.scenarios import ScenarioManager
+
     mgr = ScenarioManager(tmp_path / "scenarios")
     with pytest.raises(ValueError, match="[Uu]nsafe"):
         mgr.fork("../../etc/passwd", "new_name")
@@ -250,6 +254,7 @@ def test_import_all_rejects_path_traversal_in_zip(tmp_path):
 
 def test_save_rejects_empty_name(tmp_path):
     from osmose.scenarios import Scenario, ScenarioManager
+
     mgr = ScenarioManager(tmp_path / "scenarios")
     scenario = Scenario(name="", config={})
     with pytest.raises(ValueError, match="[Ii]nvalid"):

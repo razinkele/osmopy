@@ -60,9 +60,7 @@ class OsmoseConfigReader:
     def read_file(self, filepath: Path) -> dict[str, str]:
         """Parse a single OSMOSE config file into a flat key-value dict."""
         if filepath.stat().st_size > 10_000_000:  # 10MB
-            raise ValueError(
-                f"Config file too large: {filepath} ({filepath.stat().st_size} bytes)"
-            )
+            raise ValueError(f"Config file too large: {filepath} ({filepath.stat().st_size} bytes)")
         result: dict[str, str] = {}
         with open(filepath, "r") as f:
             for line in f:
@@ -77,7 +75,5 @@ class OsmoseConfigReader:
                     value = value.rstrip(";,:\t =")
                     result[key] = value
                 else:
-                    _log.debug(
-                        "Skipping unparseable line in %s: %r", filepath.name, line
-                    )
+                    _log.debug("Skipping unparseable line in %s: %r", filepath.name, line)
         return result

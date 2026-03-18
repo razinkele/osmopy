@@ -85,34 +85,46 @@ def mock_study_output(study_species):
     # Biomass
     bio_frames = []
     for sp in sp_names:
-        bio_frames.append(pd.DataFrame({
-            "time": range(n_time),
-            "species": sp,
-            "biomass": rng.exponential(scale=50000, size=n_time),
-        }))
+        bio_frames.append(
+            pd.DataFrame(
+                {
+                    "time": range(n_time),
+                    "species": sp,
+                    "biomass": rng.exponential(scale=50000, size=n_time),
+                }
+            )
+        )
     biomass_df = pd.concat(bio_frames, ignore_index=True)
 
     # Yield
     yield_frames = []
     for sp in sp_names:
-        yield_frames.append(pd.DataFrame({
-            "time": range(n_time),
-            "species": sp,
-            "yield": rng.exponential(scale=5000, size=n_time),
-        }))
+        yield_frames.append(
+            pd.DataFrame(
+                {
+                    "time": range(n_time),
+                    "species": sp,
+                    "yield": rng.exponential(scale=5000, size=n_time),
+                }
+            )
+        )
     yield_df = pd.concat(yield_frames, ignore_index=True)
 
     # Mortality breakdown
     mort_frames = []
     for sp in sp_names:
-        mort_frames.append(pd.DataFrame({
-            "time": range(n_time),
-            "species": sp,
-            "predation": rng.uniform(0, 0.4, size=n_time),
-            "starvation": rng.uniform(0, 0.2, size=n_time),
-            "fishing": rng.uniform(0, 0.3, size=n_time),
-            "natural": rng.uniform(0, 0.2, size=n_time),
-        }))
+        mort_frames.append(
+            pd.DataFrame(
+                {
+                    "time": range(n_time),
+                    "species": sp,
+                    "predation": rng.uniform(0, 0.4, size=n_time),
+                    "starvation": rng.uniform(0, 0.2, size=n_time),
+                    "fishing": rng.uniform(0, 0.3, size=n_time),
+                    "natural": rng.uniform(0, 0.2, size=n_time),
+                }
+            )
+        )
     mortality_df = pd.concat(mort_frames, ignore_index=True)
 
     # 2D: Biomass by age
@@ -121,24 +133,32 @@ def mock_study_output(study_species):
     for sp in sp_names:
         for t in range(n_time):
             for b in age_bins:
-                byage_frames.append({
-                    "time": t, "species": sp, "bin": b,
-                    "value": rng.exponential(scale=10000),
-                })
+                byage_frames.append(
+                    {
+                        "time": t,
+                        "species": sp,
+                        "bin": b,
+                        "value": rng.exponential(scale=10000),
+                    }
+                )
     byage_df = pd.DataFrame(byage_frames)
 
     # Size spectrum
     sizes = [2**i for i in range(1, 12)]
-    abundances = [rng.exponential(scale=10**(6 - 0.3 * i)) for i in range(11)]
+    abundances = [rng.exponential(scale=10 ** (6 - 0.3 * i)) for i in range(11)]
     spectrum_df = pd.DataFrame({"size": sizes, "abundance": abundances})
 
-    return name, sp_names, {
-        "biomass": biomass_df,
-        "yield": yield_df,
-        "mortality": mortality_df,
-        "byage": byage_df,
-        "spectrum": spectrum_df,
-    }
+    return (
+        name,
+        sp_names,
+        {
+            "biomass": biomass_df,
+            "yield": yield_df,
+            "mortality": mortality_df,
+            "byage": byage_df,
+            "spectrum": spectrum_df,
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -191,8 +211,12 @@ class TestStudyCharts:
         # Aggregate biomass across species per timestep
         agg = data["biomass"].groupby("time")["biomass"].agg(["mean", "min", "max"]).reset_index()
         fig = make_ci_timeseries(
-            agg["time"], agg["mean"], agg["min"], agg["max"],
-            f"Total Biomass CI — {name}", "tons",
+            agg["time"],
+            agg["mean"],
+            agg["min"],
+            agg["max"],
+            f"Total Biomass CI — {name}",
+            "tons",
         )
         assert isinstance(fig, go.Figure)
         assert len(fig.data) >= 2
@@ -233,11 +257,13 @@ class TestStudyCharts:
             min_key = f"predation.predPrey.sizeRatio.min.sp{i}"
             max_key = f"predation.predPrey.sizeRatio.max.sp{i}"
             if min_key in config and max_key in config:
-                params.append({
-                    "name": config.get(f"species.name.sp{i}", f"sp{i}"),
-                    "size_ratio_min": float(config[min_key]),
-                    "size_ratio_max": float(config[max_key]),
-                })
+                params.append(
+                    {
+                        "name": config.get(f"species.name.sp{i}", f"sp{i}"),
+                        "size_ratio_min": float(config[min_key]),
+                        "size_ratio_max": float(config[max_key]),
+                    }
+                )
         if not params:
             pytest.skip(f"{name}: no predation size ratio params")
         fig = make_predation_ranges(params)
@@ -297,7 +323,8 @@ class TestSchemaFieldResolution:
         name, config, _ = study_config
         # Filter out per-species nschool keys (not in schema)
         sim_keys = [
-            k for k in config
+            k
+            for k in config
             if k.startswith("simulation.") and not k.startswith("simulation.nschool.sp")
         ]
         unresolved = [k for k in sim_keys if registry.match_field(k) is None]
@@ -336,18 +363,14 @@ class TestSchemaFieldResolution:
         resolved = sum(1 for k in out_keys if registry.match_field(k) is not None)
         ratio = resolved / max(len(out_keys), 1)
         # Allow some unresolved output keys (OSMOSE has many optional output params)
-        assert ratio >= 0.3, (
-            f"{name}: only {resolved}/{len(out_keys)} output keys resolved"
-        )
+        assert ratio >= 0.3, f"{name}: only {resolved}/{len(out_keys)} output keys resolved"
 
     def test_predation_keys_resolve(self, study_config, registry):
         name, config, _ = study_config
         pred_keys = [k for k in config if k.startswith("predation.")]
         resolved = sum(1 for k in pred_keys if registry.match_field(k) is not None)
         ratio = resolved / max(len(pred_keys), 1)
-        assert ratio >= 0.3, (
-            f"{name}: only {resolved}/{len(pred_keys)} predation keys resolved"
-        )
+        assert ratio >= 0.3, f"{name}: only {resolved}/{len(pred_keys)} predation keys resolved"
 
 
 # ---------------------------------------------------------------------------
@@ -386,7 +409,7 @@ class TestGridCreationFromStudy:
         create_grid_csv(nlat, nlon, output, mask=mask)
         df = pd.read_csv(output, header=None)
         assert df.iloc[0, 0] == -1  # Land
-        assert df.iloc[1, 1] == 1   # Ocean
+        assert df.iloc[1, 1] == 1  # Ocean
 
     def test_create_netcdf_grid_from_study(self, study_config, tmp_path):
         name, config, _ = study_config
@@ -410,6 +433,7 @@ class TestGridCreationFromStudy:
         assert output.exists()
 
         import xarray as xr
+
         ds = xr.open_dataset(output)
         assert "mask" in ds
         assert ds["mask"].shape == (nlat, nlon)
@@ -444,6 +468,7 @@ class TestGridCreationFromStudy:
         )
 
         import xarray as xr
+
         ds = xr.open_dataset(output)
         assert ds["mask"].values[0, 0] == 0  # Land
         assert ds["mask"].values[1, 1] == 1  # Ocean
@@ -545,9 +570,7 @@ class TestVonBertalanffyFromStudy:
             t = np.linspace(max(0, sp["t0"] + 0.01), sp["lifespan"], 200)
             length = sp["linf"] * (1 - np.exp(-sp["k"] * (t - sp["t0"])))
             diffs = np.diff(length)
-            assert (diffs >= -1e-10).all(), (
-                f"{name}/{sp['name']}: growth curve not monotonic"
-            )
+            assert (diffs >= -1e-10).all(), f"{name}/{sp['name']}: growth curve not monotonic"
 
     def test_growth_reaches_half_linf(self, study_species):
         """Species should reach at least 50% of linf within their lifespan."""
@@ -556,9 +579,7 @@ class TestVonBertalanffyFromStudy:
             t_max = sp["lifespan"]
             length_at_max = sp["linf"] * (1 - np.exp(-sp["k"] * (t_max - sp["t0"])))
             ratio = length_at_max / sp["linf"]
-            assert ratio >= 0.5, (
-                f"{name}/{sp['name']}: only reaches {ratio:.0%} of linf by max age"
-            )
+            assert ratio >= 0.5, f"{name}/{sp['name']}: only reaches {ratio:.0%} of linf by max age"
 
     def test_weight_at_length_is_positive(self, study_config):
         """Length-weight relationship W = a * L^b should give positive weights."""
@@ -578,9 +599,7 @@ class TestVonBertalanffyFromStudy:
                     f"{name}/sp{i}: weight at linf is non-positive: a={a}, b={b}, linf={linf}"
                 )
                 # Weight should be in reasonable range (grams to kg)
-                assert weight < 1e6, (
-                    f"{name}/sp{i}: weight at linf seems too high: {weight:.0f}g"
-                )
+                assert weight < 1e6, f"{name}/sp{i}: weight at linf seems too high: {weight:.0f}g"
 
 
 # ---------------------------------------------------------------------------
@@ -608,8 +627,12 @@ class TestEnsembleCICharting:
         upper_vals = np.percentile([r.values for r in replicates], 97.5, axis=0)
 
         fig = make_ci_timeseries(
-            times, mean_vals, lower_vals, upper_vals,
-            f"Ensemble Biomass — {name}", "tons",
+            times,
+            mean_vals,
+            lower_vals,
+            upper_vals,
+            f"Ensemble Biomass — {name}",
+            "tons",
         )
         assert isinstance(fig, go.Figure)
         assert len(fig.data) >= 2  # CI band + mean line

@@ -67,7 +67,9 @@ def cleanup_old_temp_dirs(max_age_hours: int = _MAX_AGE_HOURS) -> int:
             pass
 
     if removed:
-        _log.info("Cleaned up %d old osmose temp director%s", removed, "y" if removed == 1 else "ies")
+        _log.info(
+            "Cleaned up %d old osmose temp director%s", removed, "y" if removed == 1 else "ies"
+        )
     return removed
 
 

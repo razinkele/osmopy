@@ -97,7 +97,7 @@ class EngineConfig:
                 cfg, "species.vonbertalanffy.threshold.age.sp{i}", n_sp
             ),
             lifespan_dt=(lifespan_years * n_dt).astype(np.int32),
-            mortality_subdt=int(cfg.get("mortality.subdt", "10")),
+            mortality_subdt=max(1, int(cfg.get("mortality.subdt", "10"))),
             ingestion_rate=_species_float(cfg, "predation.ingestion.rate.max.sp{i}", n_sp),
             critical_success_rate=_species_float(cfg, "predation.efficiency.critical.sp{i}", n_sp),
             delta_lmax_factor=_species_float_optional(

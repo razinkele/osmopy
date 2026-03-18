@@ -206,7 +206,9 @@ def test_all_demos_produce_unique_configs(tmp_path):
     # Each pair of demos should differ in species count or species names
     demo_list = list_demos()
     for i, a in enumerate(demo_list):
-        for b in demo_list[i + 1:]:
-            assert configs[a].get("simulation.nspecies") != configs[b].get("simulation.nspecies") or \
-                configs[a].get("species.name.sp0") != configs[b].get("species.name.sp0"), \
+        for b in demo_list[i + 1 :]:
+            assert configs[a].get("simulation.nspecies") != configs[b].get(
+                "simulation.nspecies"
+            ) or configs[a].get("species.name.sp0") != configs[b].get("species.name.sp0"), (
                 f"Demos {a} and {b} produced identical configs"
+            )

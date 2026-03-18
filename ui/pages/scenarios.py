@@ -132,8 +132,7 @@ def scenarios_server(input, output, session, state):
 
             n_species = int(loaded.config.get("simulation.nspecies", "3"))
             names = [
-                loaded.config.get(f"species.name.sp{i}", f"Species {i}")
-                for i in range(n_species)
+                loaded.config.get(f"species.name.sp{i}", f"Species {i}") for i in range(n_species)
             ]
             state.species_names.set(names)
             ui.update_numeric("n_species", value=n_species)

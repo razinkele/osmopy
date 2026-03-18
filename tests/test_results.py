@@ -535,6 +535,7 @@ class TestExportDataframe:
 
 def test_export_map_includes_fishery_outputs():
     from osmose.results import OsmoseResults
+
     assert "fishery_yield" in OsmoseResults._EXPORT_MAP
     assert "fishery_yield_by_age" in OsmoseResults._EXPORT_MAP
     assert "fishery_yield_by_size" in OsmoseResults._EXPORT_MAP
@@ -542,6 +543,7 @@ def test_export_map_includes_fishery_outputs():
 
 def test_export_map_includes_bioen_outputs():
     from osmose.results import OsmoseResults
+
     assert "bioen_ingestion" in OsmoseResults._EXPORT_MAP
     assert "bioen_maintenance" in OsmoseResults._EXPORT_MAP
     assert "bioen_net_energy" in OsmoseResults._EXPORT_MAP
@@ -549,6 +551,7 @@ def test_export_map_includes_bioen_outputs():
 
 def test_export_map_includes_additional_distributions():
     from osmose.results import OsmoseResults
+
     assert "abundance_by_tl" in OsmoseResults._EXPORT_MAP
     assert "yield_n_by_age" in OsmoseResults._EXPORT_MAP
     assert "yield_n_by_size" in OsmoseResults._EXPORT_MAP
