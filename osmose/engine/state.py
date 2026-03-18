@@ -68,6 +68,7 @@ class SchoolState:
     # Egg state
     is_egg: NDArray[np.bool_]
     first_feeding_age_dt: NDArray[np.int32]
+    egg_retained: NDArray[np.float64]  # eggs withheld from prey pool per sub-timestep
 
     def __len__(self) -> int:
         return len(self.species_id)
@@ -107,6 +108,7 @@ class SchoolState:
             n_dead=np.zeros((n, n_causes), dtype=np.float64),
             is_egg=np.zeros(n, dtype=np.bool_),
             first_feeding_age_dt=np.zeros(n, dtype=np.int32),
+            egg_retained=np.zeros(n, dtype=np.float64),
         )
 
     def replace(self, **kwargs: NDArray) -> SchoolState:
