@@ -72,6 +72,33 @@ def larva_mortality(state: SchoolState, config: EngineConfig) -> SchoolState:
     return state.replace(abundance=new_abundance, biomass=new_biomass, n_dead=new_n_dead)
 
 
+def out_mortality(state: SchoolState, config: EngineConfig) -> SchoolState:
+    """Apply mortality to out-of-domain schools.
+
+    Java: D = M_out / n_dt_per_year, applied once per timestep.
+    """
+    if len(state) == 0:
+        return state
+
+    out = state.is_out
+    if not out.any():
+        return state
+
+    sp = state.species_id
+    d = config.out_mortality_rate[sp] / config.n_dt_per_year
+    mortality_fraction = 1 - np.exp(-d)
+
+    n_dead = np.zeros_like(state.abundance)
+    n_dead[out] = state.abundance[out] * mortality_fraction[out]
+
+    new_abundance = state.abundance - n_dead
+    new_biomass = new_abundance * state.weight
+    new_n_dead = state.n_dead.copy()
+    new_n_dead[:, MortalityCause.OUT] += n_dead
+
+    return state.replace(abundance=new_abundance, biomass=new_biomass, n_dead=new_n_dead)
+
+
 def aging_mortality(state: SchoolState, config: EngineConfig) -> SchoolState:
     """Kill schools that have reached their species' lifespan.
 
