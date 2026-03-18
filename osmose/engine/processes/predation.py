@@ -86,7 +86,7 @@ if _HAS_NUMBA:
                     continue
 
                 ratio = pred_len / prey_len
-                if ratio <= r_max or ratio > r_min:
+                if ratio < r_min or ratio >= r_max:
                     continue
 
                 sp_prey = species_id[q_idx]
@@ -174,7 +174,7 @@ def _predation_in_cell_python(
                 continue
 
             ratio = pred_len / prey_len
-            if ratio <= r_max or ratio > r_min:
+            if ratio < r_min or ratio >= r_max:
                 continue
 
             sp_prey = state.species_id[q_idx]
@@ -271,8 +271,9 @@ def _predation_on_resources(
 
             # Size overlap: what fraction of the resource size range
             # falls within the predator's prey window?
-            prey_size_min = pred_len / r_min_val  # min prey size predator can eat
-            prey_size_max = pred_len / r_max_val  # max prey size predator can eat
+            # Prey window: [L/r_max, L/r_min] (r_max > r_min by convention)
+            prey_size_min = pred_len / r_max_val  # smallest prey this predator eats
+            prey_size_max = pred_len / r_min_val  # largest prey this predator eats
 
             overlap_min = max(rsc.size_min, prey_size_min)
             overlap_max = min(rsc.size_max, prey_size_max)
