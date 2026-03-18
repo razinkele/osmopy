@@ -56,9 +56,9 @@ class Grid:
             for dx in (-1, 0, 1):
                 if dy == 0 and dx == 0:
                     continue
-                ny, nx = y + dy, x + dx
-                if 0 <= ny < self.ny and 0 <= nx < self.nx:
-                    result.append((ny, nx))
+                nb_y, nb_x = y + dy, x + dx
+                if 0 <= nb_y < self.ny and 0 <= nb_x < self.nx:
+                    result.append((nb_y, nb_x))
         return result
 
     @classmethod
@@ -70,13 +70,12 @@ class Grid:
         lon_dim: str = "longitude",
     ) -> Grid:
         """Load grid from a NetCDF file."""
-        ds = xr.open_dataset(path)
-        mask_data = ds[mask_var].values
-        lat = ds[lat_dim].values.astype(np.float64)
-        lon = ds[lon_dim].values.astype(np.float64)
+        with xr.open_dataset(path) as ds:
+            mask_data = ds[mask_var].values
+            lat = ds[lat_dim].values.astype(np.float64)
+            lon = ds[lon_dim].values.astype(np.float64)
         ny, nx = mask_data.shape
         ocean_mask = mask_data > 0
-        ds.close()
         return cls(ny=ny, nx=nx, ocean_mask=ocean_mask, lat=lat, lon=lon)
 
     @classmethod

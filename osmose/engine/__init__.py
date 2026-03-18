@@ -41,6 +41,8 @@ class PythonEngine:
         from osmose.engine.simulate import simulate
 
         engine_config = EngineConfig.from_dict(config)
+        # Phase 1: simple rectangular grid. Phase 4+ will load from NetCDF
+        # via grid.file config key. Default 10x10 for testing.
         nx = int(config.get("grid.ncol", "10"))
         ny = int(config.get("grid.nrow", "10"))
         grid = Grid.from_dimensions(ny=ny, nx=nx)
