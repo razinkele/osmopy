@@ -86,13 +86,25 @@ def predation_in_cell(
             if ratio <= r_max or ratio > r_min:
                 continue
 
+            # Accessibility coefficient (if matrix loaded)
+            sp_prey = state.species_id[q_idx]
+            access_coeff = 1.0
+            if config.accessibility_matrix is not None:
+                if (
+                    sp_pred < config.accessibility_matrix.shape[0]
+                    and sp_prey < config.accessibility_matrix.shape[1]
+                ):
+                    access_coeff = config.accessibility_matrix[sp_pred, sp_prey]
+                    if access_coeff <= 0:
+                        continue  # not accessible
+
             # Prey is eligible -- use its current biomass (asynchronous)
             prey_bio = state.abundance[q_idx] * state.weight[q_idx]
             if prey_bio <= 0:
                 continue
 
-            prey_eligible[q_pos] = prey_bio
-            available += prey_bio
+            prey_eligible[q_pos] = prey_bio * access_coeff
+            available += prey_bio * access_coeff
 
         if available <= 0:
             continue

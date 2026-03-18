@@ -7,8 +7,10 @@ into typed NumPy arrays indexed by species, ready for vectorized computation.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
+import pandas as pd
 from numpy.typing import NDArray
 
 
@@ -46,6 +48,49 @@ def _species_int_optional(
     return np.array(
         [int(cfg.get(pattern.format(i=i), str(default))) for i in range(n)], dtype=np.int32
     )
+
+
+def _load_accessibility(cfg: dict[str, str], n_species: int) -> NDArray[np.float64] | None:
+    """Load predation accessibility matrix from CSV if available.
+
+    Returns matrix with shape (n_total, n_total) where index [predator, prey] = coefficient.
+    """
+    file_key = cfg.get("predation.accessibility.file", "")
+    if not file_key:
+        return None
+    for base in [Path("."), Path("data/examples")]:
+        path = base / file_key
+        if path.exists():
+            df = pd.read_csv(path, sep=";", index_col=0)
+            return df.values.astype(np.float64)
+    return None
+
+
+def _load_spawning_seasons(
+    cfg: dict[str, str], n_species: int, n_dt_per_year: int
+) -> NDArray[np.float64] | None:
+    """Load spawning season CSV files for each species.
+
+    Returns array of shape (n_species, n_dt_per_year) with season weights.
+    """
+    seasons = np.ones((n_species, n_dt_per_year), dtype=np.float64) / n_dt_per_year
+    found_any = False
+
+    for i in range(n_species):
+        file_key = cfg.get(f"reproduction.season.file.sp{i}", "")
+        if not file_key:
+            continue
+        for base in [Path("."), Path("data/examples")]:
+            path = base / file_key
+            if path.exists():
+                df = pd.read_csv(path, sep=";")
+                values = df.iloc[:, 1].values.astype(np.float64)
+                if len(values) == n_dt_per_year:
+                    seasons[i] = values
+                    found_any = True
+                break
+
+    return seasons if found_any else None
 
 
 @dataclass
@@ -96,6 +141,12 @@ class EngineConfig:
     fishing_enabled: bool  # global fishing toggle
     fishing_rate: NDArray[np.float64]  # annual fishing mortality rate per species
 
+    # Predation accessibility
+    accessibility_matrix: NDArray[np.float64] | None  # (n_pred, n_prey) or None
+
+    # Reproduction
+    spawning_season: NDArray[np.float64] | None  # (n_species, n_dt_per_year) or None
+
     # Movement
     movement_method: list[str]
     random_walk_range: NDArray[np.int32]
@@ -108,13 +159,20 @@ class EngineConfig:
         n_yr = int(_get(cfg, "simulation.time.nyear"))
         lifespan_years = _species_float(cfg, "species.lifespan.sp{i}", n_sp)
 
+        # Fishing rate: try both key patterns (Java uses mortality.fishing.rate)
+        fishing = _species_float_optional(cfg, "mortality.fishing.rate.sp{i}", n_sp, default=0.0)
+        if fishing.sum() == 0:
+            fishing = _species_float_optional(cfg, "fishing.rate.sp{i}", n_sp, default=0.0)
+
         return cls(
             n_species=n_sp,
             n_dt_per_year=n_dt,
             n_year=n_yr,
             n_steps=n_dt * n_yr,
             n_schools=_species_int_optional(
-                cfg, "simulation.nschool.sp{i}", n_sp,
+                cfg,
+                "simulation.nschool.sp{i}",
+                n_sp,
                 default=int(cfg.get("simulation.nschool", "20")),
             ),
             species_names=_species_str(cfg, "species.name.sp{i}", n_sp),
@@ -163,9 +221,11 @@ class EngineConfig:
             starvation_rate_max=_species_float_optional(
                 cfg, "mortality.starvation.rate.max.sp{i}", n_sp, default=0.0
             ),
+            accessibility_matrix=_load_accessibility(cfg, n_sp),
+            spawning_season=_load_spawning_seasons(cfg, n_sp, n_dt),
             fishing_enabled=cfg.get("simulation.fishing.mortality.enabled", "true").lower()
             == "true",
-            fishing_rate=_species_float_optional(cfg, "fishing.rate.sp{i}", n_sp, default=0.0),
+            fishing_rate=fishing,
             movement_method=[
                 cfg.get(f"movement.distribution.method.sp{i}", "random") for i in range(n_sp)
             ],
