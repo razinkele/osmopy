@@ -288,6 +288,7 @@ class TestMortalityWithRealParams:
             abundance=np.array([10000.0]),
             weight=np.array([5.0]),
             biomass=np.array([50000.0]),
+            age_dt=np.array([24], dtype=np.int32),  # non-zero: eggs are skipped
         )
 
         new_state = additional_mortality(state, cfg, n_subdt)
@@ -313,6 +314,7 @@ class TestMortalityWithRealParams:
             abundance=np.array([10000.0]),
             weight=np.array([5.0]),
             biomass=np.array([50000.0]),
+            age_dt=np.array([24], dtype=np.int32),  # non-zero: eggs are skipped
         )
 
         # Apply for full year: n_dt timesteps * n_subdt sub-steps

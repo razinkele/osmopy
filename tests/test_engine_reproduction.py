@@ -133,8 +133,8 @@ class TestReproduction:
         rng = np.random.default_rng(42)
         new_state = reproduction(state, cfg, step=0, rng=rng)
 
-        # Expected eggs = 0.5 * 800 * 10000 * (1/12) = 333333.33
-        expected_total_eggs = 0.5 * 800.0 * ssb * (1.0 / 12.0)
+        # Expected eggs = 0.5 * 800 * 10000 * (1/12) * 1e6 (tonnes→grams)
+        expected_total_eggs = 0.5 * 800.0 * ssb * (1.0 / 12.0) * 1_000_000.0
         # Sum abundance of new schools (indices 1: are eggs)
         actual_total_eggs = new_state.abundance[1:].sum()
         np.testing.assert_allclose(actual_total_eggs, expected_total_eggs, rtol=1e-6)

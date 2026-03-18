@@ -46,7 +46,10 @@ def reproduction(
                 ssb[sp] = config.seeding_biomass[sp]
 
     # Egg count per species
-    n_eggs = config.sex_ratio * config.relative_fecundity * ssb * season_factor
+    # Java: nEgg = sexRatio * beta * season * SSB * 1_000_000
+    # The 1e6 converts SSB from tonnes to grams (fecundity is eggs per gram)
+    TONNES_TO_GRAMS = 1_000_000.0
+    n_eggs = config.sex_ratio * config.relative_fecundity * ssb * season_factor * TONNES_TO_GRAMS
 
     # Create new schools from eggs
     new_schools_list = []

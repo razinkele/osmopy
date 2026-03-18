@@ -38,6 +38,7 @@ class TestAdditionalMortality:
             abundance=np.array([1000.0]),
             biomass=np.array([6000.0]),
             weight=np.array([6.0]),
+            age_dt=np.array([24], dtype=np.int32),  # non-zero: eggs are skipped
         )
         n_subdt = 10
         new_state = additional_mortality(state, cfg, n_subdt)
@@ -59,6 +60,7 @@ class TestAdditionalMortality:
             abundance=np.array([10000.0]),
             weight=np.array([6.0]),
             biomass=np.array([60000.0]),
+            age_dt=np.array([24], dtype=np.int32),  # non-zero: eggs are skipped
         )
 
         # Apply for a full year: n_dt timesteps, each with n_subdt sub-steps
@@ -78,6 +80,21 @@ class TestAdditionalMortality:
         state = state.replace(abundance=np.array([1000.0]))
         new_state = additional_mortality(state, cfg, n_subdt=10)
         np.testing.assert_allclose(new_state.abundance[0], 1000.0)
+
+    def test_skips_age_zero_schools(self):
+        """Java skips age_dt==0 schools — eggs handled by larva_mortality."""
+        cfg = EngineConfig.from_dict(_make_mortality_config())
+        state = SchoolState.create(n_schools=2, species_id=np.zeros(2, dtype=np.int32))
+        state = state.replace(
+            abundance=np.array([1000.0, 1000.0]),
+            weight=np.array([0.001, 6.0]),
+            age_dt=np.array([0, 24], dtype=np.int32),  # egg vs adult
+        )
+        new_state = additional_mortality(state, cfg, n_subdt=10)
+        # Egg (age_dt=0) should be untouched
+        np.testing.assert_allclose(new_state.abundance[0], 1000.0)
+        # Adult should have mortality applied
+        assert new_state.abundance[1] < 1000.0
 
 
 class TestAgingMortality:
