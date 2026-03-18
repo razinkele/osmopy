@@ -16,7 +16,7 @@ from numpy.typing import NDArray
 from osmose.engine.config import EngineConfig
 from osmose.engine.grid import Grid
 from osmose.engine.resources import ResourceState
-from osmose.engine.state import SchoolState
+from osmose.engine.state import MortalityCause, SchoolState
 
 
 @dataclass
@@ -26,6 +26,7 @@ class StepOutput:
     step: int
     biomass: NDArray[np.float64]
     abundance: NDArray[np.float64]
+    mortality_by_cause: NDArray[np.float64]  # (n_species, n_causes)
 
 
 # ---------------------------------------------------------------------------
@@ -112,7 +113,17 @@ def _collect_outputs(state: SchoolState, config: EngineConfig, step: int) -> Ste
     if len(state) > 0:
         np.add.at(biomass, state.species_id, state.biomass)
         np.add.at(abundance, state.species_id, state.abundance)
-    return StepOutput(step=step, biomass=biomass, abundance=abundance)
+
+    # Aggregate mortality by cause per species
+    n_causes = len(MortalityCause)
+    mortality_by_cause = np.zeros((config.n_species, n_causes), dtype=np.float64)
+    if len(state) > 0:
+        for cause in range(n_causes):
+            np.add.at(mortality_by_cause[:, cause], state.species_id, state.n_dead[:, cause])
+
+    return StepOutput(
+        step=step, biomass=biomass, abundance=abundance, mortality_by_cause=mortality_by_cause
+    )
 
 
 # ---------------------------------------------------------------------------
