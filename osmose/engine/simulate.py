@@ -69,9 +69,11 @@ def _mortality(
     resources: ResourceState,
     config: EngineConfig,
     rng: np.random.Generator,
+    grid: Grid,
 ) -> SchoolState:
-    """Apply mortality sources. Phase 4: additional + larva + out-of-domain."""
+    """Apply mortality sources. Phase 5: predation + additional + larva + out-of-domain."""
     from osmose.engine.processes.natural import additional_mortality, larva_mortality, out_mortality
+    from osmose.engine.processes.predation import predation
 
     n_subdt = config.mortality_subdt
 
@@ -80,6 +82,7 @@ def _mortality(
 
     # Main mortality sub-timestep loop
     for _sub in range(n_subdt):
+        state = predation(state, config, rng, n_subdt, grid.ny, grid.nx)
         state = additional_mortality(state, config, n_subdt)
 
     # Out-of-domain mortality
@@ -188,7 +191,7 @@ def simulate(
         state = _reset_step_variables(state)
         resources.update(step)
         state = _movement(state, grid, config, step, rng)
-        state = _mortality(state, resources, config, rng)
+        state = _mortality(state, resources, config, rng, grid)
         state = _growth(state, config, rng)
         state = _aging_mortality(state, config)
         state = _reproduction(state, config, step, rng)
