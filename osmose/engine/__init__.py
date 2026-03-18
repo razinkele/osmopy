@@ -38,17 +38,18 @@ class PythonEngine:
     def run(self, config: dict[str, str], output_dir: Path, seed: int = 0) -> RunResult:
         from osmose.engine.config import EngineConfig
         from osmose.engine.grid import Grid
+        from osmose.engine.output import write_outputs
         from osmose.engine.simulate import simulate
 
         engine_config = EngineConfig.from_dict(config)
-        # Phase 1: simple rectangular grid. Phase 4+ will load from NetCDF
-        # via grid.file config key. Default 10x10 for testing.
+        # Phase 7: simple rectangular grid. Future: load from NetCDF
         nx = int(config.get("grid.ncol", "10"))
         ny = int(config.get("grid.nrow", "10"))
         grid = Grid.from_dimensions(ny=ny, nx=nx)
         rng = np.random.default_rng(seed)
 
-        simulate(engine_config, grid, rng)
+        outputs = simulate(engine_config, grid, rng)
+        write_outputs(outputs, output_dir, engine_config)
 
         return RunResult(
             returncode=0,
