@@ -71,9 +71,11 @@ def _mortality(
     rng: np.random.Generator,
     grid: Grid,
 ) -> SchoolState:
-    """Apply mortality sources. Phase 5: predation + additional + larva + out-of-domain."""
+    """Apply all mortality sources. Phase 6: predation + starvation + fishing + additional."""
+    from osmose.engine.processes.fishing import fishing_mortality
     from osmose.engine.processes.natural import additional_mortality, larva_mortality, out_mortality
     from osmose.engine.processes.predation import predation
+    from osmose.engine.processes.starvation import starvation_mortality, update_starvation_rate
 
     n_subdt = config.mortality_subdt
 
@@ -83,10 +85,14 @@ def _mortality(
     # Main mortality sub-timestep loop
     for _sub in range(n_subdt):
         state = predation(state, config, rng, n_subdt, grid.ny, grid.nx)
+        state = starvation_mortality(state, config, n_subdt)
+        state = fishing_mortality(state, config, n_subdt)
         state = additional_mortality(state, config, n_subdt)
 
     # Out-of-domain mortality
     state = out_mortality(state, config)
+    # Compute new starvation rate for NEXT step (lagged)
+    state = update_starvation_rate(state, config)
     return state
 
 
