@@ -13,8 +13,6 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from shiny_deckgl import polygon_layer  # type: ignore[import-untyped]
-
 from osmose.logging import setup_logging
 
 _log = setup_logging("osmose.grid.helpers")
@@ -71,6 +69,8 @@ def build_grid_layers(
     Uses PolygonLayer with exact lat/lon rectangles per cell —
     handles non-square grids correctly in geographic coordinates.
     """
+    from shiny_deckgl import polygon_layer  # type: ignore[import-untyped]
+
     layers = []
 
     if ul_lat == 0 and ul_lon == 0 and lr_lat == 0 and lr_lon == 0:
@@ -227,6 +227,8 @@ def build_netcdf_grid_layers(
 
     Returns (layers, view_state) tuple.
     """
+    from shiny_deckgl import polygon_layer  # type: ignore[import-untyped]
+
     if lat.ndim == 1 and lon.ndim == 1:
         lon, lat = np.meshgrid(lon, lat)
     ny, nx = lat.shape
