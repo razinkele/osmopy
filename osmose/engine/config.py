@@ -152,6 +152,9 @@ class EngineConfig:
     random_walk_range: NDArray[np.int32]
     out_mortality_rate: NDArray[np.float64]
 
+    # Raw config dict for subsystems that need unparsed access (e.g. ResourceState)
+    raw_config: dict[str, str]
+
     @classmethod
     def from_dict(cls, cfg: dict[str, str]) -> EngineConfig:
         n_sp = int(_get(cfg, "simulation.nspecies"))
@@ -235,4 +238,5 @@ class EngineConfig:
             out_mortality_rate=_species_float_optional(
                 cfg, "mortality.out.rate.sp{i}", n_sp, default=0.0
             ),
+            raw_config=cfg,
         )
