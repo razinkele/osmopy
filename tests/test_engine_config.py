@@ -123,10 +123,10 @@ class TestEngineConfig:
         assert cfg.random_walk_range[1] == 2
 
     def test_size_ratio_params(self, minimal_config):
-        minimal_config["predation.predPrey.sizeRatio.min.sp0"] = "3.5"
-        minimal_config["predation.predPrey.sizeRatio.min.sp1"] = "2.0"
-        minimal_config["predation.predPrey.sizeRatio.max.sp0"] = "1.0"
-        minimal_config["predation.predPrey.sizeRatio.max.sp1"] = "0.5"
+        minimal_config["predation.predprey.sizeratio.min.sp0"] = "3.5"
+        minimal_config["predation.predprey.sizeratio.min.sp1"] = "2.0"
+        minimal_config["predation.predprey.sizeratio.max.sp0"] = "1.0"
+        minimal_config["predation.predprey.sizeratio.max.sp1"] = "0.5"
         cfg = EngineConfig.from_dict(minimal_config)
         assert cfg.size_ratio_min[0] == pytest.approx(3.5)
         assert cfg.size_ratio_min[1] == pytest.approx(2.0)

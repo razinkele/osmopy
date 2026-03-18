@@ -41,10 +41,10 @@ def _make_predation_config() -> dict[str, str]:
         "predation.efficiency.critical.sp0": "0.57",
         "predation.efficiency.critical.sp1": "0.57",
         # Eligible when r_min <= pred/prey < r_max
-        "predation.predPrey.sizeRatio.min.sp0": "1.0",
-        "predation.predPrey.sizeRatio.min.sp1": "1.0",
-        "predation.predPrey.sizeRatio.max.sp0": "3.5",
-        "predation.predPrey.sizeRatio.max.sp1": "3.5",
+        "predation.predprey.sizeratio.min.sp0": "1.0",
+        "predation.predprey.sizeratio.min.sp1": "1.0",
+        "predation.predprey.sizeratio.max.sp0": "3.5",
+        "predation.predprey.sizeratio.max.sp1": "3.5",
     }
 
 

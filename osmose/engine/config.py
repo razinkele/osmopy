@@ -217,10 +217,10 @@ class EngineConfig:
                 cfg, "mortality.additional.larva.rate.sp{i}", n_sp, default=0.0
             ),
             size_ratio_min=_species_float_optional(
-                cfg, "predation.predPrey.sizeRatio.min.sp{i}", n_sp, default=1.0
+                cfg, "predation.predprey.sizeratio.min.sp{i}", n_sp, default=1.0
             ),
             size_ratio_max=_species_float_optional(
-                cfg, "predation.predPrey.sizeRatio.max.sp{i}", n_sp, default=3.5
+                cfg, "predation.predprey.sizeratio.max.sp{i}", n_sp, default=3.5
             ),
             starvation_rate_max=_species_float_optional(
                 cfg, "mortality.starvation.rate.max.sp{i}", n_sp, default=0.0
