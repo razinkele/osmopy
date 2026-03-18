@@ -108,3 +108,22 @@ class TestEngineConfig:
         cfg = EngineConfig.from_dict(minimal_config)
         assert cfg.maturity_size[0] == pytest.approx(12.0)
         assert cfg.maturity_size[1] == pytest.approx(40.0)
+
+    def test_movement_method(self, minimal_config):
+        minimal_config["movement.distribution.method.sp0"] = "random"
+        minimal_config["movement.distribution.method.sp1"] = "maps"
+        cfg = EngineConfig.from_dict(minimal_config)
+        assert cfg.movement_method == ["random", "maps"]
+
+    def test_random_walk_range(self, minimal_config):
+        minimal_config["movement.randomwalk.range.sp0"] = "1"
+        minimal_config["movement.randomwalk.range.sp1"] = "2"
+        cfg = EngineConfig.from_dict(minimal_config)
+        assert cfg.random_walk_range[0] == 1
+        assert cfg.random_walk_range[1] == 2
+
+    def test_out_mortality_rate(self, minimal_config):
+        minimal_config["mortality.out.rate.sp0"] = "0.1"
+        minimal_config["mortality.out.rate.sp1"] = "0.05"
+        cfg = EngineConfig.from_dict(minimal_config)
+        assert cfg.out_mortality_rate[0] == pytest.approx(0.1)

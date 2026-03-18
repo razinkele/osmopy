@@ -39,6 +39,15 @@ def _species_float_optional(
     return np.array([float(cfg.get(pattern.format(i=i), str(default))) for i in range(n)])
 
 
+def _species_int_optional(
+    cfg: dict[str, str], pattern: str, n: int, default: int
+) -> NDArray[np.int32]:
+    """Extract a per-species int array, using default if key is missing."""
+    return np.array(
+        [int(cfg.get(pattern.format(i=i), str(default))) for i in range(n)], dtype=np.int32
+    )
+
+
 @dataclass
 class EngineConfig:
     """Typed engine configuration extracted from a flat OSMOSE config dict."""
@@ -75,6 +84,11 @@ class EngineConfig:
     maturity_size: NDArray[np.float64]  # length at maturity (cm)
     seeding_biomass: NDArray[np.float64]  # initial biomass for seeding (tonnes)
     larva_mortality_rate: NDArray[np.float64]  # additional mortality for eggs/larvae
+
+    # Movement
+    movement_method: list[str]
+    random_walk_range: NDArray[np.int32]
+    out_mortality_rate: NDArray[np.float64]
 
     @classmethod
     def from_dict(cls, cfg: dict[str, str]) -> EngineConfig:
@@ -125,5 +139,14 @@ class EngineConfig:
             ),
             larva_mortality_rate=_species_float_optional(
                 cfg, "mortality.additional.larva.rate.sp{i}", n_sp, default=0.0
+            ),
+            movement_method=[
+                cfg.get(f"movement.distribution.method.sp{i}", "random") for i in range(n_sp)
+            ],
+            random_walk_range=_species_int_optional(
+                cfg, "movement.randomwalk.range.sp{i}", n_sp, default=1
+            ),
+            out_mortality_rate=_species_float_optional(
+                cfg, "mortality.out.rate.sp{i}", n_sp, default=0.0
             ),
         )
