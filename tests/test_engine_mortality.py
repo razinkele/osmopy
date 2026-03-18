@@ -3,7 +3,7 @@
 import numpy as np
 
 from osmose.engine.config import EngineConfig
-from osmose.engine.processes.natural import additional_mortality, aging_mortality
+from osmose.engine.processes.natural import additional_mortality, aging_mortality, larva_mortality
 from osmose.engine.state import MortalityCause, SchoolState
 
 
@@ -79,3 +79,49 @@ class TestAgingMortality:
         )
         new_state = aging_mortality(state, cfg)
         np.testing.assert_allclose(new_state.abundance, [500.0])
+
+
+class TestLarvaMortality:
+    def test_kills_only_eggs(self):
+        """Larva mortality should only affect schools where is_egg=True."""
+        cfg_dict = _make_mortality_config()
+        cfg_dict["mortality.additional.larva.rate.sp0"] = "1.0"
+        cfg = EngineConfig.from_dict(cfg_dict)
+        state = SchoolState.create(n_schools=2, species_id=np.zeros(2, dtype=np.int32))
+        state = state.replace(
+            abundance=np.array([1000.0, 1000.0]),
+            weight=np.array([0.001, 6.0]),
+            is_egg=np.array([True, False]),
+        )
+        new_state = larva_mortality(state, cfg, n_subdt=10)
+        # Egg school should have reduced abundance
+        assert new_state.abundance[0] < 1000.0
+        # Non-egg school should be unchanged
+        np.testing.assert_allclose(new_state.abundance[1], 1000.0)
+
+    def test_zero_rate_no_mortality(self):
+        cfg = EngineConfig.from_dict(_make_mortality_config())
+        state = SchoolState.create(n_schools=1, species_id=np.zeros(1, dtype=np.int32))
+        state = state.replace(
+            abundance=np.array([1000.0]),
+            is_egg=np.array([True]),
+        )
+        new_state = larva_mortality(state, cfg, n_subdt=10)
+        np.testing.assert_allclose(new_state.abundance[0], 1000.0)
+
+    def test_larva_mortality_formula(self):
+        """N_dead = N * (1 - exp(-M_larva / n_subdt)) for eggs only."""
+        cfg_dict = _make_mortality_config()
+        cfg_dict["mortality.additional.larva.rate.sp0"] = "2.0"
+        cfg = EngineConfig.from_dict(cfg_dict)
+        state = SchoolState.create(n_schools=1, species_id=np.zeros(1, dtype=np.int32))
+        state = state.replace(
+            abundance=np.array([5000.0]),
+            weight=np.array([0.001]),
+            is_egg=np.array([True]),
+        )
+        new_state = larva_mortality(state, cfg, n_subdt=10)
+        expected_dead = 5000.0 * (1 - np.exp(-2.0 / 10))
+        np.testing.assert_allclose(
+            new_state.n_dead[0, MortalityCause.ADDITIONAL], expected_dead, rtol=1e-10
+        )

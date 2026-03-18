@@ -68,11 +68,17 @@ def _mortality(
     config: EngineConfig,
     rng: np.random.Generator,
 ) -> SchoolState:
-    """Apply mortality sources. Phase 2: only additional mortality."""
-    from osmose.engine.processes.natural import additional_mortality
+    """Apply mortality sources. Phase 3: additional + larva mortality."""
+    from osmose.engine.processes.natural import additional_mortality, larva_mortality
 
-    for _sub in range(config.mortality_subdt):
-        state = additional_mortality(state, config, config.mortality_subdt)
+    n_subdt = config.mortality_subdt
+
+    # Pre-pass: larva mortality on eggs (before main loop)
+    state = larva_mortality(state, config, n_subdt)
+
+    # Main mortality sub-timestep loop
+    for _sub in range(n_subdt):
+        state = additional_mortality(state, config, n_subdt)
     return state
 
 
