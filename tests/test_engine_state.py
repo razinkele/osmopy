@@ -68,3 +68,30 @@ class TestSchoolState:
         assert MortalityCause.PREDATION.value == 0
         assert MortalityCause.AGING.value == 7
         assert len(MortalityCause) == 8
+
+
+class TestPythonEngineIntegration:
+    def test_run_with_minimal_config(self, tmp_path):
+        """PythonEngine.run() should complete with a minimal config."""
+        config = {
+            "simulation.time.ndtperyear": "12",
+            "simulation.time.nyear": "1",
+            "simulation.nspecies": "1",
+            "simulation.nschool.sp0": "5",
+            "species.name.sp0": "TestFish",
+            "species.linf.sp0": "20.0",
+            "species.k.sp0": "0.3",
+            "species.t0.sp0": "-0.1",
+            "species.egg.size.sp0": "0.1",
+            "species.length2weight.condition.factor.sp0": "0.006",
+            "species.length2weight.allometric.power.sp0": "3.0",
+            "species.lifespan.sp0": "3",
+            "species.vonbertalanffy.threshold.age.sp0": "1.0",
+            "mortality.subdt": "10",
+            "predation.ingestion.rate.max.sp0": "3.5",
+            "predation.efficiency.critical.sp0": "0.57",
+        }
+        engine = PythonEngine()
+        result = engine.run(config=config, output_dir=tmp_path, seed=42)
+        assert result.returncode == 0
+        assert result.output_dir == tmp_path

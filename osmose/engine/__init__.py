@@ -9,6 +9,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
+import numpy as np
+
 from osmose.runner import RunResult
 
 
@@ -16,9 +18,7 @@ from osmose.runner import RunResult
 class Engine(Protocol):
     """Common interface for Java and Python OSMOSE engines."""
 
-    def run(
-        self, config: dict[str, str], output_dir: Path, seed: int = 0
-    ) -> RunResult: ...
+    def run(self, config: dict[str, str], output_dir: Path, seed: int = 0) -> RunResult: ...
 
     def run_ensemble(
         self,
@@ -35,10 +35,25 @@ class PythonEngine:
     def __init__(self, backend: str = "numpy") -> None:
         self.backend = backend
 
-    def run(
-        self, config: dict[str, str], output_dir: Path, seed: int = 0
-    ) -> RunResult:
-        raise NotImplementedError("Phase 1 stub — simulation not yet implemented")
+    def run(self, config: dict[str, str], output_dir: Path, seed: int = 0) -> RunResult:
+        from osmose.engine.config import EngineConfig
+        from osmose.engine.grid import Grid
+        from osmose.engine.simulate import simulate
+
+        engine_config = EngineConfig.from_dict(config)
+        nx = int(config.get("grid.ncol", "10"))
+        ny = int(config.get("grid.nrow", "10"))
+        grid = Grid.from_dimensions(ny=ny, nx=nx)
+        rng = np.random.default_rng(seed)
+
+        simulate(engine_config, grid, rng)
+
+        return RunResult(
+            returncode=0,
+            output_dir=output_dir,
+            stdout="",
+            stderr="",
+        )
 
     def run_ensemble(
         self,
@@ -57,9 +72,7 @@ class JavaEngine:
         self.jar_path = jar_path
         self.java_cmd = java_cmd
 
-    def run(
-        self, config: dict[str, str], output_dir: Path, seed: int = 0
-    ) -> RunResult:
+    def run(self, config: dict[str, str], output_dir: Path, seed: int = 0) -> RunResult:
         raise NotImplementedError(
             "JavaEngine.run() requires config file path — use OsmoseRunner directly for now"
         )
