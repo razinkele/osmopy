@@ -144,3 +144,14 @@ class TestEngineConfig:
         minimal_config["mortality.out.rate.sp1"] = "0.05"
         cfg = EngineConfig.from_dict(minimal_config)
         assert cfg.out_mortality_rate[0] == pytest.approx(0.1)
+
+    def test_starvation_rate_max(self, minimal_config):
+        minimal_config["mortality.starvation.rate.max.sp0"] = "3.0"
+        minimal_config["mortality.starvation.rate.max.sp1"] = "2.0"
+        cfg = EngineConfig.from_dict(minimal_config)
+        assert cfg.starvation_rate_max[0] == pytest.approx(3.0)
+
+    def test_fishing_enabled(self, minimal_config):
+        minimal_config["simulation.fishing.mortality.enabled"] = "false"
+        cfg = EngineConfig.from_dict(minimal_config)
+        assert cfg.fishing_enabled is False
