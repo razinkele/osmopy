@@ -78,7 +78,7 @@ class SchoolState:
     n_dead: NDArray[np.float64]             # (n_schools, N_MORTALITY_CAUSES)
 
     # Egg state
-    is_egg: NDArray[np.bool_]               # True for age_dt == 0 schools
+    is_egg: NDArray[np.bool_]               # True for age_dt < first_feeding_age_dt (NOT just age 0)
     first_feeding_age_dt: NDArray[np.int32] # age (in dt) when feeding begins
 ```
 
@@ -139,7 +139,7 @@ def reset_step_variables(state: SchoolState) -> SchoolState:
 
 ## Mortality System
 
-**Critical design point:** In Java, all mortality sources (predation, fishing, starvation, additional) are NOT separate sequential processes. They are interleaved within a single stochastic loop across `mortality.subdt` sub-timesteps. The `mortality()` function orchestrates all sources:
+**Critical design point:** In Java, all mortality sources (predation, fishing, starvation, additional) are NOT separate sequential processes. They are interleaved within a single stochastic double-loop: the outer loop iterates over "school slots" (one per school), and for each slot, the four mortality causes are reshuffled and applied — but each cause targets a **different** school from its own pre-shuffled ordering. This ensures maximum stochasticity. The `mortality()` function orchestrates all sources:
 
 ```python
 def mortality(state: SchoolState, resources: ResourceState, config: EngineConfig, rng: Generator) -> SchoolState:
@@ -149,14 +149,24 @@ def mortality(state: SchoolState, resources: ResourceState, config: EngineConfig
     state = larva_mortality(state, config, n_subdt)
     state = retain_eggs(state)  # exclude eggs from predation initially
 
+    n_schools = len(state)
     for sub in range(n_subdt):
         # Release fraction of eggs into the prey pool
         state = release_eggs(state, sub, n_subdt)
 
-        # Randomize order of mortality sources AND school processing order
-        sources = rng.permutation(['predation', 'fishing', 'starvation', 'additional'])
-        for source in sources:
-            state = MORTALITY_FNS[source](state, resources, config, rng, n_subdt)
+        # Each mortality cause gets its own independent random school ordering
+        seq_pred = rng.permutation(n_schools)
+        seq_fish = rng.permutation(n_schools)
+        seq_starv = rng.permutation(n_schools)
+        seq_nat = rng.permutation(n_schools)
+
+        # Process one school-slot at a time; causes reshuffled per slot
+        for i in range(n_schools):
+            causes = rng.permutation(['predation', 'fishing', 'starvation', 'additional'])
+            for cause in causes:
+                school_idx = {'predation': seq_pred, 'fishing': seq_fish,
+                              'starvation': seq_starv, 'additional': seq_nat}[cause][i]
+                state = apply_mortality_to_school(state, resources, school_idx, cause, config, rng, n_subdt)
 
     # Out-of-domain mortality (after main loop)
     state = out_mortality(state, config)
@@ -172,8 +182,8 @@ def mortality(state: SchoolState, resources: ResourceState, config: EngineConfig
 
 Eggs have special treatment in the mortality system:
 
-- **Retain:** At the start of mortality, eggs (`age_dt == 0`) are excluded from the prey pool
-- **Larva mortality:** Eggs receive separate additional mortality (`mortality.additional.larva.rate`) before the main stochastic loop
+- **Retain:** At the start of mortality, eggs (`age_dt < first_feeding_age_dt`) are excluded from the prey pool
+- **Larva mortality:** Eggs (`age_dt < first_feeding_age_dt`) receive separate additional mortality (`mortality.additional.larva.rate`) before the main stochastic loop; they are also excluded from regular additional mortality in the stochastic loop
 - **Progressive release:** Each sub-timestep, `1/n_subdt` of surviving eggs are "released" into the prey pool, becoming eligible to be preyed upon
 - **No feeding:** Schools with `age_dt < first_feeding_age_dt` cannot predate (skip predation as predators)
 
@@ -195,7 +205,10 @@ Schools exceeding their species' lifespan are killed entirely. Runs between grow
 ```python
 def aging_mortality(state: SchoolState, config: EngineConfig) -> SchoolState:
     lifespan_dt = config.lifespan_dt[state.species_id]  # lifespan in time steps
-    expired = state.age_dt >= lifespan_dt
+    # Java uses ageDt > lifespanDt - 2 (i.e., >= lifespanDt - 1) because aging
+    # runs BEFORE reproduction where age_dt is incremented. The school would
+    # reach/exceed lifespan after the upcoming age increment.
+    expired = state.age_dt >= lifespan_dt - 1
     state.n_dead[expired, AGING] += state.abundance[expired]
     state.abundance[expired] = 0
     return state
