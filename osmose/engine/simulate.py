@@ -58,8 +58,10 @@ def _movement(
     step: int,
     rng: np.random.Generator,
 ) -> SchoolState:
-    """Phase 1 stub: spatial movement."""
-    return state
+    """Apply spatial movement."""
+    from osmose.engine.processes.movement import movement
+
+    return movement(state, grid, config, step, rng)
 
 
 def _mortality(
@@ -68,8 +70,8 @@ def _mortality(
     config: EngineConfig,
     rng: np.random.Generator,
 ) -> SchoolState:
-    """Apply mortality sources. Phase 3: additional + larva mortality."""
-    from osmose.engine.processes.natural import additional_mortality, larva_mortality
+    """Apply mortality sources. Phase 4: additional + larva + out-of-domain."""
+    from osmose.engine.processes.natural import additional_mortality, larva_mortality, out_mortality
 
     n_subdt = config.mortality_subdt
 
@@ -79,6 +81,9 @@ def _mortality(
     # Main mortality sub-timestep loop
     for _sub in range(n_subdt):
         state = additional_mortality(state, config, n_subdt)
+
+    # Out-of-domain mortality
+    state = out_mortality(state, config)
     return state
 
 
