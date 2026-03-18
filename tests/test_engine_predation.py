@@ -3,7 +3,7 @@
 import numpy as np
 
 from osmose.engine.config import EngineConfig
-from osmose.engine.processes.predation import predation, predation_in_cell
+from osmose.engine.processes.predation import predation, _predation_in_cell_python as predation_in_cell
 from osmose.engine.state import SchoolState
 
 
