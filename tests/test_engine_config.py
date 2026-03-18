@@ -70,3 +70,23 @@ class TestEngineConfig:
     def test_missing_required_key_raises(self):
         with pytest.raises(KeyError):
             EngineConfig.from_dict({})
+
+    def test_delta_lmax_factor(self, minimal_config):
+        minimal_config["species.delta.lmax.factor.sp0"] = "2.0"
+        minimal_config["species.delta.lmax.factor.sp1"] = "1.8"
+        cfg = EngineConfig.from_dict(minimal_config)
+        assert cfg.delta_lmax_factor[0] == pytest.approx(2.0)
+        assert cfg.delta_lmax_factor[1] == pytest.approx(1.8)
+
+    def test_delta_lmax_factor_default(self, minimal_config):
+        """delta_lmax_factor defaults to 2.0 when not specified."""
+        cfg = EngineConfig.from_dict(minimal_config)
+        assert cfg.delta_lmax_factor[0] == pytest.approx(2.0)
+        assert cfg.delta_lmax_factor[1] == pytest.approx(2.0)
+
+    def test_additional_mortality_rate(self, minimal_config):
+        minimal_config["mortality.additional.rate.sp0"] = "0.2"
+        minimal_config["mortality.additional.rate.sp1"] = "0.15"
+        cfg = EngineConfig.from_dict(minimal_config)
+        assert cfg.additional_mortality_rate[0] == pytest.approx(0.2)
+        assert cfg.additional_mortality_rate[1] == pytest.approx(0.15)
