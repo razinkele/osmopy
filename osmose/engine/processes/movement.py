@@ -23,8 +23,14 @@ def random_walk(
     if len(state) == 0:
         return state
 
-    dx = np.array([rng.integers(-int(r), int(r) + 1) for r in walk_range], dtype=np.int32)
-    dy = np.array([rng.integers(-int(r), int(r) + 1) for r in walk_range], dtype=np.int32)
+    # Batch RNG: generate max-range displacements, then clip to per-school range
+    max_r = int(walk_range.max()) if len(walk_range) > 0 else 0
+    if max_r == 0:
+        return state
+    dx = rng.integers(-max_r, max_r + 1, size=len(state)).astype(np.int32)
+    dy = rng.integers(-max_r, max_r + 1, size=len(state)).astype(np.int32)
+    dx = np.clip(dx, -walk_range, walk_range)
+    dy = np.clip(dy, -walk_range, walk_range)
 
     new_x = np.clip(state.cell_x + dx, 0, grid.nx - 1)
     new_y = np.clip(state.cell_y + dy, 0, grid.ny - 1)

@@ -2,6 +2,9 @@
 
 Size-based opportunistic predation within grid cells. Predators are
 processed sequentially in random order with asynchronous prey biomass updates.
+
+Uses Numba JIT compilation for the inner cell loop when available,
+falling back to pure Python otherwise.
 """
 
 from __future__ import annotations
@@ -12,81 +15,167 @@ from numpy.typing import NDArray
 from osmose.engine.config import EngineConfig
 from osmose.engine.state import SchoolState
 
+try:
+    from numba import njit
 
-def predation_in_cell(
+    _HAS_NUMBA = True
+except ImportError:
+    _HAS_NUMBA = False
+
+
+# ---------------------------------------------------------------------------
+# Numba-accelerated inner loop
+# ---------------------------------------------------------------------------
+
+if _HAS_NUMBA:
+
+    @njit(cache=True)
+    def _predation_in_cell_numba(
+        indices: NDArray[np.int32],
+        pred_order: NDArray[np.int32],
+        abundance: NDArray[np.float64],
+        length: NDArray[np.float64],
+        weight: NDArray[np.float64],
+        age_dt: NDArray[np.int32],
+        first_feeding_age_dt: NDArray[np.int32],
+        species_id: NDArray[np.int32],
+        pred_success_rate: NDArray[np.float64],
+        preyed_biomass: NDArray[np.float64],
+        size_ratio_min: NDArray[np.float64],
+        size_ratio_max: NDArray[np.float64],
+        ingestion_rate: NDArray[np.float64],
+        access_matrix: NDArray[np.float64],
+        has_access: bool,
+        n_subdt: int,
+    ) -> None:
+        """Numba-compiled predation within a single cell."""
+        n_local = len(indices)
+
+        for p_pos_idx in range(len(pred_order)):
+            p_pos = pred_order[p_pos_idx]
+            p_idx = indices[p_pos]
+
+            if age_dt[p_idx] < first_feeding_age_dt[p_idx]:
+                continue
+            if abundance[p_idx] <= 0:
+                continue
+
+            pred_len = length[p_idx]
+            sp_pred = species_id[p_idx]
+            r_min = size_ratio_min[sp_pred]
+            r_max = size_ratio_max[sp_pred]
+
+            biomass_p = abundance[p_idx] * weight[p_idx]
+            max_eatable = biomass_p * ingestion_rate[sp_pred] / n_subdt
+            if max_eatable <= 0:
+                continue
+
+            available = 0.0
+            # Use a fixed-size array for eligible prey biomass
+            prey_bio_eligible = np.zeros(n_local, dtype=np.float64)
+
+            for q_pos in range(n_local):
+                q_idx = indices[q_pos]
+                if q_idx == p_idx:
+                    continue
+                if abundance[q_idx] <= 0:
+                    continue
+                prey_len = length[q_idx]
+                if prey_len <= 0:
+                    continue
+
+                ratio = pred_len / prey_len
+                if ratio <= r_max or ratio > r_min:
+                    continue
+
+                sp_prey = species_id[q_idx]
+                access_coeff = 1.0
+                if has_access:
+                    if sp_pred < access_matrix.shape[0] and sp_prey < access_matrix.shape[1]:
+                        access_coeff = access_matrix[sp_pred, sp_prey]
+                        if access_coeff <= 0:
+                            continue
+
+                prey_bio = abundance[q_idx] * weight[q_idx]
+                if prey_bio <= 0:
+                    continue
+
+                val = prey_bio * access_coeff
+                prey_bio_eligible[q_pos] = val
+                available += val
+
+            if available <= 0:
+                continue
+
+            eaten_total = min(available, max_eatable)
+
+            for q_pos in range(n_local):
+                if prey_bio_eligible[q_pos] <= 0:
+                    continue
+                q_idx = indices[q_pos]
+                share = prey_bio_eligible[q_pos] / available
+                eaten_from_prey = eaten_total * share
+                if weight[q_idx] > 0:
+                    n_dead = eaten_from_prey / weight[q_idx]
+                    new_abd = abundance[q_idx] - n_dead
+                    abundance[q_idx] = max(0.0, new_abd)
+
+            pred_success_rate[p_idx] += eaten_total / max_eatable
+            preyed_biomass[p_idx] += eaten_total
+
+
+# ---------------------------------------------------------------------------
+# Pure Python fallback
+# ---------------------------------------------------------------------------
+
+
+def _predation_in_cell_python(
     indices: NDArray[np.int32],
     state: SchoolState,
     config: EngineConfig,
     rng: np.random.Generator,
     n_subdt: int,
 ) -> None:
-    """Apply predation within a single cell. Modifies state arrays IN-PLACE.
-
-    Predators are processed in random order. Prey biomass is decremented
-    immediately after each predator eats (asynchronous update).
-
-    Args:
-        indices: Indices into state arrays for schools in this cell.
-        state: SchoolState (modified in place for performance).
-        config: Engine configuration.
-        rng: Random number generator.
-        n_subdt: Number of mortality sub-timesteps.
-    """
+    """Pure Python fallback for predation within a single cell."""
     n_local = len(indices)
     if n_local < 2:
-        return  # Need at least 2 schools for predation
+        return
 
-    # Random predator order
     order = rng.permutation(n_local)
 
     for p_pos in order:
         p_idx = indices[p_pos]
-
-        # Skip non-feeding schools (eggs)
         if state.age_dt[p_idx] < state.first_feeding_age_dt[p_idx]:
             continue
-
-        # Skip dead schools
         if state.abundance[p_idx] <= 0:
             continue
 
         pred_len = state.length[p_idx]
         sp_pred = state.species_id[p_idx]
+        r_min = config.size_ratio_min[sp_pred]
+        r_max = config.size_ratio_max[sp_pred]
 
-        # Size ratio thresholds for this predator species
-        r_min = config.size_ratio_min[sp_pred]  # upper bound of ratio
-        r_max = config.size_ratio_max[sp_pred]  # lower bound of ratio
-
-        # Maximum eatable biomass this sub-step
         max_eatable = state.biomass[p_idx] * config.ingestion_rate[sp_pred] / n_subdt
         if max_eatable <= 0:
             continue
 
-        # Scan all potential prey in this cell
         available = 0.0
         prey_eligible = np.zeros(n_local, dtype=np.float64)
 
         for q_pos in range(n_local):
             q_idx = indices[q_pos]
-
-            # Skip self
             if q_idx == p_idx:
                 continue
-
-            # Skip dead prey
             if state.abundance[q_idx] <= 0:
                 continue
-
             prey_len = state.length[q_idx]
             if prey_len <= 0:
                 continue
 
-            # Size ratio check: r_max < pred/prey <= r_min
             ratio = pred_len / prey_len
             if ratio <= r_max or ratio > r_min:
                 continue
 
-            # Accessibility coefficient (if matrix loaded)
             sp_prey = state.species_id[q_idx]
             access_coeff = 1.0
             if config.accessibility_matrix is not None:
@@ -96,9 +185,8 @@ def predation_in_cell(
                 ):
                     access_coeff = config.accessibility_matrix[sp_pred, sp_prey]
                     if access_coeff <= 0:
-                        continue  # not accessible
+                        continue
 
-            # Prey is eligible -- use its current biomass (asynchronous)
             prey_bio = state.abundance[q_idx] * state.weight[q_idx]
             if prey_bio <= 0:
                 continue
@@ -109,26 +197,28 @@ def predation_in_cell(
         if available <= 0:
             continue
 
-        # How much the predator eats
         eaten_total = min(available, max_eatable)
 
-        # Distribute eaten biomass proportionally among eligible prey
         for q_pos in range(n_local):
             if prey_eligible[q_pos] <= 0:
                 continue
-
             q_idx = indices[q_pos]
             share = prey_eligible[q_pos] / available
             eaten_from_prey = eaten_total * share
-
-            # Update prey -- IMMEDIATE (asynchronous)
             if state.weight[q_idx] > 0:
                 n_dead = eaten_from_prey / state.weight[q_idx]
                 state.abundance[q_idx] = max(0.0, state.abundance[q_idx] - n_dead)
 
-        # Update predator success rate
         state.pred_success_rate[p_idx] += eaten_total / max_eatable
         state.preyed_biomass[p_idx] += eaten_total
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+# Dummy accessibility matrix for Numba when none is loaded
+_DUMMY_ACCESS = np.zeros((1, 1), dtype=np.float64)
 
 
 def predation(
@@ -141,8 +231,8 @@ def predation(
 ) -> SchoolState:
     """Apply predation across all grid cells.
 
-    Groups schools by cell, then processes predation within each
-    occupied cell independently.
+    Groups schools by cell via argsort+searchsorted, then processes
+    predation within each occupied cell. Uses Numba if available.
     """
     if len(state) == 0:
         return state
@@ -152,27 +242,58 @@ def predation(
     pred_success_rate = state.pred_success_rate.copy()
     preyed_biomass = state.preyed_biomass.copy()
 
-    # Create a temporary mutable view
     work_state = state.replace(
         abundance=abundance,
         pred_success_rate=pred_success_rate,
         preyed_biomass=preyed_biomass,
     )
 
-    # Group schools by cell
+    # Group schools by cell using searchsorted (fast boundary detection)
     cell_ids = work_state.cell_y * grid_nx + work_state.cell_x
-    order = np.argsort(cell_ids)
+    order = np.argsort(cell_ids, kind="mergesort")
     sorted_cells = cell_ids[order]
 
-    # Find boundaries of each cell group
-    unique_cells = np.unique(sorted_cells)
-    for cell in unique_cells:
-        mask = sorted_cells == cell
-        cell_indices = order[mask]
-        if len(cell_indices) >= 2:
-            predation_in_cell(cell_indices, work_state, config, rng, n_subdt)
+    # Find group boundaries with searchsorted
+    n_cells = grid_ny * grid_nx
+    boundaries = np.searchsorted(sorted_cells, np.arange(n_cells + 1))
 
-    # Update biomass from new abundance
+    # Precompute accessibility info
+    has_access = config.accessibility_matrix is not None
+    access_matrix = config.accessibility_matrix if has_access else _DUMMY_ACCESS
+
+    for cell in range(n_cells):
+        start = boundaries[cell]
+        end = boundaries[cell + 1]
+        if end - start < 2:
+            continue
+
+        cell_indices = order[start:end].astype(np.int32)
+
+        if _HAS_NUMBA:
+            pred_order = rng.permutation(len(cell_indices)).astype(np.int32)
+            _predation_in_cell_numba(
+                cell_indices,
+                pred_order,
+                work_state.abundance,
+                work_state.length,
+                work_state.weight,
+                work_state.age_dt,
+                work_state.first_feeding_age_dt,
+                work_state.species_id,
+                work_state.pred_success_rate,
+                work_state.preyed_biomass,
+                config.size_ratio_min,
+                config.size_ratio_max,
+                config.ingestion_rate,
+                access_matrix,
+                has_access,
+                n_subdt,
+            )
+        else:
+            _predation_in_cell_python(
+                cell_indices, work_state, config, rng, n_subdt
+            )
+
     new_biomass = work_state.abundance * work_state.weight
 
     return state.replace(
