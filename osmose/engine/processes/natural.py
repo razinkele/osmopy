@@ -33,6 +33,34 @@ def additional_mortality(state: SchoolState, config: EngineConfig, n_subdt: int)
     return state.replace(abundance=new_abundance, biomass=new_biomass, n_dead=new_n_dead)
 
 
+def larva_mortality(state: SchoolState, config: EngineConfig, n_subdt: int) -> SchoolState:
+    """Apply additional mortality to eggs/larvae before the main mortality loop.
+
+    Only affects schools where is_egg is True. Uses the separate larva
+    mortality rate instead of the regular additional mortality rate.
+    """
+    if len(state) == 0:
+        return state
+
+    eggs = state.is_egg
+    if not eggs.any():
+        return state
+
+    sp = state.species_id
+    m_rate = config.larva_mortality_rate[sp]
+    mortality_fraction = 1 - np.exp(-m_rate / n_subdt)
+
+    n_dead = np.zeros_like(state.abundance)
+    n_dead[eggs] = state.abundance[eggs] * mortality_fraction[eggs]
+
+    new_abundance = state.abundance - n_dead
+    new_biomass = new_abundance * state.weight
+    new_n_dead = state.n_dead.copy()
+    new_n_dead[:, MortalityCause.ADDITIONAL] += n_dead
+
+    return state.replace(abundance=new_abundance, biomass=new_biomass, n_dead=new_n_dead)
+
+
 def aging_mortality(state: SchoolState, config: EngineConfig) -> SchoolState:
     """Kill schools that have reached their species' lifespan.
 

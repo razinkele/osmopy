@@ -69,6 +69,13 @@ class EngineConfig:
     # Natural mortality
     additional_mortality_rate: NDArray[np.float64]  # annual additional mortality rate per species
 
+    # Reproduction
+    sex_ratio: NDArray[np.float64]  # fraction female per species
+    relative_fecundity: NDArray[np.float64]  # eggs per gram of mature female
+    maturity_size: NDArray[np.float64]  # length at maturity (cm)
+    seeding_biomass: NDArray[np.float64]  # initial biomass for seeding (tonnes)
+    larva_mortality_rate: NDArray[np.float64]  # additional mortality for eggs/larvae
+
     @classmethod
     def from_dict(cls, cfg: dict[str, str]) -> EngineConfig:
         n_sp = int(_get(cfg, "simulation.nspecies"))
@@ -105,5 +112,18 @@ class EngineConfig:
             ),
             additional_mortality_rate=_species_float_optional(
                 cfg, "mortality.additional.rate.sp{i}", n_sp, default=0.0
+            ),
+            sex_ratio=_species_float_optional(cfg, "species.sexratio.sp{i}", n_sp, default=0.5),
+            relative_fecundity=_species_float_optional(
+                cfg, "species.relativefecundity.sp{i}", n_sp, default=500.0
+            ),
+            maturity_size=_species_float_optional(
+                cfg, "species.maturity.size.sp{i}", n_sp, default=0.0
+            ),
+            seeding_biomass=_species_float_optional(
+                cfg, "population.seeding.biomass.sp{i}", n_sp, default=0.0
+            ),
+            larva_mortality_rate=_species_float_optional(
+                cfg, "mortality.additional.larva.rate.sp{i}", n_sp, default=0.0
             ),
         )

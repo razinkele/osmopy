@@ -68,11 +68,17 @@ def _mortality(
     config: EngineConfig,
     rng: np.random.Generator,
 ) -> SchoolState:
-    """Apply mortality sources. Phase 2: only additional mortality."""
-    from osmose.engine.processes.natural import additional_mortality
+    """Apply mortality sources. Phase 3: additional + larva mortality."""
+    from osmose.engine.processes.natural import additional_mortality, larva_mortality
 
-    for _sub in range(config.mortality_subdt):
-        state = additional_mortality(state, config, config.mortality_subdt)
+    n_subdt = config.mortality_subdt
+
+    # Pre-pass: larva mortality on eggs (before main loop)
+    state = larva_mortality(state, config, n_subdt)
+
+    # Main mortality sub-timestep loop
+    for _sub in range(n_subdt):
+        state = additional_mortality(state, config, n_subdt)
     return state
 
 
@@ -93,8 +99,10 @@ def _aging_mortality(state: SchoolState, config: EngineConfig) -> SchoolState:
 def _reproduction(
     state: SchoolState, config: EngineConfig, step: int, rng: np.random.Generator
 ) -> SchoolState:
-    """Phase 1 stub: egg production + age increment."""
-    return state
+    """Egg production + age increment."""
+    from osmose.engine.processes.reproduction import reproduction
+
+    return reproduction(state, config, step, rng)
 
 
 # ---------------------------------------------------------------------------
@@ -118,13 +126,43 @@ def _collect_outputs(state: SchoolState, config: EngineConfig, step: int) -> Ste
 
 
 def initialize(config: EngineConfig, grid: Grid, rng: np.random.Generator) -> SchoolState:
-    """Create the initial population of schools.
+    """Create the initial population of schools with seeding biomass.
 
-    Phase 1: creates empty state. Phase 3 will add seeding/population init.
+    Each species gets n_schools schools with biomass split equally from
+    seeding_biomass. Schools start at age 0 with egg size.
     """
     total_schools = int(config.n_schools.sum())
     species_ids = np.repeat(np.arange(config.n_species, dtype=np.int32), config.n_schools)
-    return SchoolState.create(n_schools=total_schools, species_id=species_ids)
+    state = SchoolState.create(n_schools=total_schools, species_id=species_ids)
+
+    # Initial length = egg size, weight from allometry
+    lengths = config.egg_size[species_ids]
+    weights = config.condition_factor[species_ids] * lengths ** config.allometric_power[species_ids]
+
+    # Split seeding biomass equally among schools of each species
+    biomass_per_school = np.zeros(total_schools, dtype=np.float64)
+    for sp in range(config.n_species):
+        mask = species_ids == sp
+        n = mask.sum()
+        if n > 0 and config.seeding_biomass[sp] > 0:
+            biomass_per_school[mask] = config.seeding_biomass[sp] / n
+
+    abundance = np.where(weights > 0, biomass_per_school / weights, 0.0)
+
+    # Random placement on grid
+    cell_x = rng.integers(0, max(1, grid.nx), size=total_schools).astype(np.int32)
+    cell_y = rng.integers(0, max(1, grid.ny), size=total_schools).astype(np.int32)
+
+    state = state.replace(
+        length=lengths,
+        weight=weights,
+        abundance=abundance,
+        biomass=biomass_per_school,
+        cell_x=cell_x,
+        cell_y=cell_y,
+        is_egg=np.ones(total_schools, dtype=np.bool_),
+    )
+    return state
 
 
 def simulate(

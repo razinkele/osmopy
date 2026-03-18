@@ -90,3 +90,21 @@ class TestEngineConfig:
         cfg = EngineConfig.from_dict(minimal_config)
         assert cfg.additional_mortality_rate[0] == pytest.approx(0.2)
         assert cfg.additional_mortality_rate[1] == pytest.approx(0.15)
+
+    def test_sex_ratio_default(self, minimal_config):
+        cfg = EngineConfig.from_dict(minimal_config)
+        assert cfg.sex_ratio[0] == pytest.approx(0.5)
+
+    def test_relative_fecundity(self, minimal_config):
+        minimal_config["species.relativefecundity.sp0"] = "800"
+        minimal_config["species.relativefecundity.sp1"] = "200"
+        cfg = EngineConfig.from_dict(minimal_config)
+        assert cfg.relative_fecundity[0] == pytest.approx(800.0)
+        assert cfg.relative_fecundity[1] == pytest.approx(200.0)
+
+    def test_maturity_size(self, minimal_config):
+        minimal_config["species.maturity.size.sp0"] = "12.0"
+        minimal_config["species.maturity.size.sp1"] = "40.0"
+        cfg = EngineConfig.from_dict(minimal_config)
+        assert cfg.maturity_size[0] == pytest.approx(12.0)
+        assert cfg.maturity_size[1] == pytest.approx(40.0)
