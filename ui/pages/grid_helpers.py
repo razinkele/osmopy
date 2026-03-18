@@ -261,9 +261,16 @@ def build_netcdf_grid_layers(
     lr_lat = float(lat.min()) - abs(float(lat[0, 0] - lat[min(1, ny - 1), 0])) / 2
     lr_lon = float(lon.max()) + abs(float(lon[0, 0] - lon[0, min(1, nx - 1)])) / 2
 
-    boundary = [{"polygon": [
-        [ul_lon, ul_lat], [lr_lon, ul_lat], [lr_lon, lr_lat], [ul_lon, lr_lat],
-    ]}]
+    boundary = [
+        {
+            "polygon": [
+                [ul_lon, ul_lat],
+                [lr_lon, ul_lat],
+                [lr_lon, lr_lat],
+                [ul_lon, lr_lat],
+            ]
+        }
+    ]
     layers.append(
         polygon_layer(
             "grid-extent",
@@ -379,7 +386,10 @@ def load_csv_overlay(
             else:
                 _log.warning(
                     "CSV %s has %d values but grid is %dx%d",
-                    file_path, len(flat), g_ny, g_nx,
+                    file_path,
+                    len(flat),
+                    g_ny,
+                    g_nx,
                 )
                 return None
         elif data.shape != (g_ny, g_nx):
@@ -389,7 +399,10 @@ def load_csv_overlay(
             else:
                 _log.warning(
                     "CSV %s shape %s doesn't match grid %dx%d",
-                    file_path, data.shape, g_ny, g_nx,
+                    file_path,
+                    data.shape,
+                    g_ny,
+                    g_nx,
                 )
                 return None
 
@@ -412,19 +425,11 @@ def load_csv_overlay(
                     clat = float(lat[r, c] if lat.ndim == 2 else lat[r])
                     clon = float(lon[r, c] if lon.ndim == 2 else lon[c])
                     if lat.ndim == 2:
-                        dlat = abs(float(
-                            lat[min(r + 1, g_ny - 1), c] - lat[max(r - 1, 0), c]
-                        )) / 2
-                        dlon = abs(float(
-                            lon[r, min(c + 1, g_nx - 1)] - lon[r, max(c - 1, 0)]
-                        )) / 2
+                        dlat = abs(float(lat[min(r + 1, g_ny - 1), c] - lat[max(r - 1, 0), c])) / 2
+                        dlon = abs(float(lon[r, min(c + 1, g_nx - 1)] - lon[r, max(c - 1, 0)])) / 2
                     else:
-                        dlat = abs(float(
-                            lat[min(r + 1, len(lat) - 1)] - lat[max(r - 1, 0)]
-                        )) / 2
-                        dlon = abs(float(
-                            lon[min(c + 1, len(lon) - 1)] - lon[max(c - 1, 0)]
-                        )) / 2
+                        dlat = abs(float(lat[min(r + 1, len(lat) - 1)] - lat[max(r - 1, 0)])) / 2
+                        dlon = abs(float(lon[min(c + 1, len(lon) - 1)] - lon[max(c - 1, 0)])) / 2
                     if r == 0 or r == g_ny - 1:
                         dlat *= 2
                     if c == 0 or c == g_nx - 1:
@@ -445,16 +450,18 @@ def load_csv_overlay(
                 blue = 0
                 alpha = int(100 + 100 * t)
 
-                cells.append({
-                    "polygon": [
-                        [clon - hlon, clat + hlat],
-                        [clon + hlon, clat + hlat],
-                        [clon + hlon, clat - hlat],
-                        [clon - hlon, clat - hlat],
-                    ],
-                    "value": v,
-                    "fill": [red, green, blue, alpha],
-                })
+                cells.append(
+                    {
+                        "polygon": [
+                            [clon - hlon, clat + hlat],
+                            [clon + hlon, clat + hlat],
+                            [clon + hlon, clat - hlat],
+                            [clon - hlon, clat - hlat],
+                        ],
+                        "value": v,
+                        "fill": [red, green, blue, alpha],
+                    }
+                )
         return cells if cells else None
     except (OSError, pd.errors.ParserError, ValueError) as exc:
         _log.warning("Failed to load CSV overlay %s: %s", file_path, exc)
@@ -509,15 +516,17 @@ def load_netcdf_overlay(
                 if c == 0 or c == onx - 1:
                     dlon *= 2
                 hlat, hlon = dlat / 2, dlon / 2
-                cells.append({
-                    "polygon": [
-                        [cell_lon - hlon, cell_lat + hlat],
-                        [cell_lon + hlon, cell_lat + hlat],
-                        [cell_lon + hlon, cell_lat - hlat],
-                        [cell_lon - hlon, cell_lat - hlat],
-                    ],
-                    "value": v,
-                })
+                cells.append(
+                    {
+                        "polygon": [
+                            [cell_lon - hlon, cell_lat + hlat],
+                            [cell_lon + hlon, cell_lat + hlat],
+                            [cell_lon + hlon, cell_lat - hlat],
+                            [cell_lon - hlon, cell_lat - hlat],
+                        ],
+                        "value": v,
+                    }
+                )
         return cells if cells else None
     except (OSError, KeyError, ValueError) as exc:
         _log.warning("Failed to load overlay %s: %s", file_path, exc)
@@ -555,14 +564,14 @@ def parse_movement_steps(raw: str | None) -> set[int]:
 
 
 MOVEMENT_PALETTE: list[list[int]] = [
-    [30, 120, 200, 140],   # Blue
-    [220, 60, 60, 140],    # Red
-    [40, 180, 80, 140],    # Green
-    [240, 150, 30, 140],   # Orange
-    [160, 60, 200, 140],   # Purple
-    [30, 190, 200, 140],   # Cyan
+    [30, 120, 200, 140],  # Blue
+    [220, 60, 60, 140],  # Red
+    [40, 180, 80, 140],  # Green
+    [240, 150, 30, 140],  # Orange
+    [160, 60, 200, 140],  # Purple
+    [30, 190, 200, 140],  # Cyan
     [220, 100, 160, 140],  # Pink
-    [200, 200, 40, 140],   # Yellow
+    [200, 200, 40, 140],  # Yellow
 ]
 
 
@@ -607,13 +616,15 @@ def build_movement_cache(
     map_indices: list[str] = []
     for key, val in cfg.items():
         if key.startswith("movement.species.map") and val == species:
-            idx = key[len("movement.species.map"):]
+            idx = key[len("movement.species.map") :]
             map_indices.append(idx)
 
     if map_indices and len(map_indices) > len(MOVEMENT_PALETTE):
         _log.warning(
             "Species %s has %d maps but palette has %d colors; colors will cycle",
-            species, len(map_indices), len(MOVEMENT_PALETTE),
+            species,
+            len(map_indices),
+            len(MOVEMENT_PALETTE),
         )
 
     cache: dict[str, dict] = {}

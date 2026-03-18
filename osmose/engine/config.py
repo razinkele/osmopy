@@ -32,6 +32,13 @@ def _species_str(cfg: dict[str, str], pattern: str, n: int) -> list[str]:
     return [_get(cfg, pattern.format(i=i)) for i in range(n)]
 
 
+def _species_float_optional(
+    cfg: dict[str, str], pattern: str, n: int, default: float
+) -> NDArray[np.float64]:
+    """Extract a per-species float array, using default if key is missing."""
+    return np.array([float(cfg.get(pattern.format(i=i), str(default))) for i in range(n)])
+
+
 @dataclass
 class EngineConfig:
     """Typed engine configuration extracted from a flat OSMOSE config dict."""
@@ -55,6 +62,12 @@ class EngineConfig:
     mortality_subdt: int
     ingestion_rate: NDArray[np.float64]
     critical_success_rate: NDArray[np.float64]
+
+    # Growth
+    delta_lmax_factor: NDArray[np.float64]  # max growth scaling factor (default 2.0)
+
+    # Natural mortality
+    additional_mortality_rate: NDArray[np.float64]  # annual additional mortality rate per species
 
     @classmethod
     def from_dict(cls, cfg: dict[str, str]) -> EngineConfig:
@@ -84,7 +97,13 @@ class EngineConfig:
                 cfg, "species.vonbertalanffy.threshold.age.sp{i}", n_sp
             ),
             lifespan_dt=(lifespan_years * n_dt).astype(np.int32),
-            mortality_subdt=int(cfg.get("mortality.subdt", "10")),
+            mortality_subdt=max(1, int(cfg.get("mortality.subdt", "10"))),
             ingestion_rate=_species_float(cfg, "predation.ingestion.rate.max.sp{i}", n_sp),
             critical_success_rate=_species_float(cfg, "predation.efficiency.critical.sp{i}", n_sp),
+            delta_lmax_factor=_species_float_optional(
+                cfg, "species.delta.lmax.factor.sp{i}", n_sp, default=2.0
+            ),
+            additional_mortality_rate=_species_float_optional(
+                cfg, "mortality.additional.rate.sp{i}", n_sp, default=0.0
+            ),
         )

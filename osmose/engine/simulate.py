@@ -68,18 +68,26 @@ def _mortality(
     config: EngineConfig,
     rng: np.random.Generator,
 ) -> SchoolState:
-    """Phase 1 stub: interleaved mortality."""
+    """Apply mortality sources. Phase 2: only additional mortality."""
+    from osmose.engine.processes.natural import additional_mortality
+
+    for _sub in range(config.mortality_subdt):
+        state = additional_mortality(state, config, config.mortality_subdt)
     return state
 
 
 def _growth(state: SchoolState, config: EngineConfig, rng: np.random.Generator) -> SchoolState:
-    """Phase 1 stub: growth."""
-    return state
+    """Apply Von Bertalanffy growth gated by predation success."""
+    from osmose.engine.processes.growth import growth
+
+    return growth(state, config, rng)
 
 
 def _aging_mortality(state: SchoolState, config: EngineConfig) -> SchoolState:
-    """Phase 1 stub: kill schools exceeding species lifespan."""
-    return state
+    """Kill schools exceeding species lifespan."""
+    from osmose.engine.processes.natural import aging_mortality
+
+    return aging_mortality(state, config)
 
 
 def _reproduction(

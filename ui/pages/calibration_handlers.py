@@ -166,9 +166,7 @@ def register_calibration_handlers(
                 cal_F.set(F)
             elif kind == "error":
                 surrogate_status.set(f"Failed: {payload}")
-                ui.notification_show(
-                    f"Calibration error: {payload}", type="error", duration=10
-                )
+                ui.notification_show(f"Calibration error: {payload}", type="error", duration=10)
             elif kind == "sensitivity":
                 sensitivity_result.set(payload)
 
@@ -263,12 +261,19 @@ def register_calibration_handlers(
                             return
 
                         msg_queue.post_status(f"Evaluating sample {idx + 1}/{n_samples}...")
-                        overrides = {fp.key: str(samples[idx, j]) for j, fp in enumerate(free_params)}
+                        overrides = {
+                            fp.key: str(samples[idx, j]) for j, fp in enumerate(free_params)
+                        }
                         try:
                             result = problem._run_single(overrides, run_id=idx)
                             for k in range(n_obj):
                                 Y[idx, k] = result[k]
-                        except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError, OSError) as exc:
+                        except (
+                            subprocess.TimeoutExpired,
+                            subprocess.CalledProcessError,
+                            FileNotFoundError,
+                            OSError,
+                        ) as exc:
                             _log.error("Surrogate sample %d/%d failed: %s", idx + 1, n_samples, exc)
                             Y[idx, :] = float("inf")
                             msg_queue.post_status(f"Sample {idx + 1}/{n_samples} failed: {exc}")
@@ -399,15 +404,19 @@ def register_calibration_handlers(
                         )
                         result = prob._run_single(overrides, run_id=idx)
                         Y[idx] = result[0]
-                    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError, OSError) as exc:
+                    except (
+                        subprocess.TimeoutExpired,
+                        subprocess.CalledProcessError,
+                        FileNotFoundError,
+                        OSError,
+                    ) as exc:
                         _log.warning("Sensitivity sample %d failed: %s", idx, exc)
                         Y[idx] = float("inf")
 
                 n_inf = int(np.isinf(Y).sum())
                 if n_inf > len(Y) * 0.1:
                     msg_queue.post_error(
-                        f"Sensitivity aborted: {n_inf}/{len(Y)} samples failed "
-                        f"(>10% threshold)"
+                        f"Sensitivity aborted: {n_inf}/{len(Y)} samples failed (>10% threshold)"
                     )
                     return
 

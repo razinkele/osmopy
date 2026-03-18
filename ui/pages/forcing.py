@@ -22,21 +22,23 @@ def forcing_ui():
         ui.layout_columns(
             ui.card(
                 collapsible_card_header("Lower Trophic Level (Plankton)", "forcing"),
-            ui.output_ui("forcing_global_fields"),
-            ui.hr(),
-            ui.input_numeric("n_resources", "Number of resource groups", value=3, min=0, max=20),
-            ui.output_ui("resource_panels"),
-        ),
-        ui.card(
-            ui.card_header("Environmental Forcing"),
-            ui.output_ui("forcing_temp_fields"),
-            ui.hr(),
-            ui.p(
-                "Upload NetCDF forcing data for spatially-varying temperature, "
-                "oxygen, or other environmental variables."
+                ui.output_ui("forcing_global_fields"),
+                ui.hr(),
+                ui.input_numeric(
+                    "n_resources", "Number of resource groups", value=3, min=0, max=20
+                ),
+                ui.output_ui("resource_panels"),
             ),
-        ),
-        col_widths=[7, 5],
+            ui.card(
+                ui.card_header("Environmental Forcing"),
+                ui.output_ui("forcing_temp_fields"),
+                ui.hr(),
+                ui.p(
+                    "Upload NetCDF forcing data for spatially-varying temperature, "
+                    "oxygen, or other environmental variables."
+                ),
+            ),
+            col_widths=[7, 5],
         ),
         class_="osm-split-layout",
         id="split_forcing",
@@ -80,8 +82,11 @@ def forcing_server(input, output, session, state):
         indexed_fields = [f for f in LTL_FIELDS if f.indexed]
         names = [cfg.get(f"species.name.sp{n_focal + i}", f"Resource {i}") for i in range(n)]
         return render_species_table(
-            indexed_fields, n_species=n, species_names=names,
-            start_idx=n_focal, config=cfg,
+            indexed_fields,
+            n_species=n,
+            species_names=names,
+            start_idx=n_focal,
+            config=cfg,
         )
 
     @reactive.effect
@@ -112,7 +117,9 @@ def forcing_server(input, output, session, state):
             sp_idx = n_focal + i
             for field in indexed_fields:
                 config_key = field.resolve_key(sp_idx)
-                base_key = field.key_pattern.replace(".sp{idx}", "").replace("{idx}", "").replace(".", "_")
+                base_key = (
+                    field.key_pattern.replace(".sp{idx}", "").replace("{idx}", "").replace(".", "_")
+                )
                 input_id = f"spt_{base_key}_{sp_idx}"
                 try:
                     val = getattr(input, input_id)()

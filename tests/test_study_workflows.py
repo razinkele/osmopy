@@ -317,10 +317,7 @@ class TestConfigManipulation:
         modified = dict(config)
         modified["simulation.time.nyear"] = "3"
 
-        content = {
-            k: v for k, v in modified.items()
-            if not k.startswith("osmose.configuration.")
-        }
+        content = {k: v for k, v in modified.items() if not k.startswith("osmose.configuration.")}
         with tempfile.TemporaryDirectory() as tmpdir:
             writer = OsmoseConfigWriter()
             writer.write(content, Path(tmpdir))
@@ -359,11 +356,13 @@ class TestCalibrationSetup:
             key = f"species.k.sp{i}"
             if key in config:
                 k_val = float(config[key])
-                free_params.append(FreeParameter(
-                    key=key,
-                    lower_bound=k_val * 0.5,
-                    upper_bound=k_val * 2.0,
-                ))
+                free_params.append(
+                    FreeParameter(
+                        key=key,
+                        lower_bound=k_val * 0.5,
+                        upper_bound=k_val * 2.0,
+                    )
+                )
 
         if not free_params:
             pytest.skip(f"{name}: no growth params found")
@@ -473,14 +472,26 @@ class TestObjectiveFunctions:
         for sp in species:
             sim_biomass = rng.exponential(scale=50000, size=n_time)
             obs_biomass = sim_biomass * rng.normal(1.0, 0.1, size=n_time)
-            sim_frames.append(pd.DataFrame({
-                "time": range(n_time), "species": sp, "biomass": sim_biomass,
-                "yield": rng.exponential(scale=5000, size=n_time),
-            }))
-            obs_frames.append(pd.DataFrame({
-                "time": range(n_time), "species": sp, "biomass": obs_biomass,
-                "yield": rng.exponential(scale=5000, size=n_time),
-            }))
+            sim_frames.append(
+                pd.DataFrame(
+                    {
+                        "time": range(n_time),
+                        "species": sp,
+                        "biomass": sim_biomass,
+                        "yield": rng.exponential(scale=5000, size=n_time),
+                    }
+                )
+            )
+            obs_frames.append(
+                pd.DataFrame(
+                    {
+                        "time": range(n_time),
+                        "species": sp,
+                        "biomass": obs_biomass,
+                        "yield": rng.exponential(scale=5000, size=n_time),
+                    }
+                )
+            )
 
         sim = pd.concat(sim_frames, ignore_index=True)
         obs = pd.concat(obs_frames, ignore_index=True)
@@ -572,9 +583,7 @@ class TestSensitivitySweeps:
                 modified = dict(config)
                 modified[key] = str(base_val * factor)
                 errors, _ = validate_config(modified, registry)
-                assert errors == [], (
-                    f"{name}: perturbing {key} by {factor}x caused: {errors}"
-                )
+                assert errors == [], f"{name}: perturbing {key} by {factor}x caused: {errors}"
 
     def test_perturb_mortality_params(self, study_config, registry):
         """Perturb additional mortality rates and validate."""
@@ -590,9 +599,7 @@ class TestSensitivitySweeps:
                 modified = dict(config)
                 modified[key] = str(base_val * factor)
                 errors, _ = validate_config(modified, registry)
-                assert errors == [], (
-                    f"{name}: perturbing {key} by {factor}x caused: {errors}"
-                )
+                assert errors == [], f"{name}: perturbing {key} by {factor}x caused: {errors}"
 
     def test_perturb_seeding_biomass(self, study_config, registry):
         """Perturb seeding biomass and validate."""
@@ -608,9 +615,7 @@ class TestSensitivitySweeps:
                 modified = dict(config)
                 modified[key] = str(base_val * factor)
                 errors, _ = validate_config(modified, registry)
-                assert errors == [], (
-                    f"{name}: perturbing {key} by {factor}x caused: {errors}"
-                )
+                assert errors == [], f"{name}: perturbing {key} by {factor}x caused: {errors}"
 
 
 # ---------------------------------------------------------------------------
@@ -631,10 +636,10 @@ class TestMigrationWithStudyConfigs:
         # Revert mortality.additional -> mortality.natural
         for key in list(old_config.keys()):
             if key.startswith("mortality.additional.rate."):
-                suffix = key[len("mortality.additional.rate."):]
+                suffix = key[len("mortality.additional.rate.") :]
                 old_config[f"mortality.natural.rate.{suffix}"] = old_config.pop(key)
             elif key.startswith("mortality.additional.larva.rate."):
-                suffix = key[len("mortality.additional.larva.rate."):]
+                suffix = key[len("mortality.additional.larva.rate.") :]
                 old_config[f"mortality.natural.larva.rate.{suffix}"] = old_config.pop(key)
 
         # Migrate to current
@@ -728,9 +733,7 @@ class TestMovementConfig:
         maps_dir = config_dir / "maps"
         if maps_dir.exists():
             map_files = list(maps_dir.glob("*.csv"))
-            assert len(map_files) >= 35, (
-                f"Expected >= 35 movement maps, got {len(map_files)}"
-            )
+            assert len(map_files) >= 35, f"Expected >= 35 movement maps, got {len(map_files)}"
 
 
 # ---------------------------------------------------------------------------
@@ -757,8 +760,7 @@ class TestResourceConfig:
         # Resource species are indexed after focal species in some configs
         # Check if resource names exist
         resource_names = [
-            k for k in config
-            if k.startswith("species.name.") or k.startswith("resource.name.")
+            k for k in config if k.startswith("species.name.") or k.startswith("resource.name.")
         ]
         assert len(resource_names) >= nspecies, (
             f"{name}: expected at least {nspecies} species names, got {len(resource_names)}"

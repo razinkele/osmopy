@@ -220,9 +220,11 @@ def migrate_config(
         for old_prefix, new_prefix in renames.items():
             if old_prefix == new_prefix:
                 continue
-            keys_to_rename = [k for k in result if k == old_prefix or k.startswith(old_prefix + ".")]
+            keys_to_rename = [
+                k for k in result if k == old_prefix or k.startswith(old_prefix + ".")
+            ]
             for key in keys_to_rename:
-                new_key = new_prefix + key[len(old_prefix):]
+                new_key = new_prefix + key[len(old_prefix) :]
                 result[new_key] = result.pop(key)
 
     result["osmose.version"] = target_version

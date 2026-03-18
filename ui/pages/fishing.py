@@ -16,17 +16,17 @@ def fishing_ui():
         ui.layout_columns(
             ui.card(
                 collapsible_card_header("Fisheries Module", "fishing"),
-            ui.output_ui("fishing_global_fields"),
-            ui.hr(),
-            ui.input_numeric("n_fisheries", "Number of fisheries", value=1, min=0, max=20),
-            ui.output_ui("fishery_panels"),
-        ),
-        ui.card(
-            ui.card_header("Marine Protected Areas"),
-            ui.input_numeric("n_mpas", "Number of MPAs", value=0, min=0, max=10),
-            ui.output_ui("mpa_panels"),
-        ),
-        col_widths=[8, 4],
+                ui.output_ui("fishing_global_fields"),
+                ui.hr(),
+                ui.input_numeric("n_fisheries", "Number of fisheries", value=1, min=0, max=20),
+                ui.output_ui("fishery_panels"),
+            ),
+            ui.card(
+                ui.card_header("Marine Protected Areas"),
+                ui.input_numeric("n_mpas", "Number of MPAs", value=0, min=0, max=10),
+                ui.output_ui("mpa_panels"),
+            ),
+            col_widths=[8, 4],
         ),
         class_="osm-split-layout",
         id="split_fishing",

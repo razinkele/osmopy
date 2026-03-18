@@ -32,11 +32,16 @@ def test_cmd_run_missing_config(tmp_path):
     """cmd_run with non-existent config should exit non-zero."""
     fake_jar = tmp_path / "fake.jar"
     fake_jar.write_text("")  # jar exists but config does not
-    with patch("sys.argv", [
-        "osmose", "run",
-        str(tmp_path / "nonexistent.csv"),
-        "--jar", str(fake_jar),
-    ]):
+    with patch(
+        "sys.argv",
+        [
+            "osmose",
+            "run",
+            str(tmp_path / "nonexistent.csv"),
+            "--jar",
+            str(fake_jar),
+        ],
+    ):
         with pytest.raises(SystemExit) as exc:
             main()
         assert exc.value.code != 0

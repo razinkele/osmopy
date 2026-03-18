@@ -56,7 +56,8 @@ def test_expand_tab_different_pages():
 def test_grid_has_fullscreen_widget_import():
     """grid.py imports fullscreen_widget from shiny_deckgl."""
     from ui.pages import grid
-    assert hasattr(grid, 'fullscreen_widget') or 'fullscreen_widget' in dir(grid)
+
+    assert hasattr(grid, "fullscreen_widget") or "fullscreen_widget" in dir(grid)
 
 
 @pytest.mark.parametrize(
