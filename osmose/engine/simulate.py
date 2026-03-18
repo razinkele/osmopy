@@ -84,7 +84,7 @@ def _mortality(
 
     # Main mortality sub-timestep loop
     for _sub in range(n_subdt):
-        state = predation(state, config, rng, n_subdt, grid.ny, grid.nx)
+        state = predation(state, config, rng, n_subdt, grid.ny, grid.nx, resources=resources)
         state = starvation_mortality(state, config, n_subdt)
         state = fishing_mortality(state, config, n_subdt)
         state = additional_mortality(state, config, n_subdt)
@@ -189,7 +189,7 @@ def simulate(
     Process ordering matches Java's SimulationStep.step().
     """
     state = initialize(config, grid, rng)
-    resources = ResourceState(config={}, grid=grid)
+    resources = ResourceState(config=config.raw_config, grid=grid)
     outputs: list[StepOutput] = []
 
     for step in range(config.n_steps):

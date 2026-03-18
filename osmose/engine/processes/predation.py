@@ -13,6 +13,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from osmose.engine.config import EngineConfig
+from osmose.engine.resources import ResourceState
 from osmose.engine.state import SchoolState
 
 try:
@@ -85,7 +86,7 @@ if _HAS_NUMBA:
                     continue
 
                 ratio = pred_len / prey_len
-                if ratio <= r_max or ratio > r_min:
+                if ratio < r_min or ratio >= r_max:
                     continue
 
                 sp_prey = species_id[q_idx]
@@ -173,7 +174,7 @@ def _predation_in_cell_python(
                 continue
 
             ratio = pred_len / prey_len
-            if ratio <= r_max or ratio > r_min:
+            if ratio < r_min or ratio >= r_max:
                 continue
 
             sp_prey = state.species_id[q_idx]
@@ -214,6 +215,117 @@ def _predation_in_cell_python(
 
 
 # ---------------------------------------------------------------------------
+# Resource predation (focal species eating LTL plankton/detritus)
+# ---------------------------------------------------------------------------
+
+
+def _predation_on_resources(
+    cell_indices: NDArray[np.int32],
+    state: SchoolState,
+    config: EngineConfig,
+    resources: ResourceState,
+    cell_y: int,
+    cell_x: int,
+    rng: np.random.Generator,
+    n_subdt: int,
+) -> None:
+    """Let focal schools in this cell eat resource species.
+
+    Called after school-to-school predation so that pred_success_rate
+    already reflects food obtained from other schools. Resources fill
+    the remaining appetite.
+    """
+    if resources.n_resources == 0:
+        return
+
+    n_local = len(cell_indices)
+    order = rng.permutation(n_local)
+
+    for p_pos_idx in range(len(order)):
+        p_idx = cell_indices[order[p_pos_idx]]
+
+        if state.age_dt[p_idx] < state.first_feeding_age_dt[p_idx]:
+            continue
+        if state.abundance[p_idx] <= 0:
+            continue
+
+        pred_len = state.length[p_idx]
+        sp_pred = state.species_id[p_idx]
+        r_min_val = config.size_ratio_min[sp_pred]
+        r_max_val = config.size_ratio_max[sp_pred]
+
+        biomass_p = state.abundance[p_idx] * state.weight[p_idx]
+        max_eatable = biomass_p * config.ingestion_rate[sp_pred] / n_subdt
+        if max_eatable <= 0:
+            continue
+
+        # Check each resource species
+        available = 0.0
+        rsc_eligible = np.zeros(resources.n_resources, dtype=np.float64)
+
+        for r in range(resources.n_resources):
+            rsc = resources.species[r]
+            rsc_bio = resources.get_cell_biomass(r, cell_y, cell_x)
+            if rsc_bio <= 0:
+                continue
+
+            # Size overlap: what fraction of the resource size range
+            # falls within the predator's prey window?
+            # Prey window: [L/r_max, L/r_min] (r_max > r_min by convention)
+            prey_size_min = pred_len / r_max_val  # smallest prey this predator eats
+            prey_size_max = pred_len / r_min_val  # largest prey this predator eats
+
+            overlap_min = max(rsc.size_min, prey_size_min)
+            overlap_max = min(rsc.size_max, prey_size_max)
+            if overlap_max <= overlap_min:
+                continue
+            rsc_range = rsc.size_max - rsc.size_min
+            if rsc_range <= 0:
+                continue
+            percent_resource = (overlap_max - overlap_min) / rsc_range
+
+            # Accessibility from matrix (resource index = n_species + r)
+            rsc_sp_idx = config.n_species + r
+            access_coeff = 1.0
+            if config.accessibility_matrix is not None:
+                if (
+                    sp_pred < config.accessibility_matrix.shape[0]
+                    and rsc_sp_idx < config.accessibility_matrix.shape[1]
+                ):
+                    access_coeff = config.accessibility_matrix[sp_pred, rsc_sp_idx]
+                    if access_coeff <= 0:
+                        continue
+
+            eligible_bio = rsc_bio * percent_resource * access_coeff
+            rsc_eligible[r] = eligible_bio
+            available += eligible_bio
+
+        if available <= 0:
+            continue
+
+        # Remaining appetite after school-to-school predation
+        remaining = max_eatable * (1.0 - min(1.0, state.pred_success_rate[p_idx]))
+        if remaining <= 0:
+            continue
+
+        eaten_total = min(available, remaining)
+
+        # Deduct from resources proportionally
+        cell_id = cell_y * resources.grid.nx + cell_x
+        for r in range(resources.n_resources):
+            if rsc_eligible[r] <= 0:
+                continue
+            share = rsc_eligible[r] / available
+            eaten_from_rsc = eaten_total * share
+            resources.biomass[r, cell_id] = max(0.0, resources.biomass[r, cell_id] - eaten_from_rsc)
+
+        # Update predator success rate
+        if max_eatable > 0:
+            state.pred_success_rate[p_idx] += eaten_total / max_eatable
+            state.preyed_biomass[p_idx] += eaten_total
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -228,6 +340,7 @@ def predation(
     n_subdt: int,
     grid_ny: int,
     grid_nx: int,
+    resources: ResourceState | None = None,
 ) -> SchoolState:
     """Apply predation across all grid cells.
 
@@ -290,8 +403,21 @@ def predation(
                 n_subdt,
             )
         else:
-            _predation_in_cell_python(
-                cell_indices, work_state, config, rng, n_subdt
+            _predation_in_cell_python(cell_indices, work_state, config, rng, n_subdt)
+
+        # Resource predation: focal schools eat LTL plankton/detritus
+        if resources is not None and resources.n_resources > 0:
+            cell_y_val = cell // grid_nx
+            cell_x_val = cell % grid_nx
+            _predation_on_resources(
+                cell_indices,
+                work_state,
+                config,
+                resources,
+                cell_y_val,
+                cell_x_val,
+                rng,
+                n_subdt,
             )
 
     new_biomass = work_state.abundance * work_state.weight
