@@ -116,9 +116,25 @@ def _load_stage_accessibility(
     return AccessibilityMatrix.from_csv(path, all_species_names)
 
 
+@dataclass
+class MPAZone:
+    """A Marine Protected Area definition."""
+
+    grid: NDArray[np.float64]  # 2D spatial grid (1 = protected, 0 = not)
+    start_year: int
+    end_year: int
+    percentage: float  # reduction factor (0-1)
+
+
 def _parse_fisheries(
     cfg: dict[str, str], species_names: list[str], n_species: int
-) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.int32]]:
+) -> tuple[
+    NDArray[np.float64],
+    NDArray[np.float64],
+    NDArray[np.int32],
+    NDArray[np.float64],
+    NDArray[np.float64],
+]:
     """Parse fisheries-based fishing config (OSMOSE v4).
 
     Returns
@@ -128,25 +144,31 @@ def _parse_fisheries(
     fishing_selectivity_a50: NDArray[np.float64]
         Age at 50% selectivity (years) per species. NaN if not applicable.
     fishing_selectivity_type: NDArray[np.int32]
-        0 = age-based (knife-edge), 1 = length-based, -1 = no fishing.
+        0 = age-based (knife-edge), 1 = sigmoidal size, -1 = no fishing.
+    fishing_selectivity_l50: NDArray[np.float64]
+        Length at 50% selectivity for sigmoidal type. 0 if not applicable.
+    fishing_selectivity_slope: NDArray[np.float64]
+        Slope of sigmoid selectivity. 0 if not applicable.
     """
     fishing_rate = np.zeros(n_species, dtype=np.float64)
     fishing_a50 = np.full(n_species, np.nan, dtype=np.float64)
     fishing_sel_type = np.full(n_species, -1, dtype=np.int32)
+    fishing_l50 = np.zeros(n_species, dtype=np.float64)
+    fishing_slope = np.zeros(n_species, dtype=np.float64)
 
     n_fisheries = int(cfg.get("simulation.nfisheries", "0"))
     if n_fisheries == 0:
-        return fishing_rate, fishing_a50, fishing_sel_type
+        return fishing_rate, fishing_a50, fishing_sel_type, fishing_l50, fishing_slope
 
-    # Read catchability CSV to map species → fishery
+    # Read catchability CSV to map species -> fishery
     catch_file = cfg.get("fisheries.catchability.file", "")
     catch_path = _resolve_file(catch_file)
     if catch_path is None:
-        return fishing_rate, fishing_a50, fishing_sel_type
+        return fishing_rate, fishing_a50, fishing_sel_type, fishing_l50, fishing_slope
 
     catch_df = pd.read_csv(catch_path, index_col=0)
     # Row labels = species names, column labels = fishery names
-    # Build species_name → fishery_index mapping
+    # Build species_name -> fishery_index mapping
     species_to_fishery: dict[str, int] = {}
     for row_idx in range(len(catch_df)):
         row_name = str(catch_df.index[row_idx]).strip()
@@ -168,7 +190,7 @@ def _parse_fisheries(
         rate_val = cfg.get(rate_key, "0.0")
         fishing_rate[sp_idx] = float(rate_val)
 
-        # Selectivity type: 0 = knife-edge by age
+        # Selectivity type: 0 = knife-edge by age, 1 = sigmoidal size
         sel_type = int(cfg.get(f"fisheries.selectivity.type.fsh{fsh_idx}", "0"))
         if sel_type == 0:
             # Age-based knife-edge
@@ -176,10 +198,120 @@ def _parse_fisheries(
             a50_val = cfg.get(a50_key, "0.0")
             fishing_a50[sp_idx] = float(a50_val)
             fishing_sel_type[sp_idx] = 0
-        else:
+        elif sel_type == 1:
+            # Sigmoidal size selectivity
             fishing_sel_type[sp_idx] = 1
+            fishing_l50[sp_idx] = float(cfg.get(f"fisheries.selectivity.l50.fsh{fsh_idx}", "0.0"))
+            fishing_slope[sp_idx] = float(
+                cfg.get(f"fisheries.selectivity.slope.fsh{fsh_idx}", "1.0")
+            )
+        else:
+            fishing_sel_type[sp_idx] = sel_type
 
-    return fishing_rate, fishing_a50, fishing_sel_type
+    return fishing_rate, fishing_a50, fishing_sel_type, fishing_l50, fishing_slope
+
+
+def _load_fishing_seasonality(
+    cfg: dict[str, str], n_species: int, n_dt_per_year: int
+) -> NDArray[np.float64] | None:
+    """Load fishing seasonality CSV files for each species.
+
+    Returns array of shape (n_species, n_dt_per_year) with normalized season weights
+    (sum = 1.0 per species). None if no seasonality files found.
+    """
+    seasons = np.ones((n_species, n_dt_per_year), dtype=np.float64) / n_dt_per_year
+    found_any = False
+
+    for i in range(n_species):
+        file_key = cfg.get(f"fisheries.seasonality.file.sp{i}", "")
+        if not file_key:
+            continue
+        path = _resolve_file(file_key)
+        if path is not None:
+            df = pd.read_csv(path, sep=";")
+            values = df.iloc[:, 1].values.astype(np.float64)
+            if len(values) == n_dt_per_year:
+                total = values.sum()
+                if total > 0:
+                    seasons[i] = values / total
+                found_any = True
+
+    return seasons if found_any else None
+
+
+def _load_fishing_rate_by_year(
+    cfg: dict[str, str], n_species: int
+) -> list[NDArray[np.float64] | None] | None:
+    """Load time-varying annual fishing rate CSV for each species.
+
+    Returns list of arrays (one per species), or None if no files found.
+    """
+    result: list[NDArray[np.float64] | None] = [None] * n_species
+    found_any = False
+
+    for i in range(n_species):
+        file_key = cfg.get(f"mortality.fishing.rate.byyear.file.sp{i}", "")
+        if not file_key:
+            continue
+        path = _resolve_file(file_key)
+        if path is not None:
+            values = np.loadtxt(path, dtype=np.float64)
+            result[i] = values.flatten()
+            found_any = True
+
+    return result if found_any else None
+
+
+def _parse_mpa_zones(cfg: dict[str, str]) -> list[MPAZone] | None:
+    """Parse Marine Protected Area configurations."""
+    zones: list[MPAZone] = []
+    i = 0
+    while True:
+        file_key = cfg.get(f"mpa.file.mpa{i}", "")
+        if not file_key:
+            break
+        path = _resolve_file(file_key)
+        if path is None:
+            i += 1
+            continue
+        grid = _load_spatial_csv(path)
+        start_year = int(cfg.get(f"mpa.start.year.mpa{i}", "0"))
+        end_year = int(cfg.get(f"mpa.end.year.mpa{i}", "999"))
+        percentage = float(cfg.get(f"mpa.percentage.mpa{i}", "1.0"))
+        zones.append(
+            MPAZone(grid=grid, start_year=start_year, end_year=end_year, percentage=percentage)
+        )
+        i += 1
+
+    return zones if zones else None
+
+
+def _load_discard_rates(
+    cfg: dict[str, str], species_names: list[str], n_species: int
+) -> NDArray[np.float64] | None:
+    """Load fishery discard rates from CSV.
+
+    Returns per-species discard rate array, or None if no discard file.
+    """
+    file_key = cfg.get("fisheries.discards.file", "")
+    path = _resolve_file(file_key)
+    if path is None:
+        return None
+
+    df = pd.read_csv(path, index_col=0)
+    discard_rate = np.zeros(n_species, dtype=np.float64)
+
+    for sp_idx in range(n_species):
+        sp_name = species_names[sp_idx].strip()
+        if sp_name in df.index:
+            row = df.loc[sp_name]
+            # Take the max discard rate across fisheries (species is caught by one fishery)
+            vals = row.values.astype(np.float64)
+            nonzero = vals[vals > 0]
+            if len(nonzero) > 0:
+                discard_rate[sp_idx] = nonzero[0]
+
+    return discard_rate
 
 
 def _load_spawning_seasons(
@@ -268,7 +400,20 @@ class EngineConfig:
 
     # Fishing — fisheries-based selectivity
     fishing_selectivity_a50: NDArray[np.float64]  # age at 50% selectivity (years), NaN = unused
-    fishing_selectivity_type: NDArray[np.int32]  # 0=age, 1=length, -1=none
+    fishing_selectivity_type: NDArray[np.int32]  # 0=age, 1=sigmoidal size, -1=none
+    fishing_selectivity_slope: NDArray[np.float64]  # sigmoid slope (type 1 only)
+
+    # Fishing seasonality: (n_species, n_dt_per_year) normalized weights, or None
+    fishing_seasonality: NDArray[np.float64] | None
+
+    # Fishing rate by year: per-species array of annual rates, or None
+    fishing_rate_by_year: list[NDArray[np.float64] | None] | None
+
+    # Marine Protected Areas
+    mpa_zones: list[MPAZone] | None
+
+    # Fishery discards: per-species discard fraction (0-1), or None
+    fishing_discard_rate: NDArray[np.float64] | None
 
     # Predation accessibility
     accessibility_matrix: NDArray[np.float64] | None  # (n_pred, n_prey) or None
@@ -315,9 +460,13 @@ class EngineConfig:
         _focal_names = _species_str(cfg, "species.name.sp{i}", n_sp)
 
         if fisheries_enabled and n_fisheries > 0:
-            fishing, focal_fishing_a50, focal_fishing_sel_type = _parse_fisheries(
-                cfg, _focal_names, n_sp
-            )
+            (
+                fishing,
+                focal_fishing_a50,
+                focal_fishing_sel_type,
+                focal_fishing_l50_fsh,
+                focal_fishing_slope,
+            ) = _parse_fisheries(cfg, _focal_names, n_sp)
         else:
             # Legacy per-species rate
             fishing = _species_float_optional(
@@ -327,6 +476,8 @@ class EngineConfig:
                 fishing = _species_float_optional(cfg, "fishing.rate.sp{i}", n_sp, default=0.0)
             focal_fishing_a50 = np.full(n_sp, np.nan, dtype=np.float64)
             focal_fishing_sel_type = np.full(n_sp, -1, dtype=np.int32)
+            focal_fishing_l50_fsh = np.zeros(n_sp, dtype=np.float64)
+            focal_fishing_slope = np.zeros(n_sp, dtype=np.float64)
 
         # Parse background species
         background_list: list[BackgroundSpeciesInfo] = parse_background_species(
@@ -526,6 +677,10 @@ class EngineConfig:
         focal_fishing_selectivity_l50 = _species_float_optional(
             cfg, "fishing.selectivity.l50.sp{i}", n_sp, default=0.0
         )
+        # Merge fisheries-parsed L50 (for sigmoid type) into selectivity L50
+        for i in range(n_sp):
+            if focal_fishing_l50_fsh[i] > 0 and focal_fishing_selectivity_l50[i] == 0:
+                focal_fishing_selectivity_l50[i] = focal_fishing_l50_fsh[i]
         focal_movement_method = [
             cfg.get(f"movement.distribution.method.sp{i}", "random") for i in range(n_sp)
         ]
@@ -582,6 +737,7 @@ class EngineConfig:
             fishing_selectivity_type = np.concatenate(
                 [focal_fishing_sel_type, np.full(n_bkg, -1, dtype=np.int32)]
             )
+            fishing_selectivity_slope = np.concatenate([focal_fishing_slope, bkg_zeros_f])
             movement_method = focal_movement_method + ["none"] * n_bkg
             random_walk_range = np.concatenate([focal_random_walk_range, bkg_zeros_i])
             out_mortality_rate = np.concatenate([focal_out_mortality_rate, bkg_zeros_f])
@@ -613,6 +769,7 @@ class EngineConfig:
             fishing_selectivity_l50 = focal_fishing_selectivity_l50
             fishing_selectivity_a50 = focal_fishing_a50
             fishing_selectivity_type = focal_fishing_sel_type
+            fishing_selectivity_slope = focal_fishing_slope
             movement_method = focal_movement_method
             random_walk_range = focal_random_walk_range
             out_mortality_rate = focal_out_mortality_rate
@@ -644,6 +801,12 @@ class EngineConfig:
         # Pad for background species (no cutoff)
         cutoff_vals.extend([0.0] * n_bkg)
         output_cutoff_age = np.array(cutoff_vals, dtype=np.float64) if found_any else None
+
+        # Phase 2 fishing features
+        fishing_seasonality = _load_fishing_seasonality(cfg, n_sp, n_dt)
+        fishing_rate_by_year = _load_fishing_rate_by_year(cfg, n_sp)
+        mpa_zones = _parse_mpa_zones(cfg)
+        fishing_discard_rate = _load_discard_rates(cfg, focal_species_names, n_sp)
 
         return cls(
             n_species=n_sp,
@@ -693,6 +856,11 @@ class EngineConfig:
             fishing_selectivity_l50=fishing_selectivity_l50,
             fishing_selectivity_a50=fishing_selectivity_a50,
             fishing_selectivity_type=fishing_selectivity_type,
+            fishing_selectivity_slope=fishing_selectivity_slope,
+            fishing_seasonality=fishing_seasonality,
+            fishing_rate_by_year=fishing_rate_by_year,
+            mpa_zones=mpa_zones,
+            fishing_discard_rate=fishing_discard_rate,
             movement_method=movement_method,
             random_walk_range=random_walk_range,
             out_mortality_rate=out_mortality_rate,

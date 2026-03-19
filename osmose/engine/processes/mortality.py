@@ -37,6 +37,7 @@ _PREDATION = int(MortalityCause.PREDATION)
 _STARVATION = int(MortalityCause.STARVATION)
 _ADDITIONAL = int(MortalityCause.ADDITIONAL)
 _FISHING = int(MortalityCause.FISHING)
+_DISCARDS = int(MortalityCause.DISCARDS)
 
 # Module-level TL tracking accumulator (set by mortality(), used by _apply_predation_for_school)
 _tl_weighted_sum: NDArray[np.float64] | None = None
@@ -90,7 +91,7 @@ def _apply_additional_for_school(
 
 
 def _apply_fishing_for_school(
-    idx: int, state: SchoolState, config: EngineConfig, n_subdt: int
+    idx: int, state: SchoolState, config: EngineConfig, n_subdt: int, step: int = 0
 ) -> None:
     """Apply fishing mortality to a single school (in-place on n_dead)."""
     if state.is_background[idx]:
@@ -101,19 +102,33 @@ def _apply_fishing_for_school(
         return
     sp = state.species_id[idx]
     f_rate = config.fishing_rate[sp]
+
+    # Rate by year override
+    if config.fishing_rate_by_year is not None:
+        year = step // config.n_dt_per_year
+        arr = config.fishing_rate_by_year[sp] if sp < len(config.fishing_rate_by_year) else None
+        if arr is not None and year < len(arr):
+            f_rate = arr[year]
+
     if f_rate <= 0:
         return
 
     # Selectivity check
     sel_type = config.fishing_selectivity_type[sp]
+    selectivity = 1.0
     if sel_type == 0:
         # Age-based knife-edge
         age_years = state.age_dt[idx] / config.n_dt_per_year
         a50 = config.fishing_selectivity_a50[sp]
         if age_years < a50:
             return
+    elif sel_type == 1:
+        # Sigmoidal size selectivity
+        l50 = config.fishing_selectivity_l50[sp]
+        slope = config.fishing_selectivity_slope[sp]
+        selectivity = 1.0 / (1.0 + np.exp(-slope * (state.length[idx] - l50)))
     else:
-        # Length-based knife-edge (sel_type == 1 or -1 for legacy)
+        # Length-based knife-edge (sel_type == -1 for legacy)
         l50 = config.fishing_selectivity_l50[sp]
         if l50 > 0 and state.length[idx] < l50:
             return
@@ -131,12 +146,37 @@ def _apply_fishing_for_school(
         else:
             return  # out of map bounds
 
-    F = f_rate / (config.n_dt_per_year * n_subdt)
+    # MPA reduction
+    if config.mpa_zones is not None:
+        year = step // config.n_dt_per_year
+        cy = int(state.cell_y[idx])
+        cx = int(state.cell_x[idx])
+        for mpa in config.mpa_zones:
+            if not (mpa.start_year <= year < mpa.end_year):
+                continue
+            if 0 <= cy < mpa.grid.shape[0] and 0 <= cx < mpa.grid.shape[1] and mpa.grid[cy, cx] > 0:
+                f_rate *= 1.0 - mpa.percentage
+
+    # Seasonality
+    if config.fishing_seasonality is not None:
+        step_in_year = step % config.n_dt_per_year
+        season_weight = config.fishing_seasonality[sp, step_in_year]
+        F = f_rate * season_weight * selectivity / n_subdt
+    else:
+        F = f_rate * selectivity / (config.n_dt_per_year * n_subdt)
+
     inst_abd = _inst_abundance(state, idx)
     if inst_abd <= 0:
         return
     n_dead = inst_abd * (1.0 - np.exp(-F))
-    state.n_dead[idx, _FISHING] += n_dead
+
+    # Discards split
+    if config.fishing_discard_rate is not None:
+        discard_r = config.fishing_discard_rate[sp]
+        state.n_dead[idx, _FISHING] += n_dead * (1.0 - discard_r)
+        state.n_dead[idx, _DISCARDS] += n_dead * discard_r
+    else:
+        state.n_dead[idx, _FISHING] += n_dead
 
 
 def _apply_predation_for_school(
@@ -399,6 +439,7 @@ def _mortality_in_cell(
     use_stage_access: bool,
     prey_access_idx: NDArray[np.int32] | None,
     pred_access_idx: NDArray[np.int32] | None,
+    step: int = 0,
 ) -> None:
     """Apply interleaved mortality within one cell, matching Java's computeMortality().
 
@@ -456,7 +497,7 @@ def _mortality_in_cell(
             elif cause == _FISHING:
                 f_local = seq_fish[i]
                 f_idx = int(cell_indices[f_local])
-                _apply_fishing_for_school(f_idx, state, config, n_subdt)
+                _apply_fishing_for_school(f_idx, state, config, n_subdt, step=step)
 
 
 # ---------------------------------------------------------------------------
@@ -470,6 +511,7 @@ def mortality(
     config: EngineConfig,
     rng: np.random.Generator,
     grid: Grid,
+    step: int = 0,
 ) -> SchoolState:
     """Apply all mortality sources with per-cell per-school interleaved ordering.
 
@@ -592,6 +634,7 @@ def mortality(
                 use_stage_access,
                 prey_access_idx,
                 pred_access_idx,
+                step=step,
             )
 
     # Update abundance from accumulated n_dead

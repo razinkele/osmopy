@@ -83,11 +83,12 @@ def _mortality(
     config: EngineConfig,
     rng: np.random.Generator,
     grid: Grid,
+    step: int = 0,
 ) -> SchoolState:
     """Apply all mortality sources with interleaved ordering."""
     from osmose.engine.processes.mortality import mortality
 
-    return mortality(state, resources, config, rng, grid)
+    return mortality(state, resources, config, rng, grid, step=step)
 
 
 def _growth(state: SchoolState, config: EngineConfig, rng: np.random.Generator) -> SchoolState:
@@ -105,8 +106,12 @@ def _aging_mortality(state: SchoolState, config: EngineConfig) -> SchoolState:
 
 
 def _reproduction(
-    state: SchoolState, config: EngineConfig, step: int, rng: np.random.Generator,
-    grid_ny: int = 10, grid_nx: int = 10,
+    state: SchoolState,
+    config: EngineConfig,
+    step: int,
+    rng: np.random.Generator,
+    grid_ny: int = 10,
+    grid_nx: int = 10,
 ) -> SchoolState:
     """Egg production + age increment."""
     from osmose.engine.processes.reproduction import reproduction
@@ -249,7 +254,7 @@ def simulate(
         if len(bkg_schools) > 0:
             state = state.append(bkg_schools)
 
-        state = _mortality(state, resources, config, rng, grid)
+        state = _mortality(state, resources, config, rng, grid, step=step)
 
         # Collect background output BEFORE stripping
         bkg_output = _collect_background_outputs(state, config, n_focal)
