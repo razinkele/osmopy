@@ -456,3 +456,57 @@ class TestMortalitySkipBackground:
         assert new_state.abundance[0] < 1000.0
         np.testing.assert_allclose(new_state.abundance[2], 1000.0)
         np.testing.assert_allclose(new_state.abundance[3], 1000.0)
+
+
+# ---------------------------------------------------------------------------
+# Tests for simulation loop with background species
+# ---------------------------------------------------------------------------
+
+
+from osmose.engine.simulate import simulate  # noqa: E402
+
+
+class TestSimulateWithBackground:
+    def _make_config_with_bkg(self):
+        cfg = {**_make_base_config(), **_make_bkg_config(10)}
+        cfg["simulation.time.nyear"] = "1"
+        cfg["population.seeding.biomass.sp0"] = "100.0"
+        cfg["species.sexratio.sp0"] = "0.5"
+        cfg["species.relativefecundity.sp0"] = "500"
+        cfg["species.maturity.size.sp0"] = "10.0"
+        return cfg
+
+    def test_simulation_runs_with_background(self):
+        cfg = self._make_config_with_bkg()
+        ec = EngineConfig.from_dict(cfg)
+        grid = Grid.from_dimensions(ny=3, nx=3)
+        rng = np.random.default_rng(42)
+        outputs = simulate(ec, grid, rng)
+        assert len(outputs) == ec.n_steps
+
+    def test_output_biomass_includes_background_columns(self):
+        cfg = self._make_config_with_bkg()
+        ec = EngineConfig.from_dict(cfg)
+        grid = Grid.from_dimensions(ny=3, nx=3)
+        rng = np.random.default_rng(42)
+        outputs = simulate(ec, grid, rng)
+        assert outputs[0].biomass.shape == (ec.n_species + ec.n_background,)
+        assert outputs[0].biomass[ec.n_species :].sum() > 0
+
+    def test_output_mortality_is_focal_only(self):
+        cfg = self._make_config_with_bkg()
+        ec = EngineConfig.from_dict(cfg)
+        grid = Grid.from_dimensions(ny=3, nx=3)
+        rng = np.random.default_rng(42)
+        outputs = simulate(ec, grid, rng)
+        assert outputs[0].mortality_by_cause.shape[0] == ec.n_species
+
+    def test_focal_state_not_corrupted_by_background(self):
+        cfg = self._make_config_with_bkg()
+        ec = EngineConfig.from_dict(cfg)
+        grid = Grid.from_dimensions(ny=3, nx=3)
+        rng = np.random.default_rng(42)
+        outputs = simulate(ec, grid, rng)
+        for o in outputs:
+            assert np.all(np.isfinite(o.biomass[: ec.n_species]))
+            assert np.all(o.biomass[: ec.n_species] >= 0)

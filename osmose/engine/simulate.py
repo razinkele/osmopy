@@ -13,6 +13,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
+from osmose.engine.background import BackgroundState
 from osmose.engine.config import EngineConfig
 from osmose.engine.grid import Grid
 from osmose.engine.resources import ResourceState
@@ -102,24 +103,68 @@ def _reproduction(
 
 
 # ---------------------------------------------------------------------------
+# Background inject/strip helpers
+# ---------------------------------------------------------------------------
+
+
+def _collect_background_outputs(
+    state: SchoolState, config: EngineConfig, n_focal: int
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Aggregate background species biomass/abundance before stripping."""
+    n_total = config.n_species + config.n_background
+    bkg_biomass = np.zeros(n_total, dtype=np.float64)
+    bkg_abundance = np.zeros(n_total, dtype=np.float64)
+    if len(state) > n_focal:
+        bkg_ids = state.species_id[n_focal:]
+        np.add.at(bkg_biomass, bkg_ids, state.biomass[n_focal:])
+        np.add.at(bkg_abundance, bkg_ids, state.abundance[n_focal:])
+    return bkg_biomass, bkg_abundance
+
+
+def _strip_background(state: SchoolState, n_focal: int) -> SchoolState:
+    """Remove background schools by slicing to first n_focal entries."""
+    from dataclasses import fields
+
+    sliced = {}
+    for f in fields(state):
+        arr = getattr(state, f.name)
+        sliced[f.name] = arr[:n_focal] if arr.ndim == 1 else arr[:n_focal, :]
+    return SchoolState(**sliced)
+
+
+# ---------------------------------------------------------------------------
 # Output collection
 # ---------------------------------------------------------------------------
 
 
-def _collect_outputs(state: SchoolState, config: EngineConfig, step: int) -> StepOutput:
+def _collect_outputs(
+    state: SchoolState,
+    config: EngineConfig,
+    step: int,
+    bkg_output: tuple[NDArray[np.float64], NDArray[np.float64]] | None = None,
+) -> StepOutput:
     """Aggregate per-species biomass and abundance from current state."""
-    biomass = np.zeros(config.n_species, dtype=np.float64)
-    abundance = np.zeros(config.n_species, dtype=np.float64)
+    n_total = config.n_species + config.n_background
+    biomass = np.zeros(n_total, dtype=np.float64)
+    abundance = np.zeros(n_total, dtype=np.float64)
     if len(state) > 0:
         np.add.at(biomass, state.species_id, state.biomass)
         np.add.at(abundance, state.species_id, state.abundance)
+    if bkg_output is not None:
+        biomass += bkg_output[0]
+        abundance += bkg_output[1]
 
-    # Aggregate mortality by cause per species
+    # Aggregate mortality by cause per species (focal only)
     n_causes = len(MortalityCause)
     mortality_by_cause = np.zeros((config.n_species, n_causes), dtype=np.float64)
     if len(state) > 0:
+        focal_mask = state.species_id < config.n_species
         for cause in range(n_causes):
-            np.add.at(mortality_by_cause[:, cause], state.species_id, state.n_dead[:, cause])
+            np.add.at(
+                mortality_by_cause[:, cause],
+                state.species_id[focal_mask],
+                state.n_dead[focal_mask, cause],
+            )
 
     return StepOutput(
         step=step, biomass=biomass, abundance=abundance, mortality_by_cause=mortality_by_cause
@@ -137,8 +182,9 @@ def initialize(config: EngineConfig, grid: Grid, rng: np.random.Generator) -> Sc
     Each species gets n_schools schools with biomass split equally from
     seeding_biomass. Schools start at age 0 with egg size.
     """
-    total_schools = int(config.n_schools.sum())
-    species_ids = np.repeat(np.arange(config.n_species, dtype=np.int32), config.n_schools)
+    focal_n_schools = config.n_schools[: config.n_species]
+    total_schools = int(focal_n_schools.sum())
+    species_ids = np.repeat(np.arange(config.n_species, dtype=np.int32), focal_n_schools)
     state = SchoolState.create(n_schools=total_schools, species_id=species_ids)
 
     # Initial length = egg size, weight from allometry
@@ -182,6 +228,7 @@ def simulate(
     """
     state = initialize(config, grid, rng)
     resources = ResourceState(config=config.raw_config, grid=grid)
+    background = BackgroundState(config=config.raw_config, grid=grid, engine_config=config)
     outputs: list[StepOutput] = []
 
     for step in range(config.n_steps):
@@ -189,11 +236,27 @@ def simulate(
         state = _reset_step_variables(state)
         resources.update(step)
         state = _movement(state, grid, config, step, rng)
+
+        # Inject background schools before mortality
+        bkg_schools = background.get_schools(step)
+        n_focal = len(state)
+        if len(bkg_schools) > 0:
+            state = state.append(bkg_schools)
+
         state = _mortality(state, resources, config, rng, grid)
+
+        # Collect background output BEFORE stripping
+        bkg_output = _collect_background_outputs(state, config, n_focal)
+
+        # Strip background schools
+        state = _strip_background(state, n_focal)
+
         state = _growth(state, config, rng)
         state = _aging_mortality(state, config)
         state = _reproduction(state, config, step, rng)
-        outputs.append(_collect_outputs(state, config, step))
+
+        # Collect focal outputs after reproduction
+        outputs.append(_collect_outputs(state, config, step, bkg_output))
         state = state.compact()
 
     return outputs

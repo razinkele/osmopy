@@ -28,7 +28,7 @@ def write_outputs(
       - {prefix}_abundance_Simu0.csv
     """
     output_dir.mkdir(parents=True, exist_ok=True)
-    species = config.species_names
+    species = config.all_species_names  # includes background
 
     # Collect time series
     times = np.array([o.step / config.n_dt_per_year for o in outputs])
