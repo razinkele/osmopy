@@ -289,8 +289,8 @@ class TestBackgroundStateUniform:
         bkg, ec, grid = _make_bkg_state()
         result = bkg.get_schools(step=0)
         c, b = 0.00308, 3.029
-        w0 = c * (10.0**b)
-        w1 = c * (30.0**b)
+        w0 = c * (10.0**b) * 1e-6  # grams to tonnes
+        w1 = c * (30.0**b) * 1e-6
         # First 9 schools are class 0, next 9 are class 1
         assert result.weight[:9] == pytest.approx(w0)
         assert result.weight[9:] == pytest.approx(w1)

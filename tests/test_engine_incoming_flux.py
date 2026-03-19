@@ -199,7 +199,7 @@ class TestSchoolCreation:
 
         sf = flux._fluxes[0]
         expected_weight = sf.weights[0]
-        expected_abund_total = 100.0 * 1e6 / expected_weight
+        expected_abund_total = 100.0 / expected_weight  # both in tonnes
 
         # Should be split into n_schools (10) schools
         n_schools = int(ec.n_schools[0])

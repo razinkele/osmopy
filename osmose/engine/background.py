@@ -265,9 +265,9 @@ class BackgroundState:
                 sp.proportion_ts = df.values.astype(np.float64)
 
         for sp in self._species:
-            # w[cls] = condition_factor * length[cls]^allometric_power
+            # w[cls] = condition_factor * length[cls]^allometric_power, convert grams to tonnes
             weights = np.array(
-                [sp.condition_factor * (length**sp.allometric_power) for length in sp.lengths],
+                [sp.condition_factor * (length**sp.allometric_power) * 1e-6 for length in sp.lengths],
                 dtype=np.float64,
             )
             self._weights.append(weights)

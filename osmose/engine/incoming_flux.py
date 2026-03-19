@@ -169,7 +169,8 @@ class IncomingFluxState:
             lengths[c] = max(length, 0.001)  # avoid zero length
             ages_dt[c] = max(0, round(age_years * n_dt_per_year))
 
-        weights = cf * lengths**ap
+        # Convert grams to tonnes (Java convention)
+        weights = cf * lengths**ap * 1e-6
 
         return _SpeciesFlux(
             species_id=sp,
@@ -205,8 +206,8 @@ class IncomingFluxState:
                 if weight <= 0.0:
                     continue
 
-                # biomass in tonnes, weight in grams -> abundance
-                abundance = bm * 1e6 / weight
+                # biomass in tonnes, weight in tonnes -> abundance
+                abundance = bm / weight
 
                 # Split into n_schools if abundance is large enough
                 n_schools_sp = int(ec.n_schools[flux.species_id])

@@ -182,7 +182,7 @@ class TestGrowthGating:
             pred_success_rate=np.array([1.0]),
         )
         new_state = growth(state, cfg, np.random.default_rng(42))
-        expected_weight = 0.006 * new_state.length[0] ** 3.0
+        expected_weight = 0.006 * new_state.length[0] ** 3.0 * 1e-6  # grams to tonnes
         np.testing.assert_allclose(new_state.weight[0], expected_weight, rtol=1e-10)
 
     def test_csr_equals_one_full_success_gets_max_delta(self):

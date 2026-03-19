@@ -98,8 +98,8 @@ def growth(state: SchoolState, config: EngineConfig, rng: np.random.Generator) -
     # OSMOSE does not define a separate lmax parameter distinct from linf.
     new_length = np.minimum(state.length + growth_factor, config.linf[sp])
 
-    # Update weight from new length: W = c * L^b
-    new_weight = config.condition_factor[sp] * new_length ** config.allometric_power[sp]
+    # Update weight from new length: W = c * L^b, convert grams to tonnes
+    new_weight = config.condition_factor[sp] * new_length ** config.allometric_power[sp] * 1e-6
 
     # Update biomass
     new_biomass = state.abundance * new_weight

@@ -189,52 +189,13 @@ def _collect_outputs(
 
 
 def initialize(config: EngineConfig, grid: Grid, rng: np.random.Generator) -> SchoolState:
-    """Create the initial population of schools with seeding biomass.
+    """Create an empty initial population (Java convention).
 
-    Each species gets n_schools schools with biomass split equally from
-    seeding_biomass. Schools start at age 0 with egg size.
+    Java's PopulatingProcess creates zero initial schools by default.
+    All schools are created by reproduction's seeding mechanism in the
+    first timestep (SSB=0 triggers seeding_biomass injection).
     """
-    focal_n_schools = config.n_schools[: config.n_species]
-    total_schools = int(focal_n_schools.sum())
-    species_ids = np.repeat(np.arange(config.n_species, dtype=np.int32), focal_n_schools)
-    state = SchoolState.create(n_schools=total_schools, species_id=species_ids)
-
-    # Initial length = egg size, weight from allometry (or override)
-    lengths = config.egg_size[species_ids]
-    weights = config.condition_factor[species_ids] * lengths ** config.allometric_power[species_ids]
-
-    # Apply egg weight overrides where specified
-    if config.egg_weight_override is not None:
-        for sp in range(config.n_species):
-            override = config.egg_weight_override[sp]
-            if not np.isnan(override):
-                mask = species_ids == sp
-                weights[mask] = override
-
-    # Split seeding biomass equally among schools of each species
-    biomass_per_school = np.zeros(total_schools, dtype=np.float64)
-    for sp in range(config.n_species):
-        mask = species_ids == sp
-        n = mask.sum()
-        if n > 0 and config.seeding_biomass[sp] > 0:
-            biomass_per_school[mask] = config.seeding_biomass[sp] / n
-
-    abundance = np.where(weights > 0, biomass_per_school / weights, 0.0)
-
-    # Random placement on grid
-    cell_x = rng.integers(0, max(1, grid.nx), size=total_schools).astype(np.int32)
-    cell_y = rng.integers(0, max(1, grid.ny), size=total_schools).astype(np.int32)
-
-    state = state.replace(
-        length=lengths,
-        weight=weights,
-        abundance=abundance,
-        biomass=biomass_per_school,
-        cell_x=cell_x,
-        cell_y=cell_y,
-        is_egg=np.ones(total_schools, dtype=np.bool_),
-    )
-    return state
+    return SchoolState.create(n_schools=0)
 
 
 def simulate(

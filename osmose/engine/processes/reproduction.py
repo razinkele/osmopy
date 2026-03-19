@@ -69,8 +69,8 @@ def reproduction(
             continue
         eggs_per_school = n_eggs[sp] / n_new
         egg_len = config.egg_size[sp]
-        egg_weight = config.condition_factor[sp] * egg_len ** config.allometric_power[sp]
-        # Use egg weight override if available (e.g., EEC config species.egg.weight.sp{N})
+        egg_weight = config.condition_factor[sp] * egg_len ** config.allometric_power[sp] * 1e-6
+        # Use egg weight override if available (already in tonnes)
         if config.egg_weight_override is not None and not np.isnan(config.egg_weight_override[sp]):
             egg_weight = config.egg_weight_override[sp]
 

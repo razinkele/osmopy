@@ -35,36 +35,20 @@ def _make_reprod_config() -> dict[str, str]:
 
 
 class TestInitialize:
-    def test_creates_correct_number_of_schools(self):
+    def test_creates_empty_state(self):
+        """Java convention: initialize returns empty state; reproduction seeds schools."""
         cfg = EngineConfig.from_dict(_make_reprod_config())
         grid = Grid.from_dimensions(ny=5, nx=5)
         rng = np.random.default_rng(42)
         state = initialize(cfg, grid, rng)
-        assert len(state) == 5  # n_schools = 5
+        assert len(state) == 0
 
-    def test_schools_have_seeding_biomass(self):
+    def test_empty_state_has_zero_biomass(self):
         cfg = EngineConfig.from_dict(_make_reprod_config())
         grid = Grid.from_dimensions(ny=5, nx=5)
         rng = np.random.default_rng(42)
         state = initialize(cfg, grid, rng)
-        total_biomass = state.biomass.sum()
-        np.testing.assert_allclose(total_biomass, 50000.0, rtol=1e-10)
-
-    def test_schools_start_as_eggs(self):
-        cfg = EngineConfig.from_dict(_make_reprod_config())
-        grid = Grid.from_dimensions(ny=5, nx=5)
-        rng = np.random.default_rng(42)
-        state = initialize(cfg, grid, rng)
-        assert np.all(state.is_egg)
-        assert np.all(state.age_dt == 0)
-
-    def test_schools_placed_on_grid(self):
-        cfg = EngineConfig.from_dict(_make_reprod_config())
-        grid = Grid.from_dimensions(ny=5, nx=5)
-        rng = np.random.default_rng(42)
-        state = initialize(cfg, grid, rng)
-        assert np.all(state.cell_x >= 0) and np.all(state.cell_x < 5)
-        assert np.all(state.cell_y >= 0) and np.all(state.cell_y < 5)
+        assert state.biomass.sum() == 0.0
 
 
 class TestReproduction:
