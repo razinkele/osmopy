@@ -569,10 +569,12 @@ class EngineConfig:
             n_schools = focal_n_schools
 
         # Egg weight override: use species.egg.weight.sp{i} if provided
+        # Java convention: config value is in GRAMS, convert to tonnes (* 1e-6)
         egg_weight_vals = [cfg.get(f"species.egg.weight.sp{i}", "") for i in range(n_sp)]
         if any(v for v in egg_weight_vals):
             egg_weight_override = np.array(
-                [float(v) if v else float("nan") for v in egg_weight_vals], dtype=np.float64
+                [float(v) * 1e-6 if v else float("nan") for v in egg_weight_vals],
+                dtype=np.float64,
             )
         else:
             egg_weight_override = None

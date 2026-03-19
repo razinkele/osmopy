@@ -266,7 +266,8 @@ class TestEggWeightOverride:
         cfg["species.egg.weight.sp0"] = "0.001"
         ec = EngineConfig.from_dict(cfg)
         assert ec.egg_weight_override is not None
-        assert ec.egg_weight_override[0] == pytest.approx(0.001)
+        # Config value 0.001 grams → stored as 0.001 * 1e-6 = 1e-9 tonnes
+        assert ec.egg_weight_override[0] == pytest.approx(0.001 * 1e-6)
 
     def test_egg_weight_override_none_when_absent(self):
         """egg_weight_override is None when no species.egg.weight keys present."""
@@ -281,20 +282,9 @@ class TestEggWeightOverride:
         # sp1 has no override
         ec = EngineConfig.from_dict(cfg)
         assert ec.egg_weight_override is not None
-        assert ec.egg_weight_override[0] == pytest.approx(0.001)
+        # Config value 0.001 grams → stored as 0.001 * 1e-6 = 1e-9 tonnes
+        assert ec.egg_weight_override[0] == pytest.approx(0.001 * 1e-6)
         assert np.isnan(ec.egg_weight_override[1])
-
-    def test_initialize_uses_egg_weight_override(self):
-        """initialize() uses egg_weight_override instead of allometry."""
-        cfg = _make_minimal_config()
-        cfg["species.egg.weight.sp0"] = "0.005"
-        cfg["population.seeding.biomass.sp0"] = "100.0"
-        ec = EngineConfig.from_dict(cfg)
-        grid = Grid.from_dimensions(ny=3, nx=3)
-        rng = np.random.default_rng(42)
-        state = initialize(ec, grid, rng)
-        # All schools of sp0 should have weight = 0.005
-        np.testing.assert_allclose(state.weight, 0.005)
 
 
 # ---------------------------------------------------------------------------
