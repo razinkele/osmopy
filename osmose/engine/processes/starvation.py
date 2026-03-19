@@ -25,6 +25,7 @@ def starvation_mortality(state: SchoolState, config: EngineConfig, n_subdt: int)
     d = state.starvation_rate / n_subdt
     mortality_fraction = 1 - np.exp(-d)
     n_dead = state.abundance * mortality_fraction
+    n_dead[state.is_background] = 0.0
 
     # Skip eggs (age_dt == 0)
     n_dead[state.age_dt == 0] = 0.0
@@ -59,5 +60,6 @@ def update_starvation_rate(state: SchoolState, config: EngineConfig) -> SchoolSt
         m_max * (1 - sr / np.where(csr > 0, csr, 1.0)),
         0.0,
     )
+    new_rate[state.is_background] = 0.0
 
     return state.replace(starvation_rate=new_rate)

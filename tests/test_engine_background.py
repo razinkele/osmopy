@@ -404,3 +404,55 @@ class TestBackgroundStateNetCDF:
         result_2x = bkg_2x.get_schools(step=0)
 
         np.testing.assert_allclose(result_2x.biomass, result_base.biomass * 2.0)
+
+
+# ---------------------------------------------------------------------------
+# Tests for mortality skip on background schools
+# ---------------------------------------------------------------------------
+
+
+from osmose.engine.processes.starvation import starvation_mortality  # noqa: E402
+from osmose.engine.processes.fishing import fishing_mortality  # noqa: E402
+from osmose.engine.processes.natural import additional_mortality  # noqa: E402
+
+
+class TestMortalitySkipBackground:
+    def _make_mixed_state(self):
+        """Create state with 2 focal + 2 background schools."""
+        cfg = {**_make_base_config(), **_make_bkg_config(10)}
+        cfg["mortality.starvation.rate.max.sp0"] = "0.5"
+        cfg["mortality.fishing.rate.sp0"] = "0.5"
+        cfg["mortality.additional.rate.sp0"] = "0.3"
+        ec = EngineConfig.from_dict(cfg)
+        state = SchoolState.create(n_schools=4, species_id=np.array([0, 0, 1, 1], dtype=np.int32))
+        state = state.replace(
+            is_background=np.array([False, False, True, True]),
+            abundance=np.array([1000.0, 1000.0, 1000.0, 1000.0]),
+            weight=np.array([5.0, 5.0, 5.0, 5.0]),
+            biomass=np.array([5000.0, 5000.0, 5000.0, 5000.0]),
+            length=np.array([15.0, 15.0, 15.0, 15.0]),
+            age_dt=np.array([10, 10, 10, 10], dtype=np.int32),
+            starvation_rate=np.array([0.5, 0.5, 0.5, 0.5]),
+        )
+        return state, ec
+
+    def test_starvation_skips_background(self):
+        state, config = self._make_mixed_state()
+        new_state = starvation_mortality(state, config, n_subdt=10)
+        assert new_state.abundance[0] < 1000.0  # focal reduced
+        np.testing.assert_allclose(new_state.abundance[2], 1000.0)  # bkg untouched
+        np.testing.assert_allclose(new_state.abundance[3], 1000.0)
+
+    def test_fishing_skips_background(self):
+        state, config = self._make_mixed_state()
+        new_state = fishing_mortality(state, config, n_subdt=10)
+        assert new_state.abundance[0] < 1000.0
+        np.testing.assert_allclose(new_state.abundance[2], 1000.0)
+        np.testing.assert_allclose(new_state.abundance[3], 1000.0)
+
+    def test_additional_skips_background(self):
+        state, config = self._make_mixed_state()
+        new_state = additional_mortality(state, config, n_subdt=10)
+        assert new_state.abundance[0] < 1000.0
+        np.testing.assert_allclose(new_state.abundance[2], 1000.0)
+        np.testing.assert_allclose(new_state.abundance[3], 1000.0)

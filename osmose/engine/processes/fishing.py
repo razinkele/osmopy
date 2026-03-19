@@ -29,6 +29,7 @@ def fishing_mortality(state: SchoolState, config: EngineConfig, n_subdt: int) ->
     l50 = config.fishing_selectivity_l50[sp]
     selectivity = np.where(l50 > 0, np.where(state.length >= l50, 1.0, 0.0), 1.0)
     n_dead = state.abundance * mortality_fraction * selectivity
+    n_dead[state.is_background] = 0.0
 
     # Skip eggs (age_dt == 0)
     n_dead[state.age_dt == 0] = 0.0

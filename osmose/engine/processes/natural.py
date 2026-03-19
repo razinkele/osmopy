@@ -30,6 +30,7 @@ def additional_mortality(state: SchoolState, config: EngineConfig, n_subdt: int)
     d = m_rate / (config.n_dt_per_year * n_subdt)
     mortality_fraction = 1 - np.exp(-d)
     n_dead = state.abundance * mortality_fraction
+    n_dead[state.is_background] = 0.0
     # Java skips age_dt == 0 (eggs handled by larva_mortality pre-pass)
     n_dead[state.age_dt == 0] = 0.0
 
