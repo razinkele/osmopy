@@ -123,13 +123,45 @@ def movement(
     config: EngineConfig,
     step: int,
     rng: np.random.Generator,
+    map_sets: dict[int, MovementMapSet] | None = None,
 ) -> SchoolState:
     """Move all schools according to their species' movement method."""
     if len(state) == 0:
         return state
 
     sp = state.species_id
-    walk_range = config.random_walk_range[sp]
-    state = random_walk(state, grid, walk_range, rng)
+
+    # Determine which schools use which method
+    uses_random = np.array([config.movement_method[s] == "random" for s in sp])
+    uses_maps = np.array([config.movement_method[s] == "maps" for s in sp])
+
+    # Random walk for "random" species (batch vectorized)
+    if uses_random.any():
+        walk_range = config.random_walk_range[sp]
+        walk_range_masked = np.where(uses_random, walk_range, 0)
+        state = random_walk(state, grid, walk_range_masked, rng)
+
+    # Map-based movement for "maps" species (per-school scalar loop)
+    if uses_maps.any() and map_sets is not None:
+        new_cx = state.cell_x.copy()
+        new_cy = state.cell_y.copy()
+        new_out = state.is_out.copy()
+        for i in np.where(uses_maps)[0]:
+            sp_id = int(sp[i])
+            if sp_id in map_sets:
+                x, y, out = _map_move_school(
+                    int(state.age_dt[i]),
+                    int(new_cx[i]),
+                    int(new_cy[i]),
+                    grid.ny,
+                    grid.nx,
+                    grid.ocean_mask,
+                    map_sets[sp_id],
+                    int(config.random_walk_range[sp_id]),
+                    step,
+                    rng,
+                )
+                new_cx[i], new_cy[i], new_out[i] = x, y, out
+        state = state.replace(cell_x=new_cx, cell_y=new_cy, is_out=new_out)
 
     return state

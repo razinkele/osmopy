@@ -50,6 +50,7 @@ def _reset_step_variables(state: SchoolState) -> SchoolState:
         pred_success_rate=np.zeros(len(state), dtype=np.float64),
         preyed_biomass=np.zeros(len(state), dtype=np.float64),
         length_start=state.length.copy(),
+        is_out=np.zeros(len(state), dtype=np.bool_),
     )
 
 
@@ -59,11 +60,12 @@ def _movement(
     config: EngineConfig,
     step: int,
     rng: np.random.Generator,
+    map_sets: dict | None = None,
 ) -> SchoolState:
     """Apply spatial movement."""
     from osmose.engine.processes.movement import movement
 
-    return movement(state, grid, config, step, rng)
+    return movement(state, grid, config, step, rng, map_sets=map_sets)
 
 
 def _mortality(
@@ -231,11 +233,27 @@ def simulate(
     background = BackgroundState(config=config.raw_config, grid=grid, engine_config=config)
     outputs: list[StepOutput] = []
 
+    from osmose.engine.movement_maps import MovementMapSet
+
+    map_sets: dict[int, MovementMapSet] = {}
+    for sp in range(config.n_species):
+        if config.movement_method[sp] == "maps":
+            sp_name = config.species_names[sp]
+            map_sets[sp] = MovementMapSet(
+                config=config.raw_config,
+                species_name=sp_name,
+                n_dt_per_year=config.n_dt_per_year,
+                n_years=config.n_year,
+                lifespan_dt=int(config.lifespan_dt[sp]),
+                ny=grid.ny,
+                nx=grid.nx,
+            )
+
     for step in range(config.n_steps):
         state = _incoming_flux(state, config, step, rng)
         state = _reset_step_variables(state)
         resources.update(step)
-        state = _movement(state, grid, config, step, rng)
+        state = _movement(state, grid, config, step, rng, map_sets=map_sets)
 
         # Inject background schools before mortality
         bkg_schools = background.get_schools(step)

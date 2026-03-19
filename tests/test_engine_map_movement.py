@@ -7,9 +7,12 @@ import logging
 import numpy as np
 import pytest
 
+from osmose.engine.config import EngineConfig
 from osmose.engine.grid import Grid
 from osmose.engine.movement_maps import MovementMapSet
-from osmose.engine.processes.movement import _map_move_school
+from osmose.engine.processes.movement import _map_move_school, movement
+from osmose.engine.simulate import simulate
+from osmose.engine.state import SchoolState
 
 
 # ---------------------------------------------------------------------------
@@ -626,3 +629,232 @@ class TestMapMoveSchool:
             assert ms.maps[0][y, x] > 0
             cells_seen.add((x, y))
         assert len(cells_seen) >= 2  # at least 2 distinct cells visited
+
+
+# ---------------------------------------------------------------------------
+# Helper for full simulation configs with map movement
+# ---------------------------------------------------------------------------
+
+
+def _make_full_config_with_maps(tmp_path, ny=5, nx=5):
+    """Full simulation config with one species using map movement."""
+    rows = [[-99] * nx for _ in range(ny)]
+    for r in range(1, 4):
+        for c in range(1, 4):
+            rows[r][c] = 1
+    map_file = tmp_path / "test_map.csv"
+    _write_csv_map(map_file, rows)
+    steps = ";".join(str(i) for i in range(24))
+    return {
+        "simulation.time.ndtperyear": "24",
+        "simulation.time.nyear": "1",
+        "simulation.nspecies": "1",
+        "simulation.nschool.sp0": "10",
+        "species.type.sp0": "focal",
+        "species.name.sp0": "TestFish",
+        "species.linf.sp0": "20.0",
+        "species.k.sp0": "0.3",
+        "species.t0.sp0": "-0.1",
+        "species.egg.size.sp0": "0.1",
+        "species.length2weight.condition.factor.sp0": "0.006",
+        "species.length2weight.allometric.power.sp0": "3.0",
+        "species.lifespan.sp0": "3",
+        "species.vonbertalanffy.threshold.age.sp0": "1.0",
+        "mortality.subdt": "10",
+        "predation.ingestion.rate.max.sp0": "3.5",
+        "predation.efficiency.critical.sp0": "0.57",
+        "movement.distribution.method.sp0": "maps",
+        "movement.randomwalk.range.sp0": "1",
+        "movement.species.map0": "TestFish",
+        "movement.initialage.map0": "0",
+        "movement.lastage.map0": "3",
+        "movement.file.map0": str(map_file),
+        "movement.steps.map0": steps,
+        "population.seeding.biomass.sp0": "100.0",
+        "species.sexratio.sp0": "0.5",
+        "species.relativefecundity.sp0": "500",
+        "species.maturity.size.sp0": "10.0",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Test 15-17 — Orchestrator dispatch tests
+# ---------------------------------------------------------------------------
+
+
+class TestMovementOrchestrator:
+    def test_random_species_moves(self, tmp_path):
+        """Species with method='random' uses random walk."""
+        cfg = _make_full_config_with_maps(tmp_path)
+        cfg["movement.distribution.method.sp0"] = "random"
+        ec = EngineConfig.from_dict(cfg)
+        grid = Grid.from_dimensions(ny=5, nx=5)
+        state = SchoolState.create(n_schools=20, species_id=np.zeros(20, dtype=np.int32))
+        state = state.replace(
+            cell_x=np.full(20, 2, dtype=np.int32),
+            cell_y=np.full(20, 2, dtype=np.int32),
+            abundance=np.ones(20),
+            age_dt=np.full(20, 10, dtype=np.int32),
+        )
+        rng = np.random.default_rng(42)
+        new_state = movement(state, grid, ec, step=0, rng=rng)
+        moved = (new_state.cell_x != 2) | (new_state.cell_y != 2)
+        assert moved.sum() > 0
+
+    def test_maps_species_moves_to_map_cells(self, tmp_path):
+        """Species with method='maps' is placed on positive map cells."""
+        cfg = _make_full_config_with_maps(tmp_path)
+        ec = EngineConfig.from_dict(cfg)
+        grid = Grid.from_dimensions(ny=5, nx=5)
+        state = SchoolState.create(n_schools=5, species_id=np.zeros(5, dtype=np.int32))
+        state = state.replace(
+            cell_x=np.full(5, -1, dtype=np.int32),
+            cell_y=np.full(5, -1, dtype=np.int32),
+            abundance=np.ones(5),
+            age_dt=np.full(5, 10, dtype=np.int32),
+        )
+        ms = MovementMapSet(
+            config=cfg,
+            species_name="TestFish",
+            n_dt_per_year=24,
+            n_years=1,
+            lifespan_dt=72,
+            ny=5,
+            nx=5,
+        )
+        rng = np.random.default_rng(42)
+        new_state = movement(state, grid, ec, step=0, rng=rng, map_sets={0: ms})
+        map_grid = ms.maps[0]
+        for i in range(5):
+            x, y = new_state.cell_x[i], new_state.cell_y[i]
+            assert map_grid[y, x] > 0
+
+    def test_mixed_species(self, tmp_path):
+        """Two species: sp0 random, sp1 maps -- both move correctly."""
+        rows = [[-99] * 5 for _ in range(5)]
+        for r in range(1, 4):
+            for c in range(1, 4):
+                rows[r][c] = 1
+        map_file = tmp_path / "test_map.csv"
+        _write_csv_map(map_file, rows)
+        steps = ";".join(str(i) for i in range(24))
+        cfg = {
+            "simulation.time.ndtperyear": "24",
+            "simulation.time.nyear": "1",
+            "simulation.nspecies": "2",
+            "simulation.nschool.sp0": "5",
+            "simulation.nschool.sp1": "5",
+            "species.type.sp0": "focal",
+            "species.type.sp1": "focal",
+            "species.name.sp0": "Anchovy",
+            "species.name.sp1": "Hake",
+            "species.linf.sp0": "20.0",
+            "species.linf.sp1": "80.0",
+            "species.k.sp0": "0.3",
+            "species.k.sp1": "0.15",
+            "species.t0.sp0": "-0.1",
+            "species.t0.sp1": "-0.2",
+            "species.egg.size.sp0": "0.1",
+            "species.egg.size.sp1": "0.2",
+            "species.length2weight.condition.factor.sp0": "0.006",
+            "species.length2weight.condition.factor.sp1": "0.008",
+            "species.length2weight.allometric.power.sp0": "3.0",
+            "species.length2weight.allometric.power.sp1": "3.0",
+            "species.lifespan.sp0": "3",
+            "species.lifespan.sp1": "10",
+            "species.vonbertalanffy.threshold.age.sp0": "1.0",
+            "species.vonbertalanffy.threshold.age.sp1": "1.0",
+            "mortality.subdt": "10",
+            "predation.ingestion.rate.max.sp0": "3.5",
+            "predation.ingestion.rate.max.sp1": "3.5",
+            "predation.efficiency.critical.sp0": "0.57",
+            "predation.efficiency.critical.sp1": "0.57",
+            "movement.distribution.method.sp0": "random",
+            "movement.distribution.method.sp1": "maps",
+            "movement.randomwalk.range.sp0": "1",
+            "movement.randomwalk.range.sp1": "1",
+            "movement.species.map0": "Hake",
+            "movement.initialage.map0": "0",
+            "movement.lastage.map0": "10",
+            "movement.file.map0": str(map_file),
+            "movement.steps.map0": steps,
+        }
+        ec = EngineConfig.from_dict(cfg)
+        grid = Grid.from_dimensions(ny=5, nx=5)
+        ms = MovementMapSet(
+            config=cfg,
+            species_name="Hake",
+            n_dt_per_year=24,
+            n_years=1,
+            lifespan_dt=240,
+            ny=5,
+            nx=5,
+        )
+        # sp0 (random) at center, sp1 (maps) unlocated
+        state = SchoolState.create(
+            n_schools=4,
+            species_id=np.array([0, 0, 1, 1], dtype=np.int32),
+        )
+        state = state.replace(
+            cell_x=np.array([2, 2, -1, -1], dtype=np.int32),
+            cell_y=np.array([2, 2, -1, -1], dtype=np.int32),
+            abundance=np.ones(4),
+            age_dt=np.array([10, 10, 10, 10], dtype=np.int32),
+        )
+        rng = np.random.default_rng(42)
+        new_state = movement(state, grid, ec, step=0, rng=rng, map_sets={1: ms})
+        # sp1 schools (idx 2,3) should be placed on map-positive cells
+        map_grid = ms.maps[0]
+        for i in [2, 3]:
+            assert new_state.cell_x[i] >= 0
+            assert map_grid[new_state.cell_y[i], new_state.cell_x[i]] > 0
+
+
+# ---------------------------------------------------------------------------
+# Test 18-19 — Full simulation integration
+# ---------------------------------------------------------------------------
+
+
+class TestMapMovementIntegration:
+    def test_full_simulation_with_maps(self, tmp_path):
+        """Full simulation with map movement completes without errors."""
+        cfg = _make_full_config_with_maps(tmp_path)
+        ec = EngineConfig.from_dict(cfg)
+        grid = Grid.from_dimensions(ny=5, nx=5)
+        rng = np.random.default_rng(42)
+        outputs = simulate(ec, grid, rng)
+        assert len(outputs) == ec.n_steps
+        for o in outputs:
+            assert np.all(np.isfinite(o.biomass))
+
+    def test_backward_compat_all_random(self):
+        """Config with all 'random' species works unchanged."""
+        cfg = {
+            "simulation.time.ndtperyear": "24",
+            "simulation.time.nyear": "1",
+            "simulation.nspecies": "1",
+            "simulation.nschool.sp0": "5",
+            "species.type.sp0": "focal",
+            "species.name.sp0": "TestFish",
+            "species.linf.sp0": "20.0",
+            "species.k.sp0": "0.3",
+            "species.t0.sp0": "-0.1",
+            "species.egg.size.sp0": "0.1",
+            "species.length2weight.condition.factor.sp0": "0.006",
+            "species.length2weight.allometric.power.sp0": "3.0",
+            "species.lifespan.sp0": "3",
+            "species.vonbertalanffy.threshold.age.sp0": "1.0",
+            "mortality.subdt": "10",
+            "predation.ingestion.rate.max.sp0": "3.5",
+            "predation.efficiency.critical.sp0": "0.57",
+            "movement.distribution.method.sp0": "random",
+            "population.seeding.biomass.sp0": "100.0",
+            "species.sexratio.sp0": "0.5",
+            "species.relativefecundity.sp0": "500",
+            "species.maturity.size.sp0": "10.0",
+        }
+        ec = EngineConfig.from_dict(cfg)
+        grid = Grid.from_dimensions(ny=5, nx=5)
+        rng = np.random.default_rng(42)
+        outputs = simulate(ec, grid, rng)
+        assert len(outputs) == ec.n_steps
