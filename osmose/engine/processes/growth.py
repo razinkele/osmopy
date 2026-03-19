@@ -94,9 +94,8 @@ def growth(state: SchoolState, config: EngineConfig, rng: np.random.Generator) -
     bypass = (state.age_dt == 0) | state.is_out
     growth_factor = np.where(bypass, delta_l, growth_factor)
 
-    # Apply growth, cap at L_inf. Design decision: L_inf is used as L_max because
-    # OSMOSE does not define a separate lmax parameter distinct from linf.
-    new_length = np.minimum(state.length + growth_factor, config.linf[sp])
+    # Apply growth, cap at lmax (which defaults to linf if not separately configured)
+    new_length = np.minimum(state.length + growth_factor, config.lmax[sp])
 
     # Update weight from new length: W = c * L^b, convert grams to tonnes
     new_weight = config.condition_factor[sp] * new_length ** config.allometric_power[sp] * 1e-6

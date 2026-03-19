@@ -25,6 +25,9 @@ class ResourceSpeciesInfo:
     size_max: float  # cm
     trophic_level: float
     accessibility: float  # fraction available per timestep [0, 0.99]
+    multiplier: float = 1.0  # biomass scaling multiplier
+    offset: float = 0.0  # biomass offset (for uniform distribution)
+    accessibility_ts: NDArray[np.float64] | None = None  # time-varying accessibility
 
 
 class ResourceState:
@@ -72,13 +75,14 @@ class ResourceState:
 
         for i in range(self.n_resources):
             name = cfg.get(f"ltl.name.rsc{i}", f"Resource{i}")
+            raw_access = float(cfg.get(f"ltl.accessibility2fish.rsc{i}", "0.01"))
             self.species.append(
                 ResourceSpeciesInfo(
                     name=name,
                     size_min=float(cfg.get(f"ltl.size.min.rsc{i}", "0.001")),
                     size_max=float(cfg.get(f"ltl.size.max.rsc{i}", "0.01")),
                     trophic_level=float(cfg.get(f"ltl.tl.rsc{i}", "1.0")),
-                    accessibility=float(cfg.get(f"ltl.accessibility2fish.rsc{i}", "0.01")),
+                    accessibility=min(raw_access, 0.99),  # Cap at 0.99
                 )
             )
             self._forcing_var_names.append(name)
@@ -110,23 +114,40 @@ class ResourceState:
 
         # Override n_resources if discovery found more/fewer
         self.n_resources = len(resource_indices)
-        self.biomass = np.zeros(
-            (self.n_resources, self.grid.ny * self.grid.nx), dtype=np.float64
-        )
+        self.biomass = np.zeros((self.n_resources, self.grid.ny * self.grid.nx), dtype=np.float64)
         self._uniform_biomass = np.zeros(self.n_resources, dtype=np.float64)
 
         nc_file = ""
         for i, fi in enumerate(resource_indices):
             name = cfg.get(f"species.name.sp{fi}", f"Resource{i}")
+            raw_access = float(cfg.get(f"species.accessibility2fish.sp{fi}", "0.01"))
+            # Cap accessibility at 0.99 (Fix 1.6)
+            capped_access = min(raw_access, 0.99)
+            multiplier = float(cfg.get(f"species.multiplier.sp{fi}", "1.0"))
+            offset = float(cfg.get(f"species.offset.sp{fi}", "0.0"))
+
+            # Time-varying accessibility (Fix 1.5)
+            access_ts: NDArray[np.float64] | None = None
+            access_file = cfg.get(f"species.accessibility2fish.file.sp{fi}", "")
+            if access_file:
+                access_path = self._resolve_data_file(access_file)
+                if access_path is not None:
+                    import pandas as _pd
+
+                    df = _pd.read_csv(access_path, sep=";")
+                    # Cap all values at 0.99
+                    access_ts = np.minimum(df.iloc[:, -1].values.astype(np.float64), 0.99)
+
             self.species.append(
                 ResourceSpeciesInfo(
                     name=name,
                     size_min=float(cfg.get(f"species.size.min.sp{fi}", "0.001")),
                     size_max=float(cfg.get(f"species.size.max.sp{fi}", "0.01")),
                     trophic_level=float(cfg.get(f"species.trophic.level.sp{fi}", "1.0")),
-                    accessibility=float(
-                        cfg.get(f"species.accessibility2fish.sp{fi}", "0.01")
-                    ),
+                    accessibility=capped_access,
+                    multiplier=multiplier,
+                    offset=offset,
+                    accessibility_ts=access_ts,
                 )
             )
             self._forcing_var_names.append(name)
@@ -142,6 +163,23 @@ class ResourceState:
 
         # Load NetCDF forcing
         self._load_netcdf(nc_file)
+
+    def _resolve_data_file(self, file_key: str) -> Path | None:
+        """Resolve a data file path against multiple search directories."""
+        import glob as _glob
+
+        if not file_key:
+            return None
+        p = Path(file_key)
+        if p.is_absolute() and p.exists():
+            return p
+        search_dirs = [Path("."), Path("data/examples")]
+        search_dirs += [Path(d) for d in _glob.glob("data/*/")]
+        for base in search_dirs:
+            path = base / file_key
+            if path.exists():
+                return path
+        return None
 
     def _load_netcdf(self, nc_file: str) -> None:
         """Load a NetCDF forcing file, trying multiple search paths."""
@@ -176,6 +214,13 @@ class ResourceState:
         for i in range(self.n_resources):
             rsc = self.species[i]
 
+            # Determine current accessibility: time-varying or constant
+            if rsc.accessibility_ts is not None and len(rsc.accessibility_ts) > 0:
+                ts_idx = step % len(rsc.accessibility_ts)
+                access = float(rsc.accessibility_ts[ts_idx])
+            else:
+                access = rsc.accessibility
+
             if self._forcing_data is not None and rsc.name in self._forcing_data:
                 # Map simulation timestep to forcing timestep
                 # Forcing has _n_forcing_steps per year, simulation has n_dt_per_year
@@ -190,13 +235,14 @@ class ResourceState:
                 # Regrid to model grid using nearest-neighbor
                 biomass_2d = self._regrid_to_model(data)
 
-                # Apply accessibility coefficient and flatten
-                cell_biomass = biomass_2d.flatten() * rsc.accessibility
+                # Apply multiplier and accessibility coefficient, then flatten
+                cell_biomass = biomass_2d.flatten() * rsc.multiplier * access
                 self.biomass[i, : len(cell_biomass)] = cell_biomass[: grid.ny * grid.nx]
 
             elif self._uniform_biomass[i] > 0:
-                # Uniform distribution
-                self.biomass[i, :] = self._uniform_biomass[i] * rsc.accessibility
+                # Uniform distribution: multiplier * (per_cell + offset) * accessibility
+                per_cell = rsc.multiplier * (self._uniform_biomass[i] + rsc.offset) * access
+                self.biomass[i, :] = per_cell
             else:
                 self.biomass[i, :] = 0.0
 

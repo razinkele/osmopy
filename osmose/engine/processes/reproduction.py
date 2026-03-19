@@ -29,8 +29,12 @@ def reproduction(
     n_sp = config.n_species
 
     # --- Egg production ---
-    # Maturity: length >= maturity_size (and abundance > 0)
-    mature = (state.length >= config.maturity_size[state.species_id]) & (state.abundance > 0)
+    # Maturity: length >= maturity_size AND age_dt >= maturity_age_dt (and abundance > 0)
+    mature = (
+        (state.length >= config.maturity_size[state.species_id])
+        & (state.age_dt >= config.maturity_age_dt[state.species_id])
+        & (state.abundance > 0)
+    )
 
     # Spawning stock biomass per species
     ssb = np.zeros(n_sp, dtype=np.float64)

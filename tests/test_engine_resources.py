@@ -228,6 +228,7 @@ class TestResourceState:
         val_step2 = rs.biomass[0, 0]
 
         # Step 0 -> forcing idx 0 (value 10), step 2 -> forcing idx 2 (value 30)
-        np.testing.assert_allclose(val_step0, 10.0, rtol=1e-6)
-        np.testing.assert_allclose(val_step2, 30.0, rtol=1e-6)
+        # Accessibility capped at 0.99 (Java parity), so 10 * 0.99 = 9.9
+        np.testing.assert_allclose(val_step0, 10.0 * 0.99, rtol=1e-6)
+        np.testing.assert_allclose(val_step2, 30.0 * 0.99, rtol=1e-6)
         rs.close()

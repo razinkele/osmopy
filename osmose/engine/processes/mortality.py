@@ -38,6 +38,9 @@ _STARVATION = int(MortalityCause.STARVATION)
 _ADDITIONAL = int(MortalityCause.ADDITIONAL)
 _FISHING = int(MortalityCause.FISHING)
 
+# Module-level TL tracking accumulator (set by mortality(), used by _apply_predation_for_school)
+_tl_weighted_sum: NDArray[np.float64] | None = None
+
 
 # ---------------------------------------------------------------------------
 # Per-school mortality helpers (operate in-place on state arrays)
@@ -115,6 +118,19 @@ def _apply_fishing_for_school(
         if l50 > 0 and state.length[idx] < l50:
             return
 
+    # Spatial fishing distribution: multiply rate by cell-specific factor
+    sp_map = config.fishing_spatial_maps[sp] if sp < len(config.fishing_spatial_maps) else None
+    if sp_map is not None:
+        cy = int(state.cell_y[idx])
+        cx = int(state.cell_x[idx])
+        if 0 <= cy < sp_map.shape[0] and 0 <= cx < sp_map.shape[1]:
+            cell_factor = sp_map[cy, cx]
+            if cell_factor <= 0 or np.isnan(cell_factor):
+                return
+            f_rate = f_rate * cell_factor
+        else:
+            return  # out of map bounds
+
     F = f_rate / (config.n_dt_per_year * n_subdt)
     inst_abd = _inst_abundance(state, idx)
     if inst_abd <= 0:
@@ -188,19 +204,13 @@ def _apply_predation_for_school(
                 p_acc = pred_access_idx[p_idx]
                 q_acc = prey_access_idx[q_idx]
                 if p_acc >= 0 and q_acc >= 0:
-                    if (
-                        q_acc < access_matrix.shape[0]
-                        and p_acc < access_matrix.shape[1]
-                    ):
+                    if q_acc < access_matrix.shape[0] and p_acc < access_matrix.shape[1]:
                         access_coeff = access_matrix[q_acc, p_acc]
                     if access_coeff <= 0:
                         continue
             else:
                 sp_prey = state.species_id[q_idx]
-                if (
-                    sp_pred < access_matrix.shape[0]
-                    and sp_prey < access_matrix.shape[1]
-                ):
+                if sp_pred < access_matrix.shape[0] and sp_prey < access_matrix.shape[1]:
                     access_coeff = access_matrix[sp_pred, sp_prey]
                     if access_coeff <= 0:
                         continue
@@ -224,6 +234,13 @@ def _apply_predation_for_school(
                 n_dead_prey = eaten_from_prey / state.weight[q_idx]
                 state.n_dead[q_idx, _PREDATION] += n_dead_prey
 
+            # TL tracking: accumulate prey_tl * eaten_biomass for predator
+            if _tl_weighted_sum is not None:
+                prey_tl = state.trophic_level[q_idx]
+                if prey_tl <= 0:
+                    prey_tl = 1.0  # default for uninitialized prey
+                _tl_weighted_sum[p_idx] += prey_tl * eaten_from_prey
+
             # Diet tracking
             if _diet_tracking_enabled and _diet_matrix is not None:
                 prey_sp = state.species_id[q_idx]
@@ -239,9 +256,17 @@ def _apply_predation_for_school(
     # Resource predation: fill remaining appetite from LTL plankton/detritus
     if resources is not None and resources.n_resources > 0:
         _predation_on_resources_for_school(
-            p_idx, state, config, resources, cell_y, cell_x,
-            n_subdt, max_eatable,
-            access_matrix, use_stage_access, pred_access_idx,
+            p_idx,
+            state,
+            config,
+            resources,
+            cell_y,
+            cell_x,
+            n_subdt,
+            max_eatable,
+            access_matrix,
+            use_stage_access,
+            pred_access_idx,
         )
 
 
@@ -313,10 +338,7 @@ def _predation_on_resources_for_school(
                         continue
         elif not use_stage_access and access_matrix is not None:
             rsc_sp_idx = config.n_species + r
-            if (
-                sp_pred < access_matrix.shape[0]
-                and rsc_sp_idx < access_matrix.shape[1]
-            ):
+            if sp_pred < access_matrix.shape[0] and rsc_sp_idx < access_matrix.shape[1]:
                 access_coeff = access_matrix[sp_pred, rsc_sp_idx]
                 if access_coeff <= 0:
                     continue
@@ -336,9 +358,14 @@ def _predation_on_resources_for_school(
             continue
         share = rsc_eligible[r] / available
         eaten_from_rsc = eaten_total * share
-        resources.biomass[r, cell_id] = max(
-            0.0, resources.biomass[r, cell_id] - eaten_from_rsc
-        )
+        resources.biomass[r, cell_id] = max(0.0, resources.biomass[r, cell_id] - eaten_from_rsc)
+
+        # TL tracking for resource predation
+        if _tl_weighted_sum is not None:
+            rsc_tl = resources.species[r].trophic_level
+            if rsc_tl <= 0:
+                rsc_tl = 1.0
+            _tl_weighted_sum[p_idx] += rsc_tl * eaten_from_rsc
 
         if _diet_tracking_enabled and _diet_matrix is not None:
             rsc_col = config.n_species + r
@@ -403,10 +430,20 @@ def _mortality_in_cell(
                 p_local = seq_pred[i]
                 p_idx = int(cell_indices[p_local])
                 _apply_predation_for_school(
-                    p_idx, cell_indices, state, config, resources,
-                    cell_y, cell_x, rng, n_subdt,
-                    access_matrix, has_access, use_stage_access,
-                    prey_access_idx, pred_access_idx,
+                    p_idx,
+                    cell_indices,
+                    state,
+                    config,
+                    resources,
+                    cell_y,
+                    cell_x,
+                    rng,
+                    n_subdt,
+                    access_matrix,
+                    has_access,
+                    use_stage_access,
+                    prey_access_idx,
+                    pred_access_idx,
                 )
             elif cause == _STARVATION:
                 s_local = seq_starv[i]
@@ -446,7 +483,12 @@ def mortality(
     4. Post-loop: abundance = original - total_dead
     5. Out-of-domain mortality, starvation rate update
     """
+    global _tl_weighted_sum
+
     n_subdt = config.mortality_subdt
+
+    # Initialize TL tracking accumulator
+    _tl_weighted_sum = np.zeros(len(state), dtype=np.float64)
 
     # Pre-pass: larva mortality on eggs
     state = larva_mortality(state, config)
@@ -537,10 +579,19 @@ def mortality(
             cx = cell % grid.nx
 
             _mortality_in_cell(
-                cell_indices, work_state, config, resources,
-                cy, cx, rng, n_subdt,
-                access_matrix, has_access, use_stage_access,
-                prey_access_idx, pred_access_idx,
+                cell_indices,
+                work_state,
+                config,
+                resources,
+                cy,
+                cx,
+                rng,
+                n_subdt,
+                access_matrix,
+                has_access,
+                use_stage_access,
+                prey_access_idx,
+                pred_access_idx,
             )
 
     # Update abundance from accumulated n_dead
@@ -563,11 +614,20 @@ def mortality(
     # Compute new starvation rate for NEXT step (lagged)
     state = update_starvation_rate(state, config)
 
-    # Update trophic level from predation
+    # Update trophic level from predation: TL = 1 + sum(prey_TL * eaten) / total_preyed
     mask = state.preyed_biomass > 0
-    if mask.any():
+    if mask.any() and _tl_weighted_sum is not None:
         new_tl = state.trophic_level.copy()
-        new_tl[mask] = 2.0  # placeholder until full diet tracking
+        # Handle schools that may have been appended after _tl_weighted_sum was created
+        tl_ws = (
+            _tl_weighted_sum[: len(state)]
+            if len(_tl_weighted_sum) >= len(state)
+            else np.pad(_tl_weighted_sum, (0, len(state) - len(_tl_weighted_sum)))
+        )
+        valid = mask & (tl_ws > 0)
+        if valid.any():
+            new_tl[valid] = 1.0 + tl_ws[valid] / state.preyed_biomass[valid]
         state = state.replace(trophic_level=new_tl)
 
+    _tl_weighted_sum = None
     return state

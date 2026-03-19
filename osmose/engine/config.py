@@ -81,9 +81,14 @@ def _resolve_file(file_key: str) -> Path | None:
     return None
 
 
-def _load_accessibility(
-    cfg: dict[str, str], n_species: int
-) -> NDArray[np.float64] | None:
+def _load_spatial_csv(path: Path) -> np.ndarray:
+    """Load a semicolon-separated spatial grid CSV and flip rows (south-to-north → north-to-south)."""
+    df = pd.read_csv(path, sep=";", header=None)
+    data = df.values.astype(np.float64)
+    return np.flipud(data)
+
+
+def _load_accessibility(cfg: dict[str, str], n_species: int) -> NDArray[np.float64] | None:
     """Load predation accessibility matrix from CSV if available.
 
     Returns matrix with shape (n_total, n_total) where index [predator, prey] = coefficient.
@@ -277,6 +282,15 @@ class EngineConfig:
     random_walk_range: NDArray[np.int32]
     out_mortality_rate: NDArray[np.float64]
 
+    # Maturity age in timesteps (0 = no age threshold, only size-based)
+    maturity_age_dt: NDArray[np.int32]
+
+    # Maximum length cap (may differ from linf)
+    lmax: NDArray[np.float64]
+
+    # Spatial fishing distribution maps: one 2D grid per species, or None
+    fishing_spatial_maps: list  # list[NDArray[np.float64] | None]
+
     # Egg weight override: if species.egg.weight.sp{i} is set, use it instead of allometry
     egg_weight_override: NDArray[np.float64] | None  # shape (n_species,) or None
 
@@ -359,6 +373,37 @@ class EngineConfig:
         focal_larva_mortality_rate = _species_float_optional(
             cfg, "mortality.additional.larva.rate.sp{i}", n_sp, default=0.0
         )
+        # Maturity age (years → timesteps); default 0 means no age threshold
+        focal_maturity_age_years = _species_float_optional(
+            cfg, "species.maturity.age.sp{i}", n_sp, default=0.0
+        )
+        focal_maturity_age_dt = (focal_maturity_age_years * n_dt).astype(np.int32)
+        # Lmax: separate cap that may differ from linf
+        focal_lmax = _species_float_optional(cfg, "species.lmax.sp{i}", n_sp, default=0.0)
+        # Default to linf if not set (value 0.0 treated as absent)
+        for i in range(n_sp):
+            if focal_lmax[i] <= 0:
+                focal_lmax[i] = focal_linf[i]
+        # Fishing spatial distribution maps
+        focal_fishing_spatial_maps: list[np.ndarray | None] = []
+        # Try shared fisheries map first (v4)
+        shared_fishing_map_file = cfg.get("fisheries.movement.file.map0", "")
+        shared_fishing_map: np.ndarray | None = None
+        if shared_fishing_map_file:
+            shared_path = _resolve_file(shared_fishing_map_file)
+            if shared_path is not None:
+                shared_fishing_map = _load_spatial_csv(shared_path)
+        for i in range(n_sp):
+            sp_map_file = cfg.get(f"mortality.fishing.spatial.distrib.file.sp{i}", "")
+            if sp_map_file:
+                sp_path = _resolve_file(sp_map_file)
+                if sp_path is not None:
+                    focal_fishing_spatial_maps.append(_load_spatial_csv(sp_path))
+                else:
+                    focal_fishing_spatial_maps.append(shared_fishing_map)
+            else:
+                focal_fishing_spatial_maps.append(shared_fishing_map)
+
         # --- Feeding stages: thresholds, metrics, multi-value size ratios ---
         _VALID_METRICS = {"age", "size", "weight", "tl"}
         global_metric = cfg.get("predation.predprey.stage.structure", "size").strip().lower()
@@ -526,6 +571,8 @@ class EngineConfig:
             maturity_size = np.concatenate([focal_maturity_size, bkg_zeros_f])
             seeding_biomass = np.concatenate([focal_seeding_biomass, bkg_zeros_f])
             larva_mortality_rate = np.concatenate([focal_larva_mortality_rate, bkg_zeros_f])
+            maturity_age_dt = np.concatenate([focal_maturity_age_dt, bkg_zeros_i])
+            lmax = np.concatenate([focal_lmax, bkg_zeros_f])
             starvation_rate_max = np.concatenate([focal_starvation_rate_max, bkg_zeros_f])
             fishing_rate = np.concatenate([fishing, bkg_zeros_f])
             fishing_selectivity_l50 = np.concatenate([focal_fishing_selectivity_l50, bkg_zeros_f])
@@ -539,6 +586,7 @@ class EngineConfig:
             random_walk_range = np.concatenate([focal_random_walk_range, bkg_zeros_i])
             out_mortality_rate = np.concatenate([focal_out_mortality_rate, bkg_zeros_f])
             n_schools = np.concatenate([focal_n_schools, bkg_zeros_i])
+            fishing_spatial_maps = focal_fishing_spatial_maps + [None] * n_bkg
         else:
             all_species_names = focal_species_names[:]
             linf = focal_linf
@@ -558,6 +606,8 @@ class EngineConfig:
             maturity_size = focal_maturity_size
             seeding_biomass = focal_seeding_biomass
             larva_mortality_rate = focal_larva_mortality_rate
+            maturity_age_dt = focal_maturity_age_dt
+            lmax = focal_lmax
             starvation_rate_max = focal_starvation_rate_max
             fishing_rate = fishing
             fishing_selectivity_l50 = focal_fishing_selectivity_l50
@@ -567,6 +617,7 @@ class EngineConfig:
             random_walk_range = focal_random_walk_range
             out_mortality_rate = focal_out_mortality_rate
             n_schools = focal_n_schools
+            fishing_spatial_maps = focal_fishing_spatial_maps
 
         # Egg weight override: use species.egg.weight.sp{i} if provided
         # Java convention: config value is in GRAMS, convert to tonnes (* 1e-6)
@@ -620,6 +671,9 @@ class EngineConfig:
             sex_ratio=sex_ratio,
             relative_fecundity=relative_fecundity,
             maturity_size=maturity_size,
+            maturity_age_dt=maturity_age_dt,
+            lmax=lmax,
+            fishing_spatial_maps=fishing_spatial_maps,
             seeding_biomass=seeding_biomass,
             larva_mortality_rate=larva_mortality_rate,
             size_ratio_min=size_ratio_min_2d,

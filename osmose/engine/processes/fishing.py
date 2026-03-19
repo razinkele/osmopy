@@ -40,7 +40,27 @@ def fishing_mortality(state: SchoolState, config: EngineConfig, n_subdt: int) ->
     # Combine: use age selectivity for type==0, length selectivity for type==1,
     # default (no type / type==-1) uses length selectivity for backward compat
     selectivity = np.where(sel_type == 0, age_select, len_select)
-    n_dead = state.abundance * mortality_fraction * selectivity
+    # Spatial fishing distribution: multiply by cell-specific factor
+    spatial_factor = np.ones(len(state), dtype=np.float64)
+    for i in range(len(state)):
+        sp_i = sp[i]
+        if (
+            sp_i < len(config.fishing_spatial_maps)
+            and config.fishing_spatial_maps[sp_i] is not None
+        ):
+            sp_map = config.fishing_spatial_maps[sp_i]
+            cy = int(state.cell_y[i])
+            cx = int(state.cell_x[i])
+            if 0 <= cy < sp_map.shape[0] and 0 <= cx < sp_map.shape[1]:
+                val = sp_map[cy, cx]
+                if val <= 0 or np.isnan(val):
+                    spatial_factor[i] = 0.0
+                else:
+                    spatial_factor[i] = val
+            else:
+                spatial_factor[i] = 0.0
+
+    n_dead = state.abundance * mortality_fraction * selectivity * spatial_factor
     n_dead[state.is_background] = 0.0
 
     # Skip eggs (age_dt == 0)
