@@ -27,6 +27,12 @@ predation.predprey.sizeratio.min.sp5 = 50;20                # one value per stag
 
 **Size ratio validation:** If the parsed `sizeratio.max` value > parsed `sizeratio.min` value for the same stage, swap the stored values and warn (matching Java PredationMortality.java lines 127-136 — note: Java's warning message has a copy-paste bug naming `max` twice; Python should correctly name both keys). Validate that the number of size ratio values equals `n_stages` per species — raise `ValueError` on mismatch.
 
+**Trailing semicolons:** Real-world configs (e.g., `eec_full/eec_param-predation.csv`) have trailing semicolons in multi-value fields: `predation.predPrey.sizeRatio.max.sp5;2.3;1.8;`. Java strips trailing separators in `Parameter.clean()`. Python's multi-value parser must filter empty tokens after splitting (e.g., skip `""` from `"2.3;1.8;".split(";")`). Reuse the `_parse_array_float()` helper from `background.py` which already handles this.
+
+**Absent global structure key:** When `predation.predprey.stage.structure` is entirely absent from config (e.g., old configs without feeding stages), default to `"size"` (the most common value in all example configs). Java would error; Python should be lenient for backward compatibility.
+
+**Unrecognized metric strings:** If the metric value is not one of `"age"`, `"size"`, `"weight"`, `"tl"` (case-insensitive comparison), raise `ValueError` with a clear message. Java's switch silently leaves the classGetter null, causing a NullPointerException at runtime.
+
 ## Stage Computation Algorithm
 
 Matches Java's `SchoolStage.getStage()` (lines 149-158):
@@ -115,6 +121,8 @@ Vectorized by metric type:
 4. Return stage index array
 
 The function uses `state.species_id` directly as the index into `config.feeding_stage_thresholds` and `config.feeding_stage_metric` — these arrays are indexed by internal sequential species ID, matching `SchoolState.species_id` values.
+
+**Indexing contract:** `feeding_stage_thresholds` and `feeding_stage_metric` must have length `n_species + n_background`. Focal schools have `species_id` in `[0, n_species)`, background schools have `species_id` in `[n_species, n_species + n_background)` — both are valid indices. When called with a combined state (after background injection), all species IDs are in range.
 
 The inner threshold-counting loop is Python-speed but runs rarely (most species have 0-1 thresholds). Numba optimization deferred unless profiling shows need.
 
