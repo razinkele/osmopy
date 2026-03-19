@@ -10,8 +10,10 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
+import xarray as xr
 from numpy.typing import NDArray
 
 logger = logging.getLogger(__name__)
@@ -208,6 +210,7 @@ class BackgroundState:
     ) -> None:
         n_focal = engine_config.n_species
         n_dt_per_year = engine_config.n_dt_per_year
+        self._n_dt_per_year: int = n_dt_per_year
 
         self._species: list[BackgroundSpeciesInfo] = parse_background_species(
             config, n_focal=n_focal, n_dt_per_year=n_dt_per_year
@@ -224,6 +227,11 @@ class BackgroundState:
         self._weights: list[NDArray[np.float64]] = []
         self._per_cell_biomass: list[float] = []
 
+        # NetCDF forcing data: one 3D array (n_forcing_steps, ny, nx) per species,
+        # or None if the species uses uniform mode.
+        self._forcing_data: list[NDArray[np.float64] | None] = []
+        self._forcing_nsteps: list[int] = []
+
         for sp in self._species:
             # w[cls] = condition_factor * length[cls]^allometric_power
             weights = np.array(
@@ -237,9 +245,52 @@ class BackgroundState:
             if total_key in config:
                 total_biomass = float(config[total_key])
                 per_cell = sp.multiplier * (total_biomass / n_ocean + sp.offset)
+                self._per_cell_biomass.append(per_cell)
+                self._forcing_data.append(None)
+                self._forcing_nsteps.append(0)
             else:
-                per_cell = -1.0  # NetCDF mode — handled in Task 3
-            self._per_cell_biomass.append(per_cell)
+                per_cell = -1.0  # NetCDF mode
+                self._per_cell_biomass.append(per_cell)
+
+                # Load NetCDF forcing file
+                nc_path_str = config.get(f"species.file.sp{sp.file_index}")
+                if nc_path_str is not None:
+                    nc_path = Path(nc_path_str)
+                    ds = xr.open_dataset(nc_path)
+                    # Try species name as variable, fall back to first variable
+                    stripped = sp.name
+                    if stripped in ds:
+                        da = ds[stripped]
+                    else:
+                        first_var = list(ds.data_vars)[0]
+                        da = ds[first_var]
+                        logger.debug(
+                            "NetCDF variable '%s' not found for species %s; using '%s'",
+                            stripped,
+                            sp.name,
+                            first_var,
+                        )
+                    raw: NDArray[np.float64] = da.values.astype(np.float64)
+                    # Apply multiplier
+                    raw = raw * sp.multiplier
+                    # Regrid to model grid if shapes differ
+                    target_ny = int(
+                        np.sum(grid.ocean_mask.any(axis=1) | ~grid.ocean_mask.any(axis=1))
+                    )
+                    target_ny = grid.ocean_mask.shape[0]
+                    target_nx = grid.ocean_mask.shape[1]
+                    if raw.shape[1] != target_ny or raw.shape[2] != target_nx:
+                        raw = BackgroundState._regrid(raw, target_ny, target_nx)
+                    self._forcing_data.append(raw)
+                    self._forcing_nsteps.append(raw.shape[0])
+                else:
+                    logger.warning(
+                        "Species %s is in NetCDF mode but no 'species.file.sp%d' found in config",
+                        sp.name,
+                        sp.file_index,
+                    )
+                    self._forcing_data.append(None)
+                    self._forcing_nsteps.append(0)
 
     def get_schools(self, step: int) -> "SchoolState":  # noqa: F821
         """Return a SchoolState with one school per species per class per ocean cell.
@@ -273,22 +324,58 @@ class BackgroundState:
             species_id = self._n_focal + bkg_idx
             per_cell = self._per_cell_biomass[bkg_idx]
             weights = self._weights[bkg_idx]
+            forcing = self._forcing_data[bkg_idx]
+
+            # Determine per-cell biomass array for this species at this step
+            if forcing is not None:
+                # NetCDF mode: map simulation step to forcing index.
+                # step_in_year uses the simulation n_dt_per_year; ratio then
+                # maps into the declared forcing resolution (forcing_nsteps_year).
+                n_forcing = self._forcing_nsteps[bkg_idx]
+                sim_n_dt = self._n_dt_per_year
+                step_in_year = step % sim_n_dt
+                # Java mapping: use declared forcing_nsteps_year as temporal resolution
+                n_declared = sp.forcing_nsteps_year
+                forcing_idx = min(
+                    int(step_in_year * n_declared / sim_n_dt),
+                    n_forcing - 1,
+                )
+                # Extract spatial slice at ocean cells: shape (n_ocean,)
+                ocean_y = self._ocean_ys
+                ocean_x = self._ocean_xs
+                sp_cell_biomass_base: NDArray[np.float64] = forcing[forcing_idx][ocean_y, ocean_x]
+                netcdf_mode = True
+            else:
+                netcdf_mode = False
 
             for cls_idx in range(sp.n_class):
-                cls_biomass = per_cell * sp.proportions[cls_idx]
+                prop = sp.proportions[cls_idx]
                 cls_weight = weights[cls_idx]
-                cls_abundance = cls_biomass / cls_weight if cls_weight > 0.0 else 0.0
                 cls_tl = sp.trophic_levels[cls_idx] if cls_idx < len(sp.trophic_levels) else 2.0
                 cls_age_dt = sp.ages_dt[cls_idx] if cls_idx < len(sp.ages_dt) else 0
+
+                if netcdf_mode:
+                    # Per-cell array from NetCDF
+                    cell_biomass: NDArray[np.float64] = sp_cell_biomass_base * prop
+                else:
+                    # Uniform: scalar spread evenly across all ocean cells
+                    scalar_biomass = per_cell * prop
+                    cell_biomass = np.full(n_ocean, scalar_biomass, dtype=np.float64)
+
+                cls_weight_arr = np.full(n_ocean, cls_weight, dtype=np.float64)
+                if cls_weight > 0.0:
+                    cls_abundance_arr: NDArray[np.float64] = cell_biomass / cls_weight
+                else:
+                    cls_abundance_arr = np.zeros(n_ocean, dtype=np.float64)
 
                 all_species_id.append(np.full(n_ocean, species_id, dtype=np.int32))
                 all_is_background.append(np.ones(n_ocean, dtype=np.bool_))
                 # CRITICAL: Java convention — -1 means always eligible to predate
                 all_first_feeding_age_dt.append(np.full(n_ocean, -1, dtype=np.int32))
                 all_age_dt.append(np.full(n_ocean, cls_age_dt, dtype=np.int32))
-                all_biomass.append(np.full(n_ocean, cls_biomass, dtype=np.float64))
-                all_weight.append(np.full(n_ocean, cls_weight, dtype=np.float64))
-                all_abundance.append(np.full(n_ocean, cls_abundance, dtype=np.float64))
+                all_biomass.append(cell_biomass)
+                all_weight.append(cls_weight_arr)
+                all_abundance.append(cls_abundance_arr)
                 all_trophic_level.append(np.full(n_ocean, cls_tl, dtype=np.float64))
                 all_cell_x.append(self._ocean_xs.copy())
                 all_cell_y.append(self._ocean_ys.copy())
@@ -307,3 +394,12 @@ class BackgroundState:
             cell_x=np.concatenate(all_cell_x),
             cell_y=np.concatenate(all_cell_y),
         )
+
+    @staticmethod
+    def _regrid(data: NDArray[np.float64], target_ny: int, target_nx: int) -> NDArray[np.float64]:
+        """Nearest-neighbor regrid a 3D array (time, lat, lon) to (time, target_ny, target_nx)."""
+        fy = data.shape[1] / target_ny
+        fx = data.shape[2] / target_nx
+        rows = np.clip((np.arange(target_ny) * fy).astype(int), 0, data.shape[1] - 1)
+        cols = np.clip((np.arange(target_nx) * fx).astype(int), 0, data.shape[2] - 1)
+        return data[:, rows][:, :, cols]

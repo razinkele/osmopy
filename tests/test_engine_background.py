@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+import xarray as xr
 
 from osmose.engine.background import (
     BackgroundSpeciesInfo,
@@ -325,3 +326,81 @@ class TestBackgroundStateUniform:
         # No school should be at (y=1, x=1)
         land_mask = (result.cell_y == 1) & (result.cell_x == 1)
         assert not land_mask.any()
+
+
+# ---------------------------------------------------------------------------
+# Tests for BackgroundState NetCDF forcing
+# ---------------------------------------------------------------------------
+
+
+class TestBackgroundStateNetCDF:
+    def _create_forcing_nc(self, tmp_path, ny=3, nx=3, n_steps=12):
+        """Create a synthetic NetCDF forcing file and return its path."""
+        data = np.random.default_rng(42).uniform(10, 100, size=(n_steps, ny, nx))
+        ds = xr.Dataset(
+            {"BkgSpecies": (("time", "latitude", "longitude"), data)},
+            coords={
+                "time": np.arange(n_steps),
+                "latitude": np.linspace(45, 47, ny),
+                "longitude": np.linspace(-5, -3, nx),
+            },
+        )
+        path = tmp_path / "bkg_forcing.nc"
+        ds.to_netcdf(path)
+        return path
+
+    def _make_netcdf_cfg(self, nc_path):
+        """Build config for NetCDF-mode background species (no uniform total key)."""
+        cfg = {**_make_base_config(), **_make_bkg_config(10)}
+        # Remove uniform mode key → triggers NetCDF mode
+        del cfg["species.biomass.total.sp10"]
+        cfg["species.file.sp10"] = str(nc_path)
+        cfg["species.biomass.nsteps.year.sp10"] = "12"
+        return cfg
+
+    def test_netcdf_loading(self, tmp_path):
+        """Loading a NetCDF file produces positive biomass from get_schools."""
+        nc_path = self._create_forcing_nc(tmp_path)
+        cfg = self._make_netcdf_cfg(nc_path)
+        ec = EngineConfig.from_dict(cfg)
+        grid = Grid.from_dimensions(ny=3, nx=3)
+        bkg = BackgroundState(config=cfg, grid=grid, engine_config=ec)
+
+        result = bkg.get_schools(step=0)
+        assert isinstance(result, SchoolState)
+        # NetCDF data is random uniform [10, 100] — all biomass should be > 0
+        assert (result.biomass > 0).all()
+
+    def test_netcdf_temporal_mapping(self, tmp_path):
+        """Steps 0 and 1 map to same forcing index when n_steps=12 and n_dt_per_year=24."""
+        nc_path = self._create_forcing_nc(tmp_path, n_steps=12)
+        cfg = self._make_netcdf_cfg(nc_path)
+        # n_dt_per_year=24, forcing_nsteps_year=12 → step_in_year * 12 / 24
+        # step 0 → int(0 * 12/24) = 0
+        # step 1 → int(1 * 12/24) = 0   (same forcing index)
+        ec = EngineConfig.from_dict(cfg)
+        grid = Grid.from_dimensions(ny=3, nx=3)
+        bkg = BackgroundState(config=cfg, grid=grid, engine_config=ec)
+
+        result_step0 = bkg.get_schools(step=0)
+        result_step1 = bkg.get_schools(step=1)
+        np.testing.assert_array_equal(result_step0.biomass, result_step1.biomass)
+
+    def test_netcdf_multiplier_applied(self, tmp_path):
+        """multiplier=2.0 produces exactly 2× biomass compared to multiplier=1.0."""
+        nc_path = self._create_forcing_nc(tmp_path)
+
+        # Base config: multiplier=1.0 (default)
+        cfg_base = self._make_netcdf_cfg(nc_path)
+        ec_base = EngineConfig.from_dict(cfg_base)
+        grid = Grid.from_dimensions(ny=3, nx=3)
+        bkg_base = BackgroundState(config=cfg_base, grid=grid, engine_config=ec_base)
+        result_base = bkg_base.get_schools(step=0)
+
+        # Config with multiplier=2.0
+        cfg_2x = {**cfg_base, "species.biomass.multiplier.sp10": "2.0"}
+        ec_2x = EngineConfig.from_dict(cfg_2x)
+        bkg_2x = BackgroundState(config=cfg_2x, grid=grid, engine_config=ec_2x)
+        result_2x = bkg_2x.get_schools(step=0)
+
+        np.testing.assert_allclose(result_2x.biomass, result_base.biomass * 2.0)
