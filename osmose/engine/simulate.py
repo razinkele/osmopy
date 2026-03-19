@@ -160,8 +160,16 @@ def _collect_outputs(
     biomass = np.zeros(n_total, dtype=np.float64)
     abundance = np.zeros(n_total, dtype=np.float64)
     if len(state) > 0:
-        np.add.at(biomass, state.species_id, state.biomass)
-        np.add.at(abundance, state.species_id, state.abundance)
+        # Apply output cutoff age filter (Java convention: exclude young-of-year)
+        if config.output_cutoff_age is not None:
+            age_years = state.age_dt.astype(np.float64) / config.n_dt_per_year
+            cutoff = config.output_cutoff_age[state.species_id]
+            include = age_years >= cutoff
+            np.add.at(biomass, state.species_id[include], state.biomass[include])
+            np.add.at(abundance, state.species_id[include], state.abundance[include])
+        else:
+            np.add.at(biomass, state.species_id, state.biomass)
+            np.add.at(abundance, state.species_id, state.abundance)
     if bkg_output is not None:
         biomass += bkg_output[0]
         abundance += bkg_output[1]

@@ -280,6 +280,9 @@ class EngineConfig:
     # Egg weight override: if species.egg.weight.sp{i} is set, use it instead of allometry
     egg_weight_override: NDArray[np.float64] | None  # shape (n_species,) or None
 
+    # Output cutoff age: exclude schools younger than this from biomass/abundance output
+    output_cutoff_age: NDArray[np.float64] | None  # shape (n_total,) or None
+
     # Raw config dict for subsystems that need unparsed access (e.g. ResourceState)
     raw_config: dict[str, str]
 
@@ -574,6 +577,21 @@ class EngineConfig:
         else:
             egg_weight_override = None
 
+        # Output cutoff age: output.cutoff.age.sp{i} (years, default 0 = include all)
+        n_total = n_sp + n_bkg
+        cutoff_vals = []
+        found_any = False
+        for i in range(n_sp):
+            val = cfg.get(f"output.cutoff.age.sp{i}", "")
+            if val and val.lower() not in ("null", "none", ""):
+                cutoff_vals.append(float(val))
+                found_any = True
+            else:
+                cutoff_vals.append(0.0)
+        # Pad for background species (no cutoff)
+        cutoff_vals.extend([0.0] * n_bkg)
+        output_cutoff_age = np.array(cutoff_vals, dtype=np.float64) if found_any else None
+
         return cls(
             n_species=n_sp,
             n_dt_per_year=n_dt,
@@ -623,5 +641,6 @@ class EngineConfig:
             random_walk_range=random_walk_range,
             out_mortality_rate=out_mortality_rate,
             egg_weight_override=egg_weight_override,
+            output_cutoff_age=output_cutoff_age,
             raw_config=cfg,
         )
