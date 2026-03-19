@@ -432,3 +432,60 @@ class TestPredationWithStages:
         new_state = predation(state, ec, rng, n_subdt=10, grid_ny=1, grid_nx=1)
         # ratio=30/5=6 -> after swap: in [3, 50) -> ACCEPTED
         assert new_state.abundance[1] < 1000.0
+
+
+class TestBackgroundSpeciesStages:
+    def test_background_species_get_thresholds(self):
+        """Background species can have feeding stage thresholds."""
+        cfg = _make_base_config()
+        cfg.update({
+            "species.type.sp10": "background",
+            "species.name.sp10": "BkgSpecies",
+            "species.nclass.sp10": "1",
+            "species.length.sp10": "15",
+            "species.size.proportion.sp10": "1.0",
+            "species.trophic.level.sp10": "2",
+            "species.age.sp10": "1",
+            "species.length2weight.condition.factor.sp10": "0.006",
+            "species.length2weight.allometric.power.sp10": "3.0",
+            "predation.predprey.sizeratio.max.sp10": "2;1.5",
+            "predation.predprey.sizeratio.min.sp10": "10;5",
+            "predation.ingestion.rate.max.sp10": "3.5",
+            "species.biomass.total.sp10": "1000",
+            "simulation.nbackground": "1",
+            "predation.predprey.stage.structure": "size",
+            "predation.predprey.stage.threshold.sp10": "10",
+        })
+        ec = EngineConfig.from_dict(cfg)
+        # Background at internal index 1 (n_focal=1 + bkg_idx=0)
+        assert ec.n_feeding_stages[1] == 2
+        np.testing.assert_array_equal(ec.feeding_stage_thresholds[1], [10.0])
+
+
+class TestFeedingStagesIntegration:
+    def test_multi_stage_simulation_runs(self):
+        """Full simulation with multi-stage predation runs without errors."""
+        cfg = _make_2stage_config()
+        # Stage 0: [1.0, 10.0), Stage 1: [2.0, 5.0)
+        cfg["predation.predprey.sizeratio.min.sp1"] = "1.0;2.0"
+        cfg["predation.predprey.sizeratio.max.sp1"] = "10.0;5.0"
+        cfg["simulation.time.nyear"] = "1"
+        cfg["population.seeding.biomass.sp0"] = "100.0"
+        cfg["population.seeding.biomass.sp1"] = "100.0"
+        cfg["species.sexratio.sp0"] = "0.5"
+        cfg["species.sexratio.sp1"] = "0.5"
+        cfg["species.relativefecundity.sp0"] = "500"
+        cfg["species.relativefecundity.sp1"] = "500"
+        cfg["species.maturity.size.sp0"] = "10.0"
+        cfg["species.maturity.size.sp1"] = "10.0"
+
+        from osmose.engine.grid import Grid
+        from osmose.engine.simulate import simulate
+
+        ec = EngineConfig.from_dict(cfg)
+        grid = Grid.from_dimensions(ny=3, nx=3)
+        rng = np.random.default_rng(42)
+        outputs = simulate(ec, grid, rng)
+        assert len(outputs) == ec.n_steps
+        for o in outputs:
+            assert np.all(o.biomass >= 0)
