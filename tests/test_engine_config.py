@@ -128,16 +128,17 @@ class TestEngineConfig:
         minimal_config["predation.predprey.sizeratio.max.sp0"] = "1.0"
         minimal_config["predation.predprey.sizeratio.max.sp1"] = "0.5"
         cfg = EngineConfig.from_dict(minimal_config)
-        assert cfg.size_ratio_min[0] == pytest.approx(3.5)
-        assert cfg.size_ratio_min[1] == pytest.approx(2.0)
-        assert cfg.size_ratio_max[0] == pytest.approx(1.0)
-        assert cfg.size_ratio_max[1] == pytest.approx(0.5)
+        # Java convention: min > max gets swapped → min becomes the smaller value
+        assert cfg.size_ratio_min[0, 0] == pytest.approx(1.0)
+        assert cfg.size_ratio_min[1, 0] == pytest.approx(0.5)
+        assert cfg.size_ratio_max[0, 0] == pytest.approx(3.5)
+        assert cfg.size_ratio_max[1, 0] == pytest.approx(2.0)
 
     def test_size_ratio_defaults(self, minimal_config):
         """size_ratio_min defaults to 1.0, size_ratio_max defaults to 3.5."""
         cfg = EngineConfig.from_dict(minimal_config)
-        assert cfg.size_ratio_min[0] == pytest.approx(1.0)
-        assert cfg.size_ratio_max[0] == pytest.approx(3.5)
+        assert cfg.size_ratio_min[0, 0] == pytest.approx(1.0)
+        assert cfg.size_ratio_max[0, 0] == pytest.approx(3.5)
 
     def test_out_mortality_rate(self, minimal_config):
         minimal_config["mortality.out.rate.sp0"] = "0.1"

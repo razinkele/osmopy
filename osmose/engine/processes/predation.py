@@ -13,6 +13,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from osmose.engine.config import EngineConfig
+from osmose.engine.processes.feeding_stage import compute_feeding_stages
 from osmose.engine.resources import ResourceState
 from osmose.engine.state import SchoolState
 
@@ -48,6 +49,7 @@ if _HAS_NUMBA:
         access_matrix: NDArray[np.float64],
         has_access: bool,
         n_subdt: int,
+        feeding_stage: NDArray[np.int32],
     ) -> None:
         """Numba-compiled predation within a single cell."""
         n_local = len(indices)
@@ -63,8 +65,9 @@ if _HAS_NUMBA:
 
             pred_len = length[p_idx]
             sp_pred = species_id[p_idx]
-            r_min = size_ratio_min[sp_pred]
-            r_max = size_ratio_max[sp_pred]
+            stage = feeding_stage[p_idx]
+            r_min = size_ratio_min[sp_pred, stage]
+            r_max = size_ratio_max[sp_pred, stage]
 
             biomass_p = abundance[p_idx] * weight[p_idx]
             max_eatable = biomass_p * ingestion_rate[sp_pred] / n_subdt
@@ -153,8 +156,8 @@ def _predation_in_cell_python(
 
         pred_len = state.length[p_idx]
         sp_pred = state.species_id[p_idx]
-        r_min = config.size_ratio_min[sp_pred]
-        r_max = config.size_ratio_max[sp_pred]
+        r_min = config.size_ratio_min[sp_pred, state.feeding_stage[p_idx]]
+        r_max = config.size_ratio_max[sp_pred, state.feeding_stage[p_idx]]
 
         max_eatable = state.biomass[p_idx] * config.ingestion_rate[sp_pred] / n_subdt
         if max_eatable <= 0:
@@ -251,8 +254,9 @@ def _predation_on_resources(
 
         pred_len = state.length[p_idx]
         sp_pred = state.species_id[p_idx]
-        r_min_val = config.size_ratio_min[sp_pred]
-        r_max_val = config.size_ratio_max[sp_pred]
+        stage = state.feeding_stage[p_idx]
+        r_min_val = config.size_ratio_min[sp_pred, stage]
+        r_max_val = config.size_ratio_max[sp_pred, stage]
 
         biomass_p = state.abundance[p_idx] * state.weight[p_idx]
         max_eatable = biomass_p * config.ingestion_rate[sp_pred] / n_subdt
@@ -361,6 +365,10 @@ def predation(
         preyed_biomass=preyed_biomass,
     )
 
+    # Compute feeding stages for 2D size ratio lookup
+    feeding_stage = compute_feeding_stages(work_state, config)
+    work_state = work_state.replace(feeding_stage=feeding_stage)
+
     # Group schools by cell using searchsorted (fast boundary detection)
     cell_ids = work_state.cell_y * grid_nx + work_state.cell_x
     order = np.argsort(cell_ids, kind="mergesort")
@@ -401,6 +409,7 @@ def predation(
                 access_matrix,
                 has_access,
                 n_subdt,
+                work_state.feeding_stage,
             )
         else:
             _predation_in_cell_python(cell_indices, work_state, config, rng, n_subdt)
