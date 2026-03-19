@@ -16,6 +16,7 @@ from numpy.typing import NDArray
 from osmose.engine.background import BackgroundState
 from osmose.engine.config import EngineConfig
 from osmose.engine.grid import Grid
+from osmose.engine.incoming_flux import IncomingFluxState
 from osmose.engine.resources import ResourceState
 from osmose.engine.state import MortalityCause, SchoolState
 
@@ -36,9 +37,17 @@ class StepOutput:
 
 
 def _incoming_flux(
-    state: SchoolState, config: EngineConfig, step: int, rng: np.random.Generator
+    state: SchoolState,
+    flux_state: IncomingFluxState | None,
+    step: int,
+    rng: np.random.Generator,
 ) -> SchoolState:
-    """Phase 1 stub: incoming flux (migration injection)."""
+    """Inject external biomass from incoming flux CSV time-series."""
+    if flux_state is None:
+        return state
+    new_schools = flux_state.get_incoming_schools(step, rng)
+    if new_schools is not None:
+        state = state.append(new_schools)
     return state
 
 
@@ -231,6 +240,7 @@ def simulate(
     state = initialize(config, grid, rng)
     resources = ResourceState(config=config.raw_config, grid=grid)
     background = BackgroundState(config=config.raw_config, grid=grid, engine_config=config)
+    flux_state = IncomingFluxState(config=config.raw_config, engine_config=config, grid=grid)
     outputs: list[StepOutput] = []
 
     from osmose.engine.movement_maps import MovementMapSet
@@ -250,7 +260,7 @@ def simulate(
             )
 
     for step in range(config.n_steps):
-        state = _incoming_flux(state, config, step, rng)
+        state = _incoming_flux(state, flux_state, step, rng)
         state = _reset_step_variables(state)
         resources.update(step)
         state = _movement(state, grid, config, step, rng, map_sets=map_sets)
