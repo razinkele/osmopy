@@ -7,6 +7,7 @@ infrastructure for map-based (B1) movement — no movement logic is implemented 
 
 from __future__ import annotations
 
+import glob as _glob
 import logging
 import warnings
 from pathlib import Path
@@ -15,6 +16,28 @@ import numpy as np
 from numpy.typing import NDArray
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_path(filepath_str: str) -> Path:
+    """Resolve a relative CSV map file path against multiple candidate directories.
+
+    Tries (in order):
+    1. The path as-is (works for absolute paths or paths relative to CWD).
+    2. Relative to ``data/examples/``.
+    3. Relative to any ``data/*/`` subdirectory (sorted for determinism).
+
+    Returns the first existing candidate, or the original path if none found
+    (so that the subsequent ``open()`` call will raise a clear ``FileNotFoundError``).
+    """
+    p = Path(filepath_str)
+    if p.exists():
+        return p
+    search_dirs = [Path("data/examples")] + [Path(d) for d in sorted(_glob.glob("data/*/"))]
+    for base in search_dirs:
+        candidate = base / p
+        if candidate.exists():
+            return candidate
+    return p  # fall through — open() will raise FileNotFoundError with the original path
 
 
 def _parse_semicolon_ints(value: str, limit: int) -> list[int]:
@@ -153,7 +176,7 @@ class MovementMapSet:
             if file_val.strip().lower() == "null":
                 file_path = None
             else:
-                file_path = Path(file_val)
+                file_path = _resolve_path(file_val)
 
             # --- Deduplication ---
             path_key = str(file_path) if file_path is not None else None
