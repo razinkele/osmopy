@@ -77,6 +77,9 @@ if _HAS_NUMBA:
         has_access: bool,
         n_subdt: int,
         feeding_stage: NDArray[np.int32],
+        prey_access_idx: NDArray[np.int32],
+        pred_access_idx: NDArray[np.int32],
+        use_stage_access: bool,
     ) -> None:
         """Numba-compiled predation within a single cell."""
         n_local = len(indices)
@@ -119,13 +122,30 @@ if _HAS_NUMBA:
                 if ratio < r_min or ratio >= r_max:
                     continue
 
-                sp_prey = species_id[q_idx]
                 access_coeff = 1.0
                 if has_access:
-                    if sp_pred < access_matrix.shape[0] and sp_prey < access_matrix.shape[1]:
-                        access_coeff = access_matrix[sp_pred, sp_prey]
-                        if access_coeff <= 0:
-                            continue
+                    if use_stage_access:
+                        # Stage-indexed: use pre-computed indices
+                        p_acc = pred_access_idx[p_idx]
+                        q_acc = prey_access_idx[q_idx]
+                        if p_acc >= 0 and q_acc >= 0:
+                            if (
+                                q_acc < access_matrix.shape[0]
+                                and p_acc < access_matrix.shape[1]
+                            ):
+                                access_coeff = access_matrix[q_acc, p_acc]
+                            if access_coeff <= 0:
+                                continue
+                        # If index is -1 (not found), keep default 1.0
+                    else:
+                        sp_prey = species_id[q_idx]
+                        if (
+                            sp_pred < access_matrix.shape[0]
+                            and sp_prey < access_matrix.shape[1]
+                        ):
+                            access_coeff = access_matrix[sp_pred, sp_prey]
+                            if access_coeff <= 0:
+                                continue
 
                 prey_bio = abundance[q_idx] * weight[q_idx]
                 if prey_bio <= 0:
@@ -166,6 +186,9 @@ def _predation_in_cell_python(
     config: EngineConfig,
     rng: np.random.Generator,
     n_subdt: int,
+    prey_access_idx: NDArray[np.int32] | None = None,
+    pred_access_idx: NDArray[np.int32] | None = None,
+    stage_access_matrix: NDArray[np.float64] | None = None,
 ) -> None:
     """Pure Python fallback for predation within a single cell."""
     n_local = len(indices)
@@ -207,9 +230,20 @@ def _predation_in_cell_python(
             if ratio < r_min or ratio >= r_max:
                 continue
 
-            sp_prey = state.species_id[q_idx]
             access_coeff = 1.0
-            if config.accessibility_matrix is not None:
+            if stage_access_matrix is not None and prey_access_idx is not None:
+                p_acc = pred_access_idx[p_idx]
+                q_acc = prey_access_idx[q_idx]
+                if p_acc >= 0 and q_acc >= 0:
+                    if (
+                        q_acc < stage_access_matrix.shape[0]
+                        and p_acc < stage_access_matrix.shape[1]
+                    ):
+                        access_coeff = stage_access_matrix[q_acc, p_acc]
+                    if access_coeff <= 0:
+                        continue
+            elif config.accessibility_matrix is not None:
+                sp_prey = state.species_id[q_idx]
                 if (
                     sp_pred < config.accessibility_matrix.shape[0]
                     and sp_prey < config.accessibility_matrix.shape[1]
@@ -264,6 +298,8 @@ def _predation_on_resources(
     cell_x: int,
     rng: np.random.Generator,
     n_subdt: int,
+    pred_access_idx: NDArray[np.int32] | None = None,
+    stage_access_matrix: NDArray[np.float64] | None = None,
 ) -> None:
     """Let focal schools in this cell eat resource species.
 
@@ -321,10 +357,31 @@ def _predation_on_resources(
                 continue
             percent_resource = (overlap_max - overlap_min) / rsc_range
 
-            # Accessibility from matrix (resource index = n_species + r)
-            rsc_sp_idx = config.n_species + r
+            # Accessibility from matrix
             access_coeff = 1.0
-            if config.accessibility_matrix is not None:
+            if (
+                stage_access_matrix is not None
+                and pred_access_idx is not None
+                and config.stage_accessibility is not None
+            ):
+                # Stage-indexed: resolve predator column, resource row
+                sa = config.stage_accessibility
+                rsc_name = rsc.name
+                csv_name = sa.resolve_name(rsc_name)
+                if csv_name is not None:
+                    rsc_row = sa.get_index(csv_name, 0.0, role="prey")
+                    p_acc = pred_access_idx[p_idx]
+                    if (
+                        rsc_row >= 0
+                        and p_acc >= 0
+                        and rsc_row < stage_access_matrix.shape[0]
+                        and p_acc < stage_access_matrix.shape[1]
+                    ):
+                        access_coeff = stage_access_matrix[rsc_row, p_acc]
+                        if access_coeff <= 0:
+                            continue
+            elif config.accessibility_matrix is not None:
+                rsc_sp_idx = config.n_species + r
                 if (
                     sp_pred < config.accessibility_matrix.shape[0]
                     and rsc_sp_idx < config.accessibility_matrix.shape[1]
@@ -418,8 +475,32 @@ def predation(
     boundaries = np.searchsorted(sorted_cells, np.arange(n_cells + 1))
 
     # Precompute accessibility info
-    has_access = config.accessibility_matrix is not None
-    access_matrix = config.accessibility_matrix if has_access else _DUMMY_ACCESS
+    # Prefer stage-indexed accessibility if available
+    if config.stage_accessibility is not None:
+        sa = config.stage_accessibility
+        prey_access_idx = sa.compute_school_indices(
+            work_state.species_id,
+            work_state.age_dt,
+            config.n_dt_per_year,
+            config.all_species_names,
+            role="prey",
+        )
+        pred_access_idx = sa.compute_school_indices(
+            work_state.species_id,
+            work_state.age_dt,
+            config.n_dt_per_year,
+            config.all_species_names,
+            role="pred",
+        )
+        access_matrix = sa.raw_matrix
+        has_access = True
+        use_stage_access = True
+    else:
+        prey_access_idx = np.zeros(len(work_state), dtype=np.int32)
+        pred_access_idx = np.zeros(len(work_state), dtype=np.int32)
+        has_access = config.accessibility_matrix is not None
+        access_matrix = config.accessibility_matrix if has_access else _DUMMY_ACCESS
+        use_stage_access = False
 
     for cell in range(n_cells):
         start = boundaries[cell]
@@ -449,9 +530,21 @@ def predation(
                 has_access,
                 n_subdt,
                 work_state.feeding_stage,
+                prey_access_idx,
+                pred_access_idx,
+                use_stage_access,
             )
         else:
-            _predation_in_cell_python(cell_indices, work_state, config, rng, n_subdt)
+            _predation_in_cell_python(
+                cell_indices,
+                work_state,
+                config,
+                rng,
+                n_subdt,
+                prey_access_idx=prey_access_idx if use_stage_access else None,
+                pred_access_idx=pred_access_idx if use_stage_access else None,
+                stage_access_matrix=access_matrix if use_stage_access else None,
+            )
 
         # Resource predation: focal schools eat LTL plankton/detritus
         if resources is not None and resources.n_resources > 0:
@@ -466,6 +559,8 @@ def predation(
                 cell_x_val,
                 rng,
                 n_subdt,
+                pred_access_idx=pred_access_idx if use_stage_access else None,
+                stage_access_matrix=access_matrix if use_stage_access else None,
             )
 
     new_biomass = work_state.abundance * work_state.weight

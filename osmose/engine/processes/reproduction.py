@@ -12,7 +12,12 @@ from osmose.engine.state import SchoolState
 
 
 def reproduction(
-    state: SchoolState, config: EngineConfig, step: int, rng: np.random.Generator
+    state: SchoolState,
+    config: EngineConfig,
+    step: int,
+    rng: np.random.Generator,
+    grid_ny: int = 10,
+    grid_nx: int = 10,
 ) -> SchoolState:
     """Produce eggs from mature schools and increment age for all schools.
 
@@ -65,6 +70,9 @@ def reproduction(
         eggs_per_school = n_eggs[sp] / n_new
         egg_len = config.egg_size[sp]
         egg_weight = config.condition_factor[sp] * egg_len ** config.allometric_power[sp]
+        # Use egg weight override if available (e.g., EEC config species.egg.weight.sp{N})
+        if config.egg_weight_override is not None and not np.isnan(config.egg_weight_override[sp]):
+            egg_weight = config.egg_weight_override[sp]
 
         new = SchoolState.create(n_schools=n_new, species_id=np.full(n_new, sp, dtype=np.int32))
         new = new.replace(
@@ -74,10 +82,10 @@ def reproduction(
             biomass=np.full(n_new, eggs_per_school * egg_weight, dtype=np.float64),
             is_egg=np.ones(n_new, dtype=np.bool_),
         )
-        # Place eggs randomly on the grid (will be replaced by proper movement in Phase 4)
+        # Place eggs randomly on ocean cells
         new = new.replace(
-            cell_x=rng.integers(0, 10, size=n_new).astype(np.int32),
-            cell_y=rng.integers(0, 10, size=n_new).astype(np.int32),
+            cell_x=rng.integers(0, max(1, grid_nx), size=n_new).astype(np.int32),
+            cell_y=rng.integers(0, max(1, grid_ny), size=n_new).astype(np.int32),
         )
         new_schools_list.append(new)
 

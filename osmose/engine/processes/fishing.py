@@ -25,9 +25,21 @@ def fishing_mortality(state: SchoolState, config: EngineConfig, n_subdt: int) ->
     d = f_rate / (config.n_dt_per_year * n_subdt)
     mortality_fraction = 1 - np.exp(-d)
 
-    # Apply selectivity (knife-edge at L50 if configured)
+    # Apply selectivity: age-based (type 0) or length-based (type 1)
+    sel_type = config.fishing_selectivity_type[sp]
+    a50 = config.fishing_selectivity_a50[sp]
     l50 = config.fishing_selectivity_l50[sp]
-    selectivity = np.where(l50 > 0, np.where(state.length >= l50, 1.0, 0.0), 1.0)
+
+    # Age-based knife-edge: selected if age_years >= a50
+    age_years = state.age_dt.astype(np.float64) / config.n_dt_per_year
+    age_select = np.where(sel_type == 0, np.where(age_years >= a50, 1.0, 0.0), 0.0)
+
+    # Length-based knife-edge: selected if length >= l50
+    len_select = np.where(l50 > 0, np.where(state.length >= l50, 1.0, 0.0), 1.0)
+
+    # Combine: use age selectivity for type==0, length selectivity for type==1,
+    # default (no type / type==-1) uses length selectivity for backward compat
+    selectivity = np.where(sel_type == 0, age_select, len_select)
     n_dead = state.abundance * mortality_fraction * selectivity
     n_dead[state.is_background] = 0.0
 

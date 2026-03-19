@@ -105,12 +105,13 @@ def _aging_mortality(state: SchoolState, config: EngineConfig) -> SchoolState:
 
 
 def _reproduction(
-    state: SchoolState, config: EngineConfig, step: int, rng: np.random.Generator
+    state: SchoolState, config: EngineConfig, step: int, rng: np.random.Generator,
+    grid_ny: int = 10, grid_nx: int = 10,
 ) -> SchoolState:
     """Egg production + age increment."""
     from osmose.engine.processes.reproduction import reproduction
 
-    return reproduction(state, config, step, rng)
+    return reproduction(state, config, step, rng, grid_ny=grid_ny, grid_nx=grid_nx)
 
 
 # ---------------------------------------------------------------------------
@@ -289,7 +290,7 @@ def simulate(
 
         state = _growth(state, config, rng)
         state = _aging_mortality(state, config)
-        state = _reproduction(state, config, step, rng)
+        state = _reproduction(state, config, step, rng, grid_ny=grid.ny, grid_nx=grid.nx)
 
         # Collect focal outputs after reproduction
         outputs.append(_collect_outputs(state, config, step, bkg_output))

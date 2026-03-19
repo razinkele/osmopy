@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
+from osmose.engine.accessibility import AccessibilityMatrix
 from osmose.engine.background import (
     BackgroundSpeciesInfo,
     _parse_floats,
@@ -80,10 +81,13 @@ def _resolve_file(file_key: str) -> Path | None:
     return None
 
 
-def _load_accessibility(cfg: dict[str, str], n_species: int) -> NDArray[np.float64] | None:
+def _load_accessibility(
+    cfg: dict[str, str], n_species: int
+) -> NDArray[np.float64] | None:
     """Load predation accessibility matrix from CSV if available.
 
     Returns matrix with shape (n_total, n_total) where index [predator, prey] = coefficient.
+    Used only when no stage structure is configured.
     """
     file_key = cfg.get("predation.accessibility.file", "")
     path = _resolve_file(file_key)
@@ -91,6 +95,86 @@ def _load_accessibility(cfg: dict[str, str], n_species: int) -> NDArray[np.float
         df = pd.read_csv(path, sep=";", index_col=0)
         return df.values.astype(np.float64)
     return None
+
+
+def _load_stage_accessibility(
+    cfg: dict[str, str], all_species_names: list[str]
+) -> AccessibilityMatrix | None:
+    """Load stage-indexed accessibility matrix when age/size stages are used.
+
+    Returns an AccessibilityMatrix instance, or None if no accessibility file exists.
+    """
+    file_key = cfg.get("predation.accessibility.file", "")
+    path = _resolve_file(file_key)
+    if path is None:
+        return None
+    return AccessibilityMatrix.from_csv(path, all_species_names)
+
+
+def _parse_fisheries(
+    cfg: dict[str, str], species_names: list[str], n_species: int
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.int32]]:
+    """Parse fisheries-based fishing config (OSMOSE v4).
+
+    Returns
+    -------
+    fishing_rate: NDArray[np.float64]
+        Annual fishing rate per species.
+    fishing_selectivity_a50: NDArray[np.float64]
+        Age at 50% selectivity (years) per species. NaN if not applicable.
+    fishing_selectivity_type: NDArray[np.int32]
+        0 = age-based (knife-edge), 1 = length-based, -1 = no fishing.
+    """
+    fishing_rate = np.zeros(n_species, dtype=np.float64)
+    fishing_a50 = np.full(n_species, np.nan, dtype=np.float64)
+    fishing_sel_type = np.full(n_species, -1, dtype=np.int32)
+
+    n_fisheries = int(cfg.get("simulation.nfisheries", "0"))
+    if n_fisheries == 0:
+        return fishing_rate, fishing_a50, fishing_sel_type
+
+    # Read catchability CSV to map species → fishery
+    catch_file = cfg.get("fisheries.catchability.file", "")
+    catch_path = _resolve_file(catch_file)
+    if catch_path is None:
+        return fishing_rate, fishing_a50, fishing_sel_type
+
+    catch_df = pd.read_csv(catch_path, index_col=0)
+    # Row labels = species names, column labels = fishery names
+    # Build species_name → fishery_index mapping
+    species_to_fishery: dict[str, int] = {}
+    for row_idx in range(len(catch_df)):
+        row_name = str(catch_df.index[row_idx]).strip()
+        for col_idx in range(len(catch_df.columns)):
+            val = float(catch_df.iloc[row_idx, col_idx])
+            if val > 0:
+                species_to_fishery[row_name.lower()] = col_idx
+                break
+
+    # Map species names to their fishing parameters
+    for sp_idx in range(n_species):
+        sp_name = species_names[sp_idx].strip().lower()
+        fsh_idx = species_to_fishery.get(sp_name)
+        if fsh_idx is None:
+            continue
+
+        # Base rate
+        rate_key = f"fisheries.rate.base.fsh{fsh_idx}"
+        rate_val = cfg.get(rate_key, "0.0")
+        fishing_rate[sp_idx] = float(rate_val)
+
+        # Selectivity type: 0 = knife-edge by age
+        sel_type = int(cfg.get(f"fisheries.selectivity.type.fsh{fsh_idx}", "0"))
+        if sel_type == 0:
+            # Age-based knife-edge
+            a50_key = f"fisheries.selectivity.a50.fsh{fsh_idx}"
+            a50_val = cfg.get(a50_key, "0.0")
+            fishing_a50[sp_idx] = float(a50_val)
+            fishing_sel_type[sp_idx] = 0
+        else:
+            fishing_sel_type[sp_idx] = 1
+
+    return fishing_rate, fishing_a50, fishing_sel_type
 
 
 def _load_spawning_seasons(
@@ -177,8 +261,13 @@ class EngineConfig:
     fishing_rate: NDArray[np.float64]  # annual fishing mortality rate per species
     fishing_selectivity_l50: NDArray[np.float64]  # length at 50% selectivity
 
+    # Fishing — fisheries-based selectivity
+    fishing_selectivity_a50: NDArray[np.float64]  # age at 50% selectivity (years), NaN = unused
+    fishing_selectivity_type: NDArray[np.int32]  # 0=age, 1=length, -1=none
+
     # Predation accessibility
     accessibility_matrix: NDArray[np.float64] | None  # (n_pred, n_prey) or None
+    stage_accessibility: AccessibilityMatrix | None  # stage-indexed accessibility, or None
 
     # Reproduction
     spawning_season: NDArray[np.float64] | None  # (n_species, n_dt_per_year) or None
@@ -201,10 +290,26 @@ class EngineConfig:
         n_yr = int(_get(cfg, "simulation.time.nyear"))
         lifespan_years = _species_float(cfg, "species.lifespan.sp{i}", n_sp)
 
-        # Fishing rate: try both key patterns (Java uses mortality.fishing.rate)
-        fishing = _species_float_optional(cfg, "mortality.fishing.rate.sp{i}", n_sp, default=0.0)
-        if fishing.sum() == 0:
-            fishing = _species_float_optional(cfg, "fishing.rate.sp{i}", n_sp, default=0.0)
+        # Fishing rate: try fisheries-based (v4), then per-species patterns
+        fisheries_enabled = cfg.get("fisheries.enabled", "false").lower() == "true"
+        n_fisheries = int(cfg.get("simulation.nfisheries", "0"))
+
+        # Build species names early for fisheries parsing
+        _focal_names = _species_str(cfg, "species.name.sp{i}", n_sp)
+
+        if fisheries_enabled and n_fisheries > 0:
+            fishing, focal_fishing_a50, focal_fishing_sel_type = _parse_fisheries(
+                cfg, _focal_names, n_sp
+            )
+        else:
+            # Legacy per-species rate
+            fishing = _species_float_optional(
+                cfg, "mortality.fishing.rate.sp{i}", n_sp, default=0.0
+            )
+            if fishing.sum() == 0:
+                fishing = _species_float_optional(cfg, "fishing.rate.sp{i}", n_sp, default=0.0)
+            focal_fishing_a50 = np.full(n_sp, np.nan, dtype=np.float64)
+            focal_fishing_sel_type = np.full(n_sp, -1, dtype=np.int32)
 
         # Parse background species
         background_list: list[BackgroundSpeciesInfo] = parse_background_species(
@@ -213,7 +318,7 @@ class EngineConfig:
         n_bkg = len(background_list)
 
         # Build focal-only arrays first
-        focal_species_names = _species_str(cfg, "species.name.sp{i}", n_sp)
+        focal_species_names = _focal_names
         focal_linf = _species_float(cfg, "species.linf.sp{i}", n_sp)
         focal_k = _species_float(cfg, "species.k.sp{i}", n_sp)
         focal_t0 = _species_float(cfg, "species.t0.sp{i}", n_sp)
@@ -421,6 +526,12 @@ class EngineConfig:
             starvation_rate_max = np.concatenate([focal_starvation_rate_max, bkg_zeros_f])
             fishing_rate = np.concatenate([fishing, bkg_zeros_f])
             fishing_selectivity_l50 = np.concatenate([focal_fishing_selectivity_l50, bkg_zeros_f])
+            fishing_selectivity_a50 = np.concatenate(
+                [focal_fishing_a50, np.full(n_bkg, np.nan, dtype=np.float64)]
+            )
+            fishing_selectivity_type = np.concatenate(
+                [focal_fishing_sel_type, np.full(n_bkg, -1, dtype=np.int32)]
+            )
             movement_method = focal_movement_method + ["none"] * n_bkg
             random_walk_range = np.concatenate([focal_random_walk_range, bkg_zeros_i])
             out_mortality_rate = np.concatenate([focal_out_mortality_rate, bkg_zeros_f])
@@ -447,6 +558,8 @@ class EngineConfig:
             starvation_rate_max = focal_starvation_rate_max
             fishing_rate = fishing
             fishing_selectivity_l50 = focal_fishing_selectivity_l50
+            fishing_selectivity_a50 = focal_fishing_a50
+            fishing_selectivity_type = focal_fishing_sel_type
             movement_method = focal_movement_method
             random_walk_range = focal_random_walk_range
             out_mortality_rate = focal_out_mortality_rate
@@ -496,11 +609,16 @@ class EngineConfig:
             n_feeding_stages=n_feeding_stages,
             starvation_rate_max=starvation_rate_max,
             accessibility_matrix=_load_accessibility(cfg, n_sp),
+            stage_accessibility=_load_stage_accessibility(cfg, all_species_names),
             spawning_season=_load_spawning_seasons(cfg, n_sp, n_dt),
-            fishing_enabled=cfg.get("simulation.fishing.mortality.enabled", "true").lower()
-            == "true",
+            fishing_enabled=(
+                cfg.get("simulation.fishing.mortality.enabled", "true").lower() == "true"
+                or fisheries_enabled
+            ),
             fishing_rate=fishing_rate,
             fishing_selectivity_l50=fishing_selectivity_l50,
+            fishing_selectivity_a50=fishing_selectivity_a50,
+            fishing_selectivity_type=fishing_selectivity_type,
             movement_method=movement_method,
             random_walk_range=random_walk_range,
             out_mortality_rate=out_mortality_rate,
