@@ -42,19 +42,18 @@ def reproduction(
         np.add.at(ssb, state.species_id[mature], state.abundance[mature] * state.weight[mature])
 
     # Season factor from loaded CSV or uniform
-    step_in_year = step % config.n_dt_per_year
+    # Multi-year CSVs: wrap by column count (handles both single-year and multi-year)
     if config.spawning_season is not None:
-        season_factor = config.spawning_season[:, step_in_year]
+        n_cols = config.spawning_season.shape[1]
+        season_idx = step % n_cols
+        season_factor = config.spawning_season[:, season_idx]
     else:
         season_factor = np.full(n_sp, 1.0 / config.n_dt_per_year)
 
     # Seeding: if SSB is zero and within seeding period, use seeding biomass
-    # Seeding period is typically the first `lifespan` years
-    step_year = step / config.n_dt_per_year
     for sp in range(n_sp):
         if ssb[sp] == 0.0:
-            max_lifespan_years = config.lifespan_dt[sp] / config.n_dt_per_year
-            if step_year < max_lifespan_years:
+            if step < config.seeding_max_step[sp]:
                 ssb[sp] = config.seeding_biomass[sp]
 
     # Egg count per species
@@ -71,6 +70,9 @@ def reproduction(
         n_new = int(config.n_schools[sp])
         if n_new <= 0:
             continue
+        # Edge case: fewer eggs than schools -> create just 1 school
+        if n_eggs[sp] < n_new:
+            n_new = 1
         eggs_per_school = n_eggs[sp] / n_new
         egg_len = config.egg_size[sp]
         egg_weight = config.condition_factor[sp] * egg_len ** config.allometric_power[sp] * 1e-6
@@ -86,10 +88,10 @@ def reproduction(
             biomass=np.full(n_new, eggs_per_school * egg_weight, dtype=np.float64),
             is_egg=np.ones(n_new, dtype=np.bool_),
         )
-        # Place eggs randomly on ocean cells
+        # Eggs are created unlocated; movement places them on the next step
         new = new.replace(
-            cell_x=rng.integers(0, max(1, grid_nx), size=n_new).astype(np.int32),
-            cell_y=rng.integers(0, max(1, grid_ny), size=n_new).astype(np.int32),
+            cell_x=np.full(n_new, -1, dtype=np.int32),
+            cell_y=np.full(n_new, -1, dtype=np.int32),
         )
         new_schools_list.append(new)
 

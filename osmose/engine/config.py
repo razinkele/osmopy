@@ -319,9 +319,15 @@ def _load_spawning_seasons(
 ) -> NDArray[np.float64] | None:
     """Load spawning season CSV files for each species.
 
-    Returns array of shape (n_species, n_dt_per_year) with season weights.
+    Returns array of shape (n_species, n_columns) with season weights.
+    n_columns equals n_dt_per_year for single-year data, or n_dt_per_year * n_years
+    for multi-year time series.
     """
-    seasons = np.ones((n_species, n_dt_per_year), dtype=np.float64) / n_dt_per_year
+    normalize = cfg.get("reproduction.normalisation.enabled", "false").lower() == "true"
+
+    # First pass: load all values to determine max column count
+    all_values: list[NDArray[np.float64] | None] = [None] * n_species
+    max_cols = n_dt_per_year
     found_any = False
 
     for i in range(n_species):
@@ -332,11 +338,75 @@ def _load_spawning_seasons(
         if path is not None:
             df = pd.read_csv(path, sep=";")
             values = df.iloc[:, 1].values.astype(np.float64)
-            if len(values) == n_dt_per_year:
-                seasons[i] = values
+            if len(values) >= n_dt_per_year:
+                all_values[i] = values
+                max_cols = max(max_cols, len(values))
                 found_any = True
 
-    return seasons if found_any else None
+    if not found_any:
+        return None
+
+    seasons = np.ones((n_species, max_cols), dtype=np.float64) / n_dt_per_year
+    for i in range(n_species):
+        if all_values[i] is not None:
+            vals = all_values[i]
+            n_vals = len(vals)
+            if normalize:
+                # Normalize per year: sum over each n_dt_per_year chunk
+                total = vals.sum()
+                if total > 0:
+                    vals = vals / total
+            seasons[i, :n_vals] = vals
+            # Pad remaining columns with uniform if multi-year array is shorter
+            if n_vals < max_cols:
+                seasons[i, n_vals:] = 1.0 / n_dt_per_year
+
+    return seasons
+
+
+def _load_additional_mortality_by_dt(
+    cfg: dict[str, str], n_species: int
+) -> list[NDArray[np.float64] | None] | None:
+    """Load time-varying additional mortality CSV (BY_DT scenario).
+
+    Returns a list of arrays (one per species), or None if no files found.
+    """
+    result: list[NDArray[np.float64] | None] = [None] * n_species
+    found_any = False
+
+    for i in range(n_species):
+        file_key = cfg.get(f"mortality.additional.rate.bytdt.file.sp{i}", "")
+        if not file_key:
+            continue
+        path = _resolve_file(file_key)
+        if path is not None:
+            values = np.loadtxt(path, dtype=np.float64)
+            result[i] = values.flatten()
+            found_any = True
+
+    return result if found_any else None
+
+
+def _load_additional_mortality_spatial(
+    cfg: dict[str, str], n_species: int
+) -> list[NDArray[np.float64] | None] | None:
+    """Load spatial additional mortality distribution maps.
+
+    Returns a list of 2D arrays (one per species), or None if no files found.
+    """
+    result: list[NDArray[np.float64] | None] = [None] * n_species
+    found_any = False
+
+    for i in range(n_species):
+        file_key = cfg.get(f"mortality.additional.spatial.distrib.file.sp{i}", "")
+        if not file_key:
+            continue
+        path = _resolve_file(file_key)
+        if path is not None:
+            result[i] = _load_spatial_csv(path)
+            found_any = True
+
+    return result if found_any else None
 
 
 @dataclass
@@ -373,12 +443,15 @@ class EngineConfig:
 
     # Natural mortality
     additional_mortality_rate: NDArray[np.float64]  # annual additional mortality rate per species
+    additional_mortality_by_dt: list[NDArray[np.float64] | None] | None  # BY_DT per-step rates
+    additional_mortality_spatial: list[NDArray[np.float64] | None] | None  # spatial multiplier maps
 
     # Reproduction
     sex_ratio: NDArray[np.float64]  # fraction female per species
     relative_fecundity: NDArray[np.float64]  # eggs per gram of mature female
     maturity_size: NDArray[np.float64]  # length at maturity (cm)
     seeding_biomass: NDArray[np.float64]  # initial biomass for seeding (tonnes)
+    seeding_max_step: NDArray[np.int32]  # max step for seeding (default: lifespan_dt)
     larva_mortality_rate: NDArray[np.float64]  # additional mortality for eggs/larvae
 
     # Predation — 2D arrays of shape (n_total, max_stages)
@@ -521,6 +594,13 @@ class EngineConfig:
         focal_seeding_biomass = _species_float_optional(
             cfg, "population.seeding.biomass.sp{i}", n_sp, default=0.0
         )
+        # Seeding max step: explicit override or default to lifespan
+        seeding_max_year_str = cfg.get("population.seeding.year.max", "")
+        if seeding_max_year_str:
+            seeding_max_years = float(seeding_max_year_str)
+            focal_seeding_max_step = np.full(n_sp, int(seeding_max_years * n_dt), dtype=np.int32)
+        else:
+            focal_seeding_max_step = (lifespan_years * n_dt).astype(np.int32)
         focal_larva_mortality_rate = _species_float_optional(
             cfg, "mortality.additional.larva.rate.sp{i}", n_sp, default=0.0
         )
@@ -725,6 +805,7 @@ class EngineConfig:
             relative_fecundity = np.concatenate([focal_relative_fecundity, bkg_zeros_f])
             maturity_size = np.concatenate([focal_maturity_size, bkg_zeros_f])
             seeding_biomass = np.concatenate([focal_seeding_biomass, bkg_zeros_f])
+            seeding_max_step = np.concatenate([focal_seeding_max_step, bkg_zeros_i])
             larva_mortality_rate = np.concatenate([focal_larva_mortality_rate, bkg_zeros_f])
             maturity_age_dt = np.concatenate([focal_maturity_age_dt, bkg_zeros_i])
             lmax = np.concatenate([focal_lmax, bkg_zeros_f])
@@ -761,6 +842,7 @@ class EngineConfig:
             relative_fecundity = focal_relative_fecundity
             maturity_size = focal_maturity_size
             seeding_biomass = focal_seeding_biomass
+            seeding_max_step = focal_seeding_max_step
             larva_mortality_rate = focal_larva_mortality_rate
             maturity_age_dt = focal_maturity_age_dt
             lmax = focal_lmax
@@ -831,6 +913,8 @@ class EngineConfig:
             critical_success_rate=critical_success_rate,
             delta_lmax_factor=delta_lmax_factor,
             additional_mortality_rate=additional_mortality_rate,
+            additional_mortality_by_dt=_load_additional_mortality_by_dt(cfg, n_sp),
+            additional_mortality_spatial=_load_additional_mortality_spatial(cfg, n_sp),
             sex_ratio=sex_ratio,
             relative_fecundity=relative_fecundity,
             maturity_size=maturity_size,
@@ -838,6 +922,7 @@ class EngineConfig:
             lmax=lmax,
             fishing_spatial_maps=fishing_spatial_maps,
             seeding_biomass=seeding_biomass,
+            seeding_max_step=seeding_max_step,
             larva_mortality_rate=larva_mortality_rate,
             size_ratio_min=size_ratio_min_2d,
             size_ratio_max=size_ratio_max_2d,

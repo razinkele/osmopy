@@ -72,7 +72,7 @@ def _apply_starvation_for_school(
 
 
 def _apply_additional_for_school(
-    idx: int, state: SchoolState, config: EngineConfig, n_subdt: int
+    idx: int, state: SchoolState, config: EngineConfig, n_subdt: int, step: int = 0
 ) -> None:
     """Apply additional (natural) mortality to a single school (in-place on n_dead)."""
     if state.is_background[idx]:
@@ -80,7 +80,27 @@ def _apply_additional_for_school(
     if state.age_dt[idx] == 0:
         return
     sp = state.species_id[idx]
-    D = config.additional_mortality_rate[sp] / (config.n_dt_per_year * n_subdt)
+
+    # Base rate: constant or time-varying (BY_DT)
+    rate = config.additional_mortality_rate[sp]
+    if config.additional_mortality_by_dt is not None and config.additional_mortality_by_dt[sp] is not None:
+        arr = config.additional_mortality_by_dt[sp]
+        rate = arr[step % len(arr)]
+
+    # Spatial multiplier
+    if config.additional_mortality_spatial is not None and config.additional_mortality_spatial[sp] is not None:
+        sp_map = config.additional_mortality_spatial[sp]
+        cy = int(state.cell_y[idx])
+        cx = int(state.cell_x[idx])
+        if 0 <= cy < sp_map.shape[0] and 0 <= cx < sp_map.shape[1]:
+            spatial_factor = sp_map[cy, cx]
+            if spatial_factor <= 0 or np.isnan(spatial_factor):
+                return
+            rate = rate * spatial_factor
+        else:
+            return  # out of map bounds
+
+    D = rate / (config.n_dt_per_year * n_subdt)
     if D <= 0:
         return
     inst_abd = _inst_abundance(state, idx)
@@ -493,7 +513,7 @@ def _mortality_in_cell(
             elif cause == _ADDITIONAL:
                 a_local = seq_nat[i]
                 a_idx = int(cell_indices[a_local])
-                _apply_additional_for_school(a_idx, state, config, n_subdt)
+                _apply_additional_for_school(a_idx, state, config, n_subdt, step=step)
             elif cause == _FISHING:
                 f_local = seq_fish[i]
                 f_idx = int(cell_indices[f_local])

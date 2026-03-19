@@ -12,7 +12,9 @@ from osmose.engine.config import EngineConfig
 from osmose.engine.state import MortalityCause, SchoolState
 
 
-def additional_mortality(state: SchoolState, config: EngineConfig, n_subdt: int) -> SchoolState:
+def additional_mortality(
+    state: SchoolState, config: EngineConfig, n_subdt: int, step: int = 0
+) -> SchoolState:
     """Apply additional (background) mortality per sub-timestep.
 
     Java converts: D = (M_annual / n_dt_per_year) / n_subdt
@@ -25,7 +27,16 @@ def additional_mortality(state: SchoolState, config: EngineConfig, n_subdt: int)
         return state
 
     sp = state.species_id
-    m_rate = config.additional_mortality_rate[sp]
+    m_rate = config.additional_mortality_rate[sp].copy()
+
+    # Override with time-varying BY_DT rates where available
+    if config.additional_mortality_by_dt is not None:
+        for i in range(len(state)):
+            sp_i = sp[i]
+            if sp_i < len(config.additional_mortality_by_dt) and config.additional_mortality_by_dt[sp_i] is not None:
+                arr = config.additional_mortality_by_dt[sp_i]
+                m_rate[i] = arr[step % len(arr)]
+
     # Match Java: rate per sub-step = M_annual / (n_dt_per_year * n_subdt)
     d = m_rate / (config.n_dt_per_year * n_subdt)
     mortality_fraction = 1 - np.exp(-d)
