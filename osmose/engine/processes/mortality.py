@@ -57,7 +57,7 @@ def _apply_starvation_for_school(
         return
     if state.age_dt[idx] == 0:
         return
-    M = state.starvation_rate[idx] / n_subdt
+    M = state.starvation_rate[idx] / (config.n_dt_per_year * n_subdt)
     if M <= 0:
         return
     inst_abd = _inst_abundance(state, idx)
@@ -159,7 +159,7 @@ def _apply_predation_for_school(
     r_max = config.size_ratio_max[sp_pred, stage]
 
     biomass_p = inst_abd_p * state.weight[p_idx]
-    max_eatable = biomass_p * config.ingestion_rate[sp_pred] / n_subdt
+    max_eatable = biomass_p * config.ingestion_rate[sp_pred] / (config.n_dt_per_year * n_subdt)
     if max_eatable <= 0:
         return
 
@@ -232,7 +232,8 @@ def _apply_predation_for_school(
 
     # Update predator success rate from school-to-school
     if max_eatable > 0 and eaten_total > 0:
-        state.pred_success_rate[p_idx] += eaten_total / max_eatable
+        success = min(eaten_total / max_eatable, 1.0)
+        state.pred_success_rate[p_idx] += success / n_subdt
         state.preyed_biomass[p_idx] += eaten_total
 
     # Resource predation: fill remaining appetite from LTL plankton/detritus
@@ -345,7 +346,8 @@ def _predation_on_resources_for_school(
                 _diet_matrix[p_idx, rsc_col] += eaten_from_rsc
 
     if max_eatable > 0:
-        state.pred_success_rate[p_idx] += eaten_total / max_eatable
+        success = min(eaten_total / max_eatable, 1.0)
+        state.pred_success_rate[p_idx] += success / n_subdt
         state.preyed_biomass[p_idx] += eaten_total
 
 

@@ -22,7 +22,7 @@ def starvation_mortality(state: SchoolState, config: EngineConfig, n_subdt: int)
         return state
 
     # Use the stored (lagged) starvation rate, divide by subdt
-    d = state.starvation_rate / n_subdt
+    d = state.starvation_rate / (config.n_dt_per_year * n_subdt)
     mortality_fraction = 1 - np.exp(-d)
     n_dead = state.abundance * mortality_fraction
     n_dead[state.is_background] = 0.0

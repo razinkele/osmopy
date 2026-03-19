@@ -41,8 +41,8 @@ class TestStarvationMortality:
             starvation_rate=np.array([1.5]),  # pre-set lagged rate
         )
         new_state = starvation_mortality(state, cfg, n_subdt=10)
-        # D = 1.5 / 10 = 0.15
-        expected_dead = 1000.0 * (1 - np.exp(-0.15))
+        # D = 1.5 / (n_dt_per_year * n_subdt) = 1.5 / (24 * 10) = 0.00625
+        expected_dead = 1000.0 * (1 - np.exp(-1.5 / (24 * 10)))
         np.testing.assert_allclose(
             new_state.n_dead[0, MortalityCause.STARVATION], expected_dead, rtol=1e-10
         )

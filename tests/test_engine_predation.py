@@ -139,17 +139,24 @@ class TestPredationInCell:
     def test_size_ratio_outside_range_no_predation(self):
         """Prey outside the size ratio window should not be eaten."""
         cfg = EngineConfig.from_dict(_make_predation_config())
-        # Predator sp1 (len=25), prey sp0 (len=25) -> ratio=1.0, NOT > 1.0
-        state = SchoolState.create(n_schools=2, species_id=np.array([1, 0], dtype=np.int32))
+        # Predator sp1 (len=25), prey sp0 (len=50) -> ratio=0.5, below r_min=1.0
+        # Also sp0 (len=50) vs sp1 (len=25) -> ratio=2.0 in range, but sp0 is
+        # assigned as "prey" here so we only check sp0 abundance stays unchanged.
+        # Use sp0 as predator (index 0) and sp1 as prey (index 1) to avoid
+        # mutual predation: sp1 (len=6) cannot eat sp0 (len=25) at ratio 6/25=0.24.
+        state = SchoolState.create(n_schools=2, species_id=np.array([0, 1], dtype=np.int32))
         state = state.replace(
             abundance=np.array([50.0, 500.0]),
-            length=np.array([25.0, 25.0]),
-            weight=np.array([78.125, 93.75]),
-            biomass=np.array([3906.25, 46875.0]),
+            length=np.array([6.0, 25.0]),
+            weight=np.array([1.296, 78.125]),
+            biomass=np.array([64.8, 39062.5]),
             age_dt=np.array([24, 24], dtype=np.int32),
         )
         rng = np.random.default_rng(42)
         predation_in_cell(np.array([0, 1], dtype=np.int32), state, cfg, rng, n_subdt=10)
+        # sp0 (len=6) trying to eat sp1 (len=25): ratio=6/25=0.24, below r_min=1.0 -> no predation
+        # sp1 (len=25) trying to eat sp0 (len=6): ratio=25/6=4.17, above r_max=3.5 -> no predation
+        np.testing.assert_allclose(state.abundance[0], 50.0)
         np.testing.assert_allclose(state.abundance[1], 500.0)
 
 

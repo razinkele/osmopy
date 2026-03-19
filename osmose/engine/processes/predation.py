@@ -76,6 +76,7 @@ if _HAS_NUMBA:
         access_matrix: NDArray[np.float64],
         has_access: bool,
         n_subdt: int,
+        n_dt_per_year: int,
         feeding_stage: NDArray[np.int32],
         prey_access_idx: NDArray[np.int32],
         pred_access_idx: NDArray[np.int32],
@@ -100,7 +101,7 @@ if _HAS_NUMBA:
             r_max = size_ratio_max[sp_pred, stage]
 
             biomass_p = abundance[p_idx] * weight[p_idx]
-            max_eatable = biomass_p * ingestion_rate[sp_pred] / n_subdt
+            max_eatable = biomass_p * ingestion_rate[sp_pred] / (n_dt_per_year * n_subdt)
             if max_eatable <= 0:
                 continue
 
@@ -171,7 +172,8 @@ if _HAS_NUMBA:
                     new_abd = abundance[q_idx] - n_dead
                     abundance[q_idx] = max(0.0, new_abd)
 
-            pred_success_rate[p_idx] += eaten_total / max_eatable
+            success = min(eaten_total / max_eatable, 1.0)
+            pred_success_rate[p_idx] += success / n_subdt
             preyed_biomass[p_idx] += eaten_total
 
 
@@ -209,7 +211,7 @@ def _predation_in_cell_python(
         r_min = config.size_ratio_min[sp_pred, state.feeding_stage[p_idx]]
         r_max = config.size_ratio_max[sp_pred, state.feeding_stage[p_idx]]
 
-        max_eatable = state.biomass[p_idx] * config.ingestion_rate[sp_pred] / n_subdt
+        max_eatable = state.biomass[p_idx] * config.ingestion_rate[sp_pred] / (config.n_dt_per_year * n_subdt)
         if max_eatable <= 0:
             continue
 
@@ -280,7 +282,8 @@ def _predation_in_cell_python(
                 if p_idx < _diet_matrix.shape[0] and prey_sp < _diet_matrix.shape[1]:
                     _diet_matrix[p_idx, prey_sp] += eaten_from_prey
 
-        state.pred_success_rate[p_idx] += eaten_total / max_eatable
+        success = min(eaten_total / max_eatable, 1.0)
+        state.pred_success_rate[p_idx] += success / n_subdt
         state.preyed_biomass[p_idx] += eaten_total
 
 
@@ -328,7 +331,7 @@ def _predation_on_resources(
         r_max_val = config.size_ratio_max[sp_pred, stage]
 
         biomass_p = state.abundance[p_idx] * state.weight[p_idx]
-        max_eatable = biomass_p * config.ingestion_rate[sp_pred] / n_subdt
+        max_eatable = biomass_p * config.ingestion_rate[sp_pred] / (config.n_dt_per_year * n_subdt)
         if max_eatable <= 0:
             continue
 
@@ -421,7 +424,8 @@ def _predation_on_resources(
 
         # Update predator success rate
         if max_eatable > 0:
-            state.pred_success_rate[p_idx] += eaten_total / max_eatable
+            success = min(eaten_total / max_eatable, 1.0)
+            state.pred_success_rate[p_idx] += success / n_subdt
             state.preyed_biomass[p_idx] += eaten_total
 
 
@@ -529,6 +533,7 @@ def predation(
                 access_matrix,
                 has_access,
                 n_subdt,
+                config.n_dt_per_year,
                 work_state.feeding_stage,
                 prey_access_idx,
                 pred_access_idx,
