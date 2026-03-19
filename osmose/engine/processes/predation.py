@@ -26,6 +26,33 @@ except ImportError:
 
 
 # ---------------------------------------------------------------------------
+# Diet tracking (module-level state)
+# ---------------------------------------------------------------------------
+
+_diet_tracking_enabled: bool = False
+_diet_matrix: NDArray[np.float64] | None = None
+
+
+def enable_diet_tracking(n_schools: int, n_species: int) -> None:
+    """Enable per-school diet tracking with a (n_schools, n_species) matrix."""
+    global _diet_tracking_enabled, _diet_matrix
+    _diet_tracking_enabled = True
+    _diet_matrix = np.zeros((n_schools, n_species), dtype=np.float64)
+
+
+def disable_diet_tracking() -> None:
+    """Disable diet tracking and clear the matrix."""
+    global _diet_tracking_enabled, _diet_matrix
+    _diet_tracking_enabled = False
+    _diet_matrix = None
+
+
+def get_diet_matrix() -> NDArray[np.float64] | None:
+    """Return the current diet matrix, or None if tracking is disabled."""
+    return _diet_matrix
+
+
+# ---------------------------------------------------------------------------
 # Numba-accelerated inner loop
 # ---------------------------------------------------------------------------
 
@@ -213,6 +240,12 @@ def _predation_in_cell_python(
                 n_dead = eaten_from_prey / state.weight[q_idx]
                 state.abundance[q_idx] = max(0.0, state.abundance[q_idx] - n_dead)
 
+            # Diet tracking: record biomass eaten per prey species
+            if _diet_tracking_enabled and _diet_matrix is not None:
+                prey_sp = state.species_id[q_idx]
+                if p_idx < _diet_matrix.shape[0] and prey_sp < _diet_matrix.shape[1]:
+                    _diet_matrix[p_idx, prey_sp] += eaten_from_prey
+
         state.pred_success_rate[p_idx] += eaten_total / max_eatable
         state.preyed_biomass[p_idx] += eaten_total
 
@@ -323,6 +356,12 @@ def _predation_on_resources(
             eaten_from_rsc = eaten_total * share
             resources.biomass[r, cell_id] = max(0.0, resources.biomass[r, cell_id] - eaten_from_rsc)
 
+            # Diet tracking: resource species index = n_species + r
+            if _diet_tracking_enabled and _diet_matrix is not None:
+                rsc_col = config.n_species + r
+                if p_idx < _diet_matrix.shape[0] and rsc_col < _diet_matrix.shape[1]:
+                    _diet_matrix[p_idx, rsc_col] += eaten_from_rsc
+
         # Update predator success rate
         if max_eatable > 0:
             state.pred_success_rate[p_idx] += eaten_total / max_eatable
@@ -390,7 +429,7 @@ def predation(
 
         cell_indices = order[start:end].astype(np.int32)
 
-        if _HAS_NUMBA:
+        if _HAS_NUMBA and not _diet_tracking_enabled:
             pred_order = rng.permutation(len(cell_indices)).astype(np.int32)
             _predation_in_cell_numba(
                 cell_indices,

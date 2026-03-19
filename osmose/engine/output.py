@@ -10,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from numpy.typing import NDArray
 
 from osmose.engine.config import EngineConfig
 from osmose.engine.simulate import StepOutput
@@ -98,3 +99,61 @@ def _write_mortality_csvs(
         with open(path, "w") as f:
             f.write(f'"Mortality rates per time step for {sp_name}"\n')
             df.to_csv(f, index=False)
+
+
+# ---------------------------------------------------------------------------
+# Diet composition output
+# ---------------------------------------------------------------------------
+
+
+def aggregate_diet_by_species(
+    diet_matrix: NDArray[np.float64],
+    species_id: NDArray[np.int32],
+    n_pred_species: int,
+) -> NDArray[np.float64]:
+    """Aggregate per-school diet matrix into per-species diet.
+
+    Args:
+        diet_matrix: shape (n_schools, n_prey_columns) — biomass eaten per prey.
+        species_id: species index for each school.
+        n_pred_species: number of predator species (focal).
+
+    Returns:
+        Array of shape (n_pred_species, n_prey_columns) with summed biomass.
+    """
+    n_prey_cols = diet_matrix.shape[1]
+    result = np.zeros((n_pred_species, n_prey_cols), dtype=np.float64)
+    for school_idx in range(diet_matrix.shape[0]):
+        sp = species_id[school_idx]
+        if sp < n_pred_species:
+            result[sp] += diet_matrix[school_idx]
+    return result
+
+
+def write_diet_csv(
+    path: Path,
+    diet_by_species: NDArray[np.float64],
+    predator_names: list[str],
+    prey_names: list[str],
+) -> None:
+    """Write diet composition as a CSV with percentage values.
+
+    Rows = prey species, columns = predator species.
+    Values are the percentage of each predator's total diet from each prey.
+
+    Args:
+        path: Output file path.
+        diet_by_species: shape (n_predators, n_prey) — biomass eaten.
+        predator_names: names for each predator species.
+        prey_names: names for each prey column (focal + resource species).
+    """
+    # Convert to percentages per predator
+    totals = diet_by_species.sum(axis=1, keepdims=True)
+    # Avoid division by zero
+    safe_totals = np.where(totals > 0, totals, 1.0)
+    pct = diet_by_species / safe_totals * 100.0
+
+    # Build DataFrame: rows = prey, columns = predator
+    df = pd.DataFrame(pct.T, index=prey_names, columns=predator_names)
+    df.index.name = "Prey"
+    df.to_csv(path)

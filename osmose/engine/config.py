@@ -6,12 +6,19 @@ into typed NumPy arrays indexed by species, ready for vectorized computation.
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
+
+from osmose.engine.background import (
+    BackgroundSpeciesInfo,
+    _parse_floats,
+    parse_background_species,
+)
 
 
 def _get(cfg: dict[str, str], key: str) -> str:
@@ -104,6 +111,11 @@ class EngineConfig:
     n_schools: NDArray[np.int32]
     species_names: list[str]
 
+    # Background species
+    n_background: int
+    background_file_indices: list[int]
+    all_species_names: list[str]
+
     linf: NDArray[np.float64]
     k: NDArray[np.float64]
     t0: NDArray[np.float64]
@@ -130,9 +142,14 @@ class EngineConfig:
     seeding_biomass: NDArray[np.float64]  # initial biomass for seeding (tonnes)
     larva_mortality_rate: NDArray[np.float64]  # additional mortality for eggs/larvae
 
-    # Predation
-    size_ratio_min: NDArray[np.float64]  # max pred/prey ratio per species (Java naming)
-    size_ratio_max: NDArray[np.float64]  # min pred/prey ratio per species
+    # Predation — 2D arrays of shape (n_total, max_stages)
+    size_ratio_min: NDArray[np.float64]  # min pred/prey ratio per species per stage
+    size_ratio_max: NDArray[np.float64]  # max pred/prey ratio per species per stage
+
+    # Feeding stages
+    feeding_stage_thresholds: list  # per-species list of threshold floats
+    feeding_stage_metric: list[str]  # per-species metric name ("size"/"age"/"weight"/"tl")
+    n_feeding_stages: NDArray[np.int32]  # number of feeding stages per species
 
     # Starvation
     starvation_rate_max: NDArray[np.float64]  # max starvation mortality rate
@@ -168,79 +185,294 @@ class EngineConfig:
         if fishing.sum() == 0:
             fishing = _species_float_optional(cfg, "fishing.rate.sp{i}", n_sp, default=0.0)
 
+        # Parse background species
+        background_list: list[BackgroundSpeciesInfo] = parse_background_species(
+            cfg, n_focal=n_sp, n_dt_per_year=n_dt
+        )
+        n_bkg = len(background_list)
+
+        # Build focal-only arrays first
+        focal_species_names = _species_str(cfg, "species.name.sp{i}", n_sp)
+        focal_linf = _species_float(cfg, "species.linf.sp{i}", n_sp)
+        focal_k = _species_float(cfg, "species.k.sp{i}", n_sp)
+        focal_t0 = _species_float(cfg, "species.t0.sp{i}", n_sp)
+        focal_egg_size = _species_float(cfg, "species.egg.size.sp{i}", n_sp)
+        focal_condition_factor = _species_float(
+            cfg, "species.length2weight.condition.factor.sp{i}", n_sp
+        )
+        focal_allometric_power = _species_float(
+            cfg, "species.length2weight.allometric.power.sp{i}", n_sp
+        )
+        focal_vb_threshold_age = _species_float(
+            cfg, "species.vonbertalanffy.threshold.age.sp{i}", n_sp
+        )
+        focal_lifespan_dt = (lifespan_years * n_dt).astype(np.int32)
+        focal_ingestion_rate = _species_float(cfg, "predation.ingestion.rate.max.sp{i}", n_sp)
+        focal_critical_success_rate = _species_float(
+            cfg, "predation.efficiency.critical.sp{i}", n_sp
+        )
+        focal_delta_lmax_factor = _species_float_optional(
+            cfg, "species.delta.lmax.factor.sp{i}", n_sp, default=2.0
+        )
+        focal_additional_mortality_rate = _species_float_optional(
+            cfg, "mortality.additional.rate.sp{i}", n_sp, default=0.0
+        )
+        focal_sex_ratio = _species_float_optional(cfg, "species.sexratio.sp{i}", n_sp, default=0.5)
+        focal_relative_fecundity = _species_float_optional(
+            cfg, "species.relativefecundity.sp{i}", n_sp, default=500.0
+        )
+        focal_maturity_size = _species_float_optional(
+            cfg, "species.maturity.size.sp{i}", n_sp, default=0.0
+        )
+        focal_seeding_biomass = _species_float_optional(
+            cfg, "population.seeding.biomass.sp{i}", n_sp, default=0.0
+        )
+        focal_larva_mortality_rate = _species_float_optional(
+            cfg, "mortality.additional.larva.rate.sp{i}", n_sp, default=0.0
+        )
+        # --- Feeding stages: thresholds, metrics, multi-value size ratios ---
+        _VALID_METRICS = {"age", "size", "weight", "tl"}
+        global_metric = cfg.get("predation.predprey.stage.structure", "size").strip().lower()
+        if global_metric not in _VALID_METRICS:
+            raise ValueError(
+                f"Unrecognized feeding stage metric: {global_metric!r}. "
+                f"Must be one of {sorted(_VALID_METRICS)}."
+            )
+
+        all_thresholds: list[list[float]] = []
+        all_metrics: list[str] = []
+        all_ratio_min: list[list[float]] = []
+        all_ratio_max: list[list[float]] = []
+
+        for i in range(n_sp):
+            # Per-species metric override
+            sp_metric = cfg.get(f"predation.predprey.stage.structure.sp{i}", "").strip().lower()
+            if not sp_metric:
+                sp_metric = global_metric
+            elif sp_metric not in _VALID_METRICS:
+                raise ValueError(
+                    f"Unrecognized feeding stage metric for sp{i}: {sp_metric!r}. "
+                    f"Must be one of {sorted(_VALID_METRICS)}."
+                )
+            all_metrics.append(sp_metric)
+
+            # Thresholds
+            thresh_raw = cfg.get(f"predation.predprey.stage.threshold.sp{i}", "")
+            if not thresh_raw or thresh_raw.strip().lower() == "null":
+                sp_thresholds: list[float] = []
+            else:
+                sp_thresholds = _parse_floats(thresh_raw)
+            all_thresholds.append(sp_thresholds)
+            n_stages = len(sp_thresholds) + 1
+
+            # Size ratios (multi-value)
+            rmin_raw = cfg.get(f"predation.predprey.sizeratio.min.sp{i}", "1.0")
+            rmax_raw = cfg.get(f"predation.predprey.sizeratio.max.sp{i}", "3.5")
+            rmin_list = _parse_floats(rmin_raw)
+            rmax_list = _parse_floats(rmax_raw)
+
+            # Validate length matches n_stages
+            if len(rmin_list) != n_stages:
+                raise ValueError(
+                    f"Size ratio min count mismatch for sp{i}: "
+                    f"got {len(rmin_list)}, expected {n_stages} stages"
+                )
+            if len(rmax_list) != n_stages:
+                raise ValueError(
+                    f"Size ratio max count mismatch for sp{i}: "
+                    f"got {len(rmax_list)}, expected {n_stages} stages"
+                )
+
+            # Swap validation: if parsed min > parsed max (Java convention), swap + warn
+            for s in range(n_stages):
+                if rmin_list[s] > rmax_list[s]:
+                    warnings.warn(
+                        f"Swapping size ratios for sp{i} stage {s}: "
+                        f"min={rmin_list[s]}, max={rmax_list[s]}",
+                        stacklevel=2,
+                    )
+                    rmin_list[s], rmax_list[s] = rmax_list[s], rmin_list[s]
+
+            all_ratio_min.append(rmin_list)
+            all_ratio_max.append(rmax_list)
+
+        # Background species: thresholds, metrics, ratios
+        for b in background_list:
+            b_idx = b.file_index
+            b_metric = cfg.get(f"predation.predprey.stage.structure.sp{b_idx}", "").strip().lower()
+            if not b_metric:
+                b_metric = global_metric
+            all_metrics.append(b_metric)
+
+            thresh_raw = cfg.get(f"predation.predprey.stage.threshold.sp{b_idx}", "")
+            if not thresh_raw or thresh_raw.strip().lower() == "null":
+                b_thresholds: list[float] = []
+            else:
+                b_thresholds = _parse_floats(thresh_raw)
+            all_thresholds.append(b_thresholds)
+            n_stages = len(b_thresholds) + 1
+
+            rmin_list = list(b.size_ratio_min)
+            rmax_list = list(b.size_ratio_max)
+
+            # If background species has 1 ratio but multiple stages, pad
+            if len(rmin_list) == 1 and n_stages > 1:
+                rmin_list = rmin_list * n_stages
+            if len(rmax_list) == 1 and n_stages > 1:
+                rmax_list = rmax_list * n_stages
+
+            # Swap validation for background
+            for s in range(min(len(rmin_list), len(rmax_list))):
+                if rmin_list[s] > rmax_list[s]:
+                    rmin_list[s], rmax_list[s] = rmax_list[s], rmin_list[s]
+
+            all_ratio_min.append(rmin_list)
+            all_ratio_max.append(rmax_list)
+
+        # Build 2D arrays with padding
+        n_total = n_sp + n_bkg
+        max_stages = max((len(r) for r in all_ratio_min), default=1)
+        n_feeding_stages = np.array([len(r) for r in all_ratio_min], dtype=np.int32)
+
+        size_ratio_min_2d = np.zeros((n_total, max_stages), dtype=np.float64)
+        size_ratio_max_2d = np.zeros((n_total, max_stages), dtype=np.float64)
+        for sp_i in range(n_total):
+            n_st = len(all_ratio_min[sp_i])
+            for s in range(n_st):
+                size_ratio_min_2d[sp_i, s] = all_ratio_min[sp_i][s]
+                size_ratio_max_2d[sp_i, s] = all_ratio_max[sp_i][s]
+            # Pad remaining columns with last valid value
+            if n_st > 0 and n_st < max_stages:
+                size_ratio_min_2d[sp_i, n_st:] = all_ratio_min[sp_i][-1]
+                size_ratio_max_2d[sp_i, n_st:] = all_ratio_max[sp_i][-1]
+
+        focal_starvation_rate_max = _species_float_optional(
+            cfg, "mortality.starvation.rate.max.sp{i}", n_sp, default=0.0
+        )
+        focal_fishing_selectivity_l50 = _species_float_optional(
+            cfg, "fishing.selectivity.l50.sp{i}", n_sp, default=0.0
+        )
+        focal_movement_method = [
+            cfg.get(f"movement.distribution.method.sp{i}", "random") for i in range(n_sp)
+        ]
+        focal_random_walk_range = _species_int_optional(
+            cfg, "movement.randomwalk.range.sp{i}", n_sp, default=1
+        )
+        focal_out_mortality_rate = _species_float_optional(
+            cfg, "mortality.out.rate.sp{i}", n_sp, default=0.0
+        )
+        focal_n_schools = _species_int_optional(
+            cfg,
+            "simulation.nschool.sp{i}",
+            n_sp,
+            default=int(cfg.get("simulation.nschool", "20")),
+        )
+
+        # Extend all per-species arrays with background species values
+        if n_bkg > 0:
+            bkg_names = [b.name for b in background_list]
+            bkg_ingestion = np.array([b.ingestion_rate for b in background_list])
+            bkg_condition_factor = np.array([b.condition_factor for b in background_list])
+            bkg_allometric_power = np.array([b.allometric_power for b in background_list])
+            bkg_zeros_f = np.zeros(n_bkg, dtype=np.float64)
+            bkg_zeros_i = np.zeros(n_bkg, dtype=np.int32)
+
+            all_species_names = focal_species_names + bkg_names
+            linf = np.concatenate([focal_linf, bkg_zeros_f])
+            k = np.concatenate([focal_k, bkg_zeros_f])
+            t0 = np.concatenate([focal_t0, bkg_zeros_f])
+            egg_size = np.concatenate([focal_egg_size, bkg_zeros_f])
+            condition_factor = np.concatenate([focal_condition_factor, bkg_condition_factor])
+            allometric_power = np.concatenate([focal_allometric_power, bkg_allometric_power])
+            vb_threshold_age = np.concatenate([focal_vb_threshold_age, bkg_zeros_f])
+            lifespan_dt = np.concatenate([focal_lifespan_dt, bkg_zeros_i])
+            ingestion_rate = np.concatenate([focal_ingestion_rate, bkg_ingestion])
+            critical_success_rate = np.concatenate([focal_critical_success_rate, bkg_zeros_f])
+            delta_lmax_factor = np.concatenate([focal_delta_lmax_factor, bkg_zeros_f])
+            additional_mortality_rate = np.concatenate(
+                [focal_additional_mortality_rate, bkg_zeros_f]
+            )
+            sex_ratio = np.concatenate([focal_sex_ratio, bkg_zeros_f])
+            relative_fecundity = np.concatenate([focal_relative_fecundity, bkg_zeros_f])
+            maturity_size = np.concatenate([focal_maturity_size, bkg_zeros_f])
+            seeding_biomass = np.concatenate([focal_seeding_biomass, bkg_zeros_f])
+            larva_mortality_rate = np.concatenate([focal_larva_mortality_rate, bkg_zeros_f])
+            starvation_rate_max = np.concatenate([focal_starvation_rate_max, bkg_zeros_f])
+            fishing_rate = np.concatenate([fishing, bkg_zeros_f])
+            fishing_selectivity_l50 = np.concatenate([focal_fishing_selectivity_l50, bkg_zeros_f])
+            movement_method = focal_movement_method + ["none"] * n_bkg
+            random_walk_range = np.concatenate([focal_random_walk_range, bkg_zeros_i])
+            out_mortality_rate = np.concatenate([focal_out_mortality_rate, bkg_zeros_f])
+            n_schools = np.concatenate([focal_n_schools, bkg_zeros_i])
+        else:
+            all_species_names = focal_species_names[:]
+            linf = focal_linf
+            k = focal_k
+            t0 = focal_t0
+            egg_size = focal_egg_size
+            condition_factor = focal_condition_factor
+            allometric_power = focal_allometric_power
+            vb_threshold_age = focal_vb_threshold_age
+            lifespan_dt = focal_lifespan_dt
+            ingestion_rate = focal_ingestion_rate
+            critical_success_rate = focal_critical_success_rate
+            delta_lmax_factor = focal_delta_lmax_factor
+            additional_mortality_rate = focal_additional_mortality_rate
+            sex_ratio = focal_sex_ratio
+            relative_fecundity = focal_relative_fecundity
+            maturity_size = focal_maturity_size
+            seeding_biomass = focal_seeding_biomass
+            larva_mortality_rate = focal_larva_mortality_rate
+            starvation_rate_max = focal_starvation_rate_max
+            fishing_rate = fishing
+            fishing_selectivity_l50 = focal_fishing_selectivity_l50
+            movement_method = focal_movement_method
+            random_walk_range = focal_random_walk_range
+            out_mortality_rate = focal_out_mortality_rate
+            n_schools = focal_n_schools
+
         return cls(
             n_species=n_sp,
             n_dt_per_year=n_dt,
             n_year=n_yr,
             n_steps=n_dt * n_yr,
-            n_schools=_species_int_optional(
-                cfg,
-                "simulation.nschool.sp{i}",
-                n_sp,
-                default=int(cfg.get("simulation.nschool", "20")),
-            ),
-            species_names=_species_str(cfg, "species.name.sp{i}", n_sp),
-            linf=_species_float(cfg, "species.linf.sp{i}", n_sp),
-            k=_species_float(cfg, "species.k.sp{i}", n_sp),
-            t0=_species_float(cfg, "species.t0.sp{i}", n_sp),
-            egg_size=_species_float(cfg, "species.egg.size.sp{i}", n_sp),
-            condition_factor=_species_float(
-                cfg, "species.length2weight.condition.factor.sp{i}", n_sp
-            ),
-            allometric_power=_species_float(
-                cfg, "species.length2weight.allometric.power.sp{i}", n_sp
-            ),
-            vb_threshold_age=_species_float(
-                cfg, "species.vonbertalanffy.threshold.age.sp{i}", n_sp
-            ),
-            lifespan_dt=(lifespan_years * n_dt).astype(np.int32),
+            n_schools=n_schools,
+            species_names=focal_species_names,
+            n_background=n_bkg,
+            background_file_indices=[b.file_index for b in background_list],
+            all_species_names=all_species_names,
+            linf=linf,
+            k=k,
+            t0=t0,
+            egg_size=egg_size,
+            condition_factor=condition_factor,
+            allometric_power=allometric_power,
+            vb_threshold_age=vb_threshold_age,
+            lifespan_dt=lifespan_dt,
             mortality_subdt=max(1, int(cfg.get("mortality.subdt", "10"))),
-            ingestion_rate=_species_float(cfg, "predation.ingestion.rate.max.sp{i}", n_sp),
-            critical_success_rate=_species_float(cfg, "predation.efficiency.critical.sp{i}", n_sp),
-            delta_lmax_factor=_species_float_optional(
-                cfg, "species.delta.lmax.factor.sp{i}", n_sp, default=2.0
-            ),
-            additional_mortality_rate=_species_float_optional(
-                cfg, "mortality.additional.rate.sp{i}", n_sp, default=0.0
-            ),
-            sex_ratio=_species_float_optional(cfg, "species.sexratio.sp{i}", n_sp, default=0.5),
-            relative_fecundity=_species_float_optional(
-                cfg, "species.relativefecundity.sp{i}", n_sp, default=500.0
-            ),
-            maturity_size=_species_float_optional(
-                cfg, "species.maturity.size.sp{i}", n_sp, default=0.0
-            ),
-            seeding_biomass=_species_float_optional(
-                cfg, "population.seeding.biomass.sp{i}", n_sp, default=0.0
-            ),
-            larva_mortality_rate=_species_float_optional(
-                cfg, "mortality.additional.larva.rate.sp{i}", n_sp, default=0.0
-            ),
-            size_ratio_min=_species_float_optional(
-                cfg, "predation.predprey.sizeratio.min.sp{i}", n_sp, default=1.0
-            ),
-            size_ratio_max=_species_float_optional(
-                cfg, "predation.predprey.sizeratio.max.sp{i}", n_sp, default=3.5
-            ),
-            starvation_rate_max=_species_float_optional(
-                cfg, "mortality.starvation.rate.max.sp{i}", n_sp, default=0.0
-            ),
+            ingestion_rate=ingestion_rate,
+            critical_success_rate=critical_success_rate,
+            delta_lmax_factor=delta_lmax_factor,
+            additional_mortality_rate=additional_mortality_rate,
+            sex_ratio=sex_ratio,
+            relative_fecundity=relative_fecundity,
+            maturity_size=maturity_size,
+            seeding_biomass=seeding_biomass,
+            larva_mortality_rate=larva_mortality_rate,
+            size_ratio_min=size_ratio_min_2d,
+            size_ratio_max=size_ratio_max_2d,
+            feeding_stage_thresholds=all_thresholds,
+            feeding_stage_metric=all_metrics,
+            n_feeding_stages=n_feeding_stages,
+            starvation_rate_max=starvation_rate_max,
             accessibility_matrix=_load_accessibility(cfg, n_sp),
             spawning_season=_load_spawning_seasons(cfg, n_sp, n_dt),
             fishing_enabled=cfg.get("simulation.fishing.mortality.enabled", "true").lower()
             == "true",
-            fishing_rate=fishing,
-            fishing_selectivity_l50=_species_float_optional(
-                cfg, "fishing.selectivity.l50.sp{i}", n_sp, default=0.0
-            ),
-            movement_method=[
-                cfg.get(f"movement.distribution.method.sp{i}", "random") for i in range(n_sp)
-            ],
-            random_walk_range=_species_int_optional(
-                cfg, "movement.randomwalk.range.sp{i}", n_sp, default=1
-            ),
-            out_mortality_rate=_species_float_optional(
-                cfg, "mortality.out.rate.sp{i}", n_sp, default=0.0
-            ),
+            fishing_rate=fishing_rate,
+            fishing_selectivity_l50=fishing_selectivity_l50,
+            movement_method=movement_method,
+            random_walk_range=random_walk_range,
+            out_mortality_rate=out_mortality_rate,
             raw_config=cfg,
         )

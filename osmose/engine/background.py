@@ -60,11 +60,11 @@ class BackgroundSpeciesInfo:
     allometric_power: float
     """Allometric power (b in W = a*L^b)."""
 
-    size_ratio_min: float
-    """Minimum predator/prey size ratio when this species is a predator."""
+    size_ratio_min: list[float]
+    """Minimum predator/prey size ratio(s) per feeding stage."""
 
-    size_ratio_max: float
-    """Maximum predator/prey size ratio when this species is a predator."""
+    size_ratio_max: list[float]
+    """Maximum predator/prey size ratio(s) per feeding stage."""
 
     ingestion_rate: float
     """Maximum ingestion rate (per year)."""
@@ -159,8 +159,8 @@ def parse_background_species(
         condition_factor = float(cfg.get(f"species.length2weight.condition.factor.sp{i}", "0.01"))
         allometric_power = float(cfg.get(f"species.length2weight.allometric.power.sp{i}", "3.0"))
 
-        size_ratio_max = float(cfg.get(f"predation.predprey.sizeratio.max.sp{i}", "3.5"))
-        size_ratio_min = float(cfg.get(f"predation.predprey.sizeratio.min.sp{i}", "1.0"))
+        size_ratio_max = _parse_floats(cfg.get(f"predation.predprey.sizeratio.max.sp{i}", "3.5"))
+        size_ratio_min = _parse_floats(cfg.get(f"predation.predprey.sizeratio.min.sp{i}", "1.0"))
         ingestion_rate = float(cfg.get(f"predation.ingestion.rate.max.sp{i}", "3.5"))
 
         multiplier = float(cfg.get(f"species.biomass.multiplier.sp{i}", "1.0"))
