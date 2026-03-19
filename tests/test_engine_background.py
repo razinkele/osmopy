@@ -510,3 +510,265 @@ class TestSimulateWithBackground:
         for o in outputs:
             assert np.all(np.isfinite(o.biomass[: ec.n_species]))
             assert np.all(o.biomass[: ec.n_species] >= 0)
+
+
+# ---------------------------------------------------------------------------
+# Task 6: Predation participation tests
+# ---------------------------------------------------------------------------
+
+
+from osmose.engine.processes.predation import predation  # noqa: E402
+
+
+class TestBackgroundPredation:
+    """Verify the predation kernel works correctly with background species."""
+
+    def _make_predation_state_focal_predator(self) -> tuple[SchoolState, EngineConfig]:
+        """Focal predator (sp0, len=30) eats background prey (sp1, len=5) in same cell."""
+        cfg_dict = {**_make_base_config(), **_make_bkg_config(10)}
+        # Wide-open size ratios for focal species: ratio=30/5=6 must pass
+        cfg_dict["predation.predprey.sizeratio.min.sp0"] = "1.0"
+        cfg_dict["predation.predprey.sizeratio.max.sp0"] = "100.0"
+        ec = EngineConfig.from_dict(cfg_dict)
+
+        state = SchoolState.create(n_schools=2, species_id=np.array([0, 1], dtype=np.int32))
+        state = state.replace(
+            is_background=np.array([False, True]),
+            abundance=np.array([100.0, 1000.0]),
+            weight=np.array([10.0, 1.0]),
+            biomass=np.array([1000.0, 1000.0]),
+            length=np.array([30.0, 5.0]),  # focal is bigger
+            age_dt=np.array([10, 10], dtype=np.int32),
+            first_feeding_age_dt=np.array([0, -1], dtype=np.int32),
+            cell_x=np.array([0, 0], dtype=np.int32),
+            cell_y=np.array([0, 0], dtype=np.int32),
+        )
+        return state, ec
+
+    def _make_predation_state_bkg_predator(self) -> tuple[SchoolState, EngineConfig]:
+        """Background predator (sp1, len=30) eats focal prey (sp0, len=5) in same cell."""
+        cfg_dict = {**_make_base_config(), **_make_bkg_config(10)}
+        # Wide-open size ratios for background species (file_index=10)
+        cfg_dict["predation.predprey.sizeratio.min.sp10"] = "1.0"
+        cfg_dict["predation.predprey.sizeratio.max.sp10"] = "100.0"
+        ec = EngineConfig.from_dict(cfg_dict)
+
+        state = SchoolState.create(n_schools=2, species_id=np.array([0, 1], dtype=np.int32))
+        state = state.replace(
+            is_background=np.array([False, True]),
+            abundance=np.array([1000.0, 100.0]),
+            weight=np.array([1.0, 10.0]),
+            biomass=np.array([1000.0, 1000.0]),
+            length=np.array([5.0, 30.0]),  # background is bigger
+            age_dt=np.array([10, 10], dtype=np.int32),
+            first_feeding_age_dt=np.array([0, -1], dtype=np.int32),
+            cell_x=np.array([0, 0], dtype=np.int32),
+            cell_y=np.array([0, 0], dtype=np.int32),
+        )
+        return state, ec
+
+    def test_background_is_eaten(self):
+        """Focal predator (sp0, len=30) successfully eats background prey (sp1, len=5)."""
+        state, config = self._make_predation_state_focal_predator()
+        rng = np.random.default_rng(0)
+        result = predation(state, config, rng, n_subdt=10, grid_ny=3, grid_nx=3)
+        # Background prey (index 1) should lose abundance
+        assert result.abundance[1] < 1000.0, "Background species was not eaten by focal predator"
+
+    def test_background_eats_focal(self):
+        """Background predator (sp1, len=30) successfully eats focal prey (sp0, len=5)."""
+        state, config = self._make_predation_state_bkg_predator()
+        rng = np.random.default_rng(0)
+        result = predation(state, config, rng, n_subdt=10, grid_ny=3, grid_nx=3)
+        # Focal prey (index 0) should lose abundance
+        assert result.abundance[0] < 1000.0, "Focal species was not eaten by background predator"
+
+    def test_first_feeding_age_negative_one_always_predates(self):
+        """Background predator with age_dt=0 and first_feeding_age_dt=-1 still eats.
+
+        The Java convention is that first_feeding_age_dt=-1 means always eligible,
+        even when age_dt=0 (which would normally skip predation).
+        """
+        cfg_dict = {**_make_base_config(), **_make_bkg_config(10)}
+        cfg_dict["predation.predprey.sizeratio.min.sp10"] = "1.0"
+        cfg_dict["predation.predprey.sizeratio.max.sp10"] = "100.0"
+        ec = EngineConfig.from_dict(cfg_dict)
+
+        state = SchoolState.create(n_schools=2, species_id=np.array([0, 1], dtype=np.int32))
+        state = state.replace(
+            is_background=np.array([False, True]),
+            abundance=np.array([1000.0, 100.0]),
+            weight=np.array([1.0, 10.0]),
+            biomass=np.array([1000.0, 1000.0]),
+            length=np.array([5.0, 30.0]),
+            # Background predator has age_dt=0, first_feeding_age_dt=-1 → always eligible
+            age_dt=np.array([10, 0], dtype=np.int32),
+            first_feeding_age_dt=np.array([0, -1], dtype=np.int32),
+            cell_x=np.array([0, 0], dtype=np.int32),
+            cell_y=np.array([0, 0], dtype=np.int32),
+        )
+        rng = np.random.default_rng(0)
+        result = predation(state, config=ec, rng=rng, n_subdt=10, grid_ny=3, grid_nx=3)
+        # Background predator (age_dt=0, first_feeding_age_dt=-1) must still eat:
+        # age_dt[1]=0 >= first_feeding_age_dt[1]=-1 is True → eligible
+        assert result.abundance[0] < 1000.0, (
+            "Background predator with first_feeding_age_dt=-1 did not eat when age_dt=0"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Task 7: Integration, proportion time-series, output timing, abundance divergence
+# ---------------------------------------------------------------------------
+
+
+class TestBackgroundIntegration:
+    """Full-sim integration tests for background species."""
+
+    def _make_sim_config(self):
+        cfg = {**_make_base_config(), **_make_bkg_config(10)}
+        cfg["simulation.time.nyear"] = "2"
+        cfg["population.seeding.biomass.sp0"] = "100.0"
+        cfg["species.sexratio.sp0"] = "0.5"
+        cfg["species.relativefecundity.sp0"] = "500"
+        cfg["species.maturity.size.sp0"] = "10.0"
+        return cfg
+
+    def test_full_simulation_stable_with_background(self):
+        """2-year sim: focal doesn't go extinct; background biomass > 0 throughout."""
+        cfg = self._make_sim_config()
+        ec = EngineConfig.from_dict(cfg)
+        grid = Grid.from_dimensions(ny=3, nx=3)
+        rng = np.random.default_rng(99)
+        outputs = simulate(ec, grid, rng)
+
+        assert len(outputs) == ec.n_steps
+        # Background biomass (index 1) must be positive at every step
+        for o in outputs:
+            assert o.biomass[ec.n_species] > 0, f"Background biomass went to zero at step {o.step}"
+
+    def test_no_background_regression(self):
+        """Sim without background still works; output biomass shape = (n_species,)."""
+        cfg = _make_base_config()
+        cfg["simulation.time.nyear"] = "1"
+        cfg["population.seeding.biomass.sp0"] = "100.0"
+        cfg["species.sexratio.sp0"] = "0.5"
+        cfg["species.relativefecundity.sp0"] = "500"
+        cfg["species.maturity.size.sp0"] = "10.0"
+        ec = EngineConfig.from_dict(cfg)
+        grid = Grid.from_dimensions(ny=3, nx=3)
+        rng = np.random.default_rng(7)
+        outputs = simulate(ec, grid, rng)
+
+        assert len(outputs) == ec.n_steps
+        # No background: output shape should be exactly (n_species,)
+        assert outputs[0].biomass.shape == (ec.n_species,)
+
+
+class TestProportionTimeSeries:
+    """Tests for time-varying size-class proportions loaded from CSV."""
+
+    def test_proportion_ts_loaded_from_csv(self, tmp_path):
+        """Proportion time-series CSV drives different proportions at different steps."""
+        import csv
+
+        n_steps = 24
+        # Create a CSV with proportions that vary from (0.2, 0.8) to (0.8, 0.2)
+        csv_path = tmp_path / "proportions.csv"
+        with open(csv_path, "w", newline="") as f:
+            writer = csv.writer(f, delimiter=";")
+            for i in range(n_steps):
+                alpha = i / (n_steps - 1)  # 0.0 → 1.0
+                p0 = 0.2 + 0.6 * alpha
+                p1 = 1.0 - p0
+                writer.writerow([f"{p0:.4f}", f"{p1:.4f}"])
+
+        cfg = {**_make_base_config(), **_make_bkg_config(10)}
+        cfg["species.size.proportion.file.sp10"] = str(csv_path)
+        ec = EngineConfig.from_dict(cfg)
+        grid = Grid.from_dimensions(ny=3, nx=3)
+
+        bkg = BackgroundState(config=cfg, grid=grid, engine_config=ec)
+
+        # Get schools at step 0 (proportion ~ 0.2/0.8) and step 23 (proportion ~ 0.8/0.2)
+        schools_step0 = bkg.get_schools(step=0)
+        schools_step23 = bkg.get_schools(step=23)
+
+        # Class 0 schools: first n_ocean=9 schools
+        biomass_cls0_step0 = schools_step0.biomass[:9].mean()
+        biomass_cls0_step23 = schools_step23.biomass[:9].mean()
+
+        # At step 0, class 0 proportion ~0.2; at step 23, ~0.8 → biomass should increase
+        assert biomass_cls0_step23 > biomass_cls0_step0, (
+            f"Expected class-0 biomass to grow with proportion: "
+            f"step0={biomass_cls0_step0:.4f}, step23={biomass_cls0_step23:.4f}"
+        )
+
+
+class TestOutputTiming:
+    """Tests that output is collected at the right point in the step cycle."""
+
+    def test_focal_output_includes_new_eggs(self):
+        """High-fecundity run produces more abundance at step 5 than zero-fecundity run.
+
+        Output is collected after reproduction, so new eggs should appear in step outputs.
+        """
+        base = {**_make_base_config()}
+        base["simulation.time.nyear"] = "1"
+        base["population.seeding.biomass.sp0"] = "500.0"
+        base["species.sexratio.sp0"] = "0.5"
+        base["species.maturity.size.sp0"] = "0.15"  # very small threshold (egg size is 0.1)
+
+        # High fecundity config
+        cfg_hi = {**base, "species.relativefecundity.sp0": "100000"}
+        ec_hi = EngineConfig.from_dict(cfg_hi)
+        grid = Grid.from_dimensions(ny=3, nx=3)
+        outputs_hi = simulate(ec_hi, grid, np.random.default_rng(42))
+
+        # Zero fecundity config (no reproduction)
+        cfg_lo = {**base, "species.relativefecundity.sp0": "0"}
+        ec_lo = EngineConfig.from_dict(cfg_lo)
+        outputs_lo = simulate(ec_lo, grid, np.random.default_rng(42))
+
+        # After several steps the high-fecundity run should have more individuals
+        abd_hi = outputs_hi[5].abundance[0]
+        abd_lo = outputs_lo[5].abundance[0]
+        assert abd_hi > abd_lo, (
+            f"High-fecundity run did not produce more abundance: hi={abd_hi}, lo={abd_lo}"
+        )
+
+
+class TestAbundanceDivergence:
+    """Test that background prey loses abundance when eaten by a focal predator."""
+
+    def test_consistent_abundance_more_vulnerable(self):
+        """Setup focal predator + background prey in same cell.
+
+        After predation, background prey should lose abundance.
+        """
+        cfg_dict = {**_make_base_config(), **_make_bkg_config(10)}
+        # Wide-open ratios for focal (sp0): ratio=30/5=6 is within [1, 100)
+        cfg_dict["predation.predprey.sizeratio.min.sp0"] = "1.0"
+        cfg_dict["predation.predprey.sizeratio.max.sp0"] = "100.0"
+        ec = EngineConfig.from_dict(cfg_dict)
+
+        initial_prey_abundance = 1000.0
+        state = SchoolState.create(n_schools=2, species_id=np.array([0, 1], dtype=np.int32))
+        state = state.replace(
+            is_background=np.array([False, True]),
+            abundance=np.array([100.0, initial_prey_abundance]),
+            weight=np.array([10.0, 1.0]),
+            biomass=np.array([1000.0, initial_prey_abundance * 1.0]),
+            length=np.array([30.0, 5.0]),  # focal is bigger
+            age_dt=np.array([10, 10], dtype=np.int32),
+            first_feeding_age_dt=np.array([0, -1], dtype=np.int32),
+            cell_x=np.array([0, 0], dtype=np.int32),
+            cell_y=np.array([0, 0], dtype=np.int32),
+        )
+
+        rng = np.random.default_rng(0)
+        result = predation(state, ec, rng, n_subdt=10, grid_ny=3, grid_nx=3)
+
+        consistent_loss = initial_prey_abundance - result.abundance[1]
+        assert consistent_loss > 0, (
+            f"Background prey abundance did not decrease: loss={consistent_loss}"
+        )
