@@ -87,6 +87,8 @@ def reproduction(
             weight=np.full(n_new, egg_weight, dtype=np.float64),
             biomass=np.full(n_new, eggs_per_school * egg_weight, dtype=np.float64),
             is_egg=np.ones(n_new, dtype=np.bool_),
+            # Eggs cannot feed for their first timestep (Java convention: first_feeding_age_dt=1)
+            first_feeding_age_dt=np.ones(n_new, dtype=np.int32),
         )
         # Eggs are created unlocated; movement places them on the next step
         new = new.replace(

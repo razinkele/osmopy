@@ -553,14 +553,20 @@ def mortality(
     _tl_weighted_sum = np.zeros(len(state), dtype=np.float64)
 
     # Pre-pass: larva mortality on eggs
+    # larva_mortality both reduces abundance AND records in n_dead[:, ADDITIONAL]
     state = larva_mortality(state, config)
+
+    # Save larva deaths for output, then reset n_dead so the interleaved loop
+    # doesn't double-count them (abundance is already reduced)
+    larva_deaths = state.n_dead.copy()
+    state = state.replace(n_dead=np.zeros_like(state.n_dead))
 
     # Retain eggs: withheld from prey pool
     egg_retained = np.where(state.is_egg, state.abundance, 0.0)
     state = state.replace(egg_retained=egg_retained)
 
     # Make working copies for in-place modification
-    n_dead = state.n_dead.copy()
+    n_dead = state.n_dead.copy()  # now zeros (larva deaths already in abundance)
     pred_success_rate = state.pred_success_rate.copy()
     preyed_biomass = state.preyed_biomass.copy()
 
@@ -662,10 +668,13 @@ def mortality(
     new_abundance = np.maximum(0.0, work_state.abundance - total_dead)
     new_biomass = new_abundance * work_state.weight
 
+    # Merge larva deaths (pre-pass) back into n_dead for output tracking
+    combined_n_dead = work_state.n_dead + larva_deaths
+
     state = state.replace(
         abundance=new_abundance,
         biomass=new_biomass,
-        n_dead=work_state.n_dead,
+        n_dead=combined_n_dead,
         pred_success_rate=work_state.pred_success_rate,
         preyed_biomass=work_state.preyed_biomass,
         egg_retained=work_state.egg_retained,
