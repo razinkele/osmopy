@@ -66,15 +66,41 @@ class Grid:
         cls,
         path: Path,
         mask_var: str = "mask",
-        lat_dim: str = "latitude",
-        lon_dim: str = "longitude",
+        lat_dim: str | None = None,
+        lon_dim: str | None = None,
     ) -> Grid:
-        """Load grid from a NetCDF file."""
+        """Load grid from a NetCDF file.
+
+        Dimension/variable names are auto-detected if not specified.
+        Supports both 1D coordinate arrays and 2D lat/lon variables.
+        """
         with xr.open_dataset(path) as ds:
             mask_data = ds[mask_var].values
-            lat = ds[lat_dim].values.astype(np.float64)
-            lon = ds[lon_dim].values.astype(np.float64)
-        ny, nx = mask_data.shape
+            ny, nx = mask_data.shape
+
+            # Auto-detect lat dimension/variable
+            if lat_dim is None:
+                for candidate in ["latitude", "lat", "y"]:
+                    if candidate in ds.dims or candidate in ds.coords or candidate in ds:
+                        lat_dim = candidate
+                        break
+
+            # Auto-detect lon dimension/variable
+            if lon_dim is None:
+                for candidate in ["longitude", "lon", "x"]:
+                    if candidate in ds.dims or candidate in ds.coords or candidate in ds:
+                        lon_dim = candidate
+                        break
+
+            lat = ds[lat_dim].values.astype(np.float64) if lat_dim and lat_dim in ds else None
+            lon = ds[lon_dim].values.astype(np.float64) if lon_dim and lon_dim in ds else None
+
+            # Handle 2D lat/lon arrays (e.g. curvilinear grids)
+            if lat is not None and lat.ndim == 2:
+                lat = lat[:, 0]
+            if lon is not None and lon.ndim == 2:
+                lon = lon[0, :]
+
         ocean_mask = mask_data > 0
         return cls(ny=ny, nx=nx, ocean_mask=ocean_mask, lat=lat, lon=lon)
 

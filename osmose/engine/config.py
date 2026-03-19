@@ -57,19 +57,39 @@ def _species_int_optional(
     )
 
 
+def _search_dirs() -> list[Path]:
+    """Build a list of directories to search for data files."""
+    import glob as _glob
+
+    dirs = [Path("."), Path("data/examples")]
+    dirs += [Path(d) for d in _glob.glob("data/*/")]
+    return dirs
+
+
+def _resolve_file(file_key: str) -> Path | None:
+    """Resolve a relative file path against multiple search directories."""
+    if not file_key:
+        return None
+    p = Path(file_key)
+    if p.is_absolute() and p.exists():
+        return p
+    for base in _search_dirs():
+        path = base / file_key
+        if path.exists():
+            return path
+    return None
+
+
 def _load_accessibility(cfg: dict[str, str], n_species: int) -> NDArray[np.float64] | None:
     """Load predation accessibility matrix from CSV if available.
 
     Returns matrix with shape (n_total, n_total) where index [predator, prey] = coefficient.
     """
     file_key = cfg.get("predation.accessibility.file", "")
-    if not file_key:
-        return None
-    for base in [Path("."), Path("data/examples")]:
-        path = base / file_key
-        if path.exists():
-            df = pd.read_csv(path, sep=";", index_col=0)
-            return df.values.astype(np.float64)
+    path = _resolve_file(file_key)
+    if path is not None:
+        df = pd.read_csv(path, sep=";", index_col=0)
+        return df.values.astype(np.float64)
     return None
 
 
@@ -87,15 +107,13 @@ def _load_spawning_seasons(
         file_key = cfg.get(f"reproduction.season.file.sp{i}", "")
         if not file_key:
             continue
-        for base in [Path("."), Path("data/examples")]:
-            path = base / file_key
-            if path.exists():
-                df = pd.read_csv(path, sep=";")
-                values = df.iloc[:, 1].values.astype(np.float64)
-                if len(values) == n_dt_per_year:
-                    seasons[i] = values
-                    found_any = True
-                break
+        path = _resolve_file(file_key)
+        if path is not None:
+            df = pd.read_csv(path, sep=";")
+            values = df.iloc[:, 1].values.astype(np.float64)
+            if len(values) == n_dt_per_year:
+                seasons[i] = values
+                found_any = True
 
     return seasons if found_any else None
 
@@ -169,6 +187,9 @@ class EngineConfig:
     movement_method: list[str]
     random_walk_range: NDArray[np.int32]
     out_mortality_rate: NDArray[np.float64]
+
+    # Egg weight override: if species.egg.weight.sp{i} is set, use it instead of allometry
+    egg_weight_override: NDArray[np.float64] | None  # shape (n_species,) or None
 
     # Raw config dict for subsystems that need unparsed access (e.g. ResourceState)
     raw_config: dict[str, str]
@@ -431,6 +452,15 @@ class EngineConfig:
             out_mortality_rate = focal_out_mortality_rate
             n_schools = focal_n_schools
 
+        # Egg weight override: use species.egg.weight.sp{i} if provided
+        egg_weight_vals = [cfg.get(f"species.egg.weight.sp{i}", "") for i in range(n_sp)]
+        if any(v for v in egg_weight_vals):
+            egg_weight_override = np.array(
+                [float(v) if v else float("nan") for v in egg_weight_vals], dtype=np.float64
+            )
+        else:
+            egg_weight_override = None
+
         return cls(
             n_species=n_sp,
             n_dt_per_year=n_dt,
@@ -474,5 +504,6 @@ class EngineConfig:
             movement_method=movement_method,
             random_walk_range=random_walk_range,
             out_mortality_rate=out_mortality_rate,
+            egg_weight_override=egg_weight_override,
             raw_config=cfg,
         )

@@ -198,9 +198,17 @@ def initialize(config: EngineConfig, grid: Grid, rng: np.random.Generator) -> Sc
     species_ids = np.repeat(np.arange(config.n_species, dtype=np.int32), focal_n_schools)
     state = SchoolState.create(n_schools=total_schools, species_id=species_ids)
 
-    # Initial length = egg size, weight from allometry
+    # Initial length = egg size, weight from allometry (or override)
     lengths = config.egg_size[species_ids]
     weights = config.condition_factor[species_ids] * lengths ** config.allometric_power[species_ids]
+
+    # Apply egg weight overrides where specified
+    if config.egg_weight_override is not None:
+        for sp in range(config.n_species):
+            override = config.egg_weight_override[sp]
+            if not np.isnan(override):
+                mask = species_ids == sp
+                weights[mask] = override
 
     # Split seeding biomass equally among schools of each species
     biomass_per_school = np.zeros(total_schools, dtype=np.float64)

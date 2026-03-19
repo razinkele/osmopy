@@ -57,7 +57,19 @@ class ResourceState:
         """Parse resource species metadata and load forcing data."""
         cfg = self.config
 
-        # Load species info
+        # Try the legacy ltl.*.rsc{i} pattern first
+        has_ltl_keys = any(k.startswith("ltl.name.rsc") for k in cfg)
+
+        if has_ltl_keys:
+            self._load_config_ltl()
+        else:
+            # Fallback: species.type.sp{N} = resource pattern (EEC-style)
+            self._load_config_species_type()
+
+    def _load_config_ltl(self) -> None:
+        """Load resource config from legacy ltl.*.rsc{i} keys."""
+        cfg = self.config
+
         for i in range(self.n_resources):
             name = cfg.get(f"ltl.name.rsc{i}", f"Resource{i}")
             self.species.append(
@@ -72,18 +84,7 @@ class ResourceState:
             self._forcing_var_names.append(name)
 
         # Load NetCDF forcing
-        nc_file = cfg.get("ltl.netcdf.file", "")
-        if nc_file:
-            # Try absolute path first, then relative paths
-            candidates = [Path(nc_file)]
-            for base in [Path("."), Path("data/examples")]:
-                candidates.append(base / nc_file)
-            for path in candidates:
-                if path.exists():
-                    self._forcing_data = xr.open_dataset(path)
-                    first_var = list(self._forcing_data.data_vars)[0]
-                    self._n_forcing_steps = self._forcing_data[first_var].shape[0]
-                    break
+        self._load_netcdf(cfg.get("ltl.netcdf.file", ""))
 
         # Check for uniform biomass fallback
         for i in range(self.n_resources):
@@ -91,6 +92,74 @@ class ResourceState:
             if total:
                 n_ocean = self.grid.n_ocean_cells
                 self._uniform_biomass[i] = float(total) / max(1, n_ocean)
+
+    def _load_config_species_type(self) -> None:
+        """Load resource config from species.type.sp{N} = resource keys (EEC-style)."""
+        cfg = self.config
+
+        # Discover resource species file indices
+        resource_indices: list[int] = []
+        for key, val in cfg.items():
+            if key.startswith("species.type.sp") and val.strip().lower() == "resource":
+                fi = int(key.rsplit("sp", 1)[1])
+                resource_indices.append(fi)
+        resource_indices.sort()
+
+        if not resource_indices:
+            return
+
+        # Override n_resources if discovery found more/fewer
+        self.n_resources = len(resource_indices)
+        self.biomass = np.zeros(
+            (self.n_resources, self.grid.ny * self.grid.nx), dtype=np.float64
+        )
+        self._uniform_biomass = np.zeros(self.n_resources, dtype=np.float64)
+
+        nc_file = ""
+        for i, fi in enumerate(resource_indices):
+            name = cfg.get(f"species.name.sp{fi}", f"Resource{i}")
+            self.species.append(
+                ResourceSpeciesInfo(
+                    name=name,
+                    size_min=float(cfg.get(f"species.size.min.sp{fi}", "0.001")),
+                    size_max=float(cfg.get(f"species.size.max.sp{fi}", "0.01")),
+                    trophic_level=float(cfg.get(f"species.trophic.level.sp{fi}", "1.0")),
+                    accessibility=float(
+                        cfg.get(f"species.accessibility2fish.sp{fi}", "0.01")
+                    ),
+                )
+            )
+            self._forcing_var_names.append(name)
+
+            # Per-species NetCDF file (EEC: all point to the same file)
+            if not nc_file:
+                nc_file = cfg.get(f"species.file.sp{fi}", "")
+
+        # Temporal resolution from config
+        self._n_forcing_steps = int(
+            cfg.get("species.biomass.nsteps.year", str(self._n_forcing_steps))
+        )
+
+        # Load NetCDF forcing
+        self._load_netcdf(nc_file)
+
+    def _load_netcdf(self, nc_file: str) -> None:
+        """Load a NetCDF forcing file, trying multiple search paths."""
+        import glob as _glob
+
+        if not nc_file:
+            return
+        candidates = [Path(nc_file)]
+        search_dirs = [Path("."), Path("data/examples")]
+        search_dirs += [Path(d) for d in _glob.glob("data/*/")]
+        for base in search_dirs:
+            candidates.append(base / nc_file)
+        for path in candidates:
+            if path.exists():
+                self._forcing_data = xr.open_dataset(path)
+                first_var = list(self._forcing_data.data_vars)[0]
+                self._n_forcing_steps = self._forcing_data[first_var].shape[0]
+                break
 
     def update(self, step: int) -> None:
         """Load resource biomass for the given simulation timestep.
