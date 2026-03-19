@@ -29,6 +29,7 @@ class StepOutput:
     biomass: NDArray[np.float64]
     abundance: NDArray[np.float64]
     mortality_by_cause: NDArray[np.float64]  # (n_species, n_causes)
+    yield_by_species: NDArray[np.float64] | None = None  # fishing yield biomass per species
 
 
 # ---------------------------------------------------------------------------
@@ -70,11 +71,12 @@ def _movement(
     step: int,
     rng: np.random.Generator,
     map_sets: dict | None = None,
+    random_patches: dict | None = None,
 ) -> SchoolState:
     """Apply spatial movement."""
     from osmose.engine.processes.movement import movement
 
-    return movement(state, grid, config, step, rng, map_sets=map_sets)
+    return movement(state, grid, config, step, rng, map_sets=map_sets, random_patches=random_patches)
 
 
 def _mortality(
@@ -191,8 +193,20 @@ def _collect_outputs(
                 state.n_dead[focal_mask, cause],
             )
 
+    # Yield: fishing deaths * weight per species
+    yield_by_species = np.zeros(config.n_species, dtype=np.float64)
+    if len(state) > 0:
+        fishing_dead = state.n_dead[:, int(MortalityCause.FISHING)]
+        fishing_yield = fishing_dead * state.weight * 1e-6  # grams -> tonnes
+        focal_mask = state.species_id < config.n_species
+        np.add.at(yield_by_species, state.species_id[focal_mask], fishing_yield[focal_mask])
+
     return StepOutput(
-        step=step, biomass=biomass, abundance=abundance, mortality_by_cause=mortality_by_cause
+        step=step,
+        biomass=biomass,
+        abundance=abundance,
+        mortality_by_cause=mortality_by_cause,
+        yield_by_species=yield_by_species,
     )
 
 
@@ -209,6 +223,33 @@ def initialize(config: EngineConfig, grid: Grid, rng: np.random.Generator) -> Sc
     first timestep (SSB=0 triggers seeding_biomass injection).
     """
     return SchoolState.create(n_schools=0)
+
+
+def _average_step_outputs(
+    accumulated: list[StepOutput], freq: int, record_step: int
+) -> StepOutput:
+    """Average accumulated StepOutputs over recording frequency."""
+    if len(accumulated) == 1:
+        return StepOutput(
+            step=record_step,
+            biomass=accumulated[0].biomass,
+            abundance=accumulated[0].abundance,
+            mortality_by_cause=accumulated[0].mortality_by_cause,
+            yield_by_species=accumulated[0].yield_by_species,
+        )
+    biomass = np.mean([o.biomass for o in accumulated], axis=0)
+    abundance = np.mean([o.abundance for o in accumulated], axis=0)
+    mortality = np.sum([o.mortality_by_cause for o in accumulated], axis=0)
+    yield_sum = np.sum(
+        [o.yield_by_species for o in accumulated if o.yield_by_species is not None], axis=0
+    )
+    return StepOutput(
+        step=record_step,
+        biomass=biomass,
+        abundance=abundance,
+        mortality_by_cause=mortality,
+        yield_by_species=yield_sum,
+    )
 
 
 def simulate(
@@ -242,11 +283,26 @@ def simulate(
                 nx=grid.nx,
             )
 
+    # Phase 4: Build random distribution patches
+    from osmose.engine.processes.movement import build_random_patches
+
+    random_patches = build_random_patches(config, grid, rng)
+
+    # Phase 5: Output recording frequency
+    record_freq = config.output_record_frequency
+    accumulated: list[StepOutput] = []
+
+    # Phase 5: Initial state output (step -1)
+    if config.output_step0_include:
+        outputs.append(_collect_outputs(state, config, step=-1))
+
     for step in range(config.n_steps):
         state = _incoming_flux(state, flux_state, step, rng)
         state = _reset_step_variables(state)
         resources.update(step)
-        state = _movement(state, grid, config, step, rng, map_sets=map_sets)
+        state = _movement(
+            state, grid, config, step, rng, map_sets=map_sets, random_patches=random_patches
+        )
 
         # Inject background schools before mortality
         bkg_schools = background.get_schools(step)
@@ -267,7 +323,18 @@ def simulate(
         state = _reproduction(state, config, step, rng, grid_ny=grid.ny, grid_nx=grid.nx)
 
         # Collect focal outputs after reproduction
-        outputs.append(_collect_outputs(state, config, step, bkg_output))
+        step_out = _collect_outputs(state, config, step, bkg_output)
+        accumulated.append(step_out)
+
+        # Write averaged output at recording frequency
+        if (step + 1) % record_freq == 0:
+            outputs.append(_average_step_outputs(accumulated, record_freq, step))
+            accumulated = []
+
         state = state.compact()
+
+    # Flush any remaining accumulated steps (if n_steps not divisible by freq)
+    if accumulated:
+        outputs.append(_average_step_outputs(accumulated, len(accumulated), config.n_steps - 1))
 
     return outputs

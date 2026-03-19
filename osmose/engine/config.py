@@ -515,6 +515,22 @@ class EngineConfig:
     # Output cutoff age: exclude schools younger than this from biomass/abundance output
     output_cutoff_age: NDArray[np.float64] | None  # shape (n_total,) or None
 
+    # Output recording frequency (steps between output records)
+    output_record_frequency: int
+
+    # Diet composition output
+    diet_output_enabled: bool
+
+    # Initial state output (step -1)
+    output_step0_include: bool
+
+    # Random seed flags (parsed but not fully implemented — future per-species RNG)
+    movement_random_seed_fixed: bool
+    mortality_random_seed_fixed: bool
+
+    # Random distribution patch constraint: per-species ncell values, or None
+    random_distribution_ncell: NDArray[np.int32] | None
+
     # Raw config dict for subsystems that need unparsed access (e.g. ResourceState)
     raw_config: dict[str, str]
 
@@ -890,6 +906,35 @@ class EngineConfig:
         mpa_zones = _parse_mpa_zones(cfg)
         fishing_discard_rate = _load_discard_rates(cfg, focal_species_names, n_sp)
 
+        # Phase 4: Random distribution patch constraint
+        ncell_vals = []
+        ncell_found = False
+        for i in range(n_sp):
+            val = cfg.get(f"movement.distribution.ncell.sp{i}", "")
+            if val:
+                ncell_vals.append(int(val))
+                ncell_found = True
+            else:
+                ncell_vals.append(0)
+        random_distribution_ncell = (
+            np.array(ncell_vals, dtype=np.int32) if ncell_found else None
+        )
+
+        # Phase 5: Output recording frequency (default: 1 = every step)
+        output_record_freq = int(cfg.get("output.recordfrequency.ndt", "1"))
+
+        # Phase 5: Diet output
+        diet_output_enabled = cfg.get("output.diet.composition.enabled", "false").lower() == "true"
+
+        # Phase 5: Initial state output
+        output_step0 = cfg.get("output.step0.include", "false").lower() == "true"
+
+        # Phase 4: Random seed flags
+        movement_seed_fixed = cfg.get("movement.randomseed.fixed", "false").lower() == "true"
+        mortality_seed_fixed = (
+            cfg.get("stochastic.mortality.randomseed.fixed", "false").lower() == "true"
+        )
+
         return cls(
             n_species=n_sp,
             n_dt_per_year=n_dt,
@@ -951,5 +996,11 @@ class EngineConfig:
             out_mortality_rate=out_mortality_rate,
             egg_weight_override=egg_weight_override,
             output_cutoff_age=output_cutoff_age,
+            output_record_frequency=output_record_freq,
+            diet_output_enabled=diet_output_enabled,
+            output_step0_include=output_step0,
+            movement_random_seed_fixed=movement_seed_fixed,
+            mortality_random_seed_fixed=mortality_seed_fixed,
+            random_distribution_ncell=random_distribution_ncell,
             raw_config=cfg,
         )

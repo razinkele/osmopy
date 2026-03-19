@@ -57,6 +57,9 @@ def write_outputs(
     # Write mortality CSVs per species
     _write_mortality_csvs(output_dir, prefix, outputs, config)
 
+    # Write yield CSV
+    _write_yield_csv(output_dir, prefix, outputs, config)
+
 
 def _write_species_csv(
     path: Path,
@@ -157,3 +160,85 @@ def write_diet_csv(
     df = pd.DataFrame(pct.T, index=prey_names, columns=predator_names)
     df.index.name = "Prey"
     df.to_csv(path)
+
+
+# ---------------------------------------------------------------------------
+# Yield output
+# ---------------------------------------------------------------------------
+
+
+def _write_yield_csv(
+    output_dir: Path,
+    prefix: str,
+    outputs: list[StepOutput],
+    config: EngineConfig,
+) -> None:
+    """Write fishing yield CSV matching Java format."""
+    times = np.array([o.step / config.n_dt_per_year for o in outputs])
+    yield_data = np.array(
+        [o.yield_by_species if o.yield_by_species is not None else np.zeros(config.n_species)
+         for o in outputs]
+    )
+    species = config.species_names
+
+    _write_species_csv(
+        output_dir / f"{prefix}_yield_Simu0.csv",
+        "Fishing yield (tons) per time step",
+        times,
+        species,
+        yield_data,
+    )
+
+
+# ---------------------------------------------------------------------------
+# NetCDF output
+# ---------------------------------------------------------------------------
+
+
+def write_outputs_netcdf(
+    outputs: list[StepOutput],
+    path: Path,
+    config: EngineConfig,
+) -> None:
+    """Write simulation outputs to NetCDF format using xarray.
+
+    Creates a dataset with biomass and abundance as variables,
+    with time and species dimensions.
+    """
+    import xarray as xr
+
+    times = np.array([o.step / config.n_dt_per_year for o in outputs])
+    biomass_data = np.array([o.biomass for o in outputs])
+    abundance_data = np.array([o.abundance for o in outputs])
+
+    n_species = biomass_data.shape[1]
+    species_names = config.all_species_names[:n_species]
+
+    ds = xr.Dataset(
+        {
+            "biomass": (["time", "species"], biomass_data),
+            "abundance": (["time", "species"], abundance_data),
+        },
+        coords={
+            "time": times,
+            "species": species_names,
+        },
+        attrs={
+            "description": "OSMOSE Python engine output",
+            "n_dt_per_year": config.n_dt_per_year,
+            "n_year": config.n_year,
+        },
+    )
+
+    # Add yield if available
+    yield_data = [o.yield_by_species for o in outputs if o.yield_by_species is not None]
+    if yield_data:
+        yield_arr = np.array(yield_data)
+        focal_names = config.species_names[:yield_arr.shape[1]]
+        ds["yield"] = (["time", "focal_species"], yield_arr)
+        ds.coords["focal_species"] = focal_names
+
+    ds.to_netcdf(path)
+
+    # TODO: Add size/age distribution outputs (5.3) — requires per-school data in StepOutput
+    # TODO: Add spatial biomass/abundance maps (5.4) — requires per-cell data in StepOutput

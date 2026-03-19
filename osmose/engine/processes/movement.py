@@ -84,6 +84,63 @@ def _map_move_school(
     return accessible[idx][0], accessible[idx][1], False
 
 
+def build_random_patches(
+    config: EngineConfig,
+    grid: Grid,
+    rng: np.random.Generator,
+) -> dict[int, set[tuple[int, int]]]:
+    """Build BFS-connected patches for species with random distribution + ncell constraint.
+
+    Java's RandomDistribution builds a connected patch of ncell ocean cells
+    starting from a random ocean cell. The patch constrains INITIAL placement only.
+
+    Returns a dict mapping species index -> set of (x, y) patch cells.
+    """
+    patches: dict[int, set[tuple[int, int]]] = {}
+    if config.random_distribution_ncell is None:
+        return patches
+
+    # Build list of ocean cells
+    ocean_cells: list[tuple[int, int]] = []
+    for y in range(grid.ny):
+        for x in range(grid.nx):
+            if grid.ocean_mask[y, x]:
+                ocean_cells.append((x, y))
+
+    n_ocean = len(ocean_cells)
+    if n_ocean == 0:
+        return patches
+
+    for sp in range(config.n_species):
+        if config.movement_method[sp] != "random":
+            continue
+        ncell = int(config.random_distribution_ncell[sp])
+        if ncell <= 0 or ncell >= n_ocean:
+            continue
+
+        # Pick random starting ocean cell
+        start_idx = rng.integers(0, n_ocean)
+        start_x, start_y = ocean_cells[start_idx]
+
+        # BFS to collect ncell connected ocean cells
+        patch: set[tuple[int, int]] = set()
+        queue: list[tuple[int, int]] = [(start_x, start_y)]
+        patch.add((start_x, start_y))
+
+        while len(patch) < ncell and queue:
+            cx, cy = queue.pop(0)
+            for ny, nx in grid.neighbors(cy, cx):
+                if len(patch) >= ncell:
+                    break
+                if grid.ocean_mask[ny, nx] and (nx, ny) not in patch:
+                    patch.add((nx, ny))
+                    queue.append((nx, ny))
+
+        patches[sp] = patch
+
+    return patches
+
+
 def random_walk(
     state: SchoolState,
     grid: Grid,
@@ -124,6 +181,7 @@ def movement(
     step: int,
     rng: np.random.Generator,
     map_sets: dict[int, MovementMapSet] | None = None,
+    random_patches: dict[int, set[tuple[int, int]]] | None = None,
 ) -> SchoolState:
     """Move all schools according to their species' movement method."""
     if len(state) == 0:
@@ -134,6 +192,22 @@ def movement(
     # Determine which schools use which method
     uses_random = np.array([config.movement_method[s] == "random" for s in sp])
     uses_maps = np.array([config.movement_method[s] == "maps" for s in sp])
+
+    # Phase 4: Place unlocated schools on patch cells (before random walk)
+    if random_patches and uses_random.any():
+        new_cx = state.cell_x.copy()
+        new_cy = state.cell_y.copy()
+        changed = False
+        for i in np.where(uses_random)[0]:
+            sp_id = int(sp[i])
+            if sp_id in random_patches and new_cx[i] < 0:
+                # Unlocated school: place on random patch cell
+                patch_cells = list(random_patches[sp_id])
+                idx = rng.integers(0, len(patch_cells))
+                new_cx[i], new_cy[i] = patch_cells[idx]
+                changed = True
+        if changed:
+            state = state.replace(cell_x=new_cx, cell_y=new_cy)
 
     # Random walk for "random" species (batch vectorized)
     if uses_random.any():
