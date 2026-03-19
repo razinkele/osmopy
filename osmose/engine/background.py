@@ -81,8 +81,8 @@ class BackgroundSpeciesInfo:
     proportions: list[float]
     """Fraction of total biomass in each size class (sums to 1.0)."""
 
-    proportion_ts: list[float] = field(default_factory=list)
-    """Time-varying proportion overrides (empty = use proportions)."""
+    proportion_ts: "NDArray[np.float64] | None" = field(default=None)
+    """Time-varying proportion overrides (shape: n_steps x n_class). None = use proportions."""
 
 
 def parse_background_species(
@@ -232,6 +232,15 @@ class BackgroundState:
         self._forcing_data: list[NDArray[np.float64] | None] = []
         self._forcing_nsteps: list[int] = []
 
+        # Load proportion time-series CSVs when referenced in config
+        for sp in self._species:
+            prop_file_key = f"species.size.proportion.file.sp{sp.file_index}"
+            if prop_file_key in config and not sp.proportion_ts:
+                import pandas as pd
+
+                df = pd.read_csv(config[prop_file_key], sep=";")
+                sp.proportion_ts = df.values.astype(np.float64)
+
         for sp in self._species:
             # w[cls] = condition_factor * length[cls]^allometric_power
             weights = np.array(
@@ -349,7 +358,12 @@ class BackgroundState:
                 netcdf_mode = False
 
             for cls_idx in range(sp.n_class):
-                prop = sp.proportions[cls_idx]
+                # Use time-varying proportion when available
+                if sp.proportion_ts is not None and len(sp.proportion_ts) > 0:
+                    ts_idx = min(step, len(sp.proportion_ts) - 1)
+                    prop = float(sp.proportion_ts[ts_idx, cls_idx])
+                else:
+                    prop = sp.proportions[cls_idx]
                 cls_weight = weights[cls_idx]
                 cls_tl = sp.trophic_levels[cls_idx] if cls_idx < len(sp.trophic_levels) else 2.0
                 cls_age_dt = sp.ages_dt[cls_idx] if cls_idx < len(sp.ages_dt) else 0
