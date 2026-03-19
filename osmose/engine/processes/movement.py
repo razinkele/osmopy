@@ -7,7 +7,81 @@ from numpy.typing import NDArray
 
 from osmose.engine.config import EngineConfig
 from osmose.engine.grid import Grid
+from osmose.engine.movement_maps import MovementMapSet
 from osmose.engine.state import SchoolState
+
+
+def _map_move_school(
+    age_dt: int,
+    cx: int,
+    cy: int,
+    grid_ny: int,
+    grid_nx: int,
+    ocean_mask: NDArray[np.bool_],
+    map_set: MovementMapSet,
+    walk_range: int,
+    step: int,
+    rng: np.random.Generator,
+) -> tuple[int, int, bool]:
+    """Move a single school using map-based distribution.
+
+    Returns (new_x, new_y, is_out).
+
+    Parameters
+    ----------
+    age_dt : int
+        School age in time-step units.
+    cx, cy : int
+        Current cell coordinates (-1 if unlocated).
+    grid_ny, grid_nx : int
+        Grid dimensions.
+    ocean_mask : NDArray[np.bool_]
+        Boolean mask of ocean cells (True = ocean).
+    map_set : MovementMapSet
+        Pre-loaded movement maps for this species.
+    walk_range : int
+        Maximum random-walk displacement (cells).
+    step : int
+        Global simulation step.
+    rng : np.random.Generator
+        Random number generator.
+    """
+    # Step 1 — Out-of-domain check
+    current_map = map_set.get_map(age_dt, step)
+    if current_map is None:
+        return -1, -1, True
+
+    # Step 2 — Same-map detection
+    index_map = map_set.get_index(age_dt, step)
+    same_map = False
+    if age_dt > 0 and step > 0:
+        prev_index = map_set.get_index(age_dt - 1, step - 1)
+        same_map = (index_map == prev_index)
+
+    # Step 3a — New placement (rejection sampling)
+    if not same_map or cx < 0:
+        n_cells = grid_nx * grid_ny
+        max_p = map_set.max_proba[index_map]
+        for _ in range(10_000):
+            flat_idx = int(round((n_cells - 1) * rng.random()))
+            j = flat_idx // grid_nx
+            i = flat_idx % grid_nx
+            proba = current_map[j, i]
+            if proba > 0 and not np.isnan(proba):
+                if max_p == 0.0 or proba >= rng.random() * max_p:
+                    return i, j, False
+        raise RuntimeError("Map placement failed after 10000 attempts")
+
+    # Step 3b — Random walk (same map, school is located)
+    accessible: list[tuple[int, int]] = []
+    for yi in range(max(0, cy - walk_range), min(grid_ny, cy + walk_range + 1)):
+        for xi in range(max(0, cx - walk_range), min(grid_nx, cx + walk_range + 1)):
+            if ocean_mask[yi, xi] and current_map[yi, xi] > 0 and not np.isnan(current_map[yi, xi]):
+                accessible.append((xi, yi))
+    if len(accessible) == 0:
+        return cx, cy, False  # stranded — stay in place
+    idx = int(round((len(accessible) - 1) * rng.random()))
+    return accessible[idx][0], accessible[idx][1], False
 
 
 def random_walk(

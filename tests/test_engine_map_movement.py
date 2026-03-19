@@ -1,4 +1,4 @@
-"""Tests for MovementMapSet — CSV map loading and index_maps construction (Task B1)."""
+"""Tests for MovementMapSet and _map_move_school (Task B1)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,9 @@ import logging
 import numpy as np
 import pytest
 
+from osmose.engine.grid import Grid
 from osmose.engine.movement_maps import MovementMapSet
+from osmose.engine.processes.movement import _map_move_school
 
 
 # ---------------------------------------------------------------------------
@@ -454,3 +456,173 @@ class TestMultiYearMapping:
         assert mms.get_index(0, n_dt) != -1
         # Year 1, last step (global step = n_dt * 1 + n_dt - 1 = 23)
         assert mms.get_index(0, n_dt + n_dt - 1) != -1
+
+
+# ---------------------------------------------------------------------------
+# Tests for _map_move_school — per-school map-based movement (Task 2)
+# ---------------------------------------------------------------------------
+
+
+class TestMapMoveSchool:
+    def test_out_of_domain(self, tmp_path):
+        """Null map -> returns (-1, -1, True)."""
+        steps = ";".join(str(i) for i in range(24))
+        cfg = {
+            "movement.species.map0": "TestFish",
+            "movement.initialage.map0": "0",
+            "movement.lastage.map0": "3",
+            "movement.file.map0": "null",
+            "movement.steps.map0": steps,
+        }
+        ms = MovementMapSet(
+            config=cfg, species_name="TestFish",
+            n_dt_per_year=24, n_years=1, lifespan_dt=72, ny=5, nx=5,
+        )
+        grid = Grid.from_dimensions(ny=5, nx=5)
+        rng = np.random.default_rng(42)
+        x, y, out = _map_move_school(10, 2, 2, 5, 5, grid.ocean_mask, ms, 1, 0, rng)
+        assert out is True
+        assert x == -1 and y == -1
+
+    def test_rejection_sampling_positive_cell(self, tmp_path):
+        """Unlocated school placed on positive-probability cell."""
+        rows = [[-99] * 5 for _ in range(5)]
+        for r in range(1, 4):
+            for c in range(1, 4):
+                rows[r][c] = 1
+        map_file = tmp_path / "test.csv"
+        _write_csv_map(map_file, rows)
+        steps = ";".join(str(i) for i in range(24))
+        cfg = {
+            "movement.species.map0": "TestFish",
+            "movement.initialage.map0": "0",
+            "movement.lastage.map0": "3",
+            "movement.file.map0": str(map_file),
+            "movement.steps.map0": steps,
+        }
+        ms = MovementMapSet(
+            config=cfg, species_name="TestFish",
+            n_dt_per_year=24, n_years=1, lifespan_dt=72, ny=5, nx=5,
+        )
+        grid = Grid.from_dimensions(ny=5, nx=5)
+        rng = np.random.default_rng(42)
+        # Unlocated school (cx=-1) -> rejection sampling
+        x, y, out = _map_move_school(10, -1, -1, 5, 5, grid.ocean_mask, ms, 1, 0, rng)
+        assert out is False
+        assert ms.maps[0][y, x] > 0
+
+    def test_same_map_random_walk(self, tmp_path):
+        """Same map + located -> random walk within range."""
+        rows = [[-99] * 5 for _ in range(5)]
+        for r in range(1, 4):
+            for c in range(1, 4):
+                rows[r][c] = 1
+        map_file = tmp_path / "test.csv"
+        _write_csv_map(map_file, rows)
+        steps = ";".join(str(i) for i in range(24))
+        cfg = {
+            "movement.species.map0": "TestFish",
+            "movement.initialage.map0": "0",
+            "movement.lastage.map0": "3",
+            "movement.file.map0": str(map_file),
+            "movement.steps.map0": steps,
+        }
+        ms = MovementMapSet(
+            config=cfg, species_name="TestFish",
+            n_dt_per_year=24, n_years=1, lifespan_dt=72, ny=5, nx=5,
+        )
+        grid = Grid.from_dimensions(ny=5, nx=5)
+        rng = np.random.default_rng(42)
+        # Located at (2,2), step=1 -> same map as step=0 -> random walk
+        x, y, out = _map_move_school(10, 2, 2, 5, 5, grid.ocean_mask, ms, 1, 1, rng)
+        assert out is False
+        assert abs(x - 2) <= 1 and abs(y - 2) <= 1
+        assert ms.maps[0][y, x] > 0
+
+    def test_unlocated_forces_new_placement(self, tmp_path):
+        """Unlocated (cx<0) forces rejection sampling even if same map."""
+        rows = [[-99] * 5 for _ in range(5)]
+        for r in range(1, 4):
+            for c in range(1, 4):
+                rows[r][c] = 1
+        map_file = tmp_path / "test.csv"
+        _write_csv_map(map_file, rows)
+        steps = ";".join(str(i) for i in range(24))
+        cfg = {
+            "movement.species.map0": "TestFish",
+            "movement.initialage.map0": "0",
+            "movement.lastage.map0": "3",
+            "movement.file.map0": str(map_file),
+            "movement.steps.map0": steps,
+        }
+        ms = MovementMapSet(
+            config=cfg, species_name="TestFish",
+            n_dt_per_year=24, n_years=1, lifespan_dt=72, ny=5, nx=5,
+        )
+        grid = Grid.from_dimensions(ny=5, nx=5)
+        rng = np.random.default_rng(42)
+        x, y, out = _map_move_school(10, -1, -1, 5, 5, grid.ocean_mask, ms, 1, 1, rng)
+        assert out is False
+        assert x >= 0 and y >= 0
+
+    def test_stranded_stays_in_place(self, tmp_path):
+        """School on isolated positive cell with no positive neighbors stays put."""
+        rows = [[-99] * 5 for _ in range(5)]
+        rows[2][2] = 1  # only this cell is positive
+        map_file = tmp_path / "isolated.csv"
+        _write_csv_map(map_file, rows)
+        steps = ";".join(str(i) for i in range(24))
+        cfg = {
+            "movement.species.map0": "TestFish",
+            "movement.initialage.map0": "0",
+            "movement.lastage.map0": "3",
+            "movement.file.map0": str(map_file),
+            "movement.steps.map0": steps,
+        }
+        ms = MovementMapSet(
+            config=cfg, species_name="TestFish",
+            n_dt_per_year=24, n_years=1, lifespan_dt=72, ny=5, nx=5,
+        )
+        grid = Grid.from_dimensions(ny=5, nx=5)
+        rng = np.random.default_rng(42)
+        # Find where the positive cell is in the flipped grid
+        grid_map = ms.maps[0]
+        pos_ys, pos_xs = np.where(grid_map > 0)
+        assert len(pos_ys) == 1
+        gy, gx = int(pos_ys[0]), int(pos_xs[0])
+        # Located at that cell, step=1 (same map) -> random walk, only accessible cell is self
+        x, y, out = _map_move_school(10, gx, gy, 5, 5, grid.ocean_mask, ms, 1, 1, rng)
+        assert x == gx and y == gy  # stays in place
+
+    def test_presence_absence_uniform(self, tmp_path):
+        """Presence/absence map (max_proba=0) -> multiple cells reachable."""
+        rows = [[-99] * 5 for _ in range(5)]
+        rows[1][1] = 1
+        rows[1][3] = 1
+        rows[3][1] = 1
+        rows[3][3] = 1
+        map_file = tmp_path / "pa.csv"
+        _write_csv_map(map_file, rows)
+        steps = ";".join(str(i) for i in range(24))
+        cfg = {
+            "movement.species.map0": "TestFish",
+            "movement.initialage.map0": "0",
+            "movement.lastage.map0": "3",
+            "movement.file.map0": str(map_file),
+            "movement.steps.map0": steps,
+        }
+        ms = MovementMapSet(
+            config=cfg, species_name="TestFish",
+            n_dt_per_year=24, n_years=1, lifespan_dt=72, ny=5, nx=5,
+        )
+        assert ms.max_proba[0] == 0.0  # presence/absence trick
+        grid = Grid.from_dimensions(ny=5, nx=5)
+        # Run 50 placements, should visit at least 2 distinct cells
+        cells_seen: set[tuple[int, int]] = set()
+        for seed in range(50):
+            rng = np.random.default_rng(seed)
+            x, y, out = _map_move_school(10, -1, -1, 5, 5, grid.ocean_mask, ms, 1, 0, rng)
+            assert out is False
+            assert ms.maps[0][y, x] > 0
+            cells_seen.add((x, y))
+        assert len(cells_seen) >= 2  # at least 2 distinct cells visited
