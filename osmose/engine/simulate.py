@@ -31,11 +31,6 @@ class StepOutput:
     abundance: NDArray[np.float64]
     mortality_by_cause: NDArray[np.float64]  # (n_species, n_causes)
     yield_by_species: NDArray[np.float64] | None = None  # fishing yield biomass per species
-    biomass_by_age: dict[int, NDArray[np.float64]] | None = None
-    abundance_by_age: dict[int, NDArray[np.float64]] | None = None
-    biomass_by_size: dict[int, NDArray[np.float64]] | None = None
-    abundance_by_size: dict[int, NDArray[np.float64]] | None = None
-
     # Per-species age/size distribution dicts (sp_idx -> 1-D array), or None if disabled
     biomass_by_age: dict[int, NDArray[np.float64]] | None = None
     abundance_by_age: dict[int, NDArray[np.float64]] | None = None
