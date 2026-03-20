@@ -44,10 +44,40 @@ def minimal_config() -> dict[str, str]:
     }
 
 
-@pytest.fixture
-def bioen_config(minimal_config) -> dict[str, str]:
-    """Minimal config with all bioenergetic keys."""
-    cfg = minimal_config.copy()
+def _make_bioen_config(base: dict[str, str] | None = None) -> dict[str, str]:
+    """Build a bioen config dict from a base config. Importable by other test files."""
+    if base is None:
+        base = {
+            "simulation.time.ndtperyear": "24",
+            "simulation.time.nyear": "5",
+            "simulation.nspecies": "2",
+            "simulation.nschool.sp0": "20",
+            "simulation.nschool.sp1": "15",
+            "species.name.sp0": "Anchovy",
+            "species.name.sp1": "Sardine",
+            "species.linf.sp0": "15.0",
+            "species.linf.sp1": "25.0",
+            "species.k.sp0": "0.4",
+            "species.k.sp1": "0.3",
+            "species.t0.sp0": "-0.1",
+            "species.t0.sp1": "-0.2",
+            "species.egg.size.sp0": "0.1",
+            "species.egg.size.sp1": "0.15",
+            "species.length2weight.condition.factor.sp0": "0.006",
+            "species.length2weight.condition.factor.sp1": "0.008",
+            "species.length2weight.allometric.power.sp0": "3.0",
+            "species.length2weight.allometric.power.sp1": "3.1",
+            "species.lifespan.sp0": "3",
+            "species.lifespan.sp1": "5",
+            "species.vonbertalanffy.threshold.age.sp0": "1.0",
+            "species.vonbertalanffy.threshold.age.sp1": "1.0",
+            "mortality.subdt": "10",
+            "predation.ingestion.rate.max.sp0": "3.5",
+            "predation.ingestion.rate.max.sp1": "3.0",
+            "predation.efficiency.critical.sp0": "0.57",
+            "predation.efficiency.critical.sp1": "0.57",
+        }
+    cfg = base.copy()
     cfg.update({
         "simulation.bioen.enabled": "true",
         "simulation.bioen.phit.enabled": "true",
@@ -91,6 +121,12 @@ def bioen_config(minimal_config) -> dict[str, str]:
         "species.bioen.forage.k_for.sp1": "0.0015",
     })
     return cfg
+
+
+@pytest.fixture
+def bioen_config(minimal_config) -> dict[str, str]:
+    """Minimal config with all bioenergetic keys (pytest fixture wrapper)."""
+    return _make_bioen_config(minimal_config)
 
 
 # ── Tests: bioen disabled ─────────────────────────────────────────────────────
