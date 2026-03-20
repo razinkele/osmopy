@@ -3,7 +3,6 @@ import numpy as np
 import pytest
 
 from osmose.engine.processes.energy_budget import compute_energy_budget, update_e_net_avg
-from osmose.engine.processes.temp_function import arrhenius
 
 
 # ── Shared helpers ─────────────────────────────────────────────────────────────

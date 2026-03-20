@@ -2,7 +2,6 @@
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from osmose.engine.config import EngineConfig
 from osmose.engine.output import write_outputs
@@ -161,7 +160,6 @@ class TestDistributionCSVOutput:
     def test_csv_data_values_correct(self, tmp_path):
         """CSV data values should match the distribution arrays."""
         cfg = EngineConfig.from_dict(_make_config())
-        n_age_bins = 3
         # Species 0 gets [0, 10, 20], species 1 gets [0, 20, 40]
         age_dist_t0 = {0: np.array([0.0, 10.0, 20.0]), 1: np.array([0.0, 20.0, 40.0])}
         age_dist_t1 = {0: np.array([1.0, 11.0, 21.0]), 1: np.array([1.0, 21.0, 41.0])}
@@ -239,7 +237,6 @@ class TestDistributionCSVOutput:
     def test_mixed_none_and_data_steps(self, tmp_path):
         """Steps with None distribution should contribute zeros to the matrix."""
         cfg = EngineConfig.from_dict(_make_config())
-        n_age_bins = 3
         age_dist = {0: np.array([5.0, 10.0, 15.0]), 1: np.array([2.0, 4.0, 6.0])}
         outputs = [
             _step_output(

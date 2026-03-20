@@ -1,7 +1,6 @@
 """Tests for Gompertz growth dispatch — Task 3 verification."""
 
 import numpy as np
-import pytest
 
 from osmose.engine.config import EngineConfig
 from osmose.engine.processes.growth import (

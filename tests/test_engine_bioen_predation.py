@@ -1,6 +1,5 @@
 """Tests for bioenergetic allometric ingestion cap."""
 import numpy as np
-import pytest
 from osmose.engine.processes.bioen_predation import bioen_ingestion_cap
 
 
