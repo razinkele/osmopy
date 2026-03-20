@@ -173,7 +173,12 @@ class ResourceState:
         p = Path(file_key)
         if p.is_absolute() and p.exists():
             return p
-        search_dirs = [Path("."), Path("data/examples")]
+        config_dir = self.config.get("_osmose.config.dir", "")
+        search_dirs: list[Path] = []
+        if config_dir:
+            search_dirs.append(Path(config_dir))
+        search_dirs.append(Path("."))
+        search_dirs.append(Path("data/examples"))
         search_dirs += [Path(d) for d in _glob.glob("data/*/")]
         for base in search_dirs:
             path = base / file_key
@@ -188,7 +193,12 @@ class ResourceState:
         if not nc_file:
             return
         candidates = [Path(nc_file)]
-        search_dirs = [Path("."), Path("data/examples")]
+        config_dir = self.config.get("_osmose.config.dir", "")
+        search_dirs: list[Path] = []
+        if config_dir:
+            search_dirs.append(Path(config_dir))
+        search_dirs.append(Path("."))
+        search_dirs.append(Path("data/examples"))
         search_dirs += [Path(d) for d in _glob.glob("data/*/")]
         for base in search_dirs:
             candidates.append(base / nc_file)

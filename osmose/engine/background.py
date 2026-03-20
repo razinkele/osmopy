@@ -20,13 +20,14 @@ from numpy.typing import NDArray
 logger = logging.getLogger(__name__)
 
 
-def _resolve_path(filepath_str: str) -> Path:
+def _resolve_path(filepath_str: str, config_dir: str = "") -> Path:
     """Resolve a relative file path against multiple candidate directories.
 
     Tries (in order):
     1. The path as-is (works for absolute paths or paths relative to CWD).
-    2. Relative to ``data/examples/``.
-    3. Relative to any ``data/*/`` subdirectory (sorted for determinism).
+    2. Relative to the config directory (if provided).
+    3. Relative to ``data/examples/``.
+    4. Relative to any ``data/*/`` subdirectory (sorted for determinism).
 
     Returns the first existing candidate, or the original path if none found
     (so that the subsequent open/xr.open_dataset call raises a clear error).
@@ -34,7 +35,11 @@ def _resolve_path(filepath_str: str) -> Path:
     p = Path(filepath_str)
     if p.exists():
         return p
-    search_dirs = [Path("data/examples")] + [Path(d) for d in sorted(_glob.glob("data/*/"))]
+    search_dirs: list[Path] = []
+    if config_dir:
+        search_dirs.append(Path(config_dir))
+    search_dirs.append(Path("data/examples"))
+    search_dirs.extend(Path(d) for d in sorted(_glob.glob("data/*/")))
     for base in search_dirs:
         candidate = base / p
         if candidate.exists():
@@ -261,7 +266,7 @@ class BackgroundState:
             if prop_file_key in config and not sp.proportion_ts:
                 import pandas as pd
 
-                df = pd.read_csv(_resolve_path(config[prop_file_key]), sep=";")
+                df = pd.read_csv(_resolve_path(config[prop_file_key], config.get("_osmose.config.dir", "")), sep=";")
                 sp.proportion_ts = df.values.astype(np.float64)
 
         for sp in self._species:
@@ -287,7 +292,7 @@ class BackgroundState:
                 # Load NetCDF forcing file
                 nc_path_str = config.get(f"species.file.sp{sp.file_index}")
                 if nc_path_str is not None:
-                    nc_path = _resolve_path(nc_path_str)
+                    nc_path = _resolve_path(nc_path_str, config.get("_osmose.config.dir", ""))
                     ds = xr.open_dataset(nc_path)
                     # Try species name as variable, fall back to first variable
                     stripped = sp.name

@@ -822,6 +822,7 @@ def simulate(
                 lifespan_dt=int(config.lifespan_dt[sp]),
                 ny=grid.ny,
                 nx=grid.nx,
+                config_dir=config.raw_config.get("_osmose.config.dir", ""),
             )
 
     # Phase 4: Build random distribution patches

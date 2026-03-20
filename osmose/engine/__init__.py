@@ -53,7 +53,12 @@ class PythonEngine:
         if grid_file:
             from pathlib import Path as P
 
-            for base in [P("."), P("data/examples")]:
+            config_dir = config.get("_osmose.config.dir", "")
+            search_bases = [P(".")]
+            if config_dir:
+                search_bases.insert(0, P(config_dir))
+            search_bases.append(P("data/examples"))
+            for base in search_bases:
                 path = base / grid_file
                 if path.exists():
                     grid = Grid.from_netcdf(

@@ -213,7 +213,11 @@ class TestSchemaValidation:
         """At least 50% of content keys should match a schema field."""
         name, _, config = study_demo
         content_keys = [
-            k for k in config if not k.startswith("osmose.configuration.") and not k.startswith("#")
+            k
+            for k in config
+            if not k.startswith("osmose.configuration.")
+            and not k.startswith("#")
+            and not k.startswith("_osmose.")
         ]
         matched = sum(1 for k in content_keys if registry.match_field(k) is not None)
         ratio = matched / max(len(content_keys), 1)
@@ -347,7 +351,11 @@ class TestConfigRoundtrip:
 
     def test_roundtrip_preserves_all_content_keys(self, study_demo):
         name, _, config = study_demo
-        content = {k: v for k, v in config.items() if not k.startswith("osmose.configuration.")}
+        content = {
+                k: v
+                for k, v in config.items()
+                if not k.startswith("osmose.configuration.") and not k.startswith("_osmose.")
+            }
         with tempfile.TemporaryDirectory() as tmpdir:
             writer = OsmoseConfigWriter()
             writer.write(content, Path(tmpdir))
@@ -359,7 +367,11 @@ class TestConfigRoundtrip:
 
     def test_roundtrip_preserves_values(self, study_demo):
         name, _, config = study_demo
-        content = {k: v for k, v in config.items() if not k.startswith("osmose.configuration.")}
+        content = {
+                k: v
+                for k, v in config.items()
+                if not k.startswith("osmose.configuration.") and not k.startswith("_osmose.")
+            }
         with tempfile.TemporaryDirectory() as tmpdir:
             writer = OsmoseConfigWriter()
             writer.write(content, Path(tmpdir))
@@ -750,7 +762,11 @@ class TestFullPipeline:
         spec = STUDY_SPECS[name]
 
         # Write config to a fresh directory
-        content = {k: v for k, v in config.items() if not k.startswith("osmose.configuration.")}
+        content = {
+                k: v
+                for k, v in config.items()
+                if not k.startswith("osmose.configuration.") and not k.startswith("_osmose.")
+            }
         config_dir = tmp_path / "roundtrip_config"
         config_dir.mkdir()
         writer = OsmoseConfigWriter()
@@ -929,10 +945,14 @@ class TestCrossStudyConsistency:
             migrated = migrate_config(config, target_version="4.3.3")
             # Content keys should be identical
             content_orig = {
-                k: v for k, v in config.items() if not k.startswith("osmose.configuration.")
+                k: v
+                for k, v in config.items()
+                if not k.startswith("osmose.configuration.") and not k.startswith("_osmose.")
             }
             content_migrated = {
-                k: v for k, v in migrated.items() if not k.startswith("osmose.configuration.")
+                k: v
+                for k, v in migrated.items()
+                if not k.startswith("osmose.configuration.") and not k.startswith("_osmose.")
             }
             assert content_orig == content_migrated, (
                 f"{name}: migration changed already-current config"

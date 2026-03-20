@@ -179,7 +179,9 @@ class TestFullRoundtrip:
             # Strip osmose.configuration.* meta-keys before writing
             # (the writer generates its own references)
             content = {
-                k: v for k, v in original.items() if not k.startswith("osmose.configuration.")
+                k: v
+                for k, v in original.items()
+                if not k.startswith("osmose.configuration.") and not k.startswith("_osmose.")
             }
             writer.write(content, Path(tmpdir))
 
@@ -197,7 +199,9 @@ class TestFullRoundtrip:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             content = {
-                k: v for k, v in original.items() if not k.startswith("osmose.configuration.")
+                k: v
+                for k, v in original.items()
+                if not k.startswith("osmose.configuration.") and not k.startswith("_osmose.")
             }
             writer = OsmoseConfigWriter()
             writer.write(content, Path(tmpdir))
@@ -221,7 +225,9 @@ class TestFullRoundtrip:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             content = {
-                k: v for k, v in original.items() if not k.startswith("osmose.configuration.")
+                k: v
+                for k, v in original.items()
+                if not k.startswith("osmose.configuration.") and not k.startswith("_osmose.")
             }
             writer = OsmoseConfigWriter()
             writer.write(content, Path(tmpdir))
@@ -248,7 +254,9 @@ class TestFullRoundtrip:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             content = {
-                k: v for k, v in original.items() if not k.startswith("osmose.configuration.")
+                k: v
+                for k, v in original.items()
+                if not k.startswith("osmose.configuration.") and not k.startswith("_osmose.")
             }
             writer = OsmoseConfigWriter()
             writer.write(content, Path(tmpdir))
@@ -273,7 +281,9 @@ class TestFullRoundtrip:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             content = {
-                k: v for k, v in original.items() if not k.startswith("osmose.configuration.")
+                k: v
+                for k, v in original.items()
+                if not k.startswith("osmose.configuration.") and not k.startswith("_osmose.")
             }
             writer = OsmoseConfigWriter()
             writer.write(content, Path(tmpdir))
@@ -291,14 +301,18 @@ class TestFullRoundtrip:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             content = {
-                k: v for k, v in original.items() if not k.startswith("osmose.configuration.")
+                k: v
+                for k, v in original.items()
+                if not k.startswith("osmose.configuration.") and not k.startswith("_osmose.")
             }
             writer = OsmoseConfigWriter()
             writer.write(content, Path(tmpdir))
 
             result = reader.read(Path(tmpdir) / "osm_all-parameters.csv")
             result_content = {
-                k: v for k, v in result.items() if not k.startswith("osmose.configuration.")
+                k: v
+                for k, v in result.items()
+                if not k.startswith("osmose.configuration.") and not k.startswith("_osmose.")
             }
 
             assert len(result_content) == len(content), (

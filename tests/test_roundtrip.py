@@ -252,7 +252,7 @@ def test_fixture_roundtrip():
         # Every key from the original (excluding osmose.configuration.* meta-keys
         # which may differ in path) should be present and equal.
         for key, value in original.items():
-            if key.startswith("osmose.configuration."):
+            if key.startswith("osmose.configuration.") or key.startswith("_osmose."):
                 continue
             assert key in roundtripped, f"Key lost after fixture roundtrip: {key}"
             assert roundtripped[key] == value, (

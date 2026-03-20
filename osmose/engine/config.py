@@ -70,11 +70,24 @@ def _species_int_optional(
     )
 
 
+_config_dir: str = ""
+
+
+def _set_config_dir(config_dir: str) -> None:
+    """Set the config base directory for file resolution."""
+    global _config_dir
+    _config_dir = config_dir
+
+
 def _search_dirs() -> list[Path]:
     """Build a list of directories to search for data files."""
     import glob as _glob
 
-    dirs = [Path("."), Path("data/examples")]
+    dirs: list[Path] = []
+    if _config_dir:
+        dirs.append(Path(_config_dir))
+    dirs.append(Path("."))
+    dirs.append(Path("data/examples"))
     dirs += [Path(d) for d in _glob.glob("data/*/")]
     return dirs
 
@@ -224,16 +237,51 @@ def _parse_fisheries(
 
 
 def _load_fishing_seasonality(
-    cfg: dict[str, str], n_species: int, n_dt_per_year: int
+    cfg: dict[str, str],
+    n_species: int,
+    n_dt_per_year: int,
+    species_names: list[str] | None = None,
 ) -> NDArray[np.float64] | None:
-    """Load fishing seasonality CSV files for each species.
+    """Load fishing seasonality for each species (v3 sp{i} or v4 fsh{i} format).
 
-    Returns array of shape (n_species, n_dt_per_year) with normalized season weights
-    (sum = 1.0 per species). None if no seasonality files found.
+    Supports:
+    - ``fisheries.seasonality.file.sp{i}`` — per-species CSV file (v3)
+    - ``fisheries.seasonality.file.fsh{i}`` — per-fishery CSV file (v4)
+    - ``fisheries.seasonality.fsh{i}`` — inline semicolon-separated values (v4)
+
+    Returns array of shape (n_species, n_dt_per_year) with season weights.
+    None if no seasonality found.
     """
     seasons = np.ones((n_species, n_dt_per_year), dtype=np.float64) / n_dt_per_year
     found_any = False
 
+    # Build fishery-to-species mapping for v4 fisheries
+    fsh_to_sp: dict[int, int] = {}
+    catch_file = cfg.get("fisheries.catchability.file", "")
+    if catch_file and species_names:
+        catch_path = _resolve_file(catch_file)
+        if catch_path is not None:
+            catch_df = pd.read_csv(catch_path, index_col=0)
+            for row_idx in range(len(catch_df)):
+                row_name = str(catch_df.index[row_idx]).strip().lower()
+                for col_idx in range(len(catch_df.columns)):
+                    if float(catch_df.iloc[row_idx, col_idx]) > 0:
+                        for sp_idx, name in enumerate(species_names):
+                            if name.strip().lower() == row_name:
+                                fsh_to_sp[col_idx] = sp_idx
+                                break
+                        break
+
+    def _set_season(sp_idx: int, values: NDArray[np.float64]) -> None:
+        nonlocal found_any
+        if len(values) >= n_dt_per_year:
+            vals = values[:n_dt_per_year]
+            total = vals.sum()
+            if total > 0:
+                seasons[sp_idx] = vals / total
+                found_any = True
+
+    # Try v3 per-species file keys first
     for i in range(n_species):
         file_key = cfg.get(f"fisheries.seasonality.file.sp{i}", "")
         if not file_key:
@@ -241,12 +289,35 @@ def _load_fishing_seasonality(
         path = _resolve_file(file_key)
         if path is not None:
             df = pd.read_csv(path, sep=";")
-            values = df.iloc[:, 1].values.astype(np.float64)
-            if len(values) == n_dt_per_year:
-                total = values.sum()
-                if total > 0:
-                    seasons[i] = values / total
-                found_any = True
+            _set_season(i, df.iloc[:, 1].values.astype(np.float64))
+
+    # Try v4 per-fishery keys (file or inline)
+    n_fisheries = int(cfg.get("simulation.nfisheries", "0"))
+    for fsh in range(n_fisheries):
+        sp_idx = fsh_to_sp.get(fsh)
+        if sp_idx is None:
+            continue
+
+        # Try file reference
+        file_key = cfg.get(f"fisheries.seasonality.file.fsh{fsh}", "")
+        if file_key:
+            path = _resolve_file(file_key)
+            if path is not None:
+                df = pd.read_csv(path, sep=";")
+                _set_season(sp_idx, df.iloc[:, 1].values.astype(np.float64))
+                continue
+
+        # Try inline semicolon-separated values
+        inline_val = cfg.get(f"fisheries.seasonality.fsh{fsh}", "")
+        if inline_val:
+            try:
+                vals = np.array(
+                    [float(v.strip()) for v in inline_val.split(";") if v.strip()],
+                    dtype=np.float64,
+                )
+                _set_season(sp_idx, vals)
+            except (ValueError, TypeError):
+                pass
 
     return seasons if found_any else None
 
@@ -602,6 +673,7 @@ class EngineConfig:
 
     @classmethod
     def from_dict(cls, cfg: dict[str, str]) -> EngineConfig:
+        _set_config_dir(cfg.get("_osmose.config.dir", ""))
         n_sp = int(_get(cfg, "simulation.nspecies"))
         n_dt = int(_get(cfg, "simulation.time.ndtperyear"))
         n_yr = int(_get(cfg, "simulation.time.nyear"))
@@ -967,7 +1039,7 @@ class EngineConfig:
         output_cutoff_age = np.array(cutoff_vals, dtype=np.float64) if found_any else None
 
         # Phase 2 fishing features
-        fishing_seasonality = _load_fishing_seasonality(cfg, n_sp, n_dt)
+        fishing_seasonality = _load_fishing_seasonality(cfg, n_sp, n_dt, focal_species_names)
         fishing_rate_by_year = _load_fishing_rate_by_year(cfg, n_sp)
         mpa_zones = _parse_mpa_zones(cfg)
         fishing_discard_rate = _load_discard_rates(cfg, focal_species_names, n_sp)

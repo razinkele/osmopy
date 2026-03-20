@@ -128,7 +128,12 @@ class IncomingFluxState:
 
         # Try relative paths
         resolved = None
-        for base in [Path("."), Path("data/examples")]:
+        config_dir = config.get("_osmose.config.dir", "")
+        search_bases = []
+        if config_dir:
+            search_bases.append(Path(config_dir))
+        search_bases.extend([Path("."), Path("data/examples")])
+        for base in search_bases:
             candidate = base / file_path
             if candidate.exists():
                 resolved = candidate
