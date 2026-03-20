@@ -61,6 +61,13 @@ class SchoolState:
     # Reproduction
     gonad_weight: NDArray[np.float64]
 
+    # Bioenergetics
+    e_net_avg: NDArray[np.float64]
+    e_gross: NDArray[np.float64]
+    e_maint: NDArray[np.float64]
+    e_net: NDArray[np.float64]
+    rho: NDArray[np.float64]
+
     # Mortality tracking
     starvation_rate: NDArray[np.float64]
     n_dead: NDArray[np.float64]  # shape (n_schools, len(MortalityCause))
@@ -104,6 +111,11 @@ class SchoolState:
             preyed_biomass=np.zeros(n, dtype=np.float64),
             feeding_stage=np.zeros(n, dtype=np.int32),
             gonad_weight=np.zeros(n, dtype=np.float64),
+            e_net_avg=np.zeros(n, dtype=np.float64),
+            e_gross=np.zeros(n, dtype=np.float64),
+            e_maint=np.zeros(n, dtype=np.float64),
+            e_net=np.zeros(n, dtype=np.float64),
+            rho=np.zeros(n, dtype=np.float64),
             starvation_rate=np.zeros(n, dtype=np.float64),
             n_dead=np.zeros((n, n_causes), dtype=np.float64),
             is_egg=np.zeros(n, dtype=np.bool_),
