@@ -83,14 +83,19 @@ def _bioen_reproduction(state, config, step, rng, grid_ny, grid_nx):
     for egg_school in new_egg_schools:
         state = state.append(egg_school)
 
-    # Age increment (standard reproduction handles this; do it here too)
-    new_age = state.age_dt + 1
+    # Age increment for existing schools only (NOT new eggs — they start at age 0)
+    # Java's BioenReproductionProcess increments age separately from egg creation
+    n_existing = len(state) - sum(len(e) for e in new_egg_schools)
+    new_age = state.age_dt.copy()
+    new_age[:n_existing] += 1
     state = state.replace(age_dt=new_age)
 
     return state
 ```
 
-**Key difference from the earlier flawed approach:** This does NOT delegate to `_reproduction()` (which would compute SSB-based eggs on top). Instead it directly creates egg schools from gonad weight, then increments age. This matches Java's `BioenReproductionProcess`.
+**Key difference from the earlier flawed approach:** This does NOT delegate to `_reproduction()` (which would compute SSB-based eggs on top). Instead it directly creates egg schools from gonad weight, then increments age for existing schools only. New egg schools retain `age_dt=0`.
+
+**Note on `egg_weight_override` units:** Config values from `species.egg.weight.sp{i}` are already converted to tonnes (`* 1e-6`) during parsing in `config.py` line ~942. The fallback formula (`condition_factor * egg_size^b * 1e-6`) also produces tonnes. Both paths are consistent.
 
 In the main loop, replace:
 ```python
@@ -134,10 +139,9 @@ Mirror the temperature loading pattern:
         o2_val = config.raw_config.get("oxygen.value", "")
         if o2_val:
             o2_data = PhysicalData.from_constant(float(o2_val))
-        else:
-            o2_file = config.raw_config.get("oxygen.filename", "")
-            if o2_file:
-                o2_data = PhysicalData.from_netcdf(Path(o2_file), ...)
+        # Note: NetCDF loading for O2 (and temperature) is deferred — only constant mode
+        # is currently supported. The PhysicalData.from_netcdf() path exists but neither
+        # temperature nor O2 wires it from simulate(). Add when spatial forcing is needed.
 ```
 
 **In `_bioen_step()`**, pass `o2_data` and replace hardcoded 1.0:
@@ -245,7 +249,8 @@ Only `meanEnet` is written to `Bioen/` directory. Missing: `ingestion`, `mainten
 |------|--------|
 | `osmose/engine/processes/energy_budget.py` | Return e_gross, e_maint, rho in tuple |
 | `osmose/engine/simulate.py` | Store bioen fields in state, aggregate to StepOutput |
-| `osmose/engine/output.py` | Write 4 additional bioen CSV types |
+| `osmose/engine/config.py` | Add `output_bioen_ingest`, `output_bioen_maint`, `output_bioen_rho`, `output_bioen_sizeinf` bool fields + parsing |
+| `osmose/engine/output.py` | Write 4 additional bioen CSV types, gated by config flags |
 
 ### Tests
 
