@@ -56,6 +56,9 @@ def write_outputs(
     # Write mortality CSVs per species
     _write_mortality_csvs(output_dir, prefix, outputs, config)
 
+    # Write age/size distribution CSVs
+    _write_distribution_csvs(output_dir, prefix, outputs, config)
+
 
 def _write_species_csv(
     path: Path,
@@ -71,6 +74,51 @@ def _write_species_csv(
     with open(path, "w") as f:
         f.write(f'"{description}"\n')
         df.to_csv(f, index=False)
+
+
+def _write_distribution_csvs(
+    output_dir: Path,
+    prefix: str,
+    outputs: list[StepOutput],
+    config: EngineConfig,
+) -> None:
+    """Write per-species age/size distribution CSVs matching Java format."""
+    times = np.array([o.step / config.n_dt_per_year for o in outputs])
+
+    for label, attr_name in [
+        ("biomassByAge", "biomass_by_age"),
+        ("abundanceByAge", "abundance_by_age"),
+        ("biomassBySize", "biomass_by_size"),
+        ("abundanceBySize", "abundance_by_size"),
+    ]:
+        first_out = next((o for o in outputs if getattr(o, attr_name) is not None), None)
+        if first_out is None:
+            continue
+        dist_data = getattr(first_out, attr_name)
+        for sp_idx, sp_name in enumerate(config.species_names):
+            if sp_idx not in dist_data:
+                continue
+            n_bins = len(dist_data[sp_idx])
+            data_matrix = np.zeros((len(outputs), n_bins))
+            for t_idx, o in enumerate(outputs):
+                d = getattr(o, attr_name)
+                if d is not None and sp_idx in d:
+                    data_matrix[t_idx, : len(d[sp_idx])] = d[sp_idx]
+
+            if "Age" in label:
+                columns = [str(i) for i in range(n_bins)]
+            else:
+                edges = np.arange(
+                    config.output_size_min,
+                    config.output_size_min + n_bins * config.output_size_incr,
+                    config.output_size_incr,
+                )
+                columns = [f"{e:.1f}" for e in edges]
+
+            df = pd.DataFrame(data_matrix, columns=columns)
+            df.insert(0, "Time", times)
+            path = output_dir / f"{prefix}_{label}_{sp_name}_Simu0.csv"
+            df.to_csv(path, index=False)
 
 
 def _write_mortality_csvs(

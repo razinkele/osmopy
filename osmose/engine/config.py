@@ -153,6 +153,13 @@ class EngineConfig:
     random_walk_range: NDArray[np.int32]
     out_mortality_rate: NDArray[np.float64]
 
+    # Output distribution flags
+    output_biomass_byage: bool  # write biomassByAge / abundanceByAge CSVs
+    output_biomass_bysize: bool  # write biomassBySize / abundanceBySize CSVs
+    output_size_min: float  # minimum size bin edge (cm)
+    output_size_max: float  # maximum size bin edge (cm)
+    output_size_incr: float  # size bin width (cm)
+
     # Raw config dict for subsystems that need unparsed access (e.g. ResourceState)
     raw_config: dict[str, str]
 
@@ -242,5 +249,12 @@ class EngineConfig:
             out_mortality_rate=_species_float_optional(
                 cfg, "mortality.out.rate.sp{i}", n_sp, default=0.0
             ),
+            output_biomass_byage=cfg.get("output.biomass.byage.enabled", "false").lower()
+            == "true",
+            output_biomass_bysize=cfg.get("output.biomass.bysize.enabled", "false").lower()
+            == "true",
+            output_size_min=float(cfg.get("output.distrib.bySize.min", "0.0")),
+            output_size_max=float(cfg.get("output.distrib.bySize.max", "200.0")),
+            output_size_incr=float(cfg.get("output.distrib.bySize.incr", "1.0")),
             raw_config=cfg,
         )
