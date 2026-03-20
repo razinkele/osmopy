@@ -279,6 +279,11 @@ def _write_bioen_csvs(
             df.to_csv(bioen_dir / f"{prefix}_{label}_{sp_name}_Simu0.csv", index=False)
 
 
+# TODO: Spatial bioen outputs — Java has SpatialEnetOutput, SpatialEnetOutputjuv,
+# SpatialEnetOutputlarvae, SpatialdGOutput. Requires per-cell aggregation framework
+# (also needed for output.spatial.biomass.enabled etc.). Deferred.
+
+
 # ---------------------------------------------------------------------------
 # NetCDF output
 # ---------------------------------------------------------------------------

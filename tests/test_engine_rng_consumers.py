@@ -4,7 +4,6 @@ from __future__ import annotations
 import inspect
 
 import numpy as np
-import pytest
 
 from osmose.engine.processes.movement import movement
 from osmose.engine.processes.mortality import mortality

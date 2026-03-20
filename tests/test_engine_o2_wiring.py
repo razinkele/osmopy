@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from osmose.engine.config import EngineConfig
 from osmose.engine.physical_data import PhysicalData

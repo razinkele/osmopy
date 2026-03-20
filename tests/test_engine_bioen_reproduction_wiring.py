@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from osmose.engine.config import EngineConfig
 from osmose.engine.grid import Grid
@@ -180,7 +179,6 @@ class TestBioenReproductionImmatureFish:
     def test_young_fish_immature_by_age(self):
         """Very young fish (age_dt=1) are immature even if large."""
         config = _make_config()
-        sp = 0
         # At age_dt=1, L_mature = m0 + m1 * (1/24) ≈ 4.5 + 0.075 = 4.575
         # Use L=10 but age_dt=1: still mature by length criterion
         # Instead, test age_dt=1 with small length to be truly immature
