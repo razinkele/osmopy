@@ -19,7 +19,7 @@ The Python engine (phases 1-7) covers ~95% of Java features with 1553 tests coll
 
 **Dual predation paths:** `_predation_in_cell_numba()` and `_predation_in_cell_python()` in `osmose/engine/processes/predation.py` duplicate ~150 lines of core logic. The Numba path lacks diet tracking; the Python path has it. Selection logic (line ~517) branches on `_HAS_NUMBA and not _diet_tracking_enabled`. If one path gets a bug fix, the other can silently diverge.
 
-**Unwired growth dispatch:** Schema declares `growth.java.classname.sp{idx}` with fully-qualified Java enum values (`fr.ird.osmose.growth.VonBertalanffy`, `fr.ird.osmose.growth.Gompertz`, `fr.ird.osmose.growth.Linear`). Only VonBertalanffy is integrated. `expected_length_gompertz()` exists in `growth.py` (lines 109-158) but is never called. Config never reads the classname key.
+**Unwired growth dispatch:** Schema declares `growth.java.classname.sp{idx}` with Java classnames. The actual Java classes are `fr.ird.osmose.process.growth.VonBertalanffyGrowth` and `fr.ird.osmose.process.growth.GompertzGrowth` (note: `process.growth` package, `Growth` suffix). There is no `LinearGrowth` Java class — the "Linear" in the current schema is incorrect. Only VonBertalanffy is integrated. `expected_length_gompertz()` exists in `growth.py` (lines 109-158) but is never called. Config never reads the classname key.
 
 ### Design
 
@@ -37,31 +37,33 @@ The Python engine (phases 1-7) covers ~95% of Java features with 1553 tests coll
 **Growth — config-driven dispatch:**
 
 - Parse `growth.java.classname.sp{idx}` in `EngineConfig.from_dict()`
-- Store as `config.growth_class[sp]` enum: `VB | GOMPERTZ | LINEAR` (mapped from `fr.ird.osmose.growth.{name}`)
+- Store as `config.growth_class[sp]` enum: `VB | GOMPERTZ` (mapped from `fr.ird.osmose.process.growth.{name}Growth`)
+- Fix schema enum values to match Java: `fr.ird.osmose.process.growth.VonBertalanffyGrowth`, `fr.ird.osmose.process.growth.GompertzGrowth` (remove `Linear` — no Java counterpart)
 - In `growth()`, dispatch per species:
   - `VB`: existing `expected_length_vb()` (no change)
-  - `GOMPERTZ`: wire existing `expected_length_gompertz()`, parse additional params (`k_exp`, `a_exp_dt`, `a_gom_dt`, `k_gom`, `t_gom`)
-  - `LINEAR`: implement `expected_length_linear()` — straightforward `L = egg_size + rate * age`
+  - `GOMPERTZ`: wire existing `expected_length_gompertz()`, parse additional params
 - When `simulation.bioen.enabled = true`: growth dispatch is bypassed entirely; `EnergyBudget` handles weight/length updates
 
 **Gompertz config keys to add** (from Java `GompertzGrowth.java`):
 
 | Key | Type | Description |
 |-----|------|-------------|
-| `species.gompertz.k_exp.sp{idx}` | FLOAT | Exponential growth rate (early phase) |
-| `species.gompertz.a_exp.sp{idx}` | FLOAT | Age switching to exponential (years) |
-| `species.gompertz.a_gom.sp{idx}` | FLOAT | Age switching to Gompertz (years) |
-| `species.gompertz.k_gom.sp{idx}` | FLOAT | Gompertz growth rate |
-| `species.gompertz.t_gom.sp{idx}` | FLOAT | Gompertz inflection age |
+| `growth.exponential.ke.sp{idx}` | FLOAT | Exponential growth rate (early phase) |
+| `growth.exponential.thr.age.sp{idx}` | FLOAT | Age switching to exponential (years) |
+| `growth.exponential.lstart.sp{idx}` | FLOAT | Starting length for exponential phase |
+| `growth.gompertz.thr.age.sp{idx}` | FLOAT | Age switching to Gompertz (years) |
+| `growth.gompertz.kg.sp{idx}` | FLOAT | Gompertz growth rate |
+| `growth.gompertz.tg.sp{idx}` | FLOAT | Gompertz inflection age |
+| `growth.gompertz.linf.sp{idx}` | FLOAT | Gompertz asymptotic length |
 
 ### Files Changed
 
 | File | Change |
 |------|--------|
 | `osmose/engine/processes/predation.py` | Extract helpers, simplify path selection |
-| `osmose/engine/processes/growth.py` | Add dispatch, wire Gompertz params, add Linear |
+| `osmose/engine/processes/growth.py` | Add dispatch, wire Gompertz params |
 | `osmose/engine/config.py` | Parse `growth.java.classname`, Gompertz params |
-| `osmose/schema/species.py` | Add missing Gompertz/Linear config fields if needed |
+| `osmose/schema/species.py` | Fix growth classname enum, add Gompertz config fields |
 
 ### Tests
 
@@ -122,7 +124,7 @@ Size bin parameters (existing in schema):
 | `output.distrib.bysize.max` | FLOAT | 205 |
 | `output.distrib.bysize.incr` | FLOAT | 10 |
 
-Enable flags (add to `osmose/schema/output.py` — not yet in schema):
+Enable flags (already in `osmose/schema/output.py` — wire to engine config):
 | Key | Type | Default |
 |-----|------|---------|
 | `output.biomass.byage.enabled` | BOOL | false |
@@ -263,23 +265,36 @@ Generic NetCDF/constant loader for temperature and oxygen forcing:
 Overrides standard predation with allometric ingestion:
 
 ```
-I_max_effective = I_max * psi * w^beta / n_dt_per_year
+# For adults:
+I_max_effective = I_max * w^beta / n_dt_per_year
+
+# For larvae (age < threshold):
+I_max_effective = (I_max + (theta - 1) * c_rate) * w^beta / n_dt_per_year
+
 ingestion = min(predated_biomass, I_max_effective)
 ```
 
-Where `psi = theta` for larvae (age < threshold), `psi = 1` for adults.
+Where `theta = predation.coef.ingestion.rate.max.larvae.bioen` and `c_rate = predation.c.bioen` (additive correction, not simple multiplier).
 
 #### `osmose/engine/processes/bioen_starvation.py`
-Energy-deficit starvation with gonad buffer:
+Energy-deficit starvation with gonad buffer, processed per sub-timestep (matching Java `BioenStarvationMortality`):
 
 ```
-if E_net < 0:
-    deficit = abs(E_net)
-    gonad_available = gonad_weight / eta
-    if deficit > gonad_available:
-        n_dead = (deficit - gonad_available) / weight
-    gonad_weight = max(0, gonad_weight - deficit * eta)
+for each sub-timestep:
+    e_net_subdt = E_net / n_subdt
+    if e_net_subdt < 0:
+        deficit = abs(e_net_subdt)
+        if gonad_weight >= eta * deficit:
+            # Gonad absorbs the full deficit
+            gonad_weight -= eta * deficit
+        else:
+            # Gonad insufficient — fish die proportionally
+            remaining = deficit - gonad_weight / eta
+            n_dead += remaining / weight
+            gonad_weight = 0
 ```
+
+Note: `eta` converts somatic energy deficit to gonadic weight cost (gonad pays `eta * deficit`). This matches Java where `gonad_weight >= eta * eNetSubDt` is the sufficiency check.
 
 #### `osmose/engine/processes/bioen_reproduction.py`
 Gonad-weight egg production (replaces SSB-based reproduction):
@@ -293,12 +308,18 @@ Add to `SchoolState`:
 
 | Field | Type | Purpose |
 |-------|------|---------|
-| `gonad_weight` | `NDArray[np.float64]` | Already exists (reserved), activate |
-| `e_net_avg` | `NDArray[np.float64]` | Running lifetime average of mass-specific E_net |
+| `gonad_weight` | `NDArray[np.float64]` | Already exists in SchoolState (initialized to 0); populate with meaningful values during bioen runs |
+| `e_net_avg` | `NDArray[np.float64]` | Running lifetime average of mass-specific E_net (4 regimes — see below) |
 | `e_gross` | `NDArray[np.float64]` | Current step gross energy (for output) |
 | `e_maint` | `NDArray[np.float64]` | Current step maintenance (for output) |
 | `e_net` | `NDArray[np.float64]` | Current step net energy (for output) |
 | `rho` | `NDArray[np.float64]` | Current allocation fraction (for output) |
+
+**`e_net_avg` computation regimes** (from Java `EnergyBudget.computeEnetFaced()`):
+1. Before first-feeding age: `e_net_avg = 0`
+2. At first-feeding step: special init with larvae factor
+3. Larvae phase (age < threshold): incremental average WITH larvae correction factor
+4. Adult phase: incremental average WITHOUT larvae factor (`e_net_avg = (e_net_avg * (n-1) + e_net_mass_specific) / n`)
 
 ### Config Keys (full list)
 
@@ -401,7 +422,7 @@ Phases 1-3 are independent and can be parallelized. Phase 4 depends on all three
 
 ## Success Criteria
 
-- All existing 1539+ tests still pass
+- All existing 1553+ tests still pass
 - ~105 new tests for the four phases
 - Growth dispatch works for VB, Gompertz, Linear configs
 - Size/age distribution CSVs match Java column format
