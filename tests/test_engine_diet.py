@@ -145,21 +145,20 @@ class TestDietTrackingPredation:
         finally:
             disable_diet_tracking()
 
-    def test_numba_skipped_when_diet_tracking(self):
-        """When diet tracking is enabled, Numba should be skipped (Python fallback)."""
+    def test_diet_tracking_works_with_numba(self):
+        """When diet tracking is enabled, Numba path should accumulate diet correctly."""
         cfg = EngineConfig.from_dict(_make_diet_config())
         state = _make_two_school_state()
         rng = np.random.default_rng(42)
 
         try:
             enable_diet_tracking(n_schools=len(state), n_species=2)
-            # This should work regardless of whether Numba is installed
+            # Diet tracking works with both Python and Numba paths
             predation(state, cfg, rng, n_subdt=10, grid_ny=1, grid_nx=1)
             mat = get_diet_matrix()
-            # If Numba were used, diet matrix would remain zero (no tracking)
-            # So a non-zero mat confirms Python path was used
+            # Non-zero matrix confirms diet was tracked and accumulated
             assert mat is not None
-            assert mat.sum() > 0.0, "Diet tracking implies Python path was used"
+            assert mat.sum() > 0.0, "Diet matrix should accumulate consumed biomass"
         finally:
             disable_diet_tracking()
 

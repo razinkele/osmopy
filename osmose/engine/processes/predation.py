@@ -56,6 +56,11 @@ def get_diet_matrix() -> NDArray[np.float64] | None:
 # Shared helper functions
 # ---------------------------------------------------------------------------
 
+# These functions are extracted as testable utilities to validate predation logic
+# in isolation (see test_engine_predation_helpers.py). The inner loops keep
+# inline logic for Numba performance reasons — extracting calls into the Numba-
+# accelerated loop would add overhead from repeated function dispatch.
+
 
 def compute_size_overlap(
     pred_length: float,
