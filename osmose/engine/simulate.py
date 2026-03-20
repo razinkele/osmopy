@@ -114,6 +114,7 @@ def _bioen_step(
     config: EngineConfig,
     temp_data: PhysicalData | None,
     step: int,
+    o2_data: PhysicalData | None = None,
 ) -> SchoolState:
     """Replace _growth() when bioenergetics is enabled.
 
@@ -207,8 +208,24 @@ def _bioen_step(
     else:
         phi_t_arr = np.ones(len(state), dtype=np.float64)
 
-    # Oxygen limitation: always 1.0 for now (spatial O2 data not yet wired)
-    f_o2_arr = np.ones(len(state), dtype=np.float64)
+    # Oxygen limitation
+    if config.bioen_fo2_enabled and o2_data is not None:
+        from osmose.engine.processes.oxygen_function import f_o2
+
+        f_o2_arr = np.ones(len(state), dtype=np.float64)
+        if o2_data.is_constant:
+            o2_scalar = o2_data.get_value(step, 0, 0)
+            for sp in range(config.n_species):
+                mask = state.species_id == sp
+                if mask.any():
+                    o2_vals = np.full(mask.sum(), o2_scalar)
+                    f_o2_arr[mask] = f_o2(
+                        o2_vals,
+                        float(config.bioen_o2_c1[sp]),
+                        float(config.bioen_o2_c2[sp]),
+                    )
+    else:
+        f_o2_arr = np.ones(len(state), dtype=np.float64)
 
     # Build per-school temperature array for Arrhenius maintenance calculation
     if temp_data is not None and temp_data.is_constant:
@@ -718,6 +735,13 @@ def simulate(
         if temp_val:
             temp_data = PhysicalData.from_constant(float(temp_val))
 
+    # Bioenergetics: load O2 forcing when enabled
+    o2_data = None
+    if config.bioen_enabled:
+        o2_val = config.raw_config.get("oxygen.value", "")
+        if o2_val:
+            o2_data = PhysicalData.from_constant(float(o2_val))
+
     from osmose.engine.movement_maps import MovementMapSet
 
     map_sets: dict[int, MovementMapSet] = {}
@@ -770,7 +794,7 @@ def simulate(
         state = _strip_background(state, n_focal)
 
         if config.bioen_enabled:
-            state = _bioen_step(state, config, temp_data, step)
+            state = _bioen_step(state, config, temp_data, step, o2_data=o2_data)
         else:
             state = _growth(state, config, rng)
         state = _aging_mortality(state, config)
