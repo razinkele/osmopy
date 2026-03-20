@@ -234,7 +234,7 @@ class TestExpectedLengthGompertz:
             k_exp=np.array([2.0]),
             a_exp_dt=np.array([6]),
             a_gom_dt=np.array([12]),
-            egg_size=np.array([0.1]),
+            lstart=np.array([0.1]),
             n_dt_per_year=24,
         )
         np.testing.assert_allclose(result, [0.1], atol=1e-10)
@@ -253,7 +253,7 @@ class TestExpectedLengthGompertz:
             k_exp=np.array([2.0]),
             a_exp_dt=np.array([6]),
             a_gom_dt=np.array([12]),
-            egg_size=np.array([0.1]),
+            lstart=np.array([0.1]),
             n_dt_per_year=n_dt,
         )
         expected = linf * np.exp(-np.exp(-k_g * (age_years - t_g)))

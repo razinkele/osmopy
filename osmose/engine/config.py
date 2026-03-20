@@ -13,6 +13,16 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
+_GROWTH_MAP: dict[str, str] = {
+    # Current canonical classnames
+    "fr.ird.osmose.process.growth.VonBertalanffyGrowth": "VB",
+    "fr.ird.osmose.process.growth.GompertzGrowth": "GOMPERTZ",
+    # Legacy backward compat
+    "fr.ird.osmose.growth.VonBertalanffy": "VB",
+    "fr.ird.osmose.growth.Gompertz": "GOMPERTZ",
+    "fr.ird.osmose.growth.Linear": "VB",  # Linear was never real, map to VB
+}
+
 
 def _get(cfg: dict[str, str], key: str) -> str:
     """Get a config value, raising KeyError with a clear message."""
@@ -153,8 +163,23 @@ class EngineConfig:
     random_walk_range: NDArray[np.int32]
     out_mortality_rate: NDArray[np.float64]
 
+    # Growth class per species: "VB" or "GOMPERTZ"
+    growth_class: list[str]
+
     # Raw config dict for subsystems that need unparsed access (e.g. ResourceState)
     raw_config: dict[str, str]
+
+    # Gompertz growth parameters (None when no GOMPERTZ species)
+    gompertz_ke: NDArray[np.float64] | None = None
+    gompertz_lstart: NDArray[np.float64] | None = None
+    gompertz_kg: NDArray[np.float64] | None = None
+    gompertz_tg: NDArray[np.float64] | None = None
+    gompertz_linf: NDArray[np.float64] | None = None
+    gompertz_thr_age_exp_dt: NDArray[np.int32] | None = None
+    gompertz_thr_age_gom_dt: NDArray[np.int32] | None = None
+
+    # Bioenergetic model toggle (False until bioen is wired in)
+    bioen_enabled: bool = False
 
     @classmethod
     def from_dict(cls, cfg: dict[str, str]) -> EngineConfig:
@@ -167,6 +192,37 @@ class EngineConfig:
         fishing = _species_float_optional(cfg, "mortality.fishing.rate.sp{i}", n_sp, default=0.0)
         if fishing.sum() == 0:
             fishing = _species_float_optional(cfg, "fishing.rate.sp{i}", n_sp, default=0.0)
+
+        # Growth class dispatch: parse classname for each focal species
+        growth_class = [
+            _GROWTH_MAP.get(
+                cfg.get(f"growth.java.classname.sp{i}", "").strip(),
+                "VB",
+            )
+            for i in range(n_sp)
+        ]
+
+        # Gompertz parameters: only parsed when at least one species uses GOMPERTZ
+        gompertz_ke = gompertz_lstart = gompertz_kg = gompertz_tg = gompertz_linf = None
+        gompertz_thr_age_exp_dt = gompertz_thr_age_gom_dt = None
+        if "GOMPERTZ" in growth_class:
+            gompertz_ke = _species_float_optional(cfg, "growth.exponential.ke.sp{i}", n_sp, 0.0)
+            gompertz_lstart = _species_float_optional(
+                cfg, "growth.exponential.lstart.sp{i}", n_sp, 0.1
+            )
+            gompertz_kg = _species_float_optional(cfg, "growth.gompertz.kg.sp{i}", n_sp, 0.0)
+            gompertz_tg = _species_float_optional(cfg, "growth.gompertz.tg.sp{i}", n_sp, 0.0)
+            gompertz_linf = _species_float_optional(
+                cfg, "growth.gompertz.linf.sp{i}", n_sp, 0.0
+            )
+            exp_yrs = _species_float_optional(
+                cfg, "growth.exponential.thr.age.sp{i}", n_sp, 0.0
+            )
+            gom_yrs = _species_float_optional(
+                cfg, "growth.gompertz.thr.age.sp{i}", n_sp, 0.0
+            )
+            gompertz_thr_age_exp_dt = (exp_yrs * n_dt).astype(np.int32)
+            gompertz_thr_age_gom_dt = (gom_yrs * n_dt).astype(np.int32)
 
         return cls(
             n_species=n_sp,
@@ -242,5 +298,13 @@ class EngineConfig:
             out_mortality_rate=_species_float_optional(
                 cfg, "mortality.out.rate.sp{i}", n_sp, default=0.0
             ),
+            growth_class=growth_class,
+            gompertz_ke=gompertz_ke,
+            gompertz_lstart=gompertz_lstart,
+            gompertz_kg=gompertz_kg,
+            gompertz_tg=gompertz_tg,
+            gompertz_linf=gompertz_linf,
+            gompertz_thr_age_exp_dt=gompertz_thr_age_exp_dt,
+            gompertz_thr_age_gom_dt=gompertz_thr_age_gom_dt,
             raw_config=cfg,
         )
