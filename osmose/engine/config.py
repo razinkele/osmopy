@@ -558,8 +558,32 @@ class EngineConfig:
     gompertz_thr_age_exp_dt: NDArray[np.int32] | None = None
     gompertz_thr_age_gom_dt: NDArray[np.int32] | None = None
 
-    # Bioenergetic model toggle (False until bioen is wired in)
+    # Bioenergetic model toggle
     bioen_enabled: bool = False
+
+    # Bioenergetic global flags
+    bioen_phit_enabled: bool = True
+    bioen_fo2_enabled: bool = True
+
+    # Bioenergetic per-species parameters (None when bioen disabled)
+    bioen_beta: NDArray[np.float64] | None = None           # allometric exponent
+    bioen_zlayer: NDArray[np.int32] | None = None           # depth layer index
+    bioen_assimilation: NDArray[np.float64] | None = None   # assimilation efficiency
+    bioen_c_m: NDArray[np.float64] | None = None            # maintenance coefficient
+    bioen_eta: NDArray[np.float64] | None = None            # energy density ratio
+    bioen_r: NDArray[np.float64] | None = None              # reproductive allocation
+    bioen_m0: NDArray[np.float64] | None = None             # LMRN intercept
+    bioen_m1: NDArray[np.float64] | None = None             # LMRN slope
+    bioen_e_mobi: NDArray[np.float64] | None = None         # Johnson e_M (eV)
+    bioen_e_d: NDArray[np.float64] | None = None            # Johnson e_D (eV)
+    bioen_tp: NDArray[np.float64] | None = None             # peak temperature (°C)
+    bioen_e_maint: NDArray[np.float64] | None = None        # Arrhenius maintenance energy (eV)
+    bioen_o2_c1: NDArray[np.float64] | None = None          # O2 dose-response asymptote
+    bioen_o2_c2: NDArray[np.float64] | None = None          # O2 half-saturation
+    bioen_i_max: NDArray[np.float64] | None = None          # max ingestion rate (bioen)
+    bioen_theta: NDArray[np.float64] | None = None          # larvae ingestion multiplier
+    bioen_c_rate: NDArray[np.float64] | None = None         # larvae correction coefficient
+    bioen_k_for: NDArray[np.float64] | None = None          # foraging mortality
 
     # Distribution output flags
     output_biomass_byage: bool = False
@@ -1011,6 +1035,66 @@ class EngineConfig:
             gompertz_thr_age_exp_dt = (exp_yrs * n_dt).astype(np.int32)
             gompertz_thr_age_gom_dt = (gom_yrs * n_dt).astype(np.int32)
 
+        # Bioenergetic parameters: only parsed when simulation.bioen.enabled=true
+        _bioen_enabled = cfg.get("simulation.bioen.enabled", "false").lower() == "true"
+        _bioen_phit_enabled = cfg.get("simulation.bioen.phit.enabled", "true").lower() == "true"
+        _bioen_fo2_enabled = cfg.get("simulation.bioen.fo2.enabled", "true").lower() == "true"
+        bioen_beta = bioen_zlayer = bioen_assimilation = bioen_c_m = None
+        bioen_eta = bioen_r = bioen_m0 = bioen_m1 = None
+        bioen_e_mobi = bioen_e_d = bioen_tp = bioen_e_maint = None
+        bioen_o2_c1 = bioen_o2_c2 = bioen_i_max = bioen_theta = bioen_c_rate = bioen_k_for = None
+        if _bioen_enabled:
+            bioen_beta = _species_float_optional(cfg, "species.beta.sp{i}", n_sp, 0.8)
+            bioen_zlayer = _species_int_optional(cfg, "species.zlayer.sp{i}", n_sp, 0)
+            bioen_assimilation = _species_float_optional(
+                cfg, "species.bioen.assimilation.sp{i}", n_sp, 0.7
+            )
+            bioen_c_m = _species_float_optional(
+                cfg, "species.bioen.maint.energy.c_m.sp{i}", n_sp, 0.0
+            )
+            bioen_eta = _species_float_optional(
+                cfg, "species.bioen.maturity.eta.sp{i}", n_sp, 1.0
+            )
+            bioen_r = _species_float_optional(
+                cfg, "species.bioen.maturity.r.sp{i}", n_sp, 0.0
+            )
+            bioen_m0 = _species_float_optional(
+                cfg, "species.bioen.maturity.m0.sp{i}", n_sp, 0.0
+            )
+            bioen_m1 = _species_float_optional(
+                cfg, "species.bioen.maturity.m1.sp{i}", n_sp, 0.0
+            )
+            bioen_e_mobi = _species_float_optional(
+                cfg, "species.bioen.mobilized.e.mobi.sp{i}", n_sp, 0.65
+            )
+            bioen_e_d = _species_float_optional(
+                cfg, "species.bioen.mobilized.e.D.sp{i}", n_sp, 1.5
+            )
+            bioen_tp = _species_float_optional(
+                cfg, "species.bioen.mobilized.Tp.sp{i}", n_sp, 20.0
+            )
+            bioen_e_maint = _species_float_optional(
+                cfg, "species.bioen.maint.e.maint.sp{i}", n_sp, 0.65
+            )
+            bioen_o2_c1 = _species_float_optional(
+                cfg, "species.oxygen.c1.sp{i}", n_sp, 1.0
+            )
+            bioen_o2_c2 = _species_float_optional(
+                cfg, "species.oxygen.c2.sp{i}", n_sp, 1.0
+            )
+            bioen_i_max = _species_float_optional(
+                cfg, "predation.ingestion.rate.max.bioen.sp{i}", n_sp, 0.0
+            )
+            bioen_theta = _species_float_optional(
+                cfg, "predation.coef.ingestion.rate.max.larvae.bioen.sp{i}", n_sp, 1.0
+            )
+            bioen_c_rate = _species_float_optional(
+                cfg, "predation.c.bioen.sp{i}", n_sp, 0.0
+            )
+            bioen_k_for = _species_float_optional(
+                cfg, "species.bioen.forage.k_for.sp{i}", n_sp, 0.0
+            )
+
         return cls(
             n_species=n_sp,
             n_dt_per_year=n_dt,
@@ -1087,6 +1171,27 @@ class EngineConfig:
             gompertz_thr_age_exp_dt=gompertz_thr_age_exp_dt,
             gompertz_thr_age_gom_dt=gompertz_thr_age_gom_dt,
             raw_config=cfg,
+            bioen_enabled=_bioen_enabled,
+            bioen_phit_enabled=_bioen_phit_enabled,
+            bioen_fo2_enabled=_bioen_fo2_enabled,
+            bioen_beta=bioen_beta,
+            bioen_zlayer=bioen_zlayer,
+            bioen_assimilation=bioen_assimilation,
+            bioen_c_m=bioen_c_m,
+            bioen_eta=bioen_eta,
+            bioen_r=bioen_r,
+            bioen_m0=bioen_m0,
+            bioen_m1=bioen_m1,
+            bioen_e_mobi=bioen_e_mobi,
+            bioen_e_d=bioen_e_d,
+            bioen_tp=bioen_tp,
+            bioen_e_maint=bioen_e_maint,
+            bioen_o2_c1=bioen_o2_c1,
+            bioen_o2_c2=bioen_o2_c2,
+            bioen_i_max=bioen_i_max,
+            bioen_theta=bioen_theta,
+            bioen_c_rate=bioen_c_rate,
+            bioen_k_for=bioen_k_for,
             output_biomass_byage=cfg.get("output.biomass.byage.enabled", "false").lower() == "true",
             output_biomass_bysize=cfg.get("output.biomass.bysize.enabled", "false").lower() == "true",
             output_abundance_byage=cfg.get("output.abundance.byage.enabled", "false").lower() == "true",
