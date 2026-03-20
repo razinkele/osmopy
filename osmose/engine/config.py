@@ -536,13 +536,12 @@ class EngineConfig:
     # Initial state output (step -1)
     output_step0_include: bool
 
-    # Random seed flags (parsed but not fully implemented — future per-species RNG)
-    movement_random_seed_fixed: bool
-    mortality_random_seed_fixed: bool
+    # RNG seeding flags
+    movement_seed_fixed: bool  # per-species independent RNG for movement
+    mortality_seed_fixed: bool  # per-species independent RNG for mortality
 
     # Random distribution patch constraint: per-species ncell values, or None
     random_distribution_ncell: NDArray[np.int32] | None
-
 
     # Growth class per species: "VB" or "GOMPERTZ"
     growth_class: list[str]
@@ -1076,8 +1075,8 @@ class EngineConfig:
             output_record_frequency=output_record_freq,
             diet_output_enabled=diet_output_enabled,
             output_step0_include=output_step0,
-            movement_random_seed_fixed=movement_seed_fixed,
-            mortality_random_seed_fixed=mortality_seed_fixed,
+            movement_seed_fixed=movement_seed_fixed,
+            mortality_seed_fixed=mortality_seed_fixed,
             random_distribution_ncell=random_distribution_ncell,
             growth_class=growth_class,
             gompertz_ke=gompertz_ke,

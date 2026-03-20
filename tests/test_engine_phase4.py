@@ -143,12 +143,12 @@ class TestDeterministicRandomSeeds:
         cfg["movement.randomseed.fixed"] = "true"
         cfg["stochastic.mortality.randomseed.fixed"] = "true"
         config = EngineConfig.from_dict(cfg)
-        assert config.movement_random_seed_fixed is True
-        assert config.mortality_random_seed_fixed is True
+        assert config.movement_seed_fixed is True
+        assert config.mortality_seed_fixed is True
 
     def test_random_seed_defaults_false(self):
         """Without config keys, seed flags should default to False."""
         cfg = _base_config(n_sp=1)
         config = EngineConfig.from_dict(cfg)
-        assert config.movement_random_seed_fixed is False
-        assert config.mortality_random_seed_fixed is False
+        assert config.movement_seed_fixed is False
+        assert config.mortality_seed_fixed is False
