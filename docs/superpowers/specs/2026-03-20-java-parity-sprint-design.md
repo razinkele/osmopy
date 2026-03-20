@@ -41,7 +41,7 @@ The Python engine (phases 1-7) covers ~95% of Java features with 1553 tests coll
 - Fix schema enum values to match Java: `fr.ird.osmose.process.growth.VonBertalanffyGrowth`, `fr.ird.osmose.process.growth.GompertzGrowth` (remove `Linear` — no Java counterpart)
 - In `growth()`, dispatch per species:
   - `VB`: existing `expected_length_vb()` (no change)
-  - `GOMPERTZ`: wire existing `expected_length_gompertz()`, parse additional params
+  - `GOMPERTZ`: wire existing `expected_length_gompertz()`, parse additional params. Note: existing function uses `egg_size` where Java uses `lStart` (separate config key `growth.exponential.lstart.sp{idx}`) — update function to use `lStart`. Also, threshold ages are FLOAT years in config but INT dt in current function signature — add conversion (`* n_dt_per_year`, cast to int) in config parsing layer.
 - When `simulation.bioen.enabled = true`: growth dispatch is bypassed entirely; `EnergyBudget` handles weight/length updates
 
 **Gompertz config keys to add** (from Java `GompertzGrowth.java`):
@@ -70,7 +70,7 @@ The Python engine (phases 1-7) covers ~95% of Java features with 1553 tests coll
 - Unit tests for each extracted predation helper
 - Test that Numba and Python paths produce identical results for same inputs
 - Test diet tracking works with both paths
-- Test growth dispatch for each class (VB, Gompertz, Linear)
+- Test growth dispatch for each class (VB, Gompertz)
 - Test bioen bypass skips growth dispatch
 
 **Estimated:** ~300 LOC changed, ~15 new tests
@@ -274,7 +274,7 @@ I_max_effective = (I_max + (theta - 1) * c_rate) * w^beta / n_dt_per_year
 ingestion = min(predated_biomass, I_max_effective)
 ```
 
-Where `theta = predation.coef.ingestion.rate.max.larvae.bioen` and `c_rate = predation.c.bioen` (additive correction, not simple multiplier).
+Where `theta = predation.coef.ingestion.rate.max.larvae.bioen` and `c_rate = predation.c.bioen` (additive correction, not simple multiplier). Note: Java additionally divides by `subdt` (number of sub-timesteps within the predation loop) — apply the same per-sub-timestep division.
 
 #### `osmose/engine/processes/bioen_starvation.py`
 Energy-deficit starvation with gonad buffer, processed per sub-timestep (matching Java `BioenStarvationMortality`):
@@ -288,13 +288,15 @@ for each sub-timestep:
             # Gonad absorbs the full deficit
             gonad_weight -= eta * deficit
         else:
-            # Gonad insufficient — fish die proportionally
-            remaining = deficit - gonad_weight / eta
-            n_dead += remaining / weight
+            # Gonad insufficient — Java flushes gonad to 0 FIRST,
+            # then computes death toll from full deficit minus
+            # the gonad's pre-flush buffering capacity
+            gonad_buffered = gonad_weight / eta
             gonad_weight = 0
+            n_dead += (deficit - gonad_buffered) / weight
 ```
 
-Note: `eta` converts somatic energy deficit to gonadic weight cost (gonad pays `eta * deficit`). This matches Java where `gonad_weight >= eta * eNetSubDt` is the sufficiency check.
+Note: `eta` converts somatic energy deficit to gonadic weight cost (gonad pays `eta * deficit`). This matches Java `BioenStarvationMortality.computeStarvation()` where `gonad_weight >= eta * eNetSubDt` is the sufficiency check. In the insufficient branch, Java zeroes the gonad then computes the death toll — we replicate this ordering exactly for parity.
 
 #### `osmose/engine/processes/bioen_reproduction.py`
 Gonad-weight egg production (replaces SSB-based reproduction):
@@ -424,7 +426,7 @@ Phases 1-3 are independent and can be parallelized. Phase 4 depends on all three
 
 - All existing 1553+ tests still pass
 - ~105 new tests for the four phases
-- Growth dispatch works for VB, Gompertz, Linear configs
+- Growth dispatch works for VB and Gompertz configs
 - Size/age distribution CSVs match Java column format
 - Per-species RNG produces reproducible, independent sequences
 - All bioenergetic equations match Java source formulas (unit tested)
