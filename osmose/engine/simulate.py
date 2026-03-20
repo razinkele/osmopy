@@ -355,6 +355,87 @@ def _reproduction(
     return reproduction(state, config, step, rng, grid_ny=grid_ny, grid_nx=grid_nx)
 
 
+def _bioen_reproduction(
+    state: SchoolState,
+    config: EngineConfig,
+    step: int,
+    rng: np.random.Generator,
+    grid_ny: int = 10,
+    grid_nx: int = 10,
+) -> SchoolState:
+    """Bioen reproduction: create egg schools from gonad weight (replaces SSB method)."""
+    from osmose.engine.processes.bioen_reproduction import bioen_egg_production
+
+    new_egg_schools = []
+    gonad = state.gonad_weight.copy()
+
+    for sp in range(config.n_species):
+        mask = state.species_id == sp
+        if not mask.any():
+            continue
+
+        # Get egg weight (handle NaN from missing config)
+        ew = np.nan
+        if config.egg_weight_override is not None:
+            ew = config.egg_weight_override[sp]
+        if np.isnan(ew):
+            # Fallback: allometric weight at egg size
+            ew = config.condition_factor[sp] * config.egg_size[sp] ** config.allometric_power[sp] * 1e-6
+
+        eggs = bioen_egg_production(
+            gonad_weight=state.gonad_weight[mask],
+            length=state.length[mask],
+            age_dt=state.age_dt[mask],
+            m0=float(config.bioen_m0[sp]),
+            m1=float(config.bioen_m1[sp]),
+            egg_weight=float(ew),
+            n_dt_per_year=config.n_dt_per_year,
+        )
+
+        total_eggs = eggs.sum()
+        if total_eggs <= 0:
+            continue
+
+        # Reset gonad weight for schools that spawned
+        spawned = eggs > 0
+        indices = np.where(mask)[0]
+        gonad[indices[spawned]] = 0.0
+
+        # Create a single egg school per species (matching Java convention)
+        # Place in random cell occupied by parent schools
+        parent_cells_y = state.cell_y[mask][spawned]
+        parent_cells_x = state.cell_x[mask][spawned]
+        if len(parent_cells_y) > 0:
+            idx = rng.integers(len(parent_cells_y))
+            egg_school = SchoolState.create(n_schools=1, species_id=np.array([sp], dtype=np.int32))
+            egg_school = egg_school.replace(
+                abundance=np.array([total_eggs]),
+                weight=np.array([float(ew)]),
+                biomass=np.array([total_eggs * float(ew)]),
+                length=np.array([config.egg_size[sp]]),
+                cell_x=np.array([parent_cells_x[idx]], dtype=np.int32),
+                cell_y=np.array([parent_cells_y[idx]], dtype=np.int32),
+                is_egg=np.array([True]),
+                first_feeding_age_dt=np.array([1], dtype=np.int32),
+            )
+            new_egg_schools.append(egg_school)
+
+    state = state.replace(gonad_weight=gonad)
+
+    # Append egg schools
+    for egg_school in new_egg_schools:
+        state = state.append(egg_school)
+
+    # Age increment for existing schools only (NOT new eggs — they start at age 0)
+    # Java's BioenReproductionProcess increments age separately from egg creation
+    n_existing = len(state) - sum(len(e) for e in new_egg_schools)
+    new_age = state.age_dt.copy()
+    new_age[:n_existing] += 1
+    state = state.replace(age_dt=new_age)
+
+    return state
+
+
 # ---------------------------------------------------------------------------
 # Background inject/strip helpers
 # ---------------------------------------------------------------------------
@@ -693,7 +774,10 @@ def simulate(
         else:
             state = _growth(state, config, rng)
         state = _aging_mortality(state, config)
-        state = _reproduction(state, config, step, rng, grid_ny=grid.ny, grid_nx=grid.nx)
+        if config.bioen_enabled:
+            state = _bioen_reproduction(state, config, step, rng, grid_ny=grid.ny, grid_nx=grid.nx)
+        else:
+            state = _reproduction(state, config, step, rng, grid_ny=grid.ny, grid_nx=grid.nx)
 
         # Collect focal outputs after reproduction
         step_out = _collect_outputs(state, config, step, bkg_output)
