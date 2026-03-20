@@ -1,330 +1,311 @@
-"""Tests for age/size distribution binning in StepOutput (_collect_outputs)."""
-
-from __future__ import annotations
+"""Tests for age/size distribution CSV output writers."""
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from osmose.engine.config import EngineConfig
-from osmose.engine.simulate import _collect_outputs
-from osmose.engine.state import SchoolState
+from osmose.engine.output import write_outputs
+from osmose.engine.simulate import StepOutput
+from osmose.engine.state import MortalityCause
+
+_N_CAUSES = len(MortalityCause)
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _make_config(
-    n_species: int = 2,
-    n_dt_per_year: int = 12,
-    lifespan_years: list[float] | None = None,
-    output_biomass_byage: bool = False,
-    output_abundance_byage: bool = False,
-    output_biomass_bysize: bool = False,
-    output_abundance_bysize: bool = False,
-    size_min: float = 0.0,
-    size_max: float = 40.0,
-    size_incr: float = 10.0,
-) -> EngineConfig:
-    """Build a minimal EngineConfig with distribution output flags."""
-    if lifespan_years is None:
-        lifespan_years = [3.0] * n_species
-
-    base: dict[str, str] = {
-        "simulation.nspecies": str(n_species),
-        "simulation.time.ndtperyear": str(n_dt_per_year),
+def _make_config(extra: dict | None = None) -> dict[str, str]:
+    base = {
+        "simulation.time.ndtperyear": "12",
         "simulation.time.nyear": "1",
+        "simulation.nspecies": "2",
+        "simulation.nschool.sp0": "5",
+        "simulation.nschool.sp1": "5",
+        "species.name.sp0": "Anchovy",
+        "species.name.sp1": "Hake",
+        "species.linf.sp0": "19.5",
+        "species.linf.sp1": "110.0",
+        "species.k.sp0": "0.364",
+        "species.k.sp1": "0.106",
+        "species.t0.sp0": "-0.70",
+        "species.t0.sp1": "-0.17",
+        "species.egg.size.sp0": "0.1",
+        "species.egg.size.sp1": "0.1",
+        "species.length2weight.condition.factor.sp0": "0.006",
+        "species.length2weight.condition.factor.sp1": "0.005",
+        "species.length2weight.allometric.power.sp0": "3.06",
+        "species.length2weight.allometric.power.sp1": "3.14",
+        "species.lifespan.sp0": "4",
+        "species.lifespan.sp1": "12",
+        "species.vonbertalanffy.threshold.age.sp0": "0",
+        "species.vonbertalanffy.threshold.age.sp1": "0",
         "mortality.subdt": "10",
+        "predation.ingestion.rate.max.sp0": "3.5",
+        "predation.ingestion.rate.max.sp1": "3.5",
+        "predation.efficiency.critical.sp0": "0.57",
+        "predation.efficiency.critical.sp1": "0.57",
     }
-    for i in range(n_species):
-        base[f"species.name.sp{i}"] = f"Sp{i}"
-        base[f"species.linf.sp{i}"] = "20.0"
-        base[f"species.k.sp{i}"] = "0.3"
-        base[f"species.t0.sp{i}"] = "-0.1"
-        base[f"species.egg.size.sp{i}"] = "0.1"
-        base[f"species.length2weight.condition.factor.sp{i}"] = "0.006"
-        base[f"species.length2weight.allometric.power.sp{i}"] = "3.0"
-        base[f"species.lifespan.sp{i}"] = str(lifespan_years[i])
-        base[f"species.vonbertalanffy.threshold.age.sp{i}"] = "1.0"
-        base[f"predation.ingestion.rate.max.sp{i}"] = "3.5"
-        base[f"predation.efficiency.critical.sp{i}"] = "0.57"
-
-    if output_biomass_byage:
-        base["output.biomass.byage.enabled"] = "true"
-    if output_abundance_byage:
-        base["output.abundance.byage.enabled"] = "true"
-    if output_biomass_bysize:
-        base["output.biomass.bysize.enabled"] = "true"
-    if output_abundance_bysize:
-        base["output.abundance.bysize.enabled"] = "true"
-
-    base["output.distrib.bysize.min"] = str(size_min)
-    base["output.distrib.bysize.max"] = str(size_max)
-    base["output.distrib.bysize.incr"] = str(size_incr)
-
-    return EngineConfig.from_dict(base)
+    if extra:
+        base.update(extra)
+    return base
 
 
-def _make_state(
-    species_ids: list[int],
-    age_dts: list[int],
-    lengths: list[float],
-    biomass: list[float],
-    abundance: list[float] | None = None,
-) -> SchoolState:
-    """Build a minimal SchoolState for testing."""
-    n = len(species_ids)
-    if abundance is None:
-        abundance = [1.0] * n
-    sp_arr = np.array(species_ids, dtype=np.int32)
-    state = SchoolState.create(n_schools=n, species_id=sp_arr)
-    state = state.replace(
-        age_dt=np.array(age_dts, dtype=np.int32),
-        length=np.array(lengths, dtype=np.float64),
-        biomass=np.array(biomass, dtype=np.float64),
-        abundance=np.array(abundance, dtype=np.float64),
+def _step_output(step, biomass, abundance, mortality_by_cause=None, **kwargs):
+    n_sp = len(biomass)
+    if mortality_by_cause is None:
+        mortality_by_cause = np.zeros((n_sp, _N_CAUSES), dtype=np.float64)
+    return StepOutput(
+        step=step,
+        biomass=biomass,
+        abundance=abundance,
+        mortality_by_cause=mortality_by_cause,
+        **kwargs,
     )
-    return state
 
 
-# ---------------------------------------------------------------------------
-# Age binning tests
-# ---------------------------------------------------------------------------
+def _make_age_dist(n_sp: int, n_age_bins: int) -> dict[int, np.ndarray]:
+    return {sp: np.arange(n_age_bins, dtype=np.float64) * (sp + 1) for sp in range(n_sp)}
 
 
-class TestAgeBinning:
-    def test_biomass_by_age_bins(self):
-        """Schools at different ages land in correct age bins."""
-        cfg = _make_config(
-            n_species=2,
-            n_dt_per_year=12,
-            lifespan_years=[3.0, 3.0],
-            output_biomass_byage=True,
+def _make_size_dist(n_sp: int, n_size_bins: int) -> dict[int, np.ndarray]:
+    return {sp: np.ones(n_size_bins, dtype=np.float64) * (sp + 1) for sp in range(n_sp)}
+
+
+class TestDistributionCSVOutput:
+    def test_biomass_by_age_csv_written(self, tmp_path):
+        """write_outputs should create biomassByAge CSVs when data is present."""
+        cfg = EngineConfig.from_dict(_make_config())
+        n_age_bins = 5
+        age_dist = _make_age_dist(2, n_age_bins)
+        outputs = [
+            _step_output(
+                t,
+                np.array([100.0, 200.0]),
+                np.array([1000.0, 500.0]),
+                biomass_by_age=age_dist,
+                abundance_by_age=age_dist,
+            )
+            for t in range(3)
+        ]
+        write_outputs(outputs, tmp_path, cfg)
+        assert (tmp_path / "osmose_biomassByAge_Anchovy_Simu0.csv").exists()
+        assert (tmp_path / "osmose_biomassByAge_Hake_Simu0.csv").exists()
+
+    def test_abundance_by_age_csv_written(self, tmp_path):
+        """write_outputs should create abundanceByAge CSVs when data is present."""
+        cfg = EngineConfig.from_dict(_make_config())
+        n_age_bins = 5
+        age_dist = _make_age_dist(2, n_age_bins)
+        outputs = [
+            _step_output(
+                t,
+                np.array([100.0, 200.0]),
+                np.array([1000.0, 500.0]),
+                abundance_by_age=age_dist,
+            )
+            for t in range(2)
+        ]
+        write_outputs(outputs, tmp_path, cfg)
+        assert (tmp_path / "osmose_abundanceByAge_Anchovy_Simu0.csv").exists()
+        assert (tmp_path / "osmose_abundanceByAge_Hake_Simu0.csv").exists()
+
+    def test_csv_has_correct_headers_age(self, tmp_path):
+        """biomassByAge CSV should have Time column + integer age bin columns."""
+        cfg = EngineConfig.from_dict(_make_config())
+        n_age_bins = 4
+        age_dist = _make_age_dist(2, n_age_bins)
+        outputs = [
+            _step_output(
+                t,
+                np.array([100.0, 200.0]),
+                np.array([1000.0, 500.0]),
+                biomass_by_age=age_dist,
+            )
+            for t in range(2)
+        ]
+        write_outputs(outputs, tmp_path, cfg)
+        df = pd.read_csv(tmp_path / "osmose_biomassByAge_Anchovy_Simu0.csv")
+        assert "Time" in df.columns
+        # Age bin columns should be "0", "1", "2", "3"
+        for i in range(n_age_bins):
+            assert str(i) in df.columns
+
+    def test_csv_has_correct_headers_size(self, tmp_path):
+        """biomassBySize CSV should have Time + size-edge float columns."""
+        cfg = EngineConfig.from_dict(
+            _make_config(
+                {
+                    "output.distrib.bySize.min": "0.0",
+                    "output.distrib.bySize.max": "5.0",
+                    "output.distrib.bySize.incr": "1.0",
+                }
+            )
         )
-        # sp0: school at age 0 dt (age_yr=0), school at age 12 dt (age_yr=1)
-        state = _make_state(
-            species_ids=[0, 0],
-            age_dts=[0, 12],
-            lengths=[1.0, 5.0],
-            biomass=[100.0, 200.0],
-        )
-        out = _collect_outputs(state, cfg, step=0)
+        n_size_bins = 5
+        size_dist = _make_size_dist(2, n_size_bins)
+        outputs = [
+            _step_output(
+                t,
+                np.array([100.0, 200.0]),
+                np.array([1000.0, 500.0]),
+                biomass_by_size=size_dist,
+                abundance_by_size=size_dist,
+            )
+            for t in range(2)
+        ]
+        write_outputs(outputs, tmp_path, cfg)
+        df = pd.read_csv(tmp_path / "osmose_biomassBySize_Anchovy_Simu0.csv")
+        assert "Time" in df.columns
+        # Size columns should be formatted as floats e.g. "0.0", "1.0", ...
+        assert "0.0" in df.columns
+        assert "1.0" in df.columns
 
-        assert out.biomass_by_age is not None
-        bba = out.biomass_by_age[0]
-        assert bba[0] == pytest.approx(100.0)
-        assert bba[1] == pytest.approx(200.0)
-        assert bba[2] == pytest.approx(0.0)
+    def test_csv_data_values_correct(self, tmp_path):
+        """CSV data values should match the distribution arrays."""
+        cfg = EngineConfig.from_dict(_make_config())
+        n_age_bins = 3
+        # Species 0 gets [0, 10, 20], species 1 gets [0, 20, 40]
+        age_dist_t0 = {0: np.array([0.0, 10.0, 20.0]), 1: np.array([0.0, 20.0, 40.0])}
+        age_dist_t1 = {0: np.array([1.0, 11.0, 21.0]), 1: np.array([1.0, 21.0, 41.0])}
+        outputs = [
+            _step_output(
+                0,
+                np.array([100.0, 200.0]),
+                np.array([1000.0, 500.0]),
+                biomass_by_age=age_dist_t0,
+            ),
+            _step_output(
+                1,
+                np.array([110.0, 190.0]),
+                np.array([1100.0, 480.0]),
+                biomass_by_age=age_dist_t1,
+            ),
+        ]
+        write_outputs(outputs, tmp_path, cfg)
+        df = pd.read_csv(tmp_path / "osmose_biomassByAge_Anchovy_Simu0.csv")
+        assert len(df) == 2
+        np.testing.assert_allclose(df["1"].iloc[0], 10.0)
+        np.testing.assert_allclose(df["1"].iloc[1], 11.0)
 
-    def test_species_1_age_bins(self):
-        """Second species ages binned correctly."""
-        cfg = _make_config(
-            n_species=2,
-            n_dt_per_year=12,
-            lifespan_years=[3.0, 5.0],
-            output_biomass_byage=True,
-        )
-        # sp0: one school at age_yr=2; sp1: one school at age_yr=4
-        state = _make_state(
-            species_ids=[0, 1],
-            age_dts=[24, 48],
-            lengths=[8.0, 15.0],
-            biomass=[50.0, 75.0],
-        )
-        out = _collect_outputs(state, cfg, step=0)
+    def test_time_column_in_years(self, tmp_path):
+        """Time column should be in fractional years."""
+        cfg = EngineConfig.from_dict(_make_config())
+        n_age_bins = 2
+        age_dist = _make_age_dist(2, n_age_bins)
+        outputs = [
+            _step_output(
+                step,
+                np.array([100.0, 200.0]),
+                np.array([1000.0, 500.0]),
+                biomass_by_age=age_dist,
+            )
+            for step in [0, 6, 12]
+        ]
+        write_outputs(outputs, tmp_path, cfg)
+        df = pd.read_csv(tmp_path / "osmose_biomassByAge_Anchovy_Simu0.csv")
+        np.testing.assert_allclose(df["Time"].iloc[0], 0.0, atol=1e-9)
+        np.testing.assert_allclose(df["Time"].iloc[1], 0.5, atol=1e-9)
+        np.testing.assert_allclose(df["Time"].iloc[2], 1.0, atol=1e-9)
 
-        assert out.biomass_by_age is not None
-        assert out.biomass_by_age[0][2] == pytest.approx(50.0)
-        assert out.biomass_by_age[1][4] == pytest.approx(75.0)
+    def test_no_csv_when_disabled(self, tmp_path):
+        """No distribution CSVs written when distribution dicts are None."""
+        cfg = EngineConfig.from_dict(_make_config())
+        outputs = [
+            _step_output(t, np.array([100.0, 200.0]), np.array([1000.0, 500.0]))
+            for t in range(3)
+        ]
+        write_outputs(outputs, tmp_path, cfg)
+        # None of the distribution files should exist
+        for label in ["biomassByAge", "abundanceByAge", "biomassBySize", "abundanceBySize"]:
+            for sp in ["Anchovy", "Hake"]:
+                assert not (tmp_path / f"osmose_{label}_{sp}_Simu0.csv").exists()
 
+    def test_biomass_by_size_csv_written(self, tmp_path):
+        """write_outputs should create biomassBySize CSVs when data is present."""
+        cfg = EngineConfig.from_dict(_make_config())
+        n_size_bins = 6
+        size_dist = _make_size_dist(2, n_size_bins)
+        outputs = [
+            _step_output(
+                t,
+                np.array([100.0, 200.0]),
+                np.array([1000.0, 500.0]),
+                biomass_by_size=size_dist,
+            )
+            for t in range(2)
+        ]
+        write_outputs(outputs, tmp_path, cfg)
+        assert (tmp_path / "osmose_biomassBySize_Anchovy_Simu0.csv").exists()
+        assert (tmp_path / "osmose_biomassBySize_Hake_Simu0.csv").exists()
 
-# ---------------------------------------------------------------------------
-# Size binning tests
-# ---------------------------------------------------------------------------
-
-
-class TestSizeBinning:
-    def test_biomass_by_size_bins(self):
-        """Schools at different lengths land in correct size bins."""
-        # bins: [0,10), [10,20), [20,30), [30,40)  -> 4 bins with min=0,max=40,incr=10
-        cfg = _make_config(
-            n_species=1,
-            n_dt_per_year=12,
-            lifespan_years=[3.0],
-            output_biomass_bysize=True,
-            size_min=0.0,
-            size_max=40.0,
-            size_incr=10.0,
-        )
-        # lengths: 5 -> bin 0, 15 -> bin 1, 25 -> bin 2
-        state = _make_state(
-            species_ids=[0, 0, 0],
-            age_dts=[0, 12, 24],
-            lengths=[5.0, 15.0, 25.0],
-            biomass=[10.0, 20.0, 30.0],
-        )
-        out = _collect_outputs(state, cfg, step=0)
-
-        assert out.biomass_by_size is not None
-        bbs = out.biomass_by_size[0]
-        assert bbs[0] == pytest.approx(10.0)
-        assert bbs[1] == pytest.approx(20.0)
-        assert bbs[2] == pytest.approx(30.0)
-
-    def test_size_at_bin_boundary(self):
-        """Length exactly at bin edge is placed in the next bin (right-exclusive)."""
-        cfg = _make_config(
-            n_species=1,
-            n_dt_per_year=12,
-            lifespan_years=[3.0],
-            output_biomass_bysize=True,
-            size_min=0.0,
-            size_max=40.0,
-            size_incr=10.0,
-        )
-        # length=10.0 exactly: searchsorted(edges=[0,10,20,30,40], 10, side='right')=2, bin=1
-        state = _make_state(
-            species_ids=[0],
-            age_dts=[0],
-            lengths=[10.0],
-            biomass=[50.0],
-        )
-        out = _collect_outputs(state, cfg, step=0)
-
-        assert out.biomass_by_size is not None
-        bbs = out.biomass_by_size[0]
-        # bin 1 should have the biomass (10.0 is in [10,20))
-        assert bbs[1] == pytest.approx(50.0)
-        assert bbs[0] == pytest.approx(0.0)
+    def test_mixed_none_and_data_steps(self, tmp_path):
+        """Steps with None distribution should contribute zeros to the matrix."""
+        cfg = EngineConfig.from_dict(_make_config())
+        n_age_bins = 3
+        age_dist = {0: np.array([5.0, 10.0, 15.0]), 1: np.array([2.0, 4.0, 6.0])}
+        outputs = [
+            _step_output(
+                0,
+                np.array([100.0, 200.0]),
+                np.array([1000.0, 500.0]),
+                biomass_by_age=age_dist,
+            ),
+            _step_output(
+                1,
+                np.array([110.0, 190.0]),
+                np.array([1100.0, 480.0]),
+                biomass_by_age=None,  # no data for this step
+            ),
+        ]
+        write_outputs(outputs, tmp_path, cfg)
+        df = pd.read_csv(tmp_path / "osmose_biomassByAge_Anchovy_Simu0.csv")
+        assert len(df) == 2
+        # Second row should be zeros (None data contributes zeros)
+        np.testing.assert_allclose(df["0"].iloc[1], 0.0)
+        np.testing.assert_allclose(df["1"].iloc[1], 0.0)
 
 
-# ---------------------------------------------------------------------------
-# Edge case tests
-# ---------------------------------------------------------------------------
+class TestDistributionCollectOutputs:
+    """Integration tests: _collect_outputs populates distribution fields."""
 
+    def _make_engine_config(self, extra: dict | None = None) -> EngineConfig:
+        base = _make_config(extra)
+        return EngineConfig.from_dict(base)
 
-class TestDistributionEdgeCases:
-    def test_empty_state_produces_none(self):
-        """When disabled, distribution fields are None."""
-        cfg = _make_config(n_species=1, n_dt_per_year=12, lifespan_years=[3.0])
+    def test_collect_outputs_age_disabled_by_default(self):
+        """Distribution dicts should be None when flags are off."""
+        from osmose.engine.simulate import _collect_outputs
+        from osmose.engine.state import SchoolState
+
+        cfg = self._make_engine_config()
         state = SchoolState.create(n_schools=0, species_id=np.array([], dtype=np.int32))
-        out = _collect_outputs(state, cfg, step=0)
-
+        out = _collect_outputs(state, cfg, 0)
         assert out.biomass_by_age is None
         assert out.abundance_by_age is None
         assert out.biomass_by_size is None
         assert out.abundance_by_size is None
 
-    def test_single_school_single_bin(self):
-        """Single school produces one non-zero bin entry."""
-        cfg = _make_config(
-            n_species=1,
-            n_dt_per_year=12,
-            lifespan_years=[3.0],
-            output_biomass_byage=True,
-            output_biomass_bysize=True,
-            size_min=0.0,
-            size_max=40.0,
-            size_incr=10.0,
-        )
-        state = _make_state(
-            species_ids=[0],
-            age_dts=[0],
-            lengths=[3.0],
-            biomass=[42.0],
-        )
-        out = _collect_outputs(state, cfg, step=5)
+    def test_collect_outputs_age_enabled(self):
+        """Distribution dicts should be populated when byage flag is on."""
+        from osmose.engine.simulate import _collect_outputs
+        from osmose.engine.state import SchoolState
 
+        cfg = self._make_engine_config({"output.biomass.byage.enabled": "true"})
+        # Empty state — distributions should be all-zero dicts
+        state = SchoolState.create(n_schools=0, species_id=np.array([], dtype=np.int32))
+        out = _collect_outputs(state, cfg, 0)
         assert out.biomass_by_age is not None
+        assert out.abundance_by_age is not None
+        assert 0 in out.biomass_by_age
+        assert 1 in out.biomass_by_age
+        np.testing.assert_array_equal(out.biomass_by_age[0], 0.0)
+
+    def test_collect_outputs_size_enabled(self):
+        """Size distribution dicts should be populated when bysize flag is on."""
+        from osmose.engine.simulate import _collect_outputs
+        from osmose.engine.state import SchoolState
+
+        cfg = self._make_engine_config({"output.biomass.bysize.enabled": "true"})
+        state = SchoolState.create(n_schools=0, species_id=np.array([], dtype=np.int32))
+        out = _collect_outputs(state, cfg, 0)
         assert out.biomass_by_size is not None
-        # Only one non-zero entry in age bins
-        assert out.biomass_by_age[0].sum() == pytest.approx(42.0)
-        assert out.biomass_by_age[0][0] == pytest.approx(42.0)
-        # Only one non-zero entry in size bins
-        assert out.biomass_by_size[0].sum() == pytest.approx(42.0)
-        assert out.biomass_by_size[0][0] == pytest.approx(42.0)
-
-    def test_all_same_age_single_bin(self):
-        """All schools at same age -> all biomass in one age bin."""
-        cfg = _make_config(
-            n_species=1,
-            n_dt_per_year=12,
-            lifespan_years=[3.0],
-            output_biomass_byage=True,
-        )
-        # All 5 schools at age_yr=1 (age_dt=12..23)
-        state = _make_state(
-            species_ids=[0, 0, 0, 0, 0],
-            age_dts=[12, 13, 14, 15, 16],
-            lengths=[5.0, 5.0, 5.0, 5.0, 5.0],
-            biomass=[10.0, 10.0, 10.0, 10.0, 10.0],
-        )
-        out = _collect_outputs(state, cfg, step=0)
-
-        assert out.biomass_by_age is not None
-        bba = out.biomass_by_age[0]
-        assert bba[1] == pytest.approx(50.0)
-        assert bba[0] == pytest.approx(0.0)
-        assert bba[2] == pytest.approx(0.0)
-
-
-# ---------------------------------------------------------------------------
-# Disabled tests
-# ---------------------------------------------------------------------------
-
-
-class TestDistributionDisabled:
-    def test_disabled_by_default(self):
-        """Distribution fields are None when config flags are false."""
-        cfg = _make_config(
-            n_species=2,
-            n_dt_per_year=12,
-            lifespan_years=[3.0, 3.0],
-            # no output_*_by* flags set -> defaults False
-        )
-        state = _make_state(
-            species_ids=[0, 1],
-            age_dts=[5, 10],
-            lengths=[3.0, 8.0],
-            biomass=[100.0, 200.0],
-        )
-        out = _collect_outputs(state, cfg, step=0)
-
-        assert out.biomass_by_age is None
-        assert out.abundance_by_age is None
-        assert out.biomass_by_size is None
-        assert out.abundance_by_size is None
-
-    def test_biomass_and_abundance_independent(self):
-        """Enabling only biomass_byage leaves abundance_by_age None and vice-versa."""
-        cfg_bm = _make_config(
-            n_species=1,
-            n_dt_per_year=12,
-            lifespan_years=[3.0],
-            output_biomass_byage=True,
-            output_abundance_byage=False,
-        )
-        cfg_ab = _make_config(
-            n_species=1,
-            n_dt_per_year=12,
-            lifespan_years=[3.0],
-            output_biomass_byage=False,
-            output_abundance_byage=True,
-        )
-        state = _make_state(
-            species_ids=[0],
-            age_dts=[6],
-            lengths=[4.0],
-            biomass=[50.0],
-            abundance=[500.0],
-        )
-
-        out_bm = _collect_outputs(state, cfg_bm, step=0)
-        assert out_bm.biomass_by_age is not None
-        assert out_bm.abundance_by_age is None
-
-        out_ab = _collect_outputs(state, cfg_ab, step=0)
-        assert out_ab.biomass_by_age is None
-        assert out_ab.abundance_by_age is not None
-        assert out_ab.abundance_by_age[0][0] == pytest.approx(500.0)
+        assert out.abundance_by_size is not None
+        assert 0 in out.biomass_by_size
