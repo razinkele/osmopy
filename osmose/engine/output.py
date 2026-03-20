@@ -259,18 +259,24 @@ def _write_bioen_csvs(
 
     times = np.array([o.step / config.n_dt_per_year for o in outputs])
 
-    # meanEnet per species
-    enet_data = [o.bioen_e_net_by_species for o in outputs]
-    if any(d is not None for d in enet_data):
-        data = np.array(
-            [d if d is not None else np.zeros(config.n_species) for d in enet_data]
-        )
+    bioen_outputs = [
+        ("bioen_e_net_by_species", "meanEnet", True),
+        ("bioen_ingestion_by_species", "ingestion", config.output_bioen_ingest),
+        ("bioen_maint_by_species", "maintenance", config.output_bioen_maint),
+        ("bioen_rho_by_species", "rho", config.output_bioen_rho),
+        ("bioen_size_inf_by_species", "sizeInf", config.output_bioen_sizeinf),
+    ]
+
+    for attr, label, enabled in bioen_outputs:
+        if not enabled:
+            continue
+        data_list = [getattr(o, attr) for o in outputs]
+        if not any(d is not None for d in data_list):
+            continue
+        data = np.array([d if d is not None else np.zeros(config.n_species) for d in data_list])
         for sp_idx, sp_name in enumerate(config.species_names):
-            df = pd.DataFrame({"Time": times, "meanEnet": data[:, sp_idx]})
-            df.to_csv(
-                bioen_dir / f"{prefix}_meanEnet_{sp_name}_Simu0.csv",
-                index=False,
-            )
+            df = pd.DataFrame({"Time": times, label: data[:, sp_idx]})
+            df.to_csv(bioen_dir / f"{prefix}_{label}_{sp_name}_Simu0.csv", index=False)
 
 
 # ---------------------------------------------------------------------------

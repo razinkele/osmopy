@@ -39,6 +39,10 @@ class StepOutput:
 
     # Bioenergetics: mean net energy per species, shape (n_species,), or None if bioen disabled
     bioen_e_net_by_species: NDArray[np.float64] | None = None
+    bioen_ingestion_by_species: NDArray[np.float64] | None = None
+    bioen_maint_by_species: NDArray[np.float64] | None = None
+    bioen_rho_by_species: NDArray[np.float64] | None = None
+    bioen_size_inf_by_species: NDArray[np.float64] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -252,12 +256,15 @@ def _bioen_step(
     dw_tonnes = np.zeros(len(state), dtype=np.float64)
     dg_tonnes = np.zeros(len(state), dtype=np.float64)
     e_net_arr = np.zeros(len(state), dtype=np.float64)
+    e_gross_arr = np.zeros(len(state), dtype=np.float64)
+    e_maint_arr = np.zeros(len(state), dtype=np.float64)
+    rho_arr = np.zeros(len(state), dtype=np.float64)
 
     for sp in range(config.n_species):
         mask = state.species_id == sp
         if not mask.any():
             continue
-        dw_sp, dg_sp, en_sp = compute_energy_budget(
+        dw_sp, dg_sp, en_sp, eg_sp, em_sp, rho_sp = compute_energy_budget(
             ingestion=capped_ingestion[mask],
             weight=state.weight[mask],
             gonad_weight=state.gonad_weight[mask],
@@ -280,6 +287,9 @@ def _bioen_step(
         dw_tonnes[mask] = dw_sp
         dg_tonnes[mask] = dg_sp
         e_net_arr[mask] = en_sp
+        e_gross_arr[mask] = eg_sp
+        e_maint_arr[mask] = em_sp
+        rho_arr[mask] = rho_sp
 
     # ------------------------------------------------------------------ #
     # Step 4: Starvation mortality per species.
@@ -355,6 +365,9 @@ def _bioen_step(
         n_dead=new_n_dead,
         e_net_avg=new_e_net_avg,
         e_net=e_net_arr,
+        e_gross=e_gross_arr,
+        e_maint=e_maint_arr,
+        rho=rho_arr,
     )
 
 
@@ -640,6 +653,10 @@ def _collect_outputs(
 
     # Bioen: mean e_net per focal species (zeros when state is empty or no focal schools)
     bioen_e_net_by_species: NDArray[np.float64] | None = None
+    bioen_ingestion_by_species: NDArray[np.float64] | None = None
+    bioen_maint_by_species: NDArray[np.float64] | None = None
+    bioen_rho_by_species: NDArray[np.float64] | None = None
+    bioen_size_inf_by_species: NDArray[np.float64] | None = None
     if config.bioen_enabled:
         bioen_e_net_by_species = np.zeros(config.n_species, dtype=np.float64)
         if len(state) > 0:
@@ -649,6 +666,32 @@ def _collect_outputs(
             np.add.at(counts, state.species_id[focal], 1)
             safe_counts = np.where(counts > 0, counts, 1)
             bioen_e_net_by_species /= safe_counts
+
+        bioen_ingestion = np.zeros(config.n_species, dtype=np.float64)
+        bioen_maint = np.zeros(config.n_species, dtype=np.float64)
+        bioen_rho = np.zeros(config.n_species, dtype=np.float64)
+        bioen_sizeinf = np.zeros(config.n_species, dtype=np.float64)
+        if len(state) > 0:
+            counts2 = np.zeros(config.n_species, dtype=np.float64)
+            focal = state.species_id < config.n_species
+            # e_gross = ingestion * assimilation * phi_T * f_O2 (Java's "ingestion" output)
+            np.add.at(bioen_ingestion, state.species_id[focal], state.e_gross[focal])
+            np.add.at(bioen_maint, state.species_id[focal], state.e_maint[focal])
+            np.add.at(bioen_rho, state.species_id[focal], state.rho[focal])
+            np.add.at(counts2, state.species_id[focal], 1)
+            safe2 = np.where(counts2 > 0, counts2, 1)
+            bioen_ingestion /= safe2
+            bioen_maint /= safe2
+            bioen_rho /= safe2
+            # sizeInf: max observed length per species
+            for sp in range(config.n_species):
+                sp_mask = (state.species_id == sp) & focal
+                if sp_mask.any():
+                    bioen_sizeinf[sp] = state.length[sp_mask].max()
+        bioen_ingestion_by_species = bioen_ingestion
+        bioen_maint_by_species = bioen_maint
+        bioen_rho_by_species = bioen_rho
+        bioen_size_inf_by_species = bioen_sizeinf
 
     return StepOutput(
         step=step,
@@ -661,6 +704,10 @@ def _collect_outputs(
         biomass_by_size=biomass_by_size,
         abundance_by_size=abundance_by_size,
         bioen_e_net_by_species=bioen_e_net_by_species,
+        bioen_ingestion_by_species=bioen_ingestion_by_species,
+        bioen_maint_by_species=bioen_maint_by_species,
+        bioen_rho_by_species=bioen_rho_by_species,
+        bioen_size_inf_by_species=bioen_size_inf_by_species,
     )
 
 
@@ -683,11 +730,15 @@ def _average_step_outputs(
     accumulated: list[StepOutput], freq: int, record_step: int
 ) -> StepOutput:
     """Average accumulated StepOutputs over recording frequency."""
-    # Bioen: mean e_net averaged across the recording window
-    bioen_arrays = [o.bioen_e_net_by_species for o in accumulated if o.bioen_e_net_by_species is not None]
-    bioen_e_net_avg: NDArray[np.float64] | None = (
-        np.mean(bioen_arrays, axis=0) if bioen_arrays else None
-    )
+    def _avg_bioen(attr: str) -> NDArray[np.float64] | None:
+        arrays = [getattr(o, attr) for o in accumulated if getattr(o, attr) is not None]
+        return np.mean(arrays, axis=0) if arrays else None
+
+    bioen_e_net_avg = _avg_bioen("bioen_e_net_by_species")
+    bioen_ingestion_avg = _avg_bioen("bioen_ingestion_by_species")
+    bioen_maint_avg = _avg_bioen("bioen_maint_by_species")
+    bioen_rho_avg = _avg_bioen("bioen_rho_by_species")
+    bioen_size_inf_avg = _avg_bioen("bioen_size_inf_by_species")
 
     if len(accumulated) == 1:
         return StepOutput(
@@ -697,6 +748,10 @@ def _average_step_outputs(
             mortality_by_cause=accumulated[0].mortality_by_cause,
             yield_by_species=accumulated[0].yield_by_species,
             bioen_e_net_by_species=bioen_e_net_avg,
+            bioen_ingestion_by_species=bioen_ingestion_avg,
+            bioen_maint_by_species=bioen_maint_avg,
+            bioen_rho_by_species=bioen_rho_avg,
+            bioen_size_inf_by_species=bioen_size_inf_avg,
         )
     biomass = np.mean([o.biomass for o in accumulated], axis=0)
     abundance = np.mean([o.abundance for o in accumulated], axis=0)
@@ -711,6 +766,10 @@ def _average_step_outputs(
         mortality_by_cause=mortality,
         yield_by_species=yield_sum,
         bioen_e_net_by_species=bioen_e_net_avg,
+        bioen_ingestion_by_species=bioen_ingestion_avg,
+        bioen_maint_by_species=bioen_maint_avg,
+        bioen_rho_by_species=bioen_rho_avg,
+        bioen_size_inf_by_species=bioen_size_inf_avg,
     )
 
 

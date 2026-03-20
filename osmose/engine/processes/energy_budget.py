@@ -31,7 +31,14 @@ def compute_energy_budget(
     f_o2: NDArray[np.float64] | float,
     n_dt_per_year: int,
     e_net_avg: NDArray[np.float64],
-) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+) -> tuple[
+    NDArray[np.float64],
+    NDArray[np.float64],
+    NDArray[np.float64],
+    NDArray[np.float64],
+    NDArray[np.float64],
+    NDArray[np.float64],
+]:
     """Compute energy budget and weight increments for one timestep.
 
     Parameters
@@ -81,6 +88,12 @@ def compute_energy_budget(
         Gonad weight increment in tonnes.
     e_net:
         Net energy this step (in grams, same units as maintenance).
+    e_gross:
+        Gross energy (ingestion * assimilation * phi_T * f_O2).
+    e_maint:
+        Maintenance energy cost this step.
+    rho:
+        Allocation fraction to gonads (0 for immature fish).
     """
     # Gross energy (grams-equivalent)
     e_gross = ingestion * assimilation * phi_t * f_o2
@@ -112,7 +125,7 @@ def compute_energy_budget(
     dw_tonnes = dw_grams * 1e-6
     dg_tonnes = dg_grams * 1e-6
 
-    return dw_tonnes, dg_tonnes, e_net
+    return dw_tonnes, dg_tonnes, e_net, e_gross, e_maint, rho
 
 
 def update_e_net_avg(

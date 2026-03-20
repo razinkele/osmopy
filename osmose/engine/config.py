@@ -594,6 +594,12 @@ class EngineConfig:
     output_size_max: float = 205.0
     output_size_incr: float = 10.0
 
+    # Bioenergetic output flags (default False; meanEnet is always written when bioen enabled)
+    output_bioen_ingest: bool = False
+    output_bioen_maint: bool = False
+    output_bioen_rho: bool = False
+    output_bioen_sizeinf: bool = False
+
     @classmethod
     def from_dict(cls, cfg: dict[str, str]) -> EngineConfig:
         n_sp = int(_get(cfg, "simulation.nspecies"))
@@ -1199,4 +1205,8 @@ class EngineConfig:
             output_size_min=float(cfg.get("output.distrib.bysize.min", "0")),
             output_size_max=float(cfg.get("output.distrib.bysize.max", "205")),
             output_size_incr=float(cfg.get("output.distrib.bysize.incr", "10")),
+            output_bioen_ingest=cfg.get("output.bioen.ingest.enabled", "false").lower() == "true",
+            output_bioen_maint=cfg.get("output.bioen.maint.enabled", "false").lower() == "true",
+            output_bioen_rho=cfg.get("output.bioen.rho.enabled", "false").lower() == "true",
+            output_bioen_sizeinf=cfg.get("output.bioen.sizeInf.enabled", "false").lower() == "true",
         )

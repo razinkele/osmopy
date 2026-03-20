@@ -35,7 +35,7 @@ class TestComputeEnergyBudget:
         # Use a large e_net_avg so rho is < 1 and both soma + gonad get positive increments
         e_net_avg = np.array([100.0])
 
-        dw, dg, e_net = compute_energy_budget(
+        dw, dg, e_net, *_ = compute_energy_budget(
             ingestion, weight, gonad_weight, age_dt, length,
             temp_c=15.0, e_net_avg=e_net_avg, **params
         )
@@ -53,7 +53,7 @@ class TestComputeEnergyBudget:
         length = np.array([10.0])
         e_net_avg = np.array([0.0])
 
-        dw, dg, e_net = compute_energy_budget(
+        dw, dg, e_net, *_ = compute_energy_budget(
             ingestion, weight, gonad_weight, age_dt, length,
             temp_c=15.0, e_net_avg=e_net_avg, **params
         )
@@ -71,11 +71,11 @@ class TestComputeEnergyBudget:
         length = np.array([8.0])
         e_net_avg = np.array([0.1])
 
-        _, _, e_net_cold = compute_energy_budget(
+        _, _, e_net_cold, *_ = compute_energy_budget(
             ingestion, weight, gonad_weight, age_dt, length,
             temp_c=5.0, e_net_avg=e_net_avg, **params
         )
-        _, _, e_net_warm = compute_energy_budget(
+        _, _, e_net_warm, *_ = compute_energy_budget(
             ingestion, weight, gonad_weight, age_dt, length,
             temp_c=25.0, e_net_avg=e_net_avg, **params
         )
@@ -91,7 +91,7 @@ class TestComputeEnergyBudget:
         length = np.array([4.0])  # below l_mature → immature
         e_net_avg = np.array([0.05])
 
-        dw, dg, e_net = compute_energy_budget(
+        dw, dg, e_net, *_ = compute_energy_budget(
             ingestion, weight, gonad_weight, age_dt, length,
             temp_c=15.0, e_net_avg=e_net_avg, **params
         )
@@ -110,7 +110,7 @@ class TestComputeEnergyBudget:
         # Large e_net_avg to keep rho < 1 so both soma and gonad get non-trivial share
         e_net_avg = np.array([1000.0])
 
-        dw, dg, e_net = compute_energy_budget(
+        dw, dg, e_net, *_ = compute_energy_budget(
             ingestion, weight, gonad_weight, age_dt, length,
             temp_c=15.0, e_net_avg=e_net_avg, **params
         )
@@ -131,7 +131,7 @@ class TestComputeEnergyBudget:
         length = np.array([15.0])
         e_net_avg = np.array([0.1])
 
-        dw, dg, _ = compute_energy_budget(
+        dw, dg, *_ = compute_energy_budget(
             ingestion, weight, gonad_weight, age_dt, length,
             temp_c=15.0, e_net_avg=e_net_avg, **params
         )
@@ -149,7 +149,7 @@ class TestComputeEnergyBudget:
         length = np.array([4.0, 4.0, 20.0])
         e_net_avg = np.array([0.05, 0.05, 0.1])
 
-        dw, dg, e_net = compute_energy_budget(
+        dw, dg, e_net, *_ = compute_energy_budget(
             ingestion, weight, gonad_weight, age_dt, length,
             temp_c=15.0, e_net_avg=e_net_avg, **params
         )
