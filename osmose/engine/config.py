@@ -156,6 +156,15 @@ class EngineConfig:
     # Raw config dict for subsystems that need unparsed access (e.g. ResourceState)
     raw_config: dict[str, str]
 
+    # Distribution output flags
+    output_biomass_byage: bool = False
+    output_biomass_bysize: bool = False
+    output_abundance_byage: bool = False
+    output_abundance_bysize: bool = False
+    output_size_min: float = 0.0
+    output_size_max: float = 205.0
+    output_size_incr: float = 10.0
+
     @classmethod
     def from_dict(cls, cfg: dict[str, str]) -> EngineConfig:
         n_sp = int(_get(cfg, "simulation.nspecies"))
@@ -243,4 +252,15 @@ class EngineConfig:
                 cfg, "mortality.out.rate.sp{i}", n_sp, default=0.0
             ),
             raw_config=cfg,
+            output_biomass_byage=cfg.get("output.biomass.byage.enabled", "false").lower()
+            == "true",
+            output_biomass_bysize=cfg.get("output.biomass.bysize.enabled", "false").lower()
+            == "true",
+            output_abundance_byage=cfg.get("output.abundance.byage.enabled", "false").lower()
+            == "true",
+            output_abundance_bysize=cfg.get("output.abundance.bysize.enabled", "false").lower()
+            == "true",
+            output_size_min=float(cfg.get("output.distrib.bysize.min", "0")),
+            output_size_max=float(cfg.get("output.distrib.bysize.max", "205")),
+            output_size_incr=float(cfg.get("output.distrib.bysize.incr", "10")),
         )
