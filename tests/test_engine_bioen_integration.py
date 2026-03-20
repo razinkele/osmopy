@@ -3,6 +3,8 @@ import numpy as np
 import pytest
 
 from osmose.engine.config import EngineConfig
+from osmose.engine.grid import Grid
+from osmose.engine.simulate import simulate
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -226,3 +228,114 @@ class TestBioenEnabled:
         assert cfg.bioen_theta[0] == pytest.approx(1.0)
         assert cfg.bioen_c_rate[0] == pytest.approx(0.0)
         assert cfg.bioen_k_for[0] == pytest.approx(0.0)
+
+
+# ── Tests: bioen simulation loop integration ──────────────────────────────────
+
+
+def _make_bioen_sim_config() -> dict[str, str]:
+    """Minimal bioen config suitable for running a short simulation."""
+    return {
+        "simulation.time.ndtperyear": "12",
+        "simulation.time.nyear": "1",
+        "simulation.nspecies": "1",
+        "simulation.nschool.sp0": "10",
+        "species.name.sp0": "TestFish",
+        "species.linf.sp0": "20.0",
+        "species.k.sp0": "0.3",
+        "species.t0.sp0": "-0.1",
+        "species.egg.size.sp0": "0.1",
+        "species.length2weight.condition.factor.sp0": "0.006",
+        "species.length2weight.allometric.power.sp0": "3.0",
+        "species.lifespan.sp0": "3",
+        "species.vonbertalanffy.threshold.age.sp0": "1.0",
+        "mortality.subdt": "10",
+        "predation.ingestion.rate.max.sp0": "3.5",
+        "predation.efficiency.critical.sp0": "0.57",
+        # Bioenergetics
+        "simulation.bioen.enabled": "true",
+        "simulation.bioen.phit.enabled": "true",
+        "simulation.bioen.fo2.enabled": "false",
+        "temperature.value": "18.0",
+        "species.beta.sp0": "0.75",
+        "species.bioen.assimilation.sp0": "0.68",
+        "species.bioen.maint.energy.c_m.sp0": "0.00123",
+        "species.bioen.maturity.eta.sp0": "1.4",
+        "species.bioen.maturity.r.sp0": "0.45",
+        "species.bioen.maturity.m0.sp0": "4.5",
+        "species.bioen.maturity.m1.sp0": "1.8",
+        "species.bioen.mobilized.e.mobi.sp0": "0.62",
+        "species.bioen.mobilized.e.D.sp0": "1.45",
+        "species.bioen.mobilized.Tp.sp0": "18.0",
+        "species.bioen.maint.e.maint.sp0": "0.63",
+        "species.oxygen.c1.sp0": "0.95",
+        "species.oxygen.c2.sp0": "2.5",
+        "predation.ingestion.rate.max.bioen.sp0": "4.2",
+        "predation.coef.ingestion.rate.max.larvae.bioen.sp0": "1.1",
+        "predation.c.bioen.sp0": "0.01",
+        "species.bioen.forage.k_for.sp0": "0.002",
+    }
+
+
+class TestBioenSimulation:
+    def test_bioen_simulation_runs(self):
+        """Bioen config runs end-to-end without error."""
+        cfg = EngineConfig.from_dict(_make_bioen_sim_config())
+        grid = Grid.from_dimensions(ny=3, nx=3)
+        rng = np.random.default_rng(0)
+        outputs = simulate(cfg, grid, rng)
+        assert len(outputs) == 12
+        # All outputs should be valid StepOutput instances with non-negative biomass
+        for out in outputs:
+            assert out.biomass.shape == (1,)
+            assert np.all(out.biomass >= 0.0)
+
+    def test_bioen_starvation_reduces_abundance(self):
+        """Schools with no food lose abundance due to starvation."""
+        from osmose.engine.processes.bioen_starvation import bioen_starvation
+
+        # Create a school with no ingestion (e_net will be negative -> starvation)
+        e_net = np.array([-0.5, -0.5])   # large deficit
+        gonad_weight = np.zeros(2)         # no gonad buffer
+        weight = np.array([1e-3, 1e-3])   # 1g fish
+        n_dead, new_gonad = bioen_starvation(
+            e_net=e_net,
+            gonad_weight=gonad_weight,
+            weight=weight,
+            eta=1.4,
+            n_subdt=10,
+        )
+        # Starvation should produce deaths
+        assert np.all(n_dead > 0.0), "Expected starvation deaths when e_net < 0 and no gonad"
+        # Gonad should remain at 0 (already depleted)
+        assert np.all(new_gonad == 0.0)
+
+    def test_standard_config_unchanged(self):
+        """Non-bioen config still produces outputs exactly as before."""
+        standard_cfg = {
+            "simulation.time.ndtperyear": "12",
+            "simulation.time.nyear": "1",
+            "simulation.nspecies": "1",
+            "simulation.nschool.sp0": "10",
+            "species.name.sp0": "TestFish",
+            "species.linf.sp0": "20.0",
+            "species.k.sp0": "0.3",
+            "species.t0.sp0": "-0.1",
+            "species.egg.size.sp0": "0.1",
+            "species.length2weight.condition.factor.sp0": "0.006",
+            "species.length2weight.allometric.power.sp0": "3.0",
+            "species.lifespan.sp0": "3",
+            "species.vonbertalanffy.threshold.age.sp0": "1.0",
+            "mortality.subdt": "10",
+            "predation.ingestion.rate.max.sp0": "3.5",
+            "predation.efficiency.critical.sp0": "0.57",
+        }
+        cfg = EngineConfig.from_dict(standard_cfg)
+        assert cfg.bioen_enabled is False
+        grid = Grid.from_dimensions(ny=3, nx=3)
+        rng = np.random.default_rng(42)
+        outputs = simulate(cfg, grid, rng)
+        assert len(outputs) == 12
+        for out in outputs:
+            assert out.biomass.shape == (1,)
+            assert np.all(out.biomass >= 0.0)

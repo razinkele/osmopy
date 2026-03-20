@@ -17,6 +17,7 @@ from osmose.engine.background import BackgroundState
 from osmose.engine.config import EngineConfig
 from osmose.engine.grid import Grid
 from osmose.engine.incoming_flux import IncomingFluxState
+from osmose.engine.physical_data import PhysicalData
 from osmose.engine.resources import ResourceState
 from osmose.engine.state import MortalityCause, SchoolState
 
@@ -108,6 +109,231 @@ def _growth(state: SchoolState, config: EngineConfig, rng: np.random.Generator) 
     from osmose.engine.processes.growth import growth
 
     return growth(state, config, rng)
+
+
+def _bioen_step(
+    state: SchoolState,
+    config: EngineConfig,
+    temp_data: PhysicalData | None,
+    step: int,
+) -> SchoolState:
+    """Replace _growth() when bioenergetics is enabled.
+
+    Steps (matches Java Bioen ordering):
+      1. Cap preyed_biomass at allometric ingestion maximum.
+      2. Compute per-school temperature response phi_t (or 1.0 if disabled).
+      3. Run energy budget per species (compute_energy_budget).
+      4. Apply starvation mortality per species (bioen_starvation).
+      5. Update weight, length, gonad weight, abundance, e_net_avg.
+    """
+    from osmose.engine.processes.bioen_predation import bioen_ingestion_cap
+    from osmose.engine.processes.bioen_starvation import bioen_starvation
+    from osmose.engine.processes.energy_budget import compute_energy_budget, update_e_net_avg
+    from osmose.engine.processes.temp_function import phi_t as phi_t_fn
+
+    if len(state) == 0:
+        return state
+
+    assert config.bioen_beta is not None
+    assert config.bioen_assimilation is not None
+    assert config.bioen_c_m is not None
+    assert config.bioen_eta is not None
+    assert config.bioen_r is not None
+    assert config.bioen_m0 is not None
+    assert config.bioen_m1 is not None
+    assert config.bioen_e_mobi is not None
+    assert config.bioen_e_d is not None
+    assert config.bioen_tp is not None
+    assert config.bioen_e_maint is not None
+    assert config.bioen_i_max is not None
+    assert config.bioen_theta is not None
+    assert config.bioen_c_rate is not None
+
+    n_subdt = config.mortality_subdt
+
+    # ------------------------------------------------------------------ #
+    # Step 1: Cap ingested biomass per school at the allometric maximum.
+    # ------------------------------------------------------------------ #
+    is_larvae = state.is_egg  # larvae flag uses egg field (age 0 schools)
+    capped_ingestion = state.preyed_biomass.copy()
+    for sp in range(config.n_species):
+        mask = state.species_id == sp
+        if not mask.any():
+            continue
+        cap = bioen_ingestion_cap(
+            weight=state.weight[mask],
+            i_max=float(config.bioen_i_max[sp]),
+            beta=float(config.bioen_beta[sp]),
+            n_dt_per_year=config.n_dt_per_year,
+            n_subdt=n_subdt,
+            is_larvae=is_larvae[mask],
+            theta=float(config.bioen_theta[sp]),
+            c_rate=float(config.bioen_c_rate[sp]),
+        )
+        # cap is max per-subdt; total cap for the full timestep = cap * n_subdt
+        capped_ingestion[mask] = np.minimum(state.preyed_biomass[mask], cap * n_subdt)
+
+    # ------------------------------------------------------------------ #
+    # Step 2: Temperature response phi_t per school.
+    # ------------------------------------------------------------------ #
+    if config.bioen_phit_enabled and temp_data is not None:
+        if temp_data.is_constant:
+            temp_scalar = temp_data.get_value(step, 0, 0)
+            phi_t_arr = np.empty(len(state), dtype=np.float64)
+            for sp in range(config.n_species):
+                mask = state.species_id == sp
+                if mask.any():
+                    phi_t_arr[mask] = phi_t_fn(
+                        np.full(mask.sum(), temp_scalar),
+                        float(config.bioen_e_mobi[sp]),
+                        float(config.bioen_e_d[sp]),
+                        float(config.bioen_tp[sp]),
+                    )
+        else:
+            # Spatially explicit: look up each school's cell
+            phi_t_arr = np.empty(len(state), dtype=np.float64)
+            for sp in range(config.n_species):
+                mask = state.species_id == sp
+                if not mask.any():
+                    continue
+                temps = np.array([
+                    temp_data.get_value(step, int(state.cell_y[i]), int(state.cell_x[i]))
+                    for i in np.where(mask)[0]
+                ])
+                phi_t_arr[mask] = phi_t_fn(
+                    temps,
+                    float(config.bioen_e_mobi[sp]),
+                    float(config.bioen_e_d[sp]),
+                    float(config.bioen_tp[sp]),
+                )
+    else:
+        phi_t_arr = np.ones(len(state), dtype=np.float64)
+
+    # Oxygen limitation: always 1.0 for now (spatial O2 data not yet wired)
+    f_o2_arr = np.ones(len(state), dtype=np.float64)
+
+    # Build per-school temperature array for Arrhenius maintenance calculation
+    if temp_data is not None and temp_data.is_constant:
+        temp_c_arr = np.full(len(state), temp_data.get_value(step, 0, 0), dtype=np.float64)
+    elif temp_data is not None:
+        temp_c_arr = np.array([
+            temp_data.get_value(step, int(state.cell_y[i]), int(state.cell_x[i]))
+            for i in range(len(state))
+        ])
+    else:
+        # No temperature data: default to 15°C (neutral for most species)
+        temp_c_arr = np.full(len(state), 15.0, dtype=np.float64)
+
+    # ------------------------------------------------------------------ #
+    # Step 3: Energy budget per species.
+    # ------------------------------------------------------------------ #
+    dw_tonnes = np.zeros(len(state), dtype=np.float64)
+    dg_tonnes = np.zeros(len(state), dtype=np.float64)
+    e_net_arr = np.zeros(len(state), dtype=np.float64)
+
+    for sp in range(config.n_species):
+        mask = state.species_id == sp
+        if not mask.any():
+            continue
+        dw_sp, dg_sp, en_sp = compute_energy_budget(
+            ingestion=capped_ingestion[mask],
+            weight=state.weight[mask],
+            gonad_weight=state.gonad_weight[mask],
+            age_dt=state.age_dt[mask],
+            length=state.length[mask],
+            temp_c=temp_c_arr[mask],   # raw temperature for Arrhenius maintenance
+            assimilation=float(config.bioen_assimilation[sp]),
+            c_m=float(config.bioen_c_m[sp]),
+            beta=float(config.bioen_beta[sp]),
+            eta=float(config.bioen_eta[sp]),
+            r=float(config.bioen_r[sp]),
+            m0=float(config.bioen_m0[sp]),
+            m1=float(config.bioen_m1[sp]),
+            e_maint_energy=float(config.bioen_e_maint[sp]),
+            phi_t=phi_t_arr[mask],   # Johnson thermal performance (applied to assimilation)
+            f_o2=f_o2_arr[mask],
+            n_dt_per_year=config.n_dt_per_year,
+            e_net_avg=state.e_net_avg[mask],
+        )
+        dw_tonnes[mask] = dw_sp
+        dg_tonnes[mask] = dg_sp
+        e_net_arr[mask] = en_sp
+
+    # ------------------------------------------------------------------ #
+    # Step 4: Starvation mortality per species.
+    # ------------------------------------------------------------------ #
+    starvation_dead = np.zeros(len(state), dtype=np.float64)
+    new_gonad = state.gonad_weight.copy()
+
+    for sp in range(config.n_species):
+        mask = state.species_id == sp
+        if not mask.any():
+            continue
+        n_dead_sp, gonad_sp = bioen_starvation(
+            e_net=e_net_arr[mask],
+            gonad_weight=state.gonad_weight[mask],
+            weight=state.weight[mask],
+            eta=float(config.bioen_eta[sp]),
+            n_subdt=n_subdt,
+        )
+        starvation_dead[mask] = n_dead_sp
+        new_gonad[mask] = gonad_sp
+
+    # ------------------------------------------------------------------ #
+    # Step 5: Apply updates to state arrays.
+    # ------------------------------------------------------------------ #
+    new_weight = np.maximum(state.weight + dw_tonnes, 0.0)
+    new_gonad = np.maximum(new_gonad + dg_tonnes, 0.0)
+
+    # Update length from weight via allometric inverse (W = a * L^b)
+    # L = (W / a)^(1/b); use species-level a (condition factor * 1e-6) and b
+    new_length = state.length.copy()
+    for sp in range(config.n_species):
+        mask = state.species_id == sp
+        if not mask.any():
+            continue
+        # W_tonnes = condition_factor * L^b * 1e-6  =>  L = (W_tonnes * 1e6 / condition_factor)^(1/b)
+        a = float(config.condition_factor[sp])
+        b = float(config.allometric_power[sp])
+        safe_a = max(a, 1e-20)
+        new_length[mask] = np.power(
+            np.maximum(new_weight[mask] * 1e6 / safe_a, 1e-20), 1.0 / b
+        )
+
+    # Reduce abundance by starvation deaths (clamp to zero)
+    new_abundance = np.maximum(state.abundance - starvation_dead, 0.0)
+
+    # Track starvation in n_dead
+    new_n_dead = state.n_dead.copy()
+    new_n_dead[:, int(MortalityCause.STARVATION)] += starvation_dead
+
+    # Update running e_net_avg
+    new_e_net_avg = np.zeros(len(state), dtype=np.float64)
+    for sp in range(config.n_species):
+        mask = state.species_id == sp
+        if not mask.any():
+            continue
+        new_e_net_avg[mask] = update_e_net_avg(
+            e_net_avg=state.e_net_avg[mask],
+            e_net=e_net_arr[mask],
+            weight=state.weight[mask],
+            age_dt=state.age_dt[mask],
+            first_feeding_age_dt=state.first_feeding_age_dt[mask],
+            n_dt_per_year=config.n_dt_per_year,
+        )
+
+    new_biomass = new_abundance * new_weight
+
+    return state.replace(
+        weight=new_weight,
+        length=new_length,
+        biomass=new_biomass,
+        gonad_weight=new_gonad,
+        abundance=new_abundance,
+        n_dead=new_n_dead,
+        e_net_avg=new_e_net_avg,
+        e_net=e_net_arr,
+    )
 
 
 def _aging_mortality(state: SchoolState, config: EngineConfig) -> SchoolState:
@@ -385,6 +611,13 @@ def simulate(
     flux_state = IncomingFluxState(config=config.raw_config, engine_config=config, grid=grid)
     outputs: list[StepOutput] = []
 
+    # Bioenergetics: load temperature forcing when enabled
+    temp_data = None
+    if config.bioen_enabled:
+        temp_val = config.raw_config.get("temperature.value", "")
+        if temp_val:
+            temp_data = PhysicalData.from_constant(float(temp_val))
+
     from osmose.engine.movement_maps import MovementMapSet
 
     map_sets: dict[int, MovementMapSet] = {}
@@ -436,7 +669,10 @@ def simulate(
         # Strip background schools
         state = _strip_background(state, n_focal)
 
-        state = _growth(state, config, rng)
+        if config.bioen_enabled:
+            state = _bioen_step(state, config, temp_data, step)
+        else:
+            state = _growth(state, config, rng)
         state = _aging_mortality(state, config)
         state = _reproduction(state, config, step, rng, grid_ny=grid.ny, grid_nx=grid.nx)
 
