@@ -42,6 +42,9 @@ class StepOutput:
     biomass_by_size: dict[int, NDArray[np.float64]] | None = None
     abundance_by_size: dict[int, NDArray[np.float64]] | None = None
 
+    # Bioenergetics: mean net energy per species, shape (n_species,), or None if bioen disabled
+    bioen_e_net_by_species: NDArray[np.float64] | None = None
+
 
 # ---------------------------------------------------------------------------
 # Stub process functions (replaced in Phase 2-7)
@@ -535,6 +538,18 @@ def _collect_outputs(
             biomass_by_size[sp] = bbs
             abundance_by_size[sp] = abs_
 
+    # Bioen: mean e_net per focal species (zeros when state is empty or no focal schools)
+    bioen_e_net_by_species: NDArray[np.float64] | None = None
+    if config.bioen_enabled:
+        bioen_e_net_by_species = np.zeros(config.n_species, dtype=np.float64)
+        if len(state) > 0:
+            counts = np.zeros(config.n_species, dtype=np.float64)
+            focal = state.species_id < config.n_species
+            np.add.at(bioen_e_net_by_species, state.species_id[focal], state.e_net[focal])
+            np.add.at(counts, state.species_id[focal], 1)
+            safe_counts = np.where(counts > 0, counts, 1)
+            bioen_e_net_by_species /= safe_counts
+
     return StepOutput(
         step=step,
         biomass=biomass,
@@ -545,6 +560,7 @@ def _collect_outputs(
         abundance_by_age=abundance_by_age,
         biomass_by_size=biomass_by_size,
         abundance_by_size=abundance_by_size,
+        bioen_e_net_by_species=bioen_e_net_by_species,
     )
 
 
@@ -567,6 +583,12 @@ def _average_step_outputs(
     accumulated: list[StepOutput], freq: int, record_step: int
 ) -> StepOutput:
     """Average accumulated StepOutputs over recording frequency."""
+    # Bioen: mean e_net averaged across the recording window
+    bioen_arrays = [o.bioen_e_net_by_species for o in accumulated if o.bioen_e_net_by_species is not None]
+    bioen_e_net_avg: NDArray[np.float64] | None = (
+        np.mean(bioen_arrays, axis=0) if bioen_arrays else None
+    )
+
     if len(accumulated) == 1:
         return StepOutput(
             step=record_step,
@@ -574,6 +596,7 @@ def _average_step_outputs(
             abundance=accumulated[0].abundance,
             mortality_by_cause=accumulated[0].mortality_by_cause,
             yield_by_species=accumulated[0].yield_by_species,
+            bioen_e_net_by_species=bioen_e_net_avg,
         )
     biomass = np.mean([o.biomass for o in accumulated], axis=0)
     abundance = np.mean([o.abundance for o in accumulated], axis=0)
@@ -587,6 +610,7 @@ def _average_step_outputs(
         abundance=abundance,
         mortality_by_cause=mortality,
         yield_by_species=yield_sum,
+        bioen_e_net_by_species=bioen_e_net_avg,
     )
 
 

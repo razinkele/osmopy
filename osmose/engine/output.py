@@ -63,6 +63,10 @@ def write_outputs(
     # Write age/size distribution CSVs
     _write_distribution_csvs(output_dir, prefix, outputs, config)
 
+    # Write bioenergetic CSVs when enabled
+    if config.bioen_enabled:
+        _write_bioen_csvs(output_dir, prefix, outputs, config)
+
 
 def _write_species_csv(
     path: Path,
@@ -236,6 +240,37 @@ def _write_yield_csv(
         species,
         yield_data,
     )
+
+
+# ---------------------------------------------------------------------------
+# Bioenergetic output
+# ---------------------------------------------------------------------------
+
+
+def _write_bioen_csvs(
+    output_dir: Path,
+    prefix: str,
+    outputs: list[StepOutput],
+    config: EngineConfig,
+) -> None:
+    """Write bioen-specific per-species CSVs into a Bioen/ subdirectory."""
+    bioen_dir = output_dir / "Bioen"
+    bioen_dir.mkdir(exist_ok=True)
+
+    times = np.array([o.step / config.n_dt_per_year for o in outputs])
+
+    # meanEnet per species
+    enet_data = [o.bioen_e_net_by_species for o in outputs]
+    if any(d is not None for d in enet_data):
+        data = np.array(
+            [d if d is not None else np.zeros(config.n_species) for d in enet_data]
+        )
+        for sp_idx, sp_name in enumerate(config.species_names):
+            df = pd.DataFrame({"Time": times, "meanEnet": data[:, sp_idx]})
+            df.to_csv(
+                bioen_dir / f"{prefix}_meanEnet_{sp_name}_Simu0.csv",
+                index=False,
+            )
 
 
 # ---------------------------------------------------------------------------

@@ -339,3 +339,71 @@ class TestBioenSimulation:
         for out in outputs:
             assert out.biomass.shape == (1,)
             assert np.all(out.biomass >= 0.0)
+
+
+# ── Tests: bioen output writers ───────────────────────────────────────────────
+
+
+class TestBioenOutput:
+    def test_bioen_dir_created(self, tmp_path):
+        """Bioen/ subdirectory is created when bioen is enabled."""
+        from osmose.engine.grid import Grid
+        from osmose.engine.output import write_outputs
+
+        cfg = EngineConfig.from_dict(_make_bioen_sim_config())
+        grid = Grid.from_dimensions(ny=3, nx=3)
+        rng = np.random.default_rng(0)
+        outputs = simulate(cfg, grid, rng)
+        write_outputs(outputs, tmp_path, cfg, prefix="test")
+        assert (tmp_path / "Bioen").is_dir()
+
+    def test_enet_csv_written(self, tmp_path):
+        """meanEnet CSV is written for each species with expected columns."""
+        from osmose.engine.grid import Grid
+        from osmose.engine.output import write_outputs
+        import pandas as pd
+
+        cfg = EngineConfig.from_dict(_make_bioen_sim_config())
+        grid = Grid.from_dimensions(ny=3, nx=3)
+        rng = np.random.default_rng(1)
+        outputs = simulate(cfg, grid, rng)
+        write_outputs(outputs, tmp_path, cfg, prefix="test")
+
+        bioen_dir = tmp_path / "Bioen"
+        for sp_name in cfg.species_names:
+            csv_path = bioen_dir / f"test_meanEnet_{sp_name}_Simu0.csv"
+            assert csv_path.exists(), f"Missing CSV for species {sp_name}"
+            df = pd.read_csv(csv_path)
+            assert "Time" in df.columns
+            assert "meanEnet" in df.columns
+            assert len(df) == len(outputs)
+
+    def test_no_bioen_dir_when_disabled(self, tmp_path):
+        """No Bioen/ directory is created when bioen is disabled."""
+        from osmose.engine.grid import Grid
+        from osmose.engine.output import write_outputs
+
+        standard_cfg = {
+            "simulation.time.ndtperyear": "12",
+            "simulation.time.nyear": "1",
+            "simulation.nspecies": "1",
+            "simulation.nschool.sp0": "10",
+            "species.name.sp0": "TestFish",
+            "species.linf.sp0": "20.0",
+            "species.k.sp0": "0.3",
+            "species.t0.sp0": "-0.1",
+            "species.egg.size.sp0": "0.1",
+            "species.length2weight.condition.factor.sp0": "0.006",
+            "species.length2weight.allometric.power.sp0": "3.0",
+            "species.lifespan.sp0": "3",
+            "species.vonbertalanffy.threshold.age.sp0": "1.0",
+            "mortality.subdt": "10",
+            "predation.ingestion.rate.max.sp0": "3.5",
+            "predation.efficiency.critical.sp0": "0.57",
+        }
+        cfg = EngineConfig.from_dict(standard_cfg)
+        grid = Grid.from_dimensions(ny=3, nx=3)
+        rng = np.random.default_rng(2)
+        outputs = simulate(cfg, grid, rng)
+        write_outputs(outputs, tmp_path, cfg, prefix="test")
+        assert not (tmp_path / "Bioen").exists()
