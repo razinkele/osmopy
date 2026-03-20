@@ -65,9 +65,16 @@ class PythonEngine:
             nx = int(config.get("grid.nlon", config.get("grid.ncol", "10")))
             ny = int(config.get("grid.nlat", config.get("grid.nrow", "10")))
             grid = Grid.from_dimensions(ny=ny, nx=nx)
-        rng = np.random.default_rng(seed)
+        from osmose.engine.rng import build_rng
 
-        outputs = simulate(engine_config, grid, rng)
+        rng = np.random.default_rng(seed)
+        movement_rngs = build_rng(seed, engine_config.n_species, engine_config.movement_seed_fixed)
+        mortality_rngs = build_rng(
+            seed + 1, engine_config.n_species, engine_config.mortality_seed_fixed
+        )
+        outputs = simulate(
+            engine_config, grid, rng, movement_rngs=movement_rngs, mortality_rngs=mortality_rngs
+        )
         write_outputs(outputs, output_dir, engine_config)
 
         return RunResult(

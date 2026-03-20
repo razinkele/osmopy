@@ -175,11 +175,17 @@ def simulate(
     config: EngineConfig,
     grid: Grid,
     rng: np.random.Generator,
+    movement_rngs: list[np.random.Generator] | None = None,
+    mortality_rngs: list[np.random.Generator] | None = None,
 ) -> list[StepOutput]:
     """Run the OSMOSE simulation loop.
 
     Process ordering matches Java's SimulationStep.step().
     """
+    if movement_rngs is None:
+        movement_rngs = [rng] * config.n_species
+    if mortality_rngs is None:
+        mortality_rngs = [rng] * config.n_species
     state = initialize(config, grid, rng)
     resources = ResourceState(config=config.raw_config, grid=grid)
     outputs: list[StepOutput] = []

@@ -153,6 +153,10 @@ class EngineConfig:
     random_walk_range: NDArray[np.int32]
     out_mortality_rate: NDArray[np.float64]
 
+    # RNG seeding flags
+    movement_seed_fixed: bool  # per-species independent RNG for movement
+    mortality_seed_fixed: bool  # per-species independent RNG for mortality
+
     # Raw config dict for subsystems that need unparsed access (e.g. ResourceState)
     raw_config: dict[str, str]
 
@@ -242,5 +246,7 @@ class EngineConfig:
             out_mortality_rate=_species_float_optional(
                 cfg, "mortality.out.rate.sp{i}", n_sp, default=0.0
             ),
+            movement_seed_fixed=cfg.get("movement.seed.fixed", "false").lower() == "true",
+            mortality_seed_fixed=cfg.get("mortality.seed.fixed", "false").lower() == "true",
             raw_config=cfg,
         )
