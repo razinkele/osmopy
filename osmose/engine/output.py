@@ -57,13 +57,11 @@ def write_outputs(
     # Write mortality CSVs per species
     _write_mortality_csvs(output_dir, prefix, outputs, config)
 
-<<<<<<< HEAD
     # Write yield CSV
     _write_yield_csv(output_dir, prefix, outputs, config)
-=======
+
     # Write age/size distribution CSVs
     _write_distribution_csvs(output_dir, prefix, outputs, config)
->>>>>>> worktree-agent-a161e3b4
 
 
 def _write_species_csv(

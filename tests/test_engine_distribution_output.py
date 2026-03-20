@@ -156,7 +156,7 @@ class TestDistributionCSVOutput:
         assert "Time" in df.columns
         # Size columns should be formatted as floats e.g. "0.0", "1.0", ...
         assert "0.0" in df.columns
-        assert "1.0" in df.columns
+        assert "10.0" in df.columns  # second size bin edge
 
     def test_csv_data_values_correct(self, tmp_path):
         """CSV data values should match the distribution arrays."""

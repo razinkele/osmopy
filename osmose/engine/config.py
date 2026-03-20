@@ -546,13 +546,6 @@ class EngineConfig:
     # Growth class per species: "VB" or "GOMPERTZ"
     growth_class: list[str]
 
-    # Output distribution flags
-    output_biomass_byage: bool  # write biomassByAge / abundanceByAge CSVs
-    output_biomass_bysize: bool  # write biomassBySize / abundanceBySize CSVs
-    output_size_min: float  # minimum size bin edge (cm)
-    output_size_max: float  # maximum size bin edge (cm)
-    output_size_incr: float  # size bin width (cm)
-
     # Raw config dict for subsystems that need unparsed access (e.g. ResourceState)
     raw_config: dict[str, str]
 
@@ -1093,6 +1086,7 @@ class EngineConfig:
             gompertz_linf=gompertz_linf,
             gompertz_thr_age_exp_dt=gompertz_thr_age_exp_dt,
             gompertz_thr_age_gom_dt=gompertz_thr_age_gom_dt,
+            raw_config=cfg,
             output_biomass_byage=cfg.get("output.biomass.byage.enabled", "false").lower() == "true",
             output_biomass_bysize=cfg.get("output.biomass.bysize.enabled", "false").lower() == "true",
             output_abundance_byage=cfg.get("output.abundance.byage.enabled", "false").lower() == "true",
@@ -1100,5 +1094,4 @@ class EngineConfig:
             output_size_min=float(cfg.get("output.distrib.bysize.min", "0")),
             output_size_max=float(cfg.get("output.distrib.bysize.max", "205")),
             output_size_incr=float(cfg.get("output.distrib.bysize.incr", "10")),
-            raw_config=cfg,
         )
