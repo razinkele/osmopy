@@ -22,6 +22,17 @@ from osmose.engine.background import (
 )
 
 
+_GROWTH_MAP: dict[str, str] = {
+    # Current canonical classnames
+    "fr.ird.osmose.process.growth.VonBertalanffyGrowth": "VB",
+    "fr.ird.osmose.process.growth.GompertzGrowth": "GOMPERTZ",
+    # Legacy backward compat
+    "fr.ird.osmose.growth.VonBertalanffy": "VB",
+    "fr.ird.osmose.growth.Gompertz": "GOMPERTZ",
+    "fr.ird.osmose.growth.Linear": "VB",  # Linear was never real, map to VB
+}
+
+
 def _get(cfg: dict[str, str], key: str) -> str:
     """Get a config value, raising KeyError with a clear message."""
     val = cfg.get(key)
@@ -531,6 +542,9 @@ class EngineConfig:
     # Random distribution patch constraint: per-species ncell values, or None
     random_distribution_ncell: NDArray[np.int32] | None
 
+    # Growth class per species: "VB" or "GOMPERTZ"
+    growth_class: list[str]
+
     # Raw config dict for subsystems that need unparsed access (e.g. ResourceState)
     raw_config: dict[str, str]
 
@@ -935,6 +949,15 @@ class EngineConfig:
             cfg.get("stochastic.mortality.randomseed.fixed", "false").lower() == "true"
         )
 
+        # Growth class dispatch: parse classname for each focal species
+        growth_class = [
+            _GROWTH_MAP.get(
+                cfg.get(f"growth.java.classname.sp{i}", "").strip(),
+                "VB",
+            )
+            for i in range(n_sp)
+        ]
+
         return cls(
             n_species=n_sp,
             n_dt_per_year=n_dt,
@@ -1002,5 +1025,6 @@ class EngineConfig:
             movement_random_seed_fixed=movement_seed_fixed,
             mortality_random_seed_fixed=mortality_seed_fixed,
             random_distribution_ncell=random_distribution_ncell,
+            growth_class=growth_class,
             raw_config=cfg,
         )
