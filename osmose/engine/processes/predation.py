@@ -53,8 +53,44 @@ def get_diet_matrix() -> NDArray[np.float64] | None:
 
 
 # ---------------------------------------------------------------------------
+# Shared helper functions
+# ---------------------------------------------------------------------------
+
+
+def compute_size_overlap(
+    pred_length: float,
+    prey_length: float,
+    ratio_min: float,
+    ratio_max: float,
+) -> bool:
+    """Return True if the predator/prey size ratio falls within [ratio_min, ratio_max)."""
+    if prey_length <= 0:
+        return False
+    ratio = pred_length / prey_length
+    return ratio_min <= ratio < ratio_max
+
+
+def compute_appetite(
+    biomass: float,
+    ingestion_rate: float,
+    n_dt_per_year: int,
+    n_subdt: int,
+) -> float:
+    """Return the maximum biomass a predator can eat in one sub-timestep."""
+    return biomass * ingestion_rate / (n_dt_per_year * n_subdt)
+
+
+if _HAS_NUMBA:
+    _compute_size_overlap_numba = njit(cache=True)(compute_size_overlap)
+    _compute_appetite_numba = njit(cache=True)(compute_appetite)
+
+
+# ---------------------------------------------------------------------------
 # Numba-accelerated inner loop
 # ---------------------------------------------------------------------------
+
+# Dummy diet matrix used when diet tracking is disabled (avoids None in Numba)
+_DUMMY_DIET = np.zeros((1, 1), dtype=np.float64)
 
 if _HAS_NUMBA:
 
@@ -81,6 +117,8 @@ if _HAS_NUMBA:
         prey_access_idx: NDArray[np.int32],
         pred_access_idx: NDArray[np.int32],
         use_stage_access: bool,
+        diet_matrix: NDArray[np.float64],
+        diet_enabled: bool,
     ) -> None:
         """Numba-compiled predation within a single cell."""
         n_local = len(indices)
@@ -171,6 +209,12 @@ if _HAS_NUMBA:
                     n_dead = eaten_from_prey / weight[q_idx]
                     new_abd = abundance[q_idx] - n_dead
                     abundance[q_idx] = max(0.0, new_abd)
+
+                # Diet tracking: accumulate eaten biomass per prey species
+                if diet_enabled:
+                    prey_sp = species_id[q_idx]
+                    if p_idx < diet_matrix.shape[0] and prey_sp < diet_matrix.shape[1]:
+                        diet_matrix[p_idx, prey_sp] += eaten_from_prey
 
             success = min(eaten_total / max_eatable, 1.0)
             pred_success_rate[p_idx] += success / n_subdt
@@ -514,8 +558,9 @@ def predation(
 
         cell_indices = order[start:end].astype(np.int32)
 
-        if _HAS_NUMBA and not _diet_tracking_enabled:
+        if _HAS_NUMBA:
             pred_order = rng.permutation(len(cell_indices)).astype(np.int32)
+            diet_mat = _diet_matrix if _diet_tracking_enabled else _DUMMY_DIET
             _predation_in_cell_numba(
                 cell_indices,
                 pred_order,
@@ -538,6 +583,8 @@ def predation(
                 prey_access_idx,
                 pred_access_idx,
                 use_stage_access,
+                diet_mat,
+                _diet_tracking_enabled,
             )
         else:
             _predation_in_cell_python(
