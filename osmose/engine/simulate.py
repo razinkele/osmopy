@@ -30,6 +30,10 @@ class StepOutput:
     abundance: NDArray[np.float64]
     mortality_by_cause: NDArray[np.float64]  # (n_species, n_causes)
     yield_by_species: NDArray[np.float64] | None = None  # fishing yield biomass per species
+    biomass_by_age: dict[int, NDArray[np.float64]] | None = None
+    abundance_by_age: dict[int, NDArray[np.float64]] | None = None
+    biomass_by_size: dict[int, NDArray[np.float64]] | None = None
+    abundance_by_size: dict[int, NDArray[np.float64]] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -201,12 +205,70 @@ def _collect_outputs(
         focal_mask = state.species_id < config.n_species
         np.add.at(yield_by_species, state.species_id[focal_mask], fishing_yield[focal_mask])
 
+    # Age binning
+    biomass_by_age: dict[int, NDArray[np.float64]] | None = None
+    abundance_by_age: dict[int, NDArray[np.float64]] | None = None
+    if config.output_biomass_byage or config.output_abundance_byage:
+        bba: dict[int, NDArray[np.float64]] = {}
+        aba: dict[int, NDArray[np.float64]] = {}
+        for sp in range(config.n_species):
+            max_age_yr = int(np.ceil(config.lifespan_dt[sp] / config.n_dt_per_year))
+            n_bins = max_age_yr + 1
+            bba[sp] = np.zeros(n_bins, dtype=np.float64)
+            aba[sp] = np.zeros(n_bins, dtype=np.float64)
+            if len(state) > 0:
+                sp_mask = state.species_id == sp
+                if sp_mask.any():
+                    age_yr = state.age_dt[sp_mask] // config.n_dt_per_year
+                    age_yr = np.clip(age_yr, 0, max_age_yr)
+                    if config.output_biomass_byage:
+                        np.add.at(bba[sp], age_yr, state.biomass[sp_mask])
+                    if config.output_abundance_byage:
+                        np.add.at(aba[sp], age_yr, state.abundance[sp_mask])
+        if config.output_biomass_byage:
+            biomass_by_age = bba
+        if config.output_abundance_byage:
+            abundance_by_age = aba
+
+    # Size binning
+    biomass_by_size: dict[int, NDArray[np.float64]] | None = None
+    abundance_by_size: dict[int, NDArray[np.float64]] | None = None
+    if config.output_biomass_bysize or config.output_abundance_bysize:
+        edges = np.arange(
+            config.output_size_min,
+            config.output_size_max + config.output_size_incr,
+            config.output_size_incr,
+        )
+        n_bins = len(edges)  # number of bins = number of left edges (searchsorted gives 0..n_bins)
+        bbs: dict[int, NDArray[np.float64]] = {}
+        abs_: dict[int, NDArray[np.float64]] = {}
+        for sp in range(config.n_species):
+            bbs[sp] = np.zeros(n_bins, dtype=np.float64)
+            abs_[sp] = np.zeros(n_bins, dtype=np.float64)
+            if len(state) > 0:
+                sp_mask = state.species_id == sp
+                if sp_mask.any():
+                    bin_idx = np.searchsorted(edges, state.length[sp_mask], side="right") - 1
+                    bin_idx = np.clip(bin_idx, 0, n_bins - 1)
+                    if config.output_biomass_bysize:
+                        np.add.at(bbs[sp], bin_idx, state.biomass[sp_mask])
+                    if config.output_abundance_bysize:
+                        np.add.at(abs_[sp], bin_idx, state.abundance[sp_mask])
+        if config.output_biomass_bysize:
+            biomass_by_size = bbs
+        if config.output_abundance_bysize:
+            abundance_by_size = abs_
+
     return StepOutput(
         step=step,
         biomass=biomass,
         abundance=abundance,
         mortality_by_cause=mortality_by_cause,
         yield_by_species=yield_by_species,
+        biomass_by_age=biomass_by_age,
+        abundance_by_age=abundance_by_age,
+        biomass_by_size=biomass_by_size,
+        abundance_by_size=abundance_by_size,
     )
 
 

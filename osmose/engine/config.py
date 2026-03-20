@@ -14,7 +14,6 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
-<<<<<<< HEAD
 from osmose.engine.accessibility import AccessibilityMatrix
 from osmose.engine.background import (
     BackgroundSpeciesInfo,
@@ -23,8 +22,7 @@ from osmose.engine.background import (
 )
 
 
-=======
->>>>>>> worktree-agent-acf5f81d
+
 _GROWTH_MAP: dict[str, str] = {
     # Current canonical classnames
     "fr.ird.osmose.process.growth.VonBertalanffyGrowth": "VB",
@@ -514,7 +512,6 @@ class EngineConfig:
     random_walk_range: NDArray[np.int32]
     out_mortality_rate: NDArray[np.float64]
 
-<<<<<<< HEAD
     # Maturity age in timesteps (0 = no age threshold, only size-based)
     maturity_age_dt: NDArray[np.int32]
 
@@ -546,8 +543,7 @@ class EngineConfig:
     # Random distribution patch constraint: per-species ncell values, or None
     random_distribution_ncell: NDArray[np.int32] | None
 
-=======
->>>>>>> worktree-agent-acf5f81d
+
     # Growth class per species: "VB" or "GOMPERTZ"
     growth_class: list[str]
 
@@ -565,6 +561,15 @@ class EngineConfig:
 
     # Bioenergetic model toggle (False until bioen is wired in)
     bioen_enabled: bool = False
+
+    # Distribution output flags
+    output_biomass_byage: bool = False
+    output_biomass_bysize: bool = False
+    output_abundance_byage: bool = False
+    output_abundance_bysize: bool = False
+    output_size_min: float = 0.0
+    output_size_max: float = 205.0
+    output_size_incr: float = 10.0
 
     @classmethod
     def from_dict(cls, cfg: dict[str, str]) -> EngineConfig:
@@ -1054,7 +1059,6 @@ class EngineConfig:
                 cfg.get("simulation.fishing.mortality.enabled", "true").lower() == "true"
                 or fisheries_enabled
             ),
-<<<<<<< HEAD
             fishing_rate=fishing_rate,
             fishing_selectivity_l50=fishing_selectivity_l50,
             fishing_selectivity_a50=fishing_selectivity_a50,
@@ -1076,8 +1080,6 @@ class EngineConfig:
             mortality_random_seed_fixed=mortality_seed_fixed,
             random_distribution_ncell=random_distribution_ncell,
             growth_class=growth_class,
-=======
-            growth_class=growth_class,
             gompertz_ke=gompertz_ke,
             gompertz_lstart=gompertz_lstart,
             gompertz_kg=gompertz_kg,
@@ -1085,6 +1087,16 @@ class EngineConfig:
             gompertz_linf=gompertz_linf,
             gompertz_thr_age_exp_dt=gompertz_thr_age_exp_dt,
             gompertz_thr_age_gom_dt=gompertz_thr_age_gom_dt,
->>>>>>> worktree-agent-acf5f81d
             raw_config=cfg,
+            output_biomass_byage=cfg.get("output.biomass.byage.enabled", "false").lower()
+            == "true",
+            output_biomass_bysize=cfg.get("output.biomass.bysize.enabled", "false").lower()
+            == "true",
+            output_abundance_byage=cfg.get("output.abundance.byage.enabled", "false").lower()
+            == "true",
+            output_abundance_bysize=cfg.get("output.abundance.bysize.enabled", "false").lower()
+            == "true",
+            output_size_min=float(cfg.get("output.distrib.bysize.min", "0")),
+            output_size_max=float(cfg.get("output.distrib.bysize.max", "205")),
+            output_size_incr=float(cfg.get("output.distrib.bysize.incr", "10")),
         )
