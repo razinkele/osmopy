@@ -512,7 +512,6 @@ class EngineConfig:
     random_walk_range: NDArray[np.int32]
     out_mortality_rate: NDArray[np.float64]
 
-<<<<<<< HEAD
     # Maturity age in timesteps (0 = no age threshold, only size-based)
     maturity_age_dt: NDArray[np.int32]
 
@@ -546,14 +545,13 @@ class EngineConfig:
 
     # Growth class per species: "VB" or "GOMPERTZ"
     growth_class: list[str]
-=======
+
     # Output distribution flags
     output_biomass_byage: bool  # write biomassByAge / abundanceByAge CSVs
     output_biomass_bysize: bool  # write biomassBySize / abundanceBySize CSVs
     output_size_min: float  # minimum size bin edge (cm)
     output_size_max: float  # maximum size bin edge (cm)
     output_size_incr: float  # size bin width (cm)
->>>>>>> worktree-agent-a161e3b4
 
     # Raw config dict for subsystems that need unparsed access (e.g. ResourceState)
     raw_config: dict[str, str]
@@ -1067,7 +1065,6 @@ class EngineConfig:
                 cfg.get("simulation.fishing.mortality.enabled", "true").lower() == "true"
                 or fisheries_enabled
             ),
-<<<<<<< HEAD
             fishing_rate=fishing_rate,
             fishing_selectivity_l50=fishing_selectivity_l50,
             fishing_selectivity_a50=fishing_selectivity_a50,
@@ -1096,25 +1093,12 @@ class EngineConfig:
             gompertz_linf=gompertz_linf,
             gompertz_thr_age_exp_dt=gompertz_thr_age_exp_dt,
             gompertz_thr_age_gom_dt=gompertz_thr_age_gom_dt,
-=======
-            output_biomass_byage=cfg.get("output.biomass.byage.enabled", "false").lower()
-            == "true",
-            output_biomass_bysize=cfg.get("output.biomass.bysize.enabled", "false").lower()
-            == "true",
-            output_size_min=float(cfg.get("output.distrib.bySize.min", "0.0")),
-            output_size_max=float(cfg.get("output.distrib.bySize.max", "200.0")),
-            output_size_incr=float(cfg.get("output.distrib.bySize.incr", "1.0")),
->>>>>>> worktree-agent-a161e3b4
-            raw_config=cfg,
-            output_biomass_byage=cfg.get("output.biomass.byage.enabled", "false").lower()
-            == "true",
-            output_biomass_bysize=cfg.get("output.biomass.bysize.enabled", "false").lower()
-            == "true",
-            output_abundance_byage=cfg.get("output.abundance.byage.enabled", "false").lower()
-            == "true",
-            output_abundance_bysize=cfg.get("output.abundance.bysize.enabled", "false").lower()
-            == "true",
+            output_biomass_byage=cfg.get("output.biomass.byage.enabled", "false").lower() == "true",
+            output_biomass_bysize=cfg.get("output.biomass.bysize.enabled", "false").lower() == "true",
+            output_abundance_byage=cfg.get("output.abundance.byage.enabled", "false").lower() == "true",
+            output_abundance_bysize=cfg.get("output.abundance.bysize.enabled", "false").lower() == "true",
             output_size_min=float(cfg.get("output.distrib.bysize.min", "0")),
             output_size_max=float(cfg.get("output.distrib.bysize.max", "205")),
             output_size_incr=float(cfg.get("output.distrib.bysize.incr", "10")),
+            raw_config=cfg,
         )
