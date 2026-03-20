@@ -532,6 +532,7 @@ def mortality(
     rng: np.random.Generator,
     grid: Grid,
     step: int = 0,
+    species_rngs: list[np.random.Generator] | None = None,
 ) -> SchoolState:
     """Apply all mortality sources with per-cell per-school interleaved ordering.
 

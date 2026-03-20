@@ -81,11 +81,17 @@ def _movement(
     rng: np.random.Generator,
     map_sets: dict | None = None,
     random_patches: dict | None = None,
+    species_rngs: list[np.random.Generator] | None = None,
 ) -> SchoolState:
     """Apply spatial movement."""
     from osmose.engine.processes.movement import movement
 
-    return movement(state, grid, config, step, rng, map_sets=map_sets, random_patches=random_patches)
+    return movement(
+        state, grid, config, step, rng,
+        map_sets=map_sets,
+        random_patches=random_patches,
+        species_rngs=species_rngs,
+    )
 
 
 def _mortality(
@@ -95,11 +101,12 @@ def _mortality(
     rng: np.random.Generator,
     grid: Grid,
     step: int = 0,
+    species_rngs: list[np.random.Generator] | None = None,
 ) -> SchoolState:
     """Apply all mortality sources with interleaved ordering."""
     from osmose.engine.processes.mortality import mortality
 
-    return mortality(state, resources, config, rng, grid, step=step)
+    return mortality(state, resources, config, rng, grid, step=step, species_rngs=species_rngs)
 
 
 def _growth(state: SchoolState, config: EngineConfig, rng: np.random.Generator) -> SchoolState:
@@ -776,7 +783,10 @@ def simulate(
         state = _reset_step_variables(state)
         resources.update(step)
         state = _movement(
-            state, grid, config, step, rng, map_sets=map_sets, random_patches=random_patches
+            state, grid, config, step, rng,
+            map_sets=map_sets,
+            random_patches=random_patches,
+            species_rngs=movement_rngs,
         )
 
         # Inject background schools before mortality
@@ -785,7 +795,7 @@ def simulate(
         if len(bkg_schools) > 0:
             state = state.append(bkg_schools)
 
-        state = _mortality(state, resources, config, rng, grid, step=step)
+        state = _mortality(state, resources, config, rng, grid, step=step, species_rngs=mortality_rngs)
 
         # Collect background output BEFORE stripping
         bkg_output = _collect_background_outputs(state, config, n_focal)

@@ -494,6 +494,7 @@ def predation(
     grid_ny: int,
     grid_nx: int,
     resources: ResourceState | None = None,
+    species_rngs: list[np.random.Generator] | None = None,
 ) -> SchoolState:
     """Apply predation across all grid cells.
 
@@ -564,7 +565,17 @@ def predation(
         cell_indices = order[start:end].astype(np.int32)
 
         if _HAS_NUMBA:
-            pred_order = rng.permutation(len(cell_indices)).astype(np.int32)
+            # Per Java convention: use first predator species' RNG for cell shuffle
+            if species_rngs is not None and len(cell_indices) > 0:
+                first_pred_sp = int(work_state.species_id[cell_indices[0]])
+                _cell_rng = (
+                    species_rngs[first_pred_sp]
+                    if first_pred_sp < len(species_rngs)
+                    else rng
+                )
+            else:
+                _cell_rng = rng
+            pred_order = _cell_rng.permutation(len(cell_indices)).astype(np.int32)
             diet_mat = _diet_matrix if _diet_tracking_enabled else _DUMMY_DIET
             _predation_in_cell_numba(
                 cell_indices,

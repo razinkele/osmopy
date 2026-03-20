@@ -182,8 +182,19 @@ def movement(
     rng: np.random.Generator,
     map_sets: dict[int, MovementMapSet] | None = None,
     random_patches: dict[int, set[tuple[int, int]]] | None = None,
+    species_rngs: list[np.random.Generator] | None = None,
 ) -> SchoolState:
-    """Move all schools according to their species' movement method."""
+    """Move all schools according to their species' movement method.
+
+    Parameters
+    ----------
+    species_rngs : list of Generator, optional
+        Per-species random number generators. When provided and
+        ``config.movement_seed_fixed`` is True, each species uses its own
+        independent RNG for patch placement and map-based movement.
+        Falls back to the global ``rng`` when None or when
+        ``movement_seed_fixed`` is False.
+    """
     if len(state) == 0:
         return state
 
@@ -192,6 +203,12 @@ def movement(
     # Determine which schools use which method
     uses_random = np.array([config.movement_method[s] == "random" for s in sp])
     uses_maps = np.array([config.movement_method[s] == "maps" for s in sp])
+
+    def _rng_for(sp_id: int) -> np.random.Generator:
+        """Return per-species RNG if available and fixed seeds enabled, else global."""
+        if species_rngs is not None and config.movement_seed_fixed and sp_id < len(species_rngs):
+            return species_rngs[sp_id]
+        return rng
 
     # Phase 4: Place unlocated schools on patch cells (before random walk)
     if random_patches and uses_random.any():
@@ -203,7 +220,8 @@ def movement(
             if sp_id in random_patches and new_cx[i] < 0:
                 # Unlocated school: place on random patch cell
                 patch_cells = list(random_patches[sp_id])
-                idx = rng.integers(0, len(patch_cells))
+                _sp_rng = _rng_for(sp_id)
+                idx = _sp_rng.integers(0, len(patch_cells))
                 new_cx[i], new_cy[i] = patch_cells[idx]
                 changed = True
         if changed:
@@ -233,7 +251,7 @@ def movement(
                     map_sets[sp_id],
                     int(config.random_walk_range[sp_id]),
                     step,
-                    rng,
+                    _rng_for(sp_id),
                 )
                 new_cx[i], new_cy[i], new_out[i] = x, y, out
         state = state.replace(cell_x=new_cx, cell_y=new_cy, is_out=new_out)
