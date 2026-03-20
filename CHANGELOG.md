@@ -4,6 +4,179 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.4.0] - 2026-03-20
+
+### Features
+
+- **engine:** complete all 5 bioen output CSVs (ingestion, maintenance, rho, sizeInf) (d706678)
+- **engine:** wire per-species RNG into movement and predation consumers (0ccf430)
+- **engine:** wire O2 forcing into bioenergetic step (39c1d8b)
+- **engine:** wire bioen reproduction — gonad-weight egg schools (96715bc)
+- **engine:** add bioenergetic output CSV writers (a72c434)
+- **engine:** wire bioenergetic processes into simulation loop (043c934)
+- **engine:** parse all bioenergetic config keys + expand schema (a445816)
+- **engine:** add energy budget process + bioen SchoolState fields (73cdb7a)
+- **engine:** write size/age distribution CSV outputs matching Java format (c6f392f)
+- **engine:** add bioen starvation with gonad-buffer deficit (ade8a5e)
+- **engine:** add gonad-weight egg production for bioen mode (58725af)
+- **engine:** add PhysicalData loader for temperature/oxygen forcing (3ee42c7)
+- **engine:** add bioenergetic allometric ingestion cap (96ac549)
+- **engine:** add Johnson thermal performance curve and O2 dose-response (92c48b4)
+- **engine:** wire Gompertz growth dispatch with config-driven class selection (bfb5fe3)
+- **engine:** add size/age distribution binning to StepOutput (4cb1db1)
+- **engine:** add per-species deterministic RNG via SeedSequence (297fb01)
+- **engine:** fix growth classname enum, add Gompertz schema fields, parse growth_class (fb74610)
+- **engine:** add diet tracking to Numba predation path + extract shared helpers (df759f6)
+- **engine:** Phases 4-5 — random patch, output frequency, yield, diet, NetCDF, step0 (65b3e21)
+- **engine:** Phase 3 — spawning normalization, time-varying mortality, egg placement, seeding max (7120c2c)
+- **engine:** Phase 2 — fishery seasonality, selectivity types, v3 scenarios, MPA, discards (6220046)
+- **engine:** Phase 1 EEC parity fixes — maturity age, spatial fishing, lmax, resource multiplier, TL computation (d5b737e)
+- **engine:** add output.cutoff.age filter — exclude young-of-year from biomass output (3360a3e)
+- **engine:** per-cell per-school interleaved mortality matching Java computeMortality() (e2873e8)
+- **engine:** add fisheries + stage-indexed accessibility + egg weight fix (92d97c3)
+- **engine:** add feeding stages (B2) + diet matrix output (C2) (db1a93e)
+- **engine:** add incoming flux — external biomass injection from CSV time-series (55ffc7d)
+- **engine:** integrate map-based movement into simulation loop (42391e5)
+- **engine:** add _map_move_school — per-school map-based movement algorithm (6bf860d)
+- **engine:** add MovementMapSet — CSV map loading and index_maps construction (2861214)
+- **engine:** update predation kernel for 2D size ratios with feeding stages (e00a9c5)
+- **engine:** integrate background species into simulation loop with inject/strip pattern (0ed3e6e)
+- **engine:** skip starvation/fishing/additional mortality for background species (095c9b4)
+- **engine:** add NetCDF forcing support to BackgroundState (fa5b218)
+- **engine:** add BackgroundState with uniform forcing and school generation (732ba88)
+- add validation pipeline script (scripts/validate_engines.py) (894b2dd)
+- add validation pipeline script comparing Python vs Java engines (ea28c70)
+- **engine:** add fishing selectivity (knife-edge and sigmoid) (b1a2f64)
+- **engine:** add mortality rate CSV output per species (20e0194)
+- **engine:** interleaved mortality with egg release and cause shuffling (4ab8877)
+- **engine:** add egg_retained field for retain/release mechanism (c5f1c44)
+- **engine:** integrate resource species as prey in predation (37848f2)
+- **engine:** implement LTL resource species with NetCDF forcing (786e01e)
+- **engine:** add accessibility matrix, spawning seasons, real grid, fishing key fix for ecosystem parity (04c3718)
+- **engine:** PythonEngine.run() now writes output CSV files (9b22ca8)
+- **engine:** add CSV output writer matching Java format (5611ec1)
+- **engine:** wire starvation and fishing into mortality sub-timestep loop (a8fee19)
+- **engine:** add fishing mortality by rate (aeef341)
+- **engine:** add starvation mortality with lagged predation success (241ebb1)
+- **engine:** add starvation and fishing parameters to EngineConfig (6f22186)
+- **engine:** wire predation into mortality sub-timestep loop (ba0b4fc)
+- **engine:** add size-based predation with asynchronous prey updates (c4e59be)
+- **engine:** add predation size ratio parameters to EngineConfig (59973b6)
+- **engine:** wire movement and out-of-domain mortality into simulation loop (7447356)
+- **engine:** add random walk movement and out-of-domain mortality (51d117a)
+- **engine:** add movement parameters to EngineConfig (890c43e)
+- **engine:** add larva mortality for eggs with separate rate (6046b7a)
+- **engine:** wire reproduction and seeded initialization into simulation loop (7b2907d)
+- **engine:** add reproduction process with egg production and seeding (6c0cd04)
+- **engine:** add reproduction parameters to EngineConfig (0871d84)
+- **engine:** wire growth and mortality processes into simulation loop (9ce5585)
+- **engine:** add additional mortality and aging mortality processes (64e5a63)
+- **engine:** add Gompertz expected length function (a60682d)
+- **engine:** add Von Bertalanffy growth with predation-success gating (afa7fb9)
+- **engine:** add delta_lmax_factor and additional_mortality_rate to EngineConfig (8cf2d5e)
+- **engine:** wire PythonEngine.run() to simulation loop (29b77b1)
+- **engine:** add simulation loop skeleton with stub processes and output collection (ca28ad2)
+- **engine:** add ResourceState placeholder for LTL forcing (90571c5)
+- **engine:** add Grid class with NetCDF loading and cell adjacency (01b37e1)
+- **engine:** add EngineConfig for typed parameter extraction from flat config (15c7fbc)
+- **engine:** add SchoolState SoA dataclass with create/replace/append/compact (8c460d8)
+- **engine:** add Engine protocol with PythonEngine and JavaEngine stubs (bbb9de0)
+
+### Bug Fixes
+
+- remove duplicate StepOutput fields from merge artifact (70dcb78)
+- resolve merge conflicts from parallel Tasks 5-12 + fix dataclass field ordering (d4d0179)
+- **engine:** update stale diet test name + document predation helpers (69a4a01)
+- **engine:** eggs cannot feed first timestep + fix larva mortality double-counting (719d950)
+- **engine:** egg_weight_override config is in grams, convert to tonnes (* 1e-6) (b2b5849)
+- **engine:** convert weight to tonnes (Java convention), remove double seeding (4864b26)
+- **engine:** correct predation appetite (/n_dt_per_year), cap pred_success_rate, fix starvation rate (d23b31a)
+- **engine:** resolve movement map and forcing file paths relative to config directory (14b4a96)
+- **engine:** EEC config compatibility — resource keys, path resolution, grid dims, egg weight (c0b5f72)
+- **engine:** correct config key case for size ratios + add selectivity (f926b1d)
+- **engine:** correct predation size-ratio logic + resource species (52d50a4)
+- **engine:** handle global simulation.nschool config key (77a6d70)
+- **engine:** match Java behavior — egg skip, reproduction units, tests (2ca9b68)
+- **engine:** correct mortality rate to match Java — D = M/(ndt*subdt) (403a4ee)
+- **engine:** address code review — csr==1.0 bug, test precision, subdt guard (2694ed6)
+- **engine:** address code review issues — shadowing, file leak, docs (d152fb6)
+- defer shiny_deckgl import to avoid test collection errors (77e1f3c)
+- filter non-spatial files from grid overlay dropdown (df30a58)
+- collapsed panels now release space to siblings via CSS Grid override (89d54ea)
+
+### Performance
+
+- **engine:** Numba JIT predation + batch RNG — 5.9x faster, beats Java (202dbd4)
+
+### Chores
+
+- lint fixes + spatial bioen TODO + final cleanup (8e7a2c8)
+- fix lint issues from sprint (unused imports + vars) (51aa833)
+- remove worktree cache (348dca5)
+
+### Documentation
+
+- add engine gap closure implementation plan (ba001fa)
+- fix 4 review issues in gap closure spec (26767e2)
+- add engine gap closure design spec (6cee3b1)
+- add Java parity sprint implementation plan (40e1de4)
+- fix review round 3 — Linear references, starvation gonad-flush order (2542304)
+- fix spec review issues — growth classnames, Gompertz keys, starvation formula (134edd2)
+- add Java parity sprint design spec (676cff8)
+- add comprehensive Java parity roadmap — 7 phases, 37 items (2679dc1)
+- add B1 map movement implementation plan with review corrections (8a542b8)
+- add B1 map movement design spec with Java parity fixes (38a7ba5)
+- add B2 feeding stages implementation plan with review corrections (0afb2da)
+- fix feeding stages spec — trailing semicolons, absent key default, indexing contract (ee9337d)
+- add B2 feeding stages design spec (61d49dc)
+- add complete implementation plan for remaining engine gaps (5506cfe)
+- add Phase 4 movement implementation plan (9ac8dea)
+- fix Phase 2 plan review issues (Gompertz, test fix, precision) (6a54f9c)
+- add Python engine Phase 2 implementation plan (291a15f)
+- fix 4 plan review issues (abundance snapshot, adjacency, biomass, TDD) (70b3bf9)
+- add Python engine Phase 1 implementation plan (5d371b8)
+- fix 3 remaining spec review issues (rev 3) (8c01f42)
+- revise Python engine spec addressing 20 review issues (02b2038)
+- add Python engine design specification (fb612f1)
+
+### Other
+
+- Merge branch 'worktree-agent-a161e3b4' (88608dc)
+- Merge branch 'worktree-agent-a9a2eeb3' (487197a)
+- Merge branch 'worktree-agent-abebd8cd' (e212eae)
+- Merge branch 'worktree-agent-a4152a1a' (e27a122)
+- Merge branch 'worktree-agent-a562217f' (bd77ce3)
+- Merge branch 'worktree-agent-acf2a5a6' (a7ead1f)
+- Merge branch 'worktree-agent-a87d9cd8' (Task 6: per-species RNG) (d08551a)
+- Merge branch 'worktree-agent-aab44ec4' (Task 4: distribution output binning) (2f6faed)
+- Merge branch 'worktree-agent-acf5f81d' (48e74b6)
+- Merge C1+B3: mortality CSV output + fishing selectivity (149e189)
+- Merge A1+A2+A3: interleaved mortality, egg retain/release, TL placeholder (e5dd2bb)
+- Merge resource species + predation fix (eba886c)
+- Merge performance optimization — Numba predation, 1.9x faster than Java (48bd1ba)
+- Merge ecosystem parity — accessibility, spawning seasons, real grid (30130fb)
+- Merge branch 'feature/python-engine-phase7' — output writer (64684ff)
+- Merge branch 'feature/python-engine-phase6' — fishing + starvation (0cbfd78)
+- Merge branch 'feature/python-engine-phase5' — predation (767fb1f)
+- Merge branch 'feature/python-engine-phase4' — movement (1069d17)
+- Merge branch 'feature/python-engine-phase3' — reproduction + initialization (1ce4437)
+- Merge branch 'feature/python-engine-phase2' — growth + mortality (2db4f3b)
+- Merge branch 'feature/python-engine-phase1' — Python engine foundation (915f075)
+
+### Refactoring
+
+- extract _make_bioen_config() for cross-test imports (ba64236)
+- **engine:** delegate _mortality to new orchestrator module (3a44ae9)
+- unify nav and panel collapse with same expand-tab pattern (43afd43)
+
+### Tests
+
+- **engine:** add background species stage + integration tests for feeding stages (7d8ebf0)
+- **engine:** add integration tests for background species (5f29a23)
+- **engine:** add background species predation participation tests (157b9bf)
+- add Tier 1.5 Java comparison tests for growth and mortality (5efed58)
+- add 503 full-model integration tests for all example studies (7b06427)
+
 ## [0.3.0] - 2026-03-15
 
 ### Features
@@ -18,6 +191,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 ### Documentation
 
 - expand OSMOSE Model help with extensions, applications, and 30+ references (b9f699d)
+
+### Other
+
+- v0.3.0 — OSMOSE scientific docs, tooltip fix, Show Help removal (befbd0b)
 
 ## [0.2.0] - 2026-03-14
 
