@@ -1395,3 +1395,461 @@ body > .row > .nav-col-collapsed ~ [class*="col-"] {
     .card-body { padding: 0.75rem; }
     .osmose-section-label { font-size: 0.7rem; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   ENHANCEMENT: Ambient Ocean Atmosphere
+   Subtle animated caustic light + wave-line on header
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Caustic light overlay on page background */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 600px 400px at 15% 80%, rgba(56, 201, 177, 0.035) 0%, transparent 100%),
+    radial-gradient(ellipse 500px 350px at 75% 30%, rgba(232, 168, 56, 0.025) 0%, transparent 100%),
+    radial-gradient(ellipse 300px 300px at 50% 60%, rgba(56, 201, 177, 0.02) 0%, transparent 100%);
+  animation: causticDrift 20s ease-in-out infinite alternate;
+  pointer-events: none;
+  z-index: 0;
+}
+
+@keyframes causticDrift {
+  0% {
+    background-position: 0% 0%, 100% 0%, 50% 50%;
+    opacity: 0.6;
+  }
+  33% {
+    opacity: 1;
+  }
+  66% {
+    opacity: 0.7;
+  }
+  100% {
+    background-position: 5% 3%, 95% 5%, 45% 55%;
+    opacity: 0.9;
+  }
+}
+
+/* Animated wave line under header (replaces static gradient) */
+.osmose-header::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--osm-teal) 20%,
+    var(--osm-accent) 50%,
+    var(--osm-teal) 80%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  opacity: 0.5;
+  animation: waveShimmer 8s ease-in-out infinite;
+}
+
+@keyframes waveShimmer {
+  0%   { background-position: 0% 0%; opacity: 0.35; }
+  50%  { background-position: 100% 0%; opacity: 0.6; }
+  100% { background-position: 0% 0%; opacity: 0.35; }
+}
+
+/* Ensure content sits above caustic layer */
+.osmose-header,
+.container-fluid,
+body > .row,
+.osm-loading-overlay {
+  position: relative;
+  z-index: 1;
+}
+
+/* Light theme: softer caustics */
+[data-theme="light"] body::before {
+  background:
+    radial-gradient(ellipse 600px 400px at 15% 80%, rgba(43, 168, 158, 0.04) 0%, transparent 100%),
+    radial-gradient(ellipse 500px 350px at 75% 30%, rgba(212, 148, 46, 0.03) 0%, transparent 100%),
+    radial-gradient(ellipse 300px 300px at 50% 60%, rgba(43, 168, 158, 0.02) 0%, transparent 100%);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   ENHANCEMENT: Polished Notifications
+   Slide-in toasts with accent bars and auto-dismiss progress
+   ═══════════════════════════════════════════════════════════════════ */
+
+.shiny-notification {
+  border-radius: 12px !important;
+  border-left: 4px solid var(--osm-teal) !important;
+  border-right: none !important;
+  border-top: none !important;
+  border-bottom: none !important;
+  animation: notifSlideIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  overflow: hidden;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+/* Accent bar color by notification type */
+.shiny-notification-message {
+  border-left-color: var(--osm-teal) !important;
+}
+
+.shiny-notification-warning {
+  border-left-color: var(--osm-accent) !important;
+}
+
+.shiny-notification-error {
+  border-left-color: #e74c3c !important;
+}
+
+/* Auto-dismiss progress shimmer at bottom */
+.shiny-notification::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  width: 100%;
+  background: linear-gradient(90deg, var(--osm-teal), var(--osm-accent));
+  animation: notifProgress 5s linear forwards;
+  opacity: 0.6;
+}
+
+.shiny-notification-error::after {
+  background: linear-gradient(90deg, #e74c3c, #c0392b);
+}
+
+.shiny-notification-warning::after {
+  background: linear-gradient(90deg, var(--osm-accent), #d68910);
+}
+
+@keyframes notifSlideIn {
+  from {
+    transform: translateX(40px) scale(0.95);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes notifProgress {
+  from { width: 100%; }
+  to { width: 0%; }
+}
+
+/* Close button refinement */
+.shiny-notification .close,
+.shiny-notification .btn-close {
+  opacity: 0.4;
+  transition: opacity var(--osm-transition);
+}
+
+.shiny-notification .close:hover,
+.shiny-notification .btn-close:hover {
+  opacity: 1;
+}
+
+/* Light theme notifications */
+[data-theme="light"] .shiny-notification {
+  backdrop-filter: blur(16px);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.06) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   ENHANCEMENT: Sonar Pulse Loading Spinner
+   Concentric rings pulse outward like marine sonar
+   ═══════════════════════════════════════════════════════════════════ */
+
+.osm-spinner {
+  width: 56px;
+  height: 56px;
+  border: none;
+  border-radius: 50%;
+  position: relative;
+  animation: none;
+  background: none;
+  margin: 0 auto;
+}
+
+/* Central dot */
+.osm-spinner::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  background: var(--osm-accent);
+  border-radius: 50%;
+  animation: sonarCorePulse 2s ease-in-out infinite;
+  box-shadow: 0 0 12px rgba(232, 168, 56, 0.4);
+}
+
+/* First sonar ring */
+.osm-spinner::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 2px solid var(--osm-accent);
+  border-radius: 50%;
+  animation: sonarRing 2s ease-out infinite;
+}
+
+@keyframes sonarRing {
+  0% {
+    transform: scale(0.3);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+
+@keyframes sonarCorePulse {
+  0%, 100% { transform: scale(1); opacity: 0.9; }
+  50% { transform: scale(1.3); opacity: 1; }
+}
+
+/* Second ring via box-shadow on the loading content wrapper */
+.osm-loading-content::before {
+  content: '';
+  display: block;
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 0;
+  border: 2px solid var(--osm-teal);
+  border-radius: 50%;
+  animation: sonarRing 2s ease-out 0.6s infinite;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.osm-loading-content {
+  position: relative;
+  padding-top: 0;
+}
+
+/* Third ring (outermost, subtle) */
+.osm-loading-content::after {
+  content: '';
+  display: block;
+  width: 56px;
+  height: 56px;
+  margin: 0 auto;
+  border: 1px solid rgba(56, 201, 177, 0.4);
+  border-radius: 50%;
+  animation: sonarRing 2s ease-out 1.2s infinite;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+/* Loading text refinement */
+.osm-loading-content p {
+  margin-top: 1.5rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--osm-text-secondary);
+  animation: loadTextPulse 2s ease-in-out infinite;
+}
+
+@keyframes loadTextPulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+/* Loading overlay backdrop — frosted glass */
+.osm-loading-overlay {
+  background: rgba(15, 25, 35, 0.7) !important;
+  backdrop-filter: blur(8px) saturate(1.2);
+  -webkit-backdrop-filter: blur(8px) saturate(1.2);
+}
+
+[data-theme="light"] .osm-loading-overlay {
+  background: rgba(240, 244, 248, 0.75) !important;
+}
+
+[data-theme="light"] .osm-loading-content p {
+  color: var(--osm-text-secondary);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   ENHANCEMENT: Nav Sidebar Micro-interactions
+   Glow on active, animated separators, bounce transitions
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Active nav item: subtle glow */
+.nav-pills .nav-link.active {
+  box-shadow:
+    inset 3px 0 0 var(--osm-accent),
+    0 0 16px rgba(232, 168, 56, 0.08),
+    0 0 4px rgba(232, 168, 56, 0.05) !important;
+  animation: navGlowPulse 3s ease-in-out infinite;
+}
+
+@keyframes navGlowPulse {
+  0%, 100% {
+    box-shadow:
+      inset 3px 0 0 var(--osm-accent),
+      0 0 12px rgba(232, 168, 56, 0.06),
+      0 0 3px rgba(232, 168, 56, 0.04);
+  }
+  50% {
+    box-shadow:
+      inset 3px 0 0 var(--osm-accent),
+      0 0 20px rgba(232, 168, 56, 0.1),
+      0 0 6px rgba(232, 168, 56, 0.07);
+  }
+}
+
+/* Nav link hover: lift and brighten */
+.nav-pills .nav-link {
+  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+}
+
+.nav-pills .nav-link:hover {
+  transform: translateX(3px);
+}
+
+.nav-pills .nav-link.active:hover {
+  transform: translateX(0);
+}
+
+/* Section header animated separator */
+.nav-pills .nav-item .osmose-section-label::before {
+  transition: width 0.4s ease-out, opacity 0.3s ease;
+  width: 0;
+  opacity: 0;
+}
+
+.nav-pills .nav-item .osmose-section-label:hover::before {
+  width: 20px;
+  opacity: 0.8;
+}
+
+/* Stagger section labels on initial load */
+.nav-pills .nav-item:nth-child(1) .osmose-section-label { animation: sectionFadeIn 0.5s 0.1s both; }
+.nav-pills .nav-item:nth-child(3) .osmose-section-label { animation: sectionFadeIn 0.5s 0.2s both; }
+.nav-pills .nav-item:nth-child(9) .osmose-section-label { animation: sectionFadeIn 0.5s 0.3s both; }
+.nav-pills .nav-item:nth-child(12) .osmose-section-label { animation: sectionFadeIn 0.5s 0.4s both; }
+
+@keyframes sectionFadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Section separator: expanding line appears on load */
+.nav-pills .nav-item .osmose-section-label::after {
+  content: '';
+  display: block;
+  height: 1px;
+  background: linear-gradient(90deg, var(--osm-text-muted), transparent);
+  margin-top: 6px;
+  opacity: 0.2;
+  animation: separatorExpand 0.6s 0.5s ease-out both;
+}
+
+@keyframes separatorExpand {
+  from { width: 0; }
+  to { width: 100%; }
+}
+
+/* Nav collapse/expand — bounce easing */
+body > .row > [class*="col-"]:first-child {
+  transition: width 0.4s cubic-bezier(0.34, 1.2, 0.64, 1),
+              min-width 0.4s cubic-bezier(0.34, 1.2, 0.64, 1),
+              max-width 0.4s cubic-bezier(0.34, 1.2, 0.64, 1),
+              opacity 0.25s ease,
+              padding 0.4s cubic-bezier(0.34, 1.2, 0.64, 1) !important;
+}
+
+/* Expand tab entrance animation */
+.osm-expand-tab.visible {
+  animation: expandTabSlide 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes expandTabSlide {
+  from {
+    transform: translateX(-10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* Collapse button rotation on hover */
+.osm-collapse-btn,
+.osm-nav-collapse-btn {
+  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+}
+
+.osm-nav-collapse-btn:hover {
+  transform: scale(1.15);
+}
+
+/* Card header collapse button rotation */
+.osm-collapse-btn:hover {
+  transform: scale(1.1) rotate(-5deg);
+}
+
+/* Badge pulse enhancement — sync with marine feel */
+.osmose-badge .dot {
+  box-shadow: 0 0 6px rgba(56, 201, 177, 0.3);
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 0.4; transform: scale(0.85); box-shadow: 0 0 4px rgba(56, 201, 177, 0.2); }
+  50% { opacity: 1; transform: scale(1.15); box-shadow: 0 0 10px rgba(56, 201, 177, 0.5); }
+}
+
+/* Tooltip icon micro-interaction */
+.osm-tooltip-icon {
+  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.osm-tooltip-icon:hover {
+  transform: scale(1.15);
+  box-shadow: 0 0 8px rgba(212, 160, 23, 0.3);
+}
+
+/* ── Reduce motion for accessibility ────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  body::before,
+  .osmose-header::after,
+  .osm-spinner::before,
+  .osm-spinner::after,
+  .osm-loading-content::before,
+  .osm-loading-content::after,
+  .osm-loading-content p,
+  .osmose-badge .dot,
+  .nav-pills .nav-link.active {
+    animation: none !important;
+  }
+  .shiny-notification {
+    animation: none !important;
+  }
+  .shiny-notification::after {
+    animation: none !important;
+  }
+  .nav-pills .nav-link:hover {
+    transform: none !important;
+  }
+}
