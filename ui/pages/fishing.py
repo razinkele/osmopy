@@ -83,14 +83,16 @@ def fishing_server(input, output, session, state):
     def sync_fishery_inputs():
         n = input.n_fisheries()
         fishery_fields = [f for f in FISHING_FIELDS if f.indexed and "fsh" in f.key_pattern]
+        all_keys = []
         for i in range(n):
-            keys = [f.resolve_key(i) for f in fishery_fields]
-            sync_inputs(input, state, keys)
+            all_keys.extend(f.resolve_key(i) for f in fishery_fields)
+        sync_inputs(input, state, all_keys)
 
     @reactive.effect
     def sync_mpa_inputs():
         n = input.n_mpas()
         mpa_fields = [f for f in FISHING_FIELDS if f.indexed and "mpa" in f.key_pattern]
+        all_keys = []
         for i in range(n):
-            keys = [f.resolve_key(i) for f in mpa_fields]
-            sync_inputs(input, state, keys)
+            all_keys.extend(f.resolve_key(i) for f in mpa_fields)
+        sync_inputs(input, state, all_keys)

@@ -38,7 +38,7 @@ def load_mask(config: dict[str, str], config_dir: Path | None = None) -> np.ndar
             break
 
     if full_path is None:
-        _log.debug("Mask file not found: %s", mask_path)
+        _log.warning("Mask file not found: %s", mask_path)
         return None
 
     try:
@@ -206,13 +206,12 @@ def load_netcdf_grid(
         var_lat = config.get("grid.var.lat", "lat")
         var_lon = config.get("grid.var.lon", "lon")
         var_mask = config.get("grid.var.mask", "mask")
-        ds = xr.open_dataset(full_path)
-        lat = ds[var_lat].values
-        lon = ds[var_lon].values
-        mask = ds[var_mask].values
-        ds.close()
+        with xr.open_dataset(full_path) as ds:
+            lat = ds[var_lat].values
+            lon = ds[var_lon].values
+            mask = ds[var_mask].values
         return lat, lon, mask
-    except (OSError, KeyError, ValueError) as exc:
+    except (OSError, KeyError) as exc:
         _log.warning("Failed to load NetCDF grid %s: %s", full_path, exc)
         return None
 
@@ -475,23 +474,21 @@ def load_netcdf_overlay(
 ) -> list[dict] | None:
     """Load a NetCDF file and return overlay cell data for deck.gl."""
     try:
-        ds = xr.open_dataset(file_path)
-        var_name = None
-        for vn in ds.data_vars:
-            if len(ds[vn].dims) >= 2:
-                var_name = vn
-                break
-        if not var_name:
-            ds.close()
-            return None
+        with xr.open_dataset(file_path) as ds:
+            var_name = None
+            for vn in ds.data_vars:
+                if len(ds[vn].dims) >= 2:
+                    var_name = vn
+                    break
+            if not var_name:
+                return None
 
-        data_vals = ds[var_name].values
-        if len(data_vals.shape) > 2:
-            data_vals = data_vals[0]  # first time step
+            data_vals = ds[var_name].values
+            if len(data_vals.shape) > 2:
+                data_vals = data_vals[0]  # first time step
 
-        olat = ds["lat"].values if "lat" in ds else fallback_lat
-        olon = ds["lon"].values if "lon" in ds else fallback_lon
-        ds.close()
+            olat = ds["lat"].values if "lat" in ds else fallback_lat
+            olon = ds["lon"].values if "lon" in ds else fallback_lon
 
         if olat is None or olon is None:
             return None

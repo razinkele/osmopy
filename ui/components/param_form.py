@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from html import escape as _esc
+
 from shiny import ui
 from osmose.logging import setup_logging
 from osmose.schema.base import OsmoseField, ParamType
@@ -12,14 +14,14 @@ _log = setup_logging("osmose.param_form")
 
 def _tooltip_content(field: OsmoseField) -> str:
     """Build tooltip HTML content from field metadata."""
-    parts = [f"<strong>{field.description}</strong>"]
+    parts = [f"<strong>{_esc(field.description)}</strong>"]
     if field.min_val is not None or field.max_val is not None:
         range_str = constraint_hint(field)
         if range_str:
-            parts.append(f"<br>{range_str}")
+            parts.append(f"<br>{_esc(range_str)}")
     if field.default is not None:
-        parts.append(f"<br>Default: {field.default}")
-    parts.append(f"<br><code>{field.key_pattern}</code>")
+        parts.append(f"<br>Default: {_esc(str(field.default))}")
+    parts.append(f"<br><code>{_esc(field.key_pattern)}</code>")
     return "".join(parts)
 
 

@@ -7,8 +7,11 @@ from pathlib import Path
 from shiny import reactive
 from shiny.types import SilentException
 
+from osmose.logging import setup_logging
 from osmose.runner import RunResult
 from osmose.schema import build_registry
+
+_log = setup_logging("osmose.state")
 
 REGISTRY = build_registry()
 
@@ -102,7 +105,10 @@ def sync_inputs(
         input_id = key.replace(".", "_")
         try:
             val = getattr(input, input_id)()
-        except (AttributeError, TypeError):
+        except AttributeError:
+            continue
+        except TypeError:
+            _log.warning("sync_inputs: TypeError reading input '%s'", input_id)
             continue
         if val is not None:
             changed[key] = str(val)
@@ -114,6 +120,7 @@ def sync_inputs(
         if actual_changes:
             cfg.update(actual_changes)
             state.config.set(cfg)
+            state.dirty.set(True)
     return changed
 
 

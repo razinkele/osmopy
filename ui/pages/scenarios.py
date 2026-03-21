@@ -1,5 +1,6 @@
 """Scenario management page."""
 
+import zipfile
 from pathlib import Path
 
 from shiny import reactive, render, ui
@@ -111,9 +112,14 @@ def scenarios_server(input, output, session, state):
             config=dict(state.config.get()),
             tags=tags,
         )
-        mgr.save(scenario)
+        try:
+            mgr.save(scenario)
+        except (OSError, ValueError) as exc:
+            ui.notification_show(f"Failed to save scenario: {exc}", type="error", duration=8)
+            return
         state.dirty.set(False)
         _bump()
+        ui.notification_show(f"Scenario '{name}' saved.", type="message", duration=3)
 
     # --- Load ---
 
@@ -160,8 +166,13 @@ def scenarios_server(input, output, session, state):
         if not selected:
             return
         new_name = f"{selected}_fork"
-        mgr.fork(selected, new_name)
+        try:
+            mgr.fork(selected, new_name)
+        except (OSError, ValueError, FileNotFoundError) as exc:
+            ui.notification_show(f"Failed to fork scenario: {exc}", type="error", duration=8)
+            return
         _bump()
+        ui.notification_show(f"Forked as '{new_name}'.", type="message", duration=3)
 
     # --- Delete ---
 
@@ -171,8 +182,13 @@ def scenarios_server(input, output, session, state):
         selected = input.selected_scenario()
         if not selected:
             return
-        mgr.delete(selected)
+        try:
+            mgr.delete(selected)
+        except (OSError, FileNotFoundError) as exc:
+            ui.notification_show(f"Failed to delete scenario: {exc}", type="error", duration=8)
+            return
         _bump()
+        ui.notification_show("Scenario deleted.", type="message", duration=3)
 
     # --- Update compare dropdowns when scenario list changes ---
 
@@ -253,5 +269,9 @@ def scenarios_server(input, output, session, state):
         if not file_info:
             return
         zip_path = Path(file_info[0]["datapath"])
-        mgr.import_all(zip_path)
+        try:
+            mgr.import_all(zip_path)
+        except (OSError, zipfile.BadZipFile, ValueError, KeyError) as exc:
+            ui.notification_show(f"Failed to import scenarios: {exc}", type="error", duration=8)
+            return
         _bump()

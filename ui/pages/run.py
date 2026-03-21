@@ -236,9 +236,10 @@ def run_server(input, output, session, state):
             log_lines = ["--- WARNINGS (continuing anyway) ---"]
             log_lines.extend(warnings)
             run_log.set(log_lines)
+        else:
+            run_log.set([])
 
         status.set("Writing config...")
-        run_log.set([])
         ui.update_action_button("btn_run", disabled=True, session=session)
         ui.update_action_button("btn_cancel", disabled=False, session=session)
 
@@ -268,8 +269,11 @@ def run_server(input, output, session, state):
         status.set("Running...")
 
         def on_progress(line: str):
-            lines = list(run_log.get())
+            with reactive.isolate():
+                lines = list(run_log.get())
             lines.append(line)
+            if len(lines) > 500:
+                lines = lines[-500:]
             run_log.set(lines)
 
         timeout_sec = input.run_timeout()
@@ -287,6 +291,7 @@ def run_server(input, output, session, state):
         finally:
             state.busy.set(None)
             ui.update_action_button("btn_run", disabled=False, session=session)
+            ui.update_action_button("btn_cancel", disabled=True, session=session)
 
         state.run_result.set(result)
         state.output_dir.set(result.output_dir)
@@ -304,7 +309,7 @@ def run_server(input, output, session, state):
                     summary={},
                 )
                 history.save(record)
-            except Exception as exc:
+            except (OSError, ValueError) as exc:
                 _log.warning("Failed to save run history: %s", exc)
                 ui.notification_show(
                     f"Run completed but history could not be saved: {exc}",

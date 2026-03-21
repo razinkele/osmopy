@@ -87,14 +87,16 @@ def movement_server(input, output, session, state):
                 n_species = int(float(_ns_raw or "3"))
             except (ValueError, TypeError):
                 n_species = 3
+        all_keys = []
         for i in range(n_species):
-            keys = [f.resolve_key(i) for f in per_species]
-            sync_inputs(input, state, keys)
+            all_keys.extend(f.resolve_key(i) for f in per_species)
+        sync_inputs(input, state, all_keys)
 
     @reactive.effect
     def sync_map_inputs():
         n = input.n_maps()
         map_fields = [f for f in MOVEMENT_FIELDS if f.indexed and "map" in f.key_pattern]
+        all_keys = []
         for i in range(n):
-            keys = [f.resolve_key(i) for f in map_fields]
-            sync_inputs(input, state, keys)
+            all_keys.extend(f.resolve_key(i) for f in map_fields)
+        sync_inputs(input, state, all_keys)

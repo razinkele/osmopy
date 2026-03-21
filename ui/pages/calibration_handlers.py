@@ -202,10 +202,12 @@ def register_calibration_handlers(
 
         writer = OsmoseConfigWriter()
         config_dir = work_dir / "config"
-        writer.write(state.config.get(), config_dir)
-        source_dir = state.config_dir.get()
+        with reactive.isolate():
+            current_config = state.config.get()
+            source_dir = state.config_dir.get()
+        writer.write(current_config, config_dir)
         if source_dir and source_dir.is_dir():
-            copy_data_files(state.config.get(), source_dir, config_dir)
+            copy_data_files(current_config, source_dir, config_dir)
         base_config = config_dir / "osm_all-parameters.csv"
 
         objective_fns = []

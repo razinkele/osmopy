@@ -172,6 +172,10 @@ def grid_server(input, output, session, state):
         try:
             nsteps = int(float(cfg.get("simulation.time.ndtPerYear", "24") or "24"))
         except (ValueError, TypeError):
+            _log.warning(
+                "Could not parse simulation.time.ndtperyear=%r, defaulting to 24",
+                cfg.get("simulation.time.ndtperyear"),
+            )
             nsteps = 24
 
         try:
@@ -234,6 +238,7 @@ def grid_server(input, output, session, state):
         Fall back to config so the preview works immediately.
         """
         state.load_trigger.get()  # re-run when example loads
+        inputs_available = True
         try:
             ul_lat = float(input.grid_upleft_lat() or 0)
             ul_lon = float(input.grid_upleft_lon() or 0)
@@ -242,20 +247,25 @@ def grid_server(input, output, session, state):
             nx = int(input.grid_nlon() or 0)
             ny = int(input.grid_nlat() or 0)
         except (SilentException, AttributeError):
-            # SilentException raised when inputs aren't initialized yet
+            inputs_available = False
             ul_lat = ul_lon = lr_lat = lr_lon = 0.0
             nx = ny = 0
 
         # Fall back to config if inputs haven't populated yet
-        if ul_lat == 0 and ul_lon == 0 and lr_lat == 0 and lr_lon == 0:
+        if not inputs_available:
             with reactive.isolate():
                 cfg = state.config.get()
-            ul_lat = float(cfg.get("grid.upleft.lat", 0))
-            ul_lon = float(cfg.get("grid.upleft.lon", 0))
-            lr_lat = float(cfg.get("grid.lowright.lat", 0))
-            lr_lon = float(cfg.get("grid.lowright.lon", 0))
-            nx = int(float(cfg.get("grid.nlon", 0)))
-            ny = int(float(cfg.get("grid.nlat", 0)))
+            try:
+                ul_lat = float(cfg.get("grid.upleft.lat", 0))
+                ul_lon = float(cfg.get("grid.upleft.lon", 0))
+                lr_lat = float(cfg.get("grid.lowright.lat", 0))
+                lr_lon = float(cfg.get("grid.lowright.lon", 0))
+                nx = int(float(cfg.get("grid.nlon", 0)))
+                ny = int(float(cfg.get("grid.nlat", 0)))
+            except (ValueError, TypeError):
+                _log.warning("Invalid grid coordinate values in config")
+                ul_lat = ul_lon = lr_lat = lr_lon = 0.0
+                nx = ny = 0
 
         return ul_lat, ul_lon, lr_lat, lr_lon, nx, ny
 
@@ -445,6 +455,12 @@ def grid_server(input, output, session, state):
                     fb_lat = nc_data[0] if nc_data else None
                     fb_lon = nc_data[1] if nc_data else None
                     cells = load_netcdf_overlay(overlay_file, fb_lat, fb_lon)
+                    if cells is None:
+                        ui.notification_show(
+                            f"Could not load overlay data from '{overlay}'.",
+                            type="warning",
+                            duration=5,
+                        )
                     if cells:
                         layers.append(
                             polygon_layer(
@@ -477,6 +493,12 @@ def grid_server(input, output, session, state):
                         ny,
                         nc_data=nc_data,
                     )
+                    if csv_cells is None:
+                        ui.notification_show(
+                            f"Could not load overlay data from '{overlay}'.",
+                            type="warning",
+                            duration=5,
+                        )
                     if csv_cells:
                         layers.append(
                             polygon_layer(

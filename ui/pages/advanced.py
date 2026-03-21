@@ -86,7 +86,14 @@ def advanced_server(input, output, session, state):
             return
         filepath = Path(file_info[0]["datapath"])
         reader = OsmoseConfigReader()
-        loaded = reader.read_file(filepath)
+        try:
+            new_cfg = reader.read_file(filepath)
+        except (OSError, ValueError, UnicodeDecodeError) as exc:
+            ui.notification_show(
+                f"Failed to parse config file: {exc}", type="error", duration=8
+            )
+            return
+        loaded = new_cfg
         # Stage for preview instead of merging directly
         import_pending.set(loaded)
 

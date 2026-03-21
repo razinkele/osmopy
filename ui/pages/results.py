@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import atexit
+import shutil
 from pathlib import Path
 
 import pandas as pd
@@ -339,7 +341,7 @@ def results_server(input, output, session, state):
             ui.notification_show("Results loaded successfully.", type="message", duration=3)
 
             state.results_loaded.set(True)
-        except Exception as exc:
+        except (OSError, ValueError, KeyError, ImportError, AttributeError, pd.errors.ParserError) as exc:
             _log.error("Failed to load results: %s", exc, exc_info=True)
             ui.notification_show(f"Error loading results: {exc}", type="error", duration=10)
 
@@ -665,4 +667,5 @@ def results_server(input, output, session, state):
         tmp_dir = Path(tempfile.mkdtemp(prefix="osmose_export_"))
         csv_path = tmp_dir / "export.csv"
         df.to_csv(csv_path, index=False)
+        atexit.register(shutil.rmtree, str(tmp_dir), True)
         return str(csv_path)
