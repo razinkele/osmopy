@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from shiny import ui, reactive, render
+from shiny.types import SilentException
 
 from osmose.demo import list_demos, migrate_config, osmose_demo
 from osmose.logging import setup_logging
@@ -180,7 +181,7 @@ def setup_server(input, output, session, state):
                 input_id = f"spt_{base_key}_{i}"
                 try:
                     val = getattr(input, input_id)()
-                except Exception:
+                except (AttributeError, SilentException):
                     continue
                 if val is not None:
                     updates[config_key] = str(val)

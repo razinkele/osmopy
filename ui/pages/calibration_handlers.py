@@ -12,6 +12,7 @@ from pathlib import Path
 
 import numpy as np
 from shiny import reactive, ui
+from shiny.types import SilentException
 
 from osmose.logging import setup_logging
 from osmose.schema.base import ParamType
@@ -118,7 +119,7 @@ def collect_selected_params(
         try:
             if val():
                 selected.append(p)
-        except Exception:
+        except (SilentException, AttributeError):
             continue
     return selected
 

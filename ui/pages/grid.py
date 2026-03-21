@@ -241,7 +241,7 @@ def grid_server(input, output, session, state):
             lr_lon = float(input.grid_lowright_lon() or 0)
             nx = int(input.grid_nlon() or 0)
             ny = int(input.grid_nlat() or 0)
-        except Exception:
+        except (SilentException, AttributeError):
             # SilentException raised when inputs aren't initialized yet
             ul_lat = ul_lon = lr_lat = lr_lon = 0.0
             nx = ny = 0

@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from shiny import reactive
+from shiny.types import SilentException
 
 from osmose.runner import RunResult
 from osmose.schema import build_registry
@@ -124,6 +125,6 @@ def get_theme_mode(input: object) -> str:
     try:
         mode = input.theme_mode()  # type: ignore[attr-defined]
         return mode if mode in ("dark", "light") else "light"
-    except Exception:
+    except (SilentException, AttributeError, TypeError):
         # SilentException when input not initialized, AttributeError/TypeError otherwise
         return "light"

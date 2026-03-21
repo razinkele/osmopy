@@ -7,6 +7,7 @@ from pathlib import Path
 import pandas as pd
 import plotly.graph_objects as go
 from shiny import reactive, render, ui
+from shiny.types import SilentException
 from shinywidgets import output_widget, render_plotly
 
 from osmose.logging import setup_logging
@@ -462,7 +463,7 @@ def results_server(input, output, session, state):
         ensemble_on = False
         try:
             ensemble_on = bool(input.ensemble_mode()) and bool(rep_dirs.get())
-        except Exception:
+        except (SilentException, AttributeError):
             pass
 
         if ensemble_on and rtype in ENSEMBLE_OUTPUT_TYPES:

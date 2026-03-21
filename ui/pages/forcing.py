@@ -1,6 +1,7 @@
 """Environmental forcing / LTL configuration page."""
 
 from shiny import ui, reactive, render
+from shiny.types import SilentException
 
 from osmose.schema.bioenergetics import BIOENERGETICS_FIELDS
 from osmose.schema.ltl import LTL_FIELDS
@@ -123,7 +124,7 @@ def forcing_server(input, output, session, state):
                 input_id = f"spt_{base_key}_{sp_idx}"
                 try:
                     val = getattr(input, input_id)()
-                except Exception:
+                except (AttributeError, SilentException):
                     continue
                 if val is not None:
                     updates[config_key] = str(val)
