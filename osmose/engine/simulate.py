@@ -607,50 +607,6 @@ def _collect_outputs(
         if config.output_abundance_bysize:
             abundance_by_size = abs_
 
-    # Compute age/size distributions when enabled
-    biomass_by_age: dict[int, NDArray[np.float64]] | None = None
-    abundance_by_age: dict[int, NDArray[np.float64]] | None = None
-    biomass_by_size: dict[int, NDArray[np.float64]] | None = None
-    abundance_by_size: dict[int, NDArray[np.float64]] | None = None
-
-    if getattr(config, "output_biomass_byage", False):
-        biomass_by_age = {}
-        abundance_by_age = {}
-        for sp in range(config.n_species):
-            n_age_bins = int(config.lifespan_dt[sp]) + 1
-            bba = np.zeros(n_age_bins, dtype=np.float64)
-            aba = np.zeros(n_age_bins, dtype=np.float64)
-            if len(state) > 0:
-                mask = state.species_id == sp
-                if mask.any():
-                    ages_dt = state.age_dt[mask].astype(np.int32)
-                    age_clipped = np.clip(ages_dt, 0, n_age_bins - 1)
-                    np.add.at(bba, age_clipped, state.biomass[mask])
-                    np.add.at(aba, age_clipped, state.abundance[mask])
-            biomass_by_age[sp] = bba
-            abundance_by_age[sp] = aba
-
-    if getattr(config, "output_biomass_bysize", False):
-        size_min = getattr(config, "output_size_min", 0.0)
-        size_incr = getattr(config, "output_size_incr", 1.0)
-        size_max = getattr(config, "output_size_max", 200.0)
-        n_size_bins = max(1, int((size_max - size_min) / size_incr))
-        biomass_by_size = {}
-        abundance_by_size = {}
-        for sp in range(config.n_species):
-            bbs = np.zeros(n_size_bins, dtype=np.float64)
-            abs_ = np.zeros(n_size_bins, dtype=np.float64)
-            if len(state) > 0:
-                mask = state.species_id == sp
-                if mask.any():
-                    lengths = state.length[mask]
-                    bin_idx = np.floor((lengths - size_min) / size_incr).astype(np.int32)
-                    bin_idx = np.clip(bin_idx, 0, n_size_bins - 1)
-                    np.add.at(bbs, bin_idx, state.biomass[mask])
-                    np.add.at(abs_, bin_idx, state.abundance[mask])
-            biomass_by_size[sp] = bbs
-            abundance_by_size[sp] = abs_
-
     # Bioen: mean e_net per focal species (zeros when state is empty or no focal schools)
     bioen_e_net_by_species: NDArray[np.float64] | None = None
     bioen_ingestion_by_species: NDArray[np.float64] | None = None

@@ -116,3 +116,26 @@ class TestSimulate:
         rng = np.random.default_rng(42)
         outputs = simulate(cfg, grid, rng)
         assert len(outputs) == 12
+
+
+def test_age_distribution_uses_year_bins(minimal_config):
+    """Regression: duplicate block used timestep bins instead of year bins."""
+    cfg_dict = dict(minimal_config)
+    cfg_dict["output.biomass.byage.enabled"] = "true"
+    cfg_dict["output.abundance.byage.enabled"] = "true"
+
+    cfg = EngineConfig.from_dict(cfg_dict)
+    grid = Grid.from_dimensions(ny=3, nx=3)
+    rng = np.random.default_rng(42)
+    outputs = simulate(cfg, grid, rng)
+
+    # With lifespan=3 years and year-based bins, we expect max_age_yr+1 = 4 bins
+    # The duplicate block would produce lifespan_dt+1 = 37 bins (3*12+1)
+    for out in outputs:
+        if out.biomass_by_age is not None:
+            n_bins = len(out.biomass_by_age[0])
+            assert n_bins <= 5, (
+                f"Got {n_bins} age bins — expected ~4 (year-based), "
+                f"not ~37 (timestep-based). Duplicate block bug?"
+            )
+            break
