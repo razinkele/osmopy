@@ -130,7 +130,10 @@ def scenarios_server(input, output, session, state):
             state.config_name.set(selected)
             state.dirty.set(False)
 
-            n_species = int(loaded.config.get("simulation.nspecies", "3"))
+            try:
+                n_species = int(float(loaded.config.get("simulation.nspecies", "3") or "3"))
+            except (ValueError, TypeError):
+                n_species = 3
             names = [
                 loaded.config.get(f"species.name.sp{i}", f"Species {i}") for i in range(n_species)
             ]

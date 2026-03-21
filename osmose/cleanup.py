@@ -63,8 +63,8 @@ def cleanup_old_temp_dirs(max_age_hours: int = _MAX_AGE_HOURS) -> int:
             if age > max_age_secs:
                 shutil.rmtree(entry, ignore_errors=True)
                 removed += 1
-        except OSError:
-            pass
+        except OSError as exc:
+            _log.debug("Could not stat/remove temp dir %s: %s", entry, exc)
 
     if removed:
         _log.info(
