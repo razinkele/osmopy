@@ -5,6 +5,8 @@ import math
 from shiny import ui, reactive, render
 from shiny.types import SilentException
 
+import shiny_deckgl as _sdgl  # type: ignore[import-untyped]
+
 from shiny_deckgl import (  # type: ignore[import-untyped]
     MapWidget,
     polygon_layer,
@@ -14,7 +16,6 @@ from shiny_deckgl import (  # type: ignore[import-untyped]
     compass_widget,
     fullscreen_widget,
     scale_widget,
-    deck_legend_control,
 )
 
 from osmose.logging import setup_logging
@@ -36,6 +37,18 @@ from ui.state import get_theme_mode, sync_inputs
 _log = setup_logging("osmose.grid.ui")
 
 GRID_GLOBAL_KEYS: list[str] = [f.key_pattern for f in GRID_FIELDS if not f.indexed]
+
+
+def _make_legend(entries: list[dict], **kwargs) -> dict:
+    """Create a legend widget/control, adapting to shiny_deckgl version."""
+    if hasattr(_sdgl, "layer_legend_widget"):
+        return _sdgl.layer_legend_widget(entries=entries, **kwargs)
+    if hasattr(_sdgl, "deck_legend_control"):
+        kw = dict(kwargs)
+        if "placement" in kw:
+            kw["position"] = kw.pop("placement")
+        return _sdgl.deck_legend_control(entries=entries, **kw)
+    return {}
 
 
 def grid_ui():
@@ -529,9 +542,9 @@ def grid_server(input, output, session, state):
         ]
         if legend_entries:
             widgets.append(
-                deck_legend_control(
+                _make_legend(
                     entries=legend_entries,
-                    position="bottom-left",
+                    placement="bottom-left",
                     show_checkbox=True,
                     title="Layers",
                 )
