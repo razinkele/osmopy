@@ -316,8 +316,11 @@ def _load_fishing_seasonality(
                     dtype=np.float64,
                 )
                 _set_season(sp_idx, vals)
-            except (ValueError, TypeError):
-                pass
+            except (ValueError, TypeError) as exc:
+                warnings.warn(
+                    f"Invalid fisheries.seasonality.fsh{fsh} value: {inline_val!r} — {exc}",
+                    stacklevel=2,
+                )
 
     return seasons if found_any else None
 

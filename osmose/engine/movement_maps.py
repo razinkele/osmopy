@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import glob as _glob
 import logging
-import warnings
 from pathlib import Path
 
 import numpy as np
@@ -220,11 +219,8 @@ class MovementMapSet:
             else:
                 try:
                     raw_grids[i] = _load_csv_grid(fp, ny, nx)
-                except Exception as exc:
-                    warnings.warn(
-                        f"Failed to load movement map file {fp}: {exc}",
-                        stacklevel=2,
-                    )
+                except (FileNotFoundError, OSError, ValueError) as exc:
+                    logger.error("Failed to load movement map file %s: %s", fp, exc)
                     raw_grids[i] = None
 
         # --- Build deduplicated maps list ---
