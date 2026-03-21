@@ -9,6 +9,10 @@ from osmose.logging import setup_logging
 
 _log = setup_logging("osmose.config")
 
+# Module-level case map: maps lowercase key → original case from last read.
+# Used by writers to restore Java's expected key casing.
+_last_key_case_map: dict[str, str] = {}
+
 
 class OsmoseConfigReader:
     """Read OSMOSE configuration files with recursive sub-file loading.
@@ -16,10 +20,17 @@ class OsmoseConfigReader:
     OSMOSE config files use key-value pairs with auto-detected separators
     (=, ;, comma, tab, colon). Lines starting with # or ! are comments.
     Sub-configs are referenced via osmose.configuration.* keys.
+
+    After reading, ``self.key_case_map`` maps each lowercase key to the
+    original case as it appeared in the config file.  Writers use this to
+    restore Java's expected case when writing config back.
     """
 
     SEPARATORS = re.compile(r"\s*[=;,:\t]\s*")
     COMMENT_CHARS = {"#", "!"}
+
+    def __init__(self) -> None:
+        self.key_case_map: dict[str, str] = {}
 
     def read(self, master_file: Path) -> dict[str, str]:
         """Recursively read a master config and all referenced sub-configs."""
@@ -28,6 +39,8 @@ class OsmoseConfigReader:
         flat: dict[str, str] = {}
         self._read_recursive(master_file, flat)
         flat["_osmose.config.dir"] = str(master_file.parent.resolve())
+        global _last_key_case_map
+        _last_key_case_map = dict(self.key_case_map)
         return flat
 
     def _read_recursive(
@@ -60,7 +73,12 @@ class OsmoseConfigReader:
                     _log.warning("Referenced sub-config not found: %s (from key %s)", sub_path, key)
 
     def read_file(self, filepath: Path) -> dict[str, str]:
-        """Parse a single OSMOSE config file into a flat key-value dict."""
+        """Parse a single OSMOSE config file into a flat key-value dict.
+
+        Keys are stored as lowercase for internal lookups. The original
+        case is preserved in ``self.key_case_map`` so that writers can
+        restore the case Java expects.
+        """
         if filepath.stat().st_size > 10_000_000:  # 10MB
             raise ValueError(f"Config file too large: {filepath} ({filepath.stat().st_size} bytes)")
         result: dict[str, str] = {}
@@ -71,11 +89,13 @@ class OsmoseConfigReader:
                     continue
                 parts = self.SEPARATORS.split(line, maxsplit=1)
                 if len(parts) == 2:
-                    key = parts[0].strip().lower()
+                    raw_key = parts[0].strip()
+                    key = raw_key.lower()
                     value = parts[1].strip()
                     # Strip trailing separators (e.g., "true," → "true")
                     value = value.rstrip(";,:\t =")
                     result[key] = value
+                    self.key_case_map[key] = raw_key
                 else:
                     _log.warning("Skipping unparseable line in %s: %r", filepath.name, line)
         return result

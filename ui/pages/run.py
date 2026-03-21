@@ -118,12 +118,16 @@ def write_temp_config(
     # Write a single flat master file with all params, stripping sub-config
     # references to avoid the Java engine loading duplicate parameters from
     # both the master and the copied sub-config files.
+    # Restore original key case so Java's case-sensitive parser works.
+    from osmose.config.reader import _last_key_case_map
+
     master = output_dir / "osm_all-parameters.csv"
     lines = []
     for key, value in sorted(config.items()):
-        if key.startswith("osmose.configuration."):
+        if key.startswith(("osmose.configuration.", "_")):
             continue
-        lines.append(f"{key} ; {value}\n")
+        original_key = _last_key_case_map.get(key, key)
+        lines.append(f"{original_key} ; {value}\n")
     master.write_text("".join(lines))
     return master
 
