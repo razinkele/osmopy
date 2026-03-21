@@ -64,7 +64,7 @@ class OsmoseConfigReader:
         if filepath.stat().st_size > 10_000_000:  # 10MB
             raise ValueError(f"Config file too large: {filepath} ({filepath.stat().st_size} bytes)")
         result: dict[str, str] = {}
-        with open(filepath, "r") as f:
+        with open(filepath, "r", encoding="utf-8", errors="replace") as f:
             for line in f:
                 line = line.strip()
                 if not line or line[0] in self.COMMENT_CHARS:
@@ -77,5 +77,5 @@ class OsmoseConfigReader:
                     value = value.rstrip(";,:\t =")
                     result[key] = value
                 else:
-                    _log.debug("Skipping unparseable line in %s: %r", filepath.name, line)
+                    _log.warning("Skipping unparseable line in %s: %r", filepath.name, line)
         return result
