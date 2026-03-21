@@ -281,11 +281,14 @@ class TestDistributionCollectOutputs:
         assert out.abundance_by_size is None
 
     def test_collect_outputs_age_enabled(self):
-        """Distribution dicts should be populated when byage flag is on."""
+        """Distribution dicts should be populated when byage flags are on."""
         from osmose.engine.simulate import _collect_outputs
         from osmose.engine.state import SchoolState
 
-        cfg = self._make_engine_config({"output.biomass.byage.enabled": "true"})
+        cfg = self._make_engine_config({
+            "output.biomass.byage.enabled": "true",
+            "output.abundance.byage.enabled": "true",
+        })
         # Empty state — distributions should be all-zero dicts
         state = SchoolState.create(n_schools=0, species_id=np.array([], dtype=np.int32))
         out = _collect_outputs(state, cfg, 0)
@@ -296,11 +299,14 @@ class TestDistributionCollectOutputs:
         np.testing.assert_array_equal(out.biomass_by_age[0], 0.0)
 
     def test_collect_outputs_size_enabled(self):
-        """Size distribution dicts should be populated when bysize flag is on."""
+        """Size distribution dicts should be populated when bysize flags are on."""
         from osmose.engine.simulate import _collect_outputs
         from osmose.engine.state import SchoolState
 
-        cfg = self._make_engine_config({"output.biomass.bysize.enabled": "true"})
+        cfg = self._make_engine_config({
+            "output.biomass.bysize.enabled": "true",
+            "output.abundance.bysize.enabled": "true",
+        })
         state = SchoolState.create(n_schools=0, species_id=np.array([], dtype=np.int32))
         out = _collect_outputs(state, cfg, 0)
         assert out.biomass_by_size is not None
