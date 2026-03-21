@@ -148,7 +148,7 @@ class TestLarvaMortality:
         np.testing.assert_allclose(new_state.abundance[0], 1000.0)
 
     def test_larva_mortality_formula(self):
-        """D = M_larva / n_dt_per_year, applied once per timestep."""
+        """D = M_larva applied directly (rate is per-timestep, not annual)."""
         cfg_dict = _make_mortality_config()
         cfg_dict["mortality.additional.larva.rate.sp0"] = "2.0"
         cfg = EngineConfig.from_dict(cfg_dict)
@@ -159,8 +159,8 @@ class TestLarvaMortality:
             is_egg=np.array([True]),
         )
         new_state = larva_mortality(state, cfg)
-        # D = 2.0 / 24 = 0.08333...
-        d = 2.0 / 24
+        # D = M_larva = 2.0 (rate is per-timestep, not annual)
+        d = 2.0
         expected_dead = 5000.0 * (1 - np.exp(-d))
         np.testing.assert_allclose(
             new_state.n_dead[0, MortalityCause.ADDITIONAL], expected_dead, rtol=1e-10

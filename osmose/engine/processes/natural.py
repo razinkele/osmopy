@@ -58,7 +58,8 @@ def larva_mortality(state: SchoolState, config: EngineConfig) -> SchoolState:
 
     Only affects schools where is_egg is True. Applied ONCE per main
     timestep (not per sub-step), matching Java's egg mortality handling.
-    Java rate: M_larva / n_dt_per_year (per-timestep rate).
+    Java: M_larva is expressed in time_step^-1 (per OSMOSE timestep), applied
+    directly — NOT divided by n_dt_per_year.
     """
     if len(state) == 0:
         return state
@@ -69,8 +70,8 @@ def larva_mortality(state: SchoolState, config: EngineConfig) -> SchoolState:
 
     sp = state.species_id
     m_rate = config.larva_mortality_rate[sp]
-    # Match Java: rate per timestep = M_larva / n_dt_per_year
-    d = m_rate / config.n_dt_per_year
+    # M_larva is already per-timestep (time_step^-1) — apply directly
+    d = m_rate
     mortality_fraction = 1 - np.exp(-d)
 
     n_dead = np.zeros_like(state.abundance)
