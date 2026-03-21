@@ -468,12 +468,6 @@ def grid_server(input, output, session, state):
                     fb_lat = nc_data[0] if nc_data else None
                     fb_lon = nc_data[1] if nc_data else None
                     cells = load_netcdf_overlay(overlay_file, fb_lat, fb_lon)
-                    if cells is None:
-                        ui.notification_show(
-                            f"Could not load overlay data from '{overlay}'.",
-                            type="warning",
-                            duration=5,
-                        )
                     if cells:
                         layers.append(
                             polygon_layer(
@@ -506,12 +500,6 @@ def grid_server(input, output, session, state):
                         ny,
                         nc_data=nc_data,
                     )
-                    if csv_cells is None:
-                        ui.notification_show(
-                            f"Could not load overlay data from '{overlay}'.",
-                            type="warning",
-                            duration=5,
-                        )
                     if csv_cells:
                         layers.append(
                             polygon_layer(
