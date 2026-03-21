@@ -230,11 +230,15 @@ def scenarios_server(input, output, session, state):
 
     @render.download(filename="osmose_scenarios.zip")
     def export_all_scenarios():
+        import atexit
+        import shutil
         import tempfile
 
         tmp_dir = Path(tempfile.mkdtemp(prefix="osmose_export_"))
         zip_path = tmp_dir / "osmose_scenarios.zip"
         mgr.export_all(zip_path)
+        # Schedule cleanup after Shiny finishes serving the download
+        atexit.register(shutil.rmtree, str(tmp_dir), True)
         return str(zip_path)
 
     # --- Bulk Import ---
