@@ -549,7 +549,7 @@ def _collect_outputs(
     yield_by_species = np.zeros(config.n_species, dtype=np.float64)
     if len(state) > 0:
         fishing_dead = state.n_dead[:, int(MortalityCause.FISHING)]
-        fishing_yield = fishing_dead * state.weight * 1e-6  # grams -> tonnes
+        fishing_yield = fishing_dead * state.weight  # weight already in tonnes
         focal_mask = state.species_id < config.n_species
         np.add.at(yield_by_species, state.species_id[focal_mask], fishing_yield[focal_mask])
 

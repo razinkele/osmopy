@@ -118,6 +118,27 @@ class TestSimulate:
         assert len(outputs) == 12
 
 
+def test_fishing_yield_not_double_scaled(minimal_config):
+    """Regression: yield was 1e6 too small due to double 1e-6 conversion."""
+    from osmose.engine.simulate import _collect_outputs
+    from osmose.engine.state import MortalityCause, SchoolState
+
+    cfg = EngineConfig.from_dict(minimal_config)
+
+    state = SchoolState.create(n_schools=1, species_id=np.array([0], dtype=np.int32))
+    # weight=0.001 tonnes (= 1 kg), n_dead[FISHING]=100 -> yield = 100 * 0.001 = 0.1 tonnes
+    state = state.replace(
+        weight=np.array([0.001]),
+        abundance=np.array([100.0]),
+        n_dead=np.array([[0.0, 0.0, 0.0, 100.0, 0.0, 0.0, 0.0, 0.0]]),
+    )
+
+    output = _collect_outputs(state, cfg, step=0)
+    total_yield = output.yield_by_species.sum()
+    assert total_yield > 0.01, f"Yield {total_yield} is suspiciously small (double 1e-6 bug?)"
+    assert abs(total_yield - 0.1) < 1e-10, f"Expected 0.1 tonnes, got {total_yield}"
+
+
 def test_age_distribution_uses_year_bins(minimal_config):
     """Regression: duplicate block used timestep bins instead of year bins."""
     cfg_dict = dict(minimal_config)
