@@ -1082,15 +1082,6 @@ class EngineConfig:
             for i in range(n_sp)
         ]
 
-        # Growth class dispatch: parse classname for each focal species
-        growth_class = [
-            _GROWTH_MAP.get(
-                cfg.get(f"growth.java.classname.sp{i}", "").strip(),
-                "VB",
-            )
-            for i in range(n_sp)
-        ]
-
         # Gompertz parameters: only parsed when at least one species uses GOMPERTZ
         gompertz_ke = gompertz_lstart = gompertz_kg = gompertz_tg = gompertz_linf = None
         gompertz_thr_age_exp_dt = gompertz_thr_age_gom_dt = None
