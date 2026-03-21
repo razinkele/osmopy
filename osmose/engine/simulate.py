@@ -675,9 +675,9 @@ def _collect_outputs(
 def initialize(config: EngineConfig, grid: Grid, rng: np.random.Generator) -> SchoolState:
     """Create an empty initial population (Java convention).
 
-    Java's PopulatingProcess creates zero initial schools by default.
-    All schools are created by reproduction's seeding mechanism in the
-    first timestep (SSB=0 triggers seeding_biomass injection).
+    Java's PopulatingProcess creates zero initial schools. All schools
+    are created by reproduction's seeding mechanism (SSB=0 triggers
+    seeding_biomass injection as SSB for egg production).
     """
     return SchoolState.create(n_schools=0)
 

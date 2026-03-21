@@ -22,7 +22,6 @@ def reproduction(
     """Produce eggs from mature schools and increment age for all schools.
 
     Maturity condition: age_dt >= maturity_age AND length >= maturity_size.
-    Since maturity_age is not separately configured, we use maturity_size only.
 
     N_eggs = sex_ratio * relative_fecundity * SSB * season_factor
     """

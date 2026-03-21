@@ -4,6 +4,10 @@
       {
         "matcher": "Edit|Write",
         "command": "cd /home/razinka/osmose/osmose-python && .venv/bin/ruff format --quiet \"$CLAUDE_FILE_PATH\" 2>/dev/null; .venv/bin/ruff check --fix --quiet \"$CLAUDE_FILE_PATH\" 2>/dev/null; true"
+      },
+      {
+        "matcher": "Edit|Write",
+        "command": "echo \"$CLAUDE_FILE_PATH\" | grep -qE '\\.py$' && cd /home/razinka/osmose/osmose-python && .venv/bin/pyright \"$CLAUDE_FILE_PATH\" 2>&1 | tail -1 | grep -q '0 errors' && true || echo 'PYRIGHT: type errors detected'; true"
       }
     ],
     "PreToolUse": [

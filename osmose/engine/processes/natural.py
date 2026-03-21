@@ -56,11 +56,12 @@ def additional_mortality(
 def larva_mortality(state: SchoolState, config: EngineConfig) -> SchoolState:
     """Apply additional mortality to eggs/larvae before the main mortality loop.
 
-    Only affects schools where is_egg is True. Applied ONCE per main
-    timestep (not per sub-step), matching Java's egg mortality handling.
-    Java: M_larva config value is an ANNUAL rate. Java's AnnualLarvaMortality
-    applies it as D = annual_rate / n_dt_per_year per timestep (confirmed by
-    matching Java output Madd-Eggs aggregate against config values).
+    Only affects schools where is_egg is True. Applied ONCE per egg cohort
+    (each cohort is age-0 for exactly one timestep before age increment).
+    Java: AnnualLarvaMortality applies the FULL configured rate in one step
+    (D = rate, NOT rate / n_dt_per_year). This is correct because each egg
+    cohort receives this mortality exactly once in its lifetime, so the rate
+    represents the total larval mortality, not a rate to be spread over time.
     """
     if len(state) == 0:
         return state
@@ -71,8 +72,8 @@ def larva_mortality(state: SchoolState, config: EngineConfig) -> SchoolState:
 
     sp = state.species_id
     m_rate = config.larva_mortality_rate[sp]
-    # Annual rate → per-timestep rate (matching Java AnnualLarvaMortality)
-    d = m_rate / config.n_dt_per_year
+    # Full rate applied once per cohort (matching Java AnnualLarvaMortality)
+    d = m_rate
     mortality_fraction = 1 - np.exp(-d)
 
     n_dead = np.zeros_like(state.abundance)

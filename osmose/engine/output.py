@@ -39,7 +39,7 @@ def write_outputs(
     # Write biomass CSV
     _write_species_csv(
         output_dir / f"{prefix}_biomass_Simu0.csv",
-        "Mean biomass (tons), including first ages specified in input",
+        "Mean biomass (tons), excluding first ages specified in input",
         times,
         species,
         biomass_data,
@@ -48,7 +48,7 @@ def write_outputs(
     # Write abundance CSV
     _write_species_csv(
         output_dir / f"{prefix}_abundance_Simu0.csv",
-        "Mean abundance (number of fish), including first ages specified in input",
+        "Mean abundance (number of fish), excluding first ages specified in input",
         times,
         species,
         abundance_data,
