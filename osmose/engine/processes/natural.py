@@ -58,8 +58,9 @@ def larva_mortality(state: SchoolState, config: EngineConfig) -> SchoolState:
 
     Only affects schools where is_egg is True. Applied ONCE per main
     timestep (not per sub-step), matching Java's egg mortality handling.
-    Java: M_larva is expressed in time_step^-1 (per OSMOSE timestep), applied
-    directly — NOT divided by n_dt_per_year.
+    Java: M_larva config value is an ANNUAL rate. Java's AnnualLarvaMortality
+    applies it as D = annual_rate / n_dt_per_year per timestep (confirmed by
+    matching Java output Madd-Eggs aggregate against config values).
     """
     if len(state) == 0:
         return state
@@ -70,8 +71,8 @@ def larva_mortality(state: SchoolState, config: EngineConfig) -> SchoolState:
 
     sp = state.species_id
     m_rate = config.larva_mortality_rate[sp]
-    # M_larva is already per-timestep (time_step^-1) — apply directly
-    d = m_rate
+    # Annual rate → per-timestep rate (matching Java AnnualLarvaMortality)
+    d = m_rate / config.n_dt_per_year
     mortality_fraction = 1 - np.exp(-d)
 
     n_dead = np.zeros_like(state.abundance)
