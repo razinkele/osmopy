@@ -34,10 +34,10 @@ The Python engine uses Numba JIT compilation and parallel execution to achieve p
 
 | Configuration | Python | Java | Speedup |
 |---------------|--------|------|---------|
-| Bay of Biscay 1yr (8 species) | **0.26s** | 0.80s | Python 3.1x faster |
-| Bay of Biscay 5yr (8 species) | **2.37s** | 2.3s | Parity |
-| English Channel 1yr (14 species) | **0.55s** | 2.6s | Python 4.8x faster |
-| English Channel 5yr (14 species) | **5.6s** | 8.6s | Python 1.5x faster |
+| Bay of Biscay 1yr (8 species) | **0.24s** | 0.80s | Python 3.3x faster |
+| Bay of Biscay 5yr (8 species) | **1.99s** | 2.3s | Python 1.2x faster |
+| English Channel 1yr (14 species) | **0.44s** | 2.5s | Python 5.7x faster |
+| English Channel 5yr (14 species) | **5.2s** | 7.2s | Python 1.4x faster |
 
 Benchmarked on Linux x86_64 with Numba 0.60, NumPy 1.26, Python 3.12. First run includes ~20s Numba compilation overhead (cached for subsequent runs).
 
@@ -56,8 +56,27 @@ Run benchmarks yourself:
 
 The Python engine has been validated against the Java reference on two real ecosystem configurations:
 
-- **Bay of Biscay** (8 focal species + 6 resources, 5-year): **8/8 species within 1 order of magnitude**
+- **Bay of Biscay** (8 focal species + 6 resources): **8/8 species within 1 order of magnitude**
 - **Eastern English Channel** (14 focal species, 1-year): **14/14 species within 1 order of magnitude**
+
+EEC 1-year biomass parity (Python vs Java, tonnes):
+
+| Species | Python | Java | Ratio |
+|---------|--------|------|-------|
+| lesserSpottedDogfish | 93 | 78 | 1.18 |
+| redMullet | 95 | 121 | 0.79 |
+| pouting | 336,738 | 314,956 | 1.07 |
+| whiting | 101,094 | 86,767 | 1.17 |
+| poorCod | 114,268 | 109,860 | 1.04 |
+| cod | 1,441 | 1,466 | 0.98 |
+| dragonet | 104,756 | 107,661 | 0.97 |
+| sole | 43,117 | 53,184 | 0.81 |
+| plaice | 15,040 | 18,483 | 0.81 |
+| horseMackerel | 157,119 | 163,585 | 0.96 |
+| mackerel | 13,982 | 17,326 | 0.81 |
+| herring | 32,752,826 | 30,541,764 | 1.07 |
+| sardine | 14,968 | 14,126 | 1.06 |
+| squids | 131,280 | 119,896 | 1.09 |
 
 Run the validation yourself:
 ```bash
@@ -118,7 +137,7 @@ ui/                      Shiny web interface
 data/
   examples/              Bay of Biscay example config (8 species)
   eec_full/              Eastern English Channel config (14 species)
-tests/                   1730 tests
+tests/                   1734 tests
 docs/
   parity-roadmap.md      Engine parity roadmap (7 phases, 37 items)
 ```
@@ -133,7 +152,7 @@ docs/
 .venv/bin/ruff format osmose/ ui/ tests/         # format
 ```
 
-1730 tests covering schema, config I/O, all engine processes, performance parity, UI structure, and integration scenarios.
+1734 tests covering schema, config I/O, all engine processes, performance parity, UI structure, and integration scenarios.
 
 ## Tech Stack
 
