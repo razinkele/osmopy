@@ -291,3 +291,38 @@ def _flatten_all_map_sets(
         pos += len(ms.maps)
 
     return all_maps, all_max_proba, all_is_null, sp_map_offset
+
+
+def _precompute_map_indices(
+    species_id: NDArray[np.int32],
+    age_dt: NDArray[np.int32],
+    uses_maps: NDArray[np.bool_],
+    map_sets: dict[int, MovementMapSet],
+    step: int,
+) -> tuple[NDArray[np.int32], NDArray[np.bool_]]:
+    """Pre-compute per-school map indices and same-map flags.
+
+    Returns:
+        current_idx: int32[n_map_schools] — current map index (-1 if out of range)
+        same_map: bool[n_map_schools] — True if same map as previous step
+    """
+    map_school_mask = np.where(uses_maps)[0]
+    n = len(map_school_mask)
+    current_idx = np.full(n, -1, dtype=np.int32)
+    prev_idx = np.full(n, -1, dtype=np.int32)
+
+    for k, i in enumerate(map_school_mask):
+        sp = int(species_id[i])
+        age = int(age_dt[i])
+        if sp not in map_sets:
+            continue
+        ms = map_sets[sp]
+        if 0 <= age < ms.index_maps.shape[0] and 0 <= step < ms.index_maps.shape[1]:
+            current_idx[k] = ms.index_maps[age, step]
+        prev_age = age - 1
+        prev_step = step - 1
+        if 0 <= prev_age < ms.index_maps.shape[0] and 0 <= prev_step < ms.index_maps.shape[1]:
+            prev_idx[k] = ms.index_maps[prev_age, prev_step]
+
+    same_map = (current_idx == prev_idx) & (age_dt[map_school_mask] > 0) & (step > 0)
+    return current_idx, same_map

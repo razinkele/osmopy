@@ -71,3 +71,53 @@ def test_flatten_all_map_sets_empty():
     assert all_maps.shape == (0, 5, 5)
     assert all_max_proba.shape == (0,)
     assert np.all(sp_offsets == -1)
+
+
+def test_precompute_map_indices_basic():
+    from osmose.engine.processes.movement import _precompute_map_indices
+
+    ny, nx = 3, 4
+    idx_maps = np.full((5, 24), -1, dtype=np.int32)
+    idx_maps[0, :] = 0
+    idx_maps[1, :] = 1
+    idx_maps[2, :] = 1
+
+    ms = _make_mock_map_set(
+        [np.ones((ny, nx)), np.ones((ny, nx))],
+        idx_maps,
+        np.array([0.0, 0.0]),
+    )
+    map_sets = {0: ms}
+
+    species_id = np.array([0, 0, 0], dtype=np.int32)
+    age_dt = np.array([0, 1, 2], dtype=np.int32)
+    uses_maps = np.array([True, True, True])
+
+    current, same = _precompute_map_indices(
+        species_id, age_dt, uses_maps, map_sets, step=2
+    )
+
+    assert current[0] == 0
+    assert current[1] == 1
+    assert current[2] == 1
+    assert not same[0]
+    assert not same[1]
+    assert same[2]
+
+
+def test_precompute_map_indices_out_of_range():
+    from osmose.engine.processes.movement import _precompute_map_indices
+
+    idx_maps = np.zeros((3, 24), dtype=np.int32)
+    ms = _make_mock_map_set([np.ones((2, 2))], idx_maps, np.array([0.0]))
+    map_sets = {0: ms}
+
+    species_id = np.array([0], dtype=np.int32)
+    age_dt = np.array([10], dtype=np.int32)
+    uses_maps = np.array([True])
+
+    current, same = _precompute_map_indices(
+        species_id, age_dt, uses_maps, map_sets, step=0
+    )
+
+    assert current[0] == -1
