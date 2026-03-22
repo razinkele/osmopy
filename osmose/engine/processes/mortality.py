@@ -428,6 +428,9 @@ def _pre_generate_cell_rng(
 ) -> tuple[list[NDArray[np.int32]], NDArray[np.int32]]:
     """Pre-generate all random data for all cells in one Python pass.
 
+    Note: Not used by the batch Numba path (which generates RNG inline).
+    Retained as a tested reference implementation and for potential future use.
+
     Returns:
         seq_bufs: list of 4 int32 arrays, each of length boundaries[n_cells].
             seq_bufs[k][start:end] is rng.permutation(n_local) for cell k.
@@ -876,7 +879,11 @@ if _HAS_NUMBA:
         diet_matrix,
         diet_enabled,
     ):
-        """Numba-compiled full interleaved mortality for all 4 causes."""
+        """Numba-compiled full interleaved mortality for all 4 causes.
+
+        SYNC: Inner loop logic duplicated in _mortality_all_cells_numba and
+        _mortality_all_cells_parallel. Changes here must be mirrored there.
+        """
         n_local = len(cell_indices)
         for i in range(n_local):
             for c in range(4):
@@ -974,6 +981,9 @@ if _HAS_NUMBA:
 
         RNG is generated inline using Numba's np.random (seeded from Python).
         This avoids the Python loop overhead of pre-generating RNG data.
+
+        SYNC: Inner loop logic duplicated from _mortality_in_cell_numba.
+        Also duplicated in _mortality_all_cells_parallel. Keep all three in sync.
         """
         np.random.seed(rng_seed)
         for cell in range(n_cells):
@@ -1077,6 +1087,9 @@ if _HAS_NUMBA:
 
         Safe because all school-level mutations are cell-local: each cell's
         index range [start, end) is disjoint.
+
+        SYNC: Inner loop logic duplicated from _mortality_in_cell_numba.
+        Also duplicated in _mortality_all_cells_numba. Keep all three in sync.
         """
         for cell in prange(n_cells):
             start = boundaries[cell]
