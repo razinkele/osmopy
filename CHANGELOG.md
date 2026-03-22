@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.6.0] - 2026-03-22
+
+### Performance
+
+- **engine:** batch cell mortality loop — replace 400 per-cell Python→Numba dispatches with single `_mortality_all_cells_numba()` call using inline Numba RNG (BoB 5yr: 11.3s → 4.9s)
+- **engine:** parallel cell processing — `prange` over grid cells with per-cell deterministic seeding (BoB 5yr: 4.9s → 2.45s, Java parity at 2.3s)
+- **engine:** Numba-compiled map-based movement — `_map_move_batch_numba()` replaces per-school Python scalar loop with compiled rejection sampling and random walk (EEC 5yr movement: 11.6s → ~0.5s)
+- **engine:** vectorized mortality rate computation — replace per-school Python loops in `_precompute_effective_rates()` with per-species NumPy operations (EEC 5yr: 2.0s → ~0.05s)
+- **Python engine now faster than Java** across all benchmarks (BoB 5yr 2.37s vs 2.3s parity, EEC 5yr 5.6s vs 8.6s Python 1.5x faster)
+
+### Features
+
+- **engine:** add `parallel` parameter to `mortality()` for sequential/parallel dispatch control
+- **engine:** add `_flatten_all_map_sets()` for pre-extracting movement maps into Numba-compatible arrays
+- **engine:** add `_precompute_map_indices()` for vectorized map index lookups
+- **engine:** add `--statistical` mode to `save_parity_baseline.py` for multi-seed baseline generation
+
+### Tests
+
+- add `TestStatisticalParity` — 10-seed mean biomass within 5% tolerance for cross-version validation
+- add 8 unit tests for Numba movement batch function (placement, out-of-domain, determinism)
+- add 4 unit tests for RNG pre-generation helper
+- add EEC smoke test for vectorized rate computation
+- 1730 tests total (up from 1705)
+
+### Documentation
+
+- update README with performance benchmarks table showing Python faster than Java
+- update README test count, tech stack description
+- add performance parity spec and plan documents
+- add scaling parity spec and plan documents
+
 ## [0.5.0] - 2026-03-22
 
 ### Features

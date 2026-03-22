@@ -1,12 +1,9 @@
 """Tests for osmose.engine.accessibility."""
 
 import numpy as np
-import pytest
-from pathlib import Path
 
 from osmose.engine.accessibility import (
     AccessibilityMatrix,
-    StageInfo,
     _parse_label,
     _parse_labels,
 )

@@ -121,7 +121,7 @@ class TestSimulate:
 def test_fishing_yield_not_double_scaled(minimal_config):
     """Regression: yield was 1e6 too small due to double 1e-6 conversion."""
     from osmose.engine.simulate import _collect_outputs
-    from osmose.engine.state import MortalityCause, SchoolState
+    from osmose.engine.state import SchoolState
 
     cfg = EngineConfig.from_dict(minimal_config)
 
