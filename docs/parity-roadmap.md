@@ -1,14 +1,24 @@
 # OSMOSE Python Engine — Java Parity Roadmap
 
-> **Date:** 2026-03-19
-> **Current status:** Bay of Biscay 7/8 PASS, EEC 7/14 within 1 OoM
+> **Date:** 2026-03-22 (updated)
+> **Current status:** Bay of Biscay **8/8 PASS**, EEC **14/14 PASS** within 1 OoM
 > **Goal:** Close all functional gaps between Python and Java OSMOSE engines
+>
+> **Milestone achieved:** Full parity on both validation configs. The critical
+> predation architecture fix (unified school+resource proportional distribution)
+> closed the remaining 2 species gaps (redMullet -2.0 OoM → +0.32, sardine -1.4 OoM → +0.05).
 
 ---
 
-## Phase 1: EEC Parity Fixes (HIGH impact — expected to reach 12-14/14)
+## Phase 1: EEC Parity Fixes — COMPLETE ✓
 
-These gaps directly cause the remaining EEC divergence. Each is a targeted fix (not a new subsystem). Estimated: 2-4 hours total.
+All Phase 1 items implemented. EEC now at 14/14 within 1 OoM.
+
+**Critical fix (2026-03-22):** Unified predation architecture — `_apply_predation_for_school` now
+scans both school prey AND resource prey into a single accessible-biomass pool and distributes
+eating proportionally across all prey types, matching Java's `computePredation()`. Previously,
+the two-phase approach (schools first, resources second) caused excess predation on small
+forage fish and a remaining-appetite miscalculation that allowed ~45% over-eating per sub-timestep.
 
 ### 1.1 Maturity age check
 **Impact:** HIGH — SSB includes immature schools → excess egg production
@@ -321,7 +331,7 @@ This is an entire alternative physiology model. Only needed for Ev-OSMOSE config
 
 | Phase | Items | Estimated Effort | Expected Impact |
 |-------|-------|-----------------|-----------------|
-| **Phase 1** | 7 fixes | 3 hours | EEC 7/14 → 12-14/14 |
+| **Phase 1** | 7 fixes + predation architecture | DONE ✓ | EEC 14/14 PASS |
 | **Phase 2** | 6 features | 4 hours | Complete fishing system |
 | **Phase 3** | 7 fixes | 2.5 hours | Reproduction/mortality refinement |
 | **Phase 4** | 2 features | 1.5 hours | Movement refinement |

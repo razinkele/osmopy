@@ -215,11 +215,14 @@ def _apply_predation_for_school(
     prey_access_idx: NDArray[np.int32] | None,
     pred_access_idx: NDArray[np.int32] | None,
 ) -> None:
-    """Apply predation for a single predator against all preys in the cell.
+    """Apply predation for a single predator against ALL preys in the cell.
+
+    Matches Java's computePredation(): schools and resources are combined
+    into a single accessible-biomass pool and eating is distributed
+    proportionally across ALL prey types simultaneously.
 
     Deaths are tracked via n_dead (not direct abundance subtraction),
     so subsequent causes see reduced instantaneous abundance.
-    Also handles resource predation for remaining appetite.
     """
     if state.age_dt[p_idx] < state.first_feeding_age_dt[p_idx]:
         return
@@ -239,10 +242,12 @@ def _apply_predation_for_school(
     if max_eatable <= 0:
         return
 
-    # Scan cell for eligible prey
-    available = 0.0
-    prey_eligible: list[tuple[int, float]] = []
+    # --- Phase 1: Scan ALL prey (schools + resources) into unified pool ---
+    # Each entry: ("school", q_idx, accessible_biomass) or ("rsc", r_idx, accessible_biomass)
+    all_prey: list[tuple[str, int, float]] = []
+    total_available = 0.0
 
+    # 1a. Scan cell schools as prey
     for q_idx_val in cell_indices:
         q_idx = int(q_idx_val)
         if q_idx == p_idx:
@@ -257,7 +262,6 @@ def _apply_predation_for_school(
         if ratio < r_min or ratio >= r_max:
             continue
 
-        # Accessibility check
         access_coeff = 1.0
         if has_access and access_matrix is not None:
             if use_stage_access and pred_access_idx is not None and prey_access_idx is not None:
@@ -280,162 +284,110 @@ def _apply_predation_for_school(
             continue
 
         eligible = prey_bio * access_coeff
-        prey_eligible.append((q_idx, eligible))
-        available += eligible
+        all_prey.append(("school", q_idx, eligible))
+        total_available += eligible
 
-    # School-to-school predation
-    eaten_total = 0.0
-    if available > 0:
-        eaten_total = min(available, max_eatable)
-        for q_idx, eligible in prey_eligible:
-            share = eligible / available
-            eaten_from_prey = eaten_total * share
+    # 1b. Scan resources as prey (matching Java: resources in same preys list)
+    if resources is not None and resources.n_resources > 0:
+        for r in range(resources.n_resources):
+            rsc = resources.species[r]
+            rsc_bio = resources.get_cell_biomass(r, cell_y, cell_x)
+            if rsc_bio <= 0:
+                continue
+
+            prey_size_min = pred_len / r_max
+            prey_size_max = pred_len / r_min
+            overlap_min = max(rsc.size_min, prey_size_min)
+            overlap_max = min(rsc.size_max, prey_size_max)
+            if overlap_max <= overlap_min:
+                continue
+            rsc_range = rsc.size_max - rsc.size_min
+            if rsc_range <= 0:
+                continue
+            percent_resource = (overlap_max - overlap_min) / rsc_range
+
+            access_coeff = 1.0
+            if (
+                use_stage_access
+                and access_matrix is not None
+                and pred_access_idx is not None
+                and config.stage_accessibility is not None
+            ):
+                sa = config.stage_accessibility
+                csv_name = sa.resolve_name(rsc.name)
+                if csv_name is not None:
+                    rsc_row = sa.get_index(csv_name, 0.0, role="prey")
+                    p_acc = pred_access_idx[p_idx]
+                    if (
+                        rsc_row >= 0
+                        and p_acc >= 0
+                        and rsc_row < access_matrix.shape[0]
+                        and p_acc < access_matrix.shape[1]
+                    ):
+                        access_coeff = access_matrix[rsc_row, p_acc]
+                        if access_coeff <= 0:
+                            continue
+            elif not use_stage_access and access_matrix is not None:
+                rsc_sp_idx = config.n_species + r
+                if sp_pred < access_matrix.shape[0] and rsc_sp_idx < access_matrix.shape[1]:
+                    access_coeff = access_matrix[sp_pred, rsc_sp_idx]
+                    if access_coeff <= 0:
+                        continue
+
+            eligible_bio = rsc_bio * percent_resource * access_coeff
+            all_prey.append(("rsc", r, eligible_bio))
+            total_available += eligible_bio
+
+    if total_available <= 0:
+        return
+
+    # --- Phase 2: Distribute eating proportionally (matching Java) ---
+    eaten_total = min(total_available, max_eatable)
+
+    cell_id = cell_y * (resources.grid.nx if resources else 0) + cell_x
+
+    for prey_type, prey_id, eligible in all_prey:
+        share = eligible / total_available
+        eaten_from_prey = eaten_total * share
+
+        if prey_type == "school":
+            q_idx = prey_id
             if state.weight[q_idx] > 0:
                 n_dead_prey = eaten_from_prey / state.weight[q_idx]
                 state.n_dead[q_idx, _PREDATION] += n_dead_prey
 
-            # TL tracking: accumulate prey_tl * eaten_biomass for predator
             if _tl_weighted_sum is not None:
                 prey_tl = state.trophic_level[q_idx]
                 if prey_tl <= 0:
-                    prey_tl = 1.0  # default for uninitialized prey
+                    prey_tl = 1.0
                 _tl_weighted_sum[p_idx] += prey_tl * eaten_from_prey
 
-            # Diet tracking
             if _diet_tracking_enabled and _diet_matrix is not None:
                 prey_sp = state.species_id[q_idx]
                 if p_idx < _diet_matrix.shape[0] and prey_sp < _diet_matrix.shape[1]:
                     _diet_matrix[p_idx, prey_sp] += eaten_from_prey
+        else:
+            r = prey_id
+            if resources is not None:
+                resources.biomass[r, cell_id] = max(
+                    0.0, resources.biomass[r, cell_id] - eaten_from_prey
+                )
 
-    # Update predator success rate from school-to-school
-    if max_eatable > 0 and eaten_total > 0:
-        success = min(eaten_total / max_eatable, 1.0)
-        state.pred_success_rate[p_idx] += success / n_subdt
-        state.preyed_biomass[p_idx] += eaten_total
+            if _tl_weighted_sum is not None:
+                rsc_tl = resources.species[r].trophic_level if resources else 1.0
+                if rsc_tl <= 0:
+                    rsc_tl = 1.0
+                _tl_weighted_sum[p_idx] += rsc_tl * eaten_from_prey
 
-    # Resource predation: fill remaining appetite from LTL plankton/detritus
-    if resources is not None and resources.n_resources > 0:
-        _predation_on_resources_for_school(
-            p_idx,
-            state,
-            config,
-            resources,
-            cell_y,
-            cell_x,
-            n_subdt,
-            max_eatable,
-            access_matrix,
-            use_stage_access,
-            pred_access_idx,
-        )
+            if _diet_tracking_enabled and _diet_matrix is not None and resources:
+                rsc_col = config.n_species + r
+                if p_idx < _diet_matrix.shape[0] and rsc_col < _diet_matrix.shape[1]:
+                    _diet_matrix[p_idx, rsc_col] += eaten_from_prey
 
-
-def _predation_on_resources_for_school(
-    p_idx: int,
-    state: SchoolState,
-    config: EngineConfig,
-    resources: ResourceState,
-    cell_y: int,
-    cell_x: int,
-    n_subdt: int,
-    max_eatable: float,
-    access_matrix: NDArray[np.float64] | None,
-    use_stage_access: bool,
-    pred_access_idx: NDArray[np.int32] | None,
-) -> None:
-    """Let one predator eat resources to fill remaining appetite."""
-    remaining = max_eatable * (1.0 - min(1.0, state.pred_success_rate[p_idx]))
-    if remaining <= 0:
-        return
-
-    sp_pred = state.species_id[p_idx]
-    pred_len = state.length[p_idx]
-    stage = state.feeding_stage[p_idx]
-    r_min_val = config.size_ratio_min[sp_pred, stage]
-    r_max_val = config.size_ratio_max[sp_pred, stage]
-
-    available = 0.0
-    rsc_eligible = np.zeros(resources.n_resources, dtype=np.float64)
-
-    for r in range(resources.n_resources):
-        rsc = resources.species[r]
-        rsc_bio = resources.get_cell_biomass(r, cell_y, cell_x)
-        if rsc_bio <= 0:
-            continue
-
-        prey_size_min = pred_len / r_max_val
-        prey_size_max = pred_len / r_min_val
-        overlap_min = max(rsc.size_min, prey_size_min)
-        overlap_max = min(rsc.size_max, prey_size_max)
-        if overlap_max <= overlap_min:
-            continue
-        rsc_range = rsc.size_max - rsc.size_min
-        if rsc_range <= 0:
-            continue
-        percent_resource = (overlap_max - overlap_min) / rsc_range
-
-        access_coeff = 1.0
-        if (
-            use_stage_access
-            and access_matrix is not None
-            and pred_access_idx is not None
-            and config.stage_accessibility is not None
-        ):
-            sa = config.stage_accessibility
-            rsc_name = rsc.name
-            csv_name = sa.resolve_name(rsc_name)
-            if csv_name is not None:
-                rsc_row = sa.get_index(csv_name, 0.0, role="prey")
-                p_acc = pred_access_idx[p_idx]
-                if (
-                    rsc_row >= 0
-                    and p_acc >= 0
-                    and rsc_row < access_matrix.shape[0]
-                    and p_acc < access_matrix.shape[1]
-                ):
-                    access_coeff = access_matrix[rsc_row, p_acc]
-                    if access_coeff <= 0:
-                        continue
-        elif not use_stage_access and access_matrix is not None:
-            rsc_sp_idx = config.n_species + r
-            if sp_pred < access_matrix.shape[0] and rsc_sp_idx < access_matrix.shape[1]:
-                access_coeff = access_matrix[sp_pred, rsc_sp_idx]
-                if access_coeff <= 0:
-                    continue
-
-        eligible_bio = rsc_bio * percent_resource * access_coeff
-        rsc_eligible[r] = eligible_bio
-        available += eligible_bio
-
-    if available <= 0:
-        return
-
-    eaten_total = min(available, remaining)
-
-    cell_id = cell_y * resources.grid.nx + cell_x
-    for r in range(resources.n_resources):
-        if rsc_eligible[r] <= 0:
-            continue
-        share = rsc_eligible[r] / available
-        eaten_from_rsc = eaten_total * share
-        resources.biomass[r, cell_id] = max(0.0, resources.biomass[r, cell_id] - eaten_from_rsc)
-
-        # TL tracking for resource predation
-        if _tl_weighted_sum is not None:
-            rsc_tl = resources.species[r].trophic_level
-            if rsc_tl <= 0:
-                rsc_tl = 1.0
-            _tl_weighted_sum[p_idx] += rsc_tl * eaten_from_rsc
-
-        if _diet_tracking_enabled and _diet_matrix is not None:
-            rsc_col = config.n_species + r
-            if p_idx < _diet_matrix.shape[0] and rsc_col < _diet_matrix.shape[1]:
-                _diet_matrix[p_idx, rsc_col] += eaten_from_rsc
-
-    if max_eatable > 0:
-        success = min(eaten_total / max_eatable, 1.0)
-        state.pred_success_rate[p_idx] += success / n_subdt
-        state.preyed_biomass[p_idx] += eaten_total
+    # --- Phase 3: Update predation success rate ONCE (matching Java) ---
+    success = min(eaten_total / max_eatable, 1.0)
+    state.pred_success_rate[p_idx] += success / n_subdt
+    state.preyed_biomass[p_idx] += eaten_total
 
 
 # ---------------------------------------------------------------------------

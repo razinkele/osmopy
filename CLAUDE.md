@@ -1,7 +1,7 @@
 # CLAUDE.md — osmose-python
 
 ## Project
-Python orchestration layer and Shiny web interface for the OSMOSE marine ecosystem simulator. The Java engine is unchanged; Python handles config I/O, execution, output reading, calibration, and visualization.
+Python orchestration layer, simulation engine, and Shiny web interface for the OSMOSE marine ecosystem simulator. Provides dual engine backends: a pure-Python engine (NumPy/Numba, full Java parity — 14/14 EEC, 8/8 Bay of Biscay) and the original Java engine (via subprocess). Python handles config I/O, execution, output reading, calibration, and visualization.
 
 ## Commands
 - **Run tests:** `.venv/bin/python -m pytest`
@@ -15,6 +15,9 @@ Schema-driven: every OSMOSE parameter is defined once as an `OsmoseField` in `os
 
 ```
 osmose/          # Core library (usable without Shiny)
+  engine/        # Python simulation engine (28 files, ~8800 LOC)
+    simulate.py  # Main simulation loop
+    processes/   # Growth, predation, mortality, reproduction, movement, fishing
   schema/        # Parameter definitions + registry (181 params)
   config/        # Config reader/writer (OSMOSE .csv/.properties format)
   calibration/   # pymoo NSGA-II, GP surrogate, SALib sensitivity

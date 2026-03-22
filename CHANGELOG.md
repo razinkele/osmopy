@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.5.0] - 2026-03-22
+
+### Features
+
+- **engine:** unified predation architecture — school and resource prey now processed in single proportional pass matching Java's `computePredation()`, achieving full EEC parity (14/14 species)
+- **docs:** comprehensive README rewrite with dual-engine documentation, API reference, and validation results
+- **docs:** add UI manual noting both Python and Java engine options
+
+### Bug Fixes
+
+- **engine:** fix predation over-eating bug — remaining appetite for resource predation was calculated using cumulative `pred_success_rate` (divided by n_subdt) instead of actual within-sub-timestep consumption, causing predators to eat ~45% more than allowed per sub-timestep
+- **engine:** fix predation distribution bias — Python processed school prey first then resources separately, while Java distributes eating proportionally across all prey types simultaneously; small forage fish (redMullet, sardine) were over-predated
+
+### Tests
+
+- add 3 new tests for unified predation: proportional distribution, max_eatable enforcement, pred_success_rate accumulation (1705 total)
+
+### Documentation
+
+- update README with dual-engine comparison table, Python engine validation results, API reference section
+- update CHANGELOG with v0.5.0 release
+- update parity roadmap to reflect EEC 14/14, Bay of Biscay 8/8
+
 ## [0.4.0] - 2026-03-20
 
 ### Features
