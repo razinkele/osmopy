@@ -953,6 +953,92 @@ if _HAS_NUMBA:
                                 n_dead[idx, 3] += dead
                             inst_abd[idx] -= dead
 
+    @njit(cache=True)
+    def _mortality_all_cells_numba(
+        sorted_indices, boundaries, n_cells,
+        seq_pred_buf, seq_starv_buf, seq_fish_buf, seq_nat_buf,
+        cause_orders_buf,
+        inst_abd, n_dead,
+        eff_starv, eff_additional, eff_fishing, fishing_discard,
+        species_id, length, weight, age_dt,
+        first_feeding_age_dt, feeding_stage, pred_success_rate,
+        preyed_biomass, trophic_level,
+        size_ratio_min, size_ratio_max, ingestion_rate,
+        n_dt_per_year, n_subdt,
+        access_matrix, has_access, use_stage_access,
+        prey_access_idx, pred_access_idx,
+        rsc_biomass, rsc_size_min, rsc_size_max, rsc_tl,
+        rsc_access_rows, n_resources, n_species,
+        tl_weighted_sum, tl_tracking, diet_matrix, diet_enabled,
+    ):
+        """Numba-compiled batch mortality for ALL cells in one call."""
+        for cell in range(n_cells):
+            start = boundaries[cell]
+            end = boundaries[cell + 1]
+            if end <= start:
+                continue
+
+            cell_indices = sorted_indices[start:end]
+            n_local = end - start
+            cell_id = cell  # flat row-major index
+
+            seq_pred = seq_pred_buf[start:end]
+            seq_starv = seq_starv_buf[start:end]
+            seq_fish = seq_fish_buf[start:end]
+            seq_nat = seq_nat_buf[start:end]
+            cause_orders = cause_orders_buf[start:end]
+
+            for i in range(n_local):
+                for c in range(4):
+                    cause = cause_orders[i, c]
+                    if cause == 0:  # PREDATION
+                        p_idx = cell_indices[seq_pred[i]]
+                        _apply_predation_numba(
+                            p_idx, cell_indices,
+                            inst_abd, n_dead, species_id, length, weight,
+                            age_dt, first_feeding_age_dt, feeding_stage,
+                            pred_success_rate, preyed_biomass, trophic_level,
+                            size_ratio_min, size_ratio_max, ingestion_rate,
+                            n_dt_per_year, n_subdt,
+                            access_matrix, has_access, use_stage_access,
+                            prey_access_idx, pred_access_idx,
+                            rsc_biomass, rsc_size_min, rsc_size_max, rsc_tl,
+                            rsc_access_rows, n_resources, n_species, cell_id,
+                            tl_weighted_sum, tl_tracking, diet_matrix, diet_enabled,
+                        )
+                    elif cause == 1:  # STARVATION
+                        idx = cell_indices[seq_starv[i]]
+                        D = eff_starv[idx]
+                        if D > 0:
+                            abd = inst_abd[idx]
+                            if abd > 0:
+                                dead = abd * (1.0 - np.exp(-D))
+                                n_dead[idx, 1] += dead
+                                inst_abd[idx] -= dead
+                    elif cause == 2:  # ADDITIONAL
+                        idx = cell_indices[seq_nat[i]]
+                        D = eff_additional[idx]
+                        if D > 0:
+                            abd = inst_abd[idx]
+                            if abd > 0:
+                                dead = abd * (1.0 - np.exp(-D))
+                                n_dead[idx, 2] += dead
+                                inst_abd[idx] -= dead
+                    elif cause == 3:  # FISHING
+                        idx = cell_indices[seq_fish[i]]
+                        F = eff_fishing[idx]
+                        if F > 0:
+                            abd = inst_abd[idx]
+                            if abd > 0:
+                                dead = abd * (1.0 - np.exp(-F))
+                                discard_r = fishing_discard[idx]
+                                if discard_r > 0:
+                                    n_dead[idx, 3] += dead * (1.0 - discard_r)
+                                    n_dead[idx, 6] += dead * discard_r
+                                else:
+                                    n_dead[idx, 3] += dead
+                                inst_abd[idx] -= dead
+
 
 # ---------------------------------------------------------------------------
 # Per-cell interleaved mortality
