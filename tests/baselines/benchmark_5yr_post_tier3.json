@@ -1,0 +1,24 @@
+{
+  "config": "Bay of Biscay",
+  "n_years": 5,
+  "seed": 42,
+  "repeats": 2,
+  "timings_s": [
+    11.189,
+    11.536
+  ],
+  "median_s": 11.536,
+  "min_s": 11.189,
+  "max_s": 11.536,
+  "per_year_s": 2.307,
+  "final_biomass": {
+    "Anchovy": 2175876.3269239436,
+    "Sardine": 124608565.8657964,
+    "Sprat": 2676100.720982808,
+    "HorseMackerel": 127832872.72962818,
+    "Mackerel": 158271387.6054017,
+    "Hake": 0.0,
+    "Sole": 3635537.4560347954,
+    "BlueWhiting": 20801727.880531266
+  }
+}

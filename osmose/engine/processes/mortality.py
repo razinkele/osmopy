@@ -955,9 +955,8 @@ if _HAS_NUMBA:
 
     @njit(cache=True)
     def _mortality_all_cells_numba(
+        rng_seed,
         sorted_indices, boundaries, n_cells,
-        seq_pred_buf, seq_starv_buf, seq_fish_buf, seq_nat_buf,
-        cause_orders_buf,
         inst_abd, n_dead,
         eff_starv, eff_additional, eff_fishing, fishing_discard,
         species_id, length, weight, age_dt,
@@ -971,7 +970,12 @@ if _HAS_NUMBA:
         rsc_access_rows, n_resources, n_species,
         tl_weighted_sum, tl_tracking, diet_matrix, diet_enabled,
     ):
-        """Numba-compiled batch mortality for ALL cells in one call."""
+        """Numba-compiled batch mortality for ALL cells in one call.
+
+        RNG is generated inline using Numba's np.random (seeded from Python).
+        This avoids the Python loop overhead of pre-generating RNG data.
+        """
+        np.random.seed(rng_seed)
         for cell in range(n_cells):
             start = boundaries[cell]
             end = boundaries[cell + 1]
@@ -982,11 +986,19 @@ if _HAS_NUMBA:
             n_local = end - start
             cell_id = cell  # flat row-major index
 
-            seq_pred = seq_pred_buf[start:end]
-            seq_starv = seq_starv_buf[start:end]
-            seq_fish = seq_fish_buf[start:end]
-            seq_nat = seq_nat_buf[start:end]
-            cause_orders = cause_orders_buf[start:end]
+            # Generate RNG inline (compiled, no Python overhead)
+            seq_pred = np.random.permutation(n_local).astype(np.int32)
+            seq_starv = np.random.permutation(n_local).astype(np.int32)
+            seq_fish = np.random.permutation(n_local).astype(np.int32)
+            seq_nat = np.random.permutation(n_local).astype(np.int32)
+            causes = np.array([0, 1, 2, 3], dtype=np.int32)
+            cause_orders = np.empty((n_local, 4), dtype=np.int32)
+            for ii in range(n_local):
+                np.random.shuffle(causes)
+                cause_orders[ii, 0] = causes[0]
+                cause_orders[ii, 1] = causes[1]
+                cause_orders[ii, 2] = causes[2]
+                cause_orders[ii, 3] = causes[3]
 
             for i in range(n_local):
                 for c in range(4):
@@ -1348,10 +1360,8 @@ def mortality(
 
         # Per-cell mortality
         if _HAS_NUMBA and len(valid_indices) > 0:
-            # Pre-generate RNG for all cells (one Python pass)
-            seq_bufs, cause_orders_buf = _pre_generate_cell_rng(
-                rng, boundaries, n_cells
-            )
+            # Generate a seed from Python RNG for Numba's internal PRNG
+            rng_seed = int(rng.integers(0, 2**63))
 
             # Extract tracking arrays from module globals BEFORE Numba call
             rsc_bio = resources.biomass if resources is not None else _DUMMY_RSC_2D
@@ -1364,11 +1374,10 @@ def mortality(
             )
             d_en = _diet_tracking_enabled and _diet_matrix is not None
 
-            # Single Numba call for all cells
+            # Single Numba call for all cells (RNG generated inside)
             _mortality_all_cells_numba(
+                rng_seed,
                 sorted_indices, boundaries, n_cells,
-                seq_bufs[0], seq_bufs[1], seq_bufs[2], seq_bufs[3],
-                cause_orders_buf,
                 inst_abd, work_state.n_dead,
                 eff_s, eff_a, eff_f, f_disc,
                 work_state.species_id, work_state.length, work_state.weight,
