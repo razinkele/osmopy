@@ -33,7 +33,7 @@ from osmose.engine.resources import ResourceState
 from osmose.engine.state import MortalityCause, SchoolState
 
 try:
-    from numba import njit
+    from numba import njit, prange
 
     _HAS_NUMBA = True
 except ImportError:
@@ -1051,6 +1051,111 @@ if _HAS_NUMBA:
                                     n_dead[idx, 3] += dead
                                 inst_abd[idx] -= dead
 
+    @njit(cache=True, parallel=True)
+    def _mortality_all_cells_parallel(
+        rng_seed,
+        sorted_indices, boundaries, n_cells,
+        inst_abd, n_dead,
+        eff_starv, eff_additional, eff_fishing, fishing_discard,
+        species_id, length, weight, age_dt,
+        first_feeding_age_dt, feeding_stage, pred_success_rate,
+        preyed_biomass, trophic_level,
+        size_ratio_min, size_ratio_max, ingestion_rate,
+        n_dt_per_year, n_subdt,
+        access_matrix, has_access, use_stage_access,
+        prey_access_idx, pred_access_idx,
+        rsc_biomass, rsc_size_min, rsc_size_max, rsc_tl,
+        rsc_access_rows, n_resources, n_species,
+        tl_weighted_sum, tl_tracking, diet_matrix, diet_enabled,
+    ):
+        """Parallel batch mortality — prange over cells for multi-core execution.
+
+        Each cell gets a deterministic seed derived from rng_seed + cell index.
+        RNG is generated inline per cell (same as sequential version) to avoid
+        the overhead of a separate pre-generation loop. Deterministic because
+        np.random.seed() resets the thread-local PRNG at each iteration.
+
+        Safe because all school-level mutations are cell-local: each cell's
+        index range [start, end) is disjoint.
+        """
+        for cell in prange(n_cells):
+            start = boundaries[cell]
+            end = boundaries[cell + 1]
+            if end <= start:
+                continue
+
+            # Per-cell deterministic seed
+            np.random.seed(rng_seed + np.int64(cell) * np.int64(7919))
+
+            cell_indices = sorted_indices[start:end]
+            n_local = end - start
+            cell_id = cell
+
+            # Generate RNG inline (compiled, no Python overhead)
+            seq_pred = np.random.permutation(n_local).astype(np.int32)
+            seq_starv = np.random.permutation(n_local).astype(np.int32)
+            seq_fish = np.random.permutation(n_local).astype(np.int32)
+            seq_nat = np.random.permutation(n_local).astype(np.int32)
+            causes = np.array([0, 1, 2, 3], dtype=np.int32)
+            cause_orders = np.empty((n_local, 4), dtype=np.int32)
+            for ii in range(n_local):
+                np.random.shuffle(causes)
+                cause_orders[ii, 0] = causes[0]
+                cause_orders[ii, 1] = causes[1]
+                cause_orders[ii, 2] = causes[2]
+                cause_orders[ii, 3] = causes[3]
+
+            for i in range(n_local):
+                for c in range(4):
+                    cause = cause_orders[i, c]
+                    if cause == 0:  # PREDATION
+                        p_idx = cell_indices[seq_pred[i]]
+                        _apply_predation_numba(
+                            p_idx, cell_indices,
+                            inst_abd, n_dead, species_id, length, weight,
+                            age_dt, first_feeding_age_dt, feeding_stage,
+                            pred_success_rate, preyed_biomass, trophic_level,
+                            size_ratio_min, size_ratio_max, ingestion_rate,
+                            n_dt_per_year, n_subdt,
+                            access_matrix, has_access, use_stage_access,
+                            prey_access_idx, pred_access_idx,
+                            rsc_biomass, rsc_size_min, rsc_size_max, rsc_tl,
+                            rsc_access_rows, n_resources, n_species, cell_id,
+                            tl_weighted_sum, tl_tracking, diet_matrix, diet_enabled,
+                        )
+                    elif cause == 1:  # STARVATION
+                        idx = cell_indices[seq_starv[i]]
+                        D = eff_starv[idx]
+                        if D > 0:
+                            abd = inst_abd[idx]
+                            if abd > 0:
+                                dead = abd * (1.0 - np.exp(-D))
+                                n_dead[idx, 1] += dead
+                                inst_abd[idx] -= dead
+                    elif cause == 2:  # ADDITIONAL
+                        idx = cell_indices[seq_nat[i]]
+                        D = eff_additional[idx]
+                        if D > 0:
+                            abd = inst_abd[idx]
+                            if abd > 0:
+                                dead = abd * (1.0 - np.exp(-D))
+                                n_dead[idx, 2] += dead
+                                inst_abd[idx] -= dead
+                    elif cause == 3:  # FISHING
+                        idx = cell_indices[seq_fish[i]]
+                        F = eff_fishing[idx]
+                        if F > 0:
+                            abd = inst_abd[idx]
+                            if abd > 0:
+                                dead = abd * (1.0 - np.exp(-F))
+                                discard_r = fishing_discard[idx]
+                                if discard_r > 0:
+                                    n_dead[idx, 3] += dead * (1.0 - discard_r)
+                                    n_dead[idx, 6] += dead * discard_r
+                                else:
+                                    n_dead[idx, 3] += dead
+                                inst_abd[idx] -= dead
+
 
 # ---------------------------------------------------------------------------
 # Per-cell interleaved mortality
@@ -1240,6 +1345,7 @@ def mortality(
     grid: Grid,
     step: int = 0,
     species_rngs: list[np.random.Generator] | None = None,
+    parallel: bool = True,
 ) -> SchoolState:
     """Apply all mortality sources with per-cell per-school interleaved ordering.
 
@@ -1375,7 +1481,12 @@ def mortality(
             d_en = _diet_tracking_enabled and _diet_matrix is not None
 
             # Single Numba call for all cells (RNG generated inside)
-            _mortality_all_cells_numba(
+            _batch_fn = (
+                _mortality_all_cells_parallel
+                if parallel
+                else _mortality_all_cells_numba
+            )
+            _batch_fn(
                 rng_seed,
                 sorted_indices, boundaries, n_cells,
                 inst_abd, work_state.n_dead,
