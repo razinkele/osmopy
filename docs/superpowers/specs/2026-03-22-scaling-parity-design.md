@@ -125,7 +125,7 @@ def _map_move_batch_numba(
     n_cells = ny * nx
     for k in range(len(school_indices)):
         idx = school_indices[k]
-        sp = sp_ids[k]
+        sp = sp_ids[idx]
         map_idx = current_map_idx[k]
 
         # Resolve to global map array index
