@@ -310,9 +310,14 @@ if _HAS_NUMBA:
         ny, nx,
         out_cx, out_cy, out_is_out,
     ):
-        """Numba-compiled batch map-based movement for all schools."""
+        """Numba-compiled batch map-based movement for all schools.
+
+        Note: cell_x/cell_y and out_cx/out_cy may alias the same arrays.
+        Safe because each school index is processed exactly once.
+        """
         np.random.seed(rng_seed)
         n_cells = ny * nx
+        total_maps = len(all_maps)
         for k in range(len(school_indices)):
             idx = school_indices[k]
             sp = sp_ids[idx]
@@ -326,7 +331,7 @@ if _HAS_NUMBA:
 
             global_map_idx = sp_map_offset[sp] + map_idx
 
-            if all_is_null[global_map_idx]:
+            if global_map_idx >= total_maps or all_is_null[global_map_idx]:
                 out_cx[idx] = -1
                 out_cy[idx] = -1
                 out_is_out[idx] = True

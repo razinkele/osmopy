@@ -533,7 +533,7 @@ def _precompute_effective_rates(work_state, config, n_subdt, step):
     rates[work_state.age_dt == 0] = 0.0
     rates[rates < 0] = 0.0
     eff_additional = rates / denom
-    np.nan_to_num(eff_additional, copy=False, nan=0.0)
+    np.nan_to_num(eff_additional, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
 
     # Fishing (vectorized over species)
     eff_fishing = np.zeros(n, dtype=np.float64)
@@ -631,7 +631,7 @@ def _precompute_effective_rates(work_state, config, n_subdt, step):
         eff_fishing[work_state.is_background] = 0.0
         eff_fishing[work_state.age_dt == 0] = 0.0
         eff_fishing[eff_fishing < 0] = 0.0
-        np.nan_to_num(eff_fishing, copy=False, nan=0.0)
+        np.nan_to_num(eff_fishing, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
 
         if config.fishing_discard_rate is not None:
             fishing_discard = np.where(
