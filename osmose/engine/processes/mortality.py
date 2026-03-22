@@ -1347,42 +1347,64 @@ def mortality(
         work_state = work_state.replace(egg_retained=new_retained)
 
         # Per-cell mortality
-        for cell in range(n_cells):
-            start = boundaries[cell]
-            end = boundaries[cell + 1]
-            if end <= start:
-                continue
-            cell_indices = sorted_indices[start:end]
-            cy = cell // grid.nx
-            cx = cell % grid.nx
-
-            _mortality_in_cell(
-                cell_indices,
-                work_state,
-                config,
-                resources,
-                cy,
-                cx,
-                rng,
-                n_subdt,
-                access_matrix,
-                has_access,
-                use_stage_access,
-                prey_access_idx,
-                pred_access_idx,
-                inst_abd=inst_abd,
-                step=step,
-                rsc_size_min=rsc_sm,
-                rsc_size_max=rsc_sx,
-                rsc_tl=rsc_tl,
-                rsc_access_rows=rsc_ar,
-                n_rsc=n_rsc,
-                eff_starv=eff_s,
-                eff_additional=eff_a,
-                eff_fishing=eff_f,
-                fishing_discard=f_disc,
-                grid_nx=grid.nx,
+        if _HAS_NUMBA and len(valid_indices) > 0:
+            # Pre-generate RNG for all cells (one Python pass)
+            seq_bufs, cause_orders_buf = _pre_generate_cell_rng(
+                rng, boundaries, n_cells
             )
+
+            # Extract tracking arrays from module globals BEFORE Numba call
+            rsc_bio = resources.biomass if resources is not None else _DUMMY_RSC_2D
+            tl_ws = _tl_weighted_sum if _tl_weighted_sum is not None else _DUMMY_RSC_1D
+            tl_track = _tl_weighted_sum is not None
+            d_mat = (
+                _diet_matrix
+                if _diet_tracking_enabled and _diet_matrix is not None
+                else _DUMMY_DIET
+            )
+            d_en = _diet_tracking_enabled and _diet_matrix is not None
+
+            # Single Numba call for all cells
+            _mortality_all_cells_numba(
+                sorted_indices, boundaries, n_cells,
+                seq_bufs[0], seq_bufs[1], seq_bufs[2], seq_bufs[3],
+                cause_orders_buf,
+                inst_abd, work_state.n_dead,
+                eff_s, eff_a, eff_f, f_disc,
+                work_state.species_id, work_state.length, work_state.weight,
+                work_state.age_dt, work_state.first_feeding_age_dt,
+                work_state.feeding_stage, work_state.pred_success_rate,
+                work_state.preyed_biomass, work_state.trophic_level,
+                config.size_ratio_min, config.size_ratio_max, config.ingestion_rate,
+                config.n_dt_per_year, n_subdt,
+                access_matrix, has_access, use_stage_access,
+                prey_access_idx, pred_access_idx,
+                rsc_bio, rsc_sm, rsc_sx, rsc_tl, rsc_ar,
+                n_rsc, config.n_species,
+                tl_ws, tl_track, d_mat, d_en,
+            )
+        else:
+            # Python fallback: per-cell dispatch (unchanged)
+            for cell in range(n_cells):
+                start = boundaries[cell]
+                end = boundaries[cell + 1]
+                if end <= start:
+                    continue
+                cell_indices = sorted_indices[start:end]
+                cy = cell // grid.nx
+                cx = cell % grid.nx
+                _mortality_in_cell(
+                    cell_indices, work_state, config, resources,
+                    cy, cx, rng, n_subdt,
+                    access_matrix, has_access, use_stage_access,
+                    prey_access_idx, pred_access_idx,
+                    inst_abd=inst_abd, step=step,
+                    rsc_size_min=rsc_sm, rsc_size_max=rsc_sx,
+                    rsc_tl=rsc_tl, rsc_access_rows=rsc_ar, n_rsc=n_rsc,
+                    eff_starv=eff_s, eff_additional=eff_a,
+                    eff_fishing=eff_f, fishing_discard=f_disc,
+                    grid_nx=grid.nx,
+                )
 
     # Update abundance from accumulated n_dead
     total_dead = work_state.n_dead.sum(axis=1)

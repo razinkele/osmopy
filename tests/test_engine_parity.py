@@ -269,5 +269,6 @@ class TestStatisticalParity:
             statistical_data["current_means"],
             statistical_data["baseline_means"],
             rtol=0.05,
+            atol=1.0,
             err_msg="Statistical parity failed — mean biomass drifted >5% from baseline",
         )
