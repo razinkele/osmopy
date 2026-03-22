@@ -499,7 +499,6 @@ def _precompute_effective_rates(work_state, config, n_subdt, step):
     eff_starv[eff_starv < 0] = 0.0
 
     # Additional mortality (vectorized over species)
-    eff_additional = np.zeros(n, dtype=np.float64)
     sp = work_state.species_id
     rates = config.additional_mortality_rate[sp].copy()
 
@@ -534,6 +533,7 @@ def _precompute_effective_rates(work_state, config, n_subdt, step):
     rates[work_state.age_dt == 0] = 0.0
     rates[rates < 0] = 0.0
     eff_additional = rates / denom
+    np.nan_to_num(eff_additional, copy=False, nan=0.0)
 
     # Fishing (vectorized over species)
     eff_fishing = np.zeros(n, dtype=np.float64)
@@ -618,12 +618,10 @@ def _precompute_effective_rates(work_state, config, n_subdt, step):
                 in_mpa[valid] = mpa.grid[cy[valid], cx[valid]] > 0
                 mpa_factor *= np.where(in_mpa, 1.0 - mpa.percentage, 1.0)
 
-        season = np.ones(n, dtype=np.float64)
+        # Combine — denominator differs based on seasonality
         if config.fishing_seasonality is not None:
             step_in_year = step % config.n_dt_per_year
             season = config.fishing_seasonality[sp, step_in_year]
-
-        if config.fishing_seasonality is not None:
             eff_fishing = (
                 f_rates * selectivity * spatial_factor * mpa_factor * season / n_subdt
             )
@@ -633,6 +631,7 @@ def _precompute_effective_rates(work_state, config, n_subdt, step):
         eff_fishing[work_state.is_background] = 0.0
         eff_fishing[work_state.age_dt == 0] = 0.0
         eff_fishing[eff_fishing < 0] = 0.0
+        np.nan_to_num(eff_fishing, copy=False, nan=0.0)
 
         if config.fishing_discard_rate is not None:
             fishing_discard = np.where(

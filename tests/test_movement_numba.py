@@ -240,3 +240,88 @@ def test_map_move_batch_numba_deterministic():
     cx2, cy2 = run(99)
     np.testing.assert_array_equal(cx1, cx2)
     np.testing.assert_array_equal(cy1, cy2)
+
+
+def test_map_move_batch_numba_random_walk():
+    """Same-map path: school walks to accessible neighbor cell."""
+    try:
+        from osmose.engine.processes.movement import _map_move_batch_numba
+    except ImportError:
+        pytest.skip("Numba not available")
+
+    ny, nx = 5, 5
+    # Map with positive values in a 3x3 block centered at (2,2)
+    prob_map = np.zeros((ny, nx), dtype=np.float64)
+    prob_map[1:4, 1:4] = 0.5
+    # Set (2,2) = 0 to force walk away from center
+    prob_map[2, 2] = 0.0
+
+    all_maps = prob_map.reshape(1, ny, nx)
+    all_max_proba = np.array([0.5])
+    all_is_null = np.array([False])
+    sp_offsets = np.array([0], dtype=np.int32)
+    ocean_mask = np.ones((ny, nx), dtype=np.bool_)
+    walk_range = np.array([1], dtype=np.int32)
+
+    # School at (2,2), same_map=True → random walk
+    out_cx = np.array([2], dtype=np.int32)
+    out_cy = np.array([2], dtype=np.int32)
+    out_is_out = np.array([False])
+
+    _map_move_batch_numba(
+        42,
+        np.array([0], dtype=np.int32),
+        np.array([0], dtype=np.int32),
+        np.array([True]),  # same_map = True → random walk path
+        out_cx, out_cy,
+        np.array([0], dtype=np.int32),
+        all_maps, all_max_proba, all_is_null, sp_offsets,
+        ocean_mask, walk_range, ny, nx,
+        out_cx, out_cy, out_is_out,
+    )
+
+    # Must move to one of the accessible neighbors (not (2,2) since prob=0 there)
+    accessible = [(1, 1), (2, 1), (3, 1), (1, 2), (3, 2), (1, 3), (2, 3), (3, 3)]
+    assert (out_cx[0], out_cy[0]) in accessible
+    assert not out_is_out[0]
+
+
+def test_map_move_batch_numba_stranded():
+    """Same-map path with no accessible neighbors: school stays in place."""
+    try:
+        from osmose.engine.processes.movement import _map_move_batch_numba
+    except ImportError:
+        pytest.skip("Numba not available")
+
+    ny, nx = 3, 3
+    # Map with positive only at center (1,1) — all neighbors are 0
+    prob_map = np.zeros((ny, nx), dtype=np.float64)
+    prob_map[1, 1] = 0.5  # school is here but walk_range neighbors are all 0
+
+    all_maps = prob_map.reshape(1, ny, nx)
+    all_max_proba = np.array([0.5])
+    all_is_null = np.array([False])
+    sp_offsets = np.array([0], dtype=np.int32)
+    ocean_mask = np.ones((ny, nx), dtype=np.bool_)
+    walk_range = np.array([1], dtype=np.int32)
+
+    out_cx = np.array([1], dtype=np.int32)
+    out_cy = np.array([1], dtype=np.int32)
+    out_is_out = np.array([False])
+
+    _map_move_batch_numba(
+        42,
+        np.array([0], dtype=np.int32),
+        np.array([0], dtype=np.int32),
+        np.array([True]),
+        out_cx, out_cy,
+        np.array([0], dtype=np.int32),
+        all_maps, all_max_proba, all_is_null, sp_offsets,
+        ocean_mask, walk_range, ny, nx,
+        out_cx, out_cy, out_is_out,
+    )
+
+    # Stranded: should stay at (1,1)
+    assert out_cx[0] == 1
+    assert out_cy[0] == 1
+    assert not out_is_out[0]

@@ -261,6 +261,16 @@ def movement(
                 grid.ny, grid.nx,
                 new_cx, new_cy, new_out,
             )
+            # Warn if any previously in-domain schools failed placement
+            newly_out = new_out & ~state.is_out
+            if newly_out.any():
+                import warnings
+
+                warnings.warn(
+                    f"Numba movement: {newly_out.sum()} schools failed map placement "
+                    f"(exhausted 10000 rejection samples). Check movement maps.",
+                    stacklevel=2,
+                )
             state = state.replace(cell_x=new_cx, cell_y=new_cy, is_out=new_out)
         else:
             # Python fallback (per-school scalar loop)
@@ -308,9 +318,15 @@ if _HAS_NUMBA:
             sp = sp_ids[idx]
             map_idx = current_map_idx[k]
 
+            if map_idx < 0 or sp_map_offset[sp] < 0:
+                out_cx[idx] = -1
+                out_cy[idx] = -1
+                out_is_out[idx] = True
+                continue
+
             global_map_idx = sp_map_offset[sp] + map_idx
 
-            if map_idx < 0 or all_is_null[global_map_idx]:
+            if all_is_null[global_map_idx]:
                 out_cx[idx] = -1
                 out_cy[idx] = -1
                 out_is_out[idx] = True
