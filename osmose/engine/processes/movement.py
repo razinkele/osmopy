@@ -189,6 +189,7 @@ def movement(
     map_sets: dict[int, MovementMapSet] | None = None,
     random_patches: dict[int, set[tuple[int, int]]] | None = None,
     species_rngs: list[np.random.Generator] | None = None,
+    flat_map_data=None,
 ) -> SchoolState:
     """Move all schools according to their species' movement method.
 
@@ -239,28 +240,50 @@ def movement(
         walk_range_masked = np.where(uses_random, walk_range, 0)
         state = random_walk(state, grid, walk_range_masked, rng)
 
-    # Map-based movement for "maps" species (per-school scalar loop)
+    # Map-based movement for "maps" species
     if uses_maps.any() and map_sets is not None:
-        new_cx = state.cell_x.copy()
-        new_cy = state.cell_y.copy()
-        new_out = state.is_out.copy()
-        for i in np.where(uses_maps)[0]:
-            sp_id = int(sp[i])
-            if sp_id in map_sets:
-                x, y, out = _map_move_school(
-                    int(state.age_dt[i]),
-                    int(new_cx[i]),
-                    int(new_cy[i]),
-                    grid.ny,
-                    grid.nx,
-                    grid.ocean_mask,
-                    map_sets[sp_id],
-                    int(config.random_walk_range[sp_id]),
-                    step,
-                    _rng_for(sp_id),
-                )
-                new_cx[i], new_cy[i], new_out[i] = x, y, out
-        state = state.replace(cell_x=new_cx, cell_y=new_cy, is_out=new_out)
+        if _HAS_NUMBA and flat_map_data is not None:
+            flat_maps, flat_max_proba, flat_is_null, sp_offsets = flat_map_data
+            map_school_indices = np.where(uses_maps)[0].astype(np.int32)
+            current_idx, same_map_flags = _precompute_map_indices(
+                state.species_id, state.age_dt, uses_maps, map_sets, step
+            )
+            rng_seed = int(rng.integers(0, 2**63))
+            new_cx = state.cell_x.copy()
+            new_cy = state.cell_y.copy()
+            new_out = state.is_out.copy()
+            _map_move_batch_numba(
+                rng_seed,
+                map_school_indices, current_idx, same_map_flags,
+                new_cx, new_cy, state.species_id,
+                flat_maps, flat_max_proba, flat_is_null, sp_offsets,
+                grid.ocean_mask, config.random_walk_range.astype(np.int32),
+                grid.ny, grid.nx,
+                new_cx, new_cy, new_out,
+            )
+            state = state.replace(cell_x=new_cx, cell_y=new_cy, is_out=new_out)
+        else:
+            # Python fallback (per-school scalar loop)
+            new_cx = state.cell_x.copy()
+            new_cy = state.cell_y.copy()
+            new_out = state.is_out.copy()
+            for i in np.where(uses_maps)[0]:
+                sp_id = int(sp[i])
+                if sp_id in map_sets:
+                    x, y, out = _map_move_school(
+                        int(state.age_dt[i]),
+                        int(new_cx[i]),
+                        int(new_cy[i]),
+                        grid.ny,
+                        grid.nx,
+                        grid.ocean_mask,
+                        map_sets[sp_id],
+                        int(config.random_walk_range[sp_id]),
+                        step,
+                        _rng_for(sp_id),
+                    )
+                    new_cx[i], new_cy[i], new_out[i] = x, y, out
+            state = state.replace(cell_x=new_cx, cell_y=new_cy, is_out=new_out)
 
     return state
 

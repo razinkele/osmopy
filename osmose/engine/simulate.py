@@ -86,6 +86,7 @@ def _movement(
     map_sets: dict | None = None,
     random_patches: dict | None = None,
     species_rngs: list[np.random.Generator] | None = None,
+    flat_map_data=None,
 ) -> SchoolState:
     """Apply spatial movement."""
     from osmose.engine.processes.movement import movement
@@ -95,6 +96,7 @@ def _movement(
         map_sets=map_sets,
         random_patches=random_patches,
         species_rngs=species_rngs,
+        flat_map_data=flat_map_data,
     )
 
 
@@ -781,6 +783,10 @@ def simulate(
                 config_dir=config.raw_config.get("_osmose.config.dir", ""),
             )
 
+    # Pre-flatten map data for Numba movement path
+    from osmose.engine.processes.movement import _flatten_all_map_sets
+    flat_map_data = _flatten_all_map_sets(map_sets, config.n_species, grid.ny, grid.nx) if map_sets else None
+
     # Phase 4: Build random distribution patches
     from osmose.engine.processes.movement import build_random_patches
 
@@ -803,6 +809,7 @@ def simulate(
             map_sets=map_sets,
             random_patches=random_patches,
             species_rngs=movement_rngs,
+            flat_map_data=flat_map_data,
         )
 
         # Inject background schools before mortality
