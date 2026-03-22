@@ -257,3 +257,37 @@ def movement(
         state = state.replace(cell_x=new_cx, cell_y=new_cy, is_out=new_out)
 
     return state
+
+
+def _flatten_all_map_sets(
+    map_sets: dict[int, MovementMapSet],
+    n_species: int,
+    ny: int,
+    nx: int,
+) -> tuple[NDArray, NDArray, NDArray, NDArray]:
+    """Stack all species' movement maps into contiguous arrays for Numba.
+
+    Returns:
+        all_maps: float64[total_maps, ny, nx] — stacked maps (None → zeros)
+        all_max_proba: float64[total_maps] — max probability per map
+        all_is_null: bool[total_maps] — True for None (out-of-domain) maps
+        sp_map_offset: int32[n_species] — offset into all_maps per species (-1 if no maps)
+    """
+    total_maps = sum(len(ms.maps) for ms in map_sets.values())
+    all_maps = np.zeros((total_maps, ny, nx), dtype=np.float64)
+    all_max_proba = np.zeros(total_maps, dtype=np.float64)
+    all_is_null = np.zeros(total_maps, dtype=np.bool_)
+    sp_map_offset = np.full(n_species, -1, dtype=np.int32)
+
+    pos = 0
+    for sp, ms in map_sets.items():
+        sp_map_offset[sp] = pos
+        for k, m in enumerate(ms.maps):
+            if m is not None:
+                all_maps[pos + k] = m
+            else:
+                all_is_null[pos + k] = True
+            all_max_proba[pos + k] = ms.max_proba[k]
+        pos += len(ms.maps)
+
+    return all_maps, all_max_proba, all_is_null, sp_map_offset
