@@ -1,7 +1,7 @@
 # Python Engine Performance Optimization Design
 
 > **Date:** 2026-03-22
-> **Current state:** Python ~12-165x slower than Java depending on config and run length
+> **Current state:** Python ~12-165x slower than Java depending on run length (school population size)
 > **Goal:** Reduce gap to <5x for typical configs, <10x for large configs
 
 ---
@@ -246,7 +246,10 @@ Numba compilation should reduce this to ~1-2s (10-15x speedup on the inner loop)
 this is a larger scope (4 mortality causes + resource predation + accessibility
 matrix + fishing selectivity). Requires careful data marshaling.
 
-**Files changed:** `mortality.py` (major rewrite of inner loop)
+**Files changed:** `mortality.py` (major rewrite of inner loop), `predation.py`
+(diet tracking API — `_diet_matrix` and `_diet_tracking_enabled` globals live
+in `predation.py` and are imported by `mortality.py`; the `enable_diet_tracking()`/
+`disable_diet_tracking()` API must be adapted to support the Numba path)
 
 ### Tier 3: Structural Optimizations (Target: additional 2-3x)
 
@@ -334,30 +337,44 @@ eliminating interpreter overhead — even single-threaded compiled code
 
 ## 6. Implementation Priorities
 
+### Phase 0: Test Infrastructure (1 hour)
+
+1. Create `scripts/save_parity_baseline.py`
+2. Create `scripts/benchmark_engine.py`
+3. Create `tests/test_engine_parity.py` with self-parity and Java cross-parity tests
+4. Save pre-optimization baselines for BoB 1yr, BoB 5yr, EEC 1yr
+5. Run parity tests to confirm green baseline
+
 ### Phase 1: Tier 1 — Cache inst_abundance (1-2 hours)
 
-1. Add `inst_abd` float64 array to mortality function
-2. Initialize from `abundance.copy()` before sub-timestep loop (n_dead is zero at this point)
-3. Pass to all per-school helpers
-4. Update in-place when deaths applied
-5. Remove `_inst_abundance()` function
-6. Run full test suite + validation
+1. Verify baseline from Phase 0 exists; re-save only if re-entering after other changes
+2. Add `inst_abd` float64 array to mortality function
+3. Initialize from `abundance.copy()` before sub-timestep loop (n_dead is zero at this point)
+4. Pass to all per-school helpers
+5. Update in-place when deaths applied
+6. Remove `_inst_abundance()` function
+7. Run `test_engine_parity.py::TestSelfParity` — must be bit-identical
+8. Run full test suite + Java parity validation
+9. Run benchmark, compare against baseline
 
 ### Phase 2: Tier 2 — Numba inner loop (4-6 hours)
 
-1. Design flat-array data interface for `@njit` function
-2. Extract accessibility lookups into pre-computed index arrays
-3. Implement `_mortality_in_cell_jit()` with all 4 causes
-4. Marshal data at cell boundaries (Python → Numba → Python)
-5. Maintain pure-Python fallback for debugging
-6. Run full test suite + validation + benchmark
+1. Refactor globals: pass `tl_weighted_sum` and `diet_matrix` explicitly through call chain
+2. Design flat-array data interface for `@njit` function
+3. Extract accessibility lookups into pre-computed index arrays
+4. Implement `_mortality_in_cell_jit()` with all 4 causes
+5. Marshal data at cell boundaries (Python → Numba → Python)
+6. Maintain pure-Python fallback for debugging (activated by env var)
+7. Run `test_engine_parity.py::TestJavaParity` — must maintain BoB 8/8, EEC 14/14
+8. Run full test suite + benchmark
 
 ### Phase 3: Tier 3 — Structural optimizations (2-3 hours)
 
 1. Single-school cell fast path
 2. Pre-compute resource eligibility per species
 3. Pre-filter dead schools before inner loop
-4. Run benchmarks to measure each optimization independently
+4. Run `test_engine_parity.py` after each optimization
+5. Run benchmarks to measure each optimization independently
 
 ---
 
@@ -384,13 +401,172 @@ Add `scripts/benchmark_engine.py` that:
 - Compares against stored baseline times
 - Runs as part of CI (non-blocking, informational)
 
-### 7.3 Regression Detection
+### 7.3 Parity Tests (New)
+
+Add `tests/test_engine_parity.py` — automated tests that run both Python and
+Java engines on the same configuration and compare outputs. These are the
+definitive correctness gate for performance work.
+
+#### 7.3.1 Bit-Identical Self-Parity (Tier 1 gate)
+
+Tier 1 is a pure refactor. Verify output CSVs are **byte-identical** before
+and after:
+
+```python
+class TestSelfParity:
+    """Output must be identical before and after Tier 1 optimization."""
+
+    def test_bob_1yr_identical(self):
+        """BoB 1-year output CSVs must match pre-optimization baseline."""
+        # 1. Load pre-computed baseline (saved before Tier 1 changes)
+        # 2. Run Python engine with same seed
+        # 3. Assert all output CSVs are byte-identical
+        baseline = load_baseline("bob_1yr_baseline.npz")
+        result = run_python_engine("examples", seed=42, years=1)
+        np.testing.assert_array_equal(result.biomass, baseline.biomass)
+        np.testing.assert_array_equal(result.abundance, baseline.abundance)
+        np.testing.assert_array_equal(result.mortality, baseline.mortality)
+```
+
+Generate baselines before starting Tier 1 work:
+```bash
+.venv/bin/python scripts/save_parity_baseline.py  # saves to tests/fixtures/
+```
+
+#### 7.3.2 Java Cross-Engine Parity (All tiers gate)
+
+Compare Python vs Java final-year biomass within tolerance. These tests
+require Java to be installed and the OSMOSE JAR to be present — skip
+gracefully if unavailable.
+
+```python
+@pytest.mark.skipif(not JAR_PATH.exists(), reason="OSMOSE JAR not found")
+class TestJavaParity:
+    """Python engine output must match Java within 1 order of magnitude."""
+
+    def test_bob_8_of_8_species(self):
+        """Bay of Biscay: all 8 species within 1 OoM of Java."""
+        java_bio = run_java("examples", years=1)
+        python_bio = run_python("examples", seed=42, years=1)
+        for species in java_bio.columns:
+            if java_bio[species].iloc[-1] == 0 and python_bio[species].iloc[-1] == 0:
+                continue  # both extinct = parity
+            log_ratio = abs(np.log10(python_bio[species].iloc[-1] / java_bio[species].iloc[-1]))
+            assert log_ratio <= 1.0, f"{species}: {log_ratio:.2f} OoM divergence"
+
+    def test_eec_14_of_14_species(self):
+        """EEC: all 14 species within 1 OoM of Java."""
+        java_bio = run_java("eec_full", years=1)
+        python_bio = run_python("eec_full", seed=42, years=1)
+        for species in java_bio.columns:
+            if java_bio[species].iloc[-1] == 0 and python_bio[species].iloc[-1] == 0:
+                continue
+            log_ratio = abs(np.log10(python_bio[species].iloc[-1] / java_bio[species].iloc[-1]))
+            assert log_ratio <= 1.0, f"{species}: {log_ratio:.2f} OoM divergence"
+
+    def test_bob_5yr_no_drift(self):
+        """5-year run: species don't drift beyond 1 OoM over longer simulations."""
+        java_bio = run_java("examples", years=5)
+        python_bio = run_python("examples", seed=42, years=5)
+        for species in java_bio.columns:
+            j = java_bio[species].iloc[-1]
+            p = python_bio[species].iloc[-1]
+            if j == 0 and p == 0:
+                continue
+            log_ratio = abs(np.log10(p / j))
+            assert log_ratio <= 1.0, f"{species}: {log_ratio:.2f} OoM after 5 years"
+```
+
+#### 7.3.3 Per-Process Parity Checks
+
+Targeted tests that verify individual process outputs match Java at the
+formula level (existing in `test_engine_java_comparison.py`, extend):
+
+```python
+class TestProcessParity:
+    """Individual process formulas match Java reference values."""
+
+    def test_von_bertalanffy_growth_curves(self):
+        """VB growth at 8 example species matches Java within 0.01%."""
+
+    def test_mortality_decay_rates(self):
+        """Mortality exponential decay matches Java within 0.01%."""
+
+    def test_predation_proportional_distribution(self):
+        """Unified predation distributes eating proportionally (Java parity)."""
+
+    def test_starvation_lagged_rate(self):
+        """Starvation uses previous timestep's pred_success_rate."""
+
+    def test_reproduction_egg_count(self):
+        """Egg count formula: sex_ratio * fecundity * SSB * season * 1e6."""
+```
+
+#### 7.3.4 Performance Parity Tests
+
+Not correctness tests — these verify that optimizations actually improve
+performance, and flag regressions:
+
+```python
+class TestPerformanceParity:
+    """Track that optimizations don't regress."""
+
+    def test_bob_1yr_under_threshold(self):
+        """BoB 1-year must complete within the current tier's target time."""
+        t = time_python_engine("examples", seed=42, years=1)
+        # Updated per tier: Tier 1 = 20s, Tier 2 = 5s, Tier 3 = 3s
+        assert t < CURRENT_TIER_THRESHOLD
+
+    def test_mortality_is_dominant_cost(self):
+        """Mortality should remain >90% of total time (validates profiling)."""
+        breakdown = profile_python_engine("examples", seed=42, years=1)
+        assert breakdown["mortality"] / breakdown["total"] > 0.90
+```
+
+#### 7.3.5 Helper Functions and Scripts
+
+**Test helpers** (in `tests/test_engine_parity.py`):
+
+```python
+from types import SimpleNamespace
+
+def run_python_engine(config_name: str, seed: int, years: int) -> SimpleNamespace:
+    """Run Python engine, return SimpleNamespace with .biomass, .abundance, .mortality DataFrames."""
+    # Loads config from data/{config_name}/, runs PythonEngine, reads output CSVs
+    ...
+    return SimpleNamespace(biomass=bio_df, abundance=abd_df, mortality=mort_df)
+
+def run_java(config_name: str, years: int) -> pd.DataFrame:
+    """Run Java engine, return biomass DataFrame. Wraps validate_engines.run_java()."""
+    ...
+
+def load_baseline(name: str) -> SimpleNamespace:
+    """Load .npz baseline from tests/fixtures/parity_baselines/{name}."""
+    data = np.load(path)
+    return SimpleNamespace(biomass=data["biomass"], abundance=data["abundance"], ...)
+
+# Performance threshold: updated per tier, module-level constant
+CURRENT_TIER_THRESHOLD = 20.0  # seconds; Tier 1 = 20s, Tier 2 = 5s, Tier 3 = 3s
+```
+
+**`scripts/save_parity_baseline.py`** — Run Python engine on BoB and EEC,
+save output arrays to `tests/fixtures/parity_baselines/` as `.npz` files.
+Keys: `biomass` (2D: timesteps × species), `abundance` (2D), `mortality`
+(3D: timesteps × species × causes). Run once before starting each tier.
+
+**`scripts/benchmark_engine.py`** — Run both engines on BoB and EEC with
+timing, print comparison table, optionally save results to JSON for CI
+tracking.
+
+### 7.4 Regression Detection
 
 Before each optimization:
-1. Run benchmark and save baseline CSV
-2. Implement optimization
-3. Run benchmark and compare
-4. Require: no regression in correctness, measurable speedup
+1. Run `scripts/save_parity_baseline.py` to save current output
+2. Run `scripts/benchmark_engine.py` to save current timing
+3. Implement optimization
+4. Run full test suite including `test_engine_parity.py`
+5. Run benchmark and compare timing
+6. Require: no regression in correctness, measurable speedup
 
 ---
 
