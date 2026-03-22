@@ -498,118 +498,146 @@ def _precompute_effective_rates(work_state, config, n_subdt, step):
     eff_starv[work_state.age_dt == 0] = 0.0
     eff_starv[eff_starv < 0] = 0.0
 
-    # Additional mortality
+    # Additional mortality (vectorized over species)
     eff_additional = np.zeros(n, dtype=np.float64)
-    for i in range(n):
-        if work_state.is_background[i] or work_state.age_dt[i] == 0:
-            continue
-        sp = int(work_state.species_id[i])
-        rate = config.additional_mortality_rate[sp]
-        if (
-            config.additional_mortality_by_dt is not None
-            and config.additional_mortality_by_dt[sp] is not None
-        ):
-            arr = config.additional_mortality_by_dt[sp]
-            rate = arr[step % len(arr)]
-        if (
-            config.additional_mortality_spatial is not None
-            and config.additional_mortality_spatial[sp] is not None
-        ):
-            sp_map = config.additional_mortality_spatial[sp]
-            cy = int(work_state.cell_y[i])
-            cx = int(work_state.cell_x[i])
-            if 0 <= cy < sp_map.shape[0] and 0 <= cx < sp_map.shape[1]:
-                factor = sp_map[cy, cx]
-                if factor <= 0 or np.isnan(factor):
-                    rate = 0.0
-                else:
-                    rate *= factor
-            else:
-                rate = 0.0
-        D = rate / denom
-        if D > 0:
-            eff_additional[i] = D
+    sp = work_state.species_id
+    rates = config.additional_mortality_rate[sp].copy()
 
-    # Fishing
+    if config.additional_mortality_by_dt is not None:
+        for sp_id in range(config.n_species):
+            arr = config.additional_mortality_by_dt[sp_id]
+            if arr is not None:
+                mask = sp == sp_id
+                rates[mask] = arr[step % len(arr)]
+
+    if config.additional_mortality_spatial is not None:
+        for sp_id in range(config.n_species):
+            sp_map = config.additional_mortality_spatial[sp_id]
+            if sp_map is not None:
+                mask = sp == sp_id
+                cy = work_state.cell_y[mask]
+                cx = work_state.cell_x[mask]
+                valid = (
+                    (cy >= 0)
+                    & (cy < sp_map.shape[0])
+                    & (cx >= 0)
+                    & (cx < sp_map.shape[1])
+                )
+                factors = np.zeros(mask.sum(), dtype=np.float64)
+                if valid.any():
+                    f_vals = sp_map[cy[valid], cx[valid]]
+                    f_vals = np.where(np.isnan(f_vals) | (f_vals <= 0), 0.0, f_vals)
+                    factors[valid] = f_vals
+                rates[mask] *= factors
+
+    rates[work_state.is_background] = 0.0
+    rates[work_state.age_dt == 0] = 0.0
+    rates[rates < 0] = 0.0
+    eff_additional = rates / denom
+
+    # Fishing (vectorized over species)
     eff_fishing = np.zeros(n, dtype=np.float64)
     fishing_discard = np.zeros(n, dtype=np.float64)
-    if config.fishing_enabled:
-        for i in range(n):
-            if work_state.is_background[i] or work_state.age_dt[i] == 0:
-                continue
-            sp = int(work_state.species_id[i])
-            f_rate = config.fishing_rate[sp]
 
-            if config.fishing_rate_by_year is not None:
-                year = step // config.n_dt_per_year
+    if config.fishing_enabled:
+        f_rates = config.fishing_rate[sp].copy()
+
+        if config.fishing_rate_by_year is not None:
+            year = step // config.n_dt_per_year
+            for sp_id in range(config.n_species):
                 arr = (
-                    config.fishing_rate_by_year[sp]
-                    if sp < len(config.fishing_rate_by_year)
+                    config.fishing_rate_by_year[sp_id]
+                    if sp_id < len(config.fishing_rate_by_year)
                     else None
                 )
                 if arr is not None and year < len(arr):
-                    f_rate = arr[year]
+                    f_rates[sp == sp_id] = arr[year]
 
-            if f_rate <= 0:
+        selectivity = np.ones(n, dtype=np.float64)
+        for sp_id in range(config.n_species):
+            mask = sp == sp_id
+            if not mask.any():
                 continue
+            sel_type = config.fishing_selectivity_type[sp_id]
+            if sel_type == 0:  # age-based
+                age_years = work_state.age_dt[mask] / config.n_dt_per_year
+                a50 = config.fishing_selectivity_a50[sp_id]
+                selectivity[mask] = np.where(age_years < a50, 0.0, 1.0)
+            elif sel_type == 1:  # logistic
+                l50 = config.fishing_selectivity_l50[sp_id]
+                slope = config.fishing_selectivity_slope[sp_id]
+                selectivity[mask] = 1.0 / (
+                    1.0 + np.exp(-slope * (work_state.length[mask] - l50))
+                )
+            else:  # length cutoff
+                l50 = config.fishing_selectivity_l50[sp_id]
+                selectivity[mask] = np.where(
+                    (l50 > 0) & (work_state.length[mask] < l50), 0.0, 1.0
+                )
 
-            sel_type = config.fishing_selectivity_type[sp]
-            selectivity = 1.0
-            if sel_type == 0:
-                age_years = work_state.age_dt[i] / config.n_dt_per_year
-                a50 = config.fishing_selectivity_a50[sp]
-                if age_years < a50:
-                    continue
-            elif sel_type == 1:
-                l50 = config.fishing_selectivity_l50[sp]
-                slope = config.fishing_selectivity_slope[sp]
-                selectivity = 1.0 / (1.0 + np.exp(-slope * (work_state.length[i] - l50)))
-            else:
-                l50 = config.fishing_selectivity_l50[sp]
-                if l50 > 0 and work_state.length[i] < l50:
-                    continue
-
+        spatial_factor = np.ones(n, dtype=np.float64)
+        for sp_id in range(config.n_species):
             sp_map = (
-                config.fishing_spatial_maps[sp]
-                if sp < len(config.fishing_spatial_maps)
+                config.fishing_spatial_maps[sp_id]
+                if sp_id < len(config.fishing_spatial_maps)
                 else None
             )
-            if sp_map is not None:
-                cy = int(work_state.cell_y[i])
-                cx = int(work_state.cell_x[i])
-                if 0 <= cy < sp_map.shape[0] and 0 <= cx < sp_map.shape[1]:
-                    cell_factor = sp_map[cy, cx]
-                    if cell_factor <= 0 or np.isnan(cell_factor):
-                        continue
-                    f_rate = f_rate * cell_factor
-                else:
+            if sp_map is None:
+                continue
+            mask = sp == sp_id
+            cy = work_state.cell_y[mask]
+            cx = work_state.cell_x[mask]
+            valid = (
+                (cy >= 0)
+                & (cy < sp_map.shape[0])
+                & (cx >= 0)
+                & (cx < sp_map.shape[1])
+            )
+            factors = np.zeros(mask.sum(), dtype=np.float64)
+            if valid.any():
+                f_vals = sp_map[cy[valid], cx[valid]]
+                f_vals = np.where(np.isnan(f_vals) | (f_vals <= 0), 0.0, f_vals)
+                factors[valid] = f_vals
+            spatial_factor[mask] = factors
+
+        mpa_factor = np.ones(n, dtype=np.float64)
+        if config.mpa_zones is not None:
+            year = step // config.n_dt_per_year
+            for mpa in config.mpa_zones:
+                if not (mpa.start_year <= year < mpa.end_year):
                     continue
+                cy = work_state.cell_y
+                cx = work_state.cell_x
+                valid = (
+                    (cy >= 0)
+                    & (cy < mpa.grid.shape[0])
+                    & (cx >= 0)
+                    & (cx < mpa.grid.shape[1])
+                )
+                in_mpa = np.zeros(n, dtype=np.bool_)
+                in_mpa[valid] = mpa.grid[cy[valid], cx[valid]] > 0
+                mpa_factor *= np.where(in_mpa, 1.0 - mpa.percentage, 1.0)
 
-            if config.mpa_zones is not None:
-                year = step // config.n_dt_per_year
-                cy = int(work_state.cell_y[i])
-                cx = int(work_state.cell_x[i])
-                for mpa in config.mpa_zones:
-                    if not (mpa.start_year <= year < mpa.end_year):
-                        continue
-                    if (
-                        0 <= cy < mpa.grid.shape[0]
-                        and 0 <= cx < mpa.grid.shape[1]
-                        and mpa.grid[cy, cx] > 0
-                    ):
-                        f_rate *= 1.0 - mpa.percentage
+        season = np.ones(n, dtype=np.float64)
+        if config.fishing_seasonality is not None:
+            step_in_year = step % config.n_dt_per_year
+            season = config.fishing_seasonality[sp, step_in_year]
 
-            if config.fishing_seasonality is not None:
-                step_in_year = step % config.n_dt_per_year
-                season_weight = config.fishing_seasonality[sp, step_in_year]
-                F = f_rate * season_weight * selectivity / n_subdt
-            else:
-                F = f_rate * selectivity / denom
+        if config.fishing_seasonality is not None:
+            eff_fishing = (
+                f_rates * selectivity * spatial_factor * mpa_factor * season / n_subdt
+            )
+        else:
+            eff_fishing = f_rates * selectivity * spatial_factor * mpa_factor / denom
 
-            if F > 0:
-                eff_fishing[i] = F
-            if config.fishing_discard_rate is not None:
-                fishing_discard[i] = config.fishing_discard_rate[sp]
+        eff_fishing[work_state.is_background] = 0.0
+        eff_fishing[work_state.age_dt == 0] = 0.0
+        eff_fishing[eff_fishing < 0] = 0.0
+
+        if config.fishing_discard_rate is not None:
+            fishing_discard = np.where(
+                eff_fishing > 0, config.fishing_discard_rate[sp], 0.0
+            )
 
     return eff_starv, eff_additional, eff_fishing, fishing_discard
 
