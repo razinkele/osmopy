@@ -10,6 +10,12 @@ from osmose.engine.grid import Grid
 from osmose.engine.movement_maps import MovementMapSet
 from osmose.engine.state import SchoolState
 
+try:
+    from numba import njit
+    _HAS_NUMBA = True
+except ImportError:
+    _HAS_NUMBA = False
+
 
 def _map_move_school(
     age_dt: int,
@@ -257,6 +263,94 @@ def movement(
         state = state.replace(cell_x=new_cx, cell_y=new_cy, is_out=new_out)
 
     return state
+
+
+if _HAS_NUMBA:
+
+    @njit(cache=True)
+    def _map_move_batch_numba(
+        rng_seed,
+        school_indices, current_map_idx, same_map,
+        cell_x, cell_y, sp_ids,
+        all_maps, all_max_proba, all_is_null, sp_map_offset,
+        ocean_mask, walk_range,
+        ny, nx,
+        out_cx, out_cy, out_is_out,
+    ):
+        """Numba-compiled batch map-based movement for all schools."""
+        np.random.seed(rng_seed)
+        n_cells = ny * nx
+        for k in range(len(school_indices)):
+            idx = school_indices[k]
+            sp = sp_ids[idx]
+            map_idx = current_map_idx[k]
+
+            global_map_idx = sp_map_offset[sp] + map_idx
+
+            if map_idx < 0 or all_is_null[global_map_idx]:
+                out_cx[idx] = -1
+                out_cy[idx] = -1
+                out_is_out[idx] = True
+                continue
+
+            current_map = all_maps[global_map_idx]
+            max_p = all_max_proba[global_map_idx]
+
+            if not same_map[k] or cell_x[idx] < 0:
+                placed = False
+                for _ in range(10_000):
+                    flat_idx = int(round((n_cells - 1) * np.random.random()))
+                    j = flat_idx // nx
+                    i = flat_idx % nx
+                    proba = current_map[j, i]
+                    if proba > 0 and not np.isnan(proba):
+                        if max_p == 0.0 or proba >= np.random.random() * max_p:
+                            out_cx[idx] = i
+                            out_cy[idx] = j
+                            out_is_out[idx] = False
+                            placed = True
+                            break
+                if not placed:
+                    out_cx[idx] = -1
+                    out_cy[idx] = -1
+                    out_is_out[idx] = True
+                continue
+
+            cx_k = cell_x[idx]
+            cy_k = cell_y[idx]
+            wr = walk_range[sp]
+            n_accessible = 0
+            y_lo = max(0, cy_k - wr)
+            y_hi = min(ny, cy_k + wr + 1)
+            x_lo = max(0, cx_k - wr)
+            x_hi = min(nx, cx_k + wr + 1)
+            for yi in range(y_lo, y_hi):
+                for xi in range(x_lo, x_hi):
+                    if ocean_mask[yi, xi] and current_map[yi, xi] > 0:
+                        if not np.isnan(current_map[yi, xi]):
+                            n_accessible += 1
+
+            if n_accessible == 0:
+                out_cx[idx] = cx_k
+                out_cy[idx] = cy_k
+                out_is_out[idx] = False
+                continue
+
+            target = int(round((n_accessible - 1) * np.random.random()))
+            count = 0
+            for yi in range(y_lo, y_hi):
+                for xi in range(x_lo, x_hi):
+                    if ocean_mask[yi, xi] and current_map[yi, xi] > 0:
+                        if not np.isnan(current_map[yi, xi]):
+                            if count == target:
+                                out_cx[idx] = xi
+                                out_cy[idx] = yi
+                                out_is_out[idx] = False
+                            count += 1
+                            if count > target:
+                                break
+                if count > target:
+                    break
 
 
 def _flatten_all_map_sets(

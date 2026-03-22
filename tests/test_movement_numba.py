@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 
 def _make_mock_map_set(maps_data, index_maps, max_proba):
@@ -121,3 +122,121 @@ def test_precompute_map_indices_out_of_range():
     )
 
     assert current[0] == -1
+
+
+def test_map_move_batch_numba_new_placement():
+    """Rejection sampling places schools on cells with non-zero probability."""
+    try:
+        from osmose.engine.processes.movement import _map_move_batch_numba
+    except ImportError:
+        pytest.skip("Numba not available")
+
+    ny, nx = 3, 4
+    prob_map = np.zeros((ny, nx), dtype=np.float64)
+    prob_map[1, 2] = 0.8
+    prob_map[2, 3] = 0.5
+
+    all_maps = prob_map.reshape(1, ny, nx)
+    all_max_proba = np.array([0.8])
+    all_is_null = np.array([False])
+    sp_offsets = np.array([0], dtype=np.int32)
+    ocean_mask = np.ones((ny, nx), dtype=np.bool_)
+    walk_range = np.array([1], dtype=np.int32)
+
+    school_indices = np.array([0], dtype=np.int32)
+    current_map_idx = np.array([0], dtype=np.int32)
+    same_map = np.array([False])
+    sp_ids = np.array([0], dtype=np.int32)
+
+    out_cx = np.array([-1], dtype=np.int32)
+    out_cy = np.array([-1], dtype=np.int32)
+    out_is_out = np.array([False])
+
+    _map_move_batch_numba(
+        42,
+        school_indices, current_map_idx, same_map,
+        out_cx, out_cy, sp_ids,
+        all_maps, all_max_proba, all_is_null, sp_offsets,
+        ocean_mask, walk_range, ny, nx,
+        out_cx, out_cy, out_is_out,
+    )
+
+    assert (out_cx[0], out_cy[0]) in [(2, 1), (3, 2)]
+    assert not out_is_out[0]
+
+
+def test_map_move_batch_numba_out_of_domain():
+    """Null map index -> school goes out of domain."""
+    try:
+        from osmose.engine.processes.movement import _map_move_batch_numba
+    except ImportError:
+        pytest.skip("Numba not available")
+
+    ny, nx = 2, 2
+    all_maps = np.zeros((1, ny, nx), dtype=np.float64)
+    all_max_proba = np.array([0.0])
+    all_is_null = np.array([True])
+    sp_offsets = np.array([0], dtype=np.int32)
+    ocean_mask = np.ones((ny, nx), dtype=np.bool_)
+    walk_range = np.array([1], dtype=np.int32)
+
+    out_cx = np.array([0], dtype=np.int32)
+    out_cy = np.array([0], dtype=np.int32)
+    out_is_out = np.array([False])
+
+    _map_move_batch_numba(
+        42,
+        np.array([0], dtype=np.int32),
+        np.array([0], dtype=np.int32),
+        np.array([False]),
+        out_cx, out_cy,
+        np.array([0], dtype=np.int32),
+        all_maps, all_max_proba, all_is_null, sp_offsets,
+        ocean_mask, walk_range, ny, nx,
+        out_cx, out_cy, out_is_out,
+    )
+
+    assert out_cx[0] == -1
+    assert out_cy[0] == -1
+    assert out_is_out[0]
+
+
+def test_map_move_batch_numba_deterministic():
+    """Same seed -> same output."""
+    try:
+        from osmose.engine.processes.movement import _map_move_batch_numba
+    except ImportError:
+        pytest.skip("Numba not available")
+
+    ny, nx = 5, 5
+    prob_map = np.random.default_rng(0).random((ny, nx))
+    all_maps = prob_map.reshape(1, ny, nx)
+    all_max_proba = np.array([prob_map.max()])
+    all_is_null = np.array([False])
+    sp_offsets = np.array([0], dtype=np.int32)
+    ocean_mask = np.ones((ny, nx), dtype=np.bool_)
+    walk_range = np.array([2], dtype=np.int32)
+
+    n = 20
+    school_indices = np.arange(n, dtype=np.int32)
+    current_map_idx = np.zeros(n, dtype=np.int32)
+    same_map_arr = np.zeros(n, dtype=np.bool_)
+    sp_ids = np.zeros(n, dtype=np.int32)
+
+    def run(seed):
+        cx = np.full(n, -1, dtype=np.int32)
+        cy = np.full(n, -1, dtype=np.int32)
+        out = np.zeros(n, dtype=np.bool_)
+        _map_move_batch_numba(
+            seed, school_indices, current_map_idx, same_map_arr,
+            cx, cy, sp_ids,
+            all_maps, all_max_proba, all_is_null, sp_offsets,
+            ocean_mask, walk_range, ny, nx,
+            cx, cy, out,
+        )
+        return cx.copy(), cy.copy()
+
+    cx1, cy1 = run(99)
+    cx2, cy2 = run(99)
+    np.testing.assert_array_equal(cx1, cx2)
+    np.testing.assert_array_equal(cy1, cy2)
