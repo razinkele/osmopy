@@ -189,7 +189,8 @@ def movement(
     map_sets: dict[int, MovementMapSet] | None = None,
     random_patches: dict[int, set[tuple[int, int]]] | None = None,
     species_rngs: list[np.random.Generator] | None = None,
-    flat_map_data=None,
+    flat_map_data: tuple[NDArray, NDArray, NDArray, NDArray] | None = None,
+    walk_range_i32: NDArray[np.int32] | None = None,
 ) -> SchoolState:
     """Move all schools according to their species' movement method.
 
@@ -201,6 +202,9 @@ def movement(
         independent RNG for patch placement and map-based movement.
         Falls back to the global ``rng`` when None or when
         ``movement_seed_fixed`` is False.
+    flat_map_data : tuple, optional
+        Pre-flattened map data from ``_flatten_all_map_sets()`` for Numba path.
+        When None (or Numba unavailable), falls back to per-school Python loop.
     """
     if len(state) == 0:
         return state
@@ -257,7 +261,8 @@ def movement(
                 map_school_indices, current_idx, same_map_flags,
                 new_cx, new_cy, state.species_id,
                 flat_maps, flat_max_proba, flat_is_null, sp_offsets,
-                grid.ocean_mask, config.random_walk_range.astype(np.int32),
+                grid.ocean_mask,
+                walk_range_i32 if walk_range_i32 is not None else config.random_walk_range.astype(np.int32),
                 grid.ny, grid.nx,
                 new_cx, new_cy, new_out,
             )
@@ -419,6 +424,10 @@ def _flatten_all_map_sets(
 
     pos = 0
     for sp, ms in map_sets.items():
+        if sp >= n_species:
+            raise ValueError(
+                f"Movement map species ID {sp} exceeds n_species={n_species}"
+            )
         sp_map_offset[sp] = pos
         for k, m in enumerate(ms.maps):
             if m is not None:

@@ -481,6 +481,35 @@ def _precompute_resource_arrays(config, resources):
     return rsc_size_min, rsc_size_max, rsc_tl, rsc_access_rows, n_rsc
 
 
+def _lookup_spatial_factors(
+    sp_map: NDArray[np.float64],
+    cell_y: NDArray[np.int32],
+    cell_x: NDArray[np.int32],
+    mask: NDArray[np.bool_],
+) -> NDArray[np.float64]:
+    """Look up spatial map factors for a species mask, with bounds/NaN safety.
+
+    Returns float64 array of length mask.sum(). Out-of-bounds or NaN/negative
+    cells get factor 0.0.
+    """
+    cy = cell_y[mask]
+    cx = cell_x[mask]
+    valid = (cy >= 0) & (cy < sp_map.shape[0]) & (cx >= 0) & (cx < sp_map.shape[1])
+    factors = np.zeros(mask.sum(), dtype=np.float64)
+    if valid.any():
+        f_vals = sp_map[cy[valid], cx[valid]]
+        f_vals = np.where(np.isnan(f_vals) | (f_vals <= 0), 0.0, f_vals)
+        factors[valid] = f_vals
+    return factors
+
+
+def _zero_exempt(arr: NDArray[np.float64], work_state) -> None:
+    """Zero out rates for background species, age-0 schools, and negatives."""
+    arr[work_state.is_background] = 0.0
+    arr[work_state.age_dt == 0] = 0.0
+    arr[arr < 0] = 0.0
+
+
 def _precompute_effective_rates(work_state, config, n_subdt, step):
     """Pre-compute per-school effective mortality rates for the Numba path.
 
@@ -494,9 +523,7 @@ def _precompute_effective_rates(work_state, config, n_subdt, step):
     denom = config.n_dt_per_year * n_subdt
     eff_starv = work_state.starvation_rate / denom
     eff_starv = eff_starv.copy()  # don't modify state array
-    eff_starv[work_state.is_background] = 0.0
-    eff_starv[work_state.age_dt == 0] = 0.0
-    eff_starv[eff_starv < 0] = 0.0
+    _zero_exempt(eff_starv, work_state)
 
     # Additional mortality (vectorized over species)
     sp = work_state.species_id
@@ -514,24 +541,11 @@ def _precompute_effective_rates(work_state, config, n_subdt, step):
             sp_map = config.additional_mortality_spatial[sp_id]
             if sp_map is not None:
                 mask = sp == sp_id
-                cy = work_state.cell_y[mask]
-                cx = work_state.cell_x[mask]
-                valid = (
-                    (cy >= 0)
-                    & (cy < sp_map.shape[0])
-                    & (cx >= 0)
-                    & (cx < sp_map.shape[1])
+                rates[mask] *= _lookup_spatial_factors(
+                    sp_map, work_state.cell_y, work_state.cell_x, mask
                 )
-                factors = np.zeros(mask.sum(), dtype=np.float64)
-                if valid.any():
-                    f_vals = sp_map[cy[valid], cx[valid]]
-                    f_vals = np.where(np.isnan(f_vals) | (f_vals <= 0), 0.0, f_vals)
-                    factors[valid] = f_vals
-                rates[mask] *= factors
 
-    rates[work_state.is_background] = 0.0
-    rates[work_state.age_dt == 0] = 0.0
-    rates[rates < 0] = 0.0
+    _zero_exempt(rates, work_state)
     eff_additional = rates / denom
     np.nan_to_num(eff_additional, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
 
@@ -585,20 +599,9 @@ def _precompute_effective_rates(work_state, config, n_subdt, step):
             if sp_map is None:
                 continue
             mask = sp == sp_id
-            cy = work_state.cell_y[mask]
-            cx = work_state.cell_x[mask]
-            valid = (
-                (cy >= 0)
-                & (cy < sp_map.shape[0])
-                & (cx >= 0)
-                & (cx < sp_map.shape[1])
+            spatial_factor[mask] = _lookup_spatial_factors(
+                sp_map, work_state.cell_y, work_state.cell_x, mask
             )
-            factors = np.zeros(mask.sum(), dtype=np.float64)
-            if valid.any():
-                f_vals = sp_map[cy[valid], cx[valid]]
-                f_vals = np.where(np.isnan(f_vals) | (f_vals <= 0), 0.0, f_vals)
-                factors[valid] = f_vals
-            spatial_factor[mask] = factors
 
         mpa_factor = np.ones(n, dtype=np.float64)
         if config.mpa_zones is not None:
@@ -628,9 +631,7 @@ def _precompute_effective_rates(work_state, config, n_subdt, step):
         else:
             eff_fishing = f_rates * selectivity * spatial_factor * mpa_factor / denom
 
-        eff_fishing[work_state.is_background] = 0.0
-        eff_fishing[work_state.age_dt == 0] = 0.0
-        eff_fishing[eff_fishing < 0] = 0.0
+        _zero_exempt(eff_fishing, work_state)
         np.nan_to_num(eff_fishing, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
 
         if config.fishing_discard_rate is not None:
