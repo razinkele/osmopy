@@ -335,6 +335,11 @@ The outer loop is over `n_species` (14 for EEC), not `n_schools` (13,744). Each 
 **Fishing (vectorized):**
 
 ```python
+if not config.fishing_enabled:
+    eff_fishing = np.zeros(n, dtype=np.float64)
+    fishing_discard = np.zeros(n, dtype=np.float64)
+else:
+
 # Base rates
 f_rates = config.fishing_rate[sp].copy()
 
@@ -363,7 +368,7 @@ for sp_id in range(config.n_species):
         selectivity[mask] = 1.0 / (1.0 + np.exp(-slope * (work_state.length[mask] - l50)))
     else:  # length cutoff
         l50 = config.fishing_selectivity_l50[sp_id]
-        selectivity[mask] = np.where(work_state.length[mask] < l50, 0.0, 1.0)
+        selectivity[mask] = np.where((l50 > 0) & (work_state.length[mask] < l50), 0.0, 1.0)
 
 # Spatial maps
 spatial_factor = np.ones(n, dtype=np.float64)
@@ -413,10 +418,10 @@ eff_fishing[work_state.is_background] = 0.0
 eff_fishing[work_state.age_dt == 0] = 0.0
 eff_fishing[eff_fishing < 0] = 0.0
 
-# Fishing discard rates (species-indexed)
+# Fishing discard rates — only set where fishing is active
 fishing_discard = np.zeros(n, dtype=np.float64)
 if config.fishing_discard_rate is not None:
-    fishing_discard = config.fishing_discard_rate[sp].copy()
+    fishing_discard = np.where(eff_fishing > 0, config.fishing_discard_rate[sp], 0.0)
 ```
 
 ### Expected Performance
