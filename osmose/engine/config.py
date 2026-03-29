@@ -690,6 +690,49 @@ class EngineConfig:
     output_bioen_rho: bool = False
     output_bioen_sizeinf: bool = False
 
+    def __post_init__(self) -> None:
+        """Validate invariants after construction."""
+        n_total = self.n_species + self.n_background
+
+        # Check n_steps consistency
+        expected_steps = self.n_dt_per_year * self.n_year
+        if self.n_steps != expected_steps:
+            raise ValueError(
+                f"n_steps ({self.n_steps}) != n_dt_per_year ({self.n_dt_per_year}) "
+                f"* n_year ({self.n_year}) = {expected_steps}"
+            )
+
+        # Check per-species array lengths
+        per_species_arrays = {
+            "linf": self.linf,
+            "k": self.k,
+            "t0": self.t0,
+            "egg_size": self.egg_size,
+            "condition_factor": self.condition_factor,
+            "allometric_power": self.allometric_power,
+            "lifespan_dt": self.lifespan_dt,
+            "ingestion_rate": self.ingestion_rate,
+            "critical_success_rate": self.critical_success_rate,
+            "additional_mortality_rate": self.additional_mortality_rate,
+            "starvation_rate_max": self.starvation_rate_max,
+        }
+        for name, arr in per_species_arrays.items():
+            if hasattr(arr, "__len__") and len(arr) != n_total:
+                raise ValueError(
+                    f"{name} has length {len(arr)}, expected {n_total} "
+                    f"(n_species={self.n_species} + n_background={self.n_background})"
+                )
+
+        # Check biological positivity constraints (focal species only)
+        for name, arr in [("linf", self.linf), ("k", self.k)]:
+            if hasattr(arr, "__len__"):
+                for i in range(self.n_species):
+                    if arr[i] <= 0:
+                        raise ValueError(
+                            f"{name}[{i}] = {arr[i]}, must be positive for "
+                            f"focal species '{self.species_names[i]}'"
+                        )
+
     @classmethod
     def from_dict(cls, cfg: dict[str, str]) -> EngineConfig:
         _set_config_dir(cfg.get("_osmose.config.dir", ""))
