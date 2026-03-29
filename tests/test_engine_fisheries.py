@@ -63,6 +63,7 @@ def _make_fisheries_config(
             rows.append(f"{names[i]}," + ",".join(vals))
         catch_path.write_text("\n".join(rows))
         cfg["fisheries.catchability.file"] = str(catch_path)
+        cfg["_osmose.config.dir"] = str(tmp_path)
 
     return cfg
 

@@ -406,6 +406,7 @@ class TestSpatialFishing:
         np.savetxt(map_file, map_data, delimiter=";", fmt="%.1f")
 
         cfg_dict = _make_minimal_config()
+        cfg_dict["_osmose.config.dir"] = str(tmp_path)
         cfg_dict["mortality.fishing.rate.sp0"] = "0.5"
         cfg_dict["mortality.fishing.spatial.distrib.file.sp0"] = str(map_file)
         cfg_dict["simulation.fishing.mortality.enabled"] = "true"
@@ -438,6 +439,7 @@ class TestSpatialFishing:
         np.savetxt(map_file, map_data, delimiter=";", fmt="%.1f")
 
         cfg_dict = _make_minimal_config()
+        cfg_dict["_osmose.config.dir"] = str(tmp_path)
         cfg_dict["mortality.fishing.rate.sp0"] = "0.5"
         cfg_dict["mortality.fishing.spatial.distrib.file.sp0"] = str(map_file)
         cfg_dict["simulation.fishing.mortality.enabled"] = "true"

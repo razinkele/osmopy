@@ -79,6 +79,7 @@ class TestFisherySeasonality:
         csv_path = tmp_path / "season_sp0.csv"
         csv_path.write_text("step;season\n0;1\n1;2\n2;3\n3;4\n")
         cfg["fisheries.seasonality.file.sp0"] = str(csv_path)
+        cfg["_osmose.config.dir"] = str(tmp_path)
         ec = EngineConfig.from_dict(cfg)
         assert ec.fishing_seasonality is not None
         assert ec.fishing_seasonality.shape == (1, 4)
@@ -94,6 +95,7 @@ class TestFisherySeasonality:
         # Season: all fishing in step 0, zero in steps 1-3
         csv_path.write_text("step;season\n0;1\n1;0\n2;0\n3;0\n")
         cfg["fisheries.seasonality.file.sp0"] = str(csv_path)
+        cfg["_osmose.config.dir"] = str(tmp_path)
         ec = EngineConfig.from_dict(cfg)
 
         state = _make_school()
@@ -123,6 +125,7 @@ class TestFishingRateByYear:
         csv_path = tmp_path / "rate_byyear_sp0.csv"
         csv_path.write_text("0.3\n0.6\n")  # year 0 → 0.3, year 1 → 0.6
         cfg["mortality.fishing.rate.byyear.file.sp0"] = str(csv_path)
+        cfg["_osmose.config.dir"] = str(tmp_path)
         ec = EngineConfig.from_dict(cfg)
         assert ec.fishing_rate_by_year is not None
         assert ec.fishing_rate_by_year[0] is not None
@@ -134,6 +137,7 @@ class TestFishingRateByYear:
         csv_path = tmp_path / "rate_byyear_sp0.csv"
         csv_path.write_text("0.2\n0.8\n")
         cfg["mortality.fishing.rate.byyear.file.sp0"] = str(csv_path)
+        cfg["_osmose.config.dir"] = str(tmp_path)
         ec = EngineConfig.from_dict(cfg)
 
         state = _make_school()
@@ -177,6 +181,7 @@ class TestSigmoidSelectivity:
         catch_path = tmp_path / "catch.csv"
         catch_path.write_text(",trawl\nFishA,1\n")
         cfg["fisheries.catchability.file"] = str(catch_path)
+        cfg["_osmose.config.dir"] = str(tmp_path)
         # Remove legacy rate
         cfg.pop("fishing.rate.sp0", None)
 
@@ -215,6 +220,7 @@ class TestSigmoidSelectivity:
         catch_path = tmp_path / "catch.csv"
         catch_path.write_text(",trawl\nFishA,1\n")
         cfg["fisheries.catchability.file"] = str(catch_path)
+        cfg["_osmose.config.dir"] = str(tmp_path)
         cfg.pop("fishing.rate.sp0", None)
 
         ec = EngineConfig.from_dict(cfg)
@@ -253,6 +259,7 @@ class TestMPA:
                 "mpa.start.year.mpa0": "0",
                 "mpa.end.year.mpa0": "2",
                 "mpa.percentage.mpa0": "0.8",
+                "_osmose.config.dir": str(tmp_path),
             }
         )
         return cfg
@@ -305,6 +312,7 @@ class TestMPA:
                 "mpa.start.year.mpa0": "1",  # starts at year 1
                 "mpa.end.year.mpa0": "2",
                 "mpa.percentage.mpa0": "1.0",  # full closure
+                "_osmose.config.dir": str(tmp_path),
             }
         )
         ec = EngineConfig.from_dict(cfg)
@@ -336,6 +344,7 @@ class TestDiscards:
         # CSV: species × fishery discard rates (same format as catchability)
         discard_path.write_text(",fsh0,fsh1\nFishA,0.3,0.0\nFishB,0.0,0.5\n")
         cfg["fisheries.discards.file"] = str(discard_path)
+        cfg["_osmose.config.dir"] = str(tmp_path)
         ec = EngineConfig.from_dict(cfg)
         assert ec.fishing_discard_rate is not None
         np.testing.assert_allclose(ec.fishing_discard_rate[0], 0.3)
@@ -347,6 +356,7 @@ class TestDiscards:
         discard_path = tmp_path / "discards.csv"
         discard_path.write_text(",fsh0\nFishA,0.4\n")
         cfg["fisheries.discards.file"] = str(discard_path)
+        cfg["_osmose.config.dir"] = str(tmp_path)
         ec = EngineConfig.from_dict(cfg)
 
         state = _make_school()

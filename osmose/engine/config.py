@@ -20,7 +20,9 @@ from osmose.engine.background import (
     _parse_floats,
     parse_background_species,
 )
+from osmose.logging import setup_logging
 
+_log = setup_logging("osmose.engine.config")
 
 
 _GROWTH_MAP: dict[str, str] = {
@@ -93,12 +95,26 @@ def _search_dirs() -> list[Path]:
 
 
 def _resolve_file(file_key: str) -> Path | None:
-    """Resolve a relative file path against multiple search directories."""
+    """Resolve a relative file path against multiple search directories.
+
+    Rejects paths containing '..' segments and absolute paths not under
+    a known search directory, to prevent path traversal.
+    """
     if not file_key:
         return None
+    if ".." in Path(file_key).parts:
+        _log.warning("Rejecting file key with '..' traversal: %s", file_key)
+        return None
     p = Path(file_key)
-    if p.is_absolute() and p.exists():
-        return p
+    if p.is_absolute():
+        for base in _search_dirs():
+            try:
+                if p.is_relative_to(base.resolve()) and p.exists():
+                    return p
+            except (ValueError, OSError):
+                continue
+        _log.warning("Rejecting absolute path not under any search dir: %s", file_key)
+        return None
     for base in _search_dirs():
         path = base / file_key
         if path.exists():

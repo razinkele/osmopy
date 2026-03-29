@@ -82,6 +82,7 @@ class TestSpawningSeasonNormalization:
         csv_path.write_text("step;season\n0;2\n1;4\n2;6\n3;8\n")
         cfg["reproduction.season.file.sp0"] = str(csv_path)
         cfg["reproduction.normalisation.enabled"] = "true"
+        cfg["_osmose.config.dir"] = str(tmp_path)
         ec = EngineConfig.from_dict(cfg)
         assert ec.spawning_season is not None
         np.testing.assert_allclose(ec.spawning_season[0].sum(), 1.0, rtol=1e-10)
@@ -95,6 +96,7 @@ class TestSpawningSeasonNormalization:
         csv_path.write_text("step;season\n0;2\n1;4\n2;6\n3;8\n")
         cfg["reproduction.season.file.sp0"] = str(csv_path)
         cfg["reproduction.normalisation.enabled"] = "false"
+        cfg["_osmose.config.dir"] = str(tmp_path)
         ec = EngineConfig.from_dict(cfg)
         assert ec.spawning_season is not None
         np.testing.assert_allclose(ec.spawning_season[0], [2, 4, 6, 8])
@@ -117,6 +119,7 @@ class TestMultiYearSpawningSeason:
             "4;0.5\n5;0.6\n6;0.7\n7;0.8\n"  # year 1
         )
         cfg["reproduction.season.file.sp0"] = str(csv_path)
+        cfg["_osmose.config.dir"] = str(tmp_path)
         ec = EngineConfig.from_dict(cfg)
         assert ec.spawning_season is not None
         # Array should have 8 columns (not truncated to 4)
@@ -160,6 +163,7 @@ class TestTimeVaryingAdditionalMortality:
         csv_path = tmp_path / "add_mort_sp0.csv"
         csv_path.write_text("0.0\n2.0\n0.0\n0.0\n")
         cfg["mortality.additional.rate.bytdt.file.sp0"] = str(csv_path)
+        cfg["_osmose.config.dir"] = str(tmp_path)
         ec = EngineConfig.from_dict(cfg)
 
         assert ec.additional_mortality_by_dt is not None
@@ -184,6 +188,7 @@ class TestTimeVaryingAdditionalMortality:
         csv_path = tmp_path / "add_mort_sp0.csv"
         csv_path.write_text("0.0\n2.0\n0.0\n0.0\n")
         cfg["mortality.additional.rate.bytdt.file.sp0"] = str(csv_path)
+        cfg["_osmose.config.dir"] = str(tmp_path)
         ec = EngineConfig.from_dict(cfg)
 
         state = _make_school(n=1, sp=0, abundance=1000.0, age_dt=10)
@@ -214,6 +219,7 @@ class TestSpatialAdditionalMortality:
         csv_path = tmp_path / "spatial_sp0.csv"
         csv_path.write_text("0.0;2.0\n1.0;1.0\n")
         cfg["mortality.additional.spatial.distrib.file.sp0"] = str(csv_path)
+        cfg["_osmose.config.dir"] = str(tmp_path)
         ec = EngineConfig.from_dict(cfg)
 
         assert ec.additional_mortality_spatial is not None
@@ -242,6 +248,7 @@ class TestSpatialAdditionalMortality:
         csv_path = tmp_path / "spatial_sp0.csv"
         csv_path.write_text("1.0;3.0\n1.0;1.0\n")
         cfg["mortality.additional.spatial.distrib.file.sp0"] = str(csv_path)
+        cfg["_osmose.config.dir"] = str(tmp_path)
         ec = EngineConfig.from_dict(cfg)
 
         n_subdt = ec.mortality_subdt
