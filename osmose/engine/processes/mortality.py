@@ -9,6 +9,8 @@ so that subsequent causes see reduced instantaneous abundance.
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 from numpy.typing import NDArray
 
@@ -38,6 +40,12 @@ try:
     _HAS_NUMBA = True
 except ImportError:
     _HAS_NUMBA = False
+    warnings.warn(
+        "Numba is not installed. Mortality will use pure Python fallback, "
+        "which may be 10-100x slower. Install numba for optimal performance.",
+        ImportWarning,
+        stacklevel=2,
+    )
 
 # Cause indices matching MortalityCause enum
 _PREDATION = int(MortalityCause.PREDATION)

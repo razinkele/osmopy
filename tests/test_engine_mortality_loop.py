@@ -236,6 +236,7 @@ class TestUnifiedPredation:
             _apply_predation_for_school(
                 0, cell_indices, state, cfg, rs, 0, 0, rng, 10,
                 None, False, False, None, None,
+                inst_abd=state.abundance.copy(),
             )
             # After one predation call, success rate should be updated exactly once
             assert state.pred_success_rate[0] > 0

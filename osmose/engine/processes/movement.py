@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 from numpy.typing import NDArray
 
@@ -15,6 +17,12 @@ try:
     _HAS_NUMBA = True
 except ImportError:
     _HAS_NUMBA = False
+    warnings.warn(
+        "Numba is not installed. Movement will use pure Python fallback, "
+        "which may be 10-100x slower. Install numba for optimal performance.",
+        ImportWarning,
+        stacklevel=2,
+    )
 
 
 def _map_move_school(
@@ -269,8 +277,6 @@ def movement(
             # Warn if any previously in-domain schools failed placement
             newly_out = new_out & ~state.is_out
             if newly_out.any():
-                import warnings
-
                 warnings.warn(
                     f"Numba movement: {newly_out.sum()} schools failed map placement "
                     f"(exhausted 10000 rejection samples). Check movement maps.",

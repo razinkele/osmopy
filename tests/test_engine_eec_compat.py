@@ -429,7 +429,7 @@ class TestSpatialFishing:
             cell_y=np.array([zy], dtype=np.int32),
             cell_x=np.array([zx], dtype=np.int32),
         )
-        _apply_fishing_for_school(0, state, cfg, n_subdt=1)
+        _apply_fishing_for_school(0, state, cfg, n_subdt=1, inst_abd=state.abundance.copy())
         assert state.n_dead[0, 3] == 0.0  # FISHING = 3
 
     def test_nonzero_map_cell_has_fishing(self, tmp_path):
@@ -453,7 +453,7 @@ class TestSpatialFishing:
             cell_y=np.array([1], dtype=np.int32),
             cell_x=np.array([2], dtype=np.int32),
         )
-        _apply_fishing_for_school(0, state, cfg, n_subdt=1)
+        _apply_fishing_for_school(0, state, cfg, n_subdt=1, inst_abd=state.abundance.copy())
         assert state.n_dead[0, 3] > 0.0
 
 
