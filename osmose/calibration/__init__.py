@@ -6,7 +6,7 @@ from osmose.calibration.objectives import (
     diet_distance,
     normalized_rmse,
 )
-from osmose.calibration.problem import FreeParameter, OsmoseCalibrationProblem
+from osmose.calibration.problem import FreeParameter, OsmoseCalibrationProblem, Transform
 from osmose.calibration.surrogate import SurrogateCalibrator
 from osmose.calibration.sensitivity import SensitivityAnalyzer
 
@@ -16,6 +16,7 @@ __all__ = [
     "diet_distance",
     "normalized_rmse",
     "FreeParameter",
+    "Transform",
     "OsmoseCalibrationProblem",
     "SurrogateCalibrator",
     "SensitivityAnalyzer",

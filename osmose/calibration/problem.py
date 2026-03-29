@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import enum
 import re
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
@@ -27,6 +28,13 @@ _expected_errors = (
 )
 
 
+class Transform(enum.Enum):
+    """Parameter space transform for calibration."""
+
+    LINEAR = "linear"
+    LOG = "log"
+
+
 @dataclass
 class FreeParameter:
     """A parameter to optimize during calibration."""
@@ -34,7 +42,18 @@ class FreeParameter:
     key: str  # OSMOSE parameter key
     lower_bound: float
     upper_bound: float
-    transform: str = "linear"  # "linear" or "log"
+    transform: Transform = Transform.LINEAR
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.transform, Transform):
+            raise TypeError(
+                f"transform must be a Transform enum, got {type(self.transform).__name__}"
+            )
+        if self.lower_bound >= self.upper_bound:
+            raise ValueError(
+                f"lower_bound ({self.lower_bound}) must be less than "
+                f"upper_bound ({self.upper_bound})"
+            )
 
 
 class OsmoseCalibrationProblem(Problem):
@@ -114,7 +133,7 @@ class OsmoseCalibrationProblem(Problem):
         overrides = {}
         for j, fp in enumerate(self.free_params):
             val = params[j]
-            if fp.transform == "log":
+            if fp.transform == Transform.LOG:
                 val = 10**val
             overrides[fp.key] = str(val)
 

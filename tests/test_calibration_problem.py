@@ -2,13 +2,13 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-from osmose.calibration.problem import FreeParameter, OsmoseCalibrationProblem
+from osmose.calibration.problem import FreeParameter, OsmoseCalibrationProblem, Transform
 
 
 def test_free_parameter():
     fp = FreeParameter(key="species.k.sp0", lower_bound=0.1, upper_bound=0.5)
     assert fp.key == "species.k.sp0"
-    assert fp.transform == "linear"
+    assert fp.transform == Transform.LINEAR
 
 
 def test_problem_dimensions():
@@ -134,7 +134,7 @@ def test_evaluate_linear_params(tmp_path):
 
 def test_evaluate_log_transform(tmp_path):
     """Log-transformed parameters are exponentiated (10**val)."""
-    params = [FreeParameter("species.k.sp0", -2, 0, transform="log")]
+    params = [FreeParameter("species.k.sp0", -2, 0, transform=Transform.LOG)]
     problem = _make_problem(tmp_path, objective_fns=[lambda r: 0.0], free_params=params)
     X = np.array([[-1.0]])  # 10**-1 = 0.1
     out = {}

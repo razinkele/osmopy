@@ -24,7 +24,7 @@ from osmose.calibration.objectives import (
     weighted_multi_objective,
     yield_rmse,
 )
-from osmose.calibration.problem import FreeParameter, OsmoseCalibrationProblem
+from osmose.calibration.problem import FreeParameter, OsmoseCalibrationProblem, Transform
 from osmose.cli import cmd_validate
 from osmose.config.reader import OsmoseConfigReader
 from osmose.config.validator import validate_config
@@ -431,7 +431,7 @@ class TestCalibrationSetup:
         if key not in config:
             pytest.skip(f"{name}: missing {key}")
 
-        fp = FreeParameter(key=key, lower_bound=-2, upper_bound=0, transform="log")
+        fp = FreeParameter(key=key, lower_bound=-2, upper_bound=0, transform=Transform.LOG)
         problem = OsmoseCalibrationProblem(
             free_params=[fp],
             objective_fns=[lambda r: 0.0],
