@@ -20,10 +20,23 @@ class OsmoseResults:
     mortality data.
     """
 
-    def __init__(self, output_dir: Path, prefix: str = "osm"):
+    def __init__(self, output_dir: Path, prefix: str = "osm", strict: bool = False):
         self.output_dir = Path(output_dir)
         self.prefix = prefix
+        self.strict = strict
         self._nc_cache: dict[str, xr.Dataset] = {}
+
+    def _raise_if_strict(self, pattern: str) -> None:
+        """Raise FileNotFoundError in strict mode when no files match."""
+        if not self.strict:
+            return
+        if not self.output_dir.exists():
+            raise FileNotFoundError(
+                f"Output directory does not exist: {self.output_dir}"
+            )
+        raise FileNotFoundError(
+            f"No files matching '{pattern}' in {self.output_dir}"
+        )
 
     def list_outputs(self) -> list[str]:
         """List all output files in the output directory."""
@@ -197,6 +210,7 @@ class OsmoseResults:
             df = pd.read_csv(filepath)
             frames.append(df)
         if not frames:
+            self._raise_if_strict(pattern)
             return pd.DataFrame()
         return pd.concat(frames, ignore_index=True)
 
@@ -251,6 +265,7 @@ class OsmoseResults:
             frames.append(melted)
 
         if not frames:
+            self._raise_if_strict(pattern)
             return pd.DataFrame()
 
         combined = pd.concat(frames, ignore_index=True)
@@ -275,6 +290,7 @@ class OsmoseResults:
             frames.append(df)
 
         if not frames:
+            self._raise_if_strict(pattern)
             return pd.DataFrame()
 
         combined = pd.concat(frames, ignore_index=True)
