@@ -9,7 +9,7 @@ LTL_FIELDS: list[OsmoseField] = [
         param_type=ParamType.ENUM,
         default="fr.ird.osmose.ltl.LTLFastForcing",
         choices=["fr.ird.osmose.ltl.LTLFastForcing"],
-        description="Java class implementing the LTL forcing",
+        description="LTL forcing method",
         category="ltl",
     ),
     OsmoseField(

@@ -8,7 +8,7 @@ GRID_FIELDS: list[OsmoseField] = [
         param_type=ParamType.ENUM,
         default="fr.ird.osmose.grid.OriginalGrid",
         choices=["fr.ird.osmose.grid.OriginalGrid", "fr.ird.osmose.grid.NcGrid"],
-        description="Java class implementing the grid",
+        description="Grid implementation type",
         category="grid",
     ),
     OsmoseField(
