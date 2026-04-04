@@ -32,6 +32,16 @@ class Grid:
         self.ocean_mask = ocean_mask
         self.lat = lat
         self.lon = lon
+        if ny < 1 or nx < 1:
+            raise ValueError(f"Grid dimensions must be >= 1, got ny={ny}, nx={nx}")
+        if ocean_mask.shape != (ny, nx):
+            raise ValueError(
+                f"ocean_mask shape {ocean_mask.shape} does not match (ny={ny}, nx={nx})"
+            )
+        if lat is not None and lat.shape != (ny,):
+            raise ValueError(f"lat shape {lat.shape} does not match ny={ny}")
+        if lon is not None and lon.shape != (nx,):
+            raise ValueError(f"lon shape {lon.shape} does not match nx={nx}")
 
     @property
     def n_cells(self) -> int:

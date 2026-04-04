@@ -47,6 +47,7 @@ def test_osmose_field_validate_in_range():
         param_type=ParamType.FLOAT,
         min_val=0.01,
         max_val=2.0,
+        indexed=True,
     )
     assert field.validate_value(0.5) == []
     errors = field.validate_value(5.0)
@@ -81,6 +82,7 @@ def test_validate_value_below_min():
         param_type=ParamType.FLOAT,
         min_val=0.01,
         max_val=2.0,
+        indexed=True,
     )
     errors = field.validate_value(-0.5)
     assert len(errors) == 1

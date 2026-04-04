@@ -77,6 +77,20 @@ class SchoolState:
     first_feeding_age_dt: NDArray[np.int32]
     egg_retained: NDArray[np.float64]  # eggs withheld from prey pool per sub-timestep
 
+    def __post_init__(self) -> None:
+        n = len(self.species_id)
+        for f in fields(self):
+            val = getattr(self, f.name)
+            if f.name == "n_dead":
+                if val.shape != (n, len(MortalityCause)):
+                    raise ValueError(
+                        f"n_dead shape {val.shape} != ({n}, {len(MortalityCause)})"
+                    )
+            elif val.ndim == 1 and len(val) != n:
+                raise ValueError(
+                    f"SchoolState.{f.name} length {len(val)} != {n}"
+                )
+
     def __len__(self) -> int:
         return len(self.species_id)
 

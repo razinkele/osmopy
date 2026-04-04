@@ -52,6 +52,24 @@ class OsmoseField:
     required: bool = True
     advanced: bool = False
 
+    def __post_init__(self) -> None:
+        if self.indexed and "{idx}" not in self.key_pattern:
+            raise ValueError(
+                f"OsmoseField indexed=True but key_pattern has no {{idx}}: {self.key_pattern}"
+            )
+        if not self.indexed and "{idx}" in self.key_pattern:
+            raise ValueError(
+                f"OsmoseField indexed=False but key_pattern contains {{idx}}: {self.key_pattern}"
+            )
+        if self.choices is not None and self.param_type != ParamType.ENUM:
+            raise ValueError(
+                f"OsmoseField has choices but param_type is {self.param_type}, not ENUM: {self.key_pattern}"
+            )
+        if self.min_val is not None and self.max_val is not None and self.min_val > self.max_val:
+            raise ValueError(
+                f"OsmoseField min_val ({self.min_val}) > max_val ({self.max_val}): {self.key_pattern}"
+            )
+
     def resolve_key(self, idx: int | None = None) -> str:
         """Resolve the key pattern to a concrete OSMOSE property key.
 

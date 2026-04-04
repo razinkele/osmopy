@@ -135,6 +135,7 @@ def test_constraint_hint_float():
         min_val=1.0,
         max_val=200.0,
         unit="cm",
+        indexed=True,
     )
     hint = constraint_hint(field)
     assert "1.0" in hint
@@ -160,6 +161,7 @@ def test_constraint_hint_min_only():
         description="Minimum age",
         min_val=0.0,
         unit="year",
+        indexed=True,
     )
     hint = constraint_hint(field)
     assert "Min: 0.0" in hint
@@ -174,6 +176,7 @@ def test_constraint_hint_max_only():
         description="Mortality rate",
         max_val=10.0,
         unit="year^-1",
+        indexed=True,
     )
     hint = constraint_hint(field)
     assert "Max: 10.0" in hint
@@ -239,6 +242,7 @@ def test_validate_field_rejects_out_of_bounds():
         max_val=200.0,
         description="L-infinity",
         category="growth",
+        indexed=True,
     )
     error = validate_field("species.linf.sp0", "500.0", field)
     assert error is not None
@@ -254,6 +258,7 @@ def test_validate_field_accepts_valid_value():
         max_val=200.0,
         description="L-infinity",
         category="growth",
+        indexed=True,
     )
     assert validate_field("species.linf.sp0", "100.0", field) is None
 
