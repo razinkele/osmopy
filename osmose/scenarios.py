@@ -29,6 +29,10 @@ class Scenario:
     parent_scenario: str | None = None
 
     def __post_init__(self):
+        if not self.name:
+            raise ValueError("Scenario name must not be empty")
+        if "/" in self.name or "\\" in self.name or ".." in self.name:
+            raise ValueError(f"Scenario name contains invalid characters: {self.name!r}")
         now = datetime.now().isoformat()
         if not self.created_at:
             self.created_at = now

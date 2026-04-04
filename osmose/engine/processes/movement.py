@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import warnings
+from collections import deque
 
 import numpy as np
 from numpy.typing import NDArray
@@ -141,11 +142,11 @@ def build_random_patches(
 
         # BFS to collect ncell connected ocean cells
         patch: set[tuple[int, int]] = set()
-        queue: list[tuple[int, int]] = [(start_x, start_y)]
+        queue: deque[tuple[int, int]] = deque([(start_x, start_y)])
         patch.add((start_x, start_y))
 
         while len(patch) < ncell and queue:
-            cx, cy = queue.pop(0)
+            cx, cy = queue.popleft()
             for ny, nx in grid.neighbors(cy, cx):
                 if len(patch) >= ncell:
                     break

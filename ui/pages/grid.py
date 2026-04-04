@@ -348,7 +348,15 @@ def grid_server(input, output, session, state):
             nc_lat, nc_lon, nc_mask = nc_data
             layers, view_state = build_netcdf_grid_layers(nc_lat, nc_lon, nc_mask, is_dark)
         else:
+            mask_path = cfg.get("grid.mask.file", "")
             mask = load_mask(cfg, config_dir=cfg_dir)
+            if mask_path and mask is None:
+                ui.notification_show(
+                    f"Grid mask file configured but could not be loaded: {mask_path}. "
+                    "Grid preview may be inaccurate.",
+                    type="warning",
+                    duration=10,
+                )
             layers = build_grid_layers(ul_lat, ul_lon, lr_lat, lr_lon, nx, ny, is_dark, mask)
 
             # Compute view state to fit grid bounds

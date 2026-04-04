@@ -27,9 +27,11 @@ class OsmoseConfigReader:
 
     def __init__(self) -> None:
         self.key_case_map: dict[str, str] = {}
+        self.skipped_lines: int = 0
 
     def read(self, master_file: Path) -> dict[str, str]:
         """Recursively read a master config and all referenced sub-configs."""
+        self.skipped_lines = 0
         master_file = Path(master_file)
         _log.info("Reading config from %s", master_file)
         flat: dict[str, str] = {}
@@ -76,6 +78,7 @@ class OsmoseConfigReader:
         if filepath.stat().st_size > 10_000_000:  # 10MB
             raise ValueError(f"Config file too large: {filepath} ({filepath.stat().st_size} bytes)")
         result: dict[str, str] = {}
+        skipped = 0
         with open(filepath, "r", encoding="utf-8", errors="replace") as f:
             for line in f:
                 line = line.strip()
@@ -92,4 +95,6 @@ class OsmoseConfigReader:
                     self.key_case_map[key] = raw_key
                 else:
                     _log.warning("Skipping unparseable line in %s: %r", filepath.name, line)
+                    skipped += 1
+        self.skipped_lines += skipped
         return result

@@ -101,8 +101,14 @@ def reproduction(
     new_is_egg = new_age_dt < state.first_feeding_age_dt
     state = state.replace(age_dt=new_age_dt, is_egg=new_is_egg)
 
-    # Append new egg schools
-    for new in new_schools_list:
-        state = state.append(new)
+    # Append all new egg schools in one batch
+    if new_schools_list:
+        from dataclasses import fields
+        merged_fields = {}
+        for f in fields(state):
+            existing = getattr(state, f.name)
+            parts = [existing] + [getattr(s, f.name) for s in new_schools_list]
+            merged_fields[f.name] = np.concatenate(parts)
+        state = SchoolState(**merged_fields)
 
     return state
