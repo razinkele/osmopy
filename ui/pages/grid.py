@@ -183,7 +183,7 @@ def grid_server(input, output, session, state):
         speed_choices = {"2000": "0.5x", "1000": "1x", "500": "2x", "250": "4x"}
 
         try:
-            nsteps = int(float(cfg.get("simulation.time.ndtPerYear", "24") or "24"))
+            nsteps = int(float(cfg.get("simulation.time.ndtperyear", "24") or "24"))
         except (ValueError, TypeError):
             _log.warning(
                 "Could not parse simulation.time.ndtperyear=%r, defaulting to 24",

@@ -1333,5 +1333,5 @@ class EngineConfig:
             output_bioen_ingest=cfg.get("output.bioen.ingest.enabled", "false").lower() == "true",
             output_bioen_maint=cfg.get("output.bioen.maint.enabled", "false").lower() == "true",
             output_bioen_rho=cfg.get("output.bioen.rho.enabled", "false").lower() == "true",
-            output_bioen_sizeinf=cfg.get("output.bioen.sizeInf.enabled", "false").lower() == "true",
+            output_bioen_sizeinf=cfg.get("output.bioen.sizeinf.enabled", "false").lower() == "true",
         )
