@@ -103,10 +103,10 @@ def sync_inputs(
     changed: dict[str, str] = {}
     for key in keys:
         input_id = key.replace(".", "_")
+        if not hasattr(input, input_id):
+            continue
         try:
             val = getattr(input, input_id)()
-        except AttributeError:
-            continue
         except TypeError:
             _log.warning("sync_inputs: TypeError reading input '%s'", input_id)
             continue
