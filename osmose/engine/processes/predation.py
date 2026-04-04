@@ -410,6 +410,8 @@ def _predation_on_resources(
             # Size overlap: what fraction of the resource size range
             # falls within the predator's prey window?
             # Prey window: [L/r_max, L/r_min] (r_max > r_min by convention)
+            if r_min_val <= 0 or r_max_val <= 0:
+                continue
             prey_size_min = pred_len / r_max_val  # smallest prey this predator eats
             prey_size_max = pred_len / r_min_val  # largest prey this predator eats
 

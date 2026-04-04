@@ -324,6 +324,8 @@ def _apply_predation_for_school(
             if rsc_bio <= 0:
                 continue
 
+            if r_min <= 0 or r_max <= 0:
+                continue
             prey_size_min = pred_len / r_max
             prey_size_max = pred_len / r_min
             overlap_min = max(rsc.size_min, prey_size_min)
@@ -775,6 +777,8 @@ if _HAS_NUMBA:
             if rsc_bio <= 0:
                 continue
 
+            if r_min <= 0 or r_max <= 0:
+                continue
             prey_size_min = pred_len / r_max
             prey_size_max = pred_len / r_min
             overlap_min = max(rsc_size_min[r], prey_size_min)
