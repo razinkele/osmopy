@@ -1,10 +1,11 @@
 """Mortality orchestrator for the OSMOSE Python engine.
 
 Implements Java's per-cell per-school interleaved mortality loop:
-for each sub-timestep, for each cell, for each school slot,
-shuffle mortality causes and apply ONE cause to ONE school
-(from that cause's own shuffled sequence), updating n_dead in-place
-so that subsequent causes see reduced instantaneous abundance.
+for each sub-timestep, for each cell, all four mortality causes
+(predation, starvation, fishing, additional+out-of-domain) are applied
+in a shuffled interleaved sequence — schools and causes are both shuffled
+so that each cause is applied to one school at a time, updating n_dead
+in-place so subsequent causes see the reduced instantaneous abundance.
 """
 
 from __future__ import annotations
@@ -55,7 +56,7 @@ _ADDITIONAL = int(MortalityCause.ADDITIONAL)
 _FISHING = int(MortalityCause.FISHING)
 _DISCARDS = int(MortalityCause.DISCARDS)
 
-# Module-level TL tracking accumulator (set by mortality(), used by _apply_predation_for_school)
+# Module-level TL tracking accumulator (set by mortality(), used by predation helpers and Numba kernels)
 _tl_weighted_sum: NDArray[np.float64] | None = None
 
 

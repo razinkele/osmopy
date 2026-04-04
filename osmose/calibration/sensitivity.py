@@ -13,7 +13,7 @@ class SensitivityAnalyzer:
 
     Workflow:
     1. Create analyzer with parameter definitions
-    2. generate_samples() -- Saltelli sampling
+    2. generate_samples() -- Sobol sampling (Saltelli's extension)
     3. (user evaluates OSMOSE for each sample)
     4. analyze(Y) -- Compute Sobol indices
     """
@@ -26,7 +26,7 @@ class SensitivityAnalyzer:
         }
 
     def generate_samples(self, n_base: int = 256) -> np.ndarray:
-        """Generate Saltelli samples for Sobol analysis.
+        """Generate Sobol samples for sensitivity analysis.
 
         Total samples = n_base * (2 * num_vars + 2).
         """

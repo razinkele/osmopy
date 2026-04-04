@@ -58,11 +58,11 @@ def compute_energy_budget(
     assimilation:
         Assimilation efficiency (dimensionless, 0–1).
     c_m:
-        Maintenance metabolic coefficient (J g^-beta per Arrhenius unit per year).
+        c_m: Maintenance metabolic coefficient (energy_units * g^{-beta} * year^{-1}, modulated by Arrhenius temperature function).
     beta:
         Allometric scaling exponent for metabolic rate.
     eta:
-        Conversion factor from joules to grams of gonad tissue.
+        eta: Energy density ratio (grams of energy per gram of gonad tissue, dimensionless in g-equivalent framework).
     r:
         Fraction of net energy allocated to gonads when mature.
     m0:

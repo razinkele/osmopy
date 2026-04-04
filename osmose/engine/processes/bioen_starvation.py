@@ -1,5 +1,5 @@
 """Energy-deficit starvation with gonad buffer.
-Matches Java BioenStarvationMortality: per-sub-timestep, gonad flushed before death toll.
+Matches Java BioenStarvationMortality: internally loops over n_subdt, flushing gonad before computing death toll at each sub-step.
 """
 from __future__ import annotations
 import numpy as np
