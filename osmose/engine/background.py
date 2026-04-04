@@ -293,23 +293,23 @@ class BackgroundState:
                 nc_path_str = config.get(f"species.file.sp{sp.file_index}")
                 if nc_path_str is not None:
                     nc_path = _resolve_path(nc_path_str, config.get("_osmose.config.dir", ""))
-                    ds = xr.open_dataset(nc_path)
-                    # Try species name as variable, fall back to first variable
-                    stripped = sp.name
-                    if stripped in ds:
-                        da = ds[stripped]
-                    else:
-                        first_var = list(ds.data_vars)[0]
-                        da = ds[first_var]
-                        logger.debug(
-                            "NetCDF variable '%s' not found for species %s; using '%s'",
-                            stripped,
-                            sp.name,
-                            first_var,
-                        )
-                    raw: NDArray[np.float64] = da.values.astype(np.float64)
-                    # Apply multiplier
-                    raw = raw * sp.multiplier
+                    with xr.open_dataset(nc_path) as ds:
+                        # Try species name as variable, fall back to first variable
+                        stripped = sp.name
+                        if stripped in ds:
+                            da = ds[stripped]
+                        else:
+                            first_var = list(ds.data_vars)[0]
+                            da = ds[first_var]
+                            logger.debug(
+                                "NetCDF variable '%s' not found for species %s; using '%s'",
+                                stripped,
+                                sp.name,
+                                first_var,
+                            )
+                        raw: NDArray[np.float64] = da.values.astype(np.float64)
+                        # Apply multiplier
+                        raw = raw * sp.multiplier
                     # Regrid to model grid if shapes differ
                     target_ny = int(
                         np.sum(grid.ocean_mask.any(axis=1) | ~grid.ocean_mask.any(axis=1))
