@@ -71,6 +71,11 @@ def _load_csv_grid(path: Path, ny: int, nx: int) -> NDArray[np.float64]:
                 row_values.append(np.nan)
             else:
                 row_values.append(float(p))
+        if len(row_values) < nx:
+            raise ValueError(
+                f"Movement map CSV row {csv_row_idx} has {len(row_values)} columns, "
+                f"expected {nx} (grid nx)"
+            )
         grid_row = ny - 1 - csv_row_idx
         grid[grid_row, :] = row_values[:nx]
 
