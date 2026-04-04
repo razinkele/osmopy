@@ -126,6 +126,14 @@ class OsmoseCalibrationProblem(Problem):
                 except _expected_errors as exc:
                     _log.warning("Candidate %d failed (expected): %s", i, exc)
 
+        # Abort if >50% of candidates failed (all objectives inf)
+        n_inf = np.all(np.isinf(F), axis=1).sum()
+        if n_inf > len(F) * 0.5:
+            raise RuntimeError(
+                f"Calibration aborted: {n_inf}/{len(F)} candidates failed "
+                f"(>50% returned inf). Check JAR path and config validity."
+            )
+
         out["F"] = F
 
     def _evaluate_candidate(self, i: int, params: np.ndarray) -> list[float]:

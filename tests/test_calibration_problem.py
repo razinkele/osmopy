@@ -2,6 +2,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
+import pytest
 from osmose.calibration.problem import FreeParameter, OsmoseCalibrationProblem, Transform
 
 
@@ -245,8 +246,8 @@ def test_evaluate_logs_candidate_failure(tmp_path, caplog):
         X = np.array([[0.5]])
         out = {}
         with caplog.at_level(logging.WARNING):
-            problem._evaluate(X, out)
-        assert np.isinf(out["F"][0, 0])
+            with pytest.raises(RuntimeError, match="Calibration aborted"):
+                problem._evaluate(X, out)
         assert "boom" in caplog.text
 
 
@@ -272,7 +273,7 @@ def test_evaluate_propagates_unexpected_exceptions(tmp_path):
 
 
 def test_evaluate_tolerates_expected_failures(tmp_path):
-    """Expected failures (OSError, etc.) are scored as inf, not propagated."""
+    """Expected failures (OSError, etc.) are scored as inf; >50% failure aborts."""
     fp = FreeParameter(key="test.param", lower_bound=0, upper_bound=1)
     problem = OsmoseCalibrationProblem(
         free_params=[fp],
@@ -286,9 +287,8 @@ def test_evaluate_tolerates_expected_failures(tmp_path):
     out = {}
 
     with patch.object(problem, "_evaluate_candidate", side_effect=OSError("disk full")):
-        problem._evaluate(X, out)
-
-    assert np.all(np.isinf(out["F"]))
+        with pytest.raises(RuntimeError, match="Calibration aborted"):
+            problem._evaluate(X, out)
 
 
 def test_evaluate_parallel_handles_mixed_failures(tmp_path):
