@@ -157,7 +157,7 @@ def _bioen_step(
     # ------------------------------------------------------------------ #
     # Step 1: Cap ingested biomass per school at the allometric maximum.
     # ------------------------------------------------------------------ #
-    is_larvae = state.is_egg  # larvae flag uses egg field (age 0 schools)
+    is_larvae = state.age_dt < state.first_feeding_age_dt
     capped_ingestion = state.preyed_biomass.copy()
     for sp in range(config.n_species):
         mask = state.species_id == sp
