@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from osmose.schema.base import ParamType
+from osmose.schema.base import OsmoseField, ParamType
+from osmose.schema.registry import ParameterRegistry
 
 
-def validate_config(config: dict[str, str], registry) -> tuple[list[str], list[str]]:
+def validate_config(config: dict[str, str], registry: ParameterRegistry) -> tuple[list[str], list[str]]:
     """Validate config values against registry schema.
 
     Returns (errors, warnings) -- lists of human-readable messages.
@@ -55,10 +56,8 @@ def validate_config(config: dict[str, str], registry) -> tuple[list[str], list[s
     return errors, warnings
 
 
-def validate_field(key: str, value: str, field) -> str | None:
+def validate_field(key: str, value: str, field: OsmoseField) -> str | None:
     """Validate a single field value. Returns error message or None."""
-    from osmose.schema.base import ParamType
-
     if field.param_type in (ParamType.FLOAT, ParamType.INT):
         try:
             num = float(value)
@@ -77,7 +76,7 @@ def validate_field(key: str, value: str, field) -> str | None:
 def check_file_references(
     config: dict[str, str],
     base_dir: str,
-    registry=None,
+    registry: ParameterRegistry | None = None,
 ) -> list[str]:
     """Check that file-referencing parameters point to existing files."""
     missing = []
