@@ -3,7 +3,7 @@
 import numpy as np
 
 from osmose.engine.config import EngineConfig
-from osmose.engine.processes.natural import additional_mortality, aging_mortality, larva_mortality
+from osmose.engine.processes.natural import additional_mortality, aging_mortality, larva_mortality, out_mortality
 from osmose.engine.state import MortalityCause, SchoolState
 
 
@@ -95,6 +95,33 @@ class TestAdditionalMortality:
         np.testing.assert_allclose(new_state.abundance[0], 1000.0)
         # Adult should have mortality applied
         assert new_state.abundance[1] < 1000.0
+
+
+class TestOutMortality:
+    def test_out_mortality_formula(self):
+        """n_dead = N * (1 - exp(-rate / n_dt_per_year)) for is_out schools."""
+        cfg_dict = _make_mortality_config()
+        cfg_dict["mortality.out.rate.sp0"] = "0.3"
+        cfg = EngineConfig.from_dict(cfg_dict)
+        state = SchoolState.create(n_schools=2, species_id=np.zeros(2, dtype=np.int32))
+        state = state.replace(
+            abundance=np.array([1000.0, 1000.0]),
+            weight=np.array([6.0, 6.0]),
+            biomass=np.array([6000.0, 6000.0]),
+            age_dt=np.array([24, 24], dtype=np.int32),
+            is_out=np.array([True, False]),
+        )
+        new_state = out_mortality(state, cfg)
+        rate = 0.3
+        n_dt = 24
+        expected_dead = 1000.0 * (1 - np.exp(-rate / n_dt))
+        np.testing.assert_allclose(
+            new_state.n_dead[0, MortalityCause.OUT], expected_dead, rtol=1e-10
+        )
+        np.testing.assert_allclose(new_state.abundance[0], 1000.0 - expected_dead, rtol=1e-10)
+        # School not marked is_out is unaffected
+        np.testing.assert_allclose(new_state.abundance[1], 1000.0)
+        np.testing.assert_allclose(new_state.n_dead[1, MortalityCause.OUT], 0.0)
 
 
 class TestAgingMortality:

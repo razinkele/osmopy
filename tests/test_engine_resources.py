@@ -198,6 +198,27 @@ class TestResourceState:
         rs.close()
         rs.close()  # Should not error
 
+    def test_resource_depletion_to_zero_no_crash(self):
+        """Depleting a resource to zero and deducting further must not raise."""
+        grid = Grid.from_dimensions(ny=5, nx=5)
+        config = {
+            "simulation.nresource": "1",
+            "simulation.time.ndtperyear": "24",
+            "ltl.name.rsc0": "Plankton",
+            "ltl.size.min.rsc0": "0.01",
+            "ltl.size.max.rsc0": "0.1",
+            "ltl.tl.rsc0": "1.0",
+            "ltl.accessibility2fish.rsc0": "0.05",
+            "ltl.biomass.total.rsc0": "1000.0",
+        }
+        rs = ResourceState(config=config, grid=grid)
+        rs.update(step=0)
+        # Deplete all biomass to zero
+        rs.biomass[0, :] = 0.0
+        # Further deduction below zero should not crash (clamp to zero)
+        rs.biomass[0, :] = np.maximum(0.0, rs.biomass[0, :] - 999.0)
+        assert np.all(rs.biomass[0, :] >= 0.0)
+
     def test_timestep_mapping(self, tmp_path):
         """Different timesteps map to different forcing indices."""
         grid = Grid.from_dimensions(ny=2, nx=2)

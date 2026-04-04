@@ -156,3 +156,14 @@ class TestEngineConfig:
         minimal_config["simulation.fishing.mortality.enabled"] = "false"
         cfg = EngineConfig.from_dict(minimal_config)
         assert cfg.fishing_enabled is False
+
+    def test_engine_config_from_empty_dict_raises(self):
+        """EngineConfig.from_dict({}) must raise (missing required keys)."""
+        with pytest.raises((KeyError, ValueError)):
+            EngineConfig.from_dict({})
+
+    def test_engine_config_non_numeric_ndtperyear_raises(self, minimal_config):
+        """Non-numeric ndtperyear must raise ValueError."""
+        minimal_config["simulation.time.ndtperyear"] = "not_a_number"
+        with pytest.raises((ValueError, KeyError)):
+            EngineConfig.from_dict(minimal_config)
