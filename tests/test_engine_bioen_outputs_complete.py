@@ -36,7 +36,7 @@ class TestBioenOutputsComplete:
             "output.bioen.ingest.enabled": "true",
             "output.bioen.maint.enabled": "true",
             "output.bioen.rho.enabled": "true",
-            "output.bioen.sizeInf.enabled": "true",
+            "output.bioen.sizeinf.enabled": "true",
         })
         _run_bioen_sim(cfg, tmp_path)
 
