@@ -8,8 +8,8 @@ import re
 # Calibratable patterns with default (lower, upper) bounds.
 # Each pattern uses "spN" as a regex group for species index.
 CALIBRATABLE_PATTERNS: dict[str, tuple[float, float]] = {
-    r"mortality\.natural\.rate\.sp\d+": (0.001, 2.0),
-    r"mortality\.natural\.larva\.rate\.sp\d+": (0.001, 10.0),
+    r"mortality\.additional\.rate\.sp\d+": (0.001, 2.0),
+    r"mortality\.additional\.larva\.rate\.sp\d+": (0.001, 10.0),
     r"mortality\.starvation\.rate\.max\.sp\d+": (0.001, 5.0),
     r"species\.k\.sp\d+": (0.01, 1.0),
     r"species\.linf\.sp\d+": (1.0, 300.0),

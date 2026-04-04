@@ -3,13 +3,13 @@
 from osmose.calibration.configure import configure_calibration
 
 
-def test_detects_mortality_natural_rate():
-    config = {"mortality.natural.rate.sp0": "0.2", "simulation.time.total": "100"}
+def test_detects_mortality_additional_rate():
+    config = {"mortality.additional.rate.sp0": "0.2", "simulation.time.total": "100"}
     result = configure_calibration(config)
     params = result["params"]
     assert len(params) == 1
     p = params[0]
-    assert p["key"] == "mortality.natural.rate.sp0"
+    assert p["key"] == "mortality.additional.rate.sp0"
     assert p["guess"] == 0.2
     assert p["lower"] == 0.001
     assert p["upper"] == 2.0
@@ -17,14 +17,14 @@ def test_detects_mortality_natural_rate():
 
 def test_detects_multiple_species():
     config = {
-        "mortality.natural.rate.sp0": "0.3",
-        "mortality.natural.rate.sp1": "0.5",
+        "mortality.additional.rate.sp0": "0.3",
+        "mortality.additional.rate.sp1": "0.5",
     }
     result = configure_calibration(config)
     assert len(result["params"]) == 2
     keys = [p["key"] for p in result["params"]]
-    assert "mortality.natural.rate.sp0" in keys
-    assert "mortality.natural.rate.sp1" in keys
+    assert "mortality.additional.rate.sp0" in keys
+    assert "mortality.additional.rate.sp1" in keys
 
 
 def test_detects_species_k():
@@ -71,7 +71,7 @@ def test_detects_population_seeding():
 
 
 def test_detects_mortality_larva():
-    config = {"mortality.natural.larva.rate.sp0": "1.5"}
+    config = {"mortality.additional.larva.rate.sp0": "1.5"}
     result = configure_calibration(config)
     p = result["params"][0]
     assert p["lower"] == 0.001
@@ -103,8 +103,8 @@ def test_empty_config():
 
 def test_all_patterns_detected():
     config = {
-        "mortality.natural.rate.sp0": "0.2",
-        "mortality.natural.larva.rate.sp0": "1.0",
+        "mortality.additional.rate.sp0": "0.2",
+        "mortality.additional.larva.rate.sp0": "1.0",
         "mortality.starvation.rate.max.sp0": "0.5",
         "species.k.sp0": "0.1",
         "species.linf.sp0": "50",
