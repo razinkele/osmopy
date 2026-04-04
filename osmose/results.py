@@ -26,6 +26,12 @@ class OsmoseResults:
         self.strict = strict
         self._nc_cache: dict[str, xr.Dataset] = {}
 
+    def __enter__(self) -> OsmoseResults:
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.close_cache()
+
     def _raise_if_strict(self, pattern: str) -> None:
         """Raise FileNotFoundError in strict mode when no files match."""
         if not self.strict:
