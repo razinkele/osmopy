@@ -9,8 +9,6 @@ so that subsequent causes see reduced instantaneous abundance.
 
 from __future__ import annotations
 
-import warnings
-
 import numpy as np
 from numpy.typing import NDArray
 
@@ -33,6 +31,7 @@ from osmose.engine.processes.starvation import (
 )
 from osmose.engine.resources import ResourceState
 from osmose.engine.state import MortalityCause, SchoolState
+from osmose.logging import setup_logging
 
 try:
     from numba import njit, prange
@@ -40,11 +39,13 @@ try:
     _HAS_NUMBA = True
 except ImportError:
     _HAS_NUMBA = False
-    warnings.warn(
+
+_log = setup_logging("osmose.engine.processes.mortality")
+
+if not _HAS_NUMBA:
+    _log.warning(
         "Numba is not installed. Mortality will use pure Python fallback, "
-        "which may be 10-100x slower. Install numba for optimal performance.",
-        ImportWarning,
-        stacklevel=2,
+        "which may be 10-100x slower. Install numba for optimal performance."
     )
 
 # Cause indices matching MortalityCause enum

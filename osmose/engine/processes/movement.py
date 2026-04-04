@@ -11,17 +11,20 @@ from osmose.engine.config import EngineConfig
 from osmose.engine.grid import Grid
 from osmose.engine.movement_maps import MovementMapSet
 from osmose.engine.state import SchoolState
+from osmose.logging import setup_logging
 
 try:
     from numba import njit
     _HAS_NUMBA = True
 except ImportError:
     _HAS_NUMBA = False
-    warnings.warn(
+
+_log = setup_logging("osmose.engine.processes.movement")
+
+if not _HAS_NUMBA:
+    _log.warning(
         "Numba is not installed. Movement will use pure Python fallback, "
-        "which may be 10-100x slower. Install numba for optimal performance.",
-        ImportWarning,
-        stacklevel=2,
+        "which may be 10-100x slower. Install numba for optimal performance."
     )
 
 

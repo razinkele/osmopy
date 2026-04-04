@@ -3,13 +3,15 @@
 Size-based opportunistic predation within grid cells. Predators are
 processed sequentially in random order with asynchronous prey biomass updates.
 
+Note: The interleaved mortality path (mortality.py) is the primary predation
+codepath used by simulate(). This standalone predation module is retained for
+testing and backward compatibility.
+
 Uses Numba JIT compilation for the inner cell loop when available,
 falling back to pure Python otherwise.
 """
 
 from __future__ import annotations
-
-import warnings
 
 import numpy as np
 from numpy.typing import NDArray
@@ -18,6 +20,7 @@ from osmose.engine.config import EngineConfig
 from osmose.engine.processes.feeding_stage import compute_feeding_stages
 from osmose.engine.resources import ResourceState
 from osmose.engine.state import SchoolState
+from osmose.logging import setup_logging
 
 try:
     from numba import njit
@@ -25,11 +28,13 @@ try:
     _HAS_NUMBA = True
 except ImportError:
     _HAS_NUMBA = False
-    warnings.warn(
+
+_log = setup_logging("osmose.engine.processes.predation")
+
+if not _HAS_NUMBA:
+    _log.warning(
         "Numba is not installed. Predation will use pure Python fallback, "
-        "which may be 10-100x slower. Install numba for optimal performance.",
-        ImportWarning,
-        stacklevel=2,
+        "which may be 10-100x slower. Install numba for optimal performance."
     )
 
 
