@@ -122,6 +122,7 @@ def setup_server(input, output, session, state):
         try:
             reader = OsmoseConfigReader()
             cfg = migrate_config(reader.read(master))
+            state.key_case_map = dict(reader.key_case_map)
             state.config.set(cfg)
             state.config_dir.set(config_dir)
             state.config_name.set(example.replace("_", " ").title())

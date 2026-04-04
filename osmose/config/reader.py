@@ -9,10 +9,6 @@ from osmose.logging import setup_logging
 
 _log = setup_logging("osmose.config")
 
-# Module-level case map: maps lowercase key → original case from last read.
-# Used by writers to restore Java's expected key casing.
-_last_key_case_map: dict[str, str] = {}
-
 
 class OsmoseConfigReader:
     """Read OSMOSE configuration files with recursive sub-file loading.
@@ -39,8 +35,6 @@ class OsmoseConfigReader:
         flat: dict[str, str] = {}
         self._read_recursive(master_file, flat)
         flat["_osmose.config.dir"] = str(master_file.parent.resolve())
-        global _last_key_case_map
-        _last_key_case_map = dict(self.key_case_map)
         return flat
 
     def _read_recursive(
