@@ -45,11 +45,6 @@ class StepOutput:
     bioen_size_inf_by_species: NDArray[np.float64] | None = None
 
 
-# ---------------------------------------------------------------------------
-# Stub process functions (replaced in Phase 2-7)
-# ---------------------------------------------------------------------------
-
-
 def _incoming_flux(
     state: SchoolState,
     flux_state: IncomingFluxState | None,
@@ -118,7 +113,7 @@ def _mortality(
 
 
 def _growth(state: SchoolState, config: EngineConfig, rng: np.random.Generator) -> SchoolState:
-    """Apply Von Bertalanffy growth gated by predation success."""
+    """Apply growth (Von Bertalanffy or Gompertz) gated by predation success."""
     from osmose.engine.processes.growth import growth
 
     return growth(state, config, rng)
@@ -148,20 +143,14 @@ def _bioen_step(
     if len(state) == 0:
         return state
 
-    assert config.bioen_beta is not None
-    assert config.bioen_assimilation is not None
-    assert config.bioen_c_m is not None
-    assert config.bioen_eta is not None
-    assert config.bioen_r is not None
-    assert config.bioen_m0 is not None
-    assert config.bioen_m1 is not None
-    assert config.bioen_e_mobi is not None
-    assert config.bioen_e_d is not None
-    assert config.bioen_tp is not None
-    assert config.bioen_e_maint is not None
-    assert config.bioen_i_max is not None
-    assert config.bioen_theta is not None
-    assert config.bioen_c_rate is not None
+    _BIOEN_REQUIRED = [
+        "bioen_beta", "bioen_assimilation", "bioen_c_m", "bioen_eta",
+        "bioen_r", "bioen_m0", "bioen_m1", "bioen_e_mobi", "bioen_e_d",
+        "bioen_tp", "bioen_e_maint", "bioen_i_max", "bioen_theta", "bioen_c_rate",
+    ]
+    for attr in _BIOEN_REQUIRED:
+        if getattr(config, attr) is None:
+            raise ValueError(f"Bioenergetics enabled but {attr} is None — check config")
 
     n_subdt = config.mortality_subdt
 
