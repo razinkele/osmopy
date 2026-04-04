@@ -211,6 +211,7 @@ class OsmoseResults:
             frames.append(df)
         if not frames:
             self._raise_if_strict(pattern)
+            _log.info("No files matching '%s' in %s", pattern, self.output_dir)
             return pd.DataFrame()
         return pd.concat(frames, ignore_index=True)
 
@@ -266,6 +267,7 @@ class OsmoseResults:
 
         if not frames:
             self._raise_if_strict(pattern)
+            _log.info("No files matching '%s' in %s", pattern, self.output_dir)
             return pd.DataFrame()
 
         combined = pd.concat(frames, ignore_index=True)
@@ -291,6 +293,7 @@ class OsmoseResults:
 
         if not frames:
             self._raise_if_strict(pattern)
+            _log.info("No files matching '%s' in %s", pattern, self.output_dir)
             return pd.DataFrame()
 
         combined = pd.concat(frames, ignore_index=True)

@@ -82,8 +82,11 @@ def _inject_random_movement_ncell(config: dict[str, str]) -> None:
         nlon = int(config.get("grid.nlon", "0"))
         nlat = int(config.get("grid.nlat", "0"))
     except ValueError:
+        _log.warning("Cannot inject random movement ncell: grid dimensions invalid (nlon=%r, nlat=%r)",
+                      config.get("grid.nlon"), config.get("grid.nlat"))
         return
     if nlon <= 0 or nlat <= 0:
+        _log.warning("Cannot inject random movement ncell: grid dimensions non-positive (nlon=%d, nlat=%d)", nlon, nlat)
         return
     total_cells = nlon * nlat
     for key, value in list(config.items()):
