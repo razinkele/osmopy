@@ -17,11 +17,17 @@ from osmose.calibration.problem import FreeParameter
 class CalibrationPhase:
     """Definition of a single calibration phase."""
 
-    name: str
     free_params: list[FreeParameter]
+    name: str = ""
     algorithm: str = "Nelder-Mead"
     max_iter: int = 100
     n_replicates: int = 1
+
+    def __post_init__(self) -> None:
+        if not self.free_params:
+            raise ValueError("CalibrationPhase.free_params must not be empty")
+        if self.max_iter < 1:
+            raise ValueError(f"max_iter must be >= 1, got {self.max_iter}")
 
 
 class MultiPhaseCalibrator:

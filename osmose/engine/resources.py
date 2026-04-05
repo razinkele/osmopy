@@ -30,6 +30,14 @@ class ResourceSpeciesInfo:
     offset: float = 0.0  # biomass offset (for uniform distribution)
     accessibility_ts: NDArray[np.float64] | None = None  # time-varying accessibility
 
+    def __post_init__(self) -> None:
+        if self.size_min >= self.size_max:
+            raise ValueError(f"size_min ({self.size_min}) must be < size_max ({self.size_max})")
+        if not (0.0 <= self.accessibility <= 0.99):
+            raise ValueError(f"accessibility must be in [0, 0.99], got {self.accessibility}")
+        if self.trophic_level <= 0:
+            raise ValueError(f"trophic_level must be > 0, got {self.trophic_level}")
+
 
 class ResourceState:
     """Container for LTL resource biomass per grid cell.

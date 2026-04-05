@@ -138,6 +138,12 @@ class MPAZone:
     end_year: int
     percentage: float  # reduction factor (0-1)
 
+    def __post_init__(self) -> None:
+        if not (0.0 <= self.percentage <= 1.0):
+            raise ValueError(f"MPAZone percentage must be in [0, 1], got {self.percentage}")
+        if self.start_year > self.end_year:
+            raise ValueError(f"MPAZone start_year ({self.start_year}) > end_year ({self.end_year})")
+
 
 def _parse_fisheries(
     cfg: dict[str, str], species_names: list[str], n_species: int

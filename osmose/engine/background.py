@@ -98,6 +98,22 @@ class BackgroundSpeciesInfo:
     proportion_ts: "NDArray[np.float64] | None" = field(default=None)
     """Time-varying proportion overrides (shape: n_steps x n_class). None = use proportions."""
 
+    def __post_init__(self) -> None:
+        if len(self.lengths) != self.n_class:
+            raise ValueError(f"n_class ({self.n_class}) != len(lengths) ({len(self.lengths)})")
+        if len(self.trophic_levels) != self.n_class:
+            raise ValueError(
+                f"n_class ({self.n_class}) != len(trophic_levels) ({len(self.trophic_levels)})"
+            )
+        if len(self.proportions) != self.n_class:
+            raise ValueError(
+                f"n_class ({self.n_class}) != len(proportions) ({len(self.proportions)})"
+            )
+        if abs(sum(self.proportions) - 1.0) > 0.01:
+            raise ValueError(
+                f"proportions must sum to ~1.0, got {sum(self.proportions):.4f}"
+            )
+
 
 def parse_background_species(
     cfg: dict[str, str],
