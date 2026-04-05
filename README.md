@@ -42,10 +42,12 @@ The Python engine uses Numba JIT compilation and parallel execution to achieve p
 Benchmarked on Linux x86_64 with Numba 0.60, NumPy 1.26, Python 3.12. First run includes ~20s Numba compilation overhead (cached for subsequent runs).
 
 Key optimizations:
-- **Numba JIT mortality loop** — full interleaved predation/starvation/fishing compiled to native code
+- **Numba JIT mortality loop** — full interleaved predation/starvation/fishing compiled to native code with shared `_apply_single_cause` helper
 - **Parallel cell processing** — `prange` over grid cells with per-cell deterministic seeding
 - **Compiled movement** — map-based rejection sampling and random walk in Numba
 - **Vectorized rate computation** — species-indexed NumPy operations replace per-school Python loops
+- **Precomputed species masks** — bioenergetic step computes masks once instead of per-loop
+- **Vectorized fishing** — spatial map and MPA lookups use per-species array indexing
 
 Run benchmarks yourself:
 ```bash
@@ -117,10 +119,11 @@ Place `osmose.jar` in `osmose-java/` before building (required for Java engine).
 
 ```
 osmose/                  Core library (usable without Shiny)
-  engine/                Python simulation engine (28 files, ~8800 LOC)
+  engine/                Python simulation engine (29 files, ~9000 LOC)
     config.py            Typed parameter extraction from flat config
-    simulate.py          Main simulation loop
+    simulate.py          Main simulation loop (SimulationContext, frozen StepOutput)
     processes/           Growth, predation, mortality, reproduction, movement, fishing
+    path_resolution.py   Consolidated file path resolver with traversal protection
     grid.py              Spatial grid with NetCDF loading
     resources.py         LTL plankton/resource forcing
     output.py            CSV/NetCDF output writer
@@ -137,7 +140,7 @@ ui/                      Shiny web interface
 data/
   examples/              Bay of Biscay example config (8 species)
   eec_full/              Eastern English Channel config (14 species)
-tests/                   1734 tests
+tests/                   1864 tests
 docs/
   parity-roadmap.md      Engine parity roadmap (7 phases, 37 items)
 ```
@@ -152,7 +155,7 @@ docs/
 .venv/bin/ruff format osmose/ ui/ tests/         # format
 ```
 
-1734 tests covering schema, config I/O, all engine processes, performance parity, UI structure, and integration scenarios.
+1864 tests covering schema, config I/O, all engine processes, performance parity, numerical edge cases, type invariants, thread safety, UI state, and integration scenarios.
 
 ## Tech Stack
 
@@ -204,10 +207,26 @@ writer.write(config, "path/to/output.csv")
 ```python
 from osmose.results import OsmoseResults
 
+# strict=True (default): raises FileNotFoundError if output files are missing
 results = OsmoseResults("path/to/output/")
 biomass = results.get_biomass()           # xarray Dataset
 mortality = results.get_mortality()       # per-species mortality by cause
 diet = results.get_diet()                 # diet composition matrix
+
+# Use strict=False for partial/speculative loads (calibration, UI)
+with OsmoseResults("path/to/output/", strict=False) as results:
+    biomass = results.get_biomass()
+```
+
+### Thread Safety
+
+The Python engine is re-entrant and thread-safe. Per-simulation state (diet matrix, trophic level tracking, config directory) is encapsulated in a `SimulationContext` dataclass passed through the call chain — no module-level globals. This makes parallel calibration safe:
+
+```python
+from concurrent.futures import ProcessPoolExecutor
+
+with ProcessPoolExecutor(max_workers=8) as pool:
+    futures = [pool.submit(engine.run, config=cfg, seed=i) for i, cfg in enumerate(configs)]
 ```
 
 ### Calibration

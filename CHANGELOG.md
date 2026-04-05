@@ -4,6 +4,50 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.7.0] - 2026-04-05
+
+### Safety & Correctness
+
+- **engine:** add epsilon guards to `f_o2` and `phi_t` preventing NaN on degenerate parameter edge cases (C2)
+- **engine:** replace 3 thread-unsafe module globals (`_diet_matrix`, `_tl_weighted_sum`, `_config_dir`) with per-simulation `SimulationContext` dataclass — engine is now re-entrant and safe for parallel calibration (C1)
+- **engine:** close `OsmoseResults` file handles in calibration via context manager, preventing handle leaks across iterations (C3)
+- **engine:** add malformed CSV resilience — skip corrupt output files with warning instead of crashing (C5, M17)
+- **engine:** change `OsmoseResults` default to `strict=True` — missing output files now raise immediately instead of returning empty DataFrames (C4)
+- **engine:** fix `_version_tuple` fallback direction — unparseable versions now apply all migrations instead of skipping them (H7)
+- **ui:** narrow `_do_load_results` exception types to `OSError`, `ValueError`, `ParserError` — programming errors no longer silently masked (H8)
+- **engine:** fix stale Phase 1 docstring in `processes/__init__.py` and align output prefix to `"osm"` matching the reader default (C6, H13)
+
+### Structural Improvements
+
+- **engine:** consolidate 4 duplicated path resolvers into `osmose.engine.path_resolution` shared module with path traversal protection (H6)
+- **engine:** add `__post_init__` validation to `MPAZone`, `ResourceSpeciesInfo`, `BackgroundSpeciesInfo`, `CalibrationPhase` — invalid construction arguments now raise immediately (H10)
+- **engine:** make `SchoolState` and `StepOutput` frozen dataclasses, enforcing immutable-replacement pattern (H9)
+- **engine:** split 150-line `_collect_outputs` into 5 focused sub-functions (`_collect_biomass_abundance`, `_collect_mortality`, `_collect_yield`, `_collect_distributions`, `_collect_bioen`) with shared `_species_mean` helper (H5)
+
+### Performance
+
+- **engine:** extract shared `@njit` mortality cause-dispatch helper `_apply_single_cause`, eliminating 3x code duplication across Numba functions (H2)
+- **engine:** precompute species masks once in `_bioen_step` instead of 8 times per bioenergetic step (M1)
+- **engine:** vectorize fishing spatial map and MPA lookups — replace per-school Python loops with per-species NumPy array indexing (H12)
+
+### Tests
+
+- add 25 bioenergetics orchestration tests for `_bioen_step` temperature branches and edge cases (T1)
+- add 11 config reader error path tests — circular references, path escape, oversized files, unparseable lines (T2)
+- add 9 numerical edge case tests for Von Bertalanffy growth and predation size overlap (T3)
+- add 13 ENUM validation tests and fix `validate_field` ENUM gap (T6)
+- add 10 UI `AppState` dirty-flag and `sync_inputs` edge case tests (T7)
+- add 8 ensemble `aggregate_replicates` edge case tests — empty inputs, unsupported types (T8)
+- add 5 path resolution tests covering absolute paths, traversal rejection, and search order
+- add 4 thread safety tests verifying `SimulationContext` isolation
+- add 7 type invariant tests for `__post_init__` validation
+- add 5 numerical guard tests for `f_o2` and `phi_t` epsilon guards
+- 1864 tests total (up from 1762)
+
+### Documentation
+
+- fix 7 misleading comments across `config.py`, `simulate.py`, `rng.py`, `temp_function.py`, `problem.py`, `demo.py`, `ensemble.py` (M19-M25)
+
 ## [0.6.0] - 2026-03-22
 
 ### Performance
