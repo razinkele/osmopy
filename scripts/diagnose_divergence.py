@@ -5,6 +5,7 @@ This verifies the root cause and shows exact magnitude of the discrepancy.
 """
 
 import sys
+
 sys.path.insert(0, ".")
 
 import numpy as np
@@ -12,8 +13,7 @@ from pathlib import Path
 from osmose.config.reader import OsmoseConfigReader
 from osmose.engine.config import EngineConfig
 from osmose.engine.grid import Grid
-from osmose.engine.state import SchoolState
-from osmose.engine.simulate import initialize, _reproduction, _growth, _reset_step_variables
+from osmose.engine.simulate import initialize, _growth, _reset_step_variables
 
 
 def main():
@@ -35,14 +35,14 @@ def main():
 
     print(f"\n  {name}:")
     print(f"  species.egg.weight.sp0 = {egg_w}")
-    print(f"  Java docs: 'Weight (gram) of eggs' -> 0.0005 GRAMS")
-    print(f"  Java School constructor: this.weight = weight * 1e-6 -> 5e-10 TONNES")
-    print(f"  Java incrementLength: setWeight(computeWeight(length) * 1e-6f) -> TONNES")
-    print(f"  Java biomass = abundance * weight_tonnes -> TONNES")
+    print("  Java docs: 'Weight (gram) of eggs' -> 0.0005 GRAMS")
+    print("  Java School constructor: this.weight = weight * 1e-6 -> 5e-10 TONNES")
+    print("  Java incrementLength: setWeight(computeWeight(length) * 1e-6f) -> TONNES")
+    print("  Java biomass = abundance * weight_tonnes -> TONNES")
     print()
     print(f"  Python initialize(): weights = egg_weight_override = {egg_w} (no conversion)")
-    print(f"  Python growth: new_weight = cf * L^b (GRAMS, no conversion)")
-    print(f"  Python biomass = abundance * weight_GRAMS -> GRAMS (should be TONNES)")
+    print("  Python growth: new_weight = cf * L^b (GRAMS, no conversion)")
+    print("  Python biomass = abundance * weight_GRAMS -> GRAMS (should be TONNES)")
 
     # ---- 2. Demonstrate the magnitude ----
     print("\n\n--- 2. Magnitude of biomass error ---")
@@ -65,7 +65,7 @@ def main():
         print(f"    Java weight   = {java_weight_tonnes:.6e} (tonnes)")
         print(f"    Python abundance = {py_abundance:.6e} (tonnes/grams = meaningless)")
         print(f"    Java abundance   = {java_abundance:.6e} (correct individual count)")
-        print(f"    Ratio (Java/Py)  = {java_abundance/py_abundance:.0f}x")
+        print(f"    Ratio (Java/Py)  = {java_abundance / py_abundance:.0f}x")
 
     # ---- 3. Growth makes it worse ----
     print("\n\n--- 3. After growth: weight diverges further ---")
@@ -81,15 +81,15 @@ def main():
         if not mask.any():
             continue
         w = grown.weight[mask][0]
-        l = grown.length[mask][0]
+        length = grown.length[mask][0]
         b = grown.biomass[mask][0]
         abd = grown.abundance[mask][0]
         print(f"\n  {config.species_names[sp]} after 1 growth step:")
-        print(f"    length = {l:.4f} cm")
+        print(f"    length = {length:.4f} cm")
         print(f"    weight (Python, grams) = {w:.6e}")
         print(f"    weight (Java, tonnes)  = {w * 1e-6:.6e}")
         print(f"    biomass = abd * weight = {abd:.6e} * {w:.6e} = {b:.6e}")
-        print(f"    This biomass is in GRAMS (Python) vs TONNES (Java)")
+        print("    This biomass is in GRAMS (Python) vs TONNES (Java)")
         print(f"    Factor: {1e6}x")
 
     # ---- 4. Reproduction amplifies the error ----
@@ -156,7 +156,7 @@ def main():
     print("  At initialization:")
     total_py = sum(state.biomass[state.species_id == sp].sum() for sp in range(config.n_species))
     print(f"    Python total biomass = {total_py:.6e}")
-    print(f"    This is in TONNES (set directly from seeding_biomass)")
+    print("    This is in TONNES (set directly from seeding_biomass)")
     print()
     print("  After growth (abundance * weight_grams):")
     total_grown = sum(grown.biomass[grown.species_id == sp].sum() for sp in range(config.n_species))

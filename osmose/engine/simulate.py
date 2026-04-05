@@ -88,7 +88,11 @@ def _movement(
     from osmose.engine.processes.movement import movement
 
     return movement(
-        state, grid, config, step, rng,
+        state,
+        grid,
+        config,
+        step,
+        rng,
         map_sets=map_sets,
         random_patches=random_patches,
         species_rngs=species_rngs,
@@ -144,9 +148,20 @@ def _bioen_step(
         return state
 
     _BIOEN_REQUIRED = [
-        "bioen_beta", "bioen_assimilation", "bioen_c_m", "bioen_eta",
-        "bioen_r", "bioen_m0", "bioen_m1", "bioen_e_mobi", "bioen_e_d",
-        "bioen_tp", "bioen_e_maint", "bioen_i_max", "bioen_theta", "bioen_c_rate",
+        "bioen_beta",
+        "bioen_assimilation",
+        "bioen_c_m",
+        "bioen_eta",
+        "bioen_r",
+        "bioen_m0",
+        "bioen_m1",
+        "bioen_e_mobi",
+        "bioen_e_d",
+        "bioen_tp",
+        "bioen_e_maint",
+        "bioen_i_max",
+        "bioen_theta",
+        "bioen_c_rate",
     ]
     for attr in _BIOEN_REQUIRED:
         if getattr(config, attr) is None:
@@ -199,10 +214,12 @@ def _bioen_step(
                 mask = state.species_id == sp
                 if not mask.any():
                     continue
-                temps = np.array([
-                    temp_data.get_value(step, int(state.cell_y[i]), int(state.cell_x[i]))
-                    for i in np.where(mask)[0]
-                ])
+                temps = np.array(
+                    [
+                        temp_data.get_value(step, int(state.cell_y[i]), int(state.cell_x[i]))
+                        for i in np.where(mask)[0]
+                    ]
+                )
                 phi_t_arr[mask] = phi_t_fn(
                     temps,
                     float(config.bioen_e_mobi[sp]),
@@ -235,10 +252,12 @@ def _bioen_step(
     if temp_data is not None and temp_data.is_constant:
         temp_c_arr = np.full(len(state), temp_data.get_value(step, 0, 0), dtype=np.float64)
     elif temp_data is not None:
-        temp_c_arr = np.array([
-            temp_data.get_value(step, int(state.cell_y[i]), int(state.cell_x[i]))
-            for i in range(len(state))
-        ])
+        temp_c_arr = np.array(
+            [
+                temp_data.get_value(step, int(state.cell_y[i]), int(state.cell_x[i]))
+                for i in range(len(state))
+            ]
+        )
     else:
         # No temperature data: default to 15°C (neutral for most species)
         temp_c_arr = np.full(len(state), 15.0, dtype=np.float64)
@@ -263,7 +282,7 @@ def _bioen_step(
             gonad_weight=state.gonad_weight[mask],
             age_dt=state.age_dt[mask],
             length=state.length[mask],
-            temp_c=temp_c_arr[mask],   # raw temperature for Arrhenius maintenance
+            temp_c=temp_c_arr[mask],  # raw temperature for Arrhenius maintenance
             assimilation=float(config.bioen_assimilation[sp]),
             c_m=float(config.bioen_c_m[sp]),
             beta=float(config.bioen_beta[sp]),
@@ -272,7 +291,7 @@ def _bioen_step(
             m0=float(config.bioen_m0[sp]),
             m1=float(config.bioen_m1[sp]),
             e_maint_energy=float(config.bioen_e_maint[sp]),
-            phi_t=phi_t_arr[mask],   # Johnson thermal performance (applied to assimilation)
+            phi_t=phi_t_arr[mask],  # Johnson thermal performance (applied to assimilation)
             f_o2=f_o2_arr[mask],
             n_dt_per_year=config.n_dt_per_year,
             e_net_avg=state.e_net_avg[mask],
@@ -317,13 +336,11 @@ def _bioen_step(
         mask = state.species_id == sp
         if not mask.any():
             continue
-        # W_tonnes = condition_factor * L^b * 1e-6  =>  L = (W_tonnes * 1e6 / condition_factor)^(1/b)
+        # W_t = cf * L^b * 1e-6  =>  L = (W_t*1e6/cf)^(1/b)
         a = float(config.condition_factor[sp])
         b = float(config.allometric_power[sp])
         safe_a = max(a, 1e-20)
-        new_length[mask] = np.power(
-            np.maximum(new_weight[mask] * 1e6 / safe_a, 1e-20), 1.0 / b
-        )
+        new_length[mask] = np.power(np.maximum(new_weight[mask] * 1e6 / safe_a, 1e-20), 1.0 / b)
 
     # Reduce abundance by starvation deaths (clamp to zero)
     new_abundance = np.maximum(state.abundance - starvation_dead, 0.0)
@@ -410,7 +427,11 @@ def _bioen_reproduction(
             ew = config.egg_weight_override[sp]
         if np.isnan(ew):
             # Fallback: allometric weight at egg size
-            ew = config.condition_factor[sp] * config.egg_size[sp] ** config.allometric_power[sp] * 1e-6
+            ew = (
+                config.condition_factor[sp]
+                * config.egg_size[sp] ** config.allometric_power[sp]
+                * 1e-6
+            )
 
         eggs = bioen_egg_production(
             gonad_weight=state.gonad_weight[mask],
@@ -675,10 +696,9 @@ def initialize(config: EngineConfig, grid: Grid, rng: np.random.Generator) -> Sc
     return SchoolState.create(n_schools=0)
 
 
-def _average_step_outputs(
-    accumulated: list[StepOutput], freq: int, record_step: int
-) -> StepOutput:
+def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step: int) -> StepOutput:
     """Average accumulated StepOutputs over recording frequency."""
+
     def _avg_bioen(attr: str) -> NDArray[np.float64] | None:
         arrays = [getattr(o, attr) for o in accumulated if getattr(o, attr) is not None]
         return np.mean(arrays, axis=0) if arrays else None
@@ -776,6 +796,7 @@ def simulate(
 
     # Pre-flatten map data for Numba movement path (skip if Numba unavailable)
     from osmose.engine.processes.movement import _flatten_all_map_sets, _HAS_NUMBA as _MV_HAS_NUMBA
+
     flat_map_data = (
         _flatten_all_map_sets(map_sets, config.n_species, grid.ny, grid.nx)
         if map_sets and _MV_HAS_NUMBA
@@ -802,7 +823,11 @@ def simulate(
         state = _reset_step_variables(state)
         resources.update(step)
         state = _movement(
-            state, grid, config, step, rng,
+            state,
+            grid,
+            config,
+            step,
+            rng,
             map_sets=map_sets,
             random_patches=random_patches,
             species_rngs=movement_rngs,
@@ -816,7 +841,9 @@ def simulate(
         if len(bkg_schools) > 0:
             state = state.append(bkg_schools)
 
-        state = _mortality(state, resources, config, rng, grid, step=step, species_rngs=mortality_rngs)
+        state = _mortality(
+            state, resources, config, rng, grid, step=step, species_rngs=mortality_rngs
+        )
 
         # Collect background output BEFORE stripping
         bkg_output = _collect_background_outputs(state, config, n_focal)

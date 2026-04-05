@@ -266,13 +266,17 @@ class BackgroundState:
             if prop_file_key in config and not sp.proportion_ts:
                 import pandas as pd
 
-                df = pd.read_csv(_resolve_path(config[prop_file_key], config.get("_osmose.config.dir", "")), sep=";")
+                csv_path = _resolve_path(
+                    config[prop_file_key],
+                    config.get("_osmose.config.dir", ""),
+                )
+                df = pd.read_csv(csv_path, sep=";")
                 sp.proportion_ts = df.values.astype(np.float64)
 
         for sp in self._species:
             # w[cls] = condition_factor * length[cls]^allometric_power, convert grams to tonnes
             weights = np.array(
-                [sp.condition_factor * (length**sp.allometric_power) * 1e-6 for length in sp.lengths],
+                [sp.condition_factor * (ln**sp.allometric_power) * 1e-6 for ln in sp.lengths],
                 dtype=np.float64,
             )
             self._weights.append(weights)

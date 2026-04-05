@@ -1,12 +1,13 @@
 """Tests for dissolved oxygen dose-response function."""
+
 import numpy as np
 import pytest
 from osmose.engine.processes.oxygen_function import f_o2
 
 
 class TestFO2:
-    C1 = 1.0   # maximum response coefficient
-    C2 = 5.0   # half-saturation concentration (mmol/m³)
+    C1 = 1.0  # maximum response coefficient
+    C2 = 5.0  # half-saturation concentration (mmol/m³)
 
     def test_fo2_at_zero_is_zero(self):
         """f_O2(0) = 0 because numerator is zero."""
@@ -17,8 +18,9 @@ class TestFO2:
         """f_O2 approaches C1 as O2 -> infinity."""
         very_high = np.array([1e9])
         result = f_o2(very_high, self.C1, self.C2)
-        assert result[0] == pytest.approx(self.C1, rel=1e-6), \
+        assert result[0] == pytest.approx(self.C1, rel=1e-6), (
             "f_O2 should approach C1 at very high O2 concentrations"
+        )
 
     def test_fo2_half_saturation(self):
         """f_O2(C2) = C1 * 0.5 by definition of the Michaelis-Menten form."""

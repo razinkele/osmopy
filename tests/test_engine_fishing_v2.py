@@ -1,4 +1,7 @@
-"""Tests for Phase 2 fishing features: seasonality, selectivity types, v3 scenarios, MPA, discards."""
+"""Tests for Phase 2 fishing features.
+
+Covers seasonality, selectivity types, v3 scenarios, MPA, discards.
+"""
 
 import numpy as np
 import pytest

@@ -16,6 +16,7 @@ from osmose.logging import setup_logging
 
 try:
     from numba import njit
+
     _HAS_NUMBA = True
 except ImportError:
     _HAS_NUMBA = False
@@ -74,7 +75,7 @@ def _map_move_school(
     same_map = False
     if age_dt > 0 and step > 0:
         prev_index = map_set.get_index(age_dt - 1, step - 1)
-        same_map = (index_map == prev_index)
+        same_map = index_map == prev_index
 
     # Step 3a — New placement (rejection sampling)
     if not same_map or cx < 0:
@@ -270,13 +271,25 @@ def movement(
             new_out = state.is_out.copy()
             _map_move_batch_numba(
                 rng_seed,
-                map_school_indices, current_idx, same_map_flags,
-                new_cx, new_cy, state.species_id,
-                flat_maps, flat_max_proba, flat_is_null, sp_offsets,
+                map_school_indices,
+                current_idx,
+                same_map_flags,
+                new_cx,
+                new_cy,
+                state.species_id,
+                flat_maps,
+                flat_max_proba,
+                flat_is_null,
+                sp_offsets,
                 grid.ocean_mask,
-                walk_range_i32 if walk_range_i32 is not None else config.random_walk_range.astype(np.int32),
-                grid.ny, grid.nx,
-                new_cx, new_cy, new_out,
+                walk_range_i32
+                if walk_range_i32 is not None
+                else config.random_walk_range.astype(np.int32),
+                grid.ny,
+                grid.nx,
+                new_cx,
+                new_cy,
+                new_out,
             )
             # Warn if any previously in-domain schools failed placement
             newly_out = new_out & ~state.is_out
@@ -318,12 +331,23 @@ if _HAS_NUMBA:
     @njit(cache=True)
     def _map_move_batch_numba(
         rng_seed,
-        school_indices, current_map_idx, same_map,
-        cell_x, cell_y, sp_ids,
-        all_maps, all_max_proba, all_is_null, sp_map_offset,
-        ocean_mask, walk_range,
-        ny, nx,
-        out_cx, out_cy, out_is_out,
+        school_indices,
+        current_map_idx,
+        same_map,
+        cell_x,
+        cell_y,
+        sp_ids,
+        all_maps,
+        all_max_proba,
+        all_is_null,
+        sp_map_offset,
+        ocean_mask,
+        walk_range,
+        ny,
+        nx,
+        out_cx,
+        out_cy,
+        out_is_out,
     ):
         """Numba-compiled batch map-based movement for all schools.
 
@@ -435,9 +459,7 @@ def _flatten_all_map_sets(
     pos = 0
     for sp, ms in map_sets.items():
         if sp >= n_species:
-            raise ValueError(
-                f"Movement map species ID {sp} exceeds n_species={n_species}"
-            )
+            raise ValueError(f"Movement map species ID {sp} exceeds n_species={n_species}")
         sp_map_offset[sp] = pos
         for k, m in enumerate(ms.maps):
             if m is not None:

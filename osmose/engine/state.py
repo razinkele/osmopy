@@ -83,13 +83,9 @@ class SchoolState:
             val = getattr(self, f.name)
             if f.name == "n_dead":
                 if val.shape != (n, len(MortalityCause)):
-                    raise ValueError(
-                        f"n_dead shape {val.shape} != ({n}, {len(MortalityCause)})"
-                    )
+                    raise ValueError(f"n_dead shape {val.shape} != ({n}, {len(MortalityCause)})")
             elif val.ndim == 1 and len(val) != n:
-                raise ValueError(
-                    f"SchoolState.{f.name} length {len(val)} != {n}"
-                )
+                raise ValueError(f"SchoolState.{f.name} length {len(val)} != {n}")
 
     def __len__(self) -> int:
         return len(self.species_id)

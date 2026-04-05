@@ -236,7 +236,9 @@ class TestSpatialAdditionalMortality:
 
         # School at cell_y=1, cell_x=0 -> factor 0.0 -> no mortality
         state_zero = _make_school(n=1, sp=0, abundance=1000.0, age_dt=10, cell_y=1, cell_x=0)
-        _apply_additional_for_school(0, state_zero, ec, n_subdt, state_zero.abundance.copy(), step=0)
+        _apply_additional_for_school(
+            0, state_zero, ec, n_subdt, state_zero.abundance.copy(), step=0
+        )
         dead_zero = state_zero.n_dead[0, int(MortalityCause.ADDITIONAL)]
         assert dead_zero == 0.0
 
@@ -255,13 +257,17 @@ class TestSpatialAdditionalMortality:
 
         # cell_y=0, cell_x=0 -> factor 1.0
         state_normal = _make_school(n=1, sp=0, abundance=1000.0, age_dt=10, cell_y=0, cell_x=0)
-        _apply_additional_for_school(0, state_normal, ec, n_subdt, state_normal.abundance.copy(), step=0)
+        _apply_additional_for_school(
+            0, state_normal, ec, n_subdt, state_normal.abundance.copy(), step=0
+        )
         dead_normal = state_normal.n_dead[0, int(MortalityCause.ADDITIONAL)]
 
         # cell_y=0, cell_x=1 -> factor 1.0 (same row)
         # cell_y=1, cell_x=1 -> factor 3.0 (after flipud)
         state_high = _make_school(n=1, sp=0, abundance=1000.0, age_dt=10, cell_y=1, cell_x=1)
-        _apply_additional_for_school(0, state_high, ec, n_subdt, state_high.abundance.copy(), step=0)
+        _apply_additional_for_school(
+            0, state_high, ec, n_subdt, state_high.abundance.copy(), step=0
+        )
         dead_high = state_high.n_dead[0, int(MortalityCause.ADDITIONAL)]
 
         assert dead_high > dead_normal

@@ -48,8 +48,9 @@ class TestSingleMapLoad:
         data = [[float(i * nx + j) / (ny * nx) for j in range(nx)] for i in range(ny)]
         _write_csv_map(tmp_path / "map0.csv", data)
         cfg = _base_config(tmp_path)
-        mms = MovementMapSet(cfg, "Anchovy", n_dt_per_year=4, n_years=1,
-                             lifespan_dt=12, ny=ny, nx=nx)
+        mms = MovementMapSet(
+            cfg, "Anchovy", n_dt_per_year=4, n_years=1, lifespan_dt=12, ny=ny, nx=nx
+        )
         assert mms.n_maps == 1
         assert mms.maps[0] is not None
         assert mms.maps[0].shape == (ny, nx)
@@ -59,8 +60,9 @@ class TestSingleMapLoad:
         data = [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6], [0.7, 0.8, 0.9]]
         _write_csv_map(tmp_path / "map0.csv", data)
         cfg = _base_config(tmp_path)
-        mms = MovementMapSet(cfg, "Anchovy", n_dt_per_year=4, n_years=1,
-                             lifespan_dt=12, ny=ny, nx=nx)
+        mms = MovementMapSet(
+            cfg, "Anchovy", n_dt_per_year=4, n_years=1, lifespan_dt=12, ny=ny, nx=nx
+        )
         assert mms.maps[0].dtype == np.float64
 
 
@@ -81,14 +83,16 @@ class TestIndexMapsFilled:
             "movement.lastage.map0": "2",
             "movement.file.map0": str(tmp_path / "map0.csv"),
         }
-        mms = MovementMapSet(cfg, "Anchovy", n_dt_per_year=n_dt, n_years=n_yr,
-                             lifespan_dt=lifespan_dt, ny=ny, nx=nx)
+        mms = MovementMapSet(
+            cfg, "Anchovy", n_dt_per_year=n_dt, n_years=n_yr, lifespan_dt=lifespan_dt, ny=ny, nx=nx
+        )
         # Every age_dt 0..7 (lifespan_dt-1=7, lastage=2*4=8 -> clamped to 7)
         # and every step 0..7 should be covered
         for age_dt in range(lifespan_dt):
             for step in range(n_dt * n_yr):
-                assert mms.index_maps[age_dt, step] != -1, \
+                assert mms.index_maps[age_dt, step] != -1, (
                     f"Expected coverage at age_dt={age_dt} step={step}"
+                )
 
 
 # ---------------------------------------------------------------------------
@@ -115,8 +119,9 @@ class TestMultipleAgeMaps:
             "movement.lastage.map1": "3",  # 4..8 dt (clamped to 7)
             "movement.file.map1": str(tmp_path / "map1.csv"),
         }
-        mms = MovementMapSet(cfg, "Tuna", n_dt_per_year=n_dt, n_years=n_yr,
-                             lifespan_dt=lifespan_dt, ny=ny, nx=nx)
+        mms = MovementMapSet(
+            cfg, "Tuna", n_dt_per_year=n_dt, n_years=n_yr, lifespan_dt=lifespan_dt, ny=ny, nx=nx
+        )
         # age_dt=0 -> map0 index
         idx_young = mms.get_index(0, 0)
         # age_dt=4 -> map1 index
@@ -142,8 +147,9 @@ class TestNullMap:
             "movement.lastage.map0": "2",
             "movement.file.map0": "null",
         }
-        mms = MovementMapSet(cfg, "Sardine", n_dt_per_year=n_dt, n_years=n_yr,
-                             lifespan_dt=lifespan_dt, ny=3, nx=3)
+        mms = MovementMapSet(
+            cfg, "Sardine", n_dt_per_year=n_dt, n_years=n_yr, lifespan_dt=lifespan_dt, ny=3, nx=3
+        )
         assert mms.maps[0] is None
 
     def test_null_get_map_returns_none(self, tmp_path):
@@ -154,8 +160,9 @@ class TestNullMap:
             "movement.lastage.map0": "2",
             "movement.file.map0": "null",
         }
-        mms = MovementMapSet(cfg, "Sardine", n_dt_per_year=n_dt, n_years=n_yr,
-                             lifespan_dt=lifespan_dt, ny=3, nx=3)
+        mms = MovementMapSet(
+            cfg, "Sardine", n_dt_per_year=n_dt, n_years=n_yr, lifespan_dt=lifespan_dt, ny=3, nx=3
+        )
         result = mms.get_map(0, 0)
         assert result is None
 
@@ -177,8 +184,9 @@ class TestCsvRowFlipping:
         ]
         _write_csv_map(tmp_path / "map0.csv", csv_data)
         cfg = _base_config(tmp_path)
-        mms = MovementMapSet(cfg, "Anchovy", n_dt_per_year=4, n_years=1,
-                             lifespan_dt=12, ny=ny, nx=nx)
+        mms = MovementMapSet(
+            cfg, "Anchovy", n_dt_per_year=4, n_years=1, lifespan_dt=12, ny=ny, nx=nx
+        )
         grid = mms.maps[0]
         # grid[ny-1] should have values from CSV row 0 (1.0)
         np.testing.assert_allclose(grid[ny - 1, :], [1.0, 1.0, 1.0])
@@ -198,8 +206,9 @@ class TestMaxProbaPresenceAbsence:
         data = [[1, 0, 1], [0, 1, 0], [1, 1, 0]]
         _write_csv_map(tmp_path / "map0.csv", data)
         cfg = _base_config(tmp_path)
-        mms = MovementMapSet(cfg, "Anchovy", n_dt_per_year=4, n_years=1,
-                             lifespan_dt=12, ny=ny, nx=nx)
+        mms = MovementMapSet(
+            cfg, "Anchovy", n_dt_per_year=4, n_years=1, lifespan_dt=12, ny=ny, nx=nx
+        )
         assert mms.max_proba[0] == 0.0
 
 
@@ -214,8 +223,9 @@ class TestMaxProbaProbabilityMap:
         data = [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6], [0.7, 0.8, 0.9]]
         _write_csv_map(tmp_path / "map0.csv", data)
         cfg = _base_config(tmp_path)
-        mms = MovementMapSet(cfg, "Anchovy", n_dt_per_year=4, n_years=1,
-                             lifespan_dt=12, ny=ny, nx=nx)
+        mms = MovementMapSet(
+            cfg, "Anchovy", n_dt_per_year=4, n_years=1, lifespan_dt=12, ny=ny, nx=nx
+        )
         # max value in data is 0.9 (stored in grid row 0 after flip, but doesn't matter)
         assert pytest.approx(mms.max_proba[0], abs=1e-9) == 0.9
 
@@ -234,15 +244,16 @@ class TestDeduplication:
         cfg = {
             "movement.species.map0": "Cod",
             "movement.initialage.map0": "0",
-            "movement.lastage.map0": "1",   # age_dt 0..3
+            "movement.lastage.map0": "1",  # age_dt 0..3
             "movement.file.map0": str(tmp_path / "shared.csv"),
             "movement.species.map1": "Cod",
             "movement.initialage.map1": "1",
-            "movement.lastage.map1": "2",   # age_dt 4..7
+            "movement.lastage.map1": "2",  # age_dt 4..7
             "movement.file.map1": str(tmp_path / "shared.csv"),  # same file
         }
-        mms = MovementMapSet(cfg, "Cod", n_dt_per_year=n_dt, n_years=n_yr,
-                             lifespan_dt=lifespan_dt, ny=ny, nx=nx)
+        mms = MovementMapSet(
+            cfg, "Cod", n_dt_per_year=n_dt, n_years=n_yr, lifespan_dt=lifespan_dt, ny=ny, nx=nx
+        )
         # Both age ranges should point to same canonical map index
         idx_young = mms.get_index(0, 0)
         idx_old = mms.get_index(4, 0)
@@ -265,8 +276,9 @@ class TestDeduplication:
             "movement.lastage.map1": "2",
             "movement.file.map1": str(tmp_path / "map1.csv"),
         }
-        mms = MovementMapSet(cfg, "Cod", n_dt_per_year=n_dt, n_years=n_yr,
-                             lifespan_dt=lifespan_dt, ny=ny, nx=nx)
+        mms = MovementMapSet(
+            cfg, "Cod", n_dt_per_year=n_dt, n_years=n_yr, lifespan_dt=lifespan_dt, ny=ny, nx=nx
+        )
         idx_young = mms.get_index(0, 0)
         idx_old = mms.get_index(4, 0)
         assert idx_young != idx_old
@@ -285,8 +297,9 @@ class TestGetMap:
         data = [[expected_val] * nx] * ny
         _write_csv_map(tmp_path / "map0.csv", data)
         cfg = _base_config(tmp_path)
-        mms = MovementMapSet(cfg, "Anchovy", n_dt_per_year=4, n_years=1,
-                             lifespan_dt=12, ny=ny, nx=nx)
+        mms = MovementMapSet(
+            cfg, "Anchovy", n_dt_per_year=4, n_years=1, lifespan_dt=12, ny=ny, nx=nx
+        )
         grid = mms.get_map(0, 0)
         assert grid is not None
         np.testing.assert_allclose(grid, expected_val)
@@ -296,8 +309,9 @@ class TestGetMap:
         data = [[0.1, 0.2, 0.3]] * ny
         _write_csv_map(tmp_path / "map0.csv", data)
         cfg = _base_config(tmp_path)
-        mms = MovementMapSet(cfg, "Anchovy", n_dt_per_year=4, n_years=1,
-                             lifespan_dt=12, ny=ny, nx=nx)
+        mms = MovementMapSet(
+            cfg, "Anchovy", n_dt_per_year=4, n_years=1, lifespan_dt=12, ny=ny, nx=nx
+        )
         assert mms.get_map(-1, 0) is None
         assert mms.get_map(0, -1) is None
         assert mms.get_map(999, 0) is None
@@ -318,8 +332,9 @@ class TestGetMapNullFile:
             "movement.lastage.map0": "2",
             "movement.file.map0": "null",
         }
-        mms = MovementMapSet(cfg, "Herring", n_dt_per_year=n_dt, n_years=n_yr,
-                             lifespan_dt=lifespan_dt, ny=3, nx=3)
+        mms = MovementMapSet(
+            cfg, "Herring", n_dt_per_year=n_dt, n_years=n_yr, lifespan_dt=lifespan_dt, ny=3, nx=3
+        )
         result = mms.get_map(0, 0)
         assert result is None
 
@@ -339,12 +354,19 @@ class TestMissingEntriesWarned:
         cfg = {
             "movement.species.map0": "Mackerel",
             "movement.initialage.map0": "0",
-            "movement.lastage.map0": "1",   # age_dt 0..4 (4*1=4 dt -> clamped to min(4,7)=4)
+            "movement.lastage.map0": "1",  # age_dt 0..4 (4*1=4 dt -> clamped to min(4,7)=4)
             "movement.file.map0": str(tmp_path / "map0.csv"),
         }
         with caplog.at_level(logging.WARNING, logger="osmose.engine.movement_maps"):
-            MovementMapSet(cfg, "Mackerel", n_dt_per_year=n_dt, n_years=n_yr,
-                           lifespan_dt=lifespan_dt, ny=ny, nx=nx)
+            MovementMapSet(
+                cfg,
+                "Mackerel",
+                n_dt_per_year=n_dt,
+                n_years=n_yr,
+                lifespan_dt=lifespan_dt,
+                ny=ny,
+                nx=nx,
+            )
         # There should be at least one warning about missing coverage
         assert any("No movement map" in rec.message for rec in caplog.records)
 
@@ -374,9 +396,10 @@ class TestSeasonSubset:
             "movement.steps.map1": ";".join(str(s) for s in range(12, 24)),  # steps 12-23
             "movement.file.map1": str(tmp_path / "map1.csv"),
         }
-        mms = MovementMapSet(cfg, "Tuna", n_dt_per_year=n_dt, n_years=n_yr,
-                             lifespan_dt=lifespan_dt, ny=ny, nx=nx)
-        idx_first_half = mms.get_index(0, 0)   # step 0 -> map0
+        mms = MovementMapSet(
+            cfg, "Tuna", n_dt_per_year=n_dt, n_years=n_yr, lifespan_dt=lifespan_dt, ny=ny, nx=nx
+        )
+        idx_first_half = mms.get_index(0, 0)  # step 0 -> map0
         idx_second_half = mms.get_index(0, 12)  # step 12 -> map1
         assert idx_first_half != idx_second_half
         assert not np.allclose(mms.maps[idx_first_half], mms.maps[idx_second_half])
@@ -403,8 +426,9 @@ class TestOutOfRangeStepsSkipped:
             "movement.file.map0": str(tmp_path / "map0.csv"),
         }
         # Should complete without error
-        mms = MovementMapSet(cfg, "Cod", n_dt_per_year=n_dt, n_years=n_yr,
-                             lifespan_dt=lifespan_dt, ny=ny, nx=nx)
+        mms = MovementMapSet(
+            cfg, "Cod", n_dt_per_year=n_dt, n_years=n_yr, lifespan_dt=lifespan_dt, ny=ny, nx=nx
+        )
         # Years 0 and 1 should be covered, no crash for out-of-range year 2-5
         assert mms.get_index(0, 0) != -1
         assert mms.get_index(0, n_dt) != -1  # year 1, step 0
@@ -429,8 +453,9 @@ class TestMultiYearMapping:
             "movement.lastyear.map0": "1",  # both years
             "movement.file.map0": str(tmp_path / "map0.csv"),
         }
-        mms = MovementMapSet(cfg, "Anchovy", n_dt_per_year=n_dt, n_years=n_yr,
-                             lifespan_dt=lifespan_dt, ny=ny, nx=nx)
+        mms = MovementMapSet(
+            cfg, "Anchovy", n_dt_per_year=n_dt, n_years=n_yr, lifespan_dt=lifespan_dt, ny=ny, nx=nx
+        )
         # step 24 = year 1, season 0
         idx = mms.get_index(0, n_dt)
         assert idx != -1
@@ -451,8 +476,9 @@ class TestMultiYearMapping:
             "movement.lastyear.map0": "1",
             "movement.file.map0": str(tmp_path / "map0.csv"),
         }
-        mms = MovementMapSet(cfg, "Sardine", n_dt_per_year=n_dt, n_years=n_yr,
-                             lifespan_dt=lifespan_dt, ny=ny, nx=nx)
+        mms = MovementMapSet(
+            cfg, "Sardine", n_dt_per_year=n_dt, n_years=n_yr, lifespan_dt=lifespan_dt, ny=ny, nx=nx
+        )
         # Year 0, step 0
         assert mms.get_index(0, 0) != -1
         # Year 1, step 0 (global step = n_dt * 1 = 12)
@@ -478,8 +504,13 @@ class TestMapMoveSchool:
             "movement.steps.map0": steps,
         }
         ms = MovementMapSet(
-            config=cfg, species_name="TestFish",
-            n_dt_per_year=24, n_years=1, lifespan_dt=72, ny=5, nx=5,
+            config=cfg,
+            species_name="TestFish",
+            n_dt_per_year=24,
+            n_years=1,
+            lifespan_dt=72,
+            ny=5,
+            nx=5,
         )
         grid = Grid.from_dimensions(ny=5, nx=5)
         rng = np.random.default_rng(42)
@@ -504,8 +535,13 @@ class TestMapMoveSchool:
             "movement.steps.map0": steps,
         }
         ms = MovementMapSet(
-            config=cfg, species_name="TestFish",
-            n_dt_per_year=24, n_years=1, lifespan_dt=72, ny=5, nx=5,
+            config=cfg,
+            species_name="TestFish",
+            n_dt_per_year=24,
+            n_years=1,
+            lifespan_dt=72,
+            ny=5,
+            nx=5,
         )
         grid = Grid.from_dimensions(ny=5, nx=5)
         rng = np.random.default_rng(42)
@@ -531,8 +567,13 @@ class TestMapMoveSchool:
             "movement.steps.map0": steps,
         }
         ms = MovementMapSet(
-            config=cfg, species_name="TestFish",
-            n_dt_per_year=24, n_years=1, lifespan_dt=72, ny=5, nx=5,
+            config=cfg,
+            species_name="TestFish",
+            n_dt_per_year=24,
+            n_years=1,
+            lifespan_dt=72,
+            ny=5,
+            nx=5,
         )
         grid = Grid.from_dimensions(ny=5, nx=5)
         rng = np.random.default_rng(42)
@@ -559,8 +600,13 @@ class TestMapMoveSchool:
             "movement.steps.map0": steps,
         }
         ms = MovementMapSet(
-            config=cfg, species_name="TestFish",
-            n_dt_per_year=24, n_years=1, lifespan_dt=72, ny=5, nx=5,
+            config=cfg,
+            species_name="TestFish",
+            n_dt_per_year=24,
+            n_years=1,
+            lifespan_dt=72,
+            ny=5,
+            nx=5,
         )
         grid = Grid.from_dimensions(ny=5, nx=5)
         rng = np.random.default_rng(42)
@@ -583,8 +629,13 @@ class TestMapMoveSchool:
             "movement.steps.map0": steps,
         }
         ms = MovementMapSet(
-            config=cfg, species_name="TestFish",
-            n_dt_per_year=24, n_years=1, lifespan_dt=72, ny=5, nx=5,
+            config=cfg,
+            species_name="TestFish",
+            n_dt_per_year=24,
+            n_years=1,
+            lifespan_dt=72,
+            ny=5,
+            nx=5,
         )
         grid = Grid.from_dimensions(ny=5, nx=5)
         rng = np.random.default_rng(42)
@@ -615,8 +666,13 @@ class TestMapMoveSchool:
             "movement.steps.map0": steps,
         }
         ms = MovementMapSet(
-            config=cfg, species_name="TestFish",
-            n_dt_per_year=24, n_years=1, lifespan_dt=72, ny=5, nx=5,
+            config=cfg,
+            species_name="TestFish",
+            n_dt_per_year=24,
+            n_years=1,
+            lifespan_dt=72,
+            ny=5,
+            nx=5,
         )
         assert ms.max_proba[0] == 0.0  # presence/absence trick
         grid = Grid.from_dimensions(ny=5, nx=5)

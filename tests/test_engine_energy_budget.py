@@ -1,4 +1,5 @@
 """Tests for energy_budget: bioenergetic energy allocation."""
+
 import numpy as np
 import pytest
 
@@ -6,6 +7,7 @@ from osmose.engine.processes.energy_budget import compute_energy_budget, update_
 
 
 # ── Shared helpers ─────────────────────────────────────────────────────────────
+
 
 def _default_params() -> dict:
     return dict(
@@ -36,8 +38,14 @@ class TestComputeEnergyBudget:
         e_net_avg = np.array([100.0])
 
         dw, dg, e_net, *_ = compute_energy_budget(
-            ingestion, weight, gonad_weight, age_dt, length,
-            temp_c=15.0, e_net_avg=e_net_avg, **params
+            ingestion,
+            weight,
+            gonad_weight,
+            age_dt,
+            length,
+            temp_c=15.0,
+            e_net_avg=e_net_avg,
+            **params,
         )
         assert e_net[0] > 0
         assert dw[0] > 0
@@ -47,15 +55,21 @@ class TestComputeEnergyBudget:
         """Negative net energy produces zero weight increments."""
         params = _default_params()
         ingestion = np.array([0.0])  # no food
-        weight = np.array([0.01])   # heavy enough for maintenance to dominate
+        weight = np.array([0.01])  # heavy enough for maintenance to dominate
         gonad_weight = np.array([0.0])
         age_dt = np.array([24])
         length = np.array([10.0])
         e_net_avg = np.array([0.0])
 
         dw, dg, e_net, *_ = compute_energy_budget(
-            ingestion, weight, gonad_weight, age_dt, length,
-            temp_c=15.0, e_net_avg=e_net_avg, **params
+            ingestion,
+            weight,
+            gonad_weight,
+            age_dt,
+            length,
+            temp_c=15.0,
+            e_net_avg=e_net_avg,
+            **params,
         )
         assert e_net[0] < 0
         assert dw[0] == pytest.approx(0.0)
@@ -72,12 +86,24 @@ class TestComputeEnergyBudget:
         e_net_avg = np.array([0.1])
 
         _, _, e_net_cold, *_ = compute_energy_budget(
-            ingestion, weight, gonad_weight, age_dt, length,
-            temp_c=5.0, e_net_avg=e_net_avg, **params
+            ingestion,
+            weight,
+            gonad_weight,
+            age_dt,
+            length,
+            temp_c=5.0,
+            e_net_avg=e_net_avg,
+            **params,
         )
         _, _, e_net_warm, *_ = compute_energy_budget(
-            ingestion, weight, gonad_weight, age_dt, length,
-            temp_c=25.0, e_net_avg=e_net_avg, **params
+            ingestion,
+            weight,
+            gonad_weight,
+            age_dt,
+            length,
+            temp_c=25.0,
+            e_net_avg=e_net_avg,
+            **params,
         )
         assert e_net_cold[0] > e_net_warm[0]
 
@@ -92,8 +118,14 @@ class TestComputeEnergyBudget:
         e_net_avg = np.array([0.05])
 
         dw, dg, e_net, *_ = compute_energy_budget(
-            ingestion, weight, gonad_weight, age_dt, length,
-            temp_c=15.0, e_net_avg=e_net_avg, **params
+            ingestion,
+            weight,
+            gonad_weight,
+            age_dt,
+            length,
+            temp_c=15.0,
+            e_net_avg=e_net_avg,
+            **params,
         )
         assert e_net[0] > 0
         assert dg[0] == pytest.approx(0.0)
@@ -111,8 +143,14 @@ class TestComputeEnergyBudget:
         e_net_avg = np.array([1000.0])
 
         dw, dg, e_net, *_ = compute_energy_budget(
-            ingestion, weight, gonad_weight, age_dt, length,
-            temp_c=15.0, e_net_avg=e_net_avg, **params
+            ingestion,
+            weight,
+            gonad_weight,
+            age_dt,
+            length,
+            temp_c=15.0,
+            e_net_avg=e_net_avg,
+            **params,
         )
         assert dg[0] > 0
         assert dw[0] > 0
@@ -132,8 +170,14 @@ class TestComputeEnergyBudget:
         e_net_avg = np.array([0.1])
 
         dw, dg, *_ = compute_energy_budget(
-            ingestion, weight, gonad_weight, age_dt, length,
-            temp_c=15.0, e_net_avg=e_net_avg, **params
+            ingestion,
+            weight,
+            gonad_weight,
+            age_dt,
+            length,
+            temp_c=15.0,
+            e_net_avg=e_net_avg,
+            **params,
         )
         # Increments should be small fractions of a tonne, not huge values
         assert abs(dw[0]) < 0.1
@@ -150,11 +194,17 @@ class TestComputeEnergyBudget:
         e_net_avg = np.array([0.05, 0.05, 0.1])
 
         dw, dg, e_net, *_ = compute_energy_budget(
-            ingestion, weight, gonad_weight, age_dt, length,
-            temp_c=15.0, e_net_avg=e_net_avg, **params
+            ingestion,
+            weight,
+            gonad_weight,
+            age_dt,
+            length,
+            temp_c=15.0,
+            e_net_avg=e_net_avg,
+            **params,
         )
         assert dw.shape == (3,)
-        assert e_net[1] < 0   # no ingestion → negative
+        assert e_net[1] < 0  # no ingestion → negative
         assert dw[1] == pytest.approx(0.0)
         assert dg[1] == pytest.approx(0.0)
 
@@ -192,9 +242,11 @@ class TestUpdateENetAvg:
         avg = e_net_avg.copy()
         for step in range(1, n_steps + 1):
             avg = update_e_net_avg(
-                avg, np.array([e_net_val]),
+                avg,
+                np.array([e_net_val]),
                 np.array([0.001]),
                 np.array([step], dtype=np.int32),
-                first_feeding_age_dt, 24
+                first_feeding_age_dt,
+                24,
             )
         assert avg[0] == pytest.approx(e_net_val, rel=1e-2)

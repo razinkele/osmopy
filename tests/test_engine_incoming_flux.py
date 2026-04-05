@@ -204,9 +204,7 @@ class TestSchoolCreation:
         # Should be split into n_schools (10) schools
         n_schools = int(ec.n_schools[0])
         assert len(schools) == n_schools
-        np.testing.assert_allclose(
-            schools.abundance.sum(), expected_abund_total, rtol=1e-10
-        )
+        np.testing.assert_allclose(schools.abundance.sum(), expected_abund_total, rtol=1e-10)
         np.testing.assert_allclose(schools.biomass.sum(), 100.0, rtol=1e-10)
         assert (schools.length == sf.lengths[0]).all()
         assert (schools.weight == expected_weight).all()

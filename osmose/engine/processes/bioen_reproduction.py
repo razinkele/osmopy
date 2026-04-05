@@ -1,6 +1,7 @@
 """Gonad-weight-based reproduction for bioenergetic mode.
 Matches Java BioenReproductionProcess.
 """
+
 from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray

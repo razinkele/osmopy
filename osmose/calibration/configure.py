@@ -38,9 +38,12 @@ def configure_calibration(config: dict[str, str]) -> dict:
                     guess = float(value)
                 except (ValueError, TypeError):
                     import logging
+
                     logging.getLogger(__name__).warning(
                         "Config value for %r is not numeric: %r, using midpoint %.3f",
-                        key, value, (lower + upper) / 2,
+                        key,
+                        value,
+                        (lower + upper) / 2,
                     )
                     guess = (lower + upper) / 2
                 params.append(

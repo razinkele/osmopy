@@ -122,8 +122,16 @@ def _resolve_file(file_key: str) -> Path | None:
     return None
 
 
+def _enabled(cfg: dict[str, str], key: str) -> bool:
+    """Check if a config key is set to 'true' (case-insensitive)."""
+    return cfg.get(key, "false").lower() == "true"
+
+
 def _load_spatial_csv(path: Path) -> np.ndarray:
-    """Load a semicolon-separated spatial grid CSV and flip rows (south-to-north → north-to-south)."""
+    """Load a semicolon-separated spatial grid CSV.
+
+    Flips rows (south-to-north to north-to-south).
+    """
     df = pd.read_csv(path, sep=";", header=None)
     data = df.values.astype(np.float64)
     return np.flipud(data)
@@ -656,24 +664,24 @@ class EngineConfig:
     bioen_fo2_enabled: bool = True
 
     # Bioenergetic per-species parameters (None when bioen disabled)
-    bioen_beta: NDArray[np.float64] | None = None           # allometric exponent
-    bioen_zlayer: NDArray[np.int32] | None = None           # depth layer index
-    bioen_assimilation: NDArray[np.float64] | None = None   # assimilation efficiency
-    bioen_c_m: NDArray[np.float64] | None = None            # maintenance coefficient
-    bioen_eta: NDArray[np.float64] | None = None            # energy density ratio
-    bioen_r: NDArray[np.float64] | None = None              # reproductive allocation
-    bioen_m0: NDArray[np.float64] | None = None             # LMRN intercept
-    bioen_m1: NDArray[np.float64] | None = None             # LMRN slope
-    bioen_e_mobi: NDArray[np.float64] | None = None         # Johnson e_M (eV)
-    bioen_e_d: NDArray[np.float64] | None = None            # Johnson e_D (eV)
-    bioen_tp: NDArray[np.float64] | None = None             # peak temperature (°C)
-    bioen_e_maint: NDArray[np.float64] | None = None        # Arrhenius maintenance energy (eV)
-    bioen_o2_c1: NDArray[np.float64] | None = None          # O2 dose-response asymptote
-    bioen_o2_c2: NDArray[np.float64] | None = None          # O2 half-saturation
-    bioen_i_max: NDArray[np.float64] | None = None          # max ingestion rate (bioen)
-    bioen_theta: NDArray[np.float64] | None = None          # larvae ingestion multiplier
-    bioen_c_rate: NDArray[np.float64] | None = None         # larvae correction coefficient
-    bioen_k_for: NDArray[np.float64] | None = None          # foraging mortality
+    bioen_beta: NDArray[np.float64] | None = None  # allometric exponent
+    bioen_zlayer: NDArray[np.int32] | None = None  # depth layer index
+    bioen_assimilation: NDArray[np.float64] | None = None  # assimilation efficiency
+    bioen_c_m: NDArray[np.float64] | None = None  # maintenance coefficient
+    bioen_eta: NDArray[np.float64] | None = None  # energy density ratio
+    bioen_r: NDArray[np.float64] | None = None  # reproductive allocation
+    bioen_m0: NDArray[np.float64] | None = None  # LMRN intercept
+    bioen_m1: NDArray[np.float64] | None = None  # LMRN slope
+    bioen_e_mobi: NDArray[np.float64] | None = None  # Johnson e_M (eV)
+    bioen_e_d: NDArray[np.float64] | None = None  # Johnson e_D (eV)
+    bioen_tp: NDArray[np.float64] | None = None  # peak temperature (°C)
+    bioen_e_maint: NDArray[np.float64] | None = None  # Arrhenius maintenance energy (eV)
+    bioen_o2_c1: NDArray[np.float64] | None = None  # O2 dose-response asymptote
+    bioen_o2_c2: NDArray[np.float64] | None = None  # O2 half-saturation
+    bioen_i_max: NDArray[np.float64] | None = None  # max ingestion rate (bioen)
+    bioen_theta: NDArray[np.float64] | None = None  # larvae ingestion multiplier
+    bioen_c_rate: NDArray[np.float64] | None = None  # larvae correction coefficient
+    bioen_k_for: NDArray[np.float64] | None = None  # foraging mortality
 
     # Distribution output flags
     output_biomass_byage: bool = False
@@ -1116,9 +1124,7 @@ class EngineConfig:
                 ncell_found = True
             else:
                 ncell_vals.append(0)
-        random_distribution_ncell = (
-            np.array(ncell_vals, dtype=np.int32) if ncell_found else None
-        )
+        random_distribution_ncell = np.array(ncell_vals, dtype=np.int32) if ncell_found else None
 
         # Phase 5: Output recording frequency (default: 1 = every step)
         output_record_freq = int(cfg.get("output.recordfrequency.ndt", "1"))
@@ -1154,15 +1160,9 @@ class EngineConfig:
             )
             gompertz_kg = _species_float_optional(cfg, "growth.gompertz.kg.sp{i}", n_sp, 0.0)
             gompertz_tg = _species_float_optional(cfg, "growth.gompertz.tg.sp{i}", n_sp, 0.0)
-            gompertz_linf = _species_float_optional(
-                cfg, "growth.gompertz.linf.sp{i}", n_sp, 0.0
-            )
-            exp_yrs = _species_float_optional(
-                cfg, "growth.exponential.thr.age.sp{i}", n_sp, 0.0
-            )
-            gom_yrs = _species_float_optional(
-                cfg, "growth.gompertz.thr.age.sp{i}", n_sp, 0.0
-            )
+            gompertz_linf = _species_float_optional(cfg, "growth.gompertz.linf.sp{i}", n_sp, 0.0)
+            exp_yrs = _species_float_optional(cfg, "growth.exponential.thr.age.sp{i}", n_sp, 0.0)
+            gom_yrs = _species_float_optional(cfg, "growth.gompertz.thr.age.sp{i}", n_sp, 0.0)
             gompertz_thr_age_exp_dt = (exp_yrs * n_dt).astype(np.int32)
             gompertz_thr_age_gom_dt = (gom_yrs * n_dt).astype(np.int32)
 
@@ -1183,45 +1183,27 @@ class EngineConfig:
             bioen_c_m = _species_float_optional(
                 cfg, "species.bioen.maint.energy.c_m.sp{i}", n_sp, 0.0
             )
-            bioen_eta = _species_float_optional(
-                cfg, "species.bioen.maturity.eta.sp{i}", n_sp, 1.0
-            )
-            bioen_r = _species_float_optional(
-                cfg, "species.bioen.maturity.r.sp{i}", n_sp, 0.0
-            )
-            bioen_m0 = _species_float_optional(
-                cfg, "species.bioen.maturity.m0.sp{i}", n_sp, 0.0
-            )
-            bioen_m1 = _species_float_optional(
-                cfg, "species.bioen.maturity.m1.sp{i}", n_sp, 0.0
-            )
+            bioen_eta = _species_float_optional(cfg, "species.bioen.maturity.eta.sp{i}", n_sp, 1.0)
+            bioen_r = _species_float_optional(cfg, "species.bioen.maturity.r.sp{i}", n_sp, 0.0)
+            bioen_m0 = _species_float_optional(cfg, "species.bioen.maturity.m0.sp{i}", n_sp, 0.0)
+            bioen_m1 = _species_float_optional(cfg, "species.bioen.maturity.m1.sp{i}", n_sp, 0.0)
             bioen_e_mobi = _species_float_optional(
                 cfg, "species.bioen.mobilized.e.mobi.sp{i}", n_sp, 0.65
             )
-            bioen_e_d = _species_float_optional(
-                cfg, "species.bioen.mobilized.e.D.sp{i}", n_sp, 1.5
-            )
-            bioen_tp = _species_float_optional(
-                cfg, "species.bioen.mobilized.Tp.sp{i}", n_sp, 20.0
-            )
+            bioen_e_d = _species_float_optional(cfg, "species.bioen.mobilized.e.D.sp{i}", n_sp, 1.5)
+            bioen_tp = _species_float_optional(cfg, "species.bioen.mobilized.Tp.sp{i}", n_sp, 20.0)
             bioen_e_maint = _species_float_optional(
                 cfg, "species.bioen.maint.e.maint.sp{i}", n_sp, 0.65
             )
-            bioen_o2_c1 = _species_float_optional(
-                cfg, "species.oxygen.c1.sp{i}", n_sp, 1.0
-            )
-            bioen_o2_c2 = _species_float_optional(
-                cfg, "species.oxygen.c2.sp{i}", n_sp, 1.0
-            )
+            bioen_o2_c1 = _species_float_optional(cfg, "species.oxygen.c1.sp{i}", n_sp, 1.0)
+            bioen_o2_c2 = _species_float_optional(cfg, "species.oxygen.c2.sp{i}", n_sp, 1.0)
             bioen_i_max = _species_float_optional(
                 cfg, "predation.ingestion.rate.max.bioen.sp{i}", n_sp, 0.0
             )
             bioen_theta = _species_float_optional(
                 cfg, "predation.coef.ingestion.rate.max.larvae.bioen.sp{i}", n_sp, 1.0
             )
-            bioen_c_rate = _species_float_optional(
-                cfg, "predation.c.bioen.sp{i}", n_sp, 0.0
-            )
+            bioen_c_rate = _species_float_optional(cfg, "predation.c.bioen.sp{i}", n_sp, 0.0)
             bioen_k_for = _species_float_optional(
                 cfg, "species.bioen.forage.k_for.sp{i}", n_sp, 0.0
             )
@@ -1323,10 +1305,10 @@ class EngineConfig:
             bioen_theta=bioen_theta,
             bioen_c_rate=bioen_c_rate,
             bioen_k_for=bioen_k_for,
-            output_biomass_byage=cfg.get("output.biomass.byage.enabled", "false").lower() == "true",
-            output_biomass_bysize=cfg.get("output.biomass.bysize.enabled", "false").lower() == "true",
-            output_abundance_byage=cfg.get("output.abundance.byage.enabled", "false").lower() == "true",
-            output_abundance_bysize=cfg.get("output.abundance.bysize.enabled", "false").lower() == "true",
+            output_biomass_byage=_enabled(cfg, "output.biomass.byage.enabled"),
+            output_biomass_bysize=_enabled(cfg, "output.biomass.bysize.enabled"),
+            output_abundance_byage=_enabled(cfg, "output.abundance.byage.enabled"),
+            output_abundance_bysize=_enabled(cfg, "output.abundance.bysize.enabled"),
             output_size_min=float(cfg.get("output.distrib.bysize.min", "0")),
             output_size_max=float(cfg.get("output.distrib.bysize.max", "205")),
             output_size_incr=float(cfg.get("output.distrib.bysize.incr", "10")),

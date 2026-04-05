@@ -63,11 +63,13 @@ class OsmoseField:
             )
         if self.choices is not None and self.param_type != ParamType.ENUM:
             raise ValueError(
-                f"OsmoseField has choices but param_type is {self.param_type}, not ENUM: {self.key_pattern}"
+                f"OsmoseField has choices but param_type is "
+                f"{self.param_type}, not ENUM: {self.key_pattern}"
             )
         if self.min_val is not None and self.max_val is not None and self.min_val > self.max_val:
             raise ValueError(
-                f"OsmoseField min_val ({self.min_val}) > max_val ({self.max_val}): {self.key_pattern}"
+                f"OsmoseField min_val ({self.min_val}) > max_val "
+                f"({self.max_val}): {self.key_pattern}"
             )
 
     def resolve_key(self, idx: int | None = None) -> str:

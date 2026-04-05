@@ -76,9 +76,7 @@ def bump_version(current: str, part: str) -> str:
 
 def git_tags() -> list[str]:
     """Return list of version tags sorted by version."""
-    result = subprocess.run(
-        ["git", "tag", "-l", "v*"], capture_output=True, text=True, cwd=ROOT
-    )
+    result = subprocess.run(["git", "tag", "-l", "v*"], capture_output=True, text=True, cwd=ROOT)
     tags = [t.strip() for t in result.stdout.splitlines() if t.strip()]
     return sorted(tags, key=lambda t: [int(x) for x in t.lstrip("v").split(".")])
 
@@ -92,7 +90,9 @@ def git_log_between(from_ref: str | None, to_ref: str = "HEAD") -> list[dict]:
 
     result = subprocess.run(
         ["git", "log", range_spec, "--pretty=format:%H|%s"],
-        capture_output=True, text=True, cwd=ROOT,
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
     )
     commits = []
     pattern = re.compile(r"^(\w+)(?:\(([^)]+)\))?\s*:\s*(.+)$")
@@ -102,19 +102,23 @@ def git_log_between(from_ref: str | None, to_ref: str = "HEAD") -> list[dict]:
         sha, subject = line.split("|", 1)
         m = pattern.match(subject)
         if m:
-            commits.append({
-                "sha": sha[:7],
-                "type": m.group(1),
-                "scope": m.group(2),
-                "description": m.group(3).strip(),
-            })
+            commits.append(
+                {
+                    "sha": sha[:7],
+                    "type": m.group(1),
+                    "scope": m.group(2),
+                    "description": m.group(3).strip(),
+                }
+            )
         else:
-            commits.append({
-                "sha": sha[:7],
-                "type": "other",
-                "scope": None,
-                "description": subject.strip(),
-            })
+            commits.append(
+                {
+                    "sha": sha[:7],
+                    "type": "other",
+                    "scope": None,
+                    "description": subject.strip(),
+                }
+            )
     return commits
 
 
@@ -153,9 +157,7 @@ def generate_changelog() -> str:
 
     # Header
     sections.append("# Changelog\n")
-    sections.append(
-        "All notable changes to this project will be documented in this file.\n"
-    )
+    sections.append("All notable changes to this project will be documented in this file.\n")
     sections.append(
         "Format based on [Keep a Changelog](https://keepachangelog.com/), "
         "generated from [Conventional Commits](https://www.conventionalcommits.org/).\n"
@@ -179,7 +181,9 @@ def generate_changelog() -> str:
             # Try to get tag date
             result = subprocess.run(
                 ["git", "log", "-1", "--format=%ai", tag],
-                capture_output=True, text=True, cwd=ROOT,
+                capture_output=True,
+                text=True,
+                cwd=ROOT,
             )
             tag_date = result.stdout.strip()[:10] if result.stdout.strip() else "unknown"
             sections.append(f"## [{version}] - {tag_date}\n")
@@ -193,7 +197,9 @@ def generate_changelog() -> str:
         if commits:
             result = subprocess.run(
                 ["git", "log", "-1", "--format=%ai", first_tag],
-                capture_output=True, text=True, cwd=ROOT,
+                capture_output=True,
+                text=True,
+                cwd=ROOT,
             )
             tag_date = result.stdout.strip()[:10] if result.stdout.strip() else "unknown"
             sections.append(f"## [{version}] - {tag_date}\n")

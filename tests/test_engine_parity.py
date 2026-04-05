@@ -129,7 +129,8 @@ class TestBaselineParity:
         np.testing.assert_array_equal(
             d["current_biomass"],
             d["baseline_biomass"],
-            err_msg="Biomass differs from baseline — regenerate if arithmetic changed intentionally",
+            err_msg="Biomass differs from baseline"
+            " — regenerate if arithmetic changed",
         )
 
     def test_abundance_match(self, baseline_and_current):
@@ -137,7 +138,8 @@ class TestBaselineParity:
         np.testing.assert_array_equal(
             d["current_abundance"],
             d["baseline_abundance"],
-            err_msg="Abundance differs from baseline — regenerate if arithmetic changed intentionally",
+            err_msg="Abundance differs from baseline"
+            " — regenerate if arithmetic changed",
         )
 
     def test_mortality_match(self, baseline_and_current):
@@ -145,7 +147,8 @@ class TestBaselineParity:
         np.testing.assert_array_equal(
             d["current_mortality"],
             d["baseline_mortality"],
-            err_msg="Mortality differs from baseline — regenerate if arithmetic changed intentionally",
+            err_msg="Mortality differs from baseline"
+            " — regenerate if arithmetic changed",
         )
 
     def test_step_count_matches(self, baseline_and_current):

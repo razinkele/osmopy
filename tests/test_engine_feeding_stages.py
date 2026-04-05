@@ -438,24 +438,26 @@ class TestBackgroundSpeciesStages:
     def test_background_species_get_thresholds(self):
         """Background species can have feeding stage thresholds."""
         cfg = _make_base_config()
-        cfg.update({
-            "species.type.sp10": "background",
-            "species.name.sp10": "BkgSpecies",
-            "species.nclass.sp10": "1",
-            "species.length.sp10": "15",
-            "species.size.proportion.sp10": "1.0",
-            "species.trophic.level.sp10": "2",
-            "species.age.sp10": "1",
-            "species.length2weight.condition.factor.sp10": "0.006",
-            "species.length2weight.allometric.power.sp10": "3.0",
-            "predation.predprey.sizeratio.max.sp10": "2;1.5",
-            "predation.predprey.sizeratio.min.sp10": "10;5",
-            "predation.ingestion.rate.max.sp10": "3.5",
-            "species.biomass.total.sp10": "1000",
-            "simulation.nbackground": "1",
-            "predation.predprey.stage.structure": "size",
-            "predation.predprey.stage.threshold.sp10": "10",
-        })
+        cfg.update(
+            {
+                "species.type.sp10": "background",
+                "species.name.sp10": "BkgSpecies",
+                "species.nclass.sp10": "1",
+                "species.length.sp10": "15",
+                "species.size.proportion.sp10": "1.0",
+                "species.trophic.level.sp10": "2",
+                "species.age.sp10": "1",
+                "species.length2weight.condition.factor.sp10": "0.006",
+                "species.length2weight.allometric.power.sp10": "3.0",
+                "predation.predprey.sizeratio.max.sp10": "2;1.5",
+                "predation.predprey.sizeratio.min.sp10": "10;5",
+                "predation.ingestion.rate.max.sp10": "3.5",
+                "species.biomass.total.sp10": "1000",
+                "simulation.nbackground": "1",
+                "predation.predprey.stage.structure": "size",
+                "predation.predprey.stage.threshold.sp10": "10",
+            }
+        )
         ec = EngineConfig.from_dict(cfg)
         # Background at internal index 1 (n_focal=1 + bkg_idx=0)
         assert ec.n_feeding_stages[1] == 2

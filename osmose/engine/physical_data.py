@@ -1,4 +1,5 @@
 """Generic NetCDF/constant physical data loader for temperature and oxygen forcing."""
+
 from __future__ import annotations
 from pathlib import Path
 import numpy as np
@@ -13,7 +14,12 @@ class PhysicalData:
     - NetCDF: 3D array (time, y, x) with periodic cycling.
     """
 
-    def __init__(self, data: NDArray[np.float64] | None, constant: float | None, nsteps_year: int) -> None:
+    def __init__(
+        self,
+        data: NDArray[np.float64] | None,
+        constant: float | None,
+        nsteps_year: int,
+    ) -> None:
         self._data = data
         self._constant = constant
         self._nsteps_year = nsteps_year
@@ -24,10 +30,17 @@ class PhysicalData:
         return cls(data=None, constant=factor * (value + offset), nsteps_year=1)
 
     @classmethod
-    def from_netcdf(cls, path: Path, varname: str = "temp", nsteps_year: int = 12,
-                    factor: float = 1.0, offset: float = 0.0) -> PhysicalData:
+    def from_netcdf(
+        cls,
+        path: Path,
+        varname: str = "temp",
+        nsteps_year: int = 12,
+        factor: float = 1.0,
+        offset: float = 0.0,
+    ) -> PhysicalData:
         """Load from NetCDF file."""
         import xarray as xr
+
         with xr.open_dataset(path) as ds:
             raw = ds[varname].values
             if raw.ndim == 2:

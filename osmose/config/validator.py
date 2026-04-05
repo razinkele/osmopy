@@ -8,7 +8,10 @@ from osmose.schema.base import OsmoseField, ParamType
 from osmose.schema.registry import ParameterRegistry
 
 
-def validate_config(config: dict[str, str], registry: ParameterRegistry) -> tuple[list[str], list[str]]:
+def validate_config(
+    config: dict[str, str],
+    registry: ParameterRegistry,
+) -> tuple[list[str], list[str]]:
     """Validate config values against registry schema.
 
     Returns (errors, warnings) -- lists of human-readable messages.

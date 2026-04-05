@@ -234,8 +234,20 @@ class TestUnifiedPredation:
             rng = np.random.default_rng(42)
             cell_indices = np.array([0, 1], dtype=np.int32)
             _apply_predation_for_school(
-                0, cell_indices, state, cfg, rs, 0, 0, rng, 10,
-                None, False, False, None, None,
+                0,
+                cell_indices,
+                state,
+                cfg,
+                rs,
+                0,
+                0,
+                rng,
+                10,
+                None,
+                False,
+                False,
+                None,
+                None,
                 inst_abd=state.abundance.copy(),
             )
             # After one predation call, success rate should be updated exactly once

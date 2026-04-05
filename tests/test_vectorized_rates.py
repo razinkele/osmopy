@@ -83,9 +83,7 @@ def test_vectorized_rates_correctness():
         fishing_discard_rate=np.array([0.1, 0.0]),
     )
 
-    eff_s, eff_a, eff_f, f_disc = _precompute_effective_rates(
-        work_state, config, n_subdt, step=5
-    )
+    eff_s, eff_a, eff_f, f_disc = _precompute_effective_rates(work_state, config, n_subdt, step=5)
 
     # School 0: sp=0, age=5, not bg → starvation=0.5/96, additional=0.1/96, fishing=0.5/96
     assert eff_s[0] == pytest.approx(0.5 / denom)

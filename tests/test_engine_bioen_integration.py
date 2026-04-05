@@ -1,4 +1,5 @@
 """Tests for bioenergetic config parsing and schema expansion."""
+
 import numpy as np
 import pytest
 
@@ -8,6 +9,7 @@ from osmose.engine.simulate import simulate
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def minimal_config() -> dict[str, str]:
@@ -78,48 +80,50 @@ def _make_bioen_config(base: dict[str, str] | None = None) -> dict[str, str]:
             "predation.efficiency.critical.sp1": "0.57",
         }
     cfg = base.copy()
-    cfg.update({
-        "simulation.bioen.enabled": "true",
-        "simulation.bioen.phit.enabled": "true",
-        "simulation.bioen.fo2.enabled": "false",
-        # Per-species bioen params for sp0 and sp1
-        "species.beta.sp0": "0.75",
-        "species.beta.sp1": "0.80",
-        "species.zlayer.sp0": "0",
-        "species.zlayer.sp1": "1",
-        "species.bioen.assimilation.sp0": "0.68",
-        "species.bioen.assimilation.sp1": "0.72",
-        "species.bioen.maint.energy.c_m.sp0": "0.00123",
-        "species.bioen.maint.energy.c_m.sp1": "0.00098",
-        "species.bioen.maturity.eta.sp0": "1.4",
-        "species.bioen.maturity.eta.sp1": "1.6",
-        "species.bioen.maturity.r.sp0": "0.45",
-        "species.bioen.maturity.r.sp1": "0.50",
-        "species.bioen.maturity.m0.sp0": "4.5",
-        "species.bioen.maturity.m0.sp1": "6.0",
-        "species.bioen.maturity.m1.sp0": "1.8",
-        "species.bioen.maturity.m1.sp1": "2.1",
-        "species.bioen.mobilized.e.mobi.sp0": "0.62",
-        "species.bioen.mobilized.e.mobi.sp1": "0.58",
-        "species.bioen.mobilized.e.D.sp0": "1.45",
-        "species.bioen.mobilized.e.D.sp1": "1.55",
-        "species.bioen.mobilized.Tp.sp0": "18.0",
-        "species.bioen.mobilized.Tp.sp1": "22.0",
-        "species.bioen.maint.e.maint.sp0": "0.63",
-        "species.bioen.maint.e.maint.sp1": "0.67",
-        "species.oxygen.c1.sp0": "0.95",
-        "species.oxygen.c1.sp1": "0.90",
-        "species.oxygen.c2.sp0": "2.5",
-        "species.oxygen.c2.sp1": "3.0",
-        "predation.ingestion.rate.max.bioen.sp0": "4.2",
-        "predation.ingestion.rate.max.bioen.sp1": "3.8",
-        "predation.coef.ingestion.rate.max.larvae.bioen.sp0": "1.1",
-        "predation.coef.ingestion.rate.max.larvae.bioen.sp1": "1.05",
-        "predation.c.bioen.sp0": "0.01",
-        "predation.c.bioen.sp1": "0.008",
-        "species.bioen.forage.k_for.sp0": "0.002",
-        "species.bioen.forage.k_for.sp1": "0.0015",
-    })
+    cfg.update(
+        {
+            "simulation.bioen.enabled": "true",
+            "simulation.bioen.phit.enabled": "true",
+            "simulation.bioen.fo2.enabled": "false",
+            # Per-species bioen params for sp0 and sp1
+            "species.beta.sp0": "0.75",
+            "species.beta.sp1": "0.80",
+            "species.zlayer.sp0": "0",
+            "species.zlayer.sp1": "1",
+            "species.bioen.assimilation.sp0": "0.68",
+            "species.bioen.assimilation.sp1": "0.72",
+            "species.bioen.maint.energy.c_m.sp0": "0.00123",
+            "species.bioen.maint.energy.c_m.sp1": "0.00098",
+            "species.bioen.maturity.eta.sp0": "1.4",
+            "species.bioen.maturity.eta.sp1": "1.6",
+            "species.bioen.maturity.r.sp0": "0.45",
+            "species.bioen.maturity.r.sp1": "0.50",
+            "species.bioen.maturity.m0.sp0": "4.5",
+            "species.bioen.maturity.m0.sp1": "6.0",
+            "species.bioen.maturity.m1.sp0": "1.8",
+            "species.bioen.maturity.m1.sp1": "2.1",
+            "species.bioen.mobilized.e.mobi.sp0": "0.62",
+            "species.bioen.mobilized.e.mobi.sp1": "0.58",
+            "species.bioen.mobilized.e.D.sp0": "1.45",
+            "species.bioen.mobilized.e.D.sp1": "1.55",
+            "species.bioen.mobilized.Tp.sp0": "18.0",
+            "species.bioen.mobilized.Tp.sp1": "22.0",
+            "species.bioen.maint.e.maint.sp0": "0.63",
+            "species.bioen.maint.e.maint.sp1": "0.67",
+            "species.oxygen.c1.sp0": "0.95",
+            "species.oxygen.c1.sp1": "0.90",
+            "species.oxygen.c2.sp0": "2.5",
+            "species.oxygen.c2.sp1": "3.0",
+            "predation.ingestion.rate.max.bioen.sp0": "4.2",
+            "predation.ingestion.rate.max.bioen.sp1": "3.8",
+            "predation.coef.ingestion.rate.max.larvae.bioen.sp0": "1.1",
+            "predation.coef.ingestion.rate.max.larvae.bioen.sp1": "1.05",
+            "predation.c.bioen.sp0": "0.01",
+            "predation.c.bioen.sp1": "0.008",
+            "species.bioen.forage.k_for.sp0": "0.002",
+            "species.bioen.forage.k_for.sp1": "0.0015",
+        }
+    )
     return cfg
 
 
@@ -130,6 +134,7 @@ def bioen_config(minimal_config) -> dict[str, str]:
 
 
 # ── Tests: bioen disabled ─────────────────────────────────────────────────────
+
 
 class TestBioenDisabled:
     def test_bioen_disabled_by_default(self, minimal_config):
@@ -167,6 +172,7 @@ class TestBioenDisabled:
 
 
 # ── Tests: bioen enabled ──────────────────────────────────────────────────────
+
 
 class TestBioenEnabled:
     def test_bioen_enabled_flag(self, bioen_config):
@@ -245,11 +251,24 @@ class TestBioenEnabled:
         cfg = EngineConfig.from_dict(bioen_config)
         n = cfg.n_species
         for attr in (
-            "bioen_beta", "bioen_zlayer", "bioen_assimilation", "bioen_c_m",
-            "bioen_eta", "bioen_r", "bioen_m0", "bioen_m1",
-            "bioen_e_mobi", "bioen_e_d", "bioen_tp", "bioen_e_maint",
-            "bioen_o2_c1", "bioen_o2_c2", "bioen_i_max",
-            "bioen_theta", "bioen_c_rate", "bioen_k_for",
+            "bioen_beta",
+            "bioen_zlayer",
+            "bioen_assimilation",
+            "bioen_c_m",
+            "bioen_eta",
+            "bioen_r",
+            "bioen_m0",
+            "bioen_m1",
+            "bioen_e_mobi",
+            "bioen_e_d",
+            "bioen_tp",
+            "bioen_e_maint",
+            "bioen_o2_c1",
+            "bioen_o2_c2",
+            "bioen_i_max",
+            "bioen_theta",
+            "bioen_c_rate",
+            "bioen_k_for",
         ):
             arr = getattr(cfg, attr)
             assert arr is not None, f"{attr} should not be None when bioen enabled"
@@ -331,9 +350,9 @@ class TestBioenSimulation:
         from osmose.engine.processes.bioen_starvation import bioen_starvation
 
         # Create a school with no ingestion (e_net will be negative -> starvation)
-        e_net = np.array([-0.5, -0.5])   # large deficit
-        gonad_weight = np.zeros(2)         # no gonad buffer
-        weight = np.array([1e-3, 1e-3])   # 1g fish
+        e_net = np.array([-0.5, -0.5])  # large deficit
+        gonad_weight = np.zeros(2)  # no gonad buffer
+        weight = np.array([1e-3, 1e-3])  # 1g fish
         n_dead, new_gonad = bioen_starvation(
             e_net=e_net,
             gonad_weight=gonad_weight,

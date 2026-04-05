@@ -186,20 +186,14 @@ if _HAS_NUMBA:
                         p_acc = pred_access_idx[p_idx]
                         q_acc = prey_access_idx[q_idx]
                         if p_acc >= 0 and q_acc >= 0:
-                            if (
-                                q_acc < access_matrix.shape[0]
-                                and p_acc < access_matrix.shape[1]
-                            ):
+                            if q_acc < access_matrix.shape[0] and p_acc < access_matrix.shape[1]:
                                 access_coeff = access_matrix[q_acc, p_acc]
                             if access_coeff <= 0:
                                 continue
                         # If index is -1 (not found), keep default 1.0
                     else:
                         sp_prey = species_id[q_idx]
-                        if (
-                            sp_pred < access_matrix.shape[0]
-                            and sp_prey < access_matrix.shape[1]
-                        ):
+                        if sp_pred < access_matrix.shape[0] and sp_prey < access_matrix.shape[1]:
                             access_coeff = access_matrix[sp_pred, sp_prey]
                             if access_coeff <= 0:
                                 continue
@@ -273,7 +267,9 @@ def _predation_in_cell_python(
         r_min = config.size_ratio_min[sp_pred, state.feeding_stage[p_idx]]
         r_max = config.size_ratio_max[sp_pred, state.feeding_stage[p_idx]]
 
-        max_eatable = state.biomass[p_idx] * config.ingestion_rate[sp_pred] / (config.n_dt_per_year * n_subdt)
+        max_eatable = (
+            state.biomass[p_idx] * config.ingestion_rate[sp_pred] / (config.n_dt_per_year * n_subdt)
+        )
         if max_eatable <= 0:
             continue
 
@@ -584,9 +580,7 @@ def predation(
             if species_rngs is not None and len(cell_indices) > 0:
                 first_pred_sp = int(work_state.species_id[cell_indices[0]])
                 _cell_rng = (
-                    species_rngs[first_pred_sp]
-                    if first_pred_sp < len(species_rngs)
-                    else rng
+                    species_rngs[first_pred_sp] if first_pred_sp < len(species_rngs) else rng
                 )
             else:
                 _cell_rng = rng

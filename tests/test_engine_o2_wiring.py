@@ -1,4 +1,5 @@
 """Tests for O2 forcing wired into _bioen_step (Gap 2)."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -15,6 +16,7 @@ from tests.test_engine_bioen_integration import _make_bioen_config
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_config(fo2_enabled: bool = True) -> EngineConfig:
     cfg_dict = _make_bioen_config()
@@ -45,6 +47,7 @@ def _make_state(config: EngineConfig, n: int = 4, species_id: int = 0) -> School
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestO2Wiring:
     def test_f_o2_applied_when_oxygen_value_set(self):

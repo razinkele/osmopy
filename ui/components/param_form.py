@@ -305,7 +305,11 @@ def render_species_table(
     header_cells = [
         ui.tags.th(
             "Parameter",
-            style="position: sticky; left: 0; z-index: 2; background: var(--osm-bg-card, #162232); min-width: 200px; padding: 8px 12px;",
+            style=(
+                "position: sticky; left: 0; z-index: 2;"
+                " background: var(--osm-bg-card, #162232);"
+                " min-width: 200px; padding: 8px 12px;"
+            ),
         )
     ]
     for i, name in enumerate(species_names):
@@ -335,7 +339,11 @@ def render_species_table(
                         style="cursor: pointer;",
                     ),
                     colspan=str(n_species + 1),
-                    style="padding: 6px 12px; font-weight: 700; color: #d4a017; background: var(--osm-bg-section, #1a2a3a);",
+                    style=(
+                        "padding: 6px 12px; font-weight: 700;"
+                        " color: #d4a017;"
+                        " background: var(--osm-bg-section, #1a2a3a);"
+                    ),
                 ),
                 **{"data-spt-cat": cat_id, "onclick": f"toggleSptCategory('{cat_id}')"},
                 style="cursor: pointer;",
@@ -363,7 +371,11 @@ def render_species_table(
                         "data-bs-placement": "right",
                     },
                 ),
-                style="padding: 5px 12px; position: sticky; left: 0; z-index: 1; background: var(--osm-bg-card, #0f1923);",
+                style=(
+                    "padding: 5px 12px; position: sticky;"
+                    " left: 0; z-index: 1;"
+                    " background: var(--osm-bg-card, #0f1923);"
+                ),
             )
 
             value_cells = []
@@ -444,7 +456,9 @@ def render_species_table(
         var span = header.querySelector('span');
         if (span) {
             var text = span.textContent;
-            span.textContent = visible ? text.replace('\u25bc', '\u25b6') : text.replace('\u25b6', '\u25bc');
+            span.textContent = visible
+                ? text.replace('\u25bc', '\u25b6')
+                : text.replace('\u25b6', '\u25bc');
         }
     }
     """)

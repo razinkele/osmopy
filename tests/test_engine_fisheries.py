@@ -16,9 +16,7 @@ from osmose.engine.state import MortalityCause, SchoolState
 # ---------------------------------------------------------------------------
 
 
-def _make_fisheries_config(
-    n_sp: int = 2, n_dt: int = 24, tmp_path=None
-) -> dict[str, str]:
+def _make_fisheries_config(n_sp: int = 2, n_dt: int = 24, tmp_path=None) -> dict[str, str]:
     """Build a minimal config with fisheries enabled."""
     cfg: dict[str, str] = {
         "simulation.time.ndtperyear": str(n_dt),
@@ -265,8 +263,7 @@ class TestAccessibilityMatrix:
         species_id = np.array([0, 0, 1], dtype=np.int32)
         age_dt = np.array([2, 20, 5], dtype=np.int32)  # n_dt=24 → ages: 0.08, 0.83, 0.21 years
         indices = am.compute_school_indices(
-            species_id, age_dt, n_dt_per_year=24,
-            all_species_names=["cod", "sole"], role="prey"
+            species_id, age_dt, n_dt_per_year=24, all_species_names=["cod", "sole"], role="prey"
         )
         # cod at 0.08 years (< 0.4) → row 0
         assert indices[0] == 0

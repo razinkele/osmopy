@@ -82,11 +82,18 @@ def _inject_random_movement_ncell(config: dict[str, str]) -> None:
         nlon = int(config.get("grid.nlon", "0"))
         nlat = int(config.get("grid.nlat", "0"))
     except ValueError:
-        _log.warning("Cannot inject random movement ncell: grid dimensions invalid (nlon=%r, nlat=%r)",
-                      config.get("grid.nlon"), config.get("grid.nlat"))
+        _log.warning(
+            "Cannot inject random movement ncell: grid dimensions invalid (nlon=%r, nlat=%r)",
+            config.get("grid.nlon"),
+            config.get("grid.nlat"),
+        )
         return
     if nlon <= 0 or nlat <= 0:
-        _log.warning("Cannot inject random movement ncell: grid dimensions non-positive (nlon=%d, nlat=%d)", nlon, nlat)
+        _log.warning(
+            "Cannot inject random movement ncell: grid dimensions non-positive (nlon=%d, nlat=%d)",
+            nlon,
+            nlat,
+        )
         return
     total_cells = nlon * nlat
     for key, value in list(config.items()):
@@ -98,7 +105,9 @@ def _inject_random_movement_ncell(config: dict[str, str]) -> None:
 
 
 def write_temp_config(
-    config: dict[str, str], output_dir: Path, source_dir: Path | None = None,
+    config: dict[str, str],
+    output_dir: Path,
+    source_dir: Path | None = None,
     key_case_map: dict[str, str] | None = None,
 ) -> Path:
     """Write config to a directory, copy data files, and return the master file path.
@@ -253,7 +262,9 @@ def run_server(input, output, session, state):
         # Write config to temp directory, copying data files from source
         work_dir = Path(tempfile.mkdtemp(prefix="osmose_run_"))
         source_dir = state.config_dir.get()
-        config_path = write_temp_config(config, work_dir, source_dir, key_case_map=state.key_case_map)
+        config_path = write_temp_config(
+            config, work_dir, source_dir, key_case_map=state.key_case_map
+        )
 
         # Parse overrides and java opts
         overrides = parse_overrides(input.param_overrides() or "")

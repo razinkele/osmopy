@@ -130,16 +130,16 @@ class TestDietTrackingPredation:
 
         try:
             enable_diet_tracking(n_schools=len(state), n_species=2)
-            result = predation(
-                state, cfg, rng, n_subdt=10, grid_ny=1, grid_nx=1
-            )
+            result = predation(state, cfg, rng, n_subdt=10, grid_ny=1, grid_nx=1)
             mat = get_diet_matrix()
             assert mat is not None
             # Sum across prey species for each predator school
             diet_sums = mat.sum(axis=1)
             # Should match preyed_biomass for each school
             np.testing.assert_allclose(
-                diet_sums, result.preyed_biomass, rtol=1e-10,
+                diet_sums,
+                result.preyed_biomass,
+                rtol=1e-10,
                 err_msg="Diet matrix row sums should match preyed_biomass",
             )
         finally:
@@ -165,23 +165,25 @@ class TestDietTrackingPredation:
     def test_diet_with_three_species(self):
         """Diet matrix correctly tracks with 3 species."""
         raw = _make_diet_config()
-        raw.update({
-            "simulation.nspecies": "3",
-            "simulation.nschool.sp2": "5",
-            "species.name.sp2": "MidPred",
-            "species.linf.sp2": "40.0",
-            "species.k.sp2": "0.2",
-            "species.t0.sp2": "-0.1",
-            "species.egg.size.sp2": "0.1",
-            "species.length2weight.condition.factor.sp2": "0.005",
-            "species.length2weight.allometric.power.sp2": "3.0",
-            "species.lifespan.sp2": "6",
-            "species.vonbertalanffy.threshold.age.sp2": "1.0",
-            "predation.ingestion.rate.max.sp2": "3.5",
-            "predation.efficiency.critical.sp2": "0.57",
-            "predation.predprey.sizeratio.min.sp2": "1.0",
-            "predation.predprey.sizeratio.max.sp2": "3.5",
-        })
+        raw.update(
+            {
+                "simulation.nspecies": "3",
+                "simulation.nschool.sp2": "5",
+                "species.name.sp2": "MidPred",
+                "species.linf.sp2": "40.0",
+                "species.k.sp2": "0.2",
+                "species.t0.sp2": "-0.1",
+                "species.egg.size.sp2": "0.1",
+                "species.length2weight.condition.factor.sp2": "0.005",
+                "species.length2weight.allometric.power.sp2": "3.0",
+                "species.lifespan.sp2": "6",
+                "species.vonbertalanffy.threshold.age.sp2": "1.0",
+                "predation.ingestion.rate.max.sp2": "3.5",
+                "predation.efficiency.critical.sp2": "0.57",
+                "predation.predprey.sizeratio.min.sp2": "1.0",
+                "predation.predprey.sizeratio.max.sp2": "3.5",
+            }
+        )
         cfg = EngineConfig.from_dict(raw)
         # School 0: Predator sp1 len=25, School 1: Prey sp0 len=10, School 2: MidPred sp2 len=15
         state = SchoolState.create(
@@ -201,15 +203,15 @@ class TestDietTrackingPredation:
 
         try:
             enable_diet_tracking(n_schools=3, n_species=3)
-            result = predation(
-                state, cfg, rng, n_subdt=10, grid_ny=1, grid_nx=1
-            )
+            result = predation(state, cfg, rng, n_subdt=10, grid_ny=1, grid_nx=1)
             mat = get_diet_matrix()
             assert mat is not None
             assert mat.shape == (3, 3)
             # Verify row sums match preyed_biomass
             np.testing.assert_allclose(
-                mat.sum(axis=1), result.preyed_biomass, rtol=1e-10,
+                mat.sum(axis=1),
+                result.preyed_biomass,
+                rtol=1e-10,
             )
         finally:
             disable_diet_tracking()
@@ -224,15 +226,17 @@ class TestDietResourceTracking:
         from osmose.engine.resources import ResourceState
 
         raw = _make_diet_config()
-        raw.update({
-            "simulation.nresource": "1",
-            "ltl.name.rsc0": "Phyto",
-            "ltl.size.min.rsc0": "0.001",
-            "ltl.size.max.rsc0": "5.0",
-            "ltl.tl.rsc0": "1.0",
-            "ltl.accessibility2fish.rsc0": "0.01",
-            "ltl.biomass.total.rsc0": "100000",
-        })
+        raw.update(
+            {
+                "simulation.nresource": "1",
+                "ltl.name.rsc0": "Phyto",
+                "ltl.size.min.rsc0": "0.001",
+                "ltl.size.max.rsc0": "5.0",
+                "ltl.tl.rsc0": "1.0",
+                "ltl.accessibility2fish.rsc0": "0.01",
+                "ltl.biomass.total.rsc0": "100000",
+            }
+        )
         cfg = EngineConfig.from_dict(raw)
         grid = Grid(ny=1, nx=1, ocean_mask=np.ones((1, 1), dtype=np.bool_))
         resources = ResourceState(config=raw, grid=grid)
@@ -259,7 +263,12 @@ class TestDietResourceTracking:
         try:
             enable_diet_tracking(n_schools=1, n_species=n_total)
             result = predation(
-                state, cfg, rng, n_subdt=10, grid_ny=1, grid_nx=1,
+                state,
+                cfg,
+                rng,
+                n_subdt=10,
+                grid_ny=1,
+                grid_nx=1,
                 resources=resources,
             )
             mat = get_diet_matrix()
@@ -270,7 +279,9 @@ class TestDietResourceTracking:
             total_eaten = result.preyed_biomass[0]
             if total_eaten > 0:
                 np.testing.assert_allclose(
-                    mat.sum(axis=1), result.preyed_biomass, rtol=1e-10,
+                    mat.sum(axis=1),
+                    result.preyed_biomass,
+                    rtol=1e-10,
                 )
         finally:
             disable_diet_tracking()
@@ -287,10 +298,12 @@ class TestDietCSVOutput:
         species_names = ["Prey", "Predator"]
         all_prey_names = ["Prey", "Predator", "Phyto"]
         # diet_by_species[pred_sp, prey_sp] = biomass eaten
-        diet_by_species = np.array([
-            [0.0, 0.0, 100.0],   # Prey: ate 100 units of Phyto
-            [500.0, 0.0, 200.0], # Predator: ate 500 Prey, 200 Phyto
-        ])
+        diet_by_species = np.array(
+            [
+                [0.0, 0.0, 100.0],  # Prey: ate 100 units of Phyto
+                [500.0, 0.0, 200.0],  # Predator: ate 500 Prey, 200 Phyto
+            ]
+        )
 
         write_diet_csv(
             path=tmp_path / "diet.csv",
@@ -326,6 +339,7 @@ class TestDietCSVOutput:
         )
 
         import csv
+
         with open(tmp_path / "diet.csv") as f:
             reader = csv.reader(f)
             next(reader)  # skip header
@@ -347,12 +361,14 @@ class TestDietAggregation:
 
         # 4 schools: sp0 (2 schools), sp1 (2 schools), 3 prey species
         species_id = np.array([0, 0, 1, 1], dtype=np.int32)
-        diet_matrix = np.array([
-            [0.0, 10.0, 5.0],   # school 0 (sp0): ate 10 from sp1, 5 from sp2
-            [0.0, 20.0, 0.0],   # school 1 (sp0): ate 20 from sp1
-            [15.0, 0.0, 0.0],   # school 2 (sp1): ate 15 from sp0
-            [5.0, 0.0, 3.0],    # school 3 (sp1): ate 5 from sp0, 3 from sp2
-        ])
+        diet_matrix = np.array(
+            [
+                [0.0, 10.0, 5.0],  # school 0 (sp0): ate 10 from sp1, 5 from sp2
+                [0.0, 20.0, 0.0],  # school 1 (sp0): ate 20 from sp1
+                [15.0, 0.0, 0.0],  # school 2 (sp1): ate 15 from sp0
+                [5.0, 0.0, 3.0],  # school 3 (sp1): ate 5 from sp0, 3 from sp2
+            ]
+        )
         n_pred_species = 2
 
         result = aggregate_diet_by_species(diet_matrix, species_id, n_pred_species)

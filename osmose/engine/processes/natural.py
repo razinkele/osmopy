@@ -33,7 +33,10 @@ def additional_mortality(
     if config.additional_mortality_by_dt is not None:
         for i in range(len(state)):
             sp_i = sp[i]
-            if sp_i < len(config.additional_mortality_by_dt) and config.additional_mortality_by_dt[sp_i] is not None:
+            if (
+                sp_i < len(config.additional_mortality_by_dt)
+                and config.additional_mortality_by_dt[sp_i] is not None
+            ):
                 arr = config.additional_mortality_by_dt[sp_i]
                 m_rate[i] = arr[step % len(arr)]
 

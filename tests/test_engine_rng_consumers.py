@@ -1,4 +1,5 @@
 """Tests for per-species RNG wiring into movement and predation consumers (Gap 3)."""
+
 from __future__ import annotations
 
 import inspect
@@ -14,31 +15,26 @@ from osmose.engine.processes.predation import predation
 # Signature tests
 # ---------------------------------------------------------------------------
 
+
 class TestSignatures:
     def test_movement_accepts_species_rngs(self):
         """movement() should accept species_rngs as optional keyword argument."""
         sig = inspect.signature(movement)
-        assert "species_rngs" in sig.parameters, (
-            "movement() must accept species_rngs parameter"
-        )
+        assert "species_rngs" in sig.parameters, "movement() must accept species_rngs parameter"
         param = sig.parameters["species_rngs"]
         assert param.default is None, "species_rngs default should be None"
 
     def test_mortality_accepts_species_rngs(self):
         """mortality() should accept species_rngs as optional keyword argument."""
         sig = inspect.signature(mortality)
-        assert "species_rngs" in sig.parameters, (
-            "mortality() must accept species_rngs parameter"
-        )
+        assert "species_rngs" in sig.parameters, "mortality() must accept species_rngs parameter"
         param = sig.parameters["species_rngs"]
         assert param.default is None, "species_rngs default should be None"
 
     def test_predation_accepts_species_rngs(self):
         """predation() should accept species_rngs as optional keyword argument."""
         sig = inspect.signature(predation)
-        assert "species_rngs" in sig.parameters, (
-            "predation() must accept species_rngs parameter"
-        )
+        assert "species_rngs" in sig.parameters, "predation() must accept species_rngs parameter"
         param = sig.parameters["species_rngs"]
         assert param.default is None, "species_rngs default should be None"
 
@@ -46,6 +42,7 @@ class TestSignatures:
 # ---------------------------------------------------------------------------
 # Backward compatibility tests (species_rngs=None must work like before)
 # ---------------------------------------------------------------------------
+
 
 class TestBackwardCompat:
     def _make_base_config(self) -> dict:
@@ -163,8 +160,14 @@ class TestBackwardCompat:
 
         # Should not raise
         result = predation(
-            state, config, rng, n_subdt=1, grid_ny=grid.ny, grid_nx=grid.nx,
-            resources=resources, species_rngs=None,
+            state,
+            config,
+            rng,
+            n_subdt=1,
+            grid_ny=grid.ny,
+            grid_nx=grid.nx,
+            resources=resources,
+            species_rngs=None,
         )
         assert result is not None
         assert len(result) == 4
@@ -173,6 +176,7 @@ class TestBackwardCompat:
 # ---------------------------------------------------------------------------
 # Functional tests: movement uses per-species rng when seed_fixed=True
 # ---------------------------------------------------------------------------
+
 
 class TestMovementPerSpeciesRNG:
     def _make_config(self, seed_fixed: bool) -> dict:
@@ -233,9 +237,7 @@ class TestMovementPerSpeciesRNG:
             age_dt=np.full(4, 10, dtype=np.int32),
         )
 
-        result = movement(
-            state, grid, config, step=0, rng=rng, species_rngs=sp_rngs
-        )
+        result = movement(state, grid, config, step=0, rng=rng, species_rngs=sp_rngs)
         assert len(result) == 4
 
     def test_movement_seed_fixed_false_ignores_species_rngs(self):

@@ -81,7 +81,7 @@ def growth(state: SchoolState, config: EngineConfig, rng: np.random.Generator) -
     # Apply growth, cap at lmax (which defaults to linf if not separately configured)
     new_length = np.minimum(state.length + growth_factor, config.lmax[sp])
 
-    # Compute weight from length: W_tonnes = c * L^b * 1e-6 (allometric formula gives grams, convert to tonnes)
+    # W_tonnes = c * L^b * 1e-6 (allometric grams -> tonnes)
     new_weight = config.condition_factor[sp] * new_length ** config.allometric_power[sp] * 1e-6
 
     # Update biomass

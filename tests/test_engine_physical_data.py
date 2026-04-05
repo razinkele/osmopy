@@ -1,4 +1,5 @@
 """Tests for PhysicalData loader."""
+
 import numpy as np
 import pytest
 from osmose.engine.physical_data import PhysicalData
@@ -24,6 +25,7 @@ class TestPhysicalDataConstant:
 
     def test_get_scalar_raises_for_netcdf(self, tmp_path):
         import xarray as xr
+
         data = np.ones((2, 2, 2))
         ds = xr.Dataset({"temp": (["time", "y", "x"], data)})
         path = tmp_path / "temp.nc"
@@ -42,6 +44,7 @@ class TestPhysicalDataNetCDF:
     def test_netcdf_load(self, tmp_path):
         """Create a small NetCDF, load it, verify values."""
         import xarray as xr
+
         data = np.random.rand(12, 3, 4)  # 12 months, 3y, 4x
         ds = xr.Dataset({"temp": (["time", "y", "x"], data)})
         path = tmp_path / "temp.nc"
@@ -53,6 +56,7 @@ class TestPhysicalDataNetCDF:
     def test_netcdf_cyclic(self, tmp_path):
         """Step beyond data length wraps around."""
         import xarray as xr
+
         data = np.ones((6, 2, 2)) * np.arange(6)[:, None, None]
         ds = xr.Dataset({"temp": (["time", "y", "x"], data)})
         path = tmp_path / "temp.nc"
@@ -63,16 +67,20 @@ class TestPhysicalDataNetCDF:
     def test_netcdf_factor_offset(self, tmp_path):
         """Factor and offset are applied on load."""
         import xarray as xr
+
         data = np.full((1, 2, 2), 273.15)
         ds = xr.Dataset({"temp": (["time", "y", "x"], data)})
         path = tmp_path / "temp.nc"
         ds.to_netcdf(path)
-        pd = PhysicalData.from_netcdf(path, varname="temp", nsteps_year=1, factor=1.0, offset=-273.15)
+        pd = PhysicalData.from_netcdf(
+            path, varname="temp", nsteps_year=1, factor=1.0, offset=-273.15
+        )
         assert pd.get_value(0, 0, 0) == pytest.approx(0.0)
 
     def test_netcdf_2d_input(self, tmp_path):
         """2D array (y, x) is promoted to (1, y, x)."""
         import xarray as xr
+
         data = np.random.rand(3, 4)
         ds = xr.Dataset({"temp": (["y", "x"], data)})
         path = tmp_path / "temp.nc"
@@ -84,6 +92,7 @@ class TestPhysicalDataNetCDF:
     def test_get_grid(self, tmp_path):
         """get_grid returns (ny, nx) slice."""
         import xarray as xr
+
         data = np.random.rand(3, 4, 5)
         ds = xr.Dataset({"temp": (["time", "y", "x"], data)})
         path = tmp_path / "temp.nc"

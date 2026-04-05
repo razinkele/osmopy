@@ -352,10 +352,10 @@ class TestConfigRoundtrip:
     def test_roundtrip_preserves_all_content_keys(self, study_demo):
         name, _, config = study_demo
         content = {
-                k: v
-                for k, v in config.items()
-                if not k.startswith("osmose.configuration.") and not k.startswith("_osmose.")
-            }
+            k: v
+            for k, v in config.items()
+            if not k.startswith("osmose.configuration.") and not k.startswith("_osmose.")
+        }
         with tempfile.TemporaryDirectory() as tmpdir:
             writer = OsmoseConfigWriter()
             writer.write(content, Path(tmpdir))
@@ -368,10 +368,10 @@ class TestConfigRoundtrip:
     def test_roundtrip_preserves_values(self, study_demo):
         name, _, config = study_demo
         content = {
-                k: v
-                for k, v in config.items()
-                if not k.startswith("osmose.configuration.") and not k.startswith("_osmose.")
-            }
+            k: v
+            for k, v in config.items()
+            if not k.startswith("osmose.configuration.") and not k.startswith("_osmose.")
+        }
         with tempfile.TemporaryDirectory() as tmpdir:
             writer = OsmoseConfigWriter()
             writer.write(content, Path(tmpdir))
@@ -763,10 +763,10 @@ class TestFullPipeline:
 
         # Write config to a fresh directory
         content = {
-                k: v
-                for k, v in config.items()
-                if not k.startswith("osmose.configuration.") and not k.startswith("_osmose.")
-            }
+            k: v
+            for k, v in config.items()
+            if not k.startswith("osmose.configuration.") and not k.startswith("_osmose.")
+        }
         config_dir = tmp_path / "roundtrip_config"
         config_dir.mkdir()
         writer = OsmoseConfigWriter()

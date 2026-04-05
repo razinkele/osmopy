@@ -1,4 +1,5 @@
 """Tests for complete bioenergetic outputs (all 5 bioen CSVs)."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -32,12 +33,14 @@ class TestBioenOutputsComplete:
     def test_all_bioen_csvs_created(self, tmp_path):
         """All 5 bioen CSVs are created when all output flags are enabled."""
         cfg = _make_bioen_config()
-        cfg.update({
-            "output.bioen.ingest.enabled": "true",
-            "output.bioen.maint.enabled": "true",
-            "output.bioen.rho.enabled": "true",
-            "output.bioen.sizeinf.enabled": "true",
-        })
+        cfg.update(
+            {
+                "output.bioen.ingest.enabled": "true",
+                "output.bioen.maint.enabled": "true",
+                "output.bioen.rho.enabled": "true",
+                "output.bioen.sizeinf.enabled": "true",
+            }
+        )
         _run_bioen_sim(cfg, tmp_path)
 
         bioen_dir = tmp_path / "Bioen"
@@ -97,7 +100,9 @@ class TestBioenOutputsComplete:
         write_outputs(outputs, tmp_path, config, prefix="osmose")
 
         bioen_dir = tmp_path / "Bioen"
-        assert not bioen_dir.exists(), "Bioen/ directory should not be created when bioen is disabled"
+        assert not bioen_dir.exists(), (
+            "Bioen/ directory should not be created when bioen is disabled"
+        )
 
     def test_compute_energy_budget_returns_six(self):
         """compute_energy_budget now returns 6 values."""
@@ -140,13 +145,15 @@ class TestBioenOutputsComplete:
     def test_step_output_has_new_fields(self):
         """StepOutput dataclass has all 4 new bioen fields."""
         cfg = _make_bioen_config()
-        cfg.update({
-            "output.bioen.ingest.enabled": "true",
-            "output.bioen.maint.enabled": "true",
-            "output.bioen.rho.enabled": "true",
-            "output.bioen.sizeInf.enabled": "true",
-            "simulation.time.nyear": "1",
-        })
+        cfg.update(
+            {
+                "output.bioen.ingest.enabled": "true",
+                "output.bioen.maint.enabled": "true",
+                "output.bioen.rho.enabled": "true",
+                "output.bioen.sizeInf.enabled": "true",
+                "simulation.time.nyear": "1",
+            }
+        )
         config = EngineConfig.from_dict(cfg)
         grid = Grid.from_dimensions(ny=5, nx=5)
         rng = np.random.default_rng(42)
@@ -170,13 +177,15 @@ class TestBioenOutputsComplete:
         import pandas as pd
 
         cfg = _make_bioen_config()
-        cfg.update({
-            "output.bioen.ingest.enabled": "true",
-            "output.bioen.maint.enabled": "true",
-            "output.bioen.rho.enabled": "true",
-            "output.bioen.sizeInf.enabled": "true",
-            "simulation.time.nyear": "1",
-        })
+        cfg.update(
+            {
+                "output.bioen.ingest.enabled": "true",
+                "output.bioen.maint.enabled": "true",
+                "output.bioen.rho.enabled": "true",
+                "output.bioen.sizeInf.enabled": "true",
+                "simulation.time.nyear": "1",
+            }
+        )
         _run_bioen_sim(cfg, tmp_path)
 
         bioen_dir = tmp_path / "Bioen"
@@ -186,5 +195,6 @@ class TestBioenOutputsComplete:
             assert len(df.columns) == 2, f"{csv_path.name}: expected exactly 2 columns"
             assert df.shape[0] > 0, f"{csv_path.name}: no rows"
             # All values should be finite numbers
-            assert df.select_dtypes(include="number").notna().all().all(), \
+            assert df.select_dtypes(include="number").notna().all().all(), (
                 f"{csv_path.name}: contains NaN values"
+            )

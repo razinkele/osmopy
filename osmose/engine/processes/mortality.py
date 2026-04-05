@@ -56,7 +56,8 @@ _ADDITIONAL = int(MortalityCause.ADDITIONAL)
 _FISHING = int(MortalityCause.FISHING)
 _DISCARDS = int(MortalityCause.DISCARDS)
 
-# Module-level TL tracking accumulator (set by mortality(), used by predation helpers and Numba kernels)
+# Module-level TL tracking accumulator
+# (set by mortality(), used by predation helpers and Numba kernels)
 _tl_weighted_sum: NDArray[np.float64] | None = None
 
 
@@ -105,12 +106,18 @@ def _apply_additional_for_school(
 
     # Base rate: constant or time-varying (BY_DT)
     rate = config.additional_mortality_rate[sp]
-    if config.additional_mortality_by_dt is not None and config.additional_mortality_by_dt[sp] is not None:
+    if (
+        config.additional_mortality_by_dt is not None
+        and config.additional_mortality_by_dt[sp] is not None
+    ):
         arr = config.additional_mortality_by_dt[sp]
         rate = arr[step % len(arr)]
 
     # Spatial multiplier
-    if config.additional_mortality_spatial is not None and config.additional_mortality_spatial[sp] is not None:
+    if (
+        config.additional_mortality_spatial is not None
+        and config.additional_mortality_spatial[sp] is not None
+    ):
         sp_map = config.additional_mortality_spatial[sp]
         cy = int(state.cell_y[idx])
         cx = int(state.cell_x[idx])
@@ -592,14 +599,10 @@ def _precompute_effective_rates(work_state, config, n_subdt, step):
             elif sel_type == 1:  # logistic
                 l50 = config.fishing_selectivity_l50[sp_id]
                 slope = config.fishing_selectivity_slope[sp_id]
-                selectivity[mask] = 1.0 / (
-                    1.0 + np.exp(-slope * (work_state.length[mask] - l50))
-                )
+                selectivity[mask] = 1.0 / (1.0 + np.exp(-slope * (work_state.length[mask] - l50)))
             else:  # length cutoff
                 l50 = config.fishing_selectivity_l50[sp_id]
-                selectivity[mask] = np.where(
-                    (l50 > 0) & (work_state.length[mask] < l50), 0.0, 1.0
-                )
+                selectivity[mask] = np.where((l50 > 0) & (work_state.length[mask] < l50), 0.0, 1.0)
 
         spatial_factor = np.ones(n, dtype=np.float64)
         for sp_id in range(config.n_species):
@@ -623,12 +626,7 @@ def _precompute_effective_rates(work_state, config, n_subdt, step):
                     continue
                 cy = work_state.cell_y
                 cx = work_state.cell_x
-                valid = (
-                    (cy >= 0)
-                    & (cy < mpa.grid.shape[0])
-                    & (cx >= 0)
-                    & (cx < mpa.grid.shape[1])
-                )
+                valid = (cy >= 0) & (cy < mpa.grid.shape[0]) & (cx >= 0) & (cx < mpa.grid.shape[1])
                 in_mpa = np.zeros(n, dtype=np.bool_)
                 in_mpa[valid] = mpa.grid[cy[valid], cx[valid]] > 0
                 mpa_factor *= np.where(in_mpa, 1.0 - mpa.percentage, 1.0)
@@ -637,9 +635,7 @@ def _precompute_effective_rates(work_state, config, n_subdt, step):
         if config.fishing_seasonality is not None:
             step_in_year = step % config.n_dt_per_year
             season = config.fishing_seasonality[sp, step_in_year]
-            eff_fishing = (
-                f_rates * selectivity * spatial_factor * mpa_factor * season / n_subdt
-            )
+            eff_fishing = f_rates * selectivity * spatial_factor * mpa_factor * season / n_subdt
         else:
             eff_fishing = f_rates * selectivity * spatial_factor * mpa_factor / denom
 
@@ -647,9 +643,7 @@ def _precompute_effective_rates(work_state, config, n_subdt, step):
         np.nan_to_num(eff_fishing, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
 
         if config.fishing_discard_rate is not None:
-            fishing_discard = np.where(
-                eff_fishing > 0, config.fishing_discard_rate[sp], 0.0
-            )
+            fishing_discard = np.where(eff_fishing > 0, config.fishing_discard_rate[sp], 0.0)
 
     return eff_starv, eff_additional, eff_fishing, fishing_discard
 
@@ -744,19 +738,13 @@ if _HAS_NUMBA:
                     p_acc = pred_access_idx[p_idx]
                     q_acc = prey_access_idx[q_idx]
                     if p_acc >= 0 and q_acc >= 0:
-                        if (
-                            q_acc < access_matrix.shape[0]
-                            and p_acc < access_matrix.shape[1]
-                        ):
+                        if q_acc < access_matrix.shape[0] and p_acc < access_matrix.shape[1]:
                             access_coeff = access_matrix[q_acc, p_acc]
                         if access_coeff <= 0:
                             continue
                 else:
                     sp_prey = species_id[q_idx]
-                    if (
-                        sp_pred < access_matrix.shape[0]
-                        and sp_prey < access_matrix.shape[1]
-                    ):
+                    if sp_pred < access_matrix.shape[0] and sp_prey < access_matrix.shape[1]:
                         access_coeff = access_matrix[sp_pred, sp_prey]
                         if access_coeff <= 0:
                             continue
@@ -796,19 +784,13 @@ if _HAS_NUMBA:
                 rsc_row = rsc_access_rows[r]
                 p_acc = pred_access_idx[p_idx]
                 if rsc_row >= 0 and p_acc >= 0:
-                    if (
-                        rsc_row < access_matrix.shape[0]
-                        and p_acc < access_matrix.shape[1]
-                    ):
+                    if rsc_row < access_matrix.shape[0] and p_acc < access_matrix.shape[1]:
                         access_coeff = access_matrix[rsc_row, p_acc]
                         if access_coeff <= 0:
                             continue
             elif has_access:
                 rsc_sp_idx = n_species + r
-                if (
-                    sp_pred < access_matrix.shape[0]
-                    and rsc_sp_idx < access_matrix.shape[1]
-                ):
+                if sp_pred < access_matrix.shape[0] and rsc_sp_idx < access_matrix.shape[1]:
                     access_coeff = access_matrix[sp_pred, rsc_sp_idx]
                     if access_coeff <= 0:
                         continue
@@ -845,10 +827,7 @@ if _HAS_NUMBA:
 
                 if diet_enabled:
                     prey_sp = species_id[q_idx]
-                    if (
-                        p_idx < diet_matrix.shape[0]
-                        and prey_sp < diet_matrix.shape[1]
-                    ):
+                    if p_idx < diet_matrix.shape[0] and prey_sp < diet_matrix.shape[1]:
                         diet_matrix[p_idx, prey_sp] += eaten_from_prey
             else:  # resource
                 r_idx = prey_id[k]
@@ -864,10 +843,7 @@ if _HAS_NUMBA:
 
                 if diet_enabled:
                     rsc_col = n_species + r_idx
-                    if (
-                        p_idx < diet_matrix.shape[0]
-                        and rsc_col < diet_matrix.shape[1]
-                    ):
+                    if p_idx < diet_matrix.shape[0] and rsc_col < diet_matrix.shape[1]:
                         diet_matrix[p_idx, rsc_col] += eaten_from_prey
 
         # Phase 3: Update predation success rate
@@ -1005,19 +981,45 @@ if _HAS_NUMBA:
     @njit(cache=True)
     def _mortality_all_cells_numba(
         rng_seed,
-        sorted_indices, boundaries, n_cells,
-        inst_abd, n_dead,
-        eff_starv, eff_additional, eff_fishing, fishing_discard,
-        species_id, length, weight, age_dt,
-        first_feeding_age_dt, feeding_stage, pred_success_rate,
-        preyed_biomass, trophic_level,
-        size_ratio_min, size_ratio_max, ingestion_rate,
-        n_dt_per_year, n_subdt,
-        access_matrix, has_access, use_stage_access,
-        prey_access_idx, pred_access_idx,
-        rsc_biomass, rsc_size_min, rsc_size_max, rsc_tl,
-        rsc_access_rows, n_resources, n_species,
-        tl_weighted_sum, tl_tracking, diet_matrix, diet_enabled,
+        sorted_indices,
+        boundaries,
+        n_cells,
+        inst_abd,
+        n_dead,
+        eff_starv,
+        eff_additional,
+        eff_fishing,
+        fishing_discard,
+        species_id,
+        length,
+        weight,
+        age_dt,
+        first_feeding_age_dt,
+        feeding_stage,
+        pred_success_rate,
+        preyed_biomass,
+        trophic_level,
+        size_ratio_min,
+        size_ratio_max,
+        ingestion_rate,
+        n_dt_per_year,
+        n_subdt,
+        access_matrix,
+        has_access,
+        use_stage_access,
+        prey_access_idx,
+        pred_access_idx,
+        rsc_biomass,
+        rsc_size_min,
+        rsc_size_max,
+        rsc_tl,
+        rsc_access_rows,
+        n_resources,
+        n_species,
+        tl_weighted_sum,
+        tl_tracking,
+        diet_matrix,
+        diet_enabled,
     ):
         """Numba-compiled batch mortality for ALL cells in one call.
 
@@ -1058,17 +1060,41 @@ if _HAS_NUMBA:
                     if cause == 0:  # PREDATION
                         p_idx = cell_indices[seq_pred[i]]
                         _apply_predation_numba(
-                            p_idx, cell_indices,
-                            inst_abd, n_dead, species_id, length, weight,
-                            age_dt, first_feeding_age_dt, feeding_stage,
-                            pred_success_rate, preyed_biomass, trophic_level,
-                            size_ratio_min, size_ratio_max, ingestion_rate,
-                            n_dt_per_year, n_subdt,
-                            access_matrix, has_access, use_stage_access,
-                            prey_access_idx, pred_access_idx,
-                            rsc_biomass, rsc_size_min, rsc_size_max, rsc_tl,
-                            rsc_access_rows, n_resources, n_species, cell_id,
-                            tl_weighted_sum, tl_tracking, diet_matrix, diet_enabled,
+                            p_idx,
+                            cell_indices,
+                            inst_abd,
+                            n_dead,
+                            species_id,
+                            length,
+                            weight,
+                            age_dt,
+                            first_feeding_age_dt,
+                            feeding_stage,
+                            pred_success_rate,
+                            preyed_biomass,
+                            trophic_level,
+                            size_ratio_min,
+                            size_ratio_max,
+                            ingestion_rate,
+                            n_dt_per_year,
+                            n_subdt,
+                            access_matrix,
+                            has_access,
+                            use_stage_access,
+                            prey_access_idx,
+                            pred_access_idx,
+                            rsc_biomass,
+                            rsc_size_min,
+                            rsc_size_max,
+                            rsc_tl,
+                            rsc_access_rows,
+                            n_resources,
+                            n_species,
+                            cell_id,
+                            tl_weighted_sum,
+                            tl_tracking,
+                            diet_matrix,
+                            diet_enabled,
                         )
                     elif cause == 1:  # STARVATION
                         idx = cell_indices[seq_starv[i]]
@@ -1106,19 +1132,45 @@ if _HAS_NUMBA:
     @njit(cache=True, parallel=True)
     def _mortality_all_cells_parallel(
         rng_seed,
-        sorted_indices, boundaries, n_cells,
-        inst_abd, n_dead,
-        eff_starv, eff_additional, eff_fishing, fishing_discard,
-        species_id, length, weight, age_dt,
-        first_feeding_age_dt, feeding_stage, pred_success_rate,
-        preyed_biomass, trophic_level,
-        size_ratio_min, size_ratio_max, ingestion_rate,
-        n_dt_per_year, n_subdt,
-        access_matrix, has_access, use_stage_access,
-        prey_access_idx, pred_access_idx,
-        rsc_biomass, rsc_size_min, rsc_size_max, rsc_tl,
-        rsc_access_rows, n_resources, n_species,
-        tl_weighted_sum, tl_tracking, diet_matrix, diet_enabled,
+        sorted_indices,
+        boundaries,
+        n_cells,
+        inst_abd,
+        n_dead,
+        eff_starv,
+        eff_additional,
+        eff_fishing,
+        fishing_discard,
+        species_id,
+        length,
+        weight,
+        age_dt,
+        first_feeding_age_dt,
+        feeding_stage,
+        pred_success_rate,
+        preyed_biomass,
+        trophic_level,
+        size_ratio_min,
+        size_ratio_max,
+        ingestion_rate,
+        n_dt_per_year,
+        n_subdt,
+        access_matrix,
+        has_access,
+        use_stage_access,
+        prey_access_idx,
+        pred_access_idx,
+        rsc_biomass,
+        rsc_size_min,
+        rsc_size_max,
+        rsc_tl,
+        rsc_access_rows,
+        n_resources,
+        n_species,
+        tl_weighted_sum,
+        tl_tracking,
+        diet_matrix,
+        diet_enabled,
     ):
         """Parallel batch mortality — prange over cells for multi-core execution.
 
@@ -1166,17 +1218,41 @@ if _HAS_NUMBA:
                     if cause == 0:  # PREDATION
                         p_idx = cell_indices[seq_pred[i]]
                         _apply_predation_numba(
-                            p_idx, cell_indices,
-                            inst_abd, n_dead, species_id, length, weight,
-                            age_dt, first_feeding_age_dt, feeding_stage,
-                            pred_success_rate, preyed_biomass, trophic_level,
-                            size_ratio_min, size_ratio_max, ingestion_rate,
-                            n_dt_per_year, n_subdt,
-                            access_matrix, has_access, use_stage_access,
-                            prey_access_idx, pred_access_idx,
-                            rsc_biomass, rsc_size_min, rsc_size_max, rsc_tl,
-                            rsc_access_rows, n_resources, n_species, cell_id,
-                            tl_weighted_sum, tl_tracking, diet_matrix, diet_enabled,
+                            p_idx,
+                            cell_indices,
+                            inst_abd,
+                            n_dead,
+                            species_id,
+                            length,
+                            weight,
+                            age_dt,
+                            first_feeding_age_dt,
+                            feeding_stage,
+                            pred_success_rate,
+                            preyed_biomass,
+                            trophic_level,
+                            size_ratio_min,
+                            size_ratio_max,
+                            ingestion_rate,
+                            n_dt_per_year,
+                            n_subdt,
+                            access_matrix,
+                            has_access,
+                            use_stage_access,
+                            prey_access_idx,
+                            pred_access_idx,
+                            rsc_biomass,
+                            rsc_size_min,
+                            rsc_size_max,
+                            rsc_tl,
+                            rsc_access_rows,
+                            n_resources,
+                            n_species,
+                            cell_id,
+                            tl_weighted_sum,
+                            tl_tracking,
+                            diet_matrix,
+                            diet_enabled,
                         )
                     elif cause == 1:  # STARVATION
                         idx = cell_indices[seq_starv[i]]
@@ -1268,21 +1344,14 @@ def _mortality_in_cell(
 
     # Full Numba path: all 4 causes compiled (Tier 3)
     use_full_numba = (
-        _HAS_NUMBA
-        and inst_abd is not None
-        and rsc_size_min is not None
-        and eff_starv is not None
+        _HAS_NUMBA and inst_abd is not None and rsc_size_min is not None and eff_starv is not None
     )
     if use_full_numba:
         rsc_bio = resources.biomass if resources is not None else _DUMMY_RSC_2D
         cell_id = cell_y * grid_nx + cell_x
         tl_ws = _tl_weighted_sum if _tl_weighted_sum is not None else _DUMMY_RSC_1D
         tl_track = _tl_weighted_sum is not None
-        d_mat = (
-            _diet_matrix
-            if _diet_tracking_enabled and _diet_matrix is not None
-            else _DUMMY_DIET
-        )
+        d_mat = _diet_matrix if _diet_tracking_enabled and _diet_matrix is not None else _DUMMY_DIET
         d_en = _diet_tracking_enabled and _diet_matrix is not None
 
         # Pre-generate cause orders (must use same RNG sequence as Python path)
@@ -1376,15 +1445,11 @@ def _mortality_in_cell(
             elif cause == _ADDITIONAL:
                 a_local = seq_nat[i]
                 a_idx = int(cell_indices[a_local])
-                _apply_additional_for_school(
-                    a_idx, state, config, n_subdt, inst_abd, step=step
-                )
+                _apply_additional_for_school(a_idx, state, config, n_subdt, inst_abd, step=step)
             elif cause == _FISHING:
                 f_local = seq_fish[i]
                 f_idx = int(cell_indices[f_local])
-                _apply_fishing_for_school(
-                    f_idx, state, config, n_subdt, inst_abd, step=step
-                )
+                _apply_fishing_for_school(f_idx, state, config, n_subdt, inst_abd, step=step)
 
 
 # ---------------------------------------------------------------------------
@@ -1505,9 +1570,7 @@ def mortality(
     rsc_sm, rsc_sx, rsc_tl, rsc_ar, n_rsc = _precompute_resource_arrays(config, resources)
 
     # Pre-compute effective mortality rates for Numba cell loop (Tier 3)
-    eff_s, eff_a, eff_f, f_disc = _precompute_effective_rates(
-        work_state, config, n_subdt, step
-    )
+    eff_s, eff_a, eff_f, f_disc = _precompute_effective_rates(work_state, config, n_subdt, step)
 
     for _sub in range(n_subdt):
         # Release fraction of eggs into prey pool
@@ -1529,34 +1592,53 @@ def mortality(
             tl_ws = _tl_weighted_sum if _tl_weighted_sum is not None else _DUMMY_RSC_1D
             tl_track = _tl_weighted_sum is not None
             d_mat = (
-                _diet_matrix
-                if _diet_tracking_enabled and _diet_matrix is not None
-                else _DUMMY_DIET
+                _diet_matrix if _diet_tracking_enabled and _diet_matrix is not None else _DUMMY_DIET
             )
             d_en = _diet_tracking_enabled and _diet_matrix is not None
 
             # Single Numba call for all cells (RNG generated inside)
-            _batch_fn = (
-                _mortality_all_cells_parallel
-                if parallel
-                else _mortality_all_cells_numba
-            )
+            _batch_fn = _mortality_all_cells_parallel if parallel else _mortality_all_cells_numba
             _batch_fn(
                 rng_seed,
-                sorted_indices, boundaries, n_cells,
-                inst_abd, work_state.n_dead,
-                eff_s, eff_a, eff_f, f_disc,
-                work_state.species_id, work_state.length, work_state.weight,
-                work_state.age_dt, work_state.first_feeding_age_dt,
-                work_state.feeding_stage, work_state.pred_success_rate,
-                work_state.preyed_biomass, work_state.trophic_level,
-                config.size_ratio_min, config.size_ratio_max, config.ingestion_rate,
-                config.n_dt_per_year, n_subdt,
-                access_matrix, has_access, use_stage_access,
-                prey_access_idx, pred_access_idx,
-                rsc_bio, rsc_sm, rsc_sx, rsc_tl, rsc_ar,
-                n_rsc, config.n_species,
-                tl_ws, tl_track, d_mat, d_en,
+                sorted_indices,
+                boundaries,
+                n_cells,
+                inst_abd,
+                work_state.n_dead,
+                eff_s,
+                eff_a,
+                eff_f,
+                f_disc,
+                work_state.species_id,
+                work_state.length,
+                work_state.weight,
+                work_state.age_dt,
+                work_state.first_feeding_age_dt,
+                work_state.feeding_stage,
+                work_state.pred_success_rate,
+                work_state.preyed_biomass,
+                work_state.trophic_level,
+                config.size_ratio_min,
+                config.size_ratio_max,
+                config.ingestion_rate,
+                config.n_dt_per_year,
+                n_subdt,
+                access_matrix,
+                has_access,
+                use_stage_access,
+                prey_access_idx,
+                pred_access_idx,
+                rsc_bio,
+                rsc_sm,
+                rsc_sx,
+                rsc_tl,
+                rsc_ar,
+                n_rsc,
+                config.n_species,
+                tl_ws,
+                tl_track,
+                d_mat,
+                d_en,
             )
         else:
             # Python fallback: per-cell dispatch (unchanged)
@@ -1569,15 +1651,30 @@ def mortality(
                 cy = cell // grid.nx
                 cx = cell % grid.nx
                 _mortality_in_cell(
-                    cell_indices, work_state, config, resources,
-                    cy, cx, rng, n_subdt,
-                    access_matrix, has_access, use_stage_access,
-                    prey_access_idx, pred_access_idx,
-                    inst_abd=inst_abd, step=step,
-                    rsc_size_min=rsc_sm, rsc_size_max=rsc_sx,
-                    rsc_tl=rsc_tl, rsc_access_rows=rsc_ar, n_rsc=n_rsc,
-                    eff_starv=eff_s, eff_additional=eff_a,
-                    eff_fishing=eff_f, fishing_discard=f_disc,
+                    cell_indices,
+                    work_state,
+                    config,
+                    resources,
+                    cy,
+                    cx,
+                    rng,
+                    n_subdt,
+                    access_matrix,
+                    has_access,
+                    use_stage_access,
+                    prey_access_idx,
+                    pred_access_idx,
+                    inst_abd=inst_abd,
+                    step=step,
+                    rsc_size_min=rsc_sm,
+                    rsc_size_max=rsc_sx,
+                    rsc_tl=rsc_tl,
+                    rsc_access_rows=rsc_ar,
+                    n_rsc=n_rsc,
+                    eff_starv=eff_s,
+                    eff_additional=eff_a,
+                    eff_fishing=eff_f,
+                    fishing_discard=f_disc,
                     grid_nx=grid.nx,
                 )
 

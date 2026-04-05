@@ -154,8 +154,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Save parity baseline for OSMOSE engine")
     parser.add_argument("--years", type=int, default=1, help="Simulation years (default: 1)")
     parser.add_argument("--seed", type=int, default=42, help="RNG seed (default: 42)")
-    parser.add_argument("--statistical", action="store_true", help="Save multi-seed statistical baseline")
-    parser.add_argument("--seeds", type=int, default=10, help="Number of seeds for statistical baseline")
+    parser.add_argument(
+        "--statistical", action="store_true", help="Save multi-seed statistical baseline"
+    )
+    parser.add_argument(
+        "--seeds", type=int, default=10, help="Number of seeds for statistical baseline"
+    )
     args = parser.parse_args()
 
     if not EXAMPLES_CONFIG.exists():

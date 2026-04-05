@@ -1,4 +1,5 @@
 """Tests for Johnson thermal performance curve and Arrhenius function."""
+
 import numpy as np
 import pytest
 from osmose.engine.processes.temp_function import phi_t, arrhenius

@@ -3,7 +3,12 @@
 import numpy as np
 
 from osmose.engine.config import EngineConfig
-from osmose.engine.processes.natural import additional_mortality, aging_mortality, larva_mortality, out_mortality
+from osmose.engine.processes.natural import (
+    additional_mortality,
+    aging_mortality,
+    larva_mortality,
+    out_mortality,
+)
 from osmose.engine.state import MortalityCause, SchoolState
 
 

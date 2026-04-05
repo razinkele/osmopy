@@ -106,9 +106,7 @@ class IncomingFluxState:
             if flux is not None:
                 self._fluxes.append(flux)
 
-    def _load_species_flux(
-        self, config: dict[str, str], sp: int
-    ) -> _SpeciesFlux | None:
+    def _load_species_flux(self, config: dict[str, str], sp: int) -> _SpeciesFlux | None:
         """Load flux CSV for a species (byAge or bySize). Returns None if no file."""
         ec = self._engine_config
 
@@ -185,9 +183,7 @@ class IncomingFluxState:
             weights=weights,
         )
 
-    def get_incoming_schools(
-        self, step: int, rng: np.random.Generator
-    ) -> SchoolState | None:
+    def get_incoming_schools(self, step: int, rng: np.random.Generator) -> SchoolState | None:
         """Generate new schools from incoming flux for the given timestep.
 
         Returns SchoolState to append, or None if no flux this step.

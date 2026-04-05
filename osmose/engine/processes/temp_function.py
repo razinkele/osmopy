@@ -1,6 +1,7 @@
 """Johnson thermal performance curve and Arrhenius function.
 Matches Java TempFunction class for bioenergetic module.
 """
+
 from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray

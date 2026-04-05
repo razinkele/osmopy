@@ -1,4 +1,5 @@
 """Tests for bioen reproduction wiring in the simulation loop (Gap 1)."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -14,6 +15,7 @@ from tests.test_engine_bioen_integration import _make_bioen_config
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_grid() -> Grid:
     return Grid.from_params(ny=5, nx=5, lat_min=0.0, lat_max=5.0, lon_min=0.0, lon_max=5.0)
@@ -54,6 +56,7 @@ def _make_state_with_gonad(
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestBioenReproductionGonadReset:
     """Gonad weight must be reset to 0 after spawning."""
@@ -172,9 +175,7 @@ class TestBioenReproductionImmatureFish:
         result = _bioen_reproduction(state, config, step=0, rng=rng)
 
         # No egg school created
-        assert len(result) == n_before, (
-            "No egg schools should be created for immature fish"
-        )
+        assert len(result) == n_before, "No egg schools should be created for immature fish"
 
     def test_young_fish_immature_by_age(self):
         """Very young fish (age_dt=1) are immature even if large."""
@@ -218,6 +219,4 @@ class TestBioenReproductionAgeIncrement:
 
         if len(result) > n_before:
             new_ages = result.age_dt[n_before:]
-            assert np.all(new_ages == 0), (
-                f"New egg schools should have age_dt=0, got {new_ages}"
-            )
+            assert np.all(new_ages == 0), f"New egg schools should have age_dt=0, got {new_ages}"

@@ -77,5 +77,7 @@ class TestSimulateAcceptsRngs:
         movement_rngs = build_rng(42, cfg.n_species, fixed=True)
         mortality_rngs = build_rng(43, cfg.n_species, fixed=True)
 
-        outputs = simulate(cfg, grid, rng, movement_rngs=movement_rngs, mortality_rngs=mortality_rngs)
+        outputs = simulate(
+            cfg, grid, rng, movement_rngs=movement_rngs, mortality_rngs=mortality_rngs
+        )
         assert len(outputs) == 12

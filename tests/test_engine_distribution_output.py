@@ -207,8 +207,7 @@ class TestDistributionCSVOutput:
         """No distribution CSVs written when distribution dicts are None."""
         cfg = EngineConfig.from_dict(_make_config())
         outputs = [
-            _step_output(t, np.array([100.0, 200.0]), np.array([1000.0, 500.0]))
-            for t in range(3)
+            _step_output(t, np.array([100.0, 200.0]), np.array([1000.0, 500.0])) for t in range(3)
         ]
         write_outputs(outputs, tmp_path, cfg)
         # None of the distribution files should exist
@@ -285,10 +284,12 @@ class TestDistributionCollectOutputs:
         from osmose.engine.simulate import _collect_outputs
         from osmose.engine.state import SchoolState
 
-        cfg = self._make_engine_config({
-            "output.biomass.byage.enabled": "true",
-            "output.abundance.byage.enabled": "true",
-        })
+        cfg = self._make_engine_config(
+            {
+                "output.biomass.byage.enabled": "true",
+                "output.abundance.byage.enabled": "true",
+            }
+        )
         # Empty state — distributions should be all-zero dicts
         state = SchoolState.create(n_schools=0, species_id=np.array([], dtype=np.int32))
         out = _collect_outputs(state, cfg, 0)
@@ -303,10 +304,12 @@ class TestDistributionCollectOutputs:
         from osmose.engine.simulate import _collect_outputs
         from osmose.engine.state import SchoolState
 
-        cfg = self._make_engine_config({
-            "output.biomass.bysize.enabled": "true",
-            "output.abundance.bysize.enabled": "true",
-        })
+        cfg = self._make_engine_config(
+            {
+                "output.biomass.bysize.enabled": "true",
+                "output.abundance.bysize.enabled": "true",
+            }
+        )
         state = SchoolState.create(n_schools=0, species_id=np.array([], dtype=np.int32))
         out = _collect_outputs(state, cfg, 0)
         assert out.biomass_by_size is not None

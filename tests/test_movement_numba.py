@@ -123,9 +123,7 @@ def test_precompute_map_indices_out_of_range():
 # _map_move_batch_numba tests (skip if Numba unavailable)
 # ---------------------------------------------------------------------------
 
-_numba_move = pytest.importorskip(
-    "osmose.engine.processes.movement", reason="Numba not available"
-)
+_numba_move = pytest.importorskip("osmose.engine.processes.movement", reason="Numba not available")
 _map_move_batch_numba = getattr(_numba_move, "_map_move_batch_numba", None)
 pytestmark = pytest.mark.skipif(
     _map_move_batch_numba is None, reason="Numba not available or function missing"
@@ -145,19 +143,46 @@ def numba_base():
     )
 
 
-def _call_numba(seed, school_indices, map_idx, same_map, cx, cy, sp_ids,
-                all_maps, all_max_proba, all_is_null, sp_offsets,
-                ocean_mask, walk_range, ny, nx):
+def _call_numba(
+    seed,
+    school_indices,
+    map_idx,
+    same_map,
+    cx,
+    cy,
+    sp_ids,
+    all_maps,
+    all_max_proba,
+    all_is_null,
+    sp_offsets,
+    ocean_mask,
+    walk_range,
+    ny,
+    nx,
+):
     """Helper to call _map_move_batch_numba with in-place output arrays."""
     out_cx = cx.copy()
     out_cy = cy.copy()
     out_is_out = np.zeros(len(cx), dtype=np.bool_)
     _map_move_batch_numba(
-        seed, school_indices, map_idx, same_map,
-        out_cx, out_cy, sp_ids,
-        all_maps, all_max_proba, all_is_null, sp_offsets,
-        ocean_mask, walk_range, ny, nx,
-        out_cx, out_cy, out_is_out,
+        seed,
+        school_indices,
+        map_idx,
+        same_map,
+        out_cx,
+        out_cy,
+        sp_ids,
+        all_maps,
+        all_max_proba,
+        all_is_null,
+        sp_offsets,
+        ocean_mask,
+        walk_range,
+        ny,
+        nx,
+        out_cx,
+        out_cy,
+        out_is_out,
     )
     return out_cx, out_cy, out_is_out
 
@@ -183,7 +208,8 @@ def test_numba_new_placement(numba_base):
         np.array([0], dtype=np.int32),
         np.ones((ny, nx), dtype=np.bool_),
         np.array([1], dtype=np.int32),
-        ny, nx,
+        ny,
+        nx,
     )
     assert (cx[0], cy[0]) in [(2, 1), (3, 2)]
     assert not is_out[0]
@@ -206,7 +232,8 @@ def test_numba_out_of_domain(numba_base):
         np.array([0], dtype=np.int32),
         np.ones((ny, nx), dtype=np.bool_),
         np.array([1], dtype=np.int32),
-        ny, nx,
+        ny,
+        nx,
     )
     assert cx[0] == -1
     assert cy[0] == -1
@@ -225,16 +252,21 @@ def test_numba_deterministic(numba_base):
 
     def run(seed):
         return _call_numba(
-            seed, school_indices, map_idx, same_map_arr,
+            seed,
+            school_indices,
+            map_idx,
+            same_map_arr,
             np.full(n, -1, dtype=np.int32),
             np.full(n, -1, dtype=np.int32),
             sp_ids,
             prob_map.reshape(1, b.ny, b.nx),
             np.array([prob_map.max()]),
             np.array([False]),
-            b.sp_offsets, b.ocean_mask,
+            b.sp_offsets,
+            b.ocean_mask,
             np.array([2], dtype=np.int32),
-            b.ny, b.nx,
+            b.ny,
+            b.nx,
         )
 
     cx1, cy1, _ = run(99)
@@ -261,7 +293,11 @@ def test_numba_random_walk(numba_base):
         prob_map.reshape(1, b.ny, b.nx),
         np.array([0.5]),
         np.array([False]),
-        b.sp_offsets, b.ocean_mask, b.walk_range, b.ny, b.nx,
+        b.sp_offsets,
+        b.ocean_mask,
+        b.walk_range,
+        b.ny,
+        b.nx,
     )
     accessible = [(1, 1), (2, 1), (3, 1), (1, 2), (3, 2), (1, 3), (2, 3), (3, 3)]
     assert (cx[0], cy[0]) in accessible
@@ -288,7 +324,8 @@ def test_numba_stranded(numba_base):
         np.array([0], dtype=np.int32),
         np.ones((ny, nx), dtype=np.bool_),
         np.array([1], dtype=np.int32),
-        ny, nx,
+        ny,
+        nx,
     )
     assert cx[0] == 1
     assert cy[0] == 1

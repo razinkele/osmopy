@@ -37,12 +37,8 @@ class OsmoseResults:
         if not self.strict:
             return
         if not self.output_dir.exists():
-            raise FileNotFoundError(
-                f"Output directory does not exist: {self.output_dir}"
-            )
-        raise FileNotFoundError(
-            f"No files matching '{pattern}' in {self.output_dir}"
-        )
+            raise FileNotFoundError(f"Output directory does not exist: {self.output_dir}")
+        raise FileNotFoundError(f"No files matching '{pattern}' in {self.output_dir}")
 
     def list_outputs(self) -> list[str]:
         """List all output files in the output directory."""

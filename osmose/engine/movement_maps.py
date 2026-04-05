@@ -140,7 +140,7 @@ class MovementMapSet:
         matched_map_numbers: list[int] = []
         for key, val in config.items():
             if key.startswith("movement.species.map"):
-                suffix = key[len("movement.species.map"):]
+                suffix = key[len("movement.species.map") :]
                 if suffix.isdigit() and val.strip().lower() == species_name.strip().lower():
                     matched_map_numbers.append(int(suffix))
 
@@ -160,7 +160,13 @@ class MovementMapSet:
 
             # --- Age range ---
             init_age_raw = float(config.get(f"movement.initialage.map{n}", "0"))
-            last_age_raw = float(config.get(f"movement.lastage.map{n}", str(lifespan_dt / n_dt_per_year)))
+            default_last = str(lifespan_dt / n_dt_per_year)
+            last_age_raw = float(
+                config.get(
+                    f"movement.lastage.map{n}",
+                    default_last,
+                )
+            )
             init_age_dt = round(init_age_raw * n_dt_per_year)
             last_age_dt = min(round(last_age_raw * n_dt_per_year), lifespan_dt - 1)
 

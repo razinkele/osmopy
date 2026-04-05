@@ -341,7 +341,14 @@ def results_server(input, output, session, state):
             ui.notification_show("Results loaded successfully.", type="message", duration=3)
 
             state.results_loaded.set(True)
-        except (OSError, ValueError, KeyError, ImportError, AttributeError, pd.errors.ParserError) as exc:
+        except (
+            OSError,
+            ValueError,
+            KeyError,
+            ImportError,
+            AttributeError,
+            pd.errors.ParserError,
+        ) as exc:
             _log.error("Failed to load results: %s", exc, exc_info=True)
             ui.notification_show(f"Error loading results: {exc}", type="error", duration=10)
 

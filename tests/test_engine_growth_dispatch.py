@@ -220,8 +220,13 @@ class TestGompertzGrowth:
         n_dt = 24
 
         vb_l = expected_length_vb(
-            age_dt, vb_cfg.linf[sp], vb_cfg.k[sp], vb_cfg.t0[sp],
-            vb_cfg.egg_size[sp], vb_cfg.vb_threshold_age[sp], n_dt,
+            age_dt,
+            vb_cfg.linf[sp],
+            vb_cfg.k[sp],
+            vb_cfg.t0[sp],
+            vb_cfg.egg_size[sp],
+            vb_cfg.vb_threshold_age[sp],
+            n_dt,
         )
         gom_l = _expected_length(age_dt, sp, gom_cfg, n_dt)
 
@@ -244,18 +249,26 @@ class TestGompertzGrowth:
         # sp0: VB
         expected_vb = expected_length_vb(
             np.array([48], dtype=np.int32),
-            np.array([30.0]), np.array([0.3]), np.array([-0.1]),
-            np.array([0.1]), np.array([1.0]), n_dt,
+            np.array([30.0]),
+            np.array([0.3]),
+            np.array([-0.1]),
+            np.array([0.1]),
+            np.array([1.0]),
+            n_dt,
         )
         np.testing.assert_allclose(result[0], expected_vb[0], atol=1e-10)
 
         # sp1: Gompertz
         expected_gom = expected_length_gompertz(
             np.array([48], dtype=np.int32),
-            np.array([50.0]), np.array([0.5]), np.array([1.5]),
+            np.array([50.0]),
+            np.array([0.5]),
+            np.array([1.5]),
             np.array([2.0]),
-            np.array([6], dtype=np.int32), np.array([12], dtype=np.int32),
-            np.array([0.2]), n_dt,
+            np.array([6], dtype=np.int32),
+            np.array([12], dtype=np.int32),
+            np.array([0.2]),
+            n_dt,
         )
         np.testing.assert_allclose(result[1], expected_gom[0], atol=1e-10)
 

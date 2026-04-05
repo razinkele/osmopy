@@ -4,6 +4,7 @@ Computes gross energy intake, maintenance costs, net energy, and
 the allocation fraction rho between somatic and gonad growth.
 Matches Java BioenEnergyBudget.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -58,11 +59,13 @@ def compute_energy_budget(
     assimilation:
         Assimilation efficiency (dimensionless, 0–1).
     c_m:
-        c_m: Maintenance metabolic coefficient (energy_units * g^{-beta} * year^{-1}, modulated by Arrhenius temperature function).
+        c_m: Maintenance metabolic coefficient
+        (energy_units * g^{-beta} * year^{-1}, Arrhenius-modulated).
     beta:
         Allometric scaling exponent for metabolic rate.
     eta:
-        eta: Energy density ratio (grams of energy per gram of gonad tissue, dimensionless in g-equivalent framework).
+        eta: Energy density ratio (g energy per g gonad tissue,
+        dimensionless in g-equivalent framework).
     r:
         Fraction of net energy allocated to gonads when mature.
     m0:

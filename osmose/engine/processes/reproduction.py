@@ -104,6 +104,7 @@ def reproduction(
     # Append all new egg schools in one batch
     if new_schools_list:
         from dataclasses import fields
+
         merged_fields = {}
         for f in fields(state):
             existing = getattr(state, f.name)

@@ -228,8 +228,10 @@ def _write_yield_csv(
     """Write fishing yield CSV matching Java format."""
     times = np.array([o.step / config.n_dt_per_year for o in outputs])
     yield_data = np.array(
-        [o.yield_by_species if o.yield_by_species is not None else np.zeros(config.n_species)
-         for o in outputs]
+        [
+            o.yield_by_species if o.yield_by_species is not None else np.zeros(config.n_species)
+            for o in outputs
+        ]
     )
     species = config.species_names
 
@@ -328,7 +330,7 @@ def write_outputs_netcdf(
     yield_data = [o.yield_by_species for o in outputs if o.yield_by_species is not None]
     if yield_data:
         yield_arr = np.array(yield_data)
-        focal_names = config.species_names[:yield_arr.shape[1]]
+        focal_names = config.species_names[: yield_arr.shape[1]]
         ds["yield"] = (["time", "focal_species"], yield_arr)
         ds.coords["focal_species"] = focal_names
 
