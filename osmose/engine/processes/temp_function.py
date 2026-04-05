@@ -23,7 +23,11 @@ def phi_t(temp_c: NDArray[np.float64], e_m: float, e_d: float, t_p: float) -> ND
 
     def _raw(t):
         num = np.exp(-e_m / (K_B * t))
-        ratio = e_m / (e_d - e_m)
+        delta = e_d - e_m
+        if abs(delta) < 1e-30:
+            # Degenerate case: no declining phase, return Arrhenius-only
+            return num
+        ratio = e_m / delta
         denom = 1.0 + ratio * np.exp(e_d / K_B * (1.0 / t_p_k - 1.0 / t))
         return num / denom
 
