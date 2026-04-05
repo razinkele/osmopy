@@ -853,6 +853,42 @@ if _HAS_NUMBA:
         preyed_biomass[p_idx] += eaten_total
 
     @njit(cache=True)
+    def _apply_single_cause(
+        cause, idx, inst_abd, n_dead,
+        eff_starv, eff_additional, eff_fishing, fishing_discard,
+    ):
+        """Apply one non-predation mortality cause to one school."""
+        if cause == 1:  # STARVATION
+            D = eff_starv[idx]
+            if D > 0:
+                abd = inst_abd[idx]
+                if abd > 0:
+                    dead = abd * (1.0 - np.exp(-D))
+                    n_dead[idx, 1] += dead
+                    inst_abd[idx] -= dead
+        elif cause == 2:  # ADDITIONAL
+            D = eff_additional[idx]
+            if D > 0:
+                abd = inst_abd[idx]
+                if abd > 0:
+                    dead = abd * (1.0 - np.exp(-D))
+                    n_dead[idx, 2] += dead
+                    inst_abd[idx] -= dead
+        elif cause == 3:  # FISHING
+            F = eff_fishing[idx]
+            if F > 0:
+                abd = inst_abd[idx]
+                if abd > 0:
+                    dead = abd * (1.0 - np.exp(-F))
+                    discard_r = fishing_discard[idx]
+                    if discard_r > 0:
+                        n_dead[idx, 3] += dead * (1.0 - discard_r)
+                        n_dead[idx, 6] += dead * discard_r
+                    else:
+                        n_dead[idx, 3] += dead
+                    inst_abd[idx] -= dead
+
+    @njit(cache=True)
     def _mortality_in_cell_numba(
         cell_indices,
         seq_pred,
@@ -898,11 +934,7 @@ if _HAS_NUMBA:
         diet_matrix,
         diet_enabled,
     ):
-        """Numba-compiled full interleaved mortality for all 4 causes.
-
-        SYNC: Inner loop logic duplicated in _mortality_all_cells_numba and
-        _mortality_all_cells_parallel. Changes here must be mirrored there.
-        """
+        """Numba-compiled full interleaved mortality for all 4 causes."""
         n_local = len(cell_indices)
         for i in range(n_local):
             for c in range(4):
@@ -946,38 +978,15 @@ if _HAS_NUMBA:
                         diet_matrix,
                         diet_enabled,
                     )
-                elif cause == 1:  # STARVATION
+                elif cause == 1:
                     idx = cell_indices[seq_starv[i]]
-                    D = eff_starv[idx]
-                    if D > 0:
-                        abd = inst_abd[idx]
-                        if abd > 0:
-                            dead = abd * (1.0 - np.exp(-D))
-                            n_dead[idx, 1] += dead
-                            inst_abd[idx] -= dead
-                elif cause == 2:  # ADDITIONAL
+                    _apply_single_cause(cause, idx, inst_abd, n_dead, eff_starv, eff_additional, eff_fishing, fishing_discard)
+                elif cause == 2:
                     idx = cell_indices[seq_nat[i]]
-                    D = eff_additional[idx]
-                    if D > 0:
-                        abd = inst_abd[idx]
-                        if abd > 0:
-                            dead = abd * (1.0 - np.exp(-D))
-                            n_dead[idx, 2] += dead
-                            inst_abd[idx] -= dead
-                elif cause == 3:  # FISHING
+                    _apply_single_cause(cause, idx, inst_abd, n_dead, eff_starv, eff_additional, eff_fishing, fishing_discard)
+                elif cause == 3:
                     idx = cell_indices[seq_fish[i]]
-                    F = eff_fishing[idx]
-                    if F > 0:
-                        abd = inst_abd[idx]
-                        if abd > 0:
-                            dead = abd * (1.0 - np.exp(-F))
-                            discard_r = fishing_discard[idx]
-                            if discard_r > 0:
-                                n_dead[idx, 3] += dead * (1.0 - discard_r)
-                                n_dead[idx, 6] += dead * discard_r
-                            else:
-                                n_dead[idx, 3] += dead
-                            inst_abd[idx] -= dead
+                    _apply_single_cause(cause, idx, inst_abd, n_dead, eff_starv, eff_additional, eff_fishing, fishing_discard)
 
     @njit(cache=True)
     def _mortality_all_cells_numba(
@@ -1026,9 +1035,6 @@ if _HAS_NUMBA:
 
         RNG is generated inline using Numba's np.random (seeded from Python).
         This avoids the Python loop overhead of pre-generating RNG data.
-
-        SYNC: Inner loop logic duplicated from _mortality_in_cell_numba.
-        Also duplicated in _mortality_all_cells_parallel. Keep all three in sync.
         """
         np.random.seed(rng_seed)
         for cell in range(n_cells):
@@ -1097,38 +1103,15 @@ if _HAS_NUMBA:
                             diet_matrix,
                             diet_enabled,
                         )
-                    elif cause == 1:  # STARVATION
+                    elif cause == 1:
                         idx = cell_indices[seq_starv[i]]
-                        D = eff_starv[idx]
-                        if D > 0:
-                            abd = inst_abd[idx]
-                            if abd > 0:
-                                dead = abd * (1.0 - np.exp(-D))
-                                n_dead[idx, 1] += dead
-                                inst_abd[idx] -= dead
-                    elif cause == 2:  # ADDITIONAL
+                        _apply_single_cause(cause, idx, inst_abd, n_dead, eff_starv, eff_additional, eff_fishing, fishing_discard)
+                    elif cause == 2:
                         idx = cell_indices[seq_nat[i]]
-                        D = eff_additional[idx]
-                        if D > 0:
-                            abd = inst_abd[idx]
-                            if abd > 0:
-                                dead = abd * (1.0 - np.exp(-D))
-                                n_dead[idx, 2] += dead
-                                inst_abd[idx] -= dead
-                    elif cause == 3:  # FISHING
+                        _apply_single_cause(cause, idx, inst_abd, n_dead, eff_starv, eff_additional, eff_fishing, fishing_discard)
+                    elif cause == 3:
                         idx = cell_indices[seq_fish[i]]
-                        F = eff_fishing[idx]
-                        if F > 0:
-                            abd = inst_abd[idx]
-                            if abd > 0:
-                                dead = abd * (1.0 - np.exp(-F))
-                                discard_r = fishing_discard[idx]
-                                if discard_r > 0:
-                                    n_dead[idx, 3] += dead * (1.0 - discard_r)
-                                    n_dead[idx, 6] += dead * discard_r
-                                else:
-                                    n_dead[idx, 3] += dead
-                                inst_abd[idx] -= dead
+                        _apply_single_cause(cause, idx, inst_abd, n_dead, eff_starv, eff_additional, eff_fishing, fishing_discard)
 
     @njit(cache=True, parallel=True)
     def _mortality_all_cells_parallel(
@@ -1182,9 +1165,6 @@ if _HAS_NUMBA:
 
         Safe because all school-level mutations are cell-local: each cell's
         index range [start, end) is disjoint.
-
-        SYNC: Inner loop logic duplicated from _mortality_in_cell_numba.
-        Also duplicated in _mortality_all_cells_numba. Keep all three in sync.
         """
         for cell in prange(n_cells):
             start = boundaries[cell]
@@ -1255,38 +1235,15 @@ if _HAS_NUMBA:
                             diet_matrix,
                             diet_enabled,
                         )
-                    elif cause == 1:  # STARVATION
+                    elif cause == 1:
                         idx = cell_indices[seq_starv[i]]
-                        D = eff_starv[idx]
-                        if D > 0:
-                            abd = inst_abd[idx]
-                            if abd > 0:
-                                dead = abd * (1.0 - np.exp(-D))
-                                n_dead[idx, 1] += dead
-                                inst_abd[idx] -= dead
-                    elif cause == 2:  # ADDITIONAL
+                        _apply_single_cause(cause, idx, inst_abd, n_dead, eff_starv, eff_additional, eff_fishing, fishing_discard)
+                    elif cause == 2:
                         idx = cell_indices[seq_nat[i]]
-                        D = eff_additional[idx]
-                        if D > 0:
-                            abd = inst_abd[idx]
-                            if abd > 0:
-                                dead = abd * (1.0 - np.exp(-D))
-                                n_dead[idx, 2] += dead
-                                inst_abd[idx] -= dead
-                    elif cause == 3:  # FISHING
+                        _apply_single_cause(cause, idx, inst_abd, n_dead, eff_starv, eff_additional, eff_fishing, fishing_discard)
+                    elif cause == 3:
                         idx = cell_indices[seq_fish[i]]
-                        F = eff_fishing[idx]
-                        if F > 0:
-                            abd = inst_abd[idx]
-                            if abd > 0:
-                                dead = abd * (1.0 - np.exp(-F))
-                                discard_r = fishing_discard[idx]
-                                if discard_r > 0:
-                                    n_dead[idx, 3] += dead * (1.0 - discard_r)
-                                    n_dead[idx, 6] += dead * discard_r
-                                else:
-                                    n_dead[idx, 3] += dead
-                                inst_abd[idx] -= dead
+                        _apply_single_cause(cause, idx, inst_abd, n_dead, eff_starv, eff_additional, eff_fishing, fishing_discard)
 
 
 # ---------------------------------------------------------------------------
