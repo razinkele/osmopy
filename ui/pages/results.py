@@ -293,7 +293,7 @@ def results_server(input, output, session, state):
             if old_res is not None and hasattr(old_res, "close_cache"):
                 old_res.close_cache()
 
-            res = OsmoseResults(out_dir)
+            res = OsmoseResults(out_dir, strict=False)
             results_obj.set(res)
 
             # Load only biomass eagerly (needed for species discovery)
@@ -344,9 +344,6 @@ def results_server(input, output, session, state):
         except (
             OSError,
             ValueError,
-            KeyError,
-            ImportError,
-            AttributeError,
             pd.errors.ParserError,
         ) as exc:
             _log.error("Failed to load results: %s", exc, exc_info=True)

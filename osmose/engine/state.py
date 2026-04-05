@@ -27,7 +27,7 @@ class MortalityCause(IntEnum):
     AGING = 7
 
 
-@dataclass
+@dataclass(frozen=True)
 class SchoolState:
     """Structure-of-Arrays state for all fish schools.
 

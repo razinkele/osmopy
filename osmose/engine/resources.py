@@ -14,6 +14,7 @@ import xarray as xr
 from numpy.typing import NDArray
 
 from osmose.engine.grid import Grid
+from osmose.engine.path_resolution import resolve_data_path
 
 
 @dataclass
@@ -28,6 +29,14 @@ class ResourceSpeciesInfo:
     multiplier: float = 1.0  # biomass scaling multiplier
     offset: float = 0.0  # biomass offset (for uniform distribution)
     accessibility_ts: NDArray[np.float64] | None = None  # time-varying accessibility
+
+    def __post_init__(self) -> None:
+        if self.size_min >= self.size_max:
+            raise ValueError(f"size_min ({self.size_min}) must be < size_max ({self.size_max})")
+        if not (0.0 <= self.accessibility <= 0.99):
+            raise ValueError(f"accessibility must be in [0, 0.99], got {self.accessibility}")
+        if self.trophic_level <= 0:
+            raise ValueError(f"trophic_level must be > 0, got {self.trophic_level}")
 
 
 class ResourceState:
@@ -166,48 +175,19 @@ class ResourceState:
 
     def _resolve_data_file(self, file_key: str) -> Path | None:
         """Resolve a data file path against multiple search directories."""
-        import glob as _glob
-
-        if not file_key:
-            return None
-        p = Path(file_key)
-        if p.is_absolute() and p.exists():
-            return p
         config_dir = self.config.get("_osmose.config.dir", "")
-        search_dirs: list[Path] = []
-        if config_dir:
-            search_dirs.append(Path(config_dir))
-        search_dirs.append(Path("."))
-        search_dirs.append(Path("data/examples"))
-        search_dirs += [Path(d) for d in _glob.glob("data/*/")]
-        for base in search_dirs:
-            path = base / file_key
-            if path.exists():
-                return path
-        return None
+        return resolve_data_path(file_key, config_dir=config_dir)
 
     def _load_netcdf(self, nc_file: str) -> None:
         """Load a NetCDF forcing file, trying multiple search paths."""
-        import glob as _glob
-
         if not nc_file:
             return
-        candidates = [Path(nc_file)]
         config_dir = self.config.get("_osmose.config.dir", "")
-        search_dirs: list[Path] = []
-        if config_dir:
-            search_dirs.append(Path(config_dir))
-        search_dirs.append(Path("."))
-        search_dirs.append(Path("data/examples"))
-        search_dirs += [Path(d) for d in _glob.glob("data/*/")]
-        for base in search_dirs:
-            candidates.append(base / nc_file)
-        for path in candidates:
-            if path.exists():
-                self._forcing_data = xr.open_dataset(path)
-                first_var = list(self._forcing_data.data_vars)[0]
-                self._n_forcing_steps = self._forcing_data[first_var].shape[0]
-                break
+        path = resolve_data_path(nc_file, config_dir=config_dir)
+        if path is not None:
+            self._forcing_data = xr.open_dataset(path)
+            first_var = list(self._forcing_data.data_vars)[0]
+            self._n_forcing_steps = self._forcing_data[first_var].shape[0]
 
     def update(self, step: int) -> None:
         """Load resource biomass for the given simulation timestep.

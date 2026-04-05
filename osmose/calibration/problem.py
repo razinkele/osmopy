@@ -167,7 +167,8 @@ class OsmoseCalibrationProblem(Problem):
         for key, value in overrides.items():
             cmd.append(f"-P{key}={value}")
 
-        result = subprocess.run(cmd, capture_output=True, timeout=3600)  # 1-hour timeout per evaluation; consider making configurable for long simulations
+        # 1-hour timeout per evaluation; consider making configurable for long simulations
+        result = subprocess.run(cmd, capture_output=True, timeout=3600)
 
         if result.returncode != 0:
             stderr_msg = result.stderr.decode(errors="replace")[:500] if result.stderr else ""
@@ -179,9 +180,9 @@ class OsmoseCalibrationProblem(Problem):
         # Compute objectives
         from osmose.results import OsmoseResults
 
-        results = OsmoseResults(output_dir)
-        obj_values = []
-        for fn in self.objective_fns:
-            obj_values.append(fn(results))
+        with OsmoseResults(output_dir, strict=False) as results:
+            obj_values = []
+            for fn in self.objective_fns:
+                obj_values.append(fn(results))
 
         return obj_values

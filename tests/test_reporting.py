@@ -45,7 +45,7 @@ def test_generate_report_html(mock_results, tmp_path):
 def test_generate_report_empty(tmp_path):
     from osmose.results import OsmoseResults
 
-    res = OsmoseResults(tmp_path)  # empty dir
+    res = OsmoseResults(tmp_path, strict=False)  # empty dir
     output_path = tmp_path / "report.html"
     generate_report(res, {}, output_path, fmt="html")
     assert output_path.exists()

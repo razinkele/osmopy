@@ -5,6 +5,10 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+from osmose.logging import setup_logging
+
+_log = setup_logging("osmose.demo")
+
 
 # Migration chain: each entry is (introduced_in_version, {old_prefix: new_prefix})
 # Renames are applied sequentially for configs older than each step version.
@@ -58,7 +62,8 @@ def _version_tuple(v: str) -> tuple[int, ...]:
     try:
         return tuple(int(x) for x in v.split("."))
     except (ValueError, AttributeError):
-        return (999,)
+        _log.warning("Could not parse version %r; applying all migrations", v)
+        return (0,)
 
 
 def list_demos() -> list[str]:
@@ -201,7 +206,9 @@ def migrate_config(
 
     Applies key renames sequentially from the config's current version
     through to target_version, following the Java engine's Releases.java chain.
-    Note: migration chain currently covers up to v4.3.0; versions above have no key renames.
+
+    Note: migration chain currently covers up to v4.3.0; versions above have
+    no key renames.
     """
     current = config.get("osmose.version", "")
     if current == target_version:

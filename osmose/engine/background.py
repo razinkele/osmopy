@@ -7,7 +7,6 @@ don't grow or reproduce.
 
 from __future__ import annotations
 
-import glob as _glob
 import logging
 import re
 from dataclasses import dataclass, field
@@ -17,34 +16,21 @@ import numpy as np
 import xarray as xr
 from numpy.typing import NDArray
 
+from osmose.engine.path_resolution import resolve_data_path
+
 logger = logging.getLogger(__name__)
 
 
 def _resolve_path(filepath_str: str, config_dir: str = "") -> Path:
     """Resolve a relative file path against multiple candidate directories.
 
-    Tries (in order):
-    1. The path as-is (works for absolute paths or paths relative to CWD).
-    2. Relative to the config directory (if provided).
-    3. Relative to ``data/examples/``.
-    4. Relative to any ``data/*/`` subdirectory (sorted for determinism).
-
-    Returns the first existing candidate, or the original path if none found
-    (so that the subsequent open/xr.open_dataset call raises a clear error).
+    Thin wrapper around :func:`resolve_data_path`. Returns the original path
+    (for a clear FileNotFoundError) when the shared resolver returns None.
     """
-    p = Path(filepath_str)
-    if p.exists():
-        return p
-    search_dirs: list[Path] = []
-    if config_dir:
-        search_dirs.append(Path(config_dir))
-    search_dirs.append(Path("data/examples"))
-    search_dirs.extend(Path(d) for d in sorted(_glob.glob("data/*/")))
-    for base in search_dirs:
-        candidate = base / p
-        if candidate.exists():
-            return candidate
-    return p  # fall through — caller will raise FileNotFoundError
+    result = resolve_data_path(filepath_str, config_dir=config_dir)
+    if result is not None:
+        return result
+    return Path(filepath_str)  # fall through — caller will raise FileNotFoundError
 
 
 def _parse_floats(value: str) -> list[float]:
@@ -111,6 +97,22 @@ class BackgroundSpeciesInfo:
 
     proportion_ts: "NDArray[np.float64] | None" = field(default=None)
     """Time-varying proportion overrides (shape: n_steps x n_class). None = use proportions."""
+
+    def __post_init__(self) -> None:
+        if len(self.lengths) != self.n_class:
+            raise ValueError(f"n_class ({self.n_class}) != len(lengths) ({len(self.lengths)})")
+        if len(self.trophic_levels) != self.n_class:
+            raise ValueError(
+                f"n_class ({self.n_class}) != len(trophic_levels) ({len(self.trophic_levels)})"
+            )
+        if len(self.proportions) != self.n_class:
+            raise ValueError(
+                f"n_class ({self.n_class}) != len(proportions) ({len(self.proportions)})"
+            )
+        if abs(sum(self.proportions) - 1.0) > 0.01:
+            raise ValueError(
+                f"proportions must sum to ~1.0, got {sum(self.proportions):.4f}"
+            )
 
 
 def parse_background_species(

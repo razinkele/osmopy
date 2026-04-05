@@ -20,6 +20,7 @@ from osmose.engine.background import (
     _parse_floats,
     parse_background_species,
 )
+from osmose.engine.path_resolution import resolve_data_path
 from osmose.logging import setup_logging
 
 _log = setup_logging("osmose.engine.config")
@@ -72,54 +73,12 @@ def _species_int_optional(
     )
 
 
-_config_dir: str = ""
-
-
-def _set_config_dir(config_dir: str) -> None:
-    """Set the config base directory for file resolution."""
-    global _config_dir
-    _config_dir = config_dir
-
-
-def _search_dirs() -> list[Path]:
-    """Build a list of directories to search for data files."""
-    import glob as _glob
-
-    dirs: list[Path] = []
-    if _config_dir:
-        dirs.append(Path(_config_dir))
-    dirs.append(Path("."))
-    dirs.append(Path("data/examples"))
-    dirs += [Path(d) for d in _glob.glob("data/*/")]
-    return dirs
-
-
-def _resolve_file(file_key: str) -> Path | None:
+def _resolve_file(file_key: str, config_dir: str = "") -> Path | None:
     """Resolve a relative file path against multiple search directories.
 
-    Rejects paths containing '..' segments and absolute paths not under
-    a known search directory, to prevent path traversal.
+    Thin wrapper around :func:`resolve_data_path` kept for backward compatibility.
     """
-    if not file_key:
-        return None
-    if ".." in Path(file_key).parts:
-        _log.warning("Rejecting file key with '..' traversal: %s", file_key)
-        return None
-    p = Path(file_key)
-    if p.is_absolute():
-        for base in _search_dirs():
-            try:
-                if p.is_relative_to(base.resolve()) and p.exists():
-                    return p
-            except (ValueError, OSError):
-                continue
-        _log.warning("Rejecting absolute path not under any search dir: %s", file_key)
-        return None
-    for base in _search_dirs():
-        path = base / file_key
-        if path.exists():
-            return path
-    return None
+    return resolve_data_path(file_key, config_dir=config_dir)
 
 
 def _enabled(cfg: dict[str, str], key: str) -> bool:
@@ -137,6 +96,11 @@ def _load_spatial_csv(path: Path) -> np.ndarray:
     return np.flipud(data)
 
 
+def _cfg_dir(cfg: dict[str, str]) -> str:
+    """Extract config directory from the config dict."""
+    return cfg.get("_osmose.config.dir", "")
+
+
 def _load_accessibility(cfg: dict[str, str], n_species: int) -> NDArray[np.float64] | None:
     """Load predation accessibility matrix from CSV if available.
 
@@ -144,7 +108,7 @@ def _load_accessibility(cfg: dict[str, str], n_species: int) -> NDArray[np.float
     Used only when no stage structure is configured.
     """
     file_key = cfg.get("predation.accessibility.file", "")
-    path = _resolve_file(file_key)
+    path = _resolve_file(file_key, _cfg_dir(cfg))
     if path is not None:
         df = pd.read_csv(path, sep=";", index_col=0)
         return df.values.astype(np.float64)
@@ -159,7 +123,7 @@ def _load_stage_accessibility(
     Returns an AccessibilityMatrix instance, or None if no accessibility file exists.
     """
     file_key = cfg.get("predation.accessibility.file", "")
-    path = _resolve_file(file_key)
+    path = _resolve_file(file_key, _cfg_dir(cfg))
     if path is None:
         return None
     return AccessibilityMatrix.from_csv(path, all_species_names)
@@ -173,6 +137,12 @@ class MPAZone:
     start_year: int
     end_year: int
     percentage: float  # reduction factor (0-1)
+
+    def __post_init__(self) -> None:
+        if not (0.0 <= self.percentage <= 1.0):
+            raise ValueError(f"MPAZone percentage must be in [0, 1], got {self.percentage}")
+        if self.start_year > self.end_year:
+            raise ValueError(f"MPAZone start_year ({self.start_year}) > end_year ({self.end_year})")
 
 
 def _parse_fisheries(
@@ -211,7 +181,7 @@ def _parse_fisheries(
 
     # Read catchability CSV to map species -> fishery
     catch_file = cfg.get("fisheries.catchability.file", "")
-    catch_path = _resolve_file(catch_file)
+    catch_path = _resolve_file(catch_file, _cfg_dir(cfg))
     if catch_path is None:
         return fishing_rate, fishing_a50, fishing_sel_type, fishing_l50, fishing_slope
 
@@ -283,7 +253,7 @@ def _load_fishing_seasonality(
     fsh_to_sp: dict[int, int] = {}
     catch_file = cfg.get("fisheries.catchability.file", "")
     if catch_file and species_names:
-        catch_path = _resolve_file(catch_file)
+        catch_path = _resolve_file(catch_file, _cfg_dir(cfg))
         if catch_path is not None:
             catch_df = pd.read_csv(catch_path, index_col=0)
             for row_idx in range(len(catch_df)):
@@ -310,7 +280,7 @@ def _load_fishing_seasonality(
         file_key = cfg.get(f"fisheries.seasonality.file.sp{i}", "")
         if not file_key:
             continue
-        path = _resolve_file(file_key)
+        path = _resolve_file(file_key, _cfg_dir(cfg))
         if path is not None:
             df = pd.read_csv(path, sep=";")
             _set_season(i, df.iloc[:, 1].values.astype(np.float64))
@@ -325,7 +295,7 @@ def _load_fishing_seasonality(
         # Try file reference
         file_key = cfg.get(f"fisheries.seasonality.file.fsh{fsh}", "")
         if file_key:
-            path = _resolve_file(file_key)
+            path = _resolve_file(file_key, _cfg_dir(cfg))
             if path is not None:
                 df = pd.read_csv(path, sep=";")
                 _set_season(sp_idx, df.iloc[:, 1].values.astype(np.float64))
@@ -363,7 +333,7 @@ def _load_fishing_rate_by_year(
         file_key = cfg.get(f"mortality.fishing.rate.byyear.file.sp{i}", "")
         if not file_key:
             continue
-        path = _resolve_file(file_key)
+        path = _resolve_file(file_key, _cfg_dir(cfg))
         if path is not None:
             values = np.loadtxt(path, dtype=np.float64)
             result[i] = values.flatten()
@@ -380,7 +350,7 @@ def _parse_mpa_zones(cfg: dict[str, str]) -> list[MPAZone] | None:
         file_key = cfg.get(f"mpa.file.mpa{i}", "")
         if not file_key:
             break
-        path = _resolve_file(file_key)
+        path = _resolve_file(file_key, _cfg_dir(cfg))
         if path is None:
             i += 1
             continue
@@ -404,7 +374,7 @@ def _load_discard_rates(
     Returns per-species discard rate array, or None if no discard file.
     """
     file_key = cfg.get("fisheries.discards.file", "")
-    path = _resolve_file(file_key)
+    path = _resolve_file(file_key, _cfg_dir(cfg))
     if path is None:
         return None
 
@@ -444,7 +414,7 @@ def _load_spawning_seasons(
         file_key = cfg.get(f"reproduction.season.file.sp{i}", "")
         if not file_key:
             continue
-        path = _resolve_file(file_key)
+        path = _resolve_file(file_key, _cfg_dir(cfg))
         if path is not None:
             df = pd.read_csv(path, sep=";")
             values = df.iloc[:, 1].values.astype(np.float64)
@@ -488,7 +458,7 @@ def _load_additional_mortality_by_dt(
         file_key = cfg.get(f"mortality.additional.rate.bytdt.file.sp{i}", "")
         if not file_key:
             continue
-        path = _resolve_file(file_key)
+        path = _resolve_file(file_key, _cfg_dir(cfg))
         if path is not None:
             values = np.loadtxt(path, dtype=np.float64)
             result[i] = values.flatten()
@@ -511,7 +481,7 @@ def _load_additional_mortality_spatial(
         file_key = cfg.get(f"mortality.additional.spatial.distrib.file.sp{i}", "")
         if not file_key:
             continue
-        path = _resolve_file(file_key)
+        path = _resolve_file(file_key, _cfg_dir(cfg))
         if path is not None:
             result[i] = _load_spatial_csv(path)
             found_any = True
@@ -743,7 +713,7 @@ class EngineConfig:
 
     @classmethod
     def from_dict(cls, cfg: dict[str, str]) -> EngineConfig:
-        _set_config_dir(cfg.get("_osmose.config.dir", ""))
+        # config_dir is extracted from cfg by _cfg_dir() at each _resolve_file call
         n_sp = int(_get(cfg, "simulation.nspecies"))
         n_dt = int(_get(cfg, "simulation.time.ndtperyear"))
         n_yr = int(_get(cfg, "simulation.time.nyear"))
@@ -845,13 +815,13 @@ class EngineConfig:
         shared_fishing_map_file = cfg.get("fisheries.movement.file.map0", "")
         shared_fishing_map: np.ndarray | None = None
         if shared_fishing_map_file:
-            shared_path = _resolve_file(shared_fishing_map_file)
+            shared_path = _resolve_file(shared_fishing_map_file, _cfg_dir(cfg))
             if shared_path is not None:
                 shared_fishing_map = _load_spatial_csv(shared_path)
         for i in range(n_sp):
             sp_map_file = cfg.get(f"mortality.fishing.spatial.distrib.file.sp{i}", "")
             if sp_map_file:
-                sp_path = _resolve_file(sp_map_file)
+                sp_path = _resolve_file(sp_map_file, _cfg_dir(cfg))
                 if sp_path is not None:
                     focal_fishing_spatial_maps.append(_load_spatial_csv(sp_path))
                 else:

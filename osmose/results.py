@@ -20,7 +20,7 @@ class OsmoseResults:
     mortality data.
     """
 
-    def __init__(self, output_dir: Path, prefix: str = "osm", strict: bool = False):
+    def __init__(self, output_dir: Path, prefix: str = "osm", strict: bool = True):
         self.output_dir = Path(output_dir)
         self.prefix = prefix
         self.strict = strict
@@ -51,13 +51,13 @@ class OsmoseResults:
         return files
 
     def read_csv(self, pattern: str) -> dict[str, pd.DataFrame]:
-        """Read CSV output files matching a glob pattern.
-
-        Returns dict mapping filename to DataFrame.
-        """
+        """Read CSV output files matching a glob pattern."""
         result = {}
         for f in sorted(self.output_dir.glob(pattern)):
-            result[f.stem] = pd.read_csv(f)
+            try:
+                result[f.stem] = pd.read_csv(f)
+            except (pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
+                _log.warning("Skipping malformed CSV %s: %s", f.name, exc)
         return result
 
     def read_netcdf(self, filename: str) -> xr.Dataset:

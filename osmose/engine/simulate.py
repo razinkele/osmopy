@@ -23,6 +23,20 @@ from osmose.engine.state import MortalityCause, SchoolState
 
 
 @dataclass
+class SimulationContext:
+    """Per-simulation mutable state -- replaces module-level globals.
+
+    Passed through the call chain instead of using module-level variables,
+    making the simulation re-entrant and thread-safe.
+    """
+
+    diet_tracking_enabled: bool = False
+    diet_matrix: NDArray[np.float64] | None = None
+    tl_weighted_sum: NDArray[np.float64] | None = None
+    config_dir: str = ""
+
+
+@dataclass(frozen=True)
 class StepOutput:
     """Aggregated output for a single simulation timestep."""
 
@@ -109,11 +123,14 @@ def _mortality(
     grid: Grid,
     step: int = 0,
     species_rngs: list[np.random.Generator] | None = None,
+    ctx: SimulationContext | None = None,
 ) -> SchoolState:
     """Apply all mortality sources with interleaved ordering."""
     from osmose.engine.processes.mortality import mortality
 
-    return mortality(state, resources, config, rng, grid, step=step, species_rngs=species_rngs)
+    return mortality(
+        state, resources, config, rng, grid, step=step, species_rngs=species_rngs, ctx=ctx
+    )
 
 
 def _growth(state: SchoolState, config: EngineConfig, rng: np.random.Generator) -> SchoolState:
@@ -167,6 +184,13 @@ def _bioen_step(
         if getattr(config, attr) is None:
             raise ValueError(f"Bioenergetics enabled but {attr} is None — check config")
 
+    # Precompute species masks once (reused by 6 loops below)
+    sp_masks: list[tuple[int, NDArray[np.bool_]]] = [
+        (sp, state.species_id == sp)
+        for sp in range(config.n_species)
+    ]
+    sp_masks = [(sp, m) for sp, m in sp_masks if m.any()]
+
     n_subdt = config.mortality_subdt
 
     # ------------------------------------------------------------------ #
@@ -174,10 +198,7 @@ def _bioen_step(
     # ------------------------------------------------------------------ #
     is_larvae = state.age_dt < state.first_feeding_age_dt
     capped_ingestion = state.preyed_biomass.copy()
-    for sp in range(config.n_species):
-        mask = state.species_id == sp
-        if not mask.any():
-            continue
+    for sp, mask in sp_masks:
         cap = bioen_ingestion_cap(
             weight=state.weight[mask],
             i_max=float(config.bioen_i_max[sp]),
@@ -198,10 +219,8 @@ def _bioen_step(
         if temp_data.is_constant:
             temp_scalar = temp_data.get_value(step, 0, 0)
             phi_t_arr = np.empty(len(state), dtype=np.float64)
-            for sp in range(config.n_species):
-                mask = state.species_id == sp
-                if mask.any():
-                    phi_t_arr[mask] = phi_t_fn(
+            for sp, mask in sp_masks:
+                phi_t_arr[mask] = phi_t_fn(
                         np.full(mask.sum(), temp_scalar),
                         float(config.bioen_e_mobi[sp]),
                         float(config.bioen_e_d[sp]),
@@ -210,10 +229,7 @@ def _bioen_step(
         else:
             # Spatially explicit: look up each school's cell
             phi_t_arr = np.empty(len(state), dtype=np.float64)
-            for sp in range(config.n_species):
-                mask = state.species_id == sp
-                if not mask.any():
-                    continue
+            for sp, mask in sp_masks:
                 temps = np.array(
                     [
                         temp_data.get_value(step, int(state.cell_y[i]), int(state.cell_x[i]))
@@ -236,15 +252,13 @@ def _bioen_step(
         f_o2_arr = np.ones(len(state), dtype=np.float64)
         if o2_data.is_constant:
             o2_scalar = o2_data.get_value(step, 0, 0)
-            for sp in range(config.n_species):
-                mask = state.species_id == sp
-                if mask.any():
-                    o2_vals = np.full(mask.sum(), o2_scalar)
-                    f_o2_arr[mask] = f_o2(
-                        o2_vals,
-                        float(config.bioen_o2_c1[sp]),
-                        float(config.bioen_o2_c2[sp]),
-                    )
+            for sp, mask in sp_masks:
+                o2_vals = np.full(mask.sum(), o2_scalar)
+                f_o2_arr[mask] = f_o2(
+                    o2_vals,
+                    float(config.bioen_o2_c1[sp]),
+                    float(config.bioen_o2_c2[sp]),
+                )
     else:
         f_o2_arr = np.ones(len(state), dtype=np.float64)
 
@@ -272,10 +286,7 @@ def _bioen_step(
     e_maint_arr = np.zeros(len(state), dtype=np.float64)
     rho_arr = np.zeros(len(state), dtype=np.float64)
 
-    for sp in range(config.n_species):
-        mask = state.species_id == sp
-        if not mask.any():
-            continue
+    for sp, mask in sp_masks:
         dw_sp, dg_sp, en_sp, eg_sp, em_sp, rho_sp = compute_energy_budget(
             ingestion=capped_ingestion[mask],
             weight=state.weight[mask],
@@ -309,10 +320,7 @@ def _bioen_step(
     starvation_dead = np.zeros(len(state), dtype=np.float64)
     new_gonad = state.gonad_weight.copy()
 
-    for sp in range(config.n_species):
-        mask = state.species_id == sp
-        if not mask.any():
-            continue
+    for sp, mask in sp_masks:
         n_dead_sp, gonad_sp = bioen_starvation(
             e_net=e_net_arr[mask],
             gonad_weight=state.gonad_weight[mask],
@@ -332,10 +340,7 @@ def _bioen_step(
     # Update length from weight via allometric inverse (W = a * L^b)
     # L = (W / a)^(1/b); use species-level a (condition factor * 1e-6) and b
     new_length = state.length.copy()
-    for sp in range(config.n_species):
-        mask = state.species_id == sp
-        if not mask.any():
-            continue
+    for sp, mask in sp_masks:
         # W_t = cf * L^b * 1e-6  =>  L = (W_t*1e6/cf)^(1/b)
         a = float(config.condition_factor[sp])
         b = float(config.allometric_power[sp])
@@ -351,10 +356,7 @@ def _bioen_step(
 
     # Update running e_net_avg
     new_e_net_avg = np.zeros(len(state), dtype=np.float64)
-    for sp in range(config.n_species):
-        mask = state.species_id == sp
-        if not mask.any():
-            continue
+    for sp, mask in sp_masks:
         new_e_net_avg[mask] = update_e_net_avg(
             e_net_avg=state.e_net_avg[mask],
             e_net=e_net_arr[mask],
@@ -522,13 +524,27 @@ def _strip_background(state: SchoolState, n_focal: int) -> SchoolState:
 # ---------------------------------------------------------------------------
 
 
-def _collect_outputs(
+def _species_mean(
+    values: NDArray[np.float64],
+    species_id: NDArray[np.int32],
+    n_species: int,
+    mask: NDArray[np.bool_],
+) -> NDArray[np.float64]:
+    """Compute per-species mean of values for schools matching mask."""
+    sums = np.zeros(n_species, dtype=np.float64)
+    counts = np.zeros(n_species, dtype=np.float64)
+    np.add.at(sums, species_id[mask], values[mask])
+    np.add.at(counts, species_id[mask], 1)
+    safe = np.where(counts > 0, counts, 1)
+    return sums / safe
+
+
+def _collect_biomass_abundance(
     state: SchoolState,
     config: EngineConfig,
-    step: int,
     bkg_output: tuple[NDArray[np.float64], NDArray[np.float64]] | None = None,
-) -> StepOutput:
-    """Aggregate per-species biomass and abundance from current state."""
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Aggregate per-species biomass and abundance, applying output cutoff age filter."""
     n_total = config.n_species + config.n_background
     biomass = np.zeros(n_total, dtype=np.float64)
     abundance = np.zeros(n_total, dtype=np.float64)
@@ -546,8 +562,14 @@ def _collect_outputs(
     if bkg_output is not None:
         biomass += bkg_output[0]
         abundance += bkg_output[1]
+    return biomass, abundance
 
-    # Aggregate mortality by cause per species (focal only)
+
+def _collect_mortality(
+    state: SchoolState,
+    config: EngineConfig,
+) -> NDArray[np.float64]:
+    """Aggregate mortality by cause per species (focal only)."""
     n_causes = len(MortalityCause)
     mortality_by_cause = np.zeros((config.n_species, n_causes), dtype=np.float64)
     if len(state) > 0:
@@ -558,15 +580,33 @@ def _collect_outputs(
                 state.species_id[focal_mask],
                 state.n_dead[focal_mask, cause],
             )
+    return mortality_by_cause
 
-    # Yield: fishing deaths * weight per species
+
+def _collect_yield(
+    state: SchoolState,
+    config: EngineConfig,
+) -> NDArray[np.float64]:
+    """Compute yield (fishing deaths * weight) per species."""
     yield_by_species = np.zeros(config.n_species, dtype=np.float64)
     if len(state) > 0:
         fishing_dead = state.n_dead[:, int(MortalityCause.FISHING)]
         fishing_yield = fishing_dead * state.weight  # weight already in tonnes
         focal_mask = state.species_id < config.n_species
         np.add.at(yield_by_species, state.species_id[focal_mask], fishing_yield[focal_mask])
+    return yield_by_species
 
+
+def _collect_distributions(
+    state: SchoolState,
+    config: EngineConfig,
+) -> tuple[
+    dict[int, NDArray[np.float64]] | None,
+    dict[int, NDArray[np.float64]] | None,
+    dict[int, NDArray[np.float64]] | None,
+    dict[int, NDArray[np.float64]] | None,
+]:
+    """Compute biomass/abundance distributions by age and by size."""
     # Age binning
     biomass_by_age: dict[int, NDArray[np.float64]] | None = None
     abundance_by_age: dict[int, NDArray[np.float64]] | None = None
@@ -621,47 +661,58 @@ def _collect_outputs(
         if config.output_abundance_bysize:
             abundance_by_size = abs_
 
-    # Bioen: mean e_net per focal species (zeros when state is empty or no focal schools)
-    bioen_e_net_by_species: NDArray[np.float64] | None = None
-    bioen_ingestion_by_species: NDArray[np.float64] | None = None
-    bioen_maint_by_species: NDArray[np.float64] | None = None
-    bioen_rho_by_species: NDArray[np.float64] | None = None
-    bioen_size_inf_by_species: NDArray[np.float64] | None = None
-    if config.bioen_enabled:
-        bioen_e_net_by_species = np.zeros(config.n_species, dtype=np.float64)
-        if len(state) > 0:
-            counts = np.zeros(config.n_species, dtype=np.float64)
-            focal = state.species_id < config.n_species
-            np.add.at(bioen_e_net_by_species, state.species_id[focal], state.e_net[focal])
-            np.add.at(counts, state.species_id[focal], 1)
-            safe_counts = np.where(counts > 0, counts, 1)
-            bioen_e_net_by_species /= safe_counts
+    return biomass_by_age, abundance_by_age, biomass_by_size, abundance_by_size
 
-        bioen_ingestion = np.zeros(config.n_species, dtype=np.float64)
-        bioen_maint = np.zeros(config.n_species, dtype=np.float64)
-        bioen_rho = np.zeros(config.n_species, dtype=np.float64)
-        bioen_sizeinf = np.zeros(config.n_species, dtype=np.float64)
-        if len(state) > 0:
-            counts2 = np.zeros(config.n_species, dtype=np.float64)
-            focal = state.species_id < config.n_species
-            # e_gross = ingestion * assimilation * phi_T * f_O2 (Java's "ingestion" output)
-            np.add.at(bioen_ingestion, state.species_id[focal], state.e_gross[focal])
-            np.add.at(bioen_maint, state.species_id[focal], state.e_maint[focal])
-            np.add.at(bioen_rho, state.species_id[focal], state.rho[focal])
-            np.add.at(counts2, state.species_id[focal], 1)
-            safe2 = np.where(counts2 > 0, counts2, 1)
-            bioen_ingestion /= safe2
-            bioen_maint /= safe2
-            bioen_rho /= safe2
-            # sizeInf: max observed length per species
-            for sp in range(config.n_species):
-                sp_mask = (state.species_id == sp) & focal
-                if sp_mask.any():
-                    bioen_sizeinf[sp] = state.length[sp_mask].max()
-        bioen_ingestion_by_species = bioen_ingestion
-        bioen_maint_by_species = bioen_maint
-        bioen_rho_by_species = bioen_rho
-        bioen_size_inf_by_species = bioen_sizeinf
+
+def _collect_bioen(
+    state: SchoolState,
+    config: EngineConfig,
+) -> tuple[
+    NDArray[np.float64] | None,
+    NDArray[np.float64] | None,
+    NDArray[np.float64] | None,
+    NDArray[np.float64] | None,
+    NDArray[np.float64] | None,
+]:
+    """Compute mean bioenergetics values per focal species."""
+    if not config.bioen_enabled:
+        return None, None, None, None, None
+
+    focal = state.species_id < config.n_species if len(state) > 0 else np.zeros(0, dtype=np.bool_)
+
+    bioen_e_net = _species_mean(state.e_net, state.species_id, config.n_species, focal) if len(state) > 0 else np.zeros(config.n_species, dtype=np.float64)
+    # e_gross = ingestion * assimilation * phi_T * f_O2 (Java's "ingestion" output)
+    bioen_ingestion = _species_mean(state.e_gross, state.species_id, config.n_species, focal) if len(state) > 0 else np.zeros(config.n_species, dtype=np.float64)
+    bioen_maint = _species_mean(state.e_maint, state.species_id, config.n_species, focal) if len(state) > 0 else np.zeros(config.n_species, dtype=np.float64)
+    bioen_rho = _species_mean(state.rho, state.species_id, config.n_species, focal) if len(state) > 0 else np.zeros(config.n_species, dtype=np.float64)
+
+    # sizeInf: max observed length per species
+    bioen_sizeinf = np.zeros(config.n_species, dtype=np.float64)
+    if len(state) > 0:
+        for sp in range(config.n_species):
+            sp_mask = (state.species_id == sp) & focal
+            if sp_mask.any():
+                bioen_sizeinf[sp] = state.length[sp_mask].max()
+
+    return bioen_e_net, bioen_ingestion, bioen_maint, bioen_rho, bioen_sizeinf
+
+
+def _collect_outputs(
+    state: SchoolState,
+    config: EngineConfig,
+    step: int,
+    bkg_output: tuple[NDArray[np.float64], NDArray[np.float64]] | None = None,
+) -> StepOutput:
+    """Aggregate per-species outputs from current state into a StepOutput."""
+    biomass, abundance = _collect_biomass_abundance(state, config, bkg_output)
+    mortality_by_cause = _collect_mortality(state, config)
+    yield_by_species = _collect_yield(state, config)
+    biomass_by_age, abundance_by_age, biomass_by_size, abundance_by_size = (
+        _collect_distributions(state, config)
+    )
+    bioen_e_net, bioen_ingestion, bioen_maint, bioen_rho, bioen_size_inf = (
+        _collect_bioen(state, config)
+    )
 
     return StepOutput(
         step=step,
@@ -673,11 +724,11 @@ def _collect_outputs(
         abundance_by_age=abundance_by_age,
         biomass_by_size=biomass_by_size,
         abundance_by_size=abundance_by_size,
-        bioen_e_net_by_species=bioen_e_net_by_species,
-        bioen_ingestion_by_species=bioen_ingestion_by_species,
-        bioen_maint_by_species=bioen_maint_by_species,
-        bioen_rho_by_species=bioen_rho_by_species,
-        bioen_size_inf_by_species=bioen_size_inf_by_species,
+        bioen_e_net_by_species=bioen_e_net,
+        bioen_ingestion_by_species=bioen_ingestion,
+        bioen_maint_by_species=bioen_maint,
+        bioen_rho_by_species=bioen_rho,
+        bioen_size_inf_by_species=bioen_size_inf,
     )
 
 
@@ -757,6 +808,10 @@ def simulate(
         movement_rngs = [rng] * config.n_species
     if mortality_rngs is None:
         mortality_rngs = [rng] * config.n_species
+
+    # Per-simulation context — replaces module-level globals for thread safety
+    ctx = SimulationContext(config_dir=config.raw_config.get("_osmose.config.dir", ""))
+
     state = initialize(config, grid, rng)
     resources = ResourceState(config=config.raw_config, grid=grid)
     background = BackgroundState(config=config.raw_config, grid=grid, engine_config=config)
@@ -842,7 +897,7 @@ def simulate(
             state = state.append(bkg_schools)
 
         state = _mortality(
-            state, resources, config, rng, grid, step=step, species_rngs=mortality_rngs
+            state, resources, config, rng, grid, step=step, species_rngs=mortality_rngs, ctx=ctx
         )
 
         # Collect background output BEFORE stripping

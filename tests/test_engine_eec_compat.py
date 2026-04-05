@@ -18,7 +18,8 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from osmose.engine.config import EngineConfig, _resolve_file
+from osmose.engine.config import EngineConfig
+from osmose.engine.path_resolution import resolve_data_path as _resolve_file
 from osmose.engine.grid import Grid
 from osmose.engine.processes.growth import growth
 from osmose.engine.processes.mortality import (
@@ -656,7 +657,10 @@ class TestTrophicLevel:
             first_feeding_age_dt=np.array([1, 1], dtype=np.int32),
         )
 
-        new_state = mortality(state, resources, cfg, np.random.default_rng(42), grid)
+        from osmose.engine.simulate import SimulationContext
+
+        ctx = SimulationContext()
+        new_state = mortality(state, resources, cfg, np.random.default_rng(42), grid, ctx=ctx)
 
         # Predator should have TL > 1 if it ate anything
         if new_state.preyed_biomass[0] > 0:

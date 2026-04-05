@@ -20,7 +20,7 @@ def write_outputs(
     outputs: list[StepOutput],
     output_dir: Path,
     config: EngineConfig,
-    prefix: str = "osmose",
+    prefix: str = "osm",
 ) -> None:
     """Write simulation outputs to CSV files matching Java format.
 

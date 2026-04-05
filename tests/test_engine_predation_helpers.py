@@ -17,6 +17,7 @@ from osmose.engine.processes.predation import (
     get_diet_matrix,
     predation,
 )
+from osmose.engine.simulate import SimulationContext
 from osmose.engine.state import SchoolState
 from tests.test_engine_predation import _make_predation_config
 
@@ -109,20 +110,18 @@ class TestComputeAppetite:
 
 class TestDietTrackingPythonPath:
     def setup_method(self):
-        disable_diet_tracking()
-
-    def teardown_method(self):
-        disable_diet_tracking()
+        self.ctx = SimulationContext()
 
     def test_diet_recorded_when_enabled(self):
         """Python path records diet matrix when tracking is enabled."""
         state, cfg = _make_pred_prey_state()
+        ctx = self.ctx
         # 2 schools (school 0 = sp1 predator, school 1 = sp0 prey)
-        enable_diet_tracking(n_schools=2, n_species=2)
+        enable_diet_tracking(n_schools=2, n_species=2, ctx=ctx)
         rng = np.random.default_rng(0)
-        predation(state, cfg, rng, n_subdt=10, grid_ny=10, grid_nx=10)
+        predation(state, cfg, rng, n_subdt=10, grid_ny=10, grid_nx=10, ctx=ctx)
 
-        diet = get_diet_matrix()
+        diet = get_diet_matrix(ctx=ctx)
         assert diet is not None
         # Predator (school 0, sp1) ate prey (school 1, sp0): diet[0, 0] > 0
         assert diet[0, 0] > 0.0, "Predator school should have recorded eating from sp0"
@@ -132,9 +131,10 @@ class TestDietTrackingPythonPath:
     def test_diet_zero_when_disabled(self):
         """No diet accumulation when tracking is disabled (default)."""
         state, cfg = _make_pred_prey_state()
+        ctx = self.ctx
         rng = np.random.default_rng(0)
-        predation(state, cfg, rng, n_subdt=10, grid_ny=10, grid_nx=10)
-        assert get_diet_matrix() is None
+        predation(state, cfg, rng, n_subdt=10, grid_ny=10, grid_nx=10, ctx=ctx)
+        assert get_diet_matrix(ctx=ctx) is None
 
 
 # ---------------------------------------------------------------------------
@@ -148,19 +148,17 @@ class TestDietTrackingPythonPath:
 )
 class TestDietTrackingNumbaPath:
     def setup_method(self):
-        disable_diet_tracking()
-
-    def teardown_method(self):
-        disable_diet_tracking()
+        self.ctx = SimulationContext()
 
     def test_numba_records_diet_when_enabled(self):
         """Numba path records diet matrix when tracking is enabled."""
         state, cfg = _make_pred_prey_state()
-        enable_diet_tracking(n_schools=2, n_species=2)
+        ctx = self.ctx
+        enable_diet_tracking(n_schools=2, n_species=2, ctx=ctx)
         rng = np.random.default_rng(0)
-        predation(state, cfg, rng, n_subdt=10, grid_ny=10, grid_nx=10)
+        predation(state, cfg, rng, n_subdt=10, grid_ny=10, grid_nx=10, ctx=ctx)
 
-        diet = get_diet_matrix()
+        diet = get_diet_matrix(ctx=ctx)
         assert diet is not None
         # school 0 is sp1 (predator) that ate sp0 (col 0)
         assert diet[0, 0] > 0.0, "Numba: predator school should have diet[pred, prey_sp] > 0"
@@ -168,11 +166,12 @@ class TestDietTrackingNumbaPath:
     def test_numba_prey_does_not_eat_predator(self):
         """Numba path: prey school should not record eating predator."""
         state, cfg = _make_pred_prey_state()
-        enable_diet_tracking(n_schools=2, n_species=2)
+        ctx = self.ctx
+        enable_diet_tracking(n_schools=2, n_species=2, ctx=ctx)
         rng = np.random.default_rng(0)
-        predation(state, cfg, rng, n_subdt=10, grid_ny=10, grid_nx=10)
+        predation(state, cfg, rng, n_subdt=10, grid_ny=10, grid_nx=10, ctx=ctx)
 
-        diet = get_diet_matrix()
+        diet = get_diet_matrix(ctx=ctx)
         assert diet is not None
         # school 1 is sp0 (prey); sp1 is column 1 — prey cannot eat predator here
         assert diet[1, 1] == 0.0, "Numba: prey school diet[prey, pred_sp] should be 0"
@@ -186,23 +185,18 @@ class TestDietTrackingNumbaPath:
 class TestNumbaVsPythonParity:
     """Verify that Numba and Python predation paths produce identical outputs."""
 
-    def setup_method(self):
-        disable_diet_tracking()
-
-    def teardown_method(self):
-        disable_diet_tracking()
-
     def _run_predation(self, use_numba: bool, seed: int = 42) -> tuple:
         """Run predation with Numba toggled on/off; return (new_state, diet_matrix)."""
         state, cfg = _make_pred_prey_state()
-        enable_diet_tracking(n_schools=2, n_species=2)
+        ctx = SimulationContext()
+        enable_diet_tracking(n_schools=2, n_species=2, ctx=ctx)
         rng = np.random.default_rng(seed)
 
         with mock.patch.object(predation_module, "_HAS_NUMBA", use_numba):
-            new_state = predation(state, cfg, rng, n_subdt=10, grid_ny=10, grid_nx=10)
+            new_state = predation(state, cfg, rng, n_subdt=10, grid_ny=10, grid_nx=10, ctx=ctx)
 
-        diet = get_diet_matrix()
-        disable_diet_tracking()
+        diet = get_diet_matrix(ctx=ctx)
+        disable_diet_tracking(ctx=ctx)
         return new_state, diet
 
     def test_abundance_identical(self):

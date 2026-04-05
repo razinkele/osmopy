@@ -9,6 +9,7 @@ from osmose.engine.processes.predation import (
     get_diet_matrix,
     predation,
 )
+from osmose.engine.simulate import SimulationContext
 from osmose.engine.state import SchoolState
 
 
@@ -72,31 +73,32 @@ class TestDietTrackingState:
 
     def test_disabled_by_default(self):
         """Diet tracking should be off by default."""
-        disable_diet_tracking()
-        assert get_diet_matrix() is None
+        ctx = SimulationContext()
+        disable_diet_tracking(ctx=ctx)
+        assert get_diet_matrix(ctx=ctx) is None
 
     def test_enable_creates_matrix(self):
         """enable_diet_tracking creates a zero matrix of correct shape."""
-        try:
-            enable_diet_tracking(n_schools=10, n_species=3)
-            mat = get_diet_matrix()
-            assert mat is not None
-            assert mat.shape == (10, 3)
-            assert mat.dtype == np.float64
-            np.testing.assert_array_equal(mat, 0.0)
-        finally:
-            disable_diet_tracking()
+        ctx = SimulationContext()
+        enable_diet_tracking(n_schools=10, n_species=3, ctx=ctx)
+        mat = get_diet_matrix(ctx=ctx)
+        assert mat is not None
+        assert mat.shape == (10, 3)
+        assert mat.dtype == np.float64
+        np.testing.assert_array_equal(mat, 0.0)
 
     def test_disable_clears_matrix(self):
         """disable_diet_tracking clears the matrix and flag."""
-        enable_diet_tracking(n_schools=5, n_species=2)
-        disable_diet_tracking()
-        assert get_diet_matrix() is None
+        ctx = SimulationContext()
+        enable_diet_tracking(n_schools=5, n_species=2, ctx=ctx)
+        disable_diet_tracking(ctx=ctx)
+        assert get_diet_matrix(ctx=ctx) is None
 
     def test_get_diet_matrix_none_when_disabled(self):
         """get_diet_matrix returns None when tracking is off."""
-        disable_diet_tracking()
-        assert get_diet_matrix() is None
+        ctx = SimulationContext()
+        disable_diet_tracking(ctx=ctx)
+        assert get_diet_matrix(ctx=ctx) is None
 
 
 class TestDietTrackingPredation:
@@ -108,59 +110,53 @@ class TestDietTrackingPredation:
         state = _make_two_school_state(pred_sp=1, prey_sp=0)
         n_species = 2
         rng = np.random.default_rng(42)
+        ctx = SimulationContext()
 
-        try:
-            enable_diet_tracking(n_schools=len(state), n_species=n_species)
-            predation(state, cfg, rng, n_subdt=10, grid_ny=1, grid_nx=1)
-            mat = get_diet_matrix()
-            assert mat is not None
-            # Predator (school 0, species 1) should have eaten prey (species 0)
-            # School 0 is the predator -> mat[0, prey_sp=0] > 0
-            assert mat[0, 0] > 0.0, "Predator should have recorded eating prey species 0"
-            # Prey school should not have eaten anything (too small to eat predator)
-            assert mat[1, 1] == 0.0, "Prey should not eat predator"
-        finally:
-            disable_diet_tracking()
+        enable_diet_tracking(n_schools=len(state), n_species=n_species, ctx=ctx)
+        predation(state, cfg, rng, n_subdt=10, grid_ny=1, grid_nx=1, ctx=ctx)
+        mat = get_diet_matrix(ctx=ctx)
+        assert mat is not None
+        # Predator (school 0, species 1) should have eaten prey (species 0)
+        # School 0 is the predator -> mat[0, prey_sp=0] > 0
+        assert mat[0, 0] > 0.0, "Predator should have recorded eating prey species 0"
+        # Prey school should not have eaten anything (too small to eat predator)
+        assert mat[1, 1] == 0.0, "Prey should not eat predator"
 
     def test_diet_matrix_sums_match_preyed_biomass(self):
         """Row sums of diet matrix should match preyed_biomass for each school."""
         cfg = EngineConfig.from_dict(_make_diet_config())
         state = _make_two_school_state(pred_sp=1, prey_sp=0)
         rng = np.random.default_rng(42)
+        ctx = SimulationContext()
 
-        try:
-            enable_diet_tracking(n_schools=len(state), n_species=2)
-            result = predation(state, cfg, rng, n_subdt=10, grid_ny=1, grid_nx=1)
-            mat = get_diet_matrix()
-            assert mat is not None
-            # Sum across prey species for each predator school
-            diet_sums = mat.sum(axis=1)
-            # Should match preyed_biomass for each school
-            np.testing.assert_allclose(
-                diet_sums,
-                result.preyed_biomass,
-                rtol=1e-10,
-                err_msg="Diet matrix row sums should match preyed_biomass",
-            )
-        finally:
-            disable_diet_tracking()
+        enable_diet_tracking(n_schools=len(state), n_species=2, ctx=ctx)
+        result = predation(state, cfg, rng, n_subdt=10, grid_ny=1, grid_nx=1, ctx=ctx)
+        mat = get_diet_matrix(ctx=ctx)
+        assert mat is not None
+        # Sum across prey species for each predator school
+        diet_sums = mat.sum(axis=1)
+        # Should match preyed_biomass for each school
+        np.testing.assert_allclose(
+            diet_sums,
+            result.preyed_biomass,
+            rtol=1e-10,
+            err_msg="Diet matrix row sums should match preyed_biomass",
+        )
 
     def test_diet_tracking_works_with_numba(self):
         """When diet tracking is enabled, Numba path should accumulate diet correctly."""
         cfg = EngineConfig.from_dict(_make_diet_config())
         state = _make_two_school_state()
         rng = np.random.default_rng(42)
+        ctx = SimulationContext()
 
-        try:
-            enable_diet_tracking(n_schools=len(state), n_species=2)
-            # Diet tracking works with both Python and Numba paths
-            predation(state, cfg, rng, n_subdt=10, grid_ny=1, grid_nx=1)
-            mat = get_diet_matrix()
-            # Non-zero matrix confirms diet was tracked and accumulated
-            assert mat is not None
-            assert mat.sum() > 0.0, "Diet matrix should accumulate consumed biomass"
-        finally:
-            disable_diet_tracking()
+        enable_diet_tracking(n_schools=len(state), n_species=2, ctx=ctx)
+        # Diet tracking works with both Python and Numba paths
+        predation(state, cfg, rng, n_subdt=10, grid_ny=1, grid_nx=1, ctx=ctx)
+        mat = get_diet_matrix(ctx=ctx)
+        # Non-zero matrix confirms diet was tracked and accumulated
+        assert mat is not None
+        assert mat.sum() > 0.0, "Diet matrix should accumulate consumed biomass"
 
     def test_diet_with_three_species(self):
         """Diet matrix correctly tracks with 3 species."""
@@ -200,21 +196,19 @@ class TestDietTrackingPredation:
             cell_y=np.array([0, 0, 0], dtype=np.int32),
         )
         rng = np.random.default_rng(42)
+        ctx = SimulationContext()
 
-        try:
-            enable_diet_tracking(n_schools=3, n_species=3)
-            result = predation(state, cfg, rng, n_subdt=10, grid_ny=1, grid_nx=1)
-            mat = get_diet_matrix()
-            assert mat is not None
-            assert mat.shape == (3, 3)
-            # Verify row sums match preyed_biomass
-            np.testing.assert_allclose(
-                mat.sum(axis=1),
-                result.preyed_biomass,
-                rtol=1e-10,
-            )
-        finally:
-            disable_diet_tracking()
+        enable_diet_tracking(n_schools=3, n_species=3, ctx=ctx)
+        result = predation(state, cfg, rng, n_subdt=10, grid_ny=1, grid_nx=1, ctx=ctx)
+        mat = get_diet_matrix(ctx=ctx)
+        assert mat is not None
+        assert mat.shape == (3, 3)
+        # Verify row sums match preyed_biomass
+        np.testing.assert_allclose(
+            mat.sum(axis=1),
+            result.preyed_biomass,
+            rtol=1e-10,
+        )
 
 
 class TestDietResourceTracking:
@@ -257,34 +251,33 @@ class TestDietResourceTracking:
             cell_y=np.array([0], dtype=np.int32),
         )
         rng = np.random.default_rng(42)
+        ctx = SimulationContext()
 
         # n_species (2 focal) + n_resources (1) = 3 columns
         n_total = cfg.n_species + resources.n_resources
-        try:
-            enable_diet_tracking(n_schools=1, n_species=n_total)
-            result = predation(
-                state,
-                cfg,
-                rng,
-                n_subdt=10,
-                grid_ny=1,
-                grid_nx=1,
-                resources=resources,
+        enable_diet_tracking(n_schools=1, n_species=n_total, ctx=ctx)
+        result = predation(
+            state,
+            cfg,
+            rng,
+            n_subdt=10,
+            grid_ny=1,
+            grid_nx=1,
+            resources=resources,
+            ctx=ctx,
+        )
+        mat = get_diet_matrix(ctx=ctx)
+        assert mat is not None
+        assert mat.shape == (1, n_total)
+        # Resource species is at column index n_species + 0 = 2
+        # If the predator ate any resources, column 2 should be > 0
+        total_eaten = result.preyed_biomass[0]
+        if total_eaten > 0:
+            np.testing.assert_allclose(
+                mat.sum(axis=1),
+                result.preyed_biomass,
+                rtol=1e-10,
             )
-            mat = get_diet_matrix()
-            assert mat is not None
-            assert mat.shape == (1, n_total)
-            # Resource species is at column index n_species + 0 = 2
-            # If the predator ate any resources, column 2 should be > 0
-            total_eaten = result.preyed_biomass[0]
-            if total_eaten > 0:
-                np.testing.assert_allclose(
-                    mat.sum(axis=1),
-                    result.preyed_biomass,
-                    rtol=1e-10,
-                )
-        finally:
-            disable_diet_tracking()
 
 
 class TestDietCSVOutput:

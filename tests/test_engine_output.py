@@ -65,7 +65,7 @@ class TestWriteOutputs:
             _step_output(1, np.array([110.0, 190.0]), np.array([1100.0, 480.0])),
         ]
         write_outputs(outputs, tmp_path, cfg)
-        biomass_file = tmp_path / "osmose_biomass_Simu0.csv"
+        biomass_file = tmp_path / "osm_biomass_Simu0.csv"
         assert biomass_file.exists()
 
     def test_biomass_csv_format(self, tmp_path):
@@ -74,7 +74,7 @@ class TestWriteOutputs:
             _step_output(0, np.array([100.0, 200.0]), np.array([1000.0, 500.0])),
         ]
         write_outputs(outputs, tmp_path, cfg)
-        biomass_file = tmp_path / "osmose_biomass_Simu0.csv"
+        biomass_file = tmp_path / "osm_biomass_Simu0.csv"
         lines = biomass_file.read_text().splitlines()
         # First line is description
         assert "biomass" in lines[0].lower()
@@ -90,7 +90,7 @@ class TestWriteOutputs:
             for i in range(12)
         ]
         write_outputs(outputs, tmp_path, cfg)
-        df = pd.read_csv(tmp_path / "osmose_biomass_Simu0.csv", skiprows=1)
+        df = pd.read_csv(tmp_path / "osm_biomass_Simu0.csv", skiprows=1)
         assert len(df) == 12
         assert "Anchovy" in df.columns
         assert "Hake" in df.columns
@@ -102,7 +102,7 @@ class TestWriteOutputs:
             _step_output(0, np.array([100.0, 200.0]), np.array([1000.0, 500.0])),
         ]
         write_outputs(outputs, tmp_path, cfg)
-        assert (tmp_path / "osmose_abundance_Simu0.csv").exists()
+        assert (tmp_path / "osm_abundance_Simu0.csv").exists()
 
     def test_time_in_years(self, tmp_path):
         """Time column should be in fractional years."""
@@ -112,7 +112,7 @@ class TestWriteOutputs:
             _step_output(6, np.array([110.0, 190.0]), np.array([1100.0, 480.0])),
         ]
         write_outputs(outputs, tmp_path, cfg)
-        df = pd.read_csv(tmp_path / "osmose_biomass_Simu0.csv", skiprows=1)
+        df = pd.read_csv(tmp_path / "osm_biomass_Simu0.csv", skiprows=1)
         np.testing.assert_allclose(df["Time"].iloc[0], 0.0, atol=1e-6)
         np.testing.assert_allclose(df["Time"].iloc[1], 0.5, atol=1e-6)
 
@@ -136,8 +136,8 @@ class TestMortalityOutput:
             ),
         ]
         write_outputs(outputs, tmp_path, cfg)
-        assert (tmp_path / "Mortality" / "osmose_mortalityRate-Anchovy_Simu0.csv").exists()
-        assert (tmp_path / "Mortality" / "osmose_mortalityRate-Hake_Simu0.csv").exists()
+        assert (tmp_path / "Mortality" / "osm_mortalityRate-Anchovy_Simu0.csv").exists()
+        assert (tmp_path / "Mortality" / "osm_mortalityRate-Hake_Simu0.csv").exists()
 
     def test_mortality_csv_has_cause_columns(self, tmp_path):
         cfg = EngineConfig.from_dict(_make_output_config())
@@ -150,7 +150,7 @@ class TestMortalityOutput:
         ]
         write_outputs(outputs, tmp_path, cfg)
         df = pd.read_csv(
-            tmp_path / "Mortality" / "osmose_mortalityRate-Anchovy_Simu0.csv", skiprows=1
+            tmp_path / "Mortality" / "osm_mortalityRate-Anchovy_Simu0.csv", skiprows=1
         )
         assert "Fishing" in df.columns
         assert "Predation" in df.columns
@@ -170,8 +170,8 @@ class TestPythonEngineWritesOutput:
         engine = PythonEngine()
         result = engine.run(config=config, output_dir=tmp_path, seed=42)
         assert result.returncode == 0
-        assert (tmp_path / "osmose_biomass_Simu0.csv").exists()
-        assert (tmp_path / "osmose_abundance_Simu0.csv").exists()
+        assert (tmp_path / "osm_biomass_Simu0.csv").exists()
+        assert (tmp_path / "osm_abundance_Simu0.csv").exists()
         # Read and verify non-empty
-        df = pd.read_csv(tmp_path / "osmose_biomass_Simu0.csv", skiprows=1)
+        df = pd.read_csv(tmp_path / "osm_biomass_Simu0.csv", skiprows=1)
         assert len(df) == 12  # 12 timesteps for 1 year
