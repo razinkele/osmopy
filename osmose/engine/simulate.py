@@ -23,6 +23,20 @@ from osmose.engine.state import MortalityCause, SchoolState
 
 
 @dataclass
+class SimulationContext:
+    """Per-simulation mutable state -- replaces module-level globals.
+
+    Passed through the call chain instead of using module-level variables,
+    making the simulation re-entrant and thread-safe.
+    """
+
+    diet_tracking_enabled: bool = False
+    diet_matrix: NDArray[np.float64] | None = None
+    tl_weighted_sum: NDArray[np.float64] | None = None
+    config_dir: str = ""
+
+
+@dataclass
 class StepOutput:
     """Aggregated output for a single simulation timestep."""
 
@@ -109,11 +123,14 @@ def _mortality(
     grid: Grid,
     step: int = 0,
     species_rngs: list[np.random.Generator] | None = None,
+    ctx: SimulationContext | None = None,
 ) -> SchoolState:
     """Apply all mortality sources with interleaved ordering."""
     from osmose.engine.processes.mortality import mortality
 
-    return mortality(state, resources, config, rng, grid, step=step, species_rngs=species_rngs)
+    return mortality(
+        state, resources, config, rng, grid, step=step, species_rngs=species_rngs, ctx=ctx
+    )
 
 
 def _growth(state: SchoolState, config: EngineConfig, rng: np.random.Generator) -> SchoolState:
@@ -757,6 +774,10 @@ def simulate(
         movement_rngs = [rng] * config.n_species
     if mortality_rngs is None:
         mortality_rngs = [rng] * config.n_species
+
+    # Per-simulation context — replaces module-level globals for thread safety
+    ctx = SimulationContext(config_dir=config.raw_config.get("_osmose.config.dir", ""))
+
     state = initialize(config, grid, rng)
     resources = ResourceState(config=config.raw_config, grid=grid)
     background = BackgroundState(config=config.raw_config, grid=grid, engine_config=config)
@@ -842,7 +863,7 @@ def simulate(
             state = state.append(bkg_schools)
 
         state = _mortality(
-            state, resources, config, rng, grid, step=step, species_rngs=mortality_rngs
+            state, resources, config, rng, grid, step=step, species_rngs=mortality_rngs, ctx=ctx
         )
 
         # Collect background output BEFORE stripping

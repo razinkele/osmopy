@@ -19,6 +19,7 @@ from numpy.typing import NDArray
 from osmose.engine.config import EngineConfig
 from osmose.engine.processes.feeding_stage import compute_feeding_stages
 from osmose.engine.resources import ResourceState
+from osmose.engine.simulate import SimulationContext
 from osmose.engine.state import SchoolState
 from osmose.logging import setup_logging
 
@@ -39,30 +40,33 @@ if not _HAS_NUMBA:
 
 
 # ---------------------------------------------------------------------------
-# Diet tracking (module-level state)
+# Diet tracking (context-based state)
 # ---------------------------------------------------------------------------
 
-_diet_tracking_enabled: bool = False
-_diet_matrix: NDArray[np.float64] | None = None
 
-
-def enable_diet_tracking(n_schools: int, n_species: int) -> None:
+def enable_diet_tracking(
+    n_schools: int,
+    n_species: int,
+    ctx: SimulationContext | None = None,
+) -> None:
     """Enable per-school diet tracking with a (n_schools, n_species) matrix."""
-    global _diet_tracking_enabled, _diet_matrix
-    _diet_tracking_enabled = True
-    _diet_matrix = np.zeros((n_schools, n_species), dtype=np.float64)
+    if ctx is None:
+        return
+    ctx.diet_tracking_enabled = True
+    ctx.diet_matrix = np.zeros((n_schools, n_species), dtype=np.float64)
 
 
-def disable_diet_tracking() -> None:
+def disable_diet_tracking(ctx: SimulationContext | None = None) -> None:
     """Disable diet tracking and clear the matrix."""
-    global _diet_tracking_enabled, _diet_matrix
-    _diet_tracking_enabled = False
-    _diet_matrix = None
+    if ctx is None:
+        return
+    ctx.diet_tracking_enabled = False
+    ctx.diet_matrix = None
 
 
-def get_diet_matrix() -> NDArray[np.float64] | None:
+def get_diet_matrix(ctx: SimulationContext | None = None) -> NDArray[np.float64] | None:
     """Return the current diet matrix, or None if tracking is disabled."""
-    return _diet_matrix
+    return ctx.diet_matrix if ctx else None
 
 
 # ---------------------------------------------------------------------------
@@ -247,6 +251,7 @@ def _predation_in_cell_python(
     prey_access_idx: NDArray[np.int32] | None = None,
     pred_access_idx: NDArray[np.int32] | None = None,
     stage_access_matrix: NDArray[np.float64] | None = None,
+    ctx: SimulationContext | None = None,
 ) -> None:
     """Pure Python fallback for predation within a single cell."""
     n_local = len(indices)
@@ -335,10 +340,12 @@ def _predation_in_cell_python(
                 state.abundance[q_idx] = max(0.0, state.abundance[q_idx] - n_dead)
 
             # Diet tracking: record biomass eaten per prey species
-            if _diet_tracking_enabled and _diet_matrix is not None:
+            _diet_en = ctx.diet_tracking_enabled if ctx else False
+            _diet_mat = ctx.diet_matrix if ctx else None
+            if _diet_en and _diet_mat is not None:
                 prey_sp = state.species_id[q_idx]
-                if p_idx < _diet_matrix.shape[0] and prey_sp < _diet_matrix.shape[1]:
-                    _diet_matrix[p_idx, prey_sp] += eaten_from_prey
+                if p_idx < _diet_mat.shape[0] and prey_sp < _diet_mat.shape[1]:
+                    _diet_mat[p_idx, prey_sp] += eaten_from_prey
 
         success = min(eaten_total / max_eatable, 1.0)
         state.pred_success_rate[p_idx] += success / n_subdt
@@ -361,6 +368,7 @@ def _predation_on_resources(
     n_subdt: int,
     pred_access_idx: NDArray[np.int32] | None = None,
     stage_access_matrix: NDArray[np.float64] | None = None,
+    ctx: SimulationContext | None = None,
 ) -> None:
     """Let focal schools in this cell eat resource species.
 
@@ -477,10 +485,12 @@ def _predation_on_resources(
             resources.biomass[r, cell_id] = max(0.0, resources.biomass[r, cell_id] - eaten_from_rsc)
 
             # Diet tracking: resource species index = n_species + r
-            if _diet_tracking_enabled and _diet_matrix is not None:
+            _diet_en = ctx.diet_tracking_enabled if ctx else False
+            _diet_mat = ctx.diet_matrix if ctx else None
+            if _diet_en and _diet_mat is not None:
                 rsc_col = config.n_species + r
-                if p_idx < _diet_matrix.shape[0] and rsc_col < _diet_matrix.shape[1]:
-                    _diet_matrix[p_idx, rsc_col] += eaten_from_rsc
+                if p_idx < _diet_mat.shape[0] and rsc_col < _diet_mat.shape[1]:
+                    _diet_mat[p_idx, rsc_col] += eaten_from_rsc
 
         # Update predator success rate
         if max_eatable > 0:
@@ -506,6 +516,7 @@ def predation(
     grid_nx: int,
     resources: ResourceState | None = None,
     species_rngs: list[np.random.Generator] | None = None,
+    ctx: SimulationContext | None = None,
 ) -> SchoolState:
     """Apply predation across all grid cells.
 
@@ -585,7 +596,9 @@ def predation(
             else:
                 _cell_rng = rng
             pred_order = _cell_rng.permutation(len(cell_indices)).astype(np.int32)
-            diet_mat = _diet_matrix if _diet_tracking_enabled else _DUMMY_DIET
+            _diet_en = ctx.diet_tracking_enabled if ctx else False
+            _diet_mat = ctx.diet_matrix if ctx else None
+            diet_mat = _diet_mat if _diet_en and _diet_mat is not None else _DUMMY_DIET
             _predation_in_cell_numba(
                 cell_indices,
                 pred_order,
@@ -609,7 +622,7 @@ def predation(
                 pred_access_idx,
                 use_stage_access,
                 diet_mat,
-                _diet_tracking_enabled,
+                _diet_en,
             )
         else:
             _predation_in_cell_python(
@@ -621,6 +634,7 @@ def predation(
                 prey_access_idx=prey_access_idx if use_stage_access else None,
                 pred_access_idx=pred_access_idx if use_stage_access else None,
                 stage_access_matrix=access_matrix if use_stage_access else None,
+                ctx=ctx,
             )
 
         # Resource predation: focal schools eat LTL plankton/detritus
@@ -638,6 +652,7 @@ def predation(
                 n_subdt,
                 pred_access_idx=pred_access_idx if use_stage_access else None,
                 stage_access_matrix=access_matrix if use_stage_access else None,
+                ctx=ctx,
             )
 
     new_biomass = work_state.abundance * work_state.weight

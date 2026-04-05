@@ -656,7 +656,10 @@ class TestTrophicLevel:
             first_feeding_age_dt=np.array([1, 1], dtype=np.int32),
         )
 
-        new_state = mortality(state, resources, cfg, np.random.default_rng(42), grid)
+        from osmose.engine.simulate import SimulationContext
+
+        ctx = SimulationContext()
+        new_state = mortality(state, resources, cfg, np.random.default_rng(42), grid, ctx=ctx)
 
         # Predator should have TL > 1 if it ate anything
         if new_state.preyed_biomass[0] > 0:
