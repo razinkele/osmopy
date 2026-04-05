@@ -85,8 +85,8 @@ class TestDistributionCSVOutput:
             for t in range(3)
         ]
         write_outputs(outputs, tmp_path, cfg)
-        assert (tmp_path / "osmose_biomassByAge_Anchovy_Simu0.csv").exists()
-        assert (tmp_path / "osmose_biomassByAge_Hake_Simu0.csv").exists()
+        assert (tmp_path / "osm_biomassByAge_Anchovy_Simu0.csv").exists()
+        assert (tmp_path / "osm_biomassByAge_Hake_Simu0.csv").exists()
 
     def test_abundance_by_age_csv_written(self, tmp_path):
         """write_outputs should create abundanceByAge CSVs when data is present."""
@@ -103,8 +103,8 @@ class TestDistributionCSVOutput:
             for t in range(2)
         ]
         write_outputs(outputs, tmp_path, cfg)
-        assert (tmp_path / "osmose_abundanceByAge_Anchovy_Simu0.csv").exists()
-        assert (tmp_path / "osmose_abundanceByAge_Hake_Simu0.csv").exists()
+        assert (tmp_path / "osm_abundanceByAge_Anchovy_Simu0.csv").exists()
+        assert (tmp_path / "osm_abundanceByAge_Hake_Simu0.csv").exists()
 
     def test_csv_has_correct_headers_age(self, tmp_path):
         """biomassByAge CSV should have Time column + integer age bin columns."""
@@ -121,7 +121,7 @@ class TestDistributionCSVOutput:
             for t in range(2)
         ]
         write_outputs(outputs, tmp_path, cfg)
-        df = pd.read_csv(tmp_path / "osmose_biomassByAge_Anchovy_Simu0.csv")
+        df = pd.read_csv(tmp_path / "osm_biomassByAge_Anchovy_Simu0.csv")
         assert "Time" in df.columns
         # Age bin columns should be "0", "1", "2", "3"
         for i in range(n_age_bins):
@@ -151,7 +151,7 @@ class TestDistributionCSVOutput:
             for t in range(2)
         ]
         write_outputs(outputs, tmp_path, cfg)
-        df = pd.read_csv(tmp_path / "osmose_biomassBySize_Anchovy_Simu0.csv")
+        df = pd.read_csv(tmp_path / "osm_biomassBySize_Anchovy_Simu0.csv")
         assert "Time" in df.columns
         # Size columns should be formatted as floats e.g. "0.0", "1.0", ...
         assert "0.0" in df.columns
@@ -178,7 +178,7 @@ class TestDistributionCSVOutput:
             ),
         ]
         write_outputs(outputs, tmp_path, cfg)
-        df = pd.read_csv(tmp_path / "osmose_biomassByAge_Anchovy_Simu0.csv")
+        df = pd.read_csv(tmp_path / "osm_biomassByAge_Anchovy_Simu0.csv")
         assert len(df) == 2
         np.testing.assert_allclose(df["1"].iloc[0], 10.0)
         np.testing.assert_allclose(df["1"].iloc[1], 11.0)
@@ -198,7 +198,7 @@ class TestDistributionCSVOutput:
             for step in [0, 6, 12]
         ]
         write_outputs(outputs, tmp_path, cfg)
-        df = pd.read_csv(tmp_path / "osmose_biomassByAge_Anchovy_Simu0.csv")
+        df = pd.read_csv(tmp_path / "osm_biomassByAge_Anchovy_Simu0.csv")
         np.testing.assert_allclose(df["Time"].iloc[0], 0.0, atol=1e-9)
         np.testing.assert_allclose(df["Time"].iloc[1], 0.5, atol=1e-9)
         np.testing.assert_allclose(df["Time"].iloc[2], 1.0, atol=1e-9)
@@ -213,7 +213,7 @@ class TestDistributionCSVOutput:
         # None of the distribution files should exist
         for label in ["biomassByAge", "abundanceByAge", "biomassBySize", "abundanceBySize"]:
             for sp in ["Anchovy", "Hake"]:
-                assert not (tmp_path / f"osmose_{label}_{sp}_Simu0.csv").exists()
+                assert not (tmp_path / f"osm_{label}_{sp}_Simu0.csv").exists()
 
     def test_biomass_by_size_csv_written(self, tmp_path):
         """write_outputs should create biomassBySize CSVs when data is present."""
@@ -230,8 +230,8 @@ class TestDistributionCSVOutput:
             for t in range(2)
         ]
         write_outputs(outputs, tmp_path, cfg)
-        assert (tmp_path / "osmose_biomassBySize_Anchovy_Simu0.csv").exists()
-        assert (tmp_path / "osmose_biomassBySize_Hake_Simu0.csv").exists()
+        assert (tmp_path / "osm_biomassBySize_Anchovy_Simu0.csv").exists()
+        assert (tmp_path / "osm_biomassBySize_Hake_Simu0.csv").exists()
 
     def test_mixed_none_and_data_steps(self, tmp_path):
         """Steps with None distribution should contribute zeros to the matrix."""
@@ -252,7 +252,7 @@ class TestDistributionCSVOutput:
             ),
         ]
         write_outputs(outputs, tmp_path, cfg)
-        df = pd.read_csv(tmp_path / "osmose_biomassByAge_Anchovy_Simu0.csv")
+        df = pd.read_csv(tmp_path / "osm_biomassByAge_Anchovy_Simu0.csv")
         assert len(df) == 2
         # Second row should be zeros (None data contributes zeros)
         np.testing.assert_allclose(df["0"].iloc[1], 0.0)
