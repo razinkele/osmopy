@@ -36,7 +36,7 @@ class SimulationContext:
     config_dir: str = ""
 
 
-@dataclass
+@dataclass(frozen=True)
 class StepOutput:
     """Aggregated output for a single simulation timestep."""
 
