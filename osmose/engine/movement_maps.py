@@ -7,12 +7,13 @@ infrastructure for map-based (B1) movement — no movement logic is implemented 
 
 from __future__ import annotations
 
-import glob as _glob
 import logging
 from pathlib import Path
 
 import numpy as np
 from numpy.typing import NDArray
+
+from osmose.engine.path_resolution import resolve_data_path
 
 logger = logging.getLogger(__name__)
 
@@ -20,28 +21,13 @@ logger = logging.getLogger(__name__)
 def _resolve_path(filepath_str: str, config_dir: str = "") -> Path:
     """Resolve a relative CSV map file path against multiple candidate directories.
 
-    Tries (in order):
-    1. The path as-is (works for absolute paths or paths relative to CWD).
-    2. Relative to the config directory (if provided).
-    3. Relative to ``data/examples/``.
-    4. Relative to any ``data/*/`` subdirectory (sorted for determinism).
-
-    Returns the first existing candidate, or the original path if none found
-    (so that the subsequent ``open()`` call will raise a clear ``FileNotFoundError``).
+    Thin wrapper around :func:`resolve_data_path`. Returns the original path
+    (for a clear FileNotFoundError) when the shared resolver returns None.
     """
-    p = Path(filepath_str)
-    if p.exists():
-        return p
-    search_dirs: list[Path] = []
-    if config_dir:
-        search_dirs.append(Path(config_dir))
-    search_dirs.append(Path("data/examples"))
-    search_dirs.extend(Path(d) for d in sorted(_glob.glob("data/*/")))
-    for base in search_dirs:
-        candidate = base / p
-        if candidate.exists():
-            return candidate
-    return p  # fall through — open() will raise FileNotFoundError with the original path
+    result = resolve_data_path(filepath_str, config_dir=config_dir)
+    if result is not None:
+        return result
+    return Path(filepath_str)  # fall through — open() will raise FileNotFoundError
 
 
 def _parse_semicolon_ints(value: str, limit: int) -> list[int]:

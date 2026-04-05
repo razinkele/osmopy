@@ -20,6 +20,7 @@ from osmose.engine.background import (
     _parse_floats,
     parse_background_species,
 )
+from osmose.engine.path_resolution import resolve_data_path
 from osmose.logging import setup_logging
 
 _log = setup_logging("osmose.engine.config")
@@ -72,45 +73,12 @@ def _species_int_optional(
     )
 
 
-def _search_dirs(config_dir: str = "") -> list[Path]:
-    """Build a list of directories to search for data files."""
-    import glob as _glob
-
-    dirs: list[Path] = []
-    if config_dir:
-        dirs.append(Path(config_dir))
-    dirs.append(Path("."))
-    dirs.append(Path("data/examples"))
-    dirs += [Path(d) for d in _glob.glob("data/*/")]
-    return dirs
-
-
 def _resolve_file(file_key: str, config_dir: str = "") -> Path | None:
     """Resolve a relative file path against multiple search directories.
 
-    Rejects paths containing '..' segments and absolute paths not under
-    a known search directory, to prevent path traversal.
+    Thin wrapper around :func:`resolve_data_path` kept for backward compatibility.
     """
-    if not file_key:
-        return None
-    if ".." in Path(file_key).parts:
-        _log.warning("Rejecting file key with '..' traversal: %s", file_key)
-        return None
-    p = Path(file_key)
-    if p.is_absolute():
-        for base in _search_dirs(config_dir):
-            try:
-                if p.is_relative_to(base.resolve()) and p.exists():
-                    return p
-            except (ValueError, OSError):
-                continue
-        _log.warning("Rejecting absolute path not under any search dir: %s", file_key)
-        return None
-    for base in _search_dirs(config_dir):
-        path = base / file_key
-        if path.exists():
-            return path
-    return None
+    return resolve_data_path(file_key, config_dir=config_dir)
 
 
 def _enabled(cfg: dict[str, str], key: str) -> bool:

@@ -1,8 +1,8 @@
-"""Tests for _resolve_file path traversal guard."""
+"""Tests for resolve_data_path path traversal guard."""
 
 from pathlib import Path
 
-from osmose.engine.config import _resolve_file
+from osmose.engine.path_resolution import resolve_data_path as _resolve_file
 
 
 def test_rejects_parent_traversal(tmp_path: Path) -> None:
@@ -24,9 +24,17 @@ def test_rejects_bare_parent_traversal(tmp_path: Path) -> None:
     assert result is None
 
 
-def test_rejects_absolute_path_outside_config_dir(tmp_path: Path) -> None:
-    """Absolute paths not under any search dir should be rejected."""
-    result = _resolve_file("/etc/hosts", config_dir=str(tmp_path))
+def test_accepts_absolute_path_that_exists(tmp_path: Path) -> None:
+    """Absolute paths that exist are accepted (security is via '..' guard)."""
+    data_file = tmp_path / "data.csv"
+    data_file.write_text("x")
+    result = _resolve_file(str(data_file), config_dir=str(tmp_path))
+    assert result == data_file
+
+
+def test_rejects_absolute_path_with_traversal(tmp_path: Path) -> None:
+    """Absolute paths containing '..' should be rejected."""
+    result = _resolve_file(str(tmp_path / "sub" / ".." / "secret.csv"), config_dir=str(tmp_path))
     assert result is None
 
 

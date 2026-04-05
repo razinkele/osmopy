@@ -18,7 +18,8 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from osmose.engine.config import EngineConfig, _resolve_file
+from osmose.engine.config import EngineConfig
+from osmose.engine.path_resolution import resolve_data_path as _resolve_file
 from osmose.engine.grid import Grid
 from osmose.engine.processes.growth import growth
 from osmose.engine.processes.mortality import (
