@@ -100,7 +100,7 @@ def test_yield_biomass(output_dir):
 
 
 def test_missing_output_returns_empty(output_dir):
-    results = OsmoseResults(output_dir)
+    results = OsmoseResults(output_dir, strict=False)
     df = results.diet_matrix()
     assert df.empty
 
@@ -120,19 +120,19 @@ def test_read_csv_pattern(output_dir):
 
 
 def test_mortality_returns_empty_when_no_files(output_dir):
-    results = OsmoseResults(output_dir)
+    results = OsmoseResults(output_dir, strict=False)
     df = results.mortality()
     assert df.empty
 
 
 def test_mean_size_returns_empty_when_no_files(output_dir):
-    results = OsmoseResults(output_dir)
+    results = OsmoseResults(output_dir, strict=False)
     df = results.mean_size()
     assert df.empty
 
 
 def test_mean_trophic_level_returns_empty_when_no_files(output_dir):
-    results = OsmoseResults(output_dir)
+    results = OsmoseResults(output_dir, strict=False)
     df = results.mean_trophic_level()
     assert df.empty
 
@@ -276,7 +276,7 @@ class TestRead2dOutput:
 
     def test_missing_files_returns_empty(self, output_dir_2d):
         """When no files match the pattern, an empty DataFrame is returned."""
-        r = OsmoseResults(output_dir_2d)
+        r = OsmoseResults(output_dir_2d, strict=False)
         df = r._read_2d_output("nonExistentOutput")
         assert df.empty
 
@@ -374,7 +374,7 @@ class TestOutputMethods2D:
     )
     def test_2d_method_missing_files_empty(self, tmp_path, method):
         """2D methods return empty DataFrame when no matching files exist."""
-        r = OsmoseResults(tmp_path)
+        r = OsmoseResults(tmp_path, strict=False)
         df = getattr(r, method)()
         assert df.empty
 
@@ -397,7 +397,7 @@ class TestOutputMethods1D:
         assert set(df["species"].unique()) == {"Anchovy"}
 
     def test_yield_abundance_missing(self, tmp_path):
-        r = OsmoseResults(tmp_path)
+        r = OsmoseResults(tmp_path, strict=False)
         df = r.yield_abundance()
         assert df.empty
 
@@ -408,7 +408,7 @@ class TestOutputMethods1D:
         assert "species" in df.columns
 
     def test_mortality_rate_missing(self, tmp_path):
-        r = OsmoseResults(tmp_path)
+        r = OsmoseResults(tmp_path, strict=False)
         df = r.mortality_rate()
         assert df.empty
 
@@ -429,7 +429,7 @@ class TestSizeSpectrum:
         assert len(df) == 8
 
     def test_missing_files_empty(self, tmp_path):
-        r = OsmoseResults(tmp_path)
+        r = OsmoseResults(tmp_path, strict=False)
         df = r.size_spectrum()
         assert df.empty
 
@@ -501,7 +501,7 @@ class TestExportDataframe:
         assert list(df.columns) == ["time", "species", "bin", "value"]
 
     def test_diet(self, output_dir):
-        r = OsmoseResults(output_dir)
+        r = OsmoseResults(output_dir, strict=False)
         df = r.export_dataframe("diet")
         # diet_matrix returns empty when no files — that's fine
         assert isinstance(df, pd.DataFrame)
@@ -512,7 +512,7 @@ class TestExportDataframe:
         assert "species" not in df.columns
 
     def test_trophic(self, output_dir):
-        r = OsmoseResults(output_dir)
+        r = OsmoseResults(output_dir, strict=False)
         df = r.export_dataframe("trophic")
         assert isinstance(df, pd.DataFrame)
 
@@ -562,13 +562,13 @@ def test_export_map_includes_additional_distributions():
 
 def test_fishery_yield_returns_dataframe(tmp_path):
     """fishery_yield() is callable and returns a DataFrame (empty when no files)."""
-    r = OsmoseResults(tmp_path)
+    r = OsmoseResults(tmp_path, strict=False)
     df = r.fishery_yield()
     assert isinstance(df, pd.DataFrame)
 
 
 def test_bioen_ingestion_returns_dataframe(tmp_path):
     """bioen_ingestion() is callable and returns a DataFrame (empty when no files)."""
-    r = OsmoseResults(tmp_path)
+    r = OsmoseResults(tmp_path, strict=False)
     df = r.bioen_ingestion()
     assert isinstance(df, pd.DataFrame)

@@ -36,13 +36,13 @@ def test_strict_raises_on_2d_missing(tmp_path: Path) -> None:
 
 
 def test_non_strict_returns_empty_df(tmp_path: Path) -> None:
-    """Default (strict=False) still returns empty DataFrame for backwards compat."""
-    r = OsmoseResults(tmp_path / "nonexistent")
+    """strict=False returns empty DataFrame instead of raising."""
+    r = OsmoseResults(tmp_path / "nonexistent", strict=False)
     df = r.biomass()
     assert df.empty
 
 
-def test_strict_default_is_false(tmp_path: Path) -> None:
-    """Verify strict defaults to False."""
+def test_strict_default_is_true(tmp_path: Path) -> None:
+    """Verify strict defaults to True."""
     r = OsmoseResults(tmp_path / "nonexistent")
-    assert r.strict is False
+    assert r.strict is True

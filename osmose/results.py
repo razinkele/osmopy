@@ -20,7 +20,7 @@ class OsmoseResults:
     mortality data.
     """
 
-    def __init__(self, output_dir: Path, prefix: str = "osm", strict: bool = False):
+    def __init__(self, output_dir: Path, prefix: str = "osm", strict: bool = True):
         self.output_dir = Path(output_dir)
         self.prefix = prefix
         self.strict = strict

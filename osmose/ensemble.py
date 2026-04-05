@@ -63,7 +63,7 @@ def aggregate_replicates(
     # Collect per-replicate time series
     series_list: list[pd.DataFrame] = []
     for rep_dir in rep_dirs:
-        res = OsmoseResults(rep_dir)
+        res = OsmoseResults(rep_dir, strict=False)
         df = res.export_dataframe(output_type, species=species)
         if df.empty or "time" not in df.columns:
             continue
