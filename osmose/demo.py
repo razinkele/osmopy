@@ -206,6 +206,9 @@ def migrate_config(
 
     Applies key renames sequentially from the config's current version
     through to target_version, following the Java engine's Releases.java chain.
+
+    Note: migration chain currently covers up to v4.3.0; versions above have
+    no key renames.
     """
     current = config.get("osmose.version", "")
     if current == target_version:

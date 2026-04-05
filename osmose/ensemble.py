@@ -41,6 +41,9 @@ def aggregate_replicates(
 ) -> dict[str, list]:
     """Aggregate replicate outputs into mean + 95% CI.
 
+    Uses empirical percentiles (non-parametric), unlike analysis.ensemble_stats
+    which uses parametric CI.
+
     Reads each replicate's output for the given type, aligns by inner join
     on time column, and computes mean + 2.5th/97.5th percentiles.
 

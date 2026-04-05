@@ -8,8 +8,10 @@ import numpy as np
 def build_rng(seed: int, n_species: int, fixed: bool) -> list[np.random.Generator]:
     """Create RNG instances for each species.
 
-    When fixed=False: all species share a single Generator.
-    When fixed=True: each species gets an independent Generator from SeedSequence.
+    When fixed=False: all species share a single Generator
+        (non-deterministic per-species ordering).
+    When fixed=True: each species gets a reproducible independent Generator
+        via SeedSequence (species ordering has no effect on results).
     """
     if not fixed:
         shared = np.random.default_rng(seed)

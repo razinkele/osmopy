@@ -6,7 +6,7 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 
-K_B = 8.62e-5  # Boltzmann constant in eV/K
+K_B = 8.62e-5  # Boltzmann constant (eV/K), used in Arrhenius and Johnson thermal curves
 
 
 def phi_t(temp_c: NDArray[np.float64], e_m: float, e_d: float, t_p: float) -> NDArray[np.float64]:

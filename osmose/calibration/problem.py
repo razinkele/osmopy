@@ -167,6 +167,7 @@ class OsmoseCalibrationProblem(Problem):
         for key, value in overrides.items():
             cmd.append(f"-P{key}={value}")
 
+        # 1-hour timeout per evaluation; consider making configurable for long simulations
         result = subprocess.run(cmd, capture_output=True, timeout=3600)
 
         if result.returncode != 0:
