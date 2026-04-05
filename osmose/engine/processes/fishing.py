@@ -84,23 +84,21 @@ def fishing_mortality(
 
     # Spatial fishing distribution: multiply by cell-specific factor
     spatial_factor = np.ones(len(state), dtype=np.float64)
-    for i in range(len(state)):
-        sp_i = sp[i]
-        if (
-            sp_i < len(config.fishing_spatial_maps)
-            and config.fishing_spatial_maps[sp_i] is not None
-        ):
-            sp_map = config.fishing_spatial_maps[sp_i]
-            cy = int(state.cell_y[i])
-            cx = int(state.cell_x[i])
-            if 0 <= cy < sp_map.shape[0] and 0 <= cx < sp_map.shape[1]:
-                val = sp_map[cy, cx]
-                if val <= 0 or np.isnan(val):
-                    spatial_factor[i] = 0.0
-                else:
-                    spatial_factor[i] = val
-            else:
-                spatial_factor[i] = 0.0
+    cy = state.cell_y.astype(np.intp)
+    cx = state.cell_x.astype(np.intp)
+    for sp_idx in range(len(config.fishing_spatial_maps)):
+        sp_map = config.fishing_spatial_maps[sp_idx]
+        if sp_map is None:
+            continue
+        sp_mask = sp == sp_idx
+        if not sp_mask.any():
+            continue
+        sy, sx = cy[sp_mask], cx[sp_mask]
+        valid = (sy >= 0) & (sy < sp_map.shape[0]) & (sx >= 0) & (sx < sp_map.shape[1])
+        vals = np.zeros(sp_mask.sum(), dtype=np.float64)
+        vals[valid] = sp_map[sy[valid], sx[valid]]
+        vals[(vals <= 0) | np.isnan(vals)] = 0.0
+        spatial_factor[sp_mask] = vals
 
     # 2.5: MPA — reduce fishing in protected cells
     mpa_factor = np.ones(len(state), dtype=np.float64)
@@ -109,15 +107,10 @@ def fishing_mortality(
         for mpa in config.mpa_zones:
             if not (mpa.start_year <= year < mpa.end_year):
                 continue
-            for i in range(len(state)):
-                cy = int(state.cell_y[i])
-                cx = int(state.cell_x[i])
-                if (
-                    0 <= cy < mpa.grid.shape[0]
-                    and 0 <= cx < mpa.grid.shape[1]
-                    and mpa.grid[cy, cx] > 0
-                ):
-                    mpa_factor[i] *= 1.0 - mpa.percentage
+            valid = (cy >= 0) & (cy < mpa.grid.shape[0]) & (cx >= 0) & (cx < mpa.grid.shape[1])
+            in_mpa = np.zeros(len(state), dtype=bool)
+            in_mpa[valid] = mpa.grid[cy[valid], cx[valid]] > 0
+            mpa_factor[in_mpa] *= 1.0 - mpa.percentage
 
     n_dead_total = state.abundance * mortality_fraction * selectivity * spatial_factor * mpa_factor
     n_dead_total[state.is_background] = 0.0
