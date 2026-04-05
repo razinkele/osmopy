@@ -101,7 +101,10 @@ def test_run_single_creates_run_dir(mock_results_cls, mock_subprocess, tmp_path)
 def test_run_single_passes_output_dir(mock_results_cls, mock_subprocess, tmp_path):
     """Output dir override is passed to Java and to OsmoseResults."""
     mock_subprocess.return_value = MagicMock(returncode=0)
-    mock_results_cls.return_value = MagicMock()
+    mock_instance = MagicMock()
+    mock_results_cls.return_value = mock_instance
+    mock_instance.__enter__ = MagicMock(return_value=mock_instance)
+    mock_instance.__exit__ = MagicMock(return_value=False)
 
     problem = _make_problem(tmp_path, objective_fns=[lambda r: 0.0])
     problem._run_single({}, run_id=3)
@@ -109,7 +112,7 @@ def test_run_single_passes_output_dir(mock_results_cls, mock_subprocess, tmp_pat
     cmd = mock_subprocess.call_args[0][0]
     expected_output = str(tmp_path / "work" / "run_3" / "output")
     assert f"-Poutput.dir.path={expected_output}" in cmd
-    mock_results_cls.assert_called_once_with(Path(expected_output))
+    mock_results_cls.assert_called_once_with(Path(expected_output), strict=False)
 
 
 # --- _evaluate tests ---

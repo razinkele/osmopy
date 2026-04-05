@@ -179,9 +179,9 @@ class OsmoseCalibrationProblem(Problem):
         # Compute objectives
         from osmose.results import OsmoseResults
 
-        results = OsmoseResults(output_dir)
-        obj_values = []
-        for fn in self.objective_fns:
-            obj_values.append(fn(results))
+        with OsmoseResults(output_dir, strict=False) as results:
+            obj_values = []
+            for fn in self.objective_fns:
+                obj_values.append(fn(results))
 
         return obj_values
