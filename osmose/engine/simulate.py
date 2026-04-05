@@ -259,7 +259,7 @@ def _bioen_step(
             ]
         )
     else:
-        # No temperature data: default to 15°C (neutral for most species)
+        # No temperature data: use 15°C as fallback (mid-range assumption; may bias tropical/polar species)
         temp_c_arr = np.full(len(state), 15.0, dtype=np.float64)
 
     # ------------------------------------------------------------------ #

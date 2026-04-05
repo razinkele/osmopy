@@ -43,6 +43,7 @@ def aggregate_replicates(
 
     Reads each replicate's output for the given type, aligns by inner join
     on time column, and computes mean + 2.5th/97.5th percentiles.
+    Uses empirical percentiles (non-parametric), unlike analysis.ensemble_stats which uses parametric CI.
 
     Args:
         rep_dirs: Paths to replicate output directories (rep_0/, rep_1/, ...).

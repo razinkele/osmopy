@@ -415,7 +415,7 @@ def _load_discard_rates(
         sp_name = species_names[sp_idx].strip()
         if sp_name in df.index:
             row = df.loc[sp_name]
-            # Take the max discard rate across fisheries (species is caught by one fishery)
+            # Take the first nonzero discard rate (assumes one primary fishery per species)
             vals = row.values.astype(np.float64)
             nonzero = vals[vals > 0]
             if len(nonzero) > 0:
