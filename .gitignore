@@ -61,3 +61,4 @@ osmose-java/*.class
 # Data outputs
 data/scenarios/*/output/
 data/eec_full/output/
+.worktrees/
