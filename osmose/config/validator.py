@@ -73,6 +73,9 @@ def validate_field(key: str, value: str, field: OsmoseField) -> str | None:
     elif field.param_type == ParamType.BOOL:
         if value.lower() not in ("true", "false", "0", "1"):
             return f"Expected boolean, got '{value}'"
+    elif field.param_type == ParamType.ENUM:
+        if field.choices and value not in field.choices:
+            return f"Expected one of {field.choices}, got '{value}'"
     return None
 
 
