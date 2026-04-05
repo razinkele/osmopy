@@ -184,6 +184,13 @@ def _bioen_step(
         if getattr(config, attr) is None:
             raise ValueError(f"Bioenergetics enabled but {attr} is None — check config")
 
+    # Precompute species masks once (reused by 6 loops below)
+    sp_masks: list[tuple[int, NDArray[np.bool_]]] = [
+        (sp, state.species_id == sp)
+        for sp in range(config.n_species)
+    ]
+    sp_masks = [(sp, m) for sp, m in sp_masks if m.any()]
+
     n_subdt = config.mortality_subdt
 
     # ------------------------------------------------------------------ #
@@ -191,10 +198,7 @@ def _bioen_step(
     # ------------------------------------------------------------------ #
     is_larvae = state.age_dt < state.first_feeding_age_dt
     capped_ingestion = state.preyed_biomass.copy()
-    for sp in range(config.n_species):
-        mask = state.species_id == sp
-        if not mask.any():
-            continue
+    for sp, mask in sp_masks:
         cap = bioen_ingestion_cap(
             weight=state.weight[mask],
             i_max=float(config.bioen_i_max[sp]),
@@ -215,10 +219,8 @@ def _bioen_step(
         if temp_data.is_constant:
             temp_scalar = temp_data.get_value(step, 0, 0)
             phi_t_arr = np.empty(len(state), dtype=np.float64)
-            for sp in range(config.n_species):
-                mask = state.species_id == sp
-                if mask.any():
-                    phi_t_arr[mask] = phi_t_fn(
+            for sp, mask in sp_masks:
+                phi_t_arr[mask] = phi_t_fn(
                         np.full(mask.sum(), temp_scalar),
                         float(config.bioen_e_mobi[sp]),
                         float(config.bioen_e_d[sp]),
@@ -227,10 +229,7 @@ def _bioen_step(
         else:
             # Spatially explicit: look up each school's cell
             phi_t_arr = np.empty(len(state), dtype=np.float64)
-            for sp in range(config.n_species):
-                mask = state.species_id == sp
-                if not mask.any():
-                    continue
+            for sp, mask in sp_masks:
                 temps = np.array(
                     [
                         temp_data.get_value(step, int(state.cell_y[i]), int(state.cell_x[i]))
@@ -253,15 +252,13 @@ def _bioen_step(
         f_o2_arr = np.ones(len(state), dtype=np.float64)
         if o2_data.is_constant:
             o2_scalar = o2_data.get_value(step, 0, 0)
-            for sp in range(config.n_species):
-                mask = state.species_id == sp
-                if mask.any():
-                    o2_vals = np.full(mask.sum(), o2_scalar)
-                    f_o2_arr[mask] = f_o2(
-                        o2_vals,
-                        float(config.bioen_o2_c1[sp]),
-                        float(config.bioen_o2_c2[sp]),
-                    )
+            for sp, mask in sp_masks:
+                o2_vals = np.full(mask.sum(), o2_scalar)
+                f_o2_arr[mask] = f_o2(
+                    o2_vals,
+                    float(config.bioen_o2_c1[sp]),
+                    float(config.bioen_o2_c2[sp]),
+                )
     else:
         f_o2_arr = np.ones(len(state), dtype=np.float64)
 
@@ -289,10 +286,7 @@ def _bioen_step(
     e_maint_arr = np.zeros(len(state), dtype=np.float64)
     rho_arr = np.zeros(len(state), dtype=np.float64)
 
-    for sp in range(config.n_species):
-        mask = state.species_id == sp
-        if not mask.any():
-            continue
+    for sp, mask in sp_masks:
         dw_sp, dg_sp, en_sp, eg_sp, em_sp, rho_sp = compute_energy_budget(
             ingestion=capped_ingestion[mask],
             weight=state.weight[mask],
@@ -326,10 +320,7 @@ def _bioen_step(
     starvation_dead = np.zeros(len(state), dtype=np.float64)
     new_gonad = state.gonad_weight.copy()
 
-    for sp in range(config.n_species):
-        mask = state.species_id == sp
-        if not mask.any():
-            continue
+    for sp, mask in sp_masks:
         n_dead_sp, gonad_sp = bioen_starvation(
             e_net=e_net_arr[mask],
             gonad_weight=state.gonad_weight[mask],
@@ -349,10 +340,7 @@ def _bioen_step(
     # Update length from weight via allometric inverse (W = a * L^b)
     # L = (W / a)^(1/b); use species-level a (condition factor * 1e-6) and b
     new_length = state.length.copy()
-    for sp in range(config.n_species):
-        mask = state.species_id == sp
-        if not mask.any():
-            continue
+    for sp, mask in sp_masks:
         # W_t = cf * L^b * 1e-6  =>  L = (W_t*1e6/cf)^(1/b)
         a = float(config.condition_factor[sp])
         b = float(config.allometric_power[sp])
@@ -368,10 +356,7 @@ def _bioen_step(
 
     # Update running e_net_avg
     new_e_net_avg = np.zeros(len(state), dtype=np.float64)
-    for sp in range(config.n_species):
-        mask = state.species_id == sp
-        if not mask.any():
-            continue
+    for sp, mask in sp_masks:
         new_e_net_avg[mask] = update_e_net_avg(
             e_net_avg=state.e_net_avg[mask],
             e_net=e_net_arr[mask],
