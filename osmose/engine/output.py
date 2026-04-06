@@ -16,6 +16,7 @@ from osmose.engine.config import EngineConfig
 from osmose.engine.simulate import StepOutput
 
 
+
 def write_outputs(
     outputs: list[StepOutput],
     output_dir: Path,
@@ -338,3 +339,66 @@ def write_outputs_netcdf(
 
     # TODO: Add size/age distribution outputs (5.3) — requires per-school data in StepOutput
     # TODO: Add spatial biomass/abundance maps (5.4) — requires per-cell data in StepOutput
+
+
+# ---------------------------------------------------------------------------
+# Economic output
+# ---------------------------------------------------------------------------
+
+
+def write_economic_outputs(
+    fleet_state: "FleetState",
+    output_dir: Path,
+) -> None:
+    """Write economic CSV output files.
+
+    Files written per fleet:
+    - econ_effort_<fleet>.csv: Effort map (ny × nx snapshot)
+    - econ_revenue_<fleet>.csv: Per-vessel revenue
+    - econ_costs_<fleet>.csv: Per-vessel costs
+
+    One file across all fleets:
+    - econ_profit_summary.csv: Per-fleet total revenue, costs, profit
+    """
+    import csv as _csv
+
+    if fleet_state is None:
+        return
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    profit_rows: list[list] = []
+
+    for fi, fleet in enumerate(fleet_state.fleets):
+        name = fleet.name
+        vessel_mask = fleet_state.vessel_fleet == fi
+
+        # Effort map: shape (ny, nx)
+        effort = fleet_state.effort_map[fi]
+        np.savetxt(output_dir / f"econ_effort_{name}.csv", effort, delimiter=";", fmt="%.1f")
+
+        # Revenue per vessel
+        revenue_arr = fleet_state.vessel_revenue[vessel_mask]
+        np.savetxt(
+            output_dir / f"econ_revenue_{name}.csv",
+            revenue_arr.reshape(1, -1),
+            delimiter=";",
+            fmt="%.2f",
+        )
+
+        # Costs per vessel
+        costs_arr = fleet_state.vessel_costs[vessel_mask]
+        np.savetxt(
+            output_dir / f"econ_costs_{name}.csv",
+            costs_arr.reshape(1, -1),
+            delimiter=";",
+            fmt="%.2f",
+        )
+
+        total_rev = float(revenue_arr.sum())
+        total_cost = float(costs_arr.sum())
+        profit_rows.append([name, total_rev, total_cost, total_rev - total_cost])
+
+    with open(output_dir / "econ_profit_summary.csv", "w", newline="") as f:
+        writer = _csv.writer(f, delimiter=";")
+        writer.writerow(["fleet", "revenue", "costs", "profit"])
+        writer.writerows(profit_rows)
