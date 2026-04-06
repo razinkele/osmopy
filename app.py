@@ -21,6 +21,7 @@ from ui.pages.fishing import fishing_ui, fishing_server
 from ui.pages.movement import movement_ui, movement_server
 from ui.pages.run import run_ui, run_server
 from ui.pages.results import results_ui, results_server
+from ui.pages.spatial_results import spatial_results_ui, spatial_results_server
 from ui.pages.calibration import calibration_ui, calibration_server
 from ui.pages.scenarios import scenarios_ui, scenarios_server
 from ui.pages.advanced import advanced_ui, advanced_server
@@ -202,6 +203,7 @@ app_ui = ui.page_fillable(
         _nav_section("Execute"),
         ui.nav_panel("Run", run_ui(), value="run"),
         ui.nav_panel("Results", results_ui(), value="results"),
+        ui.nav_panel("Spatial Results", spatial_results_ui(), value="spatial_results"),
         # Optimize
         _nav_section("Optimize"),
         ui.nav_panel("Calibration", calibration_ui(), value="calibration"),
@@ -274,6 +276,32 @@ app_ui = ui.page_fillable(
         }, 500);
     })();
     """),
+    # Toggle Spatial Results pill disabled state
+    ui.tags.script("""
+    (function() {
+        // Start disabled
+        var poll = setInterval(function() {
+            var pill = document.querySelector('.nav-link[data-value="spatial_results"]');
+            if (!pill) return;
+            clearInterval(poll);
+            pill.classList.add('osm-disabled');
+        }, 200);
+
+        // Listen for server messages to toggle
+        if (typeof Shiny !== 'undefined') {
+            Shiny.addCustomMessageHandler('toggle-spatial-pill', function(msg) {
+                var pill = document.querySelector('.nav-link[data-value="spatial_results"]');
+                if (pill) {
+                    if (msg.action === 'add') {
+                        pill.classList.add('osm-disabled');
+                    } else {
+                        pill.classList.remove('osm-disabled');
+                    }
+                }
+            });
+        }
+    })();
+    """),
     theme=THEME,
 )
 
@@ -326,6 +354,7 @@ def server(input, output, session):
     movement_server(input, output, session, state)
     run_server(input, output, session, state)
     results_server(input, output, session, state)
+    spatial_results_server(input, output, session, state)
     calibration_server(input, output, session, state)
     scenarios_server(input, output, session, state)
     advanced_server(input, output, session, state)
