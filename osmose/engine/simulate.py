@@ -155,6 +155,7 @@ def _bioen_step(
     temp_data: PhysicalData | None,
     step: int,
     o2_data: PhysicalData | None = None,
+    trait_overrides: dict[str, NDArray[np.float64]] | None = None,
 ) -> SchoolState:
     """Replace _growth() when bioenergetics is enabled.
 
@@ -193,10 +194,15 @@ def _bioen_step(
         if getattr(config, attr) is None:
             raise ValueError(f"Bioenergetics enabled but {attr} is None — check config")
 
+    # Helper: resolve parameter as per-school array or species scalar
+    def _resolve(param_name: str, sp: int, mask: NDArray[np.bool_]) -> float | NDArray[np.float64]:
+        if trait_overrides and param_name in trait_overrides:
+            return trait_overrides[param_name][mask]
+        return float(getattr(config, param_name)[sp])
+
     # Precompute species masks once (reused by 6 loops below)
     sp_masks: list[tuple[int, NDArray[np.bool_]]] = [
-        (sp, state.species_id == sp)
-        for sp in range(config.n_species)
+        (sp, state.species_id == sp) for sp in range(config.n_species)
     ]
     sp_masks = [(sp, m) for sp, m in sp_masks if m.any()]
 
@@ -210,7 +216,7 @@ def _bioen_step(
     for sp, mask in sp_masks:
         cap = bioen_ingestion_cap(
             weight=state.weight[mask],
-            i_max=float(config.bioen_i_max[sp]),
+            i_max=_resolve("bioen_i_max", sp, mask),
             beta=float(config.bioen_beta[sp]),
             n_dt_per_year=config.n_dt_per_year,
             n_subdt=n_subdt,
@@ -230,11 +236,11 @@ def _bioen_step(
             phi_t_arr = np.empty(len(state), dtype=np.float64)
             for sp, mask in sp_masks:
                 phi_t_arr[mask] = phi_t_fn(
-                        np.full(mask.sum(), temp_scalar),
-                        float(config.bioen_e_mobi[sp]),
-                        float(config.bioen_e_d[sp]),
-                        float(config.bioen_tp[sp]),
-                    )
+                    np.full(mask.sum(), temp_scalar),
+                    float(config.bioen_e_mobi[sp]),
+                    float(config.bioen_e_d[sp]),
+                    float(config.bioen_tp[sp]),
+                )
         else:
             # Spatially explicit: look up each school's cell
             phi_t_arr = np.empty(len(state), dtype=np.float64)
@@ -307,9 +313,9 @@ def _bioen_step(
             c_m=float(config.bioen_c_m[sp]),
             beta=float(config.bioen_beta[sp]),
             eta=float(config.bioen_eta[sp]),
-            r=float(config.bioen_r[sp]),
-            m0=float(config.bioen_m0[sp]),
-            m1=float(config.bioen_m1[sp]),
+            r=_resolve("bioen_r", sp, mask),
+            m0=_resolve("bioen_m0", sp, mask),
+            m1=_resolve("bioen_m1", sp, mask),
             e_maint_energy=float(config.bioen_e_maint[sp]),
             phi_t=phi_t_arr[mask],  # Johnson thermal performance (applied to assimilation)
             f_o2=f_o2_arr[mask],
@@ -420,6 +426,7 @@ def _bioen_reproduction(
     rng: np.random.Generator,
     grid_ny: int = 10,
     grid_nx: int = 10,
+    trait_overrides: dict[str, NDArray[np.float64]] | None = None,
 ) -> SchoolState:
     """Bioen reproduction: create egg schools from gonad weight (replaces SSB method)."""
     from osmose.engine.processes.bioen_reproduction import bioen_egg_production
@@ -448,8 +455,16 @@ def _bioen_reproduction(
             gonad_weight=state.gonad_weight[mask],
             length=state.length[mask],
             age_dt=state.age_dt[mask],
-            m0=float(config.bioen_m0[sp]),
-            m1=float(config.bioen_m1[sp]),
+            m0=(
+                trait_overrides["bioen_m0"][mask]
+                if trait_overrides and "bioen_m0" in trait_overrides
+                else float(config.bioen_m0[sp])
+            ),
+            m1=(
+                trait_overrides["bioen_m1"][mask]
+                if trait_overrides and "bioen_m1" in trait_overrides
+                else float(config.bioen_m1[sp])
+            ),
             egg_weight=float(ew),
             n_dt_per_year=config.n_dt_per_year,
         )
@@ -689,11 +704,27 @@ def _collect_bioen(
 
     focal = state.species_id < config.n_species if len(state) > 0 else np.zeros(0, dtype=np.bool_)
 
-    bioen_e_net = _species_mean(state.e_net, state.species_id, config.n_species, focal) if len(state) > 0 else np.zeros(config.n_species, dtype=np.float64)
+    bioen_e_net = (
+        _species_mean(state.e_net, state.species_id, config.n_species, focal)
+        if len(state) > 0
+        else np.zeros(config.n_species, dtype=np.float64)
+    )
     # e_gross = ingestion * assimilation * phi_T * f_O2 (Java's "ingestion" output)
-    bioen_ingestion = _species_mean(state.e_gross, state.species_id, config.n_species, focal) if len(state) > 0 else np.zeros(config.n_species, dtype=np.float64)
-    bioen_maint = _species_mean(state.e_maint, state.species_id, config.n_species, focal) if len(state) > 0 else np.zeros(config.n_species, dtype=np.float64)
-    bioen_rho = _species_mean(state.rho, state.species_id, config.n_species, focal) if len(state) > 0 else np.zeros(config.n_species, dtype=np.float64)
+    bioen_ingestion = (
+        _species_mean(state.e_gross, state.species_id, config.n_species, focal)
+        if len(state) > 0
+        else np.zeros(config.n_species, dtype=np.float64)
+    )
+    bioen_maint = (
+        _species_mean(state.e_maint, state.species_id, config.n_species, focal)
+        if len(state) > 0
+        else np.zeros(config.n_species, dtype=np.float64)
+    )
+    bioen_rho = (
+        _species_mean(state.rho, state.species_id, config.n_species, focal)
+        if len(state) > 0
+        else np.zeros(config.n_species, dtype=np.float64)
+    )
 
     # sizeInf: max observed length per species
     bioen_sizeinf = np.zeros(config.n_species, dtype=np.float64)
@@ -716,11 +747,11 @@ def _collect_outputs(
     biomass, abundance = _collect_biomass_abundance(state, config, bkg_output)
     mortality_by_cause = _collect_mortality(state, config)
     yield_by_species = _collect_yield(state, config)
-    biomass_by_age, abundance_by_age, biomass_by_size, abundance_by_size = (
-        _collect_distributions(state, config)
+    biomass_by_age, abundance_by_age, biomass_by_size, abundance_by_size = _collect_distributions(
+        state, config
     )
-    bioen_e_net, bioen_ingestion, bioen_maint, bioen_rho, bioen_size_inf = (
-        _collect_bioen(state, config)
+    bioen_e_net, bioen_ingestion, bioen_maint, bioen_rho, bioen_size_inf = _collect_bioen(
+        state, config
     )
 
     return StepOutput(
@@ -833,7 +864,11 @@ def simulate(
 
         trait_registry = TraitRegistry.from_config(config.raw_config, config.n_species)
         ctx.genetic_state = create_initial_genotypes(
-            trait_registry, state.species_id, rng
+            trait_registry,
+            state.species_id,
+            rng,
+            n_neutral=config.genetics_n_neutral,
+            n_neutral_val=config.genetics_n_neutral_val,
         )
 
     # -- DSVM fleet economics initialization --
@@ -842,12 +877,8 @@ def simulate(
 
         fleets = parse_fleets(config.raw_config, config.n_species)
         if fleets:
-            rationality = float(
-                config.raw_config.get("simulation.economic.rationality", "1.0")
-            )
-            memory_decay = float(
-                config.raw_config.get("simulation.economic.memory.decay", "0.7")
-            )
+            rationality = float(config.raw_config.get("simulation.economic.rationality", "1.0"))
+            memory_decay = float(config.raw_config.get("simulation.economic.memory.decay", "0.7"))
             ctx.fleet_state = create_fleet_state(
                 fleets,
                 grid_ny=grid.ny,
@@ -1015,19 +1046,40 @@ def simulate(
             apply_trait_overrides(trait_overrides, phenotypes, ctx.genetic_state.registry)
 
         if config.bioen_enabled:
-            state = _bioen_step(state, config, temp_data, step, o2_data=o2_data)
+            state = _bioen_step(
+                state,
+                config,
+                temp_data,
+                step,
+                o2_data=o2_data,
+                trait_overrides=trait_overrides if trait_overrides else None,
+            )
         else:
             state = _growth(state, config, rng)
         state = _aging_mortality(state, config)
         n_before_repro = len(state)
         if config.bioen_enabled:
-            state = _bioen_reproduction(state, config, step, rng, grid_ny=grid.ny, grid_nx=grid.nx)
+            state = _bioen_reproduction(
+                state,
+                config,
+                step,
+                rng,
+                grid_ny=grid.ny,
+                grid_nx=grid.nx,
+                trait_overrides=trait_overrides if trait_overrides else None,
+            )
         else:
             state = _reproduction(state, config, step, rng, grid_ny=grid.ny, grid_nx=grid.nx)
 
         # -- Genetics inheritance (after reproduction) --
         if ctx.genetic_state is not None:
             from osmose.engine.genetics import create_offspring_genotypes
+
+            current_year = step // config.n_dt_per_year
+            seeding = (
+                config.genetics_transmission_year > 0
+                and current_year < config.genetics_transmission_year
+            )
 
             n_new = len(state) - n_before_repro
             if n_new > 0:
@@ -1044,6 +1096,7 @@ def simulate(
                             offspring_species=int(sp),
                             n_offspring=n_off,
                             rng=rng,
+                            seeding=seeding,
                         )
                     )
                 for part in offspring_parts:
