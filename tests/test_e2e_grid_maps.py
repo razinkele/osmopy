@@ -122,10 +122,10 @@ def test_grid_fields_have_values(page: Page, app: ShinyAppProc):
 
 def test_overlay_selector_entries(page: Page, app: ShinyAppProc):
     """EEC Full overlay selector should contain Grid Extent, LTL Biomass,
-    and Movement Animation (background species config is commented out)."""
+    species distribution maps, fishing distribution, and Movement Animation."""
     _load_eec_full(page, app)
     _goto_grid(page)
-    _wait_for_overlay_options(page, min_count=3)
+    _wait_for_overlay_options(page, min_count=10)
 
     options = page.locator("#grid_overlay option").all_text_contents()
     options_lower = [o.lower() for o in options]
@@ -138,6 +138,14 @@ def test_overlay_selector_entries(page: Page, app: ShinyAppProc):
     )
     assert any("movement" in o for o in options_lower), (
         f"Missing 'Movement Animation' in options: {options}"
+    )
+    # Species distribution maps should appear (e.g., cod, sole)
+    assert any("cod:" in o for o in options_lower), (
+        f"Missing cod distribution maps in options: {options}"
+    )
+    # Fishing fleet distribution should appear
+    assert any("fishing" in o for o in options_lower), (
+        f"Missing Fishing distribution in options: {options}"
     )
 
 

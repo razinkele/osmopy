@@ -164,9 +164,12 @@ def grid_server(input, output, session, state):
             "predation.accessibility",
             "fisheries.catchability",
             "fisheries.discards",
-            "movement.file.map",  # movement CSVs — handled by Movement Animation
+            "movement.file.map",  # movement CSVs — shown separately below
             "movement.species.map",  # movement species labels
-            "fisheries.movement.",  # fishing movement maps
+            "movement.initialAge.",
+            "movement.lastAge.",
+            "movement.steps.",
+            "movement.distribution.",
         )
 
         # Deduplicate by canonical resolved path: many config keys may point to the
@@ -196,6 +199,40 @@ def grid_server(input, output, session, state):
                 path_id = str(resolved)
                 if path_id not in seen_paths:
                     seen_paths[path_id] = _overlay_label(val)
+
+            # Add species distribution maps (from movement.file.mapN keys)
+            for key, val in sorted(cfg.items()):
+                if not key.startswith("movement.file.map") or not val:
+                    continue
+                if not val.endswith(".csv"):
+                    continue
+                try:
+                    resolved = (cfg_dir / val).resolve()
+                    resolved.relative_to(cfg_dir_resolved)
+                except (Exception, ValueError):
+                    continue
+                path_id = str(resolved)
+                if path_id not in seen_paths:
+                    # Get species name from movement.species.mapN
+                    idx = key.removeprefix("movement.file.map")
+                    species = cfg.get(f"movement.species.map{idx}", "")
+                    label = f"{species}: {_overlay_label(val)}" if species else _overlay_label(val)
+                    seen_paths[path_id] = label
+
+            # Add fishing distribution maps (from fisheries.movement.file.mapN keys)
+            for key, val in sorted(cfg.items()):
+                if not key.startswith("fisheries.movement.file.map") or not val:
+                    continue
+                if not val.endswith(".csv"):
+                    continue
+                try:
+                    resolved = (cfg_dir / val).resolve()
+                    resolved.relative_to(cfg_dir_resolved)
+                except (Exception, ValueError):
+                    continue
+                path_id = str(resolved)
+                if path_id not in seen_paths:
+                    seen_paths[path_id] = f"Fishing: {_overlay_label(val)}"
 
             # Scan mpa/ directory for MPA files not referenced in the config
             mpa_dir = cfg_dir / "mpa"
