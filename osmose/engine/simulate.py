@@ -912,6 +912,12 @@ def simulate(
         outputs.append(_collect_outputs(state, config, step=-1))
 
     for step in range(config.n_steps):
+        # -- Annual reset for fleet economics --
+        if ctx.fleet_state is not None and step > 0 and step % config.n_dt_per_year == 0:
+            ctx.fleet_state.vessel_days_used[:] = 0
+            ctx.fleet_state.vessel_revenue[:] = 0.0
+            ctx.fleet_state.vessel_costs[:] = 0.0
+
         state = _incoming_flux(state, flux_state, step, rng)
         state = _reset_step_variables(state)
         resources.update(step)
@@ -953,6 +959,46 @@ def simulate(
         state = _mortality(
             state, resources, config, rng, grid, step=step, species_rngs=mortality_rngs, ctx=ctx
         )
+
+        # -- Update fleet revenue and catch memory after fishing --
+        if ctx.fleet_state is not None:
+            from osmose.engine.economics.choice import update_catch_memory
+            from osmose.engine.state import MortalityCause
+
+            n_fleets = len(ctx.fleet_state.fleets)
+            ny_f = ctx.fleet_state.catch_memory.shape[1]
+            nx_f = ctx.fleet_state.catch_memory.shape[2]
+            realized = np.zeros((n_fleets, ny_f, nx_f), dtype=np.float64)
+
+            fishing_cause = int(MortalityCause.FISHING)
+            for i in range(len(state)):
+                fishing_dead = state.n_dead[i, fishing_cause]
+                if fishing_dead <= 0:
+                    continue
+                sp = int(state.species_id[i])
+                cy, cx = int(state.cell_y[i]), int(state.cell_x[i])
+                if not (0 <= cy < ny_f and 0 <= cx < nx_f):
+                    continue
+                catch_biomass = fishing_dead * state.weight[i]
+
+                for fi, fleet_cfg in enumerate(ctx.fleet_state.fleets):
+                    if sp in fleet_cfg.target_species:
+                        vessel_mask = (
+                            (ctx.fleet_state.vessel_fleet == fi)
+                            & (ctx.fleet_state.vessel_cell_y == cy)
+                            & (ctx.fleet_state.vessel_cell_x == cx)
+                        )
+                        n_in_cell = int(vessel_mask.sum())
+                        if n_in_cell > 0:
+                            rev_per_vessel = (
+                                catch_biomass * fleet_cfg.price_per_tonne[sp] / n_in_cell
+                            )
+                            ctx.fleet_state.vessel_revenue[vessel_mask] += rev_per_vessel
+                        realized[fi, cy, cx] += catch_biomass
+
+            ctx.fleet_state.catch_memory = update_catch_memory(
+                ctx.fleet_state.catch_memory, realized, ctx.fleet_state.memory_decay
+            )
 
         # Collect background output BEFORE stripping
         bkg_output = _collect_background_outputs(state, config, n_focal)
