@@ -125,7 +125,7 @@ app_ui = ui.page_fillable(
                 if (activeLink) {
                     var val = activeLink.getAttribute('data-value') || '';
                     pageIds.forEach(function(pid) {
-                        if (val.indexOf(pid) !== -1) restorePanelIfNeeded(pid);
+                        if (val === pid) restorePanelIfNeeded(pid);
                     });
                 }
                 // Restore panels as tabs are activated (lazy rendering)
@@ -133,7 +133,7 @@ app_ui = ui.page_fillable(
                     var val = e.target.getAttribute('data-value') ||
                               e.target.getAttribute('href') || '';
                     pageIds.forEach(function(pid) {
-                        if (val.indexOf(pid) !== -1) restorePanelIfNeeded(pid);
+                        if (val === pid) restorePanelIfNeeded(pid);
                     });
                 });
             });

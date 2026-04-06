@@ -131,7 +131,10 @@ def spatial_results_server(input, output, session, state):
     @reactive.effect
     async def _toggle_pill():
         out_dir = state.output_dir.get()
-        has_results = out_dir is not None and out_dir.exists()
+        try:
+            has_results = out_dir is not None and out_dir.exists()
+        except OSError:
+            has_results = False
         action = "remove" if has_results else "add"
         await session.send_custom_message(
             "toggle-spatial-pill",
@@ -139,10 +142,20 @@ def spatial_results_server(input, output, session, state):
         )
 
     # ── Auto-load NC files when output_dir changes ───────────────
+    def _close_spatial_ds():
+        """Close the previous xarray Dataset to release file handles."""
+        old_ds = _spatial_ds.get()
+        if old_ds is not None:
+            try:
+                old_ds.close()
+            except Exception:
+                pass
+
     @reactive.effect
     def _auto_load_spatial():
         out_dir = state.output_dir.get()
         if out_dir is None or not out_dir.exists():
+            _close_spatial_ds()
             _spatial_ds.set(None)
             _spatial_nc_files.set([])
             return
@@ -155,6 +168,7 @@ def spatial_results_server(input, output, session, state):
         _spatial_nc_files.set(nc_files)
 
         if nc_files:
+            _close_spatial_ds()
             _spatial_ds.set(res.read_netcdf(nc_files[0]))
 
     # ── NC file selector ─────────────────────────────────────────
@@ -182,6 +196,7 @@ def spatial_results_server(input, output, session, state):
             filename = input.spatial_result_type()
         except SilentException:
             return
+        _close_spatial_ds()
         res = OsmoseResults(out_dir, strict=False)
         _spatial_ds.set(res.read_netcdf(filename))
 
@@ -280,6 +295,7 @@ def spatial_results_server(input, output, session, state):
                 session,
                 layers=[],
                 view_state={"latitude": 46.0, "longitude": -4.5, "zoom": 5},
+                transition_duration=800,
                 widgets=[
                     fullscreen_widget(placement="top-left"),
                     zoom_widget(placement="top-right"),
@@ -303,7 +319,10 @@ def spatial_results_server(input, output, session, state):
         da = ds[var_name]
         if "time" in da.dims:
             da = da.isel(time=time_idx)
-        data_slice = da.values  # (ny, nx)
+        data_slice = da.values
+        if data_slice.ndim != 2:
+            _log.warning("Expected 2D spatial slice, got shape %s for %s", data_slice.shape, var_name)
+            return
         lat_raw = ds["lat"].values
         lon_raw = ds["lon"].values
 
@@ -394,4 +413,10 @@ def spatial_results_server(input, output, session, state):
 
         view_state = {"latitude": center_lat, "longitude": center_lon, "zoom": zoom}
 
-        await _map.update(session, layers=layers, view_state=view_state, widgets=widgets)
+        await _map.update(
+            session,
+            layers=layers,
+            view_state=view_state,
+            transition_duration=800,
+            widgets=widgets,
+        )
