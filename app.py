@@ -288,7 +288,11 @@ app_ui = ui.page_fillable(
         }, 200);
 
         // Listen for server messages to toggle (must wait for Shiny JS to load)
+        // Guard: deck.gl CDN fallback re-dispatches shiny:connected — register once only
+        var _pillRegistered = false;
         document.addEventListener('shiny:connected', function() {
+            if (_pillRegistered) return;
+            _pillRegistered = true;
             Shiny.addCustomMessageHandler('toggle-spatial-pill', function(msg) {
                 var pill = document.querySelector('.nav-link[data-value="spatial_results"]');
                 if (pill) {
