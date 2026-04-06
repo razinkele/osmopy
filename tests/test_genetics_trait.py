@@ -4,6 +4,11 @@ import numpy as np
 import pytest
 
 from osmose.engine.genetics.trait import Trait, TraitRegistry
+from osmose.engine.genetics.genotype import (
+    GeneticState,
+    compact_genetic_state,
+    create_initial_genotypes,
+)
 
 
 class TestTrait:
@@ -68,3 +73,45 @@ class TestTraitRegistry:
     def test_empty_when_no_traits(self):
         registry = TraitRegistry.from_config({}, n_species=1)
         assert len(registry.traits) == 0
+
+
+class TestGeneticState:
+    def _make_registry(self) -> TraitRegistry:
+        cfg = {
+            "evolution.trait.imax.mean.sp0": "3.5",
+            "evolution.trait.imax.var.sp0": "0.1",
+            "evolution.trait.imax.envvar.sp0": "0.05",
+            "evolution.trait.imax.nlocus.sp0": "5",
+            "evolution.trait.imax.nval.sp0": "20",
+            "evolution.trait.imax.target": "ingestion_rate",
+        }
+        return TraitRegistry.from_config(cfg, n_species=1)
+
+    def test_create_initial_genotypes(self):
+        registry = self._make_registry()
+        species_id = np.array([0, 0, 0], dtype=np.int32)
+        rng = np.random.default_rng(42)
+        gs = create_initial_genotypes(registry, species_id, rng)
+        assert "imax" in gs.alleles
+        assert gs.alleles["imax"].shape == (3, 5, 2)
+        assert "imax" in gs.env_noise
+        assert gs.env_noise["imax"].shape == (3,)
+
+    def test_compact_removes_dead(self):
+        registry = self._make_registry()
+        species_id = np.array([0, 0, 0], dtype=np.int32)
+        rng = np.random.default_rng(42)
+        gs = create_initial_genotypes(registry, species_id, rng)
+        alive = np.array([True, False, True])
+        compacted = compact_genetic_state(gs, alive)
+        assert compacted.alleles["imax"].shape[0] == 2
+        assert compacted.env_noise["imax"].shape[0] == 2
+
+    def test_append_concatenates(self):
+        registry = self._make_registry()
+        rng = np.random.default_rng(42)
+        gs1 = create_initial_genotypes(registry, np.array([0, 0], dtype=np.int32), rng)
+        gs2 = create_initial_genotypes(registry, np.array([0], dtype=np.int32), rng)
+        merged = gs1.append(gs2)
+        assert merged.alleles["imax"].shape[0] == 3
+        assert merged.env_noise["imax"].shape[0] == 3
