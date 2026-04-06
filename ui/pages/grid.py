@@ -1,12 +1,9 @@
 """Grid configuration page."""
 
-import math
 from pathlib import Path
 
 from shiny import ui, reactive, render
 from shiny.types import SilentException
-
-import shiny_deckgl as _sdgl  # type: ignore[import-untyped]
 
 from shiny_deckgl import (  # type: ignore[import-untyped]
     MapWidget,
