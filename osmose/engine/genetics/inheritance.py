@@ -44,6 +44,7 @@ def create_offspring_genotypes(
     offspring_species: int,
     n_offspring: int,
     rng: np.random.Generator,
+    seeding: bool = False,
 ) -> GeneticState:
     """Create genotypes for n_offspring new schools of one species."""
     sp_mask = (species_id == offspring_species) & (gonad_weight > 0)
@@ -57,7 +58,15 @@ def create_offspring_genotypes(
         n_loc = int(trait.n_loci[offspring_species])
         off_alleles = np.zeros((n_offspring, max_loci, 2), dtype=np.float64)
 
-        if len(sp_indices) > 0:
+        if seeding:
+            # During seeding: draw alleles from the full population pool at random
+            pool_alleles = parent_gs.alleles[name]  # (N, max_loci, 2)
+            for j in range(n_offspring):
+                for a in range(2):
+                    donor = rng.integers(0, len(pool_alleles))
+                    allele_pick = rng.integers(0, 2)
+                    off_alleles[j, :n_loc, a] = pool_alleles[donor, :n_loc, allele_pick]
+        elif len(sp_indices) > 0:
             sp_gonad = gonad_weight[sp_indices]
             sp_alleles = parent_gs.alleles[name][sp_indices]
 
@@ -75,4 +84,37 @@ def create_offspring_genotypes(
         alleles[name] = off_alleles
         env_noise[name] = noise
 
-    return GeneticState(alleles=alleles, env_noise=env_noise, registry=parent_gs.registry)
+    # Neutral loci
+    neutral = None
+    if parent_gs.neutral_alleles is not None:
+        n_neutral = parent_gs.neutral_alleles.shape[1]
+        n_neutral_val = int(parent_gs.neutral_alleles.max()) + 1
+        off_neutral = np.zeros((n_offspring, n_neutral, 2), dtype=np.int32)
+
+        if seeding:
+            pool = parent_gs.neutral_alleles  # (N, n_neutral, 2)
+            for j in range(n_offspring):
+                for a in range(2):
+                    donor = rng.integers(0, len(pool))
+                    allele_pick = rng.integers(0, 2)
+                    off_neutral[j, :, a] = pool[donor, :, allele_pick]
+        elif len(sp_indices) > 0:
+            sp_gonad = gonad_weight[sp_indices]
+            sp_neutral = parent_gs.neutral_alleles[sp_indices]
+            for j in range(n_offspring):
+                pa, pb = select_parents(sp_gonad, rng)
+                picks_a = rng.integers(0, 2, size=n_neutral)
+                picks_b = rng.integers(0, 2, size=n_neutral)
+                off_neutral[j, :, 0] = sp_neutral[pa, np.arange(n_neutral), picks_a]
+                off_neutral[j, :, 1] = sp_neutral[pb, np.arange(n_neutral), picks_b]
+        else:
+            # No eligible parents → random draw
+            off_neutral = rng.integers(
+                0, n_neutral_val, size=(n_offspring, n_neutral, 2), dtype=np.int32
+            )
+
+        neutral = off_neutral
+
+    return GeneticState(
+        alleles=alleles, env_noise=env_noise, registry=parent_gs.registry, neutral_alleles=neutral
+    )

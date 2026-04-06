@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 from numpy.typing import NDArray
@@ -18,6 +18,7 @@ class GeneticState:
     alleles: dict[str, NDArray[np.float64]]
     env_noise: dict[str, NDArray[np.float64]]
     registry: TraitRegistry
+    neutral_alleles: NDArray[np.int32] | None = field(default=None)
 
     def append(self, other: GeneticState) -> GeneticState:
         new_alleles = {}
@@ -25,19 +26,32 @@ class GeneticState:
         for name in self.alleles:
             new_alleles[name] = np.concatenate([self.alleles[name], other.alleles[name]], axis=0)
             new_noise[name] = np.concatenate([self.env_noise[name], other.env_noise[name]], axis=0)
-        return GeneticState(alleles=new_alleles, env_noise=new_noise, registry=self.registry)
+        neutral = None
+        if self.neutral_alleles is not None and other.neutral_alleles is not None:
+            neutral = np.concatenate([self.neutral_alleles, other.neutral_alleles], axis=0)
+        return GeneticState(
+            alleles=new_alleles,
+            env_noise=new_noise,
+            registry=self.registry,
+            neutral_alleles=neutral,
+        )
 
 
 def compact_genetic_state(gs: GeneticState, alive_mask: NDArray[np.bool_]) -> GeneticState:
     new_alleles = {name: arr[alive_mask] for name, arr in gs.alleles.items()}
     new_noise = {name: arr[alive_mask] for name, arr in gs.env_noise.items()}
-    return GeneticState(alleles=new_alleles, env_noise=new_noise, registry=gs.registry)
+    neutral = gs.neutral_alleles[alive_mask] if gs.neutral_alleles is not None else None
+    return GeneticState(
+        alleles=new_alleles, env_noise=new_noise, registry=gs.registry, neutral_alleles=neutral
+    )
 
 
 def create_initial_genotypes(
     registry: TraitRegistry,
     species_id: NDArray[np.int32],
     rng: np.random.Generator,
+    n_neutral: int = 0,
+    n_neutral_val: int = 50,
 ) -> GeneticState:
     n_schools = len(species_id)
     alleles: dict[str, NDArray[np.float64]] = {}
@@ -60,4 +74,10 @@ def create_initial_genotypes(
         alleles[name] = arr
         env_noise[name] = noise
 
-    return GeneticState(alleles=alleles, env_noise=env_noise, registry=registry)
+    neutral = None
+    if n_neutral > 0:
+        neutral = rng.integers(0, n_neutral_val, size=(n_schools, n_neutral, 2), dtype=np.int32)
+
+    return GeneticState(
+        alleles=alleles, env_noise=env_noise, registry=registry, neutral_alleles=neutral
+    )
