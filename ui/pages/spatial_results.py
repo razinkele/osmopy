@@ -194,7 +194,7 @@ def spatial_results_server(input, output, session, state):
         var_names = [v for v in ds.data_vars if "lat" in ds[v].dims and "lon" in ds[v].dims]
         if len(var_names) <= 1:
             return ui.div()
-        choices = {"__all__": "All (sum)"}
+        choices = {"__all__": "All species"}
         choices.update({v: v.replace("_", " ").title() for v in var_names})
         return ui.input_select(
             "spatial_species", "Variable / Species", choices=choices, selected="__all__"
@@ -275,6 +275,12 @@ def spatial_results_server(input, output, session, state):
                 session,
                 layers=[],
                 view_state={"latitude": 46.0, "longitude": -4.5, "zoom": 5},
+                widgets=[
+                    fullscreen_widget(placement="top-left"),
+                    zoom_widget(placement="top-right"),
+                    compass_widget(placement="top-right"),
+                    scale_widget(placement="bottom-left"),
+                ],
             )
             return
 
@@ -289,7 +295,10 @@ def spatial_results_server(input, output, session, state):
         max_t = ds.sizes.get("time", 1) - 1
         time_idx = min(time_idx, max_t)
 
-        data_slice = ds[var_name].isel(time=time_idx).values  # (ny, nx)
+        da = ds[var_name]
+        if "time" in da.dims:
+            da = da.isel(time=time_idx)
+        data_slice = da.values  # (ny, nx)
         lat_raw = ds["lat"].values
         lon_raw = ds["lon"].values
 

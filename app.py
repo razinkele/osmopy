@@ -117,7 +117,7 @@ app_ui = ui.page_fillable(
                 }
             }
             var pageIds = ['setup','grid','forcing','fishing','movement',
-                           'run','results','calibration','scenarios','advanced'];
+                           'run','results','spatial_results','calibration','scenarios','advanced'];
 
             document.addEventListener('DOMContentLoaded', function() {
                 // Restore the initially active tab's panel
@@ -287,8 +287,8 @@ app_ui = ui.page_fillable(
             pill.classList.add('osm-disabled');
         }, 200);
 
-        // Listen for server messages to toggle
-        if (typeof Shiny !== 'undefined') {
+        // Listen for server messages to toggle (must wait for Shiny JS to load)
+        document.addEventListener('shiny:connected', function() {
             Shiny.addCustomMessageHandler('toggle-spatial-pill', function(msg) {
                 var pill = document.querySelector('.nav-link[data-value="spatial_results"]');
                 if (pill) {
@@ -299,7 +299,7 @@ app_ui = ui.page_fillable(
                     }
                 }
             });
-        }
+        });
     })();
     """),
     theme=THEME,

@@ -7,6 +7,8 @@ The Spatial Results pill is disabled until a simulation run completes.
 These tests verify the disabled state and basic page functionality.
 """
 
+import re
+
 import pytest
 from playwright.sync_api import Page, expect
 from shiny.pytest import create_app_fixture
@@ -28,12 +30,8 @@ def test_spatial_results_pill_disabled_initially(page: Page, app: ShinyAppProc):
     pill = page.locator(".nav-pills .nav-link[data-value='spatial_results']")
     expect(pill).to_be_visible(timeout=_NAV_TIMEOUT)
 
-    # Should have osm-disabled class
-    page.wait_for_timeout(1_000)
-    classes = pill.get_attribute("class") or ""
-    assert "osm-disabled" in classes, (
-        f"Expected 'osm-disabled' in pill classes, got: '{classes}'"
-    )
+    # Should have osm-disabled class (use Playwright retry, not sleep)
+    expect(pill).to_have_class(re.compile(r"osm-disabled"), timeout=_NAV_TIMEOUT)
 
 
 def test_spatial_results_pill_exists_in_execute_section(page: Page, app: ShinyAppProc):

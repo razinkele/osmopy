@@ -979,7 +979,10 @@ def make_spatial_map(
     """Create a Plotly imshow heatmap from a spatial xarray Dataset."""
     import plotly.express as px
 
-    data = ds[var_name].isel(time=time_idx).values
+    da = ds[var_name]
+    if "time" in da.dims:
+        da = da.isel(time=time_idx)
+    data = da.values
     lat = ds["lat"].values
     lon = ds["lon"].values
     fig = px.imshow(
