@@ -9,6 +9,11 @@ Follows Java's SimulationStep.step() ordering:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from osmose.engine.economics.fleet import FleetState
+    from osmose.engine.genetics.genotype import GeneticState
 
 import numpy as np
 from numpy.typing import NDArray
@@ -34,6 +39,10 @@ class SimulationContext:
     diet_matrix: NDArray[np.float64] | None = None
     tl_weighted_sum: NDArray[np.float64] | None = None
     config_dir: str = ""
+    # Ev-OSMOSE genetics (None when disabled)
+    genetic_state: GeneticState | None = None
+    # DSVM fleet dynamics (None when disabled)
+    fleet_state: FleetState | None = None
 
 
 @dataclass(frozen=True)
@@ -818,6 +827,35 @@ def simulate(
     flux_state = IncomingFluxState(config=config.raw_config, engine_config=config, grid=grid)
     outputs: list[StepOutput] = []
 
+    # -- Ev-OSMOSE genetics initialization --
+    if config.genetics_enabled:
+        from osmose.engine.genetics import TraitRegistry, create_initial_genotypes
+
+        trait_registry = TraitRegistry.from_config(config.raw_config, config.n_species)
+        ctx.genetic_state = create_initial_genotypes(
+            trait_registry, state.species_id, rng
+        )
+
+    # -- DSVM fleet economics initialization --
+    if config.economics_enabled:
+        from osmose.engine.economics import create_fleet_state, parse_fleets
+
+        fleets = parse_fleets(config.raw_config, config.n_species)
+        if fleets:
+            rationality = float(
+                config.raw_config.get("simulation.economic.rationality", "1.0")
+            )
+            memory_decay = float(
+                config.raw_config.get("simulation.economic.memory.decay", "0.7")
+            )
+            ctx.fleet_state = create_fleet_state(
+                fleets,
+                grid_ny=grid.ny,
+                grid_nx=grid.nx,
+                rationality=rationality,
+                memory_decay=memory_decay,
+            )
+
     # Bioenergetics: load temperature forcing when enabled
     temp_data = None
     if config.bioen_enabled:
@@ -896,6 +934,22 @@ def simulate(
         if len(bkg_schools) > 0:
             state = state.append(bkg_schools)
 
+        # -- DSVM fleet decision (before mortality) --
+        if ctx.fleet_state is not None:
+            from osmose.engine.economics import fleet_decision
+
+            # Compute biomass per cell per species
+            n_sp = config.n_species
+            biomass_by_cell = np.zeros((n_sp, grid.ny, grid.nx), dtype=np.float64)
+            for i in range(len(state)):
+                sp = state.species_id[i]
+                if sp < n_sp:
+                    cy, cx = state.cell_y[i], state.cell_x[i]
+                    if 0 <= cy < grid.ny and 0 <= cx < grid.nx:
+                        biomass_by_cell[sp, cy, cx] += state.biomass[i]
+
+            ctx.fleet_state = fleet_decision(ctx.fleet_state, biomass_by_cell, rng)
+
         state = _mortality(
             state, resources, config, rng, grid, step=step, species_rngs=mortality_rngs, ctx=ctx
         )
@@ -906,15 +960,48 @@ def simulate(
         # Strip background schools
         state = _strip_background(state, n_focal)
 
+        # -- Genetics trait expression (before growth/bioen) --
+        trait_overrides: dict[str, NDArray[np.float64]] = {}
+        if ctx.genetic_state is not None:
+            from osmose.engine.genetics import apply_trait_overrides, express_traits
+
+            phenotypes = express_traits(ctx.genetic_state, state.species_id)
+            apply_trait_overrides(trait_overrides, phenotypes, ctx.genetic_state.registry)
+
         if config.bioen_enabled:
             state = _bioen_step(state, config, temp_data, step, o2_data=o2_data)
         else:
             state = _growth(state, config, rng)
         state = _aging_mortality(state, config)
+        n_before_repro = len(state)
         if config.bioen_enabled:
             state = _bioen_reproduction(state, config, step, rng, grid_ny=grid.ny, grid_nx=grid.nx)
         else:
             state = _reproduction(state, config, step, rng, grid_ny=grid.ny, grid_nx=grid.nx)
+
+        # -- Genetics inheritance (after reproduction) --
+        if ctx.genetic_state is not None:
+            from osmose.engine.genetics import create_offspring_genotypes
+
+            n_new = len(state) - n_before_repro
+            if n_new > 0:
+                new_ids = state.species_id[-n_new:]
+                offspring_parts: list = []
+                for sp in np.unique(new_ids):
+                    sp_mask = new_ids == sp
+                    n_off = int(sp_mask.sum())
+                    offspring_parts.append(
+                        create_offspring_genotypes(
+                            parent_gs=ctx.genetic_state,
+                            gonad_weight=state.gonad_weight[: len(state) - n_new],
+                            species_id=state.species_id[: len(state) - n_new],
+                            offspring_species=int(sp),
+                            n_offspring=n_off,
+                            rng=rng,
+                        )
+                    )
+                for part in offspring_parts:
+                    ctx.genetic_state = ctx.genetic_state.append(part)
 
         # Collect focal outputs after reproduction
         step_out = _collect_outputs(state, config, step, bkg_output)
@@ -925,6 +1012,12 @@ def simulate(
             outputs.append(_average_step_outputs(accumulated, record_freq, step))
             accumulated = []
 
+        # Compact dead schools -- sync genetic state with same mask
+        if ctx.genetic_state is not None:
+            alive = state.abundance > 0
+            from osmose.engine.genetics import compact_genetic_state
+
+            ctx.genetic_state = compact_genetic_state(ctx.genetic_state, alive)
         state = state.compact()
 
     # Flush any remaining accumulated steps (if n_steps not divisible by freq)
