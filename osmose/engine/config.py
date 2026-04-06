@@ -653,6 +653,12 @@ class EngineConfig:
     bioen_c_rate: NDArray[np.float64] | None = None  # larvae correction coefficient
     bioen_k_for: NDArray[np.float64] | None = None  # foraging mortality
 
+    # Ev-OSMOSE genetics toggle
+    genetics_enabled: bool = False
+
+    # DSVM fleet dynamics toggle
+    economics_enabled: bool = False
+
     # Distribution output flags
     output_biomass_byage: bool = False
     output_biomass_bysize: bool = False
@@ -1178,6 +1184,12 @@ class EngineConfig:
                 cfg, "species.bioen.forage.k_for.sp{i}", n_sp, 0.0
             )
 
+        # Ev-OSMOSE genetics
+        genetics_enabled = _enabled(cfg, "simulation.genetic.enabled")
+
+        # DSVM fleet economics
+        economics_enabled = _enabled(cfg, "simulation.economic.enabled")
+
         return cls(
             n_species=n_sp,
             n_dt_per_year=n_dt,
@@ -1275,6 +1287,8 @@ class EngineConfig:
             bioen_theta=bioen_theta,
             bioen_c_rate=bioen_c_rate,
             bioen_k_for=bioen_k_for,
+            genetics_enabled=genetics_enabled,
+            economics_enabled=economics_enabled,
             output_biomass_byage=_enabled(cfg, "output.biomass.byage.enabled"),
             output_biomass_bysize=_enabled(cfg, "output.biomass.bysize.enabled"),
             output_abundance_byage=_enabled(cfg, "output.abundance.byage.enabled"),

@@ -530,7 +530,7 @@ def _zero_exempt(arr: NDArray[np.float64], work_state) -> None:
     arr[arr < 0] = 0.0
 
 
-def _precompute_effective_rates(work_state, config, n_subdt, step):
+def _precompute_effective_rates(work_state, config, n_subdt, step, fleet_state=None):
     """Pre-compute per-school effective mortality rates for the Numba path.
 
     Returns (eff_starv, eff_additional, eff_fishing, fishing_discard) arrays,
@@ -645,6 +645,25 @@ def _precompute_effective_rates(work_state, config, n_subdt, step):
 
         if config.fishing_discard_rate is not None:
             fishing_discard = np.where(eff_fishing > 0, config.fishing_discard_rate[sp], 0.0)
+
+        # Scale fishing by fleet effort when economic module is active
+        if fleet_state is not None:
+            targeted_species: set[int] = set()
+            for fleet_cfg in fleet_state.fleets:
+                targeted_species.update(fleet_cfg.target_species)
+
+            effort_factor = np.zeros(n, dtype=np.float64)
+            for i in range(n):
+                sp_id = work_state.species_id[i]
+                if sp_id in targeted_species:
+                    cy, cx = work_state.cell_y[i], work_state.cell_x[i]
+                    ny, nx = fleet_state.effort_map.shape[1], fleet_state.effort_map.shape[2]
+                    if 0 <= cy < ny and 0 <= cx < nx:
+                        effort_factor[i] = fleet_state.effort_map[:, cy, cx].sum()
+
+            for i in range(n):
+                if work_state.species_id[i] in targeted_species:
+                    eff_fishing[i] *= effort_factor[i]
 
     return eff_starv, eff_additional, eff_fishing, fishing_discard
 
@@ -1533,7 +1552,10 @@ def mortality(
     rsc_sm, rsc_sx, rsc_tl, rsc_ar, n_rsc = _precompute_resource_arrays(config, resources)
 
     # Pre-compute effective mortality rates for Numba cell loop (Tier 3)
-    eff_s, eff_a, eff_f, f_disc = _precompute_effective_rates(work_state, config, n_subdt, step)
+    fleet_state = ctx.fleet_state if ctx is not None else None
+    eff_s, eff_a, eff_f, f_disc = _precompute_effective_rates(
+        work_state, config, n_subdt, step, fleet_state=fleet_state
+    )
 
     for _sub in range(n_subdt):
         # Release fraction of eggs into prey pool
