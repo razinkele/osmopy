@@ -4,8 +4,10 @@
 import numpy as np
 import pytest
 
+from osmose.engine.config import EngineConfig
 from osmose.engine.economics.choice import aggregate_effort, fleet_decision, logit_probabilities
 from osmose.engine.economics.fleet import FleetConfig, FleetState, create_fleet_state
+from osmose.engine.state import SchoolState
 
 
 class TestLogitProbabilities:
@@ -33,7 +35,9 @@ class TestAggregateEffort:
         vessel_fleet = np.array([0, 0, 0], dtype=np.int32)
         vessel_cell_y = np.array([0, 0, 1], dtype=np.int32)
         vessel_cell_x = np.array([1, 1, 0], dtype=np.int32)
-        effort = aggregate_effort(vessel_fleet, vessel_cell_y, vessel_cell_x, n_fleets=1, ny=2, nx=2)
+        effort = aggregate_effort(
+            vessel_fleet, vessel_cell_y, vessel_cell_x, n_fleets=1, ny=2, nx=2
+        )
         assert effort.shape == (1, 2, 2)
         assert effort[0, 0, 1] == 2.0
         assert effort[0, 1, 0] == 1.0
@@ -82,10 +86,6 @@ class TestFleetDecision:
         rng = np.random.default_rng(42)
         fs = fleet_decision(fleet_state=fs, biomass_by_cell_species=biomass_by_cell, rng=rng)
         assert fs.effort_map.sum() == pytest.approx(50.0)
-
-
-from osmose.engine.config import EngineConfig
-from osmose.engine.state import SchoolState
 
 
 class TestEffortFishingIntegration:

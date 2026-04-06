@@ -4,7 +4,7 @@
 import numpy as np
 import pytest
 
-from osmose.engine.economics.fleet import FleetConfig, FleetState, create_fleet_state, parse_fleets
+from osmose.engine.economics.fleet import FleetConfig, create_fleet_state, parse_fleets
 
 
 class TestParseFleets:

@@ -5,7 +5,6 @@ import pytest
 
 from osmose.engine.genetics.trait import Trait, TraitRegistry
 from osmose.engine.genetics.genotype import (
-    GeneticState,
     compact_genetic_state,
     create_initial_genotypes,
 )
