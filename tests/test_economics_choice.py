@@ -82,3 +82,75 @@ class TestFleetDecision:
         rng = np.random.default_rng(42)
         fs = fleet_decision(fleet_state=fs, biomass_by_cell_species=biomass_by_cell, rng=rng)
         assert fs.effort_map.sum() == pytest.approx(50.0)
+
+
+from osmose.engine.config import EngineConfig
+from osmose.engine.state import SchoolState
+
+
+class TestEffortFishingIntegration:
+    def test_effort_scales_fishing_mortality(self):
+        """Fishing mortality should be higher where fleet effort is concentrated."""
+        cfg_dict = {
+            "simulation.time.ndtperyear": "12",
+            "simulation.time.nyear": "1",
+            "simulation.nspecies": "1",
+            "simulation.nschool.sp0": "2",
+            "species.name.sp0": "TestFish",
+            "species.linf.sp0": "20.0",
+            "species.k.sp0": "0.3",
+            "species.t0.sp0": "-0.1",
+            "species.egg.size.sp0": "0.1",
+            "species.length2weight.condition.factor.sp0": "0.006",
+            "species.length2weight.allometric.power.sp0": "3.0",
+            "species.lifespan.sp0": "3",
+            "species.vonbertalanffy.threshold.age.sp0": "1.0",
+            "mortality.subdt": "10",
+            "predation.ingestion.rate.max.sp0": "3.5",
+            "predation.efficiency.critical.sp0": "0.57",
+            "mortality.fishing.rate.sp0": "0.5",
+        }
+        config = EngineConfig.from_dict(cfg_dict)
+
+        state = SchoolState.create(n_schools=2, species_id=np.array([0, 0], dtype=np.int32))
+        state = state.replace(
+            abundance=np.array([1000.0, 1000.0]),
+            biomass=np.array([100.0, 100.0]),
+            length=np.array([15.0, 15.0]),
+            weight=np.array([0.1, 0.1]),
+            age_dt=np.array([24, 24], dtype=np.int32),
+            cell_y=np.array([0, 1], dtype=np.int32),
+            cell_x=np.array([0, 0], dtype=np.int32),
+        )
+
+        fleet = FleetConfig(
+            name="Trawlers",
+            n_vessels=10,
+            home_port_y=0,
+            home_port_x=0,
+            gear_type="bottom_trawl",
+            max_days_at_sea=200,
+            fuel_cost_per_cell=0.0,
+            base_operating_cost=0.0,
+            stock_elasticity=np.array([0.0]),
+            target_species=[0],
+            price_per_tonne=np.array([1000.0]),
+        )
+        fs = create_fleet_state([fleet], grid_ny=2, grid_nx=1, rationality=1.0)
+        fs.effort_map[0, 0, 0] = 10.0
+        fs.effort_map[0, 1, 0] = 0.0
+
+        from osmose.engine.processes.mortality import _precompute_effective_rates
+
+        # Without fleet state — both schools get same fishing rate
+        _, _, eff_fishing_base, _ = _precompute_effective_rates(state, config, 10, 0)
+        assert eff_fishing_base[0] == eff_fishing_base[1]
+        assert eff_fishing_base[0] > 0
+
+        # With fleet state — school at (0,0) should have fishing, school at (1,0) should have zero
+        _, _, eff_fishing_effort, _ = _precompute_effective_rates(
+            state, config, 10, 0, fleet_state=fs
+        )
+
+        assert eff_fishing_effort[0] > 0
+        assert eff_fishing_effort[1] == 0.0
