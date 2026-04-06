@@ -116,9 +116,9 @@ def spatial_results_ui():
 
 def spatial_results_server(input, output, session, state):
     """Server logic for the Spatial Results page."""
-    _spatial_ds = reactive.Value(None)  # xarray Dataset
-    _spatial_nc_files = reactive.Value([])  # list of NC filenames
-    _prev_output_dir = reactive.Value(None)
+    _spatial_ds: reactive.Value = reactive.Value(None)  # xarray Dataset | None
+    _spatial_nc_files: reactive.Value[list[str]] = reactive.Value([])
+    _prev_output_dir: reactive.Value = reactive.Value(None)
 
     # Lightweight handle for map updates
     _map = MapWidget(

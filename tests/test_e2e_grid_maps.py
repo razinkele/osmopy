@@ -112,7 +112,7 @@ def test_grid_fields_have_values(page: Page, app: ShinyAppProc):
     # The NetCDF Grid Settings section should be visible
     grid_fields_text = page.locator("#grid_fields").inner_text()
     assert "NetCDF Grid Settings" in grid_fields_text, (
-        f"Expected 'NetCDF Grid Settings' heading in grid fields"
+        "Expected 'NetCDF Grid Settings' heading in grid fields"
     )
 
 
