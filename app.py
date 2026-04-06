@@ -194,7 +194,7 @@ app_ui = ui.page_fillable(
         # Configure
         _nav_section("Configure"),
         ui.nav_panel("Setup", setup_ui(), value="setup"),
-        ui.nav_panel("Grid & Maps", grid_ui(), value="grid"),
+        ui.nav_panel("Grid", grid_ui(), value="grid"),
         ui.nav_panel("Forcing", forcing_ui(), value="forcing"),
         ui.nav_panel("Fishing", fishing_ui(), value="fishing"),
         ui.nav_panel("Movement", movement_ui(), value="movement"),
