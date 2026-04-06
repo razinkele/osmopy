@@ -6,6 +6,11 @@ from osmose.engine.genetics.genotype import (
     compact_genetic_state,
     create_initial_genotypes,
 )
+from osmose.engine.genetics.inheritance import (
+    create_offspring_genotypes,
+    form_gamete,
+    select_parents,
+)
 from osmose.engine.genetics.trait import Trait, TraitRegistry
 
 __all__ = [
@@ -15,5 +20,8 @@ __all__ = [
     "apply_trait_overrides",
     "compact_genetic_state",
     "create_initial_genotypes",
+    "create_offspring_genotypes",
     "express_traits",
+    "form_gamete",
+    "select_parents",
 ]
