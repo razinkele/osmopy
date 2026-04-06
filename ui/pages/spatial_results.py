@@ -236,6 +236,11 @@ def spatial_results_server(input, output, session, state):
         vals = ds[var_name].values
         vmin = float(np.nanmin(vals))
         vmax = float(np.nanmax(vals))
+        if np.isnan(vmin) or np.isnan(vmax):
+            return ui.p(
+                "No valid data for this variable.",
+                style="font-size: 12px; color: var(--osm-text-muted);",
+            )
         return ui.div(
             ui.p(
                 f"Range: {vmin:.4g} \u2014 {vmax:.4g}",
