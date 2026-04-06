@@ -41,15 +41,17 @@ class TestFormGamete:
 class TestCreateOffspringGenotypes:
     def _make_registry(self) -> TraitRegistry:
         registry = TraitRegistry()
-        registry.register(Trait(
-            name="imax",
-            species_mean=np.array([3.5]),
-            species_var=np.array([0.1]),
-            env_var=np.array([0.05]),
-            n_loci=np.array([3], dtype=np.int32),
-            n_alleles=np.array([20], dtype=np.int32),
-            target_param="ingestion_rate",
-        ))
+        registry.register(
+            Trait(
+                name="imax",
+                species_mean=np.array([3.5]),
+                species_var=np.array([0.1]),
+                env_var=np.array([0.05]),
+                n_loci=np.array([3], dtype=np.int32),
+                n_alleles=np.array([20], dtype=np.int32),
+                target_param="ingestion_rate",
+            )
+        )
         return registry
 
     def test_offspring_has_correct_shape(self):

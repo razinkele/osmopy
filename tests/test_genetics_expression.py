@@ -56,7 +56,7 @@ class TestExpressTraits:
         species_id = np.array([0, 1], dtype=np.int32)
 
         phenotypes = express_traits(gs, species_id)
-        assert phenotypes["imax"][0] == pytest.approx(1.0)   # 0 + 0.5 + 0.5
+        assert phenotypes["imax"][0] == pytest.approx(1.0)  # 0 + 0.5 + 0.5
         assert phenotypes["imax"][1] == pytest.approx(10.0)  # 10 + (-1) + 1
 
 

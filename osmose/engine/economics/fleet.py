@@ -21,9 +21,9 @@ class FleetConfig:
     max_days_at_sea: int
     fuel_cost_per_cell: float
     base_operating_cost: float
-    stock_elasticity: NDArray[np.float64]   # shape (n_species,)
+    stock_elasticity: NDArray[np.float64]  # shape (n_species,)
     target_species: list[int]
-    price_per_tonne: NDArray[np.float64]    # shape (n_species,)
+    price_per_tonne: NDArray[np.float64]  # shape (n_species,)
 
 
 @dataclass
@@ -70,23 +70,27 @@ def parse_fleets(cfg: dict[str, str], n_species: int) -> list[FleetConfig]:
             [float(cfg.get(f"{prefix}.price.sp{sp}.{fid}", "0.0")) for sp in range(n_species)]
         )
         elasticity = np.array(
-            [float(cfg.get(f"{prefix}.stock.elasticity.sp{sp}.{fid}", "0.0"))
-             for sp in range(n_species)]
+            [
+                float(cfg.get(f"{prefix}.stock.elasticity.sp{sp}.{fid}", "0.0"))
+                for sp in range(n_species)
+            ]
         )
 
-        fleets.append(FleetConfig(
-            name=name,
-            n_vessels=n_vessels,
-            home_port_y=home_y,
-            home_port_x=home_x,
-            gear_type=gear,
-            max_days_at_sea=max_days,
-            fuel_cost_per_cell=fuel_cost,
-            base_operating_cost=op_cost,
-            stock_elasticity=elasticity,
-            target_species=target_species,
-            price_per_tonne=price,
-        ))
+        fleets.append(
+            FleetConfig(
+                name=name,
+                n_vessels=n_vessels,
+                home_port_y=home_y,
+                home_port_x=home_x,
+                gear_type=gear,
+                max_days_at_sea=max_days,
+                fuel_cost_per_cell=fuel_cost,
+                base_operating_cost=op_cost,
+                stock_elasticity=elasticity,
+                target_species=target_species,
+                price_per_tonne=price,
+            )
+        )
 
     return fleets
 
