@@ -956,16 +956,22 @@ def list_movement_species(cfg: dict[str, str]) -> list[str]:
 
 
 def make_legend(entries: list[dict], **kwargs) -> dict:
-    """Create a deck.gl legend control via shiny_deckgl.
+    """Create a deck.gl legend control, adapting to shiny_deckgl version.
 
-    Accepts ``placement`` as an alias for ``position`` for convenience.
+    The dev venv (v1.9.1 fork) exports ``deck_legend_control``, while the
+    server (stock PyPI) exports ``layer_legend_widget``.  Accepts
+    ``placement`` as an alias for ``position`` for convenience.
     """
-    from shiny_deckgl import deck_legend_control  # type: ignore[import-untyped]
+    import shiny_deckgl as _sdgl  # type: ignore[import-untyped]
 
-    kw = dict(kwargs)
-    if "placement" in kw:
-        kw["position"] = kw.pop("placement")
-    return deck_legend_control(entries=entries, **kw)
+    if hasattr(_sdgl, "layer_legend_widget"):
+        return _sdgl.layer_legend_widget(entries=entries, **kwargs)
+    if hasattr(_sdgl, "deck_legend_control"):
+        kw = dict(kwargs)
+        if "placement" in kw:
+            kw["position"] = kw.pop("placement")
+        return _sdgl.deck_legend_control(entries=entries, **kw)
+    return {}
 
 
 def make_spatial_map(
