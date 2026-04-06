@@ -7,6 +7,7 @@ independently of the Shiny runtime.
 
 import math
 import re
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -16,6 +17,14 @@ import xarray as xr
 from osmose.logging import setup_logging
 
 _log = setup_logging("osmose.grid.helpers")
+
+
+def _safe_resolve(base: Path, rel: str) -> Path | None:
+    """Resolve a relative path against base, rejecting traversal outside base."""
+    candidate = (base / rel).resolve()
+    if not candidate.is_relative_to(base.resolve()):
+        return None
+    return candidate
 
 
 def load_mask(config: dict[str, str], config_dir: Path | None = None) -> np.ndarray | None:
@@ -32,7 +41,10 @@ def load_mask(config: dict[str, str], config_dir: Path | None = None) -> np.ndar
 
     full_path = None
     for d in search_dirs:
-        candidate = d / mask_path
+        candidate = _safe_resolve(d, mask_path)
+        if candidate is None:
+            _log.warning("Path traversal rejected for root %s: %s", d, mask_path)
+            continue
         if candidate.exists():
             full_path = candidate
             break
@@ -52,6 +64,13 @@ def load_mask(config: dict[str, str], config_dir: Path | None = None) -> np.ndar
     except (OSError, ValueError) as exc:
         _log.warning("Failed to load mask %s: %s", full_path, exc)
         return None
+
+
+def _zoom_for_span(span: float, default: float = 5.0) -> float:
+    """Compute deck.gl zoom level to fit a geographic span in degrees."""
+    if span <= 0:
+        return default
+    return max(1.0, min(15.0, math.log2(360 / span) - 0.5))
 
 
 def build_grid_layers(
@@ -102,36 +121,65 @@ def build_grid_layers(
         )
     )
 
-    # Individual grid cells as lat/lon rectangles
+    # Individual grid cells as lat/lon rectangles — vectorised with NumPy meshgrid
     if nx > 0 and ny > 0:
         dx = (lr_lon - ul_lon) / nx
         dy = (ul_lat - lr_lat) / ny
 
-        ocean_cells = []
-        land_cells = []
+        col_arr = np.arange(nx)
+        row_arr = np.arange(ny)
+        lo0 = ul_lon + col_arr * dx  # (nx,)
+        la0 = ul_lat - row_arr * dy  # (ny,)
+        lo0g, la0g = np.meshgrid(lo0, la0)  # (ny, nx)
+        lo1g = lo0g + dx
+        la1g = la0g - dy
 
-        for row in range(ny):
-            for col in range(nx):
-                lon0 = ul_lon + col * dx
-                lon1 = lon0 + dx
-                lat0 = ul_lat - row * dy
-                lat1 = lat0 - dy
-                is_land = (
-                    mask is not None
-                    and row < mask.shape[0]
-                    and col < mask.shape[1]
-                    and mask[row, col] <= 0
-                )
-                cell = {
-                    "polygon": [[lon0, lat0], [lon1, lat0], [lon1, lat1], [lon0, lat1]],
-                    "row": row,
-                    "col": col,
-                    "type": "land" if is_land else "ocean",
-                }
-                if is_land:
-                    land_cells.append(cell)
-                else:
-                    ocean_cells.append(cell)
+        if mask is not None:
+            mny = min(mask.shape[0], ny)
+            mnx = min(mask.shape[1], nx)
+            land_g = np.zeros((ny, nx), dtype=bool)
+            land_g[:mny, :mnx] = mask[:mny, :mnx] <= 0
+        else:
+            land_g = np.zeros((ny, nx), dtype=bool)
+
+        lo0f = lo0g.ravel()
+        lo1f = lo1g.ravel()
+        la0f = la0g.ravel()
+        la1f = la1g.ravel()
+        rows_f = np.repeat(row_arr, nx)
+        cols_f = np.tile(col_arr, ny)
+        land_f = land_g.ravel()
+
+        ocean_cells = [
+            {
+                "polygon": [
+                    [float(lo0f[i]), float(la0f[i])],
+                    [float(lo1f[i]), float(la0f[i])],
+                    [float(lo1f[i]), float(la1f[i])],
+                    [float(lo0f[i]), float(la1f[i])],
+                ],
+                "row": int(rows_f[i]),
+                "col": int(cols_f[i]),
+                "type": "ocean",
+            }
+            for i in range(len(land_f))
+            if not land_f[i]
+        ]
+        land_cells = [
+            {
+                "polygon": [
+                    [float(lo0f[i]), float(la0f[i])],
+                    [float(lo1f[i]), float(la0f[i])],
+                    [float(lo1f[i]), float(la1f[i])],
+                    [float(lo0f[i]), float(la1f[i])],
+                ],
+                "row": int(rows_f[i]),
+                "col": int(cols_f[i]),
+                "type": "land",
+            }
+            for i in range(len(land_f))
+            if land_f[i]
+        ]
 
         # Ocean cells
         if ocean_cells:
@@ -193,7 +241,10 @@ def load_netcdf_grid(
 
     full_path = None
     for d in search_dirs:
-        candidate = d / nc_path
+        candidate = _safe_resolve(d, nc_path)
+        if candidate is None:
+            _log.warning("Path traversal rejected for root %s: %s", d, nc_path)
+            continue
         if candidate.exists():
             full_path = candidate
             break
@@ -233,6 +284,14 @@ def build_netcdf_grid_layers(
     ny, nx = lat.shape
     layers = []
 
+    # Precompute cell step sizes (handle single-row/col degenerate grids)
+    lat_step = abs(float(lat[0, 0] - lat[min(1, ny - 1), 0]))
+    lon_step = abs(float(lon[0, 0] - lon[0, min(1, nx - 1)]))
+    if lat_step == 0:
+        lat_step = lon_step if lon_step > 0 else 1.0
+    if lon_step == 0:
+        lon_step = lat_step if lat_step > 0 else 1.0
+
     # Compute cell boundaries from center points (half-step between neighbors)
     def _cell_polygon(row: int, col: int) -> list[list[float]]:
         """Build polygon corners for a cell from neighboring center points."""
@@ -245,6 +304,11 @@ def build_netcdf_grid_layers(
             dlat *= 2
         if col == 0 or col == nx - 1:
             dlon *= 2
+        # Fallback for degenerate single-row/col grids
+        if dlat == 0:
+            dlat = lon_step * (1 if lat[0, 0] >= lat[min(1, ny - 1), 0] else -1)
+        if dlon == 0:
+            dlon = lat_step
         hlat = abs(dlat) / 2
         hlon = abs(dlon) / 2
         return [
@@ -254,11 +318,11 @@ def build_netcdf_grid_layers(
             [clon - hlon, clat - hlat],
         ]
 
-    # Grid boundary from outer edges
-    ul_lat = float(lat.max()) + abs(float(lat[0, 0] - lat[min(1, ny - 1), 0])) / 2
-    ul_lon = float(lon.min()) - abs(float(lon[0, 0] - lon[0, min(1, nx - 1)])) / 2
-    lr_lat = float(lat.min()) - abs(float(lat[0, 0] - lat[min(1, ny - 1), 0])) / 2
-    lr_lon = float(lon.max()) + abs(float(lon[0, 0] - lon[0, min(1, nx - 1)])) / 2
+    # Grid boundary from outer edges (uses precomputed steps — safe for single-row/col)
+    ul_lat = float(lat.max()) + lat_step / 2
+    ul_lon = float(lon.min()) - lon_step / 2
+    lr_lat = float(lat.min()) - lat_step / 2
+    lr_lon = float(lon.max()) + lon_step / 2
 
     boundary = [
         {
@@ -288,19 +352,59 @@ def build_netcdf_grid_layers(
     ocean_cells = []
     land_cells = []
 
-    for row in range(ny):
-        for col in range(nx):
-            is_ocean = mask[row, col] > 0
-            cell = {
-                "polygon": _cell_polygon(row, col),
-                "row": row,
-                "col": col,
-                "type": "ocean" if is_ocean else "land",
-            }
-            if is_ocean:
-                ocean_cells.append(cell)
-            else:
-                land_cells.append(cell)
+    # Vectorized polygon computation — avoids O(ny*nx) Python loop for large grids.
+    lat_f = lat.astype(float)
+    lon_f = lon.astype(float)
+
+    # Compute per-cell half-steps using finite differences (edge cells mirror).
+    dlat = np.empty_like(lat_f)
+    if ny == 1:
+        dlat[:] = lat_step
+    else:
+        dlat[0, :] = lat_f[1, :] - lat_f[0, :]
+        dlat[-1, :] = lat_f[-1, :] - lat_f[-2, :]
+        if ny > 2:
+            dlat[1:-1, :] = (lat_f[2:, :] - lat_f[:-2, :]) / 2
+
+    dlon = np.empty_like(lon_f)
+    if nx == 1:
+        dlon[:] = lon_step
+    else:
+        dlon[:, 0] = lon_f[:, 1] - lon_f[:, 0]
+        dlon[:, -1] = lon_f[:, -1] - lon_f[:, -2]
+        if nx > 2:
+            dlon[:, 1:-1] = (lon_f[:, 2:] - lon_f[:, :-2]) / 2
+
+    # Fallback for degenerate zero-step cells
+    lat_sign = 1.0 if lat_f[0, 0] >= lat_f[min(1, ny - 1), 0] else -1.0
+    fallback_dlat = float(lon_step * lat_sign) or lat_step
+    dlat = np.where(dlat == 0, fallback_dlat, dlat)
+    dlon = np.where(dlon == 0, lat_step, dlon)
+
+    hlat = np.abs(dlat) / 2
+    hlon = np.abs(dlon) / 2
+
+    # Build polygon corner arrays: shape (ny, nx, 4, 2) in [lon, lat] order
+    polys = np.stack(
+        [
+            np.stack([lon_f - hlon, lat_f + hlat], axis=-1),  # top-left
+            np.stack([lon_f + hlon, lat_f + hlat], axis=-1),  # top-right
+            np.stack([lon_f + hlon, lat_f - hlat], axis=-1),  # bottom-right
+            np.stack([lon_f - hlon, lat_f - hlat], axis=-1),  # bottom-left
+        ],
+        axis=2,
+    )
+    polys_list = polys.tolist()  # nested Python lists for JSON serialization
+
+    ocean_mask = mask > 0
+    for r, c in zip(*np.where(ocean_mask)):
+        ocean_cells.append(
+            {"polygon": polys_list[r][c], "row": int(r), "col": int(c), "type": "ocean"}
+        )
+    for r, c in zip(*np.where(~ocean_mask)):
+        land_cells.append(
+            {"polygon": polys_list[r][c], "row": int(r), "col": int(c), "type": "land"}
+        )
 
     if ocean_cells:
         fill = [30, 120, 180, 90] if is_dark else [20, 100, 180, 70]
@@ -341,7 +445,7 @@ def build_netcdf_grid_layers(
     center_lat = (ul_lat + lr_lat) / 2
     center_lon = (ul_lon + lr_lon) / 2
     span = max(abs(ul_lat - lr_lat), abs(lr_lon - ul_lon))
-    zoom = max(1, min(15, math.log2(360 / span) - 0.5)) if span > 0 else 5
+    zoom = _zoom_for_span(span)
     view_state = {"latitude": center_lat, "longitude": center_lon, "zoom": zoom}
 
     return layers, view_state
@@ -406,8 +510,9 @@ def load_csv_overlay(
                 return None
 
         # Compute value range for color scaling
+        # -99 (and values < -9) are OSMOSE sentinel values meaning "outside grid/land" — skip them.
         numeric = data.astype(float)
-        valid = numeric[~np.isnan(numeric)]
+        valid = numeric[(~np.isnan(numeric)) & (numeric > -9.0)]
         if len(valid) == 0:
             return None
         vmin, vmax = float(valid.min()), float(valid.max())
@@ -417,7 +522,7 @@ def load_csv_overlay(
         for r in range(g_ny):
             for c in range(g_nx):
                 v = float(numeric[r, c])
-                if np.isnan(v):
+                if np.isnan(v) or v < -9.0:  # skip NaN and -99 sentinel (outside grid)
                     continue
                 # Compute cell polygon from grid coordinates
                 if nc_data is not None and lat is not None and lon is not None:
@@ -471,62 +576,234 @@ def load_netcdf_overlay(
     file_path: Path,
     fallback_lat: np.ndarray | None = None,
     fallback_lon: np.ndarray | None = None,
+    var_lat: str = "lat",
+    var_lon: str = "lon",
+    var_name: str | None = None,
+    time_step: int = 0,
+    vmin: float | None = None,
+    vmax: float | None = None,
 ) -> list[dict] | None:
-    """Load a NetCDF file and return overlay cell data for deck.gl."""
+    """Load a NetCDF overlay file and return colored cell data for deck.gl.
+
+    Applies a blue→cyan→yellow colormap scaled against ``vmin``/``vmax``
+    (which should be the global range across all time steps for consistent
+    colour across animation).  If not provided, they are computed from the
+    selected slice.
+
+    Parameters
+    ----------
+    file_path:
+        Path to the NetCDF file.
+    fallback_lat/fallback_lon:
+        Coordinate arrays to use when the file does not contain lat/lon vars
+        (e.g. a 2-D NcGrid mask that shares coordinates with the base grid).
+    var_lat/var_lon:
+        Name of the latitude/longitude variables inside the file.
+    var_name:
+        Data variable to display.  If *None*, the first 2-D+ variable is used.
+    time_step:
+        Index along the leading time dimension (clamped to valid range).
+    vmin/vmax:
+        Fixed colour-scale bounds.  Pass the per-variable bounds from
+        ``list_nc_overlay_variables`` for stable colours across time steps.
+    """
+    _TIME_DIM_NAMES = {"time", "t", "year", "month", "step", "date", "ntime"}
+
     try:
         with xr.open_dataset(file_path) as ds:
-            var_name = None
-            for vn in ds.data_vars:
-                if len(ds[vn].dims) >= 2:
-                    var_name = vn
-                    break
-            if not var_name:
+            # --- Select variable ---
+            if var_name and var_name in ds.data_vars:
+                sel_var = var_name
+            else:
+                sel_var = next(
+                    (vn for vn in ds.data_vars if len(ds[vn].dims) >= 2),
+                    None,
+                )
+            if not sel_var:
                 return None
 
-            data_vals = ds[var_name].values
-            if len(data_vals.shape) > 2:
-                data_vals = data_vals[0]  # first time step
+            da = ds[sel_var]
 
-            olat = ds["lat"].values if "lat" in ds else fallback_lat
-            olon = ds["lon"].values if "lon" in ds else fallback_lon
+            # --- Slice time dimension if present ---
+            has_time = len(da.dims) > 2 and da.dims[0].lower() in _TIME_DIM_NAMES
+            if has_time:
+                t_idx = max(0, min(time_step, da.shape[0] - 1))
+                data_vals = da.values[t_idx]
+            elif da.values.ndim > 2:
+                data_vals = da.values[0]
+            else:
+                data_vals = da.values
+
+            # --- Resolve lat/lon arrays (try several common names) ---
+            _LAT_NAMES = (var_lat, "lat", "latitude", "nav_lat", "LAT", "Latitude")
+            _LON_NAMES = (var_lon, "lon", "longitude", "nav_lon", "LON", "Longitude")
+            olat = next((ds[n].values for n in _LAT_NAMES if n in ds), fallback_lat)
+            olon = next((ds[n].values for n in _LON_NAMES if n in ds), fallback_lon)
 
         if olat is None or olon is None:
             return None
 
-        ony, onx = data_vals.shape
+        data_f = data_vals.astype(float)
+        ony, onx = data_f.shape
+
+        # --- Expand 1-D lat/lon to 2-D ---
+        if olat.ndim == 1:
+            lat_2d = np.broadcast_to(olat[:, np.newaxis], (ony, onx)).copy()
+            lon_2d = np.broadcast_to(olon[np.newaxis, :], (ony, onx)).copy()
+        else:
+            lat_2d = olat[:ony, :onx].astype(float)
+            lon_2d = olon[:ony, :onx].astype(float)
+
+        lat_step = abs(float(lat_2d[min(1, ony - 1), 0] - lat_2d[0, 0])) if ony > 1 else 1.0
+        lon_step = abs(float(lon_2d[0, min(1, onx - 1)] - lon_2d[0, 0])) if onx > 1 else 1.0
+
+        # Vectorised half-extents using finite differences (edge cells: single-sided)
+        dlat = np.empty((ony, onx))
+        if ony == 1:
+            dlat[:] = lat_step
+        else:
+            dlat[0, :] = abs(lat_2d[1, :] - lat_2d[0, :])
+            dlat[-1, :] = abs(lat_2d[-1, :] - lat_2d[-2, :])
+            if ony > 2:
+                dlat[1:-1, :] = abs(lat_2d[2:, :] - lat_2d[:-2, :]) / 2
+
+        dlon = np.empty((ony, onx))
+        if onx == 1:
+            dlon[:] = lon_step
+        else:
+            dlon[:, 0] = abs(lon_2d[:, 1] - lon_2d[:, 0])
+            dlon[:, -1] = abs(lon_2d[:, -1] - lon_2d[:, -2])
+            if onx > 2:
+                dlon[:, 1:-1] = abs(lon_2d[:, 2:] - lon_2d[:, :-2]) / 2
+
+        dlat = np.where(dlat == 0, lon_step if lon_step > 0 else 1.0, dlat)
+        dlon = np.where(dlon == 0, lat_step if lat_step > 0 else 1.0, dlon)
+        hlat = dlat / 2
+        hlon = dlon / 2
+
+        # Build polygon corners: shape (ony, onx, 4, 2) in [lon, lat] order
+        polys = np.stack(
+            [
+                np.stack([lon_2d - hlon, lat_2d + hlat], axis=-1),
+                np.stack([lon_2d + hlon, lat_2d + hlat], axis=-1),
+                np.stack([lon_2d + hlon, lat_2d - hlat], axis=-1),
+                np.stack([lon_2d - hlon, lat_2d - hlat], axis=-1),
+            ],
+            axis=2,
+        )
+        polys_list = polys.tolist()
+
+        # --- Colour scaling (computed only over valid cells to avoid NaN cast warnings) ---
+        valid_mask = ~np.isnan(data_f)
+        valid_vals = data_f[valid_mask]
+        if len(valid_vals) == 0:
+            return None
+        vmin_eff = vmin if vmin is not None else float(valid_vals.min())
+        vmax_eff = vmax if vmax is not None else float(valid_vals.max())
+        vrange = vmax_eff - vmin_eff if vmax_eff != vmin_eff else 1.0
+
+        # Blue→cyan→yellow colormap applied only to the valid subset
+        t_valid = np.clip((valid_vals - vmin_eff) / vrange, 0.0, 1.0)
+        lo = t_valid < 0.5
+        s_lo = t_valid * 2
+        s_hi = (t_valid - 0.5) * 2
+        r_ch = np.where(lo, 0.0, s_hi * 255)
+        g_ch = np.where(lo, 80.0 + s_lo * 130, 210.0 + s_hi * 20)
+        b_ch = np.where(lo, 200.0 - s_lo * 20, 180.0 - s_hi * 180)
+        a_ch = np.where(lo, 120.0 + s_lo * 40, 160.0 + s_hi * 40)
+        rgba_valid = np.stack([r_ch, g_ch, b_ch, a_ch], axis=-1).astype(np.uint8)
+
         cells = []
-        for r in range(min(ony, olat.shape[0] if olat.ndim > 1 else ony)):
-            for c in range(min(onx, olon.shape[1] if olon.ndim > 1 else onx)):
-                v = float(data_vals[r, c])
-                if np.isnan(v):
-                    continue
-                cell_lat = float(olat[r, c] if olat.ndim == 2 else olat[r])
-                cell_lon = float(olon[r, c] if olon.ndim == 2 else olon[c])
-                if olat.ndim == 2:
-                    dlat = abs(float(olat[min(r + 1, ony - 1), c] - olat[max(r - 1, 0), c])) / 2
-                    dlon = abs(float(olon[r, min(c + 1, onx - 1)] - olon[r, max(c - 1, 0)])) / 2
-                else:
-                    dlat = abs(float(olat[min(r + 1, len(olat) - 1)] - olat[max(r - 1, 0)])) / 2
-                    dlon = abs(float(olon[min(c + 1, len(olon) - 1)] - olon[max(c - 1, 0)])) / 2
-                if r == 0 or r == ony - 1:
-                    dlat *= 2
-                if c == 0 or c == onx - 1:
-                    dlon *= 2
-                hlat, hlon = dlat / 2, dlon / 2
-                cells.append(
-                    {
-                        "polygon": [
-                            [cell_lon - hlon, cell_lat + hlat],
-                            [cell_lon + hlon, cell_lat + hlat],
-                            [cell_lon + hlon, cell_lat - hlat],
-                            [cell_lon - hlon, cell_lat - hlat],
-                        ],
-                        "value": v,
-                    }
-                )
+        for i, (r_idx, c_idx) in enumerate(zip(*np.where(valid_mask))):
+            cells.append(
+                {
+                    "polygon": polys_list[r_idx][c_idx],
+                    "value": float(valid_vals[i]),
+                    "fill": rgba_valid[i].tolist(),
+                }
+            )
         return cells if cells else None
-    except (OSError, KeyError, ValueError) as exc:
+    except (OSError, KeyError, ValueError, StopIteration) as exc:
         _log.warning("Failed to load overlay %s: %s", file_path, exc)
+        return None
+
+
+# Coordinate and time-like dimension names (excluded from overlay variable list)
+_NC_COORD_NAMES: frozenset[str] = frozenset(
+    {
+        "lat",
+        "lon",
+        "latitude",
+        "longitude",
+        "nav_lat",
+        "nav_lon",
+        "x",
+        "y",
+        "i",
+        "j",
+        "time",
+        "t",
+        "year",
+        "month",
+        "depth",
+        "z",
+        "level",
+        "row",
+        "col",
+    }
+)
+_NC_TIME_DIM_NAMES: frozenset[str] = frozenset(
+    {"time", "t", "year", "month", "step", "date", "ntime"}
+)
+
+
+@lru_cache(maxsize=16)
+def list_nc_overlay_variables(file_path_str: str) -> dict[str, dict] | None:
+    """Return per-variable metadata for a NetCDF overlay file.
+
+    Results are cached by file path string so repeated reactive evaluations
+    do not incur disk I/O.  Invalidate by restarting the app after file changes.
+
+    Returns
+    -------
+    dict mapping variable name to metadata::
+
+        {
+            "Dinoflagellates": {
+                "n_time": 24,
+                "has_time": True,
+                "vmin": 0.0,
+                "vmax": 4500.3,
+            },
+            ...
+        }
+
+    Returns *None* on error or when no suitable 2-D+ data variable is found.
+    """
+    try:
+        with xr.open_dataset(Path(file_path_str)) as ds:
+            result: dict[str, dict] = {}
+            for vn in ds.data_vars:
+                if vn.lower() in _NC_COORD_NAMES:
+                    continue
+                da = ds[vn]
+                if len(da.dims) < 2:
+                    continue
+                has_time = len(da.dims) > 2 and da.dims[0].lower() in _NC_TIME_DIM_NAMES
+                n_time = int(da.shape[0]) if has_time else 1
+                vals = da.values.astype(float)
+                valid = vals[~np.isnan(vals)]
+                if len(valid) == 0:
+                    continue
+                result[vn] = {
+                    "n_time": n_time,
+                    "has_time": has_time,
+                    "vmin": float(valid.min()),
+                    "vmax": float(valid.max()),
+                }
+        return result or None
+    except (OSError, KeyError, ValueError) as exc:
+        _log.warning("Failed to inspect NC file %s: %s", file_path_str, exc)
         return None
 
 
@@ -628,12 +905,12 @@ def build_movement_cache(
     color_idx = 0
     for idx in sorted(map_indices, key=lambda x: int(x) if x.isdigit() else 0):
         file_val = cfg.get(f"movement.file.map{idx}", "")
-        if not file_val or file_val in ("null", "None"):
+        if not file_val or file_val.lower() in ("null", "none"):
             continue
 
         if config_dir:
-            file_path = (config_dir / file_val).resolve()
-            if not file_path.is_relative_to(config_dir.resolve()):
+            file_path = _safe_resolve(config_dir, file_val)
+            if file_path is None:
                 _log.warning("Path traversal in movement map: %s", file_val)
                 continue
             if not file_path.exists():
@@ -676,3 +953,43 @@ def list_movement_species(cfg: dict[str, str]) -> list[str]:
         if key.startswith("movement.species.map") and val:
             species.add(val)
     return sorted(species)
+
+
+def make_legend(entries: list[dict], **kwargs) -> dict:
+    """Create a legend widget/control, adapting to shiny_deckgl version."""
+    import shiny_deckgl as _sdgl  # type: ignore[import-untyped]
+
+    if hasattr(_sdgl, "layer_legend_widget"):
+        return _sdgl.layer_legend_widget(entries=entries, **kwargs)
+    if hasattr(_sdgl, "deck_legend_control"):
+        kw = dict(kwargs)
+        if "placement" in kw:
+            kw["position"] = kw.pop("placement")
+        return _sdgl.deck_legend_control(entries=entries, **kw)
+    return {}
+
+
+def make_spatial_map(
+    ds,
+    var_name: str,
+    time_idx: int = 0,
+    title: str | None = None,
+    template: str = "osmose",
+):
+    """Create a Plotly imshow heatmap from a spatial xarray Dataset."""
+    import plotly.express as px
+
+    data = ds[var_name].isel(time=time_idx).values
+    lat = ds["lat"].values
+    lon = ds["lon"].values
+    fig = px.imshow(
+        data,
+        x=lon,
+        y=lat,
+        origin="lower",
+        color_continuous_scale="Viridis",
+        labels={"x": "Longitude", "y": "Latitude", "color": var_name},
+        title=title or f"{var_name} (t={time_idx})",
+    )
+    fig.update_layout(template=template)
+    return fig

@@ -14,6 +14,7 @@ from shinywidgets import output_widget, render_plotly
 
 from osmose.logging import setup_logging
 from ui.components.collapsible import collapsible_card_header, expand_tab
+from ui.pages.grid_helpers import make_spatial_map
 from ui.styles import STYLE_EMPTY, STYLE_MONO_KEY
 
 _log = setup_logging("osmose.results.ui")
@@ -76,32 +77,6 @@ def make_diet_heatmap(df: pd.DataFrame, template: str = "osmose") -> go.Figure:
         title="Diet Composition",
         color_continuous_scale="YlOrRd",
         labels={"x": "Prey", "y": "Predator", "color": "Proportion"},
-    )
-    fig.update_layout(template=template)
-    return fig
-
-
-def make_spatial_map(
-    ds,
-    var_name: str,
-    time_idx: int = 0,
-    title: str | None = None,
-    template: str = "osmose",
-) -> go.Figure:
-    """Create a spatial heatmap from NetCDF data."""
-    import plotly.express as px
-
-    data = ds[var_name].isel(time=time_idx).values
-    lat = ds["lat"].values
-    lon = ds["lon"].values
-    fig = px.imshow(
-        data,
-        x=lon,
-        y=lat,
-        origin="lower",
-        color_continuous_scale="Viridis",
-        labels={"x": "Longitude", "y": "Latitude", "color": var_name},
-        title=title or f"{var_name} (t={time_idx})",
     )
     fig.update_layout(template=template)
     return fig
@@ -276,7 +251,7 @@ def results_server(input, output, session, state):
         p = Path(path_str)
         if not p.is_dir():
             return ui.tags.small("Directory not found", style="color: #e74c3c;")
-        csvs = list(p.glob("*.csv"))
+        csvs = list(p.glob("*.csv"))[:200]
         if not csvs:
             return ui.tags.small("No results found in this directory", style="color: #e67e22;")
         return ui.tags.small(f"Found {len(csvs)} output files", style="color: #2ecc71;")

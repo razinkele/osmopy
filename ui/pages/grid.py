@@ -1,6 +1,7 @@
 """Grid configuration page."""
 
 import math
+from pathlib import Path
 
 from shiny import ui, reactive, render
 from shiny.types import SilentException
@@ -27,10 +28,13 @@ from ui.pages.grid_helpers import (
     build_movement_cache,
     build_netcdf_grid_layers,
     list_movement_species,
+    list_nc_overlay_variables,
     load_csv_overlay,
     load_mask,
     load_netcdf_grid,
     load_netcdf_overlay,
+    make_legend,
+    _zoom_for_span,
 )
 from ui.state import get_theme_mode, sync_inputs
 
@@ -39,16 +43,40 @@ _log = setup_logging("osmose.grid.ui")
 GRID_GLOBAL_KEYS: list[str] = [f.key_pattern for f in GRID_FIELDS if not f.indexed]
 
 
-def _make_legend(entries: list[dict], **kwargs) -> dict:
-    """Create a legend widget/control, adapting to shiny_deckgl version."""
-    if hasattr(_sdgl, "layer_legend_widget"):
-        return _sdgl.layer_legend_widget(entries=entries, **kwargs)
-    if hasattr(_sdgl, "deck_legend_control"):
-        kw = dict(kwargs)
-        if "placement" in kw:
-            kw["position"] = kw.pop("placement")
-        return _sdgl.deck_legend_control(entries=entries, **kw)
-    return {}
+def _validate_overlay_path(overlay_val: str, cfg_dir: Path | None) -> Path | None:
+    """Resolve and validate an overlay path is within the config directory.
+
+    The overlay selector stores canonical resolved paths as option values.
+    This server-side check ensures a crafted client request cannot read
+    arbitrary files outside the config directory.
+
+    Returns the resolved Path if valid, None otherwise.
+    """
+    if not cfg_dir or not overlay_val or overlay_val in ("grid_extent", "__movement_animation__"):
+        return None
+    candidate = Path(overlay_val).resolve()
+    try:
+        candidate.relative_to(cfg_dir.resolve())
+    except ValueError:
+        _log.warning("Overlay path rejected (outside config dir): %s", overlay_val)
+        return None
+    return candidate
+
+
+def _overlay_label(rel_path: str) -> str:
+    """Generate a human-readable label from an overlay file path."""
+    stem = Path(rel_path).stem.lower()
+    if "ltl" in stem or ("ltlbiomass" in stem.replace("_", "").replace("-", "")):
+        return "LTL Biomass"
+    if "backgroundspecies" in stem.replace("_", "").replace("-", ""):
+        return "Background Species"
+    if "mpa" in stem or ("marine" in stem and "protected" in stem):
+        return stem.replace("_", " ").replace("-", " ").title()
+    if "distrib" in stem or ("fishing" in stem and "distrib" in stem):
+        return "Fishing Distribution"
+    if "fishing" in stem:
+        return "Fishing"
+    return stem.replace("_", " ").replace("-", " ").title()
 
 
 def grid_ui():
@@ -75,6 +103,7 @@ def grid_ui():
             ui.card(
                 collapsible_card_header("Grid Type", "grid"),
                 ui.output_ui("grid_overlay_selector"),
+                ui.output_ui("overlay_nc_controls"),
                 ui.output_ui("movement_controls"),
                 ui.output_ui("grid_fields"),
             ),
@@ -126,8 +155,11 @@ def grid_server(input, output, session, state):
         state.load_trigger.get()
         with reactive.isolate():
             cfg = state.config.get()
+            cfg_dir = state.config_dir.get()
+
         choices: dict[str, str] = {"grid_extent": "Grid extent"}
-        # Keys whose .csv/.nc values are NOT spatial grids
+
+        # Config keys whose file values are NOT displayable spatial grids
         skip_prefixes = (
             "grid.",
             "osmose.configuration.",
@@ -135,21 +167,48 @@ def grid_server(input, output, session, state):
             "predation.accessibility",
             "fisheries.catchability",
             "fisheries.discards",
+            "movement.file.map",  # movement CSVs — handled by Movement Animation
+            "movement.species.map",  # movement species labels
+            "fisheries.movement.",  # fishing movement maps
         )
 
-        for key, val in sorted(cfg.items()):
-            if not val or not isinstance(val, str):
-                continue
-            if not (val.endswith(".nc") or val.endswith(".csv")):
-                continue
-            if any(key.startswith(p) for p in skip_prefixes):
-                continue
-            if "season" in key:
-                continue
-            label = key.replace(".", " ").replace("_", " ").title()
-            choices[key] = label
+        # Deduplicate by canonical resolved path: many config keys may point to the
+        # same file (e.g. species.file.sp14–sp23 all pointing to eec_ltlbiomassTons.nc).
+        seen_paths: dict[str, str] = {}  # resolved_path_str -> label
 
-        # Add Movement Animation entry
+        if cfg_dir and cfg_dir.is_dir():
+            cfg_dir_resolved = cfg_dir.resolve()
+            for key, val in sorted(cfg.items()):
+                if not val or not isinstance(val, str):
+                    continue
+                if not (val.endswith(".nc") or val.endswith(".csv")):
+                    continue
+                if key.startswith(skip_prefixes):
+                    continue
+                if "season" in key:
+                    continue
+                try:
+                    resolved = (cfg_dir / val).resolve()
+                except Exception:
+                    continue
+                # Reject path traversal
+                try:
+                    resolved.relative_to(cfg_dir_resolved)
+                except ValueError:
+                    continue
+                path_id = str(resolved)
+                if path_id not in seen_paths:
+                    seen_paths[path_id] = _overlay_label(val)
+
+            # Scan mpa/ directory for MPA files not referenced in the config
+            mpa_dir = cfg_dir / "mpa"
+            if mpa_dir.is_dir():
+                for mpa_file in sorted(mpa_dir.glob("*.csv")):
+                    path_id = str(mpa_file.resolve())
+                    if path_id not in seen_paths:
+                        seen_paths[path_id] = f"MPA: {mpa_file.stem.replace('_', ' ').title()}"
+
+        choices.update(seen_paths)
         choices["__movement_animation__"] = "Movement Animation"
 
         if len(choices) <= 1:
@@ -157,6 +216,85 @@ def grid_server(input, output, session, state):
         return ui.input_select(
             "grid_overlay", "Overlay data", choices=choices, selected="grid_extent"
         )
+
+    @render.ui
+    def overlay_nc_controls():
+        """Show variable selector and/or time slider for multi-var/time NetCDF overlays."""
+        try:
+            overlay_val = input.grid_overlay()
+        except SilentException:
+            return ui.div()
+
+        if overlay_val in ("grid_extent", "__movement_animation__"):
+            return ui.div()
+
+        with reactive.isolate():
+            cfg_dir = state.config_dir.get()
+        overlay_path = _validate_overlay_path(overlay_val, cfg_dir)
+        if overlay_path is None or overlay_path.suffix != ".nc" or not overlay_path.exists():
+            return ui.div()
+
+        meta = list_nc_overlay_variables(str(overlay_path))
+        if not meta:
+            return ui.div()
+
+        controls = []
+
+        # Variable selector (only when multiple data variables present)
+        if len(meta) > 1:
+            var_choices = {k: k.replace("_", " ").title() for k in meta}
+            try:
+                current_var = input.nc_var_select()
+            except SilentException:
+                current_var = next(iter(meta))
+            if current_var not in meta:
+                current_var = next(iter(meta))
+            controls.append(
+                ui.input_select(
+                    "nc_var_select",
+                    "Variable",
+                    choices=var_choices,
+                    selected=current_var,
+                )
+            )
+            sel_var = current_var
+        else:
+            # Single variable — hidden select so input.nc_var_select() is always defined
+            sole_var = next(iter(meta))
+            controls.append(
+                ui.div(
+                    ui.input_select(
+                        "nc_var_select",
+                        "Variable",
+                        choices={sole_var: sole_var},
+                        selected=sole_var,
+                    ),
+                    style="display:none",
+                )
+            )
+            sel_var = sole_var
+
+        # Time step slider when the selected variable has multiple time steps
+        var_meta = meta.get(sel_var, {})
+        n_time = var_meta.get("n_time", 1)
+        if n_time > 1:
+            try:
+                current_step = int(input.nc_time_step())
+            except (SilentException, ValueError, TypeError):
+                current_step = 0
+            current_step = max(0, min(current_step, n_time - 1))
+            controls.append(
+                ui.input_slider(
+                    "nc_time_step",
+                    "Time step",
+                    min=0,
+                    max=n_time - 1,
+                    value=current_step,
+                    step=1,
+                )
+            )
+
+        return ui.div(*controls) if controls else ui.div()
 
     @render.ui
     def movement_controls():
@@ -196,10 +334,11 @@ def grid_server(input, output, session, state):
         except (SilentException, ValueError, TypeError):
             interval = 1000
 
-        try:
-            current_step = input.movement_step()
-        except SilentException:
-            current_step = 0
+        with reactive.isolate():
+            try:
+                current_step = input.movement_step()
+            except (SilentException, AttributeError):
+                current_step = 0
 
         return ui.div(
             ui.input_select(
@@ -241,7 +380,9 @@ def grid_server(input, output, session, state):
 
     # Movement animation state
     _movement_cache: reactive.Value[dict[str, dict]] = reactive.Value({})
-    _prev_active_maps: reactive.Value[frozenset[str]] = reactive.Value(frozenset())
+    _prev_active_maps: reactive.Value[tuple[frozenset[str], bool]] = reactive.Value(
+        (frozenset(), False)
+    )
 
     def _read_grid_values() -> tuple[float, float, float, float, int, int]:
         """Read grid bounds from inputs, falling back to config.
@@ -309,7 +450,7 @@ def grid_server(input, output, session, state):
             return
         if overlay != "__movement_animation__":
             _movement_cache.set({})
-            _prev_active_maps.set(frozenset())
+            _prev_active_maps.set((frozenset(), False))
             return
         try:
             species = input.movement_species()
@@ -328,7 +469,7 @@ def grid_server(input, output, session, state):
 
         cache = build_movement_cache(cfg, cfg_dir, grid_params, species=species)
         _movement_cache.set(cache)
-        _prev_active_maps.set(frozenset())
+        _prev_active_maps.set((frozenset(), False))
 
     @reactive.effect
     async def update_grid_map():
@@ -366,10 +507,7 @@ def grid_server(input, output, session, state):
                 lat_span = abs(ul_lat - lr_lat)
                 lon_span = abs(lr_lon - ul_lon)
                 span = max(lat_span, lon_span)
-                if span > 0:
-                    zoom = max(1, min(15, math.log2(360 / span) - 0.5))
-                else:
-                    zoom = 5
+                zoom = _zoom_for_span(span)
                 view_state = {
                     "latitude": center_lat,
                     "longitude": center_lon,
@@ -417,7 +555,10 @@ def grid_server(input, output, session, state):
                 )
 
         # Load overlay data if selected
-        overlay = input.grid_overlay() if hasattr(input, "grid_overlay") else None
+        try:
+            overlay = input.grid_overlay()
+        except (SilentException, AttributeError):
+            overlay = None
         if not overlay:
             overlay = "grid_extent"
 
@@ -430,10 +571,10 @@ def grid_server(input, output, session, state):
                 except SilentException:
                     step = 0
                 active_ids = frozenset(mid for mid, m in cache.items() if step in m["steps"])
-                prev = _prev_active_maps.get()
-                if active_ids == prev and prev:
-                    return  # skip update — no visual change
-                _prev_active_maps.set(active_ids)
+                prev_ids, prev_dark = _prev_active_maps.get()
+                if active_ids == prev_ids and prev_ids and is_dark == prev_dark:
+                    return  # skip update — same maps AND same theme
+                _prev_active_maps.set((active_ids, is_dark))
 
                 for mid in sorted(active_ids):
                     m = cache[mid]
@@ -461,74 +602,103 @@ def grid_server(input, output, session, state):
                     )
 
         elif overlay != "grid_extent":
-            overlay_path_str = cfg.get(overlay, "")
-            if overlay_path_str and cfg_dir:
-                overlay_file = (cfg_dir / overlay_path_str).resolve()
-                if not overlay_file.is_relative_to(cfg_dir.resolve()):
-                    _log.warning("Skipping path traversal in overlay: %s", overlay_path_str)
-                elif not overlay_file.exists():
+            # Validate overlay value is within the config directory (server-side check
+            # against crafted client requests; selector already dedupes by canonical path)
+            overlay_file = _validate_overlay_path(overlay, cfg_dir)
+            if overlay_file is None or not overlay_file.exists():
+                if overlay_file is not None:
                     ui.notification_show(
-                        f"File not found: {overlay_path_str}",
+                        f"Overlay file not found: {overlay_file.name}",
                         type="warning",
                         duration=3,
                     )
-                elif overlay_file.suffix == ".nc":
-                    fb_lat = nc_data[0] if nc_data else None
-                    fb_lon = nc_data[1] if nc_data else None
-                    cells = load_netcdf_overlay(overlay_file, fb_lat, fb_lon)
-                    if cells:
-                        layers.append(
-                            polygon_layer(
-                                "grid-overlay",
-                                data=cells,
-                                get_polygon="@@=d.polygon",
-                                get_fill_color=[255, 140, 0, 150],
-                                get_line_color=[0, 0, 0, 0],
-                                filled=True,
-                                stroked=False,
-                                pickable=True,
-                            )
+            elif overlay_file.suffix == ".nc":
+                # Read variable and time-step controls (populated by overlay_nc_controls)
+                try:
+                    nc_var = input.nc_var_select() or None
+                except (SilentException, AttributeError):
+                    nc_var = None
+                try:
+                    nc_time = max(0, int(input.nc_time_step()))
+                except (SilentException, ValueError, TypeError, AttributeError):
+                    nc_time = 0
+
+                # Fetch stable vmin/vmax from cached metadata for consistent colours
+                meta = list_nc_overlay_variables(str(overlay_file))
+                nc_vmin = nc_vmax = None
+                if meta:
+                    sel_meta = meta.get(nc_var or "") or next(iter(meta.values()), None)
+                    if sel_meta:
+                        nc_vmin = sel_meta["vmin"]
+                        nc_vmax = sel_meta["vmax"]
+
+                fb_lat = nc_data[0] if nc_data else None
+                fb_lon = nc_data[1] if nc_data else None
+                cells = load_netcdf_overlay(
+                    overlay_file,
+                    fb_lat,
+                    fb_lon,
+                    var_lat=cfg.get("grid.var.lat", "lat"),
+                    var_lon=cfg.get("grid.var.lon", "lon"),
+                    var_name=nc_var,
+                    time_step=nc_time,
+                    vmin=nc_vmin,
+                    vmax=nc_vmax,
+                )
+                if cells:
+                    layers.append(
+                        polygon_layer(
+                            "grid-overlay",
+                            data=cells,
+                            get_polygon="@@=d.polygon",
+                            get_fill_color="@@=d.fill",
+                            get_line_color=[0, 0, 0, 0],
+                            filled=True,
+                            stroked=False,
+                            pickable=True,
                         )
-                        legend_entries.append(
-                            {
-                                "layer_id": "grid-overlay",
-                                "label": "Overlay Data",
-                                "color": [255, 140, 0],
-                                "shape": "rect",
-                            }
-                        )
-                elif overlay_file.suffix == ".csv":
-                    csv_cells = load_csv_overlay(
-                        overlay_file,
-                        ul_lat,
-                        ul_lon,
-                        lr_lat,
-                        lr_lon,
-                        nx,
-                        ny,
-                        nc_data=nc_data,
                     )
-                    if csv_cells:
-                        layers.append(
-                            polygon_layer(
-                                "grid-overlay",
-                                data=csv_cells,
-                                get_polygon="@@=d.polygon",
-                                get_fill_color="@@=d.fill",
-                                get_line_color=[0, 0, 0, 0],
-                                filled=True,
-                                stroked=False,
-                                pickable=True,
-                            )
+                    overlay_label = nc_var.replace("_", " ").title() if nc_var else "Overlay Data"
+                    legend_entries.append(
+                        {
+                            "layer_id": "grid-overlay",
+                            "label": overlay_label,
+                            "color": [0, 170, 180],  # mid-range cyan
+                            "shape": "rect",
+                        }
+                    )
+            elif overlay_file.suffix == ".csv":
+                csv_cells = load_csv_overlay(
+                    overlay_file,
+                    ul_lat,
+                    ul_lon,
+                    lr_lat,
+                    lr_lon,
+                    nx,
+                    ny,
+                    nc_data=nc_data,
+                )
+                if csv_cells:
+                    layers.append(
+                        polygon_layer(
+                            "grid-overlay",
+                            data=csv_cells,
+                            get_polygon="@@=d.polygon",
+                            get_fill_color="@@=d.fill",
+                            get_line_color=[0, 0, 0, 0],
+                            filled=True,
+                            stroked=False,
+                            pickable=True,
                         )
-                        legend_entries.append(
-                            {
-                                "layer_id": "grid-overlay",
-                                "label": "Overlay Data",
-                                "color": [255, 140, 0],
-                                "shape": "rect",
-                            }
-                        )
+                    )
+                    legend_entries.append(
+                        {
+                            "layer_id": "grid-overlay",
+                            "label": _overlay_label(overlay_file.name),
+                            "color": [255, 140, 0],
+                            "shape": "rect",
+                        }
+                    )
 
         widgets = [
             fullscreen_widget(placement="top-left"),
@@ -538,10 +708,11 @@ def grid_server(input, output, session, state):
         ]
         if legend_entries:
             widgets.append(
-                _make_legend(
+                make_legend(
                     entries=legend_entries,
                     placement="bottom-left",
-                    show_checkbox=True,
+                    show_checkbox=False,
+                    collapsed=True,
                     title="Layers",
                 )
             )

@@ -401,3 +401,13 @@ def test_list_movement_species_empty():
     from ui.pages.grid_helpers import list_movement_species
 
     assert list_movement_species({}) == []
+
+
+def test_make_spatial_map_importable():
+    from ui.pages.grid_helpers import make_spatial_map
+    assert callable(make_spatial_map)
+
+
+def test_make_legend_importable():
+    from ui.pages.grid_helpers import make_legend
+    assert callable(make_legend)
