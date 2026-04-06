@@ -14,7 +14,6 @@ from shinywidgets import output_widget, render_plotly
 
 from osmose.logging import setup_logging
 from ui.components.collapsible import collapsible_card_header, expand_tab
-from ui.pages.grid_helpers import make_spatial_map
 from ui.styles import STYLE_EMPTY, STYLE_MONO_KEY
 
 _log = setup_logging("osmose.results.ui")
@@ -175,24 +174,6 @@ def results_ui():
                 output_widget("diet_chart"),
             ),
             ui.nav_panel(
-                "Spatial Distribution",
-                ui.input_slider(
-                    "spatial_time_idx",
-                    "Time step",
-                    min=0,
-                    max=1,
-                    value=0,
-                    step=1,
-                    animate=ui.AnimationOptions(
-                        interval=1000,
-                        loop=True,
-                        play_button="Play",
-                        pause_button="Pause",
-                    ),
-                ),
-                output_widget("spatial_chart"),
-            ),
-            ui.nav_panel(
                 "Compare Runs",
                 ui.layout_columns(
                     ui.div(
@@ -229,7 +210,6 @@ def results_ui():
 def results_server(input, output, session, state):
     results_obj: reactive.Value = reactive.Value(None)
     results_data: reactive.Value[dict[str, pd.DataFrame]] = reactive.Value({})
-    spatial_ds: reactive.Value = reactive.Value(None)
     rep_dirs: reactive.Value[list[Path]] = reactive.Value([])
     _prev_output_dir: reactive.Value[str] = reactive.Value("")
 
@@ -295,13 +275,6 @@ def results_server(input, output, session, state):
                     for sp in state.species_names.get():
                         species_choices[sp] = sp
             ui.update_select("result_species", choices=species_choices)
-
-            # Look for NetCDF files for spatial data
-            nc_files = [f for f in res.list_outputs() if f.endswith(".nc")]
-            if nc_files:
-                spatial_ds.set(res.read_netcdf(nc_files[0]))
-                max_t = spatial_ds.get().sizes.get("time", 1) - 1
-                ui.update_slider("spatial_time_idx", max=max(max_t, 0))
 
             # Populate run comparison choices from history
             from osmose.history import RunHistory
@@ -524,28 +497,6 @@ def results_server(input, output, session, state):
         tmpl = _tpl(input)
         df = _get_result_data("diet")
         return make_diet_heatmap(df, template=tmpl)
-
-    @render_plotly
-    def spatial_chart():
-        tmpl = _tpl(input)
-        ds = spatial_ds.get()
-        if ds is None:
-            return go.Figure().update_layout(
-                title="No spatial data loaded",
-                template=tmpl,
-            )
-        time_idx = input.spatial_time_idx()
-        # Find a suitable variable (prefer 'biomass')
-        var_names = [v for v in ds.data_vars if "lat" in ds[v].dims and "lon" in ds[v].dims]
-        if not var_names:
-            return go.Figure().update_layout(
-                title="No spatial variables found",
-                template=tmpl,
-            )
-        var_name = "biomass" if "biomass" in var_names else var_names[0]
-        max_t = ds.sizes.get("time", 1) - 1
-        safe_idx = min(time_idx, max_t)
-        return make_spatial_map(ds, var_name, time_idx=safe_idx, template=tmpl)
 
     @render_plotly
     def comparison_chart():

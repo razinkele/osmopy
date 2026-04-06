@@ -8,8 +8,8 @@ import plotly.graph_objects as go
 from ui.pages.results import (
     make_timeseries_chart,
     make_diet_heatmap,
-    make_spatial_map,
 )
+from ui.pages.grid_helpers import make_spatial_map
 
 
 def test_make_timeseries_chart_biomass():
