@@ -655,6 +655,9 @@ class EngineConfig:
 
     # Ev-OSMOSE genetics toggle
     genetics_enabled: bool = False
+    genetics_transmission_year: int = 0  # first year seeding is active (0 = always normal)
+    genetics_n_neutral: int = 0  # number of neutral loci (0 = disabled)
+    genetics_n_neutral_val: int = 50  # number of allele values per neutral locus
 
     # DSVM fleet dynamics toggle
     economics_enabled: bool = False
@@ -1186,6 +1189,9 @@ class EngineConfig:
 
         # Ev-OSMOSE genetics
         genetics_enabled = _enabled(cfg, "simulation.genetic.enabled")
+        genetics_transmission_year = int(cfg.get("evolution.seeding.year", "0"))
+        genetics_n_neutral = int(cfg.get("evolution.neutral.nlocus", "0"))
+        genetics_n_neutral_val = int(cfg.get("evolution.neutral.nval", "50"))
 
         # DSVM fleet economics
         economics_enabled = _enabled(cfg, "simulation.economic.enabled")
@@ -1288,6 +1294,9 @@ class EngineConfig:
             bioen_c_rate=bioen_c_rate,
             bioen_k_for=bioen_k_for,
             genetics_enabled=genetics_enabled,
+            genetics_transmission_year=genetics_transmission_year,
+            genetics_n_neutral=genetics_n_neutral,
+            genetics_n_neutral_val=genetics_n_neutral_val,
             economics_enabled=economics_enabled,
             output_biomass_byage=_enabled(cfg, "output.biomass.byage.enabled"),
             output_biomass_bysize=_enabled(cfg, "output.biomass.bysize.enabled"),
