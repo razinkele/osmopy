@@ -38,6 +38,9 @@ from ui.state import get_theme_mode, sync_inputs
 
 _log = setup_logging("osmose.grid.ui")
 
+_OVERLAY_GRID_EXTENT = "grid_extent"
+_OVERLAY_MOVEMENT_ANIM = "__movement_animation__"
+
 GRID_GLOBAL_KEYS: list[str] = [f.key_pattern for f in GRID_FIELDS if not f.indexed]
 
 
@@ -50,7 +53,11 @@ def _validate_overlay_path(overlay_val: str, cfg_dir: Path | None) -> Path | Non
 
     Returns the resolved Path if valid, None otherwise.
     """
-    if not cfg_dir or not overlay_val or overlay_val in ("grid_extent", "__movement_animation__"):
+    if (
+        not cfg_dir
+        or not overlay_val
+        or overlay_val in (_OVERLAY_GRID_EXTENT, _OVERLAY_MOVEMENT_ANIM)
+    ):
         return None
     candidate = Path(overlay_val).resolve()
     try:
@@ -139,7 +146,7 @@ def grid_server(input, output, session, state):
             cfg = state.config.get()
             cfg_dir = state.config_dir.get()
 
-        choices: dict[str, str] = {"grid_extent": "Grid extent"}
+        choices: dict[str, str] = {_OVERLAY_GRID_EXTENT: "Grid extent"}
 
         # Config keys whose file values are NOT displayable spatial grids
         skip_prefixes = (
@@ -228,12 +235,12 @@ def grid_server(input, output, session, state):
                         seen_paths[path_id] = f"MPA: {mpa_file.stem.replace('_', ' ').title()}"
 
         choices.update(seen_paths)
-        choices["__movement_animation__"] = "Movement Animation"
+        choices[_OVERLAY_MOVEMENT_ANIM] = "Movement Animation"
 
         if len(choices) <= 1:
             return ui.div()
         return ui.input_select(
-            "grid_overlay", "Overlay data", choices=choices, selected="grid_extent"
+            "grid_overlay", "Overlay data", choices=choices, selected=_OVERLAY_GRID_EXTENT
         )
 
     @render.ui
@@ -244,7 +251,7 @@ def grid_server(input, output, session, state):
         except SilentException:
             return ui.div()
 
-        if overlay_val in ("grid_extent", "__movement_animation__"):
+        if overlay_val in (_OVERLAY_GRID_EXTENT, _OVERLAY_MOVEMENT_ANIM):
             return ui.div()
 
         with reactive.isolate():
@@ -323,7 +330,7 @@ def grid_server(input, output, session, state):
         except SilentException:
             return ui.div()
 
-        if overlay_val != "__movement_animation__":
+        if overlay_val != _OVERLAY_MOVEMENT_ANIM:
             return ui.div()
 
         with reactive.isolate():
@@ -467,7 +474,7 @@ def grid_server(input, output, session, state):
             overlay = input.grid_overlay()
         except SilentException:
             return
-        if overlay != "__movement_animation__":
+        if overlay != _OVERLAY_MOVEMENT_ANIM:
             _movement_cache.set({})
             _prev_active_maps.set((frozenset(), False))
             return
@@ -584,9 +591,9 @@ def grid_server(input, output, session, state):
         except (SilentException, AttributeError):
             overlay = None
         if not overlay:
-            overlay = "grid_extent"
+            overlay = _OVERLAY_GRID_EXTENT
 
-        if overlay == "__movement_animation__":
+        if overlay == _OVERLAY_MOVEMENT_ANIM:
             # Movement animation mode — use cached maps
             cache = _movement_cache.get()
             if cache:
@@ -625,7 +632,7 @@ def grid_server(input, output, session, state):
                         }
                     )
 
-        elif overlay != "grid_extent":
+        elif overlay != _OVERLAY_GRID_EXTENT:
             # Validate overlay value is within the config directory (server-side check
             # against crafted client requests; selector already dedupes by canonical path)
             overlay_file = _validate_overlay_path(overlay, cfg_dir)
