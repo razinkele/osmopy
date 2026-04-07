@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-import numpy as np
 from shiny import ui, reactive, render
 from shiny.types import SilentException
 
@@ -36,11 +35,13 @@ from ui.state import get_theme_mode
 
 _log = setup_logging("osmose.map_viewer")
 
+_DEFAULT_VIEW_STATE = {"latitude": 46.0, "longitude": -4.5, "zoom": 5, "pitch": 0, "bearing": 0}
+
 
 def map_viewer_ui():
     viewer_map = MapWidget(
         "map_viewer_map",
-        view_state={"latitude": 46.0, "longitude": -4.5, "zoom": 5, "pitch": 0, "bearing": 0},
+        view_state=_DEFAULT_VIEW_STATE,
         style=CARTO_POSITRON,
         tooltip={"html": "Value: {properties.value}", "style": {"fontSize": "12px"}},
         controls=[],
@@ -70,7 +71,7 @@ def map_viewer_ui():
 def map_viewer_server(input, output, session, state):
     _map = MapWidget(
         "map_viewer_map",
-        view_state={"latitude": 46.0, "longitude": -4.5, "zoom": 5},
+        view_state=_DEFAULT_VIEW_STATE,
         style=CARTO_POSITRON,
     )
 
@@ -180,7 +181,9 @@ def map_viewer_server(input, output, session, state):
             sole_var = next(iter(meta))
             controls.append(
                 ui.div(
-                    ui.input_select("mv_nc_var", "Variable", choices={sole_var: sole_var}, selected=sole_var),
+                    ui.input_select(
+                        "mv_nc_var", "Variable", choices={sole_var: sole_var}, selected=sole_var
+                    ),
                     style="display:none",
                 )
             )
@@ -195,7 +198,9 @@ def map_viewer_server(input, output, session, state):
                 current_step = 0
             current_step = max(0, min(current_step, n_time - 1))
             controls.append(
-                ui.input_slider("mv_nc_time", "Time step", min=0, max=n_time - 1, value=current_step, step=1)
+                ui.input_slider(
+                    "mv_nc_time", "Time step", min=0, max=n_time - 1, value=current_step, step=1
+                )
             )
 
         return ui.div(*controls) if controls else ui.div()
@@ -215,7 +220,9 @@ def map_viewer_server(input, output, session, state):
         if not file_path.exists():
             return ui.div()
 
-        parts = [ui.tags.span(file_path.name, style="color: var(--osm-text-muted); font-size: 11px;")]
+        parts = [
+            ui.tags.span(file_path.name, style="color: var(--osm-text-muted); font-size: 11px;")
+        ]
         return ui.div(
             *parts,
             style="padding: 4px 8px; font-size: 11px; color: var(--osm-text-muted);",
@@ -267,7 +274,11 @@ def map_viewer_server(input, output, session, state):
                 center_lat = (ul_lat + lr_lat) / 2
                 center_lon = (ul_lon + lr_lon) / 2
                 span = max(abs(ul_lat - lr_lat), abs(lr_lon - ul_lon))
-                view_state = {"latitude": center_lat, "longitude": center_lon, "zoom": _zoom_for_span(span)}
+                view_state = {
+                    "latitude": center_lat,
+                    "longitude": center_lon,
+                    "zoom": _zoom_for_span(span),
+                }
             else:
                 view_state = {"latitude": 46.0, "longitude": -4.5, "zoom": 5}
 
@@ -291,31 +302,64 @@ def map_viewer_server(input, output, session, state):
             fb_lat = nc_data[0] if nc_data else None
             fb_lon = nc_data[1] if nc_data else None
             cells = load_netcdf_overlay(
-                file_path, fb_lat, fb_lon,
+                file_path,
+                fb_lat,
+                fb_lon,
                 var_lat=cfg.get("grid.var.lat", "lat"),
                 var_lon=cfg.get("grid.var.lon", "lon"),
-                var_name=nc_var, time_step=nc_time, vmin=nc_vmin, vmax=nc_vmax,
+                var_name=nc_var,
+                time_step=nc_time,
+                vmin=nc_vmin,
+                vmax=nc_vmax,
             )
             if cells:
-                layers.append(polygon_layer(
-                    "viewer-overlay", data=cells,
-                    get_polygon="@@=d.polygon", get_fill_color="@@=d.fill",
-                    get_line_color=[0, 0, 0, 0], filled=True, stroked=False, pickable=True,
-                ))
+                layers.append(
+                    polygon_layer(
+                        "viewer-overlay",
+                        data=cells,
+                        get_polygon="@@=d.polygon",
+                        get_fill_color="@@=d.fill",
+                        get_line_color=[0, 0, 0, 0],
+                        filled=True,
+                        stroked=False,
+                        pickable=True,
+                    )
+                )
                 label = (nc_var or "Overlay").replace("_", " ").title()
-                legend_entries.append({"layer_id": "viewer-overlay", "label": label, "color": [0, 170, 180], "shape": "rect"})
+                legend_entries.append(
+                    {
+                        "layer_id": "viewer-overlay",
+                        "label": label,
+                        "color": [0, 170, 180],
+                        "shape": "rect",
+                    }
+                )
         elif file_path.suffix == ".csv":
             if nc_data is not None:
                 cells = load_csv_overlay(file_path, 0, 0, 0, 0, 0, 0, nc_data=nc_data)
             else:
                 cells = load_csv_overlay(file_path, ul_lat, ul_lon, lr_lat, lr_lon, nx, ny)
             if cells:
-                layers.append(polygon_layer(
-                    "viewer-overlay", data=cells,
-                    get_polygon="@@=d.polygon", get_fill_color="@@=d.fill",
-                    get_line_color=[0, 0, 0, 0], filled=True, stroked=False, pickable=True,
-                ))
-                legend_entries.append({"layer_id": "viewer-overlay", "label": _overlay_label(file_path.name), "color": [255, 140, 0], "shape": "rect"})
+                layers.append(
+                    polygon_layer(
+                        "viewer-overlay",
+                        data=cells,
+                        get_polygon="@@=d.polygon",
+                        get_fill_color="@@=d.fill",
+                        get_line_color=[0, 0, 0, 0],
+                        filled=True,
+                        stroked=False,
+                        pickable=True,
+                    )
+                )
+                legend_entries.append(
+                    {
+                        "layer_id": "viewer-overlay",
+                        "label": _overlay_label(file_path.name),
+                        "color": [255, 140, 0],
+                        "shape": "rect",
+                    }
+                )
 
         # Widgets
         style = CARTO_DARK if is_dark else CARTO_POSITRON
@@ -330,6 +374,16 @@ def map_viewer_server(input, output, session, state):
             scale_widget(placement="bottom-right"),
         ]
         if legend_entries:
-            widgets.append(make_legend(entries=legend_entries, placement="bottom-left", show_checkbox=False, collapsed=True, title="Layers"))
+            widgets.append(
+                make_legend(
+                    entries=legend_entries,
+                    placement="bottom-left",
+                    show_checkbox=False,
+                    collapsed=True,
+                    title="Layers",
+                )
+            )
 
-        await _map.update(session, layers=layers, view_state=view_state, transition_duration=800, widgets=widgets)
+        await _map.update(
+            session, layers=layers, view_state=view_state, transition_duration=800, widgets=widgets
+        )
