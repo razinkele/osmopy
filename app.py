@@ -24,6 +24,7 @@ from ui.pages.spatial_results import spatial_results_ui, spatial_results_server
 from ui.pages.calibration import calibration_ui, calibration_server
 from ui.pages.scenarios import scenarios_ui, scenarios_server
 from ui.pages.advanced import advanced_ui, advanced_server
+from ui.pages.map_viewer import map_viewer_ui, map_viewer_server
 
 from osmose.cleanup import cleanup_old_temp_dirs, register_cleanup
 
@@ -116,7 +117,7 @@ app_ui = ui.page_fillable(
                 }
             }
             var pageIds = ['setup','grid','forcing','fishing','movement',
-                           'run','results','spatial_results','calibration','scenarios','advanced'];
+                           'run','results','spatial_results','calibration','scenarios','advanced','map_viewer'];
 
             document.addEventListener('DOMContentLoaded', function() {
                 // Restore the initially active tab's panel
@@ -210,6 +211,7 @@ app_ui = ui.page_fillable(
         _nav_section("Manage"),
         ui.nav_panel("Scenarios", scenarios_ui(), value="scenarios"),
         ui.nav_panel("Advanced", advanced_ui(), value="advanced"),
+        ui.nav_panel("Map Viewer", map_viewer_ui(), value="map_viewer"),
         id="main_nav",
         selected="setup",
         widths=(2, 10),
@@ -367,6 +369,7 @@ def server(input, output, session):
     calibration_server(input, output, session, state)
     scenarios_server(input, output, session, state)
     advanced_server(input, output, session, state)
+    map_viewer_server(input, output, session, state)
 
 
 app = App(app_ui, server, static_assets=_WWW)
