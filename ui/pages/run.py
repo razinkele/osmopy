@@ -263,7 +263,7 @@ def run_server(input, output, session, state):
         work_dir = Path(tempfile.mkdtemp(prefix="osmose_run_"))
         source_dir = state.config_dir.get()
         config_path = write_temp_config(
-            config, work_dir, source_dir, key_case_map=state.key_case_map
+            config, work_dir, source_dir, key_case_map=state.key_case_map.get()
         )
 
         # Parse overrides and java opts

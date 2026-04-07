@@ -27,6 +27,23 @@ def _safe_resolve(base: Path, rel: str) -> Path | None:
     return candidate
 
 
+def _read_csv_auto_sep(path: Path) -> pd.DataFrame:
+    """Read a CSV file, auto-detecting semicolon vs comma separator.
+
+    OSMOSE spatial CSV files use semicolons; test fixtures and third-party
+    files may use commas.  Try semicolon first (OSMOSE convention), fall back
+    to comma if the result has only one column.
+    """
+    df = pd.read_csv(path, header=None, sep=";")
+    if df.shape[1] == 1:
+        # Single column — likely comma-separated (or truly 1-column data).
+        # Re-read with comma; if still 1 column, it really is 1-column data.
+        df_comma = pd.read_csv(path, header=None, sep=",")
+        if df_comma.shape[1] > 1:
+            return df_comma
+    return df
+
+
 def load_mask(config: dict[str, str], config_dir: Path | None = None) -> np.ndarray | None:
     """Load a grid mask CSV from the config if available."""
     mask_path = config.get("grid.mask.file", "")
@@ -54,7 +71,7 @@ def load_mask(config: dict[str, str], config_dir: Path | None = None) -> np.ndar
         return None
 
     try:
-        return pd.read_csv(full_path, header=None).values
+        return _read_csv_auto_sep(full_path).values
     except (pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
         _log.warning("Mask file %s could not be parsed: %s", full_path, exc)
         return None
@@ -468,7 +485,7 @@ def load_csv_overlay(
     Values are mapped onto the regular grid defined by the bounding box.
     """
     try:
-        df = pd.read_csv(file_path, header=None)
+        df = _read_csv_auto_sep(file_path)
         data = df.values
 
         # Determine grid dimensions to use
@@ -866,6 +883,7 @@ def build_movement_cache(
     config_dir: Path | None,
     grid_params: tuple[float, float, float, float, int, int],
     species: str,
+    nc_data: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None,
 ) -> dict[str, dict]:
     """Pre-read all movement maps for a species and return a cache dict.
 
@@ -879,6 +897,11 @@ def build_movement_cache(
         Tuple of (ul_lat, ul_lon, lr_lat, lr_lon, nx, ny) for grid bounds.
     species
         Species name to filter maps for.
+    nc_data
+        Optional (lat, lon, mask) arrays from a NetCDF grid.  When provided,
+        CSV overlays are mapped onto the NetCDF grid coordinates instead of
+        the regular bounding-box grid (required for NcGrid configs where
+        grid.nlon/nlat may not match the NetCDF dimensions).
 
     Returns
     -------
@@ -924,7 +947,7 @@ def build_movement_cache(
             _log.debug("Movement map%s has no valid time steps, skipping", idx)
             continue
 
-        cells = load_csv_overlay(file_path, ul_lat, ul_lon, lr_lat, lr_lon, nx, ny)
+        cells = load_csv_overlay(file_path, ul_lat, ul_lon, lr_lat, lr_lon, nx, ny, nc_data=nc_data)
         if not cells:
             continue
 

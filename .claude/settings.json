@@ -154,6 +154,22 @@
       {
         "matcher": "Edit|Write",
         "command": "echo \"$CLAUDE_FILE_PATH\" | grep -qE 'osmose/schema/.*\\.py$' && echo 'REMINDER: Schema changed — verify tests cover new/modified fields'; true"
+      },
+      {
+        "matcher": "Edit|Write",
+        "command": "echo \"$CLAUDE_FILE_PATH\" | grep -qE 'ui/.*\\.py$' && cd /home/razinka/osmose/osmose-python && grep -n 'sync_inputs()\\|update_config()' \"$CLAUDE_FILE_PATH\" | grep -v 'isolate' | grep -v 'def ' | head -5 | while read line; do echo \"WARNING: Possible missing reactive.isolate() — $line\"; done; true"
+      },
+      {
+        "matcher": "Edit|Write",
+        "command": "echo \"$CLAUDE_FILE_PATH\" | grep -qE 'ui/pages/.*\\.py$' && grep -q 'import ui.charts' \"$CLAUDE_FILE_PATH\" && echo 'ERROR: ui.charts must only be imported in app.py (shadows shiny.ui) — revert this change immediately'; true"
+      },
+      {
+        "matcher": "Edit|Write",
+        "command": "echo \"$CLAUDE_FILE_PATH\" | grep -qE 'tests/test_.*\\.py$' && cd /home/razinka/osmose/osmose-python && .venv/bin/python -m pytest \"$CLAUDE_FILE_PATH\" -x -q 2>&1 | tail -5; true"
+      },
+      {
+        "matcher": "Edit|Write",
+        "command": "echo \"$CLAUDE_FILE_PATH\" | grep -qE 'osmose/engine/processes/(movement|mortality|predation)\\.py$' && grep -qE '@njit|@jit' \"$CLAUDE_FILE_PATH\" && echo 'REMINDER: Numba-jitted function changed — first run will include recompilation overhead, do not compare timing until second run'; true"
       }
     ],
     "PreToolUse": [

@@ -501,7 +501,12 @@ def grid_server(input, output, session, state):
             ul_lat, ul_lon, lr_lat, lr_lon, nx, ny = _read_grid_values()
         grid_params = (ul_lat, ul_lon, lr_lat, lr_lon, nx, ny)
 
-        cache = build_movement_cache(cfg, cfg_dir, grid_params, species=species)
+        # For NcGrid configs, pass nc_data so CSV overlays use the NetCDF grid
+        # coordinates (grid.nlon/nlat may not match the NetCDF dimensions).
+        is_ncgrid = "NcGrid" in cfg.get("grid.java.classname", "")
+        nc_data = load_netcdf_grid(cfg, config_dir=cfg_dir) if is_ncgrid else None
+
+        cache = build_movement_cache(cfg, cfg_dir, grid_params, species=species, nc_data=nc_data)
         _movement_cache.set(cache)
         _prev_active_maps.set((frozenset(), False))
 

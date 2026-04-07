@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import tempfile
 from pathlib import Path
 from typing import Any
+
+_log = logging.getLogger(__name__)
 
 
 class OsmoseConfigWriter:
@@ -125,6 +128,7 @@ class OsmoseConfigWriter:
             with os.fdopen(tmp_fd, "w") as f:
                 f.write(content)
             os.replace(tmp_path, filepath)
-        except Exception:
+        except Exception as exc:
+            _log.error("Failed to write config to %s: %s", filepath, exc, exc_info=True)
             os.unlink(tmp_path)
             raise

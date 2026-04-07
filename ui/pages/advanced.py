@@ -77,6 +77,7 @@ def advanced_ui():
 
 def advanced_server(input, output, session, state):
     import_pending = reactive.value({})
+    pending_case_map = reactive.value({})
 
     @reactive.effect
     @reactive.event(input.import_config)
@@ -94,6 +95,7 @@ def advanced_server(input, output, session, state):
         loaded = new_cfg
         # Stage for preview instead of merging directly
         import_pending.set(loaded)
+        pending_case_map.set(dict(reader.key_case_map))
 
     @render.ui
     def import_preview():
@@ -170,6 +172,12 @@ def advanced_server(input, output, session, state):
             cfg.update(pending)
             state.config.set(cfg)
             import_pending.set({})
+
+            with reactive.isolate():
+                cm = dict(state.key_case_map.get())
+            cm.update(pending_case_map.get())
+            state.key_case_map.set(cm)
+            pending_case_map.set({})
 
             with reactive.isolate():
                 state.load_trigger.set(state.load_trigger.get() + 1)

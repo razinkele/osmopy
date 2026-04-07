@@ -1,5 +1,7 @@
 """Movement / spatial distribution page."""
 
+import re
+
 from shiny import ui, reactive, render
 
 from osmose.schema.movement import MOVEMENT_FIELDS
@@ -100,3 +102,18 @@ def movement_server(input, output, session, state):
         for i in range(n):
             all_keys.extend(f.resolve_key(i) for f in map_fields)
         sync_inputs(input, state, all_keys)
+
+    @reactive.effect
+    def sync_n_maps_from_config():
+        state.load_trigger.get()
+        with reactive.isolate():
+            cfg = state.config.get()
+        count = sum(
+            1 for k in cfg
+            if re.match(r"movement\.file\.map\d+$", k)
+            and isinstance(cfg[k], str)
+            and cfg[k].strip()
+            and cfg[k].strip().lower() not in ("null", "none")
+        )
+        if count > 0:
+            ui.update_numeric("n_maps", value=count)

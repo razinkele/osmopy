@@ -52,6 +52,13 @@ class CalibrationMessageQueue:
         return msgs
 
 
+def _clamp_int(value: int, lo: int, hi: int, name: str) -> int:
+    """Validate integer is within [lo, hi]; raises ValueError if not."""
+    if value < lo or value > hi:
+        raise ValueError(f"{name} must be between {lo} and {hi}, got {value}")
+    return value
+
+
 def _make_progress_callback(cal_history_append, cancel_check):
     """Create a pymoo callback (lazy import to avoid loading pymoo at startup)."""
     from pymoo.core.callback import Callback  # type: ignore[import-untyped]
@@ -221,7 +228,7 @@ def register_calibration_handlers(
         if not objective_fns:
             return
 
-        n_parallel = int(input.cal_n_parallel())
+        n_parallel = _clamp_int(int(input.cal_n_parallel()), 1, 32, "n_parallel")
 
         problem = OsmoseCalibrationProblem(
             free_params=free_params,
@@ -239,8 +246,8 @@ def register_calibration_handlers(
         surrogate_status.set("")
 
         algorithm_choice = input.cal_algorithm()
-        pop_size = int(input.cal_pop_size())
-        generations = int(input.cal_generations())
+        pop_size = _clamp_int(int(input.cal_pop_size()), 10, 500, "pop_size")
+        generations = _clamp_int(int(input.cal_generations()), 10, 1000, "generations")
 
         if algorithm_choice == "surrogate":
 

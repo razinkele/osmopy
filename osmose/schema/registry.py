@@ -8,7 +8,14 @@ from osmose.schema.base import OsmoseField
 
 
 class ParameterRegistry:
-    """Collects all OSMOSE parameter definitions and provides lookup/validation."""
+    """Collects all OSMOSE parameter definitions and provides lookup/validation.
+
+    Thread-safety note: ``_match_cache`` is lazily populated and is NOT thread-safe.
+    This is intentional — the app targets local single-worker deployment.  If running
+    under a multi-worker Shiny server, wrap ``register`` and ``match`` calls with a
+    ``threading.Lock``.  The engine's genetics module also calls ``register`` at
+    runtime, so a global freeze is not appropriate.
+    """
 
     def __init__(self):
         self._fields: list[OsmoseField] = []

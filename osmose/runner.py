@@ -13,6 +13,8 @@ from osmose.logging import setup_logging
 
 _log = setup_logging("osmose.runner")
 
+_OSMOSE_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9._]*$")
+
 _SAFE_JVM_PATTERNS = [
     re.compile(r"^-X(mx|ms|ss)\d+[kmgKMG]?$"),  # memory flags
     re.compile(r"^-D[\w.]+=[^;|&`$()]*$"),  # system properties
@@ -83,6 +85,8 @@ class OsmoseRunner:
             cmd.append("-force")
         if overrides:
             for key, value in overrides.items():
+                if not _OSMOSE_KEY_PATTERN.match(key):
+                    raise ValueError(f"Invalid override key: {key!r}")
                 cmd.append(f"-P{key}={value}")
         return cmd
 
