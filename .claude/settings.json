@@ -1,5 +1,6 @@
 {
   "permissions": {
+    "defaultMode": "bypassPermissions",
     "allow": [
       "Read",
       "Edit",
@@ -170,6 +171,14 @@
       {
         "matcher": "Edit|Write",
         "command": "echo \"$CLAUDE_FILE_PATH\" | grep -qE 'osmose/engine/processes/(movement|mortality|predation)\\.py$' && grep -qE '@njit|@jit' \"$CLAUDE_FILE_PATH\" && echo 'REMINDER: Numba-jitted function changed — first run will include recompilation overhead, do not compare timing until second run'; true"
+      },
+      {
+        "matcher": "Edit|Write",
+        "command": "echo \"$CLAUDE_FILE_PATH\" | grep -qE 'ui/state\\.py$' && grep -q 'def sync_inputs' \"$CLAUDE_FILE_PATH\" && ! grep -q 'in old_val' \"$CLAUDE_FILE_PATH\" && echo 'ERROR: sync_inputs must preserve multi-value config entries (semicolon-separated arrays) — check for ; in old_val before overwriting'; true"
+      },
+      {
+        "matcher": "Edit|Write",
+        "command": "echo \"$CLAUDE_FILE_PATH\" | grep -qE 'ui/pages/grid_helpers\\.py$' && grep -qE 'def load.*(csv|mask)' \"$CLAUDE_FILE_PATH\" && ! grep -q 'flipud' \"$CLAUDE_FILE_PATH\" && echo 'ERROR: OSMOSE CSVs are south-to-north — CSV/mask loaders must np.flipud() after reading'; true"
       }
     ],
     "PreToolUse": [

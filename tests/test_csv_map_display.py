@@ -20,9 +20,7 @@ import pytest
 _EEC_FULL_DIR = pathlib.Path(__file__).parent.parent / "data" / "eec_full"
 _EEC_FULL_AVAILABLE = (_EEC_FULL_DIR / "eec_all-parameters.csv").exists()
 
-pytestmark = pytest.mark.skipif(
-    not _EEC_FULL_AVAILABLE, reason="EEC Full example files not found"
-)
+pytestmark = pytest.mark.skipif(not _EEC_FULL_AVAILABLE, reason="EEC Full example files not found")
 
 
 # ---------------------------------------------------------------------------
@@ -49,12 +47,12 @@ def eec_full():
         "lon": lon,
         "mask": mask,
         "grid_params": (
-            float(lat.max()),   # ul_lat
-            float(lon.min()),   # ul_lon
-            float(lat.min()),   # lr_lat
-            float(lon.max()),   # lr_lon
-            lat.shape[1],       # nx
-            lat.shape[0],       # ny
+            float(lat.max()),  # ul_lat
+            float(lon.min()),  # ul_lon
+            float(lat.min()),  # lr_lat
+            float(lon.max()),  # lr_lon
+            lat.shape[1],  # nx
+            lat.shape[0],  # ny
         ),
     }
 
@@ -89,7 +87,7 @@ class TestCsvMapFileLoading:
             df = _read_csv_auto_sep(p)
             if df.shape != (ny, nx):
                 failures.append(f"{p.name}: {df.shape} != ({ny}, {nx})")
-        assert not failures, f"Shape mismatches:\n" + "\n".join(failures)
+        assert not failures, "Shape mismatches:\n" + "\n".join(failures)
 
     def test_movement_csvs_contain_expected_values(self, all_movement_csv_paths):
         """OSMOSE movement CSVs contain -99 (land), 0 (absence), and positive (presence)."""
@@ -216,37 +214,22 @@ class TestCsvMapColorPalette:
             assert 0 <= b <= 255, f"Cell {i}: B={b} out of range"
             assert 0 <= a <= 255, f"Cell {i}: A={a} out of range"
 
-    def test_amber_palette_min_value_is_dark(self, eec_full):
-        """Cells at vmin must have the darkest amber fill (R~180, G~80, B=0, A~100)."""
+    def test_single_value_map_uses_teal(self, eec_full):
+        """Single-value maps (vmin==vmax) use bright teal fill."""
         from ui.pages.grid_helpers import load_csv_overlay
 
         p = eec_full["cfg_dir"] / "maps" / "6cod_nurseries.csv"
         cells = load_csv_overlay(p, 0, 0, 0, 0, 0, 0, nc_data=eec_full["nc_data"])
         assert cells is not None
 
-        min_val = min(c["value"] for c in cells)
-        min_cells = [c for c in cells if c["value"] == min_val]
-        r, g, b, a = min_cells[0]["fill"]
-        assert r == 180, f"Min-value R should be 180 (amber base), got {r}"
-        assert g == 80, f"Min-value G should be 80, got {g}"
-        assert b == 0, f"Min-value B should be 0, got {b}"
-        assert a == 100, f"Min-value A should be 100, got {a}"
-
-    def test_amber_palette_max_value_is_bright(self, eec_full):
-        """Cells at vmax must have the brightest amber fill (R=255, G=140, B=0, A=200)."""
-        from ui.pages.grid_helpers import load_csv_overlay
-
-        p = eec_full["cfg_dir"] / "maps" / "6cod_nurseries.csv"
-        cells = load_csv_overlay(p, 0, 0, 0, 0, 0, 0, nc_data=eec_full["nc_data"])
-        assert cells is not None
-
-        max_val = max(c["value"] for c in cells)
-        max_cells = [c for c in cells if c["value"] == max_val]
-        r, g, b, a = max_cells[0]["fill"]
-        assert r == 255, f"Max-value R should be 255, got {r}"
-        assert g == 140, f"Max-value G should be 140, got {g}"
-        assert b == 0, f"Max-value B should be 0, got {b}"
-        assert a == 200, f"Max-value A should be 200, got {a}"
+        vals = {c["value"] for c in cells}
+        if len(vals) > 1:
+            pytest.skip("Map has multiple values — teal test only for single-value")
+        r, g, b, a = cells[0]["fill"]
+        assert r == 20, f"Single-value R should be 20 (teal), got {r}"
+        assert g == 220, f"Single-value G should be 220, got {g}"
+        assert b == 180, f"Single-value B should be 180, got {b}"
+        assert a == 180, f"Single-value A should be 180, got {a}"
 
     def test_higher_values_have_brighter_fill(self, eec_full):
         """Cells with higher values must have higher R, G, and A channels."""
@@ -283,13 +266,12 @@ class TestAllMovementMapsDisplay:
             cells = load_csv_overlay(p, 0, 0, 0, 0, 0, 0, nc_data=eec_full["nc_data"])
             if cells is None or len(cells) == 0:
                 failures.append(f"{p.name}: no cells")
-        assert not failures, f"Maps that failed to display:\n" + "\n".join(failures)
+        assert not failures, "Maps that failed to display:\n" + "\n".join(failures)
 
     def test_movement_maps_cell_count_does_not_exceed_ocean(self, eec_full, all_movement_csv_paths):
         """No movement map should produce more cells than there are ocean cells."""
         from ui.pages.grid_helpers import load_csv_overlay
 
-        ocean_count = int((eec_full["mask"] > 0).sum())
         # Total cells (ocean+land excluding sentinels) can be at most ny*nx
         ny, nx = eec_full["lat"].shape
         max_cells = ny * nx
@@ -411,9 +393,7 @@ class TestMovementCacheDisplayData:
         )
         for mid, m in cache.items():
             for step in m["steps"]:
-                assert 0 <= step < nsteps, (
-                    f"{mid}: step {step} outside [0, {nsteps})"
-                )
+                assert 0 <= step < nsteps, f"{mid}: step {step} outside [0, {nsteps})"
 
     def test_cache_labels_are_human_readable(self, eec_full):
         """Movement cache labels must be non-empty and not raw indices."""
@@ -438,9 +418,7 @@ class TestMovementCacheDisplayData:
             pytest.skip("Sole has fewer than 2 maps")
 
         colors = [tuple(m["color"]) for m in cache.values()]
-        assert len(set(colors)) == len(colors), (
-            f"Duplicate colors in sole maps: {colors}"
-        )
+        assert len(set(colors)) == len(colors), f"Duplicate colors in sole maps: {colors}"
 
 
 # ---------------------------------------------------------------------------
@@ -458,7 +436,7 @@ class TestBboxVsNcGridConsistency:
         """
         from ui.pages.grid_helpers import load_csv_overlay
 
-        lat, lon = eec_full["lat"], eec_full["lon"]
+        _lat, _lon = eec_full["lat"], eec_full["lon"]
         ul_lat, ul_lon, lr_lat, lr_lon, nx, ny = eec_full["grid_params"]
 
         p = eec_full["cfg_dir"] / "maps" / "6cod_1plus.csv"

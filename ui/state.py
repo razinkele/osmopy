@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, Protocol
 
 from shiny import reactive
 from shiny.types import SilentException
@@ -10,6 +11,13 @@ from shiny.types import SilentException
 from osmose.logging import setup_logging
 from osmose.runner import RunResult
 from osmose.schema import build_registry
+
+
+class ShinyInputs(Protocol):
+    """Minimal interface for Shiny's runtime-generated ``input`` object."""
+
+    def __getattr__(self, name: str) -> Any: ...
+
 
 _log = setup_logging("osmose.state")
 
@@ -79,7 +87,7 @@ class AppState:
 
 
 def sync_inputs(
-    input: object,
+    input: ShinyInputs,
     state: AppState,
     keys: list[str],
 ) -> dict[str, str]:
@@ -100,8 +108,11 @@ def sync_inputs(
     # ui.update_* messages reach the client.
     with reactive.isolate():
         if state.loading.get():
+            _log.debug("sync_inputs: skipping — loading in progress")
             return {}
     changed: dict[str, str] = {}
+    with reactive.isolate():
+        cfg = dict(state.config.get())
     for key in keys:
         input_id = key.replace(".", "_")
         if not hasattr(input, input_id):
@@ -112,10 +123,21 @@ def sync_inputs(
             _log.warning("sync_inputs: TypeError reading input '%s'", input_id)
             continue
         if val is not None:
-            changed[key] = str(val)
+            new_val = str(val)
+            # Preserve multi-value config entries (e.g. "2.3;1.8" for per-stage
+            # arrays). The UI renders these as single-value inputs using the
+            # field default, so writing back would clobber the original array.
+            old_val = cfg.get(key, "")
+            if ";" in old_val and ";" not in new_val:
+                _log.debug(
+                    "sync_inputs: preserving multi-value '%s' (old=%r, ui=%r)",
+                    key,
+                    old_val,
+                    new_val,
+                )
+                continue
+            changed[key] = new_val
     if changed:
-        with reactive.isolate():
-            cfg = dict(state.config.get())
         # Only set config if values actually differ
         actual_changes = {k: v for k, v in changed.items() if cfg.get(k) != v}
         if actual_changes:

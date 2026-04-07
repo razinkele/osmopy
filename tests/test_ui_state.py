@@ -110,3 +110,59 @@ def test_sync_inputs_does_not_set_dirty_when_value_unchanged():
 
         sync_inputs(FakeInput(), state, ["simulation.nspecies"])
         assert state.dirty.get() is False
+
+
+_SIZERATIO_KEY = "predation.predprey.sizeratio.max.sp5"
+_SIZERATIO_ID = _SIZERATIO_KEY.replace(".", "_")
+
+
+def _make_fake_input(input_id: str, value):
+    """Create a FakeInput that only responds to a specific input ID."""
+
+    class FakeInput:
+        def __getattr__(self, name):
+            if name == input_id:
+                return lambda: value
+            raise AttributeError(name)
+
+    return FakeInput()
+
+
+def test_sync_inputs_preserves_multivalue_entry():
+    """sync_inputs must NOT overwrite a semicolon-separated config value with a single value."""
+    state = AppState()
+    with reactive.isolate():
+        state.config.set({_SIZERATIO_KEY: "2.3;1.8"})
+        state.dirty.set(False)
+
+        changed = sync_inputs(_make_fake_input(_SIZERATIO_ID, 3.5), state, [_SIZERATIO_KEY])
+        cfg = state.config.get()
+        assert cfg[_SIZERATIO_KEY] == "2.3;1.8"
+        assert _SIZERATIO_KEY not in changed
+        assert state.dirty.get() is False
+
+
+def test_sync_inputs_allows_multivalue_to_multivalue_update():
+    """sync_inputs SHOULD update when both old and new contain semicolons."""
+    state = AppState()
+    with reactive.isolate():
+        state.config.set({_SIZERATIO_KEY: "2.3;1.8"})
+        state.dirty.set(False)
+
+        sync_inputs(_make_fake_input(_SIZERATIO_ID, "3.0;2.5"), state, [_SIZERATIO_KEY])
+        cfg = state.config.get()
+        assert cfg[_SIZERATIO_KEY] == "3.0;2.5"
+        assert state.dirty.get() is True
+
+
+def test_sync_inputs_allows_plain_to_plain_update():
+    """sync_inputs SHOULD update when neither old nor new contain semicolons."""
+    state = AppState()
+    with reactive.isolate():
+        state.config.set({_SIZERATIO_KEY: "2.3"})
+        state.dirty.set(False)
+
+        sync_inputs(_make_fake_input(_SIZERATIO_ID, 3.5), state, [_SIZERATIO_KEY])
+        cfg = state.config.get()
+        assert cfg[_SIZERATIO_KEY] == "3.5"
+        assert state.dirty.get() is True

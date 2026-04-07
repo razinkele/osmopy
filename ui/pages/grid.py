@@ -719,7 +719,7 @@ def grid_server(input, output, session, state):
                         {
                             "layer_id": "grid-overlay",
                             "label": _overlay_label(overlay_file.name),
-                            "color": [255, 140, 0],
+                            "color": [30, 180, 120],
                             "shape": "rect",
                         }
                     )
@@ -735,8 +735,8 @@ def grid_server(input, output, session, state):
                 make_legend(
                     entries=legend_entries,
                     placement="bottom-left",
-                    show_checkbox=False,
-                    collapsed=True,
+                    show_checkbox=True,
+                    collapsed=False,
                     title="Layers",
                 )
             )

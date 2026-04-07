@@ -10,15 +10,13 @@ Covers:
 """
 
 import pathlib
-import tempfile
 
 import numpy as np
 import pytest
 import xarray as xr
 
 _EEC_DIR = (
-    pathlib.Path(__file__).parent.parent.parent
-    / "osmose-master/java/src/test/resources/osmose-eec"
+    pathlib.Path(__file__).parent.parent.parent / "osmose-master/java/src/test/resources/osmose-eec"
 )
 _EEC_LTL = _EEC_DIR / "eec_ltlbiomassTons.nc"
 _EEC_BG = _EEC_DIR / "eec_backgroundspecies_biomass.nc"
@@ -74,9 +72,7 @@ def _make_csv_grid(path: pathlib.Path, ny=4, nx=5, *, value=1.0, sentinel_row=0)
     pd.DataFrame(data).to_csv(path, sep=",", header=False, index=False)
 
 
-def _make_semicolon_csv(
-    path: pathlib.Path, ny=4, nx=5, *, value=1.0, sentinel_value=-99.0
-) -> None:
+def _make_semicolon_csv(path: pathlib.Path, ny=4, nx=5, *, value=1.0, sentinel_value=-99.0) -> None:
     """Write a semicolon-separated CSV (OSMOSE standard format)."""
     import pandas as pd
 
@@ -142,7 +138,8 @@ class TestCsvSentinelFilter:
         pd.DataFrame(data).to_csv(p, sep=",", header=False, index=False)
         cells = load_csv_overlay(p, ul_lat=47.0, ul_lon=1.0, lr_lat=45.0, lr_lon=3.0, nx=3, ny=3)
         assert cells is not None
-        assert len(cells) == 9, "Values > -9.0 must all be included"
+        # 0.0 is excluded (OSMOSE absent marker); negatives above -9 are kept
+        assert len(cells) == 8, "Values > -9.0 and != 0.0 must be included"
 
     def test_all_sentinel_returns_none(self, tmp_path):
         """A CSV consisting entirely of -99 must return None."""
@@ -153,6 +150,63 @@ class TestCsvSentinelFilter:
         pd.DataFrame(np.full((3, 3), -99.0)).to_csv(p, sep=",", header=False, index=False)
         cells = load_csv_overlay(p, ul_lat=47.0, ul_lon=1.0, lr_lat=45.0, lr_lon=3.0, nx=3, ny=3)
         assert cells is None
+
+    def test_all_zeros_returns_none(self, tmp_path):
+        """A CSV with only 0.0 values (after sentinel exclusion) must return None."""
+        from ui.pages.grid_helpers import load_csv_overlay
+        import pandas as pd
+
+        p = tmp_path / "all_zeros.csv"
+        data = np.array([[-99.0, -99.0, -99.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+        pd.DataFrame(data).to_csv(p, sep=",", header=False, index=False)
+        cells = load_csv_overlay(p, ul_lat=47.0, ul_lon=1.0, lr_lat=45.0, lr_lon=3.0, nx=3, ny=3)
+        assert cells is None
+
+    def test_flipud_applied_to_csv_overlay(self, tmp_path):
+        """CSV row 0 (southernmost) must map to the lowest latitude after flipud."""
+        from ui.pages.grid_helpers import load_csv_overlay
+        import pandas as pd
+
+        # Row 0 = value 1, row 1 = value 2, row 2 = value 3
+        p = tmp_path / "ordered.csv"
+        data = np.array([[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]])
+        pd.DataFrame(data).to_csv(p, sep=",", header=False, index=False)
+        cells = load_csv_overlay(p, ul_lat=50.0, ul_lon=0.0, lr_lat=47.0, lr_lon=2.0, nx=2, ny=3)
+        assert cells is not None
+        # After flipud: row 0 (value 1, southernmost) → last row → lowest lat
+        # Row 2 (value 3, northernmost) → first row → highest lat
+        # Find cell with highest latitude (clat + hlat)
+        northmost = max(cells, key=lambda c: c["polygon"][0][1])
+        southmost = min(cells, key=lambda c: c["polygon"][2][1])
+        # CSV row 0 = south → low lat; CSV row 2 = north → high lat
+        assert northmost["value"] == 3.0, "CSV row 2 (north in file) should map to high lat"
+        assert southmost["value"] == 1.0, "CSV row 0 (south in file) should map to low lat"
+
+    def test_viridis_gradient_produces_distinct_colors(self, tmp_path):
+        """Multi-value CSVs must produce distinct colors via the viridis ramp."""
+        from ui.pages.grid_helpers import load_csv_overlay
+        import pandas as pd
+
+        p = tmp_path / "gradient.csv"
+        data = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+        pd.DataFrame(data).to_csv(p, sep=",", header=False, index=False)
+        cells = load_csv_overlay(p, ul_lat=48.0, ul_lon=0.0, lr_lat=46.0, lr_lon=3.0, nx=3, ny=2)
+        assert cells is not None
+        assert len(cells) == 6
+        fills = [tuple(c["fill"]) for c in cells]
+        # Must have more than 1 distinct color for 6 distinct values
+        assert len(set(fills)) > 1, "Multi-value map must produce distinct colors"
+        # All RGBA channels must be in valid range
+        for r, g, b, a in fills:
+            assert 0 <= r <= 255
+            assert 0 <= g <= 255
+            assert 0 <= b <= 255
+            assert 0 <= a <= 255
+        # Min value cell should have viridis start (purple-ish: low R, low G, high B)
+        min_cell = min(cells, key=lambda c: c["value"])
+        max_cell = max(cells, key=lambda c: c["value"])
+        assert min_cell["fill"][0] < max_cell["fill"][0], "R should increase with value"
+        assert min_cell["fill"][1] < max_cell["fill"][1], "G should increase with value"
 
 
 # ---------------------------------------------------------------------------
@@ -170,9 +224,7 @@ class TestCsvSemicolonSeparator:
         p = tmp_path / "semi.csv"
         _make_semicolon_csv(p, ny=4, nx=5, value=1.0)
         # Row 0 is -99 sentinel → 5 cells excluded, 15 remain
-        cells = load_csv_overlay(
-            p, ul_lat=47.0, ul_lon=1.0, lr_lat=45.0, lr_lon=3.0, nx=5, ny=4
-        )
+        cells = load_csv_overlay(p, ul_lat=47.0, ul_lon=1.0, lr_lat=45.0, lr_lon=3.0, nx=5, ny=4)
         assert cells is not None
         assert len(cells) == 15, f"Expected 15 valid cells, got {len(cells)}"
 
@@ -182,9 +234,7 @@ class TestCsvSemicolonSeparator:
 
         p = tmp_path / "nums.csv"
         _make_semicolon_csv(p, ny=3, nx=3, value=42.5, sentinel_value=-99.0)
-        cells = load_csv_overlay(
-            p, ul_lat=47.0, ul_lon=1.0, lr_lat=45.0, lr_lon=3.0, nx=3, ny=3
-        )
+        cells = load_csv_overlay(p, ul_lat=47.0, ul_lon=1.0, lr_lat=45.0, lr_lon=3.0, nx=3, ny=3)
         assert cells is not None
         for c in cells:
             assert isinstance(c["value"], float)
@@ -196,9 +246,7 @@ class TestCsvSemicolonSeparator:
 
         p = tmp_path / "comma.csv"
         _make_csv_grid(p, ny=3, nx=3, value=2.0, sentinel_row=0)
-        cells = load_csv_overlay(
-            p, ul_lat=47.0, ul_lon=1.0, lr_lat=45.0, lr_lon=3.0, nx=3, ny=3
-        )
+        cells = load_csv_overlay(p, ul_lat=47.0, ul_lon=1.0, lr_lat=45.0, lr_lon=3.0, nx=3, ny=3)
         assert cells is not None
         assert len(cells) == 6  # row 0 is sentinel, 6 remain
 
@@ -216,7 +264,9 @@ class TestCsvSemicolonSeparator:
         assert mask is not None
         assert mask.shape == (3, 3)
         assert mask[1, 1] == 1
-        assert mask[0, 0] == -99
+        # CSV row 0 (southernmost) becomes array row 2 after flipud
+        assert mask[2, 0] == -99
+        assert mask[0, 0] == 1
 
     def test_comma_mask_still_works(self, tmp_path):
         """load_mask must still handle comma-separated CSVs."""
@@ -244,7 +294,9 @@ class TestCsvSemicolonSeparator:
         pd.DataFrame(data).to_csv(p, sep=";", header=False, index=False)
 
         # Fake nc_data tuple
-        lat = np.array([[45.0, 45.0, 45.0, 45.0], [46.0, 46.0, 46.0, 46.0], [47.0, 47.0, 47.0, 47.0]])
+        lat = np.array(
+            [[45.0, 45.0, 45.0, 45.0], [46.0, 46.0, 46.0, 46.0], [47.0, 47.0, 47.0, 47.0]]
+        )
         lon = np.array([[1.0, 2.0, 3.0, 4.0], [1.0, 2.0, 3.0, 4.0], [1.0, 2.0, 3.0, 4.0]])
         mask = np.ones((3, 4))
         nc_data = (lat, lon, mask)
@@ -267,9 +319,7 @@ class TestReadCsvAutoSep:
         import pandas as pd
 
         p = tmp_path / "semi.csv"
-        pd.DataFrame([[1, 2, 3], [4, 5, 6]]).to_csv(
-            p, sep=";", header=False, index=False
-        )
+        pd.DataFrame([[1, 2, 3], [4, 5, 6]]).to_csv(p, sep=";", header=False, index=False)
         df = _read_csv_auto_sep(p)
         assert df.shape == (2, 3)
 
@@ -278,9 +328,7 @@ class TestReadCsvAutoSep:
         import pandas as pd
 
         p = tmp_path / "comma.csv"
-        pd.DataFrame([[1, 2, 3], [4, 5, 6]]).to_csv(
-            p, sep=",", header=False, index=False
-        )
+        pd.DataFrame([[1, 2, 3], [4, 5, 6]]).to_csv(p, sep=",", header=False, index=False)
         df = _read_csv_auto_sep(p)
         assert df.shape == (2, 3)
 
@@ -374,7 +422,7 @@ class TestNetcdfOverlayTimeStep:
         # Time slices with clearly distinct values
         data = np.array(
             [
-                [[10.0, 10.0], [10.0, 10.0]],   # t=0: all 10
+                [[10.0, 10.0], [10.0, 10.0]],  # t=0: all 10
                 [[999.0, 999.0], [999.0, 999.0]],  # t=1: all 999
             ]
         )
@@ -622,9 +670,7 @@ class TestListNcOverlayVariables:
         lat = np.array([[45.0, 45.0], [46.0, 46.0]])
         lon = np.array([[1.0, 2.0], [1.0, 2.0]])
         # t=0: values 0–1; t=1: values 500–501 — vmax must be ≥ 500
-        data = np.array(
-            [[[0.0, 1.0], [0.5, 0.75]], [[500.0, 500.5], [500.25, 501.0]]]
-        )
+        data = np.array([[[0.0, 1.0], [0.5, 0.75]], [[500.0, 500.5], [500.25, 501.0]]])
         ds = xr.Dataset(
             {"v": (["time", "y", "x"], data)},
             coords={"lat": (["y", "x"], lat), "lon": (["y", "x"], lon)},
@@ -662,31 +708,37 @@ class TestListNcOverlayVariables:
 class TestOverlayLabel:
     def test_ltl_biomass_label(self):
         from ui.pages.grid_helpers import _overlay_label
+
         assert _overlay_label("ltl/eec_ltlbiomassTons.nc") == "LTL Biomass"
 
     def test_background_species_label(self):
         from ui.pages.grid_helpers import _overlay_label
+
         assert _overlay_label("eec_backgroundspecies_biomass.nc") == "Background Species"
 
     def test_fishing_distrib_label(self):
         from ui.pages.grid_helpers import _overlay_label
+
         label = _overlay_label("fishing/fishing-distrib.csv")
         assert "ishing" in label  # "Fishing Distribution" or similar
 
     def test_mpa_pattern_label(self):
         from ui.pages.grid_helpers import _overlay_label
+
         label = _overlay_label("mpa/full_mpa.csv")
         # Must mention MPA or the filename content
         assert label != ""
 
     def test_generic_fallback_is_titlecase(self):
         from ui.pages.grid_helpers import _overlay_label
+
         label = _overlay_label("data/some_custom_file.nc")
         # Falls back to titlecase stem
         assert label == label.title() or label[0].isupper()
 
     def test_no_crash_on_bare_filename(self):
         from ui.pages.grid_helpers import _overlay_label
+
         label = _overlay_label("plain.nc")
         assert isinstance(label, str) and len(label) > 0
 
@@ -726,9 +778,7 @@ class TestOverlayCatalogStructure:
     def test_movement_map_keys_excluded(self):
         """movement.file.map keys must be in skip_prefixes."""
         src = self._selector_source()
-        assert "movement.file.map" in src, (
-            "movement.file.mapN keys must appear in skip_prefixes"
-        )
+        assert "movement.file.map" in src, "movement.file.mapN keys must appear in skip_prefixes"
 
     def test_resolved_path_is_overlay_id(self):
         """The overlay id passed to input_select must be the resolved path, not config key."""
@@ -745,9 +795,7 @@ class TestOverlayCatalogStructure:
 
     def test_overlay_nc_controls_present_in_grid_ui(self):
         """grid_ui must include output_ui('overlay_nc_controls')."""
-        assert "overlay_nc_controls" in self._text, (
-            "grid_ui must render overlay_nc_controls"
-        )
+        assert "overlay_nc_controls" in self._text, "grid_ui must render overlay_nc_controls"
 
 
 # ---------------------------------------------------------------------------
@@ -792,7 +840,9 @@ class TestEecIntegration:
         assert meta is not None
         var = "Dinoflagellates"
         vm = meta[var]
-        cells = load_netcdf_overlay(_EEC_LTL, var_name=var, time_step=0, vmin=vm["vmin"], vmax=vm["vmax"])
+        cells = load_netcdf_overlay(
+            _EEC_LTL, var_name=var, time_step=0, vmin=vm["vmin"], vmax=vm["vmax"]
+        )
         assert cells is not None
         assert len(cells) == 464, f"Expected 464 ocean cells, got {len(cells)}"
 
@@ -818,8 +868,12 @@ class TestEecIntegration:
         meta = list_nc_overlay_variables(str(_EEC_LTL))
         assert meta is not None
         vm = meta["Diatoms"]
-        cells_t0 = load_netcdf_overlay(_EEC_LTL, var_name="Diatoms", time_step=0, vmin=vm["vmin"], vmax=vm["vmax"])
-        cells_t6 = load_netcdf_overlay(_EEC_LTL, var_name="Diatoms", time_step=6, vmin=vm["vmin"], vmax=vm["vmax"])
+        cells_t0 = load_netcdf_overlay(
+            _EEC_LTL, var_name="Diatoms", time_step=0, vmin=vm["vmin"], vmax=vm["vmax"]
+        )
+        cells_t6 = load_netcdf_overlay(
+            _EEC_LTL, var_name="Diatoms", time_step=6, vmin=vm["vmin"], vmax=vm["vmax"]
+        )
         assert cells_t0 is not None and cells_t6 is not None
         fills_t0 = {tuple(c["fill"]) for c in cells_t0}
         fills_t6 = {tuple(c["fill"]) for c in cells_t6}
@@ -843,7 +897,9 @@ class TestEecIntegration:
         meta = list_nc_overlay_variables(str(_EEC_BG))
         assert meta is not None
         vm = meta["backgroundSpecies"]
-        cells = load_netcdf_overlay(_EEC_BG, var_name="backgroundSpecies", time_step=0, vmin=vm["vmin"], vmax=vm["vmax"])
+        cells = load_netcdf_overlay(
+            _EEC_BG, var_name="backgroundSpecies", time_step=0, vmin=vm["vmin"], vmax=vm["vmax"]
+        )
         assert cells is not None
         assert len(cells) == 464
 
@@ -854,7 +910,9 @@ class TestEecIntegration:
         meta = list_nc_overlay_variables(str(_EEC_LTL))
         assert meta is not None
         vm = meta["Dinoflagellates"]
-        cells = load_netcdf_overlay(_EEC_LTL, var_name="Dinoflagellates", time_step=3, vmin=vm["vmin"], vmax=vm["vmax"])
+        cells = load_netcdf_overlay(
+            _EEC_LTL, var_name="Dinoflagellates", time_step=3, vmin=vm["vmin"], vmax=vm["vmax"]
+        )
         assert cells is not None
         for cell in cells:
             assert "fill" in cell

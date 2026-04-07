@@ -5,10 +5,13 @@ These functions are free of Shiny reactive context (no ``input``, ``state``,
 independently of the Shiny runtime.
 """
 
+from __future__ import annotations
+
 import math
 import re
 from functools import lru_cache
 from pathlib import Path
+from typing import TypedDict
 
 import numpy as np
 import pandas as pd
@@ -17,6 +20,14 @@ import xarray as xr
 from osmose.logging import setup_logging
 
 _log = setup_logging("osmose.grid.helpers")
+
+
+class CellOverlay(TypedDict):
+    """A single coloured grid cell for deck.gl polygon_layer."""
+
+    polygon: list[list[float]]  # 4 corners, each [lon, lat]
+    value: float
+    fill: list[int]  # [R, G, B, A], each 0–255
 
 
 def _safe_resolve(base: Path, rel: str) -> Path | None:
@@ -71,7 +82,7 @@ def load_mask(config: dict[str, str], config_dir: Path | None = None) -> np.ndar
         return None
 
     try:
-        return _read_csv_auto_sep(full_path).values
+        return np.flipud(_read_csv_auto_sep(full_path).values)
     except (pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
         _log.warning("Mask file %s could not be parsed: %s", full_path, exc)
         return None
@@ -118,11 +129,18 @@ def discover_spatial_files(
     seen_paths: set[str] = set()
 
     skip_prefixes = (
-        "grid.", "osmose.configuration.", "simulation.restart",
-        "predation.accessibility", "fisheries.catchability", "fisheries.discards",
+        "grid.",
+        "osmose.configuration.",
+        "simulation.restart",
+        "predation.accessibility",
+        "fisheries.catchability",
+        "fisheries.discards",
         "fisheries.movement.file.map",
-        "movement.file.map", "movement.species.map",
-        "movement.initialAge.", "movement.lastAge.", "movement.steps.",
+        "movement.file.map",
+        "movement.species.map",
+        "movement.initialAge.",
+        "movement.lastAge.",
+        "movement.steps.",
         "movement.distribution.",
     )
 
@@ -162,7 +180,7 @@ def discover_spatial_files(
         if path_id in seen_paths:
             continue
         seen_paths.add(path_id)
-        idx = key[len("movement.file.map"):]
+        idx = key[len("movement.file.map") :]
         species = cfg.get(f"movement.species.map{idx}", "unknown")
         age_range = ""
         min_age = cfg.get(f"movement.initialAge.map{idx}")
@@ -173,9 +191,14 @@ def discover_spatial_files(
         steps_raw = cfg.get(f"movement.steps.map{idx}", "")
         n_steps = len([s for s in steps_raw.split(";") if s.strip()]) if steps_raw else 0
         label = derive_map_label(val, int(idx) if idx.isdigit() else 0)
-        movement.setdefault(species, []).append({
-            "path": resolved, "label": label, "age": age_range, "steps": n_steps,
-        })
+        movement.setdefault(species, []).append(
+            {
+                "path": resolved,
+                "label": label,
+                "age": age_range,
+                "steps": n_steps,
+            }
+        )
 
     # Pass 3: fishing distribution maps
     for key, val in sorted(cfg.items()):
@@ -202,10 +225,12 @@ def discover_spatial_files(
             path_id = str(mpa_file.resolve())
             if path_id not in seen_paths:
                 seen_paths.add(path_id)
-                other.append({
-                    "path": mpa_file.resolve(),
-                    "label": f"MPA: {mpa_file.stem.replace('_', ' ').title()}",
-                })
+                other.append(
+                    {
+                        "path": mpa_file.resolve(),
+                        "label": f"MPA: {mpa_file.stem.replace('_', ' ').title()}",
+                    }
+                )
 
     return {"movement": movement, "fishing": fishing, "other": other}
 
@@ -604,7 +629,7 @@ def load_csv_overlay(
     nx: int,
     ny: int,
     nc_data: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None,
-) -> list[dict] | None:
+) -> list[CellOverlay] | None:
     """Load a CSV spatial file and map values onto grid cells for deck.gl.
 
     OSMOSE CSV spatial files are typically 2D matrices (ny x nx) with one value
@@ -653,23 +678,35 @@ def load_csv_overlay(
                 )
                 return None
 
+        # OSMOSE CSV maps are stored south-to-north (row 0 = southernmost).
+        # Flip so row 0 = northernmost, matching the grid coordinate system.
+        data = np.flipud(data)
+
         # Compute value range for color scaling
         # -99 (and values < -9) are OSMOSE sentinel values meaning "outside grid/land" — skip them.
+        # 0.0 exactly means "absent" in distribution maps — skip for cleaner visualisation.
         numeric = data.astype(float)
-        valid = numeric[(~np.isnan(numeric)) & (numeric > -9.0)]
+        valid = numeric[(~np.isnan(numeric)) & (numeric > -9.0) & (numeric != 0.0)]
         if len(valid) == 0:
             return None
         vmin, vmax = float(valid.min()), float(valid.max())
         vrange = vmax - vmin if vmax != vmin else 1.0
 
+        # Pre-compute regular-grid constants (used when nc_data is None)
+        use_nc = nc_data is not None and lat is not None and lon is not None
+        if not use_nc:
+            dx = (lr_lon - ul_lon) / g_nx
+            dy = (ul_lat - lr_lat) / g_ny
+            hlon, hlat = dx / 2, dy / 2
+
         cells = []
         for r in range(g_ny):
             for c in range(g_nx):
                 v = float(numeric[r, c])
-                if np.isnan(v) or v < -9.0:  # skip NaN and -99 sentinel (outside grid)
+                if np.isnan(v) or v < -9.0 or v == 0.0:
                     continue
                 # Compute cell polygon from grid coordinates
-                if nc_data is not None and lat is not None and lon is not None:
+                if use_nc:
                     clat = float(lat[r, c] if lat.ndim == 2 else lat[r])
                     clon = float(lon[r, c] if lon.ndim == 2 else lon[c])
                     if lat.ndim == 2:
@@ -684,19 +721,18 @@ def load_csv_overlay(
                         dlon *= 2
                     hlat, hlon = dlat / 2, dlon / 2
                 else:
-                    # Regular grid from bounding box
-                    dx = (lr_lon - ul_lon) / g_nx
-                    dy = (ul_lat - lr_lat) / g_ny
                     clon = ul_lon + (c + 0.5) * dx
                     clat = ul_lat - (r + 0.5) * dy
-                    hlon, hlat = dx / 2, dy / 2
 
-                # Color: scale 0→1 to amber palette (dark→bright)
-                t = (v - vmin) / vrange
-                red = int(180 + 75 * t)
-                green = int(80 + 60 * t)
-                blue = 0
-                alpha = int(100 + 100 * t)
+                # Colormap: bright teal for single-value, dark-to-bright ramp for ranges
+                if vmin == vmax:
+                    red, green, blue, alpha = 20, 220, 180, 180
+                else:
+                    t = (v - vmin) / vrange
+                    red = int(68 + 187 * t * t)
+                    green = int(1 + 209 * t)
+                    blue = int(84 + 86 * t - 170 * t * t)
+                    alpha = int(150 + 80 * t)
 
                 cells.append(
                     {
@@ -726,7 +762,7 @@ def load_netcdf_overlay(
     time_step: int = 0,
     vmin: float | None = None,
     vmax: float | None = None,
-) -> list[dict] | None:
+) -> list[CellOverlay] | None:
     """Load a NetCDF overlay file and return colored cell data for deck.gl.
 
     Applies a blue→cyan→yellow colormap scaled against ``vmin``/``vmax``
@@ -751,8 +787,6 @@ def load_netcdf_overlay(
         Fixed colour-scale bounds.  Pass the per-variable bounds from
         ``list_nc_overlay_variables`` for stable colours across time steps.
     """
-    _TIME_DIM_NAMES = {"time", "t", "year", "month", "step", "date", "ntime"}
-
     try:
         with xr.open_dataset(file_path) as ds:
             # --- Select variable ---
@@ -769,7 +803,7 @@ def load_netcdf_overlay(
             da = ds[sel_var]
 
             # --- Slice time dimension if present ---
-            has_time = len(da.dims) > 2 and da.dims[0].lower() in _TIME_DIM_NAMES
+            has_time = len(da.dims) > 2 and da.dims[0].lower() in _NC_TIME_DIM_NAMES
             if has_time:
                 t_idx = max(0, min(time_step, da.shape[0] - 1))
                 data_vals = da.values[t_idx]
@@ -1121,6 +1155,9 @@ def make_legend(entries: list[dict], **kwargs) -> dict:
         if "placement" in kw:
             kw["position"] = kw.pop("placement")
         return _sdgl.deck_legend_control(entries=entries, **kw)
+    _log.warning(
+        "make_legend: shiny_deckgl has neither layer_legend_widget nor deck_legend_control"
+    )
     return {}
 
 
