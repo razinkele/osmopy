@@ -30,6 +30,43 @@ class CellOverlay(TypedDict):
     fill: list[int]  # [R, G, B, A], each 0–255
 
 
+def _compute_half_extents(lat_2d: np.ndarray, lon_2d: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Compute per-cell half-extents via finite differences for polygon construction.
+
+    Returns (hlat, hlon) arrays of shape (ny, nx). All values are positive.
+    Uses a simple fallback for zero-step cells (no direction awareness).
+    """
+    ny, nx = lat_2d.shape
+    lat_f = lat_2d.astype(float)
+    lon_f = lon_2d.astype(float)
+
+    lat_step = abs(float(lat_f[min(1, ny - 1), 0] - lat_f[0, 0])) if ny > 1 else 1.0
+    lon_step = abs(float(lon_f[0, min(1, nx - 1)] - lon_f[0, 0])) if nx > 1 else 1.0
+
+    dlat = np.empty_like(lat_f)
+    if ny == 1:
+        dlat[:] = lat_step or 1.0
+    else:
+        dlat[0, :] = lat_f[1, :] - lat_f[0, :]
+        dlat[-1, :] = lat_f[-1, :] - lat_f[-2, :]
+        if ny > 2:
+            dlat[1:-1, :] = (lat_f[2:, :] - lat_f[:-2, :]) / 2
+
+    dlon = np.empty_like(lon_f)
+    if nx == 1:
+        dlon[:] = lon_step or 1.0
+    else:
+        dlon[:, 0] = lon_f[:, 1] - lon_f[:, 0]
+        dlon[:, -1] = lon_f[:, -1] - lon_f[:, -2]
+        if nx > 2:
+            dlon[:, 1:-1] = (lon_f[:, 2:] - lon_f[:, :-2]) / 2
+
+    dlat = np.where(dlat == 0, lon_step if lon_step > 0 else 1.0, dlat)
+    dlon = np.where(dlon == 0, lat_step if lat_step > 0 else 1.0, dlon)
+
+    return np.abs(dlat) / 2, np.abs(dlon) / 2
+
+
 def _safe_resolve(base: Path, rel: str) -> Path | None:
     """Resolve a relative path against base, rejecting traversal outside base."""
     candidate = (base / rel).resolve()
@@ -518,33 +555,7 @@ def build_netcdf_grid_layers(
     lat_f = lat.astype(float)
     lon_f = lon.astype(float)
 
-    # Compute per-cell half-steps using finite differences (edge cells mirror).
-    dlat = np.empty_like(lat_f)
-    if ny == 1:
-        dlat[:] = lat_step
-    else:
-        dlat[0, :] = lat_f[1, :] - lat_f[0, :]
-        dlat[-1, :] = lat_f[-1, :] - lat_f[-2, :]
-        if ny > 2:
-            dlat[1:-1, :] = (lat_f[2:, :] - lat_f[:-2, :]) / 2
-
-    dlon = np.empty_like(lon_f)
-    if nx == 1:
-        dlon[:] = lon_step
-    else:
-        dlon[:, 0] = lon_f[:, 1] - lon_f[:, 0]
-        dlon[:, -1] = lon_f[:, -1] - lon_f[:, -2]
-        if nx > 2:
-            dlon[:, 1:-1] = (lon_f[:, 2:] - lon_f[:, :-2]) / 2
-
-    # Fallback for degenerate zero-step cells
-    lat_sign = 1.0 if lat_f[0, 0] >= lat_f[min(1, ny - 1), 0] else -1.0
-    fallback_dlat = float(lon_step * lat_sign) or lat_step
-    dlat = np.where(dlat == 0, fallback_dlat, dlat)
-    dlon = np.where(dlon == 0, lat_step, dlon)
-
-    hlat = np.abs(dlat) / 2
-    hlon = np.abs(dlon) / 2
+    hlat, hlon = _compute_half_extents(lat, lon)
 
     # Build polygon corner arrays: shape (ny, nx, 4, 2) in [lon, lat] order
     polys = np.stack(
@@ -825,32 +836,7 @@ def load_netcdf_overlay(
             lat_2d = olat[:ony, :onx].astype(float)
             lon_2d = olon[:ony, :onx].astype(float)
 
-        lat_step = abs(float(lat_2d[min(1, ony - 1), 0] - lat_2d[0, 0])) if ony > 1 else 1.0
-        lon_step = abs(float(lon_2d[0, min(1, onx - 1)] - lon_2d[0, 0])) if onx > 1 else 1.0
-
-        # Vectorised half-extents using finite differences (edge cells: single-sided)
-        dlat = np.empty((ony, onx))
-        if ony == 1:
-            dlat[:] = lat_step
-        else:
-            dlat[0, :] = abs(lat_2d[1, :] - lat_2d[0, :])
-            dlat[-1, :] = abs(lat_2d[-1, :] - lat_2d[-2, :])
-            if ony > 2:
-                dlat[1:-1, :] = abs(lat_2d[2:, :] - lat_2d[:-2, :]) / 2
-
-        dlon = np.empty((ony, onx))
-        if onx == 1:
-            dlon[:] = lon_step
-        else:
-            dlon[:, 0] = abs(lon_2d[:, 1] - lon_2d[:, 0])
-            dlon[:, -1] = abs(lon_2d[:, -1] - lon_2d[:, -2])
-            if onx > 2:
-                dlon[:, 1:-1] = abs(lon_2d[:, 2:] - lon_2d[:, :-2]) / 2
-
-        dlat = np.where(dlat == 0, lon_step if lon_step > 0 else 1.0, dlat)
-        dlon = np.where(dlon == 0, lat_step if lat_step > 0 else 1.0, dlon)
-        hlat = dlat / 2
-        hlon = dlon / 2
+        hlat, hlon = _compute_half_extents(lat_2d, lon_2d)
 
         # Build polygon corners: shape (ony, onx, 4, 2) in [lon, lat] order
         polys = np.stack(
