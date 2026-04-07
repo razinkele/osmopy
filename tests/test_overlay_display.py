@@ -661,32 +661,32 @@ class TestListNcOverlayVariables:
 
 class TestOverlayLabel:
     def test_ltl_biomass_label(self):
-        from ui.pages.grid import _overlay_label
+        from ui.pages.grid_helpers import _overlay_label
         assert _overlay_label("ltl/eec_ltlbiomassTons.nc") == "LTL Biomass"
 
     def test_background_species_label(self):
-        from ui.pages.grid import _overlay_label
+        from ui.pages.grid_helpers import _overlay_label
         assert _overlay_label("eec_backgroundspecies_biomass.nc") == "Background Species"
 
     def test_fishing_distrib_label(self):
-        from ui.pages.grid import _overlay_label
+        from ui.pages.grid_helpers import _overlay_label
         label = _overlay_label("fishing/fishing-distrib.csv")
         assert "ishing" in label  # "Fishing Distribution" or similar
 
     def test_mpa_pattern_label(self):
-        from ui.pages.grid import _overlay_label
+        from ui.pages.grid_helpers import _overlay_label
         label = _overlay_label("mpa/full_mpa.csv")
         # Must mention MPA or the filename content
         assert label != ""
 
     def test_generic_fallback_is_titlecase(self):
-        from ui.pages.grid import _overlay_label
+        from ui.pages.grid_helpers import _overlay_label
         label = _overlay_label("data/some_custom_file.nc")
         # Falls back to titlecase stem
         assert label == label.title() or label[0].isupper()
 
     def test_no_crash_on_bare_filename(self):
-        from ui.pages.grid import _overlay_label
+        from ui.pages.grid_helpers import _overlay_label
         label = _overlay_label("plain.nc")
         assert isinstance(label, str) and len(label) > 0
 

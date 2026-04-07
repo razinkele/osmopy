@@ -83,6 +83,133 @@ def load_mask(config: dict[str, str], config_dir: Path | None = None) -> np.ndar
         return None
 
 
+def _overlay_label(rel_path: str) -> str:
+    """Generate a human-readable label from an overlay file path."""
+    stem = Path(rel_path).stem.lower()
+    if "ltl" in stem or ("ltlbiomass" in stem.replace("_", "").replace("-", "")):
+        return "LTL Biomass"
+    if "backgroundspecies" in stem.replace("_", "").replace("-", ""):
+        return "Background Species"
+    if "mpa" in stem or ("marine" in stem and "protected" in stem):
+        return stem.replace("_", " ").replace("-", " ").title()
+    if "distrib" in stem or ("fishing" in stem and "distrib" in stem):
+        return "Fishing Distribution"
+    if "fishing" in stem:
+        return "Fishing"
+    return stem.replace("_", " ").replace("-", " ").title()
+
+
+def discover_spatial_files(
+    cfg: dict[str, str],
+    cfg_dir: Path | None,
+) -> dict[str, dict[str, list[dict]] | list[dict]]:
+    """Discover all spatial files (CSV/NC) from an OSMOSE config.
+
+    Returns ``{"movement": {species: [entries]}, "fishing": [entries], "other": [entries]}``
+    where each entry is ``{"path": Path, "label": str, ...}``.
+    """
+    movement: dict[str, list[dict]] = {}
+    fishing: list[dict] = []
+    other: list[dict] = []
+
+    if not cfg_dir or not cfg_dir.is_dir():
+        return {"movement": movement, "fishing": fishing, "other": other}
+
+    seen_paths: set[str] = set()
+
+    skip_prefixes = (
+        "grid.", "osmose.configuration.", "simulation.restart",
+        "predation.accessibility", "fisheries.catchability", "fisheries.discards",
+        "fisheries.movement.file.map",
+        "movement.file.map", "movement.species.map",
+        "movement.initialAge.", "movement.lastAge.", "movement.steps.",
+        "movement.distribution.",
+    )
+
+    # Pass 1: general spatial files (non-movement, non-fishing)
+    for key, val in sorted(cfg.items()):
+        if not val or not isinstance(val, str):
+            continue
+        if not (val.endswith(".nc") or val.endswith(".csv")):
+            continue
+        if key.startswith(skip_prefixes) or "season" in key:
+            continue
+        try:
+            resolved = _safe_resolve(cfg_dir, val)
+        except Exception:
+            continue
+        if resolved is None or not resolved.exists():
+            continue
+        path_id = str(resolved)
+        if path_id in seen_paths:
+            continue
+        seen_paths.add(path_id)
+        other.append({"path": resolved, "label": _overlay_label(val)})
+
+    # Pass 2: movement maps grouped by species
+    for key, val in sorted(cfg.items()):
+        if not key.startswith("movement.file.map") or not val:
+            continue
+        if val.lower() in ("null", "none") or not val.endswith(".csv"):
+            continue
+        try:
+            resolved = _safe_resolve(cfg_dir, val)
+        except Exception:
+            continue
+        if resolved is None or not resolved.exists():
+            continue
+        path_id = str(resolved)
+        if path_id in seen_paths:
+            continue
+        seen_paths.add(path_id)
+        idx = key[len("movement.file.map"):]
+        species = cfg.get(f"movement.species.map{idx}", "unknown")
+        age_range = ""
+        min_age = cfg.get(f"movement.initialAge.map{idx}")
+        max_age = cfg.get(f"movement.lastAge.map{idx}")
+        if min_age is not None:
+            age_range = f"{min_age}+" if max_age is None else f"{min_age}-{max_age}"
+            age_range += " yr"
+        steps_raw = cfg.get(f"movement.steps.map{idx}", "")
+        n_steps = len([s for s in steps_raw.split(";") if s.strip()]) if steps_raw else 0
+        label = derive_map_label(val, int(idx) if idx.isdigit() else 0)
+        movement.setdefault(species, []).append({
+            "path": resolved, "label": label, "age": age_range, "steps": n_steps,
+        })
+
+    # Pass 3: fishing distribution maps
+    for key, val in sorted(cfg.items()):
+        if not key.startswith("fisheries.movement.file.map") or not val:
+            continue
+        if not val.endswith(".csv"):
+            continue
+        try:
+            resolved = _safe_resolve(cfg_dir, val)
+        except Exception:
+            continue
+        if resolved is None or not resolved.exists():
+            continue
+        path_id = str(resolved)
+        if path_id in seen_paths:
+            continue
+        seen_paths.add(path_id)
+        fishing.append({"path": resolved, "label": f"Fishing: {_overlay_label(val)}"})
+
+    # Pass 4: MPA directory scan
+    mpa_dir = cfg_dir / "mpa"
+    if mpa_dir.is_dir():
+        for mpa_file in sorted(mpa_dir.glob("*.csv")):
+            path_id = str(mpa_file.resolve())
+            if path_id not in seen_paths:
+                seen_paths.add(path_id)
+                other.append({
+                    "path": mpa_file.resolve(),
+                    "label": f"MPA: {mpa_file.stem.replace('_', ' ').title()}",
+                })
+
+    return {"movement": movement, "fishing": fishing, "other": other}
+
+
 def _zoom_for_span(span: float, default: float = 5.0) -> float:
     """Compute deck.gl zoom level to fit a geographic span in degrees."""
     if span <= 0:

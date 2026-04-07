@@ -21,6 +21,7 @@ from osmose.schema.grid import GRID_FIELDS
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.components.param_form import render_field
 from ui.pages.grid_helpers import (
+    _overlay_label,
     build_grid_layers,
     build_movement_cache,
     build_netcdf_grid_layers,
@@ -58,22 +59,6 @@ def _validate_overlay_path(overlay_val: str, cfg_dir: Path | None) -> Path | Non
         _log.warning("Overlay path rejected (outside config dir): %s", overlay_val)
         return None
     return candidate
-
-
-def _overlay_label(rel_path: str) -> str:
-    """Generate a human-readable label from an overlay file path."""
-    stem = Path(rel_path).stem.lower()
-    if "ltl" in stem or ("ltlbiomass" in stem.replace("_", "").replace("-", "")):
-        return "LTL Biomass"
-    if "backgroundspecies" in stem.replace("_", "").replace("-", ""):
-        return "Background Species"
-    if "mpa" in stem or ("marine" in stem and "protected" in stem):
-        return stem.replace("_", " ").replace("-", " ").title()
-    if "distrib" in stem or ("fishing" in stem and "distrib" in stem):
-        return "Fishing Distribution"
-    if "fishing" in stem:
-        return "Fishing"
-    return stem.replace("_", " ").replace("-", " ").title()
 
 
 def grid_ui():
