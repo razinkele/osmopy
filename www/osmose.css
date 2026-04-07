@@ -81,7 +81,7 @@ body {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 14px 24px;
+  padding: 8px 16px;
   background: linear-gradient(
     135deg,
     rgba(22, 38, 52, 0.95) 0%,
@@ -111,7 +111,7 @@ body {
 }
 
 .osmose-logo {
-  font-size: 1.4rem;
+  font-size: 1.1rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   color: var(--osm-text-primary);
@@ -121,7 +121,7 @@ body {
 }
 
 .osmose-logo .subtitle {
-  font-size: 0.8rem;
+  font-size: 0.7rem;
   font-weight: 400;
   letter-spacing: 0.02em;
   color: var(--osm-text-muted);
@@ -327,12 +327,12 @@ body {
 
 /* Section headers */
 .nav-pills .nav-item .osmose-section-label {
-  font-size: 0.65rem;
+  font-size: 0.6rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--osm-text-muted);
-  padding: 20px 14px 6px;
+  padding: 12px 14px 4px;
   display: block;
   position: relative;
 }
@@ -358,8 +358,8 @@ body {
   background: transparent !important;
   border: none !important;
   border-radius: 8px !important;
-  padding: 8px 14px !important;
-  font-size: 0.85rem;
+  padding: 4px 12px !important;
+  font-size: 0.82rem;
   font-weight: 500;
   transition: all var(--osm-transition);
   position: relative;
@@ -1126,6 +1126,10 @@ hr {
   }
 
   .osmose-badge {
+    display: none;
+  }
+
+  .osm-config-info {
     display: none;
   }
 
