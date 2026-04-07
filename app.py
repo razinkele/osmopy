@@ -9,7 +9,6 @@ from shiny import App, render, ui
 from ui.state import AppState
 from ui.components.help_modal import about_modal, help_modal
 from ui.theme import THEME
-from ui.styles import STYLE_CONFIG_HEADER
 import ui.charts as _charts  # noqa: F401 — registers custom plotly template
 
 from shiny_deckgl import head_includes as _deckgl_head
@@ -153,6 +152,7 @@ app_ui = ui.page_fillable(
             class_="osmose-badge",
         ),
         ui.div(
+            ui.output_ui("config_header"),
             ui.tags.button(
                 ui.tags.span("\u2600\ufe0f", class_="icon-sun"),
                 ui.tags.span("\u263e", class_="icon-moon"),
@@ -179,7 +179,6 @@ app_ui = ui.page_fillable(
         class_="osmose-header",
     ),
     # ── Global loading overlay ───────────────────────────────────
-    ui.output_ui("config_header"),
     ui.output_ui("loading_overlay"),
     # ── Left pill navigation with grouped sections ──────────────
     ui.navset_pill_list(
@@ -327,18 +326,24 @@ def server(input, output, session):
         n_params = len(cfg)
         is_dirty = state.dirty.get()
         return ui.div(
-            ui.div(
-                ui.tags.span(name, style="color: #d4a017; font-weight: 600;"),
-                ui.tags.span(
-                    f" {n_species} species \u2022 {n_params} parameters",
-                    style="color: #5a6a7a; font-size: 12px; margin-left: 8px;",
+            ui.tags.span(
+                name,
+                style=(
+                    "color: var(--osm-accent); font-weight: 600; font-size: 0.78rem;"
+                    " overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+                    " max-width: 180px; display: inline-block; vertical-align: middle;"
                 ),
             ),
             ui.tags.span(
-                "modified" if is_dirty else "",
-                style="color: #e67e22; font-size: 11px; font-style: italic;",
+                f" {n_species} species \u2022 {n_params} params",
+                style="color: var(--osm-text-muted); font-size: 0.7rem; margin-left: 6px;",
             ),
-            style=STYLE_CONFIG_HEADER,
+            ui.tags.span(
+                " modified" if is_dirty else "",
+                style="color: #e67e22; font-size: 0.65rem; font-style: italic; margin-left: 4px;",
+            ),
+            class_="osm-config-info",
+            style="display: flex; align-items: center; margin-right: 8px;",
         )
 
     @render.ui
