@@ -4,6 +4,7 @@ from pathlib import Path
 
 from shiny import reactive
 
+from tests.helpers import make_catch_all_input, make_multi_input
 from ui.state import AppState
 
 
@@ -93,19 +94,10 @@ def test_sync_inputs_updates_config():
     with reactive.isolate():
         state.reset_to_defaults()
 
-        class FakeInput:
-            def __getattr__(self, name):
-                def getter():
-                    if name == "simulation_nspecies":
-                        return 5
-                    if name == "simulation_time_ndtperyear":
-                        return 12
-                    return None
-
-                return getter
-
         changed = sync_inputs(
-            FakeInput(), state, ["simulation.nspecies", "simulation.time.ndtperyear"]
+            make_multi_input(simulation_nspecies=5, simulation_time_ndtperyear=12, default=None),
+            state,
+            ["simulation.nspecies", "simulation.time.ndtperyear"],
         )
         assert changed["simulation.nspecies"] == "5"
         assert changed["simulation.time.ndtperyear"] == "12"
@@ -126,11 +118,7 @@ def test_sync_inputs_skips_none():
     with reactive.isolate():
         state.reset_to_defaults()
 
-        class FakeInput:
-            def __getattr__(self, name):
-                return lambda: None
-
-        changed = sync_inputs(FakeInput(), state, ["simulation.nspecies"])
+        changed = sync_inputs(make_catch_all_input(None), state, ["simulation.nspecies"])
         assert changed == {}
 
 

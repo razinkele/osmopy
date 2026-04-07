@@ -4,6 +4,7 @@ import threading
 
 from shiny import reactive
 
+from tests.helpers import make_catch_all_input, make_multi_input
 from ui.pages.calibration import collect_selected_params, build_free_params
 
 
@@ -16,13 +17,9 @@ def test_collect_selected_params():
         state.reset_to_defaults()
 
         # Simulate checkboxes: only species.k.sp0 is checked
-        class FakeInput:
-            def __getattr__(self, name):
-                if name == "cal_param_species_k_sp0":
-                    return lambda: True
-                return lambda: False
-
-        params = collect_selected_params(FakeInput(), state)
+        params = collect_selected_params(
+            make_multi_input(cal_param_species_k_sp0=True, default=False), state
+        )
         keys = [p["key"] for p in params]
         assert "species.k.sp0" in keys
 
@@ -35,11 +32,7 @@ def test_collect_selected_params_empty():
     with reactive.isolate():
         state.reset_to_defaults()
 
-        class FakeInput:
-            def __getattr__(self, name):
-                return lambda: False
-
-        params = collect_selected_params(FakeInput(), state)
+        params = collect_selected_params(make_catch_all_input(False), state)
         assert params == []
 
 

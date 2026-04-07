@@ -7,6 +7,7 @@ from shiny import reactive
 
 from osmose.config.reader import OsmoseConfigReader
 from osmose.demo import list_demos, osmose_demo, migrate_config
+from tests.helpers import make_catch_all_input
 from ui.state import AppState
 
 
@@ -185,11 +186,7 @@ def test_load_scenario_loading_guard(tmp_path):
         state.config.set(cfg)
 
         # sync_inputs should return empty while loading is True
-        class FakeInput:
-            def __getattr__(self, name):
-                return lambda: "overwritten"
-
-        changed = sync_inputs(FakeInput(), state, ["simulation.nspecies"])
+        changed = sync_inputs(make_catch_all_input("overwritten"), state, ["simulation.nspecies"])
         assert changed == {}
 
         state.loading.set(False)

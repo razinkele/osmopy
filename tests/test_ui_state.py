@@ -6,6 +6,7 @@ pytest.importorskip("shiny")
 
 from shiny import reactive
 
+from tests.helpers import make_catch_all_input, make_fake_input
 from ui.state import AppState, sync_inputs
 
 
@@ -77,11 +78,7 @@ def test_sync_inputs_skips_loading_state():
     with reactive.isolate():
         state.loading.set(True)
 
-        class FakeInput:
-            def __getattr__(self, name):
-                return lambda: "42"
-
-        changed = sync_inputs(FakeInput(), state, ["simulation.nspecies"])
+        changed = sync_inputs(make_catch_all_input("42"), state, ["simulation.nspecies"])
         assert changed == {}
 
 
@@ -104,28 +101,12 @@ def test_sync_inputs_does_not_set_dirty_when_value_unchanged():
         state.config.set({"simulation.nspecies": "3"})
         state.dirty.set(False)
 
-        class FakeInput:
-            def __getattr__(self, name):
-                return lambda: 3  # same as stored "3"
-
-        sync_inputs(FakeInput(), state, ["simulation.nspecies"])
+        sync_inputs(make_catch_all_input(3), state, ["simulation.nspecies"])  # same as stored "3"
         assert state.dirty.get() is False
 
 
 _SIZERATIO_KEY = "predation.predprey.sizeratio.max.sp5"
 _SIZERATIO_ID = _SIZERATIO_KEY.replace(".", "_")
-
-
-def _make_fake_input(input_id: str, value):
-    """Create a FakeInput that only responds to a specific input ID."""
-
-    class FakeInput:
-        def __getattr__(self, name):
-            if name == input_id:
-                return lambda: value
-            raise AttributeError(name)
-
-    return FakeInput()
 
 
 def test_sync_inputs_preserves_multivalue_entry():
@@ -135,7 +116,7 @@ def test_sync_inputs_preserves_multivalue_entry():
         state.config.set({_SIZERATIO_KEY: "2.3;1.8"})
         state.dirty.set(False)
 
-        changed = sync_inputs(_make_fake_input(_SIZERATIO_ID, 3.5), state, [_SIZERATIO_KEY])
+        changed = sync_inputs(make_fake_input(_SIZERATIO_ID, 3.5), state, [_SIZERATIO_KEY])
         cfg = state.config.get()
         assert cfg[_SIZERATIO_KEY] == "2.3;1.8"
         assert _SIZERATIO_KEY not in changed
@@ -149,7 +130,7 @@ def test_sync_inputs_allows_multivalue_to_multivalue_update():
         state.config.set({_SIZERATIO_KEY: "2.3;1.8"})
         state.dirty.set(False)
 
-        sync_inputs(_make_fake_input(_SIZERATIO_ID, "3.0;2.5"), state, [_SIZERATIO_KEY])
+        sync_inputs(make_fake_input(_SIZERATIO_ID, "3.0;2.5"), state, [_SIZERATIO_KEY])
         cfg = state.config.get()
         assert cfg[_SIZERATIO_KEY] == "3.0;2.5"
         assert state.dirty.get() is True
@@ -162,7 +143,7 @@ def test_sync_inputs_allows_plain_to_plain_update():
         state.config.set({_SIZERATIO_KEY: "2.3"})
         state.dirty.set(False)
 
-        sync_inputs(_make_fake_input(_SIZERATIO_ID, 3.5), state, [_SIZERATIO_KEY])
+        sync_inputs(make_fake_input(_SIZERATIO_ID, 3.5), state, [_SIZERATIO_KEY])
         cfg = state.config.get()
         assert cfg[_SIZERATIO_KEY] == "3.5"
         assert state.dirty.get() is True
