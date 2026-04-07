@@ -55,28 +55,35 @@ def _read_csv_auto_sep(path: Path) -> pd.DataFrame:
     return df
 
 
+def _find_config_file(rel_path: str, config_dir: Path | None = None) -> Path | None:
+    """Search config_dir then examples dir for a relative path, with traversal protection.
+
+    Returns the resolved Path if found, None otherwise.
+    Logs traversal rejections as warnings. Does NOT log file-not-found —
+    callers emit their own context-specific messages at the appropriate level.
+    """
+    search_dirs: list[Path] = []
+    if config_dir and config_dir.is_dir():
+        search_dirs.append(config_dir)
+    search_dirs.append(Path(__file__).parent.parent.parent / "data" / "examples")
+
+    for d in search_dirs:
+        candidate = _safe_resolve(d, rel_path)
+        if candidate is None:
+            _log.warning("Path traversal rejected for root %s: %s", d, rel_path)
+            continue
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def load_mask(config: dict[str, str], config_dir: Path | None = None) -> np.ndarray | None:
     """Load a grid mask CSV from the config if available."""
     mask_path = config.get("grid.mask.file", "")
     if not mask_path:
         return None
 
-    # Try config_dir first, fall back to examples directory
-    search_dirs = []
-    if config_dir and config_dir.is_dir():
-        search_dirs.append(config_dir)
-    search_dirs.append(Path(__file__).parent.parent.parent / "data" / "examples")
-
-    full_path = None
-    for d in search_dirs:
-        candidate = _safe_resolve(d, mask_path)
-        if candidate is None:
-            _log.warning("Path traversal rejected for root %s: %s", d, mask_path)
-            continue
-        if candidate.exists():
-            full_path = candidate
-            break
-
+    full_path = _find_config_file(mask_path, config_dir)
     if full_path is None:
         _log.warning("Mask file not found: %s", mask_path)
         return None
@@ -403,21 +410,7 @@ def load_netcdf_grid(
     if not nc_path:
         return None
 
-    search_dirs = []
-    if config_dir and config_dir.is_dir():
-        search_dirs.append(config_dir)
-    search_dirs.append(Path(__file__).parent.parent.parent / "data" / "examples")
-
-    full_path = None
-    for d in search_dirs:
-        candidate = _safe_resolve(d, nc_path)
-        if candidate is None:
-            _log.warning("Path traversal rejected for root %s: %s", d, nc_path)
-            continue
-        if candidate.exists():
-            full_path = candidate
-            break
-
+    full_path = _find_config_file(nc_path, config_dir)
     if full_path is None:
         _log.debug("NetCDF grid file not found: %s", nc_path)
         return None
