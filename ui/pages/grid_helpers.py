@@ -689,11 +689,13 @@ def load_csv_overlay(
         # Compute value range for color scaling
         # -99 (and values < -9) are OSMOSE sentinel values meaning "outside grid/land" — skip them.
         # 0.0 exactly means "absent" in distribution maps — skip for cleaner visualisation.
+        # Use ~(numeric < -9.0) so that -9.0 itself is KEPT (not a sentinel).
         numeric = data.astype(float)
-        valid = numeric[(~np.isnan(numeric)) & (numeric > -9.0) & (numeric != 0.0)]
-        if len(valid) == 0:
+        valid_mask = (~np.isnan(numeric)) & ~(numeric < -9.0) & (numeric != 0.0)
+        valid_vals = numeric[valid_mask]
+        if len(valid_vals) == 0:
             return None
-        vmin, vmax = float(valid.min()), float(valid.max())
+        vmin, vmax = float(valid_vals.min()), float(valid_vals.max())
         vrange = vmax - vmin if vmax != vmin else 1.0
 
         # Pre-compute regular-grid constants (used when nc_data is None)
@@ -703,53 +705,51 @@ def load_csv_overlay(
             dy = (ul_lat - lr_lat) / g_ny
             hlon, hlat = dx / 2, dy / 2
 
-        cells = []
-        for r in range(g_ny):
-            for c in range(g_nx):
-                v = float(numeric[r, c])
-                if np.isnan(v) or v < -9.0 or v == 0.0:
-                    continue
-                # Compute cell polygon from grid coordinates
-                if use_nc:
-                    clat = float(lat[r, c] if lat.ndim == 2 else lat[r])
-                    clon = float(lon[r, c] if lon.ndim == 2 else lon[c])
-                    if lat.ndim == 2:
-                        dlat = abs(float(lat[min(r + 1, g_ny - 1), c] - lat[max(r - 1, 0), c])) / 2
-                        dlon = abs(float(lon[r, min(c + 1, g_nx - 1)] - lon[r, max(c - 1, 0)])) / 2
-                    else:
-                        dlat = abs(float(lat[min(r + 1, len(lat) - 1)] - lat[max(r - 1, 0)])) / 2
-                        dlon = abs(float(lon[min(c + 1, len(lon) - 1)] - lon[max(c - 1, 0)])) / 2
-                    if r == 0 or r == g_ny - 1:
-                        dlat *= 2
-                    if c == 0 or c == g_nx - 1:
-                        dlon *= 2
-                    hlat, hlon = dlat / 2, dlon / 2
-                else:
-                    clon = ul_lon + (c + 0.5) * dx
-                    clat = ul_lat - (r + 0.5) * dy
+        r_idxs, c_idxs = np.where(valid_mask)
 
-                # Colormap: bright teal for single-value, dark-to-bright ramp for ranges
-                if vmin == vmax:
-                    red, green, blue, alpha = 20, 220, 180, 180
-                else:
-                    t = (v - vmin) / vrange
-                    red = int(68 + 187 * t * t)
-                    green = int(1 + 209 * t)
-                    blue = int(84 + 86 * t - 170 * t * t)
-                    alpha = int(150 + 80 * t)
+        if use_nc:
+            if lat.ndim == 2:
+                clats = lat[r_idxs, c_idxs].astype(float)
+                clons = lon[r_idxs, c_idxs].astype(float)
+            else:
+                clats = lat[r_idxs].astype(float)
+                clons = lon[c_idxs].astype(float)
+            hlat_arr, hlon_arr = _compute_half_extents(
+                lat if lat.ndim == 2 else np.broadcast_to(lat[:, np.newaxis], (g_ny, g_nx)),
+                lon if lon.ndim == 2 else np.broadcast_to(lon[np.newaxis, :], (g_ny, g_nx)),
+            )
+            hlats = hlat_arr[r_idxs, c_idxs]
+            hlons = hlon_arr[r_idxs, c_idxs]
+        else:
+            clons = ul_lon + (c_idxs + 0.5) * dx
+            clats = ul_lat - (r_idxs + 0.5) * dy
+            hlats = np.full(len(r_idxs), hlat)
+            hlons = np.full(len(r_idxs), hlon)
 
-                cells.append(
-                    {
-                        "polygon": [
-                            [clon - hlon, clat + hlat],
-                            [clon + hlon, clat + hlat],
-                            [clon + hlon, clat - hlat],
-                            [clon - hlon, clat - hlat],
-                        ],
-                        "value": v,
-                        "fill": [red, green, blue, alpha],
-                    }
-                )
+        # Vectorized colormap
+        if vmin == vmax:
+            rgba = np.full((len(valid_vals), 4), [20, 220, 180, 180], dtype=np.uint8)
+        else:
+            t = (valid_vals - vmin) / vrange
+            r_ch = np.clip(68 + 187 * t * t, 0, 255).astype(np.uint8)
+            g_ch = np.clip(1 + 209 * t, 0, 255).astype(np.uint8)
+            b_ch = np.clip(84 + 86 * t - 170 * t * t, 0, 255).astype(np.uint8)
+            a_ch = np.clip(150 + 80 * t, 0, 255).astype(np.uint8)
+            rgba = np.stack([r_ch, g_ch, b_ch, a_ch], axis=-1)
+
+        cells = [
+            {
+                "polygon": [
+                    [float(clons[i] - hlons[i]), float(clats[i] + hlats[i])],
+                    [float(clons[i] + hlons[i]), float(clats[i] + hlats[i])],
+                    [float(clons[i] + hlons[i]), float(clats[i] - hlats[i])],
+                    [float(clons[i] - hlons[i]), float(clats[i] - hlats[i])],
+                ],
+                "value": float(valid_vals[i]),
+                "fill": rgba[i].tolist(),
+            }
+            for i in range(len(valid_vals))
+        ]
         return cells if cells else None
     except (OSError, pd.errors.ParserError, ValueError) as exc:
         _log.warning("Failed to load CSV overlay %s: %s", file_path, exc)

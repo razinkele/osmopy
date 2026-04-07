@@ -1025,3 +1025,51 @@ class TestEecFullCsvIntegration:
         assert df.shape == (ny, nx), (
             f"6cod_nurseries.csv shape {df.shape} doesn't match grid ({ny}, {nx})"
         )
+
+
+def test_csv_overlay_output_stability(tmp_path):
+    """Cell-by-cell output must be identical before and after vectorization."""
+    import pandas as pd
+
+    from ui.pages.grid_helpers import load_csv_overlay
+
+    p = tmp_path / "stability.csv"
+    np.random.seed(42)
+    data = np.random.rand(5, 6) * 10
+    data[0, :3] = -99  # some sentinels
+    data[2, 2] = 0.0  # zero (filtered)
+    data[3, 0] = -9.0  # boundary value (should be KEPT)
+    pd.DataFrame(data).to_csv(p, sep=";", header=False, index=False)
+
+    cells = load_csv_overlay(p, ul_lat=50.0, ul_lon=-5.0, lr_lat=45.0, lr_lon=5.0, nx=6, ny=5)
+    assert cells is not None
+
+    vals = [c["value"] for c in cells]
+    assert -9.0 in vals, "-9.0 must be kept (not a sentinel)"
+
+    snapshot = sorted((c["value"], tuple(c["polygon"][0])) for c in cells)
+    cells2 = load_csv_overlay(p, ul_lat=50.0, ul_lon=-5.0, lr_lat=45.0, lr_lon=5.0, nx=6, ny=5)
+    snapshot2 = sorted((c["value"], tuple(c["polygon"][0])) for c in cells2)
+    assert snapshot == snapshot2, "Output must be deterministic"
+
+
+def test_csv_overlay_rgba_range(tmp_path):
+    """All RGBA channels must be in [0, 255] after vectorization (np.clip fix)."""
+    import pandas as pd
+
+    from ui.pages.grid_helpers import load_csv_overlay
+
+    p = tmp_path / "range_check.csv"
+    np.random.seed(99)
+    data = np.random.rand(10, 12) * 20 - 5
+    data[0, :3] = -99
+    pd.DataFrame(data).to_csv(p, sep=";", header=False, index=False)
+
+    cells = load_csv_overlay(p, ul_lat=50.0, ul_lon=-5.0, lr_lat=45.0, lr_lon=5.0, nx=12, ny=10)
+    assert cells is not None
+    for c in cells:
+        r, g, b, a = c["fill"]
+        assert 0 <= r <= 255, f"red {r} out of range"
+        assert 0 <= g <= 255, f"green {g} out of range"
+        assert 0 <= b <= 255, f"blue {b} out of range"
+        assert 0 <= a <= 255, f"alpha {a} out of range"
