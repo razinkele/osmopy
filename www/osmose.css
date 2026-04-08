@@ -322,23 +322,23 @@ body {
 
 /* Sidebar column background */
 .nav-pills {
-  padding: 12px 8px !important;
+  padding: 6px 6px !important;
 }
 
 /* Section headers */
 .nav-pills .nav-item .osmose-section-label {
-  font-size: 0.6rem;
+  font-size: 0.55rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--osm-text-muted);
-  padding: 12px 14px 4px;
+  padding: 8px 12px 2px;
   display: block;
   position: relative;
 }
 
 .nav-pills .nav-item:first-child .osmose-section-label {
-  padding-top: 4px;
+  padding-top: 2px;
 }
 
 .nav-pills .nav-item .osmose-section-label::before {
@@ -357,13 +357,13 @@ body {
   color: var(--osm-text-secondary) !important;
   background: transparent !important;
   border: none !important;
-  border-radius: 8px !important;
-  padding: 4px 12px !important;
-  font-size: 0.82rem;
+  border-radius: 6px !important;
+  padding: 3px 10px !important;
+  font-size: 0.78rem;
   font-weight: 500;
   transition: all var(--osm-transition);
   position: relative;
-  margin: 1px 0;
+  margin: 0;
 }
 
 .nav-pills .nav-link:hover {
@@ -400,8 +400,8 @@ body {
 .card-header {
   background: rgba(0, 0, 0, 0.15) !important;
   border-bottom: 1px solid var(--osm-border) !important;
-  padding: 12px 18px !important;
-  font-size: 0.85rem;
+  padding: 8px 14px !important;
+  font-size: 0.82rem;
   font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--osm-text-primary);
@@ -788,7 +788,7 @@ hr {
 
 /* ── Content area padding ─────────────────────────────────────────── */
 .tab-content > .tab-pane {
-  padding: 8px 4px;
+  padding: 4px 2px;
 }
 
 /* ── Section separator inside cards ───────────────────────────────── */
