@@ -4,7 +4,7 @@ from pathlib import Path
 
 from osmose import __version__
 
-from shiny import App, render, ui
+from shiny import App, reactive, render, ui
 
 from ui.state import AppState
 from ui.components.help_modal import about_modal, help_modal
@@ -138,6 +138,44 @@ app_ui = ui.page_fillable(
                 });
             });
         })();
+
+        // Engine mode toggle — syncs with Shiny input and localStorage
+        window.setEngineMode = function(mode) {
+            localStorage.setItem('osmose-engine', mode);
+            var jBtn = document.getElementById('engineBtnJava');
+            var pBtn = document.getElementById('engineBtnPython');
+            if (mode === 'java') {
+                jBtn.classList.add('active');
+                pBtn.classList.remove('active');
+            } else {
+                pBtn.classList.add('active');
+                jBtn.classList.remove('active');
+            }
+            if (typeof Shiny !== 'undefined' && Shiny.setInputValue) {
+                Shiny.setInputValue('engine_mode', mode);
+            }
+            // Toggle disabled state on Python-only nav items
+            document.querySelectorAll('.osm-engine-gated').forEach(function(el) {
+                if (mode === 'python') {
+                    el.classList.remove('osm-disabled');
+                    el.removeAttribute('title');
+                } else {
+                    el.classList.add('osm-disabled');
+                    el.setAttribute('title', 'Requires Python engine');
+                }
+            });
+        };
+        // Restore engine mode from localStorage on page load
+        (function() {
+            var saved = localStorage.getItem('osmose-engine') || 'java';
+            // Defer until DOM is ready so buttons exist
+            var poll = setInterval(function() {
+                if (document.getElementById('engineBtnJava')) {
+                    clearInterval(poll);
+                    setEngineMode(saved);
+                }
+            }, 100);
+        })();
     """)
     ),
     # ── App header ──────────────────────────────────────────────
@@ -151,6 +189,22 @@ app_ui = ui.page_fillable(
             ui.tags.span(class_="dot"),
             f"v{__version__}",
             class_="osmose-badge",
+        ),
+        # Engine mode toggle
+        ui.div(
+            ui.tags.button(
+                "Java",
+                class_="osm-engine-btn active",
+                id="engineBtnJava",
+                onclick="setEngineMode('java')",
+            ),
+            ui.tags.button(
+                "Python",
+                class_="osm-engine-btn",
+                id="engineBtnPython",
+                onclick="setEngineMode('python')",
+            ),
+            class_="osm-engine-toggle",
         ),
         ui.div(
             ui.output_ui("config_header"),
@@ -314,6 +368,13 @@ app_ui = ui.page_fillable(
 def server(input, output, session):
     state = AppState()
     state.reset_to_defaults()
+
+    @reactive.effect
+    @reactive.event(input.engine_mode)
+    def _sync_engine_mode():
+        mode = input.engine_mode()
+        if mode in ("java", "python"):
+            state.engine_mode.set(mode)
 
     @render.ui
     def config_header():
