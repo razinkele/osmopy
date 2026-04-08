@@ -49,6 +49,7 @@ class AppState:
         self.species_names: reactive.Value[list[str]] = reactive.Value([])
         self.results_loaded: reactive.Value[bool] = reactive.Value(False)
         self.key_case_map: reactive.Value[dict[str, str]] = reactive.Value({})
+        self.engine_mode: reactive.Value[str] = reactive.Value("java")
 
     def update_config(self, key: str, value: str) -> None:
         """Update a single key in the config dict.
