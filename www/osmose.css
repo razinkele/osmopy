@@ -80,15 +80,15 @@ body {
 .osmose-header {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 8px 16px;
+  gap: 8px;
+  padding: 4px 12px;
   background: linear-gradient(
     135deg,
     rgba(22, 38, 52, 0.95) 0%,
     rgba(15, 25, 35, 0.98) 100%
   );
   border-bottom: 1px solid var(--osm-border);
-  box-shadow: 0 1px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.25);
   position: relative;
   z-index: 10;
 }
@@ -111,7 +111,7 @@ body {
 }
 
 .osmose-logo {
-  font-size: 1.1rem;
+  font-size: 0.95rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   color: var(--osm-text-primary);
@@ -121,7 +121,7 @@ body {
 }
 
 .osmose-logo .subtitle {
-  font-size: 0.7rem;
+  font-size: 0.6rem;
   font-weight: 400;
   letter-spacing: 0.02em;
   color: var(--osm-text-muted);
@@ -132,12 +132,12 @@ body {
 .osmose-badge {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 10px;
+  gap: 4px;
+  padding: 2px 8px;
   background: var(--osm-accent-dim);
   border: 1px solid var(--osm-border-accent);
   border-radius: 20px;
-  font-size: 0.65rem;
+  font-size: 0.6rem;
   font-weight: 600;
   color: var(--osm-accent);
   text-transform: uppercase;
@@ -167,10 +167,10 @@ body {
 
 .osmose-header-btn {
   color: var(--osm-text-muted) !important;
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   font-weight: 500;
   letter-spacing: 0.03em;
-  padding: 5px 12px;
+  padding: 3px 8px;
   border-radius: 6px;
   text-decoration: none !important;
   transition: all var(--osm-transition);
