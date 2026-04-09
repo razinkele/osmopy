@@ -25,6 +25,9 @@ from ui.pages.calibration import calibration_ui, calibration_server
 from ui.pages.scenarios import scenarios_ui, scenarios_server
 from ui.pages.advanced import advanced_ui, advanced_server
 from ui.pages.map_viewer import map_viewer_ui, map_viewer_server
+from ui.pages.genetics import genetics_ui, genetics_server
+from ui.pages.economic import economic_ui, economic_server
+from ui.pages.diagnostics import diagnostics_ui, diagnostics_server
 
 from osmose.cleanup import cleanup_old_temp_dirs, register_cleanup
 
@@ -116,8 +119,8 @@ app_ui = ui.page_fillable(
                     setTimeout(function() { togglePanel(pageId); }, 100);
                 }
             }
-            var pageIds = ['setup','grid','forcing','fishing','movement',
-                           'run','results','spatial_results','calibration','scenarios','advanced','map_viewer'];
+            var pageIds = ['setup','grid','forcing','fishing','movement','genetics','economic',
+                           'run','results','spatial_results','diagnostics','calibration','scenarios','advanced','map_viewer'];
 
             document.addEventListener('DOMContentLoaded', function() {
                 // Restore the initially active tab's panel
@@ -253,11 +256,26 @@ app_ui = ui.page_fillable(
         ui.nav_panel("Forcing", forcing_ui(), value="forcing"),
         ui.nav_panel("Fishing", fishing_ui(), value="fishing"),
         ui.nav_panel("Movement", movement_ui(), value="movement"),
+        ui.nav_panel(
+            ui.span("Genetics", class_="osm-engine-gated osm-disabled"),
+            genetics_ui(),
+            value="genetics",
+        ),
+        ui.nav_panel(
+            ui.span("Economic", class_="osm-engine-gated osm-disabled"),
+            economic_ui(),
+            value="economic",
+        ),
         # Execute
         _nav_section("Execute"),
         ui.nav_panel("Run", run_ui(), value="run"),
         ui.nav_panel("Results", results_ui(), value="results"),
         ui.nav_panel("Spatial Results", spatial_results_ui(), value="spatial_results"),
+        ui.nav_panel(
+            ui.span("Diagnostics", class_="osm-engine-gated osm-disabled"),
+            diagnostics_ui(),
+            value="diagnostics",
+        ),
         # Optimize
         _nav_section("Optimize"),
         ui.nav_panel("Calibration", calibration_ui(), value="calibration"),
@@ -431,6 +449,9 @@ def server(input, output, session):
     scenarios_server(input, output, session, state)
     advanced_server(input, output, session, state)
     map_viewer_server(input, output, session, state)
+    genetics_server(input, output, session, state)
+    economic_server(input, output, session, state)
+    diagnostics_server(input, output, session, state)
 
 
 app = App(app_ui, server, static_assets=_WWW)

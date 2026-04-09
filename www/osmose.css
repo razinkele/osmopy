@@ -1907,3 +1907,10 @@ body > .row > [class*="col-"]:first-child {
   pointer-events: none;
   cursor: not-allowed;
 }
+
+/* Engine-gated nav items — disabled when Java engine selected */
+.nav-pills .nav-link:has(.osm-engine-gated.osm-disabled) {
+  opacity: 0.4;
+  pointer-events: none;
+  cursor: not-allowed;
+}
