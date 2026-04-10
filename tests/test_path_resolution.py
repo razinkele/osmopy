@@ -1,8 +1,6 @@
 """Tests for the consolidated path resolution module."""
 
-from pathlib import Path
 
-import pytest
 
 from osmose.engine.path_resolution import resolve_data_path
 

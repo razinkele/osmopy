@@ -28,7 +28,7 @@ def _make_bioen_config_dict(n_species: int = 2) -> dict[str, str]:
     cfg: dict[str, str] = {
         "simulation.time.ndtperyear": "24",
         "simulation.time.nyear": "2",
-        f"simulation.nspecies": str(n_species),
+        "simulation.nspecies": str(n_species),
         "mortality.subdt": "10",
         "simulation.bioen.enabled": "true",
         "simulation.bioen.phit.enabled": "true",

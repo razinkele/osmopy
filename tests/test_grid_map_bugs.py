@@ -1,7 +1,6 @@
 """Regression tests for map display bugs (C1, C2, C3, H1)."""
 
 import numpy as np
-import pytest
 
 
 # ---------------------------------------------------------------------------
@@ -88,7 +87,9 @@ class TestSingleRowNetcdf:
     def test_single_row_overlay_nonzero(self):
         """ny=1 NetCDF overlay: cell polygons must have non-zero height."""
         from ui.pages.grid_helpers import load_netcdf_overlay
-        import tempfile, pathlib, xarray as xr
+        import tempfile
+        import pathlib
+        import xarray as xr
 
         with tempfile.TemporaryDirectory() as tmp:
             p = pathlib.Path(tmp) / "overlay.nc"
@@ -114,7 +115,8 @@ class TestSingleRowNetcdf:
 class TestMovementStepIsolation:
     def test_movement_step_read_uses_isolate(self):
         """movement_controls must read input.movement_step inside reactive.isolate()."""
-        import ast, pathlib
+        import ast
+        import pathlib
         src = (pathlib.Path(__file__).parent.parent / "ui" / "pages" / "grid.py").read_text()
         tree = ast.parse(src)
 
@@ -151,7 +153,9 @@ class TestNetcdfOverlayCustomVarNames:
         """load_netcdf_overlay should find 'latitude'/'longitude' automatically
         and also respect explicit var_lat/var_lon params."""
         from ui.pages.grid_helpers import load_netcdf_overlay
-        import tempfile, pathlib, xarray as xr
+        import tempfile
+        import pathlib
+        import xarray as xr
 
         with tempfile.TemporaryDirectory() as tmp:
             p = pathlib.Path(tmp) / "overlay.nc"
@@ -186,7 +190,7 @@ class TestNetcdfOverlayCustomVarNames:
 class TestThemeInAnimationHash:
     def test_prev_active_maps_stores_theme(self):
         """_prev_active_maps reactive.Value must store (frozenset, bool) not just frozenset."""
-        import ast, pathlib
+        import pathlib
         src = (pathlib.Path(__file__).parent.parent / "ui" / "pages" / "grid.py").read_text()
         # The initialisation must be tuple, not bare frozenset
         # Look for _prev_active_maps.set( and the initial value
