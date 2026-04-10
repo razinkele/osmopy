@@ -7,6 +7,7 @@ OsmoseResults reader works with either engine.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
@@ -14,6 +15,9 @@ from numpy.typing import NDArray
 
 from osmose.engine.config import EngineConfig
 from osmose.engine.simulate import StepOutput
+
+if TYPE_CHECKING:
+    from osmose.engine.economics.fleet import FleetState
 
 
 

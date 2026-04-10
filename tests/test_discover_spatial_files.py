@@ -73,7 +73,7 @@ class TestDiscoverSpatialFiles:
 
         result = discover_spatial_files(self.cfg, self.cfg_dir)
         labels = [e["label"] for e in result["other"]]
-        assert any("LTL" in l for l in labels)
+        assert any("LTL" in label for label in labels)
 
     def test_all_paths_exist(self):
         from ui.pages.grid_helpers import discover_spatial_files

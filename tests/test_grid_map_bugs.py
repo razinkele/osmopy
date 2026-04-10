@@ -79,7 +79,7 @@ class TestSingleRowNetcdf:
         lon = np.array([[1.0, 2.0, 3.0]])
         mask = np.ones((1, 3))
         layers, _ = build_netcdf_grid_layers(lat, lon, mask)
-        boundary_layers = [l for l in layers if l.get("id") == "grid-extent"]
+        boundary_layers = [layer for layer in layers if layer.get("id") == "grid-extent"]
         assert boundary_layers
         poly = boundary_layers[0]["data"][0]["polygon"]
         assert _polygon_height(poly) > 0

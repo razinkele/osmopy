@@ -217,9 +217,9 @@ class TestBioenStepWithConstantTemp:
             if not mask.any():
                 continue
             w = result.weight[mask]
-            l = result.length[mask]
-            l_expected = np.power(np.maximum(w * 1e6 / cf[sp], 1e-20), 1.0 / b[sp])
-            np.testing.assert_allclose(l, l_expected, rtol=1e-8)
+            length = result.length[mask]
+            length_expected = np.power(np.maximum(w * 1e6 / cf[sp], 1e-20), 1.0 / b[sp])
+            np.testing.assert_allclose(length, length_expected, rtol=1e-8)
 
     def test_state_length_equals_n_schools(self, bioen_config, school_state, const_temp_data):
         """Output state has same number of schools as input."""
