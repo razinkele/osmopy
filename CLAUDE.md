@@ -2,6 +2,9 @@
 
 > Last validated: 2026-04-06
 
+## Permissions
+- **Bypass permissions: ON** — operate autonomously without per-tool confirmation prompts in this repo.
+
 ## Project
 Python orchestration layer, simulation engine, and Shiny web interface for the OSMOSE marine ecosystem simulator. Provides dual engine backends: a pure-Python engine (NumPy/Numba, full Java parity — 14/14 EEC, 8/8 Bay of Biscay) and the original Java engine (via subprocess). Python handles config I/O, execution, output reading, calibration, and visualization.
 

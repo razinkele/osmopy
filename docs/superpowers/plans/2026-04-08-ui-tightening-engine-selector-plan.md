@@ -1,6 +1,6 @@
 # UI Tightening, Layer Control & Engine Selector Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Tighten the UI spacing, verify the layer control widget with shiny-deckgl 1.9.2, add a global Java/Python engine selector, and create stub UI pages for Python-only features.
 
@@ -31,7 +31,7 @@
 **Files:**
 - Modify: `www/osmose.css:79-166`
 
-- [ ] **Step 1: Tighten header bar padding and gap**
+- [x] **Step 1: Tighten header bar padding and gap**
 
 In `www/osmose.css`, replace the `.osmose-header` block:
 
@@ -56,7 +56,7 @@ In `www/osmose.css`, replace the `.osmose-header` block:
 
 Changes: `gap: 16px` → `8px`, `padding: 8px 16px` → `4px 12px`, `box-shadow` slightly reduced.
 
-- [ ] **Step 2: Reduce logo and badge sizes**
+- [x] **Step 2: Reduce logo and badge sizes**
 
 In `www/osmose.css`, replace `.osmose-logo`:
 
@@ -98,7 +98,7 @@ In `www/osmose.css`, replace `.osmose-logo`:
 
 Changes: logo `1.1rem` → `0.95rem`, subtitle `0.7rem` → `0.6rem`, badge gap `5px` → `4px`, padding `3px 10px` → `2px 8px`, font `0.65rem` → `0.6rem`.
 
-- [ ] **Step 3: Reduce header button padding**
+- [x] **Step 3: Reduce header button padding**
 
 In `www/osmose.css`, replace `.osmose-header-btn`:
 
@@ -118,13 +118,13 @@ In `www/osmose.css`, replace `.osmose-header-btn`:
 
 Changes: font `0.78rem` → `0.72rem`, padding `5px 12px` → `3px 8px`.
 
-- [ ] **Step 4: Verify header renders correctly**
+- [x] **Step 4: Verify header renders correctly**
 
 Run: `/opt/micromamba/envs/shiny/bin/shiny run app.py --host 0.0.0.0 --port 8000`
 
 Check: header is visually tighter, no clipping, all elements visible.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git -C /home/razinka/osmose/osmose-python add www/osmose.css
@@ -138,7 +138,7 @@ git -C /home/razinka/osmose/osmose-python commit -m "style: tighten header bar s
 **Files:**
 - Modify: `www/osmose.css:324-408`
 
-- [ ] **Step 1: Tighten nav pills container and section headers**
+- [x] **Step 1: Tighten nav pills container and section headers**
 
 In `www/osmose.css`, replace the nav-pills block at line 324:
 
@@ -166,7 +166,7 @@ In `www/osmose.css`, replace the nav-pills block at line 324:
 
 Changes: pills padding `12px 8px` → `6px 6px`, section label font `0.6rem` → `0.55rem`, padding `12px 14px 4px` → `8px 12px 2px`, first-child `4px` → `2px`.
 
-- [ ] **Step 2: Tighten nav link padding**
+- [x] **Step 2: Tighten nav link padding**
 
 In `www/osmose.css`, replace `.nav-pills .nav-link` at line 356:
 
@@ -187,7 +187,7 @@ In `www/osmose.css`, replace `.nav-pills .nav-link` at line 356:
 
 Changes: padding `4px 12px` → `3px 10px`, font `0.82rem` → `0.78rem`, border-radius `8px` → `6px`, margin `1px 0` → `0`.
 
-- [ ] **Step 3: Tighten card header and content padding**
+- [x] **Step 3: Tighten card header and content padding**
 
 In `www/osmose.css`, replace `.card-header` at line 400:
 
@@ -205,7 +205,7 @@ In `www/osmose.css`, replace `.card-header` at line 400:
 
 Changes: padding `12px 18px` → `8px 14px`, font `0.85rem` → `0.82rem`.
 
-- [ ] **Step 4: Tighten tab content padding**
+- [x] **Step 4: Tighten tab content padding**
 
 In `www/osmose.css`, replace `.tab-content > .tab-pane` at line 790:
 
@@ -217,11 +217,11 @@ In `www/osmose.css`, replace `.tab-content > .tab-pane` at line 790:
 
 Changes: padding `8px 4px` → `4px 2px`.
 
-- [ ] **Step 5: Verify nav and content render correctly**
+- [x] **Step 5: Verify nav and content render correctly**
 
 Run the app and check: nav pills are tighter, card headers compact, content area has less wasted space. Target: ~30-40% reduction in vertical space at the top.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git -C /home/razinka/osmose/osmose-python add www/osmose.css
@@ -236,7 +236,7 @@ git -C /home/razinka/osmose/osmose-python commit -m "style: tighten nav pills, c
 - Modify: `ui/state.py:34-51`
 - Test: `tests/test_state_engine.py`
 
-- [ ] **Step 1: Write failing test for engine_mode**
+- [x] **Step 1: Write failing test for engine_mode**
 
 Create `tests/test_state_engine.py`:
 
@@ -257,13 +257,13 @@ def test_engine_mode_can_be_set_to_python():
     assert state.engine_mode.get() == "python"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `.venv/bin/python -m pytest tests/test_state_engine.py -v`
 
 Expected: FAIL with `AttributeError: 'AppState' object has no attribute 'engine_mode'`
 
-- [ ] **Step 3: Add engine_mode to AppState**
+- [x] **Step 3: Add engine_mode to AppState**
 
 In `ui/state.py`, after line 51 (`self.key_case_map`), add:
 
@@ -271,13 +271,13 @@ In `ui/state.py`, after line 51 (`self.key_case_map`), add:
         self.engine_mode: reactive.Value[str] = reactive.Value("java")
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `.venv/bin/python -m pytest tests/test_state_engine.py -v`
 
 Expected: 2 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git -C /home/razinka/osmose/osmose-python add ui/state.py tests/test_state_engine.py
@@ -292,7 +292,7 @@ git -C /home/razinka/osmose/osmose-python commit -m "feat: add engine_mode react
 - Modify: `app.py:143-181` (header div)
 - Modify: `www/osmose.css` (toggle styling)
 
-- [ ] **Step 1: Add engine toggle CSS**
+- [x] **Step 1: Add engine toggle CSS**
 
 Append to `www/osmose.css`, before the closing comments or at the end of the header section (after `.osmose-header-btn:hover`):
 
@@ -332,7 +332,7 @@ Append to `www/osmose.css`, before the closing comments or at the end of the hea
 }
 ```
 
-- [ ] **Step 2: Add engine toggle widget to header in app.py**
+- [x] **Step 2: Add engine toggle widget to header in app.py**
 
 In `app.py`, replace the header `ui.div(...)` block (lines 144-181). Insert the engine toggle between the badge and the header-actions div:
 
@@ -394,7 +394,7 @@ In `app.py`, replace the header `ui.div(...)` block (lines 144-181). Insert the 
     ),
 ```
 
-- [ ] **Step 3: Add engine mode JS + Shiny bridge**
+- [x] **Step 3: Add engine mode JS + Shiny bridge**
 
 In `app.py`, inside the `<head>` JS block (the `ui.tags.script(...)` that contains `toggleTheme`), add the `setEngineMode` function. Append this before the closing `})();`:
 
@@ -438,7 +438,7 @@ In `app.py`, inside the `<head>` JS block (the `ui.tags.script(...)` that contai
         })();
 ```
 
-- [ ] **Step 4: Wire engine_mode Shiny input to AppState in server function**
+- [x] **Step 4: Wire engine_mode Shiny input to AppState in server function**
 
 In `app.py`, inside the `server()` function (after `state.reset_to_defaults()`), add:
 
@@ -451,11 +451,11 @@ In `app.py`, inside the `server()` function (after `state.reset_to_defaults()`),
             state.engine_mode.set(mode)
 ```
 
-- [ ] **Step 5: Verify engine toggle renders and switches**
+- [x] **Step 5: Verify engine toggle renders and switches**
 
 Run the app. Check: toggle appears in header between badge and actions, clicking switches active state, `input.engine_mode` updates in Shiny.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git -C /home/razinka/osmose/osmose-python add app.py www/osmose.css
@@ -470,7 +470,7 @@ git -C /home/razinka/osmose/osmose-python commit -m "feat: add Java/Python engin
 - Modify: `ui/pages/grid_helpers.py:1121-1140` (if needed)
 - Modify: `ui/pages/grid.py` (if needed)
 
-- [ ] **Step 1: Check make_legend() dispatches correctly**
+- [x] **Step 1: Check make_legend() dispatches correctly**
 
 Read `ui/pages/grid_helpers.py:1121-1140` and verify the `make_legend()` wrapper calls `layer_legend_widget()` from shiny-deckgl 1.9.2. The function should detect `layer_legend_widget` via `hasattr(shiny_deckgl, "layer_legend_widget")`.
 
@@ -482,7 +482,7 @@ Run a quick check:
 
 Expected: `True`
 
-- [ ] **Step 2: Check layer_legend_widget API signature compatibility**
+- [x] **Step 2: Check layer_legend_widget API signature compatibility**
 
 Run:
 
@@ -492,7 +492,7 @@ Run:
 
 Verify the signature accepts: `entries`, `placement`, `show_checkbox`, `collapsed`, `title`. These are the kwargs passed by `make_legend()`.
 
-- [ ] **Step 3: Run app and test layer toggle**
+- [x] **Step 3: Run app and test layer toggle**
 
 Run the app, load a config with a grid, navigate to Grid page. Verify:
 1. Legend widget appears on the map (bottom-left)
@@ -501,7 +501,7 @@ Run the app, load a config with a grid, navigate to Grid page. Verify:
 4. Rechecking restores it
 5. Overlay layers appear when an overlay is selected
 
-- [ ] **Step 4: Confirm no code changes needed**
+- [x] **Step 4: Confirm no code changes needed**
 
 The `layer_legend_widget()` API in 1.9.2 accepts exactly the parameters `make_legend()` passes: `entries`, `placement`, `show_checkbox`, `collapsed`, `title`. The `deck_legend_control` fallback branch in `make_legend()` can be kept for backward compatibility but is not exercised with 1.9.2.
 
@@ -519,7 +519,7 @@ git -C /home/razinka/osmose/osmose-python commit -m "fix: update layer control f
 **Files:**
 - Create: `ui/pages/genetics.py`
 
-- [ ] **Step 1: Create genetics page module**
+- [x] **Step 1: Create genetics page module**
 
 Create `ui/pages/genetics.py`:
 
@@ -572,7 +572,7 @@ def genetics_server(input, output, session, state):
     pass
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git -C /home/razinka/osmose/osmose-python add ui/pages/genetics.py
@@ -586,7 +586,7 @@ git -C /home/razinka/osmose/osmose-python commit -m "feat: add Ev-OSMOSE genetic
 **Files:**
 - Create: `ui/pages/economic.py`
 
-- [ ] **Step 1: Create economic page module**
+- [x] **Step 1: Create economic page module**
 
 Create `ui/pages/economic.py`:
 
@@ -639,7 +639,7 @@ def economic_server(input, output, session, state):
     pass
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git -C /home/razinka/osmose/osmose-python add ui/pages/economic.py
@@ -653,7 +653,7 @@ git -C /home/razinka/osmose/osmose-python commit -m "feat: add economic module s
 **Files:**
 - Create: `ui/pages/diagnostics.py`
 
-- [ ] **Step 1: Create diagnostics page module**
+- [x] **Step 1: Create diagnostics page module**
 
 Create `ui/pages/diagnostics.py`:
 
@@ -749,7 +749,7 @@ def diagnostics_server(input, output, session, state):
                      style=STYLE_EMPTY)
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git -C /home/razinka/osmose/osmose-python add ui/pages/diagnostics.py
@@ -766,7 +766,7 @@ git -C /home/razinka/osmose/osmose-python commit -m "feat: add Python engine dia
 
 **Depends on:** Tasks 6, 7, 8 (page modules must exist)
 
-- [ ] **Step 1: Add imports for new pages**
+- [x] **Step 1: Add imports for new pages**
 
 In `app.py`, after the `map_viewer` import (line 27), add:
 
@@ -776,7 +776,7 @@ from ui.pages.economic import economic_ui, economic_server
 from ui.pages.diagnostics import diagnostics_ui, diagnostics_server
 ```
 
-- [ ] **Step 2: Add engine-gated nav items**
+- [x] **Step 2: Add engine-gated nav items**
 
 In `app.py`, update the `navset_pill_list` to include the three new pages. Add them with the `osm-engine-gated osm-disabled` classes (disabled by default since engine_mode defaults to Java).
 
@@ -820,7 +820,7 @@ Replace the Configure, Execute, and Manage sections:
         ui.nav_panel("Map Viewer", map_viewer_ui(), value="map_viewer"),
 ```
 
-- [ ] **Step 3: Wire server functions**
+- [x] **Step 3: Wire server functions**
 
 In the `server()` function, after `map_viewer_server(...)`:
 
@@ -830,7 +830,7 @@ In the `server()` function, after `map_viewer_server(...)`:
     diagnostics_server(input, output, session, state)
 ```
 
-- [ ] **Step 4: Add CSS for engine-gated nav links**
+- [x] **Step 4: Add CSS for engine-gated nav links**
 
 The existing `.osm-disabled` class in `www/osmose.css:1871` handles the styling. Add this rule to ensure it propagates from the span to the nav-link:
 
@@ -843,7 +843,7 @@ The existing `.osm-disabled` class in `www/osmose.css:1871` handles the styling.
 }
 ```
 
-- [ ] **Step 5: Verify all three pages and engine gating**
+- [x] **Step 5: Verify all three pages and engine gating**
 
 Run the app. Check:
 1. "Genetics", "Economic", "Diagnostics" appear in nav but greyed out (Java default)
@@ -851,7 +851,7 @@ Run the app. Check:
 3. Each page renders its stub content
 4. Toggle back to Java — disabled again
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git -C /home/razinka/osmose/osmose-python add app.py www/osmose.css
@@ -866,7 +866,7 @@ git -C /home/razinka/osmose/osmose-python commit -m "feat: wire new pages with e
 - Modify: `ui/pages/run.py:147-185` (run_ui function)
 - Modify: `ui/pages/run.py:188+` (run_server function)
 
-- [ ] **Step 1: Refactor run_ui into tabbed layout**
+- [x] **Step 1: Refactor run_ui into tabbed layout**
 
 In `ui/pages/run.py`, replace the `run_ui()` function:
 
@@ -943,7 +943,7 @@ def run_ui():
     )
 ```
 
-- [ ] **Step 2: Add engine tab sync to run_server**
+- [x] **Step 2: Add engine tab sync to run_server**
 
 In `ui/pages/run.py`, inside `run_server()`, add a reactive effect to sync the active tab with the engine mode. Add after the `sync_jar_path` effect:
 
@@ -955,7 +955,7 @@ In `ui/pages/run.py`, inside `run_server()`, add a reactive effect to sync the a
         ui.update_navs("run_engine_tabs", selected=tab, session=session)
 ```
 
-- [ ] **Step 3: Verify tabs render and sync with engine toggle**
+- [x] **Step 3: Verify tabs render and sync with engine toggle**
 
 Run the app. Check:
 1. Run page shows "Java" and "Python" tabs
@@ -964,7 +964,7 @@ Run the app. Check:
 4. Switching engine toggle in header auto-selects matching tab
 5. Start Run button works from Java tab (existing functionality preserved)
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git -C /home/razinka/osmose/osmose-python add ui/pages/run.py
@@ -977,19 +977,19 @@ git -C /home/razinka/osmose/osmose-python commit -m "feat: add Java/Python tabbe
 
 **Files:** None (verification only)
 
-- [ ] **Step 1: Run full test suite**
+- [x] **Step 1: Run full test suite**
 
 Run: `.venv/bin/python -m pytest -x -q`
 
 Expected: All existing tests pass, plus new `test_state_engine.py` tests.
 
-- [ ] **Step 2: Run lint**
+- [x] **Step 2: Run lint**
 
 Run: `.venv/bin/ruff check osmose/ ui/ tests/`
 
 Expected: Clean (no lint errors)
 
-- [ ] **Step 3: End-to-end manual verification**
+- [x] **Step 3: End-to-end manual verification**
 
 Run the app and verify:
 1. Header is visually tighter (~30-40% less vertical space at top)
@@ -1002,6 +1002,6 @@ Run the app and verify:
 8. Tab auto-switches when engine toggle changes
 9. Existing functionality (load config, run Java simulation) still works
 
-- [ ] **Step 4: Commit any remaining fixes**
+- [x] **Step 4: Commit any remaining fixes**
 
 If any issues found in steps 1-3, fix and commit individually.
