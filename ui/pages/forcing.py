@@ -135,4 +135,4 @@ def forcing_server(input, output, session, state):
             cfg.update(actual_changes)
             with reactive.isolate():
                 state.config.set(cfg)
-            state.dirty.set(True)
+                state.dirty.set(True)
