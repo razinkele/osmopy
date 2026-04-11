@@ -265,15 +265,14 @@ class MovementMapSet:
         self.n_maps = n_canonical
 
         # --- Validate: warn about uncovered (age, step) slots ---
-        for age_dt in range(lifespan_dt):
-            for step in range(n_total_steps):
-                if self.index_maps[age_dt, step] == -1:
-                    logger.warning(
-                        "No movement map for species=%r age_dt=%d step=%d",
-                        species_name,
-                        age_dt,
-                        step,
-                    )
+        uncovered = int((self.index_maps == -1).sum())
+        if uncovered > 0:
+            logger.warning(
+                "Species %r: %d of %d (age_dt, step) slots have no movement map assigned",
+                species_name,
+                uncovered,
+                lifespan_dt * n_total_steps,
+            )
 
     # ------------------------------------------------------------------
     # Lookup methods

@@ -367,8 +367,10 @@ class TestMissingEntriesWarned:
                 ny=ny,
                 nx=nx,
             )
-        # There should be at least one warning about missing coverage
-        assert any("No movement map" in rec.message for rec in caplog.records)
+        # There should be an aggregated warning about missing coverage
+        assert any(
+            "slots have no movement map assigned" in rec.message for rec in caplog.records
+        )
 
 
 # ---------------------------------------------------------------------------
