@@ -196,10 +196,18 @@ class TestVBGrowthCurvesAllSpecies:
             n_dt_per_year=N_DT_PER_YEAR,
         )
 
-        weights = sp["c"] * lengths ** sp["b"]
-        expected_weights = sp["c"] * lengths ** sp["b"]
-        np.testing.assert_allclose(
-            weights, expected_weights, rtol=1e-12, err_msg=f"W-L mismatch for {sp['name']}"
+        # Weight from VB lengths should match W = c * L^b
+        computed_weights = sp["c"] * lengths ** sp["b"]
+        # Verify against independently known analytical bounds:
+        # At age=0, length ≈ initial; at max age, length → L_inf
+        assert computed_weights[0] > 0, f"Weight at age 0 must be positive for {sp['name']}"
+        assert computed_weights[-1] > computed_weights[0], (
+            f"Weight must increase with age for {sp['name']}"
+        )
+        # Max weight must be bounded by c * linf^b
+        max_weight = sp["c"] * sp["linf"] ** sp["b"]
+        assert computed_weights[-1] <= max_weight * 1.01, (
+            f"Weight exceeds theoretical max for {sp['name']}"
         )
 
     @pytest.mark.parametrize("sp", SPECIES, ids=[s["name"] for s in SPECIES])
