@@ -330,3 +330,33 @@ def test_numba_stranded(numba_base):
     assert cx[0] == 1
     assert cy[0] == 1
     assert not is_out[0]
+
+
+def test_round_based_sampling_has_boundary_bias():
+    """Verify that int(round((n-1)*random())) is biased and our fix removes it.
+
+    The old pattern int(round((n-1)*rand)) gives boundary cells half the
+    probability of interior cells. rng.integers(0, n) is uniform.
+    """
+    n = 5
+    rng = np.random.default_rng(42)
+
+    # Old pattern — biased
+    old_counts = np.zeros(n, dtype=np.int64)
+    for _ in range(100_000):
+        idx = int(round((n - 1) * rng.random()))
+        old_counts[idx] += 1
+    # Boundary cells (0 and n-1) should have ~half the hits of interior cells
+    assert old_counts[0] < old_counts[2] * 0.7, "Old pattern should show boundary bias"
+
+    # New pattern — uniform
+    new_counts = np.zeros(n, dtype=np.int64)
+    rng2 = np.random.default_rng(42)
+    for _ in range(100_000):
+        idx = rng2.integers(0, n)
+        new_counts[idx] += 1
+    expected = 100_000 / n
+    for i in range(n):
+        assert abs(new_counts[i] - expected) < expected * 0.1, (
+            f"Cell {i} got {new_counts[i]} hits, expected ~{expected}"
+        )

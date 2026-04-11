@@ -82,7 +82,7 @@ def _map_move_school(
         n_cells = grid_nx * grid_ny
         max_p = map_set.max_proba[index_map]
         for _ in range(10_000):
-            flat_idx = int(round((n_cells - 1) * rng.random()))
+            flat_idx = rng.integers(0, n_cells)
             j = flat_idx // grid_nx
             i = flat_idx % grid_nx
             proba = current_map[j, i]
@@ -99,7 +99,7 @@ def _map_move_school(
                 accessible.append((xi, yi))
     if len(accessible) == 0:
         return cx, cy, False  # stranded — stay in place
-    idx = int(round((len(accessible) - 1) * rng.random()))
+    idx = rng.integers(0, len(accessible))
     return accessible[idx][0], accessible[idx][1], False
 
 
@@ -382,7 +382,7 @@ if _HAS_NUMBA:
             if not same_map[k] or cell_x[idx] < 0:
                 placed = False
                 for _ in range(10_000):
-                    flat_idx = int(round((n_cells - 1) * np.random.random()))
+                    flat_idx = np.random.randint(0, n_cells)
                     j = flat_idx // nx
                     i = flat_idx % nx
                     proba = current_map[j, i]
@@ -419,7 +419,7 @@ if _HAS_NUMBA:
                 out_is_out[idx] = False
                 continue
 
-            target = int(round((n_accessible - 1) * np.random.random()))
+            target = np.random.randint(0, n_accessible)
             count = 0
             for yi in range(y_lo, y_hi):
                 for xi in range(x_lo, x_hi):
