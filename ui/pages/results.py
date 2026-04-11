@@ -509,6 +509,8 @@ def results_server(input, output, session, state):
         from osmose.plotting import make_run_comparison
 
         out_dir = Path(input.output_dir())
+        if ".." in out_dir.parts or (out_dir.is_absolute() and not out_dir.is_relative_to(Path.cwd())):
+            return go.Figure().update_layout(title="Invalid output directory", template=tmpl)
         history_dir = out_dir.parent / ".osmose_history"
         if not history_dir.is_dir():
             return go.Figure().update_layout(title="No run history found", template=tmpl)
@@ -529,6 +531,8 @@ def results_server(input, output, session, state):
         from osmose.history import RunHistory
 
         out_dir = Path(input.output_dir())
+        if ".." in out_dir.parts or (out_dir.is_absolute() and not out_dir.is_relative_to(Path.cwd())):
+            return ui.div("Invalid output directory.")
         history_dir = out_dir.parent / ".osmose_history"
         if not history_dir.is_dir():
             return ui.div("No run history found.")
