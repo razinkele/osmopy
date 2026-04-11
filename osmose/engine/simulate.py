@@ -242,15 +242,11 @@ def _bioen_step(
                     float(config.bioen_tp[sp]),
                 )
         else:
-            # Spatially explicit: look up each school's cell
+            # Spatially explicit: single vectorized grid lookup, then per-species phi_t.
+            temp_grid = temp_data.get_grid(step)
             phi_t_arr = np.empty(len(state), dtype=np.float64)
             for sp, mask in sp_masks:
-                temps = np.array(
-                    [
-                        temp_data.get_value(step, int(state.cell_y[i]), int(state.cell_x[i]))
-                        for i in np.where(mask)[0]
-                    ]
-                )
+                temps = temp_grid[state.cell_y[mask], state.cell_x[mask]]
                 phi_t_arr[mask] = phi_t_fn(
                     temps,
                     float(config.bioen_e_mobi[sp]),
@@ -281,12 +277,8 @@ def _bioen_step(
     if temp_data is not None and temp_data.is_constant:
         temp_c_arr = np.full(len(state), temp_data.get_value(step, 0, 0), dtype=np.float64)
     elif temp_data is not None:
-        temp_c_arr = np.array(
-            [
-                temp_data.get_value(step, int(state.cell_y[i]), int(state.cell_x[i]))
-                for i in range(len(state))
-            ]
-        )
+        temp_grid = temp_data.get_grid(step)
+        temp_c_arr = temp_grid[state.cell_y, state.cell_x]
     else:
         # No temperature data: use 15°C as fallback (mid-range assumption; may bias tropical/polar species)
         temp_c_arr = np.full(len(state), 15.0, dtype=np.float64)
