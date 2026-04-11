@@ -182,6 +182,14 @@ class ScenarioManager:
             for name in zf.namelist():
                 if not name.endswith(".json"):
                     continue
+                info = zf.getinfo(name)
+                if info.file_size > 10 * 1024 * 1024:
+                    _log.warning(
+                        "Skipping oversized ZIP entry: %s (%d bytes)",
+                        name,
+                        info.file_size,
+                    )
+                    continue
                 data = json.loads(zf.read(name))
                 scenario_name = data["name"]
                 # Validate name does not escape storage directory

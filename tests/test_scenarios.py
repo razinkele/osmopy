@@ -257,3 +257,42 @@ def test_save_rejects_empty_name(tmp_path):
     mgr = ScenarioManager(tmp_path / "scenarios")  # noqa: F841
     with pytest.raises(ValueError, match="[Ee]mpty"):
         Scenario(name="", config={})
+
+
+def test_import_all_rejects_oversized_zip_entries(tmp_path, caplog):
+    """ZIP entries larger than 10 MB must be skipped with a warning, not read."""
+    import json
+    import zipfile
+    import logging
+    from osmose.scenarios import ScenarioManager
+
+    storage = tmp_path / "scenarios"
+    storage.mkdir()
+    mgr = ScenarioManager(storage)
+
+    zip_path = tmp_path / "evil.zip"
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        # A legitimate small scenario
+        small = {
+            "name": "ok",
+            "description": "",
+            "config": {},
+            "tags": [],
+            "parent_scenario": None,
+        }
+        zf.writestr("ok.json", json.dumps(small))
+        # An oversized entry: 11 MB of valid JSON (above the 10 MB cap)
+        big = {"name": "big", "filler": "x" * (11 * 1024 * 1024)}
+        zf.writestr("big.json", json.dumps(big))
+
+    with caplog.at_level(logging.WARNING):
+        count = mgr.import_all(zip_path)
+
+    assert count == 1, f"Only the small scenario should import, got {count}"
+    # ScenarioManager.save() writes to storage_dir/<name>/scenario.json
+    assert (storage / "ok" / "scenario.json").exists(), (
+        "Small scenario should have been saved to storage/ok/scenario.json"
+    )
+    assert any("oversized" in rec.message.lower() for rec in caplog.records), (
+        "An oversize warning should have been logged"
+    )
