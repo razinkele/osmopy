@@ -62,3 +62,8 @@ osmose-java/*.class
 data/scenarios/*/output/
 data/eec_full/output/
 .worktrees/
+
+# Claude Code / Superpowers workspace artifacts (skill brainstorm/review output)
+.superpowers/
+www/skill-review.html
+www/skill-triggers.html
