@@ -179,6 +179,10 @@ def register_calibration_handlers(
                 sensitivity_result.set(payload)
 
     @reactive.effect
+    def _consume_cal_poll():
+        _poll_cal_messages()
+
+    @reactive.effect
     @reactive.event(input.btn_start_cal)
     def handle_start_cal():
         selected = collect_selected_params(input, state)
