@@ -807,6 +807,10 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
             abundance=accumulated[0].abundance,
             mortality_by_cause=accumulated[0].mortality_by_cause,
             yield_by_species=accumulated[0].yield_by_species,
+            biomass_by_age=accumulated[0].biomass_by_age,
+            abundance_by_age=accumulated[0].abundance_by_age,
+            biomass_by_size=accumulated[0].biomass_by_size,
+            abundance_by_size=accumulated[0].abundance_by_size,
             bioen_e_net_by_species=bioen_e_net_avg,
             bioen_ingestion_by_species=bioen_ingestion_avg,
             bioen_maint_by_species=bioen_maint_avg,
@@ -819,12 +823,18 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
     yield_sum = np.sum(
         [o.yield_by_species for o in accumulated if o.yield_by_species is not None], axis=0
     )
+    # Distribution dicts are point-in-time snapshots (not rates): use the last
+    # step in the recording window as the representative value rather than averaging.
     return StepOutput(
         step=record_step,
         biomass=biomass,
         abundance=abundance,
         mortality_by_cause=mortality,
         yield_by_species=yield_sum,
+        biomass_by_age=accumulated[-1].biomass_by_age,
+        abundance_by_age=accumulated[-1].abundance_by_age,
+        biomass_by_size=accumulated[-1].biomass_by_size,
+        abundance_by_size=accumulated[-1].abundance_by_size,
         bioen_e_net_by_species=bioen_e_net_avg,
         bioen_ingestion_by_species=bioen_ingestion_avg,
         bioen_maint_by_species=bioen_maint_avg,

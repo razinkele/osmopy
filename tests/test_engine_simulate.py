@@ -160,3 +160,25 @@ def test_age_distribution_uses_year_bins(minimal_config):
                 f"not ~37 (timestep-based). Duplicate block bug?"
             )
             break
+
+
+def test_average_step_outputs_preserves_distributions():
+    """Distribution dicts must not be silently dropped during averaging."""
+    from osmose.engine.simulate import _average_step_outputs, StepOutput
+
+    dist = {0: np.array([1.0, 2.0, 3.0])}
+    so = StepOutput(
+        step=0,
+        biomass=np.array([100.0]),
+        abundance=np.array([50.0]),
+        mortality_by_cause=np.zeros((1, 6)),
+        biomass_by_age=dist,
+        abundance_by_age=dist,
+        biomass_by_size=dist,
+        abundance_by_size=dist,
+    )
+    result = _average_step_outputs([so], freq=1, record_step=0)
+    assert result.biomass_by_age is not None
+    assert result.abundance_by_age is not None
+    assert result.biomass_by_size is not None
+    assert result.abundance_by_size is not None
