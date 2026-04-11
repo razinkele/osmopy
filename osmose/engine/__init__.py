@@ -118,4 +118,6 @@ class JavaEngine:
         n: int,
         base_seed: int = 0,
     ) -> list[RunResult]:
-        return [self.run(config, output_dir, seed=base_seed + i) for i in range(n)]
+        raise NotImplementedError(
+            "JavaEngine.run_ensemble() is not implemented — use OsmoseRunner directly"
+        )
