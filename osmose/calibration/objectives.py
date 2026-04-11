@@ -13,14 +13,23 @@ def _timeseries_rmse(
     value_col: str,
     species: str | None = None,
 ) -> float:
-    """Generic RMSE for aligned time series with an optional species filter."""
+    """Generic RMSE for aligned time series with an optional species filter.
+
+    When both frames contain a `species` column, rows are aligned on
+    (time, species); otherwise on `time` alone. Asymmetric presence of the
+    species column raises ValueError.
+    """
     if species:
         simulated = simulated[simulated["species"] == species]  # type: ignore[assignment]
         observed = observed[observed["species"] == species]  # type: ignore[assignment]
 
-    merge_cols = ["time"]
-    if "species" in simulated.columns and "species" in observed.columns:
-        merge_cols.append("species")
+    sim_has_species = "species" in simulated.columns
+    obs_has_species = "species" in observed.columns
+    if sim_has_species != obs_has_species:
+        raise ValueError(
+            "species column must be present in both simulated and observed, or in neither"
+        )
+    merge_cols = ["time", "species"] if sim_has_species else ["time"]
     merged = pd.merge(simulated, observed, on=merge_cols, suffixes=("_sim", "_obs"))
     if merged.empty:
         return float("inf")

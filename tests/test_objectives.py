@@ -210,3 +210,19 @@ def test_timeseries_rmse_multi_species_no_cross_product():
     # Identical data should give RMSE 0.0 (cross-product would inflate this).
     result = biomass_rmse(sim, obs, species=None)
     assert result == 0.0, f"Expected 0.0 for identical multi-species data, got {result}"
+
+
+def test_timeseries_rmse_asymmetric_species_raises():
+    """Raising ValueError is better than silently cross-producting."""
+    from osmose.calibration.objectives import biomass_rmse
+    sim = pd.DataFrame({
+        "time": [1, 2],
+        "species": ["A", "A"],
+        "biomass": [100.0, 110.0],
+    })
+    obs = pd.DataFrame({
+        "time": [1, 2],
+        "biomass": [100.0, 110.0],
+    })
+    with pytest.raises(ValueError, match="species column must be present"):
+        biomass_rmse(sim, obs, species=None)
