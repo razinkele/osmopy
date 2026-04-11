@@ -432,10 +432,15 @@ def _load_spawning_seasons(
             vals = all_values[i]
             n_vals = len(vals)
             if normalize:
-                # Normalize per year: sum over each n_dt_per_year chunk
-                total = vals.sum()
-                if total > 0:
-                    vals = vals / total
+                # Normalize each n_dt_per_year-sized chunk independently so
+                # every year's weights sum to 1.0, not the whole multi-year array.
+                n_years_in_vals = max(1, n_vals // n_dt_per_year)
+                for yr in range(n_years_in_vals):
+                    s = yr * n_dt_per_year
+                    e = min(s + n_dt_per_year, n_vals)
+                    chunk_sum = vals[s:e].sum()
+                    if chunk_sum > 0:
+                        vals[s:e] = vals[s:e] / chunk_sum
             seasons[i, :n_vals] = vals
             # Pad remaining columns with uniform if multi-year array is shorter
             if n_vals < max_cols:

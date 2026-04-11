@@ -1,5 +1,6 @@
 """Tests for EngineConfig — typed parameter extraction from flat config dicts."""
 
+import numpy as np
 import pytest
 
 from osmose.engine.config import EngineConfig
@@ -167,3 +168,24 @@ class TestEngineConfig:
         minimal_config["simulation.time.ndtperyear"] = "not_a_number"
         with pytest.raises((ValueError, KeyError)):
             EngineConfig.from_dict(minimal_config)
+
+
+def test_spawning_season_normalization_per_year(tmp_path):
+    """Normalization must divide each per-year chunk independently, not the total sum."""
+    from osmose.engine.config import _load_spawning_seasons
+
+    csv_path = tmp_path / "season_sp0.csv"
+    csv_path.write_text("step;value\n0;1\n1;2\n2;3\n3;4\n4;5\n5;6\n6;7\n7;8\n")
+    cfg = {
+        "_osmose.config.dir": str(tmp_path),
+        "reproduction.season.file.sp0": "season_sp0.csv",
+        "reproduction.normalisation.enabled": "true",
+    }
+    seasons = _load_spawning_seasons(cfg, n_species=1, n_dt_per_year=4)
+    assert seasons is not None
+    # Year 1 chunk [1,2,3,4] must sum to 1.0 after per-year normalization
+    year1_sum = seasons[0, 0:4].sum()
+    np.testing.assert_allclose(year1_sum, 1.0, atol=1e-10)
+    # Year 2 chunk [5,6,7,8] must also sum to 1.0
+    year2_sum = seasons[0, 4:8].sum()
+    np.testing.assert_allclose(year2_sum, 1.0, atol=1e-10)
