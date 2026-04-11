@@ -5,9 +5,12 @@ from pathlib import Path
 
 from shiny import reactive, render, ui
 
+from osmose.logging import setup_logging
 from osmose.scenarios import Scenario, ScenarioManager
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.styles import STYLE_DIFF_ROW, STYLE_EMPTY
+
+_log = setup_logging("osmose.scenarios_ui")
 
 
 def scenarios_ui():
@@ -115,7 +118,12 @@ def scenarios_server(input, output, session, state):
         try:
             mgr.save(scenario)
         except (OSError, ValueError) as exc:
-            ui.notification_show(f"Failed to save scenario: {exc}", type="error", duration=8)
+            _log.error("Failed to save scenario: %s", exc, exc_info=True)
+            ui.notification_show(
+                "Failed to save scenario. Check server logs for details.",
+                type="error",
+                duration=8,
+            )
             return
         state.dirty.set(False)
         _bump()
@@ -169,7 +177,12 @@ def scenarios_server(input, output, session, state):
         try:
             mgr.fork(selected, new_name)
         except (OSError, ValueError, FileNotFoundError) as exc:
-            ui.notification_show(f"Failed to fork scenario: {exc}", type="error", duration=8)
+            _log.error("Failed to fork scenario: %s", exc, exc_info=True)
+            ui.notification_show(
+                "Failed to fork scenario. Check server logs for details.",
+                type="error",
+                duration=8,
+            )
             return
         _bump()
         ui.notification_show(f"Forked as '{new_name}'.", type="message", duration=3)
@@ -185,7 +198,12 @@ def scenarios_server(input, output, session, state):
         try:
             mgr.delete(selected)
         except (OSError, FileNotFoundError) as exc:
-            ui.notification_show(f"Failed to delete scenario: {exc}", type="error", duration=8)
+            _log.error("Failed to delete scenario: %s", exc, exc_info=True)
+            ui.notification_show(
+                "Failed to delete scenario. Check server logs for details.",
+                type="error",
+                duration=8,
+            )
             return
         _bump()
         ui.notification_show("Scenario deleted.", type="message", duration=3)
@@ -272,6 +290,11 @@ def scenarios_server(input, output, session, state):
         try:
             mgr.import_all(zip_path)
         except (OSError, zipfile.BadZipFile, ValueError, KeyError) as exc:
-            ui.notification_show(f"Failed to import scenarios: {exc}", type="error", duration=8)
+            _log.error("Failed to import scenarios: %s", exc, exc_info=True)
+            ui.notification_show(
+                "Failed to import scenarios. Check server logs for details.",
+                type="error",
+                duration=8,
+            )
             return
         _bump()

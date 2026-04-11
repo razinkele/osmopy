@@ -110,7 +110,12 @@ def setup_server(input, output, session, state):
             atexit.register(shutil.rmtree, str(tmp), True)
             result = osmose_demo(example, tmp)
         except ValueError as exc:
-            ui.notification_show(str(exc), type="error", duration=5)
+            _log.error("Failed to load example config: %s", exc, exc_info=True)
+            ui.notification_show(
+                "Failed to load example. Check server logs for details.",
+                type="error",
+                duration=5,
+            )
             return
 
         master = result["config_file"]
