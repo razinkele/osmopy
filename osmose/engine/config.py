@@ -434,8 +434,20 @@ def _load_spawning_seasons(
             if normalize:
                 # Normalize each n_dt_per_year-sized chunk independently so
                 # every year's weights sum to 1.0, not the whole multi-year array.
-                n_years_in_vals = max(1, n_vals // n_dt_per_year)
-                for yr in range(n_years_in_vals):
+                # A trailing partial-year chunk is also normalized to sum 1.0;
+                # warn because a non-whole-year file is usually a data error.
+                if n_vals % n_dt_per_year != 0:
+                    _log.warning(
+                        "Spawning season file for species %d has %d rows "
+                        "which is not a multiple of n_dt_per_year=%d; "
+                        "normalizing the %d-row trailing partial chunk to sum 1.0",
+                        i,
+                        n_vals,
+                        n_dt_per_year,
+                        n_vals % n_dt_per_year,
+                    )
+                n_chunks = (n_vals + n_dt_per_year - 1) // n_dt_per_year  # ceil
+                for yr in range(n_chunks):
                     s = yr * n_dt_per_year
                     e = min(s + n_dt_per_year, n_vals)
                     chunk_sum = vals[s:e].sum()

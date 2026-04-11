@@ -189,3 +189,35 @@ def test_spawning_season_normalization_per_year(tmp_path):
     # Year 2 chunk [5,6,7,8] must also sum to 1.0
     year2_sum = seasons[0, 4:8].sum()
     np.testing.assert_allclose(year2_sum, 1.0, atol=1e-10)
+
+
+def test_spawning_season_normalization_partial_year(tmp_path, caplog):
+    """A non-whole-year file normalizes every chunk including the partial tail, with a warning."""
+    import logging
+
+    from osmose.engine.config import _load_spawning_seasons
+
+    # 10-row CSV with n_dt_per_year=4: two full years (rows 0-3, 4-7) plus a 2-row tail (8-9)
+    csv_path = tmp_path / "season_sp0.csv"
+    csv_path.write_text(
+        "step;value\n0;1\n1;2\n2;3\n3;4\n4;5\n5;6\n6;7\n7;8\n8;9\n9;11\n"
+    )
+    cfg = {
+        "_osmose.config.dir": str(tmp_path),
+        "reproduction.season.file.sp0": "season_sp0.csv",
+        "reproduction.normalisation.enabled": "true",
+    }
+    with caplog.at_level(logging.WARNING, logger="osmose.engine.config"):
+        seasons = _load_spawning_seasons(cfg, n_species=1, n_dt_per_year=4)
+
+    assert seasons is not None
+    # Year 1 [1,2,3,4] normalized
+    np.testing.assert_allclose(seasons[0, 0:4].sum(), 1.0, atol=1e-10)
+    # Year 2 [5,6,7,8] normalized
+    np.testing.assert_allclose(seasons[0, 4:8].sum(), 1.0, atol=1e-10)
+    # Partial tail [9, 11] normalized so the 2-row chunk sums to 1.0
+    np.testing.assert_allclose(seasons[0, 8:10].sum(), 1.0, atol=1e-10)
+    # And a warning was emitted
+    assert any(
+        "not a multiple of n_dt_per_year" in rec.message for rec in caplog.records
+    ), "Expected a partial-year warning"
