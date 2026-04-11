@@ -221,3 +221,139 @@ def test_spawning_season_normalization_partial_year(tmp_path, caplog):
     assert any(
         "not a multiple of n_dt_per_year" in rec.message for rec in caplog.records
     ), "Expected a partial-year warning"
+
+
+# ---------------------------------------------------------------------------
+# Regression: file-resolution helpers must raise when a non-empty config key
+# points at a missing file, instead of silently disabling the feature.
+# Deep review v3 C-3 through C-7 — the "silent feature removal" anti-pattern.
+# ---------------------------------------------------------------------------
+
+
+class TestRequireFileRaisesOnMissing:
+    """Non-empty file keys with missing files must raise FileNotFoundError."""
+
+    def test_require_file_helper_raises_for_missing_file(self, tmp_path):
+        """_require_file raises FileNotFoundError with the file_key + context."""
+        from osmose.engine.config import _require_file
+
+        with pytest.raises(FileNotFoundError, match="doesnt_exist.csv"):
+            _require_file("doesnt_exist.csv", str(tmp_path), "test.context")
+
+    def test_require_file_helper_returns_path_for_existing_file(self, tmp_path):
+        """_require_file returns the resolved Path for a file that exists."""
+        from osmose.engine.config import _require_file
+
+        (tmp_path / "real.csv").write_text("x")
+        path = _require_file("real.csv", str(tmp_path), "test.context")
+        assert path.exists()
+        assert path.name == "real.csv"
+
+    def test_require_file_error_message_includes_context_and_config_dir(self, tmp_path):
+        """Error message must help the user find the bad config key."""
+        from osmose.engine.config import _require_file
+
+        with pytest.raises(FileNotFoundError) as exc_info:
+            _require_file("typo.csv", str(tmp_path), "mortality.fishing.rate.byyear.file.sp3")
+        msg = str(exc_info.value)
+        assert "typo.csv" in msg
+        assert "mortality.fishing.rate.byyear.file.sp3" in msg
+        assert str(tmp_path) in msg
+
+    def test_fisheries_catchability_file_missing_raises(self, tmp_path):
+        """C-3: simulation.nfisheries>0 with missing catchability file raises, not silently zeros."""
+        from osmose.engine.config import _parse_fisheries
+
+        # Minimal fishing v4 config with a catchability file that doesn't exist
+        cfg = {
+            "_osmose.config.dir": str(tmp_path),
+            "simulation.nfisheries": "1",
+            "fisheries.catchability.file": "typo_catch.csv",  # doesn't exist
+        }
+        with pytest.raises(FileNotFoundError, match="typo_catch.csv"):
+            _parse_fisheries(cfg, ["Anchovy"], n_species=1)
+
+    def test_fisheries_catchability_empty_key_with_n_fisheries_raises(self, tmp_path):
+        """C-3: simulation.nfisheries>0 but catchability.file unset raises ValueError."""
+        from osmose.engine.config import _parse_fisheries
+
+        cfg = {
+            "_osmose.config.dir": str(tmp_path),
+            "simulation.nfisheries": "1",
+            # fisheries.catchability.file intentionally missing
+        }
+        with pytest.raises(ValueError, match="fisheries.catchability.file is not set"):
+            _parse_fisheries(cfg, ["Anchovy"], n_species=1)
+
+    def test_fishing_rate_by_year_missing_file_raises(self, tmp_path):
+        """C-7: non-empty mortality.fishing.rate.byyear.file.sp{i} with missing file raises."""
+        from osmose.engine.config import _load_fishing_rate_by_year
+
+        cfg = {
+            "_osmose.config.dir": str(tmp_path),
+            "mortality.fishing.rate.byyear.file.sp0": "typo.csv",
+        }
+        with pytest.raises(FileNotFoundError, match="typo.csv"):
+            _load_fishing_rate_by_year(cfg, n_species=1)
+
+    def test_fishing_rate_by_year_empty_key_does_not_raise(self, tmp_path):
+        """C-7: empty mortality.fishing.rate.byyear.file.sp{i} still means 'not configured'."""
+        from osmose.engine.config import _load_fishing_rate_by_year
+
+        cfg = {"_osmose.config.dir": str(tmp_path)}
+        # No keys set → None, no raise
+        result = _load_fishing_rate_by_year(cfg, n_species=2)
+        assert result is None
+
+    def test_additional_mortality_by_dt_missing_file_raises(self, tmp_path):
+        """C-5: non-empty mortality.additional.rate.bytdt.file.sp{i} with missing file raises."""
+        from osmose.engine.config import _load_additional_mortality_by_dt
+
+        cfg = {
+            "_osmose.config.dir": str(tmp_path),
+            "mortality.additional.rate.bytdt.file.sp0": "ghost.csv",
+        }
+        with pytest.raises(FileNotFoundError, match="ghost.csv"):
+            _load_additional_mortality_by_dt(cfg, n_species=1)
+
+    def test_additional_mortality_spatial_missing_file_raises(self, tmp_path):
+        """C-6: non-empty mortality.additional.spatial.distrib.file.sp{i} with missing file raises."""
+        from osmose.engine.config import _load_additional_mortality_spatial
+
+        cfg = {
+            "_osmose.config.dir": str(tmp_path),
+            "mortality.additional.spatial.distrib.file.sp0": "missing.csv",
+        }
+        with pytest.raises(FileNotFoundError, match="missing.csv"):
+            _load_additional_mortality_spatial(cfg, n_species=1)
+
+    def test_per_species_fishing_spatial_map_missing_raises(self, tmp_path):
+        """C-4: non-empty mortality.fishing.spatial.distrib.file.sp{i} with missing file raises.
+
+        This one has to go through EngineConfig.from_dict because the per-species
+        spatial map is processed inline in from_dict, not in a standalone helper.
+        """
+        # Minimal working config with the problematic key
+        cfg = {
+            "_osmose.config.dir": str(tmp_path),
+            "simulation.time.ndtperyear": "24",
+            "simulation.time.nyear": "1",
+            "simulation.nspecies": "1",
+            "simulation.nschool.sp0": "5",
+            "species.name.sp0": "Anchovy",
+            "species.linf.sp0": "20.0",
+            "species.k.sp0": "0.3",
+            "species.t0.sp0": "-0.1",
+            "species.egg.size.sp0": "0.1",
+            "species.length2weight.condition.factor.sp0": "0.006",
+            "species.length2weight.allometric.power.sp0": "3.0",
+            "species.lifespan.sp0": "3",
+            "species.vonbertalanffy.threshold.age.sp0": "1.0",
+            "mortality.subdt": "10",
+            "predation.ingestion.rate.max.sp0": "3.5",
+            "predation.efficiency.critical.sp0": "0.57",
+            # The key under test: points at a non-existent file
+            "mortality.fishing.spatial.distrib.file.sp0": "ghost_map.csv",
+        }
+        with pytest.raises(FileNotFoundError, match="ghost_map.csv"):
+            EngineConfig.from_dict(cfg)

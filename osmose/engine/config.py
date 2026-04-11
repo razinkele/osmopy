@@ -76,9 +76,57 @@ def _species_int_optional(
 def _resolve_file(file_key: str, config_dir: str = "") -> Path | None:
     """Resolve a relative file path against multiple search directories.
 
+    Returns None for BOTH "key empty" (feature not configured) AND "key set but
+    file missing" (user typo or wrong path). Callers that can distinguish these
+    two cases should check `file_key` is non-empty before calling this, and
+    prefer :func:`_require_file` when a non-empty key implies the file must
+    exist.
+
     Thin wrapper around :func:`resolve_data_path` kept for backward compatibility.
     """
     return resolve_data_path(file_key, config_dir=config_dir)
+
+
+def _require_file(file_key: str, config_dir: str, context: str) -> Path:
+    """Resolve a file path that the caller has determined must exist.
+
+    Unlike :func:`_resolve_file`, this helper raises :class:`FileNotFoundError`
+    when ``file_key`` is set but the file cannot be located. Use it in callers
+    that have already checked ``if not file_key: continue/skip`` and therefore
+    know the user requested this file — a missing file at that point is a
+    config error, not a silent "feature not enabled."
+
+    Deep review v3 C-3 through C-7 identified five loaders in this module that
+    used ``_resolve_file`` in the pattern::
+
+        file_key = cfg.get("some.file.sp{i}", "")
+        if not file_key:
+            continue
+        path = _resolve_file(file_key, _cfg_dir(cfg))
+        if path is None:
+            continue  # silently disables the feature for species i
+
+    Callers in that pattern should now use ``_require_file`` and drop the
+    defensive ``if path is None`` check — a missing file becomes a loud,
+    actionable error instead of a silent wrong-result bug.
+
+    Parameters
+    ----------
+    file_key:
+        The raw value from the config dict (relative or absolute path).
+    config_dir:
+        The resolved config directory for relative-path lookup.
+    context:
+        Human-readable context included in the error message, e.g. the
+        original config key name — helps users find the typo in their config.
+    """
+    path = resolve_data_path(file_key, config_dir=config_dir)
+    if path is None:
+        raise FileNotFoundError(
+            f"Configured file {file_key!r} (from {context}) could not be resolved. "
+            f"Checked config dir {config_dir!r} and standard data search paths."
+        )
+    return path
 
 
 def _enabled(cfg: dict[str, str], key: str) -> bool:
@@ -179,11 +227,16 @@ def _parse_fisheries(
     if n_fisheries == 0:
         return fishing_rate, fishing_a50, fishing_sel_type, fishing_l50, fishing_slope
 
-    # Read catchability CSV to map species -> fishery
+    # Read catchability CSV to map species -> fishery.
+    # With n_fisheries > 0, the catchability file is required — empty or missing
+    # is a config error, not a silent "no fishing" signal. (Deep review v3 C-3)
     catch_file = cfg.get("fisheries.catchability.file", "")
-    catch_path = _resolve_file(catch_file, _cfg_dir(cfg))
-    if catch_path is None:
-        return fishing_rate, fishing_a50, fishing_sel_type, fishing_l50, fishing_slope
+    if not catch_file:
+        raise ValueError(
+            f"simulation.nfisheries={n_fisheries} but fisheries.catchability.file "
+            "is not set. Either set the catchability file or set nfisheries=0."
+        )
+    catch_path = _require_file(catch_file, _cfg_dir(cfg), "fisheries.catchability.file")
 
     catch_df = pd.read_csv(catch_path, index_col=0)
     # Row labels = species names, column labels = fishery names
@@ -333,11 +386,14 @@ def _load_fishing_rate_by_year(
         file_key = cfg.get(f"mortality.fishing.rate.byyear.file.sp{i}", "")
         if not file_key:
             continue
-        path = _resolve_file(file_key, _cfg_dir(cfg))
-        if path is not None:
-            values = np.loadtxt(path, dtype=np.float64)
-            result[i] = values.flatten()
-            found_any = True
+        # Non-empty key means user asked for a time-varying rate for this species.
+        # A missing file is a config error, not a silent fallback. (v3 C-7)
+        path = _require_file(
+            file_key, _cfg_dir(cfg), f"mortality.fishing.rate.byyear.file.sp{i}"
+        )
+        values = np.loadtxt(path, dtype=np.float64)
+        result[i] = values.flatten()
+        found_any = True
 
     return result if found_any else None
 
@@ -475,11 +531,13 @@ def _load_additional_mortality_by_dt(
         file_key = cfg.get(f"mortality.additional.rate.bytdt.file.sp{i}", "")
         if not file_key:
             continue
-        path = _resolve_file(file_key, _cfg_dir(cfg))
-        if path is not None:
-            values = np.loadtxt(path, dtype=np.float64)
-            result[i] = values.flatten()
-            found_any = True
+        # Non-empty key: file must exist. (v3 C-5)
+        path = _require_file(
+            file_key, _cfg_dir(cfg), f"mortality.additional.rate.bytdt.file.sp{i}"
+        )
+        values = np.loadtxt(path, dtype=np.float64)
+        result[i] = values.flatten()
+        found_any = True
 
     return result if found_any else None
 
@@ -498,10 +556,12 @@ def _load_additional_mortality_spatial(
         file_key = cfg.get(f"mortality.additional.spatial.distrib.file.sp{i}", "")
         if not file_key:
             continue
-        path = _resolve_file(file_key, _cfg_dir(cfg))
-        if path is not None:
-            result[i] = _load_spatial_csv(path)
-            found_any = True
+        # Non-empty key: file must exist. (v3 C-6)
+        path = _require_file(
+            file_key, _cfg_dir(cfg), f"mortality.additional.spatial.distrib.file.sp{i}"
+        )
+        result[i] = _load_spatial_csv(path)
+        found_any = True
 
     return result if found_any else None
 
@@ -847,11 +907,12 @@ class EngineConfig:
         for i in range(n_sp):
             sp_map_file = cfg.get(f"mortality.fishing.spatial.distrib.file.sp{i}", "")
             if sp_map_file:
-                sp_path = _resolve_file(sp_map_file, _cfg_dir(cfg))
-                if sp_path is not None:
-                    focal_fishing_spatial_maps.append(_load_spatial_csv(sp_path))
-                else:
-                    focal_fishing_spatial_maps.append(shared_fishing_map)
+                # User explicitly set a per-species map — missing file is a
+                # config error, not a silent fallback to the shared map. (v3 C-4)
+                sp_path = _require_file(
+                    sp_map_file, _cfg_dir(cfg), f"mortality.fishing.spatial.distrib.file.sp{i}"
+                )
+                focal_fishing_spatial_maps.append(_load_spatial_csv(sp_path))
             else:
                 focal_fishing_spatial_maps.append(shared_fishing_map)
 
