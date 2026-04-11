@@ -273,7 +273,8 @@ def _predation_in_cell_python(
         r_max = config.size_ratio_max[sp_pred, state.feeding_stage[p_idx]]
 
         max_eatable = (
-            state.biomass[p_idx] * config.ingestion_rate[sp_pred] / (config.n_dt_per_year * n_subdt)
+            state.abundance[p_idx] * state.weight[p_idx]
+            * config.ingestion_rate[sp_pred] / (config.n_dt_per_year * n_subdt)
         )
         if max_eatable <= 0:
             continue
