@@ -358,6 +358,40 @@ class TestBackgroundStateNetCDF:
         cfg["species.biomass.nsteps.year.sp10"] = "12"
         return cfg
 
+    def test_netcdf_variable_name_mismatch_raises(self, tmp_path):
+        """Deep review v3 C-8: NetCDF variable name mismatch must raise KeyError.
+
+        Previously, if sp.name didn't match any variable in the NetCDF file,
+        the loader silently picked the FIRST variable in the file (logging
+        only at DEBUG level, which is off by default). That substituted an
+        arbitrary variable (possibly longitude or an unrelated biomass field)
+        for the intended species forcing, silently corrupting simulation data.
+        The fix raises KeyError with the expected name and available variables.
+        """
+        # Create a NetCDF file with a variable NAMED DIFFERENTLY from the species.
+        data = np.random.default_rng(42).uniform(10, 100, size=(12, 3, 3))
+        ds = xr.Dataset(
+            {
+                "phytoplankton_biomass": (("time", "latitude", "longitude"), data),
+            },
+            coords={
+                "time": np.arange(12),
+                "latitude": np.linspace(45, 47, 3),
+                "longitude": np.linspace(-5, -3, 3),
+            },
+        )
+        nc_path = tmp_path / "wrong_name.nc"
+        ds.to_netcdf(nc_path)
+
+        # Background species is named "BkgSpecies" (from _make_bkg_config) —
+        # does not match "phytoplankton_biomass" in the NetCDF.
+        cfg = self._make_netcdf_cfg(nc_path)
+        ec = EngineConfig.from_dict(cfg)
+        grid = Grid.from_dimensions(ny=3, nx=3)
+
+        with pytest.raises(KeyError, match="BkgSpecies"):
+            BackgroundState(config=cfg, grid=grid, engine_config=ec)
+
     def test_netcdf_loading(self, tmp_path):
         """Loading a NetCDF file produces positive biomass from get_schools."""
         nc_path = self._create_forcing_nc(tmp_path)
