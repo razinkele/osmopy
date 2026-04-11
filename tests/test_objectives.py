@@ -193,3 +193,20 @@ def test_weighted_multi_objective_uniform():
     objectives = [3.0, 4.0]
     weights = [1.0, 1.0]
     assert weighted_multi_objective(objectives, weights) == pytest.approx(7.0)
+
+
+def test_timeseries_rmse_multi_species_no_cross_product():
+    """Multi-species merge must join on (time, species), not just time."""
+    sim = pd.DataFrame({
+        "time": [1, 1, 2, 2],
+        "species": ["A", "B", "A", "B"],
+        "biomass": [100.0, 200.0, 110.0, 210.0],
+    })
+    obs = pd.DataFrame({
+        "time": [1, 1, 2, 2],
+        "species": ["A", "B", "A", "B"],
+        "biomass": [100.0, 200.0, 110.0, 210.0],
+    })
+    # Identical data should give RMSE 0.0 (cross-product would inflate this).
+    result = biomass_rmse(sim, obs, species=None)
+    assert result == 0.0, f"Expected 0.0 for identical multi-species data, got {result}"

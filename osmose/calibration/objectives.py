@@ -18,7 +18,10 @@ def _timeseries_rmse(
         simulated = simulated[simulated["species"] == species]  # type: ignore[assignment]
         observed = observed[observed["species"] == species]  # type: ignore[assignment]
 
-    merged = pd.merge(simulated, observed, on="time", suffixes=("_sim", "_obs"))
+    merge_cols = ["time"]
+    if "species" in simulated.columns and "species" in observed.columns:
+        merge_cols.append("species")
+    merged = pd.merge(simulated, observed, on=merge_cols, suffixes=("_sim", "_obs"))
     if merged.empty:
         return float("inf")
 
