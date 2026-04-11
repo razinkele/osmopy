@@ -182,3 +182,42 @@ def test_average_step_outputs_preserves_distributions():
     assert result.abundance_by_age is not None
     assert result.biomass_by_size is not None
     assert result.abundance_by_size is not None
+
+
+def test_simulate_output_step0_include(minimal_config):
+    """output.step0.include=true prepends a step=-1 snapshot to the output list."""
+    cfg_dict = dict(minimal_config)
+    cfg_dict["output.step0.include"] = "true"
+    # Pin record frequency explicitly so this test is not coupled to the default.
+    cfg_dict["output.recordfrequency.ndt"] = "1"
+    cfg = EngineConfig.from_dict(cfg_dict)
+    grid = Grid.from_dimensions(ny=3, nx=3)
+    rng = np.random.default_rng(42)
+
+    outputs = simulate(cfg, grid, rng)
+
+    # First element must be the step=-1 snapshot
+    assert outputs[0].step == -1, (
+        f"Expected first output to be step=-1 snapshot, got step={outputs[0].step}"
+    )
+    # With record_freq=1 and n_dt_per_year*n_years=12, the normal run produces 12
+    # regular outputs on top of the snapshot — total 13.
+    assert len(outputs) == 13, f"Expected 13 outputs (12 + step0), got {len(outputs)}"
+
+
+def test_simulate_partial_flush_non_divisible_record_freq(minimal_config):
+    """A record frequency that doesn't divide n_steps must still flush the tail."""
+    cfg_dict = dict(minimal_config)
+    # 12 total steps, recording every 7 -> 1 full window (steps 0-6) + 1 partial window (7-11)
+    cfg_dict["output.recordfrequency.ndt"] = "7"
+    cfg = EngineConfig.from_dict(cfg_dict)
+    grid = Grid.from_dimensions(ny=3, nx=3)
+    rng = np.random.default_rng(42)
+
+    outputs = simulate(cfg, grid, rng)
+
+    # 12 / 7 = 1 remainder 5 -> at least 2 outputs (1 full, 1 partial flush)
+    assert len(outputs) >= 2, f"Expected ≥2 outputs from partial flush, got {len(outputs)}"
+    # Regression guard: the old buggy behavior was to drop the partial entirely,
+    # producing exactly 1 output. Assert strictly more than 1.
+    assert len(outputs) > 1, "Partial flush regression: tail accumulation was dropped"
