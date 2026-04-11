@@ -187,3 +187,23 @@ def test_reader_handles_latin1_characters(tmp_path):
     reader = OsmoseConfigReader()
     result = reader.read_file(config_file)
     assert "species.name.sp0" in result
+
+
+def test_key_case_map_reset_between_reads(tmp_path):
+    """key_case_map must not carry stale entries from previous read() calls."""
+    from osmose.config.reader import OsmoseConfigReader
+
+    f1 = tmp_path / "cfg1.csv"
+    f1.write_text("Species.Name.sp0 ; Anchovy\n")
+    f2 = tmp_path / "cfg2.csv"
+    f2.write_text("simulation.time.nyear ; 5\n")
+
+    reader = OsmoseConfigReader()
+    reader.read(f1)
+    assert "species.name.sp0" in reader.key_case_map
+
+    reader.read(f2)
+    assert "species.name.sp0" not in reader.key_case_map, (
+        "Stale key from previous read() leaked into key_case_map"
+    )
+    assert "simulation.time.nyear" in reader.key_case_map

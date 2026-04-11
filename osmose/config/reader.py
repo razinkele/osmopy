@@ -32,6 +32,7 @@ class OsmoseConfigReader:
     def read(self, master_file: Path) -> dict[str, str]:
         """Recursively read a master config and all referenced sub-configs."""
         self.skipped_lines = 0
+        self.key_case_map = {}
         master_file = Path(master_file)
         _log.info("Reading config from %s", master_file)
         flat: dict[str, str] = {}
