@@ -1110,6 +1110,26 @@ class EngineConfig:
         mpa_zones = _parse_mpa_zones(cfg)
         fishing_discard_rate = _load_discard_rates(cfg, focal_species_names, n_sp)
 
+        # Pad fishing_seasonality and fishing_discard_rate for background species.
+        # These loaders only know about focal species (n_sp), but work_state.species_id
+        # in mortality indexing includes background IDs in [n_sp, n_total). Without
+        # padding, fishing_seasonality[sp, step] raises IndexError when background
+        # species are present and fishing features are enabled. The zero values mean
+        # background species effectively have no fishing, which is also what
+        # fishing_rate (concatenated with bkg_zeros_f above) already enforces — so
+        # this preserves the "background species are unfished" invariant used
+        # throughout the rest of the engine.
+        if n_bkg > 0:
+            if fishing_seasonality is not None:
+                fishing_seasonality = np.concatenate(
+                    [fishing_seasonality, np.zeros((n_bkg, n_dt), dtype=np.float64)],
+                    axis=0,
+                )
+            if fishing_discard_rate is not None:
+                fishing_discard_rate = np.concatenate(
+                    [fishing_discard_rate, np.zeros(n_bkg, dtype=np.float64)]
+                )
+
         # Phase 4: Random distribution patch constraint
         ncell_vals = []
         ncell_found = False

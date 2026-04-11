@@ -772,3 +772,94 @@ class TestAbundanceDivergence:
         assert consistent_loss > 0, (
             f"Background prey abundance did not decrease: loss={consistent_loss}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Regression: fishing_seasonality and fishing_discard_rate must be padded
+# for background species so that mortality indexing with work_state.species_id
+# (which includes background IDs in [n_sp, n_total)) does not raise IndexError.
+# Deep review v3 C-1 / C-2.
+# ---------------------------------------------------------------------------
+
+
+class TestFishingArraysPaddedForBackground:
+    def test_fishing_seasonality_shape_matches_n_total(self, tmp_path):
+        """fishing_seasonality must have shape (n_total, n_dt_per_year), not (n_sp,...)."""
+        # Write a minimal per-species seasonality CSV (2 columns: step;value).
+        # 24 rows to match simulation.time.ndtperyear in _make_base_config.
+        csv_path = tmp_path / "fishing_season_sp0.csv"
+        csv_path.write_text(
+            "step;value\n" + "".join(f"{i};1\n" for i in range(24))
+        )
+
+        cfg = {**_make_base_config(), **_make_bkg_config(file_idx=10)}
+        cfg["_osmose.config.dir"] = str(tmp_path)
+        cfg["fisheries.seasonality.file.sp0"] = "fishing_season_sp0.csv"
+
+        ec = EngineConfig.from_dict(cfg)
+        assert ec.fishing_seasonality is not None
+        assert ec.fishing_seasonality.shape == (2, 24), (
+            f"Expected (n_total=2, n_dt_per_year=24), got {ec.fishing_seasonality.shape}. "
+            f"Without the C-1 padding fix, shape would be (n_sp=1, 24) and indexing "
+            f"with background species ID would raise IndexError."
+        )
+        # Background row should be all zeros (no fishing for background species).
+        np.testing.assert_array_equal(ec.fishing_seasonality[1], 0.0)
+
+    def test_fishing_discard_rate_shape_matches_n_total(self, tmp_path):
+        """fishing_discard_rate must have shape (n_total,), not (n_sp,)."""
+        # Minimal per-species discard CSV: index=species name, one fishery column
+        csv_path = tmp_path / "fishing_discard.csv"
+        # pd.read_csv default separator is comma.
+        csv_path.write_text("species,f0\nAnchovy,0.1\n")
+
+        cfg = {**_make_base_config(), **_make_bkg_config(file_idx=10)}
+        cfg["_osmose.config.dir"] = str(tmp_path)
+        cfg["fisheries.discards.file"] = "fishing_discard.csv"
+
+        ec = EngineConfig.from_dict(cfg)
+        assert ec.fishing_discard_rate is not None
+        assert ec.fishing_discard_rate.shape == (2,), (
+            f"Expected (n_total=2,), got {ec.fishing_discard_rate.shape}. "
+            f"Without the C-2 padding fix, shape would be (n_sp=1,) and indexing "
+            f"with background species ID would raise IndexError."
+        )
+        # Focal rate preserved, background padded to zero.
+        assert ec.fishing_discard_rate[0] == pytest.approx(0.1)
+        assert ec.fishing_discard_rate[1] == 0.0
+
+    def test_indexing_with_background_species_ids_does_not_crash(self, tmp_path):
+        """Direct reproduction: index fishing arrays with work_state.species_id containing bg IDs."""
+        # Set up both CSVs so both arrays are non-None
+        season_csv = tmp_path / "fishing_season_sp0.csv"
+        season_csv.write_text("step;value\n" + "".join(f"{i};1\n" for i in range(24)))
+        discard_csv = tmp_path / "fishing_discard.csv"
+        # pd.read_csv default separator is comma.
+        discard_csv.write_text("species,f0\nAnchovy,0.1\n")
+
+        cfg = {**_make_base_config(), **_make_bkg_config(file_idx=10)}
+        cfg["_osmose.config.dir"] = str(tmp_path)
+        cfg["fisheries.seasonality.file.sp0"] = "fishing_season_sp0.csv"
+        cfg["fisheries.discards.file"] = "fishing_discard.csv"
+
+        ec = EngineConfig.from_dict(cfg)
+
+        # Simulate the mortality indexing pattern: work_state.species_id contains
+        # both focal (0) and background (1) IDs. Both indexing operations must succeed.
+        species_id = np.array([0, 1, 0, 1], dtype=np.int32)
+        step_in_year = 5
+
+        # This is the exact expression from mortality.py:638 — must not raise.
+        season = ec.fishing_seasonality[species_id, step_in_year]
+        assert season.shape == (4,)
+        # Focal schools get normalized 1/24 weight, background gets 0.
+        assert season[0] == pytest.approx(1.0 / 24)
+        assert season[1] == 0.0
+        assert season[2] == pytest.approx(1.0 / 24)
+        assert season[3] == 0.0
+
+        # And the exact expression from mortality.py:647 — must not raise.
+        discard = ec.fishing_discard_rate[species_id]
+        assert discard.shape == (4,)
+        assert discard[0] == pytest.approx(0.1)
+        assert discard[1] == 0.0
