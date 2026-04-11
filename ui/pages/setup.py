@@ -1,5 +1,8 @@
 """Species & Simulation setup page."""
 
+import atexit
+import shutil
+import tempfile
 from pathlib import Path
 
 from shiny import ui, reactive, render
@@ -95,8 +98,6 @@ def setup_server(input, output, session, state):
     @reactive.event(input.btn_load_example)
     def handle_load_example():
         """Load a bundled example config when Load button is clicked."""
-        import tempfile
-
         from osmose.config.reader import OsmoseConfigReader
 
         example = input.load_example()
@@ -106,6 +107,7 @@ def setup_server(input, output, session, state):
 
         try:
             tmp = Path(tempfile.mkdtemp(prefix="osmose_demo_"))
+            atexit.register(shutil.rmtree, str(tmp), True)
             result = osmose_demo(example, tmp)
         except ValueError as exc:
             ui.notification_show(str(exc), type="error", duration=5)

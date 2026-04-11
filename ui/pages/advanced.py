@@ -1,5 +1,7 @@
 """Advanced raw config editor page."""
 
+import atexit
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -193,6 +195,7 @@ def advanced_server(input, output, session, state):
     @render.download(filename="osm_all-parameters.csv")
     def export_config():
         work_dir = Path(tempfile.mkdtemp(prefix="osmose_export_"))
+        atexit.register(shutil.rmtree, str(work_dir), True)
         writer = OsmoseConfigWriter()
         writer.write(state.config.get(), work_dir)
         master = work_dir / "osm_all-parameters.csv"
