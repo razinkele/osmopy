@@ -9,6 +9,7 @@ import pytest
 
 from osmose.engine.processes.movement import (
     _flatten_all_map_sets,
+    _map_move_school,
     _precompute_map_indices,
 )
 
@@ -359,4 +360,69 @@ def test_round_based_sampling_has_boundary_bias():
     for i in range(n):
         assert abs(new_counts[i] - expected) < expected * 0.1, (
             f"Cell {i} got {new_counts[i]} hits, expected ~{expected}"
+        )
+
+
+def test_map_move_school_uniform_placement_no_boundary_bias():
+    """Regression test for the real _map_move_school function.
+
+    Calls the Python-fallback _map_move_school in a tight loop against a
+    synthetic 1xN uniform-probability map and asserts every cell is hit
+    ~uniformly. If the rejection sampler at movement.py line 85 is reverted
+    to ``int(round((n_cells - 1) * rng.random()))``, boundary cells 0 and
+    n-1 receive roughly half the hits of interior cells and this test fails.
+    """
+    ny, nx = 1, 7
+    n_cells = ny * nx
+    uniform_prob = 1.0 / n_cells
+    prob_map = np.full((ny, nx), uniform_prob, dtype=np.float64)
+    ocean_mask = np.ones((ny, nx), dtype=np.bool_)
+
+    class _UniformMapSet:
+        """Minimal stand-in for MovementMapSet exposing only what
+        _map_move_school actually reads."""
+
+        def __init__(self, m, max_p):
+            self._map = m
+            self.max_proba = np.array([max_p], dtype=np.float64)
+
+        def get_map(self, age_dt, step):
+            return self._map
+
+        def get_index(self, age_dt, step):
+            return 0
+
+    map_set = _UniformMapSet(prob_map, uniform_prob)
+    rng = np.random.default_rng(123)
+
+    n_trials = 50_000
+    counts = np.zeros(nx, dtype=np.int64)
+    for _ in range(n_trials):
+        # age_dt=0 forces new-placement branch (Step 3a), bypassing same-map
+        # detection. cx=cy=-1 marks the school as unlocated.
+        x, y, is_out = _map_move_school(
+            0,  # age_dt
+            -1,  # cx (unlocated)
+            -1,  # cy
+            ny,
+            nx,
+            ocean_mask,
+            map_set,
+            1,  # walk_range (unused on new-placement path)
+            0,  # step
+            rng,
+        )
+        assert not is_out
+        assert y == 0
+        assert 0 <= x < nx
+        counts[x] += 1
+
+    expected = n_trials / nx
+    # With boundary bias (old int(round(...)) pattern), cells 0 and nx-1 each
+    # receive about expected/2 hits. A 10% tolerance distinguishes the two
+    # regimes without being flaky at 50k trials.
+    for i in range(nx):
+        assert abs(counts[i] - expected) < expected * 0.1, (
+            f"Cell {i} got {counts[i]} hits, expected ~{expected} "
+            f"(boundary bias suspected)"
         )
