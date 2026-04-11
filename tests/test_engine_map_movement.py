@@ -371,6 +371,13 @@ class TestMissingEntriesWarned:
         assert any(
             "slots have no movement map assigned" in rec.message for rec in caplog.records
         )
+        matching = [
+            rec for rec in caplog.records
+            if "slots have no movement map assigned" in rec.message
+        ]
+        assert len(matching) == 1, (
+            f"expected exactly one aggregated warning per species, got {len(matching)}"
+        )
 
 
 # ---------------------------------------------------------------------------
