@@ -296,3 +296,50 @@ def test_import_all_rejects_oversized_zip_entries(tmp_path, caplog):
     assert any("oversized" in rec.message.lower() for rec in caplog.records), (
         "An oversize warning should have been logged"
     )
+
+
+def test_import_all_skips_invalid_scenario_names(tmp_path, caplog):
+    """A single bad scenario name must not abort the import of the rest."""
+    import json
+    import zipfile
+    import logging
+    from osmose.scenarios import ScenarioManager
+
+    storage = tmp_path / "scenarios"
+    storage.mkdir()
+    mgr = ScenarioManager(storage)
+
+    zip_path = tmp_path / "mixed.zip"
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(
+            "bad.json",
+            json.dumps({
+                "name": "",
+                "description": "invalid empty name",
+                "config": {},
+                "tags": [],
+                "parent_scenario": None,
+            }),
+        )
+        zf.writestr(
+            "good.json",
+            json.dumps({
+                "name": "good_one",
+                "description": "valid",
+                "config": {},
+                "tags": [],
+                "parent_scenario": None,
+            }),
+        )
+
+    with caplog.at_level(logging.WARNING):
+        count = mgr.import_all(zip_path)
+
+    assert count == 1, f"Only the valid scenario should import, got {count}"
+    assert (storage / "good_one" / "scenario.json").exists(), (
+        "The valid scenario should have been saved"
+    )
+    assert any(
+        "invalid" in rec.message.lower() or "skipping" in rec.message.lower()
+        for rec in caplog.records
+    ), "A skip warning should have been logged for the bad entry"

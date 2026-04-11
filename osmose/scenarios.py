@@ -197,13 +197,20 @@ class ScenarioManager:
                 if not target.is_relative_to(storage_resolved):
                     _log.warning("Skipping scenario with unsafe name: %s", scenario_name)
                     continue
-                scenario = Scenario(
-                    name=scenario_name,
-                    description=data.get("description", ""),
-                    config=data.get("config", {}),
-                    tags=data.get("tags", []),
-                    parent_scenario=data.get("parent_scenario"),
-                )
-                self.save(scenario)
-                count += 1
+                try:
+                    scenario = Scenario(
+                        name=scenario_name,
+                        description=data.get("description", ""),
+                        config=data.get("config", {}),
+                        tags=data.get("tags", []),
+                        parent_scenario=data.get("parent_scenario"),
+                    )
+                    self.save(scenario)
+                    count += 1
+                except ValueError as exc:
+                    _log.warning(
+                        "Skipping scenario with invalid name %r: %s",
+                        scenario_name,
+                        exc,
+                    )
         return count
