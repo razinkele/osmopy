@@ -93,6 +93,8 @@ class OsmoseConfigWriter:
         buckets: dict[str, dict[str, str]] = {}
 
         for key, value in config.items():
+            if key.startswith("_"):
+                continue
             bucket = self._classify(key)
             buckets.setdefault(bucket, {})[key] = str(value)
 

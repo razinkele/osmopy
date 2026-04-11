@@ -145,3 +145,16 @@ def test_roundtrip_value_with_semicolon(tmp_path):
     value = result.get("species.name.sp0", "")
     assert isinstance(value, str)
     assert len(value) > 0
+
+
+def test_internal_keys_not_written(tmp_path):
+    """Keys starting with _ must not appear in output files."""
+    writer = OsmoseConfigWriter()
+    config = {
+        "_osmose.config.dir": "/tmp/internal",
+        "simulation.time.nyear": "5",
+    }
+    writer.write(config, tmp_path)
+    master = (tmp_path / "osm_all-parameters.csv").read_text()
+    assert "_osmose" not in master
+    assert "simulation.time.nyear" in master
