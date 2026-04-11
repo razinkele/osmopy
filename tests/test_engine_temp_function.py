@@ -44,6 +44,26 @@ class TestPhiT:
         result = phi_t(np.array([self.T_P]), self.E_M, self.E_D, self.T_P)
         assert float(result[0]) == pytest.approx(1.0, abs=1e-12)
 
+    def test_phi_t_degenerate_e_d_equals_e_m_falls_back_to_arrhenius(self):
+        """When e_d == e_m the Johnson denominator is ill-defined; fall back to Arrhenius.
+
+        The degenerate case is handled by returning the pure Arrhenius term
+        exp(-e_m / (K_B * T)) instead of raising. Callers that need strict
+        Johnson semantics must validate e_d > e_m upstream. This test pins the
+        silent-fallback contract so a future refactor can't change it without
+        failing a test — see the docstring of phi_t for the design rationale.
+        """
+        e = 0.6
+        temps = np.array([10.0, 15.0, 20.0])
+        result = phi_t(temps, e_m=e, e_d=e, t_p=self.T_P)
+        # At T_P the normalized value is always 1.0 by construction
+        assert result[1] == pytest.approx(1.0, abs=1e-12)
+        # Off-peak: phi_t / phi_t(T_P) should equal the ratio of raw Arrhenius values
+        arr_at_temps = arrhenius(temps, e)
+        arr_at_peak = arrhenius(np.array([self.T_P]), e)[0]
+        expected = arr_at_temps / arr_at_peak
+        np.testing.assert_allclose(result, expected, rtol=1e-12)
+
 
 class TestArrhenius:
     E_M = 0.6  # eV activation energy

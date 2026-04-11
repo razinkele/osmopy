@@ -17,6 +17,15 @@ def phi_t(temp_c: NDArray[np.float64], e_m: float, e_d: float, t_p: float) -> ND
         e_m: Increasing activation energy (eV).
         e_d: Declining activation energy (eV).
         t_p: Peak temperature (Celsius).
+
+    Degenerate case: when ``abs(e_d - e_m) < 1e-30`` the declining phase of
+    the Johnson curve is ill-defined (division by the activation-energy
+    gap), and this function falls back to the pure Arrhenius form
+    ``exp(-e_m / (K_B * T))``. The fallback is silent by design — configs
+    with ``e_d ≈ e_m`` are physically uncommon but not strictly invalid,
+    and raising here would break any simulation that ends up on the edge
+    through rounding. Callers that need strict Johnson semantics should
+    validate their activation-energy parameters upstream.
     """
     t_k = temp_c + 273.15
     t_p_k = t_p + 273.15
