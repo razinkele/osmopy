@@ -17,6 +17,7 @@ OSMOSE JAR to be present. They are skipped otherwise.
 
 from __future__ import annotations
 
+import math
 import shutil
 import subprocess
 from pathlib import Path
@@ -181,7 +182,7 @@ class TestVBGrowthCurvesAllSpecies:
 
     @pytest.mark.parametrize("sp", SPECIES, ids=[s["name"] for s in SPECIES])
     def test_weight_length_conversion(self, sp):
-        """Weight = c * L^b for lengths from the VB curve."""
+        """Weight from W=c*L^b satisfies positivity, monotonicity, formula pin, and linf bound."""
         ages_dt = np.array([24, 48, 72], dtype=np.int32)  # 1, 2, 3 years
         ages_dt = ages_dt[ages_dt <= sp["lifespan"] * N_DT_PER_YEAR]
         n = len(ages_dt)
@@ -198,16 +199,24 @@ class TestVBGrowthCurvesAllSpecies:
 
         # Weight from VB lengths should match W = c * L^b
         computed_weights = sp["c"] * lengths ** sp["b"]
-        # Verify against independently known analytical bounds:
-        # At age=0, length ≈ initial; at max age, length → L_inf
+        # ages [24, 48, 72] sample 1/2/3 years — well below VB asymptote
         assert computed_weights[0] > 0, f"Weight at age 0 must be positive for {sp['name']}"
         assert computed_weights[-1] > computed_weights[0], (
             f"Weight must increase with age for {sp['name']}"
         )
-        # Max weight must be bounded by c * linf^b
+        # Max weight must be bounded by c * linf^b (strict; ages are below asymptote)
         max_weight = sp["c"] * sp["linf"] ** sp["b"]
-        assert computed_weights[-1] <= max_weight * 1.01, (
+        assert computed_weights[-1] <= max_weight, (
             f"Weight exceeds theoretical max for {sp['name']}"
+        )
+        # Value-based pin: independent code path (scalar math.pow vs numpy **)
+        ref_idx = 0
+        expected_first = math.pow(float(lengths[ref_idx]), sp["b"]) * sp["c"]
+        np.testing.assert_allclose(
+            computed_weights[ref_idx],
+            expected_first,
+            rtol=1e-12,
+            err_msg=f"W-L formula mismatch for {sp['name']} at first length",
         )
 
     @pytest.mark.parametrize("sp", SPECIES, ids=[s["name"] for s in SPECIES])
