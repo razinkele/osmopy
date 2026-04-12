@@ -184,6 +184,66 @@ def test_average_step_outputs_preserves_distributions():
     assert result.abundance_by_size is not None
 
 
+def test_average_step_outputs_multi_element_contract():
+    """The multi-element branch of _average_step_outputs must:
+    - Average biomass across the window
+    - Sum mortality_by_cause across the window
+    - Sum yield_by_species across the window
+    - Snapshot the LAST entry's distribution dicts (not the first, not the mean)
+
+    Deep review v3 I-5: the multi-element branch was previously untested.
+    """
+    from osmose.engine.simulate import StepOutput, _average_step_outputs
+
+    so_a = StepOutput(
+        step=0,
+        biomass=np.array([100.0]),
+        abundance=np.array([50.0]),
+        mortality_by_cause=np.array([[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]]),
+        yield_by_species=np.array([10.0]),
+        biomass_by_age={0: np.array([1.0])},
+        abundance_by_age={0: np.array([1.0])},
+        biomass_by_size={0: np.array([1.0])},
+        abundance_by_size={0: np.array([1.0])},
+    )
+    so_b = StepOutput(
+        step=1,
+        biomass=np.array([200.0]),
+        abundance=np.array([100.0]),
+        mortality_by_cause=np.array([[2.0, 4.0, 6.0, 8.0, 10.0, 12.0]]),
+        yield_by_species=np.array([20.0]),
+        biomass_by_age={0: np.array([2.0])},
+        abundance_by_age={0: np.array([2.0])},
+        biomass_by_size={0: np.array([2.0])},
+        abundance_by_size={0: np.array([2.0])},
+    )
+    so_c = StepOutput(
+        step=2,
+        biomass=np.array([300.0]),
+        abundance=np.array([150.0]),
+        mortality_by_cause=np.array([[3.0, 6.0, 9.0, 12.0, 15.0, 18.0]]),
+        yield_by_species=np.array([30.0]),
+        biomass_by_age={0: np.array([3.0])},
+        abundance_by_age={0: np.array([3.0])},
+        biomass_by_size={0: np.array([3.0])},
+        abundance_by_size={0: np.array([3.0])},
+    )
+
+    result = _average_step_outputs([so_a, so_b, so_c], freq=3, record_step=2)
+
+    np.testing.assert_allclose(result.biomass, np.array([200.0]))
+    np.testing.assert_allclose(result.abundance, np.array([100.0]))
+    np.testing.assert_allclose(
+        result.mortality_by_cause, np.array([[6.0, 12.0, 18.0, 24.0, 30.0, 36.0]])
+    )
+    np.testing.assert_allclose(result.yield_by_species, np.array([60.0]))
+    np.testing.assert_array_equal(result.biomass_by_age[0], np.array([3.0]))
+    np.testing.assert_array_equal(result.abundance_by_age[0], np.array([3.0]))
+    np.testing.assert_array_equal(result.biomass_by_size[0], np.array([3.0]))
+    np.testing.assert_array_equal(result.abundance_by_size[0], np.array([3.0]))
+    assert result.step == 2
+
+
 def test_simulate_output_step0_include(minimal_config):
     """output.step0.include=true prepends a step=-1 snapshot to the output list."""
     cfg_dict = dict(minimal_config)
