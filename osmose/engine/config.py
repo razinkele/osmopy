@@ -897,7 +897,9 @@ class EngineConfig:
         focal_seeding_biomass = _species_float_optional(
             cfg, "population.seeding.biomass.sp{i}", n_sp, default=0.0
         )
-        # Seeding max step: explicit override or default to lifespan
+        # Seeding max step: global-only key — verified 2026-04-12 against Java OSMOSE
+        # source (ReproductionProcess.java:83,146). Java uses a single `int yearMaxSeeding`
+        # for all species, NOT per-species. Python's np.full broadcast is correct parity.
         seeding_max_year_str = cfg.get("population.seeding.year.max", "")
         if seeding_max_year_str:
             seeding_max_years = float(seeding_max_year_str)
