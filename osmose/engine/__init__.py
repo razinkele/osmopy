@@ -1,32 +1,12 @@
-"""Python OSMOSE simulation engine.
-
-Provides a common Engine protocol for both Java (subprocess) and
-Python (in-process vectorized) backends.
-"""
+"""Python OSMOSE simulation engine."""
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Protocol, runtime_checkable
 
 import numpy as np
 
 from osmose.runner import RunResult
-
-
-@runtime_checkable
-class Engine(Protocol):
-    """Common interface for Java and Python OSMOSE engines."""
-
-    def run(self, config: dict[str, str], output_dir: Path, seed: int = 0) -> RunResult: ...
-
-    def run_ensemble(
-        self,
-        config: dict[str, str],
-        output_dir: Path,
-        n: int,
-        base_seed: int = 0,
-    ) -> list[RunResult]: ...
 
 
 class PythonEngine:
@@ -51,13 +31,11 @@ class PythonEngine:
 
         grid = None
         if grid_file:
-            from pathlib import Path as P
-
             config_dir = config.get("_osmose.config.dir", "")
-            search_bases = [P(".")]
+            search_bases = [Path(".")]
             if config_dir:
-                search_bases.insert(0, P(config_dir))
-            search_bases.append(P("data/examples"))
+                search_bases.insert(0, Path(config_dir))
+            search_bases.append(Path("data/examples"))
             for base in search_bases:
                 path = base / grid_file
                 if path.exists():
@@ -97,27 +75,3 @@ class PythonEngine:
         base_seed: int = 0,
     ) -> list[RunResult]:
         return [self.run(config, output_dir, seed=base_seed + i) for i in range(n)]
-
-
-class JavaEngine:
-    """Wrapper around existing OsmoseRunner for Engine protocol compatibility."""
-
-    def __init__(self, jar_path: Path, java_cmd: str = "java") -> None:
-        self.jar_path = jar_path
-        self.java_cmd = java_cmd
-
-    def run(self, config: dict[str, str], output_dir: Path, seed: int = 0) -> RunResult:
-        raise NotImplementedError(
-            "JavaEngine.run() requires config file path — use OsmoseRunner directly for now"
-        )
-
-    def run_ensemble(
-        self,
-        config: dict[str, str],
-        output_dir: Path,
-        n: int,
-        base_seed: int = 0,
-    ) -> list[RunResult]:
-        raise NotImplementedError(
-            "JavaEngine.run_ensemble() is not implemented — use OsmoseRunner directly"
-        )
