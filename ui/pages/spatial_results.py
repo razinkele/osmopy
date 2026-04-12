@@ -149,7 +149,10 @@ def spatial_results_server(input, output, session, state):
             try:
                 old_ds.close()
             except Exception:
-                pass
+                _log.warning(
+                    "Failed to close previous spatial dataset during swap",
+                    exc_info=True,
+                )
 
     @reactive.effect
     def _auto_load_spatial():
