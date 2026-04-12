@@ -174,7 +174,7 @@ def register_calibration_handlers(
                 cal_F.set(F)
             elif kind == "error":
                 surrogate_status.set(f"Failed: {payload}")
-                ui.notification_show(f"Calibration error: {payload}", type="error", duration=10)
+                ui.notification_show(f"Calibration error: {payload}", type="error", duration=15)
             elif kind == "sensitivity":
                 sensitivity_result.set(payload)
 
@@ -188,18 +188,18 @@ def register_calibration_handlers(
         selected = collect_selected_params(input, state)
         if not selected:
             cal_history.set([])
-            ui.notification_show("Select at least one parameter to calibrate.", type="warning")
+            ui.notification_show("Select at least one parameter to calibrate.", type="warning", duration=5)
             return
 
         jar_path = Path(state.jar_path.get())
         if not jar_path.exists():
-            ui.notification_show(f"JAR not found: {jar_path}", type="error")
+            ui.notification_show(f"JAR not found: {jar_path}", type="error", duration=15)
             return
 
         obs_bio = input.observed_biomass()
         obs_diet = input.observed_diet()
         if not obs_bio and not obs_diet:
-            ui.notification_show("Upload observed data (biomass or diet CSV).", type="warning")
+            ui.notification_show("Upload observed data (biomass or diet CSV).", type="warning", duration=5)
             return
 
         import pandas as pd
@@ -216,7 +216,8 @@ def register_calibration_handlers(
         with reactive.isolate():
             current_config = state.config.get()
             source_dir = state.config_dir.get()
-        writer.write(current_config, config_dir)
+            case_map = state.key_case_map.get()
+        writer.write(current_config, config_dir, key_case_map=case_map)
         if source_dir and source_dir.is_dir():
             copy_data_files(current_config, source_dir, config_dir)
         base_config = config_dir / "osm_all-parameters.csv"
@@ -372,12 +373,12 @@ def register_calibration_handlers(
 
         selected = collect_selected_params(input, state)
         if not selected:
-            ui.notification_show("Select at least one parameter for sensitivity.", type="warning")
+            ui.notification_show("Select at least one parameter for sensitivity.", type="warning", duration=5)
             return
 
         jar_path = Path(state.jar_path.get())
         if not jar_path.exists():
-            ui.notification_show(f"JAR not found: {jar_path}", type="error")
+            ui.notification_show(f"JAR not found: {jar_path}", type="error", duration=15)
             return
 
         param_names = [p["key"] for p in selected]
@@ -386,13 +387,14 @@ def register_calibration_handlers(
 
         obs_bio = input.observed_biomass()
         if not obs_bio:
-            ui.notification_show("Upload observed biomass CSV.", type="warning")
+            ui.notification_show("Upload observed biomass CSV.", type="warning", duration=5)
             return
         obs_bio_df = pd.read_csv(obs_bio[0]["datapath"])
 
         # Capture reactive values before spawning thread (thread safety)
         sens_config = state.config.get()
         sens_source_dir = state.config_dir.get()
+        sens_case_map = state.key_case_map.get()
 
         def run_sensitivity():
             try:
@@ -400,22 +402,22 @@ def register_calibration_handlers(
                 sens_work_dir = Path(tempfile.mkdtemp(prefix="osmose_sens_"))
                 sens_writer = OsmoseConfigWriter()
                 config_dir = sens_work_dir / "config"
-                sens_writer.write(sens_config, config_dir)
+                sens_writer.write(sens_config, config_dir, key_case_map=sens_case_map)
                 if sens_source_dir and sens_source_dir.is_dir():
                     copy_data_files(sens_config, sens_source_dir, config_dir)
                 base_config = config_dir / "osm_all-parameters.csv"
 
                 Y = np.zeros(samples.shape[0])
+                prob = OsmoseCalibrationProblem(
+                    free_params=build_free_params(selected),
+                    objective_fns=[lambda r, df=obs_bio_df: biomass_rmse(r.biomass(), df)],
+                    base_config_path=base_config,
+                    jar_path=jar_path,
+                    work_dir=sens_work_dir,
+                )
                 for idx, row in enumerate(samples):
                     overrides = {selected[j]["key"]: str(row[j]) for j in range(len(selected))}
                     try:
-                        prob = OsmoseCalibrationProblem(
-                            free_params=build_free_params(selected),
-                            objective_fns=[lambda r, df=obs_bio_df: biomass_rmse(r.biomass(), df)],
-                            base_config_path=base_config,
-                            jar_path=jar_path,
-                            work_dir=sens_work_dir / f"sens_{idx}",
-                        )
                         result = prob._run_single(overrides, run_id=idx)
                         Y[idx] = result[0]
                     except (
@@ -426,6 +428,8 @@ def register_calibration_handlers(
                     ) as exc:
                         _log.warning("Sensitivity sample %d failed: %s", idx, exc)
                         Y[idx] = float("inf")
+                    finally:
+                        prob.cleanup_run(idx)
 
                 n_inf = int(np.isinf(Y).sum())
                 if n_inf > len(Y) * 0.1:

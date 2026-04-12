@@ -20,12 +20,18 @@ class SurrogateCalibrator:
     5. optimize() -- Find optimal parameters on the surrogate
     """
 
-    def __init__(self, param_bounds: list[tuple[float, float]], n_objectives: int = 1):
+    def __init__(
+        self,
+        param_bounds: list[tuple[float, float]],
+        n_objectives: int = 1,
+        n_restarts_optimizer: int = 2,
+    ):
         self.param_bounds = param_bounds
         self.n_objectives = n_objectives
         self.n_params = len(param_bounds)
         self.models: list[GaussianProcessRegressor] = []
         self._is_fitted = False
+        self._n_restarts_optimizer = n_restarts_optimizer
 
     def generate_samples(self, n_samples: int = 500, seed: int = 42) -> np.ndarray:
         """Generate Latin hypercube samples in the parameter space.
@@ -53,7 +59,11 @@ class SurrogateCalibrator:
         self.models = []
         for obj_idx in range(y.shape[1]):
             kernel = Matern(nu=2.5)
-            gp = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=5, random_state=42)
+            gp = GaussianProcessRegressor(
+                kernel=kernel,
+                n_restarts_optimizer=self._n_restarts_optimizer,
+                random_state=42,
+            )
             gp.fit(X, y[:, obj_idx])
             self.models.append(gp)
 

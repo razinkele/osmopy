@@ -17,6 +17,7 @@ from pymoo.core.problem import Problem  # type: ignore[import-untyped]
 from osmose.logging import setup_logging
 
 _OSMOSE_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9._]*$")
+_OSMOSE_VALUE_PATTERN = re.compile(r"^[\w.+\-eE/]+$")
 
 _log = setup_logging("osmose.calibration")
 
@@ -153,9 +154,15 @@ class OsmoseCalibrationProblem(Problem):
         Uses subprocess (synchronous) since pymoo evaluates in a loop.
         """
         # Validate override keys before constructing the command
-        for key in overrides:
+        for key, value in overrides.items():
             if not _OSMOSE_KEY_PATTERN.match(key):
                 raise ValueError(f"Invalid override key: {key!r}")
+            val_str = str(value)
+            if not _OSMOSE_VALUE_PATTERN.match(val_str):
+                raise ValueError(
+                    f"Invalid override value for {key!r}: {val_str!r} — "
+                    "only alphanumeric, '.', '+', '-', 'e', 'E', '/' allowed"
+                )
 
         # Create isolated output directory
         run_dir = self.work_dir / f"run_{run_id}"
@@ -186,3 +193,11 @@ class OsmoseCalibrationProblem(Problem):
                 obj_values.append(fn(results))
 
         return obj_values
+
+    def cleanup_run(self, run_id: int) -> None:
+        """Remove a completed run directory to reclaim disk space."""
+        run_dir = self.work_dir / f"run_{run_id}"
+        if run_dir.is_dir():
+            import shutil
+
+            shutil.rmtree(run_dir, ignore_errors=True)
