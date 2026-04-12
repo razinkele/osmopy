@@ -27,8 +27,8 @@ def starvation_mortality(state: SchoolState, config: EngineConfig, n_subdt: int)
     n_dead = state.abundance * mortality_fraction
     n_dead[state.is_background] = 0.0
 
-    # Skip eggs (age_dt == 0)
-    n_dead[state.age_dt == 0] = 0.0
+    # Skip pre-feeding schools (eggs/larvae before first feeding age)
+    n_dead[state.age_dt < state.first_feeding_age_dt] = 0.0
 
     new_abundance = state.abundance - n_dead
     new_biomass = new_abundance * state.weight

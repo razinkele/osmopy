@@ -129,7 +129,7 @@ class SchoolState:
             starvation_rate=np.zeros(n, dtype=np.float64),
             n_dead=np.zeros((n, n_causes), dtype=np.float64),
             is_egg=np.zeros(n, dtype=np.bool_),
-            first_feeding_age_dt=np.zeros(n, dtype=np.int32),
+            first_feeding_age_dt=np.ones(n, dtype=np.int32),
             egg_retained=np.zeros(n, dtype=np.float64),
         )
 

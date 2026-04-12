@@ -138,3 +138,45 @@ def test_additional_mortality_by_dt_override_rotates_with_step():
         rtol=1e-10,
         err_msg="Step 5 (wraps to index 1) did not produce expected mortality",
     )
+
+
+def test_additional_mortality_skips_pre_feeding_larvae():
+    """Larvae with age_dt < first_feeding_age_dt should skip additional mortality."""
+    from osmose.engine.processes.natural import additional_mortality
+
+    cfg_dict = {
+        "simulation.time.ndtperyear": "24",
+        "simulation.time.nyear": "1",
+        "simulation.nspecies": "1",
+        "simulation.nschool.sp0": "5",
+        "species.name.sp0": "Anchovy",
+        "species.linf.sp0": "20.0",
+        "species.k.sp0": "0.3",
+        "species.t0.sp0": "-0.5",
+        "species.lmax.sp0": "20.0",
+        "species.length2weight.condition.factor.sp0": "0.005",
+        "species.length2weight.allometric.power.sp0": "3.0",
+        "species.lifespan.sp0": "5",
+        "species.egg.size.sp0": "1.0",
+        "species.vonbertalanffy.threshold.age.sp0": "1.0",
+        "predation.ingestion.rate.max.sp0": "3.5",
+        "predation.efficiency.critical.sp0": "0.57",
+        "mortality.additional.rate.sp0": "5.0",
+    }
+    cfg = EngineConfig.from_dict(cfg_dict)
+
+    state = SchoolState.create(n_schools=3, species_id=np.zeros(3, dtype=np.int32))
+    state = state.replace(
+        abundance=np.array([1000.0, 1000.0, 1000.0]),
+        weight=np.array([0.001, 0.01, 6.0]),
+        biomass=np.array([1.0, 10.0, 6000.0]),
+        age_dt=np.array([0, 2, 24], dtype=np.int32),
+        first_feeding_age_dt=np.array([3, 3, 3], dtype=np.int32),
+    )
+    result = additional_mortality(state, cfg, n_subdt=10)
+    # age_dt=0 < first_feeding_age_dt=3: skip
+    np.testing.assert_allclose(result.abundance[0], 1000.0)
+    # age_dt=2 < first_feeding_age_dt=3: skip
+    np.testing.assert_allclose(result.abundance[1], 1000.0)
+    # age_dt=24 >= first_feeding_age_dt=3: apply mortality
+    assert result.abundance[2] < 1000.0

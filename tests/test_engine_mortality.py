@@ -113,20 +113,22 @@ class TestAdditionalMortality:
         # sp1 (rate=0.2): abundance must have decreased
         assert new_state.abundance[1] < 1000.0
 
-    def test_skips_age_zero_schools(self):
-        """Java skips age_dt==0 schools — eggs handled by larva_mortality."""
+    def test_skips_pre_feeding_schools(self):
+        """Pre-feeding schools (age_dt < first_feeding_age_dt) skip additional mortality."""
         cfg = EngineConfig.from_dict(_make_mortality_config())
-        state = SchoolState.create(n_schools=2, species_id=np.zeros(2, dtype=np.int32))
+        state = SchoolState.create(n_schools=3, species_id=np.zeros(3, dtype=np.int32))
         state = state.replace(
-            abundance=np.array([1000.0, 1000.0]),
-            weight=np.array([0.001, 6.0]),
-            age_dt=np.array([0, 24], dtype=np.int32),  # egg vs adult
+            abundance=np.array([1000.0, 1000.0, 1000.0]),
+            weight=np.array([0.001, 0.01, 6.0]),
+            age_dt=np.array([0, 2, 24], dtype=np.int32),
+            first_feeding_age_dt=np.array([3, 3, 3], dtype=np.int32),
         )
         new_state = additional_mortality(state, cfg, n_subdt=10)
-        # Egg (age_dt=0) should be untouched
+        # Both pre-feeding schools should be untouched
         np.testing.assert_allclose(new_state.abundance[0], 1000.0)
-        # Adult should have mortality applied
-        assert new_state.abundance[1] < 1000.0
+        np.testing.assert_allclose(new_state.abundance[1], 1000.0)
+        # Adult (age_dt=24 >= first_feeding_age_dt=3) should have mortality
+        assert new_state.abundance[2] < 1000.0
 
 
 class TestOutMortality:

@@ -64,10 +64,27 @@ class TestStarvationMortality:
         state = state.replace(
             abundance=np.array([1000.0]),
             age_dt=np.array([0], dtype=np.int32),
+            first_feeding_age_dt=np.array([1], dtype=np.int32),
             starvation_rate=np.array([2.0]),
         )
         new_state = starvation_mortality(state, cfg, n_subdt=10)
         np.testing.assert_allclose(new_state.abundance[0], 1000.0)
+
+    def test_skips_pre_feeding_larvae(self):
+        """Larvae with age_dt < first_feeding_age_dt should also skip starvation."""
+        cfg = EngineConfig.from_dict(_make_starv_config())
+        state = SchoolState.create(n_schools=2, species_id=np.zeros(2, dtype=np.int32))
+        state = state.replace(
+            abundance=np.array([1000.0, 1000.0]),
+            age_dt=np.array([1, 5], dtype=np.int32),
+            first_feeding_age_dt=np.array([3, 3], dtype=np.int32),
+            starvation_rate=np.array([2.0, 2.0]),
+        )
+        new_state = starvation_mortality(state, cfg, n_subdt=10)
+        # age_dt=1 < first_feeding_age_dt=3: skip
+        np.testing.assert_allclose(new_state.abundance[0], 1000.0)
+        # age_dt=5 >= first_feeding_age_dt=3: apply
+        assert new_state.abundance[1] < 1000.0
 
 
 class TestUpdateStarvationRate:

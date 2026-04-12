@@ -70,7 +70,7 @@ def _apply_starvation_for_school(
     """Apply starvation mortality to a single school (in-place on n_dead)."""
     if state.is_background[idx]:
         return
-    if state.age_dt[idx] == 0:
+    if state.age_dt[idx] < state.first_feeding_age_dt[idx]:
         return
     M = state.starvation_rate[idx] / (config.n_dt_per_year * n_subdt)
     if M <= 0:
@@ -94,7 +94,7 @@ def _apply_additional_for_school(
     """Apply additional (natural) mortality to a single school (in-place on n_dead)."""
     if state.is_background[idx]:
         return
-    if state.age_dt[idx] == 0:
+    if state.age_dt[idx] < state.first_feeding_age_dt[idx]:
         return
     sp = state.species_id[idx]
 
@@ -145,7 +145,7 @@ def _apply_fishing_for_school(
     """Apply fishing mortality to a single school (in-place on n_dead)."""
     if state.is_background[idx]:
         return
-    if state.age_dt[idx] == 0:
+    if state.age_dt[idx] < state.first_feeding_age_dt[idx]:
         return
     if not config.fishing_enabled:
         return
@@ -533,9 +533,9 @@ def _lookup_spatial_factors(
 
 
 def _zero_exempt(arr: NDArray[np.float64], work_state) -> None:
-    """Zero out rates for background species, age-0 schools, and negatives."""
+    """Zero out rates for background species, pre-feeding schools, and negatives."""
     arr[work_state.is_background] = 0.0
-    arr[work_state.age_dt == 0] = 0.0
+    arr[work_state.age_dt < work_state.first_feeding_age_dt] = 0.0
     arr[arr < 0] = 0.0
 
 

@@ -45,8 +45,8 @@ def additional_mortality(
     mortality_fraction = 1 - np.exp(-d)
     n_dead = state.abundance * mortality_fraction
     n_dead[state.is_background] = 0.0
-    # Java skips age_dt == 0 (eggs handled by larva_mortality pre-pass)
-    n_dead[state.age_dt == 0] = 0.0
+    # Java skips pre-feeding schools (eggs handled by larva_mortality pre-pass)
+    n_dead[state.age_dt < state.first_feeding_age_dt] = 0.0
 
     new_abundance = state.abundance - n_dead
     new_biomass = new_abundance * state.weight

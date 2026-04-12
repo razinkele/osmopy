@@ -53,6 +53,7 @@ def test_vectorized_rates_correctness():
             self.species_id = np.array([0, 0, 1, 1, 0], dtype=np.int32)
             self.is_background = np.array([False, False, False, False, True])
             self.age_dt = np.array([5, 0, 3, 10, 5], dtype=np.int32)
+            self.first_feeding_age_dt = np.ones(5, dtype=np.int32)
             self.starvation_rate = np.array([0.5, 0.0, 0.3, 0.0, 0.1])
             self.cell_y = np.array([0, 1, 0, 1, 0], dtype=np.int32)
             self.cell_x = np.array([0, 0, 1, 1, 0], dtype=np.int32)

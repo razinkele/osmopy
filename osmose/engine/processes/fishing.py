@@ -115,8 +115,8 @@ def fishing_mortality(
     n_dead_total = state.abundance * mortality_fraction * selectivity * spatial_factor * mpa_factor
     n_dead_total[state.is_background] = 0.0
 
-    # Skip eggs (age_dt == 0)
-    n_dead_total[state.age_dt == 0] = 0.0
+    # Skip pre-feeding schools (eggs/larvae before first feeding age)
+    n_dead_total[state.age_dt < state.first_feeding_age_dt] = 0.0
 
     # 2.6: Discards — split total fishing deaths into landed and discarded
     new_n_dead = state.n_dead.copy()
