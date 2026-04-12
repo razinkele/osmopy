@@ -76,8 +76,9 @@ class OsmoseConfigReader:
         case is preserved in ``self.key_case_map`` so that writers can
         restore the case Java expects.
         """
-        if filepath.stat().st_size > 10_000_000:  # 10MB
-            raise ValueError(f"Config file too large: {filepath} ({filepath.stat().st_size} bytes)")
+        st = filepath.stat()
+        if st.st_size > 10_000_000:  # 10MB
+            raise ValueError(f"Config file too large: {filepath} ({st.st_size} bytes)")
         result: dict[str, str] = {}
         skipped = 0
         with open(filepath, "r", encoding="utf-8", errors="replace") as f:
