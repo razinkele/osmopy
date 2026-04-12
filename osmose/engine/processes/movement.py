@@ -83,8 +83,8 @@ def _map_move_school(
         max_p = map_set.max_proba[index_map]
         for _ in range(10_000):
             flat_idx = rng.integers(0, n_cells)
-            j = flat_idx // grid_nx
-            i = flat_idx % grid_nx
+            j = int(flat_idx // grid_nx)
+            i = int(flat_idx % grid_nx)
             proba = current_map[j, i]
             if proba > 0 and not np.isnan(proba):
                 if max_p == 0.0 or proba >= rng.random() * max_p:

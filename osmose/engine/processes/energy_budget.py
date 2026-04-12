@@ -103,7 +103,7 @@ def compute_energy_budget(
 
     # Maintenance: convert weight to grams, apply Arrhenius
     w_grams = weight * 1e6
-    e_maint = c_m * np.power(w_grams, beta) * arrhenius(temp_c, e_maint_energy) / n_dt_per_year
+    e_maint = c_m * np.power(w_grams, beta) * arrhenius(np.asarray(temp_c), e_maint_energy) / n_dt_per_year
 
     # Net energy
     e_net = e_gross - e_maint

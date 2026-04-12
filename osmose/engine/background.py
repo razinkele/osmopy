@@ -11,12 +11,18 @@ import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import xarray as xr
 from numpy.typing import NDArray
 
 from osmose.engine.path_resolution import resolve_data_path
+
+if TYPE_CHECKING:
+    from osmose.engine.config import EngineConfig
+    from osmose.engine.grid import Grid
+    from osmose.engine.state import SchoolState
 
 logger = logging.getLogger(__name__)
 
@@ -235,8 +241,8 @@ class BackgroundState:
     def __init__(
         self,
         config: dict[str, str],
-        grid: "Grid",  # noqa: F821 — Grid imported lazily to avoid circular deps
-        engine_config: "EngineConfig",  # noqa: F821
+        grid: Grid,
+        engine_config: EngineConfig,
     ) -> None:
         n_focal = engine_config.n_species
         n_dt_per_year = engine_config.n_dt_per_year
@@ -340,7 +346,7 @@ class BackgroundState:
                     self._forcing_data.append(None)
                     self._forcing_nsteps.append(0)
 
-    def get_schools(self, step: int) -> "SchoolState":  # noqa: F821
+    def get_schools(self, step: int) -> SchoolState:
         """Return a SchoolState with one school per species per class per ocean cell.
 
         Parameters
@@ -409,7 +415,7 @@ class BackgroundState:
 
                 if netcdf_mode:
                     # Per-cell array from NetCDF
-                    cell_biomass: NDArray[np.float64] = sp_cell_biomass_base * prop
+                    cell_biomass: NDArray[np.float64] = np.asarray(sp_cell_biomass_base * prop, dtype=np.float64)
                 else:
                     # Uniform: scalar spread evenly across all ocean cells
                     scalar_biomass = per_cell * prop

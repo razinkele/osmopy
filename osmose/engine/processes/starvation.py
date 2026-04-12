@@ -60,6 +60,9 @@ def update_starvation_rate(state: SchoolState, config: EngineConfig) -> SchoolSt
         m_max * (1 - sr / np.where(csr > 0, csr, 1.0)),
         0.0,
     )
+    # Clamp to non-negative: float precision can push sr slightly above 1.0
+    # when csr == 0, producing a small negative rate.
+    new_rate = np.maximum(0.0, new_rate)
     new_rate[state.is_background] = 0.0
 
     return state.replace(starvation_rate=new_rate)

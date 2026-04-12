@@ -259,6 +259,8 @@ def _apply_predation_for_school(
     if state.age_dt[p_idx] < state.first_feeding_age_dt[p_idx]:
         return
 
+    if inst_abd is None:
+        raise RuntimeError("inst_abd must not be None in _apply_predation_for_school")
     inst_abd_p = inst_abd[p_idx]
     if inst_abd_p <= 0:
         return
@@ -1186,12 +1188,18 @@ if _HAS_NUMBA:
 
         Each cell gets a deterministic seed derived from rng_seed + cell index.
         RNG is generated inline per cell (same as sequential version) to avoid
-        the overhead of a separate pre-generation loop. Deterministic because
-        np.random.seed() resets the thread-local PRNG at each iteration.
+        the overhead of a separate pre-generation loop.
 
-        Safe because all school-level mutations are cell-local: each cell's
-        index range [start, end) is disjoint.
+        Deterministic because:
+        1. np.random.seed() resets the thread-local PRNG per cell iteration.
+        2. Each cell's school index range [start, end) is disjoint by
+           construction (sorted_indices partitioned by cell boundaries),
+           so no cross-cell write conflicts exist even under prange.
+
+        This means results are reproducible for a given seed regardless of
+        thread scheduling order, provided the disjoint-index invariant holds.
         """
+        # Invariant: boundaries partition sorted_indices into disjoint slices
         for cell in prange(n_cells):
             start = boundaries[cell]
             end = boundaries[cell + 1]
@@ -1428,14 +1436,20 @@ def _mortality_in_cell(
                     ctx=ctx,
                 )
             elif cause == _STARVATION:
+                if inst_abd is None:
+                    raise RuntimeError("inst_abd must not be None for STARVATION cause")
                 s_local = seq_starv[i]
                 s_idx = int(cell_indices[s_local])
                 _apply_starvation_for_school(s_idx, state, config, n_subdt, inst_abd)
             elif cause == _ADDITIONAL:
+                if inst_abd is None:
+                    raise RuntimeError("inst_abd must not be None for ADDITIONAL cause")
                 a_local = seq_nat[i]
                 a_idx = int(cell_indices[a_local])
                 _apply_additional_for_school(a_idx, state, config, n_subdt, inst_abd, step=step)
             elif cause == _FISHING:
+                if inst_abd is None:
+                    raise RuntimeError("inst_abd must not be None for FISHING cause")
                 f_local = seq_fish[i]
                 f_idx = int(cell_indices[f_local])
                 _apply_fishing_for_school(f_idx, state, config, n_subdt, inst_abd, step=step)

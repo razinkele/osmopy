@@ -43,8 +43,14 @@ class PythonEngine:
                         path, mask_var=mask_var, lat_dim=lat_var, lon_dim=lon_var
                     )
                     break
-
-        if grid is None:
+            if grid is None:
+                searched = [str(b / grid_file) for b in search_bases]
+                raise FileNotFoundError(
+                    f"Grid file '{grid_file}' not found in search paths: {searched}. "
+                    "Set grid.netcdf.file to an existing file or remove the key "
+                    "to use a rectangular grid."
+                )
+        else:
             nx = int(config.get("grid.nlon", config.get("grid.ncol", "10")))
             ny = int(config.get("grid.nlat", config.get("grid.nrow", "10")))
             grid = Grid.from_dimensions(ny=ny, nx=nx)
