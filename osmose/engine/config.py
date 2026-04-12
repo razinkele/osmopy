@@ -678,6 +678,118 @@ def _parse_predation_params(
     }
 
 
+def _merge_focal_background(
+    focal: dict[str, Any],
+    background_list: list[BackgroundSpeciesInfo],
+    focal_species_names: list[str],
+    focal_fishing_spatial_maps: list[np.ndarray | None],
+    focal_movement_method: list[str],
+) -> dict[str, Any]:
+    """Concatenate focal-species arrays with background defaults."""
+    n_bkg = len(background_list)
+    if n_bkg > 0:
+        bkg_names = [b.name for b in background_list]
+        bkg_ingestion = np.array([b.ingestion_rate for b in background_list])
+        bkg_condition_factor = np.array([b.condition_factor for b in background_list])
+        bkg_allometric_power = np.array([b.allometric_power for b in background_list])
+        bkg_zeros_f = np.zeros(n_bkg, dtype=np.float64)
+        bkg_zeros_i = np.zeros(n_bkg, dtype=np.int32)
+
+        return {
+            "all_species_names": focal_species_names + bkg_names,
+            "linf": np.concatenate([focal["focal_linf"], bkg_zeros_f]),
+            "k": np.concatenate([focal["focal_k"], bkg_zeros_f]),
+            "t0": np.concatenate([focal["focal_t0"], bkg_zeros_f]),
+            "egg_size": np.concatenate([focal["focal_egg_size"], bkg_zeros_f]),
+            "condition_factor": np.concatenate(
+                [focal["focal_condition_factor"], bkg_condition_factor]
+            ),
+            "allometric_power": np.concatenate(
+                [focal["focal_allometric_power"], bkg_allometric_power]
+            ),
+            "vb_threshold_age": np.concatenate([focal["focal_vb_threshold_age"], bkg_zeros_f]),
+            "lifespan_dt": np.concatenate([focal["focal_lifespan_dt"], bkg_zeros_i]),
+            "ingestion_rate": np.concatenate([focal["focal_ingestion_rate"], bkg_ingestion]),
+            "critical_success_rate": np.concatenate(
+                [focal["focal_critical_success_rate"], bkg_zeros_f]
+            ),
+            "delta_lmax_factor": np.concatenate([focal["focal_delta_lmax_factor"], bkg_zeros_f]),
+            "additional_mortality_rate": np.concatenate(
+                [focal["focal_additional_mortality_rate"], bkg_zeros_f]
+            ),
+            "sex_ratio": np.concatenate([focal["focal_sex_ratio"], bkg_zeros_f]),
+            "relative_fecundity": np.concatenate(
+                [focal["focal_relative_fecundity"], bkg_zeros_f]
+            ),
+            "maturity_size": np.concatenate([focal["focal_maturity_size"], bkg_zeros_f]),
+            "seeding_biomass": np.concatenate([focal["focal_seeding_biomass"], bkg_zeros_f]),
+            "seeding_max_step": np.concatenate([focal["focal_seeding_max_step"], bkg_zeros_i]),
+            "larva_mortality_rate": np.concatenate(
+                [focal["focal_larva_mortality_rate"], bkg_zeros_f]
+            ),
+            "maturity_age_dt": np.concatenate([focal["focal_maturity_age_dt"], bkg_zeros_i]),
+            "lmax": np.concatenate([focal["focal_lmax"], bkg_zeros_f]),
+            "starvation_rate_max": np.concatenate(
+                [focal["focal_starvation_rate_max"], bkg_zeros_f]
+            ),
+            "fishing_rate": np.concatenate([focal["fishing"], bkg_zeros_f]),
+            "fishing_selectivity_l50": np.concatenate(
+                [focal["focal_fishing_selectivity_l50"], bkg_zeros_f]
+            ),
+            "fishing_selectivity_a50": np.concatenate(
+                [focal["focal_fishing_a50"], np.full(n_bkg, np.nan, dtype=np.float64)]
+            ),
+            "fishing_selectivity_type": np.concatenate(
+                [focal["focal_fishing_sel_type"], np.full(n_bkg, -1, dtype=np.int32)]
+            ),
+            "fishing_selectivity_slope": np.concatenate(
+                [focal["focal_fishing_slope"], bkg_zeros_f]
+            ),
+            "movement_method": focal_movement_method + ["none"] * n_bkg,
+            "random_walk_range": np.concatenate([focal["focal_random_walk_range"], bkg_zeros_i]),
+            "out_mortality_rate": np.concatenate(
+                [focal["focal_out_mortality_rate"], bkg_zeros_f]
+            ),
+            "n_schools": np.concatenate([focal["focal_n_schools"], bkg_zeros_i]),
+            "fishing_spatial_maps": focal_fishing_spatial_maps + [None] * n_bkg,
+        }
+    else:
+        return {
+            "all_species_names": focal_species_names[:],
+            "linf": focal["focal_linf"],
+            "k": focal["focal_k"],
+            "t0": focal["focal_t0"],
+            "egg_size": focal["focal_egg_size"],
+            "condition_factor": focal["focal_condition_factor"],
+            "allometric_power": focal["focal_allometric_power"],
+            "vb_threshold_age": focal["focal_vb_threshold_age"],
+            "lifespan_dt": focal["focal_lifespan_dt"],
+            "ingestion_rate": focal["focal_ingestion_rate"],
+            "critical_success_rate": focal["focal_critical_success_rate"],
+            "delta_lmax_factor": focal["focal_delta_lmax_factor"],
+            "additional_mortality_rate": focal["focal_additional_mortality_rate"],
+            "sex_ratio": focal["focal_sex_ratio"],
+            "relative_fecundity": focal["focal_relative_fecundity"],
+            "maturity_size": focal["focal_maturity_size"],
+            "seeding_biomass": focal["focal_seeding_biomass"],
+            "seeding_max_step": focal["focal_seeding_max_step"],
+            "larva_mortality_rate": focal["focal_larva_mortality_rate"],
+            "maturity_age_dt": focal["focal_maturity_age_dt"],
+            "lmax": focal["focal_lmax"],
+            "starvation_rate_max": focal["focal_starvation_rate_max"],
+            "fishing_rate": focal["fishing"],
+            "fishing_selectivity_l50": focal["focal_fishing_selectivity_l50"],
+            "fishing_selectivity_a50": focal["focal_fishing_a50"],
+            "fishing_selectivity_type": focal["focal_fishing_sel_type"],
+            "fishing_selectivity_slope": focal["focal_fishing_slope"],
+            "movement_method": focal_movement_method,
+            "random_walk_range": focal["focal_random_walk_range"],
+            "out_mortality_rate": focal["focal_out_mortality_rate"],
+            "n_schools": focal["focal_n_schools"],
+            "fishing_spatial_maps": focal_fishing_spatial_maps,
+        }
+
+
 def _parse_mpa_zones(cfg: dict[str, str]) -> list[MPAZone] | None:
     """Parse Marine Protected Area configurations."""
     zones: list[MPAZone] = []
@@ -1175,86 +1287,72 @@ class EngineConfig:
         size_ratio_min_2d = _pred["size_ratio_min_2d"]
         size_ratio_max_2d = _pred["size_ratio_max_2d"]
 
-        # Extend all per-species arrays with background species values
-        if n_bkg > 0:
-            bkg_names = [b.name for b in background_list]
-            bkg_ingestion = np.array([b.ingestion_rate for b in background_list])
-            bkg_condition_factor = np.array([b.condition_factor for b in background_list])
-            bkg_allometric_power = np.array([b.allometric_power for b in background_list])
-            bkg_zeros_f = np.zeros(n_bkg, dtype=np.float64)
-            bkg_zeros_i = np.zeros(n_bkg, dtype=np.int32)
-
-            all_species_names = focal_species_names + bkg_names
-            linf = np.concatenate([focal_linf, bkg_zeros_f])
-            k = np.concatenate([focal_k, bkg_zeros_f])
-            t0 = np.concatenate([focal_t0, bkg_zeros_f])
-            egg_size = np.concatenate([focal_egg_size, bkg_zeros_f])
-            condition_factor = np.concatenate([focal_condition_factor, bkg_condition_factor])
-            allometric_power = np.concatenate([focal_allometric_power, bkg_allometric_power])
-            vb_threshold_age = np.concatenate([focal_vb_threshold_age, bkg_zeros_f])
-            lifespan_dt = np.concatenate([focal_lifespan_dt, bkg_zeros_i])
-            ingestion_rate = np.concatenate([focal_ingestion_rate, bkg_ingestion])
-            critical_success_rate = np.concatenate([focal_critical_success_rate, bkg_zeros_f])
-            delta_lmax_factor = np.concatenate([focal_delta_lmax_factor, bkg_zeros_f])
-            additional_mortality_rate = np.concatenate(
-                [focal_additional_mortality_rate, bkg_zeros_f]
-            )
-            sex_ratio = np.concatenate([focal_sex_ratio, bkg_zeros_f])
-            relative_fecundity = np.concatenate([focal_relative_fecundity, bkg_zeros_f])
-            maturity_size = np.concatenate([focal_maturity_size, bkg_zeros_f])
-            seeding_biomass = np.concatenate([focal_seeding_biomass, bkg_zeros_f])
-            seeding_max_step = np.concatenate([focal_seeding_max_step, bkg_zeros_i])
-            larva_mortality_rate = np.concatenate([focal_larva_mortality_rate, bkg_zeros_f])
-            maturity_age_dt = np.concatenate([focal_maturity_age_dt, bkg_zeros_i])
-            lmax = np.concatenate([focal_lmax, bkg_zeros_f])
-            starvation_rate_max = np.concatenate([focal_starvation_rate_max, bkg_zeros_f])
-            fishing_rate = np.concatenate([fishing, bkg_zeros_f])
-            fishing_selectivity_l50 = np.concatenate([focal_fishing_selectivity_l50, bkg_zeros_f])
-            fishing_selectivity_a50 = np.concatenate(
-                [focal_fishing_a50, np.full(n_bkg, np.nan, dtype=np.float64)]
-            )
-            fishing_selectivity_type = np.concatenate(
-                [focal_fishing_sel_type, np.full(n_bkg, -1, dtype=np.int32)]
-            )
-            fishing_selectivity_slope = np.concatenate([focal_fishing_slope, bkg_zeros_f])
-            movement_method = focal_movement_method + ["none"] * n_bkg
-            random_walk_range = np.concatenate([focal_random_walk_range, bkg_zeros_i])
-            out_mortality_rate = np.concatenate([focal_out_mortality_rate, bkg_zeros_f])
-            n_schools = np.concatenate([focal_n_schools, bkg_zeros_i])
-            fishing_spatial_maps = focal_fishing_spatial_maps + [None] * n_bkg
-        else:
-            all_species_names = focal_species_names[:]
-            linf = focal_linf
-            k = focal_k
-            t0 = focal_t0
-            egg_size = focal_egg_size
-            condition_factor = focal_condition_factor
-            allometric_power = focal_allometric_power
-            vb_threshold_age = focal_vb_threshold_age
-            lifespan_dt = focal_lifespan_dt
-            ingestion_rate = focal_ingestion_rate
-            critical_success_rate = focal_critical_success_rate
-            delta_lmax_factor = focal_delta_lmax_factor
-            additional_mortality_rate = focal_additional_mortality_rate
-            sex_ratio = focal_sex_ratio
-            relative_fecundity = focal_relative_fecundity
-            maturity_size = focal_maturity_size
-            seeding_biomass = focal_seeding_biomass
-            seeding_max_step = focal_seeding_max_step
-            larva_mortality_rate = focal_larva_mortality_rate
-            maturity_age_dt = focal_maturity_age_dt
-            lmax = focal_lmax
-            starvation_rate_max = focal_starvation_rate_max
-            fishing_rate = fishing
-            fishing_selectivity_l50 = focal_fishing_selectivity_l50
-            fishing_selectivity_a50 = focal_fishing_a50
-            fishing_selectivity_type = focal_fishing_sel_type
-            fishing_selectivity_slope = focal_fishing_slope
-            movement_method = focal_movement_method
-            random_walk_range = focal_random_walk_range
-            out_mortality_rate = focal_out_mortality_rate
-            n_schools = focal_n_schools
-            fishing_spatial_maps = focal_fishing_spatial_maps
+        # Merge focal arrays with background species defaults
+        _focal = {
+            "focal_linf": focal_linf, "focal_k": focal_k, "focal_t0": focal_t0,
+            "focal_egg_size": focal_egg_size,
+            "focal_condition_factor": focal_condition_factor,
+            "focal_allometric_power": focal_allometric_power,
+            "focal_vb_threshold_age": focal_vb_threshold_age,
+            "focal_lifespan_dt": focal_lifespan_dt,
+            "focal_delta_lmax_factor": focal_delta_lmax_factor,
+            "focal_additional_mortality_rate": focal_additional_mortality_rate,
+            "focal_lmax": focal_lmax,
+            "focal_ingestion_rate": focal_ingestion_rate,
+            "focal_critical_success_rate": focal_critical_success_rate,
+            "focal_sex_ratio": focal_sex_ratio,
+            "focal_relative_fecundity": focal_relative_fecundity,
+            "focal_maturity_size": focal_maturity_size,
+            "focal_seeding_biomass": focal_seeding_biomass,
+            "focal_seeding_max_step": focal_seeding_max_step,
+            "focal_larva_mortality_rate": focal_larva_mortality_rate,
+            "focal_maturity_age_dt": focal_maturity_age_dt,
+            "focal_starvation_rate_max": focal_starvation_rate_max,
+            "focal_fishing_selectivity_l50": focal_fishing_selectivity_l50,
+            "focal_fishing_a50": focal_fishing_a50,
+            "focal_fishing_sel_type": focal_fishing_sel_type,
+            "focal_fishing_slope": focal_fishing_slope,
+            "focal_random_walk_range": focal_random_walk_range,
+            "focal_out_mortality_rate": focal_out_mortality_rate,
+            "focal_n_schools": focal_n_schools,
+            "fishing": fishing,
+        }
+        _merged = _merge_focal_background(
+            _focal, background_list, focal_species_names,
+            focal_fishing_spatial_maps, focal_movement_method,
+        )
+        all_species_names = _merged["all_species_names"]
+        linf = _merged["linf"]
+        k = _merged["k"]
+        t0 = _merged["t0"]
+        egg_size = _merged["egg_size"]
+        condition_factor = _merged["condition_factor"]
+        allometric_power = _merged["allometric_power"]
+        vb_threshold_age = _merged["vb_threshold_age"]
+        lifespan_dt = _merged["lifespan_dt"]
+        ingestion_rate = _merged["ingestion_rate"]
+        critical_success_rate = _merged["critical_success_rate"]
+        delta_lmax_factor = _merged["delta_lmax_factor"]
+        additional_mortality_rate = _merged["additional_mortality_rate"]
+        sex_ratio = _merged["sex_ratio"]
+        relative_fecundity = _merged["relative_fecundity"]
+        maturity_size = _merged["maturity_size"]
+        seeding_biomass = _merged["seeding_biomass"]
+        seeding_max_step = _merged["seeding_max_step"]
+        larva_mortality_rate = _merged["larva_mortality_rate"]
+        maturity_age_dt = _merged["maturity_age_dt"]
+        lmax = _merged["lmax"]
+        starvation_rate_max = _merged["starvation_rate_max"]
+        fishing_rate = _merged["fishing_rate"]
+        fishing_selectivity_l50 = _merged["fishing_selectivity_l50"]
+        fishing_selectivity_a50 = _merged["fishing_selectivity_a50"]
+        fishing_selectivity_type = _merged["fishing_selectivity_type"]
+        fishing_selectivity_slope = _merged["fishing_selectivity_slope"]
+        movement_method = _merged["movement_method"]
+        random_walk_range = _merged["random_walk_range"]
+        out_mortality_rate = _merged["out_mortality_rate"]
+        n_schools = _merged["n_schools"]
+        fishing_spatial_maps = _merged["fishing_spatial_maps"]
 
         # Egg weight override: use species.egg.weight.sp{i} if provided
         # Java convention: config value is in GRAMS, convert to tonnes (* 1e-6)
