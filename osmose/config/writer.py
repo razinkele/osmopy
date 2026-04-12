@@ -24,7 +24,7 @@ class OsmoseConfigWriter:
     # less-specific parents (e.g. "species.bioen." before "species.").
     ROUTING: list[tuple[tuple[str, ...], str, str]] = [
         (
-            ("temperature.", "species.bioen.", "species.beta."),
+            ("temperature.", "species.bioen.", "species.beta.", "oxygen."),
             "osm_param-bioenergetics.csv",
             "bioenergetics",
         ),
@@ -55,7 +55,12 @@ class OsmoseConfigWriter:
         "stochastic.",
     )
 
-    def write(self, config: dict[str, Any], output_dir: Path) -> None:
+    def write(
+        self,
+        config: dict[str, Any],
+        output_dir: Path,
+        key_case_map: dict[str, str] | None = None,
+    ) -> None:
         """Write *config* to OSMOSE files under *output_dir*.
 
         Parameters
@@ -65,6 +70,9 @@ class OsmoseConfigWriter:
         output_dir:
             Directory in which the config files will be created.
             Created (with parents) if it does not already exist.
+        key_case_map:
+            Optional mapping from lowercase keys to their original-case
+            form. When provided, output keys use the original case.
         """
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -76,13 +84,13 @@ class OsmoseConfigWriter:
             params = buckets.get(suffix, {})
             if not params:
                 continue
-            self._write_file(output_dir / filename, params)
+            self._write_file(output_dir / filename, params, key_case_map)
             references[f"osmose.configuration.{suffix}"] = filename
 
         # Write master file (master params + references to sub-files).
         master_params: dict[str, str] = dict(buckets.get("master", {}))
         master_params.update(references)
-        self._write_file(output_dir / "osm_all-parameters.csv", master_params)
+        self._write_file(output_dir / "osm_all-parameters.csv", master_params, key_case_map)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -117,14 +125,21 @@ class OsmoseConfigWriter:
         return "master"
 
     @staticmethod
-    def _write_file(filepath: Path, params: dict[str, str]) -> None:
+    def _write_file(
+        filepath: Path,
+        params: dict[str, str],
+        key_case_map: dict[str, str] | None = None,
+    ) -> None:
         """Write *params* to *filepath* as sorted ``key ; value`` lines.
 
         Uses a temp-file + os.replace() pattern so the target file is
         never left in a partially-written state if the process is
         interrupted mid-write.
         """
-        content = "".join(f"{k} ; {v}\n" for k, v in sorted(params.items()))
+        case_map = key_case_map or {}
+        content = "".join(
+            f"{case_map.get(k, k)} ; {v}\n" for k, v in sorted(params.items())
+        )
         tmp_fd, tmp_path = tempfile.mkstemp(dir=filepath.parent, suffix=".tmp")
         try:
             with os.fdopen(tmp_fd, "w") as f:

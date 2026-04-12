@@ -340,7 +340,7 @@ def make_food_web(
     _require_columns(diet_df, "predator", "prey", "proportion", context="make_food_web")
 
     # Filter weak links
-    diet_df = diet_df[diet_df["proportion"] >= threshold]
+    diet_df = diet_df[diet_df["proportion"] >= threshold]  # type: ignore[assignment]
     if diet_df.empty:
         return _empty_figure(title)
 

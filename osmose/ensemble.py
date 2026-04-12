@@ -83,8 +83,8 @@ def aggregate_replicates(
             if not non_time:
                 continue
             agg = df[["time", non_time[0]]].copy()
-            agg = agg.rename(columns={non_time[0]: value_col})
-        series_list.append(agg)
+            agg = agg.rename(columns={non_time[0]: value_col})  # type: ignore[call-overload]
+        series_list.append(agg)  # type: ignore[arg-type]
 
     if not series_list:
         return empty

@@ -101,6 +101,8 @@ class OsmoseField:
             List of error messages (empty if valid).
         """
         errors: list[str] = []
+        if value is None:
+            return errors
         if self.param_type in (ParamType.FLOAT, ParamType.INT):
             if self.min_val is not None and value < self.min_val:
                 errors.append(f"Value {value} below min {self.min_val}")

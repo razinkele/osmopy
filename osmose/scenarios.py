@@ -27,6 +27,7 @@ class Scenario:
     config: dict[str, str] = field(default_factory=dict)
     tags: list[str] = field(default_factory=list)
     parent_scenario: str | None = None
+    key_case_map: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
         if not self.name:
@@ -65,9 +66,10 @@ class ScenarioManager:
             raise ValueError(f"Unsafe scenario name: {name!r}")
         return target
 
-    def save(self, scenario: Scenario) -> Path:
+    def save(self, scenario: Scenario, preserve_modified_at: bool = False) -> Path:
         """Save a scenario to disk using atomic write pattern."""
-        scenario.modified_at = datetime.now().isoformat()
+        if not preserve_modified_at:
+            scenario.modified_at = datetime.now().isoformat()
         target = self._validate_path(scenario.name)
 
         tmp_dir = Path(tempfile.mkdtemp(dir=self.storage_dir))
@@ -156,6 +158,7 @@ class ScenarioManager:
             config=dict(source.config),
             tags=list(source.tags),
             parent_scenario=source_name,
+            key_case_map=dict(source.key_case_map),
         )
         self.save(forked)
         return forked
@@ -168,9 +171,12 @@ class ScenarioManager:
                 data = {
                     "name": scenario.name,
                     "description": scenario.description,
+                    "created_at": scenario.created_at,
+                    "modified_at": scenario.modified_at,
                     "config": scenario.config,
                     "tags": scenario.tags,
                     "parent_scenario": scenario.parent_scenario,
+                    "key_case_map": scenario.key_case_map,
                 }
                 zf.writestr(f"{scenario.name}.json", json.dumps(data, indent=2))
 
@@ -201,11 +207,14 @@ class ScenarioManager:
                     scenario = Scenario(
                         name=scenario_name,
                         description=data.get("description", ""),
+                        created_at=data.get("created_at", ""),
+                        modified_at=data.get("modified_at", ""),
                         config=data.get("config", {}),
                         tags=data.get("tags", []),
                         parent_scenario=data.get("parent_scenario"),
+                        key_case_map=data.get("key_case_map", {}),
                     )
-                    self.save(scenario)
+                    self.save(scenario, preserve_modified_at=True)
                     count += 1
                 except ValueError as exc:
                     _log.warning(

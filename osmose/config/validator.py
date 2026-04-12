@@ -28,8 +28,27 @@ def validate_config(
         if not value or value.lower() in ("null", "none"):
             continue
 
-        # Skip multi-value params (semicolon-separated stage values)
+        # Validate each value in semicolon-separated multi-value params
         if ";" in value:
+            for idx, sub_val in enumerate(value.split(";")):
+                sub_val = sub_val.strip()
+                if not sub_val:
+                    continue
+                if field.param_type in (ParamType.FLOAT, ParamType.INT):
+                    try:
+                        num = float(sub_val)
+                    except (ValueError, TypeError):
+                        errors.append(f"{key}[{idx}]: expected number, got '{sub_val}'")
+                        continue
+                    if field.min_val is not None and num < field.min_val:
+                        errors.append(f"{key}[{idx}]: value {num} below minimum {field.min_val}")
+                    if field.max_val is not None and num > field.max_val:
+                        errors.append(f"{key}[{idx}]: value {num} above maximum {field.max_val}")
+                elif field.param_type == ParamType.ENUM and field.choices:
+                    if sub_val not in field.choices:
+                        errors.append(
+                            f"{key}[{idx}]: '{sub_val}' not in {field.choices}"
+                        )
             continue
 
         # Type check
