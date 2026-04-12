@@ -3,10 +3,13 @@
 import numpy as np
 
 from osmose.engine.config import EngineConfig
+from osmose.engine.grid import Grid
 from osmose.engine.processes.predation import (
+    _predation_on_resources,
     predation,
     _predation_in_cell_python as predation_in_cell,
 )
+from osmose.engine.resources import ResourceState
 from osmose.engine.state import SchoolState
 
 
@@ -204,3 +207,94 @@ class TestPredationAcrossCells:
         new_state = predation(state, cfg, rng, n_subdt=10, grid_ny=10, grid_nx=10)
         # Prey should have been eaten
         assert new_state.abundance[1] < 500.0
+
+
+def _make_ltl_config() -> dict[str, str]:
+    """Minimal config for one focal species + one LTL resource (ltl.* keys)."""
+    return {
+        "simulation.time.ndtperyear": "24",
+        "simulation.time.nyear": "1",
+        "simulation.nspecies": "1",
+        "simulation.nresource": "1",
+        "simulation.nschool.sp0": "5",
+        "species.name.sp0": "Anchovy",
+        "species.linf.sp0": "20.0",
+        "species.k.sp0": "0.3",
+        "species.t0.sp0": "-0.1",
+        "species.egg.size.sp0": "0.1",
+        "species.length2weight.condition.factor.sp0": "0.006",
+        "species.length2weight.allometric.power.sp0": "3.0",
+        "species.lifespan.sp0": "3",
+        "species.vonbertalanffy.threshold.age.sp0": "1.0",
+        "mortality.subdt": "10",
+        "predation.ingestion.rate.max.sp0": "3.5",
+        "predation.efficiency.critical.sp0": "0.57",
+        # size ratios: predator (len=15) / prey range [0.001, 0.5] -> ratio in [30, 15000]
+        "predation.predprey.sizeratio.min.sp0": "1.0",
+        "predation.predprey.sizeratio.max.sp0": "10000.0",
+        # LTL resource
+        "ltl.name.rsc0": "Plankton",
+        "ltl.size.min.rsc0": "0.001",
+        "ltl.size.max.rsc0": "0.5",
+        "ltl.tl.rsc0": "1.0",
+        "ltl.accessibility2fish.rsc0": "0.5",
+        "ltl.biomass.total.rsc0": "1000.0",
+    }
+
+
+def test_predation_on_resources_removes_biomass() -> None:
+    """_predation_on_resources should reduce resource biomass in a cell.
+
+    A mature focal school (sp0, len=15) with size-ratio window [1, 10000] is
+    placed in cell (0, 0).  The LTL resource has size range [0.001, 0.5] cm,
+    which falls entirely within the predator's prey window (15/10000=0.0015 to
+    15/1.0=15).  After one call the resource biomass in cell (0, 0) must be
+    strictly less than the initial value.
+    """
+    cfg_dict = _make_ltl_config()
+    cfg = EngineConfig.from_dict(cfg_dict)
+    grid = Grid.from_dimensions(ny=5, nx=5)
+
+    # Build ResourceState with uniform biomass
+    resources = ResourceState(config=cfg_dict, grid=grid)
+    resources.update(step=0)
+
+    # Record initial biomass in cell (0, 0)
+    cell_y, cell_x = 0, 0
+    biomass_before = resources.get_cell_biomass(0, cell_y, cell_x)
+    assert biomass_before > 0.0, "ResourceState.update() should set non-zero biomass"
+
+    # Single feeding-age school in cell (0, 0)
+    state = SchoolState.create(n_schools=1, species_id=np.array([0], dtype=np.int32))
+    state = state.replace(
+        abundance=np.array([1000.0]),
+        length=np.array([15.0]),  # mature anchovy
+        weight=np.array([8.1]),   # ~0.006 * 15^3
+        biomass=np.array([8100.0]),
+        age_dt=np.array([24], dtype=np.int32),   # past first feeding age
+        first_feeding_age_dt=np.array([1], dtype=np.int32),
+        pred_success_rate=np.array([0.0]),        # no prior satiation
+        preyed_biomass=np.array([0.0]),
+        cell_x=np.array([cell_x], dtype=np.int32),
+        cell_y=np.array([cell_y], dtype=np.int32),
+    )
+
+    rng = np.random.default_rng(42)
+    cell_indices = np.array([0], dtype=np.int32)
+
+    _predation_on_resources(
+        cell_indices,
+        state,
+        cfg,
+        resources,
+        cell_y,
+        cell_x,
+        rng,
+        n_subdt=10,
+    )
+
+    biomass_after = resources.get_cell_biomass(0, cell_y, cell_x)
+    assert biomass_after < biomass_before, (
+        f"Resource biomass should decrease after predation: "
+        f"before={biomass_before:.4f}, after={biomass_after:.4f}"
+    )
