@@ -261,9 +261,6 @@ def _parse_predation_params(
     focal_critical_success_rate = _species_float(
         cfg, "predation.efficiency.critical.sp{i}", n_sp
     )
-    focal_starvation_rate_max = _species_float_optional(
-        cfg, "mortality.starvation.rate.max.sp{i}", n_sp, default=0.0
-    )
 
     _VALID_METRICS = {"age", "size", "weight", "tl"}
     global_metric = cfg.get("predation.predprey.stage.structure", "size").strip().lower()
