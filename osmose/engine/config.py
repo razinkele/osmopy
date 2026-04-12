@@ -149,18 +149,29 @@ def _cfg_dir(cfg: dict[str, str]) -> str:
     return cfg.get("_osmose.config.dir", "")
 
 
+def _accessibility_path_or_none(cfg: dict[str, str]) -> "Path | None":
+    """Resolve predation.accessibility.file once, shared by both accessibility loaders.
+
+    Returns None when the key is absent or empty. Delegates to :func:`_resolve_file`
+    so that a set-but-missing path also returns None (consistent with original behaviour).
+    """
+    file_key = cfg.get("predation.accessibility.file", "")
+    if not file_key:
+        return None
+    return _resolve_file(file_key, _cfg_dir(cfg))
+
+
 def _load_accessibility(cfg: dict[str, str], n_species: int) -> NDArray[np.float64] | None:
     """Load predation accessibility matrix from CSV if available.
 
     Returns matrix with shape (n_total, n_total) where index [predator, prey] = coefficient.
     Used only when no stage structure is configured.
     """
-    file_key = cfg.get("predation.accessibility.file", "")
-    path = _resolve_file(file_key, _cfg_dir(cfg))
-    if path is not None:
-        df = pd.read_csv(path, sep=";", index_col=0)
-        return df.values.astype(np.float64)
-    return None
+    path = _accessibility_path_or_none(cfg)
+    if path is None:
+        return None
+    df = pd.read_csv(path, sep=";", index_col=0)
+    return df.values.astype(np.float64)
 
 
 def _load_stage_accessibility(
@@ -170,8 +181,7 @@ def _load_stage_accessibility(
 
     Returns an AccessibilityMatrix instance, or None if no accessibility file exists.
     """
-    file_key = cfg.get("predation.accessibility.file", "")
-    path = _resolve_file(file_key, _cfg_dir(cfg))
+    path = _accessibility_path_or_none(cfg)
     if path is None:
         return None
     return AccessibilityMatrix.from_csv(path, all_species_names)
