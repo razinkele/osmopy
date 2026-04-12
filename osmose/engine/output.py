@@ -286,9 +286,10 @@ def _write_bioen_csvs(
             df.to_csv(bioen_dir / f"{prefix}_{label}_{sp_name}_Simu0.csv", index=False)
 
 
-# TODO: Spatial bioen outputs — Java has SpatialEnetOutput, SpatialEnetOutputjuv,
-# SpatialEnetOutputlarvae, SpatialdGOutput. Requires per-cell aggregation framework
-# (also needed for output.spatial.biomass.enabled etc.). Deferred.
+# TODO(v0.7): Spatial bioen outputs — Java has SpatialEnetOutput, SpatialEnetOutputjuv,
+# SpatialEnetOutputlarvae, SpatialdGOutput. Requires: (1) per-cell aggregation framework
+# (see docs/parity-roadmap.md §5.4), and (2) Ev-OSMOSE bioenergetics module
+# (see docs/parity-roadmap.md §6.1–6.5). Blocked on both; only needed for Ev-OSMOSE configs.
 
 
 # ---------------------------------------------------------------------------
@@ -341,8 +342,10 @@ def write_outputs_netcdf(
 
     ds.to_netcdf(path)
 
-    # TODO: Add size/age distribution outputs (5.3) — requires per-school data in StepOutput
-    # TODO: Add spatial biomass/abundance maps (5.4) — requires per-cell data in StepOutput
+    # TODO(v0.7): Add size/age distribution outputs — see docs/parity-roadmap.md §5.3.
+    # Blocked on per-school data being carried through StepOutput (currently only aggregates).
+    # TODO(v0.7): Add spatial biomass/abundance maps — see docs/parity-roadmap.md §5.4.
+    # Blocked on per-cell aggregation framework; needs cell-indexed data in StepOutput.
 
 
 # ---------------------------------------------------------------------------
