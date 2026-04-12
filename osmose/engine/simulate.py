@@ -9,7 +9,7 @@ Follows Java's SimulationStep.step() ordering:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from osmose.engine.economics.fleet import FleetState
@@ -48,6 +48,7 @@ class SimulationContext:
 
     diet_tracking_enabled: bool = False
     diet_matrix: NDArray[np.float64] | None = None
+    _diet_active_rows: int = 0
     tl_weighted_sum: NDArray[np.float64] | None = None
     config_dir: str = ""
     # Ev-OSMOSE genetics (None when disabled)
@@ -87,6 +88,9 @@ class StepOutput:
     bioen_rho_by_species: NDArray[np.float64] | None = None
     bioen_size_inf_by_species: NDArray[np.float64] | None = None
 
+    # Diet: per-species diet composition, shape (n_predators, n_prey), or None if diet disabled
+    diet_by_species: NDArray[np.float64] | None = None
+
 
 def _incoming_flux(
     state: SchoolState,
@@ -106,7 +110,6 @@ def _incoming_flux(
 def _reset_step_variables(state: SchoolState) -> SchoolState:
     """Reset per-step tracking variables at the start of each timestep."""
     return state.replace(
-        abundance=state.abundance.copy(),
         n_dead=np.zeros_like(state.n_dead),
         pred_success_rate=np.zeros(len(state), dtype=np.float64),
         preyed_biomass=np.zeros(len(state), dtype=np.float64),
@@ -214,17 +217,39 @@ def _bioen_step(
         if getattr(config, attr) is None:
             raise ValueError(f"Bioenergetics enabled but {attr} is None — check config")
 
+    # Type guards: after validation, all _BIOEN_REQUIRED attributes are known to be non-None
+    config.bioen_beta = cast(NDArray[np.float64], config.bioen_beta)
+    config.bioen_assimilation = cast(NDArray[np.float64], config.bioen_assimilation)
+    config.bioen_c_m = cast(NDArray[np.float64], config.bioen_c_m)
+    config.bioen_eta = cast(NDArray[np.float64], config.bioen_eta)
+    config.bioen_r = cast(NDArray[np.float64], config.bioen_r)
+    config.bioen_m0 = cast(NDArray[np.float64], config.bioen_m0)
+    config.bioen_m1 = cast(NDArray[np.float64], config.bioen_m1)
+    config.bioen_e_mobi = cast(NDArray[np.float64], config.bioen_e_mobi)
+    config.bioen_e_d = cast(NDArray[np.float64], config.bioen_e_d)
+    config.bioen_tp = cast(NDArray[np.float64], config.bioen_tp)
+    config.bioen_e_maint = cast(NDArray[np.float64], config.bioen_e_maint)
+    config.bioen_i_max = cast(NDArray[np.float64], config.bioen_i_max)
+    config.bioen_theta = cast(NDArray[np.float64], config.bioen_theta)
+    config.bioen_c_rate = cast(NDArray[np.float64], config.bioen_c_rate)
+    if hasattr(config, 'bioen_o2_c1') and config.bioen_o2_c1 is not None:
+        config.bioen_o2_c1 = cast(NDArray[np.float64], config.bioen_o2_c1)
+    if hasattr(config, 'bioen_o2_c2') and config.bioen_o2_c2 is not None:
+        config.bioen_o2_c2 = cast(NDArray[np.float64], config.bioen_o2_c2)
+
     # Helper: resolve parameter as per-school array or species scalar
     def _resolve(param_name: str, sp: int, mask: NDArray[np.bool_]) -> float | NDArray[np.float64]:
         if trait_overrides and param_name in trait_overrides:
             return trait_overrides[param_name][mask]
         return float(getattr(config, param_name)[sp])
 
-    # Precompute species masks once (reused by 6 loops below)
+    # Precompute species masks only for species present in state (skip absent species)
+    present_species = np.unique(state.species_id)
     sp_masks: list[tuple[int, NDArray[np.bool_]]] = [
-        (sp, state.species_id == sp) for sp in range(config.n_species)
+        (sp, state.species_id == sp)
+        for sp in present_species
+        if sp < config.n_species
     ]
-    sp_masks = [(sp, m) for sp, m in sp_masks if m.any()]
 
     n_subdt = config.mortality_subdt
 
@@ -236,7 +261,7 @@ def _bioen_step(
     for sp, mask in sp_masks:
         cap = bioen_ingestion_cap(
             weight=state.weight[mask],
-            i_max=_resolve("bioen_i_max", sp, mask),
+            i_max=cast(float, _resolve("bioen_i_max", sp, mask)),
             beta=float(config.bioen_beta[sp]),
             n_dt_per_year=config.n_dt_per_year,
             n_subdt=n_subdt,
@@ -280,6 +305,8 @@ def _bioen_step(
     if config.bioen_fo2_enabled and o2_data is not None:
         from osmose.engine.processes.oxygen_function import f_o2
 
+        if config.bioen_o2_c1 is None or config.bioen_o2_c2 is None:
+            raise RuntimeError("bioen_o2_c1/c2 must be set when O2 limitation is enabled")
         f_o2_arr = np.ones(len(state), dtype=np.float64)
         if o2_data.is_constant:
             o2_scalar = o2_data.get_value(step, 0, 0)
@@ -301,6 +328,15 @@ def _bioen_step(
         temp_c_arr = temp_grid[state.cell_y, state.cell_x]
     else:
         # No temperature data: use 15°C as fallback (mid-range assumption; may bias tropical/polar species)
+        import warnings
+
+        warnings.warn(
+            "No temperature forcing data configured — using 15°C fallback for bioenergetics. "
+            "This may produce inaccurate results for tropical or polar species.",
+            UserWarning,
+            stacklevel=1,
+        )
+        # Python's warnings module suppresses duplicate warnings by default (same message+location)
         temp_c_arr = np.full(len(state), 15.0, dtype=np.float64)
 
     # ------------------------------------------------------------------ #
@@ -325,9 +361,9 @@ def _bioen_step(
             c_m=float(config.bioen_c_m[sp]),
             beta=float(config.bioen_beta[sp]),
             eta=float(config.bioen_eta[sp]),
-            r=_resolve("bioen_r", sp, mask),
-            m0=_resolve("bioen_m0", sp, mask),
-            m1=_resolve("bioen_m1", sp, mask),
+            r=cast(float, _resolve("bioen_r", sp, mask)),
+            m0=cast(float, _resolve("bioen_m0", sp, mask)),
+            m1=cast(float, _resolve("bioen_m1", sp, mask)),
             e_maint_energy=float(config.bioen_e_maint[sp]),
             phi_t=phi_t_arr[mask],  # Johnson thermal performance (applied to assimilation)
             f_o2=f_o2_arr[mask],
@@ -463,20 +499,27 @@ def _bioen_reproduction(
                 * 1e-6
             )
 
+        # Resolve m0 and m1 parameters (check trait_overrides first to avoid None subscript)
+        if trait_overrides is not None and "bioen_m0" in trait_overrides:
+            m0_val: float | NDArray[np.float64] = trait_overrides["bioen_m0"][mask]
+        else:
+            if config.bioen_m0 is None:
+                raise RuntimeError("bioen_m0 must be set for bioenergetics species")
+            m0_val = float(config.bioen_m0[sp])
+        
+        if trait_overrides is not None and "bioen_m1" in trait_overrides:
+            m1_val: float | NDArray[np.float64] = trait_overrides["bioen_m1"][mask]
+        else:
+            if config.bioen_m1 is None:
+                raise RuntimeError("bioen_m1 must be set for bioenergetics species")
+            m1_val = float(config.bioen_m1[sp])
+
         eggs = bioen_egg_production(
             gonad_weight=state.gonad_weight[mask],
             length=state.length[mask],
             age_dt=state.age_dt[mask],
-            m0=(
-                trait_overrides["bioen_m0"][mask]
-                if trait_overrides and "bioen_m0" in trait_overrides
-                else float(config.bioen_m0[sp])
-            ),
-            m1=(
-                trait_overrides["bioen_m1"][mask]
-                if trait_overrides and "bioen_m1" in trait_overrides
-                else float(config.bioen_m1[sp])
-            ),
+            m0=cast(float, m0_val),
+            m1=cast(float, m1_val),
             egg_weight=float(ew),
             n_dt_per_year=config.n_dt_per_year,
         )
@@ -754,6 +797,7 @@ def _collect_outputs(
     config: EngineConfig,
     step: int,
     bkg_output: tuple[NDArray[np.float64], NDArray[np.float64]] | None = None,
+    diet_by_species: NDArray[np.float64] | None = None,
 ) -> StepOutput:
     """Aggregate per-species outputs from current state into a StepOutput."""
     biomass, abundance = _collect_biomass_abundance(state, config, bkg_output)
@@ -781,6 +825,7 @@ def _collect_outputs(
         bioen_maint_by_species=bioen_maint,
         bioen_rho_by_species=bioen_rho,
         bioen_size_inf_by_species=bioen_size_inf,
+        diet_by_species=diet_by_species,
     )
 
 
@@ -812,6 +857,12 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
     bioen_rho_avg = _avg_bioen("bioen_rho_by_species")
     bioen_size_inf_avg = _avg_bioen("bioen_size_inf_by_species")
 
+    # Diet: sum biomass eaten across recording window (normalization happens at write time)
+    diet_arrays = [o.diet_by_species for o in accumulated if o.diet_by_species is not None]
+    diet_summed: NDArray[np.float64] | None = (
+        np.sum(diet_arrays, axis=0) if diet_arrays else None
+    )
+
     if len(accumulated) == 1:
         return StepOutput(
             step=record_step,
@@ -828,6 +879,7 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
             bioen_maint_by_species=bioen_maint_avg,
             bioen_rho_by_species=bioen_rho_avg,
             bioen_size_inf_by_species=bioen_size_inf_avg,
+            diet_by_species=diet_summed,
         )
     biomass = np.mean([o.biomass for o in accumulated], axis=0)
     abundance = np.mean([o.abundance for o in accumulated], axis=0)
@@ -852,6 +904,7 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
         bioen_maint_by_species=bioen_maint_avg,
         bioen_rho_by_species=bioen_rho_avg,
         bioen_size_inf_by_species=bioen_size_inf_avg,
+        diet_by_species=diet_summed,
     )
 
 
@@ -1010,9 +1063,28 @@ def simulate(
 
             ctx.fleet_state = fleet_decision(ctx.fleet_state, biomass_by_cell, rng)
 
+        # -- Enable diet tracking before mortality if configured --
+        if config.diet_output_enabled:
+            from osmose.engine.processes.predation import enable_diet_tracking
+
+            enable_diet_tracking(len(state), config.n_species + config.n_background, ctx=ctx)
+
         state = _mortality(
             state, resources, config, rng, grid, step=step, species_rngs=mortality_rngs, ctx=ctx
         )
+
+        # -- Aggregate diet immediately after mortality, before state mutations --
+        step_diet: NDArray[np.float64] | None = None
+        if ctx.diet_tracking_enabled and ctx.diet_matrix is not None:
+            from osmose.engine.output import aggregate_diet_by_species
+
+            n_active = ctx._diet_active_rows
+            step_diet = aggregate_diet_by_species(
+                ctx.diet_matrix[:n_active], state.species_id[:n_active], config.n_species
+            )
+            from osmose.engine.processes.predation import disable_diet_tracking
+
+            disable_diet_tracking(ctx=ctx)
 
         # -- Update fleet revenue and catch memory after fishing --
         if ctx.fleet_state is not None:
@@ -1126,7 +1198,7 @@ def simulate(
                     ctx.genetic_state = ctx.genetic_state.append(part)
 
         # Collect focal outputs after reproduction
-        step_out = _collect_outputs(state, config, step, bkg_output)
+        step_out = _collect_outputs(state, config, step, bkg_output, diet_by_species=step_diet)
         accumulated.append(step_out)
 
         # Write averaged output at recording frequency

@@ -150,7 +150,7 @@ def _expected_length(
 ) -> NDArray[np.float64]:
     """Dispatch expected-length computation by growth class per school."""
     result = np.zeros(len(age_dt), dtype=np.float64)
-    vb_mask = np.array([config.growth_class[s] == "VB" for s in sp])
+    vb_mask = np.isin(sp, np.array(sorted(config.vb_species_ids), dtype=np.int32))
     if vb_mask.any():
         result[vb_mask] = expected_length_vb(
             age_dt[vb_mask],
@@ -163,6 +163,8 @@ def _expected_length(
         )
     gom_mask = ~vb_mask
     if gom_mask.any() and config.gompertz_ke is not None:
+        if config.gompertz_linf is None or config.gompertz_kg is None or config.gompertz_tg is None or config.gompertz_thr_age_exp_dt is None or config.gompertz_thr_age_gom_dt is None or config.gompertz_lstart is None:
+            raise RuntimeError("Gompertz config arrays must not be None when gompertz_ke is not None")
         result[gom_mask] = expected_length_gompertz(
             age_dt[gom_mask],
             config.gompertz_linf[sp[gom_mask]],

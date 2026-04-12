@@ -7,13 +7,19 @@ The stage index counts how many thresholds the value meets or exceeds.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 from numpy.typing import NDArray
 
+if TYPE_CHECKING:
+    from osmose.engine.config import EngineConfig
+    from osmose.engine.state import SchoolState
+
 
 def compute_feeding_stages(
-    state: "SchoolState",  # noqa: F821
-    config: "EngineConfig",  # noqa: F821
+    state: SchoolState,
+    config: EngineConfig,
 ) -> NDArray[np.int32]:
     """Compute the feeding stage for every school.
 
@@ -62,11 +68,8 @@ def compute_feeding_stages(
         else:
             raise ValueError(f"Unrecognized feeding stage metric: {metric!r}")
 
-        # Count thresholds exceeded (>= comparison)
-        sp_stages = np.zeros(len(values), dtype=np.int32)
-        for threshold in sp_thresholds:
-            sp_stages += (values >= threshold).astype(np.int32)
-
-        stages[mask] = sp_stages
+        # Count thresholds exceeded (>= comparison) using vectorized searchsorted
+        sorted_thr = np.sort(sp_thresholds)
+        stages[mask] = np.searchsorted(sorted_thr, values, side="right").astype(np.int32)
 
     return stages

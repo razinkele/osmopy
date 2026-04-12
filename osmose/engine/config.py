@@ -9,7 +9,7 @@ from __future__ import annotations
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -332,18 +332,17 @@ def _load_fishing_seasonality(
     fsh_to_sp: dict[int, int] = {}
     catch_file = cfg.get("fisheries.catchability.file", "")
     if catch_file and species_names:
-        catch_path = _resolve_file(catch_file, _cfg_dir(cfg))
-        if catch_path is not None:
-            catch_df = pd.read_csv(catch_path, index_col=0)
-            for row_idx in range(len(catch_df)):
-                row_name = str(catch_df.index[row_idx]).strip().lower()
-                for col_idx in range(len(catch_df.columns)):
-                    if float(catch_df.iloc[row_idx, col_idx]) > 0:
-                        for sp_idx, name in enumerate(species_names):
-                            if name.strip().lower() == row_name:
-                                fsh_to_sp[col_idx] = sp_idx
-                                break
-                        break
+        catch_path = _require_file(catch_file, _cfg_dir(cfg), "fisheries.catchability.file")
+        catch_df = pd.read_csv(catch_path, index_col=0)
+        for row_idx in range(len(catch_df)):
+            row_name = str(catch_df.index[row_idx]).strip().lower()
+            for col_idx in range(len(catch_df.columns)):
+                if float(catch_df.iloc[row_idx, col_idx]) > 0:
+                    for sp_idx, name in enumerate(species_names):
+                        if name.strip().lower() == row_name:
+                            fsh_to_sp[col_idx] = sp_idx
+                            break
+                    break
 
     def _set_season(sp_idx: int, values: NDArray[np.float64]) -> None:
         nonlocal found_any
@@ -359,10 +358,9 @@ def _load_fishing_seasonality(
         file_key = cfg.get(f"fisheries.seasonality.file.sp{i}", "")
         if not file_key:
             continue
-        path = _resolve_file(file_key, _cfg_dir(cfg))
-        if path is not None:
-            df = pd.read_csv(path, sep=";")
-            _set_season(i, df.iloc[:, 1].values.astype(np.float64))
+        path = _require_file(file_key, _cfg_dir(cfg), f"fisheries.seasonality.file.sp{i}")
+        df = pd.read_csv(path, sep=";")
+        _set_season(i, df.iloc[:, 1].values.astype(np.float64))
 
     # Try v4 per-fishery keys (file or inline)
     n_fisheries = int(cfg.get("simulation.nfisheries", "0"))
@@ -374,11 +372,12 @@ def _load_fishing_seasonality(
         # Try file reference
         file_key = cfg.get(f"fisheries.seasonality.file.fsh{fsh}", "")
         if file_key:
-            path = _resolve_file(file_key, _cfg_dir(cfg))
-            if path is not None:
-                df = pd.read_csv(path, sep=";")
-                _set_season(sp_idx, df.iloc[:, 1].values.astype(np.float64))
-                continue
+            path = _require_file(
+                file_key, _cfg_dir(cfg), f"fisheries.seasonality.file.fsh{fsh}"
+            )
+            df = pd.read_csv(path, sep=";")
+            _set_season(sp_idx, df.iloc[:, 1].values.astype(np.float64))
+            continue
 
         # Try inline semicolon-separated values
         inline_val = cfg.get(f"fisheries.seasonality.fsh{fsh}", "")
@@ -899,49 +898,52 @@ def _load_spawning_seasons(
         file_key = cfg.get(f"reproduction.season.file.sp{i}", "")
         if not file_key:
             continue
-        path = _resolve_file(file_key, _cfg_dir(cfg))
-        if path is not None:
-            df = pd.read_csv(path, sep=";")
-            values = df.iloc[:, 1].values.astype(np.float64)
-            if len(values) >= n_dt_per_year:
-                all_values[i] = values
-                max_cols = max(max_cols, len(values))
-                found_any = True
+        path = _require_file(file_key, _cfg_dir(cfg), f"reproduction.season.file.sp{i}")
+        df = pd.read_csv(path, sep=";")
+        values = df.iloc[:, 1].values.astype(np.float64)
+        if len(values) >= n_dt_per_year:
+            all_values[i] = values
+            max_cols = max(max_cols, len(values))
+            found_any = True
 
     if not found_any:
         return None
 
     seasons = np.ones((n_species, max_cols), dtype=np.float64) / n_dt_per_year
     for i in range(n_species):
-        if all_values[i] is not None:
-            vals = all_values[i]
-            n_vals = len(vals)
-            if normalize:
-                # Normalize each n_dt_per_year-sized chunk independently so
-                # every year's weights sum to 1.0, not the whole multi-year array.
-                # A trailing partial-year chunk is also normalized to sum 1.0;
-                # warn because a non-whole-year file is usually a data error.
-                if n_vals % n_dt_per_year != 0:
-                    _log.warning(
-                        "Spawning season file for species %d has %d rows "
-                        "which is not a multiple of n_dt_per_year=%d; "
-                        "normalizing the %d-row trailing partial chunk to sum 1.0",
-                        i,
-                        n_vals,
-                        n_dt_per_year,
-                        n_vals % n_dt_per_year,
-                    )
-                n_chunks = (n_vals + n_dt_per_year - 1) // n_dt_per_year  # ceil
-                for yr in range(n_chunks):
-                    s = yr * n_dt_per_year
-                    e = min(s + n_dt_per_year, n_vals)
-                    chunk_sum = vals[s:e].sum()
-                    if chunk_sum > 0:
-                        vals[s:e] = vals[s:e] / chunk_sum
-            seasons[i, :n_vals] = vals
-            # Pad remaining columns with uniform if multi-year array is shorter
-            if n_vals < max_cols:
-                seasons[i, n_vals:] = 1.0 / n_dt_per_year
+        if all_values[i] is None:
+            continue
+        vals: NDArray[np.float64] = cast(NDArray[np.float64], all_values[i])
+        n_vals = len(vals)
+        if normalize:
+            # Normalize each n_dt_per_year-sized chunk independently so
+            # every year's weights sum to 1.0, not the whole multi-year array.
+            # A trailing partial-year chunk is also normalized to sum 1.0;
+            # warn because a non-whole-year file is usually a data error.
+            if n_vals % n_dt_per_year != 0:
+                _log.warning(
+                    "Spawning season file for species %d has %d rows "
+                    "which is not a multiple of n_dt_per_year=%d; "
+                    "normalizing the %d-row trailing partial chunk to sum 1.0",
+                    i,
+                    n_vals,
+                    n_dt_per_year,
+                    n_vals % n_dt_per_year,
+                )
+            n_chunks = (n_vals + n_dt_per_year - 1) // n_dt_per_year  # ceil
+            for yr in range(n_chunks):
+                s = yr * n_dt_per_year
+                e = min(s + n_dt_per_year, n_vals)
+                if vals is None:
+                    continue
+                chunk_sum = vals[s:e].sum()
+                if chunk_sum > 0:
+                    vals[s:e] = vals[s:e] / chunk_sum
+        seasons[i, :n_vals] = vals
+        # Pad remaining columns with uniform if multi-year array is shorter
+        if n_vals < max_cols:
+            seasons[i, n_vals:] = 1.0 / n_dt_per_year
+
 
     return seasons
 
@@ -1106,6 +1108,9 @@ class EngineConfig:
 
     # Raw config dict for subsystems that need unparsed access (e.g. ResourceState)
     raw_config: dict[str, str]
+
+    # Pre-computed set of species IDs with VB growth (for fast mask creation)
+    vb_species_ids: frozenset[int] = frozenset()
 
     # Movement map coverage enforcement
     movement_strict_coverage: bool = False
@@ -1528,6 +1533,26 @@ class EngineConfig:
         # DSVM fleet economics
         economics_enabled = _enabled(cfg, "simulation.economic.enabled")
 
+        # ── Post-validation: reject non-finite / out-of-range parameters ──
+        # Note: fishing_selectivity_a50 uses NaN as "unused" sentinel — skip it.
+        for _arr, _label in (
+            (fishing_selectivity_slope, "fishing_selectivity_slope"),
+            (fishing_selectivity_l50, "fishing_selectivity_l50"),
+        ):
+            bad = np.flatnonzero(~np.isfinite(_arr))
+            if len(bad) > 0:
+                raise ValueError(
+                    f"Non-finite values in {_label} at species indices "
+                    f"{bad.tolist()}: {_arr[bad].tolist()}"
+                )
+
+        bad_allo = np.flatnonzero(allometric_power <= 0)
+        if len(bad_allo) > 0:
+            raise ValueError(
+                f"allometric_power must be > 0 for all species; "
+                f"invalid at indices {bad_allo.tolist()}: {allometric_power[bad_allo].tolist()}"
+            )
+
         return cls(
             n_species=n_sp,
             n_dt_per_year=n_dt,
@@ -1597,6 +1622,7 @@ class EngineConfig:
             movement_strict_coverage=movement_strict,
             random_distribution_ncell=random_distribution_ncell,
             growth_class=growth_class,
+            vb_species_ids=frozenset(i for i, gc in enumerate(growth_class) if gc == "VB"),
             gompertz_ke=gompertz_ke,
             gompertz_lstart=gompertz_lstart,
             gompertz_kg=gompertz_kg,

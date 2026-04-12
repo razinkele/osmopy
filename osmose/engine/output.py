@@ -72,6 +72,20 @@ def write_outputs(
     if config.bioen_enabled:
         _write_bioen_csvs(output_dir, prefix, outputs, config)
 
+    # Write diet CSV if diet data is present
+    diet_arrays = [o.diet_by_species for o in outputs if o.diet_by_species is not None]
+    if diet_arrays:
+        # Sum diet across all timesteps, then normalize at write time
+        total_diet = np.sum(diet_arrays, axis=0)
+        prey_names = config.all_species_names
+        predator_names = config.species_names
+        write_diet_csv(
+            output_dir / f"{prefix}_dietMatrix_Simu0.csv",
+            total_diet,
+            predator_names,
+            prey_names,
+        )
+
 
 def _write_species_csv(
     path: Path,
@@ -81,7 +95,7 @@ def _write_species_csv(
     data: np.ndarray,
 ) -> None:
     """Write a species time-series CSV matching Java format."""
-    df = pd.DataFrame(data, columns=species)
+    df = pd.DataFrame(data, columns=species)  # type: ignore[arg-type]
     df.insert(0, "Time", times)
 
     with open(path, "w") as f:
@@ -128,7 +142,7 @@ def _write_distribution_csvs(
                 )
                 columns = [f"{e:.1f}" for e in edges]
 
-            df = pd.DataFrame(data_matrix, columns=columns)
+            df = pd.DataFrame(data_matrix, columns=columns)  # type: ignore[arg-type]
             df.insert(0, "Time", times)
             path = output_dir / f"{prefix}_{label}_{sp_name}_Simu0.csv"
             df.to_csv(path, index=False)
@@ -152,7 +166,7 @@ def _write_mortality_csvs(
     for sp_idx, sp_name in enumerate(config.species_names):
         # Extract mortality data for this species across all timesteps
         data = np.array([o.mortality_by_cause[sp_idx] for o in outputs])
-        df = pd.DataFrame(data, columns=cause_names)
+        df = pd.DataFrame(data, columns=cause_names)  # type: ignore[arg-type]
         df.insert(0, "Time", times)
 
         path = mort_dir / f"{prefix}_mortalityRate-{sp_name}_Simu0.csv"
@@ -183,10 +197,10 @@ def aggregate_diet_by_species(
     """
     n_prey_cols = diet_matrix.shape[1]
     result = np.zeros((n_pred_species, n_prey_cols), dtype=np.float64)
-    for school_idx in range(diet_matrix.shape[0]):
-        sp = species_id[school_idx]
-        if sp < n_pred_species:
-            result[sp] += diet_matrix[school_idx]
+    # Filter to focal species only (exclude background species)
+    focal_mask = species_id < n_pred_species
+    if focal_mask.any():
+        np.add.at(result, species_id[focal_mask], diet_matrix[focal_mask])
     return result
 
 
@@ -214,7 +228,7 @@ def write_diet_csv(
     pct = diet_by_species / safe_totals * 100.0
 
     # Build DataFrame: rows = prey, columns = predator
-    df = pd.DataFrame(pct.T, index=prey_names, columns=predator_names)
+    df = pd.DataFrame(pct.T, index=prey_names, columns=predator_names)  # type: ignore[arg-type]
     df.index.name = "Prey"
     df.to_csv(path)
 

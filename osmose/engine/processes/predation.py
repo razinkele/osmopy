@@ -49,24 +49,34 @@ def enable_diet_tracking(
     n_species: int,
     ctx: SimulationContext | None = None,
 ) -> None:
-    """Enable per-school diet tracking with a (n_schools, n_species) matrix."""
+    """Enable per-school diet tracking with a (n_schools, n_species) matrix.
+
+    If the context already has a diet matrix with sufficient capacity,
+    reuses it (zeroing active rows) to avoid repeated allocation.
+    """
     if ctx is None:
         return
     ctx.diet_tracking_enabled = True
-    ctx.diet_matrix = np.zeros((n_schools, n_species), dtype=np.float64)
+    if ctx.diet_matrix is not None and ctx.diet_matrix.shape[0] >= n_schools and ctx.diet_matrix.shape[1] == n_species:
+        ctx.diet_matrix[:n_schools] = 0.0
+    else:
+        ctx.diet_matrix = np.zeros((n_schools, n_species), dtype=np.float64)
+    ctx._diet_active_rows = n_schools
 
 
 def disable_diet_tracking(ctx: SimulationContext | None = None) -> None:
-    """Disable diet tracking and clear the matrix."""
+    """Disable diet tracking (keeps buffer for reuse)."""
     if ctx is None:
         return
     ctx.diet_tracking_enabled = False
-    ctx.diet_matrix = None
+    ctx._diet_active_rows = 0
 
 
 def get_diet_matrix(ctx: SimulationContext | None = None) -> NDArray[np.float64] | None:
-    """Return the current diet matrix, or None if tracking is disabled."""
-    return ctx.diet_matrix if ctx else None
+    """Return the active diet matrix, or None if tracking is disabled."""
+    if ctx is None or not ctx.diet_tracking_enabled:
+        return None
+    return ctx.diet_matrix
 
 
 # ---------------------------------------------------------------------------
@@ -192,14 +202,14 @@ if _HAS_NUMBA:
                         if p_acc >= 0 and q_acc >= 0:
                             if q_acc < access_matrix.shape[0] and p_acc < access_matrix.shape[1]:
                                 access_coeff = access_matrix[q_acc, p_acc]
-                            if access_coeff <= 0:
+                            if access_coeff <= 0.0 or access_coeff != access_coeff:
                                 continue
                         # If index is -1 (not found), keep default 1.0
                     else:
                         sp_prey = species_id[q_idx]
                         if sp_pred < access_matrix.shape[0] and sp_prey < access_matrix.shape[1]:
                             access_coeff = access_matrix[sp_pred, sp_prey]
-                            if access_coeff <= 0:
+                            if access_coeff <= 0.0 or access_coeff != access_coeff:
                                 continue
 
                 prey_bio = abundance[q_idx] * weight[q_idx]
@@ -297,7 +307,7 @@ def _predation_in_cell_python(
                 continue
 
             access_coeff = 1.0
-            if stage_access_matrix is not None and prey_access_idx is not None:
+            if stage_access_matrix is not None and prey_access_idx is not None and pred_access_idx is not None:
                 p_acc = pred_access_idx[p_idx]
                 q_acc = prey_access_idx[q_idx]
                 if p_acc >= 0 and q_acc >= 0:
@@ -306,7 +316,7 @@ def _predation_in_cell_python(
                         and p_acc < stage_access_matrix.shape[1]
                     ):
                         access_coeff = stage_access_matrix[q_acc, p_acc]
-                    if access_coeff <= 0:
+                    if access_coeff <= 0.0 or access_coeff != access_coeff:
                         continue
             elif config.accessibility_matrix is not None:
                 sp_prey = state.species_id[q_idx]
@@ -315,7 +325,7 @@ def _predation_in_cell_python(
                     and sp_prey < config.accessibility_matrix.shape[1]
                 ):
                     access_coeff = config.accessibility_matrix[sp_pred, sp_prey]
-                    if access_coeff <= 0:
+                    if access_coeff <= 0.0 or access_coeff != access_coeff:
                         continue
 
             prey_bio = state.abundance[q_idx] * state.weight[q_idx]
@@ -450,7 +460,7 @@ def _predation_on_resources(
                         and p_acc < stage_access_matrix.shape[1]
                     ):
                         access_coeff = stage_access_matrix[rsc_row, p_acc]
-                        if access_coeff <= 0:
+                        if access_coeff <= 0.0 or access_coeff != access_coeff:
                             continue
             elif config.accessibility_matrix is not None:
                 rsc_sp_idx = config.n_species + r
@@ -459,7 +469,7 @@ def _predation_on_resources(
                     and rsc_sp_idx < config.accessibility_matrix.shape[1]
                 ):
                     access_coeff = config.accessibility_matrix[sp_pred, rsc_sp_idx]
-                    if access_coeff <= 0:
+                    if access_coeff <= 0.0 or access_coeff != access_coeff:
                         continue
 
             eligible_bio = rsc_bio * percent_resource * access_coeff
@@ -600,6 +610,8 @@ def predation(
             _diet_en = ctx.diet_tracking_enabled if ctx else False
             _diet_mat = ctx.diet_matrix if ctx else None
             diet_mat = _diet_mat if _diet_en and _diet_mat is not None else _DUMMY_DIET
+            if access_matrix is None:
+                access_matrix = _DUMMY_ACCESS
             _predation_in_cell_numba(
                 cell_indices,
                 pred_order,
