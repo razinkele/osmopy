@@ -53,25 +53,30 @@ class TestUncoveredSlotFixture:
 
     Species: lifespan=4yr, n_dt=12 → 48 age_dt values.
     Sim: 1 year → 12 global steps. Total slots: 48 × 12 = 576.
-    Map0: covers ages 0-1 only → 24 age_dt × 12 steps = 288 covered.
-    Uncovered: ages 2-3 → 24 age_dt × 12 steps = 288 uncovered.
+    Map0: covers ages 0-1 (lastage="1") → init_age_dt=0, last_age_dt=min(round(1*12),47)=12
+      → range(0, 13) = 13 age_dt × 12 steps = 156 covered.
+    Uncovered: ages 13-47 → 35 age_dt × 12 steps = 420 uncovered.
+
+    Review fix: lastage="1" produces 13 age_dt values (0-12 inclusive), not 24.
+    The movement_maps.py loader uses round(lastage * n_dt_per_year) as INCLUSIVE upper bound.
     """
 
     def _make_config_and_map(self, tmp_path):
-        """Create a 3×3 CSV map and config dict for a single map covering ages 0-1."""
+        """Create a 3×3 semicolon-delimited CSV map and config dict."""
         import numpy as np
 
-        # Write a valid 3×3 movement map CSV
+        # Write a valid 3×3 movement map CSV — MUST use semicolons, not commas.
+        # The movement_maps.py loader at line 52 uses line.split(";").
         map_path = tmp_path / "map0.csv"
         grid = np.full((3, 3), 0.5, dtype=np.float64)
-        np.savetxt(map_path, grid, delimiter=",")
+        np.savetxt(map_path, grid, delimiter=";")
 
         config = {
             "movement.species.map0": "TestFish",
             "movement.file.map0": str(map_path),
             "movement.initialage.map0": "0",
             "movement.lastage.map0": "1",
-            # All steps covered for map0
+            # All steps covered for map0 (default: all steps 0..n_dt-1)
         }
         return config
 
@@ -90,10 +95,11 @@ class TestUncoveredSlotFixture:
             config_dir=str(tmp_path),
         )
         uncovered = int((ms.index_maps == -1).sum())
-        total = 48 * 12
+        total = 48 * 12  # 576
         covered = total - uncovered
-        assert covered == 24 * 12, f"Expected 288 covered slots, got {covered}"
-        assert uncovered == 24 * 12, f"Expected 288 uncovered slots, got {uncovered}"
+        # lastage="1" → last_age_dt = round(1*12) = 12 → range(0,13) = 13 ages
+        assert covered == 13 * 12, f"Expected 156 covered slots, got {covered}"
+        assert uncovered == 35 * 12, f"Expected 420 uncovered slots, got {uncovered}"
 ```
 
 **IMPORTANT:** Read the actual `MovementMapSet.__init__` signature before writing. The parameter names may differ (e.g., `config_dir` might be a separate parameter or derived from `config["_osmose.config.dir"]`). Adapt accordingly. Check existing tests in the file for the fixture pattern — `_make_full_config_with_maps()` at the bottom of the file is a good template.
@@ -189,7 +195,7 @@ class TestStrictCoverage:
         import numpy as np
 
         map_path = tmp_path / "map0.csv"
-        np.savetxt(map_path, np.full((3, 3), 0.5), delimiter=",")
+        np.savetxt(map_path, np.full((3, 3), 0.5), delimiter=";")
         return {
             "movement.species.map0": "TestFish",
             "movement.file.map0": str(map_path),
@@ -202,7 +208,7 @@ class TestStrictCoverage:
         import numpy as np
 
         map_path = tmp_path / "map0.csv"
-        np.savetxt(map_path, np.full((3, 3), 0.5), delimiter=",")
+        np.savetxt(map_path, np.full((3, 3), 0.5), delimiter=";")
         return {
             "movement.species.map0": "TestFish",
             "movement.file.map0": str(map_path),

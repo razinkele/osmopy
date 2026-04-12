@@ -34,12 +34,16 @@ No new files. All changes are in-place modifications to:
 **Files:**
 - Modify: `osmose/engine/config.py`
 
-**Context:** Lines 864-920 parse Von Bertalanffy growth parameters, egg size, allometry, lifespan_dt, lmax, and related focal-species scalars. They depend on `cfg`, `n_sp`, `n_dt`, and `lifespan_years` (already computed at line 829).
+**Context:** Lines 864-920 parse Von Bertalanffy growth parameters, egg size, allometry, lifespan_dt, lmax, additional mortality rate, and related focal-species scalars. They depend on `cfg`, `n_sp`, `n_dt`, and `lifespan_years` (already computed at line 829).
+
+**IMPORTANT variable ownership (review fix B-1/B-2):** Lines 880-883 (`focal_ingestion_rate`, `focal_critical_success_rate`) are left inline — they belong to Task 3 (`_parse_predation_params`). Line 887 (`focal_additional_mortality_rate`) is included in THIS task's helper because Task 4 reads it from the focal dict. The subagent must NOT remove lines 880-883 when extracting this block.
 
 - [ ] **Step 1: Read the target block**
 
-Read `osmose/engine/config.py` lines 864-920. Record every local variable assigned. These become the return dict keys:
-- `focal_linf`, `focal_k`, `focal_t0`, `focal_egg_size`, `focal_condition_factor`, `focal_allometric_power`, `focal_vb_threshold_age`, `focal_lifespan_dt`, `focal_delta_lmax_factor`, `focal_lmax`
+Read `osmose/engine/config.py` lines 864-920. Record every local variable assigned. The variables going into this helper are:
+- `focal_linf`, `focal_k`, `focal_t0`, `focal_egg_size`, `focal_condition_factor`, `focal_allometric_power`, `focal_vb_threshold_age`, `focal_lifespan_dt`, `focal_delta_lmax_factor`, `focal_additional_mortality_rate`, `focal_lmax`
+
+Variables at lines 880-883 (`focal_ingestion_rate`, `focal_critical_success_rate`) stay inline — they're absorbed by Task 3.
 
 - [ ] **Step 2: Add the helper function**
 
@@ -49,7 +53,7 @@ Above `from_dict` (after the existing helpers like `_load_per_species_timeseries
 def _parse_growth_params(
     cfg: dict[str, str], n_sp: int, n_dt: int, lifespan_years: NDArray[np.float64]
 ) -> dict[str, Any]:
-    """Parse Von Bertalanffy growth, allometry, and lifespan parameters."""
+    """Parse Von Bertalanffy growth, allometry, lifespan, and additional mortality."""
     linf = _species_float(cfg, "species.linf.sp{i}", n_sp)
     k = _species_float(cfg, "species.k.sp{i}", n_sp)
     t0 = _species_float(cfg, "species.t0.sp{i}", n_sp)
@@ -67,6 +71,9 @@ def _parse_growth_params(
     delta_lmax_factor = _species_float_optional(
         cfg, "species.delta.lmax.factor.sp{i}", n_sp, default=2.0
     )
+    additional_mortality_rate = _species_float_optional(
+        cfg, "mortality.additional.rate.sp{i}", n_sp, default=0.0
+    )
     lmax = _species_float_optional(cfg, "species.lmax.sp{i}", n_sp, default=0.0)
     for i in range(n_sp):
         if lmax[i] <= 0:
@@ -81,13 +88,14 @@ def _parse_growth_params(
         "focal_vb_threshold_age": vb_threshold_age,
         "focal_lifespan_dt": lifespan_dt,
         "focal_delta_lmax_factor": delta_lmax_factor,
+        "focal_additional_mortality_rate": additional_mortality_rate,
         "focal_lmax": lmax,
     }
 ```
 
 - [ ] **Step 3: Replace the inline block in `from_dict`**
 
-Replace lines 864-920 (from `focal_species_names = _focal_names` through the lmax defaulting loop) with:
+Replace lines 864-879 and 884-920 (keeping lines 880-883 inline for `focal_ingestion_rate`/`focal_critical_success_rate`) with:
 
 ```python
         focal_species_names = _focal_names
@@ -101,7 +109,14 @@ Replace lines 864-920 (from `focal_species_names = _focal_names` through the lma
         focal_vb_threshold_age = _growth["focal_vb_threshold_age"]
         focal_lifespan_dt = _growth["focal_lifespan_dt"]
         focal_delta_lmax_factor = _growth["focal_delta_lmax_factor"]
+        focal_additional_mortality_rate = _growth["focal_additional_mortality_rate"]
         focal_lmax = _growth["focal_lmax"]
+        # Lines 880-883 stay inline (focal_ingestion_rate, focal_critical_success_rate)
+        # — absorbed by Task 3's _parse_predation_params
+        focal_ingestion_rate = _species_float(cfg, "predation.ingestion.rate.max.sp{i}", n_sp)
+        focal_critical_success_rate = _species_float(
+            cfg, "predation.efficiency.critical.sp{i}", n_sp
+        )
 ```
 
 - [ ] **Step 4: Run parity tests**
@@ -215,16 +230,20 @@ git commit -m "refactor(engine): extract _parse_reproduction_params from from_di
 
 ---
 
-## Task 3: Extract `_parse_predation_params` (lines 921-1057)
+## Task 3: Extract `_parse_predation_params` (lines 943-1083)
 
 **Files:**
 - Modify: `osmose/engine/config.py`
 
-**Context:** This is the largest block — 136 lines parsing feeding stages, size ratios (with multi-value support), ingestion rate, critical success rate, background species feeding, and 2D array padding. It produces: `focal_ingestion_rate`, `focal_critical_success_rate`, `all_thresholds`, `all_metrics`, `all_ratio_min`, `all_ratio_max`, `n_feeding_stages`, `size_ratio_min_2d`, `size_ratio_max_2d`, `focal_starvation_rate_max`.
+**Context:** This is the largest block — lines 943-1083 parsing feeding stages, size ratios (with multi-value support), background species feeding, 2D array padding, PLUS post-predation variables (starvation, fishing selectivity L50, movement method, walk range, out mortality, n_schools). Note: lines 921-941 (fishing spatial maps) stay inline — they're not predation-related.
+
+**Produces:** `focal_ingestion_rate`, `focal_critical_success_rate`, `all_thresholds`, `all_metrics`, `n_feeding_stages`, `size_ratio_min_2d`, `size_ratio_max_2d`, `focal_starvation_rate_max`, `focal_fishing_selectivity_l50`, `focal_movement_method`, `focal_random_walk_range`, `focal_out_mortality_rate`, `focal_n_schools`.
+
+**Review fix B-3/B-4:** Lines 1059-1083 were originally omitted from this task. They are now included because Task 4 reads all these variables from the focal dict. `focal_fishing_selectivity_l50` (lines 1062-1068) needs `focal_fishing_l50_fsh` as a parameter — this is passed in from the fisheries parsing block.
 
 - [ ] **Step 1: Read the full block carefully**
 
-Read from the fishing spatial maps section (after Task 1/2 extractions) through the 2D array padding. Note: this block uses `background_list` and `n_bkg` which are computed earlier in `from_dict`. These must be passed as parameters.
+Read from line 943 (feeding stages) through line 1083 (n_schools). Note: this block uses `background_list`, `n_bkg`, `n_sp`, and `focal_fishing_l50_fsh` (from the fisheries block at lines 838-856). All must be passed as parameters.
 
 - [ ] **Step 2: Add the helper function**
 
@@ -232,9 +251,11 @@ Read from the fishing spatial maps section (after Task 1/2 extractions) through 
 def _parse_predation_params(
     cfg: dict[str, str],
     n_sp: int,
+    n_dt: int,
     background_list: list[BackgroundSpeciesInfo],
+    focal_fishing_l50_fsh: NDArray[np.float64],
 ) -> dict[str, Any]:
-    """Parse feeding stages, size ratios, and predation parameters."""
+    """Parse feeding stages, size ratios, predation, and post-predation params."""
     n_bkg = len(background_list)
     focal_ingestion_rate = _species_float(cfg, "predation.ingestion.rate.max.sp{i}", n_sp)
     focal_critical_success_rate = _species_float(
@@ -349,10 +370,41 @@ def _parse_predation_params(
             size_ratio_min_2d[sp_i, n_st:] = all_ratio_min[sp_i][-1]
             size_ratio_max_2d[sp_i, n_st:] = all_ratio_max[sp_i][-1]
 
+    # --- Post-predation variables (lines 1059-1083) ---
+    focal_starvation_rate_max = _species_float_optional(
+        cfg, "mortality.starvation.rate.max.sp{i}", n_sp, default=0.0
+    )
+    focal_fishing_selectivity_l50 = _species_float_optional(
+        cfg, "fishing.selectivity.l50.sp{i}", n_sp, default=0.0
+    )
+    for i in range(n_sp):
+        if focal_fishing_l50_fsh[i] > 0 and focal_fishing_selectivity_l50[i] == 0:
+            focal_fishing_selectivity_l50[i] = focal_fishing_l50_fsh[i]
+    focal_movement_method = [
+        cfg.get(f"movement.distribution.method.sp{i}", "random") for i in range(n_sp)
+    ]
+    focal_random_walk_range = _species_int_optional(
+        cfg, "movement.randomwalk.range.sp{i}", n_sp, default=1
+    )
+    focal_out_mortality_rate = _species_float_optional(
+        cfg, "mortality.out.rate.sp{i}", n_sp, default=0.0
+    )
+    focal_n_schools = _species_int_optional(
+        cfg,
+        "simulation.nschool.sp{i}",
+        n_sp,
+        default=int(cfg.get("simulation.nschool", "20")),
+    )
+
     return {
         "focal_ingestion_rate": focal_ingestion_rate,
         "focal_critical_success_rate": focal_critical_success_rate,
         "focal_starvation_rate_max": focal_starvation_rate_max,
+        "focal_fishing_selectivity_l50": focal_fishing_selectivity_l50,
+        "focal_movement_method": focal_movement_method,
+        "focal_random_walk_range": focal_random_walk_range,
+        "focal_out_mortality_rate": focal_out_mortality_rate,
+        "focal_n_schools": focal_n_schools,
         "all_thresholds": all_thresholds,
         "all_metrics": all_metrics,
         "n_feeding_stages": n_feeding_stages,
@@ -363,13 +415,20 @@ def _parse_predation_params(
 
 - [ ] **Step 3: Replace inline block in `from_dict`**
 
-Replace the entire predation/feeding section with:
+Replace lines 943-1083 (feeding stages through n_schools, excluding fishing spatial maps at 921-941) with:
 
 ```python
-        _pred = _parse_predation_params(cfg, n_sp, background_list)
+        _pred = _parse_predation_params(
+            cfg, n_sp, n_dt, background_list, focal_fishing_l50_fsh
+        )
         focal_ingestion_rate = _pred["focal_ingestion_rate"]
         focal_critical_success_rate = _pred["focal_critical_success_rate"]
         focal_starvation_rate_max = _pred["focal_starvation_rate_max"]
+        focal_fishing_selectivity_l50 = _pred["focal_fishing_selectivity_l50"]
+        focal_movement_method = _pred["focal_movement_method"]
+        focal_random_walk_range = _pred["focal_random_walk_range"]
+        focal_out_mortality_rate = _pred["focal_out_mortality_rate"]
+        focal_n_schools = _pred["focal_n_schools"]
         all_thresholds = _pred["all_thresholds"]
         all_metrics = _pred["all_metrics"]
         n_feeding_stages = _pred["n_feeding_stages"]
@@ -629,5 +688,5 @@ git commit -m "refactor(engine): extract _parse_output_flags from from_dict (I-3
 - [ ] **Full suite**: `.venv/bin/python -m pytest tests/ -q` → 2148 passed, 15 skipped, 0 failed
 - [ ] **Ruff**: `.venv/bin/ruff check osmose/ ui/ tests/` → clean
 - [ ] **Commit count**: `git log --oneline master..HEAD` → 5 commits
-- [ ] **Line count check**: `grep -c "def from_dict" osmose/engine/config.py` → still 1; the method should now be ~150-200 lines
+- [ ] **Line count check**: `grep -c "def from_dict" osmose/engine/config.py` → still 1; the method should now be ~300-350 lines (down from 611; the remaining inline code includes fisheries, fishing spatial maps, egg weight, bioen, gompertz, genetics, economics, and the return statement)
 - [ ] Invoke `superpowers:finishing-a-development-branch`

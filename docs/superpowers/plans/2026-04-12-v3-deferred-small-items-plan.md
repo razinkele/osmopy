@@ -44,6 +44,8 @@
 
 - [ ] **Step 1: Create the test file**
 
+**Review fix (B-1/B-2):** The primary test using `@reactive.effect` and `flush()` won't work outside a Shiny session — `flush()` is `async def` and effects require a running event loop. Use the documentation-pinning approach instead, which tests the API contract without needing an active session.
+
 ```python
 """Tests for Shiny reactive semantics relied on by the OSMOSE UI.
 
@@ -51,63 +53,45 @@ Deep review v3 D-1: pins the invariant that reactive.Value.set() inside
 reactive.isolate() propagates to downstream readers.
 """
 
-import pytest
 from shiny import reactive
-from shiny.reactive import flush
 
 
-def test_reactive_write_inside_isolate_propagates():
-    """Writing a reactive.Value inside reactive.isolate() must propagate.
+def test_isolate_is_context_manager():
+    """reactive.isolate() must be a usable context manager (API contract).
 
-    Shiny's isolate() suppresses reads from creating dependencies, but writes
-    always propagate. The OSMOSE UI relies on this in forcing.py:136-138 and
-    state.py update_config(). This test pins the contract.
+    The OSMOSE UI uses `with reactive.isolate(): state.config.set(cfg)`
+    in forcing.py:136-138 and state.py:62-68. This test verifies the API
+    surface exists.
     """
-    flag = reactive.value(False)
-    observed: list[bool] = []
+    assert hasattr(reactive, "isolate")
+    # isolate() returns a context manager
+    ctx = reactive.isolate()
+    assert hasattr(ctx, "__enter__") and hasattr(ctx, "__exit__")
 
-    @reactive.effect
-    def _observer():
-        observed.append(flag.get())
 
-    # Initial flush: observer fires, sees False
-    with reactive.isolate():
-        flush()
-    assert observed == [False], f"Initial: {observed}"
+def test_reactive_value_set_is_unconditional():
+    """reactive.Value.set() must be callable inside an isolate block.
 
-    # Write inside isolate — must propagate
-    with reactive.isolate():
-        flag.set(True)
+    Shiny's isolate() suppresses READS from creating reactive dependencies.
+    WRITES (set) are never suppressed — they always propagate to downstream
+    readers. This is the key semantic guarantee the OSMOSE UI relies on.
 
-    flush()
-    assert observed == [False, True], f"After write-in-isolate: {observed}"
-```
+    The Shiny source (shiny/reactive/_core.py) confirms: isolate() wraps
+    reads in a no-dependency context; it does not intercept writes. A Value's
+    set() method directly invalidates all dependents regardless of context.
 
-**IMPORTANT:** The Shiny reactive API may differ from what's shown. Read `shiny.reactive` module to verify:
-- Is it `reactive.value()` or `reactive.Value()`?
-- Is `flush()` available and how is it imported?
-- Does the effect-based observation pattern work in a test context (outside a Shiny app session)?
-
-If the Shiny reactive runtime requires an active session, adapt the test to use `shiny.session.session_context` or `@pytest.mark.asyncio` with Shiny's test utilities. Check `tests/ui/test_ui_spatial_results.py` for an existing pattern.
-
-**Fallback:** If Shiny's reactive runtime cannot be tested outside an app session, write a simpler documentation-only test:
-
-```python
-def test_isolate_write_semantics_documented():
-    """Pin the expected behavior of reactive.isolate() for future reviewers.
-
-    reactive.isolate() suppresses reads from creating dependencies.
-    Writes inside isolate() always propagate to downstream readers.
-    See forcing.py:136-138, state.py:62-68.
+    This test verifies the API allows writing inside isolate without error.
+    Full integration verification (write propagates to a downstream effect)
+    requires an active Shiny session and is out of scope for unit tests.
 
     Deep review v3 D-1.
     """
-    from shiny import reactive
-
-    # Verify the isolate context manager exists (API contract)
-    assert hasattr(reactive, "isolate")
-    # The semantic guarantee (writes propagate) is documented here and in
-    # the spec: docs/superpowers/specs/2026-04-12-v3-deferred-small-items-design.md
+    val = reactive.Value(0)
+    with reactive.isolate():
+        val.set(42)
+    # Read back (also inside isolate to avoid needing a reactive context)
+    with reactive.isolate():
+        assert val.get() == 42, "Value.set() inside isolate must persist"
 ```
 
 - [ ] **Step 2: Run the test**
@@ -476,7 +460,7 @@ git commit -m "refactor(ui): extract collect_resolved_keys from fishing.py (M-9)
 
 ---
 
-### Task 6: Extract `format_timing_rows` from diagnostics.py
+### Task 6: Extract `format_timing_pairs` from diagnostics.py
 
 **Files:**
 - Modify: `ui/pages/diagnostics.py`
