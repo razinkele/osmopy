@@ -472,6 +472,50 @@ def _parse_growth_params(
     }
 
 
+def _parse_reproduction_params(
+    cfg: dict[str, str],
+    n_sp: int,
+    n_dt: int,
+    lifespan_years: NDArray[np.float64],
+) -> dict[str, Any]:
+    """Parse reproduction, seeding, and larva mortality parameters."""
+    sex_ratio = _species_float_optional(cfg, "species.sexratio.sp{i}", n_sp, default=0.5)
+    relative_fecundity = _species_float_optional(
+        cfg, "species.relativefecundity.sp{i}", n_sp, default=500.0
+    )
+    maturity_size = _species_float_optional(
+        cfg, "species.maturity.size.sp{i}", n_sp, default=0.0
+    )
+    seeding_biomass = _species_float_optional(
+        cfg, "population.seeding.biomass.sp{i}", n_sp, default=0.0
+    )
+    # Seeding max step: global-only key — verified 2026-04-12 against Java OSMOSE
+    # source (ReproductionProcess.java:83,146). Java uses a single `int yearMaxSeeding`
+    # for all species, NOT per-species. Python's np.full broadcast is correct parity.
+    seeding_max_year_str = cfg.get("population.seeding.year.max", "")
+    if seeding_max_year_str:
+        seeding_max_years = float(seeding_max_year_str)
+        seeding_max_step = np.full(n_sp, int(seeding_max_years * n_dt), dtype=np.int32)
+    else:
+        seeding_max_step = (lifespan_years * n_dt).astype(np.int32)
+    larva_mortality_rate = _species_float_optional(
+        cfg, "mortality.additional.larva.rate.sp{i}", n_sp, default=0.0
+    )
+    maturity_age_years = _species_float_optional(
+        cfg, "species.maturity.age.sp{i}", n_sp, default=0.0
+    )
+    maturity_age_dt = (maturity_age_years * n_dt).astype(np.int32)
+    return {
+        "focal_sex_ratio": sex_ratio,
+        "focal_relative_fecundity": relative_fecundity,
+        "focal_maturity_size": maturity_size,
+        "focal_seeding_biomass": seeding_biomass,
+        "focal_seeding_max_step": seeding_max_step,
+        "focal_larva_mortality_rate": larva_mortality_rate,
+        "focal_maturity_age_dt": maturity_age_dt,
+    }
+
+
 def _parse_mpa_zones(cfg: dict[str, str]) -> list[MPAZone] | None:
     """Parse Marine Protected Area configurations."""
     zones: list[MPAZone] = []
@@ -926,39 +970,14 @@ class EngineConfig:
         focal_critical_success_rate = _species_float(
             cfg, "predation.efficiency.critical.sp{i}", n_sp
         )
-        focal_sex_ratio = _species_float_optional(cfg, "species.sexratio.sp{i}", n_sp, default=0.5)
-        focal_relative_fecundity = _species_float_optional(
-            cfg, "species.relativefecundity.sp{i}", n_sp, default=500.0
-        )
-        focal_maturity_size = _species_float_optional(
-            cfg, "species.maturity.size.sp{i}", n_sp, default=0.0
-        )
-        focal_seeding_biomass = _species_float_optional(
-            cfg, "population.seeding.biomass.sp{i}", n_sp, default=0.0
-        )
-        # Seeding max step: global-only key — verified 2026-04-12 against Java OSMOSE
-        # source (ReproductionProcess.java:83,146). Java uses a single `int yearMaxSeeding`
-        # for all species, NOT per-species. Python's np.full broadcast is correct parity.
-        seeding_max_year_str = cfg.get("population.seeding.year.max", "")
-        if seeding_max_year_str:
-            seeding_max_years = float(seeding_max_year_str)
-            focal_seeding_max_step = np.full(n_sp, int(seeding_max_years * n_dt), dtype=np.int32)
-        else:
-            focal_seeding_max_step = (lifespan_years * n_dt).astype(np.int32)
-        focal_larva_mortality_rate = _species_float_optional(
-            cfg, "mortality.additional.larva.rate.sp{i}", n_sp, default=0.0
-        )
-        # Maturity age (years → timesteps); default 0 means no age threshold
-        focal_maturity_age_years = _species_float_optional(
-            cfg, "species.maturity.age.sp{i}", n_sp, default=0.0
-        )
-        focal_maturity_age_dt = (focal_maturity_age_years * n_dt).astype(np.int32)
-        # Lmax: separate cap that may differ from linf
-        focal_lmax = _species_float_optional(cfg, "species.lmax.sp{i}", n_sp, default=0.0)
-        # Default to linf if not set (value 0.0 treated as absent)
-        for i in range(n_sp):
-            if focal_lmax[i] <= 0:
-                focal_lmax[i] = focal_linf[i]
+        _repro = _parse_reproduction_params(cfg, n_sp, n_dt, lifespan_years)
+        focal_sex_ratio = _repro["focal_sex_ratio"]
+        focal_relative_fecundity = _repro["focal_relative_fecundity"]
+        focal_maturity_size = _repro["focal_maturity_size"]
+        focal_seeding_biomass = _repro["focal_seeding_biomass"]
+        focal_seeding_max_step = _repro["focal_seeding_max_step"]
+        focal_larva_mortality_rate = _repro["focal_larva_mortality_rate"]
+        focal_maturity_age_dt = _repro["focal_maturity_age_dt"]
         # Fishing spatial distribution maps
         focal_fishing_spatial_maps: list[np.ndarray | None] = []
         # Try shared fisheries map first (v4)
