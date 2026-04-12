@@ -381,6 +381,102 @@ class TestMissingEntriesWarned:
 
 
 # ---------------------------------------------------------------------------
+# Test: Uncovered slot fixture — partial age coverage with known counts
+# ---------------------------------------------------------------------------
+
+
+class TestUncoveredSlotFixture:
+    """Verify that index_maps correctly counts covered/uncovered slots.
+
+    Species lifespan_dt=48, n_dt_per_year=12, n_years=1.
+    Map covers initialage=0 .. lastage=1.
+      last_age_dt = min(round(1 * 12), 48 - 1) = min(12, 47) = 12
+      => age_dt range: 0..12 inclusive = 13 ages
+      => covered = 13 ages * 12 steps = 156
+      => uncovered = (48 - 13) ages * 12 steps = 35 * 12 = 420
+    """
+
+    def test_covered_and_uncovered_counts(self, tmp_path):
+        ny, nx = 3, 3
+        data = [[0.1, 0.2, 0.3]] * ny
+        _write_csv_map(tmp_path / "map0.csv", data)
+
+        cfg = {
+            "movement.species.map0": "TestFish",
+            "movement.file.map0": str(tmp_path / "map0.csv"),
+            "movement.initialage.map0": "0",
+            "movement.lastage.map0": "1",
+        }
+
+        mms = MovementMapSet(
+            cfg,
+            species_name="TestFish",
+            n_dt_per_year=12,
+            n_years=1,
+            lifespan_dt=48,
+            ny=ny,
+            nx=nx,
+        )
+
+        covered = int((mms.index_maps != -1).sum())
+        uncovered = int((mms.index_maps == -1).sum())
+
+        assert covered == 13 * 12, f"expected 156 covered slots, got {covered}"
+        assert uncovered == 35 * 12, f"expected 420 uncovered slots, got {uncovered}"
+
+    def test_strict_raises_on_uncovered(self, tmp_path):
+        """With strict=True, uncovered slots raise ValueError."""
+        ny, nx = 3, 3
+        data = [[0.1, 0.2, 0.3]] * ny
+        _write_csv_map(tmp_path / "map0.csv", data)
+
+        cfg = {
+            "movement.species.map0": "TestFish",
+            "movement.file.map0": str(tmp_path / "map0.csv"),
+            "movement.initialage.map0": "0",
+            "movement.lastage.map0": "1",
+        }
+
+        with pytest.raises(ValueError, match="slots have no movement map assigned"):
+            MovementMapSet(
+                cfg,
+                species_name="TestFish",
+                n_dt_per_year=12,
+                n_years=1,
+                lifespan_dt=48,
+                ny=ny,
+                nx=nx,
+                strict=True,
+            )
+
+    def test_strict_false_does_not_raise(self, tmp_path):
+        """With strict=False (default), uncovered slots only warn."""
+        ny, nx = 3, 3
+        data = [[0.1, 0.2, 0.3]] * ny
+        _write_csv_map(tmp_path / "map0.csv", data)
+
+        cfg = {
+            "movement.species.map0": "TestFish",
+            "movement.file.map0": str(tmp_path / "map0.csv"),
+            "movement.initialage.map0": "0",
+            "movement.lastage.map0": "1",
+        }
+
+        # Should not raise
+        mms = MovementMapSet(
+            cfg,
+            species_name="TestFish",
+            n_dt_per_year=12,
+            n_years=1,
+            lifespan_dt=48,
+            ny=ny,
+            nx=nx,
+            strict=False,
+        )
+        assert mms.index_maps is not None
+
+
+# ---------------------------------------------------------------------------
 # Test 12 — Season subset (steps 0-11 vs 12-23 -> different maps)
 # ---------------------------------------------------------------------------
 

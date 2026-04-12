@@ -100,6 +100,7 @@ class MovementMapSet:
         ny: int,
         nx: int,
         config_dir: str = "",
+        strict: bool = False,
     ) -> None:
         """Build index_maps and load CSV grids for one species.
 
@@ -267,12 +268,13 @@ class MovementMapSet:
         # --- Validate: warn about uncovered (age, step) slots ---
         uncovered = int((self.index_maps == -1).sum())
         if uncovered > 0:
-            logger.warning(
-                "Species %r: %d of %d (age_dt, step) slots have no movement map assigned",
-                species_name,
-                uncovered,
-                lifespan_dt * n_total_steps,
+            msg = (
+                f"Species {species_name!r}: {uncovered} of {lifespan_dt * n_total_steps} "
+                f"(age_dt, step) slots have no movement map assigned"
             )
+            if strict:
+                raise ValueError(msg)
+            logger.warning("%s", msg)
 
     # ------------------------------------------------------------------
     # Lookup methods
