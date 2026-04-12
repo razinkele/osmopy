@@ -70,6 +70,75 @@ class TestSchoolState:
         assert len(MortalityCause) == 8
 
 
+class TestSchoolStateValidate:
+    """Opt-in validation of biological invariants on SchoolState.
+    Deep review v3 I-1.
+    """
+
+    def _minimal_valid_state(self, n: int = 2):
+        import numpy as np
+        from osmose.engine.state import SchoolState
+
+        s = SchoolState.create(
+            n_schools=n, species_id=np.zeros(n, dtype=np.int32)
+        )
+        return s.replace(
+            abundance=np.full(n, 100.0),
+            weight=np.full(n, 0.01),
+            biomass=np.full(n, 1.0),
+            length=np.full(n, 10.0),
+            age_dt=np.zeros(n, dtype=np.int32),
+            cell_x=np.zeros(n, dtype=np.int32),
+            cell_y=np.zeros(n, dtype=np.int32),
+        )
+
+    def test_validate_passes_on_clean_state(self):
+        s = self._minimal_valid_state()
+        s.validate()
+
+    def test_validate_raises_on_negative_abundance(self):
+        import numpy as np
+        import pytest
+        s = self._minimal_valid_state()
+        s = s.replace(abundance=np.array([-1.0, 10.0]))
+        with pytest.raises(ValueError, match="abundance must be non-negative"):
+            s.validate()
+
+    def test_validate_raises_on_negative_length(self):
+        import numpy as np
+        import pytest
+        s = self._minimal_valid_state()
+        s = s.replace(length=np.array([-5.0, 10.0]))
+        with pytest.raises(ValueError, match="length must be non-negative"):
+            s.validate()
+
+    def test_validate_raises_on_biomass_mismatch(self):
+        import numpy as np
+        import pytest
+        s = self._minimal_valid_state()
+        s = s.replace(biomass=np.array([2.0, 1.0]))
+        with pytest.raises(ValueError, match="biomass .* abundance \\* weight"):
+            s.validate()
+
+    def test_validate_raises_on_negative_cell(self):
+        import numpy as np
+        import pytest
+        s = self._minimal_valid_state()
+        s = s.replace(cell_x=np.array([-1, 0], dtype=np.int32))
+        with pytest.raises(ValueError, match="cell_x must be non-negative"):
+            s.validate()
+
+    def test_validate_skip_dead_schools(self):
+        import numpy as np
+        s = self._minimal_valid_state()
+        s = s.replace(
+            abundance=np.array([100.0, 0.0]),
+            weight=np.array([0.01, 0.0]),
+            biomass=np.array([1.0, 0.0]),
+        )
+        s.validate()
+
+
 class TestPythonEngineIntegration:
     def test_run_with_minimal_config(self, tmp_path):
         """PythonEngine.run() should complete with a minimal config."""

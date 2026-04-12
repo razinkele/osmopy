@@ -151,6 +151,37 @@ class SchoolState:
             merged[f.name] = np.concatenate([a, b], axis=0)
         return SchoolState(**merged)
 
+    def validate(self) -> None:
+        """Check biological invariants. Opt-in: called from tests, not __post_init__.
+        Raises ValueError on the first violation. Deep review v3 I-1.
+        """
+        if (self.abundance < 0).any():
+            raise ValueError(f"abundance must be non-negative; found minimum {self.abundance.min()}")
+        if (self.length < 0).any():
+            raise ValueError(f"length must be non-negative; found minimum {self.length.min()}")
+        if (self.weight < 0).any():
+            raise ValueError(f"weight must be non-negative; found minimum {self.weight.min()}")
+        if (self.biomass < 0).any():
+            raise ValueError(f"biomass must be non-negative; found minimum {self.biomass.min()}")
+        if (self.cell_x < 0).any():
+            raise ValueError(f"cell_x must be non-negative; found minimum {self.cell_x.min()}")
+        if (self.cell_y < 0).any():
+            raise ValueError(f"cell_y must be non-negative; found minimum {self.cell_y.min()}")
+        live = self.abundance > 0
+        if live.any():
+            expected = self.abundance[live] * self.weight[live]
+            rtol = 1e-6
+            diff = np.abs(self.biomass[live] - expected)
+            tol = rtol * np.abs(expected) + 1e-12
+            bad = diff > tol
+            if bad.any():
+                bad_idx = np.where(live)[0][bad][0]
+                raise ValueError(
+                    f"biomass must equal abundance * weight for live schools "
+                    f"(school {bad_idx}: biomass={self.biomass[bad_idx]}, "
+                    f"abundance*weight={self.abundance[bad_idx] * self.weight[bad_idx]})"
+                )
+
     def compact(self) -> SchoolState:
         """Remove dead schools (abundance <= 0)."""
         alive = self.abundance > 0
