@@ -92,7 +92,7 @@ def advanced_server(input, output, session, state):
         try:
             new_cfg = reader.read_file(filepath)
         except (OSError, ValueError, UnicodeDecodeError) as exc:
-            ui.notification_show(f"Failed to parse config file: {exc}", type="error", duration=8)
+            ui.notification_show(f"Failed to parse config file: {exc}", type="error", duration=15)
             return
         loaded = new_cfg
         # Stage for preview instead of merging directly
@@ -173,6 +173,7 @@ def advanced_server(input, output, session, state):
                 cfg = dict(state.config.get())
             cfg.update(pending)
             state.config.set(cfg)
+            state.dirty.set(True)  # Mark as dirty so unsaved-changes warning fires
             import_pending.set({})
 
             with reactive.isolate():
@@ -197,7 +198,7 @@ def advanced_server(input, output, session, state):
         work_dir = Path(tempfile.mkdtemp(prefix="osmose_export_"))
         atexit.register(shutil.rmtree, str(work_dir), True)
         writer = OsmoseConfigWriter()
-        writer.write(state.config.get(), work_dir)
+        writer.write(state.config.get(), work_dir, key_case_map=state.key_case_map.get())
         master = work_dir / "osm_all-parameters.csv"
         return str(master)
 

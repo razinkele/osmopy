@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from html import escape as _esc
+from typing import TYPE_CHECKING, Any
 
 from shiny import ui
 from osmose.logging import setup_logging
 from osmose.schema.base import OsmoseField, ParamType
 from ui.styles import STYLE_HINT
+
+if TYPE_CHECKING:
+    from shiny.session import Session
 
 _log = setup_logging("osmose.param_form")
 
@@ -37,10 +41,11 @@ def _wrap_with_tooltip(label: str, field: OsmoseField) -> ui.Tag:
             tabindex="0",
             **{
                 "data-bs-toggle": "popover",
-                "data-bs-trigger": "hover focus",
+                "data-bs-trigger": "hover focus click",
                 "data-bs-html": "true",
                 "data-bs-content": content,
                 "data-bs-placement": "top",
+                "aria-label": f"Help: {field.description}",
             },
         ),
     )
@@ -313,8 +318,22 @@ def render_species_table(
         )
     ]
     for i, name in enumerate(species_names):
+        th_content: list[ui.Tag | str] = [name]
+        if i == 0 and n_species > 1:
+            th_content.append(
+                ui.tags.button(
+                    "📋 Copy to all",
+                    class_="btn btn-sm btn-outline-warning mt-1",
+                    style="font-size: 9px; padding: 1px 5px; display: block; margin: 2px auto 0;",
+                    onclick=(
+                        "Shiny.setInputValue('copy_sp0_to_all', Date.now(),"
+                        " {priority: 'event'})"
+                    ),
+                    title="Copy all species 0 values to other species",
+                )
+            )
         header_cells.append(
-            ui.tags.th(name, style="text-align: center; min-width: 90px; padding: 8px;")
+            ui.tags.th(*th_content, style="text-align: center; min-width: 90px; padding: 8px;")
         )
     header = ui.tags.thead(
         ui.tags.tr(*header_cells, style="border-bottom: 2px solid var(--osm-border, #2d3d50);")
@@ -365,10 +384,11 @@ def render_species_table(
                     tabindex="0",
                     **{
                         "data-bs-toggle": "popover",
-                        "data-bs-trigger": "hover focus",
+                        "data-bs-trigger": "hover focus click",
                         "data-bs-html": "true",
                         "data-bs-content": tooltip_html,
                         "data-bs-placement": "right",
+                        "aria-label": f"Help: {field.description}",
                     },
                 ),
                 style=(
@@ -407,7 +427,7 @@ def render_species_table(
                     widget = ui.input_numeric(
                         input_id,
                         "",
-                        value=val if val is not None else 0,
+                        value=float(val) if val is not None else 0,
                         min=field.min_val,
                         max=field.max_val,
                         step=_guess_step(field) if field.param_type == ParamType.FLOAT else 1,
@@ -420,7 +440,7 @@ def render_species_table(
                 elif field.param_type == ParamType.ENUM:
                     choices = {c: c for c in (field.choices or [])}
                     widget = ui.input_select(
-                        input_id, "", choices=choices, selected=val, width="90px"
+                        input_id, "", choices=choices, selected=str(val) if val is not None else None, width="90px"
                     )
                 elif field.param_type in (ParamType.FILE_PATH, ParamType.MATRIX):
                     widget = ui.tags.span("file", style="color: #5a6a7a; font-size: 11px;")
@@ -482,3 +502,51 @@ def _guess_step(field: OsmoseField) -> float:
         else:
             return 10.0
     return 0.1
+
+
+def copy_species0_to_all(
+    fields: list[OsmoseField],
+    n_species: int,
+    config: dict[str, str],
+    input: Any,
+    session: Session | None,
+    start_idx: int = 0,
+    show_advanced: bool = False,
+) -> int:
+    """Copy all species 0 input values to all other species.
+
+    Returns the number of parameters copied.
+    """
+    visible = [f for f in fields if f.indexed and (show_advanced or not f.advanced)]
+    copied = 0
+    for field in visible:
+        if field.param_type in (ParamType.FILE_PATH, ParamType.MATRIX):
+            continue
+        base_key = (
+            field.key_pattern.replace(".sp{idx}", "").replace("{idx}", "").replace(".", "_")
+        )
+        src_id = f"spt_{base_key}_{start_idx}"
+        try:
+            src_val = getattr(input, src_id)()
+        except Exception:
+            continue
+        if src_val is None:
+            continue
+
+        for i in range(1, n_species):
+            sp_idx = start_idx + i
+            config_key = field.resolve_key(sp_idx)
+            dst_id = f"spt_{base_key}_{sp_idx}"
+
+            config[config_key] = str(src_val)
+
+            if field.param_type in (ParamType.FLOAT, ParamType.INT):
+                ui.update_numeric(dst_id, value=float(src_val), session=session)
+            elif field.param_type == ParamType.BOOL:
+                ui.update_switch(dst_id, value=bool(src_val), session=session)
+            elif field.param_type == ParamType.ENUM:
+                ui.update_select(dst_id, selected=str(src_val), session=session)
+            else:
+                ui.update_text(dst_id, value=str(src_val), session=session)
+        copied += 1
+    return copied

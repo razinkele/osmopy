@@ -20,6 +20,7 @@ def collapsible_card_header(title: str, page_id: str):
             class_="osm-collapse-btn",
             onclick=f"togglePanel('{page_id}')",
             title="Collapse panel",
+            **{"aria-label": "Collapse panel", "aria-expanded": "true"},
         ),
     )
 
@@ -37,9 +38,10 @@ def expand_tab(title: str, page_id: str):
     page_id
         Must match the page_id used in collapsible_card_header.
     """
-    return _ui.div(
+    return _ui.tags.button(
         title,
         class_="osm-expand-tab",
         id=f"expand_{page_id}",
         onclick=f"togglePanel('{page_id}')",
+        **{"aria-label": "Expand panel", "aria-expanded": "false"},
     )

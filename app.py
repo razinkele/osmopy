@@ -47,6 +47,12 @@ def _nav_section(label: str):
 
 
 app_ui = ui.page_fillable(
+    # ── Skip link for keyboard users ────────────────────────────
+    ui.tags.a(
+        "Skip to content",
+        href="#main-content",
+        class_="visually-hidden-focusable",
+    ),
     # ── Custom CSS + theme toggle JS ────────────────────────────
     ui.head_content(ui.include_css(_WWW / "osmose.css")),
     ui.head_content(ui.include_css(_WWW / "deckgl-widgets.css")),
@@ -91,6 +97,10 @@ app_ui = ui.page_fillable(
             // Show/hide the expand tab
             var tab = document.getElementById('nav-expand-tab');
             if (tab) tab.classList.toggle('visible', collapsed);
+            // Sync ARIA on both nav collapse and expand buttons
+            var collapseBtn = document.querySelector('.osm-nav-collapse-btn');
+            if (collapseBtn) collapseBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+            if (tab) tab.setAttribute('aria-expanded', collapsed ? 'true' : 'false');
             localStorage.setItem('osmose-nav-collapsed', collapsed ? '1' : '0');
         }
         // Nav expand tab is created at end of body (after DOM renders)
@@ -106,6 +116,10 @@ app_ui = ui.page_fillable(
 
             var collapsed = left.classList.toggle('collapsed');
             if (tab) tab.classList.toggle('visible', collapsed);
+            // Sync ARIA states on both collapse and expand buttons
+            var collapseBtn = container.querySelector('.osm-collapse-btn');
+            if (collapseBtn) collapseBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+            if (tab) tab.setAttribute('aria-expanded', collapsed ? 'true' : 'false');
             localStorage.setItem('osmose-panel-collapsed-' + pageId, collapsed ? '1' : '0');
         }
 
@@ -169,16 +183,7 @@ app_ui = ui.page_fillable(
             });
         };
         // Restore engine mode from localStorage on page load
-        (function() {
-            var saved = localStorage.getItem('osmose-engine') || 'java';
-            // Defer until DOM is ready so buttons exist
-            var poll = setInterval(function() {
-                if (document.getElementById('engineBtnJava')) {
-                    clearInterval(poll);
-                    setEngineMode(saved);
-                }
-            }, 100);
-        })();
+        // (deferred to consolidated init in end-of-body script)
     """)
     ),
     # ── App header ──────────────────────────────────────────────
@@ -247,6 +252,11 @@ app_ui = ui.page_fillable(
                 class_="osm-collapse-btn osm-nav-collapse-btn",
                 onclick="toggleNav()",
                 title="Collapse menu",
+                **{
+                    "aria-label": "Collapse navigation",
+                    "aria-expanded": "true",
+                    "aria-controls": "main_nav",
+                },
             ),
         ),
         # Configure
@@ -318,50 +328,84 @@ app_ui = ui.page_fillable(
     })();
     """),
     # End-of-body scripts — must run after Shiny renders the DOM.
-    # 1. Create nav expand tab (inserted between nav and content columns)
-    # 2. Initialize Bootstrap 5 popovers (poll for dynamically rendered fields)
+    # Consolidated initialization: nav expand tab, popovers, spatial pill, skip link
     ui.tags.script("""
     (function() {
-        // Create nav expand tab once the row exists
-        var navPoll = setInterval(function() {
+        // ── Consolidated one-shot DOM setup ──────────────────────
+        function initOnceElements() {
+            // 1. Create nav expand tab (if not already created)
             var row = document.querySelector('body > .row');
-            if (!row || row.children.length < 2) return;
-            if (document.getElementById('nav-expand-tab')) { clearInterval(navPoll); return; }
-            clearInterval(navPoll);
-            var tab = document.createElement('div');
-            tab.id = 'nav-expand-tab';
-            tab.className = 'osm-expand-tab';
-            tab.textContent = 'Menu';
-            tab.onclick = function() { toggleNav(); };
-            row.insertBefore(tab, row.children[1]);
-            // Restore collapsed state
-            if (localStorage.getItem('osmose-nav-collapsed') === '1') {
-                toggleNav();
+            if (row && row.children.length >= 2 && !document.getElementById('nav-expand-tab')) {
+                var tab = document.createElement('button');
+                tab.id = 'nav-expand-tab';
+                tab.className = 'osm-expand-tab';
+                tab.textContent = 'Menu';
+                tab.setAttribute('aria-label', 'Expand navigation');
+                tab.setAttribute('aria-expanded', 'false');
+                tab.onclick = function() { toggleNav(); };
+                row.insertBefore(tab, row.children[1]);
+                if (localStorage.getItem('osmose-nav-collapsed') === '1') {
+                    toggleNav();
+                }
             }
-        }, 200);
 
-        // Initialize Bootstrap 5 popovers
-        setInterval(function() {
-            if (typeof bootstrap === 'undefined' || !bootstrap.Popover) return;
-            document.querySelectorAll('[data-bs-toggle="popover"]').forEach(function(el) {
-                if (!bootstrap.Popover.getInstance(el)) new bootstrap.Popover(el);
-            });
-        }, 500);
-    })();
-    """),
-    # Toggle Spatial Results pill disabled state
-    ui.tags.script("""
-    (function() {
-        // Start disabled
-        var poll = setInterval(function() {
+            // 2. Disable spatial results pill initially
             var pill = document.querySelector('.nav-link[data-value="spatial_results"]');
-            if (!pill) return;
-            clearInterval(poll);
-            pill.classList.add('osm-disabled');
-        }, 200);
+            if (pill) pill.classList.add('osm-disabled');
 
-        // Listen for server messages to toggle (must wait for Shiny JS to load)
-        // Guard: deck.gl CDN fallback re-dispatches shiny:connected — register once only
+            // 3. Set id/role on main tab-content for skip link
+            var mainNav = document.getElementById('main_nav');
+            if (mainNav) {
+                var tabContent = mainNav.closest('.row');
+                if (tabContent) tabContent = tabContent.querySelector('.tab-content');
+                if (tabContent) {
+                    tabContent.id = 'main-content';
+                    tabContent.setAttribute('role', 'main');
+                    tabContent.setAttribute('tabindex', '-1');
+                }
+            }
+
+            // 4. Restore engine mode from localStorage
+            if (document.getElementById('engineBtnJava')) {
+                var savedEngine = localStorage.getItem('osmose-engine') || 'java';
+                setEngineMode(savedEngine);
+            }
+        }
+
+        // Try immediately, then retry via requestAnimationFrame
+        if (document.readyState === 'complete' || document.readyState === 'interactive') {
+            initOnceElements();
+            // Retry once more in case DOM isn't fully rendered
+            requestAnimationFrame(function() { initOnceElements(); });
+        } else {
+            document.addEventListener('DOMContentLoaded', function() {
+                initOnceElements();
+                requestAnimationFrame(function() { initOnceElements(); });
+            });
+        }
+
+        // ── Popover init via MutationObserver ────────────────────
+        function initNewPopovers(root) {
+            if (typeof bootstrap === 'undefined' || !bootstrap.Popover) return;
+            var els = (root || document).querySelectorAll('[data-bs-toggle="popover"]:not([data-osm-init])');
+            els.forEach(function(el) {
+                new bootstrap.Popover(el);
+                el.setAttribute('data-osm-init', '1');
+            });
+        }
+        // Initial scan
+        initNewPopovers();
+        // Watch for dynamically added popovers
+        var observer = new MutationObserver(function(mutations) {
+            var needScan = false;
+            for (var i = 0; i < mutations.length; i++) {
+                if (mutations[i].addedNodes.length) { needScan = true; break; }
+            }
+            if (needScan) initNewPopovers();
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+
+        // ── Spatial pill toggle (server-driven) ──────────────────
         var _pillRegistered = false;
         document.addEventListener('shiny:connected', function() {
             if (_pillRegistered) return;
@@ -376,6 +420,38 @@ app_ui = ui.page_fillable(
                     }
                 }
             });
+        });
+
+        // ── Pause caustic animation when tab is hidden ───────────
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) {
+                document.documentElement.classList.add('paused');
+            } else {
+                document.documentElement.classList.remove('paused');
+            }
+        });
+
+        // ── Keyboard shortcuts ───────────────────────────────────
+        document.addEventListener('keydown', function(e) {
+            // Ctrl/Cmd+S → save scenario
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                if (typeof Shiny !== 'undefined' && Shiny.setInputValue) {
+                    Shiny.setInputValue('shortcut_save', Date.now(), {priority: 'event'});
+                }
+                return;
+            }
+            // ? → open help modal (only when not typing in an input)
+            if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                var tag = e.target.tagName;
+                if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' ||
+                    e.target.contentEditable === 'true') return;
+                var helpModal = document.getElementById('helpModal');
+                if (helpModal && typeof bootstrap !== 'undefined') {
+                    var modal = bootstrap.Modal.getOrCreateInstance(helpModal);
+                    modal.show();
+                }
+            }
         });
     })();
     """),
@@ -407,24 +483,16 @@ def server(input, output, session):
         n_params = len(cfg)
         is_dirty = state.dirty.get()
         return ui.div(
-            ui.tags.span(
-                name,
-                style=(
-                    "color: var(--osm-accent); font-weight: 600; font-size: 0.78rem;"
-                    " overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
-                    " max-width: 180px; display: inline-block; vertical-align: middle;"
-                ),
-            ),
+            ui.tags.span(name, class_="osm-config-name"),
             ui.tags.span(
                 f" {n_species} species \u2022 {n_params} params",
-                style="color: var(--osm-text-muted); font-size: 0.7rem; margin-left: 6px;",
+                class_="osm-config-stats",
             ),
             ui.tags.span(
                 " modified" if is_dirty else "",
-                style="color: #e67e22; font-size: 0.65rem; font-style: italic; margin-left: 4px;",
+                class_="osm-config-dirty",
             ),
             class_="osm-config-info",
-            style="display: flex; align-items: center; margin-right: 8px;",
         )
 
     @render.ui

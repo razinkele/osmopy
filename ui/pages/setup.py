@@ -13,7 +13,11 @@ from osmose.logging import setup_logging
 from osmose.schema.simulation import SIMULATION_FIELDS
 from osmose.schema.species import SPECIES_FIELDS
 from ui.components.collapsible import collapsible_card_header, expand_tab
-from ui.components.param_form import render_category, render_species_table
+from ui.components.param_form import (
+    copy_species0_to_all,
+    render_category,
+    render_species_table,
+)
 from ui.state import sync_inputs
 
 _log = setup_logging("osmose.setup")
@@ -102,7 +106,7 @@ def setup_server(input, output, session, state):
 
         example = input.load_example()
         if not example:
-            ui.notification_show("Select an example first.", type="warning", duration=3)
+            ui.notification_show("Select an example first.", type="warning", duration=5)
             return
 
         try:
@@ -114,13 +118,13 @@ def setup_server(input, output, session, state):
             ui.notification_show(
                 "Failed to load example. Check server logs for details.",
                 type="error",
-                duration=5,
+                duration=15,
             )
             return
 
         master = result["config_file"]
         if not master.exists():
-            ui.notification_show(f"Example not found: {master}", type="error", duration=5)
+            ui.notification_show(f"Example not found: {master}", type="error", duration=15)
             return
 
         config_dir = master.parent
@@ -206,3 +210,27 @@ def setup_server(input, output, session, state):
         # Update global species names list (read from freshly updated cfg).
         names = [cfg.get(f"species.name.sp{i}", f"Species {i}") for i in range(n)]
         state.species_names.set(names)
+
+    @reactive.effect
+    @reactive.event(input.copy_sp0_to_all)
+    def handle_copy_sp0():
+        n = input.n_species()
+        if n < 2:
+            return
+        state.loading.set(True)
+        try:
+            with reactive.isolate():
+                cfg = dict(state.config.get())
+            show_adv = input.show_advanced_species()
+            count = copy_species0_to_all(
+                SPECIES_FIELDS, n, cfg, input, session, show_advanced=show_adv
+            )
+            state.config.set(cfg)
+            state.dirty.set(True)
+            ui.notification_show(
+                f"Copied {count} parameters from species 0 to {n - 1} species.",
+                type="message",
+                duration=3,
+            )
+        finally:
+            state.loading.set(False)

@@ -708,18 +708,25 @@ def load_csv_overlay(
         r_idxs, c_idxs = np.where(valid_mask)
 
         if use_nc:
-            if lat.ndim == 2:
-                clats = lat[r_idxs, c_idxs].astype(float)
-                clons = lon[r_idxs, c_idxs].astype(float)
+            if lat is not None and lon is not None:
+                if lat.ndim == 2:
+                    clats = lat[r_idxs, c_idxs].astype(float)
+                    clons = lon[r_idxs, c_idxs].astype(float)
+                else:
+                    clats = lat[r_idxs].astype(float)
+                    clons = lon[c_idxs].astype(float)
+                hlat_arr, hlon_arr = _compute_half_extents(
+                    lat if lat.ndim == 2 else np.broadcast_to(lat[:, np.newaxis], (g_ny, g_nx)),
+                    lon if lon.ndim == 2 else np.broadcast_to(lon[np.newaxis, :], (g_ny, g_nx)),
+                )
+                hlats = hlat_arr[r_idxs, c_idxs]
+                hlons = hlon_arr[r_idxs, c_idxs]
             else:
-                clats = lat[r_idxs].astype(float)
-                clons = lon[c_idxs].astype(float)
-            hlat_arr, hlon_arr = _compute_half_extents(
-                lat if lat.ndim == 2 else np.broadcast_to(lat[:, np.newaxis], (g_ny, g_nx)),
-                lon if lon.ndim == 2 else np.broadcast_to(lon[np.newaxis, :], (g_ny, g_nx)),
-            )
-            hlats = hlat_arr[r_idxs, c_idxs]
-            hlons = hlon_arr[r_idxs, c_idxs]
+                # Fallback to regular grid
+                clons = ul_lon + (c_idxs + 0.5) * dx
+                clats = ul_lat - (r_idxs + 0.5) * dy
+                hlats = np.full(len(r_idxs), hlat)
+                hlons = np.full(len(r_idxs), hlon)
         else:
             clons = ul_lon + (c_idxs + 0.5) * dx
             clats = ul_lat - (r_idxs + 0.5) * dy
@@ -750,7 +757,7 @@ def load_csv_overlay(
             }
             for i in range(len(valid_vals))
         ]
-        return cells if cells else None
+        return cells if cells else None  # type: ignore[return-value]
     except (OSError, pd.errors.ParserError, ValueError) as exc:
         _log.warning("Failed to load CSV overlay %s: %s", file_path, exc)
         return None
@@ -807,7 +814,7 @@ def load_netcdf_overlay(
             da = ds[sel_var]
 
             # --- Slice time dimension if present ---
-            has_time = len(da.dims) > 2 and da.dims[0].lower() in _NC_TIME_DIM_NAMES
+            has_time = len(da.dims) > 2 and str(da.dims[0]).lower() in _NC_TIME_DIM_NAMES
             if has_time:
                 t_idx = max(0, min(time_step, da.shape[0] - 1))
                 data_vals = da.values[t_idx]
@@ -941,18 +948,18 @@ def list_nc_overlay_variables(file_path_str: str) -> dict[str, dict] | None:
         with xr.open_dataset(Path(file_path_str)) as ds:
             result: dict[str, dict] = {}
             for vn in ds.data_vars:
-                if vn.lower() in _NC_COORD_NAMES:
+                if str(vn).lower() in _NC_COORD_NAMES:
                     continue
                 da = ds[vn]
                 if len(da.dims) < 2:
                     continue
-                has_time = len(da.dims) > 2 and da.dims[0].lower() in _NC_TIME_DIM_NAMES
+                has_time = len(da.dims) > 2 and str(da.dims[0]).lower() in _NC_TIME_DIM_NAMES
                 n_time = int(da.shape[0]) if has_time else 1
                 vals = da.values.astype(float)
                 valid = vals[~np.isnan(vals)]
                 if len(valid) == 0:
                     continue
-                result[vn] = {
+                result[str(vn)] = {
                     "n_time": n_time,
                     "has_time": has_time,
                     "vmin": float(valid.min()),

@@ -100,12 +100,14 @@ def scenarios_server(input, output, session, state):
 
     # --- Save ---
 
+    pending_save: reactive.Value[Scenario | None] = reactive.Value(None)
+
     @reactive.effect
     @reactive.event(input.btn_save_scenario)
     def handle_save():
         name = input.scenario_name().strip()
         if not name:
-            ui.notification_show("Enter a scenario name.", type="warning", duration=3)
+            ui.notification_show("Enter a scenario name.", type="warning", duration=5)
             return
         tags_raw = input.scenario_tags().strip()
         tags = [t.strip() for t in tags_raw.split(",") if t.strip()] if tags_raw else []
@@ -114,7 +116,43 @@ def scenarios_server(input, output, session, state):
             description=input.scenario_desc().strip(),
             config=dict(state.config.get()),
             tags=tags,
+            key_case_map=dict(state.key_case_map.get()),
         )
+        # Check if scenario already exists
+        existing = {s["name"] for s in mgr.list_scenarios()}
+        if name in existing:
+            pending_save.set(scenario)
+            ui.modal_show(
+                ui.modal(
+                    ui.p(f"Scenario '{name}' already exists. Overwrite?"),
+                    title="Confirm Overwrite",
+                    easy_close=True,
+                    footer=ui.div(
+                        ui.input_action_button(
+                            "btn_confirm_overwrite", "Overwrite", class_="btn-warning"
+                        ),
+                        ui.tags.button(
+                            "Cancel",
+                            class_="btn btn-secondary",
+                            **{"data-bs-dismiss": "modal"},
+                        ),
+                    ),
+                )
+            )
+            return
+        _do_save(scenario)
+
+    @reactive.effect
+    @reactive.event(input.btn_confirm_overwrite)
+    def handle_confirm_overwrite():
+        scenario = pending_save.get()
+        if scenario is None:
+            return
+        ui.modal_remove()
+        _do_save(scenario)
+        pending_save.set(None)
+
+    def _do_save(scenario: Scenario):
         try:
             mgr.save(scenario)
         except (OSError, ValueError) as exc:
@@ -122,12 +160,12 @@ def scenarios_server(input, output, session, state):
             ui.notification_show(
                 "Failed to save scenario. Check server logs for details.",
                 type="error",
-                duration=8,
+                duration=15,
             )
             return
         state.dirty.set(False)
         _bump()
-        ui.notification_show(f"Scenario '{name}' saved.", type="message", duration=3)
+        ui.notification_show(f"Scenario '{scenario.name}' saved.", type="message", duration=3)
 
     # --- Load ---
 
@@ -142,6 +180,7 @@ def scenarios_server(input, output, session, state):
         try:
             state.config.set(loaded.config)
             state.config_name.set(selected)
+            state.key_case_map.set(dict(loaded.key_case_map))
             state.dirty.set(False)
 
             try:
@@ -181,7 +220,7 @@ def scenarios_server(input, output, session, state):
             ui.notification_show(
                 "Failed to fork scenario. Check server logs for details.",
                 type="error",
-                duration=8,
+                duration=15,
             )
             return
         _bump()
@@ -189,22 +228,52 @@ def scenarios_server(input, output, session, state):
 
     # --- Delete ---
 
+    pending_delete: reactive.Value[str | None] = reactive.Value(None)
+
     @reactive.effect
     @reactive.event(input.btn_delete_scenario)
     def handle_delete():
         selected = input.selected_scenario()
         if not selected:
             return
+        pending_delete.set(selected)
+        ui.modal_show(
+            ui.modal(
+                ui.p(f"Are you sure you want to delete scenario '{selected}'?"),
+                ui.p("This action cannot be undone.", style="color: #e74c3c; font-size: 0.9em;"),
+                title="Confirm Delete",
+                easy_close=True,
+                footer=ui.div(
+                    ui.input_action_button(
+                        "btn_confirm_delete", "Delete", class_="btn-danger"
+                    ),
+                    ui.tags.button(
+                        "Cancel",
+                        class_="btn btn-secondary",
+                        **{"data-bs-dismiss": "modal"},
+                    ),
+                ),
+            )
+        )
+
+    @reactive.effect
+    @reactive.event(input.btn_confirm_delete)
+    def handle_confirm_delete():
+        name = pending_delete.get()
+        if not name:
+            return
+        ui.modal_remove()
         try:
-            mgr.delete(selected)
+            mgr.delete(name)
         except (OSError, FileNotFoundError) as exc:
             _log.error("Failed to delete scenario: %s", exc, exc_info=True)
             ui.notification_show(
                 "Failed to delete scenario. Check server logs for details.",
                 type="error",
-                duration=8,
+                duration=15,
             )
             return
+        pending_delete.set(None)
         _bump()
         ui.notification_show("Scenario deleted.", type="message", duration=3)
 
@@ -294,7 +363,33 @@ def scenarios_server(input, output, session, state):
             ui.notification_show(
                 "Failed to import scenarios. Check server logs for details.",
                 type="error",
-                duration=8,
+                duration=15,
             )
             return
         _bump()
+        ui.notification_show("Scenarios imported.", type="message", duration=3)
+
+    # --- Keyboard shortcut: Ctrl+S / Cmd+S → save scenario ---
+
+    @reactive.effect
+    @reactive.event(input.shortcut_save)
+    def handle_shortcut_save():
+        name = input.scenario_name().strip()
+        if not name:
+            ui.notification_show(
+                "Enter a scenario name on the Scenarios tab to save.",
+                type="warning",
+                duration=5,
+            )
+            return
+        tags_raw = input.scenario_tags().strip()
+        tags = [t.strip() for t in tags_raw.split(",") if t.strip()] if tags_raw else []
+        scenario = Scenario(
+            name=name,
+            description=input.scenario_desc().strip(),
+            config=dict(state.config.get()),
+            tags=tags,
+            key_case_map=dict(state.key_case_map.get()),
+        )
+        _do_save(scenario)
+

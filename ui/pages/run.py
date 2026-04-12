@@ -308,9 +308,9 @@ def run_server(input, output, session, state):
         java_opts_text = input.java_opts() or ""
         java_opts = java_opts_text.split() if java_opts_text.strip() else []
         try:
-            validate_java_opts(java_opts)
+            validate_java_opts(java_opts)  # type: ignore[arg-type]
         except ValueError as exc:
-            ui.notification_show(str(exc), type="error", duration=5)
+            ui.notification_show(str(exc), type="error", duration=15)
             ui.update_action_button("btn_run", disabled=False, session=session)
             ui.update_action_button("btn_cancel", disabled=True, session=session)
             status.set(f"Error: {exc}")
@@ -369,7 +369,7 @@ def run_server(input, output, session, state):
                 ui.notification_show(
                     f"Run completed but history could not be saved: {exc}",
                     type="warning",
-                    duration=8,
+                    duration=5,
                 )
         else:
             status.set(f"Failed (exit code {result.returncode})")

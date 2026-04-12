@@ -5,7 +5,7 @@ from pathlib import Path
 from shiny import ui, reactive, render
 from shiny.types import SilentException
 
-from shiny_deckgl import (
+from shiny_deckgl import (  # type: ignore[import-untyped]
     MapWidget,
     polygon_layer,
     CARTO_POSITRON,
@@ -101,34 +101,40 @@ def map_viewer_server(input, output, session, state):
             )
 
         catalog = discover_spatial_files(cfg, cfg_dir)
-        choices = {}
+        choices: dict = {}
 
         # Movement maps grouped by species
         movement = catalog.get("movement", {})
+        movement = movement if isinstance(movement, dict) else {}  # type: ignore[assignment]
         total_mvmt = sum(len(v) for v in movement.values())
         if movement:
-            group_choices = {}
+            group_choices: dict[str, str] = {}
             for species in sorted(movement):
                 for entry in movement[species]:
-                    key = str(entry["path"])
-                    suffix = f" ({entry['age']})" if entry.get("age") else ""
-                    group_choices[key] = f"{species}: {entry['label']}{suffix}"
+                    entry_dict = entry if isinstance(entry, dict) else {}  # type: ignore[assignment]
+                    key = str(entry_dict.get("path", ""))
+                    suffix = f" ({entry_dict.get('age')})" if entry_dict.get("age") else ""
+                    group_choices[key] = f"{species}: {entry_dict.get('label', '')}{suffix}"
             choices[f"Movement Maps ({total_mvmt})"] = group_choices
 
         # Fishing
         fishing = catalog.get("fishing", [])
+        fishing = fishing if isinstance(fishing, list) else []  # type: ignore[assignment]
         if fishing:
-            fish_choices = {}
+            fish_choices: dict[str, str] = {}
             for entry in fishing:
-                fish_choices[str(entry["path"])] = entry["label"]
+                entry_dict = entry if isinstance(entry, dict) else {}  # type: ignore[assignment]
+                fish_choices[str(entry_dict.get("path", ""))] = str(entry_dict.get("label", ""))
             choices[f"Fishing ({len(fishing)})"] = fish_choices
 
         # Other
         other = catalog.get("other", [])
+        other = other if isinstance(other, list) else []  # type: ignore[assignment]
         if other:
-            other_choices = {}
+            other_choices: dict[str, str] = {}
             for entry in other:
-                other_choices[str(entry["path"])] = entry["label"]
+                entry_dict = entry if isinstance(entry, dict) else {}  # type: ignore[assignment]
+                other_choices[str(entry_dict.get("path", ""))] = str(entry_dict.get("label", ""))
             choices[f"Other ({len(other)})"] = other_choices
 
         if not choices:
@@ -140,8 +146,8 @@ def map_viewer_server(input, output, session, state):
         return ui.input_select(
             "map_viewer_file",
             "Select a file to preview",
-            choices=choices,
-            size=20,
+            choices=choices,  # type: ignore[arg-type]
+            size="20",
         )
 
     @render.ui

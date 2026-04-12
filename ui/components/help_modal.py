@@ -17,7 +17,7 @@ def _bs_modal(modal_id: str, title: str, body, *, size: str = "lg"):
             ui.div(
                 # Header
                 ui.div(
-                    ui.tags.h5(title, class_="modal-title"),
+                    ui.tags.h5(title, class_="modal-title", id=f"{modal_id}-label"),
                     ui.tags.button(
                         type="button",
                         class_="btn-close",

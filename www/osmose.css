@@ -26,7 +26,7 @@
 
   /* Text hierarchy */
   --osm-text-primary:  #e2e8f0;
-  --osm-text-secondary:#8899aa;
+  --osm-text-secondary:#a0b4c8;
   --osm-text-muted:    #5a6a7a;
 
   /* Borders & surfaces */
@@ -40,6 +40,13 @@
   /* Transitions */
   --osm-transition:    0.2s cubic-bezier(0.4, 0, 0.2, 1);
   --osm-transition-slow: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Z-index scale */
+  --osm-z-base:        1;
+  --osm-z-tab:         90;
+  --osm-z-header:      100;
+  --osm-z-modal:       1050;
+  --osm-z-loading:     9999;
 }
 
 /* ── Base Typography ──────────────────────────────────────────────── */
@@ -90,7 +97,7 @@ body {
   border-bottom: 1px solid var(--osm-border);
   box-shadow: 0 1px 8px rgba(0, 0, 0, 0.25);
   position: relative;
-  z-index: 10;
+  z-index: var(--osm-z-header);
 }
 
 .osmose-header::after {
@@ -155,6 +162,35 @@ body {
 @keyframes pulse-dot {
   0%, 100% { opacity: 0.4; transform: scale(0.9); }
   50% { opacity: 1; transform: scale(1.1); }
+}
+
+/* ── Config info in header ──────────────────────────────────────── */
+.osm-config-info {
+  display: flex;
+  align-items: center;
+  margin-right: 8px;
+}
+.osm-config-name {
+  color: var(--osm-accent);
+  font-weight: 600;
+  font-size: 0.78rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
+  display: inline-block;
+  vertical-align: middle;
+}
+.osm-config-stats {
+  color: var(--osm-text-muted);
+  font-size: 0.7rem;
+  margin-left: 6px;
+}
+.osm-config-dirty {
+  color: #e67e22;
+  font-size: 0.65rem;
+  font-style: italic;
+  margin-left: 4px;
 }
 
 /* ── Header Actions (About / Help) ────────────────────────────────── */
@@ -1178,7 +1214,7 @@ hr {
     position: fixed; top: 0; left: 0; width: 100%; height: 100%;
     background: rgba(15, 25, 35, 0.85);
     display: flex; align-items: center; justify-content: center;
-    z-index: 9999;
+    z-index: var(--osm-z-loading);
 }
 .osm-loading-content { text-align: center; color: #e2e8f0; }
 .osm-loading-content p { margin-top: 1rem; font-size: 1.1rem; }
@@ -1336,7 +1372,7 @@ body > .row > .nav-col-collapsed ~ [class*="col-"] {
     width: 28px;
     min-width: 28px;
     max-width: 28px;
-    z-index: 10;
+    z-index: var(--osm-z-tab);
     position: sticky;
     top: 140px;
     transition: all var(--osm-transition);
@@ -1462,6 +1498,11 @@ body::before {
   z-index: 0;
 }
 
+/* Pause caustic animation when browser tab is hidden */
+html.paused body::before {
+  animation-play-state: paused;
+}
+
 @keyframes causticDrift {
   0% {
     background-position: 0% 0%, 100% 0%, 50% 50%;
@@ -1512,7 +1553,7 @@ body::before {
 body > .row,
 .osm-loading-overlay {
   position: relative;
-  z-index: 1;
+  z-index: var(--osm-z-base);
 }
 
 /* Light theme: softer caustics */
@@ -1568,6 +1609,7 @@ body > .row,
 
 .shiny-notification-error::after {
   background: linear-gradient(90deg, #e74c3c, #c0392b);
+  animation-duration: 15s;
 }
 
 .shiny-notification-warning::after {

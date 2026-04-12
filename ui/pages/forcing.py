@@ -6,7 +6,7 @@ from shiny.types import SilentException
 from osmose.schema.bioenergetics import BIOENERGETICS_FIELDS
 from osmose.schema.ltl import LTL_FIELDS
 from ui.components.collapsible import collapsible_card_header, expand_tab
-from ui.components.param_form import render_field, render_species_table
+from ui.components.param_form import copy_species0_to_all, render_field, render_species_table
 from ui.pages._helpers import parse_nspecies
 from ui.state import sync_inputs
 
@@ -131,3 +131,28 @@ def forcing_server(input, output, session, state):
             with reactive.isolate():
                 state.config.set(cfg)
                 state.dirty.set(True)
+
+    @reactive.effect
+    @reactive.event(input.copy_sp0_to_all)
+    def handle_copy_sp0_resources():
+        n = input.n_resources()
+        if n < 2:
+            return
+        state.loading.set(True)
+        try:
+            with reactive.isolate():
+                cfg = dict(state.config.get())
+            n_focal = parse_nspecies(cfg)
+            indexed_fields = [f for f in LTL_FIELDS if f.indexed]
+            count = copy_species0_to_all(
+                indexed_fields, n, cfg, input, session, start_idx=n_focal
+            )
+            state.config.set(cfg)
+            state.dirty.set(True)
+            ui.notification_show(
+                f"Copied {count} parameters from resource 0 to {n - 1} resources.",
+                type="message",
+                duration=3,
+            )
+        finally:
+            state.loading.set(False)

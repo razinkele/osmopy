@@ -164,15 +164,36 @@ def spatial_results_server(input, output, session, state):
             return
         if out_dir == _prev_output_dir.get():
             return
-        _prev_output_dir.set(out_dir)
 
-        res = OsmoseResults(out_dir, strict=False)
-        nc_files = [f for f in res.list_outputs() if f.endswith(".nc")]
+        # Stage A: discover outputs
+        try:
+            res = OsmoseResults(out_dir, strict=False)
+            nc_files = [f for f in res.list_outputs() if f.endswith(".nc")]
+        except (OSError, ValueError, KeyError) as exc:
+            _log.error("Failed to discover spatial outputs: %s", exc, exc_info=True)
+            _spatial_ds.set(None)
+            _spatial_nc_files.set([])
+            ui.notification_show(
+                f"Failed to load spatial outputs: {exc}", type="error", duration=15
+            )
+            return
+
+        _prev_output_dir.set(out_dir)
         _spatial_nc_files.set(nc_files)
 
+        # Stage B: open initial NC file
         if nc_files:
+            try:
+                new_ds = res.read_netcdf(nc_files[0])
+            except (OSError, ValueError, KeyError) as exc:
+                _log.error("Failed to open initial spatial file: %s", exc, exc_info=True)
+                _spatial_ds.set(None)
+                ui.notification_show(
+                    f"Failed to open {nc_files[0]}: {exc}", type="error", duration=15
+                )
+                return
             _close_spatial_ds()
-            _spatial_ds.set(res.read_netcdf(nc_files[0]))
+            _spatial_ds.set(new_ds)
 
     # ── NC file selector ─────────────────────────────────────────
     @render.ui
@@ -199,9 +220,17 @@ def spatial_results_server(input, output, session, state):
             filename = input.spatial_result_type()
         except SilentException:
             return
+        try:
+            res = OsmoseResults(out_dir, strict=False)
+            new_ds = res.read_netcdf(filename)
+        except (OSError, ValueError, KeyError) as exc:
+            _log.error("Failed to load spatial file %s: %s", filename, exc, exc_info=True)
+            ui.notification_show(
+                f"Failed to load {filename}: {exc}", type="error", duration=15
+            )
+            return
         _close_spatial_ds()
-        res = OsmoseResults(out_dir, strict=False)
-        _spatial_ds.set(res.read_netcdf(filename))
+        _spatial_ds.set(new_ds)
 
     # ── Variable (species) selector ──────────────────────────────
     @render.ui

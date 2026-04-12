@@ -231,12 +231,19 @@ def results_server(input, output, session, state):
         p = Path(path_str)
         if not p.is_dir():
             return ui.tags.small("Directory not found", style="color: #e74c3c;")
-        csvs = list(p.glob("*.csv"))[:200]
+        csvs = list(p.glob("*.csv"))
+        # Also search engine subdirectories (Mortality/, Bioen/)
+        for subdir in ("Mortality", "Bioen"):
+            sub = p / subdir
+            if sub.is_dir():
+                csvs.extend(sub.glob("*.csv"))
+        csvs = csvs[:200]
         if not csvs:
             return ui.tags.small("No results found in this directory", style="color: #e67e22;")
         return ui.tags.small(f"Found {len(csvs)} output files", style="color: #2ecc71;")
 
     def _do_load_results(out_dir: Path):
+        state.busy.set("Loading results\u2026")
         try:
             from osmose.results import OsmoseResults
 
@@ -295,7 +302,9 @@ def results_server(input, output, session, state):
             pd.errors.ParserError,
         ) as exc:
             _log.error("Failed to load results: %s", exc, exc_info=True)
-            ui.notification_show(f"Error loading results: {exc}", type="error", duration=10)
+            ui.notification_show(f"Error loading results: {exc}", type="error", duration=15)
+        finally:
+            state.busy.set(None)
 
     def _get_result_data(output_type: str) -> pd.DataFrame:
         """Load result data lazily — only when requested."""
@@ -323,10 +332,10 @@ def results_server(input, output, session, state):
     def _load_results():
         out_dir = Path(input.output_dir())
         if ".." in out_dir.parts:
-            ui.notification_show("Invalid output directory path.", type="error")
+            ui.notification_show("Invalid output directory path.", type="error", duration=15)
             return
         if not out_dir.is_dir():
-            ui.notification_show(f"Directory not found: {out_dir}", type="error", duration=5)
+            ui.notification_show(f"Directory not found: {out_dir}", type="error", duration=15)
             return
         _do_load_results(out_dir)
 
@@ -433,7 +442,7 @@ def results_server(input, output, session, state):
                     agg["lower"],
                     agg["upper"],
                     title=f"{title} (ensemble)",
-                    y_label=col_map.get(rtype, rtype),
+                    y_label=col_map.get(rtype, rtype) or "",
                 )
                 fig.update_layout(template=tmpl)
                 return fig
@@ -563,7 +572,7 @@ def results_server(input, output, session, state):
         )
 
     @render.download(
-        filename=lambda: (
+        filename=lambda: (  # type: ignore[arg-type]
             f"osmose_{input.result_type()}"
             + (f"_{input.result_species()}" if input.result_species() != "all" else "")
             + ".csv"
@@ -575,7 +584,7 @@ def results_server(input, output, session, state):
 
         out_dir = Path(input.output_dir())
         if ".." in out_dir.parts:
-            ui.notification_show("Invalid output directory path.", type="error")
+            ui.notification_show("Invalid output directory path.", type="error", duration=15)
             return
         if not out_dir.is_dir():
             ui.notification_show(
