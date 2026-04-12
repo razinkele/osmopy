@@ -139,3 +139,56 @@ class TestReproduction:
         new_state = reproduction(state, cfg, step=0, rng=rng)
         # Should produce eggs from seeding biomass
         assert len(new_state) > 1  # original + new eggs
+
+
+def test_reproduction_creates_single_school_when_n_eggs_below_n_new():
+    """Cover the n_eggs < n_new collapse branch: when egg count < n_schools, n_new collapses to 1.
+
+    Setup: n_schools=100, but very low fecundity and tiny SSB so that n_eggs ~0.4 < 100.
+    Expected: exactly 1 new egg school created (original 1 + 1 egg = 2 total).
+    """
+    raw_cfg = {
+        "simulation.time.ndtperyear": "12",
+        "simulation.time.nyear": "10",
+        "simulation.nspecies": "1",
+        "simulation.nschool.sp0": "100",  # large school count
+        "species.name.sp0": "TinyFish",
+        "species.linf.sp0": "30.0",
+        "species.k.sp0": "0.3",
+        "species.t0.sp0": "-0.1",
+        "species.egg.size.sp0": "0.1",
+        "species.length2weight.condition.factor.sp0": "0.006",
+        "species.length2weight.allometric.power.sp0": "3.0",
+        "species.lifespan.sp0": "5",
+        "species.vonbertalanffy.threshold.age.sp0": "1.0",
+        "mortality.subdt": "10",
+        "predation.ingestion.rate.max.sp0": "3.5",
+        "predation.efficiency.critical.sp0": "0.57",
+        "species.sexratio.sp0": "0.5",
+        "species.relativefecundity.sp0": "0.001",  # very low fecundity
+        "species.maturity.size.sp0": "12.0",
+        "population.seeding.biomass.sp0": "0",  # disable seeding
+    }
+    cfg = EngineConfig.from_dict(raw_cfg)
+
+    # One mature school: length=15 (above maturity_size=12), tiny weight → tiny SSB
+    # SSB = abundance * weight = 10 * 0.001 = 0.01 tonnes
+    # n_eggs = 0.5 * 0.001 * 0.01 * (1/12) * 1e6 ≈ 0.417  → 0 < n_eggs < 100 = n_schools
+    state = SchoolState.create(n_schools=1, species_id=np.array([0], dtype=np.int32))
+    state = state.replace(
+        abundance=np.array([10.0]),
+        length=np.array([15.0]),  # above maturity_size=12
+        weight=np.array([0.001]),  # tiny weight so SSB is minuscule
+        biomass=np.array([0.01]),
+        age_dt=np.array([24], dtype=np.int32),  # 2 years old — well past maturity age
+    )
+    rng = np.random.default_rng(0)
+    new_state = reproduction(state, cfg, step=0, rng=rng)
+
+    # The branch collapses n_new to 1: original school + exactly 1 egg school
+    n_new_schools = len(new_state) - 1  # subtract original school
+    assert n_new_schools == 1, (
+        f"Expected 1 new egg school (n_eggs<n_new branch), got {n_new_schools}"
+    )
+    # The single new school must be an egg
+    assert new_state.is_egg[-1], "New school should be flagged as egg"
