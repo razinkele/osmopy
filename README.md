@@ -46,8 +46,12 @@ Key optimizations:
 - **Parallel cell processing** — `prange` over grid cells with per-cell deterministic seeding
 - **Compiled movement** — map-based rejection sampling and random walk in Numba
 - **Vectorized rate computation** — species-indexed NumPy operations replace per-school Python loops
-- **Precomputed species masks** — bioenergetic step computes masks once instead of per-loop
+- **Vectorized diet aggregation** — `np.add.at` replaces per-school Python loop for diet-by-species rollup
+- **Vectorized feeding stages** — `np.searchsorted` replaces nested threshold loop
+- **Pre-allocated diet buffers** — capacity-based reuse avoids per-timestep `np.zeros` allocation
+- **Precomputed species masks** — bioenergetic step computes masks once; growth uses pre-built VB species set
 - **Vectorized fishing** — spatial map and MPA lookups use per-species array indexing
+- **Results caching** — CSV and NetCDF output DataFrames cached across repeated reads
 
 Run benchmarks yourself:
 ```bash
@@ -140,7 +144,7 @@ ui/                      Shiny web interface
 data/
   examples/              Bay of Biscay example config (8 species)
   eec_full/              Eastern English Channel config (14 species)
-tests/                   1864 tests
+tests/                   2207 tests
 docs/
   parity-roadmap.md      Engine parity roadmap (7 phases, 37 items)
 ```
@@ -155,7 +159,7 @@ docs/
 .venv/bin/ruff format osmose/ ui/ tests/         # format
 ```
 
-1864 tests covering schema, config I/O, all engine processes, performance parity, numerical edge cases, type invariants, thread safety, UI state, and integration scenarios.
+2207 tests covering schema, config I/O, all engine processes, performance parity, numerical edge cases, type invariants, thread safety, UI state, calibration, scenario management, and integration scenarios.
 
 ## Tech Stack
 

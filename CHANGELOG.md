@@ -4,6 +4,48 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.8.0] - 2026-04-12
+
+### Safety & Correctness
+
+- **engine:** fix `mortality()` output type from `"mortality"` to `"mortalityRate"` — prefix-matching now finds the correct files (R1)
+- **engine:** fix bioenergetics readers using wrong filenames (`bioenIngestion` → `ingestion`, etc.) matching Java's actual output names (R2)
+- **engine:** fix `_collect_outputs` reading stale `ctx.diet_matrix` — now receives pre-aggregated `step_diet` directly after mortality (R3)
+- **scenarios:** fix `fork()` dropping `key_case_map`, UI save/load now persist case mapping for round-trip fidelity (R4)
+- **results:** fix preamble detection failure on header-only files — added fallback to first line with >1 fields (R5)
+- **config:** validate semicolons within individual values, not just at line level (F1A)
+- **schema:** add None guard in `validate_value()` preventing TypeError on missing defaults (F1B)
+- **config:** fix oxygen routing in writer to use correct output key format (F2D)
+- **engine:** fix diet pipeline wiring — `_collect_outputs` accepts `diet_by_species` param, `write_outputs` calls diet writer (F3)
+
+### Performance
+
+- **engine:** vectorize diet aggregation with `np.add.at()` replacing per-school Python loop (P1A)
+- **engine:** pre-allocate diet matrix with capacity buffer — reuses buffer across timesteps instead of `np.zeros()` each step (P1B)
+- **engine:** remove redundant `abundance.copy()` in `_reset_step_variables` — mortality already creates its own snapshot (P1C)
+- **engine:** pre-compute VB species ID set at config init — eliminates per-timestep string comparison in growth dispatch (P1D)
+- **engine:** replace feeding stage nested threshold loop with `np.searchsorted` (P1E)
+- **engine:** use `np.unique(state.species_id)` for bioenergetic species masks — skips absent species (P1F)
+- **results:** cache preamble detection by `(path, mtime_ns, size)` — avoids re-parsing CSV headers on repeated reads (P2B)
+- **results:** add `_csv_cache` to `OsmoseResults` — DataFrame results cached across repeated `biomass()`/`mortality()` calls (P2A)
+- **config:** fix double `stat()` call in `read_file` — single `stat()` reused for size check and error message (P2D)
+- **calibration:** reuse single `OsmoseCalibrationProblem` across sensitivity samples instead of creating one per sample (P4A)
+- **calibration:** add `cleanup_run()` to reclaim disk space after each sensitivity evaluation (P4B)
+- **calibration:** make GP surrogate `n_restarts_optimizer` configurable, default reduced from 5 to 2 (P4C)
+
+### UI Improvements
+
+- **state:** add `get_config_value()` single-key accessor — avoids full dict copy for read-only lookups (P3A)
+- **grid:** cache NetCDF grid loads with `@reactive.calc` — eliminates redundant disk reads across reactive effects (P3B)
+- **scenarios:** save/load handlers now persist `key_case_map` and timestamps for full round-trip fidelity
+
+### Tests
+
+- add 33 new tests for results helpers, semicolon validation, key_case_map round-trip, preamble edge cases (R6)
+- update diet tracking tests for capacity buffer reuse behavior
+- update thread safety tests for `enable_diet_tracking` API changes
+- 2207 tests total (up from 1864)
+
 ## [0.7.0] - 2026-04-05
 
 ### Safety & Correctness
