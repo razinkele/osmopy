@@ -386,30 +386,35 @@ def _load_fishing_seasonality(
     return seasons if found_any else None
 
 
-def _load_fishing_rate_by_year(
-    cfg: dict[str, str], n_species: int
+def _load_per_species_timeseries(
+    cfg: dict[str, str], n_species: int, key_pattern: str, context_prefix: str
 ) -> list[NDArray[np.float64] | None] | None:
-    """Load time-varying annual fishing rate CSV for each species.
+    """Load a per-species time-varying CSV into a list of flattened arrays.
 
+    Shared implementation for fishing rate and additional mortality loaders.
+    ``key_pattern`` should contain ``{i}`` which is formatted per species index.
     Returns list of arrays (one per species), or None if no files found.
     """
     result: list[NDArray[np.float64] | None] = [None] * n_species
     found_any = False
-
     for i in range(n_species):
-        file_key = cfg.get(f"mortality.fishing.rate.byyear.file.sp{i}", "")
+        file_key = cfg.get(key_pattern.format(i=i), "")
         if not file_key:
             continue
-        # Non-empty key means user asked for a time-varying rate for this species.
-        # A missing file is a config error, not a silent fallback. (v3 C-7)
-        path = _require_file(
-            file_key, _cfg_dir(cfg), f"mortality.fishing.rate.byyear.file.sp{i}"
-        )
+        path = _require_file(file_key, _cfg_dir(cfg), key_pattern.format(i=i))
         values = np.loadtxt(path, dtype=np.float64)
         result[i] = values.flatten()
         found_any = True
-
     return result if found_any else None
+
+
+def _load_fishing_rate_by_year(
+    cfg: dict[str, str], n_species: int
+) -> list[NDArray[np.float64] | None] | None:
+    """Load time-varying annual fishing rate CSV for each species."""
+    return _load_per_species_timeseries(
+        cfg, n_species, "mortality.fishing.rate.byyear.file.sp{i}", "fishing_rate_by_year"
+    )
 
 
 def _parse_mpa_zones(cfg: dict[str, str]) -> list[MPAZone] | None:
@@ -534,26 +539,10 @@ def _load_spawning_seasons(
 def _load_additional_mortality_by_dt(
     cfg: dict[str, str], n_species: int
 ) -> list[NDArray[np.float64] | None] | None:
-    """Load time-varying additional mortality CSV (BY_DT scenario).
-
-    Returns a list of arrays (one per species), or None if no files found.
-    """
-    result: list[NDArray[np.float64] | None] = [None] * n_species
-    found_any = False
-
-    for i in range(n_species):
-        file_key = cfg.get(f"mortality.additional.rate.bytdt.file.sp{i}", "")
-        if not file_key:
-            continue
-        # Non-empty key: file must exist. (v3 C-5)
-        path = _require_file(
-            file_key, _cfg_dir(cfg), f"mortality.additional.rate.bytdt.file.sp{i}"
-        )
-        values = np.loadtxt(path, dtype=np.float64)
-        result[i] = values.flatten()
-        found_any = True
-
-    return result if found_any else None
+    """Load time-varying additional mortality CSV (BY_DT scenario)."""
+    return _load_per_species_timeseries(
+        cfg, n_species, "mortality.additional.rate.bytdt.file.sp{i}", "additional_mortality_by_dt"
+    )
 
 
 def _load_additional_mortality_spatial(
