@@ -9,6 +9,7 @@ from __future__ import annotations
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -426,6 +427,49 @@ def _load_fishing_rate_by_year(
     return _load_per_species_timeseries(
         cfg, n_species, "mortality.fishing.rate.byyear.file.sp{i}", "fishing_rate_by_year"
     )
+
+
+def _parse_growth_params(
+    cfg: dict[str, str], n_sp: int, n_dt: int, lifespan_years: NDArray[np.float64]
+) -> dict[str, Any]:
+    """Parse Von Bertalanffy growth, allometry, lifespan, and additional mortality."""
+    linf = _species_float(cfg, "species.linf.sp{i}", n_sp)
+    k = _species_float(cfg, "species.k.sp{i}", n_sp)
+    t0 = _species_float(cfg, "species.t0.sp{i}", n_sp)
+    egg_size = _species_float(cfg, "species.egg.size.sp{i}", n_sp)
+    condition_factor = _species_float(
+        cfg, "species.length2weight.condition.factor.sp{i}", n_sp
+    )
+    allometric_power = _species_float(
+        cfg, "species.length2weight.allometric.power.sp{i}", n_sp
+    )
+    vb_threshold_age = _species_float(
+        cfg, "species.vonbertalanffy.threshold.age.sp{i}", n_sp
+    )
+    lifespan_dt = (lifespan_years * n_dt).astype(np.int32)
+    delta_lmax_factor = _species_float_optional(
+        cfg, "species.delta.lmax.factor.sp{i}", n_sp, default=2.0
+    )
+    additional_mortality_rate = _species_float_optional(
+        cfg, "mortality.additional.rate.sp{i}", n_sp, default=0.0
+    )
+    lmax = _species_float_optional(cfg, "species.lmax.sp{i}", n_sp, default=0.0)
+    for i in range(n_sp):
+        if lmax[i] <= 0:
+            lmax[i] = linf[i]
+    return {
+        "focal_linf": linf,
+        "focal_k": k,
+        "focal_t0": t0,
+        "focal_egg_size": egg_size,
+        "focal_condition_factor": condition_factor,
+        "focal_allometric_power": allometric_power,
+        "focal_vb_threshold_age": vb_threshold_age,
+        "focal_lifespan_dt": lifespan_dt,
+        "focal_delta_lmax_factor": delta_lmax_factor,
+        "focal_additional_mortality_rate": additional_mortality_rate,
+        "focal_lmax": lmax,
+    }
 
 
 def _parse_mpa_zones(cfg: dict[str, str]) -> list[MPAZone] | None:
@@ -866,29 +910,21 @@ class EngineConfig:
 
         # Build focal-only arrays first
         focal_species_names = _focal_names
-        focal_linf = _species_float(cfg, "species.linf.sp{i}", n_sp)
-        focal_k = _species_float(cfg, "species.k.sp{i}", n_sp)
-        focal_t0 = _species_float(cfg, "species.t0.sp{i}", n_sp)
-        focal_egg_size = _species_float(cfg, "species.egg.size.sp{i}", n_sp)
-        focal_condition_factor = _species_float(
-            cfg, "species.length2weight.condition.factor.sp{i}", n_sp
-        )
-        focal_allometric_power = _species_float(
-            cfg, "species.length2weight.allometric.power.sp{i}", n_sp
-        )
-        focal_vb_threshold_age = _species_float(
-            cfg, "species.vonbertalanffy.threshold.age.sp{i}", n_sp
-        )
-        focal_lifespan_dt = (lifespan_years * n_dt).astype(np.int32)
+        _growth = _parse_growth_params(cfg, n_sp, n_dt, lifespan_years)
+        focal_linf = _growth["focal_linf"]
+        focal_k = _growth["focal_k"]
+        focal_t0 = _growth["focal_t0"]
+        focal_egg_size = _growth["focal_egg_size"]
+        focal_condition_factor = _growth["focal_condition_factor"]
+        focal_allometric_power = _growth["focal_allometric_power"]
+        focal_vb_threshold_age = _growth["focal_vb_threshold_age"]
+        focal_lifespan_dt = _growth["focal_lifespan_dt"]
+        focal_delta_lmax_factor = _growth["focal_delta_lmax_factor"]
+        focal_additional_mortality_rate = _growth["focal_additional_mortality_rate"]
+        focal_lmax = _growth["focal_lmax"]
         focal_ingestion_rate = _species_float(cfg, "predation.ingestion.rate.max.sp{i}", n_sp)
         focal_critical_success_rate = _species_float(
             cfg, "predation.efficiency.critical.sp{i}", n_sp
-        )
-        focal_delta_lmax_factor = _species_float_optional(
-            cfg, "species.delta.lmax.factor.sp{i}", n_sp, default=2.0
-        )
-        focal_additional_mortality_rate = _species_float_optional(
-            cfg, "mortality.additional.rate.sp{i}", n_sp, default=0.0
         )
         focal_sex_ratio = _species_float_optional(cfg, "species.sexratio.sp{i}", n_sp, default=0.5)
         focal_relative_fecundity = _species_float_optional(
