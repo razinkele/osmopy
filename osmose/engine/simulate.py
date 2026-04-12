@@ -33,6 +33,17 @@ class SimulationContext:
 
     Passed through the call chain instead of using module-level variables,
     making the simulation re-entrant and thread-safe.
+
+    Diet tracking two-way coupling (deep review v3 M-14):
+    - When diet_tracking_enabled is True, diet_matrix must be non-None
+      with shape (n_schools, n_species).
+    - When diet_tracking_enabled is False, diet_matrix must be None.
+    - enable_diet_tracking() / disable_diet_tracking() (in
+      osmose.engine.processes.predation) are the only correct way to
+      transition between these states.
+    - tl_weighted_sum is a separate field populated inside mortality.py
+      during predation loops; it is NOT touched by enable/disable_diet_tracking
+      and has its own lifecycle tied to the simulation loop, not the diet API.
     """
 
     diet_tracking_enabled: bool = False

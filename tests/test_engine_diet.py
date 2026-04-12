@@ -370,3 +370,27 @@ class TestDietAggregation:
         np.testing.assert_allclose(result[0], [0.0, 30.0, 5.0])
         # sp1 total: [20, 0, 3]
         np.testing.assert_allclose(result[1], [20.0, 0.0, 3.0])
+
+
+def test_simulation_context_diet_coupling_after_enable():
+    """After enable_diet_tracking(), diet_tracking_enabled and diet_matrix
+    must be consistent. Deep review v3 M-14.
+    """
+    from osmose.engine.processes.predation import enable_diet_tracking, disable_diet_tracking
+    from osmose.engine.simulate import SimulationContext
+
+    ctx = SimulationContext(config_dir="")
+
+    assert ctx.diet_tracking_enabled is False
+    assert ctx.diet_matrix is None
+
+    enable_diet_tracking(n_schools=5, n_species=3, ctx=ctx)
+
+    assert ctx.diet_tracking_enabled is True
+    assert ctx.diet_matrix is not None
+    assert ctx.diet_matrix.shape == (5, 3)
+
+    disable_diet_tracking(ctx=ctx)
+
+    assert ctx.diet_tracking_enabled is False
+    assert ctx.diet_matrix is None
