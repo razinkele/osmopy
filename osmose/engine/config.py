@@ -790,6 +790,46 @@ def _merge_focal_background(
         }
 
 
+def _parse_output_flags(cfg: dict[str, str], n_sp: int, n_bkg: int) -> dict[str, Any]:
+    """Parse output recording flags and distribution settings."""
+    output_record_freq = int(cfg.get("output.recordfrequency.ndt", "1"))
+    diet_output = cfg.get("output.diet.composition.enabled", "false").lower() == "true"
+    step0 = cfg.get("output.step0.include", "false").lower() == "true"
+
+    # Output cutoff age
+    cutoff_vals = []
+    found_any = False
+    for i in range(n_sp):
+        val = cfg.get(f"output.cutoff.age.sp{i}", "")
+        if val and val.lower() not in ("null", "none", ""):
+            cutoff_vals.append(float(val))
+            found_any = True
+        else:
+            cutoff_vals.append(0.0)
+    cutoff_vals.extend([0.0] * n_bkg)
+    cutoff_age = np.array(cutoff_vals, dtype=np.float64) if found_any else None
+
+    return {
+        "output_record_frequency": output_record_freq,
+        "diet_output_enabled": diet_output,
+        "output_step0_include": step0,
+        "output_cutoff_age": cutoff_age,
+        "output_biomass_byage": _enabled(cfg, "output.biomass.byage.enabled"),
+        "output_biomass_bysize": _enabled(cfg, "output.biomass.bysize.enabled"),
+        "output_abundance_byage": _enabled(cfg, "output.abundance.byage.enabled"),
+        "output_abundance_bysize": _enabled(cfg, "output.abundance.bysize.enabled"),
+        "output_size_min": float(cfg.get("output.distrib.bysize.min", "0")),
+        "output_size_max": float(cfg.get("output.distrib.bysize.max", "205")),
+        "output_size_incr": float(cfg.get("output.distrib.bysize.incr", "10")),
+        "output_bioen_ingest": cfg.get("output.bioen.ingest.enabled", "false").lower() == "true",
+        "output_bioen_maint": cfg.get("output.bioen.maint.enabled", "false").lower() == "true",
+        "output_bioen_rho": cfg.get("output.bioen.rho.enabled", "false").lower() == "true",
+        "output_bioen_sizeinf": (
+            cfg.get("output.bioen.sizeinf.enabled", "false").lower() == "true"
+        ),
+    }
+
+
 def _parse_mpa_zones(cfg: dict[str, str]) -> list[MPAZone] | None:
     """Parse Marine Protected Area configurations."""
     zones: list[MPAZone] = []
@@ -1365,19 +1405,7 @@ class EngineConfig:
         else:
             egg_weight_override = None
 
-        # Output cutoff age: output.cutoff.age.sp{i} (years, default 0 = include all)
-        cutoff_vals = []
-        found_any = False
-        for i in range(n_sp):
-            val = cfg.get(f"output.cutoff.age.sp{i}", "")
-            if val and val.lower() not in ("null", "none", ""):
-                cutoff_vals.append(float(val))
-                found_any = True
-            else:
-                cutoff_vals.append(0.0)
-        # Pad for background species (no cutoff)
-        cutoff_vals.extend([0.0] * n_bkg)
-        output_cutoff_age = np.array(cutoff_vals, dtype=np.float64) if found_any else None
+        _output = _parse_output_flags(cfg, n_sp, n_bkg)
 
         # Phase 2 fishing features
         fishing_seasonality = _load_fishing_seasonality(cfg, n_sp, n_dt, focal_species_names)
@@ -1416,15 +1444,6 @@ class EngineConfig:
             else:
                 ncell_vals.append(0)
         random_distribution_ncell = np.array(ncell_vals, dtype=np.int32) if ncell_found else None
-
-        # Phase 5: Output recording frequency (default: 1 = every step)
-        output_record_freq = int(cfg.get("output.recordfrequency.ndt", "1"))
-
-        # Phase 5: Diet output
-        diet_output_enabled = cfg.get("output.diet.composition.enabled", "false").lower() == "true"
-
-        # Phase 5: Initial state output
-        output_step0 = cfg.get("output.step0.include", "false").lower() == "true"
 
         # Phase 4: Random seed flags
         movement_seed_fixed = cfg.get("movement.randomseed.fixed", "false").lower() == "true"
@@ -1569,10 +1588,10 @@ class EngineConfig:
             random_walk_range=random_walk_range,
             out_mortality_rate=out_mortality_rate,
             egg_weight_override=egg_weight_override,
-            output_cutoff_age=output_cutoff_age,
-            output_record_frequency=output_record_freq,
-            diet_output_enabled=diet_output_enabled,
-            output_step0_include=output_step0,
+            output_cutoff_age=_output["output_cutoff_age"],
+            output_record_frequency=_output["output_record_frequency"],
+            diet_output_enabled=_output["diet_output_enabled"],
+            output_step0_include=_output["output_step0_include"],
             movement_seed_fixed=movement_seed_fixed,
             mortality_seed_fixed=mortality_seed_fixed,
             movement_strict_coverage=movement_strict,
@@ -1612,15 +1631,15 @@ class EngineConfig:
             genetics_n_neutral=genetics_n_neutral,
             genetics_n_neutral_val=genetics_n_neutral_val,
             economics_enabled=economics_enabled,
-            output_biomass_byage=_enabled(cfg, "output.biomass.byage.enabled"),
-            output_biomass_bysize=_enabled(cfg, "output.biomass.bysize.enabled"),
-            output_abundance_byage=_enabled(cfg, "output.abundance.byage.enabled"),
-            output_abundance_bysize=_enabled(cfg, "output.abundance.bysize.enabled"),
-            output_size_min=float(cfg.get("output.distrib.bysize.min", "0")),
-            output_size_max=float(cfg.get("output.distrib.bysize.max", "205")),
-            output_size_incr=float(cfg.get("output.distrib.bysize.incr", "10")),
-            output_bioen_ingest=cfg.get("output.bioen.ingest.enabled", "false").lower() == "true",
-            output_bioen_maint=cfg.get("output.bioen.maint.enabled", "false").lower() == "true",
-            output_bioen_rho=cfg.get("output.bioen.rho.enabled", "false").lower() == "true",
-            output_bioen_sizeinf=cfg.get("output.bioen.sizeinf.enabled", "false").lower() == "true",
+            output_biomass_byage=_output["output_biomass_byage"],
+            output_biomass_bysize=_output["output_biomass_bysize"],
+            output_abundance_byage=_output["output_abundance_byage"],
+            output_abundance_bysize=_output["output_abundance_bysize"],
+            output_size_min=_output["output_size_min"],
+            output_size_max=_output["output_size_max"],
+            output_size_incr=_output["output_size_incr"],
+            output_bioen_ingest=_output["output_bioen_ingest"],
+            output_bioen_maint=_output["output_bioen_maint"],
+            output_bioen_rho=_output["output_bioen_rho"],
+            output_bioen_sizeinf=_output["output_bioen_sizeinf"],
         )
