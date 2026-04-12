@@ -47,7 +47,16 @@ class SimulationContext:
 
 @dataclass(frozen=True)
 class StepOutput:
-    """Aggregated output for a single simulation timestep."""
+    """Aggregated output for a single simulation timestep.
+
+    Pairing invariant (deep review v3 M-13):
+    - biomass_by_age and abundance_by_age must both be None or both non-None.
+    - biomass_by_size and abundance_by_size must both be None or both non-None.
+    - When they are dicts, they share the same species_id keys.
+
+    Callers must not set one field of a pair while leaving the other None —
+    downstream NetCDF/CSV writers rely on the co-presence.
+    """
 
     step: int
     biomass: NDArray[np.float64]

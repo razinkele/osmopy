@@ -281,3 +281,48 @@ def test_simulate_partial_flush_non_divisible_record_freq(minimal_config):
     # Regression guard: the old buggy behavior was to drop the partial entirely,
     # producing exactly 1 output. Assert strictly more than 1.
     assert len(outputs) > 1, "Partial flush regression: tail accumulation was dropped"
+
+
+def test_step_output_distribution_pairs_travel_together():
+    """biomass_by_age and abundance_by_age must be co-populated by any code path.
+    Deep review v3 M-13.
+    """
+    from osmose.engine.simulate import simulate
+    from osmose.engine.config import EngineConfig
+    from osmose.engine.grid import Grid
+
+    cfg_dict = {
+        "simulation.time.ndtperyear": "12",
+        "simulation.time.nyear": "1",
+        "simulation.nspecies": "1",
+        "simulation.nschool.sp0": "5",
+        "species.name.sp0": "TestFish",
+        "species.linf.sp0": "20.0",
+        "species.k.sp0": "0.3",
+        "species.t0.sp0": "-0.1",
+        "species.egg.size.sp0": "0.1",
+        "species.length2weight.condition.factor.sp0": "0.006",
+        "species.length2weight.allometric.power.sp0": "3.0",
+        "species.lifespan.sp0": "3",
+        "species.vonbertalanffy.threshold.age.sp0": "1.0",
+        "mortality.subdt": "1",
+        "predation.ingestion.rate.max.sp0": "3.5",
+        "predation.efficiency.critical.sp0": "0.57",
+    }
+    cfg = EngineConfig.from_dict(cfg_dict)
+    grid = Grid.from_dimensions(ny=3, nx=3)
+    outputs = simulate(cfg, grid, np.random.default_rng(42))
+
+    for o in outputs:
+        age_bio = o.biomass_by_age is not None
+        age_abun = o.abundance_by_age is not None
+        assert age_bio == age_abun, (
+            f"biomass_by_age ({age_bio}) and abundance_by_age "
+            f"({age_abun}) must match on step {o.step}"
+        )
+        size_bio = o.biomass_by_size is not None
+        size_abun = o.abundance_by_size is not None
+        assert size_bio == size_abun, (
+            f"biomass_by_size ({size_bio}) and abundance_by_size "
+            f"({size_abun}) must match on step {o.step}"
+        )
