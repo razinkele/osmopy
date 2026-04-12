@@ -78,13 +78,40 @@ class TestAdditionalMortality:
         np.testing.assert_allclose(state.abundance[0], expected, rtol=1e-4)
 
     def test_zero_rate_no_mortality(self):
+        # Two species: sp0 rate=0, sp1 rate=0.2 — verifies zero-rate school is
+        # specifically unaffected while a non-zero control school in the same
+        # state DOES lose abundance (makes the test non-tautological).
         cfg_dict = _make_mortality_config()
+        cfg_dict["simulation.nspecies"] = "2"
+        cfg_dict["simulation.nschool.sp1"] = "1"
+        cfg_dict["species.name.sp1"] = "ControlFish"
+        cfg_dict["species.linf.sp1"] = "30.0"
+        cfg_dict["species.k.sp1"] = "0.3"
+        cfg_dict["species.t0.sp1"] = "-0.1"
+        cfg_dict["species.egg.size.sp1"] = "0.1"
+        cfg_dict["species.length2weight.condition.factor.sp1"] = "0.006"
+        cfg_dict["species.length2weight.allometric.power.sp1"] = "3.0"
+        cfg_dict["species.lifespan.sp1"] = "3"
+        cfg_dict["species.vonbertalanffy.threshold.age.sp1"] = "1.0"
+        cfg_dict["predation.ingestion.rate.max.sp1"] = "3.5"
+        cfg_dict["predation.efficiency.critical.sp1"] = "0.57"
         cfg_dict["mortality.additional.rate.sp0"] = "0.0"
+        cfg_dict["mortality.additional.rate.sp1"] = "0.2"
         cfg = EngineConfig.from_dict(cfg_dict)
-        state = SchoolState.create(n_schools=1, species_id=np.array([0], dtype=np.int32))
-        state = state.replace(abundance=np.array([1000.0]))
+        state = SchoolState.create(
+            n_schools=2,
+            species_id=np.array([0, 1], dtype=np.int32),
+        )
+        state = state.replace(
+            abundance=np.array([1000.0, 1000.0]),
+            age_dt=np.array([24, 24], dtype=np.int32),
+        )
         new_state = additional_mortality(state, cfg, n_subdt=10)
+        # sp0 (rate=0): unchanged abundance and zero n_dead
         np.testing.assert_allclose(new_state.abundance[0], 1000.0)
+        assert new_state.n_dead[0, MortalityCause.ADDITIONAL] == 0.0
+        # sp1 (rate=0.2): abundance must have decreased
+        assert new_state.abundance[1] < 1000.0
 
     def test_skips_age_zero_schools(self):
         """Java skips age_dt==0 schools — eggs handled by larva_mortality."""
@@ -170,14 +197,41 @@ class TestLarvaMortality:
         np.testing.assert_allclose(new_state.abundance[1], 1000.0)
 
     def test_zero_rate_no_mortality(self):
-        cfg = EngineConfig.from_dict(_make_mortality_config())
-        state = SchoolState.create(n_schools=1, species_id=np.zeros(1, dtype=np.int32))
+        # Two species: sp0 larva rate=0 (default), sp1 larva rate=1.0 — verifies
+        # the zero-rate egg is specifically unaffected while a non-zero control
+        # egg in the same state DOES lose abundance (makes the test non-tautological).
+        cfg_dict = _make_mortality_config()
+        cfg_dict["simulation.nspecies"] = "2"
+        cfg_dict["simulation.nschool.sp1"] = "1"
+        cfg_dict["species.name.sp1"] = "ControlFish"
+        cfg_dict["species.linf.sp1"] = "30.0"
+        cfg_dict["species.k.sp1"] = "0.3"
+        cfg_dict["species.t0.sp1"] = "-0.1"
+        cfg_dict["species.egg.size.sp1"] = "0.1"
+        cfg_dict["species.length2weight.condition.factor.sp1"] = "0.006"
+        cfg_dict["species.length2weight.allometric.power.sp1"] = "3.0"
+        cfg_dict["species.lifespan.sp1"] = "3"
+        cfg_dict["species.vonbertalanffy.threshold.age.sp1"] = "1.0"
+        cfg_dict["predation.ingestion.rate.max.sp1"] = "3.5"
+        cfg_dict["predation.efficiency.critical.sp1"] = "0.57"
+        cfg_dict["mortality.additional.rate.sp1"] = "0.0"
+        cfg_dict["mortality.additional.larva.rate.sp0"] = "0.0"
+        cfg_dict["mortality.additional.larva.rate.sp1"] = "1.0"
+        cfg = EngineConfig.from_dict(cfg_dict)
+        state = SchoolState.create(
+            n_schools=2,
+            species_id=np.array([0, 1], dtype=np.int32),
+        )
         state = state.replace(
-            abundance=np.array([1000.0]),
-            is_egg=np.array([True]),
+            abundance=np.array([1000.0, 1000.0]),
+            is_egg=np.array([True, True]),
         )
         new_state = larva_mortality(state, cfg)
+        # sp0 (larva rate=0): unchanged abundance and zero n_dead
         np.testing.assert_allclose(new_state.abundance[0], 1000.0)
+        assert new_state.n_dead[0, MortalityCause.ADDITIONAL] == 0.0
+        # sp1 (larva rate=1.0): abundance must have decreased
+        assert new_state.abundance[1] < 1000.0
 
     def test_larva_mortality_formula(self):
         """D = M_larva (full rate), applied once per egg cohort."""
