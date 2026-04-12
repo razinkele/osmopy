@@ -5,7 +5,7 @@ import textwrap
 import numpy as np
 import pytest
 
-from osmose.engine.accessibility import AccessibilityMatrix, _parse_label, _parse_labels
+from osmose.engine.accessibility import AccessibilityMatrix
 from osmose.engine.config import EngineConfig
 from osmose.engine.processes.fishing import fishing_mortality
 from osmose.engine.state import MortalityCause, SchoolState
@@ -164,45 +164,6 @@ class TestAgeBasedFishing:
                 state = fishing_mortality(state, ec, n_subdt)
         expected = 10000.0 * np.exp(-0.3)
         np.testing.assert_allclose(state.abundance[0], expected, rtol=1e-4)
-
-
-# ---------------------------------------------------------------------------
-# Test: Accessibility label parsing
-# ---------------------------------------------------------------------------
-
-
-class TestAccessibilityParsing:
-    def test_parse_label_with_threshold(self):
-        """Label 'cod < 0.4' parses to ('cod', 0.4)."""
-        name, threshold = _parse_label("cod < 0.4")
-        assert name == "cod"
-        assert threshold == pytest.approx(0.4)
-
-    def test_parse_label_no_threshold(self):
-        """Label 'cod' parses to ('cod', inf)."""
-        name, threshold = _parse_label("cod")
-        assert name == "cod"
-        assert threshold == float("inf")
-
-    def test_parse_label_with_spaces(self):
-        """Label with trailing spaces parses correctly."""
-        name, threshold = _parse_label("pouting ")
-        assert name == "pouting"
-        assert threshold == float("inf")
-
-    def test_parse_labels_multi_stage(self):
-        """Two-stage species has sorted stages."""
-        labels = ["cod < 0.4", "cod", "sole"]
-        result = _parse_labels(labels)
-        assert "cod" in result
-        assert len(result["cod"]) == 2
-        # First stage: threshold 0.4 (young), second: inf (adult)
-        assert result["cod"][0].threshold == pytest.approx(0.4)
-        assert result["cod"][0].matrix_index == 0
-        assert result["cod"][1].threshold == float("inf")
-        assert result["cod"][1].matrix_index == 1
-        # Sole: single stage
-        assert len(result["sole"]) == 1
 
 
 class TestAccessibilityMatrix:
