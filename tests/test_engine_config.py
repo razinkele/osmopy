@@ -224,6 +224,67 @@ def test_spawning_season_normalization_partial_year(tmp_path, caplog):
 
 
 # ---------------------------------------------------------------------------
+# Bioen coupling invariant (deep review v3 I-2)
+#
+# When bioen_enabled=True, from_dict() populates all 18 bioen_* per-species
+# arrays with defaults for any missing config keys.  The coupling is therefore
+# implicit (no runtime check in __post_init__ is needed because no construction
+# path can produce None arrays with bioen_enabled=True).
+# ---------------------------------------------------------------------------
+
+
+class TestBioenCoupling:
+    """I-2: bioen_enabled=True guarantees all bioen_* fields non-None (implicit coupling)."""
+
+    _BIOEN_FIELDS = [
+        "bioen_beta",
+        "bioen_zlayer",
+        "bioen_assimilation",
+        "bioen_c_m",
+        "bioen_eta",
+        "bioen_r",
+        "bioen_m0",
+        "bioen_m1",
+        "bioen_e_mobi",
+        "bioen_e_d",
+        "bioen_tp",
+        "bioen_e_maint",
+        "bioen_o2_c1",
+        "bioen_o2_c2",
+        "bioen_i_max",
+        "bioen_theta",
+        "bioen_c_rate",
+        "bioen_k_for",
+    ]
+
+    def test_bioen_enabled_populates_all_fields(self, minimal_config):
+        """All 18 bioen_* arrays are non-None after from_dict with bioen_enabled=True.
+
+        This documents the implicit coupling: from_dict() applies hard-coded defaults
+        for every missing bioen key, so __post_init__ does not need a redundant check.
+        """
+        cfg_dict = dict(minimal_config)
+        cfg_dict["simulation.bioen.enabled"] = "true"
+        ec = EngineConfig.from_dict(cfg_dict)
+        assert ec.bioen_enabled is True
+        for field in self._BIOEN_FIELDS:
+            arr = getattr(ec, field)
+            assert arr is not None, f"{field} must not be None when bioen_enabled=True"
+            assert len(arr) == ec.n_species, (
+                f"{field} has length {len(arr)}, expected n_species={ec.n_species}"
+            )
+
+    def test_bioen_disabled_leaves_fields_none(self, minimal_config):
+        """All 18 bioen_* arrays remain None when bioen_enabled=False (default)."""
+        ec = EngineConfig.from_dict(minimal_config)
+        assert ec.bioen_enabled is False
+        for field in self._BIOEN_FIELDS:
+            assert getattr(ec, field) is None, (
+                f"{field} should be None when bioen_enabled=False"
+            )
+
+
+# ---------------------------------------------------------------------------
 # Regression: file-resolution helpers must raise when a non-empty config key
 # points at a missing file, instead of silently disabling the feature.
 # Deep review v3 C-3 through C-7 — the "silent feature removal" anti-pattern.

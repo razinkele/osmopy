@@ -710,7 +710,13 @@ class EngineConfig:
     bioen_phit_enabled: bool = True
     bioen_fo2_enabled: bool = True
 
-    # Bioenergetic per-species parameters (None when bioen disabled)
+    # Bioenergetic per-species parameters (None when bioen disabled).
+    # Coupling invariant: when bioen_enabled=True, from_dict() populates ALL 18
+    # bioen_* fields with per-species arrays using hard-coded defaults where config
+    # keys are absent.  No bioen_* field can be None after from_dict() returns with
+    # bioen_enabled=True.  __post_init__ does not need a redundant None-check because
+    # from_dict() is the only supported construction path (direct dataclass
+    # instantiation with None bioen arrays + bioen_enabled=True is unsupported).
     bioen_beta: NDArray[np.float64] | None = None  # allometric exponent
     bioen_zlayer: NDArray[np.int32] | None = None  # depth layer index
     bioen_assimilation: NDArray[np.float64] | None = None  # assimilation efficiency
@@ -755,7 +761,13 @@ class EngineConfig:
     output_bioen_sizeinf: bool = False
 
     def __post_init__(self) -> None:
-        """Validate invariants after construction."""
+        """Validate invariants after construction.
+
+        Bioen coupling note (I-2): when bioen_enabled=True all 18 bioen_* per-species
+        arrays are guaranteed non-None by from_dict(), which assigns defaults for every
+        missing key.  A runtime None-check in __post_init__ is therefore a no-op and is
+        intentionally omitted; the coupling is implicitly enforced by the parser.
+        """
         n_total = self.n_species + self.n_background
 
         # Check n_steps consistency
