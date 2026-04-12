@@ -38,3 +38,11 @@ def collect_resolved_keys(fields, count: int, start_idx: int = 0) -> list[str]:
     for i in range(start_idx, start_idx + count):
         keys.extend(f.resolve_key(i) for f in fields)
     return keys
+
+
+def format_timing_pairs(timing: dict[str, float]) -> list[tuple[str, str]]:
+    """Sort timing dict by process name and format values as 'X.XXXs' strings.
+
+    Returns list of (process_name, formatted_time) tuples, sorted alphabetically.
+    """
+    return [(name, f"{secs:.3f}s") for name, secs in sorted(timing.items())]

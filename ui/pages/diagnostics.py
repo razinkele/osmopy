@@ -3,6 +3,7 @@
 from shiny import render, ui
 
 from ui.components.collapsible import collapsible_card_header, expand_tab
+from ui.pages._helpers import format_timing_pairs
 from ui.styles import STYLE_EMPTY
 
 
@@ -62,10 +63,10 @@ def diagnostics_server(input, output, session, state):
         if timing is None:
             return ui.p("No timing data available for this run.", style=STYLE_EMPTY)
         rows = []
-        for process, seconds in sorted(timing.items()):
+        for process, time_str in format_timing_pairs(timing):
             rows.append(ui.tags.tr(
                 ui.tags.td(process, style="font-weight: 500;"),
-                ui.tags.td(f"{seconds:.3f}s"),
+                ui.tags.td(time_str),
             ))
         return ui.tags.table(
             ui.tags.thead(ui.tags.tr(ui.tags.th("Process"), ui.tags.th("Time"))),
