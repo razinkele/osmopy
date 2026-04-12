@@ -51,6 +51,15 @@ class AppState:
         self.key_case_map: reactive.Value[dict[str, str]] = reactive.Value({})
         self.engine_mode: reactive.Value[str] = reactive.Value("java")
 
+    def get_config_value(self, key: str, default: str = "") -> str:
+        """Read a single config value without copying the entire dict.
+
+        Uses reactive.isolate() — no reactive dependency taken. Use in
+        read-only render paths where only one key is needed.
+        """
+        with reactive.isolate():
+            return self.config.get().get(key, default)
+
     def update_config(self, key: str, value: str) -> None:
         """Update a single key in the config dict.
 

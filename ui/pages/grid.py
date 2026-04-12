@@ -124,6 +124,17 @@ def grid_server(input, output, session, state):
         f for f in GRID_FIELDS if "netcdf" in f.key_pattern or f.key_pattern.startswith("grid.var")
     ]
 
+    @reactive.calc
+    def _cached_nc_grid():
+        """Cache NetCDF grid data — only reloads when config changes."""
+        state.load_trigger.get()
+        cfg = state.config.get()
+        cfg_dir = state.config_dir.get()
+        is_ncgrid = "NcGrid" in cfg.get("grid.java.classname", "")
+        if not is_ncgrid:
+            return None
+        return load_netcdf_grid(cfg, config_dir=cfg_dir)
+
     @render.ui
     def grid_fields():
         state.load_trigger.get()
@@ -495,8 +506,7 @@ def grid_server(input, output, session, state):
 
         # For NcGrid configs, pass nc_data so CSV overlays use the NetCDF grid
         # coordinates (grid.nlon/nlat may not match the NetCDF dimensions).
-        is_ncgrid = "NcGrid" in cfg.get("grid.java.classname", "")
-        nc_data = load_netcdf_grid(cfg, config_dir=cfg_dir) if is_ncgrid else None
+        nc_data = _cached_nc_grid()
 
         cache = build_movement_cache(cfg, cfg_dir, grid_params, species=species, nc_data=nc_data)
         _movement_cache.set(cache)
@@ -513,8 +523,7 @@ def grid_server(input, output, session, state):
             cfg_dir = state.config_dir.get()
 
         # Detect grid type: NcGrid uses NetCDF file, OriginalGrid uses bounds
-        is_ncgrid = "NcGrid" in cfg.get("grid.java.classname", "")
-        nc_data = load_netcdf_grid(cfg, config_dir=cfg_dir) if is_ncgrid else None
+        nc_data = _cached_nc_grid()
 
         if nc_data is not None:
             nc_lat, nc_lon, nc_mask = nc_data
@@ -641,7 +650,7 @@ def grid_server(input, output, session, state):
                     ui.notification_show(
                         f"Overlay file not found: {overlay_file.name}",
                         type="warning",
-                        duration=3,
+                        duration=5,
                     )
             elif overlay_file.suffix == ".nc":
                 # Read variable and time-step controls (populated by overlay_nc_controls)
@@ -748,13 +757,18 @@ def grid_server(input, output, session, state):
                 )
             )
 
-        await _map.update(
-            session,
-            layers=layers,
-            view_state=view_state,
-            transition_duration=800,
-            widgets=widgets,
-        )
+        try:
+            await _map.update(
+                session,
+                layers=layers,
+                view_state=view_state,
+                transition_duration=800,
+                widgets=widgets,
+            )
+        except Exception as exc:
+            ui.notification_show(
+                f"Grid map update failed: {exc}", type="warning", duration=5
+            )
 
     @reactive.effect
     def sync_grid_inputs():
