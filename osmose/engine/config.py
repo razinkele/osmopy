@@ -152,13 +152,14 @@ def _cfg_dir(cfg: dict[str, str]) -> str:
 def _accessibility_path_or_none(cfg: dict[str, str]) -> "Path | None":
     """Resolve predation.accessibility.file once, shared by both accessibility loaders.
 
-    Returns None when the key is absent or empty. Delegates to :func:`_resolve_file`
-    so that a set-but-missing path also returns None (consistent with original behaviour).
+    Returns None when the key is absent or empty. Raises :class:`FileNotFoundError`
+    when the key is set but the file cannot be located — a set-but-missing path is a
+    config error, not a silent "feature disabled."
     """
     file_key = cfg.get("predation.accessibility.file", "")
     if not file_key:
         return None
-    return _resolve_file(file_key, _cfg_dir(cfg))
+    return _require_file(file_key, _cfg_dir(cfg), "predation.accessibility.file")
 
 
 def _load_accessibility(cfg: dict[str, str], n_species: int) -> NDArray[np.float64] | None:
@@ -435,10 +436,7 @@ def _parse_mpa_zones(cfg: dict[str, str]) -> list[MPAZone] | None:
         file_key = cfg.get(f"mpa.file.mpa{i}", "")
         if not file_key:
             break
-        path = _resolve_file(file_key, _cfg_dir(cfg))
-        if path is None:
-            i += 1
-            continue
+        path = _require_file(file_key, _cfg_dir(cfg), f"mpa.file.mpa{i}")
         grid = _load_spatial_csv(path)
         start_year = int(cfg.get(f"mpa.start.year.mpa{i}", "0"))
         end_year = int(cfg.get(f"mpa.end.year.mpa{i}", "999"))
@@ -459,9 +457,9 @@ def _load_discard_rates(
     Returns per-species discard rate array, or None if no discard file.
     """
     file_key = cfg.get("fisheries.discards.file", "")
-    path = _resolve_file(file_key, _cfg_dir(cfg))
-    if path is None:
+    if not file_key:
         return None
+    path = _require_file(file_key, _cfg_dir(cfg), "fisheries.discards.file")
 
     df = pd.read_csv(path, index_col=0)
     discard_rate = np.zeros(n_species, dtype=np.float64)
@@ -926,9 +924,10 @@ class EngineConfig:
         shared_fishing_map_file = cfg.get("fisheries.movement.file.map0", "")
         shared_fishing_map: np.ndarray | None = None
         if shared_fishing_map_file:
-            shared_path = _resolve_file(shared_fishing_map_file, _cfg_dir(cfg))
-            if shared_path is not None:
-                shared_fishing_map = _load_spatial_csv(shared_path)
+            shared_path = _require_file(
+                shared_fishing_map_file, _cfg_dir(cfg), "fisheries.movement.file.map0"
+            )
+            shared_fishing_map = _load_spatial_csv(shared_path)
         for i in range(n_sp):
             sp_map_file = cfg.get(f"mortality.fishing.spatial.distrib.file.sp{i}", "")
             if sp_map_file:

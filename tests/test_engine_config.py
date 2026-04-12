@@ -419,6 +419,55 @@ class TestRequireFileRaisesOnMissing:
         with pytest.raises(FileNotFoundError, match="ghost_map.csv"):
             EngineConfig.from_dict(cfg)
 
+    def test_fisheries_discards_file_missing_raises(self, tmp_path):
+        """Task-16: non-empty fisheries.discards.file with missing file raises, not silently zeroes."""
+        from osmose.engine.config import _load_discard_rates
+
+        cfg = {"_osmose.config.dir": str(tmp_path), "fisheries.discards.file": "typo.csv"}
+        with pytest.raises(FileNotFoundError, match="typo.csv"):
+            _load_discard_rates(cfg, ["Anchovy"], n_species=1)
+
+    def test_mpa_file_missing_raises(self, tmp_path):
+        """Task-16: non-empty mpa.file.mpa{i} with missing file raises, not silently skips."""
+        from osmose.engine.config import _parse_mpa_zones
+
+        cfg = {"_osmose.config.dir": str(tmp_path), "mpa.file.mpa0": "typo.csv"}
+        with pytest.raises(FileNotFoundError, match="typo.csv"):
+            _parse_mpa_zones(cfg)
+
+    def test_shared_fishing_map_missing_raises(self, tmp_path):
+        """Task-16: non-empty fisheries.movement.file.map0 with missing file raises."""
+        cfg = {
+            "_osmose.config.dir": str(tmp_path),
+            "simulation.time.ndtperyear": "24",
+            "simulation.time.nyear": "1",
+            "simulation.nspecies": "1",
+            "simulation.nschool.sp0": "5",
+            "species.name.sp0": "Anchovy",
+            "species.linf.sp0": "20.0",
+            "species.k.sp0": "0.3",
+            "species.t0.sp0": "-0.1",
+            "species.egg.size.sp0": "0.1",
+            "species.length2weight.condition.factor.sp0": "0.006",
+            "species.length2weight.allometric.power.sp0": "3.0",
+            "species.lifespan.sp0": "3",
+            "species.vonbertalanffy.threshold.age.sp0": "1.0",
+            "mortality.subdt": "10",
+            "predation.ingestion.rate.max.sp0": "3.5",
+            "predation.efficiency.critical.sp0": "0.57",
+            "fisheries.movement.file.map0": "ghost_shared_map.csv",
+        }
+        with pytest.raises(FileNotFoundError, match="ghost_shared_map.csv"):
+            EngineConfig.from_dict(cfg)
+
+    def test_predation_accessibility_file_missing_raises(self, tmp_path):
+        """Task-16: non-empty predation.accessibility.file with missing file raises."""
+        from osmose.engine.config import _load_accessibility
+
+        cfg = {"_osmose.config.dir": str(tmp_path), "predation.accessibility.file": "typo_access.csv"}
+        with pytest.raises(FileNotFoundError, match="typo_access.csv"):
+            _load_accessibility(cfg, n_species=2)
+
 
 class TestMPAZoneValidation:
     """Deep review v3 I-8: MPAZone must validate grid shape and value range."""
