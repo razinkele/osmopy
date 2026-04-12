@@ -705,6 +705,9 @@ class EngineConfig:
     # Raw config dict for subsystems that need unparsed access (e.g. ResourceState)
     raw_config: dict[str, str]
 
+    # Movement map coverage enforcement
+    movement_strict_coverage: bool = False
+
     # Gompertz growth parameters (None when no GOMPERTZ species)
     gompertz_ke: NDArray[np.float64] | None = None
     gompertz_lstart: NDArray[np.float64] | None = None
@@ -1243,6 +1246,7 @@ class EngineConfig:
         mortality_seed_fixed = (
             cfg.get("stochastic.mortality.randomseed.fixed", "false").lower() == "true"
         )
+        movement_strict = cfg.get("movement.map.strict.coverage", "false").lower() == "true"
 
         # Growth class dispatch: parse classname for each focal species
         growth_class = [
@@ -1386,6 +1390,7 @@ class EngineConfig:
             output_step0_include=output_step0,
             movement_seed_fixed=movement_seed_fixed,
             mortality_seed_fixed=mortality_seed_fixed,
+            movement_strict_coverage=movement_strict,
             random_distribution_ncell=random_distribution_ncell,
             growth_class=growth_class,
             gompertz_ke=gompertz_ke,
