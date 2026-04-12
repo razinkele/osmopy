@@ -84,7 +84,12 @@ def test_valid_config_passes() -> None:
     """A minimal valid config should construct without error."""
     cfg = _minimal_config()
     ec = EngineConfig(**cfg)
+    # Check stored scalar and that per-species arrays have the expected shape,
+    # confirming __post_init__ ran to completion without trimming or rejecting data.
     assert ec.n_species == 2
+    assert ec.linf.shape == (2,)
+    assert ec.k.shape == (2,)
+    assert ec.fishing_rate.shape == (2,)
 
 
 def test_mismatched_array_length_raises() -> None:
@@ -125,7 +130,11 @@ def test_background_species_zero_linf_allowed() -> None:
     cfg["linf"] = np.array([30.0, 30.0, 0.0])
     cfg["k"] = np.array([0.3, 0.3, 0.0])
     ec = EngineConfig(**cfg)
+    # Confirm the background species zero linf was accepted as-is (not clamped or rejected)
+    # and that focal species linf remains positive.
     assert ec.n_background == 1
+    assert ec.linf[2] == 0.0, "background species linf must be stored unchanged"
+    assert (ec.linf[:2] > 0).all(), "focal species linf must remain positive"
 
 
 def test_from_dict_still_works() -> None:
