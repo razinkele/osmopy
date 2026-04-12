@@ -378,7 +378,14 @@ def _apply_predation_for_school(
     # --- Phase 2: Distribute eating proportionally (matching Java) ---
     eaten_total = min(total_available, max_eatable)
 
-    cell_id = cell_y * (resources.grid.nx if resources else 0) + cell_x
+    # cell_id is only meaningful when resources are present (used inside the
+    # `if resources is not None:` branch below). When resources is None we
+    # assign a sentinel to satisfy the variable-always-defined rule, but the
+    # value is never read. Deep review v3 M-6.
+    if resources is not None:
+        cell_id = cell_y * resources.grid.nx + cell_x
+    else:
+        cell_id = -1
 
     for prey_type, prey_id, eligible in all_prey:
         share = eligible / total_available
