@@ -1,12 +1,11 @@
 """Movement / spatial distribution page."""
 
-import re
-
 from shiny import ui, reactive, render
 
 from osmose.schema.movement import MOVEMENT_FIELDS
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.components.param_form import render_field
+from ui.pages._helpers import parse_nspecies, count_map_entries
 from ui.state import sync_inputs
 
 MOVEMENT_GLOBAL_KEYS: list[str] = [f.key_pattern for f in MOVEMENT_FIELDS if not f.indexed]
@@ -51,10 +50,7 @@ def movement_server(input, output, session, state):
         per_species = [f for f in MOVEMENT_FIELDS if f.indexed and "map" not in f.key_pattern]
         with reactive.isolate():
             cfg = state.config.get()
-            try:
-                n_species = int(float(cfg.get("simulation.nspecies", "3") or "3"))
-            except (ValueError, TypeError):
-                n_species = 3
+            n_species = parse_nspecies(cfg, default=3)
         panels = []
         for i in range(n_species):
             panels.extend([render_field(f, species_idx=i, config=cfg) for f in per_species])
@@ -84,11 +80,7 @@ def movement_server(input, output, session, state):
     def sync_species_movement_inputs():
         per_species = [f for f in MOVEMENT_FIELDS if f.indexed and "map" not in f.key_pattern]
         with reactive.isolate():
-            _ns_raw = state.config.get().get("simulation.nspecies", "3")
-            try:
-                n_species = int(float(_ns_raw or "3"))
-            except (ValueError, TypeError):
-                n_species = 3
+            n_species = parse_nspecies(state.config.get(), default=3)
         all_keys = []
         for i in range(n_species):
             all_keys.extend(f.resolve_key(i) for f in per_species)
@@ -108,12 +100,6 @@ def movement_server(input, output, session, state):
         state.load_trigger.get()
         with reactive.isolate():
             cfg = state.config.get()
-        count = sum(
-            1 for k in cfg
-            if re.match(r"movement\.file\.map\d+$", k)
-            and isinstance(cfg[k], str)
-            and cfg[k].strip()
-            and cfg[k].strip().lower() not in ("null", "none")
-        )
+        count = count_map_entries(cfg)
         if count > 0:
             ui.update_numeric("n_maps", value=count)
