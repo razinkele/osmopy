@@ -191,6 +191,20 @@ class MPAZone:
             raise ValueError(f"MPAZone percentage must be in [0, 1], got {self.percentage}")
         if self.start_year > self.end_year:
             raise ValueError(f"MPAZone start_year ({self.start_year}) > end_year ({self.end_year})")
+        if self.grid.ndim != 2:
+            raise ValueError(
+                f"MPAZone.grid must be 2D (shape (ny, nx)), got {self.grid.ndim}D"
+            )
+        if not np.isin(self.grid, [0.0, 1.0]).all():
+            unique = np.unique(self.grid)
+            raise ValueError(
+                f"MPAZone.grid values must be 0 or 1 (binary protected/unprotected), "
+                f"got unique values {unique.tolist()}"
+            )
+        if self.start_year < 0:
+            raise ValueError(
+                f"MPAZone.start_year must be non-negative, got {self.start_year}"
+            )
 
 
 def _parse_fisheries(

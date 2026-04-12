@@ -418,3 +418,55 @@ class TestRequireFileRaisesOnMissing:
         }
         with pytest.raises(FileNotFoundError, match="ghost_map.csv"):
             EngineConfig.from_dict(cfg)
+
+
+class TestMPAZoneValidation:
+    """Deep review v3 I-8: MPAZone must validate grid shape and value range."""
+
+    def _base_kwargs(self):
+        import numpy as np
+        return {
+            "grid": np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.float64),
+            "start_year": 0,
+            "end_year": 10,
+            "percentage": 0.5,
+        }
+
+    def test_valid_mpa_zone(self):
+        from osmose.engine.config import MPAZone
+        MPAZone(**self._base_kwargs())
+
+    def test_1d_grid_rejected(self):
+        import numpy as np
+        import pytest
+        from osmose.engine.config import MPAZone
+        kwargs = self._base_kwargs()
+        kwargs["grid"] = np.array([0.0, 1.0, 0.0])
+        with pytest.raises(ValueError, match="grid must be 2D"):
+            MPAZone(**kwargs)
+
+    def test_3d_grid_rejected(self):
+        import numpy as np
+        import pytest
+        from osmose.engine.config import MPAZone
+        kwargs = self._base_kwargs()
+        kwargs["grid"] = np.zeros((2, 2, 2), dtype=np.float64)
+        with pytest.raises(ValueError, match="grid must be 2D"):
+            MPAZone(**kwargs)
+
+    def test_continuous_grid_rejected(self):
+        import numpy as np
+        import pytest
+        from osmose.engine.config import MPAZone
+        kwargs = self._base_kwargs()
+        kwargs["grid"] = np.array([[0.0, 0.5], [1.0, 0.2]])
+        with pytest.raises(ValueError, match="grid values must be 0 or 1"):
+            MPAZone(**kwargs)
+
+    def test_negative_start_year_rejected(self):
+        import pytest
+        from osmose.engine.config import MPAZone
+        kwargs = self._base_kwargs()
+        kwargs["start_year"] = -1
+        with pytest.raises(ValueError, match="start_year must be non-negative"):
+            MPAZone(**kwargs)
