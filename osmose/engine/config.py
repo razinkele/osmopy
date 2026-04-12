@@ -516,6 +516,168 @@ def _parse_reproduction_params(
     }
 
 
+def _parse_predation_params(
+    cfg: dict[str, str],
+    n_sp: int,
+    n_dt: int,
+    background_list: list[BackgroundSpeciesInfo],
+    focal_fishing_l50_fsh: NDArray[np.float64],
+) -> dict[str, Any]:
+    """Parse feeding stages, size ratios, predation, and post-predation params."""
+    n_bkg = len(background_list)
+    focal_ingestion_rate = _species_float(cfg, "predation.ingestion.rate.max.sp{i}", n_sp)
+    focal_critical_success_rate = _species_float(
+        cfg, "predation.efficiency.critical.sp{i}", n_sp
+    )
+
+    _VALID_METRICS = {"age", "size", "weight", "tl"}
+    global_metric = cfg.get("predation.predprey.stage.structure", "size").strip().lower()
+    if global_metric not in _VALID_METRICS:
+        raise ValueError(
+            f"Unrecognized feeding stage metric: {global_metric!r}. "
+            f"Must be one of {sorted(_VALID_METRICS)}."
+        )
+
+    all_thresholds: list[list[float]] = []
+    all_metrics: list[str] = []
+    all_ratio_min: list[list[float]] = []
+    all_ratio_max: list[list[float]] = []
+
+    for i in range(n_sp):
+        sp_metric = cfg.get(f"predation.predprey.stage.structure.sp{i}", "").strip().lower()
+        if not sp_metric:
+            sp_metric = global_metric
+        elif sp_metric not in _VALID_METRICS:
+            raise ValueError(
+                f"Unrecognized feeding stage metric for sp{i}: {sp_metric!r}. "
+                f"Must be one of {sorted(_VALID_METRICS)}."
+            )
+        all_metrics.append(sp_metric)
+
+        thresh_raw = cfg.get(f"predation.predprey.stage.threshold.sp{i}", "")
+        if not thresh_raw or thresh_raw.strip().lower() == "null":
+            sp_thresholds: list[float] = []
+        else:
+            sp_thresholds = _parse_floats(thresh_raw)
+        all_thresholds.append(sp_thresholds)
+        n_stages = len(sp_thresholds) + 1
+
+        rmin_raw = cfg.get(f"predation.predprey.sizeratio.min.sp{i}", "1.0")
+        rmax_raw = cfg.get(f"predation.predprey.sizeratio.max.sp{i}", "3.5")
+        rmin_list = _parse_floats(rmin_raw)
+        rmax_list = _parse_floats(rmax_raw)
+
+        if len(rmin_list) != n_stages:
+            raise ValueError(
+                f"Size ratio min count mismatch for sp{i}: "
+                f"got {len(rmin_list)}, expected {n_stages} stages"
+            )
+        if len(rmax_list) != n_stages:
+            raise ValueError(
+                f"Size ratio max count mismatch for sp{i}: "
+                f"got {len(rmax_list)}, expected {n_stages} stages"
+            )
+
+        for s in range(n_stages):
+            if rmin_list[s] > rmax_list[s]:
+                warnings.warn(
+                    f"Swapping size ratios for sp{i} stage {s}: "
+                    f"min={rmin_list[s]}, max={rmax_list[s]}",
+                    stacklevel=2,
+                )
+                rmin_list[s], rmax_list[s] = rmax_list[s], rmin_list[s]
+
+        all_ratio_min.append(rmin_list)
+        all_ratio_max.append(rmax_list)
+
+    # Background species
+    for b in background_list:
+        b_idx = b.file_index
+        b_metric = cfg.get(
+            f"predation.predprey.stage.structure.sp{b_idx}", ""
+        ).strip().lower()
+        if not b_metric:
+            b_metric = global_metric
+        all_metrics.append(b_metric)
+
+        thresh_raw = cfg.get(f"predation.predprey.stage.threshold.sp{b_idx}", "")
+        if not thresh_raw or thresh_raw.strip().lower() == "null":
+            b_thresholds: list[float] = []
+        else:
+            b_thresholds = _parse_floats(thresh_raw)
+        all_thresholds.append(b_thresholds)
+        n_stages = len(b_thresholds) + 1
+
+        rmin_list = list(b.size_ratio_min)
+        rmax_list = list(b.size_ratio_max)
+        if len(rmin_list) == 1 and n_stages > 1:
+            rmin_list = rmin_list * n_stages
+        if len(rmax_list) == 1 and n_stages > 1:
+            rmax_list = rmax_list * n_stages
+        for s in range(min(len(rmin_list), len(rmax_list))):
+            if rmin_list[s] > rmax_list[s]:
+                rmin_list[s], rmax_list[s] = rmax_list[s], rmin_list[s]
+        all_ratio_min.append(rmin_list)
+        all_ratio_max.append(rmax_list)
+
+    # Build 2D arrays
+    n_total = n_sp + n_bkg
+    max_stages = max((len(r) for r in all_ratio_min), default=1)
+    n_feeding_stages = np.array([len(r) for r in all_ratio_min], dtype=np.int32)
+    size_ratio_min_2d = np.zeros((n_total, max_stages), dtype=np.float64)
+    size_ratio_max_2d = np.zeros((n_total, max_stages), dtype=np.float64)
+    for sp_i in range(n_total):
+        n_st = len(all_ratio_min[sp_i])
+        for s in range(n_st):
+            size_ratio_min_2d[sp_i, s] = all_ratio_min[sp_i][s]
+            size_ratio_max_2d[sp_i, s] = all_ratio_max[sp_i][s]
+        if n_st > 0 and n_st < max_stages:
+            size_ratio_min_2d[sp_i, n_st:] = all_ratio_min[sp_i][-1]
+            size_ratio_max_2d[sp_i, n_st:] = all_ratio_max[sp_i][-1]
+
+    # Post-predation variables
+    focal_starvation_rate_max = _species_float_optional(
+        cfg, "mortality.starvation.rate.max.sp{i}", n_sp, default=0.0
+    )
+    focal_fishing_selectivity_l50 = _species_float_optional(
+        cfg, "fishing.selectivity.l50.sp{i}", n_sp, default=0.0
+    )
+    for i in range(n_sp):
+        if focal_fishing_l50_fsh[i] > 0 and focal_fishing_selectivity_l50[i] == 0:
+            focal_fishing_selectivity_l50[i] = focal_fishing_l50_fsh[i]
+    focal_movement_method = [
+        cfg.get(f"movement.distribution.method.sp{i}", "random") for i in range(n_sp)
+    ]
+    focal_random_walk_range = _species_int_optional(
+        cfg, "movement.randomwalk.range.sp{i}", n_sp, default=1
+    )
+    focal_out_mortality_rate = _species_float_optional(
+        cfg, "mortality.out.rate.sp{i}", n_sp, default=0.0
+    )
+    focal_n_schools = _species_int_optional(
+        cfg,
+        "simulation.nschool.sp{i}",
+        n_sp,
+        default=int(cfg.get("simulation.nschool", "20")),
+    )
+
+    return {
+        "focal_ingestion_rate": focal_ingestion_rate,
+        "focal_critical_success_rate": focal_critical_success_rate,
+        "focal_starvation_rate_max": focal_starvation_rate_max,
+        "focal_fishing_selectivity_l50": focal_fishing_selectivity_l50,
+        "focal_movement_method": focal_movement_method,
+        "focal_random_walk_range": focal_random_walk_range,
+        "focal_out_mortality_rate": focal_out_mortality_rate,
+        "focal_n_schools": focal_n_schools,
+        "all_thresholds": all_thresholds,
+        "all_metrics": all_metrics,
+        "n_feeding_stages": n_feeding_stages,
+        "size_ratio_min_2d": size_ratio_min_2d,
+        "size_ratio_max_2d": size_ratio_max_2d,
+    }
+
+
 def _parse_mpa_zones(cfg: dict[str, str]) -> list[MPAZone] | None:
     """Parse Marine Protected Area configurations."""
     zones: list[MPAZone] = []
@@ -966,10 +1128,6 @@ class EngineConfig:
         focal_delta_lmax_factor = _growth["focal_delta_lmax_factor"]
         focal_additional_mortality_rate = _growth["focal_additional_mortality_rate"]
         focal_lmax = _growth["focal_lmax"]
-        focal_ingestion_rate = _species_float(cfg, "predation.ingestion.rate.max.sp{i}", n_sp)
-        focal_critical_success_rate = _species_float(
-            cfg, "predation.efficiency.critical.sp{i}", n_sp
-        )
         _repro = _parse_reproduction_params(cfg, n_sp, n_dt, lifespan_years)
         focal_sex_ratio = _repro["focal_sex_ratio"]
         focal_relative_fecundity = _repro["focal_relative_fecundity"]
@@ -1000,147 +1158,22 @@ class EngineConfig:
             else:
                 focal_fishing_spatial_maps.append(shared_fishing_map)
 
-        # --- Feeding stages: thresholds, metrics, multi-value size ratios ---
-        _VALID_METRICS = {"age", "size", "weight", "tl"}
-        global_metric = cfg.get("predation.predprey.stage.structure", "size").strip().lower()
-        if global_metric not in _VALID_METRICS:
-            raise ValueError(
-                f"Unrecognized feeding stage metric: {global_metric!r}. "
-                f"Must be one of {sorted(_VALID_METRICS)}."
-            )
-
-        all_thresholds: list[list[float]] = []
-        all_metrics: list[str] = []
-        all_ratio_min: list[list[float]] = []
-        all_ratio_max: list[list[float]] = []
-
-        for i in range(n_sp):
-            # Per-species metric override
-            sp_metric = cfg.get(f"predation.predprey.stage.structure.sp{i}", "").strip().lower()
-            if not sp_metric:
-                sp_metric = global_metric
-            elif sp_metric not in _VALID_METRICS:
-                raise ValueError(
-                    f"Unrecognized feeding stage metric for sp{i}: {sp_metric!r}. "
-                    f"Must be one of {sorted(_VALID_METRICS)}."
-                )
-            all_metrics.append(sp_metric)
-
-            # Thresholds
-            thresh_raw = cfg.get(f"predation.predprey.stage.threshold.sp{i}", "")
-            if not thresh_raw or thresh_raw.strip().lower() == "null":
-                sp_thresholds: list[float] = []
-            else:
-                sp_thresholds = _parse_floats(thresh_raw)
-            all_thresholds.append(sp_thresholds)
-            n_stages = len(sp_thresholds) + 1
-
-            # Size ratios (multi-value)
-            rmin_raw = cfg.get(f"predation.predprey.sizeratio.min.sp{i}", "1.0")
-            rmax_raw = cfg.get(f"predation.predprey.sizeratio.max.sp{i}", "3.5")
-            rmin_list = _parse_floats(rmin_raw)
-            rmax_list = _parse_floats(rmax_raw)
-
-            # Validate length matches n_stages
-            if len(rmin_list) != n_stages:
-                raise ValueError(
-                    f"Size ratio min count mismatch for sp{i}: "
-                    f"got {len(rmin_list)}, expected {n_stages} stages"
-                )
-            if len(rmax_list) != n_stages:
-                raise ValueError(
-                    f"Size ratio max count mismatch for sp{i}: "
-                    f"got {len(rmax_list)}, expected {n_stages} stages"
-                )
-
-            # Swap validation: if parsed min > parsed max (Java convention), swap + warn
-            for s in range(n_stages):
-                if rmin_list[s] > rmax_list[s]:
-                    warnings.warn(
-                        f"Swapping size ratios for sp{i} stage {s}: "
-                        f"min={rmin_list[s]}, max={rmax_list[s]}",
-                        stacklevel=2,
-                    )
-                    rmin_list[s], rmax_list[s] = rmax_list[s], rmin_list[s]
-
-            all_ratio_min.append(rmin_list)
-            all_ratio_max.append(rmax_list)
-
-        # Background species: thresholds, metrics, ratios
-        for b in background_list:
-            b_idx = b.file_index
-            b_metric = cfg.get(f"predation.predprey.stage.structure.sp{b_idx}", "").strip().lower()
-            if not b_metric:
-                b_metric = global_metric
-            all_metrics.append(b_metric)
-
-            thresh_raw = cfg.get(f"predation.predprey.stage.threshold.sp{b_idx}", "")
-            if not thresh_raw or thresh_raw.strip().lower() == "null":
-                b_thresholds: list[float] = []
-            else:
-                b_thresholds = _parse_floats(thresh_raw)
-            all_thresholds.append(b_thresholds)
-            n_stages = len(b_thresholds) + 1
-
-            rmin_list = list(b.size_ratio_min)
-            rmax_list = list(b.size_ratio_max)
-
-            # If background species has 1 ratio but multiple stages, pad
-            if len(rmin_list) == 1 and n_stages > 1:
-                rmin_list = rmin_list * n_stages
-            if len(rmax_list) == 1 and n_stages > 1:
-                rmax_list = rmax_list * n_stages
-
-            # Swap validation for background
-            for s in range(min(len(rmin_list), len(rmax_list))):
-                if rmin_list[s] > rmax_list[s]:
-                    rmin_list[s], rmax_list[s] = rmax_list[s], rmin_list[s]
-
-            all_ratio_min.append(rmin_list)
-            all_ratio_max.append(rmax_list)
-
-        # Build 2D arrays with padding
-        n_total = n_sp + n_bkg
-        max_stages = max((len(r) for r in all_ratio_min), default=1)
-        n_feeding_stages = np.array([len(r) for r in all_ratio_min], dtype=np.int32)
-
-        size_ratio_min_2d = np.zeros((n_total, max_stages), dtype=np.float64)
-        size_ratio_max_2d = np.zeros((n_total, max_stages), dtype=np.float64)
-        for sp_i in range(n_total):
-            n_st = len(all_ratio_min[sp_i])
-            for s in range(n_st):
-                size_ratio_min_2d[sp_i, s] = all_ratio_min[sp_i][s]
-                size_ratio_max_2d[sp_i, s] = all_ratio_max[sp_i][s]
-            # Pad remaining columns with last valid value
-            if n_st > 0 and n_st < max_stages:
-                size_ratio_min_2d[sp_i, n_st:] = all_ratio_min[sp_i][-1]
-                size_ratio_max_2d[sp_i, n_st:] = all_ratio_max[sp_i][-1]
-
-        focal_starvation_rate_max = _species_float_optional(
-            cfg, "mortality.starvation.rate.max.sp{i}", n_sp, default=0.0
+        _pred = _parse_predation_params(
+            cfg, n_sp, n_dt, background_list, focal_fishing_l50_fsh
         )
-        focal_fishing_selectivity_l50 = _species_float_optional(
-            cfg, "fishing.selectivity.l50.sp{i}", n_sp, default=0.0
-        )
-        # Merge fisheries-parsed L50 (for sigmoid type) into selectivity L50
-        for i in range(n_sp):
-            if focal_fishing_l50_fsh[i] > 0 and focal_fishing_selectivity_l50[i] == 0:
-                focal_fishing_selectivity_l50[i] = focal_fishing_l50_fsh[i]
-        focal_movement_method = [
-            cfg.get(f"movement.distribution.method.sp{i}", "random") for i in range(n_sp)
-        ]
-        focal_random_walk_range = _species_int_optional(
-            cfg, "movement.randomwalk.range.sp{i}", n_sp, default=1
-        )
-        focal_out_mortality_rate = _species_float_optional(
-            cfg, "mortality.out.rate.sp{i}", n_sp, default=0.0
-        )
-        focal_n_schools = _species_int_optional(
-            cfg,
-            "simulation.nschool.sp{i}",
-            n_sp,
-            default=int(cfg.get("simulation.nschool", "20")),
-        )
+        focal_ingestion_rate = _pred["focal_ingestion_rate"]
+        focal_critical_success_rate = _pred["focal_critical_success_rate"]
+        focal_starvation_rate_max = _pred["focal_starvation_rate_max"]
+        focal_fishing_selectivity_l50 = _pred["focal_fishing_selectivity_l50"]
+        focal_movement_method = _pred["focal_movement_method"]
+        focal_random_walk_range = _pred["focal_random_walk_range"]
+        focal_out_mortality_rate = _pred["focal_out_mortality_rate"]
+        focal_n_schools = _pred["focal_n_schools"]
+        all_thresholds = _pred["all_thresholds"]
+        all_metrics = _pred["all_metrics"]
+        n_feeding_stages = _pred["n_feeding_stages"]
+        size_ratio_min_2d = _pred["size_ratio_min_2d"]
+        size_ratio_max_2d = _pred["size_ratio_max_2d"]
 
         # Extend all per-species arrays with background species values
         if n_bkg > 0:
@@ -1235,7 +1268,6 @@ class EngineConfig:
             egg_weight_override = None
 
         # Output cutoff age: output.cutoff.age.sp{i} (years, default 0 = include all)
-        n_total = n_sp + n_bkg
         cutoff_vals = []
         found_any = False
         for i in range(n_sp):
