@@ -7,6 +7,7 @@ from osmose.schema.bioenergetics import BIOENERGETICS_FIELDS
 from osmose.schema.ltl import LTL_FIELDS
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.components.param_form import render_field, render_species_table
+from ui.pages._helpers import parse_nspecies
 from ui.state import sync_inputs
 
 FORCING_GLOBAL_KEYS: list[str] = [f.key_pattern for f in LTL_FIELDS if not f.indexed]
@@ -76,10 +77,7 @@ def forcing_server(input, output, session, state):
         n = input.n_resources()
         with reactive.isolate():
             cfg = state.config.get()
-        try:
-            n_focal = int(float(cfg.get("simulation.nspecies", "0") or "0"))
-        except (ValueError, TypeError):
-            n_focal = 0
+        n_focal = parse_nspecies(cfg)
         indexed_fields = [f for f in LTL_FIELDS if f.indexed]
         names = [cfg.get(f"species.name.sp{n_focal + i}", f"Resource {i}") for i in range(n)]
         return render_species_table(
@@ -106,10 +104,7 @@ def forcing_server(input, output, session, state):
             if state.loading.get():
                 return
             cfg = dict(state.config.get())
-        try:
-            n_focal = int(float(cfg.get("simulation.nspecies", "0") or "0"))
-        except (ValueError, TypeError):
-            n_focal = 0
+        n_focal = parse_nspecies(cfg)
         indexed_fields = [f for f in LTL_FIELDS if f.indexed]
 
         # Collect all updates before touching reactive state.
