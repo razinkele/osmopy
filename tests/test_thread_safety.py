@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from osmose.engine.processes.predation import get_diet_matrix
+from osmose.engine.processes.predation import enable_diet_tracking, get_diet_matrix
 from osmose.engine.simulate import SimulationContext
 
 
@@ -13,9 +13,9 @@ def test_diet_matrix_not_global():
 
 
 def test_diet_matrix_with_context():
-    """get_diet_matrix returns the matrix from the context."""
+    """get_diet_matrix returns the matrix from the context when tracking is enabled."""
     ctx = SimulationContext()
-    ctx.diet_matrix = np.zeros((3, 2), dtype=np.float64)
+    enable_diet_tracking(n_schools=3, n_species=2, ctx=ctx)
     matrix = get_diet_matrix(ctx=ctx)
     assert matrix is not None
     assert matrix.shape == (3, 2)

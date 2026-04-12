@@ -452,10 +452,12 @@ def _create_mock_output(output_dir: Path, species_names: list[str], n_timesteps:
             output_dir / f"osm_abundance_{sp}.csv", index=False
         )
 
-        # Mortality time series
+        # Mortality time series (engine writes to Mortality/ subdir with dash naming)
+        mortality_dir = output_dir / "Mortality"
+        mortality_dir.mkdir(exist_ok=True)
         mortality_vals = rng.uniform(0, 1, size=n_timesteps).tolist()
         pd.DataFrame({"time": times, "mortality": mortality_vals}).to_csv(
-            output_dir / f"osm_mortality_{sp}.csv", index=False
+            mortality_dir / f"osm_mortalityRate-{sp}_Simu0.csv", index=False
         )
 
         # Yield time series
@@ -732,24 +734,7 @@ class TestEnsembleAggregation:
 # ---------------------------------------------------------------------------
 
 
-class _ScriptRunner(OsmoseRunner):
-    """OsmoseRunner that invokes Python scripts instead of Java."""
-
-    def _build_cmd(
-        self,
-        config_path: Path,
-        output_dir: Path | None = None,
-        java_opts: list[str] | None = None,
-        overrides: dict[str, str] | None = None,
-        **kwargs,
-    ) -> list[str]:
-        cmd = [self.java_cmd, str(self.jar_path), str(config_path)]
-        if output_dir:
-            cmd.append(f"-Poutput.dir.path={output_dir}")
-        if overrides:
-            for key, value in overrides.items():
-                cmd.append(f"-P{key}={value}")
-        return cmd
+from tests.helpers import _ScriptRunner  # noqa: E402
 
 
 class TestFullPipeline:

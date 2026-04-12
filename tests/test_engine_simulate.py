@@ -179,9 +179,14 @@ def test_average_step_outputs_preserves_distributions():
     )
     result = _average_step_outputs([so], freq=1, record_step=0)
     assert result.biomass_by_age is not None
+    assert isinstance(result.biomass_by_age, dict)
+    assert 0 in result.biomass_by_age
     assert result.abundance_by_age is not None
+    assert isinstance(result.abundance_by_age, dict)
     assert result.biomass_by_size is not None
+    assert isinstance(result.biomass_by_size, dict)
     assert result.abundance_by_size is not None
+    assert isinstance(result.abundance_by_size, dict)
 
 
 def test_average_step_outputs_multi_element_contract():

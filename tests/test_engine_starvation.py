@@ -95,3 +95,20 @@ class TestUpdateStarvationRate:
         state = state.replace(pred_success_rate=np.array([0.285]))
         new_state = update_starvation_rate(state, cfg)
         np.testing.assert_allclose(new_state.starvation_rate[0], 1.5, rtol=1e-6)
+
+
+class TestStarvationNegativeClamp:
+    """Verify starvation rate is clamped to non-negative (Phase 1A fix)."""
+
+    def test_sr_slightly_above_one_with_csr_zero(self):
+        """When csr==0, sr>1.0 (float precision) must produce rate 0, not negative."""
+        cfg_dict = _make_starv_config()
+        cfg_dict["predation.efficiency.critical.sp0"] = "0.0"  # csr = 0
+        cfg = EngineConfig.from_dict(cfg_dict)
+        state = SchoolState.create(n_schools=1, species_id=np.array([0], dtype=np.int32))
+        # sr slightly above 1.0 — simulates float precision artifact
+        state = state.replace(pred_success_rate=np.array([1.001]))
+        new_state = update_starvation_rate(state, cfg)
+        assert new_state.starvation_rate[0] >= 0.0, (
+            f"Starvation rate should be non-negative, got {new_state.starvation_rate[0]}"
+        )

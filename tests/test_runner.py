@@ -1,7 +1,7 @@
 """Tests for osmose.runner -- async OSMOSE Java engine runner.
 
-Since we don't have the actual OSMOSE JAR for testing, we use a thin
-subclass (_ScriptRunner) that overrides ``_build_cmd`` to invoke
+Since we don't have the actual OSMOSE JAR for testing, we use the shared
+_ScriptRunner helper from conftest that overrides ``_build_cmd`` to invoke
 Python scripts directly instead of going through ``java -jar``.
 """
 
@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.helpers import _ScriptRunner
 from osmose.runner import OsmoseRunner, RunResult
 
 
@@ -20,27 +21,6 @@ from osmose.runner import OsmoseRunner, RunResult
 # For testing we substitute ``python <script> <config> [flags]`` so that
 # the fake scripts can run without a real JVM.
 # ---------------------------------------------------------------------------
-
-
-class _ScriptRunner(OsmoseRunner):
-    """OsmoseRunner variant that invokes scripts via ``python <script>``
-    instead of ``java -jar <jar>`` so tests can use plain Python scripts."""
-
-    def _build_cmd(
-        self,
-        config_path: Path,
-        output_dir: Path | None = None,
-        java_opts: list[str] | None = None,
-        overrides: dict[str, str] | None = None,
-        **kwargs,
-    ) -> list[str]:
-        cmd = [self.java_cmd, str(self.jar_path), str(config_path)]
-        if output_dir:
-            cmd.append(f"-Poutput.dir.path={output_dir}")
-        if overrides:
-            for key, value in overrides.items():
-                cmd.append(f"-P{key}={value}")
-        return cmd
 
 
 # ---------------------------------------------------------------------------

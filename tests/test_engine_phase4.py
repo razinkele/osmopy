@@ -2,10 +2,10 @@
 
 import numpy as np
 
+from tests.helpers import _make_school
 from osmose.engine.config import EngineConfig
 from osmose.engine.grid import Grid
 from osmose.engine.processes.movement import movement
-from osmose.engine.state import SchoolState
 
 
 # ---------------------------------------------------------------------------
@@ -46,27 +46,6 @@ def _base_config(n_sp: int = 1, n_dt: int = 12) -> dict[str, str]:
             }
         )
     return cfg
-
-
-def _make_school(
-    n: int = 1,
-    sp: int = 0,
-    abundance: float = 1000.0,
-    length: float = 15.0,
-    age_dt: int = 48,
-    cell_x: int = -1,
-    cell_y: int = -1,
-) -> SchoolState:
-    state = SchoolState.create(n_schools=n, species_id=np.full(n, sp, dtype=np.int32))
-    weight = 0.006 * length**3.0
-    return state.replace(
-        abundance=np.full(n, abundance),
-        weight=np.full(n, weight),
-        length=np.full(n, length),
-        age_dt=np.full(n, age_dt, dtype=np.int32),
-        cell_x=np.full(n, cell_x, dtype=np.int32),
-        cell_y=np.full(n, cell_y, dtype=np.int32),
-    )
 
 
 # ===========================================================================

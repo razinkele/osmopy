@@ -393,4 +393,6 @@ def test_simulation_context_diet_coupling_after_enable():
     disable_diet_tracking(ctx=ctx)
 
     assert ctx.diet_tracking_enabled is False
-    assert ctx.diet_matrix is None
+    # Buffer is kept for reuse, but get_diet_matrix returns None when disabled
+    from osmose.engine.processes.predation import get_diet_matrix
+    assert get_diet_matrix(ctx=ctx) is None
