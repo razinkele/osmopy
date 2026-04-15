@@ -85,7 +85,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-asyncio>=0.24", "respx>=0.22"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.24", "respx>=0.22", "ruff>=0.4"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -347,9 +347,13 @@ def load_json_fixture(name: str) -> list | dict:
     return json.loads(load_fixture(name))
 
 
-@pytest.fixture(autouse=True)
-def _clear_sag_cache():
-    """Clear SAG stock key cache between tests for isolation."""
+@pytest.fixture
+def clear_sag_cache():
+    """Clear SAG stock key cache between tests for isolation.
+
+    Not autouse — only used by test_sag.py tests that need it.
+    Import and use as: @pytest.mark.usefixtures("clear_sag_cache")
+    """
     from ices.sag import clear_stock_key_cache
 
     clear_stock_key_cache()
@@ -377,7 +381,9 @@ from ices.sag import (
     list_stocks,
     resolve_stock_key,
 )
-# Note: conftest.py autouse fixture clears resolve_stock_key cache between tests
+
+
+pytestmark = pytest.mark.usefixtures("clear_sag_cache")
 from tests.conftest import load_fixture, load_json_fixture
 
 
@@ -483,6 +489,55 @@ async def test_get_reference_points():
     )
     assert "blim" in result
     assert "bpa" in result
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_get_reference_points_null_fmsy():
+    """Verify note field when Fmsy is null (e.g. Eastern Baltic cod)."""
+    stock_list = load_json_fixture("sag_stock_list.json")
+    # Build a ref points response with null F values
+    null_ref = [{"Flim": None, "Fpa": None, "FMSY": None,
+                 "Blim": 108942, "Bpa": 122114, "MSYBtrigger": None,
+                 "FAge": None, "RecruitmentAge": 1}]
+    respx.get(f"{SAG_BASE}/StockList", params={"year": "2023"}).respond(
+        json=stock_list
+    )
+    cod = [s for s in stock_list if s.get("StockKeyLabel") == "cod.27.24-32"]
+    if not cod:
+        pytest.skip("Fixture doesn't contain cod.27.24-32")
+    key = cod[0]["AssessmentKey"]
+    respx.get(
+        f"{SAG_BASE}/FishStockReferencePoints",
+        params={"assessmentKey": str(key)},
+    ).respond(json=null_ref)
+    result = await get_reference_points(
+        httpx.AsyncClient(), stock_key="cod.27.24-32", year=2023
+    )
+    assert result["fmsy"] is None
+    assert result["blim"] == 108942
+    assert "note" in result
+    assert "FMSY" in result["note"]
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_fetch_json_retries_on_503():
+    """Verify retry with backoff on transient 503."""
+    from ices.sag import _fetch_json
+
+    route = respx.get(f"{SAG_BASE}/StockList", params={"year": "2023"})
+    # First 2 calls return 503, third succeeds
+    route.side_effect = [
+        httpx.Response(503, text="Maintenance"),
+        httpx.Response(503, text="Maintenance"),
+        httpx.Response(200, json=[{"StockKeyLabel": "test"}]),
+    ]
+    result = await _fetch_json(
+        httpx.AsyncClient(), f"{SAG_BASE}/StockList", {"year": "2023"}
+    )
+    assert result == [{"StockKeyLabel": "test"}]
+    assert route.call_count == 3
 ```
 
 - [ ] **Step 4: Run tests to verify they fail**
@@ -737,6 +792,19 @@ async def test_get_metadata():
     assert len(result) > 0
     assert "stock_key" in result[0]
     assert "trophic_guild" in result[0]
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_get_metadata_common_name():
+    """Verify common name 'cod' resolves to scientific name in OData filter."""
+    data = load_json_fixture("sd_stock_list.json")
+    route = respx.get(url__startswith=SD_BASE).respond(json=data)
+    await get_metadata(httpx.AsyncClient(), species_name="cod")
+    # Verify the OData filter used the scientific name
+    assert route.call_count == 1
+    request = route.calls[0].request
+    assert "Gadus morhua" in str(request.url)
 ```
 
 - [ ] **Step 3: Run tests to verify they fail**
@@ -1130,6 +1198,63 @@ async def test_get_age_length(ca_xml):
     assert "age" in rec
     assert "length_cm" in rec
     assert "aphia_id" in rec
+
+
+def test_parse_malformed_xml_no_records():
+    """Verify ParseError on truncated XML with 0 complete records raises IcesApiError."""
+    from ices import IcesApiError
+
+    # Truncated mid-record — no closing tags, zero complete records
+    broken_xml = '<ArrayOfCls_Datras_CPUE_Length xmlns="ices.dk.local/DATRAS"><Cls_Datras_CPUE_Length><AphiaID>126436</AphiaID>'
+    with pytest.raises(IcesApiError, match="Failed to parse"):
+        parse_datras_xml(broken_xml, "Cls_Datras_CPUE_Length")
+
+
+def test_parse_malformed_xml_partial_recovery():
+    """Verify truncated XML after some records returns partial results (not error)."""
+    # One complete record followed by truncation
+    partial_xml = (
+        '<ArrayOfCls_Datras_CPUE_Length xmlns="ices.dk.local/DATRAS">'
+        '<Cls_Datras_CPUE_Length><AphiaID>126436</AphiaID><LngtClas>100</LngtClas></Cls_Datras_CPUE_Length>'
+        '<Cls_Datras_CPUE_Length><AphiaID>126417</AphiaID>'  # truncated
+    )
+    result = parse_datras_xml(partial_xml, "Cls_Datras_CPUE_Length")
+    assert len(result) == 1  # Only the complete record
+    assert result[0]["AphiaID"] == 126436
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_fetch_xml_rejects_html_200():
+    """Verify HTML error page with 200 status is detected."""
+    from ices import IcesApiError
+    from ices.datras import _fetch_xml
+
+    respx.get(url__startswith=DATRAS_BASE).respond(
+        status_code=200,
+        content="<html><body>Service unavailable</body></html>",
+        headers={"content-type": "text/html"},
+    )
+    with pytest.raises(IcesApiError, match="non-XML response"):
+        await _fetch_xml(httpx.AsyncClient(), "getCPUELength",
+                         {"survey": "BITS", "year": "2023", "quarter": "1"})
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_get_cpue_length_species_filter(cpue_xml):
+    """Verify species parameter filters records by WoRMS AphiaID."""
+    respx.get(url__startswith=DATRAS_BASE).respond(
+        content=cpue_xml, headers={"content-type": "text/xml"}
+    )
+    # Use a species that may or may not be in fixture
+    result = await get_cpue_length(
+        httpx.AsyncClient(), survey="BITS", year=2023, quarter=1,
+        species="126436", mode="raw"  # cod AphiaID
+    )
+    # Either all results are cod, or empty if fixture has no cod
+    for rec in result:
+        assert rec["aphia_id"] == 126436
 ```
 
 - [ ] **Step 3: Run tests to verify they fail**
@@ -1459,7 +1584,7 @@ async def get_age_length(
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run: `cd ~/ices-mcp-server && uv run pytest tests/test_datras.py -v`
-Expected: All 14 tests PASS. Some may need fixture adjustments depending on actual XML field names — fix and re-run.
+Expected: All 19 tests PASS. Some may need fixture adjustments depending on actual XML field names — fix and re-run.
 
 - [ ] **Step 6: Commit**
 
@@ -1529,6 +1654,20 @@ async def test_search_empty():
         httpx.AsyncClient(), species="Gadus morhua", year=1900
     )
     assert result == []
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_search_truncates_large_results():
+    """Verify responses > 500 rows are truncated."""
+    large_data = [{"year": 2004, "month": 1, "numSamples": 1,
+                   "noMeasurements": 1, "stage": "EL", "species": "Gadus morhua",
+                   "survey": "CP-EGGS", "aphiaID": 126436}] * 600
+    respx.get(url__startswith=EGGS_BASE).respond(json=large_data)
+    result = await search(
+        httpx.AsyncClient(), species="Gadus morhua", year=2004
+    )
+    assert len(result) == 500  # Truncated
 ```
 
 - [ ] **Step 3: Run tests to verify they fail**
