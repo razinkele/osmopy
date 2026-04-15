@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-HISTORY_DIR = Path("data/calibration_history")
+# Resolve relative to the project root (two levels up from osmose/calibration/)
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+HISTORY_DIR = _PROJECT_ROOT / "data" / "calibration_history"
 
 
 def save_run(run_data: dict, history_dir: Path = HISTORY_DIR) -> Path:

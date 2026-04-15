@@ -23,9 +23,17 @@ def make_convergence_chart(history: list[float], tmpl: str = "osmose") -> go.Fig
 
 
 def make_pareto_chart(F: np.ndarray, obj_names: list[str], tmpl: str = "osmose") -> go.Figure:
-    """Scatter plot of Pareto front (2 objectives)."""
+    """Scatter plot of Pareto front (2+ objectives) or histogram (1 objective)."""
     import plotly.express as px
 
+    if F.shape[1] < 2:
+        fig = px.histogram(x=F[:, 0], title="Objective Distribution")
+        fig.update_layout(
+            xaxis_title=obj_names[0] if obj_names else "Objective",
+            yaxis_title="Count",
+            template=tmpl,
+        )
+        return fig
     fig = px.scatter(x=F[:, 0], y=F[:, 1], title="Pareto Front")
     fig.update_layout(
         xaxis_title=obj_names[0] if len(obj_names) > 0 else "Obj 1",

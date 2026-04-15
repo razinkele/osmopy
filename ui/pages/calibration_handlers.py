@@ -418,7 +418,6 @@ def register_calibration_handlers(
                     )
 
                     # Auto-save to history
-                    import time as _time
                     from osmose.calibration.history import save_run
 
                     save_run(
@@ -474,8 +473,14 @@ def register_calibration_handlers(
                     algorithm = NSGA2(pop_size=pop_size)
                     termination = get_termination("n_gen", generations)
 
+                    _local_convergence: list[float] = []
+
+                    def _tracked_append(val: float) -> None:
+                        _local_convergence.append(val)
+                        msg_queue.post_history_append(val)
+
                     callback = _make_progress_callback(
-                        cal_history_append=msg_queue.post_history_append,
+                        cal_history_append=_tracked_append,
                         cancel_check=cancel_event.is_set,
                     )
 
@@ -525,7 +530,9 @@ def register_calibration_handlers(
                                     "n_evaluations": pop_size * generations,
                                     "duration_seconds": int(_time.time() - _t0),
                                     "objective_names": obj_names,
-                                    "convergence": [],
+                                    "convergence": [
+                                        [i, v] for i, v in enumerate(_local_convergence)
+                                    ],
                                     "pareto_X": res.X.tolist(),
                                     "pareto_F": res.F.tolist(),
                                 },
