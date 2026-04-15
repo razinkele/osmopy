@@ -36,14 +36,16 @@ def list_runs(history_dir: Path = HISTORY_DIR) -> list[dict]:
             data = json.loads(f.read_text())
         except (json.JSONDecodeError, OSError):
             continue
-        entries.append({
-            "path": str(f),
-            "timestamp": data.get("timestamp", ""),
-            "algorithm": data.get("algorithm", "unknown"),
-            "best_objective": data.get("results", {}).get("best_objective", float("inf")),
-            "n_params": len(data.get("parameters", [])),
-            "duration_seconds": data.get("results", {}).get("duration_seconds", 0),
-        })
+        entries.append(
+            {
+                "path": str(f),
+                "timestamp": data.get("timestamp", ""),
+                "algorithm": data.get("algorithm", "unknown"),
+                "best_objective": data.get("results", {}).get("best_objective", float("inf")),
+                "n_params": len(data.get("parameters", [])),
+                "duration_seconds": data.get("results", {}).get("duration_seconds", 0),
+            }
+        )
     entries.sort(key=lambda e: e["timestamp"], reverse=True)
     return entries
 

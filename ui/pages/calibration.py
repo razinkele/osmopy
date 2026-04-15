@@ -60,24 +60,16 @@ def calibration_ui():
                     },
                 ),
                 ui.input_numeric("cal_pop_size", "Population size", value=50, min=10, max=500),
-                ui.input_numeric(
-                    "cal_generations", "Generations", value=100, min=10, max=1000
-                ),
-                ui.input_numeric(
-                    "cal_n_parallel", "Parallel workers", value=4, min=1, max=32
-                ),
+                ui.input_numeric("cal_generations", "Generations", value=100, min=10, max=1000),
+                ui.input_numeric("cal_n_parallel", "Parallel workers", value=4, min=1, max=32),
                 ui.hr(),
                 ui.h5("Free Parameters"),
                 ui.p("Select parameters to optimize:", style=STYLE_HINT_BLOCK),
                 ui.output_ui("free_param_selector"),
                 ui.hr(),
                 ui.h5("Objectives"),
-                ui.input_file(
-                    "observed_biomass", "Upload observed biomass CSV", accept=[".csv"]
-                ),
-                ui.input_file(
-                    "observed_diet", "Upload observed diet matrix CSV", accept=[".csv"]
-                ),
+                ui.input_file("observed_biomass", "Upload observed biomass CSV", accept=[".csv"]),
+                ui.input_file("observed_diet", "Upload observed diet matrix CSV", accept=[".csv"]),
                 # Banded loss section
                 ui.hr(),
                 ui.input_checkbox("cal_banded_loss_enabled", "Enable Banded Loss Objective"),
@@ -111,9 +103,7 @@ def calibration_ui():
                     ui.input_action_button(
                         "btn_start_cal", "Start Calibration", class_="btn-success w-100"
                     ),
-                    ui.input_action_button(
-                        "btn_stop_cal", "Stop", class_="btn-danger w-100"
-                    ),
+                    ui.input_action_button("btn_stop_cal", "Stop", class_="btn-danger w-100"),
                     col_widths=[8, 4],
                 ),
             ),
@@ -343,20 +333,14 @@ def calibration_server(input, output, session, state):
         result = sensitivity_result.get()
         if result is None or "objective_names" not in result:
             return ui.div()
-        choices = {
-            str(i): name for i, name in enumerate(result["objective_names"])
-        }
-        return ui.input_select(
-            "cal_sens_objective", "Objective", choices=choices
-        )
+        choices = {str(i): name for i, name in enumerate(result["objective_names"])}
+        return ui.input_select("cal_sens_objective", "Objective", choices=choices)
 
     @render_plotly
     def sensitivity_chart():
         result = sensitivity_result.get()
         if result is None:
-            return go.Figure().update_layout(
-                title="Sensitivity (click Run)", template=_tmpl()
-            )
+            return go.Figure().update_layout(title="Sensitivity (click Run)", template=_tmpl())
         selected = 0
         if "objective_names" in result:
             try:
