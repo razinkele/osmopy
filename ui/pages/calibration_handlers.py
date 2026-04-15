@@ -45,6 +45,9 @@ class CalibrationMessageQueue:
     def post_validation(self, result) -> None:
         self._q.put(("validation", result))
 
+    def post_history_saved(self) -> None:
+        self._q.put(("history_saved", None))
+
     def drain(self) -> list[tuple]:
         msgs = []
         while True:
@@ -188,6 +191,7 @@ def register_calibration_handlers(
     validation_result,
     cal_param_names,
     history_banner_text,
+    history_trigger,
 ):
     """Register all reactive event handlers for the calibration page."""
 
@@ -212,6 +216,8 @@ def register_calibration_handlers(
                 ui.notification_show(f"Calibration error: {payload}", type="error", duration=15)
             elif kind == "sensitivity":
                 sensitivity_result.set(payload)
+            elif kind == "history_saved":
+                history_trigger.set(history_trigger.get() + 1)
             elif kind == "validation":
                 validation_result.set(payload)
 
@@ -450,6 +456,7 @@ def register_calibration_handlers(
                             },
                         }
                     )
+                    msg_queue.post_history_saved()
                 except Exception as exc:
                     _log.error("Surrogate calibration failed: %s", exc, exc_info=True)
                     msg_queue.post_error(f"Surrogate calibration failed: {exc}")
@@ -538,6 +545,7 @@ def register_calibration_handlers(
                                 },
                             }
                         )
+                        msg_queue.post_history_saved()
                 except Exception as exc:
                     _log.error("Calibration failed: %s", exc, exc_info=True)
                     msg_queue.post_error(str(exc))
@@ -631,7 +639,21 @@ def register_calibration_handlers(
 
     @reactive.effect
     def _handle_history_buttons():
-        """Watch for dynamically created history load/delete buttons."""
+        """Watch for dynamically created history load/delete buttons.
+
+        Gated on: (1) History tab must be active, (2) history_trigger must have
+        changed (save or delete). This avoids disk I/O on every 0.5s poll cycle.
+        """
+        # Only run when History tab is selected
+        try:
+            if input.cal_groups() != "History":
+                return
+        except (SilentException, AttributeError):
+            return
+
+        # Depend on the trigger so we re-read after save/delete
+        history_trigger.get()
+
         from osmose.calibration.history import delete_run, list_runs, load_run
 
         runs = list_runs()
@@ -653,6 +675,7 @@ def register_calibration_handlers(
             try:
                 if getattr(input, delete_id)():
                     delete_run(Path(run["path"]))
+                    history_trigger.set(history_trigger.get() + 1)
                     ui.notification_show("Run deleted.", type="message", duration=3)
             except (SilentException, AttributeError):
                 pass

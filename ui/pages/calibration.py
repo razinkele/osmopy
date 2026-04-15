@@ -191,6 +191,7 @@ def calibration_server(input, output, session, state):
     validation_result = reactive.value(None)
     cal_param_names = reactive.value([])
     history_banner_text = reactive.value("")
+    history_trigger = reactive.value(0)
 
     def _tmpl() -> str:
         mode = get_theme_mode(input)
@@ -212,6 +213,7 @@ def calibration_server(input, output, session, state):
         validation_result=validation_result,
         cal_param_names=cal_param_names,
         history_banner_text=history_banner_text,
+        history_trigger=history_trigger,
     )
 
     @render.text
@@ -361,6 +363,7 @@ def calibration_server(input, output, session, state):
 
     @render.ui
     def history_list():
+        history_trigger.get()  # Re-render when history changes (save/delete)
         from osmose.calibration.history import list_runs
 
         runs = list_runs()
