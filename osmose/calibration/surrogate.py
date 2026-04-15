@@ -71,7 +71,8 @@ class SurrogateCalibrator:
         self.n_objectives = y.shape[1]
         self._is_fitted = True
 
-        # Compute in-sample R² as a sanity check
+        # Compute in-sample R² as a sanity check (first objective only).
+        # For multi-objective, use cross_validate() per objective or check individual GPs.
         # Note: y has already been reshaped to 2D earlier in fit(), so y[:, 0] is safe
         means, _ = self.predict(X)
         y_col = y[:, 0]
@@ -136,6 +137,9 @@ class SurrogateCalibrator:
         seed: int = 42,
     ) -> dict:
         """K-fold cross-validation of the surrogate.
+
+        Note: RMSE and R² are computed on the first objective only.
+        For multi-objective surrogates, inspect individual GP models directly.
 
         Raises ValueError if len(X) < k_folds.
         """

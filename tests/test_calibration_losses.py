@@ -75,6 +75,9 @@ class TestWorstSpeciesPenalty:
     def test_all_zero(self) -> None:
         assert worst_species_penalty([0.0, 0.0]) == 0.0
 
+    def test_empty_list(self) -> None:
+        assert worst_species_penalty([]) == 0.0
+
 
 class TestMakeBandedObjective:
     @pytest.fixture()

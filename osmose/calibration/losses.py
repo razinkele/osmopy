@@ -36,6 +36,8 @@ def stability_penalty(
 
 def worst_species_penalty(species_errors: list[float]) -> float:
     """Max of weighted per-species errors."""
+    if not species_errors:
+        return 0.0
     return max(species_errors)
 
 
