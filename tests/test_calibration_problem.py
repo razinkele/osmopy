@@ -439,6 +439,7 @@ def test_cache_invalidated_by_jar_change(mock_results_cls, mock_subprocess, tmp_
 
     # Simulate JAR recompilation
     import time
+
     time.sleep(0.01)
     jar.write_bytes(b"v2")
 
@@ -486,15 +487,17 @@ def test_validate_overrides_catches_bad_value(tmp_path):
     from osmose.schema.base import OsmoseField, ParamType
 
     registry = ParameterRegistry()
-    registry.register(OsmoseField(
-        key_pattern="species.k.sp{idx}",
-        param_type=ParamType.FLOAT,
-        min_val=0.01,
-        max_val=1.0,
-        indexed=True,
-        category="species",
-        description="Growth rate",
-    ))
+    registry.register(
+        OsmoseField(
+            key_pattern="species.k.sp{idx}",
+            param_type=ParamType.FLOAT,
+            min_val=0.01,
+            max_val=1.0,
+            indexed=True,
+            category="species",
+            description="Growth rate",
+        )
+    )
 
     fp = FreeParameter(key="species.k.sp0", lower_bound=0.01, upper_bound=1.0)
     problem = OsmoseCalibrationProblem(

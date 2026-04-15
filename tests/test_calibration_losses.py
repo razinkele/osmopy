@@ -81,22 +81,32 @@ class TestMakeBandedObjective:
     def targets(self) -> list[BiomassTarget]:
         return [
             BiomassTarget(species="cod", target=120000, lower=60000, upper=250000, weight=1.0),
-            BiomassTarget(species="herring", target=1500000, lower=800000, upper=3000000, weight=0.5),
+            BiomassTarget(
+                species="herring", target=1500000, lower=800000, upper=3000000, weight=0.5
+            ),
         ]
 
     def test_all_within_range(self, targets: list[BiomassTarget]) -> None:
         obj = make_banded_objective(targets, ["cod", "herring"])
         stats = {
-            "cod_mean": 150000, "cod_cv": 0.1, "cod_trend": 0.01,
-            "herring_mean": 2000000, "herring_cv": 0.05, "herring_trend": 0.02,
+            "cod_mean": 150000,
+            "cod_cv": 0.1,
+            "cod_trend": 0.01,
+            "herring_mean": 2000000,
+            "herring_cv": 0.05,
+            "herring_trend": 0.02,
         }
         assert obj(stats) == 0.0
 
     def test_one_below_range(self, targets: list[BiomassTarget]) -> None:
         obj = make_banded_objective(targets, ["cod", "herring"])
         stats = {
-            "cod_mean": 10000, "cod_cv": 0.1, "cod_trend": 0.01,
-            "herring_mean": 2000000, "herring_cv": 0.05, "herring_trend": 0.02,
+            "cod_mean": 10000,
+            "cod_cv": 0.1,
+            "cod_trend": 0.01,
+            "herring_mean": 2000000,
+            "herring_cv": 0.05,
+            "herring_trend": 0.02,
         }
         result = obj(stats)
         assert result > 0.0
@@ -111,8 +121,12 @@ class TestMakeBandedObjective:
     def test_stability_penalty_applied(self, targets: list[BiomassTarget]) -> None:
         obj = make_banded_objective(targets, ["cod", "herring"], w_stability=5.0)
         stats = {
-            "cod_mean": 150000, "cod_cv": 0.5, "cod_trend": 0.01,
-            "herring_mean": 2000000, "herring_cv": 0.05, "herring_trend": 0.02,
+            "cod_mean": 150000,
+            "cod_cv": 0.5,
+            "cod_trend": 0.01,
+            "herring_mean": 2000000,
+            "herring_cv": 0.05,
+            "herring_trend": 0.02,
         }
         result = obj(stats)
         assert result > 0.0
@@ -121,7 +135,11 @@ class TestMakeBandedObjective:
         obj_with = make_banded_objective(targets, ["cod", "herring"], w_worst=1.0)
         obj_without = make_banded_objective(targets, ["cod", "herring"], w_worst=0.0)
         stats = {
-            "cod_mean": 10000, "cod_cv": 0.1, "cod_trend": 0.01,
-            "herring_mean": 2000000, "herring_cv": 0.05, "herring_trend": 0.02,
+            "cod_mean": 10000,
+            "cod_cv": 0.1,
+            "cod_trend": 0.01,
+            "herring_mean": 2000000,
+            "herring_cv": 0.05,
+            "herring_trend": 0.02,
         }
         assert obj_with(stats) > obj_without(stats)

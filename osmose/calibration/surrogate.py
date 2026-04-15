@@ -140,9 +140,7 @@ class SurrogateCalibrator:
         Raises ValueError if len(X) < k_folds.
         """
         if len(X) < k_folds:
-            raise ValueError(
-                f"Need at least k_folds={k_folds} samples, got {len(X)}"
-            )
+            raise ValueError(f"Need at least k_folds={k_folds} samples, got {len(X)}")
 
         from sklearn.model_selection import KFold  # type: ignore[import-untyped]
 

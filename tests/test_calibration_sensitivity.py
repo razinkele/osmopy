@@ -43,10 +43,12 @@ class TestAnalyze2D:
 
     def test_returns_objective_names(self, analyzer: SensitivityAnalyzer) -> None:
         samples = analyzer.generate_samples(n_base=64)
-        Y = np.column_stack([
-            np.sum(samples, axis=1),
-            np.prod(samples, axis=1),
-        ])
+        Y = np.column_stack(
+            [
+                np.sum(samples, axis=1),
+                np.prod(samples, axis=1),
+            ]
+        )
         result = analyzer.analyze(Y, objective_names=["sum", "product"])
         assert result["objective_names"] == ["sum", "product"]
         assert result["n_objectives"] == 2
@@ -59,10 +61,12 @@ class TestAnalyze2D:
 
     def test_s1_shape_2d(self, analyzer: SensitivityAnalyzer) -> None:
         samples = analyzer.generate_samples(n_base=64)
-        Y = np.column_stack([
-            np.sum(samples, axis=1),
-            samples[:, 0] ** 2,
-        ])
+        Y = np.column_stack(
+            [
+                np.sum(samples, axis=1),
+                samples[:, 0] ** 2,
+            ]
+        )
         result = analyzer.analyze(Y)
         assert result["S1"].shape == (2, 2)  # (n_obj, n_params)
         assert result["ST"].shape == (2, 2)

@@ -101,9 +101,7 @@ class OsmoseCalibrationProblem(Problem):
         # Pre-compute base config hash for cache keys
         self._base_config_hash = ""
         if enable_cache and base_config_path.exists():
-            self._base_config_hash = hashlib.sha256(
-                base_config_path.read_bytes()
-            ).hexdigest()[:16]
+            self._base_config_hash = hashlib.sha256(base_config_path.read_bytes()).hexdigest()[:16]
 
         xl = np.array([fp.lower_bound for fp in free_params])
         xu = np.array([fp.upper_bound for fp in free_params])
@@ -231,9 +229,7 @@ class OsmoseCalibrationProblem(Problem):
             key = self._cache_key(overrides)
             self._cache_dir.mkdir(parents=True, exist_ok=True)
             cache_file = self._cache_dir / f"{key}.json"
-            fd, tmp_file = tempfile.mkstemp(
-                dir=str(self._cache_dir), suffix=".tmp"
-            )
+            fd, tmp_file = tempfile.mkstemp(dir=str(self._cache_dir), suffix=".tmp")
             try:
                 with os.fdopen(fd, "w") as f:
                     json.dump({"objectives": obj_values}, f)
