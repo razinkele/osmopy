@@ -29,8 +29,13 @@ Six files in `osmose/calibration/`:
 | `surrogate.py` | **modify** | Cross-validation, fit score |
 | `sensitivity.py` | **modify** | Multi-objective support (2D Y array) |
 | `__init__.py` | **modify** | Export new public API |
+| `objectives.py` | unchanged | Existing 8 objective functions — no changes |
+| `configure.py` | unchanged | Auto-detect calibratable params — no changes |
+| `multiphase.py` | unchanged | Multi-phase calibrator — no changes |
 
 Plus updates to `data/baltic/reference/biomass_targets.csv` (add `reference_point_type` column).
+
+**Note:** `BiomassTarget.reference_point_type` is stored and loaded in Phase 1 but no library code branches on its value — it is a data enrichment for display and future Phase 2 UI use. Tests verify it loads correctly but no behavioral test depends on it.
 
 ## Design
 
@@ -54,16 +59,22 @@ class BiomassTarget:
 
 def load_targets(path: Path) -> tuple[list[BiomassTarget], dict]:
     """Load targets from CSV. Skips # comment lines.
-    Optional structured metadata lines prefixed with #! are parsed as YAML key-value pairs.
+    Optional structured metadata lines prefixed with #! are parsed as simple
+    key-value pairs using str.split(":", 1) — no YAML library required.
+    Example: ``#! version: 1.0`` → ``{"version": "1.0"}``.
     
     Returns:
         (targets, metadata) where targets is list[BiomassTarget] and metadata is a dict
         of parsed #! lines (empty dict if none present).
         The reference_point_type column is optional (defaults to "biomass").
+        
+    Note: The existing BiomassTarget in calibrate_baltic.py (lines 48-54) lacks
+    reference_point_type, source, and notes fields. This is a superset. Callers
+    migrating from the Baltic script must unpack the tuple return value.
     """
 ```
 
-**CSV format** — backward-compatible. Existing `biomass_targets.csv` works unchanged since `reference_point_type` defaults to `"biomass"`. The new column is optional. Structured metadata uses `#!` prefix lines (machine-readable YAML) vs plain `#` (human comments):
+**CSV format** — backward-compatible. Existing `biomass_targets.csv` works unchanged since `reference_point_type` defaults to `"biomass"` and the `source`/`notes` columns already exist in the CSV (just not read by the Baltic script's simpler dataclass). The new `reference_point_type` column is optional. Structured metadata uses `#!` prefix lines (parsed via `str.split(":", 1)` — no YAML dependency) vs plain `#` (human comments):
 
 ```csv
 #! version: "1.0"
@@ -94,8 +105,9 @@ def stability_penalty(
     cv_threshold: float = 0.2, trend_threshold: float = 0.05,
 ) -> float:
     """Penalty for oscillations (CV) and non-equilibrium (trend).
-    Returns sum of (cv - threshold)^2 + (trend - threshold)^2
-    for values exceeding their threshold; zero otherwise.
+    Returns sum of penalties for whichever values exceed their respective thresholds:
+    (cv - cv_threshold)^2 if cv > cv_threshold, else 0, plus
+    (trend - trend_threshold)^2 if trend > trend_threshold, else 0.
     """
 
 def worst_species_penalty(species_errors: list[float]) -> float:
@@ -109,11 +121,16 @@ def make_banded_objective(
 ) -> Callable[[dict[str, float]], float]:
     """Factory: returns callable(species_stats) -> scalar objective.
     
-    species_stats is a dict with keys '{species}_mean', '{species}_cv', '{species}_trend'.
-    Composes: sum of weighted banded losses + stability penalties + worst-species term.
+    species_stats is a dict with keys '{species}_mean', '{species}_cv', '{species}_trend'
+    where each {species} must match an entry in species_names. If a species key is missing
+    from species_stats, a penalty of 100.0 is applied (same as sim_biomass <= 0 case).
     
-    This matches the objective structure in calibrate_baltic.py (lines 141-235)
-    but is parameterized and reusable for any region/target set.
+    species_names passed to the factory must match the key prefixes in species_stats.
+    A mismatch at call time results in the missing-key penalty, not a silent zero.
+    
+    This matches the loss computation in calibrate_baltic.py make_objective()
+    (lines 179-221, the banded loss + stability + worst-species portion),
+    not the full function which also includes parameter mapping and simulation execution.
     """
 ```
 
@@ -150,19 +167,26 @@ New methods:
 Cache logic in `_run_single`:
 1. Compute cache key from overrides
 2. If hit: read cached JSON, return objective values, increment hits counter
-3. If miss: run OSMOSE subprocess, write result JSON to cache dir, increment misses counter
+3. If miss: run OSMOSE subprocess, write result to temp file, atomic-rename into cache dir, increment misses counter
+
+Thread safety: cache writes use atomic rename (`os.replace(tmp, final)`) so concurrent threads evaluating identical parameter sets may both run the simulation (duplicate work) but cannot produce corrupt cache files. This is acceptable — duplicate runs waste time but correctness is maintained, and identical-override collisions are rare in practice (LHS/DE produce distinct candidates).
 
 JAR `st_mtime` in the hash ensures a recompiled JAR invalidates the cache automatically.
 
 **Schema validation** — optional, gated on `registry` parameter:
 
 ```python
-    def _validate_overrides(
-        self, overrides: dict[str, str], registry: ParameterRegistry | None,
-    ) -> None:
-        """Validate override keys exist in registry and values within [min_val, max_val].
+    def _validate_overrides(self, overrides: dict[str, str]) -> None:
+        """Validate overrides against the schema registry.
+        Delegates to registry.validate() (osmose/schema/registry.py:59) which
+        already handles field matching, type checking, and min/max bounds.
+        
         Collects all violations and raises a single ValueError listing them all.
-        Called in _run_single before subprocess when registry is not None.
+        Called in _run_single before subprocess when self.registry is not None.
+        Skipped silently when registry is None (backward-compatible).
+        
+        Non-numeric field types (FILE_PATH, BOOL, ENUM) are validated by the
+        existing registry.validate() logic — no special handling needed here.
         """
 ```
 
@@ -170,17 +194,25 @@ JAR `st_mtime` in the hash ensures a recompiled JAR invalidates the cache automa
 
 ```python
 class SurrogateCalibrator:
-    fit_score_: float | None = None  # LOO R², set during fit()
+    fit_score_: float | None = None  # In-sample R², set during fit()
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> None:
-        """Fit GP models. Computes leave-one-out R² stored in fit_score_.
-        Uses sklearn GP's built-in alpha for efficient LOO computation.
+        """Fit GP models. Computes in-sample R² stored in fit_score_.
+        Uses sklearn GP's score() method (coefficient of determination on training data).
+        
+        Note: in-sample R² for a GP is typically near 1.0 (exact interpolator).
+        Use cross_validate() for a realistic generalization estimate.
         """
 
     def cross_validate(
         self, X: np.ndarray, y: np.ndarray, k_folds: int = 5, seed: int = 42,
     ) -> dict:
         """K-fold cross-validation of the surrogate.
+        
+        Uses sklearn.model_selection.KFold to split data, fits a fresh GP per fold,
+        and computes RMSE and R² on the held-out fold.
+        
+        Raises ValueError if len(X) < k_folds.
         
         Returns:
             {'fold_rmse': list[float], 'fold_r2': list[float],
@@ -189,7 +221,7 @@ class SurrogateCalibrator:
         """
 ```
 
-`fit_score_` follows scikit-learn convention (trailing underscore = attribute set during `fit()`).
+`fit_score_` follows scikit-learn convention (trailing underscore = attribute set during `fit()`). It is in-sample R², which for an exact GP interpolator will be near 1.0 — it serves as a sanity check, not a quality metric. `cross_validate()` provides the meaningful generalization estimate.
 
 ### 5. `sensitivity.py` — Multi-Objective Support
 
@@ -213,25 +245,32 @@ class SensitivityAnalyzer:
             2D input:
                 {'S1': array(n_obj, n_params), 'ST': array(n_obj, n_params),
                  'S1_conf': ..., 'ST_conf': ...,
-                 'param_names': list[str], 'objective_names': list[str]}
+                 'param_names': list[str], 'objective_names': list[str],
+                 'n_objectives': int}
         """
 ```
 
-Implementation: 1D path unchanged. 2D path loops `sobol_analyze.analyze()` per column and stacks.
+Implementation: 1D path unchanged (SALib's `sobol.analyze()` only accepts 1D, so the 2D path loops per column and stacks). Callers can check `"objective_names" in result` to distinguish 1D vs 2D return shapes. A `n_objectives` key is also included in the 2D return dict for unambiguous shape detection.
 
 ### 6. `multiseed.py` — Multi-Seed Validation
 
 ```python
+from collections.abc import Callable, Sequence
+
 def validate_multiseed(
     make_objective: Callable[[int], Callable[[np.ndarray], float]],
     x: np.ndarray,
-    seeds: list[int] = (42, 123, 7, 999, 2024),
+    seeds: Sequence[int] = (42, 123, 7, 999, 2024),
 ) -> dict:
     """Re-evaluate a candidate solution across multiple random seeds.
     
     Args:
         make_objective: Factory(seed) -> objective(x) -> float.
-            Matches calibrate_baltic.py pattern where make_objective() accepts seed.
+            This is a seed-only factory. Callers migrating from calibrate_baltic.py
+            must wrap their multi-argument make_objective into a closure, e.g.:
+                lambda seed: make_objective(config, targets, keys, seed=seed)
+            The Baltic script's make_objective takes 5+ args (base_config, targets,
+            param_keys, n_years, seed) — only seed varies across validations.
         x: Parameter vector to evaluate.
         seeds: Random seeds to test against.
     
@@ -243,7 +282,7 @@ def validate_multiseed(
 def rank_candidates_multiseed(
     make_objective: Callable[[int], Callable[[np.ndarray], float]],
     candidates: np.ndarray,
-    seeds: list[int] = (42, 123, 7, 999, 2024),
+    seeds: Sequence[int] = (42, 123, 7, 999, 2024),
 ) -> dict:
     """Re-rank multiple candidates by mean objective across seeds.
     
@@ -292,12 +331,12 @@ Each new/modified module gets a corresponding test file:
 
 | Test file | Covers |
 |-----------|--------|
-| `tests/test_calibration_targets.py` | `load_targets()`, BiomassTarget validation, backward-compat CSV, #! metadata |
-| `tests/test_calibration_losses.py` | All 3 primitives + `make_banded_objective` with known species_stats |
-| `tests/test_calibration_multiseed.py` | `validate_multiseed`, `rank_candidates_multiseed` with mock objectives |
-| `tests/test_calibration_problem.py` | Extended: cache hit/miss/invalidation, schema validation errors |
-| `tests/test_calibration_surrogate.py` | New: `cross_validate()` returns, `fit_score_` set after fit |
-| `tests/test_calibration_sensitivity.py` | New: 2D Y array, backward-compat 1D path |
+| `tests/test_calibration_targets.py` | `load_targets()`, BiomassTarget validation, backward-compat CSV (inline old-format fixture without `reference_point_type` column), `#!` metadata parsing, malformed `#!` lines |
+| `tests/test_calibration_losses.py` | All 3 primitives + `make_banded_objective` with known species_stats; missing species key penalty (100.0); edge cases (sim_biomass=0, sim_biomass negative) |
+| `tests/test_calibration_multiseed.py` | `validate_multiseed`, `rank_candidates_multiseed` with mock objectives; cv/worst_seed calculation |
+| `tests/test_calibration_problem.py` | Extended: cache hit/miss/invalidation (JAR mtime change), schema validation errors (delegates to registry.validate()), atomic rename under concurrent writes |
+| `tests/test_calibration_surrogate.py` | New: `cross_validate()` returns, `fit_score_` set after fit, `ValueError` when `len(X) < k_folds` |
+| `tests/test_calibration_sensitivity.py` | New: 2D Y array returns `n_objectives` key, backward-compat 1D path returns same shape as before, `objective_names` presence check |
 
 ## Out of Scope (Phase 2 — UI)
 
