@@ -1,22 +1,25 @@
 #!/usr/bin/env bash
-# deploy.sh — Deploy osmose-python to the local Shiny server
+# deploy.sh — Deploy osmose-python to the production server
 #
-# Creates a symlink in /srv/shiny-server/osmose pointing to this project,
-# installs missing Python dependencies, updates shiny-server.conf, and
-# restarts the Shiny server.
+# Runs OSMOSE as a standalone Uvicorn service (osmose-shiny.service) on port
+# 8838, proxied by nginx.  This bypasses shiny-server which has WebSocket
+# compatibility issues with Python Shiny + Starlette.
 #
 # Usage:  sudo bash deploy.sh
 #         sudo bash deploy.sh --uninstall
+#         sudo bash deploy.sh --restart      # restart the service only
 
 set -euo pipefail
 
 APP_NAME="osmose"
 SOURCE_DIR="$(cd "$(dirname "$0")" && pwd)"
 SHINY_ROOT="/srv/shiny-server"
-SHINY_CONF="/etc/shiny-server/shiny-server.conf"
 SHINY_PYTHON="/opt/micromamba/envs/shiny/bin/python3"
 SHINY_PIP="/opt/micromamba/envs/shiny/bin/pip"
 LINK_PATH="${SHINY_ROOT}/${APP_NAME}"
+SERVICE_NAME="osmose-shiny"
+SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+APP_PORT=8838
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -27,9 +30,28 @@ info()  { echo -e "${GREEN}[+]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[!]${NC} $*"; }
 error() { echo -e "${RED}[✗]${NC} $*" >&2; }
 
+# --- Restart mode ---
+if [[ "${1:-}" == "--restart" ]]; then
+    info "Restarting ${SERVICE_NAME}..."
+    systemctl restart "$SERVICE_NAME" 2>/dev/null && info "Service restarted." || error "Could not restart ${SERVICE_NAME}"
+    exit 0
+fi
+
 # --- Uninstall mode ---
 if [[ "${1:-}" == "--uninstall" ]]; then
-    info "Uninstalling ${APP_NAME} from Shiny server..."
+    info "Uninstalling ${APP_NAME}..."
+
+    if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+        systemctl stop "$SERVICE_NAME"
+        info "Stopped ${SERVICE_NAME} service"
+    fi
+
+    if [[ -f "$SERVICE_FILE" ]]; then
+        systemctl disable "$SERVICE_NAME" 2>/dev/null || true
+        rm "$SERVICE_FILE"
+        systemctl daemon-reload
+        info "Removed ${SERVICE_FILE}"
+    fi
 
     if [[ -L "$LINK_PATH" ]]; then
         rm "$LINK_PATH"
@@ -38,13 +60,8 @@ if [[ "${1:-}" == "--uninstall" ]]; then
         warn "No symlink at ${LINK_PATH}"
     fi
 
-    if grep -q "location /${APP_NAME}" "$SHINY_CONF" 2>/dev/null; then
-        sed -i "/# --- osmose-python start ---/,/# --- osmose-python end ---/d" "$SHINY_CONF"
-        info "Removed ${APP_NAME} location block from ${SHINY_CONF}"
-    fi
-
-    systemctl restart shiny-server 2>/dev/null && info "Shiny server restarted" || warn "Could not restart shiny-server"
     info "Uninstall complete."
+    info "NOTE: Update nginx config manually to remove the /osmose/ location block."
     exit 0
 fi
 
@@ -107,47 +124,68 @@ else
     info "All Python dependencies already installed."
 fi
 
-# --- Step 3: Update shiny-server.conf ---
-if grep -q "location /${APP_NAME}" "$SHINY_CONF" 2>/dev/null; then
-    info "Shiny server config already has /${APP_NAME} location block."
-else
-    info "Adding /${APP_NAME} location block to ${SHINY_CONF}..."
-    # Insert before the closing brace of the server block
-    OSMOSE_BLOCK=$(cat <<'CONF'
+# --- Step 3: Install systemd service ---
+info "Installing ${SERVICE_NAME} systemd service..."
+cat > "$SERVICE_FILE" <<EOF
+[Unit]
+Description=OSMOSE Python Shiny App (direct Uvicorn)
+After=network.target
 
-  # --- osmose-python start ---
-  location /osmose {
-    app_dir /srv/shiny-server/osmose;
-    python /opt/micromamba/envs/shiny/bin/python3;
-    log_dir /var/log/shiny-server;
-  }
-  # --- osmose-python end ---
-CONF
-)
-    # Find the last closing brace and insert before it
-    # Create a backup first
-    cp "$SHINY_CONF" "${SHINY_CONF}.bak"
-    # Use awk to insert before the final closing brace
-    awk -v block="$OSMOSE_BLOCK" '
-        /^}/ && !done { print block; done=1 }
-        { print }
-    ' "${SHINY_CONF}.bak" > "$SHINY_CONF"
-    info "Config updated (backup at ${SHINY_CONF}.bak)."
+[Service]
+Type=simple
+User=shiny
+Group=shiny
+WorkingDirectory=${LINK_PATH}
+ExecStart=${SHINY_PYTHON} -m shiny run app.py --host 127.0.0.1 --port ${APP_PORT}
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable "$SERVICE_NAME" 2>/dev/null
+
+# --- Step 4: Start/restart the service ---
+if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+    systemctl restart "$SERVICE_NAME"
+    info "Service ${SERVICE_NAME} restarted."
+else
+    systemctl start "$SERVICE_NAME"
+    info "Service ${SERVICE_NAME} started."
 fi
 
-# --- Step 4: Restart Shiny server ---
-if systemctl restart shiny-server 2>/dev/null; then
-    info "Shiny server restarted."
+# Wait for it to be ready
+sleep 2
+if systemctl is-active --quiet "$SERVICE_NAME"; then
+    info "Service is running."
 else
-    warn "Could not restart shiny-server via systemctl. Try manually."
+    error "Service failed to start. Check: journalctl -u ${SERVICE_NAME} --no-pager -n 20"
+    exit 1
+fi
+
+# --- Step 5: Verify HTTP ---
+HTTP_CODE=$(curl -sS -m 5 -o /dev/null -w "%{http_code}" "http://127.0.0.1:${APP_PORT}/" 2>/dev/null || echo "000")
+if [[ "$HTTP_CODE" == "200" ]]; then
+    info "HTTP check passed (port ${APP_PORT})."
+else
+    warn "HTTP check returned ${HTTP_CODE}. Service may still be starting."
 fi
 
 # --- Summary ---
 echo ""
 info "Deployment complete!"
-echo "  App URL:    http://localhost:3838/${APP_NAME}/"
+echo "  Service:    ${SERVICE_NAME} (port ${APP_PORT})"
 echo "  Source:     ${SOURCE_DIR}"
 echo "  Symlink:    ${LINK_PATH}"
-echo "  Config:     ${SHINY_CONF}"
+echo "  Service:    ${SERVICE_FILE}"
 echo ""
-echo "  To uninstall:  sudo bash ${SOURCE_DIR}/deploy.sh --uninstall"
+echo "  NOTE: Ensure nginx proxies /osmose/ to http://127.0.0.1:${APP_PORT}/"
+echo "        (not to shiny-server on port 3838)"
+echo ""
+echo "  Commands:"
+echo "    Restart:    sudo bash ${SOURCE_DIR}/deploy.sh --restart"
+echo "    Logs:       journalctl -u ${SERVICE_NAME} -f"
+echo "    Uninstall:  sudo bash ${SOURCE_DIR}/deploy.sh --uninstall"

@@ -1,10 +1,16 @@
 ---
 name: deploy
-description: Deploy the OSMOSE app to the local Shiny Server after verifying tests and lint pass
+description: Deploy the OSMOSE app to the production server (direct Uvicorn service, not shiny-server)
 disable-model-invocation: true
 ---
 
-Deploy OSMOSE to the local Shiny Server.
+Deploy OSMOSE to the production server.
+
+## Architecture
+
+OSMOSE runs as a standalone Uvicorn service (`osmose-shiny.service`) on port 8838,
+proxied directly by nginx. This bypasses shiny-server which has WebSocket compatibility
+issues with Python Shiny 1.5+ / Starlette 0.52+.
 
 ## Steps
 
@@ -23,10 +29,28 @@ Deploy OSMOSE to the local Shiny Server.
    sudo bash deploy.sh
    ```
 
-4. Verify deployment is accessible at `http://localhost:3838/osmose/`
+4. Verify deployment is accessible at `https://laguna.ku.lt/osmose/`
+
+## Quick restart (after code changes)
+
+```
+sudo bash deploy.sh --restart
+```
+
+Or equivalently:
+```
+sudo systemctl restart osmose-shiny
+```
+
+## Logs
+
+```
+journalctl -u osmose-shiny -f
+```
 
 ## Rules
 
 - Do NOT deploy if tests or lint fail. Report failures and stop.
 - The deploy script requires `sudo` — confirm with the user before running.
 - Always run from `/home/razinka/osmose/osmose-python/`.
+- After code changes, restart the service — Uvicorn does NOT auto-reload in production.
