@@ -44,8 +44,12 @@ Calibration Page
         └── History Browser (NEW — list + detail view)
 ```
 
-Implementation: Shiny `navset_tab` inside `navset_pill` (outer = groups, inner = sub-tabs).
+Implementation: Shiny `navset_card_pill` (outer container, replacing the current
+`navset_card_tab`) with `navset_tab` inside each `nav_panel` for sub-tabs.
 The "Run" group has only one tab but maintains the grouping for consistency.
+This is consistent with the existing `navset_card_tab` pattern — `navset_card_pill`
+uses pills instead of tabs for the top-level groups, providing visual distinction
+between group-level and sub-tab-level navigation.
 
 ### File Map
 
@@ -139,12 +143,19 @@ with a different seed override:
 ```python
 from osmose.calibration.multiseed import rank_candidates_multiseed
 
+_val_counter = [0]  # mutable counter for unique run_ids
+
 def make_objective_factory(seed):
     # Override the simulation seed, reuse the existing problem's _run_single
     def objective(x):
-        overrides = _params_to_overrides(x, param_keys)
+        overrides = {
+            param_keys[j]: str(float(x[j])) for j in range(len(param_keys))
+        }
         overrides["simulation.random.seed"] = str(seed)
-        obj_values = problem._run_single(overrides, run_id=0)
+        run_id = _val_counter[0]
+        _val_counter[0] += 1
+        obj_values = problem._run_single(overrides, run_id=run_id)
+        problem.cleanup_run(run_id)  # reclaim disk space
         return sum(obj_values)  # scalar for ranking
     return objective
 
@@ -152,6 +163,10 @@ result = rank_candidates_multiseed(
     make_objective_factory, top_n_candidates, seeds=seeds
 )
 ```
+
+Note: `param_keys` is `[p["key"] for p in selected]`, extracted from the selected
+parameters before spawning the validation thread. Each `_run_single` call gets a
+unique `run_id` to avoid directory conflicts, and `cleanup_run` reclaims disk space.
 
 The validation runs in a background thread (same pattern as calibration) with progress
 messages. The existing `CalibrationMessageQueue` carries validation status.
@@ -245,15 +260,17 @@ Correlations) with the historical run's data. The configuration panel is NOT res
 - Interactive range filtering on each axis (Plotly built-in)
 
 ```python
+import pandas as pd
 import plotly.express as px
 
-def make_correlation_chart(X, F, param_names):
+def make_correlation_chart(X, F, param_names, tmpl="osmose"):
     """Parallel coordinates plot of Pareto candidates.
 
     Args:
         X: Parameter array (n_candidates, n_params)
         F: Objective array (n_candidates, n_objectives)
         param_names: Parameter labels
+        tmpl: Plotly template name (consistent with other chart functions)
     """
     df = pd.DataFrame(X, columns=param_names)
     df["objective"] = F[:, 0] if F.shape[1] == 1 else np.sum(F, axis=1)
@@ -262,6 +279,7 @@ def make_correlation_chart(X, F, param_names):
         dimensions=param_names,
         color_continuous_scale="Viridis_r",  # lower = better = yellow
     )
+    fig.update_layout(template=tmpl)
     return fig
 ```
 
@@ -281,11 +299,12 @@ per objective.
 - S1/ST bars update reactively on dropdown change
 
 ```python
-def make_sensitivity_chart(result, selected_objective=0):
+def make_sensitivity_chart(result, tmpl="osmose", selected_objective=0):
     """Sobol sensitivity bar chart.
 
     Handles both 1D (backward-compat) and 2D (multi-objective) results.
     For 2D, selected_objective indexes into the objectives axis.
+    Existing callers pass tmpl=_tmpl() — this parameter is preserved.
     """
     if "objective_names" in result:
         s1 = result["S1"][selected_objective]
@@ -295,7 +314,7 @@ def make_sensitivity_chart(result, selected_objective=0):
         s1 = result["S1"]
         st = result["ST"]
         title = "Sensitivity Analysis"
-    # ... existing bar chart logic with s1, st, param_names
+    # ... existing bar chart logic with s1, st, param_names, template=tmpl
 ```
 
 **Handler change:** The sensitivity handler already calls `analyzer.analyze(Y)`. When
