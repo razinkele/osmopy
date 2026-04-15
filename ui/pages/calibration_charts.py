@@ -35,15 +35,51 @@ def make_pareto_chart(F: np.ndarray, obj_names: list[str], tmpl: str = "osmose")
     return fig
 
 
-def make_sensitivity_chart(result: dict, tmpl: str = "osmose") -> go.Figure:
-    """Bar chart of Sobol sensitivity indices."""
+def make_sensitivity_chart(
+    result: dict,
+    tmpl: str = "osmose",
+    selected_objective: int = 0,
+) -> go.Figure:
+    """Bar chart of Sobol sensitivity indices (1D or multi-objective)."""
+    if "objective_names" in result:
+        s1 = result["S1"][selected_objective]
+        st = result["ST"][selected_objective]
+        obj_name = result["objective_names"][selected_objective]
+        title = f"Sobol Sensitivity — {obj_name}"
+    else:
+        s1 = result["S1"]
+        st = result["ST"]
+        title = "Sobol Sensitivity Indices"
+
     names = result["param_names"]
     fig = go.Figure()
-    fig.add_trace(go.Bar(name="S1 (First-order)", x=names, y=result["S1"]))
-    fig.add_trace(go.Bar(name="ST (Total-order)", x=names, y=result["ST"]))
-    fig.update_layout(
-        title="Sobol Sensitivity Indices",
-        barmode="group",
-        template=tmpl,
+    fig.add_trace(go.Bar(name="S1 (First-order)", x=names, y=s1))
+    fig.add_trace(go.Bar(name="ST (Total-order)", x=names, y=st))
+    fig.update_layout(title=title, barmode="group", template=tmpl)
+    return fig
+
+
+def make_correlation_chart(
+    X: np.ndarray,
+    F: np.ndarray,
+    param_names: list[str],
+    tmpl: str = "osmose",
+) -> go.Figure:
+    """Parallel coordinates plot of Pareto candidates."""
+    import pandas as pd
+    import plotly.express as px
+
+    if X is None or len(X) == 0:
+        return go.Figure().update_layout(
+            title="Parameter Correlations (run calibration first)", template=tmpl
+        )
+    df = pd.DataFrame(X, columns=param_names)
+    df["objective"] = F[:, 0] if F.shape[1] == 1 else np.sum(F, axis=1)
+    fig = px.parallel_coordinates(
+        df,
+        color="objective",
+        dimensions=param_names,
+        color_continuous_scale="Viridis_r",
     )
+    fig.update_layout(template=tmpl)
     return fig

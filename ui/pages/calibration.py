@@ -10,6 +10,7 @@ from shinywidgets import output_widget, render_plotly
 
 from ui.pages.calibration_charts import (
     make_convergence_chart,
+    make_correlation_chart,
     make_pareto_chart,
     make_sensitivity_chart,
 )
@@ -33,6 +34,7 @@ __all__ = [
     "collect_selected_params",
     "build_free_params",
     "make_convergence_chart",
+    "make_correlation_chart",
     "make_pareto_chart",
     "make_sensitivity_chart",
     "_make_progress_callback",
