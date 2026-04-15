@@ -92,6 +92,7 @@ from osmose.calibration.losses import make_banded_objective
 from osmose.calibration.targets import load_targets
 
 targets, _ = load_targets(targets_path)
+species_names = [t.species for t in targets]
 banded_obj = make_banded_objective(
     targets, species_names,
     w_stability=w_stability, w_worst=w_worst,
@@ -199,6 +200,7 @@ Filename: `{timestamp}_{algorithm}.json` (e.g., `2026-04-15T14-30-00_nsga2.json`
     "best_objective": 0.342,
     "n_evaluations": 5000,
     "duration_seconds": 847,
+    "objective_names": ["Biomass RMSE", "Banded Loss"],
     "convergence": [[0, 12.5], [1, 8.3], ...],
     "pareto_X": [[0.3, 100.0, ...], ...],
     "pareto_F": [[0.34, 0.12], ...]
