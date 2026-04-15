@@ -21,6 +21,7 @@ from osmose.calibration.losses import (
     make_banded_objective,
 )
 from osmose.calibration.multiseed import validate_multiseed, rank_candidates_multiseed
+from osmose.calibration.history import save_run, load_run, list_runs, delete_run
 
 __all__ = [
     "biomass_rmse",
@@ -44,4 +45,8 @@ __all__ = [
     "make_banded_objective",
     "validate_multiseed",
     "rank_candidates_multiseed",
+    "save_run",
+    "load_run",
+    "list_runs",
+    "delete_run",
 ]
