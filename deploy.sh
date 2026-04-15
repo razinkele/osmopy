@@ -136,7 +136,7 @@ Type=simple
 User=shiny
 Group=shiny
 WorkingDirectory=${LINK_PATH}
-ExecStart=${SHINY_PYTHON} -m shiny run app.py --host 127.0.0.1 --port ${APP_PORT}
+ExecStart=${SHINY_PYTHON} -m uvicorn app:app --host 127.0.0.1 --port ${APP_PORT} --root-path /${APP_NAME}
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
