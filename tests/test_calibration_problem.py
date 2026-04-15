@@ -377,3 +377,148 @@ def test_run_single_logs_subprocess_stderr(tmp_path, caplog):
             result = problem._run_single({}, run_id=0)
         assert result == [float("inf")]
         assert "OutOfMemoryError" in caplog.text
+
+
+# --- Cache tests ---
+
+
+@patch("subprocess.run")
+@patch("osmose.results.OsmoseResults")
+def test_cache_miss_then_hit(mock_results_cls, mock_subprocess, tmp_path):
+    """Second call with same overrides returns cached result without subprocess."""
+    mock_subprocess.return_value = MagicMock(returncode=0)
+    mock_results_cls.return_value = MagicMock()
+
+    fp = FreeParameter(key="species.k.sp0", lower_bound=0.1, upper_bound=0.5)
+    problem = OsmoseCalibrationProblem(
+        free_params=[fp],
+        objective_fns=[lambda r: 0.5],
+        base_config_path=tmp_path / "config.csv",
+        jar_path=tmp_path / "fake.jar",
+        work_dir=tmp_path,
+        enable_cache=True,
+    )
+    # Create fake JAR so st_mtime works
+    (tmp_path / "fake.jar").write_bytes(b"fake")
+
+    result1 = problem._run_single({"species.k.sp0": "0.3"}, run_id=0)
+    assert result1 == [0.5]
+    assert mock_subprocess.call_count == 1
+
+    result2 = problem._run_single({"species.k.sp0": "0.3"}, run_id=1)
+    assert result2 == [0.5]
+    assert mock_subprocess.call_count == 1  # Not called again — cache hit
+
+    stats = problem.cache_stats()
+    assert stats["hits"] == 1
+    assert stats["misses"] == 1
+
+
+@patch("subprocess.run")
+@patch("osmose.results.OsmoseResults")
+def test_cache_invalidated_by_jar_change(mock_results_cls, mock_subprocess, tmp_path):
+    """Changing JAR file invalidates cache."""
+    mock_subprocess.return_value = MagicMock(returncode=0)
+    mock_results_cls.return_value = MagicMock()
+
+    fp = FreeParameter(key="species.k.sp0", lower_bound=0.1, upper_bound=0.5)
+    jar = tmp_path / "fake.jar"
+    jar.write_bytes(b"v1")
+
+    problem = OsmoseCalibrationProblem(
+        free_params=[fp],
+        objective_fns=[lambda r: 0.5],
+        base_config_path=tmp_path / "config.csv",
+        jar_path=jar,
+        work_dir=tmp_path,
+        enable_cache=True,
+    )
+
+    problem._run_single({"species.k.sp0": "0.3"}, run_id=0)
+    assert mock_subprocess.call_count == 1
+
+    # Simulate JAR recompilation
+    import time
+    time.sleep(0.01)
+    jar.write_bytes(b"v2")
+
+    problem._run_single({"species.k.sp0": "0.3"}, run_id=1)
+    assert mock_subprocess.call_count == 2  # Cache miss — JAR changed
+
+
+def test_cache_disabled_by_default(tmp_path):
+    """enable_cache defaults to False."""
+    fp = FreeParameter(key="species.k.sp0", lower_bound=0.1, upper_bound=0.5)
+    problem = OsmoseCalibrationProblem(
+        free_params=[fp],
+        objective_fns=[lambda r: 0.0],
+        base_config_path=tmp_path / "config.csv",
+        jar_path=tmp_path / "fake.jar",
+        work_dir=tmp_path,
+    )
+    assert problem._enable_cache is False
+
+
+def test_clear_cache(tmp_path):
+    """clear_cache removes the cache directory contents."""
+    fp = FreeParameter(key="species.k.sp0", lower_bound=0.1, upper_bound=0.5)
+    problem = OsmoseCalibrationProblem(
+        free_params=[fp],
+        objective_fns=[lambda r: 0.0],
+        base_config_path=tmp_path / "config.csv",
+        jar_path=tmp_path / "fake.jar",
+        work_dir=tmp_path,
+        enable_cache=True,
+    )
+    cache_dir = tmp_path / ".cache"
+    cache_dir.mkdir()
+    (cache_dir / "test.json").write_text("{}")
+    problem.clear_cache()
+    assert not list(cache_dir.iterdir())
+
+
+# --- Schema validation tests ---
+
+
+def test_validate_overrides_catches_bad_value(tmp_path):
+    """Schema validation rejects values outside [min_val, max_val]."""
+    from osmose.schema.registry import ParameterRegistry
+    from osmose.schema.base import OsmoseField, ParamType
+
+    registry = ParameterRegistry()
+    registry.register(OsmoseField(
+        key_pattern="species.k.sp{idx}",
+        param_type=ParamType.FLOAT,
+        min_val=0.01,
+        max_val=1.0,
+        indexed=True,
+        category="species",
+        description="Growth rate",
+    ))
+
+    fp = FreeParameter(key="species.k.sp0", lower_bound=0.01, upper_bound=1.0)
+    problem = OsmoseCalibrationProblem(
+        free_params=[fp],
+        objective_fns=[lambda r: 0.0],
+        base_config_path=tmp_path / "config.csv",
+        jar_path=tmp_path / "fake.jar",
+        work_dir=tmp_path,
+        registry=registry,
+    )
+
+    with pytest.raises(ValueError, match="species.k.sp0"):
+        problem._validate_overrides({"species.k.sp0": "999.0"})
+
+
+def test_validate_overrides_skipped_when_no_registry(tmp_path):
+    """No registry means no validation — backward-compatible."""
+    fp = FreeParameter(key="species.k.sp0", lower_bound=0.1, upper_bound=0.5)
+    problem = OsmoseCalibrationProblem(
+        free_params=[fp],
+        objective_fns=[lambda r: 0.0],
+        base_config_path=tmp_path / "config.csv",
+        jar_path=tmp_path / "fake.jar",
+        work_dir=tmp_path,
+    )
+    # Should not raise
+    problem._validate_overrides({"species.k.sp0": "999.0"})

@@ -4,12 +4,19 @@
 from __future__ import annotations
 
 import enum
+import hashlib
+import json
+import os
 import re
 import subprocess
+import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
+
+if TYPE_CHECKING:
+    from osmose.schema.registry import ParameterRegistry
 
 import numpy as np
 from pymoo.core.problem import Problem  # type: ignore[import-untyped]
@@ -75,6 +82,9 @@ class OsmoseCalibrationProblem(Problem):
         work_dir: Path,
         java_cmd: str = "java",
         n_parallel: int = 1,
+        enable_cache: bool = False,
+        cache_dir: Path | None = None,
+        registry: "ParameterRegistry | None" = None,
     ):
         self.free_params = free_params
         self.objective_fns = objective_fns
@@ -83,6 +93,17 @@ class OsmoseCalibrationProblem(Problem):
         self.work_dir = work_dir
         self.java_cmd = java_cmd
         self.n_parallel = max(1, n_parallel)
+        self._enable_cache = enable_cache
+        self._cache_dir = cache_dir or (self.work_dir / ".cache")
+        self._registry = registry
+        self._cache_hits = 0
+        self._cache_misses = 0
+        # Pre-compute base config hash for cache keys
+        self._base_config_hash = ""
+        if enable_cache and base_config_path.exists():
+            self._base_config_hash = hashlib.sha256(
+                base_config_path.read_bytes()
+            ).hexdigest()[:16]
 
         xl = np.array([fp.lower_bound for fp in free_params])
         xu = np.array([fp.upper_bound for fp in free_params])
@@ -164,6 +185,19 @@ class OsmoseCalibrationProblem(Problem):
                     "only alphanumeric, '.', '+', '-', 'e', 'E', '/' allowed"
                 )
 
+        # Schema validation
+        self._validate_overrides(overrides)
+
+        # Cache check
+        if self._enable_cache:
+            key = self._cache_key(overrides)
+            self._cache_dir.mkdir(parents=True, exist_ok=True)
+            cache_file = self._cache_dir / f"{key}.json"
+            if cache_file.exists():
+                self._cache_hits += 1
+                cached = json.loads(cache_file.read_text())
+                return cached["objectives"]
+
         # Create isolated output directory
         run_dir = self.work_dir / f"run_{run_id}"
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -192,6 +226,25 @@ class OsmoseCalibrationProblem(Problem):
             for fn in self.objective_fns:
                 obj_values.append(fn(results))
 
+        # Cache write (atomic rename)
+        if self._enable_cache:
+            key = self._cache_key(overrides)
+            self._cache_dir.mkdir(parents=True, exist_ok=True)
+            cache_file = self._cache_dir / f"{key}.json"
+            fd, tmp_file = tempfile.mkstemp(
+                dir=str(self._cache_dir), suffix=".tmp"
+            )
+            try:
+                with os.fdopen(fd, "w") as f:
+                    json.dump({"objectives": obj_values}, f)
+                os.replace(tmp_file, str(cache_file))
+            except OSError:
+                try:
+                    os.unlink(tmp_file)
+                except OSError:
+                    pass
+            self._cache_misses += 1
+
         return obj_values
 
     def cleanup_run(self, run_id: int) -> None:
@@ -201,3 +254,53 @@ class OsmoseCalibrationProblem(Problem):
             import shutil
 
             shutil.rmtree(run_dir, ignore_errors=True)
+
+    def _cache_key(self, overrides: dict[str, str]) -> str:
+        """Deterministic hash of overrides + JAR mtime + base config hash."""
+        parts = sorted(overrides.items())
+        try:
+            jar_mtime = str(self.jar_path.stat().st_mtime)
+        except OSError:
+            jar_mtime = "missing"
+        raw = f"{parts}|{jar_mtime}|{self._base_config_hash}"
+        return hashlib.sha256(raw.encode()).hexdigest()
+
+    def cache_stats(self) -> dict:
+        """Returns cache hit/miss counts and size."""
+        size_mb = 0.0
+        if self._cache_dir.is_dir():
+            size_mb = sum(f.stat().st_size for f in self._cache_dir.iterdir()) / (1024 * 1024)
+        return {"hits": self._cache_hits, "misses": self._cache_misses, "size_mb": size_mb}
+
+    def clear_cache(self) -> None:
+        """Remove all cached evaluations."""
+        if self._cache_dir.is_dir():
+            for f in self._cache_dir.iterdir():
+                f.unlink(missing_ok=True)
+
+    def _validate_overrides(self, overrides: dict[str, str]) -> None:
+        """Validate overrides against the schema registry.
+
+        Note: overrides values are strings (from OSMOSE config format).
+        We must coerce numeric values to float/int before passing to the
+        registry, since validate_value() compares with ``<`` / ``>``.
+        """
+        if self._registry is None:
+            return
+        from osmose.schema.base import ParamType
+
+        coerced: dict[str, object] = {}
+        for k, v in overrides.items():
+            field = self._registry.match_field(k)
+            if field and field.param_type == ParamType.FLOAT:
+                coerced[k] = float(v)
+            elif field and field.param_type == ParamType.INT:
+                coerced[k] = int(v)
+            else:
+                coerced[k] = v
+        errors = self._registry.validate(coerced)
+        if errors:
+            raise ValueError(
+                f"Override validation failed ({len(errors)} errors):\n"
+                + "\n".join(f"  - {e}" for e in errors)
+            )
