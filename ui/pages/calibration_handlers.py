@@ -42,6 +42,9 @@ class CalibrationMessageQueue:
     def post_sensitivity(self, result) -> None:
         self._q.put(("sensitivity", result))
 
+    def post_validation(self, result) -> None:
+        self._q.put(("validation", result))
+
     def drain(self) -> list[tuple]:
         msgs = []
         while True:
@@ -357,8 +360,11 @@ def register_calibration_handlers(
 
             def run_surrogate():
                 try:
+                    import time as _time
+
                     from osmose.calibration.surrogate import SurrogateCalibrator
 
+                    _t0 = _time.time()
                     bounds = [(fp.lower_bound, fp.upper_bound) for fp in free_params]
                     n_obj = len(objective_fns)
                     calibrator = SurrogateCalibrator(param_bounds=bounds, n_objectives=n_obj)
@@ -437,9 +443,9 @@ def register_calibration_handlers(
                             "results": {
                                 "best_objective": float(np.min(Y.sum(axis=1))),
                                 "n_evaluations": n_samples,
-                                "duration_seconds": 0,
+                                "duration_seconds": int(_time.time() - _t0),
                                 "objective_names": obj_names,
-                                "convergence": history,
+                                "convergence": [[i, v] for i, v in enumerate(history)],
                                 "pareto_X": samples.tolist(),
                                 "pareto_F": Y.tolist(),
                             },
@@ -457,7 +463,11 @@ def register_calibration_handlers(
             # NSGA-II (default)
             def run_optimization():
                 try:
+                    import time as _time
+
                     from pymoo.algorithms.moo.nsga2 import NSGA2  # type: ignore[import-untyped]
+
+                    _t0 = _time.time()
                     from pymoo.optimize import minimize  # type: ignore[import-untyped]
                     from pymoo.termination import get_termination  # type: ignore[import-untyped]
 
@@ -513,7 +523,7 @@ def register_calibration_handlers(
                                 "results": {
                                     "best_objective": float(np.min(res.F.sum(axis=1))),
                                     "n_evaluations": pop_size * generations,
-                                    "duration_seconds": 0,
+                                    "duration_seconds": int(_time.time() - _t0),
                                     "objective_names": obj_names,
                                     "convergence": [],
                                     "pareto_X": res.X.tolist(),
@@ -604,7 +614,7 @@ def register_calibration_handlers(
 
                 result = rank_candidates_multiseed(make_factory, candidates, seeds=seeds)
                 msg_queue.post_status("")
-                msg_queue._q.put(("validation", result))
+                msg_queue.post_validation(result)
             except Exception as exc:
                 _log.error("Validation failed: %s", exc, exc_info=True)
                 msg_queue.post_error(f"Validation: {exc}")

@@ -41,7 +41,9 @@ class TestSaveRun:
         assert path.exists()
         assert path.suffix == ".json"
 
-    def test_filename_contains_timestamp_and_algorithm(self, tmp_path: Path, sample_run: dict) -> None:
+    def test_filename_contains_timestamp_and_algorithm(
+        self, tmp_path: Path, sample_run: dict
+    ) -> None:
         path = save_run(sample_run, history_dir=tmp_path)
         assert "2026-04-15" in path.name
         assert "nsga2" in path.name
@@ -78,16 +80,38 @@ class TestListRuns:
 
     def test_lists_runs_sorted_by_timestamp_desc(self, tmp_path: Path) -> None:
         run1 = {
-            "version": 1, "timestamp": "2026-04-14T09:00:00", "algorithm": "surrogate",
-            "settings": {}, "parameters": [], "objectives": {},
-            "results": {"best_objective": 0.5, "n_evaluations": 100, "duration_seconds": 60,
-                        "objective_names": [], "convergence": [], "pareto_X": [], "pareto_F": []},
+            "version": 1,
+            "timestamp": "2026-04-14T09:00:00",
+            "algorithm": "surrogate",
+            "settings": {},
+            "parameters": [],
+            "objectives": {},
+            "results": {
+                "best_objective": 0.5,
+                "n_evaluations": 100,
+                "duration_seconds": 60,
+                "objective_names": [],
+                "convergence": [],
+                "pareto_X": [],
+                "pareto_F": [],
+            },
         }
         run2 = {
-            "version": 1, "timestamp": "2026-04-15T14:30:00", "algorithm": "nsga2",
-            "settings": {}, "parameters": [{"key": "a", "lower": 0, "upper": 1}], "objectives": {},
-            "results": {"best_objective": 0.3, "n_evaluations": 200, "duration_seconds": 120,
-                        "objective_names": [], "convergence": [], "pareto_X": [], "pareto_F": []},
+            "version": 1,
+            "timestamp": "2026-04-15T14:30:00",
+            "algorithm": "nsga2",
+            "settings": {},
+            "parameters": [{"key": "a", "lower": 0, "upper": 1}],
+            "objectives": {},
+            "results": {
+                "best_objective": 0.3,
+                "n_evaluations": 200,
+                "duration_seconds": 120,
+                "objective_names": [],
+                "convergence": [],
+                "pareto_X": [],
+                "pareto_F": [],
+            },
         }
         save_run(run1, history_dir=tmp_path)
         save_run(run2, history_dir=tmp_path)
