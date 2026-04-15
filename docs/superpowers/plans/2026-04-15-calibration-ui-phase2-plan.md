@@ -604,7 +604,6 @@ def calibration_server(input, output, session, state):
             return go.Figure().update_layout(
                 title="Pareto Front (run calibration first)", template=_tmpl()
             )
-        names = cal_param_names.get()
         obj_labels = [f"Obj {i + 1}" for i in range(F.shape[1])]
         return make_pareto_chart(F, obj_labels, tmpl=_tmpl())
 
@@ -995,7 +994,9 @@ after results are posted. In `run_surrogate`, after `msg_queue.post_results(...)
                     )
 ```
 
-Similarly in `run_optimization`, after `msg_queue.post_results(...)`:
+Similarly in `run_optimization`, after `msg_queue.post_results(...)`.
+
+Note: the NSGA-II thread cannot safely call `cal_history.get()` (reactive value, main thread only). Instead, reconstruct convergence from the pymoo result object. The callback tracks best objective per generation, but the result `res` contains the final Pareto front. We store an empty convergence list — the convergence chart is populated from the reactive value on the main thread, and history is primarily for loading Pareto data:
 
 ```python
                     if res.F is not None:
@@ -1033,9 +1034,7 @@ Similarly in `run_optimization`, after `msg_queue.post_results(...)`:
                                     "n_evaluations": pop_size * generations,
                                     "duration_seconds": 0,
                                     "objective_names": obj_names,
-                                    "convergence": [
-                                        [i, v] for i, v in enumerate(cal_history.get())
-                                    ],
+                                    "convergence": [],
                                     "pareto_X": res.X.tolist(),
                                     "pareto_F": res.F.tolist(),
                                 },
@@ -1219,7 +1218,17 @@ Then update the Y assignment in the sample loop to handle multi-objective:
                                 Y[idx, k] = result[k]
                         else:
                             Y[idx] = result[0]
-                    except ...
+                    except (
+                        subprocess.TimeoutExpired,
+                        subprocess.CalledProcessError,
+                        FileNotFoundError,
+                        OSError,
+                    ) as exc:
+                        _log.warning("Sensitivity sample %d failed: %s", idx, exc)
+                        if n_obj_sens > 1:
+                            Y[idx, :] = float("inf")
+                        else:
+                            Y[idx] = float("inf")
 ```
 
 - [ ] **Step 9: Run lint**
