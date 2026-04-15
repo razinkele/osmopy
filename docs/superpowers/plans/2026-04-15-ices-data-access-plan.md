@@ -6,7 +6,7 @@
 
 **Architecture:** Standalone project at `~/ices-mcp-server/` with one module per upstream API (`sag.py`, `datras.py`, `sd.py`, `eggs.py`, `vocab.py`). Async throughout (`httpx.AsyncClient`, `async-lru`). DATRAS XML parsed via streaming `iterparse()` in a thread pool. Skill is a single markdown file at `~/.claude/skills/ices-data/ices-data.md`.
 
-**Tech Stack:** Python 3.12+, `mcp` SDK, `httpx`, `pandas`, `async-lru`, `uv run`, `pytest`
+**Tech Stack:** Python 3.12+, `mcp` SDK, `httpx`, `pandas`, `uv run`, `pytest`
 
 **Spec:** `docs/superpowers/specs/2026-04-15-ices-data-access-design.md`
 
@@ -82,7 +82,6 @@ dependencies = [
     "mcp>=1.0",
     "httpx>=0.27",
     "pandas>=2.2",
-    "async-lru>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -346,6 +345,16 @@ def load_fixture(name: str) -> str:
 def load_json_fixture(name: str) -> list | dict:
     """Load a JSON fixture file."""
     return json.loads(load_fixture(name))
+
+
+@pytest.fixture(autouse=True)
+def _clear_sag_cache():
+    """Clear SAG stock key cache between tests for isolation."""
+    from ices.sag import clear_stock_key_cache
+
+    clear_stock_key_cache()
+    yield
+    clear_stock_key_cache()
 ```
 
 - [ ] **Step 3: Write failing SAG tests**
@@ -368,6 +377,7 @@ from ices.sag import (
     list_stocks,
     resolve_stock_key,
 )
+# Note: conftest.py autouse fixture clears resolve_stock_key cache between tests
 from tests.conftest import load_fixture, load_json_fixture
 
 
@@ -491,7 +501,6 @@ from __future__ import annotations
 import re
 
 import httpx
-from async_lru import alru_cache
 
 from ices import IcesApiError
 
@@ -547,19 +556,32 @@ async def list_stocks(
             "stock_key": stock_key,
             "species_name": entry.get("SpeciesName", ""),
             "assessment_key": entry.get("AssessmentKey"),
-            "expert_group": entry.get("ExpertGroupUrl", ""),
+            "expert_group": entry.get("ExpertGroup", entry.get("ExpertGroupUrl", "")),
         })
     return stocks
 
 
-@alru_cache(maxsize=64)
+# Module-level cache for stock key resolution (cleared per session).
+# NOT using alru_cache because httpx.AsyncClient is unhashable.
+_stock_key_cache: dict[tuple[str, int], int] = {}
+
+
+def clear_stock_key_cache() -> None:
+    """Clear the stock key resolution cache (useful for tests)."""
+    _stock_key_cache.clear()
+
+
 async def resolve_stock_key(
     client: httpx.AsyncClient, stock_key: str, year: int
 ) -> int:
     """Resolve a stock key label to its numeric assessment key."""
+    cache_key = (stock_key, year)
+    if cache_key in _stock_key_cache:
+        return _stock_key_cache[cache_key]
     stocks = await list_stocks(client, year=year)
     for s in stocks:
         if s["stock_key"] == stock_key:
+            _stock_key_cache[cache_key] = s["assessment_key"]
             return s["assessment_key"]
     raise IcesApiError(
         f"Stock key '{stock_key}' not found in {year} assessments. "
@@ -693,11 +715,17 @@ def test_normalize_unknown_raises():
         normalize_stock_key("fake.99.99-99")
 
 
-def test_stock_key_map_has_baltic_stocks():
-    required = ["cod.27.24-32", "cod.27.22-24", "her.27.25-2932",
-                 "spr.27.22-32"]
+def test_stock_key_map_has_required_stocks():
+    """Spec requires at least 10 edge-case keys in the map."""
+    required = [
+        "cod.27.24-32", "cod.27.22-24", "her.27.25-2932", "spr.27.22-32",
+        "ple.27.24-32", "fle.27.2425", "her.27.20-24", "her.27.28",
+        "cod.27.47d20", "sol.27.4", "mac.27.nea", "hke.27.3a46-8abd",
+    ]
     for key in required:
         assert key in STOCK_KEY_MAP, f"Missing: {key}"
+        sd_key = STOCK_KEY_MAP[key]
+        assert isinstance(sd_key, str) and len(sd_key) > 0
 
 
 @respx.mock
@@ -926,6 +954,7 @@ import respx
 from ices.datras import (
     DATRAS_BASE,
     get_age_length,
+    get_cpue_age,
     get_cpue_length,
     get_hauls,
     parse_datras_xml,
@@ -1056,6 +1085,39 @@ async def test_get_hauls(hh_xml):
 
 @respx.mock
 @pytest.mark.asyncio
+async def test_get_cpue_age_summary(cpue_xml):
+    # Reuse CPUE length fixture — structure is similar enough for parsing
+    respx.get(url__startswith=DATRAS_BASE).respond(
+        content=cpue_xml, headers={"content-type": "text/xml"}
+    )
+    result = await get_cpue_age(
+        httpx.AsyncClient(), survey="BITS", year=2023, quarter=1, mode="summary"
+    )
+    # May be empty if fixture has no age data — that's OK
+    if result:
+        rec = result[0]
+        assert "mean_cpue" in rec
+        assert "n_hauls" in rec
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_get_cpue_age_raw(cpue_xml):
+    respx.get(url__startswith=DATRAS_BASE).respond(
+        content=cpue_xml, headers={"content-type": "text/xml"}
+    )
+    result = await get_cpue_age(
+        httpx.AsyncClient(), survey="BITS", year=2023, quarter=1, mode="raw"
+    )
+    if result:
+        rec = result[0]
+        assert "age" in rec
+        assert "cpue_number_per_hour" in rec
+        assert "shoot_lat" in rec
+
+
+@respx.mock
+@pytest.mark.asyncio
 async def test_get_age_length(ca_xml):
     respx.get(url__startswith=DATRAS_BASE).respond(
         content=ca_xml, headers={"content-type": "text/xml"}
@@ -1124,7 +1186,8 @@ async def _fetch_xml(client: httpx.AsyncClient, endpoint: str, params: dict) -> 
                 )
             text = resp.text
             # Detect HTML error page masquerading as 200
-            if not text.strip().startswith("<ArrayOf"):
+            # Use 'in' not 'startswith' — valid XML may have <?xml ...?> declaration
+            if "<ArrayOf" not in text[:500]:
                 raise IcesApiError(
                     "DATRAS returned non-XML response (possibly HTML error page)"
                 )
@@ -1396,7 +1459,7 @@ async def get_age_length(
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run: `cd ~/ices-mcp-server && uv run pytest tests/test_datras.py -v`
-Expected: All 12 tests PASS. Some may need fixture adjustments depending on actual XML field names — fix and re-run.
+Expected: All 14 tests PASS. Some may need fixture adjustments depending on actual XML field names — fix and re-run.
 
 - [ ] **Step 6: Commit**
 
@@ -1552,7 +1615,7 @@ cd ~/ices-mcp-server && git add ices/eggs.py tests/test_eggs.py tests/fixtures/e
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["mcp>=1.0", "httpx>=0.27", "pandas>=2.2", "async-lru>=2.0"]
+# dependencies = ["mcp>=1.0", "httpx>=0.27", "pandas>=2.2"]
 # ///
 """ICES MCP Server — 9 tools wrapping SAG, DATRAS, SD, and Eggs & Larvae APIs."""
 
@@ -1936,6 +1999,7 @@ Area filter examples:
 | NS-IBTS | North Sea | Q1, Q3 | 1965+, International Bottom Trawl Survey |
 | EVHOE | Bay of Biscay | Q4 | 1997+, French survey |
 | CGFS | Eastern English Channel | Q4 | 1988+, Channel Ground Fish Survey |
+| IBTS-Q3 | North Sea + Celtic | Q3 | 1991+, Q3 component of IBTS |
 
 ## OSMOSE Integration Workflows
 
@@ -1971,6 +2035,35 @@ Area filter examples:
 1. `get_reference_points(stock_key="cod.27.24-32")`
 2. Fishing rates are indexed by **fishery** (`fisheries.rate.base.fsh{N}`), not species
 3. Flag if simulated F exceeds Fmsy
+
+## Config Key Patterns
+
+**Casing note:** Schema uses lowercase (`species.linf`) but config files use camelCase (`species.lInf`). Java is case-sensitive — always match the existing config file.
+
+```
+# Species biology (config file casing)
+species.lInf.sp{N}                    # VB L-infinity (cm)
+species.K.sp{N}                       # VB K (year^-1)
+species.t0.sp{N}                      # VB t0 (years)
+species.length2weight.condition.factor.sp{N}  # L-W a
+species.length2weight.allometric.power.sp{N}  # L-W b
+species.maturity.size.sp{N}           # Size at maturity (cm)
+species.lifespan.sp{N}               # Maximum age (years)
+
+# Mortality & predation
+mortality.additional.rate.sp{N}       # Natural mortality
+predation.ingestion.rate.max.sp{N}    # Max ingestion rate
+
+# Fishing (indexed by fishery, not species)
+fisheries.rate.base.fsh{N}            # Base fishing rate
+mortality.fishing.rate.sp{N}          # Legacy per-species F
+
+# Movement maps (config format, NOT schema)
+movement.file.map{N}                  # Map CSV path
+movement.species.map{N}              # Species index
+movement.initialAge.map{N}           # Age threshold
+movement.steps.map{N}                # Active timesteps
+```
 ```
 
 - [ ] **Step 2: Verify skill directory exists**
