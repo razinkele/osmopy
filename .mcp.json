@@ -11,6 +11,30 @@
     "github": {
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-github"]
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/razinka/osmose"]
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+    },
+    "fetch": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-fetch"]
+    },
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"]
+    },
+    "huggingface": {
+      "command": "npx",
+      "args": ["-y", "@huggingface/mcp-server"]
+    },
+    "ices": {
+      "command": "/home/razinka/.local/bin/uv",
+      "args": ["run", "--directory", "/home/razinka/ices-mcp-server", "server.py"]
     }
   }
 }
