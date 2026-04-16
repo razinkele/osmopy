@@ -334,3 +334,57 @@ class TestSelectivityIntegration:
         # Selectivity increases: L50 < L75 < big
         assert dead_l50 < dead_l75
         assert dead_l75 < dead_big
+
+
+class TestFishingScenarioDispatch:
+    """Config auto-detects fishing scenario from keys."""
+
+    def test_rate_annual_detected(self) -> None:
+        """mortality.fishing.rate.sp0 -> rate-based."""
+        from osmose.engine.config import detect_fishing_scenario
+
+        config = {"mortality.fishing.rate.sp0": "0.3"}
+        scenario = detect_fishing_scenario(config, 0)
+        assert scenario == "rate_annual"
+
+    def test_rate_by_year_detected(self) -> None:
+        from osmose.engine.config import detect_fishing_scenario
+
+        config = {"mortality.fishing.rate.byYear.file.sp0": "/path/to/file.csv"}
+        scenario = detect_fishing_scenario(config, 0)
+        assert scenario == "rate_by_year"
+
+    def test_catches_annual_detected(self) -> None:
+        from osmose.engine.config import detect_fishing_scenario
+
+        config = {"mortality.fishing.catches.sp0": "1000"}
+        scenario = detect_fishing_scenario(config, 0)
+        assert scenario == "catches_annual"
+
+    def test_rate_by_dt_by_age_detected(self) -> None:
+        from osmose.engine.config import detect_fishing_scenario
+
+        config = {"mortality.fishing.rate.byDt.byAge.file.sp0": "/path.csv"}
+        scenario = detect_fishing_scenario(config, 0)
+        assert scenario == "rate_by_dt_by_class"
+
+    def test_no_fishing_returns_none(self) -> None:
+        from osmose.engine.config import detect_fishing_scenario
+
+        config = {"species.name.sp0": "TestFish"}
+        scenario = detect_fishing_scenario(config, 0)
+        assert scenario is None
+
+    def test_catches_by_year_detected(self) -> None:
+        from osmose.engine.config import detect_fishing_scenario
+
+        config = {"mortality.fishing.catches.byYear.file.sp0": "/path.csv"}
+        scenario = detect_fishing_scenario(config, 0)
+        assert scenario == "catches_by_year"
+
+    def test_catches_by_dt_by_class_detected(self) -> None:
+        from osmose.engine.config import detect_fishing_scenario
+
+        config = {"mortality.fishing.catches.byDt.byAge.file.sp0": "/path.csv"}
+        scenario = detect_fishing_scenario(config, 0)
+        assert scenario == "catches_by_dt_by_class"

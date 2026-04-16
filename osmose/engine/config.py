@@ -958,6 +958,33 @@ def _load_additional_mortality_spatial(
     return result if found_any else None
 
 
+# ---------------------------------------------------------------------------
+# SP-1: Fishing scenario detection (matches Java FishingMortality.Scenario enum)
+# ---------------------------------------------------------------------------
+
+_FISHING_SCENARIOS = [
+    ("rate_annual", "mortality.fishing.rate.sp"),
+    ("rate_by_year", "mortality.fishing.rate.byYear.file.sp"),
+    ("rate_by_dt_by_class", "mortality.fishing.rate.byDt.byAge.file.sp"),
+    ("rate_by_dt_by_class", "mortality.fishing.rate.byDt.bySize.file.sp"),
+    ("catches_annual", "mortality.fishing.catches.sp"),
+    ("catches_by_year", "mortality.fishing.catches.byYear.file.sp"),
+    ("catches_by_dt_by_class", "mortality.fishing.catches.byDt.byAge.file.sp"),
+    ("catches_by_dt_by_class", "mortality.fishing.catches.byDt.bySize.file.sp"),
+]
+
+
+def detect_fishing_scenario(config: dict[str, str], species_idx: int) -> str | None:
+    """Detect fishing scenario for a species from config keys.
+
+    Matches Java FishingMortality.findScenario(). Returns scenario name or None.
+    """
+    for scenario_name, key_prefix in _FISHING_SCENARIOS:
+        if f"{key_prefix}{species_idx}" in config:
+            return scenario_name
+    return None
+
+
 @dataclass
 class EngineConfig:
     """Typed engine configuration extracted from a flat OSMOSE config dict."""
