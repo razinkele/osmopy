@@ -256,3 +256,81 @@ class TestCatchBasedFishing:
         result = fishing_mortality(state, config, n_subdt=1, step=0)
         dead = result.n_dead[0, MortalityCause.FISHING]
         assert dead <= 100.0
+
+
+class TestSelectivityIntegration:
+    """Selectivity types 2 and 3 wired into fishing_mortality."""
+
+    def test_gaussian_selectivity_in_fishing(self) -> None:
+        """Type 2 (Gaussian) reduces fishing on small/large fish."""
+        config = _mock_config(
+            fishing_rate=np.array([1.0]),
+            fishing_selectivity_type=np.array([2], dtype=np.int32),
+            fishing_selectivity_l50=np.array([20.0]),
+            fishing_selectivity_l75=np.array([25.0]),
+        )
+
+        # Two schools: one at L50 (peak), one far from it
+        state = _make_state(
+            n_schools=2,
+            species_id=np.array([0, 0], dtype=np.int32),
+            abundance=np.array([1000.0, 1000.0]),
+            weight=np.array([0.01, 0.01]),
+            length=np.array([20.0, 5.0]),
+            age_dt=np.array([48, 48], dtype=np.int32),
+        )
+
+        result = fishing_mortality(state, config, n_subdt=1, step=0)
+        dead_at_peak = result.n_dead[0, MortalityCause.FISHING]
+        dead_far = result.n_dead[1, MortalityCause.FISHING]
+        assert dead_at_peak > dead_far
+
+    def test_lognormal_selectivity_in_fishing(self) -> None:
+        """Type 3 (log-normal) applies asymmetric selectivity."""
+        config = _mock_config(
+            fishing_rate=np.array([1.0]),
+            fishing_selectivity_type=np.array([3], dtype=np.int32),
+            fishing_selectivity_l50=np.array([20.0]),
+            fishing_selectivity_l75=np.array([30.0]),
+        )
+
+        # School near mode vs very small school
+        state = _make_state(
+            n_schools=2,
+            species_id=np.array([0, 0], dtype=np.int32),
+            abundance=np.array([1000.0, 1000.0]),
+            weight=np.array([0.01, 0.01]),
+            length=np.array([15.0, 1.0]),
+            age_dt=np.array([48, 48], dtype=np.int32),
+        )
+
+        result = fishing_mortality(state, config, n_subdt=1, step=0)
+        dead_near_mode = result.n_dead[0, MortalityCause.FISHING]
+        dead_tiny = result.n_dead[1, MortalityCause.FISHING]
+        assert dead_near_mode > dead_tiny
+
+    def test_sigmoid_l75_formula_in_fishing(self) -> None:
+        """Type 1 with L75 uses Java L50/L75 formula."""
+        config = _mock_config(
+            fishing_rate=np.array([1.0]),
+            fishing_selectivity_type=np.array([1], dtype=np.int32),
+            fishing_selectivity_l50=np.array([20.0]),
+            fishing_selectivity_l75=np.array([25.0]),
+        )
+
+        # At L50, selectivity = 0.5; at L75, selectivity = 0.75
+        state_l50 = _make_state(length=np.array([20.0]))
+        state_l75 = _make_state(length=np.array([25.0]))
+        state_big = _make_state(length=np.array([40.0]))
+
+        result_l50 = fishing_mortality(state_l50, config, n_subdt=1, step=0)
+        result_l75 = fishing_mortality(state_l75, config, n_subdt=1, step=0)
+        result_big = fishing_mortality(state_big, config, n_subdt=1, step=0)
+
+        dead_l50 = result_l50.n_dead[0, MortalityCause.FISHING]
+        dead_l75 = result_l75.n_dead[0, MortalityCause.FISHING]
+        dead_big = result_big.n_dead[0, MortalityCause.FISHING]
+
+        # Selectivity increases: L50 < L75 < big
+        assert dead_l50 < dead_l75
+        assert dead_l75 < dead_big

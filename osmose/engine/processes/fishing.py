@@ -74,32 +74,48 @@ def fishing_mortality(
 
     mortality_fraction = 1 - np.exp(-d)
 
-    # Apply selectivity: age-based (type 0), sigmoidal (type 1), or length knife-edge
-    sel_type = config.fishing_selectivity_type[sp]
-    a50 = config.fishing_selectivity_a50[sp]
-    l50 = config.fishing_selectivity_l50[sp]
-
-    # Age-based knife-edge: selected if age_years >= a50
-    age_years = state.age_dt.astype(np.float64) / config.n_dt_per_year
-    age_select = np.where(sel_type == 0, np.where(age_years >= a50, 1.0, 0.0), 0.0)
-
-    # 2.4: Sigmoidal size selectivity (type 1)
-    slope = config.fishing_selectivity_slope[sp]
-    sigmoid_select = np.where(
-        sel_type == 1,
-        1.0 / (1.0 + np.exp(-slope * (state.length - l50))),
-        0.0,
+    # Apply selectivity: type 0=age, 1=sigmoid, 2=Gaussian, 3=log-normal, -1=default
+    from osmose.engine.processes.selectivity import (
+        gaussian,
+        knife_edge,
+        log_normal,
+        sigmoid,
+        sigmoid_slope,
     )
 
-    # Length-based knife-edge: selected if length >= l50
-    len_select = np.where(l50 > 0, np.where(state.length >= l50, 1.0, 0.0), 1.0)
+    selectivity = np.ones(len(state), dtype=np.float64)
+    for sp_i in range(config.n_species):
+        sp_mask = sp == sp_i
+        if not sp_mask.any():
+            continue
+        t = int(config.fishing_selectivity_type[sp_i])
+        lengths = state.length[sp_mask]
+        l50_val = float(config.fishing_selectivity_l50[sp_i])
+        l75_val = float(config.fishing_selectivity_l75[sp_i])
 
-    # Combine: type 0 = age, type 1 = sigmoid, default = length knife-edge
-    selectivity = np.where(
-        sel_type == 0,
-        age_select,
-        np.where(sel_type == 1, sigmoid_select, len_select),
-    )
+        if t == 0:
+            # Age-based knife-edge
+            a50_val = float(config.fishing_selectivity_a50[sp_i])
+            age_years = state.age_dt[sp_mask].astype(np.float64) / config.n_dt_per_year
+            selectivity[sp_mask] = np.where(age_years >= a50_val, 1.0, 0.0)
+        elif t == 1:
+            # Sigmoid: prefer L50/L75 formula, fall back to slope-based
+            if l75_val > 0:
+                selectivity[sp_mask] = sigmoid(lengths, l50_val, l75_val)
+            else:
+                slope_val = float(config.fishing_selectivity_slope[sp_i])
+                selectivity[sp_mask] = sigmoid_slope(lengths, l50_val, slope_val)
+        elif t == 2:
+            # Gaussian
+            selectivity[sp_mask] = gaussian(lengths, l50_val, l75_val)
+        elif t == 3:
+            # Log-normal
+            selectivity[sp_mask] = log_normal(lengths, l50_val, l75_val)
+        else:
+            # Default: length knife-edge (if l50 > 0)
+            if l50_val > 0:
+                selectivity[sp_mask] = knife_edge(lengths, l50_val)
+            # else: selectivity stays 1.0
 
     # SP-1: Catch-based fishing -- proportional allocation (Java CatchesBySeason* variants)
     if config.fishing_catches is not None:
