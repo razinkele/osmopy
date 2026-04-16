@@ -1234,6 +1234,11 @@ class EngineConfig:
     bioen_c_rate: NDArray[np.float64] | None = None  # larvae correction coefficient
     bioen_k_for: NDArray[np.float64] | None = None  # foraging mortality
 
+    # Foraging mortality (bioen only)
+    foraging_k1_for: NDArray[np.float64] | None = None  # genetic mode base
+    foraging_k2_for: NDArray[np.float64] | None = None  # genetic mode exponent
+    foraging_I_max: NDArray[np.float64] | None = None  # reference I_max
+
     # Ev-OSMOSE genetics toggle
     genetics_enabled: bool = False
     genetics_transmission_year: int = 0  # first year seeding is active (0 = always normal)
@@ -1656,6 +1661,21 @@ class EngineConfig:
                 cfg, "species.bioen.forage.k_for.sp{i}", n_sp, 0.0
             )
 
+        # Foraging mortality parameters (bioen only)
+        foraging_k1_for = None
+        foraging_k2_for = None
+        foraging_I_max = None
+        if _bioen_enabled:
+            foraging_k1_for = _species_float_optional(
+                cfg, "species.bioen.forage.k1_for.sp{i}", n_sp, 0.0
+            )
+            foraging_k2_for = _species_float_optional(
+                cfg, "species.bioen.forage.k2_for.sp{i}", n_sp, 0.0
+            )
+            foraging_I_max = _species_float_optional(
+                cfg, "predation.ingestion.rate.max.bioen.sp{i}", n_sp, 0.0
+            )
+
         # Ev-OSMOSE genetics
         genetics_enabled = _enabled(cfg, "simulation.genetic.enabled")
         genetics_transmission_year = int(cfg.get("evolution.seeding.year", "0"))
@@ -1806,6 +1826,9 @@ class EngineConfig:
             bioen_theta=bioen_theta,
             bioen_c_rate=bioen_c_rate,
             bioen_k_for=bioen_k_for,
+            foraging_k1_for=foraging_k1_for,
+            foraging_k2_for=foraging_k2_for,
+            foraging_I_max=foraging_I_max,
             genetics_enabled=genetics_enabled,
             genetics_transmission_year=genetics_transmission_year,
             genetics_n_neutral=genetics_n_neutral,
