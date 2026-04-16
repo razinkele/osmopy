@@ -268,7 +268,12 @@ def run_morris_screening(
     morris_n: int = 10,
     negligible_threshold: float = 0.01,
 ) -> list[ParameterScreening]:
-    """Run Morris elementary effects screening.
+    """Run Morris elementary effects screening (standalone entry point).
+
+    This is the simple, test-friendly API for Morris-only analysis.
+    ``run_preflight()`` (Task 4) re-uses the same analysis logic but adds
+    cancellation, per-trajectory blowup tracking, and failure counting
+    around the evaluation loop.
 
     Args:
         param_names: Parameter names.
@@ -398,8 +403,8 @@ class TestIssueDetection:
             ParameterScreening("a", mu_star=1.0, sigma=0.1, mu_star_conf=0.05, influential=True),
         ]
         sobol_result = {
-            "S1": np.array([[0.01, 0.02]]),  # (n_obj=2, n_params=1) — obj1 flat-ish
-            "ST": np.array([[0.05, 0.3]]),
+            "S1": np.array([[0.01], [0.8]]),  # (n_obj=2, n_params=1) — obj1 flat, obj2 responsive
+            "ST": np.array([[0.05], [0.9]]),
             "param_names": ["a"],
             "objective_names": ["obj_flat", "obj_responsive"],
             "n_objectives": 2,
@@ -1015,14 +1020,19 @@ Expected: FAIL — `cannot import name 'make_preflight_eval_fn'`
 
 - [ ] **Step 3: Implement eval factory**
 
-Add to `osmose/calibration/preflight.py`:
+Add to the top of `osmose/calibration/preflight.py` (module-level imports, needed for mock patching in tests):
 
 ```python
 from pathlib import Path
 
 from osmose.calibration.problem import FreeParameter, Transform
+from osmose.engine import PythonEngine
+from osmose.results import OsmoseResults
+```
 
+Then add the function:
 
+```python
 def make_preflight_eval_fn(
     config: dict[str, str],
     free_params: list[FreeParameter],
@@ -1042,9 +1052,6 @@ def make_preflight_eval_fn(
     Returns:
         Function mapping parameter vector (1D array) → objective values (1D array).
     """
-    from osmose.engine import PythonEngine
-    from osmose.results import OsmoseResults
-
     cfg = dict(config)
     configured_years = int(cfg.get("simulation.time.nyear", "10"))
     effective_years = sim_years if sim_years is not None else min(5, configured_years)
@@ -1566,11 +1573,9 @@ Update the `"preflight"` handler in `_poll_cal_messages` to show the modal or st
                 if modal is None:
                     # No issues — start calibration immediately
                     surrogate_status.set("Pre-flight passed — starting calibration...")
-                    # Re-read current state and start optimization
                     selected = collect_selected_params(input, state)
                     free_params = build_free_params(selected)
-                    # Use the stored preflight result's survivors to filter
-                    _start_optimization_from_preflight(free_params, payload)
+                    _start_optimization_with_params(free_params)
                 else:
                     ui.modal_show(modal)
 ```
