@@ -204,9 +204,7 @@ class MPAZone:
         if self.start_year > self.end_year:
             raise ValueError(f"MPAZone start_year ({self.start_year}) > end_year ({self.end_year})")
         if self.grid.ndim != 2:
-            raise ValueError(
-                f"MPAZone.grid must be 2D (shape (ny, nx)), got {self.grid.ndim}D"
-            )
+            raise ValueError(f"MPAZone.grid must be 2D (shape (ny, nx)), got {self.grid.ndim}D")
         if not np.isin(self.grid, [0.0, 1.0]).all():
             unique = np.unique(self.grid)
             raise ValueError(
@@ -214,9 +212,7 @@ class MPAZone:
                 f"got unique values {unique.tolist()}"
             )
         if self.start_year < 0:
-            raise ValueError(
-                f"MPAZone.start_year must be non-negative, got {self.start_year}"
-            )
+            raise ValueError(f"MPAZone.start_year must be non-negative, got {self.start_year}")
 
 
 def _parse_fisheries(
@@ -372,9 +368,7 @@ def _load_fishing_seasonality(
         # Try file reference
         file_key = cfg.get(f"fisheries.seasonality.file.fsh{fsh}", "")
         if file_key:
-            path = _require_file(
-                file_key, _cfg_dir(cfg), f"fisheries.seasonality.file.fsh{fsh}"
-            )
+            path = _require_file(file_key, _cfg_dir(cfg), f"fisheries.seasonality.file.fsh{fsh}")
             df = pd.read_csv(path, sep=";")
             _set_season(sp_idx, df.iloc[:, 1].values.astype(np.float64))
             continue
@@ -436,15 +430,9 @@ def _parse_growth_params(
     k = _species_float(cfg, "species.k.sp{i}", n_sp)
     t0 = _species_float(cfg, "species.t0.sp{i}", n_sp)
     egg_size = _species_float(cfg, "species.egg.size.sp{i}", n_sp)
-    condition_factor = _species_float(
-        cfg, "species.length2weight.condition.factor.sp{i}", n_sp
-    )
-    allometric_power = _species_float(
-        cfg, "species.length2weight.allometric.power.sp{i}", n_sp
-    )
-    vb_threshold_age = _species_float(
-        cfg, "species.vonbertalanffy.threshold.age.sp{i}", n_sp
-    )
+    condition_factor = _species_float(cfg, "species.length2weight.condition.factor.sp{i}", n_sp)
+    allometric_power = _species_float(cfg, "species.length2weight.allometric.power.sp{i}", n_sp)
+    vb_threshold_age = _species_float(cfg, "species.vonbertalanffy.threshold.age.sp{i}", n_sp)
     lifespan_dt = (lifespan_years * n_dt).astype(np.int32)
     delta_lmax_factor = _species_float_optional(
         cfg, "species.delta.lmax.factor.sp{i}", n_sp, default=2.0
@@ -482,9 +470,7 @@ def _parse_reproduction_params(
     relative_fecundity = _species_float_optional(
         cfg, "species.relativefecundity.sp{i}", n_sp, default=500.0
     )
-    maturity_size = _species_float_optional(
-        cfg, "species.maturity.size.sp{i}", n_sp, default=0.0
-    )
+    maturity_size = _species_float_optional(cfg, "species.maturity.size.sp{i}", n_sp, default=0.0)
     seeding_biomass = _species_float_optional(
         cfg, "population.seeding.biomass.sp{i}", n_sp, default=0.0
     )
@@ -525,9 +511,7 @@ def _parse_predation_params(
     """Parse feeding stages, size ratios, predation, and post-predation params."""
     n_bkg = len(background_list)
     focal_ingestion_rate = _species_float(cfg, "predation.ingestion.rate.max.sp{i}", n_sp)
-    focal_critical_success_rate = _species_float(
-        cfg, "predation.efficiency.critical.sp{i}", n_sp
-    )
+    focal_critical_success_rate = _species_float(cfg, "predation.efficiency.critical.sp{i}", n_sp)
 
     _VALID_METRICS = {"age", "size", "weight", "tl"}
     global_metric = cfg.get("predation.predprey.stage.structure", "size").strip().lower()
@@ -592,9 +576,7 @@ def _parse_predation_params(
     # Background species
     for b in background_list:
         b_idx = b.file_index
-        b_metric = cfg.get(
-            f"predation.predprey.stage.structure.sp{b_idx}", ""
-        ).strip().lower()
+        b_metric = cfg.get(f"predation.predprey.stage.structure.sp{b_idx}", "").strip().lower()
         if not b_metric:
             b_metric = global_metric
         all_metrics.append(b_metric)
@@ -717,9 +699,7 @@ def _merge_focal_background(
                 [focal["focal_additional_mortality_rate"], bkg_zeros_f]
             ),
             "sex_ratio": np.concatenate([focal["focal_sex_ratio"], bkg_zeros_f]),
-            "relative_fecundity": np.concatenate(
-                [focal["focal_relative_fecundity"], bkg_zeros_f]
-            ),
+            "relative_fecundity": np.concatenate([focal["focal_relative_fecundity"], bkg_zeros_f]),
             "maturity_size": np.concatenate([focal["focal_maturity_size"], bkg_zeros_f]),
             "seeding_biomass": np.concatenate([focal["focal_seeding_biomass"], bkg_zeros_f]),
             "seeding_max_step": np.concatenate([focal["focal_seeding_max_step"], bkg_zeros_i]),
@@ -746,9 +726,7 @@ def _merge_focal_background(
             ),
             "movement_method": focal_movement_method + ["none"] * n_bkg,
             "random_walk_range": np.concatenate([focal["focal_random_walk_range"], bkg_zeros_i]),
-            "out_mortality_rate": np.concatenate(
-                [focal["focal_out_mortality_rate"], bkg_zeros_f]
-            ),
+            "out_mortality_rate": np.concatenate([focal["focal_out_mortality_rate"], bkg_zeros_f]),
             "n_schools": np.concatenate([focal["focal_n_schools"], bkg_zeros_i]),
             "fishing_spatial_maps": focal_fishing_spatial_maps + [None] * n_bkg,
         }
@@ -944,7 +922,6 @@ def _load_spawning_seasons(
         if n_vals < max_cols:
             seasons[i, n_vals:] = 1.0 / n_dt_per_year
 
-
     return seasons
 
 
@@ -1054,6 +1031,19 @@ class EngineConfig:
     # Fishing rate by year: per-species array of annual rates, or None
     fishing_rate_by_year: list[NDArray[np.float64] | None] | None
 
+    # Fishing rate by dt and age/size class: per-species ByClassTimeSeries, or None
+    fishing_rate_by_dt_by_class: list | None  # list[ByClassTimeSeries | None] | None
+
+    # Catch-based fishing: annual target catches (tonnes) per species, or None
+    fishing_catches: NDArray[np.float64] | None
+    # Catch by year: per-species list of annual catch values, or None
+    fishing_catches_by_year: list | None  # list[NDArray[np.float64] | None] | None
+    # Catch seasonality: same as fishing_seasonality
+    fishing_catches_season: NDArray[np.float64] | None
+
+    # L75: length at 75% selectivity (for sigmoid/Gaussian/log-normal)
+    fishing_selectivity_l75: NDArray[np.float64]
+
     # Marine Protected Areas
     mpa_zones: list[MPAZone] | None
 
@@ -1063,6 +1053,11 @@ class EngineConfig:
     # Predation accessibility
     accessibility_matrix: NDArray[np.float64] | None  # (n_pred, n_prey) or None
     stage_accessibility: AccessibilityMatrix | None  # stage-indexed accessibility, or None
+
+    # Dynamic accessibility — density-dependent scaling
+    dynamic_accessibility_enabled: bool
+    dynamic_accessibility_exponent: float
+    dynamic_accessibility_floor: float
 
     # Reproduction
     spawning_season: NDArray[np.float64] | None  # (n_species, n_dt_per_year) or None
@@ -1315,9 +1310,7 @@ class EngineConfig:
             else:
                 focal_fishing_spatial_maps.append(shared_fishing_map)
 
-        _pred = _parse_predation_params(
-            cfg, n_sp, n_dt, background_list, focal_fishing_l50_fsh
-        )
+        _pred = _parse_predation_params(cfg, n_sp, n_dt, background_list, focal_fishing_l50_fsh)
         focal_ingestion_rate = _pred["focal_ingestion_rate"]
         focal_critical_success_rate = _pred["focal_critical_success_rate"]
         focal_starvation_rate_max = _pred["focal_starvation_rate_max"]
@@ -1334,7 +1327,9 @@ class EngineConfig:
 
         # Merge focal arrays with background species defaults
         _focal = {
-            "focal_linf": focal_linf, "focal_k": focal_k, "focal_t0": focal_t0,
+            "focal_linf": focal_linf,
+            "focal_k": focal_k,
+            "focal_t0": focal_t0,
             "focal_egg_size": focal_egg_size,
             "focal_condition_factor": focal_condition_factor,
             "focal_allometric_power": focal_allometric_power,
@@ -1363,8 +1358,11 @@ class EngineConfig:
             "fishing": fishing,
         }
         _merged = _merge_focal_background(
-            _focal, background_list, focal_species_names,
-            focal_fishing_spatial_maps, focal_movement_method,
+            _focal,
+            background_list,
+            focal_species_names,
+            focal_fishing_spatial_maps,
+            focal_movement_method,
         )
         all_species_names = _merged["all_species_names"]
         linf = _merged["linf"]
@@ -1417,6 +1415,58 @@ class EngineConfig:
         fishing_rate_by_year = _load_fishing_rate_by_year(cfg, n_sp)
         mpa_zones = _parse_mpa_zones(cfg)
         fishing_discard_rate = _load_discard_rates(cfg, focal_species_names, n_sp)
+
+        # SP-1: Rate by dt by class
+        from osmose.engine.timeseries import ByClassTimeSeries
+
+        fishing_rate_by_dt_by_class: list | None = None
+        _have_dt_class = False
+        _dt_class_list: list = [None] * n_sp
+        for i in range(n_sp):
+            for variant in ["byDt.byAge", "byDt.bySize"]:
+                key = f"mortality.fishing.rate.{variant}.file.sp{i}"
+                if key in cfg and cfg[key]:
+                    ts_path = _resolve_file(cfg[key], _cfg_dir(cfg))
+                    if ts_path is not None:
+                        n_years = int(cfg.get("simulation.time.nyear", "1"))
+                        ts = ByClassTimeSeries.from_csv(ts_path, n_dt, n_dt * n_years)
+                        _dt_class_list[i] = ts
+                        _have_dt_class = True
+                    break
+        if _have_dt_class:
+            fishing_rate_by_dt_by_class = _dt_class_list
+
+        # SP-1: Catch-based fishing
+        fishing_catches: np.ndarray | None = None
+        fishing_catches_by_year: list | None = None
+        fishing_catches_season: np.ndarray | None = None
+        for i in range(n_sp):
+            key = f"mortality.fishing.catches.sp{i}"
+            if key in cfg:
+                if fishing_catches is None:
+                    fishing_catches = np.zeros(n_sp, dtype=np.float64)
+                fishing_catches[i] = float(cfg[key])
+            year_key = f"mortality.fishing.catches.byYear.file.sp{i}"
+            if year_key in cfg and cfg[year_key]:
+                if fishing_catches_by_year is None:
+                    fishing_catches_by_year = [None] * n_sp
+                yr_path = _resolve_file(cfg[year_key], _cfg_dir(cfg))
+                if yr_path is not None:
+                    n_years = int(cfg.get("simulation.time.nyear", "1"))
+                    arr = np.loadtxt(yr_path, delimiter=";")
+                    if arr.ndim == 0:
+                        arr = np.array([float(arr)])
+                    fishing_catches_by_year[i] = arr[:n_years]
+
+        # SP-1: L75 selectivity parameter
+        fishing_selectivity_l75 = _species_float_optional(
+            cfg, "fisheries.selectivity.l75.fsh{i}", n_sp, 0.0
+        )
+        # Also try per-species key format
+        for i in range(n_sp):
+            sp_key = f"fishing.selectivity.l75.sp{i}"
+            if sp_key in cfg:
+                fishing_selectivity_l75[i] = float(cfg[sp_key])
 
         # Pad fishing_seasonality and fishing_discard_rate for background species.
         # These loaders only know about focal species (n_sp), but work_state.species_id
@@ -1595,6 +1645,15 @@ class EngineConfig:
             starvation_rate_max=starvation_rate_max,
             accessibility_matrix=_load_accessibility(cfg, n_sp),
             stage_accessibility=_load_stage_accessibility(cfg, all_species_names),
+            dynamic_accessibility_enabled=(
+                cfg.get("predation.accessibility.dynamic.enabled", "false").lower() == "true"
+            ),
+            dynamic_accessibility_exponent=float(
+                cfg.get("predation.accessibility.dynamic.exponent", "1.0")
+            ),
+            dynamic_accessibility_floor=float(
+                cfg.get("predation.accessibility.dynamic.floor", "0.05")
+            ),
             spawning_season=_load_spawning_seasons(cfg, n_sp, n_dt),
             fishing_enabled=(
                 cfg.get("simulation.fishing.mortality.enabled", "true").lower() == "true"
@@ -1607,6 +1666,15 @@ class EngineConfig:
             fishing_selectivity_slope=fishing_selectivity_slope,
             fishing_seasonality=fishing_seasonality,
             fishing_rate_by_year=fishing_rate_by_year,
+            fishing_rate_by_dt_by_class=fishing_rate_by_dt_by_class,
+            fishing_catches=fishing_catches,
+            fishing_catches_by_year=fishing_catches_by_year,
+            fishing_catches_season=fishing_catches_season,
+            fishing_selectivity_l75=np.concatenate(
+                [fishing_selectivity_l75, np.zeros(n_bkg, dtype=np.float64)]
+            )
+            if n_bkg > 0
+            else fishing_selectivity_l75,
             mpa_zones=mpa_zones,
             fishing_discard_rate=fishing_discard_rate,
             movement_method=movement_method,

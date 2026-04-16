@@ -44,6 +44,25 @@ def fishing_mortality(
                 mask = sp == sp_i
                 f_rate[mask] = arr[year]
 
+    # SP-1: Rate by dt by class — overrides base rate with per-class rate for this step
+    if config.fishing_rate_by_dt_by_class is not None:
+        step_idx = step % (config.n_dt_per_year * max(1, config.n_year))
+        for sp_i in range(config.n_species):
+            ts = config.fishing_rate_by_dt_by_class[sp_i]
+            if ts is None:
+                continue
+            sp_mask = sp == sp_i
+            if not sp_mask.any():
+                continue
+            ages_dt = state.age_dt[sp_mask].astype(float)
+            sp_indices = np.where(sp_mask)[0]
+            for j in range(len(ages_dt)):
+                class_idx = ts.class_of(ages_dt[j])
+                if class_idx >= 0:
+                    f_rate[sp_indices[j]] = ts.get_by_class(step_idx, class_idx)
+                else:
+                    f_rate[sp_indices[j]] = 0.0
+
     # 2.1: Seasonality — multiply by normalized season weight for this step
     step_in_year = step % config.n_dt_per_year
     if config.fishing_seasonality is not None:
