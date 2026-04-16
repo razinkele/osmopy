@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from osmose.calibration.preflight import (
@@ -10,6 +11,8 @@ from osmose.calibration.preflight import (
     ParameterScreening,
     PreflightIssue,
     PreflightResult,
+    run_morris_screening,
+    detect_issues,  # noqa: F401 — used in TestIssueDetection below
 )
 
 
@@ -76,3 +79,45 @@ class TestDataModel:
         assert result.sobol is None
         assert result.survivors == ["a"]
         assert result.elapsed_seconds == pytest.approx(1.23)
+
+
+class TestMorrisScreening:
+    """Tests for run_morris_screening()."""
+
+    def test_ranking_correctness(self) -> None:
+        """y = 3*a + 0*b + 0.5*c  →  a highest mu_star, b negligible, c influential."""
+
+        def eval_fn(X: np.ndarray) -> np.ndarray:
+            return 3.0 * X[:, 0] + 0.0 * X[:, 1] + 0.5 * X[:, 2]
+
+        results = run_morris_screening(
+            param_names=["a", "b", "c"],
+            param_bounds=[(0, 1), (0, 1), (0, 1)],
+            eval_fn=eval_fn,
+            n_trajectories=20,
+            seed=42,
+        )
+        by_key = {ps.key: ps for ps in results}
+        assert by_key["a"].mu_star > by_key["c"].mu_star > by_key["b"].mu_star
+        assert by_key["a"].influential
+        assert by_key["c"].influential
+        assert not by_key["b"].influential
+
+    def test_multi_objective_aggregation(self) -> None:
+        """obj1 = 3*a, obj2 = 3*b  →  both a and b influential after max aggregation."""
+
+        def eval_fn(X: np.ndarray) -> np.ndarray:
+            obj1 = 3.0 * X[:, 0]
+            obj2 = 3.0 * X[:, 1]
+            return np.column_stack([obj1, obj2])
+
+        results = run_morris_screening(
+            param_names=["a", "b"],
+            param_bounds=[(0, 1), (0, 1)],
+            eval_fn=eval_fn,
+            n_trajectories=20,
+            seed=42,
+        )
+        by_key = {ps.key: ps for ps in results}
+        assert by_key["a"].influential
+        assert by_key["b"].influential
