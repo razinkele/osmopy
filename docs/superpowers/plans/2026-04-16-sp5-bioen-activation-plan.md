@@ -303,7 +303,8 @@ def _apply_starvation_for_school(
         eta = config.bioen_eta[sp_i] if hasattr(config, 'bioen_eta') else 1.0
 
         n_dead_arr, new_gonad = bioen_starvation(e_net, gonad_w, weight, eta, n_subdt)
-        n_dead = float(n_dead_arr[0]) * abd  # fraction → absolute
+        # bioen_starvation returns absolute n_dead (deficit/weight), NOT a fraction
+        n_dead = float(n_dead_arr[0])
         if n_dead > 0:
             state.n_dead[idx, _STARVATION] += n_dead
             inst_abd[idx] -= n_dead
@@ -434,8 +435,27 @@ def _apply_foraging_for_school(
     from osmose.engine.processes.foraging_mortality import foraging_rate
 
     sp_i = state.species_id[idx]
-    k_for = np.array([config.foraging_k_for[sp_i]]) if config.foraging_k_for is not None else None
-    rate = foraging_rate(k_for=k_for, ndt_per_year=config.n_dt_per_year)
+
+    # Java checks isGeneticEnabled() to decide mode
+    # Genetic mode: needs per-school imax trait from genetic state
+    genetic = (
+        config.foraging_k1_for is not None
+        and config.foraging_k2_for is not None
+        and hasattr(state, 'imax_trait')
+        and state.imax_trait is not None
+    )
+    if genetic:
+        rate = foraging_rate(
+            k_for=None,
+            ndt_per_year=config.n_dt_per_year,
+            k1_for=np.array([config.foraging_k1_for[sp_i]]),
+            k2_for=np.array([config.foraging_k2_for[sp_i]]),
+            imax_trait=np.array([state.imax_trait[idx]]),
+            I_max=np.array([config.foraging_I_max[sp_i]]),
+        )
+    else:
+        k_for = np.array([config.foraging_k_for[sp_i]]) if config.foraging_k_for is not None else np.array([0.0])
+        rate = foraging_rate(k_for=k_for, ndt_per_year=config.n_dt_per_year)
 
     M = float(rate[0]) / n_subdt
     if M <= 0:
@@ -457,6 +477,14 @@ In the Python path of `_mortality_in_cell()`, add to the cause switch:
 ```
 
 Also add `seq_for = rng.permutation(n_local).astype(np.int32)` alongside the other shuffle sequences.
+
+**Numba path:** The existing Numba-JIT mortality kernel (`_mortality_in_cell_numba`) only handles 4 causes. When `bioen_enabled=True`, force the Python fallback path by setting `use_full_numba = False` when bioen is on. This avoids complex Numba changes. Add to the `use_full_numba` condition:
+```python
+    use_full_numba = (
+        _HAS_NUMBA and inst_abd is not None and rsc_size_min is not None
+        and eff_starv is not None and not config.bioen_enabled  # <-- disable Numba for bioen
+    )
+```
 
 - [ ] **Step 4: Run tests**
 
