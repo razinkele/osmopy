@@ -13,6 +13,8 @@ import ui.charts as _charts  # noqa: F401 — registers custom plotly template
 
 from shiny_deckgl import head_includes as _deckgl_head
 
+from ui.components.renderer_badge import renderer_badge_script
+
 from ui.pages.setup import setup_ui, setup_server
 from ui.pages.grid import grid_ui, grid_server
 from ui.pages.forcing import forcing_ui, forcing_server
@@ -61,6 +63,7 @@ app_ui = ui.page_fillable(
     ui.head_content(ui.tags.link(rel="icon", type="image/svg+xml", href="favicon.svg")),
     # ── deck.gl JS/CSS dependencies (needed for grid map) ──────
     _deckgl_head(),
+    renderer_badge_script(),
     ui.head_content(
         ui.tags.script("""
         function toggleTheme() {
@@ -79,7 +82,7 @@ app_ui = ui.page_fillable(
             document.documentElement.setAttribute('data-theme', saved);
             // Notify Shiny once connected
             if (typeof Shiny !== 'undefined') {
-                Shiny.addCustomMessageHandler('_noop', function(){});
+                Shiny.addCustomMessageHandler('_noop', function(msg){});
             }
             document.addEventListener('shiny:connected', function() {
                 var theme = localStorage.getItem('osmose-theme') || 'light';
@@ -156,34 +159,8 @@ app_ui = ui.page_fillable(
             });
         })();
 
-        // Engine mode toggle — syncs with Shiny input and localStorage
-        window.setEngineMode = function(mode) {
-            localStorage.setItem('osmose-engine', mode);
-            var jBtn = document.getElementById('engineBtnJava');
-            var pBtn = document.getElementById('engineBtnPython');
-            if (mode === 'java') {
-                jBtn.classList.add('active');
-                pBtn.classList.remove('active');
-            } else {
-                pBtn.classList.add('active');
-                jBtn.classList.remove('active');
-            }
-            if (typeof Shiny !== 'undefined' && Shiny.setInputValue) {
-                Shiny.setInputValue('engine_mode', mode);
-            }
-            // Toggle disabled state on Python-only nav items
-            document.querySelectorAll('.osm-engine-gated').forEach(function(el) {
-                if (mode === 'python') {
-                    el.classList.remove('osm-disabled');
-                    el.removeAttribute('title');
-                } else {
-                    el.classList.add('osm-disabled');
-                    el.setAttribute('title', 'Requires Python engine');
-                }
-            });
-        };
-        // Restore engine mode from localStorage on page load
-        // (deferred to consolidated init in end-of-body script)
+        // Engine mode toggle is defined in end-of-body script to guarantee
+        // availability before initOnceElements and onclick handlers run.
     """)
     ),
     # ── App header ──────────────────────────────────────────────
@@ -331,6 +308,34 @@ app_ui = ui.page_fillable(
     # Consolidated initialization: nav expand tab, popovers, spatial pill, skip link
     ui.tags.script("""
     (function() {
+        // ── Engine mode toggle — must be defined before initOnceElements ──
+        window.setEngineMode = function(mode) {
+            localStorage.setItem('osmose-engine', mode);
+            var jBtn = document.getElementById('engineBtnJava');
+            var pBtn = document.getElementById('engineBtnPython');
+            if (jBtn && pBtn) {
+                if (mode === 'java') {
+                    jBtn.classList.add('active');
+                    pBtn.classList.remove('active');
+                } else {
+                    pBtn.classList.add('active');
+                    jBtn.classList.remove('active');
+                }
+            }
+            if (typeof Shiny !== 'undefined' && Shiny.setInputValue) {
+                Shiny.setInputValue('engine_mode', mode);
+            }
+            document.querySelectorAll('.osm-engine-gated').forEach(function(el) {
+                if (mode === 'python') {
+                    el.classList.remove('osm-disabled');
+                    el.removeAttribute('title');
+                } else {
+                    el.classList.add('osm-disabled');
+                    el.setAttribute('title', 'Requires Python engine');
+                }
+            });
+        };
+
         // ── Consolidated one-shot DOM setup ──────────────────────
         function initOnceElements() {
             // 1. Create nav expand tab (if not already created)

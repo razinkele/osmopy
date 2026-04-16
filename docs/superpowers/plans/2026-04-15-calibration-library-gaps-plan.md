@@ -450,7 +450,9 @@ def make_banded_objective(
     """Factory: returns callable(species_stats) -> scalar objective.
 
     species_stats keys: ``{species}_mean``, ``{species}_cv``, ``{species}_trend``.
-    Missing species keys receive a penalty of 100.0.
+    Missing species keys receive a penalty of 100.0, weighted by species weight.
+    (Note: the Baltic script applies the missing-species penalty unweighted.
+    Weighting it here is intentional — see spec for rationale.)
     """
     target_dict = {t.species: t for t in targets}
 
@@ -799,11 +801,9 @@ In `__init__`, after `self._n_restarts_optimizer = n_restarts_optimizer`, add:
 At the end of `fit()`, after `self._is_fitted = True`, add:
 ```python
         # Compute in-sample R² as a sanity check
+        # Note: y has already been reshaped to 2D earlier in fit(), so y[:, 0] is safe
         means, _ = self.predict(X)
-        if y.ndim == 1:
-            y_col = y
-        else:
-            y_col = y[:, 0]
+        y_col = y[:, 0]
         ss_res = float(np.sum((y_col - means[:, 0]) ** 2))
         ss_tot = float(np.sum((y_col - np.mean(y_col)) ** 2))
         self.fit_score_ = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
@@ -1266,12 +1266,26 @@ Add new methods after `cleanup_run`:
                 f.unlink(missing_ok=True)
 
     def _validate_overrides(self, overrides: dict[str, str]) -> None:
-        """Validate overrides against the schema registry."""
+        """Validate overrides against the schema registry.
+
+        Note: overrides values are strings (from OSMOSE config format).
+        We must coerce numeric values to float/int before passing to the
+        registry, since validate_value() compares with ``<`` / ``>``.
+        """
         if self._registry is None:
             return
-        errors = self._registry.validate(
-            {k: v for k, v in overrides.items()}
-        )
+        from osmose.schema.base import ParamType
+
+        coerced: dict[str, object] = {}
+        for k, v in overrides.items():
+            field = self._registry.match_field(k)
+            if field and field.param_type == ParamType.FLOAT:
+                coerced[k] = float(v)
+            elif field and field.param_type == ParamType.INT:
+                coerced[k] = int(v)
+            else:
+                coerced[k] = v
+        errors = self._registry.validate(coerced)
         if errors:
             raise ValueError(
                 f"Override validation failed ({len(errors)} errors):\n"

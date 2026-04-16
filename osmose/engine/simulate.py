@@ -55,6 +55,10 @@ class SimulationContext:
     genetic_state: GeneticState | None = None
     # DSVM fleet dynamics (None when disabled)
     fleet_state: FleetState | None = None
+    # Dynamic accessibility: per-species prey density scale factors (updated annually)
+    prey_density_scale: NDArray[np.float64] | None = None
+    # Reference biomass for dynamic accessibility (set from year-0 or user config)
+    prey_density_reference: NDArray[np.float64] | None = None
 
 
 @dataclass(frozen=True)
@@ -1024,6 +1028,26 @@ def simulate(
             ctx.fleet_state.vessel_days_used[:] = 0
             ctx.fleet_state.vessel_revenue[:] = 0.0
             ctx.fleet_state.vessel_costs[:] = 0.0
+
+        # -- Dynamic accessibility: update prey density scale at year boundaries --
+        if config.dynamic_accessibility_enabled and step % config.n_dt_per_year == 0:
+            from osmose.engine.processes.dynamic_accessibility import compute_prey_density_scale
+
+            species_biomass = np.zeros(config.n_species, dtype=np.float64)
+            for sp in range(config.n_species):
+                mask = state.species_id == sp
+                species_biomass[sp] = np.sum(state.abundance[mask] * state.weight[mask])
+
+            if ctx.prey_density_reference is None:
+                # Year 0: use initial biomass as reference
+                ctx.prey_density_reference = np.maximum(species_biomass.copy(), 1e-6)
+
+            ctx.prey_density_scale = compute_prey_density_scale(
+                prey_biomass=species_biomass,
+                reference_biomass=ctx.prey_density_reference,
+                exponent=config.dynamic_accessibility_exponent,
+                floor=config.dynamic_accessibility_floor,
+            )
 
         state = _incoming_flux(state, flux_state, step, rng)
         state = _reset_step_variables(state)

@@ -1,0 +1,58 @@
+# Baltic Sea LTL (plankton/resource) configuration
+# Resources are numbered sp8-sp13 (continuing after 8 focal species)
+# Biomass forcing from NetCDF (tonnes per cell, seasonal cycle)
+
+species.type.sp8;resource
+species.type.sp9;resource
+species.type.sp10;resource
+species.type.sp11;resource
+species.type.sp12;resource
+species.type.sp13;resource
+
+species.name.sp8;Diatoms
+species.name.sp9;Dinoflagellates
+species.name.sp10;Microzooplankton
+species.name.sp11;Mesozooplankton
+species.name.sp12;Macrozooplankton
+species.name.sp13;Benthos
+
+# NetCDF forcing file (all resources in same file)
+species.file.sp8;baltic_ltl_biomass.nc
+species.file.sp9;baltic_ltl_biomass.nc
+species.file.sp10;baltic_ltl_biomass.nc
+species.file.sp11;baltic_ltl_biomass.nc
+species.file.sp12;baltic_ltl_biomass.nc
+species.file.sp13;baltic_ltl_biomass.nc
+
+# Trophic levels (engine key: species.trophic.level)
+species.trophic.level.sp8;1.0
+species.trophic.level.sp9;1.0
+species.trophic.level.sp10;2.0
+species.trophic.level.sp11;2.5
+species.trophic.level.sp12;3.0
+species.trophic.level.sp13;2.5
+
+# Size range (cm)
+species.size.min.sp8;0.0002
+species.size.min.sp9;0.0002
+species.size.min.sp10;0.002
+species.size.min.sp11;0.02
+species.size.min.sp12;0.2
+species.size.min.sp13;0.5
+
+species.size.max.sp8;0.02
+species.size.max.sp9;0.002
+species.size.max.sp10;0.02
+species.size.max.sp11;0.2
+species.size.max.sp12;2.0
+species.size.max.sp13;10.0
+
+# Accessibility to fish (proportion available per timestep)
+species.accessibility2fish.sp8;0.8
+species.accessibility2fish.sp9;0.8
+species.accessibility2fish.sp10;0.8
+species.accessibility2fish.sp11;0.8
+species.accessibility2fish.sp12;0.8
+species.accessibility2fish.sp13;0.8
+
+species.biomass.nsteps.year;24

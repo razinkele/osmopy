@@ -1,0 +1,69 @@
+{
+  "phase": "1g",
+  "settings": {
+    "years": 40,
+    "seed": 42,
+    "cod_larval_mort": 15.0,
+    "stickleback_larval_mort": 3.5,
+    "stickleback_fecundity": 600,
+    "stickleback_ingestion": 5.0,
+    "dynamic_accessibility": true,
+    "ltl_multiplier": 0.4,
+    "ltl_accessibility": 0.4,
+    "da_exponent": 1.0,
+    "da_floor": 0.05
+  },
+  "results": {
+    "cod": {
+      "biomass": 187290,
+      "target": 200000,
+      "ratio": 0.94,
+      "status": "GOOD"
+    },
+    "herring": {
+      "biomass": 2750531,
+      "target": 1500000,
+      "ratio": 1.83,
+      "status": "GOOD"
+    },
+    "sprat": {
+      "biomass": 416558,
+      "target": 800000,
+      "ratio": 0.52,
+      "status": "GOOD"
+    },
+    "flounder": {
+      "biomass": 23784,
+      "target": 50000,
+      "ratio": 0.48,
+      "status": "OK"
+    },
+    "perch": {
+      "biomass": 7249,
+      "target": 20000,
+      "ratio": 0.36,
+      "status": "OK"
+    },
+    "pikeperch": {
+      "biomass": 8974,
+      "target": 10000,
+      "ratio": 0.9,
+      "status": "GOOD"
+    },
+    "whitefish": {
+      "biomass": 29226,
+      "target": 15000,
+      "ratio": 1.95,
+      "status": "GOOD"
+    },
+    "stickleback": {
+      "biomass": 263052,
+      "target": 200000,
+      "ratio": 1.32,
+      "status": "GOOD"
+    }
+  },
+  "total_log_error": 4.13,
+  "species_within_2x": 6,
+  "species_within_3x": 8
+}

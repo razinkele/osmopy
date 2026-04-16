@@ -52,6 +52,20 @@ _STARVATION = int(MortalityCause.STARVATION)
 _ADDITIONAL = int(MortalityCause.ADDITIONAL)
 _FISHING = int(MortalityCause.FISHING)
 _DISCARDS = int(MortalityCause.DISCARDS)
+_FORAGING = int(MortalityCause.FORAGING)
+
+
+def _get_mortality_causes(config: EngineConfig) -> list[int]:
+    """Get the list of mortality causes for the interleaved loop.
+
+    Without bioen: [PREDATION, STARVATION, ADDITIONAL, FISHING]
+    With bioen: [PREDATION, STARVATION, ADDITIONAL, FISHING, FORAGING]
+    Matches Java MortalityProcess lines 512-517.
+    """
+    causes = [_PREDATION, _STARVATION, _ADDITIONAL, _FISHING]
+    if config.bioen_enabled:
+        causes.append(_FORAGING)
+    return causes
 
 
 # ---------------------------------------------------------------------------
@@ -250,6 +264,59 @@ def _apply_fishing_for_school(
         state.n_dead[idx, _DISCARDS] += n_dead * discard_r
     else:
         state.n_dead[idx, _FISHING] += n_dead
+    inst_abd[idx] -= n_dead
+
+
+def _apply_foraging_for_school(
+    idx: int,
+    state: SchoolState,
+    config: EngineConfig,
+    n_subdt: int,
+    inst_abd: NDArray[np.float64],
+) -> None:
+    """Apply foraging mortality to a single school (bioen only, in-place)."""
+    if state.is_background[idx]:
+        return
+    if state.age_dt[idx] < state.first_feeding_age_dt[idx]:
+        return
+
+    abd = inst_abd[idx]
+    if abd <= 0:
+        return
+
+    from osmose.engine.processes.foraging_mortality import foraging_rate
+
+    sp_i = state.species_id[idx]
+
+    # Java checks isGeneticEnabled() to decide mode
+    genetic = (
+        config.foraging_k1_for is not None
+        and config.foraging_k2_for is not None
+        and hasattr(state, "imax_trait")
+        and state.imax_trait is not None
+    )
+    if genetic:
+        rate = foraging_rate(
+            k_for=None,
+            ndt_per_year=config.n_dt_per_year,
+            k1_for=np.array([config.foraging_k1_for[sp_i]]),
+            k2_for=np.array([config.foraging_k2_for[sp_i]]),
+            imax_trait=np.array([state.imax_trait[idx]]),
+            I_max=np.array([config.foraging_I_max[sp_i]]),
+        )
+    else:
+        k_for = (
+            np.array([config.bioen_k_for[sp_i]])
+            if config.bioen_k_for is not None
+            else np.array([0.0])
+        )
+        rate = foraging_rate(k_for=k_for, ndt_per_year=config.n_dt_per_year)
+
+    M = float(rate[0]) / n_subdt
+    if M <= 0:
+        return
+    n_dead = abd * (1.0 - np.exp(-M))
+    state.n_dead[idx, _FORAGING] += n_dead
     inst_abd[idx] -= n_dead
 
 
@@ -1445,10 +1512,16 @@ def _mortality_in_cell(
     seq_starv = rng.permutation(n_local).astype(np.int32)
     seq_fish = rng.permutation(n_local).astype(np.int32)
     seq_nat = rng.permutation(n_local).astype(np.int32)
+    seq_for = rng.permutation(n_local).astype(np.int32)
 
     # Full Numba path: all 4 causes compiled (Tier 3)
+    # Disable Numba when bioen is enabled (Numba kernel only handles 4 causes)
     use_full_numba = (
-        _HAS_NUMBA and inst_abd is not None and rsc_size_min is not None and eff_starv is not None
+        _HAS_NUMBA
+        and inst_abd is not None
+        and rsc_size_min is not None
+        and eff_starv is not None
+        and not config.bioen_enabled
     )
     if use_full_numba:
         rsc_bio = resources.biomass if resources is not None else _DUMMY_RSC_2D
@@ -1519,7 +1592,7 @@ def _mortality_in_cell(
         return
 
     # Python fallback path
-    causes = [_PREDATION, _STARVATION, _ADDITIONAL, _FISHING]
+    causes = _get_mortality_causes(config)
 
     for i in range(n_local):
         rng.shuffle(causes)
@@ -1564,6 +1637,12 @@ def _mortality_in_cell(
                 f_local = seq_fish[i]
                 f_idx = int(cell_indices[f_local])
                 _apply_fishing_for_school(f_idx, state, config, n_subdt, inst_abd, step=step)
+            elif cause == _FORAGING:
+                if inst_abd is None:
+                    raise RuntimeError("inst_abd must not be None for FORAGING cause")
+                fo_local = seq_for[i]
+                fo_idx = int(cell_indices[fo_local])
+                _apply_foraging_for_school(fo_idx, state, config, n_subdt, inst_abd)
 
 
 # ---------------------------------------------------------------------------

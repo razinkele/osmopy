@@ -1,0 +1,30 @@
+# Baltic Sea OSMOSE configuration - Main parameter file
+# 8 focal species: Cod, Herring, Sprat, Flounder, Perch, Pike-perch, Whitefish, Stickleback
+# 6 LTL resource groups: Diatoms, Dinoflagellates, Microzooplankton, Mesozooplankton, Macrozooplankton, Benthos
+
+osmose.configuration.simulation;baltic_param-simulation.csv
+osmose.configuration.species;baltic_param-species.csv
+osmose.configuration.grid;baltic_param-grid.csv
+osmose.configuration.output;baltic_param-output.csv
+osmose.configuration.mortality.predation;baltic_param-predation.csv
+osmose.configuration.mortality.fishing;baltic_param-fishing.csv
+osmose.configuration.mortality.starvation;baltic_param-starvation.csv
+osmose.configuration.mortality.additional;baltic_param-additional-mortality.csv
+osmose.configuration.reproduction;baltic_param-reproduction.csv
+osmose.configuration.movement;baltic_param-movement.csv
+osmose.configuration.plankton;baltic_param-ltl.csv
+osmose.configuration.initialization;baltic_param-init-pop.csv
+osmose.configuration.migration;baltic_param-out-mortality.csv
+
+mortality.subdt;10
+
+simulation.nschool.sp0;50
+simulation.nschool.sp1;60
+simulation.nschool.sp2;60
+simulation.nschool.sp3;40
+simulation.nschool.sp4;30
+simulation.nschool.sp5;30
+simulation.nschool.sp6;30
+simulation.nschool.sp7;40
+
+osmose.version;4.3.3

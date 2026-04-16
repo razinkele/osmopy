@@ -23,6 +23,7 @@ from shiny_deckgl import (  # type: ignore[import-untyped]
 from osmose.logging import setup_logging
 from osmose.results import OsmoseResults
 from ui.components.collapsible import collapsible_card_header, expand_tab
+from ui.components.renderer_badge import renderer_badge
 from ui.pages.grid_helpers import (
     make_legend,
     make_spatial_map,
@@ -99,6 +100,7 @@ def spatial_results_ui():
                     "Map View",
                     ui.div(
                         spatial_map.ui(height="100%"),
+                        renderer_badge(),
                         class_="osm-grid-map-container",
                     ),
                 ),
@@ -406,9 +408,9 @@ def spatial_results_server(input, output, session, state):
                 polygon_layer(
                     "spatial-data",
                     data=cells,
-                    get_polygon="@@=d.polygon",
-                    get_fill_color="@@=d.fill",
-                    get_line_color=[0, 0, 0, 0],
+                    getPolygon="@@=d.polygon",
+                    getFillColor="@@=d.fill",
+                    getLineColor=[0, 0, 0, 0],
                     filled=True,
                     stroked=False,
                     pickable=True,

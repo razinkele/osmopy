@@ -18,6 +18,7 @@ from shiny_deckgl import (  # type: ignore[import-untyped]
 
 from osmose.logging import setup_logging
 from ui.components.collapsible import collapsible_card_header, expand_tab
+from ui.components.renderer_badge import renderer_badge
 from ui.pages.grid_helpers import (
     _overlay_label,
     _zoom_for_span,
@@ -59,6 +60,7 @@ def map_viewer_ui():
                 ui.output_ui("map_viewer_nc_controls"),
                 viewer_map.ui(height="100%"),
                 ui.output_ui("map_viewer_metadata"),
+                renderer_badge(),
                 class_="osm-grid-map-container",
             ),
             col_widths=[5, 7],
@@ -323,9 +325,9 @@ def map_viewer_server(input, output, session, state):
                     polygon_layer(
                         "viewer-overlay",
                         data=cells,
-                        get_polygon="@@=d.polygon",
-                        get_fill_color="@@=d.fill",
-                        get_line_color=[0, 0, 0, 0],
+                        getPolygon="@@=d.polygon",
+                        getFillColor="@@=d.fill",
+                        getLineColor=[0, 0, 0, 0],
                         filled=True,
                         stroked=False,
                         pickable=True,
@@ -350,9 +352,9 @@ def map_viewer_server(input, output, session, state):
                     polygon_layer(
                         "viewer-overlay",
                         data=cells,
-                        get_polygon="@@=d.polygon",
-                        get_fill_color="@@=d.fill",
-                        get_line_color=[0, 0, 0, 0],
+                        getPolygon="@@=d.polygon",
+                        getFillColor="@@=d.fill",
+                        getLineColor=[0, 0, 0, 0],
                         filled=True,
                         stroked=False,
                         pickable=True,

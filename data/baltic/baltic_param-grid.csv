@@ -1,0 +1,8 @@
+# Baltic Sea grid: 50 x 40 cells covering ~10-30E, ~54-66N
+grid.nlon;50
+grid.nlat;40
+grid.upleft.lat;66
+grid.upleft.lon;10
+grid.lowright.lat;54
+grid.lowright.lon;30
+grid.mask.file;grid/baltic_mask.csv

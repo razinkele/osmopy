@@ -68,7 +68,7 @@ def _version_tuple(v: str) -> tuple[int, ...]:
 
 def list_demos() -> list[str]:
     """List available demo scenarios."""
-    return ["bay_of_biscay", "eec", "eec_full", "minimal"]
+    return ["baltic", "bay_of_biscay", "eec", "eec_full", "minimal"]
 
 
 def osmose_demo(scenario: str, output_dir: Path) -> dict:
@@ -84,6 +84,7 @@ def osmose_demo(scenario: str, output_dir: Path) -> dict:
     output_dir = Path(output_dir)
 
     generators = {
+        "baltic": _generate_baltic,
         "bay_of_biscay": _generate_bay_of_biscay,
         "eec": _generate_eec,
         "eec_full": _generate_eec_full,
@@ -93,6 +94,30 @@ def osmose_demo(scenario: str, output_dir: Path) -> dict:
     if gen is None:
         raise ValueError(f"Unknown scenario: {scenario}. Available: {list_demos()}")
     return gen(output_dir)
+
+
+def _generate_baltic(output_dir: Path) -> dict:
+    """Generate Baltic Sea multi-species demo configuration."""
+    data_dir = Path(__file__).parent.parent / "data" / "baltic"
+    config_dir = output_dir / "config"
+    sim_output = output_dir / "output"
+    sim_output.mkdir(parents=True, exist_ok=True)
+
+    if data_dir.exists():
+        shutil.copytree(data_dir, config_dir, dirs_exist_ok=True)
+    else:
+        config_dir.mkdir(parents=True, exist_ok=True)
+        master = config_dir / "baltic_all-parameters.csv"
+        master.write_text(
+            "simulation.time.ndtperyear ; 24\n"
+            "simulation.time.nyear ; 50\n"
+            "simulation.nspecies ; 8\n"
+            "simulation.nresource ; 6\n"
+            "simulation.ncpu ; 1\n"
+        )
+
+    config_file = config_dir / "baltic_all-parameters.csv"
+    return {"config_file": config_file, "output_dir": sim_output}
 
 
 def _generate_bay_of_biscay(output_dir: Path) -> dict:

@@ -77,13 +77,16 @@ def load_targets(path: Path) -> tuple[list[BiomassTarget], dict]:
 **CSV format** — backward-compatible. Existing `biomass_targets.csv` works unchanged since `reference_point_type` defaults to `"biomass"` and the `source`/`notes` columns already exist in the CSV (just not read by the Baltic script's simpler dataclass). The new `reference_point_type` column is optional. Structured metadata uses `#!` prefix lines (parsed via `str.split(":", 1)` — no YAML dependency) vs plain `#` (human comments):
 
 ```csv
-#! version: "1.0"
-#! last_updated: "2026-04-15"
-#! ices_advice_year: "2022-2023"
+#! version: 1.0
+#! last_updated: 2026-04-15
+#! ices_advice_year: 2022-2023
 # Human-readable comment here
 species,target_tonnes,lower_tonnes,upper_tonnes,weight,reference_point_type,source,notes
 cod,120000,60000,250000,1.0,ssb,ICES SD24-32...,Post-2015 collapse...
 ```
+
+> **Note:** Do not quote metadata values — `str.split(":", 1)` + `strip()` does not
+> strip quotes, so `"1.0"` would be stored as the literal string `"1.0"` (with quotes).
 
 ### 2. `losses.py` — Composable Banded Loss Objectives
 
@@ -128,9 +131,14 @@ def make_banded_objective(
     species_names passed to the factory must match the key prefixes in species_stats.
     A mismatch at call time results in the missing-key penalty, not a silent zero.
     
-    This matches the loss computation in calibrate_baltic.py make_objective()
+    This is based on the loss computation in calibrate_baltic.py make_objective()
     (lines 179-221, the banded loss + stability + worst-species portion),
     not the full function which also includes parameter mapping and simulation execution.
+    
+    **Difference from Baltic script:** The missing-species penalty (100.0) is weighted
+    by the species weight here, whereas the Baltic script applies it unweighted. This is
+    intentional — it prevents a low-weight species from dominating the objective when
+    its data is simply missing from the stats dict.
     """
 ```
 
@@ -180,6 +188,11 @@ JAR `st_mtime` in the hash ensures a recompiled JAR invalidates the cache automa
         """Validate overrides against the schema registry.
         Delegates to registry.validate() (osmose/schema/registry.py:59) which
         already handles field matching, type checking, and min/max bounds.
+        
+        IMPORTANT: overrides values are strings (OSMOSE config format), but
+        validate_value() uses ``<`` / ``>`` comparison against float min/max.
+        This method must coerce FLOAT/INT values before passing to the registry
+        to avoid TypeError in Python 3.
         
         Collects all violations and raises a single ValueError listing them all.
         Called in _run_single before subprocess when self.registry is not None.
@@ -315,9 +328,9 @@ from osmose.calibration.multiseed import validate_multiseed, rank_candidates_mul
 Add `reference_point_type` column and `#!` metadata lines:
 
 ```csv
-#! version: "1.0"
-#! last_updated: "2026-04-15"
-#! ices_advice_year: "2022-2023"
+#! version: 1.0
+#! last_updated: 2026-04-15
+#! ices_advice_year: 2022-2023
 # Baltic Sea equilibrium biomass targets for calibration
 # Sources: ICES stock assessments (2018-2022 averages), FishBase, published literature
 species,target_tonnes,lower_tonnes,upper_tonnes,weight,reference_point_type,source,notes

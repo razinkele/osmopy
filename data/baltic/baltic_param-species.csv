@@ -1,0 +1,142 @@
+# Baltic Sea species parameters
+# sp0=Cod, sp1=Herring, sp2=Sprat, sp3=Flounder, sp4=Perch, sp5=Pike-perch, sp6=Whitefish, sp7=Stickleback
+
+# Species types
+species.type.sp0;focal
+species.type.sp1;focal
+species.type.sp2;focal
+species.type.sp3;focal
+species.type.sp4;focal
+species.type.sp5;focal
+species.type.sp6;focal
+species.type.sp7;focal
+
+# Species names
+species.name.sp0;cod
+species.name.sp1;herring
+species.name.sp2;sprat
+species.name.sp3;flounder
+species.name.sp4;perch
+species.name.sp5;pikeperch
+species.name.sp6;whitefish
+species.name.sp7;stickleback
+
+# Lifespan (years)
+species.lifespan.sp0;20
+species.lifespan.sp1;12
+species.lifespan.sp2;8
+species.lifespan.sp3;15
+species.lifespan.sp4;15
+species.lifespan.sp5;15
+species.lifespan.sp6;20
+species.lifespan.sp7;4
+
+# Von Bertalanffy growth: L-infinity (cm)
+species.lInf.sp0;110.0
+species.lInf.sp1;27.0
+species.lInf.sp2;16.0
+species.lInf.sp3;42.0
+species.lInf.sp4;45.0
+species.lInf.sp5;90.0
+species.lInf.sp6;60.0
+species.lInf.sp7;8.0
+
+# Von Bertalanffy growth: K (year^-1)
+species.K.sp0;0.15
+species.K.sp1;0.35
+species.K.sp2;0.45
+species.K.sp3;0.20
+species.K.sp4;0.15
+species.K.sp5;0.18
+species.K.sp6;0.12
+species.K.sp7;0.80
+
+# Von Bertalanffy growth: t0 (years)
+species.t0.sp0;-0.20
+species.t0.sp1;-0.80
+species.t0.sp2;-0.50
+species.t0.sp3;-0.40
+species.t0.sp4;-0.50
+species.t0.sp5;-0.30
+species.t0.sp6;-0.50
+species.t0.sp7;-0.10
+
+# VB threshold age
+species.vonbertalanffy.threshold.age.sp0;0.5
+species.vonbertalanffy.threshold.age.sp1;0.5
+species.vonbertalanffy.threshold.age.sp2;0.5
+species.vonbertalanffy.threshold.age.sp3;0.5
+species.vonbertalanffy.threshold.age.sp4;0.5
+species.vonbertalanffy.threshold.age.sp5;0.5
+species.vonbertalanffy.threshold.age.sp6;0.5
+species.vonbertalanffy.threshold.age.sp7;0.5
+
+# Length-weight: condition factor (a in W=a*L^b, W in g, L in cm)
+species.length2weight.condition.factor.sp0;0.00870
+species.length2weight.condition.factor.sp1;0.00560
+species.length2weight.condition.factor.sp2;0.00490
+species.length2weight.condition.factor.sp3;0.00890
+species.length2weight.condition.factor.sp4;0.01070
+species.length2weight.condition.factor.sp5;0.00620
+species.length2weight.condition.factor.sp6;0.00750
+species.length2weight.condition.factor.sp7;0.00800
+
+# Length-weight: allometric power (b)
+species.length2weight.allometric.power.sp0;3.050
+species.length2weight.allometric.power.sp1;3.130
+species.length2weight.allometric.power.sp2;3.120
+species.length2weight.allometric.power.sp3;3.080
+species.length2weight.allometric.power.sp4;3.100
+species.length2weight.allometric.power.sp5;3.090
+species.length2weight.allometric.power.sp6;3.040
+species.length2weight.allometric.power.sp7;3.050
+
+# Egg size (cm)
+species.egg.size.sp0;0.15
+species.egg.size.sp1;0.12
+species.egg.size.sp2;0.10
+species.egg.size.sp3;0.13
+species.egg.size.sp4;0.20
+species.egg.size.sp5;0.15
+species.egg.size.sp6;0.25
+species.egg.size.sp7;0.15
+
+# Egg weight (g)
+species.egg.weight.sp0;0.001
+species.egg.weight.sp1;0.001
+species.egg.weight.sp2;0.001
+species.egg.weight.sp3;0.001
+species.egg.weight.sp4;0.001
+species.egg.weight.sp5;0.001
+species.egg.weight.sp6;0.001
+species.egg.weight.sp7;0.001
+
+# Maturity size (cm)
+species.maturity.size.sp0;38.0
+species.maturity.size.sp1;18.0
+species.maturity.size.sp2;9.0
+species.maturity.size.sp3;22.0
+species.maturity.size.sp4;18.0
+species.maturity.size.sp5;40.0
+species.maturity.size.sp6;35.0
+species.maturity.size.sp7;4.5
+
+# Relative fecundity (eggs per gram of mature female)
+species.relativefecundity.sp0;500
+species.relativefecundity.sp1;600
+species.relativefecundity.sp2;1200
+species.relativefecundity.sp3;400
+species.relativefecundity.sp4;350
+species.relativefecundity.sp5;300
+species.relativefecundity.sp6;250
+species.relativefecundity.sp7;600
+
+# Sex ratio (proportion female)
+species.sexratio.sp0;0.5
+species.sexratio.sp1;0.5
+species.sexratio.sp2;0.5
+species.sexratio.sp3;0.5
+species.sexratio.sp4;0.5
+species.sexratio.sp5;0.5
+species.sexratio.sp6;0.5
+species.sexratio.sp7;0.5

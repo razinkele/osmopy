@@ -9,7 +9,6 @@ from shiny_deckgl import (  # type: ignore[import-untyped]
     MapWidget,
     polygon_layer,
     CARTO_POSITRON,
-    CARTO_DARK,
     zoom_widget,
     compass_widget,
     fullscreen_widget,
@@ -20,6 +19,7 @@ from osmose.logging import setup_logging
 from osmose.schema.grid import GRID_FIELDS
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.components.param_form import render_field
+from ui.components.renderer_badge import renderer_badge
 from ui.pages.grid_helpers import (
     _overlay_label,
     build_grid_layers,
@@ -99,6 +99,7 @@ def grid_ui():
             ui.div(
                 ui.output_ui("grid_hint"),
                 grid_map.ui(height="100%"),
+                renderer_badge(),
                 class_="osm-grid-map-container",
             ),
             col_widths=[5, 7],
@@ -556,8 +557,8 @@ def grid_server(input, output, session, state):
             else:
                 view_state = {"latitude": 46.0, "longitude": -4.5, "zoom": 5}
 
-        # Update map style based on theme
-        style = CARTO_DARK if is_dark else CARTO_POSITRON
+        # Always use light basemap for grid panel (better land/sea contrast)
+        style = CARTO_POSITRON
         if style != _map.style:
             _map.style = style
             await _map.set_style(session, style)
@@ -623,9 +624,9 @@ def grid_server(input, output, session, state):
                         polygon_layer(
                             layer_id,
                             data=m["cells"],
-                            get_polygon="@@=d.polygon",
-                            get_fill_color=m["color"],
-                            get_line_color=[0, 0, 0, 0],
+                            getPolygon="@@=d.polygon",
+                            getFillColor=m["color"],
+                            getLineColor=[0, 0, 0, 0],
                             filled=True,
                             stroked=False,
                             pickable=True,
@@ -690,9 +691,9 @@ def grid_server(input, output, session, state):
                         polygon_layer(
                             "grid-overlay",
                             data=cells,
-                            get_polygon="@@=d.polygon",
-                            get_fill_color="@@=d.fill",
-                            get_line_color=[0, 0, 0, 0],
+                            getPolygon="@@=d.polygon",
+                            getFillColor="@@=d.fill",
+                            getLineColor=[0, 0, 0, 0],
                             filled=True,
                             stroked=False,
                             pickable=True,
@@ -723,9 +724,9 @@ def grid_server(input, output, session, state):
                         polygon_layer(
                             "grid-overlay",
                             data=csv_cells,
-                            get_polygon="@@=d.polygon",
-                            get_fill_color="@@=d.fill",
-                            get_line_color=[0, 0, 0, 0],
+                            getPolygon="@@=d.polygon",
+                            getFillColor="@@=d.fill",
+                            getLineColor=[0, 0, 0, 0],
                             filled=True,
                             stroked=False,
                             pickable=True,

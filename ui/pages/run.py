@@ -1,5 +1,6 @@
 """Run control page - execute OSMOSE simulations."""
 
+import asyncio
 import shutil
 import tempfile
 from pathlib import Path
@@ -11,6 +12,7 @@ from osmose.config.validator import (
     check_species_consistency,
     validate_config,
 )
+from osmose.engine import PythonEngine
 from osmose.logging import setup_logging
 from osmose.runner import OsmoseRunner, validate_java_opts
 from ui.components.collapsible import collapsible_card_header, expand_tab
@@ -216,6 +218,136 @@ def run_ui():
     )
 
 
+async def _run_python_engine(
+    input, state, session, config, work_dir, source_dir,
+    run_log, status, runner_ref,
+):
+    """Run the simulation using the in-process Python engine."""
+    overrides = parse_overrides(input.py_param_overrides() or "")
+    run_config = dict(config)
+    run_config.update(overrides)
+
+    # Store config_dir so PythonEngine can find grid NetCDF files
+    if source_dir:
+        run_config["_osmose.config.dir"] = str(source_dir)
+
+    output_dir = work_dir / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    engine = PythonEngine()
+    status.set("Running (Python engine)...")
+
+    state.busy.set("Running simulation (Python)...")
+    try:
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None, lambda: engine.run(run_config, output_dir, seed=0)
+        )
+    except Exception as exc:
+        _log.error("Python engine failed: %s", exc)
+        lines = list(run_log.get())
+        lines.append(f"--- ERROR ---\n{exc}")
+        run_log.set(lines)
+        status.set(f"Failed: {exc}")
+        return
+    finally:
+        state.busy.set(None)
+        ui.update_action_button("btn_run", disabled=False, session=session)
+        ui.update_action_button("btn_cancel", disabled=True, session=session)
+
+    _handle_result(result, config, state, run_log, status)
+
+
+async def _run_java_engine(
+    input, state, session, config, work_dir, source_dir,
+    run_log, status, runner_ref,
+):
+    """Run the simulation using the Java JAR subprocess."""
+    jar_path = Path(state.jar_path.get())
+    if not jar_path.exists():
+        status.set(f"Error: JAR not found at {jar_path}")
+        ui.update_action_button("btn_run", disabled=False, session=session)
+        ui.update_action_button("btn_cancel", disabled=True, session=session)
+        return
+
+    config_path = write_temp_config(
+        config, work_dir, source_dir, key_case_map=state.key_case_map.get()
+    )
+
+    overrides = parse_overrides(input.param_overrides() or "")
+    java_opts_text = input.java_opts() or ""
+    java_opts = java_opts_text.split() if java_opts_text.strip() else []
+    try:
+        validate_java_opts(java_opts)  # type: ignore[arg-type]
+    except ValueError as exc:
+        ui.notification_show(str(exc), type="error", duration=15)
+        ui.update_action_button("btn_run", disabled=False, session=session)
+        ui.update_action_button("btn_cancel", disabled=True, session=session)
+        status.set(f"Error: {exc}")
+        return
+    java_opts = java_opts or None
+
+    runner = OsmoseRunner(jar_path=jar_path)
+    runner_ref.set(runner)  # type: ignore[arg-type]
+
+    status.set("Running (Java engine)...")
+
+    def on_progress(line: str):
+        with reactive.isolate():
+            lines = list(run_log.get())
+        lines.append(line)
+        if len(lines) > 500:
+            lines = lines[-500:]
+        run_log.set(lines)
+
+    timeout_sec = input.run_timeout()
+
+    state.busy.set("Running simulation (Java)...")
+    try:
+        result = await runner.run(
+            config_path=config_path,
+            output_dir=work_dir / "output",
+            java_opts=java_opts,  # type: ignore[arg-type]
+            overrides=overrides,
+            on_progress=on_progress,
+            timeout_sec=timeout_sec,
+        )
+    finally:
+        state.busy.set(None)
+        ui.update_action_button("btn_run", disabled=False, session=session)
+        ui.update_action_button("btn_cancel", disabled=True, session=session)
+
+    _handle_result(result, config, state, run_log, status)
+
+
+def _handle_result(result, config, state, run_log, status):
+    """Process a RunResult from either engine."""
+    state.run_result.set(result)
+    state.output_dir.set(result.output_dir)
+
+    if result.returncode == 0:
+        status.set(f"Complete. Output: {result.output_dir}")
+        try:
+            from osmose.history import RunRecord, RunHistory
+
+            history = RunHistory(Path("data/history"))
+            record = RunRecord(
+                config_snapshot=config,
+                duration_sec=0,
+                output_dir=str(result.output_dir),
+                summary={},
+            )
+            history.save(record)
+        except (OSError, ValueError) as exc:
+            _log.warning("Failed to save run history: %s", exc)
+    else:
+        status.set(f"Failed (exit code {result.returncode})")
+        if result.stderr:
+            lines = list(run_log.get())
+            lines.append(f"--- STDERR ---\n{result.stderr}")
+            run_log.set(lines)
+
+
 def run_server(input, output, session, state):
     run_log = reactive.value([])
     status = reactive.value("Idle")
@@ -260,12 +392,9 @@ def run_server(input, output, session, state):
     @reactive.effect
     @reactive.event(input.btn_run)
     async def handle_run():
-        jar_path = Path(state.jar_path.get())
-        if not jar_path.exists():
-            status.set(f"Error: JAR not found at {jar_path}")
-            return
+        engine_mode = state.engine_mode.get()
 
-        # Validate config before run
+        # Validate config before run (common to both engines)
         config = state.config.get()
         errors, warnings = validate_config(config, state.registry)
         source_dir = state.config_dir.get()
@@ -296,87 +425,19 @@ def run_server(input, output, session, state):
         ui.update_action_button("btn_run", disabled=True, session=session)
         ui.update_action_button("btn_cancel", disabled=False, session=session)
 
-        # Write config to temp directory, copying data files from source
         work_dir = Path(tempfile.mkdtemp(prefix="osmose_run_"))
         source_dir = state.config_dir.get()
-        config_path = write_temp_config(
-            config, work_dir, source_dir, key_case_map=state.key_case_map.get()
-        )
 
-        # Parse overrides and java opts
-        overrides = parse_overrides(input.param_overrides() or "")
-        java_opts_text = input.java_opts() or ""
-        java_opts = java_opts_text.split() if java_opts_text.strip() else []
-        try:
-            validate_java_opts(java_opts)  # type: ignore[arg-type]
-        except ValueError as exc:
-            ui.notification_show(str(exc), type="error", duration=15)
-            ui.update_action_button("btn_run", disabled=False, session=session)
-            ui.update_action_button("btn_cancel", disabled=True, session=session)
-            status.set(f"Error: {exc}")
-            return
-        java_opts = java_opts or None
-
-        # Create runner
-        runner = OsmoseRunner(jar_path=jar_path)
-        runner_ref.set(runner)  # type: ignore[arg-type]
-
-        status.set("Running...")
-
-        def on_progress(line: str):
-            with reactive.isolate():
-                lines = list(run_log.get())
-            lines.append(line)
-            if len(lines) > 500:
-                lines = lines[-500:]
-            run_log.set(lines)
-
-        timeout_sec = input.run_timeout()
-
-        state.busy.set("Running simulation...")
-        try:
-            result = await runner.run(
-                config_path=config_path,
-                output_dir=work_dir / "output",
-                java_opts=java_opts,  # type: ignore[arg-type]
-                overrides=overrides,
-                on_progress=on_progress,
-                timeout_sec=timeout_sec,
+        if engine_mode == "python":
+            await _run_python_engine(
+                input, state, session, config, work_dir, source_dir,
+                run_log, status, runner_ref,
             )
-        finally:
-            state.busy.set(None)
-            ui.update_action_button("btn_run", disabled=False, session=session)
-            ui.update_action_button("btn_cancel", disabled=True, session=session)
-
-        state.run_result.set(result)
-        state.output_dir.set(result.output_dir)
-
-        if result.returncode == 0:
-            status.set(f"Complete. Output: {result.output_dir}")
-            try:
-                from osmose.history import RunRecord, RunHistory
-
-                history = RunHistory(Path("data/history"))
-                record = RunRecord(
-                    config_snapshot=config,
-                    duration_sec=0,  # Would need timing in a real implementation
-                    output_dir=str(result.output_dir),
-                    summary={},
-                )
-                history.save(record)
-            except (OSError, ValueError) as exc:
-                _log.warning("Failed to save run history: %s", exc)
-                ui.notification_show(
-                    f"Run completed but history could not be saved: {exc}",
-                    type="warning",
-                    duration=5,
-                )
         else:
-            status.set(f"Failed (exit code {result.returncode})")
-            if result.stderr:
-                lines = list(run_log.get())
-                lines.append(f"--- STDERR ---\n{result.stderr}")
-                run_log.set(lines)
+            await _run_java_engine(
+                input, state, session, config, work_dir, source_dir,
+                run_log, status, runner_ref,
+            )
 
     @reactive.effect
     @reactive.event(input.btn_cancel)

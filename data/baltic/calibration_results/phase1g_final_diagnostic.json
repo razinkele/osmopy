@@ -1,0 +1,54 @@
+{
+  "settings": {
+    "years": 50,
+    "seed": 42,
+    "dynamic_accessibility": true,
+    "ltl_multiplier": 0.4,
+    "ltl_accessibility": 0.4,
+    "da_exponent": 1.0,
+    "da_floor": 0.05
+  },
+  "results": {
+    "cod": {
+      "biomass": 76298.31492767413,
+      "target": 200000,
+      "ratio": 0.38
+    },
+    "herring": {
+      "biomass": 2362146.910246423,
+      "target": 1500000,
+      "ratio": 1.57
+    },
+    "sprat": {
+      "biomass": 1150678.0516434233,
+      "target": 800000,
+      "ratio": 1.44
+    },
+    "flounder": {
+      "biomass": 44547.04385366517,
+      "target": 50000,
+      "ratio": 0.89
+    },
+    "perch": {
+      "biomass": 19352.573194573677,
+      "target": 20000,
+      "ratio": 0.97
+    },
+    "pikeperch": {
+      "biomass": 14176.145956375693,
+      "target": 10000,
+      "ratio": 1.42
+    },
+    "whitefish": {
+      "biomass": 45824.246839858286,
+      "target": 15000,
+      "ratio": 3.05
+    },
+    "stickleback": {
+      "biomass": 697651.7372360241,
+      "target": 200000,
+      "ratio": 3.49
+    }
+  },
+  "total_log_error": 4.64
+}

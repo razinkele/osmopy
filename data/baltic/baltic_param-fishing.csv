@@ -1,0 +1,106 @@
+# Baltic Sea fishing parameters
+# One fishery per focal species
+
+fisheries.enabled;true
+simulation.nfisheries;8
+
+# Fishery names
+fisheries.name.fsh0;trawl_cod
+fisheries.name.fsh1;pelagic_herring
+fisheries.name.fsh2;pelagic_sprat
+fisheries.name.fsh3;trawl_flounder
+fisheries.name.fsh4;coastal_perch
+fisheries.name.fsh5;coastal_pikeperch
+fisheries.name.fsh6;gill_whitefish
+fisheries.name.fsh7;coastal_stickleback
+
+# Selectivity type (0 = knife-edge by age)
+fisheries.selectivity.type.fsh0;0
+fisheries.selectivity.type.fsh1;0
+fisheries.selectivity.type.fsh2;0
+fisheries.selectivity.type.fsh3;0
+fisheries.selectivity.type.fsh4;0
+fisheries.selectivity.type.fsh5;0
+fisheries.selectivity.type.fsh6;0
+fisheries.selectivity.type.fsh7;0
+
+# Age at 50% selectivity (years)
+fisheries.selectivity.a50.fsh0;2.0
+fisheries.selectivity.a50.fsh1;1.0
+fisheries.selectivity.a50.fsh2;1.0
+fisheries.selectivity.a50.fsh3;2.0
+fisheries.selectivity.a50.fsh4;2.0
+fisheries.selectivity.a50.fsh5;2.0
+fisheries.selectivity.a50.fsh6;3.0
+fisheries.selectivity.a50.fsh7;1.0
+
+# Base fishing mortality rate (year^-1) — calibrated R18
+fisheries.rate.base.fsh0;0.08
+fisheries.rate.base.fsh1;0.15
+fisheries.rate.base.fsh2;0.32
+fisheries.rate.base.fsh3;0.04
+fisheries.rate.base.fsh4;0.03
+fisheries.rate.base.fsh5;0.03
+fisheries.rate.base.fsh6;0.02
+fisheries.rate.base.fsh7;0.01
+
+# Fishing period parameters
+fisheries.period.number.fsh0;1
+fisheries.period.number.fsh1;1
+fisheries.period.number.fsh2;1
+fisheries.period.number.fsh3;1
+fisheries.period.number.fsh4;1
+fisheries.period.number.fsh5;1
+fisheries.period.number.fsh6;1
+fisheries.period.number.fsh7;1
+
+fisheries.rate.byPeriod.fsh0;1
+fisheries.rate.byPeriod.fsh1;1
+fisheries.rate.byPeriod.fsh2;1
+fisheries.rate.byPeriod.fsh3;1
+fisheries.rate.byPeriod.fsh4;1
+fisheries.rate.byPeriod.fsh5;1
+fisheries.rate.byPeriod.fsh6;1
+fisheries.rate.byPeriod.fsh7;1
+
+fisheries.period.start.fsh0;0
+fisheries.period.start.fsh1;0
+fisheries.period.start.fsh2;0
+fisheries.period.start.fsh3;0
+fisheries.period.start.fsh4;0
+fisheries.period.start.fsh5;0
+fisheries.period.start.fsh6;0
+fisheries.period.start.fsh7;0
+
+# Fishing seasonality (uniform across 24 timesteps = 1/24 ≈ 0.04167)
+fisheries.seasonality.fsh0;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167
+fisheries.seasonality.fsh1;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167
+fisheries.seasonality.fsh2;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167
+fisheries.seasonality.fsh3;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167
+fisheries.seasonality.fsh4;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167
+fisheries.seasonality.fsh5;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167
+fisheries.seasonality.fsh6;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167
+fisheries.seasonality.fsh7;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167
+
+# Catchability and discards
+fisheries.catchability.file;fishery-catchability.csv
+fisheries.discards.file;fishery-discards.csv
+
+# Fishing distribution maps
+fisheries.movement.fishery.map0;trawl_cod
+fisheries.movement.fishery.map1;pelagic_herring
+fisheries.movement.fishery.map2;pelagic_sprat
+fisheries.movement.fishery.map3;trawl_flounder
+fisheries.movement.fishery.map4;coastal_perch
+fisheries.movement.fishery.map5;coastal_pikeperch
+fisheries.movement.fishery.map6;gill_whitefish
+fisheries.movement.fishery.map7;coastal_stickleback
+
+fisheries.movement.file.map0;fishing/fishing-distrib.csv
+fisheries.movement.file.map1;fishing/fishing-distrib.csv
+fisheries.movement.file.map2;fishing/fishing-distrib.csv
+fisheries.movement.file.map3;fishing/fishing-distrib.csv
+fisheries.movement.file.map4;fishing/fishing-distrib.csv
+fisheries.movement.file.map5;fishing/fishing-distrib.csv
+fisheries.movement.file.map6;fishing/fishing-distrib.csv
+fisheries.movement.file.map7;fishing/fishing-distrib.csv

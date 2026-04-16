@@ -1,0 +1,194 @@
+# Baltic Sea movement parameters
+# All species use map-based distribution with life-stage and seasonal maps
+
+movement.distribution.method.sp0;maps
+movement.distribution.method.sp1;maps
+movement.distribution.method.sp2;maps
+movement.distribution.method.sp3;maps
+movement.distribution.method.sp4;maps
+movement.distribution.method.sp5;maps
+movement.distribution.method.sp6;maps
+movement.distribution.method.sp7;maps
+
+movement.randomwalk.range.sp0;2
+movement.randomwalk.range.sp1;3
+movement.randomwalk.range.sp2;3
+movement.randomwalk.range.sp3;1
+movement.randomwalk.range.sp4;1
+movement.randomwalk.range.sp5;1
+movement.randomwalk.range.sp6;2
+movement.randomwalk.range.sp7;1
+
+# ============================================
+# sp0: Cod — juvenile (age 0-1), adult (1-4), spawning adults (4+, Mar-Aug)
+# ============================================
+movement.species.map0;cod
+movement.initialAge.map0;0
+movement.lastAge.map0;1
+movement.file.map0;maps/cod_juvenile.csv
+movement.steps.map0;0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16;17;18;19;20;21;22;23
+
+movement.species.map1;cod
+movement.initialAge.map1;1
+movement.lastAge.map1;4
+movement.file.map1;maps/cod_adult.csv
+movement.steps.map1;0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16;17;18;19;20;21;22;23
+
+movement.species.map2;cod
+movement.initialAge.map2;4
+movement.lastAge.map2;21
+movement.file.map2;maps/cod_spawning.csv
+movement.steps.map2;4;5;6;7;8;9;10;11;12;13;14;15
+
+movement.species.map3;cod
+movement.initialAge.map3;4
+movement.lastAge.map3;21
+movement.file.map3;maps/cod_adult.csv
+movement.steps.map3;0;1;2;3;16;17;18;19;20;21;22;23
+
+# ============================================
+# sp1: Herring — juvenile (0-1), adult (1+), spawning (spring, coastal)
+# ============================================
+movement.species.map4;herring
+movement.initialAge.map4;0
+movement.lastAge.map4;1
+movement.file.map4;maps/herring_juvenile.csv
+movement.steps.map4;0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16;17;18;19;20;21;22;23
+
+movement.species.map5;herring
+movement.initialAge.map5;1
+movement.lastAge.map5;13
+movement.file.map5;maps/herring_adult.csv
+movement.steps.map5;0;1;2;3;12;13;14;15;16;17;18;19;20;21;22;23
+
+movement.species.map6;herring
+movement.initialAge.map6;1
+movement.lastAge.map6;13
+movement.file.map6;maps/herring_spawning.csv
+movement.steps.map6;4;5;6;7;8;9;10;11
+
+# ============================================
+# sp2: Sprat — juvenile (0-1), adult (1+), spawning (Apr-Jul, deep)
+# ============================================
+movement.species.map7;sprat
+movement.initialAge.map7;0
+movement.lastAge.map7;1
+movement.file.map7;maps/sprat_juvenile.csv
+movement.steps.map7;0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16;17;18;19;20;21;22;23
+
+movement.species.map8;sprat
+movement.initialAge.map8;1
+movement.lastAge.map8;9
+movement.file.map8;maps/sprat_adult.csv
+movement.steps.map8;0;1;2;3;4;5;14;15;16;17;18;19;20;21;22;23
+
+movement.species.map9;sprat
+movement.initialAge.map9;1
+movement.lastAge.map9;9
+movement.file.map9;maps/sprat_spawning.csv
+movement.steps.map9;6;7;8;9;10;11;12;13
+
+# ============================================
+# sp3: Flounder — juvenile (0-2, coastal), adult (2+), spawning (Feb-May, deep south)
+# ============================================
+movement.species.map10;flounder
+movement.initialAge.map10;0
+movement.lastAge.map10;2
+movement.file.map10;maps/flounder_juvenile.csv
+movement.steps.map10;0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16;17;18;19;20;21;22;23
+
+movement.species.map11;flounder
+movement.initialAge.map11;2
+movement.lastAge.map11;16
+movement.file.map11;maps/flounder_adult.csv
+movement.steps.map11;0;1;10;11;12;13;14;15;16;17;18;19;20;21;22;23
+
+movement.species.map12;flounder
+movement.initialAge.map12;2
+movement.lastAge.map12;16
+movement.file.map12;maps/flounder_spawning.csv
+movement.steps.map12;2;3;4;5;6;7;8;9
+
+# ============================================
+# sp4: Perch — juvenile (0-2, coastal), adult (2+, coastal), spawning (May-Jun)
+# ============================================
+movement.species.map13;perch
+movement.initialAge.map13;0
+movement.lastAge.map13;2
+movement.file.map13;maps/perch_juvenile.csv
+movement.steps.map13;0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16;17;18;19;20;21;22;23
+
+movement.species.map14;perch
+movement.initialAge.map14;2
+movement.lastAge.map14;16
+movement.file.map14;maps/perch_adult.csv
+movement.steps.map14;0;1;2;3;4;5;6;7;12;13;14;15;16;17;18;19;20;21;22;23
+
+movement.species.map15;perch
+movement.initialAge.map15;2
+movement.lastAge.map15;16
+movement.file.map15;maps/perch_spawning.csv
+movement.steps.map15;8;9;10;11
+
+# ============================================
+# sp5: Pike-perch — juvenile (0-2, coastal), adult (2+), spawning (Apr-Jun)
+# ============================================
+movement.species.map16;pikeperch
+movement.initialAge.map16;0
+movement.lastAge.map16;2
+movement.file.map16;maps/pikeperch_juvenile.csv
+movement.steps.map16;0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16;17;18;19;20;21;22;23
+
+movement.species.map17;pikeperch
+movement.initialAge.map17;2
+movement.lastAge.map17;16
+movement.file.map17;maps/pikeperch_adult.csv
+movement.steps.map17;0;1;2;3;4;5;12;13;14;15;16;17;18;19;20;21;22;23
+
+movement.species.map18;pikeperch
+movement.initialAge.map18;2
+movement.lastAge.map18;16
+movement.file.map18;maps/pikeperch_spawning.csv
+movement.steps.map18;6;7;8;9;10;11
+
+# ============================================
+# sp6: Whitefish — juvenile (0-2, north), adult (2+, north), spawning (Oct-Dec, coastal north)
+# ============================================
+movement.species.map19;whitefish
+movement.initialAge.map19;0
+movement.lastAge.map19;2
+movement.file.map19;maps/whitefish_juvenile.csv
+movement.steps.map19;0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16;17;18;19;20;21;22;23
+
+movement.species.map20;whitefish
+movement.initialAge.map20;2
+movement.lastAge.map20;21
+movement.file.map20;maps/whitefish_adult.csv
+movement.steps.map20;0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16;17
+
+movement.species.map21;whitefish
+movement.initialAge.map21;2
+movement.lastAge.map21;21
+movement.file.map21;maps/whitefish_spawning.csv
+movement.steps.map21;18;19;20;21;22;23
+
+# ============================================
+# sp7: Stickleback — juvenile (0-1, everywhere), adult (1+, coastal), spawning (May-Jul)
+# ============================================
+movement.species.map22;stickleback
+movement.initialAge.map22;0
+movement.lastAge.map22;1
+movement.file.map22;maps/stickleback_juvenile.csv
+movement.steps.map22;0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16;17;18;19;20;21;22;23
+
+movement.species.map23;stickleback
+movement.initialAge.map23;1
+movement.lastAge.map23;5
+movement.file.map23;maps/stickleback_adult.csv
+movement.steps.map23;0;1;2;3;4;5;6;7;14;15;16;17;18;19;20;21;22;23
+
+movement.species.map24;stickleback
+movement.initialAge.map24;1
+movement.lastAge.map24;5
+movement.file.map24;maps/stickleback_spawning.csv
+movement.steps.map24;8;9;10;11;12;13
