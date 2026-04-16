@@ -75,10 +75,12 @@ def load_timeseries(config: dict, key_prefix: str, species_idx: int, ndt: int) -
     """Auto-detect timeseries type from config keys and load appropriate class."""
 ```
 
-Detection logic (matches Java `StepParameters` dispatch):
+**Note:** Java has NO centralized factory — each process class instantiates TimeSeries directly in its `init()`/`readParameters()` method. The Python `load_timeseries()` factory is a design improvement over Java's scattered approach, consolidating the detection logic in one place.
+
+Detection logic (derived from reading each Java process's `readParameters()`):
 - If value is numeric string → `SingleTimeSeries`
 - If `.byDt.file` key exists → `GenericTimeSeries` or `ByClassTimeSeries` (if has class columns)
-- If `.season.file` key exists → `SeasonTimeSeries`
+- If `.season.file` or `.season.distrib.file` key exists → `SeasonTimeSeries`
 - If `.byYear.file` key exists → `ByYearTimeSeries`
 - If `.byRegime.file` + `.byRegime.shift` keys exist → `ByRegimeTimeSeries` (value changes at year boundaries specified by shift array)
 
@@ -102,12 +104,12 @@ Detection logic (matches Java `StepParameters` dispatch):
 |-------|-------------------|---------|
 | `RateBySeasonFishingMortality` | `mortality.fishing.rate.sp{i}` (scalar) | F = rate / ndt_per_year |
 | `RateByYearBySeasonFishingMortality` | `mortality.fishing.rate.byYear.file.sp{i}` | F = rate(year, season) from CSV |
-| `RateByDtByClassFishingMortality` | `mortality.fishing.rate.byDt.byAge.file.sp{i}` | F = rate(dt, age_class) from CSV |
-| `CatchesBySeasonFishingMortality` | `mortality.fishing.catches.sp{i}` (scalar) | Solve F such that catch ≈ target |
-| `CatchesByYearBySeasonFishingMortality` | `mortality.fishing.catches.byYear.file.sp{i}` | Solve F for target(year, season) |
-| `CatchesByDtByClassFishingMortality` | `mortality.fishing.catches.byDt.byAge.file.sp{i}` | Solve F for target(dt, class) |
+| `RateByDtByClassFishingMortality` | `mortality.fishing.rate.byDt.byAge.file.sp{i}` OR `.bySize.file.sp{i}` | F = rate(dt, age/size class) from CSV |
+| `CatchesBySeasonFishingMortality` | `mortality.fishing.catches.sp{i}` (scalar) | Proportional allocation: catch = (school_biomass / fishable_biomass) × annual_catches × season_weight |
+| `CatchesByYearBySeasonFishingMortality` | `mortality.fishing.catches.byYear.file.sp{i}` | Same proportional allocation with year-varying target |
+| `CatchesByDtByClassFishingMortality` | `mortality.fishing.catches.byDt.byAge.file.sp{i}` OR `.bySize.file.sp{i}` | Same proportional allocation per class |
 
-Rate-based variants use SP-3 `TimeSeries` to load values. Catch-based variants iteratively solve for F that produces target catch biomass (Java uses bisection).
+Rate-based variants use SP-3 `TimeSeries` to load values. Catch-based variants use **proportional allocation** (NOT bisection): each school's catch = `(school_biomass / total_fishable_biomass) × target_catches × seasonal_weight`. This is from Java `CatchesBySeasonFishingMortality.getCatches()`. The `RateByDtByClassFishingMortality` and `CatchesByDtByClassFishingMortality` each support BOTH `byAge` and `bySize` config key variants.
 
 **Files:**
 - Modify: `osmose/engine/processes/fishing.py` — add 5 new rate/catch variants, dispatch by config
@@ -124,7 +126,7 @@ Rate-based variants use SP-3 `TimeSeries` to load values. Catch-based variants i
 | `FisherySeasonality` | Monthly effort multiplier loaded via TimeSeries |
 | `FisheryMapSet` | Spatial distribution maps per fishery (same MapSet pattern as movement) |
 | `FisheryPeriod` | Start/end year for fishery activity |
-| `FishingGear` | Maps gear type → selectivity parameters |
+| `FishingGear` (in `mortality/`, not `mortality/fishery/`) | Maps gear type → selectivity parameters |
 | `MPA` (util) | Spatial closure grid with time windows — cells where fishing = 0 |
 
 **Files:**
@@ -160,7 +162,7 @@ Grid mask (0/1) loaded per MPA. During mortality, if school is in MPA cell and w
 | `AnnualLarvaMortality` | `mortality.additional.larva.rate.sp{i}` (scalar) | **EXISTS** |
 | `ByDtAdditionalMortality` | `mortality.additional.rate.byDt.file.sp{i}` | Load via SP-3 `GenericTimeSeries` |
 | `ByDtLarvaMortality` | `mortality.additional.larva.rate.byDt.file.sp{i}` | Load via SP-3 `GenericTimeSeries` |
-| `ByDtByClassAdditionalMortality` | `mortality.additional.rate.byDt.byAge.file.sp{i}` | Load via SP-3 `ByClassTimeSeries` |
+| `ByDtByClassAdditionalMortality` | `mortality.additional.rate.byDt.byAge.file.sp{i}` OR `.bySize.file.sp{i}` | Load via SP-3 `ByClassTimeSeries` (supports both age and size classes) |
 
 **Design:**
 
@@ -189,25 +191,72 @@ Modify `osmose/engine/config.py`:
 
 ### ForagingMortality
 
-**Java:** `process/mortality/ForagingMortality.java`
+**Java:** `process/mortality/ForagingMortality.java` (lines 83-105)
 
-Schools expend energy searching for food. Foraging mortality is proportional to the ratio of maintenance cost to gross intake — schools that can't find enough food have higher mortality. Mortality rate:
+Two modes depending on whether genetics is enabled:
 
+**Without genetics (standard bioen):**
 ```
-F_foraging = base_rate * max(0, 1 - E_gross / E_maint)
+F_foraging = k_for / ndt_per_year
+```
+Simple constant rate. Config key: `species.bioen.forage.k_for.sp{i}`.
+
+**With genetics (Ev-OSMOSE):**
+```
+F_foraging = k1_for * exp(k2_for * (imax_trait - I_max)) / ndt_per_year
+```
+Exponential penalty: schools whose evolved `imax` trait deviates from the species baseline `I_max` suffer higher foraging mortality. Config keys:
+- `species.bioen.forage.k1_for.sp{i}` — base rate coefficient
+- `species.bioen.forage.k2_for.sp{i}` — exponential scaling
+- `predation.ingestion.rate.max.bioen.sp{i}` — reference I_max
+
+In both modes: if result < 0, clamp to 0.
+
+### BioenStarvationMortality
+
+**Java:** `process/bioen/BioenStarvationMortality.java` (lines 76-116)
+
+Called via `computeStarvation(school, subdt)` (NOT via `getRate()`). Formula:
+
+```python
+if E_net >= 0:
+    return 0  # maintenance paid, no starvation
+
+e_net_sub = abs(E_net) / subdt  # per-substep deficit
+
+if gonad_weight >= eta * e_net_sub:
+    # Enough gonadic energy — pay with gonad, no deaths
+    gonad_weight -= e_net_sub * eta
+    E_net += e_net_sub
+    return 0
+else:
+    # Not enough gonad — flush gonad, starvation occurs
+    E_net += gonad_weight * eta
+    death_toll = e_net_sub - gonad_weight / eta
+    gonad_weight = 0
+    return death_toll / school_weight  # fraction of school that dies
 ```
 
-When `E_gross >= E_maint`, foraging mortality = 0. Config key: `mortality.foraging.rate.sp{i}`.
+Config key: `species.bioen.maturity.eta.sp{i}` (gonadic energy conversion factor).
+
+### BioenPredationMortality
+
+**Java:** `process/bioen/BioenPredationMortality.java`
+
+Extends `PredationMortality`. Overrides `computePredation()` to apply oxygen-based ingestion constraints via `OxygenFunction` and bioen-specific ingestion rate. Config keys:
+- `predation.ingestion.rate.max.bioen.sp{i}`
+- `predation.coef.ingestion.rate.max.larvae.bioen.sp{i}`
+- `predation.c.bioen.sp{i}`
 
 **Files:**
-- Create: `osmose/engine/processes/foraging_mortality.py`
+- Create: `osmose/engine/processes/foraging_mortality.py` — both modes (constant + genetic exponential)
 - Modify: `osmose/engine/processes/mortality.py` — add FORAGING cause to interleaved loop when `bioen_enabled`
-- Modify: `osmose/engine/processes/bioen_predation.py` — verify formula matches Java, wire into loop
-- Modify: `osmose/engine/processes/bioen_starvation.py` — verify formula matches Java, wire into loop
-- Modify: `osmose/engine/config.py` — parse foraging mortality config keys
+- Modify: `osmose/engine/processes/bioen_predation.py` — implement oxygen-constrained ingestion, wire into loop
+- Modify: `osmose/engine/processes/bioen_starvation.py` — implement gonad-depletion starvation with eta, wire into loop
+- Modify: `osmose/engine/config.py` — parse foraging/bioen mortality config keys
 - Test: `tests/test_engine_bioen_activation.py`
 
-**Tests:** 4 tests (foraging mortality rate, bioen predation replaces standard, bioen starvation replaces standard, all three together in simulation).
+**Tests:** 6 tests (foraging constant mode, foraging genetic mode, bioen starvation with gonad compensation, bioen starvation without gonad, bioen predation with O2, all three together in simulation).
 
 ---
 
@@ -290,7 +339,7 @@ All are NetCDF mirrors of Tier 1-3 CSV outputs using xarray (already a dependenc
 
 Config key: `output.format` = `csv` (default) or `netcdf`.
 
-### Tier 5: Specialized
+### Tier 5: Specialized & Economic Outputs
 
 | Java Class | What | Priority |
 |-----------|------|----------|
@@ -303,12 +352,35 @@ Config key: `output.format` = `csv` (default) or `netcdf`.
 | `DiscardOutput` | Discard biomass (needs SP-1 discards) | LOW |
 | `Surveys` | Survey-style sampling | LOW |
 | `SchoolSetSnapshot` / `ModularSchoolSetSnapshot` | Full school state dump | LOW |
+| `FishingAccessBiomassOutput` | Biomass accessible to each fishery | LOW |
+| `FishingHarvestedBiomassDistribOutput` | Harvested biomass by size/age | LOW |
+| `FishingPriceAccessBiomassOutput` | Price-weighted accessible biomass | LOW |
+| `ResourceOutput` | Resource/LTL biomass time series | LOW |
+| `MortalityOutput` | Aggregate mortality rates | MEDIUM |
+
+**Bioen outputs** (`BioenMaintOutput`, `BioenMeanEnergyNet`, `BioenRhoOutput`, `BioenSizeInfOutput`) are already implemented in Python `output.py` — no work needed.
+
+### Output Control Config Keys
+
+Java `OutputManager` uses per-output toggle keys (from `OutputManager.init()`):
+```
+output.abundance.netcdf.enabled = true/false
+output.biomass.netcdf.enabled = true/false
+output.yield.biomass.netcdf.enabled = true/false
+output.biomass.bysize.netcdf.enabled = true/false
+output.biomass.byage.netcdf.enabled = true/false
+output.biomass.bytl.netcdf.enabled = true/false
+output.diet.composition.netcdf.enabled = true/false
+output.recordfrequency.ndt = 24  (averaging period)
+```
+
+Python should support both `output.recordfrequency.ndt` and per-output `output.*.enabled` toggles.
 
 **Files:**
 - Create: `osmose/engine/output_distributions.py` — binning infrastructure
 - Create: `osmose/engine/output_spatial.py` — per-cell aggregation
 - Create: `osmose/engine/output_netcdf.py` — NetCDF writer
-- Modify: `osmose/engine/output.py` — add Tier 1-5 writers, recording frequency, output manager
+- Modify: `osmose/engine/output.py` — add Tier 1-5 writers, recording frequency, output manager with per-output toggles
 - Modify: `osmose/engine/config.py` — parse output config keys
 - Modify: `osmose/engine/simulate.py` — collect additional metrics (yield, diet, TL, predator pressure) during simulation for output
 - Test: `tests/test_engine_outputs.py`
@@ -342,6 +414,6 @@ After SP-4 (outputs), add output-level parity tests:
 | SP-3: TimeSeries | 1 | 0 | ~10 | 4 |
 | SP-1: Fishing | 2 | 4 | ~16 | 8 |
 | SP-2: Mortality | 0 | 2 | ~3 | 3 |
-| SP-5: Bioen | 1 | 4 | ~4 | 2 |
+| SP-5: Bioen | 1 | 4 | ~6 | 3 |
 | SP-4: Outputs | 3 | 3 | ~20 | 15 |
-| **Total** | **7** | **13** | **~53** | **~32** |
+| **Total** | **7** | **13** | **~55** | **~33** |
