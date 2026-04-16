@@ -99,11 +99,15 @@ class TestByDtByClassAdditionalMortality:
     """Rate varies per (dt, age/size class) from ByClassTimeSeries."""
 
     def test_young_gets_low_rate(self, tmp_path: Path) -> None:
-        """Young school (age class 0) gets rate from first column."""
+        """Young school (age class 0) gets rate from first column.
+
+        CSV thresholds are in dt units (already converted by config loader
+        for byAge: years * ndt_per_year). For testing, we use dt directly.
+        """
         csv_file = tmp_path / "mort.csv"
-        # Age thresholds: 0 dt and 48 dt (2 years * 24 dt/yr)
+        # Thresholds already in dt (as if config loader converted from years)
         _write_csv(csv_file, ["step", "0", "48"], [
-            ["0", "0.1", "0.5"],  # step 0: class 0=0.1, class 1=0.5
+            ["0", "0.1", "0.5"],
         ])
         ts = ByClassTimeSeries.from_csv(csv_file, ndt_per_year=1, ndt_simu=1)
         config = _make_config(additional_mortality_by_dt_by_class=[ts])
@@ -111,9 +115,8 @@ class TestByDtByClassAdditionalMortality:
         state = _make_state(age_dt=10)  # age_dt=10 → class 0 (< 48)
         result = additional_mortality(state, config, n_subdt=1, step=0)
         dead = result.n_dead[0, MortalityCause.ADDITIONAL]
-        # Rate 0.1 → D = 0.1 / (24*1) ≈ 0.00417 → fraction ≈ 0.00416
         assert dead > 0
-        assert dead < 10  # low mortality
+        assert dead < 10
 
     def test_old_gets_high_rate(self, tmp_path: Path) -> None:
         """Old school (age class 1) gets rate from second column."""
@@ -127,13 +130,12 @@ class TestByDtByClassAdditionalMortality:
         state = _make_state(age_dt=100)  # age_dt=100 → class 1 (≥ 48)
         result = additional_mortality(state, config, n_subdt=1, step=0)
         dead = result.n_dead[0, MortalityCause.ADDITIONAL]
-        # Rate 2.0 → much higher mortality
         assert dead > 50
 
     def test_below_first_threshold_gets_zero(self, tmp_path: Path) -> None:
         """Age below first threshold → rate 0 (Java: return 0)."""
         csv_file = tmp_path / "mort.csv"
-        _write_csv(csv_file, ["step", "24", "48"], [  # thresholds start at 24
+        _write_csv(csv_file, ["step", "24", "48"], [
             ["0", "0.5", "1.0"],
         ])
         ts = ByClassTimeSeries.from_csv(csv_file, ndt_per_year=1, ndt_simu=1)
@@ -165,17 +167,26 @@ Add loading function:
 def _load_additional_mortality_by_dt_by_class(
     cfg: dict[str, str], n_species: int, n_dt_per_year: int, n_dt_simu: int
 ) -> list[ByClassTimeSeries | None] | None:
-    """Load by-dt-by-class additional mortality from CSV."""
+    """Load by-dt-by-class additional mortality from CSV.
+
+    For byAge: Java converts class thresholds from years to time steps
+    (threshold * nStepYear). For bySize: thresholds are in cm, used as-is.
+    """
     from osmose.engine.timeseries import ByClassTimeSeries
 
     result: list[ByClassTimeSeries | None] = [None] * n_species
     found = False
     for i in range(n_species):
+        is_by_age = False
         for variant in ["byDt.byAge", "byDt.bySize"]:
             key = f"mortality.additional.rate.{variant}.file.sp{i}"
             if key in cfg:
                 path = _require_file(cfg[key], _cfg_dir(cfg), key)
-                result[i] = ByClassTimeSeries.from_csv(path, n_dt_per_year, n_dt_simu)
+                ts = ByClassTimeSeries.from_csv(path, n_dt_per_year, n_dt_simu)
+                # Java converts age thresholds from years to time steps
+                if "byAge" in variant:
+                    ts.classes = np.round(ts.classes * n_dt_per_year).astype(np.float64)
+                result[i] = ts
                 found = True
                 break
     return result if found else None
