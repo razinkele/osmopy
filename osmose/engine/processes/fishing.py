@@ -101,6 +101,10 @@ def fishing_mortality(
         np.where(sel_type == 1, sigmoid_select, len_select),
     )
 
+    # SP-1: Catch-based fishing -- proportional allocation (Java CatchesBySeason* variants)
+    if config.fishing_catches is not None:
+        return _catch_based_fishing(state, config, sp, selectivity, n_subdt, step)
+
     # Spatial fishing distribution: multiply by cell-specific factor
     spatial_factor = np.ones(len(state), dtype=np.float64)
     cy = state.cell_y.astype(np.intp)
@@ -151,4 +155,77 @@ def fishing_mortality(
     new_abundance = state.abundance - n_dead_total
     new_biomass = new_abundance * state.weight
 
+    return state.replace(abundance=new_abundance, biomass=new_biomass, n_dead=new_n_dead)
+
+
+def _catch_based_fishing(
+    state: SchoolState,
+    config: EngineConfig,
+    sp: np.ndarray,
+    selectivity: np.ndarray,
+    n_subdt: int,
+    step: int,
+) -> SchoolState:
+    """Catch-based proportional allocation (Java CatchesBySeason* variants).
+
+    catch_per_school = (school_biomass / total_fishable) * annual_catch * season_weight / n_subdt
+    """
+    step_in_year = step % config.n_dt_per_year
+    year = step // config.n_dt_per_year
+    n_dead_total = np.zeros(len(state), dtype=np.float64)
+
+    for sp_i in range(config.n_species):
+        sp_mask = sp == sp_i
+
+        # Determine annual catch target
+        annual_catch = config.fishing_catches[sp_i]
+        if config.fishing_catches_by_year is not None:
+            arr = config.fishing_catches_by_year[sp_i]
+            if arr is not None and year < len(arr):
+                annual_catch = arr[year]
+
+        if annual_catch <= 0:
+            continue
+
+        # Season weight (default uniform)
+        if config.fishing_catches_season is not None:
+            season_w = config.fishing_catches_season[sp_i, step_in_year]
+        else:
+            season_w = 1.0 / config.n_dt_per_year
+
+        # Compute fishable biomass (selectivity-weighted)
+        fishable = (state.abundance * state.weight * selectivity)[sp_mask]
+        total_fishable = fishable.sum()
+
+        if total_fishable <= 0:
+            continue
+
+        # Proportional allocation per school
+        catch_this_step = annual_catch * season_w / n_subdt
+        school_catch = (fishable / total_fishable) * catch_this_step
+
+        # Convert biomass catch to abundance
+        school_weights = state.weight[sp_mask]
+        n_dead_catch = np.where(school_weights > 0, school_catch / school_weights, 0.0)
+        # Cap at available abundance
+        n_dead_catch = np.minimum(n_dead_catch, state.abundance[sp_mask])
+
+        n_dead_total[sp_mask] = n_dead_catch
+
+    # Skip background and pre-feeding schools
+    n_dead_total[state.is_background] = 0.0
+    n_dead_total[state.age_dt < state.first_feeding_age_dt] = 0.0
+
+    new_n_dead = state.n_dead.copy()
+    if config.fishing_discard_rate is not None:
+        discard_rate = config.fishing_discard_rate[sp]
+        n_discarded = n_dead_total * discard_rate
+        n_landed = n_dead_total - n_discarded
+        new_n_dead[:, MortalityCause.FISHING] += n_landed
+        new_n_dead[:, MortalityCause.DISCARDS] += n_discarded
+    else:
+        new_n_dead[:, MortalityCause.FISHING] += n_dead_total
+
+    new_abundance = state.abundance - n_dead_total
+    new_biomass = new_abundance * state.weight
     return state.replace(abundance=new_abundance, biomass=new_biomass, n_dead=new_n_dead)

@@ -192,3 +192,67 @@ class TestRateByDtByClass:
         dead_young = result_young.n_dead[0, MortalityCause.FISHING]
 
         assert dead_old > dead_young
+
+
+class TestCatchBasedFishing:
+    """Catch-based proportional allocation."""
+
+    def test_proportional_allocation(self) -> None:
+        """Catch distributed proportionally to school biomass."""
+        config = _mock_config(
+            fishing_catches=np.array([100.0]),
+            n_dt_per_year=12,
+            fishing_selectivity_type=np.array([-1], dtype=np.int32),
+        )
+
+        # Two schools of same species, different biomass
+        state = _make_state(
+            n_schools=2,
+            species_id=np.array([0, 0], dtype=np.int32),
+            abundance=np.array([1000.0, 3000.0]),
+            weight=np.array([0.001, 0.001]),  # biomass: 1.0, 3.0 tonnes
+            length=np.array([10.0, 10.0]),
+            age_dt=np.array([24, 24], dtype=np.int32),
+        )
+
+        result = fishing_mortality(state, config, n_subdt=1, step=0)
+
+        dead_0 = result.n_dead[0, MortalityCause.FISHING]
+        dead_1 = result.n_dead[1, MortalityCause.FISHING]
+        # 3:1 biomass ratio -> 3:1 catch ratio
+        assert dead_1 / dead_0 == pytest.approx(3.0, rel=0.1)
+
+    def test_zero_fishable_biomass(self) -> None:
+        """Zero fishable biomass (via selectivity) -> no catch."""
+        config = _mock_config(
+            fishing_catches=np.array([100.0]),
+            n_dt_per_year=12,
+            fishing_selectivity_type=np.array([0], dtype=np.int32),
+            fishing_selectivity_a50=np.array([100.0]),  # no school old enough
+        )
+
+        state = _make_state(
+            abundance=np.array([1000.0]),
+            weight=np.array([0.001]),
+            length=np.array([5.0]),
+            age_dt=np.array([1], dtype=np.int32),
+        )
+
+        result = fishing_mortality(state, config, n_subdt=1, step=0)
+        assert result.n_dead[0, MortalityCause.FISHING] == 0.0
+
+    def test_catch_not_exceed_biomass(self) -> None:
+        """Catch should not exceed available biomass."""
+        config = _mock_config(
+            fishing_catches=np.array([1e10]),  # very high catch target
+            n_dt_per_year=1,
+        )
+
+        state = _make_state(
+            abundance=np.array([100.0]),
+            weight=np.array([0.001]),
+        )
+
+        result = fishing_mortality(state, config, n_subdt=1, step=0)
+        dead = result.n_dead[0, MortalityCause.FISHING]
+        assert dead <= 100.0
