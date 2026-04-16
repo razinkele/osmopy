@@ -96,6 +96,13 @@ class TestSingleTimeSeries:
         ts = SingleTimeSeries.from_csv(csv_file, ndt_per_year=1, ndt_simu=3)
         np.testing.assert_array_almost_equal(ts.values, [5.0, 5.0, 5.0])
 
+    def test_rejects_partial_year(self, tmp_path: Path) -> None:
+        """CSV with 3 rows but ndt_per_year=2 → not a multiple, raises ValueError."""
+        csv_file = tmp_path / "ts.csv"
+        _write_csv(csv_file, ["step", "value"], [["0", "1.0"], ["1", "2.0"], ["2", "3.0"]])
+        with pytest.raises(ValueError, match="multiple"):
+            SingleTimeSeries.from_csv(csv_file, ndt_per_year=2, ndt_simu=6)
+
 
 class TestGenericTimeSeries:
     """CSV reader without cycling."""
@@ -203,6 +210,16 @@ class SingleTimeSeries:
     ) -> SingleTimeSeries:
         raw = _read_csv_column(path)
         n = len(raw)
+        # Java validation: series must be at least ndt_per_year OR exactly ndt_simu
+        if n != ndt_simu and n < ndt_per_year:
+            raise ValueError(
+                f"Time series in {path} has {n} steps, need at least {ndt_per_year}"
+            )
+        # Java validation: must be multiple of ndt_per_year (for clean cycling)
+        if n != ndt_simu and n % ndt_per_year != 0:
+            raise ValueError(
+                f"Time series in {path} has {n} steps, must be a multiple of {ndt_per_year}"
+            )
         # Truncate if longer than simulation
         if n > ndt_simu:
             raw = raw[:ndt_simu]
@@ -300,7 +317,7 @@ class TestSeasonTimeSeries:
     def test_from_array_cycles_annually(self) -> None:
         """Array of ndt_per_year values repeated over simulation."""
         seasonal = [0.1, 0.2, 0.3]  # 3 steps per year
-        ts = SeasonTimeSeries.from_array(seasonal, ndt_simu=9)
+        ts = SeasonTimeSeries.from_array(seasonal, ndt_per_year=3, ndt_simu=9)
         # 3 years: [0.1, 0.2, 0.3, 0.1, 0.2, 0.3, 0.1, 0.2, 0.3]
         for i in range(9):
             assert ts.get(i) == pytest.approx(seasonal[i % 3])
@@ -374,12 +391,21 @@ class SeasonTimeSeries:
 
     @classmethod
     def from_array(
-        cls, seasonal_values: list[float], ndt_simu: int
+        cls, seasonal_values: list[float], ndt_per_year: int, ndt_simu: int
     ) -> SeasonTimeSeries:
-        ndt_per_year = len(seasonal_values)
+        n = len(seasonal_values)
         expanded = np.empty(ndt_simu, dtype=np.float64)
-        for i in range(ndt_simu):
-            expanded[i] = seasonal_values[i % ndt_per_year]
+        if n == ndt_per_year:
+            # Annual cycle — repeat pattern (Java: tempValues.length == nStepYear)
+            for i in range(ndt_simu):
+                expanded[i] = seasonal_values[i % ndt_per_year]
+        else:
+            # Full-length or other — use directly, truncate if needed (Java: else branch)
+            for i in range(min(n, ndt_simu)):
+                expanded[i] = seasonal_values[i]
+            # Fill remainder with last value if shorter
+            if n < ndt_simu:
+                expanded[n:] = seasonal_values[-1]
         return cls(expanded)
 
     @classmethod
@@ -543,6 +569,17 @@ class ByClassTimeSeries:
         classes = np.array([float(h) for h in headers], dtype=np.float64)
         n_rows = len(rows)
         n_classes = len(classes)
+
+        # Java validation: min length and multiple of ndt_per_year
+        if n_rows != ndt_simu and n_rows < ndt_per_year:
+            raise ValueError(
+                f"ByClass time series in {path} has {n_rows} steps, need at least {ndt_per_year}"
+            )
+        if n_rows != ndt_simu and n_rows % ndt_per_year != 0:
+            raise ValueError(
+                f"ByClass time series in {path} has {n_rows} steps, "
+                f"must be a multiple of {ndt_per_year}"
+            )
 
         # Truncate if longer
         if n_rows > ndt_simu:
@@ -741,6 +778,14 @@ class ByRegimeTimeSeries:
         # Convert shift years to time steps, filter out-of-range
         shifts_dt = [y * ndt_per_year for y in shift_years if y * ndt_per_year < ndt_simu]
 
+        # Java validation: need at least nShift + 1 values
+        n_regimes = len(shifts_dt) + 1
+        if len(values) < n_regimes:
+            raise ValueError(
+                f"ByRegime needs at least {n_regimes} values for {len(shifts_dt)} shifts, "
+                f"got {len(values)}"
+            )
+
         # Build step-indexed values
         i_rate = 0
         i_shift = 0
@@ -800,8 +845,8 @@ class TestLoadTimeSeries:
         assert ts.get(0) == pytest.approx(0.3)
         assert ts.get(47) == pytest.approx(0.3)
 
-    def test_bydt_file_returns_generic(self, tmp_path: Path) -> None:
-        """byDt.file key → GenericTimeSeries (or SingleTimeSeries for cycling)."""
+    def test_bydt_file_returns_single_with_cycling(self, tmp_path: Path) -> None:
+        """byDt.file key → SingleTimeSeries (with cycling, matching Java)."""
         csv_file = tmp_path / "ts.csv"
         _write_csv(csv_file, ["step", "value"], [["0", "1.0"], ["1", "2.0"]])
         config = {"mortality.fishing.rate.byDt.file.sp0": str(csv_file)}
