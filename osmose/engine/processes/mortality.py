@@ -54,7 +54,6 @@ _FISHING = int(MortalityCause.FISHING)
 _DISCARDS = int(MortalityCause.DISCARDS)
 
 
-
 # ---------------------------------------------------------------------------
 # Per-school mortality helpers (operate in-place on state arrays)
 # ---------------------------------------------------------------------------
@@ -67,20 +66,45 @@ def _apply_starvation_for_school(
     n_subdt: int,
     inst_abd: NDArray[np.float64],
 ) -> None:
-    """Apply starvation mortality to a single school (in-place on n_dead)."""
+    """Apply starvation mortality to a single school (in-place on n_dead).
+
+    When bioen_enabled=True: uses BioenStarvationMortality (gonad depletion).
+    When bioen_enabled=False: uses standard starvation rate.
+    Matches Java MortalityProcess lines 604-626.
+    """
     if state.is_background[idx]:
         return
     if state.age_dt[idx] < state.first_feeding_age_dt[idx]:
         return
-    M = state.starvation_rate[idx] / (config.n_dt_per_year * n_subdt)
-    if M <= 0:
-        return
+
     abd = inst_abd[idx]
     if abd <= 0:
         return
-    n_dead = abd * (1.0 - np.exp(-M))
-    state.n_dead[idx, _STARVATION] += n_dead
-    inst_abd[idx] -= n_dead
+
+    if config.bioen_enabled:
+        # Bioen starvation: gonad-depletion formula
+        from osmose.engine.processes.bioen_starvation import bioen_starvation
+
+        e_net = np.array([state.e_net[idx]])
+        gonad_w = np.array([state.gonad_weight[idx]])
+        weight = np.array([state.weight[idx]])
+        sp_i = state.species_id[idx]
+        eta = config.bioen_eta[sp_i] if config.bioen_eta is not None else 1.0
+
+        n_dead_arr, _new_gonad = bioen_starvation(e_net, gonad_w, weight, eta, n_subdt)
+        # bioen_starvation returns absolute n_dead (deficit/weight), NOT a fraction
+        n_dead = float(n_dead_arr[0])
+        if n_dead > 0:
+            state.n_dead[idx, _STARVATION] += n_dead
+            inst_abd[idx] -= n_dead
+    else:
+        # Standard starvation
+        M = state.starvation_rate[idx] / (config.n_dt_per_year * n_subdt)
+        if M <= 0:
+            return
+        n_dead = abd * (1.0 - np.exp(-M))
+        state.n_dead[idx, _STARVATION] += n_dead
+        inst_abd[idx] -= n_dead
 
 
 def _apply_additional_for_school(
@@ -882,8 +906,14 @@ if _HAS_NUMBA:
 
     @njit(cache=True)
     def _apply_single_cause(
-        cause, idx, inst_abd, n_dead,
-        eff_starv, eff_additional, eff_fishing, fishing_discard,
+        cause,
+        idx,
+        inst_abd,
+        n_dead,
+        eff_starv,
+        eff_additional,
+        eff_fishing,
+        fishing_discard,
     ):
         """Apply one non-predation mortality cause to one school."""
         if cause == 1:  # STARVATION
@@ -1008,13 +1038,40 @@ if _HAS_NUMBA:
                     )
                 elif cause == 1:
                     idx = cell_indices[seq_starv[i]]
-                    _apply_single_cause(cause, idx, inst_abd, n_dead, eff_starv, eff_additional, eff_fishing, fishing_discard)
+                    _apply_single_cause(
+                        cause,
+                        idx,
+                        inst_abd,
+                        n_dead,
+                        eff_starv,
+                        eff_additional,
+                        eff_fishing,
+                        fishing_discard,
+                    )
                 elif cause == 2:
                     idx = cell_indices[seq_nat[i]]
-                    _apply_single_cause(cause, idx, inst_abd, n_dead, eff_starv, eff_additional, eff_fishing, fishing_discard)
+                    _apply_single_cause(
+                        cause,
+                        idx,
+                        inst_abd,
+                        n_dead,
+                        eff_starv,
+                        eff_additional,
+                        eff_fishing,
+                        fishing_discard,
+                    )
                 elif cause == 3:
                     idx = cell_indices[seq_fish[i]]
-                    _apply_single_cause(cause, idx, inst_abd, n_dead, eff_starv, eff_additional, eff_fishing, fishing_discard)
+                    _apply_single_cause(
+                        cause,
+                        idx,
+                        inst_abd,
+                        n_dead,
+                        eff_starv,
+                        eff_additional,
+                        eff_fishing,
+                        fishing_discard,
+                    )
 
     @njit(cache=True)
     def _mortality_all_cells_numba(
@@ -1133,13 +1190,40 @@ if _HAS_NUMBA:
                         )
                     elif cause == 1:
                         idx = cell_indices[seq_starv[i]]
-                        _apply_single_cause(cause, idx, inst_abd, n_dead, eff_starv, eff_additional, eff_fishing, fishing_discard)
+                        _apply_single_cause(
+                            cause,
+                            idx,
+                            inst_abd,
+                            n_dead,
+                            eff_starv,
+                            eff_additional,
+                            eff_fishing,
+                            fishing_discard,
+                        )
                     elif cause == 2:
                         idx = cell_indices[seq_nat[i]]
-                        _apply_single_cause(cause, idx, inst_abd, n_dead, eff_starv, eff_additional, eff_fishing, fishing_discard)
+                        _apply_single_cause(
+                            cause,
+                            idx,
+                            inst_abd,
+                            n_dead,
+                            eff_starv,
+                            eff_additional,
+                            eff_fishing,
+                            fishing_discard,
+                        )
                     elif cause == 3:
                         idx = cell_indices[seq_fish[i]]
-                        _apply_single_cause(cause, idx, inst_abd, n_dead, eff_starv, eff_additional, eff_fishing, fishing_discard)
+                        _apply_single_cause(
+                            cause,
+                            idx,
+                            inst_abd,
+                            n_dead,
+                            eff_starv,
+                            eff_additional,
+                            eff_fishing,
+                            fishing_discard,
+                        )
 
     @njit(cache=True, parallel=True)
     def _mortality_all_cells_parallel(
@@ -1271,13 +1355,40 @@ if _HAS_NUMBA:
                         )
                     elif cause == 1:
                         idx = cell_indices[seq_starv[i]]
-                        _apply_single_cause(cause, idx, inst_abd, n_dead, eff_starv, eff_additional, eff_fishing, fishing_discard)
+                        _apply_single_cause(
+                            cause,
+                            idx,
+                            inst_abd,
+                            n_dead,
+                            eff_starv,
+                            eff_additional,
+                            eff_fishing,
+                            fishing_discard,
+                        )
                     elif cause == 2:
                         idx = cell_indices[seq_nat[i]]
-                        _apply_single_cause(cause, idx, inst_abd, n_dead, eff_starv, eff_additional, eff_fishing, fishing_discard)
+                        _apply_single_cause(
+                            cause,
+                            idx,
+                            inst_abd,
+                            n_dead,
+                            eff_starv,
+                            eff_additional,
+                            eff_fishing,
+                            fishing_discard,
+                        )
                     elif cause == 3:
                         idx = cell_indices[seq_fish[i]]
-                        _apply_single_cause(cause, idx, inst_abd, n_dead, eff_starv, eff_additional, eff_fishing, fishing_discard)
+                        _apply_single_cause(
+                            cause,
+                            idx,
+                            inst_abd,
+                            n_dead,
+                            eff_starv,
+                            eff_additional,
+                            eff_fishing,
+                            fishing_discard,
+                        )
 
 
 # ---------------------------------------------------------------------------
@@ -1552,7 +1663,7 @@ def mortality(
             # Build stage-to-species mapping for prey rows
             stage_to_sp = np.full(access_matrix.shape[0], -1, dtype=np.int32)
             sa_obj = config.stage_accessibility
-            for sp_idx, sp_name in enumerate(config.all_species_names[:config.n_species]):
+            for sp_idx, sp_name in enumerate(config.all_species_names[: config.n_species]):
                 for _norm in (sp_name, sp_name.lower(), sp_name.replace(" ", "")):
                     if _norm in sa_obj.prey_lookup:
                         for si in sa_obj.prey_lookup[_norm]:
@@ -1564,12 +1675,17 @@ def mortality(
                             stage_to_sp[si.matrix_index] = sp_idx
                         break
             access_matrix = apply_prey_scale_to_matrix(
-                access_matrix, ctx.prey_density_scale, config.n_species,
-                is_stage_indexed=True, stage_to_species=stage_to_sp,
+                access_matrix,
+                ctx.prey_density_scale,
+                config.n_species,
+                is_stage_indexed=True,
+                stage_to_species=stage_to_sp,
             )
         else:
             access_matrix = apply_prey_scale_to_matrix(
-                access_matrix, ctx.prey_density_scale, config.n_species,
+                access_matrix,
+                ctx.prey_density_scale,
+                config.n_species,
                 is_stage_indexed=False,
             )
 
@@ -1629,9 +1745,7 @@ def mortality(
             _diet_mat = ctx.diet_matrix if ctx else None
             tl_ws = _tl_weighted_sum if _tl_weighted_sum is not None else _DUMMY_RSC_1D
             tl_track = _tl_weighted_sum is not None
-            d_mat = (
-                _diet_mat if _diet_tracking_enabled and _diet_mat is not None else _DUMMY_DIET
-            )
+            d_mat = _diet_mat if _diet_tracking_enabled and _diet_mat is not None else _DUMMY_DIET
             d_en = _diet_tracking_enabled and _diet_mat is not None
 
             # Single Numba call for all cells (RNG generated inside)
