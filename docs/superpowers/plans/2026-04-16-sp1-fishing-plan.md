@@ -58,6 +58,20 @@ from osmose.engine.processes.selectivity import (
 )
 
 
+class TestSigmoidSelectivity:
+    """Type 1: Logistic sigmoid parameterized by L50/L75 (Java formula)."""
+
+    def test_half_at_l50(self) -> None:
+        """Selectivity = 0.5 at L50."""
+        sel = sigmoid(np.array([20.0]), l50=20.0, l75=25.0)
+        assert sel[0] == pytest.approx(0.5, rel=1e-6)
+
+    def test_75pct_at_l75(self) -> None:
+        """Selectivity = 0.75 at L75."""
+        sel = sigmoid(np.array([25.0]), l50=20.0, l75=25.0)
+        assert sel[0] == pytest.approx(0.75, rel=1e-6)
+
+
 class TestGaussianSelectivity:
     """Type 2: Normal distribution, normalized by peak."""
 
@@ -120,9 +134,17 @@ class TestLogNormalSelectivity:
 Run: `.venv/bin/python -m pytest tests/test_engine_fishing_variants.py::TestGaussianSelectivity tests/test_engine_fishing_variants.py::TestLogNormalSelectivity -v`
 Expected: FAIL — `cannot import name 'gaussian'`
 
-- [ ] **Step 3: Implement Gaussian and log-normal selectivity**
+- [ ] **Step 3: Fix existing sigmoid and add Gaussian and log-normal selectivity**
 
-Add to `osmose/engine/processes/selectivity.py`:
+**CRITICAL:** The existing `sigmoid()` function in `selectivity.py` uses `1/(1+exp(-slope*(x-l50)))` which does NOT match Java. Java's sigmoid is parameterized by L50 and L75:
+```
+s1 = (l50 * log(3)) / (l75 - l50)
+s2 = s1 / l50
+selectivity = 1 / (1 + exp(s1 - s2 * x))
+```
+This guarantees selectivity = 0.5 at L50 and 0.75 at L75.
+
+Replace the existing `sigmoid()` and add Gaussian/log-normal in `osmose/engine/processes/selectivity.py`:
 
 ```python
 from scipy.stats import norm, lognorm
@@ -130,6 +152,24 @@ from scipy.stats import norm, lognorm
 
 # qnorm(0.75) — the 75th percentile of the standard normal
 _Q75 = 0.674489750196082
+
+
+def sigmoid(
+    length: NDArray[np.float64], l50: float, l75: float, tiny: float = 1e-8
+) -> NDArray[np.float64]:
+    """Logistic sigmoid selectivity — type 1 in Java.
+
+    Parameterized by L50 (50% selectivity) and L75 (75% selectivity).
+    Formula: 1 / (1 + exp(s1 - s2 * x)) where:
+      s1 = (L50 * log(3)) / (L75 - L50)
+      s2 = s1 / L50
+    Matches Java FisherySelectivity.getSigmoidSelectivity().
+    """
+    s1 = (l50 * np.log(3)) / (l75 - l50)
+    s2 = s1 / l50
+    sel = 1.0 / (1.0 + np.exp(s1 - s2 * length))
+    sel[sel < tiny] = 0.0
+    return sel
 
 
 def gaussian(
@@ -486,7 +526,7 @@ In config loading, detect catch-based scenario:
 
 - [ ] **Step 4: Add catch-based branch to `fishing_mortality()`**
 
-In `osmose/engine/processes/fishing.py`, add a catch-based path. The key logic: if `config.fishing_catches` is not None, use proportional allocation instead of rate-based mortality:
+In `osmose/engine/processes/fishing.py`, add a catch-based path **after the selectivity computation** (from Task 4) but **before the rate-based mortality calculation**. The catch-based path is an early return — if `config.fishing_catches` is not None, it computes catch via proportional allocation and returns without using the rate-based `mortality_fraction`:
 
 ```python
     # Catch-based fishing — proportional allocation (Java CatchesBySeason* variants)
@@ -665,7 +705,7 @@ In `osmose/engine/processes/fishing.py`, replace the existing selectivity block 
             selectivity[sp_mask] = np.where(age_years >= a50[sp_mask][0], 1.0, 0.0)
         elif t == 1:
             # Sigmoid
-            selectivity[sp_mask] = sigmoid(lengths, l50[sp_mask][0], config.fishing_selectivity_slope[sp_mask][0])
+            selectivity[sp_mask] = sigmoid(lengths, l50[sp_mask][0], l75[sp_mask][0])
         elif t == 2:
             # Gaussian
             selectivity[sp_mask] = gaussian(lengths, l50[sp_mask][0], l75[sp_mask][0])
