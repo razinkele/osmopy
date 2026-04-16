@@ -33,13 +33,15 @@ SP-3 first: provides the time-varying parameter loading infrastructure needed by
 **Problem:** Java has 7 `TimeSeries` classes in `util/timeseries/` for loading parameter values that vary over time. Python hardcodes values or reads single-year CSVs.
 
 **Java classes (7):**
-- `SingleTimeSeries` — constant value
-- `SeasonTimeSeries` — repeating seasonal CSV (ndt_per_year rows)
-- `ByYearTimeSeries` — year×season matrix
-- `BySpeciesTimeSeries` — per-species values
-- `ByClassTimeSeries` — per-age/size class per dt
-- `ByRegimeTimeSeries` — regime-switching (value changes at specified years)
-- `GenericTimeSeries` — arbitrary dt-indexed CSV
+- `SingleTimeSeries` — reads CSV (header + data, column[1]); cycles if shorter than simulation length. NOT a scalar wrapper — handles full time-series with cycling.
+- `SeasonTimeSeries` — reads from **config array key** (not CSV file); if array length = ndt_per_year, cycles annually over simulation.
+- `ByYearTimeSeries` — reads CSV with **one value per year** (not year×season); cycles if fewer years than simulation.
+- `BySpeciesTimeSeries` — per-species values from config array.
+- `ByClassTimeSeries` — reads CSV: header row = class thresholds, data rows = per-class values per dt; cycles if shorter.
+- `ByRegimeTimeSeries` — reads from **config array keys** (not CSV files); takes shift years + values from config; converts shift years to time steps internally.
+- `GenericTimeSeries` — reads CSV (header + data, column[1]); NO cycling, raw values only.
+
+**Key shared behavior:** `SingleTimeSeries`, `ByClassTimeSeries`, and `ByYearTimeSeries` all **cycle** shorter series to fill the simulation length. Python must replicate this cycling behavior.
 
 **Design:**
 
@@ -50,23 +52,23 @@ class TimeSeries(Protocol):
     def get(self, step: int) -> float: ...
 
 class SingleTimeSeries:
-    """Constant value — wraps a scalar."""
+    """CSV time-series (header + data, column[1]). Cycles if shorter than ndt_simu."""
 
 class SeasonTimeSeries:
-    """Repeating seasonal pattern — CSV with ndt_per_year rows, cycles annually."""
+    """Config array repeated annually. If len = ndt_per_year, cycles over simulation."""
 
 class ByYearTimeSeries:
-    """Year×season matrix — CSV with n_years * ndt_per_year rows."""
+    """CSV with one value per year (column[1]). Cycles if fewer years than simulation."""
 
 class ByClassTimeSeries:
-    """Per-class per-dt — CSV with ndt rows × n_classes columns."""
+    """CSV: header = class thresholds, rows = per-class values per dt. Cycles if shorter."""
     def get_by_class(self, step: int, class_idx: int) -> float: ...
 
 class ByRegimeTimeSeries:
-    """Regime-switching — value changes at specified year boundaries."""
+    """Config arrays: shift years + values. Regime changes at year boundaries."""
 
 class GenericTimeSeries:
-    """Arbitrary dt-indexed — CSV with one value per simulation step."""
+    """CSV time-series (header + data, column[1]). No cycling — raw values only."""
 ```
 
 Factory function:
@@ -102,8 +104,8 @@ Detection logic (derived from reading each Java process's `readParameters()`):
 
 | Class | Config key pattern | Formula |
 |-------|-------------------|---------|
-| `RateBySeasonFishingMortality` | `mortality.fishing.rate.sp{i}` (scalar) | F = rate / ndt_per_year |
-| `RateByYearBySeasonFishingMortality` | `mortality.fishing.rate.byYear.file.sp{i}` | F = rate(year, season) from CSV |
+| `RateBySeasonFishingMortality` | `mortality.fishing.rate.sp{i}` (scalar) | F = annualF × season[step_in_year]. Default season = 1/ndt (uniform). Optional seasonality file: `mortality.fishing.season.distrib.file.sp{i}` |
+| `RateByYearBySeasonFishingMortality` | `mortality.fishing.rate.byYear.file.sp{i}` | F = annualF[year] × season[step_in_year]. Year-varying rate from ByYearTimeSeries + optional seasonality file |
 | `RateByDtByClassFishingMortality` | `mortality.fishing.rate.byDt.byAge.file.sp{i}` OR `.bySize.file.sp{i}` | F = rate(dt, age/size class) from CSV |
 | `CatchesBySeasonFishingMortality` | `mortality.fishing.catches.sp{i}` (scalar) | Proportional allocation: catch = (school_biomass / fishable_biomass) × annual_catches × season_weight |
 | `CatchesByYearBySeasonFishingMortality` | `mortality.fishing.catches.byYear.file.sp{i}` | Same proportional allocation with year-varying target |
@@ -135,17 +137,23 @@ Rate-based variants use SP-3 `TimeSeries` to load values. Catch-based variants u
 - Modify: `osmose/engine/config.py` — parse fishery config keys (`fisheries.name.fsh{i}`, etc.)
 - Modify: `osmose/engine/processes/mortality.py` — apply fishery selectivity + seasonality + spatial maps + MPA in fishing mortality step
 
-### 1C. MPA (Marine Protected Areas)
+### 1C. Spatial Fishing Distribution
+
+Config key: `mortality.fishing.spatial.distrib.file.sp{i}` — per-species spatial factor grid (GridMap). Multiplies the fishing rate per cell. Java normalizes so the mean over fished cells = 1.0. Separate from fishery-level FisheryMapSet.
+
+### 1D. MPA (Marine Protected Areas)
 
 Config keys: `mpa.file.mpa{i}`, `mpa.start.year.mpa{i}`, `mpa.end.year.mpa{i}`
 
-Grid mask (0/1) loaded per MPA. During mortality, if school is in MPA cell and within active period, fishing mortality = 0 for that school.
+MPA supports **percentage** coverage per cell (`getPercentageMPA(cell)`), not just binary 0/1. MPA factor = `1 - percentageMPA`. When MPA closes cells, Java redistributes fishing effort to non-MPA cells to keep total effort constant (normalization within `setMPA()`).
 
 **Tests:**
-- Rate variants: 6 tests (one per type) with synthetic configs
-- Catch-based solver: 3 tests (convergence, overshoot, zero biomass)
+- Rate variants: 6 tests (one per type, including seasonality) with synthetic configs
+- Catch-based allocation: 3 tests (proportional allocation, zero fishable biomass, non-fishable school)
 - Selectivity: 4 tests (one per type, verify shape against Java formulas)
-- Fishery integration: 2 tests (seasonality × selectivity, MPA closure)
+- Spatial distribution: 1 test (verify normalization)
+- MPA: 2 tests (percentage coverage, effort redistribution)
+- Fishery integration: 2 tests (seasonality × selectivity, spatial × MPA)
 - Config dispatch: 1 test (auto-detect variant from config keys)
 
 ---
@@ -160,20 +168,28 @@ Grid mask (0/1) loaded per MPA. During mortality, if school is in MPA cell and w
 |-------|-----------------|-------------|
 | `AnnualAdditionalMortality` | `mortality.additional.rate.sp{i}` (scalar) | **EXISTS** |
 | `AnnualLarvaMortality` | `mortality.additional.larva.rate.sp{i}` (scalar) | **EXISTS** |
-| `ByDtAdditionalMortality` | `mortality.additional.rate.byDt.file.sp{i}` | Load via SP-3 `GenericTimeSeries` |
-| `ByDtLarvaMortality` | `mortality.additional.larva.rate.byDt.file.sp{i}` | Load via SP-3 `GenericTimeSeries` |
-| `ByDtByClassAdditionalMortality` | `mortality.additional.rate.byDt.byAge.file.sp{i}` OR `.bySize.file.sp{i}` | Load via SP-3 `ByClassTimeSeries` (supports both age and size classes) |
+| `ByDtAdditionalMortality` | `mortality.additional.rate.bytDt.file.sp{i}` (**note Java typo: `bytDt`**) | Load via SP-3 `SingleTimeSeries` (has cycling behavior) |
+| `ByDtLarvaMortality` | `mortality.additional.larva.rate.bytDt.file.sp{i}` (**same typo**) | Load via SP-3 `SingleTimeSeries` (has cycling behavior) |
+| `ByDtByClassAdditionalMortality` | `mortality.additional.rate.byDt.byAge.file.sp{i}` OR `.bySize.file.sp{i}` (correct `byDt` here) | Load via SP-3 `ByClassTimeSeries` (supports both age and size classes) |
+
+**IMPORTANT:** Java has a typo in config keys — `bytDt` instead of `byDt` for the ByDt and ByDtLarva variants (confirmed in `AdditionalMortality.Scenario` enum and the class `init()` methods). The `ByDtByClass` variants use the correct `byDt`. Python must accept BOTH `bytDt` (backward compat with Java configs) and `byDt` (corrected form) during config key detection.
+
+**Also:** Java loads `ByDtAdditionalMortality` and `ByDtLarvaMortality` via `SingleTimeSeries` (which has cycling), NOT `GenericTimeSeries` (which doesn't cycle). Python must use the cycling variant.
+
+**Spatial additional mortality:** Java also loads `mortality.additional.spatial.distrib.file.sp{i}` — a per-species GridMap spatial factor that multiplies additional mortality rates per cell (lines 127-136 of `AdditionalMortality.java`).
 
 **Design:**
 
 Modify `osmose/engine/processes/natural.py`:
-- At init, detect variant type from config keys (same pattern as fishing)
-- If `.byDt.file` key exists → load TimeSeries, index by step
+- At init, detect variant type from config keys (check both `bytDt` and `byDt`)
+- If `.bytDt.file` or `.byDt.file` key exists → load SingleTimeSeries (with cycling), index by step
 - If `.byDt.byAge.file` key exists → load ByClassTimeSeries, index by step and age class
 - Otherwise → use existing constant rate
+- Load spatial factor grid if `mortality.additional.spatial.distrib.file.sp{i}` exists
 
 Modify `osmose/engine/config.py`:
-- Parse `mortality.additional.rate.byDt.file.sp{i}` and `mortality.additional.rate.byDt.byAge.file.sp{i}`
+- Parse additional mortality file keys (both typo and corrected forms)
+- Parse spatial distribution file key
 - Store file paths in EngineConfig
 
 **Files:**
@@ -181,7 +197,7 @@ Modify `osmose/engine/config.py`:
 - Modify: `osmose/engine/config.py`
 - Test: `tests/test_engine_additional_mortality.py`
 
-**Tests:** 3 tests (ByDt constant check, ByDt varying check, ByDtByClass varying check).
+**Tests:** 5 tests (ByDt with cycling, ByDt varying, ByDtByClass by age, ByDtByClass by size, spatial factor application).
 
 ---
 
@@ -243,10 +259,26 @@ Config key: `species.bioen.maturity.eta.sp{i}` (gonadic energy conversion factor
 
 **Java:** `process/bioen/BioenPredationMortality.java`
 
-Extends `PredationMortality`. Overrides `computePredation()` to apply oxygen-based ingestion constraints via `OxygenFunction` and bioen-specific ingestion rate. Config keys:
-- `predation.ingestion.rate.max.bioen.sp{i}`
-- `predation.coef.ingestion.rate.max.larvae.bioen.sp{i}`
-- `predation.c.bioen.sp{i}`
+Extends `PredationMortality`. Overrides two methods:
+
+1. **`getMaxPredationRate(predator)`** — bioen-specific ingestion rate:
+   ```
+   imax = trait("imax") if genetic else predationRateBioen[sp]
+   larvae_factor = larvaePredationRateBioen[sp] if age < threshold else 1
+   rate = (imax + (larvae_factor - 1) * c_rateBioen[sp]) / ndt_per_year
+   ```
+
+2. **`computePredation()`** — same proportional prey distribution as standard, but uses bioen rate and weight in **grams** (`weight * 1e6`) with `betaBioen` exponent:
+   ```
+   maxBiomassToPredate = rate * (weight_g ^ betaBioen) / subdt * abundance * 1e-6
+   ```
+
+Config keys:
+- `predation.ingestion.rate.max.bioen.sp{i}` — base Imax
+- `predation.coef.ingestion.rate.max.larvae.bioen.sp{i}` — larvae multiplier
+- `predation.c.bioen.sp{i}` — c-rate for larvae formula
+
+**Note:** Java initializes `OxygenFunction` in constructor but it's not directly called in `computePredation()` or `getMaxPredationRate()` — it may be used elsewhere in the bioen pipeline or be a dead reference. Implement the constructor initialization but verify usage.
 
 **Files:**
 - Create: `osmose/engine/processes/foraging_mortality.py` — both modes (constant + genetic exponential)
@@ -267,15 +299,19 @@ Extends `PredationMortality`. Overrides `computePredation()` to apply oxygen-bas
 ### Architecture
 
 **Distribution infrastructure** (`output_distributions.py`):
+
+Java has 4 distribution types (from `DistributionType` enum): SIZE, AGE, WEIGHT, TL.
+
 ```python
 class OutputDistribution:
-    """Bin schools by age or size class for distribution outputs."""
+    """Bin schools by age, size, weight, or TL class for distribution outputs."""
     def bin_by_age(self, schools, n_age_classes) -> np.ndarray: ...
     def bin_by_size(self, schools, size_breaks) -> np.ndarray: ...
+    def bin_by_weight(self, schools, weight_breaks) -> np.ndarray: ...
     def bin_by_tl(self, schools, tl_breaks) -> np.ndarray: ...
 ```
 
-Config keys: `output.distribution.bySize.min/max/step`, `output.distribution.byAge.max`
+Config keys: `output.distribution.bySize.min/max/step`, `output.distribution.byAge.max`, `output.distribution.byWeight.min/max/step`, `output.distribution.byTL.min/max/step`
 
 **Recording frequency** (`output.py`):
 ```python
@@ -337,7 +373,12 @@ All are NetCDF mirrors of Tier 1-3 CSV outputs using xarray (already a dependenc
 
 **Infrastructure:** `osmose/engine/output_netcdf.py` — wrapper that converts CSV-style data to xarray Dataset and writes `.nc`.
 
-Config key: `output.format` = `csv` (default) or `netcdf`.
+**Important:** There is NO single `output.format` toggle. CSV and NetCDF outputs are **independently enabled** via separate config keys. For example:
+- `output.biomass.enabled = true` → CSV biomass output
+- `output.biomass.netcdf.enabled = true` → NetCDF biomass output
+- Both can be enabled simultaneously
+
+The full config key pattern is: `output.<metric>[.<distribution>][.netcdf].enabled`
 
 ### Tier 5: Specialized & Economic Outputs
 
