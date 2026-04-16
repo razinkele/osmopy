@@ -99,6 +99,11 @@ def calibration_ui():
                     ),
                 ),
                 ui.hr(),
+                ui.input_checkbox(
+                    "cal_preflight_enabled",
+                    "Pre-flight screening (recommended)",
+                    value=True,
+                ),
                 ui.layout_columns(
                     ui.input_action_button(
                         "btn_start_cal", "Start Calibration", class_="btn-success w-100"
@@ -192,6 +197,7 @@ def calibration_server(input, output, session, state):
     cal_param_names = reactive.value([])
     history_banner_text = reactive.value("")
     history_trigger = reactive.value(0)
+    preflight_result = reactive.value(None)
 
     def _tmpl() -> str:
         mode = get_theme_mode(input)
@@ -212,6 +218,7 @@ def calibration_server(input, output, session, state):
         copy_data_files=copy_data_files,
         validation_result=validation_result,
         cal_param_names=cal_param_names,
+        preflight_result=preflight_result,
         history_banner_text=history_banner_text,
         history_trigger=history_trigger,
     )

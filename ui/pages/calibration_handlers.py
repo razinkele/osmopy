@@ -48,6 +48,9 @@ class CalibrationMessageQueue:
     def post_history_saved(self) -> None:
         self._q.put(("history_saved", None))
 
+    def post_preflight(self, result) -> None:
+        self._q.put(("preflight", result))
+
     def drain(self) -> list[tuple]:
         msgs = []
         while True:
@@ -176,6 +179,129 @@ def _extract_species_stats(results, species_names: list[str], n_eval_years: int 
     return stats
 
 
+def build_preflight_modal(result):
+    """Build a modal dialog showing pre-flight issues with fix checkboxes.
+
+    Returns a ``ui.modal()`` if there are issues, or ``None`` if the result is clean.
+    Auto-fixable issues get checkboxes; non-fixable issues are shown as text.
+    """
+    if not result.issues:
+        return None
+
+    body_items = []
+    body_items.append(
+        ui.p(
+            f"Pre-flight screening completed in {result.elapsed_seconds:.1f}s. "
+            f"{len(result.survivors)} of {len(result.screening)} parameters survived."
+        )
+    )
+
+    fixable_idx = 0
+    for issue in result.issues:
+        severity_class = "text-danger" if issue.severity.value == "error" else "text-warning"
+        if issue.auto_fixable:
+            body_items.append(
+                ui.div(
+                    ui.input_checkbox(
+                        f"preflight_fix_{fixable_idx}",
+                        ui.span(
+                            ui.tags.strong(issue.message, class_=severity_class),
+                            ui.br(),
+                            ui.tags.em(issue.suggestion),
+                        ),
+                        value=True,
+                    ),
+                    class_="mb-2",
+                )
+            )
+            fixable_idx += 1
+        else:
+            body_items.append(
+                ui.div(
+                    ui.tags.strong(issue.message, class_=severity_class),
+                    ui.br(),
+                    ui.tags.em(issue.suggestion),
+                    class_="mb-2",
+                )
+            )
+
+    footer = ui.div(
+        ui.input_action_button(
+            "btn_preflight_apply", "Apply Selected & Start", class_="btn-success me-2"
+        ),
+        ui.tags.button("Cancel", class_="btn btn-secondary", **{"data-bs-dismiss": "modal"}),
+    )
+
+    return ui.modal(
+        *body_items,
+        title="Pre-flight Screening Results",
+        footer=footer,
+        easy_close=True,
+        size="l",
+    )
+
+
+def apply_preflight_fixes(free_params, issues, checked):
+    """Apply selected pre-flight fixes to the free parameter list.
+
+    - NEGLIGIBLE: remove the parameter entirely.
+    - BOUND_TIGHT: widen bounds by 10% of span on each side.
+    - BLOWUP: tighten bounds by 10% of span on each side.
+
+    Args:
+        free_params: List of FreeParameter objects.
+        issues: List of auto-fixable PreflightIssue objects.
+        checked: List of booleans indicating which fixes are selected.
+
+    Returns:
+        Updated list of FreeParameter objects.
+    """
+    from osmose.calibration.preflight import IssueCategory
+    from osmose.calibration.problem import FreeParameter
+
+    # Build a map of param_key -> list of (issue, is_checked)
+    removals: set[str] = set()
+    bound_adjustments: dict[str, list[tuple]] = {}
+
+    for issue, is_checked in zip(issues, checked):
+        if not is_checked:
+            continue
+        if issue.category is IssueCategory.NEGLIGIBLE and issue.param_key:
+            removals.add(issue.param_key)
+        elif issue.category is IssueCategory.BOUND_TIGHT and issue.param_key:
+            bound_adjustments.setdefault(issue.param_key, []).append(("widen",))
+        elif issue.category is IssueCategory.BLOWUP and issue.param_key:
+            bound_adjustments.setdefault(issue.param_key, []).append(("tighten",))
+
+    result = []
+    for fp in free_params:
+        if fp.key in removals:
+            continue
+        if fp.key in bound_adjustments:
+            lo, hi = fp.lower_bound, fp.upper_bound
+            span = hi - lo
+            for (action,) in bound_adjustments[fp.key]:
+                if action == "widen":
+                    lo -= 0.1 * span
+                    hi += 0.1 * span
+                elif action == "tighten":
+                    lo += 0.1 * span
+                    hi -= 0.1 * span
+            if lo >= hi:
+                # Safety: don't create invalid bounds, keep original
+                result.append(fp)
+            else:
+                result.append(
+                    FreeParameter(
+                        key=fp.key, lower_bound=lo, upper_bound=hi, transform=fp.transform
+                    )
+                )
+        else:
+            result.append(fp)
+
+    return result
+
+
 def register_calibration_handlers(
     input,
     output,
@@ -190,6 +316,7 @@ def register_calibration_handlers(
     copy_data_files,
     validation_result,
     cal_param_names,
+    preflight_result,
     history_banner_text,
     history_trigger,
 ):
@@ -220,128 +347,60 @@ def register_calibration_handlers(
                 history_trigger.set(history_trigger.get() + 1)
             elif kind == "validation":
                 validation_result.set(payload)
+            elif kind == "preflight":
+                preflight_result.set(payload)
+                modal = build_preflight_modal(payload)
+                if modal is None:
+                    surrogate_status.set("Pre-flight passed — starting calibration...")
+                    selected = collect_selected_params(input, state)
+                    fp = build_free_params(selected)
+                    _start_optimization_with_params(fp)
+                else:
+                    ui.modal_show(modal)
 
     @reactive.effect
     def _consume_cal_poll():
         _poll_cal_messages()
 
-    @reactive.effect
-    @reactive.event(input.btn_start_cal)
-    def handle_start_cal():
-        selected = collect_selected_params(input, state)
-        if not selected:
-            cal_history.set([])
-            ui.notification_show(
-                "Select at least one parameter to calibrate.", type="warning", duration=5
-            )
-            return
+    # Shared state for preflight -> optimization handoff (nonlocal across handlers)
+    _shared_objective_fns = []
+    _shared_obj_names = []
+    _shared_obs_bio = None
+    _shared_obs_diet = None
+    _shared_banded_enabled = False
+    _shared_base_config = None
+    _shared_jar_path = None
+    _shared_work_dir = None
+    _shared_current_config = None
+    _shared_n_parallel = 4
+    _shared_algorithm_choice = "nsga2"
+    _shared_pop_size = 50
+    _shared_generations = 100
 
-        jar_path = Path(state.jar_path.get())
-        if not jar_path.exists():
-            ui.notification_show(f"JAR not found: {jar_path}", type="error", duration=15)
-            return
+    def _start_optimization_with_params(free_params):
+        """Launch the optimization thread (surrogate or NSGA-II) with given params.
 
-        obs_bio = input.observed_biomass()
-        obs_diet = input.observed_diet()
-        banded_check = False
-        try:
-            banded_check = bool(input.cal_banded_loss_enabled())
-        except (SilentException, AttributeError):
-            pass
-        if not obs_bio and not obs_diet and not banded_check:
-            ui.notification_show(
-                "Upload observed data or enable banded loss objective.",
-                type="warning",
-                duration=5,
-            )
-            return
+        All shared state (_shared_*) must be set before calling this.
+        """
+        nonlocal _shared_objective_fns, _shared_obj_names, _shared_obs_bio
+        nonlocal _shared_obs_diet, _shared_banded_enabled, _shared_base_config
+        nonlocal _shared_jar_path, _shared_work_dir, _shared_n_parallel
+        nonlocal _shared_algorithm_choice, _shared_pop_size, _shared_generations
 
-        import pandas as pd
-
-        from osmose.calibration.objectives import biomass_rmse, diet_distance
         from osmose.calibration.problem import OsmoseCalibrationProblem
-        from osmose.config.writer import OsmoseConfigWriter
 
-        free_params = build_free_params(selected)
-        work_dir = Path(tempfile.mkdtemp(prefix="osmose_cal_"))
-
-        writer = OsmoseConfigWriter()
-        config_dir = work_dir / "config"
-        with reactive.isolate():
-            current_config = state.config.get()
-            source_dir = state.config_dir.get()
-            case_map = state.key_case_map.get()
-        writer.write(current_config, config_dir, key_case_map=case_map)
-        if source_dir and source_dir.is_dir():
-            copy_data_files(current_config, source_dir, config_dir)
-        base_config = config_dir / "osm_all-parameters.csv"
-
-        objective_fns = []
-        if obs_bio:
-            obs_bio_df = pd.read_csv(obs_bio[0]["datapath"])
-            objective_fns.append(lambda r, df=obs_bio_df: biomass_rmse(r.biomass(), df))
-        if obs_diet:
-            obs_diet_df = pd.read_csv(obs_diet[0]["datapath"])
-            objective_fns.append(lambda r, df=obs_diet_df: diet_distance(r.diet_matrix(), df))
-
-        # Banded loss objective
-        obj_names = []
-        if obs_bio:
-            obj_names.append("Biomass RMSE")
-        if obs_diet:
-            obj_names.append("Diet Distance")
-
-        banded_enabled = False
-        try:
-            banded_enabled = bool(input.cal_banded_loss_enabled())
-        except (SilentException, AttributeError):
-            pass
-
-        if banded_enabled:
-            from osmose.calibration.losses import make_banded_objective
-            from osmose.calibration.targets import load_targets
-
-            banded_source = input.cal_banded_source()
-            if banded_source == "baltic":
-                targets_path = Path("data/baltic/reference/biomass_targets.csv")
-            else:
-                banded_file = input.cal_banded_targets_file()
-                if not banded_file:
-                    ui.notification_show(
-                        "Upload a targets CSV or select Baltic defaults.",
-                        type="warning",
-                        duration=5,
-                    )
-                    return
-                targets_path = Path(banded_file[0]["datapath"])
-
-            targets, _ = load_targets(targets_path)
-            species_names = [t.species for t in targets]
-            w_stability = float(input.cal_w_stability())
-            w_worst = float(input.cal_w_worst())
-            banded_obj = make_banded_objective(
-                targets, species_names, w_stability=w_stability, w_worst=w_worst
-            )
-
-            def banded_objective_fn(results, _banded=banded_obj, _sp=species_names):
-                stats = _extract_species_stats(results, _sp)
-                return _banded(stats)
-
-            objective_fns.append(banded_objective_fn)
-            obj_names.append("Banded Loss")
-
-        if not objective_fns:
-            ui.notification_show(
-                "Enable at least one objective (upload data or enable banded loss).",
-                type="warning",
-                duration=5,
-            )
-            return
-
-        # Store param names for charts
-        cal_param_names.set([p["key"].split(".")[-1] for p in selected])
-
-        n_parallel = _clamp_int(int(input.cal_n_parallel()), 1, 32, "n_parallel")
+        objective_fns = _shared_objective_fns
+        obj_names = list(_shared_obj_names)
+        obs_bio = _shared_obs_bio
+        obs_diet = _shared_obs_diet
+        banded_enabled = _shared_banded_enabled
+        base_config = _shared_base_config
+        jar_path = _shared_jar_path
+        work_dir = _shared_work_dir
+        n_parallel = _shared_n_parallel
+        algorithm_choice = _shared_algorithm_choice
+        pop_size = _shared_pop_size
+        generations = _shared_generations
 
         problem = OsmoseCalibrationProblem(
             free_params=free_params,
@@ -357,10 +416,6 @@ def register_calibration_handlers(
         cal_F.set(None)
         cal_X.set(None)
         surrogate_status.set("")
-
-        algorithm_choice = input.cal_algorithm()
-        pop_size = _clamp_int(int(input.cal_pop_size()), 10, 500, "pop_size")
-        generations = _clamp_int(int(input.cal_generations()), 10, 1000, "generations")
 
         if algorithm_choice == "surrogate":
 
@@ -379,7 +434,6 @@ def register_calibration_handlers(
                     msg_queue.post_status(f"Generating {n_samples} Latin hypercube samples...")
                     samples = calibrator.generate_samples(n_samples=n_samples)
 
-                    # Evaluate OSMOSE for each sample
                     Y = np.zeros((n_samples, n_obj))
                     for idx in range(n_samples):
                         if cancel_event.is_set():
@@ -414,7 +468,6 @@ def register_calibration_handlers(
                     msg_queue.post_status("Finding optimum on surrogate...")
                     optimum = calibrator.find_optimum()
 
-                    # Set results for the UI
                     msg_queue.post_results(X=samples, F=Y)
                     history = [float(np.min(Y[: i + 1].sum(axis=1))) for i in range(n_samples)]
                     for val in history:
@@ -423,7 +476,6 @@ def register_calibration_handlers(
                         f"Done. Best predicted objective: {optimum['predicted_objectives']}"
                     )
 
-                    # Auto-save to history
                     from osmose.calibration.history import save_run
 
                     save_run(
@@ -437,7 +489,11 @@ def register_calibration_handlers(
                                 "n_parallel": n_parallel,
                             },
                             "parameters": [
-                                {"key": fp.key, "lower": fp.lower_bound, "upper": fp.upper_bound}
+                                {
+                                    "key": fp.key,
+                                    "lower": fp.lower_bound,
+                                    "upper": fp.upper_bound,
+                                }
                                 for fp in free_params
                             ],
                             "objectives": {
@@ -505,7 +561,6 @@ def register_calibration_handlers(
                     elif res.F is not None:
                         msg_queue.post_results(X=res.X, F=res.F)
 
-                        # Auto-save to history
                         import time as _time
                         from osmose.calibration.history import save_run
 
@@ -553,6 +608,209 @@ def register_calibration_handlers(
             thread = threading.Thread(target=run_optimization, daemon=True)
             thread.start()
             cal_thread.set(thread)
+
+    @reactive.effect
+    @reactive.event(input.btn_start_cal)
+    def handle_start_cal():
+        nonlocal _shared_objective_fns, _shared_obj_names, _shared_obs_bio
+        nonlocal _shared_obs_diet, _shared_banded_enabled, _shared_base_config
+        nonlocal _shared_jar_path, _shared_work_dir, _shared_current_config
+        nonlocal _shared_n_parallel, _shared_algorithm_choice
+        nonlocal _shared_pop_size, _shared_generations
+
+        selected = collect_selected_params(input, state)
+        if not selected:
+            cal_history.set([])
+            ui.notification_show(
+                "Select at least one parameter to calibrate.", type="warning", duration=5
+            )
+            return
+
+        jar_path = Path(state.jar_path.get())
+        if not jar_path.exists():
+            ui.notification_show(f"JAR not found: {jar_path}", type="error", duration=15)
+            return
+
+        obs_bio = input.observed_biomass()
+        obs_diet = input.observed_diet()
+        banded_check = False
+        try:
+            banded_check = bool(input.cal_banded_loss_enabled())
+        except (SilentException, AttributeError):
+            pass
+        if not obs_bio and not obs_diet and not banded_check:
+            ui.notification_show(
+                "Upload observed data or enable banded loss objective.",
+                type="warning",
+                duration=5,
+            )
+            return
+
+        import pandas as pd
+
+        from osmose.calibration.objectives import biomass_rmse, diet_distance
+        from osmose.config.writer import OsmoseConfigWriter
+
+        free_params = build_free_params(selected)
+        work_dir = Path(tempfile.mkdtemp(prefix="osmose_cal_"))
+
+        writer = OsmoseConfigWriter()
+        config_dir = work_dir / "config"
+        with reactive.isolate():
+            current_config = state.config.get()
+            source_dir = state.config_dir.get()
+            case_map = state.key_case_map.get()
+        writer.write(current_config, config_dir, key_case_map=case_map)
+        if source_dir and source_dir.is_dir():
+            copy_data_files(current_config, source_dir, config_dir)
+        base_config = config_dir / "osm_all-parameters.csv"
+
+        objective_fns = []
+        if obs_bio:
+            obs_bio_df = pd.read_csv(obs_bio[0]["datapath"])
+            objective_fns.append(lambda r, df=obs_bio_df: biomass_rmse(r.biomass(), df))
+        if obs_diet:
+            obs_diet_df = pd.read_csv(obs_diet[0]["datapath"])
+            objective_fns.append(lambda r, df=obs_diet_df: diet_distance(r.diet_matrix(), df))
+
+        obj_names = []
+        if obs_bio:
+            obj_names.append("Biomass RMSE")
+        if obs_diet:
+            obj_names.append("Diet Distance")
+
+        banded_enabled = False
+        try:
+            banded_enabled = bool(input.cal_banded_loss_enabled())
+        except (SilentException, AttributeError):
+            pass
+
+        if banded_enabled:
+            from osmose.calibration.losses import make_banded_objective
+            from osmose.calibration.targets import load_targets
+
+            banded_source = input.cal_banded_source()
+            if banded_source == "baltic":
+                targets_path = Path("data/baltic/reference/biomass_targets.csv")
+            else:
+                banded_file = input.cal_banded_targets_file()
+                if not banded_file:
+                    ui.notification_show(
+                        "Upload a targets CSV or select Baltic defaults.",
+                        type="warning",
+                        duration=5,
+                    )
+                    return
+                targets_path = Path(banded_file[0]["datapath"])
+
+            targets, _ = load_targets(targets_path)
+            species_names = [t.species for t in targets]
+            w_stability = float(input.cal_w_stability())
+            w_worst = float(input.cal_w_worst())
+            banded_obj = make_banded_objective(
+                targets, species_names, w_stability=w_stability, w_worst=w_worst
+            )
+
+            def banded_objective_fn(results, _banded=banded_obj, _sp=species_names):
+                stats = _extract_species_stats(results, _sp)
+                return _banded(stats)
+
+            objective_fns.append(banded_objective_fn)
+            obj_names.append("Banded Loss")
+
+        if not objective_fns:
+            ui.notification_show(
+                "Enable at least one objective (upload data or enable banded loss).",
+                type="warning",
+                duration=5,
+            )
+            return
+
+        # Store param names for charts
+        cal_param_names.set([p["key"].split(".")[-1] for p in selected])
+
+        n_parallel = _clamp_int(int(input.cal_n_parallel()), 1, 32, "n_parallel")
+
+        # Store shared state for preflight -> optimization handoff
+        _shared_objective_fns = objective_fns
+        _shared_obj_names = obj_names
+        _shared_obs_bio = obs_bio
+        _shared_obs_diet = obs_diet
+        _shared_banded_enabled = banded_enabled
+        _shared_base_config = base_config
+        _shared_jar_path = jar_path
+        _shared_work_dir = work_dir
+        _shared_current_config = current_config
+        _shared_n_parallel = n_parallel
+        _shared_algorithm_choice = input.cal_algorithm()
+        _shared_pop_size = _clamp_int(int(input.cal_pop_size()), 10, 500, "pop_size")
+        _shared_generations = _clamp_int(int(input.cal_generations()), 10, 1000, "generations")
+
+        # Check if preflight is enabled
+        preflight_enabled = False
+        try:
+            preflight_enabled = bool(input.cal_preflight_enabled())
+        except (SilentException, AttributeError):
+            pass
+
+        if not preflight_enabled:
+            _start_optimization_with_params(free_params)
+            return
+
+        # Run preflight in background thread
+        surrogate_status.set("Running pre-flight screening...")
+        param_names = [fp.key for fp in free_params]
+        param_bounds = [(fp.lower_bound, fp.upper_bound) for fp in free_params]
+
+        from osmose.calibration.preflight import make_preflight_eval_fn, run_preflight
+
+        eval_fn = make_preflight_eval_fn(
+            free_params=free_params,
+            base_config=dict(current_config),
+            output_dir=work_dir / "preflight_output",
+            objective_fns=objective_fns,
+        )
+
+        def _run_preflight_thread():
+            try:
+                result = run_preflight(
+                    param_names=param_names,
+                    param_bounds=param_bounds,
+                    evaluation_fn=eval_fn,
+                    cancel_event=cancel_event,
+                )
+                msg_queue.post_preflight(result)
+            except Exception as exc:
+                _log.error("Pre-flight screening failed: %s", exc, exc_info=True)
+                msg_queue.post_error(f"Pre-flight screening failed: {exc}")
+
+        cancel_event.clear()
+        thread = threading.Thread(target=_run_preflight_thread, daemon=True)
+        thread.start()
+        cal_thread.set(thread)
+
+    @reactive.effect
+    @reactive.event(input.btn_preflight_apply)
+    def handle_preflight_apply():
+        result = preflight_result.get()
+        if result is None:
+            return
+        ui.modal_remove()
+        selected = collect_selected_params(input, state)
+        free_params = build_free_params(selected)
+        fixable_issues = [i for i in result.issues if i.auto_fixable]
+        checked = []
+        for idx in range(len(fixable_issues)):
+            try:
+                checked.append(bool(getattr(input, f"preflight_fix_{idx}")()))
+            except (SilentException, AttributeError):
+                checked.append(False)
+        updated_params = apply_preflight_fixes(free_params, fixable_issues, checked)
+        if not updated_params:
+            ui.notification_show("All parameters removed.", type="warning", duration=5)
+            return
+        cal_param_names.set([fp.key.split(".")[-1] for fp in updated_params])
+        _start_optimization_with_params(updated_params)
 
     @reactive.effect
     @reactive.event(input.btn_stop_cal)
