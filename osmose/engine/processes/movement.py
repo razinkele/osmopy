@@ -291,14 +291,31 @@ def movement(
                 new_cy,
                 new_out,
             )
-            # Warn if any previously in-domain schools failed placement
+            # Warn only about schools that failed rejection sampling, not
+            # intentional null-map migrations (which are expected out-of-domain
+            # behaviour matching Java's school.out()).
             newly_out = new_out & ~state.is_out
             if newly_out.any():
-                warnings.warn(
-                    f"Numba movement: {newly_out.sum()} schools failed map placement "
-                    f"(exhausted 10000 rejection samples). Check movement maps.",
-                    stacklevel=2,
-                )
+                # Separate null-map migrations from true placement failures
+                n_null_map = 0
+                for k in range(len(map_school_indices)):
+                    idx = map_school_indices[k]
+                    if not newly_out[idx]:
+                        continue
+                    mi = current_idx[k]
+                    sp_id = state.species_id[idx]
+                    off = sp_offsets[sp_id]
+                    if mi < 0 or off < 0:
+                        n_null_map += 1
+                    elif off + mi < len(flat_is_null) and flat_is_null[off + mi]:
+                        n_null_map += 1
+                n_failed = int(newly_out.sum()) - n_null_map
+                if n_failed > 0:
+                    warnings.warn(
+                        f"Numba movement: {n_failed} schools failed map placement "
+                        f"(exhausted 10000 rejection samples). Check movement maps.",
+                        stacklevel=2,
+                    )
             state = state.replace(cell_x=new_cx, cell_y=new_cy, is_out=new_out)
         else:
             # Python fallback (per-school scalar loop)
