@@ -25,12 +25,12 @@ species.file.sp12;baltic_ltl_biomass.nc
 species.file.sp13;baltic_ltl_biomass.nc
 
 # Trophic levels (engine key: species.trophic.level)
-species.trophic.level.sp8;1.0
-species.trophic.level.sp9;1.0
-species.trophic.level.sp10;2.0
-species.trophic.level.sp11;2.5
-species.trophic.level.sp12;3.0
-species.trophic.level.sp13;2.5
+species.tl.sp8;1.0
+species.tl.sp9;1.0
+species.tl.sp10;2.0
+species.tl.sp11;2.5
+species.tl.sp12;3.0
+species.tl.sp13;2.5
 
 # Size range (cm)
 species.size.min.sp8;0.0002

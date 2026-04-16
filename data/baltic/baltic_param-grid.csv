@@ -6,3 +6,7 @@ grid.upleft.lon;10
 grid.lowright.lat;54
 grid.lowright.lon;30
 grid.mask.file;grid/baltic_mask.csv
+grid.netcdf.file;baltic_grid.nc
+grid.var.mask;mask
+grid.var.lat;latitude
+grid.var.lon;longitude
