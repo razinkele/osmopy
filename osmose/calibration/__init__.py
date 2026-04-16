@@ -1,5 +1,14 @@
 """OSMOSE calibration module — optimization, surrogate modelling, and sensitivity analysis."""
 
+from osmose.calibration.preflight import (
+    IssueCategory,
+    IssueSeverity,
+    ParameterScreening,
+    PreflightIssue,
+    PreflightResult,
+    run_preflight,
+    make_preflight_eval_fn,
+)
 from osmose.calibration.objectives import (
     biomass_rmse,
     abundance_rmse,
@@ -24,6 +33,13 @@ from osmose.calibration.multiseed import validate_multiseed, rank_candidates_mul
 from osmose.calibration.history import save_run, load_run, list_runs, delete_run
 
 __all__ = [
+    "IssueCategory",
+    "IssueSeverity",
+    "ParameterScreening",
+    "PreflightIssue",
+    "PreflightResult",
+    "run_preflight",
+    "make_preflight_eval_fn",
     "biomass_rmse",
     "abundance_rmse",
     "diet_distance",
