@@ -200,3 +200,229 @@ class TestIssueDetection:
         }
         issues = detect_issues(screening, sobol_result=sobol_result)
         assert issues == []
+
+
+class TestRunPreflight:
+    """Tests for run_preflight() two-stage orchestrator."""
+
+    def test_happy_path(self) -> None:
+        """y = 3*a + 0*b + 0.5*c  ->  a,c survive, b filtered, sobol populated."""
+        from osmose.calibration.preflight import run_preflight
+
+        def evaluation_fn(X: np.ndarray) -> np.ndarray:
+            return 3.0 * X[:, 0] + 0.0 * X[:, 1] + 0.5 * X[:, 2]
+
+        result = run_preflight(
+            param_names=["a", "b", "c"],
+            param_bounds=[(0, 1), (0, 1), (0, 1)],
+            evaluation_fn=evaluation_fn,
+            n_trajectories=20,
+            seed=42,
+        )
+
+        assert isinstance(result.screening, list)
+        assert len(result.screening) == 3
+        assert result.elapsed_seconds > 0
+
+        by_key = {ps.key: ps for ps in result.screening}
+        assert by_key["a"].influential
+        assert by_key["c"].influential
+        assert not by_key["b"].influential
+
+        assert "a" in result.survivors
+        assert "c" in result.survivors
+        assert "b" not in result.survivors
+
+        assert result.sobol is not None
+        assert "S1" in result.sobol
+        assert "ST" in result.sobol
+
+    def test_failure_abort(self) -> None:
+        """50% failure rate triggers blowup issues."""
+        from osmose.calibration.preflight import run_preflight, IssueCategory
+
+        def evaluation_fn(X: np.ndarray) -> np.ndarray:
+            Y = np.ones(X.shape[0])
+            Y[::2] = np.nan
+            return Y
+
+        result = run_preflight(
+            param_names=["a", "b"],
+            param_bounds=[(0, 1), (0, 1)],
+            evaluation_fn=evaluation_fn,
+            n_trajectories=10,
+            blowup_threshold=0.30,
+            seed=1,
+        )
+
+        blowup_issues = [i for i in result.issues if i.category is IssueCategory.BLOWUP]
+        assert len(blowup_issues) > 0
+
+    def test_single_parameter(self) -> None:
+        """k=1 works correctly."""
+        from osmose.calibration.preflight import run_preflight
+
+        def evaluation_fn(X: np.ndarray) -> np.ndarray:
+            return 2.0 * X[:, 0]
+
+        result = run_preflight(
+            param_names=["a"],
+            param_bounds=[(0, 1)],
+            evaluation_fn=evaluation_fn,
+            n_trajectories=10,
+            seed=0,
+        )
+
+        assert len(result.screening) == 1
+        assert result.screening[0].key == "a"
+        assert result.elapsed_seconds >= 0
+
+    def test_cancellation(self) -> None:
+        """cancel_event.set() before call returns quickly with empty result."""
+        import threading
+        from osmose.calibration.preflight import run_preflight
+
+        cancel_event = threading.Event()
+        cancel_event.set()
+
+        def evaluation_fn(X: np.ndarray) -> np.ndarray:
+            raise RuntimeError("Should not be called")
+
+        result = run_preflight(
+            param_names=["a", "b"],
+            param_bounds=[(0, 1), (0, 1)],
+            evaluation_fn=evaluation_fn,
+            cancel_event=cancel_event,
+        )
+
+        assert result.screening == []
+        assert result.survivors == []
+        assert result.issues == []
+        assert result.elapsed_seconds >= 0
+
+
+class TestMakePreflightEvalFn:
+    """Tests for make_preflight_eval_fn() factory."""
+
+    def test_sim_years_clamped_to_5(self) -> None:
+        """Configured 30yr -> run uses 5."""
+        from unittest.mock import MagicMock, patch
+        from osmose.calibration.problem import FreeParameter
+        from osmose.calibration.preflight import make_preflight_eval_fn
+        from pathlib import Path
+
+        free_params = [FreeParameter(key="sp.linf", lower_bound=0.0, upper_bound=1.0)]
+        base_config = {"simulation.time.nyear": "30", "sp.linf": "0.5"}
+        output_dir = Path("/tmp/test_osmose_output")
+
+        captured_configs = []
+
+        def mock_objective(results):
+            return 1.0
+
+        with patch("osmose.calibration.preflight.PythonEngine") as MockEngine:
+            with patch("osmose.calibration.preflight.OsmoseResults") as MockResults:
+                mock_engine_instance = MagicMock()
+                MockEngine.return_value = mock_engine_instance
+                MockResults.return_value = MagicMock()
+
+                def capture_run(config, out_dir, seed=0):
+                    captured_configs.append(dict(config))
+                    return MagicMock()
+
+                mock_engine_instance.run.side_effect = capture_run
+
+                fn = make_preflight_eval_fn(
+                    free_params=free_params,
+                    base_config=base_config,
+                    output_dir=output_dir,
+                    objective_fns=[mock_objective],
+                )
+                X = np.array([[0.5]])
+                fn(X)
+
+        assert len(captured_configs) == 1
+        assert captured_configs[0]["simulation.time.nyear"] == "5"
+
+    def test_sim_years_keeps_short(self) -> None:
+        """Configured 3yr -> run keeps 3."""
+        from unittest.mock import MagicMock, patch
+        from osmose.calibration.problem import FreeParameter
+        from osmose.calibration.preflight import make_preflight_eval_fn
+        from pathlib import Path
+
+        free_params = [FreeParameter(key="sp.linf", lower_bound=0.0, upper_bound=1.0)]
+        base_config = {"simulation.time.nyear": "3", "sp.linf": "0.5"}
+        output_dir = Path("/tmp/test_osmose_output")
+
+        captured_configs = []
+
+        def mock_objective(results):
+            return 1.0
+
+        with patch("osmose.calibration.preflight.PythonEngine") as MockEngine:
+            with patch("osmose.calibration.preflight.OsmoseResults") as MockResults:
+                mock_engine_instance = MagicMock()
+                MockEngine.return_value = mock_engine_instance
+                MockResults.return_value = MagicMock()
+
+                def capture_run(config, out_dir, seed=0):
+                    captured_configs.append(dict(config))
+                    return MagicMock()
+
+                mock_engine_instance.run.side_effect = capture_run
+
+                fn = make_preflight_eval_fn(
+                    free_params=free_params,
+                    base_config=base_config,
+                    output_dir=output_dir,
+                    objective_fns=[mock_objective],
+                )
+                X = np.array([[0.5]])
+                fn(X)
+
+        assert len(captured_configs) == 1
+        assert captured_configs[0]["simulation.time.nyear"] == "3"
+
+    def test_log_transform_applied(self) -> None:
+        """-1.0 with LOG transform -> config value 0.1."""
+        from unittest.mock import MagicMock, patch
+        from osmose.calibration.problem import FreeParameter, Transform
+        from osmose.calibration.preflight import make_preflight_eval_fn
+        from pathlib import Path
+
+        free_params = [
+            FreeParameter(key="sp.linf", lower_bound=-2.0, upper_bound=2.0, transform=Transform.LOG)
+        ]
+        base_config = {"simulation.time.nyear": "3", "sp.linf": "1.0"}
+        output_dir = Path("/tmp/test_osmose_output")
+
+        captured_configs = []
+
+        def mock_objective(results):
+            return 1.0
+
+        with patch("osmose.calibration.preflight.PythonEngine") as MockEngine:
+            with patch("osmose.calibration.preflight.OsmoseResults") as MockResults:
+                mock_engine_instance = MagicMock()
+                MockEngine.return_value = mock_engine_instance
+                MockResults.return_value = MagicMock()
+
+                def capture_run(config, out_dir, seed=0):
+                    captured_configs.append(dict(config))
+                    return MagicMock()
+
+                mock_engine_instance.run.side_effect = capture_run
+
+                fn = make_preflight_eval_fn(
+                    free_params=free_params,
+                    base_config=base_config,
+                    output_dir=output_dir,
+                    objective_fns=[mock_objective],
+                )
+                X = np.array([[-1.0]])
+                fn(X)
+
+        assert len(captured_configs) == 1
+        actual_val = float(captured_configs[0]["sp.linf"])
+        assert abs(actual_val - 0.1) < 1e-9

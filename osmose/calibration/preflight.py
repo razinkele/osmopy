@@ -7,16 +7,20 @@ objectives, and tight bounds.
 
 from __future__ import annotations
 
+import threading
+import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import Callable
 
 import numpy as np
 from SALib.sample import morris as morris_sample  # type: ignore[import-untyped]
 from SALib.analyze import morris as morris_analyze  # type: ignore[import-untyped]
 
-if TYPE_CHECKING:
-    pass
+from osmose.engine import PythonEngine
+from osmose.results import OsmoseResults
+from osmose.calibration.problem import FreeParameter, Transform
 
 
 # ---------------------------------------------------------------------------
@@ -355,3 +359,338 @@ def detect_issues(
     # Sort: errors first, then warnings
     issues.sort(key=lambda i: 0 if i.severity is IssueSeverity.ERROR else 1)
     return issues
+
+
+# ---------------------------------------------------------------------------
+# Two-stage Orchestrator
+# ---------------------------------------------------------------------------
+
+
+def run_preflight(
+    param_names: list[str],
+    param_bounds: list[tuple[float, float]],
+    evaluation_fn: Callable[[np.ndarray], np.ndarray],
+    *,
+    n_trajectories: int = 10,
+    num_levels: int = 4,
+    negligible_threshold: float = 0.1,
+    blowup_threshold: float = 0.30,
+    sobol_n_base: int = 64,
+    sobol_failure_threshold: float = 0.10,
+    seed: int | None = None,
+    cancel_event: threading.Event | None = None,
+) -> PreflightResult:
+    """Run two-stage pre-flight sensitivity analysis (Morris + Sobol).
+
+    Stage 1 — Morris screening:
+        Generates Morris trajectories, evaluates ``evaluation_fn`` for each
+        sample, tracks which parameter was perturbed per trajectory step to
+        identify blow-up sources, checks the 30 % failure threshold, and
+        classifies parameters as influential or negligible.
+
+    Stage 2 — Sobol on survivors:
+        Uses :class:`~osmose.calibration.sensitivity.SensitivityAnalyzer` on
+        the subset of influential parameters.  Non-surviving parameters are
+        fixed at their midpoint.  Checks 10 % failure threshold.
+
+    Parameters
+    ----------
+    param_names:
+        Names of the free parameters.
+    param_bounds:
+        ``(lower, upper)`` bounds for each parameter.
+    evaluation_fn:
+        Callable ``(X: np.ndarray) -> np.ndarray`` accepting an ``(N, k)``
+        sample matrix and returning shape ``(N,)`` or ``(N, n_obj)``.
+    n_trajectories:
+        Number of Morris trajectories.
+    num_levels:
+        Number of grid levels for the Morris design.
+    negligible_threshold:
+        Relative threshold for Morris negligibility classification.
+    blowup_threshold:
+        Fraction of failed samples that triggers a blow-up ERROR (default 30 %).
+    sobol_n_base:
+        Base sample count for Sobol (total = ``n_base * (2*k+2)``).
+    sobol_failure_threshold:
+        Fraction of failed Sobol samples that is considered acceptable (10 %).
+    seed:
+        Random seed forwarded to Morris sampler and Sobol sampler.
+    cancel_event:
+        Optional :class:`threading.Event`; if set before or during the run the
+        function returns immediately with an empty result.
+
+    Returns
+    -------
+    PreflightResult
+    """
+    # Import here to avoid circular imports at module load time
+    from osmose.calibration.sensitivity import SensitivityAnalyzer
+
+    t_start = time.monotonic()
+
+    def _cancelled() -> bool:
+        return cancel_event is not None and cancel_event.is_set()
+
+    if _cancelled():
+        return PreflightResult(
+            screening=[],
+            sobol=None,
+            issues=[],
+            survivors=[],
+            elapsed_seconds=time.monotonic() - t_start,
+        )
+
+    k = len(param_names)
+
+    # ------------------------------------------------------------------
+    # Stage 1: Morris sampling + evaluation
+    # ------------------------------------------------------------------
+    problem = {
+        "num_vars": k,
+        "names": param_names,
+        "bounds": list(param_bounds),
+    }
+
+    sample_kwargs: dict = {"num_levels": num_levels}
+    if seed is not None:
+        sample_kwargs["seed"] = seed
+
+    X = morris_sample.sample(problem, n_trajectories, **sample_kwargs)
+
+    if _cancelled():
+        return PreflightResult(
+            screening=[],
+            sobol=None,
+            issues=[],
+            survivors=[],
+            elapsed_seconds=time.monotonic() - t_start,
+        )
+
+    # Evaluate and track blow-ups per-parameter.
+    # Morris trajectories have shape (n_trajectories * (k+1), k).
+    # Within each trajectory block of (k+1) rows, rows 1..k each perturb
+    # exactly one parameter relative to the previous row.
+    Y_raw = np.asarray(evaluation_fn(X))
+    if Y_raw.ndim == 1:
+        Y_raw = Y_raw[:, np.newaxis]
+
+    n_samples = X.shape[0]
+    blowup_sample_flags = np.any(~np.isfinite(Y_raw), axis=1)  # shape (N,)
+
+    # Identify which param is perturbed in each sample row within trajectories.
+    traj_size = k + 1  # rows per trajectory
+    blowup_params_set: set[str] = set()
+    for traj_idx in range(n_trajectories):
+        base = traj_idx * traj_size
+        for step in range(1, traj_size):  # step 0 is the starting point
+            row = base + step
+            if row >= n_samples:
+                break
+            if blowup_sample_flags[row]:
+                # The perturbed parameter is identified by which column
+                # differs between this row and the previous row.
+                diff = np.abs(X[row] - X[row - 1])
+                if diff.max() > 0:
+                    perturbed_col = int(np.argmax(diff))
+                    blowup_params_set.add(param_names[perturbed_col])
+
+    # Check overall failure threshold for Morris
+    n_failed = int(np.sum(blowup_sample_flags))
+    failure_rate = n_failed / max(n_samples, 1)
+
+    # Replace inf/NaN with large finite value before passing to SALib
+    Y_clean = np.where(np.isfinite(Y_raw), Y_raw, 1e6)
+
+    # Run Morris analysis per objective, aggregate across objectives
+    n_obj = Y_clean.shape[1]
+    agg_mu_star = np.zeros(k)
+    agg_conf = np.zeros(k)
+    agg_sigma = np.zeros(k)
+
+    for obj_idx in range(n_obj):
+        Y_col = Y_clean[:, obj_idx]
+        result = morris_analyze.analyze(
+            problem, X, Y_col, num_levels=num_levels, print_to_console=False
+        )
+        mu_star_obj = np.asarray(result["mu_star"])
+        conf_obj = np.asarray(result["mu_star_conf"])
+        sigma_obj = np.asarray(result["sigma"])
+        agg_mu_star = np.maximum(agg_mu_star, mu_star_obj)
+        agg_conf = np.maximum(agg_conf, conf_obj)
+        agg_sigma = np.maximum(agg_sigma, sigma_obj)
+
+    max_mu_star = float(np.max(agg_mu_star)) if np.max(agg_mu_star) > 0 else 1.0
+    screening: list[ParameterScreening] = []
+    for j, name in enumerate(param_names):
+        influential = (agg_mu_star[j] + agg_conf[j]) >= negligible_threshold * max_mu_star
+        screening.append(
+            ParameterScreening(
+                key=name,
+                mu_star=float(agg_mu_star[j]),
+                sigma=float(agg_sigma[j]),
+                mu_star_conf=float(agg_conf[j]),
+                influential=influential,
+            )
+        )
+
+    # Collect blowup issues (use blowup_params_set or overall threshold)
+    blowup_params: list[str] = sorted(blowup_params_set)
+    if failure_rate > blowup_threshold and not blowup_params:
+        # Fallback: flag all params if we cannot identify which caused it
+        blowup_params = list(param_names)
+
+    if _cancelled():
+        issues = detect_issues(screening, blowup_params=blowup_params)
+        return PreflightResult(
+            screening=screening,
+            sobol=None,
+            issues=issues,
+            survivors=[ps.key for ps in screening if ps.influential],
+            elapsed_seconds=time.monotonic() - t_start,
+        )
+
+    # ------------------------------------------------------------------
+    # Stage 2: Sobol on survivors
+    # ------------------------------------------------------------------
+    survivors = [ps.key for ps in screening if ps.influential]
+    sobol_result: dict | None = None
+
+    if survivors:
+        survivor_indices = [param_names.index(sv) for sv in survivors]
+        survivor_bounds = [param_bounds[i] for i in survivor_indices]
+        midpoints = np.array([(lo + hi) / 2.0 for lo, hi in param_bounds])
+
+        analyzer = SensitivityAnalyzer(
+            param_names=survivors,
+            param_bounds=survivor_bounds,
+        )
+
+        sobol_kwargs: dict = {}
+        if seed is not None:
+            sobol_kwargs["seed"] = seed
+
+        # Generate Sobol samples using SALib directly
+        from SALib.sample import sobol as sobol_sample_mod  # type: ignore[import-untyped]
+
+        sobol_problem = {
+            "num_vars": len(survivors),
+            "names": survivors,
+            "bounds": survivor_bounds,
+        }
+        X_sobol_reduced = sobol_sample_mod.sample(sobol_problem, sobol_n_base, **sobol_kwargs)
+
+        # Map back to full parameter vector (non-survivors at midpoint)
+        n_sobol = X_sobol_reduced.shape[0]
+        X_sobol_full = np.tile(midpoints, (n_sobol, 1))
+        for new_col, orig_col in enumerate(survivor_indices):
+            X_sobol_full[:, orig_col] = X_sobol_reduced[:, new_col]
+
+        if _cancelled():
+            issues = detect_issues(screening, blowup_params=blowup_params)
+            return PreflightResult(
+                screening=screening,
+                sobol=None,
+                issues=issues,
+                survivors=survivors,
+                elapsed_seconds=time.monotonic() - t_start,
+            )
+
+        Y_sobol_raw = np.asarray(evaluation_fn(X_sobol_full))
+        if Y_sobol_raw.ndim == 1:
+            Y_sobol_raw = Y_sobol_raw[:, np.newaxis]
+
+        # Check Sobol failure threshold
+        sobol_failed = np.any(~np.isfinite(Y_sobol_raw), axis=1)
+        sobol_failure_rate = float(np.sum(sobol_failed)) / max(n_sobol, 1)
+        if sobol_failure_rate > sobol_failure_threshold:
+            blowup_params = sorted(set(blowup_params) | set(survivors))
+
+        Y_sobol_clean = np.where(np.isfinite(Y_sobol_raw), Y_sobol_raw, 1e6)
+
+        # Pass the cleaned outputs to the analyzer
+        if Y_sobol_clean.shape[1] == 1:
+            sobol_result = analyzer.analyze(Y_sobol_clean[:, 0])
+        else:
+            sobol_result = analyzer.analyze(Y_sobol_clean)
+
+    issues = detect_issues(screening, sobol_result=sobol_result, blowup_params=blowup_params)
+
+    return PreflightResult(
+        screening=screening,
+        sobol=sobol_result,
+        issues=issues,
+        survivors=survivors,
+        elapsed_seconds=time.monotonic() - t_start,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Evaluation Function Factory
+# ---------------------------------------------------------------------------
+
+
+def make_preflight_eval_fn(
+    free_params: list[FreeParameter],
+    base_config: dict[str, str],
+    output_dir: Path,
+    objective_fns: list[Callable],
+) -> Callable[[np.ndarray], np.ndarray]:
+    """Create an evaluation function suitable for ``run_preflight()``.
+
+    The returned callable accepts a sample matrix ``X`` of shape ``(N, k)``
+    and returns a ``(N, n_obj)`` array of objective values.  Failed runs
+    return ``np.full(n_obj, np.inf)`` for that row.
+
+    The simulation is capped at ``min(5, simulation.time.nyear)`` years so
+    that pre-flight runs are cheap.
+
+    Parameters
+    ----------
+    free_params:
+        Free parameter definitions (bounds + transforms).
+    base_config:
+        Base OSMOSE config dict (will be cloned per evaluation).
+    output_dir:
+        Directory where simulation outputs are written.
+    objective_fns:
+        List of callables ``(OsmoseResults) -> float`` to evaluate.
+
+    Returns
+    -------
+    Callable[[np.ndarray], np.ndarray]
+        Shape ``(N, k) -> (N, n_obj)``.
+    """
+    n_obj = len(objective_fns)
+
+    # Clamp simulation years to at most 5
+    configured_years = int(base_config.get("simulation.time.nyear", "10"))
+    run_years = min(5, configured_years)
+
+    def _evaluate(X: np.ndarray) -> np.ndarray:
+        n_samples = X.shape[0]
+        results_matrix = np.full((n_samples, n_obj), np.inf)
+
+        for i in range(n_samples):
+            config = dict(base_config)
+            config["simulation.time.nyear"] = str(run_years)
+
+            # Apply parameter values with optional LOG transform
+            for j, fp in enumerate(free_params):
+                val = float(X[i, j])
+                if fp.transform is Transform.LOG:
+                    val = 10.0**val
+                config[fp.key] = str(val)
+
+            try:
+                engine = PythonEngine()
+                engine.run(config, output_dir)
+                osmose_results = OsmoseResults(output_dir)
+                row = np.array([float(fn(osmose_results)) for fn in objective_fns])
+                results_matrix[i] = row
+            except Exception:  # noqa: BLE001
+                pass  # leave row as inf
+
+        return results_matrix
+
+    return _evaluate
