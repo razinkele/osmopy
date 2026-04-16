@@ -121,3 +121,82 @@ class TestMorrisScreening:
         by_key = {ps.key: ps for ps in results}
         assert by_key["a"].influential
         assert by_key["b"].influential
+
+
+class TestIssueDetection:
+    """Tests for detect_issues()."""
+
+    def _make_screening(
+        self, influential: bool, key: str = "a", mu_star: float = 1.0, sigma: float = 0.2
+    ) -> ParameterScreening:
+        return ParameterScreening(
+            key=key, mu_star=mu_star, sigma=sigma, mu_star_conf=0.05, influential=influential
+        )
+
+    def test_negligible_detected(self) -> None:
+        screening = [
+            self._make_screening(influential=True, key="a"),
+            self._make_screening(influential=False, key="b"),
+        ]
+        issues = detect_issues(screening)
+        negligible = [i for i in issues if i.category is IssueCategory.NEGLIGIBLE]
+        assert len(negligible) == 1
+        assert negligible[0].param_key == "b"
+        assert negligible[0].severity is IssueSeverity.WARNING
+        assert negligible[0].auto_fixable is True
+
+    def test_all_negligible_detected(self) -> None:
+        screening = [
+            self._make_screening(influential=False, key="a"),
+            self._make_screening(influential=False, key="b"),
+        ]
+        issues = detect_issues(screening)
+        all_neg = [i for i in issues if i.category is IssueCategory.ALL_NEGLIGIBLE]
+        assert len(all_neg) == 1
+        assert all_neg[0].severity is IssueSeverity.ERROR
+        assert all_neg[0].auto_fixable is False
+
+    def test_flat_objective_detected(self) -> None:
+        screening = [self._make_screening(influential=True, key="a")]
+        S1 = np.zeros((2, 1))
+        sobol_result = {
+            "S1": S1,
+            "ST": np.ones((2, 1)) * 0.5,
+            "param_names": ["a"],
+            "objective_names": ["biomass", "yield"],
+        }
+        issues = detect_issues(screening, sobol_result=sobol_result)
+        flat = [i for i in issues if i.category is IssueCategory.FLAT_OBJECTIVE]
+        assert len(flat) == 2
+
+    def test_bound_tight_detected(self) -> None:
+        screening = [
+            ParameterScreening(key="a", mu_star=1.0, sigma=2.0, mu_star_conf=0.05, influential=True)
+        ]
+        sobol_result = {
+            "S1": np.array([0.4]),
+            "ST": np.array([0.5]),
+            "param_names": ["a"],
+        }
+        issues = detect_issues(screening, sobol_result=sobol_result)
+        bound_tight = [i for i in issues if i.category is IssueCategory.BOUND_TIGHT]
+        assert len(bound_tight) == 1
+        assert bound_tight[0].param_key == "a"
+        assert bound_tight[0].severity is IssueSeverity.WARNING
+
+    def test_no_issues_when_clean(self) -> None:
+        screening = [
+            ParameterScreening(
+                key="a", mu_star=2.0, sigma=0.3, mu_star_conf=0.05, influential=True
+            ),
+            ParameterScreening(
+                key="b", mu_star=1.5, sigma=0.2, mu_star_conf=0.05, influential=True
+            ),
+        ]
+        sobol_result = {
+            "S1": np.array([0.4, 0.35]),
+            "ST": np.array([0.45, 0.4]),
+            "param_names": ["a", "b"],
+        }
+        issues = detect_issues(screening, sobol_result=sobol_result)
+        assert issues == []
