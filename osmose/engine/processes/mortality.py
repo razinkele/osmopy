@@ -1522,6 +1522,7 @@ def _mortality_in_cell(
         and rsc_size_min is not None
         and eff_starv is not None
         and not config.bioen_enabled
+        and not config.java_compat_rng
     )
     if use_full_numba:
         rsc_bio = resources.biomass if resources is not None else _DUMMY_RSC_2D
@@ -1813,7 +1814,9 @@ def mortality(
         work_state = work_state.replace(egg_retained=new_retained)
 
         # Per-cell mortality
-        if _HAS_NUMBA and len(valid_indices) > 0:
+        # Java-compat mode: force Python fallback to use XorshiftRNG sequence
+        _use_numba = _HAS_NUMBA and not config.java_compat_rng
+        if _use_numba and len(valid_indices) > 0:
             # Generate a seed from Python RNG for Numba's internal PRNG
             rng_seed = int(rng.integers(0, 2**63))
 

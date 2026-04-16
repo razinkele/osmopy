@@ -106,3 +106,23 @@ class XorshiftRNG:
         for i in range(n, 1, -1):
             j = self.next_int(i)
             arr[i - 1], arr[j] = arr[j], arr[i - 1]
+
+    # ------------------------------------------------------------------
+    # numpy.random.Generator-compatible interface
+    # ------------------------------------------------------------------
+    # These methods let XorshiftRNG be used as a drop-in replacement for
+    # np.random.Generator in the mortality/movement/reproduction code.
+
+    def integers(self, low: int, high: int | None = None, size: int | None = None) -> int | NDArray:
+        """Match ``np.random.Generator.integers(low, high)``."""
+        if high is None:
+            high = low
+            low = 0
+        bound = high - low
+        if size is None:
+            return low + self.next_int(bound)
+        return np.array([low + self.next_int(bound) for _ in range(size)], dtype=np.int64)
+
+    def random(self) -> float:
+        """Match ``np.random.Generator.random()``."""
+        return self.next_double()

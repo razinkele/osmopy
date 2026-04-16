@@ -1022,6 +1022,13 @@ def simulate(
     if config.output_step0_include:
         outputs.append(_collect_outputs(state, config, step=-1))
 
+    # Java-compat RNG: replace main rng with XorshiftRNG for mortality parity.
+    # Java's MortalityProcess uses XSRandom(rank) where rank=0 for single sim.
+    if config.java_compat_rng:
+        from osmose.engine.rng_compat import XorshiftRNG
+
+        rng = XorshiftRNG(seed=1)  # nonzero seed (Java rank=0 is a fixed point)
+
     for step in range(config.n_steps):
         # -- Annual reset for fleet economics --
         if ctx.fleet_state is not None and step > 0 and step % config.n_dt_per_year == 0:

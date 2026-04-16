@@ -82,6 +82,7 @@ def _minimal_config(n_species: int = 2, n_background: int = 0, **overrides) -> d
         output_step0_include=False,
         movement_seed_fixed=False,
         mortality_seed_fixed=False,
+        java_compat_rng=False,
         random_distribution_ncell=None,
         growth_class=["VB"] * n_total,
         raw_config={},

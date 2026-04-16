@@ -1176,6 +1176,7 @@ class EngineConfig:
     # RNG seeding flags
     movement_seed_fixed: bool  # per-species independent RNG for movement
     mortality_seed_fixed: bool  # per-species independent RNG for mortality
+    java_compat_rng: bool  # use Java's XorshiftRNG for bit-exact parity
 
     # Random distribution patch constraint: per-species ncell values, or None
     random_distribution_ncell: NDArray[np.int32] | None
@@ -1592,6 +1593,7 @@ class EngineConfig:
         mortality_seed_fixed = (
             cfg.get("stochastic.mortality.randomseed.fixed", "false").lower() == "true"
         )
+        java_compat_rng = cfg.get("engine.rng.java_compat", "false").lower() == "true"
         movement_strict = cfg.get("movement.map.strict.coverage", "false").lower() == "true"
 
         # Growth class dispatch: parse classname for each focal species
@@ -1793,6 +1795,7 @@ class EngineConfig:
             output_step0_include=_output["output_step0_include"],
             movement_seed_fixed=movement_seed_fixed,
             mortality_seed_fixed=mortality_seed_fixed,
+            java_compat_rng=java_compat_rng,
             movement_strict_coverage=movement_strict,
             random_distribution_ncell=random_distribution_ncell,
             growth_class=growth_class,
