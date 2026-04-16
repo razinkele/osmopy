@@ -1491,7 +1491,7 @@ def mortality(
 
     # Pre-pass: larva mortality on eggs
     # larva_mortality both reduces abundance AND records in n_dead[:, ADDITIONAL]
-    state = larva_mortality(state, config)
+    state = larva_mortality(state, config, step=step)
 
     # Save larva deaths for output, then reset n_dead so the interleaved loop
     # doesn't double-count them (abundance is already reduced)
@@ -1543,6 +1543,35 @@ def mortality(
         has_access = config.accessibility_matrix is not None
         access_matrix = config.accessibility_matrix if has_access else _DUMMY_ACCESS
         use_stage_access = False
+
+    # Apply dynamic accessibility scaling if active
+    if ctx is not None and ctx.prey_density_scale is not None and has_access:
+        from osmose.engine.processes.dynamic_accessibility import apply_prey_scale_to_matrix
+
+        if use_stage_access:
+            # Build stage-to-species mapping for prey rows
+            stage_to_sp = np.full(access_matrix.shape[0], -1, dtype=np.int32)
+            sa_obj = config.stage_accessibility
+            for sp_idx, sp_name in enumerate(config.all_species_names[:config.n_species]):
+                for _norm in (sp_name, sp_name.lower(), sp_name.replace(" ", "")):
+                    if _norm in sa_obj.prey_lookup:
+                        for si in sa_obj.prey_lookup[_norm]:
+                            stage_to_sp[si.matrix_index] = sp_idx
+                        break
+                    mapped = sa_obj._species_name_map.get(_norm)
+                    if mapped and mapped in sa_obj.prey_lookup:
+                        for si in sa_obj.prey_lookup[mapped]:
+                            stage_to_sp[si.matrix_index] = sp_idx
+                        break
+            access_matrix = apply_prey_scale_to_matrix(
+                access_matrix, ctx.prey_density_scale, config.n_species,
+                is_stage_indexed=True, stage_to_species=stage_to_sp,
+            )
+        else:
+            access_matrix = apply_prey_scale_to_matrix(
+                access_matrix, ctx.prey_density_scale, config.n_species,
+                is_stage_indexed=False,
+            )
 
     # Group schools by cell
     cell_ids = work_state.cell_y * grid.nx + work_state.cell_x

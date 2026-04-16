@@ -40,10 +40,48 @@ def additional_mortality(
                 arr = config.additional_mortality_by_dt[sp_i]
                 m_rate[i] = arr[step % len(arr)]
 
+    # Override with by-dt-by-class rates (ByClassTimeSeries)
+    if config.additional_mortality_by_dt_by_class is not None:
+        for sp_i in range(config.n_species):
+            ts = config.additional_mortality_by_dt_by_class[sp_i]
+            if ts is None:
+                continue
+            sp_mask = sp == sp_i
+            if not sp_mask.any():
+                continue
+            ages_dt = state.age_dt[sp_mask].astype(float)
+            step_idx = min(step, len(ts.values) - 1)
+            for j in range(len(ages_dt)):
+                class_idx = ts.class_of(ages_dt[j])
+                school_idx = np.where(sp_mask)[0][j]
+                if class_idx >= 0:
+                    m_rate[school_idx] = ts.get_by_class(step_idx, class_idx)
+                else:
+                    m_rate[school_idx] = 0.0  # below first threshold
+
     # Match Java: rate per sub-step = M_annual / (n_dt_per_year * n_subdt)
     d = m_rate / (config.n_dt_per_year * n_subdt)
     mortality_fraction = 1 - np.exp(-d)
-    n_dead = state.abundance * mortality_fraction
+
+    # Apply spatial factor (per-cell multiplier)
+    spatial_factor = np.ones(len(state), dtype=np.float64)
+    if config.additional_mortality_spatial is not None:
+        cy = state.cell_y.astype(np.intp)
+        cx = state.cell_x.astype(np.intp)
+        for sp_i in range(config.n_species):
+            sp_map = config.additional_mortality_spatial[sp_i]
+            if sp_map is None:
+                continue
+            sp_mask = sp == sp_i
+            if not sp_mask.any():
+                continue
+            sy, sx = cy[sp_mask], cx[sp_mask]
+            valid = (sy >= 0) & (sy < sp_map.shape[0]) & (sx >= 0) & (sx < sp_map.shape[1])
+            vals = np.zeros(sp_mask.sum(), dtype=np.float64)
+            vals[valid] = sp_map[sy[valid], sx[valid]]
+            spatial_factor[sp_mask] = vals
+
+    n_dead = state.abundance * mortality_fraction * spatial_factor
     n_dead[state.is_background] = 0.0
     # Java skips pre-feeding schools (eggs handled by larva_mortality pre-pass)
     n_dead[state.age_dt < state.first_feeding_age_dt] = 0.0
@@ -56,7 +94,7 @@ def additional_mortality(
     return state.replace(abundance=new_abundance, biomass=new_biomass, n_dead=new_n_dead)
 
 
-def larva_mortality(state: SchoolState, config: EngineConfig) -> SchoolState:
+def larva_mortality(state: SchoolState, config: EngineConfig, step: int = 0) -> SchoolState:
     """Apply additional mortality to eggs/larvae before the main mortality loop.
 
     Only affects schools where is_egg is True. Applied ONCE per egg cohort
@@ -65,6 +103,8 @@ def larva_mortality(state: SchoolState, config: EngineConfig) -> SchoolState:
     (D = rate, NOT rate / n_dt_per_year). This is correct because each egg
     cohort receives this mortality exactly once in its lifetime, so the rate
     represents the total larval mortality, not a rate to be spread over time.
+
+    Supports constant (Annual) and time-varying (ByDt) rates.
     """
     if len(state) == 0:
         return state
@@ -74,7 +114,21 @@ def larva_mortality(state: SchoolState, config: EngineConfig) -> SchoolState:
         return state
 
     sp = state.species_id
-    m_rate = config.larva_mortality_rate[sp]
+    m_rate = config.larva_mortality_rate[sp].copy()
+
+    # Override with time-varying BY_DT larval rates
+    if config.larva_mortality_by_dt is not None:
+        for i in range(len(state)):
+            if not eggs[i]:
+                continue
+            sp_i = sp[i]
+            if (
+                sp_i < len(config.larva_mortality_by_dt)
+                and config.larva_mortality_by_dt[sp_i] is not None
+            ):
+                ts = config.larva_mortality_by_dt[sp_i]
+                m_rate[i] = ts.get(step)
+
     # Full rate applied once per cohort (matching Java AnnualLarvaMortality)
     d = m_rate
     mortality_fraction = 1 - np.exp(-d)

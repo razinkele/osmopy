@@ -958,6 +958,59 @@ def _load_additional_mortality_spatial(
     return result if found_any else None
 
 
+def _load_additional_mortality_by_dt_by_class(
+    cfg: dict[str, str], n_species: int, n_dt_per_year: int, n_dt_simu: int
+) -> list | None:
+    """Load by-dt-by-class additional mortality from CSV.
+
+    For byAge: Java converts class thresholds from years to time steps
+    (threshold * nStepYear). For bySize: thresholds are in cm, used as-is.
+    """
+    from osmose.engine.timeseries import ByClassTimeSeries
+
+    result: list = [None] * n_species
+    found = False
+    for i in range(n_species):
+        for variant in ["byDt.byAge", "byDt.bySize"]:
+            key = f"mortality.additional.rate.{variant}.file.sp{i}"
+            if key in cfg:
+                path = _require_file(cfg[key], _cfg_dir(cfg), key)
+                ts = ByClassTimeSeries.from_csv(path, n_dt_per_year, n_dt_simu)
+                # Java converts age thresholds from years to time steps
+                if "byAge" in variant:
+                    ts.classes = np.round(ts.classes * n_dt_per_year).astype(np.float64)
+                result[i] = ts
+                found = True
+                break
+    return result if found else None
+
+
+def _detect_larva_by_dt_key(cfg: dict[str, str], species_idx: int) -> str | None:
+    """Detect larval by-dt file, supporting both bytDt (Java typo) and byDt."""
+    for variant in ["bytDt", "byDt"]:
+        key = f"mortality.additional.larva.rate.{variant}.file.sp{species_idx}"
+        if key in cfg:
+            return cfg[key]
+    return None
+
+
+def _load_larva_mortality_by_dt(
+    cfg: dict[str, str], n_species: int, n_dt_per_year: int, n_dt_simu: int
+) -> list | None:
+    """Load time-varying larval mortality CSV (ByDtLarvaMortality)."""
+    from osmose.engine.timeseries import SingleTimeSeries
+
+    result: list = [None] * n_species
+    found = False
+    for i in range(n_species):
+        path_str = _detect_larva_by_dt_key(cfg, i)
+        if path_str:
+            path = _require_file(path_str, _cfg_dir(cfg), f"larva.rate.byDt.sp{i}")
+            result[i] = SingleTimeSeries.from_csv(path, n_dt_per_year, n_dt_simu)
+            found = True
+    return result if found else None
+
+
 # ---------------------------------------------------------------------------
 # SP-1: Fishing scenario detection (matches Java FishingMortality.Scenario enum)
 # ---------------------------------------------------------------------------
@@ -1020,6 +1073,7 @@ class EngineConfig:
     # Natural mortality
     additional_mortality_rate: NDArray[np.float64]  # annual additional mortality rate per species
     additional_mortality_by_dt: list[NDArray[np.float64] | None] | None  # BY_DT per-step rates
+    additional_mortality_by_dt_by_class: list | None  # BY_DT by-class rates (ByClassTimeSeries)
     additional_mortality_spatial: list[NDArray[np.float64] | None] | None  # spatial multiplier maps
 
     # Reproduction
@@ -1029,6 +1083,7 @@ class EngineConfig:
     seeding_biomass: NDArray[np.float64]  # initial biomass for seeding (tonnes)
     seeding_max_step: NDArray[np.int32]  # max step for seeding (default: lifespan_dt)
     larva_mortality_rate: NDArray[np.float64]  # additional mortality for eggs/larvae
+    larva_mortality_by_dt: list | None  # time-varying larval mortality (SingleTimeSeries per sp)
 
     # Predation — 2D arrays of shape (n_total, max_stages)
     size_ratio_min: NDArray[np.float64]  # min pred/prey ratio per species per stage
@@ -1654,6 +1709,9 @@ class EngineConfig:
             delta_lmax_factor=delta_lmax_factor,
             additional_mortality_rate=additional_mortality_rate,
             additional_mortality_by_dt=_load_additional_mortality_by_dt(cfg, n_sp),
+            additional_mortality_by_dt_by_class=_load_additional_mortality_by_dt_by_class(
+                cfg, n_sp, n_dt, n_dt * n_yr
+            ),
             additional_mortality_spatial=_load_additional_mortality_spatial(cfg, n_sp),
             sex_ratio=sex_ratio,
             relative_fecundity=relative_fecundity,
@@ -1664,6 +1722,7 @@ class EngineConfig:
             seeding_biomass=seeding_biomass,
             seeding_max_step=seeding_max_step,
             larva_mortality_rate=larva_mortality_rate,
+            larva_mortality_by_dt=_load_larva_mortality_by_dt(cfg, n_sp, n_dt, n_dt * n_yr),
             size_ratio_min=size_ratio_min_2d,
             size_ratio_max=size_ratio_max_2d,
             feeding_stage_thresholds=all_thresholds,
