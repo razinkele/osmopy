@@ -37,3 +37,17 @@ def test_server_py_module_globals_reflect_env(monkeypatch):
     spec.loader.exec_module(mod)
     assert getattr(mod, "CMEMS_USER", "sentinel") is None
     assert getattr(mod, "CMEMS_PASS", "sentinel") is None
+
+
+def test_require_creds_raises_on_missing_env(monkeypatch):
+    """The guard must raise RuntimeError, not silently pass."""
+    import pytest
+
+    monkeypatch.delenv("CMEMS_USERNAME", raising=False)
+    monkeypatch.delenv("CMEMS_PASSWORD", raising=False)
+    spec = importlib.util.spec_from_file_location("_copernicus_server_raises", SERVER_PATH)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    with pytest.raises(RuntimeError, match="CMEMS_USERNAME"):
+        mod._require_creds()

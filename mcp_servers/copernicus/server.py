@@ -30,6 +30,17 @@ from fastmcp import FastMCP
 CMEMS_USER: str | None = os.environ.get("CMEMS_USERNAME")
 CMEMS_PASS: str | None = os.environ.get("CMEMS_PASSWORD")
 
+
+def _require_creds() -> tuple[str, str]:
+    """Return non-null (username, password) or raise with operator guidance."""
+    if not CMEMS_USER or not CMEMS_PASS:
+        raise RuntimeError(
+            "CMEMS_USERNAME and CMEMS_PASSWORD environment variables must be set. "
+            "See mcp_servers/copernicus/README.md."
+        )
+    return CMEMS_USER, CMEMS_PASS
+
+
 # Baltic Sea bounding box (matches OSMOSE grid: 10-30E, 54-66N)
 BALTIC_BBOX = {
     "minimum_longitude": 9.5,
@@ -157,12 +168,8 @@ mcp = FastMCP(
 
 def _login() -> None:
     """Ensure CMEMS credentials are configured."""
-    if not CMEMS_USER or not CMEMS_PASS:
-        raise RuntimeError(
-            "CMEMS_USERNAME and CMEMS_PASSWORD environment variables must be set. "
-            "See mcp_servers/copernicus/README.md."
-        )
-    cm.login(username=CMEMS_USER, password=CMEMS_PASS, force_overwrite=True)
+    user, password = _require_creds()
+    cm.login(username=user, password=password, force_overwrite=True)
 
 
 # ---------------------------------------------------------------------------
@@ -586,15 +593,11 @@ def generate_osmose_physics(
 @mcp.tool()
 def check_credentials() -> str:
     """Test Copernicus Marine Service login credentials."""
-    if not CMEMS_USER or not CMEMS_PASS:
-        raise RuntimeError(
-            "CMEMS_USERNAME and CMEMS_PASSWORD environment variables must be set. "
-            "See mcp_servers/copernicus/README.md."
-        )
+    user, password = _require_creds()
     try:
         result = cm.login(
-            username=CMEMS_USER,
-            password=CMEMS_PASS,
+            username=user,
+            password=password,
             check_credentials_valid=True,
         )
         if result:
