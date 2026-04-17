@@ -21,6 +21,20 @@ from osmose.schema.registry import ParameterRegistry
 _log = setup_logging("osmose.calibration.ui")
 
 
+def _require_preflight(
+    base_config: Path | None,
+    jar_path: Path | None,
+    work_dir: Path | None,
+) -> tuple[Path, Path, Path]:
+    """Return non-Optional paths or raise if preflight never ran."""
+    if base_config is None or jar_path is None or work_dir is None:
+        raise RuntimeError(
+            "Calibration preflight must run before optimization. "
+            "Click 'Preflight' first in the Calibration tab."
+        )
+    return base_config, jar_path, work_dir
+
+
 class CalibrationMessageQueue:
     """Thread-safe message queue for calibration thread -> UI communication."""
 
@@ -368,9 +382,9 @@ def register_calibration_handlers(
     _shared_obs_bio = None
     _shared_obs_diet = None
     _shared_banded_enabled = False
-    _shared_base_config = None
-    _shared_jar_path = None
-    _shared_work_dir = None
+    _shared_base_config: Path | None = None
+    _shared_jar_path: Path | None = None
+    _shared_work_dir: Path | None = None
     _shared_current_config = None
     _shared_n_parallel = 4
     _shared_algorithm_choice = "nsga2"
@@ -394,9 +408,9 @@ def register_calibration_handlers(
         obs_bio = _shared_obs_bio
         obs_diet = _shared_obs_diet
         banded_enabled = _shared_banded_enabled
-        base_config = _shared_base_config
-        jar_path = _shared_jar_path
-        work_dir = _shared_work_dir
+        base_config, jar_path, work_dir = _require_preflight(
+            _shared_base_config, _shared_jar_path, _shared_work_dir
+        )
         n_parallel = _shared_n_parallel
         algorithm_choice = _shared_algorithm_choice
         pop_size = _shared_pop_size
