@@ -188,8 +188,8 @@ def calibration_ui():
 
 def calibration_server(input, output, session, state):
     cal_history = reactive.value([])
-    cal_F = reactive.value(None)
-    cal_X = reactive.value(None)
+    cal_F: reactive.value[np.ndarray | None] = reactive.value(None)
+    cal_X: reactive.value[np.ndarray | None] = reactive.value(None)
     sensitivity_result = reactive.value(None)
     cal_thread = reactive.value(None)
     surrogate_status = reactive.value("")
