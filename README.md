@@ -5,7 +5,7 @@ Python orchestration layer, simulation engine, and Shiny web interface for the [
 ## Features
 
 - **Dual simulation engines** — run simulations via the built-in Python engine or the original Java engine (selectable in the UI)
-- **Schema-driven parameter system** — 181 parameters defined once, UI auto-generated from metadata
+- **Schema-driven parameter system** — 153 parameters defined once, UI auto-generated from metadata
 - **Config I/O** — read/write OSMOSE's native `.csv`/`.properties` format with auto-detected separators and recursive sub-file loading
 - **Python engine** — vectorized NumPy/Numba implementation with full process-level Java parity (growth, predation, reproduction, mortality, movement, fishing, starvation, bioenergetics)
 - **Java engine** — async subprocess runner with real-time progress streaming
@@ -13,6 +13,7 @@ Python orchestration layer, simulation engine, and Shiny web interface for the [
 - **Calibration** — multi-objective optimization (pymoo NSGA-II), GP surrogate model, Sobol sensitivity analysis
 - **Scenario management** — save, load, compare, and fork named configurations
 - **10-tab Shiny UI** — Setup, Grid, Forcing, Fishing, Movement, Run, Results, Calibration, Scenarios, Advanced
+- **MCP server integrations** — Copernicus Marine (CMEMS) forcing downloader, ICES data access (credentials loaded from `.env`; see `mcp_servers/copernicus/README.md`)
 
 ## Simulation Engines
 
@@ -123,7 +124,7 @@ Place `osmose.jar` in `osmose-java/` before building (required for Java engine).
 
 ```
 osmose/                  Core library (usable without Shiny)
-  engine/                Python simulation engine (29 files, ~9000 LOC)
+  engine/                Python simulation engine (44 files, ~11.5k LOC)
     config.py            Typed parameter extraction from flat config
     simulate.py          Main simulation loop (SimulationContext, frozen StepOutput)
     processes/           Growth, predation, mortality, reproduction, movement, fishing
@@ -131,7 +132,7 @@ osmose/                  Core library (usable without Shiny)
     grid.py              Spatial grid with NetCDF loading
     resources.py         LTL plankton/resource forcing
     output.py            CSV/NetCDF output writer
-  schema/                Parameter definitions + registry (181 params)
+  schema/                Parameter definitions + registry (153 params)
   config/                Config reader/writer
   calibration/           pymoo, GP surrogate, SALib sensitivity
   runner.py              Async Java subprocess manager
@@ -141,12 +142,15 @@ ui/                      Shiny web interface
   pages/                 One module per tab
   components/            Reusable widgets (param form)
   theme.py               Shinyswatch superhero theme
+mcp_servers/             Model Context Protocol servers (optional, for Claude Code)
+  copernicus/            CMEMS forcing downloader (env-based credentials)
 data/
   examples/              Bay of Biscay example config (8 species)
   eec_full/              Eastern English Channel config (14 species)
-tests/                   2207 tests
+tests/                   2467 tests
 docs/
   parity-roadmap.md      Engine parity roadmap (7 phases, 37 items)
+  osmose-master-java-fixes.patch   Portable patch for upstream osmose-master (Java test discipline)
 ```
 
 ## Testing
@@ -159,7 +163,7 @@ docs/
 .venv/bin/ruff format osmose/ ui/ tests/         # format
 ```
 
-2207 tests covering schema, config I/O, all engine processes, performance parity, numerical edge cases, type invariants, thread safety, UI state, calibration, scenario management, and integration scenarios.
+2467 tests covering schema, config I/O, all engine processes, performance parity, numerical edge cases, type invariants, thread safety, UI state, calibration, scenario management, MCP credential hygiene, and integration scenarios. Pyright passes with zero errors on the `osmose/` and `ui/` trees.
 
 ## Tech Stack
 
@@ -247,6 +251,22 @@ cal_config = CalibratorConfig(
 calibrator = Calibrator(cal_config, base_config, jar_path)
 result = calibrator.run()
 ```
+
+## Secrets and MCP Credentials
+
+The Copernicus Marine MCP server (`mcp_servers/copernicus/`) and similar integrations read credentials from environment variables only — there are **no hardcoded fallbacks**. Populate `.env` (gitignored) at the repo root:
+
+```bash
+cp .env.example .env
+$EDITOR .env   # fill in CMEMS_USERNAME / CMEMS_PASSWORD
+```
+
+`server.py` auto-loads `.env` via `python-dotenv`. Two enforcement tests guard against regressions:
+
+- `tests/test_copernicus_mcp_env.py` — server source must not contain a hardcoded credential default; `_require_creds()` must raise `RuntimeError` on missing env.
+- `tests/test_mcp_config_hygiene.py` — `.mcp.json` must not ship a CMEMS password literal under any server's `env` block.
+
+Rotate credentials via the Copernicus portal; update `.env` afterwards. See `mcp_servers/copernicus/README.md`.
 
 ## License
 

@@ -1,6 +1,6 @@
 # CLAUDE.md — osmose-python
 
-> Last validated: 2026-04-06
+> Last validated: 2026-04-17
 
 ## Permissions
 - **Bypass permissions: ON** — operate autonomously without per-tool confirmation prompts in this repo.
@@ -20,10 +20,10 @@ Schema-driven: every OSMOSE parameter is defined once as an `OsmoseField` in `os
 
 ```
 osmose/          # Core library (usable without Shiny)
-  engine/        # Python simulation engine (40 files, ~9575 LOC)
+  engine/        # Python simulation engine (44 files, ~11.5k LOC)
     simulate.py  # Main simulation loop
     processes/   # Growth, predation, mortality, reproduction, movement, fishing
-  schema/        # Parameter definitions + registry (215 params)
+  schema/        # Parameter definitions + registry (153 params)
   config/        # Config reader/writer (OSMOSE .csv/.properties format)
   calibration/   # pymoo NSGA-II, GP surrogate, SALib sensitivity
   runner.py      # Async Java subprocess manager
@@ -35,6 +35,7 @@ ui/              # Shiny UI (page_fillable + navset_pill_list sidebar)
   charts.py      # Custom "osmose" Plotly template (ocean palette)
   styles.py      # Centralized style constants
   theme.py       # shinyswatch superhero theme
+mcp_servers/     # MCP servers (Copernicus CMEMS, ICES) — env-based credentials via .env
 www/
   osmose.css     # Custom CSS overlay (Nautical Observatory theme)
 ```
@@ -93,6 +94,12 @@ When writing bash commands, strictly follow these rules to avoid triggering secu
 - Prefer multiple simple, single-line bash calls over one complex compound command
 - For anything that cannot be expressed as a clean single-line command, write a temporary .sh script and run it
 - Always use double quotes around paths, variables, and arguments containing spaces or special characters
+
+## Secrets and credentials
+- `.env` at repo root holds CMEMS + other service credentials; gitignored at `.gitignore:58`
+- `mcp_servers/copernicus/server.py` calls `load_dotenv(Path(__file__).resolve().parents[2] / ".env")` at import time — never hardcode credentials
+- `_require_creds()` is the canonical pattern for env-only credential guards in MCP servers
+- Enforcement: `tests/test_copernicus_mcp_env.py` and `tests/test_mcp_config_hygiene.py` fail CI if creds reappear in tracked files
 
 ## Gotchas
 - Use `.venv/bin/python`, not `python` (system python may not exist)

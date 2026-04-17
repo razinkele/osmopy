@@ -4,146 +4,464 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
-## [0.8.0] - 2026-04-12
-
-### Safety & Correctness
-
-- **engine:** fix `mortality()` output type from `"mortality"` to `"mortalityRate"` — prefix-matching now finds the correct files (R1)
-- **engine:** fix bioenergetics readers using wrong filenames (`bioenIngestion` → `ingestion`, etc.) matching Java's actual output names (R2)
-- **engine:** fix `_collect_outputs` reading stale `ctx.diet_matrix` — now receives pre-aggregated `step_diet` directly after mortality (R3)
-- **scenarios:** fix `fork()` dropping `key_case_map`, UI save/load now persist case mapping for round-trip fidelity (R4)
-- **results:** fix preamble detection failure on header-only files — added fallback to first line with >1 fields (R5)
-- **config:** validate semicolons within individual values, not just at line level (F1A)
-- **schema:** add None guard in `validate_value()` preventing TypeError on missing defaults (F1B)
-- **config:** fix oxygen routing in writer to use correct output key format (F2D)
-- **engine:** fix diet pipeline wiring — `_collect_outputs` accepts `diet_by_species` param, `write_outputs` calls diet writer (F3)
-
-### Performance
-
-- **engine:** vectorize diet aggregation with `np.add.at()` replacing per-school Python loop (P1A)
-- **engine:** pre-allocate diet matrix with capacity buffer — reuses buffer across timesteps instead of `np.zeros()` each step (P1B)
-- **engine:** remove redundant `abundance.copy()` in `_reset_step_variables` — mortality already creates its own snapshot (P1C)
-- **engine:** pre-compute VB species ID set at config init — eliminates per-timestep string comparison in growth dispatch (P1D)
-- **engine:** replace feeding stage nested threshold loop with `np.searchsorted` (P1E)
-- **engine:** use `np.unique(state.species_id)` for bioenergetic species masks — skips absent species (P1F)
-- **results:** cache preamble detection by `(path, mtime_ns, size)` — avoids re-parsing CSV headers on repeated reads (P2B)
-- **results:** add `_csv_cache` to `OsmoseResults` — DataFrame results cached across repeated `biomass()`/`mortality()` calls (P2A)
-- **config:** fix double `stat()` call in `read_file` — single `stat()` reused for size check and error message (P2D)
-- **calibration:** reuse single `OsmoseCalibrationProblem` across sensitivity samples instead of creating one per sample (P4A)
-- **calibration:** add `cleanup_run()` to reclaim disk space after each sensitivity evaluation (P4B)
-- **calibration:** make GP surrogate `n_restarts_optimizer` configurable, default reduced from 5 to 2 (P4C)
-
-### UI Improvements
-
-- **state:** add `get_config_value()` single-key accessor — avoids full dict copy for read-only lookups (P3A)
-- **grid:** cache NetCDF grid loads with `@reactive.calc` — eliminates redundant disk reads across reactive effects (P3B)
-- **scenarios:** save/load handlers now persist `key_case_map` and timestamps for full round-trip fidelity
-
-### Tests
-
-- add 33 new tests for results helpers, semicolon validation, key_case_map round-trip, preamble edge cases (R6)
-- update diet tracking tests for capacity buffer reuse behavior
-- update thread safety tests for `enable_diet_tracking` API changes
-- 2207 tests total (up from 1864)
-
-## [0.7.0] - 2026-04-05
-
-### Safety & Correctness
-
-- **engine:** add epsilon guards to `f_o2` and `phi_t` preventing NaN on degenerate parameter edge cases (C2)
-- **engine:** replace 3 thread-unsafe module globals (`_diet_matrix`, `_tl_weighted_sum`, `_config_dir`) with per-simulation `SimulationContext` dataclass — engine is now re-entrant and safe for parallel calibration (C1)
-- **engine:** close `OsmoseResults` file handles in calibration via context manager, preventing handle leaks across iterations (C3)
-- **engine:** add malformed CSV resilience — skip corrupt output files with warning instead of crashing (C5, M17)
-- **engine:** change `OsmoseResults` default to `strict=True` — missing output files now raise immediately instead of returning empty DataFrames (C4)
-- **engine:** fix `_version_tuple` fallback direction — unparseable versions now apply all migrations instead of skipping them (H7)
-- **ui:** narrow `_do_load_results` exception types to `OSError`, `ValueError`, `ParserError` — programming errors no longer silently masked (H8)
-- **engine:** fix stale Phase 1 docstring in `processes/__init__.py` and align output prefix to `"osm"` matching the reader default (C6, H13)
-
-### Structural Improvements
-
-- **engine:** consolidate 4 duplicated path resolvers into `osmose.engine.path_resolution` shared module with path traversal protection (H6)
-- **engine:** add `__post_init__` validation to `MPAZone`, `ResourceSpeciesInfo`, `BackgroundSpeciesInfo`, `CalibrationPhase` — invalid construction arguments now raise immediately (H10)
-- **engine:** make `SchoolState` and `StepOutput` frozen dataclasses, enforcing immutable-replacement pattern (H9)
-- **engine:** split 150-line `_collect_outputs` into 5 focused sub-functions (`_collect_biomass_abundance`, `_collect_mortality`, `_collect_yield`, `_collect_distributions`, `_collect_bioen`) with shared `_species_mean` helper (H5)
-
-### Performance
-
-- **engine:** extract shared `@njit` mortality cause-dispatch helper `_apply_single_cause`, eliminating 3x code duplication across Numba functions (H2)
-- **engine:** precompute species masks once in `_bioen_step` instead of 8 times per bioenergetic step (M1)
-- **engine:** vectorize fishing spatial map and MPA lookups — replace per-school Python loops with per-species NumPy array indexing (H12)
-
-### Tests
-
-- add 25 bioenergetics orchestration tests for `_bioen_step` temperature branches and edge cases (T1)
-- add 11 config reader error path tests — circular references, path escape, oversized files, unparseable lines (T2)
-- add 9 numerical edge case tests for Von Bertalanffy growth and predation size overlap (T3)
-- add 13 ENUM validation tests and fix `validate_field` ENUM gap (T6)
-- add 10 UI `AppState` dirty-flag and `sync_inputs` edge case tests (T7)
-- add 8 ensemble `aggregate_replicates` edge case tests — empty inputs, unsupported types (T8)
-- add 5 path resolution tests covering absolute paths, traversal rejection, and search order
-- add 4 thread safety tests verifying `SimulationContext` isolation
-- add 7 type invariant tests for `__post_init__` validation
-- add 5 numerical guard tests for `f_o2` and `phi_t` epsilon guards
-- 1864 tests total (up from 1762)
-
-### Documentation
-
-- fix 7 misleading comments across `config.py`, `simulate.py`, `rng.py`, `temp_function.py`, `problem.py`, `demo.py`, `ensemble.py` (M19-M25)
-
-## [0.6.0] - 2026-03-22
-
-### Performance
-
-- **engine:** batch cell mortality loop — replace 400 per-cell Python→Numba dispatches with single `_mortality_all_cells_numba()` call using inline Numba RNG (BoB 5yr: 11.3s → 4.9s)
-- **engine:** parallel cell processing — `prange` over grid cells with per-cell deterministic seeding (BoB 5yr: 4.9s → 2.45s, Java parity at 2.3s)
-- **engine:** Numba-compiled map-based movement — `_map_move_batch_numba()` replaces per-school Python scalar loop with compiled rejection sampling and random walk (EEC 5yr movement: 11.6s → ~0.5s)
-- **engine:** vectorized mortality rate computation — replace per-school Python loops in `_precompute_effective_rates()` with per-species NumPy operations (EEC 5yr: 2.0s → ~0.05s)
-- **Python engine now faster than Java** across all benchmarks (BoB 5yr 2.37s vs 2.3s parity, EEC 5yr 5.6s vs 8.6s Python 1.5x faster)
+## [0.8.1] - 2026-04-17
 
 ### Features
 
-- **engine:** add `parallel` parameter to `mortality()` for sequential/parallel dispatch control
-- **engine:** add `_flatten_all_map_sets()` for pre-extracting movement maps into Numba-compatible arrays
-- **engine:** add `_precompute_map_indices()` for vectorized map index lookups
-- **engine:** add `--statistical` mode to `save_parity_baseline.py` for multi-seed baseline generation
+- auto-load .env in copernicus MCP server (9b8d197)
+- **data:** add Baltic NetCDF grid and fix LTL trophic level key (f1bcd8f)
+- **engine:** wire XorshiftRNG into simulation via java_compat_rng flag (9bf9d11)
+- **engine:** add Java-compatible Xorshift RNG for bit-exact parity (70425ee)
+- add dynamic accessibility, Python engine UI, Baltic example, and renderer badge (396e496)
+- **engine:** wire bioen starvation into mortality loop with bioen_enabled switch (24e8296)
+- **engine:** add foraging mortality function with constant and genetic modes (60dc41f)
+- **engine:** add by-dt-by-class additional mortality variant (eb6f977)
+- **engine:** add fishing scenario auto-detection from config keys (0579da2)
+- **engine:** wire Gaussian/log-normal selectivity into fishing mortality (3e8c509)
+- **engine:** add catch-based proportional allocation fishing variants (f713b7a)
+- **engine:** add rate-by-dt-by-class fishing mortality variant (cdeb063)
+- **engine:** add Gaussian and log-normal fishing selectivity types (496dbce)
+- **engine:** add SingleTimeSeries and GenericTimeSeries with CSV loading (f976c7b)
+- **ui:** add preflight screening checkbox, modal, and handler wiring (4f7b565)
+- **calibration:** export preflight API from __init__ (47d0fc0)
+- **calibration:** add run_preflight() two-stage orchestrator (fe6229a)
+- **calibration:** add preflight issue detection logic (4ad9231)
+- **calibration:** add Morris screening with multi-objective aggregation (36db8b4)
+- **calibration:** add preflight data model — enums and dataclasses (165d1ba)
+- **calibration:** export history module from __init__.py (a1a63d8)
+- **calibration:** add banded loss, validation, history, and 2D sensitivity handlers (6a9bb06)
+- **calibration:** restructure tabs, add banded loss/validation/history/correlation UI (1da6bdf)
+- **calibration:** add history persistence module (2b42a0b)
+- **calibration:** add correlation chart, upgrade sensitivity for multi-objective (aa242e7)
+- **calibration:** export new public API from __init__.py (953405a)
+- **calibration:** add evaluation cache and schema validation to problem (ec2b148)
+- **calibration:** add surrogate cross-validation and fit_score_ (00c724d)
+- **calibration:** extend sensitivity analysis for multi-objective (d1dd600)
+- **calibration:** add multi-seed validation and candidate ranking (c1a27e2)
+- **calibration:** add composable banded loss objectives (855b594)
+- **calibration:** add BiomassTarget data model and CSV loader (9af1cd7)
 
-### Tests
+### Bug Fixes
 
-- add `TestStatisticalParity` — 10-seed mean biomass within 5% tolerance for cross-version validation
-- add 8 unit tests for Numba movement batch function (placement, out-of-domain, determinism)
-- add 4 unit tests for RNG pre-generation helper
-- add EEC smoke test for vectorized rate computation
-- 1730 tests total (up from 1705)
+- **engine:** keep Numba enabled with java_compat_rng flag (3270bc1)
+- **engine:** distinguish null-map migrations from placement failures in warning (679b70f)
+- **tests:** update tests for new fishing config fields and sigmoid API (64c5676)
+- apply test coverage + dependency ordering review to plan (653149d)
+- apply code correctness + spec alignment review to plan (7027c98)
+- **deploy:** add --root-path /osmose for reverse proxy WebSocket routing (b28db08)
+- **calibration:** single-obj Pareto crash, NSGA-II convergence persistence, absolute HISTORY_DIR (6716e99)
+- **calibration:** track duration_seconds, fix surrogate convergence format, add post_validation API (6861b26)
+- **docs:** Phase 2 plan — fix except placeholder, thread-safe history save, dead code (d6a043e)
+- **docs:** Phase 2 spec — add objective_names to history JSON, derive species_names (b5d1e27)
+- **docs:** correct Phase 2 spec — navset names, tmpl params, run_id conflicts (74a07ee)
+- **calibration:** guard worst_species_penalty against empty list, document first-objective-only metrics (87baf55)
+- **engine:** align egg detection to first_feeding_age_dt (F4E) (6d7502c)
+- **ui:** accessibility, UX safety, and consistency improvements (cb35aef)
+- **config:** validation, writer routing, scenario persistence fixes (3b5601c)
+- **engine:** safety and correctness fixes across engine processes (39ad713)
+
+### Performance
+
+- **calibration:** gate history buttons on tab selection + reactive trigger (d6d3f29)
+
+### Chores
+
+- gitignore operational dirs (.remember, logs, cmems_cache) (9b427ec)
+- clean up ruff F401/F841 in non-CI-scoped scripts (d1ee962)
+- register ICES MCP server in .mcp.json (ab3fd88)
 
 ### Documentation
 
-- update README with performance benchmarks table showing Python faster than Java
-- update README test count, tech stack description
-- add performance parity spec and plan documents
-- add scaling parity spec and plan documents
+- ship osmose-master java test/build-discipline patch (34707a4)
+- add 2026-04-17 deep-review fixes plan (4525c92)
+- apply 4-task review to SP-5 bioen activation plan (01b6fad)
+- add SP-5 bioen activation implementation plan (123bdd1)
+- apply 3-task review to SP-2 additional mortality plan (bb32dd7)
+- add SP-2 additional mortality variants implementation plan (cc72bdb)
+- apply 5-task review to SP-1 fishing plan (bec15e8)
+- add SP-1 fishing system completion implementation plan (8011c4d)
+- apply 5-task review to SP-3 timeseries plan (4bac915)
+- add SP-3 time-series framework implementation plan (104b784)
+- apply 5-iteration Java source review to parity spec (4f3863a)
+- apply review fixes to Java parity spec (9 issues) (cb8ae1d)
+- add full Java OSMOSE 4.3.3 parity design spec (3bcdd3e)
+- apply 10-task review to preflight implementation plan (540c96f)
+- add pre-flight sensitivity analysis implementation plan (c9e202a)
+- apply 6-iteration review to pre-flight sensitivity spec (9c24e33)
+- add pre-flight sensitivity analysis design spec (dcad6a7)
+- add ICES data access implementation plan (b4cf65e)
+- apply 4-iteration review to ICES data access spec (a6e1558)
+- add ICES data access MCP server + skill spec (b1a78ef)
+- add calibration UI Phase 2 implementation plan (9ab6b31)
+- add calibration UI Phase 2 design spec (0b8cc86)
+- add calibration library gaps Phase 1 implementation plan (b2b110d)
+- fix 10 issues in calibration library gaps spec (f8c6f03)
+- add calibration library gaps Phase 1 design spec (7dbb43b)
+
+### Other
+
+- 2026-04-17 deep-review fixes (credentials, types, docs) (2c45323)
+- encode calibration preflight invariant via _require_preflight helper (5a50a36)
+- widen param_names annotation for pandas DataFrame columns (0caf824)
+- annotate reactive.value generics for cal_X/cal_F (b036a1f)
+- broaden load_timeseries return, align ByYearTimeSeries param name (f23e733)
+- narrow stage_accessibility and access_matrix for prey-scale path (b5e47c2)
+- cast bioen eta to float to match bioen_starvation signature (4653d81)
+- hoist fishing_catches to narrowed local in catch allocator (dde6d78)
+- declare SchoolState.imax_trait and guard None in fields() iterators (59ccca1)
+- remove committed CMEMS credentials from .mcp.json, document env setup (6e71a2e)
+- require CMEMS credentials from env, remove hardcoded fallback (ddb742b)
+- add reference_point_type and metadata to Baltic targets CSV (a8a56ef)
+
+### Refactoring
+
+- extract _require_creds helper, add behavioral guard test (3973069)
+- **deploy:** switch from shiny-server to standalone Uvicorn service (2eb860a)
+
+### Styling
+
+- format calibration UI Phase 2 files (597b592)
+- format calibration library gap files (b9c5881)
+
+### Tests
+
+- detect literal CMEMS credentials under any mcpServers env block (3b618e4)
+
+## [0.8.0] - 2026-04-13
+
+### Features
+
+- **engine:** add movement.map.strict.coverage config key (M-7) (9911cc7)
+- **engine:** add uncovered-slot fixture + strict parameter to MovementMapSet (M-7) (e3c218a)
+- **ui:** extract parse_nspecies to shared _helpers.py (M-9) (2c5ba61)
+- **engine:** MPAZone validates grid shape and binary values (I-8) (195b873)
+- **engine:** validate bioen_* field coupling at EngineConfig construction (I-2) (ed009b3)
+- **engine:** add SchoolState.validate() for biological invariants (I-1) (936eb33)
+- add Java/Python tabbed layout to Run page (f6bc5c9)
+- wire new pages with engine-gated nav items (578a2ac)
+- add Ev-OSMOSE genetics stub page module (14d2332)
+- add Python engine diagnostics page module (3d02fac)
+- add economic module stub page module (2febf66)
+- add Java/Python engine selector toggle in header (9991f74)
+- add engine_mode reactive field to AppState (d20862d)
+- register Map Viewer tab in app navigation (0d1b778)
+- add Map Viewer page with file list and deck.gl preview (842594a)
+- move model info into header bar, remove second row (e8a2f42)
+- deep review fixes, CSV separator fix, automation setup, map display tests (634498e)
+- add species distribution and fishing maps to grid overlay selector (b141fcd)
+- wire Spatial Results page into nav with disabled pill state (b4f7cf6)
+- implement spatial_results_server with data loading and map rendering (74ca06d)
+- add spatial_results page skeleton with UI layout (6a32e18)
+- **genetics:** seeding phase + config fields for transmission_year and neutral loci (579bf66)
+- **genetics:** add neutral loci to GeneticState and inheritance (d6b6295)
+- **genetics:** wire trait_overrides into _bioen_step and _bioen_reproduction (1b3384a)
+- **economics:** add economic CSV output files (261d2fb)
+- **economics:** add annual reset and catch memory update in simulation loop (c659736)
+- **economics:** add full cost model, stock catchability, and catch memory (136a5b0)
+- **economics:** add travel cost and stock-dependent revenue calculations (5b5afaf)
+- **economics:** integrate effort map into fishing mortality scaling (b7c7ae1)
+- **simulate:** wire genetics and economics into simulation loop (884cb21)
+- **config:** add genetics_enabled and economics_enabled flags to EngineConfig (a564167)
+- **economics:** add DSVM logit choice model and effort aggregation (b138f17)
+- **economics:** add FleetConfig, FleetState, and config parsing (9612e98)
+- **genetics:** add gametic inheritance with fecundity-weighted parent selection (8157bf4)
+- **genetics:** add trait expression and phenotype override mechanism (3274519)
+- **genetics:** add GeneticState with compact/append sync and initial genotype creation (3d5bc5e)
+- **genetics:** add Trait dataclass and TraitRegistry with config parsing (7381795)
+
+### Bug Fixes
+
+- **ui:** log exc_info in _close_spatial_ds instead of bare pass (M-8) (04b5824)
+- **engine:** apply _require_file to 4 adjacent silent-failure sites (26cf198)
+- raise KeyError on NetCDF variable name mismatch for background species (C-8) (3d2d134)
+- raise on missing config files instead of silent fallback (C-3..C-7) (fa0c5f9)
+- pad fishing_seasonality/discard_rate for background species (C-1, C-2) (f177926)
+- **tests:** register osmose plotly template in conftest to fix isolation failures (3bf4bf2)
+- gracefully skip invalid scenario names in import_all (M6) (7c5af1a)
+- reject oversized ZIP entries in scenario import_all (M10) (de264ed)
+- reset key_case_map between read() calls on same reader (M7) (1cdb77a)
+- normalize partial-year spawning tail with warning (M2 followup) (4d80db1)
+- normalize spawning season per-year chunk instead of total (M2) (55349dd)
+- sanitize exception messages in UI notifications (H14) (3f981c0)
+- add path traversal guard to comparison_chart and config_diff_table (H12, H13) (adcbb38)
+- register atexit cleanup for export and demo temp dirs (H10, H11) (6179e8d)
+- move state.dirty.set inside reactive.isolate in forcing sync (H8) (616efeb)
+- raise ValueError on asymmetric species column in RMSE merge (H7 followup) (4c8c622)
+- include species in RMSE merge to prevent cross-product (H7) (f7e9319)
+- filter internal _-prefixed keys from config writer output (H6) (0b4407f)
+- aggregate movement map coverage warning instead of per-slot flooding (H5) (d6d42ec)
+- use integer sampling instead of round() to avoid boundary cell bias (H4) (c4cce5a)
+- preserve distribution dicts in _average_step_outputs (H3) (2dda4c4)
+- use live abundance*weight in Python fallback predation (H1) (f05c2fb)
+- explicit NotImplementedError in JavaEngine.run_ensemble (C7) (96925fd)
+- **tests:** add W=c*L^b value pin and tighten bounds in weight-length test (C6 followup) (0f6f12a)
+- replace tautological weight-length test with meaningful assertions (C6) (083ae5f)
+- consume reactive.poll result so calibration UI updates (C5) (b9ce68e)
+- CSV map orientation, colormap, layer toggle, multi-value config guard (247a232)
+- restore hasattr fallback in make_legend for server compatibility (92ec20a)
+- address round 3 review findings (9b004bd)
+- add type annotations for reactive values, fix f-string lint warning (e8db4a7)
+- handle all-NaN data in spatial scale info display (5c91e27)
+- guard shiny:connected handler against duplicate registration (44473be)
+- address review findings across spatial results implementation (c76ba79)
+- remove unused math and _sdgl imports from grid.py (c2eb8ff)
+
+### Performance
+
+- **calibration:** reuse problem instance and add cleanup (a57f681)
+- **ui:** add config value accessor and cache grid NetCDF loads (ea82aa8)
+- **io:** add CSV/preamble caching and fix double stat() (83f5ea3)
+- **engine:** vectorize hot-path loops and reduce allocations (7006418)
+- vectorize temperature lookups in _bioen_step via get_grid (M13) (ea8e5c3)
+- vectorize load_csv_overlay cell loop with NumPy (44e1e54)
+
+### Chores
+
+- delete unused JavaEngine stub + Engine Protocol + redundant Path import (I-10, M-2) (3f707ea)
+- gitignore superpowers workspace + skill review HTML (41c8f29)
+- fix remaining ruff errors (FleetState forward ref, ambiguous l) (d31fdcd)
+- **tests:** ruff auto-fix unused imports and drop duplicate classes (d980e89)
+
+### Documentation
+
+- update README, CHANGELOG and bump version to 0.8.0 (cb2f447)
+- **engine:** document population.seeding.year.max is global-only per Java parity (M-5) (48bb1c8)
+- remove duplicate focal_starvation_rate_max in plan 1 task 3 (review loop 2) (9930818)
+- fix 8 blockers in v3 deferred plans after thorough review loop (feb98ec)
+- add implementation plans for 3 v3 deferred items (I-3, M-7, D-1+M-5+M-9) (be2e62f)
+- add design specs for 3 v3 deferred item plans (I-3, M-7, D-1+M-5+M-9) (f914e51)
+- **engine:** clarify cell_id expression when resources is None (M-6) (51e1c19)
+- make output.py TODOs actionable / link to roadmap (M-4) (1eee064)
+- revise v3 remediation plan after 5 review loops (e9bad01)
+- add deep review v3 remediation plan (28 tasks, 7 phases) (e387de7)
+- add fresh deep review v3 findings document (34 items) (441b378)
+- **engine:** pin phi_t Arrhenius fallback behavior for e_d==e_m (C3) (e9dd7c0)
+- add deep review v2 Phase 3-5 implementation plan (a7b59e6)
+- enable bypass permissions and mark UI tightening plan complete (4cd9edd)
+- add UI tightening + engine selector spec and plan (b0edf1b)
+- add implementation plan for Grid / Spatial Results split (521d7e9)
+- add spec for splitting Grid & Maps into Grid + Spatial Results (bab5d72)
+- add Ev-OSMOSE + DSVM fleet dynamics design specification (0a33fe9)
+
+### Other
+
+- Merge branch 'refactor/from-dict-split-2026-04-12' — I-3 from_dict monolith split (e4100f3)
+- docs+test: pin SimulationContext diet field two-way coupling (M-14) (592d0c6)
+- docs+test: pin StepOutput age/size distribution pairing invariant (M-13) (9c3531b)
+- Merge feat/ev-osmose-economic-mvp: Ev-OSMOSE genetics + DSVM fleet dynamics Phase 1 MVP (5b0e0aa)
+
+### Refactoring
+
+- **engine:** extract _parse_output_flags from from_dict (I-3 step 5/5) (05d1d03)
+- **engine:** extract _merge_focal_background from from_dict (I-3 step 4/5) (3dd4551)
+- **engine:** extract _parse_predation_params from from_dict (I-3 step 3/5) (52c65a4)
+- **engine:** extract _parse_reproduction_params from from_dict (I-3 step 2/5) (a21c8c7)
+- **engine:** extract _parse_growth_params from from_dict (I-3 step 1/5) (de71cde)
+- **ui:** wire parse_nspecies into forcing.py (M-9) (034a1cc)
+- **ui:** extract format_timing_pairs from diagnostics.py (M-9) (4fd32a4)
+- **ui:** extract collect_resolved_keys from fishing.py (M-9) (ab2f327)
+- **ui:** extract count_map_entries + wire parse_nspecies in movement.py (M-9) (4658092)
+- **engine:** extract _accessibility_path_or_none helper (M-3) (b251f0d)
+- **engine:** consolidate per-species timeseries CSV loaders into one helper (I-9) (b586642)
+- extract _DEFAULT_VIEW_STATE in map_viewer.py (07fba24)
+- consolidate FakeInput into shared test helpers (24dd1e4)
+- replace string sentinels with named constants in grid.py (d8eaa48)
+- extract _compute_half_extents to deduplicate finite-difference logic (e3fe543)
+- extract _find_config_file helper to deduplicate file search (cf62ac0)
+- extract _overlay_label and discover_spatial_files into grid_helpers (81a3394)
+- remove Spatial Distribution tab from Results page (4c11a2b)
+- rename Grid & Maps tab to Grid (f9c5ff1)
+- move make_legend and make_spatial_map to grid_helpers for sharing (53af11a)
+
+### Styling
+
+- tighten nav pills, card headers, and content gap spacing (ede6e39)
+- tighten header bar spacing and reduce element sizes (546b7e1)
+- compact header padding, nav pill spacing, and section labels (b500011)
+- add osm-disabled class for greyed-out nav pills (242cc17)
+- ruff format remaining genetics and economics files (f185d95)
+- fix ruff lint warnings in genetics and economics tests (dcc040b)
+
+### Tests
+
+- update tests for performance optimizations (8195aa2)
+- **ui:** pin reactive.isolate write-propagation semantics (D-1) (23397ef)
+- **ui:** add pure-helper unit tests for spatial_results._nc_label (M-9 partial) (4b5bfab)
+- strengthen construction-only assertions in config validation tests (M-12) (bab8013)
+- deduplicate test_parse_label (M-11) (42821ed)
+- strengthen test_zero_rate_no_mortality with non-zero control school (M-10) (19d3129)
+- pin additional_mortality_by_dt override step-rotation (I-7b) (ea827e9)
+- pin out_mortality rate application when is_out=True (I-7a) (948078f)
+- cover reproduction 'n_eggs < n_new' collapse branch (I-6) (6b50c83)
+- pin _average_step_outputs multi-element branch contract (I-5) (8869743)
+- add direct behavioral test for _predation_on_resources (I-4) (166d917)
+- add coverage for output.step0.include and partial flush (H18) (00ff908)
+- assert movement map warning fires once per species (H5 followup) (53b5690)
+- add _map_move_school uniform placement regression test (H4 followup) (2d3596a)
+- add E2E Playwright tests for Map Viewer page (6f9c070)
+- add e2e tests for Spatial Results disabled pill and Grid rename (97278a1)
+- **genetics:** 5 statistics tests for trait expression and neutral loci (78b9258)
+- **economics:** add multi-fleet non-interference tests (4cced56)
+- **economics:** add days-at-sea tracking and forced port tests (786431c)
+- add integration tests for genetics and economics modules (b60f0c0)
+
+## [0.7.0] - 2026-04-05
+
+### Features
+
+- add __post_init__ validation to MPAZone, ResourceSpeciesInfo, BackgroundSpeciesInfo, CalibrationPhase (H10) (a3465fa)
+- add context manager protocol to OsmoseResults (H4) (4d58ee0)
+- add __post_init__ validation to OsmoseField, Grid, and SchoolState (H3a-c) (ef96bbf)
+- add EngineConfig __post_init__ validation for array lengths and biological constraints (dd56db5)
+- FreeParameter uses Transform enum + bounds validation (81385dd)
+- emit ImportWarning when Numba is unavailable in engine processes (079ad59)
+- add strict mode to OsmoseResults to raise on missing data (399d485)
+
+### Bug Fixes
+
+- remove stale Phase 1 docstring and align output prefix to 'osm' (C6, H13) (9d59d9e)
+- default strict=True for OsmoseResults, fix version fallback, narrow UI catches (C4, H7, H8) (72c1b5b)
+- close OsmoseResults in calibration and handle malformed CSVs (C3, C5, M17) (d9e8216)
+- add epsilon guards to f_o2 and phi_t to prevent NaN on edge cases (C2) (c3fab38)
+- abort calibration when >50% of candidates fail (H6) (033de9a)
+- use age_dt < first_feeding_age_dt for larvae check instead of is_egg (C2) (87e8ce9)
+- wrap xr.open_dataset in context managers to prevent file handle leaks (H2) (0e0fa73)
+- add logging for empty DataFrame returns and ncell injection skip (H5, SF3) (92786ab)
+- use hasattr guard instead of broad except AttributeError in sync_inputs (C8) (5f7f231)
+- validate CSV grid dimensions in movement map loader (C7) (f18370a)
+- guard against division by zero when size_ratio_min is 0 (C1) (f63adf0)
+- update bioen test to use lowercase sizeinf config key (C5 follow-up) (deddf6b)
+- add missing calibration objective exports to __all__ (H8) (7778964)
+- use _log.warning instead of warnings.warn for Numba fallback (H7) (979a4ac)
+- replace assert with if/raise for bioenergetics validation (C3) (0f92a81)
+- use mortality.additional key pattern in calibration auto-detect (C6) (286a4f4)
+- lowercase config key lookups for ndtperyear and bioen sizeinf (C4, C5) (b746f37)
+- add path traversal guard to _resolve_file (68cc9ba)
+- address all remaining review findings (minor+medium) (a458236)
+- add global_map_idx bounds check + clamp inf in nan_to_num (1462d6c)
+- address review findings — guards, NaN clamping, tests (f833582)
+
+### Performance
+
+- vectorize fishing spatial map and MPA lookups (H12) (0d8e020)
+- precompute species masks once in _bioen_step instead of 6 times (M1) (24770b1)
+
+### Chores
+
+- add .worktrees to .gitignore (deef65f)
+
+### Documentation
+
+- bump v0.7.0 — update CHANGELOG, README, and version for deep review #2 remediation (e167049)
+- fix misleading comments across 7 files (M19-M25) (1add9fb)
+- fix misleading comments across 7 files (M19-M25) (7768b82)
+- fix comment quality issues from deep review (d1438a9)
+- fix stale comments, schema descriptions, and docstrings (H9, M10-M14) (016a2d3)
+- update README with latest benchmarks and EEC biomass parity table (16bd43d)
+
+### Other
+
+- Merge branch 'deep-review-2-remediation' (58b9740)
+
+### Refactoring
+
+- extract shared Numba mortality cause-dispatch, eliminating 3x duplication (H2) (d8dc189)
+- split _collect_outputs into focused sub-functions with shared species-mean helper (H5) (ac3ca6c)
+- make SchoolState and StepOutput frozen to enforce immutable-replacement pattern (H9) (367b777)
+- consolidate 4 duplicated path resolvers into shared module (H6) (9729e8c)
+- replace module-level mutable globals with SimulationContext (C1) (341e930)
+- BFS deque, Scenario validation, batch append, mask UI warning, reader skip count (M4-M9) (1a34715)
+- move _last_key_case_map from module global to AppState (H1 partial) (7d27ab3)
+- add type annotations to config validator public API (M15) (5102268)
+
+### Styling
+
+- apply ruff format across codebase (9431c75)
+
+### Tests
+
+- add UI state and ensemble edge case tests (T7, T8) (bd286f2)
+- add numerical edge case and ENUM validation tests, fix validate_field ENUM gap (T3, T6) (5544cd1)
+- add config reader error path tests for circular refs, path escape, file size (T2) (cd83324)
+- add _bioen_step orchestration tests for temperature branches and edge cases (T1) (302e1d4)
+- add coverage for out_mortality formula, config errors, writer semicolon, resource depletion (T1,T4,T5,T7) (d955e1c)
+
+## [0.6.0] - 2026-03-22
+
+### Features
+
+- wire Numba movement batch into movement() and simulate() (cd3224f)
+- add _map_move_batch_numba for compiled movement (001355e)
+- add _precompute_map_indices for movement Numba path (fd4fc46)
+- add _flatten_all_map_sets for Numba movement data (1d13a44)
+- wire batch cell loop into mortality() orchestration (Phase A) (c255eeb)
+- add _mortality_all_cells_numba batch function (513720f)
+- add _pre_generate_cell_rng for batch RNG pre-generation (0b6c81c)
+- add --statistical mode to save_parity_baseline.py (b9edab6)
+
+### Bug Fixes
+
+- sp_ids[k] → sp_ids[idx] bug in movement Numba function (bfd02a0)
+
+### Performance
+
+- vectorize _precompute_effective_rates with NumPy (0b57e70)
+- add prange parallel cell processing (Phase B) (8cce908)
+- move RNG generation into Numba batch function (Phase A) (a549090)
+
+### Documentation
+
+- fix 3 review issues in scaling parity spec (round 3→4) (abf5447)
+- add scaling parity spec (movement Numba + vectorized rates) (efb936d)
+- add sync comments for duplicated Numba inner loops (5534d72)
+- add parity tests to performance spec, fix review round 3 (2cbc34b)
+- add Python engine performance optimization design spec (15cf94f)
+
+### Other
+
+- v0.6.0 — Python engine faster than Java (8509845)
+- final baselines after scaling parity — Python 1.5x faster than Java on EEC 5yr (fcc8fd1)
+- save EEC 5yr pre-scaling baseline (17.9s) (44b8d04)
+- generate 10-seed statistical baseline for BoB 1yr (dab7e47)
+- save 5yr pre-Phase-A timing baseline (69e30a7)
+
+### Tests
+
+- add TestStatisticalParity for cross-version RNG tolerance (6fed9fc)
 
 ## [0.5.0] - 2026-03-22
 
 ### Features
 
-- **engine:** unified predation architecture — school and resource prey now processed in single proportional pass matching Java's `computePredation()`, achieving full EEC parity (14/14 species)
-- **docs:** comprehensive README rewrite with dual-engine documentation, API reference, and validation results
-- **docs:** add UI manual noting both Python and Java engine options
+- **ui:** add ambient ocean atmosphere, sonar spinner, polished notifications (d117776)
 
 ### Bug Fixes
 
-- **engine:** fix predation over-eating bug — remaining appetite for resource predation was calculated using cumulative `pred_success_rate` (divided by n_subdt) instead of actual within-sub-timestep consumption, causing predators to eat ~45% more than allowed per sub-timestep
-- **engine:** fix predation distribution bias — Python processed school prey first then resources separately, while Java distributes eating proportionally across all prey types simultaneously; small forage fish (redMullet, sardine) were over-predated
+- preserve original key case when writing config back to Java (b9ce724)
+- remove overly aggressive overlay failure notifications (9dc62a2)
+- migrate from deck_legend_control to layer_legend_widget for shiny_deckgl 1.9 (c5229b1)
+- **ui:** address code review findings across 11 UI files (854a7da)
+- **engine:** apply larva mortality as full per-cohort rate, fix output headers (b6045bf)
+- **engine:** larva mortality rate is per-timestep, not annual (c96ceaf)
+- enable both biomass+abundance flags in distribution tests (4138a1e)
+- warn on malformed fishing seasonality, narrow movement map exception (0aa569a)
+- use utf-8 encoding with replace fallback, warn on unparseable lines (2aea6f1)
+- narrow except Exception blocks to specific exceptions in UI sync code (279f470)
+- register temp dir cleanup for scenario export downloads (85522d6)
+- map None returncode to -1 instead of masking as success (4ddbe9b)
+- remove duplicate growth_class parsing block (b74e902)
+- remove double 1e-6 conversion on fishing yield (eacc5f9)
+- remove duplicate age/size distribution block that overwrote correct results (8a7eaa4)
+- **engine:** config-dir-aware file resolution + v4 fisheries seasonality (97ac300)
+
+### Other
+
+- v0.5.0 — full EEC parity (14/14) via unified predation architecture (c8de5fb)
+- restore larva mortality /n_dt_per_year division (2531801)
 
 ### Tests
 
-- add 3 new tests for unified predation: proportional distribution, max_eatable enforcement, pred_success_rate accumulation (1705 total)
-
-### Documentation
-
-- update README with dual-engine comparison table, Python engine validation results, API reference section
-- update CHANGELOG with v0.5.0 release
-- update parity roadmap to reflect EEC 14/14, Bay of Biscay 8/8
+- add test_engine_accessibility.py for predation accessibility matrix (772b655)
 
 ## [0.4.0] - 2026-03-20
 
@@ -282,6 +600,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ### Other
 
+- v0.4.0 (38c5b85)
 - Merge branch 'worktree-agent-a161e3b4' (88608dc)
 - Merge branch 'worktree-agent-a9a2eeb3' (487197a)
 - Merge branch 'worktree-agent-abebd8cd' (e212eae)
