@@ -190,11 +190,14 @@ def _catch_based_fishing(
     year = step // config.n_dt_per_year
     n_dead_total = np.zeros(len(state), dtype=np.float64)
 
+    catches = config.fishing_catches
+    assert catches is not None, "fishing_catches must be loaded before catch allocation"
+
     for sp_i in range(config.n_species):
         sp_mask = sp == sp_i
 
         # Determine annual catch target
-        annual_catch = config.fishing_catches[sp_i]
+        annual_catch = catches[sp_i]
         if config.fishing_catches_by_year is not None:
             arr = config.fishing_catches_by_year[sp_i]
             if arr is not None and year < len(arr):

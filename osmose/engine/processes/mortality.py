@@ -103,7 +103,7 @@ def _apply_starvation_for_school(
         gonad_w = np.array([state.gonad_weight[idx]])
         weight = np.array([state.weight[idx]])
         sp_i = state.species_id[idx]
-        eta = config.bioen_eta[sp_i] if config.bioen_eta is not None else 1.0
+        eta = float(config.bioen_eta[sp_i]) if config.bioen_eta is not None else 1.0
 
         n_dead_arr, _new_gonad = bioen_starvation(e_net, gonad_w, weight, eta, n_subdt)
         # bioen_starvation returns absolute n_dead (deficit/weight), NOT a fraction
@@ -292,17 +292,29 @@ def _apply_foraging_for_school(
     genetic = (
         config.foraging_k1_for is not None
         and config.foraging_k2_for is not None
-        and hasattr(state, "imax_trait")
+        and config.foraging_I_max is not None
         and state.imax_trait is not None
     )
     if genetic:
+        # Narrow Optional fields to concrete arrays for the type-checker; the
+        # `genetic` guard above already established all four are non-None.
+        k1_arr = config.foraging_k1_for
+        k2_arr = config.foraging_k2_for
+        i_max_arr = config.foraging_I_max
+        imax_trait = state.imax_trait
+        assert (
+            k1_arr is not None
+            and k2_arr is not None
+            and i_max_arr is not None
+            and imax_trait is not None
+        )
         rate = foraging_rate(
             k_for=None,
             ndt_per_year=config.n_dt_per_year,
-            k1_for=np.array([config.foraging_k1_for[sp_i]]),
-            k2_for=np.array([config.foraging_k2_for[sp_i]]),
-            imax_trait=np.array([state.imax_trait[idx]]),
-            I_max=np.array([config.foraging_I_max[sp_i]]),
+            k1_for=np.array([k1_arr[sp_i]]),
+            k2_for=np.array([k2_arr[sp_i]]),
+            imax_trait=np.array([imax_trait[idx]]),
+            I_max=np.array([i_max_arr[sp_i]]),
         )
     else:
         k_for = (
@@ -1738,10 +1750,15 @@ def mortality(
     if ctx is not None and ctx.prey_density_scale is not None and has_access:
         from osmose.engine.processes.dynamic_accessibility import apply_prey_scale_to_matrix
 
+        assert access_matrix is not None, "access_matrix must be populated when has_access is True"
+
         if use_stage_access:
+            sa_obj = config.stage_accessibility
+            assert sa_obj is not None, (
+                "stage_accessibility must be loaded when use_stage_access is True"
+            )
             # Build stage-to-species mapping for prey rows
             stage_to_sp = np.full(access_matrix.shape[0], -1, dtype=np.int32)
-            sa_obj = config.stage_accessibility
             for sp_idx, sp_name in enumerate(config.all_species_names[: config.n_species]):
                 for _norm in (sp_name, sp_name.lower(), sp_name.replace(" ", "")):
                     if _norm in sa_obj.prey_lookup:

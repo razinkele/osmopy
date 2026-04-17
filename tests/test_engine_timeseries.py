@@ -284,3 +284,22 @@ class TestLoadTimeSeries:
         regime = ByRegimeTimeSeries(np.array([1.0]))
         for ts in [single, generic, by_year, season, regime]:
             assert isinstance(ts, TimeSeries)
+
+
+def test_byyear_timeseries_get_parameter_name_is_step() -> None:
+    """Protocol requires `step` as parameter name; ByYearTimeSeries must honor it."""
+    import inspect
+
+    sig = inspect.signature(ByYearTimeSeries.get)
+    assert "step" in sig.parameters, (
+        "ByYearTimeSeries.get must name its parameter `step` to match the TimeSeries protocol"
+    )
+
+
+def test_load_timeseries_return_union_types() -> None:
+    """The factory returns one of three concrete classes based on config keys."""
+    # Scalar → SingleTimeSeries
+    cfg_scalar = {"foo.sp0": "1.5"}
+    ts = load_timeseries(cfg_scalar, "foo", 0, ndt_per_year=24, ndt_simu=240)
+    assert isinstance(ts, SingleTimeSeries)
+    assert ts.get(0) == 1.5

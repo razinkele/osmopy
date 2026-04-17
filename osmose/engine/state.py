@@ -77,10 +77,15 @@ class SchoolState:
     first_feeding_age_dt: NDArray[np.int32]
     egg_retained: NDArray[np.float64]  # eggs withheld from prey pool per sub-timestep
 
+    # Genetics (Ev-OSMOSE). Optional: populated only when genetic traits are enabled.
+    imax_trait: NDArray[np.float64] | None = None
+
     def __post_init__(self) -> None:
         n = len(self.species_id)
         for f in fields(self):
             val = getattr(self, f.name)
+            if val is None:
+                continue
             if f.name == "n_dead":
                 if val.shape != (n, len(MortalityCause)):
                     raise ValueError(f"n_dead shape {val.shape} != ({n}, {len(MortalityCause)})")
@@ -143,12 +148,25 @@ class SchoolState:
         return SchoolState(**values)
 
     def append(self, other: SchoolState) -> SchoolState:
-        """Concatenate another SchoolState onto this one."""
+        """Concatenate another SchoolState onto this one.
+
+        Optional (None) fields are treated uniformly: the field stays None unless
+        exactly one side has an array, in which case that array is taken verbatim.
+        Mixed None/array on a per-call basis is currently unreachable in the engine
+        (no code path assigns imax_trait), but guarded here for robustness.
+        """
         merged = {}
         for f in fields(self):
             a = getattr(self, f.name)
             b = getattr(other, f.name)
-            merged[f.name] = np.concatenate([a, b], axis=0)
+            if a is None and b is None:
+                merged[f.name] = None
+            elif a is None:
+                merged[f.name] = b
+            elif b is None:
+                merged[f.name] = a
+            else:
+                merged[f.name] = np.concatenate([a, b], axis=0)
         return SchoolState(**merged)
 
     def validate(self) -> None:
@@ -188,5 +206,8 @@ class SchoolState:
         compacted = {}
         for f in fields(self):
             arr = getattr(self, f.name)
+            if arr is None:
+                compacted[f.name] = None
+                continue
             compacted[f.name] = arr[alive] if arr.ndim == 1 else arr[alive, :]
         return SchoolState(**compacted)

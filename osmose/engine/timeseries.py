@@ -136,8 +136,10 @@ class ByYearTimeSeries:
         expanded = _cycle_to_length(raw, n_years)
         return cls(expanded)
 
-    def get(self, year: int) -> float:
-        return float(self.values[year])
+    def get(self, step: int) -> float:
+        # For by-year series, `step` is interpreted as the year index.
+        # Use `get_for_step` for conversion from simulation-step units.
+        return float(self.values[step])
 
     def get_for_step(self, step: int, ndt_per_year: int) -> float:
         """Get value for a simulation step by mapping to year index."""
@@ -404,7 +406,7 @@ def load_timeseries(
     species_idx: int,
     ndt_per_year: int,
     ndt_simu: int,
-) -> TimeSeries:
+) -> SingleTimeSeries | ByYearTimeSeries | ByClassTimeSeries:
     """Auto-detect and load a TimeSeries from config keys.
 
     Detection order (matches Java process readParameters() patterns):

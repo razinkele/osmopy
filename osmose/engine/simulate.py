@@ -598,6 +598,9 @@ def _strip_background(state: SchoolState, n_focal: int) -> SchoolState:
     sliced = {}
     for f in fields(state):
         arr = getattr(state, f.name)
+        if arr is None:
+            sliced[f.name] = None
+            continue
         sliced[f.name] = arr[:n_focal] if arr.ndim == 1 else arr[:n_focal, :]
     return SchoolState(**sliced)
 
