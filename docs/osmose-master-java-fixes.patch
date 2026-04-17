@@ -1,0 +1,140 @@
+From: OSMOSE Python repo (2026-04-17 deep-review fixes)
+Subject: [PATCH] build: enable Java tests by default + document local Maven repo
+
+Applies Tasks 13, 14, 15 from
+osmose-python/docs/superpowers/plans/2026-04-17-codebase-review-fixes-plan.md
+to the upstream osmose-master tree.
+
+  - pom.xml: invert skipTests default so `mvn test` / `mvn verify` actually run tests.
+  - .github/workflows/java-compile.yml: run `mvn -B verify` instead of
+    `mvn -B package -DskipTests=true` so CI catches test regressions.
+  - java/local/README.md: inventory the single vendored artifact
+    (ml.options:options:1.0.0) and document the refresh procedure.
+
+To apply against your osmose-master clone:
+
+    cd <osmose-master clone>
+    git apply path/to/osmose-master-java-fixes.patch
+
+Or with plain `patch`:
+
+    cd <osmose-master clone>
+    patch -p1 < path/to/osmose-master-java-fixes.patch
+
+---
+--- a/pom.xml
++++ b/pom.xml
+@@ -56,7 +56,7 @@
+         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+         <maven.compiler.release>8</maven.compiler.release>
+         <mainClass>fr.ird.osmose.Osmose</mainClass>
+-        <skipTests>true</skipTests>
++        <skipTests>false</skipTests>
+     </properties>
+
+     <!-- Libraries declarations -->
+--- a/.github/workflows/java-compile.yml	2026-04-17 16:33:02.799929985 +0300
++++ b/.github/workflows/java-compile.yml	2026-04-17 16:19:37.120807677 +0300
+@@ -52,7 +52,7 @@
+                 ${{ runner.os }}-build-
+                 ${{ runner.os }}-
+ 
+-      - name: Compile Java code
++      - name: Compile and test Java code
+         run:  |
+             mvn build-helper:remove-project-artifact
+-            mvn -B package -DskipTests=true
++            mvn -B verify
+--- a/java/local/README.md	2026-04-17 16:32:35.219391282 +0300
++++ b/java/local/README.md	2026-04-17 16:19:55.496476053 +0300
+@@ -2,14 +2,15 @@
+ 
+ ## Description
+ 
+-This is the local maven dependencies repository.
+-All locals libraries is contained in this folder like a maven artifactory.
++This is the local Maven repository bundled with OSMOSE. It holds JARs that are
++not (or were not) available from Maven Central or the UCAR repositories at the
++time they were needed, and must therefore travel with the source tree.
+ 
+-## How it work ?
++## How it works
+ 
+-The project link this repository in the POM file with the line :
++The project links this repository in `pom.xml`:
+ 
+-```
++```xml
+ <repository>
+     <id>project.local</id>
+     <name>project</name>
+@@ -17,25 +18,52 @@
+ </repository>
+ ```
+ 
+-When the project download the specified dependencies, it check this folder and
+-copy all required library to the global .m2 folder.
+-
+-Il you want to add a new local library, you can use this repository.
+-But it's more useful to separate your project in a sub project or to deploy it
+-to an externel repository.
++When Maven resolves dependencies, it checks this folder and copies matching
++artifacts into the global `.m2/` cache like any other repository.
+ 
+-## How to add a new library ?
++## Vendored artifacts (2026-04-17 audit)
+ 
+-The process I have used is indicated at this page : 
+-[sookocheff.com](https://sookocheff.com/post/java/local-maven-repository/)
+-
+-The goal is to create a maven project from a jar file and place it in this folder, 
+-I have used this command below to generate the ml.options dependency :
++| GAV                     | Files                                | Why vendored                                                                 |
++| ----------------------- | ------------------------------------ | ---------------------------------------------------------------------------- |
++| `ml.options:options:1.0.0` | `options-1.0.0.jar`, `options-1.0.0.pom` | Command-line options parser; not available on Maven Central under this GAV. |
++
++If a future inventory diverges from this table, update the table — do not let it
++drift silently.
++
++## Refresh procedure
++
++If Maven Central or UCAR publishes a newer version of one of the vendored
++artifacts, prefer migrating to the remote version rather than bumping the
++vendored copy:
++
++1. Remove `<repository>project.local</repository>` for that dependency in `pom.xml`.
++2. Add a regular `<dependency>` pointing to the remote version.
++3. `mvn clean verify` to confirm the build resolves.
++4. Delete the no-longer-needed JAR/POM from `java/local/`.
++5. Commit with a `build:` message.
++
++If you must keep the local repository (e.g. the artifact still isn't on Maven
++Central), add a new version alongside the old one rather than overwriting, so
++reverts are trivial.
++
++## How to add a new library
++
++Based on <https://sookocheff.com/post/java/local-maven-repository/>:
++
++```sh
++mvn deploy:deploy-file \
++  -Durl=file:${project.basedir}/java/local/ \
++  -Dfile=/path/to/your.jar \
++  -DgroupId=com.example \
++  -DartifactId=libname \
++  -Dpackaging=jar \
++  -Dversion=1.2.3
++```
+ 
+-mvn deploy:deploy-file -Durl=file:/home/amap/localrepo/ 
+--Dfile=/home/amap/localrepo/options.jar -DgroupId=ml.options -DartifactId=options 
+--Dpackaging=jar -Dversion=1.0.0
++Commit the generated `com/example/libname/1.2.3/` tree and update the "Vendored
++artifacts" table above.
+ 
+-I Hope that was usefull to you, good luck ;)
++## History
+ 
+-Tristan Muller
++Originally authored by Tristan Muller. The `ml.options:options:1.0.0` artifact
++was imported at that time via the `mvn deploy:deploy-file` command above.
