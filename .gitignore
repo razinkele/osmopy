@@ -61,7 +61,12 @@ osmose-java/*.class
 # Data outputs
 data/scenarios/*/output/
 data/eec_full/output/
+data/cmems_cache/
 .worktrees/
+
+# Operational state
+.remember/
+logs/
 
 # Claude Code / Superpowers workspace artifacts (skill brainstorm/review output)
 .superpowers/
