@@ -1750,10 +1750,15 @@ def mortality(
     if ctx is not None and ctx.prey_density_scale is not None and has_access:
         from osmose.engine.processes.dynamic_accessibility import apply_prey_scale_to_matrix
 
+        assert access_matrix is not None, "access_matrix must be populated when has_access is True"
+
         if use_stage_access:
+            sa_obj = config.stage_accessibility
+            assert sa_obj is not None, (
+                "stage_accessibility must be loaded when use_stage_access is True"
+            )
             # Build stage-to-species mapping for prey rows
             stage_to_sp = np.full(access_matrix.shape[0], -1, dtype=np.int32)
-            sa_obj = config.stage_accessibility
             for sp_idx, sp_name in enumerate(config.all_species_names[: config.n_species]):
                 for _norm in (sp_name, sp_name.lower(), sp_name.replace(" ", "")):
                     if _norm in sa_obj.prey_lookup:
