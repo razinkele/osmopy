@@ -27,8 +27,16 @@ def test_server_py_has_no_hardcoded_credentials():
     assert not re.search(r"os\.environ\.get\(\s*['\"]CMEMS_USERNAME['\"]\s*,\s*['\"]", user_line)
 
 
+def _neuter_dotenv(monkeypatch):
+    """Prevent load_dotenv from populating env from a developer's local .env."""
+    import dotenv
+
+    monkeypatch.setattr(dotenv, "load_dotenv", lambda *a, **kw: False)
+
+
 def test_server_py_module_globals_reflect_env(monkeypatch):
     """Load server.py via spec_from_file_location (mcp_servers is not a package)."""
+    _neuter_dotenv(monkeypatch)
     monkeypatch.delenv("CMEMS_USERNAME", raising=False)
     monkeypatch.delenv("CMEMS_PASSWORD", raising=False)
     spec = importlib.util.spec_from_file_location("_copernicus_server_test", SERVER_PATH)
@@ -43,6 +51,7 @@ def test_require_creds_raises_on_missing_env(monkeypatch):
     """The guard must raise RuntimeError, not silently pass."""
     import pytest
 
+    _neuter_dotenv(monkeypatch)
     monkeypatch.delenv("CMEMS_USERNAME", raising=False)
     monkeypatch.delenv("CMEMS_PASSWORD", raising=False)
     spec = importlib.util.spec_from_file_location("_copernicus_server_raises", SERVER_PATH)

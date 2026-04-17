@@ -20,11 +20,16 @@ from typing import Annotated
 import copernicusmarine as cm
 import numpy as np
 import xarray as xr
+from dotenv import load_dotenv
 from fastmcp import FastMCP
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
+# Load .env from the project root (osmose-python/) so the MCP server can be
+# started without the parent shell having the vars exported.
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+
 CMEMS_USER: str | None = os.environ.get("CMEMS_USERNAME")
 CMEMS_PASS: str | None = os.environ.get("CMEMS_PASSWORD")
 
