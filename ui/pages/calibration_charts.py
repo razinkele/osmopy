@@ -81,7 +81,7 @@ def make_correlation_chart(
         return go.Figure().update_layout(
             title="Parameter Correlations (run calibration first)", template=tmpl
         )
-    df = pd.DataFrame(X, columns=param_names)
+    df = pd.DataFrame(X, columns=pd.Index(param_names))
     df["objective"] = F[:, 0] if F.shape[1] == 1 else np.sum(F, axis=1)
     fig = px.parallel_coordinates(
         df,
