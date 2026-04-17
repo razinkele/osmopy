@@ -109,7 +109,20 @@ def reproduction(
         for f in fields(state):
             existing = getattr(state, f.name)
             parts = [existing] + [getattr(s, f.name) for s in new_schools_list]
-            merged_fields[f.name] = np.concatenate(parts)
+            # Skip fields that are None on every source (optional fields like
+            # imax_trait are unpopulated unless genetic traits are enabled).
+            non_none = [p for p in parts if p is not None]
+            if not non_none:
+                merged_fields[f.name] = None
+            elif len(non_none) == len(parts):
+                merged_fields[f.name] = np.concatenate(parts)
+            else:
+                # Partial population: one side has arrays, the other doesn't.
+                # Currently unreachable (no code path assigns imax_trait), so
+                # fail loudly rather than silently mis-align lengths.
+                raise ValueError(
+                    f"SchoolState.{f.name}: cannot concatenate; some inputs are None"
+                )
         state = SchoolState(**merged_fields)
 
     return state

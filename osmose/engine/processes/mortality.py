@@ -292,17 +292,29 @@ def _apply_foraging_for_school(
     genetic = (
         config.foraging_k1_for is not None
         and config.foraging_k2_for is not None
-        and hasattr(state, "imax_trait")
+        and config.foraging_I_max is not None
         and state.imax_trait is not None
     )
     if genetic:
+        # Narrow Optional fields to concrete arrays for the type-checker; the
+        # `genetic` guard above already established all four are non-None.
+        k1_arr = config.foraging_k1_for
+        k2_arr = config.foraging_k2_for
+        i_max_arr = config.foraging_I_max
+        imax_trait = state.imax_trait
+        assert (
+            k1_arr is not None
+            and k2_arr is not None
+            and i_max_arr is not None
+            and imax_trait is not None
+        )
         rate = foraging_rate(
             k_for=None,
             ndt_per_year=config.n_dt_per_year,
-            k1_for=np.array([config.foraging_k1_for[sp_i]]),
-            k2_for=np.array([config.foraging_k2_for[sp_i]]),
-            imax_trait=np.array([state.imax_trait[idx]]),
-            I_max=np.array([config.foraging_I_max[sp_i]]),
+            k1_for=np.array([k1_arr[sp_i]]),
+            k2_for=np.array([k2_arr[sp_i]]),
+            imax_trait=np.array([imax_trait[idx]]),
+            I_max=np.array([i_max_arr[sp_i]]),
         )
     else:
         k_for = (
