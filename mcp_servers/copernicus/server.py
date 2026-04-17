@@ -13,9 +13,7 @@ Key CMEMS datasets used:
 
 from __future__ import annotations
 
-import json
 import os
-import tempfile
 from pathlib import Path
 from typing import Annotated
 
@@ -235,7 +233,7 @@ def download_field(
     filename = f"baltic_{dataset}_{var_str}_{start_date}_{end_date}.nc"
 
     try:
-        result = cm.subset(
+        _result = cm.subset(
             dataset_id=ds_info["dataset_id"],
             variables=variables,
             start_datetime=f"{start_date}T00:00:00",
@@ -401,7 +399,6 @@ def generate_osmose_ltl(
         # ---- Mode A: Direct phyto/zoo carbon from forecast ----
         phyc = _get_var(ds, "phyc")   # mmolC/m3
         zooc = _get_var(ds, "zooc")   # mmolC/m3
-        si = _get_var(ds, "si")       # mmol/m3 silicate (diatom proxy)
         chl = _get_var(ds, "chl")     # mg/m3 (for diagnostics)
         nppv = _get_var(ds, "nppv")   # mgC/m3/day
 
