@@ -103,7 +103,7 @@ def _apply_starvation_for_school(
         gonad_w = np.array([state.gonad_weight[idx]])
         weight = np.array([state.weight[idx]])
         sp_i = state.species_id[idx]
-        eta = config.bioen_eta[sp_i] if config.bioen_eta is not None else 1.0
+        eta = float(config.bioen_eta[sp_i]) if config.bioen_eta is not None else 1.0
 
         n_dead_arr, _new_gonad = bioen_starvation(e_net, gonad_w, weight, eta, n_subdt)
         # bioen_starvation returns absolute n_dead (deficit/weight), NOT a fraction
