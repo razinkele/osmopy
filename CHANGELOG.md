@@ -4,43 +4,84 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
-## [Unreleased]
+## [0.9.0] - 2026-04-18
 
-### Added
+### Features
 
-- **output:** SP-4 closes the three remaining Phase-5 output-parity gaps. (5.5) Diet CSV matches Java — one `{prefix}_dietMatrix_Simu{i}.csv` per run with `Time` column and one row per recording period (predator-major, prey-minor column order). `_normalize_diet_matrix_to_percent` retained as a private helper for callers needing Java's percentage-per-predator layout. (5.6) `write_outputs_netcdf` emits biomass/abundance by age and by size plus `mortality_by_cause` (8-member `MortalityCause` enum as `cause` coord, capitalized to match the CSV writer); ragged-padded with NaN across species; CF-1.8 + `_FillValue=NaN`. Gated per-variable: `output.{biomass,abundance}.{byage,bysize}.netcdf.enabled` and `output.mortality.netcdf.enabled` — no master switch. (5.4) Spatial NetCDFs `{prefix}_spatial_{biomass,abundance,yield}_Simu{i}.nc` with dims `(time, species, lat, lon)`, land cells as NaN, grid coords from `grid.lat`/`grid.lon` with cell-index fallback. `StepOutput` gains three paired spatial dict fields with an enforced pairing invariant; `_average_step_outputs` extends with per-field rules (biomass/abundance mean, yield sum); `_collect_spatial_outputs` uses `state.cell_x`/`state.cell_y` and `n_dead[:, FISHING] * weight` for yield. Config keys reuse the pre-existing `output.spatial.*` schema entries. Spec at `docs/superpowers/specs/2026-04-19-sp4-output-system-design.md`; plan at `docs/superpowers/plans/2026-04-19-sp4-output-system-plan.md`. Commits: 0779581 (test helper), 5e96916 (5.5 diet), d5947f0 (5.6 NetCDF), 901b3be (5.4 spatial).
-- **calibration-ui:** Phase 3 surfaces three existing library capabilities on the UI. (a) `PreflightEvalError` now renders as a red-banner modal with the failing stage (`morris`), error message, and recovery hints — no more opaque "Preflight failed". (b) Preflight settings expose a `Workers` numeric input (`cal_preflight_workers`) that wires to `make_preflight_eval_fn(n_workers=...)`, default 1 (sequential). (c) Surrogate Optimum panel gains a `Pareto | Weighted sum` radio; Weighted mode emits one `input_numeric` per objective (passed as `weights=` into `find_optimum`); Pareto mode shows scatter+table (n_obj ≤ 2) or table-only (n_obj ≥ 3). Spec at `docs/superpowers/specs/2026-04-19-calibration-ui-phase3-design.md`; plan at `docs/superpowers/plans/2026-04-19-calibration-ui-phase3-plan.md`. Commits: c8b2e32 (red-banner), 95e858d (n_workers), 84e5ab7 (Pareto toggle).
-- **docs:** `docs/baltic_example.md` — full provenance doc for the Baltic example: file inventory, construction workflow, per-parameter-family sources with DOIs (FishBase, ICES SAG, Copernicus CMEMS, 9 cited papers), known limitations, refresh path. Complements the Baltic ICES validation report with the "where did each value come from" layer. (4031138)
-- **calibration:** ICES SAG 2024-advice snapshots for eight Baltic stocks (cod ×2, herring ×4, sprat, flounder) under `data/baltic/reference/ices_snapshots/`. `cod.27.22-24` uses 2022 advice (last full assessment before 2024 category-3 downgrade); all others use 2024. (a7d65a5)
-- **calibration:** `scripts/validate_baltic_vs_ices_sag.py` compares model F rates and biomass envelopes against ICES snapshots; writes `docs/baltic_ices_validation_2026-04-18.md`. Unit-aware: skips envelope checks for stocks whose SSB is reported as a relative biomass index (cod.27.24-32, her.27.25-2932, fle.27.2223) since indices cannot be combined with tonnes-scale model targets. After a multi-agent review round, F-rate weighting now prefers the tonnes subset and falls back to index (never mixes); eastern cod no longer silently vanishes into western cod's weighted F. (2be016f, 590240e)
-- **tests:** regression fence for severe F-rate and biomass-envelope drift vs ICES, with documented `F_KNOWN_EXCEPTIONS` / `B_KNOWN_EXCEPTIONS` allowlists for deliberate calibration choices (`tests/test_baltic_ices_validation.py`). Eight additional coverage tests surface `_ssb_weighted_f` empty-window, `_ices_ssb_envelope` partial/empty-coverage, unit-filter exclusion for cod/herring/flounder, and self-tests that allowlists are still load-bearing. (0435fde, 590240e)
+- **output:** spatial outputs — biomass / abundance / yield-biomass NetCDF (901b3be)
+- **output:** NetCDF per-species distributions + mortality-by-cause (d5947f0)
+- **output:** diet CSV Java-parity — one file, one row per recording period (5e96916)
+- **calibration-ui:** Pareto/Weighted toggle for surrogate optimum (84e5ab7)
+- **calibration-ui:** n_workers numeric input for preflight (95e858d)
+- **calibration-ui:** red-banner modal for PreflightEvalError (c8b2e32)
+- **calibration:** ICES SAG validator for Baltic F rates and biomass envelopes (2be016f)
+- **calibration:** problem.py robustness (timeout/stderr/cleanup) (8358725)
 
-### Changed
+### Bug Fixes
 
-- **calibration:** validator `_series_by_year` now warns on uncoercible values instead of silent drop (catches Euro-locale `"1,234.5"` payloads that would otherwise disappear). `_parse_model_fishing_rates` now raises with file:line context on separator shifts. `_validate_snapshot_coverage` warns when any stock's SSB series doesn't reach the window end (catches puller re-runs at a wrong advice year silently shortening the series). `main()` exit code now fails on "assessed species with no ICES F" in addition to tolerance breaches — previously an all-`None` pull passed CI with every row rendered as `—`. (590240e)
-- **calibration:** `scripts/_pull_ices_snapshots.py` now raises on empty-200 payloads from ICES and on unclassifiable SSB units, rather than silently committing degenerate snapshots. (590240e)
+- **baltic:** post-rename cleanup + Java-compat regression tests (89734a0)
+- **calibration:** unit-aware F weighting + defensive snapshot pull + coverage tests (590240e)
+- **calibration:** surrogate multi-obj returns Pareto or weighted-sum (6d75310)
+- **calibration:** loud failures + abort threshold in preflight eval (4de10ae)
 
-### Fixed
+### Performance
 
-- **data(baltic):** fishery names in `baltic_param-fishing.csv`, `fishery-catchability.csv`, `fishery-discards.csv` stripped of `_` to match Java 4.3.3's `FishingGear.java:107` `replaceAll("_", "").replaceAll("-", "")` normalization — prior names (`trawl_cod`, etc.) caused Java to fail at boot with `[severe] No catchability found for fishery trawlcod` and deactivate all eight fisheries. Python engine unaffected (catchability resolved by row/column index, not name). Plan at `docs/superpowers/plans/2026-04-19-baltic-java-fishery-reformat-plan.md`.
-- **scripts:** `swap_whitefish_to_smelt.py` updated to converge on the post-rename canonical `gillsmelt` regardless of input vintage (handles `gill_whitefish`, `gillwhitefish`, and the intermediate `gill_smelt` spelling that predated the Java-compat rename). Re-running on an already-migrated checkout is a harmless no-op.
+- **calibration:** parallelize preflight eval with ThreadPoolExecutor (a454758)
 
-### Added
+### Chores
 
-- **tests:** `tests/test_baltic_java_compat.py` — four static lints that pin the Baltic fishing config to Java 4.3.3's invariants: fishery names must be purely alphanumeric post-strip; map values must reference existing fishery names verbatim (case-sensitive, no-strip comparison per `FisheryMapSet.java:209`); catchability and discards column headers must match the fishery-name order exactly. Catches a future regression that reintroduces `_` for readability.
+- gitignore .bak + calibration_results; archive sensitivity plan (355e7f4)
 
-### Changed
+### Documentation
 
-- **calibration:** preflight evaluator logs exceptions and aborts when Morris majority-of-samples fails (was: silent `except Exception: pass`). (4de10ae)
-- **calibration:** surrogate `find_optimum(weights=...)` for weighted scalarization; default multi-objective call returns a Pareto (non-dominated) set instead of a naive unweighted sum. (6d75310)
-- **calibration:** `OsmoseCalibrationProblem` now accepts `subprocess_timeout` and `cleanup_after_eval` options; on subprocess failure the full stderr lands in `run_dir/stderr.txt` instead of being truncated in logs. (8358725)
-- **calibration:** preflight evaluation loop is parallelizable via `n_workers`; per-sample `output_dir/preflight_{i}` subdirs avoid concurrent-writer clobbering. (a454758)
+- post-session roadmap STATUS-COMPLETE for fronts 1-4 (7482b6f)
+- SP-4 changelog + Phase 5 STATUS-COMPLETE (445f354)
+- **plans:** fix stale test-count arithmetic in SP-4 plan self-review (e03a69c)
+- **spec,plans:** iteration-2 spec + plan patches for SP-4 (47349a8)
+- **spec:** SP-4 spec iteration-1 patches (internal consistency + Java parity) (fc7b4cc)
+- **plans:** iteration-2 patches to SP-4 plan (542bcf9)
+- **plans:** rewrite SP-4 plan after 4-reviewer ground-truth audit (0c74795)
+- **plan:** SP-4 output system implementation plan (e036338)
+- **spec:** scrub two residual output.spatialized.* config-key references (8ad2103)
+- **spec:** SP-4 review-round-1 corrections (553ece4)
+- **spec:** SP-4 output system design (Front 4) (b77e85d)
+- changelog for calibration UI Phase 3 (62f628b)
+- **plan,spec:** plan review-round-1 corrections (a476a0e)
+- **plan:** calibration UI Phase 3 implementation plan (aef168f)
+- **spec:** fix SilentException import path to shiny.types (was shiny.reactive) (0bbfdfb)
+- **spec:** calibration UI Phase 3 review-round 1 corrections (38676a1)
+- **spec:** calibration UI Phase 3 design (Front 3) (1cafed5)
+- modernize README (TOC, Baltic example section, doc index) + changelog for review fixes and provenance doc (034f614)
+- **baltic:** full provenance doc for the Baltic example (sources, scripts, per-parameter refs) (4031138)
+- changelog for Baltic ICES cross-validation (9797e2f)
+- **baltic:** document ICES snapshot refresh workflow (722f21f)
+- **baltic:** summarize ICES cross-validation findings and known limits (2926436)
+- **baltic:** scaffold ICES SAG snapshot directory + manifest (028beb7)
+- roadmap for closing remaining fronts (ICES MCP → Java fishery reformat → UI Phase 3 → SP-4) (2fa0737)
+- **plans:** STATUS-COMPLETE banners on three more shipped plans (fb08acc)
+- **plans:** STATUS-COMPLETE banners on five already-shipped plans (934b46b)
+- **plans:** loop-review patches to ICES SAG validation plan (518de4b)
+- **plans:** mark UI Phase 2 complete; fix ICES plan MCP-shape drift (a313866)
+- plan for ICES SAG cross-validation of Baltic calibration (d923ad0)
+- changelog for calibration/sensitivity fixes (b8a58b4)
 
-### Refactored
+### Other
 
-- **calibration:** `run_preflight` split into `_run_morris_stage` / `_maybe_run_sobol_stage` / orchestrator. (13f9474)
-- **calibration:** `detect_issues` split into per-category helpers (`_issues_blowup`, `_issues_negligible`, `_issues_all_negligible`, `_issues_flat`, `_issues_bound_tight`). (95db190)
-- **scripts:** `calibrate_baltic.py` gains a `Callable[[np.ndarray], float]` return hint on `make_objective` and swaps the list-wrapped counter for `itertools.count(1)`. (7ace2f3)
+- **baltic:** strip underscores from fishery names for Java-engine compatibility (98f478e)
+- **baltic:** freeze ICES SAG snapshots for eight Baltic stocks (2024 advice, cod.27.22-24 on 2022) (a7d65a5)
+- load-example picker on grid page + calibrate_baltic popsize_mult (fc5f271)
+- **baltic:** grid-mask rebuild + ICES validation + whitefish→smelt swap (d61ea1c)
+
+### Refactoring
+
+- **scripts:** return-type hint + itertools counter in calibrate_baltic (7ace2f3)
+- **calibration:** split detect_issues into per-category helpers (95db190)
+- **calibration:** split run_preflight into Morris/Sobol stages (13f9474)
+
+### Tests
+
+- make_minimal_engine_config helper for SP-4 tests (0779581)
+- **calibration:** regression fence for F-rate and biomass-envelope drift vs ICES (0435fde)
 
 ## [0.8.1] - 2026-04-17
 
@@ -138,6 +179,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ### Other
 
+- v0.8.1 — deep-review fixes (credentials, types, docs) (e2bedc2)
 - 2026-04-17 deep-review fixes (credentials, types, docs) (2c45323)
 - encode calibration preflight invariant via _require_preflight helper (5a50a36)
 - widen param_names annotation for pandas DataFrame columns (0caf824)
