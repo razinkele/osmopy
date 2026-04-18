@@ -45,14 +45,16 @@ def test_spatial_results_pill_exists_in_execute_section(page: Page, app: ShinyAp
 
 
 def test_grid_tab_renamed_to_grid(page: Page, app: ShinyAppProc):
-    """Grid tab should be labeled 'Grid' (not 'Grid & Maps')."""
+    """Grid tab should be labeled 'Domain' (data-value='grid') — renamed from
+    the earlier 'Grid' / 'Grid & Maps' labels while keeping the stable
+    data-value anchor."""
     page.goto(app.url)
     page.wait_for_selector(".nav-pills", timeout=_LOAD_TIMEOUT)
 
     grid_pill = page.locator(".nav-pills .nav-link[data-value='grid']")
     expect(grid_pill).to_be_visible(timeout=_NAV_TIMEOUT)
-    assert grid_pill.text_content().strip() == "Grid"
+    assert grid_pill.text_content().strip() == "Domain"
 
-    # Old name should not exist
+    # Prior labels should not exist
     old_pills = page.locator(".nav-pills .nav-link:has-text('Grid & Maps')")
     assert old_pills.count() == 0, "Old 'Grid & Maps' pill should not exist"

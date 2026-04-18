@@ -23,7 +23,7 @@ def test_app_loads_with_navigation(page: Page, app: ShinyAppProc):
     page.wait_for_selector(".nav-pills", timeout=15000)
 
     # Core navigation tabs should be visible in the main pill list
-    for tab in ["Setup", "Run", "Results", "Scenarios", "Advanced"]:
+    for tab in ["Species", "Run", "Results", "Scenarios", "Advanced"]:
         loc = page.locator(f".nav-pills .nav-link:has-text('{tab}')")
         expect(loc.first).to_be_visible(timeout=5000)
 
@@ -82,7 +82,10 @@ def test_species_panels_render_after_load(page: Page, app: ShinyAppProc):
     page.click("#btn_load_example")
     page.wait_for_selector(".shiny-notification", timeout=15000)
 
-    # Wait for species panels to render
+    # Navigate to the Species tab — the species panel is rendered lazily by
+    # `ui.output_ui("species_panels")` on that tab; `#spt_species_name_0`
+    # doesn't exist in the DOM until the tab is active.
+    page.locator(".nav-pills .nav-link:has-text('Species')").click()
     page.wait_for_timeout(3000)
 
     # Species name input for first species should be visible and populated
@@ -113,8 +116,8 @@ def test_navigation_preserves_state(page: Page, app: ShinyAppProc):
     page.locator(".nav-pills .nav-link:has-text('Advanced')").click()
     page.wait_for_timeout(1500)
 
-    # Navigate back to Setup
-    page.locator(".nav-pills .nav-link:has-text('Setup')").click()
+    # Navigate back to Species (formerly "Setup")
+    page.locator(".nav-pills .nav-link:has-text('Species')").click()
     page.wait_for_timeout(1500)
 
     # Config header should still show Bay Of Biscay (title-cased)
