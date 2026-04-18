@@ -426,3 +426,57 @@ class TestMakePreflightEvalFn:
         assert len(captured_configs) == 1
         actual_val = float(captured_configs[0]["sp.linf"])
         assert abs(actual_val - 0.1) < 1e-9
+
+
+def test_preflight_eval_fn_logs_and_counts_failures(monkeypatch, caplog, tmp_path) -> None:
+    """Engine exceptions must be logged, counted, and leave the row as inf."""
+    import logging
+
+    from osmose.calibration import preflight as pre
+    from osmose.calibration.problem import FreeParameter
+
+    class _FakeEngine:
+        def run(self, config, output_dir):  # noqa: ARG002
+            raise RuntimeError("synthetic blow-up")
+
+    class _FakeResults:
+        def __init__(self, *a, **kw) -> None: ...
+
+    monkeypatch.setattr(pre, "PythonEngine", lambda: _FakeEngine())
+    monkeypatch.setattr(pre, "OsmoseResults", _FakeResults)
+
+    fp_spec = [FreeParameter(key="predation.efficiency.sp0",
+                             lower_bound=0.1, upper_bound=0.9)]
+    fn = pre.make_preflight_eval_fn(
+        free_params=fp_spec,
+        base_config={"simulation.time.nyear": "1"},
+        output_dir=tmp_path,
+        objective_fns=[lambda r: 0.0],
+        run_years=1,
+    )
+
+    X = np.array([[0.5]])
+    with caplog.at_level(logging.WARNING, logger="osmose.calibration.preflight"):
+        Y = fn(X)
+    assert not np.isfinite(Y[0, 0])
+    assert any("synthetic blow-up" in rec.getMessage() for rec in caplog.records), \
+        "Exception message must appear in logs (no silent pass)"
+    assert fn.failures == 1
+    assert fn.samples == 1
+
+
+def test_run_preflight_aborts_when_failure_rate_exceeds_threshold(tmp_path) -> None:
+    """If >50% of Morris samples fail, run_preflight must raise PreflightEvalError."""
+    from osmose.calibration import preflight as pre
+
+    def always_fails(X):
+        return np.full((X.shape[0], 1), np.inf)
+
+    with pytest.raises(pre.PreflightEvalError, match="failure rate"):
+        pre.run_preflight(
+            param_names=["a", "b"],
+            param_bounds=[(0.0, 1.0), (0.0, 1.0)],
+            evaluation_fn=always_fails,
+            n_trajectories=3,
+            num_levels=4,
+        )

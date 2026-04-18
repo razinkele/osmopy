@@ -7,6 +7,7 @@ objectives, and tight bounds.
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from dataclasses import dataclass
@@ -21,6 +22,8 @@ from SALib.analyze import morris as morris_analyze  # type: ignore[import-untype
 from osmose.engine import PythonEngine
 from osmose.results import OsmoseResults
 from osmose.calibration.problem import FreeParameter, Transform
+
+_log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +114,13 @@ class PreflightResult:
     issues: list[PreflightIssue]
     survivors: list[str]
     elapsed_seconds: float
+
+
+class PreflightEvalError(RuntimeError):
+    """Raised when a preflight run fails so many samples that results are
+    unusable. The caller should review the evaluation_fn rather than trust
+    degenerate sensitivity indices.
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -499,6 +509,16 @@ def run_preflight(
     n_failed = int(np.sum(blowup_sample_flags))
     failure_rate = n_failed / max(n_samples, 1)
 
+    # Hard abort if a majority of Morris samples failed — the resulting
+    # indices would be uninformative noise.
+    _MAJORITY_FAILURE = 0.5
+    if failure_rate > _MAJORITY_FAILURE:
+        raise PreflightEvalError(
+            f"Morris stage failure rate {failure_rate:.0%} exceeds "
+            f"{_MAJORITY_FAILURE:.0%}; check evaluation_fn — sensitivity "
+            "indices would be meaningless."
+        )
+
     # Replace inf/NaN with large finite value before passing to SALib
     Y_clean = np.where(np.isfinite(Y_raw), Y_raw, 1e6)
 
@@ -635,62 +655,69 @@ def make_preflight_eval_fn(
     base_config: dict[str, str],
     output_dir: Path,
     objective_fns: list[Callable],
+    *,
+    run_years: int | None = None,
 ) -> Callable[[np.ndarray], np.ndarray]:
     """Create an evaluation function suitable for ``run_preflight()``.
 
     The returned callable accepts a sample matrix ``X`` of shape ``(N, k)``
-    and returns a ``(N, n_obj)`` array of objective values.  Failed runs
-    return ``np.full(n_obj, np.inf)`` for that row.
+    and returns a ``(N, n_obj)`` array of objective values. Failed rows are
+    left as ``inf`` (SALib then treats them as blow-ups) and the exception is
+    logged at WARNING level.
 
-    The simulation is capped at ``min(5, simulation.time.nyear)`` years so
-    that pre-flight runs are cheap.
+    When ``run_years`` is None (default), the preflight run length is clamped
+    to ``min(5, base_config["simulation.time.nyear"])`` — the legacy contract.
+    When explicitly set, the caller's value is used verbatim (useful for
+    fast-failure tests and when the caller already decided run length).
 
-    Parameters
-    ----------
-    free_params:
-        Free parameter definitions (bounds + transforms).
-    base_config:
-        Base OSMOSE config dict (will be cloned per evaluation).
-    output_dir:
-        Directory where simulation outputs are written.
-    objective_fns:
-        List of callables ``(OsmoseResults) -> float`` to evaluate.
+    The returned callable exposes two diagnostic attributes:
 
-    Returns
-    -------
-    Callable[[np.ndarray], np.ndarray]
-        Shape ``(N, k) -> (N, n_obj)``.
+    * ``samples`` — number of sample rows evaluated across all calls
+    * ``failures`` — number of sample rows that raised an exception
     """
     n_obj = len(objective_fns)
 
-    # Clamp simulation years to at most 5
-    configured_years = int(base_config.get("simulation.time.nyear", "10"))
-    run_years = min(5, configured_years)
+    if run_years is None:
+        configured_years = int(base_config.get("simulation.time.nyear", "10"))
+        effective_years = min(5, configured_years)
+    else:
+        effective_years = int(run_years)
 
-    def _evaluate(X: np.ndarray) -> np.ndarray:
-        n_samples = X.shape[0]
-        results_matrix = np.full((n_samples, n_obj), np.inf)
+    class _EvalFn:
+        def __init__(self) -> None:
+            self.samples = 0
+            self.failures = 0
 
-        for i in range(n_samples):
-            config = dict(base_config)
-            config["simulation.time.nyear"] = str(run_years)
+        def __call__(self, X: np.ndarray) -> np.ndarray:
+            n_samples = X.shape[0]
+            results_matrix = np.full((n_samples, n_obj), np.inf)
 
-            # Apply parameter values with optional LOG transform
-            for j, fp in enumerate(free_params):
-                val = float(X[i, j])
-                if fp.transform is Transform.LOG:
-                    val = 10.0**val
-                config[fp.key] = str(val)
+            for i in range(n_samples):
+                config = dict(base_config)
+                config["simulation.time.nyear"] = str(effective_years)
+                for j, fp in enumerate(free_params):
+                    val = float(X[i, j])
+                    if fp.transform is Transform.LOG:
+                        val = 10.0**val
+                    config[fp.key] = str(val)
 
-            try:
-                engine = PythonEngine()
-                engine.run(config, output_dir)
-                osmose_results = OsmoseResults(output_dir)
-                row = np.array([float(fn(osmose_results)) for fn in objective_fns])
-                results_matrix[i] = row
-            except Exception:  # noqa: BLE001
-                pass  # leave row as inf
+                try:
+                    engine = PythonEngine()
+                    engine.run(config, output_dir)
+                    osmose_results = OsmoseResults(output_dir)
+                    results_matrix[i] = np.array(
+                        [float(fn(osmose_results)) for fn in objective_fns]
+                    )
+                except Exception as exc:  # noqa: BLE001 — preflight is best-effort
+                    _log.warning(
+                        "preflight sample %d failed (%s: %s); row left as inf",
+                        i,
+                        type(exc).__name__,
+                        exc,
+                    )
+                    self.failures += 1
+                self.samples += 1
 
-        return results_matrix
+            return results_matrix
 
-    return _evaluate
+    return _EvalFn()
