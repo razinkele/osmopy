@@ -69,6 +69,9 @@ class CalibrationMessageQueue:
     def post_preflight_error(self, exc) -> None:
         self._q.put(("preflight_error", exc))
 
+    def post_surrogate_optimum(self, optimum) -> None:
+        self._q.put(("surrogate_optimum", optimum))
+
     def drain(self) -> list[tuple]:
         msgs = []
         while True:
@@ -84,6 +87,34 @@ def _clamp_int(value: int, lo: int, hi: int, name: str) -> int:
     if value < lo or value > hi:
         raise ValueError(f"{name} must be between {lo} and {hi}, got {value}")
     return value
+
+
+def _resolve_optimum_weights(input, n_obj: int) -> list[float] | None:
+    """Read the weights inputs if mode=='weighted', else return None.
+
+    Returns None for the Pareto path. Returns a list of non-negative
+    floats for the Weighted path. If any weight input is not yet
+    rendered (SilentException, e.g. the @render.ui for weights hasn't
+    flushed yet, or n_obj shrank mid-run), falls back to None rather
+    than halting silently — matches the preflight_fix_N pattern at
+    calibration_handlers.py:815-819.
+    """
+    from shiny.types import SilentException
+
+    mode = getattr(input, "cal_optimum_mode", lambda: "pareto")()
+    if mode != "weighted":
+        return None
+    weights: list[float] = []
+    for i in range(n_obj):
+        try:
+            raw = getattr(input, f"cal_weight_{i}")()
+        except SilentException:
+            return None
+        try:
+            weights.append(float(raw or 0.0))
+        except (TypeError, ValueError):
+            return None
+    return weights
 
 
 def _clamp_n_workers(requested: int | None, cpu: int | None) -> int:
@@ -395,6 +426,7 @@ def register_calibration_handlers(
     preflight_result,
     history_banner_text,
     history_trigger,
+    surrogate_optimum,
 ):
     """Register all reactive event handlers for the calibration page."""
 
@@ -438,6 +470,8 @@ def register_calibration_handlers(
                 modal = build_preflight_modal(payload)
                 if modal is not None:
                     ui.modal_show(modal)
+            elif kind == "surrogate_optimum":
+                surrogate_optimum.set(payload)
 
     @reactive.effect
     def _consume_cal_poll():
@@ -547,7 +581,13 @@ def register_calibration_handlers(
                     calibrator.fit(samples, Y)
 
                     msg_queue.post_status("Finding optimum on surrogate...")
-                    optimum = calibrator.find_optimum()
+                    n_obj = calibrator.surrogate.n_objectives
+                    weights = _resolve_optimum_weights(input, n_obj)
+                    if weights is not None:
+                        optimum = calibrator.find_optimum(weights=weights)
+                    else:
+                        optimum = calibrator.find_optimum()  # weights=None → Pareto
+                    msg_queue.post_surrogate_optimum(optimum)
 
                     msg_queue.post_results(X=samples, F=Y)
                     history = [float(np.min(Y[: i + 1].sum(axis=1))) for i in range(n_samples)]

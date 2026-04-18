@@ -6,8 +6,10 @@ from __future__ import annotations
 import os
 
 import numpy as np
+import pandas as pd
 import plotly.graph_objects as go
 from shiny import reactive, render, ui
+from shiny.render import DataGrid
 from shinywidgets import output_widget, render_plotly
 
 from ui.pages.calibration_charts import (
@@ -18,6 +20,7 @@ from ui.pages.calibration_charts import (
 )
 from ui.pages.calibration_handlers import (
     _make_progress_callback,
+    _resolve_optimum_weights,
     build_free_params,
     collect_selected_params,
     get_calibratable_params,
@@ -41,6 +44,133 @@ __all__ = [
     "make_sensitivity_chart",
     "_make_progress_callback",
 ]
+
+
+# -- Pure module-level helpers for surrogate-optimum rendering ----------------
+
+
+def _obj_labels_for_surrogate(optimum: dict | None) -> list[str]:
+    """Best-effort objective labels for the weights row and tables.
+
+    ``find_optimum`` (``surrogate.py:123``) does NOT currently populate an
+    ``objective_labels`` key — the helper falls back to ``obj_{i}`` for
+    every position. The ``objective_labels`` branch exists so a caller
+    can inject friendlier labels by adding that key to the payload
+    before ``post_surrogate_optimum`` (out of scope for Phase 3;
+    reserved for a future follow-up).
+    """
+    if optimum is None:
+        return []
+    labels = optimum.get("objective_labels")
+    if labels:
+        return list(labels)
+    obj = optimum.get("predicted_objectives")
+    n = int(getattr(obj, "__len__", lambda: 0)()) if obj is not None else 0
+    return [f"obj_{i}" for i in range(n)]
+
+
+def _render_weights_inputs(mode: str, optimum: dict | None):
+    """Pure helper used by the ``weights_inputs`` @render.ui delegate."""
+    if mode != "weighted":
+        return ui.TagList()  # empty — Pareto mode shows no weights
+    if optimum is None:
+        return ui.help_text(
+            "Run the surrogate workflow first — weights match the fitted surrogate's objectives.",
+            class_="small text-muted",
+        )
+    labels = _obj_labels_for_surrogate(optimum)
+    n_obj = len(labels)
+    rows = []
+    for i in range(n_obj):
+        rows.append(
+            ui.input_numeric(
+                f"cal_weight_{i}",
+                f"w[{labels[i]}]",
+                value=1.0,
+                min=0.0,
+                step=0.1,
+            )
+        )
+    return ui.TagList(*rows)
+
+
+def _render_pareto_scatter(optimum: dict | None, tmpl: str = "osmose"):
+    """Pure helper for the ``surrogate_pareto_scatter`` delegate.
+
+    Returns an empty ``plotly.graph_objects.Figure`` for missing data
+    OR for n_obj >= 3 (the scatter is not meaningful past 2 objectives).
+    """
+    if optimum is None or "pareto" not in optimum:
+        return go.Figure()
+    F = np.asarray(optimum["pareto"]["objectives"])
+    if F.ndim != 2 or F.shape[1] >= 3:
+        return go.Figure()
+    labels = _obj_labels_for_surrogate(optimum)
+    return make_pareto_chart(F, labels, tmpl=tmpl)
+
+
+def _render_pareto_table(optimum: dict | None):
+    """Pure helper for the ``surrogate_pareto_table`` delegate.
+
+    Returns a ``shiny.render.DataGrid`` wrapping an empty DataFrame
+    when no Pareto set is present, otherwise the full Pareto set
+    laid out as obj_*, ±obj_*, param_* columns.
+    """
+    if optimum is None or "pareto" not in optimum:
+        return DataGrid(pd.DataFrame(), selection_mode="row")
+    F = np.asarray(optimum["pareto"]["objectives"])
+    U = np.asarray(optimum["pareto"]["uncertainty"])
+    P = np.asarray(optimum["pareto"]["params"])
+    labels = _obj_labels_for_surrogate(optimum)
+    n_obj = F.shape[1] if F.ndim == 2 else 0
+    n_params = P.shape[1] if P.ndim == 2 else 0
+    data: dict[str, np.ndarray] = {}
+    for i in range(n_obj):
+        data[labels[i] if i < len(labels) else f"obj_{i}"] = F[:, i]
+    for i in range(n_obj):
+        data[f"\u00b1{labels[i] if i < len(labels) else f'obj_{i}'}"] = U[:, i]
+    for j in range(n_params):
+        data[f"param_{j}"] = P[:, j]
+    return DataGrid(pd.DataFrame(data), selection_mode="row")
+
+
+def _render_weighted_summary(optimum: dict | None, weights: list[float] | None):
+    """Pure helper for the ``surrogate_weighted_summary`` delegate.
+
+    When ``weights`` is None/empty the weighted-sum scalar is omitted.
+    Otherwise the summary line shows ``w·means = X`` per the spec.
+    """
+    if optimum is None or "pareto" in optimum:
+        return ui.help_text(
+            "Switch to Weighted sum and run the surrogate workflow "
+            "to see the single weighted-optimum point.",
+            class_="small text-muted",
+        )
+    obj = np.asarray(optimum["predicted_objectives"])
+    unc = np.asarray(optimum["predicted_uncertainty"])
+    params = np.asarray(optimum["params"])
+    scalar_line = None
+    if weights:
+        w = np.asarray(weights, dtype=float)
+        w_dot_means = float(w @ obj)
+        scalar_line = ui.tags.span(
+            f"weighted sum (w\u00b7means) = {w_dot_means:.4g}",
+            class_="fw-semibold",
+        )
+    rows = [
+        ui.tags.strong("Weighted optimum"),
+        ui.br(),
+    ]
+    if scalar_line is not None:
+        rows += [scalar_line, ui.br()]
+    rows += [
+        ui.tags.span(
+            f"objectives = {np.round(obj, 4).tolist()} (\u00b1{np.round(unc, 4).tolist()})"
+        ),
+        ui.br(),
+        ui.tags.span(f"parameters = {np.round(params, 4).tolist()}"),
+    ]
+    return ui.div(*rows, class_="p-3 border rounded bg-light")
 
 
 # -- Shiny UI / Server --------------------------------------------------------
@@ -140,7 +270,39 @@ def calibration_ui():
                     ui.navset_tab(
                         ui.nav_panel(
                             "Pareto Front",
-                            ui.div(output_widget("pareto_chart")),
+                            ui.div(
+                                ui.input_radio_buttons(
+                                    "cal_optimum_mode",
+                                    "Optimum",
+                                    choices={
+                                        "pareto": "Pareto front",
+                                        "weighted": "Weighted sum",
+                                    },
+                                    selected="pareto",
+                                    inline=True,
+                                ),
+                                ui.output_ui("weights_inputs"),
+                                ui.help_text(
+                                    "Weights are raw non-negative floats. "
+                                    "Scaling is irrelevant for ranking within "
+                                    "a single search — [0.3, 0.7] and [3, 7] "
+                                    "pick the same point.",
+                                    class_="small text-muted",
+                                ),
+                                output_widget("pareto_chart"),
+                                ui.panel_conditional(
+                                    "input.cal_optimum_mode == 'pareto'",
+                                    ui.layout_columns(
+                                        output_widget("surrogate_pareto_scatter"),
+                                        ui.output_data_frame("surrogate_pareto_table"),
+                                        col_widths=[6, 6],
+                                    ),
+                                ),
+                                ui.panel_conditional(
+                                    "input.cal_optimum_mode == 'weighted'",
+                                    ui.output_ui("surrogate_weighted_summary"),
+                                ),
+                            ),
                         ),
                         ui.nav_panel(
                             "Correlations",
@@ -212,6 +374,7 @@ def calibration_server(input, output, session, state):
     history_banner_text = reactive.value("")
     history_trigger = reactive.value(0)
     preflight_result = reactive.value(None)
+    surrogate_optimum = reactive.value(None)
 
     def _tmpl() -> str:
         mode = get_theme_mode(input)
@@ -235,7 +398,27 @@ def calibration_server(input, output, session, state):
         preflight_result=preflight_result,
         history_banner_text=history_banner_text,
         history_trigger=history_trigger,
+        surrogate_optimum=surrogate_optimum,
     )
+
+    @render.ui
+    def weights_inputs():
+        return _render_weights_inputs(input.cal_optimum_mode(), surrogate_optimum.get())
+
+    @render_plotly
+    def surrogate_pareto_scatter():
+        return _render_pareto_scatter(surrogate_optimum.get(), tmpl=_tmpl())
+
+    @render.data_frame
+    def surrogate_pareto_table():
+        return _render_pareto_table(surrogate_optimum.get())
+
+    @render.ui
+    def surrogate_weighted_summary():
+        optimum = surrogate_optimum.get()
+        n_obj = len(_obj_labels_for_surrogate(optimum))
+        weights = _resolve_optimum_weights(input, n_obj) if optimum else None
+        return _render_weighted_summary(optimum, weights)
 
     @render.text
     def cal_status():

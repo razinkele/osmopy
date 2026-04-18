@@ -7,7 +7,10 @@ from shiny import reactive
 from osmose.calibration.preflight import PreflightEvalError
 from tests.helpers import make_catch_all_input, make_multi_input
 from ui.pages.calibration import build_free_params, collect_selected_params
-from ui.pages.calibration_handlers import _clamp_n_workers, build_preflight_modal
+from ui.pages.calibration_handlers import (
+    _clamp_n_workers,
+    build_preflight_modal,
+)
 
 
 def test_collect_selected_params():
@@ -213,3 +216,92 @@ def test_clamp_n_workers_defaults_on_invalid():
 def test_clamp_n_workers_survives_null_cpu_count():
     # Platforms where os.cpu_count() returns None: fall back to 1
     assert _clamp_n_workers(4, None) == 1
+
+
+def test_resolve_optimum_weights_pareto_mode_returns_none():
+    from ui.pages.calibration_handlers import _resolve_optimum_weights
+
+    inp = make_multi_input(cal_optimum_mode="pareto", default=None)
+    assert _resolve_optimum_weights(inp, n_obj=3) is None
+
+
+def test_resolve_optimum_weights_weighted_mode_reads_N_inputs():
+    from ui.pages.calibration_handlers import _resolve_optimum_weights
+
+    inp = make_multi_input(
+        cal_optimum_mode="weighted",
+        cal_weight_0=1.0,
+        cal_weight_1=2.0,
+        default=None,
+    )
+    assert _resolve_optimum_weights(inp, n_obj=2) == [1.0, 2.0]
+
+
+def test_resolve_optimum_weights_falls_back_on_silent_exception():
+    """Simulate the @render.ui not having flushed — cal_weight_1 raises
+    SilentException. Helper must return None (fallback to Pareto) rather
+    than propagate the exception and halt the click handler."""
+    from shiny.types import SilentException
+
+    from ui.pages.calibration_handlers import _resolve_optimum_weights
+
+    class _PartialInput:
+        cal_optimum_mode = staticmethod(lambda: "weighted")
+        cal_weight_0 = staticmethod(lambda: 1.0)
+
+        def __getattr__(self, name):
+            if name == "cal_weight_1":
+                raise SilentException()
+            raise AttributeError(name)
+
+    assert _resolve_optimum_weights(_PartialInput(), n_obj=2) is None
+
+
+def test_weights_inputs_renders_zero_inputs_in_pareto_mode():
+    """In Pareto mode, _render_weights_inputs emits no input_numeric tags."""
+    import numpy as np  # noqa: F401  (kept for consistency with sibling tests)
+    from ui.pages.calibration import _render_weights_inputs
+
+    out = _render_weights_inputs(mode="pareto", optimum=None)
+    html = str(out)
+    assert "input_numeric" not in html and "cal_weight_" not in html
+
+
+def test_weights_inputs_renders_N_inputs_in_weighted_mode():
+    import numpy as np
+    from ui.pages.calibration import _render_weights_inputs
+
+    optimum = {
+        "predicted_objectives": np.array([1.0, 2.0, 3.0]),
+        "objective_labels": ["a", "b", "c"],
+    }
+    out = _render_weights_inputs(mode="weighted", optimum=optimum)
+    html = str(out)
+    for i in range(3):
+        assert f"cal_weight_{i}" in html, f"Missing input cal_weight_{i}"
+
+
+def test_surrogate_pareto_scatter_empty_for_high_dim():
+    """n_obj >= 3: scatter returns empty figure; table still produces M rows."""
+    import numpy as np
+    import pandas as pd
+    from ui.pages.calibration import _render_pareto_scatter, _render_pareto_table
+
+    optimum = {
+        "pareto": {
+            "objectives": np.arange(12).reshape(4, 3).astype(float),
+            "uncertainty": np.full((4, 3), 0.1),
+            "params": np.arange(8).reshape(4, 2).astype(float),
+        },
+        "predicted_objectives": np.array([0.0, 0.0, 0.0]),
+        "predicted_uncertainty": np.array([0.1, 0.1, 0.1]),
+        "params": np.array([0.0, 0.0]),
+    }
+    fig = _render_pareto_scatter(optimum)
+    assert len(fig.data) == 0, "Expected empty scatter for n_obj >= 3"
+
+    df_out = _render_pareto_table(optimum)
+    df = df_out.data if hasattr(df_out, "data") else df_out
+    assert isinstance(df, pd.DataFrame), f"Expected DataFrame, got {type(df)}"
+    assert len(df) == 4, f"Expected 4 rows, got {len(df)}"
+
