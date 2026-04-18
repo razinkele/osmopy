@@ -76,3 +76,64 @@ def test_validator_produces_report_for_sprat(report):
     assert b_rows["sprat"]["ices_min_ssb"] is not None, (
         "sprat has linked stock but no SSB envelope computed"
     )
+
+
+# Documented calibration choices that deliberately sit outside the ICES envelope.
+# Bump the corresponding KNOWN_EXCEPTIONS set (and explain why in
+# docs/baltic_ices_validation_2026-04-18.md Findings) when the model changes.
+F_KNOWN_EXCEPTIONS = {
+    # Baltic cod: model F=0.08 vs ICES ~0.91. Low F is intentional against
+    # very-low post-collapse biomass to prevent extirpation in-model.
+    # See docs/baltic_ices_validation_2026-04-18.md Findings.
+    "cod",
+    # Baltic flounder: model F=0.04 vs ICES ~0.22. Coarse-grid under-resolves
+    # lagoon-concentrated habitat; configured F compensates downward.
+    "flounder",
+}
+B_KNOWN_EXCEPTIONS = {
+    # Baltic cod: model target is total biomass across both stocks; ICES
+    # envelope here is western SSB alone (eastern is excluded as index-unit).
+    # See biomass_targets.csv:22 — aggregation + SSB/total-biomass mismatch.
+    "cod",
+}
+
+
+def test_no_severe_f_rate_drift(report):
+    """Model F must stay within [0.25x, 4x] of ICES F — wider than the
+    [0.5x, 1.5x] soft tolerance in the validator. Catches order-of-magnitude
+    drift only. Known documented exceptions are allowlisted; bump
+    F_KNOWN_EXCEPTIONS with a pointer to the findings doc when the set
+    changes.
+    """
+    severe = []
+    for r in report["f_rates"]:
+        if r["ices_f_weighted"] is None or r["species"] in F_KNOWN_EXCEPTIONS:
+            continue
+        ratio = r["model_f"] / r["ices_f_weighted"]
+        if ratio < 0.25 or ratio > 4.0:
+            severe.append((r["species"], ratio))
+    assert not severe, (
+        f"Severe F-rate drift (order-of-magnitude) vs ICES: {severe}. "
+        "Either refresh snapshots with a note, correct the model config, "
+        "or — if this is a deliberate modeling choice — add the species to "
+        "F_KNOWN_EXCEPTIONS with a rationale."
+    )
+
+
+def test_biomass_envelope_overlaps_ices_for_assessed_species(report):
+    """Every species with linked tonnes-unit ICES stocks must have its
+    biomass envelope overlap the ICES SSB envelope (2018-2022). Species
+    where the envelope couldn't be computed (all stocks are index-unit
+    or unassessed) are ignored. Known exceptions are allowlisted.
+    """
+    non_overlapping = [
+        r["species"]
+        for r in report["biomass_envelopes"]
+        if r["envelopes_overlap"] is False and r["species"] not in B_KNOWN_EXCEPTIONS
+    ]
+    assert not non_overlapping, (
+        f"Model biomass envelope does not overlap ICES SSB for: {non_overlapping}. "
+        "Either broaden the target envelope, re-justify (e.g. total biomass "
+        "vs SSB distinction — document in the report), or add the species "
+        "to B_KNOWN_EXCEPTIONS with a rationale."
+    )
