@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **calibration:** preflight evaluator logs exceptions and aborts when Morris majority-of-samples fails (was: silent `except Exception: pass`). (4de10ae)
+- **calibration:** surrogate `find_optimum(weights=...)` for weighted scalarization; default multi-objective call returns a Pareto (non-dominated) set instead of a naive unweighted sum. (6d75310)
+- **calibration:** `OsmoseCalibrationProblem` now accepts `subprocess_timeout` and `cleanup_after_eval` options; on subprocess failure the full stderr lands in `run_dir/stderr.txt` instead of being truncated in logs. (8358725)
+- **calibration:** preflight evaluation loop is parallelizable via `n_workers`; per-sample `output_dir/preflight_{i}` subdirs avoid concurrent-writer clobbering. (a454758)
+
+### Refactored
+
+- **calibration:** `run_preflight` split into `_run_morris_stage` / `_maybe_run_sobol_stage` / orchestrator. (13f9474)
+- **calibration:** `detect_issues` split into per-category helpers (`_issues_blowup`, `_issues_negligible`, `_issues_all_negligible`, `_issues_flat`, `_issues_bound_tight`). (95db190)
+- **scripts:** `calibrate_baltic.py` gains a `Callable[[np.ndarray], float]` return hint on `make_objective` and swaps the list-wrapped counter for `itertools.count(1)`. (7ace2f3)
+
 ## [0.8.1] - 2026-04-17
 
 ### Features
