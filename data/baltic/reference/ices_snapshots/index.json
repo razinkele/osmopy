@@ -22,5 +22,25 @@
     "pikeperch": [],
     "smelt": [],
     "stickleback": []
+  },
+  "units_by_stock": {
+    "cod.27.24-32": "index",
+    "cod.27.22-24": "tonnes",
+    "her.27.25-2932": "index",
+    "her.27.28": "tonnes",
+    "her.27.3031": "tonnes",
+    "her.27.20-24": "tonnes",
+    "spr.27.22-32": "tonnes",
+    "fle.27.2223": "index"
+  },
+  "advice_year_by_stock": {
+    "cod.27.24-32": 2024,
+    "cod.27.22-24": 2022,
+    "her.27.25-2932": 2024,
+    "her.27.28": 2024,
+    "her.27.3031": 2024,
+    "her.27.20-24": 2024,
+    "spr.27.22-32": 2024,
+    "fle.27.2223": 2024
   }
 }
