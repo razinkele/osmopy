@@ -57,3 +57,49 @@ is inferred from the `Blim` magnitude. The validator skips biomass
 envelope comparisons for index-unit stocks (nothing to compare tonnes
 against an index) but still uses them for F-rate comparisons (F is
 dimensionless across all stocks).
+
+## How to Refresh
+
+Snapshots freeze the 2024 ICES advice. When ICES publishes a new advice year
+(typically every May/June), refresh via:
+
+1. Start a Claude Code session in `osmose-python/` so the `ices` MCP server
+   loads (CWD-sensitive — launching from the parent directory silently drops
+   the server).
+2. Update `scripts/_pull_ices_snapshots.py`: bump the `year` in each tuple
+   of the `STOCKS` list. Cod `cod.27.22-24` is category-3 in odd years — keep
+   its year at the most recent even-year advice (2022, 2024, 2026, …) until
+   ICES resumes full assessment. Baltic flounder `fle.27.2223` is on the same
+   biennial cycle.
+3. Run the helper:
+
+   ```bash
+   .venv/bin/python scripts/_pull_ices_snapshots.py
+   ```
+
+   It hits the ICES SAG REST API directly, applies the same flattening the
+   MCP server does (lowercase keys matching `get_stock_assessment` /
+   `get_reference_points` output), and rewrites every `{stock}.assessment.json`
+   and `{stock}.reference_points.json` plus `index.json` (`advice_year_by_stock`
+   and `units_by_stock` are derived automatically — the latter from Blim
+   magnitude since the ICES `StockSizeUnits` field is unreliable).
+4. Update `index.json`'s top-level `advice_year` and `created` date by hand
+   (the helper doesn't touch them).
+5. **Update hardcoded constants in `scripts/validate_baltic_vs_ices_sag.py`:**
+   - `WINDOW_YEARS` (currently `range(2018, 2023)`) — shift to the last five
+     years covered by the new advice (`range(advice_year - 6, advice_year - 1)`).
+   - `REPORT_MD` filename (contains `2026-04-18`) — update the date stub to
+     the refresh date.
+   - The `"2024 advice"` label in the validator docstring and report header
+     should match the new advice year.
+6. Update the `advice_year` assertion in
+   `tests/test_baltic_ices_validation.py::test_manifest_exists_and_is_readable`.
+7. Run `.venv/bin/python scripts/validate_baltic_vs_ices_sag.py --report` and
+   review the refreshed `docs/baltic_ices_validation_<date>.md` for new drift.
+8. Run `.venv/bin/python -m pytest tests/test_baltic_ices_validation.py -v`.
+   If the drift fence trips for a species that now has genuine drift, decide:
+   broaden the calibration target in `baltic_param-fishing.csv` /
+   `biomass_targets.csv` (separate calibration-tuning plan, not this
+   validation plan), or — for deliberate modeling choices — add the species
+   to `F_KNOWN_EXCEPTIONS` / `B_KNOWN_EXCEPTIONS` with a pointer to the
+   findings doc.
