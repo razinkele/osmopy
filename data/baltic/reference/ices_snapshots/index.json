@@ -1,0 +1,26 @@
+{
+  "advice_year": 2024,
+  "created": "2026-04-18",
+  "model_species_to_ices_stocks": {
+    "cod": [
+      "cod.27.24-32",
+      "cod.27.22-24"
+    ],
+    "herring": [
+      "her.27.25-2932",
+      "her.27.28",
+      "her.27.3031",
+      "her.27.20-24"
+    ],
+    "sprat": [
+      "spr.27.22-32"
+    ],
+    "flounder": [
+      "fle.27.2223"
+    ],
+    "perch": [],
+    "pikeperch": [],
+    "smelt": [],
+    "stickleback": []
+  }
+}
