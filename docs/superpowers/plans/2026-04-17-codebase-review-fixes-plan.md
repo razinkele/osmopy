@@ -1,5 +1,7 @@
 # Codebase Review Fixes Implementation Plan
 
+> **STATUS (verified 2026-04-18): COMPLETE — shipped as merge `2c45323` → release `e2bedc2` (v0.8.1, 2026-04-17). DO NOT RE-EXECUTE.** Evidence: `_require_creds()` at `mcp_servers/copernicus/server.py:37` (called at 174, 598); `imax_trait: NDArray[np.float64] | None = None` declared at `osmose/engine/state.py:81`; `_require_preflight` at `ui/pages/calibration_handlers.py:24` (called at 411); `TimeSeries.get(step: int)` protocol at `osmose/engine/timeseries.py:64` with aligned concrete implementations.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Resolve every actionable finding in `docs/review-findings.md` (the 2026-04-17 deep-review re-verification) — rotate exposed credentials, burn the 22 Pyright errors down to zero, re-enable Java tests in pom/workflow, and document the local-Maven dependency chain.

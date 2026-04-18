@@ -1,5 +1,7 @@
 # Calibration Library Gaps — Phase 1 Implementation Plan
 
+> **STATUS (verified 2026-04-18): COMPLETE — shipped alongside Calibration Library v1 (2026-04-15). DO NOT RE-EXECUTE.** Evidence: `osmose/calibration/targets.py`, `osmose/calibration/losses.py`, `osmose/calibration/multiseed.py` all exist with expected public symbols (`BiomassTarget`, `banded_log_ratio_loss`, `validate_multiseed`); `__init__.py` exports confirmed.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Extract reusable calibration primitives from the Baltic script into the `osmose/calibration/` library: ICES target data model, composable banded loss objectives, evaluation caching, schema validation, surrogate cross-validation, multi-objective sensitivity, and multi-seed validation.

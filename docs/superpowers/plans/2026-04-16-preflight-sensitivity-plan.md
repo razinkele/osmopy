@@ -1,5 +1,7 @@
 # Pre-flight Sensitivity Analysis Implementation Plan
 
+> **STATUS (verified 2026-04-18): COMPLETE — shipped 2026-04-16 and subsequently hardened on 2026-04-18 (see `2026-04-17-calibration-sensitivity-fixes-plan.md` for the Morris-abort + parallel eval + per-stage refactor). DO NOT RE-EXECUTE.** Evidence: `osmose/calibration/preflight.py` contains all plan targets — `PreflightResult` (line 101), `run_preflight` (line 565), `make_preflight_eval_fn` (line 658), `detect_issues` (line 360), `_run_morris_stage` (line 402), `_maybe_run_sobol_stage` (line 496); `ui/pages/calibration_handlers.py` has `_require_preflight` (line 24).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a two-stage pre-flight sensitivity analysis (Morris screening + targeted Sobol) that runs automatically before calibration to validate parameter influence and problem well-posedness.
