@@ -1,6 +1,8 @@
 """Tests for diet matrix tracking (C2 feature)."""
 
 import numpy as np
+import pandas as pd
+import pytest
 
 from osmose.engine.config import EngineConfig
 from osmose.engine.processes.predation import (
@@ -283,13 +285,11 @@ class TestDietResourceTracking:
 class TestDietCSVOutput:
     """Test diet composition CSV output."""
 
-    def test_write_diet_csv(self, tmp_path):
-        """write_diet_csv produces a valid CSV with correct format."""
-        from osmose.engine.output import write_diet_csv
+    def test_write_diet_csv(self):
+        """_normalize_diet_matrix_to_percent returns correct shape and non-zero entries."""
+        from osmose.engine.output import _normalize_diet_matrix_to_percent
 
         # Species-level diet: 2 predators, 3 prey columns (2 focal + 1 resource)
-        species_names = ["Prey", "Predator"]
-        all_prey_names = ["Prey", "Predator", "Phyto"]
         # diet_by_species[pred_sp, prey_sp] = biomass eaten
         diet_by_species = np.array(
             [
@@ -298,51 +298,27 @@ class TestDietCSVOutput:
             ]
         )
 
-        write_diet_csv(
-            path=tmp_path / "diet.csv",
-            diet_by_species=diet_by_species,
-            predator_names=species_names,
-            prey_names=all_prey_names,
-        )
+        pct = _normalize_diet_matrix_to_percent(diet_by_species)
 
-        # Read and verify
-        lines = (tmp_path / "diet.csv").read_text().strip().split("\n")
-        assert len(lines) >= 3  # header + at least 2 data rows
-        # Header should have predator names
-        header = lines[0]
-        assert "Prey" in header
-        assert "Predator" in header
-        # Data rows should be prey species
-        assert "Phyto" in lines[-1] or "Phyto" in lines[-2]
+        assert pct.shape == diet_by_species.shape
+        # Prey row: only Phyto eaten -> 100%
+        assert abs(pct[0, 2] - 100.0) < 0.01
+        assert abs(pct[0, 0]) < 0.01
+        # Predator row: 500/(500+200)*100 = 71.43%, 200/(700)*100 = 28.57%
+        assert abs(pct[1, 0] - 500.0 / 700.0 * 100.0) < 0.01
+        assert abs(pct[1, 2] - 200.0 / 700.0 * 100.0) < 0.01
 
-    def test_write_diet_csv_percentage(self, tmp_path):
-        """Diet CSV values should be percentages of each predator's total diet."""
-        from osmose.engine.output import write_diet_csv
+    def test_write_diet_csv_percentage(self):
+        """_normalize_diet_matrix_to_percent returns per-predator percentages summing to 100."""
+        from osmose.engine.output import _normalize_diet_matrix_to_percent
 
-        species_names = ["Pred"]
-        prey_names = ["PreyA", "PreyB"]
         # Pred eats 300 PreyA + 700 PreyB = 1000 total
         diet_by_species = np.array([[300.0, 700.0]])
 
-        write_diet_csv(
-            path=tmp_path / "diet.csv",
-            diet_by_species=diet_by_species,
-            predator_names=species_names,
-            prey_names=prey_names,
-        )
+        pct = _normalize_diet_matrix_to_percent(diet_by_species)
 
-        import csv
-
-        with open(tmp_path / "diet.csv") as f:
-            reader = csv.reader(f)
-            next(reader)  # skip header
-            rows = list(reader)
-
-        # Column 0 is prey name, column 1 is Pred percentage
-        prey_a_pct = float(rows[0][1])
-        prey_b_pct = float(rows[1][1])
-        assert abs(prey_a_pct - 30.0) < 0.01
-        assert abs(prey_b_pct - 70.0) < 0.01
+        assert abs(pct[0, 0] - 30.0) < 0.01
+        assert abs(pct[0, 1] - 70.0) < 0.01
 
 
 class TestDietAggregation:
@@ -395,4 +371,61 @@ def test_simulation_context_diet_coupling_after_enable():
     assert ctx.diet_tracking_enabled is False
     # Buffer is kept for reuse, but get_diet_matrix returns None when disabled
     from osmose.engine.processes.predation import get_diet_matrix
+
     assert get_diet_matrix(ctx=ctx) is None
+
+
+def test_write_diet_csv_emits_one_row_per_recording_period(tmp_path):
+    """Java-parity: one CSV per run, one row per recording period, Time
+    in the first column. Whole-run sum recoverable via
+    df.drop(columns='Time').sum(axis=0)."""
+    from osmose.engine.output import write_diet_csv
+
+    predator_names = ["cod", "herring"]
+    prey_names = ["cod", "herring", "plankton"]
+
+    step_matrices = [
+        np.array([[0.0, 1.0, 2.0], [3.0, 0.0, 4.0]]),
+        np.array([[1.0, 0.0, 2.0], [0.0, 1.0, 5.0]]),
+        np.array([[2.0, 2.0, 0.0], [1.0, 2.0, 6.0]]),
+    ]
+    step_times = [1.0, 2.0, 3.0]
+
+    path = tmp_path / "run_dietMatrix_Simu0.csv"
+    write_diet_csv(
+        path=path,
+        step_diet_matrices=step_matrices,
+        step_times=step_times,
+        predator_names=predator_names,
+        prey_names=prey_names,
+    )
+
+    df = pd.read_csv(path)
+    assert len(df) == 3
+    assert list(df["Time"]) == step_times
+    assert list(df.columns) == [
+        "Time",
+        "cod_cod",
+        "cod_herring",
+        "cod_plankton",
+        "herring_cod",
+        "herring_herring",
+        "herring_plankton",
+    ]
+    assert df.iloc[0]["cod_plankton"] == pytest.approx(2.0)
+    assert df.iloc[1]["herring_plankton"] == pytest.approx(5.0)
+    assert df.iloc[2]["cod_cod"] == pytest.approx(2.0)
+
+
+def test_write_diet_csv_with_empty_step_list_writes_no_file(tmp_path):
+    from osmose.engine.output import write_diet_csv
+
+    path = tmp_path / "run_dietMatrix_Simu0.csv"
+    write_diet_csv(
+        path=path,
+        step_diet_matrices=[],
+        step_times=[],
+        predator_names=["cod"],
+        prey_names=["cod", "plankton"],
+    )
+    assert not path.exists()

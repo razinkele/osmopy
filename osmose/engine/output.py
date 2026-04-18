@@ -20,7 +20,6 @@ if TYPE_CHECKING:
     from osmose.engine.economics.fleet import FleetState
 
 
-
 def write_outputs(
     outputs: list[StepOutput],
     output_dir: Path,
@@ -72,18 +71,20 @@ def write_outputs(
     if config.bioen_enabled:
         _write_bioen_csvs(output_dir, prefix, outputs, config)
 
-    # Write diet CSV if diet data is present
-    diet_arrays = [o.diet_by_species for o in outputs if o.diet_by_species is not None]
-    if diet_arrays:
-        # Sum diet across all timesteps, then normalize at write time
-        total_diet = np.sum(diet_arrays, axis=0)
-        prey_names = config.all_species_names
-        predator_names = config.species_names
+    # Write diet CSV (Java-parity: one file, one row per recording period)
+    if config.diet_output_enabled:
+        step_matrices: list[NDArray[np.float64]] = []
+        step_times: list[float] = []
+        for o in outputs:
+            if o.diet_by_species is not None:
+                step_matrices.append(o.diet_by_species)
+                step_times.append(o.step / config.n_dt_per_year)
         write_diet_csv(
-            output_dir / f"{prefix}_dietMatrix_Simu0.csv",
-            total_diet,
-            predator_names,
-            prey_names,
+            path=output_dir / f"{prefix}_dietMatrix_Simu0.csv",
+            step_diet_matrices=step_matrices,
+            step_times=step_times,
+            predator_names=config.species_names,
+            prey_names=config.all_species_names,
         )
 
 
@@ -205,32 +206,50 @@ def aggregate_diet_by_species(
 
 
 def write_diet_csv(
+    *,
     path: Path,
-    diet_by_species: NDArray[np.float64],
+    step_diet_matrices: list[NDArray[np.float64]],
+    step_times: list[float],
     predator_names: list[str],
     prey_names: list[str],
 ) -> None:
-    """Write diet composition as a CSV with percentage values.
+    """Write diet composition as one CSV per simulation with one row per
+    recording period, matching Java ``DietOutput.java:217-222``.
 
-    Rows = prey species, columns = predator species.
-    Values are the percentage of each predator's total diet from each prey.
+    Schema: first column ``Time``; remaining columns are one per
+    ``{predator}_{prey}`` pair in predator-major, prey-minor order.
+    Values are BIOMASS EATEN in tonnes. Per-predator percentage
+    normalization is available via ``_normalize_diet_matrix_to_percent``
+    when callers need Java's percentage layout.
 
-    Args:
-        path: Output file path.
-        diet_by_species: shape (n_predators, n_prey) — biomass eaten.
-        predator_names: names for each predator species.
-        prey_names: names for each prey column (focal + resource species).
+    No-op when ``step_diet_matrices`` is empty.
     """
-    # Convert to percentages per predator
-    totals = diet_by_species.sum(axis=1, keepdims=True)
-    # Avoid division by zero
-    safe_totals = np.where(totals > 0, totals, 1.0)
-    pct = diet_by_species / safe_totals * 100.0
+    if not step_diet_matrices:
+        return
+    if len(step_diet_matrices) != len(step_times):
+        raise ValueError(
+            f"step_diet_matrices length {len(step_diet_matrices)} "
+            f"!= step_times length {len(step_times)}"
+        )
 
-    # Build DataFrame: rows = prey, columns = predator
-    df = pd.DataFrame(pct.T, index=prey_names, columns=predator_names)  # type: ignore[arg-type]
-    df.index.name = "Prey"
-    df.to_csv(path)
+    n_pred, n_prey = len(predator_names), len(prey_names)
+    columns = [f"{pred}_{prey}" for pred in predator_names for prey in prey_names]
+    rows: list[list[float]] = []
+    for mat, t in zip(step_diet_matrices, step_times, strict=True):
+        if mat.shape != (n_pred, n_prey):
+            raise ValueError(f"diet matrix shape {mat.shape} != ({n_pred}, {n_prey}) at time {t}")
+        rows.append([t, *mat.reshape(-1).tolist()])
+    df = pd.DataFrame(rows, columns=["Time", *columns])
+    df.to_csv(path, index=False)
+
+
+def _normalize_diet_matrix_to_percent(
+    diet_by_species: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """Normalize a single (n_pred, n_prey) matrix to per-predator percentages."""
+    totals = diet_by_species.sum(axis=1, keepdims=True)
+    safe_totals = np.where(totals > 0, totals, 1.0)
+    return diet_by_species / safe_totals * 100.0
 
 
 # ---------------------------------------------------------------------------

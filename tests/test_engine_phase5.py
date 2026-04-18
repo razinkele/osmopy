@@ -248,3 +248,24 @@ class TestInitialStateOutput:
         assert len(outputs) == 5
         # First output should be step -1 (initial state)
         assert outputs[0].step == -1
+
+
+def test_write_outputs_skips_diet_csv_when_disabled(tmp_path):
+    import numpy as np
+    from osmose.engine.output import write_outputs
+    from osmose.engine.simulate import StepOutput
+    from tests.helpers import make_minimal_engine_config
+
+    cfg = make_minimal_engine_config(diet_output_enabled=False)
+    n_pred = cfg.n_species
+    n_prey = len(cfg.all_species_names)
+    step_out = StepOutput(
+        step=23,
+        biomass=np.zeros(n_pred + cfg.n_background),
+        abundance=np.zeros(n_pred + cfg.n_background),
+        mortality_by_cause=np.zeros((n_pred, 8)),
+        diet_by_species=np.ones((n_pred, n_prey), dtype=np.float64),
+    )
+    # write_outputs signature: (outputs, output_dir, config, prefix="osm")
+    write_outputs([step_out], tmp_path, cfg, prefix="run")
+    assert not (tmp_path / "run_dietMatrix_Simu0.csv").exists()
