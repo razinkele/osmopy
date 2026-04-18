@@ -62,7 +62,12 @@ class PythonEngine:
             seed + 1, engine_config.n_species, engine_config.mortality_seed_fixed
         )
         outputs = simulate(
-            engine_config, grid, rng, movement_rngs=movement_rngs, mortality_rngs=mortality_rngs
+            engine_config,
+            grid,
+            rng,
+            movement_rngs=movement_rngs,
+            mortality_rngs=mortality_rngs,
+            output_dir=output_dir,
         )
         write_outputs(outputs, output_dir, engine_config, grid=grid)
 

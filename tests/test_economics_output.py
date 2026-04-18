@@ -51,7 +51,9 @@ def _economics_output_config() -> dict[str, str]:
 
 class TestEconomicOutput:
     def test_all_output_files_created(self):
-        """All economic output files should be created when economics is enabled."""
+        """All economic output files should be created when economics is enabled
+        and simulate() receives an output_dir. Exercises the simulate→writer
+        wire-up added for the Phase 2 economics-core STATUS-COMPLETE pass."""
         cfg = EngineConfig.from_dict(_economics_output_config())
         grid = Grid.from_dimensions(ny=3, nx=3)
         rng = np.random.default_rng(42)
@@ -59,9 +61,28 @@ class TestEconomicOutput:
         with tempfile.TemporaryDirectory() as tmpdir:
             from osmose.engine.output import write_outputs
 
-            outputs = simulate(cfg, grid, rng)
-            write_outputs(outputs, Path(tmpdir), cfg)
+            out_dir = Path(tmpdir)
+            outputs = simulate(cfg, grid, rng, output_dir=out_dir)
+            write_outputs(outputs, out_dir, cfg)
             assert len(outputs) == 4
+
+            # Economic CSVs written at end of simulate() (new wire-up)
+            assert (out_dir / "econ_effort_Trawlers.csv").exists()
+            assert (out_dir / "econ_revenue_Trawlers.csv").exists()
+            assert (out_dir / "econ_costs_Trawlers.csv").exists()
+            assert (out_dir / "econ_profit_summary.csv").exists()
+
+    def test_no_economic_csvs_when_output_dir_omitted(self):
+        """simulate() without output_dir must not write any economic CSVs —
+        preserves backward-compat for the 25+ test callers of simulate()
+        that never passed an output_dir."""
+        cfg = EngineConfig.from_dict(_economics_output_config())
+        grid = Grid.from_dimensions(ny=3, nx=3)
+        rng = np.random.default_rng(42)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            simulate(cfg, grid, rng)  # no output_dir kwarg
+            assert not (Path(tmpdir) / "econ_profit_summary.csv").exists()
 
     def test_profit_summary_format(self):
         """Profit summary CSV should have header and one row per fleet."""

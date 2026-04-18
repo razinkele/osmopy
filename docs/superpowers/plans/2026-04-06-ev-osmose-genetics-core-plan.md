@@ -1,5 +1,7 @@
 # Ev-OSMOSE Genetics Phase 2 (Core) Implementation Plan
 
+> **STATUS-COMPLETE (2026-04-19):** All 5 deliverables shipped. `TraitRegistry` is name-agnostic (supports all 4 Java traits: imax, gsi, m0, m1 — verified in `tests/test_genetics_bioen_integration.py:11-73`). Bioenergetics integration wires `trait_overrides` into `_bioen_step` (targets `bioen_i_max` at `simulate.py:283`; `bioen_r` at `:383`; `bioen_m0`/`bioen_m1` at `:384-385`) and `_bioen_reproduction` (`:522-534`, commit `1b3384a`). Neutral loci on `GeneticState.neutral_alleles` + inheritance transmission (commit `d6b6295`). Seeding phase via `genetics_transmission_year` gate (commit `579bf66`). Eight genetics test files (expression, inheritance, neutral, seeding, statistics, trait, integration, bioen_integration) all pass at HEAD post-v0.9.0.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Extend the Phase 1 genetics MVP from 1 trait (imax) to all 4 Java traits (imax, gsi, m0, m1) with full bioenergetics integration, neutral loci for drift tracking, and a seeding phase for genetic initialization.

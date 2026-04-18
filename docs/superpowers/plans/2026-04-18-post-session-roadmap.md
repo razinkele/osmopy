@@ -1,6 +1,6 @@
 # Post-Session Roadmap — Closing Remaining Fronts
 
-> **STATUS-COMPLETE (2026-04-19):** Fronts 1-4 shipped on master. Front 6 (Ev-OSMOSE MVP) remains deferred as a separate product thread. See commit log `git log --oneline` for per-front commits; shipped commits summarized below.
+> **STATUS-COMPLETE (2026-04-19):** All six active fronts shipped on master. Front 6 (Ev-OSMOSE MVP + economics) turned out to already be ~95% implemented at roadmap time (Phase 1 MVP merge `5b0e0aa` and the Phase 2 Genetics/Economics Core commits predated v0.9.0); the STATUS-COMPLETE pass on 2026-04-19 added the one missing wire-up (`write_economic_outputs` dispatch from `simulate(output_dir=...)`) and applied banners to the three Front-6 plans at `docs/superpowers/plans/2026-04-06-ev-osmose-{economic-mvp,economics-core,genetics-core}-plan.md`. See commit log for per-front commits; shipped commits summarized below.
 
 > **For agentic workers:** This is a **roadmap**, not a task-by-task plan. Each numbered front links to a concrete plan (existing or to-be-written). Work them in order; the ordering reflects dependency and session-constraint reality.
 

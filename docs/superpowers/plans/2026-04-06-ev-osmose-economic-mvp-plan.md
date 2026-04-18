@@ -1,5 +1,7 @@
 # Ev-OSMOSE + Economic Fleet Dynamics — Phase 1 MVP Implementation Plan
 
+> **STATUS-COMPLETE (2026-04-19):** All 8 tasks shipped via merge `5b0e0aa` "feat/ev-osmose-economic-mvp" plus follow-ups. Module files: `osmose/engine/genetics/{trait,genotype,inheritance,expression}.py`, `osmose/engine/economics/{fleet,choice}.py`. Sim-loop wiring in `osmose/engine/simulate.py`. Config flags `genetics_enabled` / `economics_enabled` on `EngineConfig`. Coverage exceeds plan minimum — 16 genetics+economics test files vs. the 5 originally specified. All 77 module tests pass at HEAD post-v0.9.0.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add two optional modules — Ev-OSMOSE diploid genetics (1 evolving trait: Imax) and DSVM fleet dynamics (single fleet, revenue-only logit) — toggleable via config, with zero overhead when disabled, and all existing tests passing.

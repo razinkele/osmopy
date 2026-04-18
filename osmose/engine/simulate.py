@@ -9,6 +9,7 @@ Follows Java's SimulationStep.step() ordering:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
@@ -1018,10 +1019,16 @@ def simulate(
     rng: np.random.Generator,
     movement_rngs: list[np.random.Generator] | None = None,
     mortality_rngs: list[np.random.Generator] | None = None,
+    *,
+    output_dir: Path | None = None,
 ) -> list[StepOutput]:
     """Run the OSMOSE simulation loop.
 
     Process ordering matches Java's SimulationStep.step().
+
+    When ``output_dir`` is provided and economics is enabled, end-of-run
+    economic CSVs are written via ``write_economic_outputs``. Keyword-only
+    to keep existing positional callers (tests) unaffected.
     """
     if movement_rngs is None:
         movement_rngs = [rng] * config.n_species
@@ -1343,5 +1350,13 @@ def simulate(
     # Flush any remaining accumulated steps (if n_steps not divisible by freq)
     if accumulated:
         outputs.append(_average_step_outputs(accumulated, len(accumulated), config.n_steps - 1))
+
+    # End-of-run economic CSVs — only when caller supplied output_dir AND
+    # economics is enabled (fleet_state populated). Lazy import breaks the
+    # simulate ↔ output cycle.
+    if output_dir is not None and ctx.fleet_state is not None:
+        from osmose.engine.output import write_economic_outputs
+
+        write_economic_outputs(ctx.fleet_state, Path(output_dir))
 
     return outputs

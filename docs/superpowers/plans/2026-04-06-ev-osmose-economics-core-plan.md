@@ -1,5 +1,7 @@
 # DSVM Fleet Economics Phase 2 (Core) Implementation Plan
 
+> **STATUS-COMPLETE (2026-04-19):** All 7 deliverables shipped. Travel costs + stock-dependent catchability at `osmose/engine/economics/costs.py` (commits `5b5afaf`, `136a5b0`). Vessel memory on `FleetState.catch_memory`; days-at-sea tracking on `FleetState.vessel_days_used`; forced-port at cap enforced in `choice.py:108-111`. Multi-fleet via `parse_fleets()` at `fleet.py:46-95`. Annual reset at `simulate.py:1127-1130`. CSV output via `write_economic_outputs()` at `osmose/engine/output.py:652`; simulate-loop wire-up added in this STATUS-COMPLETE pass — `simulate(..., output_dir=path)` dispatches the writer at end-of-run (previously the writer was unit-tested but never invoked from a full simulation). Eight economics test files (choice, costs, days, fleet, integration, memory, multifleet, output) all pass at HEAD post-v0.9.0.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Extend the Phase 1 economics MVP (revenue-only logit, single fleet) to the full DSVM core: travel costs, stock-dependent catchability, vessel memory, days-at-sea tracking, multi-fleet support, annual reset, and CSV output files.
