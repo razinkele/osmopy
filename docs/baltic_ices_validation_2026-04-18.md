@@ -44,3 +44,107 @@ Values for index-unit stocks (cod.27.24-32, her.27.25-2932, fle.27.2223) are in 
 | `her.27.28` | tonnes | 5.208e+04 | 7.291e+04 | 0.28 | 7.291e+04 |
 | `her.27.3031` | tonnes | 3.899e+05 | 5.167e+05 | 0.218 | 6.134e+05 |
 | `spr.27.22-32` | tonnes | 4.59e+05 | 5.41e+05 | 0.34 | 5.41e+05 |
+
+## Findings and Recommended Follow-ups
+
+### Drift hits
+
+- **cod (F ✗):** model F = 0.080, ICES SSB-weighted F = 0.912 — model is
+  **~91% below** ICES. The ICES weighting is dominated by `cod.27.22-24`
+  (tonnes-unit, ~5–17 kt SSB, F ≈ 0.9 flat through 2018–2021);
+  `cod.27.24-32` contributes via its index-scale SSB (~0.3–0.4) and F
+  ≈ 0.04–0.40. Even discounting the weighting ambiguity, Baltic cod
+  fishing mortality is documented in the 0.4–1.0 range post-2015. Model
+  0.08 is an artifact of calibration against very low post-collapse
+  biomass — likely intentional (low F to keep the low-biomass cod from
+  extirpating in-model). Follow-up: **document as a calibration
+  choice**, not a config bug. Add a header note to
+  `baltic_param-fishing.csv`.
+
+- **cod (B ✗):** model envelope [60 000, 250 000] t does not overlap
+  ICES [5 303, 12 896] t. ICES envelope here is western Baltic cod alone
+  (`cod.27.22-24`) — eastern (`cod.27.24-32`) is excluded because its
+  SSB is an index, not tonnes. The model target covers **total biomass
+  across both stocks**, ICES reports SSB of one stock; the tenfold
+  mismatch is a legitimate aggregation / biomass-type mismatch, already
+  documented at `biomass_targets.csv:22`. Follow-up: **keep cod as a
+  known exception** in the regression fence (Task 6).
+
+- **flounder (F ✗):** model F = 0.040, ICES SSB-weighted F = 0.215 —
+  model is **~81% below** ICES. `fle.27.2223` F in 2018–2022 fluctuated
+  0.09–0.33. Model 0.04 sits below the low end. Likely cause: coarse-grid
+  calibration under-resolves flounder-concentrated lagoon habitats so
+  the configured F compensates downward. Follow-up: **document as
+  scenario choice** (grid-resolution trade-off); optional re-calibration
+  once the grid is refined.
+
+### Non-drift
+
+- **herring (F ✓):** model 0.150, ICES 0.208 (weighted across
+  `her.27.3031`, `.28`, `.20-24`; `her.27.25-2932` excluded as index).
+  Within tolerance.
+- **sprat (F ✓):** model 0.320, ICES 0.369. Within tolerance — sprat is
+  the best-calibrated pelagic.
+- **herring (B ✓):** model [800 k, 3 M] t overlaps ICES [727 k, 812 k] t
+  (three of four tonnes-unit herring stocks summed; central Baltic
+  `her.27.25-2932` excluded as index). Model's wide envelope is
+  appropriate given the index-unit exclusion — adding central Baltic
+  would lift the ICES sum by roughly another ~400–500 kt (per its
+  published 2022 advice sheet).
+- **sprat (B ✓):** model [800 k, 2.5 M] t overlaps ICES [892 k, 1.1 M] t.
+  Clean match.
+
+### Unit spot-check
+
+Values verified against the ICES 2024 advice sheets (DOIs in each raw
+`StockDownload` response):
+
+- `spr.27.22-32` 2022 SSB in snapshot = 1 126 771 t vs published advice
+  ≈ 1.13 Mt → **tonnes confirmed**.
+- `her.27.3031` 2022 SSB in snapshot = 548 671 t vs published ≈ 550 kt
+  → **tonnes confirmed**.
+- `cod.27.22-24` 2021 SSB in snapshot = 5 303 t vs published ≈ 5 kt
+  post-collapse → **tonnes confirmed**.
+- `cod.27.24-32` 2018 SSB in snapshot = 0.379 with Blim 0.635 → clearly
+  an **index**, not tonnes. The ICES SAG API mislabels this as
+  `"tonnes"`; our Blim-magnitude heuristic (`< 100 ⇒ index`) picks it
+  up.
+
+## Known Limitations
+
+- `model_species_to_ices_stocks` aggregates four independently assessed
+  herring stocks into one `herring` species in the model. Summed SSB/F
+  is a simplification — spatial distribution and per-stock Fmsy values
+  cannot be combined linearly. Three of four herring stocks contribute
+  to the envelope sum (all tonnes); the central Baltic stock
+  `her.27.25-2932` is an index and is excluded. Document this as a
+  modeling choice, not drift.
+- Three stocks (`cod.27.24-32`, `her.27.25-2932`, `fle.27.2223`) report
+  SSB as a relative biomass index rather than tonnes. The ICES SAG API
+  mislabels these as `"tonnes"` in its per-row metadata; the snapshot
+  manifest's `units_by_stock` field overrides this using Blim magnitude.
+  Biomass envelope comparisons are silently skipped for these stocks —
+  no comparison is possible without external anchoring to absolute
+  biomass.
+- Baltic eastern cod (`cod.27.24-32`) and western cod (`cod.27.22-24`)
+  are on different assessment cycles; `cod.27.22-24` is snapshotted
+  from 2022 advice (last full assessment) while `cod.27.24-32` uses
+  2024. Documented in `advice_year_by_stock`.
+- Coastal species (perch, pikeperch, smelt, stickleback) have no ICES
+  SAG assessment — validation for these is by construction impossible
+  through this plan. See a future `*-coastal-validation-plan.md` for
+  DATRAS-CPUE / national-survey alternatives.
+- The SSB envelope uses the intersection of years for which **all**
+  linked tonnes-unit stocks report SSB. A stock assessed only from 2020
+  will drop 2018–2019 from the envelope for its species rather than
+  undercounting them. If the resulting envelope window shrinks below
+  three years the result is likely noise — report as "insufficient
+  overlap" rather than drift.
+- `_ssb_weighted_f` mixes tonnes-scale and index-scale SSB as weights
+  for the weighted F. Within-stock this cancels; across mixed-unit
+  stocks (cod, herring, flounder species groups) the tonnes-unit stocks
+  dominate because their SSB magnitudes are orders of magnitude larger.
+  The ICES F for these species is therefore effectively the tonnes-
+  weighted F of the tonnes stocks — index-unit stocks' F contributions
+  are swamped. Acceptable for our tolerance fence; flagged here for
+  transparency.
