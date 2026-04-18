@@ -1,8 +1,23 @@
 # Post-Session Roadmap — Closing Remaining Fronts
 
+> **STATUS-COMPLETE (2026-04-19):** Fronts 1-4 shipped on master. Front 6 (Ev-OSMOSE MVP) remains deferred as a separate product thread. See commit log `git log --oneline` for per-front commits; shipped commits summarized below.
+
 > **For agentic workers:** This is a **roadmap**, not a task-by-task plan. Each numbered front links to a concrete plan (existing or to-be-written). Work them in order; the ordering reflects dependency and session-constraint reality.
 
 **Goal:** Close every open front surfaced by the 2026-04-18 session audit. Six fronts, ordered by (1) session-gating, (2) dependency unblocking, (3) effort, (4) novelty.
+
+**Shipped (2026-04-18 → 2026-04-19):**
+- **Front 1** — ICES MCP Baltic validation: snapshots + validator + regression fence shipped across commits `a7d65a5`, `2be016f`, `0435fde`, `590240e`, `4031138`.
+- **Front 2** — Baltic Java fishery config reformat: plan `docs/superpowers/plans/2026-04-19-baltic-java-fishery-reformat-plan.md` written + executed; fishery name `_`-strip to match Java 4.3.3's `FishingGear.java:107` normalization; lint fence `tests/test_baltic_java_compat.py` (commit `98f478e`).
+- **Front 3** — Calibration UI Phase 3: plan `docs/superpowers/plans/2026-04-19-calibration-ui-phase3-plan.md`; three UI surfaces (red-banner PreflightEvalError, n_workers slider, Pareto/weighted-sum toggle) across commits `c8b2e32`, `95e858d`, `84e5ab7`.
+- **Front 4** — SP-4 Output System parity: spec `docs/superpowers/specs/2026-04-19-sp4-output-system-design.md`; plan `docs/superpowers/plans/2026-04-19-sp4-output-system-plan.md`; capability commits `5e96916` (5.5 diet), `d5947f0` (5.6 NetCDF distributions + mortality), `901b3be` (5.4 spatial); CHANGELOG + STATUS-COMPLETE `445f354`.
+
+Test baseline: 2461 → 2484 passing (+23 new tests across Fronts 1-4). Ruff clean.
+
+Next step per line 84 below: cut v0.9.0 release via `scripts/release.py minor` (bumps `osmose/__version__.py`, regenerates CHANGELOG, creates tag `v0.9.0`).
+
+---
+
 
 **Principles baked into the order:**
 
