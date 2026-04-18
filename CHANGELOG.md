@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ## [Unreleased]
 
+### Added
+
+- **calibration:** ICES SAG 2024-advice snapshots for eight Baltic stocks (cod ×2, herring ×4, sprat, flounder) under `data/baltic/reference/ices_snapshots/`. `cod.27.22-24` uses 2022 advice (last full assessment before 2024 category-3 downgrade); all others use 2024. (a7d65a5)
+- **calibration:** `scripts/validate_baltic_vs_ices_sag.py` compares model F rates and biomass envelopes against ICES snapshots; writes `docs/baltic_ices_validation_2026-04-18.md`. Unit-aware: skips envelope checks for stocks whose SSB is reported as a relative biomass index (cod.27.24-32, her.27.25-2932, fle.27.2223) since indices cannot be combined with tonnes-scale model targets. (2be016f)
+- **tests:** regression fence for severe F-rate and biomass-envelope drift vs ICES, with documented `F_KNOWN_EXCEPTIONS` / `B_KNOWN_EXCEPTIONS` allowlists for deliberate calibration choices (`tests/test_baltic_ices_validation.py`). (0435fde)
+
 ### Changed
 
 - **calibration:** preflight evaluator logs exceptions and aborts when Morris majority-of-samples fails (was: silent `except Exception: pass`). (4de10ae)
