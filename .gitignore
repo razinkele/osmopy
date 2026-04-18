@@ -62,7 +62,11 @@ osmose-java/*.class
 data/scenarios/*/output/
 data/eec_full/output/
 data/cmems_cache/
+data/baltic/calibration_results/
 .worktrees/
+
+# In-place migration backups (rebuild_baltic_mask.py, apply_ices_validation_fixes.py, etc.)
+*.bak
 
 # Operational state
 .remember/
