@@ -790,12 +790,12 @@ def validate(cfg: dict, mode: str) -> list[UnknownKey]:
 .venv/bin/python -m pytest tests/test_config_validation.py -v 2>&1 | tail -30
 ```
 
-Expected: `18 passed`. If any test fails, read the failure carefully:
+Expected: `19 passed`. If any test fails, read the failure carefully:
 
 - `test_error_mode_collects_all_unknowns` failing → your `validate()` is fail-fast; fix the loop to append then raise once.
 - `test_close_match_suggestion_cutoff` failing with a suggestion surfacing → `_SUGGESTION_CUTOFF` too low; confirm `0.85`.
 - `test_ast_handles_fstring_with_name_interpolation` failing → the `_render_fstring` helper dropped the f-string; check the `JoinedStr` branch path.
-- `test_source_file_unavailable_falls_back_to_schema_only` failing → `build_known_keys.cache_clear()` wasn't called; re-read the try/finally block in that test.
+- `test_source_file_unavailable_falls_back_to_schema_only` failing → `_clear_known_keys_cache()` wasn't called; re-read the try/finally block in that test (the module uses a plain `_KNOWN_KEYS_CACHE` dict, not `functools.cache`).
 
 ---
 
