@@ -20,7 +20,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ### Fixed
 
-- **data(baltic):** fishery names in `baltic_param-fishing.csv`, `fishery-catchability.csv`, `fishery-discards.csv` stripped of `_` to match Java 4.3.3's `FishingGear.java:106` `replaceAll("_", "")` normalization — prior names (`trawl_cod`, etc.) caused Java to fail at boot with `[severe] No catchability found for fishery trawlcod` and deactivate all eight fisheries. Python engine unaffected (catchability resolved by row/column index, not name). Plan at `docs/superpowers/plans/2026-04-19-baltic-java-fishery-reformat-plan.md`.
+- **data(baltic):** fishery names in `baltic_param-fishing.csv`, `fishery-catchability.csv`, `fishery-discards.csv` stripped of `_` to match Java 4.3.3's `FishingGear.java:107` `replaceAll("_", "").replaceAll("-", "")` normalization — prior names (`trawl_cod`, etc.) caused Java to fail at boot with `[severe] No catchability found for fishery trawlcod` and deactivate all eight fisheries. Python engine unaffected (catchability resolved by row/column index, not name). Plan at `docs/superpowers/plans/2026-04-19-baltic-java-fishery-reformat-plan.md`.
+- **scripts:** `swap_whitefish_to_smelt.py` updated to converge on the post-rename canonical `gillsmelt` regardless of input vintage (handles `gill_whitefish`, `gillwhitefish`, and the intermediate `gill_smelt` spelling that predated the Java-compat rename). Re-running on an already-migrated checkout is a harmless no-op.
+
+### Added
+
+- **tests:** `tests/test_baltic_java_compat.py` — four static lints that pin the Baltic fishing config to Java 4.3.3's invariants: fishery names must be purely alphanumeric post-strip; map values must reference existing fishery names verbatim (case-sensitive, no-strip comparison per `FisheryMapSet.java:209`); catchability and discards column headers must match the fishery-name order exactly. Catches a future regression that reintroduces `_` for readability.
 
 ### Changed
 

@@ -41,11 +41,11 @@ SPECIES_PARAMS_SP6 = {
 # Reproduction seasonality for smelt: spring spawner (peak Mar-Apr, steps 4-9).
 # 24 biweekly steps/year; weights normalized to 1.0.
 SMELT_SPAWNING_WEIGHTS = {
-    4: 0.05,   # Feb late
+    4: 0.05,  # Feb late
     5: 0.12,
-    6: 0.20,   # Mar
+    6: 0.20,  # Mar
     7: 0.25,
-    8: 0.20,   # Apr
+    8: 0.20,  # Apr
     9: 0.12,
     10: 0.05,  # May early
     11: 0.01,
@@ -107,8 +107,10 @@ def update_movement_config() -> None:
     # Rename species references
     text = text.replace(";whitefish\n", ";smelt\n")
     text = text.replace("/whitefish_", "/smelt_")
-    text = text.replace("Whitefish: Steps 18-23 = Oct-Dec. VERIFIED — autumn/winter spawner in northern Baltic.",
-                        "Smelt: Steps 4-11 = Feb-May. Spring spawner (coastal/estuarine).")
+    text = text.replace(
+        "Whitefish: Steps 18-23 = Oct-Dec. VERIFIED — autumn/winter spawner in northern Baltic.",
+        "Smelt: Steps 4-11 = Feb-May. Spring spawner (coastal/estuarine).",
+    )
 
     # Update age bounds and step ranges for smelt (lifespan 7 → lastAge 6)
     # Juvenile: ages 0-1 (was 0-2)
@@ -156,11 +158,18 @@ def update_fishery_csvs() -> None:
         path = DATA / name
         _backup(path)
         text = path.read_text()
-        text = text.replace("gill_whitefish", "gill_smelt")
+        # Covers three historical spellings: the pre-swap whitefish fishery
+        # (`gill_whitefish` / `gillwhitefish`) and the intermediate post-swap
+        # name (`gill_smelt`) that predated the 2026-04-19 Java-compat rename.
+        # Target = post-rename canonical `gillsmelt`. Re-running against an
+        # already-migrated file is a harmless no-op.
+        text = text.replace("gill_whitefish", "gillsmelt")
+        text = text.replace("gillwhitefish", "gillsmelt")
+        text = text.replace("gill_smelt", "gillsmelt")
         # Rename the species row label "whitefish" (standalone at start of line)
         text = re.sub(r"^whitefish,", "smelt,", text, flags=re.MULTILINE)
         path.write_text(text)
-        print(f"  {name}: renamed whitefish → smelt, gill_whitefish → gill_smelt")
+        print(f"  {name}: renamed whitefish → smelt, gill_whitefish → gillsmelt")
 
 
 def update_predation_accessibility() -> None:
@@ -250,9 +259,13 @@ def update_fishing_config() -> None:
     path = DATA / "baltic_param-fishing.csv"
     _backup(path)
     text = path.read_text()
-    text = text.replace("gill_whitefish", "gill_smelt")
+    # See comment in update_fishery_csvs — three historical spellings handled
+    # so re-running on any vintage of the file converges on `gillsmelt`.
+    text = text.replace("gill_whitefish", "gillsmelt")
+    text = text.replace("gillwhitefish", "gillsmelt")
+    text = text.replace("gill_smelt", "gillsmelt")
     path.write_text(text)
-    print(f"  {path.name}: renamed fishery gill_whitefish → gill_smelt")
+    print(f"  {path.name}: renamed fishery gill_whitefish → gillsmelt")
 
 
 def main() -> None:

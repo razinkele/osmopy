@@ -16,13 +16,12 @@ osmose[warn] No map assigned for fishery trawlcod year 0 step 0
 osmose[severe] No catchability found for fishery trawlcod
 ```
 
-Trace: `osmose-master/java/src/main/java/fr/ird/osmose/process/mortality/FishingGear.java:106`
+Trace: `osmose-master/java/src/main/java/fr/ird/osmose/process/mortality/FishingGear.java:107-109` (line 106 is the `// set-up the name of the fishery` comment; the assignment is on line 107):
 
 ```java
-name = cfg.getString("fisheries.name.fsh" + fileFisheryIndex)
-          .replaceAll("_", "").replaceAll("-", "");
+name = cfg.getString("fisheries.name.fsh" + fileFisheryIndex).replaceAll("_", "").replaceAll("-", "");
 if (!this.getName().matches("^[a-zA-Z0-9]*$")) {
-    error("Fishery name must contain alphanumeric characters only...", null);
+    error("Fishery name must contain alphanumeric characters only. Please rename " + this.getName(), null);
 }
 ```
 
