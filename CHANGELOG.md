@@ -18,6 +18,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 - **calibration:** validator `_series_by_year` now warns on uncoercible values instead of silent drop (catches Euro-locale `"1,234.5"` payloads that would otherwise disappear). `_parse_model_fishing_rates` now raises with file:line context on separator shifts. `_validate_snapshot_coverage` warns when any stock's SSB series doesn't reach the window end (catches puller re-runs at a wrong advice year silently shortening the series). `main()` exit code now fails on "assessed species with no ICES F" in addition to tolerance breaches — previously an all-`None` pull passed CI with every row rendered as `—`. (590240e)
 - **calibration:** `scripts/_pull_ices_snapshots.py` now raises on empty-200 payloads from ICES and on unclassifiable SSB units, rather than silently committing degenerate snapshots. (590240e)
 
+### Fixed
+
+- **data(baltic):** fishery names in `baltic_param-fishing.csv`, `fishery-catchability.csv`, `fishery-discards.csv` stripped of `_` to match Java 4.3.3's `FishingGear.java:106` `replaceAll("_", "")` normalization — prior names (`trawl_cod`, etc.) caused Java to fail at boot with `[severe] No catchability found for fishery trawlcod` and deactivate all eight fisheries. Python engine unaffected (catchability resolved by row/column index, not name). Plan at `docs/superpowers/plans/2026-04-19-baltic-java-fishery-reformat-plan.md`.
+
 ### Changed
 
 - **calibration:** preflight evaluator logs exceptions and aborts when Morris majority-of-samples fails (was: silent `except Exception: pass`). (4de10ae)

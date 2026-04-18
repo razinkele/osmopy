@@ -5,14 +5,14 @@ fisheries.enabled;true
 simulation.nfisheries;8
 
 # Fishery names
-fisheries.name.fsh0;trawl_cod
-fisheries.name.fsh1;pelagic_herring
-fisheries.name.fsh2;pelagic_sprat
-fisheries.name.fsh3;trawl_flounder
-fisheries.name.fsh4;coastal_perch
-fisheries.name.fsh5;coastal_pikeperch
-fisheries.name.fsh6;gill_smelt
-fisheries.name.fsh7;coastal_stickleback
+fisheries.name.fsh0;trawlcod
+fisheries.name.fsh1;pelagicherring
+fisheries.name.fsh2;pelagicsprat
+fisheries.name.fsh3;trawlflounder
+fisheries.name.fsh4;coastalperch
+fisheries.name.fsh5;coastalpikeperch
+fisheries.name.fsh6;gillsmelt
+fisheries.name.fsh7;coastalstickleback
 
 # Selectivity type (0 = knife-edge by age)
 fisheries.selectivity.type.fsh0;0
@@ -87,14 +87,14 @@ fisheries.catchability.file;fishery-catchability.csv
 fisheries.discards.file;fishery-discards.csv
 
 # Fishing distribution maps
-fisheries.movement.fishery.map0;trawl_cod
-fisheries.movement.fishery.map1;pelagic_herring
-fisheries.movement.fishery.map2;pelagic_sprat
-fisheries.movement.fishery.map3;trawl_flounder
-fisheries.movement.fishery.map4;coastal_perch
-fisheries.movement.fishery.map5;coastal_pikeperch
-fisheries.movement.fishery.map6;gill_smelt
-fisheries.movement.fishery.map7;coastal_stickleback
+fisheries.movement.fishery.map0;trawlcod
+fisheries.movement.fishery.map1;pelagicherring
+fisheries.movement.fishery.map2;pelagicsprat
+fisheries.movement.fishery.map3;trawlflounder
+fisheries.movement.fishery.map4;coastalperch
+fisheries.movement.fishery.map5;coastalpikeperch
+fisheries.movement.fishery.map6;gillsmelt
+fisheries.movement.fishery.map7;coastalstickleback
 
 fisheries.movement.file.map0;fishing/fishing-distrib.csv
 fisheries.movement.file.map1;fishing/fishing-distrib.csv
