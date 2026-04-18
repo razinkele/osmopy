@@ -54,27 +54,29 @@
 
   ```python
   from dataclasses import replace
-  from pathlib import Path
 
-  from osmose.engine.config import EngineConfig, build_engine_config
+  from osmose.engine.config import EngineConfig
 
 
+  # Minimum keys to satisfy EngineConfig.from_dict() for a 1-species, 0-background
+  # test config. Expand as needed — the smoke test below will tell you which
+  # species.* keys the reader still demands. Do NOT add grid.* keys: grid is
+  # constructed separately (see Task 3 helper _make_grid_2x2_with_land) and is
+  # NOT parsed from the cfg dict by EngineConfig.from_dict.
   _MINIMAL_CFG_DICT: dict[str, str] = {
       "simulation.nspecies": "1",
       "simulation.nbackground": "0",
-      "simulation.ndtperyear": "24",
-      "simulation.nyear": "1",
-      "grid.n.lat": "2",
-      "grid.n.lon": "2",
-      "grid.mask.value": "1",
-      # ... any other keys build_engine_config() requires as non-default.
-      # Follow the pattern of tests/test_engine_*.py::MINIMAL_CONFIG_DICT.
+      "simulation.time.ndtperyear": "24",   # NOT "simulation.ndtperyear"
+      "simulation.time.nyear": "1",          # NOT "simulation.nyear"
+      # Species-0 minimum (iterate via smoke test if reader demands more):
+      "species.name.sp0": "sp0",
+      "species.lifespan.sp0": "10",
+      # ... add whatever else the reader raises KeyError on.
   }
 
 
   def make_minimal_engine_config(
       *,
-      cfg_dir: Path | None = None,
       extra_cfg: dict[str, str] | None = None,
       **overrides,
   ) -> EngineConfig:
@@ -92,7 +94,7 @@
       raw: dict[str, str] = dict(_MINIMAL_CFG_DICT)
       if extra_cfg:
           raw.update(extra_cfg)
-      base = build_engine_config(raw, cfg_dir=cfg_dir or Path("."))
+      base = EngineConfig.from_dict(raw)
       if not overrides:
           return base
       # Validate overrides against declared fields
@@ -105,7 +107,7 @@
       return replace(base, **overrides)
   ```
 
-  If the config reader entry point is named differently (e.g. `EngineConfig.from_dict`, `parse_config`, `_build_config`), adjust the import. Grep `osmose/engine/config.py` for the public constructor.
+  **Verified:** the public constructor is `EngineConfig.from_dict(cfg)` at `osmose/engine/config.py:1317` — a classmethod taking a single positional dict (no `cfg_dir` kwarg).
 
 - [ ] **Step 3: Smoke test**
 
@@ -704,7 +706,10 @@
               ["time", "species", "cause"],
               np.array([o.mortality_by_cause for o in outputs]),
           )
-          coords["cause"] = [c.name.lower() for c in MortalityCause]
+          coords["cause"] = [c.name.capitalize() for c in MortalityCause]
+          # Match the existing CSV writer at osmose/engine/output.py:161
+          # ("Predation", "Starvation", ..., "Aging"). Users comparing CSV
+          # and NetCDF outputs see identical cause labels.
 
       ds = xr.Dataset(
           data_vars,
@@ -755,7 +760,8 @@
     biomass_by_size / abundance_by_size  (time, species, size_bin)
     mortality_by_cause                   (time, species, cause)
 
-  Cause coord uses the 8-member MortalityCause enum (lowercase).
+  Cause coord uses the 8-member MortalityCause enum, capitalized
+  to match the CSV writer (Predation, Starvation, ..., Aging).
   Ragged per-species bin counts padded to cross-species max with NaN.
   CF-1.8 conventions declared; _FillValue=NaN on every float DataArray.
   When every toggle is off, no file is written.
@@ -1101,15 +1107,75 @@
       avg = _average_step_outputs([s0, s1], freq=24, record_step=47)
       arr = getattr(avg, field)[0]
       np.testing.assert_allclose(arr, expected)
+
+
+  @pytest.mark.parametrize(
+      "field,expected",
+      [
+          ("spatial_biomass",   10.0),  # single-step mean == value
+          ("spatial_abundance", 10.0),
+          ("spatial_yield",     10.0),  # single-step sum == value
+      ],
+  )
+  def test_average_spatial_outputs_single_accumulator_branch(field, expected):
+      """Covers the early-return branch of _average_step_outputs (1 step).
+      Iteration-1 review found both branches must be instrumented; this
+      exercises the one the 2-step test above does NOT hit."""
+      s0 = _spatial_step(23, sb_val=10.0, sa_val=10.0, sy_val=10.0)
+      avg = _average_step_outputs([s0], freq=24, record_step=23)
+      arr = getattr(avg, field)[0]
+      np.testing.assert_allclose(arr, expected)
+
+
+  def test_average_spatial_outputs_preserves_per_cell_variation():
+      """Fixtures with np.full() reduce axis bugs to scalar equality.
+      This test uses per-cell-varying arrays so an axis-wrong implementation
+      (e.g. flatten-then-mean) gives a different answer than element-wise."""
+      sb0 = np.array([[1.0, 2.0], [3.0, 4.0]])
+      sb1 = np.array([[10.0, 20.0], [30.0, 40.0]])
+      s0 = StepOutput(
+          step=23, biomass=np.array([100.0]), abundance=np.array([1000.0]),
+          mortality_by_cause=np.zeros((1, 8)),
+          spatial_biomass={0: sb0},
+          spatial_abundance={0: np.zeros((2, 2))},
+          spatial_yield={0: np.zeros((2, 2))},
+      )
+      s1 = StepOutput(
+          step=47, biomass=np.array([100.0]), abundance=np.array([1000.0]),
+          mortality_by_cause=np.zeros((1, 8)),
+          spatial_biomass={0: sb1},
+          spatial_abundance={0: np.zeros((2, 2))},
+          spatial_yield={0: np.zeros((2, 2))},
+      )
+      avg = _average_step_outputs([s0, s1], freq=24, record_step=47)
+      np.testing.assert_allclose(
+          avg.spatial_biomass[0],
+          np.array([[5.5, 11.0], [16.5, 22.0]]),
+      )
+
+
+  def test_step_output_post_init_rejects_partial_spatial_trio():
+      """Directly exercise the __post_init__ pairing invariant on StepOutput:
+      spatial_biomass / spatial_abundance / spatial_yield must be all-None or
+      all-set. Partial construction is rejected."""
+      with pytest.raises(ValueError, match="spatial"):
+          StepOutput(
+              step=23,
+              biomass=np.array([100.0]),
+              abundance=np.array([1000.0]),
+              mortality_by_cause=np.zeros((1, 8)),
+              spatial_biomass={0: np.zeros((2, 2))},
+              # spatial_abundance and spatial_yield omitted (None) → invariant violation
+          )
   ```
 
 - [ ] **Step 9: Run collector + averaging tests**
 
   ```bash
-  .venv/bin/python -m pytest tests/test_engine_output.py -v -k "collect_spatial or average_spatial"
+  .venv/bin/python -m pytest tests/test_engine_output.py -v -k "collect_spatial or average_spatial or step_output_post_init"
   ```
 
-  Expected: 4 PASS (1 collector + 3 parametrized).
+  Expected: 9 PASS (1 collector + 3 parametrized 2-step + 3 parametrized 1-step single-accumulator + 1 per-cell-varying + 1 `__post_init__` invariant).
 
 - [ ] **Step 10: Implement `write_outputs_netcdf_spatial` + thread `grid` through `write_outputs`**
 
@@ -1197,6 +1263,11 @@
                   "n_year": config.n_year,
                   "Conventions": "CF-1.8",
                   "spatial_coord_source": coord_source,
+                  "time_convention": (
+                      "Each time coordinate value is the LAST raw timestep "
+                      "of its averaging window (not window midpoint). "
+                      "Consistent with the non-spatial _average_step_outputs."
+                  ),
                   "nan_semantics": (
                       "NaN = land cell (outside ocean_mask). "
                       "0.0 = ocean cell with no schools this recording period. "
@@ -1238,7 +1309,7 @@
   grep -rn "write_outputs(" osmose/ scripts/ tests/ 2>&1 | head
   ```
 
-  Most calls come from `osmose/engine/simulate.py` at the end of `simulate()`; the engine top-level already has `grid` in scope. Scripts that construct configs and call `write_outputs` may need a grid; if a script doesn't have one, pass `grid=None` (the writer falls back to cell-index coords).
+  **Verified caller chain:** the ONE production caller is `osmose/engine/__init__.py:67` (`PythonEngine.run()`), which already has `grid` in scope (built at lines 42-56). Update that single call site to pass `grid=grid`. The remaining 15+ callers are all tests — since the new arg is keyword-only with a `None` default, tests don't need updating unless they exercise spatial paths. Scripts that construct configs and call `write_outputs` without a grid in scope pass `grid=None` (the writer falls back to cell-index coords).
 
 - [ ] **Step 11: Write the remaining spatial tests**
 
@@ -1356,6 +1427,36 @@
           assert not (tmp_path / f"run_spatial_{suffix}_Simu0.nc").exists()
 
 
+  def test_spatial_netcdf_grid_none_fallback(tmp_path):
+      """When grid=None is passed to the writer, coords fall back to cell
+      indices (0..ny-1, 0..nx-1), no land masking is applied, and the
+      spatial_coord_source attr records 'cell_index'. Covers the writer
+      fallback branch exercised by scripts that don't have a Grid in scope."""
+      cfg = make_minimal_engine_config(
+          n_species=1, output_spatial_enabled=True, output_spatial_biomass=True,
+      )
+      outputs = [
+          StepOutput(
+              step=23,
+              biomass=np.array([100.0]),
+              abundance=np.array([1000.0]),
+              mortality_by_cause=np.zeros((1, 8)),
+              spatial_biomass={0: np.full((2, 3), 5.0)},
+              spatial_abundance={0: np.full((2, 3), 50.0)},
+              spatial_yield={0: np.full((2, 3), 1.0)},
+          ),
+      ]
+      write_outputs_netcdf_spatial(
+          outputs, tmp_path, prefix="run", sim_index=0, config=cfg, grid=None,
+      )
+      ds = xr.open_dataset(tmp_path / "run_spatial_biomass_Simu0.nc")
+      np.testing.assert_array_equal(ds["lat"].values, [0, 1])
+      np.testing.assert_array_equal(ds["lon"].values, [0, 1, 2])
+      assert ds.attrs["spatial_coord_source"] == "cell_index"
+      # No NaN anywhere — fallback omits land masking
+      assert not np.isnan(ds["biomass"].values).any()
+
+
   def test_spatial_biomass_sum_equals_nonspatial_biomass():
       """Parity invariant: sum(spatial_biomass over cells) per focal species
       equals biomass[:n_species] (focal-only, cutoff applied)."""
@@ -1391,7 +1492,7 @@
   .venv/bin/python -m pytest tests/test_engine_output.py -v -k spatial
   ```
 
-  Expected: all PASS (1 collector + 3 averaging + 4 writer + 1 parity = 9 spatial-labelled tests). Add the collector test: grand total 4 spatial-side + 3 averaging + 1 collection-boundary + 1 parity = actually 1 collector + 3 avg + 4 writer-variant + 1 parity = 9; with the `+1` for `test_spatial_collection_runs_but_no_files_when_all_variants_off` being a writer-variant, the plan's total is 9, not 7 as the spec optimistically said. Update the final count accordingly.
+  Expected: 14 PASS — 1 collector + 3 averaging-2step + 3 averaging-1step (single-accumulator) + 1 per-cell-varying + 1 `__post_init__` invariant + 4 writer variants (shape, land-NaN, master-off, all-variants-off) + 1 writer grid-None fallback + 1 parity.
 
 - [ ] **Step 13: Full suite + lint**
 
@@ -1400,7 +1501,7 @@
   .venv/bin/ruff check osmose/ scripts/ tests/ ui/
   ```
 
-  Expected: `baseline + 3 (Task 1) + 6 (Task 2) + 9 (Task 3) = baseline + 18`. Ruff clean.
+  Expected: `baseline + 3 (Task 1) + 6 (Task 2) + 14 (Task 3) = baseline + 23`. Ruff clean.
 
 - [ ] **Step 14: Commit**
 
@@ -1432,7 +1533,9 @@
   threads through write_outputs as a keyword-only arg; write_outputs
   dispatches to the new write_outputs_netcdf_spatial.
 
-  Tests: +9 (collector, 3 averaging, 4 writer variants, 1 parity)."
+  Tests: +14 (collector, 3 averaging 2-step, 3 averaging 1-step single-accumulator,
+  1 per-cell-varying, 1 __post_init__ invariant, 4 writer variants,
+  1 grid-None fallback, 1 parity)."
   ```
 
 ---
