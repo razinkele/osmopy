@@ -80,7 +80,7 @@ One module-local function `_extract_literal_keys_from_config_py() -> set[str]`:
   - `_enabled(cfg, "x")` → second arg (named `key`)
   - `_species_float(cfg, "species.x.sp{i}", n)` / `_species_int(...)` / `_species_array(...)` / `_species_string(...)` / `_species_bool(...)` / `_get(cfg, "x")` → second arg
 - Keys containing `{i}`, `{fsh}`, `{idx}` are normalized to `{idx}` to match the `ParameterRegistry` convention.
-- Result cached at module import (the AST parse runs once per process).
+- Result cached **lazily on first call** via `@functools.cache`, not at module import — avoids import-order fragility with `ParameterRegistry` submodule registration. The first `EngineConfig.from_dict()` call pays a one-time AST-parse cost (~10ms); subsequent calls are free.
 
 ### Integration point
 
@@ -141,6 +141,7 @@ This makes the validator recognize its own flag (avoids a self-referential "unkn
 - `n=1`: single suggestion only (per brainstorm — top-3 adds noise)
 - `cutoff=0.8`: ratcheted conservative. `species.linf.sp0` vs `species.liinf.sp0` ratio ≈ 0.95 — suggestion fires. `species.linf.sp0` vs `species.totallywrong.sp0` ratio ≈ 0.4 — no suggestion, plain warning only.
 - Matches are compared against the *pattern* strings (`species.linf.sp{idx}`) not concrete keys, so the allowlist stays small (~312 entries rather than one per species).
+- **Suggestion rendering:** the warning message shows the pattern form verbatim (`did you mean 'species.linf.sp{idx}'?`) rather than a resolved concrete form (`did you mean 'species.linf.sp0'?`). Rationale: the pattern is honest about what the schema accepts (any species index). A concrete suggestion would mislead when the user typed `species.liinf.sp5` — we'd falsely-point at `species.linf.sp0` as if the `sp0` part were relevant.
 
 ## Log destination
 
@@ -174,7 +175,7 @@ Explicit exclusions so a future reader or plan reviewer doesn't think they were 
 9. `test_ast_parse_captures_cfg_get_literals` — unit test the `_extract_literal_keys_from_config_py` helper directly against a small test AST fixture (don't rely on `config.py` content that may drift).
 10. `test_ast_parse_normalizes_idx_variants` — `cfg.get("species.k.sp{i}")` is captured as `species.k.sp{idx}` (matches the ParameterRegistry convention).
 
-**Integration tests** (extend `tests/test_engine_config.py` or `tests/test_engine_config_validation.py` if it exists):
+**Integration tests** — extend the existing `tests/test_engine_config_validation.py` (which today tests `EngineConfig.__post_init__` field-level validation; unknown-key validation at `from_dict` entry is semantically adjacent). Unit tests for the pure validator helpers go in a new `tests/test_config_validation.py` file (items 1-10 above).
 
 11. `test_from_dict_off_mode_silent_on_valid_config` — load `data/examples/eec/` config; no warning, no raise.
 12. `test_from_dict_warn_mode_catches_known_typo` — inject `species.liinf.sp0` into an EEC config, mode=warn; assert warning logged.
