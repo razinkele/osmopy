@@ -68,19 +68,18 @@ Verified against `osmose-master/java/src/main/java/fr/ird/osmose/output/DietOutp
 
 - Emit one CSV per simulation: `{prefix}_dietMatrix_Simu{i}.csv` **at the output-dir root** (no `Trophic/` subdirectory — Python outputs are flat).
 - Schema: first column `Time`, then one column per `(predator, prey)` pair, predator-major then prey-minor (Python `itertools.product(predators, preys)` order; equivalent to tuple-sort but stated explicitly rather than relying on lexicographic tuple-ordering). One row per recording period. `n_periods` rows total.
-- Rewrite `write_diet_csv` signature to accept the outputs list directly, preserving the existing CSV layout semantics:
+- Rewrite `write_diet_csv` with a keyword-only signature that accepts pre-flattened per-period matrices plus pre-built target path (the one production caller at `output.py:76-87` already has everything in scope — building the path + flattening the list keeps `write_diet_csv` itself a pure formatter):
   ```python
   def write_diet_csv(
-      outputs: list[StepOutput],
-      cfg: dict,
-      output_dir: Path,
-      prefix: str,
-      sim_index: int,
+      *,
+      path: Path,
+      step_diet_matrices: list[np.ndarray],  # one (n_pred, n_prey) matrix per recording period
+      step_times: list[float],                # matching time values for the Time column
       predator_names: list[str],
       prey_names: list[str],
   ) -> None:
   ```
-  (The current caller at `output.py:76-87` collapses the per-step matrices by summing — replace that collapse with a per-row emission.)
+  (The current caller at `output.py:76-87` collapses the per-step matrices by summing — replace that collapse with a per-row emission, loop-building `step_diet_matrices` / `step_times` from the outputs list before invoking the writer.)
 - Remove the whole-run-summed matrix as the only output. The CSV that lands on disk now has one row per recording period, and the whole-run sum is trivially derivable by `df.drop(columns="Time").sum(axis=0)`.
 - **Averaging rule per recording period**: diet matrices are **summed** across the accumulator window (one row = sum of per-step diet matrices across that period's timesteps). Matches the existing `diet_by_species` = sum rule at `_average_step_outputs:simulate.py:893-896`.
 - **Retain `_normalize_diet_matrix_to_percent`** as a private helper (module-level in `output.py`) returning Java's percentage-per-predator layout (rows sum to 100 per predator-row). Used by the migrated `test_write_diet_csv_percentage` test. Not exposed in the public `write_diet_csv` API — the CSV on disk is always raw sums.
@@ -138,13 +137,13 @@ Bins may differ per species — for NetCDF this means we pad to the cross-specie
 ### Files touched
 
 - Modify: `osmose/engine/output.py` — `write_outputs_netcdf` body.
-- Modify: `osmose/schema/output.py` — add `output.netcdf.enabled` `OsmoseField`.
+- Modify: `osmose/engine/config.py` — parse the five new per-variable NetCDF keys into `EngineConfig` (the three pre-existing keys at `osmose/schema/output.py:149-151` are declared but currently unparsed; the new five extend the same pattern). No schema file changes — NetCDF keys live in the existing schema.
 
 ### Tests
 
 - `test_netcdf_contains_biomass_by_age_when_enabled`: synthesize 3 `StepOutput`s with `biomass_by_age` populated; write; open with xarray; assert `biomass_by_age` variable with dims `(time, species, age_bin)` and values matching input.
-- `test_netcdf_contains_mortality_by_cause`: same pattern for mortality; assert the `cause` coord has the 8 expected enum labels in the correct order.
-- `test_netcdf_suppressed_when_master_disabled`: `output.netcdf.enabled=false` → no `.nc` file in the output dir.
+- `test_netcdf_contains_mortality_by_cause`: same pattern for mortality; assert the `cause` coord has the 8 expected capitalized enum labels (`Predation`, `Starvation`, `Additional`, `Fishing`, `Out`, `Foraging`, `Discards`, `Aging`) in the correct order.
+- `test_netcdf_not_written_when_every_toggle_disabled`: every per-variable NetCDF toggle set to `false` → no `.nc` file in the output dir. (No master switch exists; "global off" is expressed by per-variable off.)
 - `test_netcdf_pads_ragged_age_bins_with_nan`: two species with different bin counts → NetCDF shape matches max, shorter species has NaN in the tail slots.
 - `test_netcdf_pads_ragged_size_bins_with_nan`: parallel of the above for `biomass_by_size` / `abundance_by_size` — the size path is independent of age (flagged by reviewer).
 - `test_netcdf_cf_conventions_attr`: assert `Dataset.attrs["Conventions"] == "CF-1.8"` and every float DataArray has `_FillValue = NaN`.
@@ -258,7 +257,7 @@ Explicit exclusions so a future reader or plan reviewer doesn't think they were 
 
 ## Caller migration
 
-`write_diet_csv` signature changes from `(path, diet_by_species, predator_names, prey_names)` to `(outputs, cfg, output_dir, prefix, sim_index, predator_names, prey_names)`. Callers:
+`write_diet_csv` signature changes from positional `(path, diet_by_species, predator_names, prey_names)` to keyword-only `(*, path, step_diet_matrices, step_times, predator_names, prey_names)`. Callers:
 - `osmose/engine/output.py:76-87` — the one production caller, rewritten as part of §5.5.
 - `tests/test_engine_diet.py:286, :318` — two tests migrated per §5.5 Files touched. Migration uses the new `_normalize_diet_matrix_to_percent` helper to preserve the percentage-layout test semantics against raw-sum on-disk values.
 

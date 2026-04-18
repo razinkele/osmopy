@@ -520,9 +520,9 @@
       assert "mortality_by_cause" in ds.data_vars
       assert ds["mortality_by_cause"].dims == ("time", "species", "cause")
       assert list(ds.coords["cause"].values) == [
-          "predation", "starvation", "additional", "fishing",
-          "out", "foraging", "discards", "aging",
-      ]
+          "Predation", "Starvation", "Additional", "Fishing",
+          "Out", "Foraging", "Discards", "Aging",
+      ]  # capitalize() to match existing CSV writer at output.py:161
 
 
   def test_netcdf_not_written_when_every_toggle_disabled(tmp_path):
@@ -711,21 +711,31 @@
           # ("Predation", "Starvation", ..., "Aging"). Users comparing CSV
           # and NetCDF outputs see identical cause labels.
 
-      ds = xr.Dataset(
-          data_vars,
-          coords=coords,
-          attrs={
-              "description": "OSMOSE Python engine output",
-              "n_dt_per_year": config.n_dt_per_year,
-              "n_year": config.n_year,
-              "Conventions": "CF-1.8",
-              "distribution_padding": (
-                  "Ragged per-species bin counts are padded to cross-species "
-                  "max with NaN. Structural padding is indistinguishable from "
-                  "missing data — downstream tools treat both identically."
-              ),
-          },
-      )
+      dataset_attrs = {
+          "description": "OSMOSE Python engine output",
+          "n_dt_per_year": config.n_dt_per_year,
+          "n_year": config.n_year,
+          "Conventions": "CF-1.8",
+          "distribution_padding": (
+              "Ragged per-species bin counts are padded to cross-species "
+              "max with NaN. Structural padding is indistinguishable from "
+              "missing data — downstream tools treat both identically."
+          ),
+      }
+      if "mortality_by_cause" in data_vars:
+          # Glossary for opaque enum members (Foraging = bioen cost-of-foraging;
+          # Out = advected-out-of-domain). Attached when mortality var is present.
+          dataset_attrs["cause_descriptions"] = (
+              "Predation: schools consumed by other schools; "
+              "Starvation: failed energy budget; "
+              "Additional: residual/M-other; "
+              "Fishing: captured by fishing mortality; "
+              "Out: advected out of domain; "
+              "Foraging: bioenergetic cost-of-foraging (Ev-OSMOSE only); "
+              "Discards: discarded catch; "
+              "Aging: senescence at lifespan."
+          )
+      ds = xr.Dataset(data_vars, coords=coords, attrs=dataset_attrs)
       for name in ds.data_vars:
           if np.issubdtype(ds[name].dtype, np.floating):
               ds[name].encoding["_FillValue"] = np.float64("nan")
@@ -1188,7 +1198,8 @@
       prefix: str,
       sim_index: int,
       config: EngineConfig,
-      grid,  # osmose.engine.grid.Grid
+      *,
+      grid=None,  # osmose.engine.grid.Grid | None — None → cell-index fallback
   ) -> None:
       """Write per-cell NetCDF files for biomass, abundance, yield-biomass.
 
@@ -1237,6 +1248,19 @@
           coord_source = "cell_index"
           land = np.zeros((ny, nx), dtype=bool)
 
+      # Per-variant cell_methods (CF-1.8 convention for aggregation): biomass and
+      # abundance are period means, yield is a period sum.
+      cell_methods_by_tag = {
+          "biomass":   "time: mean",
+          "abundance": "time: mean",
+          "yield":     "time: sum",
+      }
+      long_name_by_tag = {
+          "biomass":   "spatial biomass per recording period (focal species only)",
+          "abundance": "spatial abundance per recording period (focal species only)",
+          "yield":     "spatial fishing yield summed over recording period (focal species only)",
+      }
+
       for enabled, attr, tag, unit in variants:
           if not enabled:
               continue
@@ -1273,8 +1297,25 @@
                       "0.0 = ocean cell with no schools this recording period. "
                       "The two are distinct states."
                   ),
+                  # Ecological caveats per spec (attach so downstream tools preserve context)
+                  "cutoff_age_note": (
+                      "Spatial outputs apply the same output_cutoff_age filter "
+                      "as the non-spatial biomass/abundance timeseries. "
+                      "Young-of-year and other sub-cutoff schools are absent "
+                      "from these maps even in nursery cells."
+                  ),
+                  "abundance_period_mean_note": (
+                      "Biomass and abundance are per-period MEANS over the "
+                      "averaging window (matching the non-spatial rule), "
+                      "not end-of-period snapshots. Recruit pulses mid-window "
+                      "are diluted by the mean."
+                  ),
               },
           )
+          # Per-DataArray CF-1.8 attrs: units, long_name, cell_methods.
+          ds[tag].attrs["units"] = unit
+          ds[tag].attrs["long_name"] = long_name_by_tag[tag]
+          ds[tag].attrs["cell_methods"] = cell_methods_by_tag[tag]
           ds[tag].encoding["_FillValue"] = np.float64("nan")
           ds.to_netcdf(output_dir / f"{prefix}_spatial_{tag}_Simu{sim_index}.nc")
   ```
@@ -1594,7 +1635,7 @@
   - Spec Non-goals preserved: no spatial TL/size/mortality/egg; no Ev-OSMOSE; no per-fishery; no CSV spatial; no retroactive migration; no debug outputs. ✓
 - **Placeholder scan:** No TBD/TODO. Every code block is complete. Parity test is not skipped. ✓
 - **Type consistency:** `_enabled(cfg, key)` used throughout (not `_parse_bool`). `state.cell_x`/`state.cell_y` (not `cell_id`). `write_outputs(outputs, output_dir, config, prefix, *, grid)` signature consistent between definition and every caller-update instruction. `_collect_outputs(state, config, grid, step, ...)` consistent. `write_outputs_netcdf_spatial(outputs, output_dir, prefix, sim_index, config, grid)` consistent. ✓
-- **Mortality cause coord:** 8 lowercased members. ✓
+- **Mortality cause coord:** 8 capitalized members (`Predation`, `Starvation`, ..., `Aging`) matching the existing CSV writer at `osmose/engine/output.py:161`. ✓
 - **Test runner:** `.venv/bin/python -m pytest` throughout. No bare `python`, no `$()`. ✓
 - **Commit granularity:** Task 0 (helper) + 3 feature commits + CHANGELOG = 5 commits. Task-0 helper is a prerequisite — reverting any feature commit leaves the helper and test file intact. ✓
 - **Test count math:** baseline + 3 (Task 1) + 6 (Task 2) + 9 (Task 3) = baseline + 18. Re-run the baseline check in pre-flight to pin the concrete final number. ✓
