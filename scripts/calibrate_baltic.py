@@ -19,7 +19,9 @@ import csv
 import json
 import tempfile
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
+from itertools import count
 from pathlib import Path
 
 import numpy as np
@@ -145,7 +147,7 @@ def make_objective(
     use_log_space: bool = True,
     w_stability: float = 5.0,
     w_worst: float = 0.5,
-):
+) -> Callable[[np.ndarray], float]:
     """Create objective function for differential evolution.
 
     Objective components:
@@ -155,10 +157,10 @@ def make_objective(
       4. Stability penalties: CV > 0.2 and trend > 0.05, weighted by w_stability
     """
     target_dict = {t.species: t for t in targets}
-    call_count = [0]
+    _calls = count(1)
 
     def objective(x: np.ndarray) -> float:
-        call_count[0] += 1
+        call_idx = next(_calls)
 
         # Map parameter vector to config overrides
         overrides: dict[str, str] = {}
@@ -218,13 +220,13 @@ def make_objective(
         # Add worst-species term to prevent hiding one bad species
         total_error += w_worst * worst_error
 
-        if call_count[0] % 5 == 0:
+        if call_idx % 5 == 0:
             biomass_summary = ", ".join(
                 f"{sp}={stats.get(f'{sp}_mean', 0):.0f}"
                 for sp in SPECIES_NAMES
             )
             print(
-                f"  [eval {call_count[0]}] obj={total_error:.4f} | {biomass_summary}",
+                f"  [eval {call_idx}] obj={total_error:.4f} | {biomass_summary}",
                 flush=True,
             )
 
