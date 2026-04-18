@@ -227,7 +227,9 @@ The v4 fisheries system is partially implemented. These additions make it comple
 
 ---
 
-## Phase 5: Output System (LOW simulation impact, HIGH usability)
+## Phase 5: Output System (LOW simulation impact, HIGH usability) — STATUS-COMPLETE (2026-04-19)
+
+All seven items shipped. 5.1 / 5.2 / 5.3 / 5.7 were already in the Python engine before SP-4; the SP-4 front (commits through 2026-04-19) closed 5.5 (diet Java-parity), 5.6 (NetCDF distributions + mortality), and 5.4 (spatial outputs: biomass / abundance / yield-biomass). Remaining Java-side spatial variants (TL, size, mortality, egg, bioen-spatial) and Ev-OSMOSE output families are deferred to Phase 6 — they don't block full standard-OSMOSE parity.
 
 ### 5.1 Output recording frequency
 **Impact:** LOW simulation, HIGH usability
