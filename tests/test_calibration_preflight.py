@@ -516,3 +516,52 @@ def test_preflight_eval_fn_parallel_matches_serial(monkeypatch, tmp_path) -> Non
     Y_serial = build(1)(X)
     Y_parallel = build(4)(X)
     np.testing.assert_allclose(Y_serial, Y_parallel)
+
+
+def test_run_morris_stage_returns_screening_and_failure_rate() -> None:
+    """Extracted Morris stage is a pure sampler+analyzer with signature
+    (screening, failure_rate, Y_clean, blowup_params_set)."""
+    from osmose.calibration import preflight as pre
+
+    param_names = ["a", "b"]
+    param_bounds = [(0.0, 1.0), (0.0, 1.0)]
+
+    def eval_fn(X):
+        return np.column_stack([X[:, 0], X[:, 1]])
+
+    screening, failure_rate, Y_clean, blowup_params = pre._run_morris_stage(
+        param_names=param_names,
+        param_bounds=param_bounds,
+        evaluation_fn=eval_fn,
+        n_trajectories=4,
+        num_levels=4,
+        negligible_threshold=0.1,
+        seed=1,
+    )
+    assert len(screening) == 2
+    assert {s.key for s in screening} == {"a", "b"}
+    assert failure_rate == 0.0
+    assert Y_clean.shape[1] == 2
+    assert blowup_params == set()
+
+
+def test_maybe_run_sobol_stage_skips_when_few_survivors() -> None:
+    """< 2 survivors → Sobol stage returns (None, [])."""
+    from osmose.calibration import preflight as pre
+
+    screening = [
+        pre.ParameterScreening(
+            key="a", mu_star=0.5, sigma=0.1, mu_star_conf=0.01, influential=True,
+        ),
+    ]
+    result, additions = pre._maybe_run_sobol_stage(
+        screening=screening,
+        param_names=["a"],
+        param_bounds=[(0.0, 1.0)],
+        evaluation_fn=lambda X: np.zeros((X.shape[0], 1)),
+        sobol_n_base=16,
+        sobol_failure_threshold=0.5,
+        seed=1,
+    )
+    assert result is None
+    assert additions == []

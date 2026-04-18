@@ -376,6 +376,169 @@ def detect_issues(
 # ---------------------------------------------------------------------------
 
 
+def _run_morris_stage(
+    *,
+    param_names: list[str],
+    param_bounds: list[tuple[float, float]],
+    evaluation_fn: Callable[[np.ndarray], np.ndarray],
+    n_trajectories: int,
+    num_levels: int,
+    negligible_threshold: float,
+    seed: int | None,
+    cancel_event: threading.Event | None = None,
+) -> tuple[list[ParameterScreening], float, np.ndarray, set[str]]:
+    """Morris sampling + per-objective analysis (max-aggregated across objectives).
+
+    Returns ``(screening, failure_rate, Y_clean, blowup_params_set)``. Raises
+    :class:`PreflightEvalError` when >50 % of Morris samples fail — sensitivity
+    indices at that point would be uninformative noise.
+
+    If ``cancel_event`` is set mid-stage the function returns an empty result
+    ``([], 0.0, np.zeros((0, 1)), set())`` and the caller is responsible for
+    short-circuiting.
+    """
+    k = len(param_names)
+    problem = {"num_vars": k, "names": param_names, "bounds": list(param_bounds)}
+
+    sample_kwargs: dict = {"num_levels": num_levels}
+    if seed is not None:
+        sample_kwargs["seed"] = seed
+    X = morris_sample.sample(problem, n_trajectories, **sample_kwargs)
+
+    if cancel_event is not None and cancel_event.is_set():
+        return [], 0.0, np.zeros((0, 1)), set()
+
+    Y_raw = np.asarray(evaluation_fn(X))
+    if Y_raw.ndim == 1:
+        Y_raw = Y_raw[:, np.newaxis]
+
+    n_samples = X.shape[0]
+    blowup_sample_flags = np.any(~np.isfinite(Y_raw), axis=1)
+
+    traj_size = k + 1
+    blowup_params_set: set[str] = set()
+    for traj_idx in range(n_trajectories):
+        base = traj_idx * traj_size
+        for step in range(1, traj_size):
+            row = base + step
+            if row >= n_samples:
+                break
+            if blowup_sample_flags[row]:
+                diff = np.abs(X[row] - X[row - 1])
+                if diff.max() > 0:
+                    blowup_params_set.add(param_names[int(np.argmax(diff))])
+
+    n_failed = int(np.sum(blowup_sample_flags))
+    failure_rate = n_failed / max(n_samples, 1)
+
+    _MAJORITY_FAILURE = 0.5
+    if failure_rate > _MAJORITY_FAILURE:
+        raise PreflightEvalError(
+            f"Morris stage failure rate {failure_rate:.0%} exceeds "
+            f"{_MAJORITY_FAILURE:.0%}; check evaluation_fn — sensitivity "
+            "indices would be meaningless."
+        )
+
+    Y_clean = np.where(np.isfinite(Y_raw), Y_raw, 1e6)
+    n_obj = Y_clean.shape[1]
+    agg_mu_star = np.zeros(k)
+    agg_conf = np.zeros(k)
+    agg_sigma = np.zeros(k)
+
+    for obj_idx in range(n_obj):
+        result = morris_analyze.analyze(
+            problem, X, Y_clean[:, obj_idx], num_levels=num_levels,
+            print_to_console=False,
+        )
+        agg_mu_star = np.maximum(agg_mu_star, np.asarray(result["mu_star"]))
+        agg_conf = np.maximum(agg_conf, np.asarray(result["mu_star_conf"]))
+        agg_sigma = np.maximum(agg_sigma, np.asarray(result["sigma"]))
+
+    max_mu_star = float(np.max(agg_mu_star)) if np.max(agg_mu_star) > 0 else 1.0
+    screening: list[ParameterScreening] = []
+    for j, name in enumerate(param_names):
+        influential = (agg_mu_star[j] + agg_conf[j]) >= negligible_threshold * max_mu_star
+        screening.append(
+            ParameterScreening(
+                key=name,
+                mu_star=float(agg_mu_star[j]),
+                sigma=float(agg_sigma[j]),
+                mu_star_conf=float(agg_conf[j]),
+                influential=influential,
+            )
+        )
+    return screening, failure_rate, Y_clean, blowup_params_set
+
+
+def _maybe_run_sobol_stage(
+    *,
+    screening: list[ParameterScreening],
+    param_names: list[str],
+    param_bounds: list[tuple[float, float]],
+    evaluation_fn: Callable[[np.ndarray], np.ndarray],
+    sobol_n_base: int,
+    sobol_failure_threshold: float,
+    seed: int | None,
+    cancel_event: threading.Event | None = None,
+) -> tuple[dict | None, list[str]]:
+    """Refine with Sobol on the non-negligible survivors.
+
+    Non-surviving parameters are pinned to their midpoint during sampling so
+    the evaluation_fn still receives full-length vectors. With fewer than two
+    survivors the stage is skipped (``(None, [])``) — a 1-dim Sobol is
+    degenerate and would report ``ST == 1.0`` by construction.
+
+    Returns ``(sobol_result_or_None, additional_blowup_keys)``. Survivors are
+    added to ``additional_blowup_keys`` when the Sobol failure rate exceeds
+    the threshold.
+    """
+    from osmose.calibration.sensitivity import SensitivityAnalyzer
+
+    survivor_idx = [i for i, s in enumerate(screening) if s.influential]
+    if len(survivor_idx) < 2:
+        return None, []
+
+    survivors = [screening[i].key for i in survivor_idx]
+    survivor_bounds = [param_bounds[param_names.index(sv)] for sv in survivors]
+    midpoints = np.array([(lo + hi) / 2.0 for lo, hi in param_bounds])
+
+    analyzer = SensitivityAnalyzer(param_names=survivors, param_bounds=survivor_bounds)
+
+    from SALib.sample import sobol as sobol_sample_mod  # type: ignore[import-untyped]
+    sobol_kwargs: dict = {}
+    if seed is not None:
+        sobol_kwargs["seed"] = seed
+    sobol_problem = {
+        "num_vars": len(survivors),
+        "names": survivors,
+        "bounds": survivor_bounds,
+    }
+    X_sobol_reduced = sobol_sample_mod.sample(sobol_problem, sobol_n_base, **sobol_kwargs)
+
+    n_sobol = X_sobol_reduced.shape[0]
+    X_sobol_full = np.tile(midpoints, (n_sobol, 1))
+    for new_col, sv in enumerate(survivors):
+        X_sobol_full[:, param_names.index(sv)] = X_sobol_reduced[:, new_col]
+
+    if cancel_event is not None and cancel_event.is_set():
+        return None, []
+
+    Y_sobol_raw = np.asarray(evaluation_fn(X_sobol_full))
+    if Y_sobol_raw.ndim == 1:
+        Y_sobol_raw = Y_sobol_raw[:, np.newaxis]
+
+    sobol_failed = np.any(~np.isfinite(Y_sobol_raw), axis=1)
+    sobol_failure_rate = float(np.sum(sobol_failed)) / max(n_sobol, 1)
+    additions = list(survivors) if sobol_failure_rate > sobol_failure_threshold else []
+
+    Y_sobol_clean = np.where(np.isfinite(Y_sobol_raw), Y_sobol_raw, 1e6)
+    if Y_sobol_clean.shape[1] == 1:
+        sobol_result = analyzer.analyze(Y_sobol_clean[:, 0])
+    else:
+        sobol_result = analyzer.analyze(Y_sobol_clean)
+    return sobol_result, additions
+
+
 def run_preflight(
     param_names: list[str],
     param_bounds: list[tuple[float, float]],
@@ -392,250 +555,69 @@ def run_preflight(
 ) -> PreflightResult:
     """Run two-stage pre-flight sensitivity analysis (Morris + Sobol).
 
-    Stage 1 — Morris screening:
-        Generates Morris trajectories, evaluates ``evaluation_fn`` for each
-        sample, tracks which parameter was perturbed per trajectory step to
-        identify blow-up sources, checks the 30 % failure threshold, and
-        classifies parameters as influential or negligible.
+    See :func:`_run_morris_stage` and :func:`_maybe_run_sobol_stage` for the
+    per-stage implementations. Aborts with :class:`PreflightEvalError` if
+    Morris fails majority-of-samples; otherwise assembles a
+    :class:`PreflightResult` with detected issues sorted errors-first.
 
-    Stage 2 — Sobol on survivors:
-        Uses :class:`~osmose.calibration.sensitivity.SensitivityAnalyzer` on
-        the subset of influential parameters.  Non-surviving parameters are
-        fixed at their midpoint.  Checks 10 % failure threshold.
-
-    Parameters
-    ----------
-    param_names:
-        Names of the free parameters.
-    param_bounds:
-        ``(lower, upper)`` bounds for each parameter.
-    evaluation_fn:
-        Callable ``(X: np.ndarray) -> np.ndarray`` accepting an ``(N, k)``
-        sample matrix and returning shape ``(N,)`` or ``(N, n_obj)``.
-    n_trajectories:
-        Number of Morris trajectories.
-    num_levels:
-        Number of grid levels for the Morris design.
-    negligible_threshold:
-        Relative threshold for Morris negligibility classification.
-    blowup_threshold:
-        Fraction of failed samples that triggers a blow-up ERROR (default 30 %).
-    sobol_n_base:
-        Base sample count for Sobol (total = ``n_base * (2*k+2)``).
-    sobol_failure_threshold:
-        Fraction of failed Sobol samples that is considered acceptable (10 %).
-    seed:
-        Random seed forwarded to Morris sampler and Sobol sampler.
-    cancel_event:
-        Optional :class:`threading.Event`; if set before or during the run the
-        function returns immediately with an empty result.
-
-    Returns
-    -------
-    PreflightResult
+    ``cancel_event.set()`` before or during the run short-circuits and yields
+    a minimal result without raising.
     """
-    # Import here to avoid circular imports at module load time
-    from osmose.calibration.sensitivity import SensitivityAnalyzer
-
     t_start = time.monotonic()
 
     def _cancelled() -> bool:
         return cancel_event is not None and cancel_event.is_set()
 
-    if _cancelled():
+    def _empty_result() -> PreflightResult:
         return PreflightResult(
-            screening=[],
-            sobol=None,
-            issues=[],
-            survivors=[],
+            screening=[], sobol=None, issues=[], survivors=[],
             elapsed_seconds=time.monotonic() - t_start,
         )
 
-    k = len(param_names)
-
-    # ------------------------------------------------------------------
-    # Stage 1: Morris sampling + evaluation
-    # ------------------------------------------------------------------
-    problem = {
-        "num_vars": k,
-        "names": param_names,
-        "bounds": list(param_bounds),
-    }
-
-    sample_kwargs: dict = {"num_levels": num_levels}
-    if seed is not None:
-        sample_kwargs["seed"] = seed
-
-    X = morris_sample.sample(problem, n_trajectories, **sample_kwargs)
-
     if _cancelled():
-        return PreflightResult(
-            screening=[],
-            sobol=None,
-            issues=[],
-            survivors=[],
-            elapsed_seconds=time.monotonic() - t_start,
-        )
+        return _empty_result()
 
-    # Evaluate and track blow-ups per-parameter.
-    # Morris trajectories have shape (n_trajectories * (k+1), k).
-    # Within each trajectory block of (k+1) rows, rows 1..k each perturb
-    # exactly one parameter relative to the previous row.
-    Y_raw = np.asarray(evaluation_fn(X))
-    if Y_raw.ndim == 1:
-        Y_raw = Y_raw[:, np.newaxis]
+    screening, failure_rate, _Y_clean, blowup_params_set = _run_morris_stage(
+        param_names=param_names,
+        param_bounds=param_bounds,
+        evaluation_fn=evaluation_fn,
+        n_trajectories=n_trajectories,
+        num_levels=num_levels,
+        negligible_threshold=negligible_threshold,
+        seed=seed,
+        cancel_event=cancel_event,
+    )
+    if not screening:
+        # Morris was cancelled during sampling.
+        return _empty_result()
 
-    n_samples = X.shape[0]
-    blowup_sample_flags = np.any(~np.isfinite(Y_raw), axis=1)  # shape (N,)
-
-    # Identify which param is perturbed in each sample row within trajectories.
-    traj_size = k + 1  # rows per trajectory
-    blowup_params_set: set[str] = set()
-    for traj_idx in range(n_trajectories):
-        base = traj_idx * traj_size
-        for step in range(1, traj_size):  # step 0 is the starting point
-            row = base + step
-            if row >= n_samples:
-                break
-            if blowup_sample_flags[row]:
-                # The perturbed parameter is identified by which column
-                # differs between this row and the previous row.
-                diff = np.abs(X[row] - X[row - 1])
-                if diff.max() > 0:
-                    perturbed_col = int(np.argmax(diff))
-                    blowup_params_set.add(param_names[perturbed_col])
-
-    # Check overall failure threshold for Morris
-    n_failed = int(np.sum(blowup_sample_flags))
-    failure_rate = n_failed / max(n_samples, 1)
-
-    # Hard abort if a majority of Morris samples failed — the resulting
-    # indices would be uninformative noise.
-    _MAJORITY_FAILURE = 0.5
-    if failure_rate > _MAJORITY_FAILURE:
-        raise PreflightEvalError(
-            f"Morris stage failure rate {failure_rate:.0%} exceeds "
-            f"{_MAJORITY_FAILURE:.0%}; check evaluation_fn — sensitivity "
-            "indices would be meaningless."
-        )
-
-    # Replace inf/NaN with large finite value before passing to SALib
-    Y_clean = np.where(np.isfinite(Y_raw), Y_raw, 1e6)
-
-    # Run Morris analysis per objective, aggregate across objectives
-    n_obj = Y_clean.shape[1]
-    agg_mu_star = np.zeros(k)
-    agg_conf = np.zeros(k)
-    agg_sigma = np.zeros(k)
-
-    for obj_idx in range(n_obj):
-        Y_col = Y_clean[:, obj_idx]
-        result = morris_analyze.analyze(
-            problem, X, Y_col, num_levels=num_levels, print_to_console=False
-        )
-        mu_star_obj = np.asarray(result["mu_star"])
-        conf_obj = np.asarray(result["mu_star_conf"])
-        sigma_obj = np.asarray(result["sigma"])
-        agg_mu_star = np.maximum(agg_mu_star, mu_star_obj)
-        agg_conf = np.maximum(agg_conf, conf_obj)
-        agg_sigma = np.maximum(agg_sigma, sigma_obj)
-
-    max_mu_star = float(np.max(agg_mu_star)) if np.max(agg_mu_star) > 0 else 1.0
-    screening: list[ParameterScreening] = []
-    for j, name in enumerate(param_names):
-        influential = (agg_mu_star[j] + agg_conf[j]) >= negligible_threshold * max_mu_star
-        screening.append(
-            ParameterScreening(
-                key=name,
-                mu_star=float(agg_mu_star[j]),
-                sigma=float(agg_sigma[j]),
-                mu_star_conf=float(agg_conf[j]),
-                influential=influential,
-            )
-        )
-
-    # Collect blowup issues (use blowup_params_set or overall threshold)
     blowup_params: list[str] = sorted(blowup_params_set)
     if failure_rate > blowup_threshold and not blowup_params:
-        # Fallback: flag all params if we cannot identify which caused it
         blowup_params = list(param_names)
+
+    survivors = [ps.key for ps in screening if ps.influential]
 
     if _cancelled():
         issues = detect_issues(screening, blowup_params=blowup_params)
         return PreflightResult(
-            screening=screening,
-            sobol=None,
-            issues=issues,
-            survivors=[ps.key for ps in screening if ps.influential],
-            elapsed_seconds=time.monotonic() - t_start,
+            screening=screening, sobol=None, issues=issues,
+            survivors=survivors, elapsed_seconds=time.monotonic() - t_start,
         )
 
-    # ------------------------------------------------------------------
-    # Stage 2: Sobol on survivors
-    # ------------------------------------------------------------------
-    survivors = [ps.key for ps in screening if ps.influential]
-    sobol_result: dict | None = None
-
-    if survivors:
-        survivor_indices = [param_names.index(sv) for sv in survivors]
-        survivor_bounds = [param_bounds[i] for i in survivor_indices]
-        midpoints = np.array([(lo + hi) / 2.0 for lo, hi in param_bounds])
-
-        analyzer = SensitivityAnalyzer(
-            param_names=survivors,
-            param_bounds=survivor_bounds,
-        )
-
-        sobol_kwargs: dict = {}
-        if seed is not None:
-            sobol_kwargs["seed"] = seed
-
-        # Generate Sobol samples using SALib directly
-        from SALib.sample import sobol as sobol_sample_mod  # type: ignore[import-untyped]
-
-        sobol_problem = {
-            "num_vars": len(survivors),
-            "names": survivors,
-            "bounds": survivor_bounds,
-        }
-        X_sobol_reduced = sobol_sample_mod.sample(sobol_problem, sobol_n_base, **sobol_kwargs)
-
-        # Map back to full parameter vector (non-survivors at midpoint)
-        n_sobol = X_sobol_reduced.shape[0]
-        X_sobol_full = np.tile(midpoints, (n_sobol, 1))
-        for new_col, orig_col in enumerate(survivor_indices):
-            X_sobol_full[:, orig_col] = X_sobol_reduced[:, new_col]
-
-        if _cancelled():
-            issues = detect_issues(screening, blowup_params=blowup_params)
-            return PreflightResult(
-                screening=screening,
-                sobol=None,
-                issues=issues,
-                survivors=survivors,
-                elapsed_seconds=time.monotonic() - t_start,
-            )
-
-        Y_sobol_raw = np.asarray(evaluation_fn(X_sobol_full))
-        if Y_sobol_raw.ndim == 1:
-            Y_sobol_raw = Y_sobol_raw[:, np.newaxis]
-
-        # Check Sobol failure threshold
-        sobol_failed = np.any(~np.isfinite(Y_sobol_raw), axis=1)
-        sobol_failure_rate = float(np.sum(sobol_failed)) / max(n_sobol, 1)
-        if sobol_failure_rate > sobol_failure_threshold:
-            blowup_params = sorted(set(blowup_params) | set(survivors))
-
-        Y_sobol_clean = np.where(np.isfinite(Y_sobol_raw), Y_sobol_raw, 1e6)
-
-        # Pass the cleaned outputs to the analyzer
-        if Y_sobol_clean.shape[1] == 1:
-            sobol_result = analyzer.analyze(Y_sobol_clean[:, 0])
-        else:
-            sobol_result = analyzer.analyze(Y_sobol_clean)
+    sobol_result, sobol_additions = _maybe_run_sobol_stage(
+        screening=screening,
+        param_names=param_names,
+        param_bounds=param_bounds,
+        evaluation_fn=evaluation_fn,
+        sobol_n_base=sobol_n_base,
+        sobol_failure_threshold=sobol_failure_threshold,
+        seed=seed,
+        cancel_event=cancel_event,
+    )
+    if sobol_additions:
+        blowup_params = sorted(set(blowup_params) | set(sobol_additions))
 
     issues = detect_issues(screening, sobol_result=sobol_result, blowup_params=blowup_params)
-
     return PreflightResult(
         screening=screening,
         sobol=sobol_result,
