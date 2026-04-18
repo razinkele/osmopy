@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import os
+
 import numpy as np
 import plotly.graph_objects as go
 from shiny import reactive, render, ui
@@ -103,6 +105,18 @@ def calibration_ui():
                     "cal_preflight_enabled",
                     "Pre-flight screening (recommended)",
                     value=True,
+                ),
+                ui.input_numeric(
+                    "cal_preflight_workers",
+                    "Workers",
+                    value=1,
+                    min=1,
+                    max=max(1, os.cpu_count() or 1),
+                    step=1,
+                ),
+                ui.help_text(
+                    "Parallel evaluators for preflight sample runs. 1 = sequential (default).",
+                    class_="small text-muted",
                 ),
                 ui.layout_columns(
                     ui.input_action_button(

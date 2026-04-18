@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 import queue as _queue_mod
 import subprocess
 import tempfile
@@ -83,6 +84,25 @@ def _clamp_int(value: int, lo: int, hi: int, name: str) -> int:
     if value < lo or value > hi:
         raise ValueError(f"{name} must be between {lo} and {hi}, got {value}")
     return value
+
+
+def _clamp_n_workers(requested: int | None, cpu: int | None) -> int:
+    """Clamp a user-supplied worker count into [1, max(1, cpu)].
+
+    None or non-positive input → 1 (sequential, the library default).
+    ``cpu`` is ``os.cpu_count()`` which returns None on some platforms;
+    fall back to 1 in that case.
+    """
+    ceiling = max(1, cpu) if cpu else 1
+    if requested is None:
+        return 1
+    try:
+        n = int(requested)
+    except (TypeError, ValueError):
+        return 1
+    if n < 1:
+        return 1
+    return min(n, ceiling)
 
 
 def _make_progress_callback(cal_history_append, cancel_check):
@@ -829,11 +849,15 @@ def register_calibration_handlers(
             run_preflight,
         )
 
+        raw_workers = getattr(input, "cal_preflight_workers", lambda: 1)()
+        n_workers = _clamp_n_workers(raw_workers, os.cpu_count())
+
         eval_fn = make_preflight_eval_fn(
             free_params=free_params,
             base_config=dict(current_config),
             output_dir=work_dir / "preflight_output",
             objective_fns=objective_fns,
+            n_workers=n_workers,
         )
 
         def _run_preflight_thread():

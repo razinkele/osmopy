@@ -118,3 +118,15 @@ def test_nsga2_progress_callback():
     cancel_getter.return_value = True
     cb.notify(algorithm)
     assert algorithm.termination.force_termination is True
+
+
+def test_cal_preflight_workers_input_registered():
+    """The n_workers input must appear in the rendered calibration UI.
+    Guards against silent removal in a future refactor."""
+    from ui.pages.calibration import calibration_ui
+
+    page_ui = calibration_ui()
+    html = str(page_ui)
+    assert 'id="cal_preflight_workers"' in html or "'cal_preflight_workers'" in html, (
+        "cal_preflight_workers input missing from rendered UI"
+    )

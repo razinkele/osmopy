@@ -7,7 +7,7 @@ from shiny import reactive
 from osmose.calibration.preflight import PreflightEvalError
 from tests.helpers import make_catch_all_input, make_multi_input
 from ui.pages.calibration import build_free_params, collect_selected_params
-from ui.pages.calibration_handlers import build_preflight_modal
+from ui.pages.calibration_handlers import _clamp_n_workers, build_preflight_modal
 
 
 def test_collect_selected_params():
@@ -194,3 +194,22 @@ def test_preflight_modal_renders_error_banner_for_PreflightEvalError():
     assert "half the Morris samples failed" in html, "Expected error message in banner"
     # Sanity: ensure it's NOT the success-shape modal
     assert "Apply Selected & Start" not in html
+
+
+def test_clamp_n_workers_honors_valid_input():
+    assert _clamp_n_workers(4, 8) == 4
+
+
+def test_clamp_n_workers_clamps_to_cpu_count():
+    assert _clamp_n_workers(16, 4) == 4
+
+
+def test_clamp_n_workers_defaults_on_invalid():
+    assert _clamp_n_workers(None, 8) == 1
+    assert _clamp_n_workers(0, 8) == 1
+    assert _clamp_n_workers(-1, 8) == 1
+
+
+def test_clamp_n_workers_survives_null_cpu_count():
+    # Platforms where os.cpu_count() returns None: fall back to 1
+    assert _clamp_n_workers(4, None) == 1
