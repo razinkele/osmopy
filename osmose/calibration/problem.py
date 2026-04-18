@@ -85,6 +85,8 @@ class OsmoseCalibrationProblem(Problem):
         enable_cache: bool = False,
         cache_dir: Path | None = None,
         registry: "ParameterRegistry | None" = None,
+        subprocess_timeout: int = 3600,
+        cleanup_after_eval: bool = False,
     ):
         self.free_params = free_params
         self.objective_fns = objective_fns
@@ -98,6 +100,8 @@ class OsmoseCalibrationProblem(Problem):
         self._registry = registry
         self._cache_hits = 0
         self._cache_misses = 0
+        self.subprocess_timeout = int(subprocess_timeout)
+        self.cleanup_after_eval = bool(cleanup_after_eval)
         # Pre-compute base config hash for cache keys
         self._base_config_hash = ""
         if enable_cache and base_config_path.exists():
@@ -206,13 +210,23 @@ class OsmoseCalibrationProblem(Problem):
         for key, value in overrides.items():
             cmd.append(f"-P{key}={value}")
 
-        # 1-hour timeout per evaluation; consider making configurable for long simulations
-        result = subprocess.run(cmd, capture_output=True, timeout=3600)
+        result = subprocess.run(cmd, capture_output=True, timeout=self.subprocess_timeout)
 
         if result.returncode != 0:
-            stderr_msg = result.stderr.decode(errors="replace")[:500] if result.stderr else ""
+            raw_stderr = result.stderr
+            stderr_bytes = raw_stderr if isinstance(raw_stderr, (bytes, bytearray)) else b""
+            stderr_file = run_dir / "stderr.txt"
+            try:
+                stderr_file.write_bytes(bytes(stderr_bytes))
+            except OSError:
+                pass  # never mask the underlying failure with a disk issue
+            stderr_msg = bytes(stderr_bytes).decode(errors="replace")[:500]
             _log.warning(
-                "OSMOSE run %d failed (exit %d): %s", run_id, result.returncode, stderr_msg
+                "OSMOSE run %d failed (exit %d); full stderr at %s; head: %s",
+                run_id,
+                result.returncode,
+                stderr_file,
+                stderr_msg,
             )
             return [float("inf")] * self.n_obj
 
@@ -240,6 +254,9 @@ class OsmoseCalibrationProblem(Problem):
                 except OSError:
                     pass
             self._cache_misses += 1
+
+        if self.cleanup_after_eval:
+            self.cleanup_run(run_id)
 
         return obj_values
 

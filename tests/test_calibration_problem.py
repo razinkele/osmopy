@@ -525,3 +525,139 @@ def test_validate_overrides_skipped_when_no_registry(tmp_path):
     )
     # Should not raise
     problem._validate_overrides({"species.k.sp0": "999.0"})
+
+
+# ---------------------------------------------------------------------------
+# Task 3: configurable subprocess_timeout
+# ---------------------------------------------------------------------------
+
+
+def test_subprocess_timeout_is_configurable(tmp_path):
+    from osmose.calibration.problem import OsmoseCalibrationProblem, FreeParameter
+
+    problem = OsmoseCalibrationProblem(
+        free_params=[FreeParameter("k", 0.1, 1.0)],
+        objective_fns=[lambda r: 0.0],
+        base_config_path=tmp_path / "missing.csv",
+        jar_path=tmp_path / "missing.jar",
+        work_dir=tmp_path,
+        subprocess_timeout=42,
+    )
+    assert problem.subprocess_timeout == 42
+
+
+def test_subprocess_timeout_default_is_3600(tmp_path):
+    from osmose.calibration.problem import OsmoseCalibrationProblem, FreeParameter
+
+    problem = OsmoseCalibrationProblem(
+        free_params=[FreeParameter("k", 0.1, 1.0)],
+        objective_fns=[lambda r: 0.0],
+        base_config_path=tmp_path / "missing.csv",
+        jar_path=tmp_path / "missing.jar",
+        work_dir=tmp_path,
+    )
+    assert problem.subprocess_timeout == 3600
+
+
+# ---------------------------------------------------------------------------
+# Task 4: persist full subprocess stderr on failure
+# ---------------------------------------------------------------------------
+
+
+def test_run_single_persists_full_stderr_on_failure(monkeypatch, tmp_path):
+    """A non-zero subprocess exit must write the full stderr to run_dir/stderr.txt."""
+    import osmose.calibration.problem as prob_mod
+    from osmose.calibration.problem import OsmoseCalibrationProblem, FreeParameter
+
+    big_stderr = b"ERROR: " + (b"x" * 2000)
+
+    class _Result:
+        returncode = 1
+        stderr = big_stderr
+        stdout = b""
+
+    monkeypatch.setattr(prob_mod.subprocess, "run", lambda *a, **k: _Result())
+
+    jar = tmp_path / "osmose.jar"
+    jar.write_bytes(b"")
+    problem = OsmoseCalibrationProblem(
+        free_params=[FreeParameter("species.k.sp0", 0.1, 1.0)],
+        objective_fns=[lambda r: 0.0],
+        base_config_path=tmp_path / "cfg.csv",
+        jar_path=jar,
+        work_dir=tmp_path / "work",
+    )
+    out = problem._run_single({"species.k.sp0": "0.5"}, run_id=0)
+    assert out == [float("inf")]
+    stderr_file = tmp_path / "work" / "run_0" / "stderr.txt"
+    assert stderr_file.exists()
+    assert stderr_file.read_bytes() == big_stderr
+
+
+# ---------------------------------------------------------------------------
+# Task 5: optional auto-cleanup of run directories
+# ---------------------------------------------------------------------------
+
+
+def test_cleanup_after_eval_true_removes_run_dir(monkeypatch, tmp_path):
+    import osmose.calibration.problem as prob_mod
+    import osmose.results as results_mod
+    from osmose.calibration.problem import OsmoseCalibrationProblem, FreeParameter
+
+    class _Result:
+        returncode = 0
+        stderr = b""
+        stdout = b""
+
+    class _FakeResults:
+        def __init__(self, *a, **kw): ...
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    monkeypatch.setattr(prob_mod.subprocess, "run", lambda *a, **k: _Result())
+    monkeypatch.setattr(results_mod, "OsmoseResults", _FakeResults)
+
+    jar = tmp_path / "osmose.jar"
+    jar.write_bytes(b"")
+    problem = OsmoseCalibrationProblem(
+        free_params=[FreeParameter("species.k.sp0", 0.1, 1.0)],
+        objective_fns=[lambda r: 0.0],
+        base_config_path=tmp_path / "cfg.csv",
+        jar_path=jar,
+        work_dir=tmp_path / "work",
+        cleanup_after_eval=True,
+    )
+    problem._run_single({"species.k.sp0": "0.5"}, run_id=0)
+    assert not (tmp_path / "work" / "run_0").exists()
+
+
+def test_cleanup_after_eval_false_keeps_run_dir(monkeypatch, tmp_path):
+    import osmose.calibration.problem as prob_mod
+    import osmose.results as results_mod
+    from osmose.calibration.problem import OsmoseCalibrationProblem, FreeParameter
+
+    class _Result:
+        returncode = 0
+        stderr = b""
+        stdout = b""
+
+    class _FakeResults:
+        def __init__(self, *a, **kw): ...
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    monkeypatch.setattr(prob_mod.subprocess, "run", lambda *a, **k: _Result())
+    monkeypatch.setattr(results_mod, "OsmoseResults", _FakeResults)
+
+    jar = tmp_path / "osmose.jar"
+    jar.write_bytes(b"")
+    problem = OsmoseCalibrationProblem(
+        free_params=[FreeParameter("species.k.sp0", 0.1, 1.0)],
+        objective_fns=[lambda r: 0.0],
+        base_config_path=tmp_path / "cfg.csv",
+        jar_path=jar,
+        work_dir=tmp_path / "work",
+        cleanup_after_eval=False,
+    )
+    problem._run_single({"species.k.sp0": "0.5"}, run_id=1)
+    assert (tmp_path / "work" / "run_1").exists()
