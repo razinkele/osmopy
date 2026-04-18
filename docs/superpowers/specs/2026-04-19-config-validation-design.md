@@ -271,11 +271,7 @@ Explicit exclusions so a future reader or plan reviewer doesn't think they were 
 20. `test_from_dict_warn_mode_catches_known_typo` — load EEC config + inject `species.liinf.sp0`, mode=`warn`; assert warning logged with `species.linf.sp{idx}` suggestion.
 21. `test_from_dict_error_mode_raises_with_typo` — same injection, mode=`error`; assert `ValueError` raised.
 
-**Baseline parity:** full suite at HEAD `e8294ee` is 2485 passed / 15 skipped / 41 deselected (2500 collected). Target after implementation: **2485 + 21 = 2506 passed** (test set expanded from the original 13 to 21 per iteration-1 review findings). Any regression of a pre-existing test means the new hook is interfering with something — investigate rather than working around.
-
-**Baseline parity test**: the full suite (currently 2485 passing at HEAD `d124de6`) must remain at `baseline + 13` after implementation — i.e. no pre-existing test regresses because its config happens to contain unknown keys that the new validator now flags.
-
-Any pre-existing test config that carries an unknown key is a latent bug the validator exposes. In that case we fix the test config (or allowlist the key if it's a legitimate reader-honored pattern the AST walker missed).
+**Baseline parity:** full suite at HEAD `e8294ee` is 2485 passed / 15 skipped / 41 deselected (2500 collected). Target after implementation: **2485 + 21 = 2506 passed** (test set expanded from the original 13 to 21 per iteration-1 review findings). Any regression of a pre-existing test means the new hook is interfering with something — investigate rather than working around. Any pre-existing test config that carries an unknown key is a latent bug the validator exposes. In that case we fix the test config (or allowlist the key if it's a legitimate reader-honored pattern the AST walker missed).
 
 ## Rollout
 
