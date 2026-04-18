@@ -5,7 +5,7 @@
 **Goal:** Surface three library capabilities that don't currently have any UI. All three exist and are library-tested; Phase 3 is pure UI plumbing, no engine change.
 
 1. `PreflightEvalError` (`osmose/calibration/preflight.py:119`) — raised when >50 % of Morris samples fail; currently surfaces as an opaque "Preflight failed" with no detail.
-2. `n_workers` on `run_preflight` (`preflight.py:665`) — the parallel evaluator is fully wired library-side but UI hardcodes 1.
+2. `n_workers` on `make_preflight_eval_fn` (`preflight.py:665` — the factory that builds the evaluator fed into `run_preflight`) — the parallel evaluator is fully wired library-side but UI hardcodes 1. Note: `n_workers` is NOT a kwarg of `run_preflight` itself (`preflight.py:565`); passing it there raises `TypeError`.
 3. `find_optimum(weights=...)` (`osmose/calibration/surrogate.py:123`) — returns either a Pareto set (weights=None) or a weighted-scalarized single point (weights given); UI today only shows the unweighted sum.
 
 **Out of scope:** new library features; changes to NSGA-II or the schema registry; UI theming/accessibility beyond what existing components already do; the "View parameters for a selected Pareto point" side panel (nice-to-have, deferred).
@@ -18,9 +18,10 @@ Three independent UI additions, all in `ui/pages/calibration.py` + `ui/pages/cal
 ┌──────────────────────┐   ┌──────────────────────────────┐   ┌──────────────────────┐
 │ Preflight settings   │   │ Preflight worker (handler)   │   │ Preflight modal      │
 │ ┌──────────────────┐ │   │ ┌──────────────────────────┐ │   │ ┌──────────────────┐ │
-│ │ Enable ✓         │ │──▶│ │ run_preflight(           │ │──▶│ │ success → checkbox│ │
-│ │ Workers [n_w]    │ │   │ │   ..., n_workers=n_w,   │ │   │ │ error  → red alert│ │
-│ └──────────────────┘ │   │ │ )                        │ │   │ └──────────────────┘ │
+│ │ Enable ✓         │ │──▶│ │ eval_fn = make_preflight_│ │──▶│ │ success → checkbox│ │
+│ │ Workers [n_w]    │ │   │ │   eval_fn(...,           │ │   │ │ error  → red alert│ │
+│ │                  │ │   │ │   n_workers=n_w)         │ │   │ │                  │ │
+│ └──────────────────┘ │   │ │ run_preflight(eval_fn=...│ │   │ └──────────────────┘ │
 └──────────────────────┘   │ └──────────────────────────┘ │   └──────────────────────┘
                            │ except PreflightEvalError: │
                            │   post_preflight_error(exc) │
@@ -94,7 +95,7 @@ Not testing the exception-catch path end-to-end — that belongs to the library 
 
 ### Scope
 
-Expose `n_workers` on `run_preflight` via a numeric input. Library default 1 (sequential) preserved — upgrading should not silently change parallelism.
+Expose `n_workers` on `make_preflight_eval_fn` (the evaluator factory fed into `run_preflight`) via a numeric input. Library default 1 (sequential) preserved — upgrading should not silently change parallelism. **`run_preflight` itself does NOT accept `n_workers`** — the parallelism knob is on the factory that produces its `evaluation_fn`.
 
 ### UI changes
 
@@ -113,7 +114,7 @@ Expose `n_workers` on `run_preflight` via a numeric input. Library default 1 (se
 
   Help text: "Parallel evaluators for preflight sample runs. 1 = sequential (default)."
 
-- `ui/pages/calibration_handlers.py:788-796` — `_run_preflight_thread` builds the `run_preflight(...)` call. Add `n_workers=getattr(input, "cal_preflight_workers", lambda: 1)()` clamped to `max(1, min(n, os.cpu_count() or 1))` before the call. `getattr` with a fallback lambda protects against the input ID being absent during tests that stub only some inputs.
+- `ui/pages/calibration_handlers.py:781-794` — `_run_preflight_thread` builds `eval_fn = make_preflight_eval_fn(...)` (line 781) and then feeds it to `run_preflight(evaluation_fn=eval_fn, ...)` (line 790). The `n_workers` kwarg goes on the **factory at line 781**, not the `run_preflight` call. Add `n_workers=getattr(input, "cal_preflight_workers", lambda: 1)()` clamped via `_clamp_n_workers(...)` into the factory-call kwargs. `getattr` with a fallback lambda protects against the input ID being absent during tests that stub only some inputs.
 
 - `import os` at the top of `calibration.py` if not already present.
 

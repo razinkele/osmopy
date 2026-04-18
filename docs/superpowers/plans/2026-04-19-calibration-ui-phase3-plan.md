@@ -17,7 +17,7 @@
 - [ ] Sanity-check the live library surface (one-time read, not a repeated check):
   - `osmose/calibration/preflight.py:119` — `class PreflightEvalError(RuntimeError)` (one-line class).
   - `osmose/calibration/preflight.py:459` — the single `raise PreflightEvalError(...)` site (Morris; Sobol has no raise site).
-  - `osmose/calibration/preflight.py:665` — `n_workers: int = 1` keyword on `run_preflight`.
+  - `osmose/calibration/preflight.py:665` — `n_workers: int = 1` keyword on **`make_preflight_eval_fn`** (the factory that builds the evaluator fed into `run_preflight`). `run_preflight` itself (`preflight.py:565`) does NOT accept `n_workers`.
   - `osmose/calibration/surrogate.py:123` — `find_optimum(..., weights=None)`.
 
 ## File map
@@ -147,7 +147,8 @@
           result = run_preflight(...)                # existing ~line 790
           msg_queue.post_preflight(result)           # existing ~line 796
       except Exception as exc:                       # existing ~line 797
-          msg_queue.post_error(str(exc))
+          _log.error("Pre-flight screening failed: %s", exc, exc_info=True)
+          msg_queue.post_error(f"Pre-flight screening failed: {exc}")
   ```
 
   Insert a specific catch BEFORE the generic one. Also add the import:
@@ -170,7 +171,8 @@
       except PreflightEvalError as exc:              # NEW — before generic
           msg_queue.post_preflight_error(exc)
       except Exception as exc:                       # unchanged
-          msg_queue.post_error(str(exc))
+          _log.error("Pre-flight screening failed: %s", exc, exc_info=True)
+          msg_queue.post_error(f"Pre-flight screening failed: {exc}")
   ```
 
 - [ ] **Step 5: Wire the queue-drain dispatch branch**
@@ -363,20 +365,23 @@
 
   (If the preflight panel uses a single comma-separated tag list, add the two tags there. If it uses a column layout with `ui.layout_columns`, add them in the same column as `cal_preflight_enabled`.)
 
-- [ ] **Step 5: Wire the clamped value into `_run_preflight_thread`**
+- [ ] **Step 5: Wire the clamped value into `make_preflight_eval_fn`**
 
-  At `ui/pages/calibration_handlers.py:788-796`, `_run_preflight_thread` currently builds a `run_preflight(...)` call. Find the call and inject `n_workers`:
+  Important: `n_workers` lives on `make_preflight_eval_fn`, NOT on `run_preflight`. Passing it to `run_preflight` raises `TypeError: run_preflight() got an unexpected keyword argument 'n_workers'`.
+
+  At `ui/pages/calibration_handlers.py:781` (`eval_fn = make_preflight_eval_fn(...)` — grep for `make_preflight_eval_fn(` inside `_run_preflight_thread`). Before the factory call, read + clamp the input:
 
   ```python
   raw_workers = getattr(input, "cal_preflight_workers", lambda: 1)()
   n_workers = _clamp_n_workers(raw_workers, os.cpu_count())
-  result = run_preflight(
+  eval_fn = make_preflight_eval_fn(
       ...                    # existing kwargs unchanged
-      n_workers=n_workers,   # NEW
+      n_workers=n_workers,   # NEW — on the factory, not run_preflight
   )
+  # run_preflight call at ~:790 is UNCHANGED.
   ```
 
-  (Add `import os` at the top of `calibration_handlers.py` if not already present.)
+  Add `import os` at the top of `calibration_handlers.py` if not already present.
 
 - [ ] **Step 6: Add the input-registration test**
 
@@ -549,39 +554,53 @@
   ),
   ```
 
-  In the server-side function of `calibration.py` (look for `def server(input, output, session)` or the equivalent — grep for `pareto_chart` at line 262 to find the surrogate-optimum server block), add a new reactive value near the existing `preflight_result = reactive.value(None)`:
+  In the server-side function of `calibration.py` (`calibration_server(input, output, session, state)` at `calibration.py:189` — note the four-arg signature; grep for `pareto_chart` at line 262 to find the surrogate-optimum server block), add a new reactive value near the existing `preflight_result = reactive.value(None)`:
 
   ```python
   surrogate_optimum = reactive.value(None)
   ```
 
-  And add the dynamic weights renderer:
+  Extract the weights-input renderer as a pure module-level helper now (the tests in Step 7 call it directly). At module scope in `calibration.py`, add:
 
   ```python
-  @render.ui
-  def weights_inputs():
-      mode = input.cal_optimum_mode()
+  def _obj_labels_for_surrogate(optimum: dict | None) -> list[str]:
+      """Best-effort objective labels for the weights row and tables.
+
+      ``find_optimum`` (`surrogate.py:123`) does NOT currently populate an
+      ``objective_labels`` key — the helper falls back to ``obj_{i}`` for
+      every position. The ``objective_labels`` branch exists so a caller
+      can inject friendlier labels by adding that key to the payload
+      before ``post_surrogate_optimum`` (out of scope for Phase 3; reserved
+      for a future follow-up).
+      """
+      if optimum is None:
+          return []
+      labels = optimum.get("objective_labels")
+      if labels:
+          return list(labels)
+      obj = optimum.get("predicted_objectives")
+      n = int(getattr(obj, "__len__", lambda: 0)()) if obj is not None else 0
+      return [f"obj_{i}" for i in range(n)]
+
+
+  def _render_weights_inputs(mode: str, optimum: dict | None):
+      """Pure helper used by the ``weights_inputs`` @render.ui delegate."""
       if mode != "weighted":
           return ui.TagList()  # empty — Pareto mode shows no weights
-      optimum = surrogate_optimum.get()
       if optimum is None:
           return ui.help_text(
               "Run the surrogate workflow first — weights match the "
               "fitted surrogate's objectives.",
               class_="small text-muted",
           )
-      obj = optimum.get("predicted_objectives")
-      n_obj = int(getattr(obj, "__len__", lambda: 1)())
-      # Objective labels: reuse existing obj_labels source if available;
-      # otherwise fall back to numeric indexing.
-      labels = _obj_labels_for_surrogate(optimum) if n_obj else []
+      labels = _obj_labels_for_surrogate(optimum)
+      n_obj = len(labels)
       rows = []
       for i in range(n_obj):
-          lab = labels[i] if i < len(labels) else f"obj_{i}"
           rows.append(
               ui.input_numeric(
                   f"cal_weight_{i}",
-                  f"w[{lab}]",
+                  f"w[{labels[i]}]",
                   value=1.0,
                   min=0.0,
                   step=0.1,
@@ -590,17 +609,12 @@
       return ui.TagList(*rows)
   ```
 
-  `_obj_labels_for_surrogate(optimum)` is a small helper — define it at module scope in `calibration.py`:
+  And the decorated wrapper in the server function:
 
   ```python
-  def _obj_labels_for_surrogate(optimum: dict) -> list[str]:
-      """Best-effort objective labels. Falls back to numeric indices."""
-      labels = optimum.get("objective_labels")
-      if labels:
-          return list(labels)
-      obj = optimum.get("predicted_objectives")
-      n = int(getattr(obj, "__len__", lambda: 0)()) if obj is not None else 0
-      return [f"obj_{i}" for i in range(n)]
+  @render.ui
+  def weights_inputs():
+      return _render_weights_inputs(input.cal_optimum_mode(), surrogate_optimum.get())
   ```
 
 - [ ] **Step 5: Wire the mode branch at the `find_optimum` call site**
@@ -667,28 +681,34 @@
   ),
   ```
 
-  In the server function, add:
+  Extract the scatter / table / weighted-summary renderers as pure module-level helpers so the tests in Step 7 can call them directly without spinning up a Shiny session. At module scope in `calibration.py`:
 
   ```python
   from shiny.render import DataGrid
 
-  @render_plotly
-  def surrogate_pareto_scatter():
-      optimum = surrogate_optimum.get()
+  def _render_pareto_scatter(optimum: dict | None):
+      """Pure helper used by the ``surrogate_pareto_scatter`` delegate.
+
+      Returns an empty ``plotly.graph_objects.Figure`` for missing data
+      OR for n_obj >= 3 (the scatter isn't meaningful past 2 objectives).
+      """
       if optimum is None or "pareto" not in optimum:
-          return go.Figure()  # empty — weighted mode, or not yet run
+          return go.Figure()
       F = np.asarray(optimum["pareto"]["objectives"])
       if F.ndim != 2 or F.shape[1] >= 3:
-          # n_obj ≥ 3 fallback: scatter is not meaningful; return empty.
           return go.Figure()
       labels = _obj_labels_for_surrogate(optimum)
       return make_pareto_chart(F, labels, tmpl=_tmpl())
 
-  @render.data_frame
-  def surrogate_pareto_table():
-      optimum = surrogate_optimum.get()
+  def _render_pareto_table(optimum: dict | None):
+      """Pure helper used by the ``surrogate_pareto_table`` delegate.
+
+      Returns a ``shiny.render.DataGrid`` wrapping an empty DataFrame
+      when no Pareto set is present, otherwise the full Pareto set
+      laid out as obj_*, ±obj_*, param_* columns.
+      """
       if optimum is None or "pareto" not in optimum:
-          return pd.DataFrame()
+          return DataGrid(pd.DataFrame(), selection_mode="row")
       F = np.asarray(optimum["pareto"]["objectives"])
       U = np.asarray(optimum["pareto"]["uncertainty"])
       P = np.asarray(optimum["pareto"]["params"])
@@ -702,12 +722,14 @@
           data[f"±{labels[i] if i < len(labels) else f'obj_{i}'}"] = U[:, i]
       for j in range(n_params):
           data[f"param_{j}"] = P[:, j]
-      df = pd.DataFrame(data)
-      return DataGrid(df, selection_mode="row")
+      return DataGrid(pd.DataFrame(data), selection_mode="row")
 
-  @render.ui
-  def surrogate_weighted_summary():
-      optimum = surrogate_optimum.get()
+  def _render_weighted_summary(optimum: dict | None, weights: list[float] | None):
+      """Pure helper used by the ``surrogate_weighted_summary`` delegate.
+
+      When ``weights`` is None/empty the weighted-sum scalar is omitted.
+      Otherwise the summary line shows ``w·means = X`` per the spec.
+      """
       if optimum is None or "pareto" in optimum:
           return ui.help_text(
               "Switch to Weighted sum and run the surrogate workflow "
@@ -717,45 +739,67 @@
       obj = np.asarray(optimum["predicted_objectives"])
       unc = np.asarray(optimum["predicted_uncertainty"])
       params = np.asarray(optimum["params"])
-      return ui.div(
+      scalar_line = None
+      if weights:
+          w = np.asarray(weights, dtype=float)
+          w_dot_means = float(w @ obj)
+          scalar_line = ui.tags.span(
+              f"weighted sum (w·means) = {w_dot_means:.4g}",
+              class_="fw-semibold",
+          )
+      rows = [
           ui.tags.strong("Weighted optimum"),
           ui.br(),
+      ]
+      if scalar_line is not None:
+          rows += [scalar_line, ui.br()]
+      rows += [
           ui.tags.span(
               f"objectives = {np.round(obj, 4).tolist()} "
               f"(±{np.round(unc, 4).tolist()})"
           ),
           ui.br(),
           ui.tags.span(f"parameters = {np.round(params, 4).tolist()}"),
-          class_="p-3 border rounded bg-light",
-      )
+      ]
+      return ui.div(*rows, class_="p-3 border rounded bg-light")
+  ```
+
+  Decorated wrappers inside `calibration_server(...)`:
+
+  ```python
+  @render_plotly
+  def surrogate_pareto_scatter():
+      return _render_pareto_scatter(surrogate_optimum.get())
+
+  @render.data_frame
+  def surrogate_pareto_table():
+      return _render_pareto_table(surrogate_optimum.get())
+
+  @render.ui
+  def surrogate_weighted_summary():
+      optimum = surrogate_optimum.get()
+      n_obj = len(_obj_labels_for_surrogate(optimum))
+      weights = _resolve_optimum_weights(input, n_obj) if optimum else None
+      return _render_weighted_summary(optimum, weights)
   ```
 
   (Imports needed at the top of `calibration.py` if not already present: `import numpy as np`, `import pandas as pd`, `import plotly.graph_objects as go`, `from shinywidgets import render_plotly`. Match whatever the sibling `pareto_chart` renderer at line 262-269 already imports — do NOT add duplicates.)
 
 - [ ] **Step 7: Write UI-layer renderer tests**
 
-  Append to `tests/test_ui_calibration_handlers.py`:
+  Append to `tests/test_ui_calibration_handlers.py` (all test subjects are module-level helpers from Step 6 — no Shiny session / decorator wrapping needed):
 
   ```python
   import numpy as np
   import pandas as pd
 
-  from shiny.render._data_frame_utils._tbl_data import _TBL_DATA_MODULES  # existence check only
-  # If the import path above is fragile in a future Shiny version, remove
-  # this import — the test below doesn't need it.
-
 
   def test_weights_inputs_renders_zero_inputs_in_pareto_mode(monkeypatch):
-      """In Pareto mode, weights_inputs emits no input_numeric tags."""
-      # The renderer reads input.cal_optimum_mode() and surrogate_optimum.get().
-      # Because @render.ui is bound to the server function, we test the
-      # inner logic by extracting it as a module-level helper OR by
-      # stubbing both dependencies. Here we extract: create
-      # _render_weights_inputs(mode, optimum) at module scope in
-      # calibration.py and test that instead.
+      """In Pareto mode, `_render_weights_inputs` emits no input_numeric tags.
+      The helper is already extracted in Step 6 at module scope."""
       from ui.pages.calibration import _render_weights_inputs
       out = _render_weights_inputs(mode="pareto", optimum=None)
-      assert str(out) == "" or "input_numeric" not in str(out)
+      assert "input_numeric" not in str(out) and "cal_weight_" not in str(out)
 
 
   def test_weights_inputs_renders_N_inputs_in_weighted_mode():
@@ -797,23 +841,7 @@
       assert len(df) == 4, f"Expected 4 rows, got {len(df)}"
   ```
 
-  These tests require a small refactor: extract the renderer bodies into module-level pure functions `_render_weights_inputs(mode, optimum)`, `_render_pareto_scatter(optimum)`, `_render_pareto_table(optimum)` in `calibration.py`. The `@render.ui` / `@render.data_frame` decorators in the server function then become thin wrappers:
-
-  ```python
-  @render.ui
-  def weights_inputs():
-      return _render_weights_inputs(input.cal_optimum_mode(), surrogate_optimum.get())
-
-  @render_plotly
-  def surrogate_pareto_scatter():
-      return _render_pareto_scatter(surrogate_optimum.get())
-
-  @render.data_frame
-  def surrogate_pareto_table():
-      return _render_pareto_table(surrogate_optimum.get())
-  ```
-
-  This mirrors the `_clamp_n_workers` / `_resolve_optimum_weights` pattern — pure function for the logic, decorated wrapper for the reactive binding.
+  All three helpers (`_render_weights_inputs`, `_render_pareto_scatter`, `_render_pareto_table`, plus `_render_weighted_summary`) were already extracted to module scope in Step 6 — the decorated `@render.ui` / `@render.data_frame` / `@render_plotly` delegates are thin wrappers. This mirrors the `_clamp_n_workers` / `_resolve_optimum_weights` pattern — pure function for the logic, decorated wrapper for the reactive binding.
 
 - [ ] **Step 8: Run tests — verify all passing**
 
