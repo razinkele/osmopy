@@ -8,7 +8,7 @@
 
 **Architecture:** One new module `osmose/engine/config_validation.py` exports `validate(cfg, mode)`. Known-key allowlist is a union of the 220-field `ParameterRegistry` with keys extracted via `ast.walk` of `osmose/engine/config.py` literals. Match order is literal-set → normalized-pattern-set → compiled-regex fallback. Suggestions use `difflib.get_close_matches(n=1, cutoff=0.85)` on `{idx}`-normalized strings.
 
-**Tech Stack:** Python 3.12, stdlib `ast` + `difflib` + `functools.cache` + `importlib.resources`, pytest (caplog).
+**Tech Stack:** Python 3.12, stdlib `ast` + `difflib` + `importlib.resources`, pytest (caplog).
 
 **Spec:** `docs/superpowers/specs/2026-04-19-config-validation-design.md` (commit `557ee1b`, 3-iteration review loop converged).
 
@@ -426,7 +426,6 @@ from __future__ import annotations
 
 import ast
 import difflib
-import functools
 import logging
 import re
 from dataclasses import dataclass
@@ -911,7 +910,7 @@ def test_from_dict_error_mode_raises_with_typo():
         _EngineConfig.from_dict(cfg)
 ```
 
-**Why the `_load_example_config` helper with two candidates:** the EEC / Bay-of-Biscay examples live under `data/examples/<name>/osm_all-parameters.csv`; the Baltic config lives under `data/baltic/osm_all-parameters.csv` (no `examples/` layer). The helper tries both and skips if neither exists.
+**Why the `_load_example_config` helper with two candidates:** actual repo layout at HEAD `bad68cb` has two filename conventions — `data/eec/osm_all-parameters.csv` and `data/minimal/osm_all-parameters.csv` use the `osm_` prefix, while `data/baltic/baltic_all-parameters.csv` and `data/eec_full/eec_all-parameters.csv` use a name-prefixed form. The helper tries `data/<name>/osm_all-parameters.csv` first, falls back to `data/<name>/<name>_all-parameters.csv`, and skips if neither exists. `bay_of_biscay` is intentionally absent from the parametrize list (no such directory in `data/`).
 
 ---
 
