@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
-> **Precondition:** Execute in a session that has the `ices` MCP server reachable (already wired in `/home/razinka/osmose/.mcp.json`). The server is stdio-based (`uv run --directory /home/razinka/ices-mcp-server server.py`); MCP boots automatically when Claude Code launches in this repo.
+> **Precondition:** Execute in a session that has the `ices` MCP server reachable. MCP config lives at `/home/razinka/osmose/osmose-python/.mcp.json` — **Claude Code must be launched from `osmose-python/` (not its parent `/home/razinka/osmose/`)** or the `.mcp.json` will not be discovered and the `ices` tools will be unavailable. The server is stdio-based (`uv run --directory /home/razinka/ices-mcp-server server.py`); MCP boots automatically at session start when the cwd matches.
 
 **Goal:** Cross-validate Baltic OSMOSE calibration inputs — biomass targets, fishing mortality rates, and implicit reference points — against ICES SAG (Stock Assessment Graphs) data for the 2018–2022 advice window. Produce reproducible JSON snapshots, a diff report, and a regression test that trips when config drifts outside the ICES-assessed envelope.
 
@@ -13,6 +13,8 @@
 - `get_reference_points` returns a **dict** with lowercase keys: `flim`, `fpa`, `fmsy`, `blim`, `bpa`, `msy_btrigger`, `f_age_range`, `recruitment_age`, optionally `note`. No `MSYBtrigger` / `Blim` etc. in the MCP output (those are only in the raw ICES response, before MCP flattening).
 
 Every downstream piece of code in this plan reads MCP output, so **use lowercase keys consistently**.
+
+**Unit assumption (tonnes):** the raw ICES SAG payload attaches `StockSizeUnits` per row but the MCP flattening at `sag.py:89-102` drops it. The validator therefore **assumes all Baltic finfish stocks report SSB in tonnes** — the ICES convention for these stocks. This holds for every stock in the `model_species_to_ices_stocks` manifest (verified against the ICES fixture `"StockSizeUnits": "tonnes"` for `cod.27.24-32`). If a future stock is added to the manifest with a different unit, the envelope check silently drifts by the unit ratio (e.g. 1000× for "1000 tonnes"). Mitigation: Task 5 must spot-check one year of each snapshot against the published ICES advice sheet DOI before trusting the envelope table.
 
 **Tech Stack:** ICES MCP server (9 tools wrapping SAG, DATRAS, SD, Eggs & Larvae APIs — see `/home/razinka/ices-mcp-server/server.py:40-96`), Python 3.12, pandas, httpx, pytest, ruff.
 
@@ -68,7 +70,7 @@ Invoke the MCP tool `list_stocks` with `year=2023` and `area_filter="27\\.[234][
 
 - [ ] **Step 2: Probe a single-stock assessment**
 
-Invoke `get_stock_assessment(stock_key="spr.27.22-32", year=2023)`. Expected: a JSON object containing at minimum `SSB`, `F`, `R`, `Year` columns/keys with values across the 1990s-2022 window. Note the exact field names returned — we will match on them in Task 4.
+Invoke `get_stock_assessment(stock_key="spr.27.22-32", year=2023)`. Expected: a list of year-row dicts with lowercase keys — at minimum `year`, `ssb`, `f`, `recruitment` with values across the 1990s-2022 window. Confirm the exact field names (MCP flattens the raw ICES response per `sag.py:89-102`, but a future MCP-server version could change this) — Task 4 matches on them.
 
 ---
 
@@ -101,10 +103,11 @@ mortality rates). Taken via the `ices` MCP server:
 Advice year: 2023 (covers the 2018-2022 window used for calibration
 targets in `biomass_targets.csv`).
 
-See `index.json` for the model-species → stock-key mapping. Re-run
-`scripts/validate_baltic_vs_ices_sag.py --refresh` to regenerate any
-snapshot that becomes stale (the script will then invoke MCP tools and
-rewrite the JSON).
+See `index.json` for the model-species → stock-key mapping and the
+"How to Refresh" section below for regenerating snapshots when ICES
+publishes a new advice year. Refresh is MCP-driven (Tasks 1-3 of the
+validation plan) — the offline validator `scripts/validate_baltic_vs_ices_sag.py`
+only reads snapshots; it does not re-query ICES.
 ```
 
 - [ ] **Step 3: Write the manifest**
@@ -147,8 +150,8 @@ git commit -m "docs(baltic): scaffold ICES SAG snapshot directory + manifest"
 ## Task 3: Pull the 2023 advice snapshots
 
 **Files:**
-- Create: `data/baltic/reference/ices_snapshots/*.assessment.json` (6 files)
-- Create: `data/baltic/reference/ices_snapshots/*.reference_points.json` (6 files)
+- Create: `data/baltic/reference/ices_snapshots/*.assessment.json` (9 files)
+- Create: `data/baltic/reference/ices_snapshots/*.reference_points.json` (9 files)
 
 **Nine** stock keys need snapshots: `cod.27.24-32`, `cod.27.22-24`, `her.27.25-2932`, `her.27.28`, `her.27.3031`, `her.27.20-24`, `spr.27.22-32`, `fle.27.24-32`, `fle.27.2223` (confirm the flounder label in Task 1 Step 1; substitute `fle.27.22-23` if that is what ICES returns). Per stock, pull both the assessment time series and the reference points.
 
@@ -221,24 +224,59 @@ Write to `tests/test_baltic_ices_validation.py`:
 
 from __future__ import annotations
 
+import importlib.util
 import json
+import sys
 from pathlib import Path
 
 import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SNAPSHOT_DIR = PROJECT_ROOT / "data" / "baltic" / "reference" / "ices_snapshots"
+MANIFEST = SNAPSHOT_DIR / "index.json"
+VALIDATOR_SCRIPT = PROJECT_ROOT / "scripts" / "validate_baltic_vs_ices_sag.py"
+
+# Skip every test in this module when the snapshots haven't been pulled
+# (i.e. Tasks 2-3 haven't run yet). Prevents `FileNotFoundError` noise
+# during partial plan execution.
+pytestmark = pytest.mark.skipif(
+    not MANIFEST.exists(),
+    reason="ICES SAG snapshots not yet pulled (run Tasks 2-3 first)",
+)
+
+
+@pytest.fixture(scope="module")
+def validator_module():
+    """Load the validator script by path (scripts/ has no __init__.py)."""
+    spec = importlib.util.spec_from_file_location(
+        "validate_baltic_vs_ices_sag", VALIDATOR_SCRIPT
+    )
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["validate_baltic_vs_ices_sag"] = mod
+    try:
+        spec.loader.exec_module(mod)
+        yield mod
+    finally:
+        sys.modules.pop("validate_baltic_vs_ices_sag", None)
+
+
+@pytest.fixture(scope="module")
+def report(validator_module):
+    """A cached validator report — avoids re-running the comparisons
+    for every fence test."""
+    return validator_module.run(write_report=False)
 
 
 def test_manifest_exists_and_is_readable():
-    manifest = json.loads((SNAPSHOT_DIR / "index.json").read_text())
+    manifest = json.loads(MANIFEST.read_text())
     assert manifest["advice_year"] == 2023
     assert "model_species_to_ices_stocks" in manifest
     assert manifest["model_species_to_ices_stocks"]["sprat"] == ["spr.27.22-32"]
 
 
 def test_every_assessed_species_has_snapshot_files():
-    manifest = json.loads((SNAPSHOT_DIR / "index.json").read_text())
+    manifest = json.loads(MANIFEST.read_text())
     for species, stocks in manifest["model_species_to_ices_stocks"].items():
         for stock in stocks:
             assert (SNAPSHOT_DIR / f"{stock}.assessment.json").exists(), \
@@ -247,26 +285,20 @@ def test_every_assessed_species_has_snapshot_files():
                 f"Missing reference-points snapshot for {species}/{stock}"
 
 
-def test_validator_script_runs_clean():
-    """The validator must execute end-to-end without raising on
-    committed snapshots + committed config."""
-    from importlib.util import spec_from_file_location, module_from_spec
-    import sys
-
-    script = PROJECT_ROOT / "scripts" / "validate_baltic_vs_ices_sag.py"
-    spec = spec_from_file_location("validate_baltic_vs_ices_sag", script)
-    assert spec is not None and spec.loader is not None
-    mod = module_from_spec(spec)
-    sys.modules["validate_baltic_vs_ices_sag"] = mod
-    try:
-        spec.loader.exec_module(mod)
-        # run() returns a dict of diffs; we only check it executes cleanly.
-        report = mod.run(write_report=False)
-        assert "f_rates" in report
-        assert "biomass_envelopes" in report
-        assert "reference_points" in report
-    finally:
-        sys.modules.pop("validate_baltic_vs_ices_sag", None)
+def test_validator_produces_report_for_sprat(report):
+    """The sprat row — the only single-stock, well-assessed Baltic species —
+    must always produce a numeric comparison. If this row is `None`, the
+    lowercase-key pathway is silently broken again."""
+    assert "f_rates" in report
+    assert "biomass_envelopes" in report
+    assert "reference_points" in report
+    f_rows = {r["species"]: r for r in report["f_rates"]}
+    b_rows = {r["species"]: r for r in report["biomass_envelopes"]}
+    assert "sprat" in f_rows, "F-rates table missing sprat"
+    assert f_rows["sprat"]["ices_f_weighted"] is not None, \
+        "sprat has linked stock but no F computed — check key casing in _series_by_year"
+    assert b_rows["sprat"]["ices_min_ssb"] is not None, \
+        "sprat has linked stock but no SSB envelope computed"
 ```
 
 - [ ] **Step 2: Run test to confirm FAIL (script doesn't exist yet)**
@@ -385,20 +417,28 @@ def _ssb_weighted_f(stocks: list[str]) -> float | None:
 
 
 def _ices_ssb_envelope(stocks: list[str]) -> tuple[float | None, float | None]:
-    """Sum SSB across stocks per year, then return (min, max) across window."""
-    yearly_totals: dict[int, float] = {y: 0.0 for y in WINDOW_YEARS}
-    yearly_has_data = {y: False for y in WINDOW_YEARS}
-    for stock in stocks:
-        assessment = _load_assessment(stock)
-        ssb_series = _series_by_year(assessment, "ssb")
-        for y in WINDOW_YEARS:
-            if y in ssb_series:
-                yearly_totals[y] += ssb_series[y]
-                yearly_has_data[y] = True
-    totals_with_data = [yearly_totals[y] for y in WINDOW_YEARS if yearly_has_data[y]]
-    if not totals_with_data:
+    """Sum SSB across stocks per year, then return (min, max) across the window.
+
+    Only include years where **all** stocks in the list have SSB data; drop
+    years with partial coverage to avoid an artificially narrow envelope
+    (e.g. a stock that was only assessed from 2020 onwards would otherwise
+    undercount the 2018-2019 totals). Returns `(None, None)` if no year
+    satisfies the full-coverage requirement — caller then reports `—`.
+    """
+    per_stock_series: list[dict[int, float]] = [
+        _series_by_year(_load_assessment(stock), "ssb") for stock in stocks
+    ]
+    if not per_stock_series:
         return None, None
-    return min(totals_with_data), max(totals_with_data)
+    full_coverage_years = [
+        y for y in WINDOW_YEARS if all(y in s for s in per_stock_series)
+    ]
+    if not full_coverage_years:
+        return None, None
+    yearly_totals = [
+        sum(s[y] for s in per_stock_series) for y in full_coverage_years
+    ]
+    return min(yearly_totals), max(yearly_totals)
 
 
 def _parse_model_fishing_rates() -> dict[int, float]:
@@ -566,17 +606,35 @@ def _format_rp_cell(rp: dict, key: str) -> str:
 
 
 def main() -> int:
+    import sys
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", action="store_true",
                         help=f"Write markdown report to {REPORT_MD.relative_to(PROJECT_ROOT)}")
     args = parser.parse_args()
     report = run(write_report=args.report)
-    # Print a one-line summary per section on stdout.
+    manifest = _load_manifest()
+    assessed = {
+        s for s, stocks in manifest["model_species_to_ices_stocks"].items() if stocks
+    }
+
     for r in report["f_rates"]:
         print(f"F[{r['species']}]: model={r['model_f']:.3f} ices={r['ices_f_weighted']} tol={r['in_tolerance']}")
+        if r["species"] in assessed and r["ices_f_weighted"] is None:
+            print(
+                f"  WARN: {r['species']} has linked ICES stocks but no F data in "
+                f"window {WINDOW_YEARS.start}-{WINDOW_YEARS.stop - 1} — check snapshots.",
+                file=sys.stderr,
+            )
     for r in report["biomass_envelopes"]:
         print(f"B[{r['species']}]: overlap={r['envelopes_overlap']} model=[{r['model_lower']:.0f},{r['model_upper']:.0f}] "
               f"ices=[{r['ices_min_ssb']},{r['ices_max_ssb']}]")
+        if r["species"] in assessed and r["ices_min_ssb"] is None:
+            print(
+                f"  WARN: {r['species']} has linked ICES stocks but no full-coverage "
+                f"SSB year in window — check snapshots or broaden window.",
+                file=sys.stderr,
+            )
     # Exit 1 if any flagged miss (so CI can catch drift).
     failures = [r for r in report["f_rates"] if r["in_tolerance"] is False]
     failures += [r for r in report["biomass_envelopes"] if r["envelopes_overlap"] is False]
@@ -625,9 +683,11 @@ git commit -m "feat(calibration): ICES SAG validator for Baltic F rates and biom
 **Files:**
 - Modify: `docs/baltic_ices_validation_2026-04-18.md` (append findings section)
 
-- [ ] **Step 1: Review the report**
+- [ ] **Step 1: Review the report + unit sanity-check**
 
 Read `docs/baltic_ices_validation_2026-04-18.md`. Note every `✗` in the F-rate and biomass-envelope tables; these are drift hits.
+
+Before trusting the envelope table, **spot-check units**: for one stock per species (e.g. `cod.27.24-32`, `her.27.25-2932`, `spr.27.22-32`, `fle.27.24-32`), open the ICES advice sheet DOI from the snapshot's source row and confirm the published SSB magnitude for one year in the window matches the corresponding `ssb` value in `data/baltic/reference/ices_snapshots/{stock}.assessment.json` to within 1%. If any stock is off by ~1000×, the MCP flattening dropped a non-tonnes unit and the envelope comparison must be corrected before publishing findings.
 
 - [ ] **Step 2: Append a findings section to the report**
 
@@ -636,7 +696,14 @@ Append to `docs/baltic_ices_validation_2026-04-18.md`:
 ```markdown
 ## Findings and Recommended Follow-ups
 
-For each drift hit in the tables above:
+If the tables above contain **no `✗` marks**, write a single line
+`No drift detected against 2023 ICES advice; all assessed species within
+[0.5×, 1.5×] F tolerance and biomass envelope overlap.` and skip the
+template below.
+
+Otherwise, for each `✗` row, instantiate this template (replace every
+`{token}` with the actual value — they are fill-ins, not f-string
+literals):
 
 - **{species}:** model {F|B} is {above|below} ICES by {pct}%. Likely cause:
   {retrospective-vs-current | aggregation across stocks | calibration pressure
@@ -656,6 +723,14 @@ For each drift hit in the tables above:
   assessment — validation for these is **by construction impossible** through
   this plan. See `docs/superpowers/plans/*-coastal-validation-plan.md` (to be
   written) for DATRAS-CPUE / national-survey alternatives.
+- The SSB envelope uses the intersection of years for which **all** linked
+  stocks report SSB. A stock assessed only from 2020 will drop 2018-2019
+  from the envelope for its species rather than undercounting them. If the
+  resulting envelope window shrinks below three years the result is likely
+  noise — report it as "insufficient overlap" rather than drift.
+- `_ssb_weighted_f` returning `None` for an assessed species triggers a
+  `WARN` on stderr; these should be investigated (missing F in the most
+  recent advice year is common for data-limited stocks).
 ```
 
 - [ ] **Step 3: Commit**
@@ -679,24 +754,14 @@ git commit -m "docs(baltic): summarize ICES cross-validation findings and known 
 Append to `tests/test_baltic_ices_validation.py`:
 
 ```python
-def test_no_severe_f_rate_drift():
+def test_no_severe_f_rate_drift(report):
     """Model F must stay within [0.25x, 4x] of ICES F — a wider fence than
     the validator's [0.5x, 1.5x] tolerance. Tighter fence = more false
-    positives on benign tweaks; this catches only order-of-magnitude drift."""
-    import importlib.util
-    import sys
+    positives on benign tweaks; this catches only order-of-magnitude drift.
 
-    script = PROJECT_ROOT / "scripts" / "validate_baltic_vs_ices_sag.py"
-    spec = importlib.util.spec_from_file_location("vbices", script)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules["vbices"] = mod
-    try:
-        spec.loader.exec_module(mod)
-        report = mod.run(write_report=False)
-    finally:
-        sys.modules.pop("vbices", None)
-
+    Uses the module-scoped `report` fixture defined at the top of this
+    file so the comparisons run only once per pytest invocation.
+    """
     severe = []
     for r in report["f_rates"]:
         if r["ices_f_weighted"] is None:
@@ -710,24 +775,11 @@ def test_no_severe_f_rate_drift():
     )
 
 
-def test_biomass_envelope_overlaps_ices_for_assessed_species():
+def test_biomass_envelope_overlaps_ices_for_assessed_species(report):
     """For every species with ICES stocks linked, the model's biomass
     envelope must overlap the ICES SSB envelope (2018-2022). Species with
-    no linked stocks are allowed to have any envelope."""
-    import importlib.util
-    import sys
-
-    script = PROJECT_ROOT / "scripts" / "validate_baltic_vs_ices_sag.py"
-    spec = importlib.util.spec_from_file_location("vbices", script)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules["vbices"] = mod
-    try:
-        spec.loader.exec_module(mod)
-        report = mod.run(write_report=False)
-    finally:
-        sys.modules.pop("vbices", None)
-
+    no linked stocks are allowed to have any envelope.
+    """
     non_overlapping = [
         r["species"] for r in report["biomass_envelopes"]
         if r["envelopes_overlap"] is False
@@ -780,13 +832,20 @@ Snapshots freeze the 2023 ICES advice. When ICES publishes a new advice year
 (typically every May/June), refresh via:
 
 1. Start a Claude Code session in this repo so the `ices` MCP server loads.
-2. Update `index.json:advice_year`.
+2. Update `index.json`: bump `advice_year` and `created`.
 3. Re-run every `get_stock_assessment` and `get_reference_points` call for
    every stock listed in `index.json`, writing the new payloads to
    `{stock}.assessment.json` / `{stock}.reference_points.json`.
-4. Run `.venv/bin/python scripts/validate_baltic_vs_ices_sag.py --report` and
+4. **Update hardcoded constants in `scripts/validate_baltic_vs_ices_sag.py`:**
+   - `WINDOW_YEARS` (currently `range(2018, 2023)`) — shift to the last
+     five years covered by the new advice (`range(advice_year - 5, advice_year)`).
+   - `REPORT_MD` filename (currently contains `2026-04-18`) — update the
+     date stub to reflect the refresh date.
+   - The `"(2023 advice)"` label in the validator docstring and report
+     header should also match the new advice year.
+5. Run `.venv/bin/python scripts/validate_baltic_vs_ices_sag.py --report` and
    review `docs/baltic_ices_validation_<date>.md` for new drift.
-5. If drift has changed materially, open a separate PR to adjust
+6. If drift has changed materially, open a separate PR to adjust
    `baltic_param-fishing.csv` / `biomass_targets.csv` (this repo's
    calibration-tuning plan, NOT the validation plan).
 ```
