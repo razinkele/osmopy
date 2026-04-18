@@ -17,9 +17,6 @@ STYLE_CONSOLE = (
 # Monospace key display
 STYLE_MONO_KEY = "font-family: 'JetBrains Mono', 'Cascadia Code', monospace; font-size: 12px;"
 
-# Constraint hint text below inputs
-STYLE_HINT = "color: #5a6a7a; font-size: 11px; margin-top: -8px;"
-
 # Empty state placeholder
 STYLE_EMPTY = "padding: 20px; text-align: center; color: #5a6a7a;"
 

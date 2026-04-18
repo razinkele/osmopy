@@ -28,13 +28,12 @@ def test_app_loads_with_navigation(page: Page, app: ShinyAppProc):
         expect(loc.first).to_be_visible(timeout=5000)
 
 
-def test_default_tab_is_setup(page: Page, app: ShinyAppProc):
-    """Setup tab should be active by default."""
+def test_default_tab_is_domain(page: Page, app: ShinyAppProc):
+    """Domain (grid) tab should be active by default — it hosts the example loader."""
     page.goto(app.url)
     page.wait_for_selector(".nav-pills", timeout=15000)
 
-    # The main nav's active link should be Setup
-    active = page.locator("#main_nav .nav-link.active[data-value='setup']")
+    active = page.locator("#main_nav .nav-link.active[data-value='grid']")
     expect(active).to_be_visible(timeout=5000)
 
 

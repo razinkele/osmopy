@@ -1497,6 +1497,56 @@ body > .row > .nav-col-collapsed ~ [class*="col-"] {
     margin-top: 4px;
 }
 
+/* ── Compact form layout (global) ────────────────────────────
+   Applied across all pages so the app feels uniformly dense.
+   Exceptions (e.g. console textareas, large map widgets) scope
+   their own overrides locally. */
+.shiny-input-container {
+    margin-bottom: 6px;
+}
+.shiny-input-container > label,
+.shiny-input-container > .control-label,
+.control-label {
+    margin-bottom: 2px;
+    font-size: 0.85rem;
+}
+.form-control,
+.form-select {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.85rem;
+    min-height: auto;
+}
+/* Let textareas (console output, scenario JSON) keep readable sizing. */
+textarea.form-control {
+    font-size: 0.82rem;
+    padding: 0.4rem 0.55rem;
+}
+.card-body {
+    padding: 0.6rem 0.8rem;
+}
+.card-header {
+    padding: 0.5rem 0.8rem;
+}
+/* h4/h5 are widely used as section titles — tighten them too. */
+.card h4, .card h5 {
+    font-size: 0.95rem;
+    margin: 0.5rem 0 0.25rem;
+}
+hr {
+    margin: 0.5rem 0;
+}
+.form-switch {
+    margin-bottom: 4px;
+}
+/* Action buttons in dense forms */
+.btn-sm, .btn {
+    padding: 0.3rem 0.7rem;
+}
+/* Preserve larger padding for the primary run buttons where emphasis helps. */
+.btn-run, .btn-lg {
+    padding: 0.5rem 1rem !important;
+}
+
 /* ── Responsive / mobile ────────────────────────────────────── */
 @media (max-width: 768px) {
     .nav-pills { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; white-space: nowrap; padding-bottom: 0.5rem; }

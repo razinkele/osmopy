@@ -1,5 +1,8 @@
-"""Grid configuration page."""
+"""Grid / Domain configuration page."""
 
+import atexit
+import shutil
+import tempfile
 from pathlib import Path
 
 from shiny import ui, reactive, render
@@ -15,6 +18,7 @@ from shiny_deckgl import (  # type: ignore[import-untyped]
     scale_widget,
 )
 
+from osmose.demo import list_demos, migrate_config, osmose_demo
 from osmose.logging import setup_logging
 from osmose.schema.grid import GRID_FIELDS
 from ui.components.collapsible import collapsible_card_header, expand_tab
@@ -86,11 +90,33 @@ def grid_ui():
         controls=[],
     )
 
+    demo_choices = {
+        "": "— Select example —",
+        **{d: d.replace("_", " ").title() for d in list_demos()},
+    }
     return ui.div(
         expand_tab("Grid Type", "grid"),
         ui.layout_columns(
             ui.card(
                 collapsible_card_header("Grid Type", "grid"),
+                ui.div(
+                    ui.layout_columns(
+                        ui.input_select(
+                            "load_example",
+                            "Example configuration",
+                            choices=demo_choices,
+                            selected="",
+                        ),
+                        ui.div(
+                            ui.input_action_button(
+                                "btn_load_example", "Load", class_="btn-primary w-100"
+                            ),
+                            style="display: flex; align-items: flex-end; height: 100%;",
+                        ),
+                        col_widths=[8, 4],
+                    ),
+                ),
+                ui.hr(),
                 ui.output_ui("grid_overlay_selector"),
                 ui.output_ui("overlay_nc_controls"),
                 ui.output_ui("movement_controls"),
@@ -774,3 +800,64 @@ def grid_server(input, output, session, state):
     @reactive.effect
     def sync_grid_inputs():
         sync_inputs(input, state, GRID_GLOBAL_KEYS)
+
+    @reactive.effect
+    @reactive.event(input.btn_load_example)
+    def handle_load_example():
+        """Load a bundled example config when Load button is clicked."""
+        from osmose.config.reader import OsmoseConfigReader
+
+        example = input.load_example()
+        if not example:
+            ui.notification_show("Select an example first.", type="warning", duration=5)
+            return
+
+        try:
+            tmp = Path(tempfile.mkdtemp(prefix="osmose_demo_"))
+            atexit.register(shutil.rmtree, str(tmp), True)
+            result = osmose_demo(example, tmp)
+        except ValueError as exc:
+            _log.error("Failed to load example config: %s", exc, exc_info=True)
+            ui.notification_show(
+                "Failed to load example. Check server logs for details.",
+                type="error",
+                duration=15,
+            )
+            return
+
+        master = result["config_file"]
+        if not master.exists():
+            ui.notification_show(f"Example not found: {master}", type="error", duration=15)
+            return
+
+        config_dir = master.parent
+
+        state.loading.set(True)
+        try:
+            reader = OsmoseConfigReader()
+            cfg = migrate_config(reader.read(master))
+            state.key_case_map.set(dict(reader.key_case_map))
+            state.config.set(cfg)
+            state.config_dir.set(config_dir)
+            state.config_name.set(example.replace("_", " ").title())
+
+            try:
+                n_species = int(float(cfg.get("simulation.nspecies", "0") or "0"))
+            except (ValueError, TypeError):
+                n_species = 0
+            names = [cfg.get(f"species.name.sp{i}", f"Species {i}") for i in range(n_species)]
+            state.species_names.set(names)
+
+            ui.update_numeric("n_species", value=n_species)
+
+            with reactive.isolate():
+                state.load_trigger.set(state.load_trigger.get() + 1)
+
+            ui.notification_show(
+                f"Loaded '{example}' ({len(cfg)} parameters).",
+                type="message",
+                duration=3,
+            )
+            state.dirty.set(False)
+        finally:
+            state.loading.set(False)

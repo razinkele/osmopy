@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any
 from shiny import ui
 from osmose.logging import setup_logging
 from osmose.schema.base import OsmoseField, ParamType
-from ui.styles import STYLE_HINT
 
 if TYPE_CHECKING:
     from shiny.session import Session
@@ -131,7 +130,7 @@ def render_field(
 
     match field.param_type:
         case ParamType.FLOAT:
-            widget = ui.input_numeric(
+            return ui.input_numeric(
                 input_id,
                 label,
                 value=default if default is not None else 0.0,  # type: ignore[arg-type]
@@ -139,15 +138,8 @@ def render_field(
                 max=field.max_val,
                 step=_guess_step(field),
             )
-            hint = constraint_hint(field)
-            if hint:
-                return ui.div(
-                    widget,
-                    ui.tags.small(hint, style=STYLE_HINT),
-                )
-            return widget
         case ParamType.INT:
-            widget = ui.input_numeric(
+            return ui.input_numeric(
                 input_id,
                 label,
                 value=default if default is not None else 0,  # type: ignore[arg-type]
@@ -155,13 +147,6 @@ def render_field(
                 max=int(field.max_val) if field.max_val is not None else None,
                 step=1,
             )
-            hint = constraint_hint(field)
-            if hint:
-                return ui.div(
-                    widget,
-                    ui.tags.small(hint, style=STYLE_HINT),
-                )
-            return widget
         case ParamType.BOOL:
             return ui.input_switch(
                 input_id,

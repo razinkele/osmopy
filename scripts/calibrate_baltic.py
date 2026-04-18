@@ -472,6 +472,7 @@ def run_calibration(
     n_seeds: int = 1,
     n_years: int = 40,
     popsize: int = 15,
+    popsize_mult: int = 10,
 ) -> dict:
     """Run differential evolution calibration for the specified phase."""
     from osmose.config.reader import OsmoseConfigReader
@@ -557,7 +558,7 @@ def run_calibration(
     # - 30% near R18 (±15% perturbation for local exploitation)
     # - 70% Latin Hypercube for global exploration
     n_params = len(param_keys)
-    eff_popsize = max(popsize, 10 * n_params)  # at least 10× n_params
+    eff_popsize = max(popsize, popsize_mult * n_params)
     rng = np.random.default_rng(42)
     x0_arr = np.array(x0)
     bounds_arr = np.array(bounds)
@@ -786,7 +787,9 @@ def main():
     parser.add_argument("--phase", type=str, default="1b",
                         help="Calibration phase: 1=all 16p, 1b=focused 8p, 2=fishing 8p")
     parser.add_argument("--maxiter", type=int, default=200, help="DE max iterations")
-    parser.add_argument("--popsize", type=int, default=15, help="DE population size multiplier")
+    parser.add_argument("--popsize", type=int, default=15, help="DE absolute population size floor")
+    parser.add_argument("--popsize-mult", type=int, default=10,
+                        help="DE population size multiplier of n_params (default 10)")
     parser.add_argument("--seeds", type=int, default=3, help="Number of seeds for validation")
     parser.add_argument("--years", type=int, default=40, help="Simulation years per eval")
     parser.add_argument("--validate", action="store_true", help="Run validation only")
@@ -801,6 +804,7 @@ def main():
             n_seeds=args.seeds,
             n_years=args.years,
             popsize=args.popsize,
+            popsize_mult=args.popsize_mult,
         )
 
 
