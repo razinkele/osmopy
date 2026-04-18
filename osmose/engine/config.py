@@ -795,6 +795,16 @@ def _parse_output_flags(cfg: dict[str, str], n_sp: int, n_bkg: int) -> dict[str,
         "output_biomass_bysize": _enabled(cfg, "output.biomass.bysize.enabled"),
         "output_abundance_byage": _enabled(cfg, "output.abundance.byage.enabled"),
         "output_abundance_bysize": _enabled(cfg, "output.abundance.bysize.enabled"),
+        # Three pre-existing schema keys that were declared but not parsed
+        "output_biomass_netcdf": _enabled(cfg, "output.biomass.netcdf.enabled"),
+        "output_abundance_netcdf": _enabled(cfg, "output.abundance.netcdf.enabled"),
+        "output_yield_biomass_netcdf": _enabled(cfg, "output.yield.biomass.netcdf.enabled"),
+        # Five new keys
+        "output_biomass_byage_netcdf": _enabled(cfg, "output.biomass.byage.netcdf.enabled"),
+        "output_abundance_byage_netcdf": _enabled(cfg, "output.abundance.byage.netcdf.enabled"),
+        "output_biomass_bysize_netcdf": _enabled(cfg, "output.biomass.bysize.netcdf.enabled"),
+        "output_abundance_bysize_netcdf": _enabled(cfg, "output.abundance.bysize.netcdf.enabled"),
+        "output_mortality_netcdf": _enabled(cfg, "output.mortality.netcdf.enabled"),
         "output_size_min": float(cfg.get("output.distrib.bysize.min", "0")),
         "output_size_max": float(cfg.get("output.distrib.bysize.max", "205")),
         "output_size_incr": float(cfg.get("output.distrib.bysize.incr", "10")),
@@ -1263,6 +1273,16 @@ class EngineConfig:
     output_bioen_maint: bool = False
     output_bioen_rho: bool = False
     output_bioen_sizeinf: bool = False
+
+    # NetCDF output flags (gated per-variable; no master switch)
+    output_biomass_netcdf: bool = False
+    output_abundance_netcdf: bool = False
+    output_yield_biomass_netcdf: bool = False
+    output_biomass_byage_netcdf: bool = False
+    output_abundance_byage_netcdf: bool = False
+    output_biomass_bysize_netcdf: bool = False
+    output_abundance_bysize_netcdf: bool = False
+    output_mortality_netcdf: bool = False
 
     def __post_init__(self) -> None:
         """Validate invariants after construction.
@@ -1848,4 +1868,12 @@ class EngineConfig:
             output_bioen_maint=_output["output_bioen_maint"],
             output_bioen_rho=_output["output_bioen_rho"],
             output_bioen_sizeinf=_output["output_bioen_sizeinf"],
+            output_biomass_netcdf=_output["output_biomass_netcdf"],
+            output_abundance_netcdf=_output["output_abundance_netcdf"],
+            output_yield_biomass_netcdf=_output["output_yield_biomass_netcdf"],
+            output_biomass_byage_netcdf=_output["output_biomass_byage_netcdf"],
+            output_abundance_byage_netcdf=_output["output_abundance_byage_netcdf"],
+            output_biomass_bysize_netcdf=_output["output_biomass_bysize_netcdf"],
+            output_abundance_bysize_netcdf=_output["output_abundance_bysize_netcdf"],
+            output_mortality_netcdf=_output["output_mortality_netcdf"],
         )

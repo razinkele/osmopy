@@ -335,50 +335,140 @@ def write_outputs_netcdf(
     path: Path,
     config: EngineConfig,
 ) -> None:
-    """Write simulation outputs to NetCDF format using xarray.
+    """Write simulation outputs to NetCDF.
 
-    Creates a dataset with biomass and abundance as variables,
-    with time and species dimensions.
+    Each of the 8 possible variables is gated by its own
+    ``output.{var}.netcdf.enabled`` config key. When every toggle is
+    off, no file is written.
+
+    Ragged per-species distribution bins are padded to cross-species
+    max with NaN. Declares CF-1.8 conventions; every float DataArray
+    carries ``_FillValue = NaN``.
     """
     import xarray as xr
 
-    times = np.array([o.step / config.n_dt_per_year for o in outputs])
-    biomass_data = np.array([o.biomass for o in outputs])
-    abundance_data = np.array([o.abundance for o in outputs])
+    want = {
+        "biomass": config.output_biomass_netcdf,
+        "abundance": config.output_abundance_netcdf,
+        "yield": config.output_yield_biomass_netcdf
+        and any(o.yield_by_species is not None for o in outputs),
+        "biomass_by_age": config.output_biomass_byage_netcdf
+        and any(o.biomass_by_age is not None for o in outputs),
+        "abundance_by_age": config.output_abundance_byage_netcdf
+        and any(o.abundance_by_age is not None for o in outputs),
+        "biomass_by_size": config.output_biomass_bysize_netcdf
+        and any(o.biomass_by_size is not None for o in outputs),
+        "abundance_by_size": config.output_abundance_bysize_netcdf
+        and any(o.abundance_by_size is not None for o in outputs),
+        "mortality_by_cause": config.output_mortality_netcdf,
+    }
+    if not any(want.values()):
+        return
 
-    n_species = biomass_data.shape[1]
+    times = np.array([o.step / config.n_dt_per_year for o in outputs])
+    n_species = len(outputs[0].biomass)
     species_names = config.all_species_names[:n_species]
 
-    ds = xr.Dataset(
-        {
-            "biomass": (["time", "species"], biomass_data),
-            "abundance": (["time", "species"], abundance_data),
-        },
-        coords={
-            "time": times,
-            "species": species_names,
-        },
-        attrs={
-            "description": "OSMOSE Python engine output",
-            "n_dt_per_year": config.n_dt_per_year,
-            "n_year": config.n_year,
-        },
-    )
+    data_vars: dict = {}
+    coords: dict = {"time": times, "species": species_names}
 
-    # Add yield if available
-    yield_data = [o.yield_by_species for o in outputs if o.yield_by_species is not None]
-    if yield_data:
-        yield_arr = np.array(yield_data)
-        focal_names = config.species_names[: yield_arr.shape[1]]
-        ds["yield"] = (["time", "focal_species"], yield_arr)
-        ds.coords["focal_species"] = focal_names
+    if want["biomass"]:
+        data_vars["biomass"] = (
+            ["time", "species"],
+            np.array([o.biomass for o in outputs]),
+        )
+    if want["abundance"]:
+        data_vars["abundance"] = (
+            ["time", "species"],
+            np.array([o.abundance for o in outputs]),
+        )
+    if want["yield"]:
+        yield_arr = np.array(
+            [
+                o.yield_by_species
+                if o.yield_by_species is not None
+                else np.full(config.n_species, np.nan)
+                for o in outputs
+            ]
+        )
+        data_vars["yield"] = (["time", "focal_species"], yield_arr)
+        coords["focal_species"] = config.species_names[: yield_arr.shape[1]]
 
+    def _pad(attr: str) -> tuple[np.ndarray, int]:
+        max_bins = 0
+        for o in outputs:
+            d = getattr(o, attr)
+            if d is None:
+                continue
+            for arr in d.values():
+                max_bins = max(max_bins, len(arr))
+        result = np.full((len(outputs), n_species, max_bins), np.nan)
+        for t_idx, o in enumerate(outputs):
+            d = getattr(o, attr)
+            if d is None:
+                continue
+            for sp, arr in d.items():
+                result[t_idx, sp, : len(arr)] = arr
+        return result, max_bins
+
+    if want["biomass_by_age"]:
+        arr, n_age = _pad("biomass_by_age")
+        data_vars["biomass_by_age"] = (["time", "species", "age_bin"], arr)
+        coords["age_bin"] = np.arange(n_age, dtype=np.float64)
+    if want["abundance_by_age"]:
+        arr, n_age = _pad("abundance_by_age")
+        data_vars["abundance_by_age"] = (["time", "species", "age_bin"], arr)
+        coords.setdefault("age_bin", np.arange(n_age, dtype=np.float64))
+    if want["biomass_by_size"]:
+        arr, n_size = _pad("biomass_by_size")
+        data_vars["biomass_by_size"] = (["time", "species", "size_bin"], arr)
+        coords["size_bin"] = np.arange(n_size, dtype=np.float64)
+    if want["abundance_by_size"]:
+        arr, n_size = _pad("abundance_by_size")
+        data_vars["abundance_by_size"] = (["time", "species", "size_bin"], arr)
+        coords.setdefault("size_bin", np.arange(n_size, dtype=np.float64))
+
+    if want["mortality_by_cause"]:
+        from osmose.engine.state import MortalityCause
+
+        data_vars["mortality_by_cause"] = (
+            ["time", "species", "cause"],
+            np.array([o.mortality_by_cause for o in outputs]),
+        )
+        coords["cause"] = [c.name.capitalize() for c in MortalityCause]
+        # Match the existing CSV writer at osmose/engine/output.py:161
+        # ("Predation", "Starvation", ..., "Aging"). Users comparing CSV
+        # and NetCDF outputs see identical cause labels.
+
+    dataset_attrs = {
+        "description": "OSMOSE Python engine output",
+        "n_dt_per_year": config.n_dt_per_year,
+        "n_year": config.n_year,
+        "Conventions": "CF-1.8",
+        "distribution_padding": (
+            "Ragged per-species bin counts are padded to cross-species "
+            "max with NaN. Structural padding is indistinguishable from "
+            "missing data — downstream tools treat both identically."
+        ),
+    }
+    if "mortality_by_cause" in data_vars:
+        # Glossary for opaque enum members (Foraging = bioen cost-of-foraging;
+        # Out = advected-out-of-domain). Attached when mortality var is present.
+        dataset_attrs["cause_descriptions"] = (
+            "Predation: schools consumed by other schools; "
+            "Starvation: failed energy budget; "
+            "Additional: residual/M-other; "
+            "Fishing: captured by fishing mortality; "
+            "Out: advected out of domain; "
+            "Foraging: bioenergetic cost-of-foraging (Ev-OSMOSE only); "
+            "Discards: discarded catch; "
+            "Aging: senescence at lifespan."
+        )
+    ds = xr.Dataset(data_vars, coords=coords, attrs=dataset_attrs)
+    for name in ds.data_vars:
+        if np.issubdtype(ds[name].dtype, np.floating):
+            ds[name].encoding["_FillValue"] = np.float64("nan")
     ds.to_netcdf(path)
-
-    # TODO(v0.7): Add size/age distribution outputs — see docs/parity-roadmap.md §5.3.
-    # Blocked on per-school data being carried through StepOutput (currently only aggregates).
-    # TODO(v0.7): Add spatial biomass/abundance maps — see docs/parity-roadmap.md §5.4.
-    # Blocked on per-cell aggregation framework; needs cell-indexed data in StepOutput.
 
 
 # ---------------------------------------------------------------------------

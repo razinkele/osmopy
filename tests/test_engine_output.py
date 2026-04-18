@@ -2,11 +2,13 @@
 
 import numpy as np
 import pandas as pd
+import xarray as xr
 
 from osmose.engine.config import EngineConfig
-from osmose.engine.output import write_outputs
+from osmose.engine.output import write_outputs, write_outputs_netcdf
 from osmose.engine.simulate import StepOutput
 from osmose.engine.state import MortalityCause
+from tests.helpers import make_minimal_engine_config
 
 _N_CAUSES = len(MortalityCause)
 
@@ -149,9 +151,7 @@ class TestMortalityOutput:
             ),
         ]
         write_outputs(outputs, tmp_path, cfg)
-        df = pd.read_csv(
-            tmp_path / "Mortality" / "osm_mortalityRate-Anchovy_Simu0.csv", skiprows=1
-        )
+        df = pd.read_csv(tmp_path / "Mortality" / "osm_mortalityRate-Anchovy_Simu0.csv", skiprows=1)
         assert "Fishing" in df.columns
         assert "Predation" in df.columns
         assert df["Fishing"].iloc[0] == 10.0
@@ -175,3 +175,152 @@ class TestPythonEngineWritesOutput:
         # Read and verify non-empty
         df = pd.read_csv(tmp_path / "osm_biomass_Simu0.csv", skiprows=1)
         assert len(df) == 12  # 12 timesteps for 1 year
+
+
+# ---------------------------------------------------------------------------
+# NetCDF output tests (SP-4 Task 2)
+# ---------------------------------------------------------------------------
+
+# Extra raw config keys to build a valid 2-species EngineConfig.
+_CFG_2SP: dict[str, str] = {
+    "simulation.nspecies": "2",
+    "simulation.nschool.sp0": "5",
+    "simulation.nschool.sp1": "5",
+    "species.name.sp1": "sp1",
+    "species.lifespan.sp1": "10",
+    "species.linf.sp1": "80.0",
+    "species.k.sp1": "0.1",
+    "species.t0.sp1": "0.0",
+    "species.egg.size.sp1": "0.1",
+    "species.length2weight.condition.factor.sp1": "0.01",
+    "species.length2weight.allometric.power.sp1": "3.0",
+    "species.vonbertalanffy.threshold.age.sp1": "0.0",
+    "predation.ingestion.rate.max.sp1": "3.5",
+    "predation.efficiency.critical.sp1": "0.57",
+}
+
+
+def _make_step_with_age(step: int, n_sp: int, bins_by_sp: dict | None = None) -> StepOutput:
+    biomass_by_age = None
+    abundance_by_age = None
+    if bins_by_sp is not None:
+        biomass_by_age = {
+            sp: np.arange(bins_by_sp[sp], dtype=np.float64)
+            for sp in range(n_sp)
+            if sp in bins_by_sp
+        }
+        abundance_by_age = {
+            sp: np.arange(bins_by_sp[sp], dtype=np.float64) * 100.0
+            for sp in range(n_sp)
+            if sp in bins_by_sp
+        }
+    return StepOutput(
+        step=step,
+        biomass=np.full(n_sp, 100.0 * (step + 1)),
+        abundance=np.full(n_sp, 1000.0 * (step + 1)),
+        mortality_by_cause=np.arange(n_sp * 8, dtype=np.float64).reshape(n_sp, 8),
+        biomass_by_age=biomass_by_age,
+        abundance_by_age=abundance_by_age,
+    )
+
+
+def test_netcdf_contains_biomass_by_age_when_enabled(tmp_path):
+    cfg = make_minimal_engine_config(
+        extra_cfg=_CFG_2SP,
+        output_biomass_byage_netcdf=True,
+    )
+    outputs = [_make_step_with_age(t, 2, {0: 3, 1: 3}) for t in (23, 47, 71)]
+    write_outputs_netcdf(outputs, tmp_path / "run_Simu0.nc", cfg)
+    ds = xr.open_dataset(tmp_path / "run_Simu0.nc")
+    assert "biomass_by_age" in ds.data_vars
+    assert ds["biomass_by_age"].dims == ("time", "species", "age_bin")
+    assert ds["biomass_by_age"].shape == (3, 2, 3)
+    np.testing.assert_array_equal(ds["biomass_by_age"].values[0, 0, :], [0, 1, 2])
+
+
+def test_netcdf_contains_mortality_by_cause(tmp_path):
+    cfg = make_minimal_engine_config(extra_cfg=_CFG_2SP, output_mortality_netcdf=True)
+    outputs = [_make_step_with_age(t, 2) for t in (23, 47)]
+    write_outputs_netcdf(outputs, tmp_path / "run_Simu0.nc", cfg)
+    ds = xr.open_dataset(tmp_path / "run_Simu0.nc")
+    assert "mortality_by_cause" in ds.data_vars
+    assert ds["mortality_by_cause"].dims == ("time", "species", "cause")
+    assert list(ds.coords["cause"].values) == [
+        "Predation",
+        "Starvation",
+        "Additional",
+        "Fishing",
+        "Out",
+        "Foraging",
+        "Discards",
+        "Aging",
+    ]  # capitalize() to match existing CSV writer at output.py:161
+
+
+def test_netcdf_not_written_when_every_toggle_disabled(tmp_path):
+    cfg = make_minimal_engine_config(
+        output_biomass_netcdf=False,
+        output_abundance_netcdf=False,
+        output_yield_biomass_netcdf=False,
+        output_biomass_byage_netcdf=False,
+        output_abundance_byage_netcdf=False,
+        output_biomass_bysize_netcdf=False,
+        output_abundance_bysize_netcdf=False,
+        output_mortality_netcdf=False,
+    )
+    path = tmp_path / "run_Simu0.nc"
+    write_outputs_netcdf([_make_step_with_age(23, 1)], path, cfg)
+    assert not path.exists()
+
+
+def test_netcdf_pads_ragged_age_bins_with_nan(tmp_path):
+    cfg = make_minimal_engine_config(
+        extra_cfg=_CFG_2SP,
+        output_biomass_byage_netcdf=True,
+    )
+    outputs = [_make_step_with_age(23, 2, {0: 4, 1: 2})]
+    write_outputs_netcdf(outputs, tmp_path / "run_Simu0.nc", cfg)
+    ds = xr.open_dataset(tmp_path / "run_Simu0.nc")
+    assert ds["biomass_by_age"].shape == (1, 2, 4)
+    np.testing.assert_array_equal(
+        np.isnan(ds["biomass_by_age"].values[0, 1, :]),
+        [False, False, True, True],
+    )
+
+
+def test_netcdf_pads_ragged_size_bins_with_nan(tmp_path):
+    cfg = make_minimal_engine_config(
+        extra_cfg=_CFG_2SP,
+        output_biomass_bysize_netcdf=True,
+    )
+    step = StepOutput(
+        step=23,
+        biomass=np.array([100.0, 200.0]),
+        abundance=np.array([1000.0, 2000.0]),
+        mortality_by_cause=np.zeros((2, 8)),
+        biomass_by_size={
+            0: np.array([1.0, 2.0, 3.0, 4.0]),
+            1: np.array([10.0, 20.0]),
+        },
+    )
+    write_outputs_netcdf([step], tmp_path / "run_Simu0.nc", cfg)
+    ds = xr.open_dataset(tmp_path / "run_Simu0.nc")
+    assert ds["biomass_by_size"].shape == (1, 2, 4)
+    np.testing.assert_array_equal(
+        np.isnan(ds["biomass_by_size"].values[0, 1, :]),
+        [False, False, True, True],
+    )
+
+
+def test_netcdf_cf_conventions_attr(tmp_path):
+    cfg = make_minimal_engine_config(
+        n_species=1,
+        output_biomass_byage_netcdf=True,
+    )
+    outputs = [_make_step_with_age(23, 1, {0: 2})]
+    write_outputs_netcdf(outputs, tmp_path / "run_Simu0.nc", cfg)
+    ds = xr.open_dataset(tmp_path / "run_Simu0.nc")
+    assert ds.attrs.get("Conventions") == "CF-1.8"
+    # _FillValue surfaces on encoding after round-trip
+    fv = ds["biomass_by_age"].encoding.get("_FillValue")
+    assert fv is not None and np.isnan(fv)

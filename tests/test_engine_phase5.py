@@ -166,6 +166,8 @@ class TestNetCDFOutput:
         from osmose.engine.output import write_outputs_netcdf
 
         cfg = _base_config(n_sp=2, n_dt=4)
+        cfg["output.biomass.netcdf.enabled"] = "true"
+        cfg["output.abundance.netcdf.enabled"] = "true"
         config = EngineConfig.from_dict(cfg)
         outputs = [
             StepOutput(
@@ -195,6 +197,8 @@ class TestNetCDFOutput:
         from osmose.engine.output import write_outputs_netcdf
 
         cfg = _base_config(n_sp=1, n_dt=4)
+        cfg["output.biomass.netcdf.enabled"] = "true"
+        cfg["output.abundance.netcdf.enabled"] = "true"
         config = EngineConfig.from_dict(cfg)
         outputs = [
             StepOutput(
