@@ -290,23 +290,26 @@ All seven items shipped. 5.1 / 5.2 / 5.3 / 5.7 were already in the Python engine
 
 ---
 
-## Phase 6: Bioenergetic Module (Ev-OSMOSE) — Future
+## Phase 6: Bioenergetic Module (Ev-OSMOSE) — STATUS-COMPLETE (2026-04-19)
 
-This is an entire alternative physiology model. Only needed for Ev-OSMOSE configurations.
+All five items shipped as part of the Ev-OSMOSE + DSVM fleet dynamics track (merge `5b0e0aa` Phase 1 MVP and the subsequent Phase 2 Genetics / Economics Core commits). Gated by `config.bioen_enabled`. 80/80 tests pass across `tests/test_engine_bioen*.py` and `tests/test_bioen_orchestration.py`.
 
-### 6.1 Energy budget growth
-**Gap:** `EnergyBudget` class replaces `GrowthProcess`
-### 6.2 Bioenergetic reproduction
-**Gap:** `BioenReproductionProcess` replaces standard reproduction
-### 6.3 Bioenergetic predation
-**Gap:** `BioenPredationMortality` modifies predation rate computation
-### 6.4 Bioenergetic starvation
-**Gap:** `BioenStarvationMortality` replaces standard starvation
-### 6.5 Foraging mortality
-**Gap:** `ForagingMortality` — new cause not in standard OSMOSE
+### 6.1 Energy budget growth — SHIPPED
+Bioenergetic growth/maintenance path wired into `_bioen_step` at `osmose/engine/simulate.py`; trait-overridable ingestion cap (`bioen_i_max`) via genetics. Alternative to standard `GrowthProcess`, selected by `bioen_enabled`.
 
-**Estimated effort:** 20-40 hours (major subsystem)
-**Priority:** Only when an Ev-OSMOSE config needs to run
+### 6.2 Bioenergetic reproduction — SHIPPED
+`osmose/engine/processes/bioen_reproduction.py`; `_bioen_reproduction` in simulate accepts `trait_overrides` (`bioen_r` for GSI, `bioen_m0`/`bioen_m1` for maturity). Replaces standard reproduction when `bioen_enabled`.
+
+### 6.3 Bioenergetic predation — SHIPPED
+`osmose/engine/processes/bioen_predation.py`; modifies predation rate via bioenergetic ingestion cap. Active under `bioen_enabled`.
+
+### 6.4 Bioenergetic starvation — SHIPPED
+`osmose/engine/processes/bioen_starvation.py` with internal subloop matching Java `BioenStarvationMortality` (gonad depletion). Dispatched from `mortality.py:98` when `bioen_enabled=True`.
+
+### 6.5 Foraging mortality — SHIPPED
+`osmose/engine/processes/foraging_mortality.py` matches Java `ForagingMortality.getRate()` with constant and genetic modes. `MortalityCause.FORAGING` (enum index 5) documented in the SP-4 `cause_descriptions` attr.
+
+**Priority fulfilled:** Ev-OSMOSE configurations now runnable on the Python engine.
 
 ---
 
