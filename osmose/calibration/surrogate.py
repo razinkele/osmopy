@@ -9,6 +9,27 @@ from sklearn.gaussian_process.kernels import Matern  # type: ignore[import-untyp
 from scipy.stats.qmc import LatinHypercube
 
 
+def _non_dominated_indices(F: np.ndarray) -> np.ndarray:
+    """Return indices of non-dominated rows (minimization).
+
+    A row i dominates j iff F[i] <= F[j] component-wise with at least one
+    strict inequality. O(n^2) in the number of candidates but the
+    surrogate's candidate pool is small (<= 10k) so it's fine.
+    """
+    n = F.shape[0]
+    is_dominated = np.zeros(n, dtype=bool)
+    for i in range(n):
+        if is_dominated[i]:
+            continue
+        le = np.all(F <= F[i], axis=1)
+        lt = np.any(F < F[i], axis=1)
+        dominators = le & lt
+        dominators[i] = False
+        if np.any(dominators):
+            is_dominated[i] = True
+    return np.flatnonzero(~is_dominated)
+
+
 class SurrogateCalibrator:
     """GP surrogate model that emulates OSMOSE for fast optimization.
 
@@ -99,10 +120,33 @@ class SurrogateCalibrator:
 
         return means, stds
 
-    def find_optimum(self, n_candidates: int = 10000, seed: int = 123) -> dict:
-        """Find the optimum on the surrogate by evaluating many random candidates.
+    def find_optimum(
+        self,
+        n_candidates: int = 10000,
+        seed: int = 123,
+        weights: list[float] | None = None,
+    ) -> dict:
+        """Find the optimum on the surrogate.
 
-        Returns dict with 'params', 'predicted_objectives', 'predicted_uncertainty'.
+        Single-objective: returns the argmin of the posterior mean.
+
+        Multi-objective with ``weights``: returns the argmin of the weighted
+        sum of posterior means. ``weights`` must be length ``n_objectives``
+        and must be non-negative.
+
+        Multi-objective without ``weights``: returns the Pareto (non-dominated)
+        set under minimization of the posterior means, plus an anchor point
+        (equal-weight scalarized best) populated under the same keys as the
+        single-objective response so legacy callers remain functional.
+
+        Returns
+        -------
+        dict
+          * single-objective / weighted: ``params``, ``predicted_objectives``,
+            ``predicted_uncertainty``.
+          * multi-objective / unweighted: the same keys (anchor point) plus
+            ``pareto`` containing ``params`` (M, k), ``objectives`` (M, n_obj)
+            and ``uncertainty`` (M, n_obj).
         """
         if not self._is_fitted:
             raise RuntimeError("Must call fit() before find_optimum()")
@@ -110,24 +154,43 @@ class SurrogateCalibrator:
         candidates = self.generate_samples(n_candidates, seed=seed)
         means, stds = self.predict(candidates)
 
-        # For single objective: find minimum
-        # For multi-objective: return Pareto front candidates
         if self.n_objectives == 1:
-            best_idx = np.argmin(means[:, 0])
+            best_idx = int(np.argmin(means[:, 0]))
             return {
                 "params": candidates[best_idx],
                 "predicted_objectives": means[best_idx],
                 "predicted_uncertainty": stds[best_idx],
             }
-        else:
-            # Return top candidates by sum of objectives (simple aggregation)
-            scores = np.sum(means, axis=1)
-            best_idx = np.argmin(scores)
+
+        if weights is not None:
+            w = np.asarray(weights, dtype=float)
+            if w.shape != (self.n_objectives,):
+                raise ValueError(
+                    f"weights length {w.shape[0] if w.ndim else 0} != "
+                    f"n_objectives {self.n_objectives}"
+                )
+            if np.any(w < 0):
+                raise ValueError("weights must be non-negative")
+            scores = means @ w
+            best_idx = int(np.argmin(scores))
             return {
                 "params": candidates[best_idx],
                 "predicted_objectives": means[best_idx],
                 "predicted_uncertainty": stds[best_idx],
             }
+
+        pareto_idx = _non_dominated_indices(means)
+        anchor = int(np.argmin(means.sum(axis=1)))
+        return {
+            "params": candidates[anchor],
+            "predicted_objectives": means[anchor],
+            "predicted_uncertainty": stds[anchor],
+            "pareto": {
+                "params": candidates[pareto_idx],
+                "objectives": means[pareto_idx],
+                "uncertainty": stds[pareto_idx],
+            },
+        }
 
     def cross_validate(
         self,

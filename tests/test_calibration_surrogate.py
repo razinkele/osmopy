@@ -78,3 +78,51 @@ class TestCrossValidate:
         cal = SurrogateCalibrator(param_bounds=[(0, 10)], n_restarts_optimizer=0)
         with pytest.raises(ValueError, match="k_folds"):
             cal.cross_validate(X, y, k_folds=5)
+
+
+class TestFindOptimumMultiObjective:
+    def test_find_optimum_multi_objective_returns_pareto_without_weights(self) -> None:
+        """With multiple objectives and no weights, find_optimum returns the
+        non-dominated (Pareto) set rather than an unweighted scalar sum."""
+        rng = np.random.default_rng(7)
+        bounds = [(0.0, 1.0), (0.0, 1.0)]
+        sc = SurrogateCalibrator(
+            param_bounds=bounds, n_objectives=2, n_restarts_optimizer=0
+        )
+
+        X = rng.uniform(0, 1, size=(40, 2))
+        # Competing objectives: obj0 prefers x0 small, obj1 prefers x0 large.
+        y = np.stack([X[:, 0], 1.0 - X[:, 0]], axis=1)
+        sc.fit(X, y)
+
+        result = sc.find_optimum(n_candidates=500, seed=1)
+        assert "pareto" in result, "must return a Pareto set key when no weights are given"
+        pareto = result["pareto"]
+        assert pareto["params"].shape[0] >= 2, "Pareto front has at least two points"
+        assert pareto["objectives"].shape[1] == 2
+
+    def test_find_optimum_multi_objective_with_weights_returns_single_point(self) -> None:
+        """When explicit weights are supplied, a scalarized best single point
+        must be returned (argmin of weighted-sum of posterior means)."""
+        rng = np.random.default_rng(11)
+        bounds = [(0.0, 1.0), (0.0, 1.0)]
+        sc = SurrogateCalibrator(
+            param_bounds=bounds, n_objectives=2, n_restarts_optimizer=0
+        )
+        X = rng.uniform(0, 1, size=(40, 2))
+        y = np.stack([X[:, 0], 1.0 - X[:, 0]], axis=1)
+        sc.fit(X, y)
+
+        result = sc.find_optimum(n_candidates=500, seed=1, weights=[1.0, 0.0])
+        # With weight only on obj0 (prefers small x0), best x0 should be near 0.
+        assert result["params"][0] < 0.2
+
+    def test_find_optimum_weights_must_match_n_objectives(self) -> None:
+        sc = SurrogateCalibrator(
+            param_bounds=[(0.0, 1.0)], n_objectives=2, n_restarts_optimizer=0
+        )
+        X = np.array([[0.1], [0.5], [0.9]])
+        y = np.array([[0.0, 1.0], [0.5, 0.5], [1.0, 0.0]])
+        sc.fit(X, y)
+        with pytest.raises(ValueError, match="weights"):
+            sc.find_optimum(weights=[0.5])  # wrong length
