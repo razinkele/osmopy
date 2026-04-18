@@ -117,10 +117,16 @@ class PreflightResult:
 
 
 class PreflightEvalError(RuntimeError):
-    """Raised when a preflight run fails so many samples that results are
-    unusable. The caller should review the evaluation_fn rather than trust
-    degenerate sensitivity indices.
+    """Raised when >50 % of preflight samples fail to evaluate.
+
+    The ``stage`` attribute names the preflight stage that failed
+    (``"morris"``, ``"sobol"``, or ``"unknown"``) so UI layers can
+    render a stage-specific error message without parsing ``str(exc)``.
     """
+
+    def __init__(self, *args, stage: str = "unknown") -> None:
+        super().__init__(*args)
+        self.stage = stage
 
 
 # ---------------------------------------------------------------------------
@@ -459,7 +465,8 @@ def _run_morris_stage(
         raise PreflightEvalError(
             f"Morris stage failure rate {failure_rate:.0%} exceeds "
             f"{_MAJORITY_FAILURE:.0%}; check evaluation_fn — sensitivity "
-            "indices would be meaningless."
+            "indices would be meaningless.",
+            stage="morris",
         )
 
     Y_clean = np.where(np.isfinite(Y_raw), Y_raw, 1e6)
@@ -470,7 +477,10 @@ def _run_morris_stage(
 
     for obj_idx in range(n_obj):
         result = morris_analyze.analyze(
-            problem, X, Y_clean[:, obj_idx], num_levels=num_levels,
+            problem,
+            X,
+            Y_clean[:, obj_idx],
+            num_levels=num_levels,
             print_to_console=False,
         )
         agg_mu_star = np.maximum(agg_mu_star, np.asarray(result["mu_star"]))
@@ -528,6 +538,7 @@ def _maybe_run_sobol_stage(
     analyzer = SensitivityAnalyzer(param_names=survivors, param_bounds=survivor_bounds)
 
     from SALib.sample import sobol as sobol_sample_mod  # type: ignore[import-untyped]
+
     sobol_kwargs: dict = {}
     if seed is not None:
         sobol_kwargs["seed"] = seed
@@ -593,7 +604,10 @@ def run_preflight(
 
     def _empty_result() -> PreflightResult:
         return PreflightResult(
-            screening=[], sobol=None, issues=[], survivors=[],
+            screening=[],
+            sobol=None,
+            issues=[],
+            survivors=[],
             elapsed_seconds=time.monotonic() - t_start,
         )
 
@@ -623,8 +637,11 @@ def run_preflight(
     if _cancelled():
         issues = detect_issues(screening, blowup_params=blowup_params)
         return PreflightResult(
-            screening=screening, sobol=None, issues=issues,
-            survivors=survivors, elapsed_seconds=time.monotonic() - t_start,
+            screening=screening,
+            sobol=None,
+            issues=issues,
+            survivors=survivors,
+            elapsed_seconds=time.monotonic() - t_start,
         )
 
     sobol_result, sobol_additions = _maybe_run_sobol_stage(

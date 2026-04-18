@@ -4,8 +4,10 @@ import threading
 
 from shiny import reactive
 
+from osmose.calibration.preflight import PreflightEvalError
 from tests.helpers import make_catch_all_input, make_multi_input
-from ui.pages.calibration import collect_selected_params, build_free_params
+from ui.pages.calibration import build_free_params, collect_selected_params
+from ui.pages.calibration_handlers import build_preflight_modal
 
 
 def test_collect_selected_params():
@@ -177,3 +179,18 @@ def test_surrogate_error_relayed_to_queue():
     assert len(msgs) == 1
     assert msgs[0][0] == "error"
     assert "singular matrix" in msgs[0][1]
+
+
+def test_preflight_modal_renders_error_banner_for_PreflightEvalError():
+    """A PreflightEvalError payload must produce a red-banner modal with
+    the stage name and the error message — not the generic success-shape
+    modal."""
+    exc = PreflightEvalError("half the Morris samples failed", stage="morris")
+    modal = build_preflight_modal(exc)
+    assert modal is not None, "Error modal should render, not return None"
+    html = str(modal)
+    assert "alert-danger" in html, "Expected red alert banner"
+    assert "morris" in html, "Expected stage label in banner"
+    assert "half the Morris samples failed" in html, "Expected error message in banner"
+    # Sanity: ensure it's NOT the success-shape modal
+    assert "Apply Selected & Start" not in html

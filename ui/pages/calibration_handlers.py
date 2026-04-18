@@ -65,6 +65,9 @@ class CalibrationMessageQueue:
     def post_preflight(self, result) -> None:
         self._q.put(("preflight", result))
 
+    def post_preflight_error(self, exc) -> None:
+        self._q.put(("preflight_error", exc))
+
     def drain(self) -> list[tuple]:
         msgs = []
         while True:
@@ -193,7 +196,46 @@ def _extract_species_stats(results, species_names: list[str], n_eval_years: int 
     return stats
 
 
-def build_preflight_modal(result):
+def build_preflight_modal(result_or_error):
+    """Dispatch on payload: PreflightEvalError → red-banner modal;
+    anything else → existing success-shape modal."""
+    from osmose.calibration.preflight import PreflightEvalError
+
+    if isinstance(result_or_error, PreflightEvalError):
+        return _build_preflight_error_modal(result_or_error)
+    return _build_preflight_success_modal(result_or_error)
+
+
+def _build_preflight_error_modal(exc):
+    """Render a red-banner modal for PreflightEvalError. Dismissal-only —
+    no retry button in this iteration."""
+    stage = getattr(exc, "stage", "unknown")
+    body = ui.div(
+        ui.div(
+            ui.tags.strong(f"Preflight failed — {stage} stage"),
+            ui.br(),
+            ui.tags.span(str(exc)),
+            class_="alert alert-danger",
+            role="alert",
+        ),
+        ui.p(
+            "Recovery: try narrowing parameter bounds, reducing the Morris "
+            "sample budget, or re-running with n_workers=1 to see the "
+            "underlying sample-evaluation exception.",
+            class_="mt-3",
+        ),
+    )
+    footer = ui.tags.button("Close", class_="btn btn-secondary", **{"data-bs-dismiss": "modal"})
+    return ui.modal(
+        body,
+        title="Pre-flight Screening Failed",
+        footer=footer,
+        easy_close=True,
+        size="l",
+    )
+
+
+def _build_preflight_success_modal(result):
     """Build a modal dialog showing pre-flight issues with fix checkboxes.
 
     Returns a ``ui.modal()`` if there are issues, or ``None`` if the result is clean.
@@ -370,6 +412,11 @@ def register_calibration_handlers(
                     fp = build_free_params(selected)
                     _start_optimization_with_params(fp)
                 else:
+                    ui.modal_show(modal)
+            elif kind == "preflight_error":
+                # build_preflight_modal dispatches on payload type → error helper
+                modal = build_preflight_modal(payload)
+                if modal is not None:
                     ui.modal_show(modal)
 
     @reactive.effect
@@ -776,7 +823,11 @@ def register_calibration_handlers(
         param_names = [fp.key for fp in free_params]
         param_bounds = [(fp.lower_bound, fp.upper_bound) for fp in free_params]
 
-        from osmose.calibration.preflight import make_preflight_eval_fn, run_preflight
+        from osmose.calibration.preflight import (
+            PreflightEvalError,
+            make_preflight_eval_fn,
+            run_preflight,
+        )
 
         eval_fn = make_preflight_eval_fn(
             free_params=free_params,
@@ -794,6 +845,8 @@ def register_calibration_handlers(
                     cancel_event=cancel_event,
                 )
                 msg_queue.post_preflight(result)
+            except PreflightEvalError as exc:
+                msg_queue.post_preflight_error(exc)
             except Exception as exc:
                 _log.error("Pre-flight screening failed: %s", exc, exc_info=True)
                 msg_queue.post_error(f"Pre-flight screening failed: {exc}")
