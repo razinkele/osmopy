@@ -158,12 +158,17 @@ def run_ui():
                         "Java",
                         ui.output_ui("jar_selector"),
                         ui.input_text(
-                            "java_opts", "Java options", value="-Xmx2g",
+                            "java_opts",
+                            "Java options",
+                            value="-Xmx2g",
                             placeholder="-Xmx4g -Xms1g",
                         ),
                         ui.input_numeric(
-                            "run_timeout", "Timeout (seconds)",
-                            value=3600, min=60, max=86400,
+                            "run_timeout",
+                            "Timeout (seconds)",
+                            value=3600,
+                            min=60,
+                            max=86400,
                         ),
                         ui.input_text_area(
                             "param_overrides",
@@ -175,11 +180,15 @@ def run_ui():
                     ui.nav_panel(
                         "Python",
                         ui.input_numeric(
-                            "py_threads", "Threads (Numba prange)",
-                            value=1, min=1, max=32,
+                            "py_threads",
+                            "Threads (Numba prange)",
+                            value=1,
+                            min=1,
+                            max=32,
                         ),
                         ui.input_select(
-                            "py_verbosity", "Verbosity",
+                            "py_verbosity",
+                            "Verbosity",
                             choices={"0": "Quiet", "1": "Normal", "2": "Verbose"},
                             selected="1",
                         ),
@@ -219,8 +228,15 @@ def run_ui():
 
 
 async def _run_python_engine(
-    input, state, session, config, work_dir, source_dir,
-    run_log, status, runner_ref,
+    input,
+    state,
+    session,
+    config,
+    work_dir,
+    source_dir,
+    run_log,
+    status,
+    runner_ref,
 ):
     """Run the simulation using the in-process Python engine."""
     overrides = parse_overrides(input.py_param_overrides() or "")
@@ -259,8 +275,15 @@ async def _run_python_engine(
 
 
 async def _run_java_engine(
-    input, state, session, config, work_dir, source_dir,
-    run_log, status, runner_ref,
+    input,
+    state,
+    session,
+    config,
+    work_dir,
+    source_dir,
+    run_log,
+    status,
+    runner_ref,
 ):
     """Run the simulation using the Java JAR subprocess."""
     jar_path = Path(state.jar_path.get())
@@ -374,7 +397,7 @@ def run_server(input, output, session, state):
     def _sync_engine_tab():
         mode = state.engine_mode.get()
         tab = "run_java_tab" if mode == "java" else "run_python_tab"
-        ui.update_navs("run_engine_tabs", selected=tab, session=session)
+        ui.update_navset("run_engine_tabs", selected=tab, session=session)
 
     @render.text
     def run_status():
@@ -430,13 +453,27 @@ def run_server(input, output, session, state):
 
         if engine_mode == "python":
             await _run_python_engine(
-                input, state, session, config, work_dir, source_dir,
-                run_log, status, runner_ref,
+                input,
+                state,
+                session,
+                config,
+                work_dir,
+                source_dir,
+                run_log,
+                status,
+                runner_ref,
             )
         else:
             await _run_java_engine(
-                input, state, session, config, work_dir, source_dir,
-                run_log, status, runner_ref,
+                input,
+                state,
+                session,
+                config,
+                work_dir,
+                source_dir,
+                run_log,
+                status,
+                runner_ref,
             )
 
     @reactive.effect

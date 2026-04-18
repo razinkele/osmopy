@@ -76,3 +76,7 @@ logs/
 .superpowers/
 www/skill-review.html
 www/skill-triggers.html
+.claude/scheduled_tasks.lock
+
+# Engine output directories (per-run artifacts)
+data/*/output/
