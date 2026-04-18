@@ -657,6 +657,7 @@ def make_preflight_eval_fn(
     objective_fns: list[Callable],
     *,
     run_years: int | None = None,
+    n_workers: int = 1,
 ) -> Callable[[np.ndarray], np.ndarray]:
     """Create an evaluation function suitable for ``run_preflight()``.
 
@@ -688,35 +689,51 @@ def make_preflight_eval_fn(
             self.samples = 0
             self.failures = 0
 
+        def _one(self, i: int, X: np.ndarray) -> tuple[int, np.ndarray | None, Exception | None]:
+            config = dict(base_config)
+            config["simulation.time.nyear"] = str(effective_years)
+            for j, fp in enumerate(free_params):
+                val = float(X[i, j])
+                if fp.transform is Transform.LOG:
+                    val = 10.0**val
+                config[fp.key] = str(val)
+            try:
+                engine = PythonEngine()
+                out_i = Path(output_dir) / f"preflight_{i}"
+                out_i.mkdir(parents=True, exist_ok=True)
+                engine.run(config, out_i)
+                osmose_results = OsmoseResults(out_i)
+                row = np.array([float(fn(osmose_results)) for fn in objective_fns])
+                return i, row, None
+            except Exception as exc:  # noqa: BLE001 — preflight is best-effort
+                return i, None, exc
+
         def __call__(self, X: np.ndarray) -> np.ndarray:
             n_samples = X.shape[0]
             results_matrix = np.full((n_samples, n_obj), np.inf)
 
-            for i in range(n_samples):
-                config = dict(base_config)
-                config["simulation.time.nyear"] = str(effective_years)
-                for j, fp in enumerate(free_params):
-                    val = float(X[i, j])
-                    if fp.transform is Transform.LOG:
-                        val = 10.0**val
-                    config[fp.key] = str(val)
-
-                try:
-                    engine = PythonEngine()
-                    engine.run(config, output_dir)
-                    osmose_results = OsmoseResults(output_dir)
-                    results_matrix[i] = np.array(
-                        [float(fn(osmose_results)) for fn in objective_fns]
-                    )
-                except Exception as exc:  # noqa: BLE001 — preflight is best-effort
+            def _record(i: int, row: np.ndarray | None, err: Exception | None) -> None:
+                if err is not None:
                     _log.warning(
                         "preflight sample %d failed (%s: %s); row left as inf",
                         i,
-                        type(exc).__name__,
-                        exc,
+                        type(err).__name__,
+                        err,
                     )
                     self.failures += 1
+                else:
+                    results_matrix[i] = row
                 self.samples += 1
+
+            if n_workers <= 1:
+                for i in range(n_samples):
+                    _record(*self._one(i, X))
+            else:
+                from concurrent.futures import ThreadPoolExecutor
+
+                with ThreadPoolExecutor(max_workers=n_workers) as pool:
+                    for i, row, err in pool.map(lambda i: self._one(i, X), range(n_samples)):
+                        _record(i, row, err)
 
             return results_matrix
 

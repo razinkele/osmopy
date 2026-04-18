@@ -480,3 +480,39 @@ def test_run_preflight_aborts_when_failure_rate_exceeds_threshold(tmp_path) -> N
             n_trajectories=3,
             num_levels=4,
         )
+
+
+def test_preflight_eval_fn_parallel_matches_serial(monkeypatch, tmp_path) -> None:
+    """With per-sample output_dir isolation, n_workers must not change output."""
+    from pathlib import Path
+
+    from osmose.calibration import preflight as pre
+    from osmose.calibration.problem import FreeParameter
+
+    class _Engine:
+        def run(self, config, output_dir):
+            (Path(output_dir) / "value.txt").write_text(str(config["species.k.sp0"]))
+
+    class _Results:
+        def __init__(self, output_dir, *a, **kw) -> None:
+            self.value = float((Path(output_dir) / "value.txt").read_text())
+
+    monkeypatch.setattr(pre, "PythonEngine", lambda: _Engine())
+    monkeypatch.setattr(pre, "OsmoseResults", _Results)
+
+    fp = [FreeParameter("species.k.sp0", 0.1, 0.9)]
+
+    def build(n_workers):
+        return pre.make_preflight_eval_fn(
+            free_params=fp,
+            base_config={},
+            output_dir=tmp_path,
+            objective_fns=[lambda r: r.value * 2.0],
+            run_years=1,
+            n_workers=n_workers,
+        )
+
+    X = np.linspace(0.1, 0.9, 12).reshape(-1, 1)
+    Y_serial = build(1)(X)
+    Y_parallel = build(4)(X)
+    np.testing.assert_allclose(Y_serial, Y_parallel)
