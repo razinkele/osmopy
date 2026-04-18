@@ -173,7 +173,7 @@ Becomes:
 
 ```python
 from shiny import req
-from shiny.reactive import SilentException
+from shiny.types import SilentException
 
 mode = getattr(input, "cal_optimum_mode", lambda: "pareto")()
 if mode == "weighted":
