@@ -10,7 +10,7 @@
 
 1. **5.5 diet-per-recording-period** — the one small cleanup (whole-run diet sum is trivially derivable; Java writes one matrix per recording step).
 2. **5.6 NetCDF completion** — extend the existing `write_outputs_netcdf` with per-species distribution variants (biomass/abundance by age and by size) and mortality-by-cause. All data is already in `StepOutput`; this is format-layer only.
-3. **5.4 spatial outputs** — the architectural piece: cell-indexed `StepOutput` fields for biomass, abundance, yield; a new `_collect_spatial_outputs` step; a new spatial NetCDF writer. Config keys match Java's `output.spatialized.*` pattern.
+3. **5.4 spatial outputs** — the architectural piece: cell-indexed `StepOutput` fields for biomass, abundance, yield; a new `_collect_spatial_outputs` step; a new spatial NetCDF writer. Config keys reuse the existing `output.spatial.*` schema entries (`osmose/schema/output.py:141-148`).
 
 **Out of scope.** Ev-OSMOSE outputs (genotype, bioen-spatial, diet-by-stage), debug/introspection outputs (school snapshots, spawn/death counts), per-fishery breakdowns (`FisheryOutput` — blocked by DSVM scope), spatial TL/size/mortality/egg maps (deferred — can be added without reshaping `StepOutput` once the spatial-biomass pattern is established), CSV variant of spatial outputs (NetCDF-only for v1). No change to existing output semantics (yield per species, biomass/abundance timeseries, mortality-by-cause CSV) — this spec only *adds* outputs and converts one (diet) from whole-run to per-period.
 
@@ -163,7 +163,7 @@ New function `_collect_spatial_outputs(state, grid, config) -> tuple[dict, dict,
 - For each school in `SchoolState`, look up its cell via `state.cell_id`.
 - Scatter biomass / abundance / fished-biomass into the per-species `(n_lat, n_lon)` arrays using `np.add.at` for correctness with duplicate cell writes.
 - **Always produces all three dicts when the master is enabled** (no per-variant skip at collection time — the three arrays share the same school loop, so splitting them would save trivial CPU while complicating the pairing invariant). Per-variant enablement gates only the writer.
-- Called from `_collect_outputs` only when `output.spatialized.enabled=true`. When the master is `false`, the function is not called at all and all three fields remain `None`.
+- Called from `_collect_outputs` only when `output.spatial.enabled=true`. When the master is `false`, the function is not called at all and all three fields remain `None`.
 
 ### Averaging (new per-field rules — not a simple reuse)
 
