@@ -88,6 +88,70 @@ def make_catch_all_input(value: Any):
     return FakeInput()
 
 
+# ---------------------------------------------------------------------------
+# Engine config test helpers
+# ---------------------------------------------------------------------------
+
+from dataclasses import replace  # noqa: E402
+
+from osmose.engine.config import EngineConfig  # noqa: E402
+
+# Minimum keys to satisfy EngineConfig.from_dict() for a 1-species, 0-background
+# test config. Do NOT add grid.* keys: grid is constructed separately (see Task 3
+# helper _make_grid_2x2_with_land) and is NOT parsed from the cfg dict by
+# EngineConfig.from_dict.
+_MINIMAL_CFG_DICT: dict[str, str] = {
+    "simulation.nspecies": "1",
+    "simulation.nbackground": "0",
+    "simulation.time.ndtperyear": "24",
+    "simulation.time.nyear": "1",
+    # Species-0 minimum
+    "species.name.sp0": "sp0",
+    "species.lifespan.sp0": "10",
+    # Von Bertalanffy growth
+    "species.linf.sp0": "100.0",
+    "species.k.sp0": "0.1",
+    "species.t0.sp0": "0.0",
+    "species.egg.size.sp0": "0.1",
+    "species.length2weight.condition.factor.sp0": "0.01",
+    "species.length2weight.allometric.power.sp0": "3.0",
+    "species.vonbertalanffy.threshold.age.sp0": "0.0",
+    # Predation
+    "predation.ingestion.rate.max.sp0": "3.5",
+    "predation.efficiency.critical.sp0": "0.57",
+}
+
+
+def make_minimal_engine_config(
+    *,
+    extra_cfg: dict[str, str] | None = None,
+    **overrides,
+) -> EngineConfig:
+    """Build a small ``EngineConfig`` for unit tests with keyword overrides.
+
+    ``extra_cfg`` injects/overrides raw config-dict keys before parsing
+    (use this for any key the existing reader honors — e.g. ``output.X.enabled``).
+    ``**overrides`` are applied via ``dataclasses.replace`` AFTER parsing,
+    for fields not exposed via config keys.
+
+    Raises AttributeError if an ``override`` names a non-existent
+    ``EngineConfig`` field — this is intentional. Update the dataclass
+    AND this helper together if you add a new field.
+    """
+    raw: dict[str, str] = dict(_MINIMAL_CFG_DICT)
+    if extra_cfg:
+        raw.update(extra_cfg)
+    base = EngineConfig.from_dict(raw)
+    if not overrides:
+        return base
+    # Validate overrides against declared fields
+    declared = {f.name for f in base.__dataclass_fields__.values()}
+    unknown = set(overrides) - declared
+    if unknown:
+        raise AttributeError(f"Unknown EngineConfig fields in overrides: {sorted(unknown)}")
+    return replace(base, **overrides)
+
+
 def make_multi_input(default: Any = _MISSING, **kwargs: Any):
     """Create a FakeInput that returns different values per input ID.
 
