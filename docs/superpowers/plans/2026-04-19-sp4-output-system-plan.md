@@ -1638,7 +1638,7 @@
 - **Mortality cause coord:** 8 capitalized members (`Predation`, `Starvation`, ..., `Aging`) matching the existing CSV writer at `osmose/engine/output.py:161`. ✓
 - **Test runner:** `.venv/bin/python -m pytest` throughout. No bare `python`, no `$()`. ✓
 - **Commit granularity:** Task 0 (helper) + 3 feature commits + CHANGELOG = 5 commits. Task-0 helper is a prerequisite — reverting any feature commit leaves the helper and test file intact. ✓
-- **Test count math:** baseline + 3 (Task 1) + 6 (Task 2) + 9 (Task 3) = baseline + 18. Re-run the baseline check in pre-flight to pin the concrete final number. ✓
+- **Test count math:** baseline + 3 (Task 1) + 6 (Task 2) + 14 (Task 3) = baseline + 23. Re-run the baseline check in pre-flight to pin the concrete final number. ✓
 
 ---
 
