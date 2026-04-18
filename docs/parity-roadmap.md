@@ -316,19 +316,17 @@ Bioenergetic growth/maintenance path wired into `_bioen_step` at `osmose/engine/
 ## Phase 7: Code Quality & Architecture (ongoing)
 
 ### 7.1 Reconcile dual predation paths
-**Gap:** `predation.py` (Numba) and `mortality.py` (per-cell Python) are two independent predation implementations
-**Fix:** Remove the standalone batch predation path; always use per-cell
-**Effort:** 2 hours
+**Gap:** `predation.py::predation()` is a standalone batch entry point that the production `simulate()` loop no longer calls (main path uses `mortality.py`'s per-cell implementation). Kept alive by 20+ call sites across `tests/test_engine_predation_helpers.py`, `tests/test_engine_background.py`, `tests/test_engine_rng_consumers.py`, `tests/test_engine_feeding_stages.py`.
+**Fix:** Migrate those test call sites to the per-cell path, then delete the standalone `predation()` function (helpers like `enable_diet_tracking`, `compute_size_overlap` remain — they're used by both paths).
+**Effort:** ~1 day (original 2h estimate was off; the 20+ test migration is the bulk of the work). **Not suitable for autonomous execution — needs test-parity audit first.**
 
-### 7.2 Pluggable growth classes
-**Gap:** `growth.java.classname.sp{i}` not supported
-**Fix:** Add growth class dispatch (VB, Gompertz, custom)
-**Effort:** 1 hour
+### 7.2 Pluggable growth classes — SHIPPED (pre-v0.9.0)
+Java class-name → dispatch-token mapping at `osmose/engine/config.py:32-36` (`fr.ird.osmose.process.growth.VonBertalanffyGrowth` → `VB`; `GompertzGrowth` → `GOMPERTZ`; plus the short-form `fr.ird.osmose.growth.*` aliases). `growth_class: list[str]` field on `EngineConfig` parsed at `config.py:1631-1633` from `growth.java.classname.sp{i}`. Runtime dispatch at `osmose/engine/processes/growth.py:151` (`expected_length_for_class`). Gompertz-specific parameters parsed conditionally at `config.py:1639-1642`. No roadmap action — header retained for history.
 
 ### 7.3 Config validation
-**Gap:** Many config keys silently ignored when misspelled or missing
-**Fix:** Add validation warnings for unknown keys, required key checks
-**Effort:** 2 hours
+**Gap:** Reader accepts ~134 keys; `ParameterRegistry` knows ~42. A naive "warn on unknown key" hook in `EngineConfig.from_dict()` would fire on ~92 legitimate keys (fisheries.*, evolution.*, fishing.rate.*, etc.) that are reader-honored but not schema-registered, creating noise rather than signal.
+**Fix (revised):** Two-layer approach. (a) Enumerate a reader-known key-pattern allowlist by introspecting the reader. (b) Union allowlist + schema-registered patterns = known-key set. (c) Warn only on keys outside the union. Optionally gate behind `validation.strict.enabled=true` config flag until confidence grows. **Design needed before implementation** — straightforward warn-on-unmatched would regress UX.
+**Effort:** ~1 day including the allowlist introspection pass and a careful test matrix across EEC / Baltic / Bay-of-Biscay configs.
 
 ---
 
