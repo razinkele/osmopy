@@ -1,5 +1,9 @@
 # Calibration UI Phase 2 — Implementation Plan
 
+> **STATUS (verified 2026-04-18): ALREADY EXECUTED — DO NOT RE-RUN.** Every file this plan modifies already contains the proposed changes (`osmose/calibration/history.py`, `tests/test_calibration_history.py`, `osmose/calibration/charts.py` with `make_correlation_chart` + multi-objective `make_sensitivity_chart`, `ui/pages/calibration.py` restructured tabs with `history_trigger` and `preflight_result` reactive values, `ui/pages/calibration_handlers.py` with banded loss / validation / history / 2D sensitivity handlers, `osmose/calibration/__init__.py` history exports). Task 3 Step 2 is **dangerous** to re-run — it would regress by dropping `history_trigger` and `preflight_result` from the reactive values and from the `register_calibration_handlers` signature. Keep this plan archived as a record of what landed, not as an execution target.
+>
+> **Known gap (future phase):** the plan pre-dates `PreflightEvalError`, parallel preflight (`n_workers`), and the Pareto-returning `find_optimum(weights=…)`. None of those are exposed in the UI by this plan or by current code. A follow-up "Calibration UI Phase 3" plan should cover them.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Expose Phase 1 calibration library features (banded loss, multi-seed validation, multi-objective sensitivity) in the Shiny UI, add a calibration history browser, and add parameter correlation visualization.

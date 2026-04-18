@@ -8,6 +8,12 @@
 
 **Architecture:** Two-layer design. Layer 1 (interactive/MCP-driven): pull raw ICES data via the MCP tools into `data/baltic/reference/ices_snapshots/*.json` — one snapshot per stock, taken once per advice year. Layer 2 (offline/deterministic): a script + pytest that compare `baltic_param-fishing.csv` and `biomass_targets.csv` against those snapshots. The snapshots are committed so validation is reproducible without re-querying ICES (keeps tests fast and independent of network).
 
+**ICES MCP response shape (verified against `/home/razinka/ices-mcp-server/ices/sag.py:80-132`):**
+- `get_stock_assessment` returns a **list of dicts** with lowercase keys: `year`, `ssb`, `recruitment`, `f`, `catches`, `landings`, `discards`, `low_ssb`, `high_ssb`. No uppercase variants; no dict-of-parallel-lists shape.
+- `get_reference_points` returns a **dict** with lowercase keys: `flim`, `fpa`, `fmsy`, `blim`, `bpa`, `msy_btrigger`, `f_age_range`, `recruitment_age`, optionally `note`. No `MSYBtrigger` / `Blim` etc. in the MCP output (those are only in the raw ICES response, before MCP flattening).
+
+Every downstream piece of code in this plan reads MCP output, so **use lowercase keys consistently**.
+
 **Tech Stack:** ICES MCP server (9 tools wrapping SAG, DATRAS, SD, Eggs & Larvae APIs — see `/home/razinka/ices-mcp-server/server.py:40-96`), Python 3.12, pandas, httpx, pytest, ruff.
 
 **Out of scope:** DATRAS survey CPUE comparison (useful for growth/recruitment calibration — separate plan), eggs & larvae spawning-ground cross-check (separate plan), adjusting the calibration objective weights in `scripts/calibrate_baltic.py:141` (belongs to a calibration-tuning plan, not this validation plan).
@@ -15,7 +21,7 @@
 **Pre-flight:**
 - Baseline: `.venv/bin/python -m pytest -q` must report 2432 passed before starting.
 - Lint baseline: `.venv/bin/ruff check osmose/ scripts/ tests/ ui/` must be clean.
-- MCP check: inside the session, invoke `list_stocks(year=2023, area_filter="27.2[0-9]")` and confirm results include at least `cod.27.24-32`, `her.27.25-2932`, `spr.27.22-32`. If that fails, the plan is blocked — do NOT proceed with snapshots.
+- MCP check: inside the session, invoke `list_stocks(year=2023, area_filter="27\\.2[0-9]")` and confirm results include at least `cod.27.24-32`, `her.27.25-2932`, `spr.27.22-32`, `fle.27.24-32`. If that fails, the plan is blocked — do NOT proceed with snapshots. **Also confirm the exact western-flounder stock-key label** — this plan assumes `fle.27.2223` but ICES occasionally publishes it hyphenated as `fle.27.22-23`. Whichever the `list_stocks` payload shows is canonical; update `index.json` and Task 3's stock list before the snapshot pull.
 - All work lands in the current working tree (the deferred Baltic-data commit from the separate front is fine — files touched below do not intersect).
 
 ---
@@ -144,7 +150,7 @@ git commit -m "docs(baltic): scaffold ICES SAG snapshot directory + manifest"
 - Create: `data/baltic/reference/ices_snapshots/*.assessment.json` (6 files)
 - Create: `data/baltic/reference/ices_snapshots/*.reference_points.json` (6 files)
 
-Six stock keys need snapshots: `cod.27.24-32`, `cod.27.22-24`, `her.27.25-2932`, `her.27.28`, `her.27.3031`, `her.27.20-24`, `spr.27.22-32`, `fle.27.24-32`, `fle.27.2223` — **nine** total, not six. Per stock, pull both the assessment time series and the reference points.
+**Nine** stock keys need snapshots: `cod.27.24-32`, `cod.27.22-24`, `her.27.25-2932`, `her.27.28`, `her.27.3031`, `her.27.20-24`, `spr.27.22-32`, `fle.27.24-32`, `fle.27.2223` (confirm the flounder label in Task 1 Step 1; substitute `fle.27.22-23` if that is what ICES returns). Per stock, pull both the assessment time series and the reference points.
 
 - [ ] **Step 1: For each stock key, invoke `get_stock_assessment`**
 
@@ -154,7 +160,7 @@ For every `{stock}` in the list above, call the MCP tool:
 get_stock_assessment(stock_key="{stock}", year=2023)
 ```
 
-Extract the `result` field from the MCP response and write it verbatim to `data/baltic/reference/ices_snapshots/{stock}.assessment.json`. Use 2-space JSON indentation so diffs are readable. The raw ICES payload is nested but contains at minimum `SSB`, `F`, `R`, `catches` keyed by year.
+Extract the `result` field from the MCP response and write it verbatim to `data/baltic/reference/ices_snapshots/{stock}.assessment.json`. Use 2-space JSON indentation so diffs are readable. The MCP payload is a list of dicts, one per year, with lowercase keys: `year`, `ssb`, `recruitment`, `f`, `catches`, `landings`, `discards`, `low_ssb`, `high_ssb` (see `/home/razinka/ices-mcp-server/ices/sag.py:89-102`).
 
 - [ ] **Step 2: For each stock key, invoke `get_reference_points`**
 
@@ -164,7 +170,7 @@ For every `{stock}` in the list above, call:
 get_reference_points(stock_key="{stock}", year=2023)
 ```
 
-Write the result to `data/baltic/reference/ices_snapshots/{stock}.reference_points.json`. ICES canonical fields: `Blim`, `Bpa`, `Fmsy`, `MSYBtrigger`, `Flim`. Missing points (ICES returns `null` for unassessed points) are kept as null.
+Write the result to `data/baltic/reference/ices_snapshots/{stock}.reference_points.json`. MCP-flattened fields (lowercase, see `sag.py:117-127`): `flim`, `fpa`, `fmsy`, `blim`, `bpa`, `msy_btrigger`, `f_age_range`, `recruitment_age`, optionally `note`. Missing points are kept as null.
 
 - [ ] **Step 3: Verify snapshot shapes on disk**
 
@@ -331,7 +337,7 @@ def _load_manifest() -> dict:
     return json.loads((SNAPSHOT_DIR / "index.json").read_text())
 
 
-def _load_assessment(stock_key: str) -> dict:
+def _load_assessment(stock_key: str) -> list[dict]:
     return json.loads((SNAPSHOT_DIR / f"{stock_key}.assessment.json").read_text())
 
 
@@ -339,31 +345,27 @@ def _load_reference_points(stock_key: str) -> dict:
     return json.loads((SNAPSHOT_DIR / f"{stock_key}.reference_points.json").read_text())
 
 
-def _series_by_year(assessment: dict, field: str) -> dict[int, float]:
-    """Extract {year: value} for an ICES SAG field.
+def _series_by_year(assessment: list[dict], field: str) -> dict[int, float]:
+    """Extract {year: value} for an ICES SAG field from an MCP `get_stock_assessment` response.
 
-    ICES SAG responses vary — try common shapes: list of dicts with 'Year' key,
-    or dict with 'Year' and value lists of equal length. Both shapes are
-    normalized to {year: value}.
+    The MCP response is a list of dicts with lowercase keys (`year`, `ssb`,
+    `recruitment`, `f`, `catches`, `landings`, `discards`, ...) — see
+    `/home/razinka/ices-mcp-server/ices/sag.py:89-102`. String values are
+    coerced via float(); None/NaN values are dropped.
     """
     out: dict[int, float] = {}
-    if isinstance(assessment, list):
-        for row in assessment:
-            y = row.get("Year")
-            v = row.get(field)
-            if y is not None and v is not None and not (isinstance(v, float) and math.isnan(v)):
-                out[int(y)] = float(v)
-        return out
-    if isinstance(assessment, dict):
-        years = assessment.get("Year") or assessment.get("years") or assessment.get("year")
-        values = assessment.get(field)
-        if isinstance(years, list) and isinstance(values, list) and len(years) == len(values):
-            for y, v in zip(years, values):
-                if v is None:
-                    continue
-                if isinstance(v, float) and math.isnan(v):
-                    continue
-                out[int(y)] = float(v)
+    for row in assessment or []:
+        y = row.get("year")
+        v = row.get(field)
+        if y is None or v is None:
+            continue
+        try:
+            fv = float(v)
+        except (TypeError, ValueError):
+            continue
+        if math.isnan(fv):
+            continue
+        out[int(y)] = fv
     return out
 
 
@@ -373,8 +375,8 @@ def _ssb_weighted_f(stocks: list[str]) -> float | None:
     den = 0.0
     for stock in stocks:
         assessment = _load_assessment(stock)
-        f_series = _series_by_year(assessment, "F")
-        ssb_series = _series_by_year(assessment, "SSB")
+        f_series = _series_by_year(assessment, "f")
+        ssb_series = _series_by_year(assessment, "ssb")
         for y in WINDOW_YEARS:
             if y in f_series and y in ssb_series:
                 num += f_series[y] * ssb_series[y]
@@ -388,7 +390,7 @@ def _ices_ssb_envelope(stocks: list[str]) -> tuple[float | None, float | None]:
     yearly_has_data = {y: False for y in WINDOW_YEARS}
     for stock in stocks:
         assessment = _load_assessment(stock)
-        ssb_series = _series_by_year(assessment, "SSB")
+        ssb_series = _series_by_year(assessment, "ssb")
         for y in WINDOW_YEARS:
             if y in ssb_series:
                 yearly_totals[y] += ssb_series[y]
@@ -542,14 +544,25 @@ def _write_markdown_report(report: dict) -> None:
         "|---|---:|---:|---:|---:|",
     ]
     for stock, rp in sorted(report["reference_points"].items()):
-        def _fmt(k: str) -> str:
-            v = rp.get(k) if isinstance(rp, dict) else None
-            return "—" if v is None else f"{v:.4g}"
-        lines.append(
-            f"| `{stock}` | {_fmt('Blim')} | {_fmt('Bpa')} | {_fmt('Fmsy')} | {_fmt('MSYBtrigger')} |"
-        )
+        cells = [_format_rp_cell(rp, k) for k in ("blim", "bpa", "fmsy", "msy_btrigger")]
+        lines.append(f"| `{stock}` | {cells[0]} | {cells[1]} | {cells[2]} | {cells[3]} |")
     REPORT_MD.parent.mkdir(parents=True, exist_ok=True)
     REPORT_MD.write_text("\n".join(lines) + "\n")
+
+
+def _format_rp_cell(rp: dict, key: str) -> str:
+    """Format a reference-point value cell — '—' for missing, 4sf otherwise.
+
+    Kept at module scope to avoid ruff B023 (late-binding closure in loop)
+    when called from the for-loop inside `_write_markdown_report`.
+    """
+    v = rp.get(key) if isinstance(rp, dict) else None
+    if v is None:
+        return "—"
+    try:
+        return f"{float(v):.4g}"
+    except (TypeError, ValueError):
+        return str(v)
 
 
 def main() -> int:
