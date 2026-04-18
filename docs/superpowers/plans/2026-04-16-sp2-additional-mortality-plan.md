@@ -1,5 +1,7 @@
 # SP-2: Additional Mortality Variants Implementation Plan
 
+> **STATUS (verified 2026-04-18): COMPLETE — shipped under `engine-phase9` (2026-04-16). DO NOT RE-EXECUTE.** Evidence: `osmose/engine/processes/natural.py` implements time-varying by-dt rates (line 32), `additional_mortality_by_dt_by_class` ByClassTimeSeries path (lines 44-58), and spatial-factor multiplier (lines 66-84). All three Java 4.3.3 `mortality/additional/` variants present.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Complete additional mortality variants to match all 5 Java OSMOSE 4.3.3 `mortality/additional/` classes, including time-varying larval rates, by-class rates, and spatial factor application.

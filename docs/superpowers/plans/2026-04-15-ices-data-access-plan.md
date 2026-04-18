@@ -1,5 +1,12 @@
 # ICES Data Access MCP Server + Skill — Implementation Plan
 
+> **STATUS (verified 2026-04-18): COMPLETE — shipped 2026-04-15. DO NOT RE-EXECUTE.** Evidence:
+> - Server at `/home/razinka/ices-mcp-server/server.py` exposes the full 9-tool set (`list_stocks`, `get_stock_assessment`, `get_reference_points`, `get_stock_metadata`, `get_survey_cpue_length`, `get_survey_cpue_age`, `get_survey_hauls`, `get_age_length_keys`, `search_eggs_larvae`) via stdio.
+> - Four ICES APIs covered by dedicated modules under `/home/razinka/ices-mcp-server/ices/`: `sag.py`, `datras.py`, `sd.py`, `eggs.py` (plus `vocab.py` support).
+> - Claude Code skill at `~/.claude/skills/ices-data/ices-data.md` encodes multi-region OSMOSE integration workflows (Baltic / North Sea / Bay of Biscay / EEC).
+> - Test suite under `/home/razinka/ices-mcp-server/tests/`: `test_sag.py`, `test_datras.py`, `test_sd.py`, `test_eggs.py`, `test_vocab.py`, `test_integration.py`.
+> - Registered as `"ices"` in `osmose-python/.mcp.json` lines 35-38.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a standalone async Python MCP server wrapping 4 ICES APIs into 9 tools, plus a Claude Code skill encoding multi-region OSMOSE integration workflows.

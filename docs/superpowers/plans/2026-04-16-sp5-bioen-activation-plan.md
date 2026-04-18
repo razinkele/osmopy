@@ -1,5 +1,7 @@
 # SP-5: Bioen Process Activation Implementation Plan
 
+> **STATUS (verified 2026-04-18): COMPLETE — shipped under `engine-phase9` (2026-04-16). DO NOT RE-EXECUTE.** Evidence: `simulation.bioen.enabled` config key parsed at `osmose/engine/config.py:1625`; all three bioen mortality processes wired — `foraging_mortality.py` imported at `osmose/engine/processes/mortality.py:287`, `bioen_starvation.py` wired at `osmose/engine/processes/mortality.py:98`, `bioen_predation.py` gated by `bioen_enabled` at `osmose/engine/simulate.py:974, 981`. Commits `24e8296` (bioen starvation), `60dc41f` (foraging mortality) confirm the integration path.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Wire the 3 bioen mortality processes (ForagingMortality, BioenStarvation, BioenPredation) into the mortality loop, switchable via `simulation.bioen.enabled` config key — matching Java OSMOSE 4.3.3's `MortalityProcess`.

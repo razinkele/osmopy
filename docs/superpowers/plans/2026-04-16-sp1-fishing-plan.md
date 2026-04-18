@@ -1,5 +1,7 @@
 # SP-1: Fishing System Completion Implementation Plan
 
+> **STATUS (verified 2026-04-18): COMPLETE — shipped under `engine-phase9` (2026-04-16). DO NOT RE-EXECUTE.** Evidence: `osmose/engine/processes/fishing.py` implements `rate_by_dt_by_class` (line 48), Gaussian / log-normal selectivity (lines 77-113), catch-based proportional allocation in `_catch_based_fishing` (line 177+). All four MEMORY.md commits (`eb6f977`, `0579da2`, `3e8c509`, `f713b7a`, `cdeb063`, `496dbce`) confirmed present in engine history.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Complete the fishing system to match all Java OSMOSE 4.3.3 fishing mortality variants and selectivity types.

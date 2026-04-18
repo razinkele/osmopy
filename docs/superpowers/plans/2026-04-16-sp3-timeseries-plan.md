@@ -1,5 +1,7 @@
 # SP-3: Time-Series Framework Implementation Plan
 
+> **STATUS (verified 2026-04-18): COMPLETE — shipped under `engine-phase9` (2026-04-16). DO NOT RE-EXECUTE.** Evidence: `osmose/engine/timeseries.py` exposes all 7 `TimeSeries` subclasses (`SingleTimeSeries`, `GenericTimeSeries`, `ByYearTimeSeries`, `SeasonTimeSeries`, `ByClassTimeSeries`, `BySpeciesTimeSeries`, `ByRegimeTimeSeries`) plus the centralized factory with auto-detection at line 409. Module docstring states "7 TimeSeries types" explicitly.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Implement a time-series loading framework matching Java OSMOSE 4.3.3's 7 `TimeSeries` classes, with a centralized factory for auto-detection.
