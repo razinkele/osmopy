@@ -1,9 +1,9 @@
-,trawl_cod,pelagic_herring,pelagic_sprat,trawl_flounder,coastal_perch,coastal_pikeperch,gill_whitefish,coastal_stickleback
+,trawl_cod,pelagic_herring,pelagic_sprat,trawl_flounder,coastal_perch,coastal_pikeperch,gill_smelt,coastal_stickleback
 cod,1,0,0,0,0,0,0,0
 herring,0,1,0,0,0,0,0,0
 sprat,0,0,1,0,0,0,0,0
 flounder,0,0,0,1,0,0,0,0
 perch,0,0,0,0,1,0,0,0
 pikeperch,0,0,0,0,0,1,0,0
-whitefish,0,0,0,0,0,0,1,0
+smelt,0,0,0,0,0,0,1,0
 stickleback,0,0,0,0,0,0,0,1

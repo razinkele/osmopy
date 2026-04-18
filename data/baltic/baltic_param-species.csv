@@ -1,5 +1,16 @@
 # Baltic Sea species parameters
-# sp0=Cod, sp1=Herring, sp2=Sprat, sp3=Flounder, sp4=Perch, sp5=Pike-perch, sp6=Whitefish, sp7=Stickleback
+# sp0=Cod, sp1=Herring, sp2=Sprat, sp3=Flounder, sp4=Perch, sp5=Pike-perch, sp6=Smelt, sp7=Stickleback
+#
+# SCIENTIFIC VALIDATION (2026-04-16):
+# Growth parameters represent HISTORICAL (pre-2015) Baltic life history.
+# Eastern Baltic cod has undergone severe growth impairment since ~2015
+# (Svedang et al. 2024, doi:10.1002/ece3.70382): current effective Linf ~60-80 cm,
+# current L50 ~20 cm. If modeling post-collapse state, revise cod parameters.
+# Herring Linf=27 cm verified against Baltic herring (C. h. membras) literature.
+# Sprat Linf=16 cm, K=0.45 consistent with published Baltic sprat data.
+# Length-weight allometric coefficients sourced from FishBase (Gadus morhua, Clupea
+# harengus, Sprattus sprattus, Platichthys flesus, Perca fluviatilis, Sander
+# lucioperca, Osmerus eperlanus, Gasterosteus aculeatus).
 
 # Species types
 species.type.sp0;focal
@@ -18,7 +29,7 @@ species.name.sp2;sprat
 species.name.sp3;flounder
 species.name.sp4;perch
 species.name.sp5;pikeperch
-species.name.sp6;whitefish
+species.name.sp6;smelt
 species.name.sp7;stickleback
 
 # Lifespan (years)
@@ -28,7 +39,7 @@ species.lifespan.sp2;8
 species.lifespan.sp3;15
 species.lifespan.sp4;15
 species.lifespan.sp5;15
-species.lifespan.sp6;20
+species.lifespan.sp6;7
 species.lifespan.sp7;4
 
 # Von Bertalanffy growth: L-infinity (cm)
@@ -38,7 +49,7 @@ species.lInf.sp2;16.0
 species.lInf.sp3;42.0
 species.lInf.sp4;45.0
 species.lInf.sp5;90.0
-species.lInf.sp6;60.0
+species.lInf.sp6;25.0
 species.lInf.sp7;8.0
 
 # Von Bertalanffy growth: K (year^-1)
@@ -48,7 +59,7 @@ species.K.sp2;0.45
 species.K.sp3;0.20
 species.K.sp4;0.15
 species.K.sp5;0.18
-species.K.sp6;0.12
+species.K.sp6;0.35
 species.K.sp7;0.80
 
 # Von Bertalanffy growth: t0 (years)
@@ -58,7 +69,7 @@ species.t0.sp2;-0.50
 species.t0.sp3;-0.40
 species.t0.sp4;-0.50
 species.t0.sp5;-0.30
-species.t0.sp6;-0.50
+species.t0.sp6;-0.30
 species.t0.sp7;-0.10
 
 # VB threshold age
@@ -78,7 +89,7 @@ species.length2weight.condition.factor.sp2;0.00490
 species.length2weight.condition.factor.sp3;0.00890
 species.length2weight.condition.factor.sp4;0.01070
 species.length2weight.condition.factor.sp5;0.00620
-species.length2weight.condition.factor.sp6;0.00750
+species.length2weight.condition.factor.sp6;0.00500
 species.length2weight.condition.factor.sp7;0.00800
 
 # Length-weight: allometric power (b)
@@ -88,7 +99,7 @@ species.length2weight.allometric.power.sp2;3.120
 species.length2weight.allometric.power.sp3;3.080
 species.length2weight.allometric.power.sp4;3.100
 species.length2weight.allometric.power.sp5;3.090
-species.length2weight.allometric.power.sp6;3.040
+species.length2weight.allometric.power.sp6;3.050
 species.length2weight.allometric.power.sp7;3.050
 
 # Egg size (cm)
@@ -98,7 +109,7 @@ species.egg.size.sp2;0.10
 species.egg.size.sp3;0.13
 species.egg.size.sp4;0.20
 species.egg.size.sp5;0.15
-species.egg.size.sp6;0.25
+species.egg.size.sp6;0.09
 species.egg.size.sp7;0.15
 
 # Egg weight (g)
@@ -108,17 +119,20 @@ species.egg.weight.sp2;0.001
 species.egg.weight.sp3;0.001
 species.egg.weight.sp4;0.001
 species.egg.weight.sp5;0.001
-species.egg.weight.sp6;0.001
+species.egg.weight.sp6;0.0005
 species.egg.weight.sp7;0.001
 
 # Maturity size (cm)
+# NOTE: Cod L50=38 cm is the HISTORICAL value (stable ~40 cm from 1930s-1990s).
+# Current eastern Baltic cod L50 has halved to ~20 cm (Svedang et al. 2024;
+# DTU data doi:10.11583/DTU:16895254). Revise if modeling post-2015 conditions.
 species.maturity.size.sp0;38.0
 species.maturity.size.sp1;18.0
 species.maturity.size.sp2;9.0
 species.maturity.size.sp3;22.0
 species.maturity.size.sp4;18.0
 species.maturity.size.sp5;40.0
-species.maturity.size.sp6;35.0
+species.maturity.size.sp6;10.0
 species.maturity.size.sp7;4.5
 
 # Relative fecundity (eggs per gram of mature female)
@@ -128,7 +142,7 @@ species.relativefecundity.sp2;1200
 species.relativefecundity.sp3;400
 species.relativefecundity.sp4;350
 species.relativefecundity.sp5;300
-species.relativefecundity.sp6;250
+species.relativefecundity.sp6;1000
 species.relativefecundity.sp7;600
 
 # Sex ratio (proportion female)

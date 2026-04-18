@@ -1,5 +1,7 @@
 # Baltic Sea additional (natural) mortality
 # Larval mortality rates (year^-1) — calibrated R18
+# NOTE: These are calibration parameters, not directly measurable biological values.
+# Larval mortality is the primary recruitment-control lever in OSMOSE calibration.
 mortality.additional.larva.rate.sp0;15.0
 mortality.additional.larva.rate.sp1;8.0
 mortality.additional.larva.rate.sp2;9.0
@@ -10,11 +12,16 @@ mortality.additional.larva.rate.sp6;13.5
 mortality.additional.larva.rate.sp7;3.5
 
 # Adult additional mortality rates (year^-1) — calibrated R18
-mortality.additional.rate.sp0;0.05
+# Cod increased from 0.05 to 0.20 to implicitly account for grey seal predation.
+# ICES estimates grey seal (Halichoerus grypus) population >40,000 in Baltic,
+# consuming ~30-50 kt cod/yr (comparable to fishing mortality). With stock ~120 kt,
+# seal-induced F ~ 0.25-0.4/yr. Conservative 0.15/yr added to base 0.05.
+# Perch/pikeperch slightly increased for cormorant predation in coastal areas.
+mortality.additional.rate.sp0;0.20
 mortality.additional.rate.sp1;0.0
 mortality.additional.rate.sp2;0.05
 mortality.additional.rate.sp3;0.05
-mortality.additional.rate.sp4;0.02
-mortality.additional.rate.sp5;0.03
+mortality.additional.rate.sp4;0.05
+mortality.additional.rate.sp5;0.06
 mortality.additional.rate.sp6;0.02
 mortality.additional.rate.sp7;0.0

@@ -1,15 +1,15 @@
-v Prey / Predator >;cod;herring;sprat;flounder;perch;pikeperch;whitefish;stickleback;Diatoms;Dinoflagellates;Microzooplankton;Mesozooplankton;Macrozooplankton;Benthos
-cod;0.05;0;0;0;0;0.05;0;0;0;0;0;0;0;0
+v Prey / Predator >;cod;herring;sprat;flounder;perch;pikeperch;smelt;stickleback;Diatoms;Dinoflagellates;Microzooplankton;Mesozooplankton;Macrozooplankton;Benthos
+cod;0.05;0;0;0;0;0.05;0.05;0;0;0;0;0;0;0
 herring;0.4;0;0;0;0.2;0.3;0;0;0;0;0;0;0;0
 sprat;0.4;0;0;0;0.2;0.3;0;0;0;0;0;0;0;0
 flounder;0.1;0;0;0;0;0.05;0;0;0;0;0;0;0;0
 perch;0.15;0;0;0;0.05;0.15;0;0;0;0;0;0;0;0
 pikeperch;0.1;0;0;0;0;0.05;0;0;0;0;0;0;0;0
-whitefish;0.05;0;0;0;0;0;0;0;0;0;0;0;0;0
+smelt;0.6;0;0;0.1;0.5;0.6;0;0;0;0;0;0;0;0
 stickleback;0.3;0.1;0.05;0.2;0.3;0.3;0.05;0;0;0;0;0;0;0
-Diatoms;0;0.5;0.6;0;0;0;0.5;0.5;0;0;0;0;0;0
-Dinoflagellates;0;0.3;0.5;0;0;0;0.5;0.3;0;0;0;0;0;0
-Microzooplankton;0;0.5;0.8;0;0;0;0.6;0.4;0;0;0;0;0;0
+Diatoms;0;0.5;0.2;0;0;0;0.1;0.5;0;0;0;0;0;0
+Dinoflagellates;0;0.3;0.2;0;0;0;0.1;0.3;0;0;0;0;0;0
+Microzooplankton;0;0.5;0.8;0;0;0;0.3;0.4;0;0;0;0;0;0
 Mesozooplankton;0.5;0.8;0.5;0.3;0.5;0.3;0.8;0.8;0;0;0;0;0;0
-Macrozooplankton;0.6;0.7;0.3;0.5;0.4;0.3;0.4;0.5;0;0;0;0;0;0
-Benthos;0.6;0;0;0.8;0.6;0.4;0.4;0.3;0;0;0;0;0;0
+Macrozooplankton;0.6;0.7;0.3;0.5;0.4;0.3;0.6;0.5;0;0;0;0;0;0
+Benthos;0.6;0.15;0;0.8;0.6;0.4;0.1;0.3;0;0;0;0;0;0

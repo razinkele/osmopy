@@ -1,5 +1,5 @@
 # Baltic Sea OSMOSE configuration - Main parameter file
-# 8 focal species: Cod, Herring, Sprat, Flounder, Perch, Pike-perch, Whitefish, Stickleback
+# 8 focal species: Cod, Herring, Sprat, Flounder, Perch, Pike-perch, Smelt, Stickleback
 # 6 LTL resource groups: Diatoms, Dinoflagellates, Microzooplankton, Mesozooplankton, Macrozooplankton, Benthos
 
 osmose.configuration.simulation;baltic_param-simulation.csv

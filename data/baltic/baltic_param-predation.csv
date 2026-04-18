@@ -1,9 +1,16 @@
 # Baltic Sea predation parameters
 
+# Accessibility matrix corrections (2026-04-16):
+#   Herring benthos: 0 -> 0.15 (mysids/amphipods in coastal areas)
+#   Sprat diatoms: 0.6 -> 0.2, dinos: 0.5 -> 0.2 (zooplanktivore, minimal phyto)
+# Accessibility matrix rebuild (2026-04-17) for sp6: whitefish → smelt swap.
+#   Smelt as prey: heavy access to cod/perch/pikeperch/flounder (forage-fish role)
+#   Smelt as predator: zooplanktivore (mesozoo 0.8, macrozoo 0.6), minor piscivory
 predation.accessibility.file;predation-accessibility.csv
 predation.accessibility.stage.structure;age
 
 # Critical predation efficiency
+# NOTE: 0.57 is the standard OSMOSE default (Shin & Cury 2004). Not species-specific.
 predation.efficiency.critical.sp0;0.57
 predation.efficiency.critical.sp1;0.57
 predation.efficiency.critical.sp2;0.57
@@ -15,7 +22,10 @@ predation.efficiency.critical.sp7;0.57
 
 # Maximum ingestion rate (g food / g predator / year)
 # Species-specific per literature: planktivores/small fish have higher mass-specific rates
-# Palomares & Pauly (1998) Q/B ratios; Travers-Trolet et al. (2019) OSMOSE Eastern English Channel
+# Palomares & Pauly (1998, doi:10.1071/mf98015) Q/B regression model;
+# Travers-Trolet et al. (2019, doi:10.1016/j.ecolmodel.2019.108800) OSMOSE EEC application.
+# Cod rate (3.5) may need reduction to account for Contracaecum osculatum parasite effects
+# on foraging capacity (Ryberg et al. 2020, doi:10.1093/conphys/coaa093).
 predation.ingestion.rate.max.sp0;3.5
 predation.ingestion.rate.max.sp1;6.0
 predation.ingestion.rate.max.sp2;7.0

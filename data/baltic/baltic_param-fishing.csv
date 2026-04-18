@@ -11,7 +11,7 @@ fisheries.name.fsh2;pelagic_sprat
 fisheries.name.fsh3;trawl_flounder
 fisheries.name.fsh4;coastal_perch
 fisheries.name.fsh5;coastal_pikeperch
-fisheries.name.fsh6;gill_whitefish
+fisheries.name.fsh6;gill_smelt
 fisheries.name.fsh7;coastal_stickleback
 
 # Selectivity type (0 = knife-edge by age)
@@ -93,7 +93,7 @@ fisheries.movement.fishery.map2;pelagic_sprat
 fisheries.movement.fishery.map3;trawl_flounder
 fisheries.movement.fishery.map4;coastal_perch
 fisheries.movement.fishery.map5;coastal_pikeperch
-fisheries.movement.fishery.map6;gill_whitefish
+fisheries.movement.fishery.map6;gill_smelt
 fisheries.movement.fishery.map7;coastal_stickleback
 
 fisheries.movement.file.map0;fishing/fishing-distrib.csv

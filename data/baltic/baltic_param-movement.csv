@@ -1,5 +1,20 @@
 # Baltic Sea movement parameters
 # All species use map-based distribution with life-stage and seasonal maps
+#
+# SPAWNING SEASON VALIDATION (2026-04-16):
+# Cod: Steps 4-15 = Mar-Aug. VERIFIED — Bleil et al. (2009, doi:10.1111/j.1439-0426.2008.01172.x):
+#   Bornholm Basin main spawning May-Aug, with shift to peak Jul since 1990s.
+#   Western Baltic spring spawning Mar-Apr. Combined Mar-Aug covers both stocks.
+# Herring: Steps 4-11 = Mar-Jun. VERIFIED — Western Baltic spring-spawning (WBSS)
+#   herring spawns Mar-Jun (Ory et al. 2024, doi:10.1111/jfb.15811). Central Baltic
+#   spring-spawning also peaks Apr-Jun. Autumn-spawning herring NOT represented.
+# Sprat: Steps 6-13 = Apr-Jul. VERIFIED — Haslob et al. (2013, doi:10.1016/j.fishres.2012.08.002):
+#   Baltic sprat spawning Jan-Jun, peak Apr-Jun in Bornholm Basin. Config covers peak.
+# Flounder: Steps 2-9 = Feb-May. VERIFIED — pelagic spawner (P. flesus) spawns Feb-May
+#   in deep southern Baltic; demersal spawner (P. solemdali) spawns Apr-Jun coastal.
+#   Config captures the pelagic spawner timing well.
+# Perch: Steps 8-11 = May-Jun. VERIFIED — standard Baltic coastal perch spawning.
+# Smelt: Steps 4-11 = Feb-May. Spring spawner (coastal/estuarine).
 
 movement.distribution.method.sp0;maps
 movement.distribution.method.sp1;maps
@@ -47,7 +62,10 @@ movement.file.map3;maps/cod_adult.csv
 movement.steps.map3;0;1;2;3;16;17;18;19;20;21;22;23
 
 # ============================================
-# sp1: Herring — juvenile (0-1), adult (1+), spawning (spring, coastal)
+# sp1: Herring — juvenile (0-1), adult (1+), spring spawning (Mar-Jun, coastal),
+#   autumn spawning (Sep-Nov, coastal). Both spawning components use coastal areas.
+#   Autumn-spawning herring are ~20-30% of Baltic herring reproductive output
+#   (mainly western Baltic SD22-24 and some central Baltic).
 # ============================================
 movement.species.map4;herring
 movement.initialAge.map4;0
@@ -59,13 +77,20 @@ movement.species.map5;herring
 movement.initialAge.map5;1
 movement.lastAge.map5;13
 movement.file.map5;maps/herring_adult.csv
-movement.steps.map5;0;1;2;3;12;13;14;15;16;17;18;19;20;21;22;23
+movement.steps.map5;0;1;2;3;12;13;14;15;22;23
 
 movement.species.map6;herring
 movement.initialAge.map6;1
 movement.lastAge.map6;13
 movement.file.map6;maps/herring_spawning.csv
 movement.steps.map6;4;5;6;7;8;9;10;11
+
+# Autumn spawning season (Sep-Nov, steps 16-21)
+movement.species.map25;herring
+movement.initialAge.map25;1
+movement.lastAge.map25;13
+movement.file.map25;maps/herring_spawning_autumn.csv
+movement.steps.map25;16;17;18;19;20;21
 
 # ============================================
 # sp2: Sprat — juvenile (0-1), adult (1+), spawning (Apr-Jul, deep)
@@ -152,25 +177,25 @@ movement.file.map18;maps/pikeperch_spawning.csv
 movement.steps.map18;6;7;8;9;10;11
 
 # ============================================
-# sp6: Whitefish — juvenile (0-2, north), adult (2+, north), spawning (Oct-Dec, coastal north)
+# sp6: Smelt — juvenile (0-1, everywhere), adult (1-6, pelagic), spawning (Feb-May, coastal)
 # ============================================
-movement.species.map19;whitefish
+movement.species.map19;smelt
 movement.initialAge.map19;0
-movement.lastAge.map19;2
-movement.file.map19;maps/whitefish_juvenile.csv
+movement.lastAge.map19;1
+movement.file.map19;maps/smelt_juvenile.csv
 movement.steps.map19;0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16;17;18;19;20;21;22;23
 
-movement.species.map20;whitefish
-movement.initialAge.map20;2
-movement.lastAge.map20;21
-movement.file.map20;maps/whitefish_adult.csv
-movement.steps.map20;0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16;17
+movement.species.map20;smelt
+movement.initialAge.map20;1
+movement.lastAge.map20;8
+movement.file.map20;maps/smelt_adult.csv
+movement.steps.map20;0;1;2;3;12;13;14;15;16;17;18;19;20;21;22;23
 
-movement.species.map21;whitefish
-movement.initialAge.map21;2
-movement.lastAge.map21;21
-movement.file.map21;maps/whitefish_spawning.csv
-movement.steps.map21;18;19;20;21;22;23
+movement.species.map21;smelt
+movement.initialAge.map21;1
+movement.lastAge.map21;8
+movement.file.map21;maps/smelt_spawning.csv
+movement.steps.map21;4;5;6;7;8;9;10;11
 
 # ============================================
 # sp7: Stickleback — juvenile (0-1, everywhere), adult (1+, coastal), spawning (May-Jul)

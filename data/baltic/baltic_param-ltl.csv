@@ -1,6 +1,12 @@
 # Baltic Sea LTL (plankton/resource) configuration
 # Resources are numbered sp8-sp13 (continuing after 8 focal species)
 # Biomass forcing from NetCDF (tonnes per cell, seasonal cycle)
+#
+# SOURCE: CMEMS Baltic Sea BGC Analysis/Forecast (cmems_mod_bal_bgc_anfc_P1M-m)
+# Year: 2024 monthly, depth-integrated 0-50m, regridded to 50x40 OSMOSE grid
+# Phytoplankton from ERGOM phyc (mmolC/m3), zooplankton from zooc
+# Diatom/dinoflagellate split: seasonal community succession pattern (Baltic)
+# Generated: 2026-04-16 via mcp_servers/copernicus/server.py generate_osmose_ltl()
 
 species.type.sp8;resource
 species.type.sp9;resource
