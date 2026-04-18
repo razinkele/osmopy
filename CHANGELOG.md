@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.9.1] - 2026-04-19
+
+### Features
+
+- **economics:** wire write_economic_outputs into simulate end-of-run + STATUS-COMPLETE Front 6 (1dcffd7)
+
+### Chores
+
+- replace deprecated update_navs + gitignore ephemeral paths (b1e9328)
+
+### Tests
+
+- **e2e:** sync Playwright assertions to current tab labels (259d3d1)
+
 ## [0.9.0] - 2026-04-18
 
 ### Features
@@ -67,6 +81,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ### Other
 
+- v0.9.0 — full Phase 5 output-system parity + calibration UI Phase 3 + Baltic ICES validation (37bdafb)
 - **baltic:** strip underscores from fishery names for Java-engine compatibility (98f478e)
 - **baltic:** freeze ICES SAG snapshots for eight Baltic stocks (2024 advice, cod.27.22-24 on 2022) (a7d65a5)
 - load-example picker on grid page + calibrate_baltic popsize_mult (fc5f271)
