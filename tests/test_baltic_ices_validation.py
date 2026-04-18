@@ -109,6 +109,10 @@ def test_no_severe_f_rate_drift(report):
     for r in report["f_rates"]:
         if r["ices_f_weighted"] is None or r["species"] in F_KNOWN_EXCEPTIONS:
             continue
+        if r["ices_f_weighted"] <= 0:
+            # Moratorium or fishing-ban stock — no ratio to test. Drift fence
+            # skips; the model-vs-zero comparison lives in a future scenario test.
+            continue
         ratio = r["model_f"] / r["ices_f_weighted"]
         if ratio < 0.25 or ratio > 4.0:
             severe.append((r["species"], ratio))
@@ -137,3 +141,99 @@ def test_biomass_envelope_overlaps_ices_for_assessed_species(report):
         "vs SSB distinction — document in the report), or add the species "
         "to B_KNOWN_EXCEPTIONS with a rationale."
     )
+
+
+# --- Branch coverage for the critical silent-None pathways -----------------
+# These synthesize inputs so we verify the plumbing; the live `report`
+# fixture only exercises whichever branch the current snapshots happen to hit.
+
+
+def test_ssb_weighted_f_returns_none_when_window_empty(validator_module, monkeypatch):
+    """If no stock has F+SSB overlap in 2018-2022, _ssb_weighted_f must return
+    None — not 0.0, not crash. Without this the drift fence passes vacuously
+    on a broken snapshot pull."""
+    out_of_window = [{"year": "1990", "ssb": "100", "f": "0.5"}]
+    monkeypatch.setattr(validator_module, "_load_assessment", lambda _s: out_of_window)
+    assert validator_module._ssb_weighted_f(["fake_stock"]) is None
+
+
+def test_ices_ssb_envelope_requires_full_coverage(validator_module, monkeypatch):
+    """Partial-coverage years must drop from the envelope. Stock A reports
+    2018-2022, stock B reports 2020-2022 only → envelope uses intersection
+    (2020-2022), not the union (would undercount 2018-2019)."""
+    a_data = [{"year": str(y), "ssb": "100"} for y in range(2018, 2023)]
+    b_data = [{"year": str(y), "ssb": "50"} for y in range(2020, 2023)]
+    store = {"A": a_data, "B": b_data}
+    monkeypatch.setattr(validator_module, "_load_assessment", lambda s: store[s])
+    lo, hi = validator_module._ices_ssb_envelope(["A", "B"])
+    # 2020, 2021, 2022 each sum to 150 → min == max == 150
+    assert lo == 150 and hi == 150
+
+
+def test_ices_ssb_envelope_empty_intersection_returns_none(validator_module, monkeypatch):
+    """If no year has coverage from all stocks, return (None, None) rather
+    than silently producing a narrow envelope from the remainder."""
+    a_data = [{"year": "2018", "ssb": "100"}]
+    b_data = [{"year": "2022", "ssb": "200"}]
+    store = {"A": a_data, "B": b_data}
+    monkeypatch.setattr(validator_module, "_load_assessment", lambda s: store[s])
+    assert validator_module._ices_ssb_envelope(["A", "B"]) == (None, None)
+
+
+def test_cod_f_excludes_eastern_index_stock(report):
+    """Mixed-unit cod must filter to tonnes-only for the weighted F —
+    otherwise the tonnes stock's F (~0.9) is silently presented as 'cod F'
+    while the eastern index-unit stock vanishes into the weighted mean."""
+    f_rows = {r["species"]: r for r in report["f_rates"]}
+    assert "cod.27.24-32" in f_rows["cod"]["excluded_index_stocks"], (
+        "cod F comparison is silently including the index-unit eastern stock"
+    )
+
+
+def test_herring_envelope_excludes_central_baltic_index_stock(report):
+    """Mixed-unit herring must exclude her.27.25-2932 (index) from the SSB
+    envelope sum. Otherwise a regression that accidentally sums indices into
+    tonnes would produce an inflated but plausible-looking envelope."""
+    b_rows = {r["species"]: r for r in report["biomass_envelopes"]}
+    assert "her.27.25-2932" in b_rows["herring"]["excluded_index_stocks"]
+
+
+def test_flounder_envelope_is_none_because_only_stock_is_index(report):
+    """Flounder has a single index-unit stock. The envelope must be None,
+    not zero and not a silent pass-through of the index values as tonnes."""
+    b_rows = {r["species"]: r for r in report["biomass_envelopes"]}
+    assert b_rows["flounder"]["ices_min_ssb"] is None
+    assert "fle.27.2223" in b_rows["flounder"]["excluded_index_stocks"]
+
+
+def test_f_known_exceptions_are_actually_outside_tolerance(report):
+    """If a species is in F_KNOWN_EXCEPTIONS but its ratio is now within
+    [0.25, 4.0], the allowlist has become dead code. Force the author to
+    prune the allowlist rather than leave misleading comments in place.
+    """
+    live_ratios: dict[str, float] = {}
+    for r in report["f_rates"]:
+        if r["species"] not in F_KNOWN_EXCEPTIONS:
+            continue
+        if r["ices_f_weighted"] is None or r["ices_f_weighted"] <= 0:
+            continue
+        live_ratios[r["species"]] = r["model_f"] / r["ices_f_weighted"]
+    for species, ratio in live_ratios.items():
+        assert ratio < 0.25 or ratio > 4.0, (
+            f"{species} is allowlisted in F_KNOWN_EXCEPTIONS but ratio "
+            f"{ratio:.3f} is within [0.25, 4.0] — prune the allowlist."
+        )
+
+
+def test_b_known_exceptions_are_actually_non_overlapping(report):
+    """Same contract for biomass: an allowlisted species whose envelope
+    now overlaps ICES must be pruned."""
+    for r in report["biomass_envelopes"]:
+        if r["species"] not in B_KNOWN_EXCEPTIONS:
+            continue
+        if r["envelopes_overlap"] is None:
+            continue
+        assert r["envelopes_overlap"] is False, (
+            f"{r['species']} is allowlisted in B_KNOWN_EXCEPTIONS but its "
+            "envelope now overlaps ICES — prune the allowlist."
+        )

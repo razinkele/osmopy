@@ -41,6 +41,7 @@ class FComparison:
     model_f: float
     ices_f_weighted: float | None
     in_tolerance: bool | None
+    excluded_index_stocks: list[str]
 
 
 @dataclass
@@ -70,8 +71,13 @@ def _series_by_year(assessment: list[dict], field: str) -> dict[int, float]:
     """Extract {year: value} for a field from a flat ICES SAG assessment.
 
     Snapshots are MCP-equivalent: list of dicts with lowercase string-valued
-    keys. Empty strings and NaN are dropped.
+    keys. Empty strings and None are dropped silently (ICES convention for
+    missing data). Values that fail float() coercion (e.g. a Euro-locale
+    "1,234.5") are logged to stderr and dropped — silent drop would mask a
+    schema shift.
     """
+    import sys
+
     out: dict[int, float] = {}
     for row in assessment or []:
         y = row.get("year")
@@ -81,6 +87,10 @@ def _series_by_year(assessment: list[dict], field: str) -> dict[int, float]:
         try:
             fv = float(v)
         except (TypeError, ValueError):
+            print(
+                f"WARN: uncoercible {field}[{y}] value {v!r}; dropped",
+                file=sys.stderr,
+            )
             continue
         if math.isnan(fv):
             continue
@@ -130,17 +140,31 @@ def _ices_ssb_envelope(
 
 
 def _parse_model_fishing_rates() -> dict[int, float]:
+    """Parse `fisheries.rate.base.fshN;value` rows from the fishing CSV.
+
+    Assumes ';' separator — OSMOSE config reader auto-detects per-line, but
+    this helper is scoped to the single prefix `fisheries.rate.base.fsh`
+    which is ';'-formatted by convention. If the separator ever shifts
+    (e.g. '=' or ','), the row will fail parsing and the error carries
+    file:line context so the drift is obvious at CI time rather than
+    silently dropped.
+    """
     rates: dict[int, float] = {}
     with FISHING_CSV.open() as f:
-        for raw in f:
+        for lineno, raw in enumerate(f, 1):
             line = raw.strip()
             if not line or line.startswith("#"):
                 continue
             if not line.startswith("fisheries.rate.base.fsh"):
                 continue
-            key, _, value = line.partition(";")
-            idx = int(key.rsplit(".fsh", 1)[1])
-            rates[idx] = float(value.strip())
+            key, sep, value = line.partition(";")
+            if sep != ";" or not value:
+                raise ValueError(f"{FISHING_CSV}:{lineno}: expected ';' separator in {raw!r}")
+            try:
+                idx = int(key.rsplit(".fsh", 1)[1])
+                rates[idx] = float(value.strip())
+            except (ValueError, IndexError) as e:
+                raise ValueError(f"{FISHING_CSV}:{lineno}: parse failure for {raw!r}") from e
     return rates
 
 
@@ -165,6 +189,23 @@ _SPECIES_FSH_INDEX = {
 
 
 def _compare_f_rates(manifest: dict, model_fsh: dict[int, float]) -> list[FComparison]:
+    """Compare model F against ICES SSB-weighted F per species.
+
+    Unit handling: F itself is dimensionless (per-year mortality), but the
+    SSB *weights* used in the weighted mean are not. Mixing tonnes-scale
+    and index-scale SSB as weights silently lets the larger-magnitude
+    side dominate — the smaller side effectively vanishes. To keep the
+    comparison honest:
+
+    - Prefer tonnes-unit stocks if any exist for the species (the common
+      case — Baltic herring, cod).
+    - Fall back to index-unit stocks only if no tonnes stock is linked
+      (flounder). F from an index-unit stock is still a valid dimensionless
+      F; only the weighting is unitful.
+    - Never mix. Excluded stocks surface in `excluded_index_stocks` so
+      the report shows which stocks were dropped.
+    """
+    units = manifest.get("units_by_stock", {})
     out: list[FComparison] = []
     for species, stocks in manifest["model_species_to_ices_stocks"].items():
         idx = _SPECIES_FSH_INDEX.get(species)
@@ -174,15 +215,23 @@ def _compare_f_rates(manifest: dict, model_fsh: dict[int, float]) -> list[FCompa
         if model_f is None:
             continue
         if not stocks:
-            out.append(FComparison(species, model_f, None, None))
+            out.append(FComparison(species, model_f, None, None, []))
             continue
-        ices_f = _ssb_weighted_f(stocks)
+        tonnes_stocks = [s for s in stocks if units.get(s) == "tonnes"]
+        index_stocks = [s for s in stocks if units.get(s) == "index"]
+        if tonnes_stocks:
+            weighting_stocks = tonnes_stocks
+            excluded = index_stocks
+        else:
+            weighting_stocks = index_stocks
+            excluded = []
+        ices_f = _ssb_weighted_f(weighting_stocks)
         if ices_f is None:
-            out.append(FComparison(species, model_f, None, None))
+            out.append(FComparison(species, model_f, None, None, excluded))
             continue
         lo, hi = F_TOLERANCE
         in_tol = lo * ices_f <= model_f <= hi * ices_f
-        out.append(FComparison(species, model_f, ices_f, in_tol))
+        out.append(FComparison(species, model_f, ices_f, in_tol, excluded))
     return out
 
 
@@ -223,8 +272,33 @@ def _collect_reference_points(manifest: dict) -> dict[str, dict]:
     return rp
 
 
+def _validate_snapshot_coverage(manifest: dict) -> None:
+    """Warn (on stderr) when any snapshot's last SSB year doesn't reach the
+    window end. Catches the case where a re-run of the puller at a wrong
+    advice year silently shortens the time series and the envelope then
+    skips the window tail without any comparison error.
+    """
+    import sys
+
+    window_end = WINDOW_YEARS.stop - 1
+    for stocks in manifest["model_species_to_ices_stocks"].values():
+        for stock in stocks:
+            years = _series_by_year(_load_assessment(stock), "ssb")
+            if not years:
+                print(f"WARN: {stock}: no SSB years in snapshot", file=sys.stderr)
+                continue
+            last = max(years)
+            if last < window_end:
+                print(
+                    f"WARN: {stock}: last SSB year {last} < window end {window_end} — "
+                    "snapshot may be stale or re-pulled at the wrong advice year",
+                    file=sys.stderr,
+                )
+
+
 def run(*, write_report: bool = True) -> dict:
     manifest = _load_manifest()
+    _validate_snapshot_coverage(manifest)
     model_fsh = _parse_model_fishing_rates()
     targets = _parse_model_targets()
 
@@ -250,14 +324,16 @@ def _write_markdown_report(report: dict) -> None:
         "",
         "## Fishing Mortality Rates (2018-2022 window)",
         "",
-        "| species | model F | ICES F (SSB-weighted) | in [0.5x, 1.5x] tolerance? |",
-        "|---|---:|---:|:---:|",
+        "| species | model F | ICES F (SSB-weighted, tonnes-preferred) | "
+        "in [0.5x, 1.5x] tolerance? | excluded (unit mismatch) |",
+        "|---|---:|---:|:---:|---|",
     ]
     for r in report["f_rates"]:
         f_model = f"{r['model_f']:.3f}"
         f_ices = "—" if r["ices_f_weighted"] is None else f"{r['ices_f_weighted']:.3f}"
         flag = "—" if r["in_tolerance"] is None else ("✓" if r["in_tolerance"] else "✗")
-        lines.append(f"| {r['species']} | {f_model} | {f_ices} | {flag} |")
+        excl = ", ".join(f"`{s}`" for s in r["excluded_index_stocks"]) or "—"
+        lines.append(f"| {r['species']} | {f_model} | {f_ices} | {flag} | {excl} |")
     lines += [
         "",
         "## Biomass Envelope Overlap (SSB 2018-2022, summed across tonnes-unit stocks)",
@@ -341,7 +417,14 @@ def main() -> int:
             f"model=[{r['model_lower']:.0f},{r['model_upper']:.0f}] ices={ices} "
             f"excluded={r['excluded_index_stocks']}"
         )
+    # Fail on: (a) soft-tolerance drift, (b) non-overlapping envelopes,
+    # (c) a species that has linked ICES stocks but produced no numeric F —
+    # case (c) catches a silently-broken snapshot pull that would otherwise
+    # pass CI with every row rendered as "—".
     failures = [r for r in report["f_rates"] if r["in_tolerance"] is False]
+    failures += [
+        r for r in report["f_rates"] if r["species"] in assessed and r["ices_f_weighted"] is None
+    ]
     failures += [r for r in report["biomass_envelopes"] if r["envelopes_overlap"] is False]
     return 1 if failures else 0
 

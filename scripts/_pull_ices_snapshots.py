@@ -113,6 +113,12 @@ def main() -> None:
             r_a = client.get(f"{SAG_BASE}/StockDownload", params={"assessmentKey": str(ak)})
             r_a.raise_for_status()
             raw_assessment = r_a.json()
+            if not raw_assessment:
+                # ICES returns 200 + [] for some category-3/4 stocks even when
+                # list_stocks claims an advice exists. Fail loudly rather than
+                # commit an empty snapshot that silently poisons downstream
+                # F-rate and envelope comparisons.
+                raise RuntimeError(f"{stock_key} @ {year}: empty assessment payload from ICES SAG")
 
             r_rp = client.get(
                 f"{SAG_BASE}/FishStockReferencePoints",
@@ -121,6 +127,10 @@ def main() -> None:
             r_rp.raise_for_status()
             raw_rp = r_rp.json()
             rp_entry = raw_rp[0] if isinstance(raw_rp, list) and raw_rp else raw_rp
+            if not rp_entry:
+                raise RuntimeError(
+                    f"{stock_key} @ {year}: empty reference-points payload from ICES SAG"
+                )
 
             flat_a = _flatten_assessment(raw_assessment)
             flat_rp = _flatten_ref_points(rp_entry)
@@ -132,7 +142,19 @@ def main() -> None:
                 json.dumps(flat_rp, indent=2) + "\n"
             )
 
-            units_by_stock[stock_key] = _unit_for(raw_assessment, flat_rp.get("blim"))
+            unit = _unit_for(raw_assessment, flat_rp.get("blim"))
+            if unit == "unknown":
+                # Every snapshotted stock must be classifiable — either the Blim
+                # is missing from the ref-points payload (surprising, worth
+                # seeing) or the magnitude falls in the borderline zone. Don't
+                # silently write "unknown" into index.json; the validator
+                # treats unknown-unit stocks as absent, which would be
+                # indistinguishable from "stock not assessed".
+                raise RuntimeError(
+                    f"{stock_key} @ {year}: cannot classify SSB unit "
+                    f"(Blim={flat_rp.get('blim')!r}) — inspect raw payload"
+                )
+            units_by_stock[stock_key] = unit
             year_by_stock[stock_key] = year
 
     # Rewrite index.json with units + per-stock advice-year overrides.
