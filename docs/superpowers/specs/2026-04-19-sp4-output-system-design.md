@@ -49,33 +49,51 @@ No library-side changes beyond the engine-owned `simulate.py` / `output.py`. No 
 
 ---
 
-## Capability 5.5 — Diet per-recording-period
+## Capability 5.5 — Diet per-recording-period (Java-parity)
 
 ### Current behaviour (whole-run sum)
 
-`write_diet_csv(outputs, ...)` at `output.py:207` currently iterates `outputs: list[StepOutput]`, sums `step.diet_by_species` across all steps, and writes a single CSV `{prefix}_diet_Simu{i}.csv`. Java writes one CSV **per recording period**.
+`write_diet_csv(path, diet_by_species, predator_names, prey_names)` at `output.py:207` writes a single `(n_pred, n_prey)` diet matrix to one CSV. The *caller* at `output.py:76-87` iterates `outputs: list[StepOutput]` and sums `step.diet_by_species` across the whole run before invoking the writer. Result: one file per simulation, whole-run-integrated. The existing collection gate `output.diet.composition.enabled` is honored at `simulate.py:1094` (`enable_diet_tracking`) but the caller at `output.py:76-87` then writes regardless of the gate's intent — on a disabled run the gate short-circuits collection so the diet arrays are empty and the writer no-ops, but the gate is not explicit at the writer boundary.
 
-### Target behaviour (per-period)
+### Target behaviour (Java-parity — append rows to one CSV)
 
-- Input unchanged: `outputs: list[StepOutput]` already averaged per recording period (`_average_step_outputs` at `simulate.py:854`).
-- Write one CSV per recording period, filename pattern `{prefix}_diet_Simu{i}_step{record_step}.csv` — the `record_step` matches the field already populated on the averaged `StepOutput`.
-- Each CSV is the `(n_pred, n_prey)` matrix with predator names as rows and prey (focal species + LTL groups) as columns. Same column schema as the current single-file output.
-- Remove the whole-run sum. Callers that want it can compute `sum(axis=time)` from the loaded NetCDF (or the per-step CSVs).
+Verified against `osmose-master/java/src/main/java/fr/ird/osmose/output/DietOutput.java:217-222`: Java writes **one** file `{prefix}_dietMatrix_Simu{rank}.csv` and appends rows each recording period, with `time` as the first column of every row. This is the same pattern as the biomass/yield/abundance CSVs already produced by `_write_species_csv`. My earlier spec proposed per-period files — that diverges from Java, not toward it. **Correcting the target**:
+
+- Continue to emit one CSV per simulation (`{prefix}_dietMatrix_Simu{i}.csv`), matching Java's naming.
+- Schema: first column `Time`, then one column per (predator, prey) pair in lexicographic order (equivalent to Java's column layout). One row per recording period. `n_periods` rows total.
+- Rewrite `write_diet_csv` signature to accept the outputs list directly, preserving the existing CSV layout semantics:
+  ```python
+  def write_diet_csv(
+      outputs: list[StepOutput],
+      cfg: dict,
+      output_dir: Path,
+      prefix: str,
+      sim_index: int,
+      predator_names: list[str],
+      prey_names: list[str],
+  ) -> None:
+  ```
+  (The current caller at `output.py:76-87` collapses the per-step matrices by summing — replace that collapse with a per-row emission.)
+- Remove the whole-run-summed matrix as the only output. The CSV that lands on disk now has one row per recording period, and the whole-run sum is trivially derivable by `df.drop(columns="Time").sum(axis=0)`.
 
 ### Config gating
 
-Tie writing to the existing `output.diet.composition.enabled` (currently parsed but not honored — `config.py:772`). When false, skip the writer entirely.
+Make the existing `output.diet.composition.enabled` (`config.py:772`) explicit at the writer boundary: if `cfg["output.diet.composition.enabled"] != "true"`, skip `write_diet_csv` entirely. Complementary to the collection gate at `simulate.py:1094`, not a replacement.
 
 ### Files touched
 
-- Modify: `osmose/engine/output.py` — `write_diet_csv` body rewrite.
-- Modify: one existing test in `tests/` that asserts on diet filename — update assertion.
-- Modify: `osmose/engine/output.py:314` (`write_outputs_netcdf`) if it currently folds diet; confirm by reading.
+- Modify: `osmose/engine/output.py` — `write_diet_csv` signature + body; `write_outputs` call site at `:76-87`.
+- Modify: **two** existing tests (not one — verified by reviewer):
+  - `tests/test_engine_diet.py::test_write_diet_csv` (line 286) — old direct-ndarray signature.
+  - `tests/test_engine_diet.py::test_write_diet_csv_percentage` (line 318) — same.
+  Either migrate both to the new outputs-list signature, or keep a small private helper `_format_diet_row` with the old single-matrix shape and point the two existing tests at that helper instead of the public `write_diet_csv`.
 
 ### Tests
 
-- `test_write_diet_csv_emits_one_file_per_recording_period`: construct a list of three `StepOutput`s with distinct `diet_by_species` matrices; call `write_diet_csv`; assert three files exist with the correct filename pattern and each file's matrix matches the per-step input.
-- `test_write_diet_csv_skipped_when_config_disabled`: `output.diet.composition.enabled=false` → no diet files written.
+- `test_write_diet_csv_emits_one_row_per_recording_period`: three `StepOutput`s with distinct diet matrices; assert the written CSV has `Time` + expected pair columns, 3 data rows matching input step values.
+- `test_write_diet_csv_skipped_when_config_disabled`: `output.diet.composition.enabled=false` → no file written.
+- `test_write_diet_csv_empty_outputs_writes_no_file`: empty `outputs` list → no file (preserves the invariant "no data → no artifact").
+- Update `tests/test_engine_phase5.py:145` (existing `output.diet.composition.enabled` parser test) to also assert the writer-gate behavior.
 
 ---
 
@@ -93,7 +111,11 @@ Extend `write_outputs_netcdf` to emit three additional `DataArray`s into the sam
 - `abundance_by_age`: same dims.
 - `biomass_by_size`: dims `(time, species, size_bin)`. Padded similarly.
 - `abundance_by_size`: same.
-- `mortality_by_cause`: dims `(time, species, cause)`. Cause names as string coords (`natural`, `predation`, `starvation`, `fishing`, `additional`, `out`).
+- `mortality_by_cause`: dims `(time, species, cause)`. Cause coord values are the **actual 8-member `MortalityCause` enum** (`osmose/engine/state.py:17-27`): `predation`, `starvation`, `additional`, `fishing`, `out`, `foraging`, `discards`, `aging`. (The earlier draft of this spec listed 6 causes with a `natural` label — that label does not exist in the enum; `additional` is the residual bucket, `aging` is senescence, `foraging` only populates when bioen is enabled. Match the enum verbatim, lowercase.)
+
+**Ragged-bin handling is net-new, not an "extension".** `write_outputs_netcdf` currently has no per-species-ragged dict handling; it emits only `(time, species)` timeseries. The CSV distribution writer at `_write_distribution_csvs:121` takes `first_out`'s bin count only and is not robust to cross-species variation. The NetCDF extension computes per-step cross-species max bin count, preallocates `(time, species, max_bin)` float64 arrays filled with NaN, and scatters each species's row into the leading slots. Pad is NaN; the padded tail of the `age_bin` / `size_bin` coord is also NaN (not 0) so downstream plotters don't show spurious points at bin 0 for species with fewer bins.
+
+**NetCDF conventions:** set `Dataset.attrs["Conventions"] = "CF-1.8"` and `_FillValue = NaN` on every float DataArray. Document in `Dataset.attrs["distribution_padding"]` that NaN represents both padded-tail (structural) and missing-data (runtime) — downstream tools treat them identically, which is the intended semantics.
 
 Each emission gated by its existing config key (`output.biomass.byage.enabled`, etc.) PLUS a new master `output.netcdf.enabled`. When the master is `false`, no NetCDF file is written at all — the `.nc` file is suppressed in favour of the CSVs.
 
@@ -112,9 +134,11 @@ Bins may differ per species — for NetCDF this means we pad to the cross-specie
 ### Tests
 
 - `test_netcdf_contains_biomass_by_age_when_enabled`: synthesize 3 `StepOutput`s with `biomass_by_age` populated; write; open with xarray; assert `biomass_by_age` variable with dims `(time, species, age_bin)` and values matching input.
-- `test_netcdf_contains_mortality_by_cause`: same pattern for mortality.
+- `test_netcdf_contains_mortality_by_cause`: same pattern for mortality; assert the `cause` coord has the 8 expected enum labels in the correct order.
 - `test_netcdf_suppressed_when_master_disabled`: `output.netcdf.enabled=false` → no `.nc` file in the output dir.
 - `test_netcdf_pads_ragged_age_bins_with_nan`: two species with different bin counts → NetCDF shape matches max, shorter species has NaN in the tail slots.
+- `test_netcdf_pads_ragged_size_bins_with_nan`: parallel of the above for `biomass_by_size` / `abundance_by_size` — the size path is independent of age (flagged by reviewer).
+- `test_netcdf_cf_conventions_attr`: assert `Dataset.attrs["Conventions"] == "CF-1.8"` and every float DataArray has `_FillValue = NaN`.
 
 ---
 
@@ -141,9 +165,17 @@ New function `_collect_spatial_outputs(state, grid, config) -> tuple[dict, dict,
 - **Always produces all three dicts when the master is enabled** (no per-variant skip at collection time — the three arrays share the same school loop, so splitting them would save trivial CPU while complicating the pairing invariant). Per-variant enablement gates only the writer.
 - Called from `_collect_outputs` only when `output.spatialized.enabled=true`. When the master is `false`, the function is not called at all and all three fields remain `None`.
 
-### Averaging
+### Averaging (new per-field rules — not a simple reuse)
 
-`_average_step_outputs` already handles `dict[int, NDArray]` fields (via the distribution pairs). Reuse the same averaging pattern: element-wise mean across the accumulator list for each species. When any step has `spatial_biomass=None`, emit `None` for the averaged output (same rule as the existing distribution pairs).
+`_average_step_outputs` at `simulate.py:854-915` does **not** element-wise average dict fields today: distributions (`biomass_by_age` etc.) are **snapshot from `accumulated[-1]`** — the last step's values, not a mean (see the explicit comment at `:897`). The non-spatial scalar fields have heterogeneous rules: `biomass`/`abundance` are means, `mortality`/`yield` are sums, `diet_by_species` is summed. So there is no single "reuse existing pattern" for the three new spatial dicts — each one needs an explicit rule:
+
+| Spatial field | Aggregation | Rationale |
+|---|---|---|
+| `spatial_biomass` | element-wise **mean** across accumulator | matches non-spatial `biomass` (line 891): instantaneous stock, averaged over the period |
+| `spatial_abundance` | element-wise **mean** | matches non-spatial `abundance` (line 892) |
+| `spatial_yield` | element-wise **sum** | matches non-spatial `yield_by_species` (line 893-896): fishing yield is a rate × interval integral |
+
+Implementation: extend `_average_step_outputs` with a per-field dispatch that handles `dict[int, NDArray]` entries with the rule above. When any step has `spatial_biomass=None` (master disabled), emit `None` for the averaged output (same pairing-None rule as distributions).
 
 ### Writer
 
@@ -151,18 +183,20 @@ New function `write_outputs_netcdf_spatial(outputs, cfg, output_dir, prefix)` in
 
 - One NetCDF file per enabled variant: `{prefix}_spatial_biomass_Simu{i}.nc`, `{prefix}_spatial_abundance_Simu{i}.nc`, `{prefix}_spatial_yield_Simu{i}.nc`.
 - Dims: `(time, species, lat, lon)`.
-- Coords: `time` from record step indices; `species` from species names; `lat` / `lon` from the grid's `baltic_grid.nc` coordinates (via `grid.lat_centers` / `grid.lon_centers`, which already exist for the grid widget).
+- Coords: `time` from `StepOutput.step` values (which carry the last raw timestep of each averaging window — document this explicitly in `Dataset.attrs["time_convention"]`); `species` from species names; `lat` from `grid.lat` (1D `(ny,)` array, `osmose/engine/grid.py:33`) and `lon` from `grid.lon` (1D `(nx,)` array, `grid.py:34`). If either coord is `None` (grid without lat/lon metadata), write cell indices instead and record `attrs["spatial_coord_source"] = "cell_index"`.
 - Values in tonnes (biomass), individuals (abundance), tonnes (yield) — matching the non-spatial variants.
 - Cells outside the ocean mask written as NaN (not zero) so downstream plotting doesn't color land.
 
-### Config keys (Java-compatible)
+### Config keys (Java-compatible — use the existing schema keys, don't invent a parallel namespace)
 
-- `output.spatialized.enabled` (master; default `false`).
-- `output.spatialized.biomass.enabled` (default `true` when master is `true`).
-- `output.spatialized.abundance.enabled` (default `false`).
-- `output.spatialized.yield.enabled` (default `false`).
+**Correction from the earlier draft**: Java's `OutputManager` uses `output.spatial.*` for config keys (the `_spatialized_` suffix in Java is a *filename* fragment at `AbstractSpatialOutput.java:275`, not a config-key prefix). The Python schema at `osmose/schema/output.py:141-148` already declares `output.spatial.*` entries as UI-only flags — we repurpose those as the real engine gates, no new master key, no parallel namespace.
 
-Added as four new `OsmoseField` entries in `osmose/schema/output.py`. When the master is `false`, the collector short-circuits and the writer emits no files.
+- `output.spatial.enabled` (master; already in schema) — gates `_collect_spatial_outputs` entirely.
+- `output.spatial.biomass.enabled` (already in schema) — gates the biomass NetCDF writer.
+- `output.spatial.abundance.enabled` (already in schema) — gates the abundance NetCDF writer.
+- `output.spatial.yield.enabled` (already in schema) — gates the yield NetCDF writer.
+
+When the master is `false`, the collector short-circuits and all three `spatial_*` fields on `StepOutput` are `None`. Per-variant toggles gate only the writer (always-collected-if-master-true, per the pairing invariant). If any Java reference configs happen to use `output.spatialized.*`, the Python config reader already normalizes key aliases at the reader layer — confirm in the plan before executing.
 
 ### Files touched
 
@@ -176,8 +210,10 @@ Added as four new `OsmoseField` entries in `osmose/schema/output.py`. When the m
 - `test_average_spatial_outputs_means_per_cell`: 2 step-outputs with different per-cell biomass for one species; averaged output is the elementwise mean.
 - `test_spatial_netcdf_shape_and_coords`: write a 3-step, 2-species, 10×10-grid dataset; open with xarray; assert dims `(3, 2, 10, 10)` and the coord values.
 - `test_spatial_netcdf_nan_on_land`: one cell in the input is masked as land; assert that cell is NaN in the written NetCDF (not 0.0).
-- `test_spatial_disabled_when_master_false`: `output.spatialized.enabled=false` → `StepOutput.spatial_biomass` is `None` and no spatial NetCDF files are written.
-- `test_spatial_per_variant_toggle`: `output.spatialized.enabled=true` + only `output.spatialized.biomass.enabled=true` → only the biomass NetCDF is written; abundance and yield files absent.
+- `test_spatial_disabled_when_master_false`: `output.spatial.enabled=false` → `StepOutput.spatial_biomass/abundance/yield` are all `None` (pairing invariant) and no spatial NetCDF files are written.
+- `test_spatial_per_variant_toggle`: `output.spatial.enabled=true` + only `output.spatial.biomass.enabled=true` → the biomass NetCDF file **exists with expected `(time, species, lat, lon)` dims and coord values**, and the abundance and yield NetCDF files are **absent from `os.listdir(output_dir)`** (both positive and negative assertions explicit, per reviewer).
+- `test_spatial_collection_runs_but_no_files_when_all_variants_disabled`: master `true` + all three per-variant toggles `false` → `StepOutput.spatial_*` populated (collection ran) but `os.listdir(output_dir)` contains zero `_spatial_*` files. Covers the seam where the pairing invariant could silently regress.
+- `test_average_spatial_outputs_preserves_aggregation_rules`: parametrize over the three field names — `spatial_biomass` and `spatial_abundance` averaged element-wise (mean), `spatial_yield` summed element-wise. Each rule verified against a known 2-step input.
 
 ---
 
@@ -203,8 +239,11 @@ Explicit exclusions so a future reader or plan reviewer doesn't think they were 
 ## Testing strategy
 
 - **Unit tests for pure helpers**: `_collect_spatial_outputs`, the ndarray-average branch of `_average_step_outputs`, `write_outputs_netcdf_spatial`. These don't need a full engine run.
-- **Integration tests via the existing engine-validate harness**: run a tiny 2-species, 5×5-grid config for 3 steps end-to-end; assert all four new NetCDF / CSV output shapes exist. One integration test covering all three capabilities.
-- **Parity test**: compare spatial-biomass totals summed over cells against the non-spatial biomass timeseries. `sum(spatial_biomass, axis=(lat, lon)) == biomass` must hold per species per timestep (within rounding tolerance ~1e-9).
+- **Integration tests via the existing engine-validate harness**: run a tiny 2-species, 5×5-grid config for 3 steps end-to-end; open each of the four new output files (`{prefix}_dietMatrix_Simu{i}.csv`, `{prefix}_Simu{i}.nc` with added distribution/mortality variables, `{prefix}_spatial_biomass_Simu{i}.nc`, …) and **assert dims/coord values match expectations** (file existence alone would miss an empty-or-malformed NetCDF). One integration test covering all three capabilities.
+- **Parity test**: compare spatial-biomass totals summed over cells against the non-spatial biomass timeseries, with caveats that match the actual code paths:
+  - `_collect_biomass_abundance` at `simulate.py:628` applies the `output.cutoff.age` filter and adds background-species biomass (which has no per-cell location). The spatial collector MUST replicate the same cutoff filter, and the parity assertion must exclude background species (restrict to focal species only).
+  - Assert `np.allclose(spatial_biomass.sum(axis=(lat, lon)), biomass[focal_species_mask], rtol=1e-12, atol=0.0)` — relative tolerance, not absolute. The `1e-9` absolute in the earlier draft is too tight at tonnes-magnitude biomass (ulp accumulation scales with totals; 1e-9 of a 10⁶ tonnes total is below float64 precision).
+  - If background-species biomass is ever nonzero in the test fixture, assert `spatial_biomass.sum() == (biomass - bkg_biomass).sum()` so the invariant is independent of background configuration.
 
 ## References
 
