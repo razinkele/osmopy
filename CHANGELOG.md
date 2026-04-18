@@ -8,9 +8,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ### Added
 
+- **docs:** `docs/baltic_example.md` — full provenance doc for the Baltic example: file inventory, construction workflow, per-parameter-family sources with DOIs (FishBase, ICES SAG, Copernicus CMEMS, 9 cited papers), known limitations, refresh path. Complements the Baltic ICES validation report with the "where did each value come from" layer. (4031138)
 - **calibration:** ICES SAG 2024-advice snapshots for eight Baltic stocks (cod ×2, herring ×4, sprat, flounder) under `data/baltic/reference/ices_snapshots/`. `cod.27.22-24` uses 2022 advice (last full assessment before 2024 category-3 downgrade); all others use 2024. (a7d65a5)
-- **calibration:** `scripts/validate_baltic_vs_ices_sag.py` compares model F rates and biomass envelopes against ICES snapshots; writes `docs/baltic_ices_validation_2026-04-18.md`. Unit-aware: skips envelope checks for stocks whose SSB is reported as a relative biomass index (cod.27.24-32, her.27.25-2932, fle.27.2223) since indices cannot be combined with tonnes-scale model targets. (2be016f)
-- **tests:** regression fence for severe F-rate and biomass-envelope drift vs ICES, with documented `F_KNOWN_EXCEPTIONS` / `B_KNOWN_EXCEPTIONS` allowlists for deliberate calibration choices (`tests/test_baltic_ices_validation.py`). (0435fde)
+- **calibration:** `scripts/validate_baltic_vs_ices_sag.py` compares model F rates and biomass envelopes against ICES snapshots; writes `docs/baltic_ices_validation_2026-04-18.md`. Unit-aware: skips envelope checks for stocks whose SSB is reported as a relative biomass index (cod.27.24-32, her.27.25-2932, fle.27.2223) since indices cannot be combined with tonnes-scale model targets. After a multi-agent review round, F-rate weighting now prefers the tonnes subset and falls back to index (never mixes); eastern cod no longer silently vanishes into western cod's weighted F. (2be016f, 590240e)
+- **tests:** regression fence for severe F-rate and biomass-envelope drift vs ICES, with documented `F_KNOWN_EXCEPTIONS` / `B_KNOWN_EXCEPTIONS` allowlists for deliberate calibration choices (`tests/test_baltic_ices_validation.py`). Eight additional coverage tests surface `_ssb_weighted_f` empty-window, `_ices_ssb_envelope` partial/empty-coverage, unit-filter exclusion for cod/herring/flounder, and self-tests that allowlists are still load-bearing. (0435fde, 590240e)
+
+### Changed
+
+- **calibration:** validator `_series_by_year` now warns on uncoercible values instead of silent drop (catches Euro-locale `"1,234.5"` payloads that would otherwise disappear). `_parse_model_fishing_rates` now raises with file:line context on separator shifts. `_validate_snapshot_coverage` warns when any stock's SSB series doesn't reach the window end (catches puller re-runs at a wrong advice year silently shortening the series). `main()` exit code now fails on "assessed species with no ICES F" in addition to tolerance breaches — previously an all-`None` pull passed CI with every row rendered as `—`. (590240e)
+- **calibration:** `scripts/_pull_ices_snapshots.py` now raises on empty-200 payloads from ICES and on unclassifiable SSB units, rather than silently committing degenerate snapshots. (590240e)
 
 ### Changed
 
