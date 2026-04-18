@@ -95,6 +95,23 @@ class StepOutput:
     # Diet: per-species diet composition, shape (n_predators, n_prey), or None if diet disabled
     diet_by_species: NDArray[np.float64] | None = None
 
+    # Spatial outputs: per-species 2-D grids (ny, nx), or None if spatial disabled
+    spatial_biomass: dict[int, NDArray[np.float64]] | None = None
+    spatial_abundance: dict[int, NDArray[np.float64]] | None = None
+    spatial_yield: dict[int, NDArray[np.float64]] | None = None
+
+    def __post_init__(self) -> None:
+        # Pairing invariant: all three spatial_* fields are None together
+        # (spatial outputs disabled) or all non-None together (master gate
+        # on). Per-variant enablement gates only the writer.
+        trio = (self.spatial_biomass, self.spatial_abundance, self.spatial_yield)
+        none_count = sum(x is None for x in trio)
+        if none_count not in (0, 3):
+            raise ValueError(
+                "StepOutput spatial_* trio must all be None or all non-None, "
+                f"got none_count={none_count}"
+            )
+
 
 def _incoming_flux(
     state: SchoolState,
@@ -236,9 +253,9 @@ def _bioen_step(
     config.bioen_i_max = cast(NDArray[np.float64], config.bioen_i_max)
     config.bioen_theta = cast(NDArray[np.float64], config.bioen_theta)
     config.bioen_c_rate = cast(NDArray[np.float64], config.bioen_c_rate)
-    if hasattr(config, 'bioen_o2_c1') and config.bioen_o2_c1 is not None:
+    if hasattr(config, "bioen_o2_c1") and config.bioen_o2_c1 is not None:
         config.bioen_o2_c1 = cast(NDArray[np.float64], config.bioen_o2_c1)
-    if hasattr(config, 'bioen_o2_c2') and config.bioen_o2_c2 is not None:
+    if hasattr(config, "bioen_o2_c2") and config.bioen_o2_c2 is not None:
         config.bioen_o2_c2 = cast(NDArray[np.float64], config.bioen_o2_c2)
 
     # Helper: resolve parameter as per-school array or species scalar
@@ -250,9 +267,7 @@ def _bioen_step(
     # Precompute species masks only for species present in state (skip absent species)
     present_species = np.unique(state.species_id)
     sp_masks: list[tuple[int, NDArray[np.bool_]]] = [
-        (sp, state.species_id == sp)
-        for sp in present_species
-        if sp < config.n_species
+        (sp, state.species_id == sp) for sp in present_species if sp < config.n_species
     ]
 
     n_subdt = config.mortality_subdt
@@ -510,7 +525,7 @@ def _bioen_reproduction(
             if config.bioen_m0 is None:
                 raise RuntimeError("bioen_m0 must be set for bioenergetics species")
             m0_val = float(config.bioen_m0[sp])
-        
+
         if trait_overrides is not None and "bioen_m1" in trait_overrides:
             m1_val: float | NDArray[np.float64] = trait_overrides["bioen_m1"][mask]
         else:
@@ -799,12 +814,59 @@ def _collect_bioen(
     return bioen_e_net, bioen_ingestion, bioen_maint, bioen_rho, bioen_sizeinf
 
 
+def _collect_spatial_outputs(
+    state: SchoolState,
+    grid: Grid,
+    config: EngineConfig,
+) -> tuple[
+    dict[int, NDArray[np.float64]],
+    dict[int, NDArray[np.float64]],
+    dict[int, NDArray[np.float64]],
+]:
+    """Aggregate biomass, abundance, and fishing-yield-in-biomass per cell per focal species."""
+    ny, nx = grid.ny, grid.nx
+    n_sp = config.n_species
+    sb = {sp: np.zeros((ny, nx), dtype=np.float64) for sp in range(n_sp)}
+    sa = {sp: np.zeros((ny, nx), dtype=np.float64) for sp in range(n_sp)}
+    sy = {sp: np.zeros((ny, nx), dtype=np.float64) for sp in range(n_sp)}
+
+    if len(state) == 0:
+        return sb, sa, sy
+
+    focal = state.species_id < n_sp
+    if config.output_cutoff_age is not None:
+        age_years = state.age_dt.astype(np.float64) / config.n_dt_per_year
+        cutoff = config.output_cutoff_age[state.species_id]
+        focal &= age_years >= cutoff
+
+    if not focal.any():
+        return sb, sa, sy
+
+    sp_ids = state.species_id[focal]
+    ys = state.cell_y[focal]
+    xs = state.cell_x[focal]
+    biomass = state.biomass[focal]
+    abundance = state.abundance[focal]
+    yield_b = state.n_dead[focal, int(MortalityCause.FISHING)] * state.weight[focal]
+
+    for sp in range(n_sp):
+        m = sp_ids == sp
+        if not m.any():
+            continue
+        np.add.at(sb[sp], (ys[m], xs[m]), biomass[m])
+        np.add.at(sa[sp], (ys[m], xs[m]), abundance[m])
+        np.add.at(sy[sp], (ys[m], xs[m]), yield_b[m])
+    return sb, sa, sy
+
+
 def _collect_outputs(
     state: SchoolState,
     config: EngineConfig,
     step: int,
     bkg_output: tuple[NDArray[np.float64], NDArray[np.float64]] | None = None,
     diet_by_species: NDArray[np.float64] | None = None,
+    *,
+    grid: Grid | None = None,
 ) -> StepOutput:
     """Aggregate per-species outputs from current state into a StepOutput."""
     biomass, abundance = _collect_biomass_abundance(state, config, bkg_output)
@@ -816,6 +878,12 @@ def _collect_outputs(
     bioen_e_net, bioen_ingestion, bioen_maint, bioen_rho, bioen_size_inf = _collect_bioen(
         state, config
     )
+
+    spatial_biomass = spatial_abundance = spatial_yield = None
+    if config.output_spatial_enabled and grid is not None:
+        spatial_biomass, spatial_abundance, spatial_yield = _collect_spatial_outputs(
+            state, grid, config
+        )
 
     return StepOutput(
         step=step,
@@ -833,6 +901,9 @@ def _collect_outputs(
         bioen_rho_by_species=bioen_rho,
         bioen_size_inf_by_species=bioen_size_inf,
         diet_by_species=diet_by_species,
+        spatial_biomass=spatial_biomass,
+        spatial_abundance=spatial_abundance,
+        spatial_yield=spatial_yield,
     )
 
 
@@ -866,9 +937,29 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
 
     # Diet: sum biomass eaten across recording window (normalization happens at write time)
     diet_arrays = [o.diet_by_species for o in accumulated if o.diet_by_species is not None]
-    diet_summed: NDArray[np.float64] | None = (
-        np.sum(diet_arrays, axis=0) if diet_arrays else None
-    )
+    diet_summed: NDArray[np.float64] | None = np.sum(diet_arrays, axis=0) if diet_arrays else None
+
+    def _avg_spatial(attr: str, op: str) -> dict[int, NDArray[np.float64]] | None:
+        dicts = [getattr(o, attr) for o in accumulated if getattr(o, attr) is not None]
+        if not dicts:
+            return None
+        keys: set[int] = set()
+        for d in dicts:
+            keys |= d.keys()
+        out: dict[int, NDArray[np.float64]] = {}
+        for sp in keys:
+            arrays = [d[sp] for d in dicts if sp in d]
+            if op == "mean":
+                out[sp] = np.mean(arrays, axis=0)
+            elif op == "sum":
+                out[sp] = np.sum(arrays, axis=0)
+            else:
+                raise ValueError(f"unknown op: {op}")
+        return out
+
+    spatial_b_agg = _avg_spatial("spatial_biomass", "mean")
+    spatial_a_agg = _avg_spatial("spatial_abundance", "mean")
+    spatial_y_agg = _avg_spatial("spatial_yield", "sum")
 
     if len(accumulated) == 1:
         return StepOutput(
@@ -887,6 +978,9 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
             bioen_rho_by_species=bioen_rho_avg,
             bioen_size_inf_by_species=bioen_size_inf_avg,
             diet_by_species=diet_summed,
+            spatial_biomass=spatial_b_agg,
+            spatial_abundance=spatial_a_agg,
+            spatial_yield=spatial_y_agg,
         )
     biomass = np.mean([o.biomass for o in accumulated], axis=0)
     abundance = np.mean([o.abundance for o in accumulated], axis=0)
@@ -912,6 +1006,9 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
         bioen_rho_by_species=bioen_rho_avg,
         bioen_size_inf_by_species=bioen_size_inf_avg,
         diet_by_species=diet_summed,
+        spatial_biomass=spatial_b_agg,
+        spatial_abundance=spatial_a_agg,
+        spatial_yield=spatial_y_agg,
     )
 
 
@@ -1023,7 +1120,7 @@ def simulate(
 
     # Phase 5: Initial state output (step -1)
     if config.output_step0_include:
-        outputs.append(_collect_outputs(state, config, step=-1))
+        outputs.append(_collect_outputs(state, config, step=-1, grid=grid))
 
     for step in range(config.n_steps):
         # -- Annual reset for fleet economics --
@@ -1225,7 +1322,9 @@ def simulate(
                     ctx.genetic_state = ctx.genetic_state.append(part)
 
         # Collect focal outputs after reproduction
-        step_out = _collect_outputs(state, config, step, bkg_output, diet_by_species=step_diet)
+        step_out = _collect_outputs(
+            state, config, step, bkg_output, diet_by_species=step_diet, grid=grid
+        )
         accumulated.append(step_out)
 
         # Write averaged output at recording frequency

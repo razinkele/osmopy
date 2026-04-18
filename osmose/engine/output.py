@@ -25,6 +25,8 @@ def write_outputs(
     output_dir: Path,
     config: EngineConfig,
     prefix: str = "osm",
+    *,
+    grid=None,
 ) -> None:
     """Write simulation outputs to CSV files matching Java format.
 
@@ -85,6 +87,17 @@ def write_outputs(
             step_times=step_times,
             predator_names=config.species_names,
             prey_names=config.all_species_names,
+        )
+
+    # Write spatial NetCDF outputs when enabled
+    if config.output_spatial_enabled:
+        write_outputs_netcdf_spatial(
+            outputs,
+            output_dir,
+            prefix=prefix,
+            sim_index=0,
+            config=config,
+            grid=grid,
         )
 
 
@@ -469,6 +482,166 @@ def write_outputs_netcdf(
         if np.issubdtype(ds[name].dtype, np.floating):
             ds[name].encoding["_FillValue"] = np.float64("nan")
     ds.to_netcdf(path)
+
+
+# ---------------------------------------------------------------------------
+# Spatial NetCDF output
+# ---------------------------------------------------------------------------
+
+
+def write_outputs_netcdf_spatial(
+    outputs: list[StepOutput],
+    output_dir: Path,
+    *,
+    prefix: str = "osm",
+    sim_index: int = 0,
+    config: EngineConfig,
+    grid=None,
+) -> None:
+    """Write per-cell spatial outputs as NetCDF files.
+
+    One file is produced per enabled spatial variant:
+      - {prefix}_spatial_biomass_Simu{i}.nc   (output.spatial.biomass.enabled)
+      - {prefix}_spatial_abundance_Simu{i}.nc (output.spatial.abundance.enabled)
+      - {prefix}_spatial_yield_Simu{i}.nc     (output.spatial.yield.biomass.enabled)
+
+    Dims: (time, species, lat, lon).
+    Land cells (grid.ocean_mask == False) are written as NaN; ocean cells with
+    no schools this period hold 0.0 (documented in attrs.nan_semantics).
+    """
+    import xarray as xr
+
+    has_spatial = any(o.spatial_biomass is not None for o in outputs)
+    if not has_spatial:
+        return
+
+    times = np.array([o.step / config.n_dt_per_year for o in outputs])
+    focal_names = list(config.species_names[: config.n_species])
+    n_sp = config.n_species
+    n_t = len(outputs)
+
+    # Determine grid dimensions: use grid object if present, else infer from data
+    if grid is not None:
+        ny, nx = grid.ny, grid.nx
+        lat = (
+            grid.lat
+            if hasattr(grid, "lat") and grid.lat is not None
+            else np.arange(ny, dtype=np.float64)
+        )
+        lon = (
+            grid.lon
+            if hasattr(grid, "lon") and grid.lon is not None
+            else np.arange(nx, dtype=np.float64)
+        )
+        ocean_mask = (
+            grid.ocean_mask if hasattr(grid, "ocean_mask") and grid.ocean_mask is not None else None
+        )
+    else:
+        # Infer shape from first non-None spatial_biomass
+        sample = next((o.spatial_biomass for o in outputs if o.spatial_biomass is not None), None)
+        if sample is None:
+            return
+        sample_arr = next(iter(sample.values()))
+        ny, nx = sample_arr.shape
+        lat = np.arange(ny, dtype=np.float64)
+        lon = np.arange(nx, dtype=np.float64)
+        ocean_mask = None
+
+    coords = {
+        "time": times,
+        "species": focal_names,
+        "lat": lat,
+        "lon": lon,
+    }
+
+    _dataset_attrs_base = {
+        "Conventions": "CF-1.8",
+        "description": "OSMOSE Python engine spatial output",
+        "n_dt_per_year": config.n_dt_per_year,
+        "n_year": config.n_year,
+        "time_convention": "step / n_dt_per_year (fractional years from simulation start)",
+        "nan_semantics": (
+            "NaN marks land cells (ocean_mask==False). "
+            "Ocean cells with no schools in the averaging window hold 0.0 — "
+            "distinguishable from NaN/land."
+        ),
+        "spatial_coord_source": "grid object" if grid is not None else "inferred (no grid passed)",
+    }
+
+    cutoff = getattr(config, "output_cutoff_age", None)
+    if cutoff is not None:
+        _dataset_attrs_base["cutoff_age_note"] = (
+            "Schools younger than output_cutoff_age are excluded from aggregation."
+        )
+    _dataset_attrs_base["abundance_period_mean_note"] = (
+        "spatial_abundance is the period mean of instantaneous abundance; "
+        "it is NOT a cumulative count."
+    )
+
+    def _build_arr(attr: str, op: str) -> np.ndarray:
+        """Stack per-step spatial dicts into (time, species, lat, lon) array."""
+        result = np.full((n_t, n_sp, ny, nx), np.nan)
+        for t_idx, o in enumerate(outputs):
+            d = getattr(o, attr)
+            if d is None:
+                continue
+            for sp in range(n_sp):
+                plane = d.get(sp)
+                if plane is None:
+                    continue
+                arr = plane.copy().astype(np.float64)
+                if ocean_mask is not None:
+                    arr[~ocean_mask] = np.nan
+                result[t_idx, sp] = arr
+        return result
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    suffix = f"_Simu{sim_index}.nc"
+
+    if config.output_spatial_biomass:
+        arr = _build_arr("spatial_biomass", "mean")
+        da = xr.DataArray(
+            arr,
+            dims=["time", "species", "lat", "lon"],
+            attrs={
+                "units": "tonnes",
+                "long_name": "Spatial mean biomass per species per cell",
+                "cell_methods": "time: mean",
+            },
+        )
+        ds = xr.Dataset({"spatial_biomass": da}, coords=coords, attrs=dict(_dataset_attrs_base))
+        ds["spatial_biomass"].encoding["_FillValue"] = np.float64("nan")
+        ds.to_netcdf(output_dir / f"{prefix}_spatial_biomass{suffix}")
+
+    if config.output_spatial_abundance:
+        arr = _build_arr("spatial_abundance", "mean")
+        da = xr.DataArray(
+            arr,
+            dims=["time", "species", "lat", "lon"],
+            attrs={
+                "units": "individuals",
+                "long_name": "Spatial mean abundance per species per cell",
+                "cell_methods": "time: mean",
+            },
+        )
+        ds = xr.Dataset({"spatial_abundance": da}, coords=coords, attrs=dict(_dataset_attrs_base))
+        ds["spatial_abundance"].encoding["_FillValue"] = np.float64("nan")
+        ds.to_netcdf(output_dir / f"{prefix}_spatial_abundance{suffix}")
+
+    if config.output_spatial_yield_biomass:
+        arr = _build_arr("spatial_yield", "sum")
+        da = xr.DataArray(
+            arr,
+            dims=["time", "species", "lat", "lon"],
+            attrs={
+                "units": "tonnes",
+                "long_name": "Spatial yield biomass per species per cell (fishing mortality * weight)",
+                "cell_methods": "time: sum",
+            },
+        )
+        ds = xr.Dataset({"spatial_yield": da}, coords=coords, attrs=dict(_dataset_attrs_base))
+        ds["spatial_yield"].encoding["_FillValue"] = np.float64("nan")
+        ds.to_netcdf(output_dir / f"{prefix}_spatial_yield{suffix}")
 
 
 # ---------------------------------------------------------------------------

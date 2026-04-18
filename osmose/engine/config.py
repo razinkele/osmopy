@@ -805,6 +805,11 @@ def _parse_output_flags(cfg: dict[str, str], n_sp: int, n_bkg: int) -> dict[str,
         "output_biomass_bysize_netcdf": _enabled(cfg, "output.biomass.bysize.netcdf.enabled"),
         "output_abundance_bysize_netcdf": _enabled(cfg, "output.abundance.bysize.netcdf.enabled"),
         "output_mortality_netcdf": _enabled(cfg, "output.mortality.netcdf.enabled"),
+        # Spatial output flags (output.spatial.* schema keys)
+        "output_spatial_enabled": _enabled(cfg, "output.spatial.enabled"),
+        "output_spatial_biomass": _enabled(cfg, "output.spatial.biomass.enabled"),
+        "output_spatial_abundance": _enabled(cfg, "output.spatial.abundance.enabled"),
+        "output_spatial_yield_biomass": _enabled(cfg, "output.spatial.yield.biomass.enabled"),
         "output_size_min": float(cfg.get("output.distrib.bysize.min", "0")),
         "output_size_max": float(cfg.get("output.distrib.bysize.max", "205")),
         "output_size_incr": float(cfg.get("output.distrib.bysize.incr", "10")),
@@ -1283,6 +1288,12 @@ class EngineConfig:
     output_biomass_bysize_netcdf: bool = False
     output_abundance_bysize_netcdf: bool = False
     output_mortality_netcdf: bool = False
+
+    # Spatial output flags (master gate + per-variant)
+    output_spatial_enabled: bool = False
+    output_spatial_biomass: bool = False
+    output_spatial_abundance: bool = False
+    output_spatial_yield_biomass: bool = False
 
     def __post_init__(self) -> None:
         """Validate invariants after construction.
@@ -1876,4 +1887,8 @@ class EngineConfig:
             output_biomass_bysize_netcdf=_output["output_biomass_bysize_netcdf"],
             output_abundance_bysize_netcdf=_output["output_abundance_bysize_netcdf"],
             output_mortality_netcdf=_output["output_mortality_netcdf"],
+            output_spatial_enabled=_output["output_spatial_enabled"],
+            output_spatial_biomass=_output["output_spatial_biomass"],
+            output_spatial_abundance=_output["output_spatial_abundance"],
+            output_spatial_yield_biomass=_output["output_spatial_yield_biomass"],
         )

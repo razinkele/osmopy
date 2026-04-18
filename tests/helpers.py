@@ -95,6 +95,41 @@ def make_catch_all_input(value: Any):
 from dataclasses import replace  # noqa: E402
 
 from osmose.engine.config import EngineConfig  # noqa: E402
+from osmose.engine.state import MortalityCause  # noqa: E402
+
+
+def make_schools_in_cells(
+    *,
+    cell_yx: list[tuple[int, int]],
+    species_id: list[int],
+    biomass: list[float],
+    abundance: list[float],
+    n_dead_fishing: list[float] | None = None,
+    weight: list[float] | None = None,
+    age_dt: list[int] | None = None,
+) -> SchoolState:
+    """Build a minimal SchoolState with schools placed in specified cells."""
+    n = len(cell_yx)
+    assert all(len(x) == n for x in [species_id, biomass, abundance]), (
+        "lists must have equal length"
+    )
+    ys = np.array([c[0] for c in cell_yx], dtype=np.int32)
+    xs = np.array([c[1] for c in cell_yx], dtype=np.int32)
+    sp = np.array(species_id, dtype=np.int32)
+    base = SchoolState.create(n, sp)
+    n_dead = np.zeros((n, len(MortalityCause)), dtype=np.float64)
+    if n_dead_fishing is not None:
+        n_dead[:, int(MortalityCause.FISHING)] = np.asarray(n_dead_fishing)
+    return base.replace(
+        cell_y=ys,
+        cell_x=xs,
+        biomass=np.asarray(biomass, dtype=np.float64),
+        abundance=np.asarray(abundance, dtype=np.float64),
+        weight=np.asarray(weight if weight is not None else [1.0] * n, dtype=np.float64),
+        age_dt=np.asarray(age_dt if age_dt is not None else [10**6] * n, dtype=np.int32),
+        n_dead=n_dead,
+    )
+
 
 # Minimum keys to satisfy EngineConfig.from_dict() for a 1-species, 0-background
 # test config. Do NOT add grid.* keys: grid is constructed separately (see Task 3

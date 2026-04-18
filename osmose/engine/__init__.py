@@ -64,7 +64,7 @@ class PythonEngine:
         outputs = simulate(
             engine_config, grid, rng, movement_rngs=movement_rngs, mortality_rngs=mortality_rngs
         )
-        write_outputs(outputs, output_dir, engine_config)
+        write_outputs(outputs, output_dir, engine_config, grid=grid)
 
         return RunResult(
             returncode=0,
