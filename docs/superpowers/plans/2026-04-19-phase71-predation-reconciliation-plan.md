@@ -708,6 +708,12 @@ def test_schools_in_different_cells_dont_interact(self):
 # After — rename to reflect the new invariant. Three schools: a
 # predator + prey in the cell being tested, plus a bystander not in
 # cell_indices. The per-cell API must not mutate the bystander.
+#
+# Note: predation_for_cell's dispatch is governed by cell_indices, NOT
+# by state.cell_x/cell_y. We leave cell_x/cell_y at their default zeros
+# (all three schools nominally in cell (0,0)) to emphasize this — the
+# "bystander" tag comes from not being in cell_indices, not from any
+# spatial-coordinate difference.
 def test_school_outside_cell_indices_is_untouched(self):
     cfg = EngineConfig.from_dict(_make_predation_config())
     state = SchoolState.create(
@@ -721,8 +727,7 @@ def test_school_outside_cell_indices_is_untouched(self):
         age_dt=np.array([24, 24, 24], dtype=np.int32),
     )
     rng = np.random.default_rng(42)
-    # Only schools 0 and 1 are in the cell we're exercising;
-    # school 2 is the bystander outside cell_indices.
+    # Only schools 0 and 1 are in cell_indices; school 2 is the bystander.
     predation_for_cell(np.array([0, 1], dtype=np.int32), state, cfg, rng, n_subdt=10)
     # Predation ran: prey was eaten.
     assert state.abundance[1] < 500.0
