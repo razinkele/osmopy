@@ -564,11 +564,10 @@ def predation_for_cell(
     # buffer mutation even though attribute reassignment is blocked.
     state.feeding_stage[:] = compute_feeding_stages(state, config)
 
-    # Precompute accessibility info for this call. Matches the precomputation
-    # block in the current batch predation() at lines 564-590, but scoped to
-    # this single call. Per-call recomputation sidesteps the in-loop rebinding
-    # quirk on _DUMMY_ACCESS that the batch function has as a local-variable
-    # side effect.
+    # Precompute accessibility info for this call — scoped to a single cell.
+    # Per-call recomputation is correct because stages/access-indices are
+    # invariant within a timestep (they derive from species_id, age_dt,
+    # length, weight, and trophic_level — none of which predation mutates).
     if config.stage_accessibility is not None:
         sa = config.stage_accessibility
         prey_access_idx = sa.compute_school_indices(
@@ -597,8 +596,9 @@ def predation_for_cell(
 
     cell_indices_i32 = cell_indices.astype(np.int32, copy=False)
 
-    # Dispatch to Numba or Python backend. Silent fallback if Numba requested
-    # but unavailable — matches current predation() behavior.
+    # Dispatch to Numba or Python backend. Silent fallback if Numba was
+    # requested but is unavailable (use_numba=True without _HAS_NUMBA
+    # drops into the Python path).
     if use_numba and _HAS_NUMBA:
         if species_rngs is not None and len(cell_indices_i32) > 0:
             first_pred_sp = int(state.species_id[cell_indices_i32[0]])
