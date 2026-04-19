@@ -15,11 +15,12 @@ from __future__ import annotations
 
 import ast
 import difflib
-import logging
 import re
 from dataclasses import dataclass
 
-log = logging.getLogger("osmose.config")
+from osmose.logging import setup_logging
+
+log = setup_logging("osmose.config")
 
 _INDEX_SUFFIXES = (
     ("fsh", re.compile(r"^fsh\d+$")),
@@ -293,6 +294,7 @@ def _suggest(normalized_key: str, patterns: frozenset[str]) -> str | None:
 
 
 def _check(cfg_key: str, known: KnownKeys) -> UnknownKey | None:
+    """Classify a single cfg key — literal fast-path, normalized-pattern, then regex fallback."""
     if cfg_key in known.literals:
         return None
     normalized = _normalize_key_to_pattern(cfg_key)

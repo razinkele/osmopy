@@ -163,7 +163,7 @@ def test_invalid_mode_raises():
 # --- AST walker tests -----------------------------------------------------
 
 
-def test_ast_extracts_cfg_get_literals_from_fixture(tmp_path):
+def test_ast_extracts_cfg_get_literals_from_fixture():
     """Synthetic AST input exercising each documented extraction shape."""
     source = textwrap.dedent(
         """
@@ -190,9 +190,9 @@ def test_ast_extracts_cfg_get_literals_from_fixture(tmp_path):
 
 def test_ast_extracts_from_real_config_py_canary():
     """Canary: the walker finds known-present sentinels in the real config.py."""
-    import osmose.engine.config as cfg_mod
     import ast as _ast
-    tree = _ast.parse(open(cfg_mod.__file__).read())
+    from osmose.engine.config_validation import _read_config_source
+    tree = _ast.parse(_read_config_source())
     keys = _extract_literal_keys_from_config_py(tree)
     for sentinel in (
         "_osmose.config.dir",
