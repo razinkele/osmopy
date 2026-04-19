@@ -518,6 +518,149 @@ def _predation_on_resources(
 _DUMMY_ACCESS = np.zeros((1, 1), dtype=np.float64)
 
 
+def predation_for_cell(
+    cell_indices: NDArray[np.int32],
+    state: SchoolState,
+    config: EngineConfig,
+    rng: np.random.Generator,
+    n_subdt: int,
+    *,
+    use_numba: bool = _HAS_NUMBA,
+    ctx: SimulationContext | None = None,
+    species_rngs: list[np.random.Generator] | None = None,
+    resources: ResourceState | None = None,
+    cell_y: int = 0,
+    cell_x: int = 0,
+) -> None:
+    """Apply predation (+ optional resource predation) within a single cell.
+
+    In-place modification of state arrays. Public contract for test harnesses
+    and any caller that needs predation isolation without running the full
+    mortality pipeline. Production code uses mortality.mortality() instead.
+
+    Fields mutated in place on ``state``:
+      - abundance       (absolute assignment)
+      - pred_success_rate  (accumulating +=)
+      - preyed_biomass     (accumulating +=)
+      - feeding_stage   (fresh overwrite via [:])
+
+    Caller owns cell_indices correctness (unique, in-range, all in cell
+    (cell_y, cell_x)). No internal validation.
+    """
+    if len(cell_indices) < 2:
+        return
+
+    # Ensure feeding_stage is current. compute_feeding_stages returns a fresh
+    # np.int32 array of length n_schools; frozen dataclass permits in-place
+    # buffer mutation even though attribute reassignment is blocked.
+    state.feeding_stage[:] = compute_feeding_stages(state, config)
+
+    # Precompute accessibility info for this call. Matches the precomputation
+    # block in the current batch predation() at lines 564-590, but scoped to
+    # this single call. Per-call recomputation sidesteps the in-loop rebinding
+    # quirk on _DUMMY_ACCESS that the batch function has as a local-variable
+    # side effect.
+    if config.stage_accessibility is not None:
+        sa = config.stage_accessibility
+        prey_access_idx = sa.compute_school_indices(
+            state.species_id,
+            state.age_dt,
+            config.n_dt_per_year,
+            config.all_species_names,
+            role="prey",
+        )
+        pred_access_idx = sa.compute_school_indices(
+            state.species_id,
+            state.age_dt,
+            config.n_dt_per_year,
+            config.all_species_names,
+            role="pred",
+        )
+        access_matrix = sa.raw_matrix
+        has_access = True
+        use_stage_access = True
+    else:
+        prey_access_idx = np.zeros(len(state), dtype=np.int32)
+        pred_access_idx = np.zeros(len(state), dtype=np.int32)
+        has_access = config.accessibility_matrix is not None
+        access_matrix = config.accessibility_matrix if has_access else _DUMMY_ACCESS
+        use_stage_access = False
+
+    cell_indices_i32 = cell_indices.astype(np.int32, copy=False)
+
+    # Dispatch to Numba or Python backend. Silent fallback if Numba requested
+    # but unavailable — matches current predation() behavior.
+    if use_numba and _HAS_NUMBA:
+        if species_rngs is not None and len(cell_indices_i32) > 0:
+            first_pred_sp = int(state.species_id[cell_indices_i32[0]])
+            _cell_rng = (
+                species_rngs[first_pred_sp]
+                if first_pred_sp < len(species_rngs)
+                else rng
+            )
+        else:
+            _cell_rng = rng
+        pred_order = _cell_rng.permutation(len(cell_indices_i32)).astype(np.int32)
+        _diet_en = ctx.diet_tracking_enabled if ctx else False
+        _diet_mat = ctx.diet_matrix if ctx else None
+        diet_mat = _diet_mat if _diet_en and _diet_mat is not None else _DUMMY_DIET
+        if access_matrix is None:
+            access_matrix = _DUMMY_ACCESS
+        _predation_in_cell_numba(
+            cell_indices_i32,
+            pred_order,
+            state.abundance,
+            state.length,
+            state.weight,
+            state.age_dt,
+            state.first_feeding_age_dt,
+            state.species_id,
+            state.pred_success_rate,
+            state.preyed_biomass,
+            config.size_ratio_min,
+            config.size_ratio_max,
+            config.ingestion_rate,
+            access_matrix,
+            has_access,
+            n_subdt,
+            config.n_dt_per_year,
+            state.feeding_stage,
+            prey_access_idx,
+            pred_access_idx,
+            use_stage_access,
+            diet_mat,
+            _diet_en,
+        )
+    else:
+        _predation_in_cell_python(
+            cell_indices_i32,
+            state,
+            config,
+            rng,
+            n_subdt,
+            prey_access_idx=prey_access_idx if use_stage_access else None,
+            pred_access_idx=pred_access_idx if use_stage_access else None,
+            stage_access_matrix=access_matrix if use_stage_access else None,
+            ctx=ctx,
+        )
+
+    # Resource predation: focal schools eat LTL plankton/detritus.
+    if resources is not None and resources.n_resources > 0:
+        _predation_on_resources(
+            cell_indices_i32,
+            state,
+            config,
+            resources,
+            cell_y,
+            cell_x,
+            rng,
+            n_subdt,
+            pred_access_idx=pred_access_idx if use_stage_access else None,
+            stage_access_matrix=access_matrix if use_stage_access else None,
+            ctx=ctx,
+        )
+
+
 def predation(
     state: SchoolState,
     config: EngineConfig,
@@ -531,63 +674,33 @@ def predation(
 ) -> SchoolState:
     """Apply predation across all grid cells.
 
-    Groups schools by cell via argsort+searchsorted, then processes
-    predation within each occupied cell. Uses Numba if available.
+    Batch orchestrator retained as a thin wrapper around predation_for_cell
+    during the Phase 7.1 migration. Delete in commit 3 after all tests
+    migrate to predation_for_cell directly.
     """
     if len(state) == 0:
         return state
 
-    # Make working copies for in-place modification
+    # Make working copies so the caller's state is not mutated.
     abundance = state.abundance.copy()
     pred_success_rate = state.pred_success_rate.copy()
     preyed_biomass = state.preyed_biomass.copy()
+    feeding_stage = state.feeding_stage.copy()
 
     work_state = state.replace(
         abundance=abundance,
         pred_success_rate=pred_success_rate,
         preyed_biomass=preyed_biomass,
+        feeding_stage=feeding_stage,
     )
 
-    # Compute feeding stages for 2D size ratio lookup
-    feeding_stage = compute_feeding_stages(work_state, config)
-    work_state = work_state.replace(feeding_stage=feeding_stage)
-
-    # Group schools by cell using searchsorted (fast boundary detection)
+    # Group schools by cell using searchsorted (fast boundary detection).
     cell_ids = work_state.cell_y * grid_nx + work_state.cell_x
     order = np.argsort(cell_ids, kind="mergesort")
     sorted_cells = cell_ids[order]
 
-    # Find group boundaries with searchsorted
     n_cells = grid_ny * grid_nx
     boundaries = np.searchsorted(sorted_cells, np.arange(n_cells + 1))
-
-    # Precompute accessibility info
-    # Prefer stage-indexed accessibility if available
-    if config.stage_accessibility is not None:
-        sa = config.stage_accessibility
-        prey_access_idx = sa.compute_school_indices(
-            work_state.species_id,
-            work_state.age_dt,
-            config.n_dt_per_year,
-            config.all_species_names,
-            role="prey",
-        )
-        pred_access_idx = sa.compute_school_indices(
-            work_state.species_id,
-            work_state.age_dt,
-            config.n_dt_per_year,
-            config.all_species_names,
-            role="pred",
-        )
-        access_matrix = sa.raw_matrix
-        has_access = True
-        use_stage_access = True
-    else:
-        prey_access_idx = np.zeros(len(work_state), dtype=np.int32)
-        pred_access_idx = np.zeros(len(work_state), dtype=np.int32)
-        has_access = config.accessibility_matrix is not None
-        access_matrix = config.accessibility_matrix if has_access else _DUMMY_ACCESS
-        use_stage_access = False
 
     for cell in range(n_cells):
         start = boundaries[cell]
@@ -596,77 +709,19 @@ def predation(
             continue
 
         cell_indices = order[start:end].astype(np.int32)
-
-        if _HAS_NUMBA:
-            # Per Java convention: use first predator species' RNG for cell shuffle
-            if species_rngs is not None and len(cell_indices) > 0:
-                first_pred_sp = int(work_state.species_id[cell_indices[0]])
-                _cell_rng = (
-                    species_rngs[first_pred_sp] if first_pred_sp < len(species_rngs) else rng
-                )
-            else:
-                _cell_rng = rng
-            pred_order = _cell_rng.permutation(len(cell_indices)).astype(np.int32)
-            _diet_en = ctx.diet_tracking_enabled if ctx else False
-            _diet_mat = ctx.diet_matrix if ctx else None
-            diet_mat = _diet_mat if _diet_en and _diet_mat is not None else _DUMMY_DIET
-            if access_matrix is None:
-                access_matrix = _DUMMY_ACCESS
-            _predation_in_cell_numba(
-                cell_indices,
-                pred_order,
-                work_state.abundance,
-                work_state.length,
-                work_state.weight,
-                work_state.age_dt,
-                work_state.first_feeding_age_dt,
-                work_state.species_id,
-                work_state.pred_success_rate,
-                work_state.preyed_biomass,
-                config.size_ratio_min,
-                config.size_ratio_max,
-                config.ingestion_rate,
-                access_matrix,
-                has_access,
-                n_subdt,
-                config.n_dt_per_year,
-                work_state.feeding_stage,
-                prey_access_idx,
-                pred_access_idx,
-                use_stage_access,
-                diet_mat,
-                _diet_en,
-            )
-        else:
-            _predation_in_cell_python(
-                cell_indices,
-                work_state,
-                config,
-                rng,
-                n_subdt,
-                prey_access_idx=prey_access_idx if use_stage_access else None,
-                pred_access_idx=pred_access_idx if use_stage_access else None,
-                stage_access_matrix=access_matrix if use_stage_access else None,
-                ctx=ctx,
-            )
-
-        # Resource predation: focal schools eat LTL plankton/detritus
-        if resources is not None and resources.n_resources > 0:
-            cell_y_val = cell // grid_nx
-            cell_x_val = cell % grid_nx
-            _predation_on_resources(
-                cell_indices,
-                work_state,
-                config,
-                resources,
-                cell_y_val,
-                cell_x_val,
-                rng,
-                n_subdt,
-                pred_access_idx=pred_access_idx if use_stage_access else None,
-                stage_access_matrix=access_matrix if use_stage_access else None,
-                ctx=ctx,
-            )
+        predation_for_cell(
+            cell_indices,
+            work_state,
+            config,
+            rng,
+            n_subdt,
+            use_numba=_HAS_NUMBA,
+            ctx=ctx,
+            species_rngs=species_rngs,
+            resources=resources,
+            cell_y=cell // grid_nx,
+            cell_x=cell % grid_nx,
+        )
 
     new_biomass = work_state.abundance * work_state.weight
 
