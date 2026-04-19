@@ -551,7 +551,7 @@ class TestSimulateWithBackground:
 # ---------------------------------------------------------------------------
 
 
-from osmose.engine.processes.predation import predation  # noqa: E402
+from osmose.engine.processes.predation import predation_for_cell  # noqa: E402
 
 
 class TestBackgroundPredation:
@@ -605,7 +605,8 @@ class TestBackgroundPredation:
         """Focal predator (sp0, len=30) successfully eats background prey (sp1, len=5)."""
         state, config = self._make_predation_state_focal_predator()
         rng = np.random.default_rng(0)
-        result = predation(state, config, rng, n_subdt=10, grid_ny=3, grid_nx=3)
+        predation_for_cell(np.array([0, 1], dtype=np.int32), state, config, rng, n_subdt=10)
+        result = state
         # Background prey (index 1) should lose abundance
         assert result.abundance[1] < 1000.0, "Background species was not eaten by focal predator"
 
@@ -613,7 +614,8 @@ class TestBackgroundPredation:
         """Background predator (sp1, len=30) successfully eats focal prey (sp0, len=5)."""
         state, config = self._make_predation_state_bkg_predator()
         rng = np.random.default_rng(0)
-        result = predation(state, config, rng, n_subdt=10, grid_ny=3, grid_nx=3)
+        predation_for_cell(np.array([0, 1], dtype=np.int32), state, config, rng, n_subdt=10)
+        result = state
         # Focal prey (index 0) should lose abundance
         assert result.abundance[0] < 1000.0, "Focal species was not eaten by background predator"
 
@@ -642,7 +644,8 @@ class TestBackgroundPredation:
             cell_y=np.array([0, 0], dtype=np.int32),
         )
         rng = np.random.default_rng(0)
-        result = predation(state, config=ec, rng=rng, n_subdt=10, grid_ny=3, grid_nx=3)
+        predation_for_cell(np.array([0, 1], dtype=np.int32), state, config=ec, rng=rng, n_subdt=10)
+        result = state
         # Background predator (age_dt=0, first_feeding_age_dt=-1) must still eat:
         # age_dt[1]=0 >= first_feeding_age_dt[1]=-1 is True → eligible
         assert result.abundance[0] < 1000.0, (
@@ -800,7 +803,8 @@ class TestAbundanceDivergence:
         )
 
         rng = np.random.default_rng(0)
-        result = predation(state, ec, rng, n_subdt=10, grid_ny=3, grid_nx=3)
+        predation_for_cell(np.array([0, 1], dtype=np.int32), state, ec, rng, n_subdt=10)
+        result = state
 
         consistent_loss = initial_prey_abundance - result.abundance[1]
         assert consistent_loss > 0, (
