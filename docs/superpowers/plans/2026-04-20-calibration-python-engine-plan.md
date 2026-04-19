@@ -1514,7 +1514,7 @@ def _run_single(self, overrides: dict[str, str], run_id: int) -> list[float]:
 
 - [ ] **Step 3: Add `_run_python_engine` helper**
 
-Below `_run_single`:
+Below `_run_single`. Note: `_expected_errors` is a module-level tuple already defined in `osmose/calibration/problem.py` (line ~30, used by the existing Java subprocess path). The new helper reuses it for consistent error handling across both engines.
 
 ```python
 def _run_python_engine(
@@ -2017,9 +2017,10 @@ Expected: **2525 passed**, ruff clean.
 
 - [ ] **Step 6: Commit**
 
-```bash
-git add scripts/benchmark_calibration.py CHANGELOG.md
-git commit -m "docs: benchmark script + CHANGELOG for v0.10.0 calibration change (task 5)
+Write the commit message to `/tmp/task5.msg` via the Write tool (same pattern as Tasks 1-4):
+
+```
+docs: benchmark script + CHANGELOG for v0.10.0 calibration change (task 5)
 
 Ship scripts/benchmark_calibration.py as the v0.10.0 release gate and
 stage the [Unreleased] CHANGELOG entry with breaking-change notes and
@@ -2042,7 +2043,14 @@ calibration.py.
 Migration notes: v0.9.x cache files are stale (different _cache_key
 scheme); user-decided whether to rm the cache dir.
 
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+Then:
+
+```bash
+git add scripts/benchmark_calibration.py CHANGELOG.md
+git commit -F /tmp/task5.msg
 ```
 
 ---
