@@ -6,8 +6,7 @@ from osmose.engine.config import EngineConfig
 from osmose.engine.grid import Grid
 from osmose.engine.processes.predation import (
     _predation_on_resources,
-    predation,
-    _predation_in_cell_python as predation_in_cell,
+    predation_for_cell,
 )
 from osmose.engine.resources import ResourceState
 from osmose.engine.state import SchoolState
@@ -67,7 +66,7 @@ class TestPredationInCell:
             cell_y=np.array([0, 0], dtype=np.int32),
         )
         rng = np.random.default_rng(42)
-        predation_in_cell(np.array([0, 1], dtype=np.int32), state, cfg, rng, n_subdt=10)
+        predation_for_cell(np.array([0, 1], dtype=np.int32), state, cfg, rng, n_subdt=10)
         # Prey abundance should have decreased
         assert state.abundance[1] < 500.0
 
@@ -84,7 +83,7 @@ class TestPredationInCell:
             age_dt=np.array([24], dtype=np.int32),
         )
         rng = np.random.default_rng(42)
-        predation_in_cell(np.array([0], dtype=np.int32), state, cfg, rng, n_subdt=10)
+        predation_for_cell(np.array([0], dtype=np.int32), state, cfg, rng, n_subdt=10)
         np.testing.assert_allclose(state.abundance[0], 100.0)
 
     def test_eggs_cannot_predate(self):
@@ -100,7 +99,7 @@ class TestPredationInCell:
             first_feeding_age_dt=np.array([1, 1], dtype=np.int32),
         )
         rng = np.random.default_rng(42)
-        predation_in_cell(np.array([0, 1], dtype=np.int32), state, cfg, rng, n_subdt=10)
+        predation_for_cell(np.array([0, 1], dtype=np.int32), state, cfg, rng, n_subdt=10)
         # Egg (age_dt=0 < first_feeding=1) should not eat -- prey unchanged
         np.testing.assert_allclose(state.abundance[1], 500.0)
 
@@ -118,7 +117,7 @@ class TestPredationInCell:
         )
         original_prey_abundance = 100.0
         rng = np.random.default_rng(42)
-        predation_in_cell(np.array([0, 1, 2], dtype=np.int32), state, cfg, rng, n_subdt=10)
+        predation_for_cell(np.array([0, 1, 2], dtype=np.int32), state, cfg, rng, n_subdt=10)
         # Prey should have been eaten by at least one predator
         assert state.abundance[2] < original_prey_abundance
 
@@ -136,7 +135,7 @@ class TestPredationInCell:
             pred_success_rate=np.array([0.0, 0.0]),
         )
         rng = np.random.default_rng(42)
-        predation_in_cell(np.array([0, 1], dtype=np.int32), state, cfg, rng, n_subdt=10)
+        predation_for_cell(np.array([0, 1], dtype=np.int32), state, cfg, rng, n_subdt=10)
         assert state.pred_success_rate[0] > 0.0
 
     def test_size_ratio_outside_range_no_predation(self):
@@ -156,7 +155,7 @@ class TestPredationInCell:
             age_dt=np.array([24, 24], dtype=np.int32),
         )
         rng = np.random.default_rng(42)
-        predation_in_cell(np.array([0, 1], dtype=np.int32), state, cfg, rng, n_subdt=10)
+        predation_for_cell(np.array([0, 1], dtype=np.int32), state, cfg, rng, n_subdt=10)
         # sp0 (len=6) trying to eat sp1 (len=25): ratio=6/25=0.24, below r_min=1.0 -> no predation
         # sp1 (len=25) trying to eat sp0 (len=6): ratio=25/6=4.17, above r_max=3.5 -> no predation
         np.testing.assert_allclose(state.abundance[0], 50.0)
@@ -164,34 +163,41 @@ class TestPredationInCell:
 
 
 class TestPredationAcrossCells:
-    def test_schools_in_different_cells_dont_interact(self):
-        """Predation only happens within the same cell."""
+    def test_school_outside_cell_indices_is_untouched(self):
+        """predation_for_cell must not mutate schools outside cell_indices.
+
+        Note: predation_for_cell's dispatch is governed by cell_indices, NOT
+        by state.cell_x/cell_y. We leave cell_x/cell_y at their default zeros
+        to emphasize this -- the "bystander" tag comes from not being in
+        cell_indices, not from any spatial-coordinate difference.
+        """
         cfg = EngineConfig.from_dict(_make_predation_config())
-        state = SchoolState.create(n_schools=2, species_id=np.array([1, 0], dtype=np.int32))
+        state = SchoolState.create(
+            n_schools=3, species_id=np.array([1, 0, 0], dtype=np.int32)
+        )
         state = state.replace(
-            abundance=np.array([50.0, 500.0]),
-            length=np.array([25.0, 10.0]),
-            weight=np.array([78.125, 6.0]),
-            biomass=np.array([3906.25, 3000.0]),
-            age_dt=np.array([24, 24], dtype=np.int32),
-            cell_x=np.array([0, 5], dtype=np.int32),  # different cells!
-            cell_y=np.array([0, 5], dtype=np.int32),
+            abundance=np.array([50.0, 500.0, 123.0]),
+            length=np.array([25.0, 10.0, 10.0]),
+            weight=np.array([78.125, 6.0, 6.0]),
+            biomass=np.array([3906.25, 3000.0, 738.0]),
+            age_dt=np.array([24, 24, 24], dtype=np.int32),
         )
         rng = np.random.default_rng(42)
-        new_state = predation(state, cfg, rng, n_subdt=10, grid_ny=10, grid_nx=10)
-        # Prey should be unchanged -- different cell from predator
-        np.testing.assert_allclose(new_state.abundance[1], 500.0)
+        # Only schools 0 and 1 are in cell_indices; school 2 is the bystander.
+        predation_for_cell(np.array([0, 1], dtype=np.int32), state, cfg, rng, n_subdt=10)
+        assert state.abundance[1] < 500.0
+        np.testing.assert_allclose(state.abundance[2], 123.0)
 
     def test_empty_state(self):
         """Predation on empty state should return empty state."""
         cfg = EngineConfig.from_dict(_make_predation_config())
         state = SchoolState.create(n_schools=0)
         rng = np.random.default_rng(42)
-        new_state = predation(state, cfg, rng, n_subdt=10, grid_ny=10, grid_nx=10)
-        assert len(new_state) == 0
+        predation_for_cell(np.array([], dtype=np.int32), state, cfg, rng, n_subdt=10)
+        assert len(state) == 0
 
-    def test_same_cell_predation_via_top_level(self):
-        """Top-level predation() should apply predation within shared cells."""
+    def test_same_cell_predation(self):
+        """Top-level predation should apply predation within shared cells."""
         cfg = EngineConfig.from_dict(_make_predation_config())
         state = SchoolState.create(n_schools=2, species_id=np.array([1, 0], dtype=np.int32))
         state = state.replace(
@@ -200,13 +206,12 @@ class TestPredationAcrossCells:
             weight=np.array([78.125, 6.0]),
             biomass=np.array([3906.25, 3000.0]),
             age_dt=np.array([24, 24], dtype=np.int32),
-            cell_x=np.array([3, 3], dtype=np.int32),  # same cell
+            cell_x=np.array([3, 3], dtype=np.int32),
             cell_y=np.array([2, 2], dtype=np.int32),
         )
         rng = np.random.default_rng(42)
-        new_state = predation(state, cfg, rng, n_subdt=10, grid_ny=10, grid_nx=10)
-        # Prey should have been eaten
-        assert new_state.abundance[1] < 500.0
+        predation_for_cell(np.array([0, 1], dtype=np.int32), state, cfg, rng, n_subdt=10)
+        assert state.abundance[1] < 500.0
 
 
 def _make_ltl_config() -> dict[str, str]:
