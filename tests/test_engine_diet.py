@@ -240,28 +240,29 @@ class TestDietResourceTracking:
         resources = ResourceState(config=raw, grid=grid)
         resources.update(step=0)
 
-        # Predator with small enough prey window to eat resources
+        # Two co-located schools (species 1) so predation_for_cell doesn't
+        # early-return on len(cell_indices) < 2 and resource predation runs.
         state = SchoolState.create(
-            n_schools=1,
-            species_id=np.array([1], dtype=np.int32),
+            n_schools=2,
+            species_id=np.array([1, 1], dtype=np.int32),
         )
         state = state.replace(
-            abundance=np.array([50.0]),
-            length=np.array([10.0]),  # small enough to see resources
-            weight=np.array([5.0]),
-            biomass=np.array([250.0]),
-            age_dt=np.array([24], dtype=np.int32),
-            cell_x=np.array([0], dtype=np.int32),
-            cell_y=np.array([0], dtype=np.int32),
+            abundance=np.array([50.0, 50.0]),
+            length=np.array([10.0, 10.0]),  # small enough to see resources
+            weight=np.array([5.0, 5.0]),
+            biomass=np.array([250.0, 250.0]),
+            age_dt=np.array([24, 24], dtype=np.int32),
+            cell_x=np.array([0, 0], dtype=np.int32),
+            cell_y=np.array([0, 0], dtype=np.int32),
         )
         rng = np.random.default_rng(42)
         ctx = SimulationContext()
 
         # n_species (2 focal) + n_resources (1) = 3 columns
         n_total = cfg.n_species + resources.n_resources
-        enable_diet_tracking(n_schools=1, n_species=n_total, ctx=ctx)
+        enable_diet_tracking(n_schools=2, n_species=n_total, ctx=ctx)
         predation_for_cell(
-            np.array([0], dtype=np.int32),
+            np.array([0, 1], dtype=np.int32),
             state,
             cfg,
             rng,
@@ -272,10 +273,10 @@ class TestDietResourceTracking:
         result = state
         mat = get_diet_matrix(ctx=ctx)
         assert mat is not None
-        assert mat.shape == (1, n_total)
+        assert mat.shape == (2, n_total)
         # Resource species is at column index n_species + 0 = 2
-        # If the predator ate any resources, column 2 should be > 0
-        total_eaten = result.preyed_biomass[0]
+        # If any school ate resources, column 2 should be > 0
+        total_eaten = result.preyed_biomass.sum()
         if total_eaten > 0:
             np.testing.assert_allclose(
                 mat.sum(axis=1),
