@@ -4,11 +4,35 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
-## [Unreleased]
+## [0.9.3] - 2026-04-19
 
-### Changed
+### Features
 
-- **predation:** reconcile dual predation paths (Phase 7.1). Deleted the standalone batch `osmose.engine.processes.predation.predation()` orchestrator in favor of a single public `predation_for_cell(cell_indices, state, config, rng, n_subdt, *, use_numba, ctx, species_rngs, resources, cell_y, cell_x)` per-cell API. All 6 test files migrated (`test_engine_predation_helpers`, `test_engine_diet`, `test_engine_predation`, `test_engine_background`, `test_engine_feeding_stages`, `test_engine_rng_consumers`). Production path (`mortality.mortality()`) untouched. Spec at `docs/superpowers/specs/2026-04-19-phase71-predation-reconciliation-design.md`; plan at `docs/superpowers/plans/2026-04-19-phase71-predation-reconciliation-plan.md`. Parity roadmap §7.1 marked SHIPPED.
+- **predation:** public predation_for_cell API (Phase 7.1 commit 1) (72f80a3)
+
+### Documentation
+
+- CHANGELOG entry for Phase 7.1 predation reconciliation (0b82e68)
+- **tests:** fix stale predation() docstring in rng_consumers (20649e0)
+- parity-roadmap §7.1 STATUS-COMPLETE (Phase 7.1) (7f9a3e7)
+- **plan:** round-2 clarify cell_x/cell_y irrelevance for dispatch (af256ff)
+- **plan:** Phase 7.1 plan round-1 review fixes (f4914d1)
+- **plan:** Phase 7.1 predation-reconciliation implementation plan (e8d10cc)
+- **spec:** Phase 7.1 round-4 review — bug-hunting pass (4fec5c8)
+- **spec:** Phase 7.1 review-driven revisions (6c3aced)
+- **spec:** Phase 7.1 predation-reconciliation design (0f16837)
+
+### Refactoring
+
+- **predation:** update stale comments in predation_for_cell (Phase 7.1 task 3 follow-up) (009c781)
+- **predation:** delete batch predation() orchestrator (Phase 7.1 commit 3) (37ceeb1)
+- **tests:** expand single-school resource test to 2 schools (Phase 7.1 task 2 follow-up) (ed62a76)
+- **tests:** migrate test_engine_rng_consumers to predation_for_cell (Phase 7.1 commit 2f) (2aa6018)
+- **tests:** migrate test_engine_feeding_stages to predation_for_cell (Phase 7.1 commit 2e) (12c8255)
+- **tests:** migrate test_engine_background to predation_for_cell (Phase 7.1 commit 2d) (5ca231a)
+- **tests:** migrate test_engine_predation to predation_for_cell (Phase 7.1 commit 2c) (ec3edd3)
+- **tests:** migrate test_engine_diet to predation_for_cell (Phase 7.1 commit 2b) (9461419)
+- **tests:** migrate test_engine_predation_helpers to predation_for_cell (Phase 7.1 commit 2a) (0ca3c60)
 
 ## [0.9.2] - 2026-04-19
 
@@ -38,6 +62,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ### Other
 
+- v0.9.2 (0e59258)
 - **config:** align logging + canary loader with project conventions (d7181ca)
 
 ## [0.9.1] - 2026-04-19
