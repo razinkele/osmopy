@@ -4,7 +4,7 @@
 
 **Goal:** Catch OSMOSE config typos at `EngineConfig.from_dict()` load time with opt-in warnings and an optional error mode. Silent-by-default (one-line count nudge when unknowns present); `validation.strict.enabled=warn` logs each unknown with a `difflib` suggestion; `=error` raises a single `ValueError` listing all unknowns.
 
-**Baseline:** 2485 passing / 2500 collected at HEAD `557ee1b`. **Target:** 2485 + 24 = 2509 passing (19 unit tests + 5 collected integration cases from 3 function defs, one of which is 3-way parametrized).
+**Baseline:** 2485 passing / 2500 collected at HEAD `557ee1b`. **Target:** 2485 + 25 = 2510 passing (20 unit tests + 5 collected integration cases from 3 function defs, one of which is 3-way parametrized).
 
 **Architecture:** One new module `osmose/engine/config_validation.py` exports `validate(cfg, mode)`. Known-key allowlist is a union of the 220-field `ParameterRegistry` with keys extracted via `ast.walk` of `osmose/engine/config.py` literals. Match order is literal-set → normalized-pattern-set → compiled-regex fallback. Suggestions use `difflib.get_close_matches(n=1, cutoff=0.85)` on `{idx}`-normalized strings.
 
@@ -12,13 +12,19 @@
 
 **Spec:** `docs/superpowers/specs/2026-04-19-config-validation-design.md` (commit `557ee1b`, 3-iteration review loop converged).
 
+**Known spec-vs-plan divergences** (plan is authoritative for execution):
+- **Test count.** Spec §Testing strategy line 274 targets `2485 + 21 = 2506`. Plan targets 2485 + 25 = 2510 (spec's 13-test set + iter-1/2/3/4 review-driven additions). Spec is not re-numbered.
+- **Integration-test parametrize set.** Spec §Testing strategy line 270 lists `[eec, bay_of_biscay, baltic]` with path `data/examples/<name>/`. That path prefix is stale and `bay_of_biscay` does not exist in `data/`. Plan uses `[eec, baltic, eec_full]` with `data/<name>/` — verified at HEAD `744ae1b`.
+- **Cache implementation.** Spec §Caching calls for `@functools.cache`. Plan uses a module-level dict keyed by `"full"` so degraded (schema-only) fallback results are NOT memoized. See `build_known_keys` docstring for rationale.
+- **`validation.strict.enabled` schema entry.** Spec §Schema entry omits `required=False`. Plan adds it (spec's prose at line 5 says the flag is optional; `OsmoseField.__post_init__` defaults `required=True` otherwise).
+
 **Ship target:** v0.9.2 patch release bundled with any other post-v0.9.1 cleanups.
 
 ---
 
 ## Pre-flight
 
-- [ ] Baseline test count. Run `.venv/bin/python -m pytest --co -q 2>&1 | tail -3`. Expected: **2500 collected (41 deselected) / 2485 passed** at HEAD `557ee1b`. If your run shows a different number, re-do the arithmetic below (plan target `2485 + 24 = 2509 passed` after this plan: 19 unit + 5 integration cases collected — the integration suite has 3 parametrized + 2 scalar = 5).
+- [ ] Baseline test count. Run `.venv/bin/python -m pytest --co -q 2>&1 | tail -3`. Expected: **2500 collected (41 deselected) / 2485 passed** at HEAD `557ee1b` (re-verified at `744ae1b`). If your run shows a different number, re-do the arithmetic below (plan target `2485 + 25 = 2510 passed` after this plan: 20 unit tests + 5 collected integration cases — 3 integration function defs total, one 3-way parametrized plus two scalar = 3+1+1 = 5 cases).
 - [ ] Lint baseline: `.venv/bin/ruff check osmose/ tests/` is clean.
 - [ ] Library surface anchors (grep rather than trusting literal line numbers):
   - `osmose/engine/config.py` — `@classmethod def from_dict(cls, cfg)` around `:1347-1348`; first `_get(cfg, "simulation.nspecies")` call at `:1350`; the internal-marker read `cfg.get("_osmose.config.dir", "")` around `:150`; `_get(cfg, key)` raising KeyError at `:41-45`; `_enabled(cfg, key)` at `:133`; `_species_float(cfg, pattern, n)` at `:49`; `_species_float_optional` at `:61`; `_species_int` at `:53`; `_species_int_optional` at `:68`; `_species_str` at `:57`.
@@ -33,21 +39,21 @@
 
 - **Engine:** `osmose/engine/config_validation.py` **(new, ~250 lines)** — dataclasses (`UnknownKey`, `KnownKeys`), `_normalize_key_to_pattern`, `_suggest`, `_extract_literal_keys_from_config_py`, `build_known_keys` (cached), public `validate(cfg, mode)`. `osmose/engine/config.py` gains a 3-line hook at the top of `from_dict`.
 - **Schema:** `osmose/schema/simulation.py` gains one `OsmoseField` entry for `validation.strict.enabled` (ENUM, choices `["off", "warn", "error"]`, `required=False`, default `"off"`).
-- **Tests:** `tests/test_config_validation.py` **(new)** — 18 unit tests; `tests/test_engine_config_validation.py` **(modify)** — append 3 parametrized integration tests.
+- **Tests:** `tests/test_config_validation.py` **(new)** — 20 unit tests; `tests/test_engine_config_validation.py` **(modify)** — append 3 integration tests (one 3-way parametrized, two scalar = 5 collected cases).
 - **Changelog:** `CHANGELOG.md` — one line under `[Unreleased] → Changed`.
 
 ---
 
-## Task 1: Config-validation module + integration + all 21 tests
+## Task 1: Config-validation module + integration + all 23 tests
 
-**Goal:** Single capability commit bundling the validator module, the schema flag entry, the `from_dict` hook, and all 21 tests. TDD-style: write tests, verify FAIL, implement, verify PASS, commit.
+**Goal:** Single capability commit bundling the validator module, the schema flag entry, the `from_dict` hook, and all 23 tests (20 unit + 3 integration function defs; the 3 integration defs collect as 5 cases because one is 3-way parametrized). TDD-style: write tests, verify FAIL, implement, verify PASS, commit.
 
 **Files:**
 - Create: `osmose/engine/config_validation.py`
 - Create: `tests/test_config_validation.py`
 - Modify: `osmose/engine/config.py` — hook at the top of `from_dict` (around line 1348).
 - Modify: `osmose/schema/simulation.py` — append one `OsmoseField` entry.
-- Modify: `tests/test_engine_config_validation.py` — append 3 parametrized integration tests.
+- Modify: `tests/test_engine_config_validation.py` — append 3 integration tests (one 3-way parametrized, two scalar = 5 collected cases).
 
 ---
 
@@ -57,7 +63,7 @@
 .venv/bin/python -m pytest -q --no-header 2>&1 | tail -3
 ```
 
-Expected: `2485 passed, 15 skipped, 41 deselected, 47 warnings`. If a different count, update the `+24 = 2509` arithmetic in Step 11 and the commit message in Step 12 to match the actual baseline+24.
+Expected: `2485 passed, 15 skipped, 41 deselected, 47 warnings`. If a different count, update the `+25 = 2510` arithmetic in Step 11 and the commit message in Step 12 to match the actual baseline+25.
 
 ---
 
@@ -112,7 +118,7 @@ If the command raises, fix the `OsmoseField` entry before moving on — a broken
 
 ---
 
-- [ ] **Step 4: Write `tests/test_config_validation.py` with all 18 unit tests**
+- [ ] **Step 4: Write `tests/test_config_validation.py` with all 20 unit tests**
 
 Create `tests/test_config_validation.py`. The file is ~330 lines — paste it in full; do not abbreviate.
 
@@ -163,8 +169,10 @@ def test_unknown_key_warns_in_warn_mode(caplog):
         result = validate(cfg, "warn")
     assert len(result) == 1
     assert result[0].key == "species.liinf.sp0"
-    # Suggestion is in pattern form (per spec §Difflib tuning)
-    assert "species.linf.sp{idx}" in result[0].suggestion
+    # Suggestion is in pattern form (per spec §Difflib tuning).
+    # Use == rather than `in` so a future schema entry containing
+    # "species.linf.sp{idx}" as a substring doesn't false-pass.
+    assert result[0].suggestion == "species.linf.sp{idx}"
     # One per-key log entry; message contains the suggestion
     warn_records = [r for r in caplog.records if r.levelno >= logging.WARNING]
     assert len(warn_records) == 1
@@ -241,12 +249,35 @@ def test_idx_pattern_accepts_concrete_key(caplog):
     assert result == []
 
 
-def test_double_index_pattern_accepts_concrete_key(caplog):
-    """Multi-index keys (fsh + sp) normalize segment-by-segment."""
-    cfg = {"fisheries.seasonality.fsh0.sp3": "0.5"}
-    with caplog.at_level(logging.INFO, logger="osmose.config"):
-        result = validate(cfg, "warn")
-    assert result == []
+def test_normalize_collapses_multi_index_segments():
+    """Multi-index keys normalize segment-by-segment, preserving each
+    token prefix (fsh0 -> fsh{idx}, sp3 -> sp{idx}).
+
+    Pins the spec's Failure-modes row 'double-index key' at the unit
+    level — no dependency on whether a particular multi-index shape
+    exists in the real OSMOSE schema. Unit-level companion to the
+    end-to-end coverage in test_idx_pattern_accepts_concrete_key.
+    """
+    # Multi-index: each index-suffixed segment collapses with its prefix
+    assert (
+        _normalize_key_to_pattern("fisheries.seasonality.fsh0.sp3")
+        == "fisheries.seasonality.fsh{idx}.sp{idx}"
+    )
+    # Single-index case
+    assert (
+        _normalize_key_to_pattern("species.linf.sp47")
+        == "species.linf.sp{idx}"
+    )
+    # Segments without an _INDEX_SUFFIXES match pass through unchanged
+    assert (
+        _normalize_key_to_pattern("simulation.nspecies")
+        == "simulation.nspecies"
+    )
+    # Non-digit suffixes on otherwise index-shaped prefixes are NOT collapsed
+    assert (
+        _normalize_key_to_pattern("fisheries.seasonality.fshX")
+        == "fisheries.seasonality.fshX"
+    )
 
 
 def test_internal_marker_not_warned(caplog):
@@ -347,6 +378,38 @@ def test_ast_handles_in_comparison():
     assert "bioen.enabled" in keys
 
 
+def test_ast_extracts_assign_rhs_fstring():
+    """Keys stored in a local variable via f-string, then consumed via
+    cfg.get(var) / cfg[var] / 'var in cfg' downstream, must be captured.
+    Covers the 8 `*_key = f"..."` patterns in osmose/engine/config.py's
+    fishery and mortality paths (e.g.,
+    `key = f"mortality.fishing.rate.{variant}.file.sp{i}"` at :1546).
+
+    Also pins the space-filter guard so error-message f-strings do NOT
+    leak into the key corpus.
+    """
+    source = textwrap.dedent(
+        """
+        def f(cfg, variant, i, fsh_idx):
+            key = f"mortality.fishing.rate.{variant}.file.sp{i}"
+            val = cfg.get(key, "")
+
+            a50_key = f"fisheries.selectivity.a50.fsh{fsh_idx}"
+            if a50_key in cfg:
+                pass
+
+            msg = f"Invalid fisheries.seasonality.fsh{fsh_idx} value: bad"
+        """
+    )
+    tree = ast.parse(source)
+    keys = _extract_literal_keys_from_config_py(tree)
+    # Assign-RHS f-strings captured
+    assert "mortality.fishing.rate.{idx}.file.sp{idx}" in keys
+    assert "fisheries.selectivity.a50.fsh{idx}" in keys
+    # Error-message f-string (contains a space) NOT captured
+    assert not any("Invalid" in k for k in keys)
+
+
 # --- build_known_keys + fallback ------------------------------------------
 
 
@@ -394,7 +457,7 @@ def test_source_file_unavailable_falls_back_to_schema_only(monkeypatch):
 
 ---
 
-- [ ] **Step 5: Run the 18 unit tests — verify FAIL with ImportError**
+- [ ] **Step 5: Run the 20 unit tests — verify FAIL with ImportError**
 
 ```bash
 .venv/bin/python -m pytest tests/test_config_validation.py -v 2>&1 | tail -10
@@ -454,10 +517,24 @@ _INDEX_SUFFIXES = (
 _VALID_MODES = ("off", "warn", "error")
 _SUGGESTION_CUTOFF = 0.85
 
-# Reader-honored keys the AST walker cannot resolve statically
-# (built from caller-arg patterns 2+ frames up — e.g.,
-# _load_per_species_timeseries). Populated empirically during the
-# EEC/Baltic/eec_full sweep in Step 10's fix path. Empty at ship.
+# Reader-honored keys the AST walker cannot resolve statically — e.g.,
+# keys built from a caller-arg `key_pattern` 2+ frames up
+# (`_load_per_species_timeseries`), metadata keys processed by
+# OsmoseConfigReader include-resolution (`osmose.configuration.*`,
+# `osmose.version`), and legacy aliases kept alongside canonical names
+# (`species.lw.*` alongside `species.length2weight.*`).
+#
+# Populated empirically during the EEC/Baltic/eec_full sweep in Step
+# 10's fix path. A dry sweep at HEAD 744ae1b flags 38/177/286 unknowns
+# in the three reference configs respectively — most are reader-injected
+# metadata (osmose.configuration.*, osmose.version) that no engine code
+# reads. Step 10's warn-mode integration test `test_from_dict_warn_mode_
+# clean_on_example_configs[...]` fails on first run with a list of
+# offenders; the implementer groups them by prefix and adds them here
+# (or extends the walker, or schema-registers them). When adding, prefer
+# schema registration (osmose/schema/*.py) over allowlist growth —
+# allowlist is for keys that genuinely belong outside the schema (e.g.,
+# reader-injected metadata, legacy aliases).
 _SUPPLEMENTARY_ALLOWLIST: frozenset[str] = frozenset()
 
 
@@ -481,14 +558,21 @@ class KnownKeys:
 def _normalize_key_to_pattern(key: str) -> str:
     """Convert a concrete user key to its {idx}-pattern form.
 
-    Applies the _INDEX_SUFFIXES table segment-by-segment. Keys with no
-    index-suffixed segment return unchanged (they're their own pattern).
+    Applies the _INDEX_SUFFIXES table segment-by-segment, preserving the
+    token prefix (fsh0 -> fsh{idx}, sp3 -> sp{idx}, etc.) so multi-index
+    keys like 'fishery.catchability.fsh0.sp3' normalize to their full
+    pattern form 'fishery.catchability.fsh{idx}.sp{idx}' — matching the
+    ParameterRegistry convention and the spec's Failure-modes table row
+    'double-index key'.
+
+    Keys with no index-suffixed segment return unchanged (they're their
+    own pattern).
     """
     segments = key.split(".")
     for i, seg in enumerate(segments):
         for token, pattern in _INDEX_SUFFIXES:
             if pattern.fullmatch(seg):
-                segments[i] = "{idx}"
+                segments[i] = f"{token}{{idx}}"
                 break
     return ".".join(segments)
 
@@ -518,19 +602,28 @@ def _read_config_source() -> str:
 def _extract_literal_keys_from_config_py(tree: ast.AST) -> set[str]:
     """Walk an AST and extract OSMOSE config-key literals.
 
-    Handles these shapes (spec §AST walker):
+    Handles these shapes (spec §AST walker + plan iter-4 walker
+    extension for Assign-RHS):
       - cfg.get("literal", ...)          → args[0]
       - cfg["literal"]                    → Subscript.slice
       - _enabled(cfg, "literal")          → args[1] or keywords["key"]
       - _get / _species_float[_optional] / _species_int[_optional] / _species_str
         (cfg, "literal", ...)             → args[1]
       - "literal" in cfg                  → Compare(ops=[In], left=Constant)
-      - Module-level list/tuple of string literals (one level deep)
+      - local_var = f"x.{i}"              → Assign(Name, JoinedStr);
+        captures the rendered f-string when it is dot-containing and
+        space-free (excludes error-message f-strings).
       - f-string with simple Name interpolations — {name} → {idx};
         complex interpolations (Attribute/Subscript/Call) are skipped.
 
     Normalization: any {i}, {fsh}, {sp}, {idx}, or f-string Name-placeholder
     collapses to {idx} to match ParameterRegistry convention.
+
+    The spec's module-level list/tuple-of-string-literals shape is NOT
+    handled — grep at HEAD 744ae1b confirms zero config.py list/tuple
+    literals contain OSMOSE key strings, and the shape captures noise
+    like ``byDt.byAge`` (loop-variant identifiers) that degrades difflib
+    suggestion quality. Dropped in plan iter-4 after empirical probe.
     """
     helper_names = {
         "_get",
@@ -623,14 +716,24 @@ def _extract_literal_keys_from_config_py(tree: ast.AST) -> set[str]:
                     if "." in node.left.value:
                         _capture_string(node.left.value)
 
-        # Module-level tuple/list of string literals — one level deep
-        elif isinstance(node, (ast.List, ast.Tuple)):
-            for elt in node.elts:
-                if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
-                    if "." in elt.value and not elt.value.startswith(
-                        ("/", "_", "http")
-                    ):
-                        _capture_string(elt.value)
+        # Assign(target=Name, value=JoinedStr) — keys stored in a local
+        # variable via f-string, then used downstream in cfg.get(var) or
+        # cfg[var] or "var in cfg". Covers the 8 `*_key = f"..."`
+        # patterns in osmose/engine/config.py's fishery + mortality paths
+        # (verified at HEAD 744ae1b). Guarded by dot-AND-no-space filter
+        # so error-message f-strings like
+        #   f"Invalid fisheries.seasonality.fsh{fsh} value: ..."
+        # (contains spaces) are not captured.
+        elif isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target = node.targets[0]
+            if isinstance(target, ast.Name) and isinstance(node.value, ast.JoinedStr):
+                rendered = _render_fstring(node.value)
+                if (
+                    rendered is not None
+                    and "." in rendered
+                    and " " not in rendered
+                ):
+                    _capture_string(rendered)
 
     return out
 
@@ -646,9 +749,17 @@ def build_known_keys() -> KnownKeys:
     """Union of ParameterRegistry field patterns + AST-extracted reader keys.
 
     Called lazily on first validate() invocation. The full (schema + AST
-    + supplementary) build is memoized; the degraded (schema-only +
+    + supplementary) build is memoized via the module-level
+    ``_KNOWN_KEYS_CACHE`` dict; the degraded (schema-only +
     supplementary) fallback is NOT memoized so transient filesystem
     errors don't stick.
+
+    **Intentional divergence from spec §Architecture / §Caching** (which
+    calls for ``@functools.cache``): the spec's decorator-based cache
+    would memoize degraded fallbacks too, locking the process into
+    schema-only mode if the first call hit a transient FS error. The
+    manual dict keyed by ``"full"`` only caches the healthy path. Pinned
+    by ``test_source_file_unavailable_falls_back_to_schema_only``.
     """
     if "full" in _KNOWN_KEYS_CACHE:
         return _KNOWN_KEYS_CACHE["full"]
@@ -784,13 +895,13 @@ def validate(cfg: dict, mode: str) -> list[UnknownKey]:
 
 ---
 
-- [ ] **Step 7: Run the 18 unit tests — expect 18 PASS**
+- [ ] **Step 7: Run the 20 unit tests — expect 20 PASS**
 
 ```bash
 .venv/bin/python -m pytest tests/test_config_validation.py -v 2>&1 | tail -30
 ```
 
-Expected: `19 passed`. If any test fails, read the failure carefully:
+Expected: `20 passed`. If any test fails, read the failure carefully:
 
 - `test_error_mode_collects_all_unknowns` failing → your `validate()` is fail-fast; fix the loop to append then raise once.
 - `test_close_match_suggestion_cutoff` failing with a suggestion surfacing → `_SUGGESTION_CUTOFF` too low; confirm `0.85`.
@@ -835,7 +946,7 @@ The local-import keeps the validator out of the critical import path (so schema 
 
 ---
 
-- [ ] **Step 9: Append the 3 parametrized integration tests to `tests/test_engine_config_validation.py`**
+- [ ] **Step 9: Append the 3 integration tests to `tests/test_engine_config_validation.py`** (one 3-way parametrized over example configs, two scalar for injected-typo verification)
 
 Append to the end of `tests/test_engine_config_validation.py` (preserving existing tests — this file has 7 `__post_init__` tests already):
 
@@ -852,39 +963,51 @@ from osmose.engine.config import EngineConfig as _EngineConfig
 def _load_example_config(example_name: str) -> dict:
     """Load an example all-parameters.csv into a dict via OsmoseConfigReader.
 
-    Candidate filename patterns (checked in order):
-      1. ``data/<name>/osm_all-parameters.csv``   — EEC, minimal
-      2. ``data/<name>/<name>_all-parameters.csv`` — Baltic, eec_full
+    Filename conventions at HEAD ``744ae1b``:
+      - ``data/eec/osm_all-parameters.csv``        (osm_ prefix)
+      - ``data/minimal/osm_all-parameters.csv``    (osm_ prefix)
+      - ``data/baltic/baltic_all-parameters.csv``  (name-prefix)
+      - ``data/eec_full/eec_all-parameters.csv``   (historical "eec" prefix)
+
+    We glob ``*_all-parameters.csv`` rather than enumerating candidates so new
+    or renamed example directories don't silently skip. If the directory
+    holds more than one matching file we pick the first sorted entry — all
+    shipped configs have exactly one.
     """
     from osmose.config import OsmoseConfigReader
 
     base = _Path(__file__).resolve().parent.parent
-    candidates = [
-        base / "data" / example_name / "osm_all-parameters.csv",
-        base / "data" / example_name / f"{example_name}_all-parameters.csv",
-    ]
-    for path in candidates:
-        if path.exists():
-            return OsmoseConfigReader().read(path)
-    _pytest.skip(f"example config not found: {example_name}")
+    matches = sorted((base / "data" / example_name).glob("*_all-parameters.csv"))
+    if not matches:
+        _pytest.skip(f"example config not found: {example_name}")
+    return OsmoseConfigReader().read(matches[0])
 
 
 @_pytest.mark.parametrize(
     "example_name",
     ["eec", "baltic", "eec_full"],
 )
-def test_from_dict_off_mode_silent_on_example_configs(example_name, caplog):
-    """Load each reference example with default (off) mode; assert no
-    WARNING/ERROR records and no exception. Catches AST-walker gaps
-    specific to a single example config."""
+def test_from_dict_warn_mode_clean_on_example_configs(example_name, caplog):
+    """Load each reference example in warn mode; assert zero WARNING records.
+
+    warn mode (not off) is the mode that actually exercises the allowlist:
+    off mode emits a single INFO-level count nudge regardless of how many
+    unknowns are present, so an off-mode test cannot detect AST-walker gaps
+    or allowlist holes. warn mode emits one WARNING per unknown, so any gap
+    shows up as a concrete list of offenders in the assertion message.
+
+    When this test fails, the message lists the exact keys that need
+    handling — Step 10 of the plan describes the two-lever fix path
+    (extend the walker OR add to ``_SUPPLEMENTARY_ALLOWLIST``).
+    """
     cfg = _load_example_config(example_name)
-    # Default mode is 'off' — do not inject the flag explicitly.
-    with caplog.at_level(_logging.INFO, logger="osmose.config"):
+    cfg["validation.strict.enabled"] = "warn"
+    with caplog.at_level(_logging.WARNING, logger="osmose.config"):
         _EngineConfig.from_dict(cfg)
-    warn_err = [r for r in caplog.records if r.levelno >= _logging.WARNING]
-    assert warn_err == [], (
-        f"{example_name} config emitted {len(warn_err)} warnings — "
-        f"first: {warn_err[0].message if warn_err else ''!r}"
+    warn_records = [r for r in caplog.records if r.levelno >= _logging.WARNING]
+    assert warn_records == [], (
+        f"{example_name} config has {len(warn_records)} unknown keys — "
+        f"first 5: {[r.getMessage() for r in warn_records[:5]]}"
     )
 
 
@@ -910,24 +1033,36 @@ def test_from_dict_error_mode_raises_with_typo():
         _EngineConfig.from_dict(cfg)
 ```
 
-**Why the `_load_example_config` helper with two candidates:** actual repo layout at HEAD `bad68cb` has two filename conventions — `data/eec/osm_all-parameters.csv` and `data/minimal/osm_all-parameters.csv` use the `osm_` prefix, while `data/baltic/baltic_all-parameters.csv` and `data/eec_full/eec_all-parameters.csv` use a name-prefixed form. The helper tries `data/<name>/osm_all-parameters.csv` first, falls back to `data/<name>/<name>_all-parameters.csv`, and skips if neither exists. `bay_of_biscay` is intentionally absent from the parametrize list (no such directory in `data/`).
+**Why `_load_example_config` globs instead of enumerating candidates:** actual repo layout at HEAD `744ae1b` has three filename conventions — `data/eec/osm_all-parameters.csv` and `data/minimal/osm_all-parameters.csv` use the `osm_` prefix, `data/baltic/baltic_all-parameters.csv` uses a name-prefixed form, and `data/eec_full/eec_all-parameters.csv` uses a historical `eec` prefix (NOT `eec_full_`). An enumerating helper would silently skip `eec_full` because no candidate pattern matches. Globbing `*_all-parameters.csv` covers all three conventions without special-casing and fails loudly (via `pytest.skip`) only when a directory is genuinely missing. `bay_of_biscay` is intentionally absent from the parametrize list (no such directory in `data/` — spec §Testing strategy line 270 lists it but the path is stale; plan is authoritative here).
 
 ---
 
 - [ ] **Step 10: Run the 3 integration tests**
 
 ```bash
-.venv/bin/python -m pytest tests/test_engine_config_validation.py -v -k "example_configs or known_typo or error_mode_raises" 2>&1 | tail -20
+.venv/bin/python -m pytest tests/test_engine_config_validation.py -v -k "example_configs or known_typo or error_mode_raises" 2>&1 | tail -30
 ```
 
-Expected: 5 passing (3 parametrized variants of `example_configs` + `warn_mode` + `error_mode_raises`).
+Expected: 5 passing (3 parametrized variants of `clean_on_example_configs` + `warn_mode_catches_known_typo` + `error_mode_raises_with_typo`).
 
-Note: if a reference config emits unknown-key warnings in off mode, **the test `test_from_dict_off_mode_silent_on_example_configs[...]` will fail with a list of the offending keys**. That's the signal that the AST walker missed something that example config uses. Fix path:
+**Expected first-run failure.** Real shipped configs carry reader-injected metadata (`osmose.configuration.*`, `osmose.version`) and legacy aliases the AST walker cannot discover. A dry sweep against HEAD `744ae1b` shows:
 
-1. Grep the offending key in `osmose/engine/config.py` to locate the reader code path that touches it.
-2. Either: (a) the AST walker should have caught it but didn't — extend `_extract_literal_keys_from_config_py` to handle the missing shape; or (b) the key is built dynamically from a caller-arg `key_pattern` (spec's "accepted misses") — add it to the `_SUPPLEMENTARY_ALLOWLIST` frozenset already stubbed in Step 6. Re-run Step 10.
+| Config    | Latent unknowns |
+|-----------|-----------------|
+| eec       | 38              |
+| baltic    | 177             |
+| eec_full  | 286             |
 
-Iterate until all 3 parametrized variants pass. If a single example config is genuinely missing on disk (e.g. `data/eec_full/eec_all-parameters.csv` isn't there for some checkouts), the parametrized case `skip`s rather than fails — that's acceptable, but the Step 11 pass-count target drops by one per skip. Update the Step 11 expectation accordingly.
+So `test_from_dict_warn_mode_clean_on_example_configs[...]` will fail on the first run with a list of offending keys. That is the intended signal. Fix path:
+
+1. Group the offending keys by prefix (e.g., `osmose.configuration.*`, `osmose.version`, `species.lw.*`, `simulation.restart.*`).
+2. For each group, grep the prefix in `osmose/engine/config.py` and `osmose/config/reader.py` to determine WHY it's in cfg:
+   - **Reader-injected metadata** (`osmose.configuration.*`, `osmose.version`, `_osmose.config.dir` — though that last one is already covered by the AST walker): the OsmoseConfigReader puts these in cfg but no engine code reads them. Add the literal (or pattern) to `_SUPPLEMENTARY_ALLOWLIST`.
+   - **Legacy aliases** (e.g., `species.lw.*` alongside `species.length2weight.*`): add the pattern to `_SUPPLEMENTARY_ALLOWLIST` OR register as a proper schema field if the alias is supposed to be honored.
+   - **Keys the walker missed but config.py DOES read**: extend `_extract_literal_keys_from_config_py` to handle the missing AST shape (e.g., a key built from a caller-arg `key_pattern` two frames up).
+3. Re-run Step 10. Repeat until all 3 parametrized variants pass with zero warnings.
+
+Iterate until all 3 parametrized variants pass. If a single example config is genuinely missing on disk (e.g., `data/eec_full/*_all-parameters.csv` isn't there for some checkouts), the parametrized case `skip`s rather than fails — acceptable, but Step 11's pass-count target drops by one per skip.
 
 ---
 
@@ -939,14 +1074,14 @@ Iterate until all 3 parametrized variants pass. If a single example config is ge
 ```
 
 Expected:
-- `2509 passed, 15 skipped, 41 deselected` (2485 baseline + 19 unit + 5 integration = +24).
+- `2510 passed, 15 skipped, 41 deselected` (2485 baseline + 20 unit + 5 integration = +25).
 - Ruff: `All checks passed!`
 
 If the passed count is off:
-- `2485 + N` where N < 24 with skips → the integration parametrize is skipping. Verify `data/eec/osm_all-parameters.csv`, `data/baltic/baltic_all-parameters.csv`, `data/eec_full/eec_all-parameters.csv` all exist. If only 2 of 3 configs exist, target is 2485 + 22 passed + 2 skipped = 2507 — **still acceptable** so long as the 2 skips are the missing configs and not something else.
-- `2485 + N` where N < 24 with no skips → some new tests weren't collected. Grep for `def test_` in both test files; confirm 19 in `tests/test_config_validation.py` and 3 in the appended block of `tests/test_engine_config_validation.py`.
+- `2485 + N` where N < 25 with skips → the integration parametrize is skipping. Verify `data/eec/osm_all-parameters.csv`, `data/baltic/baltic_all-parameters.csv`, and some `data/eec_full/*_all-parameters.csv` all exist. Each missing config reduces passed by 1 and increases skipped by 1 — e.g., 1 config missing → 2485 + 24 passed + 1 skipped. **Acceptable** so long as the skips are the missing configs and not something else.
+- `2485 + N` where N < 25 with no skips → some new tests weren't collected. Grep for `def test_` in both test files; confirm 20 in `tests/test_config_validation.py` and 3 in the appended block of `tests/test_engine_config_validation.py`.
 - `< 2485` pass count → a pre-existing test regressed. The most likely culprit: a test that calls `EngineConfig.from_dict` with a cfg containing a latent unknown that now trips the validator's `off`-mode nudge (harmless — shouldn't fail). If an INTEGRATION test regressed, investigate (check if the test asserts clean caplog at the `osmose.config` logger).
-- `> 2485 + 24` → you accidentally added more tests than planned. Count and reconcile.
+- `> 2485 + 25` → you accidentally added more tests than planned. Count and reconcile.
 
 ---
 
@@ -967,9 +1102,10 @@ load time. Three modes via validation.strict.enabled:
 Allowlist (~255 patterns) is a union of the 220-field ParameterRegistry
 and AST-extracted literal keys from config.py (cfg.get, subscript,
 _enabled / _get / _species_float[_optional] / _species_int[_optional] /
-_species_str helpers, f-strings with Name interpolation, module-level
-tuple/list literals, and 'x' in cfg membership tests). Match order is
-literal-fast-path → normalized-pattern exact → compiled-regex fallback.
+_species_str helpers, f-strings with Name interpolation, Assign-RHS
+f-strings for the 8 `*_key = f\"...\"` fishery/mortality patterns, and
+'x' in cfg membership tests). Match order is literal-fast-path →
+normalized-pattern exact → compiled-regex fallback.
 
 Typo suggestions use difflib.get_close_matches(n=1, cutoff=0.85) on
 {idx}-normalized strings — species.liinf.sp0 normalized to
@@ -980,8 +1116,8 @@ Schema flag validation.strict.enabled added to osmose/schema/simulation.py
 of EngineConfig.from_dict; zero behavior change on clean configs in
 off mode.
 
-Tests: +24 (19 unit + 5 collected integration cases from 3 function
-defs, parametrized over EEC / Baltic / eec_full). Baseline 2485 → 2509.
+Tests: +25 (20 unit + 5 collected integration cases from 3 function
+defs, parametrized over EEC / Baltic / eec_full). Baseline 2485 → 2510.
 
 Spec: docs/superpowers/specs/2026-04-19-config-validation-design.md"
 ```
@@ -1009,13 +1145,13 @@ git commit -m "docs: CHANGELOG entry for Phase 7.3 config validation"
 
 ## Self-review checklist
 
-- **Spec coverage:** every spec section has at least one task step that implements it — schema entry (Step 2), core validator module (Step 6), AST walker (Step 6 inside `_extract_literal_keys_from_config_py`), integration hook (Step 8), 18 unit tests (Step 4) + 3 integration tests (Step 9), CHANGELOG (Task 2). ✓
-- **Failure-modes table coverage:** 10 rows in the spec's Failure modes table; each maps to at least one test — `_osmose.config.dir` → test #10 `test_internal_marker_not_warned`; `{idx}`-concrete → test #8; double-index → test #9; high-confidence typo → test #2 + #3; no close match → test #7; non-string value → test #11; mode=error collect-all → test #4; mode=off with nudge → test #5; mode=off zero unknowns → test #6; invalid mode → test #12; flag-absent defaults to off → implicit across integration tests. ✓
+- **Spec coverage:** every spec section has at least one task step that implements it — schema entry (Step 2), core validator module (Step 6), AST walker (Step 6 inside `_extract_literal_keys_from_config_py`), integration hook (Step 8), 20 unit tests (Step 4) + 3 integration tests (Step 9), CHANGELOG (Task 2). ✓
+- **Failure-modes table coverage:** 12 data rows in the spec's Failure modes table; each maps to at least one test — `_osmose.config.dir` → test #10 `test_internal_marker_not_warned`; `{idx}`-concrete → test #8; double-index → test #9; high-confidence typo → test #2 + #3; no close match → test #7; non-string value → test #11; mode=error collect-all → test #4; mode=off with nudge → test #5; mode=off zero unknowns → test #6; invalid mode → test #12; flag-absent defaults to off → pinned by Step 8 hook via stdlib `cfg.get("validation.strict.enabled", "off")` — trivial enough that no dedicated test is warranted, and integration tests exercise the explicit-flag branches; pre-parsed flag self-reference → pinned by `test_build_known_keys_has_literal_fast_path` (asserts `validation.strict.enabled` is in `kk.literals`); validator-runs-before-reader ordering → pinned by `test_from_dict_error_mode_raises_with_typo` (raises before any `_get` call). ✓
 - **Placeholder scan:** no "TBD", no "TODO", no "implement later", no bare "add validation", no "similar to step N". Every code block is complete. ✓
 - **Type consistency:** `UnknownKey`, `KnownKeys`, `build_known_keys`, `validate`, `_normalize_key_to_pattern`, `_suggest`, `_extract_literal_keys_from_config_py`, `_check`, `_read_config_source`, `_compile_regex_for_pattern`, `_SUGGESTION_CUTOFF`, `_VALID_MODES`, `_INDEX_SUFFIXES`, `_SUPPLEMENTARY_ALLOWLIST`, `_KNOWN_KEYS_CACHE`, `_clear_known_keys_cache` — names used consistently across the module definition and the tests. ✓
 - **Test runner:** `.venv/bin/python -m pytest` throughout. No bare `python`. ✓
 - **Commit granularity:** 2 commits total matching "single capability + CHANGELOG" (Task 1 + Task 2). Task 1 is one atomic commit; Task 2 is the CHANGELOG-only commit. ✓
-- **Baseline check:** pre-flight asserts 2485 passed / 2500 collected; Step 11 expects 2509 after +24 tests (19 unit + 5 integration cases from 3 function defs with a 3-way parametrize). If baseline drifts, all arithmetic documented here needs updating. ✓
+- **Baseline check:** pre-flight asserts 2485 passed / 2500 collected; Step 11 expects 2510 after +25 tests (20 unit + 5 integration cases from 3 function defs with a 3-way parametrize). If baseline drifts, all arithmetic documented here needs updating. ✓
 - **Library-surface anchors:** all line citations (`config.py:1347-1348`, `:150`, `:41-45`, `:133`, `:49`, etc.) verified against HEAD `557ee1b` during plan writing. ✓
 
 ---
