@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **config:** unknown-key validation at `EngineConfig.from_dict` (Phase 7.3). Silent by default — set `validation.strict.enabled=warn` (or `=error`) to catch typos like `species.liinf.sp0` with a difflib suggestion pointing at `species.linf.sp{idx}`. Allowlist is the union of the 220-field `ParameterRegistry`, AST-extracted literal keys from `osmose/engine/config.py`, and a 40-entry `_SUPPLEMENTARY_ALLOWLIST` of reader-injected metadata + legacy aliases (391 patterns total). Spec at `docs/superpowers/specs/2026-04-19-config-validation-design.md`; plan at `docs/superpowers/plans/2026-04-19-config-validation-plan.md`.
+
 ## [0.9.1] - 2026-04-19
 
 ### Features
