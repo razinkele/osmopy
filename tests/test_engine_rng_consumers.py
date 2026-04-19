@@ -134,7 +134,7 @@ class TestBackwardCompat:
         assert len(result) == 4
 
     def test_predation_none_species_rngs_works(self):
-        """predation() with species_rngs=None should run without error."""
+        """predation_for_cell() with species_rngs=None should run without error."""
         from osmose.engine.config import EngineConfig
         from osmose.engine.grid import Grid
         from osmose.engine.resources import ResourceState
