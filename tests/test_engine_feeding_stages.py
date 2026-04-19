@@ -5,7 +5,7 @@ import pytest
 
 from osmose.engine.config import EngineConfig
 from osmose.engine.processes.feeding_stage import compute_feeding_stages
-from osmose.engine.processes.predation import predation
+from osmose.engine.processes.predation import predation_for_cell
 from osmose.engine.state import SchoolState
 
 
@@ -359,7 +359,8 @@ class TestPredationWithStages:
             cell_y=np.array([0, 0], dtype=np.int32),
         )
         rng = np.random.default_rng(42)
-        new_state = predation(state, ec, rng, n_subdt=10, grid_ny=1, grid_nx=1)
+        predation_for_cell(np.array([0, 1], dtype=np.int32), state, ec, rng, n_subdt=10)
+        new_state = state
         assert new_state.abundance[1] < 1000.0  # Prey eaten
 
     def test_adult_uses_stage1_ratios(self):
@@ -384,7 +385,8 @@ class TestPredationWithStages:
             cell_y=np.array([0, 0], dtype=np.int32),
         )
         rng = np.random.default_rng(42)
-        new_state = predation(state, ec, rng, n_subdt=10, grid_ny=1, grid_nx=1)
+        predation_for_cell(np.array([0, 1], dtype=np.int32), state, ec, rng, n_subdt=10)
+        new_state = state
         np.testing.assert_allclose(new_state.abundance[1], 1000.0)  # Prey NOT eaten
 
     def test_backward_compat_single_stage(self):
@@ -406,7 +408,8 @@ class TestPredationWithStages:
             cell_y=np.array([0, 0], dtype=np.int32),
         )
         rng = np.random.default_rng(42)
-        new_state = predation(state, ec, rng, n_subdt=10, grid_ny=1, grid_nx=1)
+        predation_for_cell(np.array([0, 1], dtype=np.int32), state, ec, rng, n_subdt=10)
+        new_state = state
         # ratio=15/7~2.14, r_min=1.0, r_max=3.5 -> in [1.0, 3.5) -> ACCEPTED
         assert new_state.abundance[1] < 1000.0
 
@@ -429,7 +432,8 @@ class TestPredationWithStages:
             cell_y=np.array([0, 0], dtype=np.int32),
         )
         rng = np.random.default_rng(42)
-        new_state = predation(state, ec, rng, n_subdt=10, grid_ny=1, grid_nx=1)
+        predation_for_cell(np.array([0, 1], dtype=np.int32), state, ec, rng, n_subdt=10)
+        new_state = state
         # ratio=30/5=6 -> after swap: in [3, 50) -> ACCEPTED
         assert new_state.abundance[1] < 1000.0
 
