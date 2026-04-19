@@ -28,7 +28,7 @@
 - [ ] Confirm baseline. Run `.venv/bin/python -m pytest -q --no-header 2>&1 | tail -3`. Expected: `2510 passed, 15 skipped, 41 deselected, 62 warnings`. If different, record the number and use `baseline+0` framing in all task-success checks (this is a refactor — expect no delta).
 - [ ] Confirm ruff baseline. Run `.venv/bin/ruff check osmose/ tests/ 2>&1 | tail -2`. Expected: `All checks passed!`.
 - [ ] Verify line anchors (grep rather than trust):
-  - `osmose/engine/processes/predation.py` — `def predation(` at `:521`; `_predation_in_cell_python` at `:255`; `_predation_in_cell_numba` at `:130`; `_predation_on_resources` at `:371`; `_DUMMY_ACCESS = np.zeros` at `:518`; `_DUMMY_DIET` near `:610`.
+  - `osmose/engine/processes/predation.py` — `def predation(` at `:521`; `_predation_in_cell_python` at `:255`; `_predation_in_cell_numba` at `:130`; `_predation_on_resources` at `:371`; `_DUMMY_ACCESS = np.zeros` at `:518`; `_DUMMY_DIET` defined at `:125`, used inside the Numba dispatch branch around `:610-612`.
   - `osmose/engine/state.py` — `@dataclass(frozen=True)` at `:30`; `class SchoolState` at `:31`; `feeding_stage: NDArray[np.int32]` at `:59`.
   - `osmose/engine/processes/feeding_stage.py` — `compute_feeding_stages` at `:20`, returns `np.zeros(n, dtype=np.int32)` for empty states at `:40-43`.
 - [ ] Verify production path is untouched. Grep `osmose/engine/simulate.py` for `from osmose.engine.processes.predation import predation` — should find NO such import (only `enable_diet_tracking` and `disable_diet_tracking` imports at `:1199` and `:1216`).
@@ -281,6 +281,10 @@ def predation(
 
 The old body's inline `feeding_stage = compute_feeding_stages(work_state, config)` and `work_state = work_state.replace(feeding_stage=feeding_stage)` lines are deleted — `predation_for_cell` handles this per-call via the in-place `[:]` write.
 
+**Behavioral note:** the current batch `predation()` computes `feeding_stage` ONCE before the cell loop; the refactored version has `predation_for_cell` recompute it at every call. The values are identical because `compute_feeding_stages` reads only `state.species_id` / `age_dt` / `length` / `weight` / `trophic_level`, none of which are modified during predation. So the recomputation is redundant within a batch call but numerically faithful. In the terminal state (after commit 3 when batch `predation()` is deleted), tests each call `predation_for_cell` once per test invocation, so the redundancy vanishes.
+
+**Edge case for batch caller:** if a `predation()` caller has a state where EVERY cell has `< 2` schools (so `predation_for_cell` early-exits for every cell), `feeding_stage` is never recomputed by the cell loop. The caller sees `feeding_stage` = the `.copy()` we made before the loop, i.e., whatever the caller passed in. This matches current behavior at the `state.replace(...)` return: the returned state also does not include `feeding_stage`, so the caller's original array is what they see. No regression.
+
 ---
 
 - [ ] **Step 4: Run the full test suite — expect unchanged pass count**
@@ -498,7 +502,11 @@ cell_indices = np.array([0, 1], dtype=np.int32)
 predation_for_cell(cell_indices, state, cfg, rng, n_subdt=10, ctx=ctx)
 ```
 
-**Numba/Python parity helper (`_run_predation`).** Look for a method roughly like:
+**Numba/Python parity helper (`_run_predation`).** The current helper uses `mock.patch.object(predation_module, "_HAS_NUMBA", use_numba)` to force dispatch. With `use_numba` now an explicit kwarg on `predation_for_cell`, the mock is unnecessary — the new API honors the flag directly.
+
+**Important: Numba availability guard.** The guard belongs on the **parity-comparison test** (the test that runs both arms and compares), NOT inside `_run_predation` itself. If `_run_predation(use_numba=True)` did `pytest.importorskip("numba")` internally, calling the helper with `use_numba=False` would also run the import check and still work — but a parity test that calls both arms and compares outputs must skip entirely on Numba-less systems (you can't compare to a non-existent Numba result).
+
+Pattern:
 
 ```python
 # Before (simplified)
@@ -511,15 +519,17 @@ def _run_predation(self, use_numba: bool, seed: int = 42) -> tuple:
         new_state = predation(state, cfg, rng, n_subdt=10, grid_ny=10, grid_nx=10, ctx=ctx)
     diet = get_diet_matrix(ctx)
     return new_state, diet
+
+# In parity-comparison test (simplified)
+def test_numba_python_parity(self):
+    state_numba, diet_numba = self._run_predation(use_numba=True, seed=42)
+    state_python, diet_python = self._run_predation(use_numba=False, seed=42)
+    np.testing.assert_allclose(state_numba.abundance, state_python.abundance)
 ```
 
-Migrate to:
-
 ```python
-# After
+# After — helper is now simple, guard lives on the parity test
 def _run_predation(self, use_numba: bool, seed: int = 42) -> tuple:
-    if use_numba:
-        pytest.importorskip("numba")
     state, cfg = _make_pred_prey_state()
     rng = np.random.default_rng(seed)
     ctx = SimulationContext(...)
@@ -530,13 +540,19 @@ def _run_predation(self, use_numba: bool, seed: int = 42) -> tuple:
     )
     diet = get_diet_matrix(ctx)
     return state, diet  # in-place; return `state` not `new_state`
+
+def test_numba_python_parity(self):
+    pytest.importorskip("numba")  # skip whole comparison if Numba absent
+    state_numba, diet_numba = self._run_predation(use_numba=True, seed=42)
+    state_python, diet_python = self._run_predation(use_numba=False, seed=42)
+    np.testing.assert_allclose(state_numba.abundance, state_python.abundance)
 ```
 
-Callers of `_run_predation` assert on `state_numba == state_python` — the return-value name change doesn't affect them since they only use positional unpacking.
+Callers of `_run_predation` assert on `state_numba == state_python` — the return-value name change doesn't affect them since they only use positional unpacking. Drop `mock` and `predation_module` imports from the file's top if no other test uses them.
 
 **Per-call migration pattern.** Each `predation(state, cfg, rng, n_subdt=10, grid_ny=10, grid_nx=10, ctx=ctx)` in this file follows the same shape because all tests use two schools in cell (0, 0). Use `cell_indices = np.array([0, 1], dtype=np.int32)` for two-school cases; adjust indices list for tests that create more schools.
 
-**Run the affected tests after each 4-5 line migration block** — don't migrate all 12 sites then run once.
+**Run the affected tests after each 4-5 line migration block** — don't migrate every site then run once at the end.
 
 ```bash
 .venv/bin/python -m pytest tests/test_engine_predation_helpers.py -v 2>&1 | tail -20
@@ -550,11 +566,12 @@ Expected: all pre-existing test names pass. No changes to test count.
 git add tests/test_engine_predation_helpers.py
 git commit -m "refactor(tests): migrate test_engine_predation_helpers to predation_for_cell (Phase 7.1 commit 2a)
 
-Update imports (predation -> predation_for_cell). Rewrite all 12 test
-call sites to use cell_indices + in-place state mutation. The
-Numba/Python parity helper _run_predation now passes use_numba
-explicitly and guards with pytest.importorskip('numba') so parity
-tests skip-not-silently-pass when Numba is missing.
+Update imports (predation -> predation_for_cell). Rewrite every
+predation() call site in this file to use cell_indices + in-place
+state mutation. The Numba/Python parity helper _run_predation now
+passes use_numba explicitly; the parity-comparison test itself
+adds pytest.importorskip('numba') so the whole comparison skips
+cleanly when Numba is absent.
 
 No behavior change. Suite still 2510 passed.
 
@@ -660,7 +677,13 @@ from osmose.engine.processes.predation import (
 )
 ```
 
-**Class B migration (different cells, `test_schools_in_different_cells_dont_interact`).** The current test places schools in cell (0,0) and (5,5) and asserts the prey at (5,5) is unchanged when the predator is at (0,0). Migrate to call `predation_for_cell` once with ONLY the predator's cell_indices:
+**Class B migration (`test_schools_in_different_cells_dont_interact`) — rewrite to test the per-cell `cell_indices` boundary.** The original test verified the BATCH orchestrator's cell-grouping: "when `predation()` loops over cells, a school in cell (0,0) does not eat a school in cell (5,5)." After Phase 7.1 that batch orchestrator is gone, but there's a corresponding useful invariant at the per-cell API: **`predation_for_cell` must only mutate schools whose indices appear in `cell_indices`**. Rewrite the test to verify this, using a three-school state where one school is a bystander outside `cell_indices`:
+
+Bad alternatives (do NOT use either):
+- `predation_for_cell(np.array([0], dtype=np.int32), ...)` — the function early-exits when `len(cell_indices) < 2` so nothing runs; the assertion is trivially true.
+- Two sequential calls with one school each — same early-exit on both calls.
+
+Good alternative:
 
 ```python
 # Before (lines ~167-183)
@@ -682,28 +705,32 @@ def test_schools_in_different_cells_dont_interact(self):
 ```
 
 ```python
-# After — simulate the "different cell" scenario by passing ONLY the
-# predator-cell's index. The test now pins: "predation_for_cell with
-# indices=[0] (predator alone, no prey in its cell) does not touch
-# school 1". This is a semantically equivalent isolation check.
-def test_schools_in_different_cells_dont_interact(self):
+# After — rename to reflect the new invariant. Three schools: a
+# predator + prey in the cell being tested, plus a bystander not in
+# cell_indices. The per-cell API must not mutate the bystander.
+def test_school_outside_cell_indices_is_untouched(self):
     cfg = EngineConfig.from_dict(_make_predation_config())
-    state = SchoolState.create(n_schools=2, species_id=np.array([1, 0], dtype=np.int32))
+    state = SchoolState.create(
+        n_schools=3, species_id=np.array([1, 0, 0], dtype=np.int32)
+    )
     state = state.replace(
-        abundance=np.array([50.0, 500.0]),
-        length=np.array([25.0, 10.0]),
-        weight=np.array([78.125, 6.0]),
-        biomass=np.array([3906.25, 3000.0]),
-        age_dt=np.array([24, 24], dtype=np.int32),
-        cell_x=np.array([0, 5], dtype=np.int32),
-        cell_y=np.array([0, 5], dtype=np.int32),
+        abundance=np.array([50.0, 500.0, 123.0]),
+        length=np.array([25.0, 10.0, 10.0]),
+        weight=np.array([78.125, 6.0, 6.0]),
+        biomass=np.array([3906.25, 3000.0, 738.0]),
+        age_dt=np.array([24, 24, 24], dtype=np.int32),
     )
     rng = np.random.default_rng(42)
-    # Predator (school 0) is alone in cell (0, 0). No prey to eat.
-    predation_for_cell(np.array([0], dtype=np.int32), state, cfg, rng, n_subdt=10)
-    # Prey (school 1) in cell (5, 5) not addressed by this call — unchanged.
-    np.testing.assert_allclose(state.abundance[1], 500.0)
+    # Only schools 0 and 1 are in the cell we're exercising;
+    # school 2 is the bystander outside cell_indices.
+    predation_for_cell(np.array([0, 1], dtype=np.int32), state, cfg, rng, n_subdt=10)
+    # Predation ran: prey was eaten.
+    assert state.abundance[1] < 500.0
+    # Bystander was NOT in cell_indices — abundance unchanged.
+    np.testing.assert_allclose(state.abundance[2], 123.0)
 ```
+
+Pass count is preserved (one `def test_*` in, one `def test_*` out). The test name changes (`test_schools_in_different_cells_dont_interact` → `test_school_outside_cell_indices_is_untouched`); mention the rename in the commit message so anyone searching git log finds the connection.
 
 **Class A migration (same-cell tests, `test_empty_state` and `test_same_cell_predation_via_top_level`):**
 
@@ -926,15 +953,13 @@ Expected: `2510 passed, 15 skipped, 41 deselected`. Exact match.
 
 Then the RNG-drift canary — run the affected test files three times with the same seed order and confirm identical output:
 
+Run the pytest suite three times (each as its own Bash call; shell rules forbid `>>` redirection). Record the final summary line from each:
+
 ```bash
-for i in 1 2 3; do
-    echo "=== Run $i ===" >> /tmp/phase71-canary.log
-    .venv/bin/python -m pytest tests/test_engine_predation.py tests/test_engine_predation_helpers.py tests/test_engine_feeding_stages.py tests/test_engine_diet.py tests/test_engine_background.py tests/test_engine_rng_consumers.py -q --no-header 2>&1 | tail -5 >> /tmp/phase71-canary.log
-done
-cat /tmp/phase71-canary.log
+.venv/bin/python -m pytest tests/test_engine_predation.py tests/test_engine_predation_helpers.py tests/test_engine_feeding_stages.py tests/test_engine_diet.py tests/test_engine_background.py tests/test_engine_rng_consumers.py -q --no-header 2>&1 | tail -3
 ```
 
-Expected: three identical "passed" lines. No flakiness.
+Run this command three times. Compare the final `N passed, M skipped` summary lines by eye (they should be identical). If you want a persistent log, write the expected summary to a file via the Write tool after the first run, then diff each subsequent run against it mentally — but there's no substitute for visually confirming "same N passed across all three runs" since RNG-drift test failures would manifest as different failure counts, which are immediately visible in the terminal.
 
 **Grep verification:**
 
@@ -1012,9 +1037,16 @@ Public API:
     compute_size_overlap, compute_appetite, compute_feeding_stages
         Utility predicates.
 
+Test-exposed private helpers (leading underscore — not stable API):
+    _predation_in_cell_python, _predation_in_cell_numba
+    _predation_on_resources
+        Used by targeted tests that need to exercise a specific backend
+        or the resource-predation path in isolation. Tests that import
+        these take on the maintenance burden if signatures change.
+
 Production code uses mortality.mortality() rather than this module
-directly; the per-cell predation helpers here are exposed for
-predation-isolated testing.
+directly; predation_for_cell is exposed for predation-isolated
+testing.
 """
 ```
 
