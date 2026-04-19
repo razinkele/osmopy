@@ -141,4 +141,20 @@ SIMULATION_FIELDS: list[OsmoseField] = [
         category="simulation",
         advanced=True,
     ),
+    OsmoseField(
+        key_pattern="validation.strict.enabled",
+        param_type=ParamType.ENUM,
+        choices=["off", "warn", "error"],
+        default="off",
+        required=False,
+        description=(
+            "Unknown-config-key validation mode. 'off' (default): emits a "
+            "single-line count summary ONLY when unknowns are present — "
+            "silent on clean configs. 'warn': log each unknown key with a "
+            "typo suggestion via the osmose.config logger. 'error': collect "
+            "all unknowns then raise ValueError listing them (not fail-fast)."
+        ),
+        category="simulation",
+        advanced=True,
+    ),
 ]

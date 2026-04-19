@@ -171,3 +171,67 @@ def test_from_dict_still_works() -> None:
     cfg = EngineConfig.from_dict(minimal)
     assert cfg.n_species == 1
     assert cfg.linf[0] == 15.0
+
+
+# --- Phase 7.3: unknown-key validation integration tests ----------------------
+import logging as _logging  # noqa: E402
+from pathlib import Path as _Path  # noqa: E402
+
+import pytest as _pytest  # noqa: E402
+
+from osmose.engine.config import EngineConfig as _EngineConfig  # noqa: E402
+
+
+def _load_example_config(example_name: str) -> dict:
+    """Load an example all-parameters.csv into a dict via OsmoseConfigReader.
+
+    Globs ``*_all-parameters.csv`` rather than enumerating candidates so all
+    three shipped filename conventions (``osm_all-parameters.csv``,
+    ``<name>_all-parameters.csv``, ``eec_all-parameters.csv`` in eec_full)
+    work without special-casing.
+    """
+    from osmose.config import OsmoseConfigReader
+
+    base = _Path(__file__).resolve().parent.parent
+    matches = sorted((base / "data" / example_name).glob("*_all-parameters.csv"))
+    if not matches:
+        _pytest.skip(f"example config not found: {example_name}")
+    return OsmoseConfigReader().read(matches[0])
+
+
+@_pytest.mark.parametrize(
+    "example_name",
+    ["eec", "baltic", "eec_full"],
+)
+def test_from_dict_warn_mode_clean_on_example_configs(example_name, caplog):
+    """Load each reference example in warn mode; assert zero WARNING records."""
+    cfg = _load_example_config(example_name)
+    cfg["validation.strict.enabled"] = "warn"
+    with caplog.at_level(_logging.WARNING, logger="osmose.config"):
+        _EngineConfig.from_dict(cfg)
+    warn_records = [r for r in caplog.records if r.levelno >= _logging.WARNING]
+    assert warn_records == [], (
+        f"{example_name} config has {len(warn_records)} unknown keys -- "
+        f"first 5: {[r.getMessage() for r in warn_records[:5]]}"
+    )
+
+
+def test_from_dict_warn_mode_catches_known_typo(caplog):
+    """Inject a single-char typo; assert the warning includes the suggestion."""
+    cfg = _load_example_config("eec")
+    cfg["species.liinf.sp0"] = "30.0"
+    cfg["validation.strict.enabled"] = "warn"
+    with caplog.at_level(_logging.WARNING, logger="osmose.config"):
+        _EngineConfig.from_dict(cfg)
+    warn_records = [r for r in caplog.records if r.levelno >= _logging.WARNING]
+    assert any("species.liinf.sp0" in r.message for r in warn_records)
+    assert any("species.linf.sp{idx}" in r.message for r in warn_records)
+
+
+def test_from_dict_error_mode_raises_with_typo():
+    """Same injection; mode=error; assert from_dict raises."""
+    cfg = _load_example_config("eec")
+    cfg["species.liinf.sp0"] = "30.0"
+    cfg["validation.strict.enabled"] = "error"
+    with _pytest.raises(ValueError, match="species.liinf.sp0"):
+        _EngineConfig.from_dict(cfg)

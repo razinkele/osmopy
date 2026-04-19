@@ -1346,6 +1346,12 @@ class EngineConfig:
 
     @classmethod
     def from_dict(cls, cfg: dict[str, str]) -> EngineConfig:
+        from osmose.engine.config_validation import validate as _validate_cfg
+
+        _raw_mode = cfg.get("validation.strict.enabled", "off")
+        _mode = _raw_mode if isinstance(_raw_mode, str) else "off"
+        _validate_cfg(cfg, _mode)
+
         # config_dir is extracted from cfg by _cfg_dir() at each _resolve_file call
         n_sp = int(_get(cfg, "simulation.nspecies"))
         n_dt = int(_get(cfg, "simulation.time.ndtperyear"))
