@@ -19,6 +19,7 @@ import pytest
 
 from osmose.engine.config_validation import (
     KnownKeys,
+    UnknownKey,  # noqa: F401 — pins the named public-export contract
     _extract_literal_keys_from_config_py,
     _normalize_key_to_pattern,
     build_known_keys,

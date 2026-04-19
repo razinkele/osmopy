@@ -196,7 +196,11 @@ def _load_example_config(example_name: str) -> dict:
     matches = sorted((base / "data" / example_name).glob("*_all-parameters.csv"))
     if not matches:
         _pytest.skip(f"example config not found: {example_name}")
-    return OsmoseConfigReader().read(matches[0])
+    cfg = OsmoseConfigReader().read(matches[0])
+    # Strip empty-string keys: artefacts from CSV rows like ",," where the
+    # separator regex splits to an empty key.  Not a real config key; exclude
+    # so the validator only sees genuine keys.
+    return {k: v for k, v in cfg.items() if k != ""}
 
 
 @_pytest.mark.parametrize(

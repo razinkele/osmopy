@@ -96,10 +96,6 @@ _SUPPLEMENTARY_ALLOWLIST: frozenset[str] = frozenset(
         "simulation.restart.enabled",
         # --- Species biomass time-scale key (Java-side) ---
         "species.biomass.nsteps.year",
-        # --- Empty-string key artefact ---
-        # Appears in eec_full config as a blank-line parsing artefact from
-        # the CSV reader; not a real config key.
-        "",
     ]
 )
 
