@@ -1,14 +1,23 @@
-"""Predation process for the OSMOSE Python engine.
+"""Predation process.
 
-Size-based opportunistic predation within grid cells. Predators are
-processed sequentially in random order with asynchronous prey biomass updates.
+Public API:
+    predation_for_cell(cell_indices, state, config, rng, n_subdt, ...)
+        Apply predation within a single cell. In-place on state.
+    enable_diet_tracking / disable_diet_tracking / get_diet_matrix
+        Diet-tracking helpers.
+    compute_size_overlap, compute_appetite, compute_feeding_stages
+        Utility predicates.
 
-Note: The interleaved mortality path (mortality.py) is the primary predation
-codepath used by simulate(). This standalone predation module is retained for
-testing and backward compatibility.
+Test-exposed private helpers (leading underscore — not stable API):
+    _predation_in_cell_python, _predation_in_cell_numba
+    _predation_on_resources
+        Used by targeted tests that need to exercise a specific backend
+        or the resource-predation path in isolation. Tests that import
+        these take on the maintenance burden if signatures change.
 
-Uses Numba JIT compilation for the inner cell loop when available,
-falling back to pure Python otherwise.
+Production code uses mortality.mortality() rather than this module
+directly; predation_for_cell is exposed for predation-isolated
+testing.
 """
 
 from __future__ import annotations
@@ -661,73 +670,3 @@ def predation_for_cell(
         )
 
 
-def predation(
-    state: SchoolState,
-    config: EngineConfig,
-    rng: np.random.Generator,
-    n_subdt: int,
-    grid_ny: int,
-    grid_nx: int,
-    resources: ResourceState | None = None,
-    species_rngs: list[np.random.Generator] | None = None,
-    ctx: SimulationContext | None = None,
-) -> SchoolState:
-    """Apply predation across all grid cells.
-
-    Batch orchestrator retained as a thin wrapper around predation_for_cell
-    during the Phase 7.1 migration. Delete in commit 3 after all tests
-    migrate to predation_for_cell directly.
-    """
-    if len(state) == 0:
-        return state
-
-    # Make working copies so the caller's state is not mutated.
-    abundance = state.abundance.copy()
-    pred_success_rate = state.pred_success_rate.copy()
-    preyed_biomass = state.preyed_biomass.copy()
-    feeding_stage = state.feeding_stage.copy()
-
-    work_state = state.replace(
-        abundance=abundance,
-        pred_success_rate=pred_success_rate,
-        preyed_biomass=preyed_biomass,
-        feeding_stage=feeding_stage,
-    )
-
-    # Group schools by cell using searchsorted (fast boundary detection).
-    cell_ids = work_state.cell_y * grid_nx + work_state.cell_x
-    order = np.argsort(cell_ids, kind="mergesort")
-    sorted_cells = cell_ids[order]
-
-    n_cells = grid_ny * grid_nx
-    boundaries = np.searchsorted(sorted_cells, np.arange(n_cells + 1))
-
-    for cell in range(n_cells):
-        start = boundaries[cell]
-        end = boundaries[cell + 1]
-        if end - start < 2:
-            continue
-
-        cell_indices = order[start:end].astype(np.int32)
-        predation_for_cell(
-            cell_indices,
-            work_state,
-            config,
-            rng,
-            n_subdt,
-            use_numba=_HAS_NUMBA,
-            ctx=ctx,
-            species_rngs=species_rngs,
-            resources=resources,
-            cell_y=cell // grid_nx,
-            cell_x=cell % grid_nx,
-        )
-
-    new_biomass = work_state.abundance * work_state.weight
-
-    return state.replace(
-        abundance=work_state.abundance,
-        biomass=new_biomass,
-        pred_success_rate=work_state.pred_success_rate,
-        preyed_biomass=work_state.preyed_biomass,
-    )
