@@ -2,7 +2,7 @@
 
 Python orchestration layer, simulation engine, and Shiny web interface for the [OSMOSE](https://osmose-model.org/) marine ecosystem simulator. Ships with a pure-Python engine (full Java parity) and a subprocess driver for the original Java engine.
 
-<sub>**Python 3.12** · **NumPy + Numba** · **Shiny for Python** · **2445 tests** · **ruff clean** · **MIT**</sub>
+<sub>**Python 3.12** · **NumPy + Numba** · **Shiny for Python** · **2510 tests** · **ruff clean** · **MIT**</sub>
 
 ## Status
 
@@ -13,7 +13,8 @@ Python orchestration layer, simulation engine, and Shiny web interface for the [
 | Shiny UI | 10-tab end-to-end UI (Setup · Grid · Forcing · Fishing · Movement · Run · Results · Calibration · Scenarios · Advanced). |
 | Calibration | pymoo NSGA-II, GP surrogate, SALib Morris/Sobol sensitivity; preflight stage + Pareto `find_optimum`. |
 | Examples | Bay of Biscay (8 sp), Eastern English Channel (14 sp), **Baltic Sea (8 sp + 6 LTL)** with ICES SAG cross-validation. |
-| Tests | 2445 passed, 15 skipped, 41 deselected. Pyright clean on `osmose/` and `ui/`. |
+| Tests | 2510 passed, 15 skipped, 41 deselected. Pyright clean on `osmose/` and `ui/`. |
+| Config validation | Opt-in typo catcher at `EngineConfig.from_dict` load time. Silent by default; `validation.strict.enabled=warn` logs `difflib` suggestions, `=error` raises with the full unknown-key list. |
 
 ## Contents
 
@@ -171,7 +172,7 @@ data/
   baltic/                   Baltic Sea calibration sandbox (8 sp + 6 LTL); see docs/baltic_example.md
     reference/              Biomass targets + frozen ICES SAG snapshots
 scripts/                    One-shot tools: benchmarks, validators, calibration, mask rebuild
-tests/                      2445 tests (schema, config, engine processes, parity, calibration,
+tests/                      2510 tests (schema, config, engine processes, parity, calibration,
                             UI state, MCP hygiene, Baltic ICES cross-validation)
 docs/
   baltic_example.md                           Baltic example full provenance
@@ -192,7 +193,7 @@ docs/
 .venv/bin/ruff format osmose/ ui/ tests/     # format
 ```
 
-2445 tests across schema, config I/O, every engine process, parity regressions, numerical edge cases, type invariants, thread safety, UI state, calibration, scenario management, MCP credential hygiene, and integration scenarios. Pyright passes with zero errors on the `osmose/` and `ui/` trees.
+2510 tests across schema, config I/O, config-key validation, every engine process, parity regressions, numerical edge cases, type invariants, thread safety, UI state, calibration, scenario management, MCP credential hygiene, and integration scenarios. Pyright passes with zero errors on the `osmose/` and `ui/` trees.
 
 ## API sketch
 
@@ -222,6 +223,22 @@ config = reader.read("path/to/osm_all-parameters.csv")
 
 writer = OsmoseConfigWriter()
 writer.write(config, "path/to/output.csv")
+```
+
+### Config-key validation
+
+`EngineConfig.from_dict()` checks every key against an allowlist built from the `ParameterRegistry` plus an AST walk of `osmose/engine/config.py`. The allowlist knows all ~390 keys the engine or reader touches, including `{idx}`-patterned families (`species.linf.sp{idx}`, `movement.file.map{idx}`, …). Default is silent; opt in with `validation.strict.enabled`:
+
+| Mode | Behavior on unknowns |
+|---|---|
+| `off` (default) | Single INFO-level nudge (`"Config has N unknown keys; set validation.strict.enabled=warn for details."`) — zero output on clean configs. |
+| `warn` | One WARNING per unknown, with a `difflib` suggestion when the ratio passes 0.85. E.g. `species.liinf.sp0` → `"did you mean 'species.linf.sp{idx}'?"` |
+| `error` | Collect **all** unknowns, then raise a single `ValueError` listing them (not fail-fast). |
+
+```python
+cfg = reader.read("path/to/osm_all-parameters.csv")
+cfg["validation.strict.enabled"] = "warn"  # or "error"
+EngineConfig.from_dict(cfg)  # emits per-key warnings
 ```
 
 ### Results reader

@@ -23,7 +23,7 @@ osmose/          # Core library (usable without Shiny)
   engine/        # Python simulation engine (44 files, ~11.5k LOC)
     simulate.py  # Main simulation loop
     processes/   # Growth, predation, mortality, reproduction, movement, fishing
-  schema/        # Parameter definitions + registry (153 params)
+  schema/        # Parameter definitions + registry (221 params)
   config/        # Config reader/writer (OSMOSE .csv/.properties format)
   calibration/   # pymoo NSGA-II, GP surrogate, SALib sensitivity
   runner.py      # Async Java subprocess manager
@@ -110,6 +110,7 @@ When writing bash commands, strictly follow these rules to avoid triggering secu
 - SALib uses `SALib.sample.sobol` (not deprecated `saltelli`)
 - `import ui.charts` in page modules shadows `from shiny import ui` — register templates in `app.py` only
 - `navset_pill_list` doesn't accept bare strings as section headers — use `ui.nav_control()` wrapper
+- `EngineConfig.from_dict` validates keys against `osmose/engine/config_validation.py`'s allowlist (schema + AST walk of `config.py` + `_SUPPLEMENTARY_ALLOWLIST` for reader-injected metadata / legacy aliases). When adding a new config key the engine reads, the AST walker should capture it automatically; if it doesn't (e.g., key built from a caller-arg `key_pattern`), add to `_SUPPLEMENTARY_ALLOWLIST` rather than extending the walker. Integration test: `tests/test_engine_config_validation.py::test_from_dict_warn_mode_clean_on_example_configs[*]` must stay warning-free.
 
 ## Design Docs
 - Design: `docs/plans/2026-02-21-osmose-python-port-design.md`
