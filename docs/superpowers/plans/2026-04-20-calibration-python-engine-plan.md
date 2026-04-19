@@ -1373,69 +1373,11 @@ def __init__(
 ):
 ```
 
-**Make two minimal edits:**
+**Make the change as follows.** Move `work_dir` from position 5 to position 4 (so it stays required positional — since `jar_path` is becoming optional, it cannot sit in front of a required `work_dir`). Move every Java-specific kwarg including `jar_path` behind a `*` keyword-only marker. Add `use_java_engine` as a new keyword-only arg at the end.
 
-1. Change `jar_path: Path` to `jar_path: Path | None = None` (positional-or-keyword, now optional).
-2. Add one new keyword argument `use_java_engine: bool = False` at the end (after `cleanup_after_eval`).
+This is a **breaking positional-argument change** with the clearest semantics — callers passing all kwargs continue to work; callers that passed `jar_path` positionally (position 4) must now pass it as `jar_path=...` and add `use_java_engine=True` to preserve Java-subprocess behavior. Document explicitly in the Task 5 CHANGELOG.
 
-Resulting signature (every existing parameter in its existing position, two minimal changes):
-
-```python
-def __init__(
-    self,
-    free_params: list[FreeParameter],
-    objective_fns: list[Callable],
-    base_config_path: Path,
-    jar_path: Path | None = None,       # CHANGED: was required; now optional
-    work_dir: Path = Path("."),          # work_dir needs a default too since jar_path got one — OR keep work_dir required and insert use_java_engine before it. See below.
-    java_cmd: str = "java",
-    n_parallel: int = 1,
-    enable_cache: bool = False,
-    cache_dir: Path | None = None,
-    registry: "ParameterRegistry | None" = None,
-    subprocess_timeout: int = 3600,
-    cleanup_after_eval: bool = False,
-    use_java_engine: bool = False,       # NEW
-):
-```
-
-**Important Python gotcha:** Because Python forbids a required positional parameter after one with a default, changing `jar_path` to optional forces `work_dir` to also become optional OR requires a structural refactor. Two acceptable resolutions:
-
-**Option A (minimum-change, gives work_dir a sensible default):**
-```python
-    jar_path: Path | None = None,
-    work_dir: Path | None = None,     # default to tempfile.mkdtemp()-style behavior if None
-    ...
-```
-Then in the body: `self.work_dir = work_dir if work_dir is not None else Path(tempfile.mkdtemp(prefix="osmose_cal_"))`.
-
-**Option B (cleanest — insert keyword-only marker):** move `work_dir` before `jar_path` so it stays required positional, and put `jar_path` behind a `*` keyword-only marker:
-
-```python
-def __init__(
-    self,
-    free_params: list[FreeParameter],
-    objective_fns: list[Callable],
-    base_config_path: Path,
-    work_dir: Path,                   # was position 5, now position 4; still required
-    *,                                # keyword-only from here
-    jar_path: Path | None = None,
-    java_cmd: str = "java",
-    n_parallel: int = 1,
-    enable_cache: bool = False,
-    cache_dir: Path | None = None,
-    registry: "ParameterRegistry | None" = None,
-    subprocess_timeout: int = 3600,
-    cleanup_after_eval: bool = False,
-    use_java_engine: bool = False,
-):
-```
-
-**Option B is the breaking change with the clearest semantics** — `work_dir` moves from position 5 to position 4 (preserving positional-caller compatibility for the first four args: free_params, objective_fns, base_config_path, work_dir); every Java-specific kwarg including `jar_path` becomes keyword-only.
-
-Callers that pass all arguments as keywords continue to work. Callers that passed `jar_path` positionally (position 4) now need to pass it as `jar_path=...` — and add `use_java_engine=True` to preserve the Java-subprocess path. **Document this explicitly in the Task 5 CHANGELOG.**
-
-**Choose Option B.** Implement:
+Implement:
 
 ```python
 def __init__(
