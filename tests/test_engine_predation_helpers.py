@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from unittest import mock
-
 import numpy as np
 import pytest
 
@@ -15,7 +13,7 @@ from osmose.engine.processes.predation import (
     disable_diet_tracking,
     enable_diet_tracking,
     get_diet_matrix,
-    predation,
+    predation_for_cell,
 )
 from osmose.engine.simulate import SimulationContext
 from osmose.engine.state import SchoolState
@@ -119,7 +117,7 @@ class TestDietTrackingPythonPath:
         # 2 schools (school 0 = sp1 predator, school 1 = sp0 prey)
         enable_diet_tracking(n_schools=2, n_species=2, ctx=ctx)
         rng = np.random.default_rng(0)
-        predation(state, cfg, rng, n_subdt=10, grid_ny=10, grid_nx=10, ctx=ctx)
+        predation_for_cell(np.array([0, 1], dtype=np.int32), state, cfg, rng, n_subdt=10, ctx=ctx)
 
         diet = get_diet_matrix(ctx=ctx)
         assert diet is not None
@@ -133,7 +131,7 @@ class TestDietTrackingPythonPath:
         state, cfg = _make_pred_prey_state()
         ctx = self.ctx
         rng = np.random.default_rng(0)
-        predation(state, cfg, rng, n_subdt=10, grid_ny=10, grid_nx=10, ctx=ctx)
+        predation_for_cell(np.array([0, 1], dtype=np.int32), state, cfg, rng, n_subdt=10, ctx=ctx)
         assert get_diet_matrix(ctx=ctx) is None
 
 
@@ -156,7 +154,7 @@ class TestDietTrackingNumbaPath:
         ctx = self.ctx
         enable_diet_tracking(n_schools=2, n_species=2, ctx=ctx)
         rng = np.random.default_rng(0)
-        predation(state, cfg, rng, n_subdt=10, grid_ny=10, grid_nx=10, ctx=ctx)
+        predation_for_cell(np.array([0, 1], dtype=np.int32), state, cfg, rng, n_subdt=10, ctx=ctx)
 
         diet = get_diet_matrix(ctx=ctx)
         assert diet is not None
@@ -169,7 +167,7 @@ class TestDietTrackingNumbaPath:
         ctx = self.ctx
         enable_diet_tracking(n_schools=2, n_species=2, ctx=ctx)
         rng = np.random.default_rng(0)
-        predation(state, cfg, rng, n_subdt=10, grid_ny=10, grid_nx=10, ctx=ctx)
+        predation_for_cell(np.array([0, 1], dtype=np.int32), state, cfg, rng, n_subdt=10, ctx=ctx)
 
         diet = get_diet_matrix(ctx=ctx)
         assert diet is not None
@@ -186,23 +184,23 @@ class TestNumbaVsPythonParity:
     """Verify that Numba and Python predation paths produce identical outputs."""
 
     def _run_predation(self, use_numba: bool, seed: int = 42) -> tuple:
-        """Run predation with Numba toggled on/off; return (new_state, diet_matrix)."""
+        """Run predation with Numba toggled on/off; return (state, diet_matrix)."""
         state, cfg = _make_pred_prey_state()
         ctx = SimulationContext()
         enable_diet_tracking(n_schools=2, n_species=2, ctx=ctx)
         rng = np.random.default_rng(seed)
 
-        with mock.patch.object(predation_module, "_HAS_NUMBA", use_numba):
-            new_state = predation(state, cfg, rng, n_subdt=10, grid_ny=10, grid_nx=10, ctx=ctx)
+        predation_for_cell(
+            np.array([0, 1], dtype=np.int32), state, cfg, rng, n_subdt=10, use_numba=use_numba, ctx=ctx
+        )
 
         diet = get_diet_matrix(ctx=ctx)
         disable_diet_tracking(ctx=ctx)
-        return new_state, diet
+        return state, diet
 
     def test_abundance_identical(self):
         """Both paths should yield identical post-predation abundance."""
-        if not predation_module._HAS_NUMBA:
-            pytest.skip("Numba not installed; parity test requires both paths")
+        pytest.importorskip("numba")
 
         state_numba, diet_numba = self._run_predation(use_numba=True, seed=42)
         state_python, diet_python = self._run_predation(use_numba=False, seed=42)
@@ -216,8 +214,7 @@ class TestNumbaVsPythonParity:
 
     def test_pred_success_rate_identical(self):
         """Both paths should yield identical predator success rates."""
-        if not predation_module._HAS_NUMBA:
-            pytest.skip("Numba not installed; parity test requires both paths")
+        pytest.importorskip("numba")
 
         state_numba, _ = self._run_predation(use_numba=True, seed=42)
         state_python, _ = self._run_predation(use_numba=False, seed=42)
@@ -231,8 +228,7 @@ class TestNumbaVsPythonParity:
 
     def test_diet_matrix_identical(self):
         """Both paths should produce identical diet matrices when tracking is enabled."""
-        if not predation_module._HAS_NUMBA:
-            pytest.skip("Numba not installed; parity test requires both paths")
+        pytest.importorskip("numba")
 
         _, diet_numba = self._run_predation(use_numba=True, seed=42)
         _, diet_python = self._run_predation(use_numba=False, seed=42)
