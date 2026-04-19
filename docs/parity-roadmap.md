@@ -1,12 +1,12 @@
 # OSMOSE Python Engine — Java Parity Roadmap
 
-> **Date:** 2026-03-22 (updated)
-> **Current status:** Bay of Biscay **8/8 PASS**, EEC **14/14 PASS** within 1 OoM
-> **Goal:** Close all functional gaps between Python and Java OSMOSE engines
+> **Date:** 2026-04-19 (STATUS-COMPLETE across all phases)
+> **Current status:** Bay of Biscay **8/8 PASS**, EEC **14/14 PASS** within 1 OoM.
+> **Goal:** Close all functional gaps between Python and Java OSMOSE engines — **reached**.
 >
-> **Milestone achieved:** Full parity on both validation configs. The critical
-> predation architecture fix (unified school+resource proportional distribution)
-> closed the remaining 2 species gaps (redMullet -2.0 OoM → +0.32, sardine -1.4 OoM → +0.05).
+> **Parity complete.** All seven phases are SHIPPED. 2510 tests passing on master; Ev-OSMOSE bioenergetic + genetics + economics also complete. Python engine is faster than Java on every benchmarked configuration. The detailed phase-by-phase ledger below is retained for provenance; no roadmap-scoped work is open.
+>
+> **Milestone history:** The critical Phase 1 predation architecture fix (unified school+resource proportional distribution) closed the EEC parity — redMullet went from −2.0 OoM to +0.32, sardine from −1.4 to +0.05. Phases 2–4 landed incrementally during the 5/6/7 tracks and were retro-verified as SHIPPED during the 2026-04-19 audit. Phase 5 (SP-4 output system) shipped in v0.9.0; Phase 6 (Ev-OSMOSE) in v0.9.1; Phase 7 closed across v0.9.2 (7.3) and v0.9.3 (7.1).
 
 ---
 
@@ -83,147 +83,66 @@ forage fish and a remaining-appetite miscalculation that allowed ~45% over-eatin
 
 ---
 
-## Phase 2: Fishing System Completion (MEDIUM impact)
+## Phase 2: Fishing System Completion — STATUS-COMPLETE (2026-04-19)
 
-The v4 fisheries system is partially implemented. These additions make it complete for EEC and similar configs.
+All six items shipped incrementally during the Phase 5/6/7 tracks. The v4 fisheries system is complete; `osmose/engine/processes/fishing.py:4` summarizes: "Supports seasonality, time-varying rates, sigmoid selectivity, MPA, and discards." 270 tests pass across `tests/test_engine_selectivity.py`, `tests/test_engine_timeseries.py`, `tests/test_phase2_3_fixes.py`, `tests/test_overlay_display.py` (MPA coverage), and the `fish`/`mpa`/`discard`/`selectivity` test families.
 
-### 2.1 Fishery seasonality
-**Impact:** MEDIUM — fishing rate is flat instead of seasonal
-**Gap:** `fisheries.seasonality.file.fsh{i}` provides intra-annual seasonality multiplier.
-**Config key:** `fisheries.seasonality.file.fsh{i}`
-**Fix:** Load seasonality CSV, normalize to sum=1 per year, multiply fishing rate by `seasonality[step_in_year]`.
-**Files:** `config.py`, `fishing.py` or `mortality.py`
-**Tests:** 2 new tests
-**Effort:** 30 min
+### 2.1 Fishery seasonality — SHIPPED
+`EngineConfig.fishing_seasonality: NDArray[np.float64] | None` and `fishing_catches_season` loaded via `_load_fishing_seasonality` in `config.py` (handles v3 `sp{i}` files, v4 `fsh{i}` files, and inline `fisheries.seasonality.fsh{i}` values). Applied at `fishing.py:66-70` as `season_weight = config.fishing_seasonality[sp, step_in_year]`.
 
-### 2.2 Fishery spatial maps
-**Impact:** MEDIUM — fisheries apply to all cells instead of their fishing grounds
-**Gap:** `fisheries.movement.file.map{N}.fsh{i}` defines spatial extent per fishery.
-**Config key:** `fisheries.movement.file.map{N}.fsh{i}`
-**Fix:** Load fishery spatial maps, multiply rate by cell value.
-**Files:** `config.py`, `mortality.py`
-**Tests:** 2 new tests
-**Effort:** 45 min
+### 2.2 Fishery spatial maps — SHIPPED
+`EngineConfig.fishing_spatial_maps: list` parsed at `config.py:1417-1436` from `fisheries.movement.file.map0` (shared map) with per-species overrides. Applied in fishing mortality to scale rate per cell.
 
-### 2.3 v3 fishing scenarios (beyond RATE_ANNUAL)
-**Impact:** LOW (EEC uses v4) — needed for older configs
-**Gap:** 7 of 8 v3 scenarios absent (by-year, by-dt-by-age, by-dt-by-size, catches).
-**Config keys:** `mortality.fishing.rate.byYear.file.sp{i}`, etc.
-**Fix:** Load CSV time series for each scenario type.
-**Files:** `fishing.py`, `config.py`
-**Tests:** 4 new tests
-**Effort:** 1.5 hours
+### 2.3 v3 fishing scenarios — SHIPPED
+All four beyond-RATE_ANNUAL variants parsed at `config.py:1035-1041` and stored on `EngineConfig`: `fishing_rate_by_year`, `fishing_rate_by_dt_by_class`, `fishing_catches_by_year`, `fishing_catches_by_dt_by_class`. Runtime at `_catch_based_fishing(fishing.py:177)` for catch-based scenarios.
 
-### 2.4 Fishing selectivity types (beyond knife-edge)
-**Impact:** LOW-MEDIUM — sigmoidal selectivity for v4 fisheries
-**Gap:** Java supports type 0 (knife-edge age), type 1 (sigmoidal size), type 2 (knife-edge size).
-**Config keys:** `fisheries.selectivity.type.fsh{i}`, `fisheries.selectivity.slope.fsh{i}`
-**Fix:** Add sigmoid selectivity function.
-**Files:** `fishing.py` or `mortality.py`
-**Tests:** 2 new tests
-**Effort:** 20 min
+### 2.4 Fishing selectivity types (beyond knife-edge) — SHIPPED
+`fishing.py:77-118` handles five types: 0 (knife-edge age), 1 (sigmoid size via l50/l75 OR l50/slope), 2 (Gaussian), 3 (log-normal), and -1 (default 1.0). Tests in `tests/test_engine_selectivity.py` cover the sigmoid, Gaussian, log-normal, and knife-edge families.
 
-### 2.5 MPA (Marine Protected Areas)
-**Impact:** LOW — only configs with MPAs
-**Gap:** Spatial fishing reduction in protected cells.
-**Config keys:** `mpa.file.mpa{i}`, `mpa.start.step.mpa{i}`, `mpa.end.step.mpa{i}`, `mpa.percentage.mpa{i}`
-**Fix:** Load MPA grid, apply percentage reduction to fishing rate in MPA cells.
-**Files:** `config.py`, `mortality.py`
-**Tests:** 3 new tests
-**Effort:** 45 min
+### 2.5 MPA (Marine Protected Areas) — SHIPPED
+`EngineConfig.mpa_zones: list[MPAZone] | None` with per-zone grid, start/end step, and percentage. Applied at `fishing.py:143-152` as `mpa_factor[in_mpa] *= 1.0 - mpa.percentage`. UI MPA overlay shipped too — see `tests/test_overlay_display.py::test_mpa_*`.
 
-### 2.6 Fishery discards
-**Impact:** LOW — discard tracking for output/economy
-**Gap:** `fisheries.discards.file` matrix defines discard rates per species per fishery.
-**Config key:** `fisheries.discards.file`
-**Fix:** Load discard matrix, split fishing mortality into FISHING + DISCARDS causes.
-**Files:** `mortality.py`, `config.py`
-**Tests:** 2 new tests
-**Effort:** 30 min
+### 2.6 Fishery discards — SHIPPED
+`EngineConfig.fishing_discard_rate: NDArray[np.float64] | None` loaded from `fisheries.discards.file` at `config.py:853`. Applied at `fishing.py:167` and `fishing.py:244` with `new_n_dead[:, MortalityCause.DISCARDS] += n_discarded`. `MortalityCause.DISCARDS` bucket added to the mortality enum.
 
 ---
 
-## Phase 3: Reproduction & Mortality Refinement (MEDIUM impact)
+## Phase 3: Reproduction & Mortality Refinement — STATUS-COMPLETE (2026-04-19)
 
-### 3.1 Spawning season normalization
-**Impact:** MEDIUM — season values may not sum to 1 without normalization
-**Gap:** `reproduction.normalisation.enabled` flag triggers per-year normalization.
-**Config key:** `reproduction.normalisation.enabled`
-**Fix:** In reproduction, normalize season array per year if flag is set.
-**Files:** `reproduction.py`, `config.py`
-**Tests:** 2 new tests
-**Effort:** 20 min
+All seven items shipped. Coverage under `tests/test_engine_phase3.py` (10 tests).
 
-### 3.2 Multi-year spawning season time series
-**Impact:** MEDIUM — interannual variability lost
-**Gap:** Java handles season CSV with > n_dt_per_year rows as interannual time series.
-**Fix:** In `_load_spawning_seasons`, detect multi-year CSVs and index by absolute step.
-**Files:** `config.py`
-**Tests:** 1 new test
-**Effort:** 20 min
+### 3.1 Spawning season normalization — SHIPPED
+`reproduction.normalisation.enabled` flag parsed at `config.py:883`. `_load_spawning_seasons` (at `config.py:874`) normalizes each `n_dt_per_year`-sized chunk to sum=1 per year when enabled. Tests: `test_normalized_season_sums_to_one`, `test_unnormalized_season_preserves_raw_values`.
 
-### 3.3 Time-varying additional mortality
-**Impact:** MEDIUM — constant rate instead of time/age/size varying
-**Gap:** 3 scenarios: BY_DT, BY_DT_BY_AGE, BY_DT_BY_SIZE.
-**Config keys:** `mortality.additional.rate.bytDt.file.sp{i}`, etc.
-**Fix:** Load CSV, index by timestep and age/size class.
-**Files:** `natural.py`, `config.py`
-**Tests:** 3 new tests
-**Effort:** 45 min
+### 3.2 Multi-year spawning season time series — SHIPPED
+`_load_spawning_seasons` (at `config.py:874-920`) detects CSV files with `len(values) >= n_dt_per_year` and stores them as `(n_species, n_dt_per_year * n_years)` arrays; `reproduction.py:46-48` indexes by `season_idx = step % n_cols` — correctly handles single- or multi-year shapes.
 
-### 3.4 Spatial additional mortality
-**Impact:** MEDIUM — uniform rate instead of spatially varying
-**Gap:** `mortality.additional.spatial.distrib.file.sp{i}` grid map.
-**Config key:** `mortality.additional.spatial.distrib.file.sp{i}`
-**Fix:** Load spatial map, multiply rate by cell value.
-**Files:** `natural.py`, `config.py`, `mortality.py`
-**Tests:** 2 new tests
-**Effort:** 30 min
+### 3.3 Time-varying additional mortality — SHIPPED
+`EngineConfig.additional_mortality_by_dt: list[NDArray[np.float64] | None] | None` and `additional_mortality_by_dt_by_class: list` carry BY_DT, BY_DT_BY_AGE, and BY_DT_BY_SIZE variants. Parsed at `config.py:989` (`for variant in ["byDt.byAge", "byDt.bySize"]`).
 
-### 3.5 Egg placement timing
-**Impact:** LOW-MEDIUM — eggs placed immediately vs deferred to next step movement
-**Gap:** Python places eggs at random cells immediately. Java creates unlocated eggs that get placed by movement on the next step.
-**Fix:** Create eggs with `cell_x = cell_y = -1` (unlocated). Movement will place them.
-**Files:** `reproduction.py`
-**Tests:** 1 new test
-**Effort:** 10 min
+### 3.4 Spatial additional mortality — SHIPPED
+`EngineConfig.additional_mortality_spatial: list[NDArray[np.float64] | None] | None` parsed at `config.py:963-968` from `mortality.additional.spatial.distrib.file.sp{i}`.
 
-### 3.6 nEgg < nSchool edge case
-**Impact:** LOW — Python creates many tiny schools, Java creates one
-**Fix:** `if n_eggs < n_new: n_new = 1`
-**Files:** `reproduction.py`
-**Tests:** 1 new test
-**Effort:** 5 min
+### 3.5 Egg placement timing — SHIPPED
+`reproduction.py:92-95` creates eggs with `cell_x = cell_y = -1` (unlocated); `movement.py:238-246` places them on the next step via `random_patches` fallback when `new_cx[i] < 0`.
 
-### 3.7 `population.seeding.year.max` config key
-**Impact:** LOW — Python uses max lifespan as default (matches Java default)
-**Config key:** `population.seeding.year.max`
-**Fix:** Parse and use in seeding condition.
-**Files:** `config.py`, `reproduction.py`
-**Tests:** 1 new test
-**Effort:** 10 min
+### 3.6 nEgg < nSchool edge case — SHIPPED
+`reproduction.py:73-74` handles this exactly: `if n_eggs[sp] < n_new: n_new = 1`. One school of small eggs instead of many tiny schools.
+
+### 3.7 `population.seeding.year.max` config key — SHIPPED
+Parsed at `config.py:480` into `EngineConfig.seeding_max_step: NDArray[np.int32]`. Tested by `test_seeding_stops_at_configured_year`.
 
 ---
 
-## Phase 4: Movement Refinement (MEDIUM impact)
+## Phase 4: Movement Refinement — STATUS-COMPLETE (2026-04-19)
 
-### 4.1 Random distribution patch constraint
-**Impact:** MEDIUM — species with `ncell` config spread across full grid instead of connected patch
-**Gap:** Java's `RandomDistribution.createRandomMap()` builds a BFS-connected patch.
-**Config key:** `movement.distribution.ncell.sp{i}`
-**Fix:** Implement BFS patch creation for `random` movement method.
-**Files:** `movement.py`
-**Tests:** 3 new tests
-**Effort:** 45 min
+Both items shipped. Coverage under `tests/test_engine_phase4.py` (4 tests) and `tests/test_engine_rng_consumers.py`.
 
-### 4.2 Deterministic random seeds
-**Impact:** LOW — affects reproducibility only
-**Gap:** `movement.randomseed.fixed` and `stochastic.mortality.randomseed.fixed`
-**Config keys:** `movement.randomseed.fixed`, `stochastic.mortality.randomseed.fixed`
-**Fix:** Create per-species RNG instances with deterministic seeds when enabled.
-**Files:** `movement.py`, `mortality.py`
-**Tests:** 2 new tests
-**Effort:** 30 min
+### 4.1 Random distribution patch constraint — SHIPPED
+`movement.py:106-152` implements `build_random_patches` — BFS from a random seed cell, collects `ncell` connected ocean cells per species. `EngineConfig.random_distribution_ncell: NDArray[np.int32] | None` at `config.py:1196-1197`. Applied per-species at `movement.py:238-246`.
+
+### 4.2 Deterministic random seeds — SHIPPED
+`movement.randomseed.fixed` → `EngineConfig.movement_seed_fixed: bool`; `stochastic.mortality.randomseed.fixed` → `mortality_seed_fixed: bool` (config.py:1629-1631). Per-species `species_rngs` wired through `movement.py:204`, `mortality.py:1672`, `predation.py:539`. Tested by `test_movement_seed_fixed_false_ignores_species_rngs` and the broader `test_engine_rng_consumers.py` suite.
 
 ---
 
@@ -328,30 +247,31 @@ Java class-name → dispatch-token mapping at `osmose/engine/config.py:32-36` (`
 
 ---
 
-## Estimated Timeline
+## Status Summary — ALL PHASES STATUS-COMPLETE
 
-| Phase | Items | Estimated Effort | Expected Impact |
-|-------|-------|-----------------|-----------------|
-| **Phase 1** | 7 fixes + predation architecture | DONE ✓ | EEC 14/14 PASS |
-| **Phase 2** | 6 features | 4 hours | Complete fishing system |
-| **Phase 3** | 7 fixes | 2.5 hours | Reproduction/mortality refinement |
-| **Phase 4** | 2 features | 1.5 hours | Movement refinement |
-| **Phase 5** | 7 features | 4 hours | Full output system |
-| **Phase 6** | 5 features | 30 hours | Ev-OSMOSE support |
-| **Phase 7** | 3 tasks | 5 hours | Code quality |
-| **Total (excl. Phase 6)** | | **~20 hours** | **Full standard OSMOSE parity** |
+| Phase | Items | Status | Shipped |
+|-------|-------|--------|---------|
+| **Phase 1** | 7 fixes + predation architecture | DONE ✓ | pre-v0.9.0 |
+| **Phase 2** | 6 fisheries features | DONE ✓ | incremental through v0.9.2 |
+| **Phase 3** | 7 reproduction + mortality fixes | DONE ✓ | pre-v0.9.0 |
+| **Phase 4** | 2 movement features | DONE ✓ | pre-v0.9.0 |
+| **Phase 5** | 7 output features | DONE ✓ | v0.9.0 (SP-4) |
+| **Phase 6** | 5 Ev-OSMOSE features | DONE ✓ | v0.9.1 |
+| **Phase 7** | 3 code-quality tasks | DONE ✓ | 7.2 pre-v0.9.0, 7.3 v0.9.2, 7.1 v0.9.3 |
+
+**Full standard OSMOSE parity reached.** Ev-OSMOSE (bioenergetic + genetics + economics) also complete.
+
+Evidence: 2510 tests passing. EEC 14/14 parity, Bay of Biscay 8/8. Python faster than Java on every benchmarked config.
 
 ---
 
-## Priority Order for Maximum Parity Improvement
+## What's next (post-parity)
 
-1. **1.1 Maturity age check** — likely biggest single EEC improvement
-2. **1.2 Spatial fishing distribution** — fishing applied to wrong cells
-3. **1.3 `species.lmax` cap** — growth overshoots
-4. **3.5 Egg placement timing** — 5-minute fix with spatial impact
-5. **1.4 Resource multiplier/offset** — biomass scaling
-6. **1.5 Time-varying resource accessibility** — seasonal prey availability
-7. **2.1 Fishery seasonality** — temporal fishing pattern
-8. **1.7 Trophic level computation** — needed for diet outputs
-9. **2.2 Fishery spatial maps** — fishing grounds
-10. **3.1 Spawning season normalization** — reproduction timing
+The parity roadmap is exhausted against standard OSMOSE + Ev-OSMOSE. Future work falls outside this document. Possible directions (no commitment implied):
+- **Performance:** further Numba tuning, parallel-simulation throughput, larger-grid memory optimizations.
+- **Usability:** UI polish, calibration workflows, scenario comparison tooling.
+- **Science extensions:** features not in upstream OSMOSE — new mortality causes, alternative growth models, richer genetics.
+- **Test infrastructure:** property-based testing, mutation testing, CI performance gates.
+- **Java-side contributions:** upstream patches matching `docs/osmose-master-java-fixes.patch`.
+
+These are brainstorming seeds, not planned work. A concrete next direction needs its own spec.
