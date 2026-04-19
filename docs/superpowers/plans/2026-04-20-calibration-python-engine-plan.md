@@ -699,6 +699,10 @@ def from_outputs(
     obj.prefix = prefix
     obj.strict = True
     obj._csv_cache = _build_dataframes_from_outputs(outputs, engine_config, grid)
+    # __init__ initializes _nc_cache = {} for NetCDF caching; since we're
+    # bypassing __init__ via __new__, set it explicitly. close_cache()
+    # iterates _nc_cache and would raise AttributeError otherwise.
+    obj._nc_cache = {}
     obj._in_memory = True
     return obj
 ```
@@ -1347,40 +1351,147 @@ git commit -F /tmp/task3.msg
 
 ---
 
-- [ ] **Step 1: Update `OsmoseCalibrationProblem.__init__` signature**
+- [ ] **Step 1: Update `OsmoseCalibrationProblem.__init__` signature — additive change only**
 
-Open `osmose/calibration/problem.py`. Find `class OsmoseCalibrationProblem` and its `__init__`.
-
-Change the signature from `jar_path: Path` (required keyword) to:
+Open `osmose/calibration/problem.py`. The current `__init__` at `:76-119` has this signature (do NOT reorder these params — that would silently corrupt existing positional callers):
 
 ```python
 def __init__(
     self,
     free_params: list[FreeParameter],
+    objective_fns: list[Callable],
     base_config_path: Path,
-    objective_fns: list[Callable[[OsmoseResults], float]],
-    registry: ParameterRegistry,
+    jar_path: Path,
     work_dir: Path,
-    *,
-    use_java_engine: bool = False,
+    java_cmd: str = "java",
+    n_parallel: int = 1,
+    enable_cache: bool = False,
+    cache_dir: Path | None = None,
+    registry: "ParameterRegistry | None" = None,
+    subprocess_timeout: int = 3600,
+    cleanup_after_eval: bool = False,
+):
+```
+
+**Make two minimal edits:**
+
+1. Change `jar_path: Path` to `jar_path: Path | None = None` (positional-or-keyword, now optional).
+2. Add one new keyword argument `use_java_engine: bool = False` at the end (after `cleanup_after_eval`).
+
+Resulting signature (every existing parameter in its existing position, two minimal changes):
+
+```python
+def __init__(
+    self,
+    free_params: list[FreeParameter],
+    objective_fns: list[Callable],
+    base_config_path: Path,
+    jar_path: Path | None = None,       # CHANGED: was required; now optional
+    work_dir: Path = Path("."),          # work_dir needs a default too since jar_path got one — OR keep work_dir required and insert use_java_engine before it. See below.
+    java_cmd: str = "java",
+    n_parallel: int = 1,
+    enable_cache: bool = False,
+    cache_dir: Path | None = None,
+    registry: "ParameterRegistry | None" = None,
+    subprocess_timeout: int = 3600,
+    cleanup_after_eval: bool = False,
+    use_java_engine: bool = False,       # NEW
+):
+```
+
+**Important Python gotcha:** Because Python forbids a required positional parameter after one with a default, changing `jar_path` to optional forces `work_dir` to also become optional OR requires a structural refactor. Two acceptable resolutions:
+
+**Option A (minimum-change, gives work_dir a sensible default):**
+```python
+    jar_path: Path | None = None,
+    work_dir: Path | None = None,     # default to tempfile.mkdtemp()-style behavior if None
+    ...
+```
+Then in the body: `self.work_dir = work_dir if work_dir is not None else Path(tempfile.mkdtemp(prefix="osmose_cal_"))`.
+
+**Option B (cleanest — insert keyword-only marker):** move `work_dir` before `jar_path` so it stays required positional, and put `jar_path` behind a `*` keyword-only marker:
+
+```python
+def __init__(
+    self,
+    free_params: list[FreeParameter],
+    objective_fns: list[Callable],
+    base_config_path: Path,
+    work_dir: Path,                   # was position 5, now position 4; still required
+    *,                                # keyword-only from here
     jar_path: Path | None = None,
     java_cmd: str = "java",
     n_parallel: int = 1,
+    enable_cache: bool = False,
+    cache_dir: Path | None = None,
+    registry: "ParameterRegistry | None" = None,
     subprocess_timeout: int = 3600,
-    enable_cache: bool = True,
-    cleanup_after_eval: bool = True,
-) -> None:
-    """..."""
-    if use_java_engine and jar_path is None:
-        raise ValueError("use_java_engine=True requires jar_path")
-    self.use_java_engine = use_java_engine
-    self.jar_path = jar_path
-    # ... rest of __init__ unchanged ...
+    cleanup_after_eval: bool = False,
+    use_java_engine: bool = False,
+):
 ```
 
-Keep everything else — `self.java_cmd`, `self.base_config_path`, `self.work_dir`, validation regex imports, cache setup.
+**Option B is the breaking change with the clearest semantics** — `work_dir` moves from position 5 to position 4 (preserving positional-caller compatibility for the first four args: free_params, objective_fns, base_config_path, work_dir); every Java-specific kwarg including `jar_path` becomes keyword-only.
 
-**Callers that currently pass `jar_path=p` without `use_java_engine=True` will now use the Python engine.** This is the intentional breaking change. Document in Task 5's CHANGELOG entry.
+Callers that pass all arguments as keywords continue to work. Callers that passed `jar_path` positionally (position 4) now need to pass it as `jar_path=...` — and add `use_java_engine=True` to preserve the Java-subprocess path. **Document this explicitly in the Task 5 CHANGELOG.**
+
+**Choose Option B.** Implement:
+
+```python
+def __init__(
+    self,
+    free_params: list[FreeParameter],
+    objective_fns: list[Callable],
+    base_config_path: Path,
+    work_dir: Path,
+    *,
+    jar_path: Path | None = None,
+    java_cmd: str = "java",
+    n_parallel: int = 1,
+    enable_cache: bool = False,
+    cache_dir: Path | None = None,
+    registry: "ParameterRegistry | None" = None,
+    subprocess_timeout: int = 3600,
+    cleanup_after_eval: bool = False,
+    use_java_engine: bool = False,
+):
+    self.free_params = free_params
+    self.objective_fns = objective_fns
+    self.base_config_path = base_config_path
+    self.jar_path = jar_path
+    self.work_dir = work_dir
+    self.java_cmd = java_cmd
+    self.n_parallel = max(1, n_parallel)
+    self._enable_cache = enable_cache
+    self._cache_dir = cache_dir or (self.work_dir / ".cache")
+    self._registry = registry
+    self._cache_hits = 0
+    self._cache_misses = 0
+    self.subprocess_timeout = int(subprocess_timeout)
+    self.cleanup_after_eval = bool(cleanup_after_eval)
+    self.use_java_engine = use_java_engine
+
+    if use_java_engine and jar_path is None:
+        raise ValueError("use_java_engine=True requires jar_path")
+
+    # Pre-compute base config hash for cache keys
+    self._base_config_hash = ""
+    if enable_cache and base_config_path.exists():
+        self._base_config_hash = hashlib.sha256(base_config_path.read_bytes()).hexdigest()[:16]
+
+    xl = np.array([fp.lower_bound for fp in free_params])
+    xu = np.array([fp.upper_bound for fp in free_params])
+
+    super().__init__(
+        n_var=len(free_params),
+        n_obj=len(objective_fns),
+        n_constr=0,
+        xl=xl,
+        xu=xu,
+    )
+```
+
+All existing attribute assignments preserved (`self.free_params`, `self.objective_fns`, `self.base_config_path`, `self.jar_path`, `self.work_dir`, `self.java_cmd`, `self.n_parallel`, `self._enable_cache`, `self._cache_dir`, `self._registry`, `self._cache_hits`, `self._cache_misses`, `self.subprocess_timeout`, `self.cleanup_after_eval`, `self._base_config_hash`). One new attribute: `self.use_java_engine`.
 
 ---
 
@@ -1446,6 +1557,13 @@ def _run_single(self, overrides: dict[str, str], run_id: int) -> list[float]:
             except OSError:
                 pass
         self._cache_misses += 1
+
+    # Cleanup Java subprocess artefacts AFTER objectives are computed
+    # (only runs for the Java path; the Python path doesn't create
+    # run_dir). Mirrors the pre-port placement — cleanup was always
+    # the last step before returning.
+    if self.use_java_engine and self.cleanup_after_eval:
+        self.cleanup_run(run_id)
 
     return obj_values
 ```
@@ -1531,12 +1649,13 @@ def _run_java_subprocess(
         return None
 
     from osmose.results import OsmoseResults
-    results = OsmoseResults(output_dir, strict=False)
+    return OsmoseResults(output_dir, strict=False)
 
-    if self.cleanup_after_eval:
-        self.cleanup_run(run_id)
-
-    return results
+    # NOTE: cleanup_run(run_id) is NOT called here — _run_single calls
+    # it after objective functions have consumed the results. Moving
+    # cleanup into this helper would delete run_dir BEFORE objectives
+    # are computed, breaking any objective that re-reads a CSV not yet
+    # cached by OsmoseResults.
 ```
 
 ---
@@ -1580,7 +1699,7 @@ from unittest import mock
 import numpy as np
 import pytest
 
-from osmose.calibration.configure import FreeParameter, Transform
+from osmose.calibration import FreeParameter, Transform  # re-exported from .problem
 from osmose.calibration.problem import OsmoseCalibrationProblem
 from osmose.schema import build_registry
 
@@ -1808,7 +1927,7 @@ BALTIC_CONFIG = PROJECT_DIR / "data" / "baltic" / "baltic_all-parameters.csv"
 
 def _run_nsga2(use_java_engine: bool, jar_path: Path | None, n_gen: int, pop_size: int) -> float:
     """Run a small NSGA-II problem; return wall-clock seconds."""
-    from osmose.calibration.configure import FreeParameter, Transform
+    from osmose.calibration import FreeParameter, Transform  # re-exported from .problem
     from osmose.calibration.problem import OsmoseCalibrationProblem
     from osmose.schema import build_registry
     from pymoo.algorithms.moo.nsga2 import NSGA2
