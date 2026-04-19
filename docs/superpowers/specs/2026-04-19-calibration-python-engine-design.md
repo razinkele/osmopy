@@ -198,17 +198,16 @@ The dispatch design hooks at both primitives, not at `read_csv`.
 ```
 Cache schema:
   self._csv_cache: dict[str, pd.DataFrame]
-  Keys: output_type strings used by the build helpers — exactly the set
-        {"biomass", "abundance", "abundanceByAge", "abundanceBySize",
-         "biomassByAge", "biomassBySize", "biomassByTL",
-         "yield", "yieldByAge", "yieldBySize", "yieldN",
-         "mortalityRate", "dietMatrix", "meanSize", "meanTL",
-         "fisheryYield", ...} — one entry per output type the engine produces.
+  Keys: output_type strings used by the build helpers. The illustrative
+        subset includes "biomass", "abundance", "abundanceByAge",
+        "abundanceBySize", "biomassByAge", "biomassBySize", "biomassByTL",
+        "yield", "yieldByAge", "yieldBySize", "yieldN", "mortalityRate",
+        "dietMatrix", "meanSize", "meanTL", "fisheryYield".
   Values: wide-form DataFrames with a 'species' column — exactly the shape
           _read_species_output() caches today.
 ```
 
-The set of valid `output_type` keys is authoritative: it is the union of keys returned by all `_build_*_dataframes` helpers in `output.py`. A spec-level parity test asserts that `from_outputs()` populates every key that `write_outputs()` would write a file for.
+The **complete** set of valid `output_type` keys is the union of keys produced by the five `_build_*_dataframes` helpers the plan introduces (one per existing `_write_*_csv` helper: `_build_species_dataframes`, `_build_distribution_dataframes`, `_build_mortality_dataframes`, `_build_yield_dataframes`, `_build_bioen_dataframes`). The authoritative enumeration is a plan-time task: Task 1 of the implementation plan extracts each helper, and the exact key set is a byproduct of that extraction. The parity test (`test_from_outputs_populates_all_written_keys`) asserts `set(build_dataframes_from_outputs(outputs, config, grid).keys()) == set(keys_that_write_outputs_would_write(outputs, config, grid))` — same-simulation, the two code paths agree on which output types exist. This test is the single source of truth for the cache key set; any future output family added to `write_outputs` automatically extends the cache and the parity test enforces it.
 
 **Dispatch logic in the two primitives:**
 
