@@ -4,11 +4,35 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
-## [Unreleased]
+## [0.9.2] - 2026-04-19
 
-### Changed
+### Features
 
-- **config:** unknown-key validation at `EngineConfig.from_dict` (Phase 7.3). Silent by default — set `validation.strict.enabled=warn` (or `=error`) to catch typos like `species.liinf.sp0` with a difflib suggestion pointing at `species.linf.sp{idx}`. Allowlist is the union of the 220-field `ParameterRegistry`, AST-extracted literal keys from `osmose/engine/config.py`, and a 40-entry `_SUPPLEMENTARY_ALLOWLIST` of reader-injected metadata + legacy aliases (391 patterns total). Spec at `docs/superpowers/specs/2026-04-19-config-validation-design.md`; plan at `docs/superpowers/plans/2026-04-19-config-validation-plan.md`.
+- **config:** unknown-key validation at EngineConfig.from_dict (Phase 7.3) (327a20c)
+
+### Bug Fixes
+
+- **config:** spec-review polish — restore UnknownKey export + strip empty-key artefact (66b3dcd)
+
+### Documentation
+
+- update README + CLAUDE.md for Phase 7.3 config validation (3af9f9a)
+- CHANGELOG entry for Phase 7.3 config validation (f29c91d)
+- **plan:** iter-4/5/6 review fixes — warn-mode integration, glob helper, arithmetic cleanup (008a8bb)
+- **plan:** iter-3 Step 7 hint fixes (744ae1b)
+- **plan:** iter-2 fixes — drop unused functools import + rewrite stale path prose (5761a72)
+- **plan:** iter-1 review patches to config-validation plan (bad68cb)
+- **plan:** config-validation implementation plan (Phase 7.3) (33b0478)
+- **spec:** remove stale +13/d124de6 baseline paragraph (iter-2 fix) (557ee1b)
+- **spec:** iteration-1 review patches to config-validation design (1a0c996)
+- **spec:** self-review fixes to config-validation design (e8294ee)
+- **spec:** config validation design (Phase 7.3) (4d273e6)
+- **parity-roadmap:** Phase 7 honesty pass — 7.2 shipped, 7.1+7.3 scoped accurately (d124de6)
+- **parity-roadmap:** Phase 6 STATUS-COMPLETE (bioenergetic module) (ede19d3)
+
+### Other
+
+- **config:** align logging + canary loader with project conventions (d7181ca)
 
 ## [0.9.1] - 2026-04-19
 
@@ -19,6 +43,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 ### Chores
 
 - replace deprecated update_navs + gitignore ephemeral paths (b1e9328)
+
+### Other
+
+- v0.9.1 — Front 6 wire-up + post-release cleanups (7c68e7a)
 
 ### Tests
 
