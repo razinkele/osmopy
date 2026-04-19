@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **predation:** reconcile dual predation paths (Phase 7.1). Deleted the standalone batch `osmose.engine.processes.predation.predation()` orchestrator in favor of a single public `predation_for_cell(cell_indices, state, config, rng, n_subdt, *, use_numba, ctx, species_rngs, resources, cell_y, cell_x)` per-cell API. All 6 test files migrated (`test_engine_predation_helpers`, `test_engine_diet`, `test_engine_predation`, `test_engine_background`, `test_engine_feeding_stages`, `test_engine_rng_consumers`). Production path (`mortality.mortality()`) untouched. Spec at `docs/superpowers/specs/2026-04-19-phase71-predation-reconciliation-design.md`; plan at `docs/superpowers/plans/2026-04-19-phase71-predation-reconciliation-plan.md`. Parity roadmap §7.1 marked SHIPPED.
+
 ## [0.9.2] - 2026-04-19
 
 ### Features
