@@ -8,7 +8,7 @@ import numpy as np
 
 from osmose.engine.processes.movement import movement
 from osmose.engine.processes.mortality import mortality
-from osmose.engine.processes.predation import predation
+from osmose.engine.processes.predation import predation_for_cell
 
 
 # ---------------------------------------------------------------------------
@@ -31,12 +31,12 @@ class TestSignatures:
         param = sig.parameters["species_rngs"]
         assert param.default is None, "species_rngs default should be None"
 
-    def test_predation_accepts_species_rngs(self):
-        """predation() should accept species_rngs as optional keyword argument."""
-        sig = inspect.signature(predation)
-        assert "species_rngs" in sig.parameters, "predation() must accept species_rngs parameter"
+    def test_predation_for_cell_accepts_species_rngs(self):
+        """predation_for_cell() should accept species_rngs as optional keyword argument."""
+        sig = inspect.signature(predation_for_cell)
+        assert "species_rngs" in sig.parameters
         param = sig.parameters["species_rngs"]
-        assert param.default is None, "species_rngs default should be None"
+        assert param.default is None
 
 
 # ---------------------------------------------------------------------------
@@ -159,16 +159,16 @@ class TestBackwardCompat:
         )
 
         # Should not raise
-        result = predation(
+        predation_for_cell(
+            np.array([0, 1, 2, 3], dtype=np.int32),
             state,
             config,
             rng,
             n_subdt=1,
-            grid_ny=grid.ny,
-            grid_nx=grid.nx,
             resources=resources,
             species_rngs=None,
         )
+        result = state
         assert result is not None
         assert len(result) == 4
 
