@@ -9,7 +9,7 @@ from osmose.engine.processes.predation import (
     disable_diet_tracking,
     enable_diet_tracking,
     get_diet_matrix,
-    predation,
+    predation_for_cell,
 )
 from osmose.engine.simulate import SimulationContext
 from osmose.engine.state import SchoolState
@@ -115,7 +115,7 @@ class TestDietTrackingPredation:
         ctx = SimulationContext()
 
         enable_diet_tracking(n_schools=len(state), n_species=n_species, ctx=ctx)
-        predation(state, cfg, rng, n_subdt=10, grid_ny=1, grid_nx=1, ctx=ctx)
+        predation_for_cell(np.array([0, 1], dtype=np.int32), state, cfg, rng, n_subdt=10, ctx=ctx)
         mat = get_diet_matrix(ctx=ctx)
         assert mat is not None
         # Predator (school 0, species 1) should have eaten prey (species 0)
@@ -132,7 +132,8 @@ class TestDietTrackingPredation:
         ctx = SimulationContext()
 
         enable_diet_tracking(n_schools=len(state), n_species=2, ctx=ctx)
-        result = predation(state, cfg, rng, n_subdt=10, grid_ny=1, grid_nx=1, ctx=ctx)
+        predation_for_cell(np.array([0, 1], dtype=np.int32), state, cfg, rng, n_subdt=10, ctx=ctx)
+        result = state
         mat = get_diet_matrix(ctx=ctx)
         assert mat is not None
         # Sum across prey species for each predator school
@@ -154,7 +155,7 @@ class TestDietTrackingPredation:
 
         enable_diet_tracking(n_schools=len(state), n_species=2, ctx=ctx)
         # Diet tracking works with both Python and Numba paths
-        predation(state, cfg, rng, n_subdt=10, grid_ny=1, grid_nx=1, ctx=ctx)
+        predation_for_cell(np.array([0, 1], dtype=np.int32), state, cfg, rng, n_subdt=10, ctx=ctx)
         mat = get_diet_matrix(ctx=ctx)
         # Non-zero matrix confirms diet was tracked and accumulated
         assert mat is not None
@@ -201,7 +202,8 @@ class TestDietTrackingPredation:
         ctx = SimulationContext()
 
         enable_diet_tracking(n_schools=3, n_species=3, ctx=ctx)
-        result = predation(state, cfg, rng, n_subdt=10, grid_ny=1, grid_nx=1, ctx=ctx)
+        predation_for_cell(np.array([0, 1, 2], dtype=np.int32), state, cfg, rng, n_subdt=10, ctx=ctx)
+        result = state
         mat = get_diet_matrix(ctx=ctx)
         assert mat is not None
         assert mat.shape == (3, 3)
@@ -258,16 +260,16 @@ class TestDietResourceTracking:
         # n_species (2 focal) + n_resources (1) = 3 columns
         n_total = cfg.n_species + resources.n_resources
         enable_diet_tracking(n_schools=1, n_species=n_total, ctx=ctx)
-        result = predation(
+        predation_for_cell(
+            np.array([0], dtype=np.int32),
             state,
             cfg,
             rng,
             n_subdt=10,
-            grid_ny=1,
-            grid_nx=1,
             resources=resources,
             ctx=ctx,
         )
+        result = state
         mat = get_diet_matrix(ctx=ctx)
         assert mat is not None
         assert mat.shape == (1, n_total)
