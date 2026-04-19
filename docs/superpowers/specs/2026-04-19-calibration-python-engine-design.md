@@ -181,7 +181,7 @@ The refactor splits each `_write_*_csv` helper into two steps:
 
 `write_outputs()` orchestrates all seven. Behavior preserved — the existing CSV output tests are the regression net.
 
-`_build_dataframes_from_outputs(outputs, config, grid)` in `results.py` calls every `_build_*_dataframes` helper and collects the results into a single `dict[str, pd.DataFrame]` mapping (see the cache schema below). The two NetCDF writers stay disk-only in v1 — in-memory equivalents are out of scope per the non-goals.
+`_build_dataframes_from_outputs(outputs, config, grid) -> dict[str, pd.DataFrame]` lives in `results.py` (new private helper) and imports the five `_build_*_dataframes` helpers from `osmose/engine/output.py`. It calls each in turn, merges their returned dicts, and returns a single `dict[str, pd.DataFrame]` for `OsmoseResults._csv_cache` to hold (see the cache schema below). The five helpers stay exported from `output.py` — both `write_outputs()` (disk path) and `_build_dataframes_from_outputs()` (in-memory path) consume them. The two NetCDF writers stay disk-only in v1 — in-memory equivalents are out of scope per the non-goals.
 
 This is the single most important invariant: disk output and in-memory output **must** produce the same DataFrame for the same simulation. The only way to guarantee that over time is to share the build code.
 
@@ -265,7 +265,7 @@ This gives the clean `FileNotFoundError` contract the design promises: every in-
 5. `OsmoseCalibrationProblem(..., use_java_engine=True, jar_path=...)` still works — verified by a test that monkeypatches `subprocess.run` and asserts the argv contains `jar_path`.
 6. Objective-value parity between engines on a small fixture: 3 candidates through Python engine match the same 3 candidates through Java engine within 1 OoM (the project's parity tolerance). Skipped in CI unless `OSMOSE_JAR` env var is set.
 7. `pd.testing.assert_frame_equal(results_disk.biomass(), results_memory.biomass())` passes for every CSV-backed getter on a 2-year fixture run (same engine, same seed, two I/O paths).
-8. Full suite: **≥ baseline passed + new tests, zero new failures**. Baseline 2510 → target ≥ 2522.
+8. Full suite: **≥ baseline passed + new tests, zero new failures**. Baseline 2510 → target ≥ 2525.
 9. Ruff clean.
 10. Benchmark script `scripts/benchmark_calibration.py` reports **≥ 4× wall-clock speedup** on a 10-generation × 20-candidate Baltic NSGA-II run, Python vs Java default.
 
@@ -273,10 +273,11 @@ This gives the clean `FileNotFoundError` contract the design promises: every in-
 
 Three new test files:
 
-- **`tests/test_results_in_memory.py`** (~5 tests)
+- **`tests/test_results_in_memory.py`** (~8 tests)
   - `test_biomass_getter_matches_disk_path`, `test_abundance_getter_matches_disk_path`, `test_yield_biomass_getter_matches_disk_path`, `test_mortality_getter_matches_disk_path`, `test_diet_matrix_getter_matches_disk_path` — all run the same config twice (disk + memory) and assert `pd.testing.assert_frame_equal`.
   - `test_spatial_biomass_raises_FileNotFoundError_in_memory_mode` — the one getter we explicitly don't support.
   - `test_from_outputs_idempotent` — calling the same getter twice returns cached result.
+  - `test_from_outputs_populates_all_written_keys` — for a single simulation, `set(_build_dataframes_from_outputs(outputs, config, grid).keys())` equals the set of `output_type` strings that `write_outputs()` actually produces files for on disk. Pinned as the single source of truth for the cache key set; any future output family added to `write_outputs()` will fail this test until the in-memory build is updated to match.
 - **`tests/test_python_engine_in_memory.py`** (~4 tests)
   - `test_seed_determinism` — two `run_in_memory()` calls with same seed produce equal biomass.
   - `test_disk_vs_memory_same_biomass` — `run(cfg, tmp, seed=42)` and `run_in_memory(cfg, seed=42)` produce biomass within `rtol=1e-12`.
@@ -287,7 +288,7 @@ Three new test files:
   - `test_java_engine_opt_in` — construct with `use_java_engine=True, jar_path=<fake>`; monkeypatch `subprocess.run` to return a mock successful result; assert argv contains the fake jar_path.
   - `test_objective_values_match_between_engines` — run 3 candidates from a seeded random population through both engines; assert objective values match within 1 OoM. `pytest.skipif(not os.environ.get("OSMOSE_JAR"))`.
 
-Total new tests: ~12. Target pass count becomes ≥ 2522.
+Total new tests: ~15 (8 in `test_results_in_memory.py` + 4 in `test_python_engine_in_memory.py` + 3 in `test_calibration_problem_python_engine.py`). Target pass count becomes ≥ 2525.
 
 Benchmark (not a test — runs on demand via `scripts/benchmark_calibration.py`):
 - 10 generations × 20 candidates on the Baltic example.
@@ -315,9 +316,16 @@ Each of the four files touched is revertible independently:
 - Revert `problem.py` — existing calibration returns to Java subprocess. Benign.
 - Revert `results.py` — `OsmoseResults.from_outputs` goes away. `PythonEngine.run_in_memory` loses its return path, but `problem.py` was reverted first, so no caller remains.
 - Revert `engine/__init__.py` — `run_in_memory` goes away. Same argument as above.
-- Revert `engine/output.py` refactor — `_records_to_dataframe` helpers removed, `write_outputs` returns to inline CSV writing. Existing output tests still pass because CSV shapes are preserved.
+- Revert `engine/output.py` refactor — `_build_*_dataframes` helpers removed, `write_outputs` returns to inline CSV writing. Existing output tests still pass because CSV shapes are preserved.
 
-Commit order (in the implementation plan) will be: output.py refactor → results.py factory → engine in-memory method → problem.py port → tests → benchmark. Any single-commit revert is safe as long as later commits haven't landed yet.
+Commit order (in the implementation plan):
+1. `output.py` refactor (extract 5 `_build_*_dataframes` helpers). **Ships with the existing output-tests suite still passing** — CSV shapes unchanged, these tests are the regression net for this commit.
+2. `results.py` factory (`OsmoseResults.from_outputs` + `_build_dataframes_from_outputs` + dispatch in `_read_species_output` / `_read_2d_output` / `read_netcdf`). **Ships with `test_from_outputs_populates_all_written_keys` + the 5 getter-parity tests + `test_spatial_biomass_raises_FileNotFoundError_in_memory_mode` + `test_from_outputs_idempotent`** — these tests are what makes commit 2 independently verifiable. Without them, commit 2 would have no runtime exercise until commit 4.
+3. `engine/__init__.py` `run_in_memory` + grid-resolver extraction. Ships with `tests/test_python_engine_in_memory.py` (4 tests).
+4. `calibration/problem.py` port — `_run_single` splits into `_run_python_engine` / `_run_java_subprocess`. Ships with `tests/test_calibration_problem_python_engine.py` (3 tests).
+5. `scripts/benchmark_calibration.py` + CHANGELOG entry recording the measured speedup.
+
+Tests travel with the commit whose behavior they guard. Each commit is individually testable and individually revertible. Any single-commit revert is safe as long as later commits haven't landed yet.
 
 ## Out-of-scope follow-ups
 
