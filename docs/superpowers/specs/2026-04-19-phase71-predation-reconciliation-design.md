@@ -76,9 +76,13 @@ Internally, `predation_for_cell`:
 
 1. Handles the early-exit case `len(cell_indices) < 2` (no predation possible).
 2. Precomputes `prey_access_idx` / `pred_access_idx` / `access_matrix` for the call (redundant if a test calls it in a loop over cells, but test performance isn't a concern).
-3. Computes `feeding_stage` on `state` if not already populated (cheap; mirrors existing behavior).
-4. Dispatches to `_predation_in_cell_numba` or `_predation_in_cell_python` based on `use_numba` + `_HAS_NUMBA`.
+3. Ensures `feeding_stage` is populated on `state`. Population check is `state.feeding_stage is None or state.feeding_stage.size == 0`; if either, call `compute_feeding_stages(state, config)` and reassign via `state.replace(feeding_stage=...)`. Tests that call `predation_for_cell` twice on overlapping `cell_indices` get the same cached `feeding_stage` for both calls — overwrite is avoided after the first call. This is a deliberate departure from batch `predation()`, which always recomputed.
+4. Dispatches to `_predation_in_cell_numba` or `_predation_in_cell_python` based on `use_numba` + `_HAS_NUMBA`. **Silent fallback when `use_numba=True` and Numba is unavailable** — matches the current batch `predation()` behavior. Numba-parity tests that need to assert "this run actually exercised Numba" must independently guard with `pytest.importorskip("numba")` or an explicit `if not _HAS_NUMBA: pytest.skip(...)` at the top of the test body. The audit (class C) flags every parity site so this guard is consistently added during migration.
 5. If `resources is not None and resources.n_resources > 0`, invokes `_predation_on_resources` for the same cell coordinates.
+
+**Caller contract for `cell_indices`:** the caller owns correctness. No internal validation. Indices must be unique, in-range (`0 <= idx < state.n_schools`), and represent schools that all genuinely occupy cell `(cell_y, cell_x)`. Passing duplicates or out-of-range indices is undefined behavior — expect silent wrong math, not a raised error. This is the same contract `_predation_in_cell_python` has today; the new public function doesn't tighten it.
+
+**Parameter naming:** the existing private `_predation_in_cell_python` takes `indices` as its first parameter. The new public API uses `cell_indices` — a deliberate rename for public clarity. Internal call sites adapt accordingly.
 
 Helpers that remain public and untouched:
 
@@ -95,16 +99,17 @@ Helpers that remain private:
 
 ### Test-migration classification
 
-Every call site in the six affected files falls into one of six classes. The implementation plan's first task is an audit pass that produces a `file:line → class → replacement snippet` table for all 34 sites. Classes:
+Every call site in the six affected files falls into one of seven classes (A-G). The implementation plan's first task is an audit pass that produces a `file:line → class → replacement snippet` table for all 34 sites, plus a separate audit column flagging `ctx=` preservation (orthogonal to A-G, captured in its own checklist). Classes:
 
 | Class | Meaning | Replacement shape |
 |---|---|---|
 | A | Single-cell, single `predation()` call | `predation_for_cell(np.array([...], dtype=np.int32), state, cfg, rng, n_subdt=10)` |
 | B | Multi-cell (verifying isolation) | One `predation_for_cell` call per occupied cell, OR a single call asserting schools outside `cell_indices` are untouched |
-| C | Numba/Python parity | Pass `use_numba=True`/`False` explicitly |
+| C | Numba/Python parity | Pass `use_numba=True`/`False` explicitly. Add `pytest.importorskip("numba")` or `_HAS_NUMBA` guard if the test asserts Numba was actually exercised — silent fallback would otherwise give a false pass. |
 | D | Resource predation | Pass `resources=...` |
 | E | Background-species edge cases | Same as A; state just happens to include background species |
 | F | Signature introspection (`test_engine_rng_consumers.py`) | Introspect `predation_for_cell` instead of `predation` |
+| G | Return-value semantics | Any test that does `new_state = predation(...)` and then either (a) asserts `new_state is not state` (immutability check) or (b) passes `new_state` into a subsequent call. Must be rewritten because `predation_for_cell` modifies in place. Class-G sites get flagged explicitly during the audit — migration rewrites to read `state` directly and, if the immutability assertion was load-bearing, deletes it (the new API's in-place contract makes it inapplicable). |
 
 ### Call-site distribution (measured at baseline)
 
@@ -130,7 +135,7 @@ Adds `predation_for_cell` alongside the existing `predation()`. **Refactors `pre
 
 New file size: `predation.py` grows by ~50 lines (the new public function) but the `predation()` body shrinks by ~30 (delegating to the new function), net ~+20 lines.
 
-Verification: full suite passes unchanged (2510/15 baseline). The predation-isolation tests still pass because `predation()` still exists and still works — it just internally delegates.
+Verification: full suite passes unchanged (2510 passed, 15 skipped, 41 deselected at baseline). The predation-isolation tests still pass because `predation()` still exists and still works — it just internally delegates.
 
 ### Commit 2 — `refactor(tests): migrate predation-isolation tests to predation_for_cell`
 
@@ -138,7 +143,7 @@ All 34 call sites migrated. Grouped by file (so the diff is reviewable one modul
 
 After migration, run the RNG-drift canary: three consecutive runs of the six affected test files with the same seed, asserting identical outputs. If `pytest-repeat` is installed, use `pytest --count=3`; otherwise a three-iteration bash loop.
 
-Verification: `grep -c "predation_for_cell(" tests/test_engine_*.py` ≥ 34. Full suite still passes. `grep -rn "from osmose.engine.processes.predation import.*\bpredation\b" osmose/ tests/` returns only `predation_for_cell` (not `predation`).
+Verification: `grep -c "predation_for_cell(" tests/test_engine_*.py` ≥ 34. Full suite still passes. No test file imports the bare `predation` name any more — `grep -rn "from osmose.engine.processes.predation import predation\b" tests/` returns zero hits (the `\b` word-boundary excludes `predation_for_cell`, which still imports legitimately).
 
 ### Commit 3 — `refactor(predation): delete batch predation() orchestrator`
 
@@ -161,8 +166,8 @@ Updates `docs/parity-roadmap.md` §7.1 with a SHIPPED banner and the commit anch
 | Feeding-stage recomputation per cell | Per-call recomputation vs batch precomputation | Both paths compute the same values deterministically from state. Commit 1's behavior-preserving property covers this. |
 | `_predation_on_resources` coupling | Resource predation currently invoked inside batch `predation()` per-cell | `predation_for_cell(resources=...)` forwards `cell_y`, `cell_x` kwargs; resource step runs after predation step for the same cell. |
 | Signature-introspection tests | `inspect.signature(predation)` asserts `"species_rngs" in sig.parameters` | Adapt to introspect `predation_for_cell`. `species_rngs` is in the new signature. |
-| Diet matrix state leak | Migration drops `ctx=` kwarg; diet assertions silently fail | Audit (class-D) flags every diet-tracking site explicitly. Migration preserves `ctx=` when present. |
-| Numba unavailability | Parity tests require both backends | `_HAS_NUMBA` already gates — `predation_for_cell(use_numba=True)` with Numba absent silently falls back to Python, matching current `predation()` behavior. Parity tests continue to skip-or-skip-gracefully. |
+| Diet matrix state leak | Migration drops `ctx=` kwarg; diet assertions silently fail | Audit pass explicitly flags every site that passes `ctx=` in the current code — orthogonal to the A-G class taxonomy and tracked as a separate audit column. Migration preserves `ctx=` when present; the plan writer adds a checklist item "every ctx= site in the before-code has ctx= in the after-code". |
+| Numba unavailability | Parity tests require both backends | `_HAS_NUMBA` already gates. `predation_for_cell(use_numba=True)` with Numba absent silently falls back to Python (matching current `predation()` behavior). Class-C parity tests therefore must not rely on silent fallback — the audit adds `pytest.importorskip("numba")` or an explicit `_HAS_NUMBA` guard to every class-C migration so the test skips rather than silently passing under the wrong backend. |
 
 ## Success criteria
 
@@ -171,7 +176,7 @@ Ship criteria (all must hold):
 1. `grep -n "^def predation\b" osmose/engine/processes/predation.py` → empty.
 2. `grep -rn "from osmose.engine.processes.predation import.*\bpredation\b" osmose/ tests/` → zero hits of the bare `predation` name (distinct from `predation_for_cell`).
 3. `grep -c "predation_for_cell(" tests/test_engine_*.py` summed ≥ 34.
-4. Full suite: **2510 passed, 15 skipped, 41 deselected**, zero new skips, zero new failures.
+4. Full suite: `pytest -q` reports **≥ baseline passed, ≤ baseline skipped, zero new failures, zero new skips introduced by this branch**. The baseline at spec time is 2510 passed / 15 skipped / 41 deselected; if unrelated commits land on master first, the plan's implementer updates the target to the pre-branch baseline they observe and keeps the "no regression" framing.
 5. `ruff check osmose/ tests/` → clean.
 6. RNG-drift canary: three consecutive runs of the six affected test files, same seed, identical outputs.
 7. `docs/parity-roadmap.md` §7.1 carries a SHIPPED banner.
@@ -179,12 +184,14 @@ Ship criteria (all must hold):
 
 ## Rollback
 
-Each commit is individually revertible:
+Each commit is individually revertible, but the revertibility window is **directional and tied to commit ordering**:
 
-- Commit 4 (docs): trivially revertible.
-- Commit 3 (delete): revert → `predation()` comes back. Tests still pass (they've been migrated to `predation_for_cell` but both functions exist).
-- Commit 2 (migrate): per-file commits allow single-file revert. Partial rollback works.
-- Commit 1 (add API): behavior-preserving by construction. If this ever needs to revert, the whole branch goes.
+- **Commit 4 (docs):** trivially revertible at any point.
+- **Commit 3 (delete `predation()`):** revert at any point → `predation()` comes back. Tests still pass because they've been migrated to `predation_for_cell` and both functions would then exist.
+- **Commit 2 (test migration):** per-file partial revert is safe **only before commit 3 lands**. After commit 3, a single-file revert of commit 2 would put that file back on `predation()` — a function that no longer exists, breaking test collection. Post-commit-3, commit 2 and commit 3 must be reverted together (or not at all). The plan should treat commits 2+3 as a paired unit for any rollback beyond docs.
+- **Commit 1 (add API):** behavior-preserving by construction. If this ever needs to revert, the whole branch goes.
+
+**Practical implication:** the safest rollback posture is to review commits 1-3 together before any of them push to a shared branch. Once they're all on master, individual-file regressions surface as test failures on the per-file scope they originated from — revert the whole trio, not a subset.
 
 ## Out-of-scope follow-ups
 
