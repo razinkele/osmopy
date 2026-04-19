@@ -315,10 +315,8 @@ Bioenergetic growth/maintenance path wired into `_bioen_step` at `osmose/engine/
 
 ## Phase 7: Code Quality & Architecture (ongoing)
 
-### 7.1 Reconcile dual predation paths
-**Gap:** `predation.py::predation()` is a standalone batch entry point that the production `simulate()` loop no longer calls (main path uses `mortality.py`'s per-cell implementation). Kept alive by 20+ call sites across `tests/test_engine_predation_helpers.py`, `tests/test_engine_background.py`, `tests/test_engine_rng_consumers.py`, `tests/test_engine_feeding_stages.py`.
-**Fix:** Migrate those test call sites to the per-cell path, then delete the standalone `predation()` function (helpers like `enable_diet_tracking`, `compute_size_overlap` remain — they're used by both paths).
-**Effort:** ~1 day (original 2h estimate was off; the 20+ test migration is the bulk of the work). **Not suitable for autonomous execution — needs test-parity audit first.**
+### 7.1 Reconcile dual predation paths — SHIPPED (2026-04-19)
+**STATUS:** SHIPPED. Branch `feature/phase71-predation-reconciliation` migrated all 6 test files (test_engine_predation_helpers, test_engine_diet, test_engine_predation, test_engine_background, test_engine_feeding_stages, test_engine_rng_consumers) to the new public `osmose.engine.processes.predation.predation_for_cell()` API and deleted the standalone batch `predation()` orchestrator. Commits `72f80a3..009c781` (Task 1: API + behavior-preserving delegation; Task 2 sub-commits 2a-2f: per-file test migrations plus the 2-school resource-test follow-up; Task 3: batch-function deletion + module docstring cleanup; Task 4: this roadmap entry). Spec at `docs/superpowers/specs/2026-04-19-phase71-predation-reconciliation-design.md`; plan at `docs/superpowers/plans/2026-04-19-phase71-predation-reconciliation-plan.md`. Final suite: 2510 passed / 15 skipped / 41 deselected (unchanged). Ruff clean. Production path (`mortality.mortality()`) untouched.
 
 ### 7.2 Pluggable growth classes — SHIPPED (pre-v0.9.0)
 Java class-name → dispatch-token mapping at `osmose/engine/config.py:32-36` (`fr.ird.osmose.process.growth.VonBertalanffyGrowth` → `VB`; `GompertzGrowth` → `GOMPERTZ`; plus the short-form `fr.ird.osmose.growth.*` aliases). `growth_class: list[str]` field on `EngineConfig` parsed at `config.py:1631-1633` from `growth.java.classname.sp{i}`. Runtime dispatch at `osmose/engine/processes/growth.py:151` (`expected_length_for_class`). Gompertz-specific parameters parsed conditionally at `config.py:1639-1642`. No roadmap action — header retained for history.
