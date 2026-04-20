@@ -52,11 +52,12 @@ class PythonEngine:
         ny = int(config.get("grid.nlat", config.get("grid.nrow", "10")))
         return Grid.from_dimensions(ny=ny, nx=nx)
 
-    def run(self, config: dict[str, str], output_dir: Path, seed: int = 0) -> RunResult:
+    def _prepare_run(self, config: dict[str, str], seed: int) -> tuple:
+        """Build the (engine_config, grid, rng, movement_rngs, mortality_rngs)
+        tuple shared between run() and run_in_memory().
+        """
         from osmose.engine.config import EngineConfig
-        from osmose.engine.output import write_outputs
         from osmose.engine.rng import build_rng
-        from osmose.engine.simulate import simulate
 
         engine_config = EngineConfig.from_dict(config)
         grid = self._resolve_grid(config)
@@ -66,6 +67,13 @@ class PythonEngine:
         mortality_rngs = build_rng(
             seed + 1, engine_config.n_species, engine_config.mortality_seed_fixed
         )
+        return engine_config, grid, rng, movement_rngs, mortality_rngs
+
+    def run(self, config: dict[str, str], output_dir: Path, seed: int = 0) -> RunResult:
+        from osmose.engine.output import write_outputs
+        from osmose.engine.simulate import simulate
+
+        engine_config, grid, rng, movement_rngs, mortality_rngs = self._prepare_run(config, seed)
         outputs = simulate(
             engine_config,
             grid,
@@ -99,18 +107,9 @@ class PythonEngine:
         Use this for calibration candidates, sensitivity analysis, or any other
         throughput-sensitive workflow where disk output is not needed.
         """
-        from osmose.engine.config import EngineConfig
-        from osmose.engine.rng import build_rng
         from osmose.engine.simulate import simulate
 
-        engine_config = EngineConfig.from_dict(config)
-        grid = self._resolve_grid(config)
-
-        rng = np.random.default_rng(seed)
-        movement_rngs = build_rng(seed, engine_config.n_species, engine_config.movement_seed_fixed)
-        mortality_rngs = build_rng(
-            seed + 1, engine_config.n_species, engine_config.mortality_seed_fixed
-        )
+        engine_config, grid, rng, movement_rngs, mortality_rngs = self._prepare_run(config, seed)
         outputs = simulate(
             engine_config,
             grid,
