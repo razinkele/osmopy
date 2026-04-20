@@ -182,10 +182,12 @@ class ResourceState:
         """Load a NetCDF forcing file, trying multiple search paths."""
         if not nc_file:
             return
+        from osmose.engine._netcdf import open_dataset_safe
+
         config_dir = self.config.get("_osmose.config.dir", "")
         path = resolve_data_path(nc_file, config_dir=config_dir)
         if path is not None:
-            self._forcing_data = xr.open_dataset(path)
+            self._forcing_data = open_dataset_safe(path)
             first_var = list(self._forcing_data.data_vars)[0]
             self._n_forcing_steps = self._forcing_data[first_var].shape[0]
 
