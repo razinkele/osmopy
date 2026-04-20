@@ -18,10 +18,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 - `PythonEngine.run_in_memory(config, seed)` — runs the Python engine and returns `OsmoseResults` directly, skipping the disk round-trip.
 - `scripts/benchmark_calibration.py` — benchmarks NSGA-II calibration wall-clock for Python vs Java engines. Release gate for v0.10.x.
 
+### Fixed
+
+- **engine:** thread-safe NetCDF opens for parallel calibration. The netCDF4-python C extension is not thread-safe; under `ThreadPoolExecutor` calibration (`n_parallel > 1`) generation 1 would succeed but generation 2 onwards would crash with `NetCDF: Can't open HDF5 attribute` and eventually `double free or corruption`, as stale `Dataset` handles from the previous generation raced new opens. New `osmose/engine/_netcdf.open_dataset_safe()` helper serializes `xr.open_dataset` through a module-level `threading.Lock` and eagerly loads the data into memory, releasing the file handle before return. Applied at every engine NetCDF open site (`resources.py`, `grid.py`, `physical_data.py`, `background.py`). Engine forcing files on Baltic are small enough that eager-load is negligible; multi-GiB forcing would need a chunked+locked strategy instead.
+
 ### Migration notes
 
 - Long-lived calibration `work_dir` directories from v0.9.x will have cached objective values keyed by the Java `jar_mtime`. v0.10.0 uses `python-{__version__}` for the Python path, so old cache files never match new runs (no corruption, just cache misses). Optionally `rm -rf <work_dir>/cache` before running v0.10.0 NSGA-II to reclaim disk.
-- **Benchmark smoke test (2026-04-20):** 1-gen × 2-candidate NSGA-II on Baltic, Python engine, `n_parallel=4`: 301.95s wall-clock (~150s per candidate; Numba JIT warm-up dominates the first call). A concurrency hazard has been observed at higher parallelism: `xarray.open_dataset` on the shared `baltic_ltl_biomass.nc` forcing file can raise `AttributeError: NetCDF: Can't open HDF5 attribute` from concurrent HDF5 handle opens — a pre-existing thread-safety issue in `osmose/engine/resources.py:_load_netcdf`, separate from this change and tracked for post-v0.10.0. Full 10×20 benchmark vs Java pending on a dev host with the jar (`OSMOSE_JAR` unavailable in the current environment).
+- **Benchmark smoke test (2026-04-20):** 1-gen × 2-candidate NSGA-II on Baltic, Python engine, `n_parallel=4`: 301.95s wall-clock (~150s per candidate; Numba JIT warm-up dominates the first call). Per-wave steady-state is ~8.5 min for 4 candidates (~128s/candidate) after JIT warm-up. Full 10×20 Python-vs-Java wall-clock comparison pending; scaled-down 3×10 benchmark in flight.
 
 ## [0.9.3] - 2026-04-19
 
