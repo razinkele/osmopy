@@ -201,7 +201,11 @@ class OsmoseCalibrationProblem(Problem):
                 )
 
         # Schema validation
-        self._validate_overrides(overrides)
+        try:
+            self._validate_overrides(overrides)
+        except ValueError as exc:
+            _log.warning("Override schema validation failed for run %d: %s", run_id, exc)
+            return [float("inf")] * self.n_obj
 
         # Cache check
         if self._enable_cache:

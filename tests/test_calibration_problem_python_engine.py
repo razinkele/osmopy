@@ -154,3 +154,20 @@ def test_python_engine_failure_returns_inf(tmp_path, monkeypatch):
             {"mortality.fishing.rate.sp0": "0.3"}, run_id=0
         )
     assert result == [float("inf")], f"Expected [inf], got {result}"
+
+
+def test_schema_validation_failure_returns_inf(tmp_path, monkeypatch):
+    """If _validate_overrides raises ValueError (candidate outside schema
+    bounds), _run_single must return [inf]*n_obj — same bad-candidate
+    contract as engine failures. Regression test for final-review
+    Critical issue: ValueError from _validate_overrides was propagating
+    through _evaluate and crashing NSGA-II.
+    """
+    problem = _make_problem(tmp_path, use_java_engine=False)
+    with mock.patch.object(
+        problem, "_validate_overrides", side_effect=ValueError("bound violation")
+    ):
+        result = problem._run_single(
+            {"mortality.fishing.rate.sp0": "0.3"}, run_id=0
+        )
+    assert result == [float("inf")], f"Expected [inf], got {result}"
