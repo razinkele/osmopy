@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
+    from osmose.results import OsmoseResults
     from osmose.schema.registry import ParameterRegistry
 
 import numpy as np
@@ -78,8 +79,9 @@ class OsmoseCalibrationProblem(Problem):
         free_params: list[FreeParameter],
         objective_fns: list[Callable],
         base_config_path: Path,
-        jar_path: Path,
         work_dir: Path,
+        *,
+        jar_path: Path | None = None,
         java_cmd: str = "java",
         n_parallel: int = 1,
         enable_cache: bool = False,
@@ -87,7 +89,10 @@ class OsmoseCalibrationProblem(Problem):
         registry: "ParameterRegistry | None" = None,
         subprocess_timeout: int = 3600,
         cleanup_after_eval: bool = False,
+        use_java_engine: bool = False,
     ):
+        if use_java_engine and jar_path is None:
+            raise ValueError("use_java_engine=True requires jar_path")
         self.free_params = free_params
         self.objective_fns = objective_fns
         self.base_config_path = base_config_path
@@ -102,6 +107,7 @@ class OsmoseCalibrationProblem(Problem):
         self._cache_misses = 0
         self.subprocess_timeout = int(subprocess_timeout)
         self.cleanup_after_eval = bool(cleanup_after_eval)
+        self.use_java_engine = bool(use_java_engine)
         # Pre-compute base config hash for cache keys
         self._base_config_hash = ""
         if enable_cache and base_config_path.exists():
@@ -172,9 +178,10 @@ class OsmoseCalibrationProblem(Problem):
         return self._run_single(overrides, run_id=i)
 
     def _run_single(self, overrides: dict[str, str], run_id: int) -> list[float]:
-        """Run OSMOSE synchronously with overrides and return objective values.
+        """Run OSMOSE with overrides and return objective values.
 
-        Uses subprocess (synchronous) since pymoo evaluates in a loop.
+        Dispatches to ``_run_python_engine`` by default, or to
+        ``_run_java_subprocess`` when ``use_java_engine=True``.
         """
         # Validate override keys before constructing the command
         for key, value in overrides.items():
@@ -199,6 +206,77 @@ class OsmoseCalibrationProblem(Problem):
                 self._cache_hits += 1
                 cached = json.loads(cache_file.read_text())
                 return cached["objectives"]
+
+        # Dispatch to the appropriate engine
+        if self.use_java_engine:
+            results = self._run_java_subprocess(overrides, run_id)
+        else:
+            results = self._run_python_engine(overrides, run_id)
+
+        if results is None:
+            return [float("inf")] * self.n_obj
+
+        # Compute objectives (results is an OsmoseResults; supports context-manager
+        # protocol and is consumable directly).
+        with results as r:
+            obj_values = [float(fn(r)) for fn in self.objective_fns]
+
+        # Cache write (atomic rename)
+        if self._enable_cache:
+            key = self._cache_key(overrides)
+            self._cache_dir.mkdir(parents=True, exist_ok=True)
+            cache_file = self._cache_dir / f"{key}.json"
+            fd, tmp_file = tempfile.mkstemp(dir=str(self._cache_dir), suffix=".tmp")
+            try:
+                with os.fdopen(fd, "w") as f:
+                    json.dump({"objectives": obj_values}, f)
+                os.replace(tmp_file, str(cache_file))
+            except OSError:
+                try:
+                    os.unlink(tmp_file)
+                except OSError:
+                    pass
+            self._cache_misses += 1
+
+        # Cleanup Java subprocess artefacts AFTER objectives are computed.
+        # Only runs for the Java path; the Python path doesn't create run_dir.
+        if self.use_java_engine and self.cleanup_after_eval:
+            self.cleanup_run(run_id)
+
+        return obj_values
+
+    def _run_python_engine(
+        self, overrides: dict[str, str], run_id: int
+    ) -> "OsmoseResults | None":
+        """Run the Python engine in-process; return OsmoseResults or None on failure."""
+        from osmose.config import OsmoseConfigReader
+        from osmose.engine import PythonEngine
+
+        try:
+            base_cfg = OsmoseConfigReader().read(self.base_config_path)
+            cfg = dict(base_cfg)
+            cfg.update(overrides)
+            return PythonEngine().run_in_memory(cfg, seed=run_id)
+        except _expected_errors as exc:
+            _log.warning(
+                "Python-engine run %d failed (%s: %s)",
+                run_id,
+                type(exc).__name__,
+                exc,
+            )
+            return None
+
+    def _run_java_subprocess(
+        self, overrides: dict[str, str], run_id: int
+    ) -> "OsmoseResults | None":
+        """Run the Java subprocess; return OsmoseResults or None on failure.
+
+        Retained as opt-in fallback for cross-engine validation
+        (``use_java_engine=True`` constructor flag). Behavior unchanged from
+        the pre-port ``_run_single`` body.
+        """
+        if self.jar_path is None:
+            raise RuntimeError("_run_java_subprocess called but jar_path is None")
 
         # Create isolated output directory
         run_dir = self.work_dir / f"run_{run_id}"
@@ -228,37 +306,11 @@ class OsmoseCalibrationProblem(Problem):
                 stderr_file,
                 stderr_msg,
             )
-            return [float("inf")] * self.n_obj
+            return None
 
-        # Compute objectives
         from osmose.results import OsmoseResults
 
-        with OsmoseResults(output_dir, strict=False) as results:
-            obj_values = []
-            for fn in self.objective_fns:
-                obj_values.append(fn(results))
-
-        # Cache write (atomic rename)
-        if self._enable_cache:
-            key = self._cache_key(overrides)
-            self._cache_dir.mkdir(parents=True, exist_ok=True)
-            cache_file = self._cache_dir / f"{key}.json"
-            fd, tmp_file = tempfile.mkstemp(dir=str(self._cache_dir), suffix=".tmp")
-            try:
-                with os.fdopen(fd, "w") as f:
-                    json.dump({"objectives": obj_values}, f)
-                os.replace(tmp_file, str(cache_file))
-            except OSError:
-                try:
-                    os.unlink(tmp_file)
-                except OSError:
-                    pass
-            self._cache_misses += 1
-
-        if self.cleanup_after_eval:
-            self.cleanup_run(run_id)
-
-        return obj_values
+        return OsmoseResults(output_dir, strict=False)
 
     def cleanup_run(self, run_id: int) -> None:
         """Remove a completed run directory to reclaim disk space."""
@@ -269,13 +321,18 @@ class OsmoseCalibrationProblem(Problem):
             shutil.rmtree(run_dir, ignore_errors=True)
 
     def _cache_key(self, overrides: dict[str, str]) -> str:
-        """Deterministic hash of overrides + JAR mtime + base config hash."""
+        """Deterministic hash of overrides + engine identity + base config hash."""
         parts = sorted(overrides.items())
-        try:
-            jar_mtime = str(self.jar_path.stat().st_mtime)
-        except OSError:
-            jar_mtime = "missing"
-        raw = f"{parts}|{jar_mtime}|{self._base_config_hash}"
+        if self.jar_path is not None:
+            try:
+                engine_id = str(self.jar_path.stat().st_mtime)
+            except OSError:
+                engine_id = "missing"
+        else:
+            from osmose import __version__
+
+            engine_id = f"python-{__version__}"
+        raw = f"{parts}|{engine_id}|{self._base_config_hash}"
         return hashlib.sha256(raw.encode()).hexdigest()
 
     def cache_stats(self) -> dict:
