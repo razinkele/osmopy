@@ -294,6 +294,8 @@ class OsmoseResults:
 
     def list_outputs(self) -> list[str]:
         """List all output files in the output directory and engine subdirs."""
+        if self._in_memory:
+            return sorted(self._csv_cache.keys())
         if not self.output_dir.exists():
             return []
         files = []
@@ -310,6 +312,12 @@ class OsmoseResults:
 
     def read_csv(self, pattern: str) -> dict[str, pd.DataFrame]:
         """Read CSV output files matching a glob pattern."""
+        if self._in_memory:
+            raise FileNotFoundError(
+                f"In-memory OsmoseResults does not support read_csv "
+                f"(requested: {pattern}). Use a disk-backed OsmoseResults "
+                f"or call the specific getter (biomass(), abundance(), etc.)."
+            )
         result = {}
         for f in _find_output_files(self.output_dir, pattern):
             try:
@@ -470,6 +478,12 @@ class OsmoseResults:
 
         Concatenates all osm_sizeSpectrum*.csv files.
         """
+        if self._in_memory:
+            raise FileNotFoundError(
+                "In-memory OsmoseResults does not support size_spectrum output. "
+                "This output family is not captured by the build helpers used by "
+                "from_outputs(); use a disk-backed OsmoseResults if you need it."
+            )
         pattern = f"{self.prefix}_sizeSpectrum*.csv"
         frames = []
         for filepath in _find_output_files(self.output_dir, pattern):

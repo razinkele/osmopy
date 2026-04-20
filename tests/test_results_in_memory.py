@@ -126,6 +126,28 @@ def test_spatial_biomass_raises_FileNotFoundError_in_memory_mode():
         r.spatial_biomass("anything.nc")
 
 
+def test_list_outputs_in_memory_returns_cache_keys(_disk_and_memory_results):
+    _, memory = _disk_and_memory_results
+    result = memory.list_outputs()
+    assert isinstance(result, list)
+    assert all(isinstance(k, str) for k in result)
+    # Cache keys should match what _build_dataframes_from_outputs produces
+    assert "biomass" in result
+    assert "abundance" in result
+
+
+def test_read_csv_in_memory_raises_FileNotFoundError(_disk_and_memory_results):
+    _, memory = _disk_and_memory_results
+    with pytest.raises(FileNotFoundError, match="does not support read_csv"):
+        memory.read_csv("biomass.csv")
+
+
+def test_size_spectrum_in_memory_raises_FileNotFoundError(_disk_and_memory_results):
+    _, memory = _disk_and_memory_results
+    with pytest.raises(FileNotFoundError, match="does not support size_spectrum"):
+        memory.size_spectrum()
+
+
 def test_from_outputs_idempotent():
     """Calling the same getter twice returns the same DataFrame (cached)."""
     outputs, config, grid = _run_short_simulation(seed=7)
