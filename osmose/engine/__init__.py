@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from osmose.results import OsmoseResults
 from osmose.runner import RunResult
+
+if TYPE_CHECKING:
+    from osmose.engine.grid import Grid
 
 
 class PythonEngine:
@@ -16,7 +20,7 @@ class PythonEngine:
     def __init__(self, backend: str = "numpy") -> None:
         self.backend = backend
 
-    def _resolve_grid(self, config: dict[str, str]):
+    def _resolve_grid(self, config: dict[str, str]) -> Grid:
         """Resolve grid from config — shared between run() and run_in_memory()."""
         from osmose.engine.grid import Grid
 
