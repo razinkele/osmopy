@@ -64,22 +64,40 @@ def main() -> int:
     parser.add_argument("--java", type=Path, help="Path to OSMOSE jar")
     parser.add_argument("--n-gen", type=int, default=10)
     parser.add_argument("--pop-size", type=int, default=20)
+    parser.add_argument(
+        "--skip-python",
+        action="store_true",
+        help="Skip the Python run and use --python-wallclock instead (for reusing a previous measurement).",
+    )
+    parser.add_argument(
+        "--python-wallclock",
+        type=float,
+        help="Provide the Python wall-clock (seconds) when --skip-python is set.",
+    )
     args = parser.parse_args()
 
     if not BALTIC_CONFIG.exists():
         print(f"ERROR: Baltic config not found at {BALTIC_CONFIG}", file=sys.stderr)
         return 1
 
+    if args.skip_python and args.python_wallclock is None:
+        print("ERROR: --skip-python requires --python-wallclock", file=sys.stderr)
+        return 1
+
     print(f"Running {args.n_gen}-gen x {args.pop_size}-pop NSGA-II on Baltic")
     print()
-    print("Python engine...")
-    t_python = _run_nsga2(
-        use_java_engine=False,
-        jar_path=None,
-        n_gen=args.n_gen,
-        pop_size=args.pop_size,
-    )
-    print(f"  Wall-clock: {t_python:.2f}s")
+    if args.skip_python:
+        t_python = args.python_wallclock
+        print(f"Python engine: {t_python:.2f}s (reusing provided measurement)")
+    else:
+        print("Python engine...")
+        t_python = _run_nsga2(
+            use_java_engine=False,
+            jar_path=None,
+            n_gen=args.n_gen,
+            pop_size=args.pop_size,
+        )
+        print(f"  Wall-clock: {t_python:.2f}s")
 
     if args.java is None:
         print()

@@ -320,6 +320,14 @@ class OsmoseCalibrationProblem(Problem):
 
         from osmose.results import OsmoseResults
 
+        # Java writes ``<output.file.name>_<type>_Simu*.csv`` using the
+        # ``output.file.name`` key from the base config, which is not
+        # necessarily ``OsmoseResults``' default prefix of ``"osm"``. Detect
+        # the actual prefix Java used so downstream readers succeed.
+        biomass_files = sorted(output_dir.glob("*_biomass_Simu*.csv"))
+        if biomass_files:
+            prefix = biomass_files[0].stem.split("_biomass_")[0]
+            return OsmoseResults(output_dir, prefix=prefix, strict=False)
         return OsmoseResults(output_dir, strict=False)
 
     def cleanup_run(self, run_id: int) -> None:
