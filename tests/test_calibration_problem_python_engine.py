@@ -137,3 +137,20 @@ def test_objective_values_match_between_engines(tmp_path):
             f"Candidate {i}: Python objective {py_val:.4g} vs Java {java_val:.4g} "
             f"differs by >1 OoM"
         )
+
+
+def test_python_engine_failure_returns_inf(tmp_path, monkeypatch):
+    """If the Python engine raises ValueError/KeyError/RuntimeError on a
+    bad candidate, _run_single must return [inf]*n_obj (not crash the
+    NSGA-II loop). Mirrors the Java path contract where a non-zero exit
+    is silently scored as inf.
+    """
+    problem = _make_problem(tmp_path, use_java_engine=False)
+    with mock.patch(
+        "osmose.engine.PythonEngine.run_in_memory",
+        side_effect=ValueError("bad config"),
+    ):
+        result = problem._run_single(
+            {"mortality.fishing.rate.sp0": "0.3"}, run_id=0
+        )
+    assert result == [float("inf")], f"Expected [inf], got {result}"

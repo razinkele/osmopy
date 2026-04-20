@@ -36,6 +36,12 @@ _expected_errors = (
     OSError,
 )
 
+# Python-engine failures add in-process exceptions that the Java subprocess
+# path never sees (a non-zero exit is the only failure mode there). Keeping
+# _expected_errors tight for the Java path and widening here preserves the
+# "bad candidate = inf" contract without swallowing genuine subprocess bugs.
+_python_engine_errors = _expected_errors + (ValueError, KeyError, RuntimeError)
+
 
 class Transform(enum.Enum):
     """Parameter space transform for calibration."""
@@ -231,12 +237,12 @@ class OsmoseCalibrationProblem(Problem):
                 with os.fdopen(fd, "w") as f:
                     json.dump({"objectives": obj_values}, f)
                 os.replace(tmp_file, str(cache_file))
+                self._cache_misses += 1
             except OSError:
                 try:
                     os.unlink(tmp_file)
                 except OSError:
                     pass
-            self._cache_misses += 1
 
         # Cleanup Java subprocess artefacts AFTER objectives are computed.
         # Only runs for the Java path; the Python path doesn't create run_dir.
@@ -257,7 +263,7 @@ class OsmoseCalibrationProblem(Problem):
             cfg = dict(base_cfg)
             cfg.update(overrides)
             return PythonEngine().run_in_memory(cfg, seed=run_id)
-        except _expected_errors as exc:
+        except _python_engine_errors as exc:
             _log.warning(
                 "Python-engine run %d failed (%s: %s)",
                 run_id,
