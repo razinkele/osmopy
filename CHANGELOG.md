@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **calibration:** port NSGA-II to PythonEngine in-memory by default (spec: `docs/superpowers/specs/2026-04-19-calibration-python-engine-design.md`). `OsmoseCalibrationProblem._run_single` now evaluates candidates in-process via the Python engine instead of shelling out to a Java subprocess per candidate. Target wall-clock speedup >= 4x on a 10-generation x 20-candidate Baltic NSGA-II run (see `scripts/benchmark_calibration.py`). Java subprocess path preserved as an opt-in fallback via `OsmoseCalibrationProblem(use_java_engine=True, jar_path=...)`.
+- **BREAKING:** `OsmoseCalibrationProblem.__init__` signature — `work_dir` moves from position 5 to position 4; `jar_path` moves from required positional (was position 4) to optional keyword-only (`jar_path: Path | None = None`); all previously-positional kwargs (`java_cmd`, `n_parallel`, `enable_cache`, `cache_dir`, `registry`, `subprocess_timeout`, `cleanup_after_eval`) are now keyword-only; new `use_java_engine: bool = False` flag gates the Java path. Existing callers that constructed `OsmoseCalibrationProblem(..., jar_path=p)` expecting the Java subprocess path must now also pass `use_java_engine=True`. Without the flag, `jar_path` is ignored and the Python engine runs. Python/Java parity is complete (14/14 EEC, 8/8 BoB within 1 OoM), so accidental migration produces equivalent objective values in most configs.
+- **BREAKING (runtime behavior):** NSGA-II Pareto fronts may differ slightly after this release, because the Python engine uses a different RNG stream than the Java engine. Numerical equivalence is within 1 OoM (documented parity). If bit-exact reproducibility with Java is required, set `use_java_engine=True`.
+
+### Added
+
+- `OsmoseResults.from_outputs(outputs, engine_config, grid)` classmethod — constructs an in-memory results object from a list of `StepOutput` returned by `simulate()`. No disk I/O.
+- `PythonEngine.run_in_memory(config, seed)` — runs the Python engine and returns `OsmoseResults` directly, skipping the disk round-trip.
+- `scripts/benchmark_calibration.py` — benchmarks NSGA-II calibration wall-clock for Python vs Java engines. Release gate for v0.10.x.
+
+### Migration notes
+
+- Long-lived calibration `work_dir` directories from v0.9.x will have cached objective values keyed by the Java `jar_mtime`. v0.10.0 uses `python-{__version__}` for the Python path, so old cache files never match new runs (no corruption, just cache misses). Optionally `rm -rf <work_dir>/cache` before running v0.10.0 NSGA-II to reclaim disk.
+- **Benchmark smoke test (2026-04-20):** 1-gen × 2-candidate NSGA-II on Baltic, Python engine, `n_parallel=4`: 301.95s wall-clock (~150s per candidate; Numba JIT warm-up dominates the first call). A concurrency hazard has been observed at higher parallelism: `xarray.open_dataset` on the shared `baltic_ltl_biomass.nc` forcing file can raise `AttributeError: NetCDF: Can't open HDF5 attribute` from concurrent HDF5 handle opens — a pre-existing thread-safety issue in `osmose/engine/resources.py:_load_netcdf`, separate from this change and tracked for post-v0.10.0. Full 10×20 benchmark vs Java pending on a dev host with the jar (`OSMOSE_JAR` unavailable in the current environment).
+
 ## [0.9.3] - 2026-04-19
 
 ### Features
