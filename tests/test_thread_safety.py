@@ -1,7 +1,11 @@
 """Tests that simulation state is isolated per-run (no module globals)."""
 
-import numpy as np
+from concurrent.futures import ThreadPoolExecutor
 
+import numpy as np
+import xarray as xr
+
+from osmose.engine._netcdf import open_dataset_safe
 from osmose.engine.processes.predation import enable_diet_tracking, get_diet_matrix
 from osmose.engine.simulate import SimulationContext
 
@@ -41,3 +45,40 @@ def test_config_dir_isolated():
     ctx2 = SimulationContext(config_dir="/path/b")
     assert ctx1.config_dir == "/path/a"
     assert ctx2.config_dir == "/path/b"
+
+
+def test_open_dataset_safe_releases_handle(tmp_path):
+    """open_dataset_safe should eagerly load and close the file handle.
+
+    The returned Dataset must be usable after the source file is deleted.
+    """
+    path = tmp_path / "forcing.nc"
+    src = xr.Dataset({"biomass": (("time", "y", "x"), np.ones((3, 4, 5)))})
+    src.to_netcdf(path)
+
+    ds = open_dataset_safe(path)
+    path.unlink()
+
+    assert ds["biomass"].shape == (3, 4, 5)
+    assert ds["biomass"].values.sum() == 60
+
+
+def test_open_dataset_safe_concurrent_threads(tmp_path):
+    """Regression: parallel calibration at n_parallel>1 used to abort with
+    'NetCDF: Can't open HDF5 attribute' / 'double free or corruption' because
+    the netCDF4 C extension is not thread-safe for concurrent opens. This
+    test exercises the serialized+eager-load path on many threads at once.
+    """
+    path = tmp_path / "forcing.nc"
+    src = xr.Dataset({"biomass": (("time", "y", "x"), np.arange(60.0).reshape(3, 4, 5))})
+    src.to_netcdf(path)
+
+    def _open_and_read() -> float:
+        ds = open_dataset_safe(path)
+        return float(ds["biomass"].values.sum())
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(lambda _: _open_and_read(), range(32)))
+
+    expected = float(np.arange(60.0).sum())
+    assert all(r == expected for r in results)
