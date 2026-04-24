@@ -106,7 +106,7 @@ def main() -> None:
     with open(results_file) as f:
         data = json.load(f)
 
-    # Stack phase 1 params under phase 2 so both sets of overrides apply.
+    # Stack phase 1 under phase 2 (but not under phase 12 — its JSON already has both).
     stacked_overrides: dict[str, str] = {}
     if args.phase == "2":
         p1_file = RESULTS_DIR / "phase1_results.json"
@@ -116,6 +116,8 @@ def main() -> None:
             for k, v in p1.get("parameters", {}).items():
                 stacked_overrides[k] = str(v)
             print(f"Stacked: phase1 ({len(stacked_overrides)} params) + phase2")
+    elif args.phase == "12":
+        print(f"Phase 12 results contain all 24 params — no stacking needed")
 
     print(f"=== Calibration report — phase {args.phase} ===")
     print(f"Evaluations: {data['n_evaluations']}")
