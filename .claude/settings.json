@@ -139,56 +139,66 @@
     ]
   },
   "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write",
-        "command": "cd /home/razinka/osmose/osmose-python && .venv/bin/ruff format --quiet \"$CLAUDE_FILE_PATH\" 2>/dev/null; .venv/bin/ruff check --fix --quiet \"$CLAUDE_FILE_PATH\" 2>/dev/null; true"
-      },
-      {
-        "matcher": "Edit|Write",
-        "command": "echo \"$CLAUDE_FILE_PATH\" | grep -qE '\\.py$' && cd /home/razinka/osmose/osmose-python && .venv/bin/pyright \"$CLAUDE_FILE_PATH\" 2>&1 | tail -1 | grep -q '0 errors' && true || echo 'PYRIGHT: type errors detected'; true"
-      },
-      {
-        "matcher": "Edit|Write",
-        "command": "echo \"$CLAUDE_FILE_PATH\" | grep -qE 'osmose/engine/.*\\.py$' && cd /home/razinka/osmose/osmose-python && .venv/bin/python -m pytest tests/ -x -q -k \"$(basename \"$CLAUDE_FILE_PATH\" .py)\" 2>&1 | tail -5; true"
-      },
-      {
-        "matcher": "Edit|Write",
-        "command": "echo \"$CLAUDE_FILE_PATH\" | grep -qE 'osmose/schema/.*\\.py$' && echo 'REMINDER: Schema changed — verify tests cover new/modified fields'; true"
-      },
-      {
-        "matcher": "Edit|Write",
-        "command": "echo \"$CLAUDE_FILE_PATH\" | grep -qE 'ui/.*\\.py$' && cd /home/razinka/osmose/osmose-python && grep -n 'sync_inputs()\\|update_config()' \"$CLAUDE_FILE_PATH\" | grep -v 'isolate' | grep -v 'def ' | head -5 | while read line; do echo \"WARNING: Possible missing reactive.isolate() — $line\"; done; true"
-      },
-      {
-        "matcher": "Edit|Write",
-        "command": "echo \"$CLAUDE_FILE_PATH\" | grep -qE 'ui/pages/.*\\.py$' && grep -q 'import ui.charts' \"$CLAUDE_FILE_PATH\" && echo 'ERROR: ui.charts must only be imported in app.py (shadows shiny.ui) — revert this change immediately'; true"
-      },
-      {
-        "matcher": "Edit|Write",
-        "command": "echo \"$CLAUDE_FILE_PATH\" | grep -qE 'tests/test_.*\\.py$' && cd /home/razinka/osmose/osmose-python && .venv/bin/python -m pytest \"$CLAUDE_FILE_PATH\" -x -q 2>&1 | tail -5; true"
-      },
-      {
-        "matcher": "Edit|Write",
-        "command": "echo \"$CLAUDE_FILE_PATH\" | grep -qE 'osmose/engine/processes/(movement|mortality|predation)\\.py$' && grep -qE '@njit|@jit' \"$CLAUDE_FILE_PATH\" && echo 'REMINDER: Numba-jitted function changed — first run will include recompilation overhead, do not compare timing until second run'; true"
-      },
-      {
-        "matcher": "Edit|Write",
-        "command": "echo \"$CLAUDE_FILE_PATH\" | grep -qE 'ui/state\\.py$' && grep -q 'def sync_inputs' \"$CLAUDE_FILE_PATH\" && ! grep -q 'in old_val' \"$CLAUDE_FILE_PATH\" && echo 'ERROR: sync_inputs must preserve multi-value config entries (semicolon-separated arrays) — check for ; in old_val before overwriting'; true"
-      },
-      {
-        "matcher": "Edit|Write",
-        "command": "echo \"$CLAUDE_FILE_PATH\" | grep -qE 'ui/pages/grid_helpers\\.py$' && grep -qE 'def load.*(csv|mask)' \"$CLAUDE_FILE_PATH\" && ! grep -q 'flipud' \"$CLAUDE_FILE_PATH\" && echo 'ERROR: OSMOSE CSVs are south-to-north — CSV/mask loaders must np.flipud() after reading'; true"
-      }
-    ],
     "PreToolUse": [
       {
         "matcher": "Edit|Write",
-        "command": "echo \"$CLAUDE_FILE_PATH\" | grep -qE '\\.(env|lock)$' && echo 'BLOCKED: Do not edit .env or lock files directly' && exit 1; true"
-      },
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); echo \"$f\" | grep -qE '\\.(env|lock)$' && { echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Do not edit .env or lock files directly\"}}'; exit 0; }; exit 0"
+          },
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); echo \"$f\" | grep -q 'osmose-java/' && { echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Java engine files are read-only reference code\"}}'; exit 0; }; exit 0"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
       {
         "matcher": "Edit|Write",
-        "command": "echo \"$CLAUDE_FILE_PATH\" | grep -q 'osmose-java/' && echo 'BLOCKED: Java engine files are read-only reference code — do not edit' && exit 1; true"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); [ -z \"$f\" ] && exit 0; cd /home/razinka/osmose/osmose-python && .venv/bin/ruff format --quiet \"$f\" 2>/dev/null; .venv/bin/ruff check --fix --quiet \"$f\" 2>/dev/null; exit 0"
+          },
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); echo \"$f\" | grep -qE '\\.py$' || exit 0; cd /home/razinka/osmose/osmose-python && .venv/bin/pyright \"$f\" 2>&1 | tail -1 | grep -q '0 errors' || echo 'PYRIGHT: type errors detected'; exit 0"
+          },
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); echo \"$f\" | grep -qE 'osmose/engine/.*\\.py$' || exit 0; cd /home/razinka/osmose/osmose-python && base=$(basename \"$f\" .py) && .venv/bin/python -m pytest tests/ -x -q -k \"$base\" 2>&1 | tail -5; exit 0"
+          },
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); echo \"$f\" | grep -qE 'osmose/schema/.*\\.py$' && echo 'REMINDER: Schema changed — verify tests cover new/modified fields'; exit 0"
+          },
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); echo \"$f\" | grep -qE 'ui/.*\\.py$' || exit 0; grep -n 'sync_inputs()\\|update_config()' \"$f\" | grep -v 'isolate' | grep -v 'def ' | head -5 | while read line; do echo \"WARNING: Possible missing reactive.isolate() — $line\"; done; exit 0"
+          },
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); echo \"$f\" | grep -qE 'ui/pages/.*\\.py$' && grep -q 'import ui.charts' \"$f\" && echo 'ERROR: ui.charts must only be imported in app.py (shadows shiny.ui) — revert this change immediately'; exit 0"
+          },
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); echo \"$f\" | grep -qE 'tests/test_.*\\.py$' || exit 0; cd /home/razinka/osmose/osmose-python && .venv/bin/python -m pytest \"$f\" -x -q 2>&1 | tail -5; exit 0"
+          },
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); echo \"$f\" | grep -qE 'osmose/engine/processes/(movement|mortality|predation)\\.py$' && grep -qE '@njit|@jit' \"$f\" && echo 'REMINDER: Numba-jitted function changed — first run will include recompilation overhead, do not compare timing until second run'; exit 0"
+          },
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); echo \"$f\" | grep -qE 'ui/state\\.py$' && grep -q 'def sync_inputs' \"$f\" && ! grep -q 'in old_val' \"$f\" && echo 'ERROR: sync_inputs must preserve multi-value config entries (semicolon-separated arrays) — check for ; in old_val before overwriting'; exit 0"
+          },
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); echo \"$f\" | grep -qE 'ui/pages/grid_helpers\\.py$' && grep -qE 'def load.*(csv|mask)' \"$f\" && ! grep -q 'flipud' \"$f\" && echo 'ERROR: OSMOSE CSVs are south-to-north — CSV/mask loaders must np.flipud() after reading'; exit 0"
+          }
+        ]
       }
     ]
   }

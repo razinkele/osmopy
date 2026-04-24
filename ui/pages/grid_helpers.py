@@ -773,6 +773,7 @@ def load_netcdf_overlay(
     time_step: int = 0,
     vmin: float | None = None,
     vmax: float | None = None,
+    ocean_mask: np.ndarray | None = None,
 ) -> list[CellOverlay] | None:
     """Load a NetCDF overlay file and return colored cell data for deck.gl.
 
@@ -797,6 +798,12 @@ def load_netcdf_overlay(
     vmin/vmax:
         Fixed colour-scale bounds.  Pass the per-variable bounds from
         ``list_nc_overlay_variables`` for stable colours across time steps.
+    ocean_mask:
+        Optional boolean array (True = ocean, False = land) aligned with the
+        NC data grid.  When supplied and shape-compatible, land cells are
+        skipped regardless of value — required for forcing files that write
+        0.0 on land (vs. NaN).  Shape mismatch triggers a warning and the
+        mask is ignored (fallback to NaN-only filtering).
     """
     try:
         with xr.open_dataset(file_path) as ds:
@@ -859,6 +866,15 @@ def load_netcdf_overlay(
 
         # --- Colour scaling (computed only over valid cells to avoid NaN cast warnings) ---
         valid_mask = ~np.isnan(data_f)
+        if ocean_mask is not None:
+            if ocean_mask.shape == data_f.shape:
+                valid_mask &= ocean_mask.astype(bool)
+            else:
+                _log.warning(
+                    "Overlay mask shape %s does not match NC data shape %s; ignoring mask",
+                    ocean_mask.shape,
+                    data_f.shape,
+                )
         valid_vals = data_f[valid_mask]
         if len(valid_vals) == 0:
             return None

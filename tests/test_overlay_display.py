@@ -618,6 +618,108 @@ class TestNetcdfOverlayLatLonResolution:
 
 
 # ---------------------------------------------------------------------------
+# OD5b: ocean_mask filters land cells regardless of value
+# ---------------------------------------------------------------------------
+
+
+class TestNetcdfOverlayOceanMask:
+    """Forcing NetCDFs that write 0.0 on land (Baltic convention) would otherwise
+    flood the map with land polygons. ``ocean_mask`` lets the caller supply the
+    grid's authoritative land/sea mask."""
+
+    def _make_zero_on_land_nc(self, path: pathlib.Path) -> None:
+        """NC where land cells have value 0.0 (not NaN) — mimics Baltic LTL."""
+        lat = np.array([47.0, 46.0, 45.0])
+        lon = np.array([1.0, 2.0, 3.0])
+        # Middle row is "ocean" with real values; outer rows are "land" with zeros
+        data = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [10.0, 20.0, 30.0],
+                [0.0, 0.0, 0.0],
+            ]
+        )
+        ds = xr.Dataset(
+            {"biomass": (["lat", "lon"], data)},
+            coords={"lat": lat, "lon": lon},
+        )
+        ds.to_netcdf(path)
+
+    def test_mask_drops_land_cells_with_zero_values(self, tmp_path):
+        """Baltic-style NC (0.0 on land) + ocean mask → only ocean cells rendered."""
+        from ui.pages.grid_helpers import load_netcdf_overlay
+
+        p = tmp_path / "zero_land.nc"
+        self._make_zero_on_land_nc(p)
+
+        # Row 1 is ocean, rows 0 and 2 are land
+        ocean_mask = np.array(
+            [
+                [False, False, False],
+                [True, True, True],
+                [False, False, False],
+            ]
+        )
+        cells = load_netcdf_overlay(p, ocean_mask=ocean_mask)
+        assert cells is not None
+        assert len(cells) == 3, "Only the 3 ocean cells should be rendered"
+        # All rendered values must be the non-zero ocean values
+        assert {round(c["value"]) for c in cells} == {10, 20, 30}
+
+    def test_without_mask_all_cells_rendered(self, tmp_path):
+        """Without ocean_mask, zero-on-land cells are rendered (the prior behaviour)."""
+        from ui.pages.grid_helpers import load_netcdf_overlay
+
+        p = tmp_path / "zero_land.nc"
+        self._make_zero_on_land_nc(p)
+        cells = load_netcdf_overlay(p)
+        assert cells is not None
+        assert len(cells) == 9, "Zeros pass the NaN-only filter — all 9 cells rendered"
+
+    def test_shape_mismatch_ignored(self, tmp_path):
+        """A mis-shaped mask must be ignored (warning logged), not crash."""
+        from ui.pages.grid_helpers import load_netcdf_overlay
+
+        p = tmp_path / "zero_land.nc"
+        self._make_zero_on_land_nc(p)
+        bad_mask = np.ones((5, 5), dtype=bool)  # wrong shape
+        cells = load_netcdf_overlay(p, ocean_mask=bad_mask)
+        assert cells is not None
+        assert len(cells) == 9  # all cells, mask silently ignored
+
+    def test_mask_with_nan_land_nc(self, tmp_path):
+        """EEC-style NC (NaN on land) + mask: behaviour unchanged — NaN already filtered."""
+        from ui.pages.grid_helpers import load_netcdf_overlay
+
+        lat = np.array([47.0, 46.0, 45.0])
+        lon = np.array([1.0, 2.0, 3.0])
+        data = np.array(
+            [
+                [np.nan, np.nan, np.nan],
+                [10.0, 20.0, 30.0],
+                [np.nan, np.nan, np.nan],
+            ]
+        )
+        ds = xr.Dataset(
+            {"biomass": (["lat", "lon"], data)},
+            coords={"lat": lat, "lon": lon},
+        )
+        p = tmp_path / "nan_land.nc"
+        ds.to_netcdf(p)
+        ocean_mask = np.array(
+            [
+                [False, False, False],
+                [True, True, True],
+                [False, False, False],
+            ]
+        )
+        cells_with = load_netcdf_overlay(p, ocean_mask=ocean_mask)
+        cells_without = load_netcdf_overlay(p)
+        assert cells_with is not None and cells_without is not None
+        assert len(cells_with) == len(cells_without) == 3
+
+
+# ---------------------------------------------------------------------------
 # OD6: list_nc_overlay_variables
 # ---------------------------------------------------------------------------
 

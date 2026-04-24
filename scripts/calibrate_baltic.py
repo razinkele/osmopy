@@ -37,7 +37,7 @@ RESULTS_DIR = PROJECT_ROOT / "data" / "baltic" / "calibration_results"
 
 SPECIES_NAMES = [
     "cod", "herring", "sprat", "flounder",
-    "perch", "pikeperch", "whitefish", "stickleback",
+    "perch", "pikeperch", "smelt", "stickleback",
 ]
 N_SPECIES = len(SPECIES_NAMES)
 
@@ -263,7 +263,7 @@ def get_phase1_params() -> tuple[list[str], list[tuple[float, float]], list[floa
         (-1.0, 2.0),   # sp3 flounder
         (-1.0, 2.0),   # sp4 perch
         (-1.0, 2.0),   # sp5 pikeperch
-        (-1.0, 2.0),   # sp6 whitefish
+        (-1.0, 2.0),   # sp6 smelt
         (-1.0, 2.0),   # sp7 stickleback
     ]
     for i in range(N_SPECIES):
@@ -281,7 +281,7 @@ def get_phase1_params() -> tuple[list[str], list[tuple[float, float]], list[floa
         (-3.0, 0.3),   # sp3 flounder
         (-3.0, 0.3),   # sp4 perch
         (-3.0, 0.3),   # sp5 pikeperch
-        (-3.0, 0.3),   # sp6 whitefish
+        (-3.0, 0.3),   # sp6 smelt
         (-3.0, 0.3),   # sp7 stickleback
     ]
     for i in range(N_SPECIES):
@@ -540,6 +540,22 @@ def run_calibration(
         base_config["predation.accessibility.dynamic.exponent"] = "1.0"
         base_config["predation.accessibility.dynamic.floor"] = "0.05"
         print("Phase 1g: Literature-validated baselines + dynamic accessibility + LTL=0.4")
+
+    # Phase 2: inherit calibrated mortality params from phase 1 as fixed base_config
+    # overrides. Without this, phase 2 would run with R18 defaults, which would reintroduce
+    # the smelt/stickleback extinction risk phase 1 just eliminated.
+    if phase == "2":
+        p1_file = RESULTS_DIR / "phase1_results.json"
+        if p1_file.exists():
+            with open(p1_file) as f:
+                p1_data = json.load(f)
+            for key, val in p1_data.get("parameters", {}).items():
+                base_config[key.lower()] = str(val)
+            print(f"Phase 2: inherited {len(p1_data.get('parameters', {}))} "
+                  f"calibrated params from phase1_results.json")
+        else:
+            print("Phase 2 WARNING: no phase1_results.json found — running on R18 defaults "
+                  "(risks re-introducing smelt/stickleback extinction).")
 
     print(f"\nFree parameters ({len(param_keys)}):")
     for key, (lo, hi), x0_val in zip(param_keys, bounds, x0):

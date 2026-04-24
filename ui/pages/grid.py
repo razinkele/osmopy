@@ -316,7 +316,7 @@ def grid_server(input, output, session, state):
             controls.append(
                 ui.input_select(
                     "nc_var_select",
-                    "Variable",
+                    f"Data variable ({len(meta)} available — switch to view other groups)",
                     choices=var_choices,
                     selected=current_var,
                 )
@@ -555,6 +555,8 @@ def grid_server(input, output, session, state):
         if nc_data is not None:
             nc_lat, nc_lon, nc_mask = nc_data
             layers, view_state = build_netcdf_grid_layers(nc_lat, nc_lon, nc_mask, is_dark)
+            # NcGrid convention: mask > 0 means ocean.
+            overlay_ocean_mask = nc_mask > 0
         else:
             mask_path = cfg.get("grid.mask.file", "")
             mask = load_mask(cfg, config_dir=cfg_dir)
@@ -566,6 +568,8 @@ def grid_server(input, output, session, state):
                     duration=10,
                 )
             layers = build_grid_layers(ul_lat, ul_lon, lr_lat, lr_lon, nx, ny, is_dark, mask)
+            # OriginalGrid CSV mask convention: value >= 0 ocean, < 0 land.
+            overlay_ocean_mask = (mask >= 0) if mask is not None else None
 
             # Compute view state to fit grid bounds
             if ul_lat != 0 or ul_lon != 0 or lr_lat != 0 or lr_lon != 0:
@@ -711,6 +715,7 @@ def grid_server(input, output, session, state):
                     time_step=nc_time,
                     vmin=nc_vmin,
                     vmax=nc_vmax,
+                    ocean_mask=overlay_ocean_mask,
                 )
                 if cells:
                     layers.append(

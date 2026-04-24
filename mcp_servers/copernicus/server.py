@@ -353,6 +353,36 @@ def _get_var(ds: xr.Dataset, name: str) -> np.ndarray | None:
     return arr
 
 
+def _load_baltic_ocean_mask() -> np.ndarray | None:
+    """Load the authoritative (nlat, nlon) ocean mask from baltic_grid.nc.
+
+    Returns a bool array (True = ocean, False = land) or None if the grid
+    file is not available. Callers apply this as the final step before
+    writing output so land cells become NaN (matching the EEC convention
+    the OSMOSE UI expects).
+    """
+    grid_path = Path(__file__).resolve().parents[2] / "data" / "baltic" / "baltic_grid.nc"
+    if not grid_path.exists():
+        return None
+    try:
+        with xr.open_dataset(grid_path) as gds:
+            return gds["mask"].values.astype(bool)
+    except (OSError, KeyError):
+        return None
+
+
+def _apply_land_mask(groups: dict[str, np.ndarray], ocean_mask: np.ndarray) -> None:
+    """Set land cells to NaN in every (time, lat, lon) array, in-place.
+
+    Shape mismatch is a silent no-op so the generator still runs if the
+    grid file is stale relative to OSMOSE_GRID dimensions.
+    """
+    for arr in groups.values():
+        if arr.shape[1:] != ocean_mask.shape:
+            return
+        arr[:, ~ocean_mask] = np.nan
+
+
 # ---------------------------------------------------------------------------
 # Tool 3: Generate OSMOSE LTL forcing NetCDF
 # ---------------------------------------------------------------------------
@@ -495,6 +525,13 @@ def generate_osmose_ltl(
     for arr in groups.values():
         arr[arr < 0] = 0.0
 
+    # Stamp land cells with NaN so the OSMOSE UI overlay does not render them.
+    # Matches the EEC LTL file convention; the UI's ocean_mask fallback
+    # handles older 0.0-on-land files too, but NaN is the canonical form.
+    ocean_mask = _load_baltic_ocean_mask()
+    if ocean_mask is not None:
+        _apply_land_mask(groups, ocean_mask)
+
     out_ds = xr.Dataset(
         {name: (["time", "latitude", "longitude"], data) for name, data in groups.items()},
         coords={"time": np.arange(24), "latitude": target_lat, "longitude": target_lon},
@@ -504,7 +541,7 @@ def generate_osmose_ltl(
             "mode": mode,
             "description": "6 lower trophic level groups, 24 biweekly timesteps",
             "depth_integration_m": depth_integrate_m,
-            "conventions": "Latitude descending (north to south) to match grid.nc",
+            "conventions": "Latitude descending (north to south) to match grid.nc; NaN on land",
         },
     )
 
@@ -517,7 +554,7 @@ def generate_osmose_ltl(
     lines = [f"Generated OSMOSE LTL forcing: {out_path}", f"Mode: {mode}"]
     lines.append(f"Grid: {nlat} x {nlon}, 24 biweekly steps")
     for name, data in groups.items():
-        lines.append(f"  {name}: total={np.sum(data):.0f} t, max/cell={np.max(data):.1f} t")
+        lines.append(f"  {name}: total={np.nansum(data):.0f} t, max/cell={np.nanmax(data):.1f} t")
     out_ds.close()
     return "\n".join(lines)
 
