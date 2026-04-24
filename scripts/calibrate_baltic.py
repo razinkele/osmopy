@@ -21,7 +21,6 @@ import tempfile
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from itertools import count
 from pathlib import Path
 
 import numpy as np
@@ -138,41 +137,50 @@ def run_simulation(
 # ---------------------------------------------------------------------------
 # Objective functions
 # ---------------------------------------------------------------------------
-def make_objective(
-    base_config: dict[str, str],
-    targets: list[BiomassTarget],
-    param_keys: list[str],
-    n_years: int = 40,
-    seed: int = 42,
-    use_log_space: bool = True,
-    w_stability: float = 5.0,
-    w_worst: float = 0.5,
-) -> Callable[[np.ndarray], float]:
-    """Create objective function for differential evolution.
+class _ObjectiveWrapper:
+    """Picklable wrapper for objective function to support multiprocessing.
 
-    Objective components:
-      1. Banded log-ratio loss: 0 inside [lower, upper], squared log-distance outside
-      2. Species weights: high (1.0) for well-assessed, low (0.2) for uncertain
-      3. Worst-species max term: prevents hiding one badly wrong species
-      4. Stability penalties: CV > 0.2 and trend > 0.05, weighted by w_stability
+    scipy.optimize.differential_evolution with workers>1 requires the objective
+    function to be picklable, so we wrap it in a class with __call__.
+    The closure pattern (returning a nested function) is not picklable by default.
     """
-    target_dict = {t.species: t for t in targets}
-    _calls = count(1)
 
-    def objective(x: np.ndarray) -> float:
-        call_idx = next(_calls)
+    def __init__(
+        self,
+        base_config: dict[str, str],
+        targets: list[BiomassTarget],
+        param_keys: list[str],
+        n_years: int = 40,
+        seed: int = 42,
+        use_log_space: bool = True,
+        w_stability: float = 5.0,
+        w_worst: float = 0.5,
+    ):
+        self.base_config = base_config
+        self.targets = targets
+        self.target_dict = {t.species: t for t in targets}
+        self.param_keys = param_keys
+        self.n_years = n_years
+        self.seed = seed
+        self.use_log_space = use_log_space
+        self.w_stability = w_stability
+        self.w_worst = w_worst
 
+    def __call__(self, x: np.ndarray) -> float:
+        """Evaluate objective function at point x."""
         # Map parameter vector to config overrides
         overrides: dict[str, str] = {}
-        for i, key in enumerate(param_keys):
-            if use_log_space:
+        for i, key in enumerate(self.param_keys):
+            if self.use_log_space:
                 val = 10.0 ** x[i]
             else:
                 val = x[i]
             overrides[key] = str(val)
 
         # Run simulation
-        stats = run_simulation(base_config, overrides, n_years=n_years, seed=seed)
+        stats = run_simulation(
+            self.base_config, overrides, n_years=self.n_years, seed=self.seed
+        )
         if not stats:
             return 1e6  # Failed run
 
@@ -184,13 +192,13 @@ def make_objective(
             cv_key = f"{sp}_cv"
             trend_key = f"{sp}_trend"
 
-            if mean_key not in stats or sp not in target_dict:
+            if mean_key not in stats or sp not in self.target_dict:
                 total_error += 100.0
                 worst_error = max(worst_error, 100.0)
                 continue
 
             sim_biomass = stats[mean_key]
-            target = target_dict[sp]
+            target = self.target_dict[sp]
 
             # Banded log-ratio loss: zero within [lower, upper]
             if sim_biomass <= 0:
@@ -210,29 +218,50 @@ def make_objective(
             # Stability penalty: penalize high CV (oscillations)
             cv = stats.get(cv_key, 0.0)
             if cv > 0.2:
-                total_error += w_stability * target.weight * (cv - 0.2) ** 2
+                total_error += self.w_stability * target.weight * (cv - 0.2) ** 2
 
             # Trend penalty: penalize non-equilibrium
             trend = stats.get(trend_key, 0.0)
             if trend > 0.05:
-                total_error += w_stability * target.weight * (trend - 0.05) ** 2
+                total_error += self.w_stability * target.weight * (trend - 0.05) ** 2
 
         # Add worst-species term to prevent hiding one bad species
-        total_error += w_worst * worst_error
-
-        if call_idx % 5 == 0:
-            biomass_summary = ", ".join(
-                f"{sp}={stats.get(f'{sp}_mean', 0):.0f}"
-                for sp in SPECIES_NAMES
-            )
-            print(
-                f"  [eval {call_idx}] obj={total_error:.4f} | {biomass_summary}",
-                flush=True,
-            )
+        total_error += self.w_worst * worst_error
 
         return total_error
 
-    return objective
+
+def make_objective(
+    base_config: dict[str, str],
+    targets: list[BiomassTarget],
+    param_keys: list[str],
+    n_years: int = 40,
+    seed: int = 42,
+    use_log_space: bool = True,
+    w_stability: float = 5.0,
+    w_worst: float = 0.5,
+) -> Callable[[np.ndarray], float]:
+    """Create objective function for differential evolution.
+
+    Objective components:
+      1. Banded log-ratio loss: 0 inside [lower, upper], squared log-distance outside
+      2. Species weights: high (1.0) for well-assessed, low (0.2) for uncertain
+      3. Worst-species max term: prevents hiding one badly wrong species
+      4. Stability penalties: CV > 0.2 and trend > 0.05, weighted by w_stability
+
+    Returns a picklable _ObjectiveWrapper instance to support multiprocessing
+    in scipy.optimize.differential_evolution.
+    """
+    return _ObjectiveWrapper(
+        base_config=base_config,
+        targets=targets,
+        param_keys=param_keys,
+        n_years=n_years,
+        seed=seed,
+        use_log_space=use_log_space,
+        w_stability=w_stability,
+        w_worst=w_worst,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -623,6 +652,8 @@ def run_calibration(
         recombination=0.8,
         disp=True,
         polish=False,  # L-BFGS-B unreliable on noisy/discontinuous landscape
+        workers=-1,    # process pool; scales ~linearly with cores
+        updating="deferred",  # required when workers > 1
     )
 
     elapsed = time.time() - t0
