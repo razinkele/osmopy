@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import tempfile
 import time
 from collections.abc import Callable
@@ -652,7 +653,12 @@ def run_calibration(
         recombination=0.8,
         disp=True,
         polish=False,  # L-BFGS-B unreliable on noisy/discontinuous landscape
-        workers=-1,    # process pool; scales ~linearly with cores
+        # Cap workers at 8 rather than os.cpu_count() — each 50-year OSMOSE
+        # sim holds ~400 MB of numpy arrays; 28 concurrent workers on a
+        # 28-thread box exhausted 32 GB RAM and thrashed (observed
+        # 2026-04-24). 8 workers × 400 MB = 3.2 GB — comfortable.
+        # Override with OSMOSE_DE_WORKERS env var if needed.
+        workers=int(os.environ.get("OSMOSE_DE_WORKERS", "8")),
         updating="deferred",  # required when workers > 1
     )
 
