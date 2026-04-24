@@ -455,9 +455,15 @@ def get_phase2_params() -> tuple[list[str], list[tuple[float, float]], list[floa
     x0 = []
 
     r18_fishing = [0.08, 0.06, 0.25, 0.04, 0.03, 0.03, 0.02, 0.01]
+    # Per-species upper bounds: widen for flounder (sp3) and pikeperch (sp5) because
+    # the 2026-04-24 phase 2 calibration had fsh3 pinned at the log10=0.0 ceiling —
+    # DE wanted more fishing pressure. These two species have no natural-predator
+    # control in the 8-species model, so fishing is the only lever until background
+    # predators are added.
+    fishing_upper = [0.0, 0.0, 0.0, 0.5, 0.0, 0.5, 0.0, 0.0]
     for i in range(N_SPECIES):
         keys.append(f"fisheries.rate.base.fsh{i}")
-        bounds.append((-2.5, 0.0))
+        bounds.append((-2.5, fishing_upper[i]))
         x0.append(np.log10(max(r18_fishing[i], 0.003)))
 
     return keys, bounds, x0
