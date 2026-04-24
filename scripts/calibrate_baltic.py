@@ -499,6 +499,17 @@ def get_phase2_params() -> tuple[list[str], list[tuple[float, float]], list[floa
     return keys, bounds, x0
 
 
+def get_phase12_params() -> tuple[list[str], list[tuple[float, float]], list[float]]:
+    """Phase 12: joint phase 1 + phase 2 (24 params).
+
+    Concatenates all mortality + fishing params for joint optimization.
+    Captures predator-prey feedback that sequential phase1→phase2 missed.
+    """
+    keys1, bounds1, x01 = get_phase1_params()
+    keys2, bounds2, x02 = get_phase2_params()
+    return keys1 + keys2, bounds1 + bounds2, x01 + x02
+
+
 # ---------------------------------------------------------------------------
 # Calibration runner
 # ---------------------------------------------------------------------------
@@ -544,6 +555,8 @@ def run_calibration(
         param_keys, bounds, x0 = get_phase1g_params()  # literature-validated baselines
     elif phase == "2":
         param_keys, bounds, x0 = get_phase2_params()
+    elif phase == "12":
+        param_keys, bounds, x0 = get_phase12_params()
     else:
         raise ValueError(f"Unknown phase: {phase}")
 
@@ -592,6 +605,12 @@ def run_calibration(
         else:
             print("Phase 2 WARNING: no phase1_results.json found — running on R18 defaults "
                   "(risks re-introducing smelt/stickleback extinction).")
+
+    # Phase 12: joint optimization. No inheritance needed; both phase 1 + 2 params are free.
+    # This captures predator-prey feedback that sequential phase1→phase2 missed.
+    if phase == "12":
+        print("Phase 12: joint optimization of all 24 params (16 mortality + 8 fishing). "
+              "Captures trophic cascade feedback.")
 
     print(f"\nFree parameters ({len(param_keys)}):")
     for key, (lo, hi), x0_val in zip(param_keys, bounds, x0):
