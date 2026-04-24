@@ -302,17 +302,21 @@ def get_phase1_params() -> tuple[list[str], list[tuple[float, float]], list[floa
         x0.append(np.log10(max(r18_larval[i], 0.1)))
 
     # Adult additional mortality: R18 values range 0.0-0.05
-    # Bounds: log10(0.001)=-3.0 to log10(2.0)=0.3
+    # Bounds: log10(0.001)=-3.0 to log10(2.0)=0.3 by default.
+    # Widened to log10(5.0)=0.7 for species with documented seal/cormorant
+    # predation pressure (Lundström 2010, Östman 2013, Heikinheimo 2021).
+    # This gives DE headroom to discover predator-equivalent mortality
+    # since the background-species engine pathway is currently broken.
     r18_adult = [0.05, 0.001, 0.05, 0.05, 0.02, 0.03, 0.02, 0.001]
     adult_bounds = [
-        (-3.0, 0.3),   # sp0 cod
-        (-3.0, 0.3),   # sp1 herring
-        (-3.0, 0.3),   # sp2 sprat
-        (-3.0, 0.3),   # sp3 flounder
-        (-3.0, 0.3),   # sp4 perch
-        (-3.0, 0.3),   # sp5 pikeperch
-        (-3.0, 0.3),   # sp6 smelt
-        (-3.0, 0.3),   # sp7 stickleback
+        (-3.0, 0.7),   # sp0 cod — seal predation
+        (-3.0, 0.7),   # sp1 herring — heavy seal predation (16-19% per Gårdmark 2012)
+        (-3.0, 0.7),   # sp2 sprat — seal predation + cormorant on juveniles
+        (-3.0, 0.7),   # sp3 flounder — seal predation + some cormorant
+        (-3.0, 0.7),   # sp4 perch — cormorant predation (4-10% per Heikinheimo 2021)
+        (-3.0, 0.7),   # sp5 pikeperch — cormorant predation (4-23% per Heikinheimo 2016)
+        (-3.0, 0.3),   # sp6 smelt — no documented top predator in model, keep default
+        (-3.0, 0.3),   # sp7 stickleback — boom-bust, not predator-limited
     ]
     for i in range(N_SPECIES):
         keys.append(f"mortality.additional.rate.sp{i}")
