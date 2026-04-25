@@ -13,7 +13,6 @@ osmose.configuration.mortality.additional;baltic_param-additional-mortality.csv
 osmose.configuration.reproduction;baltic_param-reproduction.csv
 osmose.configuration.movement;baltic_param-movement.csv
 osmose.configuration.plankton;baltic_param-ltl.csv
-osmose.configuration.background;baltic_param-background.csv
 osmose.configuration.initialization;baltic_param-init-pop.csv
 osmose.configuration.migration;baltic_param-out-mortality.csv
 
