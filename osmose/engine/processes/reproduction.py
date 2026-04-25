@@ -58,8 +58,21 @@ def reproduction(
     # Egg count per species
     # Java: nEgg = sexRatio * beta * season * SSB * 1_000_000
     # The 1e6 converts SSB from tonnes to grams (fecundity is eggs per gram)
+    #
+    # Slice all per-species arrays to focal-only (length n_sp). When background
+    # species are configured, sex_ratio / relative_fecundity have length
+    # n_focal + n_bkg (extended with zeros by _merge_focal_background in
+    # config.py), but ssb is computed only for focal species. Without the
+    # slice, broadcasting fails when background species are activated.
+    # See `osmose/engine/config.py:701-702` for the merge that pads these.
     TONNES_TO_GRAMS = 1_000_000.0
-    n_eggs = config.sex_ratio * config.relative_fecundity * ssb * season_factor * TONNES_TO_GRAMS
+    n_eggs = (
+        config.sex_ratio[:n_sp]
+        * config.relative_fecundity[:n_sp]
+        * ssb
+        * season_factor
+        * TONNES_TO_GRAMS
+    )
 
     # Create new schools from eggs
     new_schools_list = []
