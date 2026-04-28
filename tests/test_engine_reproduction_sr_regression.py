@@ -48,15 +48,14 @@ def _make_state(biomass_t: float, n_schools: int = 1) -> SchoolState:
 def test_type_none_matches_linear_formula_across_ssb_sweep():
     """For five SSB levels at step=0, type=none returns sex_ratio*fec*SSB*season*1e6 exactly."""
     cfg = _make_cfg()
-    rng = np.random.default_rng(42)
     sex_ratio = 0.5
     rel_fec = 800.0
-    season = 1.0 / 12  # uniform when no spawning_season CSV is configured
+    season = 1.0 / cfg.n_dt_per_year  # uniform when no spawning_season CSV is configured
 
     biomasses_t = [10000.0, 50000.0, 100000.0, 250000.0, 1_000_000.0]
     for bm in biomasses_t:
         state = _make_state(bm)
-        out = reproduction(state, cfg, step=0, rng=rng)
+        out = reproduction(state, cfg, step=0, rng=np.random.default_rng(42))
         eggs = out.abundance[out.is_egg].sum()
         # Reproduction uses weight*abundance for SSB (not the biomass field).
         # Recompute the same way for the manual expected value.
@@ -68,15 +67,14 @@ def test_type_none_matches_linear_formula_across_ssb_sweep():
 def test_type_none_matches_linear_formula_across_step_phase():
     """Sample three steps within a year; the season factor must drop out of the byte-equality."""
     cfg = _make_cfg()
-    rng = np.random.default_rng(42)
     sex_ratio = 0.5
     rel_fec = 800.0
-    season = 1.0 / 12  # uniform; not phase-dependent without a spawning CSV
+    season = 1.0 / cfg.n_dt_per_year  # uniform; not phase-dependent without a spawning CSV
     state = _make_state(100_000.0)
     ssb_t = (state.abundance * state.weight).sum()
     expected = sex_ratio * rel_fec * ssb_t * season * 1_000_000.0
 
     for step in (0, 6, 11):
-        out = reproduction(state, cfg, step=step, rng=rng)
+        out = reproduction(state, cfg, step=step, rng=np.random.default_rng(42))
         eggs = out.abundance[out.is_egg].sum()
         np.testing.assert_allclose(eggs, expected, rtol=1e-9)
