@@ -6,17 +6,18 @@ Also handles age increment for all schools (Java side-effect of reproduction).
 from __future__ import annotations
 
 import numpy as np
+from numpy.typing import NDArray
 
 from osmose.engine.config import EngineConfig
 from osmose.engine.state import SchoolState
 
 
 def apply_stock_recruitment(
-    linear_eggs: np.ndarray,
-    ssb: np.ndarray,
-    ssb_half: np.ndarray,
+    linear_eggs: NDArray[np.float64],
+    ssb: NDArray[np.float64],
+    ssb_half: NDArray[np.float64],
     recruitment_type: list[str],
-) -> np.ndarray:
+) -> NDArray[np.float64]:
     """Apply per-species density-dependent stock-recruitment.
 
     Multiplicative correction over the linear SSB→eggs formula. At low SSB,
@@ -36,7 +37,11 @@ def apply_stock_recruitment(
     """
     n_sp = linear_eggs.shape[0]
     if not (ssb.shape[0] == ssb_half.shape[0] == len(recruitment_type) == n_sp):
-        raise ValueError("apply_stock_recruitment: input length mismatch")
+        raise ValueError(
+            f"apply_stock_recruitment: shape mismatch — "
+            f"linear_eggs={n_sp}, ssb={ssb.shape[0]}, "
+            f"ssb_half={ssb_half.shape[0]}, recruitment_type={len(recruitment_type)}"
+        )
 
     out = linear_eggs.copy()
     for sp in range(n_sp):

@@ -45,10 +45,7 @@ class TestApplyStockRecruitment:
         assert out[0] < linear[0] * 0.01
 
     def test_ricker_at_peak(self):
-        """Ricker peaks at SSB = ssb_half (where d eggs / d SSB = 0).
-
-        At SSB = ssb_half, the multiplier is exp(-1) ≈ 0.368.
-        """
+        """At SSB = ssb_half, the Ricker multiplier is exp(-1) ≈ 0.368."""
         linear = np.array([1000.0])
         ssb = np.array([500.0])
         ssb_half = np.array([500.0])
@@ -76,14 +73,21 @@ class TestApplyStockRecruitment:
         np.testing.assert_allclose(out[1], 500.0)
         np.testing.assert_allclose(out[2], 1000.0 * np.exp(-1.0), rtol=1e-6)
 
-    def test_zero_ssb_returns_zero(self):
-        """SSB=0 with any SR type returns 0 (linear is already 0)."""
-        linear = np.array([0.0, 0.0])
+    def test_zero_ssb_with_zero_ssb_half_does_not_divide_by_zero(self):
+        """The ssb<=0 guard must short-circuit before B-H divides by ssb_half=0.
+
+        Without the guard, B-H computes 1000 / (1 + 0/0) which yields NaN. The
+        guard preserves the linear_eggs value (which would be 0 in production
+        because SSB=0 -> linear=0, but here we use linear>0 to exercise the
+        contract directly).
+        """
+        linear = np.array([1000.0, 1000.0])
         ssb = np.array([0.0, 0.0])
-        ssb_half = np.array([100.0, 100.0])
+        ssb_half = np.array([0.0, 0.0])
         types = ["beverton_holt", "ricker"]
         out = apply_stock_recruitment(linear, ssb, ssb_half, types)
-        np.testing.assert_array_equal(out, [0.0, 0.0])
+        np.testing.assert_array_equal(out, linear)
+        assert not np.any(np.isnan(out)), "guard must prevent NaN"
 
     def test_unknown_type_raises(self):
         linear = np.array([1000.0])
