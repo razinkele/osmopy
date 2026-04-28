@@ -79,6 +79,10 @@ def _species_str_optional(
 ) -> list[str]:
     """Extract a per-species string array, using default if key is missing.
 
+    Both the default and user-provided values are stripped of whitespace and
+    lowercased before any comparison, so callers should pass `allowed` entries
+    in lowercase. Returns a list of normalized lowercase strings.
+
     If `allowed` is given, raise ValueError on any value not in the set.
     """
     out: list[str] = []
@@ -745,7 +749,7 @@ def _merge_focal_background(
             ),
             "maturity_age_dt": np.concatenate([focal["focal_maturity_age_dt"], bkg_zeros_i]),
             "recruitment_type": (
-                focal["focal_recruitment_type"] + ["none"] * len(background_list)
+                focal["focal_recruitment_type"] + ["none"] * n_bkg
             ),
             "recruitment_ssb_half": np.concatenate(
                 [focal["focal_recruitment_ssb_half"], bkg_zeros_f]

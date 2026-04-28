@@ -265,8 +265,7 @@ SPECIES_FIELDS: list[OsmoseField] = [
         max_val=1e9,
         description=(
             "SSB (tonnes) at which Beverton-Holt halves recruitment, or at which "
-            "Ricker recruitment peaks. Ignored when stock.recruitment.type=none. "
-            "0.0 with type!=none is a config error."
+            "Ricker recruitment peaks. Ignored when stock.recruitment.type=none."
         ),
         category="reproduction",
         unit="tonnes",

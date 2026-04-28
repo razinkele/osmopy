@@ -1,6 +1,7 @@
 """Tests for reproduction and initialization — Tier 1 verification."""
 
 import numpy as np
+import pytest
 
 from osmose.engine.config import EngineConfig
 from osmose.engine.grid import Grid
@@ -212,7 +213,6 @@ class TestStockRecruitmentConfig:
 
     def test_unknown_type_rejected(self):
         """Misspelled SR types fail loudly at config parse time."""
-        import pytest
         d = _make_reprod_config()
         d["stock.recruitment.type.sp0"] = "berverton_holdt"  # typo
         with pytest.raises(ValueError, match="stock.recruitment.type"):
@@ -220,7 +220,6 @@ class TestStockRecruitmentConfig:
 
     def test_ssbhalf_zero_with_active_sr_rejected(self):
         """type!=none with ssbhalf=0 is a configuration error."""
-        import pytest
         d = _make_reprod_config()
         d["stock.recruitment.type.sp0"] = "beverton_holt"
         d["stock.recruitment.ssbhalf.sp0"] = "0.0"
