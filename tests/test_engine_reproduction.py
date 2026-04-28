@@ -158,13 +158,12 @@ class TestReproduction:
                 abundance=np.array([100_000.0]),
                 length=np.array([15.0]),
                 weight=np.array([20.25]),
-                biomass=np.array([2_025_000.0]),  # 2025 t
+                biomass=np.array([2_025_000.0]),  # SSB = abundance(100k) × weight(20.25)
                 age_dt=np.array([24], dtype=np.int32),
             )
 
-        rng = np.random.default_rng(42)
-        st_lin = reproduction(_make_state(), cfg_linear, step=0, rng=rng)
-        st_bh = reproduction(_make_state(), cfg_bh, step=0, rng=rng)
+        st_lin = reproduction(_make_state(), cfg_linear, step=0, rng=np.random.default_rng(42))
+        st_bh = reproduction(_make_state(), cfg_bh, step=0, rng=np.random.default_rng(42))
 
         eggs_lin = st_lin.abundance[st_lin.is_egg].sum()
         eggs_bh = st_bh.abundance[st_bh.is_egg].sum()
