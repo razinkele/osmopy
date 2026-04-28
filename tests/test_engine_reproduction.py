@@ -141,6 +141,61 @@ class TestReproduction:
         # Should produce eggs from seeding biomass
         assert len(new_state) > 1  # original + new eggs
 
+    def test_beverton_holt_caps_eggs_at_high_ssb(self):
+        """Setting type=beverton_holt with low ssbhalf reduces eggs vs linear."""
+        d = _make_reprod_config()
+        # Linear baseline egg count
+        cfg_linear = EngineConfig.from_dict(d)
+        # B-H with very tight cap
+        d_bh = dict(d)
+        d_bh["stock.recruitment.type.sp0"] = "beverton_holt"
+        d_bh["stock.recruitment.ssbhalf.sp0"] = "1.0"  # very low cap
+        cfg_bh = EngineConfig.from_dict(d_bh)
+
+        def _make_state():
+            s = SchoolState.create(n_schools=1, species_id=np.array([0], dtype=np.int32))
+            return s.replace(
+                abundance=np.array([100_000.0]),
+                length=np.array([15.0]),
+                weight=np.array([20.25]),
+                biomass=np.array([2_025_000.0]),  # 2025 t
+                age_dt=np.array([24], dtype=np.int32),
+            )
+
+        rng = np.random.default_rng(42)
+        st_lin = reproduction(_make_state(), cfg_linear, step=0, rng=rng)
+        st_bh = reproduction(_make_state(), cfg_bh, step=0, rng=rng)
+
+        eggs_lin = st_lin.abundance[st_lin.is_egg].sum()
+        eggs_bh = st_bh.abundance[st_bh.is_egg].sum()
+        assert eggs_bh < eggs_lin * 0.01, (
+            f"B-H should heavily cap eggs: linear={eggs_lin}, bh={eggs_bh}"
+        )
+
+    def test_recruitment_type_none_matches_pre_sr_byte_for_byte(self):
+        """type=none must preserve the exact linear formula (Java parity)."""
+        cfg = EngineConfig.from_dict(_make_reprod_config())
+        assert cfg.recruitment_type[0] == "none"
+        state = SchoolState.create(n_schools=1, species_id=np.array([0], dtype=np.int32))
+        state = state.replace(
+            abundance=np.array([1000.0]),
+            length=np.array([15.0]),
+            weight=np.array([20.25]),
+            biomass=np.array([20250.0]),
+            age_dt=np.array([24], dtype=np.int32),
+        )
+        rng = np.random.default_rng(42)
+        new_state = reproduction(state, cfg, step=0, rng=rng)
+
+        # Manual linear computation
+        ssb = 20250.0  # 1 mature school
+        sex_ratio = 0.5
+        rel_fec = 800.0
+        season = 1.0 / 12  # n_dt_per_year=12, no spawning_season CSV
+        expected = sex_ratio * rel_fec * ssb * season * 1_000_000.0
+        actual = new_state.abundance[new_state.is_egg].sum()
+        np.testing.assert_allclose(actual, expected, rtol=1e-9)
+
 
 def test_reproduction_creates_single_school_when_n_eggs_below_n_new():
     """Cover the n_eggs < n_new collapse branch: when egg count < n_schools, n_new collapses to 1.

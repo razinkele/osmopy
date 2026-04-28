@@ -114,12 +114,18 @@ def reproduction(
     # slice, broadcasting fails when background species are activated.
     # See `osmose/engine/config.py:701-702` for the merge that pads these.
     TONNES_TO_GRAMS = 1_000_000.0
-    n_eggs = (
+    n_eggs_linear = (
         config.sex_ratio[:n_sp]
         * config.relative_fecundity[:n_sp]
         * ssb
         * season_factor
         * TONNES_TO_GRAMS
+    )
+    n_eggs = apply_stock_recruitment(
+        n_eggs_linear,
+        ssb,
+        config.recruitment_ssb_half[:n_sp],
+        config.recruitment_type[:n_sp],
     )
 
     # Create new schools from eggs
