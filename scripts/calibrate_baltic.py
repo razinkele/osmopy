@@ -305,8 +305,9 @@ def get_phase1_params() -> tuple[list[str], list[tuple[float, float]], list[floa
     # Bounds: log10(0.001)=-3.0 to log10(2.0)=0.3 by default.
     # Widened to log10(5.0)=0.7 for species with documented seal/cormorant
     # predation pressure (Lundström 2010, Östman 2013, Heikinheimo 2021).
-    # This gives DE headroom to discover predator-equivalent mortality
-    # since the background-species engine pathway is currently broken.
+    # B-H stock-recruitment (v0.11.0) now provides density-dependent
+    # cod recruitment, so DE no longer needs a hard mortality floor —
+    # the linear-eggs compensation pathway is closed at the egg stage.
     r18_adult = [0.05, 0.001, 0.05, 0.05, 0.02, 0.03, 0.02, 0.001]
     adult_bounds = [
         (-3.0, 0.7),   # sp0 cod — seal predation
@@ -321,7 +322,11 @@ def get_phase1_params() -> tuple[list[str], list[tuple[float, float]], list[floa
     for i in range(N_SPECIES):
         keys.append(f"mortality.additional.rate.sp{i}")
         bounds.append(adult_bounds[i])
-        x0.append(np.log10(max(r18_adult[i], 0.001)))
+        # Defensive: clamp x0 into its bound so DE doesn't start from an
+        # infeasible point if a per-species floor or ceiling is later raised.
+        log_x0 = np.log10(max(r18_adult[i], 0.001))
+        log_x0 = max(adult_bounds[i][0], min(adult_bounds[i][1], log_x0))
+        x0.append(log_x0)
 
     return keys, bounds, x0
 
@@ -503,15 +508,46 @@ def get_phase2_params() -> tuple[list[str], list[tuple[float, float]], list[floa
     return keys, bounds, x0
 
 
-def get_phase12_params() -> tuple[list[str], list[tuple[float, float]], list[float]]:
-    """Phase 12: joint phase 1 + phase 2 (24 params).
+def get_recruitment_ssbhalf_params() -> tuple[list[str], list[tuple[float, float]], list[float]]:
+    """Beverton-Holt ssb_half DE parameters (3 species).
 
-    Concatenates all mortality + fishing params for joint optimization.
-    Captures predator-prey feedback that sequential phase1→phase2 missed.
+    Cod (sp0) is held fixed at 120 kt (Bpa per ICES cod.27.24-32) via the
+    baltic_param-reproduction.csv default; only sp3/sp4/sp5 are tunable.
+
+    Bounds in log10(tonnes):
+    - sp3 flounder: 5–200 kt (lumped Baltic stock; ICES splits into 4 sub-stocks)
+    - sp4 perch:    0.5–50 kt (Curonian Lagoon, no ICES assessment)
+    - sp5 pikeperch: 0.5–50 kt (Curonian Lagoon, no ICES assessment)
+    """
+    keys = [
+        "stock.recruitment.ssbhalf.sp3",
+        "stock.recruitment.ssbhalf.sp4",
+        "stock.recruitment.ssbhalf.sp5",
+    ]
+    bounds = [
+        (3.7, 5.3),  # sp3 flounder: 5k–200k t
+        (2.7, 4.7),  # sp4 perch:    500–50k t
+        (2.7, 4.7),  # sp5 pikeperch: 500–50k t
+    ]
+    x0 = [
+        np.log10(50000.0),  # sp3 flounder mid-range
+        np.log10(10000.0),  # sp4 perch mid-range
+        np.log10(10000.0),  # sp5 pikeperch mid-range
+    ]
+    return keys, bounds, x0
+
+
+def get_phase12_params() -> tuple[list[str], list[tuple[float, float]], list[float]]:
+    """Phase 12: joint phase 1 + phase 2 + B-H ssb_half (27 params).
+
+    Concatenates all mortality + fishing + recruitment params for joint
+    optimization. Captures predator-prey feedback that sequential phase1→phase2
+    missed, plus density-dependent recruitment (v0.11.0).
     """
     keys1, bounds1, x01 = get_phase1_params()
     keys2, bounds2, x02 = get_phase2_params()
-    return keys1 + keys2, bounds1 + bounds2, x01 + x02
+    keys3, bounds3, x03 = get_recruitment_ssbhalf_params()
+    return keys1 + keys2 + keys3, bounds1 + bounds2 + bounds3, x01 + x02 + x03
 
 
 # ---------------------------------------------------------------------------
@@ -613,8 +649,9 @@ def run_calibration(
     # Phase 12: joint optimization. No inheritance needed; both phase 1 + 2 params are free.
     # This captures predator-prey feedback that sequential phase1→phase2 missed.
     if phase == "12":
-        print("Phase 12: joint optimization of all 24 params (16 mortality + 8 fishing). "
-              "Captures trophic cascade feedback.")
+        print("Phase 12: joint optimization of 27 params (16 mortality + 8 fishing "
+              "+ 3 B-H ssb_half). Captures trophic cascade feedback + density-dependent "
+              "recruitment.")
 
     print(f"\nFree parameters ({len(param_keys)}):")
     for key, (lo, hi), x0_val in zip(param_keys, bounds, x0):

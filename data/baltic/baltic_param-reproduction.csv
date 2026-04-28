@@ -7,3 +7,16 @@ reproduction.season.file.sp4;reproduction/reproduction-seasonality-sp4.csv
 reproduction.season.file.sp5;reproduction/reproduction-seasonality-sp5.csv
 reproduction.season.file.sp6;reproduction/reproduction-seasonality-sp6.csv
 reproduction.season.file.sp7;reproduction/reproduction-seasonality-sp7.csv
+
+# Density-dependent stock-recruitment (Beverton-Holt) — v0.11.0
+# Cod (sp0): ssb_half ≈ Bpa (122 kt) per ICES cod.27.24-32; fixed.
+# Flounder (sp3), perch (sp4), pikeperch (sp5): DE-tunable initial values;
+# overridden at runtime by phase 12 calibration. Other species default to 'none'.
+stock.recruitment.type.sp0;beverton_holt
+stock.recruitment.type.sp3;beverton_holt
+stock.recruitment.type.sp4;beverton_holt
+stock.recruitment.type.sp5;beverton_holt
+stock.recruitment.ssbhalf.sp0;120000.0
+stock.recruitment.ssbhalf.sp3;50000.0
+stock.recruitment.ssbhalf.sp4;10000.0
+stock.recruitment.ssbhalf.sp5;10000.0
