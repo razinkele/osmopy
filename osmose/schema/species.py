@@ -242,6 +242,37 @@ SPECIES_FIELDS: list[OsmoseField] = [
         indexed=True,
         required=False,
     ),
+    OsmoseField(
+        key_pattern="stock.recruitment.type.sp{idx}",
+        param_type=ParamType.ENUM,
+        default="none",
+        choices=["none", "beverton_holt", "ricker"],
+        description=(
+            "Stock-recruitment relationship applied to per-step egg production. "
+            "'none' preserves the linear SSB→eggs formula (Java parity). "
+            "'beverton_holt' caps recruitment asymptotically at high SSB. "
+            "'ricker' over-compensates (recruitment peaks then declines)."
+        ),
+        category="reproduction",
+        indexed=True,
+        required=False,
+    ),
+    OsmoseField(
+        key_pattern="stock.recruitment.ssbhalf.sp{idx}",
+        param_type=ParamType.FLOAT,
+        default=0.0,
+        min_val=0.0,
+        max_val=1e9,
+        description=(
+            "SSB (tonnes) at which Beverton-Holt halves recruitment, or at which "
+            "Ricker recruitment peaks. Ignored when stock.recruitment.type=none. "
+            "0.0 with type!=none is a config error."
+        ),
+        category="reproduction",
+        unit="tonnes",
+        indexed=True,
+        required=False,
+    ),
     # ── Life History ─────────────────────────────────────────────────────
     OsmoseField(
         key_pattern="species.lifespan.sp{idx}",
