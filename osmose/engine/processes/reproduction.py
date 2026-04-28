@@ -11,6 +11,49 @@ from osmose.engine.config import EngineConfig
 from osmose.engine.state import SchoolState
 
 
+def apply_stock_recruitment(
+    linear_eggs: np.ndarray,
+    ssb: np.ndarray,
+    ssb_half: np.ndarray,
+    recruitment_type: list[str],
+) -> np.ndarray:
+    """Apply per-species density-dependent stock-recruitment.
+
+    Multiplicative correction over the linear SSB→eggs formula. At low SSB,
+    every variant approaches `linear_eggs` (preserves Java-linear regime).
+
+    Parameters
+    ----------
+    linear_eggs : (n_sp,) per-step linear egg production = sex_ratio * relative_fecundity
+        * SSB * season_factor * 1e6 (tonnes→grams). All non-negative.
+    ssb : (n_sp,) spawning stock biomass in tonnes (per-step).
+    ssb_half : (n_sp,) half-saturation SSB in tonnes; ignored where type=="none".
+    recruitment_type : per-species, one of {"none","beverton_holt","ricker"}.
+
+    Returns
+    -------
+    (n_sp,) corrected egg counts.
+    """
+    n_sp = linear_eggs.shape[0]
+    if not (ssb.shape[0] == ssb_half.shape[0] == len(recruitment_type) == n_sp):
+        raise ValueError("apply_stock_recruitment: input length mismatch")
+
+    out = linear_eggs.copy()
+    for sp in range(n_sp):
+        t = recruitment_type[sp]
+        if t == "none":
+            continue
+        if ssb[sp] <= 0.0:
+            continue  # nothing to scale; linear_eggs is already 0
+        if t == "beverton_holt":
+            out[sp] = linear_eggs[sp] / (1.0 + ssb[sp] / ssb_half[sp])
+        elif t == "ricker":
+            out[sp] = linear_eggs[sp] * np.exp(-ssb[sp] / ssb_half[sp])
+        else:
+            raise ValueError(f"unknown stock-recruitment type: {t!r}")
+    return out
+
+
 def reproduction(
     state: SchoolState,
     config: EngineConfig,
