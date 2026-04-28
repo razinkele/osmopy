@@ -74,6 +74,25 @@ def _species_int_optional(
     )
 
 
+def _species_str_optional(
+    cfg: dict[str, str], pattern: str, n: int, default: str, allowed: set[str] | None = None
+) -> list[str]:
+    """Extract a per-species string array, using default if key is missing.
+
+    If `allowed` is given, raise ValueError on any value not in the set.
+    """
+    out: list[str] = []
+    for i in range(n):
+        key = pattern.format(i=i)
+        val = cfg.get(key, default).strip().lower()
+        if allowed is not None and val not in allowed:
+            raise ValueError(
+                f"{key}={val!r} is not one of {sorted(allowed)}"
+            )
+        out.append(val)
+    return out
+
+
 def _resolve_file(file_key: str, config_dir: str = "") -> Path | None:
     """Resolve a relative file path against multiple search directories.
 
@@ -490,6 +509,22 @@ def _parse_reproduction_params(
         cfg, "species.maturity.age.sp{i}", n_sp, default=0.0
     )
     maturity_age_dt = (maturity_age_years * n_dt).astype(np.int32)
+    recruitment_type = _species_str_optional(
+        cfg,
+        "stock.recruitment.type.sp{i}",
+        n_sp,
+        default="none",
+        allowed={"none", "beverton_holt", "ricker"},
+    )
+    recruitment_ssb_half = _species_float_optional(
+        cfg, "stock.recruitment.ssbhalf.sp{i}", n_sp, default=0.0
+    )
+    for i in range(n_sp):
+        if recruitment_type[i] != "none" and recruitment_ssb_half[i] <= 0.0:
+            raise ValueError(
+                f"stock.recruitment.ssbhalf.sp{i} must be > 0 when "
+                f"stock.recruitment.type.sp{i}={recruitment_type[i]!r}"
+            )
     return {
         "focal_sex_ratio": sex_ratio,
         "focal_relative_fecundity": relative_fecundity,
@@ -498,6 +533,8 @@ def _parse_reproduction_params(
         "focal_seeding_max_step": seeding_max_step,
         "focal_larva_mortality_rate": larva_mortality_rate,
         "focal_maturity_age_dt": maturity_age_dt,
+        "focal_recruitment_type": recruitment_type,
+        "focal_recruitment_ssb_half": recruitment_ssb_half,
     }
 
 
@@ -707,6 +744,12 @@ def _merge_focal_background(
                 [focal["focal_larva_mortality_rate"], bkg_zeros_f]
             ),
             "maturity_age_dt": np.concatenate([focal["focal_maturity_age_dt"], bkg_zeros_i]),
+            "recruitment_type": (
+                focal["focal_recruitment_type"] + ["none"] * len(background_list)
+            ),
+            "recruitment_ssb_half": np.concatenate(
+                [focal["focal_recruitment_ssb_half"], bkg_zeros_f]
+            ),
             "lmax": np.concatenate([focal["focal_lmax"], bkg_zeros_f]),
             "starvation_rate_max": np.concatenate(
                 [focal["focal_starvation_rate_max"], bkg_zeros_f]
@@ -752,6 +795,8 @@ def _merge_focal_background(
             "seeding_max_step": focal["focal_seeding_max_step"],
             "larva_mortality_rate": focal["focal_larva_mortality_rate"],
             "maturity_age_dt": focal["focal_maturity_age_dt"],
+            "recruitment_type": focal["focal_recruitment_type"],
+            "recruitment_ssb_half": focal["focal_recruitment_ssb_half"],
             "lmax": focal["focal_lmax"],
             "starvation_rate_max": focal["focal_starvation_rate_max"],
             "fishing_rate": focal["fishing"],
@@ -1099,6 +1144,9 @@ class EngineConfig:
     seeding_max_step: NDArray[np.int32]  # max step for seeding (default: lifespan_dt)
     larva_mortality_rate: NDArray[np.float64]  # additional mortality for eggs/larvae
     larva_mortality_by_dt: list | None  # time-varying larval mortality (SingleTimeSeries per sp)
+    # Stock-recruitment (post-parity divergence; Java has no equivalent)
+    recruitment_type: list[str]  # one of {"none","beverton_holt","ricker"} per species
+    recruitment_ssb_half: NDArray[np.float64]  # tonnes; ignored when type=="none"
 
     # Predation — 2D arrays of shape (n_total, max_stages)
     size_ratio_min: NDArray[np.float64]  # min pred/prey ratio per species per stage
@@ -1413,6 +1461,8 @@ class EngineConfig:
         focal_seeding_max_step = _repro["focal_seeding_max_step"]
         focal_larva_mortality_rate = _repro["focal_larva_mortality_rate"]
         focal_maturity_age_dt = _repro["focal_maturity_age_dt"]
+        focal_recruitment_type = _repro["focal_recruitment_type"]
+        focal_recruitment_ssb_half = _repro["focal_recruitment_ssb_half"]
         # Fishing spatial distribution maps
         focal_fishing_spatial_maps: list[np.ndarray | None] = []
         # Try shared fisheries map first (v4)
@@ -1472,6 +1522,8 @@ class EngineConfig:
             "focal_seeding_max_step": focal_seeding_max_step,
             "focal_larva_mortality_rate": focal_larva_mortality_rate,
             "focal_maturity_age_dt": focal_maturity_age_dt,
+            "focal_recruitment_type": focal_recruitment_type,
+            "focal_recruitment_ssb_half": focal_recruitment_ssb_half,
             "focal_starvation_rate_max": focal_starvation_rate_max,
             "focal_fishing_selectivity_l50": focal_fishing_selectivity_l50,
             "focal_fishing_a50": focal_fishing_a50,
@@ -1509,6 +1561,8 @@ class EngineConfig:
         seeding_max_step = _merged["seeding_max_step"]
         larva_mortality_rate = _merged["larva_mortality_rate"]
         maturity_age_dt = _merged["maturity_age_dt"]
+        recruitment_type = _merged["recruitment_type"]
+        recruitment_ssb_half = _merged["recruitment_ssb_half"]
         lmax = _merged["lmax"]
         starvation_rate_max = _merged["starvation_rate_max"]
         fishing_rate = _merged["fishing_rate"]
@@ -1782,6 +1836,8 @@ class EngineConfig:
             seeding_max_step=seeding_max_step,
             larva_mortality_rate=larva_mortality_rate,
             larva_mortality_by_dt=_load_larva_mortality_by_dt(cfg, n_sp, n_dt, n_dt * n_yr),
+            recruitment_type=recruitment_type,
+            recruitment_ssb_half=recruitment_ssb_half,
             size_ratio_min=size_ratio_min_2d,
             size_ratio_max=size_ratio_max_2d,
             feeding_stage_thresholds=all_thresholds,

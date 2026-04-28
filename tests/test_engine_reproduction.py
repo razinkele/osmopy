@@ -192,3 +192,37 @@ def test_reproduction_creates_single_school_when_n_eggs_below_n_new():
     )
     # The single new school must be an egg
     assert new_state.is_egg[-1], "New school should be flagged as egg"
+
+
+class TestStockRecruitmentConfig:
+    def test_default_type_is_none(self):
+        """Without stock.recruitment.* keys, all species default to 'none'."""
+        cfg = EngineConfig.from_dict(_make_reprod_config())
+        assert cfg.recruitment_type[0] == "none"
+        assert cfg.recruitment_ssb_half[0] == 0.0
+
+    def test_beverton_holt_type_parsed(self):
+        """Setting type=beverton_holt and ssbhalf is round-tripped."""
+        d = _make_reprod_config()
+        d["stock.recruitment.type.sp0"] = "beverton_holt"
+        d["stock.recruitment.ssbhalf.sp0"] = "12500.0"
+        cfg = EngineConfig.from_dict(d)
+        assert cfg.recruitment_type[0] == "beverton_holt"
+        assert cfg.recruitment_ssb_half[0] == 12500.0
+
+    def test_unknown_type_rejected(self):
+        """Misspelled SR types fail loudly at config parse time."""
+        import pytest
+        d = _make_reprod_config()
+        d["stock.recruitment.type.sp0"] = "berverton_holdt"  # typo
+        with pytest.raises(ValueError, match="stock.recruitment.type"):
+            EngineConfig.from_dict(d)
+
+    def test_ssbhalf_zero_with_active_sr_rejected(self):
+        """type!=none with ssbhalf=0 is a configuration error."""
+        import pytest
+        d = _make_reprod_config()
+        d["stock.recruitment.type.sp0"] = "beverton_holt"
+        d["stock.recruitment.ssbhalf.sp0"] = "0.0"
+        with pytest.raises(ValueError, match="stock.recruitment.ssbhalf"):
+            EngineConfig.from_dict(d)
