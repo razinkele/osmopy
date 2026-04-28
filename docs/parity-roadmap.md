@@ -265,6 +265,28 @@ Evidence: 2510 tests passing. EEC 14/14 parity, Bay of Biscay 8/8. Python faster
 
 ---
 
+## Post-parity divergences
+
+OSMOSE-Python preserves Java parity by default but adds the following opt-in
+features that have no Java counterpart. These are documented here so any future
+parity audit knows to expect a divergence when the corresponding config keys
+are set.
+
+### Beverton-Holt / Ricker stock-recruitment (2026-04-28)
+
+- Config: `stock.recruitment.type.sp{i}` ∈ `{none, beverton_holt, ricker}`,
+  `stock.recruitment.ssbhalf.sp{i}` (tonnes).
+- Default: `type=none` for every species → byte-for-byte equivalent to the
+  Java linear formula `n_eggs = sex_ratio · relative_fecundity · SSB · season · 1e6`.
+- Rationale: Java OSMOSE has no SR; DE calibration of the linear regime can
+  trade off adult vs larval mortality to defeat single-axis biomass bounds
+  (verified 2026-04-27 with cod-floor experiment: forcing adult mortality up
+  14× moved cod biomass only +8% because larval mortality dropped 24× to
+  compensate). Density-dependent recruitment is the structural fix.
+- Code: `osmose/engine/processes/reproduction.py:apply_stock_recruitment`
+
+---
+
 ## What's next (post-parity)
 
 The parity roadmap is exhausted against standard OSMOSE + Ev-OSMOSE. Future work falls outside this document. Possible directions (no commitment implied):

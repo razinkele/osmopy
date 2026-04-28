@@ -90,9 +90,7 @@ def _species_str_optional(
         key = pattern.format(i=i)
         val = cfg.get(key, default).strip().lower()
         if allowed is not None and val not in allowed:
-            raise ValueError(
-                f"{key}={val!r} is not one of {sorted(allowed)}"
-            )
+            raise ValueError(f"{key}={val!r} is not one of {sorted(allowed)}")
         out.append(val)
     return out
 
@@ -748,9 +746,7 @@ def _merge_focal_background(
                 [focal["focal_larva_mortality_rate"], bkg_zeros_f]
             ),
             "maturity_age_dt": np.concatenate([focal["focal_maturity_age_dt"], bkg_zeros_i]),
-            "recruitment_type": (
-                focal["focal_recruitment_type"] + ["none"] * n_bkg
-            ),
+            "recruitment_type": (focal["focal_recruitment_type"] + ["none"] * n_bkg),
             "recruitment_ssb_half": np.concatenate(
                 [focal["focal_recruitment_ssb_half"], bkg_zeros_f]
             ),

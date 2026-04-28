@@ -85,6 +85,8 @@ def _minimal_config(n_species: int = 2, n_background: int = 0, **overrides) -> d
         java_compat_rng=False,
         random_distribution_ncell=None,
         growth_class=["VB"] * n_total,
+        recruitment_type=["none"] * n_total,
+        recruitment_ssb_half=np.zeros(n_total),
         raw_config={},
     )
     defaults.update(overrides)

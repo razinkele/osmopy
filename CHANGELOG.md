@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [Unreleased]
+
+### Added
+- Stock-recruitment subsystem: per-species `stock.recruitment.type` ∈
+  `{none, beverton_holt, ricker}` plus `stock.recruitment.ssbhalf` for the
+  shape parameter. Default is `none` (linear, Java parity preserved). Opt-in
+  fix for the cod/perch/pikeperch/flounder structural overshoots observed in
+  the 2026-04-27 phase-12 cod-floor calibration. See
+  `docs/parity-roadmap.md` § Post-parity divergences.
+
 ## [0.9.3] - 2026-04-19
 
 ### Features

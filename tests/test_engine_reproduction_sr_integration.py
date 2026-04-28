@@ -35,9 +35,7 @@ def _base_cfg() -> dict[str, str]:
 
 def _seed_state(n_schools: int = 5) -> SchoolState:
     """Seed mature schools that will spawn at every step."""
-    s = SchoolState.create(
-        n_schools=n_schools, species_id=np.zeros(n_schools, dtype=np.int32)
-    )
+    s = SchoolState.create(n_schools=n_schools, species_id=np.zeros(n_schools, dtype=np.int32))
     return s.replace(
         abundance=np.full(n_schools, 10_000.0, dtype=np.float64),
         length=np.full(n_schools, 20.0, dtype=np.float64),
@@ -66,11 +64,13 @@ def test_bh_produces_strictly_fewer_eggs_than_linear():
     cfg_lin = EngineConfig.from_dict(_base_cfg())
     eggs_lin = _run_steps(cfg_lin, n_steps=12)
 
-    cfg_bh = EngineConfig.from_dict({
-        **_base_cfg(),
-        "stock.recruitment.type.sp0": "beverton_holt",
-        "stock.recruitment.ssbhalf.sp0": "1000.0",  # ssb_half << per-step SSB
-    })
+    cfg_bh = EngineConfig.from_dict(
+        {
+            **_base_cfg(),
+            "stock.recruitment.type.sp0": "beverton_holt",
+            "stock.recruitment.ssbhalf.sp0": "1000.0",  # ssb_half << per-step SSB
+        }
+    )
     eggs_bh = _run_steps(cfg_bh, n_steps=12)
 
     assert eggs_bh < eggs_lin, (
@@ -78,18 +78,18 @@ def test_bh_produces_strictly_fewer_eggs_than_linear():
     )
     # ssb_half << SSB → B-H multiplier ≈ ssb_half / SSB → near-zero ratio.
     assert eggs_bh / eggs_lin < 0.1, (
-        f"B-H cap should be aggressive at low ssb_half: ratio={eggs_bh/eggs_lin:.4f}"
+        f"B-H cap should be aggressive at low ssb_half: ratio={eggs_bh / eggs_lin:.4f}"
     )
 
 
 def test_ricker_collapses_eggs_at_high_ssb():
     """Ricker with ssb_half << SSB drives eggs to near-zero (over-compensation)."""
-    cfg_ricker = EngineConfig.from_dict({
-        **_base_cfg(),
-        "stock.recruitment.type.sp0": "ricker",
-        "stock.recruitment.ssbhalf.sp0": "100.0",  # SSB / ssb_half ≈ 24000 → exp(-24000) ≈ 0
-    })
-    eggs_ricker = _run_steps(cfg_ricker, n_steps=6)
-    assert eggs_ricker < 1.0, (
-        f"Ricker should collapse to ~0 at SSB/h=24000: got {eggs_ricker}"
+    cfg_ricker = EngineConfig.from_dict(
+        {
+            **_base_cfg(),
+            "stock.recruitment.type.sp0": "ricker",
+            "stock.recruitment.ssbhalf.sp0": "100.0",  # SSB / ssb_half ≈ 24000 → exp(-24000) ≈ 0
+        }
     )
+    eggs_ricker = _run_steps(cfg_ricker, n_steps=6)
+    assert eggs_ricker < 1.0, f"Ricker should collapse to ~0 at SSB/h=24000: got {eggs_ricker}"

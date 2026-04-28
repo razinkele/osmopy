@@ -187,9 +187,7 @@ def reproduction(
                 # Partial population: one side has arrays, the other doesn't.
                 # Currently unreachable (no code path assigns imax_trait), so
                 # fail loudly rather than silently mis-align lengths.
-                raise ValueError(
-                    f"SchoolState.{f.name}: cannot concatenate; some inputs are None"
-                )
+                raise ValueError(f"SchoolState.{f.name}: cannot concatenate; some inputs are None")
         state = SchoolState(**merged_fields)
 
     return state
