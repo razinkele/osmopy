@@ -373,6 +373,7 @@ class BackgroundState:
         all_trophic_level: list[NDArray[np.float64]] = []
         all_cell_x: list[NDArray[np.int32]] = []
         all_cell_y: list[NDArray[np.int32]] = []
+        all_length: list[NDArray[np.float64]] = []
 
         for bkg_idx, sp in enumerate(self._species):
             species_id = self._n_focal + bkg_idx
@@ -422,6 +423,7 @@ class BackgroundState:
                     cell_biomass = np.full(n_ocean, scalar_biomass, dtype=np.float64)
 
                 cls_weight_arr = np.full(n_ocean, cls_weight, dtype=np.float64)
+                cls_length = sp.lengths[cls_idx] if cls_idx < len(sp.lengths) else 0.0
                 if cls_weight > 0.0:
                     cls_abundance_arr: NDArray[np.float64] = cell_biomass / cls_weight
                 else:
@@ -438,6 +440,7 @@ class BackgroundState:
                 all_trophic_level.append(np.full(n_ocean, cls_tl, dtype=np.float64))
                 all_cell_x.append(self._ocean_xs.copy())
                 all_cell_y.append(self._ocean_ys.copy())
+                all_length.append(np.full(n_ocean, cls_length, dtype=np.float64))
 
         n_total = sum(len(a) for a in all_species_id)
         state = SchoolState.create(n_schools=n_total)
@@ -452,6 +455,7 @@ class BackgroundState:
             trophic_level=np.concatenate(all_trophic_level),
             cell_x=np.concatenate(all_cell_x),
             cell_y=np.concatenate(all_cell_y),
+            length=np.concatenate(all_length),
         )
 
     @staticmethod
