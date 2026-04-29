@@ -13,6 +13,7 @@ the emulator.
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Callable
 from typing import Any
 
@@ -22,7 +23,7 @@ from numpy.typing import NDArray
 from scipy.optimize import differential_evolution
 from scipy.stats.qmc import LatinHypercube
 from sklearn.gaussian_process import GaussianProcessRegressor  # type: ignore[import-untyped]
-from sklearn.gaussian_process.kernels import Matern  # type: ignore[import-untyped]
+from sklearn.gaussian_process.kernels import Matern, WhiteKernel  # type: ignore[import-untyped]
 
 
 def _eval_batch(
@@ -135,10 +136,24 @@ def surrogate_assisted_de(
     lhs = LatinHypercube(d=n_dim, seed=rng)
     init_samples = bounds_arr[:, 0] + lhs.random(n_initial) * (bounds_arr[:, 1] - bounds_arr[:, 0])
     if x0 is not None:
-        init_samples[0] = np.asarray(x0, dtype=float)
-        init_samples[0] = np.clip(init_samples[0], bounds_arr[:, 0], bounds_arr[:, 1])
+        x0_arr = np.asarray(x0, dtype=float)
+        x0_clipped = np.clip(x0_arr, bounds_arr[:, 0], bounds_arr[:, 1])
+        if not np.allclose(x0_clipped, x0_arr):
+            # Silent mutation of a warm-start would mislead callers comparing
+            # the result against the seed they passed in. Surface it.
+            warnings.warn(
+                f"x0 clipped into bounds: "
+                f"{int((x0_clipped != x0_arr).sum())} of {n_dim} components changed",
+                stacklevel=2,
+            )
+        init_samples[0] = x0_clipped
+
+    # Track real-eval budget separately from training-set size — NaN evals are
+    # dropped from training but DID consume budget; nfev must reflect that.
+    total_real_evals = 0
 
     Y = _eval_batch(objective, init_samples, workers)
+    total_real_evals += int(len(Y))
     finite = np.isfinite(Y)
     if not finite.any():
         raise RuntimeError("All initial evaluations returned NaN/inf — objective is broken")
@@ -148,26 +163,69 @@ def surrogate_assisted_de(
 
     history: list[dict[str, Any]] = [{
         "phase": "init",
-        "real_evals": int(finite.sum()),
+        "real_evals": int(len(Y)),
+        "real_evals_finite": int(finite.sum()),
         "best": float(np.min(y_train)),
         "n_train": int(finite.sum()),
     }]
     if verbose:
-        print(f"[surrogate-DE] init: {finite.sum()} real evals, best={np.min(y_train):.4f}")
+        print(
+            f"[surrogate-DE] init: {finite.sum()}/{len(Y)} finite evals, "
+            f"best={np.min(y_train):.4f}"
+        )
 
     # Phase 2..N: surrogate refinement
     for it in range(n_iterations):
-        # Fit GP. normalize_y=True is critical — otherwise the GP defaults to a
-        # zero prior mean which severely biases predictions when y is far from 0.
+        # Fit GP. normalize_y=True keeps the prior mean tracking the data; the
+        # WhiteKernel adds a learnable noise floor so near-duplicate training
+        # points (a real risk when many evals NaN and survivors cluster) do not
+        # produce a singular covariance matrix.
+        kernel = Matern(nu=2.5) + WhiteKernel(
+            noise_level=1e-3, noise_level_bounds=(1e-7, 1.0)
+        )
         gp = GaussianProcessRegressor(
-            kernel=Matern(nu=2.5),
+            kernel=kernel,
             normalize_y=True,
             n_restarts_optimizer=3,
             random_state=int(seed) + it,
         )
-        gp.fit(X_train, y_train)
+        try:
+            gp.fit(X_train, y_train)
+        except (np.linalg.LinAlgError, ValueError) as exc:
+            # Singular covariance or other fit failure — fall back: skip the
+            # surrogate-DE step this iteration and sample fresh LHS candidates
+            # so we keep accumulating training data instead of crashing.
+            warnings.warn(
+                f"surrogate-DE: GP fit failed at iter {it} ({type(exc).__name__}: {exc}); "
+                f"falling back to LHS exploration this iteration",
+                stacklevel=2,
+            )
+            fallback_lhs = LatinHypercube(d=n_dim, seed=rng)
+            candidates = bounds_arr[:, 0] + fallback_lhs.random(n_topk) * (
+                bounds_arr[:, 1] - bounds_arr[:, 0]
+            )
+            new_y = _eval_batch(objective, candidates, workers)
+            total_real_evals += int(len(new_y))
+            finite_new = np.isfinite(new_y)
+            if finite_new.any():
+                X_train = np.vstack([X_train, candidates[finite_new]])
+                y_train = np.concatenate([y_train, new_y[finite_new]])
+            best_idx = int(np.argmin(y_train))
+            history.append({
+                "phase": f"iter{it}_lhs_fallback",
+                "real_evals": int(len(candidates)),
+                "best": float(y_train[best_idx]),
+                "gp_de_pred": float("nan"),
+                "gp_de_real": float("nan"),
+                "n_train": int(len(y_train)),
+            })
+            continue
 
-        # DE on GP-predicted mean — cheap, treat as scalar function
+        # DE on GP-predicted mean — cheap, treat as scalar function. The closure
+        # captures `gp` by reference; this is correct because the inner DE call
+        # is synchronous and `gp` is not reassigned until the next loop iteration.
+        # Do NOT pass this closure to `_eval_batch` (which serialises across
+        # worker processes); only the real `objective` should be parallelised.
         def gp_mean(x: NDArray[np.float64]) -> float:
             return float(gp.predict(np.asarray(x).reshape(1, -1))[0])
 
@@ -196,6 +254,7 @@ def surrogate_assisted_de(
 
         # Real-eval candidates
         new_y = _eval_batch(objective, candidates, workers)
+        total_real_evals += int(len(new_y))
         finite_new = np.isfinite(new_y)
         if finite_new.any():
             X_train = np.vstack([X_train, candidates[finite_new]])
@@ -221,7 +280,10 @@ def surrogate_assisted_de(
     return {
         "x": X_train[best_idx],
         "fun": float(y_train[best_idx]),
-        "nfev": int(len(y_train)),
+        # nfev = total real evaluations actually consumed (including NaN'd
+        # ones), not just the size of the final training set. Users budget
+        # against real time spent.
+        "nfev": int(total_real_evals),
         "history": history,
         "X_train": X_train,
         "y_train": y_train,

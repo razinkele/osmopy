@@ -106,3 +106,96 @@ def test_all_nan_initial_raises():
             n_topk=3,
             seed=42,
         )
+
+
+def test_warm_start_clip_warns_when_x0_out_of_bounds():
+    """Out-of-bounds x0 must be clipped with a warning so callers notice."""
+    import warnings as _w
+    with _w.catch_warnings(record=True) as caught:
+        _w.simplefilter("always")
+        result = surrogate_assisted_de(
+            _sphere,
+            bounds=[(-1.0, 1.0)] * 3,
+            x0=[5.0, -3.0, 0.5],  # first two are out of bounds
+            n_initial=10,
+            n_iterations=1,
+            n_topk=3,
+            seed=42,
+        )
+    assert any("clipped into bounds" in str(w.message) for w in caught), (
+        f"expected clip warning; got: {[str(w.message) for w in caught]}"
+    )
+    # x0 actually placed in init_samples is the clipped value
+    assert np.allclose(result["X_train"][0], [1.0, -1.0, 0.5])
+
+
+def test_nfev_counts_real_evals_including_nans():
+    """nfev should reflect total real evaluations consumed, not just the
+    surviving training set. NaN evals cost wall-clock; users budget against that.
+    """
+    call_count = {"n": 0}
+
+    def occasional_nan(x):
+        call_count["n"] += 1
+        # Every 3rd call NaN — the surviving training set is ~2/3 of evals
+        if call_count["n"] % 3 == 0:
+            return float("nan")
+        return _sphere(x)
+
+    result = surrogate_assisted_de(
+        occasional_nan,
+        bounds=[(-2.0, 2.0)] * 3,
+        n_initial=15,
+        n_iterations=2,
+        n_topk=10,
+        seed=42,
+    )
+    expected_total = 15 + 2 * 10  # init + 2 iterations of n_topk each
+    assert result["nfev"] == expected_total, (
+        f"nfev {result['nfev']} != actual evals {expected_total}"
+    )
+    # Training set is smaller than nfev (NaNs were dropped from training)
+    assert len(result["y_train"]) < result["nfev"]
+
+
+def test_gp_fit_failure_falls_back_to_lhs_not_crash():
+    """If gp.fit raises, the iteration should fall back to LHS sampling
+    rather than crashing — a long run must accumulate value even when the
+    surrogate path occasionally fails.
+    """
+    import warnings as _w
+    from unittest.mock import patch
+
+    # Mock GaussianProcessRegressor.fit to raise on the first iteration only
+    original_fit = None
+    call_count = {"n": 0}
+
+    def failing_fit(self, X, y):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise np.linalg.LinAlgError("simulated singular covariance")
+        return original_fit(self, X, y)
+
+    from sklearn.gaussian_process import GaussianProcessRegressor as GPR
+    original_fit = GPR.fit
+
+    with patch.object(GPR, "fit", failing_fit), _w.catch_warnings(record=True) as caught:
+        _w.simplefilter("always")
+        result = surrogate_assisted_de(
+            _sphere,
+            bounds=[(-2.0, 2.0)] * 3,
+            n_initial=15,
+            n_iterations=3,
+            n_topk=8,
+            seed=42,
+        )
+
+    # Did NOT crash; produced a result
+    assert result["fun"] < 5.0
+    # Warning was emitted about the GP fit failure
+    assert any("GP fit failed" in str(w.message) for w in caught), (
+        f"expected GP-fit-failure warning; got: {[str(w.message) for w in caught]}"
+    )
+    # The first iteration's history entry uses the LHS fallback phase label
+    iter_phases = [h["phase"] for h in result["history"] if h["phase"] != "init"]
+    assert iter_phases[0] == "iter0_lhs_fallback"
