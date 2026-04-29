@@ -101,3 +101,54 @@ def test_resume_csv_round_trip(tmp_path):
     assert Y[3] == 1.234
     assert Y[7] == 5.678
     assert np.isnan(Y[1])  # untouched index stays NaN
+
+
+def test_resume_skips_nan_so_they_are_retried(tmp_path):
+    """NaN rows must NOT be in `done` — otherwise --resume can't fix them."""
+    sys.path.insert(0, str(PROJECT_ROOT))
+    try:
+        from scripts.sensitivity_phase12 import _load_existing_y
+    finally:
+        sys.path.pop(0)
+
+    csv_path = tmp_path / "y.csv"
+    with open(csv_path, "w") as f:
+        f.write("idx,objective\n")
+        f.write("0,3.14\n")
+        f.write("1,nan\n")     # worker failure — should be retried on resume
+        f.write("2,7.5\n")
+
+    Y, done = _load_existing_y(csv_path, n_samples=4)
+    assert done == {0, 2}, f"NaN at idx 1 must NOT be in done; got {done}"
+    assert Y[0] == 3.14
+    assert np.isnan(Y[1])  # value loaded so analysis can flag it
+    assert Y[2] == 7.5
+
+
+def test_existing_csv_without_resume_or_force_refuses(tmp_path):
+    """Re-running on an existing y_csv without --resume/--force must fail loudly."""
+    venv_python = PROJECT_ROOT / ".venv" / "bin" / "python"
+    if not venv_python.exists():
+        pytest.skip(".venv/bin/python missing")
+
+    # Pre-populate a y_csv with the expected name pattern: y_n{n_base}_seed{seed}.csv
+    n_base, seed = 8, 42
+    y_csv = tmp_path / f"y_n{n_base}_seed{seed}.csv"
+    y_csv.write_text("idx,objective\n0,3.14\n")
+
+    result = subprocess.run(
+        [
+            str(venv_python),
+            str(PROJECT_ROOT / "scripts" / "sensitivity_phase12.py"),
+            "--n-base", str(n_base),
+            "--seed", str(seed),
+            "--workers", "2",
+            "--output-dir", str(tmp_path),
+            # NB: no --resume, no --force, no --dry-run
+        ],
+        capture_output=True, text=True, timeout=120,
+    )
+    assert result.returncode == 1, f"expected exit 1; got {result.returncode}"
+    assert "already exists" in result.stderr or "already exists" in result.stdout
+    # Pre-existing file must NOT be truncated
+    assert y_csv.read_text().strip().splitlines()[-1] == "0,3.14"

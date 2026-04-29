@@ -78,13 +78,28 @@ def _pool_init(base_config, targets, param_keys, n_years, seed):
 
 
 def _eval_one(args):
-    """Evaluate one Sobol sample. Returns (idx, objective). NaN on failure."""
+    """Evaluate one Sobol sample. Returns (idx, objective). NaN on failure.
+
+    Exceptions are logged to stderr (type, message, traceback) before the NaN
+    return so genuine programming bugs in workers don't silently masquerade
+    as scientific NaN — a 14k-eval job with a systematic bug would otherwise
+    surface only at the analysis step after hours of compute.
+    """
+    import sys as _sys
+    import traceback as _tb
+
     idx, x = args
     try:
         val = float(_OBJECTIVE(np.asarray(x, dtype=float)))
         if not np.isfinite(val):
             val = float("nan")
-    except Exception:
+    except Exception as exc:
+        print(
+            f"[sensitivity worker] idx={idx} FAILED: "
+            f"{type(exc).__name__}: {exc}\n{_tb.format_exc()}",
+            file=_sys.stderr,
+            flush=True,
+        )
         val = float("nan")
     return idx, val
 
@@ -93,6 +108,14 @@ def _eval_one(args):
 # Resume helpers
 # ---------------------------------------------------------------------------
 def _load_existing_y(y_csv: Path, n_samples: int) -> tuple[np.ndarray, set[int]]:
+    """Load Y values from a previous run.
+
+    Only finite values are added to `done`; rows with NaN are loaded into Y
+    (so the analysis step can flag them) but excluded from `done`, which means
+    --resume will re-evaluate them. Without this, a NaN'd index would loop
+    forever between "ERROR: NaN samples — re-run via --resume" and a resume
+    that skips it as already-done.
+    """
     Y = np.full(n_samples, np.nan)
     done: set[int] = set()
     if not y_csv.exists():
@@ -105,8 +128,10 @@ def _load_existing_y(y_csv: Path, n_samples: int) -> tuple[np.ndarray, set[int]]
                 continue
             idx = int(row[0])
             if 0 <= idx < n_samples:
-                Y[idx] = float(row[1])
-                done.add(idx)
+                val = float(row[1])
+                Y[idx] = val
+                if np.isfinite(val):
+                    done.add(idx)
     return Y, done
 
 
@@ -122,7 +147,11 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=42,
                         help="Seed for both Sobol sampling and OSMOSE simulations")
     parser.add_argument("--n-years", type=int, default=50,
-                        help="Simulation years per evaluation (matches phase 12 default)")
+                        help="Simulation years per evaluation. Note: calibrate_baltic.py "
+                             "phase 12 default is 40; using 50 here gives a longer "
+                             "equilibrium window for cleaner sensitivity signal but "
+                             "introduces a methodological gap with the DE search it "
+                             "informs. Match to 40 for strict consistency.")
     parser.add_argument("--workers", type=int,
                         default=int(os.environ.get("OSMOSE_DE_WORKERS", "24")),
                         help="Parallel workers (default: $OSMOSE_DE_WORKERS or 24)")
@@ -131,7 +160,11 @@ def main() -> int:
     parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD,
                         help=f"ST threshold for TUNE/FIX recommendation (default {DEFAULT_THRESHOLD})")
     parser.add_argument("--resume", action="store_true",
-                        help="Resume from existing y_*.csv in output-dir")
+                        help="Resume from existing y_*.csv in output-dir; NaN'd rows "
+                             "are auto-retried.")
+    parser.add_argument("--force", action="store_true",
+                        help="Overwrite an existing y_*.csv. DESTROYS prior work — "
+                             "prefer --resume unless intentionally restarting.")
     parser.add_argument("--dry-run", action="store_true",
                         help="Plan only — print expected eval count + ETA, don't run")
     args = parser.parse_args()
@@ -166,19 +199,31 @@ def main() -> int:
               f"(assumes {per_worker} evals/worker/min)")
         return 0
 
-    # 3. Resume support
+    # 3. Resume support — refuse to truncate prior work without explicit consent.
+    # A 14-28h job's Y values must not be silently destroyed by a re-launch
+    # that forgot --resume.
     y_csv = args.output_dir / f"y_n{args.n_base}_seed{args.seed}.csv"
-    Y, done = _load_existing_y(y_csv, n_samples) if args.resume else (
-        np.full(n_samples, np.nan), set()
-    )
-    if args.resume and done:
-        print(f"Resuming with {len(done)}/{n_samples} samples already evaluated")
+    if y_csv.exists() and not args.resume and not args.force:
+        print(
+            f"ERROR: {y_csv} already exists from a prior run.\n"
+            f"  → Pass --resume to continue evaluating remaining samples.\n"
+            f"  → Pass --force to overwrite (DESTROYS prior work).\n"
+            f"  → Or delete the file manually to start fresh.",
+            file=sys.stderr,
+        )
+        return 1
 
-    if not args.resume or not y_csv.exists():
-        with open(y_csv, "w") as f:
-            f.write("idx,objective\n")
+    if args.resume and y_csv.exists():
+        Y, done = _load_existing_y(y_csv, n_samples)
+        if done:
+            print(f"Resuming with {len(done)}/{n_samples} samples already evaluated")
+        # Open in append mode; existing rows (including any NaN-marked ones,
+        # which are NOT in `done` and will be re-evaluated) stay in the file.
+    else:
         Y = np.full(n_samples, np.nan)
         done = set()
+        with open(y_csv, "w") as f:
+            f.write("idx,objective\n")
 
     todo = [(i, X[i].tolist()) for i in range(n_samples) if i not in done]
     if not todo:
