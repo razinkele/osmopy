@@ -6,10 +6,25 @@ dimensions. Use this when DE is converging slowly and the objective is
 reasonably smooth (no hard discontinuities).
 
 Tier C2 of the speedup roadmap. The `cma` package is already in the venv.
+
+Bound handling: cma 4.x defaults to ``BoundaryHandler=BoundTransform`` when
+``bounds`` is set — a smooth bijective transform that maps R^D into the
+bounded hypercube, so the internal distribution adapts in unbounded space
+and candidates returned by ``es.ask()`` are always feasible. We rely on this
+default rather than the alternative ``BoundPenalty`` (clip-and-penalize),
+which would let the distribution mean drift outside bounds in high dim.
+
+Determinism note: the ``seed`` argument seeds cma's internal RNG, so
+single-worker runs are reproducible. With ``workers > 1`` joblib's task
+scheduling can interact with worker-side numpy RNG state in non-deterministic
+ways, so reproducibility is best-effort. For strict bit-for-bit
+reproducibility, run with ``workers=1`` or ensure the objective seeds its
+own RNG explicitly per call.
 """
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Callable
 from typing import Any
 
@@ -74,6 +89,18 @@ def run_cmaes(
     if popsize is None:
         popsize = 4 + int(3 * np.log(n_dim))
 
+    # Clip x0 into bounds before handing it to cma — cma's BoundTransform
+    # rejects out-of-bounds initial means with ValueError ("argument of
+    # inverse must be within the given bounds"). Warn on silent mutation.
+    x0_arr = np.asarray(x0, dtype=float)
+    x0_clipped = np.clip(x0_arr, bounds_arr[:, 0], bounds_arr[:, 1])
+    if not np.allclose(x0_clipped, x0_arr):
+        warnings.warn(
+            f"x0 clipped into bounds before CMA-ES init: "
+            f"{(x0_clipped != x0_arr).sum()} of {n_dim} components changed",
+            stacklevel=2,
+        )
+
     cma_opts = {
         "bounds": [bounds_arr[:, 0].tolist(), bounds_arr[:, 1].tolist()],
         "popsize": popsize,
@@ -82,9 +109,14 @@ def run_cmaes(
         "seed": seed,
         "verbose": 1 if verbose else -9,
     }
-    es = cma.CMAEvolutionStrategy(np.asarray(x0, dtype=float).tolist(), sigma0, cma_opts)
+    es = cma.CMAEvolutionStrategy(x0_clipped.tolist(), sigma0, cma_opts)
 
     history: list[dict[str, Any]] = []
+    # Track the largest finite cost ever observed across all generations so
+    # NaN replacements stay strictly worse than any real datum — preventing a
+    # partial-NaN gen from injecting an artificially low "penalty" that would
+    # corrupt cma's covariance update.
+    worst_ever: float = -np.inf
 
     while not es.stop():
         candidates = es.ask()
@@ -95,13 +127,20 @@ def run_cmaes(
         else:
             values = [float(objective(np.asarray(c, dtype=float))) for c in candidates]
 
-        # Replace any NaN/inf with a large but finite penalty so CMA's
-        # mean/cov updates stay well-defined; non-finite values cause cma
-        # to refuse the gen and silently stall.
         values_arr = np.asarray(values, dtype=float)
-        nan_mask = ~np.isfinite(values_arr)
+        finite_mask = np.isfinite(values_arr)
+        if finite_mask.any():
+            worst_ever = max(worst_ever, float(np.max(values_arr[finite_mask])))
+
+        nan_mask = ~finite_mask
         if nan_mask.any():
-            penalty = float(np.nanmax(values_arr[~nan_mask])) + 1.0 if (~nan_mask).any() else 1e9
+            # Penalty is strictly worse than any finite value seen so far,
+            # across all generations. If we've never seen a finite value,
+            # use a large fallback so cma can still proceed.
+            if np.isfinite(worst_ever):
+                penalty = worst_ever * 1.1 + 1.0
+            else:
+                penalty = 1e9
             values_arr[nan_mask] = penalty
             values = values_arr.tolist()
 
@@ -113,11 +152,30 @@ def run_cmaes(
             "std": float(np.std(values_arr)),
         })
 
+    # Map cma's stop reason to a meaningful success flag. Budget-exhausted or
+    # degenerate-state stops are NOT successful convergence. Also: if every
+    # single eval returned NaN (worst_ever stays -inf), cma stops via tolfun
+    # because all penalty values are equal — that's not real convergence.
+    stop_reasons = es.stop()
+    non_convergence = {"maxiter", "maxfevals", "conditioncov",
+                       "noeffectaxis", "noeffectcoord"}
+    success = bool(
+        stop_reasons
+        and not (set(stop_reasons.keys()) & non_convergence)
+        and np.isfinite(worst_ever)  # at least one real datum seen
+    )
+
+    # Defensive clip on best.x — under BoundTransform es.best.x is always in
+    # bounds, but if a future cma version or option change breaks that
+    # invariant, a downstream caller should never receive an infeasible point.
+    best_x = np.clip(np.asarray(es.best.x, dtype=float),
+                     bounds_arr[:, 0], bounds_arr[:, 1])
+
     return {
-        "x": np.asarray(es.best.x, dtype=float),
+        "x": best_x,
         "fun": float(es.best.f),
-        "success": True,
-        "message": str(es.stop()),
+        "success": success,
+        "message": str(stop_reasons),
         "nfev": int(es.countevals),
         "history": history,
     }
