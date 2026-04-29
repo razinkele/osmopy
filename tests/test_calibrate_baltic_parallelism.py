@@ -60,6 +60,69 @@ def test_phase12_returns_expected_params():
     assert bounds[sp5_idx] == (2.7, 4.7)
 
 
+def test_optimizer_choices_and_dispatch():
+    """All three optimizers must dispatch through to a normalized result dict."""
+    import numpy as np
+    from scripts.calibrate_baltic import _OPTIMIZER_CHOICES, _dispatch_optimizer
+
+    assert _OPTIMIZER_CHOICES == ("de", "cmaes", "surrogate-de")
+
+    # Tiny synthetic objective to keep the test cheap (~seconds).
+    def quad(x):
+        return float(np.sum((np.asarray(x) - 0.3) ** 2))
+
+    bounds = [(-1.0, 1.0)] * 3
+    x0 = [0.0, 0.0, 0.0]
+    # init_pop only used by DE; minimal valid value
+    init_pop = np.tile(np.asarray(x0), (10, 1))
+
+    for opt in _OPTIMIZER_CHOICES:
+        # Tiny budgets — just want to confirm dispatch + result shape, not convergence
+        if opt == "surrogate-de":
+            # surrogate-DE has fixed n_iterations=6, n_topk=30 hardcoded in dispatcher;
+            # smoke-test would do ~165 evals which is acceptable for a synthetic quad
+            pass
+        result = _dispatch_optimizer(
+            opt, quad, bounds, x0, init_pop,
+            maxiter=5, popsize=5, tol=1e-3, workers=1, seed=42,
+        )
+        assert {"x", "fun", "nfev", "success", "message"} <= set(result.keys()), (
+            f"optimizer {opt} returned incomplete result: {set(result.keys())}"
+        )
+        assert len(result["x"]) == 3
+        assert isinstance(result["fun"], float)
+        assert isinstance(result["nfev"], int)
+        assert isinstance(result["message"], str)
+
+
+def test_unknown_optimizer_raises():
+    import pytest
+    import numpy as np
+    from scripts.calibrate_baltic import _dispatch_optimizer
+
+    with pytest.raises(ValueError, match="unknown optimizer"):
+        _dispatch_optimizer(
+            "bogus", lambda x: 0.0, [(-1.0, 1.0)], [0.0],
+            np.zeros((1, 1)),
+            maxiter=1, popsize=1, tol=0.1, workers=1, seed=0,
+        )
+
+
+def test_cli_optimizer_choices_in_help():
+    """--help must list all three optimizers so users know what's available."""
+    import subprocess
+    venv_python = Path(__file__).resolve().parent.parent / ".venv" / "bin" / "python"
+    if not venv_python.exists():
+        return
+    result = subprocess.run(
+        [str(venv_python), str(Path(__file__).resolve().parent.parent / "scripts" / "calibrate_baltic.py"), "--help"],
+        capture_output=True, text=True, timeout=30,
+    )
+    assert "--optimizer" in result.stdout
+    for opt in ("de", "cmaes", "surrogate-de"):
+        assert opt in result.stdout, f"optimizer choice {opt!r} missing from --help"
+
+
 def test_apply_warm_start_overrides_only_known_keys(tmp_path):
     """warm-start: known keys overridden, unknown kept default, skipped excluded."""
     from scripts.calibrate_baltic import apply_warm_start

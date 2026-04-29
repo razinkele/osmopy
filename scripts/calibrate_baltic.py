@@ -553,6 +553,95 @@ def get_phase12_params() -> tuple[list[str], list[tuple[float, float]], list[flo
 # ---------------------------------------------------------------------------
 # Calibration runner
 # ---------------------------------------------------------------------------
+_OPTIMIZER_CHOICES = ("de", "cmaes", "surrogate-de")
+
+
+def _dispatch_optimizer(
+    optimizer: str,
+    objective,
+    bounds: list[tuple[float, float]],
+    x0: list[float],
+    init_pop: np.ndarray,
+    *,
+    maxiter: int,
+    popsize: int,
+    tol: float,
+    workers: int,
+    seed: int,
+) -> dict:
+    """Dispatch to the chosen optimizer; return a normalised result dict.
+
+    Result schema: ``{x, fun, nfev, success, message}``. Optimizer-specific
+    extras (``history``, ``X_train``, etc.) pass through unchanged.
+
+    DE consumes the pre-built ``init_pop`` (LHS + R18 neighbourhood).
+    CMA-ES and surrogate-DE generate their own initial samples internally
+    and only need ``x0`` — the ``init_pop`` is unused for those paths.
+    """
+    if optimizer == "de":
+        result = differential_evolution(
+            objective,
+            bounds,
+            maxiter=maxiter,
+            init=init_pop,
+            seed=seed,
+            tol=tol,
+            mutation=(0.5, 1.5),
+            recombination=0.8,
+            disp=True,
+            polish=False,  # L-BFGS-B unreliable on noisy landscape
+            workers=workers,
+            updating="deferred",  # required when workers > 1
+        )
+        return {
+            "x": np.asarray(result.x, dtype=float),
+            "fun": float(result.fun),
+            "nfev": int(result.nfev),
+            "success": bool(result.success),
+            "message": str(result.message),
+        }
+    if optimizer == "cmaes":
+        from osmose.calibration.cmaes_runner import run_cmaes
+        return run_cmaes(
+            objective,
+            bounds,
+            x0=x0,
+            sigma0=0.3,
+            popsize=popsize if popsize > 0 else None,
+            maxiter=maxiter,
+            tol=tol,
+            seed=seed,
+            workers=workers,
+            verbose=True,
+        )
+    if optimizer == "surrogate-de":
+        from osmose.calibration.surrogate_de import surrogate_assisted_de
+        n_dim = len(bounds)
+        result = surrogate_assisted_de(
+            objective,
+            bounds,
+            x0=x0,
+            n_initial=max(20, 5 * n_dim),
+            n_iterations=6,
+            n_topk=30,
+            workers=workers,
+            seed=seed,
+            verbose=True,
+        )
+        # Add scipy-style fields for downstream compatibility. surrogate-DE
+        # has no convergence concept (fixed-iteration loop), so success is
+        # whether the final training set is non-empty.
+        result["success"] = bool(len(result.get("y_train", [])) > 0)
+        result["message"] = (
+            f"surrogate-DE: {len(result.get('history', [])) - 1} refinement iterations "
+            f"completed; nfev={result['nfev']}"
+        )
+        return result
+    raise ValueError(
+        f"unknown optimizer: {optimizer!r}; choices are {_OPTIMIZER_CHOICES}"
+    )
+
+
 def apply_warm_start(
     warm_start_path: Path,
     param_keys: list[str],
@@ -592,6 +681,7 @@ def run_calibration(
     tol: float = 0.005,
     warm_start_path: Path | None = None,
     skip_warm_start_keys: list[str] | None = None,
+    optimizer: str = "de",
 ) -> dict:
     """Run differential evolution calibration for the specified phase."""
     from osmose.config.reader import OsmoseConfigReader
@@ -752,45 +842,46 @@ def run_calibration(
     for i in range(n_lhs):
         init_pop[n_r18 + i] = bounds_arr[:, 0] + lhs_samples[i] * widths
 
-    # Run DE with improved settings
-    print(f"\nStarting differential evolution (eff_popsize={eff_popsize}, maxiter={maxiter})...")
-    print(f"Init: {n_r18} near R18, {n_lhs} LHS global")
+    # Run the chosen optimizer.
+    # Workers cap default 8 (memory: each 50-y OSMOSE sim holds ~400 MB; 28
+    # concurrent workers on a 28-thread box exhausted 32 GB and thrashed
+    # 2026-04-24). 8 × 400 MB = 3.2 GB — comfortable. Override with
+    # OSMOSE_DE_WORKERS env var.
+    workers = int(os.environ.get("OSMOSE_DE_WORKERS", "8"))
+    print(f"\nStarting optimizer={optimizer!r} (eff_popsize={eff_popsize}, "
+          f"maxiter={maxiter}, workers={workers})...")
+    print(f"Init: {n_r18} near R18, {n_lhs} LHS global "
+          f"(consumed by DE; CMA-ES and surrogate-DE generate their own)")
     t0 = time.time()
 
-    result = differential_evolution(
+    result = _dispatch_optimizer(
+        optimizer,
         objective,
         bounds,
+        x0,
+        init_pop,
         maxiter=maxiter,
-        init=init_pop,
-        seed=42,
+        popsize=popsize,
         tol=tol,
-        mutation=(0.5, 1.5),
-        recombination=0.8,
-        disp=True,
-        polish=False,  # L-BFGS-B unreliable on noisy/discontinuous landscape
-        # Cap workers at 8 rather than os.cpu_count() — each 50-year OSMOSE
-        # sim holds ~400 MB of numpy arrays; 28 concurrent workers on a
-        # 28-thread box exhausted 32 GB RAM and thrashed (observed
-        # 2026-04-24). 8 workers × 400 MB = 3.2 GB — comfortable.
-        # Override with OSMOSE_DE_WORKERS env var if needed.
-        workers=int(os.environ.get("OSMOSE_DE_WORKERS", "8")),
-        updating="deferred",  # required when workers > 1
+        workers=workers,
+        seed=42,
     )
 
     elapsed = time.time() - t0
-    print(f"\nDE completed in {elapsed:.0f}s ({elapsed / 60:.1f} min)")
-    print(f"Success: {result.success}")
-    print(f"Message: {result.message}")
-    print(f"Function evaluations: {result.nfev}")
-    print(f"Best DE objective (single-seed): {result.fun:.6f}")
+    print(f"\n{optimizer} completed in {elapsed:.0f}s ({elapsed / 60:.1f} min)")
+    print(f"Success: {result['success']}")
+    print(f"Message: {result['message']}")
+    print(f"Function evaluations: {result['nfev']}")
+    print(f"Best objective (single-seed): {result['fun']:.6f}")
 
-    # Multi-seed re-ranking of DE best solution
+    # Multi-seed re-ranking of best solution
     # Single-seed optimization can overfit; validate on multiple seeds
     rerank_seeds = [42, 123, 7, 999, 2024]
     print(f"\n=== Multi-seed re-ranking ({len(rerank_seeds)} seeds) ===")
+    best_x = np.asarray(result["x"], dtype=float)
     best_overrides: dict[str, str] = {}
     for i, key in enumerate(param_keys):
-        log_val = result.x[i]
+        log_val = best_x[i]
         actual_val = 10.0 ** log_val
         best_overrides[key] = str(actual_val)
 
@@ -800,20 +891,20 @@ def run_calibration(
             base_config, targets, param_keys,
             n_years=n_years, seed=rs, use_log_space=True,
         )
-        obj_val = obj_fn(result.x)
+        obj_val = obj_fn(best_x)
         rerank_objectives.append(obj_val)
 
     mean_obj = float(np.mean(rerank_objectives))
     std_obj = float(np.std(rerank_objectives))
     print(f"  Per-seed objectives: {[f'{v:.4f}' for v in rerank_objectives]}")
     print(f"  Mean: {mean_obj:.4f} ± {std_obj:.4f}")
-    print(f"  (Single-seed was: {result.fun:.4f})")
+    print(f"  (Single-seed was: {result['fun']:.4f})")
 
     # Decode results
     optimized: dict[str, float] = {}
     print("\n=== Optimized Parameters ===")
     for i, key in enumerate(param_keys):
-        log_val = result.x[i]
+        log_val = best_x[i]
         actual_val = 10.0 ** log_val
         optimized[key] = actual_val
         print(f"  {key}: {actual_val:.6f} (log10: {log_val:.4f})")
@@ -848,14 +939,15 @@ def run_calibration(
     results_file = RESULTS_DIR / f"phase{phase.replace('/', '_')}_results.json"
     save_data = {
         "phase": phase,
-        "objective_single_seed": float(result.fun),
+        "optimizer": optimizer,
+        "objective_single_seed": float(result["fun"]),
         "objective_multiseed_mean": mean_obj,
         "objective_multiseed_std": std_obj,
         "objective_per_seed": [float(v) for v in rerank_objectives],
-        "n_evaluations": result.nfev,
+        "n_evaluations": int(result["nfev"]),
         "elapsed_seconds": elapsed,
         "parameters": {k: float(v) for k, v in optimized.items()},
-        "log10_parameters": {k: float(result.x[i]) for i, k in enumerate(param_keys)},
+        "log10_parameters": {k: float(best_x[i]) for i, k in enumerate(param_keys)},
         "bounds_log10": {k: list(b) for k, b in zip(param_keys, bounds)},
     }
     with open(results_file, "w") as f:
@@ -974,6 +1066,15 @@ def main():
     parser.add_argument("--skip-warm-start-keys", type=str, default="",
                         help="Comma-separated param keys to exclude from warm-start "
                              "(e.g. when their bounds changed)")
+    parser.add_argument("--optimizer", type=str, default="de",
+                        choices=list(_OPTIMIZER_CHOICES),
+                        help="Optimization algorithm. 'de' (default): scipy "
+                             "differential_evolution, broad-search workhorse. 'cmaes': "
+                             "CMA-ES via the cma package, 2-3× fewer evals on smooth "
+                             "continuous landscapes (Tier C2). 'surrogate-de': GP-assisted "
+                             "DE — trains a surrogate on real evals and runs DE on the "
+                             "predicted objective; 5-10× fewer real evals when the "
+                             "surrogate fits well (Tier C1).")
     parser.add_argument("--validate", action="store_true", help="Run validation only")
     args = parser.parse_args()
 
@@ -991,6 +1092,7 @@ def main():
             tol=args.tol,
             warm_start_path=Path(args.warm_start) if args.warm_start else None,
             skip_warm_start_keys=skip_keys,
+            optimizer=args.optimizer,
         )
 
 
