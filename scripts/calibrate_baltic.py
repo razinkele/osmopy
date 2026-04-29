@@ -553,6 +553,35 @@ def get_phase12_params() -> tuple[list[str], list[tuple[float, float]], list[flo
 # ---------------------------------------------------------------------------
 # Calibration runner
 # ---------------------------------------------------------------------------
+def apply_warm_start(
+    warm_start_path: Path,
+    param_keys: list[str],
+    x0: list[float],
+    skip_keys: set[str],
+) -> tuple[list[float], list[str], list[str]]:
+    """Override x0 entries from a prior calibration's log10_parameters.
+
+    Returns (new_x0, applied_keys, skipped_keys). Keys in `skip_keys` are
+    explicitly excluded (e.g. when bounds changed for that param). Keys absent
+    from the JSON keep their computed x0 (e.g. ssb_half params not in a
+    pre-B-H result).
+    """
+    with open(warm_start_path) as f:
+        data = json.load(f)
+    log_params = data.get("log10_parameters", {})
+    new_x0 = list(x0)
+    applied: list[str] = []
+    skipped: list[str] = []
+    for i, key in enumerate(param_keys):
+        if key in skip_keys:
+            skipped.append(key)
+            continue
+        if key in log_params:
+            new_x0[i] = float(log_params[key])
+            applied.append(key)
+    return new_x0, applied, skipped
+
+
 def run_calibration(
     phase: str,
     maxiter: int = 200,
@@ -560,6 +589,9 @@ def run_calibration(
     n_years: int = 40,
     popsize: int = 15,
     popsize_mult: int = 10,
+    tol: float = 0.005,
+    warm_start_path: Path | None = None,
+    skip_warm_start_keys: list[str] | None = None,
 ) -> dict:
     """Run differential evolution calibration for the specified phase."""
     from osmose.config.reader import OsmoseConfigReader
@@ -653,6 +685,29 @@ def run_calibration(
               "+ 3 B-H ssb_half). Captures trophic cascade feedback + density-dependent "
               "recruitment.")
 
+    # Apply warm-start (Tier B1): override x0 entries from a prior result JSON.
+    # Keys absent from the JSON keep their computed default (e.g. new B-H
+    # ssb_half params won't be in a pre-v0.11.0 result). Keys in skip set are
+    # excluded — useful when bounds changed (e.g. cod sp0 after dropping the
+    # cod-floor: old optimum sat at log10≈0.57 against a (-0.523, 0.7) bound,
+    # which biases the new (-3.0, 0.7) search incorrectly post-B-H).
+    if warm_start_path is not None:
+        skip_set = set(skip_warm_start_keys or [])
+        x0, applied, skipped = apply_warm_start(
+            warm_start_path, param_keys, x0, skip_set
+        )
+        print(f"\nWarm-start: loaded {len(applied)} params from {warm_start_path}")
+        if applied:
+            print(f"  Applied: {', '.join(applied)}")
+        if skipped:
+            print(f"  Skipped (explicit): {', '.join(skipped)}")
+        not_in_json = [
+            k for k in param_keys
+            if k not in applied and k not in skipped
+        ]
+        if not_in_json:
+            print(f"  Not in JSON (kept default x0): {', '.join(not_in_json)}")
+
     print(f"\nFree parameters ({len(param_keys)}):")
     for key, (lo, hi), x0_val in zip(param_keys, bounds, x0):
         config_key = key.lower()
@@ -708,7 +763,7 @@ def run_calibration(
         maxiter=maxiter,
         init=init_pop,
         seed=42,
-        tol=0.001,
+        tol=tol,
         mutation=(0.5, 1.5),
         recombination=0.8,
         disp=True,
@@ -911,12 +966,21 @@ def main():
                         help="DE population size multiplier of n_params (default 10)")
     parser.add_argument("--seeds", type=int, default=3, help="Number of seeds for validation")
     parser.add_argument("--years", type=int, default=40, help="Simulation years per eval")
+    parser.add_argument("--tol", type=float, default=0.005,
+                        help="DE convergence tolerance (default 0.005; scipy default 0.01; "
+                             "pre-2026-04-29 hardcoded 0.001 — Tier A3 speedup)")
+    parser.add_argument("--warm-start", type=str, default=None,
+                        help="Path to prior calibration JSON to warm-start x0 from (Tier B1)")
+    parser.add_argument("--skip-warm-start-keys", type=str, default="",
+                        help="Comma-separated param keys to exclude from warm-start "
+                             "(e.g. when their bounds changed)")
     parser.add_argument("--validate", action="store_true", help="Run validation only")
     args = parser.parse_args()
 
     if args.validate:
         validate_calibration(n_years=50, n_seeds=args.seeds)
     else:
+        skip_keys = [k.strip() for k in args.skip_warm_start_keys.split(",") if k.strip()]
         run_calibration(
             phase=args.phase,
             maxiter=args.maxiter,
@@ -924,6 +988,9 @@ def main():
             n_years=args.years,
             popsize=args.popsize,
             popsize_mult=args.popsize_mult,
+            tol=args.tol,
+            warm_start_path=Path(args.warm_start) if args.warm_start else None,
+            skip_warm_start_keys=skip_keys,
         )
 
 

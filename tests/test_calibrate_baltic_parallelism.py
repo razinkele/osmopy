@@ -1,5 +1,6 @@
 """Verify the calibration script passes workers=-1 to scipy DE."""
 import ast
+import json
 from pathlib import Path
 
 
@@ -57,3 +58,39 @@ def test_phase12_returns_expected_params():
     assert bounds[sp3_idx] == (3.7, 5.3)
     assert bounds[sp4_idx] == (2.7, 4.7)
     assert bounds[sp5_idx] == (2.7, 4.7)
+
+
+def test_apply_warm_start_overrides_only_known_keys(tmp_path):
+    """warm-start: known keys overridden, unknown kept default, skipped excluded."""
+    from scripts.calibrate_baltic import apply_warm_start
+
+    fixture = tmp_path / "prior.json"
+    fixture.write_text(json.dumps({
+        "log10_parameters": {
+            "mortality.additional.rate.sp0": 0.57,
+            "fisheries.rate.base.fsh3": -0.81,
+            "mortality.additional.larva.rate.sp1": 0.62,
+        }
+    }))
+
+    param_keys = [
+        "mortality.additional.rate.sp0",          # in JSON, but skipped
+        "fisheries.rate.base.fsh3",               # in JSON, applied
+        "mortality.additional.larva.rate.sp1",    # in JSON, applied
+        "stock.recruitment.ssbhalf.sp3",          # NOT in JSON, kept default
+    ]
+    x0 = [-1.301, -1.398, 0.903, 4.699]
+    skip = {"mortality.additional.rate.sp0"}
+
+    new_x0, applied, skipped = apply_warm_start(fixture, param_keys, x0, skip)
+
+    # sp0 stays at default x0 (it's in skip set)
+    assert new_x0[0] == -1.301
+    # fsh3 + larva.sp1 are overridden from JSON
+    assert new_x0[1] == -0.81
+    assert new_x0[2] == 0.62
+    # ssb_half stays at default x0 (not in JSON)
+    assert new_x0[3] == 4.699
+    # tracking lists
+    assert applied == ["fisheries.rate.base.fsh3", "mortality.additional.larva.rate.sp1"]
+    assert skipped == ["mortality.additional.rate.sp0"]
