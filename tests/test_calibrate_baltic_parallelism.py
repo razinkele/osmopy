@@ -121,6 +121,95 @@ def test_cli_optimizer_choices_in_help():
     assert "--optimizer" in result.stdout
     for opt in ("de", "cmaes", "surrogate-de"):
         assert opt in result.stdout, f"optimizer choice {opt!r} missing from --help"
+    assert "--checkpoint-every" in result.stdout
+
+
+def test_checkpoint_callback_writes_snapshot(tmp_path):
+    """The DE checkpoint callback must serialise (gen, fun, x, params) to JSON."""
+    import json
+    from types import SimpleNamespace
+    from scripts.calibrate_baltic import _make_checkpoint_callback
+
+    checkpoint_path = tmp_path / "phase12_checkpoint.json"
+    param_keys = ["mortality.additional.rate.sp0", "fisheries.rate.base.fsh0"]
+    bounds = [(-3.0, 0.7), (-2.5, 0.0)]
+    cb = _make_checkpoint_callback(
+        checkpoint_path, every_n=2, param_keys=param_keys, bounds=bounds,
+    )
+
+    # Gen 1 — should NOT write (every_n=2)
+    cb(SimpleNamespace(x=[0.0, -1.5], fun=4.5))
+    assert not checkpoint_path.exists()
+
+    # Gen 2 — writes
+    cb(SimpleNamespace(x=[-1.0, -2.0], fun=3.2))
+    assert checkpoint_path.exists()
+    snap = json.loads(checkpoint_path.read_text())
+    assert snap["generation"] == 2
+    assert snap["best_fun"] == 3.2
+    assert snap["best_x_log10"] == [-1.0, -2.0]
+    # Linear params: 10^(-1.0) = 0.1, 10^(-2.0) = 0.01
+    assert abs(snap["best_parameters"]["mortality.additional.rate.sp0"] - 0.1) < 1e-9
+    assert abs(snap["best_parameters"]["fisheries.rate.base.fsh0"] - 0.01) < 1e-9
+    assert "timestamp_iso" in snap
+
+    # Gen 3 — does not write (only every 2nd gen)
+    cb(SimpleNamespace(x=[0.5, -0.5], fun=999.0))
+    snap = json.loads(checkpoint_path.read_text())
+    assert snap["generation"] == 2  # unchanged
+    assert snap["best_fun"] == 3.2
+
+    # Gen 4 — writes again, overwriting
+    cb(SimpleNamespace(x=[-2.0, -1.0], fun=2.1))
+    snap = json.loads(checkpoint_path.read_text())
+    assert snap["generation"] == 4
+    assert snap["best_fun"] == 2.1
+
+
+def test_checkpoint_callback_atomic_no_partial_file(tmp_path):
+    """A kill mid-write must NOT leave a partial JSON — atomic via tmp + rename."""
+    from types import SimpleNamespace
+    from scripts.calibrate_baltic import _make_checkpoint_callback
+
+    checkpoint_path = tmp_path / "snap.json"
+    cb = _make_checkpoint_callback(
+        checkpoint_path, every_n=1, param_keys=["k0"], bounds=[(-1.0, 1.0)],
+    )
+    cb(SimpleNamespace(x=[0.5], fun=1.5))
+    # Verify only the final renamed file exists, no .tmp leftover
+    assert checkpoint_path.exists()
+    assert not (tmp_path / "snap.json.tmp").exists()
+
+
+def test_checkpoint_callback_disabled_with_zero_every_n(tmp_path):
+    """every_n=0 means no checkpoint writes — used by --checkpoint-every 0."""
+    from types import SimpleNamespace
+    from scripts.calibrate_baltic import _make_checkpoint_callback
+
+    checkpoint_path = tmp_path / "snap.json"
+    cb = _make_checkpoint_callback(
+        checkpoint_path, every_n=0, param_keys=["k0"], bounds=[(-1.0, 1.0)],
+    )
+    for _ in range(5):
+        cb(SimpleNamespace(x=[0.5], fun=1.5))
+    assert not checkpoint_path.exists()
+
+
+def test_checkpoint_callback_handles_legacy_signature(tmp_path):
+    """If scipy passes the legacy (xk, convergence) signature, callback must
+    not crash — just skip the snapshot."""
+    import numpy as np
+    from scripts.calibrate_baltic import _make_checkpoint_callback
+
+    checkpoint_path = tmp_path / "snap.json"
+    cb = _make_checkpoint_callback(
+        checkpoint_path, every_n=1, param_keys=["k0"], bounds=[(-1.0, 1.0)],
+    )
+    # Legacy signature passes a numpy array as first positional, not OptimizeResult.
+    # The callback should not crash — it will fail to access .x / .fun but
+    # gracefully return None.
+    cb(np.array([0.5]), convergence=0.1)
+    assert not checkpoint_path.exists()
 
 
 def test_apply_warm_start_overrides_only_known_keys(tmp_path):

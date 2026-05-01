@@ -22,6 +22,7 @@ import tempfile
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -556,6 +557,55 @@ def get_phase12_params() -> tuple[list[str], list[tuple[float, float]], list[flo
 _OPTIMIZER_CHOICES = ("de", "cmaes", "surrogate-de")
 
 
+def _make_checkpoint_callback(
+    checkpoint_path: Path,
+    every_n: int,
+    param_keys: list[str],
+    bounds: list[tuple[float, float]],
+):
+    """Build a scipy DE callback that snapshots the current best every N gens.
+
+    Solves the "long DE run interrupted = total loss of best x" problem we hit
+    on 2026-04-30 when a 31h run found f=2.499 but had no way to surface its
+    best params on SIGTERM. With this callback, killing the calibration at
+    any point still leaves a usable JSON snapshot on disk.
+
+    Atomic write via tmp + rename — a kill mid-write leaves the prior snapshot
+    intact rather than a partial file. Uses scipy 1.11+ callback signature
+    where the argument is an OptimizeResult-like object exposing .x and .fun.
+    """
+    state = {"gen": 0}
+
+    def callback(intermediate_result, *_args, **_kw):
+        state["gen"] += 1
+        if every_n <= 0 or state["gen"] % every_n != 0:
+            return None
+        try:
+            best_x = np.asarray(intermediate_result.x, dtype=float)
+            best_fun = float(intermediate_result.fun)
+        except AttributeError:
+            # Fallback if scipy passes the legacy (xk, convergence) signature
+            return None
+        snapshot = {
+            "generation": state["gen"],
+            "best_fun": best_fun,
+            "best_x_log10": [float(v) for v in best_x],
+            "best_parameters": {
+                k: float(10.0 ** best_x[i])
+                for i, k in enumerate(param_keys)
+            },
+            "bounds_log10": {k: list(b) for k, b in zip(param_keys, bounds)},
+            "timestamp_iso": datetime.now().isoformat(),
+        }
+        tmp_path = checkpoint_path.with_suffix(checkpoint_path.suffix + ".tmp")
+        with open(tmp_path, "w") as f:
+            json.dump(snapshot, f, indent=2)
+        tmp_path.replace(checkpoint_path)
+        return None
+
+    return callback
+
+
 def _dispatch_optimizer(
     optimizer: str,
     objective,
@@ -568,6 +618,7 @@ def _dispatch_optimizer(
     tol: float,
     workers: int,
     seed: int,
+    de_callback=None,
 ) -> dict:
     """Dispatch to the chosen optimizer; return a normalised result dict.
 
@@ -577,6 +628,10 @@ def _dispatch_optimizer(
     DE consumes the pre-built ``init_pop`` (LHS + R18 neighbourhood).
     CMA-ES and surrogate-DE generate their own initial samples internally
     and only need ``x0`` — the ``init_pop`` is unused for those paths.
+
+    ``de_callback``: optional scipy DE callback (typically built by
+    ``_make_checkpoint_callback``). Only consumed by the DE branch; CMA-ES
+    and surrogate-DE have separate iteration models and ignore it.
     """
     if optimizer == "de":
         result = differential_evolution(
@@ -592,6 +647,7 @@ def _dispatch_optimizer(
             polish=False,  # L-BFGS-B unreliable on noisy landscape
             workers=workers,
             updating="deferred",  # required when workers > 1
+            callback=de_callback,
         )
         return {
             "x": np.asarray(result.x, dtype=float),
@@ -682,6 +738,7 @@ def run_calibration(
     warm_start_path: Path | None = None,
     skip_warm_start_keys: list[str] | None = None,
     optimizer: str = "de",
+    checkpoint_every: int = 5,
 ) -> dict:
     """Run differential evolution calibration for the specified phase."""
     from osmose.config.reader import OsmoseConfigReader
@@ -852,6 +909,20 @@ def run_calibration(
           f"maxiter={maxiter}, workers={workers})...")
     print(f"Init: {n_r18} near R18, {n_lhs} LHS global "
           f"(consumed by DE; CMA-ES and surrogate-DE generate their own)")
+
+    # Build the checkpoint callback for DE so a long run is interruptible
+    # without losing the best-known x. Only meaningful for the DE path —
+    # CMA-ES and surrogate-DE have their own iteration models.
+    de_callback = None
+    if optimizer == "de" and checkpoint_every > 0:
+        RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+        checkpoint_path = RESULTS_DIR / f"phase{phase.replace('/', '_')}_checkpoint.json"
+        de_callback = _make_checkpoint_callback(
+            checkpoint_path, checkpoint_every, param_keys, bounds,
+        )
+        print(f"Checkpointing best-x every {checkpoint_every} generations to "
+              f"{checkpoint_path}")
+
     t0 = time.time()
 
     result = _dispatch_optimizer(
@@ -865,6 +936,7 @@ def run_calibration(
         tol=tol,
         workers=workers,
         seed=42,
+        de_callback=de_callback,
     )
 
     elapsed = time.time() - t0
@@ -1075,6 +1147,10 @@ def main():
                              "DE — trains a surrogate on real evals and runs DE on the "
                              "predicted objective; 5-10× fewer real evals when the "
                              "surrogate fits well (Tier C1).")
+    parser.add_argument("--checkpoint-every", type=int, default=5,
+                        help="DE only: snapshot best-x to a JSON file every N "
+                             "generations. Lets you SIGTERM a long DE run and still "
+                             "recover the best known parameters. Set to 0 to disable.")
     parser.add_argument("--validate", action="store_true", help="Run validation only")
     args = parser.parse_args()
 
@@ -1093,6 +1169,7 @@ def main():
             warm_start_path=Path(args.warm_start) if args.warm_start else None,
             skip_warm_start_keys=skip_keys,
             optimizer=args.optimizer,
+            checkpoint_every=args.checkpoint_every,
         )
 
 
