@@ -562,45 +562,111 @@ def _make_checkpoint_callback(
     every_n: int,
     param_keys: list[str],
     bounds: list[tuple[float, float]],
+    *,
+    patience: int = 0,
+    wall_clock_max_seconds: float | None = None,
+    rel_improvement_threshold: float = 1e-6,
 ):
-    """Build a scipy DE callback that snapshots the current best every N gens.
+    """Build a scipy DE callback combining checkpointing and early stopping.
 
-    Solves the "long DE run interrupted = total loss of best x" problem we hit
-    on 2026-04-30 when a 31h run found f=2.499 but had no way to surface its
-    best params on SIGTERM. With this callback, killing the calibration at
-    any point still leaves a usable JSON snapshot on disk.
+    Three concerns, one callback:
+      1. **Checkpointing** — snapshot the current best every ``every_n`` gens
+         to ``checkpoint_path`` (atomic via tmp + rename). Lets a SIGTERM'd
+         long run still surface its best params. Set ``every_n=0`` to disable.
+      2. **Patience-based early stop** — terminate after ``patience``
+         consecutive generations without best-fun improvement. Returns True
+         from the callback, which scipy DE treats as "stop now". Solves the
+         multi-modal landscape problem where scipy's ``tol`` (population-std
+         based) refuses to converge while the best-fun has clearly plateaued.
+         Set ``patience=0`` to disable.
+      3. **Wall-clock cap** — terminate after ``wall_clock_max_seconds``
+         regardless of convergence. A hard ceiling so a forgotten run can
+         never grow unbounded. Set to ``None`` to disable.
 
-    Atomic write via tmp + rename — a kill mid-write leaves the prior snapshot
-    intact rather than a partial file. Uses scipy 1.11+ callback signature
-    where the argument is an OptimizeResult-like object exposing .x and .fun.
+    Origin (2026-05-03 incident): the prior 75h+ phase 12 run found
+    f=1.7735 at step 65 (~42h elapsed) and then plateaued for 40 more
+    generations / ~33h with no improvement. scipy's ``tol`` never triggered
+    because population diversity stayed high. Result was lost on kill
+    because the running script pre-dated checkpointing. Patience + wall-
+    clock cap together make this category of incident structurally impossible.
+
+    Improvement is measured against the best-fun-ever seen by this callback,
+    requiring a relative improvement of at least ``rel_improvement_threshold``
+    (default 1e-6) to count — guards against tiny floating-point oscillation
+    being mistaken for progress.
     """
-    state = {"gen": 0}
+    state: dict = {
+        "gen": 0,
+        "best_fun_seen": None,  # not set until first datum arrives
+        "gens_since_improvement": 0,
+        "start_time": time.time(),
+    }
 
     def callback(intermediate_result, *_args, **_kw):
         state["gen"] += 1
-        if every_n <= 0 or state["gen"] % every_n != 0:
-            return None
         try:
             best_x = np.asarray(intermediate_result.x, dtype=float)
             best_fun = float(intermediate_result.fun)
         except AttributeError:
-            # Fallback if scipy passes the legacy (xk, convergence) signature
+            # Legacy scipy signature (xk, convergence=val) — skip cleanly.
             return None
-        snapshot = {
-            "generation": state["gen"],
-            "best_fun": best_fun,
-            "best_x_log10": [float(v) for v in best_x],
-            "best_parameters": {
-                k: float(10.0 ** best_x[i])
-                for i, k in enumerate(param_keys)
-            },
-            "bounds_log10": {k: list(b) for k, b in zip(param_keys, bounds)},
-            "timestamp_iso": datetime.now().isoformat(),
-        }
-        tmp_path = checkpoint_path.with_suffix(checkpoint_path.suffix + ".tmp")
-        with open(tmp_path, "w") as f:
-            json.dump(snapshot, f, indent=2)
-        tmp_path.replace(checkpoint_path)
+
+        # Track improvement. The first finite datum always counts. After
+        # that, a new best must beat the prior by more than the relative
+        # threshold to count, otherwise tiny oscillations would forever
+        # reset the patience counter.
+        prior_best = state["best_fun_seen"]
+        if prior_best is None:
+            state["best_fun_seen"] = best_fun
+            state["gens_since_improvement"] = 0
+        elif best_fun < prior_best - max(abs(prior_best), 1.0) * rel_improvement_threshold:
+            state["best_fun_seen"] = best_fun
+            state["gens_since_improvement"] = 0
+        else:
+            state["gens_since_improvement"] += 1
+
+        # Checkpoint snapshot (atomic write).
+        if every_n > 0 and state["gen"] % every_n == 0:
+            snapshot = {
+                "generation": state["gen"],
+                "best_fun": best_fun,
+                "best_x_log10": [float(v) for v in best_x],
+                "best_parameters": {
+                    k: float(10.0 ** best_x[i])
+                    for i, k in enumerate(param_keys)
+                },
+                "bounds_log10": {k: list(b) for k, b in zip(param_keys, bounds)},
+                "gens_since_improvement": state["gens_since_improvement"],
+                "elapsed_seconds": time.time() - state["start_time"],
+                "timestamp_iso": datetime.now().isoformat(),
+            }
+            tmp_path = checkpoint_path.with_suffix(checkpoint_path.suffix + ".tmp")
+            with open(tmp_path, "w") as f:
+                json.dump(snapshot, f, indent=2)
+            tmp_path.replace(checkpoint_path)
+
+        # Patience-based early stop.
+        if patience > 0 and state["gens_since_improvement"] >= patience:
+            print(
+                f"[early-stop] {patience} generations without improvement "
+                f"(best={state['best_fun_seen']:.6f}); terminating DE",
+                flush=True,
+            )
+            return True
+
+        # Wall-clock cap.
+        if wall_clock_max_seconds is not None:
+            elapsed = time.time() - state["start_time"]
+            if elapsed > wall_clock_max_seconds:
+                print(
+                    f"[early-stop] wall-clock cap "
+                    f"{wall_clock_max_seconds:.0f}s reached "
+                    f"(elapsed={elapsed:.0f}s, best={state['best_fun_seen']:.6f}); "
+                    f"terminating DE",
+                    flush=True,
+                )
+                return True
+
         return None
 
     return callback
@@ -739,6 +805,8 @@ def run_calibration(
     skip_warm_start_keys: list[str] | None = None,
     optimizer: str = "de",
     checkpoint_every: int = 5,
+    patience: int = 20,
+    wall_clock_cap_h: float = 12.0,
 ) -> dict:
     """Run differential evolution calibration for the specified phase."""
     from osmose.config.reader import OsmoseConfigReader
@@ -910,18 +978,32 @@ def run_calibration(
     print(f"Init: {n_r18} near R18, {n_lhs} LHS global "
           f"(consumed by DE; CMA-ES and surrogate-DE generate their own)")
 
-    # Build the checkpoint callback for DE so a long run is interruptible
-    # without losing the best-known x. Only meaningful for the DE path —
-    # CMA-ES and surrogate-DE have their own iteration models.
+    # Build the DE callback combining checkpointing + early-stop. Only the
+    # DE path consumes it; CMA-ES and surrogate-DE have their own iteration
+    # bounds. Without this, scipy DE's tol-based termination can fail to
+    # converge on multi-modal landscapes — observed 2026-05-03 when a 75h+
+    # phase 12 run plateaued at f=1.7735 for 40 generations / ~33h with no
+    # improvement, never triggering tol because the population stayed diverse.
     de_callback = None
-    if optimizer == "de" and checkpoint_every > 0:
+    if optimizer == "de" and (
+        checkpoint_every > 0 or patience > 0 or wall_clock_cap_h > 0
+    ):
         RESULTS_DIR.mkdir(parents=True, exist_ok=True)
         checkpoint_path = RESULTS_DIR / f"phase{phase.replace('/', '_')}_checkpoint.json"
+        wall_clock_cap_s = wall_clock_cap_h * 3600.0 if wall_clock_cap_h > 0 else None
         de_callback = _make_checkpoint_callback(
             checkpoint_path, checkpoint_every, param_keys, bounds,
+            patience=patience,
+            wall_clock_max_seconds=wall_clock_cap_s,
         )
-        print(f"Checkpointing best-x every {checkpoint_every} generations to "
-              f"{checkpoint_path}")
+        msg_parts = []
+        if checkpoint_every > 0:
+            msg_parts.append(f"checkpoint every {checkpoint_every} gens")
+        if patience > 0:
+            msg_parts.append(f"early-stop after {patience} stale gens")
+        if wall_clock_cap_h > 0:
+            msg_parts.append(f"wall-clock cap {wall_clock_cap_h:.1f}h")
+        print(f"DE callback: {'; '.join(msg_parts)} → {checkpoint_path}")
 
     t0 = time.time()
 
@@ -1151,6 +1233,15 @@ def main():
                         help="DE only: snapshot best-x to a JSON file every N "
                              "generations. Lets you SIGTERM a long DE run and still "
                              "recover the best known parameters. Set to 0 to disable.")
+    parser.add_argument("--patience", type=int, default=20,
+                        help="DE only: terminate after N consecutive generations "
+                             "without best-fun improvement. Solves the multi-modal "
+                             "landscape problem where scipy's tol never triggers "
+                             "(observed 2026-05-03). Set to 0 to disable.")
+    parser.add_argument("--wall-clock-cap-h", type=float, default=12.0,
+                        help="DE only: hard wall-clock cap in hours regardless of "
+                             "convergence. Hard ceiling so a forgotten run can't "
+                             "grow unbounded. Set to 0 to disable.")
     parser.add_argument("--validate", action="store_true", help="Run validation only")
     args = parser.parse_args()
 
@@ -1170,6 +1261,8 @@ def main():
             skip_warm_start_keys=skip_keys,
             optimizer=args.optimizer,
             checkpoint_every=args.checkpoint_every,
+            patience=args.patience,
+            wall_clock_cap_h=args.wall_clock_cap_h,
         )
 
 

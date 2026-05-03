@@ -212,6 +212,163 @@ def test_checkpoint_callback_handles_legacy_signature(tmp_path):
     assert not checkpoint_path.exists()
 
 
+def test_patience_early_stop_fires_after_n_stale_generations(tmp_path):
+    """Callback returns True after `patience` consecutive stale gens — solves
+    the multi-modal landscape problem where scipy's tol never triggers."""
+    from types import SimpleNamespace
+    from scripts.calibrate_baltic import _make_checkpoint_callback
+
+    cb = _make_checkpoint_callback(
+        tmp_path / "snap.json", every_n=0,
+        param_keys=["k0"], bounds=[(-1.0, 1.0)],
+        patience=3,
+    )
+    # Improving gens — none should trigger
+    assert cb(SimpleNamespace(x=[0.0], fun=10.0)) is None
+    assert cb(SimpleNamespace(x=[0.0], fun=8.0)) is None
+    assert cb(SimpleNamespace(x=[0.0], fun=5.0)) is None
+    # Stale gen 1 (no improvement at 5.0)
+    assert cb(SimpleNamespace(x=[0.0], fun=5.0)) is None
+    # Stale gen 2
+    assert cb(SimpleNamespace(x=[0.0], fun=5.0)) is None
+    # Stale gen 3 — triggers early stop
+    assert cb(SimpleNamespace(x=[0.0], fun=5.0)) is True
+
+
+def test_patience_zero_disables_early_stop(tmp_path):
+    """patience=0 means no patience-based early termination."""
+    from types import SimpleNamespace
+    from scripts.calibrate_baltic import _make_checkpoint_callback
+
+    cb = _make_checkpoint_callback(
+        tmp_path / "snap.json", every_n=0,
+        param_keys=["k0"], bounds=[(-1.0, 1.0)],
+        patience=0,
+    )
+    # Many stale generations — never triggers
+    cb(SimpleNamespace(x=[0.0], fun=5.0))
+    for _ in range(100):
+        result = cb(SimpleNamespace(x=[0.0], fun=5.0))
+        assert result is None, "patience=0 must never trigger"
+
+
+def test_patience_resets_on_meaningful_improvement(tmp_path):
+    """Patience counter resets when best-fun meaningfully improves."""
+    from types import SimpleNamespace
+    from scripts.calibrate_baltic import _make_checkpoint_callback
+
+    cb = _make_checkpoint_callback(
+        tmp_path / "snap.json", every_n=0,
+        param_keys=["k0"], bounds=[(-1.0, 1.0)],
+        patience=3,
+    )
+    cb(SimpleNamespace(x=[0.0], fun=10.0))
+    cb(SimpleNamespace(x=[0.0], fun=10.0))  # stale 1
+    cb(SimpleNamespace(x=[0.0], fun=10.0))  # stale 2
+    # Improvement — counter resets
+    assert cb(SimpleNamespace(x=[0.0], fun=5.0)) is None
+    # Three more stale gens needed before trigger
+    cb(SimpleNamespace(x=[0.0], fun=5.0))  # stale 1
+    cb(SimpleNamespace(x=[0.0], fun=5.0))  # stale 2
+    assert cb(SimpleNamespace(x=[0.0], fun=5.0)) is True  # stale 3 — trigger
+
+
+def test_tiny_oscillation_does_not_reset_patience(tmp_path):
+    """Floating-point noise (improvement < rel_threshold) should NOT reset
+    patience — otherwise patience effectively never fires on noisy objectives."""
+    from types import SimpleNamespace
+    from scripts.calibrate_baltic import _make_checkpoint_callback
+
+    cb = _make_checkpoint_callback(
+        tmp_path / "snap.json", every_n=0,
+        param_keys=["k0"], bounds=[(-1.0, 1.0)],
+        patience=3,
+        rel_improvement_threshold=1e-3,  # 0.1%
+    )
+    cb(SimpleNamespace(x=[0.0], fun=10.0))
+    # Tiny "improvements" below the relative threshold — should NOT count
+    cb(SimpleNamespace(x=[0.0], fun=9.9999))    # stale 1 (oscillation)
+    cb(SimpleNamespace(x=[0.0], fun=9.9998))    # stale 2 (oscillation)
+    assert cb(SimpleNamespace(x=[0.0], fun=9.9997)) is True  # stale 3 — trigger
+
+
+def test_wall_clock_cap_fires_after_configured_seconds(tmp_path):
+    """Wall-clock cap triggers regardless of convergence."""
+    import time
+    from types import SimpleNamespace
+    from scripts.calibrate_baltic import _make_checkpoint_callback
+
+    # Use a tiny cap so the test is fast
+    cb = _make_checkpoint_callback(
+        tmp_path / "snap.json", every_n=0,
+        param_keys=["k0"], bounds=[(-1.0, 1.0)],
+        patience=0,
+        wall_clock_max_seconds=0.05,  # 50ms cap
+    )
+    # First call: in-budget
+    assert cb(SimpleNamespace(x=[0.0], fun=10.0)) is None
+    # Sleep past the cap
+    time.sleep(0.1)
+    # Even with continued improvement, cap fires
+    assert cb(SimpleNamespace(x=[0.0], fun=5.0)) is True
+
+
+def test_wall_clock_none_disables_cap(tmp_path):
+    """wall_clock_max_seconds=None disables the cap entirely."""
+    import time
+    from types import SimpleNamespace
+    from scripts.calibrate_baltic import _make_checkpoint_callback
+
+    cb = _make_checkpoint_callback(
+        tmp_path / "snap.json", every_n=0,
+        param_keys=["k0"], bounds=[(-1.0, 1.0)],
+        patience=0,
+        wall_clock_max_seconds=None,
+    )
+    cb(SimpleNamespace(x=[0.0], fun=10.0))
+    time.sleep(0.05)
+    # Many stale gens, plenty of wall-clock — never fires
+    for _ in range(20):
+        result = cb(SimpleNamespace(x=[0.0], fun=10.0))
+        assert result is None, "wall_clock=None must never trigger"
+
+
+def test_checkpoint_records_gens_since_improvement(tmp_path):
+    """The snapshot JSON must include the patience counter for diagnostics."""
+    import json
+    from types import SimpleNamespace
+    from scripts.calibrate_baltic import _make_checkpoint_callback
+
+    snap_path = tmp_path / "snap.json"
+    cb = _make_checkpoint_callback(
+        snap_path, every_n=1,
+        param_keys=["k0"], bounds=[(-1.0, 1.0)],
+        patience=100,  # large enough to not fire
+    )
+    cb(SimpleNamespace(x=[0.0], fun=10.0))
+    cb(SimpleNamespace(x=[0.0], fun=10.0))  # stale 1
+    cb(SimpleNamespace(x=[0.0], fun=10.0))  # stale 2
+    snap = json.loads(snap_path.read_text())
+    assert snap["gens_since_improvement"] == 2
+    assert "elapsed_seconds" in snap
+
+
+def test_cli_includes_patience_and_wall_clock_flags():
+    """--help must expose --patience and --wall-clock-cap-h."""
+    import subprocess
+    venv_python = Path(__file__).resolve().parent.parent / ".venv" / "bin" / "python"
+    if not venv_python.exists():
+        return
+    result = subprocess.run(
+        [str(venv_python),
+         str(Path(__file__).resolve().parent.parent / "scripts" / "calibrate_baltic.py"),
+         "--help"],
+        capture_output=True, text=True, timeout=30,
+    )
+    assert "--patience" in result.stdout
+    assert "--wall-clock-cap-h" in result.stdout
+
+
 def test_apply_warm_start_overrides_only_known_keys(tmp_path):
     """warm-start: known keys overridden, unknown kept default, skipped excluded."""
     from scripts.calibrate_baltic import apply_warm_start
