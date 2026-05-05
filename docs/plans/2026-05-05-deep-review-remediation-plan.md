@@ -92,6 +92,22 @@
 >     `grep`/`pytest` commands (no more "any test fakes").
 >   - **Out-of-scope items** renamed `OOS-1..OOS-4` to remove the M9 ID
 >     collision permanently.
+> - 2026-05-05 r5 — fourth-pass review by claim-verification + structural
+>   reviewers. Corrections applied:
+>   - **C4 `_handle_result` signature** (High): r4 sketch showed
+>     `def _handle_result(result: RunResult) -> None:` but actual signature
+>     at `run.py:346` is `(result, config, state, run_log, status)` —
+>     five positional args. r5 rewrites the patch sketch against the real
+>     signature and shows the minimal diff (move
+>     `state.output_dir.set(result.output_dir)` inside the success branch,
+>     add `state.output_dir.set(None)` in the failure branch).
+>   - **C4 `state.run_dirty`** (High): r4 referenced
+>     `state.run_dirty.set(state.run_dirty.get() + 1)` but no `run_dirty`
+>     reactive exists in `ui/state.py`. r5 drops it — Shiny's reactive
+>     system invalidates downstream readers automatically when
+>     `state.output_dir.set(None)` runs.
+>   - **Risk register row added** for `_handle_result` non-`run.py`
+>     callers, with concrete `grep` mitigation.
 
 This plan is organised as five execution phases, each independently shippable.
 Each issue is given a **stable ID** (matches the deep-review report — `C` =
@@ -270,34 +286,51 @@ weakness in the results page.
    SimulationCancelled()`. Define `SimulationCancelled` in
    `osmose/engine/__init__.py`.
 4. Wire `btn_cancel.click` → `state.run_cancel_token.set()` in `run.py`.
-5. **Modify `_handle_result` first (added r4)** at `ui/pages/run.py` to
-   guard on `result.status` before mutating `state.output_dir`:
+5. **Modify `_handle_result` (signature corrected r5)** at
+   `ui/pages/run.py:346`. The actual signature is
+   `_handle_result(result, config, state, run_log, status)` — five
+   positional arguments, not a single `RunResult`. (r4 sketch had this
+   wrong; r5 corrects.) The existing function already branches on
+   `result.returncode == 0`; we simply move the unconditional
+   `state.output_dir.set(...)` at line 349 inside the success branch:
    ```python
-   def _handle_result(result: RunResult) -> None:
+   def _handle_result(result, config, state, run_log, status):
+       """Process a RunResult from either engine."""
        state.run_result.set(result)
-       if result.status != "ok":
-           state.output_dir.set(None)
-           state.run_dirty.set(state.run_dirty.get() + 1)
-           return
-       state.output_dir.set(result.output_dir)
-       # ... existing post-success bookkeeping ...
+       if result.returncode == 0:
+           state.output_dir.set(result.output_dir)
+           status.set(f"Complete. Output: {result.output_dir}")
+           # existing history.save block at run.py:355-365 stays here
+       else:
+           state.output_dir.set(None)  # NEW — invalidate on failure/cancel
+           status.set(f"Failed (exit code {result.returncode})")
+           if result.stderr:  # existing run.py:369-372
+               lines = list(run_log.get())
+               lines.append(f"--- STDERR ---\n{result.stderr}")
+               run_log.set(lines)
    ```
-   This is the load-bearing change — without it, the cancel/failed branch's
-   `state.output_dir = None` setter (step 6 below) is overwritten as soon
-   as `_handle_result` runs. r3 missed this sequencing.
-6. Wrap `_run_python_engine` in `try/except SimulationCancelled` and a broad
-   `except Exception`; in both error branches:
+   No `state.run_dirty` (it does not exist in `ui/state.py`; the reactive
+   system invalidates downstream readers automatically when
+   `state.output_dir.set(None)` runs).
+6. Wrap `_run_python_engine` in `try/except SimulationCancelled` and a
+   broad `except Exception`; in both error branches, build a `RunResult`
+   and route through `_handle_result(result, config, state, run_log,
+   status)` exactly the same way as the success path (already happens at
+   `run.py:274` and `run.py:343`):
    - On cancel: `_handle_result(RunResult(returncode=-1,
      output_dir=Path(""), stdout="", stderr="", status="cancelled",
-     message="user cancelled"))`.
+     message="user cancelled"), config, state, run_log, status)`.
    - On exception: `_handle_result(RunResult(returncode=1,
      output_dir=Path(""), stdout="", stderr=str(exc), status="failed",
-     message=str(exc)))`.
-   The `_handle_result` change in step 5 above ensures `state.output_dir`
-   ends up `None` and `state.run_dirty` ticks.
+     message=str(exc)), config, state, run_log, status)`.
+   `returncode != 0` triggers the failure branch in step 5 →
+   `state.output_dir.set(None)` runs → all downstream reactives
+   (including `_auto_load_results`) re-fire with `output_dir = None`.
 7. Audit the `Results` page's `_auto_load_results` to short-circuit when
-   `state.run_result().status != "ok"`. (`_handle_result` covers the
-   `state.output_dir`-side gate; this covers the auto-load reactive path.)
+   `state.output_dir() is None` (already the natural guard once step 5
+   lands; verify there's no path that reads `state.run_result()` directly
+   and tries to load before `output_dir` is checked). Add a
+   `result.returncode != 0` short-circuit if such a path exists.
 8. Optional UX: disable form inputs while `state.busy != ""` via CSS
    `pointer-events: none` overlay (already partly there with `osm-disabled`).
 
@@ -941,3 +974,4 @@ The plan is fully landed when:
 | **`_safe_output_dir` (C3) breaks symlinked output dirs** (added r3) | Acceptance test must include the symlink case (symlink → inside-cwd directory accepted; symlink → `/etc` rejected). Calibration / scenario forks may legitimately symlink; the helper resolves with `Path.resolve(strict=False)` which follows symlinks — confirm that's the desired behaviour with the test. |
 | **H10 reproduction bound fails on legacy fixture data** (added r3) | Run `grep -rE 'species\.(sexratio\|relativefecundity)\.sp' data/ --include='*.csv'` (r4 verified all clean); if any value is outside the new bound, soften the raise to a warning (with offending fixture path) before merge. Hard-failing master because of legacy data is worse than the bug. |
 | **Phase 1 sequencing — extending `RunResult` (C4) ripples through callers** (added r3, tightened r4) | Default the new `status` field to `"ok"` and `message` to `""` so existing `RunResult(returncode=..., output_dir=..., stdout=..., stderr=...)` constructors keep working. Verification: `grep -rn 'RunResult(' osmose/ ui/ tests/` — every call site must either keep its current keyword args (default `status="ok"` covers it) or be explicitly updated. Then `.venv/bin/python -m pytest tests/test_runner.py tests/test_run_*.py` must be green before pushing. Done when both grep and pytest commands return clean. |
+| **`_handle_result` callers other than `_run_python_engine` could synthesise a `RunResult` with default `status="ok"` while the underlying op actually failed silently** (added r5) | `grep -rn '_handle_result\|_run_python_engine' ui/ osmose/` — confirm only `run.py:274` (Java engine path) and `run.py:343` (Python engine path) call `_handle_result`, and both originate from `OsmoseRunner.run` / `_run_python_engine`. If any synthetic-`RunResult` callers exist, audit them to set `status="failed"` explicitly when not `returncode == 0`. Done when the grep returns ≤ the two known sites and any third-party caller is wired correctly. |
