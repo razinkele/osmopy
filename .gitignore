@@ -3,6 +3,11 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Run-history side effects produced by interactive Shiny sessions and
+# by tests that invoke the success branch of _handle_result(). The files
+# are local audit logs, never committed.
+data/history/
+
 # C extensions
 *.so
 

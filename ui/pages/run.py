@@ -12,9 +12,9 @@ from osmose.config.validator import (
     check_species_consistency,
     validate_config,
 )
-from osmose.engine import PythonEngine
+from osmose.engine import PythonEngine, SimulationCancelled
 from osmose.logging import setup_logging
-from osmose.runner import OsmoseRunner, validate_java_opts
+from osmose.runner import OsmoseRunner, RunResult, validate_java_opts
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.styles import STYLE_CONSOLE
 
@@ -259,13 +259,38 @@ async def _run_python_engine(
         result = await loop.run_in_executor(
             None, lambda: engine.run(run_config, output_dir, seed=0)
         )
+    except SimulationCancelled as exc:
+        # Phase B will trigger this from a UI Cancel button; Phase A defines
+        # the path so the result-handling code is uniform across exit modes.
+        _log.info("Python engine cancelled: %s", exc)
+        lines = list(run_log.get())
+        lines.append(f"--- CANCELLED ---\n{exc}")
+        run_log.set(lines)
+        result = RunResult(
+            returncode=-1,
+            output_dir=Path(""),
+            stdout="",
+            stderr=str(exc),
+            status="cancelled",
+            message=str(exc) or "user cancelled",
+        )
     except Exception as exc:
+        # Pre-C4 this returned early without calling _handle_result, leaving
+        # state.output_dir pointing at the partial / missing output dir from
+        # the previous run. C4 (Phase A) routes failures through
+        # _handle_result so state.output_dir gets cleared.
         _log.error("Python engine failed: %s", exc)
         lines = list(run_log.get())
         lines.append(f"--- ERROR ---\n{exc}")
         run_log.set(lines)
-        status.set(f"Failed: {exc}")
-        return
+        result = RunResult(
+            returncode=1,
+            output_dir=Path(""),
+            stdout="",
+            stderr=str(exc),
+            status="failed",
+            message=str(exc),
+        )
     finally:
         state.busy.set(None)
         ui.update_action_button("btn_run", disabled=False, session=session)
@@ -344,11 +369,19 @@ async def _run_java_engine(
 
 
 def _handle_result(result, config, state, run_log, status):
-    """Process a RunResult from either engine."""
+    """Process a RunResult from either engine.
+
+    Pre-C4, state.output_dir was set unconditionally; on a failed or
+    cancelled run, the Results page would then auto-load from a partial /
+    nonexistent directory and surface stale or broken data. C4 (Phase A,
+    2026-05-05) gates state.output_dir.set on returncode == 0 and clears
+    it on failure or cancellation, so downstream reactives (notably
+    _auto_load_results) re-fire with a None signal they can short-circuit on.
+    """
     state.run_result.set(result)
-    state.output_dir.set(result.output_dir)
 
     if result.returncode == 0:
+        state.output_dir.set(result.output_dir)
         status.set(f"Complete. Output: {result.output_dir}")
         try:
             from osmose.history import RunRecord, RunHistory
@@ -363,12 +396,20 @@ def _handle_result(result, config, state, run_log, status):
             history.save(record)
         except (OSError, ValueError) as exc:
             _log.warning("Failed to save run history: %s", exc)
+        return
+
+    # Failure or cancellation — invalidate the output dir so dependent
+    # reactives (Results page _auto_load_results) short-circuit instead of
+    # loading a partial / missing directory.
+    state.output_dir.set(None)
+    if result.status == "cancelled":
+        status.set(f"Cancelled: {result.message or 'user cancelled'}")
     else:
         status.set(f"Failed (exit code {result.returncode})")
-        if result.stderr:
-            lines = list(run_log.get())
-            lines.append(f"--- STDERR ---\n{result.stderr}")
-            run_log.set(lines)
+    if result.stderr:
+        lines = list(run_log.get())
+        lines.append(f"--- STDERR ---\n{result.stderr}")
+        run_log.set(lines)
 
 
 def run_server(input, output, session, state):
