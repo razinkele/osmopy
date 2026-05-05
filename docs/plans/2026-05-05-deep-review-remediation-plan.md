@@ -41,6 +41,33 @@
 >     command instead of "all 7 reviewers re-run".
 >   - **Out-of-scope cross-ref** to "M9" deduplicated; renamed to a
 >     descriptive label.
+> - 2026-05-05 r3 — second-pass review by claim-verification + structural
+>   reviewers. Corrections applied:
+>   - **C3** function-name labels fixed: line 586 is `download_results_csv`,
+>     not `output_dir_status` (that's at line 227 and is out-of-scope).
+>   - **C4** `RunResult` patch sketch corrected: r2 wrote
+>     `RunResult(status="failed", message=...)` but the dataclass at
+>     `osmose/runner.py:43` only has `returncode/output_dir/stdout/stderr`.
+>     r3 explicitly adds an "extend `RunResult` with `status` + `message`"
+>     step and shows correct constructor calls.
+>   - **Acceptance #1** dispatch instructions reworded — agent
+>     `subagent_type` strings are listed with a note to verify presence
+>     in the session before dispatch (rather than presented as
+>     guaranteed-executable code).
+>   - **Sequencing notes** updated — Phase 2 acceptance now explicitly
+>     depends on C5 (Phase 1) landing first.
+>   - **Phase 1 estimate** revised from "1 day" to "1–2 days" to reflect
+>     C5's addition.
+>   - **Phase 5 estimate** revised from "1–2 days" to "2–3 days" with
+>     5a/5b split option.
+>   - **C3 acceptance** extended with symlink test cases.
+>   - **M2 parity gate** tightened with numeric-baseline requirement.
+>   - **H10 pre-change sweep** added to avoid red-master post-merge.
+>   - **Schema field-quality acceptance** added (no acceptance criterion
+>     in r1/r2).
+>   - **Risk register** extended with 4 new rows: allowlist-typo masking,
+>     symlink behaviour, legacy fixture bound failures, RunResult
+>     constructor ripple.
 
 This plan is organised as five execution phases, each independently shippable.
 Each issue is given a **stable ID** (matches the deep-review report — `C` =
@@ -54,10 +81,18 @@ validation.
 
 ---
 
-## Phase 1 — Critical correctness & security (target: 1 day)
+## Phase 1 — Critical correctness & security (target: 1–2 days)
 
 Fixes silent-failure modes the user can hit today and the path-traversal
 weakness in the results page.
+
+> **Estimate revised in r3.** r1/r2 said "1 day". With C5 added and C4 still
+> in scope, realistic budget is **1.5–2 engineer-days**: ~3 hours for C1
+> (movement schema rewrite + parity test), ~30 min C2, ~2 h C3 (helper +
+> 4 sites + symlink test), ~3 h C4 (RunResult extension + cancellation
+> plumbing through simulate.py + new test), ~2 h C5 (schema or allowlist
+> additions + test re-green). If C4 is deferred per its scope-note, drop to
+> ~1 day.
 
 ### C1 — Movement schema keys are inverted vs engine
 
@@ -113,19 +148,23 @@ weakness in the results page.
 
 ### C3 — Path traversal in results page (narrowed in r2)
 
-**Symptom.** `_load_results` and `output_dir_status` reject only the `..`
-substring; absolute paths like `/etc` slip through.
+**Symptom.** `_load_results` and `download_results_csv` reject only the
+`..` substring; absolute paths like `/etc` slip through.
 
-**Verified scope (r2).** Of the five sites cited in r1:
-- `results.py:521` (`comparison_chart`) and `results.py:543`
-  (`download_results_csv`) **already** combine the `..` check with
+**Verified scope (r3 — function names corrected after r2 review).**
+- `results.py:521` (inside `comparison_chart` reactive starting near
+  line 510) and `results.py:543` (inside `config_diff_table` reactive
+  starting near line 540) **already** combine the `..` check with
   `out_dir.is_absolute() and not out_dir.is_relative_to(Path.cwd())` —
   no fix needed for these two.
-- `results.py:334` (`_load_results`) and `results.py:586`
-  (`output_dir_status`) — **`..` check only**, real bug.
-- `results.py:228` is `path_str = input.output_dir()` inside
-  `output_dir_status`. The function only does `p.is_dir()` and `glob` for
-  on-screen feedback, no privileged file access. Out of scope.
+- `results.py:334` (inside `_load_results` at line 332) — **`..` check
+  only**, real bug.
+- `results.py:586` (inside `download_results_csv` download handler at
+  line ~582) — **`..` check only**, real bug. (r2 mistakenly named this
+  function `output_dir_status`; that function is at line 227 and is
+  out of scope.)
+- `results.py:227` (`output_dir_status`) only does `p.is_dir()` and
+  `glob` for on-screen feedback, no privileged file access. Out of scope.
 
 **Files.**
 - `ui/pages/results.py:334, 586` (apply helper)
@@ -162,6 +201,11 @@ substring; absolute paths like `/etc` slip through.
   - `/tmp/foo` (outside cwd) → rejected
   - `../../etc/passwd` → rejected
   - `output/run123` (inside cwd) → accepted
+  - **Symlink case (added r3):** symlink at `output/symlink-out` pointing
+    to a directory inside cwd → accepted; symlink pointing to `/etc` →
+    rejected. (Calibration / scenario forks may legitimately symlink
+    output dirs; the helper must not break that workflow while still
+    catching escape-via-symlink.)
 
 ### C4 — Run race + lost engine errors + non-cancellable Python engine
 
@@ -183,25 +227,38 @@ substring; absolute paths like `/etc` slip through.
 **Files.**
 - `ui/pages/run.py:243-253, 354-365, 481-485`
 - `ui/state.py` (add cancellation token)
+- `osmose/runner.py` (extend `RunResult` with status + message)
 - `osmose/engine/simulate.py` (accept a cooperative-cancellation callback)
 
 **Plan.**
-1. Add a `threading.Event` to `AppState`: `state.run_cancel_token`. Reset
+1. **Extend `RunResult`** at `osmose/runner.py:40-47` to carry a
+   `status: Literal["ok", "failed", "cancelled"]` field and an optional
+   `message: str = ""` field. Default `status="ok"` so existing callers
+   that construct `RunResult(returncode=..., output_dir=..., stdout=...,
+   stderr=...)` keep working. (r2 patch sketch tried to write
+   `RunResult(status="failed", message=...)` directly; `RunResult` only
+   has `returncode/output_dir/stdout/stderr`. r3 corrects this.)
+2. Add a `threading.Event` to `AppState`: `state.run_cancel_token`. Reset
    on each run start.
-2. Thread it through `PythonEngine.run(...)` and into the simulation loop.
+3. Thread it through `PythonEngine.run(...)` and into the simulation loop.
    In `simulate.py`'s outer `for step in range(n_steps):` loop, add
    `if cancel_token is not None and cancel_token.is_set(): raise
    SimulationCancelled()`. Define `SimulationCancelled` in
    `osmose/engine/__init__.py`.
-3. Wire `btn_cancel.click` → `state.run_cancel_token.set()` in `run.py`.
-4. Wrap `_run_python_engine` in `try/except SimulationCancelled` and a broad
+4. Wire `btn_cancel.click` → `state.run_cancel_token.set()` in `run.py`.
+5. Wrap `_run_python_engine` in `try/except SimulationCancelled` and a broad
    `except Exception`; in both error branches:
-   - Set `state.run_result = RunResult(status="failed", message=...)`.
+   - On cancel: `state.run_result = RunResult(returncode=-1,
+     output_dir=Path(""), stdout="", stderr="", status="cancelled",
+     message="user cancelled")`.
+   - On exception: `state.run_result = RunResult(returncode=1,
+     output_dir=Path(""), stdout="", stderr=str(exc), status="failed",
+     message=str(exc))`.
    - Set `state.output_dir = None`.
    - Bump `state.run_dirty` so dependent reactives re-fire.
-5. Audit `_handle_result` and the `Results` page's `_auto_load_results` to
+6. Audit `_handle_result` and the `Results` page's `_auto_load_results` to
    short-circuit when `state.run_result.status != "ok"`.
-6. Optional UX: disable form inputs while `state.busy != ""` via CSS
+7. Optional UX: disable form inputs while `state.busy != ""` via CSS
    `pointer-events: none` overlay (already partly there with `osm-disabled`).
 
 **Acceptance.**
@@ -210,6 +267,8 @@ substring; absolute paths like `/etc` slip through.
 - Test: `tests/test_run_cancellation.py` — fake engine that runs for 100
   steps; trigger cancel at step 10; assert `RunResult.status == "cancelled"`
   and no auto-load occurs.
+- Test: existing runner tests still pass without modification (default
+  `status="ok"` keeps the old constructor calls working).
 
 ### C5 — Master is RED on `test_from_dict_warn_mode_clean_on_example_configs[baltic]` (NEW in r2)
 
@@ -366,6 +425,17 @@ bug". Demote H2 from a bug to a sync task.
 
 ### Schema field-quality fixes (mostly L/M warnings from review)
 
+> **Acceptance (added r3).** After the per-field changes below land:
+> 1. `tests/test_engine_config_validation.py` — full parametrize set still
+>    green (no new unknown-key warnings introduced).
+> 2. Round-trip via `scripts/check_config_roundtrip.py` on all five
+>    fixtures — every changed field round-trips identically (no value
+>    munging from the new defaults).
+> 3. New defaults must match the engine-side defaults verified against
+>    `osmose/engine/config.py` (`grep` for the same `cfg.get(key,
+>    "DEFAULT")` and assert the schema default string-equals it).
+
+
 **Files.** `osmose/schema/movement.py:8-15`, `output.py:88-93`,
 `simulation.py:79-85, 150-156`, `predation.py:6-11`, `bioenergetics.py:113-247`,
 `ltl.py:30-44`, `fishing.py:53-60`.
@@ -395,8 +465,17 @@ Tightens parameter validation and closes the second-order parity drifts.
 **Files.** `osmose/engine/config.py:469-470`,
 `osmose/engine/processes/reproduction.py:48`.
 
+> **Pre-change sweep (added r3).** Before tightening these bounds, run
+> `grep -rE 'species\.(sexratio|relativefecundity)\.sp' data/*/`*.csv` and
+> inspect every value across all five fixtures. If any fixture has
+> `sexratio` outside `[0, 1]` or `relativefecundity ≤ 0`, soften the
+> raise to a warning (with the offending fixture path) instead of
+> failing master post-merge.
+
 **Plan.**
-1. In `config.py`, after loading `species.sexratio.spX` and
+1. **Run the sweep first.** If clean, proceed with hard bounds. If not,
+   downgrade to warnings and document the legacy values.
+2. In `config.py`, after loading `species.sexratio.spX` and
    `species.relativefecundity.spX`, validate:
    ```python
    if not 0.0 <= sex_ratio <= 1.0:
@@ -404,7 +483,7 @@ Tightens parameter validation and closes the second-order parity drifts.
    if relative_fecundity <= 0:
        raise ValueError(f"relative_fecundity for sp{idx} must be > 0")
    ```
-2. In `reproduction.py:48`, after loading `spawning_season[sp, :]`, assert
+3. In `reproduction.py:48`, after loading `spawning_season[sp, :]`, assert
    `np.isclose(season.sum(), 1.0, atol=0.01)` and emit a warning (not raise)
    if violated — many configs may have legacy non-normalised vectors.
 
@@ -463,11 +542,15 @@ actual `FishStage` implementation uses `>=` or `>`**. Two outcomes:
    (`osmose-model/osmose`) to determine the actual comparison operator.
 2. **If Java is `>=`**: close M2 as "verified; current code matches".
    Update the comment if anything is unclear.
-3. **If Java is `>`**: switch to `side='left'`. Then run parity tests
-   (`tests/test_parity_*`) and confirm the change reduces (not introduces)
-   drift on `*_by_size` outputs.
-4. If parity drift increases either way, document and revert; boundary
-   epsilon is biologically negligible relative to aggregate biomass.
+3. **If Java is `>`**: switch to `side='left'`. Then capture the
+   pre-change drift on `*_by_size` outputs vs Java reference NetCDF as a
+   numeric baseline (`max_abs_diff`, `mean_abs_diff` per size bin); the
+   change must show post-change drift ≤ pre-change drift on **every
+   size-bin metric** before merging. Aggregate-biomass drift must remain
+   inside the existing parity tolerance (no widening).
+4. If parity drift increases either way (or is unchanged within
+   noise), document and revert; boundary epsilon is biologically
+   negligible relative to aggregate biomass.
 
 ### Engine parity M1 — Distribution averaging
 
@@ -569,7 +652,18 @@ once, reused across runs. Avoids paying the Numba JIT cost per click.
 
 ---
 
-## Phase 5 — Test coverage, UI cleanup, polish (target: 1–2 days)
+## Phase 5 — Test coverage, UI cleanup, polish (target: 2–3 days, splittable)
+
+> **Estimate revised in r3.** This phase contains 13 distinct items
+> (H8/H9/M7/M8/M9 tests + L test fix + UI consolidation M10/M13 + H3/H12
+> /H11/M12 + a 5-bullet "Misc Low/Nit" list). Even at 1 hour per item the
+> total is realistically 2 engineer-days; UI consolidation alone (M10
+> across every page) is half a day.
+>
+> If sequencing matters, consider splitting:
+> - **Phase 5a (tests-only, ~1 day):** H8, H9, M7, M8, M9, L
+> - **Phase 5b (UI/polish, ~1–2 days):** M10, M13, H3, H12, H11, M12,
+>   misc nits
 
 ### H8 — NaN/Inf propagation suite
 
@@ -693,16 +787,27 @@ helper that depends only on `state.config_dirty` (a counter bumped by
 The plan is fully landed when:
 
 1. **Re-dispatch the deep-review agent suite on the resulting branch and
-   find no remaining Critical or High issues.** Concrete dispatch
-   (executable from a fresh Claude Code session in this repo):
-   ```
-   Agent(subagent_type="feature-dev:code-reviewer", prompt="Review the changes on
-        claude/deep-app-review-xvuga vs master. Report Critical/High only.")
-   Agent(subagent_type="pr-review-toolkit:silent-failure-hunter", prompt="...")
-   Agent(subagent_type="pr-review-toolkit:type-design-analyzer", prompt="...")
-   Agent(subagent_type="superpowers:code-reviewer", prompt="...")
-   ```
-   Iteration ends when all four agents return zero new C/H findings.
+   find no remaining Critical or High issues.** From a fresh Claude Code
+   session in this repo, dispatch via the Agent tool. Verify each
+   `subagent_type` is present in the session's agent list before
+   dispatching (the four below are present in this author's
+   environment as of 2026-05-05; if any are missing, install the
+   corresponding plugin or substitute an equivalent agent):
+   - `feature-dev:code-reviewer` — bug / logic / convention adherence
+   - `pr-review-toolkit:silent-failure-hunter` — error-handling / fallback
+   - `pr-review-toolkit:type-design-analyzer` — type / dataclass review
+   - `superpowers:code-reviewer` — plan-vs-implementation cross-check
+
+   Each agent's prompt must include: branch under review
+   (`claude/deep-app-review-xvuga` post-merge of all phases), severity
+   filter (Critical and High only), and the report-format request used in
+   this session's review iterations (numbered findings with file:line +
+   evidence + severity).
+
+   Iteration ends when all four agents return zero new C/H findings on a
+   single round (note: a finding is "new" only if it points to code or
+   docs touched by the remediation; pre-existing unrelated issues do not
+   block this acceptance).
 2. **`.venv/bin/python -m pytest`** passes 100% with the new tests.
 3. **Round-trip script** (`scripts/check_config_roundtrip.py`) passes on
    all five fixtures (`eec`, `baltic`, `eec_full`, `examples`, `minimal`)
@@ -720,13 +825,20 @@ The plan is fully landed when:
 
 ## Sequencing notes
 
-- **Phase 1 + Phase 2 are independent** and can be done in either order
-  (or in parallel by two engineers).
+- **Phase 2 acceptance depends on C5 (Phase 1) landing first** — H1's
+  "zero unknown-key warnings on all five fixtures" is unreachable while
+  master's `[baltic]` parametrization is red. Other than that single
+  cross-phase coupling, Phase 1 and Phase 2 are independent and can be
+  parallelised by two engineers (engineer A: C1 + C2 + C3 + C4; engineer
+  B: C5 + Phase 2).
 - **Phase 3** depends on Phase 2 (some new schema fields need engine
   validation tightened simultaneously).
 - **Phase 4** is independent and can ship anytime; defer if no
-  performance complaints.
+  performance complaints. Each Phase-4 sub-task gates on its own baseline
+  benchmark (see "Baseline gate" at top of Phase 4).
 - **Phase 5** depends on all earlier phases (tests for the new behaviour).
+  If split into 5a / 5b, Phase 5a (tests) can land in parallel with
+  Phase 4 once Phase 3 is in.
 
 ## Out of scope
 
@@ -749,3 +861,7 @@ The plan is fully landed when:
 | Schema additions in Phase 2 break existing user configs that omit the keys | All new fields ship with `required=False` and engine-matching defaults; round-trip test on bundled fixtures gates the merge |
 | Numba parallel determinism test (H9) flakes on different thread counts | Run with `NUMBA_NUM_THREADS` pinned in CI; mark test as `@pytest.mark.xfail` if Numba RNG semantics differ between thread counts (would be a separate engine bug) |
 | Cancellation path (C4) leaves orphaned NetCDF/CSV file handles | Wrap output writers in `try/finally` close; verify with `lsof` in the test |
+| **C5/H1 allowlist additions silently mask real config typos** (added r3) | Prefer schema fields over `_SUPPLEMENTARY_ALLOWLIST` entries. For every key added to the allowlist, also add a positive engine-read assertion in `tests/test_engine_config.py` confirming the engine actually consumes it. If the engine doesn't read a key, it shouldn't be in the allowlist. |
+| **`_safe_output_dir` (C3) breaks symlinked output dirs** (added r3) | Acceptance test must include the symlink case (symlink → inside-cwd directory accepted; symlink → `/etc` rejected). Calibration / scenario forks may legitimately symlink; the helper resolves with `Path.resolve(strict=False)` which follows symlinks — confirm that's the desired behaviour with the test. |
+| **H10 reproduction bound fails on legacy fixture data** (added r3) | Run the pre-change sweep over `data/*/`*.csv` for `species.sexratio.*` and `species.relativefecundity.*`; if any value is outside the new bound, soften the raise to a warning (with offending fixture path) before merge. Hard-failing master because of legacy data is worse than the bug. |
+| **Phase 1 sequencing — extending `RunResult` (C4) ripples through callers** (added r3) | Default the new `status` field to `"ok"` and `message` to `""` so existing `RunResult(returncode=..., output_dir=..., stdout=..., stderr=...)` constructors keep working. Audit `osmose/runner.py:182,192` and any test fakes; run the full test suite before pushing. |
