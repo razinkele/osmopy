@@ -153,6 +153,11 @@
 >   present, the rebase worked; if absent, it didn't. Same correction
 >   applied to the in-section diagnostic command in the
 >   "Execution prerequisite" callout.
+> - 2026-05-05 r9 — iter 8 spotted one residual `git diff cf5cb8e --
+>   data/baltic/` diagnostic inside the C5 preflight callout (line 466
+>   pre-r9) that r8 missed. r9 swaps it to the same `ls`-based check
+>   used everywhere else, plus corrects "13 passed" → "12 passed" (the
+>   actual test-count fallback when the rebase is incomplete).
 
 This plan is organised as five execution phases, each independently shippable.
 Each issue is given a **stable ID** (matches the deep-review report — `C` =
@@ -461,12 +466,13 @@ weakness in the results page.
 > .venv/bin/python -m pytest tests/test_engine_config_validation.py -q
 > ```
 > Expected: `1 failed, 11 passed` with `[baltic]` listing the 11
-> unknown-key warnings. If you see "13 passed" instead, the rebase
-> didn't bring the baltic background CSVs in — re-check `git status` and
-> `git diff cf5cb8e -- data/baltic/`. Without this preflight, an
-> engineer following C5 will see green, assume the work is done, and
-> ship the schema additions on a stale base where they aren't actually
-> exercised.
+> unknown-key warnings. If you see "12 passed" instead, the rebase
+> didn't bring the baltic background CSVs in — re-check `git status`
+> and confirm `ls data/baltic/baltic_param-background.csv` returns the
+> file (it should after a successful rebase onto master). Without this
+> preflight, an engineer following C5 will see green, assume the work
+> is done, and ship the schema additions on a stale base where they
+> aren't actually exercised.
 
 **Symptom.** CLAUDE.md asserts:
 > "Integration test: `tests/test_engine_config_validation.py::test_from_dict_warn_mode_clean_on_example_configs[*]` must stay warning-free."
