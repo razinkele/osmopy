@@ -30,46 +30,36 @@ def write_outputs(
 ) -> None:
     """Write simulation outputs to CSV files matching Java format.
 
-    Creates:
-      - {prefix}_biomass_Simu0.csv
-      - {prefix}_abundance_Simu0.csv
+    Build-then-write: each family's CSV is built as a DataFrame via
+    _build_*_dataframes, then _write_species_csv writes it to disk
+    with the appropriate commentary header. The build helpers are the
+    shared source of truth for disk and in-memory (OsmoseResults.from_outputs)
+    paths.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
-    species = config.all_species_names  # includes background
 
-    # Collect time series
-    times = np.array([o.step / config.n_dt_per_year for o in outputs])
-    biomass_data = np.array([o.biomass for o in outputs])
-    abundance_data = np.array([o.abundance for o in outputs])
+    species_dfs = _build_species_dataframes(outputs, config)
+    headers = {
+        "biomass": "Mean biomass (tons), excluding first ages specified in input",
+        "abundance": "Mean abundance (number of fish), excluding first ages specified in input",
+    }
+    for key in ("biomass", "abundance"):
+        df = species_dfs[key]
+        times = df["Time"].values
+        species = [c for c in df.columns if c != "Time"]
+        data = df[species].values
+        _write_species_csv(
+            output_dir / f"{prefix}_{key}_Simu0.csv",
+            headers[key],
+            times,
+            species,
+            data,
+        )
 
-    # Write biomass CSV
-    _write_species_csv(
-        output_dir / f"{prefix}_biomass_Simu0.csv",
-        "Mean biomass (tons), excluding first ages specified in input",
-        times,
-        species,
-        biomass_data,
-    )
-
-    # Write abundance CSV
-    _write_species_csv(
-        output_dir / f"{prefix}_abundance_Simu0.csv",
-        "Mean abundance (number of fish), excluding first ages specified in input",
-        times,
-        species,
-        abundance_data,
-    )
-
-    # Write mortality CSVs per species
     _write_mortality_csvs(output_dir, prefix, outputs, config)
-
-    # Write yield CSV
     _write_yield_csv(output_dir, prefix, outputs, config)
-
-    # Write age/size distribution CSVs
     _write_distribution_csvs(output_dir, prefix, outputs, config)
 
-    # Write bioenergetic CSVs when enabled
     if config.bioen_enabled:
         _write_bioen_csvs(output_dir, prefix, outputs, config)
 
@@ -101,6 +91,31 @@ def write_outputs(
         )
 
 
+def _build_species_dataframes(
+    outputs: list[StepOutput],
+    config: EngineConfig,
+) -> dict[str, pd.DataFrame]:
+    """Build wide-form DataFrames for per-species time series (biomass, abundance).
+
+    Returns a dict with keys "biomass" and "abundance", each mapping to a
+    wide-form DataFrame with columns ["Time"] + config.all_species_names.
+    These are the in-memory equivalents of the CSVs written by
+    _write_species_csv (one row per step, one column per species).
+    """
+    times = np.array([o.step / config.n_dt_per_year for o in outputs])
+    species = config.all_species_names
+    biomass_data = np.array([o.biomass for o in outputs])
+    abundance_data = np.array([o.abundance for o in outputs])
+
+    bio_df = pd.DataFrame(biomass_data, columns=list(species))
+    bio_df.insert(0, "Time", times)
+
+    abd_df = pd.DataFrame(abundance_data, columns=list(species))
+    abd_df.insert(0, "Time", times)
+
+    return {"biomass": bio_df, "abundance": abd_df}
+
+
 def _write_species_csv(
     path: Path,
     description: str,
@@ -117,14 +132,19 @@ def _write_species_csv(
         df.to_csv(f, index=False)
 
 
-def _write_distribution_csvs(
-    output_dir: Path,
-    prefix: str,
+def _build_distribution_dataframes(
     outputs: list[StepOutput],
     config: EngineConfig,
-) -> None:
-    """Write per-species age/size distribution CSVs matching Java format."""
+) -> dict[str, pd.DataFrame]:
+    """Build wide-form DataFrames for per-species age/size distributions.
+
+    Returns a dict keyed by f"{output_type}_{species_name}" (e.g.,
+    "biomassByAge_cod"), each mapping to a wide-form DataFrame with
+    columns ["Time"] + bin labels. One entry per (output_type, species)
+    pair that has data in the outputs list.
+    """
     times = np.array([o.step / config.n_dt_per_year for o in outputs])
+    result: dict[str, pd.DataFrame] = {}
 
     for label, attr_name in [
         ("biomassByAge", "biomass_by_age"),
@@ -158,8 +178,48 @@ def _write_distribution_csvs(
 
             df = pd.DataFrame(data_matrix, columns=columns)  # type: ignore[arg-type]
             df.insert(0, "Time", times)
-            path = output_dir / f"{prefix}_{label}_{sp_name}_Simu0.csv"
-            df.to_csv(path, index=False)
+            result[f"{label}_{sp_name}"] = df
+
+    return result
+
+
+def _write_distribution_csvs(
+    output_dir: Path,
+    prefix: str,
+    outputs: list[StepOutput],
+    config: EngineConfig,
+) -> None:
+    """Write per-species age/size distribution CSVs matching Java format."""
+    dfs = _build_distribution_dataframes(outputs, config)
+    for key, df in dfs.items():
+        path = output_dir / f"{prefix}_{key}_Simu0.csv"
+        df.to_csv(path, index=False)
+
+
+def _build_mortality_dataframes(
+    outputs: list[StepOutput],
+    config: EngineConfig,
+) -> dict[str, pd.DataFrame]:
+    """Build wide-form DataFrames for per-species mortality-rate outputs.
+
+    Ported verbatim from _write_mortality_csvs; only change is returning
+    DataFrames instead of writing them.
+
+    Returns {f"mortalityRate_{species_name}": df} with columns
+    ["Time"] + [cause.name.capitalize() for cause in MortalityCause].
+    """
+    from osmose.engine.state import MortalityCause
+
+    times = np.array([o.step / config.n_dt_per_year for o in outputs])
+    cause_names = [c.name.capitalize() for c in MortalityCause]
+
+    result: dict[str, pd.DataFrame] = {}
+    for sp_idx, sp_name in enumerate(config.species_names):
+        data = np.array([o.mortality_by_cause[sp_idx] for o in outputs])
+        df = pd.DataFrame(data, columns=cause_names)  # type: ignore[arg-type]
+        df.insert(0, "Time", times)
+        result[f"mortalityRate_{sp_name}"] = df
+    return result
 
 
 def _write_mortality_csvs(
@@ -169,20 +229,12 @@ def _write_mortality_csvs(
     config: EngineConfig,
 ) -> None:
     """Write per-species mortality rate CSVs matching Java format."""
-    from osmose.engine.state import MortalityCause
-
-    times = np.array([o.step / config.n_dt_per_year for o in outputs])
-    cause_names = [c.name.capitalize() for c in MortalityCause]
-
     mort_dir = output_dir / "Mortality"
     mort_dir.mkdir(exist_ok=True)
 
-    for sp_idx, sp_name in enumerate(config.species_names):
-        # Extract mortality data for this species across all timesteps
-        data = np.array([o.mortality_by_cause[sp_idx] for o in outputs])
-        df = pd.DataFrame(data, columns=cause_names)  # type: ignore[arg-type]
-        df.insert(0, "Time", times)
-
+    dfs = _build_mortality_dataframes(outputs, config)
+    for key, df in dfs.items():
+        sp_name = key.split("_", 1)[1]
         path = mort_dir / f"{prefix}_mortalityRate-{sp_name}_Simu0.csv"
         with open(path, "w") as f:
             f.write(f'"Mortality rates per time step for {sp_name}"\n')
@@ -216,6 +268,41 @@ def aggregate_diet_by_species(
     if focal_mask.any():
         np.add.at(result, species_id[focal_mask], diet_matrix[focal_mask])
     return result
+
+
+def _build_diet_dataframe(
+    outputs: list[StepOutput],
+    config: EngineConfig,
+) -> dict[str, pd.DataFrame]:
+    """Build the diet matrix DataFrame (long-form: one row per recording period).
+
+    Caller must check config.diet_output_enabled before calling.
+    Keyed by "dietMatrix" to match the single-file CSV output.
+    Ported verbatim from write_diet_csv; only change is returning a
+    DataFrame instead of writing it to disk.
+    """
+    step_matrices: list[NDArray[np.float64]] = []
+    step_times: list[float] = []
+    for o in outputs:
+        if o.diet_by_species is not None:
+            step_matrices.append(o.diet_by_species)
+            step_times.append(o.step / config.n_dt_per_year)
+    if not step_matrices:
+        return {}
+
+    predator_names = config.species_names
+    prey_names = config.all_species_names
+    n_pred, n_prey = len(predator_names), len(prey_names)
+    columns = [f"{pred}_{prey}" for pred in predator_names for prey in prey_names]
+    rows: list[list[float]] = []
+    for mat, t in zip(step_matrices, step_times, strict=True):
+        if mat.shape != (n_pred, n_prey):
+            raise ValueError(
+                f"diet matrix shape {mat.shape} != ({n_pred}, {n_prey}) at time {t}"
+            )
+        rows.append([t, *mat.reshape(-1).tolist()])
+    df = pd.DataFrame(rows, columns=["Time", *columns])
+    return {"dietMatrix": df}
 
 
 def write_diet_csv(
@@ -270,6 +357,30 @@ def _normalize_diet_matrix_to_percent(
 # ---------------------------------------------------------------------------
 
 
+def _build_yield_dataframes(
+    outputs: list[StepOutput],
+    config: EngineConfig,
+) -> dict[str, pd.DataFrame]:
+    """Build wide-form DataFrames for yield outputs.
+
+    Ported verbatim from _write_yield_csv; returns {"yield": df} with
+    columns ["Time"] + config.species_names.
+    """
+    times = np.array([o.step / config.n_dt_per_year for o in outputs])
+    yield_data = np.array(
+        [
+            o.yield_by_species
+            if o.yield_by_species is not None
+            else np.zeros(config.n_species)
+            for o in outputs
+        ]
+    )
+    species = config.species_names
+    df = pd.DataFrame(yield_data, columns=list(species))
+    df.insert(0, "Time", times)
+    return {"yield": df}
+
+
 def _write_yield_csv(
     output_dir: Path,
     prefix: str,
@@ -277,15 +388,13 @@ def _write_yield_csv(
     config: EngineConfig,
 ) -> None:
     """Write fishing yield CSV matching Java format."""
-    times = np.array([o.step / config.n_dt_per_year for o in outputs])
-    yield_data = np.array(
-        [
-            o.yield_by_species if o.yield_by_species is not None else np.zeros(config.n_species)
-            for o in outputs
-        ]
-    )
-    species = config.species_names
-
+    dfs = _build_yield_dataframes(outputs, config)
+    if "yield" not in dfs:
+        return
+    df = dfs["yield"]
+    times = df["Time"].values
+    species = [c for c in df.columns if c != "Time"]
+    yield_data = df[species].values
     _write_species_csv(
         output_dir / f"{prefix}_yield_Simu0.csv",
         "Fishing yield (tons) per time step",
@@ -300,16 +409,18 @@ def _write_yield_csv(
 # ---------------------------------------------------------------------------
 
 
-def _write_bioen_csvs(
-    output_dir: Path,
-    prefix: str,
+def _build_bioen_dataframes(
     outputs: list[StepOutput],
     config: EngineConfig,
-) -> None:
-    """Write bioen-specific per-species CSVs into a Bioen/ subdirectory."""
-    bioen_dir = output_dir / "Bioen"
-    bioen_dir.mkdir(exist_ok=True)
+) -> dict[str, pd.DataFrame]:
+    """Build wide-form DataFrames for bioenergetic outputs.
 
+    Caller must check config.bioen_enabled before calling. Ported verbatim
+    from _write_bioen_csvs; only change is returning DataFrames.
+
+    Returns {f"{label}_{species_name}": df} for each enabled bioen output,
+    where df has columns ["Time", label].
+    """
     times = np.array([o.step / config.n_dt_per_year for o in outputs])
 
     bioen_outputs = [
@@ -320,6 +431,7 @@ def _write_bioen_csvs(
         ("bioen_size_inf_by_species", "sizeInf", config.output_bioen_sizeinf),
     ]
 
+    result: dict[str, pd.DataFrame] = {}
     for attr, label, enabled in bioen_outputs:
         if not enabled:
             continue
@@ -329,7 +441,24 @@ def _write_bioen_csvs(
         data = np.array([d if d is not None else np.zeros(config.n_species) for d in data_list])
         for sp_idx, sp_name in enumerate(config.species_names):
             df = pd.DataFrame({"Time": times, label: data[:, sp_idx]})
-            df.to_csv(bioen_dir / f"{prefix}_{label}_{sp_name}_Simu0.csv", index=False)
+            result[f"{label}_{sp_name}"] = df
+    return result
+
+
+def _write_bioen_csvs(
+    output_dir: Path,
+    prefix: str,
+    outputs: list[StepOutput],
+    config: EngineConfig,
+) -> None:
+    """Write bioen-specific per-species CSVs into a Bioen/ subdirectory."""
+    bioen_dir = output_dir / "Bioen"
+    bioen_dir.mkdir(exist_ok=True)
+
+    dfs = _build_bioen_dataframes(outputs, config)
+    for key, df in dfs.items():
+        path = bioen_dir / f"{prefix}_{key}_Simu0.csv"
+        df.to_csv(path, index=False)
 
 
 # TODO(v0.7): Spatial bioen outputs — Java has SpatialEnetOutput, SpatialEnetOutputjuv,

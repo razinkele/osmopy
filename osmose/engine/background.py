@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
-import xarray as xr
 from numpy.typing import NDArray
 
 from osmose.engine.path_resolution import resolve_data_path
@@ -304,29 +303,31 @@ class BackgroundState:
                 # Load NetCDF forcing file
                 nc_path_str = config.get(f"species.file.sp{sp.file_index}")
                 if nc_path_str is not None:
+                    from osmose.engine._netcdf import open_dataset_safe
+
                     nc_path = _resolve_path(nc_path_str, config.get("_osmose.config.dir", ""))
-                    with xr.open_dataset(nc_path) as ds:
-                        # Look up the NetCDF variable by species name. The old
-                        # behavior was to silently fall back to the FIRST variable
-                        # in the file with only a logger.debug (off by default) —
-                        # which meant a typo in the species name would substitute
-                        # an arbitrary variable (possibly longitude or an unrelated
-                        # biomass field) and corrupt simulation biomass with no
-                        # visible error. (Deep review v3 C-8)
-                        stripped = sp.name
-                        if stripped not in ds:
-                            available = list(ds.data_vars)
-                            raise KeyError(
-                                f"NetCDF variable {stripped!r} not found in "
-                                f"{nc_path} for background species {sp.name!r}. "
-                                f"Available variables: {available}. "
-                                "The variable name in the NetCDF file must match "
-                                "species.name.sp{i} exactly."
-                            )
-                        da = ds[stripped]
-                        raw: NDArray[np.float64] = da.values.astype(np.float64)
-                        # Apply multiplier
-                        raw = raw * sp.multiplier
+                    ds = open_dataset_safe(nc_path)
+                    # Look up the NetCDF variable by species name. The old
+                    # behavior was to silently fall back to the FIRST variable
+                    # in the file with only a logger.debug (off by default) —
+                    # which meant a typo in the species name would substitute
+                    # an arbitrary variable (possibly longitude or an unrelated
+                    # biomass field) and corrupt simulation biomass with no
+                    # visible error. (Deep review v3 C-8)
+                    stripped = sp.name
+                    if stripped not in ds:
+                        available = list(ds.data_vars)
+                        raise KeyError(
+                            f"NetCDF variable {stripped!r} not found in "
+                            f"{nc_path} for background species {sp.name!r}. "
+                            f"Available variables: {available}. "
+                            "The variable name in the NetCDF file must match "
+                            "species.name.sp{i} exactly."
+                        )
+                    da = ds[stripped]
+                    raw: NDArray[np.float64] = da.values.astype(np.float64)
+                    # Apply multiplier
+                    raw = raw * sp.multiplier
                     # Regrid to model grid if shapes differ
                     target_ny = int(
                         np.sum(grid.ocean_mask.any(axis=1) | ~grid.ocean_mask.any(axis=1))

@@ -39,13 +39,13 @@ class PhysicalData:
         offset: float = 0.0,
     ) -> PhysicalData:
         """Load from NetCDF file."""
-        import xarray as xr
+        from osmose.engine._netcdf import open_dataset_safe
 
-        with xr.open_dataset(path) as ds:
-            raw = ds[varname].values
-            if raw.ndim == 2:
-                raw = raw[np.newaxis, :, :]
-            data = factor * (raw.astype(np.float64) + offset)
+        ds = open_dataset_safe(path)
+        raw = ds[varname].values
+        if raw.ndim == 2:
+            raw = raw[np.newaxis, :, :]
+        data = factor * (raw.astype(np.float64) + offset)
         return cls(data=data, constant=None, nsteps_year=nsteps_year)
 
     @property

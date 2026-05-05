@@ -33,7 +33,7 @@ def test_problem_dimensions():
 # --- Helper to build a problem for mocked tests ---
 
 
-def _make_problem(tmp_path, objective_fns=None, free_params=None):
+def _make_problem(tmp_path, objective_fns=None, free_params=None, *, use_java_engine=True):
     if free_params is None:
         free_params = [
             FreeParameter("species.k.sp0", 0.1, 0.5),
@@ -47,6 +47,7 @@ def _make_problem(tmp_path, objective_fns=None, free_params=None):
         base_config_path=tmp_path / "config",
         jar_path=tmp_path / "fake.jar",
         work_dir=tmp_path / "work",
+        use_java_engine=use_java_engine,
     )
 
 
@@ -348,6 +349,7 @@ def test_run_single_accepts_valid_override_keys(tmp_path):
         base_config_path=tmp_path / "config.csv",
         jar_path=tmp_path / "fake.jar",
         work_dir=tmp_path,
+        use_java_engine=True,
     )
     mock_result = MagicMock()
     mock_result.returncode = 0
@@ -368,6 +370,7 @@ def test_run_single_logs_subprocess_stderr(tmp_path, caplog):
         base_config_path=tmp_path / "config.csv",
         jar_path=tmp_path / "fake.jar",
         work_dir=tmp_path,
+        use_java_engine=True,
     )
     mock_result = MagicMock()
     mock_result.returncode = 1
@@ -397,6 +400,7 @@ def test_cache_miss_then_hit(mock_results_cls, mock_subprocess, tmp_path):
         jar_path=tmp_path / "fake.jar",
         work_dir=tmp_path,
         enable_cache=True,
+        use_java_engine=True,
     )
     # Create fake JAR so st_mtime works
     (tmp_path / "fake.jar").write_bytes(b"fake")
@@ -432,6 +436,7 @@ def test_cache_invalidated_by_jar_change(mock_results_cls, mock_subprocess, tmp_
         jar_path=jar,
         work_dir=tmp_path,
         enable_cache=True,
+        use_java_engine=True,
     )
 
     problem._run_single({"species.k.sp0": "0.3"}, run_id=0)
@@ -586,6 +591,7 @@ def test_run_single_persists_full_stderr_on_failure(monkeypatch, tmp_path):
         base_config_path=tmp_path / "cfg.csv",
         jar_path=jar,
         work_dir=tmp_path / "work",
+        use_java_engine=True,
     )
     out = problem._run_single({"species.k.sp0": "0.5"}, run_id=0)
     assert out == [float("inf")]
@@ -626,6 +632,7 @@ def test_cleanup_after_eval_true_removes_run_dir(monkeypatch, tmp_path):
         jar_path=jar,
         work_dir=tmp_path / "work",
         cleanup_after_eval=True,
+        use_java_engine=True,
     )
     problem._run_single({"species.k.sp0": "0.5"}, run_id=0)
     assert not (tmp_path / "work" / "run_0").exists()
@@ -658,6 +665,7 @@ def test_cleanup_after_eval_false_keeps_run_dir(monkeypatch, tmp_path):
         jar_path=jar,
         work_dir=tmp_path / "work",
         cleanup_after_eval=False,
+        use_java_engine=True,
     )
     problem._run_single({"species.k.sp0": "0.5"}, run_id=1)
     assert (tmp_path / "work" / "run_1").exists()

@@ -4,11 +4,16 @@ import threading
 
 from shiny import reactive
 
+from pathlib import Path
+
+import pytest
+
 from osmose.calibration.preflight import PreflightEvalError
 from tests.helpers import make_catch_all_input, make_multi_input
 from ui.pages.calibration import build_free_params, collect_selected_params
 from ui.pages.calibration_handlers import (
     _clamp_n_workers,
+    _require_preflight,
     build_preflight_modal,
 )
 
@@ -197,6 +202,28 @@ def test_preflight_modal_renders_error_banner_for_PreflightEvalError():
     assert "half the Morris samples failed" in html, "Expected error message in banner"
     # Sanity: ensure it's NOT the success-shape modal
     assert "Apply Selected & Start" not in html
+
+
+def test_require_preflight_allows_missing_jar_path():
+    """Regression for final-review Important issue: the Python engine is
+    the UI default and doesn't need a JAR. _require_preflight must permit
+    jar_path=None so users without a local OSMOSE JAR can still launch
+    calibration."""
+    base = Path("/tmp/base.csv")
+    work = Path("/tmp/work")
+    out_base, out_jar, out_work = _require_preflight(base, None, work)
+    assert out_base is base
+    assert out_jar is None
+    assert out_work is work
+
+
+def test_require_preflight_still_blocks_missing_base_config():
+    """base_config and work_dir remain mandatory — they're produced by the
+    preflight stage itself, so their absence means preflight hasn't run."""
+    with pytest.raises(RuntimeError, match="preflight"):
+        _require_preflight(None, None, Path("/tmp/work"))
+    with pytest.raises(RuntimeError, match="preflight"):
+        _require_preflight(Path("/tmp/base.csv"), None, None)
 
 
 def test_clamp_n_workers_honors_valid_input():

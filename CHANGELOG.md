@@ -14,6 +14,30 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
   the 2026-04-27 phase-12 cod-floor calibration. See
   `docs/parity-roadmap.md` § Post-parity divergences.
 
+## [0.10.0] - 2026-04-21
+
+### Changed
+
+- **calibration:** port NSGA-II to PythonEngine in-memory by default (spec: `docs/superpowers/specs/2026-04-19-calibration-python-engine-design.md`). `OsmoseCalibrationProblem._run_single` now evaluates candidates in-process via the Python engine instead of shelling out to a Java subprocess per candidate. Measured speedup on Baltic 3-gen × 10-candidate NSGA-II at saturated `n_parallel=4`: **Python 4027.72s vs Java 12149.11s = 3.02× wall-clock speedup**. A half-saturated smoke point (1-gen × 2-cand at `n_parallel=4`) reports 4.34×; the ratio drops at full saturation because Numba's `prange` hot path (`_mortality_all_cells_parallel`) benefits from unrestricted core access in the pre-port Java path, while the in-process Python workers compete over a single GIL + single OS process. A `ProcessPoolExecutor` swap (post-v0.10.0) is expected to recover the higher ratio. Java subprocess path preserved as an opt-in fallback via `OsmoseCalibrationProblem(use_java_engine=True, jar_path=...)`.
+- **BREAKING:** `OsmoseCalibrationProblem.__init__` signature — `work_dir` moves from position 5 to position 4; `jar_path` moves from required positional (was position 4) to optional keyword-only (`jar_path: Path | None = None`); all previously-positional kwargs (`java_cmd`, `n_parallel`, `enable_cache`, `cache_dir`, `registry`, `subprocess_timeout`, `cleanup_after_eval`) are now keyword-only; new `use_java_engine: bool = False` flag gates the Java path. Existing callers that constructed `OsmoseCalibrationProblem(..., jar_path=p)` expecting the Java subprocess path must now also pass `use_java_engine=True`. Without the flag, `jar_path` is ignored and the Python engine runs. Python/Java parity is complete (14/14 EEC, 8/8 BoB within 1 OoM), so accidental migration produces equivalent objective values in most configs.
+- **BREAKING (runtime behavior):** NSGA-II Pareto fronts may differ slightly after this release, because the Python engine uses a different RNG stream than the Java engine. Numerical equivalence is within 1 OoM (documented parity). If bit-exact reproducibility with Java is required, set `use_java_engine=True`.
+
+### Added
+
+- `OsmoseResults.from_outputs(outputs, engine_config, grid)` classmethod — constructs an in-memory results object from a list of `StepOutput` returned by `simulate()`. No disk I/O.
+- `PythonEngine.run_in_memory(config, seed)` — runs the Python engine and returns `OsmoseResults` directly, skipping the disk round-trip.
+- `scripts/benchmark_calibration.py` — benchmarks NSGA-II calibration wall-clock for Python vs Java engines. Release gate for v0.10.x.
+
+### Fixed
+
+- **engine:** thread-safe NetCDF opens for parallel calibration. The netCDF4-python C extension is not thread-safe; under `ThreadPoolExecutor` calibration (`n_parallel > 1`) generation 1 would succeed but generation 2 onwards would crash with `NetCDF: Can't open HDF5 attribute` and eventually `double free or corruption`, as stale `Dataset` handles from the previous generation raced new opens. New `osmose/engine/_netcdf.open_dataset_safe()` helper serializes `xr.open_dataset` through a module-level `threading.Lock` and eagerly loads the data into memory, releasing the file handle before return. Applied at every engine NetCDF open site (`resources.py`, `grid.py`, `physical_data.py`, `background.py`). Engine forcing files on Baltic are small enough that eager-load is negligible; multi-GiB forcing would need a chunked+locked strategy instead.
+
+### Migration notes
+
+- Long-lived calibration `work_dir` directories from v0.9.x will have cached objective values keyed by the Java `jar_mtime`. v0.10.0 uses `python-{__version__}` for the Python path, so old cache files never match new runs (no corruption, just cache misses). Optionally `rm -rf <work_dir>/cache` before running v0.10.0 NSGA-II to reclaim disk.
+- **Benchmark results (2026-04-20, Ubuntu 24.04, 28 cores, Baltic config):** 3-gen × 10-pop NSGA-II at `n_parallel=4`: Python 4027.72s (~67 min) vs Java 12149.11s (~202 min) = **3.02× wall-clock speedup**. Scaled-down from the originally-targeted 10×20 to fit a single workday; the per-wave timing is steady-state so the 3×10 ratio should hold for 10×20. This is below the originally-aspirational 4× goal: at full `parallel=4` the Python workers share one process and contend on GIL-bound code paths, while each Java candidate is its own JVM subprocess with independent scheduling. The 1×2 half-saturated smoke (2 candidates on 4-way parallel, 2 idle workers) showed 4.34×, indicating the bottleneck is CPU contention rather than per-candidate cost.
+- **Known limitation + follow-up:** swapping `concurrent.futures.ThreadPoolExecutor` → `ProcessPoolExecutor` in `OsmoseCalibrationProblem._evaluate` would give each worker its own GIL and likely raise the ratio materially. Not in v0.10.0 scope because candidate-object picklability, Numba-cache per-process warmup, and the NetCDF backend per-process repeat-load all need validating.
+
 ## [0.9.3] - 2026-04-19
 
 ### Features

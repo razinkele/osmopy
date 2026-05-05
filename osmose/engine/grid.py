@@ -9,7 +9,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-import xarray as xr
 from numpy.typing import NDArray
 
 
@@ -84,32 +83,34 @@ class Grid:
         Dimension/variable names are auto-detected if not specified.
         Supports both 1D coordinate arrays and 2D lat/lon variables.
         """
-        with xr.open_dataset(path) as ds:
-            mask_data = ds[mask_var].values
-            ny, nx = mask_data.shape
+        from osmose.engine._netcdf import open_dataset_safe
 
-            # Auto-detect lat dimension/variable
-            if lat_dim is None:
-                for candidate in ["latitude", "lat", "y"]:
-                    if candidate in ds.dims or candidate in ds.coords or candidate in ds:
-                        lat_dim = candidate
-                        break
+        ds = open_dataset_safe(path)
+        mask_data = ds[mask_var].values
+        ny, nx = mask_data.shape
 
-            # Auto-detect lon dimension/variable
-            if lon_dim is None:
-                for candidate in ["longitude", "lon", "x"]:
-                    if candidate in ds.dims or candidate in ds.coords or candidate in ds:
-                        lon_dim = candidate
-                        break
+        # Auto-detect lat dimension/variable
+        if lat_dim is None:
+            for candidate in ["latitude", "lat", "y"]:
+                if candidate in ds.dims or candidate in ds.coords or candidate in ds:
+                    lat_dim = candidate
+                    break
 
-            lat = ds[lat_dim].values.astype(np.float64) if lat_dim and lat_dim in ds else None
-            lon = ds[lon_dim].values.astype(np.float64) if lon_dim and lon_dim in ds else None
+        # Auto-detect lon dimension/variable
+        if lon_dim is None:
+            for candidate in ["longitude", "lon", "x"]:
+                if candidate in ds.dims or candidate in ds.coords or candidate in ds:
+                    lon_dim = candidate
+                    break
 
-            # Handle 2D lat/lon arrays (e.g. curvilinear grids)
-            if lat is not None and lat.ndim == 2:
-                lat = lat[:, 0]
-            if lon is not None and lon.ndim == 2:
-                lon = lon[0, :]
+        lat = ds[lat_dim].values.astype(np.float64) if lat_dim and lat_dim in ds else None
+        lon = ds[lon_dim].values.astype(np.float64) if lon_dim and lon_dim in ds else None
+
+        # Handle 2D lat/lon arrays (e.g. curvilinear grids)
+        if lat is not None and lat.ndim == 2:
+            lat = lat[:, 0]
+        if lon is not None and lon.ndim == 2:
+            lon = lon[0, :]
 
         ocean_mask = mask_data > 0
         return cls(ny=ny, nx=nx, ocean_mask=ocean_mask, lat=lat, lon=lon)

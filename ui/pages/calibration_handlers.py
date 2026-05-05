@@ -26,9 +26,15 @@ def _require_preflight(
     base_config: Path | None,
     jar_path: Path | None,
     work_dir: Path | None,
-) -> tuple[Path, Path, Path]:
-    """Return non-Optional paths or raise if preflight never ran."""
-    if base_config is None or jar_path is None or work_dir is None:
+) -> tuple[Path, Path | None, Path]:
+    """Return the base_config and work_dir (required) plus an optional jar_path.
+
+    The Python engine is the default and needs no JAR, so ``jar_path`` may be
+    ``None``. Only ``base_config`` and ``work_dir`` are mandatory — both are
+    produced by the preflight stage itself, so their absence really does mean
+    preflight hasn't run yet.
+    """
+    if base_config is None or work_dir is None:
         raise RuntimeError(
             "Calibration preflight must run before optimization. "
             "Click 'Preflight' first in the Calibration tab."
@@ -747,10 +753,12 @@ def register_calibration_handlers(
             )
             return
 
-        jar_path = Path(state.jar_path.get())
-        if not jar_path.exists():
-            ui.notification_show(f"JAR not found: {jar_path}", type="error", duration=15)
-            return
+        # JAR is only needed for the opt-in Java engine backend; the Python
+        # engine (default) runs entirely in-process. Resolve the state value
+        # to an existing Path or None so downstream callers don't assume a
+        # JAR exists.
+        _raw_jar = Path(state.jar_path.get())
+        jar_path = _raw_jar if _raw_jar.exists() else None
 
         obs_bio = input.observed_biomass()
         obs_diet = input.observed_diet()
@@ -967,7 +975,11 @@ def register_calibration_handlers(
         selected = collect_selected_params(input, state)
         param_keys = [p["key"] for p in selected]
 
-        jar_path = Path(state.jar_path.get())
+        # JAR is only required by the opt-in Java engine; fall back to None
+        # when the configured path is missing so validation works on the
+        # default Python engine.
+        _raw_jar = Path(state.jar_path.get())
+        jar_path = _raw_jar if _raw_jar.exists() else None
         with reactive.isolate():
             current_config = state.config.get()
             source_dir = state.config_dir.get()
@@ -1086,10 +1098,10 @@ def register_calibration_handlers(
             )
             return
 
-        jar_path = Path(state.jar_path.get())
-        if not jar_path.exists():
-            ui.notification_show(f"JAR not found: {jar_path}", type="error", duration=15)
-            return
+        # Same rationale as handle_start_cal: Python engine is the default,
+        # JAR is optional.
+        _raw_jar = Path(state.jar_path.get())
+        jar_path = _raw_jar if _raw_jar.exists() else None
 
         param_names = [p["key"] for p in selected]
         param_bounds = [(p["lower"], p["upper"]) for p in selected]
