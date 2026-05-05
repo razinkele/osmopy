@@ -108,6 +108,31 @@
 >     `state.output_dir.set(None)` runs.
 >   - **Risk register row added** for `_handle_result` non-`run.py`
 >     callers, with concrete `grep` mitigation.
+> - 2026-05-05 r6 — fifth-pass review by `superpowers:code-reviewer` (fresh
+>   eyes; not in the iter 1–4 reviewer rotation). Three real findings
+>   that earlier rounds shared a blind spot on:
+>   - **C5 preflight (Critical)**: this branch was forked pre-2026-04-25,
+>     before the baltic background-species CSVs landed. Running C5's
+>     test from the worktree as-is shows green (3 passed) — but only
+>     because the offending `data/baltic/baltic_param-background.csv`
+>     rows aren't present here. r6 adds an "Execution prerequisite"
+>     callout: rebase onto current master and **verify the test is RED**
+>     before adding schema fields, otherwise the C5 work ships against a
+>     stale base where it isn't actually exercised.
+>   - **C4 step 6 (High)**: r4/r5 said "wrap `_run_python_engine` in
+>     try/except". But `_run_python_engine` already has both blocks at
+>     `run.py:255-272`; the real change is to **replace the early
+>     `return` at line 268** with a `_handle_result` fall-through and
+>     add a `SimulationCancelled` branch ahead of the existing broad
+>     `except Exception`. r6 rewrites step 6 with the full diff, marking
+>     additions and the deletion explicitly.
+>   - **H10 line numbers (High)**: r1 cited `config.py:469-470` for
+>     `species.sexratio` / `species.relativefecundity`; actual is
+>     **490, 492** on master `cf5cb8e`. r1 also said the
+>     season-normalisation assert belongs at `reproduction.py:48`, but
+>     that line is inside a per-step recruitment loop. r6 reroutes the
+>     assert to `_load_spawning_seasons` at `config.py:919-960` (the
+>     actual load site) and corrects both line refs.
 
 This plan is organised as five execution phases, each independently shippable.
 Each issue is given a **stable ID** (matches the deep-review report — `C` =
@@ -312,20 +337,45 @@ weakness in the results page.
    No `state.run_dirty` (it does not exist in `ui/state.py`; the reactive
    system invalidates downstream readers automatically when
    `state.output_dir.set(None)` runs).
-6. Wrap `_run_python_engine` in `try/except SimulationCancelled` and a
-   broad `except Exception`; in both error branches, build a `RunResult`
-   and route through `_handle_result(result, config, state, run_log,
-   status)` exactly the same way as the success path (already happens at
-   `run.py:274` and `run.py:343`):
-   - On cancel: `_handle_result(RunResult(returncode=-1,
-     output_dir=Path(""), stdout="", stderr="", status="cancelled",
-     message="user cancelled"), config, state, run_log, status)`.
-   - On exception: `_handle_result(RunResult(returncode=1,
-     output_dir=Path(""), stdout="", stderr=str(exc), status="failed",
-     message=str(exc)), config, state, run_log, status)`.
-   `returncode != 0` triggers the failure branch in step 5 →
-   `state.output_dir.set(None)` runs → all downstream reactives
-   (including `_auto_load_results`) re-fire with `output_dir = None`.
+6. **Modify the existing `except Exception` block** at `run.py:262-268`
+   (signature corrected r6 — r4/r5 said "wrap with try/except", but
+   `_run_python_engine` already has both `try` and `except` blocks; the
+   real change is to **replace the early `return`** at line 268 with a
+   `_handle_result` call). Also add a new `except SimulationCancelled`
+   branch ahead of the broad `except Exception`. The complete diff:
+   ```python
+   try:
+       loop = asyncio.get_running_loop()
+       result = await loop.run_in_executor(
+           None, lambda: engine.run(run_config, output_dir, seed=0)
+       )
+   except SimulationCancelled:                                # NEW
+       result = RunResult(returncode=-1, output_dir=Path(""), # NEW
+                          stdout="", stderr="",               # NEW
+                          status="cancelled",                 # NEW
+                          message="user cancelled")           # NEW
+   except Exception as exc:
+       _log.error("Python engine failed: %s", exc)
+       lines = list(run_log.get())
+       lines.append(f"--- ERROR ---\n{exc}")
+       run_log.set(lines)
+       status.set(f"Failed: {exc}")
+       result = RunResult(returncode=1, output_dir=Path(""),  # NEW
+                          stdout="", stderr=str(exc),         # NEW
+                          status="failed", message=str(exc))  # NEW
+       # NB: the existing `return` on line 268 is REMOVED so that
+       # control falls through to the unified `_handle_result` call
+       # already at run.py:274 (no need to add a second call site).
+   finally:
+       state.busy.set(None)
+       ui.update_action_button("btn_run", disabled=False, session=session)
+       ui.update_action_button("btn_cancel", disabled=True, session=session)
+
+   _handle_result(result, config, state, run_log, status)  # already at line 274
+   ```
+   With `_handle_result` modified per step 5, `returncode != 0` →
+   `state.output_dir.set(None)` runs → downstream reactives (including
+   `_auto_load_results`) re-fire with `output_dir = None`.
 7. Audit the `Results` page's `_auto_load_results` to short-circuit when
    `state.output_dir() is None` (already the natural guard once step 5
    lands; verify there's no path that reads `state.run_result()` directly
@@ -343,7 +393,30 @@ weakness in the results page.
 - Test: existing runner tests still pass without modification (default
   `status="ok"` keeps the old constructor calls working).
 
-### C5 — Master is RED on `test_from_dict_warn_mode_clean_on_example_configs[baltic]` (NEW in r2)
+### C5 — Master is RED on `test_from_dict_warn_mode_clean_on_example_configs[baltic]` (NEW in r2; preflight added r6)
+
+> **Execution prerequisite (added r6 — Critical).** This plan was authored
+> on branch `claude/deep-app-review-xvuga`, which was forked from master
+> *before* the 2026-04-25 baltic background-species CSVs landed
+> (`data/baltic/baltic_param-background.csv` and the sp14/sp15 entries in
+> `baltic_all-parameters.csv`). On the plan branch as-is, the
+> `[baltic]` parametrization passes (3 passed) — but only because the
+> offending CSV rows are absent on this branch, not because the schema
+> covers them.
+>
+> Before starting C5, **rebase the working branch onto current master
+> (`cf5cb8e` or newer)** and confirm the test is RED:
+> ```
+> git rebase origin/master
+> .venv/bin/python -m pytest tests/test_engine_config_validation.py -q
+> ```
+> Expected: `1 failed, 11 passed` with `[baltic]` listing the 11
+> unknown-key warnings. If you see "13 passed" instead, the rebase
+> didn't bring the baltic background CSVs in — re-check `git status` and
+> `git diff cf5cb8e -- data/baltic/`. Without this preflight, an
+> engineer following C5 will see green, assume the work is done, and
+> ship the schema additions on a stale base where they aren't actually
+> exercised.
 
 **Symptom.** CLAUDE.md asserts:
 > "Integration test: `tests/test_engine_config_validation.py::test_from_dict_warn_mode_clean_on_example_configs[*]` must stay warning-free."
@@ -535,8 +608,16 @@ Tightens parameter validation and closes the second-order parity drifts.
 
 ### H10 / Science — Reproduction parameter bounds
 
-**Files.** `osmose/engine/config.py:469-470`,
-`osmose/engine/processes/reproduction.py:48`.
+**Files (line numbers corrected r6).**
+- `osmose/engine/config.py:490, 492` (where
+  `_species_float_optional` loads `species.sexratio.sp{i}` and
+  `species.relativefecundity.sp{i}` — r1/r5 said "config.py:469-470",
+  actual is 490/492 on master `cf5cb8e`).
+- `osmose/engine/config.py:919-960` (`_load_spawning_seasons`) — this is
+  where the season-normalization warning belongs, not
+  `osmose/engine/processes/reproduction.py:48` as r1 stated.
+  `reproduction.py:48` is inside a per-step recruitment-type loop and
+  doesn't load the season vector.
 
 > **Pre-change sweep (added r3, syntax-fixed r4).** Before tightening
 > these bounds, run
@@ -561,9 +642,14 @@ Tightens parameter validation and closes the second-order parity drifts.
    if relative_fecundity <= 0:
        raise ValueError(f"relative_fecundity for sp{idx} must be > 0")
    ```
-3. In `reproduction.py:48`, after loading `spawning_season[sp, :]`, assert
-   `np.isclose(season.sum(), 1.0, atol=0.01)` and emit a warning (not raise)
-   if violated — many configs may have legacy non-normalised vectors.
+3. In `_load_spawning_seasons` at `config.py:919-960`, immediately after
+   `all_values[i] = values` is set (around line 943), assert
+   `np.isclose(values.sum() / (len(values) // n_dt_per_year), 1.0,
+   atol=0.01)` (per-year mean for multi-year inputs; for single-year,
+   the divisor is 1) and emit a warning (not raise) if violated — many
+   configs may have legacy non-normalised vectors. The existing
+   `normalize` flag at line 928 already auto-corrects when set; the
+   warning catches the case where it's off and the input is non-unit.
 
 ### Science M4 — Gompertz `linf` zero-default
 
