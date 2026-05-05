@@ -68,6 +68,30 @@
 >   - **Risk register** extended with 4 new rows: allowlist-typo masking,
 >     symlink behaviour, legacy fixture bound failures, RunResult
 >     constructor ripple.
+> - 2026-05-05 r4 — third-pass review by claim-verification + structural
+>   reviewers. Corrections applied:
+>   - **C4 sequencing** (Critical): r3 set `state.output_dir = None` in the
+>     cancel branch but `_handle_result` (which the cancel branch must
+>     still call to update `state.run_result`) overwrites
+>     `state.output_dir` with `Path("")`. r4 makes `_handle_result` itself
+>     guard on `result.status` and routes the cancel/failed branches
+>     through it explicitly.
+>   - **M2 baseline infrastructure**: per-size-bin `max_abs_diff`/
+>     `mean_abs_diff` machinery doesn't exist; r4 makes it a deliverable
+>     (`scripts/parity_size_bin_diff.py`) and adds ~3 h to Phase 3.
+>   - **Estimated total** revised header to "6–8 days mandatory (5–7 if
+>     Phase 4 deferred)" — was a stale 5–7.
+>   - **Sequencing notes** clarified: C1-C4 independent of C5; only Phase
+>     2's *acceptance* depends on C5 landing.
+>   - **Acceptance #2** extended to cite the specific test files for C1,
+>     C2, C3, C4, H10. Added Acceptance #7 enforcing "every C/H must have
+>     a test or manual-verification entry".
+>   - **H10 grep command** syntax-fixed (stray backtick) and verified —
+>     all fixtures clean, hard bounds safe.
+>   - **Risk register row** for RunResult ripple tightened with concrete
+>     `grep`/`pytest` commands (no more "any test fakes").
+>   - **Out-of-scope items** renamed `OOS-1..OOS-4` to remove the M9 ID
+>     collision permanently.
 
 This plan is organised as five execution phases, each independently shippable.
 Each issue is given a **stable ID** (matches the deep-review report — `C` =
@@ -75,9 +99,9 @@ critical, `H` = high, `M` = medium, `L` = low) and is paired with a concrete
 patch sketch, acceptance criteria, and test plan. Phases are ordered so that
 the cheapest, highest-leverage fixes ship first.
 
-Estimated total: ~5–7 engineer-days to land all phases. Phases 1–2 alone
-remove the user-visible silent-failure modes and unblock strict schema
-validation.
+Estimated total: **~6–8 engineer-days mandatory** (5–7 if Phase 4 is
+deferred per its optional flag). Phases 1–2 alone remove the user-visible
+silent-failure modes and unblock strict schema validation.
 
 ---
 
@@ -246,19 +270,35 @@ weakness in the results page.
    SimulationCancelled()`. Define `SimulationCancelled` in
    `osmose/engine/__init__.py`.
 4. Wire `btn_cancel.click` → `state.run_cancel_token.set()` in `run.py`.
-5. Wrap `_run_python_engine` in `try/except SimulationCancelled` and a broad
+5. **Modify `_handle_result` first (added r4)** at `ui/pages/run.py` to
+   guard on `result.status` before mutating `state.output_dir`:
+   ```python
+   def _handle_result(result: RunResult) -> None:
+       state.run_result.set(result)
+       if result.status != "ok":
+           state.output_dir.set(None)
+           state.run_dirty.set(state.run_dirty.get() + 1)
+           return
+       state.output_dir.set(result.output_dir)
+       # ... existing post-success bookkeeping ...
+   ```
+   This is the load-bearing change — without it, the cancel/failed branch's
+   `state.output_dir = None` setter (step 6 below) is overwritten as soon
+   as `_handle_result` runs. r3 missed this sequencing.
+6. Wrap `_run_python_engine` in `try/except SimulationCancelled` and a broad
    `except Exception`; in both error branches:
-   - On cancel: `state.run_result = RunResult(returncode=-1,
+   - On cancel: `_handle_result(RunResult(returncode=-1,
      output_dir=Path(""), stdout="", stderr="", status="cancelled",
-     message="user cancelled")`.
-   - On exception: `state.run_result = RunResult(returncode=1,
+     message="user cancelled"))`.
+   - On exception: `_handle_result(RunResult(returncode=1,
      output_dir=Path(""), stdout="", stderr=str(exc), status="failed",
-     message=str(exc))`.
-   - Set `state.output_dir = None`.
-   - Bump `state.run_dirty` so dependent reactives re-fire.
-6. Audit `_handle_result` and the `Results` page's `_auto_load_results` to
-   short-circuit when `state.run_result.status != "ok"`.
-7. Optional UX: disable form inputs while `state.busy != ""` via CSS
+     message=str(exc)))`.
+   The `_handle_result` change in step 5 above ensures `state.output_dir`
+   ends up `None` and `state.run_dirty` ticks.
+7. Audit the `Results` page's `_auto_load_results` to short-circuit when
+   `state.run_result().status != "ok"`. (`_handle_result` covers the
+   `state.output_dir`-side gate; this covers the auto-load reactive path.)
+8. Optional UX: disable form inputs while `state.busy != ""` via CSS
    `pointer-events: none` overlay (already partly there with `osm-disabled`).
 
 **Acceptance.**
@@ -465,12 +505,17 @@ Tightens parameter validation and closes the second-order parity drifts.
 **Files.** `osmose/engine/config.py:469-470`,
 `osmose/engine/processes/reproduction.py:48`.
 
-> **Pre-change sweep (added r3).** Before tightening these bounds, run
-> `grep -rE 'species\.(sexratio|relativefecundity)\.sp' data/*/`*.csv` and
-> inspect every value across all five fixtures. If any fixture has
+> **Pre-change sweep (added r3, syntax-fixed r4).** Before tightening
+> these bounds, run
+> ```
+> grep -rE 'species\.(sexratio|relativefecundity)\.sp' data/ --include='*.csv'
+> ```
+> and inspect every value across all five fixtures. If any fixture has
 > `sexratio` outside `[0, 1]` or `relativefecundity ≤ 0`, soften the
 > raise to a warning (with the offending fixture path) instead of
-> failing master post-merge.
+> failing master post-merge. (r4 verified: all `sexratio` values are
+> 0.5; all `relativefecundity` values are positive — proceed with hard
+> bounds.)
 
 **Plan.**
 1. **Run the sweep first.** If clean, proceed with hard bounds. If not,
@@ -548,6 +593,17 @@ actual `FishStage` implementation uses `>=` or `>`**. Two outcomes:
    change must show post-change drift ≤ pre-change drift on **every
    size-bin metric** before merging. Aggregate-biomass drift must remain
    inside the existing parity tolerance (no widening).
+
+   **r4 caveat — baseline infrastructure does not yet exist.** The
+   `tests/test_engine_parity*` files do not currently produce per-size-bin
+   `max_abs_diff`/`mean_abs_diff` deltas; they assert array equality
+   within tolerance. Treat the per-bin baseline as a **deliverable of
+   M2**: write `scripts/parity_size_bin_diff.py` (or extend
+   `tests/test_engine_outputs.py`) that loads `data/eec/output` Java
+   reference NetCDF + freshly-run Python NetCDF, computes per-(species,
+   size-bin) deltas, and writes a JSON snapshot. Add ~3 hours to
+   Phase 3's M2 budget for this script. Skip if Java semantics turn out
+   to be `>=` (no code change needed).
 4. If parity drift increases either way (or is unchanged within
    noise), document and revert; boundary epsilon is biologically
    negligible relative to aggregate biomass.
@@ -809,6 +865,19 @@ The plan is fully landed when:
    docs touched by the remediation; pre-existing unrelated issues do not
    block this acceptance).
 2. **`.venv/bin/python -m pytest`** passes 100% with the new tests.
+   Specifically, every Critical / High issue must have an automated test
+   that fails on master and passes on the remediation branch:
+   - **C1** — `tests/test_schema_engine_key_parity.py` resolves every
+     schema `key_pattern` with `idx=0` and asserts the engine validation
+     allowlist accepts it.
+   - **C2** — `tests/test_schema_all.py` asserts every
+     `OsmoseField.key_pattern` matches `^[a-z0-9._{}]+$` (lowercase only).
+   - **C3** — `tests/test_results_page_path_safety.py` exercises the
+     `/etc`, `/tmp/foo`, `../../etc/passwd`, in-cwd, and symlink cases.
+   - **C4** — `tests/test_run_cancellation.py`.
+   - **C5** + **H1** + **H4** — covered by acceptance #3 below.
+   - **H10** — `tests/test_engine_config.py` adds bounds-check tests
+     (or the pre-change sweep documents why warnings replace raises).
 3. **Round-trip script** (`scripts/check_config_roundtrip.py`) passes on
    all five fixtures (`eec`, `baltic`, `eec_full`, `examples`, `minimal`)
    with zero unknown-key warnings.
@@ -820,6 +889,9 @@ The plan is fully landed when:
    `output.bioen.sizeinf.enabled` and movement maps reach the engine.
 6. **`CLAUDE.md` updated** with: corrected schema field count, RNG
    reproducibility note, multi-value-field gotcha.
+7. **Every C/H issue must have either an entry in #2 above or a
+   documented manual-verification step in #5** — no closed issue without
+   a verification trail.
 
 ---
 
@@ -827,10 +899,12 @@ The plan is fully landed when:
 
 - **Phase 2 acceptance depends on C5 (Phase 1) landing first** — H1's
   "zero unknown-key warnings on all five fixtures" is unreachable while
-  master's `[baltic]` parametrization is red. Other than that single
-  cross-phase coupling, Phase 1 and Phase 2 are independent and can be
-  parallelised by two engineers (engineer A: C1 + C2 + C3 + C4; engineer
-  B: C5 + Phase 2).
+  master's `[baltic]` parametrization is red. So Phase 1's C5 must merge
+  before Phase 2's acceptance gate can be hit. Within Phase 1, **C1, C2,
+  C3, and C4 are independent of C5** (they touch unrelated files), so
+  parallelisation works as: engineer A on C1 + C2 + C3 + C4 (~1 day);
+  engineer B on C5 then Phase 2 (~1.5 days). Both engineers can start
+  immediately; only Phase 2 acceptance waits on C5.
 - **Phase 3** depends on Phase 2 (some new schema fields need engine
   validation tightened simultaneously).
 - **Phase 4** is independent and can ship anytime; defer if no
@@ -842,16 +916,18 @@ The plan is fully landed when:
 
 ## Out of scope
 
-- **Reactive-config refactor** — moving `state.config` from
-  `dict[str, str]` to `dict[str, reactive.Value[str]]`. (Original review
-  labelled this M9 internally — note that the review's M9 ID conflicts
-  with the M9 listed in **Phase 5** above; in this plan, the reactive
-  refactor is *not* numbered, only listed here as out-of-scope.) Big
-  refactor; defer to a dedicated design doc.
-- Replacing `loading_overlay` with a richer per-field disable mechanism.
-- Internationalisation of help text.
-- Adding non-Java-OSMOSE features (genetics is already partly there;
-  DSVM economics already partly there).
+- **OOS-1 — Reactive-config refactor** — moving `state.config` from
+  `dict[str, str]` to `dict[str, reactive.Value[str]]`. The original
+  deep-review report tagged this `M9`, but Phase 5 in this plan already
+  has its own M9 ("Broaden MCP credential test"). To avoid the
+  collision, the reactive-config item is renamed `OOS-1` here and not
+  cross-referenced as M9 anywhere in this document. Big refactor; defer
+  to a dedicated design doc.
+- **OOS-2** — Replacing `loading_overlay` with a richer per-field disable
+  mechanism.
+- **OOS-3** — Internationalisation of help text.
+- **OOS-4** — Adding non-Java-OSMOSE features (genetics is already partly
+  there; DSVM economics already partly there).
 
 ## Risk register
 
@@ -863,5 +939,5 @@ The plan is fully landed when:
 | Cancellation path (C4) leaves orphaned NetCDF/CSV file handles | Wrap output writers in `try/finally` close; verify with `lsof` in the test |
 | **C5/H1 allowlist additions silently mask real config typos** (added r3) | Prefer schema fields over `_SUPPLEMENTARY_ALLOWLIST` entries. For every key added to the allowlist, also add a positive engine-read assertion in `tests/test_engine_config.py` confirming the engine actually consumes it. If the engine doesn't read a key, it shouldn't be in the allowlist. |
 | **`_safe_output_dir` (C3) breaks symlinked output dirs** (added r3) | Acceptance test must include the symlink case (symlink → inside-cwd directory accepted; symlink → `/etc` rejected). Calibration / scenario forks may legitimately symlink; the helper resolves with `Path.resolve(strict=False)` which follows symlinks — confirm that's the desired behaviour with the test. |
-| **H10 reproduction bound fails on legacy fixture data** (added r3) | Run the pre-change sweep over `data/*/`*.csv` for `species.sexratio.*` and `species.relativefecundity.*`; if any value is outside the new bound, soften the raise to a warning (with offending fixture path) before merge. Hard-failing master because of legacy data is worse than the bug. |
-| **Phase 1 sequencing — extending `RunResult` (C4) ripples through callers** (added r3) | Default the new `status` field to `"ok"` and `message` to `""` so existing `RunResult(returncode=..., output_dir=..., stdout=..., stderr=...)` constructors keep working. Audit `osmose/runner.py:182,192` and any test fakes; run the full test suite before pushing. |
+| **H10 reproduction bound fails on legacy fixture data** (added r3) | Run `grep -rE 'species\.(sexratio\|relativefecundity)\.sp' data/ --include='*.csv'` (r4 verified all clean); if any value is outside the new bound, soften the raise to a warning (with offending fixture path) before merge. Hard-failing master because of legacy data is worse than the bug. |
+| **Phase 1 sequencing — extending `RunResult` (C4) ripples through callers** (added r3, tightened r4) | Default the new `status` field to `"ok"` and `message` to `""` so existing `RunResult(returncode=..., output_dir=..., stdout=..., stderr=...)` constructors keep working. Verification: `grep -rn 'RunResult(' osmose/ ui/ tests/` — every call site must either keep its current keyword args (default `status="ok"` covers it) or be explicitly updated. Then `.venv/bin/python -m pytest tests/test_runner.py tests/test_run_*.py` must be green before pushing. Done when both grep and pytest commands return clean. |
