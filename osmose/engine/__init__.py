@@ -14,6 +14,20 @@ if TYPE_CHECKING:
     from osmose.engine.grid import Grid
 
 
+class SimulationCancelled(Exception):
+    """Raised when a simulation is cancelled cooperatively (C4).
+
+    The simulation loop checks an optional cancel token between time steps;
+    when set, this exception is raised. Callers wrap `engine.run(...)` in
+    `try/except SimulationCancelled` to surface a clean cancelled-run path
+    distinct from a failed run.
+
+    Phase A of C4 (this commit) defines the exception and extends RunResult;
+    Phase B will plumb the cancel token through simulate.py and wire the
+    UI Cancel button.
+    """
+
+
 class PythonEngine:
     """Vectorized in-process OSMOSE simulation engine."""
 

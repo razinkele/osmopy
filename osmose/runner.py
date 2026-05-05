@@ -41,12 +41,22 @@ def validate_java_opts(opts: list[str]) -> None:
 
 @dataclass
 class RunResult:
-    """Result of an OSMOSE simulation run."""
+    """Result of an OSMOSE simulation run.
+
+    `status` and `message` were added in C4 (2026-05-05) so that interactive
+    UI consumers can distinguish a successful run from a failed or cancelled
+    one. Default `status="ok"` keeps every existing constructor call working
+    without modification — the field is interpreted alongside `returncode`,
+    not in place of it. Cancelled runs use `returncode=-1`, failed runs
+    `returncode=1`, successful runs `returncode=0`.
+    """
 
     returncode: int
     output_dir: Path
     stdout: str
     stderr: str
+    status: str = "ok"  # "ok" | "failed" | "cancelled"
+    message: str = ""
 
 
 class OsmoseRunner:
