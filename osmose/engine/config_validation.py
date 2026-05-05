@@ -46,6 +46,7 @@ _SUPPLEMENTARY_ALLOWLIST: frozenset[str] = frozenset(
         # Injected by OsmoseConfigReader when loading sub-config files; never
         # registered in the schema and never read by EngineConfig.from_dict.
         "osmose.version",
+        "osmose.configuration.background",
         "osmose.configuration.fishing",
         "osmose.configuration.grid",
         "osmose.configuration.initialization",
@@ -61,6 +62,17 @@ _SUPPLEMENTARY_ALLOWLIST: frozenset[str] = frozenset(
         "osmose.configuration.reproduction",
         "osmose.configuration.simulation",
         "osmose.configuration.species",
+        # --- Background-species keys (engine reads in background.py) ---
+        # The AST walker scans only config.py. These six keys are read by
+        # osmose/engine/background.py (line 178-189) when a config declares
+        # background species via osmose.configuration.background +
+        # simulation.nbackground (e.g. baltic seal sp14, cormorant sp15).
+        # Closes C5 from docs/plans/2026-05-05-deep-review-remediation-plan.md.
+        "species.nclass.sp{idx}",
+        "species.trophic.level.sp{idx}",
+        "species.length.sp{idx}",
+        "species.size.proportion.sp{idx}",
+        "species.age.sp{idx}",
         # --- Legacy species.lw.* aliases ---
         # Shipped configs use species.lw.* as aliases for
         # species.length2weight.*; Java engine reads both forms.
