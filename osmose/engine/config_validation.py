@@ -66,14 +66,13 @@ _SUPPLEMENTARY_ALLOWLIST: frozenset[str] = frozenset(
         # species.length2weight.*; Java engine reads both forms.
         "species.lw.condition.factor.sp{idx}",
         "species.lw.allpower.sp{idx}",
-        # --- Movement map keys (Java-side, read by Java engine only) ---
-        # The Python engine parses movement via movement.distribution.method;
-        # map-file indexed keys are Java-side grid/movement config.
-        "movement.file.map{idx}",
+        # --- Movement map keys: registered in osmose/schema/movement.py
+        # as of C1 (2026-05-05). Most of them are auto-detected by the
+        # extended AST walker scanning movement_maps.py. The exception
+        # is movement.species.map{idx}, which the engine reads via
+        # key.startswith("movement.species.map") (a string method, not
+        # cfg.get) — invisible to the literal-key walker, so allowlist it.
         "movement.species.map{idx}",
-        "movement.steps.map{idx}",
-        "movement.initialage.map{idx}",
-        "movement.lastage.map{idx}",
         # --- Fisheries movement/rate keys (Java-side) ---
         "fisheries.movement.file.map{idx}",
         "fisheries.movement.fishery.map{idx}",
@@ -141,6 +140,35 @@ def _read_config_source() -> str:
     )
 
 
+# Engine modules other than config.py that also call cfg.get(...) directly.
+# Extended in C1 (2026-05-05) to fix the silent UI-engine drift on movement
+# map keys read by movement_maps.py — the AST walker previously saw only
+# config.py and missed every key these modules read. Add new entries here
+# whenever a new engine module starts reading config keys directly.
+_EXTRA_ENGINE_SOURCES: tuple[str, ...] = (
+    "movement_maps.py",
+    "background.py",
+    "resources.py",
+    "grid.py",
+    "physical_data.py",
+    "_netcdf.py",
+)
+
+
+def _read_extra_engine_sources() -> dict[str, str]:
+    """Read each `_EXTRA_ENGINE_SOURCES` file; missing files are skipped (test-hookable)."""
+    import importlib.resources
+
+    sources: dict[str, str] = {}
+    base = importlib.resources.files("osmose.engine")
+    for filename in _EXTRA_ENGINE_SOURCES:
+        try:
+            sources[filename] = base.joinpath(filename).read_text(encoding="utf-8")
+        except (FileNotFoundError, OSError):
+            continue
+    return sources
+
+
 def _extract_literal_keys_from_config_py(tree: ast.AST) -> set[str]:
     """Walk an AST and extract OSMOSE config-key literals."""
     helper_names = {
@@ -151,6 +179,7 @@ def _extract_literal_keys_from_config_py(tree: ast.AST) -> set[str]:
         "_species_int",
         "_species_int_optional",
         "_species_str",
+        "_species_str_optional",
     }
     out: set[str] = set()
 
@@ -259,6 +288,16 @@ def build_known_keys() -> KnownKeys:
         source = _read_config_source()
         tree = ast.parse(source)
         pattern_strs |= _extract_literal_keys_from_config_py(tree)
+        for filename, extra_source in _read_extra_engine_sources().items():
+            try:
+                pattern_strs |= _extract_literal_keys_from_config_py(ast.parse(extra_source))
+            except SyntaxError as exc:
+                log.info(
+                    "config_validation: failed to parse %s (%s: %s); skipping.",
+                    filename,
+                    type(exc).__name__,
+                    exc,
+                )
         ast_ok = True
     except Exception as exc:
         log.info(
