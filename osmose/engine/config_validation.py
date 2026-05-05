@@ -29,6 +29,7 @@ _INDEX_SUFFIXES = (
     ("age", re.compile(r"^age\d+$")),
     ("sz", re.compile(r"^sz\d+$")),
     ("sp", re.compile(r"^sp\d+$")),
+    ("rsc", re.compile(r"^rsc\d+$")),
 )
 
 _VALID_MODES = ("off", "warn", "error")
@@ -50,6 +51,7 @@ _SUPPLEMENTARY_ALLOWLIST: frozenset[str] = frozenset(
         "osmose.configuration.fishing",
         "osmose.configuration.grid",
         "osmose.configuration.initialization",
+        "osmose.configuration.ltl",
         "osmose.configuration.migration",
         "osmose.configuration.mortality.additional",
         "osmose.configuration.mortality.fishing",
@@ -108,6 +110,13 @@ _SUPPLEMENTARY_ALLOWLIST: frozenset[str] = frozenset(
         "simulation.restart.enabled",
         # --- Species biomass time-scale key (Java-side) ---
         "species.biomass.nsteps.year",
+        # --- Conversion-to-tons keys (Java-side, H1 — 2026-05-05) ---
+        # Read by the Java engine for biomass-unit conversion. The Python
+        # engine does not consume them (verified: zero hits for either
+        # pattern under osmose/). Kept here so they don't surface as
+        # unknown-key warnings on the examples / minimal fixtures.
+        "species.conversion2tons.sp{idx}",
+        "ltl.conversion2tons.rsc{idx}",
     ]
 )
 
