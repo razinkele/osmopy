@@ -19,6 +19,35 @@ from ui.styles import STYLE_EMPTY, STYLE_MONO_KEY
 _log = setup_logging("osmose.results.ui")
 
 
+def _safe_output_dir(raw: str) -> Path | None:
+    """Validate a user-supplied output directory; return resolved Path or None.
+
+    Closes C3: previously the `..` substring check at lines 334 and 586
+    accepted absolute paths like `/etc`, letting users read directories
+    outside the working tree. The pattern at lines 521 / 543 already used
+    `is_relative_to(Path.cwd())` correctly — this consolidates it into one
+    helper applied at all four sites.
+
+    Returns the resolved Path if `raw` points to a directory inside the
+    current working tree, else None. Symlinks are resolved before the
+    `is_relative_to` check, so a symlink that escapes the cwd is rejected
+    while a symlink that points inside the cwd is accepted (common for
+    calibration scenario forks).
+    """
+    if not raw:
+        return None
+    try:
+        p = Path(raw).resolve(strict=False)
+    except OSError:
+        return None
+    cwd = Path.cwd().resolve()
+    if p != cwd and not p.is_relative_to(cwd):
+        return None
+    if not p.is_dir():
+        return None
+    return p
+
+
 # ---------------------------------------------------------------------------
 # Pure chart-generation functions (testable without Shiny)
 # ---------------------------------------------------------------------------
@@ -330,12 +359,13 @@ def results_server(input, output, session, state):
     @reactive.effect
     @reactive.event(input.btn_load_results)
     def _load_results():
-        out_dir = Path(input.output_dir())
-        if ".." in out_dir.parts:
-            ui.notification_show("Invalid output directory path.", type="error", duration=15)
-            return
-        if not out_dir.is_dir():
-            ui.notification_show(f"Directory not found: {out_dir}", type="error", duration=15)
+        out_dir = _safe_output_dir(input.output_dir())
+        if out_dir is None:
+            ui.notification_show(
+                "Invalid output directory: must be inside the working directory.",
+                type="error",
+                duration=15,
+            )
             return
         _do_load_results(out_dir)
 
@@ -517,8 +547,8 @@ def results_server(input, output, session, state):
         from osmose.history import RunHistory
         from osmose.plotting import make_run_comparison
 
-        out_dir = Path(input.output_dir())
-        if ".." in out_dir.parts or (out_dir.is_absolute() and not out_dir.is_relative_to(Path.cwd())):
+        out_dir = _safe_output_dir(input.output_dir())
+        if out_dir is None:
             return go.Figure().update_layout(title="Invalid output directory", template=tmpl)
         history_dir = out_dir.parent / ".osmose_history"
         if not history_dir.is_dir():
@@ -539,8 +569,8 @@ def results_server(input, output, session, state):
 
         from osmose.history import RunHistory
 
-        out_dir = Path(input.output_dir())
-        if ".." in out_dir.parts or (out_dir.is_absolute() and not out_dir.is_relative_to(Path.cwd())):
+        out_dir = _safe_output_dir(input.output_dir())
+        if out_dir is None:
             return ui.div("Invalid output directory.")
         history_dir = out_dir.parent / ".osmose_history"
         if not history_dir.is_dir():
@@ -582,13 +612,11 @@ def results_server(input, output, session, state):
         from osmose.results import OsmoseResults
         import tempfile
 
-        out_dir = Path(input.output_dir())
-        if ".." in out_dir.parts:
-            ui.notification_show("Invalid output directory path.", type="error", duration=15)
-            return
-        if not out_dir.is_dir():
+        out_dir = _safe_output_dir(input.output_dir())
+        if out_dir is None:
             ui.notification_show(
-                "No output directory selected. Load results first.",
+                "No valid output directory: must be inside the working directory. "
+                "Load results first.",
                 type="warning",
                 duration=5,
             )
