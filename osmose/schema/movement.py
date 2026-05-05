@@ -7,7 +7,7 @@ MOVEMENT_FIELDS: list[OsmoseField] = [
     OsmoseField(
         key_pattern="movement.distribution.method.sp{idx}",
         param_type=ParamType.ENUM,
-        default="maps",
+        default="random",  # engine reads `cfg.get(..., "random")` at config.py:669
         choices=["maps", "random"],
         description="Spatial distribution method",
         category="movement",

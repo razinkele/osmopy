@@ -87,7 +87,7 @@ _GENERAL_OUTPUT_FIELDS: list[OsmoseField] = [
     OsmoseField(
         key_pattern="output.distrib.bysize.incr",
         param_type=ParamType.FLOAT,
-        default=10,
+        default=10.0,
         description="Size increment for size distribution output",
         category="output",
     ),
