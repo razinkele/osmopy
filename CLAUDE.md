@@ -23,7 +23,7 @@ osmose/          # Core library (usable without Shiny)
   engine/        # Python simulation engine (44 files, ~11.5k LOC)
     simulate.py  # Main simulation loop
     processes/   # Growth, predation, mortality, reproduction, movement, fishing
-  schema/        # Parameter definitions + registry (221 params)
+  schema/        # Parameter definitions + registry (223 params)
   config/        # Config reader/writer (OSMOSE .csv/.properties format)
   calibration/   # pymoo NSGA-II, GP surrogate, SALib sensitivity
   runner.py      # Async Java subprocess manager
