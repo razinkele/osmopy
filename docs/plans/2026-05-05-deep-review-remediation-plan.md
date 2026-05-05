@@ -5,6 +5,42 @@
 > Scope: All issues identified by the 7-agent deep review (UI/Shiny, schema,
 > config integrity, engine parity, performance, science plausibility, test
 > coverage)
+>
+> **Revision log:**
+> - 2026-05-05 r1 — initial draft (commit `59be0a0`).
+> - 2026-05-05 r2 — verified against master `cf5cb8e`. Corrections applied:
+>   - **H2 retracted** (claimed schema count 154; actual is 223 via
+>     `sum(len(g) for g in osmose.schema.ALL_FIELDS)`; CLAUDE.md's "221" is
+>     within ±2). Replaced with a CLAUDE.md sync task only.
+>   - **H1 rebuilt from ground truth** by running
+>     `tests/test_engine_config_validation.py::test_from_dict_warn_mode_clean_on_example_configs`
+>     on master and capturing the actual unknown-key warnings per fixture
+>     (eec/eec_full/minimal clean; baltic = 11 background-species keys;
+>     examples = 43 ltl/rsc + species.conversion2tons keys). The original
+>     speculative table was replaced with this empirical list.
+>   - **C5 added (NEW)**: master ships RED on
+>     `test_from_dict_warn_mode_clean_on_example_configs[baltic]` —
+>     CLAUDE.md asserts this test "must stay warning-free", but it isn't.
+>     Promoted from "schema gap" to a critical regression in its own row.
+>   - **C3 narrowed** to the two remaining unguarded sites (lines 334 and
+>     586). Lines 521 and 543 already do `is_relative_to(Path.cwd())`; line
+>     228 is a non-privileged display-only path-check call. Original "5
+>     bug sites" claim was overcounted.
+>   - **M2 reasoning flipped.** `searchsorted(arr, v, side='right')` already
+>     gives `count(arr ≤ v)` semantics — i.e., `value >= threshold`. The
+>     original plan proposed `'left'` to fix `>=`-semantics; that's
+>     backwards. Re-scoped as "verify against Java's `FishStage` source
+>     before changing anything; if Java uses strict `>`, then `'left'`;
+>     otherwise current code is correct".
+>   - **C4 caveated** as user-facing-UI-only — calibration / headless users
+>     never trigger the cancel button, so this is not a blocking-correctness
+>     issue for the simulation engine.
+>   - **Phase 4 baseline gate** added — perf claims must cite a baseline
+>     benchmark run before merging.
+>   - **Acceptance #1 made actionable** by naming the agents and dispatch
+>     command instead of "all 7 reviewers re-run".
+>   - **Out-of-scope cross-ref** to "M9" deduplicated; renamed to a
+>     descriptive label.
 
 This plan is organised as five execution phases, each independently shippable.
 Each issue is given a **stable ID** (matches the deep-review report — `C` =
@@ -75,33 +111,50 @@ weakness in the results page.
 - Test in `tests/test_schema_all.py`: assert all `OsmoseField.key_pattern`
   values match `^[a-z0-9._{}]+$` (lowercase only, no camelCase).
 
-### C3 — Path traversal in results page
+### C3 — Path traversal in results page (narrowed in r2)
 
-**Symptom.** `_load_results`, `download_results_csv`, `output_dir_status`
-only check for the `..` substring; absolute paths like `/etc` slip through.
+**Symptom.** `_load_results` and `output_dir_status` reject only the `..`
+substring; absolute paths like `/etc` slip through.
+
+**Verified scope (r2).** Of the five sites cited in r1:
+- `results.py:521` (`comparison_chart`) and `results.py:543`
+  (`download_results_csv`) **already** combine the `..` check with
+  `out_dir.is_absolute() and not out_dir.is_relative_to(Path.cwd())` —
+  no fix needed for these two.
+- `results.py:334` (`_load_results`) and `results.py:586`
+  (`output_dir_status`) — **`..` check only**, real bug.
+- `results.py:228` is `path_str = input.output_dir()` inside
+  `output_dir_status`. The function only does `p.is_dir()` and `glob` for
+  on-screen feedback, no privileged file access. Out of scope.
 
 **Files.**
-- `ui/pages/results.py:228, 333, 520, 542, 585`
+- `ui/pages/results.py:334, 586` (apply helper)
+- `ui/pages/results.py:521, 543` (refactor to call the same helper for
+  consistency, no behaviour change)
 
 **Plan.**
-1. Extract the `comparison_chart` (line 521) validation into a single
-   private helper `_safe_output_dir(raw: str) -> Path | None` in
-   `ui/pages/results.py`:
+1. Extract the existing `is_relative_to`-based check (already present at
+   lines 521/543) into a private helper in `ui/pages/results.py`:
    ```python
    def _safe_output_dir(raw: str) -> Path | None:
-       p = Path(raw).resolve()
+       try:
+           p = Path(raw).resolve(strict=False)
+       except OSError:
+           return None
        cwd = Path.cwd().resolve()
-       if not p.is_relative_to(cwd):
+       if p != cwd and not p.is_relative_to(cwd):
            return None
        if not p.is_dir():
            return None
        return p
    ```
-2. Replace every ad-hoc `..`-substring check with a call to this helper.
-3. Use `Path.resolve(strict=False)` then `is_relative_to(cwd)` — covers both
-   absolute paths and traversal attempts.
-4. Audit `ui/pages/scenarios.py` and any other page that takes a path input
-   (forcing.py, advanced.py); apply the same helper if needed.
+2. Apply the helper at lines 334 and 586 — those are the actual unguarded
+   sites.
+3. Refactor 521 and 543 to call the same helper for consistency (no new
+   behaviour, just dedup).
+4. Audit `ui/pages/scenarios.py`, `forcing.py`, `advanced.py` for similar
+   user-input-path patterns; apply the helper where they read sensitive
+   files (skip display-only sites like `output_dir_status`).
 
 **Acceptance.**
 - New test `tests/test_results_page_path_safety.py`:
@@ -111,6 +164,15 @@ only check for the `..` substring; absolute paths like `/etc` slip through.
   - `output/run123` (inside cwd) → accepted
 
 ### C4 — Run race + lost engine errors + non-cancellable Python engine
+
+> **Scope note (r2):** All three symptoms are **interactive-UI only**.
+> Calibration and headless `python -m osmose.engine.simulate` users do
+> not run through the Cancel button or `_handle_result`, so this is a UX
+> regression rather than a simulation-correctness bug. Land if interactive
+> users surface complaints; defer otherwise. Symptom (2) — silent
+> auto-load of stale results — is the highest-impact piece and could be
+> fixed standalone (state-invalidation only) without the cancellation
+> plumbing.
 
 **Symptom.**
 1. Cancel button is a silent no-op when running the Python engine.
@@ -149,6 +211,53 @@ only check for the `..` substring; absolute paths like `/etc` slip through.
   steps; trigger cancel at step 10; assert `RunResult.status == "cancelled"`
   and no auto-load occurs.
 
+### C5 — Master is RED on `test_from_dict_warn_mode_clean_on_example_configs[baltic]` (NEW in r2)
+
+**Symptom.** CLAUDE.md asserts:
+> "Integration test: `tests/test_engine_config_validation.py::test_from_dict_warn_mode_clean_on_example_configs[*]` must stay warning-free."
+
+But on master `cf5cb8e` the `[baltic]` parametrization fails — 11 unknown-key warnings:
+
+| Key | Source | Engine read site (current) |
+|---|---|---|
+| `osmose.configuration.background` | top-level switch | `engine/config.py` background-species loader |
+| `species.nclass.sp{14,15}` | seal/cormorant | background-species block |
+| `species.trophic.level.sp{14,15}` | seal/cormorant | background-species block |
+| `species.length.sp{14,15}` | seal/cormorant | background-species block |
+| `species.size.proportion.sp{14,15}` | seal/cormorant | background-species block |
+| `species.age.sp{14,15}` | seal/cormorant | background-species block |
+
+These were added when seal/cormorant background species were wired into
+baltic (per memory: 2026-04-25 "Engine reproduction.py fix") without
+extending the schema or `_SUPPLEMENTARY_ALLOWLIST`. CI either doesn't
+run this test or has been red for several commits.
+
+**Why this is C-priority** — we can't claim Phase 2 acceptance ("zero
+unknown-key warnings on all five fixtures") if master is already red on
+one fixture. Fix this *before* enumerating new schema gaps.
+
+**Files.**
+- `osmose/engine/config_validation.py:_SUPPLEMENTARY_ALLOWLIST` (or new
+  `osmose/schema/background.py` with `OsmoseField` entries)
+- `osmose/engine/config_validation.py:_INDEX_SUFFIXES` (verify `sp` covers
+  background-species indices >= n_focal)
+
+**Plan.**
+1. Decide whether background species belong in the schema (preferred —
+   makes the keys discoverable to UI form generators) or only in
+   `_SUPPLEMENTARY_ALLOWLIST` (shorter path; matches existing pattern for
+   reader-injected metadata). I recommend adding a
+   `osmose/schema/background.py` with the 5 indexed fields plus
+   `osmose.configuration.background` global, then re-running the test.
+2. Run `.venv/bin/python -m pytest tests/test_engine_config_validation.py`
+   and confirm `[baltic]` passes.
+3. Add a CI gate so this can't regress silently again — already covered by
+   the existing parametrize, but verify it actually runs in CI.
+
+**Acceptance.**
+- `tests/test_engine_config_validation.py` — 100% green on master with
+  no skips on baltic.
+
 ---
 
 ## Phase 2 — Schema correctness & coverage (target: 1 day)
@@ -156,30 +265,63 @@ only check for the `..` substring; absolute paths like `/etc` slip through.
 Eliminates silent UI-engine drift on lesser-used keys; unblocks strict
 validation.
 
-### H1 — Schema coverage gaps (~12+ undeclared engine-read keys)
+### H1 — Schema coverage gaps (rebuilt from ground truth in r2)
 
-**Plan.** For each missing key, add an `OsmoseField` in the appropriate
-schema module. Default values must match `config.py` defaults (verify via
-`grep`).
+**Method.** Instead of speculating, ran each fixture through
+`EngineConfig.from_dict(cfg)` with `validation.strict.enabled=warn` and
+captured every "Unknown config key" warning. Script saved at
+`/tmp/list_unknown_keys.py` for reproducibility.
 
-| Key | Schema module | Engine read site |
-|---|---|---|
-| `output.step0.include` | `output.py` | `config.py:774` |
-| `population.seeding.year.max` | `simulation.py` (or new `population.py`) | `config.py:480` |
-| `reproduction.normalisation.enabled` | `reproduction.py` (new file) | `config.py:883` |
-| `mortality.fishing.spatial.distrib.file.sp{idx}` | `fishing.py` | `config.py:1427` |
-| `mortality.additional.spatial.distrib.file.sp{idx}` | `fishing.py` | `config.py:963` |
-| `predation.predprey.stage.structure.sp{idx}` (per-species) | `predation.py:35` (extend) | `config.py:530` |
-| `fisheries.selectivity.a50.fsh{idx}`, `fisheries.selectivity.slope.fsh{idx}` | `fishing.py` | `config.py:291,300` |
-| `fisheries.movement.file.map0`, `fisheries.seasonality.fsh{idx}` | `fishing.py` | `config.py:377,1419` |
-| `movement.map.strict.coverage` | `movement.py` | `config.py:1634` |
-| `mpa.percentage.mpa{idx}` | `fishing.py:101-122` (extend) | `config.py:837` |
-| Economic block: `simulation.economic.enabled`, `simulation.economic.memory.decay`, `simulation.economic.rationality`, `economic.fleet.number`, `economic.fleet.*` | `economics.py` | (multiple) |
+**Per-fixture results on master `cf5cb8e`:**
+
+| Fixture | Unknown-key warnings |
+|---|---|
+| `eec` | 0 (clean) |
+| `eec_full` | 0 (clean) |
+| `minimal` | 0 (clean) |
+| `baltic` | 11 — covered by **C5** (above) |
+| `examples` | 43 — covered by this item (H1) |
+
+**`examples` — 43 warnings, three groups:**
+
+1. `osmose.configuration.ltl` — top-level switch. 1 warning.
+2. `species.conversion2tons.sp{8..13}` — 6 warnings. Engine reads at
+   `osmose/engine/config.py` (existing `species.*` block); plain schema
+   field add.
+3. LTL resource block — `ltl.{name,tl,size.min,size.max,accessibility2fish,conversion2tons}.rsc{0..5}`
+   — 36 warnings (6 fields × 6 indices).
+
+**Plan.**
+1. Add `rsc` to `_INDEX_SUFFIXES` in
+   `osmose/engine/config_validation.py:25-32`:
+   ```python
+   ("rsc", re.compile(r"^rsc\d+$")),
+   ```
+2. Add to `_SUPPLEMENTARY_ALLOWLIST` (or a new `osmose/schema/ltl.py`
+   extension):
+   - `osmose.configuration.ltl`
+   - `species.conversion2tons.sp{idx}`
+   - `ltl.name.rsc{idx}`, `ltl.tl.rsc{idx}`, `ltl.size.min.rsc{idx}`,
+     `ltl.size.max.rsc{idx}`, `ltl.accessibility2fish.rsc{idx}`,
+     `ltl.conversion2tons.rsc{idx}`
+3. Add `examples` and `minimal` to the parametrize list (also in **H4**).
+
+**What dropped from r1.** The r1 table listed ~13 keys that the deep-review
+agents *thought* were undeclared (`output.step0.include`,
+`population.seeding.year.max`, the mortality/fishing/MPA spatial fields,
+the economic block, etc.). Re-running validation shows those keys are
+already in the allowlist — either via the schema or
+`_SUPPLEMENTARY_ALLOWLIST` already added before this session. They are
+**not** Phase 2 work.
+
+**Caveat.** Validation only catches keys present in fixture CSVs. Keys
+read by the engine but absent from any shipped fixture won't surface here.
+Address those (if any are found) under **H2**.
 
 **Acceptance.**
-- `tests/test_engine_config_validation.py::test_from_dict_warn_mode_clean_on_example_configs`
-  passes with zero unknown-key warnings on all five fixtures (`eec`, `baltic`,
-  `eec_full`, `examples`, `minimal`).
+- All five `parametrize` entries (`eec`, `baltic`, `eec_full`,
+  `examples`, `minimal`) pass with zero unknown-key warnings on master
+  after C5 + H1 + H4 land.
 
 ### H4 — Validation test does not exercise `examples`
 
@@ -196,12 +338,31 @@ schema module. Default values must match `config.py` defaults (verify via
    - `ltl.*.rsc{idx}` (6 patterns)
    - `species.conversion2tons.sp{idx}`
 
-### H2 — CLAUDE.md claims 221 schema params; actual is 154
+### H2 — CLAUDE.md schema-param count sync (retracted "154", revised in r2)
+
+**r1 retraction.** r1 claimed "actual is 154". Verified on master `cf5cb8e`:
+
+```
+$ .venv/bin/python -c "from osmose.schema import ALL_FIELDS; print(sum(len(g) for g in ALL_FIELDS))"
+223
+```
+
+`osmose.schema` exposes `ALL_FIELDS` as a list of per-module groups
+(`MOVEMENT_FIELDS`, `OUTPUT_FIELDS`, etc.); `len(ALL_FIELDS) == 10` is the
+group count, not the field count. The r1 reviewer almost certainly
+imported the wrong symbol (e.g., `len(ALL_FIELDS)` or a single-module
+import).
+
+**Reality.** CLAUDE.md says "221", actual is **223**. The discrepancy is
+two fields, well within "documentation drift" rather than "documentation
+bug". Demote H2 from a bug to a sync task.
 
 **Plan.**
-1. After Phase 2's schema additions, recount fields:
-   `python -c "from osmose.schema import REGISTRY; print(len(REGISTRY))"`.
-2. Update `CLAUDE.md` under "Architecture" with the correct count.
+1. After Phase 2 schema additions land, recount with
+   `sum(len(g) for g in osmose.schema.ALL_FIELDS)`.
+2. Update CLAUDE.md's "Architecture" block to the new total.
+
+**Acceptance.** CLAUDE.md count matches the live recount (±0).
 
 ### Schema field-quality fixes (mostly L/M warnings from review)
 
@@ -270,18 +431,43 @@ Gompertz growth, that `gompertz.linf > 0` and `gompertz.k > 0`.
 2. In `natural.py:84-89`, clamp `n_dead = min(n_dead, abundance)` to prevent
    negative-abundance sentinel values when `spatial_factor > 1`.
 
-### Engine parity M2 — Feeding-stage boundary
+### Engine parity M2 — Feeding-stage boundary (rationale flipped in r2)
 
 **Files.** `osmose/engine/processes/feeding_stage.py:73`.
 
+**r2 correction.** The r1 plan said `side='right'` is wrong and `side='left'`
+matches Java's `value >= threshold` semantics. **That is backwards.**
+
+For an ascending threshold array `arr`:
+- `np.searchsorted(arr, v, side='right')` returns `count(arr ≤ v)` — i.e.,
+  the count of thresholds ≤ value, which IS the `value >= threshold`
+  count. Example: `arr=[1,2,3], v=2 → 2` (thresholds 1 and 2 both satisfy
+  `value >= threshold`).
+- `np.searchsorted(arr, v, side='left')` returns `count(arr < v)` — i.e.,
+  strict `>`. Example: same input → `1`.
+
+The current code (`side='right'`) is consistent with the comment "Count
+thresholds exceeded (>= comparison)" and matches `value >= threshold`
+semantics.
+
+**Verification still owed.** What's not verified is whether **Java's
+actual `FishStage` implementation uses `>=` or `>`**. Two outcomes:
+
+1. **Java uses `>=` (most likely)** — current Python code is correct, M2
+   is a non-issue, drop it.
+2. **Java uses strict `>`** — change to `side='left'` matches Java; the
+   "comment says `>=`" is the bug.
+
 **Plan.**
-1. Change `np.searchsorted(thresholds, value, side="right")` to
-   `side="left"` to match Java's `value >= threshold` semantics.
-2. Re-run parity tests (`tests/test_parity_*`) with relaxed atol on
-   `*_by_size` outputs; confirm no aggregate biomass drift.
-3. If any of the 22 parity tests regress beyond tolerance, document and
-   revert (boundary epsilon is biologically negligible; aggregate parity
-   matters more).
+1. Read the Java `FishStage` source on the OSMOSE GitHub repo
+   (`osmose-model/osmose`) to determine the actual comparison operator.
+2. **If Java is `>=`**: close M2 as "verified; current code matches".
+   Update the comment if anything is unclear.
+3. **If Java is `>`**: switch to `side='left'`. Then run parity tests
+   (`tests/test_parity_*`) and confirm the change reduces (not introduces)
+   drift on `*_by_size` outputs.
+4. If parity drift increases either way, document and revert; boundary
+   epsilon is biologically negligible relative to aggregate biomass.
 
 ### Engine parity M1 — Distribution averaging
 
@@ -315,8 +501,15 @@ PCG64 ≠ Java MT19937, so byte-equivalent cross-engine outputs are impossible.
 
 ## Phase 4 — Performance (target: 1 day, optional)
 
-All optional but high-leverage. Expected aggregate: 10–20% wall-time
-reduction on Bay of Biscay / EEC.
+All optional but high-leverage.
+
+> **Baseline gate (added in r2).** The r1 plan claimed "expected aggregate:
+> 10–20% wall-time reduction" without a baseline. Before merging any Phase
+> 4 commit, capture a current-master benchmark (`scripts/optimizer_bench.py`
+> or a single `simulate.run` over `data/eec` for 50 years × 24 dt × 3
+> seeds) and report the per-change delta in the PR description. Drop any
+> sub-task whose measured improvement is < 2 % (noise floor on a 28-core
+> box).
 
 ### H5 — Hoist scratch buffers in `_apply_predation_numba`
 
@@ -499,8 +692,17 @@ helper that depends only on `state.config_dirty` (a counter bumped by
 
 The plan is fully landed when:
 
-1. **All 7 reviewers re-run on the resulting branch find no Critical or
-   High issues** (re-dispatch the same agents from this session).
+1. **Re-dispatch the deep-review agent suite on the resulting branch and
+   find no remaining Critical or High issues.** Concrete dispatch
+   (executable from a fresh Claude Code session in this repo):
+   ```
+   Agent(subagent_type="feature-dev:code-reviewer", prompt="Review the changes on
+        claude/deep-app-review-xvuga vs master. Report Critical/High only.")
+   Agent(subagent_type="pr-review-toolkit:silent-failure-hunter", prompt="...")
+   Agent(subagent_type="pr-review-toolkit:type-design-analyzer", prompt="...")
+   Agent(subagent_type="superpowers:code-reviewer", prompt="...")
+   ```
+   Iteration ends when all four agents return zero new C/H findings.
 2. **`.venv/bin/python -m pytest`** passes 100% with the new tests.
 3. **Round-trip script** (`scripts/check_config_roundtrip.py`) passes on
    all five fixtures (`eec`, `baltic`, `eec_full`, `examples`, `minimal`)
@@ -528,9 +730,12 @@ The plan is fully landed when:
 
 ## Out of scope
 
-- Architectural rework of `state.config` from `dict[str, str]` to
-  `dict[str, reactive.Value[str]]` (M9 in original review). Big refactor;
-  defer to a dedicated design doc.
+- **Reactive-config refactor** — moving `state.config` from
+  `dict[str, str]` to `dict[str, reactive.Value[str]]`. (Original review
+  labelled this M9 internally — note that the review's M9 ID conflicts
+  with the M9 listed in **Phase 5** above; in this plan, the reactive
+  refactor is *not* numbered, only listed here as out-of-scope.) Big
+  refactor; defer to a dedicated design doc.
 - Replacing `loading_overlay` with a richer per-field disable mechanism.
 - Internationalisation of help text.
 - Adding non-Java-OSMOSE features (genetics is already partly there;
