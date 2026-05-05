@@ -163,7 +163,7 @@ _OUTPUT_ENABLE_FLAGS = [
     "output.bioen.maint.enabled",
     "output.bioen.enet.enabled",
     "output.bioen.rho.enabled",
-    "output.bioen.sizeInf.enabled",
+    "output.bioen.sizeinf.enabled",
 ]
 
 
