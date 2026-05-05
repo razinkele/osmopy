@@ -144,6 +144,15 @@
 >     parallelisation discussion.
 >   - **Risk register row** added: "engineer skips rebase preflight" with
 >     a `git diff cf5cb8e -- data/` belt-and-braces check.
+> - 2026-05-05 r8 — claim-verification round caught one logical bug: the
+>   r7 belt-and-braces check used `git diff cf5cb8e -- data/` and
+>   expected the baltic CSVs to "appear in the diff", but after a
+>   successful rebase the diff against master is **empty** (the branch
+>   matches master for those files). r8 swaps the check to
+>   `ls data/baltic/baltic_param-background.csv` — if the file is
+>   present, the rebase worked; if absent, it didn't. Same correction
+>   applied to the in-section diagnostic command in the
+>   "Execution prerequisite" callout.
 
 This plan is organised as five execution phases, each independently shippable.
 Each issue is given a **stable ID** (matches the deep-review report — `C` =
@@ -176,8 +185,9 @@ git rebase origin/master   # one-time, before starting Phase 1
 ```
 
 If that test shows `12 passed` instead, the rebase didn't bring the
-baltic background CSVs in — re-check `git status` and `git diff
-cf5cb8e -- data/baltic/`. **Do not proceed** while the test goes
+baltic background CSVs in — re-check `git status` and confirm
+`data/baltic/baltic_param-background.csv` exists (it should after a
+successful rebase onto master). **Do not proceed** while the test goes
 falsely green: the work would ship against a stale base where it isn't
 actually exercised.
 
@@ -1110,4 +1120,4 @@ The plan is fully landed when:
 | **H10 reproduction bound fails on legacy fixture data** (added r3) | Run `grep -rE 'species\.(sexratio\|relativefecundity)\.sp' data/ --include='*.csv'` (r4 verified all clean); if any value is outside the new bound, soften the raise to a warning (with offending fixture path) before merge. Hard-failing master because of legacy data is worse than the bug. |
 | **Phase 1 sequencing — extending `RunResult` (C4) ripples through callers** (added r3, tightened r4) | Default the new `status` field to `"ok"` and `message` to `""` so existing `RunResult(returncode=..., output_dir=..., stdout=..., stderr=...)` constructors keep working. Verification: `grep -rn 'RunResult(' osmose/ ui/ tests/` — every call site must either keep its current keyword args (default `status="ok"` covers it) or be explicitly updated. Then `.venv/bin/python -m pytest tests/test_runner.py tests/test_run_*.py` must be green before pushing. Done when both grep and pytest commands return clean. |
 | **`_handle_result` callers other than `_run_python_engine` could synthesise a `RunResult` with default `status="ok"` while the underlying op actually failed silently** (added r5) | `grep -rn '_handle_result\|_run_python_engine' ui/ osmose/` — confirm only `run.py:274` (Java engine path) and `run.py:343` (Python engine path) call `_handle_result`, and both originate from `OsmoseRunner.run` / `_run_python_engine`. If any synthetic-`RunResult` callers exist, audit them to set `status="failed"` explicitly when not `returncode == 0`. Done when the grep returns ≤ the two known sites and any third-party caller is wired correctly. |
-| **Engineer skips the "rebase first" preflight and acceptance tests pass for the wrong reason** (added r7) | The "Execution prerequisite — REBASE FIRST" section near the top of this plan is the primary mitigation. Belt-and-braces: before merging any phase, run `git diff cf5cb8e -- data/` from the working branch — if the baltic background CSVs (`baltic_param-background.csv` and the sp14/sp15 entries in `baltic_all-parameters.csv`) are not present in the diff, the branch was not rebased and acceptance gates are not yet meaningful. Refuse to merge until the diff shows the expected post-rebase state. |
+| **Engineer skips the "rebase first" preflight and acceptance tests pass for the wrong reason** (added r7, check-logic corrected r8) | The "Execution prerequisite — REBASE FIRST" section near the top of this plan is the primary mitigation. Belt-and-braces: before merging any phase, run `ls data/baltic/baltic_param-background.csv` from the working branch — if the file is **missing**, the branch was not rebased and acceptance gates are not yet meaningful. (r7 originally suggested `git diff cf5cb8e -- data/` and "files appear in the diff", but after a successful rebase the diff against current master is empty for files inherited from master; the correct check is "does the file exist on disk".) Refuse to merge until the file is present. |
