@@ -133,6 +133,17 @@
 >     that line is inside a per-step recruitment loop. r6 reroutes the
 >     assert to `_load_spawning_seasons` at `config.py:919-960` (the
 >     actual load site) and corrects both line refs.
+> - 2026-05-05 r7 — sixth-pass structural review. The r6 C5 preflight was
+>   issue-local; the same "false-green on stale base" failure mode
+>   applies plan-wide. r7 hoists the rebase requirement:
+>   - **New "Execution prerequisite — REBASE FIRST" section** at the top
+>     of the plan with the verification command + expected output.
+>   - **Acceptance #3** now explicitly says "after rebasing onto current
+>     master".
+>   - **Sequencing notes** lead with "Rebase first" before any
+>     parallelisation discussion.
+>   - **Risk register row** added: "engineer skips rebase preflight" with
+>     a `git diff cf5cb8e -- data/` belt-and-braces check.
 
 This plan is organised as five execution phases, each independently shippable.
 Each issue is given a **stable ID** (matches the deep-review report — `C` =
@@ -143,6 +154,35 @@ the cheapest, highest-leverage fixes ship first.
 Estimated total: **~6–8 engineer-days mandatory** (5–7 if Phase 4 is
 deferred per its optional flag). Phases 1–2 alone remove the user-visible
 silent-failure modes and unblock strict schema validation.
+
+---
+
+## Execution prerequisite — REBASE FIRST (added r7)
+
+**Before starting any work in this plan, rebase the working branch onto
+current master (`cf5cb8e` or newer).** This branch
+(`claude/deep-app-review-xvuga`) was forked before the 2026-04-25 baltic
+background-species CSVs landed. On the un-rebased branch:
+- C5's parametrize test goes **falsely green** (`3 passed`) because
+  `data/baltic/baltic_param-background.csv` is absent.
+- Acceptance #3 (round-trip script with zero unknown-key warnings) and
+  any other "five-fixture" gate inherit the same blind spot.
+
+Verification command before declaring any acceptance gate satisfied:
+```
+git rebase origin/master   # one-time, before starting Phase 1
+.venv/bin/python -m pytest tests/test_engine_config_validation.py -q
+# expected: 1 failed, 11 passed (baltic listing 11 unknown-key warnings)
+```
+
+If that test shows `12 passed` instead, the rebase didn't bring the
+baltic background CSVs in — re-check `git status` and `git diff
+cf5cb8e -- data/baltic/`. **Do not proceed** while the test goes
+falsely green: the work would ship against a stale base where it isn't
+actually exercised.
+
+This applies to **all** Phase 1 acceptance tests, not just C5 — see also
+Acceptance #3 below.
 
 ---
 
@@ -999,7 +1039,11 @@ The plan is fully landed when:
      (or the pre-change sweep documents why warnings replace raises).
 3. **Round-trip script** (`scripts/check_config_roundtrip.py`) passes on
    all five fixtures (`eec`, `baltic`, `eec_full`, `examples`, `minimal`)
-   with zero unknown-key warnings.
+   with zero unknown-key warnings — **after rebasing onto current
+   master** (see "Execution prerequisite — REBASE FIRST" near the top of
+   this plan). On the un-rebased
+   `claude/deep-app-review-xvuga@b4a5ee2` branch the round-trip will
+   appear to pass for the wrong reason.
 4. **Java parity tests** (14/14 EEC, 8/8 BoB) still pass at original
    tolerances after Phase 3 changes (or tolerances widened by ≤2× with
    documented justification for `*_by_size` outputs).
@@ -1016,6 +1060,10 @@ The plan is fully landed when:
 
 ## Sequencing notes
 
+- **Rebase first.** All Phase 1 work — including engineer A's C1/C2/C3/C4
+  — must run against a branch rebased onto current master, otherwise
+  acceptance tests can pass for the wrong reason (see "Execution
+  prerequisite — REBASE FIRST" near the top of this plan).
 - **Phase 2 acceptance depends on C5 (Phase 1) landing first** — H1's
   "zero unknown-key warnings on all five fixtures" is unreachable while
   master's `[baltic]` parametrization is red. So Phase 1's C5 must merge
@@ -1023,7 +1071,8 @@ The plan is fully landed when:
   C3, and C4 are independent of C5** (they touch unrelated files), so
   parallelisation works as: engineer A on C1 + C2 + C3 + C4 (~1 day);
   engineer B on C5 then Phase 2 (~1.5 days). Both engineers can start
-  immediately; only Phase 2 acceptance waits on C5.
+  immediately, **after the shared rebase**; only Phase 2 acceptance waits
+  on C5.
 - **Phase 3** depends on Phase 2 (some new schema fields need engine
   validation tightened simultaneously).
 - **Phase 4** is independent and can ship anytime; defer if no
@@ -1061,3 +1110,4 @@ The plan is fully landed when:
 | **H10 reproduction bound fails on legacy fixture data** (added r3) | Run `grep -rE 'species\.(sexratio\|relativefecundity)\.sp' data/ --include='*.csv'` (r4 verified all clean); if any value is outside the new bound, soften the raise to a warning (with offending fixture path) before merge. Hard-failing master because of legacy data is worse than the bug. |
 | **Phase 1 sequencing — extending `RunResult` (C4) ripples through callers** (added r3, tightened r4) | Default the new `status` field to `"ok"` and `message` to `""` so existing `RunResult(returncode=..., output_dir=..., stdout=..., stderr=...)` constructors keep working. Verification: `grep -rn 'RunResult(' osmose/ ui/ tests/` — every call site must either keep its current keyword args (default `status="ok"` covers it) or be explicitly updated. Then `.venv/bin/python -m pytest tests/test_runner.py tests/test_run_*.py` must be green before pushing. Done when both grep and pytest commands return clean. |
 | **`_handle_result` callers other than `_run_python_engine` could synthesise a `RunResult` with default `status="ok"` while the underlying op actually failed silently** (added r5) | `grep -rn '_handle_result\|_run_python_engine' ui/ osmose/` — confirm only `run.py:274` (Java engine path) and `run.py:343` (Python engine path) call `_handle_result`, and both originate from `OsmoseRunner.run` / `_run_python_engine`. If any synthetic-`RunResult` callers exist, audit them to set `status="failed"` explicitly when not `returncode == 0`. Done when the grep returns ≤ the two known sites and any third-party caller is wired correctly. |
+| **Engineer skips the "rebase first" preflight and acceptance tests pass for the wrong reason** (added r7) | The "Execution prerequisite — REBASE FIRST" section near the top of this plan is the primary mitigation. Belt-and-braces: before merging any phase, run `git diff cf5cb8e -- data/` from the working branch — if the baltic background CSVs (`baltic_param-background.csv` and the sp14/sp15 entries in `baltic_all-parameters.csv`) are not present in the diff, the branch was not rebased and acceptance gates are not yet meaningful. Refuse to merge until the diff shows the expected post-rebase state. |
