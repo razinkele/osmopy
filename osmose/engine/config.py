@@ -1739,6 +1739,23 @@ class EngineConfig:
             gompertz_kg = _species_float_optional(cfg, "growth.gompertz.kg.sp{i}", n_sp, 0.0)
             gompertz_tg = _species_float_optional(cfg, "growth.gompertz.tg.sp{i}", n_sp, 0.0)
             gompertz_linf = _species_float_optional(cfg, "growth.gompertz.linf.sp{i}", n_sp, 0.0)
+            # M4: Gompertz growth curve is undefined for non-positive linf or kg.
+            # Default-to-zero would produce L(t) = 0 * exp(...) = 0 for all ages
+            # — silently no growth. Surface as a hard error so the config author
+            # fixes the input.
+            for i in range(n_sp):
+                if growth_class[i] != "GOMPERTZ":
+                    continue
+                if gompertz_linf[i] <= 0.0:
+                    raise ValueError(
+                        f"growth.gompertz.linf.sp{i} must be > 0 for GOMPERTZ growth, "
+                        f"got {float(gompertz_linf[i])}"
+                    )
+                if gompertz_kg[i] <= 0.0:
+                    raise ValueError(
+                        f"growth.gompertz.kg.sp{i} must be > 0 for GOMPERTZ growth, "
+                        f"got {float(gompertz_kg[i])}"
+                    )
             exp_yrs = _species_float_optional(cfg, "growth.exponential.thr.age.sp{i}", n_sp, 0.0)
             gom_yrs = _species_float_optional(cfg, "growth.gompertz.thr.age.sp{i}", n_sp, 0.0)
             gompertz_thr_age_exp_dt = (exp_yrs * n_dt).astype(np.int32)
