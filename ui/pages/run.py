@@ -74,11 +74,16 @@ def copy_data_files(config: dict[str, str], source_dir: Path, dest_dir: Path) ->
     return skipped
 
 
-def _inject_random_movement_ncell(config: dict[str, str]) -> None:
-    """Inject movement.distribution.ncell.spN for species using random movement.
+def _inject_random_movement_ncell(config: dict[str, str]) -> dict[str, str]:
+    """Return a NEW dict with movement.distribution.ncell.spN injected.
 
     Works around a Java engine off-by-one bug in RandomDistribution.createRandomMap()
     where the engine accesses grid cell at index == grid size when ncell is not set.
+
+    H3 (2026-05-06): refactored from in-place mutation to pure-return. The
+    previous version mutated the caller's dict, which was surprising when
+    invoked on a reactive value (the mutation could be observed mid-flight
+    by other reactives). Callers now do `config = _inject_random_movement_ncell(config)`.
     """
     try:
         nlon = int(config.get("grid.nlon", "0"))
@@ -89,21 +94,23 @@ def _inject_random_movement_ncell(config: dict[str, str]) -> None:
             config.get("grid.nlon"),
             config.get("grid.nlat"),
         )
-        return
+        return dict(config)
     if nlon <= 0 or nlat <= 0:
         _log.warning(
             "Cannot inject random movement ncell: grid dimensions non-positive (nlon=%d, nlat=%d)",
             nlon,
             nlat,
         )
-        return
+        return dict(config)
     total_cells = nlon * nlat
-    for key, value in list(config.items()):
+    out = dict(config)
+    for key, value in config.items():
         if key.startswith("movement.distribution.method.sp") and value.strip() == "random":
             sp_suffix = key.split("movement.distribution.method.")[-1]
             ncell_key = f"movement.distribution.ncell.{sp_suffix}"
-            if ncell_key not in config:
-                config[ncell_key] = str(total_cells)
+            if ncell_key not in out:
+                out[ncell_key] = str(total_cells)
+    return out
 
 
 def write_temp_config(
@@ -128,7 +135,8 @@ def write_temp_config(
     # when movement.distribution.ncell.spN is absent and method is "random",
     # the engine tries to access grid cell at index == grid size (out of bounds).
     # Auto-inject ncell = nlon * nlat - 1 for any species using random movement.
-    _inject_random_movement_ncell(config)
+    # H3: now returns a new dict (was in-place mutation).
+    config = _inject_random_movement_ncell(config)
 
     # Write a single flat master file with all params, stripping sub-config
     # references to avoid the Java engine loading duplicate parameters from

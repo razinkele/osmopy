@@ -46,10 +46,10 @@ def test_inject_ncell_for_random_movement():
         "movement.distribution.method.sp1": "maps",
         "movement.distribution.method.sp2": "random",
     }
-    _inject_random_movement_ncell(config)
-    assert config["movement.distribution.ncell.sp0"] == "180"
-    assert "movement.distribution.ncell.sp1" not in config
-    assert config["movement.distribution.ncell.sp2"] == "180"
+    out = _inject_random_movement_ncell(config)
+    assert out["movement.distribution.ncell.sp0"] == "180"
+    assert "movement.distribution.ncell.sp1" not in out
+    assert out["movement.distribution.ncell.sp2"] == "180"
 
 
 def test_inject_ncell_preserves_existing():
@@ -59,8 +59,31 @@ def test_inject_ncell_preserves_existing():
         "movement.distribution.method.sp0": "random",
         "movement.distribution.ncell.sp0": "50",
     }
-    _inject_random_movement_ncell(config)
-    assert config["movement.distribution.ncell.sp0"] == "50"
+    out = _inject_random_movement_ncell(config)
+    assert out["movement.distribution.ncell.sp0"] == "50"
+
+
+def test_inject_ncell_does_not_mutate_caller():
+    """H3: callers of _inject_random_movement_ncell rely on the input not mutating
+    (e.g. when the input is a reactive value's dict-of-record). Pin the contract."""
+    config = {
+        "grid.nlon": "10",
+        "grid.nlat": "10",
+        "movement.distribution.method.sp0": "random",
+    }
+    snapshot = dict(config)
+    out = _inject_random_movement_ncell(config)
+    assert config == snapshot, "input dict was mutated"
+    assert out is not config, "output must be a new dict, not the input"
+    assert out["movement.distribution.ncell.sp0"] == "100"
+
+
+def test_inject_ncell_invalid_grid_returns_unchanged_copy():
+    """When grid dims are invalid, the return must still be a NEW dict (copy)."""
+    config = {"grid.nlon": "not-a-number", "grid.nlat": "10"}
+    out = _inject_random_movement_ncell(config)
+    assert out == config
+    assert out is not config
 
 
 def test_prerun_validation_blocks_on_errors():
