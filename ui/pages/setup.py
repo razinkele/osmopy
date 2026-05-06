@@ -84,7 +84,7 @@ def setup_server(input, output, session, state):
         20 species × 30+ fields this avoids 600+ individual reactive updates.
         """
         with reactive.isolate():
-            if state.loading.get():
+            if state.busy.get():
                 return
         n = input.n_species()
         show_adv = input.show_advanced_species()
@@ -126,7 +126,7 @@ def setup_server(input, output, session, state):
         n = input.n_species()
         if n < 2:
             return
-        state.loading.set(True)
+        state.busy.set("Copying species 0 parameters to all species…")
         try:
             with reactive.isolate():
                 cfg = dict(state.config.get())
@@ -142,4 +142,4 @@ def setup_server(input, output, session, state):
                 duration=3,
             )
         finally:
-            state.loading.set(False)
+            state.busy.set(None)

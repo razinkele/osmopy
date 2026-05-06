@@ -18,12 +18,12 @@ def _load_scenario_into_state(scenario: str, tmp_path: Path) -> tuple[AppState, 
     cfg = migrate_config(reader.read(result["config_file"]))
     state = AppState()
     with reactive.isolate():
-        state.loading.set(True)
+        state.busy.set("loading test scenario")
         state.config.set(cfg)
         state.config_dir.set(result["config_file"].parent)
         state.load_trigger.set(state.load_trigger.get() + 1)
         state.dirty.set(False)
-        state.loading.set(False)
+        state.busy.set(None)
     return state, cfg
 
 
@@ -182,14 +182,14 @@ def test_load_scenario_loading_guard(tmp_path):
 
     state = AppState()
     with reactive.isolate():
-        state.loading.set(True)
+        state.busy.set("loading test scenario")
         state.config.set(cfg)
 
-        # sync_inputs should return empty while loading is True
+        # M10: sync_inputs returns empty while state.busy is non-None
         changed = sync_inputs(make_catch_all_input("overwritten"), state, ["simulation.nspecies"])
         assert changed == {}
 
-        state.loading.set(False)
+        state.busy.set(None)
 
 
 def test_all_demos_produce_unique_configs(tmp_path):
