@@ -42,7 +42,12 @@ class AppState:
             "osmose-java/osmose_4.3.3-jar-with-dependencies.jar"
         )
         self.config_dir: reactive.Value[Path | None] = reactive.Value(None)
-        self.loading: reactive.Value[bool] = reactive.Value(False)
+        # M10 (2026-05-06): state.loading was consolidated into state.busy.
+        # state.busy is the single source of truth — its value is None when
+        # idle, or a non-empty string descriptor while a long-running task
+        # blocks user input. Pages that previously called state.loading
+        # now publish a meaningful descriptor via state.busy so the
+        # status banner can show users *what* is blocking them.
         self.busy: reactive.Value[str | None] = reactive.Value(None)
         # C4 Phase B: cooperative cancellation token for the Python engine.
         # _run_python_engine constructs a fresh threading.Event per run and
@@ -119,13 +124,14 @@ def sync_inputs(
     Returns:
         Dict of keys that were actually updated with their new values.
     """
-    # Check loading flag without creating a reactive dependency —
-    # prevents sync effects from re-running when loading toggles,
-    # which would overwrite config with stale input values before
-    # ui.update_* messages reach the client.
+    # M10: skip while a busy operation is in flight (was state.loading.get();
+    # bool(state.busy.get()) is the same condition since busy is non-None
+    # iff something is actively blocking user input). Isolated read so
+    # sync effects don't re-run when busy toggles, which would overwrite
+    # config with stale input values before ui.update_* reaches the client.
     with reactive.isolate():
-        if state.loading.get():
-            _log.debug("sync_inputs: skipping — loading in progress")
+        if state.busy.get():
+            _log.debug("sync_inputs: skipping — busy in progress")
             return {}
     changed: dict[str, str] = {}
     with reactive.isolate():

@@ -101,7 +101,7 @@ def forcing_server(input, output, session, state):
         """
         n = input.n_resources()
         with reactive.isolate():
-            if state.loading.get():
+            if state.busy.get():
                 return
             cfg = dict(state.config.get())
         n_focal = parse_nspecies(cfg)
@@ -138,7 +138,7 @@ def forcing_server(input, output, session, state):
         n = input.n_resources()
         if n < 2:
             return
-        state.loading.set(True)
+        state.busy.set("Copying resource 0 parameters to all resources…")
         try:
             with reactive.isolate():
                 cfg = dict(state.config.get())
@@ -155,4 +155,4 @@ def forcing_server(input, output, session, state):
                 duration=3,
             )
         finally:
-            state.loading.set(False)
+            state.busy.set(None)

@@ -837,7 +837,7 @@ def grid_server(input, output, session, state):
 
         config_dir = master.parent
 
-        state.loading.set(True)
+        state.busy.set(f"Loading example '{example}'…")
         try:
             reader = OsmoseConfigReader()
             cfg = migrate_config(reader.read(master))
@@ -865,4 +865,4 @@ def grid_server(input, output, session, state):
             )
             state.dirty.set(False)
         finally:
-            state.loading.set(False)
+            state.busy.set(None)

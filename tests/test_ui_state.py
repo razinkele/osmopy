@@ -72,11 +72,11 @@ def test_reset_to_defaults_clears_dirty():
         assert state.dirty.get() is False
 
 
-def test_sync_inputs_skips_loading_state():
-    """sync_inputs returns empty dict when loading flag is True."""
+def test_sync_inputs_skips_when_busy():
+    """sync_inputs returns empty dict when state.busy is non-None (M10)."""
     state = AppState()
     with reactive.isolate():
-        state.loading.set(True)
+        state.busy.set("loading something")
 
         changed = sync_inputs(make_catch_all_input("42"), state, ["simulation.nspecies"])
         assert changed == {}

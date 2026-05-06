@@ -176,7 +176,7 @@ def scenarios_server(input, output, session, state):
         if not selected:
             return
         loaded = mgr.load(selected)
-        state.loading.set(True)
+        state.busy.set(f"Loading scenario '{selected}'…")
         try:
             state.config.set(loaded.config)
             state.config_name.set(selected)
@@ -202,7 +202,7 @@ def scenarios_server(input, output, session, state):
                 duration=3,
             )
         finally:
-            state.loading.set(False)
+            state.busy.set(None)
 
     # --- Fork ---
 

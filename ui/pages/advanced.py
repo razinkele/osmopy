@@ -167,7 +167,7 @@ def advanced_server(input, output, session, state):
         pending = import_pending.get()
         if not pending:
             return
-        state.loading.set(True)
+        state.busy.set("Importing advanced parameters…")
         try:
             with reactive.isolate():
                 cfg = dict(state.config.get())
@@ -191,7 +191,7 @@ def advanced_server(input, output, session, state):
                 duration=3,
             )
         finally:
-            state.loading.set(False)
+            state.busy.set(None)
 
     @render.download(filename="osm_all-parameters.csv")
     def export_config():
