@@ -33,10 +33,22 @@ from ui.pages.diagnostics import diagnostics_ui, diagnostics_server
 
 from osmose.cleanup import cleanup_old_temp_dirs, register_cleanup
 
-# Clean stale osmose temp dirs from previous sessions and register atexit
-# handler so current-session dirs are removed on normal shutdown.
-cleanup_old_temp_dirs()
-register_cleanup()
+# H11: cleanup is invoked at server() time (per session) rather than at
+# import time so that simply importing this module — e.g. for tests, type
+# checking, or schema-only access — does not touch the filesystem. The
+# `_cleanup_done` flag below ensures filesystem cleanup runs at most once
+# per process.
+_cleanup_done = False
+
+
+def _ensure_cleanup_registered() -> None:
+    """Idempotent first-session-start cleanup (H11)."""
+    global _cleanup_done
+    if _cleanup_done:
+        return
+    cleanup_old_temp_dirs()
+    register_cleanup()
+    _cleanup_done = True
 
 _WWW = Path(__file__).parent / "www"
 
@@ -465,6 +477,7 @@ app_ui = ui.page_fillable(
 
 
 def server(input, output, session):
+    _ensure_cleanup_registered()
     state = AppState()
     state.reset_to_defaults()
 
