@@ -158,6 +158,45 @@ async def test_runner_cancel(tmp_path: Path) -> None:
     assert result.returncode != 0  # terminated
 
 
+async def test_runner_partial_stdout_then_failure(tmp_path: Path) -> None:
+    """M8: a process that emits some progress then exits non-zero is reported failed.
+
+    Pre-fix sketch concern: a script that wrote partial CSV before crashing
+    might be misclassified as ok if returncode parsing was lenient. Verify
+    the runner reports returncode != 0 and preserves the partial stdout.
+    """
+    script = tmp_path / "partial_then_fail.py"
+    script.write_text(
+        "import sys\n"
+        "for i in range(10):\n"
+        "    print(f'progress line {i}')\n"
+        "sys.exit(2)\n"
+    )
+    config = tmp_path / "config.csv"
+    config.write_text("x ; 1\n")
+    runner = _ScriptRunner(jar_path=script, java_cmd=sys.executable)
+    result = await runner.run(config_path=config)
+    assert result.returncode == 2, f"expected exit code 2, got {result.returncode}"
+    assert "progress line 0" in result.stdout
+    assert "progress line 9" in result.stdout
+
+
+async def test_runner_stderr_only_failure(tmp_path: Path) -> None:
+    """M8: a process that writes only to stderr must surface stderr in the result."""
+    script = tmp_path / "stderr_only.py"
+    script.write_text(
+        "import sys\nprint('java.lang.NullPointerException', file=sys.stderr)\nsys.exit(1)\n"
+    )
+    config = tmp_path / "config.csv"
+    config.write_text("x ; 1\n")
+    runner = _ScriptRunner(jar_path=script, java_cmd=sys.executable)
+    result = await runner.run(config_path=config)
+    assert result.returncode == 1
+    assert "NullPointerException" in result.stderr
+    # No stdout in this scenario
+    assert result.stdout.strip() == ""
+
+
 def test_build_cmd_includes_jar_flag() -> None:
     """Verify the production _build_cmd includes -jar in the right position."""
     runner = OsmoseRunner(jar_path=Path("/path/to/osmose.jar"), java_cmd="java")
