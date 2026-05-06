@@ -488,9 +488,25 @@ def _parse_reproduction_params(
 ) -> dict[str, Any]:
     """Parse reproduction, seeding, and larva mortality parameters."""
     sex_ratio = _species_float_optional(cfg, "species.sexratio.sp{i}", n_sp, default=0.5)
+    # H10: sex ratio is a probability — bounded [0, 1].
+    bad_sr = np.where((sex_ratio < 0.0) | (sex_ratio > 1.0))[0]
+    if len(bad_sr) > 0:
+        i = int(bad_sr[0])
+        raise ValueError(
+            f"species.sexratio.sp{i} must be in [0, 1], got {float(sex_ratio[i])}"
+        )
     relative_fecundity = _species_float_optional(
         cfg, "species.relativefecundity.sp{i}", n_sp, default=500.0
     )
+    # H10: fecundity is a count — non-negative. (Zero is a valid degenerate
+    # "no reproduction" case used in tests and some calibration scenarios;
+    # negative values are nonsensical and indicate a config error.)
+    bad_rf = np.where(relative_fecundity < 0.0)[0]
+    if len(bad_rf) > 0:
+        i = int(bad_rf[0])
+        raise ValueError(
+            f"species.relativefecundity.sp{i} must be >= 0, got {float(relative_fecundity[i])}"
+        )
     maturity_size = _species_float_optional(cfg, "species.maturity.size.sp{i}", n_sp, default=0.0)
     seeding_biomass = _species_float_optional(
         cfg, "population.seeding.biomass.sp{i}", n_sp, default=0.0
@@ -943,6 +959,22 @@ def _load_spawning_seasons(
             all_values[i] = values
             max_cols = max(max_cols, len(values))
             found_any = True
+            # H10: spawning-season vectors should sum to 1.0 per year (each
+            # entry is the fraction of annual reproduction in that step).
+            # If `reproduction.normalisation.enabled=true` the engine will
+            # auto-correct downstream; otherwise a non-unit sum produces
+            # silently-wrong reproduction. Warn so the config author can fix
+            # the input rather than rely on the implicit normaliser.
+            if not normalize:
+                n_years = max(1, len(values) // n_dt_per_year)
+                annual_mean = float(values.sum()) / n_years
+                if not np.isclose(annual_mean, 1.0, atol=0.01):
+                    warnings.warn(
+                        f"reproduction.season.file.sp{i}: per-year sum is {annual_mean:.4f}, "
+                        f"expected 1.0 (set reproduction.normalisation.enabled=true to "
+                        f"auto-rescale, or fix the input).",
+                        stacklevel=2,
+                    )
 
     if not found_any:
         return None
