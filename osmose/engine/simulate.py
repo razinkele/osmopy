@@ -8,6 +8,7 @@ Follows Java's SimulationStep.step() ordering:
 
 from __future__ import annotations
 
+import threading  # noqa: F401  (cancel_token type hint, used at runtime when callers pass an Event)
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -1021,6 +1022,7 @@ def simulate(
     mortality_rngs: list[np.random.Generator] | None = None,
     *,
     output_dir: Path | None = None,
+    cancel_token: "threading.Event | None" = None,
 ) -> list[StepOutput]:
     """Run the OSMOSE simulation loop.
 
@@ -1029,6 +1031,12 @@ def simulate(
     When ``output_dir`` is provided and economics is enabled, end-of-run
     economic CSVs are written via ``write_economic_outputs``. Keyword-only
     to keep existing positional callers (tests) unaffected.
+
+    ``cancel_token`` (C4 Phase B): an optional ``threading.Event`` callers
+    can ``set()`` to cooperatively cancel a running simulation. The outer
+    step loop checks it once per step; on the next iteration with the
+    flag set, the loop raises ``SimulationCancelled``. ``None`` (default)
+    disables cancellation entirely.
     """
     if movement_rngs is None:
         movement_rngs = [rng] * config.n_species
@@ -1130,6 +1138,15 @@ def simulate(
         outputs.append(_collect_outputs(state, config, step=-1, grid=grid))
 
     for step in range(config.n_steps):
+        # C4 Phase B: cooperative cancellation. The check is once per step
+        # (not per process inside a step) — interactive UI cancel latency
+        # is bounded by step duration, which is fine for typical configs
+        # (~ms to single-digit-seconds per step on Baltic / EEC).
+        if cancel_token is not None and cancel_token.is_set():
+            from osmose.engine import SimulationCancelled
+            raise SimulationCancelled(
+                f"cancelled at step {step}/{config.n_steps}"
+            )
         # -- Annual reset for fleet economics --
         if ctx.fleet_state is not None and step > 0 and step % config.n_dt_per_year == 0:
             ctx.fleet_state.vessel_days_used[:] = 0

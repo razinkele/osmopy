@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading  # noqa: F401  (cancel_token type annotation; runtime use only)
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -83,7 +84,14 @@ class PythonEngine:
         )
         return engine_config, grid, rng, movement_rngs, mortality_rngs
 
-    def run(self, config: dict[str, str], output_dir: Path, seed: int = 0) -> RunResult:
+    def run(
+        self,
+        config: dict[str, str],
+        output_dir: Path,
+        seed: int = 0,
+        *,
+        cancel_token: "threading.Event | None" = None,
+    ) -> RunResult:
         from osmose.engine.output import write_outputs
         from osmose.engine.simulate import simulate
 
@@ -95,6 +103,7 @@ class PythonEngine:
             movement_rngs=movement_rngs,
             mortality_rngs=mortality_rngs,
             output_dir=output_dir,
+            cancel_token=cancel_token,
         )
         write_outputs(outputs, output_dir, engine_config, grid=grid)
 
@@ -109,6 +118,8 @@ class PythonEngine:
         self,
         config: dict[str, str],
         seed: int = 0,
+        *,
+        cancel_token: "threading.Event | None" = None,
     ) -> OsmoseResults:
         """Run the Python engine and return results as an in-memory OsmoseResults.
 
@@ -120,6 +131,8 @@ class PythonEngine:
 
         Use this for calibration candidates, sensitivity analysis, or any other
         throughput-sensitive workflow where disk output is not needed.
+
+        ``cancel_token`` (C4 Phase B): see ``simulate()``.
         """
         from osmose.engine.simulate import simulate
 
@@ -131,6 +144,7 @@ class PythonEngine:
             movement_rngs=movement_rngs,
             mortality_rngs=mortality_rngs,
             output_dir=None,
+            cancel_token=cancel_token,
         )
         return OsmoseResults.from_outputs(outputs, engine_config, grid)
 

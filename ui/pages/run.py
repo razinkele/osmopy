@@ -261,11 +261,18 @@ async def _run_python_engine(
     engine = PythonEngine()
     status.set("Running (Python engine)...")
 
+    # C4 Phase B: fresh cancellation token per run. The cancel button
+    # handler (handle_cancel below) sets this to interrupt the simulation.
+    import threading as _threading
+    cancel_token = _threading.Event()
+    state.run_cancel_token.set(cancel_token)
+
     state.busy.set("Running simulation (Python)...")
     try:
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
-            None, lambda: engine.run(run_config, output_dir, seed=0)
+            None,
+            lambda: engine.run(run_config, output_dir, seed=0, cancel_token=cancel_token),
         )
     except SimulationCancelled as exc:
         # Phase B will trigger this from a UI Cancel button; Phase A defines
@@ -528,7 +535,15 @@ def run_server(input, output, session, state):
     @reactive.effect
     @reactive.event(input.btn_cancel)
     def handle_cancel():
+        # C4 Phase B: cancel both engine paths.
+        # 1. Java engine: signal the OsmoseRunner subprocess.
         runner = runner_ref.get()
         if runner:
             runner.cancel()
             status.set("Cancelled")
+        # 2. Python engine: set the cancellation token so simulate.py's
+        #    outer step loop raises SimulationCancelled on next iteration.
+        token = state.run_cancel_token.get()
+        if token is not None:
+            token.set()
+            status.set("Cancelling Python engine — finishing current step…")
