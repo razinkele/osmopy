@@ -7,8 +7,72 @@ from ui.components.param_form import (
     render_category,
     _guess_step,
     constraint_hint,
+    input_id_for_field,
+    input_id_for_key,
     render_species_table,
 )
+
+
+def test_input_id_for_key_basic():
+    """Dots become underscores; that's the canonical encoding."""
+    assert input_id_for_key("species.linf.sp0") == "species_linf_sp0"
+    assert input_id_for_key("simulation.nspecies") == "simulation_nspecies"
+
+
+def test_input_id_for_key_with_prefix():
+    assert input_id_for_key("species.linf.sp0", prefix="adv_") == "adv_species_linf_sp0"
+
+
+def test_input_id_for_field_indexed_resolved():
+    field = OsmoseField(
+        key_pattern="species.linf.sp{idx}",
+        param_type=ParamType.FLOAT,
+        default=30.0,
+        category="species",
+        indexed=True,
+    )
+    assert input_id_for_field(field, idx=3) == "species_linf_sp3"
+
+
+def test_input_id_for_field_indexed_no_idx_drops_placeholder():
+    """Without idx, the {idx} placeholder is dropped (used for generic-form ids)."""
+    field = OsmoseField(
+        key_pattern="species.linf.sp{idx}",
+        param_type=ParamType.FLOAT,
+        default=30.0,
+        category="species",
+        indexed=True,
+    )
+    assert input_id_for_field(field) == "species_linf_sp"
+
+
+def test_input_id_for_field_non_indexed():
+    field = OsmoseField(
+        key_pattern="simulation.nspecies",
+        param_type=ParamType.INT,
+        default=2,
+        category="simulation",
+    )
+    assert input_id_for_field(field) == "simulation_nspecies"
+
+
+def test_input_id_helper_matches_render_field_encoding():
+    """Pin the contract: input_id_for_field produces the same id render_field
+    would write, so sync_inputs (which uses input_id_for_key) reads back the
+    same input."""
+    field = OsmoseField(
+        key_pattern="species.linf.sp{idx}",
+        param_type=ParamType.FLOAT,
+        default=30.0,
+        category="species",
+        indexed=True,
+    )
+    # render_field would produce: f"{prefix}{key}".replace(".", "_") for idx=5
+    # = "species_linf_sp5". The sync_inputs side reads input_id_for_key on the
+    # resolved key = "species.linf.sp5" -> "species_linf_sp5". Both must agree.
+    rendered_id = input_id_for_field(field, idx=5)
+    sync_id = input_id_for_key(field.resolve_key(5))
+    assert rendered_id == sync_id == "species_linf_sp5"
 
 
 def test_render_float_field():

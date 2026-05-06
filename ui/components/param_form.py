@@ -15,6 +15,34 @@ if TYPE_CHECKING:
 _log = setup_logging("osmose.param_form")
 
 
+def input_id_for_key(key: str, prefix: str = "") -> str:
+    """Convert a config key to its Shiny input ID.
+
+    Shiny input IDs cannot contain dots, so the canonical encoding is
+    `key.replace(".", "_")` plus an optional prefix. This helper exists
+    so that `render_field` (which writes the input) and `sync_inputs`
+    (which reads it back) can call exactly the same function rather
+    than duplicating the encoding inline. M13 (2026-05-06).
+    """
+    return f"{prefix}{key}".replace(".", "_")
+
+
+def input_id_for_field(field: OsmoseField, idx: int | None = None, prefix: str = "") -> str:
+    """Convert an OsmoseField (+ optional species/fishery/map index) to its Shiny input ID.
+
+    For an indexed field with `idx` provided, resolves the placeholder
+    (e.g. `species.linf.sp{idx}` -> `species.linf.sp3` -> `species_linf_sp3`).
+    For an indexed field without `idx`, drops the placeholder for use as a
+    generic-form input id (e.g. `species_linf_sp`). For a non-indexed field
+    the key is used as-is.
+    """
+    if field.indexed and idx is not None:
+        return input_id_for_key(field.resolve_key(idx), prefix)
+    if field.indexed:
+        return input_id_for_key(field.key_pattern, prefix).replace("{idx}", "")
+    return input_id_for_key(field.key_pattern, prefix)
+
+
 def _tooltip_content(field: OsmoseField) -> str:
     """Build tooltip HTML content from field metadata."""
     parts = [f"<strong>{_esc(field.description)}</strong>"]
@@ -84,13 +112,12 @@ def render_field(
     Returns:
         A Shiny UI element (input widget).
     """
-    # Build unique input ID and config key
+    # Build unique input ID and config key (M13: use the canonical helper)
     if field.indexed and species_idx is not None:
         config_key = field.resolve_key(species_idx)
-        input_id = f"{prefix}{config_key}".replace(".", "_")
     else:
         config_key = field.key_pattern
-        input_id = f"{prefix}{config_key}".replace(".", "_").replace("{idx}", "")
+    input_id = input_id_for_field(field, idx=species_idx, prefix=prefix)
 
     # Resolve initial value: config takes priority over field.default
     default = field.default
