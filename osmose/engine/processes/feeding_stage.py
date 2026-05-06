@@ -68,7 +68,22 @@ def compute_feeding_stages(
         else:
             raise ValueError(f"Unrecognized feeding stage metric: {metric!r}")
 
-        # Count thresholds exceeded (>= comparison) using vectorized searchsorted
+        # Count thresholds exceeded (>= comparison) using vectorized searchsorted.
+        #
+        # Java parity (verified 2026-05-06 against Java OSMOSE master,
+        # SchoolStage.java#getStage):
+        #   for (float threshold : thresholds[iSpec]) {
+        #       if (classGetter[iSpec].getVariable(school) < threshold) break;
+        #       stage++;
+        #   }
+        # i.e. stage = count(value >= threshold). For ascending thresholds,
+        # `np.searchsorted(arr, v, side='right')` returns count(arr <= v) which
+        # is the same number — so side='right' matches Java. Closes M2 from
+        # docs/plans/2026-05-05-deep-review-remediation-plan.md.
+        # DO NOT change to side='left' — that would give strict-> count and
+        # introduce a one-bin off-by-one drift on every species's by-size /
+        # by-age / by-tl output (verified semantics in
+        # tests/test_feeding_stage_java_parity.py).
         sorted_thr = np.sort(sp_thresholds)
         stages[mask] = np.searchsorted(sorted_thr, values, side="right").astype(np.int32)
 
