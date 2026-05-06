@@ -119,6 +119,27 @@ def render_field(
         config_key = field.key_pattern
     input_id = input_id_for_field(field, idx=species_idx, prefix=prefix)
 
+    # H12: detect multi-value entries (";"-separated arrays like "2.3;1.8"
+    # for per-stage parameters). The single-value inputs below cannot
+    # represent these — render a visibly read-only text input with a label
+    # directing the user to edit via the Advanced tab. The reverse-side
+    # guard at ui/state.py:sync_inputs already preserves the original
+    # array if a single-value form somehow tries to overwrite it.
+    if config is not None and config_key in config:
+        cfg_val = config[config_key]
+        if isinstance(cfg_val, str) and ";" in cfg_val:
+            base_label = field.description or field.key_pattern
+            label = ui.tags.span(
+                f"{base_label} (multi-value — edit in Advanced)",
+                class_="osm-multivalue-readonly-label",
+            )
+            return ui.input_text(
+                input_id,
+                label,
+                value=cfg_val,
+                placeholder="multi-value array (read-only here)",
+            )
+
     # Resolve initial value: config takes priority over field.default
     default = field.default
     if config is not None and config_key in config:
