@@ -735,7 +735,20 @@ def _collect_distributions(
         if config.output_abundance_byage:
             abundance_by_age = aba
 
-    # Size binning
+    # Size binning.
+    #
+    # Java parity (verified 2026-05-06 against
+    # OutputDistribution.java#initialize): Java computes
+    #   nClass = (int) Math.ceil((max - min) / incr) + 1
+    # which yields an "overflow" bin at the top capturing values >= max.
+    # Python's `len(np.arange(min, max + incr, incr))` produces the same
+    # count across the cases tested (including float-precision edges:
+    # 0..1 step 0.1 -> 11 bins matching Java; 0..0.3 step 0.1 -> 4 matching
+    # Java). See tests/test_size_bin_java_parity.py. Closes M3 from
+    # docs/plans/2026-05-05-deep-review-remediation-plan.md as
+    # "verified, no code change needed". (The plan's r1 sketch
+    # `n_bins = int((max - min) / incr)` was wrong-direction; floor would
+    # under-count by 1 vs Java's ceil-plus-one.)
     biomass_by_size: dict[int, NDArray[np.float64]] | None = None
     abundance_by_size: dict[int, NDArray[np.float64]] | None = None
     if config.output_biomass_bysize or config.output_abundance_bysize:
