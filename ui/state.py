@@ -11,6 +11,7 @@ from shiny.types import SilentException
 from osmose.logging import setup_logging
 from osmose.runner import RunResult
 from osmose.schema import build_registry
+from ui.components.param_form import input_id_for_key
 
 
 class ShinyInputs(Protocol):
@@ -124,7 +125,7 @@ def sync_inputs(
     with reactive.isolate():
         cfg = dict(state.config.get())
     for key in keys:
-        input_id = key.replace(".", "_")
+        input_id = input_id_for_key(key)  # M13: canonical helper
         if not hasattr(input, input_id):
             continue
         try:
