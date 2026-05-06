@@ -111,6 +111,7 @@ When writing bash commands, strictly follow these rules to avoid triggering secu
 - `import ui.charts` in page modules shadows `from shiny import ui` — register templates in `app.py` only
 - `navset_pill_list` doesn't accept bare strings as section headers — use `ui.nav_control()` wrapper
 - `EngineConfig.from_dict` validates keys against `osmose/engine/config_validation.py`'s allowlist (schema + AST walk of `config.py` + `_SUPPLEMENTARY_ALLOWLIST` for reader-injected metadata / legacy aliases). When adding a new config key the engine reads, the AST walker should capture it automatically; if it doesn't (e.g., key built from a caller-arg `key_pattern`), add to `_SUPPLEMENTARY_ALLOWLIST` rather than extending the walker. Integration test: `tests/test_engine_config_validation.py::test_from_dict_warn_mode_clean_on_example_configs[*]` must stay warning-free.
+- **RNG reproducibility** is Python-side only. `simulation.rng.fixed=true` makes a single config + seed reproducible across Python-engine runs. It does NOT produce bit-equal outputs against the Java engine — NumPy uses PCG64, Java uses MT19937, the streams diverge on the first draw. Cross-engine equivalence is "within 1 OoM" per the parity tests (14/14 EEC, 8/8 BoB). For bit-exact Java parity, set `OsmoseCalibrationProblem(use_java_engine=True)`. See `osmose/engine/rng.py` module docstring.
 
 ## Design Docs
 - Design: `docs/plans/2026-02-21-osmose-python-port-design.md`

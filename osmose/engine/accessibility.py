@@ -63,6 +63,23 @@ class AccessibilityMatrix:
         df = pd.read_csv(csv_path, sep=";", index_col=0)
         raw_matrix = df.values.astype(np.float64)
 
+        # M5: accessibility coefficients should fall in [0, 1] — they are
+        # consumption-fraction multipliers. Values > 1 yield more biomass
+        # consumed than the prey-school holds; biomass-conservation breaks.
+        # Surface as a warning rather than raising — calibration sometimes
+        # pushes coefficients above 1 transiently while exploring the
+        # parameter space.
+        if (raw_matrix > 1.0).any():
+            n_violations = int((raw_matrix > 1.0).sum())
+            max_val = float(raw_matrix.max())
+            import warnings
+            warnings.warn(
+                f"predation accessibility matrix at {csv_path}: {n_violations} "
+                f"coefficient(s) exceed 1.0 (max={max_val:.3f}); biomass "
+                f"conservation may be violated. Re-check the CSV.",
+                stacklevel=2,
+            )
+
         # Parse row labels (prey)
         prey_labels = [str(lbl).strip() for lbl in df.index]
         prey_lookup = _parse_labels(prey_labels)

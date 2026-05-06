@@ -85,6 +85,12 @@ def additional_mortality(
     n_dead[state.is_background] = 0.0
     # Java skips pre-feeding schools (eggs handled by larva_mortality pre-pass)
     n_dead[state.age_dt < state.first_feeding_age_dt] = 0.0
+    # M5: clamp so spatial_factor > 1 cannot drive abundance negative.
+    # mortality_fraction is in [0, 1] but spatial_factor is unbounded above
+    # in the Java engine — without this clamp a multiplier > 1 would let
+    # `state.abundance - n_dead` go negative and propagate sentinel values
+    # into downstream biomass / mortality bookkeeping.
+    np.minimum(n_dead, state.abundance, out=n_dead)
 
     new_abundance = state.abundance - n_dead
     new_biomass = new_abundance * state.weight
