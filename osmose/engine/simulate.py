@@ -1003,18 +1003,23 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
     yield_sum = np.sum(
         [o.yield_by_species for o in accumulated if o.yield_by_species is not None], axis=0
     )
-    # Distribution dicts are point-in-time snapshots (not rates): use the last
-    # step in the recording window as the representative value rather than averaging.
+    # M1: Java parity (verified 2026-05-06 against
+    # AbstractDistribOutput.java#write):
+    #     array[iClass][cpt++] = values[iSpec][iClass] / getRecordFrequency();
+    # i.e. distribution values are averaged across the recording window.
+    # Pre-fix this used `accumulated[-1]` (last step in window) which silently
+    # diverged from Java when output.recordfrequency.ndt > 1. _avg_spatial
+    # already implements the same per-species-dict mean — reuse it.
     return StepOutput(
         step=record_step,
         biomass=biomass,
         abundance=abundance,
         mortality_by_cause=mortality,
         yield_by_species=yield_sum,
-        biomass_by_age=accumulated[-1].biomass_by_age,
-        abundance_by_age=accumulated[-1].abundance_by_age,
-        biomass_by_size=accumulated[-1].biomass_by_size,
-        abundance_by_size=accumulated[-1].abundance_by_size,
+        biomass_by_age=_avg_spatial("biomass_by_age", "mean"),
+        abundance_by_age=_avg_spatial("abundance_by_age", "mean"),
+        biomass_by_size=_avg_spatial("biomass_by_size", "mean"),
+        abundance_by_size=_avg_spatial("abundance_by_size", "mean"),
         bioen_e_net_by_species=bioen_e_net_avg,
         bioen_ingestion_by_species=bioen_ingestion_avg,
         bioen_maint_by_species=bioen_maint_avg,

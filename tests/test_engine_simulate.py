@@ -194,9 +194,13 @@ def test_average_step_outputs_multi_element_contract():
     - Average biomass across the window
     - Sum mortality_by_cause across the window
     - Sum yield_by_species across the window
-    - Snapshot the LAST entry's distribution dicts (not the first, not the mean)
+    - **Average** distribution dicts (biomass_by_age, abundance_by_age,
+      biomass_by_size, abundance_by_size) across the window — Java parity
+      (M1, 2026-05-06 — was previously last-step semantics, which silently
+      diverged from Java AbstractDistribOutput.write).
 
-    Deep review v3 I-5: the multi-element branch was previously untested.
+    Deep review v3 I-5 originally pinned last-step semantics for the
+    distribution dicts; M1 corrects to mean to match Java.
     """
     from osmose.engine.simulate import StepOutput, _average_step_outputs
 
@@ -242,10 +246,12 @@ def test_average_step_outputs_multi_element_contract():
         result.mortality_by_cause, np.array([[6.0, 12.0, 18.0, 24.0, 30.0, 36.0]])
     )
     np.testing.assert_allclose(result.yield_by_species, np.array([60.0]))
-    np.testing.assert_array_equal(result.biomass_by_age[0], np.array([3.0]))
-    np.testing.assert_array_equal(result.abundance_by_age[0], np.array([3.0]))
-    np.testing.assert_array_equal(result.biomass_by_size[0], np.array([3.0]))
-    np.testing.assert_array_equal(result.abundance_by_size[0], np.array([3.0]))
+    # M1: distribution dicts averaged across the window (was last-step).
+    # Mean of (1, 2, 3) = 2.0 for each dict.
+    np.testing.assert_allclose(result.biomass_by_age[0], np.array([2.0]))
+    np.testing.assert_allclose(result.abundance_by_age[0], np.array([2.0]))
+    np.testing.assert_allclose(result.biomass_by_size[0], np.array([2.0]))
+    np.testing.assert_allclose(result.abundance_by_size[0], np.array([2.0]))
     assert result.step == 2
 
 
