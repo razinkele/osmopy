@@ -430,3 +430,37 @@ def test_tooltip_markup_in_render_field():
     assert "osm-tooltip-icon" in html
     assert "data-bs-toggle" in html
     assert "data-bs-content" in html
+
+
+def test_render_field_multivalue_renders_as_text_input():
+    """H12: a config value containing ';' must render as a labelled text input
+    (multi-value array editable only via Advanced tab)."""
+    field = OsmoseField(
+        key_pattern="species.size.threshold.sp{idx}",
+        param_type=ParamType.FLOAT,
+        default=10.0,
+        category="species",
+        indexed=True,
+    )
+    cfg = {"species.size.threshold.sp0": "2.3;1.8"}
+    widget = render_field(field, species_idx=0, config=cfg)
+    rendered = str(widget)
+    assert "2.3;1.8" in rendered, f"multi-value not preserved: {rendered}"
+    assert "multi-value" in rendered.lower(), f"multi-value label missing: {rendered}"
+
+
+def test_render_field_single_value_unchanged():
+    """Sanity: a single value still renders as its native input type, no multi-value path."""
+    field = OsmoseField(
+        key_pattern="species.linf.sp{idx}",
+        param_type=ParamType.FLOAT,
+        default=30.0,
+        category="species",
+        indexed=True,
+    )
+    cfg = {"species.linf.sp0": "42.5"}  # no ';' -> not multi-value
+    widget = render_field(field, species_idx=0, config=cfg)
+    rendered = str(widget)
+    assert "multi-value" not in rendered.lower(), (
+        f"single-value field incorrectly took multi-value path: {rendered}"
+    )
