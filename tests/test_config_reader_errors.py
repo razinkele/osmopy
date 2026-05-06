@@ -48,19 +48,34 @@ def test_circular_reference_logs_warning(tmp_path, caplog):
 # ---------------------------------------------------------------------------
 
 
-def test_path_escape_blocked(tmp_path):
-    """Sub-config paths that escape the config directory must be skipped."""
+def test_path_escape_blocked(tmp_path, caplog):
+    """Sub-config paths that escape the config directory must be skipped.
+
+    The pre-fix assertion (`assert "root" not in str(result)`) was brittle
+    — it could match any stringified Path that happens to contain 'root'
+    (file owner, parent directory, etc.). The actual security invariant is
+    "the escape path was rejected, not loaded" — best verified by the
+    WARNING log entry that the reader emits when it refuses to follow.
+    """
     master = tmp_path / "master.csv"
-    # Use ../../etc/passwd — should be skipped, not crash
     master.write_text("osmose.configuration.escape ; ../../etc/passwd\nvalid.key ; ok\n")
 
-    reader = OsmoseConfigReader()
-    result = reader.read(master)
+    import logging
 
-    # The valid key is still loaded; no crash
+    reader = OsmoseConfigReader()
+    with caplog.at_level(logging.WARNING, logger="osmose.config"):
+        result = reader.read(master)
+
+    # Valid keys still load.
     assert result["valid.key"] == "ok"
-    # The escaped path is not loaded as a key
-    assert "root" not in str(result)
+    # The reader emitted the rejection warning — that IS the security check.
+    assert any(
+        "escapes config directory" in r.message and "etc/passwd" in r.message
+        for r in caplog.records
+    ), (
+        f"expected an 'escapes config directory' WARNING; got: "
+        f"{[r.message for r in caplog.records]}"
+    )
 
 
 def test_path_escape_logs_warning(tmp_path, caplog):
