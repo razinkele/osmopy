@@ -208,7 +208,13 @@ def render_field(
                 value=str(default) if default is not None else "",
             )
         case ParamType.ENUM:
-            choices = {c: c for c in (field.choices or [])}
+            # When choice_labels is set, show friendly labels in the dropdown
+            # while keeping Shiny's underlying value equal to the engine-readable
+            # choice string (e.g. selectivity '0' shown as 'knife-edge').
+            if field.choice_labels:
+                choices = {c: field.choice_labels.get(c, c) for c in (field.choices or [])}
+            else:
+                choices = {c: c for c in (field.choices or [])}
             return ui.input_select(
                 input_id,
                 label,
@@ -471,7 +477,13 @@ def render_species_table(
                         input_id, "", value=bool(val) if val is not None else False
                     )
                 elif field.param_type == ParamType.ENUM:
-                    choices = {c: c for c in (field.choices or [])}
+                    # See render_field's ENUM branch — choice_labels keeps
+                    # the stored value (engine-readable) while showing a
+                    # friendly label in the dropdown.
+                    if field.choice_labels:
+                        choices = {c: field.choice_labels.get(c, c) for c in (field.choices or [])}
+                    else:
+                        choices = {c: c for c in (field.choices or [])}
                     widget = ui.input_select(
                         input_id, "", choices=choices, selected=str(val) if val is not None else None, width="90px"
                     )

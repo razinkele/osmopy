@@ -34,6 +34,15 @@ class OsmoseField:
         category: UI grouping category (e.g. "growth", "reproduction").
         unit: Physical unit (e.g. "cm", "year^-1").
         choices: Valid values for ENUM type.
+        choice_labels: Optional friendly display label per choice
+            ``{choice_value: human_label}``. If set, the UI dropdown
+            shows ``human_label`` while the underlying stored value
+            stays ``choice_value`` — so the Java engine reads the same
+            literal it always has. Used e.g. for
+            ``fisheries.selectivity.type.fsh{idx}`` where the engine
+            reads ``int("0"|"1"|"2"|"3")`` but users want to see
+            "knife-edge"/"sigmoid"/etc. Must cover every entry in
+            ``choices`` when present.
         indexed: True if this parameter is per-species (uses sp{idx}).
         required: Whether this parameter must be specified.
         advanced: If True, shown only in the advanced config panel.
@@ -48,6 +57,7 @@ class OsmoseField:
     category: str = ""
     unit: str = ""
     choices: list[str] | None = None
+    choice_labels: dict[str, str] | None = None
     indexed: bool = False
     required: bool = True
     advanced: bool = False
@@ -66,6 +76,17 @@ class OsmoseField:
                 f"OsmoseField has choices but param_type is "
                 f"{self.param_type}, not ENUM: {self.key_pattern}"
             )
+        if self.choice_labels is not None:
+            if self.choices is None:
+                raise ValueError(
+                    f"OsmoseField has choice_labels but no choices: {self.key_pattern}"
+                )
+            missing = set(self.choices) - set(self.choice_labels.keys())
+            if missing:
+                raise ValueError(
+                    f"OsmoseField choice_labels missing entries for "
+                    f"{sorted(missing)}: {self.key_pattern}"
+                )
         if self.min_val is not None and self.max_val is not None and self.min_val > self.max_val:
             raise ValueError(
                 f"OsmoseField min_val ({self.min_val}) > max_val "

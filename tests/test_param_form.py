@@ -432,6 +432,72 @@ def test_tooltip_markup_in_render_field():
     assert "data-bs-content" in html
 
 
+def test_enum_with_choice_labels_renders_friendly_text():
+    """An ENUM with choice_labels shows the friendly labels in the dropdown
+    while keeping stored values as the engine-readable choice strings."""
+    field = OsmoseField(
+        key_pattern="fisheries.selectivity.type.fsh{idx}",
+        param_type=ParamType.ENUM,
+        choices=["0", "1", "2", "3"],
+        choice_labels={"0": "knife-edge", "1": "sigmoid", "2": "Gaussian", "3": "log-normal"},
+        default="0",
+        category="fishing",
+        indexed=True,
+    )
+    rendered = str(render_field(field, species_idx=0))
+    # The friendly labels appear as option text...
+    assert "knife-edge" in rendered
+    assert "sigmoid" in rendered
+    assert "Gaussian" in rendered
+    assert "log-normal" in rendered
+    # ...and the underlying option values stay as int-strings (so Shiny posts
+    # back e.g. "1" not "sigmoid"). Inspect the value="..." attributes:
+    for v in ("0", "1", "2", "3"):
+        assert f'value="{v}"' in rendered, f"option value={v!r} missing from rendered HTML"
+
+
+def test_enum_without_choice_labels_renders_choice_as_label():
+    """Backwards-compat: an ENUM without choice_labels keeps the existing
+    'choice == label' behaviour."""
+    field = OsmoseField(
+        key_pattern="movement.distribution.method.sp{idx}",
+        param_type=ParamType.ENUM,
+        choices=["maps", "random"],
+        default="random",
+        category="movement",
+        indexed=True,
+    )
+    rendered = str(render_field(field, species_idx=0))
+    assert "maps" in rendered and "random" in rendered
+
+
+def test_choice_labels_must_cover_all_choices():
+    """Validation: a partial choice_labels mapping must raise."""
+    import pytest as _pytest
+
+    with _pytest.raises(ValueError, match="choice_labels missing entries"):
+        OsmoseField(
+            key_pattern="x.test",
+            param_type=ParamType.ENUM,
+            choices=["0", "1", "2"],
+            choice_labels={"0": "a", "1": "b"},  # missing "2"
+            category="test",
+        )
+
+
+def test_choice_labels_requires_choices():
+    """Validation: choice_labels without choices must raise."""
+    import pytest as _pytest
+
+    with _pytest.raises(ValueError, match="choice_labels but no choices"):
+        OsmoseField(
+            key_pattern="x.test",
+            param_type=ParamType.ENUM,
+            choice_labels={"0": "a"},
+            category="test",
+        )
+
+
 def test_render_field_multivalue_renders_as_text_input():
     """H12: a config value containing ';' must render as a labelled text input
     (multi-value array editable only via Advanced tab)."""
