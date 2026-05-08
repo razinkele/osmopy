@@ -22,8 +22,32 @@ import numpy as np
 PROJECT_DIR = Path(__file__).parent.parent
 EXAMPLES_CONFIG = PROJECT_DIR / "data" / "examples" / "osm_all-parameters.csv"
 
+# Built-in fixture aliases — keep keys here in sync with `data/`. New entries
+# are picked up by the --config flag automatically.
+FIXTURES: dict[str, Path] = {
+    "examples": PROJECT_DIR / "data" / "examples" / "osm_all-parameters.csv",
+    "minimal": PROJECT_DIR / "data" / "minimal" / "osm_all-parameters.csv",
+    "baltic": PROJECT_DIR / "data" / "baltic" / "baltic_all-parameters.csv",
+    "eec_full": PROJECT_DIR / "data" / "eec_full" / "eec_all-parameters.csv",
+}
 
-def run_benchmark(n_years: int, seed: int) -> dict:
+
+def resolve_config(arg: str | None) -> Path:
+    """Resolve --config NAME-or-PATH to a fixture file path."""
+    if arg is None:
+        return EXAMPLES_CONFIG
+    if arg in FIXTURES:
+        return FIXTURES[arg]
+    p = Path(arg)
+    if p.exists():
+        return p
+    raise FileNotFoundError(
+        f"Config not found: {arg!r}. Pick a built-in fixture "
+        f"({sorted(FIXTURES)}) or provide an existing path."
+    )
+
+
+def run_benchmark(n_years: int, seed: int, config_path: Path = EXAMPLES_CONFIG) -> dict:
     """Run the Python engine once and return timing + summary stats."""
     from osmose.config.reader import OsmoseConfigReader
     from osmose.engine.config import EngineConfig
@@ -31,7 +55,7 @@ def run_benchmark(n_years: int, seed: int) -> dict:
     from osmose.engine.simulate import simulate
 
     reader = OsmoseConfigReader()
-    raw = reader.read(EXAMPLES_CONFIG)
+    raw = reader.read(config_path)
     raw["simulation.time.nyear"] = str(n_years)
 
     cfg = EngineConfig.from_dict(raw)
@@ -40,8 +64,10 @@ def run_benchmark(n_years: int, seed: int) -> dict:
     if grid_file:
         from osmose.engine.grid import Grid as G
 
+        # Resolve grid file relative to the config's directory so each fixture
+        # finds its own NetCDF (eec_full vs baltic vs examples vary here).
         grid = G.from_netcdf(
-            PROJECT_DIR / "data" / "examples" / grid_file,
+            config_path.parent / grid_file,
             mask_var=raw.get("grid.var.mask", "mask"),
         )
     else:
@@ -55,11 +81,15 @@ def run_benchmark(n_years: int, seed: int) -> dict:
     outputs = simulate(cfg, grid, rng)
     elapsed = time.perf_counter() - start
 
-    # Collect final-step biomass per species
+    # Collect final-step biomass per species. baltic + others may have
+    # background species (sp >= n_focal) whose biomass is appended; guard
+    # against a name list shorter than the biomass array.
     final = outputs[-1]
-    biomass_by_species = {
-        cfg.species_names[i]: float(final.biomass[i]) for i in range(len(final.biomass))
-    }
+    names = list(cfg.species_names)
+    biomass_by_species = {}
+    for i in range(len(final.biomass)):
+        key = names[i] if i < len(names) else f"sp{i}"
+        biomass_by_species[key] = float(final.biomass[i])
 
     return {
         "elapsed_s": round(elapsed, 3),
@@ -127,6 +157,16 @@ def main() -> None:
     parser.add_argument("--repeats", type=int, default=3, help="Number of runs (default: 3)")
     parser.add_argument("--output", type=str, default=None, help="Save results to JSON file")
     parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help=(
+            "Fixture name (one of "
+            + ", ".join(sorted(FIXTURES))
+            + ") or path to an all-parameters.csv. Default: examples."
+        ),
+    )
+    parser.add_argument(
         "--compare", nargs=2, metavar=("BASELINE", "CURRENT"), help="Compare two result files"
     )
     args = parser.parse_args()
@@ -135,17 +175,21 @@ def main() -> None:
         compare_results(Path(args.compare[0]), Path(args.compare[1]))
         return
 
-    if not EXAMPLES_CONFIG.exists():
-        print(f"ERROR: Config not found at {EXAMPLES_CONFIG}")
+    config_path = resolve_config(args.config)
+    if not config_path.exists():
+        print(f"ERROR: Config not found at {config_path}")
         sys.exit(1)
 
-    print(f"Benchmarking Python engine: {args.years}yr, seed={args.seed}, repeats={args.repeats}")
+    print(
+        f"Benchmarking Python engine: config={config_path.parent.name}, "
+        f"{args.years}yr, seed={args.seed}, repeats={args.repeats}"
+    )
     print()
 
     timings = []
     result = None
     for i in range(args.repeats):
-        result = run_benchmark(args.years, args.seed)
+        result = run_benchmark(args.years, args.seed, config_path=config_path)
         timings.append(result["elapsed_s"])
         print(f"  Run {i + 1}/{args.repeats}: {result['elapsed_s']:.3f}s")
 
@@ -153,7 +197,7 @@ def main() -> None:
     median = timings[len(timings) // 2]
 
     summary = {
-        "config": "Bay of Biscay",
+        "config": config_path.parent.name,
         "n_years": args.years,
         "seed": args.seed,
         "repeats": args.repeats,
