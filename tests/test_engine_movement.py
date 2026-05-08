@@ -4,7 +4,12 @@ import numpy as np
 
 from osmose.engine.config import EngineConfig
 from osmose.engine.grid import Grid
-from osmose.engine.processes.movement import movement, random_walk
+from osmose.engine.processes.movement import (
+    _precompute_map_indices,
+    _precompute_map_indices_loop,
+    movement,
+    random_walk,
+)
 from osmose.engine.processes.natural import out_mortality
 from osmose.engine.state import SchoolState
 
@@ -114,6 +119,123 @@ class TestOutMortality:
         state = state.replace(abundance=np.array([1000.0]), is_out=np.array([True]))
         new_state = out_mortality(state, cfg)
         np.testing.assert_allclose(new_state.abundance[0], 1000.0)
+
+
+class _FakeMapSet:
+    """Stub matching the duck-typed interface _precompute_map_indices uses."""
+
+    def __init__(self, index_maps: np.ndarray) -> None:
+        self.index_maps = index_maps
+
+
+class TestPrecomputeMapIndicesVectorisedMatchesLoop:
+    """A2 acceptance: the vectorised path is element-wise equal to the loop."""
+
+    def _make_map_sets(self, rng: np.random.Generator) -> dict[int, _FakeMapSet]:
+        # Two species with different (lifespan_dt, n_steps) shapes to
+        # exercise per-species bounds checks. -1 sentinel for "no map".
+        idx0 = rng.integers(-1, 12, size=(8, 24), dtype=np.int32)
+        idx1 = rng.integers(-1, 8, size=(15, 24), dtype=np.int32)
+        return {0: _FakeMapSet(idx0), 1: _FakeMapSet(idx1)}
+
+    def _assert_equal(self, vec_out, loop_out):
+        np.testing.assert_array_equal(vec_out[0], loop_out[0], err_msg="current_idx")
+        np.testing.assert_array_equal(vec_out[1], loop_out[1], err_msg="same_map")
+
+    def test_random_inputs(self):
+        rng = np.random.default_rng(0)
+        n = 200
+        species_id = rng.integers(0, 2, size=n, dtype=np.int32)
+        age_dt = rng.integers(0, 16, size=n, dtype=np.int32)
+        uses_maps = rng.random(n) > 0.2  # ~80% use maps
+        map_sets = self._make_map_sets(rng)
+        for step in (0, 1, 5, 12, 23):
+            vec = _precompute_map_indices(species_id, age_dt, uses_maps, map_sets, step)
+            loop = _precompute_map_indices_loop(species_id, age_dt, uses_maps, map_sets, step)
+            self._assert_equal(vec, loop)
+
+    def test_age_zero_no_wrap_to_last_row(self):
+        # age_dt == 0 → prev_age = -1. Without the pre-mask, NumPy would
+        # silently return ms.index_maps[-1, prev_step] (wrap-around to last
+        # row). The vectorised path must keep prev_idx[k] == -1.
+        n = 5
+        species_id = np.zeros(n, dtype=np.int32)
+        age_dt = np.zeros(n, dtype=np.int32)  # ALL age == 0 → all prev_age == -1
+        uses_maps = np.ones(n, dtype=np.bool_)
+        # Build a map set whose last-row values are NOT -1, so a wrap would
+        # silently put a wrong value into prev_idx instead of -1.
+        idx0 = np.arange(8 * 24, dtype=np.int32).reshape(8, 24)  # all >= 0
+        map_sets = {0: _FakeMapSet(idx0)}
+        # step >= 1 so the cur path can return non-(-1), but prev_step = step-1
+        # could still trigger the wrap if pre-mask is missing.
+        vec = _precompute_map_indices(species_id, age_dt, uses_maps, map_sets, step=5)
+        loop = _precompute_map_indices_loop(species_id, age_dt, uses_maps, map_sets, step=5)
+        self._assert_equal(vec, loop)
+        assert (vec[0] == idx0[0, 5]).all()  # current_idx → row 0, step 5
+        assert not vec[1].any()  # same_map False (age == 0 disables)
+
+    def test_step_zero_disables_prev(self):
+        # step == 0 → prev_step == -1; prev_idx must be -1 for all schools.
+        rng = np.random.default_rng(2)
+        n = 6
+        species_id = np.zeros(n, dtype=np.int32)
+        age_dt = rng.integers(1, 8, size=n, dtype=np.int32)  # all > 0
+        uses_maps = np.ones(n, dtype=np.bool_)
+        map_sets = self._make_map_sets(rng)
+        vec = _precompute_map_indices(species_id, age_dt, uses_maps, map_sets, step=0)
+        loop = _precompute_map_indices_loop(species_id, age_dt, uses_maps, map_sets, step=0)
+        self._assert_equal(vec, loop)
+
+    def test_step_out_of_range(self):
+        rng = np.random.default_rng(3)
+        n = 6
+        species_id = np.zeros(n, dtype=np.int32)
+        age_dt = rng.integers(0, 8, size=n, dtype=np.int32)
+        uses_maps = np.ones(n, dtype=np.bool_)
+        map_sets = self._make_map_sets(rng)
+        # step >= n_steps → both current and prev paths short-circuit
+        vec = _precompute_map_indices(species_id, age_dt, uses_maps, map_sets, step=99)
+        loop = _precompute_map_indices_loop(species_id, age_dt, uses_maps, map_sets, step=99)
+        self._assert_equal(vec, loop)
+        assert (vec[0] == -1).all()
+
+    def test_unknown_species(self):
+        # Schools whose species_id has no entry in map_sets must keep -1.
+        rng = np.random.default_rng(4)
+        n = 6
+        species_id = np.full(n, 7, dtype=np.int32)  # not in map_sets
+        age_dt = rng.integers(0, 8, size=n, dtype=np.int32)
+        uses_maps = np.ones(n, dtype=np.bool_)
+        map_sets = self._make_map_sets(rng)
+        vec = _precompute_map_indices(species_id, age_dt, uses_maps, map_sets, step=5)
+        loop = _precompute_map_indices_loop(species_id, age_dt, uses_maps, map_sets, step=5)
+        self._assert_equal(vec, loop)
+        assert (vec[0] == -1).all()
+
+    def test_no_schools_use_maps(self):
+        rng = np.random.default_rng(5)
+        n = 6
+        species_id = rng.integers(0, 2, size=n, dtype=np.int32)
+        age_dt = rng.integers(0, 8, size=n, dtype=np.int32)
+        uses_maps = np.zeros(n, dtype=np.bool_)
+        map_sets = self._make_map_sets(rng)
+        vec = _precompute_map_indices(species_id, age_dt, uses_maps, map_sets, step=5)
+        loop = _precompute_map_indices_loop(species_id, age_dt, uses_maps, map_sets, step=5)
+        self._assert_equal(vec, loop)
+        assert vec[0].shape == (0,)
+        assert vec[1].shape == (0,)
+
+    def test_age_out_of_range_high(self):
+        # age_dt >= n_ages for that species → current keeps -1, prev too.
+        rng = np.random.default_rng(6)
+        n = 4
+        species_id = np.zeros(n, dtype=np.int32)
+        age_dt = np.array([100, 200, 100, 200], dtype=np.int32)  # all > 8
+        uses_maps = np.ones(n, dtype=np.bool_)
+        map_sets = self._make_map_sets(rng)
+        vec = _precompute_map_indices(species_id, age_dt, uses_maps, map_sets, step=5)
+        loop = _precompute_map_indices_loop(species_id, age_dt, uses_maps, map_sets, step=5)
+        self._assert_equal(vec, loop)
 
 
 class TestMovementOrchestrator:
