@@ -1,4 +1,5 @@
 """Verify the calibration script passes workers=-1 to scipy DE."""
+
 import ast
 import json
 from pathlib import Path
@@ -8,7 +9,8 @@ def test_de_call_uses_workers():
     source = (Path(__file__).parent.parent / "scripts" / "calibrate_baltic.py").read_text()
     tree = ast.parse(source)
     de_calls = [
-        node for node in ast.walk(tree)
+        node
+        for node in ast.walk(tree)
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Name)
         and node.func.id == "differential_evolution"
@@ -17,13 +19,13 @@ def test_de_call_uses_workers():
     for call in de_calls:
         kw_names = {kw.arg for kw in call.keywords}
         assert "workers" in kw_names, (
-            f"differential_evolution call at line {call.lineno} "
-            f"does not pass 'workers' kwarg"
+            f"differential_evolution call at line {call.lineno} does not pass 'workers' kwarg"
         )
 
 
 def test_phase12_returns_expected_params():
     from scripts.calibrate_baltic import get_phase12_params
+
     keys, bounds, x0 = get_phase12_params()
     # 16 mortality (8 larval + 8 adult) + 8 fishing + 3 B-H ssb_half (sp3/4/5)
     assert len(keys) == 27, f"phase 12 should expose 27 params, got {len(keys)}"
@@ -60,6 +62,69 @@ def test_phase12_returns_expected_params():
     assert bounds[sp5_idx] == (2.7, 4.7)
 
 
+def test_validation_loads_phase12_without_phase1_phase2_stacking(tmp_path, monkeypatch):
+    """Joint phase 12 validation must not silently use stale phase 1+2 outputs."""
+    import scripts.calibrate_baltic as cal
+
+    results_dir = tmp_path / "results"
+    results_dir.mkdir()
+    (results_dir / "phase1_results.json").write_text(
+        json.dumps({"parameters": {"mortality.additional.rate.sp0": 0.2}})
+    )
+    (results_dir / "phase2_results.json").write_text(
+        json.dumps({"parameters": {"fisheries.rate.base.fsh0": 0.08}})
+    )
+    (results_dir / "phase12_results.json").write_text(
+        json.dumps({"parameters": {"stock.recruitment.ssbhalf.sp5": 12345.0}})
+    )
+    monkeypatch.setattr(cal, "RESULTS_DIR", results_dir)
+
+    overrides = cal._load_phase_overrides_for_validation("12")
+
+    assert overrides == {"stock.recruitment.ssbhalf.sp5": "12345.0"}
+
+
+def test_validation_stacks_phase2_on_phase1(tmp_path, monkeypatch):
+    """Sequential phase 2 validation still inherits phase 1 mortality params."""
+    import scripts.calibrate_baltic as cal
+
+    results_dir = tmp_path / "results"
+    results_dir.mkdir()
+    (results_dir / "phase1_results.json").write_text(
+        json.dumps({"parameters": {"mortality.additional.rate.sp0": 0.2}})
+    )
+    (results_dir / "phase2_results.json").write_text(
+        json.dumps({"parameters": {"fisheries.rate.base.fsh0": 0.08}})
+    )
+    monkeypatch.setattr(cal, "RESULTS_DIR", results_dir)
+
+    overrides = cal._load_phase_overrides_for_validation("2")
+
+    assert overrides == {
+        "mortality.additional.rate.sp0": "0.2",
+        "fisheries.rate.base.fsh0": "0.08",
+    }
+
+
+def test_report_warns_when_phase12_json_is_legacy(capsys):
+    """A 24-param legacy phase 12 JSON should be visibly flagged in reports."""
+    from scripts.report_calibration import warn_if_result_schema_stale
+
+    data = {
+        "parameters": {
+            "mortality.additional.larva.rate.sp0": 1.0,
+            "fisheries.rate.base.fsh0": 0.1,
+        }
+    }
+
+    warn_if_result_schema_stale("12", data)
+
+    out = capsys.readouterr().out
+    assert "WARNING" in out
+    assert "Expected 27 params" in out
+    assert "stock.recruitment.ssbhalf.sp5" in out
+
+
 def test_optimizer_choices_and_dispatch():
     """All three optimizers must dispatch through to a normalized result dict."""
     import numpy as np
@@ -83,8 +148,16 @@ def test_optimizer_choices_and_dispatch():
             # smoke-test would do ~165 evals which is acceptable for a synthetic quad
             pass
         result = _dispatch_optimizer(
-            opt, quad, bounds, x0, init_pop,
-            maxiter=5, popsize=5, tol=1e-3, workers=1, seed=42,
+            opt,
+            quad,
+            bounds,
+            x0,
+            init_pop,
+            maxiter=5,
+            popsize=5,
+            tol=1e-3,
+            workers=1,
+            seed=42,
         )
         assert {"x", "fun", "nfev", "success", "message"} <= set(result.keys()), (
             f"optimizer {opt} returned incomplete result: {set(result.keys())}"
@@ -102,21 +175,35 @@ def test_unknown_optimizer_raises():
 
     with pytest.raises(ValueError, match="unknown optimizer"):
         _dispatch_optimizer(
-            "bogus", lambda x: 0.0, [(-1.0, 1.0)], [0.0],
+            "bogus",
+            lambda x: 0.0,
+            [(-1.0, 1.0)],
+            [0.0],
             np.zeros((1, 1)),
-            maxiter=1, popsize=1, tol=0.1, workers=1, seed=0,
+            maxiter=1,
+            popsize=1,
+            tol=0.1,
+            workers=1,
+            seed=0,
         )
 
 
 def test_cli_optimizer_choices_in_help():
     """--help must list all three optimizers so users know what's available."""
     import subprocess
+
     venv_python = Path(__file__).resolve().parent.parent / ".venv" / "bin" / "python"
     if not venv_python.exists():
         return
     result = subprocess.run(
-        [str(venv_python), str(Path(__file__).resolve().parent.parent / "scripts" / "calibrate_baltic.py"), "--help"],
-        capture_output=True, text=True, timeout=30,
+        [
+            str(venv_python),
+            str(Path(__file__).resolve().parent.parent / "scripts" / "calibrate_baltic.py"),
+            "--help",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
     assert "--optimizer" in result.stdout
     for opt in ("de", "cmaes", "surrogate-de"):
@@ -134,7 +221,10 @@ def test_checkpoint_callback_writes_snapshot(tmp_path):
     param_keys = ["mortality.additional.rate.sp0", "fisheries.rate.base.fsh0"]
     bounds = [(-3.0, 0.7), (-2.5, 0.0)]
     cb = _make_checkpoint_callback(
-        checkpoint_path, every_n=2, param_keys=param_keys, bounds=bounds,
+        checkpoint_path,
+        every_n=2,
+        param_keys=param_keys,
+        bounds=bounds,
     )
 
     # Gen 1 — should NOT write (every_n=2)
@@ -173,7 +263,10 @@ def test_checkpoint_callback_atomic_no_partial_file(tmp_path):
 
     checkpoint_path = tmp_path / "snap.json"
     cb = _make_checkpoint_callback(
-        checkpoint_path, every_n=1, param_keys=["k0"], bounds=[(-1.0, 1.0)],
+        checkpoint_path,
+        every_n=1,
+        param_keys=["k0"],
+        bounds=[(-1.0, 1.0)],
     )
     cb(SimpleNamespace(x=[0.5], fun=1.5))
     # Verify only the final renamed file exists, no .tmp leftover
@@ -188,7 +281,10 @@ def test_checkpoint_callback_disabled_with_zero_every_n(tmp_path):
 
     checkpoint_path = tmp_path / "snap.json"
     cb = _make_checkpoint_callback(
-        checkpoint_path, every_n=0, param_keys=["k0"], bounds=[(-1.0, 1.0)],
+        checkpoint_path,
+        every_n=0,
+        param_keys=["k0"],
+        bounds=[(-1.0, 1.0)],
     )
     for _ in range(5):
         cb(SimpleNamespace(x=[0.5], fun=1.5))
@@ -203,7 +299,10 @@ def test_checkpoint_callback_handles_legacy_signature(tmp_path):
 
     checkpoint_path = tmp_path / "snap.json"
     cb = _make_checkpoint_callback(
-        checkpoint_path, every_n=1, param_keys=["k0"], bounds=[(-1.0, 1.0)],
+        checkpoint_path,
+        every_n=1,
+        param_keys=["k0"],
+        bounds=[(-1.0, 1.0)],
     )
     # Legacy signature passes a numpy array as first positional, not OptimizeResult.
     # The callback should not crash — it will fail to access .x / .fun but
@@ -219,8 +318,10 @@ def test_patience_early_stop_fires_after_n_stale_generations(tmp_path):
     from scripts.calibrate_baltic import _make_checkpoint_callback
 
     cb = _make_checkpoint_callback(
-        tmp_path / "snap.json", every_n=0,
-        param_keys=["k0"], bounds=[(-1.0, 1.0)],
+        tmp_path / "snap.json",
+        every_n=0,
+        param_keys=["k0"],
+        bounds=[(-1.0, 1.0)],
         patience=3,
     )
     # Improving gens — none should trigger
@@ -241,8 +342,10 @@ def test_patience_zero_disables_early_stop(tmp_path):
     from scripts.calibrate_baltic import _make_checkpoint_callback
 
     cb = _make_checkpoint_callback(
-        tmp_path / "snap.json", every_n=0,
-        param_keys=["k0"], bounds=[(-1.0, 1.0)],
+        tmp_path / "snap.json",
+        every_n=0,
+        param_keys=["k0"],
+        bounds=[(-1.0, 1.0)],
         patience=0,
     )
     # Many stale generations — never triggers
@@ -258,8 +361,10 @@ def test_patience_resets_on_meaningful_improvement(tmp_path):
     from scripts.calibrate_baltic import _make_checkpoint_callback
 
     cb = _make_checkpoint_callback(
-        tmp_path / "snap.json", every_n=0,
-        param_keys=["k0"], bounds=[(-1.0, 1.0)],
+        tmp_path / "snap.json",
+        every_n=0,
+        param_keys=["k0"],
+        bounds=[(-1.0, 1.0)],
         patience=3,
     )
     cb(SimpleNamespace(x=[0.0], fun=10.0))
@@ -280,15 +385,17 @@ def test_tiny_oscillation_does_not_reset_patience(tmp_path):
     from scripts.calibrate_baltic import _make_checkpoint_callback
 
     cb = _make_checkpoint_callback(
-        tmp_path / "snap.json", every_n=0,
-        param_keys=["k0"], bounds=[(-1.0, 1.0)],
+        tmp_path / "snap.json",
+        every_n=0,
+        param_keys=["k0"],
+        bounds=[(-1.0, 1.0)],
         patience=3,
         rel_improvement_threshold=1e-3,  # 0.1%
     )
     cb(SimpleNamespace(x=[0.0], fun=10.0))
     # Tiny "improvements" below the relative threshold — should NOT count
-    cb(SimpleNamespace(x=[0.0], fun=9.9999))    # stale 1 (oscillation)
-    cb(SimpleNamespace(x=[0.0], fun=9.9998))    # stale 2 (oscillation)
+    cb(SimpleNamespace(x=[0.0], fun=9.9999))  # stale 1 (oscillation)
+    cb(SimpleNamespace(x=[0.0], fun=9.9998))  # stale 2 (oscillation)
     assert cb(SimpleNamespace(x=[0.0], fun=9.9997)) is True  # stale 3 — trigger
 
 
@@ -300,8 +407,10 @@ def test_wall_clock_cap_fires_after_configured_seconds(tmp_path):
 
     # Use a tiny cap so the test is fast
     cb = _make_checkpoint_callback(
-        tmp_path / "snap.json", every_n=0,
-        param_keys=["k0"], bounds=[(-1.0, 1.0)],
+        tmp_path / "snap.json",
+        every_n=0,
+        param_keys=["k0"],
+        bounds=[(-1.0, 1.0)],
         patience=0,
         wall_clock_max_seconds=0.05,  # 50ms cap
     )
@@ -320,8 +429,10 @@ def test_wall_clock_none_disables_cap(tmp_path):
     from scripts.calibrate_baltic import _make_checkpoint_callback
 
     cb = _make_checkpoint_callback(
-        tmp_path / "snap.json", every_n=0,
-        param_keys=["k0"], bounds=[(-1.0, 1.0)],
+        tmp_path / "snap.json",
+        every_n=0,
+        param_keys=["k0"],
+        bounds=[(-1.0, 1.0)],
         patience=0,
         wall_clock_max_seconds=None,
     )
@@ -341,8 +452,10 @@ def test_checkpoint_records_gens_since_improvement(tmp_path):
 
     snap_path = tmp_path / "snap.json"
     cb = _make_checkpoint_callback(
-        snap_path, every_n=1,
-        param_keys=["k0"], bounds=[(-1.0, 1.0)],
+        snap_path,
+        every_n=1,
+        param_keys=["k0"],
+        bounds=[(-1.0, 1.0)],
         patience=100,  # large enough to not fire
     )
     cb(SimpleNamespace(x=[0.0], fun=10.0))
@@ -356,14 +469,19 @@ def test_checkpoint_records_gens_since_improvement(tmp_path):
 def test_cli_includes_patience_and_wall_clock_flags():
     """--help must expose --patience and --wall-clock-cap-h."""
     import subprocess
+
     venv_python = Path(__file__).resolve().parent.parent / ".venv" / "bin" / "python"
     if not venv_python.exists():
         return
     result = subprocess.run(
-        [str(venv_python),
-         str(Path(__file__).resolve().parent.parent / "scripts" / "calibrate_baltic.py"),
-         "--help"],
-        capture_output=True, text=True, timeout=30,
+        [
+            str(venv_python),
+            str(Path(__file__).resolve().parent.parent / "scripts" / "calibrate_baltic.py"),
+            "--help",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
     assert "--patience" in result.stdout
     assert "--wall-clock-cap-h" in result.stdout
@@ -374,19 +492,23 @@ def test_apply_warm_start_overrides_only_known_keys(tmp_path):
     from scripts.calibrate_baltic import apply_warm_start
 
     fixture = tmp_path / "prior.json"
-    fixture.write_text(json.dumps({
-        "log10_parameters": {
-            "mortality.additional.rate.sp0": 0.57,
-            "fisheries.rate.base.fsh3": -0.81,
-            "mortality.additional.larva.rate.sp1": 0.62,
-        }
-    }))
+    fixture.write_text(
+        json.dumps(
+            {
+                "log10_parameters": {
+                    "mortality.additional.rate.sp0": 0.57,
+                    "fisheries.rate.base.fsh3": -0.81,
+                    "mortality.additional.larva.rate.sp1": 0.62,
+                }
+            }
+        )
+    )
 
     param_keys = [
-        "mortality.additional.rate.sp0",          # in JSON, but skipped
-        "fisheries.rate.base.fsh3",               # in JSON, applied
-        "mortality.additional.larva.rate.sp1",    # in JSON, applied
-        "stock.recruitment.ssbhalf.sp3",          # NOT in JSON, kept default
+        "mortality.additional.rate.sp0",  # in JSON, but skipped
+        "fisheries.rate.base.fsh3",  # in JSON, applied
+        "mortality.additional.larva.rate.sp1",  # in JSON, applied
+        "stock.recruitment.ssbhalf.sp3",  # NOT in JSON, kept default
     ]
     x0 = [-1.301, -1.398, 0.903, 4.699]
     skip = {"mortality.additional.rate.sp0"}

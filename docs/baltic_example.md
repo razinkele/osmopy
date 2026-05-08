@@ -1,6 +1,6 @@
 # Baltic Sea OSMOSE Example — Full Provenance
 
-> Living document. Last validated against repository state: **2026-04-18**. Update when parameter files change.
+> Living document. Last validated against repository state: **2026-05-03**. Update when parameter files change.
 
 ## Purpose
 
@@ -8,12 +8,21 @@ An end-to-end OSMOSE configuration for the Baltic Sea used to validate the Pytho
 
 This document is a **navigation + provenance layer** over the ~800 lines of parameter CSVs in `data/baltic/`. Values themselves live in the CSVs; this doc explains where each family of parameters came from and why.
 
+## Intended interpretation for the current Baltic setup
+
+This configuration is still an **aggregated Baltic ecosystem model**, not a stock-resolved reconstruction. For contemporary (2018–2022-oriented) use, interpret the focal species as follows:
+
+- **Cod:** one aggregated Baltic cod species, not separate western and eastern stock objects. The intended contemporary reading is a **Bornholm-dominant southern Baltic spawner** with a western spring/summer connection, not a claim that historical Gotland/Gdansk spawning intensity is fully represented in the present-day state.
+- **Herring:** one aggregated Baltic herring complex. The spring and autumn spawning maps/seasonality are **phenology components inside one species**, not separate ICES herring stocks.
+- **Flounder:** the current setup should be read as a **pelagic-spawning southern/deep-basin flounder representation**. Baltic flounder / coastal demersal spawning is not modeled as a separate species or map set.
+- **Perch, pikeperch, smelt, stickleback:** coastal species are represented by coarse occupancy masks suitable for trophic-model structure and calibration, not by observation-derived stock maps.
+
 ## At a glance
 
 | Dimension                | Value                                                                 |
 |--------------------------|-----------------------------------------------------------------------|
 | Domain                   | 10–30° E × 54–66° N, 50 × 40 cells (~0.4° × 0.3° cell)                |
-| Ocean cells (mask)       | 612 (rebuilt 2026-04-17 from fish-distribution union)                 |
+| Ocean cells (mask)       | 616 (current union of committed movement/fishing maps)                |
 | Time step                | 24 dt/yr (fortnightly), 50-yr default run                             |
 | Focal species            | 8: cod, herring, sprat, flounder, perch, pikeperch, smelt, stickleback |
 | LTL resource groups      | 6: diatoms, dinoflagellates, micro-/meso-/macrozooplankton, benthos   |
@@ -49,15 +58,15 @@ data/baltic/
 ├── maps/                             # 25 species × life-stage distribution maps (CSV grids)
 │   ├── cod_{juvenile,adult,spawning}.csv
 │   ├── herring_{juvenile,adult,spawning,spawning_autumn}.csv
-│   ├── sprat_{juvenile,adult,spawning}.csv        # spawning = adult for sprat
+│   ├── sprat_{juvenile,adult,spawning}.csv
 │   ├── flounder_{juvenile,adult,spawning}.csv
 │   ├── perch_{juvenile,adult,spawning}.csv
 │   ├── pikeperch_{juvenile,adult,spawning}.csv
 │   ├── smelt_{juvenile,adult,spawning}.csv
-│   └── stickleback maps are shared with perch/smelt (coastal pattern)
+│   └── stickleback_{juvenile,adult,spawning}.csv
 │
 ├── grid/
-│   └── baltic_mask.csv               # 50×40 ocean (1) / land (-99) mask, CSV form
+│   └── baltic_mask.csv               # 50×40 ocean (0) / land (-99) mask, CSV form
 │
 ├── fishing/
 │   └── fishing-distrib.csv           # Baltic-wide fishing distribution (50×40, used by all 8 fleets)
@@ -90,7 +99,7 @@ The Baltic example is the product of several overlapping threads. In chronologic
 
 6. **Calibration (phase 1 larval M, phase 2 adult M + F).** `scripts/calibrate_baltic.py` uses the Python engine to run many short simulations and fit larval-mortality + selected adult parameters to the 2018–2022 ICES biomass envelope. The current committed values are from calibration round 18 ("R18" — noted in file comments).
 
-7. **Mask rebuild** (2026-04-17). `scripts/rebuild_baltic_mask.py` shrank the mask from 912 to 612 ocean cells by keeping only cells where at least one species map or fishing map had a positive value. The 300 removed cells were "ocean-with-zero" cells in northern Norway/Sweden that had been mirrored from the southern Baltic pattern — no species ever used them. CSV grids rewritten so those cells became `-99` (land).
+7. **Mask rebuild** (2026-04-17, with later map edits). `scripts/rebuild_baltic_mask.py` originally shrank the mask from 912 to 612 ocean cells by keeping only cells where at least one species map or fishing map had a positive value. The removed cells were "ocean-with-zero" cells in northern Norway/Sweden that had been mirrored from the southern Baltic pattern — no species ever used them. Subsequent committed map edits bring the current recomputed union to **616** ocean cells. Treat the script output, not the older hard-coded count, as the source of truth.
 
 8. **ICES SAG cross-validation** (2026-04-18 — Front 1 of current work). Eight snapshots of the 2024 advice cycle (plus `cod.27.22-24` from 2022 since its 2024 assessment is category-3) frozen under `data/baltic/reference/ices_snapshots/`. `scripts/validate_baltic_vs_ices_sag.py` compares F rates and biomass envelopes; output at `docs/baltic_ices_validation_2026-04-18.md`.
 
@@ -122,12 +131,12 @@ Each subsection below documents the **source** of a parameter family (not the va
 
 - **Source:** Hand-designed domain to match the Baltic management extent used in ICES SAG advice (subdivisions 22–32 plus Kattegat-Skagerrak for cross-boundary species).
 - **Extent:** 50 cells (10°–30° E) × 40 cells (54°–66° N). Each cell ≈ 40 km × 33 km.
-- **Mask (612 cells):** Rebuilt 2026-04-17 from the union of species distribution maps. Rationale in `scripts/rebuild_baltic_mask.py` top docstring: the previous 912-cell mask had 300 "ocean-with-zero" cells that were mirrors of the southern Baltic pattern into northern Norway/Sweden — never used by any species, visually wrong.
+- **Mask (616 cells in current committed data):** Rebuilt from the union of movement/fishing maps. The original 2026-04-17 cleanup removed the mirrored northern "ocean-with-zero" cells from the older 912-cell mask; later map edits added four active cells back into the current union. `scripts/rebuild_baltic_mask.py` should be treated as authoritative for the exact count.
 - **NetCDF handshake:** `grid.netcdf.file = baltic_grid.nc` + `grid.var.mask = mask`. The Java engine reads the NetCDF; the Python engine reads either the NetCDF or the CSV (at `grid.mask.file`) — both kept in sync.
 
 ### Species (8 focal species, `baltic_param-species.csv`)
 
-Comments at the top of the CSV list the FishBase cross-references. Growth parameters represent **historical (pre-2015) life history**. Eastern Baltic cod has undergone severe growth impairment since ~2015 (Svedäng et al. 2024, `doi:10.1002/ece3.70382`); current effective Linf is ~60–80 cm vs the configured 110 cm. This is a documented modeling choice — see `docs/baltic_ices_validation_2026-04-18.md` Findings for why we run in the "historical ecosystem" scenario rather than the post-collapse state.
+Comments at the top of the CSV list the FishBase cross-references. Growth parameters still represent **historical (pre-2015) life history**. Eastern Baltic cod has undergone severe growth impairment since ~2015 (Svedäng et al. 2024, `doi:10.1002/ece3.70382`); current effective Linf is ~60–80 cm vs the configured 110 cm. This is a documented limitation of the current committed setup: the Baltic example mixes contemporary validation targets with some intentionally historical life-history parameters, most notably for cod.
 
 | sp | name        | Linf (cm) | K    | t0    | a (×10⁻³) | b    | Lifespan | Source                                   |
 |----|-------------|-----------|------|-------|-----------|------|----------|------------------------------------------|
@@ -173,11 +182,11 @@ Structural notes:
 Species-by-species spawning windows (with DOIs):
 
 - **Cod (sp0):** March–August. Bleil et al. 2009, `doi:10.1111/j.1439-0426.2008.01172.x` — Bornholm Basin main spawning May–Aug with post-1990s shift to July peak; Western Baltic spring Mar–Apr. Combined window covers both stocks.
-- **Herring (sp1):** March–June (spring spawner). Ory et al. 2024, `doi:10.1111/jfb.15811` for Western Baltic spring-spawning (WBSS); central Baltic spring also peaks Apr–Jun. Autumn-spawning herring NOT represented in the current config.
+- **Herring (sp1):** March–June spring component plus a coarse September–November autumn component. Ory et al. 2024, `doi:10.1111/jfb.15811`, supports the Western Baltic spring-spawning (WBSS) timing used for the spring map. The current config also wires `herring_spawning_autumn.csv` and allocates 25% of annual herring reproductive seasonality to steps 16–21 as a simplifying autumn pulse rather than a separate stock-resolved herring component.
 - **Sprat (sp2):** April–July. Haslob et al. 2013, `doi:10.1016/j.fishres.2012.08.002` — Baltic sprat spawns Jan–Jun, peak Apr–Jun in Bornholm Basin. Config captures the peak.
 - **Flounder (sp3):** February–May. Pelagic spawner (*P. flesus*) spawns Feb–May in the deep southern Baltic; demersal spawner (*P. solemdali*) spawns Apr–Jun coastally. Config captures the pelagic spawner.
 - **Perch (sp4):** May–June. Standard Baltic coastal perch spawning.
-- **Pikeperch (sp5):** similar to perch; both are coastal spring spawners.
+- **Pikeperch (sp5):** April–June. Saulamo et al. 2005, `doi:10.1111/j.1365-2400.2004.00434.x`, sampled a Baltic bay spawning migration during April–June; Kallasvuo et al. 2017, `doi:10.1139/cjfas-2016-0008`, supports shallow, sheltered, vegetated northern-Baltic reproduction habitat for perch/pikeperch.
 - **Smelt (sp6):** February–May. Coastal/estuarine spring spawner.
 - **Stickleback (sp7):** spring–summer (nest-building; window overlaps the zooplankton bloom).
 
@@ -185,10 +194,24 @@ Species-by-species spawning windows (with DOIs):
 
 - **Method:** `movement.distribution.method.spN = maps` for every species. Life-stage maps (juvenile, adult, spawning) drive spatial distribution; no analytical movement kernel.
 - **Random-walk range:** 2–3 cells/dt for most species (moderate dispersal); wider for pelagic species on long migrations. Hand-set.
-- **Maps:** 25 CSV grids under `maps/`. Each is 50×40 with `1` = habitable, `0` = accessible-but-avoided, `-99` = land. File naming is `{species}_{stage}.csv` with stages `juvenile`, `adult`, `spawning` (plus `spawning_autumn` for herring — created to support the future autumn-spawning herring split but not currently wired).
+- **Maps:** 25 CSV grids under `maps/`. Each is 50×40 with `1` = active occupancy, `0` = in-domain but inactive, `-99` = land. File naming is `{species}_{stage}.csv` with stages `juvenile`, `adult`, `spawning` (plus `spawning_autumn` for herring, which is wired in the current movement config).
+- **Salinity provenance maps:** `environment/surface_salinity_mean.csv` and `environment/bottom_salinity_mean.csv` are coarse 50×40 practical-salinity-unit proxy layers added for habitat interpretation and pikeperch-map derivation. They are not OSMOSE forcing fields.
 - **Stage-to-map assignment:** controlled by `movement.distribution.ndt.spN` and the per-stage age thresholds in the species CSV. A single-stage species uses `adult` throughout; species with clear ontogenetic shifts (cod, flounder) split into juvenile/adult.
-- **Sources:** map patterns hand-drawn from ICES distribution atlases, HELCOM species fact-sheets, and BalticNest WFD reports. Spawning maps tightened to known spawning grounds (e.g. cod spawning restricted to Bornholm/Gdansk/Gotland basins).
-- **Rebuild:** if distribution data shifts, re-run `scripts/rebuild_baltic_mask.py` to sync the mask union; re-draw individual map CSVs by hand.
+- **Sources:** map patterns are a mix of HELCOM Pan Baltic Scope / essential-fish-habitat layers, ICES stock-area interpretation, salinity-context layers, and hand-drawn occupancy masks where no direct layer was available. In practice this means strong direct spatial support for cod, herring, sprat, flounder, perch, and pikeperch via HELCOM biodiversity layers (`45`, `49`, `50`, `46`, `47`, `48`, `51`, `52`), HELCOM salinity context via Background layers (`48` bottom salinity mean, `50` surface salinity mean), and weaker direct layer support for smelt and stickleback. These CSVs should therefore be read as **coarse occupancy masks**, not observation-derived present-day density surfaces.
+- **Current map reading (2026-05-03 spatial pass):**
+  - **Cod:** spawning map trimmed to the southern contemporary core (`BornholmGdansk`, `Arkona`, `Mecklenburg` only; 68 active cells). Adult map still spans the southern/central Baltic, but the Gulf of Riga component was removed.
+  - **Herring:** spring map remains the broad coastal Baltic spawning mask; autumn map is now a western subset of that spring footprint (`Mecklenburg`, `Arkona`, `BornholmGdansk`; 23 active cells), matching the interpretation of a coarse secondary autumn pulse rather than a stock-resolved eastern component.
+  - **Flounder:** spawning map now keeps the southern/deep-basin footprint (`BornholmGdansk`, `Arkona`, `Mecklenburg`, `EGotland`; 177 active cells) consistent with the pelagic-spawner interpretation.
+  - **Pikeperch:** juvenile, adult, and spawning maps were rebuilt from the coastal perch masks constrained to surface salinity ≤6.5 psu, plus an explicit southern-lagoon corridor for the Oder/Szczecin, Vistula/Gdansk, and Curonian lagoon systems. The resulting maps focus on low-salinity coastal/inner-bay habitat (`Gulf of Riga`, `Gulf of Finland`, `Archipelago Sea`, `Bothnian Sea/Bay`, and southern Baltic lagoons) with 67 juvenile, 82 adult, and 62 spawning cells; the earlier southern open-Baltic skew was removed while lagoon habitat was retained.
+  - **Stickleback:** adult and spawning maps were coastalized from the union of other coastal occupancy layers (perch, pikeperch, smelt, and herring spawning components), reducing the previous near-basin-wide spread to 334 adult cells and 98 spawning cells.
+- **Rebuild:** if pikeperch or salinity constraints shift, run `scripts/rebuild_baltic_pikeperch_salinity_maps.py`, then `scripts/rebuild_baltic_mask.py` to sync the mask union. For other species, re-draw individual map CSVs by hand, then rebuild the mask.
+
+### Salinity context (`environment/*.csv`)
+
+- **Files:** `environment/surface_salinity_mean.csv` and `environment/bottom_salinity_mean.csv`.
+- **Purpose:** coarse habitat-provenance layers used to document and reproduce the pikeperch low-salinity constraint. They are excluded from the OSMOSE runtime configuration and do not alter growth, mortality, or movement directly.
+- **Source interpretation:** HELCOM exposes Background layers for surface and bottom salinity means over the Baltic. The committed CSVs are a grid-matched proxy preserving the basin-scale southwest-to-northeast freshening and low-salinity gulfs/archipelagoes at OSMOSE's coarse 50×40 resolution, not a direct resampling of HELCOM rasters.
+- **Pikeperch threshold:** active pikeperch cells have surface salinity from 1.6 to 6.5 psu. This is used as a broad brackish/coastal habitat screen, alongside HELCOM pikeperch recruitment layer `52`, northern-Baltic literature on sheltered, vegetated, low-salinity bays, and southern-lagoon evidence for pikeperch in systems such as the Vistula and Curonian lagoons.
 
 ### Fishing (`baltic_param-fishing.csv`, `fishing/fishing-distrib.csv`, `fishery-catchability.csv`, `fishery-discards.csv`)
 
@@ -247,15 +270,16 @@ OSMOSE re-distributes seeded biomass across age classes via the species life-his
 
 ## Validation and known limitations
 
-- **ICES SAG cross-validation** (`docs/baltic_ices_validation_2026-04-18.md`): F rates and biomass envelopes compared to the 2024 advice cycle (2022 for `cod.27.22-24` which is category-3 in 2024). Cod and flounder F flagged as deliberate scenario limitations; herring and sprat within tolerance. Cod biomass target upper bound (250 kt) flagged by science review as likely historical rather than 2018–2022-era — a future calibration-tuning pass will revisit.
+- **ICES SAG cross-validation** (`docs/baltic_ices_validation_2026-04-18.md`): F rates and biomass envelopes compared to the 2024 advice cycle (2022 for `cod.27.22-24` which is category-3 in 2024). Cod and flounder F remain flagged as deliberate scenario limitations; herring and sprat remain within tolerance. The 2026-05-03 post-map rerun did **not** materially change this report, which is expected because the validator is driven mainly by fishing parameters and biomass targets rather than movement-map geometry. Cod biomass target upper bound (250 kt) remains flagged by science review as likely historical rather than 2018–2022-era — a future calibration-tuning pass will revisit.
 - **Calibration targets** (`data/baltic/reference/biomass_targets.csv`): species × [lower, upper] tonnes + weight + source column. Weights 1.0 (well-assessed pelagics: herring, sprat) down to 0.2 (coarse-grid coastal: perch, pikeperch).
 - **Stickleback biomass** (~200 kt target): Olsson et al. 2019, `doi:10.1093/icesjms/fsz078` — first large-scale biomass assessment. Wide range (50–500 kt) appropriate given boom-bust dynamics.
 
-Documented limitations that this example **does not currently represent**:
+Documented limitations that this example **does not currently represent cleanly or at stock resolution**:
 
-- Post-2015 Eastern Baltic cod collapse state (growth impairment + low SSB). Model runs in "historical" scenario.
-- Autumn-spawning herring stock (maps exist, not wired).
-- Eastern Baltic flounder (`fle.27.24-32`) — no ICES SAG assessment exists for this stock; only `fle.27.2223` is validated against.
+- Post-2015 Eastern Baltic cod collapse state (growth impairment + low SSB). Current cod growth and maturity still reflect the older historical life-history regime.
+- Separate spring- and autumn-spawning herring stocks. The current model includes an autumn map/seasonality pulse, but still collapses multiple Baltic herring stocks into one species.
+- Baltic flounder / coastal demersal-spawning flounder as a separate modeled component. The current flounder species is interpreted as the pelagic-spawning southern/deep-basin representation, and only `fle.27.2223` is used in the current ICES validation workflow.
+- Coastal small-fish distributions at survey-map resolution. Smelt and especially stickleback remain coarse occupancy masks assembled from the best available coastal evidence rather than direct stock-assessment surfaces.
 - Per-fleet spatial fishing footprints (all 8 fleets share one distribution map).
 - Oxygen-limited cod reproduction (cod only spawns in basins with sufficient O₂, depth-dependent — not modeled).
 - Parasite-induced mortality (Contracaecum osculatum on cod, documented but not applied).
@@ -266,6 +290,7 @@ Documented limitations that this example **does not currently represent**:
 ### Primary data
 
 - **ICES SAG** Stock Assessment Graphs: https://sag.ices.dk — accessed via MCP server at `/home/razinka/ices-mcp-server/` (wraps the public REST API).
+- **HELCOM Map and Data service / Pan Baltic Scope fish habitat layers:** public biodiversity layers for cod, herring, sprat, Baltic flounder, European flounder, flounder nursery, perch, and pikeperch; see HELCOM post "HELCOM publishes maps on fish habitats" (2020-09-11), https://helcom.fi/helcom-publishes-maps-on-fish-habitats/ .
 - **Copernicus Marine** Baltic BGC Analysis/Forecast (`cmems_mod_bal_bgc_anfc_P1M-m`): https://doi.org/10.48670/moi-00011 — accessed via `mcp_servers/copernicus/server.py`.
 - **FishBase**: Froese & Pauly, https://www.fishbase.org — per-species Baltic population entries for growth and L–W allometry.
 

@@ -7,13 +7,20 @@
 #   Western Baltic spring spawning Mar-Apr. Combined Mar-Aug covers both stocks.
 # Herring: Steps 4-11 = Mar-Jun. VERIFIED — Western Baltic spring-spawning (WBSS)
 #   herring spawns Mar-Jun (Ory et al. 2024, doi:10.1111/jfb.15811). Central Baltic
-#   spring-spawning also peaks Apr-Jun. Autumn-spawning herring NOT represented.
+#   spring-spawning also peaks Apr-Jun. The current config also wires a coarse
+#   Sep-Nov autumn component via herring_spawning_autumn.csv plus the seasonality
+#   file in baltic_param-reproduction.csv; this is not a separate stock model.
 # Sprat: Steps 6-13 = Apr-Jul. VERIFIED — Haslob et al. (2013, doi:10.1016/j.fishres.2012.08.002):
 #   Baltic sprat spawning Jan-Jun, peak Apr-Jun in Bornholm Basin. Config covers peak.
 # Flounder: Steps 2-9 = Feb-May. VERIFIED — pelagic spawner (P. flesus) spawns Feb-May
 #   in deep southern Baltic; demersal spawner (P. solemdali) spawns Apr-Jun coastal.
 #   Config captures the pelagic spawner timing well.
 # Perch: Steps 8-11 = May-Jun. VERIFIED — standard Baltic coastal perch spawning.
+# Pikeperch: Steps 6-11 = Apr-Jun. VERIFIED — Baltic bay spawning migration
+#   occurs Apr-Jun (Saulamo et al. 2005, doi:10.1111/j.1365-2400.2004.00434.x).
+#   Maps use low-salinity coastal bay habitat derived from perch coastal masks plus
+#   data/baltic/environment/surface_salinity_mean.csv, with explicit southern
+#   lagoon cells for the Oder/Szczecin, Vistula/Gdansk, and Curonian systems.
 # Smelt: Steps 4-11 = Feb-May. Spring spawner (coastal/estuarine).
 
 movement.distribution.method.sp0;maps
@@ -63,9 +70,9 @@ movement.steps.map3;0;1;2;3;16;17;18;19;20;21;22;23
 
 # ============================================
 # sp1: Herring — juvenile (0-1), adult (1+), spring spawning (Mar-Jun, coastal),
-#   autumn spawning (Sep-Nov, coastal). Both spawning components use coastal areas.
-#   Autumn-spawning herring are ~20-30% of Baltic herring reproductive output
-#   (mainly western Baltic SD22-24 and some central Baltic).
+#   autumn spawning (Sep-Nov, coastal). Both spawning components are wired in the
+#   current config. The autumn component is a coarse secondary pulse rather than a
+#   separate stock-resolved autumn-herring representation.
 # ============================================
 movement.species.map4;herring
 movement.initialAge.map4;0
@@ -156,7 +163,8 @@ movement.file.map15;maps/perch_spawning.csv
 movement.steps.map15;8;9;10;11
 
 # ============================================
-# sp5: Pike-perch — juvenile (0-2, coastal), adult (2+), spawning (Apr-Jun)
+# sp5: Pikeperch — juvenile (0-2, low-salinity coastal bays), adult (2+ coastal),
+# spawning (Apr-Jun, sheltered low-salinity bays)
 # ============================================
 movement.species.map16;pikeperch
 movement.initialAge.map16;0

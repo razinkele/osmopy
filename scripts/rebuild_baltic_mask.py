@@ -1,13 +1,14 @@
-"""Rebuild baltic_grid.nc mask + CSV land pattern from fish-distribution data.
+"""Rebuild baltic_grid.nc mask + CSV land pattern from movement/fishing maps.
 
-The mask previously had 912 ocean cells, but 300 of them were "ocean-with-zero"
-in every single movement/fishing CSV — no species ever used them, and they
-visually corresponded to northern Norway/Sweden mountains (lon 10-15°E at
-62-66°N) that were mirrored from the southern Baltic pattern.
+Historically the Baltic mask contained many northern "ocean-with-zero" cells
+that were inactive in every movement/fishing CSV and visually mirrored the
+southern Baltic pattern into non-Baltic areas. The rebuild logic treats the
+union of cells with value > 0 across the committed movement/fishing CSVs as the
+authoritative ocean mask and rewrites all other in-domain cells to -99 (land).
 
-Fix: shrink the mask to the union of cells where at least one species or
-fishing map has a positive value (612 cells), and rewrite all CSVs so the
-300 removed cells become -99 (land) instead of 0 (ocean-with-zero).
+The exact ocean-cell count depends on the currently committed CSVs, so avoid
+hard-coding historical totals in downstream documentation; use this script's
+output as the source of truth.
 
 Run from repo root:
     .venv/bin/python scripts/rebuild_baltic_mask.py
