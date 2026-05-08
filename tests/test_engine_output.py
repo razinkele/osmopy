@@ -417,6 +417,32 @@ def test_collect_spatial_yield_uses_fishing_mortality():
     assert sy[0][0, 0] == 10.0
 
 
+def test_collect_spatial_excludes_unlocated_schools():
+    """Newly-spawned egg schools have cell_x=-1, cell_y=-1 until movement
+    places them. They must be excluded from spatial outputs (np.bincount
+    rejects negative indices outright; the legacy np.add.at silently
+    wrapped to the last row/column — wrong-cell bug now fixed).
+    """
+    grid = _make_grid_2x2_with_land()
+    # Two schools in cell (0,0); one unlocated; one in cell (0,1).
+    # Unlocated should contribute nothing; located schools contribute
+    # their biomass to the right cells.
+    state = make_schools_in_cells(
+        cell_yx=[(0, 0), (-1, -1), (0, 1)],
+        species_id=[0, 0, 0],
+        biomass=[10.0, 999.0, 30.0],
+        abundance=[100.0, 9999.0, 300.0],
+        weight=[1.0, 1.0, 1.0],
+    )
+    cfg = make_minimal_engine_config(output_spatial_enabled=True)
+    sb, sa, sy = _collect_spatial_outputs(state, grid, cfg)
+    # Cell (0,0) should hold ONLY the located school's 10.0 (not 10+999).
+    assert sb[0][0, 0] == 10.0
+    assert sb[0][0, 1] == 30.0
+    # Total spatial biomass excludes the unlocated school.
+    assert sb[0].sum() == 40.0
+
+
 # --- averaging tests (Steps 8-9) ---
 
 

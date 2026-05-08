@@ -854,6 +854,18 @@ def _collect_spatial_outputs(
         cutoff = config.output_cutoff_age[state.species_id]
         focal &= age_years >= cutoff
 
+    # Drop unlocated schools (cell_x < 0 or cell_y < 0). Newly-spawned
+    # egg schools are placed at (-1, -1) until movement assigns them a
+    # cell on the next step (see reproduction.py); they should not
+    # contribute to spatial outputs. The legacy np.add.at silently
+    # wrapped negative indices to the last row/column — a wrong-cell
+    # bug that wasn't caught because the eec_full / baltic benchmarks
+    # have output.spatial.enabled=false. np.bincount rejects negative
+    # indices outright, so this filter both fixes the legacy
+    # wrong-cell bug and keeps np.bincount safe.
+    located = (state.cell_x >= 0) & (state.cell_y >= 0)
+    focal &= located
+
     if not focal.any():
         return sb, sa, sy
 
