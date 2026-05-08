@@ -51,9 +51,16 @@ FISHING_FIELDS: list[OsmoseField] = [
         required=False,
     ),
     OsmoseField(
+        # Java reads this as `int(...)` at engine/config.py:309, so the
+        # ENUM choices must remain stringified ints. The description
+        # spells out the mapping so the form renders an unambiguous label.
+        # Plan's r1 suggested semantic labels (sigmoid/gaussian/lognormal/
+        # knife-edge) via a writer helper — bigger change with a write-side
+        # mapping to maintain; deferred.
         key_pattern="fisheries.selectivity.type.fsh{idx}",
         param_type=ParamType.ENUM,
         choices=["0", "1", "2", "3"],
+        default="0",  # knife-edge — the Java engine default
         description="Selectivity type: 0=knife-edge, 1=sigmoid, 2=Gaussian, 3=log-normal",
         category="fishing",
         indexed=True,

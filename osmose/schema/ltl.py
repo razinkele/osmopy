@@ -29,18 +29,24 @@ LTL_FIELDS: list[OsmoseField] = [
     OsmoseField(
         key_pattern="species.size.min.sp{idx}",
         param_type=ParamType.FLOAT,
+        # Engine default at resources.py:153.
+        default=0.001,
         description="Minimum resource size",
         category="ltl",
         unit="cm",
         indexed=True,
+        min_val=0.0,
     ),
     OsmoseField(
         key_pattern="species.size.max.sp{idx}",
         param_type=ParamType.FLOAT,
+        # Engine default at resources.py:154.
+        default=0.01,
         description="Maximum resource size",
         category="ltl",
         unit="cm",
         indexed=True,
+        min_val=0.0,
     ),
     OsmoseField(
         key_pattern="species.tl.sp{idx}",
