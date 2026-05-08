@@ -501,6 +501,71 @@ def _precompute_map_indices(
     Returns:
         current_idx: int32[n_map_schools] — current map index (-1 if out of range)
         same_map: bool[n_map_schools] — True if same map as previous step
+
+    Vectorised per-species over `map_sets`. The reference loop
+    implementation kept for cross-check tests is
+    `_precompute_map_indices_loop`.
+
+    Critical correctness: NumPy treats negative integer indices as
+    wrap-around (e.g. `arr[-1, step]` returns the last row), so the
+    `prev_age = age - 1` branch must pre-mask before indexing
+    `ms.index_maps`. Schools with `age_dt == 0` would otherwise silently
+    receive a wrong `prev_idx` instead of the -1 sentinel.
+    """
+    map_school_mask = np.where(uses_maps)[0]
+    n = len(map_school_mask)
+    current_idx = np.full(n, -1, dtype=np.int32)
+    prev_idx = np.full(n, -1, dtype=np.int32)
+    if n == 0:
+        same_map = np.zeros(0, dtype=np.bool_)
+        return current_idx, same_map
+
+    sp_at_mask = species_id[map_school_mask]
+    age_at_mask = age_dt[map_school_mask]
+    prev_step = step - 1
+
+    for sp, ms in map_sets.items():
+        sel = sp_at_mask == sp
+        if not sel.any():
+            continue
+        ages = age_at_mask[sel]
+        prev_ages = ages - 1
+        n_ages, n_steps = ms.index_maps.shape
+        sel_idx = np.flatnonzero(sel)
+
+        cur_in_bounds = (ages >= 0) & (ages < n_ages) & (0 <= step < n_steps)
+        if cur_in_bounds.any():
+            valid_ages = ages[cur_in_bounds]
+            current_local = np.full(ages.shape, -1, dtype=np.int32)
+            current_local[cur_in_bounds] = ms.index_maps[valid_ages, step]
+            current_idx[sel_idx] = current_local
+
+        prev_in_bounds = (
+            (prev_ages >= 0) & (prev_ages < n_ages) & (0 <= prev_step < n_steps)
+        )
+        if prev_in_bounds.any():
+            valid_prev_ages = prev_ages[prev_in_bounds]
+            prev_local = np.full(ages.shape, -1, dtype=np.int32)
+            prev_local[prev_in_bounds] = ms.index_maps[valid_prev_ages, prev_step]
+            prev_idx[sel_idx] = prev_local
+
+    same_map = (current_idx == prev_idx) & (age_dt[map_school_mask] > 0) & (step > 0)
+    return current_idx, same_map
+
+
+def _precompute_map_indices_loop(
+    species_id: NDArray[np.int32],
+    age_dt: NDArray[np.int32],
+    uses_maps: NDArray[np.bool_],
+    map_sets: dict[int, MovementMapSet],
+    step: int,
+) -> tuple[NDArray[np.int32], NDArray[np.bool_]]:
+    """Reference loop implementation kept for cross-check tests.
+
+    Behaviourally equivalent to `_precompute_map_indices`. NOT used in
+    production — exists only so parity tests can call both
+    implementations against the same inputs and assert element-wise
+    equality.
     """
     map_school_mask = np.where(uses_maps)[0]
     n = len(map_school_mask)
