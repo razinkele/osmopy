@@ -1217,15 +1217,31 @@ def simulate(
         if ctx.fleet_state is not None:
             from osmose.engine.economics import fleet_decision
 
-            # Compute biomass per cell per species
+            # Compute biomass per cell per species. H7 (2026-05-08):
+            # vectorised with np.add.at — replaces an O(n_schools) Python
+            # loop. Behaviour identical (np.add.at performs unbuffered
+            # accumulation, matching the += semantics of the loop). Schools
+            # outside the species or grid range are masked out before the
+            # add so the loop's bounds-check translates 1:1.
             n_sp = config.n_species
             biomass_by_cell = np.zeros((n_sp, grid.ny, grid.nx), dtype=np.float64)
-            for i in range(len(state)):
-                sp = state.species_id[i]
-                if sp < n_sp:
-                    cy, cx = state.cell_y[i], state.cell_x[i]
-                    if 0 <= cy < grid.ny and 0 <= cx < grid.nx:
-                        biomass_by_cell[sp, cy, cx] += state.biomass[i]
+            valid = (
+                (state.species_id < n_sp)
+                & (state.cell_y >= 0)
+                & (state.cell_y < grid.ny)
+                & (state.cell_x >= 0)
+                & (state.cell_x < grid.nx)
+            )
+            if valid.any():
+                np.add.at(
+                    biomass_by_cell,
+                    (
+                        state.species_id[valid],
+                        state.cell_y[valid],
+                        state.cell_x[valid],
+                    ),
+                    state.biomass[valid],
+                )
 
             ctx.fleet_state = fleet_decision(ctx.fleet_state, biomass_by_cell, rng)
 
