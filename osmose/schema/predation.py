@@ -8,6 +8,9 @@ PREDATION_FIELDS: list[OsmoseField] = [
         param_type=ParamType.FILE_PATH,
         description="Accessibility matrix CSV",
         category="predation",
+        # required=False because the engine falls back to per-species
+        # accessibility2fish when this is absent (resources.py:140).
+        required=False,
     ),
     OsmoseField(
         key_pattern="predation.accessibility.stage.structure",
