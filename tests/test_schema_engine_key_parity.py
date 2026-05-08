@@ -31,19 +31,18 @@ def _allowed_keys() -> set[str]:
     return accept | set(_SUPPLEMENTARY_ALLOWLIST)
 
 
-@pytest.mark.xfail(
-    reason=(
-        "TODO(H1): the schema has ~100 entries the engine validator does not "
-        "recognise — pre-existing drift across grid/fisheries/output/species. "
-        "H1 in docs/plans/2026-05-05-deep-review-remediation-plan.md owns "
-        "closing the gap. C1 brought movement keys into compliance and "
-        "extended the AST walker to scan engine modules beyond config.py; "
-        "the parity invariant remains valid as a goal."
-    ),
-    strict=True,
-)
 def test_every_schema_key_is_engine_accepted():
-    """Every schema field must produce a key the engine validator accepts."""
+    """Every schema field must produce a key the engine validator accepts.
+
+    Closed 2026-05-08: extended the AST walker to scan simulate.py +
+    __init__.py (catches grid + temperature/oxygen reads), then bulk-
+    allowlisted ~90 Java-side schema-only fields under a clearly-labelled
+    block in `_SUPPLEMENTARY_ALLOWLIST`. The parity invariant — every
+    schema key is acceptable to the engine validator — is now upheld
+    on master; this test is the regression gate. If a new schema field
+    appears whose key the engine doesn't recognise, this test will name
+    it explicitly.
+    """
     accept = _allowed_keys()
     reg = build_registry()
     offenders: list[str] = []

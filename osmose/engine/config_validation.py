@@ -117,6 +117,111 @@ _SUPPLEMENTARY_ALLOWLIST: frozenset[str] = frozenset(
         # unknown-key warnings on the examples / minimal fixtures.
         "species.conversion2tons.sp{idx}",
         "ltl.conversion2tons.rsc{idx}",
+        # --- Java-side schema fields (broad-parity TODO closure, 2026-05-08) ---
+        # Every entry below is in osmose/schema/ (so the UI auto-renders an
+        # input for it) but the Python engine does not read it. They cover:
+        # (a) Java-side output flags and settings — Python engine has its own
+        #     output system (osmose/engine/output.py).
+        # (b) Java-side grid bounds + classname — Python engine reads
+        #     grid.netcdf.file / grid.nlon / grid.nlat / grid.var.{lat,lon,mask}
+        #     directly via PythonEngine._resolve_grid (already AST-walked).
+        # (c) Java-side fisheries period / name — Python fishing_mortality
+        #     reads fishing.rate.sp{idx} and selectivity, not these.
+        # (d) Java-side temperature/oxygen NetCDF forcing knobs — Python
+        #     uses temperature.value / oxygen.value scalars.
+        # (e) Java-side simulation knobs (ncpu, nsimulation, restart.file).
+        # Verified: zero hits for each under osmose/engine/ via grep.
+        # Closes the broad schema-engine-parity TODO from C1.
+        "economic.output.stage",
+        "economy.enabled",
+        "fisheries.check.enabled",
+        "fisheries.name.fsh{idx}",
+        "fisheries.period.number.fsh{idx}",
+        "fisheries.period.start.fsh{idx}",
+        "grid.java.classname",
+        "grid.lowright.lat",
+        "grid.lowright.lon",
+        "grid.mask.file",
+        "grid.upleft.lat",
+        "grid.upleft.lon",
+        "ltl.java.classname",
+        "ltl.nstep",
+        "mortality.fishing.recruitment.age.sp{idx}",
+        "mortality.fishing.recruitment.size.sp{idx}",
+        "output.abundance.age1.enabled",
+        "output.abundance.bytl.enabled",
+        "output.abundance.byweight.enabled",
+        "output.abundance.enabled",
+        "output.age.at.death.enabled",
+        "output.bioen.enet.enabled",
+        "output.biomass.bytl.enabled",
+        "output.biomass.byweight.enabled",
+        "output.biomass.enabled",
+        "output.csv.separator",
+        "output.cutoff.enabled",
+        "output.diet.composition.byage.enabled",
+        "output.diet.composition.bysize.enabled",
+        "output.diet.composition.netcdf.enabled",
+        "output.diet.pressure.byage.enabled",
+        "output.diet.pressure.bysize.enabled",
+        "output.diet.pressure.enabled",
+        "output.diet.pressure.netcdf.enabled",
+        "output.diet.success.enabled",
+        "output.dir.path",
+        "output.file.prefix",
+        "output.fishery.byage.enabled",
+        "output.fishery.bysize.enabled",
+        "output.fishery.enabled",
+        "output.flush.enabled",
+        "output.meansize.byage.enabled",
+        "output.meantl.byage.enabled",
+        "output.meantl.bysize.enabled",
+        "output.meanweight.byage.enabled",
+        "output.mortality.additional.byage.enabled",
+        "output.mortality.additional.bysize.enabled",
+        "output.mortality.enabled",
+        "output.mortality.perspecies.byage.enabled",
+        "output.mortality.perspecies.bysize.enabled",
+        "output.nschool.enabled",
+        "output.restart.enabled",
+        "output.size.catch.enabled",
+        "output.size.enabled",
+        "output.spatial.egg.enabled",
+        "output.spatial.ltl.enabled",
+        "output.spatial.size.enabled",
+        "output.spatial.yield.abundance.enabled",
+        "output.ssb.enabled",
+        "output.start.year",
+        "output.tl.catch.enabled",
+        "output.tl.enabled",
+        "output.weight.enabled",
+        "output.yield.abundance.byage.enabled",
+        "output.yield.abundance.bysize.enabled",
+        "output.yield.abundance.enabled",
+        "output.yield.abundance.netcdf.enabled",
+        "output.yield.biomass.byage.enabled",
+        "output.yield.biomass.bysize.enabled",
+        "output.yield.biomass.enabled",
+        "oxygen.factor",
+        "oxygen.filename",
+        "oxygen.nsteps.year",
+        "oxygen.offset",
+        "oxygen.varname",
+        "predation.accessibility.stage.structure",
+        "predation.accessibility.stage.threshold.sp{idx}",
+        "simulation.incoming.flux.enabled",
+        "simulation.ncpu",
+        "simulation.nsimulation",
+        "simulation.restart.file",
+        "species.biomass.total.sp{idx}",
+        "species.first.feeding.age.sp{idx}",
+        "species.tl.sp{idx}",
+        "species.type.sp{idx}",
+        "temperature.factor",
+        "temperature.filename",
+        "temperature.nsteps.year",
+        "temperature.offset",
+        "temperature.varname",
     ]
 )
 
@@ -173,6 +278,8 @@ _EXTRA_ENGINE_SOURCES: tuple[str, ...] = (
     "grid.py",
     "physical_data.py",
     "_netcdf.py",
+    "simulate.py",  # extended 2026-05-08: temperature.value, oxygen.value reads
+    "__init__.py",  # extended 2026-05-08: PythonEngine._resolve_grid reads grid.* keys
 )
 
 
