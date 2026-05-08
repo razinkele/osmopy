@@ -819,8 +819,20 @@ if _HAS_NUMBA:
         tl_tracking,
         diet_matrix,
         diet_enabled,
+        prey_type_buf,
+        prey_id_buf,
+        prey_eligible_buf,
     ):
-        """Numba-compiled single-predator predation (schools + resources)."""
+        """Numba-compiled single-predator predation (schools + resources).
+
+        K1 (2026-05-08): the three scratch buffers `prey_type_buf`,
+        `prey_id_buf`, `prey_eligible_buf` are allocated per-cell by the
+        caller and reused across every predator in that cell — replaces
+        the prior per-call `np.zeros(max_prey, ...)` allocation triple.
+        Write-then-read pattern: each Phase-1 scan loop iteration
+        writes to `..._buf[n_prey]` before incrementing, and Phase 2
+        only reads `..._buf[:n_prey]`, so no zero-init is required.
+        """
         if age_dt[p_idx] < first_feeding_age_dt[p_idx]:
             return
 
@@ -840,12 +852,11 @@ if _HAS_NUMBA:
             return
 
         n_local = len(cell_indices)
-        max_prey = n_local + n_resources
 
-        # Phase 1: Scan all prey into fixed-size arrays
-        prey_type = np.zeros(max_prey, dtype=np.int32)
-        prey_id = np.zeros(max_prey, dtype=np.int32)
-        prey_eligible = np.zeros(max_prey, dtype=np.float64)
+        # Phase 1: Scan all prey using caller-provided scratch buffers.
+        prey_type = prey_type_buf
+        prey_id = prey_id_buf
+        prey_eligible = prey_eligible_buf
         total_available = 0.0
         n_prey = 0
 
@@ -1073,6 +1084,14 @@ if _HAS_NUMBA:
     ):
         """Numba-compiled full interleaved mortality for all 4 causes."""
         n_local = len(cell_indices)
+
+        # K1: per-cell scratch (this kernel processes one cell, allocated
+        # once and reused across all predators in the per-school loop).
+        max_prey_cell = n_local + n_resources
+        prey_type_buf = np.empty(max_prey_cell, dtype=np.int32)
+        prey_id_buf = np.empty(max_prey_cell, dtype=np.int32)
+        prey_eligible_buf = np.empty(max_prey_cell, dtype=np.float64)
+
         for i in range(n_local):
             for c in range(4):
                 cause = cause_orders[i, c]
@@ -1114,6 +1133,9 @@ if _HAS_NUMBA:
                         tl_tracking,
                         diet_matrix,
                         diet_enabled,
+                        prey_type_buf,
+                        prey_id_buf,
+                        prey_eligible_buf,
                     )
                 elif cause == 1:
                     idx = cell_indices[seq_starv[i]]
@@ -1225,6 +1247,14 @@ if _HAS_NUMBA:
                 cause_orders[ii, 2] = causes[2]
                 cause_orders[ii, 3] = causes[3]
 
+            # K1: per-cell scratch for _apply_predation_numba's prey scan.
+            # Reused across every predator in this cell — write-then-read
+            # so no zero-init is required.
+            max_prey_cell = n_local + n_resources
+            prey_type_buf = np.empty(max_prey_cell, dtype=np.int32)
+            prey_id_buf = np.empty(max_prey_cell, dtype=np.int32)
+            prey_eligible_buf = np.empty(max_prey_cell, dtype=np.float64)
+
             for i in range(n_local):
                 for c in range(4):
                     cause = cause_orders[i, c]
@@ -1266,6 +1296,9 @@ if _HAS_NUMBA:
                             tl_tracking,
                             diet_matrix,
                             diet_enabled,
+                            prey_type_buf,
+                            prey_id_buf,
+                            prey_eligible_buf,
                         )
                     elif cause == 1:
                         idx = cell_indices[seq_starv[i]]
@@ -1390,6 +1423,13 @@ if _HAS_NUMBA:
                 cause_orders[ii, 2] = causes[2]
                 cause_orders[ii, 3] = causes[3]
 
+            # K1: per-cell scratch (each prange iteration owns its own
+            # copy — thread-safe).
+            max_prey_cell = n_local + n_resources
+            prey_type_buf = np.empty(max_prey_cell, dtype=np.int32)
+            prey_id_buf = np.empty(max_prey_cell, dtype=np.int32)
+            prey_eligible_buf = np.empty(max_prey_cell, dtype=np.float64)
+
             for i in range(n_local):
                 for c in range(4):
                     cause = cause_orders[i, c]
@@ -1431,6 +1471,9 @@ if _HAS_NUMBA:
                             tl_tracking,
                             diet_matrix,
                             diet_enabled,
+                            prey_type_buf,
+                            prey_id_buf,
+                            prey_eligible_buf,
                         )
                     elif cause == 1:
                         idx = cell_indices[seq_starv[i]]
