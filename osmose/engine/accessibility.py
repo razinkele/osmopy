@@ -26,6 +26,19 @@ class StageInfo:
 
 
 @dataclass
+class _PerSpeciesStages:
+    """Vectorised per-species stage cache used by compute_school_indices.
+
+    Built once at AccessibilityMatrix construction time. Replaces the
+    per-call int→string→stages-list traversal with a single searchsorted
+    on float64 threshold arrays.
+    """
+
+    thresholds: NDArray[np.float64]   # sorted ascending; last element is +inf for open-ended labels
+    matrix_indices: NDArray[np.int32]  # same length, parallel to thresholds
+
+
+@dataclass
 class AccessibilityMatrix:
     """Stage-indexed predation accessibility matrix.
 
@@ -47,6 +60,14 @@ class AccessibilityMatrix:
     pred_lookup: dict[str, list[StageInfo]] = field(default_factory=dict)
     # Species name → index mapping (normalised names)
     _species_name_map: dict[str, str] = field(default_factory=dict)
+    # Vectorised per-species stage cache, keyed by int sp_idx (NOT csv-label
+    # string). Built at from_csv time via _build_stages_by_role; consumed by
+    # compute_school_indices for the searchsorted fast path. Schools whose
+    # species_id is absent from a role's dict keep the -1 sentinel — matches
+    # the legacy loop's `resolved.get(sp) is None: continue` skip.
+    _stages_by_role: dict[str, dict[int, _PerSpeciesStages]] = field(
+        default_factory=lambda: {"prey": {}, "pred": {}}
+    )
 
     @classmethod
     def from_csv(cls, csv_path: str | Path, species_names: list[str]) -> AccessibilityMatrix:
@@ -100,12 +121,51 @@ class AccessibilityMatrix:
             norm = csv_name.strip().lower()
             name_map[norm] = csv_name
 
-        return cls(
+        instance = cls(
             raw_matrix=raw_matrix,
             prey_lookup=prey_lookup,
             pred_lookup=pred_lookup,
             _species_name_map=name_map,
         )
+        instance._build_stages_by_role(species_names)
+        return instance
+
+    def _build_stages_by_role(self, species_names: list[str]) -> None:
+        """Translate string-keyed prey/pred lookups into int-keyed numpy arrays.
+
+        Iterates `species_names` in sp_idx order, resolves each name via
+        `_species_name_map`, and inserts a `_PerSpeciesStages` entry under
+        each role only when the lookup contains a non-empty stages list.
+        Species whose name does not resolve are absent from both role
+        dicts — `compute_school_indices` then leaves their schools at -1.
+        """
+        self._stages_by_role = {"prey": {}, "pred": {}}
+        for sp_idx, name in enumerate(species_names):
+            csv_name = self.resolve_name(name)
+            if csv_name is None:
+                continue
+            for role, lookup in (("prey", self.prey_lookup), ("pred", self.pred_lookup)):
+                stages = lookup.get(csv_name)
+                if not stages:
+                    continue
+                thresholds = np.array(
+                    [s.threshold for s in stages], dtype=np.float64
+                )
+                matrix_indices = np.array(
+                    [s.matrix_index for s in stages], dtype=np.int32
+                )
+                # Construction-time invariant: every cached species has at
+                # least one stage. Without this, the searchsorted+clamp
+                # path would index `matrix_indices[-1]` and silently wrap
+                # to a wrong row.
+                assert len(thresholds) >= 1, (
+                    f"AccessibilityMatrix: {role} stages for {name!r} "
+                    f"(csv={csv_name!r}) must be non-empty"
+                )
+                self._stages_by_role[role][sp_idx] = _PerSpeciesStages(
+                    thresholds=thresholds,
+                    matrix_indices=matrix_indices,
+                )
 
     def resolve_name(self, species_name: str) -> str | None:
         """Resolve a config species name to its CSV label name."""
@@ -156,6 +216,11 @@ class AccessibilityMatrix:
     ) -> NDArray[np.int32]:
         """Compute matrix row/col index for every school.
 
+        Vectorised over schools via per-species `np.searchsorted` against
+        precomputed threshold arrays (`_stages_by_role`, built at from_csv
+        time). For the equivalent loop implementation kept for cross-check,
+        see `_compute_school_indices_loop`.
+
         Parameters
         ----------
         species_id:
@@ -165,7 +230,10 @@ class AccessibilityMatrix:
         n_dt_per_year:
             Timesteps per year (for age conversion).
         all_species_names:
-            Full species name list (focal + background).
+            Full species name list. Retained for API compatibility with
+            the loop implementation; the vectorised path consults the
+            int-keyed `_stages_by_role` cache built at construction time
+            from the same `species_names` argument passed to `from_csv`.
         role:
             "prey" or "pred".
 
@@ -173,24 +241,55 @@ class AccessibilityMatrix:
         -------
         Array of matrix indices, shape (n_schools,). -1 if not found.
         """
+        indices = np.full(species_id.shape, -1, dtype=np.int32)
+        if species_id.size == 0:
+            return indices
+        age_years = age_dt.astype(np.float64) / n_dt_per_year
+        stages_by_sp = self._stages_by_role.get(role, {})
+        for sp_idx, stages in stages_by_sp.items():
+            mask = species_id == sp_idx
+            if not mask.any():
+                continue
+            # searchsorted-right + clamp reproduces the legacy loop's
+            #   `if age < threshold: return matrix_index` semantics, with
+            #   `return stages[-1]` as the fallback for ages >= all
+            #   thresholds. The clamp is also sufficient if the last
+            #   threshold is finite (no `+inf` sentinel) — searchsorted
+            #   returns len(thresholds), the clamp drops it to len-1.
+            bin_idx = np.searchsorted(
+                stages.thresholds, age_years[mask], side="right"
+            )
+            np.minimum(bin_idx, len(stages.thresholds) - 1, out=bin_idx)
+            indices[mask] = stages.matrix_indices[bin_idx]
+        return indices
+
+    def _compute_school_indices_loop(
+        self,
+        species_id: NDArray[np.int32],
+        age_dt: NDArray[np.int32],
+        n_dt_per_year: int,
+        all_species_names: list[str],
+        role: str = "prey",
+    ) -> NDArray[np.int32]:
+        """Reference loop implementation kept for cross-check tests.
+
+        Behaviourally equivalent to `compute_school_indices`. NOT used in
+        production — exists only so parity tests can call both
+        implementations against the same inputs and assert element-wise
+        equality.
+        """
         n = len(species_id)
         indices = np.full(n, -1, dtype=np.int32)
-
-        # Build per-species resolved name cache
         resolved: dict[int, str | None] = {}
         for sp_idx in range(len(all_species_names)):
-            name = all_species_names[sp_idx]
-            csv_name = self.resolve_name(name)
-            resolved[sp_idx] = csv_name
-
+            resolved[sp_idx] = self.resolve_name(all_species_names[sp_idx])
         for i in range(n):
             sp = species_id[i]
-            csv_name = resolved.get(sp)
+            csv_name = resolved.get(int(sp))
             if csv_name is None:
                 continue
-            age_years = float(age_dt[i]) / n_dt_per_year
-            indices[i] = self.get_index(csv_name, age_years, role)
-
+            age_years_i = float(age_dt[i]) / n_dt_per_year
+            indices[i] = self.get_index(csv_name, age_years_i, role)
         return indices
 
 
