@@ -6,13 +6,63 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-05-08
+
+Headline: **−37.8 % engine wall-time on eec_full 5-yr** (4.872 s → 3.030 s) from vectorising the non-JIT'd Python-side hot paths, plus density-dependent recruitment, calibration speedup roadmap, DE bounded-runtime guards, and the deep-review remediation suite.
+
 ### Added
-- Stock-recruitment subsystem: per-species `stock.recruitment.type` ∈
-  `{none, beverton_holt, ricker}` plus `stock.recruitment.ssbhalf` for the
-  shape parameter. Default is `none` (linear, Java parity preserved). Opt-in
-  fix for the cod/perch/pikeperch/flounder structural overshoots observed in
-  the 2026-04-27 phase-12 cod-floor calibration. See
-  `docs/parity-roadmap.md` § Post-parity divergences.
+
+- **Stock-recruitment subsystem.** Per-species `stock.recruitment.type` ∈ `{none, beverton_holt, ricker}` plus `stock.recruitment.ssbhalf` for the shape parameter. Default is `none` (linear, Java parity preserved). Opt-in fix for the cod / perch / pikeperch / flounder structural overshoots observed in the 2026-04-27 phase-12 cod-floor calibration. See `docs/parity-roadmap.md` § Post-parity divergences.
+- **Calibration speedup roadmap (Tier A+B+C1+C2+D4).** New `--optimizer {de,cmaes,surrogate-de}` flag in `scripts/calibrate_baltic.py` dispatching to standalone runners under `osmose/calibration/` (`cmaes_runner.py`, `surrogate_de.py`). Sobol sensitivity at `scripts/sensitivity_phase12.py`. Combined Tier A+B speedup wrapper at `scripts/launch_phase12_bh_fast.sh`. Empirical 175 evals/h at 8 workers.
+- **DE bounded-runtime guards.** `differential_evolution` now uses `--patience 20 --wall-clock-cap-h 12 --checkpoint-every 5` by default; the `_make_checkpoint_callback` helper bounds every scipy DE call by construction. Solves the failure mode where scipy's tol-based termination stalls indefinitely on multi-modal landscapes (post-incident: 75h+ phase-12 run on 2026-04-30 → 2026-05-03).
+- **Phase 12 wiring with B-H.** 27 calibration parameters (cod sp0 ssb_half FIXED at 120 kt Bpa; sp3/4/5 ssb_half DE-tunable). Cod-floor reverted in favour of B-H as the structural fix.
+- **Benchmark infrastructure.** `scripts/benchmark_engine.py --config <name|path>` supports per-fixture grid resolution (eec_full, baltic, examples) with documented baselines. `--compare baseline.json current.json` reports side-by-side wall-time + per-species final-biomass parity.
+- **Bench fixtures + perf docs.** New `docs/perf/` directory documenting the K4 profile gate, A3 not-shipping post-mortem, and per-K go/no-go decisions.
+
+### Changed
+
+- **engine (perf):** vectorise `AccessibilityMatrix.compute_school_indices` via per-species `np.searchsorted` over precomputed `_stages_by_role` arrays — **17.7 % wall-time reduction** alone, exact bit-for-bit parity preserved.
+- **engine (perf):** vectorise `_precompute_map_indices` per-species with explicit pre-mask before `ms.index_maps[ages, step]` indexing (avoids the silent NumPy negative-index wrap for `age_dt == 0` schools) — **24.4 % wall-time reduction** on top of A1, exact parity.
+- **engine (perf):** vectorise `biomass_by_cell` DSVM accumulator (H7) via `np.add.at` instead of per-school Python loop.
+- **engine (mortality):** drop redundant `n_dead` zeros allocation when `state.n_dead` already starts zeroed (H6 partial cleanup).
+- **calibration:** `OSMOSE_DE_WORKERS` default lowered 24 → 16 (memory-bandwidth contention on 28-core box; 16 delivers higher total throughput).
+- **schema:** Phase 2 field-quality bundle — predation, bioenergetics, LTL, fishing param refinements.
+- **schema:** `output.bioen.sizeInf` → `sizeinf` (camelCase fix; the engine never read camelCase, was a schema-only typo).
+- **schema:** movement keys (C1) — engine reads `movement.{property}.map{N}`.
+- **ui:** `_inject_random_movement_ncell` made pure (H3); `state.loading` consolidated into `state.busy` (M10); multi-value (`;`-separated) config entries render as read-only text inputs (H12); `input_id_for_field/key` helpers extracted (M13).
+- **ui+engine:** cooperative cancellation now plumbed through `simulate()` (C4 Phase B); failed/cancelled runs invalidate `state.output_dir` (C4 Phase A).
+
+### Fixed
+
+- **engine (background):** set `length` on background schools so `_apply_predation_numba` sees the right size for size-overlap computation. Without this, mult=0/1/10 ramps showed no scaled predator effects on Baltic seal/cormorant. Verified by re-calibration showing strong predation gradients.
+- **engine (validation):** broad schema-engine parity TODO closed (C1) — config_validation now scans `simulate.py` + `__init__.py` keys; `_SUPPLEMENTARY_ALLOWLIST` extended with 90 Java-side keys; the previously-xfail'd parity test now passes.
+- **engine:** Phase 3 — Gompertz length bounds (M4); accessibility / `n_dead` clamps (M5); RNG reproducibility documented (`osmose/engine/rng.py` module docstring) — Python-side `simulation.rng.fixed=true` is bit-reproducible across Python-engine runs but NOT against Java (PCG64 vs MT19937 streams diverge on first draw).
+- **engine:** reproduction parameter bounds (H10); `relativefecundity >= 0` legitimate-zero relaxation; starvation NaN clamp documented in test (H8).
+- **engine:** average distribution dicts across the recording window (M1) — was previously taking last-step semantics, broke Java parity.
+- **schema:** field-quality fixes from Phase 2 plan (H1, H4, H2 schema-coverage gaps closed).
+- **schema:** `output.bioen.sizeInf` lowercased (C2).
+- **schema:** ENUM `fisheries.selectivity.type` now displays friendly labels via the new `OsmoseField.choice_labels` field — UI shows "Knife-edge", "Sigmoid", etc. instead of raw enum values.
+- **ui:** path-traversal hardening in results page (C3).
+- **app:** defer `cleanup_old_temp_dirs()` until first session start (H11).
+- **validation:** allowlist baltic background-species keys (C5).
+
+### Tests
+
+- New parity / regression tests for: NaN propagation through fishing_mortality (H8 final), reproduction / accessibility / starvation NaN extensions (H8), JIT determinism across thread counts (H9), feeding-stage Java parity (M2), size-bin Java parity (M3), Phase 5a — L brittleness fix + M7 lifespan boundary + M8 runner failure modes, A1 cross-check vs `_compute_school_indices_loop` (8 cases including all-finite-thresholds and predator-only species), A2 cross-check vs `_precompute_map_indices_loop` (7 cases including the `age_dt == 0` wrap-around trap).
+- Suite: 2733 → **2740 passed** at v0.12.0, 22 skipped, 41 deselected, ruff clean. Full Java parity tests 12/12 remain bit-exact.
+
+### Deferred
+
+- **A3 (fused prey + pred `compute_school_indices_both`)** — measured 0.7 % wall-time delta, within the 100 ms / 2 % noise floor. After A1 collapsed the per-call cost from ~1460 µs to ~290 µs, the surface for fusion is no longer measurable. The fused method is functionally correct (verified locally) but contributes nothing to the gate. Post-mortem at `docs/perf/2026-05-08-A3-not-shipping.md`.
+- **K1 (predation scratch buffer hoisting)** — kernel-surgery item with conditional gate per the K4 profile (3-12 % straddles the 2 % gate). Awaiting a fresh post-A1+A2 profile to re-evaluate before pursuing.
+- **K2, K3 (kernel-surgery sub-items)** — dropped per the K4 profile gate. K2: ~1 % saving with high cost (RNG-stream divergence + calibration cache invalidation). K3: 0.41 % `numpy.ndarray.copy` ceiling, below half the gate. Post-mortems at `docs/perf/2026-05-08-K2-not-shipping.md` and `docs/perf/2026-05-08-K3-not-shipping.md`.
+- **A4 (compute_feeding_stages per-cell)** — flagged in the perf plan as a deferred candidate; needs a fresh post-A2 profile to re-prioritise.
+
+### Migration notes
+
+- B-H is opt-in via `stock.recruitment.type=beverton_holt` per species. Existing configs without the key keep linear recruitment (Java parity).
+- The 37.8 % perf gain is automatic for any caller of the Python engine; no API change. Outputs are bit-for-bit identical to v0.11.0 across all parity tests, so calibration caches remain valid (cache key is `python-{__version__}` — caches will miss on the first v0.12.0 run, then warm).
+- DE checkpoint files from < v0.12.0 remain compatible — the new bounded-runtime guards add patience + wall-clock-cap on TOP of the existing checkpoint mechanism, no on-disk format change.
 
 ## [0.10.0] - 2026-04-21
 
