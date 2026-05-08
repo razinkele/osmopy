@@ -1695,17 +1695,21 @@ def mortality(
     # larva_mortality both reduces abundance AND records in n_dead[:, ADDITIONAL]
     state = larva_mortality(state, config, step=step)
 
-    # Save larva deaths for output, then reset n_dead so the interleaved loop
-    # doesn't double-count them (abundance is already reduced)
+    # Save larva deaths for output. Was: also state.replace(n_dead=zeros)
+    # then n_dead = state.n_dead.copy() — three same-shape allocations of
+    # the same zero data. H6 (2026-05-08): allocate the kernel scratch
+    # directly as zeros and let work_state.n_dead point to it via the
+    # replace below. The interleaved loop never reads state.n_dead between
+    # here and the post-loop combined_n_dead merge (which reads
+    # work_state.n_dead), so we don't need to update state.n_dead.
     larva_deaths = state.n_dead.copy()
-    state = state.replace(n_dead=np.zeros_like(state.n_dead))
+    n_dead = np.zeros_like(state.n_dead)
 
     # Retain eggs: withheld from prey pool
     egg_retained = np.where(state.is_egg, state.abundance, 0.0)
     state = state.replace(egg_retained=egg_retained)
 
     # Make working copies for in-place modification
-    n_dead = state.n_dead.copy()  # now zeros (larva deaths already in abundance)
     pred_success_rate = state.pred_success_rate.copy()
     preyed_biomass = state.preyed_biomass.copy()
 
