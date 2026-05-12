@@ -12,8 +12,12 @@ import pytest
 from osmose.calibration.checkpoint import (
     CalibrationCheckpoint,
     CheckpointReadResult,
+    LiveSnapshot,
     MAX_CHECKPOINT_BYTES,
     default_results_dir,
+    is_live,
+    liveness_state,
+    probe_writable,
     read_checkpoint,
     write_checkpoint,
 )
@@ -355,9 +359,6 @@ def test_read_checkpoint_corrupt_on_invalid_utf8(tmp_path):
     assert result.kind == "corrupt"
 
 
-from osmose.calibration.checkpoint import is_live, probe_writable
-
-
 def test_is_live_true_for_recent_file(tmp_path):
     path = tmp_path / "phase12_checkpoint.json"
     path.write_text("{}")
@@ -409,9 +410,6 @@ def test_probe_writable_raises_on_readonly_dir(tmp_path):
         tmp_path.chmod(0o755)
 
 
-from osmose.calibration.checkpoint import liveness_state
-
-
 def test_liveness_state_live_boundary():
     assert liveness_state(age_seconds=30.0) == "live"
     assert liveness_state(age_seconds=0.0) == "live"
@@ -430,9 +428,6 @@ def test_liveness_state_stalled_to_idle_boundary_300s():
 
 def test_liveness_state_rejects_negative_age():
     assert liveness_state(age_seconds=-10.0) == "idle"
-
-
-from osmose.calibration.checkpoint import LiveSnapshot
 
 
 def test_live_snapshot_construction():
