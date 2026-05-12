@@ -99,3 +99,54 @@ def tmp_output_dir(tmp_path: Path) -> Path:
     out = tmp_path / "output"
     out.mkdir()
     return out
+
+
+# ---------------------------------------------------------------------------
+# Calibration dashboard fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def tmp_results_dir(tmp_path, monkeypatch) -> Path:
+    """Redirect all checkpoint writes to tmp_path."""
+    monkeypatch.setattr("osmose.calibration.checkpoint.RESULTS_DIR", tmp_path)
+    try:
+        import scripts.calibrate_baltic as cb_mod
+        monkeypatch.setattr(cb_mod, "RESULTS_DIR", tmp_path, raising=False)
+    except ImportError:
+        pass
+    try:
+        import ui.pages.calibration_handlers as ch_mod
+        monkeypatch.setattr(ch_mod, "RESULTS_DIR", tmp_path, raising=False)
+    except ImportError:
+        pass
+    return tmp_path
+
+
+@pytest.fixture
+def synthetic_two_species_targets():
+    """A 2-species banded-loss target list."""
+    from scripts.calibrate_baltic import BiomassTarget
+
+    targets = [
+        BiomassTarget(species="sp_a", target=1.0, lower=0.5, upper=1.5, weight=1.0),
+        BiomassTarget(species="sp_b", target=2.0, lower=1.5, upper=2.5, weight=1.0),
+    ]
+    species_names = ["sp_a", "sp_b"]
+    return targets, species_names
+
+
+@pytest.fixture
+def synthetic_stats_in_band():
+    return {
+        "sp_a_mean": 1.0, "sp_a_cv": 0.1, "sp_a_trend": 0.01,
+        "sp_b_mean": 2.0, "sp_b_cv": 0.1, "sp_b_trend": 0.01,
+    }
+
+
+@pytest.fixture
+def synthetic_stats_sp_b_out_of_band():
+    return {
+        "sp_a_mean": 1.0, "sp_a_cv": 0.1, "sp_a_trend": 0.01,
+        "sp_b_mean": 5.0, "sp_b_cv": 0.1, "sp_b_trend": 0.01,
+    }
