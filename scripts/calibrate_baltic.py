@@ -167,10 +167,72 @@ class _ObjectiveWrapper:
         self.use_log_space = use_log_space
         self.w_stability = w_stability
         self.w_worst = w_worst
+        self.last_per_species_residuals: list[tuple[str, float, float]] | None = None
 
     def __call__(self, x: np.ndarray) -> float:
-        """Evaluate objective function at point x."""
-        # Map parameter vector to config overrides
+        """Evaluate objective function at point x.
+
+        Per-species (species, weighted_error, sim_biomass) triples are appended
+        to a LOCAL list, then assigned to self.last_per_species_residuals as
+        the LAST statement before return. A mid-call raise therefore leaves
+        the attribute at None — load-bearing invariant per spec §6.5.1.
+        """
+        stats = self._simulate_and_compute_stats(x)
+        if not stats:
+            return 1e6
+
+        residuals_local: list[tuple[str, float, float]] = []
+        total_error = 0.0
+        worst_error = 0.0
+        for sp in (t.species for t in self.targets):
+            mean_key = f"{sp}_mean"
+            cv_key = f"{sp}_cv"
+            trend_key = f"{sp}_trend"
+
+            if mean_key not in stats or sp not in self.target_dict:
+                total_error += 100.0
+                worst_error = max(worst_error, 100.0)
+                residuals_local.append((sp, 100.0, 0.0))
+                continue
+
+            sim_biomass = stats[mean_key]
+            target = self.target_dict[sp]
+            recorded_biomass = sim_biomass
+
+            if sim_biomass <= 0:
+                sp_error = 100.0
+                recorded_biomass = 0.0
+            elif sim_biomass < target.lower:
+                sp_error = float(np.log10(target.lower / sim_biomass) ** 2)
+            elif sim_biomass > target.upper:
+                sp_error = float(np.log10(sim_biomass / target.upper) ** 2)
+            else:
+                sp_error = 0.0
+
+            weighted_error = target.weight * sp_error
+            total_error += weighted_error
+            worst_error = max(worst_error, weighted_error)
+            residuals_local.append((sp, weighted_error, float(recorded_biomass)))
+
+            cv = stats.get(cv_key, 0.0)
+            if cv > 0.2:
+                total_error += self.w_stability * target.weight * (cv - 0.2) ** 2
+            trend = stats.get(trend_key, 0.0)
+            if trend > 0.05:
+                total_error += self.w_stability * target.weight * (trend - 0.05) ** 2
+
+        total_error += self.w_worst * worst_error
+        # LOAD-BEARING: assign-at-end — see spec §6.5.1.
+        self.last_per_species_residuals = residuals_local
+        return total_error
+
+    def _simulate_and_compute_stats(self, x: np.ndarray) -> dict[str, float]:
+        """Run the simulation at parameter vector x and return the stats dict.
+
+        Extracted verbatim from the existing __call__ body so tests can
+        monkeypatch this seam. Returns {} on a failed simulation — the caller
+        short-circuits to 1e6.
+        """
         overrides: dict[str, str] = {}
         for i, key in enumerate(self.param_keys):
             if self.use_log_space:
@@ -179,58 +241,10 @@ class _ObjectiveWrapper:
                 val = x[i]
             overrides[key] = str(val)
 
-        # Run simulation
         stats = run_simulation(
             self.base_config, overrides, n_years=self.n_years, seed=self.seed
         )
-        if not stats:
-            return 1e6  # Failed run
-
-        # Compute objective
-        total_error = 0.0
-        worst_error = 0.0
-        for sp in SPECIES_NAMES:
-            mean_key = f"{sp}_mean"
-            cv_key = f"{sp}_cv"
-            trend_key = f"{sp}_trend"
-
-            if mean_key not in stats or sp not in self.target_dict:
-                total_error += 100.0
-                worst_error = max(worst_error, 100.0)
-                continue
-
-            sim_biomass = stats[mean_key]
-            target = self.target_dict[sp]
-
-            # Banded log-ratio loss: zero within [lower, upper]
-            if sim_biomass <= 0:
-                sp_error = 100.0
-            elif sim_biomass < target.lower:
-                sp_error = np.log10(target.lower / sim_biomass) ** 2
-            elif sim_biomass > target.upper:
-                sp_error = np.log10(sim_biomass / target.upper) ** 2
-            else:
-                sp_error = 0.0  # Within acceptable range
-
-            # Apply species weight
-            weighted_error = target.weight * sp_error
-            total_error += weighted_error
-            worst_error = max(worst_error, weighted_error)
-
-            # Stability penalty: penalize high CV (oscillations)
-            cv = stats.get(cv_key, 0.0)
-            if cv > 0.2:
-                total_error += self.w_stability * target.weight * (cv - 0.2) ** 2
-
-            # Trend penalty: penalize non-equilibrium
-            trend = stats.get(trend_key, 0.0)
-            if trend > 0.05:
-                total_error += self.w_stability * target.weight * (trend - 0.05) ** 2
-
-        # Add worst-species term to prevent hiding one bad species
-        total_error += self.w_worst * worst_error
-
-        return total_error
+        return stats or {}
 
 
 def make_objective(
