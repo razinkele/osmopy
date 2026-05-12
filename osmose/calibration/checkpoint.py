@@ -88,6 +88,12 @@ class CalibrationCheckpoint:
                 f"best_parameters keys mismatch param_keys: "
                 f"{set(self.best_parameters.keys()) ^ set(self.param_keys)}"
             )
+        # Inv 5a: param_keys must be unique (set-equality above would
+        # otherwise silently collapse duplicates)
+        if len(self.param_keys) != len(set(self.param_keys)):
+            raise ValueError(
+                f"param_keys must be unique, got duplicates: {self.param_keys}"
+            )
         # Inv 6: bounds_log10.keys == param_keys
         if set(self.bounds_log10.keys()) != set(self.param_keys):
             raise ValueError(
@@ -136,6 +142,12 @@ class CalibrationCheckpoint:
             raise ValueError(
                 f"proxy_source={self.proxy_source!r} inconsistent with "
                 f"per_species_residuals is{'' if self.per_species_residuals is not None else ' not'} None"
+            )
+        # Inv 12a: banded_loss requires banded_targets (the proxy table
+        # renderer indexes banded_targets[species] for the magnitude factor)
+        if self.proxy_source == "banded_loss" and self.banded_targets is None:
+            raise ValueError(
+                "proxy_source='banded_loss' requires banded_targets is not None"
             )
         # Inv 13: per_species_sim_biomass iff per_species_residuals, parallel, finite, >= 0
         if (self.per_species_sim_biomass is None) != (self.per_species_residuals is None):

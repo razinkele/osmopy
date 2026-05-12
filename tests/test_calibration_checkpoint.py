@@ -175,3 +175,27 @@ def test_residuals_disabled_when_banded_loss_not_in_use():
     kwargs["proxy_source"] = "objective_disabled"
     ckpt = CalibrationCheckpoint(**kwargs)
     assert ckpt.proxy_source == "objective_disabled"
+
+
+def test_invariant_param_keys_unique():
+    """Duplicate param_keys must be rejected; set-equality with best_parameters
+    would otherwise silently accept ('a', 'a') matched to {'a': 1.0}."""
+    kwargs = _valid_checkpoint_kwargs()
+    kwargs["param_keys"] = ("k_a", "k_a")  # duplicate
+    kwargs["best_parameters"] = {"k_a": 0.5}
+    kwargs["best_x_log10"] = (-0.3, -0.3)
+    kwargs["bounds_log10"] = {"k_a": (-1.0, 0.0)}
+    with pytest.raises(ValueError, match="param_keys"):
+        CalibrationCheckpoint(**kwargs)
+
+
+def test_invariant_banded_loss_requires_banded_targets():
+    """proxy_source='banded_loss' is meaningless without banded_targets;
+    the proxy table renderer (§8) crashes on banded_targets[species]
+    if banded_targets is None."""
+    kwargs = _valid_checkpoint_kwargs()
+    kwargs["banded_targets"] = None
+    # per_species_residuals / sim_biomass / species_labels / proxy_source
+    # all stay as their valid_kwargs values (banded_loss configured)
+    with pytest.raises(ValueError, match="banded_targets"):
+        CalibrationCheckpoint(**kwargs)
