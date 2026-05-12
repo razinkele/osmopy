@@ -13,8 +13,11 @@ the emulator.
 
 from __future__ import annotations
 
+import logging
+import time
 import warnings
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import joblib  # type: ignore[import-untyped]
@@ -24,6 +27,8 @@ from scipy.optimize import differential_evolution
 from scipy.stats.qmc import LatinHypercube
 from sklearn.gaussian_process import GaussianProcessRegressor  # type: ignore[import-untyped]
 from sklearn.gaussian_process.kernels import Matern, WhiteKernel  # type: ignore[import-untyped]
+
+from osmose.calibration.checkpoint import _write_progress_checkpoint
 
 
 def _eval_batch(
@@ -77,6 +82,13 @@ def surrogate_assisted_de(
     workers: int = 1,
     seed: int = 42,
     verbose: bool = False,
+    *,
+    param_keys: list[str] | None = None,
+    checkpoint_path: Path | None = None,
+    checkpoint_every: int = 0,
+    phase: str = "unknown",
+    evaluator: Any = None,
+    banded_targets: dict[str, tuple[float, float]] | None = None,
 ) -> dict[str, Any]:
     """Optimise `objective` over `bounds` using GP-assisted DE.
 
@@ -131,6 +143,15 @@ def surrogate_assisted_de(
         n_initial = max(20, 5 * n_dim)
 
     rng = np.random.default_rng(seed)
+
+    logger = logging.getLogger("osmose.calibration.surrogate_de")
+    _checkpoint_state = {
+        "gen": 0,
+        "best_fun_seen": float("inf"),
+        "gens_since_improvement": 0,
+        "start_time": time.time(),
+        "persistence_failure_notified": False,
+    }
 
     # Phase 1: LHS init + real-eval
     lhs = LatinHypercube(d=n_dim, seed=rng)
@@ -219,6 +240,37 @@ def surrogate_assisted_de(
                 "gp_de_real": float("nan"),
                 "n_train": int(len(y_train)),
             })
+
+            _checkpoint_state["gen"] += 1
+            _best_x = X_train[best_idx]
+            _best_fun = float(y_train[best_idx])
+            _prior_best = _checkpoint_state["best_fun_seen"]
+            if _best_fun < _prior_best:
+                _checkpoint_state["best_fun_seen"] = _best_fun
+                _checkpoint_state["gens_since_improvement"] = 0
+            else:
+                _checkpoint_state["gens_since_improvement"] += 1
+
+            if (
+                checkpoint_path is not None
+                and checkpoint_every > 0
+                and param_keys is not None
+                and _checkpoint_state["gen"] % checkpoint_every == 0
+            ):
+                _write_progress_checkpoint(
+                    checkpoint_path=checkpoint_path,
+                    state=_checkpoint_state,
+                    best_x=_best_x,
+                    best_fun=_best_fun,
+                    optimizer="surrogate-de",
+                    phase=phase,
+                    generation_budget=n_iterations,
+                    param_keys=param_keys,
+                    bounds=bounds,
+                    evaluator=evaluator,
+                    banded_targets=banded_targets,
+                    logger=logger,
+                )
             continue
 
         # DE on GP-predicted mean — cheap, treat as scalar function. The closure
@@ -269,6 +321,38 @@ def surrogate_assisted_de(
             "gp_de_real": float(new_y[0]) if finite_new[0] else float("nan"),
             "n_train": int(len(y_train)),
         })
+
+        _checkpoint_state["gen"] += 1
+        _best_x = X_train[best_idx]
+        _best_fun = float(y_train[best_idx])
+        _prior_best = _checkpoint_state["best_fun_seen"]
+        if _best_fun < _prior_best:
+            _checkpoint_state["best_fun_seen"] = _best_fun
+            _checkpoint_state["gens_since_improvement"] = 0
+        else:
+            _checkpoint_state["gens_since_improvement"] += 1
+
+        if (
+            checkpoint_path is not None
+            and checkpoint_every > 0
+            and param_keys is not None
+            and _checkpoint_state["gen"] % checkpoint_every == 0
+        ):
+            _write_progress_checkpoint(
+                checkpoint_path=checkpoint_path,
+                state=_checkpoint_state,
+                best_x=_best_x,
+                best_fun=_best_fun,
+                optimizer="surrogate-de",
+                phase=phase,
+                generation_budget=n_iterations,
+                param_keys=param_keys,
+                bounds=bounds,
+                evaluator=evaluator,
+                banded_targets=banded_targets,
+                logger=logger,
+            )
+
         if verbose:
             print(
                 f"[surrogate-DE] iter{it}: best={y_train[best_idx]:.4f} "

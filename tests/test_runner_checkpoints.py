@@ -87,3 +87,31 @@ def test_cmaes_writes_checkpoint(tmp_results_dir):
     assert result.checkpoint.optimizer == "cmaes"
     assert result.checkpoint.generation == 2
     assert result.checkpoint.generation_budget == 2
+
+
+def test_surrogate_de_writes_checkpoint(tmp_results_dir):
+    from osmose.calibration.checkpoint import read_checkpoint
+    from osmose.calibration.surrogate_de import surrogate_assisted_de
+
+    bounds = [(-1.0, 1.0), (0.0, 3.0)]
+    checkpoint_path = tmp_results_dir / "phase_test_checkpoint.json"
+
+    surrogate_assisted_de(
+        objective=_toy_objective_2_param,
+        bounds=bounds,
+        param_keys=["k_a", "k_b"],
+        seed=42,
+        n_iterations=2,
+        n_initial=4,
+        n_topk=3,
+        checkpoint_path=checkpoint_path,
+        checkpoint_every=1,
+        phase="test",
+        evaluator=None,
+        banded_targets=None,
+    )
+    assert checkpoint_path.exists()
+    result = read_checkpoint(checkpoint_path)
+    assert result.kind == "ok"
+    assert result.checkpoint.optimizer == "surrogate-de"
+    assert result.checkpoint.generation == 2
