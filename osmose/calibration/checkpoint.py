@@ -9,7 +9,9 @@ full contract and 14 invariants enforced in CalibrationCheckpoint.__post_init__.
 
 from __future__ import annotations
 
+import json
 import math
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -198,3 +200,74 @@ class CheckpointReadResult:
             raise ValueError(
                 f"CheckpointReadResult(kind={self.kind!r}) must have checkpoint=None"
             )
+
+
+def _coerce_serialisable(value):
+    """Coerce numpy scalars/arrays and tuples to plain Python types.
+
+    Raises TypeError on unconvertible types; raises ValueError on non-finite floats.
+    """
+    if isinstance(value, dict):
+        return {str(k): _coerce_serialisable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_coerce_serialisable(v) for v in value]
+    if hasattr(value, "tolist"):  # numpy array / scalar
+        value = value.tolist()
+        if isinstance(value, (list, tuple)):
+            return _coerce_serialisable(value)
+    if isinstance(value, (int, str, bool)) or value is None:
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError(f"non-finite float not serialisable: {value!r}")
+        return float(value)
+    raise TypeError(f"unserialisable value of type {type(value).__name__}: {value!r}")
+
+
+def write_checkpoint(path: Path, ckpt: CalibrationCheckpoint) -> None:
+    """Atomic write: serialise to a .tmp file then os.replace into place.
+
+    Coerces numpy scalars/arrays to plain Python types at the boundary so DE/CMA-ES
+    callers don't have to. Uses json.dump(allow_nan=False) as defence in depth
+    against NaN that slipped past __post_init__.
+
+    Raises (OSError, TypeError, ValueError) on failure; callers wrap in their own
+    layered exception handler.
+    """
+    payload = _coerce_serialisable({
+        "optimizer": ckpt.optimizer,
+        "phase": ckpt.phase,
+        "generation": ckpt.generation,
+        "generation_budget": ckpt.generation_budget,
+        "best_fun": ckpt.best_fun,
+        "per_species_residuals": (
+            list(ckpt.per_species_residuals)
+            if ckpt.per_species_residuals is not None
+            else None
+        ),
+        "per_species_sim_biomass": (
+            list(ckpt.per_species_sim_biomass)
+            if ckpt.per_species_sim_biomass is not None
+            else None
+        ),
+        "species_labels": (
+            list(ckpt.species_labels) if ckpt.species_labels is not None else None
+        ),
+        "best_x_log10": list(ckpt.best_x_log10),
+        "best_parameters": dict(ckpt.best_parameters),
+        "param_keys": list(ckpt.param_keys),
+        "bounds_log10": {k: list(v) for k, v in ckpt.bounds_log10.items()},
+        "gens_since_improvement": ckpt.gens_since_improvement,
+        "elapsed_seconds": ckpt.elapsed_seconds,
+        "timestamp_iso": ckpt.timestamp_iso,
+        "banded_targets": (
+            {k: list(v) for k, v in ckpt.banded_targets.items()}
+            if ckpt.banded_targets is not None
+            else None
+        ),
+        "proxy_source": ckpt.proxy_source,
+    })
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp, "w") as f:
+        json.dump(payload, f, indent=2, allow_nan=False)
+    os.replace(tmp, path)

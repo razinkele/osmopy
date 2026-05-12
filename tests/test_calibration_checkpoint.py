@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from osmose.calibration.checkpoint import (
@@ -10,6 +12,7 @@ from osmose.calibration.checkpoint import (
     CheckpointReadResult,
     MAX_CHECKPOINT_BYTES,
     default_results_dir,
+    write_checkpoint,
 )
 
 
@@ -232,3 +235,49 @@ def test_checkpoint_read_result_invariant_non_ok_with_checkpoint_raises():
         CheckpointReadResult(kind="partial", checkpoint=ckpt, error_summary=None)
     with pytest.raises(ValueError, match="checkpoint=None"):
         CheckpointReadResult(kind="corrupt", checkpoint=ckpt, error_summary="x")
+
+
+def test_write_checkpoint_creates_file(tmp_path):
+    ckpt = CalibrationCheckpoint(**_valid_checkpoint_kwargs())
+    path = tmp_path / "phase12_checkpoint.json"
+    write_checkpoint(path, ckpt)
+    assert path.exists()
+    data = json.loads(path.read_text())
+    assert data["optimizer"] == "de"
+    assert data["generation"] == 10
+
+
+def test_write_checkpoint_is_atomic_no_partial_file(tmp_path, monkeypatch):
+    """If os.replace fails, only the .tmp file (if any) is left; the destination is not touched."""
+    ckpt = CalibrationCheckpoint(**_valid_checkpoint_kwargs())
+    path = tmp_path / "phase12_checkpoint.json"
+
+    def boom(*args, **kwargs):
+        raise OSError("simulated rename failure")
+
+    monkeypatch.setattr("os.replace", boom)
+    with pytest.raises(OSError):
+        write_checkpoint(path, ckpt)
+    assert not path.exists()
+
+
+def test_write_checkpoint_coerces_numpy_scalars(tmp_path):
+    kwargs = _valid_checkpoint_kwargs()
+    kwargs["best_fun"] = np.float64(3.14)
+    ckpt = CalibrationCheckpoint(**kwargs)
+    path = tmp_path / "phase12_checkpoint.json"
+    write_checkpoint(path, ckpt)
+    data = json.loads(path.read_text())
+    assert data["best_fun"] == 3.14
+    assert isinstance(data["best_fun"], float)
+
+
+def test_write_checkpoint_disallows_nan_in_output(tmp_path):
+    """write_checkpoint passes allow_nan=False to json.dump as defence in depth
+    against any non-finite that slipped past __post_init__."""
+    kwargs = _valid_checkpoint_kwargs()
+    ckpt = CalibrationCheckpoint(**kwargs)
+    path = tmp_path / "phase12_checkpoint.json"
+    write_checkpoint(path, ckpt)
+    text = path.read_text()
+    assert "NaN" not in text and "Infinity" not in text
