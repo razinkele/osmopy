@@ -421,3 +421,80 @@ class LiveSnapshot:
     active: CheckpointReadResult
     other_live_paths: tuple[Path, ...]
     snapshot_monotonic: float
+
+
+def _write_progress_checkpoint(
+    checkpoint_path, state, best_x, best_fun,
+    optimizer, phase, generation_budget, param_keys, bounds,
+    evaluator, banded_targets, logger,
+):
+    """Build and write a CalibrationCheckpoint for the current generation.
+
+    If `evaluator` is provided (Path A), re-evaluate best_x in the main thread
+    to capture per-species residuals + sim_biomass. The engine rebuilds its
+    PCG64 state from evaluator.seed on every run, so the re-eval is
+    deterministic. See spec §6.5.1.
+    """
+    from datetime import datetime, timezone
+    import time as _time
+
+    proxy_source: Literal["banded_loss", "objective_disabled", "not_implemented"]
+    residuals: list[tuple[str, float, float]] | None
+
+    if evaluator is None or banded_targets is None:
+        residuals = None
+        proxy_source = "objective_disabled"
+    else:
+        evaluator.last_per_species_residuals = None
+        try:
+            # best_x is log10 space; __call__ converts to linear internally
+            evaluator(best_x)
+            residuals = evaluator.last_per_species_residuals
+            if residuals is None:
+                logger.warning(
+                    "checkpoint re-eval at gen %d: evaluator returned without "
+                    "populating last_per_species_residuals "
+                    "(proxy_source=not_implemented; cause=evaluator_returned_none). "
+                    "This is a bug in _ObjectiveWrapper.",
+                    state["gen"],
+                )
+                proxy_source = "not_implemented"
+            else:
+                proxy_source = "banded_loss"
+        except Exception as e:  # noqa: BLE001 — bounded log+continue (§6.5.1)
+            logger.warning(
+                "checkpoint re-eval failed at gen %d "
+                "(proxy_source=not_implemented; cause=reeval_raised): %s (%s)",
+                state["gen"], e.__class__.__name__, e,
+            )
+            residuals = None
+            proxy_source = "not_implemented"
+
+    best_x_log10 = tuple(float(v) for v in best_x)
+    ckpt = CalibrationCheckpoint(
+        optimizer=optimizer,
+        phase=phase,
+        generation=state["gen"],
+        generation_budget=generation_budget,
+        best_fun=best_fun,
+        per_species_residuals=tuple(r for _, r, _ in residuals) if residuals else None,
+        per_species_sim_biomass=tuple(b for _, _, b in residuals) if residuals else None,
+        species_labels=tuple(s for s, _, _ in residuals) if residuals else None,
+        best_x_log10=best_x_log10,
+        best_parameters={k: float(10.0 ** v) for k, v in zip(param_keys, best_x_log10)},
+        param_keys=tuple(param_keys),
+        bounds_log10={k: (float(lo), float(hi)) for k, (lo, hi) in zip(param_keys, bounds)},
+        gens_since_improvement=state["gens_since_improvement"],
+        elapsed_seconds=_time.time() - state["start_time"],
+        timestamp_iso=datetime.now(timezone.utc).isoformat(),
+        banded_targets=banded_targets,
+        proxy_source=proxy_source,
+    )
+
+    try:
+        write_checkpoint(checkpoint_path, ckpt)
+    except (OSError, TypeError, ValueError) as e:
+        logger.warning(
+            "write_checkpoint failed at gen %d: %s (%s) path=%s",
+            state["gen"], e.__class__.__name__, e, checkpoint_path,
+        )

@@ -22,7 +22,6 @@ import tempfile
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -580,13 +579,22 @@ def _make_checkpoint_callback(
     patience: int = 0,
     wall_clock_max_seconds: float | None = None,
     rel_improvement_threshold: float = 1e-6,
+    # NEW (all default-None / safe; existing callers unchanged):
+    phase: str = "unknown",
+    optimizer: str = "de",
+    evaluator=None,
+    banded_targets: dict[str, tuple[float, float]] | None = None,
+    generation_budget: int | None = None,
 ):
-    """Build a scipy DE callback combining checkpointing and early stopping.
+    """scipy DE callback combining checkpointing, early-stopping, and the
+    main-thread re-evaluation that captures per-species residuals for the
+    dashboard. See spec §6.5.1.
 
     Three concerns, one callback:
       1. **Checkpointing** — snapshot the current best every ``every_n`` gens
-         to ``checkpoint_path`` (atomic via tmp + rename). Lets a SIGTERM'd
-         long run still surface its best params. Set ``every_n=0`` to disable.
+         via ``_write_progress_checkpoint`` (atomic via tmp + rename inside
+         ``write_checkpoint``). Lets a SIGTERM'd long run still surface its
+         best params. Set ``every_n=0`` to disable.
       2. **Patience-based early stop** — terminate after ``patience``
          consecutive generations without best-fun improvement. Returns True
          from the callback, which scipy DE treats as "stop now". Solves the
@@ -609,6 +617,13 @@ def _make_checkpoint_callback(
     (default 1e-6) to count — guards against tiny floating-point oscillation
     being mistaken for progress.
     """
+    import functools
+    import logging
+
+    # S1: _write_progress_checkpoint lives in osmose/calibration/checkpoint.py.
+    from osmose.calibration.checkpoint import _write_progress_checkpoint
+
+    logger = logging.getLogger("osmose.calibration.checkpoint_callback")
     state: dict = {
         "gen": 0,
         "best_fun_seen": None,  # not set until first datum arrives
@@ -616,6 +631,18 @@ def _make_checkpoint_callback(
         "start_time": time.time(),
     }
 
+    # scipy 1.10+ inspects the callback's parameter set; if it equals
+    # exactly {'intermediate_result'}, scipy passes an OptimizeResult
+    # (with .x and .fun). Otherwise scipy falls back to the legacy
+    # (xk, convergence) signature, which has no .fun — making
+    # checkpointing impossible. We use functools.wraps with a template
+    # function so inspect.signature reports {'intermediate_result'}
+    # while the actual callable still accepts *args/**kw for direct
+    # legacy-form test calls.
+    def _scipy_signature_template(intermediate_result):  # pragma: no cover
+        pass
+
+    @functools.wraps(_scipy_signature_template)
     def callback(intermediate_result, *_args, **_kw):
         state["gen"] += 1
         try:
@@ -639,25 +666,15 @@ def _make_checkpoint_callback(
         else:
             state["gens_since_improvement"] += 1
 
-        # Checkpoint snapshot (atomic write).
+        # Checkpoint snapshot via the shared helper (atomic write inside
+        # write_checkpoint). The helper also captures per-species residuals
+        # via main-thread evaluator re-eval when evaluator is provided.
         if every_n > 0 and state["gen"] % every_n == 0:
-            snapshot = {
-                "generation": state["gen"],
-                "best_fun": best_fun,
-                "best_x_log10": [float(v) for v in best_x],
-                "best_parameters": {
-                    k: float(10.0 ** best_x[i])
-                    for i, k in enumerate(param_keys)
-                },
-                "bounds_log10": {k: list(b) for k, b in zip(param_keys, bounds)},
-                "gens_since_improvement": state["gens_since_improvement"],
-                "elapsed_seconds": time.time() - state["start_time"],
-                "timestamp_iso": datetime.now().isoformat(),
-            }
-            tmp_path = checkpoint_path.with_suffix(checkpoint_path.suffix + ".tmp")
-            with open(tmp_path, "w") as f:
-                json.dump(snapshot, f, indent=2)
-            tmp_path.replace(checkpoint_path)
+            _write_progress_checkpoint(
+                checkpoint_path, state, best_x, best_fun,
+                optimizer, phase, generation_budget, param_keys, bounds,
+                evaluator, banded_targets, logger,
+            )
 
         # Patience-based early stop.
         if patience > 0 and state["gens_since_improvement"] >= patience:
@@ -1005,10 +1022,27 @@ def run_calibration(
         RESULTS_DIR.mkdir(parents=True, exist_ok=True)
         checkpoint_path = RESULTS_DIR / f"phase{phase.replace('/', '_')}_checkpoint.json"
         wall_clock_cap_s = wall_clock_cap_h * 3600.0 if wall_clock_cap_h > 0 else None
+        # Derive banded_targets dict from the evaluator's targets for the
+        # main-thread re-eval that captures per-species residuals. The
+        # evaluator (an _ObjectiveWrapper) is the same instance the DE
+        # workers call — re-evaluating best_x in-thread is deterministic
+        # because the engine rebuilds its PCG64 state from evaluator.seed
+        # on every run. See spec §6.5.1.
+        evaluator_instance = objective if hasattr(objective, "targets") else None
+        banded_targets_dict = (
+            {t.species: (t.lower, t.upper) for t in evaluator_instance.targets}
+            if evaluator_instance is not None
+            else None
+        )
         de_callback = _make_checkpoint_callback(
             checkpoint_path, checkpoint_every, param_keys, bounds,
             patience=patience,
             wall_clock_max_seconds=wall_clock_cap_s,
+            phase=phase,
+            optimizer="de",
+            evaluator=evaluator_instance,
+            banded_targets=banded_targets_dict,
+            generation_budget=maxiter,
         )
         msg_parts = []
         if checkpoint_every > 0:
