@@ -13,11 +13,14 @@ import json
 import math
 import os
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, Literal
 
 MAX_CHECKPOINT_BYTES: Final[int] = 1_048_576  # 1 MiB; real checkpoints are ~10 KB
+
+_PARTIAL_WRITE_WINDOW_S: Final[float] = 3.0
 
 _PACKAGE_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -271,3 +274,100 @@ def write_checkpoint(path: Path, ckpt: CalibrationCheckpoint) -> None:
     with open(tmp, "w") as f:
         json.dump(payload, f, indent=2, allow_nan=False)
     os.replace(tmp, path)
+
+
+def read_checkpoint(path: Path) -> CheckpointReadResult:
+    """Read and validate a checkpoint file. Never raises.
+
+    See spec §5 for the four-kind contract:
+      - 'ok'      : file present, JSON valid, all 14 invariants pass
+      - 'no_run'  : file does not exist (vanished between glob and read)
+      - 'partial' : decode/invariant error AND mtime within partial-write window
+      - 'corrupt' : decode/invariant error AND older, OR size > MAX_CHECKPOINT_BYTES
+    """
+    path_str = str(path)
+    try:
+        st = path.stat()
+    except (FileNotFoundError, PermissionError):
+        return CheckpointReadResult(kind="no_run", checkpoint=None, error_summary=None)
+    except OSError as e:
+        return CheckpointReadResult(
+            kind="corrupt", checkpoint=None,
+            error_summary=(
+                f"stat failed for {path_str}: {e.__class__.__name__}: {e}. "
+                "Recovery: delete the file or check filesystem mount/perms."
+            ),
+        )
+    if st.st_size > MAX_CHECKPOINT_BYTES:
+        return CheckpointReadResult(
+            kind="corrupt", checkpoint=None,
+            error_summary=(
+                f"file {path_str} exceeds MAX_CHECKPOINT_BYTES "
+                f"(size={st.st_size}, limit={MAX_CHECKPOINT_BYTES}). "
+                "Recovery: delete the file — calibration will resume at next checkpoint."
+            ),
+        )
+
+    age = time.time() - st.st_mtime
+    is_recent = age < _PARTIAL_WRITE_WINDOW_S
+
+    try:
+        text = path.read_bytes().decode("utf-8")
+        data = json.loads(text)
+    except FileNotFoundError:
+        return CheckpointReadResult(kind="no_run", checkpoint=None, error_summary=None)
+    except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as e:
+        kind = "partial" if is_recent else "corrupt"
+        return CheckpointReadResult(
+            kind=kind, checkpoint=None,
+            error_summary=(
+                f"decode failed for {path_str}: {e.__class__.__name__}: {e}. "
+                "Recovery: if persistent, delete the file."
+            ),
+        )
+
+    try:
+        ckpt = CalibrationCheckpoint(
+            optimizer=data["optimizer"],
+            phase=data["phase"],
+            generation=int(data["generation"]),
+            generation_budget=data.get("generation_budget"),
+            best_fun=float(data["best_fun"]),
+            per_species_residuals=(
+                tuple(data["per_species_residuals"])
+                if data.get("per_species_residuals") is not None else None
+            ),
+            per_species_sim_biomass=(
+                tuple(data["per_species_sim_biomass"])
+                if data.get("per_species_sim_biomass") is not None else None
+            ),
+            species_labels=(
+                tuple(data["species_labels"])
+                if data.get("species_labels") is not None else None
+            ),
+            best_x_log10=tuple(data["best_x_log10"]),
+            best_parameters=dict(data["best_parameters"]),
+            param_keys=tuple(data["param_keys"]),
+            bounds_log10={k: tuple(v) for k, v in data["bounds_log10"].items()},
+            gens_since_improvement=int(data["gens_since_improvement"]),
+            elapsed_seconds=float(data["elapsed_seconds"]),
+            timestamp_iso=data["timestamp_iso"],
+            banded_targets=(
+                {k: tuple(v) for k, v in data["banded_targets"].items()}
+                if data.get("banded_targets") is not None else None
+            ),
+            proxy_source=data["proxy_source"],
+        )
+    except (KeyError, TypeError, ValueError) as e:
+        # JSON decoded successfully, so the file is not a partial write —
+        # it's either a frame from an older incompatible version or a real
+        # invariant violation. Either way it's corrupt regardless of mtime.
+        return CheckpointReadResult(
+            kind="corrupt", checkpoint=None,
+            error_summary=(
+                f"invariant violation for {path_str}: {e.__class__.__name__}: {e}. "
+                "Recovery: delete the file to discard the bad frame; the next "
+                "successful generation re-creates it."
+            ),
+        )
+    return CheckpointReadResult(kind="ok", checkpoint=ckpt, error_summary=None)

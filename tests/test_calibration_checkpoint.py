@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
+import time
 from pathlib import Path
 
 import numpy as np
@@ -12,6 +14,7 @@ from osmose.calibration.checkpoint import (
     CheckpointReadResult,
     MAX_CHECKPOINT_BYTES,
     default_results_dir,
+    read_checkpoint,
     write_checkpoint,
 )
 
@@ -281,3 +284,72 @@ def test_write_checkpoint_disallows_nan_in_output(tmp_path):
     write_checkpoint(path, ckpt)
     text = path.read_text()
     assert "NaN" not in text and "Infinity" not in text
+
+
+def test_read_checkpoint_roundtrip(tmp_path):
+    """write then read returns kind='ok' with the same checkpoint."""
+    original = CalibrationCheckpoint(**_valid_checkpoint_kwargs())
+    path = tmp_path / "phase12_checkpoint.json"
+    write_checkpoint(path, original)
+    result = read_checkpoint(path)
+    assert result.kind == "ok"
+    assert result.checkpoint is not None
+    assert result.checkpoint.optimizer == original.optimizer
+    assert result.checkpoint.best_fun == original.best_fun
+    assert result.checkpoint.per_species_residuals == original.per_species_residuals
+
+
+def test_read_checkpoint_no_run_on_missing_file(tmp_path):
+    result = read_checkpoint(tmp_path / "phase12_checkpoint.json")
+    assert result.kind == "no_run"
+    assert result.checkpoint is None
+
+
+def test_read_checkpoint_partial_on_truncated_json_recent_mtime(tmp_path):
+    """File half-written and mtime recent (<3 s) → kind='partial'."""
+    path = tmp_path / "phase12_checkpoint.json"
+    path.write_text('{"optimizer": "de"')
+    result = read_checkpoint(path)
+    assert result.kind == "partial"
+
+
+def test_read_checkpoint_corrupt_on_truncated_json_old_mtime(tmp_path):
+    path = tmp_path / "phase12_checkpoint.json"
+    path.write_text('{"optimizer": "de"')
+    old = time.time() - 10
+    os.utime(path, (old, old))
+    result = read_checkpoint(path)
+    assert result.kind == "corrupt"
+    assert result.error_summary is not None
+
+
+def test_read_checkpoint_corrupt_on_size_exceeds_limit(tmp_path):
+    """File larger than MAX_CHECKPOINT_BYTES returns kind='corrupt' before parse."""
+    path = tmp_path / "phase12_checkpoint.json"
+    path.write_bytes(b"{}" + b" " * (MAX_CHECKPOINT_BYTES))
+    result = read_checkpoint(path)
+    assert result.kind == "corrupt"
+    assert "exceeds" in (result.error_summary or "").lower()
+
+
+def test_read_checkpoint_corrupt_on_invariant_violation(tmp_path):
+    """JSON parses fine, but generation=-1 violates Inv 1; convert ValueError to kind='corrupt'."""
+    ckpt = CalibrationCheckpoint(**_valid_checkpoint_kwargs())
+    path = tmp_path / "phase12_checkpoint.json"
+    write_checkpoint(path, ckpt)
+    data = json.loads(path.read_text())
+    data["generation"] = -1
+    path.write_text(json.dumps(data))
+    result = read_checkpoint(path)
+    assert result.kind == "corrupt"
+    assert "generation" in (result.error_summary or "")
+
+
+def test_read_checkpoint_corrupt_on_invalid_utf8(tmp_path):
+    """Non-UTF-8 bytes → UnicodeDecodeError (a ValueError subclass) → kind='corrupt'."""
+    path = tmp_path / "phase12_checkpoint.json"
+    path.write_bytes(b"\xff\xfe\x00not-json")
+    old = time.time() - 10
+    os.utime(path, (old, old))
+    result = read_checkpoint(path)
+    assert result.kind == "corrupt"
