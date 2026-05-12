@@ -7,6 +7,7 @@ import pytest
 
 from osmose.calibration.checkpoint import (
     CalibrationCheckpoint,
+    CheckpointReadResult,
     MAX_CHECKPOINT_BYTES,
     default_results_dir,
 )
@@ -199,3 +200,35 @@ def test_invariant_banded_loss_requires_banded_targets():
     # all stay as their valid_kwargs values (banded_loss configured)
     with pytest.raises(ValueError, match="banded_targets"):
         CalibrationCheckpoint(**kwargs)
+
+
+def test_checkpoint_read_result_ok_with_checkpoint():
+    ckpt = CalibrationCheckpoint(**_valid_checkpoint_kwargs())
+    r = CheckpointReadResult(kind="ok", checkpoint=ckpt, error_summary=None)
+    assert r.kind == "ok"
+    assert r.checkpoint is ckpt
+
+
+def test_checkpoint_read_result_no_run_sentinel():
+    r = CheckpointReadResult(kind="no_run", checkpoint=None, error_summary=None)
+    assert r.checkpoint is None
+
+
+def test_checkpoint_read_result_corrupt_with_error():
+    r = CheckpointReadResult(kind="corrupt", checkpoint=None, error_summary="bad json")
+    assert r.error_summary == "bad json"
+
+
+def test_checkpoint_read_result_invariant_ok_without_checkpoint_raises():
+    with pytest.raises(ValueError, match="kind='ok'"):
+        CheckpointReadResult(kind="ok", checkpoint=None, error_summary=None)
+
+
+def test_checkpoint_read_result_invariant_non_ok_with_checkpoint_raises():
+    ckpt = CalibrationCheckpoint(**_valid_checkpoint_kwargs())
+    with pytest.raises(ValueError, match="checkpoint=None"):
+        CheckpointReadResult(kind="no_run", checkpoint=ckpt, error_summary=None)
+    with pytest.raises(ValueError, match="checkpoint=None"):
+        CheckpointReadResult(kind="partial", checkpoint=ckpt, error_summary=None)
+    with pytest.raises(ValueError, match="checkpoint=None"):
+        CheckpointReadResult(kind="corrupt", checkpoint=ckpt, error_summary="x")

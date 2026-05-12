@@ -173,3 +173,28 @@ class CalibrationCheckpoint:
             raise ValueError(f"phase must not contain '..': {self.phase!r}")
         if not _PHASE_RE.match(self.phase):
             raise ValueError(f"phase {self.phase!r} fails regex {_PHASE_RE.pattern}")
+
+
+@dataclass(frozen=True)
+class CheckpointReadResult:
+    """Discriminated read result.
+
+    Lets the UI distinguish transient partial writes from persistent
+    corruption from "no active run", without ever raising into the
+    reactive runtime.
+    """
+
+    kind: Literal["ok", "no_run", "partial", "corrupt"]
+    checkpoint: CalibrationCheckpoint | None
+    error_summary: str | None
+
+    def __post_init__(self) -> None:
+        if self.kind == "ok" and self.checkpoint is None:
+            raise ValueError(
+                "CheckpointReadResult(kind='ok') requires non-None checkpoint; "
+                "use kind='no_run' for the empty sentinel"
+            )
+        if self.kind != "ok" and self.checkpoint is not None:
+            raise ValueError(
+                f"CheckpointReadResult(kind={self.kind!r}) must have checkpoint=None"
+            )
