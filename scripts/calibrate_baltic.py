@@ -17,11 +17,13 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import logging
 import os
 import tempfile
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -40,6 +42,14 @@ SPECIES_NAMES = [
     "perch", "pikeperch", "smelt", "stickleback",
 ]
 N_SPECIES = len(SPECIES_NAMES)
+
+
+def _save_run_for_de(payload: dict) -> None:
+    """Thin DE-side wrapper around _save_run_safe."""
+    from osmose.calibration.history import _save_run_safe
+
+    logger = logging.getLogger("osmose.calibration.history_wiring")
+    _save_run_safe(payload, logger=logger, with_fallback=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1016,6 +1026,14 @@ def run_calibration(
     # phase 12 run plateaued at f=1.7735 for 40 generations / ~33h with no
     # improvement, never triggering tol because the population stayed diverse.
     de_callback = None
+    # Hoisted out of the optimizer=="de" conditional so the post-run save_run
+    # call (further down) can read them unconditionally.
+    evaluator_instance = objective if hasattr(objective, "targets") else None
+    banded_targets_dict = (
+        {t.species: (t.lower, t.upper) for t in evaluator_instance.targets}
+        if evaluator_instance is not None
+        else None
+    )
     if optimizer == "de" and (
         checkpoint_every > 0 or patience > 0 or wall_clock_cap_h > 0
     ):
@@ -1028,12 +1046,6 @@ def run_calibration(
         # workers call — re-evaluating best_x in-thread is deterministic
         # because the engine rebuilds its PCG64 state from evaluator.seed
         # on every run. See spec §6.5.1.
-        evaluator_instance = objective if hasattr(objective, "targets") else None
-        banded_targets_dict = (
-            {t.species: (t.lower, t.upper) for t in evaluator_instance.targets}
-            if evaluator_instance is not None
-            else None
-        )
         de_callback = _make_checkpoint_callback(
             checkpoint_path, checkpoint_every, param_keys, bounds,
             patience=patience,
@@ -1135,6 +1147,44 @@ def run_calibration(
                 f"(target: {target:>10,.0f}, ratio: {ratio:.2f}, "
                 f"mean CV: {np.mean(cvs):.3f})"
             )
+
+    # New: persist to History tab via save_run (additive — the existing
+    # phase{N}_results.json write below is preserved).
+    best_x_log10 = tuple(float(v) for v in best_x)
+    final_residuals: list[tuple[str, float, float]] | None
+    if evaluator_instance is not None and banded_targets_dict is not None:
+        try:
+            evaluator_instance.last_per_species_residuals = None
+            evaluator_instance(best_x)
+            final_residuals = evaluator_instance.last_per_species_residuals
+        except Exception:
+            final_residuals = None
+    else:
+        final_residuals = None
+
+    _save_run_for_de({
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "algorithm": "de",
+        "phase": phase,
+        "parameters": list(param_keys),
+        "results": {
+            "best_objective": float(result["fun"]),
+            "best_parameters": {
+                k: float(10.0 ** v) for k, v in zip(param_keys, best_x_log10)
+            },
+            "duration_seconds": time.time() - t0,
+            "n_evaluations": int(result.get("nfev", 0)),
+            "per_species_residuals_final": (
+                [r for _, r, _ in final_residuals] if final_residuals else None
+            ),
+            "per_species_sim_biomass_final": (
+                [b for _, _, b in final_residuals] if final_residuals else None
+            ),
+            "species_labels": (
+                [s for s, _, _ in final_residuals] if final_residuals else None
+            ),
+        },
+    })
 
     # Save results
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
