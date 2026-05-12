@@ -24,14 +24,19 @@ own RNG explicitly per call.
 
 from __future__ import annotations
 
+import logging
+import time
 import warnings
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import cma  # type: ignore[import-untyped]
 import joblib  # type: ignore[import-untyped]
 import numpy as np
 from numpy.typing import NDArray
+
+from osmose.calibration.checkpoint import _write_progress_checkpoint
 
 
 def run_cmaes(
@@ -45,6 +50,13 @@ def run_cmaes(
     seed: int = 42,
     workers: int = 1,
     verbose: bool = False,
+    *,
+    param_keys: list[str] | None = None,
+    checkpoint_path: Path | None = None,
+    checkpoint_every: int = 0,
+    phase: str = "unknown",
+    evaluator: Any = None,
+    banded_targets: dict[str, tuple[float, float]] | None = None,
 ) -> dict[str, Any]:
     """Optimise `objective` over `bounds` via CMA-ES.
 
@@ -111,6 +123,15 @@ def run_cmaes(
     }
     es = cma.CMAEvolutionStrategy(x0_clipped.tolist(), sigma0, cma_opts)
 
+    logger = logging.getLogger("osmose.calibration.cmaes_runner")
+    _checkpoint_state = {
+        "gen": 0,
+        "best_fun_seen": float("inf"),
+        "gens_since_improvement": 0,
+        "start_time": time.time(),
+        "persistence_failure_notified": False,
+    }
+
     history: list[dict[str, Any]] = []
     # Track the largest finite cost ever observed across all generations so
     # NaN replacements stay strictly worse than any real datum — preventing a
@@ -151,6 +172,40 @@ def run_cmaes(
             "mean": float(np.mean(values_arr)),
             "std": float(np.std(values_arr)),
         })
+
+        _checkpoint_state["gen"] += 1
+        _best_x = np.clip(
+            np.asarray(es.best.x, dtype=float),
+            bounds_arr[:, 0], bounds_arr[:, 1],
+        )
+        _best_fun = float(es.best.f)
+        _prior_best = _checkpoint_state["best_fun_seen"]
+        if _best_fun < _prior_best:
+            _checkpoint_state["best_fun_seen"] = _best_fun
+            _checkpoint_state["gens_since_improvement"] = 0
+        else:
+            _checkpoint_state["gens_since_improvement"] += 1
+
+        if (
+            checkpoint_path is not None
+            and checkpoint_every > 0
+            and param_keys is not None
+            and _checkpoint_state["gen"] % checkpoint_every == 0
+        ):
+            _write_progress_checkpoint(
+                checkpoint_path=checkpoint_path,
+                state=_checkpoint_state,
+                best_x=_best_x,
+                best_fun=_best_fun,
+                optimizer="cmaes",
+                phase=phase,
+                generation_budget=maxiter,
+                param_keys=param_keys,
+                bounds=bounds,
+                evaluator=evaluator,
+                banded_targets=banded_targets,
+                logger=logger,
+            )
 
     # Map cma's stop reason to a meaningful success flag. Budget-exhausted or
     # degenerate-state stops are NOT successful convergence. Also: if every

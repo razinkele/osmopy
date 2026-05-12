@@ -57,3 +57,33 @@ def test_de_existing_test_callsite_still_works(tmp_path):
     cb(SimpleNamespace(x=[0.0, 1.0], fun=4.5))
     cb(SimpleNamespace(x=[-0.5, 0.5], fun=3.2))
     assert checkpoint_path.exists()
+
+
+def test_cmaes_writes_checkpoint(tmp_results_dir):
+    """A 2-generation CMA-ES run on a synthetic toy writes a CalibrationCheckpoint."""
+    from osmose.calibration.checkpoint import read_checkpoint
+    from osmose.calibration.cmaes_runner import run_cmaes
+
+    bounds = [(-1.0, 1.0), (0.0, 3.0)]
+    checkpoint_path = tmp_results_dir / "phase_test_checkpoint.json"
+
+    run_cmaes(
+        objective=_toy_objective_2_param,
+        bounds=bounds,
+        param_keys=["k_a", "k_b"],
+        x0=[0.0, 1.5],
+        seed=42,
+        maxiter=2,
+        sigma0=0.3,
+        checkpoint_path=checkpoint_path,
+        checkpoint_every=1,
+        phase="test",
+        evaluator=None,
+        banded_targets=None,
+    )
+    assert checkpoint_path.exists()
+    result = read_checkpoint(checkpoint_path)
+    assert result.kind == "ok"
+    assert result.checkpoint.optimizer == "cmaes"
+    assert result.checkpoint.generation == 2
+    assert result.checkpoint.generation_budget == 2
