@@ -90,7 +90,7 @@ class TestMakeBandedObjective:
         ]
 
     def test_all_within_range(self, targets: list[BiomassTarget]) -> None:
-        obj = make_banded_objective(targets, ["cod", "herring"])
+        obj, _ = make_banded_objective(targets, ["cod", "herring"])
         stats = {
             "cod_mean": 150000,
             "cod_cv": 0.1,
@@ -102,7 +102,7 @@ class TestMakeBandedObjective:
         assert obj(stats) == 0.0
 
     def test_one_below_range(self, targets: list[BiomassTarget]) -> None:
-        obj = make_banded_objective(targets, ["cod", "herring"])
+        obj, _ = make_banded_objective(targets, ["cod", "herring"])
         stats = {
             "cod_mean": 10000,
             "cod_cv": 0.1,
@@ -115,14 +115,14 @@ class TestMakeBandedObjective:
         assert result > 0.0
 
     def test_missing_species_key_penalty(self, targets: list[BiomassTarget]) -> None:
-        obj = make_banded_objective(targets, ["cod", "herring"])
+        obj, _ = make_banded_objective(targets, ["cod", "herring"])
         stats = {"cod_mean": 150000, "cod_cv": 0.1, "cod_trend": 0.01}
         # herring keys missing -> 100.0 penalty * 0.5 weight = 50.0 + worst term
         result = obj(stats)
         assert result >= 50.0
 
     def test_stability_penalty_applied(self, targets: list[BiomassTarget]) -> None:
-        obj = make_banded_objective(targets, ["cod", "herring"], w_stability=5.0)
+        obj, _ = make_banded_objective(targets, ["cod", "herring"], w_stability=5.0)
         stats = {
             "cod_mean": 150000,
             "cod_cv": 0.5,
@@ -135,8 +135,8 @@ class TestMakeBandedObjective:
         assert result > 0.0
 
     def test_worst_species_term(self, targets: list[BiomassTarget]) -> None:
-        obj_with = make_banded_objective(targets, ["cod", "herring"], w_worst=1.0)
-        obj_without = make_banded_objective(targets, ["cod", "herring"], w_worst=0.0)
+        obj_with, _ = make_banded_objective(targets, ["cod", "herring"], w_worst=1.0)
+        obj_without, _ = make_banded_objective(targets, ["cod", "herring"], w_worst=0.0)
         stats = {
             "cod_mean": 10000,
             "cod_cv": 0.1,
@@ -146,3 +146,61 @@ class TestMakeBandedObjective:
             "herring_trend": 0.02,
         }
         assert obj_with(stats) > obj_without(stats)
+
+
+def test_make_banded_objective_returns_tuple(synthetic_two_species_targets):
+    targets, species_names = synthetic_two_species_targets
+    result = make_banded_objective(targets, species_names)
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+    obj, accessor = result
+    assert callable(obj)
+    assert callable(accessor)
+
+
+def test_residuals_accessor_returns_none_before_first_call(synthetic_two_species_targets):
+    targets, species_names = synthetic_two_species_targets
+    _, accessor = make_banded_objective(targets, species_names)
+    assert accessor() is None
+
+
+def test_residuals_accessor_returns_most_recent(
+    synthetic_two_species_targets, synthetic_stats_in_band,
+    synthetic_stats_sp_b_out_of_band,
+):
+    targets, species_names = synthetic_two_species_targets
+    obj, accessor = make_banded_objective(targets, species_names)
+
+    obj(synthetic_stats_in_band)
+    labels1, residuals1, sim_biomass1 = accessor()
+    assert tuple(labels1) == ("sp_a", "sp_b")
+    assert tuple(residuals1) == (0.0, 0.0)
+
+    obj(synthetic_stats_sp_b_out_of_band)
+    labels2, residuals2, sim_biomass2 = accessor()
+    assert residuals2[1] > 0.0
+    assert sim_biomass2[1] == synthetic_stats_sp_b_out_of_band["sp_b_mean"]
+
+
+def test_make_banded_objective_callable_returns_zero_when_in_band(
+    synthetic_two_species_targets, synthetic_stats_in_band,
+):
+    """Backward-compat: callable behaviour unchanged for in-band stats."""
+    targets, species_names = synthetic_two_species_targets
+    obj, _ = make_banded_objective(targets, species_names)
+    value = obj(synthetic_stats_in_band)
+    assert value == 0.0
+
+
+def test_residuals_accessor_reset_to_none_on_call_failure(synthetic_two_species_targets):
+    """Spec §6.5.2 failure-mode parity."""
+    targets, species_names = synthetic_two_species_targets
+    obj, accessor = make_banded_objective(targets, species_names)
+
+    obj({"sp_a_mean": 1.0, "sp_b_mean": 2.0, "sp_a_cv": 0.0, "sp_b_cv": 0.0,
+         "sp_a_trend": 0.0, "sp_b_trend": 0.0})
+    assert accessor() is not None
+
+    with pytest.raises((TypeError, AttributeError, KeyError)):
+        obj(None)  # type: ignore[arg-type]
+    assert accessor() is None

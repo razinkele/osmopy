@@ -836,7 +836,7 @@ def register_calibration_handlers(
             species_names = [t.species for t in targets]
             w_stability = float(input.cal_w_stability())
             w_worst = float(input.cal_w_worst())
-            banded_obj = make_banded_objective(
+            banded_obj, banded_residuals_accessor = make_banded_objective(
                 targets, species_names, w_stability=w_stability, w_worst=w_worst
             )
 
