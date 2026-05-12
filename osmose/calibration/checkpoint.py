@@ -408,3 +408,16 @@ def liveness_state(age_seconds: float) -> Literal["live", "stalled", "idle"]:
     if age_seconds <= 300.0:
         return "stalled"
     return "idle"
+
+
+@dataclass(frozen=True)
+class LiveSnapshot:
+    """One atomic view of the results directory per scan tick.
+
+    Shared by all rendering reactives so they cannot disagree about which
+    run is active. See spec §7 reactive-plumbing.
+    """
+
+    active: CheckpointReadResult
+    other_live_paths: tuple[Path, ...]
+    snapshot_monotonic: float

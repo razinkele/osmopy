@@ -430,3 +430,23 @@ def test_liveness_state_stalled_to_idle_boundary_300s():
 
 def test_liveness_state_rejects_negative_age():
     assert liveness_state(age_seconds=-10.0) == "idle"
+
+
+from osmose.calibration.checkpoint import LiveSnapshot
+
+
+def test_live_snapshot_construction():
+    sentinel = CheckpointReadResult(kind="no_run", checkpoint=None, error_summary=None)
+    snap = LiveSnapshot(active=sentinel, other_live_paths=(), snapshot_monotonic=42.0)
+    assert snap.active is sentinel
+    assert snap.other_live_paths == ()
+
+
+def test_live_snapshot_replace_via_dataclasses_replace():
+    """Frozen dataclass: dataclasses.replace produces a new instance."""
+    sentinel = CheckpointReadResult(kind="no_run", checkpoint=None, error_summary=None)
+    snap = LiveSnapshot(active=sentinel, other_live_paths=(), snapshot_monotonic=42.0)
+    snap2 = dataclasses.replace(snap, snapshot_monotonic=99.0)
+    assert snap2.snapshot_monotonic == 99.0
+    assert snap2.active is sentinel
+    assert snap.snapshot_monotonic == 42.0
