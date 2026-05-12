@@ -353,3 +353,80 @@ def test_read_checkpoint_corrupt_on_invalid_utf8(tmp_path):
     os.utime(path, (old, old))
     result = read_checkpoint(path)
     assert result.kind == "corrupt"
+
+
+from osmose.calibration.checkpoint import is_live, probe_writable
+
+
+def test_is_live_true_for_recent_file(tmp_path):
+    path = tmp_path / "phase12_checkpoint.json"
+    path.write_text("{}")
+    assert is_live(path, max_age_s=60.0) is True
+
+
+def test_is_live_false_for_old_file(tmp_path):
+    path = tmp_path / "phase12_checkpoint.json"
+    path.write_text("{}")
+    old = time.time() - 120
+    os.utime(path, (old, old))
+    assert is_live(path, max_age_s=60.0) is False
+
+
+def test_is_live_false_for_future_mtime(tmp_path):
+    path = tmp_path / "phase12_checkpoint.json"
+    path.write_text("{}")
+    future = time.time() + 60
+    os.utime(path, (future, future))
+    assert is_live(path, max_age_s=60.0) is False
+
+
+def test_is_live_uses_injected_now_for_determinism(tmp_path):
+    path = tmp_path / "phase12_checkpoint.json"
+    path.write_text("{}")
+    target_mtime = path.stat().st_mtime
+    assert is_live(path, max_age_s=60.0, now=target_mtime + 30) is True
+    assert is_live(path, max_age_s=60.0, now=target_mtime + 90) is False
+
+
+def test_probe_writable_succeeds_on_writable_dir(tmp_path):
+    probe_writable(tmp_path)
+
+
+def test_probe_writable_does_not_leak_sentinel(tmp_path):
+    probe_writable(tmp_path)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_probe_writable_raises_on_readonly_dir(tmp_path):
+    import sys
+    if sys.platform.startswith("win"):
+        pytest.skip("chmod 0o555 semantics differ on Windows")
+    tmp_path.chmod(0o555)
+    try:
+        with pytest.raises(OSError):
+            probe_writable(tmp_path)
+    finally:
+        tmp_path.chmod(0o755)
+
+
+from osmose.calibration.checkpoint import liveness_state
+
+
+def test_liveness_state_live_boundary():
+    assert liveness_state(age_seconds=30.0) == "live"
+    assert liveness_state(age_seconds=0.0) == "live"
+
+
+def test_liveness_state_stalled_boundary_60s():
+    assert liveness_state(age_seconds=61.0) == "stalled"
+    assert liveness_state(age_seconds=120.0) == "stalled"
+
+
+def test_liveness_state_stalled_to_idle_boundary_300s():
+    assert liveness_state(age_seconds=299.0) == "stalled"
+    assert liveness_state(age_seconds=301.0) == "idle"
+    assert liveness_state(age_seconds=3600.0) == "idle"
+
+
+def test_liveness_state_rejects_negative_age():
+    assert liveness_state(age_seconds=-10.0) == "idle"

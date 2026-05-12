@@ -13,6 +13,7 @@ import json
 import math
 import os
 import re
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -371,3 +372,39 @@ def read_checkpoint(path: Path) -> CheckpointReadResult:
             ),
         )
     return CheckpointReadResult(kind="ok", checkpoint=ckpt, error_summary=None)
+
+
+def is_live(path: Path, max_age_s: float = 60.0, now: float | None = None) -> bool:
+    """True iff (now - max_age_s) < mtime <= now.
+
+    Strict on the lower bound, inclusive on the upper. Future-mtime files
+    (NTP rewind, clock jump) return False.
+    """
+    try:
+        mtime = path.stat().st_mtime
+    except (FileNotFoundError, PermissionError):
+        return False
+    t = time.time() if now is None else now
+    return (t - max_age_s) < mtime <= t
+
+
+def probe_writable(results_dir: Path) -> None:
+    """Write a temporary probe file; raise OSError on permission/missing-dir failure.
+
+    Uses NamedTemporaryFile(delete=True) so no sentinel persists after return.
+    """
+    with tempfile.NamedTemporaryFile(
+        dir=results_dir, delete=True, prefix=".probe_", suffix=".tmp"
+    ):
+        pass
+
+
+def liveness_state(age_seconds: float) -> Literal["live", "stalled", "idle"]:
+    """Three-state liveness classification per spec §7."""
+    if age_seconds < 0:
+        return "idle"
+    if age_seconds <= 60.0:
+        return "live"
+    if age_seconds <= 300.0:
+        return "stalled"
+    return "idle"
