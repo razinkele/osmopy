@@ -265,6 +265,7 @@ def calibration_ui():
                         ui.output_ui("run_header"),
                         ui.output_ui("ices_proxy_table"),
                         output_widget("convergence_chart"),
+                        ui.output_ui("current_best_parameters"),
                     ),
                 ),
                 ui.nav_panel(

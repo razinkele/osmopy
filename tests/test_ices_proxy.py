@@ -137,3 +137,43 @@ def test_convergence_chart_no_best_ever_line_when_no_prior_runs(monkeypatch):
     monkeypatch.setattr(hist_mod, "list_runs", lambda history_dir=None: [])
     fig = make_convergence_chart(history=[10.0], optimizer="de", phase="test")
     assert not (fig.layout.shapes or ())
+
+
+def test_bound_distance_badge_at_upper():
+    from ui.pages.calibration_handlers import _build_param_rows
+
+    ckpt = CalibrationCheckpoint(
+        optimizer="de", phase="test", generation=1, generation_budget=None,
+        best_fun=1.0,
+        per_species_residuals=None, per_species_sim_biomass=None, species_labels=None,
+        best_x_log10=(0.96, 0.5),
+        best_parameters={"k_a": 9.12, "k_b": 3.16},
+        param_keys=("k_a", "k_b"),
+        bounds_log10={"k_a": (0.0, 1.0), "k_b": (0.0, 1.0)},
+        gens_since_improvement=0, elapsed_seconds=1.0,
+        timestamp_iso="2026-05-12T10:00:00+00:00",
+        banded_targets=None, proxy_source="objective_disabled",
+    )
+    rows = _build_param_rows(ckpt)
+    by_key = {r["key"]: r for r in rows}
+    assert by_key["k_a"]["bound_badge"] == "at upper bound"
+    assert by_key["k_b"]["bound_badge"] == ""
+
+
+def test_bound_distance_badge_at_lower():
+    from ui.pages.calibration_handlers import _build_param_rows
+
+    ckpt = CalibrationCheckpoint(
+        optimizer="de", phase="test", generation=1, generation_budget=None,
+        best_fun=1.0,
+        per_species_residuals=None, per_species_sim_biomass=None, species_labels=None,
+        best_x_log10=(0.02,),
+        best_parameters={"k_a": 1.05},
+        param_keys=("k_a",),
+        bounds_log10={"k_a": (0.0, 1.0)},
+        gens_since_improvement=0, elapsed_seconds=1.0,
+        timestamp_iso="2026-05-12T10:00:00+00:00",
+        banded_targets=None, proxy_source="objective_disabled",
+    )
+    rows = _build_param_rows(ckpt)
+    assert rows[0]["bound_badge"] == "at lower bound"

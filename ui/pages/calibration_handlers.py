@@ -192,6 +192,29 @@ def _build_proxy_rows(ckpt: CalibrationCheckpoint) -> list[dict]:
     return rows
 
 
+_BOUND_DISTANCE_THRESHOLD = 0.05  # 5% of bound range
+
+
+def _build_param_rows(ckpt: CalibrationCheckpoint) -> list[dict]:
+    """Current-best-parameters rows with bound-distance hints."""
+    rows: list[dict] = []
+    for key in sorted(ckpt.param_keys):
+        idx = ckpt.param_keys.index(key)
+        x_log10 = ckpt.best_x_log10[idx]
+        lo, hi = ckpt.bounds_log10[key]
+        rng = hi - lo
+        if rng <= 0:
+            badge = ""
+        elif (hi - x_log10) / rng < _BOUND_DISTANCE_THRESHOLD:
+            badge = "at upper bound"
+        elif (x_log10 - lo) / rng < _BOUND_DISTANCE_THRESHOLD:
+            badge = "at lower bound"
+        else:
+            badge = ""
+        rows.append({"key": key, "value": ckpt.best_parameters[key], "bound_badge": badge})
+    return rows
+
+
 def _aria_for_state(state: str, magnitude: float, direction: str) -> str:
     if state == "in_range":
         return "in band"
@@ -858,6 +881,31 @@ def register_calibration_handlers(
                 f"{n_in}/{n_in + n_out + n_na} in-band (proxy) · {n_out} out · {n_na} n/a · "
                 "authoritative ICES verdict appears in Results tab after completion.",
                 class_="small text-muted",
+            ),
+        )
+
+    @output
+    @render.ui
+    def current_best_parameters():
+        snap = _live_snapshot()
+        if snap.active.kind != "ok":
+            return ui.tags.div()
+        rows = _build_param_rows(snap.active.checkpoint)
+        return ui.tags.details(
+            ui.tags.summary("Current best parameters"),
+            ui.tags.table(
+                ui.tags.tbody(*[
+                    ui.tags.tr(
+                        ui.tags.td(html.escape(r["key"])),
+                        ui.tags.td(f"{r['value']:.4f}"),
+                        ui.tags.td(
+                            ui.tags.span(f"[{r['bound_badge']}]", class_="text-warning small")
+                            if r["bound_badge"] else ""
+                        ),
+                    )
+                    for r in rows
+                ]),
+                class_="table table-sm small",
             ),
         )
 
