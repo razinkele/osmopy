@@ -332,3 +332,76 @@ def test_surrogate_pareto_scatter_empty_for_high_dim():
     assert isinstance(df, pd.DataFrame), f"Expected DataFrame, got {type(df)}"
     assert len(df) == 4, f"Expected 4 rows, got {len(df)}"
 
+
+def test_progress_callback_writes_checkpoint_per_generation(tmp_results_dir):
+    """Driving the NSGA-II callback three times produces a checkpoint with
+    monotonically-increasing generation."""
+    from unittest.mock import MagicMock
+
+    import numpy as np
+
+    from osmose.calibration.checkpoint import read_checkpoint
+    from ui.pages.calibration_handlers import _make_progress_callback
+
+    history_appended = []
+    cb = _make_progress_callback(
+        cal_history_append=history_appended.append,
+        cancel_check=lambda: False,
+        checkpoint_path=tmp_results_dir / "phase_test_checkpoint.json",
+        phase="test",
+        param_keys=["k_a", "k_b"],
+        bounds=[(-1.0, 1.0), (0.0, 3.0)],
+        banded_residuals_accessor=lambda: None,
+        banded_targets=None,
+    )
+
+    for gen in range(1, 4):
+        mock_alg = MagicMock()
+        mock_alg.opt = MagicMock()
+        mock_alg.opt.get.side_effect = lambda key, _g=gen: {
+            "F": np.array([[float(_g) * 0.5]]),
+            "X": np.array([[0.1, 0.2]]),
+        }[key]
+        cb.notify(mock_alg)
+
+    result = read_checkpoint(tmp_results_dir / "phase_test_checkpoint.json")
+    assert result.kind == "ok"
+    assert result.checkpoint.optimizer == "nsga2"
+    assert result.checkpoint.generation == 3
+
+
+def test_results_branch_handles_write_failure_gracefully(monkeypatch):
+    """write_checkpoint raising in the NSGA-II callback MUST NOT prevent
+    cal_history_append from updating the convergence chart."""
+    from pathlib import Path
+    from unittest.mock import MagicMock
+
+    import numpy as np
+
+    from ui.pages.calibration_handlers import _make_progress_callback
+
+    def failing_write(*args, **kwargs):
+        raise OSError("simulated disk-full")
+
+    monkeypatch.setattr(
+        "osmose.calibration.checkpoint.write_checkpoint", failing_write,
+    )
+    appended = []
+    cb = _make_progress_callback(
+        cal_history_append=appended.append,
+        cancel_check=lambda: False,
+        checkpoint_path=Path("/tmp/should_not_be_used.json"),
+        phase="test",
+        param_keys=["k_a"],
+        bounds=[(-1.0, 1.0)],
+        banded_residuals_accessor=lambda: None,
+        banded_targets=None,
+    )
+    mock_alg = MagicMock()
+    mock_alg.opt.get.side_effect = lambda key: {
+        "F": np.array([[3.14]]),
+        "X": np.array([[0.0]]),
+    }[key]
+    cb.notify(mock_alg)
+    assert appended == [3.14]  # chart updated even though disk write raised
+

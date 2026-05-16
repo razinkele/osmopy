@@ -15,6 +15,7 @@ import numpy as np
 from shiny import reactive, ui
 from shiny.types import SilentException
 
+from osmose.calibration.checkpoint import RESULTS_DIR
 from osmose.logging import setup_logging
 from osmose.schema.base import ParamType
 from osmose.schema.registry import ParameterRegistry
@@ -142,9 +143,36 @@ def _clamp_n_workers(requested: int | None, cpu: int | None) -> int:
     return min(n, ceiling)
 
 
-def _make_progress_callback(cal_history_append, cancel_check):
-    """Create a pymoo callback (lazy import to avoid loading pymoo at startup)."""
+def _make_progress_callback(
+    cal_history_append,
+    cancel_check,
+    *,
+    checkpoint_path: Path | None = None,
+    phase: str = "unknown",
+    param_keys: list[str] | None = None,
+    bounds: list[tuple[float, float]] | None = None,
+    banded_residuals_accessor=None,
+    banded_targets: dict[str, tuple[float, float]] | None = None,
+):
+    """Create a pymoo callback that feeds cal_history AND writes a checkpoint.
+
+    The existing in-memory chart feed is preserved (cal_history_append); the
+    new write is additive and wrapped in try/except so a disk failure cannot
+    regress the convergence chart. See spec §6 runner table (NSGA-II row).
+    """
+    from datetime import datetime, timezone
+    import logging
+    import time
+
     from pymoo.core.callback import Callback  # type: ignore[import-untyped]
+
+    logger = logging.getLogger("osmose.ui.calibration_dashboard")
+    state = {
+        "gen": 0,
+        "best_fun_seen": float("inf"),
+        "gens_since_improvement": 0,
+        "start_time": time.time(),
+    }
 
     class _ProgressCallback(Callback):
         def __init__(self):
@@ -156,9 +184,115 @@ def _make_progress_callback(cal_history_append, cancel_check):
                 return
             F = algorithm.opt.get("F")
             best = float(np.min(F.sum(axis=1)))
-            cal_history_append(best)
+            cal_history_append(best)  # existing — MUST run first
+
+            if checkpoint_path is None or param_keys is None or bounds is None:
+                return
+
+            state["gen"] += 1
+            prior_best = state["best_fun_seen"]
+            if best < prior_best:
+                state["best_fun_seen"] = best
+                state["gens_since_improvement"] = 0
+            else:
+                state["gens_since_improvement"] += 1
+
+            # Path B: in-process single-threaded → no re-eval needed.
+            if banded_residuals_accessor is None or banded_targets is None:
+                residuals_tuple = None
+            else:
+                residuals_tuple = banded_residuals_accessor()
+
+            if residuals_tuple is None:
+                if banded_targets is None:
+                    proxy_source = "objective_disabled"
+                else:
+                    proxy_source = "not_implemented"
+                    logger.warning(
+                        "NSGA-II checkpoint at gen %d: banded_residuals_accessor "
+                        "returned None despite banded-loss being configured "
+                        "(proxy_source=not_implemented; cause=accessor_returned_none).",
+                        state["gen"],
+                    )
+                per_species_residuals = None
+                per_species_sim_biomass = None
+                species_labels = None
+            else:
+                species_labels, per_species_residuals, per_species_sim_biomass = residuals_tuple
+                proxy_source = "banded_loss"
+
+            best_x = algorithm.opt.get("X")[0]
+            best_x_log10 = tuple(float(v) for v in best_x)
+
+            try:
+                from osmose.calibration.checkpoint import (
+                    CalibrationCheckpoint,
+                    write_checkpoint,
+                )
+
+                ckpt = CalibrationCheckpoint(
+                    optimizer="nsga2",
+                    phase=phase,
+                    generation=state["gen"],
+                    generation_budget=None,
+                    best_fun=best,
+                    per_species_residuals=per_species_residuals,
+                    per_species_sim_biomass=per_species_sim_biomass,
+                    species_labels=species_labels,
+                    best_x_log10=best_x_log10,
+                    best_parameters={
+                        k: float(10.0 ** v) for k, v in zip(param_keys, best_x_log10)
+                    },
+                    param_keys=tuple(param_keys),
+                    bounds_log10={
+                        k: (float(lo), float(hi))
+                        for k, (lo, hi) in zip(param_keys, bounds)
+                    },
+                    gens_since_improvement=state["gens_since_improvement"],
+                    elapsed_seconds=time.time() - state["start_time"],
+                    timestamp_iso=datetime.now(timezone.utc).isoformat(),
+                    banded_targets=banded_targets,
+                    proxy_source=proxy_source,
+                )
+                write_checkpoint(checkpoint_path, ckpt)
+            except (OSError, TypeError, ValueError) as e:
+                logger.warning(
+                    "NSGA-II checkpoint write failed at gen %d: %s", state["gen"], e,
+                )
 
     return _ProgressCallback()
+
+
+def _save_run_for_nsga2(payload, X, F, phase: str, param_keys: list[str]) -> None:
+    """Thin NSGA-II-side wrapper around _save_run_safe in history.py.
+
+    Mirrors _save_run_for_de in scripts/calibrate_baltic.py.
+    """
+    from datetime import datetime, timezone
+    import logging
+
+    from osmose.calibration.history import _save_run_safe
+
+    logger = logging.getLogger("osmose.ui.calibration_dashboard")
+    best_idx = int(np.argmin(F.sum(axis=1)))
+    best_F = float(F.sum(axis=1)[best_idx])
+    best_x = X[best_idx]
+    record = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "algorithm": "nsga2",
+        "phase": phase,
+        "parameters": list(param_keys),
+        "results": {
+            "best_objective": best_F,
+            "best_parameters": {k: float(v) for k, v in zip(param_keys, best_x)},
+            "duration_seconds": 0.0,
+            "n_evaluations": int(getattr(X, "shape", [0])[0]),
+            "per_species_residuals_final": None,
+            "per_species_sim_biomass_final": None,
+            "species_labels": None,
+        },
+    }
+    _save_run_safe(record, logger=logger, with_fallback=True)
 
 
 def get_calibratable_params(registry: ParameterRegistry, n_species: int) -> list[dict]:
@@ -452,6 +586,17 @@ def register_calibration_handlers(
                 X, F = payload
                 cal_X.set(X)
                 cal_F.set(F)
+                # Scope note: phase and param_keys are NOT in scope at this
+                # callsite. NSGA-II UI runs use a fixed phase string. param_keys
+                # comes from cal_param_names (register_calibration_handlers closure parameter).
+                try:
+                    _save_run_for_nsga2(
+                        payload, X, F,
+                        phase="ui_nsga2",
+                        param_keys=cal_param_names.get() or [],
+                    )
+                except Exception as e:  # noqa: BLE001
+                    surrogate_status.set(f"history persist failed: {e}")
             elif kind == "error":
                 surrogate_status.set(f"Failed: {payload}")
                 ui.notification_show(f"Calibration error: {payload}", type="error", duration=15)
@@ -497,6 +642,8 @@ def register_calibration_handlers(
     _shared_algorithm_choice = "nsga2"
     _shared_pop_size = 50
     _shared_generations = 100
+    _shared_banded_residuals_accessor = None
+    _shared_banded_targets_dict: dict[str, tuple[float, float]] | None = None
 
     def _start_optimization_with_params(free_params):
         """Launch the optimization thread (surrogate or NSGA-II) with given params.
@@ -507,6 +654,7 @@ def register_calibration_handlers(
         nonlocal _shared_obs_diet, _shared_banded_enabled, _shared_base_config
         nonlocal _shared_jar_path, _shared_work_dir, _shared_n_parallel
         nonlocal _shared_algorithm_choice, _shared_pop_size, _shared_generations
+        nonlocal _shared_banded_residuals_accessor, _shared_banded_targets_dict
 
         from osmose.calibration.problem import OsmoseCalibrationProblem
 
@@ -672,6 +820,13 @@ def register_calibration_handlers(
                     callback = _make_progress_callback(
                         cal_history_append=_tracked_append,
                         cancel_check=cancel_event.is_set,
+                        # NEW dashboard wiring:
+                        checkpoint_path=RESULTS_DIR / "phase_ui_nsga2_checkpoint.json",
+                        phase="ui_nsga2",
+                        param_keys=[fp.key for fp in free_params],
+                        bounds=[(fp.lower_bound, fp.upper_bound) for fp in free_params],
+                        banded_residuals_accessor=_shared_banded_residuals_accessor,
+                        banded_targets=_shared_banded_targets_dict,
                     )
 
                     res = minimize(
@@ -744,6 +899,7 @@ def register_calibration_handlers(
         nonlocal _shared_jar_path, _shared_work_dir, _shared_current_config
         nonlocal _shared_n_parallel, _shared_algorithm_choice
         nonlocal _shared_pop_size, _shared_generations
+        nonlocal _shared_banded_residuals_accessor, _shared_banded_targets_dict
 
         selected = collect_selected_params(input, state)
         if not selected:
@@ -779,6 +935,11 @@ def register_calibration_handlers(
 
         from osmose.calibration.objectives import biomass_rmse, diet_distance
         from osmose.config.writer import OsmoseConfigWriter
+
+        # Reset banded-loss shared state — stale values from a prior run would
+        # cause the NSGA-II checkpoint to write stale residuals/targets.
+        _shared_banded_residuals_accessor = None
+        _shared_banded_targets_dict = None
 
         free_params = build_free_params(selected)
         work_dir = Path(tempfile.mkdtemp(prefix="osmose_cal_"))
@@ -839,6 +1000,10 @@ def register_calibration_handlers(
             banded_obj, banded_residuals_accessor = make_banded_objective(
                 targets, species_names, w_stability=w_stability, w_worst=w_worst
             )
+            _shared_banded_residuals_accessor = banded_residuals_accessor
+            _shared_banded_targets_dict = {
+                t.species: (t.lower, t.upper) for t in targets
+            }
 
             def banded_objective_fn(results, _banded=banded_obj, _sp=species_names):
                 stats = _extract_species_stats(results, _sp)
