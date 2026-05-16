@@ -71,13 +71,14 @@ _EQ_WINDOW_END: float = 25.0
 _CASCADE_STICKLEBACK_MIN_RATIO: float = 1.02  # mean(S_pert) / mean(S_base) >= this
 _CASCADE_SPRAT_MAX_DELTA: float = 0.10        # |mean(Sp_pert)/mean(Sp_base) - 1| <= this
 
-# Equilibrium bands per focal species. Wide-default (covers any plausible
-# value within 15 orders of magnitude). Task 6 narrows to MEASURED equilibrium
-# ± 20%.  Values are (lower, upper) in tonnes.
+# Equilibrium bands per focal species. Measured from equilibrium window
+# (years 5-25, seed=42) and encoded as ± 20%. Values are (lower, upper) in tonnes.
+# Measured 2026-05-17 against the Baltic substrate. Re-measure if build_config
+# values or engine version change.
 _PYRAMID_BOUNDS: dict[str, tuple[float, float]] = {
-    "cod":          (1.0, 1.0e15),
-    "sprat":        (1.0, 1.0e15),
-    "stickleback":  (1.0, 1.0e15),
+    "cod":          (7.238e+02, 1.086e+03),
+    "sprat":        (4.418e+06, 6.627e+06),
+    "stickleback":  (4.342e+05, 6.513e+05),
 }
 
 
