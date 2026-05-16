@@ -112,11 +112,13 @@ def tmp_results_dir(tmp_path, monkeypatch) -> Path:
     monkeypatch.setattr("osmose.calibration.checkpoint.RESULTS_DIR", tmp_path)
     try:
         import scripts.calibrate_baltic as cb_mod
+
         monkeypatch.setattr(cb_mod, "RESULTS_DIR", tmp_path, raising=False)
     except ImportError:
         pass
     try:
         import ui.pages.calibration_handlers as ch_mod
+
         monkeypatch.setattr(ch_mod, "RESULTS_DIR", tmp_path, raising=False)
     except ImportError:
         pass
@@ -139,31 +141,56 @@ def synthetic_two_species_targets():
 @pytest.fixture
 def synthetic_stats_in_band():
     return {
-        "sp_a_mean": 1.0, "sp_a_cv": 0.1, "sp_a_trend": 0.01,
-        "sp_b_mean": 2.0, "sp_b_cv": 0.1, "sp_b_trend": 0.01,
+        "sp_a_mean": 1.0,
+        "sp_a_cv": 0.1,
+        "sp_a_trend": 0.01,
+        "sp_b_mean": 2.0,
+        "sp_b_cv": 0.1,
+        "sp_b_trend": 0.01,
     }
 
 
 @pytest.fixture
 def synthetic_stats_sp_b_out_of_band():
     return {
-        "sp_a_mean": 1.0, "sp_a_cv": 0.1, "sp_a_trend": 0.01,
-        "sp_b_mean": 5.0, "sp_b_cv": 0.1, "sp_b_trend": 0.01,
+        "sp_a_mean": 1.0,
+        "sp_a_cv": 0.1,
+        "sp_a_trend": 0.01,
+        "sp_b_mean": 5.0,
+        "sp_b_cv": 0.1,
+        "sp_b_trend": 0.01,
     }
 
 
 # ---------------------------------------------------------------------------
-# Numba warmup stub (T5 will replace with real Numba JIT compilation fixture)
+# Numba warmup — session-scoped, opt-in
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture(scope="session")
 def numba_warmup() -> None:  # type: ignore[return]
-    """Placeholder fixture for Numba JIT compilation warmup.
+    """Warm Numba's JIT cache once per pytest session.
 
-    T5 will replace this stub with a session-scoped fixture that compiles all
-    Numba-decorated functions once before the tutorial tests run.  Until then
-    this stub ensures the tutorial tests can be collected and run without
-    fixture-not-found errors.
+    The OSMOSE engine compiles ~20-25 s of native code on first run; subsequent
+    runs are <2 s. Tests that run the engine should request this fixture so
+    the JIT cost is paid once per session, not once per test.
+
+    OPT-IN (not autouse) — tests that don't run the engine (schema-only,
+    MCP-credential, etc.) shouldn't pay this cost. The tutorial test requests
+    it via its `baseline_run` and `perturbed_run` fixtures.
+
+    Runs a minimal 1-year Baltic simulation. Output is discarded.
     """
-    yield
+    import tempfile
+    from pathlib import Path
+
+    from osmose.engine import PythonEngine
+
+    # Local import to avoid circular dependency at conftest load time
+    from tests._tutorial_config import build_config
+
+    with tempfile.TemporaryDirectory() as td:
+        work = Path(td)
+        cfg = build_config(work, n_year=1)
+        PythonEngine().run_in_memory(config=cfg, seed=0)
+    # No yield — one-shot setup with no teardown.
