@@ -886,6 +886,39 @@ def register_calibration_handlers(
 
     @output
     @render.ui
+    def other_live_runs_badge():
+        snap = _live_snapshot()
+        n_others = len(snap.other_live_paths)
+        if n_others == 0:
+            return ui.tags.div()
+        label = "1 other live run" if n_others == 1 else f"{n_others} other live runs"
+        return ui.tags.div(
+            ui.tags.span(f"📡 {label}", class_="me-2"),
+            ui.input_action_button(
+                "btn_switch_other_run",
+                "[switch]",
+                class_="btn-sm btn-outline-secondary",
+                **{"aria-label": "Switch to next-most-recent live run"},
+            ),
+            class_="alert alert-info py-1 small",
+        )
+
+
+    @reactive.effect
+    @reactive.event(input.btn_switch_other_run)
+    def _switch_to_other_run():
+        """v1 disclosure-only: log the intent so it's traceable, then no-op.
+
+        A future iteration will rotate the active-pick reactive.Value to actually
+        switch.
+        """
+        snap = _live_snapshot()
+        if not snap.other_live_paths:
+            return
+        logger.info("[switch] other-live-runs button clicked; %d other(s) available", len(snap.other_live_paths))
+
+    @output
+    @render.ui
     def current_best_parameters():
         snap = _live_snapshot()
         if snap.active.kind != "ok":

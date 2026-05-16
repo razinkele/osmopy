@@ -129,3 +129,20 @@ def test_ckpt_mtime_for_falls_back_when_no_active_checkpoint():
     result = _ckpt_mtime_for(snap)
     after = time.time()
     assert before <= result <= after
+
+
+def test_other_live_runs_returns_all_but_newest(tmp_results_dir):
+    from osmose.calibration.checkpoint import CalibrationCheckpoint, write_checkpoint
+    from tests.test_calibration_checkpoint import _valid_checkpoint_kwargs
+    from ui.pages.calibration_handlers import _scan_results_dir
+
+    for phase in ["a", "b", "c"]:
+        kwargs = _valid_checkpoint_kwargs()
+        kwargs["phase"] = phase
+        write_checkpoint(
+            tmp_results_dir / f"phase_{phase}_checkpoint.json",
+            CalibrationCheckpoint(**kwargs),
+        )
+
+    snap = _scan_results_dir()
+    assert len(snap.other_live_paths) == 2
