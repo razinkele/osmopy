@@ -369,7 +369,7 @@ This section is normative for how the plan should be structured.
 6. **Measure the equilibrium ratios**: with the locked `build_config`, run `N_YR=50, seed=42`, then `bio_long[bio_long["Time"] >= 45].groupby("species")["biomass"].mean()`. Encode those numbers into the test's pyramid assertion as `±20%` margins. **If the measured ordering doesn't match the spec's narrative** (`PlanktonEater > Forager > Predator`), the parameters need adjusting — the *narrative* is the load-bearing design promise, not the parameter values. Adjust seeding biomass + larva mortality until measurement matches narrative; do not flip the narrative.
 7. **Implement `numba_warmup` as a session-scoped pytest fixture** that runs one `N_YR=1` simulation before any test class. After warmup, each timed test sees a warm JIT and runs in <2 s.
 8. **Confirm `h5netcdf` is in `[dev]` extras** in `pyproject.toml`. If not, add one line.
-9. **Verify `species.accessibility2fish.sp{N}` engine path** for resource species in `osmose/engine/resources.py`; lock the 0.8 override.
+9. **Verify `species.accessibility2fish.sp{N}` engine path** for resource species in `osmose/engine/resources.py`; lock the 0.99 override.
 10. **Verify `simulation.fishing.mortality.enabled=false` + `simulation.nfisheries=0` is sufficient** to disable fishing without stub selectivity keys (an open question — if extras are needed, add them at step 4).
 11. **Write `30-minute-ecosystem.md`** with the dict transcribed from the (now-locked) `build_config`. Set version stamp.
 12. **Write `docs/tutorials/README.md`**, edit `README.md` (top-of-page pointer + doc-index row), and ship.
