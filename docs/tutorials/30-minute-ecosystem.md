@@ -116,9 +116,9 @@ if not BALTIC.exists():
     shutil.copytree(BALTIC_SRC, BALTIC)
 
 # -- [Beat 2] Load the config; override nyear=30 for tutorial pacing ----------
-# The canonical Baltic calibration runs 50 years.  30 years is enough to see
-# the ecosystem reach a quasi-equilibrium state (years 5-25) while keeping
-# the tutorial fast.
+# The canonical Baltic calibration runs 50 years.  30 years captures the key
+# transient dynamics (sprat plateau ~yr 20, stickleback boom-bust yr 4-15,
+# cod near baseline throughout) while keeping the tutorial fast.
 cfg = OsmoseConfigReader().read(str(BALTIC / "baltic_all-parameters.csv"))
 cfg["simulation.time.nyear"] = "30"
 
@@ -152,6 +152,7 @@ fig = px.line(
     x="Time",
     y="biomass",
     color="species",
+    log_y=True,  # cod (~12t) is invisible against sprat (~7M) on linear scale
     title="Baltic Sea -- 3 focal species, biomass over 30 years (seed=42)",
     labels={"Time": "Year", "biomass": "Biomass (tonnes)"},
     template="plotly_white",
@@ -187,22 +188,36 @@ sprat        ~5 500 000 t
 stickleback    ~550 000 t
 ```
 
-Open `tutorial-work/biomass.html` in your browser.  You should see three
-time-series trajectories diverging rapidly in the first 5 years as the
-ecosystem burns off its initial-population state, then settling into a
-quasi-equilibrium.
+Open `tutorial-work/biomass.html` in your browser.
 
-**Sanity check before continuing:**
+**What you should see:**
 
-- All three species are visible in the chart (cod, sprat, stickleback).
-- Sprat biomass is roughly 1000x larger than cod biomass — this reflects the
-  real Baltic food pyramid (sprat dominates the mid-trophic level; cod is
-  a depleted top predator).
-- The plot is interactive: hover to read exact values, click a legend label
-  to toggle a species.
+- **Sprat** climbs from near-zero to a plateau around 6–7 million tonnes by
+  year 20.  It is the dominant species by biomass throughout the run.
+- **Stickleback** explodes to a peak of roughly 7 million tonnes around year 4,
+  then crashes back to near-zero by year 15.  This boom-bust is genuine Baltic
+  dynamics: stickleback population explosions during regime shifts are
+  documented in the literature.  It is not a model artefact.
+- **Cod** stays near 10–50 tonnes throughout — roughly five orders of magnitude
+  below sprat.  On the log y-axis you can trace its faint trajectory: a slight
+  rise in the first decade, then a slow decline.  Baltic cod has been
+  ecologically suppressed by overfishing and grey-seal predation for decades;
+  this model reflects that present-day state, not the historical 1970s
+  population.
 
-If the script fails, see the **Troubleshooting** section at the end of this
-document.
+The plot uses a **log y-axis** because biomass spans five or more orders of
+magnitude.  On a linear scale, cod would be a flat line indistinguishable from
+zero and stickleback's boom-bust would be invisible against sprat's plateau.
+
+**If your plot looks substantially different** — all-zero lines, runaway
+exponentials, or a species missing entirely — stop and consult the
+troubleshooting table at the bottom of this tutorial before reading on.
+
+**The plot is interactive:** hover to read exact values; click a legend label
+to toggle a species on or off.
+
+If the script fails outright, see the **Troubleshooting** section at the end of
+this document.
 
 ---
 
@@ -276,11 +291,12 @@ approximately 40 km wide × 33 km tall (~1 320 km²).  Of the 2 000 cells,
 cfg["simulation.time.nyear"] = "30"
 ```
 
-The canonical calibrated run uses 50 years.  30 years is enough to see the
-ecosystem reach a **quasi-equilibrium** — a state where annual mean biomass
-varies by less than ~5 % year-over-year — for the three focal species.  Beyond
-30 years the model continues evolving, but the cascade signal we care about is
-already present at year 25.
+The canonical calibrated run uses 50 years.  30 years is enough to capture the system's transient dynamics: sprat reaches
+its growth plateau by year 20; stickleback boom-busts in the first decade; cod
+remains near its post-collapse baseline throughout.  The cascade signal we care
+about in Beat 6 is clearly present at year 25, where the equilibrium-window
+comparison (years 25–30 mean) captures the system's transient mean for each
+species.
 
 Within each year the clock ticks 24 times (`simulation.time.ndtperyear=24`),
 giving a fortnightly time step.  A 30-year run therefore executes 720 time
@@ -310,6 +326,13 @@ three-level cascade chain that is easy to perturb and measure:
 | cod         | 110 cm | 20 yr    | apex predator; eats herring, sprat, stickleback, smelt, and cannibal |
 | sprat       | 16 cm  | 8 yr     | small pelagic planktivore; main forage fish for cod |
 | stickleback | 8 cm   | 4 yr     | tiny coastal forage fish; under some cod predation pressure |
+
+Baltic dynamics over 30 years are transient rather than steady-state: sprat
+reaches its growth plateau by year 20; stickleback boom-busts in the first
+decade; cod remains at its post-collapse baseline throughout.  The
+equilibrium-window comparison used in Beat 6 (years 25–30 mean) captures the
+system's transient mean — which is the meaningful quantity to compare between
+baseline and perturbed runs.
 
 **A note on real Baltic dynamics.**  Grey-seal predation on cod is a major
 ecological force in the present-day Baltic.  The model proxies it via an
