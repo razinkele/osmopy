@@ -150,3 +150,20 @@ def synthetic_stats_sp_b_out_of_band():
         "sp_a_mean": 1.0, "sp_a_cv": 0.1, "sp_a_trend": 0.01,
         "sp_b_mean": 5.0, "sp_b_cv": 0.1, "sp_b_trend": 0.01,
     }
+
+
+# ---------------------------------------------------------------------------
+# Numba warmup stub (T5 will replace with real Numba JIT compilation fixture)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def numba_warmup() -> None:  # type: ignore[return]
+    """Placeholder fixture for Numba JIT compilation warmup.
+
+    T5 will replace this stub with a session-scoped fixture that compiles all
+    Numba-decorated functions once before the tutorial tests run.  Until then
+    this stub ensures the tutorial tests can be collected and run without
+    fixture-not-found errors.
+    """
+    yield

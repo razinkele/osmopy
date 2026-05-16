@@ -1,49 +1,66 @@
-"""Canonical source of truth for the 3-species tutorial.
+"""Canonical source of truth for the 30-min tutorial (Baltic substrate).
 
-The tutorial markdown at docs/tutorials/30-minute-ecosystem.md transcribes
-the contents of `build_config`, `ACCESSIBILITY_CSV`, and `build_ltl` into
-its main code block. The regression test at tests/test_tutorial_3species.py
-imports them directly.
+The tutorial uses the data/baltic/ 8-species calibrated config and highlights
+cod, sprat, and stickleback for the trophic cascade narrative.
 
-If anything here changes, update docs/tutorials/30-minute-ecosystem.md to
-match. Drift is caught at PR review time + by the markdown-parses test.
+The reader's workflow: copy baltic/ to a workdir, override nyear for speed,
+run the engine, plot biomass for the 3 highlighted species, perturb
+cod-on-sprat accessibility, re-run, observe the cascade.
+
+Cascade mechanics (Baltic-substrate finding):
+  Dropping cod's accessibility to sprat (0.4 -> 0.05) slightly reduces
+  predation pressure on stickleback (cod eats stickleback as well as sprat;
+  with less sprat food, cod is less abundant -> fewer cod -> stickleback UP).
+  The sprat signal is weak (<1 %) because cod biomass is small relative to the
+  sprat population.  This is ecologically realistic: Baltic cod is in an
+  overfished, bottom-up-controlled state.
 """
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
-import numpy as np  # noqa: F401  (used by build_ltl in Task 4)
-import xarray as xr  # noqa: F401  (used by build_ltl in Task 4)
+from osmose.config.reader import OsmoseConfigReader
 
-# The exact substring the tutorial tells the reader to find in accessibility.csv,
-# and the exact substring they replace it with. Used by the perturbation test
-# to confirm the instruction is robust to CSV-format edits.
-BASELINE_PERTURBATION: tuple[str, str] = ("Forager;0.8;0;0", "Forager;0.1;0;0")
+# Three species highlighted in the tutorial narrative.
+FOCAL_SPECIES = ["cod", "sprat", "stickleback"]
 
-# Canonical accessibility CSV. ;-separated; rows = prey labels, cols = predator
-# labels (focal species only). Loaded by osmose/engine/accessibility.py:72-131.
-ACCESSIBILITY_CSV: str = """;Predator;Forager;PlanktonEater
-Predator;0;0;0
-Forager;0.8;0;0
-PlanktonEater;0;0.8;0
-Plankton;0;0.2;0.8
-"""
+# Path to the canonical Baltic accessibility CSV (within data/baltic/).
+# The tutorial copies the whole baltic/ directory to a workdir; the
+# perturbation in Beat 6 edits the workdir's copy.
+BALTIC_DIR = Path(__file__).resolve().parents[1] / "data" / "baltic"
+ACCESSIBILITY_CSV_RELPATH = "predation-accessibility.csv"
+
+# Beat-6 perturbation: drop cod's accessibility to sprat from 0.4 to 0.05.
+# In the accessibility CSV rows = prey, cols = predators.
+# The sprat row begins "sprat;0.4;" where 0.4 is cod's column (first predator).
+# We replace it with 0.05 to simulate reduced predation opportunity.
+BASELINE_PERTURBATION: tuple[str, str] = ("sprat;0.4;", "sprat;0.05;")
 
 
-def build_ltl(work_dir: Path) -> Path:
-    """Write the constant-Plankton LTL forcing NetCDF to work_dir.
+def build_baltic_workdir(work_dir: Path, n_year: int = 30) -> Path:
+    """Copy data/baltic/ into work_dir/baltic/, return the path.
 
-    Returns the path to the written file. Filled in by Task 4.
+    n_year is stored separately in the config override; this function only
+    copies the directory tree.  Default 30 years is enough for the cascade
+    demo (full canonical run is 50 yr, which is too slow for a tutorial).
     """
-    raise NotImplementedError("Filled in by Task 4")
+    target = work_dir / "baltic"
+    shutil.copytree(BALTIC_DIR, target)
+    return target
 
 
-def build_config(work_dir: Path) -> dict:
-    """Return the engine config dict with paths resolved against work_dir.
+def build_config(work_dir: Path, n_year: int = 30) -> dict:
+    """Load the Baltic config from work_dir/baltic/ and apply tutorial overrides.
 
-    `species.file.sp3` and `predation.accessibility.file` get resolved to
-    `work_dir / "ltl.nc"` and `work_dir / "accessibility.csv"` respectively
-    via `.as_posix()`. Filled in by Task 4.
+    Returns a config dict ready for PythonEngine.run_in_memory().
+    The accessibility CSV is read from work_dir/baltic/predation-accessibility.csv;
+    tests that exercise the perturbation edit that file before calling build_config.
     """
-    raise NotImplementedError("Filled in by Task 4")
+    baltic_dir = build_baltic_workdir(work_dir, n_year=n_year)
+    reader = OsmoseConfigReader()
+    cfg = reader.read(str(baltic_dir / "baltic_all-parameters.csv"))
+    # Override nyear for tutorial pacing (canonical = 50, tutorial = 30).
+    cfg["simulation.time.nyear"] = str(n_year)
+    return cfg
