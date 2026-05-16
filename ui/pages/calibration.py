@@ -262,6 +262,7 @@ def calibration_ui():
                     "Run",
                     ui.div(
                         ui.output_text("cal_status"),
+                        ui.output_ui("run_header"),
                         output_widget("convergence_chart"),
                     ),
                 ),

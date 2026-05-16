@@ -78,3 +78,54 @@ def test_scan_signature_invalidates_on_persistent_oserror(monkeypatch):
     sig2 = _scan_signature()
     sig3 = _scan_signature()
     assert sig1[2] < sig2[2] < sig3[2]
+
+
+def test_format_elapsed_seconds():
+    from ui.pages.calibration_handlers import _format_elapsed
+    assert _format_elapsed(0) == "0s"
+    assert _format_elapsed(45) == "45s"
+    assert _format_elapsed(59.4) == "59s"
+
+
+def test_format_elapsed_minutes():
+    from ui.pages.calibration_handlers import _format_elapsed
+    assert _format_elapsed(60) == "1m 0s"
+    assert _format_elapsed(125) == "2m 5s"
+    assert _format_elapsed(3599) == "59m 59s"
+
+
+def test_format_elapsed_hours():
+    from ui.pages.calibration_handlers import _format_elapsed
+    assert _format_elapsed(3600) == "1h 0m"
+    assert _format_elapsed(4980) == "1h 23m"
+    assert _format_elapsed(86400) == "24h 0m"
+
+
+def test_ckpt_mtime_for_returns_timestamp_iso_when_ok(tmp_results_dir):
+    from osmose.calibration.checkpoint import CalibrationCheckpoint, write_checkpoint
+    from tests.test_calibration_checkpoint import _valid_checkpoint_kwargs
+    from ui.pages.calibration_handlers import _ckpt_mtime_for, _scan_results_dir
+
+    kwargs = _valid_checkpoint_kwargs()
+    kwargs["timestamp_iso"] = "2026-05-12T10:00:00+00:00"
+    write_checkpoint(tmp_results_dir / "phase_x_checkpoint.json",
+                     CalibrationCheckpoint(**kwargs))
+    snap = _scan_results_dir()
+    from datetime import datetime, timezone
+    expected = datetime(2026, 5, 12, 10, 0, 0, tzinfo=timezone.utc).timestamp()
+    assert _ckpt_mtime_for(snap) == expected
+
+
+def test_ckpt_mtime_for_falls_back_when_no_active_checkpoint():
+    from osmose.calibration.checkpoint import CheckpointReadResult, LiveSnapshot
+    from ui.pages.calibration_handlers import _ckpt_mtime_for
+    import time
+    snap = LiveSnapshot(
+        active=CheckpointReadResult(kind="no_run", checkpoint=None, error_summary=None),
+        other_live_paths=(),
+        snapshot_monotonic=0.0,
+    )
+    before = time.time()
+    result = _ckpt_mtime_for(snap)
+    after = time.time()
+    assert before <= result <= after

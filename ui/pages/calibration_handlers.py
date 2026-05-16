@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 
 import numpy as np
-from shiny import reactive, ui
+from shiny import reactive, render, ui
 from shiny.types import SilentException
 
 from osmose.calibration.checkpoint import (
@@ -129,6 +129,25 @@ def _scan_results_dir() -> LiveSnapshot:
     except OSError as e:
         _notify_scan_failure_once(e)
         return dataclasses.replace(_EMPTY_SNAPSHOT, snapshot_monotonic=time.monotonic())
+
+
+def _format_elapsed(seconds: float) -> str:
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    if seconds < 3600:
+        return f"{int(seconds // 60)}m {int(seconds % 60)}s"
+    return f"{int(seconds // 3600)}h {int((seconds % 3600) // 60)}m"
+
+
+def _ckpt_mtime_for(snap: LiveSnapshot) -> float:
+    """Wall-clock time the active checkpoint was written."""
+    if snap.active.checkpoint is None:
+        return time.time()
+    try:
+        from datetime import datetime
+        return datetime.fromisoformat(snap.active.checkpoint.timestamp_iso).timestamp()
+    except ValueError:
+        return time.time()
 
 
 def _require_preflight(
@@ -680,6 +699,54 @@ def register_calibration_handlers(
 
     msg_queue = CalibrationMessageQueue()
     cancel_event = threading.Event()
+
+    @reactive.poll(_scan_signature, interval_secs=1.0)
+    def _live_snapshot() -> LiveSnapshot:
+        return _scan_results_dir()
+
+
+    @output
+    @render.ui
+    def run_header():
+        snap = _live_snapshot()
+        if snap.active.kind == "no_run":
+            return ui.tags.div("No active calibration run", class_="text-muted small")
+        if snap.active.kind == "corrupt":
+            return ui.tags.div(
+                f"Checkpoint unreadable ({html.escape(snap.active.error_summary or '')})",
+                class_="alert alert-danger",
+            )
+        if snap.active.kind == "partial":
+            return ui.tags.div("Checkpoint updating…", class_="text-warning small")
+        ckpt = snap.active.checkpoint
+        assert ckpt is not None
+
+        elapsed_str = _format_elapsed(ckpt.elapsed_seconds)
+        gen_str = (
+            f"gen {ckpt.generation} / {ckpt.generation_budget}"
+            if ckpt.generation_budget else f"gen {ckpt.generation}"
+        )
+        from osmose.calibration.checkpoint import liveness_state
+        age = time.time() - _ckpt_mtime_for(snap)
+        state_text = liveness_state(age)
+        state_dot = "●" if state_text in ("live", "stalled") else "○"
+        patience = (
+            f"⏱ patience {ckpt.gens_since_improvement}"
+            if ckpt.gens_since_improvement > 0 else ""
+        )
+        return ui.tags.div(
+            ui.tags.div(
+                f"{ckpt.optimizer.upper()} · phase {html.escape(ckpt.phase)}  |  "
+                f"{gen_str}  |  elapsed {elapsed_str}",
+                class_="fw-bold",
+            ),
+            ui.tags.div(
+                f"{patience}   {state_dot} {state_text} (last update {int(age)}s ago)",
+                class_="small text-muted",
+                **{"aria-live": "polite", "aria-atomic": "false"},
+            ),
+            class_="run-header mb-2",
+        )
 
     @reactive.poll(lambda: time.time(), interval_secs=0.5)
     def _poll_cal_messages():
