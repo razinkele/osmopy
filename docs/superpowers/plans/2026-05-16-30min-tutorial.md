@@ -261,7 +261,7 @@ def tutorial_workdir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def baseline_run(tutorial_workdir: Path) -> pd.DataFrame:
+def baseline_run(tutorial_workdir: Path, numba_warmup: None) -> pd.DataFrame:
     """Run the engine with the baseline config; return tidy biomass."""
     cfg = build_config(tutorial_workdir)
     cfg["validation.strict.enabled"] = "error"
@@ -272,7 +272,7 @@ def baseline_run(tutorial_workdir: Path) -> pd.DataFrame:
 
 
 @pytest.fixture
-def perturbed_run(tutorial_workdir: Path) -> pd.DataFrame:
+def perturbed_run(tutorial_workdir: Path, numba_warmup: None) -> pd.DataFrame:
     """Run the engine with the Beat-6 perturbation applied; return tidy biomass."""
     find, replace = BASELINE_PERTURBATION
     perturbed_csv = ACCESSIBILITY_CSV.replace(find, replace)
@@ -380,7 +380,7 @@ def test_trophic_cascade_visible(
 
 
 # === Assertion #4: the tutorial's markdown code block parses + runs ===
-def test_markdown_code_block_parses_and_runs_and_runs(tmp_path: Path, numba_warmup: None) -> None:
+def test_markdown_code_block_parses_and_runs(tmp_path: Path, numba_warmup: None) -> None:
     """Extract the first ```python fence from the tutorial markdown, ast.parse it,
     then exec it in a subprocess with a 90 s timeout. Catches semantic drift —
     e.g., a renamed import (PythonEngine → OsmoseEngine) parses fine but fails to run."""
@@ -473,7 +473,7 @@ Expected: tests fail. Specifically:
 - `test_script_runs_to_completion`: FAILS at `build_ltl(tmp_path)` with `NotImplementedError: Filled in by Task 4`
 - `test_biomass_pyramid_emerges`: same (uses same fixture)
 - `test_trophic_cascade_visible`: same
-- `test_markdown_code_block_parses_and_runs_and_runs`: FAILS at `TUTORIAL_MD_PATH.exists()` with `AssertionError: Tutorial markdown not found...` (expected — written in Task 9)
+- `test_markdown_code_block_parses_and_runs`: FAILS at `TUTORIAL_MD_PATH.exists()` with `AssertionError: Tutorial markdown not found...` (expected — written in Task 9)
 - `test_perturbation_instruction_is_findable`: PASSES (string lookups against in-memory constants, no helper needed)
 - `test_headless_fallback_produces_equilibrium`: FAILS via fixture (NotImplementedError)
 
@@ -1019,6 +1019,7 @@ Decision tree:
 - **If `Forager ratio` is between 1.5 and 2.0:** Cascade is visible but weak. Likely Predator's pressure on Forager isn't dominant enough at baseline. Tweak in `build_config`: try increasing the Predator's `predation.ingestion.rate.max.sp0` from 4.0 to 6.0, OR increase Predator seeding biomass to 400. Re-measure pyramid (Task 6) AND cascade until both hold.
 - **If `Forager ratio < 1.5`:** Cascade is barely transmitting. Inspect the size-ratio kernel — confirm Predator/Forager = 6× exceeds `sizeratio.min.sp0=2.0`. Confirm Forager/PlanktonEater = 3.1× exceeds `sizeratio.min.sp1=2.0`. Also confirm `predation.predprey.sizeratio.max.sp{i}=1000.0` is in effect (otherwise engine default 3.5× would block large-spread predation).
 - **If `PlanktonEater ratio > 0.6` (cascade didn't reach the bottom):** Forager population didn't expand enough to depress PlanktonEater, OR PlanktonEater is bottom-feeder-saturated by the 10000 t/cell plankton. Try reducing PlanktonEater's seeding biomass from 4000 to 1000, OR reducing plankton biomass from 10000 to 5000 in `build_ltl`.
+- **If Predator equilibrium mean is < 1.0 t (effectively extinct):** the combined adult+larva mortality compressed Predator recruitment too hard. Try reducing `mortality.additional.rate.sp0` from 0.15 to 0.05, OR remove it entirely from `build_config` and rely on larva mortality alone. Predator extinction also breaks the pyramid assertion (#2 layer a), so Task 6's measurement would have caught this first.
 
 **Each iteration costs ~60 s of wall-clock.** **Hard stopping criterion: 8 iterations max.** If after 8 iterations the 2.0×/0.6× margins still don't hold:
 - **DO NOT silently loosen** `_CASCADE_FORAGER_MIN_RATIO` or `_CASCADE_PLANKTONEATER_MAX_RATIO` in the test. The pre-pinned thresholds are spec-promised behaviour.
@@ -1058,7 +1059,7 @@ git -C /home/razinka/osmose/osmose-python add tests/_tutorial_config.py
 git -C /home/razinka/osmose/osmose-python commit -m "fix(tutorial): tune build_config for visible cascade margins"
 ```
 
-You may also need to re-encode the pyramid bounds in `tests/test_tutorial_3species.py` if the tweaks shifted equilibrium values significantly:
+You may also need to re-encode the pyramid bounds in `tests/test_tutorial_3species.py` if the tweaks shifted equilibrium values by more than the ±20% bands already encoded — re-run Step 6.2's measurement script after any `build_config` edit, and if any species' mean moves more than 15% from the Task-6 measurement, re-encode the bounds:
 
 ```bash
 git -C /home/razinka/osmose/osmose-python add tests/test_tutorial_3species.py
