@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import math
 
-import pytest
-
 from osmose.calibration.checkpoint import CalibrationCheckpoint
 
 
