@@ -200,7 +200,7 @@ Create `tests/test_tutorial_3species.py`:
 If `build_config`, `ACCESSIBILITY_CSV`, or `build_ltl` in
 `tests/_tutorial_config.py` change, update
 `docs/tutorials/30-minute-ecosystem.md` to match. Drift in the markdown
-code block's syntax is caught by test_markdown_code_block_parses below.
+code block's syntax is caught by test_markdown_code_block_parses_and_runs below.
 Drift in the dict's actual values is caught by manual reconciliation at
 PR review.
 
@@ -286,53 +286,61 @@ def perturbed_run(tutorial_workdir: Path) -> pd.DataFrame:
     return bio_long[bio_long["species"].isin(FOCAL_SPECIES)].reset_index(drop=True)
 
 
-# Margins below are MEASURED during Task 6 (pyramid) and Task 7 (cascade).
-# Until then, they are deliberately impossible to satisfy so the test fails
-# loudly if run against a half-implemented helper.
-_PYRAMID_BOUNDS_MEASURED: bool = False  # flipped to True in Task 6
-_CASCADE_BOUNDS_MEASURED: bool = False  # flipped to True in Task 7
+EXPECTED_ROWS_PER_SPECIES = 50 * 24  # 1200; n_year × n_dt_per_year
 
-# Placeholders — Task 6 replaces these with measured equilibrium values ± 20%.
-_PYRAMID_BOUNDS: dict[str, tuple[float, float]] = {
-    "Predator": (1.0e9, 1.0e10),
-    "Forager": (1.0e9, 1.0e10),
-    "PlanktonEater": (1.0e9, 1.0e10),
-}
-
-# Placeholders — Task 7 replaces these with measured perturbation ratios.
+# Pre-pinned cascade thresholds. Task 7 confirms these hold via measurement.
+# If measurement shows they don't, the implementer escalates per Task 7 step 7.2 —
+# they do NOT silently loosen these thresholds.
 _CASCADE_FORAGER_MIN_RATIO: float = 2.0  # mean(F_pert) / mean(F_base) >= this
 _CASCADE_PLANKTONEATER_MAX_RATIO: float = 0.6  # mean(PE_pert) / mean(PE_base) <= this
+
+# Equilibrium bands per focal species. Wide-default in Task 3 (covers any plausible
+# value within 15 orders of magnitude). Task 6 narrows to MEASURED equilibrium ± 20%.
+_PYRAMID_BOUNDS: dict[str, tuple[float, float]] = {
+    "Predator": (1.0, 1.0e15),
+    "Forager": (1.0, 1.0e15),
+    "PlanktonEater": (1.0, 1.0e15),
+}
 
 
 # === Assertion #1: the script runs to completion ===
 def test_script_runs_to_completion(baseline_run: pd.DataFrame) -> None:
-    """run_in_memory returns valid biomass; strict-key check passes."""
+    """run_in_memory returns valid biomass; strict-key check passes; exact row count."""
     assert not baseline_run.empty, "biomass DataFrame is empty"
     assert set(baseline_run["species"].unique()) == set(FOCAL_SPECIES), (
         f"Expected exactly {FOCAL_SPECIES} in species column, "
         f"got {sorted(baseline_run['species'].unique())}"
     )
     per_species_rows = baseline_run.groupby("species").size()
-    assert (per_species_rows > 100).all(), (
-        f"Expected more than 100 rows per species (50 yr × 24 dt = 1200); "
-        f"got {dict(per_species_rows)}"
+    # Engine default output.recordfrequency.ndt=1 → one row per dt → 50×24=1200 per species.
+    # Exact equality catches engine output-frequency drift (e.g., if a default flips).
+    assert (per_species_rows == EXPECTED_ROWS_PER_SPECIES).all(), (
+        f"Expected exactly {EXPECTED_ROWS_PER_SPECIES} rows per species "
+        f"(50 yr × 24 dt); got {dict(per_species_rows)}"
     )
 
 
 # === Assertion #2: biomass pyramid at equilibrium ===
 def test_biomass_pyramid_emerges(baseline_run: pd.DataFrame) -> None:
-    """Years 45-50 mean biomass should respect the pyramid PlanktonEater > Forager > Predator
-    (or whatever measured ordering Task 6 pins; the narrative will adapt to measurement)."""
-    if not _PYRAMID_BOUNDS_MEASURED:
-        pytest.fail(
-            "Pyramid bounds not measured yet. Run Task 6's measurement protocol, "
-            "then set _PYRAMID_BOUNDS_MEASURED=True and update _PYRAMID_BOUNDS."
-        )
-
+    """Two layers: (a) strict ordering PlanktonEater > Forager > Predator at equilibrium —
+    always tested, RED while helper stubbed. (b) ±20% bands around measured equilibrium —
+    wide-default in Task 3, tightened in Task 6 from measurement."""
     means = _equilibrium_means(baseline_run)
+
+    # Layer (a): strict pyramid ordering. This is the load-bearing narrative
+    # promise — if measurement disagrees, parameters need tuning (per Task 6),
+    # not loosening this assertion.
+    assert means["PlanktonEater"] > means["Forager"] > means["Predator"], (
+        f"Pyramid violated: PE={means['PlanktonEater']:.3e}, "
+        f"F={means['Forager']:.3e}, P={means['Predator']:.3e}. "
+        f"Expected PE > F > P at equilibrium."
+    )
+
+    # Layer (b): equilibrium bands. Tightened in Task 6.
     for sp, (lo, hi) in _PYRAMID_BOUNDS.items():
         assert lo <= means[sp] <= hi, (
-            f"{sp} equilibrium mean {means[sp]:.3e} outside expected band [{lo:.3e}, {hi:.3e}]"
+            f"{sp} equilibrium mean {means[sp]:.3e} outside expected band "
+            f"[{lo:.3e}, {hi:.3e}]"
         )
 
 
@@ -340,40 +348,77 @@ def test_biomass_pyramid_emerges(baseline_run: pd.DataFrame) -> None:
 def test_trophic_cascade_visible(
     baseline_run: pd.DataFrame, perturbed_run: pd.DataFrame
 ) -> None:
-    """Dropping Predator-on-Forager accessibility 0.8→0.1 should: (a) raise Forager
-    biomass strongly, (b) suppress PlanktonEater biomass via the cascade."""
-    if not _CASCADE_BOUNDS_MEASURED:
-        pytest.fail(
-            "Cascade bounds not measured yet. Run Task 7's perturbation protocol, "
-            "then set _CASCADE_BOUNDS_MEASURED=True."
-        )
-
+    """Two layers: (a) direction of change (Forager↑, PlanktonEater↓) — qualitative;
+    (b) magnitude ratios ≥2.0× and ≤0.6× — pre-pinned in Task 3, validated in Task 7."""
     base = _equilibrium_means(baseline_run)
     pert = _equilibrium_means(perturbed_run)
 
     forager_ratio = pert["Forager"] / base["Forager"]
     pe_ratio = pert["PlanktonEater"] / base["PlanktonEater"]
 
+    # Layer (a): direction of change.
+    assert forager_ratio > 1.0, (
+        f"Forager perturbed/baseline = {forager_ratio:.2f}; "
+        f"expected > 1 (release from predation)."
+    )
+    assert pe_ratio < 1.0, (
+        f"PlanktonEater perturbed/baseline = {pe_ratio:.2f}; "
+        f"expected < 1 (cascade reached the bottom)."
+    )
+
+    # Layer (b): magnitude. 8× drop in accessibility should produce a strong response.
+    # Pre-pinned thresholds — do not silently loosen.
     assert forager_ratio >= _CASCADE_FORAGER_MIN_RATIO, (
         f"Forager perturbed/baseline = {forager_ratio:.2f}, expected >= "
-        f"{_CASCADE_FORAGER_MIN_RATIO}. Cascade not visible."
+        f"{_CASCADE_FORAGER_MIN_RATIO}. Cascade visible but weak. "
+        f"See Task 7 step 7.2 — adjust parameters in build_config or escalate."
     )
     assert pe_ratio <= _CASCADE_PLANKTONEATER_MAX_RATIO, (
         f"PlanktonEater perturbed/baseline = {pe_ratio:.2f}, expected <= "
-        f"{_CASCADE_PLANKTONEATER_MAX_RATIO}. Cascade did not propagate."
+        f"{_CASCADE_PLANKTONEATER_MAX_RATIO}. Cascade did not fully propagate."
     )
 
 
-# === Assertion #4: the tutorial's markdown code block is syntactically valid ===
-def test_markdown_code_block_parses() -> None:
-    """Extract the first ```python fence from the tutorial markdown and ast.parse it.
-    Catches syntactic drift between _tutorial_config.py and the transcribed markdown."""
+# === Assertion #4: the tutorial's markdown code block parses + runs ===
+def test_markdown_code_block_parses_and_runs_and_runs(tmp_path: Path, numba_warmup: None) -> None:
+    """Extract the first ```python fence from the tutorial markdown, ast.parse it,
+    then exec it in a subprocess with a 90 s timeout. Catches semantic drift —
+    e.g., a renamed import (PythonEngine → OsmoseEngine) parses fine but fails to run."""
+    import subprocess
+    import sys
+
     assert TUTORIAL_MD_PATH.exists(), f"Tutorial markdown not found at {TUTORIAL_MD_PATH}"
     text = TUTORIAL_MD_PATH.read_text()
     match = re.search(r"```python\n(.*?)\n```", text, re.DOTALL)
     assert match is not None, "No ```python fence found in tutorial markdown"
-    # ast.parse raises SyntaxError on any syntactic issue
-    ast.parse(match.group(1))
+    code = match.group(1)
+
+    # Layer (a): syntactic.
+    ast.parse(code)
+
+    # Layer (b): runs to completion. Write to tmp_path/tutorial.py and exec in a
+    # subprocess. Numba is warm via the numba_warmup fixture, so this is ~3-5 s.
+    script_path = tmp_path / "tutorial.py"
+    script_path.write_text(code)
+    result = subprocess.run(
+        [sys.executable, str(script_path)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=90,
+        check=False,
+    )
+    assert result.returncode == 0, (
+        f"Markdown tutorial.py failed to execute (exit {result.returncode}).\n"
+        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    )
+    # Layer (c): the script writes biomass.html. Confirm non-trivial size.
+    html_path = tmp_path / "tutorial-work" / "biomass.html"
+    assert html_path.exists(), f"biomass.html not written at {html_path}"
+    assert html_path.stat().st_size > 100_000, (
+        f"biomass.html is suspiciously small ({html_path.stat().st_size} bytes); "
+        f"plotly may have produced a malformed file."
+    )
 
 
 # === Assertion #5: the perturbation instruction is findable + replace string is disjoint ===
@@ -391,14 +436,21 @@ def test_perturbation_instruction_is_findable() -> None:
     )
 
 
-# === Assertion #6: headless fallback produces equilibrium means for each focal species ===
+# === Assertion #6: headless fallback produces meaningful equilibrium means ===
 def test_headless_fallback_produces_equilibrium(baseline_run: pd.DataFrame) -> None:
-    """The tutorial script prints `bio_long[Time>=45].groupby("species")["biomass"].mean()`
-    so headless readers see equilibrium values. Confirm it returns 3 finite numbers."""
+    """The tutorial prints equilibrium means. Confirm: 3 species, finite, non-collapsed."""
     means = _equilibrium_means(baseline_run)
     assert len(means) == 3, f"Expected 3 species in equilibrium summary; got {len(means)}"
     assert means.notna().all(), f"Some equilibrium means are NaN: {means.to_dict()}"
     assert (means > 0).all(), f"Some equilibrium means are zero or negative: {means.to_dict()}"
+    # Spread check: at least 2× separation between max and min. Catches the
+    # "all species collapsed to the same tiny biomass" failure mode that would
+    # otherwise satisfy the finite-and-positive check trivially.
+    spread = means.max() / means.min()
+    assert spread >= 2.0, (
+        f"Equilibrium means are collapsed (max/min = {spread:.2f}, expected >= 2.0): "
+        f"{means.to_dict()}. Food chain likely has not differentiated."
+    )
 ```
 
 - [ ] **Step 3.2: Format with ruff**
@@ -421,11 +473,11 @@ Expected: tests fail. Specifically:
 - `test_script_runs_to_completion`: FAILS at `build_ltl(tmp_path)` with `NotImplementedError: Filled in by Task 4`
 - `test_biomass_pyramid_emerges`: same (uses same fixture)
 - `test_trophic_cascade_visible`: same
-- `test_markdown_code_block_parses`: FAILS at `TUTORIAL_MD_PATH.exists()` with `AssertionError: Tutorial markdown not found...` (expected — written in Task 9)
-- `test_perturbation_instruction_is_findable`: PASSES (string lookups against in-memory constants)
+- `test_markdown_code_block_parses_and_runs_and_runs`: FAILS at `TUTORIAL_MD_PATH.exists()` with `AssertionError: Tutorial markdown not found...` (expected — written in Task 9)
+- `test_perturbation_instruction_is_findable`: PASSES (string lookups against in-memory constants, no helper needed)
 - `test_headless_fallback_produces_equilibrium`: FAILS via fixture (NotImplementedError)
 
-5 fail, 1 pass — exactly the expected RED state.
+5 fail, 1 pass — exactly the expected RED state. The 5 failures are *real RED* (not gated behind a `pytest.fail` skip): they exercise the test's actual predicates and fail because the helper is stubbed or the markdown file doesn't exist yet.
 
 - [ ] **Step 3.5: Commit**
 
@@ -536,15 +588,19 @@ def build_config(work_dir: Path) -> dict:
         "predation.accessibility.file": accessibility_path,
     }
 
-    # Per-focal-species params: round-number toy values, see spec for sourcing.
+    # Per-focal-species params: round-number toy values, pre-tuned per round-1 review.
+    # larva_rate: 6/8/10 yr⁻¹ — higher for fast-cyclers to prevent boom-bust without
+    # fishing or B-H stock-recruit (cf. project_phase12_cod_floor.md in MEMORY.md).
+    # adult_rate: 0.15 yr⁻¹ on Predator only — proxy for what fishing would do in a
+    # real config; without it the apex layer grows unbounded.
     focal_params = [
-        # (name, linf, k, t0, lifespan, egg_size, maturity_size, ingestion_max, seed_biomass)
-        ("Predator", 150.0, 0.12, -0.3, 25, 0.25, 50.0, 4.0, 200.0),
-        ("Forager", 25.0, 0.40, -0.5, 8, 0.15, 12.0, 5.0, 1000.0),
-        ("PlanktonEater", 8.0, 0.70, -0.3, 4, 0.10, 4.0, 6.0, 4000.0),
+        # (name, linf, k, t0, lifespan, egg, mat, ingest, seed, larva_rate, adult_rate)
+        ("Predator", 150.0, 0.12, -0.3, 25, 0.25, 50.0, 4.0, 200.0, 6.0, 0.15),
+        ("Forager", 25.0, 0.40, -0.5, 8, 0.15, 12.0, 5.0, 1000.0, 8.0, 0.0),
+        ("PlanktonEater", 8.0, 0.70, -0.3, 4, 0.10, 4.0, 6.0, 4000.0, 10.0, 0.0),
     ]
     for i, (
-        name, linf, k, t0, lifespan, egg, mat, ingest, seed,
+        name, linf, k, t0, lifespan, egg, mat, ingest, seed, larva_rate, adult_rate,
     ) in enumerate(focal_params):
         cfg[f"species.name.sp{i}"] = name
         cfg[f"species.linf.sp{i}"] = linf
@@ -564,7 +620,9 @@ def build_config(work_dir: Path) -> dict:
         cfg[f"predation.predprey.sizeratio.max.sp{i}"] = 1000.0
         cfg[f"movement.distribution.method.sp{i}"] = "random"
         cfg[f"movement.randomwalk.range.sp{i}"] = 1
-        cfg[f"mortality.additional.larva.rate.sp{i}"] = 5.0
+        cfg[f"mortality.additional.larva.rate.sp{i}"] = larva_rate
+        if adult_rate > 0.0:
+            cfg[f"mortality.additional.rate.sp{i}"] = adult_rate
         cfg[f"population.seeding.biomass.sp{i}"] = seed
 
     cfg["population.seeding.year.max"] = 20
@@ -627,6 +685,17 @@ Expected: one of three outcomes:
 
 **Iterate until outcome (c).** Each cold-start pays ~25 s of Numba JIT; subsequent runs are <2 s warm. Allow up to 10-15 iterations before stepping back to re-read `osmose/engine/config.py:1428-1500` for a missed key family.
 
+- [ ] **Step 4.5b: Checkpoint commit at first green smoke**
+
+The moment outcome (c) succeeds — engine runs end-to-end without errors — make a checkpoint commit. Long iterations + context-budget exhaustion = lost work if you don't:
+
+```bash
+git -C /home/razinka/osmose/osmose-python add tests/_tutorial_config.py
+git -C /home/razinka/osmose/osmose-python commit -m "wip(tutorial): build_config runs end-to-end on 5-yr smoke"
+```
+
+You'll squash or replace this in Step 4.9 once assertions #1, #5, #6 are all green.
+
 - [ ] **Step 4.6: Run the regression test — confirm assertion #1 passes**
 
 Run: `.venv/bin/pytest tests/test_tutorial_3species.py::test_script_runs_to_completion -xvs`
@@ -675,20 +744,20 @@ Append to `tests/conftest.py` (add the imports at the top if not already present
 import pytest
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def numba_warmup():
     """Warm Numba's JIT cache once per pytest session.
 
     The OSMOSE engine compiles ~20-25 s of native code on first run; subsequent
-    runs are <2 s. Without this fixture, every test that runs the engine pays
-    the JIT cost in isolation.
+    runs are <2 s. Tests that run the engine should request this fixture in their
+    signature so the JIT cost is paid once per session, not once per test.
 
-    Runs a minimal 1-year simulation (16 cells, 3 species, 1 LTL group) before
-    any test class starts. Only runs once per session, even if multiple test
-    files import the engine.
+    OPT-IN (not autouse) — tests that don't run the engine (schema-only,
+    MCP-credential, etc.) shouldn't pay this cost. The tutorial test requests
+    it via its `baseline_run` and `perturbed_run` fixtures.
 
-    Marked autouse=True so tests don't need to opt in explicitly. The warmup
-    output is discarded.
+    Runs a minimal 1-year simulation (16 cells, 3 species, 1 LTL group). The
+    warmup output is discarded.
     """
     import tempfile
     from pathlib import Path
@@ -710,7 +779,7 @@ def numba_warmup():
         cfg["simulation.time.nyear"] = 1  # smallest meaningful run
 
         PythonEngine().run_in_memory(config=cfg, seed=0)
-    # No yield needed — this is a one-shot setup with no teardown.
+    # No yield — one-shot setup with no teardown.
 ```
 
 - [ ] **Step 5.3: Format + lint**
@@ -733,7 +802,7 @@ Expected:
 
 Run: `.venv/bin/pytest tests/ -x --ignore=tests/test_tutorial_3species.py -q 2>&1 | tail -30`
 
-Expected: existing tests pass with no new errors introduced by the session-scoped fixture. The fixture is `autouse=True`, so it will run before every test session — confirm the cost is paid only once (not per file).
+Expected: existing tests pass with **no change in wall-clock**. The fixture is `autouse=False`, opt-in — it only runs when a test requests it in its signature. The tutorial test does; the rest of the suite doesn't.
 
 If existing tests break (e.g., they don't expect `_tutorial_config` to be importable), audit the fixture: it should only fail loudly if `_tutorial_config` doesn't exist, which it does by this point.
 
@@ -815,33 +884,29 @@ Name: biomass, dtype: float64
 
 - [ ] **Step 6.3: Copy the measured margins into the test**
 
-Open `tests/test_tutorial_3species.py`. Find the `_PYRAMID_BOUNDS` block:
+Open `tests/test_tutorial_3species.py`. Find the wide-default `_PYRAMID_BOUNDS` block:
 
 ```python
-_PYRAMID_BOUNDS_MEASURED: bool = False  # flipped to True in Task 6
-
 _PYRAMID_BOUNDS: dict[str, tuple[float, float]] = {
-    "Predator": (1.0e9, 1.0e10),
-    "Forager": (1.0e9, 1.0e10),
-    "PlanktonEater": (1.0e9, 1.0e10),
+    "Predator": (1.0, 1.0e15),
+    "Forager": (1.0, 1.0e15),
+    "PlanktonEater": (1.0, 1.0e15),
 }
 ```
 
-Replace with the measured bounds, e.g.:
+Replace with the measured bounds. Use the values printed in Step 6.2:
 
 ```python
-_PYRAMID_BOUNDS_MEASURED: bool = True  # measured 2026-05-16, seed=42, see Task 6
-
-# Equilibrium means (years 45-50, seed=42) ± 20%.
-# Re-measure if build_config values or engine version changes.
+# Equilibrium means (years 45-50, seed=42) ± 20%. Measured 2026-05-16; re-measure if
+# build_config values or engine version changes (see scripts/measure_tutorial_baseline.py if checked in).
 _PYRAMID_BOUNDS: dict[str, tuple[float, float]] = {
-    "Predator": (X.XXXe+XX, X.XXXe+XX),
+    "Predator": (X.XXXe+XX, X.XXXe+XX),   # measured mean × {0.8, 1.2}
     "Forager": (X.XXXe+XX, X.XXXe+XX),
     "PlanktonEater": (X.XXXe+XX, X.XXXe+XX),
 }
 ```
 
-Use the values printed in Step 6.2.
+**No `_PYRAMID_BOUNDS_MEASURED` flag** — the pyramid assertion's strict-ordering layer (a) is always tested and was GREEN from Task 4 onward; this step tightens the magnitude bands (layer b) from measurement.
 
 - [ ] **Step 6.4: Run assertion #2 — confirm GREEN**
 
@@ -859,9 +924,18 @@ rm /tmp/measure.py
 
 - [ ] **Step 6.6: Commit**
 
+If Step 6.2's sanity check forced parameter adjustments in `build_config` (e.g., bumping a `larva.rate` value), include those in a separate commit BEFORE the test-encoding commit:
+
+```bash
+git -C /home/razinka/osmose/osmose-python add tests/_tutorial_config.py
+git -C /home/razinka/osmose/osmose-python commit -m "fix(tutorial): tune build_config for measured equilibrium ordering"
+```
+
+Then commit the test-encoding change:
+
 ```bash
 git -C /home/razinka/osmose/osmose-python add tests/test_tutorial_3species.py
-git -C /home/razinka/osmose/osmose-python commit -m "test(tutorial): encode measured equilibrium margins; assertion #2 GREEN"
+git -C /home/razinka/osmose/osmose-python commit -m "test(tutorial): encode measured equilibrium margins; assertion #2 tightened"
 ```
 
 ---
@@ -871,7 +945,7 @@ git -C /home/razinka/osmose/osmose-python commit -m "test(tutorial): encode meas
 **Goal:** Run the perturbed simulation (Forager;0.8 → Forager;0.1 in accessibility.csv), measure the year-45-50 mean ratios, and confirm assertion #3's pre-set 2.0× / 0.6× margins hold. If they don't, the parameters need adjusting (the cascade is too weak).
 
 **Files:**
-- Modify: `tests/test_tutorial_3species.py` (just flip `_CASCADE_BOUNDS_MEASURED` to True)
+- No code edits required if the pre-pinned 2.0×/0.6× thresholds hold. Conditional edit to `tests/_tutorial_config.py` if parameter tuning is needed (see Step 7.2's decision tree).
 
 - [ ] **Step 7.1: Write the perturbation measurement script**
 
@@ -946,23 +1020,16 @@ Decision tree:
 - **If `Forager ratio < 1.5`:** Cascade is barely transmitting. Inspect the size-ratio kernel — confirm Predator/Forager = 6× exceeds `sizeratio.min.sp0=2.0`. Confirm Forager/PlanktonEater = 3.1× exceeds `sizeratio.min.sp1=2.0`. Also confirm `predation.predprey.sizeratio.max.sp{i}=1000.0` is in effect (otherwise engine default 3.5× would block large-spread predation).
 - **If `PlanktonEater ratio > 0.6` (cascade didn't reach the bottom):** Forager population didn't expand enough to depress PlanktonEater, OR PlanktonEater is bottom-feeder-saturated by the 10000 t/cell plankton. Try reducing PlanktonEater's seeding biomass from 4000 to 1000, OR reducing plankton biomass from 10000 to 5000 in `build_ltl`.
 
-**Each iteration costs ~60 s of wall-clock.** Budget 4-8 iterations max. If after that the margins don't hold cleanly, document the gap in your task report and propose either (a) loosening the margins to measured values, or (b) escalating to the spec author.
+**Each iteration costs ~60 s of wall-clock.** **Hard stopping criterion: 8 iterations max.** If after 8 iterations the 2.0×/0.6× margins still don't hold:
+- **DO NOT silently loosen** `_CASCADE_FORAGER_MIN_RATIO` or `_CASCADE_PLANKTONEATER_MAX_RATIO` in the test. The pre-pinned thresholds are spec-promised behaviour.
+- Commit your best-attempt `build_config` to a separate branch and open an issue describing: (a) the measured ratios after 8 iterations, (b) what was tried, (c) which decision-tree branch each iteration landed in.
+- Surface the failure in your task report. Escalate to the spec author with: "the synthetic model as specified does not produce a 2.0×/0.6× cascade under any reasonable parameter perturbation we explored. Spec may need either (a) different parameters, (b) looser margins, or (c) a different perturbation magnitude."
 
-- [ ] **Step 7.3: Flip the cascade-measured flag**
+This is the documented failure mode for the "implementer tunes parameters to pass the test" risk in the spec (round-1 review). The thresholds stay rigid; the parameters get tuned within bounds; if the bounds don't work, the design needs revisiting, not the test.
 
-Open `tests/test_tutorial_3species.py`. Find:
+- [ ] **Step 7.3: No flag-flip needed**
 
-```python
-_CASCADE_BOUNDS_MEASURED: bool = False  # flipped to True in Task 7
-```
-
-Change to:
-
-```python
-_CASCADE_BOUNDS_MEASURED: bool = True  # measured 2026-05-16, seed=42, see Task 7
-```
-
-The constants `_CASCADE_FORAGER_MIN_RATIO=2.0` and `_CASCADE_PLANKTONEATER_MAX_RATIO=0.6` remain — they were pre-pinned in Task 3 against the spec.
+Assertion #3 is fully active (no `_CASCADE_BOUNDS_MEASURED` flag) and will run whenever pytest exercises it. Step 7.2's measurement validates that the pre-pinned thresholds (`_CASCADE_FORAGER_MIN_RATIO=2.0`, `_CASCADE_PLANKTONEATER_MAX_RATIO=0.6`) hold — no edit to the test required if measurement passes.
 
 - [ ] **Step 7.4: Run assertion #3 — confirm GREEN**
 
@@ -972,7 +1039,7 @@ Expected: PASSES.
 
 - [ ] **Step 7.5: Run the full test file — confirm all 5 non-markdown assertions GREEN**
 
-Run: `.venv/bin/pytest tests/test_tutorial_3species.py -xvs --deselect tests/test_tutorial_3species.py::test_markdown_code_block_parses`
+Run: `.venv/bin/pytest tests/test_tutorial_3species.py -xvs --deselect tests/test_tutorial_3species.py::test_markdown_code_block_parses_and_runs`
 
 Expected: 5 passed.
 
@@ -982,12 +1049,23 @@ Expected: 5 passed.
 rm /tmp/cascade.py
 ```
 
-- [ ] **Step 7.7: Commit**
+- [ ] **Step 7.7: Commit (conditional)**
+
+If Step 7.2 required parameter tweaks to `tests/_tutorial_config.py` (which is the normal case if pre-tuning in Task 4 was insufficient), commit them:
+
+```bash
+git -C /home/razinka/osmose/osmose-python add tests/_tutorial_config.py
+git -C /home/razinka/osmose/osmose-python commit -m "fix(tutorial): tune build_config for visible cascade margins"
+```
+
+You may also need to re-encode the pyramid bounds in `tests/test_tutorial_3species.py` if the tweaks shifted equilibrium values significantly:
 
 ```bash
 git -C /home/razinka/osmose/osmose-python add tests/test_tutorial_3species.py
-git -C /home/razinka/osmose/osmose-python commit -m "test(tutorial): cascade margins measured + flipped to active; assertion #3 GREEN"
+git -C /home/razinka/osmose/osmose-python commit -m "test(tutorial): re-encode pyramid bounds after cascade tuning"
 ```
+
+If the pre-pinned thresholds held without tweaks, no commit is needed here — assertion #3 was already GREEN from Task 4 onward (the wide-default bounds + pre-pinned cascade ratios). Skip to Task 8.
 
 ---
 
@@ -1174,7 +1252,8 @@ config = {
     "predation.predprey.sizeratio.max.sp0": 1000.0,
     "movement.distribution.method.sp0": "random",
     "movement.randomwalk.range.sp0": 1,
-    "mortality.additional.larva.rate.sp0": 5.0,
+    "mortality.additional.larva.rate.sp0": 6.0,
+    "mortality.additional.rate.sp0": 0.15,
     "population.seeding.biomass.sp0": 200.0,
     # sp1 — Forager
     "species.name.sp1": "Forager",
@@ -1195,7 +1274,7 @@ config = {
     "predation.predprey.sizeratio.max.sp1": 1000.0,
     "movement.distribution.method.sp1": "random",
     "movement.randomwalk.range.sp1": 1,
-    "mortality.additional.larva.rate.sp1": 5.0,
+    "mortality.additional.larva.rate.sp1": 8.0,
     "population.seeding.biomass.sp1": 1000.0,
     # sp2 — PlanktonEater
     "species.name.sp2": "PlanktonEater",
@@ -1216,7 +1295,7 @@ config = {
     "predation.predprey.sizeratio.max.sp2": 1000.0,
     "movement.distribution.method.sp2": "random",
     "movement.randomwalk.range.sp2": 1,
-    "mortality.additional.larva.rate.sp2": 5.0,
+    "mortality.additional.larva.rate.sp2": 10.0,
     "population.seeding.biomass.sp2": 4000.0,
     # [Beat 4] LTL Plankton (sp3)
     "species.name.sp3": "Plankton",
@@ -1273,7 +1352,7 @@ Replace `<VERSION>` and `<SHA>` at the top with the actual values from Step 9.1.
 
 - [ ] **Step 9.3: Run the markdown-parses test — expect GREEN**
 
-Run: `.venv/bin/pytest tests/test_tutorial_3species.py::test_markdown_code_block_parses -xvs`
+Run: `.venv/bin/pytest tests/test_tutorial_3species.py::test_markdown_code_block_parses_and_runs -xvs`
 
 Expected: PASSES. The test extracts the first ```python fence and runs `ast.parse` on it.
 
@@ -1281,14 +1360,10 @@ If it fails with `SyntaxError`, copy the parser's error message verbatim, locate
 
 - [ ] **Step 9.4: Manually run the script — confirm it executes**
 
+Extract the markdown's code block into a runnable file in an isolated cwd, then run it:
+
 ```bash
 mkdir -p /tmp/tut9 && cd /tmp/tut9
-.venv/bin/python /home/razinka/osmose/osmose-python/docs/tutorials/30-minute-ecosystem.md
-```
-
-This won't work directly (markdown isn't Python). Instead, extract the script:
-
-```bash
 .venv/bin/python -c "
 import re, pathlib
 md = pathlib.Path('/home/razinka/osmose/osmose-python/docs/tutorials/30-minute-ecosystem.md').read_text()
@@ -1355,7 +1430,7 @@ The chosen values are round-number toy values, not literature-sourced:
 | Forager (sp1) | 25 cm | 0.40 | 8 yr | mid-trophic |
 | PlanktonEater (sp2) | 8 cm | 0.70 | 4 yr | small + fast |
 
-The other ~16 keys per species are growth-curve and length-to-weight conversion parameters (`length2weight.condition.factor`, `length2weight.allometric.power`, `vonbertalanffy.threshold.age`, `t0`) plus mortality and seeding parameters (`mortality.additional.larva.rate`, `population.seeding.biomass`). They use OSMOSE-EEC defaults except `mortality.additional.larva.rate=5.0` and `population.seeding.biomass` which control how the model reaches equilibrium without fishing. If you're curious, the [Baltic example documentation](../baltic_example.md) walks through every parameter family with literature provenance.
+The other ~16 keys per species are growth-curve and length-to-weight conversion parameters (`length2weight.condition.factor`, `length2weight.allometric.power`, `vonbertalanffy.threshold.age`, `t0`) plus mortality and seeding parameters (`mortality.additional.larva.rate`, `population.seeding.biomass`). They use OSMOSE-EEC defaults except `mortality.additional.larva.rate` (6/8/10 yr⁻¹ for Predator/Forager/PlanktonEater — higher for fast-cyclers to prevent boom-bust without fishing) and `mortality.additional.rate.sp0=0.15` on Predator only (proxy for what fishing would do; without it the apex layer grows unbounded). If you're curious, the [Baltic example documentation](../baltic_example.md) walks through every parameter family with literature provenance.
 
 **Von Bertalanffy growth** (one paragraph): `L∞` is the asymptotic max length; `K` is how fast the fish approaches `L∞`. Large + slow fish (Predator: Linf=150 cm, K=0.12) live long; small + fast (PlanktonEater: Linf=8 cm, K=0.7) live short. The actual length-at-age curve is `L(t) = L∞ × (1 - exp(-K × (t - t0)))`.
 
@@ -1451,7 +1526,7 @@ This is a **trophic cascade**: an indirect effect that propagates down the food 
 
 - [ ] **Step 10.2: Re-run the markdown-parses test**
 
-Run: `.venv/bin/pytest tests/test_tutorial_3species.py::test_markdown_code_block_parses -xvs`
+Run: `.venv/bin/pytest tests/test_tutorial_3species.py::test_markdown_code_block_parses_and_runs -xvs`
 
 Expected: PASSES. The Beats 2-6 markdown doesn't add new Python code fences (only one ```python block at the top, the rest are illustrative shell + CSV snippets).
 
@@ -1495,7 +1570,15 @@ Hands-on tutorials. Self-contained, single-session. Each tutorial is a markdown 
 
 - [ ] **Step 11.2: Add the top-of-page callout to `README.md`**
 
-Open `README.md`. Find the line that ends `## Status` (the "## Status" header). Insert *immediately above* it (between the one-paragraph intro and the Status table):
+First, verify the `## Status` header exists and capture its line number:
+
+```bash
+grep -n '^## Status' README.md
+```
+
+Expected: one match, e.g., `7:## Status`. If the result is empty or different, the README structure has drifted from what the spec described — update the spec target before editing.
+
+Open `README.md`. Find the `## Status` header line. Insert *immediately above* it (between the one-paragraph intro and the Status table):
 
 ```markdown
 
@@ -1564,11 +1647,11 @@ Expected: **6 passed in under 45 seconds** (cold). All 6 assertions GREEN.
 
 Run: `.venv/bin/pytest tests/ -q --ignore=tests/test_tutorial_3species.py 2>&1 | tail -10`
 
-Expected: pre-existing passing tests still pass. If the `numba_warmup` fixture (autouse=True) accidentally breaks any test that doesn't expect engine setup, audit and fix.
+Expected: pre-existing passing tests still pass. The `numba_warmup` fixture is `autouse=False`, opt-in — pre-existing tests don't request it, so their wall-clock is unchanged.
 
 - [ ] **Step 12.3: Acceptance #1 — fresh-venv smoke test**
 
-Simulate a fresh reader. From any directory:
+Simulate a fresh reader. From any directory. **CRITICAL: do NOT remove the `cd /tmp/ac1-fresh` step** — the tutorial's `WORK = Path("tutorial-work").absolute()` resolves against the current working directory; running from the repo root would pollute the repo with `tutorial-work/`.
 
 ```bash
 mkdir -p /tmp/ac1-fresh && cd /tmp/ac1-fresh
@@ -1668,7 +1751,7 @@ The tutorial is ready to ship. Post-merge bookkeeping (not in this plan):
 Before declaring the plan complete, the implementer should confirm:
 
 - [ ] All 6 regression assertions pass: `.venv/bin/pytest tests/test_tutorial_3species.py -v` shows `6 passed`.
-- [ ] The tutorial markdown is syntactically valid Python in its main code block (the `test_markdown_code_block_parses` assertion).
+- [ ] The tutorial markdown is syntactically valid Python in its main code block (the `test_markdown_code_block_parses_and_runs` assertion).
 - [ ] Manual smoke of the tutorial in `/tmp/` produces a `biomass.html` plot (Step 12.3).
 - [ ] The Beat-6 perturbation visibly changes the plot (Step 12.4).
 - [ ] All README links resolve (Step 12.6).
