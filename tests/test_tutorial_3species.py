@@ -114,7 +114,7 @@ def baseline_run(tmp_path: Path, numba_warmup: None) -> pd.DataFrame:
     workdir = tmp_path / "base"
     workdir.mkdir()
     cfg = build_config(workdir)
-    cfg["simulation.rng.fixed"] = "true"
+    cfg["validation.strict.enabled"] = "error"
     result = PythonEngine().run_in_memory(config=cfg, seed=42)
     bio_wide = result.biomass()
     bio_long = _melt_to_long(bio_wide)
@@ -151,7 +151,7 @@ def perturbed_run(tmp_path: Path, numba_warmup: None) -> pd.DataFrame:
     reader = OsmoseConfigReader()
     cfg = reader.read(str(target / "baltic_all-parameters.csv"))
     cfg["simulation.time.nyear"] = "30"
-    cfg["simulation.rng.fixed"] = "true"
+    cfg["validation.strict.enabled"] = "error"
 
     result = PythonEngine().run_in_memory(config=cfg, seed=42)
     bio_wide = result.biomass()

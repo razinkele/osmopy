@@ -110,8 +110,10 @@ WORK = Path("tutorial-work").absolute()
 WORK.mkdir(exist_ok=True)
 BALTIC = WORK / "baltic"
 
-# Copy the calibrated Baltic config into our workdir (idempotent on re-runs)
-shutil.copytree(BALTIC_SRC, BALTIC, dirs_exist_ok=True)
+# Copy the calibrated Baltic config into our workdir on first run.
+# Subsequent runs preserve any reader edits (e.g., Beat 6 perturbation).
+if not BALTIC.exists():
+    shutil.copytree(BALTIC_SRC, BALTIC)
 
 # -- [Beat 2] Load the config; override nyear=30 for tutorial pacing ----------
 # The canonical Baltic calibration runs 50 years.  30 years is enough to see
