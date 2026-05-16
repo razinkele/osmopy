@@ -6,6 +6,7 @@ from __future__ import annotations
 import dataclasses
 import html
 import logging
+import math
 import os
 import queue as _queue_mod
 import stat
@@ -21,6 +22,7 @@ from shiny.types import SilentException
 
 from osmose.calibration.checkpoint import (
     RESULTS_DIR,
+    CalibrationCheckpoint,
     CheckpointReadResult,
     LiveSnapshot,
     is_live,
@@ -148,6 +150,56 @@ def _ckpt_mtime_for(snap: LiveSnapshot) -> float:
         return datetime.fromisoformat(snap.active.checkpoint.timestamp_iso).timestamp()
     except ValueError:
         return time.time()
+
+
+_PROXY_EPS = 1e-9
+_STATE_ORDER = {"out_of_range": 0, "in_range": 1, "extinct": 2}
+
+
+def _build_proxy_rows(ckpt: CalibrationCheckpoint) -> list[dict]:
+    """Compute proxy-table rows. When proxy_source != 'banded_loss',
+    returns a single sentinel row signalling the renderer to display a banner."""
+    if ckpt.proxy_source != "banded_loss":
+        return [{"state": ckpt.proxy_source, "species": "", "loss": 0.0,
+                 "band": (0.0, 0.0), "magnitude": 0.0, "direction": ""}]
+
+    assert ckpt.species_labels is not None
+    assert ckpt.per_species_residuals is not None
+    assert ckpt.per_species_sim_biomass is not None
+    assert ckpt.banded_targets is not None
+
+    rows: list[dict] = []
+    for i, sp in enumerate(ckpt.species_labels):
+        residual = ckpt.per_species_residuals[i]
+        sim_biomass = ckpt.per_species_sim_biomass[i]
+        lo, hi = ckpt.banded_targets[sp]
+        target_mean = math.sqrt(lo * hi)  # Inv 9 ensures lo > 0
+        if sim_biomass == 0.0:
+            state, direction, magnitude = "extinct", "", 0.0
+        elif residual <= _PROXY_EPS:
+            state = "in_range"
+            magnitude = sim_biomass / target_mean
+            direction = ""
+        else:
+            state = "out_of_range"
+            magnitude = sim_biomass / target_mean
+            direction = "overshoot" if sim_biomass > hi else "undershoot"
+        rows.append({
+            "species": sp, "state": state, "loss": residual,
+            "band": (lo, hi), "magnitude": magnitude, "direction": direction,
+        })
+    rows.sort(key=lambda r: _STATE_ORDER[r["state"]])
+    return rows
+
+
+def _aria_for_state(state: str, magnitude: float, direction: str) -> str:
+    if state == "in_range":
+        return "in band"
+    if state == "out_of_range":
+        return f"out of band — {magnitude:.2f} times {direction}"
+    if state == "extinct":
+        return "extinct"
+    return "proxy unavailable"
 
 
 def _require_preflight(
@@ -746,6 +798,67 @@ def register_calibration_handlers(
                 **{"aria-live": "polite", "aria-atomic": "false"},
             ),
             class_="run-header mb-2",
+        )
+
+    @output
+    @render.ui
+    def ices_proxy_table():
+        snap = _live_snapshot()
+        if snap.active.kind != "ok":
+            return ui.tags.div()
+        ckpt = snap.active.checkpoint
+        rows = _build_proxy_rows(ckpt)
+
+        if rows and rows[0]["state"] == "objective_disabled":
+            return ui.tags.div(
+                "ICES proxy unavailable: this run does not use banded-loss objectives. "
+                "Authoritative verdict will appear in Results tab on completion.",
+                class_="alert alert-info small",
+            )
+        if rows and rows[0]["state"] == "not_implemented":
+            return ui.tags.div(
+                "ICES proxy: per-species residuals were not exposed by losses.py "
+                "despite banded-loss being configured. This is a bug — please file an "
+                "issue and include the checkpoint filename.",
+                class_="alert alert-danger small",
+            )
+
+        table_rows = []
+        n_in, n_out, n_na = 0, 0, 0
+        for r in rows:
+            if r["state"] == "in_range":
+                badge, n_in = "✓", n_in + 1
+                mag_text = f"≈{r['magnitude']:.2f}×"
+            elif r["state"] == "out_of_range":
+                badge, n_out = "✗", n_out + 1
+                mag_text = f"{r['magnitude']:.2f}× {r['direction']}"
+            elif r["state"] == "extinct":
+                badge, n_out = "☠", n_out + 1
+                mag_text = "extinct"
+            else:
+                badge, n_na = "—", n_na + 1
+                mag_text = ""
+            table_rows.append(ui.tags.tr(
+                ui.tags.td(html.escape(r["species"])),
+                ui.tags.td(f"loss {r['loss']:.2f}"),
+                ui.tags.td(f"band [{r['band'][0]:.2f}, {r['band'][1]:.2f}]"),
+                ui.tags.td(badge, **{"aria-label": _aria_for_state(r['state'], r['magnitude'], r['direction'])}),
+                ui.tags.td(mag_text),
+            ))
+        return ui.tags.div(
+            ui.tags.table(
+                ui.tags.thead(ui.tags.tr(
+                    ui.tags.th("species"), ui.tags.th("loss"), ui.tags.th("band"),
+                    ui.tags.th(""), ui.tags.th("magnitude"),
+                )),
+                ui.tags.tbody(*table_rows),
+                class_="table table-sm",
+            ),
+            ui.tags.div(
+                f"{n_in}/{n_in + n_out + n_na} in-band (proxy) · {n_out} out · {n_na} n/a · "
+                "authoritative ICES verdict appears in Results tab after completion.",
+                class_="small text-muted",
+            ),
         )
 
     @reactive.poll(lambda: time.time(), interval_secs=0.5)

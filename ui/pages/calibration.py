@@ -263,6 +263,7 @@ def calibration_ui():
                     ui.div(
                         ui.output_text("cal_status"),
                         ui.output_ui("run_header"),
+                        ui.output_ui("ices_proxy_table"),
                         output_widget("convergence_chart"),
                     ),
                 ),
