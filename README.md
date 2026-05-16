@@ -4,6 +4,8 @@ Python orchestration layer, simulation engine, and Shiny web interface for the [
 
 <sub>**Python 3.12** · **NumPy + Numba** · **Shiny for Python** · **2510 tests** · **ruff clean** · **MIT**</sub>
 
+> 🚀 **New here?** Run and perturb a calibrated Baltic ecosystem in 30 minutes: [Tutorial](docs/tutorials/30-minute-ecosystem.md).
+
 ## Status
 
 | Surface | State |
@@ -314,6 +316,7 @@ Start here depending on what you want:
 
 | Goal | Doc |
 |---|---|
+| Learn OSMOSE by running and perturbing a real Baltic ecosystem in 30 min | [`docs/tutorials/30-minute-ecosystem.md`](docs/tutorials/30-minute-ecosystem.md) |
 | Run an existing example | [Quick start](#quick-start) above |
 | Understand the Baltic example, its parameters, and their sources | [`docs/baltic_example.md`](docs/baltic_example.md) |
 | See where model F and biomass sit vs ICES 2024 advice | [`docs/baltic_ices_validation_2026-04-18.md`](docs/baltic_ices_validation_2026-04-18.md) |
