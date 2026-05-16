@@ -139,7 +139,7 @@ The earlier r2 promise that Shiny UI Setup → Load could open this tutorial's c
 | Plot file path printed but won't open | Headless server | The script also prints the equilibrium values; read those. |
 | Want to start over from scratch | Stale artifacts in `tutorial-work/` | `rm -rf tutorial-work/` then re-run. |
 | `FileNotFoundError: ltl.nc` after editing accessibility CSV | Re-ran from a different CWD | `cd` back to the directory where `tutorial.py` lives. Paths are absolute under `tutorial-work/`. |
-| Beat 6 perturbation didn't change anything | Edited the wrong `0.8` | The CSV has one `0.8`: on the line `Forager;0.8;0;0`. Don't touch `Plankton;0;0.2;0.8`. |
+| Beat 6 perturbation didn't change anything | Edited the wrong `0.8` | The CSV contains *two* `0.8`s — one on `Forager;0.8;0;0` (target) and one on `Plankton;0;0.2;0.8` (last column; do NOT edit). Search for the literal string `Forager;0.8` to find the right line. |
 
 ## The synthetic model (concrete values — normative)
 
@@ -166,7 +166,7 @@ Size ratios with these values: Predator/Forager = 6×, Forager/PlanktonEater = 3
 - `species.name.sp3=Plankton`, `species.type.sp3=resource`, `species.file.sp3=tutorial-work/ltl.nc`
 - `species.size.min.sp3=0.0002`, `species.size.max.sp3=0.5`
 - `species.trophic.level.sp3=1.0`
-- `species.accessibility2fish.sp3=0.8` (override the 0.01 default)
+- `species.accessibility2fish.sp3=0.8` — overrides the engine default (~0.01). **Note:** this acts as a multiplier on the raw NetCDF biomass when fish encounter the resource (`osmose/engine/resources.py:231`), so the *effective* plankton biomass available to predators is 0.8 × 10 000 = 8 000 t/cell. If you want exactly 10 000 t/cell effective, set this to 1.0 (capped at 0.99 by the engine).
 - `simulation.nresource=1`
 - NetCDF: `Plankton` variable, dims `(time, latitude, longitude)`, shape `(24, 4, 4)`, constant **10000.0**.
 
@@ -200,10 +200,10 @@ Loaded by `osmose/engine/accessibility.py:72-131` via `pd.read_csv(sep=';', inde
 - `species.length2weight.allometric.power.sp{i}=3.05` per species (OSMOSE-EEC default)
 - `species.vonbertalanffy.threshold.age.sp{i}=1.0` per species
 - `species.maturity.size.sp{i}`: 50 / 12 / 4 cm for sp0/sp1/sp2 (matches the table at the top of this section)
-- `species.relativefecundity.sp{i}=4000` per species (OSMOSE default)
+- `species.relativefecundity.sp{i}=500` per species (the engine default at `osmose/engine/config.py:499`; reference Baltic configs use 300–1200, EEC uses 0.14–2228 with very different unit conventions, so the engine default is the right anchor for a toy)
 - `species.sexratio.sp{i}=0.5` per species (engine default; declared explicitly to survive `validation.strict.enabled=error`)
 
-If the engine has stage-structured predation thresholds enabled, `predation.predprey.stage.threshold.sp{i}` may also be required; check `osmose/engine/config.py:572-639`. Since this synthetic model has no stage structure, the right answer is likely to leave `predation.predprey.stage.structure.sp{i}=size` (engine default) and not set thresholds.
+If the engine has stage-structured predation thresholds enabled, `predation.predprey.stage.threshold.sp{i}` may also be required; check `osmose/engine/config.py:572-639`. Since this synthetic model has no stage structure, leave the global `predation.predprey.stage.structure=size` at its engine default (line 572) and skip the per-species variants + thresholds.
 
 The implementer enumerates the complete set against `osmose/engine/config.py:1428-1500` (the `_get` / `_species_float` walk under `EngineConfig.from_dict`); expected total ~80 keys.
 
@@ -284,7 +284,8 @@ fig = px.line(bio_long, x="Time", y="biomass", color="species",
               template="plotly_white")
 fig.write_html(WORK / "biomass.html")
 print(f"Open: {WORK / 'biomass.html'}")
-print(bio_long.groupby("species").tail(3))   # headless fallback
+print("Equilibrium biomass (years 45-50 mean):")
+print(bio_long[bio_long["Time"] >= 45].groupby("species")["biomass"].mean())   # headless fallback
 ```
 
 ### Key shape decisions (post r1+r2 review)
@@ -300,18 +301,18 @@ print(bio_long.groupby("species").tail(3))   # headless fallback
 
 ### File: `tests/test_tutorial_3species.py`
 
-Imports `CONFIG`, `ACCESSIBILITY_CSV`, `build_ltl`, `BASELINE_PERTURBATION` from `tests/_tutorial_config.py`. Uses a session-scoped `numba_warmup` fixture (runs a single-year throwaway sim before any timed assertions) so the per-test budget is warm-only. Total session budget: **under 45 seconds** including warmup; per-test budget after warmup: under 15 s.
+Imports `build_config`, `ACCESSIBILITY_CSV`, `build_ltl`, `BASELINE_PERTURBATION` from `tests/_tutorial_config.py`. The fixture writes the accessibility CSV + LTL NetCDF to a pytest `tmp_path`, calls `cfg = build_config(tmp_path)`, then `PythonEngine().run_in_memory(config=cfg, seed=42)`. Uses a session-scoped `numba_warmup` fixture (runs a single-year throwaway sim before any timed assertions) so the per-test budget is warm-only. Total session budget: **under 45 seconds** including warmup; per-test budget after warmup: under 15 s.
 
 ### Assertions
 
-1. **The script runs to completion.** `run_in_memory(config=cfg, seed=42)` returns a non-empty `OsmoseResults`; `.biomass()` returns a wide-form DataFrame; the post-melt tidy DataFrame has the expected ~50 × 3 = 150 rows for the focal species. Test sets `cfg["validation.strict.enabled"]="error"` to surface unknown-key drift loudly.
+1. **The script runs to completion.** `run_in_memory(config=cfg, seed=42)` returns a non-empty `OsmoseResults`; `.biomass()` returns a wide-form DataFrame; the post-melt tidy DataFrame contains exactly `{"Predator", "Forager", "PlanktonEater"}` in its `species` column and has more than 100 rows per species. (Engine emits one biomass row per dt by default — `output.recordfrequency.ndt=1` in `osmose/engine/config.py:833` — so 50 yr × 24 dt = 1200 rows per species. Assert *more than 100* rather than exact equality to tolerate engine output-frequency changes.) Test sets `cfg["validation.strict.enabled"]="error"` to surface unknown-key drift loudly.
 2. **Biomass pyramid holds at the windowed mean over years 45–50.** `mean(PlanktonEater) > mean(Forager) > mean(Predator)`. Margins are *measured during authorship* — the implementer runs the model, records the actual equilibrium ratios, and codes them into the test with a ±20 % slack band. (Hand-picked margins risked tuning-to-pass; measured margins anchor the test to empirical reality.)
 3. **Trophic cascade is visible at the windowed mean over years 45–50.** Re-running with `Forager;0.1` (instead of `Forager;0.8`):
    - `mean(Forager_perturbed) > 2.0 × mean(Forager_baseline)` — release-from-predation produces a strong response (an 8× drop in accessibility should not just barely move the needle).
    - `mean(PlanktonEater_perturbed) < 0.6 × mean(PlanktonEater_baseline)` — the cascade reached the bottom with a strong signal.
 4. **Markdown code block parses.** A separate fast test extracts the first ```python fence from `30-minute-ecosystem.md` and runs `ast.parse()` on it. Costs ~50 ms; catches syntactic drift between the helper and the markdown.
 5. **The perturbation instruction is findable.** Substring check: `"Forager;0.8;0;0" in ACCESSIBILITY_CSV`. Catches column-reorder / row-rename drift that wouldn't break the main test but *would* break the tutorial's instructions.
-6. **Headless fallback produces meaningful output.** Asserts `bio_long.groupby("species").tail(3).shape[0] == 9` (3 species × 3 last rows).
+6. **Headless fallback produces meaningful output.** Asserts the equilibrium summary `bio_long[bio_long["Time"] >= 45].groupby("species")["biomass"].mean()` returns 3 finite values (one per focal species).
 
 ### What the test does NOT assert
 
@@ -375,6 +376,8 @@ This section is normative for how the plan should be structured.
 
 ### Measurement protocol for the pyramid assertion (step 6 above)
 
+**Prerequisite:** this script requires step 4 complete (`build_config` returning a real dict, not the stub). If you try to run it earlier you'll get `KeyError` from the engine's mandatory-key check.
+
 ```python
 from pathlib import Path
 from tests._tutorial_config import build_config, ACCESSIBILITY_CSV, build_ltl
@@ -405,7 +408,7 @@ Take these numbers, encode them with ±20 % into the test. Commit the numbers in
 2. **Perform the perturbation** (`Forager;0.8` → `Forager;0.1` in `accessibility.csv`); re-run produces a visibly different plot with Forager up and PlanktonEater down.
 3. **Run `.venv/bin/python -m pytest tests/test_tutorial_3species.py -v`** — passes in under 45 seconds (session-level).
 4. **All README links resolve.**
-5. **Regression test sets `validation.strict.enabled=error` and produces zero unknown-key warnings.** This enforces dict completeness.
+5. **Regression test sets `validation.strict.enabled=error` and completes without raising on unknown keys.** (Error mode raises `ValueError` listing every unknown key; success = no raise.) This enforces dict completeness.
 6. **Troubleshooting table covers** every error a reader is likely to encounter in their first paste: missing venv, missing NetCDF backend, Numba cold start, dict typo, headless display, stale state, wrong CWD, wrong-`0.8`-edit.
 
 ## Risks and mitigations
