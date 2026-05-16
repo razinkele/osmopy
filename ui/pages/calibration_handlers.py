@@ -3,8 +3,12 @@
 
 from __future__ import annotations
 
+import dataclasses
+import html
+import logging
 import os
 import queue as _queue_mod
+import stat
 import subprocess
 import tempfile
 import threading
@@ -15,12 +19,116 @@ import numpy as np
 from shiny import reactive, ui
 from shiny.types import SilentException
 
-from osmose.calibration.checkpoint import RESULTS_DIR
+from osmose.calibration.checkpoint import (
+    RESULTS_DIR,
+    CheckpointReadResult,
+    LiveSnapshot,
+    is_live,
+    probe_writable,
+    read_checkpoint,
+)
 from osmose.logging import setup_logging
 from osmose.schema.base import ParamType
 from osmose.schema.registry import ParameterRegistry
 
 _log = setup_logging("osmose.calibration.ui")
+
+logger = logging.getLogger("osmose.ui.calibration_dashboard")
+
+# Startup probe (call once at module import; failure logs but does not raise).
+try:
+    probe_writable(RESULTS_DIR)
+except OSError as e:
+    logger.error("RESULTS_DIR probe failed: %s", e)
+
+_signature_tick: int = 0
+_seen_scan_errors: set[type] = set()
+_seen_scan_errors_lock = threading.Lock()
+_EMPTY_SNAPSHOT = LiveSnapshot(
+    active=CheckpointReadResult(kind="no_run", checkpoint=None, error_summary=None),
+    other_live_paths=(),
+    snapshot_monotonic=0.0,
+)
+
+
+def _notify_scan_failure_once(e: OSError) -> None:
+    cls = type(e)
+    with _seen_scan_errors_lock:
+        if cls in _seen_scan_errors:
+            return
+        _seen_scan_errors.add(cls)
+    logger.error("calibration results scan failed: %s: %s", cls.__name__, e)
+    try:
+        ui.notification_show(
+            f"Calibration directory scan failed "
+            f"({html.escape(cls.__name__)}: {html.escape(str(e))}) — "
+            "dashboard will retry. Check the results directory's mount/perms.",
+            type="warning", duration=None,
+        )
+    except Exception:
+        pass  # outside a Shiny session (tests) — log-only
+
+
+def _scan_signature() -> tuple[float, int, int]:
+    """Cheap poll dependency. Uses lstat() to match the symlink-skip policy.
+
+    Persistent failures advance _signature_tick so the poll keeps invalidating
+    (otherwise it would latch on (0.0, 0) and never re-fire _scan_results_dir,
+    which would silence _notify_scan_failure_once after first call).
+    """
+    global _signature_tick
+    try:
+        pairs = []
+        for p in RESULTS_DIR.glob("phase*_checkpoint.json"):
+            try:
+                st = p.lstat()
+                if stat.S_ISLNK(st.st_mode):
+                    continue
+                pairs.append(st.st_mtime)
+            except (FileNotFoundError, PermissionError):
+                continue
+        return (max(pairs, default=0.0), len(pairs), 0)
+    except OSError:
+        _signature_tick += 1
+        return (0.0, 0, _signature_tick)
+
+
+def _scan_results_dir() -> LiveSnapshot:
+    """Atomic scan; never raises into the reactive runtime.
+
+    Symlinks are skipped (security: a symlink in RESULTS_DIR cannot trick
+    read_checkpoint into reading /etc/shadow, and bytes from a target file
+    cannot leak through UnicodeDecodeError.__str__ into the UI banner).
+    """
+    try:
+        paths_with_mtime: list[tuple[Path, float]] = []
+        for p in RESULTS_DIR.glob("phase*_checkpoint.json"):
+            try:
+                st = p.lstat()
+                if stat.S_ISLNK(st.st_mode):
+                    continue
+                paths_with_mtime.append((p, st.st_mtime))
+            except (FileNotFoundError, PermissionError):
+                continue
+        paths_with_mtime.sort(key=lambda pm: pm[1], reverse=True)
+        live: list[Path] = []
+        for p, _mt in paths_with_mtime:
+            try:
+                if is_live(p):
+                    live.append(p)
+            except (FileNotFoundError, PermissionError):
+                continue
+        if live:
+            active = read_checkpoint(live[0])
+            others = tuple(live[1:])
+        else:
+            active = CheckpointReadResult(kind="no_run", checkpoint=None, error_summary=None)
+            others = ()
+        return LiveSnapshot(active=active, other_live_paths=others,
+                            snapshot_monotonic=time.monotonic())
+    except OSError as e:
+        _notify_scan_failure_once(e)
+        return dataclasses.replace(_EMPTY_SNAPSHOT, snapshot_monotonic=time.monotonic())
 
 
 def _require_preflight(
