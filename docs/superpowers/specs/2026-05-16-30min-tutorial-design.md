@@ -166,7 +166,7 @@ Size ratios with these values: Predator/Forager = 6×, Forager/PlanktonEater = 3
 - `species.name.sp3=Plankton`, `species.type.sp3=resource`, `species.file.sp3=tutorial-work/ltl.nc`
 - `species.size.min.sp3=0.0002`, `species.size.max.sp3=0.5`
 - `species.trophic.level.sp3=1.0`
-- `species.accessibility2fish.sp3=0.8` — overrides the engine default (~0.01). **Note:** this acts as a multiplier on the raw NetCDF biomass when fish encounter the resource (`osmose/engine/resources.py:231`), so the *effective* plankton biomass available to predators is 0.8 × 10 000 = 8 000 t/cell. If you want exactly 10 000 t/cell effective, set this to 1.0 (capped at 0.99 by the engine).
+- `species.accessibility2fish.sp3=0.99` — overrides the engine default (~0.01); set just under the engine's 0.99 cap so the *effective* plankton biomass (multiplier × raw at `osmose/engine/resources.py:231`) is ≈ raw, keeping the spec's "10 000 t/cell" headline honest.
 - `simulation.nresource=1`
 - NetCDF: `Plankton` variable, dims `(time, latitude, longitude)`, shape `(24, 4, 4)`, constant **10000.0**.
 
@@ -219,12 +219,12 @@ One file, one paste. Anchor comments mark each beat's domain. The skeleton below
 """3-species OSMOSE ecosystem tutorial — see docs/tutorials/30-minute-ecosystem.md."""
 from pathlib import Path
 import numpy as np
-import pandas as pd
 import xarray as xr
 import plotly.express as px
 from osmose.engine import PythonEngine
 
-WORK = Path("tutorial-work").absolute(); WORK.mkdir(exist_ok=True)
+WORK = Path("tutorial-work").absolute()
+WORK.mkdir(exist_ok=True)
 N_LON, N_LAT, N_YR, N_DT = 4, 4, 50, 24
 
 # [Beat 5] Predation accessibility CSV — Beat 6 perturbs the Forager;0.8 entry ↓
@@ -263,7 +263,7 @@ config = {
     "species.name.sp3": "Plankton", "species.type.sp3": "resource",
     "species.file.sp3": (WORK / "ltl.nc").as_posix(),
     "species.size.min.sp3": 0.0002, "species.size.max.sp3": 0.5,
-    "species.trophic.level.sp3": 1.0, "species.accessibility2fish.sp3": 0.8,
+    "species.trophic.level.sp3": 1.0, "species.accessibility2fish.sp3": 0.99,
 
     # [Beat 5] Predation accessibility CSV
     "predation.accessibility.file": (WORK / "accessibility.csv").as_posix(),
@@ -273,10 +273,11 @@ config = {
 
 # Run + reshape biomass to tidy form for plotly
 result = PythonEngine().run_in_memory(config=config, seed=42)
-bio_wide = result.biomass()                                            # ["Time", <sp_names>, "species"="all"]
-bio_long = (bio_wide.drop(columns=["species"])                          # drop vestigial "all" column
-                    .melt(id_vars="Time", var_name="species", value_name="biomass"))
-bio_long = bio_long[bio_long["species"].isin(["Predator", "Forager", "PlanktonEater"])]
+# biomass() returns wide-form ["Time", <sp_names>, "species"="all"]; melt to tidy.
+bio_wide = result.biomass().drop(columns=["species"])
+bio_long = bio_wide.melt(id_vars="Time", var_name="species", value_name="biomass")
+focal = ["Predator", "Forager", "PlanktonEater"]
+bio_long = bio_long[bio_long["species"].isin(focal)]
 
 # Plot + headless fallback
 fig = px.line(bio_long, x="Time", y="biomass", color="species",
@@ -311,7 +312,7 @@ Imports `build_config`, `ACCESSIBILITY_CSV`, `build_ltl`, `BASELINE_PERTURBATION
    - `mean(Forager_perturbed) > 2.0 × mean(Forager_baseline)` — release-from-predation produces a strong response (an 8× drop in accessibility should not just barely move the needle).
    - `mean(PlanktonEater_perturbed) < 0.6 × mean(PlanktonEater_baseline)` — the cascade reached the bottom with a strong signal.
 4. **Markdown code block parses.** A separate fast test extracts the first ```python fence from `30-minute-ecosystem.md` and runs `ast.parse()` on it. Costs ~50 ms; catches syntactic drift between the helper and the markdown.
-5. **The perturbation instruction is findable.** Substring check: `"Forager;0.8;0;0" in ACCESSIBILITY_CSV`. Catches column-reorder / row-rename drift that wouldn't break the main test but *would* break the tutorial's instructions.
+5. **The perturbation instruction is findable.** Unpacks `find, replace = BASELINE_PERTURBATION` from the canonical helper, then `assert find in ACCESSIBILITY_CSV and replace not in ACCESSIBILITY_CSV` — confirms both the search-for substring and the replace-with substring are unique-and-disjoint in the canonical CSV. Catches column-reorder / row-rename drift that wouldn't break the main test but *would* break the tutorial's instructions.
 6. **Headless fallback produces meaningful output.** Asserts the equilibrium summary `bio_long[bio_long["Time"] >= 45].groupby("species")["biomass"].mean()` returns 3 finite values (one per focal species).
 
 ### What the test does NOT assert
@@ -322,7 +323,7 @@ Imports `build_config`, `ACCESSIBILITY_CSV`, `build_ltl`, `BASELINE_PERTURBATION
 
 ### Authorship discipline (not enforced — discipline cue)
 
-Implementer authors `_tutorial_config.py` first, runs the regression test, then transcribes the helper's contents into `30-minute-ecosystem.md`. Test docstring says: *"If `CONFIG`, `ACCESSIBILITY_CSV`, or `build_ltl` change, update `docs/tutorials/30-minute-ecosystem.md` to match."*
+Implementer authors `_tutorial_config.py` first, runs the regression test, then transcribes the helper's contents into `30-minute-ecosystem.md`. Test docstring says: *"If `build_config`, `ACCESSIBILITY_CSV`, or `build_ltl` change, update `docs/tutorials/30-minute-ecosystem.md` to match."*
 
 ## Cross-references
 
@@ -361,7 +362,7 @@ This section is normative for how the plan should be structured.
 ### Task ordering (test-first, with stubs)
 
 1. **Author `_tutorial_config.py` as stubs**: `build_config` returns `{}`; `build_ltl` raises `NotImplementedError`; `ACCESSIBILITY_CSV = ""`; `BASELINE_PERTURBATION = ("", "")`. Commit.
-2. **Author `test_tutorial_3species.py`** in its final form (all 6 assertions). Run it — confirm it goes RED in the expected way (helper stubs fail). Commit.
+2. **Author `test_tutorial_3species.py`** with all 6 assertion functions present in skeletal form (assertions #1–#3 import from `_tutorial_config` and run the engine; assertions #4–#6 are file-level / string-level checks). Run the file — confirm assertions #1–#3 go RED in the expected way (helper stubs fail) while #4–#6 may pass trivially against the current files. Commit. (No later "add ast.parse + substring tests" step — they're authored here, alongside the engine-running tests.)
 3. **Probe `result.biomass()` column shape** by writing a 10-line script that runs `data/minimal/` end-to-end and prints `df.columns, df.head()`. Lock the melt + filter logic against the observed shape.
 4. **Enumerate every mandatory key** in `EngineConfig.from_dict` (`osmose/engine/config.py:1428-1500`; follow `_get` and `_species_float` calls; also scan `_SUPPLEMENTARY_ALLOWLIST` for reader-injected keys). Build the complete `build_config` dict.
 5. **Use a 5-year smoke** (`N_YR=5`) for parameter shake-down. Only run the 50-yr config once values are pinned. Each cold-Numba iteration on the 50-yr config is ~25 s — the 5-yr smoke is ~5 s after JIT and gives you direction-of-change for most parameter probes.
@@ -371,8 +372,7 @@ This section is normative for how the plan should be structured.
 9. **Verify `species.accessibility2fish.sp{N}` engine path** for resource species in `osmose/engine/resources.py`; lock the 0.8 override.
 10. **Verify `simulation.fishing.mortality.enabled=false` + `simulation.nfisheries=0` is sufficient** to disable fishing without stub selectivity keys (an open question — if extras are needed, add them at step 4).
 11. **Write `30-minute-ecosystem.md`** with the dict transcribed from the (now-locked) `build_config`. Set version stamp.
-12. **Add the markdown `ast.parse` test + the perturbation-substring test**.
-13. **Write `docs/tutorials/README.md`**, edit `README.md` (top-of-page pointer + doc-index row), and ship.
+12. **Write `docs/tutorials/README.md`**, edit `README.md` (top-of-page pointer + doc-index row), and ship.
 
 ### Measurement protocol for the pyramid assertion (step 6 above)
 
