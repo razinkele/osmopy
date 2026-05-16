@@ -455,7 +455,23 @@ def calibration_server(input, output, session, state):
 
     @render_plotly
     def convergence_chart():
-        return make_convergence_chart(cal_history.get(), tmpl=_tmpl())
+        # Read the active checkpoint to derive (optimizer, phase) for the
+        # best-ever reference line. _scan_results_dir is module-level and
+        # importable; _live_snapshot is a @reactive.poll local to
+        # register_calibration_handlers and CANNOT be imported.
+        from ui.pages.calibration_handlers import _scan_results_dir
+        try:
+            snap = _scan_results_dir()
+            if snap.active.kind == "ok":
+                opt = snap.active.checkpoint.optimizer
+                ph = snap.active.checkpoint.phase
+            else:
+                opt = ph = None
+        except Exception:  # noqa: BLE001 — defensive fallback; should never fire
+            opt = ph = None
+        return make_convergence_chart(
+            cal_history.get(), tmpl=_tmpl(), optimizer=opt, phase=ph,
+        )
 
     @render_plotly
     def pareto_chart():

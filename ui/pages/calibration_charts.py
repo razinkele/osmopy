@@ -7,8 +7,20 @@ import numpy as np
 import plotly.graph_objects as go
 
 
-def make_convergence_chart(history: list[float], tmpl: str = "osmose") -> go.Figure:
-    """Line chart of best objective value per generation."""
+def make_convergence_chart(
+    history: list[float],
+    tmpl: str = "osmose",
+    optimizer: str | None = None,
+    phase: str | None = None,
+) -> go.Figure:
+    """Line chart of best objective value per generation.
+
+    When ``optimizer`` AND ``phase`` are both given, queries
+    :func:`osmose.calibration.history.list_runs` for prior matching runs and
+    adds a horizontal dashed reference line at the minimum ``best_objective``
+    with annotation ``"best ever: f=<X.XXX>"``. Existing callers that pass
+    only ``history`` and ``tmpl`` are unaffected — no reference line drawn.
+    """
     if not history:
         return go.Figure().update_layout(title="Convergence", template=tmpl)
     import plotly.express as px
@@ -19,6 +31,29 @@ def make_convergence_chart(history: list[float], tmpl: str = "osmose") -> go.Fig
         yaxis_title="Best Objective",
         template=tmpl,
     )
+    if optimizer is not None and phase is not None:
+        from osmose.calibration import history as hist_mod
+
+        try:
+            runs = hist_mod.list_runs()
+        except Exception:  # noqa: BLE001 — defensive; history is optional context
+            runs = []
+        matching = [
+            r for r in runs
+            if r.get("algorithm") == optimizer and r.get("phase") == phase
+        ]
+        finite = [
+            r["best_objective"] for r in matching
+            if r.get("best_objective") not in (None, float("inf"))
+        ]
+        if finite:
+            best_ever = min(finite)
+            fig.add_hline(
+                y=best_ever,
+                line_dash="dash",
+                annotation_text=f"best ever: f={best_ever:.3f}",
+                annotation_position="top left",
+            )
     return fig
 
 

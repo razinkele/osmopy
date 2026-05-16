@@ -107,3 +107,33 @@ def test_proxy_default_sort_out_first_then_in_then_extinct():
     rows = _build_proxy_rows(ckpt)
     states = [r["state"] for r in rows]
     assert states == ["out_of_range", "in_range", "extinct"]
+
+
+def test_convergence_chart_adds_best_ever_line(monkeypatch):
+    """list_runs() with matching prior runs → chart gets a horizontal line."""
+    from osmose.calibration import history as hist_mod
+    from ui.pages.calibration_charts import make_convergence_chart
+
+    monkeypatch.setattr(
+        hist_mod, "list_runs",
+        lambda history_dir=None: [
+            {"algorithm": "de", "phase": "test", "best_objective": 4.2,
+             "timestamp": "2026-05-01T10:00:00+00:00", "n_params": 2, "duration_seconds": 1.0,
+             "path": "x"},
+            {"algorithm": "de", "phase": "test", "best_objective": 5.1,
+             "timestamp": "2026-05-02T10:00:00+00:00", "n_params": 2, "duration_seconds": 1.0,
+             "path": "x"},
+        ],
+    )
+    fig = make_convergence_chart(history=[10.0, 8.0, 7.0], optimizer="de", phase="test")
+    shapes = fig.layout.shapes or ()
+    assert any(s.y0 == 4.2 and s.y1 == 4.2 for s in shapes), "expected hline at 4.2"
+
+
+def test_convergence_chart_no_best_ever_line_when_no_prior_runs(monkeypatch):
+    from osmose.calibration import history as hist_mod
+    from ui.pages.calibration_charts import make_convergence_chart
+
+    monkeypatch.setattr(hist_mod, "list_runs", lambda history_dir=None: [])
+    fig = make_convergence_chart(history=[10.0], optimizer="de", phase="test")
+    assert not (fig.layout.shapes or ())
