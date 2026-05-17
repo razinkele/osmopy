@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import atexit
 import shutil
+import tempfile
 from pathlib import Path
 
 import pandas as pd
@@ -19,20 +20,35 @@ from ui.styles import STYLE_EMPTY, STYLE_MONO_KEY
 _log = setup_logging("osmose.results.ui")
 
 
+_OSMOSE_TMP_PREFIXES: tuple[str, ...] = (
+    "osmose_run_",
+    "osmose_demo_",
+    "osmose_export_",
+    "osmose_cal_",
+    "osmose_val_",
+    "osmose_sens_",
+)
+
+
 def _safe_output_dir(raw: str) -> Path | None:
     """Validate a user-supplied output directory; return resolved Path or None.
 
-    Closes C3: previously the `..` substring check at lines 334 and 586
-    accepted absolute paths like `/etc`, letting users read directories
-    outside the working tree. The pattern at lines 521 / 543 already used
-    `is_relative_to(Path.cwd())` correctly — this consolidates it into one
-    helper applied at all four sites.
+    Closes C3 (path-traversal): previously the `..`-substring check accepted
+    absolute paths like `/etc`, letting users read directories outside the
+    working tree. We now resolve the path and accept it only when:
 
-    Returns the resolved Path if `raw` points to a directory inside the
-    current working tree, else None. Symlinks are resolved before the
-    `is_relative_to` check, so a symlink that escapes the cwd is rejected
-    while a symlink that points inside the cwd is accepted (common for
-    calibration scenario forks).
+    1. It lives under `Path.cwd()` (the normal case for in-tree run outputs), OR
+    2. It lives under `tempfile.gettempdir()` AND its first path component
+       matches one of the osmose-owned tmpdir prefixes (`osmose_run_`,
+       `osmose_demo_`, ...) used by the Run / Calibration / Demo / Export
+       tabs when they call `tempfile.mkdtemp(prefix=...)`. This carve-out
+       restores the natural Run → Results flow, which broke when the C3 fix
+       overreached — a user-typed `/etc/passwd` is still rejected, but the
+       engine-created `/tmp/osmose_run_abc123/output/` is accepted.
+
+    Symlinks are resolved before the prefix / is-relative-to check, so a
+    symlink that escapes the allowlist is rejected while a symlink pointing
+    into the allowlist is accepted (common for calibration scenario forks).
     """
     if not raw:
         return None
@@ -40,12 +56,20 @@ def _safe_output_dir(raw: str) -> Path | None:
         p = Path(raw).resolve(strict=False)
     except OSError:
         return None
-    cwd = Path.cwd().resolve()
-    if p != cwd and not p.is_relative_to(cwd):
-        return None
     if not p.is_dir():
         return None
-    return p
+
+    cwd = Path.cwd().resolve()
+    if p == cwd or p.is_relative_to(cwd):
+        return p
+
+    tmp_root = Path(tempfile.gettempdir()).resolve()
+    if p.is_relative_to(tmp_root):
+        rel = p.relative_to(tmp_root)
+        if rel.parts and rel.parts[0].startswith(_OSMOSE_TMP_PREFIXES):
+            return p
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -70,16 +94,50 @@ def make_timeseries_chart(
     species: str | None = None,
     template: str = "osmose",
 ) -> go.Figure:
-    """Create a time series line chart from OSMOSE output."""
+    """Create a time series line chart from OSMOSE output.
+
+    Accepts both shapes the engine emits:
+    - Long/tidy form: columns ``[time, species, <value_col>]``.
+    - Wide form (what ``OsmoseResults.biomass()`` returns for cross-species
+      output types like biomass/abundance/yield): columns
+      ``[Time, <sp_a>, <sp_b>, ..., species]`` where the ``species`` column is
+      a constant ``"all"``. Wide form is detected and melted internally before
+      plotting.
+    """
     if df.empty:
         return go.Figure().update_layout(title=title, template=template)
-    if species and "species" in df.columns:
+
+    cols = list(df.columns)
+    # Time-column casing varies (the engine emits "Time"; older fixtures use "time").
+    if "Time" in cols:
+        time_col = "Time"
+    elif "time" in cols:
+        time_col = "time"
+    else:
+        return go.Figure().update_layout(title=title, template=template)
+
+    # Detect wide form: has a "species" column but the requested value column
+    # is NOT present, while >=1 non-time, non-species columns exist (one per
+    # species). Melt those species columns into rows.
+    if "species" in cols and value_col not in cols:
+        species_cols = [c for c in cols if c not in (time_col, "species")]
+        if species_cols:
+            df = df.drop(columns=["species"]).melt(
+                id_vars=time_col,
+                value_vars=species_cols,
+                var_name="species",
+                value_name=value_col,
+            )
+
+    # "all" is the UI's sentinel for "show every species" — treat as no filter.
+    if species and species != "all" and "species" in df.columns:
         df = df[df["species"] == species]  # type: ignore[assignment]
     if df.empty:
         return go.Figure().update_layout(title=title, template=template)
+
     import plotly.express as px
 
-    fig = px.line(df, x="time", y=value_col, color="species", title=title)
+    fig = px.line(df, x=time_col, y=value_col, color="species", title=title)
     fig.update_layout(template=template)
     return fig
 
@@ -522,12 +580,12 @@ def results_server(input, output, session, state):
         value_col = col_map.get(rtype, rtype)
         title = title_map.get(rtype, rtype.title())
 
-        # If the expected value column doesn't exist, try first numeric column
-        if not df.empty and value_col not in df.columns:
-            numeric_cols = df.select_dtypes(include="number").columns
-            non_time = [c for c in numeric_cols if c != "time"]
-            if non_time:
-                value_col = non_time[0]
+        # NOTE: a former fallback here silently reassigned `value_col` to the
+        # first numeric column when it wasn't a column of `df`. That broke the
+        # wide-form code path in `make_timeseries_chart` (which needs to detect
+        # `value_col not in df.columns` to trigger the melt). The chart helper
+        # now handles the missing-value-col case via melt, so the fallback was
+        # removed.
 
         return make_timeseries_chart(df, value_col, title, species=sp, template=tmpl)  # type: ignore[arg-type]
 

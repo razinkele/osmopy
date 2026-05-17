@@ -44,6 +44,70 @@ def test_make_timeseries_chart_with_species_filter():
     assert len(fig.data) == 1
 
 
+def test_make_timeseries_chart_wide_form_from_engine():
+    """OsmoseResults.biomass() returns wide-form with capital 'Time', one column
+    per species, and a constant 'species'='all' column. The chart helper must
+    detect and melt this shape before plotting."""
+    df = pd.DataFrame(
+        {
+            "Time": [0, 1, 2],
+            "cod": [100.0, 110.0, 120.0],
+            "sprat": [1000.0, 1100.0, 1050.0],
+            "stickleback": [500.0, 480.0, 460.0],
+            "species": ["all", "all", "all"],
+        }
+    )
+    fig = make_timeseries_chart(df, "biomass", "Biomass")
+    assert isinstance(fig, go.Figure)
+    # 3 species columns → 3 traces after the internal melt
+    assert len(fig.data) == 3
+    trace_names = sorted(t.name for t in fig.data)
+    assert trace_names == ["cod", "sprat", "stickleback"]
+
+
+def test_make_timeseries_chart_wide_form_species_filter():
+    """Species filter still works on wide-form input after the internal melt."""
+    df = pd.DataFrame(
+        {
+            "Time": [0, 1, 2],
+            "cod": [100.0, 110.0, 120.0],
+            "sprat": [1000.0, 1100.0, 1050.0],
+            "species": ["all", "all", "all"],
+        }
+    )
+    fig = make_timeseries_chart(df, "biomass", "Biomass", species="cod")
+    assert len(fig.data) == 1
+    assert fig.data[0].name == "cod"
+
+
+def test_make_timeseries_chart_no_time_column():
+    """A DataFrame without any 'time' / 'Time' column returns an empty figure
+    rather than raising — the chart can't show a time-series without time."""
+    df = pd.DataFrame({"cod": [100, 200], "species": ["all", "all"]})
+    fig = make_timeseries_chart(df, "biomass", "Biomass")
+    assert isinstance(fig, go.Figure)
+    assert len(fig.data) == 0
+
+
+def test_make_timeseries_chart_species_all_sentinel():
+    """The UI passes `species="all"` from the default select option to mean
+    'show all species'. The chart helper must treat 'all' as no filter, not
+    as a literal species name to filter by."""
+    df = pd.DataFrame(
+        {
+            "Time": [0, 1, 2],
+            "cod": [100.0, 110.0, 120.0],
+            "sprat": [1000.0, 1100.0, 1050.0],
+            "species": ["all", "all", "all"],
+        }
+    )
+    fig = make_timeseries_chart(df, "biomass", "Biomass", species="all")
+    # 2 species columns → 2 traces; the "all" sentinel doesn't drop them
+    assert len(fig.data) == 2
+    trace_names = sorted(t.name for t in fig.data)
+    assert trace_names == ["cod", "sprat"]
+
+
 def test_make_diet_heatmap():
     df = pd.DataFrame(
         {
