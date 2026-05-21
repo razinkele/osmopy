@@ -1130,6 +1130,31 @@ def detect_fishing_scenario(config: dict[str, str], species_idx: int) -> str | N
     return None
 
 
+def _validate_trait_declarations(cfg: dict[str, str], n_sp: int) -> None:
+    """Each declared `evolution.trait.<name>.target` must have a per-species
+    mean for every species where variance is nonzero."""
+    import re
+    trait_names: set[str] = set()
+    for key in cfg:
+        m = re.match(r"evolution\.trait\.(\w+)\.target", key)
+        if m:
+            trait_names.add(m.group(1))
+    for name in trait_names:
+        for i in range(n_sp):
+            var_key = f"evolution.trait.{name}.var.sp{i}"
+            mean_key = f"evolution.trait.{name}.mean.sp{i}"
+            var_str = cfg.get(var_key, "0.0")
+            try:
+                var = float(var_str)
+            except ValueError:
+                raise ValueError(f"{var_key}: not a number ({var_str!r})")
+            if var > 0.0 and mean_key not in cfg:
+                raise ValueError(
+                    f"{mean_key} missing: trait '{name}' declares nonzero variance "
+                    f"on species {i} but no mean is specified"
+                )
+
+
 @dataclass
 class EngineConfig:
     """Typed engine configuration extracted from a flat OSMOSE config dict."""
@@ -1823,6 +1848,9 @@ class EngineConfig:
         genetics_transmission_year = int(cfg.get("evolution.seeding.year", "0"))
         genetics_n_neutral = int(cfg.get("evolution.neutral.nlocus", "0"))
         genetics_n_neutral_val = int(cfg.get("evolution.neutral.nval", "50"))
+
+        if genetics_enabled:
+            _validate_trait_declarations(cfg, n_sp)
 
         # DSVM fleet economics
         economics_enabled = _enabled(cfg, "simulation.economic.enabled")
