@@ -58,7 +58,14 @@ def test_baltic_ev_cod_reaches_fishery_l50_in_baseline(tmp_path: Path) -> None:
     """Baseline (bioen on, genetics off, no fishing) must produce cod
     that grow past 35cm in adult life-stage, otherwise the FIE demo's
     l50=35cm gear catches nothing and produces a null FIE signal for
-    structural reasons rather than the science."""
+    structural reasons rather than the science.
+
+    On pass, this test touches `tests/.preflight_wired`. Task 11's
+    `_require_preflight()` refuses to run until that sentinel exists.
+    The sentinel is deterministic — if the underlying bioen fixture
+    changes and cod stop reaching 35cm, the assertion fails, the
+    sentinel is NOT re-created, and Task 11 reverts to skipped.
+    """
     from osmose.config import OsmoseConfigReader
     from osmose.engine import PythonEngine
 
@@ -67,16 +74,33 @@ def test_baltic_ev_cod_reaches_fishery_l50_in_baseline(tmp_path: Path) -> None:
     cfg["simulation.genetic.enabled"] = "false"
     # Zero fishing so cod size distribution reflects bioen alone
     cfg["fisheries.rate.base.fsh0"] = "0.0"
-    PythonEngine().run(cfg, tmp_path, seed=0)
+    result = PythonEngine().run_in_memory(cfg, seed=0)
 
-    raise AssertionError(
-        "PRE-FLIGHT NOT WIRED. This stub must be replaced with a real "
-        "cod-final-length >= 35cm assertion sourced from the engine output "
-        "BEFORE running Task 11. Until wired, the FIE-direction test can "
-        "silently pass on a null signal — cod that never reach the gear "
-        "l50 produce structurally-zero selection regardless of trait "
-        "variance. See plan §Task 7.8."
+    # biomass_by_size returns long-form [time, species, bin, value] where
+    # `bin` is the size-bin lower edge as a string (e.g. "35.0"); see
+    # osmose/engine/output.py:_build_distribution_dataframes. We assert
+    # that, in the final simulated year, cod biomass in size bins >=35cm
+    # is strictly positive — i.e. the gear l50=35cm catches a non-empty
+    # share of the population.
+    bbs = result.biomass_by_size("cod")
+    assert not bbs.empty, "biomass_by_size('cod') returned an empty frame"
+    bbs = bbs.assign(bin_lower=bbs["bin"].astype(float))
+    t_max = bbs["time"].max()
+    last_year = bbs[bbs["time"] >= t_max - 1.0]
+    biomass_ge35 = float(last_year[last_year["bin_lower"] >= 35.0]["value"].sum())
+    biomass_total = float(last_year["value"].sum())
+    max_occupied_bin = float(last_year[last_year["value"] > 0]["bin_lower"].max())
+
+    assert biomass_ge35 > 0.0, (
+        f"cod biomass in size bins >=35cm at year {t_max:.1f} is "
+        f"{biomass_ge35:.3e} (total cod biomass = {biomass_total:.3e}, "
+        f"largest occupied bin = {max_occupied_bin:.1f}cm). Gear l50=35cm "
+        "catches nothing → FIE demo will produce a null signal. Tune "
+        "bioen growth params (Task 7.4) before relying on Task 11."
     )
+
+    # Sentinel for Task 11. Only touched after the assertion above passes.
+    Path("tests/.preflight_wired").touch()
 
 
 @pytest.mark.integration
