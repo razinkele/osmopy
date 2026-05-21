@@ -41,12 +41,15 @@ def test_baltic_ev_runs_5_years_without_genetics() -> None:
     cfg["simulation.genetic.enabled"] = "false"
     result = PythonEngine().run_in_memory(cfg, seed=0)
     biomass = result.biomass()
-    # `biomass()` returns long-form: columns [time, species, biomass]
-    # (osmose/results.py:342-348). `.any()` over the whole frame can be
-    # satisfied by background LTL species; we need to confirm the focal
-    # species (cod = sp0) produced non-zero biomass at end of run.
-    assert "biomass" in biomass.columns
-    cod_final = biomass[biomass["species"] == "cod"].iloc[-1]["biomass"]
+    # `biomass()` returns wide-form: columns `[Time, <species1>, <species2>, ...]`
+    # with a trailing `species` column from the loader that equals "all" for
+    # the unified biomass CSV. The docstring at osmose/results.py:343 currently
+    # documents long-form but the implementation is wide; the docstring fix is
+    # out of scope for this plan.
+    assert "cod" in biomass.columns, (
+        f"biomass output missing 'cod' column; got columns={list(biomass.columns)}"
+    )
+    cod_final = float(biomass.sort_values("Time")["cod"].iloc[-1])
     assert cod_final > 0, f"cod biomass at end of 5y is {cod_final}, expected > 0"
 
 
@@ -91,11 +94,15 @@ def test_baltic_ev_cod_biomass_within_2x_envelope_over_50y(tmp_path: Path) -> No
     cfg["fisheries.rate.base.fsh0"] = "0.0"
 
     result = PythonEngine().run_in_memory(cfg, seed=0)
-    bio = result.biomass()
-    cod = bio[bio["species"] == "cod"].sort_values("time")
-    burnin = cod[(cod["time"] >= 5.0) & (cod["time"] < 6.0)]["biomass"].mean()
-    end = cod[cod["time"] >= 49.0]["biomass"].mean()
-    ratio = end / burnin
+    bio = result.biomass().sort_values("Time")
+    # See test_baltic_ev_runs_5_years_without_genetics for the wide-form
+    # biomass() return-shape note.
+    assert "cod" in bio.columns, (
+        f"biomass output missing 'cod' column; got columns={list(bio.columns)}"
+    )
+    burnin = float(bio[(bio["Time"] >= 5.0) & (bio["Time"] < 6.0)]["cod"].mean())
+    end = float(bio[bio["Time"] >= 49.0]["cod"].mean())
+    ratio = end / burnin if burnin > 0 else float("inf")
     assert 0.5 <= ratio <= 2.0, (
         f"cod biomass at year 50 = {end:.2e}, year 5 = {burnin:.2e}, "
         f"ratio = {ratio:.2f}. Expected 0.5 <= ratio <= 2.0 under no-fishing, "

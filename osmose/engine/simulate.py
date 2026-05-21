@@ -445,6 +445,10 @@ def _bioen_step(
         safe_a = max(a, 1e-20)
         new_length[mask] = np.power(np.maximum(new_weight[mask] * 1e6 / safe_a, 1e-20), 1.0 / b)
 
+    # Eggs (lecithotrophic phase) do not starve — they carry their own yolk reserves.
+    # Zero out starvation deaths for schools that have not yet reached first feeding age.
+    starvation_dead = np.where(state.is_egg, 0.0, starvation_dead)
+
     # Reduce abundance by starvation deaths (clamp to zero)
     new_abundance = np.maximum(state.abundance - starvation_dead, 0.0)
 
@@ -519,6 +523,71 @@ def _bioen_reproduction(
 
     for sp in range(config.n_species):
         mask = state.species_id == sp
+
+        # Seeding fallback — mirrors _reproduction's SSB=0 logic.
+        # When no mature fish have accumulated gonad weight (SSB equivalent = 0),
+        # use seeding_biomass to bootstrap the population during the warm-up period.
+        # This applies whether or not any (immature/egg) schools exist.
+        # Without this, bioen mode never produces fish because the population
+        # starts empty and _bioen_reproduction only creates eggs from gonads.
+        gonad_ssb = float(state.gonad_weight[mask].sum()) if mask.any() else 0.0
+        if gonad_ssb == 0.0 and step < config.seeding_max_step[sp] and config.seeding_biomass[sp] > 0:
+            from osmose.engine.processes.reproduction import apply_stock_recruitment
+
+            # Season factor (same as standard _reproduction)
+            if config.spawning_season is not None:
+                n_cols = config.spawning_season.shape[1]
+                season_factor = float(config.spawning_season[sp, step % n_cols])
+            else:
+                season_factor = 1.0 / config.n_dt_per_year
+
+            ssb_seed = config.seeding_biomass[sp]
+            TONNES_TO_GRAMS = 1_000_000.0
+            n_eggs_linear = (
+                float(config.sex_ratio[sp])
+                * float(config.relative_fecundity[sp])
+                * ssb_seed
+                * season_factor
+                * TONNES_TO_GRAMS
+            )
+            n_eggs_arr = apply_stock_recruitment(
+                np.array([n_eggs_linear]),
+                np.array([ssb_seed]),
+                np.array([config.recruitment_ssb_half[sp]]),
+                np.array([config.recruitment_type[sp]]),
+            )
+            total_eggs_seed = float(n_eggs_arr[0])
+            if total_eggs_seed > 0:
+                ew_seed = np.nan
+                if config.egg_weight_override is not None:
+                    ew_seed = float(config.egg_weight_override[sp])
+                if np.isnan(ew_seed):
+                    ew_seed = (
+                        config.condition_factor[sp]
+                        * config.egg_size[sp] ** config.allometric_power[sp]
+                        * 1e-6
+                    )
+                n_new = int(config.n_schools[sp])
+                if n_new > 0:
+                    if total_eggs_seed < n_new:
+                        n_new = 1
+                    eggs_per_school = total_eggs_seed / n_new
+                    seed_school = SchoolState.create(
+                        n_schools=n_new,
+                        species_id=np.full(n_new, sp, dtype=np.int32),
+                    )
+                    seed_school = seed_school.replace(
+                        abundance=np.full(n_new, eggs_per_school, dtype=np.float64),
+                        weight=np.full(n_new, float(ew_seed), dtype=np.float64),
+                        biomass=np.full(n_new, eggs_per_school * float(ew_seed), dtype=np.float64),
+                        length=np.full(n_new, config.egg_size[sp], dtype=np.float64),
+                        cell_x=np.full(n_new, -1, dtype=np.int32),
+                        cell_y=np.full(n_new, -1, dtype=np.int32),
+                        is_egg=np.ones(n_new, dtype=np.bool_),
+                        first_feeding_age_dt=np.ones(n_new, dtype=np.int32),
+                    )
+                    new_egg_schools.append(seed_school)
+
         if not mask.any():
             continue
 
