@@ -678,3 +678,16 @@ class OsmoseResults:
     def close(self) -> None:
         """Close any cached NetCDF datasets."""
         self.close_cache()
+
+
+def read_genetic_trait_means(output_dir: Path, prefix: str = "osm") -> "xr.Dataset":
+    """Read per-step genetic trait statistics into an xarray Dataset.
+
+    Indexed by (Time, species_id, trait_name). Returns an empty dataset if the
+    CSV does not exist (genetics disabled run).
+    """
+    path = Path(output_dir) / f"{prefix}_genetic_trait_means_Simu0.csv"
+    if not path.exists():
+        return xr.Dataset()
+    df = pd.read_csv(path)
+    return df.set_index(["Time", "species_id", "trait_name"]).to_xarray()
