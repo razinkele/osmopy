@@ -64,6 +64,15 @@ class SimulationContext:
 
 
 @dataclass(frozen=True)
+class TraitStats:
+    """Per-species summary statistics for one genetic trait at one timestep."""
+
+    mean: float
+    variance: float
+    n_individuals: int
+
+
+@dataclass(frozen=True)
 class StepOutput:
     """Aggregated output for a single simulation timestep.
 
@@ -96,6 +105,11 @@ class StepOutput:
 
     # Diet: per-species diet composition, shape (n_predators, n_prey), or None if diet disabled
     diet_by_species: NDArray[np.float64] | None = None
+
+    # Genetic trait statistics: trait_name -> species_id -> TraitStats,
+    # or None if genetics disabled. Populated by _collect_outputs from
+    # ctx.genetic_state phenotypes.
+    trait_stats: dict[str, dict[int, "TraitStats"]] | None = None
 
     # Spatial outputs: per-species 2-D grids (ny, nx), or None if spatial disabled
     spatial_biomass: dict[int, NDArray[np.float64]] | None = None
