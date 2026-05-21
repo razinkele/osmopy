@@ -918,6 +918,7 @@ def _collect_outputs(
     diet_by_species: NDArray[np.float64] | None = None,
     *,
     grid: Grid | None = None,
+    phenotypes: dict[str, NDArray[np.float64]] | None = None,
 ) -> StepOutput:
     """Aggregate per-species outputs from current state into a StepOutput."""
     biomass, abundance = _collect_biomass_abundance(state, config, bkg_output)
@@ -935,6 +936,8 @@ def _collect_outputs(
         spatial_biomass, spatial_abundance, spatial_yield = _collect_spatial_outputs(
             state, grid, config
         )
+
+    trait_stats = _collect_trait_stats(state, phenotypes) if phenotypes else None
 
     return StepOutput(
         step=step,
@@ -955,7 +958,32 @@ def _collect_outputs(
         spatial_biomass=spatial_biomass,
         spatial_abundance=spatial_abundance,
         spatial_yield=spatial_yield,
+        trait_stats=trait_stats,
     )
+
+
+def _collect_trait_stats(
+    state: SchoolState,
+    phenotypes: dict[str, NDArray[np.float64]],
+) -> dict[str, dict[int, TraitStats]]:
+    """Group expressed phenotypes by species; return mean/var/count per trait per species."""
+    out: dict[str, dict[int, TraitStats]] = {}
+    species_ids = np.unique(state.species_id)
+    for trait_name, values in phenotypes.items():
+        per_species: dict[int, TraitStats] = {}
+        for sp in species_ids:
+            mask = state.species_id == sp
+            n = int(mask.sum())
+            if n == 0:
+                continue
+            sub = values[mask]
+            per_species[int(sp)] = TraitStats(
+                mean=float(np.mean(sub)),
+                variance=float(np.var(sub)),
+                n_individuals=n,
+            )
+        out[trait_name] = per_species
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1032,6 +1060,7 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
             spatial_biomass=spatial_b_agg,
             spatial_abundance=spatial_a_agg,
             spatial_yield=spatial_y_agg,
+            trait_stats=accumulated[0].trait_stats,
         )
     biomass = np.mean([o.biomass for o in accumulated], axis=0)
     abundance = np.mean([o.abundance for o in accumulated], axis=0)
@@ -1046,6 +1075,28 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
     # Pre-fix this used `accumulated[-1]` (last step in window) which silently
     # diverged from Java when output.recordfrequency.ndt > 1. _avg_spatial
     # already implements the same per-species-dict mean — reuse it.
+    trait_stats_list = [o.trait_stats for o in accumulated if o.trait_stats is not None]
+    merged_trait_stats: dict[str, dict[int, TraitStats]] | None = None
+    if trait_stats_list:
+        merged_trait_stats = {}
+        all_traits = set().union(*(d.keys() for d in trait_stats_list))
+        for trait in all_traits:
+            per_sp_lists: dict[int, list[TraitStats]] = {}
+            for d in trait_stats_list:
+                for sp, ts in d.get(trait, {}).items():
+                    per_sp_lists.setdefault(sp, []).append(ts)
+            merged_trait_stats[trait] = {
+                sp: TraitStats(
+                    # NOTE: `variance` field carries the mean-of-step-variances
+                    # across the averaging window, NOT the pooled variance of the
+                    # underlying schools. Downstream consumers that want pooled
+                    # variance must recompute from raw phenotype arrays.
+                    mean=float(np.mean([t.mean for t in lst])),
+                    variance=float(np.mean([t.variance for t in lst])),
+                    n_individuals=lst[-1].n_individuals,
+                )
+                for sp, lst in per_sp_lists.items()
+            }
     return StepOutput(
         step=record_step,
         biomass=biomass,
@@ -1065,6 +1116,7 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
         spatial_biomass=spatial_b_agg,
         spatial_abundance=spatial_a_agg,
         spatial_yield=spatial_y_agg,
+        trait_stats=merged_trait_stats,
     )
 
 
