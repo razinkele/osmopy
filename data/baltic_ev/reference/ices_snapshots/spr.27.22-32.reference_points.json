@@ -1,0 +1,11 @@
+{
+  "flim": null,
+  "fpa": "0.35",
+  "fmsy": "0.34",
+  "blim": "459000",
+  "bpa": "541000",
+  "msy_btrigger": "541000",
+  "f_age_range": "3-5",
+  "recruitment_age": "1",
+  "note": "FLIM not defined for this stock"
+}

@@ -1,0 +1,53 @@
+# Baltic Sea background-species configuration
+# Grey seal (sp14) + cormorant (sp15) as top predators
+# NetCDF biomass = STANDING biomass; ingestion.rate.max = annual turnover
+# OSMOSE computes consumption = standing_biomass × ingestion_rate
+# Refs: Galatius 2020 doi:10.2981/wlb.00711, Lundström 2010 doi:10.7557/3.2733,
+#       Östman 2013 doi:10.1371/journal.pone.0083763,
+#       Heikinheimo 2021 doi:10.1093/icesjms/fsab258
+
+simulation.nbackground = 2
+
+# ---- sp14: Grey seal (Halichoerus grypus grypus) ----
+# 30,000 individuals × 150 kg = 4,500 t standing biomass Baltic-wide.
+# Annual consumption target ~60,000 t → turnover 13.3× body mass/year.
+# Size ratios: 150 cm body / prey 12.5-50 cm = 3-12 → herring, sprat,
+# medium cod, flounder, small-medium pikeperch.
+species.type.sp14;background
+species.name.sp14;GreySeal
+species.length2weight.allometric.power.sp14;3.0
+species.length2weight.condition.factor.sp14;0.04
+predation.predPrey.sizeRatio.max.sp14;12
+predation.predPrey.sizeRatio.min.sp14;3
+predation.ingestion.rate.max.sp14;13.0
+
+species.file.sp14 = baltic_predator_biomass.nc
+
+species.nclass.sp14;2
+species.trophic.level.sp14;4.5, 4.8
+species.length.sp14;110;170
+species.size.proportion.sp14;0.35;0.65
+species.age.sp14;2;6
+
+# ---- sp15: Great cormorant (Phalacrocorax carbo sinensis) ----
+# ~520,000 individuals × 2 kg × 0.48 presence-weight = 500 t effective
+# standing biomass. Annual consumption target ~20,000 t → turnover 40×.
+# Size ratios: 80 cm body / prey 10-32 cm = 2.5-8 → young perch, herring,
+# sprat, small pikeperch, juvenile cod/flounder.
+species.type.sp15;background
+species.name.sp15;Cormorant
+species.length2weight.allometric.power.sp15;3.0
+# condition factor tuned to give ~2 kg at 80 cm (adult cormorant mass).
+# W = 0.004 * 80^3 ≈ 2048 g, matches the ~2 kg/bird literature value.
+species.length2weight.condition.factor.sp15;0.004
+predation.predPrey.sizeRatio.max.sp15;8
+predation.predPrey.sizeRatio.min.sp15;2.5
+predation.ingestion.rate.max.sp15;40.0
+
+species.file.sp15 = baltic_predator_biomass.nc
+
+species.nclass.sp15;2
+species.trophic.level.sp15;4.2, 4.5
+species.length.sp15;70;85
+species.size.proportion.sp15;0.4;0.6
+species.age.sp15;1;3
