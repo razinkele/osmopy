@@ -1505,7 +1505,7 @@ def simulate(
 
         # -- Genetics inheritance (after reproduction) --
         if ctx.genetic_state is not None:
-            from osmose.engine.genetics import create_offspring_genotypes
+            from osmose.engine.genetics import create_offspring_genotypes, express_traits
 
             current_year = step // config.n_dt_per_year
             seeding = (
@@ -1533,6 +1533,12 @@ def simulate(
                     )
                 for part in offspring_parts:
                     ctx.genetic_state = ctx.genetic_state.append(part)
+
+            # Re-express phenotypes after offspring genotypes are appended so
+            # that _collect_outputs receives an array that matches the current
+            # state length (pre-repro schools + n_new offspring schools).
+            if phenotypes is not None:
+                phenotypes = express_traits(ctx.genetic_state, state.species_id)
 
         # Collect focal outputs after reproduction
         step_out = _collect_outputs(
