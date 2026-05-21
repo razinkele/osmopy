@@ -667,7 +667,12 @@ def _bioen_reproduction(
     n_existing = len(state) - sum(len(e) for e in new_egg_schools)
     new_age = state.age_dt.copy()
     new_age[:n_existing] += 1
-    state = state.replace(age_dt=new_age)
+    # Hatch eggs: clear is_egg flag for schools whose age has reached first_feeding_age_dt.
+    # Mirrors _reproduction (non-bioen) path which does the same update at line ~169.
+    # Without this, is_egg stays True forever in bioen mode, blocking starvation,
+    # feeding-stage promotion, and (downstream) growth.
+    new_is_egg = new_age < state.first_feeding_age_dt
+    state = state.replace(age_dt=new_age, is_egg=new_is_egg)
 
     return state
 
