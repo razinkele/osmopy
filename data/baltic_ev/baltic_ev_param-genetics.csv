@@ -1,0 +1,25 @@
+evolution.trait.imax.target;bioen_i_max
+evolution.trait.imax.mean.sp0;3.0
+evolution.trait.imax.var.sp0;0.018
+evolution.trait.imax.envvar.sp0;0.054
+# nlocus=10, nval=10 follow Marty, Dieckmann & Ernande (2015,
+# https://doi.org/10.1111/eva.12220), the canonical eco-genetic precursor to
+# Ev-OSMOSE — they use ~10 functional loci with 10 allelic states, with nval=10
+# anchored on Poulsen et al. (2006)'s empirical mean cod microsatellite allelic
+# diversity of 9.4. nval=20 in the earlier draft of this plan was unsourced.
+evolution.trait.imax.nlocus.sp0;10
+evolution.trait.imax.nval.sp0;10
+evolution.trait.imax.mean.sp1;3.5
+evolution.trait.imax.var.sp1;0.0
+evolution.trait.imax.mean.sp2;4.0
+evolution.trait.imax.var.sp2;0.0
+evolution.trait.imax.mean.sp3;3.5
+evolution.trait.imax.var.sp3;0.0
+evolution.trait.imax.mean.sp4;3.5
+evolution.trait.imax.var.sp4;0.0
+evolution.trait.imax.mean.sp5;4.0
+evolution.trait.imax.var.sp5;0.0
+evolution.trait.imax.mean.sp6;3.0
+evolution.trait.imax.var.sp6;0.0
+evolution.trait.imax.mean.sp7;3.5
+evolution.trait.imax.var.sp7;0.0

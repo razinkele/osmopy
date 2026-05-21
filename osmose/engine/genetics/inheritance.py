@@ -59,13 +59,25 @@ def create_offspring_genotypes(
         off_alleles = np.zeros((n_offspring, max_loci, 2), dtype=np.float64)
 
         if seeding:
-            # During seeding: draw alleles from the full population pool at random
+            # During seeding: draw alleles from the full population pool at random.
+            # If the population pool is empty (all schools died, e.g. early warm-up),
+            # fall back to drawing directly from the trait's pre-built allele pool so
+            # that new offspring can always be seeded without crashing.
             pool_alleles = parent_gs.alleles[name]  # (N, max_loci, 2)
-            for j in range(n_offspring):
-                for a in range(2):
-                    donor = rng.integers(0, len(pool_alleles))
-                    allele_pick = rng.integers(0, 2)
-                    off_alleles[j, :n_loc, a] = pool_alleles[donor, :n_loc, allele_pick]
+            if len(pool_alleles) > 0:
+                for j in range(n_offspring):
+                    for a in range(2):
+                        donor = rng.integers(0, len(pool_alleles))
+                        allele_pick = rng.integers(0, 2)
+                        off_alleles[j, :n_loc, a] = pool_alleles[donor, :n_loc, allele_pick]
+            else:
+                # Fallback: bootstrap from trait allele pool (same logic as create_initial_genotypes)
+                sp_pool = trait.allele_pool[offspring_species]
+                if sp_pool:
+                    for j in range(n_offspring):
+                        for a in range(2):
+                            for loc in range(n_loc):
+                                off_alleles[j, loc, a] = rng.choice(sp_pool[loc])
         elif len(sp_indices) > 0:
             sp_gonad = gonad_weight[sp_indices]
             sp_alleles = parent_gs.alleles[name][sp_indices]

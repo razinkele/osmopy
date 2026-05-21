@@ -17,6 +17,7 @@ osmose.configuration.background;baltic_ev_param-background.csv
 osmose.configuration.initialization;baltic_ev_param-init-pop.csv
 osmose.configuration.migration;baltic_ev_param-out-mortality.csv
 osmose.configuration.bioen;baltic_ev_param-bioen.csv
+osmose.configuration.genetics;baltic_ev_param-genetics.csv
 
 mortality.subdt;10
 

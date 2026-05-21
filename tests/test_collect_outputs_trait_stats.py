@@ -103,7 +103,7 @@ def test_average_step_outputs_merges_trait_stats() -> None:
     assert merged.trait_stats["imax"][0].n_individuals == 20
 
 
-def test_focal_outputs_thread_phenotypes_when_genetics_on(monkeypatch) -> None:
+def test_focal_outputs_thread_phenotypes_when_genetics_on(monkeypatch, tmp_path) -> None:
     """When ctx.genetic_state is non-None, the focal `_collect_outputs` call
     must receive the same phenotypes dict that `express_traits` produced.
 
@@ -113,15 +113,21 @@ def test_focal_outputs_thread_phenotypes_when_genetics_on(monkeypatch) -> None:
     create a separate binding that bypasses the patch — we intentionally do
     NOT import `_collect_outputs` at the top of this test file.
     """
-    import osmose.engine.simulate as sim_mod
+    from osmose.config import OsmoseConfigReader
+    from osmose.engine import PythonEngine
+    import osmose.engine.simulate as sim_mod  # not exported from osmose.engine.__init__
 
     captured: dict = {}
     real_collect = sim_mod._collect_outputs
 
     def spy_collect(*args, **kwargs):
-        captured["phenotypes"] = kwargs.get("phenotypes")
+        if kwargs.get("phenotypes") is not None:
+            captured["phenotypes"] = kwargs["phenotypes"]
         return real_collect(*args, **kwargs)
 
     monkeypatch.setattr(sim_mod, "_collect_outputs", spy_collect)
-
-    pytest.skip("baltic_ev fixture not wired until Task 8; unskipped in Step 8.5.")
+    cfg = OsmoseConfigReader().read(Path("data/baltic_ev/baltic_ev_all-parameters.csv"))
+    cfg["simulation.time.nyear"] = "1"
+    PythonEngine().run(cfg, tmp_path, seed=0)
+    assert "phenotypes" in captured
+    assert "imax" in captured["phenotypes"]
