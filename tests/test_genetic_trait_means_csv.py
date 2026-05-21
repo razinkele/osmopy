@@ -71,3 +71,20 @@ def test_writer_skipped_when_no_trait_stats(tmp_path: Path) -> None:
     ]
     write_outputs(outputs, tmp_path, config, prefix="osm")
     assert not (tmp_path / "osm_genetic_trait_means_Simu0.csv").exists()
+
+
+def test_read_genetic_trait_means_round_trip(tmp_path: Path) -> None:
+    from osmose.engine.config import EngineConfig
+    from osmose.results import read_genetic_trait_means
+
+    config = EngineConfig.from_dict(_bare_config_dict())
+    outputs = _build_outputs_with_trait_stats()
+    write_outputs(outputs, tmp_path, config, prefix="osm")
+
+    ds = read_genetic_trait_means(tmp_path, prefix="osm")
+    assert "mean" in ds.data_vars
+    assert "variance" in ds.data_vars
+    assert "n_individuals" in ds.data_vars
+    assert set(ds.coords) >= {"Time", "species_id", "trait_name"}
+    # Two timesteps, 1 species, 1 trait
+    assert ds["mean"].sel(species_id=0, trait_name="imax").shape == (2,)
