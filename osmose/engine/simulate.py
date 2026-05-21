@@ -1403,6 +1403,7 @@ def simulate(
 
         # -- Genetics trait expression (before growth/bioen) --
         trait_overrides: dict[str, NDArray[np.float64]] = {}
+        phenotypes: dict[str, NDArray[np.float64]] | None = None
         if ctx.genetic_state is not None:
             from osmose.engine.genetics import apply_trait_overrides, express_traits
 
@@ -1468,7 +1469,8 @@ def simulate(
 
         # Collect focal outputs after reproduction
         step_out = _collect_outputs(
-            state, config, step, bkg_output, diet_by_species=step_diet, grid=grid
+            state, config, step, bkg_output, diet_by_species=step_diet, grid=grid,
+            phenotypes=phenotypes,
         )
         accumulated.append(step_out)
 

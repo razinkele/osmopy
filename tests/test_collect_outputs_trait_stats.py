@@ -101,3 +101,27 @@ def test_average_step_outputs_merges_trait_stats() -> None:
     assert merged.trait_stats["imax"][0].variance == pytest.approx(1.5)
     # n_individuals carries through as the latest value (snapshot semantic)
     assert merged.trait_stats["imax"][0].n_individuals == 20
+
+
+def test_focal_outputs_thread_phenotypes_when_genetics_on(monkeypatch) -> None:
+    """When ctx.genetic_state is non-None, the focal `_collect_outputs` call
+    must receive the same phenotypes dict that `express_traits` produced.
+
+    Patched on the module attribute (`sim_mod._collect_outputs`) because the
+    step loop at `simulate.py:1402` resolves the name in the simulate module's
+    namespace at call time. Top-of-file imports of `_collect_outputs` would
+    create a separate binding that bypasses the patch — we intentionally do
+    NOT import `_collect_outputs` at the top of this test file.
+    """
+    import osmose.engine.simulate as sim_mod
+
+    captured: dict = {}
+    real_collect = sim_mod._collect_outputs
+
+    def spy_collect(*args, **kwargs):
+        captured["phenotypes"] = kwargs.get("phenotypes")
+        return real_collect(*args, **kwargs)
+
+    monkeypatch.setattr(sim_mod, "_collect_outputs", spy_collect)
+
+    pytest.skip("baltic_ev fixture not wired until Task 8; unskipped in Step 8.5.")
