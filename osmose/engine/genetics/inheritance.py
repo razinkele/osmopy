@@ -86,6 +86,22 @@ def create_offspring_genotypes(
                 pa, pb = select_parents(sp_gonad, rng)
                 off_alleles[j, :n_loc, 0] = form_gamete(sp_alleles[pa, :n_loc, :], rng)
                 off_alleles[j, :n_loc, 1] = form_gamete(sp_alleles[pb, :n_loc, :], rng)
+        elif n_offspring > 0:
+            # Non-seeding mode with n_offspring > 0 but no eligible parents is a
+            # contract violation: returning zero-initialised alleles would silently
+            # collapse heritable variance for this cohort and bias the FIE signal
+            # toward zero. The seeding branch has its own fallback (bootstrap from
+            # the trait allele pool); the non-seeding branch must not invent
+            # genetics out of thin air. Surface the upstream bug loudly.
+            raise ValueError(
+                f"create_offspring_genotypes(seeding=False) requested "
+                f"n_offspring={n_offspring} for species {offspring_species} "
+                f"trait {name!r} but found no eligible parents "
+                f"(species_id mask matched 0 schools with gonad_weight > 0). "
+                f"This indicates reproduction was triggered without a viable "
+                f"parent pool — fix the upstream caller rather than papering "
+                f"over here."
+            )
 
         ev = float(trait.env_var[offspring_species])
         if ev > 0:

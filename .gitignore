@@ -85,3 +85,10 @@ www/skill-triggers.html
 
 # Engine output directories (per-run artifacts)
 data/*/output/
+
+# Test preflight sentinel — created at runtime by
+# tests/test_baltic_ev_fixture_bioen.py::test_baltic_ev_cod_reaches_fishery_l50_in_baseline
+# only AFTER its assertion passes. Must never be tracked; tracking it
+# permanently bypasses the gate that protects Task 11's FIE direction
+# test from running against a non-viable cod population.
+tests/.preflight_wired
