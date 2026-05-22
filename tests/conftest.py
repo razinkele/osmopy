@@ -5,6 +5,7 @@ Only fixtures that are (or will be) used across multiple test files are placed
 here; file-specific fixtures stay in their own test modules.
 """
 
+from importlib.util import find_spec
 from pathlib import Path
 
 import pandas as pd
@@ -19,6 +20,15 @@ from osmose.schema import build_registry
 # imports ui.charts at server startup. Running conftest.py triggers the
 # registration during pytest collection, before any test module is imported.
 ensure_templates()
+
+# Skip e2e modules at collection time when playwright is unavailable. The e2e
+# files import `playwright.sync_api` at module top, which raises ImportError
+# during pytest collection — before `addopts = "-m 'not e2e'"` can filter them
+# out. CI doesn't install playwright (it's not in [dev]), so this guard keeps
+# CI collection clean while still letting local devs run e2e when playwright
+# is installed.
+if find_spec("playwright") is None:
+    collect_ignore_glob = ["test_e2e_*.py"]
 
 
 # ---------------------------------------------------------------------------
