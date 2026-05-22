@@ -18,7 +18,7 @@ dependencies = [
     "numpy>=1.26",
     "pyyaml>=6.0",
     "scipy>=1.13",
-    "shiny_deckgl @ git+https://github.com/razinka/shiny_deckgl.git@v1.9.1",
+    "shiny_deckgl @ git+https://github.com/razinkele/shiny_deckgl.git@v1.6.1",
 ]
 
 [project.optional-dependencies]
