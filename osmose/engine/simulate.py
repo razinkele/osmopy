@@ -887,9 +887,12 @@ def _collect_spatial_outputs(
         if not m.any():
             continue
         flat_idx = ys[m].astype(np.intp) * nx + xs[m].astype(np.intp)
-        sb[sp] = np.bincount(flat_idx, weights=biomass[m], minlength=n_cells).reshape(ny, nx)
-        sa[sp] = np.bincount(flat_idx, weights=abundance[m], minlength=n_cells).reshape(ny, nx)
-        sy[sp] = np.bincount(flat_idx, weights=yield_b[m], minlength=n_cells).reshape(ny, nx)
+        # np.bincount returns float64 when weights are float64, but the numpy
+        # stubs always type the return as intp. Each assignment below is
+        # runtime-safe (sb/sa/sy are float64 ndarrays; weights are float64).
+        sb[sp] = np.bincount(flat_idx, weights=biomass[m], minlength=n_cells).reshape(ny, nx)  # type: ignore[assignment]
+        sa[sp] = np.bincount(flat_idx, weights=abundance[m], minlength=n_cells).reshape(ny, nx)  # type: ignore[assignment]
+        sy[sp] = np.bincount(flat_idx, weights=yield_b[m], minlength=n_cells).reshape(ny, nx)  # type: ignore[assignment]
     return sb, sa, sy
 
 

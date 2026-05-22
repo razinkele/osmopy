@@ -154,7 +154,7 @@ def surrogate_assisted_de(
     }
 
     # Phase 1: LHS init + real-eval
-    lhs = LatinHypercube(d=n_dim, seed=rng)
+    lhs = LatinHypercube(d=n_dim, rng=rng)
     init_samples = bounds_arr[:, 0] + lhs.random(n_initial) * (bounds_arr[:, 1] - bounds_arr[:, 0])
     if x0 is not None:
         x0_arr = np.asarray(x0, dtype=float)
@@ -220,7 +220,7 @@ def surrogate_assisted_de(
                 f"falling back to LHS exploration this iteration",
                 stacklevel=2,
             )
-            fallback_lhs = LatinHypercube(d=n_dim, seed=rng)
+            fallback_lhs = LatinHypercube(d=n_dim, rng=rng)
             candidates = bounds_arr[:, 0] + fallback_lhs.random(n_topk) * (
                 bounds_arr[:, 1] - bounds_arr[:, 0]
             )
@@ -287,7 +287,7 @@ def surrogate_assisted_de(
             bounds,
             maxiter=de_maxiter,
             popsize=de_popsize_mult,
-            seed=int(seed) + it,
+            rng=int(seed) + it,
             tol=1e-4,
             mutation=(0.5, 1.5),
             recombination=0.8,

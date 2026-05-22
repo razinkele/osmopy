@@ -59,7 +59,7 @@ def make_banded_objective(
         statement before return.
     """
     target_dict = {t.species: t for t in targets}
-    state: dict[str, tuple] = {"residuals": None}
+    state: dict[str, tuple | None] = {"residuals": None}
 
     def objective(species_stats: dict[str, float]) -> float:
         state["residuals"] = None  # clear at start

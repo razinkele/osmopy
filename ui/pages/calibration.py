@@ -466,6 +466,10 @@ def calibration_server(input, output, session, state):
         try:
             snap = _scan_results_dir()
             if snap.active.kind == "ok":
+                # CheckpointReadResult invariant (see __post_init__): kind=="ok"
+                # implies checkpoint is not None. Pyright can't follow the
+                # invariant, so we assert it here.
+                assert snap.active.checkpoint is not None
                 opt = snap.active.checkpoint.optimizer
                 ph = snap.active.checkpoint.phase
             else:

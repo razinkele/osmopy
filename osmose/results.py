@@ -170,14 +170,14 @@ def _melt_wide_to_long(
         var_name="bin",
         value_name="value",
     )
-    melted = melted.rename(columns={time_col: "time"})
+    melted = melted.rename(columns={time_col: "time"})  # type: ignore[dict-item]
     if not has_species:
         melted["species"] = "all"
     melted = melted[["time", "species", "bin", "value"]]
 
     if species is not None:
         melted = melted[melted["species"] == species]
-    return melted
+    return melted  # type: ignore[return-value]
 
 
 # Output-type keys that represent cross-species (single-file) outputs — their
@@ -576,7 +576,7 @@ class OsmoseResults:
             combined = self._csv_cache[output_type]
             if species:
                 combined = combined[combined["species"] == species]
-            return combined
+            return combined  # type: ignore[return-value]
 
         cache_key = output_type
         if cache_key not in self._csv_cache:

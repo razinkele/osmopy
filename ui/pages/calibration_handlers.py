@@ -845,6 +845,9 @@ def register_calibration_handlers(
         snap = _live_snapshot()
         if snap.active.kind != "ok":
             return ui.tags.div()
+        # CheckpointReadResult invariant (see __post_init__): kind=="ok"
+        # implies checkpoint is not None.
+        assert snap.active.checkpoint is not None
         ckpt = snap.active.checkpoint
         rows = _build_proxy_rows(ckpt)
 
@@ -928,7 +931,11 @@ def register_calibration_handlers(
                 "btn_switch_other_run",
                 "[switch]",
                 class_="btn-sm btn-outline-secondary",
-                **{"aria-label": "Switch to next-most-recent live run"},
+                # `aria-label` has a hyphen so cannot be passed as a Python
+                # keyword; the dict-unpack here is for HTML-attribute forwarding
+                # via input_action_button's **kwargs. Pyright can't statically
+                # tell the dict doesn't contain known param names like `disabled`.
+                **{"aria-label": "Switch to next-most-recent live run"},  # type: ignore[arg-type]
             ),
             class_="alert alert-info py-1 small",
         )
@@ -955,6 +962,9 @@ def register_calibration_handlers(
         snap = _live_snapshot()
         if snap.active.kind != "ok":
             return ui.tags.div()
+        # CheckpointReadResult invariant (see __post_init__): kind=="ok"
+        # implies checkpoint is not None.
+        assert snap.active.checkpoint is not None
         rows = _build_param_rows(snap.active.checkpoint)
         return ui.tags.details(
             ui.tags.summary("Current best parameters"),
@@ -1141,7 +1151,10 @@ def register_calibration_handlers(
                     calibrator.fit(samples, Y)
 
                     msg_queue.post_status("Finding optimum on surrogate...")
-                    n_obj = calibrator.surrogate.n_objectives
+                    # n_obj already defined above as len(objective_fns); the
+                    # previous `calibrator.surrogate.n_objectives` reassignment
+                    # accessed a non-existent attribute and would raise at
+                    # runtime — removed.
                     weights = _resolve_optimum_weights(input, n_obj)
                     if weights is not None:
                         optimum = calibrator.find_optimum(weights=weights)

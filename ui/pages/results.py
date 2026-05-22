@@ -15,6 +15,7 @@ from shinywidgets import output_widget, render_plotly
 
 from osmose.logging import setup_logging
 from ui.components.collapsible import collapsible_card_header, expand_tab
+from ui.state import AppState
 from ui.styles import STYLE_EMPTY, STYLE_MONO_KEY
 
 _log = setup_logging("osmose.results.ui")
@@ -294,7 +295,7 @@ def results_ui():
 # ---------------------------------------------------------------------------
 
 
-def results_server(input, output, session, state):
+def results_server(input, output, session, state: AppState):
     results_obj: reactive.Value = reactive.Value(None)
     results_data: reactive.Value[dict[str, pd.DataFrame]] = reactive.Value({})
     rep_dirs: reactive.Value[list[Path]] = reactive.Value([])
