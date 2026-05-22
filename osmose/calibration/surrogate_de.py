@@ -38,7 +38,7 @@ def _eval_batch(
 ) -> NDArray[np.float64]:
     """Real-evaluate a batch of parameter vectors. NaNs preserved."""
     if workers > 1:
-        values = joblib.Parallel(n_jobs=workers, batch_size=1)(
+        values = joblib.Parallel(n_jobs=workers, batch_size=1)(  # type: ignore[arg-type]
             joblib.delayed(objective)(s) for s in samples
         )
     else:
@@ -62,8 +62,10 @@ def _select_topk_lcb(
     """
     n_dim = bounds.shape[0]
     samples = bounds[:, 0] + rng.uniform(size=(n_candidates, n_dim)) * (bounds[:, 1] - bounds[:, 0])
-    mu, sigma = gp.predict(samples, return_std=True)
-    acquisition = mu - kappa * sigma
+    # gp.predict(..., return_std=True) returns (mu, sigma) at runtime but
+    # sklearn's overload union also covers single-array and 3-tuple cases.
+    mu, sigma = gp.predict(samples, return_std=True)  # type: ignore[misc]
+    acquisition = mu - kappa * sigma  # type: ignore[operator]
     top_idx = np.argsort(acquisition)[:k]
     return samples[top_idx]
 

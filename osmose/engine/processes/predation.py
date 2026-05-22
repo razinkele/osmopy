@@ -33,7 +33,7 @@ from osmose.engine.state import SchoolState
 from osmose.logging import setup_logging
 
 try:
-    from numba import njit
+    from numba import njit  # type: ignore[import-not-found]
 
     _HAS_NUMBA = True
 except ImportError:

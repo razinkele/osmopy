@@ -158,9 +158,9 @@ def make_diet_heatmap(df: pd.DataFrame, template: str = "osmose") -> go.Figure:
         matrix = df[prey_cols].mean().to_frame().T  # type: ignore[union-attr]
     prey_names = [c.replace("prey_", "") for c in prey_cols]
     fig = px.imshow(
-        matrix.values,
+        matrix.values,  # type: ignore[union-attr]
         x=prey_names,
-        y=list(matrix.index),
+        y=list(matrix.index),  # type: ignore[arg-type,union-attr]
         title="Diet Composition",
         color_continuous_scale="YlOrRd",
         labels={"x": "Prey", "y": "Predator", "color": "Proportion"},

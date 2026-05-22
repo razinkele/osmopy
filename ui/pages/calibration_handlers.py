@@ -1259,7 +1259,7 @@ def register_calibration_handlers(
 
                     if cancel_event.is_set():
                         msg_queue.post_status("Cancelled.")
-                    elif res.F is not None:
+                    elif res.F is not None and res.X is not None:
                         msg_queue.post_results(X=res.X, F=res.F)
 
                         import time as _time

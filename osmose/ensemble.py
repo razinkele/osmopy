@@ -73,7 +73,7 @@ def aggregate_replicates(
             continue
         # Sum across species at each time step to get total
         if "species" in df.columns and value_col in df.columns:
-            agg = df.groupby("time")[value_col].sum().reset_index()
+            agg = df.groupby("time")[value_col].sum().reset_index()  # type: ignore[union-attr]
         elif value_col in df.columns:
             agg = df[["time", value_col]].copy()
         else:

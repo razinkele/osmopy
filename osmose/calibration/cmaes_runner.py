@@ -142,7 +142,7 @@ def run_cmaes(
     while not es.stop():
         candidates = es.ask()
         if workers > 1:
-            values = joblib.Parallel(n_jobs=workers, batch_size=1)(
+            values = joblib.Parallel(n_jobs=workers, batch_size=1)(  # type: ignore[arg-type]
                 joblib.delayed(objective)(np.asarray(c, dtype=float)) for c in candidates
             )
         else:
