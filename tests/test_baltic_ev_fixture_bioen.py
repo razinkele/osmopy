@@ -15,9 +15,7 @@ def test_baltic_ev_has_bioen_enabled() -> None:
 def test_baltic_ev_cod_has_bioen_imax() -> None:
     # cod is sp0 in baltic; bioen ingestion key (real path used by reader at
     # config.py:1796) must exist
-    all_text = "\n".join(
-        p.read_text() for p in Path("data/baltic_ev").rglob("*.csv")
-    )
+    all_text = "\n".join(p.read_text() for p in Path("data/baltic_ev").rglob("*.csv"))
     assert "predation.ingestion.rate.max.bioen.sp0" in all_text
 
 
@@ -66,6 +64,13 @@ def test_baltic_ev_cod_reaches_fishery_l50_in_baseline(tmp_path: Path) -> None:
     changes and cod stop reaching 35cm, the assertion fails, the
     sentinel is NOT re-created, and Task 11 reverts to skipped.
     """
+    # Delete the sentinel up front so a stale file from a previous run (or
+    # — historically — an accidentally-committed empty sentinel) cannot
+    # mask the current state of the fixture. The sentinel is only valid
+    # if THIS run reaches the touch() at the end of this test.
+    sentinel = Path("tests/.preflight_wired")
+    sentinel.unlink(missing_ok=True)
+
     from osmose.config import OsmoseConfigReader
     from osmose.engine import PythonEngine
 
@@ -100,7 +105,7 @@ def test_baltic_ev_cod_reaches_fishery_l50_in_baseline(tmp_path: Path) -> None:
     )
 
     # Sentinel for Task 11. Only touched after the assertion above passes.
-    Path("tests/.preflight_wired").touch()
+    sentinel.touch()
 
 
 @pytest.mark.integration
