@@ -116,17 +116,25 @@ def create_offspring_genotypes(
     neutral = None
     if parent_gs.neutral_alleles is not None:
         n_neutral = parent_gs.neutral_alleles.shape[1]
-        n_neutral_val = int(parent_gs.neutral_alleles.max()) + 1
         off_neutral = np.zeros((n_offspring, n_neutral, 2), dtype=np.int32)
 
-        if seeding:
+        # parent_gs.neutral_alleles can be a (0, n_neutral, 2) zero-row array
+        # at first-step seeding (initialize() returns an empty state). The
+        # previous unconditional .max() crashed there with
+        # "zero-size array to reduction operation maximum which has no
+        # identity"; the seeding branch's rng.integers(0, len(pool)) also
+        # would have failed with len(pool)=0. Compute the parent-pool size
+        # once and route empty-pool cases through the random-draw branch.
+        has_parents = parent_gs.neutral_alleles.shape[0] > 0
+
+        if seeding and has_parents:
             pool = parent_gs.neutral_alleles  # (N, n_neutral, 2)
             for j in range(n_offspring):
                 for a in range(2):
                     donor = rng.integers(0, len(pool))
                     allele_pick = rng.integers(0, 2)
                     off_neutral[j, :, a] = pool[donor, :, allele_pick]
-        elif len(sp_indices) > 0:
+        elif not seeding and len(sp_indices) > 0:
             sp_gonad = gonad_weight[sp_indices]
             sp_neutral = parent_gs.neutral_alleles[sp_indices]
             for j in range(n_offspring):
@@ -135,8 +143,12 @@ def create_offspring_genotypes(
                 picks_b = rng.integers(0, 2, size=n_neutral)
                 off_neutral[j, :, 0] = sp_neutral[pa, np.arange(n_neutral), picks_a]
                 off_neutral[j, :, 1] = sp_neutral[pb, np.arange(n_neutral), picks_b]
-        else:
-            # No eligible parents → random draw
+        elif n_offspring > 0:
+            # No usable parent pool — random draw. With a populated parent
+            # pool we read the historical max value to scope the draw; with
+            # an empty parent pool (first-step seeding) that's impossible,
+            # so we fall back to create_initial_genotypes' default of 50.
+            n_neutral_val = int(parent_gs.neutral_alleles.max()) + 1 if has_parents else 50
             off_neutral = rng.integers(
                 0, n_neutral_val, size=(n_offspring, n_neutral, 2), dtype=np.int32
             )
