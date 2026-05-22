@@ -82,12 +82,8 @@ def test_read_econ_outputs_parses_semicolon_csv(tmp_path):
     """
     demo = _load_demo_module()
     # Mock the writer's output format: per-vessel revenue across one period.
-    (tmp_path / "econ_revenue_TestFleet.csv").write_text(
-        "1000.0;2000.0;3000.0;4000.0\n"
-    )
-    (tmp_path / "econ_costs_TestFleet.csv").write_text(
-        "100.0;200.0;300.0;400.0\n"
-    )
+    (tmp_path / "econ_revenue_TestFleet.csv").write_text("1000.0;2000.0;3000.0;4000.0\n")
+    (tmp_path / "econ_costs_TestFleet.csv").write_text("100.0;200.0;300.0;400.0\n")
     summary = demo._read_econ_outputs(tmp_path)
     assert "TestFleet" in summary["fleets"]
     fleet = summary["fleets"]["TestFleet"]

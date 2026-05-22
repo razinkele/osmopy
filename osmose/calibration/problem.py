@@ -255,9 +255,7 @@ class OsmoseCalibrationProblem(Problem):
 
         return obj_values
 
-    def _run_python_engine(
-        self, overrides: dict[str, str], run_id: int
-    ) -> "OsmoseResults | None":
+    def _run_python_engine(self, overrides: dict[str, str], run_id: int) -> "OsmoseResults | None":
         """Run the Python engine in-process; return OsmoseResults or None on failure."""
         from osmose.config import OsmoseConfigReader
         from osmose.engine import PythonEngine

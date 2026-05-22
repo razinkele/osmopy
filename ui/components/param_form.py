@@ -365,8 +365,7 @@ def render_species_table(
                     class_="btn btn-sm btn-outline-warning mt-1",
                     style="font-size: 9px; padding: 1px 5px; display: block; margin: 2px auto 0;",
                     onclick=(
-                        "Shiny.setInputValue('copy_sp0_to_all', Date.now(),"
-                        " {priority: 'event'})"
+                        "Shiny.setInputValue('copy_sp0_to_all', Date.now(), {priority: 'event'})"
                     ),
                     title="Copy all species 0 values to other species",
                 )
@@ -485,7 +484,11 @@ def render_species_table(
                     else:
                         choices = {c: c for c in (field.choices or [])}
                     widget = ui.input_select(
-                        input_id, "", choices=choices, selected=str(val) if val is not None else None, width="90px"
+                        input_id,
+                        "",
+                        choices=choices,
+                        selected=str(val) if val is not None else None,
+                        width="90px",
                     )
                 elif field.param_type in (ParamType.FILE_PATH, ParamType.MATRIX):
                     widget = ui.tags.span("file", style="color: #5a6a7a; font-size: 11px;")
@@ -567,9 +570,7 @@ def copy_species0_to_all(
     for field in visible:
         if field.param_type in (ParamType.FILE_PATH, ParamType.MATRIX):
             continue
-        base_key = (
-            field.key_pattern.replace(".sp{idx}", "").replace("{idx}", "").replace(".", "_")
-        )
+        base_key = field.key_pattern.replace(".sp{idx}", "").replace("{idx}", "").replace(".", "_")
         src_id = f"spt_{base_key}_{start_idx}"
         try:
             src_val = getattr(input, src_id)()

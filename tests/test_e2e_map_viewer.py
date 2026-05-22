@@ -39,9 +39,7 @@ def test_map_viewer_file_list_populated(page: Page, app: ShinyAppProc):
         "(document.querySelector('#map_viewer_file')?.options?.length ?? 0) >= 5",
         timeout=_TIMEOUT,
     )
-    count = page.evaluate(
-        "document.querySelector('#map_viewer_file')?.options?.length ?? 0"
-    )
+    count = page.evaluate("document.querySelector('#map_viewer_file')?.options?.length ?? 0")
     assert count >= 10, f"Expected >=10 file options, got {count}"
 
     # Verify optgroup headers exist (grouped select)

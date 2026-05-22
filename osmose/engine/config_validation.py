@@ -11,6 +11,7 @@ Match order (fast -> slow):
   4. Miss -> UnknownKey with optional difflib suggestion (cutoff 0.85
      against normalized pattern-form strings on both sides).
 """
+
 from __future__ import annotations
 
 import ast
@@ -260,9 +261,7 @@ def _read_config_source() -> str:
     import importlib.resources
 
     return (
-        importlib.resources.files("osmose.engine")
-        .joinpath("config.py")
-        .read_text(encoding="utf-8")
+        importlib.resources.files("osmose.engine").joinpath("config.py").read_text(encoding="utf-8")
     )
 
 
@@ -372,9 +371,7 @@ def _extract_literal_keys_from_config_py(tree: ast.AST) -> set[str]:
 
         elif isinstance(node, ast.Compare) and len(node.ops) == 1:
             if isinstance(node.ops[0], ast.In):
-                if isinstance(node.left, ast.Constant) and isinstance(
-                    node.left.value, str
-                ):
+                if isinstance(node.left, ast.Constant) and isinstance(node.left.value, str):
                     if "." in node.left.value:
                         _capture_string(node.left.value)
 
@@ -382,11 +379,7 @@ def _extract_literal_keys_from_config_py(tree: ast.AST) -> set[str]:
             target = node.targets[0]
             if isinstance(target, ast.Name) and isinstance(node.value, ast.JoinedStr):
                 rendered = _render_fstring(node.value)
-                if (
-                    rendered is not None
-                    and "." in rendered
-                    and " " not in rendered
-                ):
+                if rendered is not None and "." in rendered and " " not in rendered:
                     _capture_string(rendered)
 
     return out
@@ -438,9 +431,7 @@ def build_known_keys() -> KnownKeys:
 
     patterns = frozenset(pattern_strs)
     literals = frozenset(p for p in patterns if "{idx}" not in p)
-    regex_pairs = tuple(
-        (p, _compile_regex_for_pattern(p)) for p in patterns if "{idx}" in p
-    )
+    regex_pairs = tuple((p, _compile_regex_for_pattern(p)) for p in patterns if "{idx}" in p)
     result = KnownKeys(patterns=patterns, literals=literals, regexes=regex_pairs)
 
     if ast_ok:
@@ -486,8 +477,7 @@ def validate(cfg: dict, mode: str) -> list[UnknownKey]:
     """
     if mode not in _VALID_MODES:
         raise ValueError(
-            f"validation.strict.enabled must be one of {list(_VALID_MODES)!r}; "
-            f"got {mode!r}"
+            f"validation.strict.enabled must be one of {list(_VALID_MODES)!r}; got {mode!r}"
         )
 
     known = build_known_keys()

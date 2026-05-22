@@ -8,6 +8,7 @@ Mode semantics:
 All log assertions use pytest's caplog against logger 'osmose.config'
 (osmose/logging.py:7 is a stdlib logging.getLogger wrapper).
 """
+
 from __future__ import annotations
 
 import ast
@@ -119,18 +120,9 @@ def test_normalize_collapses_multi_index_segments():
         _normalize_key_to_pattern("fisheries.seasonality.fsh0.sp3")
         == "fisheries.seasonality.fsh{idx}.sp{idx}"
     )
-    assert (
-        _normalize_key_to_pattern("species.linf.sp47")
-        == "species.linf.sp{idx}"
-    )
-    assert (
-        _normalize_key_to_pattern("simulation.nspecies")
-        == "simulation.nspecies"
-    )
-    assert (
-        _normalize_key_to_pattern("fisheries.seasonality.fshX")
-        == "fisheries.seasonality.fshX"
-    )
+    assert _normalize_key_to_pattern("species.linf.sp47") == "species.linf.sp{idx}"
+    assert _normalize_key_to_pattern("simulation.nspecies") == "simulation.nspecies"
+    assert _normalize_key_to_pattern("fisheries.seasonality.fshX") == "fisheries.seasonality.fshX"
 
 
 def test_internal_marker_not_warned(caplog):
@@ -192,6 +184,7 @@ def test_ast_extracts_from_real_config_py_canary():
     """Canary: the walker finds known-present sentinels in the real config.py."""
     import ast as _ast
     from osmose.engine.config_validation import _read_config_source
+
     tree = _ast.parse(_read_config_source())
     keys = _extract_literal_keys_from_config_py(tree)
     for sentinel in (
@@ -255,6 +248,7 @@ def test_ast_extracts_assign_rhs_fstring():
 def test_build_known_keys_has_literal_fast_path():
     """build_known_keys returns KnownKeys with literal + regex views."""
     from osmose.engine.config_validation import _clear_known_keys_cache
+
     _clear_known_keys_cache()
     kk = build_known_keys()
     assert isinstance(kk, KnownKeys)

@@ -462,6 +462,7 @@ def calibration_server(input, output, session, state):
         # importable; _live_snapshot is a @reactive.poll local to
         # register_calibration_handlers and CANNOT be imported.
         from ui.pages.calibration_handlers import _scan_results_dir
+
         try:
             snap = _scan_results_dir()
             if snap.active.kind == "ok":
@@ -472,7 +473,10 @@ def calibration_server(input, output, session, state):
         except Exception:  # noqa: BLE001 — defensive fallback; should never fire
             opt = ph = None
         return make_convergence_chart(
-            cal_history.get(), tmpl=_tmpl(), optimizer=opt, phase=ph,
+            cal_history.get(),
+            tmpl=_tmpl(),
+            optimizer=opt,
+            phase=ph,
         )
 
     @render_plotly

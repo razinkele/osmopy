@@ -191,7 +191,13 @@ class TestNumbaVsPythonParity:
         rng = np.random.default_rng(seed)
 
         predation_for_cell(
-            np.array([0, 1], dtype=np.int32), state, cfg, rng, n_subdt=10, use_numba=use_numba, ctx=ctx
+            np.array([0, 1], dtype=np.int32),
+            state,
+            cfg,
+            rng,
+            n_subdt=10,
+            use_numba=use_numba,
+            ctx=ctx,
         )
 
         diet = get_diet_matrix(ctx=ctx)

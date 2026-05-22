@@ -174,7 +174,9 @@ class SchoolState:
         Raises ValueError on the first violation. Deep review v3 I-1.
         """
         if (self.abundance < 0).any():
-            raise ValueError(f"abundance must be non-negative; found minimum {self.abundance.min()}")
+            raise ValueError(
+                f"abundance must be non-negative; found minimum {self.abundance.min()}"
+            )
         if (self.length < 0).any():
             raise ValueError(f"length must be non-negative; found minimum {self.length.min()}")
         if (self.weight < 0).any():

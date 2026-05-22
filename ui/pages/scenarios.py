@@ -244,9 +244,7 @@ def scenarios_server(input, output, session, state):
                 title="Confirm Delete",
                 easy_close=True,
                 footer=ui.div(
-                    ui.input_action_button(
-                        "btn_confirm_delete", "Delete", class_="btn-danger"
-                    ),
+                    ui.input_action_button("btn_confirm_delete", "Delete", class_="btn-danger"),
                     ui.tags.button(
                         "Cancel",
                         class_="btn btn-secondary",
@@ -392,4 +390,3 @@ def scenarios_server(input, output, session, state):
             key_case_map=dict(state.key_case_map.get()),
         )
         _do_save(scenario)
-

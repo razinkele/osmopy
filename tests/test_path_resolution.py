@@ -1,7 +1,5 @@
 """Tests for the consolidated path resolution module."""
 
-
-
 from osmose.engine.path_resolution import resolve_data_path
 
 

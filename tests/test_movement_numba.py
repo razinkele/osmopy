@@ -423,6 +423,5 @@ def test_map_move_school_uniform_placement_no_boundary_bias():
     # regimes without being flaky at 50k trials.
     for i in range(nx):
         assert abs(counts[i] - expected) < expected * 0.1, (
-            f"Cell {i} got {counts[i]} hits, expected ~{expected} "
-            f"(boundary bias suspected)"
+            f"Cell {i} got {counts[i]} hits, expected ~{expected} (boundary bias suspected)"
         )

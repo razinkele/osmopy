@@ -88,8 +88,15 @@ def _save_run_safe(
     try:
         save_run(payload, history_dir=hist_mod.HISTORY_DIR)
         return
-    except (OSError, TypeError, ValueError, OverflowError,
-            UnicodeError, RecursionError, MemoryError) as e:
+    except (
+        OSError,
+        TypeError,
+        ValueError,
+        OverflowError,
+        UnicodeError,
+        RecursionError,
+        MemoryError,
+    ) as e:
         if with_fallback:
             _save_run_fallback(payload, e, logger)
         else:
@@ -108,7 +115,9 @@ def _save_run_fallback(payload: dict, e: BaseException, logger: logging.Logger) 
     prior file is still the most-likely-recoverable copy. Spec §9 contract.
     """
     logger.exception(
-        "save_run failed: %s; payload keys=%s", e.__class__.__name__, list(payload.keys()),
+        "save_run failed: %s; payload keys=%s",
+        e.__class__.__name__,
+        list(payload.keys()),
     )
     ts = payload.get("timestamp", datetime.now(timezone.utc).isoformat()).replace(":", "-")
     raw_algo = str(payload.get("algorithm", "unknown"))

@@ -313,23 +313,27 @@ def test_import_all_skips_invalid_scenario_names(tmp_path, caplog):
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr(
             "bad.json",
-            json.dumps({
-                "name": "",
-                "description": "invalid empty name",
-                "config": {},
-                "tags": [],
-                "parent_scenario": None,
-            }),
+            json.dumps(
+                {
+                    "name": "",
+                    "description": "invalid empty name",
+                    "config": {},
+                    "tags": [],
+                    "parent_scenario": None,
+                }
+            ),
         )
         zf.writestr(
             "good.json",
-            json.dumps({
-                "name": "good_one",
-                "description": "valid",
-                "config": {},
-                "tags": [],
-                "parent_scenario": None,
-            }),
+            json.dumps(
+                {
+                    "name": "good_one",
+                    "description": "valid",
+                    "config": {},
+                    "tags": [],
+                    "parent_scenario": None,
+                }
+            ),
         )
 
     with caplog.at_level(logging.WARNING):

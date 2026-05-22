@@ -140,9 +140,7 @@ class TestComputeSchoolIndicesVectorisedMatchesLoop:
             "anchovy < 0.2;0.14;0.24;0.34;0.44;0.54;0.64;0.74\n"
             "anchovy;0.15;0.25;0.35;0.45;0.55;0.65;0.75\n"
         )
-        return AccessibilityMatrix.from_csv(
-            csv, species_names=["cod", "hake", "anchovy", "sprat"]
-        )
+        return AccessibilityMatrix.from_csv(csv, species_names=["cod", "hake", "anchovy", "sprat"])
 
     def test_randomised_inputs_match_loop_prey(self, tmp_path):
         m = self._make_matrix(tmp_path)
@@ -209,9 +207,7 @@ class TestComputeSchoolIndicesVectorisedMatchesLoop:
         # searchsorted-right(>=1.2) returns 2, clamp to 1 → matrix index 1.
         csv = tmp_path / "access.csv"
         csv.write_text(
-            ";whitefish < 0.4;whitefish < 1.2\n"
-            "whitefish < 0.4;0.1;0.2\n"
-            "whitefish < 1.2;0.3;0.4\n"
+            ";whitefish < 0.4;whitefish < 1.2\nwhitefish < 0.4;0.1;0.2\nwhitefish < 1.2;0.3;0.4\n"
         )
         m = AccessibilityMatrix.from_csv(csv, species_names=["whitefish"])
         names = ["whitefish"]
@@ -230,9 +226,7 @@ class TestComputeSchoolIndicesVectorisedMatchesLoop:
         # mask never fires, school 2 stays -1.
         csv = tmp_path / "access.csv"
         csv.write_text(";cod;hake\ncod;0.8;0.5\nhake;0.3;0.9\n")
-        m = AccessibilityMatrix.from_csv(
-            csv, species_names=["cod", "hake", "shark"]
-        )
+        m = AccessibilityMatrix.from_csv(csv, species_names=["cod", "hake", "shark"])
         species_id = np.array([0, 1, 2, 0], dtype=np.int32)
         age_dt = np.array([12, 12, 12, 12], dtype=np.int32)
         vec = m.compute_school_indices(

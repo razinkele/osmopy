@@ -97,9 +97,7 @@ class CalibrationCheckpoint:
         # Inv 5a: param_keys must be unique (set-equality above would
         # otherwise silently collapse duplicates)
         if len(self.param_keys) != len(set(self.param_keys)):
-            raise ValueError(
-                f"param_keys must be unique, got duplicates: {self.param_keys}"
-            )
+            raise ValueError(f"param_keys must be unique, got duplicates: {self.param_keys}")
         # Inv 6: bounds_log10.keys == param_keys
         if set(self.bounds_log10.keys()) != set(self.param_keys):
             raise ValueError(
@@ -135,9 +133,7 @@ class CalibrationCheckpoint:
                 )
             for i, r in enumerate(self.per_species_residuals):
                 if not math.isfinite(r) or r < 0:
-                    raise ValueError(
-                        f"per_species_residuals[{i}] = {r} not finite or negative"
-                    )
+                    raise ValueError(f"per_species_residuals[{i}] = {r} not finite or negative")
         # Inv 11: every species_label has a banded_targets entry
         if self.species_labels is not None and self.banded_targets is not None:
             missing = set(self.species_labels) - set(self.banded_targets.keys())
@@ -152,14 +148,10 @@ class CalibrationCheckpoint:
         # Inv 12a: banded_loss requires banded_targets (the proxy table
         # renderer indexes banded_targets[species] for the magnitude factor)
         if self.proxy_source == "banded_loss" and self.banded_targets is None:
-            raise ValueError(
-                "proxy_source='banded_loss' requires banded_targets is not None"
-            )
+            raise ValueError("proxy_source='banded_loss' requires banded_targets is not None")
         # Inv 13: per_species_sim_biomass iff per_species_residuals, parallel, finite, >= 0
         if (self.per_species_sim_biomass is None) != (self.per_species_residuals is None):
-            raise ValueError(
-                "per_species_sim_biomass must be set iff per_species_residuals is set"
-            )
+            raise ValueError("per_species_sim_biomass must be set iff per_species_residuals is set")
         if self.per_species_sim_biomass is not None:
             assert self.species_labels is not None  # guarded by Inv 10
             if len(self.per_species_sim_biomass) != len(self.species_labels):
@@ -169,9 +161,7 @@ class CalibrationCheckpoint:
                 )
             for i, b in enumerate(self.per_species_sim_biomass):
                 if not math.isfinite(b) or b < 0:
-                    raise ValueError(
-                        f"per_species_sim_biomass[{i}] = {b} not finite or negative"
-                    )
+                    raise ValueError(f"per_species_sim_biomass[{i}] = {b} not finite or negative")
         # Inv 14: phase regex + length + no `..`
         if not (1 <= len(self.phase) <= 64):
             raise ValueError(f"phase length must be 1..64, got {len(self.phase)}")
@@ -201,9 +191,7 @@ class CheckpointReadResult:
                 "use kind='no_run' for the empty sentinel"
             )
         if self.kind != "ok" and self.checkpoint is not None:
-            raise ValueError(
-                f"CheckpointReadResult(kind={self.kind!r}) must have checkpoint=None"
-            )
+            raise ValueError(f"CheckpointReadResult(kind={self.kind!r}) must have checkpoint=None")
 
 
 def _coerce_serialisable(value):
@@ -238,39 +226,39 @@ def write_checkpoint(path: Path, ckpt: CalibrationCheckpoint) -> None:
     Raises (OSError, TypeError, ValueError) on failure; callers wrap in their own
     layered exception handler.
     """
-    payload = _coerce_serialisable({
-        "optimizer": ckpt.optimizer,
-        "phase": ckpt.phase,
-        "generation": ckpt.generation,
-        "generation_budget": ckpt.generation_budget,
-        "best_fun": ckpt.best_fun,
-        "per_species_residuals": (
-            list(ckpt.per_species_residuals)
-            if ckpt.per_species_residuals is not None
-            else None
-        ),
-        "per_species_sim_biomass": (
-            list(ckpt.per_species_sim_biomass)
-            if ckpt.per_species_sim_biomass is not None
-            else None
-        ),
-        "species_labels": (
-            list(ckpt.species_labels) if ckpt.species_labels is not None else None
-        ),
-        "best_x_log10": list(ckpt.best_x_log10),
-        "best_parameters": dict(ckpt.best_parameters),
-        "param_keys": list(ckpt.param_keys),
-        "bounds_log10": {k: list(v) for k, v in ckpt.bounds_log10.items()},
-        "gens_since_improvement": ckpt.gens_since_improvement,
-        "elapsed_seconds": ckpt.elapsed_seconds,
-        "timestamp_iso": ckpt.timestamp_iso,
-        "banded_targets": (
-            {k: list(v) for k, v in ckpt.banded_targets.items()}
-            if ckpt.banded_targets is not None
-            else None
-        ),
-        "proxy_source": ckpt.proxy_source,
-    })
+    payload = _coerce_serialisable(
+        {
+            "optimizer": ckpt.optimizer,
+            "phase": ckpt.phase,
+            "generation": ckpt.generation,
+            "generation_budget": ckpt.generation_budget,
+            "best_fun": ckpt.best_fun,
+            "per_species_residuals": (
+                list(ckpt.per_species_residuals) if ckpt.per_species_residuals is not None else None
+            ),
+            "per_species_sim_biomass": (
+                list(ckpt.per_species_sim_biomass)
+                if ckpt.per_species_sim_biomass is not None
+                else None
+            ),
+            "species_labels": (
+                list(ckpt.species_labels) if ckpt.species_labels is not None else None
+            ),
+            "best_x_log10": list(ckpt.best_x_log10),
+            "best_parameters": dict(ckpt.best_parameters),
+            "param_keys": list(ckpt.param_keys),
+            "bounds_log10": {k: list(v) for k, v in ckpt.bounds_log10.items()},
+            "gens_since_improvement": ckpt.gens_since_improvement,
+            "elapsed_seconds": ckpt.elapsed_seconds,
+            "timestamp_iso": ckpt.timestamp_iso,
+            "banded_targets": (
+                {k: list(v) for k, v in ckpt.banded_targets.items()}
+                if ckpt.banded_targets is not None
+                else None
+            ),
+            "proxy_source": ckpt.proxy_source,
+        }
+    )
     tmp = path.with_suffix(path.suffix + ".tmp")
     with open(tmp, "w") as f:
         json.dump(payload, f, indent=2, allow_nan=False)
@@ -293,7 +281,8 @@ def read_checkpoint(path: Path) -> CheckpointReadResult:
         return CheckpointReadResult(kind="no_run", checkpoint=None, error_summary=None)
     except OSError as e:
         return CheckpointReadResult(
-            kind="corrupt", checkpoint=None,
+            kind="corrupt",
+            checkpoint=None,
             error_summary=(
                 f"stat failed for {path_str}: {e.__class__.__name__}: {e}. "
                 "Recovery: delete the file or check filesystem mount/perms."
@@ -301,7 +290,8 @@ def read_checkpoint(path: Path) -> CheckpointReadResult:
         )
     if st.st_size > MAX_CHECKPOINT_BYTES:
         return CheckpointReadResult(
-            kind="corrupt", checkpoint=None,
+            kind="corrupt",
+            checkpoint=None,
             error_summary=(
                 f"file {path_str} exceeds MAX_CHECKPOINT_BYTES "
                 f"(size={st.st_size}, limit={MAX_CHECKPOINT_BYTES}). "
@@ -320,7 +310,8 @@ def read_checkpoint(path: Path) -> CheckpointReadResult:
     except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as e:
         kind = "partial" if is_recent else "corrupt"
         return CheckpointReadResult(
-            kind=kind, checkpoint=None,
+            kind=kind,
+            checkpoint=None,
             error_summary=(
                 f"decode failed for {path_str}: {e.__class__.__name__}: {e}. "
                 "Recovery: if persistent, delete the file."
@@ -336,15 +327,16 @@ def read_checkpoint(path: Path) -> CheckpointReadResult:
             best_fun=float(data["best_fun"]),
             per_species_residuals=(
                 tuple(data["per_species_residuals"])
-                if data.get("per_species_residuals") is not None else None
+                if data.get("per_species_residuals") is not None
+                else None
             ),
             per_species_sim_biomass=(
                 tuple(data["per_species_sim_biomass"])
-                if data.get("per_species_sim_biomass") is not None else None
+                if data.get("per_species_sim_biomass") is not None
+                else None
             ),
             species_labels=(
-                tuple(data["species_labels"])
-                if data.get("species_labels") is not None else None
+                tuple(data["species_labels"]) if data.get("species_labels") is not None else None
             ),
             best_x_log10=tuple(data["best_x_log10"]),
             best_parameters=dict(data["best_parameters"]),
@@ -355,7 +347,8 @@ def read_checkpoint(path: Path) -> CheckpointReadResult:
             timestamp_iso=data["timestamp_iso"],
             banded_targets=(
                 {k: tuple(v) for k, v in data["banded_targets"].items()}
-                if data.get("banded_targets") is not None else None
+                if data.get("banded_targets") is not None
+                else None
             ),
             proxy_source=data["proxy_source"],
         )
@@ -364,7 +357,8 @@ def read_checkpoint(path: Path) -> CheckpointReadResult:
         # it's either a frame from an older incompatible version or a real
         # invariant violation. Either way it's corrupt regardless of mtime.
         return CheckpointReadResult(
-            kind="corrupt", checkpoint=None,
+            kind="corrupt",
+            checkpoint=None,
             error_summary=(
                 f"invariant violation for {path_str}: {e.__class__.__name__}: {e}. "
                 "Recovery: delete the file to discard the bad frame; the next "
@@ -393,9 +387,7 @@ def probe_writable(results_dir: Path) -> None:
 
     Uses NamedTemporaryFile(delete=True) so no sentinel persists after return.
     """
-    with tempfile.NamedTemporaryFile(
-        dir=results_dir, delete=True, prefix=".probe_", suffix=".tmp"
-    ):
+    with tempfile.NamedTemporaryFile(dir=results_dir, delete=True, prefix=".probe_", suffix=".tmp"):
         pass
 
 
@@ -424,9 +416,18 @@ class LiveSnapshot:
 
 
 def _write_progress_checkpoint(
-    checkpoint_path, state, best_x, best_fun,
-    optimizer, phase, generation_budget, param_keys, bounds,
-    evaluator, banded_targets, logger,
+    checkpoint_path,
+    state,
+    best_x,
+    best_fun,
+    optimizer,
+    phase,
+    generation_budget,
+    param_keys,
+    bounds,
+    evaluator,
+    banded_targets,
+    logger,
 ):
     """Build and write a CalibrationCheckpoint for the current generation.
 
@@ -465,7 +466,9 @@ def _write_progress_checkpoint(
             logger.warning(
                 "checkpoint re-eval failed at gen %d "
                 "(proxy_source=not_implemented; cause=reeval_raised): %s (%s)",
-                state["gen"], e.__class__.__name__, e,
+                state["gen"],
+                e.__class__.__name__,
+                e,
             )
             residuals = None
             proxy_source = "not_implemented"
@@ -481,7 +484,7 @@ def _write_progress_checkpoint(
         per_species_sim_biomass=tuple(b for _, _, b in residuals) if residuals else None,
         species_labels=tuple(s for s, _, _ in residuals) if residuals else None,
         best_x_log10=best_x_log10,
-        best_parameters={k: float(10.0 ** v) for k, v in zip(param_keys, best_x_log10)},
+        best_parameters={k: float(10.0**v) for k, v in zip(param_keys, best_x_log10)},
         param_keys=tuple(param_keys),
         bounds_log10={k: (float(lo), float(hi)) for k, (lo, hi) in zip(param_keys, bounds)},
         gens_since_improvement=state["gens_since_improvement"],
@@ -496,5 +499,8 @@ def _write_progress_checkpoint(
     except (OSError, TypeError, ValueError) as e:
         logger.warning(
             "write_checkpoint failed at gen %d: %s (%s) path=%s",
-            state["gen"], e.__class__.__name__, e, checkpoint_path,
+            state["gen"],
+            e.__class__.__name__,
+            e,
+            checkpoint_path,
         )

@@ -64,10 +64,12 @@ def diagnostics_server(input, output, session, state):
             return ui.p("No timing data available for this run.", style=STYLE_EMPTY)
         rows = []
         for process, time_str in format_timing_pairs(timing):
-            rows.append(ui.tags.tr(
-                ui.tags.td(process, style="font-weight: 500;"),
-                ui.tags.td(time_str),
-            ))
+            rows.append(
+                ui.tags.tr(
+                    ui.tags.td(process, style="font-weight: 500;"),
+                    ui.tags.td(time_str),
+                )
+            )
         return ui.tags.table(
             ui.tags.thead(ui.tags.tr(ui.tags.th("Process"), ui.tags.th("Time"))),
             ui.tags.tbody(*rows),
@@ -76,15 +78,16 @@ def diagnostics_server(input, output, session, state):
 
     @render.ui
     def diag_numba():
-        return ui.p("Numba JIT compilation info will appear after a Python engine run.",
-                     style=STYLE_EMPTY)
+        return ui.p(
+            "Numba JIT compilation info will appear after a Python engine run.", style=STYLE_EMPTY
+        )
 
     @render.ui
     def diag_memory():
-        return ui.p("Memory usage profiling will appear after a Python engine run.",
-                     style=STYLE_EMPTY)
+        return ui.p(
+            "Memory usage profiling will appear after a Python engine run.", style=STYLE_EMPTY
+        )
 
     @render.ui
     def diag_comparison():
-        return ui.p("Comparison data will appear after running both engines.",
-                     style=STYLE_EMPTY)
+        return ui.p("Comparison data will appear after running both engines.", style=STYLE_EMPTY)

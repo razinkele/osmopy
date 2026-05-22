@@ -5,6 +5,7 @@ The actual 14k-eval Sobol run is too costly for CI; these tests verify the
 script imports cleanly, parses CLI, and that the SALib path on a known
 analytical function produces expected sensitivity rankings.
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -42,11 +43,16 @@ def test_dry_run_prints_plan(tmp_path):
             str(venv_python),
             str(PROJECT_ROOT / "scripts" / "sensitivity_phase12.py"),
             "--dry-run",
-            "--n-base", "8",
-            "--workers", "4",
-            "--output-dir", str(tmp_path),
+            "--n-base",
+            "8",
+            "--workers",
+            "4",
+            "--output-dir",
+            str(tmp_path),
         ],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
     assert result.returncode == 0, f"stderr: {result.stderr}"
     assert "total samples" in result.stdout
@@ -73,9 +79,7 @@ def test_sobol_pipeline_on_known_function(tmp_path):
     Y = X[:, 0] + 0.1 * X[:, 1]
     Si = a.analyze(Y)
 
-    assert Si["ST"][0] > Si["ST"][1] * 5, (
-        f"expected param a's ST to dominate b; got ST={Si['ST']}"
-    )
+    assert Si["ST"][0] > Si["ST"][1] * 5, f"expected param a's ST to dominate b; got ST={Si['ST']}"
     assert 0.0 < Si["S1"][0] < 1.5
     assert -0.05 < Si["S1"][1] < 0.2
 
@@ -115,7 +119,7 @@ def test_resume_skips_nan_so_they_are_retried(tmp_path):
     with open(csv_path, "w") as f:
         f.write("idx,objective\n")
         f.write("0,3.14\n")
-        f.write("1,nan\n")     # worker failure — should be retried on resume
+        f.write("1,nan\n")  # worker failure — should be retried on resume
         f.write("2,7.5\n")
 
     Y, done = _load_existing_y(csv_path, n_samples=4)
@@ -140,13 +144,19 @@ def test_existing_csv_without_resume_or_force_refuses(tmp_path):
         [
             str(venv_python),
             str(PROJECT_ROOT / "scripts" / "sensitivity_phase12.py"),
-            "--n-base", str(n_base),
-            "--seed", str(seed),
-            "--workers", "2",
-            "--output-dir", str(tmp_path),
+            "--n-base",
+            str(n_base),
+            "--seed",
+            str(seed),
+            "--workers",
+            "2",
+            "--output-dir",
+            str(tmp_path),
             # NB: no --resume, no --force, no --dry-run
         ],
-        capture_output=True, text=True, timeout=120,
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
     assert result.returncode == 1, f"expected exit 1; got {result.returncode}"
     assert "already exists" in result.stderr or "already exists" in result.stdout

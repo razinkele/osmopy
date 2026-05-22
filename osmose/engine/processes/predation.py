@@ -66,7 +66,11 @@ def enable_diet_tracking(
     if ctx is None:
         return
     ctx.diet_tracking_enabled = True
-    if ctx.diet_matrix is not None and ctx.diet_matrix.shape[0] >= n_schools and ctx.diet_matrix.shape[1] == n_species:
+    if (
+        ctx.diet_matrix is not None
+        and ctx.diet_matrix.shape[0] >= n_schools
+        and ctx.diet_matrix.shape[1] == n_species
+    ):
         ctx.diet_matrix[:n_schools] = 0.0
     else:
         ctx.diet_matrix = np.zeros((n_schools, n_species), dtype=np.float64)
@@ -292,8 +296,10 @@ def _predation_in_cell_python(
         r_max = config.size_ratio_max[sp_pred, state.feeding_stage[p_idx]]
 
         max_eatable = (
-            state.abundance[p_idx] * state.weight[p_idx]
-            * config.ingestion_rate[sp_pred] / (config.n_dt_per_year * n_subdt)
+            state.abundance[p_idx]
+            * state.weight[p_idx]
+            * config.ingestion_rate[sp_pred]
+            / (config.n_dt_per_year * n_subdt)
         )
         if max_eatable <= 0:
             continue
@@ -316,7 +322,11 @@ def _predation_in_cell_python(
                 continue
 
             access_coeff = 1.0
-            if stage_access_matrix is not None and prey_access_idx is not None and pred_access_idx is not None:
+            if (
+                stage_access_matrix is not None
+                and prey_access_idx is not None
+                and pred_access_idx is not None
+            ):
                 p_acc = pred_access_idx[p_idx]
                 q_acc = prey_access_idx[q_idx]
                 if p_acc >= 0 and q_acc >= 0:
@@ -602,11 +612,7 @@ def predation_for_cell(
     if use_numba and _HAS_NUMBA:
         if species_rngs is not None and len(cell_indices_i32) > 0:
             first_pred_sp = int(state.species_id[cell_indices_i32[0]])
-            _cell_rng = (
-                species_rngs[first_pred_sp]
-                if first_pred_sp < len(species_rngs)
-                else rng
-            )
+            _cell_rng = species_rngs[first_pred_sp] if first_pred_sp < len(species_rngs) else rng
         else:
             _cell_rng = rng
         pred_order = _cell_rng.permutation(len(cell_indices_i32)).astype(np.int32)
@@ -668,5 +674,3 @@ def predation_for_cell(
             stage_access_matrix=access_matrix if use_stage_access else None,
             ctx=ctx,
         )
-
-

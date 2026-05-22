@@ -52,8 +52,12 @@ def test_runresult_default_status_ok():
 
 def test_runresult_failed_construction():
     r = RunResult(
-        returncode=1, output_dir=Path(""), stdout="", stderr="boom",
-        status="failed", message="boom",
+        returncode=1,
+        output_dir=Path(""),
+        stdout="",
+        stderr="boom",
+        status="failed",
+        message="boom",
     )
     assert r.status == "failed"
     assert r.message == "boom"
@@ -61,8 +65,12 @@ def test_runresult_failed_construction():
 
 def test_runresult_cancelled_construction():
     r = RunResult(
-        returncode=-1, output_dir=Path(""), stdout="", stderr="",
-        status="cancelled", message="user cancelled",
+        returncode=-1,
+        output_dir=Path(""),
+        stdout="",
+        stderr="",
+        status="cancelled",
+        message="user cancelled",
     )
     assert r.status == "cancelled"
 
@@ -85,8 +93,12 @@ def test_handle_result_success_sets_output_dir(
 def test_handle_result_failure_clears_output_dir(state_stub, status_stub, run_log_stub):
     """On a failed run, state.output_dir must be cleared to None — no stale auto-load."""
     result = RunResult(
-        returncode=1, output_dir=Path(""), stdout="", stderr="oops",
-        status="failed", message="oops",
+        returncode=1,
+        output_dir=Path(""),
+        stdout="",
+        stderr="oops",
+        status="failed",
+        message="oops",
     )
     _handle_result(result, config={}, state=state_stub, run_log=run_log_stub, status=status_stub)
     # The bug pre-C4: state.output_dir.set was called with the (empty/missing)
@@ -97,8 +109,12 @@ def test_handle_result_failure_clears_output_dir(state_stub, status_stub, run_lo
 def test_handle_result_cancelled_clears_output_dir(state_stub, status_stub, run_log_stub):
     """Same as failed — cancelled runs must also clear state.output_dir."""
     result = RunResult(
-        returncode=-1, output_dir=Path(""), stdout="", stderr="",
-        status="cancelled", message="user cancelled",
+        returncode=-1,
+        output_dir=Path(""),
+        stdout="",
+        stderr="",
+        status="cancelled",
+        message="user cancelled",
     )
     _handle_result(result, config={}, state=state_stub, run_log=run_log_stub, status=status_stub)
     state_stub.output_dir.set.assert_called_once_with(None)
@@ -107,8 +123,12 @@ def test_handle_result_cancelled_clears_output_dir(state_stub, status_stub, run_
 def test_handle_result_cancelled_status_message(state_stub, status_stub, run_log_stub):
     """Cancelled status text must mention cancellation, not 'Failed'."""
     result = RunResult(
-        returncode=-1, output_dir=Path(""), stdout="", stderr="",
-        status="cancelled", message="user cancelled",
+        returncode=-1,
+        output_dir=Path(""),
+        stdout="",
+        stderr="",
+        status="cancelled",
+        message="user cancelled",
     )
     _handle_result(result, config={}, state=state_stub, run_log=run_log_stub, status=status_stub)
     # status_stub.set was called with a string starting with 'Cancelled'

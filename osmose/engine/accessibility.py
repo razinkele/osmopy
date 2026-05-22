@@ -34,7 +34,7 @@ class _PerSpeciesStages:
     on float64 threshold arrays.
     """
 
-    thresholds: NDArray[np.float64]   # sorted ascending; last element is +inf for open-ended labels
+    thresholds: NDArray[np.float64]  # sorted ascending; last element is +inf for open-ended labels
     matrix_indices: NDArray[np.int32]  # same length, parallel to thresholds
 
 
@@ -94,6 +94,7 @@ class AccessibilityMatrix:
             n_violations = int((raw_matrix > 1.0).sum())
             max_val = float(raw_matrix.max())
             import warnings
+
             warnings.warn(
                 f"predation accessibility matrix at {csv_path}: {n_violations} "
                 f"coefficient(s) exceed 1.0 (max={max_val:.3f}); biomass "
@@ -148,12 +149,8 @@ class AccessibilityMatrix:
                 stages = lookup.get(csv_name)
                 if not stages:
                     continue
-                thresholds = np.array(
-                    [s.threshold for s in stages], dtype=np.float64
-                )
-                matrix_indices = np.array(
-                    [s.matrix_index for s in stages], dtype=np.int32
-                )
+                thresholds = np.array([s.threshold for s in stages], dtype=np.float64)
+                matrix_indices = np.array([s.matrix_index for s in stages], dtype=np.int32)
                 # Construction-time invariant: every cached species has at
                 # least one stage. Without this, the searchsorted+clamp
                 # path would index `matrix_indices[-1]` and silently wrap
@@ -256,9 +253,7 @@ class AccessibilityMatrix:
             #   thresholds. The clamp is also sufficient if the last
             #   threshold is finite (no `+inf` sentinel) — searchsorted
             #   returns len(thresholds), the clamp drops it to len-1.
-            bin_idx = np.searchsorted(
-                stages.thresholds, age_years[mask], side="right"
-            )
+            bin_idx = np.searchsorted(stages.thresholds, age_years[mask], side="right")
             np.minimum(bin_idx, len(stages.thresholds) - 1, out=bin_idx)
             indices[mask] = stages.matrix_indices[bin_idx]
         return indices

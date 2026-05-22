@@ -67,6 +67,7 @@ def test_simulate_raises_when_token_set_mid_run() -> None:
     def _fire() -> None:
         # short delay so simulate() has a chance to enter its loop
         import time
+
         time.sleep(0.01)
         token.set()
 

@@ -74,9 +74,7 @@ def test_accessibility_coefficient_above_one_warns(tmp_path: Path) -> None:
 
     csv = tmp_path / "bad_access.csv"
     csv.write_text(
-        ";A < 1.0;A\n"
-        "B < 0.5;0.3;0.7\n"
-        "B;0.5;1.5\n"  # 1.5 violates the [0, 1] bound
+        ";A < 1.0;A\nB < 0.5;0.3;0.7\nB;0.5;1.5\n"  # 1.5 violates the [0, 1] bound
     )
     with pytest.warns(UserWarning, match=r"accessibility matrix.*1 coefficient.*exceed 1\.0"):
         AccessibilityMatrix.from_csv(csv, species_names=["A", "B"])

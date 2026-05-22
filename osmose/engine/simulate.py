@@ -1181,9 +1181,8 @@ def simulate(
         # (~ms to single-digit-seconds per step on Baltic / EEC).
         if cancel_token is not None and cancel_token.is_set():
             from osmose.engine import SimulationCancelled
-            raise SimulationCancelled(
-                f"cancelled at step {step}/{config.n_steps}"
-            )
+
+            raise SimulationCancelled(f"cancelled at step {step}/{config.n_steps}")
         # -- Annual reset for fleet economics --
         if ctx.fleet_state is not None and step > 0 and step % config.n_dt_per_year == 0:
             ctx.fleet_state.vessel_days_used[:] = 0

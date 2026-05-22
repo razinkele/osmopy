@@ -18,7 +18,10 @@ def test_de_writes_checkpoint_each_generation(tmp_results_dir):
     param_keys = ["k_a", "k_b"]
     checkpoint_path = tmp_results_dir / "phase_test_checkpoint.json"
     callback = _make_checkpoint_callback(
-        checkpoint_path, 1, param_keys, bounds,
+        checkpoint_path,
+        1,
+        param_keys,
+        bounds,
         phase="test",
         optimizer="de",
         evaluator=None,
@@ -26,8 +29,14 @@ def test_de_writes_checkpoint_each_generation(tmp_results_dir):
         generation_budget=3,
     )
     differential_evolution(
-        _toy_objective_2_param, bounds, maxiter=3, popsize=4, seed=42,
-        workers=1, callback=callback, polish=False,
+        _toy_objective_2_param,
+        bounds,
+        maxiter=3,
+        popsize=4,
+        seed=42,
+        workers=1,
+        callback=callback,
+        polish=False,
     )
     assert checkpoint_path.exists()
     result = read_checkpoint(checkpoint_path)
@@ -51,8 +60,10 @@ def test_de_existing_test_callsite_still_works(tmp_path):
 
     checkpoint_path = tmp_path / "phase_legacy_checkpoint.json"
     cb = _make_checkpoint_callback(
-        checkpoint_path, every_n=2,
-        param_keys=["k_a", "k_b"], bounds=[(-1.0, 1.0), (0.0, 3.0)],
+        checkpoint_path,
+        every_n=2,
+        param_keys=["k_a", "k_b"],
+        bounds=[(-1.0, 1.0), (0.0, 3.0)],
     )
     cb(SimpleNamespace(x=[0.0, 1.0], fun=4.5))
     cb(SimpleNamespace(x=[-0.5, 0.5], fun=3.2))

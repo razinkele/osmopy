@@ -198,8 +198,7 @@ def test_individual_movement_map_overlay_renders(page: Page, app: ShinyAppProc):
 
     layer_ids = _get_deckgl_layer_ids(page)
     assert "grid-overlay" in layer_ids, (
-        f"Expected 'grid-overlay' layer after selecting movement map, "
-        f"got layers: {layer_ids}"
+        f"Expected 'grid-overlay' layer after selecting movement map, got layers: {layer_ids}"
     )
 
 
@@ -215,17 +214,13 @@ def test_overlay_selector_has_species_labeled_maps(page: Page, app: ShinyAppProc
 
     all_text = page.locator("#grid_overlay option").all_text_contents()
     species_entries = [t for t in all_text if ":" in t and "Movement Animation" not in t]
-    assert len(species_entries) > 0, (
-        f"Expected species-labeled overlay entries, got: {all_text}"
-    )
+    assert len(species_entries) > 0, f"Expected species-labeled overlay entries, got: {all_text}"
 
     # Verify known species appear
     all_joined = " ".join(all_text).lower()
     known_species = ["cod", "sole", "herring", "whiting"]
     found = [sp for sp in known_species if sp in all_joined]
-    assert len(found) >= 2, (
-        f"Expected at least 2 known species in overlay labels, found: {found}"
-    )
+    assert len(found) >= 2, f"Expected at least 2 known species in overlay labels, found: {found}"
 
 
 # ---------------------------------------------------------------------------
@@ -291,14 +286,10 @@ def test_movement_animation_controls_functional(page: Page, app: ShinyAppProc):
     species_count = page.evaluate(
         "document.querySelector('#movement_species')?.options?.length ?? 0"
     )
-    assert species_count == 14, (
-        f"Expected 14 species in movement selector, got {species_count}"
-    )
+    assert species_count == 14, f"Expected 14 species in movement selector, got {species_count}"
 
     # Speed selector should have 4 options (0.5x, 1x, 2x, 4x)
-    speed_count = page.evaluate(
-        "document.querySelector('#movement_speed')?.options?.length ?? 0"
-    )
+    speed_count = page.evaluate("document.querySelector('#movement_speed')?.options?.length ?? 0")
     assert speed_count == 4, f"Expected 4 speed options, got {speed_count}"
 
     # Step slider should have max=23 (24 steps, 0-indexed)

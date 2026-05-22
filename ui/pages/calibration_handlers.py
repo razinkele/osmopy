@@ -65,7 +65,8 @@ def _notify_scan_failure_once(e: OSError) -> None:
             f"Calibration directory scan failed "
             f"({html.escape(cls.__name__)}: {html.escape(str(e))}) — "
             "dashboard will retry. Check the results directory's mount/perms.",
-            type="warning", duration=None,
+            type="warning",
+            duration=None,
         )
     except Exception:
         pass  # outside a Shiny session (tests) — log-only
@@ -126,8 +127,9 @@ def _scan_results_dir() -> LiveSnapshot:
         else:
             active = CheckpointReadResult(kind="no_run", checkpoint=None, error_summary=None)
             others = ()
-        return LiveSnapshot(active=active, other_live_paths=others,
-                            snapshot_monotonic=time.monotonic())
+        return LiveSnapshot(
+            active=active, other_live_paths=others, snapshot_monotonic=time.monotonic()
+        )
     except OSError as e:
         _notify_scan_failure_once(e)
         return dataclasses.replace(_EMPTY_SNAPSHOT, snapshot_monotonic=time.monotonic())
@@ -147,6 +149,7 @@ def _ckpt_mtime_for(snap: LiveSnapshot) -> float:
         return time.time()
     try:
         from datetime import datetime
+
         return datetime.fromisoformat(snap.active.checkpoint.timestamp_iso).timestamp()
     except ValueError:
         return time.time()
@@ -160,8 +163,16 @@ def _build_proxy_rows(ckpt: CalibrationCheckpoint) -> list[dict]:
     """Compute proxy-table rows. When proxy_source != 'banded_loss',
     returns a single sentinel row signalling the renderer to display a banner."""
     if ckpt.proxy_source != "banded_loss":
-        return [{"state": ckpt.proxy_source, "species": "", "loss": 0.0,
-                 "band": (0.0, 0.0), "magnitude": 0.0, "direction": ""}]
+        return [
+            {
+                "state": ckpt.proxy_source,
+                "species": "",
+                "loss": 0.0,
+                "band": (0.0, 0.0),
+                "magnitude": 0.0,
+                "direction": "",
+            }
+        ]
 
     assert ckpt.species_labels is not None
     assert ckpt.per_species_residuals is not None
@@ -184,10 +195,16 @@ def _build_proxy_rows(ckpt: CalibrationCheckpoint) -> list[dict]:
             state = "out_of_range"
             magnitude = sim_biomass / target_mean
             direction = "overshoot" if sim_biomass > hi else "undershoot"
-        rows.append({
-            "species": sp, "state": state, "loss": residual,
-            "band": (lo, hi), "magnitude": magnitude, "direction": direction,
-        })
+        rows.append(
+            {
+                "species": sp,
+                "state": state,
+                "loss": residual,
+                "band": (lo, hi),
+                "magnitude": magnitude,
+                "direction": direction,
+            }
+        )
     rows.sort(key=lambda r: _STATE_ORDER[r["state"]])
     return rows
 
@@ -442,13 +459,10 @@ def _make_progress_callback(
                     per_species_sim_biomass=per_species_sim_biomass,
                     species_labels=species_labels,
                     best_x_log10=best_x_log10,
-                    best_parameters={
-                        k: float(10.0 ** v) for k, v in zip(param_keys, best_x_log10)
-                    },
+                    best_parameters={k: float(10.0**v) for k, v in zip(param_keys, best_x_log10)},
                     param_keys=tuple(param_keys),
                     bounds_log10={
-                        k: (float(lo), float(hi))
-                        for k, (lo, hi) in zip(param_keys, bounds)
+                        k: (float(lo), float(hi)) for k, (lo, hi) in zip(param_keys, bounds)
                     },
                     gens_since_improvement=state["gens_since_improvement"],
                     elapsed_seconds=time.time() - state["start_time"],
@@ -459,7 +473,9 @@ def _make_progress_callback(
                 write_checkpoint(checkpoint_path, ckpt)
             except (OSError, TypeError, ValueError) as e:
                 logger.warning(
-                    "NSGA-II checkpoint write failed at gen %d: %s", state["gen"], e,
+                    "NSGA-II checkpoint write failed at gen %d: %s",
+                    state["gen"],
+                    e,
                 )
 
     return _ProgressCallback()
@@ -779,7 +795,6 @@ def register_calibration_handlers(
     def _live_snapshot() -> LiveSnapshot:
         return _scan_results_dir()
 
-
     @output
     @render.ui
     def run_header():
@@ -799,15 +814,16 @@ def register_calibration_handlers(
         elapsed_str = _format_elapsed(ckpt.elapsed_seconds)
         gen_str = (
             f"gen {ckpt.generation} / {ckpt.generation_budget}"
-            if ckpt.generation_budget else f"gen {ckpt.generation}"
+            if ckpt.generation_budget
+            else f"gen {ckpt.generation}"
         )
         from osmose.calibration.checkpoint import liveness_state
+
         age = time.time() - _ckpt_mtime_for(snap)
         state_text = liveness_state(age)
         state_dot = "●" if state_text in ("live", "stalled") else "○"
         patience = (
-            f"⏱ patience {ckpt.gens_since_improvement}"
-            if ckpt.gens_since_improvement > 0 else ""
+            f"⏱ patience {ckpt.gens_since_improvement}" if ckpt.gens_since_improvement > 0 else ""
         )
         return ui.tags.div(
             ui.tags.div(
@@ -861,19 +877,33 @@ def register_calibration_handlers(
             else:
                 badge, n_na = "—", n_na + 1
                 mag_text = ""
-            table_rows.append(ui.tags.tr(
-                ui.tags.td(html.escape(r["species"])),
-                ui.tags.td(f"loss {r['loss']:.2f}"),
-                ui.tags.td(f"band [{r['band'][0]:.2f}, {r['band'][1]:.2f}]"),
-                ui.tags.td(badge, **{"aria-label": _aria_for_state(r['state'], r['magnitude'], r['direction'])}),
-                ui.tags.td(mag_text),
-            ))
+            table_rows.append(
+                ui.tags.tr(
+                    ui.tags.td(html.escape(r["species"])),
+                    ui.tags.td(f"loss {r['loss']:.2f}"),
+                    ui.tags.td(f"band [{r['band'][0]:.2f}, {r['band'][1]:.2f}]"),
+                    ui.tags.td(
+                        badge,
+                        **{
+                            "aria-label": _aria_for_state(
+                                r["state"], r["magnitude"], r["direction"]
+                            )
+                        },
+                    ),
+                    ui.tags.td(mag_text),
+                )
+            )
         return ui.tags.div(
             ui.tags.table(
-                ui.tags.thead(ui.tags.tr(
-                    ui.tags.th("species"), ui.tags.th("loss"), ui.tags.th("band"),
-                    ui.tags.th(""), ui.tags.th("magnitude"),
-                )),
+                ui.tags.thead(
+                    ui.tags.tr(
+                        ui.tags.th("species"),
+                        ui.tags.th("loss"),
+                        ui.tags.th("band"),
+                        ui.tags.th(""),
+                        ui.tags.th("magnitude"),
+                    )
+                ),
                 ui.tags.tbody(*table_rows),
                 class_="table table-sm",
             ),
@@ -903,7 +933,6 @@ def register_calibration_handlers(
             class_="alert alert-info py-1 small",
         )
 
-
     @reactive.effect
     @reactive.event(input.btn_switch_other_run)
     def _switch_to_other_run():
@@ -915,7 +944,10 @@ def register_calibration_handlers(
         snap = _live_snapshot()
         if not snap.other_live_paths:
             return
-        logger.info("[switch] other-live-runs button clicked; %d other(s) available", len(snap.other_live_paths))
+        logger.info(
+            "[switch] other-live-runs button clicked; %d other(s) available",
+            len(snap.other_live_paths),
+        )
 
     @output
     @render.ui
@@ -927,17 +959,20 @@ def register_calibration_handlers(
         return ui.tags.details(
             ui.tags.summary("Current best parameters"),
             ui.tags.table(
-                ui.tags.tbody(*[
-                    ui.tags.tr(
-                        ui.tags.td(html.escape(r["key"])),
-                        ui.tags.td(f"{r['value']:.4f}"),
-                        ui.tags.td(
-                            ui.tags.span(f"[{r['bound_badge']}]", class_="text-warning small")
-                            if r["bound_badge"] else ""
-                        ),
-                    )
-                    for r in rows
-                ]),
+                ui.tags.tbody(
+                    *[
+                        ui.tags.tr(
+                            ui.tags.td(html.escape(r["key"])),
+                            ui.tags.td(f"{r['value']:.4f}"),
+                            ui.tags.td(
+                                ui.tags.span(f"[{r['bound_badge']}]", class_="text-warning small")
+                                if r["bound_badge"]
+                                else ""
+                            ),
+                        )
+                        for r in rows
+                    ]
+                ),
                 class_="table table-sm small",
             ),
         )
@@ -960,7 +995,9 @@ def register_calibration_handlers(
                 # comes from cal_param_names (register_calibration_handlers closure parameter).
                 try:
                     _save_run_for_nsga2(
-                        payload, X, F,
+                        payload,
+                        X,
+                        F,
                         phase="ui_nsga2",
                         param_keys=cal_param_names.get() or [],
                     )
@@ -1370,9 +1407,7 @@ def register_calibration_handlers(
                 targets, species_names, w_stability=w_stability, w_worst=w_worst
             )
             _shared_banded_residuals_accessor = banded_residuals_accessor
-            _shared_banded_targets_dict = {
-                t.species: (t.lower, t.upper) for t in targets
-            }
+            _shared_banded_targets_dict = {t.species: (t.lower, t.upper) for t in targets}
 
             def banded_objective_fn(results, _banded=banded_obj, _sp=species_names):
                 stats = _extract_species_stats(results, _sp)

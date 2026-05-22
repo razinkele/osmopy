@@ -617,8 +617,11 @@ def test_cleanup_after_eval_true_removes_run_dir(monkeypatch, tmp_path):
 
     class _FakeResults:
         def __init__(self, *a, **kw): ...
-        def __enter__(self): return self
-        def __exit__(self, *a): return False
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
 
     monkeypatch.setattr(prob_mod.subprocess, "run", lambda *a, **k: _Result())
     monkeypatch.setattr(results_mod, "OsmoseResults", _FakeResults)
@@ -650,8 +653,11 @@ def test_cleanup_after_eval_false_keeps_run_dir(monkeypatch, tmp_path):
 
     class _FakeResults:
         def __init__(self, *a, **kw): ...
-        def __enter__(self): return self
-        def __exit__(self, *a): return False
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
 
     monkeypatch.setattr(prob_mod.subprocess, "run", lambda *a, **k: _Result())
     monkeypatch.setattr(results_mod, "OsmoseResults", _FakeResults)

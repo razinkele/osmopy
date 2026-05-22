@@ -64,9 +64,7 @@ def test_apply_stock_recruitment_clean_input_clean_output() -> None:
     linear = np.array([100.0, 200.0, 300.0])
     ssb = np.array([10.0, 20.0, 30.0])
     ssb_half = np.array([100.0, 200.0, 300.0])
-    out = apply_stock_recruitment(
-        linear, ssb, ssb_half, ["none", "beverton_holt", "ricker"]
-    )
+    out = apply_stock_recruitment(linear, ssb, ssb_half, ["none", "beverton_holt", "ricker"])
     assert np.isfinite(out).all()
 
 

@@ -115,9 +115,7 @@ class BackgroundSpeciesInfo:
                 f"n_class ({self.n_class}) != len(proportions) ({len(self.proportions)})"
             )
         if abs(sum(self.proportions) - 1.0) > 0.01:
-            raise ValueError(
-                f"proportions must sum to ~1.0, got {sum(self.proportions):.4f}"
-            )
+            raise ValueError(f"proportions must sum to ~1.0, got {sum(self.proportions):.4f}")
 
 
 def parse_background_species(
@@ -417,7 +415,9 @@ class BackgroundState:
 
                 if netcdf_mode:
                     # Per-cell array from NetCDF
-                    cell_biomass: NDArray[np.float64] = np.asarray(sp_cell_biomass_base * prop, dtype=np.float64)
+                    cell_biomass: NDArray[np.float64] = np.asarray(
+                        sp_cell_biomass_base * prop, dtype=np.float64
+                    )
                 else:
                     # Uniform: scalar spread evenly across all ocean cells
                     scalar_biomass = per_cell * prop

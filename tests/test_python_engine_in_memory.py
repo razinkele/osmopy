@@ -2,6 +2,7 @@
 
 Spec: docs/superpowers/specs/2026-04-19-calibration-python-engine-design.md
 """
+
 from __future__ import annotations
 
 import tempfile
@@ -72,6 +73,4 @@ def test_no_disk_writes(tmp_path, monkeypatch):
     suspicious = [
         p for p in new_entries if not p.name.startswith(".") and "__pycache__" not in p.name
     ]
-    assert not suspicious, (
-        f"run_in_memory leaked files into cwd: {[str(p) for p in suspicious]}"
-    )
+    assert not suspicious, f"run_in_memory leaked files into cwd: {[str(p) for p in suspicious]}"

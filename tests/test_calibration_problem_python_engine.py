@@ -2,6 +2,7 @@
 
 Spec: docs/superpowers/specs/2026-04-19-calibration-python-engine-design.md
 """
+
 from __future__ import annotations
 
 import os
@@ -119,9 +120,7 @@ def test_objective_values_match_between_engines(tmp_path):
     """
     jar_path = Path(os.environ["OSMOSE_JAR"])
     py_problem = _make_problem(tmp_path / "py", use_java_engine=False)
-    java_problem = _make_problem(
-        tmp_path / "java", use_java_engine=True, jar_path=jar_path
-    )
+    java_problem = _make_problem(tmp_path / "java", use_java_engine=True, jar_path=jar_path)
 
     rng = np.random.default_rng(42)
     X = rng.uniform(0.1, 0.5, size=(3, 1))
@@ -134,8 +133,7 @@ def test_objective_values_match_between_engines(tmp_path):
         py_val = py_out["F"][i, 0]
         java_val = java_out["F"][i, 0]
         assert 0.1 <= py_val / java_val <= 10.0, (
-            f"Candidate {i}: Python objective {py_val:.4g} vs Java {java_val:.4g} "
-            f"differs by >1 OoM"
+            f"Candidate {i}: Python objective {py_val:.4g} vs Java {java_val:.4g} differs by >1 OoM"
         )
 
 
@@ -150,9 +148,7 @@ def test_python_engine_failure_returns_inf(tmp_path, monkeypatch):
         "osmose.engine.PythonEngine.run_in_memory",
         side_effect=ValueError("bad config"),
     ):
-        result = problem._run_single(
-            {"mortality.fishing.rate.sp0": "0.3"}, run_id=0
-        )
+        result = problem._run_single({"mortality.fishing.rate.sp0": "0.3"}, run_id=0)
     assert result == [float("inf")], f"Expected [inf], got {result}"
 
 
@@ -167,7 +163,5 @@ def test_schema_validation_failure_returns_inf(tmp_path, monkeypatch):
     with mock.patch.object(
         problem, "_validate_overrides", side_effect=ValueError("bound violation")
     ):
-        result = problem._run_single(
-            {"mortality.fishing.rate.sp0": "0.3"}, run_id=0
-        )
+        result = problem._run_single({"mortality.fishing.rate.sp0": "0.3"}, run_id=0)
     assert result == [float("inf")], f"Expected [inf], got {result}"

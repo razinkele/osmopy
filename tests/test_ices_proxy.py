@@ -5,17 +5,25 @@ import math
 from osmose.calibration.checkpoint import CalibrationCheckpoint
 
 
-def _make_ckpt_with_proxy(per_species_residuals, per_species_sim_biomass, banded_targets, proxy_source):
+def _make_ckpt_with_proxy(
+    per_species_residuals, per_species_sim_biomass, banded_targets, proxy_source
+):
     species_labels = tuple(banded_targets.keys()) if banded_targets else None
     return CalibrationCheckpoint(
-        optimizer="de", phase="test", generation=1, generation_budget=10,
+        optimizer="de",
+        phase="test",
+        generation=1,
+        generation_budget=10,
         best_fun=1.0,
         per_species_residuals=per_species_residuals,
         per_species_sim_biomass=per_species_sim_biomass,
         species_labels=species_labels,
-        best_x_log10=(0.0,), best_parameters={"k": 1.0}, param_keys=("k",),
+        best_x_log10=(0.0,),
+        best_parameters={"k": 1.0},
+        param_keys=("k",),
         bounds_log10={"k": (-1.0, 1.0)},
-        gens_since_improvement=0, elapsed_seconds=1.0,
+        gens_since_improvement=0,
+        elapsed_seconds=1.0,
         timestamp_iso="2026-05-12T10:00:00+00:00",
         banded_targets=banded_targets,
         proxy_source=proxy_source,
@@ -113,14 +121,27 @@ def test_convergence_chart_adds_best_ever_line(monkeypatch):
     from ui.pages.calibration_charts import make_convergence_chart
 
     monkeypatch.setattr(
-        hist_mod, "list_runs",
+        hist_mod,
+        "list_runs",
         lambda history_dir=None: [
-            {"algorithm": "de", "phase": "test", "best_objective": 4.2,
-             "timestamp": "2026-05-01T10:00:00+00:00", "n_params": 2, "duration_seconds": 1.0,
-             "path": "x"},
-            {"algorithm": "de", "phase": "test", "best_objective": 5.1,
-             "timestamp": "2026-05-02T10:00:00+00:00", "n_params": 2, "duration_seconds": 1.0,
-             "path": "x"},
+            {
+                "algorithm": "de",
+                "phase": "test",
+                "best_objective": 4.2,
+                "timestamp": "2026-05-01T10:00:00+00:00",
+                "n_params": 2,
+                "duration_seconds": 1.0,
+                "path": "x",
+            },
+            {
+                "algorithm": "de",
+                "phase": "test",
+                "best_objective": 5.1,
+                "timestamp": "2026-05-02T10:00:00+00:00",
+                "n_params": 2,
+                "duration_seconds": 1.0,
+                "path": "x",
+            },
         ],
     )
     fig = make_convergence_chart(history=[10.0, 8.0, 7.0], optimizer="de", phase="test")
@@ -141,16 +162,23 @@ def test_bound_distance_badge_at_upper():
     from ui.pages.calibration_handlers import _build_param_rows
 
     ckpt = CalibrationCheckpoint(
-        optimizer="de", phase="test", generation=1, generation_budget=None,
+        optimizer="de",
+        phase="test",
+        generation=1,
+        generation_budget=None,
         best_fun=1.0,
-        per_species_residuals=None, per_species_sim_biomass=None, species_labels=None,
+        per_species_residuals=None,
+        per_species_sim_biomass=None,
+        species_labels=None,
         best_x_log10=(0.96, 0.5),
         best_parameters={"k_a": 9.12, "k_b": 3.16},
         param_keys=("k_a", "k_b"),
         bounds_log10={"k_a": (0.0, 1.0), "k_b": (0.0, 1.0)},
-        gens_since_improvement=0, elapsed_seconds=1.0,
+        gens_since_improvement=0,
+        elapsed_seconds=1.0,
         timestamp_iso="2026-05-12T10:00:00+00:00",
-        banded_targets=None, proxy_source="objective_disabled",
+        banded_targets=None,
+        proxy_source="objective_disabled",
     )
     rows = _build_param_rows(ckpt)
     by_key = {r["key"]: r for r in rows}
@@ -162,16 +190,23 @@ def test_bound_distance_badge_at_lower():
     from ui.pages.calibration_handlers import _build_param_rows
 
     ckpt = CalibrationCheckpoint(
-        optimizer="de", phase="test", generation=1, generation_budget=None,
+        optimizer="de",
+        phase="test",
+        generation=1,
+        generation_budget=None,
         best_fun=1.0,
-        per_species_residuals=None, per_species_sim_biomass=None, species_labels=None,
+        per_species_residuals=None,
+        per_species_sim_biomass=None,
+        species_labels=None,
         best_x_log10=(0.02,),
         best_parameters={"k_a": 1.05},
         param_keys=("k_a",),
         bounds_log10={"k_a": (0.0, 1.0)},
-        gens_since_improvement=0, elapsed_seconds=1.0,
+        gens_since_improvement=0,
+        elapsed_seconds=1.0,
         timestamp_iso="2026-05-12T10:00:00+00:00",
-        banded_targets=None, proxy_source="objective_disabled",
+        banded_targets=None,
+        proxy_source="objective_disabled",
     )
     rows = _build_param_rows(ckpt)
     assert rows[0]["bound_badge"] == "at lower bound"

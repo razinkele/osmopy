@@ -798,9 +798,7 @@ def grid_server(input, output, session, state):
                 widgets=widgets,
             )
         except Exception as exc:
-            ui.notification_show(
-                f"Grid map update failed: {exc}", type="warning", duration=5
-            )
+            ui.notification_show(f"Grid map update failed: {exc}", type="warning", duration=5)
 
     @reactive.effect
     def sync_grid_inputs():

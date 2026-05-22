@@ -61,9 +61,7 @@ def test_python_matches_java_get_stage() -> None:
     for value, thresholds in _CASES:
         java = java_get_stage(value, thresholds)
         py = python_get_stage(value, thresholds)
-        assert java == py, (
-            f"value={value}, thresholds={thresholds}: Java={java}, Python={py}"
-        )
+        assert java == py, f"value={value}, thresholds={thresholds}: Java={java}, Python={py}"
 
 
 def test_side_left_would_break_parity_at_threshold_boundary() -> None:

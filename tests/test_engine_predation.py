@@ -172,9 +172,7 @@ class TestPredationAcrossCells:
         cell_indices, not from any spatial-coordinate difference.
         """
         cfg = EngineConfig.from_dict(_make_predation_config())
-        state = SchoolState.create(
-            n_schools=3, species_id=np.array([1, 0, 0], dtype=np.int32)
-        )
+        state = SchoolState.create(n_schools=3, species_id=np.array([1, 0, 0], dtype=np.int32))
         state = state.replace(
             abundance=np.array([50.0, 500.0, 123.0]),
             length=np.array([25.0, 10.0, 10.0]),
@@ -274,11 +272,11 @@ def test_predation_on_resources_removes_biomass() -> None:
     state = state.replace(
         abundance=np.array([1000.0]),
         length=np.array([15.0]),  # mature anchovy
-        weight=np.array([8.1]),   # ~0.006 * 15^3
+        weight=np.array([8.1]),  # ~0.006 * 15^3
         biomass=np.array([8100.0]),
-        age_dt=np.array([24], dtype=np.int32),   # past first feeding age
+        age_dt=np.array([24], dtype=np.int32),  # past first feeding age
         first_feeding_age_dt=np.array([1], dtype=np.int32),
-        pred_success_rate=np.array([0.0]),        # no prior satiation
+        pred_success_rate=np.array([0.0]),  # no prior satiation
         preyed_biomass=np.array([0.0]),
         cell_x=np.array([cell_x], dtype=np.int32),
         cell_y=np.array([cell_y], dtype=np.int32),

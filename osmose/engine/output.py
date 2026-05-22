@@ -297,9 +297,7 @@ def _build_diet_dataframe(
     rows: list[list[float]] = []
     for mat, t in zip(step_matrices, step_times, strict=True):
         if mat.shape != (n_pred, n_prey):
-            raise ValueError(
-                f"diet matrix shape {mat.shape} != ({n_pred}, {n_prey}) at time {t}"
-            )
+            raise ValueError(f"diet matrix shape {mat.shape} != ({n_pred}, {n_prey}) at time {t}")
         rows.append([t, *mat.reshape(-1).tolist()])
     df = pd.DataFrame(rows, columns=["Time", *columns])
     return {"dietMatrix": df}
@@ -369,9 +367,7 @@ def _build_yield_dataframes(
     times = np.array([o.step / config.n_dt_per_year for o in outputs])
     yield_data = np.array(
         [
-            o.yield_by_species
-            if o.yield_by_species is not None
-            else np.zeros(config.n_species)
+            o.yield_by_species if o.yield_by_species is not None else np.zeros(config.n_species)
             for o in outputs
         ]
     )

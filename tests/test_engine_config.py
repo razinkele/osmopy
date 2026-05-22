@@ -199,9 +199,7 @@ def test_spawning_season_normalization_partial_year(tmp_path, caplog):
 
     # 10-row CSV with n_dt_per_year=4: two full years (rows 0-3, 4-7) plus a 2-row tail (8-9)
     csv_path = tmp_path / "season_sp0.csv"
-    csv_path.write_text(
-        "step;value\n0;1\n1;2\n2;3\n3;4\n4;5\n5;6\n6;7\n7;8\n8;9\n9;11\n"
-    )
+    csv_path.write_text("step;value\n0;1\n1;2\n2;3\n3;4\n4;5\n5;6\n6;7\n7;8\n8;9\n9;11\n")
     cfg = {
         "_osmose.config.dir": str(tmp_path),
         "reproduction.season.file.sp0": "season_sp0.csv",
@@ -218,9 +216,9 @@ def test_spawning_season_normalization_partial_year(tmp_path, caplog):
     # Partial tail [9, 11] normalized so the 2-row chunk sums to 1.0
     np.testing.assert_allclose(seasons[0, 8:10].sum(), 1.0, atol=1e-10)
     # And a warning was emitted
-    assert any(
-        "not a multiple of n_dt_per_year" in rec.message for rec in caplog.records
-    ), "Expected a partial-year warning"
+    assert any("not a multiple of n_dt_per_year" in rec.message for rec in caplog.records), (
+        "Expected a partial-year warning"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -279,9 +277,7 @@ class TestBioenCoupling:
         ec = EngineConfig.from_dict(minimal_config)
         assert ec.bioen_enabled is False
         for field in self._BIOEN_FIELDS:
-            assert getattr(ec, field) is None, (
-                f"{field} should be None when bioen_enabled=False"
-            )
+            assert getattr(ec, field) is None, f"{field} should be None when bioen_enabled=False"
 
 
 # ---------------------------------------------------------------------------
@@ -464,7 +460,10 @@ class TestRequireFileRaisesOnMissing:
         """Task-16: non-empty predation.accessibility.file with missing file raises."""
         from osmose.engine.config import _load_accessibility
 
-        cfg = {"_osmose.config.dir": str(tmp_path), "predation.accessibility.file": "typo_access.csv"}
+        cfg = {
+            "_osmose.config.dir": str(tmp_path),
+            "predation.accessibility.file": "typo_access.csv",
+        }
         with pytest.raises(FileNotFoundError, match="typo_access.csv"):
             _load_accessibility(cfg, n_species=2)
 
@@ -474,6 +473,7 @@ class TestMPAZoneValidation:
 
     def _base_kwargs(self):
         import numpy as np
+
         return {
             "grid": np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.float64),
             "start_year": 0,
@@ -483,12 +483,14 @@ class TestMPAZoneValidation:
 
     def test_valid_mpa_zone(self):
         from osmose.engine.config import MPAZone
+
         MPAZone(**self._base_kwargs())
 
     def test_1d_grid_rejected(self):
         import numpy as np
         import pytest
         from osmose.engine.config import MPAZone
+
         kwargs = self._base_kwargs()
         kwargs["grid"] = np.array([0.0, 1.0, 0.0])
         with pytest.raises(ValueError, match="grid must be 2D"):
@@ -498,6 +500,7 @@ class TestMPAZoneValidation:
         import numpy as np
         import pytest
         from osmose.engine.config import MPAZone
+
         kwargs = self._base_kwargs()
         kwargs["grid"] = np.zeros((2, 2, 2), dtype=np.float64)
         with pytest.raises(ValueError, match="grid must be 2D"):
@@ -507,6 +510,7 @@ class TestMPAZoneValidation:
         import numpy as np
         import pytest
         from osmose.engine.config import MPAZone
+
         kwargs = self._base_kwargs()
         kwargs["grid"] = np.array([[0.0, 0.5], [1.0, 0.2]])
         with pytest.raises(ValueError, match="grid values must be 0 or 1"):
@@ -515,6 +519,7 @@ class TestMPAZoneValidation:
     def test_negative_start_year_rejected(self):
         import pytest
         from osmose.engine.config import MPAZone
+
         kwargs = self._base_kwargs()
         kwargs["start_year"] = -1
         with pytest.raises(ValueError, match="start_year must be non-negative"):

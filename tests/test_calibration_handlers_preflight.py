@@ -1,4 +1,5 @@
 """If optimization runs without preflight, we must fail loudly (not silently pass None)."""
+
 import pytest
 
 
