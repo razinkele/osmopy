@@ -25,7 +25,7 @@ pytestmark = pytest.mark.e2e
 app = create_app_fixture("../app.py")
 
 _GRID_TIMEOUT = 25_000  # ms — grid map can be slow to initialise
-_NC_TIMEOUT = 15_000    # ms — NC controls render after overlay select
+_NC_TIMEOUT = 15_000  # ms — NC controls render after overlay select
 # Minimum options in a fully-loaded overlay selector (grid_extent + at least 1 overlay)
 _MIN_OVERLAY_OPTIONS = 3
 
@@ -33,6 +33,7 @@ _MIN_OVERLAY_OPTIONS = 3
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _load_eec_full_and_goto_grid(page: Page, app: ShinyAppProc) -> None:
     """Navigate to app, load EEC Full example, then click the Grid tab.
@@ -67,6 +68,7 @@ def _wait_for_overlay_options(page: Page, min_count: int = _MIN_OVERLAY_OPTIONS)
 # E2E-G1: Grid tab is accessible after loading the EEC example
 # ---------------------------------------------------------------------------
 
+
 def test_grid_tab_accessible_after_eec_load(page: Page, app: ShinyAppProc):
     """Grid tab should be reachable and the overlay selector should appear."""
     _load_eec_full_and_goto_grid(page, app)
@@ -79,6 +81,7 @@ def test_grid_tab_accessible_after_eec_load(page: Page, app: ShinyAppProc):
 # ---------------------------------------------------------------------------
 # E2E-G2: LTL Biomass appears exactly once in the overlay selector
 # ---------------------------------------------------------------------------
+
 
 def test_overlay_ltl_biomass_deduplicated(page: Page, app: ShinyAppProc):
     """EEC has 10 species files pointing to the same NC — should show only once."""
@@ -97,6 +100,7 @@ def test_overlay_ltl_biomass_deduplicated(page: Page, app: ShinyAppProc):
 # E2E-G3: Movement map keys are NOT present as individual options
 # ---------------------------------------------------------------------------
 
+
 def test_overlay_movement_maps_excluded(page: Page, app: ShinyAppProc):
     """Individual movement.file.mapN config keys must not appear in the selector."""
     _load_eec_full_and_goto_grid(page, app)
@@ -105,14 +109,13 @@ def test_overlay_movement_maps_excluded(page: Page, app: ShinyAppProc):
 
     # Options whose text looks like a raw config key (e.g. "movement.file.map0")
     movement_raw = page.locator("#grid_overlay option:has-text('movement.file.map')")
-    assert movement_raw.count() == 0, (
-        f"Unexpected raw movement key options: {movement_raw.count()}"
-    )
+    assert movement_raw.count() == 0, f"Unexpected raw movement key options: {movement_raw.count()}"
 
 
 # ---------------------------------------------------------------------------
 # E2E-G4: Selecting LTL Biomass shows the NC controls panel
 # ---------------------------------------------------------------------------
+
 
 def test_ltl_overlay_shows_nc_controls(page: Page, app: ShinyAppProc):
     """After selecting LTL Biomass overlay, nc_var_select and nc_time_step should appear."""
@@ -128,6 +131,7 @@ def test_ltl_overlay_shows_nc_controls(page: Page, app: ShinyAppProc):
 # ---------------------------------------------------------------------------
 # E2E-G5: NC variable selector contains expected plankton variable names
 # ---------------------------------------------------------------------------
+
 
 def test_nc_var_selector_has_plankton_vars(page: Page, app: ShinyAppProc):
     """After selecting LTL Biomass, nc_var_select should list plankton variables."""
@@ -159,6 +163,7 @@ def test_nc_var_selector_has_plankton_vars(page: Page, app: ShinyAppProc):
 # E2E-G6: Time step slider range reflects 24 time steps (max = 23)
 # ---------------------------------------------------------------------------
 
+
 def test_nc_time_slider_range(page: Page, app: ShinyAppProc):
     """The time-step slider for LTL Biomass NC should have max = 23 (24 steps)."""
     _load_eec_full_and_goto_grid(page, app)
@@ -168,14 +173,13 @@ def test_nc_time_slider_range(page: Page, app: ShinyAppProc):
     page.wait_for_selector("#nc_time_step", timeout=_NC_TIMEOUT)
 
     slider_max = page.locator("#nc_time_step").get_attribute("data-max")
-    assert slider_max == "23", (
-        f"Expected slider data-max=23 for 24 time steps, got '{slider_max}'"
-    )
+    assert slider_max == "23", f"Expected slider data-max=23 for 24 time steps, got '{slider_max}'"
 
 
 # ---------------------------------------------------------------------------
 # E2E-G7: Grid extent option is always present
 # ---------------------------------------------------------------------------
+
 
 def test_grid_extent_always_present(page: Page, app: ShinyAppProc):
     """The 'Grid Extent' option should always appear first in the overlay selector."""
@@ -192,6 +196,7 @@ def test_grid_extent_always_present(page: Page, app: ShinyAppProc):
 # ---------------------------------------------------------------------------
 # E2E-G8: NC controls are hidden / absent when a CSV overlay is selected
 # ---------------------------------------------------------------------------
+
 
 def test_nc_controls_hidden_for_grid_extent(page: Page, app: ShinyAppProc):
     """Selecting grid_extent (non-NC) should not show the nc_time_step slider."""
@@ -216,6 +221,7 @@ def test_nc_controls_hidden_for_grid_extent(page: Page, app: ShinyAppProc):
 # ---------------------------------------------------------------------------
 # E2E-G9: Time slider value changes when moved
 # ---------------------------------------------------------------------------
+
 
 def test_time_step_slider_interactive(page: Page, app: ShinyAppProc):
     """Moving the time-step slider should update its value."""

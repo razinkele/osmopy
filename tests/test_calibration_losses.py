@@ -165,7 +165,8 @@ def test_residuals_accessor_returns_none_before_first_call(synthetic_two_species
 
 
 def test_residuals_accessor_returns_most_recent(
-    synthetic_two_species_targets, synthetic_stats_in_band,
+    synthetic_two_species_targets,
+    synthetic_stats_in_band,
     synthetic_stats_sp_b_out_of_band,
 ):
     targets, species_names = synthetic_two_species_targets
@@ -183,7 +184,8 @@ def test_residuals_accessor_returns_most_recent(
 
 
 def test_make_banded_objective_callable_returns_zero_when_in_band(
-    synthetic_two_species_targets, synthetic_stats_in_band,
+    synthetic_two_species_targets,
+    synthetic_stats_in_band,
 ):
     """Backward-compat: callable behaviour unchanged for in-band stats."""
     targets, species_names = synthetic_two_species_targets
@@ -197,8 +199,16 @@ def test_residuals_accessor_reset_to_none_on_call_failure(synthetic_two_species_
     targets, species_names = synthetic_two_species_targets
     obj, accessor = make_banded_objective(targets, species_names)
 
-    obj({"sp_a_mean": 1.0, "sp_b_mean": 2.0, "sp_a_cv": 0.0, "sp_b_cv": 0.0,
-         "sp_a_trend": 0.0, "sp_b_trend": 0.0})
+    obj(
+        {
+            "sp_a_mean": 1.0,
+            "sp_b_mean": 2.0,
+            "sp_a_cv": 0.0,
+            "sp_b_cv": 0.0,
+            "sp_a_trend": 0.0,
+            "sp_b_trend": 0.0,
+        }
+    )
     assert accessor() is not None
 
     with pytest.raises((TypeError, AttributeError, KeyError)):

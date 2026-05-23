@@ -137,9 +137,7 @@ class OsmoseConfigWriter:
         interrupted mid-write.
         """
         case_map = key_case_map or {}
-        content = "".join(
-            f"{case_map.get(k, k)} ; {v}\n" for k, v in sorted(params.items())
-        )
+        content = "".join(f"{case_map.get(k, k)} ; {v}\n" for k, v in sorted(params.items()))
         tmp_fd, tmp_path = tempfile.mkstemp(dir=filepath.parent, suffix=".tmp")
         try:
             with os.fdopen(tmp_fd, "w") as f:

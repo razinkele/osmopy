@@ -27,7 +27,9 @@ def test_last_per_species_residuals_none_before_first_call(synthetic_two_species
 
 
 def test_last_per_species_residuals_populated_after_call(
-    synthetic_two_species_targets, synthetic_stats_in_band, monkeypatch,
+    synthetic_two_species_targets,
+    synthetic_stats_in_band,
+    monkeypatch,
 ):
     targets, species_names = synthetic_two_species_targets
     w = _build_wrapper(targets, species_names)
@@ -44,7 +46,9 @@ def test_last_per_species_residuals_populated_after_call(
 
 
 def test_residuals_zero_when_in_band(
-    synthetic_two_species_targets, synthetic_stats_in_band, monkeypatch,
+    synthetic_two_species_targets,
+    synthetic_stats_in_band,
+    monkeypatch,
 ):
     targets, species_names = synthetic_two_species_targets
     w = _build_wrapper(targets, species_names)
@@ -56,12 +60,16 @@ def test_residuals_zero_when_in_band(
 
 
 def test_residual_positive_when_out_of_band(
-    synthetic_two_species_targets, synthetic_stats_sp_b_out_of_band, monkeypatch,
+    synthetic_two_species_targets,
+    synthetic_stats_sp_b_out_of_band,
+    monkeypatch,
 ):
     targets, species_names = synthetic_two_species_targets
     w = _build_wrapper(targets, species_names)
     monkeypatch.setattr(
-        w, "_simulate_and_compute_stats", lambda x: synthetic_stats_sp_b_out_of_band,
+        w,
+        "_simulate_and_compute_stats",
+        lambda x: synthetic_stats_sp_b_out_of_band,
     )
     w([0.0, 0.0])
     by_sp = {sp: r for sp, r, _ in w.last_per_species_residuals}
@@ -70,7 +78,9 @@ def test_residual_positive_when_out_of_band(
 
 
 def test_sim_biomass_captured_per_species(
-    synthetic_two_species_targets, synthetic_stats_in_band, monkeypatch,
+    synthetic_two_species_targets,
+    synthetic_stats_in_band,
+    monkeypatch,
 ):
     targets, species_names = synthetic_two_species_targets
     w = _build_wrapper(targets, species_names)
@@ -82,15 +92,21 @@ def test_sim_biomass_captured_per_species(
 
 
 def test_extinction_fast_path_records_100_loss_and_zero_biomass(
-    synthetic_two_species_targets, monkeypatch,
+    synthetic_two_species_targets,
+    monkeypatch,
 ):
     targets, species_names = synthetic_two_species_targets
     w = _build_wrapper(targets, species_names)
     monkeypatch.setattr(
-        w, "_simulate_and_compute_stats",
+        w,
+        "_simulate_and_compute_stats",
         lambda x: {
-            "sp_a_mean": 0.0, "sp_a_cv": 0.0, "sp_a_trend": 0.0,
-            "sp_b_mean": 2.0, "sp_b_cv": 0.0, "sp_b_trend": 0.0,
+            "sp_a_mean": 0.0,
+            "sp_a_cv": 0.0,
+            "sp_a_trend": 0.0,
+            "sp_b_mean": 2.0,
+            "sp_b_cv": 0.0,
+            "sp_b_trend": 0.0,
         },
     )
     w([0.0, 0.0])
@@ -100,7 +116,8 @@ def test_extinction_fast_path_records_100_loss_and_zero_biomass(
 
 
 def test_residuals_attribute_unset_when_call_raises_midway(
-    synthetic_two_species_targets, monkeypatch,
+    synthetic_two_species_targets,
+    monkeypatch,
 ):
     """Spec §6.5.1 load-bearing assign-at-end invariant."""
     targets, species_names = synthetic_two_species_targets
@@ -108,15 +125,23 @@ def test_residuals_attribute_unset_when_call_raises_midway(
 
     def boom(x):
         raise RuntimeError("simulated crash")
+
     monkeypatch.setattr(w, "_simulate_and_compute_stats", boom)
     with pytest.raises(RuntimeError):
         w([0.0, 0.0])
     assert w.last_per_species_residuals is None
 
     monkeypatch.setattr(
-        w, "_simulate_and_compute_stats",
-        lambda x: {"sp_a_mean": 1.0, "sp_a_cv": 0.0, "sp_a_trend": 0.0,
-                   "sp_b_mean": 2.0, "sp_b_cv": 0.0, "sp_b_trend": 0.0},
+        w,
+        "_simulate_and_compute_stats",
+        lambda x: {
+            "sp_a_mean": 1.0,
+            "sp_a_cv": 0.0,
+            "sp_a_trend": 0.0,
+            "sp_b_mean": 2.0,
+            "sp_b_cv": 0.0,
+            "sp_b_trend": 0.0,
+        },
     )
     w([0.0, 0.0])
     populated = w.last_per_species_residuals
@@ -129,8 +154,12 @@ def test_residuals_attribute_unset_when_call_raises_midway(
 
 # Module-level helpers for multiprocessing round-trip test
 _RTL_RESULT_KEYS_STATS = {
-    "sp_a_mean": 1.0, "sp_a_cv": 0.0, "sp_a_trend": 0.0,
-    "sp_b_mean": 2.0, "sp_b_cv": 0.0, "sp_b_trend": 0.0,
+    "sp_a_mean": 1.0,
+    "sp_a_cv": 0.0,
+    "sp_a_trend": 0.0,
+    "sp_b_mean": 2.0,
+    "sp_b_cv": 0.0,
+    "sp_b_trend": 0.0,
 }
 
 

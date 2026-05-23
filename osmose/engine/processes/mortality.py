@@ -32,7 +32,7 @@ from osmose.engine.state import MortalityCause, SchoolState
 from osmose.logging import setup_logging
 
 try:
-    from numba import njit, prange
+    from numba import njit, prange  # type: ignore[import-not-found]
 
     _HAS_NUMBA = True
 except ImportError:

@@ -26,12 +26,13 @@ def test_sync_n_maps_counts_old_style_keys():
     cfg = {
         "movement.file.map1": "/path/to/map1.csv",
         "movement.file.map2": "/path/to/map2.csv",
-        "movement.file.map3": "",          # empty — should NOT count
-        "movement.file.map4": "NULL",      # null sentinel — should NOT count
+        "movement.file.map3": "",  # empty — should NOT count
+        "movement.file.map4": "NULL",  # null sentinel — should NOT count
         "movement.species.map1": "anchovy",
     }
     count = sum(
-        1 for k in cfg
+        1
+        for k in cfg
         if pattern.match(k)
         and isinstance(cfg[k], str)
         and cfg[k].strip()

@@ -264,6 +264,7 @@ async def _run_python_engine(
     # C4 Phase B: fresh cancellation token per run. The cancel button
     # handler (handle_cancel below) sets this to interrupt the simulation.
     import threading as _threading
+
     cancel_token = _threading.Event()
     state.run_cancel_token.set(cancel_token)
 

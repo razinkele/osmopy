@@ -15,8 +15,10 @@ def test_collect_resolved_keys_basic():
     fields = [_FakeField("fishing.rate.fsh{idx}"), _FakeField("fishing.name.fsh{idx}")]
     result = collect_resolved_keys(fields, count=2)
     assert result == [
-        "fishing.rate.fsh0", "fishing.name.fsh0",
-        "fishing.rate.fsh1", "fishing.name.fsh1",
+        "fishing.rate.fsh0",
+        "fishing.name.fsh0",
+        "fishing.rate.fsh1",
+        "fishing.name.fsh1",
     ]
 
 

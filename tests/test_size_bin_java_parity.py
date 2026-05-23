@@ -55,17 +55,13 @@ _CASES = [
 
 
 @pytest.mark.parametrize("mn,mx,incr,expected", _CASES)
-def test_java_formula_matches_expected(
-    mn: float, mx: float, incr: float, expected: int
-) -> None:
+def test_java_formula_matches_expected(mn: float, mx: float, incr: float, expected: int) -> None:
     """Sanity: the Java port produces the documented expected count."""
     assert java_nclass(mn, mx, incr) == expected
 
 
 @pytest.mark.parametrize("mn,mx,incr,expected", _CASES)
-def test_python_n_bins_matches_java(
-    mn: float, mx: float, incr: float, expected: int
-) -> None:
+def test_python_n_bins_matches_java(mn: float, mx: float, incr: float, expected: int) -> None:
     """The production Python expression produces the same count as Java."""
     py = python_n_bins(mn, mx, incr)
     j = java_nclass(mn, mx, incr)

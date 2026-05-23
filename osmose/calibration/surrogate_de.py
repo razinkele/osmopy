@@ -38,7 +38,7 @@ def _eval_batch(
 ) -> NDArray[np.float64]:
     """Real-evaluate a batch of parameter vectors. NaNs preserved."""
     if workers > 1:
-        values = joblib.Parallel(n_jobs=workers, batch_size=1)(
+        values = joblib.Parallel(n_jobs=workers, batch_size=1)(  # type: ignore[arg-type]
             joblib.delayed(objective)(s) for s in samples
         )
     else:
@@ -62,8 +62,10 @@ def _select_topk_lcb(
     """
     n_dim = bounds.shape[0]
     samples = bounds[:, 0] + rng.uniform(size=(n_candidates, n_dim)) * (bounds[:, 1] - bounds[:, 0])
-    mu, sigma = gp.predict(samples, return_std=True)
-    acquisition = mu - kappa * sigma
+    # gp.predict(..., return_std=True) returns (mu, sigma) at runtime but
+    # sklearn's overload union also covers single-array and 3-tuple cases.
+    mu, sigma = gp.predict(samples, return_std=True)  # type: ignore[misc]
+    acquisition = mu - kappa * sigma  # type: ignore[operator]
     top_idx = np.argsort(acquisition)[:k]
     return samples[top_idx]
 
@@ -154,7 +156,7 @@ def surrogate_assisted_de(
     }
 
     # Phase 1: LHS init + real-eval
-    lhs = LatinHypercube(d=n_dim, seed=rng)
+    lhs = LatinHypercube(d=n_dim, rng=rng)
     init_samples = bounds_arr[:, 0] + lhs.random(n_initial) * (bounds_arr[:, 1] - bounds_arr[:, 0])
     if x0 is not None:
         x0_arr = np.asarray(x0, dtype=float)
@@ -182,17 +184,18 @@ def surrogate_assisted_de(
     X_train = init_samples[finite].copy()
     y_train = Y[finite].copy()
 
-    history: list[dict[str, Any]] = [{
-        "phase": "init",
-        "real_evals": int(len(Y)),
-        "real_evals_finite": int(finite.sum()),
-        "best": float(np.min(y_train)),
-        "n_train": int(finite.sum()),
-    }]
+    history: list[dict[str, Any]] = [
+        {
+            "phase": "init",
+            "real_evals": int(len(Y)),
+            "real_evals_finite": int(finite.sum()),
+            "best": float(np.min(y_train)),
+            "n_train": int(finite.sum()),
+        }
+    ]
     if verbose:
         print(
-            f"[surrogate-DE] init: {finite.sum()}/{len(Y)} finite evals, "
-            f"best={np.min(y_train):.4f}"
+            f"[surrogate-DE] init: {finite.sum()}/{len(Y)} finite evals, best={np.min(y_train):.4f}"
         )
 
     # Phase 2..N: surrogate refinement
@@ -201,9 +204,7 @@ def surrogate_assisted_de(
         # WhiteKernel adds a learnable noise floor so near-duplicate training
         # points (a real risk when many evals NaN and survivors cluster) do not
         # produce a singular covariance matrix.
-        kernel = Matern(nu=2.5) + WhiteKernel(
-            noise_level=1e-3, noise_level_bounds=(1e-7, 1.0)
-        )
+        kernel = Matern(nu=2.5) + WhiteKernel(noise_level=1e-3, noise_level_bounds=(1e-7, 1.0))
         gp = GaussianProcessRegressor(
             kernel=kernel,
             normalize_y=True,
@@ -221,7 +222,7 @@ def surrogate_assisted_de(
                 f"falling back to LHS exploration this iteration",
                 stacklevel=2,
             )
-            fallback_lhs = LatinHypercube(d=n_dim, seed=rng)
+            fallback_lhs = LatinHypercube(d=n_dim, rng=rng)
             candidates = bounds_arr[:, 0] + fallback_lhs.random(n_topk) * (
                 bounds_arr[:, 1] - bounds_arr[:, 0]
             )
@@ -232,14 +233,16 @@ def surrogate_assisted_de(
                 X_train = np.vstack([X_train, candidates[finite_new]])
                 y_train = np.concatenate([y_train, new_y[finite_new]])
             best_idx = int(np.argmin(y_train))
-            history.append({
-                "phase": f"iter{it}_lhs_fallback",
-                "real_evals": int(len(candidates)),
-                "best": float(y_train[best_idx]),
-                "gp_de_pred": float("nan"),
-                "gp_de_real": float("nan"),
-                "n_train": int(len(y_train)),
-            })
+            history.append(
+                {
+                    "phase": f"iter{it}_lhs_fallback",
+                    "real_evals": int(len(candidates)),
+                    "best": float(y_train[best_idx]),
+                    "gp_de_pred": float("nan"),
+                    "gp_de_real": float("nan"),
+                    "n_train": int(len(y_train)),
+                }
+            )
 
             _checkpoint_state["gen"] += 1
             _best_x = X_train[best_idx]
@@ -286,7 +289,7 @@ def surrogate_assisted_de(
             bounds,
             maxiter=de_maxiter,
             popsize=de_popsize_mult,
-            seed=int(seed) + it,
+            rng=int(seed) + it,
             tol=1e-4,
             mutation=(0.5, 1.5),
             recombination=0.8,
@@ -297,7 +300,9 @@ def surrogate_assisted_de(
         # Build top-K candidate set: GP-DE optimum + LCB-selected from uniform pool
         de_optimum = np.asarray(de_res.x, dtype=float).reshape(1, -1)
         lcb_picks = _select_topk_lcb(
-            gp, bounds_arr, k=max(0, n_topk - 1),
+            gp,
+            bounds_arr,
+            k=max(0, n_topk - 1),
             n_candidates=lcb_n_candidates,
             kappa=lcb_kappa,
             rng=rng,
@@ -313,14 +318,16 @@ def surrogate_assisted_de(
             y_train = np.concatenate([y_train, new_y[finite_new]])
 
         best_idx = int(np.argmin(y_train))
-        history.append({
-            "phase": f"iter{it}",
-            "real_evals": int(len(candidates)),
-            "best": float(y_train[best_idx]),
-            "gp_de_pred": float(de_res.fun),
-            "gp_de_real": float(new_y[0]) if finite_new[0] else float("nan"),
-            "n_train": int(len(y_train)),
-        })
+        history.append(
+            {
+                "phase": f"iter{it}",
+                "real_evals": int(len(candidates)),
+                "best": float(y_train[best_idx]),
+                "gp_de_pred": float(de_res.fun),
+                "gp_de_real": float(new_y[0]) if finite_new[0] else float("nan"),
+                "n_train": int(len(y_train)),
+            }
+        )
 
         _checkpoint_state["gen"] += 1
         _best_x = X_train[best_idx]

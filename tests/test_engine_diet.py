@@ -202,7 +202,9 @@ class TestDietTrackingPredation:
         ctx = SimulationContext()
 
         enable_diet_tracking(n_schools=3, n_species=3, ctx=ctx)
-        predation_for_cell(np.array([0, 1, 2], dtype=np.int32), state, cfg, rng, n_subdt=10, ctx=ctx)
+        predation_for_cell(
+            np.array([0, 1, 2], dtype=np.int32), state, cfg, rng, n_subdt=10, ctx=ctx
+        )
         result = state
         mat = get_diet_matrix(ctx=ctx)
         assert mat is not None

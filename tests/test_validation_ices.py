@@ -40,36 +40,58 @@ def _make_snapshot(tmp_path: Path) -> Path:
     (d / "index.json").write_text(json.dumps(manifest))
 
     # Cod tonnes-unit assessment: SSB 100, 110, 120, 130, 140 over 2018-2022
-    (d / "cod.27.22-24.assessment.json").write_text(json.dumps([
-        {"year": 2018, "ssb": 100.0, "f": 0.30},
-        {"year": 2019, "ssb": 110.0, "f": 0.32},
-        {"year": 2020, "ssb": 120.0, "f": 0.31},
-        {"year": 2021, "ssb": 130.0, "f": 0.29},
-        {"year": 2022, "ssb": 140.0, "f": 0.28},
-    ]))
-    (d / "cod.27.22-24.reference_points.json").write_text(json.dumps({
-        "blim": 60.0, "bpa": 90.0, "fmsy": 0.30,
-    }))
+    (d / "cod.27.22-24.assessment.json").write_text(
+        json.dumps(
+            [
+                {"year": 2018, "ssb": 100.0, "f": 0.30},
+                {"year": 2019, "ssb": 110.0, "f": 0.32},
+                {"year": 2020, "ssb": 120.0, "f": 0.31},
+                {"year": 2021, "ssb": 130.0, "f": 0.29},
+                {"year": 2022, "ssb": 140.0, "f": 0.28},
+            ]
+        )
+    )
+    (d / "cod.27.22-24.reference_points.json").write_text(
+        json.dumps(
+            {
+                "blim": 60.0,
+                "bpa": 90.0,
+                "fmsy": 0.30,
+            }
+        )
+    )
 
     # Herring tonnes-unit assessment: SSB 1000-1500
-    (d / "her.27.20-24.assessment.json").write_text(json.dumps([
-        {"year": 2018, "ssb": 1000.0, "f": 0.20},
-        {"year": 2019, "ssb": 1100.0, "f": 0.22},
-        {"year": 2020, "ssb": 1200.0, "f": 0.21},
-        {"year": 2021, "ssb": 1400.0, "f": 0.19},
-        {"year": 2022, "ssb": 1500.0, "f": 0.18},
-    ]))
+    (d / "her.27.20-24.assessment.json").write_text(
+        json.dumps(
+            [
+                {"year": 2018, "ssb": 1000.0, "f": 0.20},
+                {"year": 2019, "ssb": 1100.0, "f": 0.22},
+                {"year": 2020, "ssb": 1200.0, "f": 0.21},
+                {"year": 2021, "ssb": 1400.0, "f": 0.19},
+                {"year": 2022, "ssb": 1500.0, "f": 0.18},
+            ]
+        )
+    )
     (d / "her.27.20-24.reference_points.json").write_text(json.dumps({}))
 
     # Index-unit assessments — exist but should be excluded from envelope
-    (d / "her.27.idx-only.assessment.json").write_text(json.dumps([
-        {"year": 2018, "ssb": 0.85, "f": 0.20},
-        {"year": 2022, "ssb": 0.95, "f": 0.18},
-    ]))
+    (d / "her.27.idx-only.assessment.json").write_text(
+        json.dumps(
+            [
+                {"year": 2018, "ssb": 0.85, "f": 0.20},
+                {"year": 2022, "ssb": 0.95, "f": 0.18},
+            ]
+        )
+    )
     (d / "her.27.idx-only.reference_points.json").write_text(json.dumps({}))
-    (d / "per.27.idx-only.assessment.json").write_text(json.dumps([
-        {"year": 2020, "ssb": 1.2, "f": 0.10},
-    ]))
+    (d / "per.27.idx-only.assessment.json").write_text(
+        json.dumps(
+            [
+                {"year": 2020, "ssb": 1.2, "f": 0.10},
+            ]
+        )
+    )
     (d / "per.27.idx-only.reference_points.json").write_text(json.dumps({}))
 
     return d
@@ -82,11 +104,13 @@ def _fake_results(biomass_by_species: dict[str, list[float]]) -> MagicMock:
         if species is None or species not in biomass_by_species:
             return None
         values = biomass_by_species[species]
-        return pd.DataFrame({
-            "species": [species] * len(values),
-            "time": list(range(len(values))),
-            "value": values,
-        })
+        return pd.DataFrame(
+            {
+                "species": [species] * len(values),
+                "time": list(range(len(values))),
+                "value": values,
+            }
+        )
 
     mock = MagicMock()
     mock.biomass = _biomass
@@ -108,10 +132,14 @@ class TestLoadSnapshot:
         # load_snapshot should silently skip it.
         d = tmp_path / "ices_snapshots"
         d.mkdir()
-        (d / "index.json").write_text(json.dumps({
-            "model_species_to_ices_stocks": {"cod": ["nonexistent.stock"]},
-            "units_by_stock": {"nonexistent.stock": "tonnes"},
-        }))
+        (d / "index.json").write_text(
+            json.dumps(
+                {
+                    "model_species_to_ices_stocks": {"cod": ["nonexistent.stock"]},
+                    "units_by_stock": {"nonexistent.stock": "tonnes"},
+                }
+            )
+        )
         snap = load_snapshot(d)
         assert "nonexistent.stock" not in snap.assessments
 
@@ -137,12 +165,14 @@ class TestCompareOutputsToIces:
     def test_in_range_species(self, tmp_path):
         # Cod ICES envelope from snapshot is [100, 140]. Model mean 120 → in range.
         snap = load_snapshot(_make_snapshot(tmp_path))
-        results = _fake_results({
-            "cod": [120.0] * 5,
-            "herring": [1300.0] * 5,
-            "flounder": [50.0] * 5,
-            "perch": [10.0] * 5,
-        })
+        results = _fake_results(
+            {
+                "cod": [120.0] * 5,
+                "herring": [1300.0] * 5,
+                "flounder": [50.0] * 5,
+                "perch": [10.0] * 5,
+            }
+        )
         comps = compare_outputs_to_ices(
             results, snap, window_years=5, ices_window=range(2018, 2023)
         )
@@ -213,17 +243,24 @@ class TestFormatMarkdownReport:
     def test_includes_headers_and_summary(self):
         comps = [
             SpeciesBiomassComparison(
-                species="cod", model_mean_tonnes=120.0,
-                ices_min_tonnes=100.0, ices_max_tonnes=140.0,
-                in_range=True, magnitude_factor=1.014,
+                species="cod",
+                model_mean_tonnes=120.0,
+                ices_min_tonnes=100.0,
+                ices_max_tonnes=140.0,
+                in_range=True,
+                magnitude_factor=1.014,
             ),
             SpeciesBiomassComparison(
-                species="sprat", model_mean_tonnes=50.0,
-                ices_min_tonnes=200.0, ices_max_tonnes=300.0,
-                in_range=False, magnitude_factor=0.20,
+                species="sprat",
+                model_mean_tonnes=50.0,
+                ices_min_tonnes=200.0,
+                ices_max_tonnes=300.0,
+                in_range=False,
+                magnitude_factor=0.20,
             ),
             SpeciesBiomassComparison(
-                species="flounder", model_mean_tonnes=10.0,  # no envelope
+                species="flounder",
+                model_mean_tonnes=10.0,  # no envelope
             ),
         ]
         report = format_markdown_report(comps, window_years=5)

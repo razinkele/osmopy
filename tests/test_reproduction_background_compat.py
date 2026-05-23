@@ -11,6 +11,7 @@ This test exercises the path by running a 1-year Baltic sim with the two
 background species (grey seal, cormorant) activated. If reproduction.py
 ever drops the slicing, this test fails.
 """
+
 from pathlib import Path
 import tempfile
 

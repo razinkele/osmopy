@@ -227,9 +227,7 @@ def spatial_results_server(input, output, session, state):
             new_ds = res.read_netcdf(filename)
         except (OSError, ValueError, KeyError) as exc:
             _log.error("Failed to load spatial file %s: %s", filename, exc, exc_info=True)
-            ui.notification_show(
-                f"Failed to load {filename}: {exc}", type="error", duration=15
-            )
+            ui.notification_show(f"Failed to load {filename}: {exc}", type="error", duration=15)
             return
         _close_spatial_ds()
         _spatial_ds.set(new_ds)
@@ -355,7 +353,9 @@ def spatial_results_server(input, output, session, state):
             da = da.isel(time=time_idx)
         data_slice = da.values
         if data_slice.ndim != 2:
-            _log.warning("Expected 2D spatial slice, got shape %s for %s", data_slice.shape, var_name)
+            _log.warning(
+                "Expected 2D spatial slice, got shape %s for %s", data_slice.shape, var_name
+            )
             return
         lat_raw = ds["lat"].values
         lon_raw = ds["lon"].values

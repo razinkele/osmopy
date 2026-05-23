@@ -492,9 +492,7 @@ def _parse_reproduction_params(
     bad_sr = np.where((sex_ratio < 0.0) | (sex_ratio > 1.0))[0]
     if len(bad_sr) > 0:
         i = int(bad_sr[0])
-        raise ValueError(
-            f"species.sexratio.sp{i} must be in [0, 1], got {float(sex_ratio[i])}"
-        )
+        raise ValueError(f"species.sexratio.sp{i} must be in [0, 1], got {float(sex_ratio[i])}")
     relative_fecundity = _species_float_optional(
         cfg, "species.relativefecundity.sp{i}", n_sp, default=500.0
     )

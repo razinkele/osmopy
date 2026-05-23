@@ -54,6 +54,7 @@ class AppState:
         # publishes it here so handle_cancel() can flip it. None when no run
         # is in flight.
         import threading as _threading
+
         self.run_cancel_token: reactive.Value[_threading.Event | None] = reactive.Value(None)
         self.dirty: reactive.Value[bool] = reactive.Value(False)
         self.load_trigger: reactive.Value[int] = reactive.Value(0)

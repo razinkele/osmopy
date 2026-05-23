@@ -25,9 +25,7 @@ def economic_server(input, output, session, state):
     @render.ui
     def economic_content():
         if state.engine_mode.get() != "python":
-            return ui.p(
-                "Switch to Python engine to access Economic module.", style=STYLE_EMPTY
-            )
+            return ui.p("Switch to Python engine to access Economic module.", style=STYLE_EMPTY)
         return ui.div(
             ui.h5("Economic Module"),
             ui.p(

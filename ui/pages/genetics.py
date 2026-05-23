@@ -25,9 +25,7 @@ def genetics_server(input, output, session, state):
     @render.ui
     def genetics_content():
         if state.engine_mode.get() != "python":
-            return ui.p(
-                "Switch to Python engine to access Genetics.", style=STYLE_EMPTY
-            )
+            return ui.p("Switch to Python engine to access Genetics.", style=STYLE_EMPTY)
         return ui.div(
             ui.h5("Ev-OSMOSE Genetics Module"),
             ui.p(

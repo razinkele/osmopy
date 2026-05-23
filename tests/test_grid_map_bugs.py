@@ -35,7 +35,7 @@ class TestSingleRowNetcdf:
         """ny=1 NetCDF grid: cell polygons must have non-zero height."""
         from ui.pages.grid_helpers import build_netcdf_grid_layers
 
-        lat = np.array([[47.0, 47.0, 47.0]])   # shape (1, 3)
+        lat = np.array([[47.0, 47.0, 47.0]])  # shape (1, 3)
         lon = np.array([[1.0, 2.0, 3.0]])
         mask = np.ones((1, 3))
         layers, _ = build_netcdf_grid_layers(lat, lon, mask)
@@ -48,7 +48,7 @@ class TestSingleRowNetcdf:
         """nx=1 NetCDF grid: cell polygons must have non-zero width."""
         from ui.pages.grid_helpers import build_netcdf_grid_layers
 
-        lat = np.array([[45.0], [46.0], [47.0]])   # shape (3, 1)
+        lat = np.array([[45.0], [46.0], [47.0]])  # shape (3, 1)
         lon = np.array([[2.0], [2.0], [2.0]])
         mask = np.ones((3, 1))
         layers, _ = build_netcdf_grid_layers(lat, lon, mask)
@@ -117,13 +117,17 @@ class TestMovementStepIsolation:
         """movement_controls must read input.movement_step inside reactive.isolate()."""
         import ast
         import pathlib
+
         src = (pathlib.Path(__file__).parent.parent / "ui" / "pages" / "grid.py").read_text()
         tree = ast.parse(src)
 
         # Find the movement_controls function
         mc_func = None
         for node in ast.walk(tree):
-            if isinstance(node, ast.AsyncFunctionDef | ast.FunctionDef) and node.name == "movement_controls":
+            if (
+                isinstance(node, ast.AsyncFunctionDef | ast.FunctionDef)
+                and node.name == "movement_controls"
+            ):
                 mc_func = node
                 break
         assert mc_func is not None, "movement_controls not found"
@@ -136,7 +140,7 @@ class TestMovementStepIsolation:
 
         # The reactive.isolate() wrapping movement_step must appear within the
         # 200 characters immediately before the call (i.e., in the same try block).
-        nearby = func_src[max(0, step_pos - 200):step_pos]
+        nearby = func_src[max(0, step_pos - 200) : step_pos]
         assert "reactive.isolate()" in nearby, (
             "input.movement_step() must be read inside a reactive.isolate() block. "
             f"Context before call:\n{nearby}"
@@ -191,6 +195,7 @@ class TestThemeInAnimationHash:
     def test_prev_active_maps_stores_theme(self):
         """_prev_active_maps reactive.Value must store (frozenset, bool) not just frozenset."""
         import pathlib
+
         src = (pathlib.Path(__file__).parent.parent / "ui" / "pages" / "grid.py").read_text()
         # The initialisation must be tuple, not bare frozenset
         # Look for _prev_active_maps.set( and the initial value
@@ -199,6 +204,6 @@ class TestThemeInAnimationHash:
         )
         # And the early return must check is_dark too — check all _prev_active_maps.get() calls
         # (the early-return guard is typically 2000+ chars after the declaration)
-        assert "is_dark" in src[src.find("_prev_active_maps"):src.rfind("_prev_active_maps") + 200], (
-            "is_dark not included in _prev_active_maps early-return guard"
-        )
+        assert (
+            "is_dark" in src[src.find("_prev_active_maps") : src.rfind("_prev_active_maps") + 200]
+        ), "is_dark not included in _prev_active_maps early-return guard"

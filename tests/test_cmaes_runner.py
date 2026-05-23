@@ -1,4 +1,5 @@
 """Smoke tests for the CMA-ES runner against analytical objectives."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -14,7 +15,7 @@ def _rosenbrock(x: np.ndarray) -> float:
 
 def _sphere(x: np.ndarray) -> float:
     """N-D sphere: minimum at origin with value 0."""
-    return float(np.sum(x ** 2))
+    return float(np.sum(x**2))
 
 
 def test_rosenbrock_2d_converges_near_optimum():
@@ -69,8 +70,11 @@ def test_nan_objective_does_not_stall():
         return _sphere(x)
 
     result = run_cmaes(
-        flaky, [(-5, 5)] * 3, x0=[1.0, 1.0, 1.0],
-        maxiter=30, seed=42,
+        flaky,
+        [(-5, 5)] * 3,
+        x0=[1.0, 1.0, 1.0],
+        maxiter=30,
+        seed=42,
     )
     # Just verify it terminated and got near the optimum despite the NaNs
     assert result["nfev"] > 0
@@ -84,12 +88,16 @@ def test_all_nan_first_generation_terminates_gracefully():
     "calibrated" with random output. Verify the run doesn't crash and returns
     a sensible result dict.
     """
+
     def all_nan(_x):
         return float("nan")
 
     result = run_cmaes(
-        all_nan, [(-5, 5)] * 3, x0=[1.0, 1.0, 1.0],
-        maxiter=30, seed=42,
+        all_nan,
+        [(-5, 5)] * 3,
+        x0=[1.0, 1.0, 1.0],
+        maxiter=30,
+        seed=42,
     )
     # Run terminated without exception, returned the expected schema
     assert "x" in result and "fun" in result and "success" in result
@@ -112,8 +120,11 @@ def test_partial_nan_uses_running_worst_penalty():
         return v
 
     result = run_cmaes(
-        occasional_nan, [(-5, 5)] * 3, x0=[1.0, 1.0, 1.0],
-        maxiter=20, seed=42,
+        occasional_nan,
+        [(-5, 5)] * 3,
+        x0=[1.0, 1.0, 1.0],
+        maxiter=20,
+        seed=42,
     )
     # Despite the NaNs, the optimization makes meaningful progress
     assert result["fun"] < 1.0
@@ -128,8 +139,13 @@ def test_success_false_when_maxiter_hit():
     """maxiter exhaustion must NOT set success=True."""
     # Use a tiny maxiter so even a trivial sphere doesn't converge in time
     result = run_cmaes(
-        _sphere, [(-5, 5)] * 5, x0=[2.0] * 5,
-        sigma0=0.3, maxiter=2, tol=1e-12, seed=42,
+        _sphere,
+        [(-5, 5)] * 5,
+        x0=[2.0] * 5,
+        sigma0=0.3,
+        maxiter=2,
+        tol=1e-12,
+        seed=42,
     )
     assert result["success"] is False, (
         f"maxiter stop should not be success; got message={result['message']}"
@@ -140,8 +156,13 @@ def test_success_false_when_maxiter_hit():
 def test_success_true_on_genuine_convergence():
     """tolfun-triggered stop should set success=True."""
     result = run_cmaes(
-        _sphere, [(-5, 5)] * 3, x0=[2.0] * 3,
-        sigma0=0.3, maxiter=200, tol=1e-6, seed=42,
+        _sphere,
+        [(-5, 5)] * 3,
+        x0=[2.0] * 3,
+        sigma0=0.3,
+        maxiter=200,
+        tol=1e-6,
+        seed=42,
     )
     assert result["success"] is True
     assert result["fun"] < 1e-4
@@ -150,11 +171,16 @@ def test_success_true_on_genuine_convergence():
 def test_x0_outside_bounds_is_clipped_with_warning():
     """Out-of-bounds x0 must be clipped (not crash cma), with a warning."""
     import warnings
+
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         result = run_cmaes(
-            _sphere, [(-1, 1)] * 3, x0=[5.0, -3.0, 0.5],
-            sigma0=0.1, maxiter=20, seed=42,
+            _sphere,
+            [(-1, 1)] * 3,
+            x0=[5.0, -3.0, 0.5],
+            sigma0=0.1,
+            maxiter=20,
+            seed=42,
         )
     assert any("clipped into bounds" in str(w.message) for w in caught), (
         f"expected clip warning; caught: {[str(w.message) for w in caught]}"
@@ -166,7 +192,11 @@ def test_x0_outside_bounds_is_clipped_with_warning():
 def test_returned_best_x_is_in_bounds():
     """Defensive clip: result['x'] is always in bounds even if cma's internal best wasn't."""
     result = run_cmaes(
-        _sphere, [(-2, 2)] * 4, x0=[0.5] * 4,
-        sigma0=0.3, maxiter=30, seed=42,
+        _sphere,
+        [(-2, 2)] * 4,
+        x0=[0.5] * 4,
+        sigma0=0.3,
+        maxiter=30,
+        seed=42,
     )
     assert all(-2.0 <= xi <= 2.0 for xi in result["x"])

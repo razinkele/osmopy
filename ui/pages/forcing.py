@@ -144,9 +144,7 @@ def forcing_server(input, output, session, state):
                 cfg = dict(state.config.get())
             n_focal = parse_nspecies(cfg)
             indexed_fields = [f for f in LTL_FIELDS if f.indexed]
-            count = copy_species0_to_all(
-                indexed_fields, n, cfg, input, session, start_idx=n_focal
-            )
+            count = copy_species0_to_all(indexed_fields, n, cfg, input, session, start_idx=n_focal)
             state.config.set(cfg)
             state.dirty.set(True)
             ui.notification_show(

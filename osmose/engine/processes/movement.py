@@ -15,7 +15,7 @@ from osmose.engine.state import SchoolState
 from osmose.logging import setup_logging
 
 try:
-    from numba import njit
+    from numba import njit  # type: ignore[import-not-found]
 
     _HAS_NUMBA = True
 except ImportError:
@@ -540,9 +540,7 @@ def _precompute_map_indices(
             current_local[cur_in_bounds] = ms.index_maps[valid_ages, step]
             current_idx[sel_idx] = current_local
 
-        prev_in_bounds = (
-            (prev_ages >= 0) & (prev_ages < n_ages) & (0 <= prev_step < n_steps)
-        )
+        prev_in_bounds = (prev_ages >= 0) & (prev_ages < n_ages) & (0 <= prev_step < n_steps)
         if prev_in_bounds.any():
             valid_prev_ages = prev_ages[prev_in_bounds]
             prev_local = np.full(ages.shape, -1, dtype=np.int32)

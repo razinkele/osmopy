@@ -72,10 +72,7 @@ def test_path_escape_blocked(tmp_path, caplog):
     assert any(
         "escapes config directory" in r.message and "etc/passwd" in r.message
         for r in caplog.records
-    ), (
-        f"expected an 'escapes config directory' WARNING; got: "
-        f"{[r.message for r in caplog.records]}"
-    )
+    ), f"expected an 'escapes config directory' WARNING; got: {[r.message for r in caplog.records]}"
 
 
 def test_path_escape_logs_warning(tmp_path, caplog):
@@ -108,6 +105,7 @@ def test_oversized_file_raises(tmp_path):
         st = original_stat(self, *args, **kwargs)
         # Return a stat_result-like object with inflated st_size
         import os
+
         fields = list(st)
         # st_size is index 6 in the tuple
         fields[6] = 10_000_001
@@ -160,11 +158,7 @@ def test_missing_subconfig_logs_warning(tmp_path, caplog):
 def test_unparseable_lines_skipped(tmp_path):
     """Lines without a recognised key-value separator are silently skipped."""
     config_file = tmp_path / "config.csv"
-    config_file.write_text(
-        "thisisnotavalidline\n"
-        "another_bad_line\n"
-        "good.key ; good_value\n"
-    )
+    config_file.write_text("thisisnotavalidline\nanother_bad_line\ngood.key ; good_value\n")
 
     reader = OsmoseConfigReader()
     result = reader.read_file(config_file)
@@ -178,11 +172,7 @@ def test_unparseable_lines_skipped(tmp_path):
 def test_unparseable_lines_counted(tmp_path):
     """skipped_lines counter increments for each unparseable line."""
     config_file = tmp_path / "config.csv"
-    config_file.write_text(
-        "bad_line_one\n"
-        "bad_line_two\n"
-        "good.key ; value\n"
-    )
+    config_file.write_text("bad_line_one\nbad_line_two\ngood.key ; value\n")
 
     reader = OsmoseConfigReader()
     reader.read_file(config_file)

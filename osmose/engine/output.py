@@ -45,9 +45,9 @@ def write_outputs(
     }
     for key in ("biomass", "abundance"):
         df = species_dfs[key]
-        times = df["Time"].values
+        times = df["Time"].to_numpy()
         species = [c for c in df.columns if c != "Time"]
-        data = df[species].values
+        data = df[species].to_numpy()
         _write_species_csv(
             output_dir / f"{prefix}_{key}_Simu0.csv",
             headers[key],
@@ -107,10 +107,10 @@ def _build_species_dataframes(
     biomass_data = np.array([o.biomass for o in outputs])
     abundance_data = np.array([o.abundance for o in outputs])
 
-    bio_df = pd.DataFrame(biomass_data, columns=list(species))
+    bio_df = pd.DataFrame(biomass_data, columns=list(species))  # type: ignore[arg-type]
     bio_df.insert(0, "Time", times)
 
-    abd_df = pd.DataFrame(abundance_data, columns=list(species))
+    abd_df = pd.DataFrame(abundance_data, columns=list(species))  # type: ignore[arg-type]
     abd_df.insert(0, "Time", times)
 
     return {"biomass": bio_df, "abundance": abd_df}
@@ -297,11 +297,9 @@ def _build_diet_dataframe(
     rows: list[list[float]] = []
     for mat, t in zip(step_matrices, step_times, strict=True):
         if mat.shape != (n_pred, n_prey):
-            raise ValueError(
-                f"diet matrix shape {mat.shape} != ({n_pred}, {n_prey}) at time {t}"
-            )
+            raise ValueError(f"diet matrix shape {mat.shape} != ({n_pred}, {n_prey}) at time {t}")
         rows.append([t, *mat.reshape(-1).tolist()])
-    df = pd.DataFrame(rows, columns=["Time", *columns])
+    df = pd.DataFrame(rows, columns=["Time", *columns])  # type: ignore[arg-type]
     return {"dietMatrix": df}
 
 
@@ -339,7 +337,7 @@ def write_diet_csv(
         if mat.shape != (n_pred, n_prey):
             raise ValueError(f"diet matrix shape {mat.shape} != ({n_pred}, {n_prey}) at time {t}")
         rows.append([t, *mat.reshape(-1).tolist()])
-    df = pd.DataFrame(rows, columns=["Time", *columns])
+    df = pd.DataFrame(rows, columns=["Time", *columns])  # type: ignore[arg-type]
     df.to_csv(path, index=False)
 
 
@@ -369,14 +367,12 @@ def _build_yield_dataframes(
     times = np.array([o.step / config.n_dt_per_year for o in outputs])
     yield_data = np.array(
         [
-            o.yield_by_species
-            if o.yield_by_species is not None
-            else np.zeros(config.n_species)
+            o.yield_by_species if o.yield_by_species is not None else np.zeros(config.n_species)
             for o in outputs
         ]
     )
     species = config.species_names
-    df = pd.DataFrame(yield_data, columns=list(species))
+    df = pd.DataFrame(yield_data, columns=list(species))  # type: ignore[arg-type]
     df.insert(0, "Time", times)
     return {"yield": df}
 
@@ -392,9 +388,9 @@ def _write_yield_csv(
     if "yield" not in dfs:
         return
     df = dfs["yield"]
-    times = df["Time"].values
+    times = df["Time"].to_numpy()
     species = [c for c in df.columns if c != "Time"]
-    yield_data = df[species].values
+    yield_data = df[species].to_numpy()
     _write_species_csv(
         output_dir / f"{prefix}_yield_Simu0.csv",
         "Fishing yield (tons) per time step",

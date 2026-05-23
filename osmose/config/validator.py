@@ -46,9 +46,7 @@ def validate_config(
                         errors.append(f"{key}[{idx}]: value {num} above maximum {field.max_val}")
                 elif field.param_type == ParamType.ENUM and field.choices:
                     if sub_val not in field.choices:
-                        errors.append(
-                            f"{key}[{idx}]: '{sub_val}' not in {field.choices}"
-                        )
+                        errors.append(f"{key}[{idx}]: '{sub_val}' not in {field.choices}")
             continue
 
         # Type check

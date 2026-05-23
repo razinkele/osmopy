@@ -167,10 +167,7 @@ async def test_runner_partial_stdout_then_failure(tmp_path: Path) -> None:
     """
     script = tmp_path / "partial_then_fail.py"
     script.write_text(
-        "import sys\n"
-        "for i in range(10):\n"
-        "    print(f'progress line {i}')\n"
-        "sys.exit(2)\n"
+        "import sys\nfor i in range(10):\n    print(f'progress line {i}')\nsys.exit(2)\n"
     )
     config = tmp_path / "config.csv"
     config.write_text("x ; 1\n")

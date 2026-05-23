@@ -101,11 +101,17 @@ def test_mortality_deterministic_across_thread_counts() -> None:
     par = _run_minimal_with_threads(n_threads=min(4, os.cpu_count() or 1), seed=42)
 
     np.testing.assert_allclose(
-        seq["biomass_final"], par["biomass_final"], rtol=0.0, atol=1e-12,
+        seq["biomass_final"],
+        par["biomass_final"],
+        rtol=0.0,
+        atol=1e-12,
         err_msg="end-of-run biomass diverges across thread counts",
     )
     np.testing.assert_allclose(
-        seq["abundance_final"], par["abundance_final"], rtol=0.0, atol=1e-12,
+        seq["abundance_final"],
+        par["abundance_final"],
+        rtol=0.0,
+        atol=1e-12,
         err_msg="end-of-run abundance diverges across thread counts",
     )
 
@@ -123,10 +129,12 @@ def test_single_thread_is_deterministic() -> None:
     a = _run_minimal_with_threads(n_threads=1, seed=42)
     b = _run_minimal_with_threads(n_threads=1, seed=42)
     np.testing.assert_array_equal(
-        a["biomass_full"], b["biomass_full"],
+        a["biomass_full"],
+        b["biomass_full"],
         err_msg="single-thread reruns produced different biomass time-series",
     )
     np.testing.assert_array_equal(
-        a["abundance_full"], b["abundance_full"],
+        a["abundance_full"],
+        b["abundance_full"],
         err_msg="single-thread reruns produced different abundance time-series",
     )

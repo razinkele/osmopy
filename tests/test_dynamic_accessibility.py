@@ -73,8 +73,11 @@ class TestApplyPreyScaleToMatrix:
         scale = np.array([0.5, 0.8])
         stage_to_species = np.array([0, 0, 1, -1], dtype=np.int32)
         result = apply_prey_scale_to_matrix(
-            matrix, scale, n_species=2,
-            is_stage_indexed=True, stage_to_species=stage_to_species,
+            matrix,
+            scale,
+            n_species=2,
+            is_stage_indexed=True,
+            stage_to_species=stage_to_species,
         )
         np.testing.assert_allclose(result[0, :], 0.5)  # sp0 stage 0
         np.testing.assert_allclose(result[1, :], 0.5)  # sp0 stage 1

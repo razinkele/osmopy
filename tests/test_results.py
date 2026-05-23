@@ -587,6 +587,7 @@ def test_bioen_ingestion_returns_dataframe(tmp_path):
 # Tests for internal helper functions
 # ---------------------------------------------------------------------------
 
+
 class TestFindOutputFiles:
     """Tests for _find_output_files searching root + subdirs."""
 
@@ -644,9 +645,7 @@ class TestDetectPreambleLines:
     def test_description_with_commas(self, tmp_path):
         """Preamble containing commas shouldn't fool field-count matching."""
         f = tmp_path / "comma.csv"
-        f.write_text(
-            "Mean biomass (tons), excluding first ages\ntime,biomass\n0,100\n1,200\n"
-        )
+        f.write_text("Mean biomass (tons), excluding first ages\ntime,biomass\n0,100\n1,200\n")
         # Description has 2 fields, header has 2, data has 2 — all match.
         # But first pair (desc, header) matches at i=0, so preamble=0.
         # This is actually correct for same-width preambles — the algorithm
@@ -716,9 +715,9 @@ class TestExtractSpecies:
         assert _extract_species("osm_biomass_Anchovy_Simu0", "biomass", "osm") == "Anchovy"
 
     def test_dash_species(self):
-        assert _extract_species(
-            "osm_mortalityRate-Anchovy_Simu0", "mortalityRate", "osm"
-        ) == "Anchovy"
+        assert (
+            _extract_species("osm_mortalityRate-Anchovy_Simu0", "mortalityRate", "osm") == "Anchovy"
+        )
 
     def test_no_species_aggregate(self):
         # Aggregate file (no species in name after stripping Simu suffix)
@@ -736,6 +735,7 @@ class TestExtractSpecies:
 # ---------------------------------------------------------------------------
 # Tests for semicolon validation
 # ---------------------------------------------------------------------------
+
 
 class TestSemicolonValidation:
     """Tests for per-value semicolon-separated parameter validation."""

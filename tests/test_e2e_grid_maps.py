@@ -31,6 +31,7 @@ _MAP_TIMEOUT = 30_000
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _load_eec_full(page: Page, app: ShinyAppProc) -> None:
     """Load the EEC Full example dataset."""
     page.goto(app.url)
@@ -63,6 +64,7 @@ def _wait_for_map_widget(page: Page) -> None:
 # GM1: Grid page loads and renders map with EEC Full NcGrid
 # ---------------------------------------------------------------------------
 
+
 def test_grid_page_renders_map(page: Page, app: ShinyAppProc):
     """Loading EEC Full and navigating to Grid should render the deck.gl map canvas."""
     _load_eec_full(page, app)
@@ -76,6 +78,7 @@ def test_grid_page_renders_map(page: Page, app: ShinyAppProc):
 # ---------------------------------------------------------------------------
 # GM2: NcGrid settings are displayed (not regular grid inputs)
 # ---------------------------------------------------------------------------
+
 
 def test_ncgrid_settings_displayed(page: Page, app: ShinyAppProc):
     """EEC Full uses NcGrid — grid fields should show NetCDF file and variable settings."""
@@ -95,6 +98,7 @@ def test_ncgrid_settings_displayed(page: Page, app: ShinyAppProc):
 # ---------------------------------------------------------------------------
 # GM3: Grid coordinate inputs populate from config
 # ---------------------------------------------------------------------------
+
 
 def test_grid_fields_have_values(page: Page, app: ShinyAppProc):
     """Grid fields should be populated after loading EEC Full (NcGrid)."""
@@ -119,6 +123,7 @@ def test_grid_fields_have_values(page: Page, app: ShinyAppProc):
 # ---------------------------------------------------------------------------
 # GM4: Overlay selector has expected entries for EEC Full
 # ---------------------------------------------------------------------------
+
 
 def test_overlay_selector_entries(page: Page, app: ShinyAppProc):
     """EEC Full overlay selector should contain Grid Extent, LTL Biomass,
@@ -153,6 +158,7 @@ def test_overlay_selector_entries(page: Page, app: ShinyAppProc):
 # GM5: LTL Biomass NC overlay has 10 plankton variables
 # ---------------------------------------------------------------------------
 
+
 def test_ltl_biomass_has_plankton_vars(page: Page, app: ShinyAppProc):
     """LTL Biomass NC overlay should populate nc_var_select with plankton variables."""
     _load_eec_full(page, app)
@@ -174,6 +180,7 @@ def test_ltl_biomass_has_plankton_vars(page: Page, app: ShinyAppProc):
 # ---------------------------------------------------------------------------
 # GM6: Movement Animation shows species selector with EEC species
 # ---------------------------------------------------------------------------
+
 
 def test_movement_animation_species_list(page: Page, app: ShinyAppProc):
     """Selecting Movement Animation should show species selector with focal species."""
@@ -205,6 +212,7 @@ def test_movement_animation_species_list(page: Page, app: ShinyAppProc):
 # ---------------------------------------------------------------------------
 # GM7: Movement Animation shows speed and step controls
 # ---------------------------------------------------------------------------
+
 
 def test_movement_animation_controls(page: Page, app: ShinyAppProc):
     """Movement Animation should show speed selector and time step slider."""
@@ -239,6 +247,7 @@ def test_movement_animation_controls(page: Page, app: ShinyAppProc):
 # ---------------------------------------------------------------------------
 # GM8: Switching between overlays updates controls correctly
 # ---------------------------------------------------------------------------
+
 
 def test_overlay_switching_updates_controls(page: Page, app: ShinyAppProc):
     """Switching from LTL Biomass to Movement Animation to Grid Extent should
@@ -282,6 +291,7 @@ def test_overlay_switching_updates_controls(page: Page, app: ShinyAppProc):
 # GM9: Map canvas persists across overlay switches
 # ---------------------------------------------------------------------------
 
+
 def test_map_persists_across_overlays(page: Page, app: ShinyAppProc):
     """The deck.gl map canvas should remain present when switching overlays."""
     _load_eec_full(page, app)
@@ -296,14 +306,13 @@ def test_map_persists_across_overlays(page: Page, app: ShinyAppProc):
             page.select_option("#grid_overlay", label=label_or_value)
         page.wait_for_timeout(1_500)
         canvas = page.locator("#grid_map canvas")
-        assert canvas.count() >= 1, (
-            f"Map canvas missing after switching to {label_or_value}"
-        )
+        assert canvas.count() >= 1, f"Map canvas missing after switching to {label_or_value}"
 
 
 # ---------------------------------------------------------------------------
 # GM10: Grid hint is hidden when NcGrid config is loaded
 # ---------------------------------------------------------------------------
+
 
 def test_grid_hint_hidden_for_ncgrid(page: Page, app: ShinyAppProc):
     """EEC Full uses NcGrid — the 'configure coordinates' hint should not appear."""
@@ -321,6 +330,7 @@ def test_grid_hint_hidden_for_ncgrid(page: Page, app: ShinyAppProc):
 # ---------------------------------------------------------------------------
 # GM11: Selecting a species in Movement Animation changes step slider
 # ---------------------------------------------------------------------------
+
 
 def test_movement_species_switch(page: Page, app: ShinyAppProc):
     """Changing the species selector in Movement Animation should keep controls stable."""
@@ -350,6 +360,7 @@ def test_movement_species_switch(page: Page, app: ShinyAppProc):
 # ---------------------------------------------------------------------------
 # GM12: Changing NC variable in LTL Biomass keeps time slider
 # ---------------------------------------------------------------------------
+
 
 def test_nc_variable_change_preserves_slider(page: Page, app: ShinyAppProc):
     """Switching the selected NC variable should keep the time step slider visible."""

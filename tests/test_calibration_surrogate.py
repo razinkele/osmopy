@@ -86,9 +86,7 @@ class TestFindOptimumMultiObjective:
         non-dominated (Pareto) set rather than an unweighted scalar sum."""
         rng = np.random.default_rng(7)
         bounds = [(0.0, 1.0), (0.0, 1.0)]
-        sc = SurrogateCalibrator(
-            param_bounds=bounds, n_objectives=2, n_restarts_optimizer=0
-        )
+        sc = SurrogateCalibrator(param_bounds=bounds, n_objectives=2, n_restarts_optimizer=0)
 
         X = rng.uniform(0, 1, size=(40, 2))
         # Competing objectives: obj0 prefers x0 small, obj1 prefers x0 large.
@@ -106,9 +104,7 @@ class TestFindOptimumMultiObjective:
         must be returned (argmin of weighted-sum of posterior means)."""
         rng = np.random.default_rng(11)
         bounds = [(0.0, 1.0), (0.0, 1.0)]
-        sc = SurrogateCalibrator(
-            param_bounds=bounds, n_objectives=2, n_restarts_optimizer=0
-        )
+        sc = SurrogateCalibrator(param_bounds=bounds, n_objectives=2, n_restarts_optimizer=0)
         X = rng.uniform(0, 1, size=(40, 2))
         y = np.stack([X[:, 0], 1.0 - X[:, 0]], axis=1)
         sc.fit(X, y)
@@ -118,9 +114,7 @@ class TestFindOptimumMultiObjective:
         assert result["params"][0] < 0.2
 
     def test_find_optimum_weights_must_match_n_objectives(self) -> None:
-        sc = SurrogateCalibrator(
-            param_bounds=[(0.0, 1.0)], n_objectives=2, n_restarts_optimizer=0
-        )
+        sc = SurrogateCalibrator(param_bounds=[(0.0, 1.0)], n_objectives=2, n_restarts_optimizer=0)
         X = np.array([[0.1], [0.5], [0.9]])
         y = np.array([[0.0, 1.0], [0.5, 0.5], [1.0, 0.0]])
         sc.fit(X, y)

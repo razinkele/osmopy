@@ -887,9 +887,12 @@ def _collect_spatial_outputs(
         if not m.any():
             continue
         flat_idx = ys[m].astype(np.intp) * nx + xs[m].astype(np.intp)
-        sb[sp] = np.bincount(flat_idx, weights=biomass[m], minlength=n_cells).reshape(ny, nx)
-        sa[sp] = np.bincount(flat_idx, weights=abundance[m], minlength=n_cells).reshape(ny, nx)
-        sy[sp] = np.bincount(flat_idx, weights=yield_b[m], minlength=n_cells).reshape(ny, nx)
+        # np.bincount returns float64 when weights are float64, but the numpy
+        # stubs always type the return as intp. Each assignment below is
+        # runtime-safe (sb/sa/sy are float64 ndarrays; weights are float64).
+        sb[sp] = np.bincount(flat_idx, weights=biomass[m], minlength=n_cells).reshape(ny, nx)  # type: ignore[assignment]
+        sa[sp] = np.bincount(flat_idx, weights=abundance[m], minlength=n_cells).reshape(ny, nx)  # type: ignore[assignment]
+        sy[sp] = np.bincount(flat_idx, weights=yield_b[m], minlength=n_cells).reshape(ny, nx)  # type: ignore[assignment]
     return sb, sa, sy
 
 
@@ -1181,9 +1184,8 @@ def simulate(
         # (~ms to single-digit-seconds per step on Baltic / EEC).
         if cancel_token is not None and cancel_token.is_set():
             from osmose.engine import SimulationCancelled
-            raise SimulationCancelled(
-                f"cancelled at step {step}/{config.n_steps}"
-            )
+
+            raise SimulationCancelled(f"cancelled at step {step}/{config.n_steps}")
         # -- Annual reset for fleet economics --
         if ctx.fleet_state is not None and step > 0 and step % config.n_dt_per_year == 0:
             ctx.fleet_state.vessel_days_used[:] = 0

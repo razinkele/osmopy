@@ -384,7 +384,8 @@ def test_results_branch_handles_write_failure_gracefully(monkeypatch):
         raise OSError("simulated disk-full")
 
     monkeypatch.setattr(
-        "osmose.calibration.checkpoint.write_checkpoint", failing_write,
+        "osmose.calibration.checkpoint.write_checkpoint",
+        failing_write,
     )
     appended = []
     cb = _make_progress_callback(
@@ -404,4 +405,3 @@ def test_results_branch_handles_write_failure_gracefully(monkeypatch):
     }[key]
     cb.notify(mock_alg)
     assert appended == [3.14]  # chart updated even though disk write raised
-

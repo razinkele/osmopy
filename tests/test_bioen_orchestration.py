@@ -80,9 +80,7 @@ def _make_school_state(n_schools: int, n_species: int = 2) -> SchoolState:
     rng = np.random.default_rng(0)
 
     # Distribute schools evenly across species
-    species_id = np.array(
-        [i % n_species for i in range(n_schools)], dtype=np.int32
-    )
+    species_id = np.array([i % n_species for i in range(n_schools)], dtype=np.int32)
 
     # Realistic weight (tonnes) and length (cm) for adult fish
     weight = rng.uniform(1e-5, 1e-3, size=n_schools)
@@ -311,7 +309,9 @@ class TestBioenStepMissingConfig:
         # Monkey-patch one required attribute to None to trigger the guard
         from unittest.mock import patch
 
-        with patch.object(type(config), "bioen_beta", new_callable=lambda: property(lambda self: None)):
+        with patch.object(
+            type(config), "bioen_beta", new_callable=lambda: property(lambda self: None)
+        ):
             with pytest.raises(ValueError, match="Bioenergetics enabled but bioen_beta is None"):
                 _bioen_step(school_state, config, const_temp_data, step=0)
 

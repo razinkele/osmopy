@@ -142,7 +142,7 @@ def run_cmaes(
     while not es.stop():
         candidates = es.ask()
         if workers > 1:
-            values = joblib.Parallel(n_jobs=workers, batch_size=1)(
+            values = joblib.Parallel(n_jobs=workers, batch_size=1)(  # type: ignore[arg-type]
                 joblib.delayed(objective)(np.asarray(c, dtype=float)) for c in candidates
             )
         else:
@@ -166,17 +166,20 @@ def run_cmaes(
             values = values_arr.tolist()
 
         es.tell(candidates, values)
-        history.append({
-            "gen": int(es.countiter),
-            "best": float(es.best.f),
-            "mean": float(np.mean(values_arr)),
-            "std": float(np.std(values_arr)),
-        })
+        history.append(
+            {
+                "gen": int(es.countiter),
+                "best": float(es.best.f),
+                "mean": float(np.mean(values_arr)),
+                "std": float(np.std(values_arr)),
+            }
+        )
 
         _checkpoint_state["gen"] += 1
         _best_x = np.clip(
             np.asarray(es.best.x, dtype=float),
-            bounds_arr[:, 0], bounds_arr[:, 1],
+            bounds_arr[:, 0],
+            bounds_arr[:, 1],
         )
         _best_fun = float(es.best.f)
         _prior_best = _checkpoint_state["best_fun_seen"]
@@ -212,8 +215,7 @@ def run_cmaes(
     # single eval returned NaN (worst_ever stays -inf), cma stops via tolfun
     # because all penalty values are equal — that's not real convergence.
     stop_reasons = es.stop()
-    non_convergence = {"maxiter", "maxfevals", "conditioncov",
-                       "noeffectaxis", "noeffectcoord"}
+    non_convergence = {"maxiter", "maxfevals", "conditioncov", "noeffectaxis", "noeffectcoord"}
     success = bool(
         stop_reasons
         and not (set(stop_reasons.keys()) & non_convergence)
@@ -223,8 +225,7 @@ def run_cmaes(
     # Defensive clip on best.x — under BoundTransform es.best.x is always in
     # bounds, but if a future cma version or option change breaks that
     # invariant, a downstream caller should never receive an infeasible point.
-    best_x = np.clip(np.asarray(es.best.x, dtype=float),
-                     bounds_arr[:, 0], bounds_arr[:, 1])
+    best_x = np.clip(np.asarray(es.best.x, dtype=float), bounds_arr[:, 0], bounds_arr[:, 1])
 
     return {
         "x": best_x,

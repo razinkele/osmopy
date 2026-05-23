@@ -1,4 +1,5 @@
 """CMEMS credentials must come from env; no default fallback is allowed."""
+
 from __future__ import annotations
 
 import importlib.util

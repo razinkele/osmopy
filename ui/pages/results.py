@@ -15,6 +15,7 @@ from shinywidgets import output_widget, render_plotly
 
 from osmose.logging import setup_logging
 from ui.components.collapsible import collapsible_card_header, expand_tab
+from ui.state import AppState
 from ui.styles import STYLE_EMPTY, STYLE_MONO_KEY
 
 _log = setup_logging("osmose.results.ui")
@@ -157,9 +158,9 @@ def make_diet_heatmap(df: pd.DataFrame, template: str = "osmose") -> go.Figure:
         matrix = df[prey_cols].mean().to_frame().T  # type: ignore[union-attr]
     prey_names = [c.replace("prey_", "") for c in prey_cols]
     fig = px.imshow(
-        matrix.values,
+        matrix.values,  # type: ignore[union-attr]
         x=prey_names,
-        y=list(matrix.index),
+        y=list(matrix.index),  # type: ignore[arg-type,union-attr]
         title="Diet Composition",
         color_continuous_scale="YlOrRd",
         labels={"x": "Prey", "y": "Predator", "color": "Proportion"},
@@ -294,7 +295,7 @@ def results_ui():
 # ---------------------------------------------------------------------------
 
 
-def results_server(input, output, session, state):
+def results_server(input, output, session, state: AppState):
     results_obj: reactive.Value = reactive.Value(None)
     results_data: reactive.Value[dict[str, pd.DataFrame]] = reactive.Value({})
     rep_dirs: reactive.Value[list[Path]] = reactive.Value([])

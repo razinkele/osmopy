@@ -48,6 +48,7 @@ def test_save_run_fallback_writes_to_tempfile_with_restrictive_mode(tmp_path, mo
 
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
     import logging
+
     logger = logging.getLogger("test")
     payload = {
         "timestamp": datetime.now(timezone.utc).isoformat(),

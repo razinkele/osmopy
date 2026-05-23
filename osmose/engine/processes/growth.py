@@ -163,8 +163,17 @@ def _expected_length(
         )
     gom_mask = ~vb_mask
     if gom_mask.any() and config.gompertz_ke is not None:
-        if config.gompertz_linf is None or config.gompertz_kg is None or config.gompertz_tg is None or config.gompertz_thr_age_exp_dt is None or config.gompertz_thr_age_gom_dt is None or config.gompertz_lstart is None:
-            raise RuntimeError("Gompertz config arrays must not be None when gompertz_ke is not None")
+        if (
+            config.gompertz_linf is None
+            or config.gompertz_kg is None
+            or config.gompertz_tg is None
+            or config.gompertz_thr_age_exp_dt is None
+            or config.gompertz_thr_age_gom_dt is None
+            or config.gompertz_lstart is None
+        ):
+            raise RuntimeError(
+                "Gompertz config arrays must not be None when gompertz_ke is not None"
+            )
         result[gom_mask] = expected_length_gompertz(
             age_dt[gom_mask],
             config.gompertz_linf[sp[gom_mask]],

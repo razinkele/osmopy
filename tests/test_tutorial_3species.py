@@ -69,16 +69,16 @@ _EQ_WINDOW_END: float = 25.0
 # bottom-up-controlled state where removing its sprat access starves cod
 # slightly, reducing cod's predation on stickleback.
 _CASCADE_STICKLEBACK_MIN_RATIO: float = 1.02  # mean(S_pert) / mean(S_base) >= this
-_CASCADE_SPRAT_MAX_DELTA: float = 0.10        # |mean(Sp_pert)/mean(Sp_base) - 1| <= this
+_CASCADE_SPRAT_MAX_DELTA: float = 0.10  # |mean(Sp_pert)/mean(Sp_base) - 1| <= this
 
 # Equilibrium bands per focal species. Measured from equilibrium window
 # (years 5-25, seed=42) and encoded as ± 20%. Values are (lower, upper) in tonnes.
 # Measured 2026-05-17 against the Baltic substrate. Re-measure if build_config
 # values or engine version change.
 _PYRAMID_BOUNDS: dict[str, tuple[float, float]] = {
-    "cod":          (7.238e+02, 1.086e+03),
-    "sprat":        (4.418e+06, 6.627e+06),
-    "stickleback":  (4.342e+05, 6.513e+05),
+    "cod": (7.238e02, 1.086e03),
+    "sprat": (4.418e06, 6.627e06),
+    "stickleback": (4.342e05, 6.513e05),
 }
 
 
@@ -97,9 +97,7 @@ def _melt_to_long(bio_wide: pd.DataFrame) -> pd.DataFrame:
 
 def _equilibrium_means(bio_long: pd.DataFrame) -> pd.Series:
     """Mean biomass per focal species over the equilibrium window (years 5-25)."""
-    window = bio_long[
-        (bio_long["Time"] >= _EQ_WINDOW_START) & (bio_long["Time"] <= _EQ_WINDOW_END)
-    ]
+    window = bio_long[(bio_long["Time"] >= _EQ_WINDOW_START) & (bio_long["Time"] <= _EQ_WINDOW_END)]
     focal = window[window["species"].isin(FOCAL_SPECIES)]
     return focal.groupby("species")["biomass"].mean()
 
@@ -148,6 +146,7 @@ def perturbed_run(tmp_path: Path, numba_warmup: None) -> pd.DataFrame:
 
     # Load config directly to avoid a second copytree call.
     from osmose.config.reader import OsmoseConfigReader  # noqa: PLC0415
+
     reader = OsmoseConfigReader()
     cfg = reader.read(str(target / "baltic_all-parameters.csv"))
     cfg["simulation.time.nyear"] = "30"

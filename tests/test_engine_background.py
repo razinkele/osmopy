@@ -826,9 +826,7 @@ class TestFishingArraysPaddedForBackground:
         # Write a minimal per-species seasonality CSV (2 columns: step;value).
         # 24 rows to match simulation.time.ndtperyear in _make_base_config.
         csv_path = tmp_path / "fishing_season_sp0.csv"
-        csv_path.write_text(
-            "step;value\n" + "".join(f"{i};1\n" for i in range(24))
-        )
+        csv_path.write_text("step;value\n" + "".join(f"{i};1\n" for i in range(24)))
 
         cfg = {**_make_base_config(), **_make_bkg_config(file_idx=10)}
         cfg["_osmose.config.dir"] = str(tmp_path)

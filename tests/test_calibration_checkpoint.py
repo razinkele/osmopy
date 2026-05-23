@@ -74,11 +74,11 @@ def test_checkpoint_is_frozen():
 @pytest.mark.parametrize(
     "field,bad_value,error_match",
     [
-        ("generation", -1, "generation"),                              # inv 1
-        ("gens_since_improvement", -1, "gens_since_improvement"),      # inv 2
-        ("elapsed_seconds", -0.5, "elapsed_seconds"),                  # inv 3
-        ("best_fun", float("nan"), "finite"),                          # inv 4
-        ("best_fun", float("inf"), "finite"),                          # inv 4
+        ("generation", -1, "generation"),  # inv 1
+        ("gens_since_improvement", -1, "gens_since_improvement"),  # inv 2
+        ("elapsed_seconds", -0.5, "elapsed_seconds"),  # inv 3
+        ("best_fun", float("nan"), "finite"),  # inv 4
+        ("best_fun", float("inf"), "finite"),  # inv 4
     ],
 )
 def test_invariant_scalar_bounds(field, bad_value, error_match):
@@ -400,6 +400,7 @@ def test_probe_writable_does_not_leak_sentinel(tmp_path):
 
 def test_probe_writable_raises_on_readonly_dir(tmp_path):
     import sys
+
     if sys.platform.startswith("win"):
         pytest.skip("chmod 0o555 semantics differ on Windows")
     tmp_path.chmod(0o555)

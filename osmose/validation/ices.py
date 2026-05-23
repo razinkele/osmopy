@@ -193,8 +193,7 @@ def model_biomass_window_mean(
 
     if "value" not in df.columns:
         raise ValueError(
-            f"biomass DataFrame for {species!r} missing 'value' column "
-            f"(got {list(df.columns)})"
+            f"biomass DataFrame for {species!r} missing 'value' column (got {list(df.columns)})"
         )
 
     if "time" in df.columns:

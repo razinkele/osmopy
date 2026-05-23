@@ -1,4 +1,5 @@
 """Smoke tests for the GP surrogate-assisted DE runner."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -11,7 +12,7 @@ from osmose.calibration.surrogate_de import (
 
 
 def _sphere(x: np.ndarray) -> float:
-    return float(np.sum(x ** 2))
+    return float(np.sum(x**2))
 
 
 def _rosenbrock(x: np.ndarray) -> float:
@@ -80,7 +81,7 @@ def test_lcb_acquisition_picks_low_predicted_mean():
     rng = np.random.default_rng(0)
     X = rng.uniform(-2, 2, size=(40, 2))
     # Train on a clear bowl: y = ||x||^2 + small noise
-    y = np.sum(X ** 2, axis=1) + rng.normal(scale=0.01, size=40)
+    y = np.sum(X**2, axis=1) + rng.normal(scale=0.01, size=40)
     gp = GaussianProcessRegressor(kernel=Matern(nu=2.5), normalize_y=True, random_state=0)
     gp.fit(X, y)
 
@@ -94,6 +95,7 @@ def test_lcb_acquisition_picks_low_predicted_mean():
 
 def test_all_nan_initial_raises():
     """If every initial eval returns NaN, fail loudly rather than silently degrade."""
+
     def bad(_x):
         return float("nan")
 
@@ -111,6 +113,7 @@ def test_all_nan_initial_raises():
 def test_warm_start_clip_warns_when_x0_out_of_bounds():
     """Out-of-bounds x0 must be clipped with a warning so callers notice."""
     import warnings as _w
+
     with _w.catch_warnings(record=True) as caught:
         _w.simplefilter("always")
         result = surrogate_assisted_de(
@@ -177,6 +180,7 @@ def test_gp_fit_failure_falls_back_to_lhs_not_crash():
         return original_fit(self, X, y)
 
     from sklearn.gaussian_process import GaussianProcessRegressor as GPR
+
     original_fit = GPR.fit
 
     with patch.object(GPR, "fit", failing_fit), _w.catch_warnings(record=True) as caught:

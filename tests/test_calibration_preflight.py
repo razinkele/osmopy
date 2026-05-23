@@ -445,8 +445,7 @@ def test_preflight_eval_fn_logs_and_counts_failures(monkeypatch, caplog, tmp_pat
     monkeypatch.setattr(pre, "PythonEngine", lambda: _FakeEngine())
     monkeypatch.setattr(pre, "OsmoseResults", _FakeResults)
 
-    fp_spec = [FreeParameter(key="predation.efficiency.sp0",
-                             lower_bound=0.1, upper_bound=0.9)]
+    fp_spec = [FreeParameter(key="predation.efficiency.sp0", lower_bound=0.1, upper_bound=0.9)]
     fn = pre.make_preflight_eval_fn(
         free_params=fp_spec,
         base_config={"simulation.time.nyear": "1"},
@@ -459,8 +458,9 @@ def test_preflight_eval_fn_logs_and_counts_failures(monkeypatch, caplog, tmp_pat
     with caplog.at_level(logging.WARNING, logger="osmose.calibration.preflight"):
         Y = fn(X)
     assert not np.isfinite(Y[0, 0])
-    assert any("synthetic blow-up" in rec.getMessage() for rec in caplog.records), \
+    assert any("synthetic blow-up" in rec.getMessage() for rec in caplog.records), (
         "Exception message must appear in logs (no silent pass)"
+    )
     assert fn.failures == 1
     assert fn.samples == 1
 
@@ -551,7 +551,11 @@ def test_maybe_run_sobol_stage_skips_when_few_survivors() -> None:
 
     screening = [
         pre.ParameterScreening(
-            key="a", mu_star=0.5, sigma=0.1, mu_star_conf=0.01, influential=True,
+            key="a",
+            mu_star=0.5,
+            sigma=0.1,
+            mu_star_conf=0.01,
+            influential=True,
         ),
     ]
     result, additions = pre._maybe_run_sobol_stage(
@@ -574,13 +578,17 @@ def test_maybe_run_sobol_stage_skips_when_few_survivors() -> None:
 
 def _screen(key, mu_star=1.0, sigma=0.1, influential=True):
     return ParameterScreening(
-        key=key, mu_star=mu_star, sigma=sigma, mu_star_conf=0.01,
+        key=key,
+        mu_star=mu_star,
+        sigma=sigma,
+        mu_star_conf=0.01,
         influential=influential,
     )
 
 
 def test_issues_blowup_emits_error_per_key() -> None:
     from osmose.calibration.preflight import _issues_blowup
+
     issues = _issues_blowup(["a", "b"])
     assert len(issues) == 2
     assert all(i.category is IssueCategory.BLOWUP for i in issues)
@@ -590,6 +598,7 @@ def test_issues_blowup_emits_error_per_key() -> None:
 
 def test_issues_negligible_emits_warning_per_non_influential() -> None:
     from osmose.calibration.preflight import _issues_negligible
+
     screening = [_screen("a", influential=False), _screen("b", influential=True)]
     issues = _issues_negligible(screening)
     assert len(issues) == 1
@@ -600,6 +609,7 @@ def test_issues_negligible_emits_warning_per_non_influential() -> None:
 
 def test_issues_all_negligible_fires_when_every_param_is_negligible() -> None:
     from osmose.calibration.preflight import _issues_all_negligible
+
     screening = [_screen("a", influential=False), _screen("b", influential=False)]
     issues = _issues_all_negligible(screening)
     assert len(issues) == 1
@@ -610,6 +620,7 @@ def test_issues_all_negligible_fires_when_every_param_is_negligible() -> None:
 
 def test_issues_flat_fires_on_low_S1_sum() -> None:
     from osmose.calibration.preflight import _issues_flat
+
     sobol = {"S1": [0.01, 0.01]}  # sum = 0.02 < 0.05
     issues = _issues_flat(sobol)
     assert any(i.category is IssueCategory.FLAT_OBJECTIVE for i in issues)
@@ -617,6 +628,7 @@ def test_issues_flat_fires_on_low_S1_sum() -> None:
 
 def test_issues_bound_tight_fires_on_high_ST_and_high_sigma_ratio() -> None:
     from osmose.calibration.preflight import _issues_bound_tight
+
     screening = [_screen("a", mu_star=0.2, sigma=0.4, influential=True)]  # sigma/mu* = 2.0
     sobol = {"ST": [0.5], "param_names": ["a"]}  # ST > 0.3
     issues = _issues_bound_tight(screening, sobol)

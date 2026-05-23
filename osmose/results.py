@@ -118,7 +118,7 @@ def _matches_output_type(stem: str, output_type: str, prefix: str) -> bool:
     expected = f"{prefix}_{output_type}"
     if not base.startswith(expected):
         return False
-    remainder = base[len(expected):]
+    remainder = base[len(expected) :]
     # Exact match (all-species) or separator before species name
     return remainder == "" or remainder[0] in ("_", "-")
 
@@ -139,7 +139,7 @@ def _extract_species(stem: str, output_type: str, prefix: str) -> str | None:
     expected_prefix = f"{prefix}_{output_type}"
     if not base.startswith(expected_prefix):
         return stem  # fallback: return full stem
-    remainder = base[len(expected_prefix):]
+    remainder = base[len(expected_prefix) :]
     if not remainder:
         return None  # all-species file
     # remainder starts with '_' or '-' followed by species name
@@ -170,14 +170,14 @@ def _melt_wide_to_long(
         var_name="bin",
         value_name="value",
     )
-    melted = melted.rename(columns={time_col: "time"})
+    melted = melted.rename(columns={time_col: "time"})  # type: ignore[dict-item]
     if not has_species:
         melted["species"] = "all"
     melted = melted[["time", "species", "bin", "value"]]
 
     if species is not None:
         melted = melted[melted["species"] == species]
-    return melted
+    return melted  # type: ignore[return-value]
 
 
 # Output-type keys that represent cross-species (single-file) outputs — their
@@ -225,10 +225,7 @@ def _build_dataframes_from_outputs(
         annotated["species"] = sp_name
         cache_shape.setdefault(output_type, []).append(annotated)
 
-    return {
-        ot: pd.concat(frames, ignore_index=True)
-        for ot, frames in cache_shape.items()
-    }
+    return {ot: pd.concat(frames, ignore_index=True) for ot, frames in cache_shape.items()}
 
 
 class OsmoseResults:
@@ -579,7 +576,7 @@ class OsmoseResults:
             combined = self._csv_cache[output_type]
             if species:
                 combined = combined[combined["species"] == species]
-            return combined
+            return combined  # type: ignore[return-value]
 
         cache_key = output_type
         if cache_key not in self._csv_cache:
