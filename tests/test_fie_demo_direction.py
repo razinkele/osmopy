@@ -1,20 +1,7 @@
 from pathlib import Path
 import pytest
 
-
-def _require_preflight() -> None:
-    """Block Task 11 from running until Task 7.8 is wired + passing."""
-    # Anchor on this file's directory so the sentinel resolves to the same
-    # absolute path regardless of pytest's cwd, matching the writer in
-    # test_baltic_ev_fixture_bioen.py.
-    sentinel = Path(__file__).parent / ".preflight_wired"
-    if not sentinel.exists():
-        pytest.skip(
-            "Pre-flight viability check (Task 7.8) is not wired or has not "
-            "been run successfully. Wire test_baltic_ev_cod_reaches_fishery_l50 "
-            "to the engine size output and run it; on success it should "
-            "`tests/.preflight_wired`.touch(). See plan §Task 7.8."
-        )
+from tests._ev_preflight import require_baltic_ev_preflight
 
 
 @pytest.mark.slow
@@ -49,7 +36,7 @@ def test_high_f_drives_lower_cod_imax_than_low_f(tmp_path: Path) -> None:
     from osmose.engine import PythonEngine
     from osmose.results import read_genetic_trait_means
 
-    _require_preflight()  # see Task 7.8 — refuses to run until pre-flight wired
+    require_baltic_ev_preflight()  # skips until the viability pre-flight passes
 
     def _cfg(fsh0_rate: str) -> dict[str, str]:
         cfg = OsmoseConfigReader().read(Path("data/baltic_ev/baltic_ev_all-parameters.csv"))
@@ -80,6 +67,7 @@ def test_high_f_drives_lower_cod_imax_than_low_f(tmp_path: Path) -> None:
         low_ends.append(_final_mean(out_low))
 
     import statistics
+
     high_mean = statistics.mean(high_ends)
     low_mean = statistics.mean(low_ends)
     drop_pct = (low_mean - high_mean) / low_mean
@@ -89,7 +77,7 @@ def test_high_f_drives_lower_cod_imax_than_low_f(tmp_path: Path) -> None:
         f"(per-seed high={high_ends}, low={low_ends})"
     )
     assert drop_pct >= 0.02, (
-        f"expected >= 2% drop in mean-across-seeds; got {drop_pct*100:.2f}% "
+        f"expected >= 2% drop in mean-across-seeds; got {drop_pct * 100:.2f}% "
         f"(per-seed high={high_ends}, low={low_ends}). "
         "If close to 1%, the response is at multi-seed drift noise floor — "
         "escalate to nyear=100 (~16 generations) BEFORE relaxing the threshold."

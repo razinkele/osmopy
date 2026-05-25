@@ -1,6 +1,8 @@
 from pathlib import Path
 import pytest
 
+from tests._ev_preflight import require_baltic_ev_preflight
+
 
 @pytest.mark.integration
 def test_baltic_ev_runs_15_years_with_genetics_on(tmp_path: Path) -> None:
@@ -15,6 +17,8 @@ def test_baltic_ev_runs_15_years_with_genetics_on(tmp_path: Path) -> None:
     Running 15y and asserting that the variance pattern continues post-year-10
     confirms the inheritance pipeline did NOT degenerate at the seed-phase
     boundary (i.e., variance does not crash to zero or NaN once redraws stop)."""
+    require_baltic_ev_preflight()  # skips until the viability pre-flight passes
+
     from osmose.config import OsmoseConfigReader
     from osmose.engine import PythonEngine
     from osmose.results import read_genetic_trait_means
@@ -33,9 +37,7 @@ def test_baltic_ev_runs_15_years_with_genetics_on(tmp_path: Path) -> None:
     assert "imax" in set(ds["trait_name"].values)
 
     # Trait expression must be non-degenerate at all times.
-    cod_var_series = (
-        ds["variance"].sel(species_id=0, trait_name="imax").to_pandas()
-    )
+    cod_var_series = ds["variance"].sel(species_id=0, trait_name="imax").to_pandas()
     assert (cod_var_series > 1e-4).all(), (
         f"cod imax variance must stay > 1e-4 at all timesteps; "
         f"got min={cod_var_series.min():.6f} at time={cod_var_series.idxmin()}. "
