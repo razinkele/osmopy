@@ -531,7 +531,11 @@ def _bioen_reproduction(
         # Without this, bioen mode never produces fish because the population
         # starts empty and _bioen_reproduction only creates eggs from gonads.
         gonad_ssb = float(state.gonad_weight[mask].sum()) if mask.any() else 0.0
-        if gonad_ssb == 0.0 and step < config.seeding_max_step[sp] and config.seeding_biomass[sp] > 0:
+        if (
+            gonad_ssb == 0.0
+            and step < config.seeding_max_step[sp]
+            and config.seeding_biomass[sp] > 0
+        ):
             from osmose.engine.processes.reproduction import apply_stock_recruitment
 
             # Season factor (same as standard _reproduction)
@@ -554,7 +558,7 @@ def _bioen_reproduction(
                 np.array([n_eggs_linear]),
                 np.array([ssb_seed]),
                 np.array([config.recruitment_ssb_half[sp]]),
-                np.array([config.recruitment_type[sp]]),
+                [config.recruitment_type[sp]],
             )
             total_eggs_seed = float(n_eggs_arr[0])
             if total_eggs_seed > 0:
@@ -1568,7 +1572,12 @@ def simulate(
 
         # Collect focal outputs after reproduction
         step_out = _collect_outputs(
-            state, config, step, bkg_output, diet_by_species=step_diet, grid=grid,
+            state,
+            config,
+            step,
+            bkg_output,
+            diet_by_species=step_diet,
+            grid=grid,
             phenotypes=phenotypes,
         )
         accumulated.append(step_out)

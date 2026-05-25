@@ -1132,6 +1132,7 @@ def _validate_trait_declarations(cfg: dict[str, str], n_sp: int) -> None:
     """Each declared `evolution.trait.<name>.target` must have a per-species
     mean for every species where variance is nonzero."""
     import re
+
     trait_names: set[str] = set()
     for key in cfg:
         m = re.match(r"evolution\.trait\.(\w+)\.target", key)

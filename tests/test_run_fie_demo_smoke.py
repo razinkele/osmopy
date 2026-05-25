@@ -10,10 +10,14 @@ def test_run_fie_demo_short_smoke(tmp_path: Path) -> None:
     a 10-year, 1-seed override."""
     result = subprocess.run(
         [
-            sys.executable, "scripts/run_fie_demo.py",
-            "--n-years", "10",
-            "--seeds", "1",
-            "--output-dir", str(tmp_path),
+            sys.executable,
+            "scripts/run_fie_demo.py",
+            "--n-years",
+            "10",
+            "--seeds",
+            "1",
+            "--output-dir",
+            str(tmp_path),
         ],
         check=True,
     )

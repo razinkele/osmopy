@@ -488,9 +488,19 @@ def _write_genetic_trait_means_csv(
                 )
     if not rows:
         return
-    df = pd.DataFrame(rows, columns=[
-        "Time", "species_id", "trait_name", "mean", "variance", "n_individuals",
-    ])
+    df = pd.DataFrame(
+        rows,
+        columns=pd.Index(
+            [
+                "Time",
+                "species_id",
+                "trait_name",
+                "mean",
+                "variance",
+                "n_individuals",
+            ]
+        ),
+    )
     df.to_csv(output_dir / f"{prefix}_genetic_trait_means_Simu0.csv", index=False)
 
 
