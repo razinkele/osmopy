@@ -1040,21 +1040,33 @@ def _collect_trait_stats(
     state: SchoolState,
     phenotypes: dict[str, NDArray[np.float64]],
 ) -> dict[str, dict[int, TraitStats]]:
-    """Group expressed phenotypes by species; return mean/var/count per trait per species."""
+    """Group expressed phenotypes by species; return mean/var/count per trait per species.
+
+    Statistics are individual-level: a school is a super-individual carrying
+    `state.abundance` individuals, so we filter out dead/empty slots
+    (`abundance > 0`, the engine's live-school convention — state.py:198) and
+    weight mean/variance by abundance. `n_individuals` is the summed head-count,
+    not the school-slot count. (Outputs are collected before compaction, so
+    zero-abundance slots are present in `state` and must be excluded here.)
+    """
     out: dict[str, dict[int, TraitStats]] = {}
     species_ids = np.unique(state.species_id)
+    live = state.abundance > 0
     for trait_name, values in phenotypes.items():
         per_species: dict[int, TraitStats] = {}
         for sp in species_ids:
-            mask = state.species_id == sp
-            n = int(mask.sum())
-            if n == 0:
+            mask = (state.species_id == sp) & live
+            if not mask.any():
                 continue
             sub = values[mask]
+            weights = state.abundance[mask]
+            total = float(weights.sum())
+            mean = float(np.average(sub, weights=weights))
+            variance = float(np.average((sub - mean) ** 2, weights=weights))
             per_species[int(sp)] = TraitStats(
-                mean=float(np.mean(sub)),
-                variance=float(np.var(sub)),
-                n_individuals=n,
+                mean=mean,
+                variance=variance,
+                n_individuals=int(total),
             )
         out[trait_name] = per_species
     return out
@@ -1154,11 +1166,18 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
     if trait_stats_list:
         merged_trait_stats = {}
         all_traits = set().union(*(d.keys() for d in trait_stats_list))
+        # Gate emission on the FINAL sampled step (record_step). A species present
+        # early in the window but absent by the final step must NOT carry forward
+        # its last-seen stats via lst[-1], or extinction within the window would
+        # read as persistence (stale positive n_individuals / trait values).
+        final_step = trait_stats_list[-1]
         for trait in all_traits:
+            present_sp = set(final_step.get(trait, {}).keys())
             per_sp_lists: dict[int, list[TraitStats]] = {}
             for d in trait_stats_list:
                 for sp, ts in d.get(trait, {}).items():
-                    per_sp_lists.setdefault(sp, []).append(ts)
+                    if sp in present_sp:
+                        per_sp_lists.setdefault(sp, []).append(ts)
             merged_trait_stats[trait] = {
                 sp: TraitStats(
                     # NOTE: `variance` field carries the mean-of-step-variances
