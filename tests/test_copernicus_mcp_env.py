@@ -6,6 +6,8 @@ import importlib.util
 import re
 from pathlib import Path
 
+import pytest
+
 SERVER_PATH = Path(__file__).resolve().parent.parent / "mcp_servers" / "copernicus" / "server.py"
 
 
@@ -29,8 +31,11 @@ def test_server_py_has_no_hardcoded_credentials():
 
 
 def _neuter_dotenv(monkeypatch):
-    """Prevent load_dotenv from populating env from a developer's local .env."""
-    import dotenv
+    """Prevent load_dotenv from populating env from a developer's local .env.
+
+    Skips the calling test when python-dotenv is absent (e.g. CI, where it is
+    not in [dev]); server.py imports it at module top so it cannot be loaded."""
+    dotenv = pytest.importorskip("dotenv")
 
     monkeypatch.setattr(dotenv, "load_dotenv", lambda *a, **kw: False)
 
@@ -50,8 +55,6 @@ def test_server_py_module_globals_reflect_env(monkeypatch):
 
 def test_require_creds_raises_on_missing_env(monkeypatch):
     """The guard must raise RuntimeError, not silently pass."""
-    import pytest
-
     _neuter_dotenv(monkeypatch)
     monkeypatch.delenv("CMEMS_USERNAME", raising=False)
     monkeypatch.delenv("CMEMS_PASSWORD", raising=False)
