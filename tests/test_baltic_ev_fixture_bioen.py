@@ -52,7 +52,7 @@ def test_baltic_ev_runs_5_years_without_genetics() -> None:
 
 
 @pytest.mark.integration
-def test_baltic_ev_cod_reaches_fishery_l50_in_baseline(tmp_path: Path) -> None:
+def test_baltic_ev_cod_reaches_fishery_l50_in_baseline() -> None:
     """Baseline (bioen on, genetics off, no fishing) must produce cod
     that grow past 35cm in adult life-stage, otherwise the FIE demo's
     l50=35cm gear catches nothing and produces a null FIE signal for
@@ -68,7 +68,10 @@ def test_baltic_ev_cod_reaches_fishery_l50_in_baseline(tmp_path: Path) -> None:
     # — historically — an accidentally-committed empty sentinel) cannot
     # mask the current state of the fixture. The sentinel is only valid
     # if THIS run reaches the touch() at the end of this test.
-    sentinel = Path("tests/.preflight_wired")
+    # Anchor on this file's directory so the sentinel resolves to the same
+    # absolute path regardless of pytest's cwd (e.g. `cd tests && pytest`),
+    # matching the reader in test_fie_demo_direction.py::_require_preflight.
+    sentinel = Path(__file__).parent / ".preflight_wired"
     sentinel.unlink(missing_ok=True)
 
     from osmose.config import OsmoseConfigReader
@@ -109,7 +112,7 @@ def test_baltic_ev_cod_reaches_fishery_l50_in_baseline(tmp_path: Path) -> None:
 
 
 @pytest.mark.integration
-def test_baltic_ev_cod_biomass_within_2x_envelope_over_50y(tmp_path: Path) -> None:
+def test_baltic_ev_cod_biomass_within_2x_envelope_over_50y() -> None:
     """Baseline (bioen on, genetics off, no fishing) cod biomass at year 50
     must stay within [0.5, 2.0] × year-5 (post-burnin) biomass. Outside
     this envelope, the FIE demo (Task 11) runs on a degenerate population

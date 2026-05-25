@@ -4,7 +4,10 @@ import pytest
 
 def _require_preflight() -> None:
     """Block Task 11 from running until Task 7.8 is wired + passing."""
-    sentinel = Path("tests/.preflight_wired")
+    # Anchor on this file's directory so the sentinel resolves to the same
+    # absolute path regardless of pytest's cwd, matching the writer in
+    # test_baltic_ev_fixture_bioen.py.
+    sentinel = Path(__file__).parent / ".preflight_wired"
     if not sentinel.exists():
         pytest.skip(
             "Pre-flight viability check (Task 7.8) is not wired or has not "
