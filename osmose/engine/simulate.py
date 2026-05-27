@@ -64,6 +64,15 @@ class SimulationContext:
 
 
 @dataclass(frozen=True)
+class TraitStats:
+    """Per-species summary statistics for one genetic trait at one timestep."""
+
+    mean: float
+    variance: float
+    n_individuals: int
+
+
+@dataclass(frozen=True)
 class StepOutput:
     """Aggregated output for a single simulation timestep.
 
@@ -96,6 +105,11 @@ class StepOutput:
 
     # Diet: per-species diet composition, shape (n_predators, n_prey), or None if diet disabled
     diet_by_species: NDArray[np.float64] | None = None
+
+    # Genetic trait statistics: trait_name -> species_id -> TraitStats,
+    # or None if genetics disabled. Populated by _collect_outputs from
+    # ctx.genetic_state phenotypes.
+    trait_stats: dict[str, dict[int, "TraitStats"]] | None = None
 
     # Spatial outputs: per-species 2-D grids (ny, nx), or None if spatial disabled
     spatial_biomass: dict[int, NDArray[np.float64]] | None = None
@@ -431,6 +445,10 @@ def _bioen_step(
         safe_a = max(a, 1e-20)
         new_length[mask] = np.power(np.maximum(new_weight[mask] * 1e6 / safe_a, 1e-20), 1.0 / b)
 
+    # Eggs (lecithotrophic phase) do not starve — they carry their own yolk reserves.
+    # Zero out starvation deaths for schools that have not yet reached first feeding age.
+    starvation_dead = np.where(state.is_egg, 0.0, starvation_dead)
+
     # Reduce abundance by starvation deaths (clamp to zero)
     new_abundance = np.maximum(state.abundance - starvation_dead, 0.0)
 
@@ -505,6 +523,75 @@ def _bioen_reproduction(
 
     for sp in range(config.n_species):
         mask = state.species_id == sp
+
+        # Seeding fallback — mirrors _reproduction's SSB=0 logic.
+        # When no mature fish have accumulated gonad weight (SSB equivalent = 0),
+        # use seeding_biomass to bootstrap the population during the warm-up period.
+        # This applies whether or not any (immature/egg) schools exist.
+        # Without this, bioen mode never produces fish because the population
+        # starts empty and _bioen_reproduction only creates eggs from gonads.
+        gonad_ssb = float(state.gonad_weight[mask].sum()) if mask.any() else 0.0
+        if (
+            gonad_ssb == 0.0
+            and step < config.seeding_max_step[sp]
+            and config.seeding_biomass[sp] > 0
+        ):
+            from osmose.engine.processes.reproduction import apply_stock_recruitment
+
+            # Season factor (same as standard _reproduction)
+            if config.spawning_season is not None:
+                n_cols = config.spawning_season.shape[1]
+                season_factor = float(config.spawning_season[sp, step % n_cols])
+            else:
+                season_factor = 1.0 / config.n_dt_per_year
+
+            ssb_seed = config.seeding_biomass[sp]
+            TONNES_TO_GRAMS = 1_000_000.0
+            n_eggs_linear = (
+                float(config.sex_ratio[sp])
+                * float(config.relative_fecundity[sp])
+                * ssb_seed
+                * season_factor
+                * TONNES_TO_GRAMS
+            )
+            n_eggs_arr = apply_stock_recruitment(
+                np.array([n_eggs_linear]),
+                np.array([ssb_seed]),
+                np.array([config.recruitment_ssb_half[sp]]),
+                [config.recruitment_type[sp]],
+            )
+            total_eggs_seed = float(n_eggs_arr[0])
+            if total_eggs_seed > 0:
+                ew_seed = np.nan
+                if config.egg_weight_override is not None:
+                    ew_seed = float(config.egg_weight_override[sp])
+                if np.isnan(ew_seed):
+                    ew_seed = (
+                        config.condition_factor[sp]
+                        * config.egg_size[sp] ** config.allometric_power[sp]
+                        * 1e-6
+                    )
+                n_new = int(config.n_schools[sp])
+                if n_new > 0:
+                    if total_eggs_seed < n_new:
+                        n_new = 1
+                    eggs_per_school = total_eggs_seed / n_new
+                    seed_school = SchoolState.create(
+                        n_schools=n_new,
+                        species_id=np.full(n_new, sp, dtype=np.int32),
+                    )
+                    seed_school = seed_school.replace(
+                        abundance=np.full(n_new, eggs_per_school, dtype=np.float64),
+                        weight=np.full(n_new, float(ew_seed), dtype=np.float64),
+                        biomass=np.full(n_new, eggs_per_school * float(ew_seed), dtype=np.float64),
+                        length=np.full(n_new, config.egg_size[sp], dtype=np.float64),
+                        cell_x=np.full(n_new, -1, dtype=np.int32),
+                        cell_y=np.full(n_new, -1, dtype=np.int32),
+                        is_egg=np.ones(n_new, dtype=np.bool_),
+                        first_feeding_age_dt=np.ones(n_new, dtype=np.int32),
+                    )
+                    new_egg_schools.append(seed_school)
+
         if not mask.any():
             continue
 
@@ -584,7 +671,12 @@ def _bioen_reproduction(
     n_existing = len(state) - sum(len(e) for e in new_egg_schools)
     new_age = state.age_dt.copy()
     new_age[:n_existing] += 1
-    state = state.replace(age_dt=new_age)
+    # Hatch eggs: clear is_egg flag for schools whose age has reached first_feeding_age_dt.
+    # Mirrors _reproduction (non-bioen) path which does the same update at line ~169.
+    # Without this, is_egg stays True forever in bioen mode, blocking starvation,
+    # feeding-stage promotion, and (downstream) growth.
+    new_is_egg = new_age < state.first_feeding_age_dt
+    state = state.replace(age_dt=new_age, is_egg=new_is_egg)
 
     return state
 
@@ -904,6 +996,7 @@ def _collect_outputs(
     diet_by_species: NDArray[np.float64] | None = None,
     *,
     grid: Grid | None = None,
+    phenotypes: dict[str, NDArray[np.float64]] | None = None,
 ) -> StepOutput:
     """Aggregate per-species outputs from current state into a StepOutput."""
     biomass, abundance = _collect_biomass_abundance(state, config, bkg_output)
@@ -921,6 +1014,8 @@ def _collect_outputs(
         spatial_biomass, spatial_abundance, spatial_yield = _collect_spatial_outputs(
             state, grid, config
         )
+
+    trait_stats = _collect_trait_stats(state, phenotypes) if phenotypes else None
 
     return StepOutput(
         step=step,
@@ -941,7 +1036,44 @@ def _collect_outputs(
         spatial_biomass=spatial_biomass,
         spatial_abundance=spatial_abundance,
         spatial_yield=spatial_yield,
+        trait_stats=trait_stats,
     )
+
+
+def _collect_trait_stats(
+    state: SchoolState,
+    phenotypes: dict[str, NDArray[np.float64]],
+) -> dict[str, dict[int, TraitStats]]:
+    """Group expressed phenotypes by species; return mean/var/count per trait per species.
+
+    Statistics are individual-level: a school is a super-individual carrying
+    `state.abundance` individuals, so we filter out dead/empty slots
+    (`abundance > 0`, the engine's live-school convention — state.py:198) and
+    weight mean/variance by abundance. `n_individuals` is the summed head-count,
+    not the school-slot count. (Outputs are collected before compaction, so
+    zero-abundance slots are present in `state` and must be excluded here.)
+    """
+    out: dict[str, dict[int, TraitStats]] = {}
+    species_ids = np.unique(state.species_id)
+    live = state.abundance > 0
+    for trait_name, values in phenotypes.items():
+        per_species: dict[int, TraitStats] = {}
+        for sp in species_ids:
+            mask = (state.species_id == sp) & live
+            if not mask.any():
+                continue
+            sub = values[mask]
+            weights = state.abundance[mask]
+            total = float(weights.sum())
+            mean = float(np.average(sub, weights=weights))
+            variance = float(np.average((sub - mean) ** 2, weights=weights))
+            per_species[int(sp)] = TraitStats(
+                mean=mean,
+                variance=variance,
+                n_individuals=int(total),
+            )
+        out[trait_name] = per_species
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1018,6 +1150,7 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
             spatial_biomass=spatial_b_agg,
             spatial_abundance=spatial_a_agg,
             spatial_yield=spatial_y_agg,
+            trait_stats=accumulated[0].trait_stats,
         )
     biomass = np.mean([o.biomass for o in accumulated], axis=0)
     abundance = np.mean([o.abundance for o in accumulated], axis=0)
@@ -1032,6 +1165,35 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
     # Pre-fix this used `accumulated[-1]` (last step in window) which silently
     # diverged from Java when output.recordfrequency.ndt > 1. _avg_spatial
     # already implements the same per-species-dict mean — reuse it.
+    trait_stats_list = [o.trait_stats for o in accumulated if o.trait_stats is not None]
+    merged_trait_stats: dict[str, dict[int, TraitStats]] | None = None
+    if trait_stats_list:
+        merged_trait_stats = {}
+        all_traits = set().union(*(d.keys() for d in trait_stats_list))
+        # Gate emission on the FINAL sampled step (record_step). A species present
+        # early in the window but absent by the final step must NOT carry forward
+        # its last-seen stats via lst[-1], or extinction within the window would
+        # read as persistence (stale positive n_individuals / trait values).
+        final_step = trait_stats_list[-1]
+        for trait in all_traits:
+            present_sp = set(final_step.get(trait, {}).keys())
+            per_sp_lists: dict[int, list[TraitStats]] = {}
+            for d in trait_stats_list:
+                for sp, ts in d.get(trait, {}).items():
+                    if sp in present_sp:
+                        per_sp_lists.setdefault(sp, []).append(ts)
+            merged_trait_stats[trait] = {
+                sp: TraitStats(
+                    # NOTE: `variance` field carries the mean-of-step-variances
+                    # across the averaging window, NOT the pooled variance of the
+                    # underlying schools. Downstream consumers that want pooled
+                    # variance must recompute from raw phenotype arrays.
+                    mean=float(np.mean([t.mean for t in lst])),
+                    variance=float(np.mean([t.variance for t in lst])),
+                    n_individuals=lst[-1].n_individuals,
+                )
+                for sp, lst in per_sp_lists.items()
+            }
     return StepOutput(
         step=record_step,
         biomass=biomass,
@@ -1051,6 +1213,7 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
         spatial_biomass=spatial_b_agg,
         spatial_abundance=spatial_a_agg,
         spatial_yield=spatial_y_agg,
+        trait_stats=merged_trait_stats,
     )
 
 
@@ -1337,6 +1500,7 @@ def simulate(
 
         # -- Genetics trait expression (before growth/bioen) --
         trait_overrides: dict[str, NDArray[np.float64]] = {}
+        phenotypes: dict[str, NDArray[np.float64]] | None = None
         if ctx.genetic_state is not None:
             from osmose.engine.genetics import apply_trait_overrides, express_traits
 
@@ -1371,7 +1535,7 @@ def simulate(
 
         # -- Genetics inheritance (after reproduction) --
         if ctx.genetic_state is not None:
-            from osmose.engine.genetics import create_offspring_genotypes
+            from osmose.engine.genetics import create_offspring_genotypes, express_traits
 
             current_year = step // config.n_dt_per_year
             seeding = (
@@ -1400,9 +1564,21 @@ def simulate(
                 for part in offspring_parts:
                     ctx.genetic_state = ctx.genetic_state.append(part)
 
+            # Re-express phenotypes after offspring genotypes are appended so
+            # that _collect_outputs receives an array that matches the current
+            # state length (pre-repro schools + n_new offspring schools).
+            if phenotypes is not None:
+                phenotypes = express_traits(ctx.genetic_state, state.species_id)
+
         # Collect focal outputs after reproduction
         step_out = _collect_outputs(
-            state, config, step, bkg_output, diet_by_species=step_diet, grid=grid
+            state,
+            config,
+            step,
+            bkg_output,
+            diet_by_species=step_diet,
+            grid=grid,
+            phenotypes=phenotypes,
         )
         accumulated.append(step_out)
 

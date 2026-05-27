@@ -63,6 +63,8 @@ def write_outputs(
     if config.bioen_enabled:
         _write_bioen_csvs(output_dir, prefix, outputs, config)
 
+    _write_genetic_trait_means_csv(output_dir, prefix, outputs, config)
+
     # Write diet CSV (Java-parity: one file, one row per recording period)
     if config.diet_output_enabled:
         step_matrices: list[NDArray[np.float64]] = []
@@ -455,6 +457,51 @@ def _write_bioen_csvs(
     for key, df in dfs.items():
         path = bioen_dir / f"{prefix}_{key}_Simu0.csv"
         df.to_csv(path, index=False)
+
+
+def _write_genetic_trait_means_csv(
+    output_dir: Path,
+    prefix: str,
+    outputs: list[StepOutput],
+    config: EngineConfig,
+) -> None:
+    """Write per-step mean/variance of each genetic trait per species.
+
+    Skipped if no output carries trait_stats (genetics disabled).
+    """
+    rows: list[dict] = []
+    for o in outputs:
+        if o.trait_stats is None:
+            continue
+        time = o.step / config.n_dt_per_year
+        for trait_name, by_species in o.trait_stats.items():
+            for sp_idx, ts in by_species.items():
+                rows.append(
+                    {
+                        "Time": time,
+                        "species_id": sp_idx,
+                        "trait_name": trait_name,
+                        "mean": ts.mean,
+                        "variance": ts.variance,
+                        "n_individuals": ts.n_individuals,
+                    }
+                )
+    if not rows:
+        return
+    df = pd.DataFrame(
+        rows,
+        columns=pd.Index(
+            [
+                "Time",
+                "species_id",
+                "trait_name",
+                "mean",
+                "variance",
+                "n_individuals",
+            ]
+        ),
+    )
+    df.to_csv(output_dir / f"{prefix}_genetic_trait_means_Simu0.csv", index=False)
 
 
 # TODO(v0.7): Spatial bioen outputs — Java has SpatialEnetOutput, SpatialEnetOutputjuv,

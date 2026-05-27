@@ -241,3 +241,36 @@ def test_from_dict_error_mode_raises_with_typo():
     cfg["validation.strict.enabled"] = "error"
     with _pytest.raises(ValueError, match="species.liinf.sp0"):
         _EngineConfig.from_dict(cfg)
+
+
+def test_evolution_trait_keys_accepted_in_error_mode():
+    """Ev-OSMOSE genetics keys are indexed by a free-form trait name (imax),
+    not a numeric index, so they must match the {name} wildcard rather than
+    {idx}. Previously strict 'error' mode rejected them, blocking config load
+    for any genetics-enabled model (e.g. baltic_ev)."""
+    from osmose.engine import config_validation as _cv
+
+    cfg = {
+        "osmose.configuration.bioen": "x",
+        "osmose.configuration.genetics": "x",
+        "evolution.trait.imax.target": "bioen_i_max",
+        "evolution.trait.imax.mean.sp0": "3.0",
+        "evolution.trait.imax.var.sp0": "0.018",
+        "evolution.trait.imax.envvar.sp0": "0.054",
+        "evolution.trait.imax.nlocus.sp0": "10",
+        "evolution.trait.imax.nval.sp0": "10",
+    }
+    assert _cv.validate(cfg, mode="error") == []
+
+
+def test_evolution_trait_malformed_key_still_flagged():
+    """The {name} wildcard must not swallow typo'd or malformed trait keys."""
+    from osmose.engine import config_validation as _cv
+
+    bad = {
+        "evolution.trait.imax.bogus.sp0": "1",  # unknown sub-key
+        "evolution.trait.imax.meen.sp0": "1",  # typo'd 'mean'
+        "evolution.trait.imax.mean": "1",  # missing sp index
+    }
+    flagged = {uk.key for uk in _cv.validate(bad, mode="warn")}
+    assert flagged == set(bad)

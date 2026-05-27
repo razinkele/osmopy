@@ -1,0 +1,16 @@
+# Baltic Sea initial population biomass (tonnes)
+population.seeding.biomass.sp0;150000
+population.seeding.biomass.sp1;800000
+population.seeding.biomass.sp2;600000
+population.seeding.biomass.sp3;80000
+population.seeding.biomass.sp4;30000
+population.seeding.biomass.sp5;15000
+population.seeding.biomass.sp6;20000
+population.seeding.biomass.sp7;100000
+
+# Seeding window must exceed simulation length so the bioen seeding fallback
+# (simulate.py:534) can keep bootstrapping the population whenever bioen
+# energy-budget mortality drives a species' gonad_ssb to zero. Without this
+# the default seeding.year.max defaults to the species lifespan (cod=20y)
+# and populations starve out structurally once the warm-up window closes.
+population.seeding.year.max;60

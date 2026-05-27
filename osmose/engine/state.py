@@ -77,7 +77,15 @@ class SchoolState:
     first_feeding_age_dt: NDArray[np.int32]
     egg_retained: NDArray[np.float64]  # eggs withheld from prey pool per sub-timestep
 
-    # Genetics (Ev-OSMOSE). Optional: populated only when genetic traits are enabled.
+    # Vestigial: the live Ev-OSMOSE path consumes evolving imax via
+    # trait_overrides (see simulate.py around the express_traits call,
+    # `apply_trait_overrides(trait_overrides, phenotypes, ctx.genetic_state.registry)`
+    # which writes overrides["bioen_i_max"]). This field is None on all
+    # live code paths. Kept only for the dead branches at
+    # processes/mortality.py:296-316, processes/foraging_mortality.py:36,
+    # processes/reproduction.py:188. Open follow-up issue to delete those
+    # branches and this field. See
+    # docs/superpowers/specs/2026-05-18-ev-osmose-activation-design.md §7.
     imax_trait: NDArray[np.float64] | None = None
 
     def __post_init__(self) -> None:
