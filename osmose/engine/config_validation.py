@@ -49,7 +49,9 @@ _SUPPLEMENTARY_ALLOWLIST: frozenset[str] = frozenset(
         # registered in the schema and never read by EngineConfig.from_dict.
         "osmose.version",
         "osmose.configuration.background",
+        "osmose.configuration.bioen",
         "osmose.configuration.fishing",
+        "osmose.configuration.genetics",
         "osmose.configuration.grid",
         "osmose.configuration.initialization",
         "osmose.configuration.ltl",
@@ -223,6 +225,18 @@ _SUPPLEMENTARY_ALLOWLIST: frozenset[str] = frozenset(
         "temperature.nsteps.year",
         "temperature.offset",
         "temperature.varname",
+        # --- Ev-OSMOSE genetics trait declarations (Python engine reads these) ---
+        # Keyed by a free-form trait *name* (e.g. imax), not a numeric index, so
+        # the {name} placeholder maps to \w+ (vs {idx} -> \d+). The AST walker
+        # cannot derive them: genetics/trait.py is not in _EXTRA_ENGINE_SOURCES,
+        # and config.py builds them from an f-string whose {name} segment the
+        # walker collapses to {idx} (yielding the wrong \d+ trait slot).
+        "evolution.trait.{name}.target",
+        "evolution.trait.{name}.mean.sp{idx}",
+        "evolution.trait.{name}.var.sp{idx}",
+        "evolution.trait.{name}.envvar.sp{idx}",
+        "evolution.trait.{name}.nlocus.sp{idx}",
+        "evolution.trait.{name}.nval.sp{idx}",
     ]
 )
 
@@ -252,7 +266,10 @@ def _normalize_key_to_pattern(key: str) -> str:
 
 
 def _compile_regex_for_pattern(pattern: str) -> re.Pattern:
-    escaped = re.escape(pattern).replace(r"\{idx\}", r"\d+")
+    # {idx} -> numeric index segment (sp0, fsh1, ...); {name} -> free-form
+    # word segment for keys indexed by a name rather than a number, e.g. the
+    # trait name in evolution.trait.<name>.* (engine parses it as \w+).
+    escaped = re.escape(pattern).replace(r"\{idx\}", r"\d+").replace(r"\{name\}", r"\w+")
     return re.compile(f"^{escaped}$")
 
 
@@ -430,8 +447,12 @@ def build_known_keys() -> KnownKeys:
         )
 
     patterns = frozenset(pattern_strs)
-    literals = frozenset(p for p in patterns if "{idx}" not in p)
-    regex_pairs = tuple((p, _compile_regex_for_pattern(p)) for p in patterns if "{idx}" in p)
+
+    def _has_placeholder(p: str) -> bool:
+        return "{idx}" in p or "{name}" in p
+
+    literals = frozenset(p for p in patterns if not _has_placeholder(p))
+    regex_pairs = tuple((p, _compile_regex_for_pattern(p)) for p in patterns if _has_placeholder(p))
     result = KnownKeys(patterns=patterns, literals=literals, regexes=regex_pairs)
 
     if ast_ok:

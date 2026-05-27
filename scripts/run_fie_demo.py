@@ -103,10 +103,17 @@ def _load(scenario: str, seeds: int, output_root: Path) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True)
 
 
+def _positive_int(value: str) -> int:
+    ivalue = int(value)
+    if ivalue <= 0:
+        raise argparse.ArgumentTypeError(f"must be a positive integer, got {value!r}")
+    return ivalue
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--n-years", type=int, default=200)
-    parser.add_argument("--seeds", type=int, default=3)
+    parser.add_argument("--n-years", type=_positive_int, default=200)
+    parser.add_argument("--seeds", type=_positive_int, default=3)
     parser.add_argument("--output-dir", type=Path, default=Path("outputs/fie_demo"))
     parser.add_argument(
         "--with-zero-f-control",
