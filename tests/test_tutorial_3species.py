@@ -102,15 +102,15 @@ def _equilibrium_means(bio_long: pd.DataFrame) -> pd.Series:
     return focal.groupby("species")["biomass"].mean()
 
 
-@pytest.fixture
-def baseline_run(tmp_path: Path, numba_warmup: None) -> pd.DataFrame:
+@pytest.fixture(scope="module")
+def baseline_run(tmp_path_factory: pytest.TempPathFactory, numba_warmup: None) -> pd.DataFrame:
     """Run the engine with the baseline Baltic config; return tidy biomass.
 
-    Uses tmp_path/base/ as the workdir to avoid collision with perturbed_run
-    when both fixtures are requested by the same test function.
+    Module-scoped: the 30-year Baltic sim is shared across every test that
+    consumes it (consumers only read the frame, never mutate it). Uses a
+    factory-allocated workdir to avoid colliding with perturbed_run.
     """
-    workdir = tmp_path / "base"
-    workdir.mkdir()
+    workdir = tmp_path_factory.mktemp("base")
     cfg = build_config(workdir)
     cfg["validation.strict.enabled"] = "error"
     result = PythonEngine().run_in_memory(config=cfg, seed=42)
@@ -119,18 +119,17 @@ def baseline_run(tmp_path: Path, numba_warmup: None) -> pd.DataFrame:
     return bio_long[bio_long["species"].isin(FOCAL_SPECIES)].reset_index(drop=True)
 
 
-@pytest.fixture
-def perturbed_run(tmp_path: Path, numba_warmup: None) -> pd.DataFrame:
+@pytest.fixture(scope="module")
+def perturbed_run(tmp_path_factory: pytest.TempPathFactory, numba_warmup: None) -> pd.DataFrame:
     """Run the engine with the Beat-6 perturbation applied; return tidy biomass.
 
-    Uses tmp_path/pert/ as the workdir to avoid collision with baseline_run.
-    The perturbation edits predation-accessibility.csv in the workdir copy
-    (never touches data/baltic/).
+    Module-scoped to mirror baseline_run. Uses a factory-allocated workdir to
+    avoid collision with baseline_run. The perturbation edits
+    predation-accessibility.csv in the workdir copy (never touches data/baltic/).
     """
     import shutil  # noqa: PLC0415
 
-    workdir = tmp_path / "pert"
-    workdir.mkdir()
+    workdir = tmp_path_factory.mktemp("pert")
     target = workdir / "baltic"
     shutil.copytree(BALTIC_DIR, target)
 
