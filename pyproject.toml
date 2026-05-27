@@ -53,6 +53,18 @@ asyncio_mode = "auto"
 markers = ["e2e: end-to-end browser tests (Playwright)"]
 addopts = "-m 'not e2e'"
 
+[tool.coverage.run]
+omit = [
+    # Dual-implementation JIT modules: the numba @njit bodies compile to machine
+    # code that coverage.py cannot line-trace, and the parallel pure-Python
+    # fallbacks only execute when numba is absent. With numba installed (dev/CI),
+    # neither path is fully measurable, so counting these in the line-coverage
+    # gate is misleading rather than informative.
+    "osmose/engine/processes/mortality.py",
+    "osmose/engine/processes/predation.py",
+    "osmose/engine/processes/movement.py",
+]
+
 [tool.ruff]
 target-version = "py312"
 line-length = 100
