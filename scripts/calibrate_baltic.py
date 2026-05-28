@@ -574,6 +574,53 @@ def get_phase12_params() -> tuple[list[str], list[tuple[float, float]], list[flo
     return keys1 + keys2 + keys3, bounds1 + bounds2 + bounds3, x01 + x02 + x03
 
 
+def get_phase13_shepherd_params() -> tuple[list[str], list[tuple[float, float]], list[float]]:
+    """Phase 13: all 8 species on Shepherd SR; joint mortality + fishing +
+    per-species ssb_half (sp1-7) + shape beta (sp0-7).
+
+    cod sp0 ssb_half stays FIXED at 120 kt (Bpa) via base_config; only its beta
+    is tunable. Bounds in log10 space (the objective applies 10**x); beta in
+    (0.3, 5.0) -> (log10(0.3), log10(5.0)), x0 = log10(1.0) = 0.0 (≡ B-H start).
+    Bounds widened from initial (0.2, 3.0) to give DE more room to find strong
+    over-compensation (beta > 2) for the perch/pikeperch x100+ overshoots
+    motivating phase 13; under-compensation (beta < 1) stays accessible.
+
+    ssb_half log10 bounds are first-pass, scaled to each species' biomass target;
+    verify against data/baltic/reference/biomass_targets.csv before a long run.
+    """
+    keys1, bounds1, x01 = get_phase1_params()
+    keys2, bounds2, x02 = get_phase2_params()
+
+    # ssb_half for sp1..sp7 (cod sp0 fixed). log10(tonnes).
+    ssbhalf_log_bounds = {
+        1: (4.7, 6.3),   # herring: 50k-2M t
+        2: (4.7, 6.3),   # sprat:   50k-2M t
+        3: (3.7, 5.3),   # flounder: 5k-200k t
+        4: (2.7, 4.7),   # perch:    0.5k-50k t
+        5: (2.7, 4.7),   # pikeperch:0.5k-50k t
+        6: (3.0, 5.0),   # smelt:    1k-100k t
+        7: (3.0, 5.7),   # stickleback: 1k-500k t (recent HELCOM bloom estimates 150-300k t)
+    }
+    ssbhalf_x0_tonnes = {1: 3e5, 2: 3e5, 3: 5e4, 4: 1e4, 5: 1e4, 6: 1e4, 7: 1e4}
+    ssbhalf_keys, ssbhalf_bounds, ssbhalf_x0 = [], [], []
+    for i in range(1, 8):
+        ssbhalf_keys.append(f"stock.recruitment.ssbhalf.sp{i}")
+        ssbhalf_bounds.append(ssbhalf_log_bounds[i])
+        ssbhalf_x0.append(np.log10(ssbhalf_x0_tonnes[i]))
+
+    # shape beta for all 8 species.
+    shape_keys, shape_bounds, shape_x0 = [], [], []
+    for i in range(8):
+        shape_keys.append(f"stock.recruitment.shape.sp{i}")
+        shape_bounds.append((np.log10(0.3), np.log10(5.0)))
+        shape_x0.append(np.log10(1.0))
+
+    keys = keys1 + keys2 + ssbhalf_keys + shape_keys
+    bounds = bounds1 + bounds2 + ssbhalf_bounds + shape_bounds
+    x0 = x01 + x02 + ssbhalf_x0 + shape_x0
+    return keys, bounds, x0
+
+
 # ---------------------------------------------------------------------------
 # Calibration runner
 # ---------------------------------------------------------------------------
@@ -885,6 +932,8 @@ def run_calibration(
         param_keys, bounds, x0 = get_phase2_params()
     elif phase == "12":
         param_keys, bounds, x0 = get_phase12_params()
+    elif phase == "13":
+        param_keys, bounds, x0 = get_phase13_shepherd_params()
     else:
         raise ValueError(f"Unknown phase: {phase}")
 
@@ -940,6 +989,13 @@ def run_calibration(
         print("Phase 12: joint optimization of 27 params (16 mortality + 8 fishing "
               "+ 3 B-H ssb_half). Captures trophic cascade feedback + density-dependent "
               "recruitment.")
+
+    if phase == "13":
+        for sp_idx in range(8):
+            base_config[f"stock.recruitment.type.sp{sp_idx}"] = "shepherd"
+        base_config["stock.recruitment.ssbhalf.sp0"] = "120000"  # cod Bpa, fixed
+        print("Phase 13: all 8 species on Shepherd SR; tuning mortality + fishing "
+              "+ ssb_half (sp1-7) + shape beta (sp0-7). cod sp0 ssb_half fixed at 120 kt.")
 
     # Apply warm-start (Tier B1): override x0 entries from a prior result JSON.
     # Keys absent from the JSON keep their computed default (e.g. new B-H
