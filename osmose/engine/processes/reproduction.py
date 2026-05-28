@@ -29,9 +29,10 @@ def apply_stock_recruitment(
     linear_eggs : (n_sp,) per-step linear egg production = sex_ratio * relative_fecundity
         * SSB * season_factor * 1e6 (tonnes→grams). All non-negative.
     ssb : (n_sp,) spawning stock biomass in tonnes (per-step).
-    ssb_half : (n_sp,) characteristic SSB in tonnes; for beverton_holt it is the
-        half-saturation SSB, for ricker the peak, for hockey_stick the breakpoint,
-        for shepherd the inflection scale. Ignored where type=="none".
+    ssb_half : (n_sp,) half-saturation SSB in tonnes; the SSB at which recruitment
+        is halved relative to the linear formula (true for every non-"none" form
+        regardless of beta). For hockey_stick it doubles as the breakpoint.
+        Ignored where type=="none".
     recruitment_type : per-species, one of
         {"none","beverton_holt","ricker","hockey_stick","shepherd"}.
     shepherd_beta : (n_sp,) Shepherd exponent; only read where type=="shepherd".
@@ -70,7 +71,7 @@ def apply_stock_recruitment(
                 out[sp] = linear_eggs[sp] * (ssb_half[sp] / ssb[sp])
             # else: below/at breakpoint, no correction (out stays linear_eggs[sp])
         elif t == "shepherd":
-            beta = 1.0 if shepherd_beta is None else float(shepherd_beta[sp])
+            beta = 1.0 if shepherd_beta is None else shepherd_beta[sp]
             out[sp] = linear_eggs[sp] / (1.0 + (ssb[sp] / ssb_half[sp]) ** beta)
         else:
             raise ValueError(f"unknown stock-recruitment type: {t!r}")
