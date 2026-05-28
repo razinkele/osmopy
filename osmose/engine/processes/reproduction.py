@@ -145,6 +145,7 @@ def reproduction(
         ssb,
         config.recruitment_ssb_half[:n_sp],
         config.recruitment_type[:n_sp],
+        config.shepherd_beta[:n_sp],
     )
 
     # Create new schools from eggs
