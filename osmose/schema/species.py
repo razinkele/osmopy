@@ -279,7 +279,7 @@ SPECIES_FIELDS: list[OsmoseField] = [
         key_pattern="stock.recruitment.shape.sp{idx}",
         param_type=ParamType.FLOAT,
         default=1.0,
-        min_val=0.0,
+        min_val=0.01,
         max_val=10.0,
         description=(
             "Shepherd stock-recruitment exponent beta. beta<1 under-compensates, "

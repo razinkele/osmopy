@@ -277,7 +277,7 @@ def test_evolution_trait_malformed_key_still_flagged():
     assert flagged == set(bad)
 
 
-def test_shepherd_shape_defaults_to_one(tmp_path):
+def test_shepherd_shape_defaults_to_one():
     """A config with no shape key parses shepherd_beta defaulting to 1.0."""
     from osmose.engine.config import EngineConfig as _EC
 

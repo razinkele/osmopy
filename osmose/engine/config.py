@@ -547,7 +547,7 @@ def _parse_reproduction_params(
         if recruitment_type[i] == "shepherd" and recruitment_shepherd_beta[i] <= 0.0:
             raise ValueError(
                 f"stock.recruitment.shape.sp{i} must be > 0 when "
-                f"stock.recruitment.type.sp{i}='shepherd'"
+                f"stock.recruitment.type.sp{i}={recruitment_type[i]!r}"
             )
     return {
         "focal_sex_ratio": sex_ratio,
