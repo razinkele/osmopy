@@ -530,16 +530,24 @@ def _parse_reproduction_params(
         "stock.recruitment.type.sp{i}",
         n_sp,
         default="none",
-        allowed={"none", "beverton_holt", "ricker"},
+        allowed={"none", "beverton_holt", "ricker", "hockey_stick", "shepherd"},
     )
     recruitment_ssb_half = _species_float_optional(
         cfg, "stock.recruitment.ssbhalf.sp{i}", n_sp, default=0.0
+    )
+    recruitment_shepherd_beta = _species_float_optional(
+        cfg, "stock.recruitment.shape.sp{i}", n_sp, default=1.0
     )
     for i in range(n_sp):
         if recruitment_type[i] != "none" and recruitment_ssb_half[i] <= 0.0:
             raise ValueError(
                 f"stock.recruitment.ssbhalf.sp{i} must be > 0 when "
                 f"stock.recruitment.type.sp{i}={recruitment_type[i]!r}"
+            )
+        if recruitment_type[i] == "shepherd" and recruitment_shepherd_beta[i] <= 0.0:
+            raise ValueError(
+                f"stock.recruitment.shape.sp{i} must be > 0 when "
+                f"stock.recruitment.type.sp{i}='shepherd'"
             )
     return {
         "focal_sex_ratio": sex_ratio,
@@ -551,6 +559,7 @@ def _parse_reproduction_params(
         "focal_maturity_age_dt": maturity_age_dt,
         "focal_recruitment_type": recruitment_type,
         "focal_recruitment_ssb_half": recruitment_ssb_half,
+        "focal_recruitment_shepherd_beta": recruitment_shepherd_beta,
     }
 
 
@@ -764,6 +773,9 @@ def _merge_focal_background(
             "recruitment_ssb_half": np.concatenate(
                 [focal["focal_recruitment_ssb_half"], bkg_zeros_f]
             ),
+            "recruitment_shepherd_beta": np.concatenate(
+                [focal["focal_recruitment_shepherd_beta"], np.ones(n_bkg, dtype=np.float64)]
+            ),
             "lmax": np.concatenate([focal["focal_lmax"], bkg_zeros_f]),
             "starvation_rate_max": np.concatenate(
                 [focal["focal_starvation_rate_max"], bkg_zeros_f]
@@ -811,6 +823,7 @@ def _merge_focal_background(
             "maturity_age_dt": focal["focal_maturity_age_dt"],
             "recruitment_type": focal["focal_recruitment_type"],
             "recruitment_ssb_half": focal["focal_recruitment_ssb_half"],
+            "recruitment_shepherd_beta": focal["focal_recruitment_shepherd_beta"],
             "lmax": focal["focal_lmax"],
             "starvation_rate_max": focal["focal_starvation_rate_max"],
             "fishing_rate": focal["fishing"],
@@ -1201,8 +1214,9 @@ class EngineConfig:
     larva_mortality_rate: NDArray[np.float64]  # additional mortality for eggs/larvae
     larva_mortality_by_dt: list | None  # time-varying larval mortality (SingleTimeSeries per sp)
     # Stock-recruitment (post-parity divergence; Java has no equivalent)
-    recruitment_type: list[str]  # one of {"none","beverton_holt","ricker"} per species
+    recruitment_type: list[str]  # one of {"none","beverton_holt","ricker","hockey_stick","shepherd"} per species
     recruitment_ssb_half: NDArray[np.float64]  # tonnes; ignored when type=="none"
+    shepherd_beta: NDArray[np.float64]  # per-species Shepherd exponent; 1.0 ≡ B-H
 
     # Predation — 2D arrays of shape (n_total, max_stages)
     size_ratio_min: NDArray[np.float64]  # min pred/prey ratio per species per stage
@@ -1430,6 +1444,7 @@ class EngineConfig:
             "critical_success_rate": self.critical_success_rate,
             "additional_mortality_rate": self.additional_mortality_rate,
             "starvation_rate_max": self.starvation_rate_max,
+            "shepherd_beta": self.shepherd_beta,
         }
         for name, arr in per_species_arrays.items():
             if hasattr(arr, "__len__") and len(arr) != n_total:
@@ -1519,6 +1534,7 @@ class EngineConfig:
         focal_maturity_age_dt = _repro["focal_maturity_age_dt"]
         focal_recruitment_type = _repro["focal_recruitment_type"]
         focal_recruitment_ssb_half = _repro["focal_recruitment_ssb_half"]
+        focal_recruitment_shepherd_beta = _repro["focal_recruitment_shepherd_beta"]
         # Fishing spatial distribution maps
         focal_fishing_spatial_maps: list[np.ndarray | None] = []
         # Try shared fisheries map first (v4)
@@ -1580,6 +1596,7 @@ class EngineConfig:
             "focal_maturity_age_dt": focal_maturity_age_dt,
             "focal_recruitment_type": focal_recruitment_type,
             "focal_recruitment_ssb_half": focal_recruitment_ssb_half,
+            "focal_recruitment_shepherd_beta": focal_recruitment_shepherd_beta,
             "focal_starvation_rate_max": focal_starvation_rate_max,
             "focal_fishing_selectivity_l50": focal_fishing_selectivity_l50,
             "focal_fishing_a50": focal_fishing_a50,
@@ -1619,6 +1636,7 @@ class EngineConfig:
         maturity_age_dt = _merged["maturity_age_dt"]
         recruitment_type = _merged["recruitment_type"]
         recruitment_ssb_half = _merged["recruitment_ssb_half"]
+        recruitment_shepherd_beta = _merged["recruitment_shepherd_beta"]
         lmax = _merged["lmax"]
         starvation_rate_max = _merged["starvation_rate_max"]
         fishing_rate = _merged["fishing_rate"]
@@ -1914,6 +1932,7 @@ class EngineConfig:
             larva_mortality_by_dt=_load_larva_mortality_by_dt(cfg, n_sp, n_dt, n_dt * n_yr),
             recruitment_type=recruitment_type,
             recruitment_ssb_half=recruitment_ssb_half,
+            shepherd_beta=recruitment_shepherd_beta,
             size_ratio_min=size_ratio_min_2d,
             size_ratio_max=size_ratio_max_2d,
             feeding_stage_thresholds=all_thresholds,
