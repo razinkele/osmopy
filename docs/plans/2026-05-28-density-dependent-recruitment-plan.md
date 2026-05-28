@@ -379,7 +379,17 @@ In the no-background branch, after line 813:
 
 - [ ] **Step 3d: Add the dataclass field** (`osmose/engine/config.py`)
 
-After line 1205 (`recruitment_ssb_half: NDArray[np.float64] ...`):
+First, update the stale comment on line 1204 — it currently lists only the
+three pre-existing forms. Replace:
+```python
+    recruitment_type: list[str]  # one of {"none","beverton_holt","ricker"} per species
+```
+with:
+```python
+    recruitment_type: list[str]  # one of {"none","beverton_holt","ricker","hockey_stick","shepherd"} per species
+```
+
+Then, after line 1205 (`recruitment_ssb_half: NDArray[np.float64] ...`), add the new field:
 ```python
     shepherd_beta: NDArray[np.float64]  # per-species Shepherd exponent; 1.0 ≡ B-H
 ```
@@ -521,7 +531,10 @@ def get_phase13_shepherd_params() -> tuple[list[str], list[tuple[float, float]],
 
     cod sp0 ssb_half stays FIXED at 120 kt (Bpa) via base_config; only its beta
     is tunable. Bounds in log10 space (the objective applies 10**x); beta in
-    (0.2, 3.0) -> (log10(0.2), log10(3.0)), x0 = log10(1.0) = 0.0 (≡ B-H start).
+    (0.3, 5.0) -> (log10(0.3), log10(5.0)), x0 = log10(1.0) = 0.0 (≡ B-H start).
+    Bounds widened from initial (0.2, 3.0) to give DE more room to find strong
+    over-compensation (beta > 2) for the perch/pikeperch x100+ overshoots
+    motivating phase 13; under-compensation (beta < 1) stays accessible.
 
     ssb_half log10 bounds are first-pass, scaled to each species' biomass target;
     verify against data/baltic/reference/biomass_targets.csv before a long run.
@@ -537,7 +550,7 @@ def get_phase13_shepherd_params() -> tuple[list[str], list[tuple[float, float]],
         4: (2.7, 4.7),   # perch:    0.5k-50k t
         5: (2.7, 4.7),   # pikeperch:0.5k-50k t
         6: (3.0, 5.0),   # smelt:    1k-100k t
-        7: (3.0, 5.0),   # stickleback: 1k-100k t
+        7: (3.0, 5.7),   # stickleback: 1k-500k t (recent HELCOM bloom estimates 150-300k t)
     }
     ssbhalf_x0_tonnes = {1: 3e5, 2: 3e5, 3: 5e4, 4: 1e4, 5: 1e4, 6: 1e4, 7: 1e4}
     ssbhalf_keys, ssbhalf_bounds, ssbhalf_x0 = [], [], []
@@ -550,7 +563,7 @@ def get_phase13_shepherd_params() -> tuple[list[str], list[tuple[float, float]],
     shape_keys, shape_bounds, shape_x0 = [], [], []
     for i in range(8):
         shape_keys.append(f"stock.recruitment.shape.sp{i}")
-        shape_bounds.append((np.log10(0.2), np.log10(3.0)))
+        shape_bounds.append((np.log10(0.3), np.log10(5.0)))
         shape_x0.append(np.log10(1.0))
 
     keys = keys1 + keys2 + ssbhalf_keys + shape_keys
@@ -625,9 +638,21 @@ Run the validator on the B-H baseline outputs and record: number of species stri
 ```bash
 OSMOSE_DE_WORKERS=16 .venv/bin/python scripts/calibrate_baltic.py \
   --phase 13 --optimizer de --seeds 3 \
+  --warm-start data/baltic/calibration_results/phase12_results.json \
+  --skip-warm-start-keys mortality.additional.rate.sp0 \
   --patience 20 --wall-clock-cap-h 12 --checkpoint-every 5
 ```
 This is the multi-hour run. It checkpoints every 5 generations and is interrupt-safe.
+
+`--warm-start` realises the design's "warm-start x0 from phase-12-best" intent
+via the existing CLI in `scripts/calibrate_baltic.py:808` (`apply_warm_start`):
+phase-12-overlapping keys (phase-1/2 mortality + fishing + sp3/4/5 ssb_half)
+are loaded from the JSON; new phase-13 keys (Shepherd shape, sp1/2/6/7
+ssb_half) keep their computed `x0` from Task 5. `--skip-warm-start-keys`
+excludes cod sp0 adult mortality for the same reason
+`launch_phase12_bh_fast.sh:33-36` does — its phase-12 optimum sat against the
+cod-floor ceiling, an artefact closed first by B-H and now generalised by
+Shepherd; warm-starting from that value would bias DE toward the artefact.
 
 - [ ] **Step 4: Validate the Shepherd result against ICES**
 

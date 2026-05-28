@@ -113,7 +113,9 @@ Calibration param-sets are `get_phaseN_params() -> (keys, bounds, x0)` consumed 
     config setup — *fixed*, not a DE dimension (keeps DE fully continuous).
   - Adds DE-tunable keys per species: `stock.recruitment.ssbhalf.sp{i}` (log10
     bounds, species-scaled) and `stock.recruitment.shape.sp{i}` = β (linear bounds
-    ≈ 0.2–3.0). Up to 16 SR dimensions.
+    ≈ 0.3–5.0; upper bound chosen above β=3 to give DE room to find strong
+    over-compensation for the perch/pikeperch ×100+ overshoots — under-
+    compensation β<1 stays accessible). Up to 16 SR dimensions.
   - Keeps **cod sp0 ssb_half fixed at Bpa = 120 kt** (tune its β only), per the
     existing phase-12 convention.
   - Warm-starts `x0` from the current best phase-12 params where keys overlap.
@@ -143,7 +145,10 @@ New unit tests in `tests/test_engine_stock_recruitment.py`:
 - Shepherd β>1 over-compensates (turns down at high SSB); β<1 under-compensates
   (gentler than B-H) — ordering/direction assertions.
 - Low-SSB limit: all forms → `linear_eggs` as `ssb → 0`; non-negativity;
-  `type=="none"` untouched.
+  `type=="none"` untouched. Note Shepherd's convergence to linear at low SSB is
+  *β-dependent*: for β=2 at `ssb/ssb_half=0.001` the deviation from linear is
+  ~10⁻⁶, but for β=0.5 it is ~3 % — mathematically correct (under-compensation
+  kicks in earlier), worth a numerical-check assertion when β<1 is exercised.
 
 Config tests (config-validation test file): new key parses with default β=1.0;
 `shepherd`/`hockey_stick` accepted; `shepherd` with β≤0 raises; unknown type still
