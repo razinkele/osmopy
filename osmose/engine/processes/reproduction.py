@@ -29,10 +29,14 @@ def apply_stock_recruitment(
     linear_eggs : (n_sp,) per-step linear egg production = sex_ratio * relative_fecundity
         * SSB * season_factor * 1e6 (tonnes→grams). All non-negative.
     ssb : (n_sp,) spawning stock biomass in tonnes (per-step).
-    ssb_half : (n_sp,) half-saturation SSB in tonnes; the SSB at which recruitment
-        is halved relative to the linear formula (true for every non-"none" form
-        regardless of beta). For hockey_stick it doubles as the breakpoint.
-        Ignored where type=="none".
+    ssb_half : (n_sp,) characteristic SSB in tonnes; ignored where type=="none".
+        Per-form role:
+        - beverton_holt, shepherd: half-saturation SSB (recruitment is halved
+          relative to the linear formula at this SSB; for shepherd this holds
+          for any beta because (ssb/ssb_half)**beta = 1 when ssb == ssb_half).
+        - ricker: peak SSB (recruitment is at exp(-1) ≈ 37% of linear here).
+        - hockey_stick: breakpoint SSB (recruitment is at 100% of linear at and
+          below this SSB; flat cap above).
     recruitment_type : per-species, one of
         {"none","beverton_holt","ricker","hockey_stick","shepherd"}.
     shepherd_beta : (n_sp,) Shepherd exponent; only read where type=="shepherd".

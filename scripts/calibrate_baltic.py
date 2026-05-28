@@ -9,6 +9,7 @@ Uses the PythonEngine directly (no Java required).
 Usage:
     .venv/bin/python scripts/calibrate_baltic.py [--phase 1] [--maxiter 200] [--seeds 3]
     .venv/bin/python scripts/calibrate_baltic.py --phase 2 --maxiter 300
+    .venv/bin/python scripts/calibrate_baltic.py --phase 13 --seeds 3   # Shepherd, all 8 species
     .venv/bin/python scripts/calibrate_baltic.py --validate  # 50yr validation of best params
 """
 
@@ -1359,7 +1360,7 @@ def validate_calibration(n_years: int = 50, n_seeds: int = 3) -> None:
 def main():
     parser = argparse.ArgumentParser(description="Baltic Sea OSMOSE calibration")
     parser.add_argument("--phase", type=str, default="1b",
-                        help="Calibration phase: 1=all 16p, 1b=focused 8p, 2=fishing 8p")
+                        help="Calibration phase: 1=all 16p, 1b=focused 8p, 2=fishing 8p, 12=joint 27p (B-H), 13=Shepherd 39p (8 spp)")
     parser.add_argument("--maxiter", type=int, default=200, help="DE max iterations")
     parser.add_argument("--popsize", type=int, default=15, help="DE absolute population size floor")
     parser.add_argument("--popsize-mult", type=int, default=10,
