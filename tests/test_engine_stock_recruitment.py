@@ -150,3 +150,37 @@ class TestApplyStockRecruitment:
         ssb_half = np.array([500.0])
         out = apply_stock_recruitment(linear, ssb, ssb_half, ["shepherd"])
         np.testing.assert_allclose(out, [500.0])
+
+    def test_hockey_stick_below_breakpoint_is_linear(self):
+        """At or below the breakpoint, hockey-stick applies no correction."""
+        linear = np.array([800.0])
+        ssb = np.array([400.0])
+        ssb_half = np.array([500.0])  # breakpoint
+        out = apply_stock_recruitment(linear, ssb, ssb_half, ["hockey_stick"])
+        np.testing.assert_array_equal(out, linear)
+
+    def test_hockey_stick_continuous_at_breakpoint(self):
+        """With linear ∝ ssb (alpha=2), output is continuous across the breakpoint."""
+        alpha = 2.0
+        ssb_half = np.array([500.0])
+        at = apply_stock_recruitment(
+            np.array([alpha * 500.0]), np.array([500.0]), ssb_half, ["hockey_stick"]
+        )
+        just_above = apply_stock_recruitment(
+            np.array([alpha * 501.0]), np.array([501.0]), ssb_half, ["hockey_stick"]
+        )
+        np.testing.assert_allclose(at, [alpha * 500.0])
+        np.testing.assert_allclose(just_above, [alpha * 500.0])
+
+    def test_hockey_stick_flat_cap_above_breakpoint(self):
+        """With linear ∝ ssb, recruitment is constant (alpha*ssb_half) above
+        breakpoint."""
+        alpha = 2.0
+        ssb_half = np.array([500.0])
+        out_vals = []
+        for s in (600.0, 1000.0, 5000.0):
+            out = apply_stock_recruitment(
+                np.array([alpha * s]), np.array([s]), ssb_half, ["hockey_stick"]
+            )
+            out_vals.append(out[0])
+        np.testing.assert_allclose(out_vals, [alpha * 500.0] * 3)
