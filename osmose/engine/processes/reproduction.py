@@ -17,6 +17,7 @@ def apply_stock_recruitment(
     ssb: NDArray[np.float64],
     ssb_half: NDArray[np.float64],
     recruitment_type: list[str],
+    shepherd_beta: NDArray[np.float64] | None = None,
 ) -> NDArray[np.float64]:
     """Apply per-species density-dependent stock-recruitment.
 
@@ -28,8 +29,13 @@ def apply_stock_recruitment(
     linear_eggs : (n_sp,) per-step linear egg production = sex_ratio * relative_fecundity
         * SSB * season_factor * 1e6 (tonnes→grams). All non-negative.
     ssb : (n_sp,) spawning stock biomass in tonnes (per-step).
-    ssb_half : (n_sp,) half-saturation SSB in tonnes; ignored where type=="none".
-    recruitment_type : per-species, one of {"none","beverton_holt","ricker"}.
+    ssb_half : (n_sp,) characteristic SSB in tonnes; for beverton_holt it is the
+        half-saturation SSB, for ricker the peak, for hockey_stick the breakpoint,
+        for shepherd the inflection scale. Ignored where type=="none".
+    recruitment_type : per-species, one of
+        {"none","beverton_holt","ricker","hockey_stick","shepherd"}.
+    shepherd_beta : (n_sp,) Shepherd exponent; only read where type=="shepherd".
+        None means beta=1.0 everywhere (≡ beverton_holt).
 
     Returns
     -------
@@ -41,6 +47,11 @@ def apply_stock_recruitment(
             f"apply_stock_recruitment: shape mismatch — "
             f"linear_eggs={n_sp}, ssb={ssb.shape[0]}, "
             f"ssb_half={ssb_half.shape[0]}, recruitment_type={len(recruitment_type)}"
+        )
+    if shepherd_beta is not None and shepherd_beta.shape[0] != n_sp:
+        raise ValueError(
+            f"apply_stock_recruitment: shepherd_beta length {shepherd_beta.shape[0]} "
+            f"!= n_sp {n_sp}"
         )
 
     out = linear_eggs.copy()
@@ -54,6 +65,13 @@ def apply_stock_recruitment(
             out[sp] = linear_eggs[sp] / (1.0 + ssb[sp] / ssb_half[sp])
         elif t == "ricker":
             out[sp] = linear_eggs[sp] * np.exp(-ssb[sp] / ssb_half[sp])
+        elif t == "hockey_stick":
+            if ssb[sp] > ssb_half[sp]:
+                out[sp] = linear_eggs[sp] * (ssb_half[sp] / ssb[sp])
+            # else: below/at breakpoint, no correction (out stays linear_eggs[sp])
+        elif t == "shepherd":
+            beta = 1.0 if shepherd_beta is None else float(shepherd_beta[sp])
+            out[sp] = linear_eggs[sp] / (1.0 + (ssb[sp] / ssb_half[sp]) ** beta)
         else:
             raise ValueError(f"unknown stock-recruitment type: {t!r}")
     return out

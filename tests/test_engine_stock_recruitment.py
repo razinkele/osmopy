@@ -95,3 +95,58 @@ class TestApplyStockRecruitment:
         ssb_half = np.array([100.0])
         with pytest.raises(ValueError, match="unknown stock-recruitment type"):
             apply_stock_recruitment(linear, ssb, ssb_half, ["sigmoid"])
+
+    def test_shepherd_beta_one_equals_beverton_holt(self):
+        """Shepherd at beta=1 is identically Beverton-Holt (correctness anchor)."""
+        linear = np.array([1000.0, 2000.0])
+        ssb = np.array([500.0, 1500.0])
+        ssb_half = np.array([500.0, 1000.0])
+        bh = apply_stock_recruitment(
+            linear, ssb, ssb_half, ["beverton_holt", "beverton_holt"]
+        )
+        shep = apply_stock_recruitment(
+            linear, ssb, ssb_half, ["shepherd", "shepherd"], np.array([1.0, 1.0])
+        )
+        np.testing.assert_array_equal(shep, bh)
+
+    def test_shepherd_low_ssb_approaches_linear(self):
+        """At SSB << ssb_half, Shepherd ≈ linear for any beta."""
+        linear = np.array([1000.0])
+        ssb = np.array([1.0])
+        ssb_half = np.array([1000.0])
+        out = apply_stock_recruitment(
+            linear, ssb, ssb_half, ["shepherd"], np.array([2.0])
+        )
+        assert abs(out[0] - linear[0]) / linear[0] < 0.01
+
+    def test_shepherd_high_beta_overcompensates(self):
+        """beta>1: with linear ∝ ssb, recruitment turns down at very high SSB."""
+        alpha = 1.0
+        ssb_half = np.array([500.0])
+        beta = np.array([3.0])
+        r_peak = apply_stock_recruitment(
+            np.array([alpha * 500.0]), np.array([500.0]), ssb_half, ["shepherd"], beta
+        )
+        r_high = apply_stock_recruitment(
+            np.array([alpha * 5000.0]), np.array([5000.0]), ssb_half, ["shepherd"], beta
+        )
+        assert r_high[0] < r_peak[0]
+
+    def test_shepherd_low_beta_gentler_than_bh(self):
+        """beta<1 caps less aggressively than B-H at the same high SSB."""
+        linear = np.array([1000.0])
+        ssb = np.array([2000.0])
+        ssb_half = np.array([500.0])
+        bh = apply_stock_recruitment(linear, ssb, ssb_half, ["beverton_holt"])
+        shep = apply_stock_recruitment(
+            linear, ssb, ssb_half, ["shepherd"], np.array([0.5])
+        )
+        assert shep[0] > bh[0]
+
+    def test_shepherd_defaults_beta_one_when_array_omitted(self):
+        """If shepherd_beta is not passed, beta defaults to 1.0 (≡ B-H)."""
+        linear = np.array([1000.0])
+        ssb = np.array([500.0])
+        ssb_half = np.array([500.0])
+        out = apply_stock_recruitment(linear, ssb, ssb_half, ["shepherd"])
+        np.testing.assert_allclose(out, [500.0])
