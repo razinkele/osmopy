@@ -246,12 +246,15 @@ SPECIES_FIELDS: list[OsmoseField] = [
         key_pattern="stock.recruitment.type.sp{idx}",
         param_type=ParamType.ENUM,
         default="none",
-        choices=["none", "beverton_holt", "ricker"],
+        choices=["none", "beverton_holt", "ricker", "hockey_stick", "shepherd"],
         description=(
             "Stock-recruitment relationship applied to per-step egg production. "
             "'none' preserves the linear SSB→eggs formula (Java parity). "
             "'beverton_holt' caps recruitment asymptotically at high SSB. "
-            "'ricker' over-compensates (recruitment peaks then declines)."
+            "'ricker' over-compensates (recruitment peaks then declines). "
+            "'hockey_stick' is linear up to a breakpoint then a flat cap. "
+            "'shepherd' generalizes B-H via a shape exponent (see "
+            "stock.recruitment.shape)."
         ),
         category="reproduction",
         indexed=True,
@@ -269,6 +272,22 @@ SPECIES_FIELDS: list[OsmoseField] = [
         ),
         category="reproduction",
         unit="tonnes",
+        indexed=True,
+        required=False,
+    ),
+    OsmoseField(
+        key_pattern="stock.recruitment.shape.sp{idx}",
+        param_type=ParamType.FLOAT,
+        default=1.0,
+        min_val=0.01,
+        max_val=10.0,
+        description=(
+            "Shepherd stock-recruitment exponent beta. beta<1 under-compensates, "
+            "beta=1 is identical to Beverton-Holt, beta>1 over-compensates "
+            "(recruitment peaks then declines). Ignored unless "
+            "stock.recruitment.type=shepherd."
+        ),
+        category="reproduction",
         indexed=True,
         required=False,
     ),

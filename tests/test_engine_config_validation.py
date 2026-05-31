@@ -87,6 +87,7 @@ def _minimal_config(n_species: int = 2, n_background: int = 0, **overrides) -> d
         growth_class=["VB"] * n_total,
         recruitment_type=["none"] * n_total,
         recruitment_ssb_half=np.zeros(n_total),
+        shepherd_beta=np.ones(n_total),
         raw_config={},
     )
     defaults.update(overrides)
@@ -274,3 +275,38 @@ def test_evolution_trait_malformed_key_still_flagged():
     }
     flagged = {uk.key for uk in _cv.validate(bad, mode="warn")}
     assert flagged == set(bad)
+
+
+def test_shepherd_shape_defaults_to_one():
+    """A config with no shape key parses shepherd_beta defaulting to 1.0."""
+    from osmose.engine.config import EngineConfig as _EC
+
+    cfg = _load_example_config("baltic")
+    cfg["stock.recruitment.type.sp0"] = "shepherd"
+    cfg["stock.recruitment.ssbhalf.sp0"] = "120000"
+    ec = _EC.from_dict(cfg)
+    assert ec.shepherd_beta.shape[0] == ec.n_species + ec.n_background
+    assert ec.shepherd_beta[0] == 1.0
+
+
+def test_shepherd_negative_shape_raises():
+    """type=shepherd with beta<=0 must raise."""
+    from osmose.engine.config import EngineConfig as _EC
+
+    cfg = _load_example_config("baltic")
+    cfg["stock.recruitment.type.sp0"] = "shepherd"
+    cfg["stock.recruitment.ssbhalf.sp0"] = "120000"
+    cfg["stock.recruitment.shape.sp0"] = "-1.0"
+    with pytest.raises(ValueError, match="stock.recruitment.shape.sp0"):
+        _EC.from_dict(cfg)
+
+
+def test_hockey_stick_type_accepted():
+    """hockey_stick is a valid recruitment type."""
+    from osmose.engine.config import EngineConfig as _EC
+
+    cfg = _load_example_config("baltic")
+    cfg["stock.recruitment.type.sp0"] = "hockey_stick"
+    cfg["stock.recruitment.ssbhalf.sp0"] = "120000"
+    ec = _EC.from_dict(cfg)
+    assert ec.recruitment_type[0] == "hockey_stick"

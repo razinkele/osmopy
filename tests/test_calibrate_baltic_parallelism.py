@@ -462,3 +462,20 @@ def test_apply_warm_start_overrides_only_known_keys(tmp_path):
     # tracking lists
     assert applied == ["fisheries.rate.base.fsh3", "mortality.additional.larva.rate.sp1"]
     assert skipped == ["mortality.additional.rate.sp0"]
+
+
+def test_phase13_shepherd_params_shape():
+    """All 8 species get a shape key; cod sp0 ssb_half is NOT tunable (fixed)."""
+    from scripts.calibrate_baltic import get_phase13_shepherd_params
+
+    keys, bounds, x0 = get_phase13_shepherd_params()
+    assert len(keys) == len(bounds) == len(x0)
+    shape_keys = [k for k in keys if k.startswith("stock.recruitment.shape.sp")]
+    assert len(shape_keys) == 8
+    ssbhalf_keys = [k for k in keys if k.startswith("stock.recruitment.ssbhalf.sp")]
+    assert "stock.recruitment.ssbhalf.sp0" not in ssbhalf_keys  # cod fixed at Bpa
+    assert len(ssbhalf_keys) == 7  # sp1..sp7
+    # beta x0 is log10(1.0) = 0.0 for every shape key
+    for k, x in zip(keys, x0):
+        if k.startswith("stock.recruitment.shape.sp"):
+            assert abs(x - 0.0) < 1e-9
