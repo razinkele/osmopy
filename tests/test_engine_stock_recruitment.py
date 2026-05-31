@@ -101,9 +101,7 @@ class TestApplyStockRecruitment:
         linear = np.array([1000.0, 2000.0])
         ssb = np.array([500.0, 1500.0])
         ssb_half = np.array([500.0, 1000.0])
-        bh = apply_stock_recruitment(
-            linear, ssb, ssb_half, ["beverton_holt", "beverton_holt"]
-        )
+        bh = apply_stock_recruitment(linear, ssb, ssb_half, ["beverton_holt", "beverton_holt"])
         shep = apply_stock_recruitment(
             linear, ssb, ssb_half, ["shepherd", "shepherd"], np.array([1.0, 1.0])
         )
@@ -114,9 +112,7 @@ class TestApplyStockRecruitment:
         linear = np.array([1000.0])
         ssb = np.array([1.0])
         ssb_half = np.array([1000.0])
-        out = apply_stock_recruitment(
-            linear, ssb, ssb_half, ["shepherd"], np.array([2.0])
-        )
+        out = apply_stock_recruitment(linear, ssb, ssb_half, ["shepherd"], np.array([2.0]))
         assert abs(out[0] - linear[0]) / linear[0] < 0.01
 
     def test_shepherd_high_beta_overcompensates(self):
@@ -138,9 +134,7 @@ class TestApplyStockRecruitment:
         ssb = np.array([2000.0])
         ssb_half = np.array([500.0])
         bh = apply_stock_recruitment(linear, ssb, ssb_half, ["beverton_holt"])
-        shep = apply_stock_recruitment(
-            linear, ssb, ssb_half, ["shepherd"], np.array([0.5])
-        )
+        shep = apply_stock_recruitment(linear, ssb, ssb_half, ["shepherd"], np.array([0.5]))
         assert shep[0] > bh[0]
 
     def test_shepherd_defaults_beta_one_when_array_omitted(self):

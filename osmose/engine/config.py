@@ -1214,7 +1214,9 @@ class EngineConfig:
     larva_mortality_rate: NDArray[np.float64]  # additional mortality for eggs/larvae
     larva_mortality_by_dt: list | None  # time-varying larval mortality (SingleTimeSeries per sp)
     # Stock-recruitment (post-parity divergence; Java has no equivalent)
-    recruitment_type: list[str]  # one of {"none","beverton_holt","ricker","hockey_stick","shepherd"} per species
+    recruitment_type: list[
+        str
+    ]  # one of {"none","beverton_holt","ricker","hockey_stick","shepherd"} per species
     recruitment_ssb_half: NDArray[np.float64]  # tonnes; ignored when type=="none"
     shepherd_beta: NDArray[np.float64]  # per-species Shepherd exponent; 1.0 ≡ B-H
 

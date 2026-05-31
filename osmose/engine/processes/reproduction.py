@@ -55,8 +55,7 @@ def apply_stock_recruitment(
         )
     if shepherd_beta is not None and shepherd_beta.shape[0] != n_sp:
         raise ValueError(
-            f"apply_stock_recruitment: shepherd_beta length {shepherd_beta.shape[0]} "
-            f"!= n_sp {n_sp}"
+            f"apply_stock_recruitment: shepherd_beta length {shepherd_beta.shape[0]} != n_sp {n_sp}"
         )
 
     out = linear_eggs.copy()
