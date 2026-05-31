@@ -1,378 +1,314 @@
 # Predator Functional Response (aggregate, opt-in) — Design
 
 **Date:** 2026-05-31
-**Status:** Design approved; revised after round-1 in-loop review (4 angles). Pending round-2 review → implementation plan.
+**Status:** Approved direction; **substantially revised after round-4 review** retargeted the feature
+from a test-only kernel to the live `mortality.py` kernel and fixed a conservation-math error.
+Pending re-review of the rewrite → implementation plan.
 **Author:** brainstormed collaboratively
 
 ## Motivation
 
-OSMOSE's current predation is effectively **Holling type-I with a ration ceiling**: each
-predator school eats `min(available_prey, max_eatable)` per cell per sub-timestep, where
-`max_eatable = biomass × ingestion_rate / (n_dt_per_year × n_subdt)`.
+OSMOSE's current predation is effectively **Holling type-I with a ration ceiling**: each predator
+school eats `min(total_available, max_eatable)` per cell per sub-timestep, where `max_eatable =
+biomass × ingestion_rate / (n_dt_per_year × n_subdt)`. From the predator's side this already
+saturates; what is **linear** is the *per-prey mortality* — when prey is scarce, predators still take
+a near-constant *fraction* of available prey, with **no prey refuge at low density**. This feature
+adds **selectable, opt-in, per-predator-species functional-response forms** (type-I / type-II /
+type-III) that change that low-density behavior, mirroring the recruitment feature (Shepherd/B-H, PR
+#50): a per-species `shape` config key, **default-off**, **bit-exact-preserving** when off, plus a
+dedicated Baltic calibration phase validated at the **process level**.
 
-From the predator's side this already saturates (it cannot exceed its ration). What is
-**linear** is the *per-prey mortality*: when prey is scarce, predators still take a near-constant
-*fraction* of available prey — there is **no prey refuge at low density**. This is the classic
-type-I weakness and is the knob a type-II / type-III response changes.
+### THE LIVE KERNEL (corrects an earlier draft)
 
-This feature adds **selectable, opt-in, per-predator-species functional-response forms**
-(type-I / type-II / type-III), mirroring the architecture of the just-shipped density-dependent
-recruitment feature (Shepherd/B-H, PR #50): a per-species `shape` config key, **default-off**,
-**bit-exact-preserving** when off, and a dedicated Baltic calibration phase that validates the
-feature at the **process level**.
+The production simulation path is `simulate.py:_mortality → mortality.py:mortality() →
+_apply_predation_numba` (numba, called from 3 sites) **/** `_apply_predation_for_school` (Python
+fallback, 1 site). The `predation.py` module's `predation_for_cell` / `_predation_in_cell_*` /
+`_predation_on_resources` are **test-only** (referenced only in docstrings; never called by
+`simulate.py`/`mortality.py`). All earlier "single injection point in `predation.py`" framing was
+against the test-only path and is **void**.
 
-> Code locations in this document are given by **symbol** (`_predation_in_cell_numba`,
-> `_predation_on_resources`, etc.). Line numbers cited in round-1 review were verified accurate as
-> of 2026-05-31 but are intentionally omitted here because they rot; the implementation plan should
-> re-locate by symbol.
+In the live kernel, **school prey and resource (LTL plankton/benthos) prey are accumulated into one
+pooled `total_available`**, and `eaten_total = min(total_available, max_eatable)` is computed **once**
+(`mortality.py` Python `:484`, numba `:952`; `success = min(eaten_total/max_eatable, 1.0)` at `:541`
+/ `:993`). There is **no** separate resource-consumption site and **no** `remaining`-appetite
+backfill in production — those exist only in the test-only `predation.py`.
 
-### Scope decisions (locked during brainstorming)
+### Design decision: FR acts on the COMBINED pool
 
-- **Aggregate**, not per-prey-type. The response saturates on *total* accessible prey, not on each
-  prey type independently. Per-prey-type **prey-switching** restructures the hot, parity-anchored
-  single-pass kernel and is a large parity departure — and PR #50 already diagnosed the percid
-  overshoot (the main prey-switching beneficiary) as **grid-under-resolution** (spatial), not a
-  predation-form failure. Per-prey-type switching is **deferred** as a documented follow-on.
-- **Selectable forms** (type-I / type-II / type-III), per-predator-species, opt-in.
+The functional response is applied at the single live injection point with `r = total_available /
+max_eatable`, where `total_available` is the **fused fish + resource** pool. We do **not** split the
+pool (that would restructure the hot, Java-parity-anchored kernel — high risk, and the fusion is
+deliberate).
 
-### Two consumption sites — and why FR is scoped to school predation
+**What this means ecologically (honest):**
+- For **near-pure piscivores** (GreySeal, Cormorant, pikeperch), `total_available ≈ fish`, so the
+  functional response behaves as intended on the ICES-calibrated fish stocks: a type-III refuge
+  reduces the *fraction* of fish taken at low fish density.
+- For **cod**, abundant benthos (sp13) keeps `total_available` (hence `r`) high, so cod is usually
+  near-satiated and the refuge **rarely triggers** — the resource pool dilutes the effect. This is a
+  real limitation of the combined-pool approach, stated up front. Cod is retained in the calibration
+  set but the diagnostic must report it honestly (the effect may be small for cod).
+- There is **no prey-switching** (aggregate response; the single proportional `share` depletes all
+  pooled prey together) and **no "protect-fish-switch-to-benthos" mechanism** (that was an artifact
+  of the test-only kernel). The aggregate refuge engages only when **total** accessible prey is low.
 
-A predator's ration is filled at **two** sequential sites in the engine:
+### Scope (locked)
 
-1. **School-to-school predation** (`_predation_in_cell_numba` / `_predation_in_cell_python`): the
-   predator eats other schools; this sets `pred_success_rate = eaten/max_eatable`.
-2. **Resource predation** (`_predation_on_resources`): runs *after* (1), filling the *leftover*
-   appetite `remaining = max_eatable·(1 − pred_success_rate)` from LTL resource pools
-   (plankton/benthos), capped `eaten = min(available_resource, remaining)`.
-
-**This feature applies the functional response to site (1) only.** Site (2) stays type-I by design.
-The consequence is explicit and *intended*, not a leak: when a type-III refuge suppresses a
-predator's fish intake at low fish density, `pred_success_rate` drops, so `remaining` rises and the
-predator **compensates by eating more resource prey (benthos/plankton)**. Ecologically this is
-**realistic alternative-prey switching**: the refuge protects the *fish stocks we calibrate against
-ICES*, while the predator survives on lower-trophic resources rather than starving. For the chosen
-Baltic predators this matters mainly for **cod** (eats benthos sp13); seal/cormorant/pikeperch are
-near-exclusively piscivorous so their resource backfill is negligible.
-
-Two downstream consequences of FR on site (1), both deliberate and **must be tested** (not just
-biomass):
-- **Resource backfill** rises (above) — verify total predator ingestion and resource depletion.
-- **`pred_success_rate` falls** under type-II/III (`success = g(r) ≤ 1`), which feeds
-  starvation/growth bioenergetics. A predator in a moderate-prey cell is scored more food-limited
-  → more starvation mortality / less growth. This is part of how FR regulates predators and
-  interacts with the PR #50 recruitment curve; the calibration must observe predator condition,
-  not only prey biomass.
-
-### Honest limitations
-
-- Aggregate FR will **not** spare a depleted stock when an abundant stock shares its cell — no
-  per-stock switching. The single-pass depletion-in-place means aggregate type-III's refuge engages
-  only when **total remaining accessible prey across all types in a cell is low** (near whole-cell
-  prey collapse), *not* in the realistic "one stock crashed, others fine" case. It is a
-  whole-cell-aggregate refuge, not a per-stock refuge.
-- The species-specific cod/percid control stories are fundamentally prey-switching problems. This
-  feature delivers the general stabilizing lever and modeling flexibility; it is **not** expected to
-  resolve the percid overshoot (a spatial-resolution issue per PR #50).
+- **Aggregate** (combined-pool), not per-prey-type. Per-prey-type prey-switching is **deferred**
+  (restructures the kernel; PR #50 diagnosed the percid overshoot as a *spatial* grid-under-
+  resolution problem, not a predation-form failure).
+- **Selectable forms** type-I / type-II / type-III, per-predator-species, opt-in, default-off.
 
 ## Section 1 — Engine math
 
-Single injection point **within school predation**: replace `eaten_total = min(available,
-max_eatable)` with `eaten_total = max_eatable × g(r)`, where `r = available / max_eatable`.
+Single live injection point (both kernels): replace `eaten_total = min(total_available, max_eatable)`
+with `eaten_total = max_eatable × g(r)`, `r = total_available / max_eatable`.
 
-| Shape | enum / int code | `g(r)` | Behavior |
-|-------|-----------------|--------|----------|
-| type-I (default) | `type1` / `1` | `min(r, 1)` | **Literal current branch** — bit-exact, no FP drift |
-| type-II | `type2` / `2` | `r / (r + K)` | Saturating (Holling-disc); slope 1/K at r=0 (no refuge) |
-| type-III | `type3` / `3` | `r² / (r² + K²)` | Sigmoid; zero slope at r=0 → low-density refuge on aggregate |
+| Shape | enum / int | `g(r)` (before clamp) | Behavior |
+|-------|------------|-----------------------|----------|
+| type-I (default) | `type1` / `1` | `min(r, 1)` | **Literal existing branch** — bit-exact |
+| type-II | `type2` / `2` | `r / (r + K)` | Saturating (Holling-disc) |
+| type-III | `type3` / `3` | `r² / (r² + K²)` | Sigmoid; low-density refuge (smaller *fraction* of available taken at low r) |
 
-- `K` = dimensionless **ration-relative** half-saturation per predator species: the
-  food-availability (in units of the predator's own per-subdt max ration) at which the predator
-  achieves half its max intake. This is a valid algebraic reparameterization of standard Holling:
-  with `Imax = max_eatable` and half-saturation prey level `N½`, `f = Imax·N/(N+N½)`; setting
-  `r = N/Imax`, `K = N½/Imax` gives `f = Imax·r/(r+K)`.
-- **DE-friendliness:** `K ∈ [0.1, 5.0]` is a clean, well-scaled bound sitting next to the recruitment
-  params.
-- **K is well-scaled, not a transferable constant.** Because `r` depends on local cell prey density,
-  predator packing, and the subdt discretization, a K calibrated on Baltic is **not** guaranteed to
-  carry the same biological refuge threshold to EEC/BoB. The portability claim is narrow: K is
-  *bounded and dimensionless for DE* (unlike absolute-biomass half-saturation), but remains an
-  **empirical per-system calibration target**.
-- **K does double duty.** type-II/III reduce realized intake at *all* finite r, not only at low
-  density (e.g. K=1, r=1 → g=0.5; type-II r=10 → g≈0.91). So switching a predator to type-III at
-  K≥1 both adds a low-density refuge **and** depresses mean realized ration. This is accepted as part
-  of the calibrated effect and is the reason ingestion rate is held fixed during calibration
-  (§5).
-- **type-III Hill exponent fixed at 2** (standard). A general Hill exponent is **not** exposed
-  (YAGNI).
-- **Bit-exact guarantee:** `type1` dispatches to the *exact existing statement* `min(available,
-  max_eatable)`, NOT the formula at a limiting K (verified: `r/(r+K)` at small K → 1 everywhere
-  r>0, the opposite of `min`). Default-off is provably byte-identical.
-- **Division-by-zero is already guarded upstream.** Both backends `continue` when `max_eatable <= 0`
-  and when `available <= 0` *before* the injection point, so `r = available/max_eatable` is finite
-  and positive. The FR branch must remain strictly **below** the `available <= 0` guard so a future
-  refactor cannot introduce NaN.
-- **Biomass conservation preserved.** `eaten_total = max_eatable·g(r) ≤ available` must continue to
-  hold (so the proportional `share` redistribution stays conservative). For type-II this is
-  immediate; for type-III it must be asserted by unit test across the K bound (§4).
-- **Composition with single-pass depletion:** unchanged. Each predator, in random `pred_order`, sees
-  the remaining `available` and applies `g(r)` to its own ration.
+**Conservation clamp (mandatory — corrects a false claim in an earlier draft).** Conservation
+requires `eaten_total ≤ total_available`, i.e. `g(r) ≤ r` (since `total_available = r·max_eatable`),
+**not** merely `g(r) ≤ 1`. The raw Holling forms violate this at low K:
+- type-II `r/(r+K) ≤ r ⟺ r+K ≥ 1` — fails for `r < 1−K` (any K<1).
+- type-III `r²/(r²+K²) ≤ r ⟺ r²−r+K² ≥ 0` — fails for `r ∈ (r₋, r₊)` with roots `(1±√(1−4K²))/2`;
+  at K=0.1 that is `r ∈ (≈0.01, ≈0.99)` — almost the entire food-limited range.
+  type-III is conservative for **all r when K ≥ 0.5** (negative discriminant).
+
+Therefore the engine applies **`g(r) := min(g_form(r), min(r, 1))`** for type-II/III ("ration-capped
+Holling"). This (a) guarantees `eaten_total ≤ total_available` so the proportional `share`
+redistribution stays conservative and `preyed_biomass`/`pred_success_rate` are not corrupted, and
+(b) preserves the refuge where it genuinely exists (low r, where `g_form(r) < r`). type-I is itself
+the cap (`min(r,1)`), so the clamp is consistent across forms.
+
+- `K` = dimensionless **ration-relative** half-saturation per predator species (food in units of the
+  predator's per-subdt max ration). Valid Holling reparameterization: with `Imax = max_eatable`,
+  half-saturation prey level `N½`, `f = Imax·r/(r+K)` for `r=N/Imax`, `K=N½/Imax`.
+- **Config-allowed range `K ∈ [0.1, 5.0]`**; **phase-14 DE bound `[0.5, 5.0]` for type-III** so the
+  clamp essentially never engages and the type-III curve is clean (K≥0.5 ⇒ conservative everywhere).
+- **K is well-scaled for DE, not a transferable biological constant** (it depends on local cell prey
+  density, predator packing, and the subdt discretization; a Baltic K need not mean the same refuge
+  threshold on EEC/BoB).
+- **K does double duty** (refuge shape *and* a mean-intake scaler — type-II/III reduce realized
+  intake at all finite r, e.g. K=1,r=1 → g=0.5). Handled by holding ingestion rate fixed in
+  calibration (§5).
+- **type-III Hill exponent fixed at 2** (YAGNI: no general exponent).
+- **Bit-exact guarantee + fencing (mandatory).** type-I dispatches to the *exact existing two
+  statements* — `eaten_total = min(total_available, max_eatable)` and `success =
+  min(eaten_total/max_eatable, 1.0)` — preserved **verbatim**. On `fr_shape[sp_pred] == 1`, **neither
+  `r` nor any new arithmetic is evaluated** on the path producing `eaten_total`/`success`. Do **not**
+  "unify" type-I into `max_eatable·g(r)`: the multiply-then-divide round-trip `max_eatable·(av/max)`
+  can differ from `min(av,max)` by 1 ULP and break 12/12 parity. (Verified: `r/(r+K)` at small K → 1
+  everywhere r>0, so type-I cannot be emulated by a limiting K either.)
+- **Division-by-zero already guarded upstream:** both kernels `continue` when `max_eatable ≤ 0` and
+  when `total_available ≤ 0` *before* the injection point, so `r` is finite/positive. The FR branch
+  must stay **below** those guards.
+- **Determinism preserved:** `g(r)` is a pure pointwise function; no new RNG, ordering, or iteration.
 
 ## Section 2 — Config schema
 
-Two new per-species keys (`osmose/schema/predation.py` + `osmose/engine/config.py`), modeled on the
-recruitment block (`stock.recruitment.shape.sp{i}` + strict-validation loop):
-
+Two new per-species keys (`osmose/schema/predation.py` + `config.py`), modeled on the recruitment
+`shape` block:
 - `predation.functional.response.shape.sp{i}` → enum `type1 | type2 | type3`, **default `type1`**.
 - `predation.functional.response.halfsat.sp{i}` → float `K`, range `[0.1, 5.0]`, **required iff**
   `shape ≠ type1`.
 
-**Strict-validation rule and message.** If shape is `type2`/`type3` and halfsat is absent, raise a
-strict-validation error with text:
-`"predation.functional.response.halfsat.sp{i} is required when predation.functional.response.shape.sp{i} = {shape}"`.
-The §4 test asserts on the `is required when` substring. (Value type differs from recruitment's
-numeric-float `shape` because the FR form is a genuinely discrete enum choice; same per-species
-default-off *pattern*.)
+**Strict validation + parse-time bound enforcement.** Raise (a) if shape ∉ enum; (b) if shape ≠ type1
+and halfsat absent, with message `"predation.functional.response.halfsat.sp{i} is required when
+predation.functional.response.shape.sp{i} = {shape}"` (test asserts the `is required when`
+substring); (c) if halfsat present and **outside `[0.1, 5.0]`** — enforce the bound at parse with a
+raising error, *not* only as a DE search bound (the recruitment `shepherd_beta>0` precedent checks
+only `>0`; we add the upper bound too, so a hand-edited `halfsat=0.0` cannot silently yield `g≡1`).
 
-**Enum→int mapping.** The mapping `type1→1, type2→2, type3→3` is performed at config-parse time.
-**Both** parse paths must produce identical int codes into the `fr_shape` array: the focal path
-(`config.py`) and the background-predator path (`background.py`, which already parses
-`predation.ingestion.rate.max.sp{i}`).
+**Enum→int mapping** `type1→1, type2→2, type3→3`, performed at parse time; **both** the focal path
+(`config.py`) and the background-predator path (`background.py`) must produce identical codes.
 
-**Applicability to non-predator / prey-only species.** The keys are nominally per-species, but the
-kernel only ever consults `fr_shape[sp_pred]` / `fr_halfsat[sp_pred]`, and LTL resource / prey-only
-species never occupy the `sp_pred` slot. Therefore:
-- Every species index (focal + LTL + background) gets a `fr_shape` entry, **defaulting to `1`
-  (type1)**; for prey-only species the entry is allocated but **never consulted** (inert).
-- Validation is **uniform**: the enum-membership check and the halfsat-required-iff-shape≠type1
-  check fire for any `sp{i}` regardless of whether that species predates. Setting a non-`type1`
-  shape on a prey-only species is therefore **accepted but inert** (it requires a halfsat to pass
-  validation, but the kernel never reads it). This keeps validation simple and avoids a fragile
-  "is this species ever a predator?" determination at parse time.
+**Array sizing (critical) — exact layout.** `fr_shape` (`np.int32`) and `fr_halfsat` (`np.float64`)
+are sized `n_total = n_species + n_background` (**10 for Baltic** = 8 focal + 2 background) — the same
+length as `ingestion_rate` — and indexed by **runtime** `sp_pred = species_id[p_idx]`. Numbering:
+- **LTL resources (config sp8–13) are NOT `species_id` slots** (separate `ResourceState`); they get
+  **no** `fr_shape` entry.
+- **Background predators' config keys are `sp14`/`sp15`** but their **runtime `species_id` =
+  `n_focal + bkg_idx` = 8 / 9** (`background.py:378`). The config key `…shape.sp14` is parsed by
+  `background.py` into the background portion at runtime slot 8.
+- Build via the **`recruitment_shepherd_beta` precedent**: focal values concatenated with
+  `np.full(n_bkg, default)` for background (`fr_shape` bkg default `1`; `fr_halfsat` bkg default a
+  fixed inert sentinel, since type1 never reads it); no-background path uses focal arrays directly.
+- **Register both arrays in `EngineConfig.__post_init__`'s `per_species_arrays` length-check dict** —
+  the dict is hardcoded; without registration an `n_species`-length array passes validation and
+  GreySeal/Cormorant FR **silently no-ops** (the exact bug this section prevents).
 
-**Array sizing (critical) — exact layout.** `fr_shape` and `fr_halfsat` must be sized to
-`n_total = n_species + n_background` (config.py: `n_total = n_sp + n_bkg`), which is **10 for Baltic**
-(8 focal + 2 background), the **same length** as the existing concatenated `ingestion_rate` /
-`species_id` arrays (`EngineConfig.__post_init__` rejects any per-species array whose length ≠
-n_total). They are indexed by the **runtime** `sp_pred = species_id[p_idx]`.
+**Config-validation allowlist (per CLAUDE.md).** Read both keys via literal-prefix f-strings so the
+AST walker auto-captures them (else add to `_SUPPLEMENTARY_ALLOWLIST`); keep
+`test_from_dict_warn_mode_clean_on_example_configs[*]` warning-free.
 
-Critical numbering distinction (the bug this section exists to prevent):
-- **LTL resource species (the Baltic config's sp8–13) are NOT `species_id` slots.** They live in a
-  separate `ResourceState`, are eaten only via `_predation_on_resources`, and never occupy
-  `sp_pred`. They get **no** `fr_shape` entry.
-- **Background predators' config-file keys are `sp14` (GreySeal) / `sp15` (Cormorant)** — but their
-  **runtime `species_id` is `n_focal + bkg_idx` = 8 / 9** (background.py: `species_id = self._n_focal
-  + bkg_idx`). So the config key `predation.functional.response.shape.sp14` is parsed by
-  `background.py` and lands in the **background portion of the concatenated array at runtime slot 8**.
-- Build the arrays following the **exact `recruitment_shepherd_beta` precedent** (config.py): focal
-  values from the focal parse, concatenated with `np.full(n_bkg, ...)` defaults for the background
-  portion (shepherd uses `np.ones(n_bkg)`; FR uses `fr_shape` background default = `1`/type1 unless
-  the background `sp14`/`sp15` keys override, and a sentinel `fr_halfsat` background default). The
-  no-background config path uses the focal arrays directly.
+**Applicability to prey-only species.** Validation is uniform (enum + halfsat-required-iff fire for
+any `sp{i}`); a non-`type1` shape on a prey-only/LTL species is **accepted but inert** (the kernel
+only reads `fr_shape[sp_pred]`, which prey-only species never occupy).
 
-Sizing the arrays to `n_species` (8) or to any "focal+LTL" width would either trip the
-`__post_init__` length check or, worse, misalign the background slots so GreySeal/Cormorant FR
-**silently no-ops** — which the calibration would not catch.
+**Back-compat.** Every existing config omits both keys ⇒ `type1` ⇒ unchanged; explicit `type1` and
+absent-key are byte-identical. **No migration.**
 
-**Config-validation allowlist (mandatory, per CLAUDE.md).** Read both keys via literal-prefix
-f-strings in `config.py` so the AST walker in `config_validation.py` auto-captures them; if built
-from a caller-arg `key_pattern` instead, add them to `_SUPPLEMENTARY_ALLOWLIST`. The integration
-test `tests/test_engine_config_validation.py::test_from_dict_warn_mode_clean_on_example_configs[*]`
-must stay warning-free.
+**Documentation.** Add both keys to the config reference (alongside the recruitment `shape` key).
+Note that **type-II is classically destabilizing** (paradox of enrichment) and **type-III is the
+recommended/validated form**.
 
-**Back-compat.** Every existing config on disk (eec_full, baltic, BoB, tutorial) omits both keys;
-absence ⇒ `type1` ⇒ unchanged behavior. **No config migration is required.** Explicit `type1` and
-absent-key are byte-identical (both hit the literal `min()` path).
+## Section 3 — Kernel changes (live `mortality.py`)
 
-**Documentation.** Add both keys to the config reference alongside where the recruitment `shape` key
-is documented (in scope for this feature).
+- Add `fr_shape` (`np.int32[n_total]`) and `fr_halfsat` (`np.float64[n_total]`) as `EngineConfig`
+  fields, built alongside `ingestion_rate`.
+- Branch on `fr_shape[sp_pred]` at the injection point in **both** kernels — `_apply_predation_numba`
+  (numba) and `_apply_predation_for_school` (Python). `== 1` keeps the verbatim existing two
+  statements; `== 2/3` apply the clamped formula using `r*r` (not `r**2`).
+- Thread the two new args from the **4 call sites** (`_apply_predation_numba` ×3,
+  `_apply_predation_for_school` ×1) — `config` is in scope at each, so pass `config.fr_shape` /
+  `config.fr_halfsat`.
+- The loop is **not** restructured; one clamped branch at one injection point per kernel. Numba
+  recompiles once on the additive signature change.
 
-## Section 3 — Kernel + Python fallback
+## Section 4 — Testing (new `tests/test_engine_functional_response.py`)
 
-- Add two arrays to `_predation_in_cell_numba`: `fr_shape` (`np.int32`, length `n_total =
-  n_species + n_background`, codes 1/2/3) and `fr_halfsat` (`np.float64`, length `n_total`). Use
-  `np.int32` to match the kernel's existing int arrays (`species_id`, `age_dt`) and avoid a second
-  numba specialization. See §2 "Array sizing (critical)" for the exact layout and the
-  config-key-`sp14`/`sp15` → runtime-slot-`8`/`9` mapping.
-- Branch on `fr_shape[sp_pred]` at the existing injection point. `== 1` keeps the exact existing
-  `min()`. For `== 2` / `== 3` apply the formulas using `r*r` (not `r**2`) to stay on the unambiguous
-  float path.
-- Mirror the branch in the pure-Python fallback `_predation_in_cell_python`.
-- The loop is **not** restructured — one branch at one injection point. Numba recompiles once on the
-  additive signature change.
-- **Call sites:** the two new args are threaded from `predation_for_cell` (which has `config` in
-  scope, so `config.fr_shape` / `config.fr_halfsat` are directly available) into the single numba
-  call site and the single Python fallback call site. No test imports the private kernels directly.
-- `EngineConfig` gains two fields `fr_shape` / `fr_halfsat`, built in `config.py` alongside
-  `ingestion_rate` (focal parse + background concatenation), following the `ingestion_rate` build
-  path exactly.
+**Curve math (with exact-value anchors, matching the recruitment test house style):**
+- type-I reproduces `min(r,1)` exactly; explicit `type1` == absent-key.
+- type-II/III exact anchors (e.g. K=1, r=1 → g=0.5 before clamp); monotonic; `g(r) → 1` as `r → ∞`.
+- type-II initial slope ≈ 1/K at small r (no-refuge) vs type-III zero slope (refuge) — distinguishes
+  the forms.
+- **Conservation (load-bearing):** assert the *clamped* `g(r) ≤ min(r, 1)` (⇒ `eaten_total ≤
+  total_available`) for all r across **K ∈ {0.1, 0.5, 1, 5}** (exercise both endpoints + the clamp
+  region); assert `g(r) ≤ 1` alone is NOT what's tested.
+- **type-III refuge (operationalized):** on a strict `r < K` grid, `g_form(r)/r` increasing and
+  `g(small r) < r`.
 
-## Section 4 — Testing
+**Config / parse:**
+- strict validation (shape enum; halfsat-required substring; halfsat out-of-`[0.1,5.0]` raises).
+- enum→int mapping asserted **on both paths**: `shape.sp0=type2 → fr_shape[0]==2`; `shape.sp14=type3
+  → fr_shape[8]==3` (background slot).
+- **direct sizing assertion** `len(cfg.fr_shape) == n_species + n_background == 10` + slot placement,
+  and a `per_species_arrays`-registration regression (mis-sized array must raise).
+- accepted-but-inert: non-`type1` on a prey-only species parses and has no runtime effect.
 
-Unit / acceptance (new file `tests/test_engine_functional_response.py`):
-- **Curve shape**, per form: monotonic increasing in `r`; `g(r) → 1` as `r → ∞`.
-- **Biomass conservation:** assert `g(r) ≤ min(r, 1)` for all `r` across `K ∈ [0.1, 5.0]` — this is
-  the load-bearing invariant (it guarantees `eaten_total = max_eatable·g(r) ≤ available`, since
-  `available = r·max_eatable`). Asserting only `g(r) ≤ 1` is **insufficient** (it would not catch a
-  form that takes more than the available prey at small `r`).
-- **type-I exactness:** `type1` reproduces `min(r, 1)` (hence `min(available, max_eatable)`) exactly.
-- **type-III refuge (operationalized):** on a strict `r < K` grid, assert `g(r)/r` is increasing
-  (for `g=r²/(r²+K²)`, `d(g/r)/dr = (K²−r²)/(r²+K²)² > 0 ⟺ r < K`), and `g(small r) < r` (type-III
-  takes a *smaller* fraction than type-I at low density: the refuge).
-- **type-II smoke (it ships user-facing):** a minimal end-to-end run with `type2` on one predator
-  completes without error and produces a **robustly detectable** difference from `type1` — assert on
-  `preyed_biomass` / `pred_success_rate` (which change directly and immediately), and choose a
-  `(K, prey-regime)` where `g(r)` departs clearly from `min(r,1)` (e.g. moderate `r ≈ K`), rather
-  than asserting a small end-of-run biomass delta that a loose tolerance could wash out. (type-II's
-  only other coverage is the curve unit tests; this is accepted.)
-- **Strict validation:** `shape ≠ type1` with missing `halfsat` raises, asserting the `is required
-  when` substring; valid config parses; explicit `type1` == absent-key behavior.
-- **Array sizing / background path:** FR config set on a **background** predator (sp14/sp15) actually
-  changes outcomes — guards against the `n_species`-vs-`n_total` sizing bug.
-- **Downstream effects (deliberate):** with type-III on a predator, assert (a) resource-predation
-  consumption increases for that predator vs type-I (alternative-prey backfill), and (b)
-  `pred_success_rate` decreases in moderate-prey cells (feeds starvation/growth).
-- **Determinism:** same-seed reproducibility with FR enabled.
+**Kernel behavior:**
+- **bit-exact parity:** the existing Java-parity suite passes **unmodified** with FR off (no baseline
+  regen); name the suite as the 12/12 enforcement.
+- **numba-vs-Python parity with FR on** (type-2 and type-3 configs) — guards single-backend bugs.
+- **NaN/guard:** type-3 predator in a cell with `total_available == 0` / no eligible prey → no NaN,
+  graceful no-op.
+- **background path:** FR on sp14/sp15 changes outcomes (catches the n_species sizing bug).
+- **downstream:** with type-3, `pred_success_rate` drops in moderate-prey cells (`r ≈ K`); and a test
+  (or explicit spec downgrade) that this feeds starvation/growth — assert the bioenergetic
+  consequence, not only the success-rate proxy. **Caveat:** under **bioenergetics mode** growth/
+  starvation are driven by `preyed_biomass` re-capped by the allometric `bioen_ingestion_cap`, so the
+  `pred_success_rate` path is bypassed and FR composes as a *double-cap*; the Baltic calibration
+  config uses neither bioen nor genetics, so this is a documented generic caveat, not a calibration
+  bug (see §6).
+- **determinism** with FR on.
 
-Parity:
-- Default-off run stays **12/12 bit-exact** — the Java-parity baseline is **not** regenerated.
-- The "type-II/III differs from type-I" assertions above are new opt-in fixtures (new baselines),
-  never modifications of the Java-parity baseline.
+**Process diagnostic unit tests (the gate's only falsifiable basis — must exist):**
+- per-school → per-species diet aggregation by `species_id[p_idx]` that **includes background slots
+  8/9** (the stock `aggregate_diet_by_species` excludes them via `focal_mask = species_id <
+  n_pred_species` — the diagnostic must NOT use it, or must extend it).
+- the diagnostic run calls `enable_diet_tracking` with **column width `n_species + n_background +
+  n_resources` (= 16 for Baltic)**, not the production default `n_species + n_background` (= 10) — else
+  resource columns ≥10 (cod's benthos = col 13) are silently dropped by the `prey_sp <
+  diet_matrix.shape[1]` guard, zeroing exactly the signal the diagnostic needs. Test that
+  background-predator and resource columns survive.
 
 ## Section 5 — Calibration (phase-14) + evaluation
 
-### Phase scaffolding & stacking
-
-- Add a `get_phase14_params()` builder + a `phase == "14"` branch in `run_calibration`
-  (`scripts/calibrate_baltic.py`), following the existing flat phase ladder.
-- **Stacking mechanism (explicit):** use the **phase-2-style inheritance** pattern (load a prior
-  results JSON and inject its params as **fixed `base_config` overrides**), not warm-start. Phase-14
-  loads **all 39 phase-13 params** as fixed `base_config` overrides and `get_phase14_params()`
-  returns **exactly the 4 new K keys** — the 39 frozen params must live *solely* in `base_config`,
-  never in the free `param_keys` list (the phase-2 precedent works because its free set is disjoint
-  from the inherited set; phase-14 must preserve that disjointness). The 4-D runtime math below
-  holds only under this exact-4-keys condition.
-- **Prerequisite artifact:** there is currently **no `phase13_results.json` on disk** (only
-  phase1/2/12 exist). Phase-14 therefore requires either (a) running phase-13 first and persisting
-  its result JSON, or (b) committing a `phase13_results.json` artifact from the PR #50 run. The plan
-  must pick one and make the phase-13 params a concrete file. (Correction to an earlier draft:
-  phase-13 optimizes **39** params — 16 mortality + 8 fishing + 7 ssb_half + 8 Shepherd β — not 27;
-  27 was phase-12.)
+### Scaffolding & stacking
+- `get_phase14_params()` + `phase == "14"` branch in `scripts/calibrate_baltic.py` (existing flat
+  phase ladder).
+- **Phase-2-style inheritance:** load **all 39 phase-13 params** (16 mortality + 8 fishing + 7
+  ssb_half + 8 Shepherd β) as fixed `base_config` overrides; `get_phase14_params()` returns
+  **exactly the 4 new K keys** — the 39 frozen params live solely in `base_config` (disjoint from the
+  free set, as the phase-2 precedent requires). The 4-D runtime math depends on this.
+- **Prerequisite:** no `phase13_results.json` exists on disk. **Decision: commit the PR #50 phase-13
+  result as `phase13_results.json`** (recommended over a fresh multi-hour run, unless one is
+  independently wanted). This is the first task of the calibration PR.
 
 ### Parameter space & runtime
-
-- **4 new K params**, bounds `[0.1, 5.0]`, type-III fixed. With all 39 phase-13 params frozen this is
-  a clean **4-D DE problem**: `eff_popsize = max(15, 10×4) = 40`; at ~175 evals/h ≈ 14 min/generation
-  → fits the 12 h wall-clock cap comfortably under `--patience 20`. (If the 39 were *not* frozen,
-  `eff_popsize` would explode to ~430 and not converge in 12 h — hence strict freezing is required,
-  not optional.)
-- Reuses the bounded-runtime guards (`--patience 20 --wall-clock-cap-h 12 --checkpoint-every 5`) and
+- 4 K params, **type-III fixed**, DE bound `[0.5, 5.0]` (clamp-free type-III). With 39 frozen this is
+  4-D: `eff_popsize = max(15, 10×4) = 40`; at ~175 evals/h ≈ 14 min/gen → fits the 12 h cap under
+  `--patience 20`. (Unfrozen would be ~430 popsize and not converge — strict freezing is required.)
+- Reuses bounded-runtime guards (`--patience 20 --wall-clock-cap-h 12 --checkpoint-every 5`) and
   multi-seed re-ranking.
 
 ### Predator selection
+- FR on **cod (sp0), pikeperch (sp5), GreySeal (sp14→slot8), Cormorant (sp15→slot9)**.
+- Rationale: pikeperch/seal/cormorant are near-pure piscivores where the combined-pool FR acts
+  cleanly on fish; cod is the dominant fish piscivore but its refuge is **diluted by benthos**
+  (above) — retained, but the diagnostic reports its (possibly small) effect honestly.
+- Perch (sp4) excluded for **parameter economy** (it IS a real predator per the diet matrix — not
+  "weakly piscivorous"; its own overshoot is the spatial grid-resolution issue, unfixable by FR).
 
-- FR enabled on **cod (sp0), pikeperch (sp5), GreySeal (sp14), Cormorant (sp15)**.
-- **Positive rationale:** cod and pikeperch are the two dominant fish piscivores in the Baltic diet
-  matrix (broad, strong prey-access rows); GreySeal and Cormorant are the apex background predators
-  whose top-down pressure the feature most directly modulates.
-- **Perch (sp4) excluded — corrected rationale.** Perch is **not** weakly piscivorous; the diet
-  matrix shows perch preying on smelt/clupeids/stickleback at coefficients within ~30 % of pikeperch.
-  It is excluded purely for **parameter economy** and because perch's *own* biomass overshoot is a
-  **spatial grid-under-resolution** problem (PR #50), which FR cannot fix. Perch's FR *could* matter
-  for controlling its prey; adding it is a documented follow-on, not a correctness gap.
-- **Background-predator access note:** GreySeal/Cormorant predation is governed by size-ratio
-  windows + default accessibility (they are not focal rows in the accessibility CSV). FR composes
-  with this unchanged — FR acts on the resulting `available`, whatever produced it. This is exactly
-  why the §2 array sizing (their config keys `sp14`/`sp15` → runtime slots 8/9) is load-bearing for
-  these two.
-
-### Confounding & the process-level diagnostic (required)
-
-Fixing ingestion rate removes only the **direct** `K ↔ ingestion_rate` confound. K's mechanism
-(reducing realized predation mortality at low prey density) still trades against the **frozen**
-phase-13 prey mortality and recruitment params — and a biomass-only objective (last-10-yr mean)
-**cannot distinguish** "predator gave prey a refuge" from "prey had lower background mortality" or
-"recruitment compensated." This residual confounding is acknowledged and is the core scientific risk.
-
-**Mitigation (mandatory):** add a **process-level diagnostic** reporting each FR predator's *realized
-predation mortality at equilibrium*, FR-on vs FR-off. The K effect is **identifiable at the process
-level** even though it is **not identifiable from biomass alone**. phase-14 K's are interpreted
-**conditional on the frozen phase-13 baseline**, and this is stated in the writeup.
-
-**Concrete data source (first-class plan task, not an evaluation-script afterthought).** The engine
-already records per-predator→per-prey eaten biomass in the **diet matrix** (`_predation_in_cell_*`
-accumulate it when diet tracking is enabled; resource predation likewise). No new engine output is
-required — but `run_simulation` currently returns biomass only, so the diagnostic run must **enable
-diet tracking** and surface the diet matrix. Definition:
-- **Realized predation mortality** of predator *p* on prey *q* at equilibrium = (Σ eaten biomass of
-  *q* by *p* over the last *N* years) / (mean biomass of *q* over the same window), per year.
-- The diagnostic runs the **same calibrated config twice with diet tracking on**: FR-off (type-I
-  baseline) and FR-on (type-III with the calibrated K's). For each of the four FR predators it
-  reports the realized predation mortality on each prey under both, and the FR-on − FR-off delta.
-- The **type-III refuge signature** is a *reduction* in realized predation mortality on prey that
-  sit at **low density** (where `r` is small → `g(r) < min(r,1)`). "Low vs high density" is read off
-  the prey's own equilibrium biomass between the two runs — no arbitrary binning is needed; the
-  refuge shows up as a negative delta concentrated on the lower-biomass prey.
-
-Two implementation details the plan must handle (the diet matrix is per-*school*, not per-*species*):
-- The diet matrix is indexed `diet_matrix[p_idx, prey_sp]` with shape `(n_schools, n_species-wide)`.
-  To get "realized mortality of predator *species* p on prey q," **aggregate the per-school rows by
-  `species_id[p_idx]`** (trivial for the 4 FR predators: cod sp0, pikeperch sp5 focal; GreySeal /
-  Cormorant at runtime slots 8/9).
-- `enable_diet_tracking` must be called with a **column width covering focal + background + resource
-  indices** (resource columns are `n_species + r`), or the bounds guard `prey_sp <
-  diet_matrix.shape[1]` silently drops background-predator diets and cod's benthos backfill — which
-  the diagnostic specifically needs to observe.
-
-This diagnostic is what makes the §"Success criteria" go/no-go falsifiable; the implementation plan
-must treat surfacing the (per-species-aggregated) diet matrix from the diagnostic run as a concrete
-task.
+### Confounding & the process diagnostic (required, first-class task)
+Fixing ingestion removes only the **direct** `K↔ingestion` confound; K still trades against the
+**frozen** phase-13 mortality and recruitment params (the Shepherd β was itself fit under the type-I
+predation regime — a dynamical, not just statistical, coupling), and a biomass-only objective cannot
+identify the K effect. **Data source:** the diet matrix already records per-(school,prey) eaten
+biomass. Realized predation mortality of predator-species p on prey q = (Σ eaten of q by p over the
+last 10 yr) / (mean biomass of q over the window), per year. Run the **same calibrated config twice
+with diet tracking on at width 16** — FR-off (type-I) vs FR-on (type-III with calibrated K) — and
+report each predator's realized mortality on each prey and the FR-on − FR-off delta, using the
+per-species aggregation that includes background slots 8/9 (§4).
 
 ### Evaluation script
-
-Extend `scripts/evaluate_calibration_vs_ices.py`:
-- Add `shepherd-fr` to the `--mode` `choices` (currently `{bh, shepherd}`). On top of the shepherd
-  fixed-config it sets `predation.functional.response.shape.sp{0,5,14,15}=type3` (mode config,
-  injected like the `shepherd` branch injects `stock.recruitment.type`) + the calibrated `halfsat`
-  values (which flow through from the phase-14 result JSON's `parameters` as overrides).
-- **Objective delta requires new capability:** the script currently reports only per-species ICES
-  in-range banding, not the objective. Reporting "objective delta vs phase-13" means importing
-  `make_objective` / the objective wrapper and evaluating both param sets — budget this as a new
-  compare capability, not a one-line flag.
-- Emit: objective (FR-on vs phase-13), per-species ICES in-range count delta, and the realized-
-  predation-mortality diagnostic specified in §"Confounding" above.
+Extend `scripts/evaluate_calibration_vs_ices.py`: add `shepherd-fr` to `--mode` `choices`
+(currently `{bh, shepherd}`); inject `shape.sp{0,5,14,15}=type3` (like the `shepherd` branch injects
+`stock.recruitment.type`) + calibrated halfsat from the phase-14 JSON `parameters`. Report objective
+(FR-on vs phase-13; requires importing the objective wrapper — `make_objective`, exact import to be
+pinned in the plan — a new compare capability, not a flag), ICES in-range delta, and the diagnostic.
 
 ### Success criteria (gate)
+**Binding (go/no-go):** 12/12 Java parity bit-exact with FR off; all §4 opt-in tests green (incl.
+numba-vs-Python with FR on, background-sizing, conservation, and the two diagnostic unit tests).
 
-**Binding gates (go/no-go):**
-- Engine: 12/12 Java parity bit-exact with FR off; all §4 opt-in tests green (incl. type-II smoke and
-  the array-sizing/background test).
+**Reported, not gated (honest, mirroring PR #50):** objective vs phase-13. Disposition:
+- Ships as a **calibrated Baltic improvement** iff the objective does not regress **AND** the
+  process diagnostic shows a mortality reduction that **exceeds the multi-seed noise band** (analogous
+  to PR #50's ±0.012; a bare "some negative delta on the lowest-biomass prey" is NOT sufficient — it
+  is structurally guaranteed by the type-III shape and would make the gate non-falsifiable) for ≥1
+  predator, **ideally corroborated by movement of that prey toward its ICES range**.
+- Otherwise ships as **engine capability only**, explicitly not a Baltic improvement.
+- "Converges" = terminates via patience/convergence before the wall-clock cap; if capped, the
+  capped-best is reported as capped.
 
-**Reported, NOT gated (honest outcome, mirroring PR #50's "not pre-committed to a gain"):**
-- Calibration objective vs phase-13 baseline. The feature **ships as engine capability** regardless
-  of whether the objective improves — but the disposition is split:
-  - If phase-14 demonstrates (via the process diagnostic) that **≥1 predator's realized low-density
-    predation mortality drops measurably FR-on vs FR-off**, *and* the objective does not regress, it
-    ships as a **calibrated Baltic improvement**.
-  - Otherwise the calibrated K's are indistinguishable from the type-I baseline, and it ships as
-    **engine capability only**, explicitly **not** as a Baltic improvement. This falsifiable
-    process-level minimum is what separates "the knob is wired" (defensible to ship) from "the knob
-    helped the Baltic fit" (must be earned), matching how PR #50 held its gate to a number.
-- "Converges" means phase-14 **terminates via patience/convergence before** the wall-clock cap; if it
-  hits the cap, the capped-best is reported honestly as capped (per the bounded-runtime guards).
+## Section 6 — Cross-feature interactions (notes for the plan)
+
+- **Bioenergetics mode:** not orthogonal. Under bioen, growth/starvation read `preyed_biomass`
+  re-capped by `bioen_ingestion_cap`, so FR composes as a **double-cap** and the `pred_success_rate`
+  mechanism is bypassed. Baltic calibration uses no bioen → safe; document the generic caveat and do
+  not claim FR+bioen is validated.
+- **Recruitment (PR #50):** FR changes prey survival → SSB → the frozen Shepherd curve. Acknowledged
+  as confounding (§5); the frozen β is itself a top-down-pressure-dependent fit.
+- **Ev-OSMOSE / FIE (PR #48):** FR is enabled on cod (sp0), the FIE species in `baltic_ev`. FR + FIE
+  on the same species is **unvalidated**; document, do not enable both in calibration.
+- **Trophic-level output:** FR shifts the realized diet mix → perturbs the TL diagnostic (minor;
+  note).
+- **Interleaved 4-cause mortality:** predation competes with starvation/additional/fishing for a
+  shared depleting `inst_abd` in a per-school-shuffled order. FR reducing predation's bite leaves
+  more abundance for other causes that sub-step. FR composes with this (it acts on the `r` computed
+  from current `inst_abd`); note that realized fishing mortality on FR-predators' prey is indirectly
+  coupled.
+- **Multi-stage feeding / accessibility:** `total_available` is already stage- and accessibility-
+  filtered before the injection point; FR composes cleanly.
+
+## Section 7 — Delivery (two PRs, mirroring PR #50 structure)
+
+- **PR-A (engine capability):** schema, focal+background parse, EngineConfig fields + array
+  concat/registration, kernel branch in both live kernels, all §4 engine/config/parity tests +
+  diagnostic unit tests. Gate: 12/12 parity off + opt-in tests. Self-contained; shippable regardless
+  of the Baltic outcome.
+- **PR-B (Baltic calibration + science):** commit `phase13_results.json`, phase-14, the FR-on/FR-off
+  diagnostic, eval `--mode shepherd-fr`. Gate: the process-diagnostic disposition above.
 
 ## Deferred / out of scope
-
-- Per-prey-type functional response (prey-switching) — documented follow-on.
-- FR on resource predation (`_predation_on_resources`) — kept type-I by design (§"Two consumption
-  sites"); resource backfill is intended alternative-prey switching.
-- Perch (sp4) FR — follow-on; excluded here for parameter economy.
-- General Hill exponent for type-III.
-- type-II exploration in the calibration phase (engine + smoke test ships; calibration uses type-III).
-- Any change to the bioenergetics ingestion cap (`bioen_predation.py`) — orthogonal, untouched.
-
-### User-facing caveat to document
-
-type-II functional responses are classically **destabilizing** (paradox of enrichment; can drive
-predator-prey limit cycles / prey extinction), whereas type-III is **stabilizing**. The config-key
-documentation must note that **type-III is the recommended/validated form** and type-II is offered
-for completeness/experimentation.
+- Per-prey-type functional response (prey-switching) — follow-on.
+- Splitting the fused fish+resource pool to apply FR to fish-only `available` — rejected here
+  (parity-risk); revisit only if combined-pool proves insufficient for cod.
+- Perch (sp4) FR; general Hill exponent; type-II in the calibration phase (engine + smoke ships;
+  calibration uses type-III); FR+bioen and FR+FIE validation.
+- Any change to `bioen_predation.py`.
