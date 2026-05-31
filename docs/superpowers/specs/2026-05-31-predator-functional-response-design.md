@@ -313,8 +313,19 @@ diet tracking** and surface the diet matrix. Definition:
   the prey's own equilibrium biomass between the two runs — no arbitrary binning is needed; the
   refuge shows up as a negative delta concentrated on the lower-biomass prey.
 
+Two implementation details the plan must handle (the diet matrix is per-*school*, not per-*species*):
+- The diet matrix is indexed `diet_matrix[p_idx, prey_sp]` with shape `(n_schools, n_species-wide)`.
+  To get "realized mortality of predator *species* p on prey q," **aggregate the per-school rows by
+  `species_id[p_idx]`** (trivial for the 4 FR predators: cod sp0, pikeperch sp5 focal; GreySeal /
+  Cormorant at runtime slots 8/9).
+- `enable_diet_tracking` must be called with a **column width covering focal + background + resource
+  indices** (resource columns are `n_species + r`), or the bounds guard `prey_sp <
+  diet_matrix.shape[1]` silently drops background-predator diets and cod's benthos backfill — which
+  the diagnostic specifically needs to observe.
+
 This diagnostic is what makes the §"Success criteria" go/no-go falsifiable; the implementation plan
-must treat surfacing the diet matrix from the diagnostic run as a concrete task.
+must treat surfacing the (per-species-aggregated) diet matrix from the diagnostic run as a concrete
+task.
 
 ### Evaluation script
 
