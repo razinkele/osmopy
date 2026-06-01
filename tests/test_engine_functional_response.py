@@ -1154,3 +1154,47 @@ def test_diagnostic_width10_truncates_resource_columns():
     assert dm.shape[1] == 10
     # The pure-resource columns 10..13 are beyond the matrix entirely.
     assert dm.shape[1] <= _RESOURCE_COL_START
+
+
+# ---------------------------------------------------------------------------
+# Downstream consequence test (spec §4): FR's observable effect expressed as a
+# PREDATOR-SPECIFIC realized-predation reduction.
+#
+# This is the robust, non-flaky form of FR's consequence: rather than asserting
+# on whole-system biomass (which is noisy and trophically coupled), we measure
+# the change in a single predator's realized diet on its own dominant prey.  A
+# type-III refuge on GreySeal (background sp14 -> runtime slot 8) must reduce the
+# mass of its top focal prey that GreySeal actually consumes.
+#
+# Empirical calibration of this test (measured on the Baltic short config,
+# seed=11, 1-yr run, width-16 diet matrix):
+#   - GreySeal's dominant focal prey is herring (focal column 1).
+#   - Baseline GreySeal-on-herring diet mass: 580.56.
+#   - type-III at k=1.0: 572.31  (delta -8.24, ~1.4 % reduction) — STRICT drop.
+#   - type-III at k=0.5: 542.08  (delta -38.47, deeper refuge).
+# The reduction is fully deterministic (movement + mortality RNG seeded), so a
+# strict ``<`` inequality is robust across the seed.  k=1.0 is sufficient to
+# show a strict top-prey reduction; we use it rather than a deeper refuge or a
+# focal-prey SUM because the strict single-prey form is the strongest available
+# statement and it holds.  This is the §4 bioenergetic-consequence requirement
+# discharged via the observable predation-reduction delta — see the module-level
+# docs note in docs/baltic_example.md ("Predator functional response").
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(
+    not _BALTIC_CONFIG.exists(),
+    reason="Baltic config not present in data/baltic/",
+)
+def test_fr_type3_reduces_greyseal_predation_on_top_prey():
+    from osmose.engine.output import aggregate_diet_all_predators
+
+    # 1. Baseline diet run: find GreySeal's (runtime slot 8) dominant focal prey.
+    dm_base, sid = _run_baltic_short_with_diet(fr=None, width=16)
+    seal = aggregate_diet_all_predators(dm_base, sid, n_total=10)[8]  # GreySeal diet row
+    prey_id = int(np.argmax(seal[:8]))  # its top FOCAL prey (cols 0..7)
+    assert seal[prey_id] > 0  # GreySeal genuinely eats it (test non-vacuous)
+    # 2. type-III refuge on GreySeal -> it eats LESS of that prey.
+    dm_fr, sid2 = _run_baltic_short_with_diet(fr={"sp14": (3, 1.0)}, width=16)
+    seal_fr = aggregate_diet_all_predators(dm_fr, sid2, n_total=10)[8]
+    assert seal_fr[prey_id] < seal[prey_id]  # FR cut GreySeal's realized predation on its top prey

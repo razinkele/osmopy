@@ -165,6 +165,30 @@ Structural notes:
 - **Stage structure:** size-based for predator–prey kernel, age-based for accessibility. Thresholds set per species in the CSV.
 - **Accessibility matrix** (see `predation-accessibility.csv`): 14 rows (prey) × 14 columns (predator). Cod eats mesozoo (0.5), macrozoo (0.6), benthos (0.6), and is cannibalistic (cod-on-cod 0.05). Sprat and herring are strict zooplanktivores (no phyto > 0.2). Stickleback the most-accessible prey in the matrix (heavy access from almost all piscivores). Smelt is the heaviest cross-trophic forage fish (access 0.5–0.8 from cod/perch/pikeperch/flounder).
 
+#### Predator functional response (opt-in, off by default)
+
+OSMOSE-Python supports an **opt-in Holling functional-response (FR)** form on a per-predator basis. Two new config keys control it (one per species index `sp{i}`):
+
+| Key | Type | Default | Range / values | Required? |
+|-----|------|---------|----------------|-----------|
+| `predation.functional.response.shape.sp{i}` | enum | `type1` | `type1` \| `type2` \| `type3` | optional |
+| `predation.functional.response.halfsat.sp{i}` | float (dimensionless K) | — | `[0.1, 5.0]` | required **iff** shape ≠ `type1` |
+
+The **per-key reference lives in the schema metadata** (`osmose/schema/predation.py`, the canonical source the UI auto-generates forms from); the prose caveats below are the discoverable companion documentation. The half-saturation `K` is a *ration-relative, dimensionless* tuning parameter (well-scaled for differential-evolution calibration) — **not** a transferable biological constant.
+
+Caveats — read before enabling:
+
+1. **Default `type1` ≡ existing behavior, bit-exact.** An explicit `type1` and an absent key are identical at runtime. There is no migration: existing Baltic configs are unaffected unless you add a non-`type1` shape.
+2. **`type2` is classically destabilizing** (the *paradox of enrichment*); **`type3` is the recommended / validated form** (sigmoid response with a low-density prey refuge). Prefer `type3` for any production use.
+3. **Combined-pool caveat.** FR acts on the *fused fish + resource* prey pool — the kernel computes a single `total_available` per cell. For a predator like cod that sits over abundant benthos, the ration ratio `r` stays high, so the `type3` low-density refuge rarely triggers and the realized effect can be small. This is a genuine limitation, stated up front: FR on a benthos-subsidized predator may barely move its diet.
+4. **"Inert on prey-only species" is imprecise.** FR applies to a species *wherever it acts as a predator* — **including when it eats resources** (plankton / benthos). A non-`type1` shape on a low-trophic species that still grazes plankton is **not** runtime-inert; it alters that species' resource consumption. FR is truly inert only for a species that eats nothing at all. Accordingly, config validation **accepts** a non-`type1` shape on any species index — the shape is only read where that species is acting as a predator, so an apparently "wrong" assignment is silently harmless rather than an error.
+5. **Bioenergetics double-cap (UNVALIDATED combination).** Under bioenergetics (bioen) mode, growth/starvation read `preyed_biomass` re-capped by the allometric ingestion cap, **bypassing** the `pred_success_rate` path; FR then composes as a *double cap*. **FR + bioen is unvalidated.** (The Baltic calibration uses no bioen, so this combination is untested here.)
+6. **Ev-OSMOSE / FIE (UNVALIDATED combination).** A follow-up (PR-B) will enable FR on cod (`sp0`), which is the fisheries-induced-evolution (FIE) species in the `baltic_ev` config. **FR + FIE on the same species is unvalidated** — do **not** enable both in the same calibration.
+7. **Trophic-level output.** FR shifts the realized diet mix, which is a **minor perturbation** of the trophic-level (TL) diagnostic. Expect small TL shifts when FR is active.
+8. **Interleaved 4-cause mortality.** Predation, starvation, additional, and fishing mortality are applied in a per-school-shuffled sub-step. When FR reduces predation's bite, it leaves more abundance available to the other three causes in the same sub-step — so the **realized fishing mortality on an FR-predator's prey is indirectly coupled** to the FR shape. This coupling is expected, not a bug.
+
+> *Spec §4's bioenergetic-consequence requirement is satisfied via the observable prey-survival / predation-reduction delta (see `tests/test_engine_functional_response.py::test_fr_type3_reduces_greyseal_predation_on_top_prey`); the `pred_success_rate → growth/starvation` path is not separately unit-tested because the Baltic config uses no bioenergetics mode.*
+
 ### Reproduction (`baltic_param-reproduction.csv`, `reproduction/reproduction-seasonality-sp{0..7}.csv`)
 
 - **Source:** Per-species spawning-season literature, all cross-referenced in the header block of `baltic_param-movement.csv` (the movement file groups spawning-map+timing together even though the actual per-step fractions live in the reproduction CSVs).
