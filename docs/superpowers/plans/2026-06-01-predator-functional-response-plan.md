@@ -86,6 +86,13 @@ def _base_cfg(background: bool):
     Baltic 8+2 background setup). Built from the existing fixture found in Step 1."""
     ...  # construct from the Step-1 fixture; keep deterministic seed
 
+def _build_via_entry_point(cfg: dict):
+    """The ONLY supported construction path is EngineConfig.from_dict (config.py:1469;
+    there is no build_engine_config). All FR config/parse tests build through this so the
+    allowlist + validation run exactly as in production."""
+    from osmose.engine.config import EngineConfig
+    return EngineConfig.from_dict(cfg)
+
 def _run_short_sim(numba=True, fr=None, seed=7, background=False, force_empty_prey=False):
     """Run a few steps; return per-species end-of-run biomass as np.ndarray.
     force_empty_prey: zero out all resource biomass AND remove non-predator schools so a
@@ -209,7 +216,7 @@ git commit -m "feat(fr): add predator functional-response schema fields"
 
 - [ ] **Step 1: Decide the entry point and write failing validation tests (all with `match=`)**
 
-The public builder is `build_engine_config` (in config.py); `EngineConfig.from_dict` runs the allowlist. Use whichever the existing `tests/test_engine_config_validation.py` parse tests use — confirm with `grep -n "build_engine_config\|from_dict\|_minimal\|_parse" tests/test_engine_config_validation.py | head`. Call that same entry point here so the red is a real validation red, not an allowlist/KeyError red.
+The only construction path is `EngineConfig.from_dict` (config.py:1469; there is no `build_engine_config`). All tests use `_build_via_entry_point` (defined in A0 = `EngineConfig.from_dict`), so the red is a real validation red, not an allowlist/KeyError red.
 
 ```python
 import pytest
@@ -328,14 +335,20 @@ _FR_HALFSAT_SENTINEL = 1.0  # inert: type1 never reads fr_halfsat
 _FR_SHAPE_CODE = {"type1": 1, "type2": 2, "type3": 3}
 ```
 
-- [ ] **Step 4: Add fields to `BackgroundSpeciesInfo` (`:88`, beside `ingestion_rate`)**
+- [ ] **Step 4: Add fields to `BackgroundSpeciesInfo`**
 
-```python
-    fr_shape: int = 1            # functional-response code: 1=type-I, 2=type-II, 3=type-III
-    fr_halfsat: float = 1.0      # ration-relative half-saturation K (type2/3 only)
-```
-
-(If the dataclass has no defaults, place these after the last defaulted field or supply them at every construction site.)
+`ingestion_rate` (`:88`) is in the dataclass's **non-defaulted** block (only `proportion_ts` at `:103` has a default). Python forbids a defaulted field before a non-defaulted one, so DO NOT insert defaulted fields at `:88`. Two valid options — pick one:
+- (a) **non-defaulted**, placed beside `ingestion_rate` (`:88`), and pass them at the `:218` constructor (the parse always supplies them):
+  ```python
+      fr_shape: int            # functional-response code: 1=type-I, 2=type-II, 3=type-III
+      fr_halfsat: float        # ration-relative half-saturation K (type2/3 only)
+  ```
+- (b) **defaulted**, placed AFTER the last defaulted field (after `proportion_ts` at `:103`):
+  ```python
+      fr_shape: int = 1
+      fr_halfsat: float = 1.0
+  ```
+Option (a) is cleaner since the parse (Step 5) always sets both.
 
 - [ ] **Step 5: Parse + validate in `parse_background_species` (beside ingestion at `:197`/`:218`)**
 
@@ -576,15 +589,9 @@ def test_oracle_type3_refuge_ratio_increasing():
 Run: `.venv/bin/python -m pytest tests/test_engine_functional_response.py -k oracle -v`
 Expected: PASS. (These test the oracle; Step 6 pins the KERNEL to the oracle — that is the load-bearing edge.)
 
-- [ ] **Step 3: Add `fr_shape`/`fr_halfsat` to `_apply_predation_for_school` signature (`:335`)**
+- [ ] **Step 3: NO signature change on the Python path**
 
-Add two params after `ingestion_rate` (match the numba order in A6):
-
-```python
-    ingestion_rate,
-    fr_shape,
-    fr_halfsat,
-```
+Unlike the numba kernel (A6), `_apply_predation_for_school` (`:339`) already takes `config: EngineConfig` directly and reads `config.ingestion_rate` internally (`:378`) — it has **no `ingestion_rate` parameter**. So the branch reads `config.fr_shape[sp_pred]` / `config.fr_halfsat[sp_pred]` directly; **do not add params and do not touch the `:1659` call site**. (The numba path differs because `@njit` code can't hold the `config` object — that's why A6 threads arrays.)
 
 - [ ] **Step 4: Replace the injection point (`:484`) — do NOT recompute sp_pred**
 
@@ -597,30 +604,23 @@ Add two params after `ingestion_rate` (match the numba order in A6):
 with:
 
 ```python
-    if fr_shape[sp_pred] == 1:
+    if config.fr_shape[sp_pred] == 1:
         eaten_total = min(total_available, max_eatable)  # verbatim type-I (bit-exact)
     else:
         r = total_available / max_eatable
-        k = fr_halfsat[sp_pred]
-        if fr_shape[sp_pred] == 2:
-            g_form = r / (r + k)
+        k_fr = config.fr_halfsat[sp_pred]
+        if config.fr_shape[sp_pred] == 2:
+            g_form = r / (r + k_fr)
         else:  # type-III
-            g_form = (r * r) / (r * r + k * k)
+            g_form = (r * r) / (r * r + k_fr * k_fr)
         cap = r if r < 1.0 else 1.0  # min(r, 1)
         g = g_form if g_form < cap else cap  # conservation clamp
         eaten_total = max_eatable * g
 ```
 
-`success = min(eaten_total / max_eatable, 1.0)` at `:541` stays **unchanged** (correct for all forms). Do NOT route type-I through `max_eatable * g` (1-ULP parity risk).
+(`k_fr`, not `k` — avoids shadowing any nearby loop variable.) `success = min(eaten_total / max_eatable, 1.0)` at `:541` stays **unchanged** (correct for all forms). Do NOT route type-I through `max_eatable * g` (1-ULP parity risk).
 
-- [ ] **Step 5: Pass the arrays at the call site (`:1659`, `config` in scope)**
-
-After `config.ingestion_rate` in the `_apply_predation_for_school(...)` call:
-
-```python
-                    config.fr_shape,
-                    config.fr_halfsat,
-```
+- [ ] **Step 5: (removed — no call-site change needed; `config` is already passed at `:1659`)**
 
 - [ ] **Step 6: THE load-bearing test — kernel output equals `max_eatable · _g_ref(r,…)`**
 
@@ -638,7 +638,13 @@ def test_python_kernel_matches_oracle(shape, k, r):
     assert eaten == pytest.approx(max_eatable * _g_ref(r, shape, k), rel=1e-12)
 ```
 
-Build `_run_single_predation_step_python` from the existing direct unit test of `_apply_predation_for_school` (find via grep); it must let you set `total_available`/`max_eatable` (e.g. via a single prey school's eligible biomass and the predator's ingestion-derived `max_eatable`). This is the test that makes `_g_ref` load-bearing.
+Build `_run_single_predation_step_python` from the existing direct unit test of `_apply_predation_for_school` (find via `grep -rn "_apply_predation_for_school" tests/` — `tests/test_engine_mortality_loop.py` has a usable single-step harness). After the call, read `eaten_total` back via `state.preyed_biomass[p_idx]` (mortality.py:543 does `preyed_biomass[p_idx] += eaten_total`, so use a freshly-zeroed `state` → the `+=` equals `eaten_total`).
+
+`_max_eatable_of_that_step` must replicate the kernel's formula at **mortality.py:378**:
+```python
+max_eatable = biomass_p * config.ingestion_rate[sp_pred] / (config.n_dt_per_year * n_subdt)
+```
+Set the prey's eligible biomass so that `total_available = r * max_eatable` for the target `r`. This direct kernel-output-vs-oracle assertion is the test that makes `_g_ref` load-bearing.
 
 - [ ] **Step 7: Run**
 
@@ -761,12 +767,12 @@ The parity suite is `tests/test_engine_parity.py` (12 collected). **3 are `@_exa
 Run: `.venv/bin/python -m pytest tests/test_engine_parity.py -v`
 Expected: **9 passed, 3 skipped** on a normal run (no baseline regen). If your environment IS the baseline interpreter, expect 12 passed.
 
-- [ ] **Step 2: Force-run the 3 bit-exact tests locally**
+- [ ] **Step 2: Confirm the 3 bit-exact tests actually RAN (not skipped)**
 
-The 3 `_exact_match_local_only` tests gate bit-exactness; run them on the baseline interpreter explicitly (the marker reads an env/flag — find it: `grep -n "_exact_match_local_only\|OSMOSE.*BASELINE\|skipif" tests/test_engine_parity.py`). Set that flag and run:
+The 3 `_exact_match_local_only` tests gate bit-exactness. The marker skips them when env `CI` is truthy **OR** Python ≠ 3.12 (confirm: `grep -n "_exact_match_local_only\|_RUNNING_ON_CI\|CI\|version_info" tests/test_engine_parity.py`). So they run **by default locally** on Python 3.12 with `CI` unset — there is no flag to "enable"; just ensure `CI` is not set:
 
-Run: `<BASELINE_FLAG>=1 .venv/bin/python -m pytest tests/test_engine_parity.py -k "biomass_match or abundance_match or mortality_match" -v`
-Expected: 3 passed (FR defaults off ⇒ verbatim type-I ⇒ bit-exact). If they can't run in this environment, document that bit-exactness was verified by the explicit `test_fr_explicit_type1_equals_absent_key` (Step 3) instead, and flag for CI/baseline confirmation.
+Run: `env -u CI .venv/bin/python -m pytest tests/test_engine_parity.py -k "biomass_match or abundance_match or mortality_match" -v`
+Expected: **3 passed** (FR defaults off ⇒ verbatim type-I ⇒ bit-exact), NOT 3 skipped. If pytest reports skipped, you are on CI/wrong Python — bit-exactness is then verified instead by `test_fr_explicit_type1_equals_absent_key` (Step 3) and must be confirmed on a 3.12 baseline before merge.
 
 - [ ] **Step 3: Explicit "type1 == absent-key" engine test**
 
@@ -847,9 +853,11 @@ def test_diagnostic_diet_width_keeps_background_and_resource_columns(monkeypatch
     real = pred.enable_diet_tracking
     monkeypatch.setattr(pred, "enable_diet_tracking",
                         lambda n_schools, n_species, ctx=None: real(n_schools, 16, ctx=ctx))
-    dm = _run_baltic_short_with_diet(fr={"sp0": (3, 1.0), "sp14": (3, 1.0)})  # returns the raw diet_matrix
+    # _run_baltic_short_with_diet returns (diet_matrix, species_id) — species_id is the
+    # engine's per-school array (state.species_id), needed by the aggregator. Have the helper
+    # return both rather than re-deriving species_id.
+    dm, sid = _run_baltic_short_with_diet(fr={"sp0": (3, 1.0), "sp14": (3, 1.0)})
     assert dm.shape[1] == 16
-    sid = _species_id_of_that_run()
     agg = aggregate_diet_all_predators(dm, sid, n_total=10)
     assert agg[8:10, :].sum() > 0   # background predators ate something (not dropped)
     assert agg[:, 10:16].sum() > 0  # resource columns (benthos etc.) survived width 16
@@ -909,7 +917,9 @@ def test_fr_type3_increases_prey_survival(monkeypatch=None):
     # type-III refuge on a predator -> less predation on its prey -> higher prey end biomass.
     base = _run_baltic_short(seed=21, fr=None)
     fr_on = _run_baltic_short(seed=21, fr={"sp14": (3, 1.0)})  # GreySeal type-III
-    prey_id = _a_primary_prey_of_greyseal()  # from the diet matrix
+    # prey_id = a fixed focal species GreySeal preys on heavily. Confirm from a baseline
+    # diet-matrix run (cod sp0 / herring / sprat are primary Baltic seal prey); pin the id.
+    prey_id = 0  # cod sp0 — verify it is a top GreySeal prey in the diet matrix; adjust if not
     assert fr_on[prey_id] >= base[prey_id]   # refuge raises (or holds) prey survival
 ```
 
