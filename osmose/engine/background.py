@@ -25,6 +25,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Duplicated from osmose/engine/config.py — importing from config would be a
+# circular import because config.py imports background.py at module level.
+# Keep in sync with config._FR_HALFSAT_SENTINEL and config._FR_SHAPE_CODE.
+_FR_HALFSAT_SENTINEL = 1.0  # inert: type1 never reads fr_halfsat
+_FR_SHAPE_CODE = {"type1": 1, "type2": 2, "type3": 3}
+
 
 def _resolve_path(filepath_str: str, config_dir: str = "") -> Path:
     """Resolve a relative file path against multiple candidate directories.
@@ -102,6 +108,12 @@ class BackgroundSpeciesInfo:
 
     proportion_ts: "NDArray[np.float64] | None" = field(default=None)
     """Time-varying proportion overrides (shape: n_steps x n_class). None = use proportions."""
+
+    fr_shape: int = 1
+    """Functional-response code: 1=type-I (linear), 2=type-II, 3=type-III."""
+
+    fr_halfsat: float = _FR_HALFSAT_SENTINEL
+    """Ration-relative half-saturation K (used by type-II/III only)."""
 
     def __post_init__(self) -> None:
         if len(self.lengths) != self.n_class:
@@ -196,6 +208,30 @@ def parse_background_species(
         size_ratio_min = _parse_floats(cfg.get(f"predation.predprey.sizeratio.min.sp{i}", "1.0"))
         ingestion_rate = float(cfg.get(f"predation.ingestion.rate.max.sp{i}", "3.5"))
 
+        fr_shape_str = (
+            cfg.get(f"predation.functional.response.shape.sp{i}", "type1").strip().lower()
+        )
+        if fr_shape_str not in _FR_SHAPE_CODE:
+            raise ValueError(
+                f"predation.functional.response.shape.sp{i} = {fr_shape_str!r} not one of "
+                f"{sorted(_FR_SHAPE_CODE)}"
+            )
+        fr_shape = _FR_SHAPE_CODE[fr_shape_str]
+        if fr_shape_str != "type1":
+            hv = cfg.get(f"predation.functional.response.halfsat.sp{i}")
+            if hv is None:
+                raise ValueError(
+                    f"predation.functional.response.halfsat.sp{i} is required when "
+                    f"predation.functional.response.shape.sp{i} = {fr_shape_str}"
+                )
+            if not (0.1 <= float(hv) <= 5.0):
+                raise ValueError(
+                    f"predation.functional.response.halfsat.sp{i} = {hv} out of range [0.1, 5.0]"
+                )
+            fr_halfsat = float(hv)
+        else:
+            fr_halfsat = _FR_HALFSAT_SENTINEL
+
         multiplier = float(cfg.get(f"species.biomass.multiplier.sp{i}", "1.0"))
         offset = float(cfg.get(f"species.biomass.offset.sp{i}", "0.0"))
 
@@ -216,6 +252,8 @@ def parse_background_species(
                 size_ratio_min=size_ratio_min,
                 size_ratio_max=size_ratio_max,
                 ingestion_rate=ingestion_rate,
+                fr_shape=fr_shape,
+                fr_halfsat=fr_halfsat,
                 multiplier=multiplier,
                 offset=offset,
                 forcing_nsteps_year=forcing_nsteps_year,

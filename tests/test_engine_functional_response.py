@@ -396,3 +396,72 @@ def test_fr_shape_invalid_enum_raises():
     cfg["predation.functional.response.shape.sp0"] = "type9"
     with pytest.raises(ValueError, match="(?i)type9|not.*one of|invalid"):
         _build_via_entry_point(cfg)
+
+
+# ---------------------------------------------------------------------------
+# A3: background-species FR parse tests
+# ---------------------------------------------------------------------------
+
+
+def test_fr_shape_code_parity_across_modules():
+    """_FR_SHAPE_CODE in background.py must match config.py — guards against drift."""
+    from osmose.engine.background import _FR_SHAPE_CODE as B
+    from osmose.engine.config import _FR_SHAPE_CODE as A
+
+    assert A == B
+
+
+def test_background_parse_sets_fr_fields():
+    """parse_background_species populates fr_shape/fr_halfsat on BackgroundSpeciesInfo.
+
+    This is the A3 acceptance criterion: background parsing works independently
+    of A4 (EngineConfig concat).  We call parse_background_species directly with
+    a minimal cfg that has sp14 declared as background + type3 FR.
+    """
+    from osmose.engine.background import parse_background_species
+
+    cfg = {
+        "species.type.sp14": "background",
+        "simulation.nbackground": "1",
+        "species.name.sp14": "GreySeal",
+        "species.nclass.sp14": "1",
+        "species.length.sp14": "100",
+        "species.size.proportion.sp14": "1",
+        "species.trophic.level.sp14": "3.5",
+        "species.age.sp14": "1",
+        "species.length2weight.condition.factor.sp14": "0.01",
+        "species.length2weight.allometric.power.sp14": "3.0",
+        "predation.predprey.sizeratio.max.sp14": "3.5",
+        "predation.predprey.sizeratio.min.sp14": "1.0",
+        "predation.ingestion.rate.max.sp14": "3.5",
+        "predation.functional.response.shape.sp14": "type3",
+        "predation.functional.response.halfsat.sp14": "1.0",
+        "species.biomass.multiplier.sp14": "1.0",
+        "species.biomass.offset.sp14": "0.0",
+        "species.biomass.total.sp14": "1000.0",
+    }
+
+    species_list = parse_background_species(cfg, n_focal=8, n_dt_per_year=12)
+    assert len(species_list) == 1
+    sp = species_list[0]
+    assert sp.fr_shape == 3, f"expected fr_shape=3 (type3), got {sp.fr_shape}"
+    assert sp.fr_halfsat == 1.0, f"expected fr_halfsat=1.0, got {sp.fr_halfsat}"
+
+
+@pytest.mark.skipif(
+    not _BALTIC_CONFIG.exists(),
+    reason="Baltic config not present in data/baltic/",
+)
+def test_fr_background_enum_maps_to_runtime_slot():
+    """Background FR config key sp14=type3 must reach runtime slot 8 (n_focal+bkg_idx).
+
+    NOTE: This test exercises the full A3+A4 pipeline.  It will fail until A4
+    wires fr_shape/fr_halfsat into EngineConfig arrays — expect AttributeError
+    or a missing-field error until then.  The background *parse* is validated
+    independently by test_background_parse_sets_fr_fields (A3-only).
+    """
+    cfg = _apply_fr(_base_cfg(background=True), {"sp14": (3, 1.0)})
+    ecfg = _build_via_entry_point(cfg)
+    assert ecfg.fr_shape[8] == 3
+    assert ecfg.fr_halfsat[8] == 1.0
+    assert ecfg.fr_shape[9] == 1
