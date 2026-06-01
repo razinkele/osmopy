@@ -494,3 +494,191 @@ def test_fr_mis_sized_array_raises():
     kwargs["fr_shape"] = np.ones(ecfg.n_species, dtype=np.int32)  # wrong length
     with pytest.raises(ValueError, match="fr_shape"):
         type(ecfg)(**kwargs)  # re-runs __post_init__ length check
+
+
+# ---------------------------------------------------------------------------
+# A5: functional-response branch in the pure-Python predation kernel
+# ---------------------------------------------------------------------------
+#
+# Oracle (mirrors the intended math in _apply_predation_for_school):
+#   type-I (1): min(r, 1)
+#   type-II (2): r/(r+k), then conservation-clamped to min(r, 1)
+#   type-III(3): r²/(r²+k²), then conservation-clamped to min(r, 1)
+
+
+def _g_ref(r, shape, k):
+    if shape == 1:
+        return min(r, 1.0)
+    g = (r / (r + k)) if shape == 2 else ((r * r) / (r * r + k * k))
+    return min(g, min(r, 1.0))  # conservation clamp
+
+
+@pytest.mark.parametrize("k", [0.1, 0.5, 1.0, 5.0])
+@pytest.mark.parametrize("r", [0.01, 0.1, 0.5, 0.9, 1.0, 2.0, 10.0])
+def test_oracle_conservation(r, k):
+    for shape in (2, 3):
+        assert _g_ref(r, shape, k) <= min(r, 1.0) + 1e-12
+
+
+def test_oracle_clamp_is_load_bearing():
+    r, k = 0.5, 0.1
+    raw = (r * r) / (r * r + k * k)
+    assert raw > min(r, 1.0)  # raw type-III violates conservation here
+    assert _g_ref(r, 3, k) == min(r, 1.0)  # clamp pulls it back to the ration cap
+
+
+def test_oracle_anchors_and_limits():
+    assert _g_ref(1.0, 2, 1.0) == pytest.approx(0.5)
+    assert _g_ref(1.0, 3, 1.0) == pytest.approx(0.5)
+    assert _g_ref(0.3, 1, 999) == 0.3 and _g_ref(5.0, 1, 999) == 1.0
+    assert _g_ref(1e6, 2, 1.0) == pytest.approx(1.0, abs=1e-3)
+    assert _g_ref(1e6, 3, 1.0) == pytest.approx(1.0, abs=1e-3)
+    xs = [0.05, 0.2, 0.5, 1.0, 2.0]
+    for shape in (2, 3):
+        gs = [_g_ref(x, shape, 1.0) for x in xs]
+        assert all(b >= a - 1e-12 for a, b in zip(gs, gs[1:]))
+
+
+def test_oracle_type3_refuge_ratio_increasing():
+    k = 1.0
+    rs = [0.05, 0.1, 0.2, 0.4]
+    ratios = [((x * x) / (x * x + k * k)) / x for x in rs]
+    assert all(b > a for a, b in zip(ratios, ratios[1:]))
+    assert _g_ref(0.05, 3, k) < _g_ref(0.05, 2, k)
+
+
+def _run_single_predation_step_python(r: float, shape: int, k: float):
+    """Drive _apply_predation_for_school once with a hand-built one-predator /
+    one-prey scenario and return (eaten_total, max_eatable).
+
+    Scenario construction (reuses the harness pattern from
+    tests/test_engine_mortality_loop.py::TestUnifiedPredation):
+      - sp1 = single big predator school, sp0 = single small prey school,
+        co-located in cell (0, 0), no resources (n_resources == 0).
+      - access_coeff defaults to 1.0 (has_access=False), so the predator's
+        accessible pool is exactly total_available = prey_abundance * prey_weight.
+      - max_eatable = pred_biomass * ingestion_rate / (n_dt_per_year * n_subdt).
+      - Prey abundance is solved so total_available == r * max_eatable EXACTLY,
+        giving the kernel a known ratio r at the injection point.
+      - FR config arrays are mutated directly on the EngineConfig:
+        fr_shape[sp_pred] = shape, fr_halfsat[sp_pred] = k.
+      - State is freshly zeroed (preyed_biomass starts at 0), so eaten_total is
+        read back as state.preyed_biomass[p_idx] (it is += from zero).
+    """
+    from osmose.engine.config import EngineConfig
+    from osmose.engine.grid import Grid
+    from osmose.engine.processes.mortality import _apply_predation_for_school
+    from osmose.engine.resources import ResourceState
+    from osmose.engine.state import SchoolState
+
+    n_subdt = 10
+    cfg_dict = {
+        "simulation.time.ndtperyear": "24",
+        "simulation.time.nyear": "1",
+        "simulation.nspecies": "2",
+        "simulation.nschool.sp0": "1",
+        "simulation.nschool.sp1": "1",
+        "species.name.sp0": "SmallPrey",
+        "species.name.sp1": "BigPredator",
+        "species.linf.sp0": "15.0",
+        "species.linf.sp1": "50.0",
+        "species.k.sp0": "0.5",
+        "species.k.sp1": "0.2",
+        "species.t0.sp0": "-0.1",
+        "species.t0.sp1": "-0.1",
+        "species.egg.size.sp0": "0.1",
+        "species.egg.size.sp1": "0.1",
+        "species.length2weight.condition.factor.sp0": "0.006",
+        "species.length2weight.condition.factor.sp1": "0.006",
+        "species.length2weight.allometric.power.sp0": "3.0",
+        "species.length2weight.allometric.power.sp1": "3.0",
+        "species.lifespan.sp0": "5",
+        "species.lifespan.sp1": "10",
+        "species.vonbertalanffy.threshold.age.sp0": "1.0",
+        "species.vonbertalanffy.threshold.age.sp1": "1.0",
+        "mortality.subdt": str(n_subdt),
+        "predation.ingestion.rate.max.sp0": "3.5",
+        "predation.ingestion.rate.max.sp1": "3.5",
+        "predation.efficiency.critical.sp0": "0.57",
+        "predation.efficiency.critical.sp1": "0.57",
+        "predation.predPrey.sizeRatio.min.sp0": "1.0",
+        "predation.predPrey.sizeRatio.min.sp1": "1.0",
+        "predation.predPrey.sizeRatio.max.sp0": "0.3",
+        "predation.predPrey.sizeRatio.max.sp1": "0.3",
+        "mortality.additional.rate.sp0": "0.0",
+        "mortality.additional.rate.sp1": "0.0",
+        "mortality.starvation.rate.max.sp0": "0.0",
+        "mortality.starvation.rate.max.sp1": "0.0",
+        "simulation.fishing.mortality.enabled": "false",
+    }
+    cfg = EngineConfig.from_dict(cfg_dict)
+
+    # Inject FR config on the predator species (sp1 == runtime slot 1).
+    sp_pred = 1
+    cfg.fr_shape[sp_pred] = shape
+    cfg.fr_halfsat[sp_pred] = k
+
+    grid = Grid.from_dimensions(ny=1, nx=1)
+    rs = ResourceState(config=cfg.raw_config, grid=grid)
+    assert rs.n_resources == 0, "scenario assumes no resources so total_available is school-only"
+
+    # schools: index 0 = predator (sp1), index 1 = prey (sp0).
+    state = SchoolState.create(n_schools=2, species_id=np.array([1, 0], dtype=np.int32))
+    pred_w = 0.006 * 30**3 * 1e-6  # tonnes per individual
+    prey_w = 0.006 * 10**3 * 1e-6
+    pred_abundance = 100.0
+    pred_biomass = pred_abundance * pred_w
+
+    # max_eatable for the predator (matches kernel formula at mortality.py:378).
+    ingestion_rate = 3.5
+    n_dt_per_year = 24
+    max_eatable = pred_biomass * ingestion_rate / (n_dt_per_year * n_subdt)
+
+    # total_available = prey_abundance * prey_w == r * max_eatable  -> solve abundance.
+    prey_abundance = (r * max_eatable) / prey_w
+
+    state = state.replace(
+        abundance=np.array([pred_abundance, prey_abundance]),
+        length=np.array([30.0, 10.0]),  # ratio 3.0, within [1.0, 1/0.3)
+        weight=np.array([pred_w, prey_w]),
+        biomass=np.array([pred_biomass, prey_abundance * prey_w]),
+        age_dt=np.array([48, 24], dtype=np.int32),
+        cell_x=np.array([0, 0], dtype=np.int32),
+        cell_y=np.array([0, 0], dtype=np.int32),
+        feeding_stage=np.array([0, 0], dtype=np.int32),
+    )
+
+    rng = np.random.default_rng(42)
+    cell_indices = np.array([0, 1], dtype=np.int32)
+    _apply_predation_for_school(
+        0,  # p_idx = predator school
+        cell_indices,
+        state,
+        cfg,
+        rs,
+        0,  # cell_y
+        0,  # cell_x
+        rng,
+        n_subdt,
+        None,  # access_matrix
+        False,  # has_access
+        False,  # use_stage_access
+        None,
+        None,
+        inst_abd=state.abundance.copy(),
+    )
+    eaten = float(state.preyed_biomass[0])
+    return eaten, max_eatable
+
+
+@pytest.mark.parametrize("shape,k", [(1, 1.0), (2, 1.0), (3, 1.0), (3, 0.1), (3, 5.0)])
+@pytest.mark.parametrize("r", [0.05, 0.5, 0.95, 2.0])
+def test_python_kernel_matches_oracle(shape, k, r):
+    eaten, max_eatable = _run_single_predation_step_python(r=r, shape=shape, k=k)
+    assert eaten == pytest.approx(max_eatable * _g_ref(r, shape, k), rel=1e-12)
+
+
+def test_python_kernel_type3_reduces_eaten_at_low_r():
+    eaten1, me1 = _run_single_predation_step_python(r=0.3, shape=1, k=1.0)
+    eaten3, me3 = _run_single_predation_step_python(r=0.3, shape=3, k=1.0)
+    assert eaten3 < eaten1  # type-III refuge eats less at low r

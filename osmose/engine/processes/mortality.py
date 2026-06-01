@@ -481,7 +481,18 @@ def _apply_predation_for_school(
         return
 
     # --- Phase 2: Distribute eating proportionally (matching Java) ---
-    eaten_total = min(total_available, max_eatable)
+    if config.fr_shape[sp_pred] == 1:
+        eaten_total = min(total_available, max_eatable)  # verbatim type-I (bit-exact)
+    else:
+        r = total_available / max_eatable
+        k_fr = config.fr_halfsat[sp_pred]
+        if config.fr_shape[sp_pred] == 2:
+            g_form = r / (r + k_fr)
+        else:  # type-III
+            g_form = (r * r) / (r * r + k_fr * k_fr)
+        cap = r if r < 1.0 else 1.0  # min(r, 1)
+        g = g_form if g_form < cap else cap  # conservation clamp
+        eaten_total = max_eatable * g
 
     # cell_id is only meaningful when resources are present (used inside the
     # `if resources is not None:` branch below). When resources is None we
