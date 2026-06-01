@@ -224,7 +224,7 @@ import pytest
 def test_fr_halfsat_required_when_shape_not_type1():
     cfg = _apply_fr(_base_cfg(background=False), {"sp0": (3, None)})  # type3, no halfsat
     with pytest.raises(ValueError, match="is required when"):
-        _build_via_entry_point(cfg)  # = build_engine_config or from_dict per Step 1
+        _build_via_entry_point(cfg)  # = EngineConfig.from_dict (defined in A0)
 
 def test_fr_halfsat_out_of_range_raises():
     cfg = _base_cfg(background=False)
@@ -912,16 +912,22 @@ Add `predation.functional.response.shape.sp{i}` and `…halfsat.sp{i}` to the co
 
 The spec §4 requires a bioenergetic-consequence test OR an explicit downgrade. Baltic uses no bioen, so deliver the observable non-bioen consequence and DOCUMENT the downgrade. Add to the test file:
 
+Assert on the **predator-specific realized predation** (directly attributable to FR), NOT whole-system end biomass (which trophic cascades + RNG make flaky for a `>=` check). Derive the target prey from GreySeal's own diet so the test is meaningful regardless of which species dominates:
+
 ```python
-def test_fr_type3_increases_prey_survival(monkeypatch=None):
-    # type-III refuge on a predator -> less predation on its prey -> higher prey end biomass.
-    base = _run_baltic_short(seed=21, fr=None)
-    fr_on = _run_baltic_short(seed=21, fr={"sp14": (3, 1.0)})  # GreySeal type-III
-    # prey_id = a fixed focal species GreySeal preys on heavily. Confirm from a baseline
-    # diet-matrix run (cod sp0 / herring / sprat are primary Baltic seal prey); pin the id.
-    prey_id = 0  # cod sp0 — verify it is a top GreySeal prey in the diet matrix; adjust if not
-    assert fr_on[prey_id] >= base[prey_id]   # refuge raises (or holds) prey survival
+def test_fr_type3_reduces_greyseal_predation_on_top_prey():
+    # 1. Baseline diet run: find GreySeal's (runtime slot 8) dominant focal prey.
+    dm_base, sid = _run_baltic_short_with_diet(fr=None)
+    seal = aggregate_diet_all_predators(dm_base, sid, n_total=10)[8]  # GreySeal diet row
+    prey_id = int(np.argmax(seal[:8]))  # its top FOCAL prey column (cols 0..7)
+    assert seal[prey_id] > 0             # GreySeal genuinely eats it (test is non-vacuous)
+    # 2. type-III refuge on GreySeal -> it eats LESS of that prey (predator-specific, not noise).
+    dm_fr, sid2 = _run_baltic_short_with_diet(fr={"sp14": (3, 1.0)})
+    seal_fr = aggregate_diet_all_predators(dm_fr, sid2, n_total=10)[8]
+    assert seal_fr[prey_id] < seal[prey_id]  # FR cut GreySeal's realized predation on its top prey
 ```
+
+(Reuses the A8 width-16 diet helper + `aggregate_diet_all_predators`. This is the observable non-bioen consequence; the `pred_success_rate→growth/starvation` path is not separately tested because Baltic uses no bioenergetics mode — see the §4 downgrade note above.)
 
 Add a one-line note in the docs / plan: *"Spec §4 bioenergetic-consequence requirement is satisfied via the observable prey-survival delta; the `pred_success_rate→growth/starvation` path is NOT separately tested because the Baltic config uses no bioenergetics mode (§6)."*
 
@@ -1086,7 +1092,7 @@ Use superpowers:requesting-code-review then superpowers:finishing-a-development-
 
 ---
 
-## Self-Review (round-6, completed by plan author)
+## Self-Review (rounds 6–7 + final clean pass, completed by plan author)
 
 **Spec coverage:** §1 → A5/A6 (branch + clamp + oracle-pinned value tests); §2 → A1/A2/A3/A4 (REAL schema kwargs, 4-layer concat, both-path enum, sizing+registration, fixture fix, allowlist); §3 → A5/A6 (both kernels, njit threading); §4 → A0/A5–A8 (oracle-vs-kernel value test, clamp-engagement, monotonic/limit/refuge-ratio, config, parity 9+3, numba-vs-python, NaN, determinism, background, inert-prey-only, focal enum, width-16 diagnostic, background-inclusive aggregator, prey-survival consequence); §5 → B1–B6 (phase13 commit at correct path, phase-2-style freeze, tuple return shape, mortality-delta noise band, eval mode, disposition); §6 → A9 docs (all 5 caveats) + §4 downgrade note + B6 verdict; §7 → Part A / Part B. ✅
 
