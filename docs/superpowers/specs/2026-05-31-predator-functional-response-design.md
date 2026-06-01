@@ -3,7 +3,10 @@
 **Date:** 2026-05-31
 **Status:** Approved direction; **substantially revised after round-4 review** retargeted the feature
 from a test-only kernel to the live `mortality.py` kernel and fixed a conservation-math error.
-Pending re-review of the rewrite → implementation plan.
+**Round-5 re-review (2026-06-01) PASSED:** an adversarial codebase-claim audit verified 9/10
+load-bearing file:line claims TRUE with no drift; the one imprecision ("config in scope at all 4 call
+sites") was corrected in §3 (3 numba sites need array-threading through njit signatures, like
+`ingestion_rate`). **Ready for implementation plan.**
 **Author:** brainstormed collaboratively
 
 ## Motivation
@@ -163,9 +166,16 @@ recommended/validated form**.
 - Branch on `fr_shape[sp_pred]` at the injection point in **both** kernels — `_apply_predation_numba`
   (numba) and `_apply_predation_for_school` (Python). `== 1` keeps the verbatim existing two
   statements; `== 2/3` apply the clamped formula using `r*r` (not `r**2`).
-- Thread the two new args from the **4 call sites** (`_apply_predation_numba` ×3,
-  `_apply_predation_for_school` ×1) — `config` is in scope at each, so pass `config.fr_shape` /
-  `config.fr_halfsat`.
+- **Threading the two new arrays (corrects an earlier "config is in scope at each" claim — it is
+  NOT).** `_apply_predation_for_school` (Python fallback, the **1** call site at `mortality.py:1659`)
+  has `config` in scope → pass `config.fr_shape` / `config.fr_halfsat` directly. The **3** numba call
+  sites (`mortality.py:1100, 1263, 1438`) live **inside** `@njit` functions
+  (`_mortality_in_cell_numba`, `_mortality_all_cells_numba`, `_mortality_all_cells_parallel`) where
+  `config` is **not** available — they already receive `config.ingestion_rate` as a **threaded array
+  argument**. Therefore `fr_shape`/`fr_halfsat` must be **added to the three njit signatures** and
+  threaded down from the **two Python callers** (near `mortality.py:1626` and `:1918`), exactly the
+  mechanism `ingestion_rate` uses today. This is the same additive pattern, just applied to two more
+  arrays — not a one-line `config.fr_*` pass.
 - The loop is **not** restructured; one clamped branch at one injection point per kernel. Numba
   recompiles once on the additive signature change.
 
