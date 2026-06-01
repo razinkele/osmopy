@@ -811,6 +811,8 @@ if _HAS_NUMBA:
         size_ratio_min,
         size_ratio_max,
         ingestion_rate,
+        fr_shape,
+        fr_halfsat,
         n_dt_per_year,
         n_subdt,
         access_matrix,
@@ -960,7 +962,18 @@ if _HAS_NUMBA:
             return
 
         # Phase 2: Distribute eating proportionally
-        eaten_total = min(total_available, max_eatable)
+        if fr_shape[sp_pred] == 1:
+            eaten_total = min(total_available, max_eatable)  # verbatim type-I (bit-exact)
+        else:
+            r = total_available / max_eatable
+            k_fr = fr_halfsat[sp_pred]
+            if fr_shape[sp_pred] == 2:
+                g_form = r / (r + k_fr)
+            else:  # type-III
+                g_form = (r * r) / (r * r + k_fr * k_fr)
+            cap = r if r < 1.0 else 1.0  # min(r, 1)
+            g = g_form if g_form < cap else cap  # conservation clamp
+            eaten_total = max_eatable * g
 
         for k in range(n_prey):
             share = prey_eligible[k] / total_available
@@ -1073,6 +1086,8 @@ if _HAS_NUMBA:
         size_ratio_min,
         size_ratio_max,
         ingestion_rate,
+        fr_shape,
+        fr_halfsat,
         n_dt_per_year,
         n_subdt,
         access_matrix,
@@ -1125,6 +1140,8 @@ if _HAS_NUMBA:
                         size_ratio_min,
                         size_ratio_max,
                         ingestion_rate,
+                        fr_shape,
+                        fr_halfsat,
                         n_dt_per_year,
                         n_subdt,
                         access_matrix,
@@ -1209,6 +1226,8 @@ if _HAS_NUMBA:
         size_ratio_min,
         size_ratio_max,
         ingestion_rate,
+        fr_shape,
+        fr_halfsat,
         n_dt_per_year,
         n_subdt,
         access_matrix,
@@ -1288,6 +1307,8 @@ if _HAS_NUMBA:
                             size_ratio_min,
                             size_ratio_max,
                             ingestion_rate,
+                            fr_shape,
+                            fr_halfsat,
                             n_dt_per_year,
                             n_subdt,
                             access_matrix,
@@ -1372,6 +1393,8 @@ if _HAS_NUMBA:
         size_ratio_min,
         size_ratio_max,
         ingestion_rate,
+        fr_shape,
+        fr_halfsat,
         n_dt_per_year,
         n_subdt,
         access_matrix,
@@ -1463,6 +1486,8 @@ if _HAS_NUMBA:
                             size_ratio_min,
                             size_ratio_max,
                             ingestion_rate,
+                            fr_shape,
+                            fr_halfsat,
                             n_dt_per_year,
                             n_subdt,
                             access_matrix,
@@ -1635,6 +1660,8 @@ def _mortality_in_cell(
             config.size_ratio_min,
             config.size_ratio_max,
             config.ingestion_rate,
+            config.fr_shape,
+            config.fr_halfsat,
             config.n_dt_per_year,
             n_subdt,
             access_matrix,
@@ -1927,6 +1954,8 @@ def mortality(
                 config.size_ratio_min,
                 config.size_ratio_max,
                 config.ingestion_rate,
+                config.fr_shape,
+                config.fr_halfsat,
                 config.n_dt_per_year,
                 n_subdt,
                 access_matrix,

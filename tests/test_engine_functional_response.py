@@ -682,3 +682,204 @@ def test_python_kernel_type3_reduces_eaten_at_low_r():
     eaten1, me1 = _run_single_predation_step_python(r=0.3, shape=1, k=1.0)
     eaten3, me3 = _run_single_predation_step_python(r=0.3, shape=3, k=1.0)
     assert eaten3 < eaten1  # type-III refuge eats less at low r
+
+
+# ---------------------------------------------------------------------------
+# A6: functional-response branch in the NUMBA predation kernel
+# ---------------------------------------------------------------------------
+#
+# Mirrors the A5 single-step harness, but drives the compiled
+# ``_apply_predation_numba`` kernel directly with the exact positional
+# argument list used by ``_mortality_in_cell_numba`` (njit is positional, so
+# the order MUST match the kernel signature).  Reads ``eaten_total`` back from
+# ``preyed_biomass[p_idx]`` exactly like the Python single-step harness reads
+# ``state.preyed_biomass[p_idx]``.
+
+
+def _run_single_predation_step_numba(r: float, shape: int, k: float):
+    """Drive ``_apply_predation_numba`` once with a one-predator / one-prey
+    scenario and return ``(eaten_total, max_eatable)``.
+
+    The scenario is numerically identical to
+    ``_run_single_predation_step_python``: predator school index 0, prey school
+    index 1, co-located, no resources, access_coeff = 1.0, prey abundance solved
+    so ``total_available == r * max_eatable`` exactly.  All arrays are built as
+    concrete numpy arrays (njit cannot accept ``None`` for typed array params),
+    with empty/dummy stand-ins for the access / resource / TL / diet machinery
+    that this scenario does not exercise.
+    """
+    import osmose.engine.processes.mortality as _mort
+
+    if not _mort._HAS_NUMBA:  # pragma: no cover - numba is a hard dep in CI
+        pytest.skip("numba not available")
+
+    n_subdt = 10
+    n_dt_per_year = 24
+    ingestion_rate_val = 3.5
+
+    n_schools = 2
+    species_id = np.array([1, 0], dtype=np.int32)  # idx0=predator sp1, idx1=prey sp0
+
+    pred_w = 0.006 * 30**3 * 1e-6  # tonnes per individual
+    prey_w = 0.006 * 10**3 * 1e-6
+    pred_abundance = 100.0
+    pred_biomass = pred_abundance * pred_w
+    max_eatable = pred_biomass * ingestion_rate_val / (n_dt_per_year * n_subdt)
+    prey_abundance = (r * max_eatable) / prey_w
+
+    inst_abd = np.array([pred_abundance, prey_abundance], dtype=np.float64)
+    length = np.array([30.0, 10.0], dtype=np.float64)  # ratio 3.0, within [1.0, 1/0.3)
+    weight = np.array([pred_w, prey_w], dtype=np.float64)
+    age_dt = np.array([48, 24], dtype=np.int32)
+    first_feeding_age_dt = np.zeros(n_schools, dtype=np.int32)
+    feeding_stage = np.zeros(n_schools, dtype=np.int32)
+
+    n_dead = np.zeros((n_schools, 7), dtype=np.float64)
+    pred_success_rate = np.zeros(n_schools, dtype=np.float64)
+    preyed_biomass = np.zeros(n_schools, dtype=np.float64)
+    trophic_level = np.zeros(n_schools, dtype=np.float64)
+
+    # size_ratio_[min/max][species, stage]: 1 stage; min=1.0, max=1/0.3.
+    n_sp = 2
+    size_ratio_min = np.full((n_sp, 1), 1.0, dtype=np.float64)
+    size_ratio_max = np.full((n_sp, 1), 1.0 / 0.3, dtype=np.float64)
+
+    ingestion_rate = np.full(n_sp, ingestion_rate_val, dtype=np.float64)
+    fr_shape = np.ones(n_sp, dtype=np.int32)
+    fr_halfsat = np.ones(n_sp, dtype=np.float64)
+    fr_shape[1] = shape  # predator is sp1 (runtime slot 1)
+    fr_halfsat[1] = k
+
+    # Access machinery unused (has_access=False, use_stage_access=False) but
+    # njit needs concrete typed arrays.
+    access_matrix = np.zeros((1, 1), dtype=np.float64)
+    prey_access_idx = np.full(n_schools, -1, dtype=np.int64)
+    pred_access_idx = np.full(n_schools, -1, dtype=np.int64)
+
+    # No resources.
+    rsc_biomass = np.zeros((0, 1), dtype=np.float64)
+    rsc_size_min = np.zeros(0, dtype=np.float64)
+    rsc_size_max = np.zeros(0, dtype=np.float64)
+    rsc_tl = np.zeros(0, dtype=np.float64)
+    rsc_access_rows = np.zeros(0, dtype=np.int64)
+    n_resources = 0
+    n_species = n_sp
+
+    cell_id = 0
+    tl_weighted_sum = np.zeros(n_schools, dtype=np.float64)
+    tl_tracking = False
+    diet_matrix = np.zeros((1, 1), dtype=np.float64)
+    diet_enabled = False
+
+    cell_indices = np.array([0, 1], dtype=np.int64)
+    max_prey = n_schools + n_resources
+    prey_type_buf = np.zeros(max_prey, dtype=np.int64)
+    prey_id_buf = np.zeros(max_prey, dtype=np.int64)
+    prey_eligible_buf = np.zeros(max_prey, dtype=np.float64)
+
+    _mort._apply_predation_numba(
+        0,  # p_idx = predator
+        cell_indices,
+        inst_abd,
+        n_dead,
+        species_id,
+        length,
+        weight,
+        age_dt,
+        first_feeding_age_dt,
+        feeding_stage,
+        pred_success_rate,
+        preyed_biomass,
+        trophic_level,
+        size_ratio_min,
+        size_ratio_max,
+        ingestion_rate,
+        fr_shape,
+        fr_halfsat,
+        n_dt_per_year,
+        n_subdt,
+        access_matrix,
+        False,  # has_access
+        False,  # use_stage_access
+        prey_access_idx,
+        pred_access_idx,
+        rsc_biomass,
+        rsc_size_min,
+        rsc_size_max,
+        rsc_tl,
+        rsc_access_rows,
+        n_resources,
+        n_species,
+        cell_id,
+        tl_weighted_sum,
+        tl_tracking,
+        diet_matrix,
+        diet_enabled,
+        prey_type_buf,
+        prey_id_buf,
+        prey_eligible_buf,
+    )
+    eaten = float(preyed_biomass[0])
+    return eaten, max_eatable
+
+
+@pytest.mark.parametrize("shape,k", [(2, 1.0), (3, 1.0), (3, 0.1)])
+@pytest.mark.parametrize("r", [0.05, 0.5, 0.95, 2.0])
+def test_numba_kernel_matches_oracle(shape, k, r):
+    eaten, max_eatable = _run_single_predation_step_numba(r=r, shape=shape, k=k)
+    assert eaten == pytest.approx(max_eatable * _g_ref(r, shape, k), rel=1e-9)
+
+
+@pytest.mark.parametrize("shape,k", [(2, 1.0), (3, 1.0), (3, 0.5)])
+@pytest.mark.parametrize("r", [0.05, 0.5, 0.95, 2.0])
+def test_numba_python_parity_fr_on(shape, k, r):
+    """Numba and pure-Python kernels must agree on ``eaten_total`` at the FR
+    injection point, bit-for-bit (to rtol=1e-9).
+
+    DESIGN NOTE (A6 deviation from the plan's full-sim parity test): a full
+    short-sim numba-vs-Python biomass comparison at rtol=1e-9 is NOT a valid
+    parity check on the Baltic config.  The two backends consume RNG through
+    different code paths and diverge inherently — measured ~98% relative
+    divergence with FR completely OFF (verified directly).  The test file's own
+    docstrings already state numba=True vs numba=False are "NOT expected to be
+    bit-identical".  So a full-sim rtol=1e-9 comparison would fail identically
+    with FR off; it tests RNG-stream divergence, not the FR kernel.
+
+    The meaningful cross-backend parity is at the kernel level: drive BOTH
+    ``_apply_predation_for_school`` (Python) and ``_apply_predation_numba``
+    (numba) on the identical hand-built one-predator/one-prey scenario and
+    assert they compute the same ``eaten_total`` for the same ratio r.  This is
+    non-tautological — it exercises the FR branch in both kernels with a known r
+    and a predator (sp1) whose FR shape demonstrably changes the eaten amount
+    away from the type-I baseline.
+    """
+    eaten_numba, me_numba = _run_single_predation_step_numba(r=r, shape=shape, k=k)
+    eaten_py, me_py = _run_single_predation_step_python(r=r, shape=shape, k=k)
+    assert me_numba == pytest.approx(me_py, rel=1e-12)
+    np.testing.assert_allclose(eaten_numba, eaten_py, rtol=1e-9, atol=0)
+    # Non-triviality guard: where the FR math is expected to differ from the
+    # type-I baseline (per the oracle), both kernels must reflect that change.
+    g_fr = _g_ref(r, shape, k)
+    g_type1 = _g_ref(r, 1, k)
+    if abs(g_fr - g_type1) > 1e-9:
+        eaten_type1, _ = _run_single_predation_step_numba(r=r, shape=1, k=k)
+        assert eaten_numba != pytest.approx(eaten_type1, rel=1e-9)
+
+
+@pytest.mark.skipif(
+    not _BALTIC_CONFIG.exists(),
+    reason="Baltic config not present in data/baltic/",
+)
+def test_fr_type3_empty_cell_no_nan():
+    out = _run_short_sim(numba=True, fr={"sp14": (3, 1.0)}, background=True, force_empty_prey=True)
+    assert np.all(np.isfinite(out))
+
+
+@pytest.mark.skipif(
+    not _BALTIC_CONFIG.exists(),
+    reason="Baltic config not present in data/baltic/",
+)
+def test_fr_determinism():
+    a = _run_short_sim(numba=True, fr={"sp14": (3, 1.0)}, seed=42, background=True)
+    b = _run_short_sim(numba=True, fr={"sp14": (3, 1.0)}, seed=42, background=True)
+    np.testing.assert_array_equal(a, b)
