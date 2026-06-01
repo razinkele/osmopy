@@ -37,6 +37,9 @@ _GROWTH_MAP: dict[str, str] = {
     "fr.ird.osmose.growth.Linear": "VB",  # Linear was never real, map to VB
 }
 
+_FR_HALFSAT_SENTINEL = 1.0  # inert: type1 never reads fr_halfsat
+_FR_SHAPE_CODE = {"type1": 1, "type2": 2, "type3": 3}
+
 
 def _get(cfg: dict[str, str], key: str) -> str:
     """Get a config value, raising KeyError with a clear message."""
@@ -549,6 +552,32 @@ def _parse_reproduction_params(
                 f"stock.recruitment.shape.sp{i} must be > 0 when "
                 f"stock.recruitment.type.sp{i}={recruitment_type[i]!r}"
             )
+    # Predator functional response (post-parity; opt-in, default type1 ≡ existing)
+    fr_shape_str = _species_str_optional(
+        cfg,
+        "predation.functional.response.shape.sp{i}",
+        n_sp,
+        default="type1",
+        allowed={"type1", "type2", "type3"},
+    )
+    # Validate halfsat presence/range before building the float array so that
+    # missing or None values raise a clear domain error rather than a TypeError.
+    for i in range(n_sp):
+        if fr_shape_str[i] != "type1":
+            hv = cfg.get(f"predation.functional.response.halfsat.sp{i}")
+            if hv is None:
+                raise ValueError(
+                    f"predation.functional.response.halfsat.sp{i} is required when "
+                    f"predation.functional.response.shape.sp{i} = {fr_shape_str[i]}"
+                )
+            if not (0.1 <= float(hv) <= 5.0):
+                raise ValueError(
+                    f"predation.functional.response.halfsat.sp{i} = {hv} out of range [0.1, 5.0]"
+                )
+    fr_halfsat_focal = _species_float_optional(
+        cfg, "predation.functional.response.halfsat.sp{i}", n_sp, default=_FR_HALFSAT_SENTINEL
+    )
+    fr_shape_focal = np.array([_FR_SHAPE_CODE[s] for s in fr_shape_str], dtype=np.int32)
     return {
         "focal_sex_ratio": sex_ratio,
         "focal_relative_fecundity": relative_fecundity,
@@ -560,6 +589,8 @@ def _parse_reproduction_params(
         "focal_recruitment_type": recruitment_type,
         "focal_recruitment_ssb_half": recruitment_ssb_half,
         "focal_recruitment_shepherd_beta": recruitment_shepherd_beta,
+        "focal_fr_shape": fr_shape_focal,
+        "focal_fr_halfsat": fr_halfsat_focal,
     }
 
 

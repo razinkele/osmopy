@@ -370,3 +370,29 @@ def test_fr_schema_fields_registered():
     halfsat = reg.get_field("predation.functional.response.halfsat.sp{idx}")
     assert halfsat.min_val == 0.1
     assert halfsat.max_val == 5.0
+
+
+# ---------------------------------------------------------------------------
+# A2: focal-species parse + strict validation tests
+# ---------------------------------------------------------------------------
+
+
+def test_fr_halfsat_required_when_shape_not_type1():
+    cfg = _apply_fr(_base_cfg(background=False), {"sp0": (3, None)})  # type3, no halfsat
+    with pytest.raises(ValueError, match="is required when"):
+        _build_via_entry_point(cfg)
+
+
+def test_fr_halfsat_out_of_range_raises():
+    cfg = _base_cfg(background=False)
+    cfg["predation.functional.response.shape.sp0"] = "type3"
+    cfg["predation.functional.response.halfsat.sp0"] = 0.0
+    with pytest.raises(ValueError, match="out of range"):
+        _build_via_entry_point(cfg)
+
+
+def test_fr_shape_invalid_enum_raises():
+    cfg = _base_cfg(background=False)
+    cfg["predation.functional.response.shape.sp0"] = "type9"
+    with pytest.raises(ValueError, match="(?i)type9|not.*one of|invalid"):
+        _build_via_entry_point(cfg)
