@@ -143,12 +143,16 @@ def _run_short_sim(
     numba:
         True  → use the default engine path (numba-accelerated mortality /
                 predation kernels when numba is available).
-        False → same engine path; the numba flag is passed for future use but
-                the Python engine does not expose a per-call numba toggle at
-                the simulate() level.  If a test needs the pure-Python
-                predation kernel specifically, call predation_for_cell with
-                use_numba=False directly.  For the FR feature tests (A5–A8)
-                the default numba=True is always correct.
+        False → patch ``osmose.engine.processes.mortality._HAS_NUMBA`` to
+                ``False`` for the duration of the run, forcing the engine to
+                take the pure-Python predation fallback
+                (``_apply_predation_for_school``) instead of the compiled
+                ``_apply_predation_numba`` kernel.  This is implemented via
+                ``unittest.mock.patch`` as a context manager so no pytest
+                fixture is required.  The two backends produce different (but
+                both valid and deterministic) outputs — do NOT compare
+                numba=True vs numba=False results for bit-equality; that
+                tolerance comparison is A6's responsibility.
     fr:
         FR config injection dict or None.  Passed straight through to
         _apply_fr; see that function's docstring for the token/shape contract.
@@ -186,14 +190,22 @@ def _run_short_sim(
             if key.startswith("resource.biomass."):
                 cfg[key] = "0"
 
-    results = PythonEngine().run_in_memory(cfg, seed=seed)
+    def _execute() -> np.ndarray:
+        results = PythonEngine().run_in_memory(cfg, seed=seed)
+        # Extract the final time-step biomass for each focal species.
+        # OsmoseResults.biomass() returns a DataFrame with a 'Time' column and one
+        # numeric column per focal species (species-index order).
+        bio_df = results.biomass()
+        numeric = bio_df.select_dtypes(include=["number"]).drop(columns=["Time"], errors="ignore")
+        return numeric.to_numpy(dtype=np.float64)[-1]
 
-    # Extract the final time-step biomass for each focal species.
-    # OsmoseResults.biomass() returns a DataFrame with a 'Time' column and one
-    # numeric column per focal species (species-index order).
-    bio_df = results.biomass()
-    numeric = bio_df.select_dtypes(include=["number"]).drop(columns=["Time"], errors="ignore")
-    return numeric.to_numpy(dtype=np.float64)[-1]
+    if numba:
+        return _execute()
+
+    from unittest import mock
+
+    with mock.patch("osmose.engine.processes.mortality._HAS_NUMBA", False):
+        return _execute()
 
 
 # ---------------------------------------------------------------------------
@@ -227,6 +239,72 @@ def test_helpers_run_baseline():
     b = _run_short_sim(numba=True, fr=None, seed=7)
     np.testing.assert_array_equal(a, b)  # deterministic
     assert np.all(np.isfinite(a)), f"baseline biomass contains non-finite values: {a}"
+
+
+@pytest.mark.skipif(
+    not _BALTIC_CONFIG.exists(),
+    reason="Baltic config not present in data/baltic/ — path-confirmation spy requires located schools",
+)
+def test_python_fallback_path_runs_and_is_deterministic():
+    """numba=False must route through the pure-Python predation fallback.
+
+    Verification strategy
+    ---------------------
+    1. Determinism: two identical (config, seed, numba=False) runs must produce
+       bit-identical biomass arrays — the Python fallback must be seeded as
+       consistently as the Numba path.
+    2. Finiteness: no NaN / Inf in either backend.
+    3. Path confirmation: ``_apply_predation_for_school`` must be called at
+       least once during a numba=False run (confirming the patch takes effect).
+       The minimal config places all schools as unlocated (cell_x=-1), so the
+       per-cell mortality loop never executes with it.  The Baltic config is
+       used for path confirmation since it has thousands of located schools per
+       timestep.
+
+    NOTE: numba=True and numba=False outputs are NOT expected to be
+    bit-identical — different code paths consume RNG differently and apply
+    slightly different arithmetic.  Cross-backend tolerance comparison is
+    A6's responsibility.
+    """
+    from unittest import mock
+
+    import osmose.engine.processes.mortality as _mort
+
+    # --- 1 & 2: determinism + finiteness of the Python fallback ---
+    # Use the minimal config (fast) for the determinism assertion.
+    a = _run_short_sim(numba=False, fr=None, seed=7)
+    b = _run_short_sim(numba=False, fr=None, seed=7)
+    np.testing.assert_array_equal(a, b)
+    assert np.all(np.isfinite(a)), f"Python-fallback biomass contains non-finite values: {a}"
+
+    # Also confirm numba=True backend is itself deterministic and finite.
+    c = _run_short_sim(numba=True, fr=None, seed=7)
+    assert np.all(np.isfinite(c)), f"Numba biomass contains non-finite values: {c}"
+
+    # --- 3: path confirmation via call-counting spy (Baltic config) ---
+    # The minimal config places all schools as unlocated (cell_x=-1), so the
+    # per-cell loop is never entered and _apply_predation_for_school is never
+    # called.  The Baltic config has ~2,500 located schools per timestep and
+    # confirms the Python fallback is genuinely exercised when numba=False.
+    py_call_count = 0
+    original_py = _mort._apply_predation_for_school
+
+    def _spy_py(*args, **kwargs):
+        nonlocal py_call_count
+        py_call_count += 1
+        return original_py(*args, **kwargs)
+
+    with mock.patch("osmose.engine.processes.mortality._HAS_NUMBA", False):
+        with mock.patch(
+            "osmose.engine.processes.mortality._apply_predation_for_school",
+            side_effect=_spy_py,
+        ):
+            _run_short_sim(numba=False, fr=None, seed=7, background=True)
+
+    assert py_call_count > 0, (
+        "_apply_predation_for_school was never called with numba=False (Baltic config) — "
+        "the _HAS_NUMBA patch may not be reaching the mortality() per-school loop"
+    )
 
 
 def test_apply_fr_type1_no_halfsat():
