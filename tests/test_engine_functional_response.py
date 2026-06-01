@@ -352,3 +352,21 @@ def test_run_baltic_short_deterministic():
     b = _run_baltic_short(seed=11, fr=None)
     np.testing.assert_array_equal(a, b)
     assert np.all(np.isfinite(a)), f"Baltic baseline contains non-finite values: {a}"
+
+
+# ---------------------------------------------------------------------------
+# A1: schema field registration tests
+# ---------------------------------------------------------------------------
+
+
+def test_fr_schema_fields_registered():
+    from osmose.schema import build_registry
+
+    reg = build_registry()
+    shape = reg.get_field("predation.functional.response.shape.sp{idx}")
+    assert shape.param_type.value == "enum"
+    assert shape.default == "type1"
+    assert set(shape.choices) == {"type1", "type2", "type3"}
+    halfsat = reg.get_field("predation.functional.response.halfsat.sp{idx}")
+    assert halfsat.min_val == 0.1
+    assert halfsat.max_val == 5.0
