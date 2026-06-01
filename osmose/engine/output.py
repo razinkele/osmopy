@@ -272,6 +272,31 @@ def aggregate_diet_by_species(
     return result
 
 
+def aggregate_diet_all_predators(
+    diet_matrix: NDArray[np.float64],
+    species_id: NDArray[np.int32],
+    n_total: int,
+) -> NDArray[np.float64]:
+    """Sum the per-school diet matrix into per-PREDATOR-SPECIES rows.
+
+    INCLUDES background predators (runtime slots ``n_focal..n_total-1``).
+    Unlike :func:`aggregate_diet_by_species`, applies no ``focal_mask`` so
+    background-predator diet rows survive. This is the diagnostic aggregator
+    that PR-B's functional-response calibration relies on.
+
+    Args:
+        diet_matrix: shape (n_schools, n_prey_columns) — biomass eaten per prey.
+        species_id: runtime species index for each school (focal + background).
+        n_total: total predator-species rows (n_focal + n_background).
+
+    Returns:
+        Array of shape (n_total, n_prey_columns) with summed biomass.
+    """
+    out = np.zeros((n_total, diet_matrix.shape[1]), dtype=diet_matrix.dtype)
+    np.add.at(out, species_id[: diet_matrix.shape[0]], diet_matrix)
+    return out
+
+
 def _build_diet_dataframe(
     outputs: list[StepOutput],
     config: EngineConfig,

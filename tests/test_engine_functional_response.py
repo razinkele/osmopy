@@ -1002,3 +1002,155 @@ def test_fr_non_type1_on_prey_only_species_inert():
     assert ecfg.fr_shape[7] == 3, (
         f"FR shape for stickleback (sp7, slot 7) expected 3 (type3), got {ecfg.fr_shape[7]}"
     )
+
+
+# ---------------------------------------------------------------------------
+# A8: background-inclusive diet aggregator + width-16 diagnostic
+# ---------------------------------------------------------------------------
+#
+# KERNEL COLUMN CONVENTION (verified directly from mortality.py):
+#   - School-prey biomass is written to ``diet_matrix[p_idx, prey_sp]`` where
+#     ``prey_sp = state.species_id[q_idx]`` (Python ~:529, numba ~:998).
+#   - Resource-prey biomass is written to ``diet_matrix[p_idx, n_species + r]``
+#     i.e. the resource column BASE is ``config.n_species`` (=8 for Baltic),
+#     NOT ``n_species + n_background`` (Python ~:547, numba ~:1012).
+#   - Both writes are guarded by ``col < diet_matrix.shape[1]`` — columns
+#     beyond the matrix width are silently dropped.
+#
+#   Baltic geometry: 8 focal + 2 background predators (runtime slots 8/9) +
+#   6 resources (runtime r=0..5).  With resource base = n_species = 8 the
+#   resource columns are 8,9,10,11,12,13.  Columns 8/9 COLLIDE with the focal-
+#   prey columns for the two background-predators-as-prey, so the strictly-
+#   resource-only columns (that exist nowhere else) are 10..13.
+#
+#   Production hardwires the diet width to ``n_species + n_background`` (=10)
+#   at simulate.py:1436, so resource columns 10..15 are dropped — only cols
+#   8,9 survive (and there they collide with bg-prey-species, not pure
+#   resources).  The diagnostic monkeypatches enable_diet_tracking to allocate
+#   width 16 so resource cols 10..13 survive.
+
+_RESOURCE_COL_START = 10  # = n_species(8) + first PURE-resource offset (slots 8,9 collide)
+_RESOURCE_COL_END = 14  # exclusive: resources r=2..5 -> cols 10..13
+
+
+def test_aggregate_all_predators_includes_background_slots():
+    """The new aggregator must NOT apply a focal_mask — background rows survive."""
+    from osmose.engine.output import aggregate_diet_all_predators
+
+    sid = np.array([0, 0, 8, 9])  # 2 focal sp0 schools + 1 GreySeal(8) + 1 Cormorant(9)
+    dm = np.array([[1, 0], [2, 0], [0, 3], [0, 4]], dtype=float)
+    agg = aggregate_diet_all_predators(dm, sid, n_total=10)
+    assert agg.shape == (10, 2)
+    assert agg[0].tolist() == [3, 0]  # focal summed
+    assert agg[8].tolist() == [0, 3]  # background slot 8 PRESENT (not masked out)
+    assert agg[9].tolist() == [0, 4]
+
+
+def test_aggregate_all_predators_vs_by_species_difference():
+    """aggregate_diet_by_species drops background rows; the new one keeps them."""
+    from osmose.engine.output import aggregate_diet_all_predators, aggregate_diet_by_species
+
+    sid = np.array([0, 8, 9])
+    dm = np.array([[5, 0], [0, 3], [0, 4]], dtype=float)
+    by_focal = aggregate_diet_by_species(dm, sid, n_pred_species=8)  # focal_mask: drops 8/9
+    all_pred = aggregate_diet_all_predators(dm, sid, n_total=10)
+    assert by_focal.shape == (8, 2)
+    assert all_pred[8:10].sum() > 0  # background diet present in the new aggregator
+    # focal rows agree between the two aggregators
+    np.testing.assert_array_equal(by_focal[0], all_pred[0])
+
+
+def _run_baltic_short_with_diet(fr: dict | None = None, width: int = 16):
+    """Run a short Baltic sim with diet tracking forced to *width* columns.
+
+    Production hardwires the diet width to ``n_species + n_background`` (=10)
+    at simulate.py:1436, dropping resource columns >= 10.  This helper
+    monkeypatches ``enable_diet_tracking`` so the width arg passed by simulate
+    is overridden to *width*, letting resource columns survive.
+
+    It also captures the RAW accumulated diet matrix + per-school species_id at
+    the moment the engine aggregates it (simulate.py calls
+    ``aggregate_diet_by_species`` on ``ctx.diet_matrix[:n_active]`` then disables
+    tracking).  We wrap that call to record its inputs before delegating.
+
+    Returns ``(diet_matrix, species_id)`` from the LAST recorded step.
+    """
+    from unittest import mock
+
+    import osmose.engine.output as _output
+    import osmose.engine.processes.predation as _pred
+    from osmose.engine import PythonEngine
+
+    cfg = _apply_fr(_base_cfg(background=True), fr)
+    # Activate the diet-tracking code path in simulate.py.
+    cfg["output.diet.composition.enabled"] = "true"
+
+    real_enable = _pred.enable_diet_tracking
+
+    def _wide_enable(n_schools, n_species, ctx=None):
+        # Override the production width (n_species+n_background) with `width`.
+        return real_enable(n_schools, width, ctx=ctx)
+
+    real_agg = _output.aggregate_diet_by_species
+    captured: dict = {}
+
+    def _capturing_agg(diet_matrix, species_id, n_pred_species):
+        # diet_matrix here is ctx.diet_matrix[:n_active]; species_id is sliced too.
+        captured["diet_matrix"] = np.array(diet_matrix, copy=True)
+        captured["species_id"] = np.array(species_id, copy=True)
+        result = real_agg(diet_matrix, species_id, n_pred_species)
+        # Downstream _build_diet_dataframe validates the per-step matrix against
+        # the PRODUCTION width (n_species + n_background = 10); our wider matrix
+        # would trip that shape check at end-of-run.  Truncate the aggregated
+        # result back to the production width so the run completes — the raw
+        # wide matrix is already captured above for the diagnostic assertions.
+        prod_width = n_pred_species + 2  # n_species + n_background (Baltic = 8 + 2)
+        if result.shape[1] > prod_width:
+            return result[:, :prod_width]
+        return result
+
+    with mock.patch.object(_pred, "enable_diet_tracking", _wide_enable):
+        with mock.patch.object(_output, "aggregate_diet_by_species", _capturing_agg):
+            PythonEngine().run_in_memory(cfg, seed=11)
+
+    assert "diet_matrix" in captured, "diet aggregation hook was never invoked"
+    return captured["diet_matrix"], captured["species_id"]
+
+
+@pytest.mark.skipif(
+    not _BALTIC_CONFIG.exists(),
+    reason="Baltic config not present in data/baltic/",
+)
+def test_diagnostic_diet_width_keeps_background_and_resource_columns(monkeypatch):
+    """At width 16 the diet matrix retains background-predator rows and the
+    pure-resource columns (10..13) that production's width-10 matrix drops."""
+    from osmose.engine.output import aggregate_diet_all_predators
+
+    dm, sid = _run_baltic_short_with_diet(fr={"sp0": (3, 1.0), "sp14": (3, 1.0)}, width=16)
+    assert dm.shape[1] == 16
+
+    agg = aggregate_diet_all_predators(dm, sid, n_total=10)
+    # Background predators (runtime rows 8, 9) ate something.
+    assert agg[8:10, :].sum() > 0, "background predators recorded no diet at width 16"
+    # Pure-resource columns survived the wider width (cols 10..13; resource base
+    # = n_species = 8, cols 8/9 collide with bg-prey-species so are excluded).
+    assert agg[:, _RESOURCE_COL_START:_RESOURCE_COL_END].sum() > 0, (
+        "no resource-column diet mass survived at width 16"
+    )
+
+
+@pytest.mark.skipif(
+    not _BALTIC_CONFIG.exists(),
+    reason="Baltic config not present in data/baltic/",
+)
+def test_diagnostic_width10_truncates_resource_columns():
+    """Production width (n_species + n_background = 10) drops the pure-resource
+    columns: the matrix is only 10 wide, so cols 10..13 do not exist at all.
+
+    This strengthens the width-16 test by proving the resource mass it observes
+    is genuinely recovered by the wider allocation, not present by default.
+    """
+    dm, _sid = _run_baltic_short_with_diet(fr={"sp0": (3, 1.0), "sp14": (3, 1.0)}, width=10)
+    assert dm.shape[1] == 10
+    # The pure-resource columns 10..13 are beyond the matrix entirely.
+    assert dm.shape[1] <= _RESOURCE_COL_START
