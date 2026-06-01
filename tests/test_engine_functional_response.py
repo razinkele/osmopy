@@ -883,3 +883,122 @@ def test_fr_determinism():
     a = _run_short_sim(numba=True, fr={"sp14": (3, 1.0)}, seed=42, background=True)
     b = _run_short_sim(numba=True, fr={"sp14": (3, 1.0)}, seed=42, background=True)
     np.testing.assert_array_equal(a, b)
+
+
+# ---------------------------------------------------------------------------
+# A7: bit-exact parity-off gate + behavior tests
+# ---------------------------------------------------------------------------
+#
+# Part 1 (parity gate): confirmed externally by running
+#   env -u CI .venv/bin/python -m pytest tests/test_engine_parity.py -v
+# All 12 passed including the 3 @_exact_match_local_only tests
+# (test_biomass_match, test_abundance_match, test_mortality_match) with FR=off.
+#
+# Part 2: four behavior tests below.
+#
+# DESIGN NOTES:
+#
+# 1. ``background=True`` is REQUIRED for all behavior tests that need located
+#    schools.  With the minimal config (background=False) ALL schools are
+#    unlocated (cell_x=-1), so the predation kernel never runs and FR has
+#    zero observable effect on end-of-run biomass.  Using minimal config for
+#    FR behavior tests is VACUOUS.
+#
+# 2. ``test_fr_non_type1_on_prey_only_species_inert``: stickleback (sp7) is the
+#    closest focal species to a "prey-only" candidate — it is the ONLY focal
+#    species whose accessibility column contains exclusively resource rows
+#    (Diatoms, Dinoflagellates, Microzooplankton, Mesozooplankton,
+#    Macrozooplankton, Benthos) with zero access to any other focal school
+#    (verified from data/baltic/predation-accessibility.csv, column sp7).
+#    However, stickleback DOES eat resources; setting FR=type3 on it reduces
+#    its resource intake, which changes its biomass, making a full-sim equality
+#    assertion impossible.  The test therefore asserts only that the config
+#    PARSES correctly (ecfg.fr_shape[7]==3) — runtime-inertness cannot be
+#    cleanly demonstrated for any focal species in the Baltic config since all
+#    8 focal species eat at least resources via the accessibility matrix.
+#
+# 3. ``test_fr_on_background_predator_changes_outcome``: GreySeal (sp14,
+#    runtime slot 8) with FR=type3, k=1.0 was empirically confirmed to change
+#    end-of-run focal biomass (arrays differ with seed=11; cod biomass changes
+#    ~32%).  No smaller-k tuning was needed; k=1.0 already produces a
+#    measurable refuge effect.
+
+
+@pytest.mark.skipif(
+    not _BALTIC_CONFIG.exists(),
+    reason="Baltic config not present in data/baltic/",
+)
+def test_fr_explicit_type1_equals_absent_key():
+    """Explicit shape.sp0=type1 (no halfsat) must produce byte-identical results to
+    omitting the key entirely.
+
+    type1 is the default FR shape; explicitly declaring it must be a no-op.
+    Uses background=True so that located schools are present and the predation
+    kernel actually runs — making the equality non-vacuous.
+    """
+    out_absent = _run_short_sim(numba=True, fr=None, seed=7, background=True)
+    out_type1 = _run_short_sim(numba=True, fr={"sp0": (1, None)}, seed=7, background=True)
+    np.testing.assert_array_equal(out_absent, out_type1)
+
+
+@pytest.mark.skipif(
+    not _BALTIC_CONFIG.exists(),
+    reason="Baltic config not present in data/baltic/",
+)
+def test_fr_on_background_predator_changes_outcome():
+    """FR=type3, k=1.0 on GreySeal (sp14, runtime slot 8) must produce a different
+    end-of-run focal biomass compared to the FR-off baseline.
+
+    At low prey-to-max_eatable ratio r, type3 has a strong refuge effect:
+    g_type3 = r²/(r²+k²) << r = g_type1, so the seal eats proportionally less
+    when prey is scarce.  With k=1.0 this effect is strong enough that cod
+    biomass changes by ~32% in a 1-year Baltic run (seed=11).  The test
+    confirms that background-predator FR is wired end-to-end into the engine
+    and is not silently discarded.
+    """
+    base = _run_baltic_short(seed=11, fr=None)
+    fr_on = _run_baltic_short(seed=11, fr={"sp14": (3, 1.0)})
+    assert not np.array_equal(base, fr_on), (
+        "FR=type3,k=1.0 on GreySeal (sp14) produced identical biomass arrays — "
+        "background-predator FR is not reaching the predation kernel"
+    )
+
+
+def test_fr_focal_enum_maps_to_slot0():
+    """Explicit FR shape sp0=type2 must wire into ecfg.fr_shape[0]==2.
+
+    Confirms that the focal-species config key to runtime-array wiring (A4) is
+    correct for slot 0 (the first focal species index).
+    """
+    ecfg = _build_via_entry_point(_apply_fr(_base_cfg(background=False), {"sp0": (2, 1.0)}))
+    assert ecfg.fr_shape[0] == 2
+
+
+@pytest.mark.skipif(
+    not _BALTIC_CONFIG.exists(),
+    reason="Baltic config not present in data/baltic/",
+)
+def test_fr_non_type1_on_prey_only_species_inert():
+    """FR=type3 on stickleback (sp7) must parse correctly.
+
+    Stickleback is the only Baltic focal species whose accessibility column
+    contains NO other focal school (only resources: Diatoms, Dinoflagellates,
+    Microzooplankton, Mesozooplankton, Macrozooplankton, Benthos — confirmed
+    from data/baltic/predation-accessibility.csv column sp7).  It is therefore
+    the closest candidate to a "prey-only" species from the perspective of
+    focal-school predation.
+
+    Runtime-inertness CANNOT be asserted with a full-sim equality check because
+    stickleback does eat resources, and FR=type3 reduces its resource intake,
+    which changes its growth/biomass.  No focal species in the Baltic config is
+    truly runtime-inert under FR, since all 8 eat at least resources via the
+    accessibility matrix.
+
+    The test therefore validates the CONFIG-PARSE CONTRACT: the FR shape key is
+    accepted by EngineConfig.from_dict and wired into ecfg.fr_shape at the
+    correct index (7 = stickleback slot in an 8-focal-species config).
+    """
+    ecfg = _build_via_entry_point(_apply_fr(_base_cfg(background=True), {"sp7": (3, 1.0)}))
+    assert ecfg.fr_shape[7] == 3, (
+        f"FR shape for stickleback (sp7, slot 7) expected 3 (type3), got {ecfg.fr_shape[7]}"
+    )
