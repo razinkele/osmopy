@@ -465,3 +465,32 @@ def test_fr_background_enum_maps_to_runtime_slot():
     assert ecfg.fr_shape[8] == 3
     assert ecfg.fr_halfsat[8] == 1.0
     assert ecfg.fr_shape[9] == 1
+
+
+# ---------------------------------------------------------------------------
+# A4: EngineConfig fr_shape / fr_halfsat array wiring + validation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(
+    not _BALTIC_CONFIG.exists(),
+    reason="Baltic config not present in data/baltic/",
+)
+def test_fr_arrays_sized_n_total_and_registered():
+    ecfg = _build_via_entry_point(_base_cfg(background=True))  # 8 focal + 2 bkg
+    assert ecfg.fr_shape.dtype == np.int32
+    assert ecfg.fr_halfsat.dtype == np.float64
+    assert len(ecfg.fr_shape) == ecfg.n_species + ecfg.n_background == 10
+    assert len(ecfg.fr_halfsat) == 10
+
+
+@pytest.mark.skipif(
+    not _BALTIC_CONFIG.exists(),
+    reason="Baltic config not present in data/baltic/",
+)
+def test_fr_mis_sized_array_raises():
+    ecfg = _build_via_entry_point(_base_cfg(background=True))
+    kwargs = dict(ecfg.__dict__)
+    kwargs["fr_shape"] = np.ones(ecfg.n_species, dtype=np.int32)  # wrong length
+    with pytest.raises(ValueError, match="fr_shape"):
+        type(ecfg)(**kwargs)  # re-runs __post_init__ length check

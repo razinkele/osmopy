@@ -88,6 +88,8 @@ def _minimal_config(n_species: int = 2, n_background: int = 0, **overrides) -> d
         recruitment_type=["none"] * n_total,
         recruitment_ssb_half=np.zeros(n_total),
         shepherd_beta=np.ones(n_total),
+        fr_shape=np.ones(n_total, dtype=np.int32),
+        fr_halfsat=np.full(n_total, 1.0),
         raw_config={},
     )
     defaults.update(overrides)

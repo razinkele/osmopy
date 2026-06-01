@@ -764,6 +764,8 @@ def _merge_focal_background(
     if n_bkg > 0:
         bkg_names = [b.name for b in background_list]
         bkg_ingestion = np.array([b.ingestion_rate for b in background_list])
+        bkg_fr_shape = np.array([b.fr_shape for b in background_list], dtype=np.int32)
+        bkg_fr_halfsat = np.array([b.fr_halfsat for b in background_list], dtype=np.float64)
         bkg_condition_factor = np.array([b.condition_factor for b in background_list])
         bkg_allometric_power = np.array([b.allometric_power for b in background_list])
         bkg_zeros_f = np.zeros(n_bkg, dtype=np.float64)
@@ -807,6 +809,8 @@ def _merge_focal_background(
             "recruitment_shepherd_beta": np.concatenate(
                 [focal["focal_recruitment_shepherd_beta"], np.ones(n_bkg, dtype=np.float64)]
             ),
+            "fr_shape": np.concatenate([focal["focal_fr_shape"], bkg_fr_shape]),
+            "fr_halfsat": np.concatenate([focal["focal_fr_halfsat"], bkg_fr_halfsat]),
             "lmax": np.concatenate([focal["focal_lmax"], bkg_zeros_f]),
             "starvation_rate_max": np.concatenate(
                 [focal["focal_starvation_rate_max"], bkg_zeros_f]
@@ -855,6 +859,8 @@ def _merge_focal_background(
             "recruitment_type": focal["focal_recruitment_type"],
             "recruitment_ssb_half": focal["focal_recruitment_ssb_half"],
             "recruitment_shepherd_beta": focal["focal_recruitment_shepherd_beta"],
+            "fr_shape": focal["focal_fr_shape"],
+            "fr_halfsat": focal["focal_fr_halfsat"],
             "lmax": focal["focal_lmax"],
             "starvation_rate_max": focal["focal_starvation_rate_max"],
             "fishing_rate": focal["fishing"],
@@ -1250,6 +1256,9 @@ class EngineConfig:
     ]  # one of {"none","beverton_holt","ricker","hockey_stick","shepherd"} per species
     recruitment_ssb_half: NDArray[np.float64]  # tonnes; ignored when type=="none"
     shepherd_beta: NDArray[np.float64]  # per-species Shepherd exponent; 1.0 ≡ B-H
+    # Predator functional response (post-parity; opt-in, default code 1 ≡ existing)
+    fr_shape: NDArray[np.int32]  # per-species Holling form code: 1=type-I, 2=type-II, 3=type-III
+    fr_halfsat: NDArray[np.float64]  # per-species ration-relative half-saturation K (type2/3 only)
 
     # Predation — 2D arrays of shape (n_total, max_stages)
     size_ratio_min: NDArray[np.float64]  # min pred/prey ratio per species per stage
@@ -1478,6 +1487,8 @@ class EngineConfig:
             "additional_mortality_rate": self.additional_mortality_rate,
             "starvation_rate_max": self.starvation_rate_max,
             "shepherd_beta": self.shepherd_beta,
+            "fr_shape": self.fr_shape,
+            "fr_halfsat": self.fr_halfsat,
         }
         for name, arr in per_species_arrays.items():
             if hasattr(arr, "__len__") and len(arr) != n_total:
@@ -1568,6 +1579,8 @@ class EngineConfig:
         focal_recruitment_type = _repro["focal_recruitment_type"]
         focal_recruitment_ssb_half = _repro["focal_recruitment_ssb_half"]
         focal_recruitment_shepherd_beta = _repro["focal_recruitment_shepherd_beta"]
+        focal_fr_shape = _repro["focal_fr_shape"]
+        focal_fr_halfsat = _repro["focal_fr_halfsat"]
         # Fishing spatial distribution maps
         focal_fishing_spatial_maps: list[np.ndarray | None] = []
         # Try shared fisheries map first (v4)
@@ -1630,6 +1643,8 @@ class EngineConfig:
             "focal_recruitment_type": focal_recruitment_type,
             "focal_recruitment_ssb_half": focal_recruitment_ssb_half,
             "focal_recruitment_shepherd_beta": focal_recruitment_shepherd_beta,
+            "focal_fr_shape": focal_fr_shape,
+            "focal_fr_halfsat": focal_fr_halfsat,
             "focal_starvation_rate_max": focal_starvation_rate_max,
             "focal_fishing_selectivity_l50": focal_fishing_selectivity_l50,
             "focal_fishing_a50": focal_fishing_a50,
@@ -1670,6 +1685,8 @@ class EngineConfig:
         recruitment_type = _merged["recruitment_type"]
         recruitment_ssb_half = _merged["recruitment_ssb_half"]
         recruitment_shepherd_beta = _merged["recruitment_shepherd_beta"]
+        fr_shape = _merged["fr_shape"]
+        fr_halfsat = _merged["fr_halfsat"]
         lmax = _merged["lmax"]
         starvation_rate_max = _merged["starvation_rate_max"]
         fishing_rate = _merged["fishing_rate"]
@@ -1966,6 +1983,8 @@ class EngineConfig:
             recruitment_type=recruitment_type,
             recruitment_ssb_half=recruitment_ssb_half,
             shepherd_beta=recruitment_shepherd_beta,
+            fr_shape=fr_shape,
+            fr_halfsat=fr_halfsat,
             size_ratio_min=size_ratio_min_2d,
             size_ratio_max=size_ratio_max_2d,
             feeding_stage_thresholds=all_thresholds,
