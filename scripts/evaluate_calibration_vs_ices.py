@@ -36,22 +36,47 @@ from calibrate_baltic import (
 )
 
 
-def _apply_mode(base_config: dict[str, str], mode: str) -> None:
+# The 4 FR-calibrated predators (phase 14): cod sp0, pikeperch sp5, GreySeal
+# sp14 (runtime slot 8), Cormorant sp15 (runtime slot 9). All type-III.
+FR_PREDATOR_SP = (0, 5, 14, 15)
+_FR_KEY_SHAPE = "predation.functional.response.shape.sp{i}"
+_FR_KEY_HALFSAT = "predation.functional.response.halfsat.sp{i}"
+
+
+def _apply_mode(base_config: dict[str, str], mode: str, params: dict | None = None) -> None:
     """Inject the fixed-config that the calibrator's ``main()`` applies per phase.
 
-    ``bh``       — base config unchanged (B-H types already live in
-                   baltic_param-reproduction.csv for sp0/3/4/5).
-    ``shepherd`` — every species switched to Shepherd SR; cod sp0 ssb_half
-                   pinned at the Bpa (120 kt), matching ``phase == "13"`` setup.
+    ``bh``          — base config unchanged (B-H types already live in
+                      baltic_param-reproduction.csv for sp0/3/4/5).
+    ``shepherd``    — every species switched to Shepherd SR; cod sp0 ssb_half
+                      pinned at the Bpa (120 kt), matching ``phase == "13"`` setup.
+    ``shepherd-fr`` — everything ``shepherd`` does PLUS injects the phase-14
+                      predator functional response: the 4 FR predators
+                      (sp0/5/14/15) get ``shape=type3`` and a ``halfsat`` K read
+                      from the evaluated params JSON. A missing halfsat key
+                      defaults to K=1.0 with a printed note.
     """
     if mode == "bh":
         return
-    if mode == "shepherd":
+    if mode in ("shepherd", "shepherd-fr"):
         for sp_idx in range(len(SPECIES_NAMES)):
             base_config[f"stock.recruitment.type.sp{sp_idx}"] = "shepherd"
         base_config["stock.recruitment.ssbhalf.sp0"] = "120000"
+        if mode == "shepherd-fr":
+            params = params or {}
+            for i in FR_PREDATOR_SP:
+                base_config[_FR_KEY_SHAPE.format(i=i)] = "type3"
+                k_key = _FR_KEY_HALFSAT.format(i=i)
+                if k_key in params:
+                    base_config[k_key] = str(params[k_key])
+                else:
+                    base_config[k_key] = "1.0"
+                    print(
+                        f"NOTE: {k_key} absent from params JSON; "
+                        f"defaulting FR halfsat sp{i} to K=1.0"
+                    )
         return
-    raise ValueError(f"unknown mode {mode!r}; expected 'bh' or 'shepherd'")
+    raise ValueError(f"unknown mode {mode!r}; expected 'bh', 'shepherd' or 'shepherd-fr'")
 
 
 def evaluate(params_path: Path, mode: str, n_years: int, seed: int) -> dict:
@@ -62,9 +87,11 @@ def evaluate(params_path: Path, mode: str, n_years: int, seed: int) -> dict:
 
     reader = OsmoseConfigReader()
     base_config = reader.read(BALTIC_CONFIG)
-    _apply_mode(base_config, mode)
+    _apply_mode(base_config, mode, params)
 
     # The JSON stores real-space (de-log10'd) values; apply directly as overrides.
+    # FR keys are injected by _apply_mode into base_config; don't re-apply the
+    # raw (string-cased) halfsat/shape keys as overrides for non-FR modes.
     overrides = {k.lower(): str(v) for k, v in params.items()}
 
     stats = run_simulation(base_config, overrides, n_years=n_years, seed=seed)
@@ -129,7 +156,7 @@ def _print_report(result: dict) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--params", type=Path, required=True, help="calibration result JSON")
-    ap.add_argument("--mode", choices=["bh", "shepherd"], required=True)
+    ap.add_argument("--mode", choices=["bh", "shepherd", "shepherd-fr"], required=True)
     ap.add_argument("--years", type=int, default=40)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--json", type=Path, default=None, help="optional output JSON path")
