@@ -305,7 +305,10 @@ def run_diagnostic(
                 }
             )
     return {
-        "k": k,
+        "k_fallback": k,  # default used only for predators absent from params
+        "halfsat_per_predator": {
+            f"sp{sp}": v for sp, v in resolve_halfsat(params, FR_PREDATOR_SP, k).items()
+        },
         "n_years": n_years,
         "window": window,
         "seeds": seeds,
@@ -316,8 +319,9 @@ def run_diagnostic(
 
 
 def _print_table(summary: dict) -> None:
+    k_str = ", ".join(f"{sp}={v:.3f}" for sp, v in summary["halfsat_per_predator"].items())
     print(
-        f"\n=== FR process diagnostic | K={summary['k']} | "
+        f"\n=== FR process diagnostic | K[{k_str}] | "
         f"{summary['n_years']}y window={summary['window']}y "
         f"seeds={summary['seeds']} (base {summary['base_seed']}) ==="
     )
@@ -367,20 +371,14 @@ def main() -> None:
     # K resolution: --halfsat-from-params reads per-predator halfsat from the
     # JSON (falling back to --k for any absent predator); otherwise uniform --k.
     if args.halfsat_from_params:
-        ks = []
         for sp in FR_PREDATOR_SP:
             key = f"predation.functional.response.halfsat.sp{sp}"
-            if key in params:
-                ks.append(float(params[key]))
-            else:
+            if key not in params:
                 print(f"NOTE: {key} absent from params JSON; using --k={args.k} for sp{sp}")
-                ks.append(args.k)
-        # The FR-ON config injects per-predator halfsat from params (via
-        # _build_base_config's param-override pass); the reported K below is the
-        # representative value used when params lacks the keys.
-        k = float(np.mean(ks))
-    else:
-        k = args.k
+    # `k` is only the FALLBACK for predators absent from params; run_diagnostic /
+    # resolve_halfsat read each predator's actual K from params when present and report
+    # the per-predator values in the summary.
+    k = args.k
 
     if args.seeds == 1:
         print(
@@ -390,7 +388,8 @@ def main() -> None:
 
     print(
         f"Running FR diagnostic: {args.seeds} seed(s) x 2 variants "
-        f"x {args.years}y (window {args.window}y), K={k}"
+        f"x {args.years}y (window {args.window}y), "
+        f"K={'per-predator from params' if args.halfsat_from_params else k}"
     )
     summary = run_diagnostic(
         params,
