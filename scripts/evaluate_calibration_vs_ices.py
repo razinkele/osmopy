@@ -90,8 +90,9 @@ def evaluate(params_path: Path, mode: str, n_years: int, seed: int) -> dict:
     _apply_mode(base_config, mode, params)
 
     # The JSON stores real-space (de-log10'd) values; apply directly as overrides.
-    # FR keys are injected by _apply_mode into base_config; don't re-apply the
-    # raw (string-cased) halfsat/shape keys as overrides for non-FR modes.
+    # Every params key is re-applied here as a raw (string-cased) override for all
+    # modes — harmless because the value equals what _apply_mode already set, and any
+    # FR halfsat keys present in the JSON are raw K (not log10).
     overrides = {k.lower(): str(v) for k, v in params.items()}
 
     stats = run_simulation(base_config, overrides, n_years=n_years, seed=seed)

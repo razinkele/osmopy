@@ -1048,6 +1048,8 @@ def run_calibration(
         for sp_idx in range(8):
             base_config[f"stock.recruitment.type.sp{sp_idx}"] = "shepherd"
         # FR type-III fixed on the 4 calibrated predators; K (halfsat) is the free param.
+        # Predator set is the canonical FR_PREDATOR_SP in evaluate_calibration_vs_ices.py
+        # (not imported here to avoid a circular import); keep the two in sync.
         for sp_idx in (0, 5, 14, 15):
             base_config[f"predation.functional.response.shape.sp{sp_idx}"] = "type3"
         print("Phase 14: FR type-III on cod(sp0)/pikeperch(sp5)/GreySeal(sp14)/"
