@@ -101,11 +101,36 @@ def realized_mortality(
     return out
 
 
+def resolve_halfsat(params: dict, predators: tuple[int, ...], default_k: float) -> dict[int, float]:
+    """Resolve per-predator half-saturation K values from a params dict.
+
+    For each predator species index ``sp`` in ``predators``, look up
+    ``predation.functional.response.halfsat.sp{sp}`` in ``params``; fall back to
+    ``default_k`` when the key is absent.
+
+    Args:
+        params: flat dict of config-key -> value (the ``"parameters"`` sub-dict
+            from a phase-14 results JSON, or any dict with the same shape).
+        predators: tuple of config-space species indices (e.g. ``(0, 5, 14, 15)``).
+        default_k: fallback K for predators whose key is absent from ``params``.
+
+    Returns:
+        dict mapping each sp index -> float K.
+    """
+    result: dict[int, float] = {}
+    for sp in predators:
+        key = f"predation.functional.response.halfsat.sp{sp}"
+        result[sp] = float(params[key]) if key in params else default_k
+    return result
+
+
 def _build_base_config(params: dict, *, fr_on: bool, k: float) -> dict[str, str]:
     """Construct a frozen phase-13 Shepherd config, then inject the FR variant.
 
     FR-OFF: the 4 predators get shape=type1 (no halfsat).
-    FR-ON : the 4 predators get shape=type3 + halfsat=k.
+    FR-ON : the 4 predators get shape=type3 + per-predator halfsat resolved via
+            ``resolve_halfsat`` (reads individual K from params when available,
+            falls back to ``k`` for absent keys).
     """
     from osmose.config.reader import OsmoseConfigReader
 
@@ -117,28 +142,21 @@ def _build_base_config(params: dict, *, fr_on: bool, k: float) -> dict[str, str]
     # the shape/halfsat for the OFF variant.
     _apply_mode(cfg, "shepherd-fr", params)
 
-    for sp in FR_PREDATOR_SP:
-        shape_key = f"predation.functional.response.shape.sp{sp}"
-        hs_key = f"predation.functional.response.halfsat.sp{sp}"
-        if fr_on:
-            cfg[shape_key] = "type3"
-            cfg[hs_key] = str(k)
-        else:
-            cfg[shape_key] = "type1"
-            cfg.pop(hs_key, None)
-
     # Apply the frozen params (SR + mortality + fishing) as real-space overrides.
     for key, val in params.items():
         cfg[key.lower()] = str(val)
 
     # Re-assert the FR variant AFTER the param overrides (params JSON may carry
     # halfsat keys that would otherwise leak into the FR-OFF variant).
+    # For FR-ON: use per-predator K resolved from params (with --k as fallback)
+    # so that calibrated values are not clobbered by a uniform write.
+    per_predator_k = resolve_halfsat(params, FR_PREDATOR_SP, default_k=k)
     for sp in FR_PREDATOR_SP:
         shape_key = f"predation.functional.response.shape.sp{sp}"
         hs_key = f"predation.functional.response.halfsat.sp{sp}"
         if fr_on:
             cfg[shape_key] = "type3"
-            cfg[hs_key] = str(k)
+            cfg[hs_key] = str(per_predator_k[sp])
         else:
             cfg[shape_key] = "type1"
             cfg.pop(hs_key, None)
@@ -363,6 +381,12 @@ def main() -> None:
         k = float(np.mean(ks))
     else:
         k = args.k
+
+    if args.seeds == 1:
+        print(
+            "WARNING: seeds=1 → per-pair std is 0; the >2σ noise-band flag is meaningless "
+            "(every nonzero delta flags). Use --seeds 3+ for a real noise band."
+        )
 
     print(
         f"Running FR diagnostic: {args.seeds} seed(s) x 2 variants "

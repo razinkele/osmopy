@@ -110,3 +110,150 @@ def test_unknown_mode_raises():
 
     with pytest.raises(ValueError, match="unknown mode"):
         _apply_mode({}, "nonsense")
+
+
+# ---------------------------------------------------------------------------
+# BUG-1 regression: resolve_halfsat preserves distinct per-predator K values
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_halfsat_returns_per_predator_values():
+    """Each predator gets its OWN K from params — not a uniform value."""
+    from fr_process_diagnostic import resolve_halfsat
+    from evaluate_calibration_vs_ices import FR_PREDATOR_SP
+
+    params = {
+        "predation.functional.response.halfsat.sp0": 2.0,
+        "predation.functional.response.halfsat.sp5": 3.0,
+        "predation.functional.response.halfsat.sp14": 4.0,
+        "predation.functional.response.halfsat.sp15": 0.5,
+    }
+    result = resolve_halfsat(params, FR_PREDATOR_SP, default_k=99.0)
+
+    assert result[0] == 2.0, "sp0 should get its own K=2.0"
+    assert result[5] == 3.0, "sp5 should get its own K=3.0"
+    assert result[14] == 4.0, "sp14 should get its own K=4.0"
+    assert result[15] == 0.5, "sp15 should get its own K=0.5"
+
+    # Values must be distinct — confirming none were clobbered to a uniform value.
+    values = list(result.values())
+    assert len(set(values)) == 4, "all four K values should be distinct"
+
+
+def test_resolve_halfsat_fallback_for_absent_key():
+    """A predator absent from params gets the default_k fallback."""
+    from fr_process_diagnostic import resolve_halfsat
+    from evaluate_calibration_vs_ices import FR_PREDATOR_SP
+
+    # Only sp0 is present; sp5/14/15 are absent.
+    params = {
+        "predation.functional.response.halfsat.sp0": 7.5,
+    }
+    result = resolve_halfsat(params, FR_PREDATOR_SP, default_k=1.0)
+
+    assert result[0] == 7.5, "present key should be used"
+    assert result[5] == 1.0, "absent sp5 should fall back to default_k"
+    assert result[14] == 1.0, "absent sp14 should fall back to default_k"
+    assert result[15] == 1.0, "absent sp15 should fall back to default_k"
+
+
+def test_resolve_halfsat_uniform_when_no_params():
+    """With an empty params dict every predator gets the default_k."""
+    from fr_process_diagnostic import resolve_halfsat
+    from evaluate_calibration_vs_ices import FR_PREDATOR_SP
+
+    result = resolve_halfsat({}, FR_PREDATOR_SP, default_k=2.5)
+    assert all(v == 2.5 for v in result.values()), "all should equal default_k=2.5"
+
+
+def test_build_base_config_fr_on_preserves_per_predator_k(monkeypatch):
+    """FR-ON config has each predator's OWN K — not clobbered to a uniform value.
+
+    We mock OsmoseConfigReader.read to avoid needing the real Baltic CSV files,
+    and inject a fake params dict with distinct per-predator halfsat values.
+    """
+    # Ensure scripts/ is on the path (already done at module level, but be safe).
+    from fr_process_diagnostic import _build_base_config
+    from evaluate_calibration_vs_ices import FR_PREDATOR_SP
+
+    # Params with distinct K per predator.
+    params = {
+        "predation.functional.response.halfsat.sp0": 2.0,
+        "predation.functional.response.halfsat.sp5": 3.0,
+        "predation.functional.response.halfsat.sp14": 4.0,
+        "predation.functional.response.halfsat.sp15": 0.5,
+        # Include some non-FR params so the param-override pass exercises both code paths.
+        "stock.recruitment.r.sp0": 0.8,
+    }
+
+    # Monkeypatch OsmoseConfigReader.read to return a minimal base config dict
+    # rather than reading real CSV files from disk.
+    import osmose.config.reader as _reader_mod
+
+    def _fake_read(self, path):
+        # Return the bare minimum keys that _apply_mode and the loops need.
+        return {
+            "simulation.time.nyear": "5",
+            "stock.recruitment.type.sp0": "bh",
+        }
+
+    monkeypatch.setattr(_reader_mod.OsmoseConfigReader, "read", _fake_read)
+
+    cfg = _build_base_config(params, fr_on=True, k=99.0)
+
+    # Each predator must have its OWN K, not the uniform fallback 99.0.
+    assert cfg["predation.functional.response.halfsat.sp0"] == "2.0", "sp0 K clobbered"
+    assert cfg["predation.functional.response.halfsat.sp5"] == "3.0", "sp5 K clobbered"
+    assert cfg["predation.functional.response.halfsat.sp14"] == "4.0", "sp14 K clobbered"
+    assert cfg["predation.functional.response.halfsat.sp15"] == "0.5", "sp15 K clobbered"
+
+    # All shapes must be type3 for FR-ON.
+    for sp in FR_PREDATOR_SP:
+        assert cfg[f"predation.functional.response.shape.sp{sp}"] == "type3"
+
+
+def test_build_base_config_fr_on_fallback_for_absent_key(monkeypatch):
+    """A predator absent from params falls back to --k in the FR-ON config."""
+    import osmose.config.reader as _reader_mod
+    from fr_process_diagnostic import _build_base_config
+
+    params = {
+        "predation.functional.response.halfsat.sp0": 7.5,
+        # sp5, sp14, sp15 absent
+    }
+
+    def _fake_read(self, path):
+        return {"simulation.time.nyear": "5"}
+
+    monkeypatch.setattr(_reader_mod.OsmoseConfigReader, "read", _fake_read)
+
+    cfg = _build_base_config(params, fr_on=True, k=1.0)
+
+    assert cfg["predation.functional.response.halfsat.sp0"] == "7.5", "present key should be used"
+    assert cfg["predation.functional.response.halfsat.sp5"] == "1.0", "absent sp5 fallback to k"
+    assert cfg["predation.functional.response.halfsat.sp14"] == "1.0", "absent sp14 fallback to k"
+    assert cfg["predation.functional.response.halfsat.sp15"] == "1.0", "absent sp15 fallback to k"
+
+
+def test_build_base_config_fr_off_has_no_halfsat_keys(monkeypatch):
+    """FR-OFF config must not contain any halfsat keys (regression guard)."""
+    import osmose.config.reader as _reader_mod
+    from fr_process_diagnostic import _build_base_config
+    from evaluate_calibration_vs_ices import FR_PREDATOR_SP
+
+    params = {
+        "predation.functional.response.halfsat.sp0": 2.0,
+        "predation.functional.response.halfsat.sp5": 3.0,
+    }
+
+    def _fake_read(self, path):
+        return {"simulation.time.nyear": "5"}
+
+    monkeypatch.setattr(_reader_mod.OsmoseConfigReader, "read", _fake_read)
+
+    cfg = _build_base_config(params, fr_on=False, k=1.0)
+
+    for sp in FR_PREDATOR_SP:
+        hs_key = f"predation.functional.response.halfsat.sp{sp}"
+        assert hs_key not in cfg, f"FR-OFF must not have {hs_key}"
+        assert cfg[f"predation.functional.response.shape.sp{sp}"] == "type1"
