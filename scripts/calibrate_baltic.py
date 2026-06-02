@@ -1039,8 +1039,11 @@ def run_calibration(
             print(f"Phase 14: inherited {len(p13_data.get('parameters', {}))} "
                   "frozen phase-13 params")
         else:
-            print("Phase 14 WARNING: no phase13_results.json — run "
-                  "scripts/reconstruct_phase13_results.py first.")
+            raise FileNotFoundError(
+                f"Phase 14 requires the frozen phase-13 base at {p13_file}, which is missing. "
+                "Run `python scripts/reconstruct_phase13_results.py` first. (Refusing to run "
+                "on bare defaults — that would silently waste a multi-hour calibration.)"
+            )
         # All 8 species on Shepherd (matches the frozen base).
         for sp_idx in range(8):
             base_config[f"stock.recruitment.type.sp{sp_idx}"] = "shepherd"
