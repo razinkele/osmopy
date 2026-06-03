@@ -11,14 +11,6 @@ from typing import TYPE_CHECKING
 import pandas as pd
 import xarray as xr
 
-from osmose.engine.output import (
-    _build_bioen_dataframes,
-    _build_diet_dataframe,
-    _build_distribution_dataframes,
-    _build_mortality_dataframes,
-    _build_species_dataframes,
-    _build_yield_dataframes,
-)
 from osmose.logging import setup_logging
 
 if TYPE_CHECKING:
@@ -105,6 +97,56 @@ def _read_output_csv(path: Path) -> pd.DataFrame:
     """Read an engine/Java CSV, auto-skipping any preamble lines."""
     skip = _detect_preamble_lines(path)
     return pd.read_csv(path, skiprows=skip)
+
+
+def _is_two_row_header_mortality(path: Path) -> bool:
+    """Detect the real ``mortalityRate-{sp}`` CSV layout (vs a synthetic test file).
+
+    The Java/engine ``mortalityRate`` output has a 1-line quoted description
+    preamble, then TWO header rows (cause: ``Mpred,Mpred,Mpred,...``; stage:
+    ``,Eggs,Pre-recruits,Recruits,...``), then data rows with a trailing comma.
+    A single ``pd.read_csv`` cannot parse this (the trailing comma yields one
+    extra field on the data rows → ``ParserError``).
+
+    Synthetic test fixtures use a flat single-header layout (e.g.
+    ``time,mortalityRate``) with no description preamble — those must keep the
+    existing single-header read path. We distinguish by looking for the
+    repeated-cause-name second line that only the real layout produces.
+    """
+    try:
+        with open(path, "r", newline="") as fh:
+            lines = [fh.readline() for _ in range(3)]
+    except OSError:
+        return False
+    # Need at least a preamble + cause row + stage row.
+    if not lines[1] or not lines[2]:
+        return False
+
+    def _fields(line: str) -> list[str]:
+        return next(csv.reader(io.StringIO(line)), [])
+
+    cause_row = _fields(lines[1])
+    stage_row = _fields(lines[2])
+    if len(cause_row) < 4 or len(stage_row) < 4:
+        return False
+    # The cause row repeats a cause name across stage columns (e.g. Mpred,Mpred,Mpred)
+    # and the stage row's first field is empty (the Time column has no stage label).
+    has_repeated_cause = any(
+        cause_row[i] and cause_row[i] == cause_row[i + 1] for i in range(1, len(cause_row) - 1)
+    )
+    stage_first_blank = stage_row[0].strip() == ""
+    return has_repeated_cause and stage_first_blank
+
+
+def _read_mortality_rate_csv(path: Path) -> pd.DataFrame:
+    """Read a real ``mortalityRate-{sp}`` CSV with a (cause, stage) MultiIndex header.
+
+    Skips the 1-line description preamble, reads the two header rows as a
+    MultiIndex, and drops the all-NaN trailing column produced by the data rows'
+    trailing comma. Mirrors ``osmose.validation.fisheries.read_mortality_recruits``.
+    """
+    df = pd.read_csv(path, skiprows=1, header=[0, 1])
+    return df.dropna(axis=1, how="all")
 
 
 def _matches_output_type(stem: str, output_type: str, prefix: str) -> bool:
@@ -204,6 +246,17 @@ def _build_dataframes_from_outputs(
 
     The ``grid`` argument is reserved for future spatial/NetCDF in-memory work.
     """
+    # Imported lazily to avoid a circular import: osmose.engine.output triggers
+    # osmose.engine.__init__, which imports OsmoseResults from this module.
+    from osmose.engine.output import (
+        _build_bioen_dataframes,
+        _build_diet_dataframe,
+        _build_distribution_dataframes,
+        _build_mortality_dataframes,
+        _build_species_dataframes,
+        _build_yield_dataframes,
+    )
+
     disk_shape: dict[str, pd.DataFrame] = {}
     disk_shape.update(_build_species_dataframes(outputs, config))
     disk_shape.update(_build_mortality_dataframes(outputs, config))
@@ -585,11 +638,21 @@ class OsmoseResults:
             for filepath in _find_output_files(self.output_dir, pattern):
                 if not _matches_output_type(filepath.stem, output_type, self.prefix):
                     continue
-                df = _read_output_csv(filepath)
+                # The real mortalityRate output has two header rows (cause, stage)
+                # plus a trailing comma that breaks the single-header reader with a
+                # ParserError. Route it through the MultiIndex-aware reader; synthetic
+                # flat-header fixtures fall through to the normal path.
+                if output_type == "mortalityRate" and _is_two_row_header_mortality(filepath):
+                    df = _read_mortality_rate_csv(filepath)
+                else:
+                    df = _read_output_csv(filepath)
                 sp_name = _extract_species(filepath.stem, output_type, self.prefix)
                 if sp_name is None:
                     sp_name = "all"
-                df["species"] = sp_name
+                if isinstance(df.columns, pd.MultiIndex):
+                    df[("species", "")] = sp_name
+                else:
+                    df["species"] = sp_name
                 frames.append(df)
 
             if not frames:
@@ -601,7 +664,10 @@ class OsmoseResults:
 
         combined = self._csv_cache[cache_key]
         if species:
-            combined = combined[combined["species"] == species]  # type: ignore[assignment]
+            # MultiIndex-column frames (real mortalityRate) key species as
+            # ("species", ""); flat frames key it as "species".
+            sp_col = ("species", "") if isinstance(combined.columns, pd.MultiIndex) else "species"
+            combined = combined[combined[sp_col] == species]  # type: ignore[assignment]
         return combined  # type: ignore[return-value]
 
     # Type-to-method mapping for export_dataframe

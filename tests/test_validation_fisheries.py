@@ -117,6 +117,28 @@ def test_format_report_renders_with_none_fm():
     assert "1 overexploited" in md
 
 
+def test_results_mortality_reads_real_csv(tmp_path):
+    from osmose.results import OsmoseResults
+
+    mdir = tmp_path / "Mortality"
+    mdir.mkdir()
+    (mdir / "osm_mortalityRate-cod_Simu0.csv").write_bytes(_FIXTURE.read_bytes())
+    r = OsmoseResults(tmp_path, prefix="osm", strict=False)
+    df = r.mortality("cod")  # must NOT raise ParserError
+    assert df is not None and len(df) > 0
+
+
+def test_cli_runs_on_empty_dir(tmp_path):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("cmb", "scripts/compute_mortality_balance.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    (tmp_path / "Mortality").mkdir()
+    rc = mod.main(["--results-dir", str(tmp_path), "--prefix", "osm", "--steps-per-year", "1"])
+    assert rc == 0
+
+
 def test_fm_bar_chart_builds():
     from osmose import plotting
 
