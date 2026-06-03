@@ -8,6 +8,8 @@ F/M > 1 means fishing removes more than natural processes (an overexploitation s
 
 from __future__ import annotations
 
+import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -44,3 +46,64 @@ def read_mortality_recruits(path: Path) -> pd.DataFrame:
     df = pd.read_csv(path, skiprows=1, header=[0, 1])
     df = df.dropna(axis=1, how="all")
     return df
+
+
+@dataclass(frozen=True)
+class MortalityBalance:
+    species: str
+    fishing_mortality: float
+    natural_mortality: float
+    f_over_m: float | None
+    overexploited: bool
+
+
+def _mortality_path(output_dir: Path, prefix: str, species: str) -> Path:
+    return Path(output_dir) / "Mortality" / f"{prefix}_mortalityRate-{species}_Simu0.csv"
+
+
+def discover_species(output_dir: Path, prefix: str) -> list[str]:
+    """Species names with a mortalityRate file in {output_dir}/Mortality."""
+    mdir = Path(output_dir) / "Mortality"
+    stem = f"{prefix}_mortalityRate-"
+    out = []
+    for p in sorted(mdir.glob(f"{stem}*_Simu0.csv")):
+        out.append(p.name[len(stem) :].rsplit("_Simu0.csv", 1)[0])
+    return out
+
+
+def compute_mortality_balance(
+    output_dir: Path,
+    *,
+    prefix: str,
+    species_list: list[str] | None = None,
+    steps_per_year: int,
+    window_years: int = 10,
+) -> list[MortalityBalance]:
+    """Per-species F/M from the mortalityRate outputs. steps_per_year is REQUIRED
+    (config-derived by the caller; never inferred from row counts)."""
+    species = species_list if species_list is not None else discover_species(output_dir, prefix)
+    out: list[MortalityBalance] = []
+    for sp in species:
+        path = _mortality_path(output_dir, prefix, sp)
+        if not path.exists():
+            print(f"WARN: no mortality file for {sp!r} at {path}", file=sys.stderr)
+            continue
+        try:
+            df = read_mortality_recruits(path)
+            f = annual_rate(df[("F", "Recruits")], steps_per_year, window_years)
+            m_series = sum(df[(c, "Recruits")] for c in _NATURAL_CAUSES)
+            m = annual_rate(m_series, steps_per_year, window_years)
+        except (KeyError, ValueError, pd.errors.ParserError) as e:
+            print(f"WARN: skipping {sp!r}: {e}", file=sys.stderr)
+            continue
+        f_over_m = (f / m) if m > 0 else None
+        out.append(
+            MortalityBalance(
+                species=sp,
+                fishing_mortality=f,
+                natural_mortality=m,
+                f_over_m=f_over_m,
+                overexploited=(f_over_m is not None and f_over_m > 1.0),
+            )
+        )
+    return out

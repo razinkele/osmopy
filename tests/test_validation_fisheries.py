@@ -45,3 +45,60 @@ def test_annual_rate_raises_when_shorter_than_a_year():
 def test_annual_rate_rejects_bad_steps_per_year():
     with pytest.raises(ValueError):
         fz.annual_rate(pd.Series([0.1, 0.2]), steps_per_year=0, window_years=1)
+
+
+def test_compute_balance_real_fixture(tmp_path):
+    mort_dir = tmp_path / "Mortality"
+    mort_dir.mkdir(parents=True)
+    (mort_dir / "osm_mortalityRate-cod_Simu0.csv").write_bytes(_FIXTURE.read_bytes())
+    out = fz.compute_mortality_balance(
+        tmp_path, prefix="osm", species_list=["cod"], steps_per_year=1, window_years=5
+    )
+    b = {x.species: x for x in out}["cod"]
+    assert b.fishing_mortality >= 0.0 and b.natural_mortality >= 0.0
+    if b.natural_mortality > 0:
+        assert b.f_over_m == pytest.approx(b.fishing_mortality / b.natural_mortality)
+        assert b.overexploited == (b.f_over_m > 1.0)
+
+
+def test_compute_balance_m_zero_gives_none(tmp_path, monkeypatch):
+    def fake_reader(path):
+        cols = pd.MultiIndex.from_tuples(
+            [("F", "Recruits"), ("Mpred", "Recruits"), ("Mstarv", "Recruits"), ("Madd", "Recruits")]
+        )
+        return pd.DataFrame([[0.4, 0.0, 0.0, 0.0], [0.4, 0.0, 0.0, 0.0]], columns=cols)
+
+    monkeypatch.setattr(fz, "read_mortality_recruits", fake_reader)
+    (tmp_path / "Mortality").mkdir()
+    (tmp_path / "Mortality" / "osm_mortalityRate-x_Simu0.csv").write_text("stub")
+    b = fz.compute_mortality_balance(
+        tmp_path, prefix="osm", species_list=["x"], steps_per_year=1, window_years=2
+    )[0]
+    assert b.natural_mortality == 0.0 and b.f_over_m is None and b.overexploited is False
+
+
+def test_compute_balance_skips_missing_species(tmp_path):
+    (tmp_path / "Mortality").mkdir()
+    out = fz.compute_mortality_balance(
+        tmp_path, prefix="osm", species_list=["ghost"], steps_per_year=1, window_years=2
+    )
+    assert out == []
+
+
+def test_compute_balance_skips_malformed_file(tmp_path):
+    # A 2-line malformed file makes read_mortality_recruits raise ParserError;
+    # compute must catch it and skip, not crash.
+    (tmp_path / "Mortality").mkdir()
+    (tmp_path / "Mortality" / "osm_mortalityRate-bad_Simu0.csv").write_text("preamble\nh1,h2\n")
+    out = fz.compute_mortality_balance(
+        tmp_path, prefix="osm", species_list=["bad"], steps_per_year=1, window_years=2
+    )
+    assert out == []  # malformed → WARN-skip, not crash
+
+
+def test_discover_species_from_mortality_dir(tmp_path):
+    d = tmp_path / "Mortality"
+    d.mkdir()
+    for sp in ("cod", "sprat"):
+        (d / f"osm_mortalityRate-{sp}_Simu0.csv").write_text("stub")
+    assert sorted(fz.discover_species(tmp_path, prefix="osm")) == ["cod", "sprat"]
