@@ -104,6 +104,7 @@ The Baltic example is the product of several overlapping threads. In chronologic
 | `scripts/relabel_baltic_grid_nc.py`      | Metadata pass over `baltic_grid.nc`                        |
 | `scripts/validate_baltic_vs_ices_sag.py` | `docs/baltic_ices_validation_2026-04-18.md`                |
 | `scripts/compute_mortality_balance.py`   | per-species F/M report (stdout / `--report` / `--json` / `--plot`) |
+| `scripts/compare_runs.py`               | per-species % change between two runs, ranked by magnitude (stdout / `--report` / `--json` / `--plot`) |
 | `mcp_servers/copernicus/server.py`       | `baltic_ltl_biomass.nc` via `generate_osmose_ltl` MCP tool |
 
 All scripts assume CWD = repo root. None write to checked-in files unless re-run intentionally.
@@ -318,6 +319,48 @@ require a config with broad ICES tonnes-unit coverage (only sprat qualifies on B
 (the standard `MSY Btrigger` proxy overstates stock health by design), and an Fbar-aligned F. Not
 worthwhile for a single species on Baltic. See
 `docs/superpowers/specs/2026-06-03-fisheries-diagnostics-design.md` for the full rescope rationale.
+
+### Config-change impact diagnostic (`scripts/compare_runs.py`)
+
+Computes a per-species **% change** in a chosen output metric (biomass, yield, or abundance) between
+a **baseline** run and a **variant** run, then ranks species by magnitude of change — so the effect
+of a config tweak (e.g. halving cod fishing mortality) is instantly legible: the biggest movers surface
+at the top.
+
+**Example usage (Baltic cod-halved variant):**
+
+```bash
+PYTHONPATH=. python scripts/compare_runs.py \
+    --baseline data/baltic/output \
+    --variant  data/baltic/output_cod_halved \
+    --prefix   baltic \
+    --metric   biomass \
+    --window-years 10 \
+    --top-n    5 \
+    --report   delta_cod_halved.md \
+    --json     delta_cod_halved.json \
+    --plot     delta_cod_halved
+```
+
+`--plot` writes `<prefix>_delta.html` (diverging bar chart). `--baseline-prefix` / `--variant-prefix`
+override `--prefix` independently when the two run directories use different output prefixes.
+
+**Honest limitations.**
+
+- **Windowed mean only.** The comparison reports the mean of the trailing `--window-years` of each run.
+  It answers "what moved" — not "is the difference beyond multi-seed noise". For a per-period
+  trajectory or confidence interval, run multiple seeds and post-process.
+- **No significance/multi-seed band.** Two single-seed runs can differ by random-number-stream variation
+  alone. A config change that is smaller than the seed-to-seed spread is not reliably detected.
+- **Zero-baseline species shown as "from 0".** When a species is absent from the baseline run but
+  present in the variant, `pct_delta` is undefined (division by zero). These species are shown with
+  `from 0` in the % column and ranked at the top; `abs_delta` and `variant_mean` are still reported.
+- **Window is by simulation YEAR.** The time filter operates on the year column, so results are correct
+  regardless of output cadence (annual or sub-annual records).
+
+**Deferred follow-ons.** Per-period "which year moved" trajectories, per-cell spatial deltas, and a UI
+"Compare Runs" tab are deferred. See
+`docs/superpowers/specs/2026-06-03-result-delta-tracking-design.md` for the rescope rationale.
 
 Documented limitations that this example **does not currently represent**:
 
