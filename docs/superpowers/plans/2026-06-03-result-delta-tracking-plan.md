@@ -96,7 +96,16 @@ def test_window_mean_real_wide_fixture():
     res = _FakeResults({"biomass": df, "yield": df, "abundance": df})
     means = az._per_species_window_mean(res, "biomass", window_years=10)
     assert "cod" in means and means["cod"] > 0
-    assert "species" not in means and "all" not in means
+    assert "species" not in means  # the constant 'species' artifact column is excluded
+
+def test_window_mean_uses_years_not_row_count():
+    # 3 years at 2 rows/year. window=1 must take the LAST YEAR (Time>2.0 → rows at 2.5,3.0),
+    # NOT the last ROW. cod last-year rows = [30,40] → mean 35 (a row-count tail(1) would give 40).
+    df = _wide(cod=[10.0, 10.0, 20.0, 20.0, 30.0, 40.0])
+    df["Time"] = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0]
+    res = _FakeResults({"biomass": df, "yield": df, "abundance": df})
+    means = az._per_species_window_mean(res, "biomass", window_years=1)
+    assert means["cod"] == pytest.approx(35.0)   # by-year window; tail(1)=40 would be WRONG
 ```
 
 - [ ] **Step 2: Run to verify failure**
@@ -113,6 +122,17 @@ _METRIC_ACCESSOR = {"biomass": "biomass", "yield": "yield_biomass", "abundance":
 _NON_SPECIES_COLS = {"Time", "time", "species"}
 
 
+def _trailing_window(df, time_col: str, window_years: int):
+    """Rows whose time is within the last `window_years` (time is in YEARS).
+
+    Filters by the time COLUMN, not by row count — so the window is correct
+    regardless of how many rows-per-year the output was saved at (a row-count
+    `tail` silently takes the last N *rows*, which is wrong for sub-annual output).
+    """
+    tmax = float(df[time_col].max())
+    return df[df[time_col] > tmax - window_years]
+
+
 def _per_species_window_mean(results, metric: str, window_years: int) -> dict[str, float]:
     """Per-species mean of `metric` over the trailing `window_years` of a run.
 
@@ -121,6 +141,9 @@ def _per_species_window_mean(results, metric: str, window_years: int) -> dict[st
       column. Per-species values are the columns; mean each over the trailing window.
     - LONG: `time, species, value` with a real per-species `species` column; group by
       species and mean `value` over the trailing window per species.
+
+    The window is selected by the time column (years), NOT by row count, so it is
+    correct for sub-annual output cadences (recordfrequency.ndt < ndtPerYear).
     """
     if metric not in _METRIC_ACCESSOR:
         raise ValueError(f"unknown metric {metric!r}; expected one of {sorted(_METRIC_ACCESSOR)}")
@@ -128,17 +151,22 @@ def _per_species_window_mean(results, metric: str, window_years: int) -> dict[st
     if df is None or len(df) == 0:
         return {}
     cols = set(df.columns)
-    is_long = "value" in cols and "species" in cols and df["species"].nunique() > 1
+    # LONG iff a value column + a species column are present. (The WIDE global frame
+    # has a `species` column too — but no `value` column — so this discriminates
+    # correctly even for a single-species long frame, where a row-count heuristic fails.)
+    is_long = "value" in cols and "species" in cols
     if is_long:
+        time_col = "time" if "time" in cols else "Time"
         out: dict[str, float] = {}
         for sp, g in df.groupby("species"):
-            tail = g.tail(window_years)
-            out[str(sp)] = float(tail["value"].mean())
+            win = _trailing_window(g.sort_values(time_col), time_col, window_years)
+            out[str(sp)] = float(win["value"].mean())
         return out
     # WIDE: species are the non-Time/non-species columns
+    time_col = "Time" if "Time" in cols else "time"
     species_cols = [c for c in df.columns if c not in _NON_SPECIES_COLS]
-    tail = df.tail(window_years)
-    return {str(c): float(tail[c].mean()) for c in species_cols}
+    win = _trailing_window(df, time_col, window_years)
+    return {str(c): float(win[c].mean()) for c in species_cols}
 ```
 
 - [ ] **Step 4: Run to verify pass**
@@ -178,11 +206,31 @@ def test_run_delta_ranks_by_pct():
     assert [d.species for d in deltas][:2] == ["herring", "cod"]
 
 def test_run_delta_top_n():
+    # Names chosen so ALPHABETICAL order (a,b,c) DISAGREES with the pct ranking — a broken
+    # sort that just preserves alpha order would fail this. a=+10%, b=+100%, c=+50%.
     base = _FakeResults({"biomass": _wide(a=[1.0], b=[1.0], c=[1.0]), "yield": _wide(a=[1.0]), "abundance": _wide(a=[1.0])})
-    var = _FakeResults({"biomass": _wide(a=[2.0], b=[1.5], c=[1.1]), "yield": _wide(a=[1.0]), "abundance": _wide(a=[1.0])})
+    var = _FakeResults({"biomass": _wide(a=[1.1], b=[2.0], c=[1.5]), "yield": _wide(a=[1.0]), "abundance": _wide(a=[1.0])})
     deltas = az.run_delta(base, var, metric="biomass", window_years=1, top_n=2)
     assert len(deltas) == 2
-    assert [d.species for d in deltas] == ["a", "b"]   # +100%, +50% are the 2 biggest
+    assert [d.species for d in deltas] == ["b", "c"]   # +100%, +50% — NOT alphabetical
+
+def test_run_delta_from_zero_ranks_above_finite():
+    # from-zero recovery must outrank a finite +200% mover.
+    base = _FakeResults({"biomass": _wide(cod=[0.0], herring=[1.0]), "yield": _wide(cod=[0.0]), "abundance": _wide(cod=[0.0])})
+    var = _FakeResults({"biomass": _wide(cod=[10.0], herring=[3.0]), "yield": _wide(cod=[0.0]), "abundance": _wide(cod=[0.0])})
+    deltas = az.run_delta(base, var, metric="biomass", window_years=1)
+    assert deltas[0].species == "cod" and deltas[0].from_zero is True
+    assert deltas[1].species == "herring"
+
+def test_run_delta_both_zero_ranks_last():
+    # A 0->0 "dead" species (pct None but NOT from_zero) must rank LAST, never as a top mover.
+    base = _FakeResults({"biomass": _wide(cod=[1.0], ghost=[0.0]), "yield": _wide(cod=[0.0]), "abundance": _wide(cod=[0.0])})
+    var = _FakeResults({"biomass": _wide(cod=[2.0], ghost=[0.0]), "yield": _wide(cod=[0.0]), "abundance": _wide(cod=[0.0])})
+    deltas = az.run_delta(base, var, metric="biomass", window_years=1)
+    assert deltas[0].species == "cod"           # +100% mover on top
+    assert deltas[-1].species == "ghost"        # 0->0 dead species last
+    ghost = deltas[-1]
+    assert ghost.pct_delta is None and ghost.from_zero is False and ghost.abs_delta == 0.0
 
 def test_run_delta_from_zero():
     base = _FakeResults({"biomass": _wide(cod=[0.0, 0.0]), "yield": _wide(cod=[0.0]), "abundance": _wide(cod=[0.0])})
@@ -215,7 +263,7 @@ Expected: FAIL (`no attribute 'run_delta'`).
 
 - [ ] **Step 3: Implement**
 
-Add to `osmose/analysis.py` (`from dataclasses import dataclass` — confirm it's imported; add if not):
+Add to `osmose/analysis.py`. **Add `from dataclasses import dataclass` at the top — it is NOT currently imported** (verified; `@dataclass` will `NameError` without it):
 
 ```python
 @dataclass(frozen=True)
@@ -250,8 +298,13 @@ def run_delta(baseline, variant, *, metric: str = "biomass", window_years: int =
                                    from_zero=(b == 0.0 and v > 0.0)))
 
     def _key(d: SpeciesDelta):
-        # from-zero / undefined-pct rank at top (inf); then by |pct|; ties by |abs|.
-        primary = float("inf") if d.pct_delta is None else abs(d.pct_delta)
+        # Genuine from-zero recoveries rank at top (inf). A 0->0 "dead" species also has
+        # pct_delta None but is NOT a mover — it must rank LAST (0.0), not at the top.
+        # Finite pct ranks by |pct|; ties by |abs|.
+        if d.pct_delta is None:
+            primary = float("inf") if d.from_zero else 0.0
+        else:
+            primary = abs(d.pct_delta)
         return (primary, abs(d.abs_delta))
 
     deltas.sort(key=_key, reverse=True)
@@ -316,8 +369,8 @@ def format_delta_report(deltas: list[SpeciesDelta], *, metric: str = "biomass",
             pct = "— (from 0)" if d.from_zero else "—"
         else:
             pct = f"{d.pct_delta * 100:+.1f}%"
-        lines.append(f"| {d.species} | {d.baseline_mean:,.3g} | {d.variant_mean:,.3g} | "
-                     f"{d.abs_delta:+,.3g} | {pct} |")
+        lines.append(f"| {d.species} | {d.baseline_mean:.3g} | {d.variant_mean:.3g} | "
+                     f"{d.abs_delta:+.3g} | {pct} |")
     n_moved = sum(1 for d in deltas if d.abs_delta != 0.0)
     lines += ["", f"**Summary:** {n_moved} of {len(deltas)} species changed.", ""]
     return "\n".join(lines)
@@ -350,8 +403,9 @@ def test_delta_chart_builds():
     ]
     fig = plotting.make_run_delta_chart(deltas)
     assert fig is not None
-    # finite-pct species are plotted (herring, cod) — 2 bars
-    assert sum(len(t.x) for t in fig.data if hasattr(t, "x") and t.x is not None) >= 2
+    # EXACTLY the 2 finite-pct species are barred (herring, cod); the from-zero sprat is NOT.
+    assert sum(len(t.x) for t in fig.data if hasattr(t, "x") and t.x is not None) == 2
+    assert "sprat" not in [s for t in fig.data if t.y is not None for s in t.y]
 ```
 
 - [ ] **Step 2: Run (FAIL) → implement in `osmose/plotting.py` → pass**
@@ -364,7 +418,9 @@ def make_run_delta_chart(deltas, *, metric: str = "biomass") -> go.Figure:
     from-zero species are listed in the title note (no finite bar).
     """
     finite = [d for d in deltas if getattr(d, "pct_delta", None) is not None]
-    finite = sorted(finite, key=lambda d: d.pct_delta)  # ascending so largest + is on top
+    # Ascending by |Δ%| so the biggest mover sits at the TOP of the horizontal chart
+    # (plotly plots data order bottom-to-top), matching run_delta's magnitude ranking.
+    finite = sorted(finite, key=lambda d: abs(d.pct_delta))
     colors = ["#2ca02c" if d.pct_delta >= 0 else "#d62728" for d in finite]
     fig = go.Figure(go.Bar(
         x=[d.pct_delta * 100 for d in finite], y=[d.species for d in finite],
@@ -461,17 +517,24 @@ if __name__ == "__main__":
 
 ```python
 def test_cli_self_comparison_is_all_zero(tmp_path):
-    import importlib.util
+    import importlib.util, json
     spec = importlib.util.spec_from_file_location("cr", "scripts/compare_runs.py")
     mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
-    # compare a real run against ITSELF → every delta 0
+    out = tmp_path / "delta.json"
+    # compare a real run against ITSELF → every delta must be exactly 0
     rc = mod.main(["--baseline", "data/eec_full/output", "--variant", "data/eec_full/output",
-                   "--prefix", "eec", "--metric", "biomass", "--window-years", "10"])
+                   "--prefix", "eec", "--metric", "biomass", "--window-years", "10",
+                   "--json", str(out)])
     assert rc == 0
+    rows = json.loads(out.read_text())
+    assert len(rows) > 0                                  # species were actually compared
+    assert all(r["abs_delta"] == 0.0 for r in rows)       # genuine self-comparison → zero deltas
+    assert all(r["pct_delta"] == 0.0 for r in rows)       # 0/x = 0% (no from-zero on a self-compare)
 ```
 
 Run: `.venv/bin/python -m pytest tests/test_analysis_delta.py -k cli -v`
-Expected: PASS (self-comparison runs, prints a table where every Δ is 0).
+Expected: PASS (self-comparison runs; the JSON proves every Δ is exactly 0, not just rc==0).
+(If eec_full's prefix differs, find it with `ls data/eec_full/output/*biomass*`. PYTHONPATH: the importlib load inherits pytest's sys.path which has the repo root; the real-run usage in the docstring shows `PYTHONPATH=.`.)
 
 - [ ] **Step 3: Real perturbed-run smoke (prove a non-zero delta surfaces)**
 
