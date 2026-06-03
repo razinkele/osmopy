@@ -1,185 +1,130 @@
-# Fisheries Stock-Status Diagnostics Implementation Plan
+# Fishing-vs-natural Mortality (F/M) Diagnostics Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Compute per-species fisheries stock-status diagnostics (F/M, B/Bmsy, F/Fmsy, Kobe quadrant) from a finished OSMOSE run, using the ICES reference points already loaded by `osmose/validation/ices.py`, and surface them via a library module, a Kobe plot, and a CLI.
+**Goal:** Compute a per-species F/M (fishing vs natural mortality) ratio from a finished OSMOSE run — for ALL species, no ICES reference points — surfaced via a library function, a bar chart, and a CLI; plus fix the pre-existing `mortalityRate` CSV read bug it depends on.
 
-**Architecture:** A new `osmose/validation/fisheries.py` reuses `ices.py`'s `IcesSnapshot`/`load_snapshot`/`model_biomass_window_mean` and the snapshot manifest (species→stock mapping + `units_by_stock` + `reference_points`). It adds mortality-rate helpers (annual F and M from the `mortalityRate` CSV), a Kobe-quadrant classifier, a `FisheriesStatus` dataclass, `compute_fisheries_status()`, and a markdown report. Plotting functions go in `osmose/plotting.py`; a CLI in `scripts/compute_fisheries_diagnostics.py` mirrors `scripts/validate_outputs_vs_ices.py`. No engine changes, no calibration runs.
+**Architecture:** A dedicated reader parses the real `mortalityRate-{sp}` CSV (1 preamble line + 2 header rows + trailing comma). `osmose/validation/fisheries.py` aggregates the `('F','Recruits')` and natural-cause columns to annual rates (using a config-derived `steps_per_year`, never row-ratio inference), computes F/M per species, and formats a report. A bar chart goes in `osmose/plotting.py`; a CLI in `scripts/compute_mortality_balance.py`. No engine changes, no calibration runs, no ICES reference-point math (B/Bmsy/F/Fmsy/Kobe are a documented deferred follow-up).
 
-**Tech Stack:** Python 3.12, pandas, NumPy, Plotly (via `osmose/plotly_theme.py` `PLOTLY_TEMPLATE`), pytest, ruff. Run tests with `.venv/bin/python -m pytest`.
+**Tech Stack:** Python 3.12, pandas, NumPy, Plotly (`osmose/plotly_theme.py` `PLOTLY_TEMPLATE`), pytest, ruff. Tests: `.venv/bin/python -m pytest`.
 
-**Reference spec:** `docs/superpowers/specs/2026-06-03-fisheries-diagnostics-design.md`.
+**Reference spec:** `docs/superpowers/specs/2026-06-03-fisheries-diagnostics-design.md` (rescoped after a 4-angle in-loop review).
 
 ---
 
-## Verified facts (from reconnaissance — use exactly)
+## Verified facts (executed against real code/data — use exactly)
 
-- `osmose/validation/ices.py` exposes: `IcesSnapshot(manifest, assessments, reference_points, snapshot_dir)`; `load_snapshot(dir)`; `model_biomass_window_mean(results, species, window_years)` → float tonnes.
-- `snapshot.manifest["model_species_to_ices_stocks"]` = `{species: [stock_keys]}`; `snapshot.manifest["units_by_stock"]` = `{stock: "tonnes"|"index"}`; `snapshot.reference_points[stock]` = dict with keys `fmsy`, `blim`, `bpa`, `msy_btrigger` (values may be `None`).
-- `results.mortality(species)` reads `{prefix}_mortalityRate-{species}_Simu0.csv`. That CSV has a **2-row column header**: row A = cause (`Mpred`,`Mstarv`,`Madd`,`F`,`Zout`,`Mfor`,`Mdis`,`Mage`, each repeated 3×), row B = life-stage (`Eggs`,`Pre-recruits`,`Recruits`); first column is `Time` (per saving timestep). "To get annual rates, sum within one year." (`osmose/engine/output.py:210`.)
-- `results.biomass(species)` → long-form `time, species, value` (tonnes).
-- `osmose/plotting.py` imports `from osmose.plotly_theme import PLOTLY_TEMPLATE as TEMPLATE`; every `make_*` fn returns a `go.Figure` and sets `template=TEMPLATE`.
-- CLI precedent `scripts/validate_outputs_vs_ices.py`: argparse with `--results-dir --snapshots-dir --window-years --prefix --report --json`; `PROJECT_ROOT`/`DEFAULT_SNAPSHOT_DIR` constants; `dataclasses.asdict` for JSON.
+- Mortality file path: `{output_dir}/Mortality/{prefix}_mortalityRate-{species}_Simu0.csv` (confirmed baltic + eec_full).
+- That CSV: line 0 = description preamble; line 1 = cause header (`Mpred`,`Mstarv`,`Madd`,`F`,`Zout`,`Mfor`,`Mdis`,`Mage`, each repeated for 3 stages; first field `Time`); line 2 = stage (`Eggs`,`Pre-recruits`,`Recruits`); data rows carry a **trailing comma** (26 fields vs 25 header). `results.mortality()` **raises `pandas.errors.ParserError`** on it today. Correct read: `pd.read_csv(path, skiprows=1, header=[0,1])` then drop the all-NaN trailing column → `(cause, stage)` MultiIndex; `df[("F","Recruits")]` etc. accessible.
+- Output cadence: biomass and mortality both saved every `output.recordfrequency.ndt`; equal row counts; for shipped configs `recordfrequency.ndt == ndtPerYear == 24` → 1 row/year, each mortality row already an annual sum. So default `steps_per_year = 1` for shipped configs; do NOT infer from row counts.
+- Config keys for steps-per-year: `simulation.time.ndtPerYear` and `output.recordfrequency.ndt` (in `{prefix}_param-simulation.csv` / `{prefix}_param-output.csv`). `steps_per_year = ndtPerYear // recordfrequency_ndt`.
+- `OsmoseResults(output_dir, prefix="osm", strict=False)` — `osmose/results.py:239`; mirror `strict=False` from `validate_outputs_vs_ices.py:102`. We do NOT rely on `results.mortality()`.
+- `osmose/plotting.py`: `import plotly.graph_objects as go`; `from osmose.plotly_theme import PLOTLY_TEMPLATE as TEMPLATE`; plotly 6.5.2 has `add_hline`/`write_html`.
 
 ## File Structure
 
-- Create: `osmose/validation/fisheries.py` — helpers, dataclass, compute, report.
-- Modify: `osmose/plotting.py` — add `make_kobe_plot`, `make_fm_ratio_bars`.
-- Create: `scripts/compute_fisheries_diagnostics.py` — CLI.
-- Create: `tests/test_validation_fisheries.py` — unit tests.
-- Modify: a feature/usage doc (find via `grep -rl "validate_outputs_vs_ices" docs/`) — add a short CLI note.
+- Create: `osmose/validation/fisheries.py` — reader, `annual_rate`, `MortalityBalance`, `compute_mortality_balance`, `format_mortality_report`.
+- Modify: `osmose/results.py` — fix the `mortalityRate` read bug (Task 6, low-risk, guarded by checking other callers).
+- Modify: `osmose/plotting.py` — add `make_fm_ratio_bars`.
+- Create: `scripts/compute_mortality_balance.py` — CLI.
+- Create: `tests/test_validation_fisheries.py` — real-file-fixture tests.
+- Modify: a usage doc (Task 7).
 
 ---
 
-## Task 1: Mortality-rate helpers (annual F and M)
+## Task 1: Mortality CSV reader (real 2-row header + trailing comma)
 
 **Files:**
 - Create: `osmose/validation/fisheries.py`
 - Test: `tests/test_validation_fisheries.py`
+- Test fixture: copy a real CSV (see Step 1).
 
-- [ ] **Step 1: Write failing tests with a synthetic mortality DataFrame**
+- [ ] **Step 1: Capture a real fixture + write the failing test**
 
-The helpers take a *DataFrame already shaped like `results.mortality()` returns* so they're unit-testable without a run. First, in `tests/test_validation_fisheries.py`, build a synthetic mortality frame matching the real 2-row header and assert annual aggregation:
+Copy a real mortality CSV into the test tree so the test runs against the true format:
+`mkdir -p tests/fixtures && cp data/eec_full/output/Mortality/eec_mortalityRate-cod_Simu0.csv tests/fixtures/mortalityRate_sample.csv`
+(If that path is absent, use `data/baltic/output/Mortality/baltic_mortalityRate-cod_Simu0.csv`. Confirm with `ls data/*/output/Mortality/*mortalityRate-cod*`.)
 
 ```python
+from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
 from osmose.validation import fisheries as fz
 
+_FIXTURE = Path(__file__).parent / "fixtures" / "mortalityRate_sample.csv"
 
-def _synthetic_mortality_df(n_years=3, steps_per_year=2):
-    """Mimic results.mortality(): MultiIndex columns (cause, stage) + a 'Time' column.
-    F/Recruits = 0.1 per step → annual F = 0.1*steps_per_year. Mpred/Recruits=0.2,
-    Mstarv/Recruits=0.05, Madd/Recruits=0.01 per step → annual M = 0.26*steps_per_year."""
-    causes = ["Mpred", "Mstarv", "Madd", "F"]
-    stages = ["Eggs", "Pre-recruits", "Recruits"]
-    cols = pd.MultiIndex.from_product([causes, stages])
-    n = n_years * steps_per_year
-    data = np.zeros((n, len(cols)))
-    per_step = {("F", "Recruits"): 0.1, ("Mpred", "Recruits"): 0.2,
-                ("Mstarv", "Recruits"): 0.05, ("Madd", "Recruits"): 0.01}
-    for (c, s), v in per_step.items():
-        data[:, cols.get_loc((c, s))] = v
-    df = pd.DataFrame(data, columns=cols)
-    df[("Time", "")] = np.arange(1, n + 1, dtype=float)
-    return df
-
-
-def test_annual_fishing_mortality_sums_within_year():
-    df = _synthetic_mortality_df(n_years=3, steps_per_year=2)
-    # annual F per year = 0.1 * 2 = 0.2; windowed mean over last 2 years = 0.2
-    assert fz._annual_fishing_mortality(df, steps_per_year=2, window_years=2) == pytest.approx(0.2)
-
-
-def test_annual_natural_mortality_sums_causes_and_steps():
-    df = _synthetic_mortality_df(n_years=3, steps_per_year=2)
-    # annual M per year = (0.2+0.05+0.01)*2 = 0.52
-    assert fz._annual_natural_mortality(df, steps_per_year=2, window_years=2) == pytest.approx(0.52)
+def test_read_mortality_recruits_real_csv():
+    df = fz.read_mortality_recruits(_FIXTURE)
+    # MultiIndex (cause, stage); the F/Recruits and natural-cause Recruits columns exist
+    assert ("F", "Recruits") in df.columns
+    assert ("Mpred", "Recruits") in df.columns
+    assert ("Mstarv", "Recruits") in df.columns
+    assert ("Madd", "Recruits") in df.columns
+    # values are finite floats, one row per saved step
+    assert len(df) > 0
+    assert df[("F", "Recruits")].notna().all()
 ```
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `.venv/bin/python -m pytest tests/test_validation_fisheries.py -k "annual_" -v`
-Expected: FAIL (`module 'fisheries' has no attribute '_annual_fishing_mortality'`).
+Run: `.venv/bin/python -m pytest tests/test_validation_fisheries.py::test_read_mortality_recruits_real_csv -v`
+Expected: FAIL (`module 'fisheries' has no attribute 'read_mortality_recruits'`).
 
-- [ ] **Step 3: Implement the helpers**
+- [ ] **Step 3: Implement the reader**
 
 Create `osmose/validation/fisheries.py`:
 
 ```python
-"""Fisheries stock-status diagnostics for OSMOSE outputs.
+"""Fishing-vs-natural mortality (F/M) diagnostics for OSMOSE outputs.
 
-Computes per-species F/M, B/Bmsy, F/Fmsy and Kobe-quadrant status from a
-finished run, using ICES reference points loaded by `osmose.validation.ices`.
-OSMOSE has no native MSY; B/Bmsy uses ICES `msy_btrigger` as the Bmsy proxy
-and F/Fmsy uses ICES `fmsy`. Reference-point ratios are computed only for
-species whose ICES sub-stocks are all tonnes-unit with non-null fmsy (mixed
-or index-unit stocks → no ratio, reported honestly).
+Computes per-species F/M (realized fishing mortality vs natural mortality) from a
+finished run — for all species, no ICES reference points. F is OSMOSE's Recruits-stage
+instantaneous fishing mortality summed to annual; M = Mpred + Mstarv + Madd likewise.
+F/M > 1 means fishing removes more than natural processes (an overexploitation signal).
 """
 
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
 
+import numpy as np
 import pandas as pd
 
-from osmose.validation.ices import IcesSnapshot, model_biomass_window_mean
-
-if TYPE_CHECKING:
-    from osmose.results import OsmoseResults
-
 _NATURAL_CAUSES = ("Mpred", "Mstarv", "Madd")
-_RECRUITS = "Recruits"
 
 
-def _recruits_series(df: pd.DataFrame, cause: str) -> pd.Series:
-    """Extract the (cause, 'Recruits') per-timestep column from a mortalityRate frame.
+def read_mortality_recruits(path: Path) -> pd.DataFrame:
+    """Read a `mortalityRate-{sp}` CSV into a (cause, stage) MultiIndex frame.
 
-    Handles both a MultiIndex-column frame and a flattened frame whose columns
-    were joined (e.g. 'F Recruits' / 'F_Recruits'). Returns a float Series.
+    The real file has a 1-line description preamble, a cause header row, a stage
+    header row, and data rows with a trailing comma (one extra field). We skip the
+    preamble, read the two header rows as a MultiIndex, and drop the all-NaN trailing
+    column the trailing comma produces.
     """
-    cols = df.columns
-    if isinstance(cols, pd.MultiIndex):
-        if (cause, _RECRUITS) in cols:
-            return df[(cause, _RECRUITS)].astype(float)
-        raise KeyError(f"({cause!r}, 'Recruits') not in mortality columns")
-    # flattened fallback: find a column containing both the cause and 'Recruits'
-    for c in cols:
-        name = str(c)
-        if cause in name and _RECRUITS in name:
-            return df[c].astype(float)
-    raise KeyError(f"no flattened '{cause} Recruits' column in {list(cols)}")
-
-
-def _windowed_annual_mean(per_step: pd.Series, steps_per_year: int, window_years: int) -> float:
-    """Sum a per-timestep rate within each year, then mean over the trailing window."""
-    n = len(per_step)
-    n_years = n // steps_per_year
-    if n_years == 0:
-        raise ValueError("mortality series shorter than one year")
-    vals = per_step.to_numpy(dtype=float)[: n_years * steps_per_year]
-    annual = vals.reshape(n_years, steps_per_year).sum(axis=1)
-    w = min(window_years, n_years)
-    return float(annual[-w:].mean())
-
-
-def _annual_fishing_mortality(df: pd.DataFrame, steps_per_year: int, window_years: int) -> float:
-    return _windowed_annual_mean(_recruits_series(df, "F"), steps_per_year, window_years)
-
-
-def _annual_natural_mortality(df: pd.DataFrame, steps_per_year: int, window_years: int) -> float:
-    total = None
-    for cause in _NATURAL_CAUSES:
-        s = _recruits_series(df, cause)
-        total = s if total is None else total + s
-    return _windowed_annual_mean(total, steps_per_year, window_years)
+    df = pd.read_csv(path, skiprows=1, header=[0, 1])
+    # Drop any fully-NaN column (the trailing-comma artifact).
+    df = df.dropna(axis=1, how="all")
+    return df
 ```
 
 - [ ] **Step 4: Run to verify pass**
 
-Run: `.venv/bin/python -m pytest tests/test_validation_fisheries.py -k "annual_" -v`
-Expected: PASS (both).
+Run: `.venv/bin/python -m pytest tests/test_validation_fisheries.py::test_read_mortality_recruits_real_csv -v`
+Expected: PASS. (If `("F","Recruits")` isn't found, inspect `list(df.columns)` — the second header level may carry whitespace; `.rename(columns=str.strip)` per level if needed, and assert the cleaned names.)
 
-- [ ] **Step 5: Verify the real CSV shape matches `_recruits_series`**
-
-Confirm `results.mortality()`'s actual column form so `_recruits_series` handles it. Run:
-`.venv/bin/python -c "from osmose.results import OsmoseResults; r=OsmoseResults('data/baltic/output'); m=r.mortality('cod'); print(type(m.columns)); print(list(m.columns)[:6])"`
-If columns are a `MultiIndex` → the primary branch handles it. If flattened strings → the fallback handles it. If neither matches (e.g. header rows became data), adjust `_recruits_series` to read the CSV directly with `pd.read_csv(path, header=[1,2])` via a `_read_mortality_csv(results, species)` helper, and add a test for that path. Document what you found in the commit message.
-
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add osmose/validation/fisheries.py tests/test_validation_fisheries.py
-git commit -m "feat(fisheries): annual F and M helpers from mortalityRate output"
+git add osmose/validation/fisheries.py tests/test_validation_fisheries.py tests/fixtures/mortalityRate_sample.csv
+git commit -m "feat(fisheries): mortalityRate CSV reader (2-row header + trailing comma)"
 ```
 
 ---
 
-## Task 2: Kobe-quadrant classifier
+## Task 2: `annual_rate` aggregation
 
 **Files:**
 - Modify: `osmose/validation/fisheries.py`
@@ -188,248 +133,183 @@ git commit -m "feat(fisheries): annual F and M helpers from mortalityRate output
 - [ ] **Step 1: Write failing tests**
 
 ```python
-def test_kobe_quadrant_classification():
-    assert fz.kobe_quadrant(1.5, 0.5) == "green"    # healthy: B>=1, F<=1
-    assert fz.kobe_quadrant(0.5, 1.5) == "red"      # overfished + overfishing
-    assert fz.kobe_quadrant(1.5, 1.5) == "orange"   # overfishing, not yet overfished
-    assert fz.kobe_quadrant(0.5, 0.5) == "yellow"   # overfished, not overfishing
-    # on-the-line edges count as the healthy side (>= / <=)
-    assert fz.kobe_quadrant(1.0, 1.0) == "green"
+def test_annual_rate_steps_per_year_1():
+    # 3 rows, spy=1 → each row already a yearly value; window of 2 → mean of last 2
+    s = pd.Series([0.1, 0.2, 0.3])
+    assert fz.annual_rate(s, steps_per_year=1, window_years=2) == pytest.approx(0.25)
+
+def test_annual_rate_steps_per_year_2():
+    # 6 rows, spy=2 → annual = [0.3, 0.7, 1.1]; window 2 → mean(0.7,1.1)=0.9
+    s = pd.Series([0.1, 0.2, 0.3, 0.4, 0.5, 0.6])
+    assert fz.annual_rate(s, steps_per_year=2, window_years=2) == pytest.approx(0.9)
+
+def test_annual_rate_drops_trailing_partial_year():
+    # 5 rows, spy=2 → 2 full years [0.3,0.7]; trailing partial (row 4) dropped
+    s = pd.Series([0.1, 0.2, 0.3, 0.4, 0.5])
+    assert fz.annual_rate(s, steps_per_year=2, window_years=2) == pytest.approx(0.5)  # mean(0.3,0.7)
 ```
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `.venv/bin/python -m pytest tests/test_validation_fisheries.py -k kobe -v`
-Expected: FAIL (`no attribute 'kobe_quadrant'`).
+Run: `.venv/bin/python -m pytest tests/test_validation_fisheries.py -k annual_rate -v`
+Expected: FAIL.
 
 - [ ] **Step 3: Implement**
 
 Add to `osmose/validation/fisheries.py`:
 
 ```python
-def kobe_quadrant(b_over_bmsy: float, f_over_fmsy: float) -> str:
-    """Standard Kobe stock-status quadrant.
+def annual_rate(per_step: pd.Series, steps_per_year: int, window_years: int) -> float:
+    """Sum a per-saved-step rate within each year, then mean over the trailing window.
 
-    green  = B/Bmsy >= 1 and F/Fmsy <= 1 (healthy)
-    orange = B/Bmsy >= 1 and F/Fmsy > 1  (overfishing, not yet overfished)
-    yellow = B/Bmsy < 1 and F/Fmsy <= 1  (overfished, not overfishing)
-    red    = B/Bmsy < 1 and F/Fmsy > 1   (overfished and overfishing)
+    A trailing *partial* year (len not a multiple of steps_per_year) is dropped so the
+    window only averages complete years.
     """
-    healthy_b = b_over_bmsy >= 1.0
-    healthy_f = f_over_fmsy <= 1.0
-    if healthy_b and healthy_f:
-        return "green"
-    if healthy_b and not healthy_f:
-        return "orange"
-    if not healthy_b and healthy_f:
-        return "yellow"
-    return "red"
+    if steps_per_year < 1:
+        raise ValueError(f"steps_per_year must be >= 1, got {steps_per_year}")
+    vals = np.asarray(per_step, dtype=float)
+    n_years = len(vals) // steps_per_year
+    if n_years == 0:
+        raise ValueError("mortality series shorter than one full year")
+    annual = vals[: n_years * steps_per_year].reshape(n_years, steps_per_year).sum(axis=1)
+    w = min(window_years, n_years)
+    return float(annual[-w:].mean())
 ```
 
-- [ ] **Step 4: Run to verify pass**
+- [ ] **Step 4: Run + commit**
 
-Run: `.venv/bin/python -m pytest tests/test_validation_fisheries.py -k kobe -v`
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
+Run: `.venv/bin/python -m pytest tests/test_validation_fisheries.py -k annual_rate -v` (PASS).
 ```bash
 git add osmose/validation/fisheries.py tests/test_validation_fisheries.py
-git commit -m "feat(fisheries): Kobe-quadrant classifier"
+git commit -m "feat(fisheries): annual_rate aggregation (per-step → annual, windowed)"
 ```
 
 ---
 
-## Task 3: `FisheriesStatus` dataclass + `compute_fisheries_status`
+## Task 3: `MortalityBalance` + `compute_mortality_balance`
 
 **Files:**
 - Modify: `osmose/validation/fisheries.py`
 - Test: `tests/test_validation_fisheries.py`
 
-- [ ] **Step 1: Write failing tests with synthetic results + snapshot**
+- [ ] **Step 1: Write failing tests (real fixture for one species; synthetic for edge cases)**
 
 ```python
-class _FakeResults:
-    """Minimal stand-in for OsmoseResults exposing biomass() and mortality()."""
-    def __init__(self, biomass_by_sp, mort_by_sp):
-        self._b = biomass_by_sp      # {species: pd.DataFrame(time,species,value)}
-        self._m = mort_by_sp         # {species: synthetic mortality df}
-        self.output_dir = "<fake>"
-    def biomass(self, species=None):
-        return self._b[species]
-    def mortality(self, species=None):
-        return self._m[species]
-
-
-def _biomass_df(value):
-    return pd.DataFrame({"time": [1.0, 2.0, 3.0], "species": ["x"] * 3, "value": [value] * 3})
-
-
-def _snapshot(ref_points, units, mapping):
-    return IcesSnapshot(
-        manifest={"model_species_to_ices_stocks": mapping, "units_by_stock": units},
-        assessments={}, reference_points=ref_points, snapshot_dir=Path("<fake>"),
+def test_compute_balance_real_fixture(tmp_path):
+    # Lay out a fake results dir with the real fixture as one species' mortality file.
+    mort_dir = tmp_path / "Mortality"
+    mort_dir.mkdir(parents=True)
+    (mort_dir / "osm_mortalityRate-cod_Simu0.csv").write_bytes(_FIXTURE.read_bytes())
+    out = fz.compute_mortality_balance(
+        tmp_path, prefix="osm", species_list=["cod"], steps_per_year=1, window_years=5
     )
+    b = {x.species: x for x in out}["cod"]
+    assert b.fishing_mortality >= 0.0
+    assert b.natural_mortality >= 0.0
+    if b.natural_mortality > 0:
+        assert b.f_over_m == pytest.approx(b.fishing_mortality / b.natural_mortality)
+        assert b.overexploited == (b.f_over_m > 1.0)
 
+def test_compute_balance_m_zero_gives_none(tmp_path, monkeypatch):
+    # Force a zero-M / known-F frame via the reader.
+    def fake_reader(path):
+        cols = pd.MultiIndex.from_tuples([("F", "Recruits"), ("Mpred", "Recruits"),
+                                          ("Mstarv", "Recruits"), ("Madd", "Recruits")])
+        return pd.DataFrame([[0.4, 0.0, 0.0, 0.0], [0.4, 0.0, 0.0, 0.0]], columns=cols)
+    monkeypatch.setattr(fz, "read_mortality_recruits", fake_reader)
+    (tmp_path / "Mortality").mkdir()
+    (tmp_path / "Mortality" / "osm_mortalityRate-x_Simu0.csv").write_text("stub")
+    b = fz.compute_mortality_balance(tmp_path, prefix="osm", species_list=["x"],
+                                     steps_per_year=1, window_years=2)[0]
+    assert b.natural_mortality == 0.0
+    assert b.f_over_m is None
+    assert b.overexploited is False
 
-def test_compute_status_with_reference_points():
-    # sprat: tonnes stock with fmsy=0.34, msy_btrigger=500000
-    mort = {"sprat": _synthetic_mortality_df(n_years=3, steps_per_year=2)}  # annual F=0.2, M=0.52
-    res = _FakeResults({"sprat": _biomass_df(1_000_000)}, mort)
-    snap = _snapshot(
-        ref_points={"spr.27.22-32": {"fmsy": 0.34, "msy_btrigger": 500_000}},
-        units={"spr.27.22-32": "tonnes"},
-        mapping={"sprat": ["spr.27.22-32"]},
-    )
-    out = {s.species: s for s in fz.compute_fisheries_status(res, snap, window_years=2, steps_per_year=2)}
-    s = out["sprat"]
-    assert s.has_reference_points is True
-    assert s.fishing_mortality == pytest.approx(0.2)
-    assert s.natural_mortality == pytest.approx(0.52)
-    assert s.f_over_m == pytest.approx(0.2 / 0.52)
-    assert s.b_over_bmsy == pytest.approx(1_000_000 / 500_000)   # 2.0
-    assert s.f_over_fmsy == pytest.approx(0.2 / 0.34)
-    assert s.kobe_quadrant == "green"                            # B>1, F<1
+def test_compute_balance_skips_missing_species(tmp_path):
+    (tmp_path / "Mortality").mkdir()
+    out = fz.compute_mortality_balance(tmp_path, prefix="osm", species_list=["ghost"],
+                                       steps_per_year=1, window_years=2)
+    assert out == []   # missing mortality file → WARN-skip, not in output
 
-
-def test_compute_status_no_reference_points_coastal():
-    # perch: no stock mapping → F/M only, no ratios
-    mort = {"perch": _synthetic_mortality_df()}
-    res = _FakeResults({"perch": _biomass_df(3_000_000)}, mort)
-    snap = _snapshot(ref_points={}, units={}, mapping={"perch": []})
-    s = {x.species: x for x in fz.compute_fisheries_status(res, snap, window_years=2, steps_per_year=2)}["perch"]
-    assert s.has_reference_points is False
-    assert s.b_over_bmsy is None and s.f_over_fmsy is None and s.kobe_quadrant is None
-    assert s.f_over_m == pytest.approx(0.2 / 0.52)               # F/M still computed
-    assert "no ICES reference point" in s.note.lower()
-
-
-def test_compute_status_mixed_unit_excluded():
-    # cod: western tonnes (fmsy set) + eastern index (no fmsy) → mixed → no ratio
-    mort = {"cod": _synthetic_mortality_df()}
-    res = _FakeResults({"cod": _biomass_df(2_000_000)}, mort)
-    snap = _snapshot(
-        ref_points={"cod.27.22-24": {"fmsy": 0.26, "msy_btrigger": 30_000},
-                    "cod.27.24-32": {"fmsy": None, "msy_btrigger": None}},
-        units={"cod.27.22-24": "tonnes", "cod.27.24-32": "index"},
-        mapping={"cod": ["cod.27.22-24", "cod.27.24-32"]},
-    )
-    s = {x.species: x for x in fz.compute_fisheries_status(res, snap, window_years=2, steps_per_year=2)}["cod"]
-    assert s.has_reference_points is False
-    assert s.b_over_bmsy is None
-    assert "mixed" in s.note.lower() or "index" in s.note.lower()
+def test_discover_species_from_mortality_dir(tmp_path):
+    d = tmp_path / "Mortality"; d.mkdir()
+    for sp in ("cod", "sprat"):
+        (d / f"osm_mortalityRate-{sp}_Simu0.csv").write_text("stub")
+    assert sorted(fz.discover_species(tmp_path, prefix="osm")) == ["cod", "sprat"]
 ```
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `.venv/bin/python -m pytest tests/test_validation_fisheries.py -k compute_status -v`
-Expected: FAIL (`no attribute 'compute_fisheries_status'`).
+Run: `.venv/bin/python -m pytest tests/test_validation_fisheries.py -k "compute_balance or discover_species" -v`
+Expected: FAIL.
 
-- [ ] **Step 3: Implement the dataclass + compute**
+- [ ] **Step 3: Implement**
 
 Add to `osmose/validation/fisheries.py`:
 
 ```python
 @dataclass(frozen=True)
-class FisheriesStatus:
+class MortalityBalance:
     species: str
-    biomass_t: float
     fishing_mortality: float
     natural_mortality: float
     f_over_m: float | None
-    b_over_bmsy: float | None = None
-    f_over_fmsy: float | None = None
-    kobe_quadrant: str | None = None
-    has_reference_points: bool = False
-    note: str = ""
+    overexploited: bool
 
 
-def _reference_points_for(snapshot: IcesSnapshot, stocks: list[str]):
-    """Return (bmsy, fmsy, note) for a species' stocks, or (None, None, note) if
-    not all stocks are tonnes-unit with non-null fmsy + msy_btrigger.
-
-    Bmsy proxy = sum of sub-stock msy_btrigger. Fmsy = simple mean of sub-stock fmsy.
-    """
-    units = snapshot.manifest.get("units_by_stock", {})
-    if not stocks:
-        return None, None, "no ICES reference point (no stock mapped)"
-    index_stocks = [s for s in stocks if units.get(s) != "tonnes"]
-    rps = [snapshot.reference_points.get(s, {}) for s in stocks]
-    fmsys = [rp.get("fmsy") for rp in rps]
-    btrigs = [rp.get("msy_btrigger") for rp in rps]
-    if index_stocks:
-        return None, None, f"no ICES reference point (index-unit/mixed: {index_stocks})"
-    if any(f is None for f in fmsys) or any(b is None for b in btrigs):
-        return None, None, "no ICES reference point (null fmsy/msy_btrigger)"
-    bmsy = float(sum(btrigs))
-    fmsy = float(sum(fmsys) / len(fmsys))
-    return bmsy, fmsy, ""
+def _mortality_path(output_dir: Path, prefix: str, species: str) -> Path:
+    return Path(output_dir) / "Mortality" / f"{prefix}_mortalityRate-{species}_Simu0.csv"
 
 
-def compute_fisheries_status(
-    results: OsmoseResults,
-    snapshot: IcesSnapshot,
-    *,
-    window_years: int = 10,
-    steps_per_year: int | None = None,
-) -> list[FisheriesStatus]:
-    """Per-species fisheries stock-status diagnostics.
-
-    steps_per_year: mortality-output saving steps per year. If None, infer from the
-    mortality frame length and the biomass frame length (steps = mort_rows / n_years
-    where n_years = biomass_rows, since biomass is annual). Callers may pass it explicitly.
-    """
-    mapping = snapshot.manifest.get("model_species_to_ices_stocks", {})
-    out: list[FisheriesStatus] = []
-    for species, stocks in mapping.items():
-        try:
-            biomass = model_biomass_window_mean(results, species, window_years=window_years)
-            mort = results.mortality(species=species)
-        except (KeyError, ValueError) as e:
-            print(f"WARN: skipping {species!r}: {e}", file=sys.stderr)
-            continue
-        spy = steps_per_year if steps_per_year is not None else _infer_steps_per_year(results, species, mort)
-        f = _annual_fishing_mortality(mort, spy, window_years)
-        m = _annual_natural_mortality(mort, spy, window_years)
-        f_over_m = (f / m) if m > 0 else None
-        bmsy, fmsy, note = _reference_points_for(snapshot, stocks)
-        if bmsy is not None and fmsy is not None and bmsy > 0 and fmsy > 0:
-            b_ratio = biomass / bmsy
-            f_ratio = f / fmsy
-            out.append(FisheriesStatus(
-                species=species, biomass_t=biomass, fishing_mortality=f, natural_mortality=m,
-                f_over_m=f_over_m, b_over_bmsy=b_ratio, f_over_fmsy=f_ratio,
-                kobe_quadrant=kobe_quadrant(b_ratio, f_ratio), has_reference_points=True, note="",
-            ))
-        else:
-            out.append(FisheriesStatus(
-                species=species, biomass_t=biomass, fishing_mortality=f, natural_mortality=m,
-                f_over_m=f_over_m, has_reference_points=False, note=note,
-            ))
+def discover_species(output_dir: Path, prefix: str) -> list[str]:
+    """Species names with a mortalityRate file in {output_dir}/Mortality."""
+    mdir = Path(output_dir) / "Mortality"
+    stem = f"{prefix}_mortalityRate-"
+    out = []
+    for p in sorted(mdir.glob(f"{stem}*_Simu0.csv")):
+        out.append(p.name[len(stem):].rsplit("_Simu0.csv", 1)[0])
     return out
 
 
-def _infer_steps_per_year(results, species, mort) -> int:
-    """Infer mortality saving-steps-per-year as len(mortality) / len(biomass-years)."""
-    try:
-        n_years = len(results.biomass(species=species))
-        n_steps = len(mort)
-        spy = max(1, round(n_steps / n_years)) if n_years else 1
-        return spy
-    except Exception:
-        return 1
+def compute_mortality_balance(
+    output_dir: Path,
+    *,
+    prefix: str,
+    species_list: list[str] | None = None,
+    steps_per_year: int,
+    window_years: int = 10,
+) -> list[MortalityBalance]:
+    """Per-species F/M from the mortalityRate outputs. steps_per_year is REQUIRED
+    (config-derived by the caller; never inferred from row counts)."""
+    species = species_list if species_list is not None else discover_species(output_dir, prefix)
+    out: list[MortalityBalance] = []
+    for sp in species:
+        path = _mortality_path(output_dir, prefix, sp)
+        if not path.exists():
+            print(f"WARN: no mortality file for {sp!r} at {path}", file=sys.stderr)
+            continue
+        try:
+            df = read_mortality_recruits(path)
+            f = annual_rate(df[("F", "Recruits")], steps_per_year, window_years)
+            m_series = sum(df[(c, "Recruits")] for c in _NATURAL_CAUSES)
+            m = annual_rate(m_series, steps_per_year, window_years)
+        except (KeyError, ValueError) as e:
+            print(f"WARN: skipping {sp!r}: {e}", file=sys.stderr)
+            continue
+        f_over_m = (f / m) if m > 0 else None
+        out.append(MortalityBalance(
+            species=sp, fishing_mortality=f, natural_mortality=m,
+            f_over_m=f_over_m, overexploited=(f_over_m is not None and f_over_m > 1.0),
+        ))
+    return out
 ```
 
-- [ ] **Step 4: Run to verify pass**
+- [ ] **Step 4: Run + commit**
 
-Run: `.venv/bin/python -m pytest tests/test_validation_fisheries.py -k compute_status -v`
-Expected: PASS (all three).
-
-- [ ] **Step 5: Commit**
-
+Run: `.venv/bin/python -m pytest tests/test_validation_fisheries.py -k "compute_balance or discover_species" -v` (PASS).
 ```bash
 git add osmose/validation/fisheries.py tests/test_validation_fisheries.py
-git commit -m "feat(fisheries): FisheriesStatus + compute_fisheries_status (ref-point rule)"
+git commit -m "feat(fisheries): MortalityBalance + compute_mortality_balance (F/M)"
 ```
 
 ---
@@ -443,175 +323,155 @@ git commit -m "feat(fisheries): FisheriesStatus + compute_fisheries_status (ref-
 - [ ] **Step 1: Write failing test**
 
 ```python
-def test_format_report_includes_ratios_and_gap_note():
-    statuses = [
-        fz.FisheriesStatus("sprat", 1_000_000, 0.2, 0.52, 0.385, 2.0, 0.588, "green", True, ""),
-        fz.FisheriesStatus("perch", 3_000_000, 0.2, 0.52, 0.385, None, None, None, False,
-                           "no ICES reference point (no stock mapped)"),
+def test_format_report_renders_with_none_fm():
+    bals = [
+        fz.MortalityBalance("cod", 0.4, 0.2, 2.0, True),
+        fz.MortalityBalance("x", 0.4, 0.0, None, False),  # M=0 → "—"
     ]
-    md = fz.format_fisheries_report(statuses)
-    assert "sprat" in md and "perch" in md
-    assert "green" in md
-    assert "B/Bmsy" in md and "F/Fmsy" in md and "F/M" in md
-    assert "no ICES reference point" in md
-    assert "1/2 species with ICES reference points" in md or "1/2" in md
+    md = fz.format_mortality_report(bals)
+    assert "cod" in md and "x" in md
+    assert "F/M" in md
+    assert "2.00" in md and "—" in md
+    assert "Recruits-stage" in md          # honest-limitation note present
+    assert "1 overexploited" in md or "1/2" in md
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [ ] **Step 2: Run to verify failure → implement → pass**
 
-Run: `.venv/bin/python -m pytest tests/test_validation_fisheries.py -k format_report -v`
-Expected: FAIL.
-
-- [ ] **Step 3: Implement**
+Run: `.venv/bin/python -m pytest tests/test_validation_fisheries.py -k format_report -v` (FAIL).
 
 Add to `osmose/validation/fisheries.py`:
 
 ```python
-def format_fisheries_report(statuses: list[FisheriesStatus], *, window_years: int = 10) -> str:
-    """Markdown table of fisheries stock-status diagnostics."""
+def format_mortality_report(balances: list[MortalityBalance], *, window_years: int = 10) -> str:
+    """Markdown table of per-species F/M (fishing vs natural mortality)."""
     lines = [
-        "# OSMOSE fisheries stock-status diagnostics",
+        "# OSMOSE fishing-vs-natural mortality (F/M)",
         "",
-        f"Model window: last {window_years} years. B/Bmsy uses ICES MSY Btrigger as the "
-        "Bmsy proxy; F/Fmsy uses ICES Fmsy. Ratios shown only where all ICES sub-stocks "
-        "are tonnes-unit with non-null reference points.",
+        f"Model window: last {window_years} years. F is OSMOSE's Recruits-stage instantaneous "
+        "fishing mortality summed to annual (not an ICES Fbar); M = Mpred + Mstarv + Madd. "
+        "F/M > 1 means fishing removes more than natural processes.",
         "",
-        "| species | B (t) | F | M | F/M | B/Bmsy | F/Fmsy | Kobe | note |",
-        "|---|---:|---:|---:|---:|---:|---:|:---:|---|",
+        "| species | F | M | F/M | overexploited |",
+        "|---|---:|---:|---:|:---:|",
     ]
-    n_ref = 0
-    for s in statuses:
-        fm = f"{s.f_over_m:.2f}" if s.f_over_m is not None else "—"
-        if s.has_reference_points:
-            n_ref += 1
-            bb = f"{s.b_over_bmsy:.2f}"
-            ff = f"{s.f_over_fmsy:.2f}"
-            kobe = s.kobe_quadrant or "—"
-            note = "—"
-        else:
-            bb = ff = kobe = "—"
-            note = s.note or "—"
-        lines.append(
-            f"| {s.species} | {s.biomass_t:,.0f} | {s.fishing_mortality:.3f} | "
-            f"{s.natural_mortality:.3f} | {fm} | {bb} | {ff} | {kobe} | {note} |"
-        )
-    lines += ["", f"**Summary:** {n_ref}/{len(statuses)} species with ICES reference points.", ""]
+    n_over = 0
+    for b in balances:
+        fm = f"{b.f_over_m:.2f}" if b.f_over_m is not None else "—"
+        over = "✓" if b.overexploited else "—"
+        if b.overexploited:
+            n_over += 1
+        lines.append(f"| {b.species} | {b.fishing_mortality:.3f} | {b.natural_mortality:.3f} | {fm} | {over} |")
+    lines += ["", f"**Summary:** {n_over} overexploited (F/M > 1) of {len(balances)} species.", ""]
     return "\n".join(lines)
 ```
 
-- [ ] **Step 4: Run + commit**
-
-Run: `.venv/bin/python -m pytest tests/test_validation_fisheries.py -v` (all pass).
+Run: `.venv/bin/python -m pytest tests/test_validation_fisheries.py -k format_report -v` (PASS).
 ```bash
 git add osmose/validation/fisheries.py tests/test_validation_fisheries.py
-git commit -m "feat(fisheries): markdown stock-status report"
+git commit -m "feat(fisheries): F/M markdown report"
 ```
 
 ---
 
-## Task 5: Plotting — Kobe plot + F/M bars
+## Task 5: F/M bar chart
 
 **Files:**
 - Modify: `osmose/plotting.py`
-- Test: `tests/test_validation_fisheries.py` (smoke: figures build)
+- Test: `tests/test_validation_fisheries.py`
 
-- [ ] **Step 1: Write failing smoke tests**
+- [ ] **Step 1: Write failing smoke test**
 
 ```python
-def test_plots_build():
+def test_fm_bar_chart_builds():
     from osmose import plotting
-    statuses = [
-        fz.FisheriesStatus("sprat", 1_000_000, 0.2, 0.52, 0.385, 2.0, 0.588, "green", True, ""),
-        fz.FisheriesStatus("perch", 3_000_000, 0.2, 0.52, 0.385, None, None, None, False, "no ref"),
-    ]
-    kobe = plotting.make_kobe_plot(statuses)
-    bars = plotting.make_fm_ratio_bars(statuses)
-    assert kobe is not None and bars is not None
-    # Kobe shows only species WITH reference points (1 of 2)
-    assert sum(len(t.x) for t in kobe.data if hasattr(t, "x") and t.x is not None) >= 1
+    bals = [fz.MortalityBalance("cod", 0.4, 0.2, 2.0, True),
+            fz.MortalityBalance("x", 0.1, 0.5, 0.2, False)]
+    fig = plotting.make_fm_ratio_bars(bals)
+    assert fig is not None
+    # both species with a finite F/M are plotted
+    assert sum(len(t.x) for t in fig.data if hasattr(t, "x") and t.x is not None) >= 1
+    # a reference line at y=1 exists
+    assert any(getattr(s, "y0", None) == 1.0 or getattr(s, "y", None) == 1.0
+               for s in fig.layout.shapes)
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [ ] **Step 2: Run (FAIL) → implement in `osmose/plotting.py` → pass**
 
-Run: `.venv/bin/python -m pytest tests/test_validation_fisheries.py -k plots_build -v`
-Expected: FAIL (`no attribute 'make_kobe_plot'`).
-
-- [ ] **Step 3: Implement in `osmose/plotting.py`**
-
-Add (after an existing `make_*`; the module already has `import plotly.graph_objects as go` and `from osmose.plotly_theme import PLOTLY_TEMPLATE as TEMPLATE`):
+Add to `osmose/plotting.py`:
 
 ```python
-def make_kobe_plot(statuses) -> go.Figure:
-    """Kobe plot: B/Bmsy (x) vs F/Fmsy (y), four stock-status quadrants.
+def make_fm_ratio_bars(balances) -> go.Figure:
+    """F/M (fishing vs natural mortality) per species; reference line at F/M=1.
 
-    Only species with ICES reference points (has_reference_points) are plotted.
+    Bars above 1 (fishing exceeds natural mortality) are highlighted.
     """
-    pts = [s for s in statuses if getattr(s, "has_reference_points", False)]
-    fig = go.Figure()
-    # quadrant shading (axes 0..2 each)
-    quad = [(0, 1, 1, 2, "rgba(214,39,40,0.12)"),   # red: B<1,F>1 (NW)
-            (1, 2, 1, 2, "rgba(255,127,14,0.12)"),  # orange: B>1,F>1 (NE)
-            (0, 1, 0, 1, "rgba(255,221,0,0.12)"),   # yellow: B<1,F<1 (SW)
-            (1, 2, 0, 1, "rgba(44,160,44,0.12)")]   # green: B>1,F<1 (SE)
-    for x0, x1, y0, y1, color in quad:
-        fig.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, fillcolor=color,
-                      line=dict(width=0), layer="below")
-    fig.add_hline(y=1.0, line=dict(dash="dash", width=1))
-    fig.add_vline(x=1.0, line=dict(dash="dash", width=1))
-    if pts:
-        fig.add_trace(go.Scatter(
-            x=[s.b_over_bmsy for s in pts], y=[s.f_over_fmsy for s in pts],
-            mode="markers+text", text=[s.species for s in pts], textposition="top center",
-            marker=dict(size=12), name="stocks",
-        ))
-    fig.update_layout(
-        title=dict(text="Kobe plot — stock status (B/Bmsy vs F/Fmsy)"),
-        xaxis=dict(title="B / Bmsy", range=[0, 2]),
-        yaxis=dict(title="F / Fmsy", range=[0, 2]),
-        template=TEMPLATE,
-    )
-    return fig
-
-
-def make_fm_ratio_bars(statuses) -> go.Figure:
-    """F/M ratio per species (available for all species; reference line at F/M=1)."""
-    valid = [s for s in statuses if getattr(s, "f_over_m", None) is not None]
-    fig = go.Figure(go.Bar(x=[s.species for s in valid], y=[s.f_over_m for s in valid], name="F/M"))
+    valid = [b for b in balances if getattr(b, "f_over_m", None) is not None]
+    colors = ["#d62728" if b.f_over_m > 1.0 else "#2ca02c" for b in valid]
+    fig = go.Figure(go.Bar(
+        x=[b.species for b in valid], y=[b.f_over_m for b in valid],
+        marker=dict(color=colors), name="F/M",
+    ))
     fig.add_hline(y=1.0, line=dict(dash="dash", width=1))
     fig.update_layout(title=dict(text="Fishing vs natural mortality (F/M)"),
                       xaxis=dict(title="species"), yaxis=dict(title="F / M"), template=TEMPLATE)
     return fig
 ```
 
-- [ ] **Step 4: Run + commit**
-
-Run: `.venv/bin/python -m pytest tests/test_validation_fisheries.py -k plots_build -v` (PASS).
-Run: `.venv/bin/ruff check osmose/plotting.py osmose/validation/fisheries.py tests/test_validation_fisheries.py`.
+Run: `.venv/bin/python -m pytest tests/test_validation_fisheries.py -k fm_bar -v` (PASS).
+Run: `.venv/bin/ruff check osmose/validation/fisheries.py osmose/plotting.py tests/test_validation_fisheries.py`.
 ```bash
 git add osmose/plotting.py tests/test_validation_fisheries.py
-git commit -m "feat(fisheries): Kobe plot + F/M bar chart"
+git commit -m "feat(fisheries): F/M bar chart"
 ```
 
 ---
 
-## Task 6: CLI — `scripts/compute_fisheries_diagnostics.py`
+## Task 6: Fix `results.mortality()` (pre-existing ParserError) + CLI
 
 **Files:**
-- Create: `scripts/compute_fisheries_diagnostics.py`
-- Test: `tests/test_validation_fisheries.py` (argparse smoke)
+- Modify: `osmose/results.py`
+- Create: `scripts/compute_mortality_balance.py`
+- Test: `tests/test_validation_fisheries.py`
 
-- [ ] **Step 1: Implement the CLI (mirror `validate_outputs_vs_ices.py`)**
+- [ ] **Step 1: Regression test for the results.mortality() bug**
+
+```python
+def test_results_mortality_reads_real_csv(tmp_path):
+    from osmose.results import OsmoseResults
+    mdir = tmp_path / "Mortality"; mdir.mkdir()
+    (mdir / "osm_mortalityRate-cod_Simu0.csv").write_bytes(_FIXTURE.read_bytes())
+    # a minimal biomass file so OsmoseResults(strict=False) constructs
+    r = OsmoseResults(tmp_path, prefix="osm", strict=False)
+    df = r.mortality("cod")       # must NOT raise ParserError
+    assert df is not None and len(df) > 0
+```
+
+- [ ] **Step 2: Run to verify it fails (ParserError today)**
+
+Run: `.venv/bin/python -m pytest tests/test_validation_fisheries.py -k results_mortality -v`
+Expected: FAIL with `ParserError` (the bug).
+
+- [ ] **Step 3: Fix the reader — but FIRST audit other callers**
+
+Run: `grep -rn "\.mortality(\|_read_species_output(\"mortalityRate\"\|mortalityRate" osmose/ ui/ scripts/ tests/ | grep -v test_validation_fisheries`. List every caller of `results.mortality()` / `mortality_rate()`. The fix must not break them. In `osmose/results.py`, make the `mortalityRate` read path use `skiprows=1, header=[0,1]` + drop the all-NaN trailing column (the same logic as `read_mortality_recruits`), returning a `(cause, stage)` MultiIndex frame. If existing callers depend on the OLD (broken or single-header) shape, instead route ONLY `mortalityRate` through the new logic and leave other species-outputs untouched; if a caller truly needs a flat frame, add a `flatten=` option rather than changing every caller. Document in the commit which callers you checked and why the change is safe. (If the audit shows the fix is risky, SKIP the results.py change — the feature already uses its own `read_mortality_recruits` — and mark this regression test `xfail` with a reason, keeping the bug documented.)
+
+- [ ] **Step 4: Run the regression test**
+
+Run: `.venv/bin/python -m pytest tests/test_validation_fisheries.py -k results_mortality -v`
+Expected: PASS (or documented `xfail` if Step 3 deemed the shared fix risky).
+
+- [ ] **Step 5: Implement the CLI `scripts/compute_mortality_balance.py`**
 
 ```python
 #!/usr/bin/env python3
-"""Compute fisheries stock-status diagnostics (F/M, B/Bmsy, F/Fmsy, Kobe) for a run.
+"""Per-species F/M (fishing vs natural mortality) diagnostics for a finished run.
 
 Usage:
-    PYTHONPATH=. .venv/bin/python scripts/compute_fisheries_diagnostics.py \\
-        --results-dir <path> \\
-        [--snapshots-dir data/baltic/reference/ices_snapshots] \\
-        [--window-years 10] [--prefix osm] \\
-        [--report out.md] [--json out.json] [--plot out_prefix]
+    PYTHONPATH=. .venv/bin/python scripts/compute_mortality_balance.py \\
+        --results-dir <path> [--prefix osm] [--window-years 10] \\
+        [--steps-per-year N] [--config <param-dir-or-file>] \\
+        [--species cod sprat ...] [--report out.md] [--json out.json] [--plot out_prefix]
 """
 from __future__ import annotations
 
@@ -622,43 +482,65 @@ from dataclasses import asdict
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_SNAPSHOT_DIR = PROJECT_ROOT / "data" / "baltic" / "reference" / "ices_snapshots"
+
+
+def _resolve_steps_per_year(args) -> int:
+    if args.steps_per_year is not None:
+        return args.steps_per_year
+    # Try to derive from a config: ndtPerYear // recordfrequency.ndt.
+    # Look for *_param-simulation.csv / *_param-output.csv near results or --config.
+    search = [args.config] if args.config else []
+    search += [args.results_dir, args.results_dir.parent]
+    ndt = rec = None
+    for base in search:
+        if base is None:
+            continue
+        base = Path(base)
+        for f in list(base.glob("*param-simulation.csv")) + list(base.glob("*param-output.csv")):
+            for line in f.read_text().splitlines():
+                if "ndtPerYear" in line:
+                    ndt = int(line.split(";")[-1].split(",")[-1].strip() or 0) or ndt
+                if "recordfrequency.ndt" in line:
+                    rec = int(line.split(";")[-1].split(",")[-1].strip() or 0) or rec
+    if ndt and rec:
+        spy = max(1, ndt // rec)
+        print(f"steps_per_year = {spy} (ndtPerYear={ndt} / recordfrequency.ndt={rec})")
+        return spy
+    print("WARNING: could not derive steps_per_year from config; defaulting to 1 "
+          "(correct iff output.recordfrequency.ndt == simulation.time.ndtPerYear). "
+          "Pass --steps-per-year if record frequency is finer than annual.", file=sys.stderr)
+    return 1
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--results-dir", required=True, type=Path)
-    p.add_argument("--snapshots-dir", type=Path, default=DEFAULT_SNAPSHOT_DIR)
-    p.add_argument("--window-years", type=int, default=10)
     p.add_argument("--prefix", type=str, default="osm")
+    p.add_argument("--window-years", type=int, default=10)
+    p.add_argument("--steps-per-year", type=int, default=None)
+    p.add_argument("--config", type=Path, default=None, help="dir/file with *param-simulation/output.csv")
+    p.add_argument("--species", nargs="*", default=None)
     p.add_argument("--report", type=Path, default=None)
     p.add_argument("--json", type=Path, default=None)
-    p.add_argument("--plot", type=str, default=None, help="output path prefix for kobe/fm plots (html)")
+    p.add_argument("--plot", type=str, default=None, help="output path prefix for the F/M bar chart (html)")
     args = p.parse_args(argv)
 
-    from osmose.results import OsmoseResults
-    from osmose.validation.ices import load_snapshot
     from osmose.validation import fisheries as fz
 
-    results = OsmoseResults(args.results_dir, prefix=args.prefix)
-    snapshot = load_snapshot(args.snapshots_dir)
-    statuses = fz.compute_fisheries_status(results, snapshot, window_years=args.window_years)
-
-    report = fz.format_fisheries_report(statuses, window_years=args.window_years)
+    spy = _resolve_steps_per_year(args)
+    balances = fz.compute_mortality_balance(
+        args.results_dir, prefix=args.prefix, species_list=args.species,
+        steps_per_year=spy, window_years=args.window_years,
+    )
+    report = fz.format_mortality_report(balances, window_years=args.window_years)
     if args.report:
         args.report.write_text(report)
     print(report)
-
     if args.json:
-        args.json.write_text(json.dumps([asdict(s) for s in statuses], indent=2))
-
+        args.json.write_text(json.dumps([asdict(b) for b in balances], indent=2))
     if args.plot:
         from osmose import plotting
-        plotting.make_kobe_plot(statuses).write_html(f"{args.plot}_kobe.html")
-        plotting.make_fm_ratio_bars(statuses).write_html(f"{args.plot}_fm.html")
-
+        plotting.make_fm_ratio_bars(balances).write_html(f"{args.plot}_fm.html")
     return 0
 
 
@@ -666,35 +548,29 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
-(Confirm the `OsmoseResults(dir, prefix=...)` constructor signature matches `validate_outputs_vs_ices.py`'s usage — `grep -n "OsmoseResults(" scripts/validate_outputs_vs_ices.py`; adjust the prefix kwarg if it differs.)
-
-- [ ] **Step 2: Argparse smoke test**
+- [ ] **Step 6: CLI tests (exercise deferred imports, not just --help)**
 
 ```python
-def test_cli_parses_and_help():
+def test_cli_runs_on_empty_dir(tmp_path):
     import importlib.util
-    spec = importlib.util.spec_from_file_location(
-        "cfd", "scripts/compute_fisheries_diagnostics.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    with pytest.raises(SystemExit):
-        mod.main(["--help"])
+    spec = importlib.util.spec_from_file_location("cmb", "scripts/compute_mortality_balance.py")
+    mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+    (tmp_path / "Mortality").mkdir()
+    rc = mod.main(["--results-dir", str(tmp_path), "--prefix", "osm", "--steps-per-year", "1"])
+    assert rc == 0   # no species → empty report, imports exercised, no crash
 ```
 
-Run: `.venv/bin/python -m pytest tests/test_validation_fisheries.py -k cli -v`
-Expected: PASS.
+- [ ] **Step 7: Real-run smoke (use a config that actually has output)**
 
-- [ ] **Step 3: Real-run smoke (if a Baltic output dir exists)**
+Run on a config with a finished run (eec_full has populated output; baltic_biomass may be empty — check `ls -la data/*/output/*biomass*`):
+`PYTHONPATH=. .venv/bin/python scripts/compute_mortality_balance.py --results-dir data/eec_full/output --prefix eec --window-years 10 2>&1 | tail -25`
+Expected: a markdown table with F, M, F/M per species, the "Recruits-stage" note, and the overexploited count; `steps_per_year = 1 (...)` printed. Confirm F/M values are plausible (0–several). Document the observed output.
 
-If `data/baltic/output/` has a finished run, run the CLI end-to-end:
-`PYTHONPATH=. .venv/bin/python scripts/compute_fisheries_diagnostics.py --results-dir data/baltic/output --prefix baltic --window-years 10 2>&1 | tail -20`
-Expected: a markdown table with F/M for all 8 species and B/Bmsy + F/Fmsy + Kobe for the ~4 ICES-covered stocks; coastal species show "no ICES reference point". If `--prefix` differs for the Baltic run, find it (`ls data/baltic/output/*biomass*`). Confirm no crash and the F values are plausible (0–2 yr⁻¹). Document the observed output in the commit.
-
-- [ ] **Step 4: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add scripts/compute_fisheries_diagnostics.py tests/test_validation_fisheries.py
-git commit -m "feat(fisheries): compute_fisheries_diagnostics CLI"
+git add osmose/results.py scripts/compute_mortality_balance.py tests/test_validation_fisheries.py
+git commit -m "feat(fisheries): fix mortalityRate reader + compute_mortality_balance CLI"
 ```
 
 ---
@@ -702,23 +578,23 @@ git commit -m "feat(fisheries): compute_fisheries_diagnostics CLI"
 ## Task 7: Docs + finalize
 
 **Files:**
-- Modify: a usage/feature doc (find: `grep -rl "validate_outputs_vs_ices" docs/`)
+- Modify: a usage doc (find: `grep -rl "validate_outputs_vs_ices\|compute_fisheries\|diagnostics" docs/ | head`; if none, add a short section to `docs/baltic_example.md` near the outputs/validation discussion).
 
-- [ ] **Step 1: Add a CLI note**
+- [ ] **Step 1: Document the CLI + the deferred follow-up**
 
-Document `scripts/compute_fisheries_diagnostics.py` alongside `validate_outputs_vs_ices.py`: what it computes (F/M, B/Bmsy, F/Fmsy, Kobe), the Bmsy=MSY-Btrigger proxy caveat, and the honest coverage gap (only ~4 ICES tonnes-unit Baltic stocks get ratios; coastal species + eastern cod show F/M + biomass only).
+Document `scripts/compute_mortality_balance.py`: what F/M means (fishing vs natural mortality, available for all species), the `--steps-per-year` caveat (default 1 = correct when record frequency == ndtPerYear; pass explicitly otherwise), and the honest limitation (F is OSMOSE Recruits-stage instantaneous F, not an ICES Fbar). Add a one-line **deferred follow-up** note: B/Bmsy + F/Fmsy + Kobe were scoped out — they need a config with broad ICES tonnes-unit coverage, a defensible Bmsy (not the MSY-Btrigger proxy, which overstates health), and an Fbar-aligned F; not worthwhile for sprat-only on Baltic.
 
-- [ ] **Step 2: Full FR-validation suite + lint**
+- [ ] **Step 2: Full suite + lint**
 
 Run: `.venv/bin/python -m pytest tests/test_validation_fisheries.py -v` (all pass; report count).
-Run: `.venv/bin/ruff check osmose/ tests/ && .venv/bin/ruff format --check osmose/ tests/` (clean — `scripts/` is not CI-format-checked; `ruff check` it separately).
-Run: `.venv/bin/python -m pytest tests/test_validation_ices.py -q` (the sibling validator still green — confirm the new module didn't perturb `ices.py`).
+Run: `.venv/bin/python -m pytest tests/test_validation_ices.py tests/test_results.py -q` (sibling validator + results tests still green — confirm the results.py mortality fix didn't perturb them; if `test_results.py` doesn't exist, run `-k results`).
+Run: `.venv/bin/ruff check osmose/ tests/ && .venv/bin/ruff format --check osmose/ tests/` (clean; `scripts/` is `ruff check`-only).
 
 - [ ] **Step 3: Commit + finish**
 
 ```bash
 git add docs/
-git commit -m "docs(fisheries): document the fisheries-diagnostics CLI"
+git commit -m "docs(fisheries): document F/M diagnostics CLI + deferred Kobe follow-up"
 ```
 
 Use superpowers:requesting-code-review then superpowers:finishing-a-development-branch.
@@ -727,8 +603,8 @@ Use superpowers:requesting-code-review then superpowers:finishing-a-development-
 
 ## Self-Review (plan author)
 
-**Spec coverage:** §architecture lib → T1–T4 (`fisheries.py`: F/M helpers, Kobe classifier, dataclass+compute, report); plotting → T5 (Kobe + F/M bars); CLI → T6; tests → T1–T6; docs → T7. Reference-point mixed-unit rule (spec's explicit rule) → T3 `_reference_points_for` (index/null → no ratio) + `test_compute_status_mixed_unit_excluded`. Bmsy=MSY-Btrigger proxy → T3 + report text + T7 doc. Coverage-gap honesty → T3 (`has_reference_points`/`note`) + T4 report + plots only-with-refs (T5). Shiny deferred → not in plan (YAGNI, per spec). ✅
+**Spec coverage:** reader bug + fix → T1 (dedicated reader) + T6 (results.mortality fix, guarded); `annual_rate` config-derived steps_per_year (no row-ratio inference) → T2 + T6 `_resolve_steps_per_year`; `MortalityBalance`/`compute_mortality_balance` (F/M, M==0→None, WARN-skip, species discovery) → T3; report w/ Recruits-stage note → T4; F/M bar chart (ref line, all species) → T5; CLI (strict=False via no `results.mortality` dependency in compute; config-derived spy, fail-loud-ish default-1-with-warning) → T6; docs + deferred-Kobe note → T7. DROPPED B/Bmsy/F/Fmsy/Kobe/ref-point-math → not in plan (deferred, per rescoped spec). ✅
 
-**Placeholder scan:** no TBD/TODO; every code step has complete code. Two verification steps (T1 Step5 real-CSV shape, T6 Step3 real-run smoke) are explicit "verify and adjust" against real data with named fallbacks — not placeholders. ✅
+**Placeholder scan:** no TBD/TODO; every code step has complete code. T1 Step1 / T6 Step7 use a REAL fixture/real run (named, with fallback paths) — not placeholders. T6 Step3 has an explicit audit-then-decide (fix or xfail) — a guarded decision, not a placeholder. ✅
 
-**Type consistency:** `FisheriesStatus` fields (biomass_t, fishing_mortality, natural_mortality, f_over_m, b_over_bmsy, f_over_fmsy, kobe_quadrant, has_reference_points, note) identical across T3 dataclass, T4 report, T5 plots, T6 CLI. `kobe_quadrant()` returns {green,orange,yellow,red} consistently (T2 ↔ T3 ↔ T5 quadrant colors). `_annual_fishing_mortality`/`_annual_natural_mortality`/`_recruits_series`/`_windowed_annual_mean` signatures consistent T1↔T3. `steps_per_year` threaded consistently (compute → helpers; inferred when None). ✅
+**Type consistency:** `MortalityBalance(species, fishing_mortality, natural_mortality, f_over_m, overexploited)` identical across T3 dataclass, T4 report, T5 plot, T6 CLI. `read_mortality_recruits`/`annual_rate`/`discover_species`/`compute_mortality_balance` signatures consistent T1↔T2↔T3↔T6. `steps_per_year` is an explicit required arg everywhere (never inferred from row counts — the review's BLOCKER-4 fix). MultiIndex access `(cause, "Recruits")` consistent T1↔T3. ✅
