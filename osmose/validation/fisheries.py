@@ -107,3 +107,28 @@ def compute_mortality_balance(
             )
         )
     return out
+
+
+def format_mortality_report(balances: list[MortalityBalance], *, window_years: int = 10) -> str:
+    """Markdown table of per-species F/M (fishing vs natural mortality)."""
+    lines = [
+        "# OSMOSE fishing-vs-natural mortality (F/M)",
+        "",
+        f"Model window: last {window_years} years. F is OSMOSE's Recruits-stage instantaneous "
+        "fishing mortality summed to annual (not an ICES Fbar); M = Mpred + Mstarv + Madd. "
+        "F/M > 1 means fishing removes more than natural processes.",
+        "",
+        "| species | F | M | F/M | overexploited |",
+        "|---|---:|---:|---:|:---:|",
+    ]
+    n_over = 0
+    for b in balances:
+        fm = f"{b.f_over_m:.2f}" if b.f_over_m is not None else "—"
+        over = "✓" if b.overexploited else "—"
+        if b.overexploited:
+            n_over += 1
+        lines.append(
+            f"| {b.species} | {b.fishing_mortality:.3f} | {b.natural_mortality:.3f} | {fm} | {over} |"
+        )
+    lines += ["", f"**Summary:** {n_over} overexploited (F/M > 1) of {len(balances)} species.", ""]
+    return "\n".join(lines)

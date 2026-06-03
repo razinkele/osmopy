@@ -102,3 +102,16 @@ def test_discover_species_from_mortality_dir(tmp_path):
     for sp in ("cod", "sprat"):
         (d / f"osm_mortalityRate-{sp}_Simu0.csv").write_text("stub")
     assert sorted(fz.discover_species(tmp_path, prefix="osm")) == ["cod", "sprat"]
+
+
+def test_format_report_renders_with_none_fm():
+    bals = [
+        fz.MortalityBalance("cod", 0.4, 0.2, 2.0, True),
+        fz.MortalityBalance("x", 0.4, 0.0, None, False),  # M=0 → "—"
+    ]
+    md = fz.format_mortality_report(bals)
+    assert "cod" in md and "x" in md
+    assert "F/M" in md
+    assert "2.00" in md and "—" in md
+    assert "Recruits-stage" in md
+    assert "1 overexploited" in md
