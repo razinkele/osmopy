@@ -39,7 +39,16 @@
 
 - [ ] **Step 1: Capture a real wide fixture + write failing tests**
 
-`cp data/eec_full/output/eec_biomass_Simu0.csv tests/fixtures/biomass_wide_sample.csv` (confirm with `ls data/eec_full/output/*biomass*`). It's the wide format (Time + per-species cols + species=all).
+Generate the fixture as the **normalizer will actually see it** — i.e. the frame `OsmoseResults.biomass()` returns (Time + per-species cols + constant `species="all"`), NOT the raw on-disk CSV. The raw file has a 1-line title preamble, so a bare `pd.read_csv` of it reads the title as the header (1-column frame) and the test would `KeyError`. Produce the clean fixture via the production reader:
+```bash
+mkdir -p tests/fixtures
+PYTHONPATH=. .venv/bin/python -c "
+from osmose.results import OsmoseResults
+OsmoseResults('data/eec_full/output', prefix='eec', strict=False).biomass().to_csv(
+    'tests/fixtures/biomass_wide_sample.csv', index=False)
+"
+```
+(Confirm the source exists: `ls data/eec_full/output/*biomass*`.) The committed fixture is then the clean wide frame; `pd.read_csv(_WIDE_FIXTURE)` reproduces the exact shape the normalizer expects.
 
 ```python
 from pathlib import Path
@@ -106,6 +115,12 @@ def test_window_mean_uses_years_not_row_count():
     res = _FakeResults({"biomass": df, "yield": df, "abundance": df})
     means = az._per_species_window_mean(res, "biomass", window_years=1)
     assert means["cod"] == pytest.approx(35.0)   # by-year window; tail(1)=40 would be WRONG
+
+def test_window_mean_rejects_nonpositive_window():
+    df = _wide(cod=[10.0, 20.0, 30.0])
+    res = _FakeResults({"biomass": df, "yield": df, "abundance": df})
+    with pytest.raises(ValueError):
+        az._per_species_window_mean(res, "biomass", window_years=0)   # empty window → NaN guard
 ```
 
 - [ ] **Step 2: Run to verify failure**
@@ -147,6 +162,9 @@ def _per_species_window_mean(results, metric: str, window_years: int) -> dict[st
     """
     if metric not in _METRIC_ACCESSOR:
         raise ValueError(f"unknown metric {metric!r}; expected one of {sorted(_METRIC_ACCESSOR)}")
+    if window_years < 1:
+        # window_years <= 0 empties the time filter → NaN means → corrupt sort + invalid JSON.
+        raise ValueError(f"window_years must be >= 1, got {window_years}")
     df = getattr(results, _METRIC_ACCESSOR[metric])()
     if df is None or len(df) == 0:
         return {}
@@ -487,6 +505,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--json", type=Path, default=None)
     p.add_argument("--plot", type=str, default=None)
     args = p.parse_args(argv)
+    if args.window_years < 1:
+        p.error("--window-years must be >= 1")
+    if args.top_n is not None and args.top_n < 1:
+        p.error("--top-n must be >= 1")
 
     from osmose.results import OsmoseResults
     from osmose import analysis as az
@@ -529,7 +551,8 @@ def test_cli_self_comparison_is_all_zero(tmp_path):
     rows = json.loads(out.read_text())
     assert len(rows) > 0                                  # species were actually compared
     assert all(r["abs_delta"] == 0.0 for r in rows)       # genuine self-comparison → zero deltas
-    assert all(r["pct_delta"] == 0.0 for r in rows)       # 0/x = 0% (no from-zero on a self-compare)
+    # pct is 0.0 for nonzero-baseline species; None for any zero-baseline species (robust either way)
+    assert all(r["pct_delta"] in (0.0, None) for r in rows)
 ```
 
 Run: `.venv/bin/python -m pytest tests/test_analysis_delta.py -k cli -v`
