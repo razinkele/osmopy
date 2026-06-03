@@ -161,3 +161,57 @@ def size_spectrum_slope(
     r_squared = float(1.0 - ss_res / ss_tot) if ss_tot > 0 else 0.0
 
     return slope, intercept, r_squared
+
+
+_METRIC_ACCESSOR = {"biomass": "biomass", "yield": "yield_biomass", "abundance": "abundance"}
+_NON_SPECIES_COLS = {"Time", "time", "species"}
+
+
+def _trailing_window(df, time_col: str, window_years: int):
+    """Rows whose time is within the last `window_years` (time is in YEARS).
+
+    Filters by the time COLUMN, not by row count — so the window is correct
+    regardless of how many rows-per-year the output was saved at (a row-count
+    `tail` silently takes the last N *rows*, which is wrong for sub-annual output).
+    """
+    tmax = float(df[time_col].max())
+    return df[df[time_col] > tmax - window_years]
+
+
+def _per_species_window_mean(results, metric: str, window_years: int) -> dict[str, float]:
+    """Per-species mean of `metric` over the trailing `window_years` of a run.
+
+    Handles both output shapes:
+    - WIDE (the disk default): `Time` + one column per species + a constant `species`
+      column. Per-species values are the columns; mean each over the trailing window.
+    - LONG: `time, species, value` with a real per-species `species` column; group by
+      species and mean `value` over the trailing window per species.
+
+    The window is selected by the time column (years), NOT by row count, so it is
+    correct for sub-annual output cadences (recordfrequency.ndt < ndtPerYear).
+    """
+    if metric not in _METRIC_ACCESSOR:
+        raise ValueError(f"unknown metric {metric!r}; expected one of {sorted(_METRIC_ACCESSOR)}")
+    if window_years < 1:
+        # window_years <= 0 empties the time filter → NaN means → corrupt sort + invalid JSON.
+        raise ValueError(f"window_years must be >= 1, got {window_years}")
+    df = getattr(results, _METRIC_ACCESSOR[metric])()
+    if df is None or len(df) == 0:
+        return {}
+    cols = set(df.columns)
+    # LONG iff a value column + a species column are present. (The WIDE global frame
+    # has a `species` column too — but no `value` column — so this discriminates
+    # correctly even for a single-species long frame, where a row-count heuristic fails.)
+    is_long = "value" in cols and "species" in cols
+    if is_long:
+        time_col = "time" if "time" in cols else "Time"
+        out: dict[str, float] = {}
+        for sp, g in df.groupby("species"):
+            win = _trailing_window(g.sort_values(time_col), time_col, window_years)
+            out[str(sp)] = float(win["value"].mean())
+        return out
+    # WIDE: species are the non-Time/non-species columns
+    time_col = "Time" if "Time" in cols else "time"
+    species_cols = [c for c in df.columns if c not in _NON_SPECIES_COLS]
+    win = _trailing_window(df, time_col, window_years)
+    return {str(c): float(win[c].mean()) for c in species_cols}
