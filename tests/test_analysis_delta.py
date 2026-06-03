@@ -240,3 +240,36 @@ def test_delta_chart_builds():
     # EXACTLY the 2 finite-pct species are barred (herring, cod); the from-zero sprat is NOT.
     assert sum(len(t.x) for t in fig.data if hasattr(t, "x") and t.x is not None) == 2
     assert "sprat" not in [s for t in fig.data if t.y is not None for s in t.y]
+
+
+def test_cli_self_comparison_is_all_zero(tmp_path):
+    import importlib.util
+    import json
+
+    spec = importlib.util.spec_from_file_location("cr", "scripts/compare_runs.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    out = tmp_path / "delta.json"
+    # compare a real run against ITSELF → every delta must be exactly 0
+    rc = mod.main(
+        [
+            "--baseline",
+            "data/eec_full/output",
+            "--variant",
+            "data/eec_full/output",
+            "--prefix",
+            "eec",
+            "--metric",
+            "biomass",
+            "--window-years",
+            "10",
+            "--json",
+            str(out),
+        ]
+    )
+    assert rc == 0
+    rows = json.loads(out.read_text())
+    assert len(rows) > 0  # species were actually compared
+    assert all(r["abs_delta"] == 0.0 for r in rows)  # genuine self-comparison → zero deltas
+    # pct is 0.0 for nonzero-baseline species; None for any zero-baseline species (robust either way)
+    assert all(r["pct_delta"] in (0.0, None) for r in rows)
