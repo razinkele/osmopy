@@ -14,7 +14,7 @@
 
 ## Verified facts (from reconnaissance — use exactly)
 
-- Compare Runs `nav_panel` is at `ui/pages/results.py:264-288`: controls `ui.div` (lines 267-283) holds `ui.input_selectize("compare_runs_select", multiple=True)` + `ui.input_select("compare_metric", choices={"biomass","yield","abundance"})`; then `output_widget("comparison_chart")` (286) + `ui.output_ui("config_diff_table")` (287).
+- Compare Runs `nav_panel` is at `ui/pages/results.py:264-288` (line numbers approximate — anchor on STRUCTURE, not numbers): the controls `ui.div` (holding `ui.input_selectize("compare_runs_select", multiple=True, choices={})` + `ui.input_select("compare_metric", choices={"biomass","yield","abundance"})`) is wrapped inside a `ui.layout_columns(..., col_widths=[12])`; the `output_widget("comparison_chart")` + `ui.output_ui("config_diff_table")` are SIBLINGS of that `layout_columns` (not inside the controls div). Insert the slider inside the controls `ui.div` (after `compare_metric`); insert the 2 new outputs as siblings after `config_diff_table`.
 - Existing render scaffolds: `@render_plotly def comparison_chart()` (599-621) and `@render.ui def config_diff_table()` (623-661). They use `_tpl(input)` (template), `_safe_output_dir(input.output_dir())`, `history_dir = out_dir.parent / ".osmose_history"`, `RunHistory(history_dir)`, `history.load_run(ts)` per selected timestamp, `STYLE_EMPTY` for empty prompts.
 - `selected = input.compare_runs_select()` is a tuple of run timestamps (strings).
 - `RunRecord` (osmose/history.py) has `.output_dir` (str), no `prefix` → `OsmoseResults(Path(rec.output_dir), strict=False)` (default prefix "osm").
@@ -197,7 +197,7 @@ In `results_server()`, after the `config_diff_table` render fn closes (line ~661
         try:
             records = [RunHistory(history_dir).load_run(ts) for ts in selected]
             deltas = _delta_for_selected(records, metric, int(input.compare_window_years()))
-        except (ValueError, KeyError, OSError) as e:
+        except Exception as e:  # noqa: BLE001 — UI guard: degrade to an error title, never crash the page
             return go.Figure().update_layout(title=f"Could not compute delta: {e}", template=tmpl)
         fig = make_run_delta_chart(deltas, metric=metric)
         fig.update_layout(template=tmpl)
@@ -209,7 +209,7 @@ In `results_server()`, after the `config_diff_table` render fn closes (line ~661
         if not selected or len(selected) != 2:
             return ui.div(
                 "Select exactly 2 runs to see the per-species output delta "
-                "(1st = baseline, 2nd = variant).",
+                "(1st = baseline, 2nd = variant). The config diff above supports more than 2.",
                 style=STYLE_EMPTY,
             )
         from osmose.history import RunHistory
@@ -227,7 +227,7 @@ In `results_server()`, after the `config_diff_table` render fn closes (line ~661
             records = [RunHistory(history_dir).load_run(ts) for ts in selected]
             window_years = int(input.compare_window_years())
             deltas = _delta_for_selected(records, metric, window_years)
-        except (ValueError, KeyError, OSError) as e:
+        except Exception as e:  # noqa: BLE001 — UI guard: degrade to an error div, never crash the page
             return ui.div(f"Could not load run outputs: {e}")
         return ui.markdown(format_delta_report(deltas, metric=metric, window_years=window_years))
 ```
