@@ -37,11 +37,11 @@
 
 - [ ] **Step 1: Write failing tests**
 
-Append to `tests/test_history.py` (it already imports `RunHistory`/`RunRecord` — confirm with `grep -n "^from\|^import" tests/test_history.py`; add `from osmose.history import RUN_HISTORY_DIR, default_run_history` to the imports it uses):
+Append to `tests/test_history.py`. It already has `from osmose.history import RunRecord, RunHistory` (line 3) — EXTEND that line to `from osmose.history import RunRecord, RunHistory, RUN_HISTORY_DIR, default_run_history` rather than adding a duplicate import (keeps ruff/tidy). The test block below assumes those names are imported:
 
 ```python
 from pathlib import Path
-from osmose.history import RUN_HISTORY_DIR, default_run_history, RunHistory, RunRecord
+# RUN_HISTORY_DIR, default_run_history, RunHistory, RunRecord come from the extended line-3 import
 
 
 def test_run_history_dir_is_canonical():
@@ -128,9 +128,11 @@ with:
 ```
 (If `Path` becomes unused in run.py after this, ruff will flag it — check `grep -n "Path(" ui/pages/run.py`; if it's used elsewhere, leave the import; if this was its only use, remove `Path` from run.py's imports to keep ruff clean.)
 
-- [ ] **Step 2: Readers — `ui/pages/results.py` (all 5 sites)**
+- [ ] **Step 2: Readers — `ui/pages/results.py` (5 sites, THREE distinct shapes)**
 
-In EACH of the 5 reader sites (`_do_load_results`, `comparison_chart`, `config_diff_table`, `run_delta_chart`, `run_delta_table` — find them all with `grep -n '.osmose_history' ui/pages/results.py`), replace the history-dir derivation + existence guard + RunHistory construction. The current shape per render-fn site is:
+`grep -n '.osmose_history' ui/pages/results.py` → 5 sites (~:400, 635, 657, 700, 729). The review found they fall into **three shapes** — handle each explicitly (the import `from osmose.history import RunHistory` at each site, ~:398/629/652/694/723, must ALSO swap to `default_run_history` or ruff flags the now-unused `RunHistory`). After this step, `grep -n '.osmose_history' ui/pages/results.py` must return NOTHING.
+
+**Shape A — `comparison_chart` (~:629-640) and `config_diff_table` (~:652-662):** these have a `history = RunHistory(history_dir)` line then `records = [history.load_run(ts) for ts in selected]` (config_diff uses `compare_runs_multi` instead — adapt). Current:
 ```python
         from osmose.history import RunHistory
         out_dir = _safe_output_dir(input.output_dir())
@@ -140,28 +142,53 @@ In EACH of the 5 reader sites (`_do_load_results`, `comparison_chart`, `config_d
         if not history_dir.is_dir():
             return <no-history result>
         history = RunHistory(history_dir)
+        records = [history.load_run(ts) for ts in selected]   # comparison_chart
 ```
-Replace with (keep the `out_dir` guard — preserves "load a run first" UX; drop the `.osmose_history` derivation + the `.is_dir()` guard since `default_run_history()` creates the dir):
+Replace with (keep the `out_dir` guard; drop the `.osmose_history` derivation + `.is_dir()` guard since `default_run_history()` creates the dir; **MAJOR fix from review — wrap the `load_run` comprehension in try/except, since dropping `.is_dir()` newly exposes an unguarded `FileNotFoundError` on a stale selection; mirror the guard the delta readers already have**):
 ```python
         from osmose.history import default_run_history
         out_dir = _safe_output_dir(input.output_dir())
         if out_dir is None:
             return <invalid-output-dir result>
         history = default_run_history()
+        try:
+            records = [history.load_run(ts) for ts in selected]
+        except Exception:  # noqa: BLE001 — stale/missing run file: degrade, don't crash the render
+            return <no-history result>   # the existing empty/error result for this fn
 ```
-For `_do_load_results` (the selector-population site, ~:398-405), the current code only populates `compare_runs_select` choices when `history_dir.is_dir()`. Replace the `history_dir = out_dir.parent / ".osmose_history"` + `if history_dir.is_dir():` gate with `default_run_history()` and populate from its `list_runs()` (empty list ⇒ empty selector, which is fine). Concretely, change:
+(For `config_diff_table`, which calls `history.compare_runs_multi(list(selected))` rather than a per-ts `load_run`, wrap that call the same way; `compare_runs_multi` internally loads runs so it can raise the same way.)
+
+**Shape B — `run_delta_chart` (~:694-706) and `run_delta_table` (~:723-735):** these construct `RunHistory` **inline inside a list comprehension** and ALREADY have a broad `except Exception` (added in the delta-UI feature):
+```python
+        from osmose.history import RunHistory
+        ...
+        history_dir = out_dir.parent / ".osmose_history"
+        if not history_dir.is_dir():
+            return <no-history result>
+        ...
+        try:
+            records = [RunHistory(history_dir).load_run(ts) for ts in selected]
+            ...
+        except Exception as e:  # noqa: BLE001
+            return ...
+```
+Change: import `default_run_history`; delete the `history_dir = out_dir.parent/".osmose_history"` line and the `if not history_dir.is_dir(): return ...` guard; replace the inline `RunHistory(history_dir).load_run(ts)` with `default_run_history().load_run(ts)` (or assign `history = default_run_history()` just above the comprehension and call `history.load_run(ts)`). The existing `except Exception` stays. Keep the `out_dir` guard.
+
+**Shape C — `_do_load_results` selector populate (~:395-405):** here `out_dir` is already established and the guard is a POSITIVE `if history_dir.is_dir():` wrapping the populate body (it calls `ui.update_selectize("compare_runs_select", choices=...)`). Read it first: `sed -n '393,408p' ui/pages/results.py`. Replace:
 ```python
         history_dir = out_dir.parent / ".osmose_history"
         if history_dir.is_dir():
             runs = RunHistory(history_dir).list_runs()
-            ...populate compare_runs_select...
+            choices = {r.timestamp: f"..." for r in runs}
+            ui.update_selectize("compare_runs_select", choices=choices)
 ```
-to:
+with (dedent the populate body — `default_run_history()` always yields a usable history; `list_runs()` is `[]` if none → empty selector, fine):
 ```python
         runs = default_run_history().list_runs()
-        ...populate compare_runs_select... (same body; runs may be empty)
+        choices = {r.timestamp: f"..." for r in runs}   # preserve the EXACT existing choice-dict format
+        ui.update_selectize("compare_runs_select", choices=choices)
 ```
-(Read the exact `_do_load_results` block first — `sed -n '395,410p' ui/pages/results.py` — and preserve its choice-dict construction; only swap the dir source. Keep the import style consistent with the other sites: `from osmose.history import default_run_history`.)
+(Preserve the exact existing `choices` f-string and the `update_selectize` call verbatim — only swap the dir source and dedent.)
 
 - [ ] **Step 3: Verify import + page builds + no stale `.osmose_history`**
 
@@ -207,7 +234,7 @@ Run: `.venv/bin/python -m pytest tests/test_history.py -k "use_default_run_histo
 
 - [ ] **Step 2: Docs/CHANGELOG note**
 
-Add a one-line note (in the doc found above, or `docs/baltic_example.md` near the Compare Runs / run-history discussion, or a CHANGELOG if one exists): "Fixed: Run-tab history and the Results Compare Runs selector now share a canonical directory (`data/history` via `osmose.history.RUN_HISTORY_DIR` / `default_run_history()`); previously the writer (`data/history`) and reader (`.osmose_history`) diverged so saved runs never appeared in the comparison selector."
+Add a note (in the doc found above, or `docs/baltic_example.md` near the Compare Runs / run-history discussion, or a CHANGELOG if one exists): "Fixed: Run-tab history and the Results Compare Runs selector now share a canonical directory (`data/history` via `osmose.history.RUN_HISTORY_DIR` / `default_run_history()`). Previously the writer (`data/history`) and the reader (`<output_dir>/../.osmose_history`) diverged — and `.osmose_history` was never created — so the **Compare Runs tab (selector, config-diff, comparison chart, and output-delta section) was entirely non-functional**. This fix resurrects it; all existing run records in `data/history` now appear."
 
 - [ ] **Step 3: Full verification + lint**
 
