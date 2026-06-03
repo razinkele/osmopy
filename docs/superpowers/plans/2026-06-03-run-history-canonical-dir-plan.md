@@ -27,6 +27,8 @@
 - Modify: `ui/pages/run.py` — writer uses `default_run_history()`.
 - Modify: `ui/pages/results.py` — 5 readers use `default_run_history()` / `RUN_HISTORY_DIR`.
 - Modify: `tests/test_history.py` — regression tests (canonical dir + writer/reader round-trip).
+- Modify: `tests/test_run_result_failure_invalidates_state.py` — repoint the writer-side-effect test off `chdir` onto a `RUN_HISTORY_DIR` `setattr` (Task 2 Step 1b).
+- Modify: `.gitignore` — update the `_handle_result`/`data/history` comment to the new `setattr` mechanism (Task 2 Step 1b).
 
 ---
 
