@@ -10,9 +10,27 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 _NATURAL_CAUSES = ("Mpred", "Mstarv", "Madd")
+
+
+def annual_rate(per_step: pd.Series, steps_per_year: int, window_years: int) -> float:
+    """Sum a per-saved-step rate within each year, then mean over the trailing window.
+
+    A trailing partial year (len not a multiple of steps_per_year) is dropped so the
+    window only averages complete years.
+    """
+    if steps_per_year < 1:
+        raise ValueError(f"steps_per_year must be >= 1, got {steps_per_year}")
+    vals = np.asarray(per_step, dtype=float)
+    n_years = len(vals) // steps_per_year
+    if n_years == 0:
+        raise ValueError("mortality series shorter than one full year")
+    annual = vals[: n_years * steps_per_year].reshape(n_years, steps_per_year).sum(axis=1)
+    w = min(window_years, n_years)
+    return float(annual[-w:].mean())
 
 
 def read_mortality_recruits(path: Path) -> pd.DataFrame:
