@@ -103,6 +103,7 @@ The Baltic example is the product of several overlapping threads. In chronologic
 | `scripts/rebuild_baltic_mask.py`         | `grid/baltic_mask.csv`, `baltic_grid.nc`, CSV grids        |
 | `scripts/relabel_baltic_grid_nc.py`      | Metadata pass over `baltic_grid.nc`                        |
 | `scripts/validate_baltic_vs_ices_sag.py` | `docs/baltic_ices_validation_2026-04-18.md`                |
+| `scripts/compute_mortality_balance.py`   | per-species F/M report (stdout / `--report` / `--json` / `--plot`) |
 | `mcp_servers/copernicus/server.py`       | `baltic_ltl_biomass.nc` via `generate_osmose_ltl` MCP tool |
 
 All scripts assume CWD = repo root. None write to checked-in files unless re-run intentionally.
@@ -272,8 +273,51 @@ OSMOSE re-distributes seeded biomass across age classes via the species life-his
 ## Validation and known limitations
 
 - **ICES SAG cross-validation** (`docs/baltic_ices_validation_2026-04-18.md`): F rates and biomass envelopes compared to the 2024 advice cycle (2022 for `cod.27.22-24` which is category-3 in 2024). Cod and flounder F flagged as deliberate scenario limitations; herring and sprat within tolerance. Cod biomass target upper bound (250 kt) flagged by science review as likely historical rather than 2018–2022-era — a future calibration-tuning pass will revisit.
+- **F/M fishing-pressure diagnostic** (`scripts/compute_mortality_balance.py`): per-species ratio of fishing mortality to natural mortality on the exploited life stage(s). See below.
 - **Calibration targets** (`data/baltic/reference/biomass_targets.csv`): species × [lower, upper] tonnes + weight + source column. Weights 1.0 (well-assessed pelagics: herring, sprat) down to 0.2 (coarse-grid coastal: perch, pikeperch).
 - **Stickleback biomass** (~200 kt target): Olsson et al. 2019, `doi:10.1093/icesjms/fsz078` — first large-scale biomass assessment. Wide range (50–500 kt) appropriate given boom-bust dynamics.
+
+### F/M fishing-pressure diagnostic (`scripts/compute_mortality_balance.py`)
+
+Computes a per-species **F/M ratio** — fishing mortality divided by natural mortality — on the exploited
+life stage(s), i.e. the stages that actually carry fishing in the OSMOSE mortality output. Excluding the
+unfished egg stage's natural mortality from the denominator prevents an artificially small ratio for
+species with very high larval M. F/M > 1 means the exploited cohort is being removed faster by fishing
+than by all combined natural causes (predation + starvation + additional mortality).
+
+This diagnostic is available for **all 8 species** — no ICES reference points are required.
+
+**Example usage (Baltic):**
+
+```bash
+PYTHONPATH=. python scripts/compute_mortality_balance.py \
+    --results-dir data/baltic/output \
+    --prefix baltic \
+    --config data/baltic \
+    --window-years 10
+```
+
+Additional flags: `--species cod sprat` (subset), `--report out.md`, `--json out.json`,
+`--plot prefix` (writes `prefix_fm.html`).
+
+**`--steps-per-year` caveat.** The script derives `steps_per_year` from
+`simulation.time.ndtPerYear / output.recordfrequency.ndt` in the config files. For the shipped Baltic
+and EEC configs this evaluates to 1 (annual records). If it cannot be determined, the script defaults to
+1 with a loud `WARNING` on stderr and the message "correct iff output.recordfrequency.ndt ==
+simulation.time.ndtPerYear". Pass `--steps-per-year N` explicitly if your model records more frequently
+than once per year (e.g. monthly records → `--steps-per-year 24`); getting this wrong scales F and M by
+a constant factor and inverts the ratio.
+
+**Honest limitation.** F is OSMOSE's instantaneous fishing mortality on the Recruits stage, summed to
+an annual rate — it is **not** an ICES Fbar over a validated age range. F/M is a model-internal pressure
+ratio useful for comparing species and tracking calibration progress; it should not be reported as an
+ICES stock-status indicator.
+
+**Deferred follow-up.** Full stock-status diagnostics (B/Bmsy, F/Fmsy, Kobe plot) were scoped out. They
+require a config with broad ICES tonnes-unit coverage (only sprat qualifies on Baltic), a defensible Bmsy
+(the standard `MSY Btrigger` proxy overstates stock health by design), and an Fbar-aligned F. Not
+worthwhile for a single species on Baltic. See
+`docs/superpowers/specs/2026-06-03-fisheries-diagnostics-design.md` for the full rescope rationale.
 
 Documented limitations that this example **does not currently represent**:
 
