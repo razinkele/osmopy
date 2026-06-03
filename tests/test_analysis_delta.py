@@ -79,3 +79,135 @@ def test_window_mean_rejects_nonpositive_window():
     res = _FakeResults({"biomass": df, "yield": df, "abundance": df})
     with pytest.raises(ValueError):
         az._per_species_window_mean(res, "biomass", window_years=0)  # empty window → NaN guard
+
+
+def test_run_delta_ranks_by_pct():
+    base = _FakeResults(
+        {
+            "biomass": _wide(cod=[100.0, 100.0], herring=[50.0, 50.0]),
+            "yield": _wide(cod=[1.0, 1.0]),
+            "abundance": _wide(cod=[1.0, 1.0]),
+        }
+    )
+    var = _FakeResults(
+        {
+            "biomass": _wide(cod=[110.0, 110.0], herring=[100.0, 100.0]),
+            "yield": _wide(cod=[1.0, 1.0]),
+            "abundance": _wide(cod=[1.0, 1.0]),
+        }
+    )
+    deltas = az.run_delta(base, var, metric="biomass", window_years=2)
+    by = {d.species: d for d in deltas}
+    assert by["cod"].abs_delta == pytest.approx(10.0)
+    assert by["cod"].pct_delta == pytest.approx(0.10)
+    assert by["herring"].pct_delta == pytest.approx(1.0)  # 50→100 = +100%
+    # ranked by |pct_delta| desc → herring (1.0) before cod (0.10)
+    assert [d.species for d in deltas][:2] == ["herring", "cod"]
+
+
+def test_run_delta_top_n():
+    # Names chosen so ALPHABETICAL order (a,b,c) DISAGREES with the pct ranking — a broken
+    # sort that just preserves alpha order would fail this. a=+10%, b=+100%, c=+50%.
+    base = _FakeResults(
+        {
+            "biomass": _wide(a=[1.0], b=[1.0], c=[1.0]),
+            "yield": _wide(a=[1.0]),
+            "abundance": _wide(a=[1.0]),
+        }
+    )
+    var = _FakeResults(
+        {
+            "biomass": _wide(a=[1.1], b=[2.0], c=[1.5]),
+            "yield": _wide(a=[1.0]),
+            "abundance": _wide(a=[1.0]),
+        }
+    )
+    deltas = az.run_delta(base, var, metric="biomass", window_years=1, top_n=2)
+    assert len(deltas) == 2
+    assert [d.species for d in deltas] == ["b", "c"]  # +100%, +50% — NOT alphabetical
+
+
+def test_run_delta_from_zero_ranks_above_finite():
+    # from-zero recovery must outrank a finite +200% mover.
+    base = _FakeResults(
+        {
+            "biomass": _wide(cod=[0.0], herring=[1.0]),
+            "yield": _wide(cod=[0.0]),
+            "abundance": _wide(cod=[0.0]),
+        }
+    )
+    var = _FakeResults(
+        {
+            "biomass": _wide(cod=[10.0], herring=[3.0]),
+            "yield": _wide(cod=[0.0]),
+            "abundance": _wide(cod=[0.0]),
+        }
+    )
+    deltas = az.run_delta(base, var, metric="biomass", window_years=1)
+    assert deltas[0].species == "cod" and deltas[0].from_zero is True
+    assert deltas[1].species == "herring"
+
+
+def test_run_delta_both_zero_ranks_last():
+    # A 0->0 "dead" species (pct None but NOT from_zero) must rank LAST, never as a top mover.
+    base = _FakeResults(
+        {
+            "biomass": _wide(cod=[1.0], ghost=[0.0]),
+            "yield": _wide(cod=[0.0]),
+            "abundance": _wide(cod=[0.0]),
+        }
+    )
+    var = _FakeResults(
+        {
+            "biomass": _wide(cod=[2.0], ghost=[0.0]),
+            "yield": _wide(cod=[0.0]),
+            "abundance": _wide(cod=[0.0]),
+        }
+    )
+    deltas = az.run_delta(base, var, metric="biomass", window_years=1)
+    assert deltas[0].species == "cod"  # +100% mover on top
+    assert deltas[-1].species == "ghost"  # 0->0 dead species last
+    ghost = deltas[-1]
+    assert ghost.pct_delta is None and ghost.from_zero is False and ghost.abs_delta == 0.0
+
+
+def test_run_delta_from_zero():
+    base = _FakeResults(
+        {"biomass": _wide(cod=[0.0, 0.0]), "yield": _wide(cod=[0.0]), "abundance": _wide(cod=[0.0])}
+    )
+    var = _FakeResults(
+        {"biomass": _wide(cod=[5.0, 5.0]), "yield": _wide(cod=[0.0]), "abundance": _wide(cod=[0.0])}
+    )
+    d = az.run_delta(base, var, metric="biomass", window_years=2)[0]
+    assert d.species == "cod"
+    assert d.baseline_mean == 0.0 and d.variant_mean == pytest.approx(5.0)
+    assert d.pct_delta is None and d.from_zero is True
+    assert d.abs_delta == pytest.approx(5.0)
+
+
+def test_run_delta_union_species_present_in_one_run():
+    base = _FakeResults(
+        {"biomass": _wide(cod=[10.0]), "yield": _wide(cod=[1.0]), "abundance": _wide(cod=[1.0])}
+    )
+    var = _FakeResults(
+        {
+            "biomass": _wide(cod=[10.0], newsp=[7.0]),
+            "yield": _wide(cod=[1.0]),
+            "abundance": _wide(cod=[1.0]),
+        }
+    )
+    by = {d.species: d for d in az.run_delta(base, var, metric="biomass", window_years=1)}
+    assert by["newsp"].baseline_mean == 0.0 and by["newsp"].variant_mean == pytest.approx(7.0)
+    assert by["newsp"].from_zero is True
+
+
+def test_run_delta_metric_switch():
+    # yield differs while biomass is identical → metric="yield" must pick up the change
+    base = _FakeResults(
+        {"biomass": _wide(cod=[10.0]), "yield": _wide(cod=[2.0]), "abundance": _wide(cod=[1.0])}
+    )
+    var = _FakeResults(
+        {"biomass": _wide(cod=[10.0]), "yield": _wide(cod=[4.0]), "abundance": _wide(cod=[1.0])}
+    )
+    d = {x.species: x for x in az.run_delta(base, var, metric="yield", window_years=1)}["cod"]
+    assert d.pct_delta == pytest.approx(1.0)

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
@@ -215,3 +217,61 @@ def _per_species_window_mean(results, metric: str, window_years: int) -> dict[st
     species_cols = [c for c in df.columns if c not in _NON_SPECIES_COLS]
     win = _trailing_window(df, time_col, window_years)
     return {str(c): float(win[c].mean()) for c in species_cols}
+
+
+@dataclass(frozen=True)
+class SpeciesDelta:
+    species: str
+    baseline_mean: float
+    variant_mean: float
+    abs_delta: float
+    pct_delta: float | None  # None when baseline_mean == 0
+    from_zero: bool  # baseline_mean == 0 and variant_mean > 0
+
+
+def run_delta(
+    baseline,
+    variant,
+    *,
+    metric: str = "biomass",
+    window_years: int = 10,
+    top_n: int | None = None,
+) -> list[SpeciesDelta]:
+    """Per-species delta of `metric` (windowed mean) between two runs, ranked by |% change|.
+
+    Species set = union of both runs (a species absent from one contributes mean 0 there).
+    pct_delta is None for a zero-baseline species (reported via from_zero + abs_delta).
+    Sorted by |pct_delta| desc (from-zero species sort to the top); ties by |abs_delta| desc.
+    """
+    bmeans = _per_species_window_mean(baseline, metric, window_years)
+    vmeans = _per_species_window_mean(variant, metric, window_years)
+    species = sorted(set(bmeans) | set(vmeans))
+    deltas: list[SpeciesDelta] = []
+    for sp in species:
+        b = bmeans.get(sp, 0.0)
+        v = vmeans.get(sp, 0.0)
+        abs_d = v - b
+        pct = (abs_d / b) if b != 0 else None
+        deltas.append(
+            SpeciesDelta(
+                species=sp,
+                baseline_mean=b,
+                variant_mean=v,
+                abs_delta=abs_d,
+                pct_delta=pct,
+                from_zero=(b == 0.0 and v > 0.0),
+            )
+        )
+
+    def _key(d: SpeciesDelta):
+        # Genuine from-zero recoveries rank at top (inf). A 0->0 "dead" species also has
+        # pct_delta None but is NOT a mover — it must rank LAST (0.0), not at the top.
+        # Finite pct ranks by |pct|; ties by |abs|.
+        if d.pct_delta is None:
+            primary = float("inf") if d.from_zero else 0.0
+        else:
+            primary = abs(d.pct_delta)
+        return (primary, abs(d.abs_delta))
+
+    deltas.sort(key=_key, reverse=True)
+    return deltas[:top_n] if top_n is not None else deltas
