@@ -224,3 +224,19 @@ def test_format_delta_report():
     assert "+100.0%" in md or "100.0%" in md  # herring pct
     assert "from 0" in md  # cod from-zero note
     assert "B/Bmsy" not in md  # sanity: not the fisheries report
+
+
+def test_delta_chart_builds():
+    from osmose import plotting
+    from osmose import analysis as az
+
+    deltas = [
+        az.SpeciesDelta("herring", 50.0, 100.0, 50.0, 1.0, False),
+        az.SpeciesDelta("cod", 100.0, 90.0, -10.0, -0.10, False),
+        az.SpeciesDelta("sprat", 0.0, 5.0, 5.0, None, True),  # from-zero: no finite bar
+    ]
+    fig = plotting.make_run_delta_chart(deltas)
+    assert fig is not None
+    # EXACTLY the 2 finite-pct species are barred (herring, cod); the from-zero sprat is NOT.
+    assert sum(len(t.x) for t in fig.data if hasattr(t, "x") and t.x is not None) == 2
+    assert "sprat" not in [s for t in fig.data if t.y is not None for s in t.y]

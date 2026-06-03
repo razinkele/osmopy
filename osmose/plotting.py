@@ -344,6 +344,40 @@ def make_fm_ratio_bars(balances) -> go.Figure:
     return fig
 
 
+def make_run_delta_chart(deltas, *, metric: str = "biomass") -> go.Figure:
+    """Horizontal diverging bar of per-species % change (variant vs baseline).
+
+    Only species with a finite pct_delta are barred (positive=green, negative=red);
+    from-zero species are listed in the title note (no finite bar).
+    """
+    finite = [d for d in deltas if getattr(d, "pct_delta", None) is not None]
+    # Ascending by |Δ%| so the biggest mover sits at the TOP of the horizontal chart
+    # (plotly plots data order bottom-to-top), matching run_delta's magnitude ranking.
+    finite = sorted(finite, key=lambda d: abs(d.pct_delta))
+    colors = ["#2ca02c" if d.pct_delta >= 0 else "#d62728" for d in finite]
+    fig = go.Figure(
+        go.Bar(
+            x=[d.pct_delta * 100 for d in finite],
+            y=[d.species for d in finite],
+            orientation="h",
+            marker=dict(color=colors),
+            name="Δ%",
+        )
+    )
+    fig.add_vline(x=0.0, line=dict(width=1))
+    from_zero = [d.species for d in deltas if getattr(d, "from_zero", False)]
+    title = f"Run delta — {metric} (% change, variant vs baseline)"
+    if from_zero:
+        title += f"  ·  from 0: {', '.join(from_zero)}"
+    fig.update_layout(
+        title=dict(text=title),
+        xaxis=dict(title="Δ%"),
+        yaxis=dict(title="species"),
+        template=TEMPLATE,
+    )
+    return fig
+
+
 # ---------------------------------------------------------------------------
 # 7. Food web Sankey diagram
 # ---------------------------------------------------------------------------
