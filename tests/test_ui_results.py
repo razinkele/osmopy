@@ -82,6 +82,18 @@ def test_delta_for_selected_requires_two(monkeypatch):
         rp._delta_for_selected(recs, metric="biomass", window_years=2)
 
 
+def test_results_ui_builds():
+    # results_ui() must construct without error after the Compare Runs additions.
+    from ui.pages.results import results_ui
+
+    tag = results_ui()
+    assert tag is not None
+    html = str(tag)
+    assert "compare_window_years" in html  # the new slider is wired
+    assert "run_delta_chart" in html  # the new chart output
+    assert "run_delta_table" in html  # the new table output
+
+
 def test_make_timeseries_chart_biomass():
     df = pd.DataFrame(
         {

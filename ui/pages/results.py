@@ -298,11 +298,16 @@ def results_ui():
                                 "abundance": "Abundance",
                             },
                         ),
+                        ui.input_slider(
+                            "compare_window_years", "Window (years)", min=1, max=30, value=10
+                        ),
                     ),
                     col_widths=[12],
                 ),
                 output_widget("comparison_chart"),
                 ui.output_ui("config_diff_table"),
+                output_widget("run_delta_chart"),
+                ui.output_ui("run_delta_table"),
             ),
         ),
     )
@@ -677,6 +682,62 @@ def results_server(input, output, session, state: AppState):
             class_="table table-sm table-striped",
             style="font-size: 13px;",
         )
+
+    @render_plotly
+    def run_delta_chart():
+        tmpl = _tpl(input)
+        selected = input.compare_runs_select()
+        if not selected or len(selected) != 2:
+            return go.Figure().update_layout(
+                title="Select exactly 2 runs (1st = baseline, 2nd = variant)", template=tmpl
+            )
+        from osmose.history import RunHistory
+        from osmose.plotting import make_run_delta_chart
+
+        out_dir = _safe_output_dir(input.output_dir())
+        if out_dir is None:
+            return go.Figure().update_layout(title="Invalid output directory", template=tmpl)
+        history_dir = out_dir.parent / ".osmose_history"
+        if not history_dir.is_dir():
+            return go.Figure().update_layout(title="No run history found", template=tmpl)
+
+        metric = input.compare_metric()
+        try:
+            records = [RunHistory(history_dir).load_run(ts) for ts in selected]
+            deltas = _delta_for_selected(records, metric, int(input.compare_window_years()))
+        except Exception as e:  # noqa: BLE001 — UI guard: degrade to an error title, never crash the page
+            return go.Figure().update_layout(title=f"Could not compute delta: {e}", template=tmpl)
+        fig = make_run_delta_chart(deltas, metric=metric)
+        fig.update_layout(template=tmpl)
+        return fig
+
+    @render.ui
+    def run_delta_table():
+        selected = input.compare_runs_select()
+        if not selected or len(selected) != 2:
+            return ui.div(
+                "Select exactly 2 runs to see the per-species output delta "
+                "(1st = baseline, 2nd = variant). The config diff above supports more than 2.",
+                style=STYLE_EMPTY,
+            )
+        from osmose.history import RunHistory
+        from osmose.analysis import format_delta_report
+
+        out_dir = _safe_output_dir(input.output_dir())
+        if out_dir is None:
+            return ui.div("Invalid output directory.")
+        history_dir = out_dir.parent / ".osmose_history"
+        if not history_dir.is_dir():
+            return ui.div("No run history found.")
+
+        metric = input.compare_metric()
+        try:
+            records = [RunHistory(history_dir).load_run(ts) for ts in selected]
+            window_years = int(input.compare_window_years())
+            deltas = _delta_for_selected(records, metric, window_years)
+        except Exception as e:  # noqa: BLE001 — UI guard: degrade to an error div, never crash the page
+            return ui.div(f"Could not load run outputs: {e}")
+        return ui.markdown(format_delta_report(deltas, metric=metric, window_years=window_years))
 
     @render.download(
         filename=lambda: (  # type: ignore[arg-type]
