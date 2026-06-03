@@ -17,9 +17,14 @@ and ranks species by how much they changed, so the effect of a change is instant
 - **No output-delta exists.** `scenarios.py::ScenarioManager.compare` and
   `history.py::RunHistory.compare_runs` are CONFIG-key diffs; `plotting.py::make_run_comparison`
   is a grouped bar over stored scalar summaries (`RunRecord.summary`), not freshly-loaded runs.
-- **Reusable accessors** (`osmose/results.py`): `biomass(species=None)`, `yield_biomass(...)`,
-  `abundance(...)` all return long-form DataFrames with columns `time, species, <value>` — trivially
-  grouped to per-species windowed means.
+- **Accessors** (`osmose/results.py`): `biomass()`, `yield_biomass()`, `abundance()`. **Shape
+  verified by execution (NOT the docstring, which is wrong):** the EEC disk output is **WIDE** —
+  `Time` + one column per species + a constant `species="all"` artifact column. `biomass(species=
+  "cod")` returns **0 rows** (the `species=` filter matches the constant "all" column, not a real
+  per-species row). So per-species values are the **columns**, and the delta normalizer must read
+  the wide frame and take per-species column means — NOT use `biomass(species=...)` and NOT expect
+  a `value` column. (A long-form `time, species, value` shape may also occur for some outputs;
+  the normalizer detects and handles both.) This is the load-bearing detail the design hinges on.
 - **`osmose/analysis.py` already exists** as the home for run-level ecological indicators
   (`summary_table`, `shannon_diversity`, `mean_tl_catch`, `size_spectrum_slope`) — `run_delta`
   belongs here, same module/imports/pattern.
