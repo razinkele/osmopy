@@ -2,8 +2,10 @@
 
 Computes per-species F/M (realized fishing mortality vs natural mortality) from a
 finished run — for all species, no ICES reference points. F and M are OSMOSE
-instantaneous mortality rates summed across life stages (Eggs+Pre-recruits+Recruits)
-and over the year; F is total fishing mortality, M = Mpred + Mstarv + Madd.
+instantaneous mortality rates computed on the exploited life stage(s) — those
+carrying fishing mortality — so that natural mortality of unfished egg/adult stages
+does not swamp the ratio. F is total annual fishing mortality, M = Mpred + Mstarv +
+Madd on the same fished stage(s).
 F/M > 1 means fishing removes more than natural processes (an overexploitation signal).
 """
 
@@ -17,6 +19,8 @@ import numpy as np
 import pandas as pd
 
 _NATURAL_CAUSES = ("Mpred", "Mstarv", "Madd")
+_STAGES = ("Eggs", "Pre-recruits", "Recruits")
+_FISHED_TOL = 1e-9
 
 
 def annual_rate(per_step: pd.Series, steps_per_year: int, window_years: int) -> float:
@@ -91,13 +95,30 @@ def compute_mortality_balance(
             continue
         try:
             df = read_mortality(path)
-            f_series = df["F"].sum(axis=1)
-            m_series = sum(df[c].sum(axis=1) for c in _NATURAL_CAUSES)
-            f = annual_rate(f_series, steps_per_year, window_years)
-            m = annual_rate(m_series, steps_per_year, window_years)
+            # per-stage windowed annual rates
+            f_by_stage = {
+                s: annual_rate(df[("F", s)], steps_per_year, window_years)
+                for s in _STAGES
+                if ("F", s) in df.columns
+            }
+            m_by_stage = {
+                s: annual_rate(
+                    sum(df[(c, s)] for c in _NATURAL_CAUSES), steps_per_year, window_years
+                )
+                for s in _STAGES
+                if all((c, s) in df.columns for c in _NATURAL_CAUSES)
+            }
         except (KeyError, ValueError, pd.errors.ParserError) as e:
             print(f"WARN: skipping {sp!r}: {e}", file=sys.stderr)
             continue
+        fished = [s for s, fv in f_by_stage.items() if fv > _FISHED_TOL]
+        f = sum(f_by_stage.get(s, 0.0) for s in fished)
+        if fished:
+            # natural mortality on the exploited stage(s)
+            m = sum(m_by_stage.get(s, 0.0) for s in fished)
+        else:
+            # unfished: F=0; report M over the post-egg stock for a defined denominator
+            m = sum(m_by_stage.get(s, 0.0) for s in ("Pre-recruits", "Recruits"))
         f_over_m = (f / m) if m > 0 else None
         out.append(
             MortalityBalance(
@@ -116,10 +137,12 @@ def format_mortality_report(balances: list[MortalityBalance], *, window_years: i
     lines = [
         "# OSMOSE fishing-vs-natural mortality (F/M)",
         "",
-        f"Model window: last {window_years} years. F and M are OSMOSE instantaneous "
-        "mortality rates summed across life stages (Eggs+Pre-recruits+Recruits) and over "
-        "the year; F is total fishing mortality, M = Mpred+Mstarv+Madd. F/M > 1 means "
-        "fishing removes more than natural processes.",
+        f"Model window: last {window_years} years. F and M are computed on the "
+        "**exploited life stage(s)** — those carrying fishing mortality (so natural "
+        "mortality of unfished egg/adult stages doesn't swamp the ratio). F = total "
+        "annual fishing mortality; M = annual natural mortality (Mpred+Mstarv+Madd) on "
+        "the same fished stage(s). F/M > 1 means fishing exceeds natural mortality for "
+        "the exploited cohort.",
         "",
         "| species | F | M | F/M | overexploited |",
         "|---|---:|---:|---:|:---:|",

@@ -111,6 +111,39 @@ def test_compute_balance_sums_fishing_across_stages(tmp_path, monkeypatch):
     assert b.overexploited is True
 
 
+def test_compute_balance_excludes_unfished_stage_natural_mortality(tmp_path, monkeypatch):
+    # F in Pre-recruits (0.4); Recruits has huge natural M (3.0) but NO fishing.
+    def fake_reader(path):
+        cols = pd.MultiIndex.from_tuples(
+            [
+                (c, s)
+                for c in ("F", "Mpred", "Mstarv", "Madd")
+                for s in ("Eggs", "Pre-recruits", "Recruits")
+            ]
+        )
+        row = {
+            (c, s): 0.0
+            for c in ("F", "Mpred", "Mstarv", "Madd")
+            for s in ("Eggs", "Pre-recruits", "Recruits")
+        }
+        row[("F", "Pre-recruits")] = 0.4
+        row[("Mpred", "Pre-recruits")] = 0.2
+        row[("Mstarv", "Recruits")] = 3.0  # must NOT enter M (Recruits unfished)
+        data = [[row[c] for c in cols]] * 2
+        return pd.DataFrame(data, columns=cols)
+
+    monkeypatch.setattr(fz, "read_mortality", fake_reader)
+    (tmp_path / "Mortality").mkdir()
+    (tmp_path / "Mortality" / "osm_mortalityRate-z_Simu0.csv").write_text("stub")
+    b = fz.compute_mortality_balance(
+        tmp_path, prefix="osm", species_list=["z"], steps_per_year=1, window_years=2
+    )[0]
+    assert b.fishing_mortality == pytest.approx(0.4)
+    assert b.natural_mortality == pytest.approx(0.2)  # Pre-recruits only; Recruits 3.0 EXCLUDED
+    assert b.f_over_m == pytest.approx(2.0)
+    assert b.overexploited is True
+
+
 def test_compute_balance_skips_missing_species(tmp_path):
     (tmp_path / "Mortality").mkdir()
     out = fz.compute_mortality_balance(
@@ -147,7 +180,7 @@ def test_format_report_renders_with_none_fm():
     assert "cod" in md and "x" in md
     assert "F/M" in md
     assert "2.00" in md and "—" in md
-    assert "summed across life stages" in md
+    assert "exploited life stage" in md
     assert "1 overexploited" in md
 
 
