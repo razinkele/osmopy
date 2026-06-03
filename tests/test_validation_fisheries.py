@@ -115,3 +115,17 @@ def test_format_report_renders_with_none_fm():
     assert "2.00" in md and "—" in md
     assert "Recruits-stage" in md
     assert "1 overexploited" in md
+
+
+def test_fm_bar_chart_builds():
+    from osmose import plotting
+
+    bals = [
+        fz.MortalityBalance("cod", 0.4, 0.2, 2.0, True),
+        fz.MortalityBalance("x", 0.1, 0.5, 0.2, False),
+    ]
+    fig = plotting.make_fm_ratio_bars(bals)
+    assert fig is not None
+    assert sum(len(t.x) for t in fig.data if hasattr(t, "x") and t.x is not None) >= 1
+    # a reference line at y=1 exists (add_hline adds a shape with y0==y1==1.0)
+    assert any(getattr(s, "y0", None) == 1.0 for s in fig.layout.shapes)

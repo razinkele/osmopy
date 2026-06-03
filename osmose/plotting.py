@@ -319,6 +319,31 @@ def make_predation_ranges(species_params: list[dict]) -> go.Figure:
     return fig
 
 
+def make_fm_ratio_bars(balances) -> go.Figure:
+    """F/M (fishing vs natural mortality) per species; reference line at F/M=1.
+
+    Bars above 1 (fishing exceeds natural mortality) are highlighted.
+    """
+    valid = [b for b in balances if getattr(b, "f_over_m", None) is not None]
+    colors = ["#d62728" if b.f_over_m > 1.0 else "#2ca02c" for b in valid]
+    fig = go.Figure(
+        go.Bar(
+            x=[b.species for b in valid],
+            y=[b.f_over_m for b in valid],
+            marker=dict(color=colors),
+            name="F/M",
+        )
+    )
+    fig.add_hline(y=1.0, line=dict(dash="dash", width=1))
+    fig.update_layout(
+        title=dict(text="Fishing vs natural mortality (F/M)"),
+        xaxis=dict(title="species"),
+        yaxis=dict(title="F / M"),
+        template=TEMPLATE,
+    )
+    return fig
+
+
 # ---------------------------------------------------------------------------
 # 7. Food web Sankey diagram
 # ---------------------------------------------------------------------------
