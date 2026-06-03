@@ -59,6 +59,17 @@ Replace each `history_dir = out_dir.parent / ".osmose_history"` + `RunHistory(hi
 behavior change; the current "load a run, then compare" UX is preserved). The history path no
 longer depends on `out_dir`.
 
+Note: the two readers that lacked a pre-existing `except` (`comparison_chart`, `config_diff_table`)
+gain a `try/except` around their `load_run`/`compare_runs_multi` call when `.is_dir()` is dropped —
+that guard previously shielded them from a `FileNotFoundError` on a stale selection. This keeps the
+"degrade, don't crash" behavior and mirrors the guard the delta readers already have.
+
+Note (test hygiene): the writer becomes CWD-independent (absolute `RUN_HISTORY_DIR`). One existing
+test (`test_handle_result_success_sets_output_dir`) used `monkeypatch.chdir(tmp_path)` to keep the
+`history.save()` side effect out of the real `data/history/`; it must switch to
+`monkeypatch.setattr("osmose.history.RUN_HISTORY_DIR", tmp_path)` (and the `.gitignore` comment that
+references it is updated accordingly).
+
 ### Migration
 
 **None.** The 6 existing records are already in `data/history/`, which becomes canonical — they

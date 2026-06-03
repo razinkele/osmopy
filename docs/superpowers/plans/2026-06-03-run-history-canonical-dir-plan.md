@@ -19,6 +19,7 @@
 - Writer: `ui/pages/run.py:403-412` — `from osmose.history import RunRecord, RunHistory`; `history = RunHistory(Path("data/history"))`; `history.save(record)`; wrapped in `try/except (OSError, ValueError)`.
 - Readers: `ui/pages/results.py`, 5 sites, each with `history_dir = out_dir.parent / ".osmose_history"` (the unique anchor string per site) then `if not history_dir.is_dir(): return <no history>` then `RunHistory(history_dir)`: `_do_load_results` (selector populate, ~:400), `comparison_chart` (~:635), `config_diff_table` (~:657), `run_delta_chart` (~:700), `run_delta_table` (~:729). Line numbers approximate — anchor on the `".osmose_history"` string.
 - `tests/test_history.py` uses `RunHistory(tmp_path)`; no test asserts the real dir.
+- **Writer-side-effect test (MUST update — round-2 finding):** `tests/test_run_result_failure_invalidates_state.py::test_handle_result_success_sets_output_dir` does `monkeypatch.chdir(tmp_path)` *specifically* so the CWD-relative `RunHistory(Path("data/history"))` write lands in tmp_path (its docstring says so). Once the writer uses the **absolute** `default_run_history()`, `chdir` no longer redirects it → the test would write a junk `run_*.json` into the real `data/history/`. The `.gitignore:7-9` comment is built around this same test. Both must be updated in Task 2 Step 1b.
 
 ## File Structure
 
@@ -111,6 +112,8 @@ git commit -m "feat(history): RUN_HISTORY_DIR constant + default_run_history() h
 **Files:**
 - Modify: `ui/pages/run.py`
 - Modify: `ui/pages/results.py`
+- Modify: `tests/test_run_result_failure_invalidates_state.py` (Step 1b)
+- Modify: `.gitignore` (Step 1b)
 
 - [ ] **Step 1: Writer — `ui/pages/run.py`**
 
@@ -126,7 +129,30 @@ with:
 
             history = default_run_history()
 ```
-(If `Path` becomes unused in run.py after this, ruff will flag it — check `grep -n "Path(" ui/pages/run.py`; if it's used elsewhere, leave the import; if this was its only use, remove `Path` from run.py's imports to keep ruff clean.)
+(If `Path` becomes unused in run.py after this, ruff will flag it — check `grep -n "Path(" ui/pages/run.py`; if it's used elsewhere, leave the import; if this was its only use, remove `Path` from run.py's imports to keep ruff clean. NOTE from audit: `Path` IS used elsewhere in run.py — lines 23, 287, 304, 330, 508 — so KEEP the `from pathlib import Path` import; only the `RunHistory` name leaves the `from osmose.history import ...` line.)
+
+- [ ] **Step 1b: Fix the writer-side-effect test + `.gitignore` comment (round-2 finding — REQUIRED)**
+
+The writer is now CWD-independent (absolute `RUN_HISTORY_DIR`), so `test_handle_result_success_sets_output_dir`'s `monkeypatch.chdir(tmp_path)` no longer keeps `history.save()` out of the real `data/history/`. Repoint the test at the new seam — the constant — instead of CWD.
+
+First read the test to confirm the exact current text:
+Run: `sed -n '78,92p' tests/test_run_result_failure_invalidates_state.py`
+
+Current (the relevant lines inside the test):
+```python
+    monkeypatch.chdir(tmp_path)
+    result = RunResult(returncode=0, output_dir=tmp_path, stdout="", stderr="")
+```
+Replace the `monkeypatch.chdir(tmp_path)` line with a constant patch (keep everything else):
+```python
+    monkeypatch.setattr("osmose.history.RUN_HISTORY_DIR", tmp_path)
+    result = RunResult(returncode=0, output_dir=tmp_path, stdout="", stderr="")
+```
+Also update the test's docstring so it describes the new mechanism (the constant patch, not chdir). Then update the now-stale `.gitignore` comment:
+Run: `grep -n "data/history\|_handle_result" .gitignore` (the comment is at ~lines 6-9). Adjust the comment text to say the history-pollution guard is now via `monkeypatch.setattr` on `osmose.history.RUN_HISTORY_DIR` (not chdir). Keep the `data/history/` ignore line itself.
+
+Run: `.venv/bin/python -m pytest tests/test_run_result_failure_invalidates_state.py -v` → all PASS.
+Verify no pollution: `git status --short data/history/` → expected: NOTHING (the suite left no new `run_*.json` in the real dir; `data/history/` is gitignored anyway, but a clean `git status` confirms the constant-patch redirect worked).
 
 - [ ] **Step 2: Readers — `ui/pages/results.py` (5 sites, THREE distinct shapes)**
 
@@ -194,14 +220,15 @@ with (dedent the populate body — `default_run_history()` always yields a usabl
 
 Run: `.venv/bin/python -c "import ui.pages.run, ui.pages.results; print('import ok')"`
 Run: `grep -n ".osmose_history" ui/pages/results.py` → expected: NO matches (all 5 removed).
-Run: `grep -n "default_run_history" ui/pages/run.py ui/pages/results.py` → expected: 1 in run.py + 5 in results.py.
-Run: `.venv/bin/python -m pytest tests/test_ui_results.py -v` (the page still builds + the delta UI tests still pass; the `test_results_ui_builds` smoke must stay green).
+Run: `grep -c "RunHistory(" ui/pages/run.py ui/pages/results.py` → expected: **0 in both** (no more direct `RunHistory(...)` construction — all via `default_run_history()`). [Round-2 fix: do NOT assert a `default_run_history` occurrence count — `default_run_history` appears on BOTH the import line and the call line at each site, so a per-site count is ~2 in run.py and ~10 in results.py, not "1 + 5". The meaningful invariant is the *absence* of the old constructions, asserted here + by the `.osmose_history` grep above + the Task-3 static-source test.]
+Run: `grep -c "default_run_history" ui/pages/run.py ui/pages/results.py` → expected: **≥1 in each** (sanity that the helper is actually referenced; exact count not asserted).
+Run: `.venv/bin/python -m pytest tests/test_ui_results.py tests/test_run_result_failure_invalidates_state.py -v` (the page still builds + the delta UI tests still pass + the Step-1b writer-test passes; the `test_results_ui_builds` smoke must stay green).
 Run: `.venv/bin/ruff check ui/pages/run.py ui/pages/results.py && .venv/bin/ruff format --check ui/`.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add ui/pages/run.py ui/pages/results.py
+git add ui/pages/run.py ui/pages/results.py tests/test_run_result_failure_invalidates_state.py .gitignore
 git commit -m "fix(ui): Run tab + Compare Runs use canonical run-history dir (default_run_history)"
 ```
 
@@ -261,3 +288,7 @@ Use superpowers:requesting-code-review then superpowers:finishing-a-development-
 **Placeholder scan:** no TBD/TODO; every code step has before/after. The `_do_load_results` step says "read the exact block first + preserve the choice-dict body" with a `sed` to get it — a grounded instruction (the block's exact choice-dict construction wasn't captured in the audit), not a placeholder; the transformation (swap dir source to `default_run_history().list_runs()`) is fully specified. The test's exact-equality assertion has a documented fallback if `tests/` isn't directly under repo root. ✅
 
 **Type consistency:** `RUN_HISTORY_DIR` (Path) + `default_run_history() -> RunHistory` used identically across T1 (def), T2 (writer + 5 readers), T3 (tests). `default_run_history()` returns a `RunHistory` whose `.save`/`.list_runs`/`.load_run` are the existing API. The `_PROJECT_ROOT` parent-count (2 for `osmose/history.py`) is distinct from calibration's (3) — verified against file depth. ✅
+
+**Test-coverage honesty (round-2 finding MINOR-3):** the new `try/except` added to `comparison_chart`/`config_diff_table` (Shape A) is NOT exercised by any unit test — render fns aren't unit-tested by project convention (`test_results_ui_builds` only calls `results_ui()`, the pure layout; no render fn fires, so `default_run_history()` is never invoked there either, which is also why the page-build smoke does not pollute `data/history`). The guard's correctness rests on a **type-match argument**, verified against source: `comparison_chart` is `@render_plotly` and its except returns `go.Figure().update_layout(...)`; `config_diff_table` is `@render.ui` and returns `ui.div(...)` — each matches its decorator's contract, so the except cannot return a wrong type. The core writer==reader invariant IS covered (T1 round-trip + T3 static-source). Accepted as-is (matches the page's no-render-test convention); a reactive-context test of the except path is high-effort, low-value. ✅
+
+**Round-2 review status:** Reviewer A (codebase-accuracy, executing) → "FIXES VERIFIED, PLAN MATCHES SOURCE" (all 3 shapes / 5 sites / writer / return-values confirmed against live source). Reviewer B (adversarial, executing) → 1 MAJOR (CWD-absolute writer breaks `test_handle_result_success_sets_output_dir`'s chdir-based pollution guard → fixed in T2 Step 1b + `.gitignore` comment), 1 build-blocking MINOR (grep-count assertion wrong → fixed in T2 Step 3), 2 doc nits (MINOR-3 above; spec drift → one-line spec note added). All folded in. ✅
