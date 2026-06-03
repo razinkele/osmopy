@@ -358,9 +358,28 @@ override `--prefix` independently when the two run directories use different out
 - **Window is by simulation YEAR.** The time filter operates on the year column, so results are correct
   regardless of output cadence (annual or sub-annual records).
 
-**Deferred follow-ons.** Per-period "which year moved" trajectories, per-cell spatial deltas, and a UI
-"Compare Runs" tab are deferred. See
-`docs/superpowers/specs/2026-06-03-result-delta-tracking-design.md` for the rescope rationale.
+**Deferred follow-ons.** Per-period "which year moved" trajectories and per-cell spatial deltas are
+deferred. See `docs/superpowers/specs/2026-06-03-result-delta-tracking-design.md` for the rescope
+rationale.
+
+#### UI: Results → Compare Runs — output delta (shipped)
+
+The **Results → Compare Runs** tab in the Shiny UI now shows a per-species **output delta** directly
+when exactly two runs are selected in the run-history picker:
+
+- **Ranked table** — species sorted by absolute % change; positive = variant higher, negative = lower.
+- **Diverging bar chart** — instant visual of which species moved and in which direction.
+- **Baseline / variant convention** — the first selected run is the baseline, the second is the variant.
+  Swapping the selection order flips all signs.
+- **Metric selector** — switches between biomass, yield, and abundance (same options as `scripts/compare_runs.py`).
+- **Window-years slider** (`compare_window_years`) — trailing-mean window, matching the `--window-years`
+  flag of the CLI tool.
+
+The tab uses the same `run_delta` engine as `scripts/compare_runs.py`; results are numerically
+identical for the same metric and window. The **inherited limitation** from the CLI also applies: the
+run selector only populates when run history exists under `<output_dir>/../.osmose_history` (written by
+`osmose/calibration/history.py`). Runs launched directly (not via the calibrator) do not appear in the
+picker.
 
 Documented limitations that this example **does not currently represent**:
 
