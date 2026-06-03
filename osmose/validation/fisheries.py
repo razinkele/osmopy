@@ -1,8 +1,9 @@
 """Fishing-vs-natural mortality (F/M) diagnostics for OSMOSE outputs.
 
 Computes per-species F/M (realized fishing mortality vs natural mortality) from a
-finished run — for all species, no ICES reference points. F is OSMOSE's Recruits-stage
-instantaneous fishing mortality summed to annual; M = Mpred + Mstarv + Madd likewise.
+finished run — for all species, no ICES reference points. F and M are OSMOSE
+instantaneous mortality rates summed across life stages (Eggs+Pre-recruits+Recruits)
+and over the year; F is total fishing mortality, M = Mpred + Mstarv + Madd.
 F/M > 1 means fishing removes more than natural processes (an overexploitation signal).
 """
 
@@ -35,7 +36,7 @@ def annual_rate(per_step: pd.Series, steps_per_year: int, window_years: int) -> 
     return float(annual[-w:].mean())
 
 
-def read_mortality_recruits(path: Path) -> pd.DataFrame:
+def read_mortality(path: Path) -> pd.DataFrame:
     """Read a `mortalityRate-{sp}` CSV into a (cause, stage) MultiIndex frame.
 
     The real file has a 1-line description preamble, a cause header row, a stage
@@ -89,9 +90,10 @@ def compute_mortality_balance(
             print(f"WARN: no mortality file for {sp!r} at {path}", file=sys.stderr)
             continue
         try:
-            df = read_mortality_recruits(path)
-            f = annual_rate(df[("F", "Recruits")], steps_per_year, window_years)
-            m_series = sum(df[(c, "Recruits")] for c in _NATURAL_CAUSES)
+            df = read_mortality(path)
+            f_series = df["F"].sum(axis=1)
+            m_series = sum(df[c].sum(axis=1) for c in _NATURAL_CAUSES)
+            f = annual_rate(f_series, steps_per_year, window_years)
             m = annual_rate(m_series, steps_per_year, window_years)
         except (KeyError, ValueError, pd.errors.ParserError) as e:
             print(f"WARN: skipping {sp!r}: {e}", file=sys.stderr)
@@ -114,9 +116,10 @@ def format_mortality_report(balances: list[MortalityBalance], *, window_years: i
     lines = [
         "# OSMOSE fishing-vs-natural mortality (F/M)",
         "",
-        f"Model window: last {window_years} years. F is OSMOSE's Recruits-stage instantaneous "
-        "fishing mortality summed to annual (not an ICES Fbar); M = Mpred + Mstarv + Madd. "
-        "F/M > 1 means fishing removes more than natural processes.",
+        f"Model window: last {window_years} years. F and M are OSMOSE instantaneous "
+        "mortality rates summed across life stages (Eggs+Pre-recruits+Recruits) and over "
+        "the year; F is total fishing mortality, M = Mpred+Mstarv+Madd. F/M > 1 means "
+        "fishing removes more than natural processes.",
         "",
         "| species | F | M | F/M | overexploited |",
         "|---|---:|---:|---:|:---:|",

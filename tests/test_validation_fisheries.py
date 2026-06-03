@@ -8,8 +8,8 @@ from osmose.validation import fisheries as fz
 _FIXTURE = Path(__file__).parent / "fixtures" / "mortalityRate_sample.csv"
 
 
-def test_read_mortality_recruits_real_csv():
-    df = fz.read_mortality_recruits(_FIXTURE)
+def test_read_mortality_real_csv():
+    df = fz.read_mortality(_FIXTURE)
     assert ("F", "Recruits") in df.columns
     assert ("Mpred", "Recruits") in df.columns
     assert ("Mstarv", "Recruits") in df.columns
@@ -68,13 +68,47 @@ def test_compute_balance_m_zero_gives_none(tmp_path, monkeypatch):
         )
         return pd.DataFrame([[0.4, 0.0, 0.0, 0.0], [0.4, 0.0, 0.0, 0.0]], columns=cols)
 
-    monkeypatch.setattr(fz, "read_mortality_recruits", fake_reader)
+    monkeypatch.setattr(fz, "read_mortality", fake_reader)
     (tmp_path / "Mortality").mkdir()
     (tmp_path / "Mortality" / "osm_mortalityRate-x_Simu0.csv").write_text("stub")
     b = fz.compute_mortality_balance(
         tmp_path, prefix="osm", species_list=["x"], steps_per_year=1, window_years=2
     )[0]
     assert b.natural_mortality == 0.0 and b.f_over_m is None and b.overexploited is False
+
+
+def test_compute_balance_sums_fishing_across_stages(tmp_path, monkeypatch):
+    # F is in Pre-recruits (0.5/step), NOT Recruits; must NOT read as 0.
+    def fake_reader(path):
+        cols = pd.MultiIndex.from_tuples(
+            [
+                ("F", "Eggs"),
+                ("F", "Pre-recruits"),
+                ("F", "Recruits"),
+                ("Mpred", "Eggs"),
+                ("Mpred", "Pre-recruits"),
+                ("Mpred", "Recruits"),
+                ("Mstarv", "Eggs"),
+                ("Mstarv", "Pre-recruits"),
+                ("Mstarv", "Recruits"),
+                ("Madd", "Eggs"),
+                ("Madd", "Pre-recruits"),
+                ("Madd", "Recruits"),
+            ]
+        )
+        row = [0.0, 0.5, 0.0, 0.0, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # F=0.5, M=0.2
+        return pd.DataFrame([row, row], columns=cols)
+
+    monkeypatch.setattr(fz, "read_mortality", fake_reader)
+    (tmp_path / "Mortality").mkdir()
+    (tmp_path / "Mortality" / "osm_mortalityRate-y_Simu0.csv").write_text("stub")
+    b = fz.compute_mortality_balance(
+        tmp_path, prefix="osm", species_list=["y"], steps_per_year=1, window_years=2
+    )[0]
+    assert b.fishing_mortality == pytest.approx(0.5)  # NOT 0 — summed across stages
+    assert b.natural_mortality == pytest.approx(0.2)
+    assert b.f_over_m == pytest.approx(2.5)
+    assert b.overexploited is True
 
 
 def test_compute_balance_skips_missing_species(tmp_path):
@@ -86,7 +120,7 @@ def test_compute_balance_skips_missing_species(tmp_path):
 
 
 def test_compute_balance_skips_malformed_file(tmp_path):
-    # A 2-line malformed file makes read_mortality_recruits raise ParserError;
+    # A 2-line malformed file makes read_mortality raise ParserError;
     # compute must catch it and skip, not crash.
     (tmp_path / "Mortality").mkdir()
     (tmp_path / "Mortality" / "osm_mortalityRate-bad_Simu0.csv").write_text("preamble\nh1,h2\n")
@@ -113,7 +147,7 @@ def test_format_report_renders_with_none_fm():
     assert "cod" in md and "x" in md
     assert "F/M" in md
     assert "2.00" in md and "—" in md
-    assert "Recruits-stage" in md
+    assert "summed across life stages" in md
     assert "1 overexploited" in md
 
 

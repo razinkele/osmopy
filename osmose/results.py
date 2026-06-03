@@ -143,7 +143,7 @@ def _read_mortality_rate_csv(path: Path) -> pd.DataFrame:
 
     Skips the 1-line description preamble, reads the two header rows as a
     MultiIndex, and drops the all-NaN trailing column produced by the data rows'
-    trailing comma. Mirrors ``osmose.validation.fisheries.read_mortality_recruits``.
+    trailing comma. Mirrors ``osmose.validation.fisheries.read_mortality``.
     """
     df = pd.read_csv(path, skiprows=1, header=[0, 1])
     return df.dropna(axis=1, how="all")
