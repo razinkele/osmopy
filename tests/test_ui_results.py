@@ -1,15 +1,85 @@
 """Tests for results page chart generation functions."""
 
+import types
+
 import numpy as np
 import pandas as pd
-import xarray as xr
 import plotly.graph_objects as go
+import pytest
+import xarray as xr
 
+from ui.pages import results as rp
 from ui.pages.results import (
-    make_timeseries_chart,
     make_diet_heatmap,
+    make_timeseries_chart,
 )
 from ui.pages.grid_helpers import make_spatial_map
+
+
+class _FakeResults:
+    """Mimics OsmoseResults' wide biomass()/yield_biomass()/abundance() accessors."""
+
+    def __init__(self, frame):
+        self._f = frame
+
+    def biomass(self, species=None):
+        return self._f
+
+    def yield_biomass(self, species=None):
+        return self._f
+
+    def abundance(self, species=None):
+        return self._f
+
+
+def _wide(**species_to_series):
+    n = len(next(iter(species_to_series.values())))
+    d = {"Time": list(range(1, n + 1))}
+    d.update(species_to_series)
+    d["species"] = ["all"] * n
+    return pd.DataFrame(d)
+
+
+def _patch_osmose_results(monkeypatch, frames_by_dir):
+    """Patch osmose.results.OsmoseResults so each output_dir maps to a fixed wide frame."""
+
+    def _factory(output_dir, prefix="osm", strict=True):
+        return _FakeResults(frames_by_dir[str(output_dir)])
+
+    monkeypatch.setattr("osmose.results.OsmoseResults", _factory)
+
+
+def test_delta_for_selected_ranks_and_signs(monkeypatch):
+    frames = {
+        "base": _wide(cod=[100.0, 100.0], herring=[50.0, 50.0]),
+        "var": _wide(cod=[110.0, 110.0], herring=[100.0, 100.0]),
+    }
+    _patch_osmose_results(monkeypatch, frames)
+    recs = [types.SimpleNamespace(output_dir="base"), types.SimpleNamespace(output_dir="var")]
+    deltas = rp._delta_for_selected(recs, metric="biomass", window_years=2)
+    by = {d.species: d for d in deltas}
+    assert by["cod"].pct_delta == pytest.approx(0.10)
+    assert by["herring"].pct_delta == pytest.approx(1.0)
+    assert [d.species for d in deltas][0] == "herring"  # biggest |Δ%| first
+
+
+def test_delta_for_selected_swap_flips_sign(monkeypatch):
+    frames = {
+        "base": _wide(cod=[100.0, 100.0]),
+        "var": _wide(cod=[110.0, 110.0]),
+    }
+    _patch_osmose_results(monkeypatch, frames)
+    recs = [types.SimpleNamespace(output_dir="base"), types.SimpleNamespace(output_dir="var")]
+    fwd = rp._delta_for_selected(recs, metric="biomass", window_years=2)[0]
+    rev = rp._delta_for_selected(list(reversed(recs)), metric="biomass", window_years=2)[0]
+    assert fwd.pct_delta == pytest.approx(0.10)  # base→var: +10%
+    assert rev.pct_delta == pytest.approx(-10 / 110)  # var→base: -9.09%
+
+
+def test_delta_for_selected_requires_two(monkeypatch):
+    recs = [types.SimpleNamespace(output_dir="only")]
+    with pytest.raises(ValueError):
+        rp._delta_for_selected(recs, metric="biomass", window_years=2)
 
 
 def test_make_timeseries_chart_biomass():

@@ -169,6 +169,24 @@ def make_diet_heatmap(df: pd.DataFrame, template: str = "osmose") -> go.Figure:
     return fig
 
 
+def _delta_for_selected(records, metric: str, window_years: int):
+    """Per-species output delta between exactly two runs (baseline=records[0], variant=records[1]).
+
+    Reconstructs each run as OsmoseResults(rec.output_dir) and returns run_delta's
+    list[SpeciesDelta]. Raises ValueError unless exactly 2 records are given.
+    """
+    if len(records) != 2:
+        raise ValueError("need exactly 2 runs for a pairwise output delta")
+    from pathlib import Path
+
+    from osmose.analysis import run_delta
+    from osmose.results import OsmoseResults
+
+    baseline = OsmoseResults(Path(records[0].output_dir), strict=False)
+    variant = OsmoseResults(Path(records[1].output_dir), strict=False)
+    return run_delta(baseline, variant, metric=metric, window_years=window_years)
+
+
 # ---------------------------------------------------------------------------
 # Result method mapping — explicit lookup replaces fragile getattr
 # ---------------------------------------------------------------------------
