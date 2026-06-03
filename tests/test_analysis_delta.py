@@ -211,3 +211,16 @@ def test_run_delta_metric_switch():
     )
     d = {x.species: x for x in az.run_delta(base, var, metric="yield", window_years=1)}["cod"]
     assert d.pct_delta == pytest.approx(1.0)
+
+
+def test_format_delta_report():
+    deltas = [
+        az.SpeciesDelta("herring", 50.0, 100.0, 50.0, 1.0, False),
+        az.SpeciesDelta("cod", 0.0, 5.0, 5.0, None, True),
+    ]
+    md = az.format_delta_report(deltas, metric="biomass", window_years=10)
+    assert "herring" in md and "cod" in md
+    assert "biomass" in md
+    assert "+100.0%" in md or "100.0%" in md  # herring pct
+    assert "from 0" in md  # cod from-zero note
+    assert "B/Bmsy" not in md  # sanity: not the fisheries report

@@ -275,3 +275,30 @@ def run_delta(
 
     deltas.sort(key=_key, reverse=True)
     return deltas[:top_n] if top_n is not None else deltas
+
+
+def format_delta_report(
+    deltas: list[SpeciesDelta], *, metric: str = "biomass", window_years: int = 10
+) -> str:
+    """Markdown table of per-species deltas, ranked (as returned by run_delta)."""
+    lines = [
+        f"# OSMOSE run delta — {metric} (variant vs baseline)",
+        "",
+        f"Per-species mean {metric} over the last {window_years} years; ranked by |% change|. "
+        "Δ% is undefined for a zero-baseline species (shown 'from 0').",
+        "",
+        "| species | baseline | variant | Δ | Δ% |",
+        "|---|---:|---:|---:|---:|",
+    ]
+    for d in deltas:
+        if d.pct_delta is None:
+            pct = "— (from 0)" if d.from_zero else "—"
+        else:
+            pct = f"{d.pct_delta * 100:+.1f}%"
+        lines.append(
+            f"| {d.species} | {d.baseline_mean:.3g} | {d.variant_mean:.3g} | "
+            f"{d.abs_delta:+.3g} | {pct} |"
+        )
+    n_moved = sum(1 for d in deltas if d.abs_delta != 0.0)
+    lines += ["", f"**Summary:** {n_moved} of {len(deltas)} species changed.", ""]
+    return "\n".join(lines)
