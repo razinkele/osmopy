@@ -395,14 +395,11 @@ def results_server(input, output, session, state: AppState):
             ui.update_select("result_species", choices=species_choices)
 
             # Populate run comparison choices from history
-            from osmose.history import RunHistory
+            from osmose.history import default_run_history
 
-            history_dir = out_dir.parent / ".osmose_history"
-            if history_dir.is_dir():
-                history = RunHistory(history_dir)
-                runs = history.list_runs()
-                choices = {r.timestamp: f"{r.timestamp[:19]} ({r.duration_sec:.0f}s)" for r in runs}
-                ui.update_selectize("compare_runs_select", choices=choices)
+            runs = default_run_history().list_runs()
+            choices = {r.timestamp: f"{r.timestamp[:19]} ({r.duration_sec:.0f}s)" for r in runs}
+            ui.update_selectize("compare_runs_select", choices=choices)
 
             ui.notification_show("Results loaded successfully.", type="message", duration=3)
 
@@ -626,18 +623,17 @@ def results_server(input, output, session, state: AppState):
         if not selected or len(selected) < 1:
             return go.Figure().update_layout(title="Select runs to compare", template=tmpl)
 
-        from osmose.history import RunHistory
+        from osmose.history import default_run_history
         from osmose.plotting import make_run_comparison
 
         out_dir = _safe_output_dir(input.output_dir())
         if out_dir is None:
             return go.Figure().update_layout(title="Invalid output directory", template=tmpl)
-        history_dir = out_dir.parent / ".osmose_history"
-        if not history_dir.is_dir():
+        history = default_run_history()
+        try:
+            records = [history.load_run(ts) for ts in selected]
+        except Exception:  # noqa: BLE001 — stale/missing run file: degrade, don't crash the render
             return go.Figure().update_layout(title="No run history found", template=tmpl)
-
-        history = RunHistory(history_dir)
-        records = [history.load_run(ts) for ts in selected]
         metric = input.compare_metric()
         fig = make_run_comparison(records, metrics=[metric])
         fig.update_layout(template=tmpl)
@@ -649,17 +645,16 @@ def results_server(input, output, session, state: AppState):
         if not selected or len(selected) < 2:
             return ui.div("Select 2+ runs to see config differences.", style=STYLE_EMPTY)
 
-        from osmose.history import RunHistory
+        from osmose.history import default_run_history
 
         out_dir = _safe_output_dir(input.output_dir())
         if out_dir is None:
             return ui.div("Invalid output directory.")
-        history_dir = out_dir.parent / ".osmose_history"
-        if not history_dir.is_dir():
+        history = default_run_history()
+        try:
+            diffs = history.compare_runs_multi(list(selected))
+        except Exception:  # noqa: BLE001 — stale/missing run file: degrade, don't crash the render
             return ui.div("No run history found.")
-
-        history = RunHistory(history_dir)
-        diffs = history.compare_runs_multi(list(selected))
 
         if not diffs:
             return ui.div("No config differences found.", style=STYLE_EMPTY)
@@ -691,19 +686,16 @@ def results_server(input, output, session, state: AppState):
             return go.Figure().update_layout(
                 title="Select exactly 2 runs (1st = baseline, 2nd = variant)", template=tmpl
             )
-        from osmose.history import RunHistory
+        from osmose.history import default_run_history
         from osmose.plotting import make_run_delta_chart
 
         out_dir = _safe_output_dir(input.output_dir())
         if out_dir is None:
             return go.Figure().update_layout(title="Invalid output directory", template=tmpl)
-        history_dir = out_dir.parent / ".osmose_history"
-        if not history_dir.is_dir():
-            return go.Figure().update_layout(title="No run history found", template=tmpl)
 
         metric = input.compare_metric()
         try:
-            records = [RunHistory(history_dir).load_run(ts) for ts in selected]
+            records = [default_run_history().load_run(ts) for ts in selected]
             deltas = _delta_for_selected(records, metric, int(input.compare_window_years()))
         except Exception as e:  # noqa: BLE001 — UI guard: degrade to an error title, never crash the page
             return go.Figure().update_layout(title=f"Could not compute delta: {e}", template=tmpl)
@@ -720,19 +712,16 @@ def results_server(input, output, session, state: AppState):
                 "(1st = baseline, 2nd = variant). The config diff above supports more than 2.",
                 style=STYLE_EMPTY,
             )
-        from osmose.history import RunHistory
+        from osmose.history import default_run_history
         from osmose.analysis import format_delta_report
 
         out_dir = _safe_output_dir(input.output_dir())
         if out_dir is None:
             return ui.div("Invalid output directory.")
-        history_dir = out_dir.parent / ".osmose_history"
-        if not history_dir.is_dir():
-            return ui.div("No run history found.")
 
         metric = input.compare_metric()
         try:
-            records = [RunHistory(history_dir).load_run(ts) for ts in selected]
+            records = [default_run_history().load_run(ts) for ts in selected]
             window_years = int(input.compare_window_years())
             deltas = _delta_for_selected(records, metric, window_years)
         except Exception as e:  # noqa: BLE001 — UI guard: degrade to an error div, never crash the page

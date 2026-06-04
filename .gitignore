@@ -3,9 +3,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Run-history side effects produced by interactive Shiny sessions and
-# by tests that invoke the success branch of _handle_result(). The files
-# are local audit logs, never committed.
+# Run-history side effects produced by interactive Shiny sessions. The files
+# are local audit logs, never committed. Tests that exercise the success
+# branch of _handle_result() guard against polluting this dir by patching
+# osmose.history.RUN_HISTORY_DIR to a tmp_path (not via chdir).
 data/history/
 
 # C extensions

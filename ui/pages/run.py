@@ -400,9 +400,9 @@ def _handle_result(result, config, state, run_log, status):
         state.output_dir.set(result.output_dir)
         status.set(f"Complete. Output: {result.output_dir}")
         try:
-            from osmose.history import RunRecord, RunHistory
+            from osmose.history import RunRecord, default_run_history
 
-            history = RunHistory(Path("data/history"))
+            history = default_run_history()
             record = RunRecord(
                 config_snapshot=config,
                 duration_sec=0,

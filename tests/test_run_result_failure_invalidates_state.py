@@ -80,11 +80,12 @@ def test_handle_result_success_sets_output_dir(
 ):
     """On a successful run, state.output_dir must be set to the result's output_dir.
 
-    monkeypatch.chdir(tmp_path) so the unrelated history.save() side effect
-    (which writes to Path('data/history')) lands inside the test's tmp_path
-    instead of polluting the repo's working tree.
+    Patch osmose.history.RUN_HISTORY_DIR to tmp_path so the unrelated
+    history.save() side effect (which now writes to the canonical run-history
+    dir via default_run_history()) lands inside the test's tmp_path instead of
+    polluting the repo's working tree.
     """
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("osmose.history.RUN_HISTORY_DIR", tmp_path)
     result = RunResult(returncode=0, output_dir=tmp_path, stdout="", stderr="")
     _handle_result(result, config={}, state=state_stub, run_log=run_log_stub, status=status_stub)
     state_stub.output_dir.set.assert_called_once_with(tmp_path)
