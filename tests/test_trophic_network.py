@@ -197,3 +197,13 @@ def test_make_trophic_network_html_self_contained_fixed_layout():
     assert '"physics"' in html and "false" in html  # physics disabled
     assert '"x"' in html and '"y"' in html  # fixed coords emitted
     assert "cod" in html and "herring" in html
+
+
+def test_results_has_trophic_network_wiring():
+    src = (Path(__file__).resolve().parent.parent / "ui" / "pages" / "results.py").read_text()
+    assert "Trophic Network" in src  # the nav_panel
+    assert "trophic_network" in src  # the output id / render fn
+    assert "trophic_time" in src  # the time slider
+    assert "make_trophic_network_html" in src  # the builder is used
+    assert "update_slider" in src  # slider populated on load
+    assert "_dietMatrix" not in src  # reads via the helper, not a hardcoded glob here

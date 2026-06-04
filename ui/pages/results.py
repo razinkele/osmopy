@@ -289,6 +289,21 @@ def results_ui():
                 output_widget("diet_chart"),
             ),
             ui.nav_panel(
+                "Trophic Network",
+                # NB: this is an INDEX into the discrete diet-matrix Time list (see Step-3b/3c),
+                # NOT the raw Time value — so fractional/sub-annual Time steps are addressable.
+                ui.input_slider("trophic_time", "Timestep", min=0, max=0, value=0, step=1),
+                ui.input_radio_buttons(
+                    "trophic_predator_level",
+                    "Predator level",
+                    {"species": "Species", "stage": "Size stage"},
+                    selected="species",
+                    inline=True,
+                ),
+                ui.input_slider("trophic_threshold", "Min diet %", min=0, max=50, value=5, step=1),
+                ui.output_ui("trophic_network"),
+            ),
+            ui.nav_panel(
                 "Compare Runs",
                 ui.layout_columns(
                     ui.div(
@@ -403,6 +418,18 @@ def results_server(input, output, session, state: AppState):
                     for sp in state.species_names.get():
                         species_choices[sp] = sp
             ui.update_select("result_species", choices=species_choices)
+
+            # Trophic-network time slider = an INDEX into the discrete diet-matrix Time list
+            # (0 .. n-1), so fractional/sub-annual Time values are addressable (the raw Time
+            # is shown as a caption by the render fn). Leave at default if there's no diet output.
+            try:
+                from osmose.trophic_network import available_times
+
+                _times = available_times(out_dir)
+                if _times:
+                    ui.update_slider("trophic_time", min=0, max=len(_times) - 1, value=0)
+            except (FileNotFoundError, OSError, ValueError):
+                pass  # no diet output -> leave the slider at its default
 
             ui.notification_show("Results loaded successfully.", type="message", duration=3)
 
@@ -641,6 +668,64 @@ def results_server(input, output, session, state: AppState):
         tmpl = _tpl(input)
         df = _get_result_data("diet")
         return make_diet_heatmap(df, template=tmpl)
+
+    @reactive.calc
+    def _trophic_cache():
+        """(loaded-dir-keyed) cached (dir, times, {level: layout}) so slider ticks are cheap.
+
+        Keys off the LOADED output dir (results_obj + state.output_dir), not the live
+        output_dir text box, so it stays consistent with the rest of the Results page
+        (e.g. diet_chart) and doesn't re-read the diet CSV on every keystroke.
+        """
+        if results_obj.get() is None:
+            return None
+        out_dir = _safe_output_dir(str(state.output_dir.get() or ""))
+        if out_dir is None:
+            return None
+        from osmose.trophic_network import available_times, network_node_universe, species_layout
+
+        try:
+            times = available_times(out_dir)  # probes existence; raises if no diet matrix
+        except (FileNotFoundError, OSError, ValueError):
+            return None
+        if not times:
+            return None
+        layouts = {
+            lvl: species_layout(network_node_universe(out_dir, lvl)) for lvl in ("species", "stage")
+        }
+        return {"dir": out_dir, "times": times, "layouts": layouts}
+
+    @render.ui
+    def trophic_network():
+        cache = _trophic_cache()
+        if cache is None:
+            return ui.div("No diet-matrix output found.", style=STYLE_EMPTY)
+        try:
+            from osmose.trophic_network import diet_network_at, make_trophic_network_html
+        except ImportError:
+            return ui.div("Install pyvis to view the trophic network.", style=STYLE_EMPTY)
+        level = input.trophic_predator_level()
+        # The slider holds an INDEX into cache["times"]; map it to the actual Time (clamped),
+        # so a fractional/sub-annual Time is addressable and we never pass an absent time value.
+        times = cache["times"]
+        idx = max(0, min(int(input.trophic_time()), len(times) - 1))
+        t = times[idx]
+        try:
+            net = diet_network_at(
+                cache["dir"],
+                time=t,
+                threshold=float(input.trophic_threshold()),
+                predator_level=level,
+            )
+            html = make_trophic_network_html(net, positions=cache["layouts"][level])
+        except (FileNotFoundError, OSError, ValueError) as e:
+            return ui.div(f"Could not build trophic network: {e}", style=STYLE_EMPTY)
+        return ui.div(
+            ui.tags.small(f"Time {t:g}", style=STYLE_MONO_KEY),
+            ui.tags.iframe(
+                srcdoc=html, style="width:100%; height:640px; border:0;", sandbox="allow-scripts"
+            ),
+        )
 
     @render_plotly
     def comparison_chart():
