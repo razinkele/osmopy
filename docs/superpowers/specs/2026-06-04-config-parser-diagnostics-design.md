@@ -65,7 +65,9 @@ missing_subconfig, path_escape}` (the line/file is genuinely broken); **warnings
     "unparseable", "")` AND keep the log warning (now including the line number); `skipped += 1`
     unchanged.
   - **Empty key** (`len(parts) == 2` but the lowercased `key == ""`): this is the separator-led
-    line class (`=value`, `,,`, `;;`, `:`). Distinguish two sub-cases:
+    line class (`=value`, `,,`, `;;`, `:`). Classify on the **post-rstrip `value`** the reader
+    already computes (`value = parts[1].strip().rstrip(";,:\t =")`) — e.g. `,,` splits to
+    `["", ","]` and rstrips to `value == ""`. Distinguish two sub-cases:
     - `value == ""` too (a `,,`/`;;` **blank spacer row** — a real, intentional pattern in shipped
       CSVs, e.g. `data/eec_full/eec_param-output.csv:5,7,8,24`): **benign — emit NO diagnostic.**
     - `value != ""` (a genuine `=value` typo that lost its key): emit `ConfigDiagnostic(file,
