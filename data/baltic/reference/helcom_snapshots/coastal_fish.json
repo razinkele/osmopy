@@ -1,0 +1,128 @@
+[
+  {
+    "sub_basin": "Arkona Basin",
+    "country": "Denmark",
+    "eqr": 0.45,
+    "status": "Fail"
+  },
+  {
+    "sub_basin": "Bay of Mecklenburg",
+    "country": "Denmark",
+    "eqr": 0.45,
+    "status": "Fail"
+  },
+  {
+    "sub_basin": "Bornholm Basin",
+    "country": "Sweden",
+    "eqr": 0.15,
+    "status": "Fail"
+  },
+  {
+    "sub_basin": "Bothnian Bay",
+    "country": "Finland",
+    "eqr": 0.9,
+    "status": "Achieve"
+  },
+  {
+    "sub_basin": "Bothnian Bay",
+    "country": "Sweden",
+    "eqr": 0.7,
+    "status": "Achieve"
+  },
+  {
+    "sub_basin": "Bothnian Sea",
+    "country": "Finland",
+    "eqr": 0.7,
+    "status": "Achieve"
+  },
+  {
+    "sub_basin": "Bothnian Sea",
+    "country": "Sweden",
+    "eqr": 0.15,
+    "status": "Fail"
+  },
+  {
+    "sub_basin": "Eastern Gotland Basin",
+    "country": "Latvia",
+    "eqr": 0.7,
+    "status": "Achieve"
+  },
+  {
+    "sub_basin": "Eastern Gotland Basin",
+    "country": "Lithuania",
+    "eqr": 0.45,
+    "status": "Fail"
+  },
+  {
+    "sub_basin": "Gdansk Basin",
+    "country": "Poland",
+    "eqr": 0.45,
+    "status": "Fail"
+  },
+  {
+    "sub_basin": "Great Belt",
+    "country": "Denmark",
+    "eqr": 0.45,
+    "status": "Fail"
+  },
+  {
+    "sub_basin": "Gulf of Finland",
+    "country": "Finland",
+    "eqr": 0.45,
+    "status": "Fail"
+  },
+  {
+    "sub_basin": "Gulf of Riga",
+    "country": "Estonia",
+    "eqr": 0.7,
+    "status": "Achieve"
+  },
+  {
+    "sub_basin": "Gulf of Riga",
+    "country": "Latvia",
+    "eqr": 0.7,
+    "status": "Achieve"
+  },
+  {
+    "sub_basin": "Northern Baltic Proper",
+    "country": "Sweden",
+    "eqr": 0.15,
+    "status": "Fail"
+  },
+  {
+    "sub_basin": "The Quark",
+    "country": "Finland",
+    "eqr": 0.45,
+    "status": "Fail"
+  },
+  {
+    "sub_basin": "The Quark",
+    "country": "Sweden",
+    "eqr": 0.45,
+    "status": "Fail"
+  },
+  {
+    "sub_basin": "The Sound",
+    "country": "Denmark",
+    "eqr": 0.45,
+    "status": "Fail"
+  },
+  {
+    "sub_basin": "Western Gotland Basin",
+    "country": "Sweden",
+    "eqr": 0.15,
+    "status": "Fail"
+  },
+  {
+    "sub_basin": "Åland Sea",
+    "country": "Finland",
+    "eqr": 0.15,
+    "status": "Fail"
+  },
+  {
+    "sub_basin": "Åland Sea",
+    "country": "Sweden",
+    "eqr": 0.15,
+    "status": "Fail"
+  }
+]

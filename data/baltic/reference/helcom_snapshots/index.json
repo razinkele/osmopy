@@ -1,0 +1,33 @@
+{
+  "assessment": "HOLAS 3",
+  "created": "2026-06-04",
+  "source_service": "https://maps.helcom.fi/arcgis/rest/services/MADS/Indicators_and_assessments/MapServer",
+  "source_layers": {
+    "commercial_fish": 434,
+    "coastal_fish": 417
+  },
+  "domain": "ICES SD 22-32 (commercial); Baltic coastal sub-basins (coastal). SD 21 Kattegat and the Kattegat coastal water bodies are excluded as outside the model domain.",
+  "ges_boundary": 0.6,
+  "ges_boundary_note": "External HELCOM convention (BQR/EQR >= 0.6 = Good Environmental Status). NOT a field returned by the service; sourced from the HOLAS 3 narrative reports.",
+  "confidence_note": "Layer 434 returned Confidence = 0 for every SD in this vintage; the field carries no per-SD signal and is not stored.",
+  "model_species_to_guild": {
+    "cod": "demersal",
+    "flounder": "demersal",
+    "sprat": "pelagic",
+    "herring": "pelagic",
+    "perch": "coastal",
+    "pikeperch": "coastal",
+    "smelt": "unassessed",
+    "stickleback": "unassessed",
+    "GreySeal": "excluded",
+    "Cormorant": "excluded"
+  },
+  "guild_note": "Commercial layer 434 resolves only two buckets, DEM (demersal) and PEL (pelagic) - no per-species value. Coastal layer 417 is an aggregated 'Integrated abundance coastal fish species' EQR per sub-basin - no per-species value either. smelt + stickleback are in neither indicator (forage). The mapping records intent; HOLAS 3 cannot score any single species.",
+  "domain_summary": {
+    "commercial_demersal_mean_bqr": 0.345,
+    "commercial_pelagic_mean_bqr": 0.306,
+    "commercial_demersal_ges_fraction": "0/12",
+    "commercial_pelagic_ges_fraction": "1/12",
+    "verdict": "Whole model domain is sub-GES for commercial fish (both guilds well below the 0.6 boundary). The only SD reaching GES is SD 31 (pelagic, Bothnian Bay). This leaves HOLAS 3 with no discriminating signal across the domain - the reason a quantitative HOLAS 3 validator was not built. See docs/baltic_holas3_diagnostic_2026-06-04.md."
+  }
+}
