@@ -19,6 +19,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
   a `scripts/compute_size_spectrum.py` CLI, and a `make_size_indicator_timeseries` trend chart.
   A length–biomass spectrum for trend/comparison (not the Sheldon exponent). Validated on the
   EEC config; works on any run that emits by-size output.
+- **ui (trophic network):** a Results → Trophic Network sub-tab renders the per-timestep diet
+  matrix as an interactive pyvis node-link graph (predator→prey, cannibalism self-loops) with a
+  fixed layout and a time-slider, so the diet network can be stepped through over time. Shows diet
+  composition (proportions), predator size-stages averaged unweighted — not consumption-weighted
+  flow. New `osmose.trophic_network` module + a `pyvis` dependency.
 
 ### Fixed
 
