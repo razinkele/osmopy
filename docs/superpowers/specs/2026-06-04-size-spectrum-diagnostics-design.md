@@ -34,6 +34,10 @@ corrected facts:
   those accessors. It reuses `osmose.results._read_output_csv` (which correctly strips the
   preamble) + `pathlib` globbing; this is a small read helper inside the new module — **no change
   to `OsmoseResults`** (keeps blast radius minimal; the existing accessors are left alone).
+  **Coupling note:** `_read_output_csv` is a private (`_`-prefixed) cross-module helper and
+  `results.py` exposes no public preamble-safe free reader; we depend on it deliberately (the only
+  alternative is duplicating `_detect_preamble_lines` + the read). Acceptable given no public
+  equivalent; if `results.py` refactors its reader this import must be updated.
 - **Empty/0-byte file** (the committed Baltic case) → `_read_output_csv` raises
   `pandas.errors.EmptyDataError`, NOT `FileNotFoundError`. Must catch both (+ a present-but-empty
   frame).
