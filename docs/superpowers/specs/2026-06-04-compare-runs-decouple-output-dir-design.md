@@ -35,8 +35,9 @@ residual coupling cause this:
     is None: return <invalid-dir result>` block (chart returns a `go.Figure` titled "Invalid
     output directory"; the `@render.ui` ones return `ui.div("Invalid output directory.")`).
   - `compare_runs_select` is defined in `results_ui()` (~:287) with `choices={}, multiple=True`.
-- `_safe_output_dir` stays — still used by `_do_load_results`, `download_results_csv`,
-  `results_chart`, the diet/timeseries readers, etc.
+- `_safe_output_dir` stays — still used by `_load_results` (~:441) and `download_results_csv`
+  (~:742) directly (the results/diet charts go through the already-loaded `results_obj`). It
+  must not be deleted.
 - Render functions and `@reactive.effect`s are NOT unit-tested by project convention; the
   page's pure helpers are (`tests/test_ui_results.py`). `default_run_history().list_runs()`
   returns `[]` on an empty/absent history (it mkdir-creates the dir and globs).
@@ -62,8 +63,11 @@ readers (`results_chart`, `diet_chart`, `download_results_csv`, etc.).
       """Build the compare_runs_select choices dict from RunHistory.list_runs() records."""
       return {r.timestamp: f"{r.timestamp[:19]} ({r.duration_sec:.0f}s)" for r in runs}
   ```
-- **Add** a dedicated effect in `results_server` that populates the selector whenever the user
-  is on the Results tab, independent of any output dir:
+- **Add** a `_last_compare_choices = reactive.Value({})` near the other module-level reactive
+  values in `results_server`, and a dedicated effect that populates the selector whenever the
+  user enters the Results tab, independent of any output dir, **but only re-pushes when the
+  choices actually changed** (avoids re-`update_selectize` flicker / momentary selection
+  clobber on every re-navigation — see Honest limitations):
   ```python
   @reactive.effect
   def _populate_compare_runs():
@@ -76,17 +80,35 @@ readers (`results_chart`, `diet_chart`, `download_results_csv`, etc.).
           return
       choices = _compare_run_choices(runs)
       with reactive.isolate():
+          if choices == _last_compare_choices.get():
+              return  # nothing new — don't tear down the widget / clobber selection
           current = input.compare_runs_select()
+      _last_compare_choices.set(choices)
       keep = [ts for ts in (current or ()) if ts in choices]
       ui.update_selectize("compare_runs_select", choices=choices, selected=keep)
   ```
-  `selected=keep` preserves the user's current picks across a re-populate (history only grows,
-  so prior selections stay valid); reading `current` under `reactive.isolate()` avoids making
-  the effect re-fire on every selection change.
-- **Remove** the `compare_runs_select` populate block from `_do_load_results` (the species
-  populate there stays). The nav-triggered effect is now the single populate path. A
-  just-finished run still appears: the post-run auto-load flips `main_nav` to "results", which
-  fires the effect.
+  - `input.main_nav()` is the only reactive dependency (it's read outside `isolate()`); both
+    `_last_compare_choices` and `input.compare_runs_select()` are read under `reactive.isolate()`
+    so the effect does NOT re-fire on a selection change or on its own `update_selectize` write
+    (confirmed no reactive loop in Shiny 1.5.1).
+  - The changed-only guard makes re-entering the Results tab a no-op when no new run was
+    recorded — preserving the widget's DOM state (today's run-once behavior) — while still
+    picking up a newly-saved run (its timestamp changes the dict).
+  - `selected=keep` preserves the user's current picks across a real re-populate (history only
+    grows, so prior selections stay valid); `keep == []` is fine.
+- **Remove** the `compare_runs_select` populate block from `_do_load_results` (the
+  `result_species` populate there stays). `_populate_compare_runs` is then the SOLE writer of
+  `compare_runs_select` (no double-populate). It and `_auto_load_results` both key on
+  `input.main_nav() == "results"` and run in the same flush, but they touch DISJOINT widgets
+  (`compare_runs_select` vs `result_species`), so their (non-deterministic) order is
+  irrelevant.
+- **Trigger reality (corrected):** the selector populates whenever the user *enters* the
+  Results tab — output-dir-independent. There is **no** auto-navigation to Results after a run
+  (`_handle_result` in `run.py` stays on the Run tab; `run.py`'s only `update_navset` targets
+  the in-page `run_engine_tabs` sub-tab, not `main_nav`). A just-finished run therefore appears
+  the next time the user navigates to Results (which is the natural action to view results). We
+  deliberately do **not** add auto-navigation — it would pull the user off the Run console
+  mid-review.
 
 ## Error handling
 
@@ -103,12 +125,19 @@ readers (`results_chart`, `diet_chart`, `download_results_csv`, etc.).
   - `_compare_run_choices` on a list of fake records (e.g. `types.SimpleNamespace(timestamp=
     "2026-06-03T12:00:00", duration_sec=42.0)`) → asserts the exact `{ts: "2026-06-03T12:00:00
     (42s)"}` mapping; and `[]` → `{}`.
-  - A static-source regression guard: the four Compare Runs reader functions' bodies no longer
-    contain `"Invalid output directory"` (read `ui/pages/results.py` source, assert the count
-    of that string dropped to only the genuinely-output-dir-dependent readers — or assert the
-    four reader names are not followed by an output-dir guard; simplest robust form: assert
-    `results.py` no longer early-returns "Invalid output directory" from the Compare Runs
-    readers by checking the total occurrence count equals the known post-fix count).
+  - A static-source regression guard. Real counts today: `"Invalid output directory"` appears
+    **5×** in `ui/pages/results.py` — once in the `_load_results` notification (`~:444`, string
+    `"Invalid output directory: must be inside the working directory."` — KEEPS) and once in
+    each of the four Compare Runs guards being removed. A bare `grep -c` is fragile (the
+    surviving notification shares the prefix). Use a form that targets ONLY the removed guards:
+    read the source and assert both removed guard-return forms are gone —
+    `src.count('return go.Figure().update_layout(title="Invalid output directory"') == 0` (the
+    two chart guards) **and** `src.count('ui.div("Invalid output directory.")') == 0` (the two
+    `@render.ui` guards). These two exact strings exist only in the four removed guards, so the
+    surviving `:444` notification is untouched. (A function-slice assertion over the four reader
+    bodies is an acceptable alternative; the two-exact-string form is simplest and robust.)
+  - Optionally also assert the new `_populate_compare_runs` effect is wired:
+    `"_populate_compare_runs" in src` and `"_last_compare_choices" in src`.
 - Render fns/effects not unit-tested (convention) → a manual UI run-through: launch the app,
   do NOT load an output dir, open Results → Compare Runs, confirm the selector lists the
   committed run records and that selecting 2 renders the comparison chart + config diff +
@@ -125,9 +154,11 @@ readers (`results_chart`, `diet_chart`, `download_results_csv`, etc.).
 
 ## Honest limitations
 
-- The selector refreshes on entering the Results tab, not live while you sit on it — a run
-  finished in another browser session won't appear until you re-navigate. Acceptable: runs are
-  launched from the Run tab in the same session, and the post-run auto-load re-navigates.
+- The selector refreshes when you enter the Results tab, not live while you sit on it — a run
+  finished elsewhere won't appear until you re-navigate. Acceptable: runs are launched from the
+  Run tab in the same session, and viewing them means navigating to Results anyway (which fires
+  the populate). The changed-only guard makes that re-entry cheap (no widget rebuild unless a
+  new run was actually recorded).
 - Compare Runs still lives under the Results page (same tab group); this fixes its data
   dependence, not its placement.
 
