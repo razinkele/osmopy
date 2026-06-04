@@ -332,6 +332,7 @@ def results_server(input, output, session, state: AppState):
     results_data: reactive.Value[dict[str, pd.DataFrame]] = reactive.Value({})
     rep_dirs: reactive.Value[list[Path]] = reactive.Value([])
     _prev_output_dir: reactive.Value[str] = reactive.Value("")
+    _last_compare_choices: reactive.Value[dict[str, str]] = reactive.Value({})
 
     @render.ui
     def output_dir_input():
@@ -403,13 +404,6 @@ def results_server(input, output, session, state: AppState):
                         species_choices[sp] = sp
             ui.update_select("result_species", choices=species_choices)
 
-            # Populate run comparison choices from history
-            from osmose.history import default_run_history
-
-            runs = default_run_history().list_runs()
-            choices = {r.timestamp: f"{r.timestamp[:19]} ({r.duration_sec:.0f}s)" for r in runs}
-            ui.update_selectize("compare_runs_select", choices=choices)
-
             ui.notification_show("Results loaded successfully.", type="message", duration=3)
 
             state.results_loaded.set(True)
@@ -469,6 +463,29 @@ def results_server(input, output, session, state: AppState):
         if out and not loaded and Path(str(out)).is_dir():
             ui.update_text("output_dir", value=str(out))
             _do_load_results(Path(str(out)))
+
+    @reactive.effect
+    def _populate_compare_runs():
+        """Populate the Compare Runs selector from run history whenever the user is on
+        the Results tab — independent of any loaded output dir. Changed-only guard avoids
+        re-tearing-down the widget (and clobbering the selection) on every re-navigation;
+        selection is preserved across a real refresh (a newly recorded run)."""
+        if input.main_nav() != "results":
+            return
+        from osmose.history import default_run_history
+
+        try:
+            runs = default_run_history().list_runs()
+        except Exception:  # noqa: BLE001 — never crash the page on a history-read error
+            return
+        choices = _compare_run_choices(runs)
+        with reactive.isolate():
+            if choices == _last_compare_choices.get():
+                return
+            current = input.compare_runs_select()
+        _last_compare_choices.set(choices)
+        keep = [ts for ts in (current or ()) if ts in choices]
+        ui.update_selectize("compare_runs_select", choices=choices, selected=keep)
 
     @reactive.effect
     def _reset_results_loaded():

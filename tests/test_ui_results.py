@@ -291,3 +291,17 @@ def test_compare_runs_readers_have_no_output_dir_guard():
     ).read_text()
     assert src.count('return go.Figure().update_layout(title="Invalid output directory"') == 0
     assert src.count('ui.div("Invalid output directory.")') == 0
+
+
+def test_compare_runs_selector_populated_independently_of_output_dir():
+    """The selector is populated by a nav-triggered effect reading run history,
+    not by _do_load_results. Assert the new wiring exists and the old populate
+    block (its distinctive comment) is gone from _do_load_results."""
+    import pathlib
+
+    src = (
+        pathlib.Path(__file__).resolve().parent.parent / "ui" / "pages" / "results.py"
+    ).read_text()
+    assert "_populate_compare_runs" in src
+    assert "_last_compare_choices" in src
+    assert "Populate run comparison choices from history" not in src
