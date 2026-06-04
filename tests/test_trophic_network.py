@@ -10,7 +10,9 @@ from osmose.trophic_network import (
     _split_species,
     available_times,
     diet_network_at,
+    make_trophic_network_html,
     network_node_universe,
+    species_layout,
 )
 
 
@@ -168,3 +170,30 @@ def test_diet_network_eec_real():
     assert len(net) > 0 and (net["proportion"] >= 0).all()
     # species-level: no size suffix in node names
     assert not any(" in [" in s for s in set(net["predator"]) | set(net["prey"]))
+
+
+def test_species_layout_deterministic():
+    a = species_layout(["cod", "herring", "sprat"])
+    b = species_layout(["sprat", "cod", "herring"])
+    assert set(a) == {"cod", "herring", "sprat"}
+    assert a["cod"] == b["cod"]  # deterministic (fixed seed), order-independent
+    assert all(isinstance(v, tuple) and len(v) == 2 for v in a.values())
+
+
+def test_make_trophic_network_html_self_contained_fixed_layout():
+    pytest.importorskip("pyvis")
+    import pandas as pd
+
+    df = pd.DataFrame(
+        {
+            "predator": ["cod", "herring", "cod"],
+            "prey": ["herring", "cod", "cod"],  # mutual cycle + self-loop
+            "proportion": [70.0, 10.0, 20.0],
+        }
+    )
+    pos = species_layout(["cod", "herring"])
+    html = make_trophic_network_html(df, positions=pos, threshold=0.0)
+    assert 'src="lib/' not in html  # self-contained (cdn_resources='in_line')
+    assert '"physics"' in html and "false" in html  # physics disabled
+    assert '"x"' in html and '"y"' in html  # fixed coords emitted
+    assert "cod" in html and "herring" in html

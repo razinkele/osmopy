@@ -113,3 +113,45 @@ def diet_network_at(
 
     out = out[out["proportion"] >= threshold]
     return out[["predator", "prey", "proportion"]].reset_index(drop=True)
+
+
+def species_layout(node_ids: list[str]) -> dict[str, tuple[float, float]]:
+    """Deterministic FIXED (x, y) per node, scaled for vis.js.
+
+    Computed once over the all-timestep node universe (so positions are stable as
+    the time-slider moves — the graph doesn't re-jiggle per frame). Uses a
+    fixed-seed networkx spring layout.
+    """
+    import networkx as nx
+
+    g = nx.Graph()
+    g.add_nodes_from(sorted(set(node_ids)))
+    pos = nx.spring_layout(g, seed=42)
+    return {n: (float(x) * 600.0, float(y) * 600.0) for n, (x, y) in pos.items()}
+
+
+def make_trophic_network_html(
+    diet_df: pd.DataFrame,
+    *,
+    positions: dict[str, tuple[float, float]],
+    threshold: float = 5.0,
+    height: str = "600px",
+) -> str:
+    """Self-contained pyvis node-link HTML (fixed layout, physics off) for a diet network."""
+    from pyvis.network import Network
+
+    net = Network(directed=True, cdn_resources="in_line", height=height, width="100%")
+    net.set_options('{"physics": {"enabled": false}}')
+    df = diet_df[diet_df["proportion"] >= threshold]
+    nodes = sorted(set(df["predator"]) | set(df["prey"]))
+    for n in nodes:
+        x, y = positions.get(n, (0.0, 0.0))
+        net.add_node(n, label=n, x=float(x), y=float(y), physics=False)
+    for row in df.itertuples():
+        net.add_edge(
+            row.predator,
+            row.prey,
+            value=float(row.proportion),
+            title=f"{row.proportion:.1f}% of {row.predator}'s diet",
+        )
+    return net.generate_html()
