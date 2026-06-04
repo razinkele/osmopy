@@ -6,6 +6,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ## [Unreleased]
 
+### Fixed
+
+- **ui (run history):** Run-tab history writer and the Results "Compare Runs" selector now share a
+  canonical directory (`data/history` via `osmose.history.RUN_HISTORY_DIR` / `default_run_history()`).
+  Previously the writer used `data/history` while the reader looked for `<output_dir>/../.osmose_history`
+  — a path that was never created — so the Compare Runs tab (selector, config-diff, comparison chart,
+  and output-delta section) was entirely non-functional. This fix resurrects it; all existing run
+  records in `data/history` now appear in the Compare Runs selector.
+
 ## [0.12.0] - 2026-05-08
 
 Headline: **−37.8 % engine wall-time on eec_full 5-yr** (4.872 s → 3.030 s) from vectorising the non-JIT'd Python-side hot paths, plus density-dependent recruitment, calibration speedup roadmap, DE bounded-runtime guards, and the deep-review remediation suite.

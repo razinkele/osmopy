@@ -164,3 +164,16 @@ def test_writer_reader_roundtrip_same_dir(monkeypatch, tmp_path):
     found = default_run_history().list_runs()
     assert [r.timestamp for r in found] == ["2026-06-03T12:00:00"]
     assert default_run_history().load_run("2026-06-03T12:00:00").output_dir == "/x/output"
+
+
+def test_run_and_results_use_default_run_history():
+    import pathlib
+
+    repo = pathlib.Path(__file__).resolve().parent.parent
+    run_src = (repo / "ui" / "pages" / "run.py").read_text()
+    res_src = (repo / "ui" / "pages" / "results.py").read_text()
+    assert "default_run_history" in run_src
+    assert "default_run_history" in res_src
+    # the old mismatched paths must be gone
+    assert 'RunHistory(Path("data/history"))' not in run_src
+    assert ".osmose_history" not in res_src
