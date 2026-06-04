@@ -128,9 +128,10 @@ class OsmoseConfigReader:
             raise ValueError(f"Config file too large: {filepath} ({st.st_size} bytes)")
         result: dict[str, str] = {}
         skipped = 0
+        seen_keys: set[str] = set()
         with open(filepath, "r", encoding="utf-8", errors="replace") as f:
-            for line in f:
-                line = line.strip()
+            for lineno, raw_line in enumerate(f, 1):
+                line = raw_line.strip()
                 if not line or line[0] in self.COMMENT_CHARS:
                     continue
                 parts = self.SEPARATORS.split(line, maxsplit=1)
@@ -140,10 +141,41 @@ class OsmoseConfigReader:
                     value = parts[1].strip()
                     # Strip trailing separators (e.g., "true," → "true")
                     value = value.rstrip(";,:\t =")
+                    if key == "":
+                        # Separator-led line. ",,"/";;" (empty value) are benign blank rows;
+                        # "=value" (lost its key) is a real error. Storage is unchanged below;
+                        # empty keys are never tracked for duplicates.
+                        if value != "":
+                            self.diagnostics.append(
+                                ConfigDiagnostic(
+                                    filepath.name,
+                                    lineno,
+                                    line,
+                                    "empty_key",
+                                    "missing key before separator",
+                                )
+                            )
+                    elif key in seen_keys:
+                        self.diagnostics.append(
+                            ConfigDiagnostic(
+                                filepath.name,
+                                lineno,
+                                line,
+                                "duplicate_key",
+                                f"overrides earlier '{self.key_case_map.get(key, key)}'",
+                            )
+                        )
                     result[key] = value
                     self.key_case_map[key] = raw_key
+                    if key != "":
+                        seen_keys.add(key)
                 else:
-                    _log.warning("Skipping unparseable line in %s: %r", filepath.name, line)
+                    self.diagnostics.append(
+                        ConfigDiagnostic(filepath.name, lineno, line, "unparseable", "")
+                    )
+                    _log.warning(
+                        "Skipping unparseable line %d in %s: %r", lineno, filepath.name, line
+                    )
                     skipped += 1
         self.skipped_lines += skipped
         return result
