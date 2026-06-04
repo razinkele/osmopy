@@ -31,7 +31,7 @@
   `_empty_figure(title)`, `_require_columns(df, *cols, context=)`.
 - EEC round-2 numbers (for the fixture test ballpark): all-bins biomass slope ≈ **−1.90** (R²0.67);
   min_size 10cm → ≈ **−2.77** (R²0.84); LFI@40 ≈ **0.073**; value-weighted mean midpoint ≈
-  **20.8 cm**; peak at the 10 cm bin.
+  **20.8 cm**; `peak_size_cm` ≈ **15.0** (the modal bin is the 10 cm-*edge* bin → midpoint 15).
 - CLI pattern (`scripts/compare_runs.py`): argparse `RawDescriptionHelpFormatter` + `description=__doc__`;
   `parser.error(...)` for bad args (exit 2); `dataclasses.asdict` for `--json`; `--plot <prefix>`
   writing `{prefix}_*.html` via `.write_html`; `main(argv=None) -> int` returning 0; `sys.exit(main())`.
@@ -47,6 +47,14 @@
 - Create: `scripts/compute_size_spectrum.py` — CLI.
 - Create: `tests/test_size_spectrum.py` — unit + EEC-fixture + plotting-smoke tests.
 - Modify: `CHANGELOG.md` — Unreleased/Added note.
+
+> **TEST-FILE IMPORT CONVENTION (avoids ruff E402 — important).** ALL module-level imports in
+> `tests/test_size_spectrum.py` must live in the **import block at the TOP of the file**. Each task
+> that needs new imports **edits that top block** (via the Edit tool) to add them, and then
+> **appends only test functions** to the end of the file. Do NOT append `import`/`from … import`
+> lines after the test functions — ruff `E402` ("module level import not at top of file") flags
+> that and `ruff format`/`ruff check --fix` does NOT auto-fix it, so the lint gate (and CI) fails.
+> Plotting tests (Task 4) import inside their test functions (function-local), which is fine.
 
 ---
 
@@ -234,19 +242,32 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 - [ ] **Step 1: Write failing tests**
 
-Append to `tests/test_size_spectrum.py`:
+First, **edit the top-of-file import block** of `tests/test_size_spectrum.py` (per the convention
+above — do NOT append these imports at the end). Add `from pathlib import Path` and extend the
+`from osmose.size_spectrum import (...)` block so it includes the new names — the consolidated top
+block becomes:
 ```python
+from __future__ import annotations
+
 from pathlib import Path
+
+import pandas as pd
+import pytest
 
 from osmose.size_spectrum import (
     SizeSpectrum,
+    _community_long,
+    _infer_bin_width,
     _large_fish_indicator,
     _mean_size,
+    _read_community_by_size,
+    _window_by_time,
     compute_size_spectrum,
     spectrum_plot_df,
 )
-
-
+```
+Then **append these test functions** to the END of the file:
+```python
 def test_large_fish_indicator():
     # edges 0,10,40,50 ; values 1,1,1,1 ; threshold 40 -> bins 40,50 -> 2/4
     assert _large_fish_indicator([0.0, 10.0, 40.0, 50.0], [1.0, 1.0, 1.0, 1.0], 40.0) == 0.5
@@ -385,7 +406,10 @@ def _mean_size(midpoints: list[float], values: list[float]) -> float:
 
 
 def _fit_slope(midpoints, values, min_size_cm):
-    """Reuse analysis.size_spectrum_slope; apply min_size_cm filter; ValueError -> None."""
+    """Reuse analysis.size_spectrum_slope; apply min_size_cm filter; ValueError -> None.
+
+    Note: min_size_cm is compared to bin MIDPOINTS (the `size` axis of the fit), not lower edges.
+    """
     df = pd.DataFrame({"size": midpoints, "abundance": values})
     if min_size_cm is not None:
         df = df[df["size"] >= min_size_cm]
@@ -487,11 +511,10 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 - [ ] **Step 1: Write failing tests**
 
-Append to `tests/test_size_spectrum.py`:
+First, **edit the top-of-file `from osmose.size_spectrum import (...)` block** to also include
+`format_size_spectrum_report` and `size_spectrum_timeseries` (keep all imports at the top — do not
+append them mid-file). Then **append these test functions** to the END of the file:
 ```python
-from osmose.size_spectrum import format_size_spectrum_report, size_spectrum_timeseries
-
-
 def test_size_spectrum_timeseries_columns(tmp_path):
     d = tmp_path / "output"
     d.mkdir()
@@ -757,7 +780,15 @@ def main(argv: list[str] | None = None) -> int:
         args.report.write_text(report)
     print(report)
     if args.json:
-        args.json.write_text(json.dumps(asdict(spec), indent=2))
+        import math
+
+        # mean_size_cm / peak_size_cm can be NaN on a degenerate all-zero window;
+        # json.dumps would emit invalid `NaN`, so map NaN floats -> null.
+        payload = {
+            k: (None if isinstance(v, float) and math.isnan(v) else v)
+            for k, v in asdict(spec).items()
+        }
+        args.json.write_text(json.dumps(payload, indent=2))
     if args.plot:
         from osmose import plotting
 
