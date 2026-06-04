@@ -3,11 +3,56 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 from osmose.logging import setup_logging
 
 _log = setup_logging("osmose.config")
+
+
+@dataclass(frozen=True)
+class ConfigDiagnostic:
+    """A structured, line-located config-parse issue."""
+
+    file: str
+    lineno: int | None
+    line: str
+    reason: str  # unparseable|empty_key|duplicate_key|circular_ref|missing_subconfig|path_escape
+    detail: str
+
+
+_ERROR_REASONS: frozenset[str] = frozenset(
+    {"unparseable", "circular_ref", "missing_subconfig", "path_escape"}
+)
+
+
+def diagnostics_have_errors(diagnostics: list[ConfigDiagnostic]) -> bool:
+    """True if any diagnostic is ERROR-class (vs the empty_key/duplicate_key warnings)."""
+    return any(d.reason in _ERROR_REASONS for d in diagnostics)
+
+
+def format_diagnostics(diagnostics: list[ConfigDiagnostic]) -> str:
+    """Human-readable report grouped by file; one line per diagnostic + a summary."""
+    if not diagnostics:
+        return "No config issues found."
+    out: list[str] = []
+    for d in diagnostics:
+        if d.lineno is not None:
+            body = f"{d.file}:{d.lineno}: {d.reason}"
+            if d.line:
+                body += f" — {d.line}"
+        else:
+            body = f"{d.file}: {d.reason}"
+            if d.detail:
+                body += f" — {d.detail}"
+        out.append(body)
+    counts: dict[str, int] = {}
+    for d in diagnostics:
+        counts[d.reason] = counts.get(d.reason, 0) + 1
+    summary = ", ".join(f"{n} {r}" for r, n in sorted(counts.items()))
+    out.append(f"{len(diagnostics)} issue(s): {summary}")
+    return "\n".join(out)
 
 
 class OsmoseConfigReader:
@@ -28,11 +73,13 @@ class OsmoseConfigReader:
     def __init__(self) -> None:
         self.key_case_map: dict[str, str] = {}
         self.skipped_lines: int = 0
+        self.diagnostics: list[ConfigDiagnostic] = []
 
     def read(self, master_file: Path) -> dict[str, str]:
         """Recursively read a master config and all referenced sub-configs."""
         self.skipped_lines = 0
         self.key_case_map = {}
+        self.diagnostics = []
         master_file = Path(master_file)
         _log.info("Reading config from %s", master_file)
         flat: dict[str, str] = {}
