@@ -111,3 +111,26 @@ def test_shipped_masters_have_no_diagnostics(master):
     r = OsmoseConfigReader()
     r.read(p)
     assert r.diagnostics == [], format_diagnostics(r.diagnostics)
+
+
+def test_cli_exit_codes(tmp_path):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("check_config", Path("scripts/check_config.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    # unparseable line -> ERROR-class -> exit 1
+    bad = tmp_path / "bad.csv"
+    bad.write_text("good;1\njunkline\n")
+    assert mod.main(["--config", str(bad)]) == 1
+
+    # only a duplicate_key (warning) -> exit 0
+    warn = tmp_path / "warn.csv"
+    warn.write_text("a;1\na;2\n")
+    assert mod.main(["--config", str(warn)]) == 0
+
+    # clean -> exit 0
+    good = tmp_path / "good.csv"
+    good.write_text("a;1\nb;2\n")
+    assert mod.main(["--config", str(good)]) == 0
