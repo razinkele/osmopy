@@ -61,3 +61,55 @@ def network_node_universe(output_dir: Path | str, predator_level: str = "species
         {_split_species(c) for c in pred_cols} if predator_level == "species" else set(pred_cols)
     )
     return sorted(prey | preds)
+
+
+def diet_network_at(
+    output_dir: Path | str,
+    *,
+    time,
+    threshold: float = 5.0,
+    predator_level: str = "species",
+) -> pd.DataFrame:
+    """Long ``predator, prey, proportion`` (percent) for one timestep.
+
+    Prey size-stages are SUMMED to prey-species (exact). For predator_level
+    'species', predator size-stages are averaged to species over their LIVE stages
+    (a 0-sum dead stage is excluded — unweighted approximation); 'stage' keeps the
+    predator stage label (exact). NaN cells dropped; links >= threshold kept.
+
+    A NaN in one of a predator's live stages contributes 0 to that species mean —
+    "no data" and "ate none" are conflated in this unweighted approximation.
+    """
+    if predator_level not in ("species", "stage"):
+        raise ValueError("predator_level must be 'species' or 'stage'")
+    wide = _read_diet_matrix(output_dir)
+    times = {float(t) for t in wide["Time"].unique()}
+    if float(time) not in times:
+        raise ValueError(f"time {time} not in diet matrix (have e.g. {sorted(times)[:3]})")
+    step = wide[wide["Time"] == float(time)]
+    pred_cols = [c for c in step.columns if c not in ("Time", "Prey")]
+
+    melted = step.melt(
+        id_vars=["Prey"], value_vars=pred_cols, var_name="pred_stage", value_name="proportion"
+    ).dropna(subset=["proportion"])
+    melted["prey"] = melted["Prey"].map(_split_species)
+    melted["pred_sp"] = melted["pred_stage"].map(_split_species)
+
+    # Prey size-stages -> prey-species, within each predator STAGE (exact additive composition).
+    per_stage = melted.groupby(["pred_stage", "pred_sp", "prey"], as_index=False)[
+        "proportion"
+    ].sum()
+    # Live predator stages = those whose total over prey > 0 (a dead stage is all-zero).
+    stage_total = per_stage.groupby("pred_stage")["proportion"].transform("sum")
+    live = per_stage[stage_total > 0].copy()
+
+    if predator_level == "stage":
+        out = live.rename(columns={"pred_stage": "predator"})[["predator", "prey", "proportion"]]
+    else:
+        n_live = live.groupby("pred_sp")["pred_stage"].nunique()
+        summed = live.groupby(["pred_sp", "prey"], as_index=False)["proportion"].sum()
+        summed["proportion"] = summed["proportion"] / summed["pred_sp"].map(n_live)
+        out = summed.rename(columns={"pred_sp": "predator"})
+
+    out = out[out["proportion"] >= threshold]
+    return out[["predator", "prey", "proportion"]].reset_index(drop=True)
