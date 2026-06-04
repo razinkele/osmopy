@@ -1,7 +1,30 @@
 # Climate-driven temperature forcing (CMEMS → baltic_ev) — Design
 
 **Date:** 2026-06-04
-**Status:** Approved direction (brainstormed; codebase-grounded by execution). New feature
+**Status:** ⚠️ **CLOSED via diagnostic — NOT built.** See
+`docs/baltic_temperature_forcing_diagnostic_2026-06-04.md`.
+
+> ## Outcome (post in-loop review + Arrhenius diagnostic)
+>
+> An in-loop review (3 executing reviewers) confirmed the engine mechanics but proved — by
+> reproducing `compute_energy_budget` — that **temperature has ~zero effect on `baltic_ev`**:
+> `phit.enabled=false`, so temperature enters only via Arrhenius maintenance, which at
+> `c_m=0.001` is ~1e-12 of intake (`dw` bit-identical 4 °C↔18 °C). The constant-vs-CMEMS demo
+> would show noise, not a climate signal.
+>
+> A follow-up diagnostic tested whether the maintenance Arrhenius was missing a reference-temp
+> normalization (a latent engine bug). **Refuted by the Java source:** `TempFunction.java:204`
+> (`get_Arrhenius`) and `EnergyBudget.java:205` (`getMaintenance`) are byte-for-byte the Python
+> formulas — bare Arrhenius by design (MTE-standard, `c_m` carries scale). **No engine bug.**
+>
+> **Decision (user-approved):** close the line. Climate temperature forcing is blocked behind a
+> calibration prerequisite (a `phiT`-enabled / maintenance-calibrated bioen config), not code —
+> a recalibration project, out of scope. No engine change, no CMEMS download, no inert loader.
+> The design below is retained as provenance; actionable-later notes live in the diagnostic doc.
+>
+> ---
+
+**Original status:** Approved direction (brainstormed; codebase-grounded by execution). New feature
 (science extension #2). **Engine change → parity-gated.**
 
 ## Motivation
