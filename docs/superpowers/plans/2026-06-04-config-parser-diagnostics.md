@@ -49,6 +49,13 @@
 > **TEST-FILE IMPORT CONVENTION (ruff E402):** keep ALL module-level imports of
 > `tests/test_config_reader_diagnostics.py` in the top block; each task edits that block to add
 > names and appends only test functions. Never append imports after functions.
+>
+> **RUFF FORMAT-FIRST (avoids the "green check, red format" CI trap):** the code blocks below are
+> NOT pre-wrapped to ruff's style — the multi-line `ConfigDiagnostic(...)` calls will be re-wrapped
+> by `ruff format`. So in every task's verify step, **run `.venv/bin/ruff format <touched files>`
+> FIRST, then `ruff check` + `ruff format --check`** (CI runs BOTH `ruff check` AND `ruff format
+> --check` on `osmose/ ui/ tests/`; `ruff check` passing alone is not enough). Re-run the task's
+> tests after formatting.
 
 ---
 
@@ -380,9 +387,9 @@ def test_missing_subconfig_diagnostic(tmp_path):
     [
         "data/baltic/baltic_all-parameters.csv",
         "data/baltic_ev/baltic_ev_all-parameters.csv",
-        "data/eec/eec_all-parameters.csv",
+        "data/eec/osm_all-parameters.csv",
         "data/eec_full/eec_all-parameters.csv",
-        "data/minimal/minimal_all-parameters.csv",
+        "data/minimal/osm_all-parameters.csv",
     ],
 )
 def test_shipped_masters_have_no_diagnostics(master):
