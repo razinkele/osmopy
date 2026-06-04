@@ -4,7 +4,7 @@
 
 **Goal:** A Results-page "Trophic Network" sub-tab that renders the per-timestep diet matrix as an interactive **pyvis** node-link graph (predator→prey, cannibalism self-loops) with a **fixed layout** and a time-slider, so the user can watch the diet network shift over time.
 
-**Architecture:** New pyvis-free analysis module `osmose/trophic_network.py` reads the `Trophic/*dietMatrix*.csv` **directly** (wildcard prefix — `OsmoseResults.diet_matrix()` can't find it), aggregates one timestep to a species-level `predator,prey,proportion` (prey summed = exact; predator size-stages averaged unweighted, dead stages excluded), computes **fixed node positions once** over the all-timestep node universe, and builds a self-contained pyvis HTML. A Results sub-tab embeds it via `ui.tags.iframe(srcdoc=…)`, with the wide df + layout cached per run and the slider debounced.
+**Architecture:** New pyvis-free analysis module `osmose/trophic_network.py` reads the `Trophic/*dietMatrix*.csv` **directly** (wildcard prefix — `OsmoseResults.diet_matrix()` can't find it), aggregates one timestep to a species-level `predator,prey,proportion` (prey summed = exact; predator size-stages averaged unweighted, dead stages excluded), computes **fixed node positions once** over the all-timestep node universe, and builds a self-contained pyvis HTML. A Results sub-tab embeds it via `ui.tags.iframe(srcdoc=…)`, with the layout cached per run and the time control an **index slider over the discrete diet-matrix Time list** (Shiny 1.5.1 has no `reactive.debounce`; the index keeps fractional/sub-annual Time addressable).
 
 **Tech Stack:** Python 3.12, pandas, networkx (layout), **pyvis 4.2** (node-link graph; already installed in `.venv` via `git+https://github.com/razinkele/pyvis.git@v4.2`), Shiny 1.5.1, pytest, ruff.
 
@@ -339,6 +339,9 @@ def diet_network_at(
     'species', predator size-stages are averaged to species over their LIVE stages
     (a 0-sum dead stage is excluded — unweighted approximation); 'stage' keeps the
     predator stage label (exact). NaN cells dropped; links >= threshold kept.
+
+    A NaN in one of a predator's live stages contributes 0 to that species mean —
+    "no data" and "ate none" are conflated in this unweighted approximation.
     """
     if predator_level not in ("species", "stage"):
         raise ValueError("predator_level must be 'species' or 'stage'")
@@ -528,7 +531,9 @@ next `ui.nav_panel(`):
 ```python
             ui.nav_panel(
                 "Trophic Network",
-                ui.input_slider("trophic_time", "Timestep", min=1, max=1, value=1, step=1),
+                # NB: this is an INDEX into the discrete diet-matrix Time list (see Step-3b/3c),
+                # NOT the raw Time value — so fractional/sub-annual Time steps are addressable.
+                ui.input_slider("trophic_time", "Timestep", min=0, max=0, value=0, step=1),
                 ui.input_radio_buttons(
                     "trophic_predator_level",
                     "Predator level",
@@ -546,14 +551,16 @@ next `ui.nav_panel(`):
 In `_do_load_results`, immediately AFTER the existing
 `ui.update_select("result_species", choices=species_choices)` line (~:405), add:
 ```python
-            # Trophic-network time slider bounds (from the diet matrix, if present)
+            # Trophic-network time slider = an INDEX into the discrete diet-matrix Time list
+            # (0 .. n-1), so fractional/sub-annual Time values are addressable (the raw Time
+            # is shown as a caption by the render fn). Leave at default if there's no diet output.
             try:
                 from osmose.trophic_network import available_times
 
                 _times = available_times(out_dir)
                 if _times:
                     ui.update_slider(
-                        "trophic_time", min=int(_times[0]), max=int(_times[-1]), value=int(_times[0])
+                        "trophic_time", min=0, max=len(_times) - 1, value=0
                     )
             except (FileNotFoundError, OSError, ValueError):
                 pass  # no diet output -> leave the slider at its default
@@ -568,22 +575,22 @@ layout, then the render fn. Place after the existing diet render fn (`diet_chart
 ```python
     @reactive.calc
     def _trophic_cache():
-        """(output_dir-keyed) cached (wide_df_dir, {level: layout}) so slider ticks are cheap."""
+        """(output_dir-keyed) cached (dir, times, {level: layout}) so slider ticks are cheap."""
         out_dir = _safe_output_dir(input.output_dir())
         if out_dir is None:
             return None
         from osmose.trophic_network import available_times, network_node_universe, species_layout
 
         try:
-            available_times(out_dir)  # probes existence; raises if no diet matrix
+            times = available_times(out_dir)  # probes existence; raises if no diet matrix
         except (FileNotFoundError, OSError, ValueError):
+            return None
+        if not times:
             return None
         layouts = {
             lvl: species_layout(network_node_universe(out_dir, lvl)) for lvl in ("species", "stage")
         }
-        return {"dir": out_dir, "layouts": layouts}
-
-    _trophic_time_d = reactive.debounce(input.trophic_time, 0.3)
+        return {"dir": out_dir, "times": times, "layouts": layouts}
 
     @render.ui
     def trophic_network():
@@ -595,25 +602,40 @@ layout, then the render fn. Place after the existing diet render fn (`diet_chart
         except ImportError:
             return ui.div("Install pyvis to view the trophic network.", style=STYLE_EMPTY)
         level = input.trophic_predator_level()
+        # The slider holds an INDEX into cache["times"]; map it to the actual Time (clamped),
+        # so a fractional/sub-annual Time is addressable and we never pass an absent time value.
+        times = cache["times"]
+        idx = max(0, min(int(input.trophic_time()), len(times) - 1))
+        t = times[idx]
         try:
             net = diet_network_at(
                 cache["dir"],
-                time=float(_trophic_time_d()),
+                time=t,
                 threshold=float(input.trophic_threshold()),
                 predator_level=level,
             )
             html = make_trophic_network_html(net, positions=cache["layouts"][level])
-        except (FileNotFoundError, OSError, ValueError) as e:  # noqa: BLE001-style UI guard
+        except (FileNotFoundError, OSError, ValueError) as e:
             return ui.div(f"Could not build trophic network: {e}", style=STYLE_EMPTY)
-        return ui.tags.iframe(
-            srcdoc=html, style="width:100%; height:640px; border:0;", sandbox="allow-scripts"
+        return ui.div(
+            ui.tags.small(f"Time {t:g}", style=STYLE_MONO_KEY),
+            ui.tags.iframe(
+                srcdoc=html, style="width:100%; height:640px; border:0;", sandbox="allow-scripts"
+            ),
         )
 ```
-NOTES: `_safe_output_dir`, `STYLE_EMPTY`, `reactive`, `ui` are already in scope in
-`ui/pages/results.py` (confirm `STYLE_EMPTY` exists; if not, use `style="color:#888;"`). Confirm the
-exact debounce signature against the installed Shiny (`reactive.debounce(fn, secs)`); if the
-installed API differs, fall back to using `input.trophic_time()` directly (slider stepping still
-works, just no debounce). The `sandbox="allow-scripts"` lets vis.js run inside the iframe.
+NOTES:
+- `_safe_output_dir`, `STYLE_EMPTY`, `STYLE_MONO_KEY`, `reactive`, `ui` are all already imported
+  in `ui/pages/results.py` (`STYLE_EMPTY, STYLE_MONO_KEY` at the `from ui.styles import …` line;
+  if either is missing, fall back to `style="color:#888;"`).
+- **No debounce:** Shiny 1.5.1 has **no** `reactive.debounce`/`throttle` and `input_slider`
+  exposes no client-side rate policy — so the time control is a deliberate-pick *index* slider and
+  reads `input.trophic_time()` directly. Each settled value renders one self-contained (`in_line`)
+  ~660 KB iframe; dragging across many steps re-renders per step. That's an accepted trade-off for
+  a results-analysis tab; if it ever matters, the follow-on is `cdn_resources="remote"` in
+  `make_trophic_network_html` (tiny per-render payload, needs internet at view time) — out of scope
+  for v1, which prioritizes offline self-containment.
+- `sandbox="allow-scripts"` lets vis.js run inside the iframe.
 
 - [ ] **Step 4: Verify (format-first)**
 
@@ -666,8 +688,8 @@ PYTHONPATH=/home/razinka/osmose/osmose-python timeout 30 .venv/bin/shiny run app
 Then via Playwright (mcp__playwright__*) or a browser: open the app, load results from a dir with
 diet output, open Results → **Trophic Network**: confirm the pyvis graph renders inside the iframe
 (species nodes, predator→prey edges, at least one self-loop), the layout is **stable** when you move
-the **Timestep** slider (nodes hold position, edges change), and the **Min diet %** slider thins the
-edges. Confirm no uncaught console errors. If launching is impractical, rely on the import +
+the **Timestep** slider (nodes hold position, the `Time N` caption updates, edges change), and the
+**Min diet %** slider thins the edges. Confirm no uncaught console errors. If launching is impractical, rely on the import +
 page-build smoke + wiring tests and state which path was used. Kill the app afterward
 (`pkill -f "shiny run app.py"`).
 
@@ -690,15 +712,16 @@ Then use superpowers:requesting-code-review then superpowers:finishing-a-develop
 + `network_node_universe` → T1; `diet_network_at` (prey-sum exact, predator-mean dead-stage-excluded,
 percent, NaN-drop, threshold, stage level, bad-time ValueError) → T2; `species_layout` fixed
 positions + `make_trophic_network_html` (in_line self-contained, physics-off, fixed x/y, self-loops)
-→ T3; Results sub-tab (slider+level+threshold+iframe), cached df/layout, debounce,
+→ T3; Results sub-tab (index-slider+level+threshold+iframe), cached times/layout, index→Time map,
 `ui.update_slider` in `_do_load_results`, degrade (no-diet / no-pyvis) → T4; docs + manual
 run-through → T5; scientific-validation caveat (composition-not-flow) in the CHANGELOG + module
 docstring; out-of-scope (Sankey, heatmap, `diet_matrix()`/`_ENGINE_SUBDIRS` fix, served-static
 optimization) → not in plan, per spec. ✅
 
-**Placeholder scan:** no TBD/TODO; every code step has complete code + exact commands. The two
-"confirm the var name / debounce signature" notes are grounded verification instructions (with
-fallbacks), not placeholders. ✅
+**Placeholder scan:** no TBD/TODO; every code step has complete code + exact commands. The
+"confirm the var name / `STYLE_*` import exists" notes are grounded verification instructions (with
+fallbacks), not placeholders. ✅ (`reactive.debounce` was REMOVED after plan review — it does not
+exist in Shiny 1.5.1; the index slider reads `input.trophic_time()` directly.)
 
 **Type consistency:** `_read_diet_matrix(output_dir)` / `available_times(output_dir)` /
 `network_node_universe(output_dir, predator_level)` / `diet_network_at(output_dir, *, time,
