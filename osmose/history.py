@@ -11,6 +11,9 @@ from osmose.logging import setup_logging
 
 _log = setup_logging("osmose.history")
 
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent  # osmose/history.py -> osmose/ -> repo root
+RUN_HISTORY_DIR = _PROJECT_ROOT / "data" / "history"
+
 
 @dataclass
 class RunRecord:
@@ -106,3 +109,10 @@ class RunHistory:
                 diffs.append({"key": key, "values": values})
 
         return diffs
+
+
+def default_run_history() -> RunHistory:
+    """The canonical RunHistory shared by the Run tab (writer) and the Results Compare Runs
+    tab (readers), so saved runs are always found. Mirrors calibration/history.py's HISTORY_DIR.
+    Reads RUN_HISTORY_DIR at call time (so tests can monkeypatch it)."""
+    return RunHistory(RUN_HISTORY_DIR)

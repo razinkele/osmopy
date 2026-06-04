@@ -1,6 +1,6 @@
 import pytest
 
-from osmose.history import RunRecord, RunHistory
+from osmose.history import RunRecord, RunHistory, RUN_HISTORY_DIR, default_run_history
 
 
 def test_save_and_list_records(tmp_path):
@@ -140,3 +140,27 @@ def test_load_run_rejects_path_traversal(tmp_path):
     history = RunHistory(tmp_path / "history")
     with pytest.raises(ValueError, match="[Uu]nsafe"):
         history.load_run("../../etc/passwd")
+
+
+def test_run_history_dir_is_canonical():
+    from pathlib import Path
+
+    assert isinstance(RUN_HISTORY_DIR, Path)
+    assert RUN_HISTORY_DIR.is_absolute()
+    assert RUN_HISTORY_DIR.parts[-2:] == ("data", "history")
+    assert RUN_HISTORY_DIR == Path(__file__).resolve().parent.parent / "data" / "history"
+
+
+def test_default_run_history_uses_canonical_dir(monkeypatch, tmp_path):
+    monkeypatch.setattr("osmose.history.RUN_HISTORY_DIR", tmp_path)
+    h = default_run_history()
+    assert h.history_dir == tmp_path
+
+
+def test_writer_reader_roundtrip_same_dir(monkeypatch, tmp_path):
+    monkeypatch.setattr("osmose.history.RUN_HISTORY_DIR", tmp_path)
+    rec = RunRecord(timestamp="2026-06-03T12:00:00", output_dir="/x/output", summary={})
+    default_run_history().save(rec)
+    found = default_run_history().list_runs()
+    assert [r.timestamp for r in found] == ["2026-06-03T12:00:00"]
+    assert default_run_history().load_run("2026-06-03T12:00:00").output_dir == "/x/output"
