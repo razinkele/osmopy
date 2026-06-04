@@ -95,6 +95,9 @@ class OsmoseConfigReader:
         resolved = filepath.resolve()
         if resolved in _seen:
             _log.warning("Circular config reference skipped: %s", filepath)
+            self.diagnostics.append(
+                ConfigDiagnostic(filepath.name, None, "", "circular_ref", str(filepath))
+            )
             return
         _seen.add(resolved)
         file_params = self.read_file(filepath)
@@ -110,11 +113,25 @@ class OsmoseConfigReader:
                         sub_path,
                         key,
                     )
+                    self.diagnostics.append(
+                        ConfigDiagnostic(
+                            filepath.name, None, "", "path_escape", f"{sub_path} (from key {key})"
+                        )
+                    )
                     continue
                 if sub_path.exists():
                     self._read_recursive(sub_path, flat, _seen)
                 else:
                     _log.warning("Referenced sub-config not found: %s (from key %s)", sub_path, key)
+                    self.diagnostics.append(
+                        ConfigDiagnostic(
+                            filepath.name,
+                            None,
+                            "",
+                            "missing_subconfig",
+                            f"{sub_path} (from key {key})",
+                        )
+                    )
 
     def read_file(self, filepath: Path) -> dict[str, str]:
         """Parse a single OSMOSE config file into a flat key-value dict.

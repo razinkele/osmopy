@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
+
 from osmose.config.reader import (
     ConfigDiagnostic,
     OsmoseConfigReader,
@@ -78,3 +82,32 @@ def test_additive_only_dict_unchanged(tmp_path):
     r = OsmoseConfigReader()
     out = r.read_file(p)
     assert out == {"a": "1", "b": "2", "": "", "c": "3"}
+
+
+def test_missing_subconfig_diagnostic(tmp_path):
+    master = tmp_path / "master.csv"
+    master.write_text("osmose.configuration.sub;does_not_exist.csv\n")
+    r = OsmoseConfigReader()
+    r.read(master)
+    diags = [d for d in r.diagnostics if d.reason == "missing_subconfig"]
+    assert len(diags) == 1 and diags[0].lineno is None
+    assert "does_not_exist.csv" in diags[0].detail
+
+
+@pytest.mark.parametrize(
+    "master",
+    [
+        "data/baltic/baltic_all-parameters.csv",
+        "data/baltic_ev/baltic_ev_all-parameters.csv",
+        "data/eec/osm_all-parameters.csv",
+        "data/eec_full/eec_all-parameters.csv",
+        "data/minimal/osm_all-parameters.csv",
+    ],
+)
+def test_shipped_masters_have_no_diagnostics(master):
+    p = Path(master)
+    if not p.is_file():
+        pytest.skip(f"shipped master not present: {master}")
+    r = OsmoseConfigReader()
+    r.read(p)
+    assert r.diagnostics == [], format_diagnostics(r.diagnostics)
