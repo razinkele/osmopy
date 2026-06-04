@@ -192,3 +192,36 @@ def test_format_report_contains_key_fields(tmp_path):
     assert "size spectrum" in md.lower()
     assert "Large-Fish Indicator" in md
     assert "trend/comparison" in md  # the honesty caveat
+
+
+def test_plotting_reuse_and_new_chart():
+    import plotly.graph_objects as go
+
+    from osmose.plotting import make_size_indicator_timeseries, make_size_spectrum_plot
+
+    pdf = pd.DataFrame({"size": [5.0, 15.0, 25.0], "abundance": [100.0, 30.0, 5.0]})
+    fig = make_size_spectrum_plot(pdf)  # reused, unchanged
+    assert isinstance(fig, go.Figure)
+
+    ts = pd.DataFrame(
+        {
+            "time": [1.0, 2.0],
+            "slope": [-2.0, -2.1],
+            "lfi": [0.1, 0.12],
+            "mean_size_cm": [20.0, 21.0],
+        }
+    )
+    fig2 = make_size_indicator_timeseries(ts)
+    assert isinstance(fig2, go.Figure)
+    assert len(fig2.data) == 3  # slope, lfi, mean_size traces
+
+
+def test_size_indicator_timeseries_empty():
+    import plotly.graph_objects as go
+
+    from osmose.plotting import make_size_indicator_timeseries
+
+    fig = make_size_indicator_timeseries(
+        pd.DataFrame(columns=["time", "slope", "lfi", "mean_size_cm"])
+    )
+    assert isinstance(fig, go.Figure)

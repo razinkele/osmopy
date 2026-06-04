@@ -190,6 +190,21 @@ def make_size_spectrum_plot(df: pd.DataFrame) -> go.Figure:
     return fig
 
 
+def make_size_indicator_timeseries(df: pd.DataFrame) -> go.Figure:
+    """Community size-indicators over time: slope, LFI, mean size (3 traces)."""
+    title = "Size Indicators Over Time"
+    if df.empty:
+        return _empty_figure(title)
+    _require_columns(
+        df, "time", "slope", "lfi", "mean_size_cm", context="make_size_indicator_timeseries"
+    )
+    fig = go.Figure()
+    for col in ("slope", "lfi", "mean_size_cm"):
+        fig.add_trace(go.Scatter(x=df["time"], y=df[col], mode="lines", name=col))
+    fig.update_layout(title=dict(text=title), xaxis_title="time", template=TEMPLATE)
+    return fig
+
+
 # ---------------------------------------------------------------------------
 # 4. CI timeseries
 # ---------------------------------------------------------------------------
