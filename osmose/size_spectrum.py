@@ -183,3 +183,69 @@ def compute_size_spectrum(
 def spectrum_plot_df(spec: SizeSpectrum) -> pd.DataFrame:
     """Build the {size, abundance} df that plotting.make_size_spectrum_plot expects."""
     return pd.DataFrame({"size": spec.bin_midpoints, "abundance": spec.values})
+
+
+def size_spectrum_timeseries(
+    output_dir,
+    *,
+    metric: str = "biomass",
+    prefix: str = "osm",
+    lfi_threshold_cm: float = 40.0,
+    min_size_cm: float | None = None,
+) -> pd.DataFrame:
+    """Per-timestep community slope / LFI / mean size (for trend lines)."""
+    wide = _read_community_by_size(Path(output_dir), f"{metric}DistribBySize", prefix)
+    long = _community_long(wide)
+    out_rows = []
+    for t, g in long.groupby("time"):
+        per_bin = g.groupby("size")["value"].sum().sort_index()
+        edges = [float(x) for x in per_bin.index]
+        values = [float(x) for x in per_bin.values]
+        width = _infer_bin_width(edges)
+        midpoints = [e + width / 2.0 for e in edges]
+        slope, _intercept, _r2, _n = _fit_slope(midpoints, values, min_size_cm)
+        out_rows.append(
+            {
+                "time": float(t),
+                "slope": slope,
+                "lfi": _large_fish_indicator(edges, values, lfi_threshold_cm),
+                "mean_size_cm": _mean_size(midpoints, values),
+            }
+        )
+    return pd.DataFrame(out_rows, columns=["time", "slope", "lfi", "mean_size_cm"])
+
+
+def format_size_spectrum_report(spec: SizeSpectrum) -> str:
+    """Markdown summary of a SizeSpectrum (honest about the slope's interpretation)."""
+    weighting = (
+        "abundance-weighted mean length"
+        if spec.metric == "abundance"
+        else "biomass-weighted size centroid"
+    )
+    slope_txt = (
+        f"{spec.slope:.3f} (intercept {spec.intercept:.3f}, R²={spec.r_squared:.3f}, "
+        f"n_bins_fit={spec.n_bins_fit})"
+        if spec.slope is not None
+        else f"undefined (n_bins_fit={spec.n_bins_fit})"
+    )
+    cutoff = f"{spec.min_size_cm:.0f} cm" if spec.min_size_cm is not None else "none (all bins)"
+    lines = [
+        f"# OSMOSE community size spectrum — {spec.metric}",
+        "",
+        "A length–"
+        + spec.metric
+        + " spectrum over linear cm bins, reported for **trend/comparison** — "
+        "not the canonical Sheldon normalized-by-body-mass exponent.",
+        "",
+        f"- Window: last {spec.window_years} yr ({spec.n_timesteps_used} timesteps)",
+        f"- Spectrum slope: {slope_txt}",
+        f"- Fit cutoff (min_size_cm): {cutoff}; peak (modal) bin midpoint: "
+        f"{spec.peak_size_cm:.1f} cm",
+        f"- Large-Fish Indicator (≥ {spec.lfi_threshold_cm:.0f} cm): {spec.lfi:.3f}",
+        f"- Mean size ({weighting}): {spec.mean_size_cm:.2f} cm",
+    ]
+    if spec.note:
+        lines += ["", f"_Note: {spec.note}_"]
+    lines += ["", "| size (cm, midpoint) | value |", "|---|---|"]
+    lines += [f"| {m:.1f} | {v:.6g} |" for m, v in zip(spec.bin_midpoints, spec.values)]
+    return "\n".join(lines)

@@ -14,6 +14,8 @@ from osmose.size_spectrum import (
     _read_community_by_size,
     _window_by_time,
     compute_size_spectrum,
+    format_size_spectrum_report,
+    size_spectrum_timeseries,
     spectrum_plot_df,
 )
 
@@ -160,3 +162,33 @@ def test_spectrum_plot_df_shape(tmp_path):
     pdf = spectrum_plot_df(spec)
     assert list(pdf.columns) == ["size", "abundance"]
     assert len(pdf) == 3
+
+
+def test_size_spectrum_timeseries_columns(tmp_path):
+    d = tmp_path / "output"
+    d.mkdir()
+    rows = []
+    for t in (1.0, 2.0):
+        for e in (0.0, 10.0, 20.0, 40.0):
+            rows.append((t, e, 1.0, 1.0))
+    pd.DataFrame(rows, columns=["Time", "Size", "sp1", "sp2"]).to_csv(
+        d / "osm_biomassDistribBySize_Simu0.csv", index=False
+    )
+    ts = size_spectrum_timeseries(d, prefix="osm", lfi_threshold_cm=40.0)
+    assert list(ts.columns) == ["time", "slope", "lfi", "mean_size_cm"]
+    assert sorted(ts["time"].unique()) == [1.0, 2.0]
+    assert ts["lfi"].tolist() == pytest.approx([1 / 4, 1 / 4])
+
+
+def test_format_report_contains_key_fields(tmp_path):
+    d = tmp_path / "output"
+    d.mkdir()
+    rows = [(1.0, e, 1.0, 1.0) for e in (0.0, 10.0, 20.0, 40.0)]
+    pd.DataFrame(rows, columns=["Time", "Size", "sp1", "sp2"]).to_csv(
+        d / "osm_biomassDistribBySize_Simu0.csv", index=False
+    )
+    spec = compute_size_spectrum(d, prefix="osm", window_years=1)
+    md = format_size_spectrum_report(spec)
+    assert "size spectrum" in md.lower()
+    assert "Large-Fish Indicator" in md
+    assert "trend/comparison" in md  # the honesty caveat
