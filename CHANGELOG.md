@@ -14,6 +14,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
   — a path that was never created — so the Compare Runs tab (selector, config-diff, comparison chart,
   and output-delta section) was entirely non-functional. This fix resurrects it; all existing run
   records in `data/history` now appear in the Compare Runs selector.
+- **ui (Compare Runs):** the Results → Compare Runs tab now works without first loading
+  an output directory — its run selector populates from the canonical run history
+  (`data/history`) on entry to the Results tab, and the readers no longer require a
+  loaded output dir. Previously the tab showed "Invalid output directory" / an empty
+  selector until an unrelated output dir was loaded.
 
 ## [0.12.0] - 2026-05-08
 
