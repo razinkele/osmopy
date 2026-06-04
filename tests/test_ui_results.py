@@ -256,3 +256,24 @@ def test_make_spatial_map_multiple_timesteps():
         fig = make_spatial_map(ds, "biomass", time_idx=t, title=f"t={t}")
         assert fig is not None
         assert f"t={t}" in fig.layout.title.text
+
+
+def test_compare_run_choices_builds_label_map():
+    import types
+
+    from ui.pages.results import _compare_run_choices
+
+    runs = [
+        types.SimpleNamespace(timestamp="2026-06-03T12:00:00", duration_sec=42.0),
+        types.SimpleNamespace(timestamp="2026-06-04T08:30:15", duration_sec=7.4),
+    ]
+    assert _compare_run_choices(runs) == {
+        "2026-06-03T12:00:00": "2026-06-03T12:00:00 (42s)",
+        "2026-06-04T08:30:15": "2026-06-04T08:30:15 (7s)",
+    }
+
+
+def test_compare_run_choices_empty():
+    from ui.pages.results import _compare_run_choices
+
+    assert _compare_run_choices([]) == {}

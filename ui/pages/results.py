@@ -73,6 +73,15 @@ def _safe_output_dir(raw: str) -> Path | None:
     return None
 
 
+def _compare_run_choices(runs) -> dict[str, str]:
+    """Build the compare_runs_select choices dict from RunHistory.list_runs() records.
+
+    {timestamp: "<first 19 chars of timestamp> (<duration>s)"} — the exact label
+    format the Compare Runs selector has always used.
+    """
+    return {r.timestamp: f"{r.timestamp[:19]} ({r.duration_sec:.0f}s)" for r in runs}
+
+
 # ---------------------------------------------------------------------------
 # Pure chart-generation functions (testable without Shiny)
 # ---------------------------------------------------------------------------
