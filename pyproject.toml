@@ -19,6 +19,7 @@ dependencies = [
     "pyyaml>=6.0",
     "scipy>=1.13",
     "shiny_deckgl @ git+https://github.com/razinkele/shiny_deckgl.git@v1.6.1",
+    "pyvis @ git+https://github.com/razinkele/pyvis.git@v4.2",
 ]
 
 [project.optional-dependencies]
