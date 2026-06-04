@@ -126,9 +126,10 @@ Add a **"Trophic Network"** sub-tab beside the diet view:
   diet-matrix output found")` (degrade, never crash — the run-history-fix pattern).
 - **Caching + debounce:** a `@reactive.calc` keyed on the output dir holds (a) the wide df and
   (b) `species_layout(union species)` — both computed once per run, so dragging the slider slices an
-  in-memory df + reuses the fixed layout (no CSV re-read, no re-layout). **Debounce the slider**
-  (`@reactive.event(input.trophic_time)` on commit, or a `reactive` throttle) so the ~710 KB
-  self-contained iframe `srcdoc` transfers on step-commit, not on every continuous drag step
+  in-memory df + reuses the fixed layout (no CSV re-read, no re-layout). **Debounce/throttle the
+  slider** via `shiny.reactive.debounce`/`reactive.throttle` (NOT `@reactive.event`, which fires on
+  every value change, not only on release) so the ~710 KB self-contained iframe `srcdoc` transfers
+  at a rate-limit, not on every continuous drag step
   (review: in_line is ~710 KB after srcdoc-escaping; CPU per render ~95 ms is fine — wire size is
   the cost).
 - **Optional auto-play** (`reactive.invalidate_later` advancing `trophic_time`): **cut for v1** —
