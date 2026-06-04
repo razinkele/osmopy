@@ -23,18 +23,19 @@
         rep_dirs: reactive.Value[list[Path]] = reactive.Value([])
         _prev_output_dir: reactive.Value[str] = reactive.Value("")
     ```
-  - `_do_load_results` populate block (the part to remove), currently at ~:395-404:
+  - `_do_load_results` populate block (the part to remove), currently at ~:395-404 (body
+    indented 12 spaces):
     ```python
-                ui.update_select("result_species", choices=species_choices)
+            ui.update_select("result_species", choices=species_choices)
 
-                # Populate run comparison choices from history
-                from osmose.history import default_run_history
+            # Populate run comparison choices from history
+            from osmose.history import default_run_history
 
-                runs = default_run_history().list_runs()
-                choices = {r.timestamp: f"{r.timestamp[:19]} ({r.duration_sec:.0f}s)" for r in runs}
-                ui.update_selectize("compare_runs_select", choices=choices)
+            runs = default_run_history().list_runs()
+            choices = {r.timestamp: f"{r.timestamp[:19]} ({r.duration_sec:.0f}s)" for r in runs}
+            ui.update_selectize("compare_runs_select", choices=choices)
 
-                ui.notification_show("Results loaded successfully.", type="message", duration=3)
+            ui.notification_show("Results loaded successfully.", type="message", duration=3)
     ```
   - `_auto_load_results` (~:451) is the precedent nav effect — `nav = input.main_nav(); if nav != "results": return`. `main_nav` is the navset id (`app.py:286 id="main_nav"`); `"results"` the panel value (`app.py:271 value="results"`).
   - The four Compare Runs readers and their EXACT vestigial guards:
@@ -319,7 +320,7 @@ Expected: both clean. If `ruff format --check` flags either file, run `.venv/bin
 
 - [ ] **Step 2: Broader regression check**
 
-Run: `.venv/bin/python -m pytest tests/test_ui_results.py -q` (report count; expect the prior 16 + 5 new = 21 passed).
+Run: `.venv/bin/python -m pytest tests/test_ui_results.py -q` (report count; expect the prior 16 + 4 new = 20 passed — the 4 new tests are 2 in Task 1, 1 in Task 2, 1 in Task 3).
 Run: `.venv/bin/python -m pytest tests/ -k "results or ui" -q` (report pass/fail; classify any FAILURE as pre-existing/unrelated vs caused — if unsure, say so rather than asserting unrelated).
 
 - [ ] **Step 3: Manual UI run-through (render fns/effects aren't unit-tested)**
