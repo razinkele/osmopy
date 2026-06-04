@@ -6,6 +6,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ## [Unreleased]
 
+### Added
+
+- **analysis (size spectrum):** community size-spectrum diagnostics from `*DistribBySize`
+  output — `osmose.size_spectrum.compute_size_spectrum` (spectrum curve, log-log slope with a
+  `min_size_cm` cutoff, Large-Fish Indicator, mean size, peak bin) + `size_spectrum_timeseries`,
+  a `scripts/compute_size_spectrum.py` CLI, and a `make_size_indicator_timeseries` trend chart.
+  A length–biomass spectrum for trend/comparison (not the Sheldon exponent). Validated on the
+  EEC config; works on any run that emits by-size output.
+
 ### Fixed
 
 - **ui (run history):** Run-tab history writer and the Results "Compare Runs" selector now share a
