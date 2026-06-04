@@ -69,47 +69,74 @@ analysis module stays pyvis-free at import time.
 
 ### 1. `osmose/trophic_network.py` (analysis layer — pyvis-free, fully testable)
 
-- `_read_diet_matrix(output_dir, prefix) -> pd.DataFrame` — `rglob("{prefix}_dietMatrix*.csv")` (any
-  subdir incl. `Trophic/`) + `_read_output_csv`; raise `FileNotFoundError` if absent. Returns wide
-  `Time, Prey, <predator-stage cols>`.
+- `_read_diet_matrix(output_dir) -> pd.DataFrame` — `rglob("*_dietMatrix*.csv")` (WILDCARD prefix —
+  any subdir incl. `Trophic/`; there is exactly one dietMatrix file per run dir) + `_read_output_csv`;
+  raise `FileNotFoundError` if absent. Returns wide `Time, Prey, <predator-stage cols>`. **Do NOT
+  depend on `res.prefix`** — review found `_do_load_results` constructs `OsmoseResults(out_dir,
+  strict=False)` with the default `prefix="osm"`, so `res.prefix` is `"osm"` on every real
+  (`eec_`/`baltic_`) run; a prefixed glob would find nothing. The wildcard glob is the fix.
 - `_split_species(label) -> str` — strip ` in [lo, hi[` suffix; pass through labels without it
   (the 10 resource species). Handles both prey-row and predator-col labels.
-- `available_times(output_dir, *, prefix="osm") -> list[float]` — sorted unique `Time`.
-- `diet_network_at(output_dir, *, prefix="osm", time, threshold=1.0, predator_level="species")
+- `available_times(output_dir) -> list[float]` — sorted unique `Time` (wildcard reader; no prefix).
+- `species_layout(species: list[str]) -> dict[str, tuple[float, float]]` — compute **fixed** (x, y)
+  positions ONCE for the **union of all species across all timesteps** (e.g.
+  `networkx.spring_layout(union_graph, seed=42)` scaled, or a deterministic circular layout —
+  networkx is already a pyvis dep). Deterministic (fixed seed) so the layout is identical every
+  render. Used so the graph does NOT re-jiggle per timestep.
+- `diet_network_at(output_dir, *, time, threshold=5.0, predator_level="species")
   -> pd.DataFrame` — filter `Time == time` (raise `ValueError` if absent); drop NaN; melt predator
   cols; `_split_species` both axes; **prey-stage rows SUM to prey-species** (exact additive
   within a predator); **predator level:** `"species"` → MEAN the species' stage columns
   **excluding 0-sum dead stages** (documented unweighted approximation); `"stage"` → keep predator
   at stage granularity (no predator aggregation, exact). Return long `predator, prey, proportion`
-  (proportion in **percent**), keep links `>= threshold`. (Values stay percent; threshold default
-  `1.0` = 1%.)
+  (proportion in **percent**), keep links `>= threshold`. **Default threshold `5.0` (5%)** — review
+  measured 97 edges / 23 nodes at 1% (a hairball) vs 63 at 5% (readable); the slider lets the user
+  lower it. Values stay percent.
 
-### 2. `make_trophic_network_html(diet_df, *, threshold=1.0, height="600px") -> str` (in `trophic_network.py`)
+### 2. `make_trophic_network_html(diet_df, *, positions, threshold=5.0, height="600px") -> str` (in `trophic_network.py`)
 
 Lazy `from pyvis.network import Network`. Build `Network(directed=True, cdn_resources='in_line',
-height=height, width='100%')`; add a node per species (union of predator+prey); add a directed
-edge predator→prey with `value=proportion` (width) and a hover title (`"X% of P's diet"`) for links
-`>= threshold`; self-loops (predator==prey) rendered as cannibalism. Return `generate_html()` (a
-self-contained HTML string). Testable: assert the species labels appear, the HTML is self-contained
-(no `lib/` src), cycles/self-loops survive. Skipped if pyvis absent.
+height=height, width='100%')`; **disable physics** (`net.set_options('{"physics": {"enabled":
+false}}')` — or `net.toggle_physics(False)`); add a node per species with its **fixed
+`x`/`y` from `positions`** (the `species_layout` dict, computed once over the all-timestep union)
+and `physics=False` so **the layout is identical every render** (no per-tick re-jiggle — the
+review's BLOCKER B1); add a directed edge predator→prey with `value=proportion` (width) + a hover
+title (`"X% of P's diet"`) for links `>= threshold`; self-loops (predator==prey) render as
+cannibalism (vis.js draws a loop arc — confirmed). Return `generate_html()` (self-contained HTML).
+Testable: assert species labels appear, HTML is self-contained (no `lib/` src), the emitted JSON
+carries `"x"`/`"y"` + `"physics": {"enabled": false}` (proves fixed layout), cycles/self-loops
+survive. Skipped if pyvis absent.
 
 ### 3. UI — Results page (`ui/pages/results.py`)
 
 Add a **"Trophic Network"** sub-tab beside the diet view:
-- `ui.input_slider("trophic_time", …)` (min/max from `available_times`, populated in
-  `_do_load_results` like the other sliders) + `ui.input_radio_buttons("trophic_predator_level",
-  …, {"species","stage"})` + `ui.input_slider("trophic_threshold", …)` + `ui.output_ui(
-  "trophic_network")` + (optional) a Play button.
+- `ui.input_slider("trophic_time", …)` + `ui.input_radio_buttons("trophic_predator_level", …,
+  {"species","stage"})` + `ui.input_slider("trophic_threshold", …, value=5.0)` +
+  `ui.output_ui("trophic_network")`.
+- **Slider population (review finding):** `_do_load_results` currently populates only a *select*
+  (`ui.update_select`) — no slider is dynamically populated there. Add an explicit
+  `ui.update_slider("trophic_time", min=…, max=…, value=…)` in `_do_load_results` from
+  `available_times(out_dir)` (guarded so a run without diet output just leaves the slider default).
+  This is the first dynamically-populated slider in the module.
 - `@render.ui def trophic_network()`: lazy-import pyvis (missing → `ui.div("Install pyvis …")`);
-  read the loaded `OsmoseResults` + its `.prefix`, the slider time, level, threshold →
-  `make_trophic_network_html(diet_network_at(dir, prefix=res.prefix, time=…, threshold=…,
-  predator_level=…))` → `ui.tags.iframe(srcdoc=html, style="width:100%; height:620px; border:0;")`.
-  Wrap in try/except → on `FileNotFoundError`/empty → `ui.div("No diet-matrix output found")`
-  (degrade, never crash — the run-history-fix pattern).
-- **Caching:** wrap the wide-df read in a `@reactive.calc` keyed on the output dir + prefix, so
-  dragging the slider slices an in-memory df instead of re-reading the 3640-row CSV per tick.
-- **Optional auto-play** (`reactive.invalidate_later` advancing `trophic_time`): the first thing to
-  cut — re-sending ~658 KB/frame is heavy; ship slider-stepping, add play only if cheap.
+  read the loaded output dir (NOT `res.prefix` — the reader globs a wildcard), the slider time,
+  level, threshold → `make_trophic_network_html(diet_network_at(dir, time=…, threshold=…,
+  predator_level=…), positions=<cached layout>)` → `ui.tags.iframe(srcdoc=html, style="width:100%;
+  height:620px; border:0;")`. Wrap in try/except → `FileNotFoundError`/empty → `ui.div("No
+  diet-matrix output found")` (degrade, never crash — the run-history-fix pattern).
+- **Caching + debounce:** a `@reactive.calc` keyed on the output dir holds (a) the wide df and
+  (b) `species_layout(union species)` — both computed once per run, so dragging the slider slices an
+  in-memory df + reuses the fixed layout (no CSV re-read, no re-layout). **Debounce the slider**
+  (`@reactive.event(input.trophic_time)` on commit, or a `reactive` throttle) so the ~710 KB
+  self-contained iframe `srcdoc` transfers on step-commit, not on every continuous drag step
+  (review: in_line is ~710 KB after srcdoc-escaping; CPU per render ~95 ms is fine — wire size is
+  the cost).
+- **Optional auto-play** (`reactive.invalidate_later` advancing `trophic_time`): **cut for v1** —
+  ~710 KB/frame is too heavy for auto-advance; revisit only after the `local`+`www` optimization.
+- **Documented optimization (out of scope for v1):** `cdn_resources='local'` writing vis.js once to
+  the already-mounted `www/` static dir (`app.py:543 static_assets=_WWW`) + `iframe src=` drops the
+  per-tick payload from ~710 KB to ~5.6 KB. Kept as a follow-on; v1 uses `in_line` + debounce for
+  simplicity (no per-tick static-file churn).
 
 ## Data flow
 
@@ -131,16 +158,21 @@ threshold change → `diet_network_at(...)` (slice cached df, aggregate one time
 
 - `_split_species`: `"cod in [10.000000, 30.000000["` → `"cod"`; `"Diatoms"` → `"Diatoms"`.
 - `diet_network_at` on a **synthetic** wide dietMatrix (Time, fish prey-stage rows + a resource row,
-  predator-stage cols, a dead 0-sum stage, a NaN, a self-loop) with known values: prey stages SUM
-  to prey-species (exact); `species` level MEANs predator stages **excluding the dead stage**;
-  `stage` level keeps stages; threshold filters; NaN dropped; self-loop preserved; bad `time`
-  raises `ValueError`. Assert proportions are in percent.
-- `available_times` sorted-unique.
-- Real-EEC smoke: `diet_network_at("data/eec_full/output", prefix="eec", time=1.0)` → non-empty
-  long df, 3 columns, species names (no ` in [` at `species` level), includes a resource prey
-  (e.g. `Mesozoo`) and a self-loop predator.
-- `make_trophic_network_html` (skip if pyvis absent): on a small df with a cycle + self-loop →
-  returns a self-contained HTML string (`"src=\"lib/"` NOT present) containing the species labels.
+  predator-stage cols incl. **a species with a 0-sum dead stage** — model the herring case, NOT cod
+  which has no dead stage, so the exclusion path is actually exercised — a NaN, a self-loop) with
+  known values: prey stages SUM to prey-species (exact); `species` level MEANs predator stages
+  **excluding the dead stage** (assert the ×N/(N−dead) scaling, e.g. the herring before/after);
+  `stage` level keeps stages; threshold filters; NaN dropped; self-loop preserved; bad `time` raises
+  `ValueError`. Assert proportions are in percent (0–100).
+- `available_times` sorted-unique (wildcard reader, no prefix arg).
+- `species_layout` is deterministic (same input → identical coords) and covers the union species.
+- Real-EEC smoke: `diet_network_at("data/eec_full/output", time=1.0)` (NO prefix — wildcard read) →
+  non-empty long df, 3 columns, species names (no ` in [` at `species` level), includes a resource
+  prey (e.g. `Mesozoo`) and a self-loop predator.
+- `make_trophic_network_html` (skip if pyvis absent): on a small df with a **self-loop** + a mutual
+  cycle (both present only at low threshold — pass `threshold=0.0` for this test) + a `positions`
+  dict → returns a self-contained HTML string (`'src="lib/'` NOT present) containing the species
+  labels AND `"physics": {"enabled": false}` + `"x"`/`"y"` (proves the fixed-layout BLOCKER fix).
 - (Render fn / slider / iframe / play not unit-tested — convention; manual UI run-through covers
   wiring: launch app, load a run with diet output, open Trophic Network, drag the slider.)
 
@@ -163,9 +195,18 @@ threshold change → `diet_network_at(...)` (slice cached df, aggregate one time
   labels it "diet composition, predator stages averaged unweighted — not consumption-weighted
   flow." **(Validated against the trophic-ecology literature; the node-link representation is the
   ecologically-correct choice for a cyclic web.)**
-- Self-contained pyvis HTML is ~658 KB/render; slider-stepping is fine, auto-play is heavy (cut if
-  not cheap). Reads the Trophic file directly (existing `diet_matrix()` accessor can't — unfixed,
-  out of scope).
+- Self-contained pyvis HTML is ~673 KB raw / ~710 KB as an escaped iframe `srcdoc`; slider-stepping
+  is debounced (transfer on commit); auto-play is cut for v1. The `cdn_resources='local'`+`www/`
+  served path (per-tick ~5.6 KB) is the documented follow-on optimization.
+- Node layout is **fixed** (computed once over the all-timestep species union) so the graph is
+  stable across timesteps; the trade-off is the layout isn't re-optimised per timestep (correct
+  for "watch it shift over time" — edges change, nodes hold still).
+- **Cycle visibility:** the "145 mutual 2-cycles + self-loops" are the *raw* (threshold≈0) counts;
+  at the default 5% threshold mutual 2-cycles largely vanish and a handful of self-loops remain.
+  The pyvis-over-Sankey justification still holds (pyvis *can* render cycles/self-loops, which a
+  Sankey can't, and they appear as the user lowers the threshold) — but the default view is a
+  readable thresholded network, not the full cyclic tangle.
+- Reads the Trophic file directly (existing `diet_matrix()` accessor can't — unfixed, out of scope).
 
 ## Delivery
 
