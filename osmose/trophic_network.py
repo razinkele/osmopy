@@ -137,7 +137,12 @@ def make_trophic_network_html(
     threshold: float = 5.0,
     height: str = "600px",
 ) -> str:
-    """Self-contained pyvis node-link HTML (fixed layout, physics off) for a diet network."""
+    """Self-contained pyvis node-link HTML (fixed layout, physics off) for a diet network.
+
+    ``threshold`` is a convenience re-filter for standalone callers; when ``diet_df`` is
+    already filtered (e.g. by ``diet_network_at``), pass ``threshold=0.0`` to avoid a
+    second, stricter clamp.
+    """
     from pyvis.network import Network
 
     net = Network(directed=True, cdn_resources="in_line", height=height, width="100%")

@@ -717,7 +717,9 @@ def results_server(input, output, session, state: AppState):
                 threshold=float(input.trophic_threshold()),
                 predator_level=level,
             )
-            html = make_trophic_network_html(net, positions=cache["layouts"][level])
+            # net is already filtered to the user's threshold by diet_network_at; pass 0.0 so
+            # make_trophic_network_html's default (5.0) doesn't silently re-clamp sub-5% sliders.
+            html = make_trophic_network_html(net, positions=cache["layouts"][level], threshold=0.0)
         except (FileNotFoundError, OSError, ValueError) as e:
             return ui.div(f"Could not build trophic network: {e}", style=STYLE_EMPTY)
         return ui.div(
