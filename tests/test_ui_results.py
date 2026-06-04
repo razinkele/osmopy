@@ -277,3 +277,17 @@ def test_compare_run_choices_empty():
     from ui.pages.results import _compare_run_choices
 
     assert _compare_run_choices([]) == {}
+
+
+def test_compare_runs_readers_have_no_output_dir_guard():
+    """The 4 Compare Runs readers must not gate on input.output_dir() — they read
+    run history from default_run_history(), not the active output dir. Asserts the
+    two exact removed guard-return forms are gone (the surviving _load_results
+    notification at ~:444 uses a different string and is intentionally untouched)."""
+    import pathlib
+
+    src = (
+        pathlib.Path(__file__).resolve().parent.parent / "ui" / "pages" / "results.py"
+    ).read_text()
+    assert src.count('return go.Figure().update_layout(title="Invalid output directory"') == 0
+    assert src.count('ui.div("Invalid output directory.")') == 0

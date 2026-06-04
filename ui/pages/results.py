@@ -635,9 +635,6 @@ def results_server(input, output, session, state: AppState):
         from osmose.history import default_run_history
         from osmose.plotting import make_run_comparison
 
-        out_dir = _safe_output_dir(input.output_dir())
-        if out_dir is None:
-            return go.Figure().update_layout(title="Invalid output directory", template=tmpl)
         history = default_run_history()
         try:
             records = [history.load_run(ts) for ts in selected]
@@ -656,9 +653,6 @@ def results_server(input, output, session, state: AppState):
 
         from osmose.history import default_run_history
 
-        out_dir = _safe_output_dir(input.output_dir())
-        if out_dir is None:
-            return ui.div("Invalid output directory.")
         history = default_run_history()
         try:
             diffs = history.compare_runs_multi(list(selected))
@@ -698,10 +692,6 @@ def results_server(input, output, session, state: AppState):
         from osmose.history import default_run_history
         from osmose.plotting import make_run_delta_chart
 
-        out_dir = _safe_output_dir(input.output_dir())
-        if out_dir is None:
-            return go.Figure().update_layout(title="Invalid output directory", template=tmpl)
-
         metric = input.compare_metric()
         try:
             records = [default_run_history().load_run(ts) for ts in selected]
@@ -723,10 +713,6 @@ def results_server(input, output, session, state: AppState):
             )
         from osmose.history import default_run_history
         from osmose.analysis import format_delta_report
-
-        out_dir = _safe_output_dir(input.output_dir())
-        if out_dir is None:
-            return ui.div("Invalid output directory.")
 
         metric = input.compare_metric()
         try:
