@@ -8,6 +8,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ### Added
 
+- **config (parser diagnostics):** `OsmoseConfigReader` now collects structured, line-located
+  parse issues in `reader.diagnostics` — unparseable lines, empty keys (e.g. a `=value` that lost
+  its key), within-file duplicate keys, and recursive-reference problems (circular / missing
+  sub-config / path-escape) — plus `format_diagnostics()` and a `scripts/check_config.py` CLI.
+  Additive only: the parsed config dict is unchanged.
 - **analysis (size spectrum):** community size-spectrum diagnostics from `*DistribBySize`
   output — `osmose.size_spectrum.compute_size_spectrum` (spectrum curve, log-log slope with a
   `min_size_cm` cutoff, Large-Fish Indicator, mean size, peak bin) + `size_spectrum_timeseries`,
