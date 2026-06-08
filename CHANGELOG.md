@@ -24,6 +24,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
   fixed layout and a time-slider, so the diet network can be stepped through over time. Shows diet
   composition (proportions), predator size-stages averaged unweighted — not consumption-weighted
   flow. New `osmose.trophic_network` module + a `pyvis` dependency.
+- **tests (property-based):** Hypothesis property tests for four pure-Python targets — config
+  writer↔reader round-trip (every key/value survives + no spurious keys; separator-invariance),
+  output-preamble detection (planted-header, no-raise, cache-invalidation), diet_network_at
+  (non-negativity, threshold monotonicity, prey-sum exactness, dead-stage exclusion), and the
+  size-spectrum helpers (mean-size convexity, LFI threshold boundary, bin-width order-invariance,
+  time-window). New `tests/strategies.py` + a deterministic Hypothesis `ci` profile.
 
 ### Fixed
 
