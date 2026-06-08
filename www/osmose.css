@@ -1308,6 +1308,13 @@ body > .row > .nav-col-collapsed ~ [class*="col-"] {
     display: flex;
     height: 100%;
 }
+/* Setup page wraps the split layout under a full-width validation panel; let the
+   split layout grow to fill the remaining height instead of its own height: 100%. */
+.osm-setup-root > .osm-split-layout {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto;
+}
 .osm-split-layout > .row,
 .osm-split-layout > .bslib-grid {
     flex: 1;

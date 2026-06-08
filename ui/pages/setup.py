@@ -23,25 +23,35 @@ SETUP_GLOBAL_KEYS: list[str] = [f.key_pattern for f in SIMULATION_FIELDS if not 
 
 def setup_ui():
     return ui.div(
-        expand_tab("Simulation Settings", "setup"),
+        # Full-width live validation summary, above the split layout. Kept OUTSIDE the
+        # osm-split-layout flex row so it spans full width and does not break the
+        # expand_tab→layout_columns adjacency the collapse CSS depends on.
         ui.output_ui("config_validation"),
-        ui.layout_columns(
-            # Left column: Simulation settings
-            ui.card(
-                collapsible_card_header("Simulation Settings", "setup"),
-                ui.output_ui("simulation_fields"),
+        ui.div(
+            expand_tab("Simulation Settings", "setup"),
+            ui.layout_columns(
+                # Left column: Simulation settings
+                ui.card(
+                    collapsible_card_header("Simulation Settings", "setup"),
+                    ui.output_ui("simulation_fields"),
+                ),
+                # Right column: Species configuration (dynamic)
+                ui.card(
+                    ui.card_header("Species Configuration"),
+                    ui.input_numeric(
+                        "n_species", "Number of focal species", value=3, min=1, max=20
+                    ),
+                    ui.input_switch(
+                        "show_advanced_species", "Show advanced parameters", value=False
+                    ),
+                    ui.output_ui("species_panels"),
+                ),
+                col_widths=[4, 8],
             ),
-            # Right column: Species configuration (dynamic)
-            ui.card(
-                ui.card_header("Species Configuration"),
-                ui.input_numeric("n_species", "Number of focal species", value=3, min=1, max=20),
-                ui.input_switch("show_advanced_species", "Show advanced parameters", value=False),
-                ui.output_ui("species_panels"),
-            ),
-            col_widths=[4, 8],
+            class_="osm-split-layout",
+            id="split_setup",
         ),
-        class_="osm-split-layout",
-        id="split_setup",
+        class_="osm-setup-root d-flex flex-column h-100",
     )
 
 
