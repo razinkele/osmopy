@@ -7,11 +7,7 @@ from pathlib import Path
 
 from shiny import ui, reactive, render
 
-from osmose.config.validator import (
-    check_file_references,
-    check_species_consistency,
-    validate_config,
-)
+from osmose.config.validator import summarize_config_validation
 from osmose.engine import PythonEngine, SimulationCancelled
 from osmose.logging import setup_logging
 from osmose.runner import OsmoseRunner, RunResult, validate_java_opts
@@ -476,13 +472,9 @@ def run_server(input, output, session, state):
 
         # Validate config before run (common to both engines)
         config = state.config.get()
-        errors, warnings = validate_config(config, state.registry)
-        source_dir = state.config_dir.get()
-        if source_dir:
-            file_errors = check_file_references(config, str(source_dir), state.registry)
-            errors.extend(file_errors)
-        species_warnings = check_species_consistency(config)
-        warnings.extend(species_warnings)
+        errors, warnings = summarize_config_validation(
+            config, state.registry, state.config_dir.get()
+        )
 
         if errors:
             log_lines = ["--- VALIDATION ERRORS (run blocked) ---"]

@@ -15,22 +15,14 @@ def cmd_validate(args: argparse.Namespace) -> int:
         return 1
 
     from osmose.config.reader import OsmoseConfigReader
-    from osmose.config.validator import (
-        validate_config,
-        check_file_references,
-        check_species_consistency,
-    )
+    from osmose.config.validator import summarize_config_validation
     from osmose.schema import build_registry
 
     reader = OsmoseConfigReader()
     config = reader.read(config_path)
     registry = build_registry()
 
-    errors, warnings = validate_config(config, registry)
-    file_errors = check_file_references(config, str(config_path.parent), registry)
-    errors.extend(file_errors)
-    species_warnings = check_species_consistency(config)
-    warnings.extend(species_warnings)
+    errors, warnings = summarize_config_validation(config, registry, config_path.parent)
 
     for w in warnings:
         print(f"WARNING: {w}")
