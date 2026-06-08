@@ -8,6 +8,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ### Added
 
+- **ui (config validation):** the Setup page now shows a live validation summary panel
+  (type/range/enum errors, missing species names, missing file references) as you edit,
+  mirroring the Run gate via a new `summarize_config_validation` helper that the Run gate
+  and the `osmose validate` CLI now also use. The panel caps long issue lists and announces
+  updates via `aria-live`. Informational only — the Run gate keeps its blocking authority.
 - **config (parser diagnostics):** `OsmoseConfigReader` now collects structured, line-located
   parse issues in `reader.diagnostics` — unparseable lines, empty keys (e.g. a `=value` that lost
   its key), within-file duplicate keys, and recursive-reference problems (circular / missing
