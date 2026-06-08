@@ -77,6 +77,8 @@ per-module test convention). Hypothesis is added as a test/dev optional dependen
                                 derandomize=True, database=None)
       settings.load_profile("ci")
   ```
+  (`conftest.py` already does `from importlib.util import find_spec` for its playwright guard —
+  reuse that bare `find_spec`, don't add `import importlib.util`, or the verbatim block NameErrors.)
   Each property-test *file* uses `hypothesis = pytest.importorskip("hypothesis")` at module top
   (that skips just that file cleanly when the dep is absent — verified exit 0).
 - `.gitignore`: add `.hypothesis/`.
@@ -93,13 +95,16 @@ per-module test convention). Hypothesis is added as a test/dev optional dependen
 Hypothesis `@st.composite` strategies producing **valid-but-diverse** inputs (the discipline that
 keeps failures meaningful, not "garbage in"):
 
-- `config_keys()` → OSMOSE-shaped dotted lowercase keys (`species.linf.sp{i}`, `predation.*`,
-  `grid.*`, `simulation.*`) drawn from a safe alphabet (`[a-z0-9.]`, `sp{0..9}` suffixes); never
-  empty, never `_`-prefixed, never containing a separator char (`= ; , : tab`). **MUST exclude the
-  whole `osmose.configuration.` prefix** — the writer *regenerates* those reference keys from its own
-  routing, silently clobbering any user value at the 9 known suffixes (verified counterexample:
-  `osmose.configuration.species` → comes back as `osm_param-species.csv`). The four listed families
-  are collision-free.
+- `config_keys()` → OSMOSE-shaped dotted lowercase keys. **Concrete construction** (so "collision-free"
+  is reproducible, not a promise): pick a family prefix from a fixed set known to round-trip cleanly —
+  e.g. `{"species.linf", "species.k", "species.lifespan", "predation.accessibility.stage",
+  "grid.ncolumn", "simulation.time.ndtperyear", "movement.distribution.method"}` — optionally append a
+  generated leaf segment matching `[a-z][a-z0-9]{0,7}` and/or a `.sp{0..9}` suffix. Constraints: never
+  empty, never `_`-prefixed, never a separator char (`= ; , : tab`), and **never starting with
+  `osmose` / never the `osmose.configuration.` prefix** — the writer *regenerates* those reference
+  keys from its own routing, silently clobbering any user value at the 9 known suffixes (verified:
+  `osmose.configuration.species` → comes back as `osm_param-species.csv`). The listed families route
+  to distinct sub-files (or master) and are collision-free.
 - `config_values()` → non-empty strings that **survive the reader's normalization**. The reader
   splits each line on the writer's framing separator at `maxsplit=1`, so **internal separator chars
   are SAFE** (`a;b`, `x=y`, `1;2;3` all round-trip). The breakers are **leading/trailing whitespace**
@@ -125,9 +130,15 @@ keeps failures meaningful, not "garbage in"):
   a single Time value. Cells are **non-negative** (`min_value=0`), and **each predator-stage column
   is normalized so its (non-NaN) sum is ≤ 100** (draw raw weights, scale the column to a drawn target
   in `(0, 100]`) — otherwise `diet_network_at` legitimately returns a proportion > 100 and the bound
-  property false-fails (verified: column-sum 250 → proportion 150). Optionally a fully-zero "dead"
-  stage (excluded from normalization); optionally NaN cells (dropped, not normalized). Returned as a
-  frame the test writes to `tmp/<x>_dietMatrix.csv`.
+  property false-fails (verified: column-sum 250 → proportion 150). **The interesting cases MUST be
+  biased in explicitly** (round-3 vacuous-pass review: a single top-level "optionally" boolean
+  under-generates them — dead stages fell to 35%, NaN to 15%, multi-stage prey to 31%, below the
+  ~20–60% the corresponding properties need to actually bite). So: draw a **per-stage `st.booleans()`
+  flag (weighted ~True)** to plant a fully-zero "dead" stage (excluded from normalization); a
+  per-cell flag to plant NaN cells (dropped, not normalized); and bias the prey set so **≥1 prey
+  species spans >1 size-stage under a predator** (the case prey-sum-exactness needs). Returned as a
+  frame the test writes to `<td>/x_dietMatrix.csv` where `td` is the per-example
+  `tempfile.TemporaryDirectory()` (§0) — never the `tmp_path` fixture.
 - `edges_and_values()` → `(edges, values)`: a sorted list of 1..8 **distinct** bin edges (≥0) and an
   equal-length list of values where each value is **either exactly `0.0` or in `[1e-3, 1e6]`** (drawn
   `st.one_of(st.just(0.0), st.floats(min_value=1e-3, max_value=1e6, allow_nan=False,
@@ -135,7 +146,13 @@ keeps failures meaningful, not "garbage in"):
   `st.floats()` yields `inf`/`NaN`/`1e308` (overflow the sums to inf/NaN → false-fail), AND a
   **denormal** like `5e-324` keeps `sum>0` true while underflowing the weighted numerator to `0.0`
   → mean-size drops below `min(midpoints)` (prototype-confirmed false-fail). Keeping `0.0` in the set
-  still exercises the zero-total branch.
+  still exercises the zero-total branch. **Consumed by** the mean-size-convexity and LFI-boundary
+  properties; the LFI property draws its threshold via `st.sampled_from(edges)` (see §2) so the
+  `edge == threshold` boundary is always hit.
+- `shuffled_bin_edges()` → for the bin-width **order-invariance** property only (a separate need from
+  `edges_and_values`, which is deliberately sorted+distinct): draw ≥2 distinct base edges, inject
+  duplicates, then **shuffle**, yielding `(shuffled, sorted(set(shuffled)))`. Without this the
+  order-invariance property has no input that actually exercises ordering/dups.
 - `time_value_frames()` → small long `time,value` frames (a few distinct integer-ish times, finite
   non-negative values) for the `_window_by_time` property.
 
@@ -143,30 +160,35 @@ keeps failures meaningful, not "garbage in"):
 
 **`tests/test_config_roundtrip_properties.py`**
 - *Round-trip survives every key/value, with no drops or spurious keys:* for `d = config_kv_dicts()`,
-  `OsmoseConfigWriter().write(d, tmp)`, then `OsmoseConfigReader().read(tmp/"osm_all-parameters.csv")`
-  → (a) for every `(k, v) in d.items()`, `result[k] == v`; **(b)** the *substantive* key set is
-  preserved exactly: `set(result) - {"_osmose.config.dir"} - {k for k in result if
-  k.startswith("osmose.configuration.")} == set(d)`. Part (b) is the teeth: it catches a routing
-  change that **silently drops** a key or **invents** an extra substantive one — invisible to the
-  per-key survival check and to every existing example test (`test_roundtrip_basic` uses 5 clean
+  in a per-example `tempfile.TemporaryDirectory() as td` (§0; never `tmp_path`),
+  `OsmoseConfigWriter().write(d, Path(td))`, then `OsmoseConfigReader().read(Path(td)/"osm_all-parameters.csv")`
+  → (a) for every `(k, v) in d.items()`, `result[k] == v` (exact **string** equality — NO
+  `pytest.approx`, these are strings); **(b)** the *substantive* key set is preserved exactly:
+  `set(result) - {"_osmose.config.dir"} - {k for k in result if k.startswith("osmose.configuration.")}
+  == set(d)`. Part (b)'s **unique** teeth (over part a) is catching an **invented/spurious**
+  substantive key — mutation testing: injecting an extra key left part (a) blind (0/150) while part
+  (b) went RED (150/150). (A pure key *drop* is already caught by part (a), since the missing key
+  reads back absent.) Neither is covered by the example tests (`test_roundtrip_basic` uses 5 clean
   keys; `test_roundtrip_value_with_semicolon` deliberately declines to pin behavior).
 - *Separator invariance:* a single `key<sep>value` line parses to the same `{key: value}` for each
   `sep in {=, ;, ,, :, tab}` (drives `read_file` on a one-line temp file). Asserts the auto-detect
   produces identical k/v regardless of which separator joined them.
 
 **`tests/test_results_preamble_properties.py`**
-- *Detects the planted header:* for `(text, k, ncols) = csv_texts()` written to a temp file,
-  `_detect_preamble_lines(path) == k`. (Highest-teeth target — the detector has near-zero direct unit
-  coverage today; this catches someone dropping the `count > 1` guard or flipping the
-  first-match fallback.)
+- *Detects the planted header:* for `(text, k, ncols) = csv_texts()` written to a file under a
+  per-example `tempfile.TemporaryDirectory()` (§0; never `tmp_path`), `_detect_preamble_lines(path) == k`.
+  (Highest-teeth target — the detector has near-zero direct unit coverage today; this catches someone
+  dropping the `count > 1` guard or flipping the first-match fallback. Round-3: `k>0` generates 76%.)
 - *Never raises on degenerate input:* for arbitrary small text (empty, single line, all width-1 rows,
   blank lines), `_detect_preamble_lines` returns an `int` and does not raise. (A robustness smoke
   test — catches a crash, not a wrong answer.)
 - *Cache invalidates on file change:* write file A (preamble `k_a`) → call (returns `k_a`) →
-  **overwrite the same path** with a different file B (different preamble `k_b` and a different byte
+  **overwrite the same path** with a different file B (preamble `k_b ≠ k_a` and a different byte
   size) → call again → assert it returns `k_b`. This exercises the `(mtime_ns, size)` cache **key**
-  (the only interesting cache bug — a stale result after the file changes); a plain "two calls on an
-  unmodified file agree" check is tautological (the function is pure) and is dropped.
+  (mutation testing: a cache that keys on path alone goes RED here). The teeth ride on the `k_a ≠ k_b`
+  case (~33% unguided), so the property should `assume(k_a != k_b)` (or draw B's `k` to differ) and
+  `event()` it, so a future strategy change can't silently make it 100% tautological. (A plain "two
+  calls on an unmodified file agree" check is tautological — the function is pure — and is dropped.)
 
 **`tests/test_trophic_network_properties.py`** (uses `diet_matrices()` written to a temp CSV)
 - *Non-negative & clean node names:* every returned `proportion` is `≥ 0`; no node id (predator or
@@ -175,30 +197,40 @@ keeps failures meaningful, not "garbage in"):
   NOT asserted: the strategy normalizes each predator column ≤100 specifically so it holds, which
   makes the check circular — dropped per the teeth review.)
 - *Threshold monotonicity:* for `t_lo ≤ t_hi`, the edge set at `t_hi` is a **subset** of the edge set
-  at `t_lo` (same `(predator,prey)` keys; `↑threshold ⇒ ⊆ edges`).
-- *Prey-sum exactness:* at `predator_level="stage"`, each `(stage, prey-species)` proportion equals
-  the exact sum of that prey's size-stage cells in the source (additive composition).
+  at `t_lo` (same `(predator,prey)` keys; `↑threshold ⇒ ⊆ edges`). **Teeth (corrected in round-3
+  mutation review):** this catches a **non-monotone threshold comparator** (e.g. `>=` flipped to a
+  band/`<`, or filtering the wrong column). It does **NOT** catch "move the filter before the
+  aggregation" — proven empirically (0/150 RED) and analytically (an earlier filter only *removes*
+  edges, so the subset relation is preserved). That reorder is caught by the next property.
+- *Prey-sum exactness (catches filter-before-aggregation):* at `predator_level="stage"`, each
+  `(stage, prey-species)` proportion equals the exact sum of that prey's size-stage cells in the
+  source (additive composition), compared with `pytest.approx(rel=1e-9, abs=1e-12)`. **This is the
+  property that bites the threshold-reorder** (it changes the summed value, 15/150 RED in mutation
+  testing) — so its teeth depend on a prey species spanning **>1 size-stage under one predator**;
+  `diet_matrices()` MUST bias toward that (it fired only 31% unbiased).
 - *Dead stage never surfaces:* when `diet_matrices()` plants an all-zero predator size-stage, that
   stage label never appears as a predator at `predator_level="stage"`. (The subtler species-level
   "mean divides by live-stage count" stays an example test — it needs a known expected value that a
   generic fuzz can't assert cheaply.)
 
 **`tests/test_size_spectrum_properties.py`** (pure helpers; lists/frames, no disk)
-- *Mean size convexity (the teeth-y one):* `_mean_size(midpoints, values)` is within
-  `[min(midpoints), max(midpoints)]` when total value > 0, and is `NaN` when total ≤ 0. This is a real
-  value-weighted-average convexity invariant (NOT arithmetically forced) — it catches a
-  midpoints/values zip misalignment, a sign error, or using edges where midpoints are intended.
-- *LFI threshold boundary:* `_large_fish_indicator(edges, values, threshold)` compares the bin
-  **lower edge** with `edge >= threshold`, so a bin whose edge is **exactly** `threshold` IS counted;
-  a bin just below is not. Assert this boundary directly (off-by-one risk). On `total ≤ 0` it returns
-  **`0.0`** (verified — not NaN). *(The trivial `LFI ∈ [0,1]` bound is NOT a separate property: with
-  non-negative values it's `0 ≤ sum(subset) ≤ sum(all)` by construction, and the zero-total `== 0.0`
-  case is already in `test_large_fish_indicator` — dropped per the teeth review.)*
-- *Bin width is order-invariant:* `_infer_bin_width(shuffled_edges) == _infer_bin_width(sorted(set(...)))`
-  — feed shuffled-with-duplicates edges and assert the result equals the sorted-unique computation
-  (catches someone removing the internal `sorted(set(edges))` and assuming pre-sorted input). *(The
-  "equals the median of consecutive diffs" clause is dropped — re-implementing the formula to assert
-  `median == median` has no teeth.)*
+- *Mean size convexity (the teeth-y one):* from `edges_and_values()`, `_mean_size(midpoints, values)`
+  is within `[min(midpoints) - 1e-9, max(midpoints) + 1e-9]` when total value > 0, and is `NaN` when
+  total ≤ 0. A real value-weighted-average convexity invariant (NOT arithmetically forced) — mutation
+  testing confirmed it catches a midpoints/values zip misalignment / arg-swap (238–242 / ~250 RED).
+- *LFI threshold boundary:* from `edges_and_values()`, draw `threshold = data.draw(st.sampled_from(edges))`
+  (NB: drawing the threshold FROM the edges is **load-bearing** — a free-floating threshold almost
+  never coincides with an edge and the boundary bug slips through; with it, mutation testing caught
+  `>=`→`>` 261/261 RED). `_large_fish_indicator` compares the bin **lower edge** with
+  `edge >= threshold`, so the bin whose edge **equals** `threshold` IS counted; assert that bin's
+  value is included, and that with `threshold = that_edge + 1e-6` the bin drops out. On `total ≤ 0`
+  it returns **`0.0`** (not NaN). *(The trivial `LFI ∈ [0,1]` bound is NOT a separate property —
+  arithmetically forced + already in `test_large_fish_indicator`; dropped per the teeth review.)*
+- *Bin width is order-invariant:* from `shuffled_bin_edges()` yielding `(shuffled, canonical)`,
+  `_infer_bin_width(shuffled) == _infer_bin_width(canonical)` exactly (catches someone removing the
+  internal `sorted(set(edges))` and assuming pre-sorted input). *(The "equals the median of
+  consecutive diffs" clause is dropped — re-implementing the formula to assert `median == median` has
+  no teeth.)*
 - *Window keeps only in-range rows:* `_window_by_time(df, "time", w)` (with `w = st.integers(min_value=1, …)`
   to match the `int` signature; `w < 1` raises) returns only rows with `time > tmax - w` (strict `>`),
   and `n_rows(out) ≤ n_rows(in)`.
