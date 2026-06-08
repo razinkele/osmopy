@@ -146,3 +146,27 @@ def check_species_consistency(config: dict[str, str]) -> list[str]:
         if key not in config:
             warnings.append(f"Missing resource species name: {key}")
     return warnings
+
+
+def summarize_config_validation(
+    config: dict[str, str],
+    registry: ParameterRegistry,
+    config_dir: Path | None = None,
+) -> tuple[list[str], list[str]]:
+    """Aggregate all config checks into (errors, warnings) of human-readable strings.
+
+    The single source of truth for "what's wrong with this config", consumed by
+    the Setup live panel, the Run gate (whose inline sequence it mirrors exactly),
+    and the `osmose validate` CLI. The sequence: type/range/enum checks, then
+    file-reference checks (only when config_dir is set — relative paths would
+    false-error otherwise), then species-name consistency (warnings). Pure; never
+    raises on a partial config.
+
+    The returned lists are fresh (validate_config builds new local lists), so callers
+    may safely keep extending them.
+    """
+    errors, warnings = validate_config(config, registry)
+    if config_dir:  # truthiness — matches the gate's `if source_dir:` exactly
+        errors.extend(check_file_references(config, str(config_dir), registry))
+    warnings.extend(check_species_consistency(config))
+    return errors, warnings

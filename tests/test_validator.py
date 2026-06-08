@@ -134,3 +134,90 @@ def test_check_species_consistency_float():
     config = {"simulation.nspecies": "3.0", "simulation.nresource": "1.0"}
     warnings = check_species_consistency(config)
     assert isinstance(warnings, list)  # should not crash
+
+
+def test_summarize_clean_config_returns_empty():
+    from osmose.config.validator import summarize_config_validation
+    from osmose.schema import build_registry
+
+    registry = build_registry()
+    config = {"simulation.nspecies": "1", "species.name.sp0": "cod", "species.type.sp0": "focal"}
+    errors, warnings = summarize_config_validation(config, registry)
+    assert errors == []
+    assert warnings == []
+
+
+def test_summarize_reports_enum_error():
+    from osmose.config.validator import summarize_config_validation
+    from osmose.schema import build_registry
+
+    registry = build_registry()
+    config = {"species.type.sp0": "invalid_type"}
+    errors, _ = summarize_config_validation(config, registry)
+    assert any("invalid_type" in e for e in errors)
+
+
+def test_summarize_reports_missing_species_warning():
+    from osmose.config.validator import summarize_config_validation
+    from osmose.schema import build_registry
+
+    registry = build_registry()
+    config = {"simulation.nspecies": "2"}  # no species.name.sp0/sp1
+    _, warnings = summarize_config_validation(config, registry)
+    assert len([w for w in warnings if "species name" in w.lower()]) == 2
+
+
+def test_summarize_skips_file_checks_when_no_dir():
+    from osmose.config.validator import summarize_config_validation
+    from osmose.schema import build_registry
+
+    registry = build_registry()
+    config = {"movement.file.map0": "does_not_exist.csv"}
+    errors, _ = summarize_config_validation(config, registry, config_dir=None)
+    assert not any("File not found" in e for e in errors)
+
+
+def test_summarize_reports_file_error_with_dir(tmp_path):
+    from osmose.config.validator import summarize_config_validation
+    from osmose.schema import build_registry
+
+    registry = build_registry()
+    config = {"movement.file.map0": "missing_map.csv"}
+    errors, _ = summarize_config_validation(config, registry, config_dir=tmp_path)
+    assert any("File not found" in e and "movement.file.map0" in e for e in errors)
+
+
+def test_summarize_does_not_raise_on_malformed():
+    from osmose.config.validator import summarize_config_validation
+    from osmose.schema import build_registry
+
+    registry = build_registry()
+    config = {"species.type.sp0": "invalid_type", "simulation.nspecies": "2"}
+    errors, warnings = summarize_config_validation(config, registry)  # must not raise
+    assert isinstance(errors, list) and isinstance(warnings, list)
+
+
+def test_summarize_matches_inline_composition_dry_lock(tmp_path):
+    """The helper must be byte-identical to the old inline gate sequence."""
+    from osmose.config.validator import (
+        summarize_config_validation,
+        validate_config,
+        check_file_references,
+        check_species_consistency,
+    )
+    from osmose.schema import build_registry
+
+    registry = build_registry()
+    config = {
+        "simulation.nspecies": "2",
+        "species.type.sp0": "invalid_type",
+        "movement.file.map0": "missing_map.csv",
+    }
+    for config_dir in (None, tmp_path):
+        inline_err, inline_warn = validate_config(config, registry)
+        if config_dir:
+            inline_err.extend(check_file_references(config, str(config_dir), registry))
+        inline_warn.extend(check_species_consistency(config))
+        helper_err, helper_warn = summarize_config_validation(config, registry, config_dir)
+        assert helper_err == inline_err
+        assert helper_warn == inline_warn
