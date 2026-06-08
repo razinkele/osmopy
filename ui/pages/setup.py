@@ -6,6 +6,7 @@ from shiny.types import SilentException
 from osmose.logging import setup_logging
 from osmose.schema.simulation import SIMULATION_FIELDS
 from osmose.schema.species import SPECIES_FIELDS
+from osmose.config.validator import summarize_config_validation
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.components.param_form import (
     copy_species0_to_all,
@@ -23,6 +24,7 @@ SETUP_GLOBAL_KEYS: list[str] = [f.key_pattern for f in SIMULATION_FIELDS if not 
 def setup_ui():
     return ui.div(
         expand_tab("Simulation Settings", "setup"),
+        ui.output_ui("config_validation"),
         ui.layout_columns(
             # Left column: Simulation settings
             ui.card(
@@ -44,6 +46,54 @@ def setup_ui():
 
 
 def setup_server(input, output, session, state):
+    @reactive.calc
+    def _config_validation():
+        """(loaded, errors, warnings). Recomputes on every edit AND on load,
+        since every loader sets state.config directly. Never raises — a half-entered
+        config must never crash the Setup tab."""
+        config = state.config.get()
+        config_dir = state.config_dir.get()
+        loaded = bool(config) and "simulation.nspecies" in config
+        if not loaded:
+            return (False, [], [])
+        try:
+            errors, warnings = summarize_config_validation(config, state.registry, config_dir)
+        except Exception as exc:  # noqa: BLE001 - panel must degrade, never crash the tab
+            return (True, [], [f"validation unavailable: {exc}"])
+        return (True, errors, warnings)
+
+    @render.ui
+    def config_validation():
+        loaded, errors, warnings = _config_validation()
+
+        def _issue_lines(items, css, cap=10):
+            lines = [
+                ui.div(f"• {m}", class_=css, style="overflow-wrap:anywhere") for m in items[:cap]
+            ]
+            if len(items) > cap:
+                lines.append(ui.div(f"… and {len(items) - cap} more", class_="small text-muted"))
+            return lines
+
+        if not loaded:
+            inner = ui.div("No configuration loaded", class_="small text-muted")
+        elif not errors and not warnings:
+            inner = ui.div("✓ Configuration valid", class_="small text-success")
+        else:
+            badge_css = "fw-bold text-danger" if errors else "fw-bold text-warning"
+            inner = ui.div(
+                ui.div(
+                    f"{len(errors)} error(s) · {len(warnings)} warning(s)",
+                    class_=badge_css,
+                ),
+                *_issue_lines(errors, "small text-danger"),
+                *_issue_lines(warnings, "small text-warning"),
+            )
+
+        return ui.card(
+            ui.div(inner, **{"aria-live": "polite", "aria-atomic": "true"}),
+            class_="mb-2",
+        )
+
     @render.ui
     def simulation_fields():
         state.load_trigger.get()

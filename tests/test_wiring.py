@@ -22,3 +22,10 @@ def test_cli_uses_helper_and_prunes_imports():
     assert "check_file_references" not in src
     assert "check_species_consistency" not in src
     assert "validate_config" not in src
+
+
+def test_setup_wires_live_validation_panel():
+    src = Path("ui/pages/setup.py").read_text()
+    assert "summarize_config_validation" in src
+    assert 'ui.output_ui("config_validation")' in src
+    assert "aria-live" in src
