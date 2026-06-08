@@ -37,15 +37,18 @@ All four targets and their gotchas were read in the current tree before this spe
   predator unweighted mean over LIVE stages (0-sum dead stage excluded), threshold filter, NaN drop.
 - **Size-spectrum** — `osmose/size_spectrum.py::compute_size_spectrum(output_dir, ...)` reads a CSV
   from disk, but the invariant-bearing logic is in pure helpers that take plain lists/frames:
-  `_large_fish_indicator(edges, values, threshold) -> float` (∈[0,1]), `_mean_size(midpoints,
-  values) -> float`, `_infer_bin_width(edges) -> float` (median of consecutive diffs),
-  `_community_long(wide) -> long`, `_window_by_time(df, time_col, window_years) -> df`. **Fuzz the
-  helpers directly** (no file-format scaffolding); `compute_size_spectrum` end-to-end stays covered by
-  the existing real-EEC example test.
-- **Dependency / settings** — `hypothesis` is **not** a dependency (no `from hypothesis` anywhere).
-  `pyproject.toml` has `[project.optional-dependencies]` with a `dev`/test extra. There is a shared
+  `_large_fish_indicator(edges, values, threshold) -> float` (∈[0,1]; returns `0.0` not NaN on
+  total≤0; compares lower `edge >= threshold`), `_mean_size(midpoints, values) -> float` (NaN on
+  total≤0), `_infer_bin_width(edges) -> float` (median of consecutive diffs of `sorted(set(edges))`),
+  `_window_by_time(df, time_col, window_years:int) -> df` (strict `time > tmax - w`). **Fuzz these
+  helpers directly** (no file-format scaffolding); `compute_size_spectrum` end-to-end and
+  `_community_long` (a plain melt) stay covered by the existing real-EEC example test.
+- **Dependency / settings** — `hypothesis` is **not** a dependency and is **not installed in `.venv`**
+  (verified by both spec reviewers: `import hypothesis` → ModuleNotFoundError). `pyproject.toml` has
+  exactly one test/dev extra named **`dev`** (`[project.optional-dependencies].dev` — currently
+  pytest, pytest-asyncio, pytest-cov, ruff, pre-commit, pyright, numba). There is a shared
   `tests/conftest.py`. CI lint targets `osmose/ ui/ tests/` (so the new test + strategies files **must
-  be ruff-clean**). CI runs the full pytest suite.
+  be ruff-clean**). CI runs the full pytest suite. **The plan must `pip install hypothesis` into `.venv`.**
 
 ## Architecture
 
@@ -55,8 +58,9 @@ per-module test convention). Hypothesis is added as a test/dev optional dependen
 
 ### 0. Dependency + settings
 
-- `pyproject.toml`: add `"hypothesis>=6.100"` to the existing dev/test optional-dependency extra
-  (already installed in `.venv` will be confirmed by the plan; if absent the plan installs it).
+- `pyproject.toml`: add `"hypothesis>=6.100"` to the **`dev`** optional-dependency extra (the only
+  test/dev extra). It is NOT currently installed in `.venv`, so the plan's first step is
+  `.venv/bin/pip install "hypothesis>=6.100"`.
 - `tests/conftest.py`: register and load a Hypothesis **`"ci"` profile** with
   `max_examples=150`, `deadline=None` (no per-example timeout → no flaky timing failures under load),
   `derandomize=True` (a green run stays green; reproducible), and
@@ -72,24 +76,42 @@ keeps failures meaningful, not "garbage in"):
 
 - `config_keys()` → OSMOSE-shaped dotted lowercase keys (`species.linf.sp{i}`, `predation.*`,
   `grid.*`, `simulation.*`) drawn from a safe alphabet (`[a-z0-9.]`, `sp{0..9}` suffixes); never
-  empty, never `_`-prefixed, never containing a separator char (`= ; , : tab`).
-- `config_values()` → non-empty strings from a safe alphabet that **survive the reader's
-  normalization**: no leading/trailing whitespace, no trailing `";,:\t ="`, no separator chars
-  (so the value is not re-split). Includes digits, decimals, simple words, paths-without-separators.
+  empty, never `_`-prefixed, never containing a separator char (`= ; , : tab`). **MUST exclude the
+  whole `osmose.configuration.` prefix** — the writer *regenerates* those reference keys from its own
+  routing, silently clobbering any user value at the 9 known suffixes (verified counterexample:
+  `osmose.configuration.species` → comes back as `osm_param-species.csv`). The four listed families
+  are collision-free.
+- `config_values()` → non-empty strings that **survive the reader's normalization**. The reader
+  splits each line on the writer's framing separator at `maxsplit=1`, so **internal separator chars
+  are SAFE** (`a;b`, `x=y`, `1;2;3` all round-trip). The only breakers are **leading/trailing
+  whitespace** (reader `.strip()`) and a **trailing char in `";,:\t ="`** (reader
+  `.rstrip(";,:\t =")`). So: non-empty, no leading/trailing whitespace, last char not in `;,:\t =`.
+  Allowing internal separators makes the test *more* diverse (it proves they round-trip).
 - `config_kv_dicts()` → `dict(config_keys, config_values)` with ≥1 entry, unique keys.
 - `csv_texts()` → tuples `(text, k, ncols)`: `k` (0..3) single-field preamble lines (realistic OSMOSE
-  description rows, width 1), then a header + `1..4` data rows each with `ncols` (2..6) fields joined
-  by the delimiter `_detect_preamble_lines` splits on (the plan confirms the exact delimiter and the
-  strategy matches it). Single-field preamble lines guarantee the first equal-width-`>1` pair is the
+  description rows, width 1), then a header + `1..4` data rows each with `ncols` (2..6) fields.
+  **`_detect_preamble_lines` counts fields with `csv.reader` — i.e. the COMMA delimiter** (NOT the
+  config separator, NOT whitespace; a tab-joined strategy false-fails, verified). Rows are
+  comma-joined and every field/preamble token is drawn from a **comma-free, double-quote-free**
+  alphabet (a comma or a quoted field changes the csv field count and breaks the width-1 preamble
+  assumption). Single-field preamble lines guarantee the first equal-width-`>1` pair is the
   header/first-data-row, so the detector must return `k`.
 - `diet_matrices()` → a wide `Time,Prey,<predator-stage cols>` DataFrame: 1..3 predator species each
   with 1..3 size-stages, a prey set including some predator species (self-loops) and a resource;
-  cells are non-negative percents per stage (optionally a fully-zero "dead" stage; optionally NaN
-  cells); a single Time value. Returned as a frame the test writes to `tmp/<x>_dietMatrix.csv`.
-- `edges_and_values()` → `(edges, values)`: a sorted list of 1..8 distinct bin edges (≥0) and an
-  equal-length list of non-negative values (some zero), for the size-spectrum helpers.
-- `community_size_frames()` → small wide `Time,<size-bin cols>` frames for `_community_long` /
-  `_window_by_time`.
+  a single Time value. Cells are **non-negative** (`min_value=0`), and **each predator-stage column
+  is normalized so its (non-NaN) sum is ≤ 100** (draw raw weights, scale the column to a drawn target
+  in `(0, 100]`) — otherwise `diet_network_at` legitimately returns a proportion > 100 and the bound
+  property false-fails (verified: column-sum 250 → proportion 150). Optionally a fully-zero "dead"
+  stage (excluded from normalization); optionally NaN cells (dropped, not normalized). Returned as a
+  frame the test writes to `tmp/<x>_dietMatrix.csv`.
+- `edges_and_values()` → `(edges, values)`: a sorted list of 1..8 **distinct** bin edges (≥0) and an
+  equal-length list of values drawn as **finite non-negative floats** (`allow_nan=False,
+  allow_infinity=False, min_value=0, max_value≈1e6`, some zero). The float bounds are LOAD-BEARING:
+  default `st.floats()` yields `inf`/`NaN`/`1e308`, which overflow the LFI/mean sums to `inf`/`NaN`
+  and false-fail the bound properties (and `derandomize=True` would lock that in as a reproducible
+  red, not a flake).
+- `time_value_frames()` → small long `time,value` frames (a few distinct integer-ish times, finite
+  non-negative values) for the `_window_by_time` property.
 
 ### 2. Property test files (one per target)
 
@@ -123,13 +145,18 @@ keeps failures meaningful, not "garbage in"):
 
 **`tests/test_size_spectrum_properties.py`** (pure helpers; lists/frames, no disk)
 - *LFI bounded:* `_large_fish_indicator(edges, values, threshold)` ∈ `[0, 1]` for any
-  `edges_and_values()` (or `NaN` only when total value ≤ 0, asserted explicitly).
+  `edges_and_values()`. On `total ≤ 0` the real impl returns **`0.0`** (NOT NaN) — assert `== 0.0`
+  for the zero-total case. Threshold is compared against the bin **edge** (`edge >= threshold`, lower
+  edge), so an edge exactly equal to the threshold counts.
 - *Mean size bounded:* `_mean_size(midpoints, values)` is within `[min(midpoints), max(midpoints)]`
-  when total value > 0 (else `NaN`).
-- *Bin width = median of diffs, order-invariant:* `_infer_bin_width(edges)` equals the median of
-  consecutive differences and is invariant to input ordering.
-- *Window keeps only in-range rows:* `_window_by_time(df, "time", w)` returns only rows with
-  `time > tmax - w`, and `n_rows(out) ≤ n_rows(in)`.
+  when total value > 0, and is `NaN` when total ≤ 0 (this is the helper that returns NaN, unlike LFI).
+- *Bin width = median of diffs, order-invariant:* `_infer_bin_width(edges)` equals the median of the
+  consecutive differences of `sorted(set(edges))` (the impl sorts+dedups internally, so it is
+  order-invariant); the strategy's "distinct edges" guarantees ≥2 unique so the `1.0` `<2`-edge
+  fallback never fires.
+- *Window keeps only in-range rows:* `_window_by_time(df, "time", w)` (with `w = st.integers(min_value=1, …)`
+  to match the `int` signature; `w < 1` raises) returns only rows with `time > tmax - w` (strict `>`),
+  and `n_rows(out) ≤ n_rows(in)`.
 
 ## Data flow
 
