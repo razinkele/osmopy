@@ -1,7 +1,7 @@
 # Real-time config validation in the Shiny form — Design
 
 **Date:** 2026-06-08
-**Status:** Approved direction (brainstormed; codebase-grounded). Clean UI feature over existing, tested validators.
+**Status:** Approved direction (brainstormed; codebase-grounded; **2 in-loop review rounds folded**). Clean UI feature over existing, tested validators.
 
 ## Motivation
 
@@ -28,7 +28,7 @@ Read in the current tree:
 
 ## Architecture
 
-One pure helper (the single source of truth for "what's wrong with this config"), consumed by both the new live panel and the existing Run gate (DRY), plus the panel UI.
+One pure helper — the single source of truth for "what's wrong with this config" — consumed by **all three** of its current callers (the new live panel, the existing Run gate, and the `osmose validate` CLI, which today hand-rolls the identical sequence at `osmose/cli.py:29-33`), plus the panel UI. Unifying the CLI too is what makes "single source of truth" actually true rather than aspirational (round-2 finding: `cli.py` is a third copy).
 
 ### 1. `summarize_config_validation` (`osmose/config/validator.py`)
 
@@ -58,14 +58,20 @@ itself call the other two checkers, so no double-counting. `validator.py` alread
 and `ParameterRegistry` — the hints need NO new imports.) The guard uses `if config_dir:`
 truthiness, not `is not None`, so it matches the gate even for the (never-occurring) `""` case.
 
-### 2. Run gate refactor (`ui/pages/run.py::handle_run`) — DRY
+### 2. Caller refactors (`ui/pages/run.py::handle_run` + `osmose/cli.py::cmd_validate`) — DRY
 
 Replace the inline 6-line sequence with:
 ```python
 config = state.config.get()
 errors, warnings = summarize_config_validation(config, state.registry, state.config_dir.get())
 ```
-The downstream `if errors: ... if warnings: ...` blocking logic is **unchanged** (verified: `errors`/`warnings` are consumed only within the gate; `config = state.config.get()` stays — it's still passed to the engine runners). This keeps the panel and the gate from drifting. A test locks that the helper reproduces the old inline result. **Prune** the now-unused `validate_config`/`check_file_references`/`check_species_consistency` imports from `run.py` (replace with `summarize_config_validation`) or ruff F401 fails CI.
+The downstream `if errors: ... if warnings: ...` blocking logic is **unchanged** (verified: `errors`/`warnings` are consumed only within the gate; `config = state.config.get()` stays — it's still passed to the engine runners). This keeps the panel and the gate from drifting. A test locks that the helper reproduces the old inline result. **Prune** the now-unused `validate_config`/`check_file_references`/`check_species_consistency` imports from `run.py` (replace with `summarize_config_validation`) or ruff F401 fails CI. (Round-2 verified: those three names appear in `run.py` **only** at the import and the gate block — `run.py:11-13` + `:479/482/484` — so the prune is safe; run.py imports from `osmose.config.validator` directly, so no `osmose/config/__init__.py` re-export is needed and none should be added.)
+
+Likewise refactor the CLI `cmd_validate` (`osmose/cli.py:29-33`), which today inlines the same three calls with `config_dir = config_path.parent` (always set — a CLI always reads from a file, so the helper's `if config_dir:` guard always runs the file checks, exactly matching today):
+```python
+errors, warnings = summarize_config_validation(config, registry, config_path.parent)
+```
+Same import prune (`cli.py:18-22`). Behavior-preserving by construction (the helper *is* that sequence). The DRY-lock test covers both call sites. After this, the helper genuinely is the only copy.
 
 ### 3. Live panel (`ui/pages/setup.py`)
 
@@ -74,11 +80,16 @@ The downstream `if errors: ... if warnings: ...` blocking logic is **unchanged**
   - **No config** (`not config` or `"simulation.nspecies" not in config`): a neutral grey line `No configuration loaded` — **NOT** green. (Avoids the false "✓ valid" on an empty/unloaded `{}` config, which `validate_config({})` would otherwise report as clean.)
   - **Clean** (config present, no errors/warnings): a single quiet green line `✓ Configuration valid`.
   - **Issues:** a header badge `N error(s) · M warning(s)` (red when errors>0, else amber), then an errors group (red `•` lines) followed by a warnings group (amber `•` lines), each line the validator's own message string (which includes the offending key).
+    - **Cap the volume (round-2 SHOULD-FIX — real on loaded configs).** `check_file_references` emits **one error per FILE_PATH key**, and those keys are heavily index-expanded — `movement.file.map{idx}` alone is ~26 keys on baltic / ~56 on eec_full, plus `species.file.sp{idx}`, `reproduction.season.file.sp{idx}`, etc. A single moved/renamed `config_dir` therefore produces **30-60+ red lines** that bury the handful of type/range errors the user is actively editing. So **cap each group at the first 10 lines** with a muted `… and N more error(s)` / `… and M more warning(s)` tail line. (The Run gate's run-log dump stays uncapped — this cap is panel-only, for at-a-glance scanning.)
+    - **Wrap long messages (round-2 SHOULD-FIX).** A resolved `File not found for 'movement.file.map0': /abs/path/...csv` line is ~90-110 chars, and `.card` sets `overflow: hidden` (`www/osmose.css:463`) with **no** `word-break`/`overflow-wrap` rule on body text, so long paths clip silently. Give the message lines `style="overflow-wrap:anywhere"` (or a small `.osm-validation-msg` class) so they wrap instead of clip.
+- **Accessibility (round-2 SHOULD-FIX).** Wrap the card's inner content `ui.div` with `**{"aria-live": "polite", "aria-atomic": "true"}` so the live summary is announced to screen readers as it updates (atomic → re-announce the whole summary, not diffed lines). In-repo precedent: the live calibration header at `ui/pages/calibration_handlers.py:837` uses exactly `aria-live="polite"`. Severity is already non-color-redundant via the `N error(s) · M warning(s)` text badge and the `✓` glyph; optionally use distinct per-line glyphs for errors vs warnings (e.g. `✕` red / `⚠` amber) so a colorblind user scanning lines — not just the badge — can tell them apart.
 - `setup_ui()` returns `ui.div(expand_tab(...), ui.layout_columns(...), id="split_setup", class_="osm-split-layout ...")`. Insert `ui.output_ui("config_validation")` (wrapped in a compact `ui.card`) as the **second child of that outer `ui.div`** — after `expand_tab(...)`, before `ui.layout_columns(...)`. NB: the outer div is a flex/split-layout container, so the manual Playwright pass must confirm the card spans **full width above** the columns (not collapses into a flex column); if it does, give the card `class_="w-100"` or move it just outside the split container.
 
 ## Data flow
 
 `edit field → sync_inputs effect writes state.config → _config_validation recomputes (summarize_config_validation) → config_validation re-renders the card`. The Run gate calls the same helper at click time. No new state, no engine calls.
+
+**Confirmed (round-2): the panel also refreshes on config LOAD, not only on edit.** Every loader sets `state.config` *directly* — example load `ui/pages/grid.py:843`, scenario load `ui/pages/scenarios.py:181`, advanced import `ui/pages/advanced.py:175` — and that `reactive.Value` is exactly the calc's dependency, so the calc invalidates immediately on load (it does **not** need `load_trigger`, which only re-renders the input widgets). Equally confirmed: the panel is **inert during a run** (the engine runs off a copied `run_config`; `state.config` is not mutated, and the calc does not read `state.busy`), and editing a species-table cell writes config on the **same flush** (the `sync_species_inputs` effect re-reads all cells and does one `state.config.set()` per run, so no one-interaction lag).
 
 **Coverage caveat (honest):** the panel validates exactly the keys in `state.config`. The Setup species sync only writes **visible, synced** fields — advanced species fields hidden behind "Show advanced parameters" and multi-value (`;`-array) fields are NOT written back from the form (they retain their loaded-from-disk value, or are absent for a fresh in-UI config). So the panel mirrors the Run gate on the *synced* key set, not necessarily on every on-screen-editable widget. This is inherent to the existing sync design, not introduced here — the panel just surfaces whatever `validate_config` sees on `state.config`. The manual run-through must toggle "Show advanced parameters" and confirm the panel does not show errors for keys with no visible/editable input.
 
@@ -93,13 +104,13 @@ The downstream `if errors: ... if warnings: ...` blocking logic is **unchanged**
 
 - **Unit-test the pure helper** `summarize_config_validation` (`tests/test_validator.py` or a new `tests/test_config_validation_summary.py`): a clean `sample_config` → `([], [])` (or warnings-only); an out-of-range value → the expected error string; a missing `species.name.spN` (nspecies>names) → the consistency warning; `config_dir=None` → file checks skipped (no file errors even with a FILE_PATH key); `config_dir=<tmp without the file>` → a file-reference error. A malformed value can't crash it (returns lists).
   Also test the `loaded` flag: empty `{}` and a config without `simulation.nspecies` → `loaded=False`; a config with it → `loaded=True`.
-- **DRY-lock test**: assert `summarize_config_validation(cfg, reg, d)` equals the old inline composition (`validate_config` + conditional `check_file_references` + `check_species_consistency`) for a representative config — so the Run-gate refactor is provably behavior-preserving.
-- **Wiring**: assert `config_validation` and `summarize_config_validation` appear in `ui/pages/setup.py` source; assert `summarize_config_validation` is used in `ui/pages/run.py` AND that the old `validate_config`/`check_file_references`/`check_species_consistency` imports were pruned there (so ruff F401 stays clean). Page-build smoke `tests/test_ui_*` (esp. any Setup/run UI build test) still passes; `ruff check ui/ osmose/ tests/` + `ruff format --check` clean.
-- **Manual Playwright run-through** (render fn not unit-tested, per convention): load a config, edit a numeric field out of range → the card shows the error live; fix it → card returns to green; before any load → neutral "No configuration loaded"; toggle "Show advanced parameters" → no errors appear for keys with no visible input; confirm the card spans full width above the columns (placement) and that rapid species-table typing doesn't cause objectionable flicker (the panel re-renders independently of the inputs, so no focus loss — but watch the cadence); the existing Run gate still blocks on the same errors.
+- **DRY-lock test**: assert `summarize_config_validation(cfg, reg, d)` equals the old inline composition (`validate_config` + conditional `check_file_references` + `check_species_consistency`) for a representative config — so the gate **and CLI** refactors are provably behavior-preserving. (Round-2 verified the result lists are deterministic — `validate_config`/`check_file_references`/`check_species_consistency` all iterate `config.items()`/`range(...)` with no glob or set ordering, and all return **fresh** local lists, so the helper's `.extend()` can't alias/mutate a cached list — direct list `==` is sound, no sorting needed, no repeat-call test required.)
+- **Wiring**: assert `config_validation` and `summarize_config_validation` appear in `ui/pages/setup.py` source; assert `summarize_config_validation` is used in `ui/pages/run.py` **and `osmose/cli.py`** AND that the old `validate_config`/`check_file_references`/`check_species_consistency` imports were pruned from both (so ruff F401 stays clean). `validator.py` has no `__all__`, so these stay source-string asserts (correct mechanism). Page-build smoke `tests/test_ui_*` (esp. any Setup/run UI build test) still passes; CLI `cmd_validate` behavior test (existing `tests/test_cli*` if any, else add one) still passes; `ruff check ui/ osmose/ tests/` + `ruff format --check` clean.
+- **Manual Playwright run-through** (render fn not unit-tested, per convention): load a config, edit a numeric field out of range → the card shows the error live; fix it → card returns to green; before any load → neutral "No configuration loaded"; toggle "Show advanced parameters" → no errors appear for keys with no visible input; confirm the card spans full width above the columns (placement) and that rapid species-table typing doesn't cause objectionable flicker (the panel re-renders independently of the inputs, so no focus loss — but watch the cadence); the existing Run gate still blocks on the same errors. **Round-2 additions:** load a config then point it at a moved/renamed dir (or load one with broken file refs) → confirm the errors group **caps at 10** with a `… and N more` tail (not a 50-line wall) and that a long File-not-found **path wraps, not clips**; confirm the card carries `aria-live="polite"`.
 
 ## Scope / YAGNI
 
-- **In:** the `summarize_config_validation` helper, the Run-gate refactor to use it, the Setup live panel (calc + render + `output_ui`), tests, a CHANGELOG note.
+- **In:** the `summarize_config_validation` helper, the Run-gate **and CLI** refactors to use it, the Setup live panel (calc + render + `output_ui`, with the 10-line cap, message wrapping, and `aria-live`), tests, a CHANGELOG note.
 - **Out (clean follow-ons):** per-field inline error styling / red borders (Approach C — needs render-path restructure + awkward in the species table); surfacing the engine key-allowlist `validate()` unknown-key suggestions (engine-side, noisier — a separate "unknown key" advisory); the reader `ConfigDiagnostic` parse panel (only meaningful in the Advanced raw-import tab); blocking/auto-fix behavior (the panel is informational; the Run gate keeps its blocking authority unchanged).
 
 ## Honest limitations
@@ -107,7 +118,8 @@ The downstream `if errors: ... if warnings: ...` blocking logic is **unchanged**
 - The panel is a **summary**, not pinpoint per-field highlighting — it lists `key: message` lines, not red borders on the offending inputs (that's the deferred Approach C).
 - It mirrors the Run gate's checks exactly; it does **not** add new validation (e.g. unknown-key detection is engine-side and out of scope).
 - It validates the **synced** key set in `state.config`, which excludes advanced-hidden species fields and multi-value `;`-array fields that the form doesn't write back (Coverage caveat above) — same limitation the Run gate already has, since both read `state.config`.
+- **`config_dir` can be stale across loads (round-2 note).** Only the example loader sets `state.config_dir` (`grid.py:844`); scenario load (`scenarios.py:179-205`) and advanced import (`advanced.py:165-194`) set `state.config` but leave `config_dir` untouched. So loading an example then a scenario can leave the panel's `check_file_references` resolving paths against the prior dir. This is **not introduced here** — `run.py` reads the same stale `state.config_dir.get()`, so the panel still mirrors the gate exactly (the DRY-parity invariant holds). Fixing the stale dir is a separate concern for both call sites.
 
 ## Delivery
 
-Single additive PR: `osmose/config/validator.py` (+helper), `ui/pages/setup.py` (panel + output_ui), `ui/pages/run.py` (DRY refactor), tests, CHANGELOG. No schema/engine changes; the Run gate's blocking behavior is unchanged.
+Single additive PR: `osmose/config/validator.py` (+helper), `ui/pages/setup.py` (panel + output_ui), `ui/pages/run.py` (DRY refactor), `osmose/cli.py` (DRY refactor), tests, CHANGELOG. No schema/engine changes; the Run gate's blocking behavior is unchanged. CHANGELOG: a `**ui (config validation):**` line under `## [Unreleased]` → `### Added` (matches the repo's Keep-a-Changelog format).
