@@ -207,18 +207,23 @@ def csv_texts(draw):
 
 @st.composite
 def csv_text_pairs(draw):
-    """(text_a, k_a, text_b, k_b) with k_a != k_b by construction (so the cache-
-    invalidation property is never a tautological pass-through)."""
+    """(text_a, k_a, text_b, k_b) with k_a != k_b AND different byte size.
+
+    The byte-size guarantee is LOAD-BEARING (plan-review BLOCKER): _detect_preamble_lines
+    caches on (mtime_ns, size), and a same-size in-place rewrite within one mtime_ns tick
+    (coarse tmpfs clocks) would NOT invalidate the cache — so the property would falsely fail
+    on the ~1% of same-size pairs. Forcing the sizes to differ tests invalidation honestly.
+    """
     k_a = draw(st.integers(min_value=0, max_value=3))
     k_b = draw(st.integers(min_value=0, max_value=3))
     if k_b == k_a:
         k_b = (k_a + 1) % 4
-    text_a = _build_csv(
-        draw, k_a, draw(st.integers(2, 6)), draw(st.integers(1, 4))
-    )
-    text_b = _build_csv(
-        draw, k_b, draw(st.integers(2, 6)), draw(st.integers(1, 4))
-    )
+    text_a = _build_csv(draw, k_a, draw(st.integers(2, 6)), draw(st.integers(1, 4)))
+    text_b = _build_csv(draw, k_b, draw(st.integers(2, 6)), draw(st.integers(1, 4)))
+    if len(text_b.encode()) == len(text_a.encode()):
+        # Trailing line -> changes byte size (cache key) without changing k_b
+        # (detection scans top-down and already settled on the header at line k_b).
+        text_b = text_b + "zz\n"
     return text_a, k_a, text_b, k_b
 
 
@@ -513,7 +518,8 @@ def test_cache_invalidates_on_file_change(pair):
         p.write_text(text_a)
         assert _detect_preamble_lines(p) == k_a
         # Overwrite the SAME path; the (mtime_ns, size) cache key must change so a
-        # stale cached value is not returned. (k_a != k_b by construction.)
+        # stale cached value is not returned. (k_a != k_b AND byte size differs by
+        # construction — see csv_text_pairs; size alone flips the cache key.)
         p.write_text(text_b)
         assert _detect_preamble_lines(p) == k_b
 ```
@@ -557,14 +563,15 @@ import pytest
 
 pytest.importorskip("hypothesis")
 
-from hypothesis import given, settings
+from hypothesis import assume, given, settings
 
 from osmose.trophic_network import _split_species, diet_network_at
 from tests.strategies import diet_matrices
 
-# The diet pipeline (melt + groupbys + read_csv) is ~11 ms/example; cap examples
-# so the file stays snappy (round-2 operational review).
-DIET = settings(max_examples=75)
+# The diet pipeline (melt + groupbys + read_csv) is ~20 ms/example; cap examples
+# so the file stays snappy (plan-review measured ~6s at 75; 50 keeps it ~4s while
+# the strategies still hit their interesting cases >70% of the time).
+DIET = settings(max_examples=50)
 
 
 def _write(df, td):
@@ -599,6 +606,9 @@ def test_threshold_monotonic(df):
 def test_prey_sum_exactness_stage_level(df):
     with tempfile.TemporaryDirectory() as td:
         net = diet_network_at(_write(df, td), time=1.0, threshold=0.0, predator_level="stage")
+    # ~28% of matrices are all-dead/all-NaN -> empty net; don't let this (the
+    # reorder-catching property) pass vacuously on those.
+    assume(len(net) > 0)
     prey_species = df["Prey"].map(_split_species)
     for r in net.itertuples():
         # stage label is r.predator; prey species is r.prey
@@ -792,7 +802,7 @@ Then use superpowers:requesting-code-review (final whole-feature review over `gi
 - `tests/strategies.py` with all strategies incl. the round-2/3 fixes (config first+last char non-sep, `st.dictionaries`, comma-delimited width-1 preamble, diet column-≤100 normalization + explicit dead/NaN/multi-stage-prey biasing, edges floor 1e-3, `shuffled_bin_edges`, `time_value_frames`) → Task 2. ✓ (`csv_text_pairs` added so the cache property isn't `assume`-heavy.)
 - Config round-trip (survival + key-set part (b) + separator-invariance, exact string compare) → Task 3. ✓
 - Preamble (detect-k, never-raise, mutate-then-recall cache-invalidation with `event`) → Task 4. ✓
-- Trophic (non-neg + clean names, threshold monotonicity, prey-sum exactness at stage level w/ `approx(rel=1e-9, abs=1e-12)`, dead-stage) at `max_examples=75` → Task 5. ✓
+- Trophic (non-neg + clean names, threshold monotonicity, prey-sum exactness at stage level w/ `approx(rel=1e-9, abs=1e-12)` + `assume(len(net) > 0)`, dead-stage) at `max_examples=50` → Task 5. ✓
 - Size-spectrum (mean-size convexity ±1e-9, LFI boundary with `threshold = st.sampled_from(positive edges)` + strict `incl > excl`, bin-width order-invariance, window strict `>`) → Task 6. ✓
 - CHANGELOG + determinism (twice) + full lint + additive-sanity → Task 7. ✓
 - Operational mandates: `tempfile.TemporaryDirectory()`-in-body (never `tmp_path`) used in every disk-writing property (Tasks 3/4/5); `pytest.importorskip("hypothesis")` then imports (ruff-exempt from E402, verified against `test_ui_state.py`). ✓
