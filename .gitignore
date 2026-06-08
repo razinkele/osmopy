@@ -49,6 +49,9 @@ htmlcov/
 # Ruff
 .ruff_cache/
 
+# Hypothesis example database
+.hypothesis/
+
 # OS
 .DS_Store
 Thumbs.db

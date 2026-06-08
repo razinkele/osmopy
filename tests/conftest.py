@@ -30,6 +30,19 @@ ensure_templates()
 if find_spec("playwright") is None:
     collect_ignore_glob = ["test_e2e_*.py"]
 
+# Register a deterministic Hypothesis profile for the property-based tests
+# (tests/test_*_properties.py). Guarded by find_spec so the whole suite still
+# COLLECTS when hypothesis is absent — a bare top-level `import hypothesis`
+# would fail collection of every test. database=None + derandomize=True keep CI
+# and local runs byte-identical; deadline=None avoids flaky timing failures.
+if find_spec("hypothesis") is not None:
+    from hypothesis import settings
+
+    settings.register_profile(
+        "ci", max_examples=150, deadline=None, derandomize=True, database=None
+    )
+    settings.load_profile("ci")
+
 
 # ---------------------------------------------------------------------------
 # Schema / registry
