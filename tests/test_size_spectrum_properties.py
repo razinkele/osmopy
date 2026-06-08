@@ -54,5 +54,12 @@ def test_bin_width_order_invariant(se):
 def test_window_keeps_in_range(tv, w):
     out = _window_by_time(tv, "time", w)
     tmax = tv["time"].max()
+    # Kept rows are strictly inside the window...
     assert (out["time"] > tmax - w).all()
+    # ...and NO in-window row was dropped. This second (two-sided) check is the
+    # teeth: the first assertion alone re-states the filter predicate and can't
+    # catch an over-aggressive window / `tmax - w` off-by-one that drops rows it
+    # should keep. (times are unique per time_value_frames, so isin is exact.)
+    dropped = tv[~tv["time"].isin(out["time"])]
+    assert (dropped["time"] <= tmax - w).all()
     assert len(out) <= len(tv)
