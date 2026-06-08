@@ -63,11 +63,30 @@ per-module test convention). Hypothesis is added as a test/dev optional dependen
   `.venv/bin/pip install "hypothesis>=6.100"`.
 - `tests/conftest.py`: register and load a Hypothesis **`"ci"` profile** with
   `max_examples=150`, `deadline=None` (no per-example timeout → no flaky timing failures under load),
-  `derandomize=True` (a green run stays green; reproducible), and
-  `suppress_health_check=[HealthCheck.too_slow]` only if needed. Load it via
-  `settings.register_profile("ci", ...)` + `settings.load_profile("ci")` guarded by
-  `pytest.importorskip("hypothesis")` so a missing dep skips rather than errors.
-- `.gitignore`: add `.hypothesis/` (the example database directory).
+  `derandomize=True` (a green run stays green), and **`database=None`** (the `.hypothesis/examples`
+  DB replays persisted examples on top of the derandomized set → a poisoned local DB and a fresh CI
+  checkout would run *different* example sets; `database=None` makes every environment identical —
+  verified). **Guard with `importlib.util.find_spec("hypothesis")`, NOT
+  `pytest.importorskip`** — `importorskip` at conftest module scope raises `Skipped` → pytest
+  treats it as a collection error and **the entire suite fails to run** (BLOCKER, prototype-confirmed
+  exit 1). The `find_spec` guard mirrors the existing playwright guard in this conftest:
+  ```python
+  if importlib.util.find_spec("hypothesis") is not None:
+      from hypothesis import settings
+      settings.register_profile("ci", max_examples=150, deadline=None,
+                                derandomize=True, database=None)
+      settings.load_profile("ci")
+  ```
+  Each property-test *file* uses `hypothesis = pytest.importorskip("hypothesis")` at module top
+  (that skips just that file cleanly when the dep is absent — verified exit 0).
+- `.gitignore`: add `.hypothesis/`.
+- **Temp-file mechanics (load-bearing):** three targets write a file per example. The pytest
+  `tmp_path` fixture **cannot** be used under `@given` — it triggers
+  `HealthCheck.function_scoped_fixture` (hard error, prototype-confirmed). Each disk-writing property
+  uses `with tempfile.TemporaryDirectory() as td:` **inside the test body**. Measured @150 examples:
+  preamble 0.3s, config round-trip 0.4–0.7s (fine); the diet-matrix property is ~2.2–3.3s (the cost is
+  the intrinsic `diet_network_at` pandas pipeline, not I/O) → give the **diet file a per-test
+  `@settings(max_examples=75)`** to keep it snappy.
 
 ### 1. Shared strategies — `tests/strategies.py` (new)
 
@@ -83,11 +102,16 @@ keeps failures meaningful, not "garbage in"):
   are collision-free.
 - `config_values()` → non-empty strings that **survive the reader's normalization**. The reader
   splits each line on the writer's framing separator at `maxsplit=1`, so **internal separator chars
-  are SAFE** (`a;b`, `x=y`, `1;2;3` all round-trip). The only breakers are **leading/trailing
-  whitespace** (reader `.strip()`) and a **trailing char in `";,:\t ="`** (reader
-  `.rstrip(";,:\t =")`). So: non-empty, no leading/trailing whitespace, last char not in `;,:\t =`.
-  Allowing internal separators makes the test *more* diverse (it proves they round-trip).
-- `config_kv_dicts()` → `dict(config_keys, config_values)` with ≥1 entry, unique keys.
+  are SAFE** (`a;b`, `x=y`, `1;2;3` all round-trip). The breakers are **leading/trailing whitespace**
+  (reader `.strip()`) and a **trailing char in `";,:\t ="`** (reader `.rstrip(";,:\t =")`). So:
+  non-empty, no leading/trailing whitespace, last char not in `;,:\t =`. **Also: the FIRST char must
+  not be in `;,:\t =`** — required by the separator-invariance property, where a one-line
+  `key<tab>value` whose value starts with a separator (e.g. `:0`) lets the reader's
+  `\s*[=;,:\t]\s*` regex greedily swallow `<tab>:` together and drop the leading char
+  (prototype-confirmed false-fail). Allowing internal separators still makes the test diverse.
+- `config_kv_dicts()` → built with **`st.dictionaries(config_keys(), config_values(), min_size=1)`**
+  (NOT a draw-a-list-then-filter-for-uniqueness construction, which risks `HealthCheck.filter_too_much`
+  on the small 40-value keyspace). `st.dictionaries` gives unique keys by construction.
 - `csv_texts()` → tuples `(text, k, ncols)`: `k` (0..3) single-field preamble lines (realistic OSMOSE
   description rows, width 1), then a header + `1..4` data rows each with `ncols` (2..6) fields.
   **`_detect_preamble_lines` counts fields with `csv.reader` — i.e. the COMMA delimiter** (NOT the
@@ -105,35 +129,51 @@ keeps failures meaningful, not "garbage in"):
   stage (excluded from normalization); optionally NaN cells (dropped, not normalized). Returned as a
   frame the test writes to `tmp/<x>_dietMatrix.csv`.
 - `edges_and_values()` → `(edges, values)`: a sorted list of 1..8 **distinct** bin edges (≥0) and an
-  equal-length list of values drawn as **finite non-negative floats** (`allow_nan=False,
-  allow_infinity=False, min_value=0, max_value≈1e6`, some zero). The float bounds are LOAD-BEARING:
-  default `st.floats()` yields `inf`/`NaN`/`1e308`, which overflow the LFI/mean sums to `inf`/`NaN`
-  and false-fail the bound properties (and `derandomize=True` would lock that in as a reproducible
-  red, not a flake).
+  equal-length list of values where each value is **either exactly `0.0` or in `[1e-3, 1e6]`** (drawn
+  `st.one_of(st.just(0.0), st.floats(min_value=1e-3, max_value=1e6, allow_nan=False,
+  allow_infinity=False))`). The bounds are LOAD-BEARING and the `1e-3` floor is too: default
+  `st.floats()` yields `inf`/`NaN`/`1e308` (overflow the sums to inf/NaN → false-fail), AND a
+  **denormal** like `5e-324` keeps `sum>0` true while underflowing the weighted numerator to `0.0`
+  → mean-size drops below `min(midpoints)` (prototype-confirmed false-fail). Keeping `0.0` in the set
+  still exercises the zero-total branch.
 - `time_value_frames()` → small long `time,value` frames (a few distinct integer-ish times, finite
   non-negative values) for the `_window_by_time` property.
 
 ### 2. Property test files (one per target)
 
 **`tests/test_config_roundtrip_properties.py`**
-- *Round-trip survives every key/value:* for `d = config_kv_dicts()`, `OsmoseConfigWriter().write(d,
-  tmp)`, then `OsmoseConfigReader().read(tmp/"osm_all-parameters.csv")` → assert for every
-  `(k, v) in d.items()`: `result[k] == v` (keys already lowercase; reader-injected `_osmose.config.dir`
-  and writer-regenerated `osmose.configuration.*` are ignored by iterating `d`, not `result`).
+- *Round-trip survives every key/value, with no drops or spurious keys:* for `d = config_kv_dicts()`,
+  `OsmoseConfigWriter().write(d, tmp)`, then `OsmoseConfigReader().read(tmp/"osm_all-parameters.csv")`
+  → (a) for every `(k, v) in d.items()`, `result[k] == v`; **(b)** the *substantive* key set is
+  preserved exactly: `set(result) - {"_osmose.config.dir"} - {k for k in result if
+  k.startswith("osmose.configuration.")} == set(d)`. Part (b) is the teeth: it catches a routing
+  change that **silently drops** a key or **invents** an extra substantive one — invisible to the
+  per-key survival check and to every existing example test (`test_roundtrip_basic` uses 5 clean
+  keys; `test_roundtrip_value_with_semicolon` deliberately declines to pin behavior).
 - *Separator invariance:* a single `key<sep>value` line parses to the same `{key: value}` for each
   `sep in {=, ;, ,, :, tab}` (drives `read_file` on a one-line temp file). Asserts the auto-detect
   produces identical k/v regardless of which separator joined them.
 
 **`tests/test_results_preamble_properties.py`**
 - *Detects the planted header:* for `(text, k, ncols) = csv_texts()` written to a temp file,
-  `_detect_preamble_lines(path) == k`.
+  `_detect_preamble_lines(path) == k`. (Highest-teeth target — the detector has near-zero direct unit
+  coverage today; this catches someone dropping the `count > 1` guard or flipping the
+  first-match fallback.)
 - *Never raises on degenerate input:* for arbitrary small text (empty, single line, all width-1 rows,
-  blank lines), `_detect_preamble_lines` returns an `int` and does not raise.
-- *Idempotent / cache-stable:* two consecutive calls on an unmodified file return the same value.
+  blank lines), `_detect_preamble_lines` returns an `int` and does not raise. (A robustness smoke
+  test — catches a crash, not a wrong answer.)
+- *Cache invalidates on file change:* write file A (preamble `k_a`) → call (returns `k_a`) →
+  **overwrite the same path** with a different file B (different preamble `k_b` and a different byte
+  size) → call again → assert it returns `k_b`. This exercises the `(mtime_ns, size)` cache **key**
+  (the only interesting cache bug — a stale result after the file changes); a plain "two calls on an
+  unmodified file agree" check is tautological (the function is pure) and is dropped.
 
 **`tests/test_trophic_network_properties.py`** (uses `diet_matrices()` written to a temp CSV)
-- *Proportion bounds & clean node names:* every returned `proportion` is `0 ≤ p ≤ 100 + 1e-9`; no
-  node id (predator or prey) contains `" in ["`, at `predator_level="species"`.
+- *Non-negative & clean node names:* every returned `proportion` is `≥ 0`; no node id (predator or
+  prey) contains `" in ["`, at `predator_level="species"` — across random structures (self-loops,
+  resources, multi-stage predators), broader than the single EEC fixture. (The `≤ 100` upper bound is
+  NOT asserted: the strategy normalizes each predator column ≤100 specifically so it holds, which
+  makes the check circular — dropped per the teeth review.)
 - *Threshold monotonicity:* for `t_lo ≤ t_hi`, the edge set at `t_hi` is a **subset** of the edge set
   at `t_lo` (same `(predator,prey)` keys; `↑threshold ⇒ ⊆ edges`).
 - *Prey-sum exactness:* at `predator_level="stage"`, each `(stage, prey-species)` proportion equals
@@ -144,16 +184,21 @@ keeps failures meaningful, not "garbage in"):
   generic fuzz can't assert cheaply.)
 
 **`tests/test_size_spectrum_properties.py`** (pure helpers; lists/frames, no disk)
-- *LFI bounded:* `_large_fish_indicator(edges, values, threshold)` ∈ `[0, 1]` for any
-  `edges_and_values()`. On `total ≤ 0` the real impl returns **`0.0`** (NOT NaN) — assert `== 0.0`
-  for the zero-total case. Threshold is compared against the bin **edge** (`edge >= threshold`, lower
-  edge), so an edge exactly equal to the threshold counts.
-- *Mean size bounded:* `_mean_size(midpoints, values)` is within `[min(midpoints), max(midpoints)]`
-  when total value > 0, and is `NaN` when total ≤ 0 (this is the helper that returns NaN, unlike LFI).
-- *Bin width = median of diffs, order-invariant:* `_infer_bin_width(edges)` equals the median of the
-  consecutive differences of `sorted(set(edges))` (the impl sorts+dedups internally, so it is
-  order-invariant); the strategy's "distinct edges" guarantees ≥2 unique so the `1.0` `<2`-edge
-  fallback never fires.
+- *Mean size convexity (the teeth-y one):* `_mean_size(midpoints, values)` is within
+  `[min(midpoints), max(midpoints)]` when total value > 0, and is `NaN` when total ≤ 0. This is a real
+  value-weighted-average convexity invariant (NOT arithmetically forced) — it catches a
+  midpoints/values zip misalignment, a sign error, or using edges where midpoints are intended.
+- *LFI threshold boundary:* `_large_fish_indicator(edges, values, threshold)` compares the bin
+  **lower edge** with `edge >= threshold`, so a bin whose edge is **exactly** `threshold` IS counted;
+  a bin just below is not. Assert this boundary directly (off-by-one risk). On `total ≤ 0` it returns
+  **`0.0`** (verified — not NaN). *(The trivial `LFI ∈ [0,1]` bound is NOT a separate property: with
+  non-negative values it's `0 ≤ sum(subset) ≤ sum(all)` by construction, and the zero-total `== 0.0`
+  case is already in `test_large_fish_indicator` — dropped per the teeth review.)*
+- *Bin width is order-invariant:* `_infer_bin_width(shuffled_edges) == _infer_bin_width(sorted(set(...)))`
+  — feed shuffled-with-duplicates edges and assert the result equals the sorted-unique computation
+  (catches someone removing the internal `sorted(set(edges))` and assuming pre-sorted input). *(The
+  "equals the median of consecutive diffs" clause is dropped — re-implementing the formula to assert
+  `median == median` has no teeth.)*
 - *Window keeps only in-range rows:* `_window_by_time(df, "time", w)` (with `w = st.integers(min_value=1, …)`
   to match the `int` signature; `w < 1` raises) returns only rows with `time > tmax - w` (strict `>`),
   and `n_rows(out) ≤ n_rows(in)`.
@@ -166,8 +211,8 @@ the example set reproducible; failures shrink to a minimal counterexample.
 
 ## Error handling / edge cases
 
-- A property that legitimately allows `NaN` (LFI/mean on zero total) asserts the `NaN` branch
-  explicitly rather than excluding it — so the zero-total path is *covered*, not skipped.
+- A property that legitimately allows `NaN` (`_mean_size` on zero total — but NOT LFI, which returns
+  `0.0`) asserts the branch explicitly rather than excluding it — so the zero-total path is *covered*.
 - Float comparisons use `== pytest.approx(...)` or an explicit `1e-9` tolerance for the additive/sum
   invariants; bound checks use `<=`/`>=` with a tiny epsilon where rounding applies.
 - Strategies are constrained to **valid** inputs by construction (see §1) so a failure means a real
@@ -194,10 +239,20 @@ stays green; running twice yields identical results (determinism check).
 
 - **In:** `hypothesis` dev dep + `"ci"` settings profile + `.hypothesis/` gitignore; `tests/strategies.py`;
   the four property files with the properties above.
-- **Out:** scenarios/fisheries/shannon/schema/history fuzzing (lower marginal signal or fiddly
-  valid-structure scaffolding — deferred, not rejected); the two-header mortality reader; engine
-  kernels (parity-coupled); a nightly/large-`max_examples` fuzzing harness; stateful/`RuleBasedStateMachine`
-  testing; fuzzing `compute_size_spectrum` end-to-end (its invariants live in the helpers we fuzz).
+- **Out:** **scenarios `fork`-independence — EVALUATED in round-2 review and REJECTED:** `Scenario.config`
+  is a flat `dict[str, str]` and `fork` does `config=dict(source.config)`; a shallow copy of a
+  flat dict with immutable string values is already fully independent (no nested mutable state to
+  alias), and the only regression it could catch — dropping the `dict()` wrapper — isn't observable
+  through the `fork()` API (the on-disk source is untouched). The property would be tautological, so
+  it is not added. (R3's recommendation assumed a *nested* mutable config, which doesn't exist here.)
+- **Out (deferred, not rejected):** fisheries `annual_rate` windowing, `analysis.shannon_diversity`
+  bounds, schema/history fuzzing; the two-header mortality reader; engine kernels (parity-coupled); a
+  nightly/large-`max_examples` fuzzing harness; stateful/`RuleBasedStateMachine` testing; fuzzing
+  `compute_size_spectrum` end-to-end (its invariants live in the helpers we fuzz).
+- **Cut in round-2 review (tautological):** the `LFI ∈ [0,1]` bound (arithmetically forced + already
+  example-covered) and the bin-width `== median-of-diffs` re-implementation check — both replaced by
+  higher-teeth variants (the `edge == threshold` boundary and order-invariance respectively). The
+  preamble `idempotent` check was replaced by a `mutate-then-recall` cache-invalidation property.
 
 ## Honest limitations
 
