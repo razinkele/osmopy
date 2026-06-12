@@ -57,7 +57,7 @@ def _window_by_time(df: pd.DataFrame, time_col: str, window_years: int) -> pd.Da
     """Keep rows whose time is within the trailing `window_years` (by Time-years, not rows)."""
     if window_years < 1:
         raise ValueError("window_years must be >= 1")
-    tmax = float(df[time_col].max())
+    tmax = float(cast(pd.Series, df[time_col]).max())
     return cast(pd.DataFrame, df[df[time_col] > tmax - window_years])
 
 
@@ -137,14 +137,14 @@ def compute_size_spectrum(
     long = _community_long(wide)
 
     notes: list[str] = []
-    tmax = float(long["time"].max())
-    tmin = float(long["time"].min())
+    tmax = float(cast(pd.Series, long["time"]).max())
+    tmin = float(cast(pd.Series, long["time"]).min())
     if tmax - tmin + 1 < window_years:
         notes.append(f"run spans < {window_years} yr; used the available {tmax - tmin + 1:.0f}.")
     windowed = _window_by_time(long, "time", window_years)
-    n_steps = int(windowed["time"].nunique())
+    n_steps = int(cast(pd.Series, windowed["time"]).nunique())
 
-    per_bin = windowed.groupby("size")["value"].mean().sort_index()
+    per_bin = cast(pd.Series, windowed.groupby("size")["value"].mean()).sort_index()
     edges = [float(x) for x in per_bin.index]
     values = [float(x) for x in per_bin.values]
     width = _infer_bin_width(edges)
@@ -199,7 +199,7 @@ def size_spectrum_timeseries(
     long = _community_long(wide)
     out_rows = []
     for t, g in long.groupby("time"):
-        per_bin = g.groupby("size")["value"].sum().sort_index()
+        per_bin = cast(pd.Series, g.groupby("size")["value"].sum()).sort_index()
         edges = [float(x) for x in per_bin.index]
         values = [float(x) for x in per_bin.values]
         width = _infer_bin_width(edges)
