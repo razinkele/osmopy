@@ -5,6 +5,8 @@ Only fixtures that are (or will be) used across multiple test files are placed
 here; file-specific fixtures stay in their own test modules.
 """
 
+import os
+import tempfile
 from importlib.util import find_spec
 from pathlib import Path
 
@@ -13,6 +15,19 @@ import pytest
 
 from osmose.plotly_theme import ensure_templates
 from osmose.schema import build_registry
+from tests._xdist_support import worker_numba_cache_dir
+
+# Give each xdist worker its own numba cache dir BEFORE any engine kernel
+# compiles. The engine's @njit(cache=True) kernels otherwise share one
+# __pycache__, and parallel workers race to write the same .nbi/.nbc files on a
+# cold cache. Must run at conftest import time (before any test imports the
+# engine). No-op on serial runs (PYTEST_XDIST_WORKER unset).
+_worker_cache = worker_numba_cache_dir(
+    os.environ.get("PYTEST_XDIST_WORKER"), Path(tempfile.gettempdir())
+)
+if _worker_cache is not None:
+    _worker_cache.mkdir(parents=True, exist_ok=True)
+    os.environ["NUMBA_CACHE_DIR"] = str(_worker_cache)
 
 # Register the "osmose" Plotly template once before any test runs. Without this,
 # tests that render charts (tests/test_ui_results.py, test_ui_charts.py, etc.)
