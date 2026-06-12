@@ -24,6 +24,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from tests._data_guards import require_baltic_phase12
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 EXPECTED_HALFSAT_KEYS = [
@@ -55,7 +57,12 @@ def cal():
 
 
 def _ensure_phase13_results() -> dict:
-    """Regenerate phase13_results.json (gitignored artifact) and return it."""
+    """Regenerate phase13_results.json (gitignored artifact) and return it.
+
+    Reconstruction reads the gitignored phase-12 results; skip when absent so a
+    clean CI checkout reports a skip rather than a hard FileNotFoundError.
+    """
+    require_baltic_phase12()
     recon = PROJECT_ROOT / "scripts" / "reconstruct_phase13_results.py"
     spec = importlib.util.spec_from_file_location("reconstruct_phase13_results", recon)
     assert spec is not None and spec.loader is not None
