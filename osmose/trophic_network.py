@@ -14,6 +14,7 @@ to species (exact). See the design doc's honest-limitations.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import pandas as pd
 
@@ -101,18 +102,20 @@ def diet_network_at(
     ].sum()
     # Live predator stages = those whose total over prey > 0 (a dead stage is all-zero).
     stage_total = per_stage.groupby("pred_stage")["proportion"].transform("sum")
-    live = per_stage[stage_total > 0].copy()
+    live = cast(pd.DataFrame, per_stage[stage_total > 0].copy())
 
     if predator_level == "stage":
         out = live.rename(columns={"pred_stage": "predator"})[["predator", "prey", "proportion"]]
     else:
-        n_live = live.groupby("pred_sp")["pred_stage"].nunique()
-        summed = live.groupby(["pred_sp", "prey"], as_index=False)["proportion"].sum()
-        summed["proportion"] = summed["proportion"] / summed["pred_sp"].map(n_live)
+        n_live = cast(pd.Series, live.groupby("pred_sp")["pred_stage"].nunique())
+        summed = cast(
+            pd.DataFrame, live.groupby(["pred_sp", "prey"], as_index=False)["proportion"].sum()
+        )
+        summed["proportion"] = summed["proportion"] / cast(pd.Series, summed["pred_sp"]).map(n_live)
         out = summed.rename(columns={"pred_sp": "predator"})
 
-    out = out[out["proportion"] >= threshold]
-    return out[["predator", "prey", "proportion"]].reset_index(drop=True)
+    out = cast(pd.DataFrame, out[out["proportion"] >= threshold])
+    return cast(pd.DataFrame, out[["predator", "prey", "proportion"]].reset_index(drop=True))
 
 
 def species_layout(node_ids: list[str]) -> dict[str, tuple[float, float]]:
@@ -143,20 +146,22 @@ def make_trophic_network_html(
     already filtered (e.g. by ``diet_network_at``), pass ``threshold=0.0`` to avoid a
     second, stricter clamp.
     """
-    from pyvis.network import Network
+    from pyvis.network import Network  # type: ignore[import-not-found]
 
     net = Network(directed=True, cdn_resources="in_line", height=height, width="100%")
     net.set_options('{"physics": {"enabled": false}}')
-    df = diet_df[diet_df["proportion"] >= threshold]
+    df = cast(pd.DataFrame, diet_df[diet_df["proportion"] >= threshold])
     nodes = sorted(set(df["predator"]) | set(df["prey"]))
     for n in nodes:
         x, y = positions.get(n, (0.0, 0.0))
         net.add_node(n, label=n, x=float(x), y=float(y), physics=False)
-    for row in df.itertuples():
+    # zip over columns rather than itertuples(): pandas-stubs types the latter's
+    # rows as plain tuple[Any, ...], so named-attribute access doesn't type-check.
+    for predator, prey, proportion in zip(df["predator"], df["prey"], df["proportion"]):
         net.add_edge(
-            row.predator,
-            row.prey,
-            value=float(row.proportion),
-            title=f"{row.proportion:.1f}% of {row.predator}'s diet",
+            predator,
+            prey,
+            value=float(proportion),
+            title=f"{proportion:.1f}% of {predator}'s diet",
         )
     return net.generate_html()

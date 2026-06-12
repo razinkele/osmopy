@@ -17,6 +17,7 @@ from __future__ import annotations
 import statistics
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import pandas as pd
 
@@ -57,7 +58,7 @@ def _window_by_time(df: pd.DataFrame, time_col: str, window_years: int) -> pd.Da
     if window_years < 1:
         raise ValueError("window_years must be >= 1")
     tmax = float(df[time_col].max())
-    return df[df[time_col] > tmax - window_years]
+    return cast(pd.DataFrame, df[df[time_col] > tmax - window_years])
 
 
 def _infer_bin_width(edges: list[float]) -> float:
@@ -111,7 +112,7 @@ def _fit_slope(midpoints, values, min_size_cm):
     """
     df = pd.DataFrame({"size": midpoints, "abundance": values})
     if min_size_cm is not None:
-        df = df[df["size"] >= min_size_cm]
+        df = cast(pd.DataFrame, df[df["size"] >= min_size_cm])
     n_fit = int(((df["size"] > 0) & (df["abundance"] > 0)).sum())
     try:
         slope, intercept, r2 = size_spectrum_slope(df)
@@ -206,13 +207,13 @@ def size_spectrum_timeseries(
         slope, _intercept, _r2, _n = _fit_slope(midpoints, values, min_size_cm)
         out_rows.append(
             {
-                "time": float(t),
+                "time": float(cast(float, t)),
                 "slope": slope,
                 "lfi": _large_fish_indicator(edges, values, lfi_threshold_cm),
                 "mean_size_cm": _mean_size(midpoints, values),
             }
         )
-    return pd.DataFrame(out_rows, columns=["time", "slope", "lfi", "mean_size_cm"])
+    return pd.DataFrame(out_rows, columns=pd.Index(["time", "slope", "lfi", "mean_size_cm"]))
 
 
 def format_size_spectrum_report(spec: SizeSpectrum) -> str:
