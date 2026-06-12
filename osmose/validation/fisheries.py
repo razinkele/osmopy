@@ -14,6 +14,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -97,13 +98,15 @@ def compute_mortality_balance(
             df = read_mortality(path)
             # per-stage windowed annual rates
             f_by_stage = {
-                s: annual_rate(df[("F", s)], steps_per_year, window_years)
+                s: annual_rate(cast(pd.Series, df[("F", s)]), steps_per_year, window_years)
                 for s in _STAGES
                 if ("F", s) in df.columns
             }
             m_by_stage = {
                 s: annual_rate(
-                    sum(df[(c, s)] for c in _NATURAL_CAUSES), steps_per_year, window_years
+                    cast(pd.Series, sum(df[(c, s)] for c in _NATURAL_CAUSES)),
+                    steps_per_year,
+                    window_years,
                 )
                 for s in _STAGES
                 if all((c, s) in df.columns for c in _NATURAL_CAUSES)
