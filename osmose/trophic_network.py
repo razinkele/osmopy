@@ -97,9 +97,10 @@ def diet_network_at(
     melted["pred_sp"] = melted["pred_stage"].map(_split_species)
 
     # Prey size-stages -> prey-species, within each predator STAGE (exact additive composition).
-    per_stage = melted.groupby(["pred_stage", "pred_sp", "prey"], as_index=False)[
-        "proportion"
-    ].sum()
+    per_stage = cast(
+        pd.DataFrame,
+        melted.groupby(["pred_stage", "pred_sp", "prey"], as_index=False)["proportion"].sum(),
+    )
     # Live predator stages = those whose total over prey > 0 (a dead stage is all-zero).
     stage_total = per_stage.groupby("pred_stage")["proportion"].transform("sum")
     live = cast(pd.DataFrame, per_stage[stage_total > 0].copy())
