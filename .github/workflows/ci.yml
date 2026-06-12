@@ -53,7 +53,12 @@ jobs:
         run: pip install -e ".[dev]"
 
       - name: Run tests with coverage
-        run: pytest --cov=osmose --cov-report=term-missing --cov-report=html --cov-fail-under=90
+        # -n auto parallelizes across the runner's cores (pytest-xdist); --dist
+        # loadfile (from pyproject addopts) keeps each file on one worker. Local
+        # dev on a many-core box should use a bounded count (e.g. -n 12) rather
+        # than auto — auto over-subscribes against the engine's numba parallel
+        # kernels once worker count approaches the core count.
+        run: pytest -n auto --cov=osmose --cov-report=term-missing --cov-report=html --cov-fail-under=90
 
       - name: Upload coverage report
         if: matrix.python-version == '3.12'

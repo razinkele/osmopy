@@ -33,6 +33,7 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "pytest-cov>=4.1",
+    "pytest-xdist>=3.5",
     "hypothesis>=6.100",
     "ruff>=0.3",
     "pre-commit>=3.5",
@@ -58,7 +59,11 @@ include = ["osmose*"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = ["e2e: end-to-end browser tests (Playwright)"]
-addopts = "-m 'not e2e'"
+# --dist loadfile: when run in parallel (-n N), keep each file's tests on one
+# worker. Preserves implicit intra-file ordering (e.g. module-level cache state)
+# and avoids redundantly rebuilding module/session-scoped fixtures across
+# workers. No-op on serial runs. Pass -n auto (or a worker count) to parallelize.
+addopts = "-m 'not e2e' --dist loadfile"
 
 [tool.coverage.run]
 omit = [
