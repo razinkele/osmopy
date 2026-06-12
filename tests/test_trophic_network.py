@@ -14,6 +14,7 @@ from osmose.trophic_network import (
     network_node_universe,
     species_layout,
 )
+from tests._data_guards import require_eec_output
 
 
 def _write_diet(path, rows, cols):
@@ -72,6 +73,7 @@ def test_network_node_universe(tmp_path):
 
 
 def test_read_diet_matrix_eec_real():
+    require_eec_output("*dietMatrix*")
     wide = _read_diet_matrix(Path("data/eec_full/output"))
     assert "Time" in wide.columns and "Prey" in wide.columns
     assert wide["Time"].nunique() == 70
@@ -165,6 +167,7 @@ def test_diet_network_bad_time(tmp_path):
 
 
 def test_diet_network_eec_real():
+    require_eec_output("*dietMatrix*")
     net = diet_network_at(Path("data/eec_full/output"), time=1.0)  # no prefix (wildcard)
     assert list(net.columns) == ["predator", "prey", "proportion"]
     assert len(net) > 0 and (net["proportion"] >= 0).all()

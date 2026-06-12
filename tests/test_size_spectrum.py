@@ -18,6 +18,7 @@ from osmose.size_spectrum import (
     size_spectrum_timeseries,
     spectrum_plot_df,
 )
+from tests._data_guards import require_eec_output
 
 
 def _write_community_csv(path, rows):
@@ -138,6 +139,8 @@ def test_compute_size_spectrum_single_bin_slope_none(tmp_path):
 
 
 def test_compute_size_spectrum_eec_real():
+    require_eec_output("eec_biomassDistribBySize*")
+    require_eec_output("eec_abundanceDistribBySize*")
     spec = compute_size_spectrum(
         Path("data/eec_full/output"), metric="biomass", prefix="eec", window_years=10
     )

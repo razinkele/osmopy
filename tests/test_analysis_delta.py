@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from osmose import analysis as az
+from tests._data_guards import require_eec_output
 
 _WIDE_FIXTURE = Path(__file__).parent / "fixtures" / "biomass_wide_sample.csv"
 
@@ -243,6 +244,7 @@ def test_delta_chart_builds():
 
 
 def test_cli_self_comparison_is_all_zero(tmp_path):
+    require_eec_output("eec_biomass_Simu0.csv")
     import importlib.util
     import json
 
