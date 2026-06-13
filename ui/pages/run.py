@@ -1,9 +1,9 @@
 """Run control page - execute OSMOSE simulations."""
 
-import asyncio
 import queue
 import shutil
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -260,100 +260,36 @@ def run_ui():
     )
 
 
-async def _run_python_engine(
-    input,
-    state,
-    session,
-    config,
-    work_dir,
-    source_dir,
-    run_log,
-    status,
-    runner_ref,
-    *,
-    step_observer=None,
-    set_live_status=None,
-):
-    """Run the simulation using the in-process Python engine."""
-    overrides = parse_overrides(input.py_param_overrides() or "")
-    run_config = dict(config)
-    run_config.update(overrides)
+def _python_engine_thread(run_config, output_dir, cancel_token, step_observer, done_q):
+    """Run the Python engine in a background thread; post the outcome to ``done_q``.
 
-    # Store config_dir so PythonEngine can find grid NetCDF files
-    if source_dir:
-        run_config["_osmose.config.dir"] = str(source_dir)
+    Fire-and-forget (the calibration-dashboard pattern): runs OFF the main thread so the
+    event handler that launched it returns immediately, letting the reactive poll flush
+    live movement frames AND run_log/status during the run. (The previous
+    ``await loop.run_in_executor(whole run)`` kept ``handle_run`` suspended, so Shiny
+    deferred every flush until the run finished — the live view never updated mid-run.)
 
-    output_dir = work_dir / "output"
-    output_dir.mkdir(parents=True, exist_ok=True)
-
+    Touches NO reactive state — the main-thread completion poll
+    (``run_server._drain_run_done``) turns the posted outcome into run_log / status /
+    button / ``_handle_result`` updates. Posts ``(kind, result_or_None, message)`` where
+    ``kind`` is ``"done" | "cancelled" | "failed"``.
+    """
     engine = PythonEngine()
-    status.set("Running (Python engine)...")
-
-    # C4 Phase B: fresh cancellation token per run. The cancel button
-    # handler (handle_cancel below) sets this to interrupt the simulation.
-    import threading as _threading
-
-    cancel_token = _threading.Event()
-    state.run_cancel_token.set(cancel_token)
-
-    state.busy.set("Running simulation (Python)...")
     try:
-        loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(
-            None,
-            lambda: engine.run(
-                run_config,
-                output_dir,
-                seed=0,
-                cancel_token=cancel_token,
-                step_observer=step_observer,
-            ),
+        result = engine.run(
+            run_config,
+            output_dir,
+            seed=0,
+            cancel_token=cancel_token,
+            step_observer=step_observer,
         )
+        done_q.put(("done", result, ""))
     except SimulationCancelled as exc:
-        # Phase B will trigger this from a UI Cancel button; Phase A defines
-        # the path so the result-handling code is uniform across exit modes.
         _log.info("Python engine cancelled: %s", exc)
-        lines = list(run_log.get())
-        lines.append(f"--- CANCELLED ---\n{exc}")
-        run_log.set(lines)
-        if set_live_status is not None:
-            set_live_status("cancelled")
-        result = RunResult(
-            returncode=-1,
-            output_dir=Path(""),
-            stdout="",
-            stderr=str(exc),
-            status="cancelled",
-            message=str(exc) or "user cancelled",
-        )
-    except Exception as exc:
-        # Pre-C4 this returned early without calling _handle_result, leaving
-        # state.output_dir pointing at the partial / missing output dir from
-        # the previous run. C4 (Phase A) routes failures through
-        # _handle_result so state.output_dir gets cleared.
-        _log.error("Python engine failed: %s", exc)
-        lines = list(run_log.get())
-        lines.append(f"--- ERROR ---\n{exc}")
-        run_log.set(lines)
-        if set_live_status is not None:
-            set_live_status("failed")
-        result = RunResult(
-            returncode=1,
-            output_dir=Path(""),
-            stdout="",
-            stderr=str(exc),
-            status="failed",
-            message=str(exc),
-        )
-    else:
-        if set_live_status is not None:
-            set_live_status("done")
-    finally:
-        state.busy.set(None)
-        ui.update_action_button("btn_run", disabled=False, session=session)
-        ui.update_action_button("btn_cancel", disabled=True, session=session)
-
-    _handle_result(result, config, state, run_log, status)
+        done_q.put(("cancelled", None, str(exc) or "user cancelled"))
+    except Exception as exc:  # noqa: BLE001
+        _log.error("Python engine failed: %s", exc, exc_info=True)
+        done_q.put(("failed", None, str(exc)))
 
 
 async def _run_java_engine(
@@ -485,6 +421,51 @@ def run_server(input, output, session, state):
     _last_live_species: list[list[str] | None] = [
         None
     ]  # plain flag for the species-selector changed-only guard
+
+    # ── Python-run completion (fire-and-forget thread → main-thread poll) ─────────
+    _run_done_q: queue.Queue = queue.Queue(maxsize=1)  # (kind, result|None, message)
+    _run_config_cell: list = [None]  # config captured at run start, for _handle_result
+
+    @reactive.poll(lambda: time.time(), interval_secs=0.2)
+    def _drain_run_done():
+        try:
+            kind, result, msg = _run_done_q.get_nowait()
+        except queue.Empty:
+            return
+        lines = list(run_log.get())
+        if kind == "cancelled":
+            lines.append(f"--- CANCELLED ---\n{msg}")
+            _live_status_val.set("cancelled")
+            result = RunResult(
+                returncode=-1,
+                output_dir=Path(""),
+                stdout="",
+                stderr=msg,
+                status="cancelled",
+                message=msg or "user cancelled",
+            )
+        elif kind == "failed":
+            lines.append(f"--- ERROR ---\n{msg}")
+            _live_status_val.set("failed")
+            result = RunResult(
+                returncode=1,
+                output_dir=Path(""),
+                stdout="",
+                stderr=msg,
+                status="failed",
+                message=msg,
+            )
+        else:  # done
+            _live_status_val.set("done")
+        run_log.set(lines)
+        state.busy.set(None)
+        ui.update_action_button("btn_run", disabled=False, session=session)
+        ui.update_action_button("btn_cancel", disabled=True, session=session)
+        _handle_result(result, _run_config_cell[0], state, run_log, status)
+
+    @reactive.effect
+    def _consume_run_done():
+        _drain_run_done()
 
     @reactive.poll(lambda: time.time(), interval_secs=0.2)
     def _drain_live_queue():
@@ -648,23 +629,29 @@ def run_server(input, output, session, state):
             _live_status_val.set("running")
             live_observer = make_step_observer(_live_queue)
 
-        def _set_live_status(s: str) -> None:
-            _live_status_val.set(s)
-
         if engine_mode == "python":
-            await _run_python_engine(
-                input,
-                state,
-                session,
-                config,
-                work_dir,
-                source_dir,
-                run_log,
-                status,
-                runner_ref,
-                step_observer=live_observer,
-                set_live_status=_set_live_status,
-            )
+            # Fire-and-forget: launch the engine in a background thread and RETURN, so the
+            # reactive polls (_drain_live_queue + _drain_run_done) flush live frames and the
+            # final result on the main thread. Awaiting the run here would suspend handle_run
+            # and Shiny would defer every flush until the run finished (no live updates).
+            overrides = parse_overrides(input.py_param_overrides() or "")
+            run_config = dict(config)
+            run_config.update(overrides)
+            if source_dir:
+                run_config["_osmose.config.dir"] = str(source_dir)
+            output_dir = work_dir / "output"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            cancel_token = threading.Event()
+            state.run_cancel_token.set(cancel_token)
+            state.busy.set("Running simulation (Python)...")
+            status.set("Running (Python engine)...")
+            _run_config_cell[0] = config
+            threading.Thread(
+                target=_python_engine_thread,
+                args=(run_config, output_dir, cancel_token, live_observer, _run_done_q),
+                daemon=True,
+            ).start()
+            # handle_run returns now; _drain_run_done finishes the run on the main thread.
         else:
             await _run_java_engine(
                 input,
