@@ -70,6 +70,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ### Fixed
 
+- **ui (spatial results):** the Map View and Flat View now render the engine's spatial output. The
+  engine writes `(time, species, lat, lon)`, so the renderers were left with a 3-D slice after
+  selecting a timestep and bailed ("Expected 2D spatial slice") — showing nothing. They now collapse
+  the species dimension via `spatial_series.spatial_slice_2d` (sum across species, or a single
+  species via a new selector), and the Flat heatmap maps land-cell NaNs to gaps (plotly+shinywidgets
+  rejected NaN in JSON).
 - **docs (README API sketch):** corrected code snippets that didn't match the real API and would
   fail on copy-paste — the engine import (`JavaEngine`/`Engine` don't exist), the results reader
   (`get_biomass()`/`get_mortality()`/`get_diet()` → `biomass()`/`mortality()`/`diet_matrix()`,
