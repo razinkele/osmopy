@@ -22,6 +22,7 @@ from shiny_deckgl import (  # type: ignore[import-untyped]
 
 from osmose.logging import setup_logging
 from osmose.results import OsmoseResults
+from osmose.spatial_series import cell_timeseries_from_dataset
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.components.renderer_badge import renderer_badge
 from ui.pages.grid_helpers import (
@@ -51,6 +52,42 @@ def _nc_label(filename: str) -> str:
         if key.lower() in stem:
             return label
     return Path(filename).stem.replace("_", " ").title()
+
+
+def _spatial_data_var(ds) -> str | None:
+    """First data variable carrying time+lat+lon dims (engine spatial output is a
+    single such variable, e.g. ``spatial_biomass``). Prefers a biomass variable."""
+    candidates = [
+        v for v in ds.data_vars if {"time", "lat", "lon"}.issubset({str(d) for d in ds[v].dims})
+    ]
+    if not candidates:
+        return None
+    for v in candidates:
+        if "biomass" in str(v).lower():
+            return v
+    return candidates[0]
+
+
+def _empty_cell_fig(message: str, tmpl: str) -> go.Figure:
+    """A blank chart carrying a centered guidance/empty-state message."""
+    fig = go.Figure()
+    fig.update_layout(
+        template=tmpl,
+        xaxis={"visible": False},
+        yaxis={"visible": False},
+        annotations=[
+            {
+                "text": message,
+                "xref": "paper",
+                "yref": "paper",
+                "x": 0.5,
+                "y": 0.5,
+                "showarrow": False,
+                "font": {"size": 14},
+            }
+        ],
+    )
+    return fig
 
 
 def _get_var_name(ds, input) -> str | None:
@@ -107,6 +144,14 @@ def spatial_results_ui():
                 ui.nav_panel(
                     "Flat View",
                     output_widget("spatial_flat_chart"),
+                ),
+                ui.nav_panel(
+                    "Cell Series",
+                    ui.div(
+                        ui.output_ui("spatial_cell_controls"),
+                        output_widget("spatial_cell_chart"),
+                        class_="osm-cell-series-panel",
+                    ),
                 ),
             ),
             col_widths=[5, 7],
@@ -311,6 +356,111 @@ def spatial_results_server(input, output, session, state):
             time_idx = 0
         max_t = ds.sizes.get("time", 1) - 1
         return make_spatial_map(ds, var_name, time_idx=min(time_idx, max_t), template=tmpl)
+
+    # ── Cell Series (per-cell time series) ───────────────────────
+    @render.ui
+    def spatial_cell_controls():
+        ds = _spatial_ds.get()
+        if ds is None:
+            return ui.div()
+        var = _spatial_data_var(ds)
+        if var is None:
+            return ui.p(
+                "No per-cell spatial data. Enable output.spatial.enabled and re-run.",
+                style="color: var(--osm-text-muted); font-size: 12px;",
+            )
+        sizes = {str(d): int(ds[var].sizes[d]) for d in ds[var].dims}
+        ny = sizes.get("lat", 1)
+        nx = sizes.get("lon", 1)
+        controls = [
+            ui.p(
+                "Pick a cell (or click one on the Map View):",
+                style="font-size: 12px; color: var(--osm-text-muted); margin-bottom: 4px;",
+            ),
+            ui.layout_columns(
+                ui.input_numeric("cell_row", "Row (lat)", value=0, min=0, max=ny - 1, step=1),
+                ui.input_numeric("cell_col", "Col (lon)", value=0, min=0, max=nx - 1, step=1),
+                col_widths=[6, 6],
+            ),
+        ]
+        if "species" in sizes:
+            species_names = [str(s) for s in ds["species"].values]
+            choices = {"__sum__": "All species (sum)", "__mean__": "All species (mean)"}
+            choices.update({name: name for name in species_names})
+            controls.append(
+                ui.input_select("cell_species", "Species", choices=choices, selected="__sum__")
+            )
+        return ui.div(*controls)
+
+    @reactive.effect
+    @reactive.event(input.spatial_map_click)
+    def _sync_cell_from_click():
+        click = input.spatial_map_click()
+        obj = click.get("object") if isinstance(click, dict) else None
+        if obj and "row" in obj and "col" in obj:
+            ui.update_numeric("cell_row", value=int(obj["row"]))
+            ui.update_numeric("cell_col", value=int(obj["col"]))
+
+    @render_plotly
+    def spatial_cell_chart():
+        tmpl = "osmose-light" if get_theme_mode(input) == "light" else "osmose"
+        ds = _spatial_ds.get()
+        if ds is None:
+            return _empty_cell_fig("No spatial data loaded. Run a simulation first.", tmpl)
+        var = _spatial_data_var(ds)
+        if var is None:
+            return _empty_cell_fig(
+                "No per-cell spatial data — enable output.spatial.enabled and re-run.", tmpl
+            )
+        try:
+            row = int(input.cell_row())
+            col = int(input.cell_col())
+        except (SilentException, TypeError, ValueError):
+            return _empty_cell_fig("Pick a cell (row/col) to see its time series.", tmpl)
+
+        species = None
+        reduce_op = "sum"
+        try:
+            sel = input.cell_species()
+        except (SilentException, AttributeError):
+            sel = "__sum__"
+        if sel == "__mean__":
+            reduce_op = "mean"
+        elif sel not in ("__sum__", None):
+            species = sel
+
+        try:
+            # Reuse the page's already-open dataset — re-opening the same NetCDF
+            # with a second handle raises an HDF5 file-locking error.
+            times, values = cell_timeseries_from_dataset(
+                ds,
+                var,
+                lat_index=row,
+                lon_index=col,
+                species=species,
+                reduce=reduce_op,
+            )
+        except (KeyError, ValueError, IndexError, OSError) as exc:
+            _log.warning("cell_timeseries failed for (%s, %s): %s", row, col, exc)
+            return _empty_cell_fig(f"Cell ({row}, {col}) unavailable: {exc}", tmpl)
+
+        if values.size == 0 or bool(np.isnan(values).all()):
+            return _empty_cell_fig(
+                f"Cell ({row}, {col}) is land or has no data for this output.", tmpl
+            )
+
+        label = species or ("mean" if reduce_op == "mean" else "sum")
+        var_label = str(var).replace("_", " ").title()
+        fig = go.Figure()
+        fig.add_scatter(x=list(times), y=list(values), mode="lines+markers", name=str(label))
+        fig.update_layout(
+            title=f"{var_label} at cell ({row}, {col}) — {label}",
+            template=tmpl,
+            xaxis_title="Time (years)",
+            yaxis_title=var_label,
+            margin={"t": 50, "r": 20, "b": 40, "l": 60},
+        )
+        return fig
 
     # ── Map View (deck.gl polygon layer) ─────────────────────────
     @reactive.effect

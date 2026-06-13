@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from osmose.spatial_series import cell_timeseries
+from osmose.spatial_series import cell_timeseries, cell_timeseries_from_dataset
 
 
 def _make_spatial_nc(path, *, n_time=6, species=("cod", "sprat"), ny=4, nx=5, land_cell=(0, 0)):
@@ -110,3 +110,26 @@ def test_result_is_single_cell_vector(tmp_path):
     p = _make_spatial_nc(tmp_path / "s.nc")
     _, vals = cell_timeseries(p, "spatial_biomass", lat_index=2, lon_index=3, reduce="sum")
     assert vals.ndim == 1
+
+
+def test_from_dataset_matches_path_variant(tmp_path):
+    p = _make_spatial_nc(tmp_path / "s.nc")
+    t_path, v_path = cell_timeseries(p, "spatial_biomass", lat_index=1, lon_index=2, reduce="sum")
+    with xr.open_dataset(p) as ds:
+        t_ds, v_ds = cell_timeseries_from_dataset(
+            ds, "spatial_biomass", lat_index=1, lon_index=2, reduce="sum"
+        )
+    np.testing.assert_allclose(v_ds, v_path)
+    np.testing.assert_allclose(t_ds, t_path)
+
+
+def test_from_dataset_works_on_already_open_handle(tmp_path):
+    # The UI keeps one open handle; the dataset variant must read from it without
+    # opening a second handle (which can raise an HDF5 locking error).
+    p = _make_spatial_nc(tmp_path / "s.nc")
+    with xr.open_dataset(p) as held_open:  # simulates the page's _spatial_ds
+        _, vals = cell_timeseries_from_dataset(
+            held_open, "spatial_biomass", lat_index=2, lon_index=2, species="cod"
+        )
+    expected = np.array([100 + 10 * t + 2 + 0.2 for t in range(6)])  # cod=s0 at (y=2,x=2)
+    np.testing.assert_allclose(vals, expected)
