@@ -8,6 +8,8 @@ on:
 
 jobs:
   lint:
+    # Single-version by design: ruff's behaviour is governed by `target-version`
+    # in pyproject, not the runtime Python, so a version matrix adds no signal.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,14 +29,25 @@ jobs:
         run: ruff format --check osmose/ ui/ tests/
 
   type-check:
+    # Matrixed across the supported Python range. pyrightconfig.json pins
+    # `pythonVersion: "3.12"` as the local default, so we pass --pythonversion
+    # explicitly per leg — otherwise pyright would analyze every leg as 3.12 and
+    # the 3.13 leg would be a no-op. The `test` job exercises 3.13 at runtime;
+    # this leg is what type-checks the 3.13 path (stdlib stubs + version_info
+    # narrowing). fail-fast off so both versions' errors surface in one run.
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
+          cache: pip
       - run: pip install -e ".[dev]"
-      - run: pyright
+      - run: pyright --pythonversion ${{ matrix.python-version }}
 
   test:
     runs-on: ubuntu-latest
