@@ -98,3 +98,15 @@ def test_prerun_validation_passes_valid_config():
     config = {"simulation.nspecies": "3", "species.linf.sp0": "50.0"}
     errors, warnings = validate_config(config, registry)
     assert len(errors) == 0
+
+
+def test_live_movement_wired_into_run_page():
+    """The live-movement view (toggle, map, queue, poll, observer) is wired into run.py."""
+    import pathlib
+
+    src = (pathlib.Path(__file__).resolve().parent.parent / "ui" / "pages" / "run.py").read_text()
+    assert "make_step_observer" in src
+    assert "live_movement_view" in src
+    assert "heatmap_layer_from_points" in src
+    assert "dots_layer_from_points" in src
+    assert "partial_update" in src
