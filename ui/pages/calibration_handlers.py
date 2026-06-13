@@ -505,6 +505,11 @@ def _save_run_for_nsga2(payload, X, F, phase: str, param_keys: list[str]) -> Non
             "best_parameters": {k: float(v) for k, v in zip(param_keys, best_x)},
             "duration_seconds": 0.0,
             "n_evaluations": int(getattr(X, "shape", [0])[0]),
+            # Persist the full multi-objective front so the History tab can
+            # reload it into the Pareto picker (cal_X / cal_F).
+            "pareto_X": np.asarray(X, dtype=float).tolist(),
+            "pareto_F": np.asarray(F, dtype=float).tolist(),
+            "objective_names": [f"Obj {i + 1}" for i in range(np.asarray(F).shape[1])],
             "per_species_residuals_final": None,
             "per_species_sim_biomass_final": None,
             "species_labels": None,
@@ -781,6 +786,7 @@ def register_calibration_handlers(
     copy_data_files,
     validation_result,
     cal_param_names,
+    cal_param_keys,
     preflight_result,
     history_banner_text,
     history_trigger,
@@ -1439,6 +1445,7 @@ def register_calibration_handlers(
 
         # Store param names for charts
         cal_param_names.set([p["key"].split(".")[-1] for p in selected])
+        cal_param_keys.set([p["key"] for p in selected])
 
         n_parallel = _clamp_int(int(input.cal_n_parallel()), 1, 32, "n_parallel")
 
@@ -1531,6 +1538,7 @@ def register_calibration_handlers(
             ui.notification_show("All parameters removed.", type="warning", duration=5)
             return
         cal_param_names.set([fp.key.split(".")[-1] for fp in updated_params])
+        cal_param_keys.set([fp.key for fp in updated_params])
         _start_optimization_with_params(updated_params)
 
     @reactive.effect
@@ -1646,10 +1654,23 @@ def register_calibration_handlers(
             try:
                 if getattr(input, load_id)():
                     data = load_run(Path(run["path"]))
-                    cal_X.set(np.array(data["results"]["pareto_X"]))
-                    cal_F.set(np.array(data["results"]["pareto_F"]))
-                    cal_param_names.set([p["key"].split(".")[-1] for p in data["parameters"]])
-                    conv = data["results"].get("convergence", [])
+                    res = data.get("results", {})
+                    # `parameters` may be a list of full-key strings (live writers)
+                    # or a list of {"key", ...} dicts (fixture / older schema).
+                    keys = [
+                        p if isinstance(p, str) else p["key"] for p in data.get("parameters", [])
+                    ]
+                    cal_param_keys.set(keys)
+                    cal_param_names.set([k.split(".")[-1] for k in keys])
+                    # A multi-objective front is only present for NSGA-II runs;
+                    # single-objective (DE/CMA-ES) runs have no pareto_X/pareto_F.
+                    if "pareto_X" in res and "pareto_F" in res:
+                        cal_X.set(np.array(res["pareto_X"]))
+                        cal_F.set(np.array(res["pareto_F"]))
+                    else:
+                        cal_X.set(None)
+                        cal_F.set(None)
+                    conv = res.get("convergence", [])
                     cal_history.set([v for _, v in conv])
                     history_banner_text.set(f"Viewing historical run from {data['timestamp']}")
                     validation_result.set(None)
