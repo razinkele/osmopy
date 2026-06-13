@@ -4,7 +4,7 @@ Python orchestration layer, simulation engine, and Shiny web interface for the [
 
 <sub>**Python 3.12** · **NumPy + Numba** · **Shiny for Python** · **2510 tests** · **ruff clean** · **MIT**</sub>
 
-> 🚀 **New here?** Run and perturb a calibrated Baltic ecosystem in 30 minutes: [Tutorial](docs/tutorials/30-minute-ecosystem.md).
+> 🚀 **New here?** Run and perturb a calibrated Baltic ecosystem in 30 minutes: [Tutorial](docs/tutorials/30-minute-ecosystem.md). Then keep the [Usage Guide](docs/usage-guide.md) handy for scripting runs, reading outputs, comparing, and calibrating.
 
 ## Status
 
@@ -202,16 +202,19 @@ docs/
 ### Engine protocol
 
 ```python
-from osmose.engine import PythonEngine, JavaEngine, Engine
+from pathlib import Path
+from osmose.engine import PythonEngine
 
 # Python engine — no Java needed
 engine = PythonEngine()
-result = engine.run(config=config_dict, output_dir=Path("output"), seed=42)
+result = engine.run(config=config_dict, output_dir=Path("output"), seed=42)  # writes CSV/NetCDF
+results = engine.run_in_memory(config=config_dict, seed=42)                  # OsmoseResults, no disk
 
-# Java engine — requires OSMOSE JAR
+# Java engine — requires an OSMOSE JAR; run() is a coroutine
+import asyncio
 from osmose.runner import OsmoseRunner
 runner = OsmoseRunner(jar_path=Path("osmose-java/osmose.jar"))
-result = await runner.run(config_path=Path("config.csv"), output_dir=Path("output"))
+result = asyncio.run(runner.run(config_path=Path("config.csv"), output_dir=Path("output")))
 ```
 
 ### Config I/O
@@ -221,10 +224,10 @@ from osmose.config.reader import OsmoseConfigReader
 from osmose.config.writer import OsmoseConfigWriter
 
 reader = OsmoseConfigReader()
-config = reader.read("path/to/osm_all-parameters.csv")
+config = reader.read(Path("path/to/osm_all-parameters.csv"))   # -> dict[str, str]
 
 writer = OsmoseConfigWriter()
-writer.write(config, "path/to/output.csv")
+writer.write(config, Path("path/to/output_dir/"))              # writes the config tree into a directory
 ```
 
 ### Config-key validation
@@ -249,15 +252,19 @@ EngineConfig.from_dict(cfg)  # emits per-key warnings
 from osmose.results import OsmoseResults
 
 # strict=True (default): FileNotFoundError if outputs are missing
-results = OsmoseResults("path/to/output/")
-biomass = results.get_biomass()         # xarray Dataset
-mortality = results.get_mortality()     # per-species mortality by cause
-diet = results.get_diet()               # diet composition matrix
+results = OsmoseResults(Path("path/to/output/"), prefix="osm")
+biomass = results.biomass()             # wide DataFrame: Time + per-species columns
+mortality = results.mortality()         # per-species mortality by cause
+diet = results.diet_matrix()            # diet composition matrix
 
 # strict=False for partial/speculative loads (calibration, UI)
-with OsmoseResults("path/to/output/", strict=False) as results:
-    biomass = results.get_biomass()
+with OsmoseResults(Path("path/to/output/"), strict=False) as results:
+    biomass = results.biomass()
 ```
+
+Selecting one species is column selection (`biomass()[["Time", "Anchovy"]]`); the
+`species=` argument filters the row-label column and returns empty on the standard wide
+files. See [`docs/usage-guide.md`](docs/usage-guide.md#2-read-outputs).
 
 ### Thread safety and parallel calibration
 
@@ -266,23 +273,24 @@ The Python engine is re-entrant. Per-simulation state is encapsulated in a `Simu
 ```python
 from concurrent.futures import ProcessPoolExecutor
 
+engine = PythonEngine()
 with ProcessPoolExecutor(max_workers=8) as pool:
-    futures = [pool.submit(engine.run, config=cfg, seed=i) for i, cfg in enumerate(configs)]
+    futures = [pool.submit(engine.run_in_memory, config=cfg, seed=i) for i, cfg in enumerate(configs)]
 ```
 
 ### Calibration
 
 ```python
-from osmose.calibration import CalibratorConfig, Calibrator
+# Drive a calibration (DE / CMA-ES / surrogate-DE) — long-running, writes to data/calibration_history:
+#   python scripts/calibrate_baltic.py --optimizer de --phase 12 --maxiter 100
 
-cal_config = CalibratorConfig(
-    parameters={"species.k.sp0": (0.1, 0.5)},
-    objectives=["biomass_rmse"],
-    n_gen=50,
-    pop_size=20,
-)
-calibrator = Calibrator(cal_config, base_config, jar_path)
-result = calibrator.run()
+from pathlib import Path
+from osmose.calibration import list_runs, load_run, OsmoseCalibrationProblem
+
+runs = list_runs()                                   # list[dict] of finished runs
+data = load_run(Path(runs[-1]["path"])) if runs else None
+# OsmoseCalibrationProblem(...) is the programmatic entry for a custom problem
+# (use_java_engine=True for bit-exact Java). See docs/usage-guide.md §4.
 ```
 
 ## MCP servers and credentials
@@ -317,6 +325,7 @@ Start here depending on what you want:
 | Goal | Doc |
 |---|---|
 | Learn OSMOSE by running and perturbing a real Baltic ecosystem in 30 min | [`docs/tutorials/30-minute-ecosystem.md`](docs/tutorials/30-minute-ecosystem.md) |
+| Script runs, read outputs, compare, and calibrate (Python + CLI) | [`docs/usage-guide.md`](docs/usage-guide.md) |
 | Run an existing example | [Quick start](#quick-start) above |
 | Understand the Baltic example, its parameters, and their sources | [`docs/baltic_example.md`](docs/baltic_example.md) |
 | See where model F and biomass sit vs ICES 2024 advice | [`docs/baltic_ices_validation_2026-04-18.md`](docs/baltic_ices_validation_2026-04-18.md) |
