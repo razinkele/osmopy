@@ -24,6 +24,7 @@ from osmose.plotting import make_biomass_overlay
 from osmose.results import OsmoseResults
 from osmose.spatial_series import grid_latlon, spatial_diff_2d
 from ui.pages.grid_helpers import make_diff_map, make_spatial_map
+from ui.styles import STYLE_MONO_KEY, STYLE_SCROLL_TABLE
 
 _log = setup_logging("osmose.scenario_diff")
 
@@ -83,6 +84,14 @@ def scenario_diff_nav_panel():
                 ),
             ),
             col_widths=[12],
+        ),
+        ui.accordion(
+            ui.accordion_panel(
+                "Config differences",
+                ui.output_ui("diff_config_table"),
+            ),
+            id="diff_config_accordion",
+            open=True,
         ),
         output_widget("diff_biomass_chart"),
         ui.output_ui("diff_biomass_caption"),
@@ -272,6 +281,56 @@ def scenario_diff_server(input, output, session, state):
             return ui.div()
         items = [ui.tags.li(f"{d.species}: ΔB = {d.abs_delta:+.3g}") for d in rows]
         return ui.div(ui.p("Mean B−A over trailing window:"), ui.tags.ul(*items))
+
+    # ── Config differences (which config keys differ between A and B) ──
+    @render.ui
+    def diff_config_table():
+        ts_a, ts_b = _safe(input.diff_run_a), _safe(input.diff_run_b)
+        # Falsy guard first: an unselected/not-yet-ready selector is "" or None.
+        if not ts_a or not ts_b:
+            return ui.p("Select two runs to compare their configs.", class_="text-muted")
+        if ts_a == ts_b:
+            return ui.p("Same run selected — no config differences.", class_="text-muted")
+        try:
+            diffs = default_run_history().compare_runs(ts_a, ts_b)
+        except Exception:  # noqa: BLE001 — stale/missing run file: degrade, don't crash the render
+            return ui.p("Could not load run configs.", class_="text-muted")
+        if not diffs:
+            return ui.p("Identical configuration — no differences.", class_="text-muted")
+
+        rows = _classify_config_diffs(diffs)
+        n = len(rows)
+        badge_cls = {"changed": "bg-secondary", "added": "bg-success", "removed": "bg-danger"}
+
+        def _val_cell(v):
+            return ui.tags.td("—" if v is None else v)
+
+        body = [
+            ui.tags.tr(
+                ui.tags.td(r["key"], style=STYLE_MONO_KEY),
+                _val_cell(r["value_a"]),
+                _val_cell(r["value_b"]),
+                ui.tags.td(ui.tags.span(r["change"], class_=f"badge {badge_cls[r['change']]}")),
+            )
+            for r in rows
+        ]
+        table = ui.tags.table(
+            ui.tags.thead(
+                ui.tags.tr(
+                    ui.tags.th("Key"),
+                    ui.tags.th("A"),
+                    ui.tags.th("B"),
+                    ui.tags.th("Change"),
+                )
+            ),
+            ui.tags.tbody(*body),
+            class_="table table-sm table-striped",
+            style="font-size: 13px;",
+        )
+        return ui.div(
+            ui.p(f"{n} differing config key{'s' if n != 1 else ''}", class_="text-muted"),
+            ui.div(table, style=STYLE_SCROLL_TABLE),
+        )
 
     # ── Spatial: common species + variable helpers ──
     def _has_latlon(ds, v):

@@ -316,3 +316,13 @@ def test_scenario_diff_tab_wired_into_results():
     ).read_text()
     assert "scenario_diff_nav_panel" in src
     assert "scenario_diff_server" in src
+
+
+def test_scenario_diff_config_panel_wired():
+    """The config-diff panel (accordion + output) is emitted in the Scenario Diff tab body."""
+    from ui.pages.scenario_diff import scenario_diff_nav_panel
+
+    # str(NavPanel) is only a repr and .tagify() raises outside a navset; render the BODY.
+    html = str(scenario_diff_nav_panel().content)
+    assert "diff_config_table" in html
+    assert "Config differences" in html
