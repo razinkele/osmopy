@@ -161,3 +161,77 @@ def cell_timeseries(
             species=species,
             reduce=reduce,
         )
+
+
+def spatial_slice_2d(ds, variable, *, time_index=0, species=None, reduce="sum"):
+    """A 2-D ``(lat, lon)`` slice of a spatial variable at one timestep.
+
+    The engine writes spatial outputs with a species dimension
+    (``(time, species, lat, lon)``); a plain ``isel(time=...)`` therefore leaves
+    a 3-D array. This collapses the species dimension so the slice is 2-D and
+    renderable as a map/heatmap.
+
+    Parameters
+    ----------
+    ds : xarray.Dataset
+        An already-open dataset (the page keeps one handle alive).
+    variable : str
+        A data variable with lat and lon dimensions (time/species optional).
+    time_index : int
+        Timestep to select (clamped to the valid range when a time dim exists).
+    species : str | int | None
+        Select a single species by name/index; ``None`` collapses the species
+        dimension with ``reduce``.
+    reduce : {"sum", "mean"}
+        How to collapse the species dimension when no single ``species`` is given.
+
+    Returns
+    -------
+    np.ndarray
+        A 2-D ``(lat, lon)`` array. Land cells (all-NaN) stay NaN.
+
+    Raises
+    ------
+    KeyError
+        ``variable`` is not in the dataset.
+    ValueError
+        ``variable`` lacks lat/lon dims, ``reduce`` is invalid, or the result is
+        not 2-D after collapsing time and species.
+    """
+    if reduce not in ("sum", "mean"):
+        raise ValueError(f"reduce must be 'sum' or 'mean', got {reduce!r}")
+    if variable not in ds.data_vars:
+        raise KeyError(
+            f"variable {variable!r} not in dataset; available: {sorted(map(str, ds.data_vars))}"
+        )
+    da = ds[variable]
+    lat_dim = _find_dim(da.dims, _LAT_DIM_NAMES)
+    lon_dim = _find_dim(da.dims, _LON_DIM_NAMES)
+    if lat_dim is None or lon_dim is None:
+        raise ValueError(f"variable {variable!r} has no lat/lon dims (have {tuple(da.dims)})")
+
+    time_dim = _find_dim(da.dims, _TIME_DIM_NAMES)
+    if time_dim is not None:
+        n_t = int(da.sizes[time_dim])
+        ti = min(max(int(time_index), 0), n_t - 1)
+        da = da.isel({time_dim: ti})
+
+    species_dim = _find_dim(da.dims, _SPECIES_DIM_NAMES)
+    if species_dim is not None:
+        if species is not None:
+            if isinstance(species, str):
+                da = da.sel({species_dim: species})
+            else:
+                da = da.isel({species_dim: int(species)})
+        # skipna=False so land (uniformly NaN across species) stays NaN.
+        elif reduce == "sum":
+            da = da.sum(dim=species_dim, skipna=False)
+        else:
+            da = da.mean(dim=species_dim, skipna=False)
+
+    data = np.asarray(da.values)
+    if data.ndim != 2:
+        raise ValueError(
+            f"expected a 2-D (lat, lon) slice, got shape {data.shape} for {variable!r}"
+        )
+    return data

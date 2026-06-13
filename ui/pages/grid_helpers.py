@@ -1169,18 +1169,27 @@ def make_spatial_map(
     time_idx: int = 0,
     title: str | None = None,
     template: str = "osmose",
+    species=None,
 ):
-    """Create a Plotly imshow heatmap from a spatial xarray Dataset."""
+    """Create a Plotly imshow heatmap from a spatial xarray Dataset.
+
+    A species dimension (engine spatial output is ``(time, species, lat, lon)``)
+    is collapsed by ``spatial_slice_2d``: summed across species when ``species``
+    is None, or a single species selected by name/index.
+    """
+    import numpy as np
     import plotly.express as px
 
-    da = ds[var_name]
-    if "time" in da.dims:
-        da = da.isel(time=time_idx)
-    data = da.values
+    from osmose.spatial_series import spatial_slice_2d
+
+    data = spatial_slice_2d(ds, var_name, time_index=time_idx, species=species)
+    # Land cells are NaN; plotly renders NaN as gaps, but shinywidgets serialises
+    # the figure with json(allow_nan=False) which rejects NaN — hand it None instead.
+    z = [[(float(v) if np.isfinite(v) else None) for v in row] for row in data]
     lat = ds["lat"].values
     lon = ds["lon"].values
     fig = px.imshow(
-        data,
+        z,
         x=lon,
         y=lat,
         origin="lower",

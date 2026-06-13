@@ -22,7 +22,7 @@ from shiny_deckgl import (  # type: ignore[import-untyped]
 
 from osmose.logging import setup_logging
 from osmose.results import OsmoseResults
-from osmose.spatial_series import cell_timeseries_from_dataset
+from osmose.spatial_series import cell_timeseries_from_dataset, spatial_slice_2d
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.components.renderer_badge import renderer_badge
 from ui.pages.grid_helpers import (
@@ -129,6 +129,7 @@ def spatial_results_ui():
                 collapsible_card_header("Spatial Results", "spatial_results"),
                 ui.output_ui("spatial_nc_selector"),
                 ui.output_ui("spatial_var_selector"),
+                ui.output_ui("spatial_species_dim_selector"),
                 ui.output_ui("spatial_time_controls"),
                 ui.output_ui("spatial_scale_info"),
             ),
@@ -292,6 +293,30 @@ def spatial_results_server(input, output, session, state):
             "spatial_species", "Variable / Species", choices=choices, selected="__all__"
         )
 
+    # ── Species selector (for a variable with a species dimension) ──
+    @render.ui
+    def spatial_species_dim_selector():
+        ds = _spatial_ds.get()
+        if ds is None:
+            return ui.div()
+        var_name = _get_var_name(ds, input)
+        if var_name is None or "species" not in {str(d) for d in ds[var_name].dims}:
+            return ui.div()
+        names = [str(s) for s in ds["species"].values]
+        choices = {"__sum__": "All species (sum)"}
+        choices.update({n: n for n in names})
+        return ui.input_select(
+            "spatial_map_species", "Species", choices=choices, selected="__sum__"
+        )
+
+    def _map_species():
+        """Selected species for the map/flat slice, or None to sum across species."""
+        try:
+            sel = input.spatial_map_species()
+        except (SilentException, AttributeError):
+            sel = "__sum__"
+        return None if sel in ("__sum__", None) else sel
+
     # ── Time step slider ─────────────────────────────────────────
     @render.ui
     def spatial_time_controls():
@@ -355,7 +380,14 @@ def spatial_results_server(input, output, session, state):
         except (SilentException, ValueError, TypeError):
             time_idx = 0
         max_t = ds.sizes.get("time", 1) - 1
-        return make_spatial_map(ds, var_name, time_idx=min(time_idx, max_t), template=tmpl)
+        try:
+            return make_spatial_map(
+                ds, var_name, time_idx=min(time_idx, max_t), template=tmpl, species=_map_species()
+            )
+        except (KeyError, ValueError) as exc:
+            return go.Figure().update_layout(
+                title=f"Cannot render {var_name}: {exc}", template=tmpl
+            )
 
     # ── Cell Series (per-cell time series) ───────────────────────
     @render.ui
@@ -498,14 +530,12 @@ def spatial_results_server(input, output, session, state):
         max_t = ds.sizes.get("time", 1) - 1
         time_idx = min(time_idx, max_t)
 
-        da = ds[var_name]
-        if "time" in da.dims:
-            da = da.isel(time=time_idx)
-        data_slice = da.values
-        if data_slice.ndim != 2:
-            _log.warning(
-                "Expected 2D spatial slice, got shape %s for %s", data_slice.shape, var_name
-            )
+        # Collapse any species dimension to a 2-D (lat, lon) slice; the engine
+        # writes (time, species, lat, lon), so a plain time-isel leaves 3-D.
+        try:
+            data_slice = spatial_slice_2d(ds, var_name, time_index=time_idx, species=_map_species())
+        except (KeyError, ValueError) as exc:
+            _log.warning("Cannot build spatial slice for %s: %s", var_name, exc)
             return
         lat_raw = ds["lat"].values
         lon_raw = ds["lon"].values

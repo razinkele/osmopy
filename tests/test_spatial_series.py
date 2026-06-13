@@ -6,7 +6,11 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from osmose.spatial_series import cell_timeseries, cell_timeseries_from_dataset
+from osmose.spatial_series import (
+    cell_timeseries,
+    cell_timeseries_from_dataset,
+    spatial_slice_2d,
+)
 
 
 def _make_spatial_nc(path, *, n_time=6, species=("cod", "sprat"), ny=4, nx=5, land_cell=(0, 0)):
@@ -121,6 +125,39 @@ def test_from_dataset_matches_path_variant(tmp_path):
         )
     np.testing.assert_allclose(v_ds, v_path)
     np.testing.assert_allclose(t_ds, t_path)
+
+
+def test_spatial_slice_2d_sum_over_species(tmp_path):
+    p = _make_spatial_nc(tmp_path / "s.nc", n_time=6, ny=4, nx=5, land_cell=(0, 0))
+    with xr.open_dataset(p) as ds:
+        sl = spatial_slice_2d(ds, "spatial_biomass", time_index=0)
+    assert sl.shape == (4, 5)
+    # at t=0, sum over 2 species of (s+1)*100 + 0 + y + x*0.1 = 300 + 2y + 0.2x
+    assert sl[1, 2] == pytest.approx(300 + 2 * 1 + 0.2 * 2)
+    assert np.isnan(sl[0, 0])  # land stays NaN
+
+
+def test_spatial_slice_2d_single_species(tmp_path):
+    p = _make_spatial_nc(tmp_path / "s.nc", n_time=6, ny=4, nx=5)
+    with xr.open_dataset(p) as ds:
+        sl = spatial_slice_2d(ds, "spatial_biomass", time_index=2, species="cod")
+    # cod (s=0) at t=2: 100 + 20 + y + 0.1x
+    assert sl[3, 4] == pytest.approx(100 + 20 + 3 + 0.1 * 4)
+
+
+def test_spatial_slice_2d_time_clamped(tmp_path):
+    p = _make_spatial_nc(tmp_path / "s.nc", n_time=6, ny=3, nx=3)
+    with xr.open_dataset(p) as ds:
+        last = spatial_slice_2d(ds, "spatial_biomass", time_index=999)
+        explicit = spatial_slice_2d(ds, "spatial_biomass", time_index=5)
+    np.testing.assert_allclose(last, explicit, equal_nan=True)
+
+
+def test_spatial_slice_2d_non_spatial_raises(tmp_path):
+    p = _make_spatial_nc(tmp_path / "s.nc")
+    with xr.open_dataset(p) as ds:
+        with pytest.raises(ValueError):
+            spatial_slice_2d(ds, "totals", time_index=0)
 
 
 def test_from_dataset_works_on_already_open_handle(tmp_path):
