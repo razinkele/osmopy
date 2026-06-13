@@ -8,6 +8,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ### Added
 
+- **ui (calibration):** a Pareto solution picker on the calibration Results → Best Parameters tab.
+  Pick a non-dominated solution from a multi-objective (NSGA-II) front (live run or a loaded
+  historical run), inspect its full parameter vector and objective values, and download those
+  parameters as an OSMOSE `key ; value` override file. New `osmose.calibration.pareto` helpers
+  (`nondominated_indices`, `select_solution`, `solution_overrides_csv`). NSGA-II runs now persist
+  the full front (`pareto_X`/`pareto_F`) so the History tab can reload it; the history loader is
+  hardened to handle single-objective runs (no front) and both parameter record shapes without error.
 - **ui (spatial results):** a "Cell Series" tab on the Spatial Results page shows a single grid
   cell's value over time. Pick a cell with row/col inputs (or click one on the Map View) and a
   species selector (sum / mean / per-species); the panel reads the trajectory from the loaded

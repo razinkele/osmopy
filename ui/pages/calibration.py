@@ -10,7 +10,14 @@ import pandas as pd
 import plotly.graph_objects as go
 from shiny import reactive, render, ui
 from shiny.render import DataGrid
+from shiny.types import SilentException
 from shinywidgets import output_widget, render_plotly
+
+from osmose.calibration.pareto import (
+    nondominated_indices,
+    select_solution,
+    solution_overrides_csv,
+)
 
 from ui.pages.calibration_charts import (
     make_convergence_chart,
@@ -317,6 +324,15 @@ def calibration_ui():
                             ui.div(
                                 ui.output_ui("best_params_table"),
                                 ui.hr(),
+                                ui.h6("Pareto solution picker"),
+                                ui.output_ui("cal_pareto_picker"),
+                                ui.output_ui("cal_selected_solution"),
+                                ui.download_button(
+                                    "cal_export_params",
+                                    "Download parameters (CSV)",
+                                    class_="btn-outline-primary btn-sm",
+                                ),
+                                ui.hr(),
                                 ui.h6("Multi-Seed Validation"),
                                 ui.layout_columns(
                                     ui.input_numeric(
@@ -375,6 +391,7 @@ def calibration_server(input, output, session, state):
     surrogate_status = reactive.value("")
     validation_result = reactive.value(None)
     cal_param_names = reactive.value([])
+    cal_param_keys = reactive.value([])  # full config keys (for per-solution config export)
     history_banner_text = reactive.value("")
     history_trigger = reactive.value(0)
     preflight_result = reactive.value(None)
@@ -399,6 +416,7 @@ def calibration_server(input, output, session, state):
         copy_data_files=copy_data_files,
         validation_result=validation_result,
         cal_param_names=cal_param_names,
+        cal_param_keys=cal_param_keys,
         preflight_result=preflight_result,
         history_banner_text=history_banner_text,
         history_trigger=history_trigger,
@@ -529,6 +547,67 @@ def calibration_server(input, output, session, state):
             ui.tags.tbody(*rows),
             class_="table table-sm table-striped",
         )
+
+    # ── Pareto solution picker ───────────────────────────────────
+    @render.ui
+    def cal_pareto_picker():
+        F = cal_F.get()
+        if F is None:
+            return ui.div(
+                "Run or load a multi-objective (NSGA-II) calibration to pick a solution.",
+                style=STYLE_EMPTY,
+            )
+        nd = nondominated_indices(F)
+        if nd.size == 0:
+            return ui.div("No non-dominated solutions.", style=STYLE_EMPTY)
+        choices = {
+            str(int(i)): f"#{int(i)}  ({', '.join(f'{v:.3g}' for v in F[int(i)])})"
+            for i in nd.tolist()
+        }
+        return ui.input_select(
+            "cal_pareto_idx",
+            "Non-dominated solution (objectives)",
+            choices=choices,
+            selected=str(int(nd[0])),
+        )
+
+    def _picked_solution():
+        """Resolve the currently-picked Pareto solution as a dict, or None."""
+        X = cal_X.get()
+        F = cal_F.get()
+        if X is None or F is None:
+            return None
+        try:
+            idx = int(input.cal_pareto_idx())
+        except (SilentException, TypeError, ValueError):
+            return None
+        keys = cal_param_keys.get() or cal_param_names.get()
+        if not (0 <= idx < X.shape[0]) or len(keys) != X.shape[1]:
+            return None
+        return select_solution(X, F, keys, idx)
+
+    @render.ui
+    def cal_selected_solution():
+        sol = _picked_solution()
+        if sol is None:
+            return ui.div()
+        param_rows = [
+            ui.tags.tr(ui.tags.td(k), ui.tags.td(f"{v:.6g}")) for k, v in sol["params"].items()
+        ]
+        obj_str = ", ".join(f"{v:.4g}" for v in sol["objectives"])
+        return ui.div(
+            ui.p(ui.tags.strong(f"Solution #{sol['index']} — objectives: "), obj_str),
+            ui.tags.table(
+                ui.tags.thead(ui.tags.tr(ui.tags.th("Parameter"), ui.tags.th("Value"))),
+                ui.tags.tbody(*param_rows),
+                class_="table table-sm table-striped",
+            ),
+        )
+
+    @render.download(filename="pareto_solution_params.csv")
+    def cal_export_params():
+        sol = _picked_solution()
+        yield solution_overrides_csv(sol["params"] if sol else {})
 
     @render.ui
     def validation_table():
