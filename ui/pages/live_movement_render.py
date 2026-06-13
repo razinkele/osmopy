@@ -89,9 +89,11 @@ def dots_layer_from_points(snap: MovementSnapshot, species_filter: str | None) -
     bmax = float(bm.max()) if bm.size and bm.max() > 0 else 1.0
     rows = []
     for i, (s, lo, la, b) in enumerate(zip(sp_id, lon, lat, bm)):
-        # Deterministic offsets in [-1, 1] from the row index (no RNG, reproducible).
-        ox = ((i * 2654435761) % 1000 / 500.0 - 1.0) * jx
-        oy = ((i * 40503) % 1000 / 500.0 - 1.0) * jy
+        # Deterministic offset in (-1, 1) from the row index (no RNG, reproducible).
+        # Modulo by primes > dot_cap (5000) so every school in a frame gets a distinct
+        # offset (a mod-1000 period would repeat once dot_cap exceeds 1000).
+        ox = ((i * 2654435761) % 10007 / 5003.5 - 1.0) * jx
+        oy = ((i * 40503) % 9973 / 4986.5 - 1.0) * jy
         rows.append(
             {
                 "position": [float(lo) + ox, float(la) + oy],

@@ -50,9 +50,8 @@ class AppState:
         # status banner can show users *what* is blocking them.
         self.busy: reactive.Value[str | None] = reactive.Value(None)
         # C4 Phase B: cooperative cancellation token for the Python engine.
-        # _run_python_engine constructs a fresh threading.Event per run and
-        # publishes it here so handle_cancel() can flip it. None when no run
-        # is in flight.
+        # handle_run constructs a fresh threading.Event per run and publishes it
+        # here so handle_cancel() can flip it. None when no run is in flight.
         import threading as _threading
 
         self.run_cancel_token: reactive.Value[_threading.Event | None] = reactive.Value(None)

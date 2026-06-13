@@ -92,7 +92,7 @@ def test_build_snapshot_dot_cap_samples_deterministically():
     n = 100
     st = _state(
         species_id=[0] * n,
-        cell_x=list(range(n % 10)) * 10 if False else [i % 10 for i in range(n)],
+        cell_x=[i % 10 for i in range(n)],
         cell_y=[i // 10 for i in range(n)],
         biomass=[1.0] * n,
     )
