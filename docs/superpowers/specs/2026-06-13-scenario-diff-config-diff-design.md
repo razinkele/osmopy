@@ -104,8 +104,9 @@ change — see Testing).
      - a header line `ui.p(f"{n} differing config key{'s' if n != 1 else ''}", class_="text-muted")`
        (avoids the verb-agreement trap — reads "1 differing config key" / "3 differing config
        keys"; `n` = row count).
-     - a Bootstrap table (`class_="table table-sm table-striped"`, like `config_diff_table`)
-       with **four** columns — **Key | A | B | Change** — one `ui.tags.tr` per differing key:
+     - a Bootstrap table (`class_="table table-sm table-striped"` plus `style="font-size: 13px;"`,
+       matching `config_diff_table` at `results.py:783-788`) with **four** columns —
+       **Key | A | B | Change** — one `ui.tags.tr` per differing key:
        - Key cell: `ui.tags.td(row["key"], style=STYLE_MONO_KEY)`.
        - A / B cells: the value verbatim, or `"—"` when `None` (added/removed side); an
          empty-string value renders as an empty cell (only `None` becomes `"—"`).

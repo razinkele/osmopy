@@ -259,9 +259,7 @@ render function (ends ~line 245), add:
                 ui.tags.td(r["key"], style=STYLE_MONO_KEY),
                 _val_cell(r["value_a"]),
                 _val_cell(r["value_b"]),
-                ui.tags.td(
-                    ui.tags.span(r["change"], class_=f"badge {badge_cls[r['change']]}")
-                ),
+                ui.tags.td(ui.tags.span(r["change"], class_=f"badge {badge_cls[r['change']]}")),
             )
             for r in rows
         ]
