@@ -11,7 +11,7 @@ from __future__ import annotations
 import threading  # noqa: F401  (cancel_token type hint, used at runtime when callers pass an Event)
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Callable, cast
 
 if TYPE_CHECKING:
     from osmose.engine.economics.fleet import FleetState
@@ -1226,6 +1226,7 @@ def simulate(
     *,
     output_dir: Path | None = None,
     cancel_token: "threading.Event | None" = None,
+    step_observer: "Callable[[int, object, object, object], None] | None" = None,
 ) -> list[StepOutput]:
     """Run the OSMOSE simulation loop.
 
@@ -1581,6 +1582,9 @@ def simulate(
             phenotypes=phenotypes,
         )
         accumulated.append(step_out)
+
+        if step_observer is not None:
+            step_observer(step, state, grid, config)
 
         # Write averaged output at recording frequency
         if (step + 1) % record_freq == 0:

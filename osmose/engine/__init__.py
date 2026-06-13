@@ -91,6 +91,7 @@ class PythonEngine:
         seed: int = 0,
         *,
         cancel_token: "threading.Event | None" = None,
+        step_observer=None,
     ) -> RunResult:
         from osmose.engine.output import write_outputs
         from osmose.engine.simulate import simulate
@@ -104,6 +105,7 @@ class PythonEngine:
             mortality_rngs=mortality_rngs,
             output_dir=output_dir,
             cancel_token=cancel_token,
+            step_observer=step_observer,
         )
         write_outputs(outputs, output_dir, engine_config, grid=grid)
 
