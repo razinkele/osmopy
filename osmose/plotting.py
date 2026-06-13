@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Sequence
+from typing import Sequence, cast
 
 import numpy as np
 import pandas as pd
@@ -561,8 +561,8 @@ def make_biomass_overlay(
     fig = go.Figure()
     for i, sp in enumerate(species):
         color = _OVERLAY_PALETTE[i % len(_OVERLAY_PALETTE)]
-        a = long_a[long_a["species"] == sp].sort_values("time")
-        b = long_b[long_b["species"] == sp].sort_values("time")
+        a = cast(pd.DataFrame, long_a[long_a["species"] == sp]).sort_values("time")
+        b = cast(pd.DataFrame, long_b[long_b["species"] == sp]).sort_values("time")
         if len(a):
             fig.add_trace(
                 go.Scatter(

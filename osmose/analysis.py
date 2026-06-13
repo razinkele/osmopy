@@ -314,7 +314,7 @@ def biomass_long(results) -> pd.DataFrame:
     empty state rather than raising.
     """
     df = results.biomass()
-    empty = pd.DataFrame(columns=["time", "species", "value"])
+    empty = pd.DataFrame(columns=pd.Index(["time", "species", "value"]))
     if df is None or len(df) == 0:
         return empty
     cols = set(df.columns)

@@ -372,16 +372,23 @@ def scenario_diff_server(input, output, session, state):
         if reason:
             return _state_fig(reason)
         var = _spatial_var(a)
+        if var is None:
+            return _state_fig("No spatial variable in one of the runs.")
         common = _common_species(a, b)
         sp = _spatial_species()
         ti_a, ti_b = _time_indices(a, b)
         ds = a if which == "a" else b
         ti = ti_a if which == "a" else ti_b
         label = "A" if which == "a" else "B"
+        # Real time value for this side at the aligned index (species subsetting
+        # leaves the time dim untouched, so look it up on the original a/b).
+        t_val = float((a if which == "a" else b)["time"].values[ti])
         if sp is None:
             ds = _subset_for_sum(ds, var, common)
         try:
-            fig = make_spatial_map(ds, var, time_idx=ti, species=sp, title=f"{label}: {var}")
+            fig = make_spatial_map(
+                ds, var, time_idx=ti, species=sp, title=f"{label}: {var} (t={t_val:.3g})"
+            )
         except (ValueError, KeyError) as exc:
             return _state_fig(f"Cannot render {label}: {exc}")
         fig.update_layout(template=_tpl(input))
@@ -394,6 +401,8 @@ def scenario_diff_server(input, output, session, state):
         if reason:
             return _state_fig(reason)
         var = _spatial_var(a)
+        if var is None:
+            return _state_fig("No spatial variable in one of the runs.")
         common = _common_species(a, b)
         sp = _spatial_species()
         ti_a, ti_b = _time_indices(a, b)
@@ -406,4 +415,12 @@ def scenario_diff_server(input, output, session, state):
         except (ValueError, TypeError, KeyError) as exc:
             return _state_fig(f"Cannot diff: {exc}")
         lat, lon = grid_latlon(ds_a, var)
-        return make_diff_map(diff, lat, lon, var_name=var, template=_tpl(input))
+        t_b_val = float(b["time"].values[ti_b])
+        return make_diff_map(
+            diff,
+            lat,
+            lon,
+            var_name=var,
+            title=f"Δ {var} (B−A, t={t_b_val:.3g})",
+            template=_tpl(input),
+        )

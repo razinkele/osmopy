@@ -8,6 +8,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ### Added
 
+- **ui (scenario diff):** a new Results "Scenario Diff" tab compares two runs (baseline A vs
+  variant B) — overlaid per-species biomass curves (A solid, B dashed) plus side-by-side spatial
+  maps and a B−A difference map. Each map title shows that run's real time value (so a single
+  slider position reads correctly even when A and B have different cadence/start), and the diff
+  map aligns the two runs by their nearest time index. New `osmose.analysis.biomass_long` and
+  `osmose.plotting.make_biomass_overlay` helpers back the overlay.
 - **ui (calibration):** a Pareto solution picker on the calibration Results → Best Parameters tab.
   Pick a non-dominated solution from a multi-objective (NSGA-II) front (live run or a loaded
   historical run), inspect its full parameter vector and objective values, and download those
