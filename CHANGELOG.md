@@ -8,6 +8,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ### Added
 
+- **docs (usage guide):** a task-oriented [`docs/usage-guide.md`](docs/usage-guide.md) with
+  copy-pasteable, executed-and-verified recipes — run a simulation (Python engine / CLI / Java),
+  read outputs with `OsmoseResults`, compare two runs (`run_delta`), calibrate, run post-run
+  diagnostics, and choose an engine (with the RNG/parity caveat) — plus a [`docs/README.md`](docs/README.md)
+  index of the `docs/` tree. Every code snippet runs against the bundled `data/minimal/` config.
 - **ui (config validation):** the Setup page now shows a live validation summary panel
   (type/range/enum errors, missing species names, missing file references) as you edit,
   mirroring the Run gate via a new `summarize_config_validation` helper that the Run gate
@@ -52,6 +57,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ### Fixed
 
+- **docs (README API sketch):** corrected code snippets that didn't match the real API and would
+  fail on copy-paste — the engine import (`JavaEngine`/`Engine` don't exist), the results reader
+  (`get_biomass()`/`get_mortality()`/`get_diet()` → `biomass()`/`mortality()`/`diet_matrix()`,
+  returning DataFrames not xarray), and the calibration block (`CalibratorConfig`/`Calibrator`
+  don't exist → `list_runs`/`load_run`/`OsmoseCalibrationProblem`); plus the Java `runner.run` is a
+  coroutine and `writer.write` targets a directory.
 - **ui (run history):** Run-tab history writer and the Results "Compare Runs" selector now share a
   canonical directory (`data/history` via `osmose.history.RUN_HISTORY_DIR` / `default_run_history()`).
   Previously the writer used `data/history` while the reader looked for `<output_dir>/../.osmose_history`
