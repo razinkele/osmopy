@@ -305,3 +305,14 @@ def test_compare_runs_selector_populated_independently_of_output_dir():
     assert "_populate_compare_runs" in src
     assert "_last_compare_choices" in src
     assert "Populate run comparison choices from history" not in src
+
+
+def test_scenario_diff_tab_wired_into_results():
+    """The Scenario Diff tab + sub-server are embedded in the Results page."""
+    import pathlib
+
+    src = (
+        pathlib.Path(__file__).resolve().parent.parent / "ui" / "pages" / "results.py"
+    ).read_text()
+    assert "scenario_diff_nav_panel" in src
+    assert "scenario_diff_server" in src

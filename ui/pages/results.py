@@ -15,6 +15,7 @@ from shinywidgets import output_widget, render_plotly
 
 from osmose.logging import setup_logging
 from ui.components.collapsible import collapsible_card_header, expand_tab
+from ui.pages.scenario_diff import scenario_diff_nav_panel, scenario_diff_server
 from ui.state import AppState
 from ui.styles import STYLE_EMPTY, STYLE_MONO_KEY
 
@@ -333,6 +334,7 @@ def results_ui():
                 output_widget("run_delta_chart"),
                 ui.output_ui("run_delta_table"),
             ),
+            scenario_diff_nav_panel(),
         ),
     )
 
@@ -866,3 +868,5 @@ def results_server(input, output, session, state: AppState):
         df.to_csv(csv_path, index=False)
         atexit.register(shutil.rmtree, str(tmp_dir), True)
         return str(csv_path)
+
+    scenario_diff_server(input, output, session, state)
