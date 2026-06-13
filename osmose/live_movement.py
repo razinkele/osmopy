@@ -1,0 +1,144 @@
+"""Live-during-run movement snapshots + queue transport (Python engine only).
+
+Pure core module — no UI imports. Produces a per-step ``MovementSnapshot`` of living
+focal schools' positions for the Run-page live map, and a throttling queue observer the
+engine step hook calls. ``queue.Queue`` is stdlib, so the transport helper stays here and
+is unit-testable.
+"""
+
+from __future__ import annotations
+
+import queue
+import time
+from dataclasses import dataclass
+from typing import Callable
+
+import numpy as np
+from numpy.typing import NDArray
+
+from osmose.logging import setup_logging
+
+_log = setup_logging("osmose.live_movement")
+
+
+@dataclass
+class MovementSnapshot:
+    """One frame of living focal schools' positions for the live map."""
+
+    step: int
+    n_steps: int
+    status: str  # "running" | "done" | "cancelled"
+    species: list[str]
+    sp_id: NDArray[np.int32]
+    lon: NDArray[np.float64]
+    lat: NDArray[np.float64]
+    biomass: NDArray[np.float64]
+    truncated: bool
+    n_total: int
+    lon_min: float
+    lon_max: float
+    lat_min: float
+    lat_max: float
+    lon_step: float  # grid cell spacing (median diff of full lon array); 0 if < 2 cells
+    lat_step: float
+
+
+def resolve_grid_latlon(grid) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Return ``(lat, lon)`` cell-coordinate arrays.
+
+    Uses ``grid.lat``/``grid.lon`` when present (NetCDF-backed grids), else
+    ``np.arange(ny|nx, dtype=float64)`` — byte-identical to the spatial-NetCDF writer's
+    fallback (``osmose/engine/output.py:726,731``), so live and post-run coords agree.
+    """
+    lat = grid.lat if grid.lat is not None else np.arange(grid.ny, dtype=np.float64)
+    lon = grid.lon if grid.lon is not None else np.arange(grid.nx, dtype=np.float64)
+    return np.asarray(lat, dtype=np.float64), np.asarray(lon, dtype=np.float64)
+
+
+def build_snapshot(
+    step: int, state, grid, config, *, status: str = "running", dot_cap: int = 5000
+) -> MovementSnapshot:
+    """Build a snapshot of focal + located + living schools at ``step`` (pure).
+
+    Selection mask = focal (``species_id < n_species``) & in-domain (``~is_out``) &
+    located (``cell_x/cell_y >= 0``, drops freshly-spawned eggs at ``-1``) & living
+    (``biomass > 0``). Samples to ``dot_cap`` deterministically when exceeded.
+    """
+    lat_arr, lon_arr = resolve_grid_latlon(grid)
+    mask = (
+        (state.species_id < config.n_species)
+        & ~state.is_out
+        & (state.cell_x >= 0)
+        & (state.cell_y >= 0)
+        & (state.biomass > 0.0)
+    )
+    sp_id = state.species_id[mask]
+    cx = state.cell_x[mask]
+    cy = state.cell_y[mask]
+    bm = state.biomass[mask]
+    n_total = int(sp_id.size)
+    truncated = n_total > dot_cap
+    if truncated:
+        idx = np.linspace(0, n_total - 1, dot_cap).astype(np.intp)
+        sp_id, cx, cy, bm = sp_id[idx], cx[idx], cy[idx], bm[idx]
+    lon_step = float(np.median(np.diff(lon_arr))) if lon_arr.size > 1 else 0.0
+    lat_step = float(np.median(np.diff(lat_arr))) if lat_arr.size > 1 else 0.0
+    return MovementSnapshot(
+        step=int(step),
+        n_steps=int(config.n_steps),
+        status=status,
+        species=list(config.species_names[: config.n_species]),
+        sp_id=np.asarray(sp_id, dtype=np.int32),
+        lon=lon_arr[cx].astype(np.float64),
+        lat=lat_arr[cy].astype(np.float64),
+        biomass=np.asarray(bm, dtype=np.float64),
+        truncated=truncated,
+        n_total=n_total,
+        lon_min=float(lon_arr.min()),
+        lon_max=float(lon_arr.max()),
+        lat_min=float(lat_arr.min()),
+        lat_max=float(lat_arr.max()),
+        lon_step=lon_step,
+        lat_step=lat_step,
+    )
+
+
+def make_step_observer(
+    q: "queue.Queue[MovementSnapshot]",
+    *,
+    dot_cap: int = 5000,
+    throttle_s: float = 0.2,
+    now: Callable[[], float] = time.monotonic,
+) -> Callable[[int, object, object, object], None]:
+    """Return a step-observer that builds a snapshot and enqueues it (drop-oldest).
+
+    Always emits step 0 and the final step (``config.n_steps - 1``); throttles the
+    rest by wall-clock. Never blocks the engine thread and never raises into it.
+    """
+    last_emit: list[float | None] = [None]
+
+    def observer(step: int, state, grid, config) -> None:
+        n_steps = int(config.n_steps)
+        is_edge = step == 0 or step == n_steps - 1
+        t = now()
+        if not is_edge and last_emit[0] is not None and (t - last_emit[0]) < throttle_s:
+            return
+        last_emit[0] = t
+        try:
+            snap = build_snapshot(step, state, grid, config, dot_cap=dot_cap)
+        except Exception:  # noqa: BLE001 — never crash the running simulation
+            _log.warning("live snapshot build failed at step %s", step, exc_info=True)
+            return
+        try:
+            q.put_nowait(snap)
+        except queue.Full:
+            try:
+                q.get_nowait()
+            except queue.Empty:
+                pass
+            try:
+                q.put_nowait(snap)
+            except queue.Full:
+                pass
+
+    return observer
