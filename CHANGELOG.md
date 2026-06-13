@@ -8,6 +8,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ### Added
 
+- **ui (spatial results):** a "Cell Series" tab on the Spatial Results page shows a single grid
+  cell's value over time. Pick a cell with row/col inputs (or click one on the Map View) and a
+  species selector (sum / mean / per-species); the panel reads the trajectory from the loaded
+  spatial NetCDF and plots it, with empty states for land cells and runs without spatial output.
+  New `osmose.spatial_series` module (`cell_timeseries` / `cell_timeseries_from_dataset`) reads one
+  cell without materialising the full `(time, species, lat, lon)` cube.
 - **docs (usage guide):** a task-oriented [`docs/usage-guide.md`](docs/usage-guide.md) with
   copy-pasteable, executed-and-verified recipes — run a simulation (Python engine / CLI / Java),
   read outputs with `OsmoseResults`, compare two runs (`run_delta`), calibrate, run post-run

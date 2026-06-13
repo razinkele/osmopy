@@ -37,6 +37,68 @@ def _find_dim(dims, names):
     return None
 
 
+def cell_timeseries_from_dataset(
+    ds,
+    variable,
+    *,
+    lat_index,
+    lon_index,
+    species=None,
+    reduce="sum",
+):
+    """Per-cell time series from an already-open ``xarray.Dataset``.
+
+    Use this when the caller already holds the dataset open (e.g. the UI keeps
+    one ``open_dataset`` handle alive) — re-opening the same NetCDF file with a
+    second handle can raise an HDF5 file-locking error.
+
+    See :func:`cell_timeseries` for the parameter/return/raise contract; this
+    function is identical except it takes an open dataset instead of a path.
+    """
+    if reduce not in ("sum", "mean"):
+        raise ValueError(f"reduce must be 'sum' or 'mean', got {reduce!r}")
+    if variable not in ds.data_vars:
+        raise KeyError(
+            f"variable {variable!r} not in dataset; available: {sorted(map(str, ds.data_vars))}"
+        )
+    da = ds[variable]
+    time_dim = _find_dim(da.dims, _TIME_DIM_NAMES)
+    lat_dim = _find_dim(da.dims, _LAT_DIM_NAMES)
+    lon_dim = _find_dim(da.dims, _LON_DIM_NAMES)
+    if time_dim is None or lat_dim is None or lon_dim is None:
+        raise ValueError(
+            f"variable {variable!r} is not a spatial time series "
+            f"(need time+lat+lon dims, have {tuple(da.dims)})"
+        )
+
+    ny, nx = int(da.sizes[lat_dim]), int(da.sizes[lon_dim])
+    if not (0 <= lat_index < ny and 0 <= lon_index < nx):
+        raise IndexError(f"cell (lat={lat_index}, lon={lon_index}) out of range for grid {ny}x{nx}")
+
+    # isel selects the single cell; .values below materialises only that cell's
+    # vectors, never the full (time, species, lat, lon) cube.
+    cell = da.isel({lat_dim: lat_index, lon_dim: lon_index})
+
+    species_dim = _find_dim(cell.dims, _SPECIES_DIM_NAMES)
+    if species is not None and species_dim is not None:
+        if isinstance(species, str):
+            cell = cell.sel({species_dim: species})
+        else:
+            cell = cell.isel({species_dim: int(species)})
+
+    extra = [d for d in cell.dims if d != time_dim]
+    if extra:
+        # skipna=False so land (uniformly NaN across species) stays NaN; ocean
+        # cells carry 0.0/positive values, so the reduction is well-defined.
+        if reduce == "sum":
+            cell = cell.sum(dim=extra, skipna=False)
+        else:
+            cell = cell.mean(dim=extra, skipna=False)
+
+    times = ds[time_dim].values if time_dim in ds.coords else np.arange(int(cell.sizes[time_dim]))
+    return np.asarray(times), np.asarray(cell.values)
+
+
 def cell_timeseries(
     nc_path,
     variable,
@@ -82,55 +144,20 @@ def cell_timeseries(
         ``variable`` lacks time/lat/lon dims, or ``reduce`` is invalid.
     IndexError
         ``lat_index``/``lon_index`` is out of range.
+
+    Notes
+    -----
+    Opens its own file handle. If you already hold the dataset open, call
+    :func:`cell_timeseries_from_dataset` instead to avoid a second handle on the
+    same file (which can raise an HDF5 locking error).
     """
-    if reduce not in ("sum", "mean"):
-        raise ValueError(f"reduce must be 'sum' or 'mean', got {reduce!r}")
-
-    path = Path(nc_path)
-    # open_dataset is lazy; the .values call below materialises only the
-    # selected cell's vectors, never the full (time, species, lat, lon) cube.
-    with xr.open_dataset(path) as ds:
-        if variable not in ds.data_vars:
-            raise KeyError(
-                f"variable {variable!r} not in {path.name}; available: {sorted(map(str, ds.data_vars))}"
-            )
-        da = ds[variable]
-        time_dim = _find_dim(da.dims, _TIME_DIM_NAMES)
-        lat_dim = _find_dim(da.dims, _LAT_DIM_NAMES)
-        lon_dim = _find_dim(da.dims, _LON_DIM_NAMES)
-        if time_dim is None or lat_dim is None or lon_dim is None:
-            raise ValueError(
-                f"variable {variable!r} is not a spatial time series "
-                f"(need time+lat+lon dims, have {tuple(da.dims)})"
-            )
-
-        ny, nx = int(da.sizes[lat_dim]), int(da.sizes[lon_dim])
-        if not (0 <= lat_index < ny and 0 <= lon_index < nx):
-            raise IndexError(
-                f"cell (lat={lat_index}, lon={lon_index}) out of range for grid {ny}x{nx}"
-            )
-
-        cell = da.isel({lat_dim: lat_index, lon_dim: lon_index})
-
-        species_dim = _find_dim(cell.dims, _SPECIES_DIM_NAMES)
-        if species is not None and species_dim is not None:
-            if isinstance(species, str):
-                cell = cell.sel({species_dim: species})
-            else:
-                cell = cell.isel({species_dim: int(species)})
-
-        extra = [d for d in cell.dims if d != time_dim]
-        if extra:
-            # skipna=False so land (uniformly NaN across species) stays NaN; ocean
-            # cells carry 0.0/positive values, so the reduction is well-defined.
-            if reduce == "sum":
-                cell = cell.sum(dim=extra, skipna=False)
-            else:
-                cell = cell.mean(dim=extra, skipna=False)
-
-        times = (
-            ds[time_dim].values if time_dim in ds.coords else np.arange(int(cell.sizes[time_dim]))
+    # open_dataset is lazy; the selection/materialisation happens in the delegate.
+    with xr.open_dataset(Path(nc_path)) as ds:
+        return cell_timeseries_from_dataset(
+            ds,
+            variable,
+            lat_index=lat_index,
+            lon_index=lon_index,
+            species=species,
+            reduce=reduce,
         )
-        values = cell.values
-
-    return np.asarray(times), np.asarray(values)
