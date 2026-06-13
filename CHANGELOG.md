@@ -36,6 +36,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
   size-spectrum helpers (mean-size convexity, LFI threshold boundary, bin-width order-invariance,
   time-window). New `tests/strategies.py` + a deterministic Hypothesis `ci` profile.
 
+### Changed
+
+- **ci (python matrix):** the `type-check` job now runs pyright across the supported Python
+  range (3.12 and 3.13), matching the `test` job. Because `pyrightconfig.json` pins
+  `pythonVersion` to 3.12, each leg passes `--pythonversion ${{ matrix.python-version }}` so it
+  actually analyzes its target version (stdlib stubs and `sys.version_info` narrowing) — the test
+  job only exercises 3.13 at runtime, so this is what type-checks the 3.13 path. `fail-fast` is
+  off so both versions' errors surface together. The `lint` job stays single-version by design
+  (ruff is governed by `target-version`, not the runtime), and `docker` stays single-version
+  (the image pins its own runtime).
+
 ### Fixed
 
 - **ui (run history):** Run-tab history writer and the Results "Compare Runs" selector now share a
