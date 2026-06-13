@@ -29,6 +29,35 @@ _log = setup_logging("osmose.scenario_diff")
 
 _SPATIAL_VAR_HINT = "spatial_biomass"  # preferred diff variable when present
 
+# Display priority for the config-diff panel: changed group first, then added, then
+# removed (NOT the change string's alphabetical order, which would put "added" first).
+_CHANGE_ORDER = {"changed": 0, "added": 1, "removed": 2}
+
+
+def _classify_config_diffs(diffs: list[dict]) -> list[dict]:
+    """Tag each {key, value_a, value_b} row with a change type and sort for display.
+
+    change is "added"   when value_a is None (key only in B),
+              "removed" when value_b is None (key only in A),
+              "changed" otherwise (both present, differ — incl. an empty-string value,
+              since only None means a missing key).
+    Sorted changed-group-first, then added, then removed; alphabetical by key within
+    each group. Deterministic and independent of input order. Pure (no I/O).
+    """
+    rows: list[dict] = []
+    for d in diffs:
+        va = d.get("value_a")
+        vb = d.get("value_b")
+        if va is None:
+            change = "added"
+        elif vb is None:
+            change = "removed"
+        else:
+            change = "changed"
+        rows.append({"key": d["key"], "value_a": va, "value_b": vb, "change": change})
+    rows.sort(key=lambda r: (_CHANGE_ORDER[r["change"]], r["key"]))
+    return rows
+
 
 def _run_choices(runs) -> dict[str, str]:
     return {r.timestamp: f"{r.timestamp[:19]} ({r.duration_sec:.0f}s)" for r in runs}
