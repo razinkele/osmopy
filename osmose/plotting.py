@@ -525,3 +525,65 @@ def make_species_dashboard(
 
     fig.update_layout(title=dict(text=title), template=TEMPLATE, height=300 * n)
     return fig
+
+
+# Paired colors so each species' A (solid) and B (dashed) traces match.
+_OVERLAY_PALETTE = (
+    "#1f77b4",
+    "#ff7f0e",
+    "#2ca02c",
+    "#d62728",
+    "#9467bd",
+    "#8c564b",
+    "#e377c2",
+    "#7f7f7f",
+    "#bcbd22",
+    "#17becf",
+)
+
+
+def make_biomass_overlay(
+    long_a: pd.DataFrame,
+    long_b: pd.DataFrame,
+    species: Sequence[str],
+    *,
+    label_a: str = "A",
+    label_b: str = "B",
+) -> go.Figure:
+    """Overlay per-species biomass trajectories from two runs (A solid, B dashed).
+
+    Inputs are already-normalized long frames (``time, species, value``) from
+    :func:`osmose.analysis.biomass_long` — this never re-derives the WIDE/LONG shape.
+    """
+    title = "Scenario biomass: A vs B"
+    if not species:
+        return _empty_figure(title)
+    fig = go.Figure()
+    for i, sp in enumerate(species):
+        color = _OVERLAY_PALETTE[i % len(_OVERLAY_PALETTE)]
+        a = long_a[long_a["species"] == sp].sort_values("time")
+        b = long_b[long_b["species"] == sp].sort_values("time")
+        if len(a):
+            fig.add_trace(
+                go.Scatter(
+                    x=a["time"],
+                    y=a["value"],
+                    mode="lines",
+                    name=f"{sp} ({label_a})",
+                    line=dict(color=color),
+                )
+            )
+        if len(b):
+            fig.add_trace(
+                go.Scatter(
+                    x=b["time"],
+                    y=b["value"],
+                    mode="lines",
+                    name=f"{sp} ({label_b})",
+                    line=dict(color=color, dash="dash"),
+                )
+            )
+    fig.update_layout(
+        title=dict(text=title), xaxis_title="time", yaxis_title="biomass", template=TEMPLATE
+    )
+    return fig

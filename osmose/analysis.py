@@ -302,3 +302,35 @@ def format_delta_report(
     n_moved = sum(1 for d in deltas if d.abs_delta != 0.0)
     lines += ["", f"**Summary:** {n_moved} of {len(deltas)} species changed.", ""]
     return "\n".join(lines)
+
+
+def biomass_long(results) -> pd.DataFrame:
+    """Normalize a run's biomass output to long form: columns ``time, species, value``.
+
+    Handles both on-disk shapes the same way :func:`_per_species_window_mean` does:
+    WIDE (``Time`` + one column per species + a constant ``species`` column) and LONG
+    (``time, species, value``). Returns an empty 3-column frame for a missing/empty run
+    (e.g. ``OsmoseResults(dir, strict=False)`` with no files), so callers degrade to an
+    empty state rather than raising.
+    """
+    df = results.biomass()
+    empty = pd.DataFrame(columns=["time", "species", "value"])
+    if df is None or len(df) == 0:
+        return empty
+    cols = set(df.columns)
+    if "value" in cols and "species" in cols:  # LONG
+        time_col = "time" if "time" in cols else "Time"
+        return (
+            df[[time_col, "species", "value"]]
+            .rename(columns={time_col: "time"})
+            .reset_index(drop=True)
+        )
+    # WIDE: species are the non-Time/non-species columns
+    time_col = "Time" if "Time" in cols else "time"
+    species_cols = [c for c in df.columns if c not in _NON_SPECIES_COLS]
+    if not species_cols:
+        return empty
+    melted = df.melt(
+        id_vars=[time_col], value_vars=species_cols, var_name="species", value_name="value"
+    )
+    return melted.rename(columns={time_col: "time"}).reset_index(drop=True)
