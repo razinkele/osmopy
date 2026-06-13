@@ -170,3 +170,98 @@ def test_from_dataset_works_on_already_open_handle(tmp_path):
         )
     expected = np.array([100 + 10 * t + 2 + 0.2 for t in range(6)])  # cod=s0 at (y=2,x=2)
     np.testing.assert_allclose(vals, expected)
+
+
+# --- spatial_diff_2d -------------------------------------------------------
+
+from osmose.spatial_series import grid_latlon, spatial_diff_2d  # noqa: E402
+
+
+def _diff_ds(*, ny=3, nx=4, n_time=2, species=("cod", "sprat"), base=0.0, lat=None, land=None):
+    """In-memory (time, species, lat, lon) dataset; cell value is identifiable."""
+    lat = np.linspace(54.0, 55.0, ny) if lat is None else np.asarray(lat, dtype=float)
+    lon = np.linspace(10.0, 12.0, nx)
+    ns = len(species)
+    data = np.fromfunction(
+        lambda t, s, y, x: base + s * 1000.0 + t * 100.0 + y * 10.0 + x,
+        (n_time, ns, ny, nx),
+        dtype=float,
+    )
+    if land is not None:
+        ly, lx = land
+        data[:, :, ly, lx] = np.nan
+    return xr.Dataset(
+        {"spatial_biomass": (("time", "species", "lat", "lon"), data)},
+        coords={
+            "time": np.arange(n_time) / 12.0,
+            "species": list(species),
+            "lat": lat,
+            "lon": lon,
+        },
+    )
+
+
+def test_spatial_diff_2d_sum_over_species():
+    a = _diff_ds(base=0.0)
+    b = _diff_ds(base=7.0)  # every cell of B is A + 7 per species; 2 species -> +14 summed
+    diff = spatial_diff_2d(a, b, "spatial_biomass", time_a=0, time_b=0)
+    assert diff.shape == (3, 4)
+    np.testing.assert_allclose(diff, np.full((3, 4), 14.0))
+
+
+def test_spatial_diff_2d_land_nan_propagates():
+    a = _diff_ds(land=(0, 0))
+    b = _diff_ds(base=7.0)  # B has no land at (0,0); A does -> result NaN there
+    diff = spatial_diff_2d(a, b, "spatial_biomass")
+    assert np.isnan(diff[0, 0])
+    assert np.isfinite(diff[1, 1])
+
+
+def test_spatial_diff_2d_single_species_by_name():
+    a = _diff_ds(base=0.0)
+    b = _diff_ds(base=7.0)
+    diff = spatial_diff_2d(a, b, "spatial_biomass", species="sprat")
+    np.testing.assert_allclose(diff, np.full((3, 4), 7.0))  # one species -> +7
+
+
+def test_spatial_diff_2d_time_indices_independent():
+    a = _diff_ds(base=0.0)  # value includes t*100
+    b = _diff_ds(base=0.0)
+    # B at t=1 minus A at t=0, summed over 2 species: each species differs by +100 -> +200
+    diff = spatial_diff_2d(a, b, "spatial_biomass", time_a=0, time_b=1)
+    np.testing.assert_allclose(diff, np.full((3, 4), 200.0))
+
+
+def test_spatial_diff_2d_identical_runs_all_zero():
+    a = _diff_ds(land=(0, 0))
+    diff = spatial_diff_2d(a, a, "spatial_biomass")
+    assert np.isnan(diff[0, 0])
+    finite = diff[np.isfinite(diff)]
+    np.testing.assert_allclose(finite, 0.0)
+
+
+def test_spatial_diff_2d_shape_mismatch_raises():
+    a = _diff_ds(nx=4)
+    b = _diff_ds(nx=5)
+    with pytest.raises(ValueError, match="shape"):
+        spatial_diff_2d(a, b, "spatial_biomass")
+
+
+def test_spatial_diff_2d_coord_mismatch_raises():
+    a = _diff_ds(lat=[54.0, 54.5, 55.0])
+    b = _diff_ds(lat=[60.0, 60.5, 61.0])  # same shape, different coords
+    with pytest.raises(ValueError, match="coordinate"):
+        spatial_diff_2d(a, b, "spatial_biomass")
+
+
+def test_spatial_diff_2d_int_species_rejected():
+    a = _diff_ds()
+    with pytest.raises(TypeError, match="name"):
+        spatial_diff_2d(a, a, "spatial_biomass", species=1)
+
+
+def test_grid_latlon_returns_coord_arrays():
+    a = _diff_ds()
+    lat, lon = grid_latlon(a, "spatial_biomass")
+    np.testing.assert_allclose(lat, np.linspace(54.0, 55.0, 3))
+    np.testing.assert_allclose(lon, np.linspace(10.0, 12.0, 4))
