@@ -1,17 +1,31 @@
 """Run control page - execute OSMOSE simulations."""
 
 import asyncio
+import queue
 import shutil
 import tempfile
+import time
 from pathlib import Path
 
 from shiny import ui, reactive, render
+from shiny_deckgl import (  # type: ignore[import-untyped]
+    CARTO_DARK,
+    CARTO_POSITRON,
+    MapWidget,
+    compass_widget,
+    fullscreen_widget,
+    scale_widget,
+    zoom_widget,
+)
 
 from osmose.config.validator import summarize_config_validation
 from osmose.engine import PythonEngine, SimulationCancelled
+from osmose.live_movement import make_step_observer
 from osmose.logging import setup_logging
 from osmose.runner import OsmoseRunner, RunResult, validate_java_opts
 from ui.components.collapsible import collapsible_card_header, expand_tab
+from ui.pages.live_movement_render import dots_layer_from_points, heatmap_layer_from_points
+from ui.state import get_theme_mode
 from ui.styles import STYLE_CONSOLE
 
 _log = setup_logging("osmose.run")
@@ -151,6 +165,7 @@ def write_temp_config(
 
 
 def run_ui():
+    live_map = MapWidget("live_map", style=CARTO_POSITRON)
     return ui.div(
         expand_tab("Run Configuration", "run"),
         ui.layout_columns(
@@ -226,6 +241,20 @@ def run_ui():
             ),
             col_widths=[4, 8],
         ),
+        ui.card(
+            ui.card_header("Live Movement (Python engine)"),
+            ui.input_switch("live_movement_view", "Stream movement during run", value=False),
+            ui.input_radio_buttons(
+                "live_movement_mode",
+                "Mode",
+                {"heatmap": "Heatmap", "dots": "Dots"},
+                selected="heatmap",
+                inline=True,
+            ),
+            ui.input_select("live_movement_species", "Species", choices={"__all__": "All species"}),
+            ui.output_ui("live_movement_status"),
+            live_map.ui(height="420px"),
+        ),
         class_="osm-split-layout",
         id="split_run",
     )
@@ -241,6 +270,9 @@ async def _run_python_engine(
     run_log,
     status,
     runner_ref,
+    *,
+    step_observer=None,
+    set_live_status=None,
 ):
     """Run the simulation using the in-process Python engine."""
     overrides = parse_overrides(input.py_param_overrides() or "")
@@ -269,7 +301,13 @@ async def _run_python_engine(
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
             None,
-            lambda: engine.run(run_config, output_dir, seed=0, cancel_token=cancel_token),
+            lambda: engine.run(
+                run_config,
+                output_dir,
+                seed=0,
+                cancel_token=cancel_token,
+                step_observer=step_observer,
+            ),
         )
     except SimulationCancelled as exc:
         # Phase B will trigger this from a UI Cancel button; Phase A defines
@@ -278,6 +316,8 @@ async def _run_python_engine(
         lines = list(run_log.get())
         lines.append(f"--- CANCELLED ---\n{exc}")
         run_log.set(lines)
+        if set_live_status is not None:
+            set_live_status("cancelled")
         result = RunResult(
             returncode=-1,
             output_dir=Path(""),
@@ -295,6 +335,8 @@ async def _run_python_engine(
         lines = list(run_log.get())
         lines.append(f"--- ERROR ---\n{exc}")
         run_log.set(lines)
+        if set_live_status is not None:
+            set_live_status("failed")
         result = RunResult(
             returncode=1,
             output_dir=Path(""),
@@ -303,6 +345,9 @@ async def _run_python_engine(
             status="failed",
             message=str(exc),
         )
+    else:
+        if set_live_status is not None:
+            set_live_status("done")
     finally:
         state.busy.set(None)
         ui.update_action_button("btn_run", disabled=False, session=session)
@@ -429,6 +474,96 @@ def run_server(input, output, session, state):
     status = reactive.value("Idle")
     runner_ref = reactive.value(None)
 
+    # ── Live movement state (Python engine only) ─────────────────
+    _live_map = MapWidget("live_map", style=CARTO_POSITRON)
+    _live_queue: queue.Queue = queue.Queue(maxsize=4)
+    _live_snapshot: reactive.Value = reactive.Value(None)  # MovementSnapshot | None
+    _live_status_val: reactive.Value = reactive.Value(
+        ""
+    )  # "" | running | done | cancelled | failed
+    _live_framed = [False]  # plain mutable flag (NOT reactive — render effect reads+writes it)
+    _last_live_species: list[list[str] | None] = [
+        None
+    ]  # plain flag for the species-selector changed-only guard
+
+    @reactive.poll(lambda: time.time(), interval_secs=0.2)
+    def _drain_live_queue():
+        latest = None
+        while True:
+            try:
+                latest = _live_queue.get_nowait()
+            except queue.Empty:
+                break
+        if latest is not None:
+            _live_snapshot.set(latest)
+
+    @reactive.effect
+    def _consume_live_poll():
+        _drain_live_queue()
+
+    @reactive.effect
+    def _populate_live_species():
+        snap = _live_snapshot.get()
+        if snap is None:
+            return
+        if snap.species == _last_live_species[0]:
+            return
+        _last_live_species[0] = list(snap.species)
+        choices = {"__all__": "All species"}
+        choices.update({name: name for name in snap.species})
+        ui.update_select("live_movement_species", choices=choices)
+
+    @render.ui
+    def live_movement_status():
+        status_v = _live_status_val.get()
+        snap = _live_snapshot.get()
+        if not status_v:
+            if state.engine_mode.get() != "python":
+                return ui.p("Live view available for the Python engine.", class_="text-muted")
+            return ui.p("Enable the toggle before running to stream movement.", class_="text-muted")
+        prog = f"step {snap.step + 1}/{snap.n_steps}" if snap is not None else ""
+        extra = ""
+        if snap is not None and snap.truncated:
+            extra = f" — showing {snap.sp_id.size} of {snap.n_total} schools"
+        return ui.p(f"{status_v} {prog}{extra}".strip())
+
+    @reactive.effect
+    async def _render_live_map():
+        snap = _live_snapshot.get()
+        mode = input.live_movement_mode()
+        sel = input.live_movement_species()
+        species_filter = None if sel in ("__all__", None) else sel
+        style = CARTO_DARK if get_theme_mode(input) == "dark" else CARTO_POSITRON
+        if style != _live_map.style:
+            _live_map.style = style
+            await _live_map.set_style(session, style)
+        if snap is None:
+            return
+        layer = (
+            dots_layer_from_points(snap, species_filter)
+            if mode == "dots"
+            else heatmap_layer_from_points(snap, species_filter)
+        )
+        if not _live_framed[0]:
+            await _live_map.update(
+                session,
+                layers=[layer],
+                view_state={
+                    "latitude": (snap.lat_min + snap.lat_max) / 2,
+                    "longitude": (snap.lon_min + snap.lon_max) / 2,
+                    "zoom": 5,
+                },
+                widgets=[
+                    fullscreen_widget(placement="top-left"),
+                    zoom_widget(placement="top-right"),
+                    compass_widget(placement="top-right"),
+                    scale_widget(placement="bottom-left"),
+                ],
+            )
+            _live_framed[0] = True
+        else:
+            await _live_map.partial_update(session, layers=[layer])
+
     @render.ui
     def jar_selector():
         jars = sorted(JAR_DIR.glob("*.jar")) if JAR_DIR.is_dir() else []
@@ -500,6 +635,22 @@ def run_server(input, output, session, state):
         work_dir = Path(tempfile.mkdtemp(prefix="osmose_run_"))
         source_dir = state.config_dir.get()
 
+        live_observer = None
+        if input.live_movement_view() and engine_mode == "python":
+            while True:
+                try:
+                    _live_queue.get_nowait()
+                except queue.Empty:
+                    break
+            _live_snapshot.set(None)
+            _live_framed[0] = False
+            _last_live_species[0] = None
+            _live_status_val.set("running")
+            live_observer = make_step_observer(_live_queue)
+
+        def _set_live_status(s: str) -> None:
+            _live_status_val.set(s)
+
         if engine_mode == "python":
             await _run_python_engine(
                 input,
@@ -511,6 +662,8 @@ def run_server(input, output, session, state):
                 run_log,
                 status,
                 runner_ref,
+                step_observer=live_observer,
+                set_live_status=_set_live_status,
             )
         else:
             await _run_java_engine(
