@@ -8,6 +8,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ### Added
 
+- **ui (run):** a live-during-run movement view on the Run page (Python engine) streams living
+  schools onto a deck.gl map as the simulation runs — as a biomass-weighted heatmap or individual
+  dots, toggled, with a per-species filter. Backed by an opt-in `step_observer` hook in the Python
+  `simulate` loop (parity-safe, off by default), a bounded snapshot queue, and a fire-and-forget
+  run dispatch so frames flush mid-run. New `osmose/live_movement.py` and
+  `ui/pages/live_movement_render.py`. (Java engine runs show a "Python engine only" note.)
 - **ui (scenario diff):** a new Results "Scenario Diff" tab compares two runs (baseline A vs
   variant B) — overlaid per-species biomass curves (A solid, B dashed) plus side-by-side spatial
   maps and a B−A difference map. Each map title shows that run's real time value (so a single

@@ -27,7 +27,10 @@ class MovementSnapshot:
 
     step: int
     n_steps: int
-    status: str  # "running" | "done" | "cancelled"
+    # "running" | "done" | "cancelled". Frames from the live observer are always
+    # "running"; the Run page shows the terminal status from its own _live_status_val
+    # (set on completion/cancel), so a retained final frame stays "running" by design.
+    status: str
     species: list[str]
     sp_id: NDArray[np.int32]
     lon: NDArray[np.float64]
