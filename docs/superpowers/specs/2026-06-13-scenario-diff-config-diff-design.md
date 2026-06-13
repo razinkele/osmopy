@@ -36,13 +36,15 @@ added / removed / changed and orders them for display. No new data path, no new 
 
 The Compare Runs tab (`ui/pages/results.py:754` `config_diff_table`) already renders an N-run
 config diff from `compare_runs_multi` as a Bootstrap table; this panel follows the same table
-styling (`table table-sm table-striped`, `STYLE_MONO_KEY` for keys, `STYLE_EMPTY` for empty
-states) for visual consistency, but is two-run, change-classified, and lives in the Scenario
-Diff tab.
+styling (`table table-sm table-striped`, `STYLE_MONO_KEY` for keys) for visual consistency, but
+is two-run, change-classified, and lives in the Scenario Diff tab. Its empty/guard states use
+the tab-local `text-muted` convention (not `config_diff_table`'s `STYLE_EMPTY` block) to match
+the other muted lines already in `scenario_diff.py` — see the Render function section.
 
 ## Architecture
 
-Single file touched for behaviour: `ui/pages/scenario_diff.py`.
+Single **production** file touched: `ui/pages/scenario_diff.py` (tests and the CHANGELOG also
+change — see Testing).
 
 1. **Pure classifier** — a module-level function in `scenario_diff.py`:
 
@@ -72,11 +74,19 @@ Single file touched for behaviour: `ui/pages/scenario_diff.py`.
    differ (including an empty string `""` vs a non-empty string) is `"changed"`; an empty-string
    value renders as an empty cell, never as `"—"` (which is reserved for `None`).
 
-2. **Render function** — a bare `@render.ui` `diff_config_table` (matching the tab's existing
-   bare-render convention, no `@output`):
-   - Reads `diff_run_a` / `diff_run_b` via the existing `_safe(...)` helper. Note the unselected
-     value is the **empty string** `""` (selectors start with `choices={}`), not `None`, so the
-     guard must use a falsy test (`not ts_a or not ts_b`), matching `diff_biomass_caption`.
+2. **Render function** — a bare `@render.ui` `diff_config_table`, defined **inside**
+   `scenario_diff_server` (like the tab's other `@render.ui` functions) so it closes over
+   `input` and the `_safe` helper; `_classify_config_diffs` stays module-level. Matches the
+   tab's bare-render convention (no `@output`):
+   - Reads `diff_run_a` / `diff_run_b` via the existing `_safe(...)` helper. The unselected /
+     not-yet-ready value is **falsy** — either `""` (selectors start with `choices={}`, so a
+     ready-but-unselected select returns the empty string) or `None` (input not yet registered,
+     which `_safe`'s `default=None` returns) — so the guard must use a falsy test
+     (`not ts_a or not ts_b`) to cover both. This follows the falsy-guard pattern of
+     `config_diff_table` (`results.py:757`) and the `if not ts` short-circuit in `_results_for`
+     (`scenario_diff.py:116`). Note `diff_config_table` cannot route through `_results_for`
+     (which returns an `OsmoseResults`): it must compare the raw timestamps directly to detect
+     `ts_a == ts_b`, which is exactly why its own explicit falsy guard must come first.
    - Empty / guard states evaluated in **this exact order** (they are mutually exclusive only
      in order — e.g. `"" == ""` would wrongly trip the same-run branch if checked first):
      1. `not ts_a or not ts_b` → "Select two runs to compare their configs."
@@ -91,18 +101,27 @@ Single file touched for behaviour: `ui/pages/scenario_diff.py`.
      centered padded block used in `results.py`). Compact so the open-but-empty accordion on
      first load is unobtrusive.
    - Otherwise calls `_classify_config_diffs` and renders:
-     - a header line: "N config keys differ" (N = row count).
-     - a scrollable table with columns **Key | A | B**, one row per differing key:
-       - Key cell uses `STYLE_MONO_KEY` (the only `ui.styles` constant this panel reuses;
-         requires adding `from ui.styles import STYLE_MONO_KEY` to `scenario_diff.py`, which
-         does not currently import it).
-       - A and B value cells show the value verbatim, or "—" when `None` (added/removed side).
-       - a small change-type chip per row — a Bootstrap badge with the **bare** change word as
-         text and one of three fixed classes (`changed` = `bg-secondary`, `added` = `bg-success`,
-         `removed` = `bg-danger`). Scope cap (YAGNI line): bare word + fixed class only; no
-         tooltips, no legend, no per-type counts/filters.
-     - The table is wrapped in a scroll container (`max-height` with `overflow:auto`) so a
-       large diff doesn't push the biomass chart off-screen.
+     - a header line `ui.p(f"{n} differing config key{'s' if n != 1 else ''}", class_="text-muted")`
+       (avoids the verb-agreement trap — reads "1 differing config key" / "3 differing config
+       keys"; `n` = row count).
+     - a Bootstrap table (`class_="table table-sm table-striped"`, like `config_diff_table`)
+       with **four** columns — **Key | A | B | Change** — one `ui.tags.tr` per differing key:
+       - Key cell: `ui.tags.td(row["key"], style=STYLE_MONO_KEY)`.
+       - A / B cells: the value verbatim, or `"—"` when `None` (added/removed side); an
+         empty-string value renders as an empty cell (only `None` becomes `"—"`).
+       - Change cell: a Bootstrap badge `ui.tags.span(row["change"], class_=f"badge {cls}")`
+         where `cls` comes from the fixed map
+         `{"changed": "bg-secondary", "added": "bg-success", "removed": "bg-danger"}` — note the
+         base `badge` class is required in addition to the `bg-*` colour. Scope cap (YAGNI line):
+         bare change word + fixed class only; no tooltips, no legend, no per-type counts/filters.
+     - The whole table is wrapped in a scroll container using the existing
+       `STYLE_SCROLL_TABLE` constant (`ui.div(table, style=STYLE_SCROLL_TABLE)` →
+       `max-height: 600px; overflow-y: auto;`) so a large diff doesn't push the biomass chart
+       off-screen.
+   - **Imports:** add `from ui.styles import STYLE_MONO_KEY, STYLE_SCROLL_TABLE` to
+     `scenario_diff.py` (it currently imports neither). No new import is needed for the table /
+     accordion / badge — `ui.tags.*`, `ui.accordion`, and `ui.accordion_panel` are all reached
+     through the already-imported `shiny.ui` (`from shiny import reactive, render, ui`).
 
 3. **Placement** — wired into `scenario_diff_nav_panel()` directly under the A/B selector
    block and above the biomass chart, inside a collapsible `ui.accordion` /
@@ -160,8 +179,11 @@ handles are involved (this is config-only, independent of the spatial-dataset li
    the `Tag` and DOES contain the output ids (`"diff_config_table"`). Prefer (b) — it verifies
    the id is actually emitted in the panel content, not merely mentioned in source.
 
-3. **e2e — extend `tests/test_e2e_scenario_diff.py`**: the existing `_write_run` helper writes
-   `config_snapshot: {}` for both runs. Give run A and run B **differing** `config_snapshot`s
+3. **e2e — extend `tests/test_e2e_scenario_diff.py`**: the shared `_write_run(name, idx, *, base)`
+   helper hardcodes `config_snapshot: {}` and has no parameter for it. Add a
+   `config_snapshot: dict | None = None` keyword param (default to `{}` inside the body) and
+   pass differing dicts only from the new test, so the two existing tests' calls keep an empty
+   snapshot. Give run A and run B **differing** `config_snapshot`s
    (e.g. A `{"predation.efficiency.sp0": "0.5", "mortality.natural.rate.sp0": "0.2"}`, B
    `{"predation.efficiency.sp0": "0.7", "movement.distance.sp0": "3"}`) — so there is one
    changed key (`predation.efficiency.sp0`), one removed (`mortality.natural.rate.sp0`, A-only)
