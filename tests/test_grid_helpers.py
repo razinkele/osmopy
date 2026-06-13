@@ -413,3 +413,28 @@ def test_make_legend_importable():
     from ui.pages.grid_helpers import make_legend
 
     assert callable(make_legend)
+
+
+# --- make_diff_map ---------------------------------------------------------
+
+from ui.pages.grid_helpers import make_diff_map  # noqa: E402
+
+
+def test_make_diff_map_symmetric_range():
+    data = np.array([[5.0, -3.0], [0.0, 2.0]])
+    fig = make_diff_map(data, [54.0, 55.0], [10.0, 11.0], var_name="biomass")
+    assert fig.layout.coloraxis.cmin == -5.0
+    assert fig.layout.coloraxis.cmax == 5.0
+
+
+def test_make_diff_map_all_nan_returns_empty_state():
+    data = np.full((2, 2), np.nan)
+    fig = make_diff_map(data, [54.0, 55.0], [10.0, 11.0], var_name="biomass")
+    assert "no data" in fig.layout.title.text.lower()
+
+
+def test_make_diff_map_all_zero_valid_range():
+    data = np.zeros((2, 2))
+    fig = make_diff_map(data, [54.0, 55.0], [10.0, 11.0], var_name="biomass")
+    # EPS floor keeps a finite, symmetric range rather than zmin==zmax==0
+    assert fig.layout.coloraxis.cmin < 0 < fig.layout.coloraxis.cmax

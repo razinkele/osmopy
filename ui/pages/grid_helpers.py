@@ -1163,6 +1163,17 @@ def make_legend(entries: list[dict], **kwargs) -> dict:
     return {}
 
 
+def _z_nan_to_none(data):
+    """Nested-list copy of a 2-D array with non-finite cells → ``None``.
+
+    shinywidgets serialises figures with ``json(allow_nan=False)``, which rejects
+    NaN/inf; plotly renders ``None`` as a gap, which is what we want for land cells.
+    """
+    import numpy as np
+
+    return [[(float(v) if np.isfinite(v) else None) for v in row] for row in data]
+
+
 def make_spatial_map(
     ds,
     var_name: str,
@@ -1177,7 +1188,6 @@ def make_spatial_map(
     is collapsed by ``spatial_slice_2d``: summed across species when ``species``
     is None, or a single species selected by name/index.
     """
-    import numpy as np
     import plotly.express as px
 
     from osmose.spatial_series import spatial_slice_2d
@@ -1185,7 +1195,7 @@ def make_spatial_map(
     data = spatial_slice_2d(ds, var_name, time_index=time_idx, species=species)
     # Land cells are NaN; plotly renders NaN as gaps, but shinywidgets serialises
     # the figure with json(allow_nan=False) which rejects NaN — hand it None instead.
-    z = [[(float(v) if np.isfinite(v) else None) for v in row] for row in data]
+    z = _z_nan_to_none(data)
     lat = ds["lat"].values
     lon = ds["lon"].values
     fig = px.imshow(
@@ -1196,6 +1206,49 @@ def make_spatial_map(
         color_continuous_scale="Viridis",
         labels={"x": "Longitude", "y": "Latitude", "color": var_name},
         title=title or f"{var_name} (t={time_idx})",
+    )
+    fig.update_layout(template=template)
+    return fig
+
+
+def make_diff_map(
+    diff_array,
+    lat,
+    lon,
+    *,
+    var_name: str,
+    title: str | None = None,
+    template: str = "osmose",
+):
+    """Diverging RdBu map of a precomputed ``B − A`` diff array, centered at zero.
+
+    Array-input sibling of :func:`make_spatial_map` (which is dataset-input). The
+    caller supplies ``lat``/``lon`` (use ``osmose.spatial_series.grid_latlon`` so the
+    axes match the diff array). Returns an empty-state figure when no cell is finite;
+    an EPS floor keeps a valid colorbar when every finite cell is 0 (identical runs).
+    """
+    import numpy as np
+    import plotly.express as px
+    import plotly.graph_objects as go
+
+    data = np.asarray(diff_array, dtype=float)
+    finite = data[np.isfinite(data)]
+    if finite.size == 0:
+        return go.Figure().update_layout(
+            title=dict(text=title or f"Δ {var_name} (no data)"), template=template
+        )
+    half = max(float(np.abs(finite).max()), 1e-9)
+    fig = px.imshow(
+        _z_nan_to_none(data),
+        x=np.asarray(lon),
+        y=np.asarray(lat),
+        origin="lower",
+        color_continuous_scale="RdBu_r",
+        color_continuous_midpoint=0.0,
+        zmin=-half,
+        zmax=half,
+        labels={"x": "Longitude", "y": "Latitude", "color": f"Δ {var_name}"},
+        title=title or f"Δ {var_name} (B−A)",
     )
     fig.update_layout(template=template)
     return fig
