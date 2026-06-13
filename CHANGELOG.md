@@ -46,6 +46,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
   off so both versions' errors surface together. The `lint` job stays single-version by design
   (ruff is governed by `target-version`, not the runtime), and `docker` stays single-version
   (the image pins its own runtime).
+- **ci (actions):** bumped GitHub Actions to their first Node 24 majors — `actions/checkout@v5`,
+  `actions/setup-python@v6`, `actions/upload-artifact@v6` — clearing the Node 20 deprecation
+  warning ahead of GitHub forcing Node 24 on the runners.
 
 ### Fixed
 
