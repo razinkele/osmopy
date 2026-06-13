@@ -31,7 +31,9 @@ _SUBSTRATE = _REPO / "data" / "_scenario_diff_e2e"
 _LOAD_TIMEOUT = 15_000
 
 
-def _write_run(name: str, idx: int, *, base: float) -> tuple[Path, Path]:
+def _write_run(
+    name: str, idx: int, *, base: float, config_snapshot: dict | None = None
+) -> tuple[Path, Path]:
     """Create a synthetic output dir (biomass CSV + spatial NetCDF) and history record."""
     out = _SUBSTRATE / name
     out.mkdir(parents=True, exist_ok=True)
@@ -58,7 +60,7 @@ def _write_run(name: str, idx: int, *, base: float) -> tuple[Path, Path]:
     ts = f"2026-06-13T0{idx}:00:00"
     rec = {
         "timestamp": ts,
-        "config_snapshot": {},
+        "config_snapshot": config_snapshot or {},
         "duration_sec": 1.0,
         "output_dir": str(out),
         "summary": {},
@@ -72,6 +74,24 @@ def _write_run(name: str, idx: int, *, base: float) -> tuple[Path, Path]:
 def two_runs():
     _HISTORY.mkdir(parents=True, exist_ok=True)
     created = [_write_run("runA", 1, base=100.0), _write_run("runB", 2, base=130.0)]
+    yield [ts for ts, _ in created]
+    import shutil
+
+    for rec_path, _ in created:
+        rec_path.unlink(missing_ok=True)
+    shutil.rmtree(_SUBSTRATE, ignore_errors=True)
+
+
+@pytest.fixture
+def two_runs_config():
+    """Two runs whose config_snapshots differ: one changed, one A-only, one B-only key."""
+    _HISTORY.mkdir(parents=True, exist_ok=True)
+    cfg_a = {"predation.efficiency.sp0": "0.5", "mortality.natural.rate.sp0": "0.2"}
+    cfg_b = {"predation.efficiency.sp0": "0.7", "movement.distance.sp0": "3"}
+    created = [
+        _write_run("runC", 3, base=100.0, config_snapshot=cfg_a),
+        _write_run("runD", 4, base=130.0, config_snapshot=cfg_b),
+    ]
     yield [ts for ts, _ in created]
     import shutil
 
@@ -134,3 +154,28 @@ def test_scenario_diff_same_run_for_a_and_b(page: Page, app: ShinyAppProc, two_r
     expect(page.locator("#diff_biomass_caption")).to_contain_text(
         "Identical runs", timeout=_LOAD_TIMEOUT
     )
+
+
+def test_scenario_diff_config_panel_shows_differences(
+    page: Page, app: ShinyAppProc, two_runs_config
+):
+    """The config-diff panel lists changed, added, and removed keys for two runs."""
+    page.goto(app.url)
+    page.wait_for_selector(".nav-pills", timeout=_LOAD_TIMEOUT)
+    page.locator(".nav-pills .nav-link[data-value='results']").click()
+    page.get_by_role("tab", name="Scenario Diff").click()
+
+    expect(page.locator("#diff_run_a option[value='2026-06-13T03:00:00']")).to_have_count(
+        1, timeout=_LOAD_TIMEOUT
+    )
+    page.locator("#diff_run_a").select_option("2026-06-13T03:00:00")
+    page.locator("#diff_run_b").select_option("2026-06-13T04:00:00")
+
+    # Assert on CONTENT (the bare @render.ui div is zero-height until it recomputes, so
+    # to_be_visible would flake). to_contain_text waits for the render to populate.
+    cfg = page.locator("#diff_config_table")
+    expect(cfg).to_contain_text("predation.efficiency.sp0", timeout=_LOAD_TIMEOUT)  # changed
+    expect(cfg).to_contain_text("mortality.natural.rate.sp0", timeout=_LOAD_TIMEOUT)  # removed
+    expect(cfg).to_contain_text("movement.distance.sp0", timeout=_LOAD_TIMEOUT)  # added
+
+    page.screenshot(path=str(_REPO / "screenshots" / "scenario_diff_config_e2e.png"))

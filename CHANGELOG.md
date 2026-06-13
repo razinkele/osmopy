@@ -20,6 +20,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
   slider position reads correctly even when A and B have different cadence/start), and the diff
   map aligns the two runs by their nearest time index. New `osmose.analysis.biomass_long` and
   `osmose.plotting.make_biomass_overlay` helpers back the overlay.
+- **ui (scenario diff):** a "Config differences" panel on the Scenario Diff tab lists the config
+  keys that differ between the two compared runs (changed / added / removed, with a badge per
+  row), so the tab reads top-to-bottom as *what you changed → what it did*. Reuses
+  `RunHistory.compare_runs`; collapsible (open by default) and shown above the biomass overlay.
 - **ui (calibration):** a Pareto solution picker on the calibration Results → Best Parameters tab.
   Pick a non-dominated solution from a multi-objective (NSGA-II) front (live run or a loaded
   historical run), inspect its full parameter vector and objective values, and download those
