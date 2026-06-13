@@ -337,3 +337,50 @@ def test_step_output_distribution_pairs_travel_together():
             f"biomass_by_size ({size_bio}) and abundance_by_size "
             f"({size_abun}) must match on step {o.step}"
         )
+
+
+def test_step_observer_fires_once_per_step(minimal_config):
+    cfg = EngineConfig.from_dict(minimal_config)
+    grid = Grid.from_dimensions(ny=3, nx=3)
+    calls = []
+    simulate(
+        cfg,
+        grid,
+        np.random.default_rng(42),
+        step_observer=lambda step, state, g, c: calls.append((step, c.n_steps)),
+    )
+    assert [s for s, _ in calls] == list(range(cfg.n_steps))
+    assert all(n == cfg.n_steps for _, n in calls)
+
+
+def test_step_observer_none_is_parity_safe(minimal_config):
+    cfg = EngineConfig.from_dict(minimal_config)
+    grid = Grid.from_dimensions(ny=3, nx=3)
+    out_a = simulate(cfg, grid, np.random.default_rng(7))
+    cfg2 = EngineConfig.from_dict(minimal_config)
+    grid2 = Grid.from_dimensions(ny=3, nx=3)
+    out_b = simulate(cfg2, grid2, np.random.default_rng(7), step_observer=lambda *a: None)
+    assert len(out_a) == len(out_b)
+    for a, b in zip(out_a, out_b):
+        np.testing.assert_array_equal(a.biomass, b.biomass)
+        np.testing.assert_array_equal(a.abundance, b.abundance)
+
+
+def test_step_observer_survives_cancel(minimal_config):
+    import threading
+
+    from osmose.engine import SimulationCancelled
+
+    cfg = EngineConfig.from_dict(minimal_config)
+    grid = Grid.from_dimensions(ny=3, nx=3)
+    token = threading.Event()
+    calls = []
+
+    def obs(step, state, g, c):
+        calls.append(step)
+        if step == 3:
+            token.set()  # request cancel; loop checks the token at the next step's top
+
+    with pytest.raises(SimulationCancelled):
+        simulate(cfg, grid, np.random.default_rng(1), cancel_token=token, step_observer=obs)
+    assert calls and max(calls) >= 3  # observer fired for the pre-cancel steps
