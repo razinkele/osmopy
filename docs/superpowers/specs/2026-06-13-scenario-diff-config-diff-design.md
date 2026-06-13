@@ -53,8 +53,13 @@ Single file touched for behaviour: `ui/pages/scenario_diff.py`.
        change is "added"   when value_a is None (key only in B),
                  "removed" when value_b is None (key only in A),
                  "changed" otherwise (both present, differ).
-       Sort order: changed first, then added, then removed; alphabetical by key within
-       each group (stable, deterministic — no reliance on input order).
+       Sort: changed group first, then added, then removed; alphabetical by key
+       within each group. The group priority is keyed explicitly (NOT by the change
+       string's alphabetical order, which would wrongly put "added" first):
+
+           key=lambda r: ({"changed": 0, "added": 1, "removed": 2}[r["change"]], r["key"])
+
+       Deterministic and independent of input order.
        """
    ```
 
@@ -62,23 +67,40 @@ Single file touched for behaviour: `ui/pages/scenario_diff.py`.
    unit-tested directly. Input is exactly what `compare_runs` returns (`value_a`/`value_b` may
    be `None`); the classifier never raises on an empty list (returns `[]`).
 
+   **Value contract:** only `None` drives added/removed — it means the key is absent on that
+   side. Values are otherwise carried verbatim. A key present on both sides with values that
+   differ (including an empty string `""` vs a non-empty string) is `"changed"`; an empty-string
+   value renders as an empty cell, never as `"—"` (which is reserved for `None`).
+
 2. **Render function** — a bare `@render.ui` `diff_config_table` (matching the tab's existing
    bare-render convention, no `@output`):
-   - Reads `diff_run_a` / `diff_run_b` via the existing `_safe(...)` helper.
-   - Empty / guard states (each returns a `ui.div(..., style=STYLE_EMPTY)` muted message):
-     - either timestamp missing → "Select two runs to compare their configs."
-     - `ts_a == ts_b` → "Same run selected — no config differences."
-     - `compare_runs` raises (stale/missing run file) → "Could not load run configs."
-       (caught broadly like `config_diff_table` does, `# noqa: BLE001`, so a bad history
-       file degrades instead of crashing the page).
-     - `compare_runs` returns `[]` → "Identical configuration — no differences."
+   - Reads `diff_run_a` / `diff_run_b` via the existing `_safe(...)` helper. Note the unselected
+     value is the **empty string** `""` (selectors start with `choices={}`), not `None`, so the
+     guard must use a falsy test (`not ts_a or not ts_b`), matching `diff_biomass_caption`.
+   - Empty / guard states evaluated in **this exact order** (they are mutually exclusive only
+     in order — e.g. `"" == ""` would wrongly trip the same-run branch if checked first):
+     1. `not ts_a or not ts_b` → "Select two runs to compare their configs."
+     2. `elif ts_a == ts_b` → "Same run selected — no config differences."
+     3. `try` `compare_runs`, `except Exception` (`# noqa: BLE001`, like `config_diff_table`,
+        so a stale/missing run file degrades instead of crashing) → "Could not load run configs."
+     4. result `== []` → "Identical configuration — no differences."
+     5. else → render the table.
+     Each empty/guard message is a single compact line using the tab-local muted convention
+     `ui.p(msg, class_="text-muted")` (consistent with `diff_biomass_caption:233` and
+     `diff_spatial_status:328` in this same file — **not** `STYLE_EMPTY`, which is the
+     centered padded block used in `results.py`). Compact so the open-but-empty accordion on
+     first load is unobtrusive.
    - Otherwise calls `_classify_config_diffs` and renders:
      - a header line: "N config keys differ" (N = row count).
      - a scrollable table with columns **Key | A | B**, one row per differing key:
-       - Key cell uses `STYLE_MONO_KEY`.
-       - A and B value cells show the value, or "—" when `None` (added/removed side).
-       - a small change-type chip per row (a Bootstrap badge: `changed` = secondary,
-         `added` = success, `removed` = danger) so the row's nature is scannable.
+       - Key cell uses `STYLE_MONO_KEY` (the only `ui.styles` constant this panel reuses;
+         requires adding `from ui.styles import STYLE_MONO_KEY` to `scenario_diff.py`, which
+         does not currently import it).
+       - A and B value cells show the value verbatim, or "—" when `None` (added/removed side).
+       - a small change-type chip per row — a Bootstrap badge with the **bare** change word as
+         text and one of three fixed classes (`changed` = `bg-secondary`, `added` = `bg-success`,
+         `removed` = `bg-danger`). Scope cap (YAGNI line): bare word + fixed class only; no
+         tooltips, no legend, no per-type counts/filters.
      - The table is wrapped in a scroll container (`max-height` with `overflow:auto`) so a
        large diff doesn't push the biomass chart off-screen.
 
@@ -122,21 +144,39 @@ handles are involved (this is config-only, independent of the spatial-dataset li
    - added row (`value_a is None`) → `change == "added"`.
    - removed row (`value_b is None`) → `change == "removed"`.
    - sort order: changed before added before removed; alphabetical within group.
+   - **order-independence:** feed rows in a deliberately scrambled order (removed, then changed,
+     then added; keys not alphabetical) and assert the exact output ordering — proves the sort
+     is deterministic and not accidentally relying on pre-sorted input.
    - empty input → `[]`.
    - rows preserve `key`/`value_a`/`value_b` verbatim.
 
-2. **Structure test** — assert the panel is wired into the tab: `scenario_diff_nav_panel()`
-   renders an element carrying the `diff_config_table` output id (string-search the rendered
-   nav-panel HTML, the lightweight check this repo uses for static wiring).
+2. **Structure test** (in the existing `tests/test_ui_results.py`, next to
+   `test_scenario_diff_tab_wired_into_results`) — assert the panel is wired into the tab.
+   `str(scenario_diff_nav_panel())` does NOT work (it returns a `NavPanel` repr; `.tagify()`
+   raises "must appear within navset_*"). Use one of the two approaches that actually work:
+   (a) the repo's established pattern — read the `scenario_diff.py` **source text** and assert
+   `diff_config_table` and the accordion are present (mirrors the existing source-text wiring
+   test); or (b) render the **panel body**: `str(scenario_diff_nav_panel().content)` tagifies
+   the `Tag` and DOES contain the output ids (`"diff_config_table"`). Prefer (b) — it verifies
+   the id is actually emitted in the panel content, not merely mentioned in source.
 
 3. **e2e — extend `tests/test_e2e_scenario_diff.py`**: the existing `_write_run` helper writes
    `config_snapshot: {}` for both runs. Give run A and run B **differing** `config_snapshot`s
    (e.g. A `{"predation.efficiency.sp0": "0.5", "mortality.natural.rate.sp0": "0.2"}`, B
-   `{"predation.efficiency.sp0": "0.7", "movement.distance.sp0": "3"}`). Add a test that, after
-   selecting A and B, the `#diff_config_table` region renders and contains the changed key
-   `predation.efficiency.sp0` and both an added and a removed key. (The two existing e2e tests
-   keep passing — adding keys to the snapshots does not affect biomass/spatial assertions; the
-   same-run test still shows the identical-config empty state.)
+   `{"predation.efficiency.sp0": "0.7", "movement.distance.sp0": "3"}`) — so there is one
+   changed key (`predation.efficiency.sp0`), one removed (`mortality.natural.rate.sp0`, A-only)
+   and one added (`movement.distance.sp0`, B-only). Add a test that, after selecting A and B,
+   asserts on **content** (not visibility — `diff_config_table` is a bare `@render.ui` that
+   renders as an empty zero-height `<div id="diff_config_table">` until the reactive recomputes,
+   which Playwright would treat as not-visible):
+   `expect(page.locator("#diff_config_table")).to_contain_text("predation.efficiency.sp0")`
+   (and likewise for `movement.distance.sp0` and `mortality.natural.rate.sp0`). The accordion is
+   `open=True`, so it renders expanded (`class "accordion-collapse collapse show"`) on load.
+   The two existing e2e tests keep passing: they assert only on `#diff_biomass_chart`,
+   `#diff_map_delta`, and `#diff_biomass_caption` ("Identical runs"), none of which read
+   `config_snapshot`. (For the record, in the same-run test the config panel shows the
+   "Same run selected — no config differences." state — the `ts_a == ts_b` branch, distinct
+   from the "Identical configuration" branch — but that test does not assert on it.)
 
 All per-task gates run `ruff check`, `ruff format --check`, **and** `pyright` (lesson from the
 Scenario Diff and Live Movement features: per-task gates that skipped pyright let type errors
