@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from osmose.analysis import (
+    biomass_long,
     ensemble_stats,
     mean_tl_catch,
     shannon_diversity,
@@ -286,3 +287,39 @@ def test_summary_table_rejects_missing_species_col():
     df = pd.DataFrame({"wrong": [1], "biomass": [10]})
     with pytest.raises(ValueError, match="missing columns.*species"):
         summary_table([df], value_col="biomass")
+
+
+# --- biomass_long ----------------------------------------------------------
+
+
+class _FakeResults:
+    def __init__(self, df):
+        self._df = df
+
+    def biomass(self):
+        return self._df
+
+
+def test_biomass_long_from_wide():
+    # WIDE: Time + per-species cols + a constant `species` column (="all"), as on disk
+    wide = pd.DataFrame(
+        {"Time": [0.0, 1.0], "cod": [10.0, 12.0], "sprat": [5.0, 6.0], "species": ["all", "all"]}
+    )
+    out = biomass_long(_FakeResults(wide))
+    assert set(out.columns) == {"time", "species", "value"}
+    assert set(out["species"]) == {"cod", "sprat"}
+    cod = out[(out["species"] == "cod") & (out["time"] == 1.0)]
+    assert cod["value"].iloc[0] == 12.0
+
+
+def test_biomass_long_from_long_passthrough():
+    long = pd.DataFrame({"time": [0.0, 0.0], "species": ["cod", "sprat"], "value": [10.0, 5.0]})
+    out = biomass_long(_FakeResults(long))
+    assert set(out.columns) == {"time", "species", "value"}
+    assert len(out) == 2
+
+
+def test_biomass_long_empty():
+    out = biomass_long(_FakeResults(pd.DataFrame()))
+    assert list(out.columns) == ["time", "species", "value"]
+    assert len(out) == 0

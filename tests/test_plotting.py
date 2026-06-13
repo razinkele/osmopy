@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 import pytest
 
 from osmose.plotting import (
+    make_biomass_overlay,
     make_ci_timeseries,
     make_food_web,
     make_growth_curves,
@@ -388,3 +389,30 @@ def test_make_species_dashboard_returns_figure():
 def test_make_species_dashboard_empty():
     fig = make_species_dashboard(pd.DataFrame(), pd.DataFrame())
     assert isinstance(fig, go.Figure)
+
+
+# --- make_biomass_overlay --------------------------------------------------
+
+
+def _long(values_by_species):
+    rows = []
+    for sp, vals in values_by_species.items():
+        for t, v in enumerate(vals):
+            rows.append({"time": float(t), "species": sp, "value": float(v)})
+    return pd.DataFrame(rows)
+
+
+def test_make_biomass_overlay_trace_count_and_dash():
+    a = _long({"cod": [10, 11], "sprat": [5, 6]})
+    b = _long({"cod": [12, 13], "sprat": [4, 3]})
+    fig = make_biomass_overlay(a, b, ["cod", "sprat"])
+    # 2 species x (A solid + B dashed) = 4 traces
+    assert len(fig.data) == 4
+    dashed = [tr for tr in fig.data if tr.line.dash == "dash"]
+    assert len(dashed) == 2  # the B traces
+
+
+def test_make_biomass_overlay_empty_species_returns_empty_figure():
+    a = _long({"cod": [10, 11]})
+    fig = make_biomass_overlay(a, a, [])
+    assert len(fig.data) == 0
