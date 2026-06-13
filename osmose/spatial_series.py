@@ -235,3 +235,46 @@ def spatial_slice_2d(ds, variable, *, time_index=0, species=None, reduce="sum"):
             f"expected a 2-D (lat, lon) slice, got shape {data.shape} for {variable!r}"
         )
     return data
+
+
+def grid_latlon(ds, variable):
+    """Return ``(lat, lon)`` coordinate arrays for ``variable`` via the dim-name sets.
+
+    Locates the lat/lon dims with the same alias-tolerant lookup ``spatial_slice_2d``
+    uses, so callers (e.g. the map renderer) never hardcode ``"lat"``/``"lon"``.
+    """
+    dims = ds[variable].dims
+    lat_dim = _find_dim(dims, _LAT_DIM_NAMES)
+    lon_dim = _find_dim(dims, _LON_DIM_NAMES)
+    if lat_dim is None or lon_dim is None:
+        raise ValueError(f"variable {variable!r} has no lat/lon dims (have {tuple(dims)})")
+    return np.asarray(ds[lat_dim].values), np.asarray(ds[lon_dim].values)
+
+
+def spatial_diff_2d(ds_a, ds_b, variable, *, time_a=0, time_b=0, species=None, reduce="sum"):
+    """``B − A`` as a 2-D ``(lat, lon)`` array; NaN where either side is land/missing.
+
+    ``species`` and ``reduce`` mirror :func:`spatial_slice_2d`. For a diff, ``species``
+    must be a name (str) or ``None`` — never an int index, since index *i* can denote a
+    different species in each run. Grids must correspond cell-to-cell: shapes must match
+    AND lat/lon coordinates must be exactly equal (the engine writes them as unpacked
+    float64, so identical grids roundtrip bit-exactly).
+
+    Raises
+    ------
+    TypeError
+        ``species`` is a non-str, non-None value.
+    ValueError
+        Slice shapes differ, or lat/lon coordinates differ.
+    """
+    if species is not None and not isinstance(species, str):
+        raise TypeError("species must be a name (str) or None for a diff (int index unsafe)")
+    a = spatial_slice_2d(ds_a, variable, time_index=time_a, species=species, reduce=reduce)
+    b = spatial_slice_2d(ds_b, variable, time_index=time_b, species=species, reduce=reduce)
+    if a.shape != b.shape:
+        raise ValueError(f"grid shapes differ: A {a.shape} vs B {b.shape}")
+    lat_a, lon_a = grid_latlon(ds_a, variable)
+    lat_b, lon_b = grid_latlon(ds_b, variable)
+    if not (np.array_equal(lat_a, lat_b) and np.array_equal(lon_a, lon_b)):
+        raise ValueError("grid coordinates differ — cannot diff cell-to-cell")
+    return b - a
