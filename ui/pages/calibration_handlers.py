@@ -29,6 +29,7 @@ from osmose.calibration.checkpoint import (
     probe_writable,
     read_checkpoint,
 )
+from osmose.calibration.objectives import BiomassRMSEObjective, DietDistanceObjective
 from osmose.logging import setup_logging
 from osmose.schema.base import ParamType
 from osmose.schema.registry import ParameterRegistry
@@ -313,6 +314,17 @@ def _clamp_int(value: int, lo: int, hi: int, name: str) -> int:
     if value < lo or value > hi:
         raise ValueError(f"{name} must be between {lo} and {hi}, got {value}")
     return value
+
+
+def _all_picklable(objective_fns: list) -> bool:
+    import pickle
+
+    try:
+        pickle.dumps(objective_fns)
+        return True
+    except Exception:  # noqa: BLE001
+        _log.info("Some objectives are not picklable — NSGA-II falls back to the thread backend")
+        return False
 
 
 def _resolve_optimum_weights(input, n_obj: int) -> list[float] | None:
@@ -1100,6 +1112,7 @@ def register_calibration_handlers(
             jar_path=jar_path,
             work_dir=work_dir,
             n_parallel=n_parallel,
+            parallel_backend=("process" if _all_picklable(_shared_objective_fns) else "thread"),
         )
 
         cancel_event.clear()
@@ -1311,6 +1324,8 @@ def register_calibration_handlers(
                 except Exception as exc:
                     _log.error("Calibration failed: %s", exc, exc_info=True)
                     msg_queue.post_error(str(exc))
+                finally:
+                    problem.shutdown_pool(cancel_futures=True)
 
             thread = threading.Thread(target=run_optimization, daemon=True)
             thread.start()
@@ -1358,7 +1373,6 @@ def register_calibration_handlers(
 
         import pandas as pd
 
-        from osmose.calibration.objectives import biomass_rmse, diet_distance
         from osmose.config.writer import OsmoseConfigWriter
 
         # Reset banded-loss shared state — stale values from a prior run would
@@ -1383,10 +1397,10 @@ def register_calibration_handlers(
         objective_fns = []
         if obs_bio:
             obs_bio_df = pd.read_csv(obs_bio[0]["datapath"])
-            objective_fns.append(lambda r, df=obs_bio_df: biomass_rmse(r.biomass(), df))
+            objective_fns.append(BiomassRMSEObjective(obs_bio_df))
         if obs_diet:
             obs_diet_df = pd.read_csv(obs_diet[0]["datapath"])
-            objective_fns.append(lambda r, df=obs_diet_df: diet_distance(r.diet_matrix(), df))
+            objective_fns.append(DietDistanceObjective(obs_diet_df))
 
         obj_names = []
         if obs_bio:

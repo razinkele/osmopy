@@ -8,6 +8,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ### Added
 
+- **calibration (perf):** an opt-in ProcessPoolExecutor backend for NSGA-II
+  (`parallel_backend="process"`) that evaluates candidates in separate processes (GIL-free),
+  recovering more than the prior ~3.02× thread-bound speedup. Objectives are now picklable functors
+  (`BiomassRMSEObjective`/`DietDistanceObjective`); the dashboard selects the process backend
+  automatically when objectives are picklable (banded loss falls back to threads). Worker count via
+  `OSMOSE_NSGA2_WORKERS`; `scripts/benchmark_calibration.py --backend {thread,process}` compares them.
 - **ui (feedback):** a header "Feedback" modal for bug reports / suggestions that appends to a JSONL
   store (`data/feedback/feedback.jsonl`), plus a token-gated read-only `GET /osmose/api/feedback`
   (disabled unless `OSMOSE_FEEDBACK_TOKEN` is set) for a maintainer to retrieve reports. New pure

@@ -154,3 +154,14 @@ def test_feedback_wired_into_app():
     src = (pathlib.Path(__file__).resolve().parent.parent / "app.py").read_text()
     assert "feedback_server" in src
     assert 'Route("/api/feedback"' in src
+
+
+def test_nsga2_process_backend_wired():
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    handlers = (root / "ui" / "pages" / "calibration_handlers.py").read_text()
+    assert "BiomassRMSEObjective" in handlers and "DietDistanceObjective" in handlers
+    assert "parallel_backend" in handlers and "shutdown_pool" in handlers
+    bench = (root / "scripts" / "benchmark_calibration.py").read_text()
+    assert "--backend" in bench
