@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-06-14
+
 ### Added
 
 - **ui (sensitivity):** a top-level "Sensitivity" page that browses persisted Sobol sensitivity

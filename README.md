@@ -2,7 +2,7 @@
 
 Python orchestration layer, simulation engine, and Shiny web interface for the [OSMOSE](https://osmose-model.org/) marine ecosystem simulator. Ships with a pure-Python engine (full Java parity) and a subprocess driver for the original Java engine.
 
-<sub>**Python 3.12** · **NumPy + Numba** · **Shiny for Python** · **2510 tests** · **ruff clean** · **MIT**</sub>
+<sub>**Python 3.12** · **NumPy + Numba** · **Shiny for Python** · **3250+ tests** · **ruff clean** · **MIT**</sub>
 
 > 🚀 **New here?** Run and perturb a calibrated Baltic ecosystem in 30 minutes: [Tutorial](docs/tutorials/30-minute-ecosystem.md). Then keep the [Usage Guide](docs/usage-guide.md) handy for scripting runs, reading outputs, comparing, and calibrating.
 
@@ -12,10 +12,10 @@ Python orchestration layer, simulation engine, and Shiny web interface for the [
 |---|---|
 | Python engine | Full Java parity on Bay of Biscay (8/8) and Eastern English Channel (14/14), within 1 order of magnitude. Faster than Java on every benchmarked config. |
 | Java engine | Wrapped as async subprocess runner. OSMOSE 4.3.3 JAR supported. |
-| Shiny UI | 10-tab end-to-end UI (Setup · Grid · Forcing · Fishing · Movement · Run · Results · Calibration · Scenarios · Advanced). |
+| Shiny UI | End-to-end UI: Setup · Grid · Forcing · Fishing · Movement · Run · Results (with Scenario Diff & Config Diff) · Spatial Results · Diagnostics · Calibration · **Sensitivity** · Scenarios · Advanced · Map Viewer. Live-during-run movement map; in-app About (README/Changelog) + a per-version startup "what's new" modal. |
 | Calibration | pymoo NSGA-II, GP surrogate, SALib Morris/Sobol sensitivity; preflight stage + Pareto `find_optimum`. |
 | Examples | Bay of Biscay (8 sp), Eastern English Channel (14 sp), **Baltic Sea (8 sp + 6 LTL)** with ICES SAG cross-validation. |
-| Tests | 2510 passed, 15 skipped, 41 deselected. Pyright clean on `osmose/` and `ui/`. |
+| Tests | 3250+ passed. Pyright clean on `osmose/` and `ui/`. |
 | Config validation | Opt-in typo catcher at `EngineConfig.from_dict` load time. Silent by default; `validation.strict.enabled=warn` logs `difflib` suggestions, `=error` raises with the full unknown-key list. |
 
 ## Contents
