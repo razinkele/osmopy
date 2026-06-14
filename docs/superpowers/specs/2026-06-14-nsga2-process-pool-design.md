@@ -1,0 +1,225 @@
+# NSGA-II ProcessPoolExecutor speedup — design
+
+**Date:** 2026-06-14
+**Status:** Approved (design phase)
+**Feature:** Add a ProcessPoolExecutor evaluation backend to the NSGA-II calibration so per-candidate
+OSMOSE simulations run in separate processes (escaping the GIL), recovering more than the current
+3.02× thread-bound speedup.
+
+## Motivation
+
+NSGA-II evaluates each generation's population via a **ThreadPoolExecutor** inside
+`OsmoseCalibrationProblem._evaluate` (`osmose/calibration/problem.py:142-147`). The per-candidate work
+is a NumPy/Numba OSMOSE simulation, so at saturation the **GIL** throttles the threads — the measured
+Baltic speedup is **3.02×** at `n_parallel=4` (a 1×2 smoke hit 4.34×). The CHANGELOG names the
+ProcessPoolExecutor swap as the post-v0.10.0 follow-up. Processes give each worker its own interpreter
+→ true parallelism on the compiled sim loops.
+
+**The blocker that makes this non-trivial:** the objective functions are **lambdas / closures** built
+in `ui/pages/calibration_handlers.py:1386-1435` (they capture observed-data DataFrames) and are stored
+on the `OsmoseCalibrationProblem` instance (`problem.py:103`). A `ProcessPoolExecutor` submitting the
+bound `self._evaluate_candidate` would pickle the whole problem → `PicklingError` on the first
+generation. So the feature is **(1) make the objectives picklable** + **(2) add a process backend via
+the initializer pattern** (already proven in `scripts/sensitivity_phase12.py:242-266`).
+
+## Decisions (locked during brainstorming)
+
+1. **Opt-in `parallel_backend`** on `OsmoseCalibrationProblem`, default `"thread"` (zero behavior
+   change for existing callers/tests). The NSGA-II launch sites request `"process"`.
+2. **Picklable objective functors** for the standard objectives (biomass RMSE, diet distance) in
+   `osmose/calibration/objectives.py`, replacing the UI lambdas.
+3. **Auto thread-fallback when objectives aren't picklable.** The launch site requests `"process"` but
+   a `pickle.dumps` pre-check downgrades to `"thread"` (with a logged note) if any objective fails to
+   pickle. **The banded-loss objective stays on thread in v1** (its closure + the UI-layer
+   `_extract_species_stats` are gnarly to make picklable) — biomass/diet calibration (the common case)
+   gets the process speedup; banded still works, just thread-bound. When banded is later made
+   picklable it auto-upgrades to process with no code change.
+4. **Persistent pool, reused across generations** (a fresh process pool per generation would re-spawn
+   workers + recompile Numba every gen). **Worker count** from `OSMOSE_NSGA2_WORKERS` (fallback
+   `n_parallel`), clamped `[1,32]`.
+
+## Reuse (do not rebuild)
+
+- `osmose/calibration/problem.py` — `_evaluate` (batch, `problem.py:133`), `_evaluate_candidate`
+  (`:175`), `_run_single`/`_run_python_engine`/`_validate_overrides`/cache (`:186-256`). The process
+  path reconstructs a problem in each worker and **reuses `_evaluate_candidate` unchanged** (parity).
+- `osmose/calibration/objectives.py` — `biomass_rmse(sim, obs)` (`:41`), `diet_distance(sim, obs)`
+  (`:55`). The functors wrap these; no new objective math.
+- `scripts/sensitivity_phase12.py:242-266` — the `ProcessPoolExecutor(initializer=_pool_init,
+  initargs=...)` worker-init pattern (build per-worker state once; tasks carry only small tuples).
+- `osmose/schema` `build_registry()` — rebuilt per worker (registry is not pickled/shipped).
+- `FreeParameter` (`problem.py:53`) is a picklable dataclass (its `Transform` enum is picklable).
+
+## Architecture — four units
+
+### 1. Picklable objective functors (`osmose/calibration/objectives.py`)
+
+Module-level callable classes (picklable; hold only a DataFrame, which pandas pickles):
+
+```python
+class BiomassRMSEObjective:
+    def __init__(self, observed: pd.DataFrame): self.observed = observed
+    def __call__(self, results) -> float: return biomass_rmse(results.biomass(), self.observed)
+
+class DietDistanceObjective:
+    def __init__(self, observed: pd.DataFrame): self.observed = observed
+    def __call__(self, results) -> float: return diet_distance(results.diet_matrix(), self.observed)
+```
+
+`ui/pages/calibration_handlers.py` builds `BiomassRMSEObjective(obs_bio_df)` /
+`DietDistanceObjective(obs_diet_df)` instead of the lambdas (`:1386,:1389`). The banded objective is
+left as-is (its closure path is unchanged; the auto-fallback keeps banded runs on thread).
+
+### 2. `EvalSpec` (picklable) + worker functions (`osmose/calibration/problem.py`)
+
+A frozen dataclass carrying exactly what a worker needs to reconstruct an evaluator — **everything the
+`OsmoseCalibrationProblem.__init__` eval path uses except the registry** (rebuilt locally):
+
+```python
+@dataclass(frozen=True)
+class _EvalSpec:
+    free_params: list[FreeParameter]
+    objective_fns: list[Callable]      # picklable functors
+    base_config_path: Path
+    work_dir: Path
+    jar_path: Path | None
+    java_cmd: str
+    enable_cache: bool
+    cache_dir: Path | None
+    subprocess_timeout: int
+    cleanup_after_eval: bool
+    use_java_engine: bool
+    use_registry: bool                 # worker calls build_registry() when True
+```
+
+Module-level worker functions (so `ProcessPoolExecutor` pickles only the spec + small tuples):
+
+```python
+_WORKER_PROBLEM: OsmoseCalibrationProblem | None = None
+
+def _worker_init(spec: _EvalSpec) -> None:
+    global _WORKER_PROBLEM
+    reg = build_registry() if spec.use_registry else None
+    _WORKER_PROBLEM = OsmoseCalibrationProblem(
+        free_params=spec.free_params, objective_fns=spec.objective_fns,
+        base_config_path=spec.base_config_path, work_dir=spec.work_dir,
+        jar_path=spec.jar_path, java_cmd=spec.java_cmd, n_parallel=1,
+        parallel_backend="thread",  # workers never nest a pool
+        enable_cache=spec.enable_cache, cache_dir=spec.cache_dir, registry=reg,
+        subprocess_timeout=spec.subprocess_timeout,
+        cleanup_after_eval=spec.cleanup_after_eval, use_java_engine=spec.use_java_engine,
+    )
+
+def _worker_eval(run_id: int, params: np.ndarray) -> list[float]:
+    try:
+        return _WORKER_PROBLEM._evaluate_candidate(run_id, params)
+    except Exception:  # noqa: BLE001 — one bad candidate must not kill the generation
+        return [float("inf")] * _WORKER_PROBLEM.n_obj
+```
+
+### 3. Process backend in `_evaluate` + pool lifecycle
+
+`OsmoseCalibrationProblem.__init__` gains `parallel_backend: Literal["thread","process"] = "thread"`
+and `self._executor = None`. `_evaluate` keeps the existing serial + thread branches verbatim and adds:
+
+```python
+elif self.parallel_backend == "process":
+    pool = self._ensure_pool()                       # lazy-create once, reuse across gens
+    futures = {pool.submit(_worker_eval, i, params): i for i, params in enumerate(X)}
+    for fut in futures:
+        i = futures[fut]
+        try:
+            for k, v in enumerate(fut.result()):
+                F[i, k] = v
+        except _expected_errors as exc:
+            _log.warning("Candidate %d failed (expected): %s", i, exc)
+```
+
+- `_ensure_pool()`: if `self._executor is None`, build `_EvalSpec` from `self`, **pre-check
+  `pickle.dumps(spec)`** (raise a clear "objective not picklable; use parallel_backend='thread'" on
+  failure), then `self._executor = ProcessPoolExecutor(max_workers=_resolve_worker_count(self.n_parallel),
+  initializer=_worker_init, initargs=(spec,))`. Returns the executor.
+- `_resolve_worker_count(n_parallel)`: `int(os.environ.get("OSMOSE_NSGA2_WORKERS", n_parallel))`,
+  clamped to `[1, 32]` (≥1).
+- `shutdown_pool(cancel_futures=False)`: `if self._executor: self._executor.shutdown(cancel_futures=...)`;
+  reset to `None`. Idempotent (no-op when no pool). The launch sites call it in a `finally`.
+- The `>50% inf → abort` guard and `out["F"]` handling are unchanged.
+
+### 4. Wiring at the NSGA-II launch sites
+
+- `ui/pages/calibration_handlers.py`: after assembling `objective_fns`, choose the backend —
+  `backend = "process" if _all_picklable(objective_fns) else "thread"` (a small helper doing
+  `pickle.dumps` on each; logs a note on fallback). Pass `parallel_backend=backend` to
+  `OsmoseCalibrationProblem(...)`. Wrap the `minimize(...)` run so `problem.shutdown_pool()` runs in a
+  `finally` (incl. the cancel path → `shutdown_pool(cancel_futures=True)`).
+- `scripts/benchmark_calibration.py`: add a `--backend {thread,process}` switch so the benchmark can
+  compare the two; ensure `shutdown_pool()` in a `finally`.
+
+## Data flow
+
+```
+generation X (pop_size × n_var)  ──► OsmoseCalibrationProblem._evaluate
+  parallel_backend == "process":
+     _ensure_pool() → ProcessPoolExecutor(initializer=_worker_init, initargs=(_EvalSpec,))   [once]
+        each worker: build_registry() + reconstruct OsmoseCalibrationProblem(n_parallel=1)
+     submit _worker_eval(i, params) per candidate  →  worker runs _evaluate_candidate (seed=i)
+        → _run_single → _run_python_engine (in-process sim) → objective functors → [floats]
+     collect into F → out["F"]
+  (pool persists across generations; launch site shutdown_pool() in finally)
+```
+
+Pymoo stays serial generation-to-generation; only within-generation evaluation moves to processes.
+
+## Picklability / determinism / workers
+
+- **Picklable:** functors (DataFrame only), `FreeParameter` dataclasses, paths/bools/ints, the
+  `_EvalSpec`. The registry is **rebuilt** per worker via `build_registry()` (not pickled). The pymoo
+  `Problem` is never pickled — only `_EvalSpec` + `(run_id, params)` tuples cross the boundary.
+- **Determinism / parity:** each candidate uses `seed=run_id` (its enumerate index, identical
+  assignment in both backends) → deterministic regardless of worker/order; NSGA-II's algorithm RNG
+  (`minimize(seed=42)`) lives in the parent. ⇒ process and thread backends produce **identical**
+  `out["F"]` for the same population (the keystone test).
+- **Workers:** persistent pool reused across generations; `OSMOSE_NSGA2_WORKERS` (clamp `[1,32]`,
+  ~400 MB/sim memory caveat — 28 workers once exhausted 32 GB). Linux `fork` (deploy target) — workers
+  inherit imported modules cheaply. First eval per worker recompiles Numba (~seconds); a shared
+  `NUMBA_CACHE_DIR` lets workers reuse compiled kernels (one-time populate, not N recompiles). Cache
+  writes stay process-safe via the existing atomic-rename (`problem.py:239-243`).
+
+## Error handling
+
+- **Pre-flight `pickle.dumps(_EvalSpec)`** in `_ensure_pool()` → clear error before any worker spawns.
+- **Launch-site picklability pre-check** → graceful `"thread"` fallback (banded), logged.
+- **Worker eval raises** → caught in `_worker_eval`, returns `inf` vector (parity with current failure
+  handling; the `>50% inf` abort still applies in the parent).
+- **Cancel / run end** → `shutdown_pool(cancel_futures=True)` in the launch-site `finally`.
+- `_resolve_worker_count` clamps `<1 → 1`, `>32 → 32`.
+
+## Testing
+
+1. **Functors `tests/test_calibration_objectives.py`** (extend): `BiomassRMSEObjective` /
+   `DietDistanceObjective` return the same value as `biomass_rmse`/`diet_distance` on the same frames;
+   each functor survives `pickle.dumps`/`loads`.
+2. **Parity `tests/test_nsga2_parallel.py`** (the keystone): a tiny `OsmoseCalibrationProblem`
+   (minimal config, ≥1 cheap picklable objective, small `X`) → `_evaluate` with
+   `parallel_backend="thread"` vs `"process"` yields **identical `out["F"]`**. Also: a worker eval that
+   raises returns an `inf` vector; `_EvalSpec` round-trips `pickle.dumps`. (A couple seconds — real
+   fork + Numba warm; runs in the normal suite, not e2e.)
+3. **Worker count `tests/test_nsga2_parallel.py`**: `_resolve_worker_count` — env unset → `n_parallel`;
+   set → clamped `[1,32]`; `<1 → 1` (monkeypatch `setenv`).
+4. **Pool lifecycle**: `shutdown_pool()` is a no-op when no pool exists and idempotent after one
+   `_evaluate`.
+
+## Benchmark (not CI-gated)
+
+Extend `scripts/benchmark_calibration.py` with `--backend {thread,process}` and print wall-clock +
+the process/thread ratio. This is the *evidence* for the speedup — hardware-dependent, run on the real
+multi-core box. **No CI ratio assertion** (CI is 2-core; measure perf, don't gate it).
+
+## Out of scope (YAGNI)
+
+- **Banded-loss objective picklability** — deferred; the auto thread-fallback keeps banded runs correct
+  (just thread-bound). Revisit by moving `_extract_species_stats` + a `BandedBiomassObjective` to core.
+- Parallelizing pymoo across generations (stays serial); touching DE / CMA-ES / surrogate-DE (already
+  parallel via scipy/joblib); exposing the process backend in `scripts/calibrate_baltic.py` (no NSGA-II
+  there); new objectives; distributed/multi-node/GPU; a CI perf-ratio gate; auto-selecting backend by
+  eval count.
