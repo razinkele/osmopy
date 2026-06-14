@@ -35,25 +35,28 @@ has ever been persisted), so the feature must also create its own data source vi
 - `osmose/history.py` is the pattern to mirror for the artifact store (`RUN_HISTORY_DIR`,
   `default_run_history`, `list_runs`/`load_run`, path-safety guards).
 - `app.py` page registration: `from ui.pages.X import X_ui, X_server` → `ui.nav_panel("Label",
-  X_ui(), value="x")` in the `navset_pill_list` (id `main_nav`, line 286) → `X_server(...)` in the
-  server fn. Pages gate page-scoped effects on `input.main_nav() == "<value>"`.
+  X_ui(), value="x")` in the `navset_pill_list` (id kwarg `id="main_nav"` at `app.py:286`; the new
+  panel goes just after the Calibration `nav_panel` at `app.py:280`) → `X_server(...)` in the server
+  fn. Pages gate page-scoped effects on `input.main_nav() == "<value>"`.
 - `get_calibratable_params` (`calibration_handlers.py`) is how param keys/bounds are sourced (already
   used by the live run; the explorer does not re-derive them — it reads what the artifact stored).
 - `ui/pages/calibration_charts.py:79` `make_sensitivity_chart(result, tmpl, selected_objective)`
   already renders a **vertical grouped** S1/ST bar from the identical `result` dict, with the 1-D/2-D
   dispatch (`if "objective_names" in result: s1 = result["S1"][selected_objective]`, else
   `result["S1"]`). The explorer needs a **horizontal tornado** with sort-by-key, threshold
-  highlighting, and `error_x` CIs — none of which that vertical helper does — so `_make_tornado`/
-  `rank_rows` are **new** code. **Critically, they dispatch 1-D vs 2-D on `int(n_objectives) > 1`,
-  NOT on `make_sensitivity_chart`'s `"objective_names" in result` check** — these are *deliberately
-  different* predicates. A persisted single-objective artifact carries `objective_names` (the live
-  hook supplies it via metadata, see §2) **yet is 1-D**, so the key-presence check would wrongly try
-  to index a flat `S1` by objective and return a scalar. Do not copy `make_sensitivity_chart`'s
-  predicate into the explorer.
+  highlighting, and `error_x` CIs — none of which that vertical helper does — so a **new**
+  `make_sobol_tornado` builder is added alongside it (see §4), and `rank_rows` (in `sobol_io`) is new.
+  **Critically, the explorer dispatches 1-D vs 2-D on `int(n_objectives) > 1`, NOT on
+  `make_sensitivity_chart`'s `"objective_names" in result` check** — these are *deliberately different*
+  predicates. A persisted single-objective artifact carries `objective_names` (the live hook supplies
+  it via metadata, see §2) **yet is 1-D**, so the key-presence check would wrongly try to index a flat
+  `S1` by objective and return a scalar. The explorer does its 1-D/2-D selection in `rank_rows`; the
+  tornado builder consumes the already-selected rows and never re-dispatches.
 
 ## Architecture
 
-Three units with clean boundaries.
+Four units with clean boundaries (the persist hook is a one-line addition to existing code; §1/§3/§4
+are new).
 
 ### 1. `osmose/calibration/sobol_io.py` (pure I/O + pure view helpers)
 
@@ -189,12 +192,13 @@ bind-on-insertion rule, same as `scenario_diff.py`):**
 - **`_rows` `@reactive.calc`** — the single source of ranked rows reused by the chart, table, and BOTH
   downloads (so they never re-read raw inputs in a download generator, which would risk
   `SilentException`): `r = _result(); return [] if r is None else rank_rows(r, objective_idx=_obj_idx(r), sort=_safe(input.sens_sort, "ST"))`,
-  where `_obj_idx(r) = clamp(int(_safe(input.sens_objective, "0") or 0), 0, int(r.get("n_objectives",1)) - 1)`.
+  where `_obj_idx(r) = max(0, min(int(_safe(input.sens_objective, "0") or 0), int(r.get("n_objectives", 1)) - 1))`
+  (`clamp` is not a Python builtin — inline the `max(0, min(...))`).
 - `sens_objective_ui` `@render.ui`: the dropdown (choices per the UI section) when `_result()` is
   multi-objective, else `ui.div()`.
 - `sens_tornado` `@render_plotly`: if `_result() is None` → empty-state figure (one message, see
-  below); else `_make_tornado(_rows(), indices=_safe(input.sens_index,"Both"), threshold=_safe(input.sens_threshold,0.05), template=_tpl(input))`
-  — horizontal grouped bar, params on y in `_rows` order, S1/ST bars, `*_conf` as `error_x`.
+  below); else `make_sobol_tornado(_rows(), indices=_safe(input.sens_index,"Both"), threshold=_safe(input.sens_threshold,0.05), template=_tpl(input))`
+  (the builder is specified in §4).
 - `sens_table` `@render.ui`: if `_result() is None` → empty-state `ui.p(..., class_="text-muted")`;
   else a Bootstrap table (`table table-sm table-striped`, `STYLE_MONO_KEY` for the param column, like
   `config_diff_table`) from `_rows()` — columns `Param | S1 | ST | Influential`, rows whose key is in
@@ -208,6 +212,36 @@ bind-on-insertion rule, same as `scenario_diff.py`):**
   (static filename, matching the `@render.download(filename=...)` idiom at `calibration.py:607`).
 - `sens_export_keys` `@render.download(filename="influential_keys.txt")`:
   `yield "\n".join(influential_keys(_rows(), _safe(input.sens_threshold, 0.05)))`.
+
+### 4. `make_sobol_tornado` (new figure builder in `ui/pages/calibration_charts.py`)
+
+Lives next to `make_sensitivity_chart` (so the two Sobol chart builders are co-located and tested
+together). It consumes **already-ranked rows** (from `rank_rows`) — it does **no** 1-D/2-D dispatch
+and no I/O, which makes it pure and unit-testable:
+
+```python
+def make_sobol_tornado(
+    rows: list[dict],            # [{param, s1, s1_conf, st, st_conf}, ...] in display order
+    *,
+    indices: str = "Both",       # "Both" | "S1" | "ST"
+    threshold: float = 0.05,
+    template: str = "osmose",
+) -> go.Figure
+```
+
+Behavior:
+- **Orientation `"h"`**, `y = [r["param"] for r in rows]`. Plotly draws the first y last, so reverse
+  the row order (or set `yaxis autorange="reversed"`) so the top-ranked param appears at the top.
+- **Traces by `indices`**: `"Both"` → two `go.Bar` (S1 then ST); `"S1"` → only the S1 bar; `"ST"` →
+  only the ST bar. Each bar's `x` is the matching value list, `error_x=dict(type="data", array=<the
+  matching *_conf list>)`.
+- **Threshold highlighting**: params with `st >= threshold` are visually marked — use a per-point
+  marker color on the **ST** bar (influential = a highlight color, others = the muted default) AND an
+  `add_vline(x=threshold, line_dash="dash")` reference line. (NaN `st` is treated as not influential,
+  consistent with `influential_keys`.)
+- `update_layout(barmode="group", template=template, title="Sobol sensitivity")`. Returns the
+  `go.Figure`. Empty `rows` → a figure with no bars (the page only calls it for non-empty `_rows`,
+  but it must not raise on `[]`).
 
 ## Data flow
 
@@ -269,7 +303,15 @@ decoupled by the on-disk artifact, exactly like run `history.py`.
      case the prefix would otherwise mask) and on `"/abs"`; and round-trips a real colon-bearing
      timestamp (proving the `:`→`-` transform is applied on both save and load).
    - All file tests use a `tmp_path` `directory=` argument (no reliance on the real dir).
-2. **Structure tests** (`tests/test_ui_*` — source-grep, the repo's wiring-test idiom):
+2. **Unit `tests/test_sobol_tornado.py`** (pure figure builder — `make_sobol_tornado` returns a
+   `go.Figure`, no browser needed; build `rows` by hand):
+   - `indices="Both"` → `len(fig.data) == 2`; `"S1"` → 1 (the S1 bar only); `"ST"` → 1 (the ST bar
+     only).
+   - every bar has `orientation == "h"` and a populated `error_x.array` from the matching `*_conf`.
+   - threshold highlighting marks exactly the params with `st >= threshold` (assert the ST bar's
+     per-point marker colors, or the influential set) and adds the `threshold` reference line.
+   - `make_sobol_tornado([])` returns a figure with no bars (does not raise).
+3. **Structure tests** (`tests/test_ui_*` — source-grep, the repo's wiring-test idiom):
    - `app.py` imports `sensitivity_explorer_ui`/`sensitivity_explorer_server`, registers the
      `value="sensitivity"` nav panel, and calls the server.
    - `calibration_handlers.py` calls `save_sobol_result` (persist hook wired).
@@ -277,7 +319,7 @@ decoupled by the on-disk artifact, exactly like run `history.py`.
      `sens_objective_ui`, `sens_index`, `sens_threshold`, `sens_sort`, `sens_tornado`, `sens_table`,
      `sens_export_csv`, `sens_export_keys` — so a future edit dropping any control fails the test.
      (A top-level page returns tags, so `str(...)` tagifies — unlike a bare `NavPanel`.)
-3. **e2e `tests/test_e2e_sensitivity_explorer.py`**: write a synthetic `sobol_<ts>.json` into the
+4. **e2e `tests/test_e2e_sensitivity_explorer.py`**: write a synthetic `sobol_<ts>.json` into the
    real `data/history/sensitivity/` (same on-disk substrate approach as the scenario-diff e2e),
    navigate to the Sensitivity page, select the run, assert the tornado widget (`#sens_tornado`) is
    visible and the table (`#sens_table`) **contains** a known param key (`to_contain_text`, not
