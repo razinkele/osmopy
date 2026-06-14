@@ -129,3 +129,12 @@ def test_startup_changelog_wired_in_app():
     assert "changelogModal" in html
     assert "window.OSMOSE_VERSION" in html
     assert "osmose_seen_changelog_version" in html
+
+
+def test_feedback_modal_has_form_ids():
+    from ui.components.feedback_modal import feedback_modal
+
+    html = str(feedback_modal())
+    assert "feedbackModal" in html
+    for wid in ["feedback_type", "feedback_message", "feedback_contact", "feedback_submit"]:
+        assert wid in html, f"Missing feedback widget id: {wid}"
