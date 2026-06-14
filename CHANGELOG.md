@@ -8,6 +8,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ### Added
 
+- **ui (sensitivity):** a top-level "Sensitivity" page that browses persisted Sobol sensitivity
+  results — a ranked S1/ST tornado (with 95% CIs and an influence-threshold highlight), a sortable
+  table, and CSV / influential-key exports. Backed by a new `osmose.calibration.sobol_io` artifact
+  store (`save_sobol_result`/`load_sobol_result`/`list_sobol_results` + pure `rank_rows`/
+  `influential_keys`/`rows_to_csv`); the existing live calibration sensitivity run now persists its
+  result so the explorer can discover it. The Sobol analyzer itself is unchanged.
 - **ui (run):** a live-during-run movement view on the Run page (Python engine) streams living
   schools onto a deck.gl map as the simulation runs — as a biomass-weighted heatmap or individual
   dots, toggled, with a per-species filter. Backed by an opt-in `step_observer` hook in the Python
