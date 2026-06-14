@@ -359,9 +359,13 @@ def test_about_modal_renders_doc_tabs():
     from ui.components.help_modal import about_modal
 
     html = str(about_modal())
-    assert "Overview" in html and "README" in html and "Changelog" in html
+    # Assert the navset TAB structure (data-value=title) — discriminating vs the old modal,
+    # which merely had a "### Changelog" heading substring.
+    assert 'data-value="Overview"' in html
+    assert 'data-value="README"' in html
+    assert 'data-value="Changelog"' in html
     # Renders real CHANGELOG content (build-time read), not the old hardcoded block.
-    assert "## [0.13.0]" in html or "0.13.0" in html
+    assert "0.13.0" in html
     # The stale hardcoded-changelog marker is gone (was a list item "Initial release").
     assert "Initial release" not in html
 
@@ -514,21 +518,22 @@ from ui.components.help_modal import about_modal, changelog_modal, help_modal
 
 - [ ] **Step 4: Place the startup modal in the layout**
 
-In `app.py`, in the modals block (lines 293-295), change:
+In `app.py`, in the modals block (lines 293-295; **4-space indentation** — these are
+page-level args, not inside the navset), change:
 
 ```python
-        # ── Modals (static HTML, triggered client-side) ─────────────
-        about_modal(),
-        help_modal(),
+    # ── Modals (static HTML, triggered client-side) ─────────────
+    about_modal(),
+    help_modal(),
 ```
 
 to:
 
 ```python
-        # ── Modals (static HTML, triggered client-side) ─────────────
-        about_modal(),
-        help_modal(),
-        changelog_modal(),
+    # ── Modals (static HTML, triggered client-side) ─────────────
+    about_modal(),
+    help_modal(),
+    changelog_modal(),
 ```
 
 - [ ] **Step 5: Add the version + startup scripts**
@@ -567,7 +572,12 @@ Expected: PASS (all).
 
 - [ ] **Step 7: Lint / format / type-check**
 
-Run: `.venv/bin/ruff check osmose/ ui/ tests/`; `.venv/bin/ruff format osmose/ ui/ tests/`; `.venv/bin/pyright app.py tests/test_app_structure.py` → 0 errors.
+Run: `.venv/bin/ruff check osmose/ ui/ tests/`; `.venv/bin/ruff format osmose/ ui/ tests/`;
+`.venv/bin/pyright --pythonpath .venv/bin/python app.py tests/test_app_structure.py` → 0 errors.
+(`--pythonpath` is required for `app.py` — without it pyright reports a spurious pre-existing
+`shiny_deckgl` import error, the documented repo gotcha. **Do NOT run `ruff format` on `app.py`** — it
+is outside the `osmose/ ui/ tests/` scope by design (CI never formats it) and has a pre-existing
+format nit at line 52 unrelated to this work; the edited regions are already format-clean.)
 
 - [ ] **Step 8: Commit**
 
@@ -681,8 +691,8 @@ git commit -m "test(docs): e2e startup modal + About tabs; CHANGELOG entry"
 
 - [ ] Full non-e2e suite: `.venv/bin/python -m pytest -m 'not e2e' -n auto -q`
 - [ ] e2e: `.venv/bin/python -m pytest tests/test_e2e_docs.py -v -m e2e`
-- [ ] `.venv/bin/ruff check osmose/ ui/ tests/` and `.venv/bin/ruff format --check osmose/ ui/ tests/` clean
-- [ ] `.venv/bin/pyright` clean on all touched files
+- [ ] `.venv/bin/ruff check osmose/ ui/ tests/` and `.venv/bin/ruff format --check osmose/ ui/ tests/` clean (app.py is outside this scope by design — do not format it)
+- [ ] `.venv/bin/pyright --pythonpath .venv/bin/python osmose/docs_content.py ui/components/help_modal.py app.py tests/test_docs_content.py tests/test_docs_freshening.py tests/test_app_structure.py tests/test_e2e_docs.py` → 0 errors (the `--pythonpath` avoids the pre-existing `shiny_deckgl` false positive on app.py)
 - [ ] Final whole-implementation review before finishing the branch.
 
 ## Self-Review (plan author)
