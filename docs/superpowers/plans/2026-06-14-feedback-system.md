@@ -198,7 +198,7 @@ def append_feedback(record: dict, *, path: Path | None = None) -> None:
 
 
 def read_feedback(*, path: Path | None = None) -> list[dict]:
-    """All records newest-first; missing file -> []; corrupt lines skipped (path resolved at call time)."""
+    """All records newest-first; missing file -> []; corrupt lines skipped (path resolved lazily)."""
     p = _resolve(path)
     if not p.is_file():
         return []
