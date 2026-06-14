@@ -606,7 +606,9 @@ def test_sensitivity_panel_present():
     from app import app_ui
 
     html = str(app_ui)
-    assert "Sensitivity" in html
+    # The Calibration page already contains the substring "Sensitivity" (a sub-tab),
+    # so assert on the new top-level nav panel's unique lowercase value instead.
+    assert 'data-value="sensitivity"' in html
     for wid in [
         "sens_run",
         "sens_objective_ui",
