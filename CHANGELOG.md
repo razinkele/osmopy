@@ -6,6 +6,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ## [Unreleased]
 
+### Added
+
+- **ui (docs):** the project docs are now surfaced in the app — the **About** modal renders
+  `README.md` and `CHANGELOG.md` in tabs (replacing a stale hardcoded changelog), and a dismissable
+  startup "What's new" modal shows the latest release notes once per version (client-side, keyed on
+  `__version__` via `localStorage`). New pure `osmose/docs_content.py` loader/parser.
+
 ## [0.13.0] - 2026-06-14
 
 ### Added
