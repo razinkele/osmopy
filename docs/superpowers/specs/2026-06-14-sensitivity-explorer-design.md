@@ -104,6 +104,10 @@ def rows_to_csv(rows: list[dict]) -> str
   **Collision-safe:** if that path already exists (two saves in the same second when `isoformat()`
   drops the microsecond field at `microsecond == 0`), append a `-<n>` counter before `.json` until the
   name is free, so a save never silently overwrites an earlier result. Returns the written path.
+  (Note: a `-<n>` collision file keeps the same in-file `timestamp`, so the timestamp-keyed selector
+  surfaces only the un-suffixed file; the `-<n>` copy is retained on disk for provenance, not reached
+  by the page. Acceptable — real collisions are vanishingly rare since `isoformat()` normally carries
+  microseconds. Filename-keyed selection is a deferred v2 concern.)
 - **`load_sobol_result`**: **validate the raw `timestamp` BEFORE building the filename** — reject any
   value containing `/`, `\`, or `..` (raise `ValueError`). Only then apply the `:`→`-` transform
   (matching `history.load_run:63`) and build `sobol_<safe>.json`. (Do NOT rely on
@@ -164,7 +168,10 @@ is **unused** — the page is config-independent; don't wire it.)
 
 **UI (static widgets; render returns empty-state figures when no data — the shinywidgets
 bind-on-insertion rule, same as `scenario_diff.py`):**
-- `input_select("sens_run", ...)` — discovered artifacts; label `"<ts[:19]> (<source>, n_base=N)"`.
+- `input_select("sens_run", ...)` — discovered artifacts. The choices dict is **keyed by the artifact
+  timestamp** (so `input.sens_run()` is the value `load_sobol_result` consumes), mirroring
+  `scenario_diff`'s `_run_choices` (`scenario_diff.py:64`):
+  `{s["timestamp"]: f'{s["timestamp"][:19]} ({s["source"]}, n_base={s["n_base"]})' for s in summaries}`.
 - `output_ui("sens_objective_ui")` — renders `input_select("sens_objective", choices=...)` only when
   the selected artifact has `int(n_objectives) > 1` (dynamic `input_select` inside `@render.ui` is
   fine; only `output_widget` must be static). Choices:
@@ -253,7 +260,7 @@ load_sobol_result(ts) ──► _result (reactive.calc: dict | None)
         │
         ▼
 _rows (reactive.calc) = rank_rows(_result(), objective_idx, sort)   (PURE rank_rows; [] when None)
-        ├─► _make_tornado(_rows(), indices, threshold, template)  → go.Figure  (sens_tornado)
+        ├─► make_sobol_tornado(_rows(), indices, threshold, template) → go.Figure  (sens_tornado)
         ├─► sens_table (render.ui)
         ├─► rows_to_csv(_rows())              → sens_export_csv
         └─► influential_keys(_rows(), thr)    → sens_export_keys
