@@ -104,3 +104,51 @@ def normalized_rmse(simulated: np.ndarray, observed: np.ndarray) -> float:
         return float("inf")
     rmse = float(np.sqrt(np.mean((simulated - observed) ** 2)))
     return float(rmse / obs_mean)
+
+
+def _biomass_long(df: pd.DataFrame) -> pd.DataFrame:
+    """Reshape the engine's WIDE biomass frame (a time column + one numeric column per species)
+    to long ``[time, species, biomass]`` so ``biomass_rmse`` can merge it. Idempotent if the frame
+    is already long. (OsmoseResults.biomass() returns wide — verify the exact columns against
+    data/minimal during implementation; melt all numeric per-species columns, lowercase Time→time,
+    drop any pre-existing non-value 'species' column.)
+    """
+    if "biomass" in df.columns and "time" in df.columns:
+        return df
+    time_col = "time" if "time" in df.columns else "Time"
+    value_cols = [
+        c
+        for c in df.columns
+        if c not in (time_col, "species") and pd.api.types.is_numeric_dtype(df[c])
+    ]
+    long = df.melt(
+        id_vars=[time_col], value_vars=value_cols, var_name="species", value_name="biomass"
+    )
+    return long.rename(columns={time_col: "time"})
+
+
+class BiomassRMSEObjective:
+    """Picklable biomass-RMSE objective (wraps biomass_rmse; reshapes wide->long).
+
+    Module-level (not a lambda) so it can cross a ProcessPoolExecutor boundary. The existing UI
+    lambda fed the wide frame straight in and KeyError'd on real engine output — this fixes it.
+    """
+
+    def __init__(self, observed: pd.DataFrame, species: str | None = None):
+        # Reshape the OBSERVED frame too (idempotent on already-long input) so a wide user CSV
+        # doesn't merge-empty -> inf -> >50% abort. Both sides go through _biomass_long.
+        self.observed = _biomass_long(observed) if observed is not None else observed
+        self.species = species
+
+    def __call__(self, results) -> float:
+        return biomass_rmse(_biomass_long(results.biomass()), self.observed, self.species)
+
+
+class DietDistanceObjective:
+    """Picklable diet-distance objective (wraps `diet_distance`; holds the observed matrix)."""
+
+    def __init__(self, observed: pd.DataFrame):
+        self.observed = observed
+
+    def __call__(self, results) -> float:
+        return diet_distance(results.diet_matrix(), self.observed)

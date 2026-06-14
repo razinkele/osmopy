@@ -1,7 +1,11 @@
+import pickle
+
 import numpy as np
 import pandas as pd
 import pytest
 from osmose.calibration.objectives import (
+    BiomassRMSEObjective,
+    DietDistanceObjective,
     abundance_rmse,
     biomass_rmse,
     diet_distance,
@@ -235,3 +239,44 @@ def test_timeseries_rmse_asymmetric_species_raises():
     )
     with pytest.raises(ValueError, match="species column must be present"):
         biomass_rmse(sim, obs, species=None)
+
+
+class _FakeResults:
+    def __init__(self, biomass_df, diet_df):
+        self._b, self._d = biomass_df, diet_df
+
+    def biomass(self):
+        return self._b
+
+    def diet_matrix(self):
+        return self._d
+
+
+def test_biomass_objective_matches_function_and_pickles():
+    obs = pd.DataFrame({"time": [0, 1], "species": ["a", "a"], "biomass": [1.0, 2.0]})
+    sim = pd.DataFrame({"time": [0, 1], "species": ["a", "a"], "biomass": [1.5, 2.5]})
+    obj = BiomassRMSEObjective(obs)
+    from osmose.calibration.objectives import biomass_rmse
+
+    assert obj(_FakeResults(sim, None)) == biomass_rmse(sim, obs)
+    assert pickle.loads(pickle.dumps(obj))(_FakeResults(sim, None)) == obj(_FakeResults(sim, None))
+
+
+def test_diet_objective_matches_function_and_pickles():
+    obs = pd.DataFrame({"pred": ["a"], "x": [1.0]})
+    sim = pd.DataFrame({"pred": ["a"], "x": [2.0]})
+    obj = DietDistanceObjective(obs)
+    from osmose.calibration.objectives import diet_distance
+
+    assert obj(_FakeResults(None, sim)) == diet_distance(sim, obs)
+    assert pickle.loads(pickle.dumps(obj)) is not None  # round-trips
+
+
+def test_biomass_objective_handles_wide_observed_and_wide_sim():
+    """Both the WIDE engine output AND a WIDE observed CSV reshape to long → finite (no merge-empty)."""
+    wide_sim = pd.DataFrame({"Time": [0, 1], "a": [1.5, 2.5], "b": [3.0, 4.0]})
+    wide_obs = pd.DataFrame({"Time": [0, 1], "a": [1.0, 2.0], "b": [3.0, 4.0]})
+    val = BiomassRMSEObjective(wide_obs)(_FakeResults(wide_sim, None))
+    import numpy as np
+
+    assert np.isfinite(val)  # would be inf if either side stayed wide (empty merge)
