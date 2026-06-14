@@ -132,8 +132,10 @@ def _worker_eval(run_id: int, params: np.ndarray) -> list[float]:
 `OsmoseCalibrationProblem.__init__` gains `parallel_backend: Literal["thread","process"] = "thread"`
 and `self._executor = None` (add `from typing import Literal` + `import multiprocessing` +
 `from concurrent.futures import ProcessPoolExecutor` and
-`from concurrent.futures.process import BrokenProcessPool` and `from concurrent.futures import
-as_completed` — `problem.py` currently imports only `ThreadPoolExecutor` and `TYPE_CHECKING, Callable`).
+`from concurrent.futures.process import BrokenProcessPool` + `from concurrent.futures import
+as_completed` + `import pickle` + `from osmose.schema import build_registry` (module-level, since
+`_worker_init` runs under `forkserver`) — `problem.py` currently imports only `ThreadPoolExecutor` and
+`TYPE_CHECKING, Callable`; `import os` is already present).
 `_evaluate`'s branch structure is **rewritten** (NOT kept verbatim — the existing `if self.n_parallel
 > 1:` thread branch would shadow the process path since NSGA-II runs at `n_parallel=4`). The full
 structure, backend-aware so the right branch is reached:
@@ -159,9 +161,11 @@ pending = {i: params for i, params in enumerate(X)}   # candidates not yet score
 for _attempt in range(3):                             # 1 initial + 2 rebuild retries
     if not pending:
         break
-    pool = self._ensure_pool()                        # lazy-create / rebuild
-    futures = {pool.submit(_worker_eval, i, p): i for i, p in pending.items()}
+    pool = self._ensure_pool()                        # lazy-create / rebuild (discards a broken pool)
     try:
+        # submit INSIDE the try: a pool that broke idle between generations raises
+        # BrokenProcessPool from submit() itself, which must hit the handler below.
+        futures = {pool.submit(_worker_eval, i, p): i for i, p in pending.items()}
         for fut in as_completed(futures):
             i = futures[fut]
             try:
@@ -178,9 +182,11 @@ for _attempt in range(3):                             # 1 initial + 2 rebuild re
 # any still-pending after the retry cap stay inf; the >50% guard then applies
 ```
 
-- `_ensure_pool()`: if `self._executor is None`, build `_EvalSpec` from `self`, **pre-check
-  `pickle.dumps(spec)`** (raise a clear "objective not picklable; use parallel_backend='thread'" on
-  failure), then
+- `_ensure_pool()`: first **discard a broken persisted pool** —
+  `if self._executor is not None and getattr(self._executor, "_broken", False): self.shutdown_pool()`
+  (a pool can break while idle between generations). Then if `self._executor is None`, build
+  `_EvalSpec` from `self`, **pre-check `pickle.dumps(spec)`** (raise a clear "objective not picklable;
+  use parallel_backend='thread'" on failure), then
   `self._executor = ProcessPoolExecutor(max_workers=_resolve_worker_count(self.n_parallel),
   mp_context=multiprocessing.get_context("forkserver"), initializer=_worker_init, initargs=(spec,))`.
   Returns the executor. (`forkserver` per the Workers section — avoids the daemon-thread/Numba fork
@@ -280,10 +286,12 @@ Pymoo stays serial generation-to-generation; only within-generation evaluation m
    normal suite, not e2e.) **Run a second parity variant WITH a registry on both backends**
    (`registry=build_registry()`) so the `use_registry` mapping is exercised — a worker-vs-parent
    validation divergence would otherwise pass undetected (the no-registry variant can't catch it).
-3. **Broken-pool recovery `tests/test_nsga2_parallel.py`**: simulate a dead worker (e.g. a worker fn
-   that `os._exit(1)`s, or monkeypatch the pool to raise `BrokenProcessPool` from `fut.result()`) →
-   `_evaluate` does not propagate the error, leaves the candidate `inf`, and resets `self._executor`
-   to `None` so the next `_evaluate` rebuilds the pool.
+3. **Broken-pool recovery `tests/test_nsga2_parallel.py`**: cover **both** break points —
+   `BrokenProcessPool` from `fut.result()` (a worker `os._exit(1)`s mid-eval) **and** from
+   `pool.submit()` (a pool already broken when the next generation starts — e.g. inject a stub
+   executor whose `submit` raises). Assert `_evaluate` does **not** propagate, that already-scored
+   candidates keep their finite values (not clobbered to `inf`), still-pending candidates are retried
+   on a rebuilt pool, and `_ensure_pool` discards a `_broken` pool.
 4. **Worker count `tests/test_nsga2_parallel.py`**: `_resolve_worker_count` — env unset → `n_parallel`;
    set → clamped `[1,32]`; `<1 → 1` (monkeypatch `setenv`).
 5. **Pool lifecycle**: `shutdown_pool()` is a no-op when no pool exists and idempotent after one
