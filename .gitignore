@@ -8,6 +8,7 @@ __pycache__/
 # branch of _handle_result() guard against polluting this dir by patching
 # osmose.history.RUN_HISTORY_DIR to a tmp_path (not via chdir).
 data/history/
+data/feedback/
 
 # C extensions
 *.so

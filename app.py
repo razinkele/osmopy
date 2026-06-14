@@ -35,6 +35,12 @@ from ui.pages.diagnostics import diagnostics_ui, diagnostics_server
 
 from osmose.cleanup import cleanup_old_temp_dirs, register_cleanup
 
+from starlette.responses import JSONResponse
+from starlette.routing import Route
+
+from osmose.feedback import check_feedback_token, read_feedback
+from ui.components.feedback_modal import feedback_modal, feedback_server
+
 # H11: cleanup is invoked at server() time (per session) rather than at
 # import time so that simply importing this module — e.g. for tests, type
 # checking, or schema-only access — does not touch the filesystem. The
@@ -228,6 +234,12 @@ app_ui = ui.page_fillable(
                 href="#",
                 **{"data-bs-toggle": "modal", "data-bs-target": "#helpModal"},
             ),
+            ui.tags.a(
+                "Feedback",
+                class_="osmose-header-btn",
+                href="#",
+                **{"data-bs-toggle": "modal", "data-bs-target": "#feedbackModal"},
+            ),
             class_="osmose-header-actions",
         ),
         class_="osmose-header",
@@ -295,6 +307,7 @@ app_ui = ui.page_fillable(
     about_modal(),
     help_modal(),
     changelog_modal(),
+    feedback_modal(),
     # ── deck.gl init fallback ─────────────────────────────────────
     # CDN scripts may finish loading after shiny:connected fires,
     # leaving MapWidget divs uninitialized.  Poll until deps are
@@ -565,6 +578,21 @@ def server(input, output, session):
     genetics_server(input, output, session, state)
     economic_server(input, output, session, state)
     diagnostics_server(input, output, session, state)
+    feedback_server(input, output, session, state)
 
 
 app = App(app_ui, server, static_assets=_WWW)
+
+
+async def _feedback_endpoint(request):
+    try:
+        if not check_feedback_token(request.headers.get("x-feedback-token")):
+            return JSONResponse({"error": "forbidden"}, status_code=403)
+        return JSONResponse(read_feedback())
+    except Exception:  # noqa: BLE001 — never leak a traceback to an unauth caller
+        return JSONResponse({"error": "internal"}, status_code=500)
+
+
+# Mount the read-only feedback API BEFORE Shiny's catch-all Mount("/") — add_route would
+# append AFTER it and the route would 404. See the feedback-system spec.
+app.starlette_app.routes.insert(0, Route("/api/feedback", _feedback_endpoint, methods=["GET"]))

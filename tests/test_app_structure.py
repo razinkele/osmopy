@@ -138,3 +138,19 @@ def test_feedback_modal_has_form_ids():
     assert "feedbackModal" in html
     for wid in ["feedback_type", "feedback_message", "feedback_contact", "feedback_submit"]:
         assert wid in html, f"Missing feedback widget id: {wid}"
+
+
+def test_feedback_wired_into_app():
+    from app import app_ui
+
+    html = str(app_ui)
+    assert "feedbackModal" in html
+    assert 'data-bs-target="#feedbackModal"' in html
+    for wid in ["feedback_type", "feedback_message", "feedback_contact", "feedback_submit"]:
+        assert wid in html
+
+    import pathlib
+
+    src = (pathlib.Path(__file__).resolve().parent.parent / "app.py").read_text()
+    assert "feedback_server" in src
+    assert 'Route("/api/feedback"' in src
