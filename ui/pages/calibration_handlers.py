@@ -1692,6 +1692,7 @@ def register_calibration_handlers(
         from osmose.calibration.objectives import biomass_rmse
         from osmose.calibration.problem import OsmoseCalibrationProblem
         from osmose.calibration.sensitivity import SensitivityAnalyzer
+        from osmose.calibration.sobol_io import save_sobol_result
         from osmose.config.writer import OsmoseConfigWriter
 
         selected = collect_selected_params(input, state)
@@ -1787,6 +1788,18 @@ def register_calibration_handlers(
 
                 Y_1d = Y.sum(axis=1) if Y.ndim > 1 else Y
                 sens_result = analyzer.analyze(Y_1d)
+                try:
+                    save_sobol_result(
+                        sens_result,
+                        metadata={
+                            "source": "calibration-live",
+                            "n_base": 64,
+                            "param_bounds": [[lo, hi] for lo, hi in param_bounds],
+                            "objective_names": obj_names_sens or None,
+                        },
+                    )
+                except Exception:  # noqa: BLE001 — persistence is additive; never break the live run
+                    _log.warning("Failed to persist sensitivity result", exc_info=True)
                 msg_queue.post_sensitivity(sens_result)
             except Exception as exc:
                 _log.error("Sensitivity analysis failed: %s", exc, exc_info=True)

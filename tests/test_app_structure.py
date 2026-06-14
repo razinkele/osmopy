@@ -56,3 +56,13 @@ def test_nav_collapse_toggle_present():
     html = str(app_ui)
     assert "osm-nav-collapse-btn" in html
     assert "toggleNav()" in html
+
+
+def test_persist_hook_wired_in_calibration_handlers():
+    """The live sensitivity run persists its result via save_sobol_result."""
+    import pathlib
+
+    src = (
+        pathlib.Path(__file__).resolve().parent.parent / "ui" / "pages" / "calibration_handlers.py"
+    ).read_text()
+    assert "save_sobol_result" in src
