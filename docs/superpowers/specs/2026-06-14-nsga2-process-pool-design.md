@@ -89,14 +89,18 @@ class _EvalSpec:
     subprocess_timeout: int
     cleanup_after_eval: bool
     use_java_engine: bool
-    use_registry: bool                 # worker calls build_registry() when True
+    use_registry: bool                 # = (self._registry is not None); see note below
 ```
 
 `_EvalSpec` is built from the parent's **resolved** state — `self._enable_cache` and `self._cache_dir`
 (the post-`__init__` value `cache_dir or work_dir/.cache`, `problem.py:110`), not the raw constructor
-args — so every worker agrees on one shared cache dir. `n_obj` is **not** an `_EvalSpec` field: pymoo's
-base `Problem.__init__` sets `self.n_obj` when the worker reconstructs the problem, so `_worker_eval`
-reads it from there.
+args — so every worker agrees on one shared cache dir. **`use_registry = (self._registry is not None)`
+— load-bearing for parity:** the thread path skips override validation when `self._registry is None`
+(`problem.py:374`), and the UI builds the problem with no registry. If workers unconditionally
+`build_registry()` and validate, they could score a candidate `inf` that the thread path accepts →
+breaking the thread==process parity. So workers rebuild the registry **iff the parent had one**.
+`n_obj` is **not** an `_EvalSpec` field: pymoo's base `Problem.__init__` sets `self.n_obj` when the
+worker reconstructs the problem, so `_worker_eval` reads it from there.
 
 Module-level worker functions (so `ProcessPoolExecutor` pickles only the spec + small tuples):
 
@@ -128,29 +132,50 @@ def _worker_eval(run_id: int, params: np.ndarray) -> list[float]:
 `OsmoseCalibrationProblem.__init__` gains `parallel_backend: Literal["thread","process"] = "thread"`
 and `self._executor = None` (add `from typing import Literal` + `import multiprocessing` +
 `from concurrent.futures import ProcessPoolExecutor` and
-`from concurrent.futures.process import BrokenProcessPool` — `problem.py` currently imports only
-`ThreadPoolExecutor` and `TYPE_CHECKING, Callable`). `_evaluate` keeps the existing serial + thread
-branches verbatim and adds:
+`from concurrent.futures.process import BrokenProcessPool` and `from concurrent.futures import
+as_completed` — `problem.py` currently imports only `ThreadPoolExecutor` and `TYPE_CHECKING, Callable`).
+`_evaluate`'s branch structure is **rewritten** (NOT kept verbatim — the existing `if self.n_parallel
+> 1:` thread branch would shadow the process path since NSGA-II runs at `n_parallel=4`). The full
+structure, backend-aware so the right branch is reached:
 
 ```python
-elif self.parallel_backend == "process":
-    pool = self._ensure_pool()                       # lazy-create once, reuse across gens
-    futures = {pool.submit(_worker_eval, i, params): i for i, params in enumerate(X)}
+if self.parallel_backend == "process" and self.n_parallel > 1:
+    self._evaluate_process(X, F)          # §below
+elif self.n_parallel > 1:                 # existing thread path, unchanged body
+    <ThreadPoolExecutor ... as today>
+else:
+    <serial loop ... as today>
+```
+
+`_evaluate_process(X, F)` — must **not** let one dead worker discard already-finished candidates
+(a single `fut.result()` raising `BrokenProcessPool` would otherwise abandon the rest of the
+generation → `>50%` inf → the whole multi-hour run aborts on one transient OOM). So it tracks the
+still-unscored candidates and, on a broken pool, rebuilds and **re-submits only those** within the
+same generation (re-running a candidate is safe — `seed=run_id` is deterministic), capped at a small
+number of rebuilds:
+
+```python
+pending = {i: params for i, params in enumerate(X)}   # candidates not yet scored
+for _attempt in range(3):                             # 1 initial + 2 rebuild retries
+    if not pending:
+        break
+    pool = self._ensure_pool()                        # lazy-create / rebuild
+    futures = {pool.submit(_worker_eval, i, p): i for i, p in pending.items()}
     try:
-        for fut in futures:
+        for fut in as_completed(futures):
             i = futures[fut]
             try:
                 for k, v in enumerate(fut.result()):
                     F[i, k] = v
-            except _expected_errors as exc:
+                del pending[i]                        # scored OK
+            except _expected_errors as exc:           # bad candidate → stays inf, done
                 _log.warning("Candidate %d failed (expected): %s", i, exc)
-    except BrokenProcessPool as exc:
-        # A worker died (e.g. OOM). Tear down the poisoned pool so the NEXT generation
-        # rebuilds a fresh one; leave the affected candidates as inf (the >50% guard below
-        # aborts the run if a whole generation was lost). BrokenProcessPool is a RuntimeError
-        # and is NOT in _expected_errors, so it must be caught explicitly here.
-        _log.warning("Process pool broke (worker died): %s — rebuilding next generation", exc)
-        self.shutdown_pool()                          # sets self._executor = None
+                del pending[i]
+    except BrokenProcessPool as exc:                  # RuntimeError, NOT in _expected_errors
+        _log.warning("Pool broke (worker died): %s — rebuilding, retrying %d candidates",
+                     exc, len(pending))
+        self.shutdown_pool()                          # finished results stay in F; pending retried
+# any still-pending after the retry cap stay inf; the >50% guard then applies
 ```
 
 - `_ensure_pool()`: if `self._executor is None`, build `_EvalSpec` from `self`, **pre-check
@@ -183,7 +208,7 @@ elif self.parallel_backend == "process":
 generation X (pop_size × n_var)  ──► OsmoseCalibrationProblem._evaluate
   parallel_backend == "process":
      _ensure_pool() → ProcessPoolExecutor(initializer=_worker_init, initargs=(_EvalSpec,))   [once]
-        each worker: build_registry() + reconstruct OsmoseCalibrationProblem(n_parallel=1)
+        each worker: reconstruct OsmoseCalibrationProblem(n_parallel=1, registry=build_registry() iff parent had one)
      submit _worker_eval(i, params) per candidate  →  worker runs _evaluate_candidate (seed=i)
         → _run_single → _run_python_engine (in-process sim) → objective functors → [floats]
      collect into F → out["F"]
@@ -252,7 +277,9 @@ Pymoo stays serial generation-to-generation; only within-generation evaluation m
    `"process"` yields **identical `out["F"]`** (verified live: bit-identical on 4 candidates / 2
    workers). Also: a worker eval that raises returns an `inf` vector; `_EvalSpec` round-trips
    `pickle.dumps`. (A few seconds — real `forkserver` spawn + one-time Numba compile; runs in the
-   normal suite, not e2e.)
+   normal suite, not e2e.) **Run a second parity variant WITH a registry on both backends**
+   (`registry=build_registry()`) so the `use_registry` mapping is exercised — a worker-vs-parent
+   validation divergence would otherwise pass undetected (the no-registry variant can't catch it).
 3. **Broken-pool recovery `tests/test_nsga2_parallel.py`**: simulate a dead worker (e.g. a worker fn
    that `os._exit(1)`s, or monkeypatch the pool to raise `BrokenProcessPool` from `fut.result()`) →
    `_evaluate` does not propagate the error, leaves the candidate `inf`, and resets `self._executor`
