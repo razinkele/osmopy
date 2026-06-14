@@ -10,10 +10,13 @@ import os
 import re
 import subprocess
 import tempfile
-from concurrent.futures import ThreadPoolExecutor
+import multiprocessing
+import pickle
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, Literal
 
 if TYPE_CHECKING:
     from osmose.results import OsmoseResults
@@ -23,6 +26,7 @@ import numpy as np
 from pymoo.core.problem import Problem  # type: ignore[import-untyped]
 
 from osmose.logging import setup_logging
+from osmose.schema import build_registry
 
 _OSMOSE_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9._]*$")
 _OSMOSE_VALUE_PATTERN = re.compile(r"^[\w.+\-eE/]+$")
@@ -41,6 +45,67 @@ _expected_errors = (
 # _expected_errors tight for the Java path and widening here preserves the
 # "bad candidate = inf" contract without swallowing genuine subprocess bugs.
 _python_engine_errors = _expected_errors + (ValueError, KeyError, RuntimeError)
+
+
+@dataclass(frozen=True)
+class _EvalSpec:
+    """Picklable subset an NSGA-II worker needs to evaluate one candidate."""
+
+    free_params: list[FreeParameter]
+    objective_fns: list[Callable]
+    base_config_path: Path
+    work_dir: Path
+    jar_path: Path | None
+    java_cmd: str
+    enable_cache: bool
+    cache_dir: Path | None
+    subprocess_timeout: int
+    cleanup_after_eval: bool
+    use_java_engine: bool
+    use_registry: bool
+
+
+_WORKER_PROBLEM: "OsmoseCalibrationProblem | None" = None
+
+
+def _worker_init(spec: _EvalSpec) -> None:
+    """ProcessPoolExecutor initializer: reconstruct the problem once per worker."""
+    global _WORKER_PROBLEM
+    reg = build_registry() if spec.use_registry else None
+    _WORKER_PROBLEM = OsmoseCalibrationProblem(
+        free_params=spec.free_params,
+        objective_fns=spec.objective_fns,
+        base_config_path=spec.base_config_path,
+        work_dir=spec.work_dir,
+        jar_path=spec.jar_path,
+        java_cmd=spec.java_cmd,
+        n_parallel=1,
+        parallel_backend="thread",  # workers must never nest a pool
+        enable_cache=spec.enable_cache,
+        cache_dir=spec.cache_dir,
+        registry=reg,
+        subprocess_timeout=spec.subprocess_timeout,
+        cleanup_after_eval=spec.cleanup_after_eval,
+        use_java_engine=spec.use_java_engine,
+    )
+
+
+def _worker_eval(run_id: int, params: np.ndarray) -> list[float]:
+    """Evaluate one candidate in the worker; never raise into the pool."""
+    assert _WORKER_PROBLEM is not None
+    try:
+        return _WORKER_PROBLEM._evaluate_candidate(run_id, params)
+    except Exception:  # noqa: BLE001 — one bad candidate must not kill the generation
+        return [float("inf")] * _WORKER_PROBLEM.n_obj
+
+
+def _resolve_worker_count(n_parallel: int) -> int:
+    """Worker count from OSMOSE_NSGA2_WORKERS (fallback n_parallel), clamped to [1, 32]."""
+    try:
+        n = int(os.environ.get("OSMOSE_NSGA2_WORKERS", n_parallel))
+    except ValueError:
+        n = n_parallel
+    return max(1, min(32, n))
 
 
 class Transform(enum.Enum):
@@ -96,6 +161,7 @@ class OsmoseCalibrationProblem(Problem):
         subprocess_timeout: int = 3600,
         cleanup_after_eval: bool = False,
         use_java_engine: bool = False,
+        parallel_backend: Literal["thread", "process"] = "thread",
     ):
         if use_java_engine and jar_path is None:
             raise ValueError("use_java_engine=True requires jar_path")
@@ -114,6 +180,8 @@ class OsmoseCalibrationProblem(Problem):
         self.subprocess_timeout = int(subprocess_timeout)
         self.cleanup_after_eval = bool(cleanup_after_eval)
         self.use_java_engine = bool(use_java_engine)
+        self.parallel_backend = parallel_backend
+        self._executor: ProcessPoolExecutor | None = None
         # Pre-compute base config hash for cache keys
         self._base_config_hash = ""
         if enable_cache and base_config_path.exists():
@@ -139,7 +207,9 @@ class OsmoseCalibrationProblem(Problem):
         _log.info("Evaluating %d candidates (parallel=%d)", X.shape[0], self.n_parallel)
         F = np.full((X.shape[0], self.n_obj), np.inf)
 
-        if self.n_parallel > 1:
+        if self.parallel_backend == "process" and self.n_parallel > 1:
+            self._evaluate_process(X, F)
+        elif self.n_parallel > 1:
             with ThreadPoolExecutor(max_workers=self.n_parallel) as executor:
                 futures = {
                     executor.submit(self._evaluate_candidate, i, params): i
@@ -182,6 +252,93 @@ class OsmoseCalibrationProblem(Problem):
             overrides[fp.key] = str(val)
 
         return self._run_single(overrides, run_id=i)
+
+    def _evaluate_process(self, X, F) -> None:
+        """Evaluate the population via the persistent process pool, recovering from a dead worker.
+
+        Preserves already-scored candidates across a BrokenProcessPool: only the still-unscored
+        ones are retried on a rebuilt pool (re-running is safe — seed=run_id is deterministic).
+        """
+        pending = {i: params for i, params in enumerate(X)}
+        for _attempt in range(3):  # 1 initial + 2 rebuild retries
+            if not pending:
+                break
+            pool = self._ensure_pool()
+            try:
+                # submit in its own try: a pool that broke idle between gens raises
+                # BrokenProcessPool from submit() itself.
+                futures = {pool.submit(_worker_eval, i, p): i for i, p in pending.items()}
+            except BrokenProcessPool as exc:
+                _log.warning("Pool broke at submit: %s — rebuilding", exc)
+                self.shutdown_pool()
+                continue
+            broke = None
+            for fut in as_completed(futures):
+                i = futures[fut]
+                try:
+                    for k, v in enumerate(fut.result()):
+                        F[i, k] = v
+                    del pending[i]  # scored OK → drop from pending
+                except BrokenProcessPool as exc:
+                    # PER-FUTURE catch (do NOT abort the drain): a worker death makes the
+                    # NOT-yet-finished futures raise here, but futures that ALREADY finished
+                    # still yield their results above. Record and keep draining so finished
+                    # candidates are preserved; only the unscored ones remain in `pending`.
+                    broke = exc
+                except _expected_errors as exc:
+                    # Narrow _expected_errors (NOT _python_engine_errors): a per-candidate
+                    # failure is scored inf and dropped; it must not be confused with worker death.
+                    _log.warning("Candidate %d failed (expected): %s", i, exc)
+                    del pending[i]
+            if broke is not None:
+                _log.warning(
+                    "Pool broke (worker died): %s — rebuilding, retrying %d candidates",
+                    broke,
+                    len(pending),
+                )
+                self.shutdown_pool()  # finished results stay in F; pending retried on a fresh pool
+        # any still-pending after the retry cap stay inf; the >50% guard then applies
+
+    def _eval_spec(self) -> _EvalSpec:
+        return _EvalSpec(
+            free_params=self.free_params,
+            objective_fns=self.objective_fns,
+            base_config_path=self.base_config_path,
+            work_dir=self.work_dir,
+            jar_path=self.jar_path,
+            java_cmd=self.java_cmd,
+            enable_cache=self._enable_cache,
+            cache_dir=self._cache_dir,
+            subprocess_timeout=self.subprocess_timeout,
+            cleanup_after_eval=self.cleanup_after_eval,
+            use_java_engine=self.use_java_engine,
+            use_registry=self._registry is not None,
+        )
+
+    def _ensure_pool(self) -> ProcessPoolExecutor:
+        # Discard a pool that broke while idle between generations.
+        if self._executor is not None and getattr(self._executor, "_broken", False):
+            self.shutdown_pool()
+        if self._executor is None:
+            spec = self._eval_spec()
+            try:
+                pickle.dumps(spec)
+            except Exception as exc:  # noqa: BLE001
+                raise RuntimeError(
+                    "Objective/spec is not picklable; use parallel_backend='thread'"
+                ) from exc
+            self._executor = ProcessPoolExecutor(
+                max_workers=_resolve_worker_count(self.n_parallel),
+                mp_context=multiprocessing.get_context("forkserver"),
+                initializer=_worker_init,
+                initargs=(spec,),
+            )
+        return self._executor
+
+    def shutdown_pool(self, cancel_futures: bool = False) -> None:
+        if self._executor is not None:
+            self._executor.shutdown(cancel_futures=cancel_futures)
+            self._executor = None
 
     def _run_single(self, overrides: dict[str, str], run_id: int) -> list[float]:
         """Run OSMOSE with overrides and return objective values.
