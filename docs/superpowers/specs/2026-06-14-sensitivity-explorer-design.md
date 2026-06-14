@@ -39,6 +39,13 @@ has ever been persisted), so the feature must also create its own data source vi
   server fn. Pages gate page-scoped effects on `input.main_nav() == "<value>"`.
 - `get_calibratable_params` (`calibration_handlers.py`) is how param keys/bounds are sourced (already
   used by the live run; the explorer does not re-derive them — it reads what the artifact stored).
+- `ui/pages/calibration_charts.py:79` `make_sensitivity_chart(result, tmpl, selected_objective)`
+  already renders a **vertical grouped** S1/ST bar from the identical `result` dict, with the 1-D/2-D
+  dispatch the explorer also needs (`if "objective_names" in result: s1 = result["S1"][selected_objective]`,
+  else `result["S1"]`). The explorer needs a **horizontal tornado** with sort-by-key, threshold
+  highlighting, and `error_x` CIs — none of which that vertical helper does — so `_make_tornado` is a
+  **new** builder rather than an extension; but it MUST keep the same objective-dispatch convention
+  (drive 1-D vs 2-D off `n_objectives`/`objective_idx`) so the two stay consistent.
 
 ## Architecture
 
@@ -147,9 +154,11 @@ bind-on-insertion rule, same as `scenario_diff.py`):**
 **Server:**
 - `_populate_runs` `@reactive.effect` gated on `input.main_nav() == "sensitivity"`: calls
   `list_sobol_results()` and `ui.update_select("sens_run", choices=...)` with a changed-only guard
-  (a `reactive.Value` of the last choices, like `scenario_diff`'s `_last_choices`).
+  (a `reactive.Value` of the last choices, like `scenario_diff`'s `_last_choices` at
+  `scenario_diff.py:119`).
 - `_result` `@reactive.calc`: `load_sobol_result(_safe(input.sens_run))` → dict or `None`
-  (broad-except degrade). A `_safe(getter, default=None)` helper mirrors `scenario_diff.py:88`.
+  (broad-except degrade). A `_safe(getter, default=None)` helper mirrors `scenario_diff.py:126`
+  (catches `SilentException`/`AttributeError`).
 - `sens_objective_ui` `@render.ui`: dropdown when multi-objective, else `ui.div()`.
 - `sens_tornado` `@render_plotly`: from `_result` + objective + index toggle + threshold + sort,
   build a horizontal grouped bar via a local `_make_tornado(rows, indices, threshold, template)`
@@ -159,8 +168,11 @@ bind-on-insertion rule, same as `scenario_diff.py`):**
 - `sens_table` `@render.ui`: Bootstrap table (`table table-sm table-striped`, `STYLE_MONO_KEY` for
   the param column, like `config_diff_table`) — columns `Param | S1 | ST | Influential`, influential
   rows badged (`badge bg-success`); empty state when no data.
-- `sens_export_csv` `@render.download`: `rows_to_csv(rank_rows(...))`.
-- `sens_export_keys` `@render.download`: newline-joined `influential_keys(...)`.
+- `sens_export_csv` `@render.download(filename="sensitivity_ranked.csv")`: yields
+  `rows_to_csv(rank_rows(...))` (static filename, matching the `@render.download(filename=...)` idiom
+  at `calibration.py:607`).
+- `sens_export_keys` `@render.download(filename="influential_keys.txt")`: yields newline-joined
+  `influential_keys(...)`.
 
 ## Data flow
 
@@ -209,14 +221,22 @@ decoupled by the on-disk artifact, exactly like run `history.py`.
    - `app.py` imports `sensitivity_explorer_ui`/`sensitivity_explorer_server`, registers the
      `value="sensitivity"` nav panel, and calls the server.
    - `calibration_handlers.py` calls `save_sobol_result` (persist hook wired).
-   - `str(sensitivity_explorer_ui())` contains the output ids (`sens_tornado`, `sens_table`,
-     `sens_run`). (A top-level page returns tags, so `str(...)` tagifies — unlike a bare `NavPanel`.)
+   - `str(sensitivity_explorer_ui())` contains the **full** widget id set — `sens_run`,
+     `sens_objective_ui`, `sens_index`, `sens_threshold`, `sens_sort`, `sens_tornado`, `sens_table`,
+     `sens_export_csv`, `sens_export_keys` — so a future edit dropping any control fails the test.
+     (A top-level page returns tags, so `str(...)` tagifies — unlike a bare `NavPanel`.)
 3. **e2e `tests/test_e2e_sensitivity_explorer.py`**: write a synthetic `sobol_<ts>.json` into the
    real `data/history/sensitivity/` (same on-disk substrate approach as the scenario-diff e2e),
    navigate to the Sensitivity page, select the run, assert the tornado widget (`#sens_tornado`) is
    visible and the table (`#sens_table`) **contains** a known param key (`to_contain_text`, not
    visibility — the bare `@render.ui` is zero-height until it recomputes), and the export buttons are
-   present. Clean up the synthetic file in teardown.
+   present. The fixture mirrors `test_e2e_scenario_diff.py:73-82` **with one difference** —
+   `data/history/sensitivity/` does **not** exist yet (it is gitignored under `data/history/` and is
+   currently empty), so the fixture MUST: (a) `SENSITIVITY_DIR.mkdir(parents=True, exist_ok=True)`
+   before writing; (b) use the `yield`-fixture form with cleanup **after** the yield so teardown runs
+   even when an assertion fails; (c) `path.unlink(missing_ok=True)` the written `sobol_*.json` — so a
+   failed test never leaks a stale artifact that `list_sobol_results` would surface in a later human
+   session. (Leaving the now-empty `sensitivity/` dir is fine — it is gitignored.)
 
 **Substrate:** synthetic JSON with real-looking keys (`species.linf.sp0`, `species.k.sp0`,
 `predation.efficiency.sp0`) in single- and multi-objective variants; real data arrives via the
