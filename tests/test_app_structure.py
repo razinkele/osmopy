@@ -97,3 +97,26 @@ def test_sensitivity_server_wired():
     src = (pathlib.Path(__file__).resolve().parent.parent / "app.py").read_text()
     assert "sensitivity_explorer_server" in src
     assert "sensitivity_explorer_ui" in src
+
+
+def test_about_modal_renders_doc_tabs():
+    from ui.components.help_modal import about_modal
+
+    html = str(about_modal())
+    # Assert the navset TAB structure (data-value=title) — discriminating vs the old modal,
+    # which merely had a "### Changelog" heading substring.
+    assert 'data-value="Overview"' in html
+    assert 'data-value="README"' in html
+    assert 'data-value="Changelog"' in html
+    # Renders real CHANGELOG content (build-time read), not the old hardcoded block.
+    assert "0.13.0" in html
+    # The stale hardcoded-changelog marker is gone (was a list item "Initial release").
+    assert "Initial release" not in html
+
+
+def test_changelog_modal_present():
+    from ui.components.help_modal import changelog_modal
+
+    html = str(changelog_modal())
+    assert "changelogModal" in html
+    assert "What's new" in html

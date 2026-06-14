@@ -7,6 +7,7 @@ client-side via data-bs-toggle, avoiding any server round-trip.
 from shiny import ui
 
 from osmose import __version__
+from osmose.docs_content import latest_changelog_entry, read_doc
 
 
 def _bs_modal(modal_id: str, title: str, body, *, size: str = "lg"):
@@ -39,8 +40,8 @@ def _bs_modal(modal_id: str, title: str, body, *, size: str = "lg"):
 
 
 def about_modal():
-    """Return the full About OSMOSE modal dialog."""
-    body = ui.TagList(
+    """About OSMOSE modal — curated Overview + rendered README / Changelog tabs."""
+    overview = ui.TagList(
         ui.div(
             ui.tags.span(f"v{__version__}", class_="osmose-version-badge"),
             ui.tags.span("Python Interface", class_="osmose-version-label"),
@@ -68,28 +69,32 @@ configuration, execution, calibration, and visualization of OSMOSE simulations.
 
 ---
 
-### Changelog
-
-- **v0.1.0** — Initial release
-  - Schema-driven parameter system (181 parameters)
-  - Config I/O with OSMOSE CSV/properties format
-  - Run page with async Java subprocess management
-  - Results viewer with Plotly charts
-  - Calibration: NSGA-II, GP surrogate, sensitivity analysis
-  - Scenario management: save, load, fork, compare
-  - Nautical Observatory theme
-
----
-
-### License
-
-Released under the **MIT License**.
-
-[View on GitHub](https://github.com/razinkele/osmopy)
+Released under the **MIT License**. [View on GitHub](https://github.com/razinkele/osmopy)
 """
         ),
     )
-    return _bs_modal("aboutModal", "About OSMOSE", body, size="lg")
+    body = ui.navset_pill(
+        ui.nav_panel("Overview", overview),
+        ui.nav_panel("README", ui.markdown(read_doc("readme"))),
+        ui.nav_panel("Changelog", ui.markdown(read_doc("changelog"))),
+        id="about_tabs",
+    )
+    return _bs_modal("aboutModal", "About OSMOSE", body, size="xl")
+
+
+def changelog_modal():
+    """Startup 'What's new' modal — the latest changelog section."""
+    entry = latest_changelog_entry(read_doc("changelog"))
+    body = ui.TagList(
+        ui.div(
+            ui.tags.span(f"v{__version__}", class_="osmose-version-badge"),
+            ui.tags.span("What's new", class_="osmose-version-label"),
+            class_="osmose-about-version",
+        ),
+        ui.markdown(entry["body"]),
+        ui.markdown("_Full history under **About → Changelog**._"),
+    )
+    return _bs_modal("changelogModal", f"What's new in v{__version__}", body, size="lg")
 
 
 def help_modal():
