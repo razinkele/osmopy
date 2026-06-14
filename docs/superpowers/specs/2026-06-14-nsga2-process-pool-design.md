@@ -182,6 +182,17 @@ for _attempt in range(3):                             # 1 initial + 2 rebuild re
 # any still-pending after the retry cap stay inf; the >50% guard then applies
 ```
 
+> **⚠ The inner per-future `except` MUST stay the narrow `_expected_errors`, NOT `_python_engine_errors`.**
+> `BrokenProcessPool` subclasses `RuntimeError`, and `_python_engine_errors` (`problem.py:43`) =
+> `_expected_errors + (ValueError, KeyError, RuntimeError)`. Although each worker runs the Python
+> engine in-process (where `_run_single` legitimately uses the broader set, `problem.py:268`), using
+> the broader set *here* would catch a dead worker's `BrokenProcessPool` at the inner level, mark that
+> candidate permanently `inf`, and the outer `except BrokenProcessPool` would never fire → no rebuild,
+> no retry → silently re-creating the `>50%`-abort blocker this whole loop exists to prevent. The
+> narrow `_expected_errors` is exactly what lets `BrokenProcessPool` propagate to the outer handler.
+> (The broken-pool test asserts a dead-worker candidate ends **finite after retry**, so a future
+> widening to `_python_engine_errors` fails the test instead of silently regressing.)
+
 - `_ensure_pool()`: first **discard a broken persisted pool** —
   `if self._executor is not None and getattr(self._executor, "_broken", False): self.shutdown_pool()`
   (a pool can break while idle between generations). Then if `self._executor is None`, build
@@ -273,7 +284,8 @@ Pymoo stays serial generation-to-generation; only within-generation evaluation m
 
 ## Testing
 
-1. **Functors `tests/test_calibration_objectives.py`** (extend): `BiomassRMSEObjective` /
+1. **Functors `tests/test_objectives.py`** (extend the existing objectives test file — there is no
+   `test_calibration_objectives.py`): `BiomassRMSEObjective` /
    `DietDistanceObjective` return the same value as `biomass_rmse`/`diet_distance` on the same frames;
    each functor survives `pickle.dumps`/`loads`.
 2. **Parity `tests/test_nsga2_parallel.py`** (the keystone): a tiny `OsmoseCalibrationProblem` built
@@ -290,8 +302,10 @@ Pymoo stays serial generation-to-generation; only within-generation evaluation m
    `BrokenProcessPool` from `fut.result()` (a worker `os._exit(1)`s mid-eval) **and** from
    `pool.submit()` (a pool already broken when the next generation starts — e.g. inject a stub
    executor whose `submit` raises). Assert `_evaluate` does **not** propagate, that already-scored
-   candidates keep their finite values (not clobbered to `inf`), still-pending candidates are retried
-   on a rebuilt pool, and `_ensure_pool` discards a `_broken` pool.
+   candidates keep their finite values (not clobbered to `inf`), that the **dead-worker candidate ends
+   FINITE after the retry** (proves the rebuild fired — and guards against a future widening of the
+   inner `except` to `_python_engine_errors`, which would swallow `BrokenProcessPool` and leave it
+   `inf`), and that `_ensure_pool` discards a `_broken` pool.
 4. **Worker count `tests/test_nsga2_parallel.py`**: `_resolve_worker_count` — env unset → `n_parallel`;
    set → clamped `[1,32]`; `<1 → 1` (monkeypatch `setenv`).
 5. **Pool lifecycle**: `shutdown_pool()` is a no-op when no pool exists and idempotent after one
