@@ -32,13 +32,10 @@ Per-task gate: `.venv/bin/ruff check osmose/ ui/ tests/`, `.venv/bin/ruff format
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `tests/test_objectives.py`:
+Append to `tests/test_objectives.py`. **Add `import pickle` to the file's TOP import block** (a
+mid-file `import` trips ruff E402; `pandas as pd` is already imported there). The appended tests:
 
 ```python
-import pickle
-
-import pandas as pd
-
 from osmose.calibration.objectives import BiomassRMSEObjective, DietDistanceObjective
 
 
@@ -71,6 +68,16 @@ def test_diet_objective_matches_function_and_pickles():
 
     assert obj(_FakeResults(None, sim)) == diet_distance(sim, obs)
     assert pickle.loads(pickle.dumps(obj)) is not None  # round-trips
+
+
+def test_biomass_objective_handles_wide_observed_and_wide_sim():
+    """Both the WIDE engine output AND a WIDE observed CSV reshape to long → finite (no merge-empty)."""
+    wide_sim = pd.DataFrame({"Time": [0, 1], "a": [1.5, 2.5], "b": [3.0, 4.0]})
+    wide_obs = pd.DataFrame({"Time": [0, 1], "a": [1.0, 2.0], "b": [3.0, 4.0]})
+    val = BiomassRMSEObjective(wide_obs)(_FakeResults(wide_sim, None))
+    import numpy as np
+
+    assert np.isfinite(val)  # would be inf if either side stayed wide (empty merge)
 ```
 
 - [ ] **Step 2: Run to verify failure**
@@ -102,15 +109,16 @@ def _biomass_long(df: pd.DataFrame) -> pd.DataFrame:
 
 
 class BiomassRMSEObjective:
-    """Picklable biomass-RMSE objective (wraps `biomass_rmse`; holds the observed long-form frame).
+    """Picklable biomass-RMSE objective (wraps biomass_rmse; reshapes wide->long).
 
-    A module-level class instead of a lambda so it can cross a ProcessPoolExecutor boundary. Reshapes
-    the engine's wide biomass output to long before calling biomass_rmse (the existing UI lambda fed
-    the wide frame straight in and KeyError'd on real engine output — this fixes that).
+    Module-level (not a lambda) so it can cross a ProcessPoolExecutor boundary. The existing UI
+    lambda fed the wide frame straight in and KeyError'd on real engine output — this fixes it.
     """
 
     def __init__(self, observed: pd.DataFrame, species: str | None = None):
-        self.observed = observed
+        # Reshape the OBSERVED frame too (idempotent on already-long input) so a wide user CSV
+        # doesn't merge-empty -> inf -> >50% abort. Both sides go through _biomass_long.
+        self.observed = _biomass_long(observed) if observed is not None else observed
         self.species = species
 
     def __call__(self, results) -> float:
@@ -356,7 +364,7 @@ After `_python_engine_errors = ...` (line ~43), add the worker machinery:
 ```python
 @dataclass(frozen=True)
 class _EvalSpec:
-    """Picklable subset of an OsmoseCalibrationProblem needed to evaluate one candidate in a worker."""
+    """Picklable subset an NSGA-II worker needs to evaluate one candidate."""
 
     free_params: list[FreeParameter]
     objective_fns: list[Callable]
@@ -478,25 +486,35 @@ Add the process-eval + pool methods to the class:
                 break
             pool = self._ensure_pool()
             try:
-                # submit INSIDE the try: a pool that broke idle between gens raises
-                # BrokenProcessPool from submit() itself, which must hit the handler below.
+                # submit in its own try: a pool that broke idle between gens raises
+                # BrokenProcessPool from submit() itself.
                 futures = {pool.submit(_worker_eval, i, p): i for i, p in pending.items()}
-                for fut in as_completed(futures):
-                    i = futures[fut]
-                    try:
-                        for k, v in enumerate(fut.result()):
-                            F[i, k] = v
-                        del pending[i]
-                    except _expected_errors as exc:
-                        # MUST stay narrow _expected_errors, NOT _python_engine_errors:
-                        # BrokenProcessPool subclasses RuntimeError, so the broader set would
-                        # swallow worker-death here and defeat the rebuild/retry below.
-                        _log.warning("Candidate %d failed (expected): %s", i, exc)
-                        del pending[i]
             except BrokenProcessPool as exc:
+                _log.warning("Pool broke at submit: %s — rebuilding", exc)
+                self.shutdown_pool()
+                continue
+            broke = None
+            for fut in as_completed(futures):
+                i = futures[fut]
+                try:
+                    for k, v in enumerate(fut.result()):
+                        F[i, k] = v
+                    del pending[i]  # scored OK → drop from pending
+                except BrokenProcessPool as exc:
+                    # PER-FUTURE catch (do NOT abort the drain): a worker death makes the
+                    # NOT-yet-finished futures raise here, but futures that ALREADY finished
+                    # still yield their results above. Record and keep draining so finished
+                    # candidates are preserved; only the unscored ones remain in `pending`.
+                    broke = exc
+                except _expected_errors as exc:
+                    # Narrow _expected_errors (NOT _python_engine_errors): a per-candidate
+                    # failure is scored inf and dropped; it must not be confused with worker death.
+                    _log.warning("Candidate %d failed (expected): %s", i, exc)
+                    del pending[i]
+            if broke is not None:
                 _log.warning(
-                    "Process pool broke (worker died): %s — rebuilding, retrying %d candidates",
-                    exc,
+                    "Pool broke (worker died): %s — rebuilding, retrying %d candidates",
+                    broke,
                     len(pending),
                 )
                 self.shutdown_pool()  # finished results stay in F; pending retried on a fresh pool
@@ -639,7 +657,13 @@ At the **NSGA-II optimization** problem construction (`OsmoseCalibrationProblem(
             parallel_backend=("process" if _all_picklable(_shared_objective_fns) else "thread"),
 ```
 
-(Use the objective list in scope at that construction — `_shared_objective_fns`. Leave the other two `OsmoseCalibrationProblem` ctors unchanged — the **validation** ctor at `:1590` (`handle_validate`) and the **sensitivity** ctor at `:1751` (which has its own ProcessPoolExecutor). Only the NSGA-II optimization ctor whose `problem` reaches `minimize()` gets `parallel_backend`.)
+(Use the objective list in scope at that construction — `_shared_objective_fns`. **Note the `:1096`
+ctor is SHARED with the GP-surrogate path (`run_surrogate`), which evaluates serially via
+`problem._run_single` and never calls `_evaluate` — so `parallel_backend='process'` is inert there and
+the `finally shutdown_pool()` is a harmless no-op for surrogate runs.** Leave the other two ctors
+unchanged — the **validation** ctor at `:1590` (`handle_validate`) and the **sensitivity** ctor at
+`:1751` (a serial `_run_single` loop — no pool; the only sensitivity ProcessPoolExecutor lives in the
+separate `scripts/sensitivity_phase12.py`). Only the NSGA-II optimization path needs `parallel_backend`.)
 
 - [ ] **Step 5: Shut the pool down in a `finally`**
 

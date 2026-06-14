@@ -171,22 +171,24 @@ for _attempt in range(3):                             # 1 initial + 2 rebuild re
     if not pending:
         break
     pool = self._ensure_pool()                        # lazy-create / rebuild (discards a broken pool)
-    try:
-        # submit INSIDE the try: a pool that broke idle between generations raises
-        # BrokenProcessPool from submit() itself, which must hit the handler below.
+    try:                                              # submit-time break (pool broke idle between gens)
         futures = {pool.submit(_worker_eval, i, p): i for i, p in pending.items()}
-        for fut in as_completed(futures):
-            i = futures[fut]
-            try:
-                for k, v in enumerate(fut.result()):
-                    F[i, k] = v
-                del pending[i]                        # scored OK
-            except _expected_errors as exc:           # bad candidate → stays inf, done
-                _log.warning("Candidate %d failed (expected): %s", i, exc)
-                del pending[i]
-    except BrokenProcessPool as exc:                  # RuntimeError, NOT in _expected_errors
-        _log.warning("Pool broke (worker died): %s — rebuilding, retrying %d candidates",
-                     exc, len(pending))
+    except BrokenProcessPool as exc:
+        _log.warning("Pool broke at submit: %s — rebuilding", exc); self.shutdown_pool(); continue
+    broke = None
+    for fut in as_completed(futures):
+        i = futures[fut]
+        try:
+            for k, v in enumerate(fut.result()):
+                F[i, k] = v
+            del pending[i]                            # scored OK
+        except BrokenProcessPool as exc:              # PER-FUTURE: record, DON'T abort the drain —
+            broke = exc                               # finished futures still yield above; unscored
+        except _expected_errors as exc:               # ones remain in `pending` for retry.
+            _log.warning("Candidate %d failed (expected): %s", i, exc)
+            del pending[i]                            # bad candidate → stays inf, done
+    if broke is not None:                             # rebuild AFTER draining all finished futures
+        _log.warning("Pool broke (worker died): %s — rebuilding, retrying %d", broke, len(pending))
         self.shutdown_pool()                          # finished results stay in F; pending retried
 # any still-pending after the retry cap stay inf; the >50% guard then applies
 ```
