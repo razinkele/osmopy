@@ -92,6 +92,12 @@ class _EvalSpec:
     use_registry: bool                 # worker calls build_registry() when True
 ```
 
+`_EvalSpec` is built from the parent's **resolved** state — `self._enable_cache` and `self._cache_dir`
+(the post-`__init__` value `cache_dir or work_dir/.cache`, `problem.py:110`), not the raw constructor
+args — so every worker agrees on one shared cache dir. `n_obj` is **not** an `_EvalSpec` field: pymoo's
+base `Problem.__init__` sets `self.n_obj` when the worker reconstructs the problem, so `_worker_eval`
+reads it from there.
+
 Module-level worker functions (so `ProcessPoolExecutor` pickles only the spec + small tuples):
 
 ```python
@@ -120,25 +126,40 @@ def _worker_eval(run_id: int, params: np.ndarray) -> list[float]:
 ### 3. Process backend in `_evaluate` + pool lifecycle
 
 `OsmoseCalibrationProblem.__init__` gains `parallel_backend: Literal["thread","process"] = "thread"`
-and `self._executor = None`. `_evaluate` keeps the existing serial + thread branches verbatim and adds:
+and `self._executor = None` (add `from typing import Literal` + `import multiprocessing` +
+`from concurrent.futures import ProcessPoolExecutor` and
+`from concurrent.futures.process import BrokenProcessPool` — `problem.py` currently imports only
+`ThreadPoolExecutor` and `TYPE_CHECKING, Callable`). `_evaluate` keeps the existing serial + thread
+branches verbatim and adds:
 
 ```python
 elif self.parallel_backend == "process":
     pool = self._ensure_pool()                       # lazy-create once, reuse across gens
     futures = {pool.submit(_worker_eval, i, params): i for i, params in enumerate(X)}
-    for fut in futures:
-        i = futures[fut]
-        try:
-            for k, v in enumerate(fut.result()):
-                F[i, k] = v
-        except _expected_errors as exc:
-            _log.warning("Candidate %d failed (expected): %s", i, exc)
+    try:
+        for fut in futures:
+            i = futures[fut]
+            try:
+                for k, v in enumerate(fut.result()):
+                    F[i, k] = v
+            except _expected_errors as exc:
+                _log.warning("Candidate %d failed (expected): %s", i, exc)
+    except BrokenProcessPool as exc:
+        # A worker died (e.g. OOM). Tear down the poisoned pool so the NEXT generation
+        # rebuilds a fresh one; leave the affected candidates as inf (the >50% guard below
+        # aborts the run if a whole generation was lost). BrokenProcessPool is a RuntimeError
+        # and is NOT in _expected_errors, so it must be caught explicitly here.
+        _log.warning("Process pool broke (worker died): %s — rebuilding next generation", exc)
+        self.shutdown_pool()                          # sets self._executor = None
 ```
 
 - `_ensure_pool()`: if `self._executor is None`, build `_EvalSpec` from `self`, **pre-check
   `pickle.dumps(spec)`** (raise a clear "objective not picklable; use parallel_backend='thread'" on
-  failure), then `self._executor = ProcessPoolExecutor(max_workers=_resolve_worker_count(self.n_parallel),
-  initializer=_worker_init, initargs=(spec,))`. Returns the executor.
+  failure), then
+  `self._executor = ProcessPoolExecutor(max_workers=_resolve_worker_count(self.n_parallel),
+  mp_context=multiprocessing.get_context("forkserver"), initializer=_worker_init, initargs=(spec,))`.
+  Returns the executor. (`forkserver` per the Workers section — avoids the daemon-thread/Numba fork
+  hazard.)
 - `_resolve_worker_count(n_parallel)`: `int(os.environ.get("OSMOSE_NSGA2_WORKERS", n_parallel))`,
   clamped to `[1, 32]` (≥1).
 - `shutdown_pool(cancel_futures=False)`: `if self._executor: self._executor.shutdown(cancel_futures=...)`;
@@ -148,8 +169,9 @@ elif self.parallel_backend == "process":
 ### 4. Wiring at the NSGA-II launch sites
 
 - `ui/pages/calibration_handlers.py`: after assembling `objective_fns`, choose the backend —
-  `backend = "process" if _all_picklable(objective_fns) else "thread"` (a small helper doing
-  `pickle.dumps` on each; logs a note on fallback). Pass `parallel_backend=backend` to
+  `backend = "process" if _all_picklable(objective_fns) else "thread"` (`_all_picklable` is a small
+  helper **in `calibration_handlers.py`** doing `pickle.dumps` on each + logging a UI-facing fallback
+  note). Pass `parallel_backend=backend` to
   `OsmoseCalibrationProblem(...)`. Wrap the `minimize(...)` run so `problem.shutdown_pool()` runs in a
   `finally` (incl. the cancel path → `shutdown_pool(cancel_futures=True)`).
 - `scripts/benchmark_calibration.py`: add a `--backend {thread,process}` switch so the benchmark can
@@ -180,18 +202,42 @@ Pymoo stays serial generation-to-generation; only within-generation evaluation m
   (`minimize(seed=42)`) lives in the parent. ⇒ process and thread backends produce **identical**
   `out["F"]` for the same population (the keystone test).
 - **Workers:** persistent pool reused across generations; `OSMOSE_NSGA2_WORKERS` (clamp `[1,32]`,
-  ~400 MB/sim memory caveat — 28 workers once exhausted 32 GB). Linux `fork` (deploy target) — workers
-  inherit imported modules cheaply. First eval per worker recompiles Numba (~seconds); a shared
-  `NUMBA_CACHE_DIR` lets workers reuse compiled kernels (one-time populate, not N recompiles). Cache
-  writes stay process-safe via the existing atomic-rename (`problem.py:239-243`).
+  ~400 MB/sim memory caveat — 28 workers once exhausted 32 GB).
+- **Start method = `forkserver` (NOT fork) — load-bearing.** The NSGA-II run executes on a **daemon
+  thread** (`calibration_handlers.py:1315`), and the engine uses `@njit(parallel=True)`/`prange`
+  (`osmose/engine/processes/mortality.py:1372,1433`), so by the time `_ensure_pool()` runs, a warmed
+  Numba threadpool exists. Forking a `ProcessPoolExecutor` from a non-main thread with that live
+  threadpool is the documented Numba deadlock hazard ("Attempted to fork from a non-main thread, the
+  TBB library may be in an invalid state in the child"). Mitigation: create the pool with
+  `mp_context=multiprocessing.get_context("forkserver")` — workers are forked from a clean, minimal
+  forkserver process, never inheriting the warmed parent threadpool. (`forkserver`/`spawn` re-import
+  the module, so `_worker_init`/`_worker_eval`/`_EvalSpec` MUST be module-level — they are.) `spawn`
+  is the fallback if `forkserver` is unavailable.
+- **Numba cache:** each worker recompiles its kernels on first eval (~seconds), paid **once per
+  worker** because the pool is persistent — it amortizes across all generations. **Do NOT point
+  workers at one shared `NUMBA_CACHE_DIR`** — this repo already learned (see
+  `tests/_xdist_support.py` / `tests/conftest.py`) that parallel processes **race** writing the same
+  cold `.nbi`/`.nbc` files; give workers no shared numba cache (accept the one-time recompile) or, if
+  ever needed, a pre-warmed read-only cache. (The atomic-rename at `problem.py:239-243` is the
+  objective-JSON cache, unrelated to numba's writer — it does keep the JSON eval cache process-safe.)
 
 ## Error handling
 
-- **Pre-flight `pickle.dumps(_EvalSpec)`** in `_ensure_pool()` → clear error before any worker spawns.
-- **Launch-site picklability pre-check** → graceful `"thread"` fallback (banded), logged.
+- **Two complementary picklability checks** (not redundant work): the launch-site `_all_picklable`
+  is the *user-facing* graceful path (process→thread downgrade, logged — e.g. banded) and runs before
+  the problem is built; the `_ensure_pool()` `pickle.dumps(_EvalSpec)` is the *in-core defensive*
+  guard for direct API callers who set `parallel_backend="process"` with a non-picklable objective →
+  clear error before any worker spawns.
+- **Dead worker / `BrokenProcessPool`** (the most likely failure given the ~400 MB/sim caveat): caught
+  in the process branch (it's a `RuntimeError`, not in `_expected_errors`) → `shutdown_pool()` tears
+  down the poisoned pool so the next generation's `_ensure_pool()` rebuilds a fresh one; the affected
+  candidates stay `inf` and the parent's `>50% inf` abort fires if a whole generation was lost.
 - **Worker eval raises** → caught in `_worker_eval`, returns `inf` vector (parity with current failure
-  handling; the `>50% inf` abort still applies in the parent).
-- **Cancel / run end** → `shutdown_pool(cancel_futures=True)` in the launch-site `finally`.
+  handling).
+- **Cancel** → pymoo's callback sets `force_termination` at the **generation boundary**, so cancel
+  latency is *one generation* (the in-flight generation's process evals finish — same as the existing
+  thread `with`-block). `shutdown_pool(cancel_futures=True)` in the launch-site `finally` is cleanup of
+  an already-idle pool (with `cancel_futures=True` for the rare race where `finally` runs mid-flight).
 - `_resolve_worker_count` clamps `<1 → 1`, `>32 → 32`.
 
 ## Testing
@@ -199,14 +245,21 @@ Pymoo stays serial generation-to-generation; only within-generation evaluation m
 1. **Functors `tests/test_calibration_objectives.py`** (extend): `BiomassRMSEObjective` /
    `DietDistanceObjective` return the same value as `biomass_rmse`/`diet_distance` on the same frames;
    each functor survives `pickle.dumps`/`loads`.
-2. **Parity `tests/test_nsga2_parallel.py`** (the keystone): a tiny `OsmoseCalibrationProblem`
-   (minimal config, ≥1 cheap picklable objective, small `X`) → `_evaluate` with
-   `parallel_backend="thread"` vs `"process"` yields **identical `out["F"]`**. Also: a worker eval that
-   raises returns an `inf` vector; `_EvalSpec` round-trips `pickle.dumps`. (A couple seconds — real
-   fork + Numba warm; runs in the normal suite, not e2e.)
-3. **Worker count `tests/test_nsga2_parallel.py`**: `_resolve_worker_count` — env unset → `n_parallel`;
+2. **Parity `tests/test_nsga2_parallel.py`** (the keystone): a tiny `OsmoseCalibrationProblem` built
+   from **`data/minimal/osm_all-parameters.csv`** (`nyear=10, ndtperyear=12, nspecies=2` → ~0.24 s
+   warm/eval; do **NOT** use `data/examples/` — ~9.8 s/eval blows the budget), ≥1 cheap picklable
+   objective, small `X` (2–4 rows, `n_obj=1`) → `_evaluate` with `parallel_backend="thread"` vs
+   `"process"` yields **identical `out["F"]`** (verified live: bit-identical on 4 candidates / 2
+   workers). Also: a worker eval that raises returns an `inf` vector; `_EvalSpec` round-trips
+   `pickle.dumps`. (A few seconds — real `forkserver` spawn + one-time Numba compile; runs in the
+   normal suite, not e2e.)
+3. **Broken-pool recovery `tests/test_nsga2_parallel.py`**: simulate a dead worker (e.g. a worker fn
+   that `os._exit(1)`s, or monkeypatch the pool to raise `BrokenProcessPool` from `fut.result()`) →
+   `_evaluate` does not propagate the error, leaves the candidate `inf`, and resets `self._executor`
+   to `None` so the next `_evaluate` rebuilds the pool.
+4. **Worker count `tests/test_nsga2_parallel.py`**: `_resolve_worker_count` — env unset → `n_parallel`;
    set → clamped `[1,32]`; `<1 → 1` (monkeypatch `setenv`).
-4. **Pool lifecycle**: `shutdown_pool()` is a no-op when no pool exists and idempotent after one
+5. **Pool lifecycle**: `shutdown_pool()` is a no-op when no pool exists and idempotent after one
    `_evaluate`.
 
 ## Benchmark (not CI-gated)
