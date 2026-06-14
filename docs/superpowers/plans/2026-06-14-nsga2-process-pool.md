@@ -83,10 +83,30 @@ Expected: FAIL (`ImportError: cannot import name 'BiomassRMSEObjective'`).
 Append to `osmose/calibration/objectives.py`:
 
 ```python
-class BiomassRMSEObjective:
-    """Picklable biomass-RMSE objective (wraps `biomass_rmse`; holds the observed frame).
+def _biomass_long(df: pd.DataFrame) -> pd.DataFrame:
+    """Reshape the engine's WIDE biomass frame (a time column + one numeric column per species)
+    to long ``[time, species, biomass]`` so ``biomass_rmse`` can merge it. Idempotent if the frame
+    is already long. (OsmoseResults.biomass() returns wide — verify the exact columns against
+    data/minimal during implementation; melt all numeric per-species columns, lowercase Time→time,
+    drop any pre-existing non-value 'species' column.)
+    """
+    if "biomass" in df.columns and "time" in df.columns:
+        return df
+    time_col = "time" if "time" in df.columns else "Time"
+    value_cols = [
+        c for c in df.columns
+        if c not in (time_col, "species") and pd.api.types.is_numeric_dtype(df[c])
+    ]
+    long = df.melt(id_vars=[time_col], value_vars=value_cols, var_name="species", value_name="biomass")
+    return long.rename(columns={time_col: "time"})
 
-    A module-level class instead of a lambda so it can cross a ProcessPoolExecutor boundary.
+
+class BiomassRMSEObjective:
+    """Picklable biomass-RMSE objective (wraps `biomass_rmse`; holds the observed long-form frame).
+
+    A module-level class instead of a lambda so it can cross a ProcessPoolExecutor boundary. Reshapes
+    the engine's wide biomass output to long before calling biomass_rmse (the existing UI lambda fed
+    the wide frame straight in and KeyError'd on real engine output — this fixes that).
     """
 
     def __init__(self, observed: pd.DataFrame, species: str | None = None):
@@ -94,7 +114,7 @@ class BiomassRMSEObjective:
         self.species = species
 
     def __call__(self, results) -> float:
-        return biomass_rmse(results.biomass(), self.observed, self.species)
+        return biomass_rmse(_biomass_long(results.biomass()), self.observed, self.species)
 
 
 class DietDistanceObjective:
@@ -138,24 +158,30 @@ Create `tests/test_nsga2_parallel.py`:
 
 from __future__ import annotations
 
+from concurrent.futures import Future
+from concurrent.futures.process import BrokenProcessPool
+from pathlib import Path
+
 import numpy as np
 import pytest
 
-from osmose.calibration.objectives import BiomassRMSEObjective
+from osmose.calibration.objectives import BiomassRMSEObjective, _biomass_long
 from osmose.calibration.problem import (
     FreeParameter,
     OsmoseCalibrationProblem,
     _resolve_worker_count,
 )
+from osmose.schema import build_registry
 
-_MINIMAL = pytest.importorskip("pathlib").Path(__file__).resolve().parent.parent / "data" / "minimal" / "osm_all-parameters.csv"
+_MINIMAL = Path(__file__).resolve().parent.parent / "data" / "minimal" / "osm_all-parameters.csv"
+_skip_no_minimal = pytest.mark.skipif(not _MINIMAL.exists(), reason="minimal config absent")
 
 
 def _baseline_obs(work_dir):
     """Run the engine once on the unmodified minimal config → use its biomass as 'observed'
     so the objective is finite (no >50% inf abort)."""
     p = OsmoseCalibrationProblem(
-        free_params=[FreeParameter("predation.efficiency.critical", 0.3, 0.5)],
+        free_params=[FreeParameter("predation.efficiency.critical.sp0", 0.3, 0.5)],
         objective_fns=[lambda r: 0.0],
         base_config_path=_MINIMAL,
         work_dir=work_dir,
@@ -163,26 +189,41 @@ def _baseline_obs(work_dir):
     res = p._run_python_engine({}, run_id=0)
     assert res is not None
     with res as r:
-        return r.biomass()
+        return _biomass_long(r.biomass())  # long form for use as 'observed'
 
 
-def _make_problem(work_dir, obs, backend):
+def _make_problem(work_dir, obs, backend, registry=None):
     return OsmoseCalibrationProblem(
-        free_params=[FreeParameter("predation.efficiency.critical", 0.3, 0.5)],
+        free_params=[FreeParameter("predation.efficiency.critical.sp0", 0.3, 0.5)],
         objective_fns=[BiomassRMSEObjective(obs)],
         base_config_path=_MINIMAL,
         work_dir=work_dir,
         n_parallel=2,
         parallel_backend=backend,
+        registry=registry,
     )
 
 
-@pytest.mark.skipif(not _MINIMAL.exists(), reason="minimal config absent")
-def test_thread_process_parity(tmp_path):
+@_skip_no_minimal
+def test_biomass_objective_handles_wide_engine_output(tmp_path):
+    """BiomassRMSEObjective must consume the engine's WIDE biomass() output (it reshapes to long)
+    and return a finite value — guards the pre-existing wide/long mismatch the functor now fixes."""
+    obs = _baseline_obs(tmp_path / "base")  # long-form baseline
+    p = _make_problem(tmp_path / "p", obs, "thread")
+    res = p._run_python_engine({}, run_id=0)
+    with res as r:
+        val = BiomassRMSEObjective(obs)(r)  # must NOT KeyError
+    assert np.isfinite(val)
+
+
+@_skip_no_minimal
+@pytest.mark.parametrize("with_registry", [False, True])
+def test_thread_process_parity(tmp_path, with_registry):
     obs = _baseline_obs(tmp_path / "base")
+    reg = build_registry() if with_registry else None  # exercises the use_registry mapping
     X = np.array([[0.35], [0.45]])
-    pt = _make_problem(tmp_path / "t", obs, "thread")
-    pp = _make_problem(tmp_path / "p", obs, "process")
+    pt = _make_problem(tmp_path / "t", obs, "thread", registry=reg)
+    pp = _make_problem(tmp_path / "p", obs, "process", registry=reg)
     out_t, out_p = {}, {}
     try:
         pt._evaluate(X, out_t)
@@ -209,18 +250,18 @@ def test_shutdown_pool_idempotent(tmp_path):
     p.shutdown_pool()
 
 
-def test_broken_pool_recovers(tmp_path, monkeypatch):
-    """A submit that raises BrokenProcessPool must not propagate; the candidate is retried
-    on a rebuilt pool and ends finite (guards against widening the inner except)."""
+@_skip_no_minimal
+def test_broken_pool_submit_path_recovers(tmp_path, monkeypatch):
+    """submit() raising BrokenProcessPool (pool broke idle between gens) must not propagate;
+    pending candidates are retried on a rebuilt pool and end finite."""
     obs = _baseline_obs(tmp_path / "base")
     p = _make_problem(tmp_path / "p", obs, "process")
-
     real_ensure = p._ensure_pool
     calls = {"n": 0}
 
     class _BrokenOnce:
         def submit(self, *a, **k):
-            raise __import__("concurrent.futures.process", fromlist=["BrokenProcessPool"]).BrokenProcessPool("boom")
+            raise BrokenProcessPool("boom")
 
     def _ensure():
         calls["n"] += 1
@@ -229,10 +270,65 @@ def test_broken_pool_recovers(tmp_path, monkeypatch):
     monkeypatch.setattr(p, "_ensure_pool", _ensure)
     out = {}
     try:
-        p._evaluate(np.array([[0.4]]), out)
+        p._evaluate(np.array([[0.35], [0.45]]), out)  # 2 candidates
     finally:
         p.shutdown_pool()
-    assert np.isfinite(out["F"]).all()  # rebuilt + retried → finite, not inf
+    assert np.isfinite(out["F"]).all() and calls["n"] >= 2
+
+
+def test_ensure_pool_discards_broken(tmp_path):
+    """_ensure_pool must rebuild when the persisted pool is _broken (broke idle between gens)."""
+    p = _make_problem(tmp_path, None, "process")
+
+    class _Stub:
+        _broken = True
+        def shutdown(self, **k):  # noqa: D401
+            pass
+
+    p._executor = _Stub()
+    new = p._ensure_pool()  # must discard the broken stub and build a real ProcessPoolExecutor
+    try:
+        assert new is not p._executor or not getattr(new, "_broken", False)
+        assert not isinstance(new, _Stub)
+    finally:
+        p.shutdown_pool()
+
+
+@_skip_no_minimal
+def test_broken_pool_result_path_preserves_finished(tmp_path, monkeypatch):
+    """BrokenProcessPool from fut.result() (a worker died mid-eval) must not discard an
+    already-finished candidate; the survivor's value is preserved and the broken one is retried.
+
+    Deterministic, no real worker death: a stub pool returns a REAL Future pre-loaded with a
+    result for candidate 0 and with a BrokenProcessPool exception for candidate 1 (as_completed
+    accepts real Futures). On retry, the real pool scores candidate 1 finite.
+    """
+    obs = _baseline_obs(tmp_path / "base")
+    p = _make_problem(tmp_path / "p", obs, "process")
+    real_ensure = p._ensure_pool
+    calls = {"n": 0}
+
+    class _MixedPool:
+        def submit(self, fn, i, params):
+            fut = Future()
+            if i == 0:
+                fut.set_result([1.23])                      # candidate 0 "finishes"
+            else:
+                fut.set_exception(BrokenProcessPool("died"))  # candidate 1's worker died
+            return fut
+
+    def _ensure():
+        calls["n"] += 1
+        return _MixedPool() if calls["n"] == 1 else real_ensure()
+
+    monkeypatch.setattr(p, "_ensure_pool", _ensure)
+    out = {}
+    try:
+        p._evaluate(np.array([[0.35], [0.45]]), out)
+    finally:
+        p.shutdown_pool()
+    assert out["F"][0, 0] == 1.23                # candidate 0 preserved, NOT clobbered to inf
+    assert np.isfinite(out["F"][1]).all()        # candidate 1 retried on the rebuilt pool → finite
     assert calls["n"] >= 2
 ```
 
@@ -543,7 +639,7 @@ At the **NSGA-II optimization** problem construction (`OsmoseCalibrationProblem(
             parallel_backend=("process" if _all_picklable(_shared_objective_fns) else "thread"),
 ```
 
-(Use the objective list in scope at that construction — `_shared_objective_fns`. Leave the preflight ctor at `:1590` and the sensitivity ctor at `:1751` unchanged — sensitivity has its own pool; preflight is cheap and stays thread/serial.)
+(Use the objective list in scope at that construction — `_shared_objective_fns`. Leave the other two `OsmoseCalibrationProblem` ctors unchanged — the **validation** ctor at `:1590` (`handle_validate`) and the **sensitivity** ctor at `:1751` (which has its own ProcessPoolExecutor). Only the NSGA-II optimization ctor whose `problem` reaches `minimize()` gets `parallel_backend`.)
 
 - [ ] **Step 5: Shut the pool down in a `finally`**
 
@@ -558,7 +654,17 @@ In `run_optimization` (the `try:` wrapping `minimize(...)` near `calibration_han
 
 - [ ] **Step 6: Add `--backend` to the benchmark**
 
-In `scripts/benchmark_calibration.py`: thread a `backend` parameter into the run function that builds the problem (`OsmoseCalibrationProblem(` at `:42`) — add `parallel_backend=backend` to that ctor; wrap the `minimize(...)` (`:58`) so `problem.shutdown_pool()` runs in a `finally`. Add the CLI arg:
+In `scripts/benchmark_calibration.py`:
+- **Promote the objective to module level** (currently `_objective` is a *nested local* def at `:32`,
+  which is NOT picklable → under `--backend process` `_ensure_pool`'s `pickle.dumps(spec)` raises and
+  the run aborts, since the benchmark has no `_all_picklable` fallback). Replace it with a module-level
+  functor (e.g. reuse `BiomassRMSEObjective` with a small observed frame, or a tiny module-level
+  `class _BenchObjective: __call__(self, results): return float(...)` over `results.biomass()`).
+- Thread a `backend` parameter into the run function that builds the problem
+  (`OsmoseCalibrationProblem(` at `:42`) — add `parallel_backend=backend` to that ctor; wrap the
+  `minimize(...)` (`:58`) so `problem.shutdown_pool()` runs in a `finally`.
+- **Run `--backend process` end-to-end** (not just thread) as part of Step 7 to prove it actually
+  evaluates (the headline deliverable). Add the CLI arg:
 
 ```python
     parser.add_argument("--backend", choices=["thread", "process"], default="thread")

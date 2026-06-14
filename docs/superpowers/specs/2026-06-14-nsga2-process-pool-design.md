@@ -59,12 +59,21 @@ Module-level callable classes (picklable; hold only a DataFrame, which pandas pi
 ```python
 class BiomassRMSEObjective:
     def __init__(self, observed: pd.DataFrame): self.observed = observed
-    def __call__(self, results) -> float: return biomass_rmse(results.biomass(), self.observed)
+    def __call__(self, results) -> float:
+        return biomass_rmse(_biomass_long(results.biomass()), self.observed)  # reshape wide->long
 
 class DietDistanceObjective:
     def __init__(self, observed: pd.DataFrame): self.observed = observed
     def __call__(self, results) -> float: return diet_distance(results.diet_matrix(), self.observed)
 ```
+
+**Biomass reshape (scope decision):** `results.biomass()` is **wide** (a `Time` column + one column per
+species), but `biomass_rmse` merges on long `[time, species, biomass]` — so the *existing* UI lambda
+`biomass_rmse(r.biomass(), df)` already KeyErrors on real Python-engine output (a latent pre-existing
+bug the plan review surfaced). Per the user's decision, this feature fixes it: a module-level
+`_biomass_long(df)` melts the wide frame to long before `biomass_rmse`, so biomass calibration actually
+benefits from the process speedup. A unit test asserts `BiomassRMSEObjective` returns a finite value on
+the engine's real wide output. (Diet/banded unchanged.)
 
 `ui/pages/calibration_handlers.py` builds `BiomassRMSEObjective(obs_bio_df)` /
 `DietDistanceObjective(obs_diet_df)` instead of the lambdas (`:1386,:1389`). The banded objective is
