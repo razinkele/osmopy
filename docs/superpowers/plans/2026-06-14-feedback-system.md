@@ -50,7 +50,9 @@ from osmose.feedback import (
 
 
 def test_build_record_fields():
-    r = build_feedback_record("bug", "  it broke  ", contact="me@x.io", version="0.13.0", nav_tab="run")
+    r = build_feedback_record(
+        "bug", "  it broke  ", contact="me@x.io", version="0.13.0", nav_tab="run"
+    )
     assert r["type"] == "bug" and r["message"] == "it broke"  # stripped
     assert r["contact"] == "me@x.io" and r["version"] == "0.13.0" and r["nav_tab"] == "run"
     assert r["id"] and r["ts"]
@@ -181,7 +183,7 @@ def build_feedback_record(
 
 
 def append_feedback(record: dict, *, path: Path | None = None) -> None:
-    """Append one record as a JSON line (creates the parent dir). Single-worker safe; flock on POSIX."""
+    """Append one record as a JSON line (creates parent dir; POSIX flock; single-worker safe)."""
     p = _resolve(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     line = json.dumps(record) + "\n"
@@ -196,7 +198,7 @@ def append_feedback(record: dict, *, path: Path | None = None) -> None:
 
 
 def read_feedback(*, path: Path | None = None) -> list[dict]:
-    """All records newest-first; missing file -> []; corrupt lines skipped. Resolves path at call time."""
+    """All records newest-first; missing file -> []; corrupt lines skipped (path resolved at call time)."""
     p = _resolve(path)
     if not p.is_file():
         return []
@@ -471,6 +473,11 @@ async def _feedback_endpoint(request):
 # append AFTER it and the route would 404. See the feedback-system spec.
 app.starlette_app.routes.insert(0, Route("/api/feedback", _feedback_endpoint, methods=["GET"]))
 ```
+
+**Route path note:** the app serves the route at **`/api/feedback`** (what TestClient and the API test
+hit). The externally-visible `/osmose/api/feedback` (goal/CHANGELOG prose) is the same route — the
+`/osmose` prefix is added by the reverse-proxy / `--root-path /osmose` deploy, **not** in the route
+definition. Do NOT change the route to `/osmose/api/feedback` (it would 404 under TestClient).
 
 - [ ] **Step 7: Call the server wiring**
 
