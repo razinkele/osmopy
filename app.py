@@ -1,5 +1,6 @@
 """OSMOPY - Python Interface for OSMOSE marine ecosystem simulator."""
 
+import json
 from pathlib import Path
 
 from osmose import __version__
@@ -7,7 +8,7 @@ from osmose import __version__
 from shiny import App, reactive, render, ui
 
 from ui.state import AppState
-from ui.components.help_modal import about_modal, help_modal
+from ui.components.help_modal import about_modal, changelog_modal, help_modal
 from ui.theme import THEME
 import ui.charts as _charts  # noqa: F401 — registers custom plotly template
 
@@ -293,6 +294,7 @@ app_ui = ui.page_fillable(
     # ── Modals (static HTML, triggered client-side) ─────────────
     about_modal(),
     help_modal(),
+    changelog_modal(),
     # ── deck.gl init fallback ─────────────────────────────────────
     # CDN scripts may finish loading after shiny:connected fires,
     # leaving MapWidget divs uninitialized.  Poll until deps are
@@ -472,6 +474,28 @@ app_ui = ui.page_fillable(
                 }
             }
         });
+    })();
+    """),
+    ui.tags.script(f"window.OSMOSE_VERSION = {json.dumps(__version__)};"),
+    ui.tags.script("""
+    (function() {
+        var KEY = "osmose_seen_changelog_version";
+        function showIfNew() {
+            // Bootstrap's bundle may load after shiny:connected — poll until ready
+            // (mirrors the deck.gl fallback pattern elsewhere in this file).
+            if (typeof bootstrap === 'undefined') { setTimeout(showIfNew, 150); return; }
+            var el = document.getElementById('changelogModal');
+            if (!el) return;
+            var seen = null;
+            try { seen = localStorage.getItem(KEY); } catch (e) {}
+            if (seen !== window.OSMOSE_VERSION) {
+                bootstrap.Modal.getOrCreateInstance(el).show();
+            }
+            el.addEventListener('hidden.bs.modal', function() {
+                try { localStorage.setItem(KEY, window.OSMOSE_VERSION); } catch (e) {}
+            });
+        }
+        document.addEventListener('shiny:connected', showIfNew);
     })();
     """),
     theme=THEME,

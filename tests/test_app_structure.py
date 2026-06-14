@@ -120,3 +120,12 @@ def test_changelog_modal_present():
     html = str(changelog_modal())
     assert "changelogModal" in html
     assert "What's new" in html
+
+
+def test_startup_changelog_wired_in_app():
+    from app import app_ui
+
+    html = str(app_ui)
+    assert "changelogModal" in html
+    assert "window.OSMOSE_VERSION" in html
+    assert "osmose_seen_changelog_version" in html
