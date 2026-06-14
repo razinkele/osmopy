@@ -167,7 +167,10 @@ No server round-trip; no new reactives; no engine/config dependency.
      Unreleased body (no crash).
 2. **Structure tests** (`tests/test_app_structure.py`):
    - `str(about_modal())` contains `"README"`, `"Changelog"`, `"Overview"` and a known README/CHANGELOG
-     marker; no longer contains the stale `"v0.1.0 — Initial release"` string.
+     marker; **no longer contains `"Initial release"`** (the stale hardcoded-changelog marker — present
+     in the current modal, removed by the rewrite). Do NOT use `"v0.1.0 — Initial release"`: `ui.markdown`
+     wraps the version in `<strong>`, so that contiguous substring never exists and the guard would be
+     vacuously true.
    - `str(app_ui)` contains `changelogModal`, `window.OSMOSE_VERSION`, and
      `osmose_seen_changelog_version`.
    - `osmose.__version__.__version__ == "0.13.0"`; `CHANGELOG.md` contains `"## [0.13.0]"`.
