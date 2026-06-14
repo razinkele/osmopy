@@ -24,6 +24,7 @@ from ui.pages.run import run_ui, run_server
 from ui.pages.results import results_ui, results_server
 from ui.pages.spatial_results import spatial_results_ui, spatial_results_server
 from ui.pages.calibration import calibration_ui, calibration_server
+from ui.pages.sensitivity_explorer import sensitivity_explorer_ui, sensitivity_explorer_server
 from ui.pages.scenarios import scenarios_ui, scenarios_server
 from ui.pages.advanced import advanced_ui, advanced_server
 from ui.pages.map_viewer import map_viewer_ui, map_viewer_server
@@ -278,6 +279,7 @@ app_ui = ui.page_fillable(
         # Optimize
         _nav_section("Optimize"),
         ui.nav_panel("Calibration", calibration_ui(), value="calibration"),
+        ui.nav_panel("Sensitivity", sensitivity_explorer_ui(), value="sensitivity"),
         # Manage
         _nav_section("Manage"),
         ui.nav_panel("Scenarios", scenarios_ui(), value="scenarios"),
@@ -532,6 +534,7 @@ def server(input, output, session):
     results_server(input, output, session, state)
     spatial_results_server(input, output, session, state)
     calibration_server(input, output, session, state)
+    sensitivity_explorer_server(input, output, session, state)
     scenarios_server(input, output, session, state)
     advanced_server(input, output, session, state)
     map_viewer_server(input, output, session, state)

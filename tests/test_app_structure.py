@@ -66,3 +66,34 @@ def test_persist_hook_wired_in_calibration_handlers():
         pathlib.Path(__file__).resolve().parent.parent / "ui" / "pages" / "calibration_handlers.py"
     ).read_text()
     assert "save_sobol_result" in src
+
+
+def test_sensitivity_panel_present():
+    """The Sensitivity page is wired into app_ui with its full widget set."""
+    from app import app_ui
+
+    html = str(app_ui)
+    # The Calibration page already contains the substring "Sensitivity" (a sub-tab),
+    # so assert on the new top-level nav panel's unique lowercase value instead.
+    assert 'data-value="sensitivity"' in html
+    for wid in [
+        "sens_run",
+        "sens_objective_ui",
+        "sens_index",
+        "sens_threshold",
+        "sens_sort",
+        "sens_tornado",
+        "sens_table",
+        "sens_export_csv",
+        "sens_export_keys",
+    ]:
+        assert wid in html, f"Missing widget id: {wid}"
+
+
+def test_sensitivity_server_wired():
+    """app.py calls sensitivity_explorer_server."""
+    import pathlib
+
+    src = (pathlib.Path(__file__).resolve().parent.parent / "app.py").read_text()
+    assert "sensitivity_explorer_server" in src
+    assert "sensitivity_explorer_ui" in src
