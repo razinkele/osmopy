@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import plotly.graph_objects as go
 
@@ -97,6 +99,55 @@ def make_sensitivity_chart(
     fig.add_trace(go.Bar(name="S1 (First-order)", x=names, y=s1))
     fig.add_trace(go.Bar(name="ST (Total-order)", x=names, y=st))
     fig.update_layout(title=title, barmode="group", template=tmpl)
+    return fig
+
+
+def make_sobol_tornado(
+    rows: list[dict],
+    *,
+    indices: str = "Both",
+    threshold: float = 0.05,
+    template: str = "osmose",
+) -> go.Figure:
+    """Horizontal tornado of Sobol indices from pre-ranked ``rows``.
+
+    ``rows`` is the output of ``sobol_io.rank_rows`` (already objective-selected and
+    sorted). ``indices`` in {"Both","S1","ST"} picks which bars to draw. ST bars are
+    colored by influence (``st >= threshold``); a dashed reference line marks the
+    threshold. Does no 1-D/2-D dispatch and no I/O.
+    """
+    if not rows:
+        return go.Figure().update_layout(title="Sobol sensitivity", template=template)
+    params = [r["param"] for r in rows]
+    fig = go.Figure()
+    if indices in ("Both", "S1"):
+        fig.add_trace(
+            go.Bar(
+                name="S1 (First-order)",
+                y=params,
+                x=[r["s1"] for r in rows],
+                orientation="h",
+                error_x={"type": "data", "array": [r["s1_conf"] for r in rows]},
+            )
+        )
+    if indices in ("Both", "ST"):
+        colors = [
+            "#d62728" if (not math.isnan(r["st"]) and r["st"] >= threshold) else "#7f7f7f"
+            for r in rows
+        ]
+        fig.add_trace(
+            go.Bar(
+                name="ST (Total-order)",
+                y=params,
+                x=[r["st"] for r in rows],
+                orientation="h",
+                marker={"color": colors},
+                error_x={"type": "data", "array": [r["st_conf"] for r in rows]},
+            )
+        )
+    fig.update_layout(barmode="group", title="Sobol sensitivity", template=template)
+    fig.update_yaxes(autorange="reversed")  # top-ranked param at the top
+    fig.add_vline(x=threshold, line_dash="dash", line_color="#888")
     return fig
 
 
