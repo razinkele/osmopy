@@ -8,6 +8,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ### Added
 
+- **ui (feedback):** a header "Feedback" modal for bug reports / suggestions that appends to a JSONL
+  store (`data/feedback/feedback.jsonl`), plus a token-gated read-only `GET /osmose/api/feedback`
+  (disabled unless `OSMOSE_FEEDBACK_TOKEN` is set) for a maintainer to retrieve reports. New pure
+  `osmose/feedback.py`; submission is in-session (no public write endpoint).
 - **ui (docs):** the project docs are now surfaced in the app — the **About** modal renders
   `README.md` and `CHANGELOG.md` in tabs (replacing a stale hardcoded changelog), and a dismissable
   startup "What's new" modal shows the latest release notes once per version (client-side, keyed on
