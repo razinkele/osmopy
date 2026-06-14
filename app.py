@@ -58,6 +58,7 @@ def _ensure_cleanup_registered() -> None:
     register_cleanup()
     _cleanup_done = True
 
+
 _WWW = Path(__file__).parent / "www"
 
 
