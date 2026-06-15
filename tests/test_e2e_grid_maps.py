@@ -18,6 +18,8 @@ from playwright.sync_api import Page, expect
 from shiny.pytest import create_app_fixture
 from shiny.run import ShinyAppProc
 
+from tests._e2e_support import dismiss_changelog_modal
+
 pytestmark = pytest.mark.e2e
 
 app = create_app_fixture("../app.py")
@@ -36,6 +38,7 @@ def _load_eec_full(page: Page, app: ShinyAppProc) -> None:
     """Load the EEC Full example dataset."""
     page.goto(app.url)
     page.wait_for_selector(".nav-pills", timeout=_LOAD_TIMEOUT)
+    dismiss_changelog_modal(page)
     page.select_option("#load_example", "eec_full")
     page.click("#btn_load_example")
     page.wait_for_selector(".shiny-notification", timeout=_LOAD_TIMEOUT)

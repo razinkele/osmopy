@@ -13,6 +13,8 @@ from playwright.sync_api import Page, expect
 from shiny.pytest import create_app_fixture
 from shiny.run import ShinyAppProc
 
+from tests._e2e_support import dismiss_changelog_modal
+
 pytestmark = pytest.mark.e2e
 
 app = create_app_fixture("../app.py")
@@ -25,6 +27,7 @@ _RUN_TIMEOUT = 60_000
 def test_live_movement_renders_during_python_run(page: Page, app: ShinyAppProc):
     page.goto(app.url)
     page.wait_for_selector(".nav-pills", timeout=_LOAD_TIMEOUT)
+    dismiss_changelog_modal(page)
 
     # Load the Baltic example config via the Grid/Domain page loader (where #load_example
     # lives — grid.py:105; e2e precedent test_e2e_grid_maps.py:39-41).
@@ -78,6 +81,7 @@ def test_live_movement_cancel_path(page: Page, app: ShinyAppProc):
     (covers the terminal-snapshot-direct-set cancel branch, which has no unit test)."""
     page.goto(app.url)
     page.wait_for_selector(".nav-pills", timeout=_LOAD_TIMEOUT)
+    dismiss_changelog_modal(page)
     page.locator(".nav-pills .nav-link[data-value='grid']").click()
     page.select_option("#load_example", "baltic")
     page.click("#btn_load_example")

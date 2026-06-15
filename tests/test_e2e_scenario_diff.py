@@ -21,6 +21,8 @@ from playwright.sync_api import Page, expect
 from shiny.pytest import create_app_fixture
 from shiny.run import ShinyAppProc
 
+from tests._e2e_support import dismiss_changelog_modal
+
 pytestmark = pytest.mark.e2e
 
 app = create_app_fixture("../app.py")
@@ -103,6 +105,7 @@ def two_runs_config():
 def test_scenario_diff_renders_overlay_and_maps(page: Page, app: ShinyAppProc, two_runs):
     page.goto(app.url)
     page.wait_for_selector(".nav-pills", timeout=_LOAD_TIMEOUT)
+    dismiss_changelog_modal(page)
 
     # Go to Results page, then the Scenario Diff tab.
     page.locator(".nav-pills .nav-link[data-value='results']").click()
@@ -138,6 +141,7 @@ def test_scenario_diff_same_run_for_a_and_b(page: Page, app: ShinyAppProc, two_r
     """
     page.goto(app.url)
     page.wait_for_selector(".nav-pills", timeout=_LOAD_TIMEOUT)
+    dismiss_changelog_modal(page)
     page.locator(".nav-pills .nav-link[data-value='results']").click()
     page.get_by_role("tab", name="Scenario Diff").click()
     expect(page.locator("#diff_run_a option[value='2026-06-13T01:00:00']")).to_have_count(
@@ -162,6 +166,7 @@ def test_scenario_diff_config_panel_shows_differences(
     """The config-diff panel lists changed, added, and removed keys for two runs."""
     page.goto(app.url)
     page.wait_for_selector(".nav-pills", timeout=_LOAD_TIMEOUT)
+    dismiss_changelog_modal(page)
     page.locator(".nav-pills .nav-link[data-value='results']").click()
     page.get_by_role("tab", name="Scenario Diff").click()
 

@@ -17,6 +17,8 @@ from playwright.sync_api import Page, expect
 from shiny.pytest import create_app_fixture
 from shiny.run import ShinyAppProc
 
+from tests._e2e_support import dismiss_changelog_modal
+
 pytestmark = pytest.mark.e2e
 
 app = create_app_fixture("../app.py")
@@ -52,6 +54,7 @@ def one_result():
 def test_sensitivity_explorer_renders(page: Page, app: ShinyAppProc, one_result):
     page.goto(app.url)
     page.wait_for_selector(".nav-pills", timeout=_LOAD_TIMEOUT)
+    dismiss_changelog_modal(page)
 
     # Open the Sensitivity page (triggers _populate_runs).
     page.locator(".nav-pills .nav-link[data-value='sensitivity']").click()

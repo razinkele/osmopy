@@ -8,6 +8,8 @@ from playwright.sync_api import Page, expect
 from shiny.pytest import create_app_fixture
 from shiny.run import ShinyAppProc
 
+from tests._e2e_support import dismiss_changelog_modal
+
 pytestmark = pytest.mark.e2e
 
 app = create_app_fixture("../app.py")
@@ -18,6 +20,7 @@ _TIMEOUT = 25_000
 def _load_eec_full_and_goto_map_viewer(page: Page, app: ShinyAppProc) -> None:
     page.goto(app.url)
     page.wait_for_selector(".nav-pills", timeout=15_000)
+    dismiss_changelog_modal(page)
     page.select_option("#load_example", "eec_full")
     page.click("#btn_load_example")
     page.wait_for_selector(".shiny-notification", timeout=15_000)
@@ -88,6 +91,7 @@ def test_map_viewer_empty_without_config(page: Page, app: ShinyAppProc):
     """Without loading a config, Map Viewer should show a hint."""
     page.goto(app.url)
     page.wait_for_selector(".nav-pills", timeout=15_000)
+    dismiss_changelog_modal(page)
     page.locator(".nav-pills .nav-link[data-value='map_viewer']").click()
     page.wait_for_timeout(2_000)
     hint = page.locator("text=Load a configuration")

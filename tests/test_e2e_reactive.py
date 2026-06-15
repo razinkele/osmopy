@@ -12,6 +12,8 @@ from playwright.sync_api import Page, expect
 from shiny.pytest import create_app_fixture
 from shiny.run import ShinyAppProc
 
+from tests._e2e_support import dismiss_changelog_modal
+
 pytestmark = pytest.mark.e2e
 
 app = create_app_fixture("../app.py")
@@ -41,6 +43,7 @@ def test_load_example_updates_species_count(page: Page, app: ShinyAppProc):
     """Loading bay_of_biscay example should update n_species and show config header."""
     page.goto(app.url)
     page.wait_for_selector(".nav-pills", timeout=15000)
+    dismiss_changelog_modal(page)
 
     # Select bay_of_biscay example and click Load
     page.select_option("#load_example", "bay_of_biscay")
@@ -59,6 +62,7 @@ def test_config_header_shows_after_load(page: Page, app: ShinyAppProc):
     """Loading an example should populate the config header with name and species count."""
     page.goto(app.url)
     page.wait_for_selector(".nav-pills", timeout=15000)
+    dismiss_changelog_modal(page)
 
     # Load example
     page.select_option("#load_example", "bay_of_biscay")
@@ -76,6 +80,7 @@ def test_species_panels_render_after_load(page: Page, app: ShinyAppProc):
     """Loading an example should render species input panels with correct values."""
     page.goto(app.url)
     page.wait_for_selector(".nav-pills", timeout=15000)
+    dismiss_changelog_modal(page)
 
     # Load an example
     page.select_option("#load_example", "bay_of_biscay")
@@ -102,6 +107,7 @@ def test_navigation_preserves_state(page: Page, app: ShinyAppProc):
     """Switching tabs should preserve loaded config state."""
     page.goto(app.url)
     page.wait_for_selector(".nav-pills", timeout=15000)
+    dismiss_changelog_modal(page)
 
     # Load example
     page.select_option("#load_example", "bay_of_biscay")
@@ -135,6 +141,7 @@ def test_theme_toggle(page: Page, app: ShinyAppProc):
     """Dark/light theme toggle should change data-theme attribute."""
     page.goto(app.url)
     page.wait_for_selector(".nav-pills", timeout=15000)
+    dismiss_changelog_modal(page)
 
     # Get initial theme
     initial_theme = page.evaluate("document.documentElement.getAttribute('data-theme')")
