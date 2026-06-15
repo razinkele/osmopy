@@ -31,10 +31,18 @@ def test_server_py_has_no_hardcoded_credentials():
 
 
 def _neuter_dotenv(monkeypatch):
-    """Prevent load_dotenv from populating env from a developer's local .env.
+    """Prepare to exec server.py, skipping the calling test if any of its undeclared
+    MCP deps are absent.
 
-    Skips the calling test when python-dotenv is absent (e.g. CI, where it is
-    not in [dev]); server.py imports it at module top so it cannot be loaded."""
+    server.py imports copernicusmarine, fastmcp, and python-dotenv at module top, and
+    none are in [dev] (kept out intentionally — copernicusmarine is heavy). On CI / the
+    deploy env one or more is missing, so exec_module would ERROR. importorskip makes the
+    test SKIP instead, matching test_copernicus_ltl_mask.py's module-level guard. (Guarding
+    only dotenv was insufficient: once dotenv arrived transitively via fastmcp /
+    pydantic-settings, the test ran and hit the missing fastmcp -> CI red.) Then stop
+    load_dotenv from reading a developer's local .env."""
+    pytest.importorskip("copernicusmarine")
+    pytest.importorskip("fastmcp")
     dotenv = pytest.importorskip("dotenv")
 
     monkeypatch.setattr(dotenv, "load_dotenv", lambda *a, **kw: False)
