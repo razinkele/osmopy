@@ -28,7 +28,7 @@ from osmose.runner import (
     java_engine_block_reason,
     validate_java_opts,
 )
-from ui.components.collapsible import collapsible_card_header, expand_tab
+from ui.components.collapsible import body_collapse_header
 from ui.pages.live_movement_render import dots_layer_from_points, heatmap_layer_from_points
 from ui.state import get_theme_mode
 from ui.styles import STYLE_CONSOLE
@@ -172,11 +172,10 @@ def write_temp_config(
 def run_ui():
     live_map = MapWidget("live_map", style=CARTO_POSITRON)
     return ui.div(
-        expand_tab("Run Configuration", "run"),
         ui.layout_columns(
             # Left: Run controls with engine tabs
             ui.card(
-                collapsible_card_header("Run Configuration", "run"),
+                body_collapse_header("Run Configuration", "run_config"),
                 ui.navset_tab(
                     ui.nav_panel(
                         "Java",
@@ -241,13 +240,13 @@ def run_ui():
             ),
             # Right: Console output
             ui.card(
-                ui.card_header("Console Output"),
+                body_collapse_header("Console Output", "run_console"),
                 ui.output_ui("run_console"),
             ),
             col_widths=[4, 8],
         ),
         ui.card(
-            ui.card_header("Live Movement (Python engine)"),
+            body_collapse_header("Live Movement (Python engine)", "run_live_movement"),
             ui.input_switch("live_movement_view", "Stream movement during run", value=False),
             ui.input_radio_buttons(
                 "live_movement_mode",
@@ -260,8 +259,8 @@ def run_ui():
             ui.output_ui("live_movement_status"),
             live_map.ui(height="420px"),
         ),
-        class_="osm-split-layout",
-        id="split_run",
+        class_="osm-run-root",
+        id="run_page",
     )
 
 

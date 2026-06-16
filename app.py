@@ -147,6 +147,39 @@ app_ui = ui.page_fillable(
             localStorage.setItem('osmose-panel-collapsed-' + pageId, collapsed ? '1' : '0');
         }
 
+        // ── Card body collapse (vertical) ─────────────────
+        // Collapses a single card's body, leaving its header visible.
+        // Independent of the sideways split-layout collapse above.
+        function toggleCardBody(btn) {
+            var card = btn.closest('.card');
+            if (!card) return;
+            var panelId = btn.getAttribute('data-osm-card-toggle');
+            var collapsed = card.classList.toggle('osm-body-collapsed');
+            btn.textContent = collapsed ? '»' : '«';
+            btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+            if (panelId) {
+                localStorage.setItem('osmose-card-collapsed-' + panelId, collapsed ? '1' : '0');
+            }
+        }
+        // Idempotent: applies persisted collapse state to every body-collapsible
+        // card currently in the DOM. Safe to call repeatedly (on connect / tab show).
+        function restoreCardBodies() {
+            var btns = document.querySelectorAll('[data-osm-card-toggle]');
+            btns.forEach(function(btn) {
+                var panelId = btn.getAttribute('data-osm-card-toggle');
+                var card = btn.closest('.card');
+                if (!card) return;
+                var want = localStorage.getItem('osmose-card-collapsed-' + panelId) === '1';
+                card.classList.toggle('osm-body-collapsed', want);
+                btn.textContent = want ? '»' : '«';
+                btn.setAttribute('aria-expanded', want ? 'false' : 'true');
+            });
+        }
+        document.addEventListener('shiny:connected', function() { restoreCardBodies(); });
+        document.addEventListener('shown.bs.tab', function() {
+            setTimeout(restoreCardBodies, 100);
+        });
+
         // ── Restore panel states on tab activation ────────
         (function() {
             var restoredPanels = {};
@@ -158,7 +191,7 @@ app_ui = ui.page_fillable(
                 }
             }
             var pageIds = ['setup','grid','forcing','fishing','movement','genetics','economic',
-                           'run','results','spatial_results','diagnostics','calibration','scenarios','advanced','map_viewer'];
+                           'results','spatial_results','diagnostics','calibration','scenarios','advanced','map_viewer'];
 
             document.addEventListener('DOMContentLoaded', function() {
                 // Restore the initially active tab's panel
