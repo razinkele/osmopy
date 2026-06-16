@@ -41,10 +41,14 @@ the source of truth.
    `state.config`. Non-destructive; only ticked rows change.
 4. **Coverage:** **FishBase + SeaLifeBase auto** — query FishBase first, fall back to
    SeaLifeBase (a `server` param) when no fish match.
-5. **Dependencies:** **stdlib `urllib`** fetches the parquet bytes and **pandas/pyarrow**
-   (already runtime deps — pandas 3.0 requires pyarrow) read them via
-   `pd.read_parquet(io.BytesIO(...))`. **No new prod/runtime dependency**, so no deploy/env
-   change. One mockable seam for tests.
+5. **Dependencies:** **stdlib `urllib`** fetches the parquet bytes; **pandas** (already a
+   runtime dep) reads them. **pandas does NOT require pyarrow** — it's only present in the
+   dev `.venv` transitively via the unmanaged `copernicusmarine` install (the clean-venv
+   trap). So **declare `pyarrow>=14` as a runtime dependency** in `pyproject.toml`. The
+   prod shiny env already has pyarrow 21 (verified), so no prod break; add pyarrow to
+   `deploy.sh`'s ensured-packages defensively. One mockable seam for tests; the clean-venv
+   check must *run* the parquet tests (not just `--collect-only`, which wouldn't execute
+   the read).
 6. **UI placement:** a per-species **"Bootstrap from FishBase"** button on the species
    setup panel, opening a review modal scoped to that species.
 

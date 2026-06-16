@@ -21,7 +21,9 @@
 - Create `ui/components/fishbase_bootstrap.py` — modal UI builder + `fishbase_bootstrap_server`.
 - Modify `ui/pages/setup.py` — add the bootstrap control to the Species Configuration card + invoke the server helper.
 - Create `tests/test_fishbase_bootstrap_ui.py` — controller-level UI test.
-- Create `tests/test_fishbase_e2e.py` — Playwright e2e (client monkeypatched; `@pytest.mark.e2e`).
+- Create `tests/test_fishbase_e2e.py` — Playwright e2e: **modal-open smoke only** (never clicks Fetch → no network; cross-process monkeypatch isn't possible since the app runs in a subprocess). `@pytest.mark.e2e`.
+- Modify `pyproject.toml` — add `pyarrow>=14` to runtime `dependencies` (pandas does NOT pull it; it's only in `.venv` via the unmanaged copernicusmarine install).
+- Modify `deploy.sh` — add `pyarrow` to the ensured-packages list (prod already has 21, defensive).
 
 **UI integration note (refines spec decision #6):** the species form is a shared
 component (`render_species_table`), so rather than N per-species buttons embedded in the
@@ -29,6 +31,54 @@ table, the feature is surfaced as **one control** in the Species Configuration c
 species dropdown + scientific-name input + "Bootstrap from FishBase" button — opening a
 modal scoped to the selected species. Same behavior (bootstrap a chosen species), lower
 blast radius. Flag this to the user at plan review.
+
+---
+
+## Task 0: Declare the `pyarrow` runtime dependency
+
+**Files:**
+- Modify: `pyproject.toml`
+- Modify: `deploy.sh`
+
+Rationale: `pd.read_parquet`/`to_parquet` need a parquet engine. **pandas does not require
+pyarrow** — the dev `.venv` only has it transitively via the unmanaged `copernicusmarine`
+install, so a clean `[dev]`/CI venv would lack it and every fishbase test would error with
+`ImportError: Missing optional dependency 'pyarrow'`. The prod shiny env already has
+pyarrow 21 (verified), so declaring it won't break prod.
+
+- [ ] **Step 1: Add to runtime dependencies**
+
+In `pyproject.toml`, in `[project] dependencies`, add after the `pandas>=2.2` line:
+
+```toml
+    "pyarrow>=14",
+```
+
+- [ ] **Step 2: Add to deploy.sh ensured packages (defensive)**
+
+In `deploy.sh`, find the version-floored install line:
+
+```bash
+"$SHINY_PIP" install --quiet --upgrade "cma>=4.0" "shinyswatch>=0.11" "shinywidgets>=0.7"
+```
+
+and append `"pyarrow>=14"` to it:
+
+```bash
+"$SHINY_PIP" install --quiet --upgrade "cma>=4.0" "shinyswatch>=0.11" "shinywidgets>=0.7" "pyarrow>=14"
+```
+
+- [ ] **Step 3: Verify it imports**
+
+Run: `.venv/bin/python -c "import pyarrow; print(pyarrow.__version__)"`
+Expected: a version ≥ 14 prints.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add pyproject.toml deploy.sh
+git commit -m "build: declare pyarrow runtime dep for fishbase parquet reads"
+```
 
 ---
 
@@ -80,6 +130,20 @@ def test_load_table_network_failure_raises_unavailable(tmp_path, monkeypatch):
     monkeypatch.setattr(fishbase, "_http_get_bytes", boom)
     with pytest.raises(fishbase.FishBaseUnavailable):
         fishbase._load_table("popgrowth", "fb")
+
+
+def test_http_get_bytes_reads_response(monkeypatch):
+    """Cover the network seam itself (urlopen mocked — still no real network)."""
+
+    class _FakeResp:
+        def __init__(self, data): self._d = data
+        def read(self): return self._d
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    import urllib.request as _u
+    monkeypatch.setattr(_u, "urlopen", lambda url, timeout=0: _FakeResp(b"ok"))
+    assert fishbase._http_get_bytes("https://example/x.parquet") == b"ok"
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -511,6 +575,16 @@ def test_review_rows_pairs_current_and_fetched():
     rows = fb.review_rows(cfg, species_index=0, traits=traits)
     row = next(r for r in rows if r["key"] == "species.linf")
     assert row["current"] == "120" and row["fetched"] == 110.0 and row["n"] == 108
+    # label resolves to the field's human description (NOT field.label, which doesn't
+    # exist on OsmoseField) — building the row at all would AttributeError on a bad attr.
+    assert row["label"] and row["label"] != "species.linf"
+
+
+def test_pick_id_is_shiny_safe():
+    """Checkbox ids must not contain dots (illegal in Shiny input ids)."""
+    pid = fb._pick_id(2, "species.length2weight.condition.factor")
+    assert "." not in pid
+    assert pid == "fb_pick_2_species_length2weight_condition_factor"
 ```
 
 - [ ] **Step 2: Run to verify failure**
@@ -531,6 +605,7 @@ to a modal. Data is CC-BY-NC (FishBase via rOpenSci / Source Cooperative).
 from __future__ import annotations
 
 from shiny import reactive, render, ui
+from shiny.types import SilentException
 
 from osmose import fishbase
 from osmose.logging import setup_logging
@@ -539,8 +614,16 @@ from osmose.schema.species import SPECIES_FIELDS
 _log = setup_logging("osmose.fishbase_ui")
 _ATTRIB = "Data: FishBase/SeaLifeBase via rOpenSci / Source Cooperative (CC-BY-NC)."
 
-# key stem -> OsmoseField (for resolve_key + label/unit)
+# key stem -> OsmoseField (for resolve_key + description/unit). OsmoseField has
+# `description` (the UI display string) — there is NO `.label` attribute.
 _FIELD_BY_STEM = {f.key_pattern.replace(".sp{idx}", ""): f for f in SPECIES_FIELDS}
+
+
+def _pick_id(species_index: int, key: str) -> str:
+    """Shiny-safe checkbox id. Dots are ILLEGAL in Shiny input ids (repo convention,
+    param_form.input_id_for_key); namespace by species index to avoid cross-species
+    checkbox stickiness on modal re-open."""
+    return f"fb_pick_{species_index}_" + key.replace(".", "_")
 
 
 def review_rows(cfg: dict, species_index: int, traits: dict) -> list[dict]:
@@ -551,7 +634,7 @@ def review_rows(cfg: dict, species_index: int, traits: dict) -> list[dict]:
         rows.append(
             {
                 "key": key,
-                "label": field.label if field else key,
+                "label": field.description if field else key,
                 "current": cfg.get(field.resolve_key(species_index)) if field else None,
                 "fetched": est.value,
                 "n": est.n,
@@ -589,17 +672,27 @@ def fishbase_bootstrap_server(input, output, session, state):
     _match: reactive.Value = reactive.Value(None)
 
     def _species_choices() -> dict:
-        names = state.species_names.get() or []
-        return {str(i): (names[i] or f"Species {i}") for i in range(len(names))}
+        # Source of truth = config's simulation.nspecies; names only label the slots.
+        with reactive.isolate():
+            cfg = state.config.get()
+            names = state.species_names.get() or []
+        try:
+            n = int(float(cfg.get("simulation.nspecies", len(names)) or 0))
+        except (TypeError, ValueError):
+            n = len(names)
+        return {
+            str(i): (names[i] if i < len(names) and names[i] else f"Species {i}")
+            for i in range(max(n, 0))
+        }
 
     @reactive.effect
     @reactive.event(input.fb_open)
     def _open():
+        _traits.set({})  # reset stale fetch state on every open (easy_close can leave it)
+        _match.set(None)
         choices = _species_choices()
         first_idx = next(iter(choices), "0")
-        with reactive.isolate():
-            names = state.species_names.get() or []
-        prefill = names[int(first_idx)] if names else ""
+        prefill = choices.get(first_idx, "")
         ui.modal_show(
             ui.modal(
                 ui.input_select("fb_species", "Species (config slot)", choices=choices),
@@ -621,6 +714,11 @@ def fishbase_bootstrap_server(input, output, session, state):
         if not name:
             ui.notification_show("Enter a species name.", type="warning", duration=5)
             return
+        # First fetch downloads up to ~8 MB (4 parquet tables) synchronously, which briefly
+        # blocks this session's flush (cf. the live-movement lesson). It's a one-shot user
+        # action; show a busy notification so the freeze reads as progress, not a hang.
+        # Subsequent fetches hit the week-long disk cache and are instant.
+        ui.notification_show("Fetching from FishBase…", id="fb_busy", duration=None)
         try:
             matches = fishbase.resolve_species(name)
             m = matches[0]
@@ -633,6 +731,8 @@ def fishbase_bootstrap_server(input, output, session, state):
             _traits.set({}); _match.set(None)
             ui.notification_show("FishBase unavailable — try again later.", type="error", duration=8)
             return
+        finally:
+            ui.notification_remove("fb_busy")
         _match.set(m)
         _traits.set(traits)
 
@@ -640,7 +740,7 @@ def fishbase_bootstrap_server(input, output, session, state):
     def fb_review():
         traits = _traits.get()
         m = _match.get()
-        if not traits:
+        if not traits or m is None:
             return ui.div()
         with reactive.isolate():
             cfg = state.config.get()
@@ -650,7 +750,7 @@ def fishbase_bootstrap_server(input, output, session, state):
         )
         rows = [
             ui.tags.tr(
-                ui.tags.td(ui.input_checkbox(f"fb_pick_{r['key']}", "", value=True)),
+                ui.tags.td(ui.input_checkbox(_pick_id(idx, r["key"]), "", value=True)),
                 ui.tags.td(r["label"]),
                 ui.tags.td("" if r["current"] is None else str(r["current"])),
                 ui.tags.td(f"{r['fetched']:.4g} {r['unit']}"),
@@ -677,7 +777,7 @@ def fishbase_bootstrap_server(input, output, session, state):
         if not traits:
             return
         idx = int(input.fb_species())
-        selected = {k for k in traits if _checkbox(input, f"fb_pick_{k}")}
+        selected = {k for k in traits if _checkbox(input, _pick_id(idx, k))}
         with reactive.isolate():
             cfg = dict(state.config.get())
         new_cfg = apply_traits(cfg, idx, traits, selected)
@@ -691,9 +791,12 @@ def fishbase_bootstrap_server(input, output, session, state):
 
 
 def _checkbox(input, input_id: str) -> bool:
+    # Narrow except (repo precedent: calibration_handlers): only swallow absent /
+    # not-yet-rendered inputs. A broad `except Exception` here would silently mask a
+    # real id-resolution bug as "unchecked" -> "Applied 0 traits" with a success toast.
     try:
         return bool(getattr(input, input_id)())
-    except Exception:  # noqa: BLE001 — absent checkbox -> not selected
+    except (AttributeError, SilentException):
         return False
 ```
 
@@ -832,9 +935,12 @@ Expected: all pass (prior count + the new fishbase tests). Confirm no test reach
 
 - [ ] **Step 3: Clean-venv check (the CI gotcha)**
 
-Build a throwaway venv and collect, to catch any undeclared import (the new module uses only pandas + stdlib, both in `[dev]`):
-Run: `python3.12 -m venv /tmp/fbcheck && /tmp/fbcheck/bin/pip install -e ".[dev]" -q && /tmp/fbcheck/bin/python -m pytest tests/test_fishbase.py tests/test_fishbase_bootstrap_ui.py --collect-only -q`
-Expected: collection succeeds (no missing dep).
+Build a throwaway venv and **RUN** the parquet tests — `--collect-only` only imports modules
+and would NOT execute `pd.read_parquet`/`to_parquet`, so it cannot catch a missing parquet
+engine. `pandas` is a main runtime dep and `pyarrow` is now declared (Task 0); this proves a
+clean install actually has a working parquet engine:
+Run: `python3.12 -m venv /tmp/fbcheck && /tmp/fbcheck/bin/pip install -e ".[dev]" -q && /tmp/fbcheck/bin/python -m pytest tests/test_fishbase.py tests/test_fishbase_bootstrap_ui.py -q -o addopts=""`
+Expected: all pass (parquet reads work → pyarrow is installed via the declared dep, not via the unmanaged `.venv` copernicusmarine chain).
 
 - [ ] **Step 4: Push + open PR**
 
