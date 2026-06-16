@@ -25,13 +25,22 @@ _PARTIAL_WRITE_WINDOW_S: Final[float] = 3.0
 
 _PACKAGE_ROOT = Path(__file__).resolve().parent.parent.parent
 
+_RESULTS_DIR_ENV = "OSMOSE_RESULTS_DIR"
+
 
 def default_results_dir() -> Path:
-    """Baltic default — package-root-resolved data/baltic/calibration_results/.
+    """Baltic default — OSMOSE_RESULTS_DIR env override, else package-root-resolved
+    data/baltic/calibration_results/.
 
-    Callers may pass a different directory to write_checkpoint / read_checkpoint
+    The env override exists for deployments where the package tree is not writable
+    by the service user (e.g. the systemd app runs as `shiny` from a source tree
+    under another user's home): point checkpoints at a writable directory instead.
+    Callers may also pass a different directory to write_checkpoint / read_checkpoint
     to support non-Baltic configurations.
     """
+    env = os.environ.get(_RESULTS_DIR_ENV)
+    if env:
+        return Path(env)
     return _PACKAGE_ROOT / "data" / "baltic" / "calibration_results"
 
 

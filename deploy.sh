@@ -163,6 +163,12 @@ ExecStart=${SHINY_PYTHON} -m uvicorn app:app --host 127.0.0.1 --port ${APP_PORT}
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
+# Calibration checkpoints must land in a service-user-writable dir. The source
+# tree (WorkingDirectory) lives under another user's home and is read-only to
+# 'shiny', so point OSMOSE_RESULTS_DIR at a systemd StateDirectory that systemd
+# creates (owned by the service user) on every start.
+StateDirectory=osmose/calibration_results
+Environment=OSMOSE_RESULTS_DIR=/var/lib/osmose/calibration_results
 
 [Install]
 WantedBy=multi-user.target

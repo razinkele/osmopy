@@ -8,6 +8,7 @@ The production web app is a **systemd service** running Uvicorn directly:
   copy — it is **not** pip-installed in the env), using `/opt/micromamba/envs/shiny`.
 - **Public URL:** behind nginx at `/osmose/`.
 - **Supported runtime:** shiny **1.6.x** (`shiny>=1.6.3,<1.7`), shinyswatch ≥0.11, shinywidgets ≥0.7, cma ≥4.0, shiny_deckgl `v1.9.2`. To upgrade the shared env in place: `pip install --upgrade "cma>=4.0" "shinyswatch>=0.11" "shinywidgets>=0.7"` and reinstall `shiny_deckgl @v1.9.2`, then restart the service.
+- **Writable state:** the source tree lives under another user's home and is read-only to `shiny`, so calibration checkpoints must NOT use the package default (`<repo>/data/baltic/calibration_results`). The unit sets `StateDirectory=osmose/calibration_results` + `Environment=OSMOSE_RESULTS_DIR=/var/lib/osmose/calibration_results` (systemd creates the dir, owned by `shiny`, on every start). Without this you'll see `RESULTS_DIR probe failed: [Errno 13] Permission denied` at startup and calibration checkpoint writes will fail.
 
 ## Deploying a change — ALWAYS restart after pulling
 

@@ -31,6 +31,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
   and `shinywidgets>=0.7`; declared `cma>=4.0` (was transitive via pymoo; <=3.3.0 breaks under
   numpy 2); pinned `shiny_deckgl@v1.9.2` to match production's `layer_legend_widget` path.
 
+### Fixed
+
+- **calibration (deploy):** `default_results_dir()` now honors an `OSMOSE_RESULTS_DIR` env
+  override, so a deployment whose package tree is read-only to the service user can point
+  calibration checkpoints at a writable directory. The systemd unit (`deploy.sh`) sets
+  `StateDirectory=osmose/calibration_results` + `OSMOSE_RESULTS_DIR=/var/lib/osmose/calibration_results`,
+  fixing the `RESULTS_DIR probe failed: [Errno 13] Permission denied` startup error and the
+  resulting checkpoint-write failures in production (app runs as `shiny` from a source tree
+  under another user's home).
+
 ## [0.13.0] - 2026-06-14
 
 ### Added
