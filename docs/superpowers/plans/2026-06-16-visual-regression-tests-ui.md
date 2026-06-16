@@ -802,7 +802,9 @@ jobs:
           print("playwright", installed, "matches image")
           PY
       - name: Run visual snapshots (retry transient timeouts, not regressions)
-        run: python -m pytest -m visual --reruns 1 --only-rerun TimeoutError
+        # -o addopts="" drops the repo ini addopts (it carries `--dist loadfile`, an xdist
+        # flag, but xdist is in [dev] not [viztest]); the explicit -m visual selects.
+        run: python -m pytest -m visual -o addopts="" --reruns 1 --only-rerun TimeoutError
       - name: Upload diffs + baselines on failure
         if: failure()
         uses: actions/upload-artifact@v6
@@ -832,7 +834,8 @@ jobs:
       - name: Regenerate baselines (all or per-page via the 'pages' input)
         env:
           OSMOSE_UPDATE_SNAPSHOTS: ${{ github.event.inputs.pages || 'all' }}
-        run: python -m pytest -m visual
+        # -o addopts="" drops the repo ini `--dist loadfile` (xdist, not in [viztest]).
+        run: python -m pytest -m visual -o addopts=""
       - name: Upload regenerated baselines
         uses: actions/upload-artifact@v6
         with:
