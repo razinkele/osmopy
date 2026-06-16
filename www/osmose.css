@@ -1417,6 +1417,12 @@ body > .row > .nav-col-collapsed ~ [class*="col-"] {
     justify-content: space-between;
 }
 
+/* ── Card body collapse (toggleCardBody) ──────────────────────── */
+/* Hide everything below the header when the card body is collapsed. */
+.card.osm-body-collapsed > :not(.card-header) {
+    display: none;
+}
+
 /* ── Light theme overrides for collapsible components ─────────── */
 [data-theme="light"] .osm-expand-tab {
     background: var(--osm-bg-card);

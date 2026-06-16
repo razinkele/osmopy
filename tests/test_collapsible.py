@@ -4,7 +4,11 @@ import importlib
 
 import pytest
 
-from ui.components.collapsible import collapsible_card_header, expand_tab
+from ui.components.collapsible import (
+    body_collapse_header,
+    collapsible_card_header,
+    expand_tab,
+)
 
 
 def _to_html(obj):
@@ -53,6 +57,39 @@ def test_expand_tab_different_pages():
     assert "expand_fishing" in t2
 
 
+def test_body_collapse_header_renders():
+    """body_collapse_header returns a card header with a body-collapse button."""
+    header = body_collapse_header("Console Output", "run_console")
+    html = _to_html(header)
+    assert "Console Output" in html
+    assert "osm-collapse-btn" in html
+    assert "toggleCardBody" in html
+    assert "data-osm-card-toggle" in html
+    assert "run_console" in html
+
+
+def test_body_collapse_header_unique_panel_ids():
+    """Each card gets its own panel_id for independent localStorage state."""
+    h1 = _to_html(body_collapse_header("Run Configuration", "run_config"))
+    h2 = _to_html(body_collapse_header("Live Movement", "run_live_movement"))
+    assert 'data-osm-card-toggle="run_config"' in h1
+    assert 'data-osm-card-toggle="run_live_movement"' in h2
+
+
+def test_run_page_uses_body_collapse():
+    """The Run page collapses its three cards via body collapse, not the sideways split."""
+    from ui.pages import run
+
+    html = str(run.run_ui())
+    # Three body-collapse toggles, one per card.
+    assert html.count("data-osm-card-toggle") == 3
+    for panel_id in ("run_config", "run_console", "run_live_movement"):
+        assert panel_id in html, f"Missing body-collapse panel {panel_id}"
+    # Sideways split-layout machinery is gone from this page.
+    assert "split_run" not in html
+    assert "expand_run" not in html
+
+
 def test_grid_has_fullscreen_widget_import():
     """grid.py imports fullscreen_widget from shiny_deckgl."""
     from ui.pages import grid
@@ -68,7 +105,6 @@ def test_grid_has_fullscreen_widget_import():
         ("ui.pages.forcing", "forcing"),
         ("ui.pages.fishing", "fishing"),
         ("ui.pages.movement", "movement"),
-        ("ui.pages.run", "run"),
         ("ui.pages.results", "results"),
         ("ui.pages.calibration", "calibration"),
         ("ui.pages.scenarios", "scenarios"),
