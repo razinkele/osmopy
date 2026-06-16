@@ -42,8 +42,16 @@ ensure_templates()
 # out. CI doesn't install playwright (it's not in [dev]), so this guard keeps
 # CI collection clean while still letting local devs run e2e when playwright
 # is installed.
+# Skip browser test modules at collection time when their imports are unavailable.
+# Both `test_e2e_*.py` and `test_visual_regression.py` import `playwright.sync_api` at
+# module top, which raises ImportError during collection before `-m` filtering can
+# exclude them. `test_visual_compare.py` is intentionally NOT guarded here: it imports
+# only numpy/Pillow (Pillow is in [dev]) and runs in the normal suite.
+collect_ignore_glob: list[str] = []
 if find_spec("playwright") is None:
-    collect_ignore_glob = ["test_e2e_*.py"]
+    collect_ignore_glob.append("test_e2e_*.py")
+if find_spec("playwright") is None or find_spec("PIL") is None:
+    collect_ignore_glob.append("test_visual_regression.py")
 
 # Register a deterministic Hypothesis profile for the property-based tests
 # (tests/test_*_properties.py). Guarded by find_spec so the whole suite still
