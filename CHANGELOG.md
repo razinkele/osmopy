@@ -23,6 +23,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
   startup "What's new" modal shows the latest release notes once per version (client-side, keyed on
   `__version__` via `localStorage`). New pure `osmose/docs_content.py` loader/parser.
 
+### Changed
+
+- **deps:** promoted shiny to the **1.6.x** line (`shiny>=1.6.3,<1.7`), lifting the long-standing
+  `<1.6` cap now that the UI is verified compatible (full e2e green under 1.6.3). Bumped
+  `shinyswatch>=0.11` (bundled Bootstrap 5.3.8 matches shiny 1.6.3 → precompiled theme, no libsass)
+  and `shinywidgets>=0.7`; declared `cma>=4.0` (was transitive via pymoo; <=3.3.0 breaks under
+  numpy 2); pinned `shiny_deckgl@v1.9.2` to match production's `layer_legend_widget` path.
+
 ## [0.13.0] - 2026-06-14
 
 ### Added

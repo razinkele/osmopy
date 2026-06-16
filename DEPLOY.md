@@ -7,6 +7,7 @@ The production web app is a **systemd service** running Uvicorn directly:
 - **Runs as:** user `shiny`, from this source tree (osmose is imported from the working
   copy — it is **not** pip-installed in the env), using `/opt/micromamba/envs/shiny`.
 - **Public URL:** behind nginx at `/osmose/`.
+- **Supported runtime:** shiny **1.6.x** (`shiny>=1.6.3,<1.7`), shinyswatch ≥0.11, shinywidgets ≥0.7, cma ≥4.0, shiny_deckgl `v1.9.2`. To upgrade the shared env in place: `pip install --upgrade "cma>=4.0" "shinyswatch>=0.11" "shinywidgets>=0.7"` and reinstall `shiny_deckgl @v1.9.2`, then restart the service.
 
 ## Deploying a change — ALWAYS restart after pulling
 
