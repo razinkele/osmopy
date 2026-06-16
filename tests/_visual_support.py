@@ -7,6 +7,7 @@ tests/conftest.py. The pure pixel diff lives in tests/_visual_compare.py.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -99,7 +100,7 @@ def navigate_to(page: Page, nav_value: str) -> str:
     clip = _NAV_TO_CLIP[nav_value]
     link = page.locator(f".nav-pills .nav-link[data-value='{nav_value}']")
     link.click()
-    expect(link).to_have_class(__import__("re").compile(r"\bactive\b"), timeout=_TIMEOUT)
+    expect(link).to_have_class(re.compile(r"\bactive\b"), timeout=_TIMEOUT)
     page.wait_for_selector(clip, state="visible", timeout=_TIMEOUT)
     # Nav panels render lazily on shown.bs.tab (app.py:173) -- wait for inner content.
     page.wait_for_selector(f"{clip} .card", timeout=_TIMEOUT)
