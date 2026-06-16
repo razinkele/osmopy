@@ -18,9 +18,22 @@ the source of truth.
 
 ## Decisions (from brainstorming)
 
-1. **Access:** in-app HTTP client (`osmose/fishbase.py`), querying the rOpenSci FishBase
-   REST API; **not** an MCP server (the interactive UI needs an in-app path anyway) and
-   not a bundled snapshot (stale/limited).
+1. **Access:** in-app HTTP client (`osmose/fishbase.py`) that **downloads the FishBase
+   parquet-snapshot tables from Source Cooperative and queries them locally**; **not** an
+   MCP server (the interactive UI needs an in-app path anyway) and not a bundled in-repo
+   snapshot (stale/limited + CC-BY-NC redistribution concerns).
+   - **Source correction (verified 2026-06-17):** the old rOpenSci REST API
+     (`fishbase.ropensci.org/taxa?...`, per-species JSON) is **deprecated** — it 404s and
+     serves a **self-signed cert** (`ssl_verify_result=18`), so a TLS-verifying prod
+     client cannot use it. rfishbase 5 moved to **parquet tables on Source Cooperative**.
+     Base (valid TLS, HTTP range supported):
+     `https://data.source.coop/cboettig/fishbase/fb/v24.07/parquet/<table>.parquet`
+     (FishBase) and `.../slb/v24.07/parquet/<table>.parquet` (SeaLifeBase). This honors
+     the "live, in-app, not-bundled" intent; only the transport changed (whole-table
+     parquet download + local query, vs per-species JSON GET).
+   - **License:** the snapshots are CC-BY-NC (Carl Boettiger / FishBase.org). We fetch at
+     runtime (no redistribution) and **attribute in the UI** ("Data: FishBase via rOpenSci
+     / Source Cooperative, CC-BY-NC").
 2. **Resolution:** when FishBase has many estimates per trait, take the **median** and
    surface **count (n) + min–max range** for transparency.
 3. **Apply model:** **review panel with per-trait accept** — fetch → table (trait |
@@ -28,8 +41,10 @@ the source of truth.
    `state.config`. Non-destructive; only ticked rows change.
 4. **Coverage:** **FishBase + SeaLifeBase auto** — query FishBase first, fall back to
    SeaLifeBase (a `server` param) when no fish match.
-5. **HTTP dependency:** use **stdlib `urllib`** (no new prod/runtime dependency) to avoid
-   another deploy/env change; one mockable seam for tests.
+5. **Dependencies:** **stdlib `urllib`** fetches the parquet bytes and **pandas/pyarrow**
+   (already runtime deps — pandas 3.0 requires pyarrow) read them via
+   `pd.read_parquet(io.BytesIO(...))`. **No new prod/runtime dependency**, so no deploy/env
+   change. One mockable seam for tests.
 6. **UI placement:** a per-species **"Bootstrap from FishBase"** button on the species
    setup panel, opening a review modal scoped to that species.
 
@@ -37,22 +52,26 @@ the source of truth.
 
 ### `osmose/fishbase.py` (pure, no Shiny import — fully unit-testable)
 
+- `_load_table(table: str, db: str = "fb") -> pd.DataFrame`: the single network seam.
+  Builds the URL `https://data.source.coop/cboettig/fishbase/{db}/v24.07/parquet/{table}.parquet`
+  (`db` ∈ `{"fb","slb"}`), fetches bytes via stdlib `urllib.request` (timeout, TLS
+  verified), and `pd.read_parquet(io.BytesIO(...))`. On-disk cache: the raw `.parquet` is
+  saved under a cache dir (TTL); a cache hit skips the network. Cache dir overridable by
+  env (`OSMOSE_FISHBASE_CACHE_DIR`) for test isolation (mirrors `OSMOSE_RESULTS_DIR`).
+  **All tests monkeypatch this** to return fixture DataFrames — no network in CI. On
+  network/HTTP/timeout failure raises `FishBaseUnavailable`.
 - `resolve_species(name: str, *, db: str | None = None) -> list[SpecMatch]`
-  - Accepts scientific (`"Gadus morhua"`) or common (`"Atlantic cod"`) name.
-  - Returns `SpecMatch(spec_code, scientific_name, common_name, db)` candidates.
-  - Tries FishBase first; if no match, tries SeaLifeBase. Multiple hits → all candidates
-    (UI disambiguates). `db` forces a specific database.
+  - Accepts scientific (`"Gadus morhua"`) or common (`"Atlantic cod"`) name; case-insensitive.
+  - Queries the `species` table: scientific match on `Genus`+`Species`, common match on
+    `FBname`. Returns `SpecMatch(spec_code, scientific_name, common_name, db)` candidates.
+  - Tries FishBase (`db="fb"`) first; if no match, tries SeaLifeBase (`db="slb"`).
+    Multiple hits → all candidates (UI disambiguates). `db` forces one database.
 - `fetch_traits(spec_code: int, db: str) -> dict[str, TraitEstimate]`
   - `TraitEstimate = {value: float (median), n: int, min: float, max: float, unit: str}`.
-  - Pulls and aggregates from the FishBase tables (see Trait mapping). Traits with no data
-    are simply absent from the dict (partial coverage is normal).
-- `TRAIT_MAP`: ordered mapping of FishBase source field → OSMOSE key-pattern stem + unit.
-- `_get_json(path, params) -> list[dict] | dict`: the single network seam (stdlib
-  `urllib.request`, timeout, JSON parse). **All tests mock this.** On failure raises
-  `FishBaseUnavailable`.
-- On-disk JSON cache (keyed by path+params) under a cache dir with a TTL, so repeated
-  fetches/dev iterations don't re-hit the API. Cache dir overridable by env for test
-  isolation (mirrors `OSMOSE_FEEDBACK_FILE`/`OSMOSE_RESULTS_DIR` pattern).
+  - Loads `popgrowth`, `poplw`, `maturity`, `species`, filters each by spec code, and
+    aggregates each mapped column to median/n/min–max (see Trait mapping). Traits with no
+    data are simply absent (partial coverage is normal).
+- `TRAIT_MAP`: ordered mapping of (table, column) → OSMOSE key-pattern stem + unit.
 - Exceptions: `FishBaseUnavailable` (network/timeout/HTTP error), `FishBaseNoMatch`
   (name resolves to nothing in either DB).
 
@@ -79,25 +98,31 @@ the source of truth.
 
 ## Trait mapping (FishBase → OSMOSE)
 
-| FishBase source (table.field)         | OSMOSE key pattern                              | Unit       |
-|---------------------------------------|-------------------------------------------------|------------|
-| popgrowth.Loo                         | `species.linf.sp{i}`                            | cm         |
-| popgrowth.K                           | `species.k.sp{i}`                               | year⁻¹     |
-| popgrowth.to                          | `species.t0.sp{i}`                              | year       |
-| species.Length (or popgrowth tmax/Lmax) | `species.lmax.sp{i}`                          | cm         |
-| poplw.a                               | `species.length2weight.condition.factor.sp{i}` | W=a·Lᵇ     |
-| poplw.b                               | `species.length2weight.allometric.power.sp{i}` | —          |
-| maturity.Lm                           | `species.maturity.size.sp{i}`                   | cm         |
-| species.LongevityWild (or popgrowth tmax) | `species.lifespan.sp{i}`                    | year       |
+Column names are **verified against the v24.07 parquet schema** (2026-06-17), with the
+*Gadus morhua* (SpecCode 69) median shown as the fixture anchor:
 
-**Unit-convention check (implementation gate):** FishBase length–weight is conventionally
-`W(g) = a · L(cm)^b`, which matches OSMOSE's `length2weight.condition.factor` /
-`allometric.power`. This will be verified with a TDD test against a known species
-(*Gadus morhua*): the bootstrapped a/b must reproduce a sane weight-at-length (e.g. a
-~80 cm cod ≈ a few kg). Lengths (Loo/Lmax/Lm) are in cm in both. The exact rOpenSci API
-field names/endpoints (`/popgrowth`, `/poplw`, `/maturity`, `/species`, `/taxa` or
-`/comnames` for resolution; `Loo`,`K`,`to`,`a`,`b`,`Lm`,`Length`,`LongevityWild`) are
-confirmed against the live API while recording the test fixtures.
+| Source table.column        | OSMOSE key pattern                              | Unit    | cod median |
+|----------------------------|-------------------------------------------------|---------|------------|
+| `popgrowth.Loo`            | `species.linf.sp{i}`                            | cm      | 110 (n=108) |
+| `popgrowth.K`              | `species.k.sp{i}`                               | year⁻¹  | 0.163 (n=108) |
+| `popgrowth.to`             | `species.t0.sp{i}`                              | year    | −0.08 (n=47) |
+| `species.Length`           | `species.lmax.sp{i}`                            | cm      | 200 |
+| `poplw.a`                  | `species.length2weight.condition.factor.sp{i}` | W=a·Lᵇ  | 0.00723 (n=52) |
+| `poplw.b`                  | `species.length2weight.allometric.power.sp{i}` | —       | 3.073 (n=52) |
+| `maturity.Lm`              | `species.maturity.size.sp{i}`                   | cm      | (per spec) |
+| `species.LongevityWild`    | `species.lifespan.sp{i}`                        | year    | 25 |
+
+**Schema quirks (real, must be handled):**
+- The `maturity` table keys on **`Speccode`** (lowercase), while `popgrowth`/`poplw`/
+  `species` use **`SpecCode`**. The filter must use the right column per table.
+- `popgrowth` rows carry a `Sex` column (mixed/male/female/unsexed); v1 takes the median
+  across all rows (per the resolution decision) — no sex filtering.
+
+**Unit-convention check (verified):** `W(g)=a·L(cm)ᵇ` matches OSMOSE's
+`length2weight.condition.factor`/`allometric.power`. Sanity-checked: cod a=0.00723,
+b=3.073 → a 110 cm cod ≈ 13 kg (plausible). A TDD test reasserts this on the recorded
+fixture so a future data/format change can't silently break it. Lengths (Loo/Length/Lm)
+are cm in both systems.
 
 ## Error handling
 
@@ -110,11 +135,14 @@ confirmed against the live API while recording the test fixtures.
 
 ## Testing
 
-- **Pure client** (`osmose/fishbase.py`): unit tests mocking `_get_json` with **recorded
-  JSON fixtures** (a real FishBase response for *Gadus morhua* + a SeaLifeBase example).
-  No network in CI (the clean-venv rule). Cover: median/range aggregation, name resolution
-  (scientific, common, multi-candidate, none), SeaLifeBase fallback, trait mapping +
-  units, cache hit/miss, `FishBaseUnavailable` on injected network error.
+- **Pure client** (`osmose/fishbase.py`): unit tests monkeypatching `_load_table` to
+  return **small recorded fixture DataFrames** — tiny parquet slices of the real
+  `popgrowth`/`poplw`/`maturity`/`species` tables for *Gadus morhua* (+ one SeaLifeBase
+  species), checked into `tests/fixtures/fishbase/`. No network in CI (the clean-venv
+  rule). Cover: median/range aggregation, name resolution (scientific, common,
+  multi-candidate, none), SeaLifeBase fallback, the `Speccode`-vs-`SpecCode` quirk, trait
+  mapping + the a/b weight-at-length assertion, cache hit/miss, `FishBaseUnavailable` on
+  injected network error.
 - **UI**: controller-level test of fetch→review→apply writing the right config keys; one
   Playwright e2e with the client mocked (no live API).
 - Full suite + ruff + pyright clean before merge.
