@@ -22,7 +22,7 @@ container) **plus the nav rail chrome** (verified selectors):
 | Fishing | `fishing` | `#split_fishing` |
 | Movement | `movement` | `#split_movement` |
 | Advanced | `advanced` | `#split_advanced` |
-| Nav chrome | (n/a) | `.nav-pills` |
+| Nav chrome | (n/a) | `#main_nav` |
 
 **Why element-clipped, not full-page:** clipping to `#split_<page>` structurally excludes the app
 **header** (which carries live, localStorage-restored, async chrome — `#config_header` param-count +
@@ -33,10 +33,13 @@ sources by construction rather than by masking. (See §3.)
 
 **Why a nav-chrome snapshot:** the page bodies are skinned mostly by the repo's own `www/osmose.css`
 (`--osm-*` vars), which a Bootstrap/shinyswatch bump does NOT change — so the body clips alone would
-be partly blind to the very theme-swap §1 motivates. `.nav-pills` is a stable, deterministic surface
-skinned by Bootstrap/shinyswatch (pill colors, active state, spacing), so it is the most sensitive
-catch for a Bootstrap-version regression. It is static (fixed nav labels), so it needs no masking.
-(The header is NOT snapshotted — it carries the async/dynamic chrome above.)
+be partly blind to the very theme-swap §1 motivates. The `#main_nav` pill rail is a stable,
+deterministic surface skinned by Bootstrap/shinyswatch (pill colors, active state, spacing), so it is
+the most sensitive catch for a Bootstrap-version regression. It is static (fixed nav labels), so it
+needs no masking. **Use the unique `#main_nav` id, NOT a bare `.nav-pills`** — the app has four pill
+navsets (`#main_nav`, `#cal_groups`, `#about_tabs`, `#help_tabs`), so `.nav-pills` matches 4 elements
+and a clip screenshot errors under Playwright strict mode. (The header is NOT snapshotted — it carries
+the async/dynamic chrome above.)
 
 **Explicitly dropped from v1:** the **About modal** — it renders live README + CHANGELOG markdown
 (dated, versioned release notes), so its content rots on every release; it is a text-doc target, not
