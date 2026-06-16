@@ -4,14 +4,14 @@ dynamic = ["version"]
 description = "Python orchestration layer and Shiny web interface for the OSMOSE marine ecosystem simulator"
 requires-python = ">=3.12"
 dependencies = [
-    # Cap below 1.6: shiny 1.6 compiles the custom theme via libsass (not a
-    # declared dep) at app import, and introduces API changes the UI isn't
-    # ported to yet. The unpinned ">=1.3.0" let CI pull 1.6.3 and silently
-    # redden the test job with no code change. Lift the cap as a deliberate
-    # 1.6 migration (add libsass / shiny[theme] and update the changed APIs).
-    "shiny>=1.3.0,<1.6",
-    "shinyswatch>=0.7.0",
-    "shinywidgets>=0.3",
+    # shiny 1.6.x is the supported baseline. shinyswatch serves its PRECOMPILED theme
+    # (no sass/libsass needed) only when its bundled Bootstrap matches shiny's: shiny 1.6.3
+    # ships Bootstrap 5.3.8 and shinyswatch >=0.11 bundles 5.3.8 (older shinyswatch bundles
+    # 5.3.1 -> mismatch -> falls back to a libsass compile). osmose uses the unmodified
+    # superhero theme, so the precompiled path applies -- do not add libsass.
+    "shiny>=1.6.3,<1.7",
+    "shinyswatch>=0.11",
+    "shinywidgets>=0.7",
     "pandas>=2.2",
     "xarray>=2024.1",
     "netCDF4>=1.6",
@@ -23,7 +23,12 @@ dependencies = [
     "numpy>=1.26",
     "pyyaml>=6.0",
     "scipy>=1.13",
-    "shiny_deckgl @ git+https://github.com/razinkele/shiny_deckgl.git@v1.6.1",
+    # cma is imported directly by osmose/calibration/cmaes_runner.py but is only pulled
+    # transitively via pymoo, so its version drifts. cma <=3.3.0 uses numpy-2-removed APIs
+    # (e.g. np.Inf) and breaks cma.CMAEvolutionStrategy under numpy>=2 (fixed in 3.4.0);
+    # floor at the current major.
+    "cma>=4.0",
+    "shiny_deckgl @ git+https://github.com/razinkele/shiny_deckgl.git@v1.9.2",
     "pyvis @ git+https://github.com/razinkele/pyvis.git@v4.2",
 ]
 
