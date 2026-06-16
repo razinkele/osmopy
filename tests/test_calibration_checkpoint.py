@@ -30,6 +30,21 @@ def test_default_results_dir_resolves_to_baltic_calibration_results():
     assert p.parts[-3:] == ("data", "baltic", "calibration_results")
 
 
+def test_default_results_dir_honors_env_override(monkeypatch, tmp_path):
+    """OSMOSE_RESULTS_DIR overrides the package default, so a deployment whose
+    package tree is not writable by the service user can point checkpoints
+    elsewhere."""
+    monkeypatch.setenv("OSMOSE_RESULTS_DIR", str(tmp_path))
+    assert default_results_dir() == tmp_path
+
+
+def test_default_results_dir_ignores_empty_env_override(monkeypatch):
+    """An empty OSMOSE_RESULTS_DIR falls back to the package default (not cwd)."""
+    monkeypatch.setenv("OSMOSE_RESULTS_DIR", "")
+    p = default_results_dir()
+    assert p.parts[-3:] == ("data", "baltic", "calibration_results")
+
+
 def test_max_checkpoint_bytes_is_1mib():
     """1 MiB ceiling for read_checkpoint's size guard."""
     assert MAX_CHECKPOINT_BYTES == 1_048_576
