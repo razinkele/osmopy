@@ -1,0 +1,90 @@
+name: Visual
+
+# Opt-in: the gate runs only on PRs to master that touch UI-affecting paths, plus manual
+# dispatch. It is ADVISORY -- do NOT add `visual-gate` to branch-protection required checks
+# (a path-filtered job reports no status on unrelated PRs and would deadlock merges).
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - "ui/**"
+      - "www/**"
+      - "app.py"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch/ref to (re)generate baselines against"
+        required: false
+      pages:
+        description: "visual-update only: 'all' or comma list of pages (e.g. fishing)"
+        required: false
+        default: "all"
+
+# Least privilege: only reads the repo and uploads artifacts.
+permissions:
+  contents: read
+
+jobs:
+  visual-gate:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    # Pinned by DIGEST (not the mutable tag) so a Microsoft repush can't silently shift
+    # fonts/AA and invalidate baselines. The v1.58.0-noble tag matches the [viztest]
+    # playwright==1.58.0 pin; the version-assert step enforces the wheel match.
+    container: mcr.microsoft.com/playwright/python@sha256:678457c4c323b981d8b4befc57b95366bb1bb6aa30057b1269f6b171e8d9975a  # v1.58.0-noble
+    steps:
+      - uses: actions/checkout@v5
+      - name: Trust the workspace (container runs as root vs checkout UID)
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Install package with visual-test extra
+        run: pip install -e ".[viztest]"
+      - name: Assert playwright wheel matches the container image
+        run: |
+          python - <<'PY'
+          import sys
+          from importlib.metadata import version
+          installed = version("playwright")
+          expected = "1.58.0"  # must equal the image tag (v1.58.0-noble) above
+          if installed != expected:
+              sys.exit(f"playwright {installed} != image-pinned {expected}; bump the [viztest] pin, the digest, and this expected together")
+          print("playwright", installed, "matches image")
+          PY
+      - name: Run visual snapshots (retry transient timeouts, not regressions)
+        run: python -m pytest -m visual --reruns 1 --only-rerun TimeoutError
+      - name: Upload diffs + baselines on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: visual-diffs
+          path: |
+            tests/visual_output/
+            tests/visual_baselines/*.png
+          retention-days: 14
+          if-no-files-found: ignore
+
+  visual-update:
+    # Manual only: regenerate baselines in the container and hand them back as an artifact
+    # for a developer to inspect and commit (no contents:write; works regardless of fork-PR
+    # token restrictions). Dispatch from the PR's head branch.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    container: mcr.microsoft.com/playwright/python@sha256:678457c4c323b981d8b4befc57b95366bb1bb6aa30057b1269f6b171e8d9975a  # v1.58.0-noble
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+      - name: Trust the workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Install package with visual-test extra
+        run: pip install -e ".[viztest]"
+      - name: Regenerate baselines (all or per-page via the 'pages' input)
+        env:
+          OSMOSE_UPDATE_SNAPSHOTS: ${{ github.event.inputs.pages || 'all' }}
+        run: python -m pytest -m visual
+      - name: Upload regenerated baselines
+        uses: actions/upload-artifact@v6
+        with:
+          name: visual-baselines
+          path: tests/visual_baselines/*.png
+          retention-days: 30
+          if-no-files-found: error
