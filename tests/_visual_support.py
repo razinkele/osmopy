@@ -108,25 +108,23 @@ def navigate_to(page: Page, nav_value: str) -> str:
     return clip
 
 
-def assert_clip_snapshot(page: Page, clip_selector: str, name: str, *, mask=None) -> None:
-    """Screenshot the clip element and compare to the committed baseline.
+def _stable_screenshot(page: Page, locator, *, mask, attempts: int = 6, settle_ms: int = 400):
+    """Capture the clip until two consecutive shots match within the gate tolerances
+    (i.e. the reactive page has SETTLED), or `attempts` is exhausted. Returns
+    (shot, stable, last_metrics); the returned shot is the later, more-settled one.
 
-    Update mode (OSMOSE_UPDATE_SNAPSHOTS) captures twice and requires self-consistency
-    before writing (guards against blessing a flickering/half-rendered frame). Missing
-    baseline in compare mode -> pytest.skip (operationally distinct from a regression).
-    On failure writes <name>.actual.png + <name>.diff.png to tests/visual_output/.
+    A one-shot double-capture is brittle: a still-rendering page (e.g. Setup's reactive
+    species panels, slower in the CI container) differs a lot between two back-to-back
+    captures. Retrying-until-stable converges once render settles, in any environment.
+    The short fixed settle here is a bounded backoff in a condition loop — not a blind
+    load wait.
     """
-    locator = page.locator(clip_selector)
     shot = locator.screenshot(mask=mask or [], mask_color="#FF00FF")
-    baseline = _BASELINE_DIR / f"{name}.png"
-
-    if _should_update(name):
-        # Self-consistency: a second capture must match within the gate tolerances, else
-        # we'd bless a flaky/half-rendered frame. NOT byte-exact — two consecutive captures
-        # of a static page still differ by a handful of sub-pixel-AA pixels (benign); a
-        # grossly-broken frame differs by far more and is caught by these tolerances.
+    metrics: dict = {}
+    for _ in range(attempts):
+        page.wait_for_timeout(settle_ms)
         shot2 = locator.screenshot(mask=mask or [], mask_color="#FF00FF")
-        stable, _, _ = compare_images(
+        stable, metrics, _ = compare_images(
             shot,
             shot2,
             threshold=_DEFAULT_THRESHOLD,
@@ -134,9 +132,29 @@ def assert_clip_snapshot(page: Page, clip_selector: str, name: str, *, mask=None
             max_pixels=_DEFAULT_MAX_PIXELS,
             mean_threshold=_DEFAULT_MEAN_THRESHOLD,
         )
+        shot = shot2
+        if stable:
+            return shot, True, metrics
+    return shot, False, metrics
+
+
+def assert_clip_snapshot(page: Page, clip_selector: str, name: str, *, mask=None) -> None:
+    """Screenshot the (settled) clip element and compare to the committed baseline.
+
+    Both modes wait for the clip to be pixel-stable (see _stable_screenshot) before using
+    the shot. Update mode (OSMOSE_UPDATE_SNAPSHOTS) refuses to write if it never settles.
+    Missing baseline in compare mode -> pytest.skip (operationally distinct from a
+    regression). On failure writes <name>.actual.png + <name>.diff.png to tests/visual_output/.
+    """
+    locator = page.locator(clip_selector)
+    baseline = _BASELINE_DIR / f"{name}.png"
+
+    if _should_update(name):
+        shot, stable, metrics = _stable_screenshot(page, locator, mask=mask)
         if not stable:
             raise AssertionError(
-                f"Non-deterministic capture for {name!r}; refusing to write baseline."
+                f"Capture for {name!r} never settled within tolerances ({metrics}); "
+                f"refusing to write baseline."
             )
         _BASELINE_DIR.mkdir(parents=True, exist_ok=True)
         baseline.write_bytes(shot)
@@ -145,6 +163,7 @@ def assert_clip_snapshot(page: Page, clip_selector: str, name: str, *, mask=None
     if not baseline.exists():
         pytest.skip(f"No baseline for {name!r}; run the visual-update job (see {_RUNBOOK}).")
 
+    shot, _, _ = _stable_screenshot(page, locator, mask=mask)
     passed, metrics, diff_png = compare_images(
         baseline.read_bytes(),
         shot,
