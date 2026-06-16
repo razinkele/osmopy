@@ -1151,7 +1151,10 @@ def make_legend(entries: list[dict], **kwargs) -> dict:
     import shiny_deckgl as _sdgl  # type: ignore[import-untyped]
 
     if hasattr(_sdgl, "layer_legend_widget"):
-        return _sdgl.layer_legend_widget(entries=entries, **kwargs)
+        # layer_legend_widget exists in the module namespace but isn't in
+        # shiny_deckgl's __all__ (>=v1.9.2); the hasattr guard above makes this
+        # attribute access safe at runtime.
+        return _sdgl.layer_legend_widget(entries=entries, **kwargs)  # pyright: ignore[reportPrivateImportUsage]
     if hasattr(_sdgl, "deck_legend_control"):
         kw = dict(kwargs)
         if "placement" in kw:
