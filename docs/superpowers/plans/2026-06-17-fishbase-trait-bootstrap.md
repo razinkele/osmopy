@@ -872,7 +872,7 @@ git commit -m "feat(fishbase-ui): surface bootstrap control on the species setup
 
 ---
 
-## Task 7: Playwright e2e (client monkeypatched, no network)
+## Task 7: Playwright e2e — modal-open smoke (no fetch, no network)
 
 **Files:**
 - Create: `tests/test_fishbase_e2e.py`
