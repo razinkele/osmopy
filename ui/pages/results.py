@@ -7,6 +7,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from shiny import reactive, render, ui
@@ -153,24 +154,67 @@ def make_timeseries_chart(
     return fig
 
 
+# Columns that are metadata, never a `<predator>_<prey>` diet pair.
+_DIET_META_COLS = {"Time", "time", "Step", "step", "species", "Simu", "simu", "replicate"}
+
+
 def make_diet_heatmap(df: pd.DataFrame, template: str = "osmose") -> go.Figure:
-    """Create a diet composition heatmap."""
+    """Create a diet composition heatmap (predator rows x prey columns).
+
+    Handles two input layouts:
+    - legacy ``prey_<name>`` columns (optionally with a ``species`` predator column);
+    - the engine's wide diet matrix, ``<predator>_<prey>`` columns (predator-major,
+      values = biomass eaten; see osmose/engine/output.py) plus a ``Time`` column and a
+      constant ``species`` column added by the reader. This layout is averaged over time
+      and normalised per predator row to diet proportions.
+    """
     if df.empty:
         return go.Figure().update_layout(title="Diet Composition", template=template)
-    prey_cols = [c for c in df.columns if c.startswith("prey_")]
-    if not prey_cols:
-        return go.Figure().update_layout(title="Diet Composition (no prey data)", template=template)
     import plotly.express as px
 
-    if "species" in df.columns:
-        matrix = df.groupby("species")[prey_cols].mean()
-    else:
-        matrix = df[prey_cols].mean().to_frame().T  # type: ignore[union-attr]
-    prey_names = [c.replace("prey_", "") for c in prey_cols]
+    # Legacy layout: explicit `prey_<name>` columns.
+    prey_cols = [c for c in df.columns if c.startswith("prey_")]
+    if prey_cols:
+        if "species" in df.columns:
+            matrix = df.groupby("species")[prey_cols].mean()
+        else:
+            matrix = df[prey_cols].mean().to_frame().T  # type: ignore[union-attr]
+        prey_names = [c.replace("prey_", "") for c in prey_cols]
+        fig = px.imshow(
+            matrix.values,  # type: ignore[union-attr]
+            x=prey_names,
+            y=list(matrix.index),  # type: ignore[arg-type,union-attr]
+            title="Diet Composition",
+            color_continuous_scale="YlOrRd",
+            labels={"x": "Prey", "y": "Predator", "color": "Proportion"},
+        )
+        fig.update_layout(template=template)
+        return fig
+
+    # Engine wide layout: `<predator>_<prey>` columns. Split on the first "_"
+    # (predator names carry no underscore; the remainder is the prey name).
+    pair_cols = [c for c in df.columns if "_" in c and c not in _DIET_META_COLS]
+    if not pair_cols:
+        return go.Figure().update_layout(title="Diet Composition (no prey data)", template=template)
+    means = df[pair_cols].mean(numeric_only=True)
+    predators: list[str] = []
+    prey_names = []
+    cells: dict[tuple[str, str], float] = {}
+    for col, val in means.items():
+        pred, _, prey = str(col).partition("_")
+        if pred not in predators:
+            predators.append(pred)
+        if prey not in prey_names:
+            prey_names.append(prey)
+        cells[(pred, prey)] = float(val)
+    z = np.array([[cells.get((p, q), 0.0) for q in prey_names] for p in predators], dtype=float)
+    # Per-predator-row normalisation to diet proportions (rows with no diet stay 0).
+    row_sums = z.sum(axis=1, keepdims=True)
+    z = np.divide(z, row_sums, out=np.zeros_like(z), where=row_sums > 0)
     fig = px.imshow(
-        matrix.values,  # type: ignore[union-attr]
+        z,
         x=prey_names,
-        y=list(matrix.index),  # type: ignore[arg-type,union-attr]
+        y=predators,
         title="Diet Composition",
         color_continuous_scale="YlOrRd",
         labels={"x": "Prey", "y": "Predator", "color": "Proportion"},

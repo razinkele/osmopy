@@ -209,6 +209,39 @@ def test_make_diet_heatmap_empty():
     assert isinstance(fig, go.Figure)
 
 
+def test_make_diet_heatmap_predator_prey_matrix():
+    """The engine writes the diet matrix wide, as `<predator>_<prey>` columns
+    (osmose/engine/output.py), plus a Time column and a constant `species` column
+    added by the reader. The heatmap must render predators (rows) x prey (cols),
+    NOT fall through to the "no prey data" empty state."""
+    df = pd.DataFrame(
+        {
+            "Time": [0.9, 1.9],
+            "cod_cod": [0.0, 0.0],
+            "cod_herring": [2.0, 4.0],  # mean 3
+            "cod_sprat": [1.0, 1.0],  # mean 1
+            "herring_cod": [0.0, 0.0],
+            "herring_herring": [0.0, 0.0],
+            "herring_sprat": [0.0, 0.0],
+            "species": ["all", "all"],
+        }
+    )
+    fig = make_diet_heatmap(df)
+    assert isinstance(fig, go.Figure)
+    assert "no prey data" not in (fig.layout.title.text or "").lower()
+    assert len(fig.data) == 1
+    trace = fig.data[0]
+    # predator-major rows; prey columns; metadata (Time/species) excluded
+    assert list(trace.y) == ["cod", "herring"]
+    assert list(trace.x) == ["cod", "herring", "sprat"]
+    z = np.asarray(trace.z, dtype=float)
+    # cod row normalised to diet proportions: herring 3/4=0.75 > sprat 1/4=0.25
+    assert z[0][1] == pytest.approx(0.75)
+    assert z[0][2] == pytest.approx(0.25)
+    # herring ate nothing -> its row stays all-zero (no divide-by-zero)
+    assert z[1].sum() == pytest.approx(0.0)
+
+
 def test_make_spatial_map():
     ds = xr.Dataset(
         {
