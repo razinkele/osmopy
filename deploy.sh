@@ -252,11 +252,19 @@ else
 fi
 
 # --- Step 5: Verify HTTP ---
-HTTP_CODE=$(curl -sS -m 5 -o /dev/null -w "%{http_code}" "http://127.0.0.1:${APP_PORT}/" 2>/dev/null || echo "000")
+# The app cold-starts in several seconds (numba/schema import), so a single
+# immediate probe races startup and reports a spurious 000. Poll until 200 or
+# the deadline, reporting the real state.
+HTTP_CODE="000"
+for _ in $(seq 1 20); do  # up to ~40s (2s interval)
+    HTTP_CODE=$(curl -sS -m 5 -o /dev/null -w "%{http_code}" "http://127.0.0.1:${APP_PORT}/" 2>/dev/null || echo "000")
+    [[ "$HTTP_CODE" == "200" ]] && break
+    sleep 2
+done
 if [[ "$HTTP_CODE" == "200" ]]; then
     info "HTTP check passed (port ${APP_PORT})."
 else
-    warn "HTTP check returned ${HTTP_CODE}. Service may still be starting."
+    warn "HTTP check returned ${HTTP_CODE} after ~40s. Check: journalctl -u ${SERVICE_NAME} --no-pager -n 30"
 fi
 
 # --- Summary ---
