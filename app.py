@@ -41,6 +41,47 @@ from starlette.routing import Route
 from osmose.feedback import check_feedback_token, read_feedback
 from ui.components.feedback_modal import feedback_modal, feedback_server
 
+def _harden_shiny_otel_source_ref() -> None:
+    """Make Shiny's per-renderer OTel source extraction non-fatal.
+
+    Shiny 1.6.3's ``set_renderer`` calls ``extract_source_ref(renderer_func)``
+    unconditionally (it is NOT gated by ``SHINY_OTEL_COLLECT``), which runs
+    ``inspect.getsourcelines``. That call wraps only ``(TypeError, OSError,
+    ValueError)`` — it does NOT catch ``tokenize.TokenError``, which
+    ``getsourcelines`` raises when a function's recorded line number no longer
+    matches the on-disk source (e.g. the file was edited under a long-running
+    process). The uncaught error aborts ``server()`` mid-registration, silently
+    breaking every interactive handler for that session.
+
+    This shim degrades that failure to empty OTel attributes (cosmetic) instead
+    of a crash. It is belt-and-suspenders behind the real fix — prod running
+    from an unedited release clone rather than the live dev tree — so that any
+    future source/line drift can never take the whole app down again.
+    """
+    try:
+        from shiny.session import _session as _sess
+    except Exception:  # noqa: BLE001 — older/newer Shiny without this internal
+        return
+    orig = getattr(_sess, "extract_source_ref", None)
+    if orig is None or getattr(orig, "_osmose_guarded", False):
+        return
+
+    def _guarded(func):  # type: ignore[no-untyped-def]
+        try:
+            return orig(func)
+        except Exception:  # noqa: BLE001 — OTel attrs are best-effort, never fatal
+            return {}
+
+    _guarded._osmose_guarded = True  # type: ignore[attr-defined]
+    # setattr (not direct assignment): extract_source_ref is a `from … import`
+    # binding on the module, so pyright doesn't treat it as a known attribute.
+    setattr(_sess, "extract_source_ref", _guarded)
+
+
+# Apply at import time, before any session runs server() / registers renderers.
+_harden_shiny_otel_source_ref()
+
+
 # H11: cleanup is invoked at server() time (per session) rather than at
 # import time so that simply importing this module — e.g. for tests, type
 # checking, or schema-only access — does not touch the filesystem. The
