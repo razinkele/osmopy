@@ -1,7 +1,9 @@
 # Visual Regression Tests for the UI — Design Spec
 
 **Date:** 2026-06-16
-**Status:** Approved (brainstormed; converged through 3 in-loop review rounds across 4 angles)
+**Status:** Approved (brainstormed; converged through multiple in-loop review rounds, incl. an
+efficacy/maintenance/cost/operability pass that added the mean-delta gate, nav-chrome snapshot,
+digest-pinned image, skip-on-absent, per-page baseline updates, and a runbook)
 **Topic:** Playwright screenshot-based visual regression tests for the deterministic config pages.
 
 ## 1. Goal & Scope
@@ -11,8 +13,8 @@ deterministic configuration **page bodies** of the Shiny app. Especially valuabl
 shiny 1.6.3 / shinyswatch 0.11 theme swap, where a Bootstrap-version change could silently shift
 rendering.
 
-**v1 covers** the four static, form-driven page bodies, each clipped to its `osm-split-layout`
-root container (verified selectors):
+**v1 covers** the four static, form-driven page bodies (each clipped to its `osm-split-layout` root
+container) **plus the nav rail chrome** (verified selectors):
 
 | Snapshot | Nav value | Clip selector |
 | --- | --- | --- |
@@ -20,6 +22,7 @@ root container (verified selectors):
 | Fishing | `fishing` | `#split_fishing` |
 | Movement | `movement` | `#split_movement` |
 | Advanced | `advanced` | `#split_advanced` |
+| Nav chrome | (n/a) | `.nav-pills` |
 
 **Why element-clipped, not full-page:** clipping to `#split_<page>` structurally excludes the app
 **header** (which carries live, localStorage-restored, async chrome — `#config_header` param-count +
@@ -27,6 +30,13 @@ dirty flag, the engine-mode toggle, the version badge, the theme toggle) *and* t
 **validation panel** (`#config_validation`, a sibling rendered *above* `#split_setup` in
 `setup.py:29`, which shows live error/warning counts). This removes the dominant nondeterminism
 sources by construction rather than by masking. (See §3.)
+
+**Why a nav-chrome snapshot:** the page bodies are skinned mostly by the repo's own `www/osmose.css`
+(`--osm-*` vars), which a Bootstrap/shinyswatch bump does NOT change — so the body clips alone would
+be partly blind to the very theme-swap §1 motivates. `.nav-pills` is a stable, deterministic surface
+skinned by Bootstrap/shinyswatch (pill colors, active state, spacing), so it is the most sensitive
+catch for a Bootstrap-version regression. It is static (fixed nav labels), so it needs no masking.
+(The header is NOT snapshotted — it carries the async/dynamic chrome above.)
 
 **Explicitly dropped from v1:** the **About modal** — it renders live README + CHANGELOG markdown
 (dated, versioned release notes), so its content rots on every release; it is a text-doc target, not
@@ -101,34 +111,48 @@ baseline regardless of future Playwright default changes).
 
 ## 4. Comparison & Tolerance
 
-`compare_images(baseline_png, actual_png, *, threshold, max_ratio)`:
+`compare_images(baseline_png, actual_png, *, threshold, max_ratio, max_pixels, mean_threshold)`:
 
 1. Decode both PNGs (Pillow) to RGB numpy arrays.
 2. **Dimension mismatch → immediate fail.** With element-clipping + the deterministic `minimal`
    config, the clip size is stable, so a size change is a real regression (not benign reflow). The
    diff PNG in this case is the actual image (cannot overlay differently-sized arrays).
-3. Per-pixel max-channel absolute difference; count pixels exceeding `threshold`.
-4. **Fail if `differing_pixels / total_pixels > max_ratio`.**
-5. Return `(passed, diff_ratio, diff_png)` where `diff_png` highlights differing pixels in **red**
+3. Per-pixel max-channel absolute difference (`delta`).
+4. **Three OR-ed failure conditions** — fail if ANY trips:
+   - **ratio:** `count(delta > threshold) / total > max_ratio` (gross localized change), AND
+   - **absolute floor:** `count(delta > threshold) > max_pixels` (small glyph-level shifts a
+     percentage ratio would hide on a large clip), AND
+   - **mean delta:** `mean(delta) > mean_threshold` (this is the critical one — a **uniform, sub-`threshold`
+     global recolor** from a Bootstrap/theme bump moves every pixel a little, tripping *zero* per-pixel
+     counts; only a mean check catches it. Without this gate the suite is blind to the exact regression
+     class in §1's motivation).
+5. Return `(passed, metrics, diff_png)` where `metrics` carries `diff_ratio`, `diff_pixels`,
+   `mean_delta`, and which condition(s) fired; `diff_png` highlights differing pixels in **red**
    (`#FF0000`, distinct from the `#FF00FF` mask color).
 
-**Defaults:** `threshold = 4`, `max_ratio` tuned empirically against the first container baselines.
-**A required plan task** is to capture the first baselines in the container, then tune `threshold` /
-`max_ratio` so the suite is green on a no-op change yet flags a deliberate injected shift. Rationale:
-a pure 1–2 px text translation produces mostly sub-threshold antialiased edge pixels; too-high
-`threshold` + too-high `max_ratio` would miss it, while too-low values flake on AA. **The plan MUST
-decide during tuning** between a ratio-only gate and an additional **absolute differing-pixel floor**
-(the latter guards glyph-level regressions on small clips that a percentage ratio would hide). Tune
-against the **`#split_advanced` clip specifically** — it is the largest / most content-dense (a ~100-row
-registry param table, `advanced.py:236`) and is the worst case for both AA noise and ratio calibration.
-(Tuning is a hard task, not optional.)
+**Defaults (committed, then tuned against the first CONTAINER baselines — a required pre-merge task):**
+`threshold = 4`, `max_ratio = 0.002`, `max_pixels = 800`, `mean_threshold = 1.0`. Rationale: a pure
+1–2 px text translation produces mostly sub-threshold antialiased edge pixels (caught by `max_pixels`),
+a localized block change is caught by `max_ratio`, and a uniform theme recolor is caught by
+`mean_threshold`. Tune against the **`#split_advanced` clip** (the largest clip; with `minimal` loaded
+its "All Parameters" table renders the loaded config's params — ~28 rows for `minimal`, NOT the full
+registry; the earlier "~100-row" framing was wrong). Tuning is mandatory and happens pre-merge once
+container baselines exist (§5).
 
 `assert_clip_snapshot` behavior:
-- **Update mode** (`OSMOSE_UPDATE_SNAPSHOTS` truthy — `"1"`/`"true"`): write the screenshot to the
-  baseline path; pass.
-- **Normal mode:** missing baseline → fail with a "run update mode" message. Else compare; on fail,
-  write `<name>.actual.png` + `<name>.diff.png` to `tests/visual_output/` and assert with a message
-  naming the diff ratio and artifact paths.
+- **Update mode** (`OSMOSE_UPDATE_SNAPSHOTS` truthy — `"1"`/`"true"`, or a comma-list of page names
+  for per-page updates, e.g. `OSMOSE_UPDATE_SNAPSHOTS=fishing`): guard against blessing a broken
+  render — capture **twice** and require the two shots to compare equal (self-consistency), then write
+  the baseline; pass. Per-page lists let `visual-update` refresh ONE page without re-blessing the
+  others (avoids the silent "bless-all" hole where an accidental regression on page B rides along with
+  an intended change on page A).
+- **Normal mode, baseline ABSENT:** `pytest.skip("no baseline for <name>; run the visual-update job")`
+  — NOT a hard failure. A missing baseline (pre-population, or a newly added page) is operationally
+  distinct from a regression and must look different (yellow skip, not red fail), especially since the
+  gate is advisory.
+- **Normal mode, baseline present:** compare; on fail, write `<name>.actual.png` + `<name>.diff.png`
+  to `tests/visual_output/` and assert with a message naming which condition fired (ratio / pixel /
+  mean), the metrics, the artifact paths, and a pointer to the baseline-update runbook (§6).
 
 **Local vs container.** Local runs use the dev's native chromium; font/AA rasterization differs from
 the `mcr.microsoft.com/playwright/python` image, so per-glyph sub-pixel diffs will be widespread.
@@ -141,8 +165,15 @@ container gate for pixel pass/fail." The container gate (§5) is the sole author
 Baselines are authoritative only when generated in the pinned Playwright container (consistent
 fonts/AA). Docker is unavailable on the dev box, so **CI generates them.**
 
-- **`visual-gate` job** — runs in `mcr.microsoft.com/playwright/python:<tag>` (tag matched to the
-  image's bundled Playwright; see lockstep below). Steps: `actions/checkout`,
+**Image pinned by DIGEST, not tag.** The whole gate premise is byte-identical fonts/AA, but a tag
+(`v1.58.0-noble`) is mutable — a Microsoft repush (patched OS / refreshed fontconfig) silently shifts
+rasterization and invalidates every committed baseline. Both jobs therefore pin
+`mcr.microsoft.com/playwright/python@sha256:<digest>` (the human-readable `v1.58.0-noble` tag kept in a
+comment); the implementer resolves the digest once (`docker manifest inspect` / registry) at plan
+time. This makes a baseline shift only ever happen via a deliberate `visual-update`. (New external
+trust: this is the repo's first `mcr.microsoft.com` CI dependency; confirm org policy permits it.)
+
+- **`visual-gate` job** — runs in the digest-pinned Playwright image (above). Steps: `actions/checkout`,
   `git config --global --add safe.directory "$GITHUB_WORKSPACE"` (container runs as root vs checkout
   UID → "dubious ownership" otherwise), `pip install -e ".[viztest]"`, `pytest -m visual`, and
   `actions/upload-artifact` of `tests/visual_output/` on failure.
@@ -152,13 +183,22 @@ fonts/AA). Docker is unavailable on the dev box, so **CI generates them.**
   path-filtered job reports *no status* on PRs that don't touch those paths, which would deadlock
   merges ("Expected — waiting for status"). Documented as advisory-only.
 - **`visual-update` job** — `workflow_dispatch` only. Same container + `safe.directory` +
-  `pip install -e ".[viztest]"`, then `OSMOSE_UPDATE_SNAPSHOTS=1 pytest -m visual`, then
-  **`actions/upload-artifact` of the regenerated `tests/visual_baselines/*.png`**. The developer
-  downloads the artifact and commits the PNGs locally (no Docker needed to *generate*; commit keeps
-  authorship/signing intact). **This is the chosen default** because it needs no elevated token and
-  is immune to fork-PR token restrictions. Set an explicit `retention-days` on the baseline artifact so
-  it doesn't expire before the dev downloads it, and dispatch `visual-update` **from the PR's head
-  branch** (optional `inputs.ref`) so baselines regenerate against that branch, not `master`.
+  `pip install -e ".[viztest]"`, then `OSMOSE_UPDATE_SNAPSHOTS=<pages> pytest -m visual` (a
+  `workflow_dispatch` input `pages` defaulting to `1` = all; or a comma-list to refresh ONE page so an
+  intended change to page A doesn't blindly re-bless an accidental regression on page B), then
+  **`actions/upload-artifact` of the regenerated `tests/visual_baselines/*.png`** (and the developer is
+  instructed to *open and inspect each PNG*, not blind-commit, since `git diff` on a binary shows
+  nothing). The developer downloads the artifact and commits the PNGs locally (no Docker needed to
+  *generate*; commit keeps authorship/signing intact). **This is the chosen default** because it needs
+  no elevated token and is immune to fork-PR token restrictions. Set an explicit `retention-days` on the
+  baseline artifact, and dispatch from the PR's head branch (input `ref`) so baselines regenerate against
+  that branch, not `master`. The **failure artifact also uploads the matching baselines** (alongside
+  `actual`/`diff`) so a remote reviewer gets a true side-by-side.
+  - **Bring-up + tuning happen PRE-MERGE (resolves an internal inconsistency).** Baselines must exist
+    before the §4 tuning can run, and an empty baseline dir would leave the gate skipping on every UI
+    PR. So during the feature branch: dispatch `visual-update`, commit the baselines, run the tuning
+    (inject a deliberate shift, confirm it fails; confirm a no-op is green), and land the suite
+    already-green — not as a deferred post-merge operator step.
   - *Documented alternative (opt-in):* have `visual-update` commit the baselines back to the branch
     directly. That requires `permissions: contents: write` on the job, only works on **same-repo**
     branches (fork PRs get a read-only token regardless), and should carry a `[skip ci]`-style bot
@@ -175,10 +215,14 @@ it must be a pin.)
 ## 6. Dependencies & Guards
 
 - **New optional extra `[viztest]`** in `pyproject.toml`:
-  `["playwright==<image-version>", "pytest-playwright>=0.5", "pillow>=10"]` — `playwright` **pinned** to
-  the container image's bundled version (§5 lockstep; prevents pip upgrading past the image's browsers).
-  Kept **out of `[dev]`** so the normal CI legs (`lint`/`type-check`/`test`/`docker`, which install
-  `.[dev]`) stay playwright-free.
+  `["playwright==<image-version>", "pytest-playwright>=0.5", "pillow>=10", "pytest-rerunfailures>=14"]`
+  — `playwright` **pinned** to the image's bundled version (§5 lockstep). `pytest-rerunfailures` lets the
+  gate retry a transient `TimeoutError` (cold container app-start) without retrying a real
+  `AssertionError` regression, so flake-red and regression-red stay distinct. Kept **out of `[dev]`** so
+  the normal CI legs (`lint`/`type-check`/`test`/`docker`, which install `.[dev]`) stay playwright-free.
+- **`pillow` is also added to `[dev]`** (separate from `[viztest]`) so the pure `compare_images` unit
+  tests (§7) actually run in the normal CI legs — relying on transitive presence is the clean-venv
+  false-green trap.
 - **Collection guard** in `tests/conftest.py`: the existing guard sets
   `collect_ignore_glob = ["test_e2e_*.py"]` only inside `if find_spec("playwright") is None`. Refactor to
   **initialize `collect_ignore_glob = []` first**, then append `"test_e2e_*.py"` when playwright is
@@ -194,18 +238,32 @@ it must be a pin.)
   the extra for safety.
 - **`.gitignore`:** add `tests/visual_output/` (not currently covered). **Do not** gitignore
   `tests/visual_baselines/` (intentionally committed); avoid any blanket `tests/visual_*` glob.
+- **`.gitattributes`:** add `tests/visual_baselines/*.png binary` so git never attempts text
+  diff/merge on the baselines.
+- **Runbook (anti-rot):** add `tests/visual_baselines/README.md` — a contributor-facing runbook
+  covering (a) updating baselines (dispatch `visual-update` → download artifact → inspect each PNG →
+  commit), (b) local runs are advisory, the CI `visual-gate` is authoritative, (c) adding a page
+  (extend `_NAV_TO_CLIP` + a test + regen), (d) bumping Playwright (the `[viztest]` pin + the image
+  digest + the version-assert all move together, then regen). The `assert_clip_snapshot` failure
+  message points at this file. Without a discoverable runbook the weekly baseline-update friction
+  drives the gate to be ignored/disabled.
 
 ## 7. Testing the Test Infrastructure (TDD)
 
 `compare_images` is pure and gets real unit tests in the **normal suite** (guarded only by numpy/Pillow
 — no browser, runs in standard CI):
 
-- Identical images → `passed=True`, `diff_ratio == 0`.
-- Sub-`threshold` antialiasing-level noise → `passed=True`.
+- Identical images → `passed=True`, all metrics zero.
+- Sub-`threshold` *localized* noise on a few pixels → `passed=True` (under ratio, pixels, and mean).
 - Dimension mismatch → `passed=False`.
-- An injected changed block exceeding `max_ratio` → `passed=False`, and the diff PNG highlights the
-  changed region (assert a non-trivial red-pixel count there).
-- `max_ratio` boundary: a change just under the ratio passes; just over fails.
+- An injected changed block exceeding `max_ratio` → `passed=False` (ratio condition), diff PNG
+  highlights the region (assert a non-trivial red-pixel count there).
+- **Uniform global recolor** of ≤`threshold` per channel across the whole image → **`passed=False` via
+  the mean-delta gate** even though `diff_pixels == 0` (this is the headline efficacy test — proves the
+  suite catches a Bootstrap-style uniform shift the per-pixel count misses).
+- **Absolute-floor:** a small cluster of strongly-changed pixels that is over `max_pixels` but under
+  `max_ratio` → `passed=False` via the floor.
+- `max_ratio` / `max_pixels` / `mean_threshold` boundaries: just-under passes, just-over fails for each.
 
 The browser-driven `-m visual` snapshots are the integration layer; their stability is validated by
 the container producing repeatable baselines and the gate re-comparing.
