@@ -262,6 +262,9 @@ def compare_images(
     actual_png: bytes,
     *,
     threshold: int = 4,
+    # Conservative core default. The authoritative gate value is supplied by
+    # assert_clip_snapshot (tests/_visual_support.py), which always passes max_ratio
+    # explicitly; this default only applies if compare_images is called directly.
     max_ratio: float = 0.001,
 ) -> tuple[bool, float, bytes]:
     """Compare two PNG byte strings.
@@ -383,7 +386,7 @@ def prepare_page(page: Page, app_url: str) -> None:
     page.wait_for_selector("#load_example", timeout=_TIMEOUT)
     page.select_option("#load_example", "minimal")
     page.click("#btn_load_example")
-    # config_header renders ".osm-config-stats" only once a config is loaded (app.py:531).
+    # config_header renders ".osm-config-stats" only once a config is loaded (app.py:547).
     expect(page.locator(".osm-config-stats")).to_contain_text("params", timeout=_TIMEOUT)
 
     page.add_style_tag(content=_DETERMINISM_CSS)
@@ -582,6 +585,7 @@ name: Visual
 # path-filtered job reports no status on unrelated PRs and would deadlock merges).
 on:
   pull_request:
+    branches: [master]
     paths:
       - "ui/**"
       - "www/**"
@@ -591,6 +595,10 @@ on:
       ref:
         description: "Branch/ref to (re)generate baselines against"
         required: false
+
+# Least privilege: this workflow only reads the repo and uploads artifacts.
+permissions:
+  contents: read
 
 jobs:
   visual-gate:
@@ -621,7 +629,7 @@ jobs:
         run: python -m pytest -m visual
       - name: Upload diff artifacts on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: visual-diffs
           path: tests/visual_output/
@@ -648,7 +656,7 @@ jobs:
           OSMOSE_UPDATE_SNAPSHOTS: "1"
         run: python -m pytest -m visual
       - name: Upload regenerated baselines
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: visual-baselines
           path: tests/visual_baselines/*.png
