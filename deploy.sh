@@ -21,6 +21,18 @@ SERVICE_NAME="osmose-shiny"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 APP_PORT=8838
 
+# Prod runs from its OWN git clone (PROD_SRC), NOT a symlink to the live dev tree.
+# Rationale: a long-running uvicorn process reads its source via inspect
+# (Shiny 1.6.3's per-renderer OTel `extract_source_ref` → `inspect.getsourcelines`).
+# If the source file is edited under the running process — which is exactly what a
+# symlink to the dev working tree allows — recorded line numbers drift from disk and
+# `getsourcelines` raises `tokenize.TokenError`, aborting `server()` and silently
+# breaking every interactive handler until restart. A dedicated clone only changes
+# on an explicit deploy (which restarts), so dev edits never touch prod.
+REPO_URL="${OSMOSE_REPO_URL:-https://github.com/razinkele/osmopy.git}"  # public → no creds
+DEPLOY_REF="${OSMOSE_DEPLOY_REF:-origin/master}"  # what to ship; override to pin a sha/tag
+PROD_SRC="${SHINY_ROOT}/${APP_NAME}-src"  # the prod clone (real dir; LINK_PATH → here)
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -60,6 +72,11 @@ if [[ "${1:-}" == "--uninstall" ]]; then
         warn "No symlink at ${LINK_PATH}"
     fi
 
+    if [[ -d "$PROD_SRC" ]]; then
+        rm -rf "$PROD_SRC"
+        info "Removed prod clone ${PROD_SRC}"
+    fi
+
     info "Uninstall complete."
     info "NOTE: Update nginx config manually to remove the /osmose/ location block."
     exit 0
@@ -86,26 +103,65 @@ if [[ ! -f "$SHINY_PYTHON" ]]; then
     exit 1
 fi
 
-# --- Step 1: Create symlink ---
+if ! command -v git >/dev/null 2>&1; then
+    error "git not found; required to manage the prod source clone (${PROD_SRC})."
+    exit 1
+fi
+
+# --- Step 1: Sync the prod source clone ---
+# Clone once, then fetch + checkout the target ref on every deploy. This is the
+# ONLY moment prod's source changes (followed by a restart in Step 4), so the
+# running process never reads a file that is being edited underneath it.
+git config --global --add safe.directory "$PROD_SRC" 2>/dev/null || true
+if [[ -d "${PROD_SRC}/.git" ]]; then
+    info "Updating prod clone at ${PROD_SRC} (fetch ${DEPLOY_REF})..."
+    git -C "$PROD_SRC" fetch --quiet --prune origin
+elif [[ -e "$PROD_SRC" ]]; then
+    error "${PROD_SRC} exists but is not a git clone. Remove it manually."
+    exit 1
+else
+    info "Creating prod clone: ${REPO_URL} -> ${PROD_SRC}"
+    git clone --quiet "$REPO_URL" "$PROD_SRC"
+fi
+git -C "$PROD_SRC" checkout --quiet --force --detach "$DEPLOY_REF"
+DEPLOYED_SHA="$(git -C "$PROD_SRC" rev-parse --short HEAD)"
+info "Prod source at ${DEPLOY_REF} (${DEPLOYED_SHA})."
+
+# The osmose-java JAR is NOT tracked in git (so it is absent from a fresh clone).
+# Provision it from the deploy host's tree so Java-engine runs remain available.
+# Best-effort: prod's primary path is the Python engine; missing JAR only disables
+# Java runs (the run page shows "no JAR found").
+if compgen -G "${SOURCE_DIR}/osmose-java/"*.jar >/dev/null 2>&1; then
+    mkdir -p "${PROD_SRC}/osmose-java"
+    cp -f "${SOURCE_DIR}/osmose-java/"*.jar "${PROD_SRC}/osmose-java/"
+    info "Provisioned Java JAR(s) into ${PROD_SRC}/osmose-java/."
+else
+    warn "No osmose-java/*.jar in ${SOURCE_DIR}; Java-engine runs will be unavailable in prod."
+fi
+
+# shiny must read the whole clone.
+chown -R shiny:shiny "$PROD_SRC" 2>/dev/null || true
+
+# --- Step 1b: Point the served path at the clone (NOT the dev tree) ---
 if [[ -L "$LINK_PATH" ]]; then
     current_target="$(readlink "$LINK_PATH")"
-    if [[ "$current_target" == "$SOURCE_DIR" ]]; then
-        info "Symlink already exists: ${LINK_PATH} -> ${SOURCE_DIR}"
+    if [[ "$current_target" == "$PROD_SRC" ]]; then
+        info "Symlink already correct: ${LINK_PATH} -> ${PROD_SRC}"
     else
-        warn "Symlink exists but points to ${current_target}. Updating..."
+        warn "Symlink points to ${current_target}; repointing to the prod clone..."
         rm "$LINK_PATH"
-        ln -s "$SOURCE_DIR" "$LINK_PATH"
-        info "Updated symlink: ${LINK_PATH} -> ${SOURCE_DIR}"
+        ln -s "$PROD_SRC" "$LINK_PATH"
+        info "Updated symlink: ${LINK_PATH} -> ${PROD_SRC}"
     fi
 elif [[ -e "$LINK_PATH" ]]; then
     error "${LINK_PATH} exists and is not a symlink. Remove it manually."
     exit 1
 else
-    ln -s "$SOURCE_DIR" "$LINK_PATH"
-    info "Created symlink: ${LINK_PATH} -> ${SOURCE_DIR}"
+    ln -s "$PROD_SRC" "$LINK_PATH"
+    info "Created symlink: ${LINK_PATH} -> ${PROD_SRC}"
 fi
 
-# Ensure shiny user can read the source directory
+# Ensure shiny user can traverse the symlink
 chown -h shiny:shiny "$LINK_PATH" 2>/dev/null || true
 
 # --- Step 2: Install missing + version-floored Python dependencies ---
@@ -206,10 +262,11 @@ fi
 # --- Summary ---
 echo ""
 info "Deployment complete!"
-echo "  Service:    ${SERVICE_NAME} (port ${APP_PORT})"
-echo "  Source:     ${SOURCE_DIR}"
-echo "  Symlink:    ${LINK_PATH}"
-echo "  Service:    ${SERVICE_FILE}"
+echo "  Service:     ${SERVICE_NAME} (port ${APP_PORT})"
+echo "  Prod source: ${PROD_SRC} @ ${DEPLOY_REF} (${DEPLOYED_SHA})"
+echo "  Served via:  ${LINK_PATH} -> ${PROD_SRC}"
+echo "  Deploy host: ${SOURCE_DIR} (ran this script; JAR source)"
+echo "  Service:     ${SERVICE_FILE}"
 echo ""
 echo "  NOTE: Ensure nginx proxies /osmose/ to http://127.0.0.1:${APP_PORT}/"
 echo "        (not to shiny-server on port 3838)"
