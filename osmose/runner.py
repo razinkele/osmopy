@@ -13,6 +13,33 @@ from osmose.logging import setup_logging
 
 _log = setup_logging("osmose.runner")
 
+
+def java_engine_block_reason(config) -> str | None:
+    """Reason the Java reference engine cannot run this configuration, or None.
+
+    Configurations that declare BACKGROUND species (``simulation.nbackground`` > 0) are
+    Python-engine-only here. The Java engine requires every background species to appear
+    in the catchability, discards, AND predation-accessibility matrices using OSMOSE's
+    ';'-separated matrix format; the Python-side configs (e.g. Baltic, with GreySeal /
+    Cormorant) store comma-separated fishery matrices and omit the background species, so
+    a Java run crashes at year 0 ("No catchability found for prey ..."). The Python engine
+    models background species natively, so it runs these configs fine -- use it instead.
+    """
+    try:
+        n_bg = int(float(str(config.get("simulation.nbackground", 0) or 0)))
+    except (TypeError, ValueError):
+        n_bg = 0
+    if n_bg > 0:
+        return (
+            "The Java reference engine does not support this configuration: it declares "
+            f"{n_bg} background species, which the Java engine requires in every fishery and "
+            "predation matrix (OSMOSE ';'-separated format). These are Python-engine "
+            "configurations (e.g. Baltic: GreySeal, Cormorant). Switch to the Python engine "
+            "to run it."
+        )
+    return None
+
+
 _OSMOSE_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9._]*$")
 
 _SAFE_JVM_PATTERNS = [

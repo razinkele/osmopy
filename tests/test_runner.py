@@ -12,7 +12,28 @@ from pathlib import Path
 import pytest
 
 from tests.helpers import _ScriptRunner
-from osmose.runner import OsmoseRunner, RunResult
+from osmose.runner import OsmoseRunner, RunResult, java_engine_block_reason
+
+
+def test_java_engine_block_reason_blocks_background_species():
+    """Configs declaring background species (e.g. Baltic GreySeal/Cormorant) are
+    Python-engine-only: the Java reference engine requires them in every fishery/
+    predation matrix, which these configs don't provide. Block with a clear reason."""
+    reason = java_engine_block_reason({"simulation.nbackground": "2", "simulation.nspecies": "8"})
+    assert reason is not None
+    assert "background" in reason.lower()
+    assert "java" in reason.lower()
+
+
+def test_java_engine_block_reason_allows_no_background():
+    # Java-validated configs (EEC, Bay of Biscay) declare no background species.
+    assert java_engine_block_reason({"simulation.nspecies": "14"}) is None
+    assert java_engine_block_reason({"simulation.nbackground": "0"}) is None
+
+
+def test_java_engine_block_reason_robust_to_bad_values():
+    assert java_engine_block_reason({"simulation.nbackground": ""}) is None
+    assert java_engine_block_reason({"simulation.nbackground": "garbage"}) is None
 
 
 # ---------------------------------------------------------------------------

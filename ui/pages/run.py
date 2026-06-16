@@ -22,7 +22,12 @@ from osmose.config.validator import summarize_config_validation
 from osmose.engine import PythonEngine, SimulationCancelled
 from osmose.live_movement import make_step_observer
 from osmose.logging import setup_logging
-from osmose.runner import OsmoseRunner, RunResult, validate_java_opts
+from osmose.runner import (
+    OsmoseRunner,
+    RunResult,
+    java_engine_block_reason,
+    validate_java_opts,
+)
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.pages.live_movement_render import dots_layer_from_points, heatmap_layer_from_points
 from ui.state import get_theme_mode
@@ -588,6 +593,19 @@ def run_server(input, output, session, state):
 
         # Validate config before run (common to both engines)
         config = state.config.get()
+
+        # Engine-compatibility guard: configs with background species (e.g. Baltic's
+        # GreySeal/Cormorant) are Python-engine-only — the Java reference engine crashes
+        # at year 0 because their entries are missing from the (comma-separated) fishery/
+        # predation matrices. Block early with a clear message instead of launching a
+        # doomed Java subprocess.
+        if engine_mode != "python":
+            block = java_engine_block_reason(config)
+            if block:
+                run_log.set(["--- RUN BLOCKED (engine not supported) ---", block])
+                status.set("Java engine not supported for this configuration")
+                ui.notification_show(block, type="error", duration=20)
+                return
         errors, warnings = summarize_config_validation(
             config, state.registry, state.config_dir.get()
         )
