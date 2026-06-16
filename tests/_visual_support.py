@@ -23,10 +23,21 @@ _OUTPUT_DIR = Path(__file__).parent / "visual_output"
 _RUNBOOK = "tests/visual_baselines/README.md"
 
 # Kill animation/focus/scrollbar nondeterminism inside the captured element.
+#
+# The notification-panel rule suppresses Shiny's transient toast (e.g. the
+# "Loaded 'minimal' (N parameters)." toast fired by prepare_page). It renders
+# position:fixed bottom-right -- overlapping the clip box of whichever page is
+# captured -- and lives in the DOM for ~2s. With animations killed it shows as a
+# fully-opaque, *stable* overlay, so _stable_screenshot can't tell it apart from
+# settled content and bakes it into the capture, differing from the toast-free
+# baseline (the movement-page flake). Hiding the panel makes every capture
+# toast-free regardless of timing; persisted on the page, it also covers toasts
+# raised by later navigations.
 _DETERMINISM_CSS = (
     "*{transition:none!important;animation:none!important;caret-color:transparent!important}"
     "*:focus{outline:none!important}"
     "::-webkit-scrollbar{display:none!important}"
+    "#shiny-notification-panel{display:none!important}"
 )
 
 _NAV_TO_CLIP = {

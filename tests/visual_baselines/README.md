@@ -28,6 +28,16 @@ Three things move together: the `playwright==X` pin in `pyproject.toml [viztest]
 both `visual.yml` jobs (resolve via `docker manifest inspect mcr.microsoft.com/playwright/python:vX-noble`).
 Then regenerate all baselines (new browser ⇒ new AA).
 
+## Determinism safeguards
+`_DETERMINISM_CSS` in `tests/_visual_support.py` is injected into the page before
+capture to remove non-deterministic paint: transitions/animations, focus outlines,
+the caret, scrollbars, and **Shiny notification toasts** (`#shiny-notification-panel`).
+The toast suppression matters because `prepare_page` raises a "Loaded 'minimal' (N
+parameters)." toast that lives ~2s; with animations killed it shows as a fully-opaque,
+*stable* overlay that `_stable_screenshot` would otherwise bake into the capture
+(this caused an intermittent movement-page failure). If a new transient overlay starts
+flaking a baseline, suppress it here rather than re-blessing it into the PNG.
+
 ## Recovery
 Baselines are plain committed PNGs: `git checkout <good-sha> -- tests/visual_baselines/`
 reverts a bad update, then re-run `visual-update` for the page you actually meant to change.
