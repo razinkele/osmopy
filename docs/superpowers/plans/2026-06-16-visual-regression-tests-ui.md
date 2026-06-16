@@ -522,9 +522,16 @@ def assert_clip_snapshot(page: Page, clip_selector: str, name: str, *, mask=None
     baseline = _BASELINE_DIR / f"{name}.png"
 
     if _should_update(name):
-        # Self-consistency: a second capture must match, else we'd bless a flaky frame.
+        # Self-consistency: a second capture must match within the gate tolerances, else
+        # we'd bless a flaky/half-rendered frame. NOT byte-exact — two consecutive captures
+        # of a static page still differ by a handful of sub-pixel-AA pixels (benign); a
+        # grossly-broken frame differs by far more and is caught by these tolerances.
         shot2 = locator.screenshot(mask=mask or [], mask_color="#FF00FF")
-        stable, _, _ = compare_images(shot, shot2, threshold=0, max_ratio=0.0, max_pixels=0, mean_threshold=0.0)
+        stable, _, _ = compare_images(
+            shot, shot2,
+            threshold=_DEFAULT_THRESHOLD, max_ratio=_DEFAULT_MAX_RATIO,
+            max_pixels=_DEFAULT_MAX_PIXELS, mean_threshold=_DEFAULT_MEAN_THRESHOLD,
+        )
         if not stable:
             raise AssertionError(f"Non-deterministic capture for {name!r}; refusing to write baseline.")
         _BASELINE_DIR.mkdir(parents=True, exist_ok=True)
@@ -594,8 +601,10 @@ app = create_app_fixture("../app.py")
 def test_visual_nav_chrome(page: Page, app: ShinyAppProc):
     # Bootstrap/shinyswatch-skinned nav rail -- the most sensitive catch for a theme/
     # Bootstrap-version regression (the page bodies are skinned mostly by osmose.css).
+    # Use the unique #main_nav id: a bare ".nav-pills" matches 4 navsets in this app
+    # (#main_nav, #cal_groups, #about_tabs, #help_tabs) -> Playwright strict-mode error.
     prepare_page(page, app.url)
-    assert_clip_snapshot(page, ".nav-pills", "nav_chrome")
+    assert_clip_snapshot(page, "#main_nav", "nav_chrome")
 
 
 def test_visual_setup_page(page: Page, app: ShinyAppProc):
