@@ -91,6 +91,10 @@ www/skill-triggers.html
 # Engine output directories (per-run artifacts)
 data/*/output/
 
+# Visual-regression failure artifacts. Baselines under tests/visual_baselines/ ARE
+# committed (do not add a tests/visual_* blanket glob).
+tests/visual_output/
+
 # Test preflight sentinel — created at runtime by
 # tests/test_baltic_ev_fixture_bioen.py::test_baltic_ev_cod_reaches_fishery_l50_in_baseline
 # only AFTER its assertion passes. Must never be tracked; tracking it

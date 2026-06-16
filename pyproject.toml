@@ -49,12 +49,29 @@ dev = [
     # without this -- it was only passing locally via a transitive copy. Keep the
     # security-endpoint tests running in CI rather than skipping them.
     "httpx>=0.27",
+    # Pillow: used by the pure image-diff core (tests/_visual_compare.py) that the
+    # compare_images unit tests (tests/test_visual_compare.py) exercise in the normal
+    # suite. Declaring it in [dev] (not only [viztest]) keeps those tests running in
+    # standard CI rather than relying on transitive presence (clean-venv false-green trap).
+    "pillow>=10",
     # numba is also an end-user opt-in via [numba], but dev/CI always
     # gets it because the test suite (test_tutorial_3species.py and
     # several engine tests) runs full simulations that are 5-10x slower
     # without the JIT path. CI without numba pushes the full suite past
     # 30 min; with numba it completes in a few minutes.
     "numba>=0.60",
+]
+viztest = [
+    # Visual-regression browser tests (pytest -m visual). playwright is PINNED to match the
+    # Playwright container image digest in .github/workflows/visual.yml (the version-assert step
+    # enforces it) -- an unpinned spec lets pip upgrade past the image's bundled browsers. Kept
+    # OUT of [dev] so the normal CI legs stay playwright-free.
+    "playwright==1.58.0",
+    "pytest-playwright>=0.5",
+    "pillow>=10",
+    # Retry transient TimeoutError (cold container app-start) without retrying a real
+    # AssertionError visual regression -- keeps flake-red distinct from regression-red.
+    "pytest-rerunfailures>=14",
 ]
 
 [project.scripts]
@@ -69,12 +86,15 @@ include = ["osmose*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-markers = ["e2e: end-to-end browser tests (Playwright)"]
+markers = [
+    "e2e: end-to-end browser tests (Playwright)",
+    "visual: screenshot visual-regression tests (Playwright; opt-in, run with -m visual)",
+]
 # --dist loadfile: when run in parallel (-n N), keep each file's tests on one
 # worker. Preserves implicit intra-file ordering (e.g. module-level cache state)
 # and avoids redundantly rebuilding module/session-scoped fixtures across
 # workers. No-op on serial runs. Pass -n auto (or a worker count) to parallelize.
-addopts = "-m 'not e2e' --dist loadfile"
+addopts = "-m 'not e2e and not visual' --dist loadfile"
 
 [tool.coverage.run]
 omit = [
