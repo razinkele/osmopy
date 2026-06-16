@@ -36,3 +36,24 @@ def test_visual_setup_page(page: Page, app: ShinyAppProc):
     prepare_page(page, app.url)
     clip = navigate_to(page, "setup")
     assert_clip_snapshot(page, clip, "setup")
+
+
+def test_visual_fishing_page(page: Page, app: ShinyAppProc):
+    prepare_page(page, app.url)
+    clip = navigate_to(page, "fishing")
+    assert_clip_snapshot(page, clip, "fishing")
+
+
+def test_visual_movement_page(page: Page, app: ShinyAppProc):
+    prepare_page(page, app.url)
+    clip = navigate_to(page, "movement")
+    assert_clip_snapshot(page, clip, "movement")
+
+
+def test_visual_advanced_page(page: Page, app: ShinyAppProc):
+    prepare_page(page, app.url)
+    clip = navigate_to(page, "advanced")
+    # Advanced is the largest clip. Its "All Parameters" table renders the LOADED config's
+    # params (~28 rows under `minimal`, not the full registry), so it under-exercises
+    # multi-value/conditional rendering -- a known v1 fixture gap (see the runbook).
+    assert_clip_snapshot(page, clip, "advanced")
