@@ -108,21 +108,44 @@ fi
 # Ensure shiny user can read the source directory
 chown -h shiny:shiny "$LINK_PATH" 2>/dev/null || true
 
-# --- Step 2: Install missing Python dependencies ---
+# --- Step 2: Install missing + version-floored Python dependencies ---
+# Presence-only check for packages we just need installed:
 MISSING_PKGS=()
 for pkg in pymoo SALib; do
     if ! "$SHINY_PIP" show "$pkg" &>/dev/null; then
         MISSING_PKGS+=("$pkg")
     fi
 done
-
 if [[ ${#MISSING_PKGS[@]} -gt 0 ]]; then
     info "Installing missing packages: ${MISSING_PKGS[*]}"
     "$SHINY_PIP" install "${MISSING_PKGS[@]}" --quiet
-    info "Packages installed."
-else
-    info "All Python dependencies already installed."
 fi
+
+# Version-floored packages: a presence check cannot enforce a minimum, so upgrade
+# unconditionally. cma <=3.3.0 breaks under numpy 2; shinyswatch <0.11 forces a sass
+# compile under shiny 1.6.3; shinywidgets floor raised. shiny_deckgl must match prod's
+# layer_legend_widget API (v1.9.2).
+info "Ensuring version-floored packages (cma, shinyswatch, shinywidgets, shiny_deckgl)..."
+"$SHINY_PIP" install --quiet --upgrade "cma>=4.0" "shinyswatch>=0.11" "shinywidgets>=0.7"
+"$SHINY_PIP" install --quiet --upgrade "shiny_deckgl @ git+https://github.com/razinkele/shiny_deckgl.git@v1.9.2"
+
+# Fail loudly if any floor is unmet after install.
+"$SHINY_PIP" install --quiet "packaging" || true
+"$SHINY_PYTHON" - <<'PYCHK'
+import sys
+from importlib.metadata import version
+from packaging.version import Version
+floors = {"cma": "4.0", "shinyswatch": "0.11", "shinywidgets": "0.7", "shiny": "1.6.3", "shiny_deckgl": "1.9.2"}
+bad = []
+for pkg, floor in floors.items():
+    have = version(pkg)
+    if Version(have) < Version(floor):
+        bad.append(f"{pkg} {have} < {floor}")
+if bad:
+    print("DEPENDENCY FLOOR CHECK FAILED:", "; ".join(bad)); sys.exit(1)
+print("dependency floors OK:", {k: version(k) for k in floors})
+PYCHK
+info "Python dependencies ensured."
 
 # --- Step 3: Install systemd service ---
 info "Installing ${SERVICE_NAME} systemd service..."
