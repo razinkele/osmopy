@@ -43,5 +43,5 @@ def test_setup_ui_includes_bootstrap_control():
 
     html = str(setup_ui())
     assert "Bootstrap from FishBase" in html
-    assert "fb_fetch" in html      # the inline panel's Fetch button
+    assert "fb_fetch" in html  # the inline panel's Fetch button
     assert "fb_species_select" in html  # the species-select output_ui placeholder

@@ -91,7 +91,9 @@ def _load_table(table: str, db: str = "fb") -> pd.DataFrame:
         return pd.read_parquet(cache)
     except Exception as exc:  # noqa: BLE001 — corrupt/changed payload: evict + signal
         cache.unlink(missing_ok=True)
-        raise FishBaseUnavailable(f"could not parse {table} parquet (cache evicted): {exc}") from exc
+        raise FishBaseUnavailable(
+            f"could not parse {table} parquet (cache evicted): {exc}"
+        ) from exc
 
 
 def _match_in_db(name: str, db: str) -> list[SpecMatch]:
