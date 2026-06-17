@@ -182,7 +182,7 @@ fi
 # compile under shiny 1.6.3; shinywidgets floor raised. shiny_deckgl must match prod's
 # layer_legend_widget API (v1.9.2).
 info "Ensuring version-floored packages (cma, shinyswatch, shinywidgets, shiny_deckgl)..."
-"$SHINY_PIP" install --quiet --upgrade "cma>=4.0" "shinyswatch>=0.11" "shinywidgets>=0.7"
+"$SHINY_PIP" install --quiet --upgrade "cma>=4.0" "shinyswatch>=0.11" "shinywidgets>=0.7" "pyarrow>=14"
 "$SHINY_PIP" install --quiet --upgrade "shiny_deckgl @ git+https://github.com/razinkele/shiny_deckgl.git@v1.9.2"
 
 # Fail loudly if any floor is unmet after install.
