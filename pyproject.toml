@@ -30,6 +30,7 @@ dependencies = [
     "cma>=4.0",
     "shiny_deckgl @ git+https://github.com/razinkele/shiny_deckgl.git@v1.9.2",
     "pyvis @ git+https://github.com/razinkele/pyvis.git@v4.2",
+    "pyarrow>=14",
 ]
 
 [project.optional-dependencies]
