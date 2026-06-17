@@ -5,11 +5,13 @@ import pytest
 
 from osmose.community_metrics import (
     SheldonSpectrum,
+    TrophicIndicators,
     _per_species_window_mean,
     _species_columns,
     _species_lw_coeffs,
     _to_float,
     compute_sheldon_spectrum,
+    compute_trophic_indicators,
 )
 
 
@@ -144,3 +146,29 @@ def test_sheldon_missing_file_raises(tmp_path):
 def test_sheldon_bad_metric_raises(tmp_path):
     with pytest.raises(ValueError):
         compute_sheldon_spectrum(tmp_path, _CONFIG, metric="nonsense")
+
+
+def test_trophic_mtl_and_mti(tmp_path):
+    # cod TL 4.0 biomass 30; herring TL 3.0 biomass 10.
+    # MTL = (4*30 + 3*10)/40 = 3.75. MTI (cutoff 3.25) keeps cod only -> 4.0.
+    _write_csv(tmp_path / "osm_meanTL_Simu0.csv", [(1.0, 4.0, 3.0)], ["Time", "cod", "herring"])
+    _write_csv(tmp_path / "osm_biomass_Simu0.csv", [(1.0, 30.0, 10.0)], ["Time", "cod", "herring"])
+    ind = compute_trophic_indicators(tmp_path, window_years=10)
+    assert isinstance(ind, TrophicIndicators)
+    assert ind.mtl == pytest.approx(3.75)
+    assert ind.mti == pytest.approx(4.0)
+    assert ind.n_species == 2
+    assert ind.n_species_above_cutoff == 1
+
+
+def test_trophic_equal_weights_without_biomass(tmp_path):
+    # No biomass file -> equal weights. MTL = (4+3)/2 = 3.5.
+    _write_csv(tmp_path / "osm_meanTL_Simu0.csv", [(1.0, 4.0, 3.0)], ["Time", "cod", "herring"])
+    ind = compute_trophic_indicators(tmp_path, window_years=10)
+    assert ind.mtl == pytest.approx(3.5)
+    assert "equal weights" in ind.note
+
+
+def test_trophic_missing_meanTL_raises(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        compute_trophic_indicators(tmp_path, window_years=10)

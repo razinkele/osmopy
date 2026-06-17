@@ -216,3 +216,66 @@ def compute_sheldon_spectrum(
         dropped_species=dropped,
         note=" ".join(notes),
     )
+
+
+@dataclass(frozen=True)
+class TrophicIndicators:
+    mtl: float
+    mti: float
+    mti_tl_cutoff: float
+    n_species: int
+    n_species_above_cutoff: int
+    window_years: int
+    note: str
+
+
+def compute_trophic_indicators(
+    output_dir,
+    *,
+    prefix: str = "osm",
+    window_years: int = 10,
+    mti_tl_cutoff: float = 3.25,
+) -> TrophicIndicators:
+    """Biomass-weighted community Mean Trophic Level + Marine Trophic Index.
+
+    MTL = biomass-weighted mean of per-species mean TL. MTI = same but only over
+    species with mean TL >= mti_tl_cutoff (Pauly & Watson; default 3.25), a
+    biomass-weighted standing-stock analogue of the catch-based index. meanTL is
+    required (strict read raises FileNotFoundError if absent); biomass is the weight
+    (read non-strict; if absent, equal weights with a note).
+    """
+    res = OsmoseResults(Path(output_dir), prefix=prefix, strict=True)
+    tl = _per_species_window_mean(res.mean_trophic_level(), window_years)
+    res_soft = OsmoseResults(Path(output_dir), prefix=prefix, strict=False)
+    bm = _per_species_window_mean(res_soft.biomass(), window_years)
+
+    species = [s for s in tl if not math.isnan(tl[s])]
+    if not species:
+        return TrophicIndicators(
+            float("nan"),
+            float("nan"),
+            mti_tl_cutoff,
+            0,
+            0,
+            window_years,
+            "no usable meanTL values.",
+        )
+
+    note = ""
+    weights = {s: bm.get(s, 0.0) for s in species}
+    if sum(weights.values()) <= 0:
+        weights = {s: 1.0 for s in species}
+        note = "no biomass output; trophic indices use equal weights."
+
+    wsum = sum(weights.values())
+    mtl = sum(tl[s] * weights[s] for s in species) / wsum
+    above = [s for s in species if tl[s] >= mti_tl_cutoff]
+    if above:
+        wabove = sum(weights[s] for s in above)
+        mti = sum(tl[s] * weights[s] for s in above) / wabove
+    else:
+        mti = float("nan")
+
+    return TrophicIndicators(
+        float(mtl), float(mti), mti_tl_cutoff, len(species), len(above), window_years, note
+    )
