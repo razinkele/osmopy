@@ -587,3 +587,59 @@ def make_biomass_overlay(
         title=dict(text=title), xaxis_title="time", yaxis_title="biomass", template=TEMPLATE
     )
     return fig
+
+
+def make_sheldon_spectrum_plot(spec) -> go.Figure:
+    """Log-log Sheldon NBSS scatter (mass-bin midpoint vs normalized biomass) + fit line."""
+    title = "Sheldon (mass) spectrum — NBSS"
+    mids = [m for m, v in zip(spec.mass_bin_midpoints, spec.nbss_values) if m > 0 and v > 0]
+    vals = [v for m, v in zip(spec.mass_bin_midpoints, spec.nbss_values) if m > 0 and v > 0]
+    if not mids:
+        return _empty_figure(title)
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=mids, y=vals, mode="markers", name="NBSS"))
+    if spec.slope is not None and spec.intercept is not None:
+        log_mid = np.log10(np.asarray(mids, dtype=float))
+        fitted = 10 ** (spec.slope * log_mid + spec.intercept)
+        fig.add_trace(
+            go.Scatter(x=mids, y=fitted, mode="lines", name="Regression", line=dict(dash="dash"))
+        )
+        fig.add_annotation(
+            text=f"Slope = {spec.slope:.2f}",
+            showarrow=False,
+            xref="paper",
+            yref="paper",
+            x=0.95,
+            y=0.95,
+        )
+    fig.update_layout(
+        title=title,
+        xaxis=dict(title="Body mass (bin midpoint)", type="log"),
+        yaxis=dict(title="Normalized biomass (per mass width)", type="log"),
+    )
+    return fig
+
+
+def make_abc_plot(abc) -> go.Figure:
+    """Cumulative %-dominance curves (biomass vs abundance) over species rank — ABC."""
+    title = "Abundance-Biomass Comparison (ABC)"
+    if not abc.ranks:
+        return _empty_figure(title)
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(x=abc.ranks, y=abc.cum_biomass_pct, mode="lines+markers", name="Biomass")
+    )
+    fig.add_trace(
+        go.Scatter(x=abc.ranks, y=abc.cum_abundance_pct, mode="lines+markers", name="Abundance")
+    )
+    w_txt = "n/a" if abc.w_statistic != abc.w_statistic else f"{abc.w_statistic:.3f}"
+    fig.add_annotation(
+        text=f"W = {w_txt}", showarrow=False, xref="paper", yref="paper", x=0.95, y=0.05
+    )
+    fig.update_layout(
+        title=title,
+        xaxis=dict(title="Species rank"),
+        yaxis=dict(title="Cumulative dominance (%)"),
+    )
+    return fig
