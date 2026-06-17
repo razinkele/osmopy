@@ -1,10 +1,12 @@
 """Tests for Python-engine community outputs: DistribBySize + meanTL."""
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from osmose.engine.config import EngineConfig
-from osmose.engine.simulate import _collect_mean_tl
+from osmose.engine.output import _build_meantl_dataframe, write_outputs
+from osmose.engine.simulate import StepOutput, _collect_mean_tl
 from osmose.engine.state import SchoolState
 
 
@@ -80,3 +82,42 @@ def test_collect_mean_tl_biomass_weighted_excludes_zero_tl():
 def test_collect_mean_tl_empty_state():
     config = EngineConfig.from_dict(_base_config())
     assert _collect_mean_tl(SchoolState.create(0), config) == {}
+
+
+def _step_output(step, biomass, abundance, **kwargs):
+    n_sp = len(biomass)
+    from osmose.engine.state import MortalityCause
+
+    return StepOutput(
+        step=step,
+        biomass=biomass,
+        abundance=abundance,
+        mortality_by_cause=np.zeros((n_sp, len(MortalityCause)), dtype=np.float64),
+        **kwargs,
+    )
+
+
+def test_build_meantl_dataframe_wide():
+    config = EngineConfig.from_dict(_base_config({"output.meantl.enabled": "true"}))
+    outputs = [
+        _step_output(0, np.array([1.0, 1.0]), np.array([1.0, 1.0]), mean_tl={0: 3.5, 1: 4.2}),
+        _step_output(12, np.array([1.0, 1.0]), np.array([1.0, 1.0]), mean_tl={0: 3.6}),
+    ]
+    dfs = _build_meantl_dataframe(outputs, config)
+    df = dfs["meanTL"]
+    assert list(df.columns) == ["Time", "Anchovy", "Hake"]
+    assert df["Anchovy"].tolist() == pytest.approx([3.5, 3.6])
+    assert df["Hake"][0] == pytest.approx(4.2)
+    assert np.isnan(df["Hake"][1])  # absent that step -> NaN
+
+
+def test_write_meantl_csv_gated(tmp_path):
+    config_off = EngineConfig.from_dict(_base_config())  # flag off
+    outputs = [_step_output(0, np.array([1.0, 1.0]), np.array([1.0, 1.0]), mean_tl={0: 3.5})]
+    write_outputs(outputs, tmp_path, config_off, prefix="osm")
+    assert not (tmp_path / "osm_meanTL_Simu0.csv").exists()
+
+    config_on = EngineConfig.from_dict(_base_config({"output.meantl.enabled": "true"}))
+    write_outputs(outputs, tmp_path, config_on, prefix="osm")
+    written = pd.read_csv(tmp_path / "osm_meanTL_Simu0.csv")
+    assert "Anchovy" in written.columns and written["Anchovy"][0] == pytest.approx(3.5)

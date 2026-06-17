@@ -59,6 +59,7 @@ def write_outputs(
     _write_mortality_csvs(output_dir, prefix, outputs, config)
     _write_yield_csv(output_dir, prefix, outputs, config)
     _write_distribution_csvs(output_dir, prefix, outputs, config)
+    _write_meantl_csv(output_dir, prefix, outputs, config)
 
     if config.bioen_enabled:
         _write_bioen_csvs(output_dir, prefix, outputs, config)
@@ -196,6 +197,37 @@ def _write_distribution_csvs(
     for key, df in dfs.items():
         path = output_dir / f"{prefix}_{key}_Simu0.csv"
         df.to_csv(path, index=False)
+
+
+def _build_meantl_dataframe(
+    outputs: list[StepOutput],
+    config: EngineConfig,
+) -> dict[str, pd.DataFrame]:
+    """Wide Time + per-species realized mean trophic level. Empty dict when disabled/absent."""
+    if not config.output_meantl or not any(o.mean_tl is not None for o in outputs):
+        return {}
+    times = np.array([o.step / config.n_dt_per_year for o in outputs])
+    sp_names = config.species_names
+    data = np.full((len(outputs), len(sp_names)), np.nan, dtype=np.float64)
+    for t_idx, o in enumerate(outputs):
+        if o.mean_tl:
+            for sp_idx, val in o.mean_tl.items():
+                if sp_idx < len(sp_names):
+                    data[t_idx, sp_idx] = val
+    df = pd.DataFrame(data, columns=sp_names)  # type: ignore[arg-type]
+    df.insert(0, "Time", times)
+    return {"meanTL": df}
+
+
+def _write_meantl_csv(
+    output_dir: Path,
+    prefix: str,
+    outputs: list[StepOutput],
+    config: EngineConfig,
+) -> None:
+    """Write {prefix}_meanTL_Simu0.csv (clean header; readers auto-detect preamble)."""
+    for key, df in _build_meantl_dataframe(outputs, config).items():
+        df.to_csv(output_dir / f"{prefix}_{key}_Simu0.csv", index=False)
 
 
 def _build_mortality_dataframes(
