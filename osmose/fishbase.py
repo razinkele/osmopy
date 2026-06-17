@@ -134,3 +134,57 @@ def resolve_species(name: str, *, db: str | None = None) -> list[SpecMatch]:
         if matches:
             return matches
     raise FishBaseNoMatch(f"no FishBase/SeaLifeBase record for {name!r}")
+
+
+# OSMOSE key stem -> (table, column, speccode_column, unit, positive_only)
+# positive_only=True drops non-positive values: FishBase stores 0 as a "not recorded"
+# sentinel for strictly-positive quantities (Loo/K/Lm/a/b/Length/longevity). `to` (t0)
+# is legitimately negative, so it must NOT be positive-filtered.
+TRAIT_MAP: dict[str, tuple[str, str, str, str, bool]] = {
+    "species.linf": ("popgrowth", "Loo", "SpecCode", "cm", True),
+    "species.k": ("popgrowth", "K", "SpecCode", "year^-1", True),
+    "species.t0": ("popgrowth", "to", "SpecCode", "year", False),
+    "species.lmax": ("species", "Length", "SpecCode", "cm", True),
+    "species.length2weight.condition.factor": ("poplw", "a", "SpecCode", "", True),
+    "species.length2weight.allometric.power": ("poplw", "b", "SpecCode", "", True),
+    "species.maturity.size": ("maturity", "Lm", "Speccode", "cm", True),
+    "species.lifespan": ("species", "LongevityWild", "SpecCode", "year", True),
+}
+
+
+def fetch_traits(spec_code: int, db: str) -> dict[str, TraitEstimate]:
+    """Aggregate each mapped trait to median/n/min-max for a species.
+
+    Per-table load failures degrade to "trait absent" (partial coverage is normal,
+    especially on SeaLifeBase where some tables are missing) — a single missing table
+    must NOT lose the traits that did load. Only a TOTAL outage (no table loads at all)
+    re-raises FishBaseUnavailable so the UI shows its "unavailable" path.
+    """
+    tables: dict[str, pd.DataFrame | None] = {}
+    out: dict[str, TraitEstimate] = {}
+    for key, (table, col, code_col, unit, positive_only) in TRAIT_MAP.items():
+        if table not in tables:
+            try:
+                tables[table] = _load_table(table, db)
+            except FishBaseUnavailable:
+                _log.warning("table %s unavailable for db=%s; skipping its traits", table, db)
+                tables[table] = None
+        df = tables[table]
+        if df is None or code_col not in df.columns or col not in df.columns:
+            continue
+        vals = pd.to_numeric(df.loc[df[code_col] == spec_code, col], errors="coerce").dropna()
+        if positive_only:
+            vals = vals[vals > 0]  # drop the 0 "not recorded" sentinel
+        if vals.empty:
+            _log.debug("trait %s: no usable values for spec_code=%s db=%s", key, spec_code, db)
+            continue
+        out[key] = TraitEstimate(
+            value=float(vals.median()),
+            n=int(vals.size),
+            min=float(vals.min()),
+            max=float(vals.max()),
+            unit=unit,
+        )
+    if tables and all(v is None for v in tables.values()):
+        raise FishBaseUnavailable(f"no FishBase tables could be loaded for db={db}")
+    return out
