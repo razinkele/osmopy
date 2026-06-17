@@ -226,7 +226,15 @@ def _melt_wide_to_long(
 
 # Output-type keys that represent cross-species (single-file) outputs — their
 # disk-shape keys do not embed a species name.
-_CROSS_SPECIES_OUTPUT_TYPES = {"biomass", "abundance", "yield", "dietMatrix"}
+_CROSS_SPECIES_OUTPUT_TYPES = {
+    "biomass",
+    "abundance",
+    "yield",
+    "dietMatrix",
+    "biomassDistribBySize",
+    "abundanceDistribBySize",
+    "meanTL",
+}
 
 
 def _build_dataframes_from_outputs(
@@ -253,7 +261,9 @@ def _build_dataframes_from_outputs(
     from osmose.engine.output import (
         _build_bioen_dataframes,
         _build_diet_dataframe,
+        _build_distrib_bysize_community_dataframes,
         _build_distribution_dataframes,
+        _build_meantl_dataframe,
         _build_mortality_dataframes,
         _build_species_dataframes,
         _build_yield_dataframes,
@@ -264,6 +274,8 @@ def _build_dataframes_from_outputs(
     disk_shape.update(_build_mortality_dataframes(outputs, config))
     disk_shape.update(_build_yield_dataframes(outputs, config))
     disk_shape.update(_build_distribution_dataframes(outputs, config))
+    disk_shape.update(_build_distrib_bysize_community_dataframes(outputs, config))
+    disk_shape.update(_build_meantl_dataframe(outputs, config))
     if config.bioen_enabled:
         disk_shape.update(_build_bioen_dataframes(outputs, config))
     if config.diet_output_enabled:

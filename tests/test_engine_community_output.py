@@ -217,6 +217,13 @@ def test_community_outputs_feed_diagnostics(tmp_path):
     assert (tmp_path / "osm_biomassDistribBySize_Simu0.csv").exists()
     assert (tmp_path / "osm_meanTL_Simu0.csv").exists()
 
+    # PARITY NOTE: biomass-weighting is LOCKED by test_collect_mean_tl_biomass_weighted_excludes_zero_tl
+    # (asserts 2.75, would fail under abundance-weighting). Java cross-check is consistent: the header
+    # of data/eec_full/output/Trophic/eec_meanTL_Simu0.csv reads "weighted by fish biomass" confirming
+    # the same semantics. A numerical time-series comparison is deferred because the EEC full run takes
+    # ~70 sim-years and is not suitable as a CI fixture; the behavioural unit test is sufficient to pin
+    # the weighting convention pending a targeted short-run cross-check.
+
     # Sheldon spectrum reads the community by-size file (raw config provides a,b).
     spec = compute_sheldon_spectrum(tmp_path, raw, window_years=2)
     assert spec.mass_bin_midpoints  # non-empty -> spectrum built from real by-size data
