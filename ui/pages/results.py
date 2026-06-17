@@ -491,13 +491,24 @@ def results_server(input, output, session, state: AppState):
             state.busy.set(None)
 
     def _get_result_data(output_type: str) -> pd.DataFrame:
-        """Load result data lazily — only when requested."""
-        data = results_data.get()
-        if output_type in data:
-            return data[output_type]
-        res = results_obj.get()
+        """Load result data lazily — only when requested.
+
+        ``results_obj`` is the SOLE reactive dependency (read first, unconditionally):
+        outputs recompute exactly once when a new result loads. ``results_data`` is a
+        pure memo and is read/written under ``reactive.isolate()`` so a lazy cache-fill
+        does NOT re-invalidate the very output that triggered it. Without this isolation,
+        a render fn (e.g. diet_chart) depends on results_data, fills it on first run, and
+        that write re-invalidates the fn → a second recalc whose overlapping
+        recalculating/progress messages desync shiny's OutputProgressReporter (the
+        user-visible "diet_chart … is in an unexpected state" client-error panel).
+        """
+        res = results_obj.get()  # the live dependency — recompute on new results
         if res is None:
             return pd.DataFrame()
+        with reactive.isolate():
+            data = results_data.get()
+        if output_type in data:
+            return data[output_type]
         # Use explicit method mapping; fall back to export_dataframe for unknowns.
         method_name = _RESULT_METHODS.get(output_type)
         if method_name:
@@ -505,10 +516,11 @@ def results_server(input, output, session, state: AppState):
             df = method() if method is not None else res.export_dataframe(output_type)
         else:
             df = res.export_dataframe(output_type)
-        # Cache it
-        data = dict(data)
-        data[output_type] = df
-        results_data.set(data)
+        # Memo-cache it WITHOUT touching the reactive graph (isolate the write).
+        with reactive.isolate():
+            cached = dict(results_data.get())
+            cached[output_type] = df
+            results_data.set(cached)
         return df
 
     @reactive.effect

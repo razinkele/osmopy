@@ -26,6 +26,11 @@ _RUN_TIMEOUT = 120_000  # 1-yr Baltic Python run + spatial I/O
 
 
 def test_baltic_full_run_and_outputs(page: Page, app: ShinyAppProc):
+    # Capture client-side console errors — guards the diet_chart "unexpected state"
+    # OutputProgressReporter desync (caused by _get_result_data's lazy cache write
+    # re-invalidating its own readers; fixed by isolating the memo cache).
+    console_errors: list[str] = []
+    page.on("console", lambda m: console_errors.append(m.text) if m.type == "error" else None)
     page.goto(app.url)
     page.wait_for_selector(".nav-pills", timeout=_LOAD_TIMEOUT)
     dismiss_changelog_modal(page)
@@ -94,3 +99,8 @@ def test_baltic_full_run_and_outputs(page: Page, app: ShinyAppProc):
 
     _REPO.joinpath("screenshots").mkdir(exist_ok=True)
     page.screenshot(path=str(_REPO / "screenshots" / "baltic_full_e2e.png"), full_page=True)
+
+    # Regression guard: no diet_chart client state-sync errors (the OutputProgressReporter
+    # desync fixed by isolating _get_result_data's memo cache so it recalcs exactly once).
+    diet_errors = [e for e in console_errors if "diet_chart" in e and "unexpected state" in e]
+    assert not diet_errors, f"diet_chart client state errors present: {diet_errors}"
