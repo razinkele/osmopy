@@ -7,6 +7,7 @@ import pytest
 
 from osmose.community_metrics import (
     ABCResult,
+    CommunityDiagnostics,
     SheldonSpectrum,
     TrophicIndicators,
     _per_species_window_mean,
@@ -14,8 +15,10 @@ from osmose.community_metrics import (
     _species_lw_coeffs,
     _to_float,
     compute_abc,
+    community_report,
     compute_sheldon_spectrum,
     compute_trophic_indicators,
+    format_community_report,
 )
 
 
@@ -220,3 +223,40 @@ def test_abc_single_species_undefined(tmp_path):
 def test_abc_missing_files_raises(tmp_path):
     with pytest.raises(FileNotFoundError):
         compute_abc(tmp_path, window_years=10)
+
+
+def _full_fixture(out_dir):
+    _sheldon_fixture(out_dir)  # writes biomassDistribBySize + biomass + abundance (cod)
+    _write_csv(out_dir / "osm_meanTL_Simu0.csv", [(1.0, 4.0)], ["Time", "cod"])
+
+
+def test_community_report_assembles_all(tmp_path):
+    _full_fixture(tmp_path)
+    diag = community_report(tmp_path, _CONFIG, window_years=10)
+    assert isinstance(diag, CommunityDiagnostics)
+    assert diag.sheldon is not None and diag.sheldon.slope == pytest.approx(-2.0, abs=1e-6)
+    assert diag.trophic is not None and diag.trophic.mtl == pytest.approx(4.0)
+    # one species -> ABC undefined (kept, not None)
+    assert diag.abc is not None and math.isnan(diag.abc.w_statistic)
+
+
+def test_community_report_without_config_skips_sheldon(tmp_path):
+    _full_fixture(tmp_path)
+    diag = community_report(tmp_path, None, window_years=10)
+    assert diag.sheldon is None
+    assert any("config" in n.lower() for n in diag.notes)
+    assert diag.trophic is not None  # trophic still computed
+
+
+def test_community_report_missing_outputs_degrade(tmp_path):
+    # empty dir: every unit's required file is absent -> all None, notes recorded, no raise.
+    diag = community_report(tmp_path, _CONFIG, window_years=10)
+    assert diag.sheldon is None and diag.trophic is None and diag.abc is None
+    assert len(diag.notes) >= 1
+
+
+def test_format_community_report_renders_present_sections(tmp_path):
+    _full_fixture(tmp_path)
+    md = format_community_report(community_report(tmp_path, _CONFIG, window_years=10))
+    assert "# OSMOSE community diagnostics" in md
+    assert "Sheldon" in md and "Mean Trophic Level" in md and "W-statistic" in md
