@@ -334,3 +334,119 @@ def compute_abc(output_dir, *, prefix: str = "osm", window_years: int = 10) -> A
         cum_a.append(100.0 * ca / at)
     w = sum(b - a for b, a in zip(cum_b, cum_a)) / (50.0 * (n - 1))
     return ABCResult(float(w), list(range(1, n + 1)), cum_b, cum_a, n, window_years, "")
+
+
+@dataclass(frozen=True)
+class CommunityDiagnostics:
+    sheldon: SheldonSpectrum | None
+    trophic: TrophicIndicators | None
+    abc: ABCResult | None
+    notes: list[str]
+
+
+def community_report(
+    output_dir,
+    config: dict | None = None,
+    *,
+    prefix: str = "osm",
+    window_years: int = 10,
+    metric: str = "biomass",
+) -> CommunityDiagnostics:
+    """Assemble the full community diagnostics bundle; each unit degrades to None on
+    missing input (recording a top-level note) rather than raising."""
+    notes: list[str] = []
+
+    sheldon: SheldonSpectrum | None = None
+    if config:
+        try:
+            sheldon = compute_sheldon_spectrum(
+                output_dir, config, metric=metric, prefix=prefix, window_years=window_years
+            )
+        except FileNotFoundError as exc:
+            notes.append(f"Sheldon (mass) spectrum unavailable: {exc}")
+    else:
+        notes.append("No config provided; Sheldon spectrum, size diversity and totals skipped.")
+
+    trophic: TrophicIndicators | None = None
+    try:
+        trophic = compute_trophic_indicators(output_dir, prefix=prefix, window_years=window_years)
+    except FileNotFoundError as exc:
+        notes.append(f"Trophic indicators unavailable: {exc}")
+
+    abc: ABCResult | None = None
+    try:
+        abc = compute_abc(output_dir, prefix=prefix, window_years=window_years)
+    except FileNotFoundError as exc:
+        notes.append(f"ABC / W-statistic unavailable: {exc}")
+
+    return CommunityDiagnostics(sheldon=sheldon, trophic=trophic, abc=abc, notes=notes)
+
+
+def _fmt(value: float | None, spec: str = ".3f") -> str:
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return "n/a"
+    return format(value, spec)
+
+
+def format_community_report(diag: CommunityDiagnostics) -> str:
+    """Markdown summary of whichever community-diagnostic sections are present."""
+    lines = ["# OSMOSE community diagnostics", ""]
+
+    if diag.sheldon is not None:
+        s = diag.sheldon
+        lines += [
+            "## Sheldon (body-mass) normalized biomass spectrum",
+            "",
+            f"- NBSS slope: {_fmt(s.slope)} "
+            f"(intercept {_fmt(s.intercept)}, R²={_fmt(s.r_squared)}, n_bins_fit={s.n_bins_fit})",
+            "  _Canonical normalized-biomass NBSS slope ≈ −1; a flatter (less negative) slope "
+            "suggests relative loss of large individuals (fishing-down). Loose reference for an "
+            "exploited fish community, not a strict Sheldon continuum._",
+            f"- Size diversity (Shannon evenness over per-octave biomass): {_fmt(s.size_diversity)}",
+            f"- Community total biomass: {_fmt(s.total_biomass, '.6g')}; "
+            f"total abundance: {_fmt(s.total_abundance, '.6g')}; "
+            f"mean body mass: {_fmt(s.mean_body_mass, '.6g')}",
+            f"- Window: last {s.window_years} yr ({s.n_timesteps_used} timesteps)",
+        ]
+        if s.note:
+            lines.append(f"- _Note: {s.note}_")
+        lines.append("")
+
+    if diag.trophic is not None:
+        t = diag.trophic
+        lines += [
+            "## Trophic indicators",
+            "",
+            f"- Mean Trophic Level (biomass-weighted): {_fmt(t.mtl)}",
+            f"- Marine Trophic Index (biomass-weighted standing stock, TL ≥ "
+            f"{_fmt(t.mti_tl_cutoff, '.2f')}): {_fmt(t.mti)} "
+            f"({t.n_species_above_cutoff}/{t.n_species} species). _A standing-stock analogue of the "
+            f"catch-based Pauly & Watson index._",
+        ]
+        if t.note:
+            lines.append(f"- _Note: {t.note}_")
+        lines.append("")
+
+    if diag.abc is not None:
+        a = diag.abc
+        w = a.w_statistic
+        if w == w and w > 0:
+            w_interp = "biomass-dominated / undisturbed"
+        elif w == w and w < 0:
+            w_interp = "abundance-dominated / disturbed"
+        else:
+            w_interp = "n/a"
+        lines += [
+            "## Abundance-Biomass Comparison (ABC)",
+            "",
+            f"- W-statistic: {_fmt(a.w_statistic)} ({w_interp})",
+            f"- Species ranked: {a.n_species}",
+        ]
+        if a.note:
+            lines.append(f"- _Note: {a.note}_")
+        lines.append("")
+
+    if diag.notes:
+        lines += ["## Notes", ""] + [f"- {n}" for n in diag.notes]
+
+    return "\n".join(lines)
