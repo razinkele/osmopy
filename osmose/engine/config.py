@@ -904,6 +904,7 @@ def _parse_output_flags(cfg: dict[str, str], n_sp: int, n_bkg: int) -> dict[str,
         "output_biomass_bysize": _enabled(cfg, "output.biomass.bysize.enabled"),
         "output_abundance_byage": _enabled(cfg, "output.abundance.byage.enabled"),
         "output_abundance_bysize": _enabled(cfg, "output.abundance.bysize.enabled"),
+        "output_meantl": _enabled(cfg, "output.meantl.enabled"),
         # Three pre-existing schema keys that were declared but not parsed
         "output_biomass_netcdf": _enabled(cfg, "output.biomass.netcdf.enabled"),
         "output_abundance_netcdf": _enabled(cfg, "output.abundance.netcdf.enabled"),
@@ -1429,6 +1430,7 @@ class EngineConfig:
     output_biomass_bysize: bool = False
     output_abundance_byage: bool = False
     output_abundance_bysize: bool = False
+    output_meantl: bool = False
     output_size_min: float = 0.0
     output_size_max: float = 205.0
     output_size_incr: float = 10.0
@@ -2081,6 +2083,7 @@ class EngineConfig:
             output_biomass_bysize=_output["output_biomass_bysize"],
             output_abundance_byage=_output["output_abundance_byage"],
             output_abundance_bysize=_output["output_abundance_bysize"],
+            output_meantl=_output["output_meantl"],
             output_size_min=_output["output_size_min"],
             output_size_max=_output["output_size_max"],
             output_size_incr=_output["output_size_incr"],
