@@ -8,6 +8,7 @@ from osmose.schema.simulation import SIMULATION_FIELDS
 from osmose.schema.species import SPECIES_FIELDS
 from osmose.config.validator import summarize_config_validation
 from ui.components.collapsible import collapsible_card_header, expand_tab
+from ui.components.fishbase_bootstrap import fishbase_bootstrap_ui, fishbase_bootstrap_server
 from ui.components.param_form import (
     copy_species0_to_all,
     render_category,
@@ -45,6 +46,7 @@ def setup_ui():
                         "show_advanced_species", "Show advanced parameters", value=False
                     ),
                     ui.output_ui("species_panels"),
+                    fishbase_bootstrap_ui(),
                 ),
                 col_widths=[4, 8],
             ),
@@ -203,3 +205,5 @@ def setup_server(input, output, session, state):
             )
         finally:
             state.busy.set(None)
+
+    fishbase_bootstrap_server(input, output, session, state)
