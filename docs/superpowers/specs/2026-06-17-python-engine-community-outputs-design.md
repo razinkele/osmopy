@@ -67,28 +67,32 @@ hot-loop edits. Files touched:
 
 ### meanTL aggregation (in `_collect_outputs`)
 
-Per output step, for each focal species compute the **abundance-weighted mean of
+Per output step, for each focal species compute the **biomass-weighted mean of
 `state.trophic_level`** over that species' live schools with `trophic_level > 0` (exclude eggs /
-never-fed schools whose TL is still the 0/baseline sentinel):
+never-fed schools whose TL is still the 0 sentinel):
 
 ```
-mean_tl[sp] = Σ_s (abundance_s · trophic_level_s) / Σ_s abundance_s     over schools s of sp with TL>0
+mean_tl[sp] = Σ_s (biomass_s · trophic_level_s) / Σ_s biomass_s     over schools s of sp with TL>0
 ```
 
 A species with no qualifying school that step is omitted (→ NaN column cell). Background/resource
 schools are excluded (focal species only, consistent with the other species outputs).
 
-**Weighting choice (parity-determined):** the design uses **abundance-weighting** (mean TL of
-individuals). This is the explicit default, but the **Java engine's `MeanTrophicLevel` output is the
-arbiter** — the implementation MUST confirm whether Java weights by abundance or biomass and match it
-(a one-line change to the weight); the parity test below is the source of truth. Likewise confirm
-whether Java seeds a school's TL to the configured `species.trophic.level.spN` baseline (in which case
-unfed schools contribute their baseline) or to 0 (excluded by the `TL>0` filter); match Java so the
-early-step meanTL aligns.
+**Weighting choice — biomass-weighting (matches Java).** The Java OSMOSE `MeanTrophicLevel` output
+weights each school's TL by its **biomass** (`Σ school.TL · school.biomass / Σ biomass`), not by
+abundance; large-bodied high-TL schools carry more weight. This is the default here. Because
+abundance- vs biomass-weighting diverge whenever per-school mean weight varies across a species'
+size/age structure (i.e. always), the unit test MUST use UNEQUAL per-school weights so it
+**distinguishes** the two and pins biomass-weighting (an equal-weight fixture would pass under either
+and lock nothing). If a Java two-engine comparison is feasible it is the final arbiter; absent that,
+the distinguishing unit test + the Java-documented biomass convention are the guard. Seed: the Python
+engine initialises `state.trophic_level` to 0 and only predation sets it (no `species.trophic.level.spN`
+baseline seed for focal schools), so the `TL>0` filter correctly drops unfed/egg schools; if a Java
+comparison shows Java seeds to a baseline, revisit (isolated change).
 
 ## Data flow
 
-`state.trophic_level` (already emergent) → `_collect_outputs` abundance-weighted per-species aggregate
+`state.trophic_level` (already emergent) → `_collect_outputs` biomass-weighted per-species aggregate
 → `StepOutput.mean_tl` → `output.py` `_build_meantl_dataframe`/`_write_meantl_csv` → `{prefix}_meanTL_Simu0.csv`.
 
 `state` per-size (existing) → `StepOutput.biomass_by_size`/`abundance_by_size` → `output.py`
@@ -120,7 +124,8 @@ consumers/parity may use them); the community files are written alongside.
   rows (`output_size_min + k·incr`), and correct per-species cells. Flag off → builder yields nothing.
 - **Unit (meanTL aggregation):** a small `SchoolState` with two species, known abundances + trophic
   levels (incl. a TL=0 egg school that must be excluded) → assert `_collect_outputs` yields the
-  hand-computed abundance-weighted mean per species, and `_build_meantl_dataframe` produces the wide
+  hand-computed biomass-weighted mean per species (UNEQUAL per-school weights so the test
+  distinguishes biomass- from abundance-weighting), and `_build_meantl_dataframe` produces the wide
   frame; species absent that step → NaN.
 - **Config:** `output.meanTL.enabled=true` round-trips to `config.output_meantl`.
 - **Integration:** a short Python-engine run (Baltic subset or EEC) with the by-size + meanTL flags on
