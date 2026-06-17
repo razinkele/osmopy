@@ -8,6 +8,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ### Added
 
+- **ui (species):** a **"Bootstrap from FishBase"** panel on the Species setup page that populates
+  a focal species' life-history traits — von Bertalanffy growth (Linf, K, t0), max length,
+  length–weight `a`/`b`, maturity size, and lifespan — from FishBase (fish) / SeaLifeBase (non-fish).
+  Enter a scientific or common name → Fetch → pick among candidates if ambiguous → review each
+  trait (current value vs. the FishBase median, study count, and min–max range) → apply the ones you
+  want. New pure `osmose/fishbase.py` reads the rfishbase-5 parquet snapshots from Source Cooperative
+  (cached on disk), aggregates each trait to a median across studies, and falls back FishBase→SeaLifeBase;
+  values are starting points to calibrate, not authoritative. Data: FishBase/SeaLifeBase via rOpenSci /
+  Source Cooperative (CC-BY-NC). Adds `pyarrow` as a runtime dependency (parquet engine).
 - **calibration (perf):** an opt-in ProcessPoolExecutor backend for NSGA-II
   (`parallel_backend="process"`) that evaluates candidates in separate processes (GIL-free),
   recovering more than the prior ~3.02× thread-bound speedup. Objectives are now picklable functors
