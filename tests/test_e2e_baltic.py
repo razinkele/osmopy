@@ -45,9 +45,7 @@ def test_baltic_full_run_and_outputs(page: Page, app: ShinyAppProc):
     # nyear=1 for speed; spatial output needs BOTH the master flag AND a sub-flag
     # (the per-quantity flag is what actually writes the NetCDF — output.py:811).
     overrides.fill(
-        "simulation.time.nyear=1\n"
-        "output.spatial.enabled=true\n"
-        "output.spatial.biomass.enabled=true"
+        "simulation.time.nyear=1\noutput.spatial.enabled=true\noutput.spatial.biomass.enabled=true"
     )
 
     # 3. Live movement + run.
