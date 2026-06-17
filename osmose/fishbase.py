@@ -12,7 +12,9 @@ import time
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
+import numpy as np
 import pandas as pd
 
 from osmose.logging import setup_logging
@@ -99,26 +101,30 @@ def _match_in_db(name: str, db: str) -> list[SpecMatch]:
     parts = name.split()
     if len(parts) >= 2 and {"Genus", "Species"}.issubset(sp.columns):  # scientific "Genus species"
         genus, species = parts[0], parts[1]
-        hit = sp[
-            sp.Genus.str.casefold().eq(genus.casefold())
-            & sp.Species.str.casefold().eq(species.casefold())
-        ]
+        hit = cast(
+            "pd.DataFrame",
+            sp[
+                sp.Genus.str.casefold().eq(genus.casefold())
+                & sp.Species.str.casefold().eq(species.casefold())
+            ],
+        )
         out += _rows_to_matches(hit, db)
     if not out and "FBname" in sp.columns:  # try common name (FBname)
-        hit = sp[sp.FBname.fillna("").str.casefold().eq(name.casefold())]
+        hit = cast("pd.DataFrame", sp[sp.FBname.fillna("").str.casefold().eq(name.casefold())])
         out += _rows_to_matches(hit, db)
     return out
 
 
 def _rows_to_matches(hit: pd.DataFrame, db: str) -> list[SpecMatch]:
+    # to_dict("records") avoids the pyright "itertuples yields bare tuple" attribute error.
     return [
         SpecMatch(
-            spec_code=int(r.SpecCode),
-            scientific_name=f"{r.Genus} {r.Species}",
-            common_name=("" if pd.isna(r.FBname) else str(r.FBname)),
+            spec_code=int(rec["SpecCode"]),
+            scientific_name=f"{rec['Genus']} {rec['Species']}",
+            common_name=("" if pd.isna(rec["FBname"]) else str(rec["FBname"])),
             db=db,
         )
-        for r in hit.itertuples()
+        for rec in hit.to_dict("records")
     ]
 
 
@@ -172,17 +178,23 @@ def fetch_traits(spec_code: int, db: str) -> dict[str, TraitEstimate]:
         df = tables[table]
         if df is None or code_col not in df.columns or col not in df.columns:
             continue
-        vals = pd.to_numeric(df.loc[df[code_col] == spec_code, col], errors="coerce").dropna()
+        vals = cast(
+            "pd.Series",
+            pd.to_numeric(df.loc[df[code_col] == spec_code, col], errors="coerce"),
+        ).dropna()
         if positive_only:
             vals = vals[vals > 0]  # drop the 0 "not recorded" sentinel
-        if vals.empty:
+        # Reduce on a plain float64 numpy array: parquet columns are pyarrow-backed, so
+        # Series reductions return broadly-typed scalars that aren't cleanly float-castable.
+        arr = np.asarray(vals, dtype=float)
+        if arr.size == 0:
             _log.debug("trait %s: no usable values for spec_code=%s db=%s", key, spec_code, db)
             continue
         out[key] = TraitEstimate(
-            value=float(vals.median()),
-            n=int(vals.size),
-            min=float(vals.min()),
-            max=float(vals.max()),
+            value=float(np.median(arr)),
+            n=int(arr.size),
+            min=float(arr.min()),
+            max=float(arr.max()),
             unit=unit,
         )
     if tables and all(v is None for v in tables.values()):
