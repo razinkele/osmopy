@@ -260,3 +260,15 @@ def test_format_community_report_renders_present_sections(tmp_path):
     md = format_community_report(community_report(tmp_path, _CONFIG, window_years=10))
     assert "# OSMOSE community diagnostics" in md
     assert "Sheldon" in md and "Mean Trophic Level" in md and "W-statistic" in md
+
+
+def test_results_page_wires_community_metrics():
+    from pathlib import Path
+
+    src = (Path(__file__).resolve().parent.parent / "ui" / "pages" / "results.py").read_text()
+    assert "sheldon_spectrum" in src  # new chart rtype / id
+    assert "abc_curve" in src  # new chart rtype / id
+    assert "make_sheldon_spectrum_plot" in src
+    assert "make_abc_plot" in src
+    assert "community_report" in src  # the metrics panel builder
+    assert "format_community_report" in src
