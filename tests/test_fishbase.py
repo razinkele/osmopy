@@ -1,4 +1,5 @@
 import io
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -63,3 +64,37 @@ def test_load_table_evicts_corrupt_cache(tmp_path, monkeypatch):
     with pytest.raises(fishbase.FishBaseUnavailable):
         fishbase._load_table("popgrowth", "fb")
     assert not cache.exists()  # evicted -> next call re-fetches
+
+
+_FIX = Path(__file__).parent / "fixtures" / "fishbase"
+
+
+@pytest.fixture
+def fixture_tables(monkeypatch):
+    """Serve fixtures from _load_table; no network."""
+    def fake(table, db="fb"):
+        return pd.read_parquet(_FIX / f"{db}_{table}.parquet")
+    monkeypatch.setattr(fishbase, "_load_table", fake)
+
+
+def test_resolve_scientific_name_fishbase(fixture_tables):
+    matches = fishbase.resolve_species("Gadus morhua")
+    assert len(matches) == 1
+    m = matches[0]
+    assert m.spec_code == 69 and m.db == "fb"
+    assert m.common_name == "Atlantic cod"
+
+
+def test_resolve_common_name(fixture_tables):
+    matches = fishbase.resolve_species("atlantic cod")  # case-insensitive
+    assert matches and matches[0].spec_code == 69
+
+
+def test_resolve_falls_back_to_sealifebase(fixture_tables):
+    matches = fishbase.resolve_species("Carcinus maenas")
+    assert matches and matches[0].db == "slb" and matches[0].spec_code == 26397
+
+
+def test_resolve_no_match_raises(fixture_tables):
+    with pytest.raises(fishbase.FishBaseNoMatch):
+        fishbase.resolve_species("Nonexistus fakus")
