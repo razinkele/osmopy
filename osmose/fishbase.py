@@ -97,14 +97,14 @@ def _match_in_db(name: str, db: str) -> list[SpecMatch]:
     name = name.strip()
     out: list[SpecMatch] = []
     parts = name.split()
-    if len(parts) >= 2:  # try scientific "Genus species"
+    if len(parts) >= 2 and {"Genus", "Species"}.issubset(sp.columns):  # scientific "Genus species"
         genus, species = parts[0], parts[1]
         hit = sp[
             sp.Genus.str.casefold().eq(genus.casefold())
             & sp.Species.str.casefold().eq(species.casefold())
         ]
         out += _rows_to_matches(hit, db)
-    if not out:  # try common name (FBname)
+    if not out and "FBname" in sp.columns:  # try common name (FBname)
         hit = sp[sp.FBname.fillna("").str.casefold().eq(name.casefold())]
         out += _rows_to_matches(hit, db)
     return out
