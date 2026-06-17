@@ -8,6 +8,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ### Added
 
+- **diagnostics (community):** a community ecosystem-state diagnostics suite. The Results page gains a
+  **Sheldon (mass) spectrum** chart — the canonical normalized biomass size spectrum over equal log₂
+  (octave) body-mass bins, converting OSMOSE's by-length classes to body mass per species via the
+  config length–weight law `W = a·L^b` — an **ABC (W-statistic)** chart (Warwick Abundance-Biomass
+  Comparison: cumulative biomass-vs-abundance dominance curves; W>0 undisturbed, W<0 disturbed), and a
+  **Community Metrics** panel summarising the NBSS slope, **size diversity** (Shannon evenness over
+  per-octave biomass), community totals + mean body mass, **Mean Trophic Level / Marine Trophic Index**
+  (biomass-weighted standing-stock; TL ≥ 3.25), and the W-statistic. New pure `osmose/community_metrics.py`
+  (each indicator degrades to a note rather than failing when its output is absent) reusing the
+  `osmose/size_spectrum.py` readers and `OsmoseResults`; plots in `osmose/plotting.py`. Also extends
+  `OsmoseResults` to find Java-engine outputs written into `Trophic/`/`Indicators/` subdirectories.
 - **ui (species):** a **"Bootstrap from FishBase"** panel on the Species setup page that populates
   a focal species' life-history traits — von Bertalanffy growth (Linf, K, t0), max length,
   length–weight `a`/`b`, maturity size, and lifespan — from FishBase (fish) / SeaLifeBase (non-fish).
