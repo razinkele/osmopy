@@ -52,3 +52,20 @@ def test_baltic_full_run_and_outputs(page: Page, app: ShinyAppProc):
     expect(page.locator("#live_movement_status")).to_contain_text("running", timeout=_RUN_TIMEOUT)
     expect(page.locator("#live_movement_status")).to_contain_text("done", timeout=_RUN_TIMEOUT)
     page.locator("#live_movement_mode").get_by_text("Dots").click()
+
+    # 4. Results: biomass time-series + diet heatmap (real data, not empty-state).
+    page.locator(".nav-pills .nav-link[data-value='results']").click()
+
+    # Biomass chart (Time Series card, always visible). A non-empty plotly plot has traces.
+    expect(page.locator("#results_chart .js-plotly-plot")).to_be_visible(timeout=_RUN_TIMEOUT)
+    assert page.locator("#results_chart .js-plotly-plot .trace").count() > 0, (
+        "biomass chart has no traces"
+    )
+
+    # Diet Composition heatmap — click its tab, assert it rendered and is NOT the
+    # "(no prey data)" empty-state (the bug a real Baltic run uniquely surfaced).
+    page.get_by_role("tab", name="Diet Composition").click()
+    diet = page.locator("#diet_chart")
+    expect(diet.locator(".js-plotly-plot")).to_be_visible(timeout=_LOAD_TIMEOUT)
+    assert diet.locator(".js-plotly-plot .heatmaplayer").count() > 0, "diet heatmap has no cells"
+    assert "no prey data" not in diet.inner_text().lower(), "diet heatmap is the empty-state"
