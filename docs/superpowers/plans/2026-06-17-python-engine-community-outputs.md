@@ -86,7 +86,10 @@ def test_output_meantl_flag_defaults_false():
 
 
 def test_output_meantl_flag_enabled():
-    config = EngineConfig.from_dict(_base_config({"output.meanTL.enabled": "true"}))
+    # NOTE: the key is LOWERCASE. The real OsmoseConfigReader lowercases every config key
+    # (reader.py:157), and config.py reads the flag with the lowercase literal. _base_config
+    # builds a hand dict that bypasses the reader, so it MUST use the lowercase key here.
+    config = EngineConfig.from_dict(_base_config({"output.meantl.enabled": "true"}))
     assert config.output_meantl is True
 ```
 
@@ -97,9 +100,9 @@ Expected: FAIL with `AttributeError: 'EngineConfig' object has no attribute 'out
 
 - [ ] **Step 3: Add the flag in `osmose/engine/config.py`**
 
-3a. In the `_output` dict (next to `"output_abundance_bysize": _enabled(cfg, "output.abundance.bysize.enabled"),`), add:
+3a. In the `_output` dict (next to `"output_abundance_bysize": _enabled(cfg, "output.abundance.bysize.enabled"),`), add — note the key is LOWERCASE (`output.meantl.enabled`), matching the reader's unconditional key-lowercasing and the existing all-lowercase flag literals; using mixed case would (a) always miss the real lowercased key → flag stuck False, and (b) fire the config-validation allowlist warning:
 ```python
-        "output_meantl": _enabled(cfg, "output.meanTL.enabled"),
+        "output_meantl": _enabled(cfg, "output.meantl.enabled"),
 ```
 
 3b. In the `EngineConfig` dataclass distribution-flags block (next to `output_abundance_bysize: bool = False`), add:
@@ -136,18 +139,23 @@ from osmose.engine.simulate import StepOutput, _collect_mean_tl
 from osmose.engine.state import SchoolState
 
 
-def test_collect_mean_tl_abundance_weighted_excludes_zero_tl():
+def test_collect_mean_tl_biomass_weighted_excludes_zero_tl():
     config = EngineConfig.from_dict(_base_config())  # 2 focal species, no cutoff age
-    # 3 schools: sp0 two schools (TL 4.0 ab 30, TL 2.0 ab 10) -> weighted (4*30+2*10)/40 = 3.5;
+    # sp0 two schools with UNEQUAL per-school weight so abundance- and biomass-weighting DIFFER
+    # (this pins biomass-weighting; an equal-weight fixture would pass under either and lock nothing):
+    #   school A: biomass 30, TL 4.0 ; school B: biomass 50, TL 2.0
+    #   biomass-weighted  = (4*30 + 2*50) / (30+50) = 220/80 = 2.75   <-- Java convention (asserted)
+    #   abundance-weighted would be (4*30 + 2*10)/40 = 3.5            <-- must NOT be the result
     # sp1 one school TL 0.0 (unfed/egg) -> excluded -> sp1 absent from the dict.
     state = SchoolState.create(3).replace(
         species_id=np.array([0, 0, 1], dtype=np.int32),
         abundance=np.array([30.0, 10.0, 50.0], dtype=np.float64),
+        biomass=np.array([30.0, 50.0, 50.0], dtype=np.float64),
         trophic_level=np.array([4.0, 2.0, 0.0], dtype=np.float64),
         age_dt=np.array([12, 12, 12], dtype=np.int32),
     )
     out = _collect_mean_tl(state, config)
-    assert out[0] == pytest.approx(3.5)
+    assert out[0] == pytest.approx(2.75)  # biomass-weighted (NOT 3.5 abundance-weighted)
     assert 1 not in out  # sp1's only school has TL 0 -> excluded
 
 
@@ -167,36 +175,37 @@ Expected: FAIL with `ImportError: cannot import name '_collect_mean_tl'`.
 
 3a. Add the `mean_tl` field to `StepOutput` (after `abundance_by_size`):
 ```python
-    # Per-species realized mean trophic level (sp_idx -> abundance-weighted mean TL), or None
+    # Per-species realized mean trophic level (sp_idx -> biomass-weighted mean TL), or None
     mean_tl: dict[int, float] | None = None
 ```
 
 3b. Add the helper (place near `_collect_biomass_abundance`):
 ```python
 def _collect_mean_tl(state: SchoolState, config: EngineConfig) -> dict[int, float]:
-    """Abundance-weighted realized mean trophic level per FOCAL species.
+    """Biomass-weighted realized mean trophic level per FOCAL species.
 
     Aggregates the emergent per-school ``state.trophic_level`` (maintained by predation
-    in mortality.py). Includes only focal-species schools (species_id < n_species) with
-    trophic_level > 0 and abundance > 0 (excludes background and unfed/egg schools whose
-    TL is still the 0 sentinel). Applies the same output cutoff-age filter as the biomass
-    output. Species with no qualifying school are omitted from the returned dict.
+    in mortality.py), weighting each school by its biomass — matching the Java OSMOSE
+    ``MeanTrophicLevel`` convention. Includes only focal-species schools
+    (species_id < n_species) with trophic_level > 0 and biomass > 0 (excludes background
+    and unfed/egg schools whose TL is still the 0 sentinel). Applies the same output
+    cutoff-age filter as the biomass output. Species with no qualifying school are omitted.
     """
     n_sp = config.n_species
-    wsum = np.zeros(n_sp, dtype=np.float64)
-    asum = np.zeros(n_sp, dtype=np.float64)
+    wsum = np.zeros(n_sp, dtype=np.float64)  # Σ biomass·TL
+    bsum = np.zeros(n_sp, dtype=np.float64)  # Σ biomass
     if len(state) > 0:
         sp = state.species_id
         tl = state.trophic_level
-        ab = state.abundance
-        mask = (sp < n_sp) & (tl > 0) & (ab > 0)
+        bm = state.biomass
+        mask = (sp < n_sp) & (tl > 0) & (bm > 0)
         if config.output_cutoff_age is not None:
             age_years = state.age_dt.astype(np.float64) / config.n_dt_per_year
             cutoff = config.output_cutoff_age[sp]
             mask = mask & (age_years >= cutoff)
-        np.add.at(wsum, sp[mask], ab[mask] * tl[mask])
-        np.add.at(asum, sp[mask], ab[mask])
-    return {i: float(wsum[i] / asum[i]) for i in range(n_sp) if asum[i] > 0}
+        np.add.at(wsum, sp[mask], bm[mask] * tl[mask])
+        np.add.at(bsum, sp[mask], bm[mask])
+    return {i: float(wsum[i] / bsum[i]) for i in range(n_sp) if bsum[i] > 0}
 ```
 
 3c. In `_collect_outputs`, after the `biomass_by_age, … = _collect_distributions(...)` line, add:
@@ -229,7 +238,7 @@ Run: `.venv/bin/python -m pytest tests/test_engine_simulate.py tests/test_distri
 
 ```bash
 git add osmose/engine/simulate.py tests/test_engine_community_output.py
-git commit -m "feat(engine): capture abundance-weighted per-species meanTL into StepOutput"
+git commit -m "feat(engine): capture biomass-weighted per-species meanTL into StepOutput"
 ```
 
 ---
@@ -258,7 +267,7 @@ def _step_output(step, biomass, abundance, **kwargs):
 
 
 def test_build_meantl_dataframe_wide():
-    config = EngineConfig.from_dict(_base_config({"output.meanTL.enabled": "true"}))
+    config = EngineConfig.from_dict(_base_config({"output.meantl.enabled": "true"}))
     outputs = [
         _step_output(0, np.array([1.0, 1.0]), np.array([1.0, 1.0]), mean_tl={0: 3.5, 1: 4.2}),
         _step_output(12, np.array([1.0, 1.0]), np.array([1.0, 1.0]), mean_tl={0: 3.6}),
@@ -277,7 +286,7 @@ def test_write_meantl_csv_gated(tmp_path):
     write_outputs(outputs, tmp_path, config_off, prefix="osm")
     assert not (tmp_path / "osm_meanTL_Simu0.csv").exists()
 
-    config_on = EngineConfig.from_dict(_base_config({"output.meanTL.enabled": "true"}))
+    config_on = EngineConfig.from_dict(_base_config({"output.meantl.enabled": "true"}))
     write_outputs(outputs, tmp_path, config_on, prefix="osm")
     written = pd.read_csv(tmp_path / "osm_meanTL_Simu0.csv")
     assert "Anchovy" in written.columns and written["Anchovy"][0] == pytest.approx(3.5)
@@ -481,11 +490,11 @@ git commit -m "feat(engine): write community biomass/abundanceDistribBySize CSVs
 
 - [ ] **Step 1: Enable 1D meanTL in the Baltic config**
 
-Add a line to `data/baltic/baltic_param-output.csv` (semicolon-separated, matching the existing `output.meanTL.bySize.enabled;true` line):
+Add a line to `data/baltic/baltic_param-output.csv` (semicolon-separated, matching the casing of the existing `output.meanTL.bySize.enabled;true` line):
 ```
 output.meanTL.enabled;true
 ```
-(The by-size biomass/abundance flags are already `true` there, so DistribBySize needs no config change.)
+The casing in the FILE is cosmetic — `OsmoseConfigReader` lowercases every key on read, so this becomes `output.meantl.enabled` in the config dict, which is exactly the lowercase literal `config.py` queries. (The by-size biomass/abundance flags are already `true` there, so DistribBySize needs no config change.)
 
 - [ ] **Step 2: Write the end-to-end integration test** (append to `tests/test_engine_community_output.py`)
 
@@ -508,9 +517,11 @@ def test_community_outputs_feed_diagnostics(tmp_path):
 
     raw = OsmoseConfigReader().read(examples_config)
     raw["simulation.time.nyear"] = "2"
+    # raw keys are already lowercased by OsmoseConfigReader; set the LOWERCASE keys to match
+    # (this is what config.py reads — NOT a case-bypass).
     raw["output.biomass.bysize.enabled"] = "true"
     raw["output.abundance.bysize.enabled"] = "true"
-    raw["output.meanTL.enabled"] = "true"
+    raw["output.meantl.enabled"] = "true"
     cfg = EngineConfig.from_dict(raw)
 
     grid_file = raw.get("grid.netcdf.file", "")
@@ -562,12 +573,14 @@ git commit -m "feat(engine): enable meanTL in Baltic config + e2e community-outp
 
 **Files:** Modify `tests/test_engine_community_output.py` (optional parity assertion)
 
-- [ ] **Step 1: Confirm the meanTL weighting/seed against Java (parity arbiter)**
+- [ ] **Step 1: Confirm/operationalize the meanTL weighting against Java**
 
-The spec defaults to abundance-weighting and a `TL>0` filter. Confirm against the Java engine's `MeanTrophicLevel` semantics:
-- Search the repo for any Java reference meanTL output or parity fixture (`grep -ril "meanTL" data/ tests/`).
-- If a Java reference run exists, compare a Python-engine meanTL series against it within the established parity tolerance and adjust the weight (abundance↔biomass) / seed handling in `_collect_mean_tl` to match. Add a guarded parity test mirroring how existing cross-engine parity tests are written (e.g. `OsmoseCalibrationProblem(use_java_engine=True)` or the parity-roadmap harness).
-- If NO Java reference is available in this environment, document that in a comment in the test file and keep the abundance-weighted default; the integration test's plausibility bound (TL ∈ [1,6]) is the available guard. Do NOT fabricate a parity number.
+The semantics are now PINNED by code + a distinguishing test, not left to chance: `_collect_mean_tl` uses **biomass-weighting** (Java's `MeanTrophicLevel` convention) and `test_collect_mean_tl_biomass_weighted_excludes_zero_tl` (Task 2) uses UNEQUAL per-school weights so it asserts the biomass-weighted value (2.75) and would FAIL under abundance-weighting — the choice cannot silently flip. This is the primary guard (the integration test's TL∈[1,6] bound alone cannot distinguish weightings).
+
+Additionally, if a Java cross-engine comparison is feasible in this environment, run it as the final arbiter:
+- `grep -ril "meantl\|meanTL" data/ tests/` for any Java reference meanTL fixture.
+- If a reference (or a runnable Java engine via `OsmoseCalibrationProblem(use_java_engine=True)` per CLAUDE.md / the parity-roadmap harness) is available, compare a Python meanTL series to Java within the established tolerance; if it disagrees with biomass-weighting, adjust `_collect_mean_tl` (the weight term) and the cutoff-age handling to match, and update the distinguishing test. Document the comparison.
+- If NO Java engine/reference is available here, document that in a comment in the test file and ship the biomass-weighted default (locked by the distinguishing test). Do NOT fabricate a parity number. The cutoff-age filter remains a documented assumption (isolated 3-line revert if Java differs).
 
 - [ ] **Step 2: Lint, format, type-check (CI parity — lint runs BOTH check and format)**
 
@@ -579,7 +592,7 @@ Run; fix; re-run until clean:
 - [ ] **Step 3: Engine + config + community-diagnostics regression suites**
 
 Run: `.venv/bin/python -m pytest tests/test_engine_community_output.py tests/test_engine_output.py tests/test_engine_distribution_output.py tests/test_engine_config_validation.py tests/test_community_metrics.py tests/test_size_spectrum.py -q` → all pass.
-NOTE on config validation: `tests/test_engine_config_validation.py::test_from_dict_warn_mode_clean_on_example_configs[*]` must stay warning-free — the new `output.meanTL.enabled` key is parsed via `_enabled(cfg, "output.meanTL.enabled")` (a string literal in config.py), so the AST allowlist walker captures it automatically. If it does NOT (a warning appears), add `"output.meanTL.enabled"` to `_SUPPLEMENTARY_ALLOWLIST` in `osmose/engine/config_validation.py` per the CLAUDE.md guidance.
+NOTE on config validation: `tests/test_engine_config_validation.py::test_from_dict_warn_mode_clean_on_example_configs[*]` must stay warning-free — the new flag is parsed via the LOWERCASE literal `_enabled(cfg, "output.meantl.enabled")` in config.py. The AST allowlist walker captures that lowercase literal, and the reader lowercases the config-file key to the same `output.meantl.enabled`, so the captured literal matches the runtime key and no warning fires (no `_SUPPLEMENTARY_ALLOWLIST` entry needed — matching the existing `output.biomass.bysize.enabled` precedent). If a warning DOES appear, confirm the literal is lowercase before touching the allowlist.
 
 - [ ] **Step 4: Full suite regression check**
 
