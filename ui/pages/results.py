@@ -309,6 +309,8 @@ def results_ui():
                             "yield_n": "Catch Numbers",
                             "mortality_rate": "Mortality by Source",
                             "size_spectrum": "Size Spectrum",
+                            "sheldon_spectrum": "Sheldon (Mass) Spectrum",
+                            "abc_curve": "ABC (W-statistic)",
                         },
                         selected="biomass",
                     ),
@@ -347,6 +349,10 @@ def results_ui():
                 ),
                 ui.input_slider("trophic_threshold", "Min diet %", min=0, max=50, value=5, step=1),
                 ui.output_ui("trophic_network"),
+            ),
+            ui.nav_panel(
+                "Community Metrics",
+                ui.output_ui("community_metrics_panel"),
             ),
             ui.nav_panel(
                 "Compare Runs",
@@ -636,6 +642,8 @@ def results_server(input, output, session, state: AppState):
             "yield_n": "Catch Numbers",
             "mortality_rate": "Mortality by Source",
             "size_spectrum": "Size Spectrum",
+            "sheldon_spectrum": "Sheldon (Mass) Spectrum",
+            "abc_curve": "ABC (W-statistic)",
         }
 
         sp = species_filter if species_filter != "all" else None
@@ -705,6 +713,43 @@ def results_server(input, output, session, state: AppState):
 
             df = _get_result_data(rtype)
             fig = make_size_spectrum_plot(df)
+            fig.update_layout(template=tmpl)
+            return fig
+
+        # NOTE: this branch intentionally BYPASSES _get_result_data — it computes directly from
+        # state.output_dir / state.config. It MUST stay ABOVE the catch-all that calls
+        # _get_result_data(rtype) below; if moved below, these rtypes would fall through to
+        # res.export_dataframe(rtype) and raise a confusing error instead of rendering.
+        if rtype in ("sheldon_spectrum", "abc_curve"):
+            from osmose.community_metrics import compute_abc, compute_sheldon_spectrum
+            from osmose.plotting import make_abc_plot, make_sheldon_spectrum_plot
+
+            out_dir = state.output_dir.get()
+            if not out_dir:
+                return go.Figure().update_layout(
+                    title="Run a simulation to see community diagnostics", template=tmpl
+                )
+            if rtype == "sheldon_spectrum":
+                cfg = state.config.get()
+                if not cfg:
+                    return go.Figure().update_layout(
+                        title="Sheldon (mass) spectrum — load a config for length-weight a,b",
+                        template=tmpl,
+                    )
+                try:
+                    fig = make_sheldon_spectrum_plot(compute_sheldon_spectrum(out_dir, cfg))
+                except FileNotFoundError:
+                    return go.Figure().update_layout(
+                        title="Sheldon (mass) spectrum — no by-size output for this run",
+                        template=tmpl,
+                    )
+            else:  # abc_curve
+                try:
+                    fig = make_abc_plot(compute_abc(out_dir))
+                except FileNotFoundError:
+                    return go.Figure().update_layout(
+                        title="ABC — needs biomass and abundance outputs", template=tmpl
+                    )
             fig.update_layout(template=tmpl)
             return fig
 
@@ -786,6 +831,16 @@ def results_server(input, output, session, state: AppState):
                 srcdoc=html, style="width:100%; height:640px; border:0;", sandbox="allow-scripts"
             ),
         )
+
+    @render.ui
+    def community_metrics_panel():
+        from osmose.community_metrics import community_report, format_community_report
+
+        out_dir = state.output_dir.get()
+        if not out_dir:
+            return ui.markdown("_Community metrics unavailable — run a simulation first._")
+        diag = community_report(out_dir, state.config.get() or None)
+        return ui.markdown(format_community_report(diag))
 
     @render_plotly
     def comparison_chart():
