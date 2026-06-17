@@ -416,3 +416,68 @@ def test_make_biomass_overlay_empty_species_returns_empty_figure():
     a = _long({"cod": [10, 11]})
     fig = make_biomass_overlay(a, a, [])
     assert len(fig.data) == 0
+
+
+# --- make_sheldon_spectrum_plot / make_abc_plot ----------------------------
+
+
+def test_make_sheldon_spectrum_plot_builds():
+    from osmose.community_metrics import SheldonSpectrum
+    from osmose.plotting import make_sheldon_spectrum_plot
+
+    spec = SheldonSpectrum(
+        metric="biomass",
+        mass_bin_edges=[5.0, 10.0],
+        mass_bin_midpoints=[7.07, 14.14],
+        nbss_values=[4.0, 1.0],
+        slope=-2.0,
+        intercept=1.0,
+        r_squared=1.0,
+        n_bins_fit=2,
+        size_diversity=0.9,
+        total_biomass=30.0,
+        total_abundance=6.0,
+        mean_body_mass=5.0,
+        window_years=10,
+        n_timesteps_used=1,
+        dropped_species=[],
+        note="",
+    )
+    fig = make_sheldon_spectrum_plot(spec)
+    assert isinstance(fig, go.Figure)
+    assert len(fig.data) >= 1  # NBSS scatter (+ regression line)
+
+
+def test_make_sheldon_spectrum_plot_empty():
+    from osmose.community_metrics import SheldonSpectrum
+    from osmose.plotting import make_sheldon_spectrum_plot
+
+    spec = SheldonSpectrum(
+        "biomass",
+        [],
+        [],
+        [],
+        None,
+        None,
+        None,
+        0,
+        float("nan"),
+        0.0,
+        0.0,
+        float("nan"),
+        10,
+        0,
+        [],
+        "empty",
+    )
+    assert isinstance(make_sheldon_spectrum_plot(spec), go.Figure)
+
+
+def test_make_abc_plot_builds():
+    from osmose.community_metrics import ABCResult
+    from osmose.plotting import make_abc_plot
+
+    abc = ABCResult(0.5, [1, 2], [80.0, 100.0], [55.0, 100.0], 2, 10, "")
+    fig = make_abc_plot(abc)
+    assert isinstance(fig, go.Figure)
+    assert len(fig.data) == 2  # biomass + abundance dominance curves
