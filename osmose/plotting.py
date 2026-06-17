@@ -614,9 +614,10 @@ def make_sheldon_spectrum_plot(spec) -> go.Figure:
             y=0.95,
         )
     fig.update_layout(
-        title=title,
+        title=dict(text=title),
         xaxis=dict(title="Body mass (bin midpoint)", type="log"),
         yaxis=dict(title="Normalized biomass (per mass width)", type="log"),
+        template=TEMPLATE,
     )
     return fig
 
@@ -638,8 +639,9 @@ def make_abc_plot(abc) -> go.Figure:
         text=f"W = {w_txt}", showarrow=False, xref="paper", yref="paper", x=0.95, y=0.05
     )
     fig.update_layout(
-        title=title,
+        title=dict(text=title),
         xaxis=dict(title="Species rank"),
         yaxis=dict(title="Cumulative dominance (%)"),
+        template=TEMPLATE,
     )
     return fig
