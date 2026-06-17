@@ -62,7 +62,8 @@ def _cache_dir() -> Path:
 
 def _http_get_bytes(url: str) -> bytes:
     """Single network seam (TLS-verified). Tests monkeypatch this."""
-    with urllib.request.urlopen(url, timeout=_TIMEOUT_SEC) as resp:  # noqa: S310 (https only)
+    req = urllib.request.Request(url, headers={"User-Agent": "osmose-python"})
+    with urllib.request.urlopen(req, timeout=_TIMEOUT_SEC) as resp:  # noqa: S310 (https only)
         return resp.read()
 
 
@@ -89,3 +90,47 @@ def _load_table(table: str, db: str = "fb") -> pd.DataFrame:
     except Exception as exc:  # noqa: BLE001 — corrupt/changed payload: evict + signal
         cache.unlink(missing_ok=True)
         raise FishBaseUnavailable(f"could not parse {table} parquet (cache evicted): {exc}") from exc
+
+
+def _match_in_db(name: str, db: str) -> list[SpecMatch]:
+    sp = _load_table("species", db)
+    name = name.strip()
+    out: list[SpecMatch] = []
+    parts = name.split()
+    if len(parts) >= 2:  # try scientific "Genus species"
+        genus, species = parts[0], parts[1]
+        hit = sp[
+            sp.Genus.str.casefold().eq(genus.casefold())
+            & sp.Species.str.casefold().eq(species.casefold())
+        ]
+        out += _rows_to_matches(hit, db)
+    if not out:  # try common name (FBname)
+        hit = sp[sp.FBname.fillna("").str.casefold().eq(name.casefold())]
+        out += _rows_to_matches(hit, db)
+    return out
+
+
+def _rows_to_matches(hit: pd.DataFrame, db: str) -> list[SpecMatch]:
+    return [
+        SpecMatch(
+            spec_code=int(r.SpecCode),
+            scientific_name=f"{r.Genus} {r.Species}",
+            common_name=("" if pd.isna(r.FBname) else str(r.FBname)),
+            db=db,
+        )
+        for r in hit.itertuples()
+    ]
+
+
+def resolve_species(name: str, *, db: str | None = None) -> list[SpecMatch]:
+    """Resolve a scientific or common name to candidate SpecMatch(es).
+
+    Tries FishBase, then SeaLifeBase (unless ``db`` forces one). Raises
+    FishBaseNoMatch when neither database has a record.
+    """
+    dbs = [db] if db else ["fb", "slb"]
+    for d in dbs:
+        matches = _match_in_db(name, d)
+        if matches:
+            return matches
+    raise FishBaseNoMatch(f"no FishBase/SeaLifeBase record for {name!r}")
