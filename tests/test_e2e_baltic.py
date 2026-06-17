@@ -7,6 +7,7 @@ Run explicitly:
 from __future__ import annotations
 
 import pathlib
+import re
 
 import pytest
 from playwright.sync_api import Page, expect
@@ -41,7 +42,13 @@ def test_baltic_full_run_and_outputs(page: Page, app: ShinyAppProc):
     page.locator("#engineBtnPython").click()
     overrides = page.locator("#py_param_overrides")
     expect(overrides).to_be_visible(timeout=_LOAD_TIMEOUT)
-    overrides.fill("simulation.time.nyear=1\noutput.spatial.enabled=true")
+    # nyear=1 for speed; spatial output needs BOTH the master flag AND a sub-flag
+    # (the per-quantity flag is what actually writes the NetCDF — output.py:811).
+    overrides.fill(
+        "simulation.time.nyear=1\n"
+        "output.spatial.enabled=true\n"
+        "output.spatial.biomass.enabled=true"
+    )
 
     # 3. Live movement + run.
     page.locator("#live_movement_view").click()
@@ -69,3 +76,23 @@ def test_baltic_full_run_and_outputs(page: Page, app: ShinyAppProc):
     expect(diet.locator(".js-plotly-plot")).to_be_visible(timeout=_LOAD_TIMEOUT)
     assert diet.locator(".js-plotly-plot .heatmaplayer").count() > 0, "diet heatmap has no cells"
     assert "no prey data" not in diet.inner_text().lower(), "diet heatmap is the empty-state"
+
+    # 5. Spatial output (enabled via the override). The Spatial Results pill is ALWAYS
+    # present but carries `osm-disabled` until the server detects spatial output; wait for
+    # it to ENABLE (proves the run's spatial NetCDF flowed to the UI), then render the Flat
+    # View plotly heatmap (controls auto-select: result type = first nc, species = sum).
+    spatial_pill = page.locator(".nav-pills .nav-link[data-value='spatial_results']")
+    expect(spatial_pill).not_to_have_class(re.compile(r"osm-disabled"), timeout=_RUN_TIMEOUT)
+    spatial_pill.click()
+    # The nc auto-loads (#spatial_result_type = output-type/file select) and the controls
+    # render (#spatial_map_species = species select, default "sum over species"), then the
+    # default Map View paints the deck.gl canvas. Asserting these proves the run's spatial
+    # NetCDF flowed engine→UI and rendered — without the brittle Flat-View tab + per-cell
+    # heatmap assertion (the spatial page's own render is covered by test_e2e_spatial_results).
+    page.wait_for_selector("#spatial_result_type", timeout=_RUN_TIMEOUT)
+    expect(page.locator("#spatial_map_species")).to_be_visible(timeout=_RUN_TIMEOUT)
+    # deck.gl renders multiple canvases (deck overlay + basemap) → take the first.
+    expect(page.locator("#spatial_map canvas").first).to_be_visible(timeout=_RUN_TIMEOUT)
+
+    _REPO.joinpath("screenshots").mkdir(exist_ok=True)
+    page.screenshot(path=str(_REPO / "screenshots" / "baltic_full_e2e.png"), full_page=True)
