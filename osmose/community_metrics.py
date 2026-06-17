@@ -13,11 +13,17 @@ orchestrator. See docs/superpowers/specs/2026-06-17-community-size-spectrum-exte
 
 from __future__ import annotations
 
+import math
+from collections import defaultdict
+from dataclasses import dataclass
+from pathlib import Path
 from typing import cast
 
 import pandas as pd
 
-from osmose.size_spectrum import _window_by_time
+from osmose.analysis import size_spectrum_slope
+from osmose.results import OsmoseResults
+from osmose.size_spectrum import _infer_bin_width, _read_community_by_size, _window_by_time
 
 _META_COLS = {"Time", "time", "Size", "size", "species", "Simu", "simu"}
 
@@ -67,3 +73,146 @@ def _species_lw_coeffs(config: dict) -> dict[str, tuple[float, float]]:
         if name and a is not None and b is not None and a > 0 and b > 0:
             out[str(name)] = (a, b)
     return out
+
+
+@dataclass(frozen=True)
+class SheldonSpectrum:
+    metric: str
+    mass_bin_edges: list[float]
+    mass_bin_midpoints: list[float]
+    nbss_values: list[float]
+    slope: float | None
+    intercept: float | None
+    r_squared: float | None
+    n_bins_fit: int
+    size_diversity: float
+    total_biomass: float
+    total_abundance: float
+    mean_body_mass: float
+    window_years: int
+    n_timesteps_used: int
+    dropped_species: list[str]
+    note: str
+
+
+def _shannon_evenness(values: list[float]) -> float:
+    """Shannon evenness H/ln(S) over positive shares; NaN if fewer than 2 positive bins."""
+    positive = [v for v in values if v > 0]
+    if len(positive) < 2:
+        return float("nan")
+    total = sum(positive)
+    shares = [v / total for v in positive]
+    h = -sum(p * math.log(p) for p in shares)
+    return float(h / math.log(len(positive)))
+
+
+def compute_sheldon_spectrum(
+    output_dir,
+    config: dict,
+    *,
+    metric: str = "biomass",
+    prefix: str = "osm",
+    window_years: int = 10,
+) -> SheldonSpectrum:
+    """Canonical Sheldon NBSS over equal log2 (octave) body-mass bins + derived metrics.
+
+    Reads the per-species {metric}DistribBySize file (does NOT sum species), converts
+    each species' length midpoints to mass via config W = a*L^b, bins biomass into
+    octaves, normalizes by bin width, and log-log fits the slope. Totals come from the
+    1D biomass/abundance outputs (read non-strict; absent -> 0/NaN). Raises
+    FileNotFoundError if the by-size file is missing; ValueError on a bad metric.
+    """
+    if metric not in ("biomass", "abundance"):
+        raise ValueError("metric must be 'biomass' or 'abundance'")
+    coeffs = _species_lw_coeffs(config or {})
+    wide = _read_community_by_size(Path(output_dir), f"{metric}DistribBySize", prefix)
+    windowed = _window_by_time(wide, "Time", window_years)
+    n_steps = int(cast(pd.Series, windowed["Time"]).nunique())
+
+    sp_cols = _species_columns(windowed)
+    sizes = sorted({float(s) for s in windowed["Size"].unique()})
+    width_len = _infer_bin_width(sizes)
+    per_size = cast(pd.DataFrame, windowed.groupby("Size")[sp_cols].mean())
+
+    notes: list[str] = []
+    dropped: list[str] = []
+    masses: list[float] = []
+    vals: list[float] = []
+    for sp in sp_cols:
+        if sp not in coeffs:
+            dropped.append(sp)
+            continue
+        a, b = coeffs[sp]
+        sp_series = cast(pd.Series, per_size[sp])
+        for size_lo, value in zip(sp_series.index.tolist(), sp_series.tolist()):
+            mid_len = float(size_lo) + width_len / 2.0
+            mass = a * mid_len**b
+            v = float(value)
+            if mass > 0 and v > 0:
+                masses.append(mass)
+                vals.append(v)
+    if dropped:
+        notes.append(f"dropped {len(dropped)} species without usable a,b: {', '.join(dropped)}.")
+
+    edges: list[float] = []
+    midpoints: list[float] = []
+    nbss: list[float] = []
+    bin_biomass: list[
+        float
+    ] = []  # raw per-octave biomass (for size diversity, NOT width-normalized)
+    if masses:
+        w_ref = min(masses)
+        binned: dict[int, float] = defaultdict(float)
+        for m, v in zip(masses, vals):
+            k = int(math.floor(math.log2(m / w_ref)))
+            binned[k] += v
+        for k in sorted(binned):
+            lower = w_ref * 2.0**k
+            edges.append(lower)
+            midpoints.append(w_ref * 2.0 ** (k + 0.5))
+            nbss.append(binned[k] / lower)  # octave linear width == lower edge value
+            bin_biomass.append(binned[k])
+    else:
+        notes.append("no positive mass bins (no species with usable a,b and data).")
+
+    slope = intercept = r2 = None
+    n_fit = sum(1 for m, v in zip(midpoints, nbss) if m > 0 and v > 0)
+    if n_fit >= 2:
+        try:
+            slope, intercept, r2 = size_spectrum_slope(
+                pd.DataFrame({"size": midpoints, "abundance": nbss})
+            )
+        except ValueError:
+            notes.append("NBSS slope fit failed.")
+    else:
+        notes.append("fewer than 2 positive mass bins; NBSS slope undefined.")
+
+    # Size diversity is evenness over RAW per-octave biomass shares (spec §Unit 1.5), NOT the
+    # width-normalized NBSS density — the latter would depend on the arbitrary w_ref alignment.
+    size_diversity = _shannon_evenness(bin_biomass)
+
+    res = OsmoseResults(Path(output_dir), prefix=prefix, strict=False)
+    bm = _per_species_window_mean(res.biomass(), window_years)
+    ab = _per_species_window_mean(res.abundance(), window_years)
+    total_biomass = float(sum(bm.values()))
+    total_abundance = float(sum(ab.values()))
+    mean_body_mass = total_biomass / total_abundance if total_abundance > 0 else float("nan")
+
+    return SheldonSpectrum(
+        metric=metric,
+        mass_bin_edges=edges,
+        mass_bin_midpoints=midpoints,
+        nbss_values=nbss,
+        slope=slope,
+        intercept=intercept,
+        r_squared=r2,
+        n_bins_fit=n_fit,
+        size_diversity=size_diversity,
+        total_biomass=total_biomass,
+        total_abundance=total_abundance,
+        mean_body_mass=mean_body_mass,
+        window_years=window_years,
+        n_timesteps_used=n_steps,
+        dropped_species=dropped,
+        note=" ".join(notes),
+    )
