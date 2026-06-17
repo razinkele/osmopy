@@ -23,8 +23,10 @@ _log = setup_logging("osmose.results")
 # Module-level cache for preamble detection (path -> (mtime_ns, size, n_preamble_lines))
 _PREAMBLE_CACHE: dict[Path, tuple[int, int, int]] = {}
 
-# Engine-defined output subdirectories (searched in addition to root)
-_ENGINE_SUBDIRS = ("Mortality", "Bioen")
+# Engine-defined output subdirectories (searched in addition to root).
+# The Java engine writes organised outputs into several subdirectories; the Python
+# engine writes flat into the root, so searching both is always correct.
+_ENGINE_SUBDIRS = ("Mortality", "Bioen", "Trophic", "Indicators", "SizeIndicators", "AgeIndicators")
 
 # Regex to strip _SimuN suffix from filenames
 _SIMU_SUFFIX_RE = re.compile(r"_Simu\d+$")

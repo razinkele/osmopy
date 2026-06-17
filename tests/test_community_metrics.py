@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import pandas as pd
 import pytest
+
+from tests._data_guards import require_eec_output
 
 from osmose.community_metrics import (
     ABCResult,
@@ -263,8 +266,6 @@ def test_format_community_report_renders_present_sections(tmp_path):
 
 
 def test_results_page_wires_community_metrics():
-    from pathlib import Path
-
     src = (Path(__file__).resolve().parent.parent / "ui" / "pages" / "results.py").read_text()
     assert "sheldon_spectrum" in src  # new chart rtype / id
     assert "abc_curve" in src  # new chart rtype / id
@@ -272,3 +273,17 @@ def test_results_page_wires_community_metrics():
     assert "make_abc_plot" in src
     assert "community_report" in src  # the metrics panel builder
     assert "format_community_report" in src
+
+
+def test_community_report_eec_real():
+    require_eec_output("*DistribBySize*")
+
+    # eec_full has no in-memory config here; exercise the config-less path (Sheldon skipped)
+    # plus the trophic + ABC units against real output.
+    diag = community_report(Path("data/eec_full/output"), None, prefix="eec", window_years=10)
+    assert diag.trophic is not None
+    assert diag.abc is not None
+    # W-statistic is a bounded index in [-1, 1].
+    assert math.isnan(diag.abc.w_statistic) or -1.0 <= diag.abc.w_statistic <= 1.0
+    md = format_community_report(diag)
+    assert "# OSMOSE community diagnostics" in md
