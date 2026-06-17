@@ -252,6 +252,22 @@ def test_sheldon_spectrum_bins_and_slope(tmp_path):
     assert spec.dropped_species == []
 
 
+def test_sheldon_slope_recovery_powerlaw(tmp_path):
+    # Genuine slope-RECOVERY test (the 2-bin test above only checks arithmetic).
+    # a=1,b=1 so mass == length midpoint. Size edges 0,10,30,70 -> inferred width
+    # median([10,20,40])=20 -> midpoints 10,20,40,80 -> octaves k=0,1,2,3 (distinct).
+    # EQUAL biomass per octave => NBSS = biomass/(w_ref*2^k) halves each octave while the
+    # midpoint doubles => log-log slope = -1 (the canonical normalized-biomass NBSS slope).
+    _write_csv(
+        tmp_path / "osm_biomassDistribBySize_Simu0.csv",
+        [(1.0, 0.0, 100.0), (1.0, 10.0, 100.0), (1.0, 30.0, 100.0), (1.0, 70.0, 100.0)],
+        ["Time", "Size", "cod"],
+    )
+    spec = compute_sheldon_spectrum(tmp_path, _CONFIG, window_years=10)
+    assert spec.n_bins_fit == 4
+    assert spec.slope == pytest.approx(-1.0, abs=1e-6)
+
+
 def test_sheldon_totals_and_diversity(tmp_path):
     _sheldon_fixture(tmp_path)
     spec = compute_sheldon_spectrum(tmp_path, _CONFIG, window_years=10)
@@ -372,6 +388,7 @@ def compute_sheldon_spectrum(
     edges: list[float] = []
     midpoints: list[float] = []
     nbss: list[float] = []
+    bin_biomass: list[float] = []  # raw per-octave biomass (for size diversity, NOT width-normalized)
     if masses:
         w_ref = min(masses)
         binned: dict[int, float] = defaultdict(float)
@@ -383,6 +400,7 @@ def compute_sheldon_spectrum(
             edges.append(lower)
             midpoints.append(w_ref * 2.0 ** (k + 0.5))
             nbss.append(binned[k] / lower)  # octave linear width == lower edge value
+            bin_biomass.append(binned[k])
     else:
         notes.append("no positive mass bins (no species with usable a,b and data).")
 
@@ -398,7 +416,9 @@ def compute_sheldon_spectrum(
     else:
         notes.append("fewer than 2 positive mass bins; NBSS slope undefined.")
 
-    size_diversity = _shannon_evenness([b for b in nbss])
+    # Size diversity is evenness over RAW per-octave biomass shares (spec §Unit 1.5), NOT the
+    # width-normalized NBSS density — the latter would depend on the arbitrary w_ref alignment.
+    size_diversity = _shannon_evenness(bin_biomass)
 
     res = OsmoseResults(Path(output_dir), prefix=prefix, strict=False)
     bm = _per_species_window_mean(res.biomass(), window_years)
@@ -430,7 +450,7 @@ def compute_sheldon_spectrum(
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `.venv/bin/python -m pytest tests/test_community_metrics.py -k sheldon -q`
-Expected: PASS (5 sheldon tests). Then run the full file: `.venv/bin/python -m pytest tests/test_community_metrics.py -q` → PASS.
+Expected: PASS (6 sheldon tests). Then run the full file: `.venv/bin/python -m pytest tests/test_community_metrics.py -q` → PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -801,7 +821,10 @@ def format_community_report(diag: CommunityDiagnostics) -> str:
             "",
             f"- NBSS slope: {_fmt(s.slope)} "
             f"(intercept {_fmt(s.intercept)}, R²={_fmt(s.r_squared)}, n_bins_fit={s.n_bins_fit})",
-            f"- Size diversity (Shannon evenness over mass bins): {_fmt(s.size_diversity)}",
+            "  _Canonical normalized-biomass NBSS slope ≈ −1; a flatter (less negative) slope "
+            "suggests relative loss of large individuals (fishing-down). Loose reference for an "
+            "exploited fish community, not a strict Sheldon continuum._",
+            f"- Size diversity (Shannon evenness over per-octave biomass): {_fmt(s.size_diversity)}",
             f"- Community total biomass: {_fmt(s.total_biomass, '.6g')}; "
             f"total abundance: {_fmt(s.total_abundance, '.6g')}; "
             f"mean body mass: {_fmt(s.mean_body_mass, '.6g')}",
@@ -817,8 +840,10 @@ def format_community_report(diag: CommunityDiagnostics) -> str:
             "## Trophic indicators",
             "",
             f"- Mean Trophic Level (biomass-weighted): {_fmt(t.mtl)}",
-            f"- Marine Trophic Index (TL ≥ {_fmt(t.mti_tl_cutoff, '.2f')}): {_fmt(t.mti)} "
-            f"({t.n_species_above_cutoff}/{t.n_species} species)",
+            f"- Marine Trophic Index (biomass-weighted standing stock, TL ≥ "
+            f"{_fmt(t.mti_tl_cutoff, '.2f')}): {_fmt(t.mti)} "
+            f"({t.n_species_above_cutoff}/{t.n_species} species). _A standing-stock analogue of the "
+            f"catch-based Pauly & Watson index._",
         ]
         if t.note:
             lines.append(f"- _Note: {t.note}_")
@@ -1020,56 +1045,73 @@ Expected: FAIL (none of the new symbols are referenced yet).
             "abc_curve": "ABC (W-statistic)",
 ```
 
-3b. Add render branches mirroring the `size_spectrum` branch (≈ line 703). Place immediately after it. `tmpl` is already in scope (`tmpl = _tpl(input)`); config and run dir come from app state:
+3b. Add ONE render branch (covering both new chart types) immediately after the `size_spectrum` branch (≈ line 703). `tmpl` is already in scope (`tmpl = _tpl(input)`); `go` is already imported in this module (used at ≈ line 672 to build inline figures), so build empty-state figures inline rather than importing the private `_empty_figure`. Guard a `None`/empty `output_dir`:
 
 ```python
-        if rtype == "sheldon_spectrum":
-            from osmose.community_metrics import compute_sheldon_spectrum
-            from osmose.plotting import _empty_figure, make_sheldon_spectrum_plot
+        # NOTE: this branch intentionally BYPASSES _get_result_data — it computes directly from
+        # state.output_dir / state.config. It MUST stay ABOVE the catch-all that calls
+        # _get_result_data(rtype) (≈ line 711); if moved below, these rtypes would fall through to
+        # res.export_dataframe(rtype) and raise a confusing error instead of rendering an empty fig.
+        if rtype in ("sheldon_spectrum", "abc_curve"):
+            from osmose.community_metrics import compute_abc, compute_sheldon_spectrum
+            from osmose.plotting import make_abc_plot, make_sheldon_spectrum_plot
 
-            cfg = state.config.get()
-            if not cfg:
-                fig = _empty_figure("Sheldon (mass) spectrum — load a config for length-weight a,b")
-            else:
+            out_dir = state.output_dir.get()
+            if not out_dir:
+                return go.Figure().update_layout(
+                    title="Run a simulation to see community diagnostics", template=tmpl
+                )
+            if rtype == "sheldon_spectrum":
+                cfg = state.config.get()
+                if not cfg:
+                    return go.Figure().update_layout(
+                        title="Sheldon (mass) spectrum — load a config for length-weight a,b",
+                        template=tmpl,
+                    )
                 try:
-                    spec = compute_sheldon_spectrum(state.output_dir.get(), cfg)
-                    fig = make_sheldon_spectrum_plot(spec)
+                    fig = make_sheldon_spectrum_plot(compute_sheldon_spectrum(out_dir, cfg))
                 except FileNotFoundError:
-                    fig = _empty_figure("Sheldon (mass) spectrum — no by-size output for this run")
-            fig.update_layout(template=tmpl)
-            return fig
-
-        if rtype == "abc_curve":
-            from osmose.community_metrics import compute_abc
-            from osmose.plotting import _empty_figure, make_abc_plot
-
-            try:
-                abc = compute_abc(state.output_dir.get())
-                fig = make_abc_plot(abc)
-            except FileNotFoundError:
-                fig = _empty_figure("ABC — needs biomass and abundance outputs")
+                    return go.Figure().update_layout(
+                        title="Sheldon (mass) spectrum — no by-size output for this run",
+                        template=tmpl,
+                    )
+            else:  # abc_curve
+                try:
+                    fig = make_abc_plot(compute_abc(out_dir))
+                except FileNotFoundError:
+                    return go.Figure().update_layout(
+                        title="ABC — needs biomass and abundance outputs", template=tmpl
+                    )
             fig.update_layout(template=tmpl)
             return fig
 ```
 
-NOTE: `_empty_figure` is importable from `osmose.plotting` (the same helper the module uses internally). Confirm `state` is the in-scope app-state name in `results.py` (it is — used for `state.output_dir`, `state.results_loaded`, etc.).
+NOTE: confirm `go` (plotly.graph_objects) is imported at module top in `results.py` (it is — used in the catch-all empty-figure path). `state` is the in-scope app-state object (used for `state.output_dir`, `state.results_loaded`, etc.).
 
-3c. Add a Community Metrics markdown panel. In the page's output-UI section (near where other `@render.ui`/`@render.text` outputs live), add a `ui.output_ui("community_metrics_panel")` to the Diagnostics layout, and in the server function add:
+3c. Add a Community Metrics markdown panel as a new tab in the existing `navset_card_tab` in `results_ui()`. That `navset_card_tab` begins at ≈ line 331 with nav panels "Diet Composition" (≈332), "Trophic Network" (≈336, closes at the `ui.output_ui("trophic_network")` on ≈ line 349/350), then "Compare Runs" (≈351). Insert the new panel BETWEEN the "Trophic Network" `ui.nav_panel(...)` and the "Compare Runs" `ui.nav_panel(...)`:
+
+```python
+            ui.nav_panel(
+                "Community Metrics",
+                ui.output_ui("community_metrics_panel"),
+            ),
+```
+
+Then add the server render in `results_server` (near the other `@render.ui` outputs such as `trophic_network`):
 
 ```python
     @render.ui
     def community_metrics_panel():
         from osmose.community_metrics import community_report, format_community_report
 
-        cfg = state.config.get()
-        try:
-            diag = community_report(state.output_dir.get(), cfg or None)
-        except FileNotFoundError:
+        out_dir = state.output_dir.get()
+        if not out_dir:
             return ui.markdown("_Community metrics unavailable — run a simulation first._")
+        diag = community_report(out_dir, state.config.get() or None)
         return ui.markdown(format_community_report(diag))
 ```
 
-Keep the placement consistent with the existing diagnostics layout — do not restructure unrelated UI. `community_report` itself never raises on missing files (each unit degrades to `None`); the `try/except` guards only an unexpected `state.output_dir` being empty/invalid.
+`community_report` never raises on missing output files (each unit degrades to `None` with a note), so no `try/except` is needed once `out_dir` is non-empty. Do not restructure unrelated UI.
 
 - [ ] **Step 4: Run the wiring test + the page imports clean**
 
@@ -1128,7 +1170,7 @@ Expected: all PASS.
 Run each, fix any reported issues, re-run until clean:
 - `.venv/bin/ruff check osmose/community_metrics.py osmose/plotting.py ui/pages/results.py tests/test_community_metrics.py tests/test_plotting.py`
 - `.venv/bin/ruff format osmose/community_metrics.py osmose/plotting.py ui/pages/results.py tests/test_community_metrics.py tests/test_plotting.py`
-- `.venv/bin/pyright osmose/community_metrics.py osmose/plotting.py` (pandas reductions may need `np.asarray(..., dtype=float)` casts or `cast(...)`; resolve to 0 errors on the new module)
+- `.venv/bin/pyright --pythonpath .venv/bin/python osmose/community_metrics.py osmose/plotting.py ui/pages/results.py` — MUST include `ui/pages/results.py` (Task 7 edits it; pyright is a per-task CI gate that has recurred on prior PRs). The `--pythonpath .venv/bin/python` is REQUIRED: a bare `pyright` resolves a pandas-blind sibling venv and falsely passes. pandas reductions may need `np.asarray(..., dtype=float)` casts or `cast(...)`; resolve to 0 NEW errors (pre-existing `results.py` errors unrelated to this change can stay, but add none).
 
 - [ ] **Step 5: Run the full suite once for regressions**
 
@@ -1150,3 +1192,5 @@ git commit -m "test(community-metrics): real-data eec smoke + final gate pass"
 - **DRY:** all three units share `_per_species_window_mean`; the Sheldon fit reuses `analysis.size_spectrum_slope`; readers reuse `size_spectrum`'s `_read_community_by_size` / `_infer_bin_width` / `_window_by_time`.
 - **YAGNI:** no per-timestep time series of the new metrics, no cross-run comparison UI (Scenario Diff already exists), no new config keys.
 - **Out of scope:** an e2e assertion for the new Diagnostics panels (the wiring test + `import ui.pages.results` cover regressions cheaply; a full Playwright pass is optional follow-up).
+- **Visual gate:** Task 7 adds a `nav_panel` + a selector choice, changing the Results UI surface. The visual gate is opt-in/non-required, but if a baseline exists, trigger it after the UI change with `gh workflow run "Visual" --ref <branch>` and review the diff rather than blindly re-blessing (per the toast-gotcha precedent).
+- **Slope sign reminder:** the canonical *normalized-biomass* NBSS slope is ≈ −1 (normalized-abundance ≈ −2); only the *un-normalized* biomass-per-octave is ≈ flat. The unit test's −2.0 (2-bin toy) and −1.0 (4-bin equal-octave) are exact arithmetic properties of those fixtures, not the canonical value — do not assert a canonical slope range on real data.

@@ -60,8 +60,14 @@ Algorithm:
    convention.
 4. **NBSS** = biomass per bin divided by the bin's mass width (linear width of the octave). Fit
    `log10(NBSS)` vs `log10(mass-bin-midpoint)` via `size_spectrum_slope` → slope, intercept, R².
-   (Canonical balanced-community normalized-biomass slope ≈ 0; abundance NBSS slope ≈ −1.)
-5. **Size diversity** = Shannon evenness `H/ln(S_bins)` over the per-bin biomass shares of the NBSS.
+   **Canonical expectation:** a *normalized-biomass* NBSS slope ≈ **−1** (and a *normalized-abundance*
+   NBSS slope ≈ **−2**); the un-normalized biomass-per-octave is what is ≈ flat (slope ≈ 0). A flatter
+   (less negative) slope than canonical indicates relative loss of large individuals (fishing-down).
+   These are loose reference values for an exploited fish community, not a strict cross-ecosystem
+   Sheldon continuum.
+5. **Size diversity** = Shannon evenness `H/ln(S_bins)` over the **raw per-octave summed biomass
+   shares** (the `binned[k]` biomass values *before* dividing by bin width — NOT the width-normalized
+   NBSS density, which would make the metric depend on the arbitrary `w_ref` octave alignment).
 6. **Community totals** are sourced from `OsmoseResults` per-species window-mean series (NOT the
    single `{metric}DistribBySize` file, which carries only one metric): **total biomass** = Σ over
    species of window-mean biomass, **total abundance** = Σ over species of window-mean abundance,
@@ -87,7 +93,9 @@ compute_trophic_indicators(
   species' window-mean TL and window-mean biomass.
 - **Mean Trophic Level (MTL)** = biomass-weighted mean of species' mean TL.
 - **Marine Trophic Index (MTI)** = biomass-weighted mean TL over only species whose mean TL
-  ≥ `mti_tl_cutoff` (Pauly & Watson's threshold; default 3.25).
+  ≥ `mti_tl_cutoff` (Pauly & Watson's threshold; default 3.25). NB: this is a **biomass-weighted
+  standing-stock analogue** of the canonical *catch-based* Pauly & Watson MTI; the formatter and
+  docstring must label it as such so it is not mistaken for the fisheries landings index.
 - `TrophicIndicators` dataclass: `mtl`, `mti`, `mti_tl_cutoff`, `n_species`,
   `n_species_above_cutoff`, `window_years`, `note`.
 
