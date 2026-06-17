@@ -13,6 +13,8 @@ orchestrator. See docs/superpowers/specs/2026-06-17-community-size-spectrum-exte
 
 from __future__ import annotations
 
+from typing import cast
+
 import pandas as pd
 
 from osmose.size_spectrum import _window_by_time
@@ -44,7 +46,7 @@ def _per_species_window_mean(df: pd.DataFrame, window_years: int) -> dict[str, f
     windowed = _window_by_time(df, "Time", window_years)
     out: dict[str, float] = {}
     for c in _species_columns(windowed):
-        out[c] = float(pd.to_numeric(windowed[c], errors="coerce").mean())
+        out[c] = float(cast(pd.Series, pd.to_numeric(windowed[c], errors="coerce")).mean())
     return out
 
 
