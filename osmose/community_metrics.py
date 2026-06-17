@@ -279,3 +279,58 @@ def compute_trophic_indicators(
     return TrophicIndicators(
         float(mtl), float(mti), mti_tl_cutoff, len(species), len(above), window_years, note
     )
+
+
+@dataclass(frozen=True)
+class ABCResult:
+    w_statistic: float
+    ranks: list[int]
+    cum_biomass_pct: list[float]
+    cum_abundance_pct: list[float]
+    n_species: int
+    window_years: int
+    note: str
+
+
+def compute_abc(output_dir, *, prefix: str = "osm", window_years: int = 10) -> ABCResult:
+    """Warwick Abundance-Biomass Comparison W-statistic + cumulative dominance curves.
+
+    Ranks species separately by biomass and by abundance (descending), builds the two
+    cumulative %-dominance curves, and computes W = sum(Bi - Ai) / (50*(S-1)) over the
+    curves (Warwick 1986). W > 0 => biomass-dominated (undisturbed); W < 0 => disturbed.
+    Both 1D outputs are required (strict read raises FileNotFoundError if absent).
+    """
+    res = OsmoseResults(Path(output_dir), prefix=prefix, strict=True)
+    bm = _per_species_window_mean(res.biomass(), window_years)
+    ab = _per_species_window_mean(res.abundance(), window_years)
+    species = sorted(set(bm) & set(ab))
+    n = len(species)
+    if n < 2:
+        return ABCResult(
+            float("nan"), [], [], [], n, window_years, "need >= 2 species for ABC; W undefined."
+        )
+
+    b_sorted = sorted((bm[s] for s in species), reverse=True)
+    a_sorted = sorted((ab[s] for s in species), reverse=True)
+    bt, at = sum(b_sorted), sum(a_sorted)
+    if bt <= 0 or at <= 0:
+        return ABCResult(
+            float("nan"),
+            [],
+            [],
+            [],
+            n,
+            window_years,
+            "zero total biomass or abundance; W undefined.",
+        )
+
+    cum_b: list[float] = []
+    cum_a: list[float] = []
+    cb = ca = 0.0
+    for bv, av in zip(b_sorted, a_sorted):
+        cb += bv
+        ca += av
+        cum_b.append(100.0 * cb / bt)
+        cum_a.append(100.0 * ca / at)
+    w = sum(b - a for b, a in zip(cum_b, cum_a)) / (50.0 * (n - 1))
+    return ABCResult(float(w), list(range(1, n + 1)), cum_b, cum_a, n, window_years, "")

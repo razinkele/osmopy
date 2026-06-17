@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import math
+
 import pandas as pd
 import pytest
 
 from osmose.community_metrics import (
+    ABCResult,
     SheldonSpectrum,
     TrophicIndicators,
     _per_species_window_mean,
     _species_columns,
     _species_lw_coeffs,
     _to_float,
+    compute_abc,
     compute_sheldon_spectrum,
     compute_trophic_indicators,
 )
@@ -172,3 +176,47 @@ def test_trophic_equal_weights_without_biomass(tmp_path):
 def test_trophic_missing_meanTL_raises(tmp_path):
     with pytest.raises(FileNotFoundError):
         compute_trophic_indicators(tmp_path, window_years=10)
+
+
+def test_abc_undisturbed_w_positive(tmp_path):
+    # biomass dominated by cod (80/20) vs more-even abundance (55/45):
+    # cumB=[80,100], cumA=[55,100]; W = (80-55 + 0)/(50*1) = 0.5.
+    _write_csv(tmp_path / "osm_biomass_Simu0.csv", [(1.0, 80.0, 20.0)], ["Time", "cod", "herring"])
+    _write_csv(
+        tmp_path / "osm_abundance_Simu0.csv", [(1.0, 55.0, 45.0)], ["Time", "cod", "herring"]
+    )
+    abc = compute_abc(tmp_path, window_years=10)
+    assert isinstance(abc, ABCResult)
+    assert abc.w_statistic == pytest.approx(0.5)
+    assert abc.n_species == 2
+    assert abc.cum_biomass_pct == pytest.approx([80.0, 100.0])
+    assert abc.cum_abundance_pct == pytest.approx([55.0, 100.0])
+
+
+def test_abc_disturbed_w_negative(tmp_path):
+    _write_csv(tmp_path / "osm_biomass_Simu0.csv", [(1.0, 55.0, 45.0)], ["Time", "cod", "herring"])
+    _write_csv(
+        tmp_path / "osm_abundance_Simu0.csv", [(1.0, 80.0, 20.0)], ["Time", "cod", "herring"]
+    )
+    assert compute_abc(tmp_path, window_years=10).w_statistic == pytest.approx(-0.5)
+
+
+def test_abc_even_w_zero(tmp_path):
+    _write_csv(tmp_path / "osm_biomass_Simu0.csv", [(1.0, 50.0, 50.0)], ["Time", "cod", "herring"])
+    _write_csv(
+        tmp_path / "osm_abundance_Simu0.csv", [(1.0, 50.0, 50.0)], ["Time", "cod", "herring"]
+    )
+    assert compute_abc(tmp_path, window_years=10).w_statistic == pytest.approx(0.0)
+
+
+def test_abc_single_species_undefined(tmp_path):
+    _write_csv(tmp_path / "osm_biomass_Simu0.csv", [(1.0, 50.0)], ["Time", "cod"])
+    _write_csv(tmp_path / "osm_abundance_Simu0.csv", [(1.0, 50.0)], ["Time", "cod"])
+    abc = compute_abc(tmp_path, window_years=10)
+    assert math.isnan(abc.w_statistic)
+    assert abc.n_species == 1
+
+
+def test_abc_missing_files_raises(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        compute_abc(tmp_path, window_years=10)
