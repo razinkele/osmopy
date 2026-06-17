@@ -210,3 +210,63 @@ def test_results_has_trophic_network_wiring():
     assert "make_trophic_network_html" in src  # the builder is used
     assert "update_slider" in src  # slider populated on load
     assert "_dietMatrix" not in src  # reads via the helper, not a hardcoded glob here
+
+
+# ── Python-engine diet-matrix format (Time, <pred>_<prey> columns; species-level) ──
+# The engine writes `Time, <predator>_<prey>` (predator-major, biomass eaten), NOT the
+# Java `Time, Prey, <predator-stage cols>` layout. The trophic reader must accept both
+# or it raises KeyError 'Prey' on every Python-engine run.
+
+
+def _write_engine_diet(path, rows):
+    """Engine format: comma-separated `Time, <pred>_<prey>` columns (no Prey column)."""
+    pd.DataFrame(rows).to_csv(path, index=False)
+
+
+def test_engine_format_node_universe(tmp_path):
+    _write_engine_diet(
+        tmp_path / "osm_dietMatrix_Simu0.csv",
+        [{"Time": 0.0, "cod_herring": 10.0, "cod_sprat": 30.0, "herring_sprat": 5.0}],
+    )
+    assert set(network_node_universe(tmp_path)) == {"cod", "herring", "sprat"}
+    # 'stage' falls back to species for engine output (no size-stages) — no error.
+    assert set(network_node_universe(tmp_path, predator_level="stage")) == {
+        "cod",
+        "herring",
+        "sprat",
+    }
+
+
+def test_engine_format_diet_network_at(tmp_path):
+    # cod ate 40 t (herring 10, sprat 30) -> 25% / 75%; herring ate 5 t sprat -> 100%.
+    _write_engine_diet(
+        tmp_path / "osm_dietMatrix_Simu0.csv",
+        [
+            {
+                "Time": 0.0,
+                "cod_herring": 10.0,
+                "cod_sprat": 30.0,
+                "herring_sprat": 5.0,
+                "herring_cod": 0.0,
+            }
+        ],
+    )
+    net = diet_network_at(tmp_path, time=0.0, threshold=1.0)
+    cod = net[net["predator"] == "cod"].set_index("prey")["proportion"]
+    assert cod["herring"] == pytest.approx(25.0)
+    assert cod["sprat"] == pytest.approx(75.0)
+    herring = net[net["predator"] == "herring"].set_index("prey")["proportion"]
+    assert herring["sprat"] == pytest.approx(100.0)
+    # 'stage' falls back to species (identical edges) for engine output.
+    net_stage = diet_network_at(tmp_path, time=0.0, threshold=1.0, predator_level="stage")
+    assert set(zip(net_stage["predator"], net_stage["prey"])) == set(
+        zip(net["predator"], net["prey"])
+    )
+
+
+def test_engine_format_available_times(tmp_path):
+    _write_engine_diet(
+        tmp_path / "osm_dietMatrix_Simu0.csv",
+        [{"Time": 0.0, "cod_herring": 1.0}, {"Time": 1.0, "cod_herring": 2.0}],
+    )
+    assert available_times(tmp_path) == [0.0, 1.0]

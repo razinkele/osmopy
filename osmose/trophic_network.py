@@ -16,6 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import cast
 
+import numpy as np
 import pandas as pd
 
 from osmose.results import _read_output_csv
@@ -41,6 +42,35 @@ def _split_species(label: str) -> str:
     return label[:idx] if idx != -1 else label
 
 
+# Non-pair columns in the Python-engine diet matrix.
+_ENGINE_META_COLS = {"Time", "time", "Prey", "Step", "step", "species", "Simu", "simu", "replicate"}
+
+
+def _is_engine_diet(df: pd.DataFrame) -> bool:
+    """True for the Python-engine layout: ``Time, <pred>_<prey>`` columns, no ``Prey`` column.
+
+    The engine writes a species-level, predator-major diet matrix (biomass eaten;
+    osmose/engine/output.py). The Java layout instead has prey-size-class ``Prey`` rows
+    and predator-size-stage columns. We support both; this picks the parser.
+    """
+    return "Prey" not in df.columns
+
+
+def _engine_pairs(df: pd.DataFrame) -> list[tuple[str, str, str]]:
+    """``(column, predator, prey)`` for each ``<pred>_<prey>`` column.
+
+    Split on the FIRST ``_`` — predator names carry no underscore (the prey name is the
+    remainder), matching osmose/engine/output.py and make_diet_heatmap.
+    """
+    out: list[tuple[str, str, str]] = []
+    for c in df.columns:
+        if c in _ENGINE_META_COLS or "_" not in c:
+            continue
+        pred, _, prey = c.partition("_")
+        out.append((c, pred, prey))
+    return out
+
+
 def available_times(output_dir: Path | str) -> list[float]:
     """Sorted unique Time values in the diet matrix (slider bounds)."""
     df = _read_diet_matrix(output_dir)
@@ -56,6 +86,10 @@ def network_node_universe(output_dir: Path | str, predator_level: str = "species
     if predator_level not in ("species", "stage"):
         raise ValueError("predator_level must be 'species' or 'stage'")
     wide = _read_diet_matrix(output_dir)
+    if _is_engine_diet(wide):
+        # Engine output is species-level; 'stage' has nothing to split → same node set.
+        pairs = _engine_pairs(wide)
+        return sorted({p for _, p, _ in pairs} | {q for _, _, q in pairs})
     prey = {_split_species(str(p)) for p in wide["Prey"].unique()}
     pred_cols = [c for c in wide.columns if c not in ("Time", "Prey")]
     preds = (
@@ -88,6 +122,26 @@ def diet_network_at(
     if float(time) not in times:
         raise ValueError(f"time {time} not in diet matrix (have e.g. {sorted(times)[:3]})")
     step = wide[wide["Time"] == float(time)]
+
+    if _is_engine_diet(wide):
+        # Engine layout: `<pred>_<prey>` biomass cells → per-predator % of diet.
+        # Species-level already, so 'species' and 'stage' produce the same network.
+        # Sum on a plain float array (parquet/CSV columns confuse the pandas stubs).
+        recs: list[tuple[str, str, float]] = [
+            (pred, prey, float(np.nansum(np.asarray(step[col], dtype=float))))
+            for col, pred, prey in _engine_pairs(wide)
+        ]
+        long = pd.DataFrame(recs, columns=["predator", "prey", "biomass"])  # type: ignore[arg-type]
+        totals = long.groupby("predator")["biomass"].transform("sum")
+        long = cast(pd.DataFrame, long[totals > 0].copy())
+        if long.empty:
+            return pd.DataFrame(columns=["predator", "prey", "proportion"])  # type: ignore[arg-type]
+        long["proportion"] = (
+            100.0 * long["biomass"] / long.groupby("predator")["biomass"].transform("sum")
+        )
+        out = cast(pd.DataFrame, long[long["proportion"] >= threshold])
+        return cast(pd.DataFrame, out[["predator", "prey", "proportion"]].reset_index(drop=True))
+
     pred_cols = [c for c in step.columns if c not in ("Time", "Prey")]
 
     melted = step.melt(
