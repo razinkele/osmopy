@@ -1,5 +1,7 @@
 """Tests for Python-engine community outputs: DistribBySize + meanTL."""
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -173,3 +175,55 @@ def test_distrib_bysize_community_written_and_readable(tmp_path):
     write_outputs(outputs, tmp_path, config, prefix="osm")
     wide = _read_community_by_size(tmp_path, "biomassDistribBySize", "osm")
     assert list(wide.columns) == ["Time", "Size", "Anchovy", "Hake"]
+
+
+def test_community_outputs_feed_diagnostics(tmp_path):
+    """Real engine run (examples config, predation active) with the flags on -> the community
+    CSVs appear and the size/Sheldon/trophic diagnostics read them instead of degrading."""
+    from osmose.community_metrics import compute_sheldon_spectrum, compute_trophic_indicators
+    from osmose.config.reader import OsmoseConfigReader
+    from osmose.engine.grid import Grid
+    from osmose.engine.simulate import simulate
+    from osmose.size_spectrum import compute_size_spectrum
+
+    project_dir = Path(__file__).parent.parent
+    examples_config = project_dir / "data" / "examples" / "osm_all-parameters.csv"
+    if not examples_config.exists():
+        pytest.skip("No example config for the engine-run integration test")
+
+    raw = OsmoseConfigReader().read(examples_config)
+    raw["simulation.time.nyear"] = "2"
+    # raw keys are already lowercased by OsmoseConfigReader; set the LOWERCASE keys to match
+    # (this is what config.py reads -- NOT a case-bypass).
+    raw["output.biomass.bysize.enabled"] = "true"
+    raw["output.abundance.bysize.enabled"] = "true"
+    raw["output.meantl.enabled"] = "true"
+    cfg = EngineConfig.from_dict(raw)
+
+    grid_file = raw.get("grid.netcdf.file", "")
+    if grid_file:
+        grid = Grid.from_netcdf(
+            project_dir / "data" / "examples" / grid_file,
+            mask_var=raw.get("grid.var.mask", "mask"),
+        )
+    else:
+        grid = Grid.from_dimensions(
+            ny=int(raw.get("grid.nline", "1")), nx=int(raw.get("grid.ncolumn", "1"))
+        )
+
+    outputs = simulate(cfg, grid, np.random.default_rng(42))
+    write_outputs(outputs, tmp_path, cfg, prefix="osm")
+
+    assert (tmp_path / "osm_biomassDistribBySize_Simu0.csv").exists()
+    assert (tmp_path / "osm_meanTL_Simu0.csv").exists()
+
+    # Sheldon spectrum reads the community by-size file (raw config provides a,b).
+    spec = compute_sheldon_spectrum(tmp_path, raw, window_years=2)
+    assert spec.mass_bin_midpoints  # non-empty -> spectrum built from real by-size data
+    # Trophic indicators read meanTL; MTL is a realized TL in a plausible ecological range.
+    trophic = compute_trophic_indicators(tmp_path, window_years=2)
+    assert trophic.n_species >= 1
+    assert 1.0 <= trophic.mtl <= 6.0  # sanity bound on realized community TL
+    # Length spectrum (existing diagnostic) also now works on a Python run.
+    ls = compute_size_spectrum(tmp_path, window_years=2)
+    assert ls.values
