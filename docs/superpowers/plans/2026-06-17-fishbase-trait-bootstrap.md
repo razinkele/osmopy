@@ -18,19 +18,21 @@
 - Create `tests/fixtures/fishbase/` — tiny recorded parquet slices (cod + green crab).
 - Create `scripts/_record_fishbase_fixtures.py` — one-off fixture recorder (documented, re-runnable).
 - Create `tests/test_fishbase.py` — client unit tests.
-- Create `ui/components/fishbase_bootstrap.py` — modal UI builder + `fishbase_bootstrap_server`.
+- Create `ui/components/fishbase_bootstrap.py` — inline panel UI builder + `fishbase_bootstrap_server`.
 - Modify `ui/pages/setup.py` — add the bootstrap control to the Species Configuration card + invoke the server helper.
-- Create `tests/test_fishbase_bootstrap_ui.py` — controller-level UI test.
-- Create `tests/test_fishbase_e2e.py` — Playwright e2e: **modal-open smoke only** (never clicks Fetch → no network; cross-process monkeypatch isn't possible since the app runs in a subprocess). `@pytest.mark.e2e`.
+- Create `tests/test_fishbase_bootstrap_ui.py` — pure-helper UI tests (apply/review/pick_id/candidate_label).
+- Create `tests/test_fishbase_e2e.py` — Playwright e2e: **panel-renders smoke only** (never clicks Fetch → no network; cross-process monkeypatch isn't possible since the app runs in a subprocess). `@pytest.mark.e2e`.
 - Modify `pyproject.toml` — add `pyarrow>=14` to runtime `dependencies` (pandas does NOT pull it; it's only in `.venv` via the unmanaged copernicusmarine install).
 - Modify `deploy.sh` — add `pyarrow` to the ensured-packages list (prod already has 21, defensive).
 
 **UI integration note (refines spec decision #6):** the species form is a shared
 component (`render_species_table`), so rather than N per-species buttons embedded in the
-table, the feature is surfaced as **one control** in the Species Configuration card — a
-species dropdown + scientific-name input + "Bootstrap from FishBase" button — opening a
-modal scoped to the selected species. Same behavior (bootstrap a chosen species), lower
-blast radius. Flag this to the user at plan review.
+table, the feature is surfaced as **one inline panel** in the Species Configuration card —
+a species dropdown + scientific-name input + Fetch button + a candidate picker (when a name
+matches >1 species) + the review table — all via `output_ui` placeholders in the static
+page body. (Not a modal: binding a `@render.ui` output inside a dynamically-shown
+`ui.modal` has no precedent in this repo and is unverified.) Same behavior (bootstrap a
+chosen species), lower blast radius. Flag this to the user at plan review.
 
 ---
 
@@ -144,6 +146,17 @@ def test_http_get_bytes_reads_response(monkeypatch):
     import urllib.request as _u
     monkeypatch.setattr(_u, "urlopen", lambda url, timeout=0: _FakeResp(b"ok"))
     assert fishbase._http_get_bytes("https://example/x.parquet") == b"ok"
+
+
+def test_load_table_evicts_corrupt_cache(tmp_path, monkeypatch):
+    """A corrupt (fresh) cache must be deleted on parse failure so it can self-heal."""
+    monkeypatch.setenv("OSMOSE_FISHBASE_CACHE_DIR", str(tmp_path))
+    cache = tmp_path / "fb_popgrowth.parquet"
+    cache.write_bytes(b"not a parquet file")  # fresh but corrupt
+    monkeypatch.setattr(fishbase, "_http_get_bytes", lambda url: (_ for _ in ()).throw(AssertionError("should not fetch: cache is fresh")))
+    with pytest.raises(fishbase.FishBaseUnavailable):
+        fishbase._load_table("popgrowth", "fb")
+    assert not cache.exists()  # evicted -> next call re-fetches
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -225,7 +238,12 @@ def _http_get_bytes(url: str) -> bytes:
 
 
 def _load_table(table: str, db: str = "fb") -> pd.DataFrame:
-    """Return a FishBase/SeaLifeBase parquet table, caching the raw file on disk."""
+    """Return a FishBase/SeaLifeBase parquet table, caching the raw file on disk.
+
+    Atomic write (tmp + os.replace) so a crashed/interrupted download can't leave a
+    truncated file behind. On a parse failure the (possibly corrupt) cache is EVICTED so
+    the next call re-fetches, instead of re-raising for the whole TTL with no self-heal.
+    """
     cache = _cache_dir() / f"{db}_{table}.parquet"
     fresh = cache.exists() and (time.time() - cache.stat().st_mtime) < _CACHE_TTL_SEC
     if not fresh:
@@ -234,11 +252,14 @@ def _load_table(table: str, db: str = "fb") -> pd.DataFrame:
             data = _http_get_bytes(url)
         except Exception as exc:  # noqa: BLE001 — any fetch failure is "unavailable"
             raise FishBaseUnavailable(f"could not fetch {url}: {exc}") from exc
-        cache.write_bytes(data)
+        tmp = cache.with_suffix(".parquet.tmp")
+        tmp.write_bytes(data)
+        os.replace(tmp, cache)  # atomic publish
     try:
         return pd.read_parquet(cache)
-    except Exception as exc:  # noqa: BLE001 — corrupt/changed payload
-        raise FishBaseUnavailable(f"could not parse {table} parquet: {exc}") from exc
+    except Exception as exc:  # noqa: BLE001 — corrupt/changed payload: evict + signal
+        cache.unlink(missing_ok=True)
+        raise FishBaseUnavailable(f"could not parse {table} parquet (cache evicted): {exc}") from exc
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -475,6 +496,48 @@ def test_fetch_traits_partial_coverage_omits_missing(fixture_tables, monkeypatch
     t = fishbase.fetch_traits(69, "fb")
     assert "species.length2weight.condition.factor" not in t
     assert "species.linf" in t  # other traits still present
+
+
+def test_fetch_traits_missing_table_degrades_not_aborts(fixture_tables, monkeypatch):
+    """A single table raising FishBaseUnavailable must NOT lose other-table traits."""
+    real = fishbase._load_table
+
+    def patched(table, db="fb"):
+        if table == "maturity":
+            raise fishbase.FishBaseUnavailable("maturity 404 on this db")
+        return real(table, db)
+
+    monkeypatch.setattr(fishbase, "_load_table", patched)
+    t = fishbase.fetch_traits(69, "fb")
+    assert "species.maturity.size" not in t   # missing table -> trait absent
+    assert "species.linf" in t                # popgrowth still loaded
+
+
+def test_fetch_traits_total_outage_raises(fixture_tables, monkeypatch):
+    """If NO table loads, signal unavailable rather than 'no traits'."""
+    monkeypatch.setattr(
+        fishbase, "_load_table",
+        lambda table, db="fb": (_ for _ in ()).throw(fishbase.FishBaseUnavailable("down")),
+    )
+    with pytest.raises(fishbase.FishBaseUnavailable):
+        fishbase.fetch_traits(69, "fb")
+
+
+def test_fetch_traits_drops_zero_sentinel(monkeypatch):
+    """positive_only traits drop 0 ('not recorded'); t0 keeps negatives."""
+    pg = pd.DataFrame({"SpecCode": [1, 1, 1], "Loo": [0.0, 100.0, 110.0], "K": [0.1, 0.2, 0.0],
+                       "to": [-0.5, -0.1, 0.0]})
+    monkeypatch.setattr(fishbase, "_load_table",
+                        lambda table, db="fb": pg if table == "popgrowth" else pg.iloc[0:0])
+    t = fishbase.fetch_traits(1, "fb")
+    assert t["species.linf"].value == 105.0 and t["species.linf"].n == 2   # 0 dropped
+    assert t["species.t0"].n == 3  # negatives + 0 all kept (positive_only=False)
+
+
+def test_fetch_traits_sealifebase_partial(fixture_tables):
+    """Green crab (SLB) returns a dict and never raises, even if growth tables are sparse."""
+    t = fishbase.fetch_traits(26397, "slb")
+    assert isinstance(t, dict)  # partial coverage is fine; may be small
 ```
 
 - [ ] **Step 2: Run to verify failure**
@@ -486,34 +549,47 @@ Expected: FAIL — no attribute `fetch_traits`.
 
 ```python
 # osmose/fishbase.py  (add)
-# OSMOSE key stem -> (table, column, speccode_column, unit)
-TRAIT_MAP: dict[str, tuple[str, str, str, str]] = {
-    "species.linf": ("popgrowth", "Loo", "SpecCode", "cm"),
-    "species.k": ("popgrowth", "K", "SpecCode", "year^-1"),
-    "species.t0": ("popgrowth", "to", "SpecCode", "year"),
-    "species.lmax": ("species", "Length", "SpecCode", "cm"),
-    "species.length2weight.condition.factor": ("poplw", "a", "SpecCode", ""),
-    "species.length2weight.allometric.power": ("poplw", "b", "SpecCode", ""),
-    "species.maturity.size": ("maturity", "Lm", "Speccode", "cm"),
-    "species.lifespan": ("species", "LongevityWild", "SpecCode", "year"),
+# OSMOSE key stem -> (table, column, speccode_column, unit, positive_only)
+# positive_only=True drops non-positive values: FishBase stores 0 as a "not recorded"
+# sentinel for strictly-positive quantities (Loo/K/Lm/a/b/Length/longevity). `to` (t0)
+# is legitimately negative, so it must NOT be positive-filtered.
+TRAIT_MAP: dict[str, tuple[str, str, str, str, bool]] = {
+    "species.linf": ("popgrowth", "Loo", "SpecCode", "cm", True),
+    "species.k": ("popgrowth", "K", "SpecCode", "year^-1", True),
+    "species.t0": ("popgrowth", "to", "SpecCode", "year", False),
+    "species.lmax": ("species", "Length", "SpecCode", "cm", True),
+    "species.length2weight.condition.factor": ("poplw", "a", "SpecCode", "", True),
+    "species.length2weight.allometric.power": ("poplw", "b", "SpecCode", "", True),
+    "species.maturity.size": ("maturity", "Lm", "Speccode", "cm", True),
+    "species.lifespan": ("species", "LongevityWild", "SpecCode", "year", True),
 }
 
 
 def fetch_traits(spec_code: int, db: str) -> dict[str, TraitEstimate]:
     """Aggregate each mapped trait to median/n/min-max for a species.
 
-    Traits with no usable data are omitted (partial coverage is normal).
+    Per-table load failures degrade to "trait absent" (partial coverage is normal,
+    especially on SeaLifeBase where some tables are missing) — a single missing table
+    must NOT lose the traits that did load. Only a TOTAL outage (no table loads at all)
+    re-raises FishBaseUnavailable so the UI shows its "unavailable" path.
     """
-    tables: dict[str, pd.DataFrame] = {}
+    tables: dict[str, pd.DataFrame | None] = {}
     out: dict[str, TraitEstimate] = {}
-    for key, (table, col, code_col, unit) in TRAIT_MAP.items():
+    for key, (table, col, code_col, unit, positive_only) in TRAIT_MAP.items():
         if table not in tables:
-            tables[table] = _load_table(table, db)
+            try:
+                tables[table] = _load_table(table, db)
+            except FishBaseUnavailable:
+                _log.warning("table %s unavailable for db=%s; skipping its traits", table, db)
+                tables[table] = None
         df = tables[table]
-        if code_col not in df.columns or col not in df.columns:
+        if df is None or code_col not in df.columns or col not in df.columns:
             continue
         vals = pd.to_numeric(df.loc[df[code_col] == spec_code, col], errors="coerce").dropna()
+        if positive_only:
+            vals = vals[vals > 0]  # drop the 0 "not recorded" sentinel
         if vals.empty:
+            _log.debug("trait %s: no usable values for spec_code=%s db=%s", key, spec_code, db)
             continue
         out[key] = TraitEstimate(
             value=float(vals.median()),
@@ -522,6 +598,9 @@ def fetch_traits(spec_code: int, db: str) -> dict[str, TraitEstimate]:
             max=float(vals.max()),
             unit=unit,
         )
+    # Total outage (every distinct table failed to load) → signal, don't pretend "no data".
+    if tables and all(v is None for v in tables.values()):
+        raise FishBaseUnavailable(f"no FishBase tables could be loaded for db={db}")
     return out
 ```
 
@@ -539,13 +618,13 @@ git commit -m "feat(fishbase): TRAIT_MAP + fetch_traits (median/range, Speccode 
 
 ---
 
-## Task 5: UI component — modal builder + `fishbase_bootstrap_server`
+## Task 5: UI component — inline bootstrap panel + `fishbase_bootstrap_server`
 
 **Files:**
 - Create: `ui/components/fishbase_bootstrap.py`
 - Test: `tests/test_fishbase_bootstrap_ui.py`
 
-- [ ] **Step 1: Write the failing controller-level test**
+- [ ] **Step 1: Write the failing pure-helper tests**
 
 ```python
 # tests/test_fishbase_bootstrap_ui.py
@@ -585,6 +664,13 @@ def test_pick_id_is_shiny_safe():
     pid = fb._pick_id(2, "species.length2weight.condition.factor")
     assert "." not in pid
     assert pid == "fb_pick_2_species_length2weight_condition_factor"
+
+
+def test_candidate_label():
+    m = SpecMatch(spec_code=69, scientific_name="Gadus morhua", common_name="Atlantic cod", db="fb")
+    assert fb.candidate_label(m) == "Gadus morhua — Atlantic cod [FB]"
+    m2 = SpecMatch(spec_code=1, scientific_name="Genus sp", common_name="", db="slb")
+    assert fb.candidate_label(m2) == "Genus sp [SLB]"
 ```
 
 - [ ] **Step 2: Run to verify failure**
@@ -596,10 +682,14 @@ Expected: FAIL — module/functions missing.
 
 ```python
 # ui/components/fishbase_bootstrap.py
-"""'Bootstrap from FishBase' control: resolve -> fetch -> review -> apply.
+"""'Bootstrap from FishBase' inline panel: resolve -> (disambiguate) -> review -> apply.
 
-Pure helpers (apply_traits, review_rows) are unit-tested; the server wires them
-to a modal. Data is CC-BY-NC (FishBase via rOpenSci / Source Cooperative).
+Rendered INLINE in the Species Configuration card (not a modal): the `output_ui`
+placeholders live in the static page body — the proven pattern in this repo. (Binding a
+`@render.ui` output whose placeholder is injected inside a dynamically-shown `ui.modal`
+has no precedent here and is unverified, so we avoid it.) Pure helpers (candidate_label,
+review_rows, apply_traits) are unit-tested; the server wires them to render.ui outputs.
+Data is CC-BY-NC (FishBase via rOpenSci / Source Cooperative).
 """
 
 from __future__ import annotations
@@ -622,8 +712,14 @@ _FIELD_BY_STEM = {f.key_pattern.replace(".sp{idx}", ""): f for f in SPECIES_FIEL
 def _pick_id(species_index: int, key: str) -> str:
     """Shiny-safe checkbox id. Dots are ILLEGAL in Shiny input ids (repo convention,
     param_form.input_id_for_key); namespace by species index to avoid cross-species
-    checkbox stickiness on modal re-open."""
+    checkbox stickiness when the panel is reused."""
     return f"fb_pick_{species_index}_" + key.replace(".", "_")
+
+
+def candidate_label(m) -> str:
+    """Human label for a SpecMatch in the disambiguation dropdown."""
+    common = f" — {m.common_name}" if m.common_name else ""
+    return f"{m.scientific_name}{common} [{m.db.upper()}]"
 
 
 def review_rows(cfg: dict, species_index: int, traits: dict) -> list[dict]:
@@ -658,54 +754,59 @@ def apply_traits(cfg: dict, species_index: int, traits: dict, selected: set[str]
 
 
 def fishbase_bootstrap_ui():
-    """Control row to embed in the Species Configuration card."""
+    """Inline panel embedded in the Species Configuration card (static output_ui slots)."""
     return ui.div(
-        ui.input_action_button(
-            "fb_open", "Bootstrap from FishBase", class_="btn-outline-info btn-sm mt-2"
-        ),
-        ui.tags.small(_ATTRIB, class_="text-muted d-block mt-1"),
+        ui.hr(),
+        ui.h6("Bootstrap from FishBase"),
+        ui.output_ui("fb_species_select"),
+        ui.input_text("fb_name", "Scientific or common name"),
+        ui.input_action_button("fb_fetch", "Fetch traits", class_="btn-primary btn-sm"),
+        ui.output_ui("fb_candidates"),
+        ui.output_ui("fb_review"),
+        ui.tags.small(_ATTRIB, class_="text-muted d-block mt-2"),
+        class_="mt-2",
     )
 
 
 def fishbase_bootstrap_server(input, output, session, state):
+    _matches: reactive.Value = reactive.Value([])  # candidates from the last resolve
     _traits: reactive.Value = reactive.Value({})
-    _match: reactive.Value = reactive.Value(None)
+    _match: reactive.Value = reactive.Value(None)   # the chosen SpecMatch
 
-    def _species_choices() -> dict:
+    def _n_species() -> int:
         # Source of truth = config's simulation.nspecies; names only label the slots.
         with reactive.isolate():
             cfg = state.config.get()
             names = state.species_names.get() or []
         try:
-            n = int(float(cfg.get("simulation.nspecies", len(names)) or 0))
+            return int(float(cfg.get("simulation.nspecies", len(names)) or 0))
         except (TypeError, ValueError):
-            n = len(names)
-        return {
+            return len(names)
+
+    @render.ui
+    def fb_species_select():
+        state.load_trigger.get()  # refresh slots when species count/names change
+        with reactive.isolate():
+            names = state.species_names.get() or []
+        n = _n_species()
+        choices = {
             str(i): (names[i] if i < len(names) and names[i] else f"Species {i}")
             for i in range(max(n, 0))
         }
+        return ui.input_select("fb_species", "Species (config slot)", choices=choices)
 
-    @reactive.effect
-    @reactive.event(input.fb_open)
-    def _open():
-        _traits.set({})  # reset stale fetch state on every open (easy_close can leave it)
-        _match.set(None)
-        choices = _species_choices()
-        first_idx = next(iter(choices), "0")
-        prefill = choices.get(first_idx, "")
-        ui.modal_show(
-            ui.modal(
-                ui.input_select("fb_species", "Species (config slot)", choices=choices),
-                ui.input_text("fb_name", "Scientific or common name", value=prefill),
-                ui.input_action_button("fb_fetch", "Fetch traits", class_="btn-primary btn-sm"),
-                ui.output_ui("fb_review"),
-                ui.input_action_button("fb_apply", "Apply selected", class_="btn-success btn-sm"),
-                ui.tags.small(_ATTRIB, class_="text-muted d-block mt-2"),
-                title="Bootstrap species traits from FishBase",
-                easy_close=True,
-                size="l",
-            )
-        )
+    def _do_fetch(m):
+        """Fetch + store traits for a chosen match (busy-wrapped)."""
+        ui.notification_show("Fetching from FishBase…", id="fb_busy", duration=None)
+        try:
+            traits = fishbase.fetch_traits(m.spec_code, m.db)
+        except fishbase.FishBaseUnavailable:
+            _traits.set({}); _match.set(None)
+            ui.notification_show("FishBase unavailable — try again later.", type="error", duration=8)
+            return
+        finally:
+            ui.notification_remove("fb_busy")
+        _match.set(m); _traits.set(traits)
 
     @reactive.effect
     @reactive.event(input.fb_fetch)
@@ -714,27 +815,46 @@ def fishbase_bootstrap_server(input, output, session, state):
         if not name:
             ui.notification_show("Enter a species name.", type="warning", duration=5)
             return
-        # First fetch downloads up to ~8 MB (4 parquet tables) synchronously, which briefly
-        # blocks this session's flush (cf. the live-movement lesson). It's a one-shot user
-        # action; show a busy notification so the freeze reads as progress, not a hang.
-        # Subsequent fetches hit the week-long disk cache and are instant.
-        ui.notification_show("Fetching from FishBase…", id="fb_busy", duration=None)
+        _matches.set([]); _traits.set({}); _match.set(None)  # reset prior results
+        # resolve downloads the ~5.5 MB species table on a cold cache (one-shot, busy-wrapped).
+        ui.notification_show("Looking up species…", id="fb_busy", duration=None)
         try:
             matches = fishbase.resolve_species(name)
-            m = matches[0]
-            traits = fishbase.fetch_traits(m.spec_code, m.db)
         except fishbase.FishBaseNoMatch:
-            _traits.set({}); _match.set(None)
             ui.notification_show(f"No FishBase/SeaLifeBase record for '{name}'.", type="error", duration=8)
             return
         except fishbase.FishBaseUnavailable:
-            _traits.set({}); _match.set(None)
             ui.notification_show("FishBase unavailable — try again later.", type="error", duration=8)
             return
         finally:
             ui.notification_remove("fb_busy")
-        _match.set(m)
-        _traits.set(traits)
+        _matches.set(matches)
+        if len(matches) == 1:
+            _do_fetch(matches[0])  # unambiguous → fetch straight away
+        # >1 → fb_candidates renders a picker; user selects, _pick fires
+
+    @render.ui
+    def fb_candidates():
+        matches = _matches.get()
+        if len(matches) <= 1:
+            return ui.div()
+        choices = {str(i): candidate_label(m) for i, m in enumerate(matches)}
+        return ui.div(
+            ui.input_select("fb_candidate", f"{len(matches)} matches — pick one", choices=choices),
+            ui.input_action_button("fb_use_candidate", "Use this match", class_="btn-secondary btn-sm"),
+            class_="mt-2",
+        )
+
+    @reactive.effect
+    @reactive.event(input.fb_use_candidate)
+    def _pick():
+        matches = _matches.get()
+        try:
+            i = int(input.fb_candidate())
+        except (TypeError, ValueError, SilentException):
+            return
+        if 0 <= i < len(matches):
+            _do_fetch(matches[i])
 
     @render.ui
     def fb_review():
@@ -768,6 +888,7 @@ def fishbase_bootstrap_server(input, output, session, state):
                 ui.tags.tbody(*rows),
                 class_="table table-sm",
             ),
+            ui.input_action_button("fb_apply", "Apply selected", class_="btn-success btn-sm"),
         )
 
     @reactive.effect
@@ -787,7 +908,6 @@ def fishbase_bootstrap_server(input, output, session, state):
             with reactive.isolate():
                 state.load_trigger.set(state.load_trigger.get() + 1)
         ui.notification_show(f"Applied {len(selected)} trait(s) to species {idx}.", type="message", duration=4)
-        ui.modal_remove()
 
 
 def _checkbox(input, input_id: str) -> bool:
@@ -803,13 +923,13 @@ def _checkbox(input, input_id: str) -> bool:
 - [ ] **Step 4: Run to verify pass**
 
 Run: `.venv/bin/python -m pytest tests/test_fishbase_bootstrap_ui.py -q -o addopts=""`
-Expected: PASS (2 passed).
+Expected: PASS (4 passed — apply, review, pick_id, candidate_label).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add ui/components/fishbase_bootstrap.py tests/test_fishbase_bootstrap_ui.py
-git commit -m "feat(fishbase-ui): review/apply helpers + bootstrap modal server"
+git commit -m "feat(fishbase-ui): review/apply helpers + inline bootstrap panel server"
 ```
 
 ---
@@ -828,14 +948,15 @@ def test_setup_ui_includes_bootstrap_control():
     from ui.pages.setup import setup_ui
 
     html = str(setup_ui())
-    assert "fb_open" in html
     assert "Bootstrap from FishBase" in html
+    assert "fb_fetch" in html      # the inline panel's Fetch button
+    assert "fb_species_select" in html  # the species-select output_ui placeholder
 ```
 
 - [ ] **Step 2: Run to verify failure**
 
 Run: `.venv/bin/python -m pytest tests/test_fishbase_bootstrap_ui.py::test_setup_ui_includes_bootstrap_control -q -o addopts=""`
-Expected: FAIL — `fb_open` not in setup_ui.
+Expected: FAIL — "Bootstrap from FishBase"/`fb_fetch` not in setup_ui yet.
 
 - [ ] **Step 3: Implement — add import, control, and server wiring**
 
@@ -872,7 +993,7 @@ git commit -m "feat(fishbase-ui): surface bootstrap control on the species setup
 
 ---
 
-## Task 7: Playwright e2e — modal-open smoke (no fetch, no network)
+## Task 7: Playwright e2e — panel-renders smoke (no fetch, no network)
 
 **Files:**
 - Create: `tests/test_fishbase_e2e.py`
@@ -893,15 +1014,14 @@ pytestmark = pytest.mark.e2e
 app = create_app_fixture("../app.py")
 
 
-def test_bootstrap_modal_opens_and_lists_traits(page: Page, app: ShinyAppProc):
-    """Smoke: the control opens the modal. (Fetch hits the live API only if reachable;
-    this test asserts the modal + inputs render, not network results.)"""
+def test_bootstrap_panel_renders_on_setup(page: Page, app: ShinyAppProc):
+    """Smoke: the inline bootstrap panel renders on the Setup page. Never clicks Fetch,
+    so no network — asserts the panel + inputs are present, not network results."""
     page.goto(app.url)
     page.wait_for_selector(".nav-pills", timeout=30_000)
     dismiss_changelog_modal(page)
     page.locator(".nav-pills .nav-link[data-value='setup']").click()
-    page.wait_for_selector("#fb_open", timeout=20_000)
-    page.locator("#fb_open").click()
+    page.wait_for_selector("#fb_fetch", timeout=20_000)
     expect(page.locator("#fb_name")).to_be_visible(timeout=10_000)
     expect(page.locator("#fb_fetch")).to_be_visible()
 ```
@@ -915,7 +1035,7 @@ Expected: PASS (1 passed). If the browser is unavailable, it errors at fixture s
 
 ```bash
 git add tests/test_fishbase_e2e.py
-git commit -m "test(fishbase): e2e smoke — bootstrap modal opens on setup page"
+git commit -m "test(fishbase): e2e smoke — bootstrap panel renders on setup page"
 ```
 
 ---
@@ -946,7 +1066,7 @@ Expected: all pass (parquet reads work → pyarrow is installed via the declared
 
 ```bash
 git push -u origin feat/fishbase-trait-bootstrap
-gh pr create --base master --title "feat: FishBase/SeaLifeBase species-trait bootstrap" --body "Populate a focal species' life-history traits (Linf, K, t0, Lmax, length-weight a/b, maturity size, lifespan) from FishBase/SeaLifeBase parquet snapshots (Source Cooperative), with a per-trait review-and-apply modal on the species setup page. Pure osmose/fishbase.py client (urllib + pandas/pyarrow, no new dep), median+range resolution, FB->SLB fallback, fixtures-only tests (no network in CI). Spec: docs/superpowers/specs/2026-06-17-fishbase-trait-bootstrap-design.md. Data CC-BY-NC (FishBase via rOpenSci / Source Cooperative), attributed in-UI."
+gh pr create --base master --title "feat: FishBase/SeaLifeBase species-trait bootstrap" --body "Populate a focal species' life-history traits (Linf, K, t0, Lmax, length-weight a/b, maturity size, lifespan) from FishBase/SeaLifeBase parquet snapshots (Source Cooperative), with a per-trait review-and-apply inline panel on the species setup page. Pure osmose/fishbase.py client (urllib + pandas/pyarrow, no new dep), median+range resolution, FB->SLB fallback, fixtures-only tests (no network in CI). Spec: docs/superpowers/specs/2026-06-17-fishbase-trait-bootstrap-design.md. Data CC-BY-NC (FishBase via rOpenSci / Source Cooperative), attributed in-UI."
 ```
 Expected: PR opens; watch CI to green.
 
@@ -956,7 +1076,7 @@ Expected: PR opens; watch CI to green.
 
 - **No network in CI:** every client test monkeypatches `_load_table` (or `_http_get_bytes`) to fixtures. Only `scripts/_record_fishbase_fixtures.py` touches the network, and CI never runs it.
 - **`Speccode` vs `SpecCode`:** the `maturity` table uses lowercase `Speccode`; `TRAIT_MAP` encodes the right column per table. Don't "normalize" it away.
-- **Pure core:** `osmose/fishbase.py` imports no Shiny; `apply_traits`/`review_rows` are pure and unit-tested independently of the modal.
+- **Pure core:** `osmose/fishbase.py` imports no Shiny; `apply_traits`/`review_rows`/`candidate_label` are pure and unit-tested independently of the UI.
 - **Apply refresh:** writing traits bumps `state.load_trigger` so `species_panels` re-renders (mirrors `grid.py: handle_load_example`).
-- **Attribution:** the CC-BY-NC credit string is shown in the control and the modal.
+- **Attribution:** the CC-BY-NC credit string is shown in the inline panel.
 - **OTel guard interplay:** unrelated, but the prod guard shipped in #67 means even a stray render error here won't crash the session.

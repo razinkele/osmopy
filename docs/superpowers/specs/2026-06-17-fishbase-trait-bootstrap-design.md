@@ -50,7 +50,9 @@ the source of truth.
    check must *run* the parquet tests (not just `--collect-only`, which wouldn't execute
    the read).
 6. **UI placement:** a per-species **"Bootstrap from FishBase"** button on the species
-   setup panel, opening a review modal scoped to that species.
+   setup panel. **Refined in the plan to one inline panel** (the species form is a shared
+   component, so a single panel + candidate picker beats N per-row buttons; and an inline
+   panel avoids binding a render output inside a dynamically-shown modal).
 
 ## Architecture & components
 
@@ -73,29 +75,41 @@ the source of truth.
 - `fetch_traits(spec_code: int, db: str) -> dict[str, TraitEstimate]`
   - `TraitEstimate = {value: float (median), n: int, min: float, max: float, unit: str}`.
   - Loads `popgrowth`, `poplw`, `maturity`, `species`, filters each by spec code, and
-    aggregates each mapped column to median/n/min–max (see Trait mapping). Traits with no
-    data are simply absent (partial coverage is normal).
-- `TRAIT_MAP`: ordered mapping of (table, column) → OSMOSE key-pattern stem + unit.
-- Exceptions: `FishBaseUnavailable` (network/timeout/HTTP error), `FishBaseNoMatch`
+    aggregates each mapped column to median/n/min–max (see Trait mapping). **Per-table load
+    failures degrade to "trait absent"** (SeaLifeBase lacks some tables for some species —
+    a missing table must not lose the traits that did load); only a **total** outage (no
+    table loads) re-raises `FishBaseUnavailable`. **`positive_only` columns drop the `0`
+    "not recorded" sentinel** (all length/growth/weight traits); `to` (t0) keeps negatives.
+- `TRAIT_MAP`: ordered mapping of (table, column, code_col, unit, positive_only) → OSMOSE
+  key-pattern stem.
+- Caching: `_load_table` writes the parquet atomically (tmp + `os.replace`) and **evicts a
+  corrupt cache file on parse failure** so it self-heals (no week-long stuck error).
+- Exceptions: `FishBaseUnavailable` (network/timeout/HTTP/parse error), `FishBaseNoMatch`
   (name resolves to nothing in either DB).
 
 ### UI surface
 
-- A **"Bootstrap from FishBase"** button per species on the setup species panel.
-- Opens a modal: scientific-name input (prefilled from `species.name.sp{i}`, editable) →
-  **Fetch** → (candidate picker if ambiguous) → **review table** → **Apply selected**.
+- An **inline "Bootstrap from FishBase" panel** in the Species Configuration card (refines
+  decision #6 — the species form is a shared `render_species_table`, so one panel beats N
+  per-row buttons). **Not a modal:** binding a `@render.ui` output inside a dynamically
+  shown `ui.modal` has no precedent in this repo and is unverified — the panel uses
+  `output_ui` placeholders in the **static page body** (the proven pattern).
+- Flow: species dropdown (slots from `simulation.nspecies`) + scientific/common-name input
+  → **Fetch** → if >1 match, a **candidate picker** (`input_select` of
+  scientific/common/db) → **review table** (`trait | current | FishBase median | n | range
+  | ☑`) → **Apply selected**.
 - Apply writes `state.config[field.resolve_key(i)] = str(value)` for each ticked trait,
-  then triggers the existing form-refresh path so inputs update.
-- Lives in **`ui/components/fishbase_bootstrap.py`** — a reusable modal builder plus a
-  small `fishbase_bootstrap_server(input, output, session, state)` helper invoked once
-  from `setup_server`, keeping `setup.py` focused. The per-species buttons share one modal
-  parameterised by the species index.
+  then bumps `state.load_trigger` so the species forms re-render (mirrors
+  `grid.py: handle_load_example`).
+- Lives in **`ui/components/fishbase_bootstrap.py`** — pure helpers (`candidate_label`,
+  `review_rows`, `apply_traits`, `_pick_id`) + a `fishbase_bootstrap_server(...)` invoked
+  once from `setup_server`, keeping `setup.py` focused.
 
 ## Data flow
 
-1. User clicks Bootstrap on species *i*; name input prefilled from `species.name.sp{i}`.
-2. `resolve_species(name)` → 0 matches → "no match" message; 1 → proceed; >1 → candidate
-   picker (scientific + common + db).
+1. User picks a species slot + enters a name in the inline panel.
+2. **Fetch** → `resolve_species(name)`: 0 matches → "no match" message; 1 → fetch straight
+   away; >1 → render a candidate picker; user selects → fetch the chosen one.
 3. `fetch_traits(spec_code, db)` → review table rows for each resolved trait:
    `trait label | current config value | FishBase median | n | range | ☑`.
 4. User ticks desired traits → **Apply selected** → `state.config` updated → forms refresh.
