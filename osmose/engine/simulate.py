@@ -96,6 +96,9 @@ class StepOutput:
     biomass_by_size: dict[int, NDArray[np.float64]] | None = None
     abundance_by_size: dict[int, NDArray[np.float64]] | None = None
 
+    # Per-species realized mean trophic level (sp_idx -> biomass-weighted mean TL), or None
+    mean_tl: dict[int, float] | None = None
+
     # Bioenergetics: mean net energy per species, shape (n_species,), or None if bioen disabled
     bioen_e_net_by_species: NDArray[np.float64] | None = None
     bioen_ingestion_by_species: NDArray[np.float64] | None = None
@@ -734,6 +737,33 @@ def _species_mean(
     return sums / safe
 
 
+def _collect_mean_tl(state: SchoolState, config: EngineConfig) -> dict[int, float]:
+    """Biomass-weighted realized mean trophic level per FOCAL species.
+
+    Aggregates the emergent per-school ``state.trophic_level`` (maintained by predation
+    in mortality.py), weighting each school by its biomass — matching the Java OSMOSE
+    ``MeanTrophicLevel`` convention. Includes only focal-species schools
+    (species_id < n_species) with trophic_level > 0 and biomass > 0 (excludes background
+    and unfed/egg schools whose TL is still the 0 sentinel). Applies the same output
+    cutoff-age filter as the biomass output. Species with no qualifying school are omitted.
+    """
+    n_sp = config.n_species
+    wsum = np.zeros(n_sp, dtype=np.float64)  # sum biomass*TL
+    bsum = np.zeros(n_sp, dtype=np.float64)  # sum biomass
+    if len(state) > 0:
+        sp = state.species_id
+        tl = state.trophic_level
+        bm = state.biomass
+        mask = (sp < n_sp) & (tl > 0) & (bm > 0)
+        if config.output_cutoff_age is not None:
+            age_years = state.age_dt.astype(np.float64) / config.n_dt_per_year
+            cutoff = config.output_cutoff_age[sp]
+            mask = mask & (age_years >= cutoff)
+        np.add.at(wsum, sp[mask], bm[mask] * tl[mask])
+        np.add.at(bsum, sp[mask], bm[mask])
+    return {i: float(wsum[i] / bsum[i]) for i in range(n_sp) if bsum[i] > 0}
+
+
 def _collect_biomass_abundance(
     state: SchoolState,
     config: EngineConfig,
@@ -1005,6 +1035,7 @@ def _collect_outputs(
     biomass_by_age, abundance_by_age, biomass_by_size, abundance_by_size = _collect_distributions(
         state, config
     )
+    mean_tl = _collect_mean_tl(state, config) if config.output_meantl else None
     bioen_e_net, bioen_ingestion, bioen_maint, bioen_rho, bioen_size_inf = _collect_bioen(
         state, config
     )
@@ -1027,6 +1058,7 @@ def _collect_outputs(
         abundance_by_age=abundance_by_age,
         biomass_by_size=biomass_by_size,
         abundance_by_size=abundance_by_size,
+        mean_tl=mean_tl,
         bioen_e_net_by_species=bioen_e_net,
         bioen_ingestion_by_species=bioen_ingestion,
         bioen_maint_by_species=bioen_maint,
@@ -1130,6 +1162,13 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
     spatial_a_agg = _avg_spatial("spatial_abundance", "mean")
     spatial_y_agg = _avg_spatial("spatial_yield", "sum")
 
+    def _avg_scalar_dict(attr: str) -> dict[int, float] | None:
+        dicts = [getattr(o, attr) for o in accumulated if getattr(o, attr) is not None]
+        if not dicts:
+            return None
+        keys: set[int] = set().union(*[set(d.keys()) for d in dicts])
+        return {k: float(np.mean([d[k] for d in dicts if k in d])) for k in keys}
+
     if len(accumulated) == 1:
         return StepOutput(
             step=record_step,
@@ -1141,6 +1180,7 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
             abundance_by_age=accumulated[0].abundance_by_age,
             biomass_by_size=accumulated[0].biomass_by_size,
             abundance_by_size=accumulated[0].abundance_by_size,
+            mean_tl=accumulated[0].mean_tl,
             bioen_e_net_by_species=bioen_e_net_avg,
             bioen_ingestion_by_species=bioen_ingestion_avg,
             bioen_maint_by_species=bioen_maint_avg,
@@ -1204,6 +1244,7 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
         abundance_by_age=_avg_spatial("abundance_by_age", "mean"),
         biomass_by_size=_avg_spatial("biomass_by_size", "mean"),
         abundance_by_size=_avg_spatial("abundance_by_size", "mean"),
+        mean_tl=_avg_scalar_dict("mean_tl"),
         bioen_e_net_by_species=bioen_e_net_avg,
         bioen_ingestion_by_species=bioen_ingestion_avg,
         bioen_maint_by_species=bioen_maint_avg,
