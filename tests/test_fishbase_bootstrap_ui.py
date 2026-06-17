@@ -36,3 +36,12 @@ def test_candidate_label():
     assert fb.candidate_label(m) == "Gadus morhua — Atlantic cod [FB]"
     m2 = SpecMatch(spec_code=1, scientific_name="Genus sp", common_name="", db="slb")
     assert fb.candidate_label(m2) == "Genus sp [SLB]"
+
+
+def test_setup_ui_includes_bootstrap_control():
+    from ui.pages.setup import setup_ui
+
+    html = str(setup_ui())
+    assert "Bootstrap from FishBase" in html
+    assert "fb_fetch" in html      # the inline panel's Fetch button
+    assert "fb_species_select" in html  # the species-select output_ui placeholder
