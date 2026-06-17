@@ -60,6 +60,7 @@ def write_outputs(
     _write_yield_csv(output_dir, prefix, outputs, config)
     _write_distribution_csvs(output_dir, prefix, outputs, config)
     _write_meantl_csv(output_dir, prefix, outputs, config)
+    _write_distrib_bysize_community_csvs(output_dir, prefix, outputs, config)
 
     if config.bioen_enabled:
         _write_bioen_csvs(output_dir, prefix, outputs, config)
@@ -227,6 +228,58 @@ def _write_meantl_csv(
 ) -> None:
     """Write {prefix}_meanTL_Simu0.csv (clean header; readers auto-detect preamble)."""
     for key, df in _build_meantl_dataframe(outputs, config).items():
+        df.to_csv(output_dir / f"{prefix}_{key}_Simu0.csv", index=False)
+
+
+def _build_distrib_bysize_community_dataframes(
+    outputs: list[StepOutput],
+    config: EngineConfig,
+) -> dict[str, pd.DataFrame]:
+    """Community {metric}DistribBySize: wide Time, Size, <species> from the per-size StepOutput
+    data, reshaped to the Java community layout (one Size row per bin, one column per species).
+
+    Only the metric(s) whose bysize flag is set are built. Missing per-species/per-bin cells are
+    zero-filled (matching the per-species distribution writer).
+    """
+    result: dict[str, pd.DataFrame] = {}
+    times = np.array([o.step / config.n_dt_per_year for o in outputs])
+    sp_names = config.species_names
+    for metric, attr, flag in (
+        ("biomassDistribBySize", "biomass_by_size", config.output_biomass_bysize),
+        ("abundanceDistribBySize", "abundance_by_size", config.output_abundance_bysize),
+    ):
+        if not flag:
+            continue
+        n_bins = 0
+        for o in outputs:
+            d = getattr(o, attr)
+            if d:
+                for arr in d.values():
+                    n_bins = max(n_bins, len(arr))
+        if n_bins == 0:
+            continue
+        edges = [config.output_size_min + k * config.output_size_incr for k in range(n_bins)]
+        rows: list[dict] = []
+        for t_idx, o in enumerate(outputs):
+            d = getattr(o, attr) or {}
+            for k in range(n_bins):
+                row: dict[str, float] = {"Time": float(times[t_idx]), "Size": float(edges[k])}
+                for sp_idx, sp_name in enumerate(sp_names):
+                    arr = d.get(sp_idx)
+                    row[sp_name] = float(arr[k]) if arr is not None and k < len(arr) else 0.0
+                rows.append(row)
+        result[metric] = pd.DataFrame(rows, columns=["Time", "Size", *sp_names])  # type: ignore[arg-type]
+    return result
+
+
+def _write_distrib_bysize_community_csvs(
+    output_dir: Path,
+    prefix: str,
+    outputs: list[StepOutput],
+    config: EngineConfig,
+) -> None:
+    """Write {prefix}_{metric}DistribBySize_Simu0.csv (community layout, clean header)."""
+    for key, df in _build_distrib_bysize_community_dataframes(outputs, config).items():
         df.to_csv(output_dir / f"{prefix}_{key}_Simu0.csv", index=False)
 
 
