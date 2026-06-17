@@ -45,12 +45,20 @@ def test_http_get_bytes_reads_response(monkeypatch):
     """Cover the network seam itself (urlopen mocked — still no real network)."""
 
     class _FakeResp:
-        def __init__(self, data): self._d = data
-        def read(self): return self._d
-        def __enter__(self): return self
-        def __exit__(self, *a): return False
+        def __init__(self, data):
+            self._d = data
+
+        def read(self):
+            return self._d
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
 
     import urllib.request as _u
+
     monkeypatch.setattr(_u, "urlopen", lambda url, timeout=0: _FakeResp(b"ok"))
     assert fishbase._http_get_bytes("https://example/x.parquet") == b"ok"
 
@@ -60,7 +68,11 @@ def test_load_table_evicts_corrupt_cache(tmp_path, monkeypatch):
     monkeypatch.setenv("OSMOSE_FISHBASE_CACHE_DIR", str(tmp_path))
     cache = tmp_path / "fb_popgrowth.parquet"
     cache.write_bytes(b"not a parquet file")  # fresh but corrupt
-    monkeypatch.setattr(fishbase, "_http_get_bytes", lambda url: (_ for _ in ()).throw(AssertionError("should not fetch: cache is fresh")))
+    monkeypatch.setattr(
+        fishbase,
+        "_http_get_bytes",
+        lambda url: (_ for _ in ()).throw(AssertionError("should not fetch: cache is fresh")),
+    )
     with pytest.raises(fishbase.FishBaseUnavailable):
         fishbase._load_table("popgrowth", "fb")
     assert not cache.exists()  # evicted -> next call re-fetches
@@ -72,8 +84,10 @@ _FIX = Path(__file__).parent / "fixtures" / "fishbase"
 @pytest.fixture
 def fixture_tables(monkeypatch):
     """Serve fixtures from _load_table; no network."""
+
     def fake(table, db="fb"):
         return pd.read_parquet(_FIX / f"{db}_{table}.parquet")
+
     monkeypatch.setattr(fishbase, "_load_table", fake)
 
 
@@ -117,7 +131,7 @@ def test_fetch_traits_ab_reproduce_weight(fixture_tables):
     t = fishbase.fetch_traits(69, "fb")
     a = t["species.length2weight.condition.factor"].value
     b = t["species.length2weight.allometric.power"].value
-    weight_g = a * (110.0 ** b)
+    weight_g = a * (110.0**b)
     assert 3_000 < weight_g < 25_000
 
 
@@ -152,7 +166,8 @@ def test_fetch_traits_missing_table_degrades_not_aborts(fixture_tables, monkeypa
 
 def test_fetch_traits_total_outage_raises(fixture_tables, monkeypatch):
     monkeypatch.setattr(
-        fishbase, "_load_table",
+        fishbase,
+        "_load_table",
         lambda table, db="fb": (_ for _ in ()).throw(fishbase.FishBaseUnavailable("down")),
     )
     with pytest.raises(fishbase.FishBaseUnavailable):
@@ -161,10 +176,17 @@ def test_fetch_traits_total_outage_raises(fixture_tables, monkeypatch):
 
 def test_fetch_traits_drops_zero_sentinel(monkeypatch):
     """positive_only traits drop 0 ('not recorded'); t0 keeps negatives."""
-    pg = pd.DataFrame({"SpecCode": [1, 1, 1], "Loo": [0.0, 100.0, 110.0], "K": [0.1, 0.2, 0.0],
-                       "to": [-0.5, -0.1, 0.0]})
-    monkeypatch.setattr(fishbase, "_load_table",
-                        lambda table, db="fb": pg if table == "popgrowth" else pg.iloc[0:0])
+    pg = pd.DataFrame(
+        {
+            "SpecCode": [1, 1, 1],
+            "Loo": [0.0, 100.0, 110.0],
+            "K": [0.1, 0.2, 0.0],
+            "to": [-0.5, -0.1, 0.0],
+        }
+    )
+    monkeypatch.setattr(
+        fishbase, "_load_table", lambda table, db="fb": pg if table == "popgrowth" else pg.iloc[0:0]
+    )
     t = fishbase.fetch_traits(1, "fb")
     assert t["species.linf"].value == 105.0 and t["species.linf"].n == 2
     assert t["species.t0"].n == 3

@@ -83,7 +83,7 @@ def fishbase_bootstrap_ui():
 def fishbase_bootstrap_server(input, output, session, state):
     _matches: reactive.Value = reactive.Value([])  # candidates from the last resolve
     _traits: reactive.Value = reactive.Value({})
-    _match: reactive.Value = reactive.Value(None)   # the chosen SpecMatch
+    _match: reactive.Value = reactive.Value(None)  # the chosen SpecMatch
 
     def _n_species() -> int:
         with reactive.isolate():
@@ -114,7 +114,9 @@ def fishbase_bootstrap_server(input, output, session, state):
         except fishbase.FishBaseUnavailable:
             _traits.set({})
             _match.set(None)
-            ui.notification_show("FishBase unavailable — try again later.", type="error", duration=8)
+            ui.notification_show(
+                "FishBase unavailable — try again later.", type="error", duration=8
+            )
             return
         finally:
             ui.notification_remove("fb_busy")
@@ -135,10 +137,14 @@ def fishbase_bootstrap_server(input, output, session, state):
         try:
             matches = fishbase.resolve_species(name)
         except fishbase.FishBaseNoMatch:
-            ui.notification_show(f"No FishBase/SeaLifeBase record for '{name}'.", type="error", duration=8)
+            ui.notification_show(
+                f"No FishBase/SeaLifeBase record for '{name}'.", type="error", duration=8
+            )
             return
         except fishbase.FishBaseUnavailable:
-            ui.notification_show("FishBase unavailable — try again later.", type="error", duration=8)
+            ui.notification_show(
+                "FishBase unavailable — try again later.", type="error", duration=8
+            )
             return
         finally:
             ui.notification_remove("fb_busy")
@@ -154,7 +160,9 @@ def fishbase_bootstrap_server(input, output, session, state):
         choices = {str(i): candidate_label(m) for i, m in enumerate(matches)}
         return ui.div(
             ui.input_select("fb_candidate", f"{len(matches)} matches — pick one", choices=choices),
-            ui.input_action_button("fb_use_candidate", "Use this match", class_="btn-secondary btn-sm"),
+            ui.input_action_button(
+                "fb_use_candidate", "Use this match", class_="btn-secondary btn-sm"
+            ),
             class_="mt-2",
         )
 
@@ -196,7 +204,12 @@ def fishbase_bootstrap_server(input, output, session, state):
             header,
             ui.tags.table(
                 ui.tags.thead(
-                    ui.tags.tr(*[ui.tags.th(h) for h in ("✓", "Trait", "Current", "FishBase", "n", "Range")])
+                    ui.tags.tr(
+                        *[
+                            ui.tags.th(h)
+                            for h in ("✓", "Trait", "Current", "FishBase", "n", "Range")
+                        ]
+                    )
                 ),
                 ui.tags.tbody(*rows),
                 class_="table table-sm",
@@ -220,7 +233,9 @@ def fishbase_bootstrap_server(input, output, session, state):
             state.dirty.set(True)
             with reactive.isolate():
                 state.load_trigger.set(state.load_trigger.get() + 1)
-        ui.notification_show(f"Applied {len(selected)} trait(s) to species {idx}.", type="message", duration=4)
+        ui.notification_show(
+            f"Applied {len(selected)} trait(s) to species {idx}.", type="message", duration=4
+        )
 
 
 def _checkbox(input, input_id: str) -> bool:
