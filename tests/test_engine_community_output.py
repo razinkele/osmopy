@@ -5,7 +5,11 @@ import pandas as pd
 import pytest
 
 from osmose.engine.config import EngineConfig
-from osmose.engine.output import _build_meantl_dataframe, write_outputs
+from osmose.engine.output import (
+    _build_distrib_bysize_community_dataframes,
+    _build_meantl_dataframe,
+    write_outputs,
+)
 from osmose.engine.simulate import StepOutput, _collect_mean_tl
 from osmose.engine.state import SchoolState
 
@@ -121,3 +125,51 @@ def test_write_meantl_csv_gated(tmp_path):
     write_outputs(outputs, tmp_path, config_on, prefix="osm")
     written = pd.read_csv(tmp_path / "osm_meanTL_Simu0.csv")
     assert "Anchovy" in written.columns and written["Anchovy"][0] == pytest.approx(3.5)
+
+
+def test_build_distrib_bysize_community():
+    config = EngineConfig.from_dict(
+        _base_config(
+            {
+                "output.biomass.bysize.enabled": "true",
+                "output.distrib.bysize.min": "0",
+                "output.distrib.bysize.incr": "10",
+            }
+        )
+    )
+    # 1 step, 3 size bins; sp0 = [1,2,3], sp1 = [4,5,6].
+    outputs = [
+        _step_output(
+            0,
+            np.array([1.0, 1.0]),
+            np.array([1.0, 1.0]),
+            biomass_by_size={0: np.array([1.0, 2.0, 3.0]), 1: np.array([4.0, 5.0, 6.0])},
+            abundance_by_size={0: np.array([1.0, 2.0, 3.0]), 1: np.array([4.0, 5.0, 6.0])},
+        )
+    ]
+    dfs = _build_distrib_bysize_community_dataframes(outputs, config)
+    df = dfs["biomassDistribBySize"]
+    assert list(df.columns) == ["Time", "Size", "Anchovy", "Hake"]
+    assert df["Size"].tolist() == pytest.approx([0.0, 10.0, 20.0])
+    assert df["Anchovy"].tolist() == pytest.approx([1.0, 2.0, 3.0])
+    assert df["Hake"].tolist() == pytest.approx([4.0, 5.0, 6.0])
+    # abundance flag is off in this config -> only the biomass community file is built
+    assert "abundanceDistribBySize" not in dfs
+
+
+def test_distrib_bysize_community_written_and_readable(tmp_path):
+    from osmose.size_spectrum import _read_community_by_size
+
+    config = EngineConfig.from_dict(_base_config({"output.biomass.bysize.enabled": "true"}))
+    outputs = [
+        _step_output(
+            0,
+            np.array([1.0, 1.0]),
+            np.array([1.0, 1.0]),
+            biomass_by_size={0: np.array([1.0, 2.0]), 1: np.array([3.0, 4.0])},
+            abundance_by_size={0: np.array([1.0, 2.0]), 1: np.array([3.0, 4.0])},
+        )
+    ]
+    write_outputs(outputs, tmp_path, config, prefix="osm")
+    wide = _read_community_by_size(tmp_path, "biomassDistribBySize", "osm")
+    assert list(wide.columns) == ["Time", "Size", "Anchovy", "Hake"]
