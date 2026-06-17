@@ -26,6 +26,7 @@ output.abundance.bySize.enabled;true
 output.TL.enabled;true
 output.TL.catch.enabled;true
 output.meanTL.bySize.enabled;true
+output.meanTL.enabled;true
 output.biomass.byTL.enabled;true
 output.yield.abundance.enabled;true
 output.yield.biomass.enabled;true
