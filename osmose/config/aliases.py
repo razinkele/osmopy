@@ -56,6 +56,63 @@ RENAMES_440: dict[str, str] = {
 }
 
 
+# new_prefix -> old_prefix (inverse of RENAMES_440).
+#
+# Omissions (intentional):
+#   "predation.ingestion.rate.max.bioen" -> "predation.ingestion.rate.max"  is LOSSY
+#       (the 4.4.0 unified key equals the pre-existing legacy key, so no inverse key exists).
+#   "species.bioen.maturity" -> "species.maturity"  fans out to 4 explicit leaf entries
+#       below to avoid corrupting the pre-existing species.maturity.size / .age growth keys.
+_INVERSE_440: dict[str, str] = {
+    # module enable flags
+    "module.multispecies.fisheries.enabled": "fisheries.enabled",
+    "module.bioenergetics.enabled": "simulation.bioen.enabled",
+    "module.genetics.enabled": "simulation.genetic.enabled",
+    "module.bioeconomics.enabled": "economy.enabled",
+    "module.population.initialisation.enabled": "population.initialization.relativebiomass.enabled",
+    # restart parameters
+    "simulation.restart.enabled": "output.restart.enabled",
+    "simulation.restart.spinup.nyear": "output.restart.spinup",
+    "simulation.restart.recordfrequency.ndt": "output.restart.recordfrequency.ndt",
+    # fishery output flags
+    "output.fisheries.enabled": "output.fishery.enabled",
+    "output.fisheries.byage.enabled": "output.fishery.byage.enabled",
+    "output.fisheries.bysize.enabled": "output.fishery.bysize.enabled",
+    "output.spatial.fisheries.enabled": "output.spatial.fishery.enabled",
+    "output.number.of.eggs.bysize.enabled": "output.fecundity.bysize.enabled",
+    # bioenergetics maturity — leaf-scoped (4 leaves) so .size/.age growth keys are never touched
+    "species.maturity.eta": "species.bioen.maturity.eta",
+    "species.maturity.r": "species.bioen.maturity.r",
+    "species.maturity.m0": "species.bioen.maturity.m0",
+    "species.maturity.m1": "species.bioen.maturity.m1",
+    # larvae ingestion ratio
+    "predation.larval.ingestion.rate.increase.ratio": "predation.coef.ingestion.rate.max.larvae.bioen",
+}
+
+
+def to_target_keys(cfg: dict[str, str], target_version: str = "4.3.3") -> dict[str, str]:
+    """Emit config keys for a target engine version (inverse of canonicalize).
+
+    target 4.4.0 -> identity + version stamp. target 4.3.x -> reverse the 4.4.0 renames
+    (longest new-prefix first so leaf keys win over shorter prefixes), set osmose.version.
+    Reverse is per-key/prefix and leaf-scoped; keys not in _INVERSE_440 (incl. the pre-existing
+    species.maturity.size/age growth keys) pass through. The ingestion merge is non-invertible:
+    the unified value reverses to the legacy predation.ingestion.rate.max.sp{idx} (NOT .bioen).
+    """
+    result = dict(cfg)
+    if target_version == "4.4.0":
+        result["osmose.version"] = "4.4.0"
+        return result
+    for new_prefix in sorted(_INVERSE_440, key=len, reverse=True):
+        old_prefix = _INVERSE_440[new_prefix]
+        for key in [k for k in result if k == new_prefix or k.startswith(new_prefix + ".")]:
+            reversed_key = old_prefix + key[len(new_prefix) :]
+            if reversed_key not in result:
+                result[reversed_key] = result.pop(key)
+    result["osmose.version"] = target_version
+    return result
+
+
 def canonicalize_config(cfg: dict[str, str]) -> tuple[dict[str, str], list[str]]:
     """Migrate a config dict to canonical 4.4.0 keys; return (new_cfg, deprecated_old_keys).
 
