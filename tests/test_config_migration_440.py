@@ -1,5 +1,47 @@
 from osmose.config.aliases import canonicalize_config, to_target_keys
 from osmose.demo import migrate_config
+from osmose.engine.config import EngineConfig
+
+
+def _min_bioen_cfg(extra: dict) -> dict[str, str]:
+    base = {
+        "simulation.time.ndtperyear": "12",
+        "simulation.time.nyear": "1",
+        "simulation.nspecies": "1",
+        "simulation.nschool.sp0": "5",
+        "species.name.sp0": "Anchovy",
+        "species.linf.sp0": "19.5",
+        "species.k.sp0": "0.364",
+        "species.t0.sp0": "-0.70",
+        "species.egg.size.sp0": "0.1",
+        "species.length2weight.condition.factor.sp0": "0.006",
+        "species.length2weight.allometric.power.sp0": "3.06",
+        "species.lifespan.sp0": "4",
+        "species.vonbertalanffy.threshold.age.sp0": "0",
+        "mortality.subdt": "10",
+        "predation.efficiency.critical.sp0": "0.57",
+    }
+    base.update(extra)
+    return base
+
+
+def test_from_dict_accepts_old_module_toggle_key():
+    cfg_old = _min_bioen_cfg(
+        {"simulation.bioen.enabled": "false", "predation.ingestion.rate.max.sp0": "3.5"}
+    )
+    config = EngineConfig.from_dict(cfg_old)
+    assert config.bioen_enabled is False
+
+
+def test_from_dict_unified_ingestion_read():
+    cfg = _min_bioen_cfg(
+        {
+            "simulation.bioen.enabled": "false",
+            "predation.ingestion.rate.max.bioen.sp0": "4.2",
+        }
+    )
+    config = EngineConfig.from_dict(cfg)
+    assert config.ingestion_rate[0] == 4.2
 
 
 def test_440_clean_renames():
