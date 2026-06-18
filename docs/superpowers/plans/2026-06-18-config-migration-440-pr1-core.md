@@ -12,7 +12,7 @@
 
 ## Boundary note (refinement of the spec's PR1/PR2 split)
 
-The spec listed "schema `key_pattern` moves" under PR1, but moving them WITHOUT the reader-canonicalize hook + write reverse-maps (both PR2) would break the UI's schema↔`state.config` binding for the renamed keys. **Schema moves, the reader hook, `OsmoseConfigWriter`/`write_temp_config` `target_version`, calibration `-P` mapping, scenario/fishbase load, and the deprecation UI are therefore ALL PR2** (they land atomically). PR1 is purely `osmose/` engine+machinery: it changes NO on-disk output and NO UI, so it is parity-safe in isolation. PR1 DOES intentionally change bioenergetics simulation results (the ingestion unification) — gated by a bioen test (Task 7).
+The spec listed "schema `key_pattern` moves" under PR1, but moving them WITHOUT the reader-canonicalize hook + write reverse-maps (both PR2) would break the UI's schema↔`state.config` binding for the renamed keys. **Schema moves, the reader hook, `OsmoseConfigWriter`/`write_temp_config` `target_version`, the `key_case_map` rebuild (it flows only through the reader→writer path, which is PR2 — no PR1 code constructs or consumes a case map, and `OsmoseConfigWriter` is not exercised by any PR1 task/test), calibration `-P` mapping, scenario/fishbase load, and the deprecation UI are therefore ALL PR2** (they land atomically). PR1 is purely `osmose/` engine+machinery: it changes NO on-disk output and NO UI, so it is parity-safe in isolation. PR1 DOES intentionally change bioenergetics simulation results (the ingestion unification) — gated by a bioen test (Task 7).
 
 ## Key facts (read before starting)
 
@@ -313,6 +313,29 @@ def test_to_target_keys_ingestion_merge_is_lossy_to_legacy_key():
     out = to_target_keys(cfg, target_version="4.3.3")
     assert out["predation.ingestion.rate.max.sp0"] == "3.5"  # stays the legacy key
     assert not any(".bioen." in k for k in out)              # no .bioen fabricated
+
+
+def test_inverse_is_faithful_inverse_of_renames():
+    # DRIFT GUARD: _INVERSE_440 is hand-maintained alongside RENAMES_440 (the spec
+    # preferred generalized chain-inversion; hand-coding is acceptable ONLY with this
+    # guard). Every forward rename — except the lossy merge and the maturity prefix that
+    # fans out to leaves — must have a faithful inverse, and no inverse may be orphaned.
+    from osmose.config.aliases import _INVERSE_440, RENAMES_440
+
+    LOSSY = {"predation.ingestion.rate.max.bioen"}   # merge -> not invertible
+    LEAF_FANOUT = {"species.bioen.maturity"}          # prefix -> 4 leaves (eta/r/m0/m1)
+    for old, new in RENAMES_440.items():
+        if old in LOSSY or old in LEAF_FANOUT:
+            continue
+        assert _INVERSE_440.get(new) == old, f"{new} has no faithful inverse"
+    for leaf in ("eta", "r", "m0", "m1"):
+        assert _INVERSE_440[f"species.maturity.{leaf}"] == f"species.bioen.maturity.{leaf}"
+    # no orphan inverse (every inverse new-prefix is something the forward map produces):
+    forward_new = set(RENAMES_440.values()) | {
+        f"species.maturity.{leaf}" for leaf in ("eta", "r", "m0", "m1")
+    }
+    for new in _INVERSE_440:
+        assert any(new == f or new.startswith(f) for f in forward_new), f"orphan inverse {new}"
 ```
 
 - [ ] **Step 2: Run, verify FAIL** (`to_target_keys` undefined).
@@ -457,7 +480,8 @@ CONFIRMED symbols: `EngineConfig.bioen_enabled: bool` (config.py:1382) and `Engi
 - [ ] **Step 4: Run, verify PASS** + full engine regression
 
 Run: `.venv/bin/python -m pytest tests/test_config_migration_440.py -k from_dict -q` → pass.
-Run: `.venv/bin/python -m pytest tests/test_engine_bioen_integration.py tests/test_bioen_orchestration.py tests/test_genetics_integration.py tests/test_engine_fisheries.py -q` → pass (old-key fixtures still work via canonicalize; the bioen ingestion now reads the unified value — see Task 7 for the intended bioen change).
+Run: `.venv/bin/python -m pytest tests/test_engine_bioen_integration.py tests/test_bioen_orchestration.py tests/test_genetics_integration.py tests/test_engine_fisheries.py -q`.
+**REQUIRED assertion update (the intended bioen change):** `tests/test_engine_bioen_integration.py::TestBioenEnabled::test_bioen_predation_params_parsed` (≈line 244) asserts `cfg.bioen_i_max[0] == pytest.approx(4.2)`; its fixture has base `predation.ingestion.rate.max.sp0=3.5` AND `.bioen.sp0=4.2`, so after the base-wins merge `bioen_i_max[0]` becomes **3.5** — change the expected value to `3.5`. This is the ONLY hard value-assertion break (verified); `test_bioen_orchestration`/`test_genetics_*` assert shapes/`>=0` and stay green. Also re-run the `baltic_ev` FIE pre-flight after this change — `tests/test_baltic_ev_fixture_bioen.py::test_baltic_ev_baseline_viable_for_fie` is a tuned sentinel (cod ingestion 3.0→3.5) that may flip pass↔skip and silently re-gate the FIE/genetics suite; confirm it still wires (`tests/.preflight_wired`).
 
 - [ ] **Step 5: Commit**
 
@@ -495,11 +519,14 @@ NOTE: the entry point is `validate(cfg, mode)` (config_validation.py:489), retur
 
 - [ ] **Step 3: Implement**
 
-At the top of `validate(cfg, mode)` (config_validation.py:489) AND `osmose/config/validator.py::validate_config(config, registry)` (validator.py:11), canonicalize first:
+At the top of each validation entry point, canonicalize first — **mind the parameter name per file**:
+- `config_validation.py:489` `validate(cfg, mode)` → `cfg, _ = canonicalize_config(cfg)`
+- `osmose/config/validator.py:11` `validate_config(config, registry)` → `config, _ = canonicalize_config(config)` (the param is `config`, NOT `cfg` — pasting `cfg` verbatim raises `NameError`)
 ```python
     from osmose.config.aliases import canonicalize_config
-    cfg, _ = canonicalize_config(cfg)
+    # then rebind the local using the file's actual parameter name (cfg / config)
 ```
+SCOPE NOTE: do NOT add an engine read for `module.bioeconomics.enabled` — the Python engine reads `simulation.economic.enabled` (config.py:1925), a different key. `economy.enabled`→`module.bioeconomics.enabled` is in the rename set for Java-config fidelity only; the Python bioeconomics-enable path is unchanged (pre-existing, out of PR1 scope). Don't "fix" line 1925.
 **MANDATORY — not optional:** in PR1 the schema `key_pattern`s are still OLD (the move is PR2), so the AST-walked known-keys set does NOT contain the new names. The bundled example configs (eec, baltic, eec_full) carry OLD keys that canonicalize into NEW names, so without allowlist entries `test_from_dict_warn_mode_clean_on_example_configs` WILL fail. Add these to `_SUPPLEMENTARY_ALLOWLIST` (config_validation.py:45) — the four genuinely-needed-by-example-configs are `module.multispecies.fisheries.enabled`, `simulation.restart.spinup.nyear`, `simulation.restart.recordfrequency.ndt`, `output.fisheries.enabled` (`simulation.restart.enabled` is already allowlisted at :113); add the full new set for completeness: also `module.bioenergetics.enabled`, `module.genetics.enabled`, `module.bioeconomics.enabled`, `output.fisheries.byage.enabled`, `output.fisheries.bysize.enabled`, `output.spatial.fisheries.enabled`, `species.maturity.{eta,r,m0,m1}.sp{idx}`, `predation.larval.ingestion.rate.increase.ratio.sp{idx}`. (`predation.ingestion.rate.max.sp{idx}` is already schema-known at species.py:320.)
 NOTE: canonicalizing in `validate_config` means renamed keys whose schema `key_pattern` hasn't moved yet (PR1) silently skip value-bounds validation until PR2 — acceptable (no false errors; bounds re-enabled when PR2 moves the patterns).
 
@@ -571,7 +598,7 @@ Run; fix; re-run until clean:
 
 - [ ] **Step 2: pyright (clean `[dev]` venv, per the recurring CI gotcha)**
 
-Run: `.venv/bin/pyright --pythonpath .venv/bin/python osmose/config/aliases.py osmose/demo.py osmose/engine/config.py` → 0 NEW errors.
+Run: `.venv/bin/pyright --pythonpath .venv/bin/python osmose/config/aliases.py osmose/demo.py osmose/engine/config.py osmose/engine/config_validation.py osmose/config/validator.py` → 0 NEW errors (include the two Task-6 files).
 
 - [ ] **Step 3: Targeted regression suites**
 
@@ -595,4 +622,5 @@ git commit -m "chore(config): PR1 final gate fixes"
 - **PR1 changes NO on-disk config output and NO UI** (schema/reader/writer/UI wiring is PR2), so it's parity-safe in isolation EXCEPT the intended bioen ingestion-unification change (Task 7), which is gated and documented.
 - **DRY:** the single `RENAMES_440` map drives forward (`canonicalize_config`/chain) and is mirrored once for the inverse (`_INVERSE_440`); engine reads use the canonical (new) names.
 - **The Task 1 gate is load-bearing** — if the live `Releases.java $15` differs from `RENAMES_440`, fix the map first.
-- **PR2 (separate plan):** schema `key_pattern` moves + `_OUTPUT_ENABLE_FLAGS` rename; reader `read_file` canonicalize hook; `AppState.load_config` + scenario/fishbase routing; `ScenarioManager.load` canonicalize; `OsmoseConfigWriter`/`write_temp_config` `target_version` + `ROUTING` for `module.*`/`output.fisheries.*`; calibration `-P` override reverse-map + checkpoint-key migration; one-time deprecation UI notification; changelog note on the bioen change + scenario key-format.
+- **PR2 (separate plan):** schema `key_pattern` moves + `_OUTPUT_ENABLE_FLAGS` rename; reader `read_file` canonicalize hook; **`key_case_map` rebuild** (synthesize new-key entries, drop orphaned old ones — lands with the reader/writer it flows through); `AppState.load_config` + scenario/fishbase routing; `ScenarioManager.load` canonicalize; `OsmoseConfigWriter`/`write_temp_config` `target_version` + `ROUTING` for `module.*`/`output.fisheries.*`; calibration `-P` override reverse-map + checkpoint-key migration; one-time deprecation UI notification; changelog note on the bioen ingestion change + scenario key-format (land PR2 close behind PR1 since PR1 already changes Ev-OSMOSE numerics).
+- **The hand-coded `_INVERSE_440` is guarded** by `test_inverse_is_faithful_inverse_of_renames` (Task 4) — it diverges from the spec's preferred generalized chain-inversion, accepted under YAGNI for a single migration step *because* the drift test catches a forgotten/orphaned inverse. If a 4.5.0 entry is added later, prefer implementing the generalized inversion then.
