@@ -61,6 +61,8 @@ _MIGRATION_CHAIN: list[tuple[str, dict[str, str]]] = [
 
 def _version_tuple(v: str) -> tuple[int, ...]:
     """Parse version string to tuple for comparison."""
+    if not v:
+        return (0,)
     try:
         return tuple(int(x) for x in v.split("."))
     except (ValueError, AttributeError):
