@@ -1,3 +1,4 @@
+from osmose.config.aliases import canonicalize_config
 from osmose.demo import migrate_config
 
 
@@ -43,3 +44,24 @@ def test_440_idempotent_on_new_keys():
     out = migrate_config(cfg, target_version="4.4.0")
     assert out["module.bioenergetics.enabled"] == "true"
     assert "simulation.bioen.enabled" not in out
+
+
+def test_canonicalize_reports_deprecated_and_canonicalizes():
+    cfg = {"osmose.version": "4.3.3", "simulation.bioen.enabled": "true"}
+    out, deprecated = canonicalize_config(cfg)
+    assert out["module.bioenergetics.enabled"] == "true"
+    assert "simulation.bioen.enabled" in deprecated
+
+
+def test_canonicalize_missing_version_does_not_corrupt_new_keys():
+    # No osmose.version, but config already uses NEW keys -> must stay new.
+    cfg = {"module.bioenergetics.enabled": "true", "predation.ingestion.rate.max.sp0": "3.5"}
+    out, _ = canonicalize_config(cfg)
+    assert out["module.bioenergetics.enabled"] == "true"
+    assert out["predation.ingestion.rate.max.sp0"] == "3.5"
+
+
+def test_canonicalize_snapshot_version_handled():
+    cfg = {"osmose.version": "4.4.0-SNAPSHOT", "simulation.bioen.enabled": "true"}
+    out, _ = canonicalize_config(cfg)
+    assert out["module.bioenergetics.enabled"] == "true"

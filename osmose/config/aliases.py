@@ -54,3 +54,18 @@ RENAMES_440: dict[str, str] = {
     "predation.ingestion.rate.max.bioen": "predation.ingestion.rate.max",  # .spN; merge/skip-if-exists
     "predation.coef.ingestion.rate.max.larvae.bioen": "predation.larval.ingestion.rate.increase.ratio",  # .spN
 }
+
+
+def canonicalize_config(cfg: dict[str, str]) -> tuple[dict[str, str], list[str]]:
+    """Migrate a config dict to canonical 4.4.0 keys; return (new_cfg, deprecated_old_keys).
+
+    ``deprecated_old_keys`` = the OLD keys from RENAMES_440 present in the input (for
+    one-time deprecation logging by callers). Idempotent on already-4.4.0 configs (NEW
+    keys are never in RENAMES_440's OLD set, so they pass through untouched).
+    """
+    from osmose.demo import migrate_config
+
+    deprecated = sorted(
+        k for k in cfg if any(k == old or k.startswith(old + ".") for old in RENAMES_440)
+    )
+    return migrate_config(cfg, target_version="4.4.0"), deprecated
