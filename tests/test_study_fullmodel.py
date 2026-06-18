@@ -888,8 +888,10 @@ class TestCrossStudyConsistency:
     def test_all_studies_have_version(self, all_configs):
         for name, config in all_configs.items():
             assert "osmose.version" in config, f"{name}: missing osmose.version"
-            assert config["osmose.version"] == "4.3.3", (
-                f"{name}: expected version 4.3.3, got {config['osmose.version']}"
+            # The reader canonicalizes 4.3.3 source files to the 4.4.0 internal key set
+            # and stamps osmose.version=4.4.0 (PR2 config-key migration).
+            assert config["osmose.version"] == "4.4.0", (
+                f"{name}: expected version 4.4.0, got {config['osmose.version']}"
             )
 
     def test_all_studies_have_valid_time_config(self, all_configs):
@@ -925,9 +927,14 @@ class TestCrossStudyConsistency:
             assert errors == [], f"{name}: validation errors: {errors}"
 
     def test_migration_is_idempotent(self, all_configs):
-        """Migrating an already-current config should be a no-op."""
+        """Migrating an already-current config should be a no-op.
+
+        Reader-canonicalized configs are at the 4.4.0 internal key set, so the
+        idempotent target is 4.4.0 (PR2). Migrating to 4.3.3 would legitimately
+        reverse-map keys and flip the version stamp -- that is not a no-op.
+        """
         for name, config in all_configs.items():
-            migrated = migrate_config(config, target_version="4.3.3")
+            migrated = migrate_config(config, target_version="4.4.0")
             # Content keys should be identical
             content_orig = {
                 k: v

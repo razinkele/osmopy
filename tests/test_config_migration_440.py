@@ -388,3 +388,21 @@ def test_calibration_java_cmd_reverse_maps_override_keys(tmp_path):
     assert any(s.startswith("-Pspecies.bioen.maturity.eta.sp0=") for s in p_args)  # reverse-mapped
     assert not any("species.maturity.eta.sp0" in s for s in p_args)  # NEW key gone
     assert not any(s.startswith("-Posmose.version=") for s in p_args)  # stamp skipped
+
+
+def test_pr2_load_write_roundtrip_coherent(tmp_path):
+    from osmose.config.reader import OsmoseConfigReader
+    from ui.pages.run import write_temp_config
+
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "osm_all-parameters.csv").write_text(
+        "osmose.version ; 4.3.3\nsimulation.bioen.enabled ; true\nfisheries.enabled ; false\n"
+    )
+    cfg = OsmoseConfigReader().read(src / "osm_all-parameters.csv")
+    assert cfg["module.bioenergetics.enabled"] == "true"  # reader canonicalized
+    out = tmp_path / "out"
+    master = write_temp_config(cfg, out)  # default target 4.3.3
+    raw = master.read_text()
+    assert "simulation.bioen.enabled" in raw  # reverse-mapped to old for the jar
+    assert "module.bioenergetics.enabled" not in raw

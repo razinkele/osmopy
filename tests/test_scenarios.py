@@ -80,7 +80,9 @@ def test_fork_scenario(manager, sample_scenario):
     assert forked.parent_scenario == "baltic_smelt_baseline"
     # load() canonicalizes to 4.4.0 keys (stamps osmose.version); the original
     # config values are otherwise preserved.
-    assert {k: v for k, v in forked.config.items() if k != "osmose.version"} == sample_scenario.config
+    assert {
+        k: v for k, v in forked.config.items() if k != "osmose.version"
+    } == sample_scenario.config
     # Verify it was saved
     loaded = manager.load("high_fishing")
     assert loaded.name == "high_fishing"
