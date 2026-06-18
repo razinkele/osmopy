@@ -162,3 +162,21 @@ def test_inverse_is_faithful_inverse_of_renames():
     }
     for new in _INVERSE_440:
         assert any(new == f or new.startswith(f) for f in forward_new), f"orphan inverse {new}"
+
+
+def test_config_validation_clean_on_old_keys():
+    # An old-key config validates warning-free (old keys canonicalized before the
+    # unknown-key check; new keys recognized via the allowlist).
+    from osmose.engine.config_validation import validate
+
+    cfg = {
+        "osmose.version": "4.3.3",
+        "simulation.bioen.enabled": "true",
+        "output.restart.enabled": "false",
+        "economy.enabled": "false",
+    }
+    unknowns = validate(cfg, mode="warn")  # list[UnknownKey], each with .key
+    flagged = {u.key for u in unknowns}
+    assert "simulation.bioen.enabled" not in flagged
+    assert "economy.enabled" not in flagged
+    assert "output.restart.enabled" not in flagged
