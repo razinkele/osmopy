@@ -5,6 +5,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+from osmose.config.aliases import RENAMES_440
 from osmose.logging import setup_logging
 
 _log = setup_logging("osmose.demo")
@@ -54,6 +55,7 @@ _MIGRATION_CHAIN: list[tuple[str, dict[str, str]]] = [
             "simulation.restart.enabled": "simulation.restart.enabled",
         },
     ),
+    ("4.4.0", RENAMES_440),
 ]
 
 
@@ -258,7 +260,11 @@ def migrate_config(
             ]
             for key in keys_to_rename:
                 new_key = new_prefix + key[len(old_prefix) :]
-                result[new_key] = result.pop(key)
+                if new_key in result and new_key != key:
+                    # Java updateKey: target already defined -> keep it, drop the old key.
+                    result.pop(key)
+                else:
+                    result[new_key] = result.pop(key)
 
     result["osmose.version"] = target_version
     return result
