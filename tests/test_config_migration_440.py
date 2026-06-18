@@ -180,3 +180,23 @@ def test_config_validation_clean_on_old_keys():
     assert "simulation.bioen.enabled" not in flagged
     assert "economy.enabled" not in flagged
     assert "output.restart.enabled" not in flagged
+
+
+def test_bioen_ingestion_unification_is_consistent():
+    """After canonicalization, a bioen config with BOTH ingestion keys uses the SINGLE
+    unified predation.ingestion.rate.max for both predation and the energy budget — the
+    intended 4.4.0 behavior. Base value wins (skip-if-target-exists). This is an intended
+    result change vs 4.3.x for bioen/Ev-OSMOSE configs (changelog note lands in PR2)."""
+    cfg = _min_bioen_cfg(
+        {
+            "simulation.bioen.enabled": "true",
+            "predation.ingestion.rate.max.sp0": "3.5",  # legacy/base
+            "predation.ingestion.rate.max.bioen.sp0": "3.0",  # bioen — dropped on merge
+        }
+    )
+    canon, _ = canonicalize_config(cfg)
+    assert canon["predation.ingestion.rate.max.sp0"] == "3.5"  # base wins
+    assert "predation.ingestion.rate.max.bioen.sp0" not in canon  # bioen dropped
+    config = EngineConfig.from_dict(cfg)
+    # the unified value (3.5) drives the engine's ingestion read used by both paths:
+    assert config.ingestion_rate[0] == 3.5
