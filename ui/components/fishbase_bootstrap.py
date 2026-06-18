@@ -229,7 +229,7 @@ def fishbase_bootstrap_server(input, output, session, state):
             cfg = dict(state.config.get())
         new_cfg = apply_traits(cfg, idx, traits, selected)
         if new_cfg != cfg:
-            state.config.set(new_cfg)
+            state.load_config(new_cfg)
             state.dirty.set(True)
             with reactive.isolate():
                 state.load_trigger.set(state.load_trigger.get() + 1)

@@ -78,7 +78,9 @@ def test_fork_scenario(manager, sample_scenario):
     forked = manager.fork("baltic_smelt_baseline", "high_fishing", "High fishing scenario")
     assert forked.name == "high_fishing"
     assert forked.parent_scenario == "baltic_smelt_baseline"
-    assert forked.config == sample_scenario.config
+    # load() canonicalizes to 4.4.0 keys (stamps osmose.version); the original
+    # config values are otherwise preserved.
+    assert {k: v for k, v in forked.config.items() if k != "osmose.version"} == sample_scenario.config
     # Verify it was saved
     loaded = manager.load("high_fishing")
     assert loaded.name == "high_fishing"
@@ -130,7 +132,8 @@ def test_import_all_from_zip(tmp_path):
     count = dst_mgr.import_all(zip_path)
     assert count == 1
     loaded = dst_mgr.load("gamma")
-    assert loaded.config == {"z": "3"}
+    # load() canonicalizes to 4.4.0 keys (stamps osmose.version).
+    assert {k: v for k, v in loaded.config.items() if k != "osmose.version"} == {"z": "3"}
 
 
 def test_save_overwrites_existing_scenario(tmp_path):

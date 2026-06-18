@@ -178,7 +178,7 @@ def scenarios_server(input, output, session, state):
         loaded = mgr.load(selected)
         state.busy.set(f"Loading scenario '{selected}'…")
         try:
-            state.config.set(loaded.config)
+            state.load_config(loaded.config)
             state.config_name.set(selected)
             state.key_case_map.set(dict(loaded.key_case_map))
             state.dirty.set(False)

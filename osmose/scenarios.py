@@ -102,6 +102,10 @@ class ScenarioManager:
         path = target / "scenario.json"
         with open(path) as f:
             data = json.load(f)
+        from osmose.config.aliases import canonicalize_config
+
+        config, _ = canonicalize_config(data.get("config", {}))
+        data["config"] = config
         return Scenario(**data)
 
     def list_scenarios(self) -> list[dict[str, str]]:

@@ -248,3 +248,37 @@ def test_reader_case_map_preserves_renamed_key_source_casing(tmp_path):
     old_cfg = to_target_keys(cfg, target_version="4.3.3")  # back to the OLD key for the jar
     (old_key,) = [k for k in old_cfg if k.endswith("byage.enabled")]
     assert reader.key_case_map.get(old_key) == "output.fishery.byAge.enabled"
+
+
+def test_appstate_load_config_canonicalizes():
+    from shiny import reactive
+
+    from ui.state import AppState
+
+    st = AppState()
+    st.load_config({"osmose.version": "4.3.3", "simulation.bioen.enabled": "true"})
+    with reactive.isolate():
+        cfg = st.config.get()
+    assert cfg["module.bioenergetics.enabled"] == "true"
+    assert "simulation.bioen.enabled" not in cfg
+
+
+def test_grid_load_surfaces_deprecation_notification():
+    from pathlib import Path
+
+    src = (Path(__file__).resolve().parent.parent / "ui" / "pages" / "grid.py").read_text()
+    assert "load_config" in src and "notification_show" in src
+    assert "reader.deprecated_keys" in src
+
+
+def test_reader_exposes_deprecated_keys(tmp_path):
+    from osmose.config.reader import OsmoseConfigReader
+
+    f = tmp_path / "osm_all-parameters.csv"
+    f.write_text(
+        "osmose.version ; 4.3.3\nsimulation.bioen.enabled ; true\noutput.restart.enabled ; false\n"
+    )
+    reader = OsmoseConfigReader()
+    reader.read(f)
+    assert "simulation.bioen.enabled" in reader.deprecated_keys
+    assert "output.restart.enabled" in reader.deprecated_keys

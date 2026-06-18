@@ -72,6 +72,7 @@ class OsmoseConfigReader:
 
     def __init__(self) -> None:
         self.key_case_map: dict[str, str] = {}
+        self.deprecated_keys: list[str] = []
         self.skipped_lines: int = 0
         self.diagnostics: list[ConfigDiagnostic] = []
 
@@ -79,6 +80,7 @@ class OsmoseConfigReader:
         """Recursively read a master config and all referenced sub-configs."""
         self.skipped_lines = 0
         self.key_case_map = {}
+        self.deprecated_keys = []
         self.diagnostics = []
         master_file = Path(master_file)
         _log.info("Reading config from %s", master_file)
@@ -204,6 +206,7 @@ class OsmoseConfigReader:
         # per-file dict that never declared one (the master file carries the version).
         if not had_version:
             canon.pop("osmose.version", None)
+        self.deprecated_keys.extend(d for d in deprecated if d not in self.deprecated_keys)
         if deprecated:
             # KEEP the renamed-old case_map entries (do NOT pop them): the writer reverse-maps
             # NEW->OLD before serializing and looks the case_map up by the OLD key, so it must
