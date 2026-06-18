@@ -195,4 +195,20 @@ class OsmoseConfigReader:
                     )
                     skipped += 1
         self.skipped_lines += skipped
+
+        from osmose.config.aliases import canonicalize_config
+
+        had_version = "osmose.version" in result
+        canon, deprecated = canonicalize_config(result)
+        # canonicalize_config stamps osmose.version=4.4.0; don't fabricate it on a
+        # per-file dict that never declared one (the master file carries the version).
+        if not had_version:
+            canon.pop("osmose.version", None)
+        if deprecated:
+            # KEEP the renamed-old case_map entries (do NOT pop them): the writer reverse-maps
+            # NEW->OLD before serializing and looks the case_map up by the OLD key, so it must
+            # still find the source casing (e.g. output.fishery.byAge.enabled). Only ADD new keys.
+            for new_key in canon:
+                self.key_case_map.setdefault(new_key, new_key)
+        result = canon
         return result

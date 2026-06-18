@@ -221,3 +221,30 @@ def test_schema_uses_new_440_key_patterns():
     assert "output.fishery.enabled" not in patterns
     assert "simulation.genetic.enabled" not in patterns
     assert "species.bioen.maturity.eta.sp{idx}" not in patterns
+
+
+def test_reader_canonicalizes_and_rebuilds_case_map(tmp_path):
+    from osmose.config.reader import OsmoseConfigReader
+
+    f = tmp_path / "osm_param-simulation.csv"
+    f.write_text("simulation.bioen.enabled ; true\noutput.restart.spinup ; 5\n")
+    reader = OsmoseConfigReader()
+    cfg = reader.read_file(f)
+    assert cfg["module.bioenergetics.enabled"] == "true"  # canonicalized on read
+    assert cfg["simulation.restart.spinup.nyear"] == "5"
+    assert "simulation.bioen.enabled" not in cfg
+
+
+def test_reader_case_map_preserves_renamed_key_source_casing(tmp_path):
+    # REGRESSION: a renamed key that is camelCase in the source must survive a
+    # read -> canonicalize(new) -> to_target_keys(old) round-trip with ORIGINAL casing.
+    from osmose.config.reader import OsmoseConfigReader
+    from osmose.config.aliases import to_target_keys
+
+    f = tmp_path / "osm_param-output.csv"
+    f.write_text("output.fishery.byAge.enabled ; true\n")
+    reader = OsmoseConfigReader()
+    cfg = reader.read_file(f)  # cfg holds the NEW (4.4.0) key
+    old_cfg = to_target_keys(cfg, target_version="4.3.3")  # back to the OLD key for the jar
+    (old_key,) = [k for k in old_cfg if k.endswith("byage.enabled")]
+    assert reader.key_case_map.get(old_key) == "output.fishery.byAge.enabled"

@@ -38,7 +38,9 @@ def test_baltic_ev_runs_5_years_without_genetics() -> None:
     cfg = OsmoseConfigReader().read(Path("data/baltic_ev/baltic_ev_all-parameters.csv"))
     cfg["simulation.time.nyear"] = "5"
     # Temporarily disable genetics for this bioen-only smoke (Task 8 enables it).
-    cfg["simulation.genetic.enabled"] = "false"
+    # The reader canonicalizes to the NEW 4.4.0 key, so set that one (setting the
+    # old key would be a no-op the from_dict merge silently drops).
+    cfg["module.genetics.enabled"] = "false"
     result = PythonEngine().run_in_memory(cfg, seed=0)
     biomass = result.biomass()
     # `biomass()` returns wide-form: columns `[Time, <species1>, <species2>, ...]`
@@ -85,7 +87,8 @@ def test_baltic_ev_baseline_viable_for_fie() -> None:
 
     cfg = OsmoseConfigReader().read(Path("data/baltic_ev/baltic_ev_all-parameters.csv"))
     cfg["simulation.time.nyear"] = "50"
-    cfg["simulation.genetic.enabled"] = "false"
+    # Reader canonicalizes to the NEW 4.4.0 key; set that one (see note above).
+    cfg["module.genetics.enabled"] = "false"
     # Zero fishing so the cod size distribution reflects bioen alone.
     cfg["fisheries.rate.base.fsh0"] = "0.0"
     result = PythonEngine().run_in_memory(cfg, seed=0)

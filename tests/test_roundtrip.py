@@ -97,7 +97,14 @@ def test_full_roundtrip():
         reader = OsmoseConfigReader()
         result = reader.read(Path(tmpdir) / "osm_all-parameters.csv")
 
-        for key, value in config.items():
+        # The reader canonicalizes to NEW 4.4.0 keys on read-back, so the renamed
+        # keys appear under their canonical names. Map the input keys accordingly.
+        from osmose.config.aliases import canonicalize_config
+
+        expected, _ = canonicalize_config(config)
+        for key, value in expected.items():
+            if key == "osmose.version":
+                continue
             assert key in result, f"Key missing after roundtrip: {key}"
             assert result[key] == value, (
                 f"Value mismatch for '{key}': expected '{value}', got '{result[key]}'"
@@ -207,8 +214,9 @@ def test_roundtrip_preserves_boolean_values():
         reader = OsmoseConfigReader()
         result = reader.read(Path(tmpdir) / "osm_all-parameters.csv")
 
-        assert result["fisheries.enabled"] == "true"
-        assert result["economy.enabled"] == "false"
+        # fisheries.enabled / economy.enabled are renamed to NEW 4.4.0 keys on read.
+        assert result["module.multispecies.fisheries.enabled"] == "true"
+        assert result["module.bioeconomics.enabled"] == "false"
         assert result["output.biomass.enabled"] == "true"
         assert result["output.abundance.enabled"] == "false"
 

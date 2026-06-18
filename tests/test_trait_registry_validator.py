@@ -18,7 +18,9 @@ def _base_dict() -> dict[str, str]:
 
     raw = OsmoseConfigReader().read(EXAMPLE_CONFIG)
     raw["simulation.time.nyear"] = "1"
-    raw["simulation.genetic.enabled"] = "true"
+    # Reader canonicalizes to NEW 4.4.0 keys; set the canonical genetics key so it
+    # survives from_dict's skip-if-target-exists merge.
+    raw["module.genetics.enabled"] = "true"
     return raw
 
 
