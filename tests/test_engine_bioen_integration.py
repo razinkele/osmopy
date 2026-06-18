@@ -241,7 +241,9 @@ class TestBioenEnabled:
     def test_bioen_predation_params_parsed(self, bioen_config):
         """Bioen-specific predation parameters parsed per species."""
         cfg = EngineConfig.from_dict(bioen_config)
-        assert cfg.bioen_i_max[0] == pytest.approx(4.2)
+        assert cfg.bioen_i_max[0] == pytest.approx(
+            3.5
+        )  # base wins: .bioen key merged/skipped by canonicalize
         assert cfg.bioen_theta[0] == pytest.approx(1.1)
         assert cfg.bioen_c_rate[0] == pytest.approx(0.01)
         assert cfg.bioen_k_for[0] == pytest.approx(0.002)

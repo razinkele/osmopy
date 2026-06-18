@@ -1517,6 +1517,10 @@ class EngineConfig:
         _mode = _raw_mode if isinstance(_raw_mode, str) else "off"
         _validate_cfg(cfg, _mode)
 
+        from osmose.config.aliases import canonicalize_config
+
+        cfg, _deprecated = canonicalize_config(cfg)
+
         # config_dir is extracted from cfg by _cfg_dir() at each _resolve_file call
         n_sp = int(_get(cfg, "simulation.nspecies"))
         n_dt = int(_get(cfg, "simulation.time.ndtperyear"))
@@ -1524,7 +1528,9 @@ class EngineConfig:
         lifespan_years = _species_float(cfg, "species.lifespan.sp{i}", n_sp)
 
         # Fishing rate: try fisheries-based (v4), then per-species patterns
-        fisheries_enabled = cfg.get("fisheries.enabled", "false").lower() == "true"
+        fisheries_enabled = (
+            cfg.get("module.multispecies.fisheries.enabled", "false").lower() == "true"
+        )
         n_fisheries = int(cfg.get("simulation.nfisheries", "0"))
 
         # Build species names early for fisheries parsing
@@ -1855,8 +1861,8 @@ class EngineConfig:
             gompertz_thr_age_exp_dt = (exp_yrs * n_dt).astype(np.int32)
             gompertz_thr_age_gom_dt = (gom_yrs * n_dt).astype(np.int32)
 
-        # Bioenergetic parameters: only parsed when simulation.bioen.enabled=true
-        _bioen_enabled = cfg.get("simulation.bioen.enabled", "false").lower() == "true"
+        # Bioenergetic parameters: only parsed when module.bioenergetics.enabled=true
+        _bioen_enabled = cfg.get("module.bioenergetics.enabled", "false").lower() == "true"
         _bioen_phit_enabled = cfg.get("simulation.bioen.phit.enabled", "true").lower() == "true"
         _bioen_fo2_enabled = cfg.get("simulation.bioen.fo2.enabled", "true").lower() == "true"
         bioen_beta = bioen_zlayer = bioen_assimilation = bioen_c_m = None
@@ -1872,10 +1878,10 @@ class EngineConfig:
             bioen_c_m = _species_float_optional(
                 cfg, "species.bioen.maint.energy.c_m.sp{i}", n_sp, 0.0
             )
-            bioen_eta = _species_float_optional(cfg, "species.bioen.maturity.eta.sp{i}", n_sp, 1.0)
-            bioen_r = _species_float_optional(cfg, "species.bioen.maturity.r.sp{i}", n_sp, 0.0)
-            bioen_m0 = _species_float_optional(cfg, "species.bioen.maturity.m0.sp{i}", n_sp, 0.0)
-            bioen_m1 = _species_float_optional(cfg, "species.bioen.maturity.m1.sp{i}", n_sp, 0.0)
+            bioen_eta = _species_float_optional(cfg, "species.maturity.eta.sp{i}", n_sp, 1.0)
+            bioen_r = _species_float_optional(cfg, "species.maturity.r.sp{i}", n_sp, 0.0)
+            bioen_m0 = _species_float_optional(cfg, "species.maturity.m0.sp{i}", n_sp, 0.0)
+            bioen_m1 = _species_float_optional(cfg, "species.maturity.m1.sp{i}", n_sp, 0.0)
             bioen_e_mobi = _species_float_optional(
                 cfg, "species.bioen.mobilized.e.mobi.sp{i}", n_sp, 0.65
             )
@@ -1887,10 +1893,10 @@ class EngineConfig:
             bioen_o2_c1 = _species_float_optional(cfg, "species.oxygen.c1.sp{i}", n_sp, 1.0)
             bioen_o2_c2 = _species_float_optional(cfg, "species.oxygen.c2.sp{i}", n_sp, 1.0)
             bioen_i_max = _species_float_optional(
-                cfg, "predation.ingestion.rate.max.bioen.sp{i}", n_sp, 0.0
+                cfg, "predation.ingestion.rate.max.sp{i}", n_sp, 0.0
             )
             bioen_theta = _species_float_optional(
-                cfg, "predation.coef.ingestion.rate.max.larvae.bioen.sp{i}", n_sp, 1.0
+                cfg, "predation.larval.ingestion.rate.increase.ratio.sp{i}", n_sp, 1.0
             )
             bioen_c_rate = _species_float_optional(cfg, "predation.c.bioen.sp{i}", n_sp, 0.0)
             bioen_k_for = _species_float_optional(
@@ -1909,11 +1915,11 @@ class EngineConfig:
                 cfg, "species.bioen.forage.k2_for.sp{i}", n_sp, 0.0
             )
             foraging_I_max = _species_float_optional(
-                cfg, "predation.ingestion.rate.max.bioen.sp{i}", n_sp, 0.0
+                cfg, "predation.ingestion.rate.max.sp{i}", n_sp, 0.0
             )
 
         # Ev-OSMOSE genetics
-        genetics_enabled = _enabled(cfg, "simulation.genetic.enabled")
+        genetics_enabled = _enabled(cfg, "module.genetics.enabled")
         genetics_transmission_year = int(cfg.get("evolution.seeding.year", "0"))
         genetics_n_neutral = int(cfg.get("evolution.neutral.nlocus", "0"))
         genetics_n_neutral_val = int(cfg.get("evolution.neutral.nval", "50"))
