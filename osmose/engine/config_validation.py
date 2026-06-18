@@ -128,6 +128,25 @@ _SUPPLEMENTARY_ALLOWLIST: frozenset[str] = frozenset(
         "output.fisheries.bysize.enabled",
         "output.spatial.fisheries.enabled",
         "output.number.of.eggs.bysize.enabled",
+        # --- Pre-4.4.0 schema key_patterns (old names; schema updated in PR2) ---
+        # The schema (osmose/schema/) still uses these pre-4.4.0 key_pattern names.
+        # PR1 adds canonicalize_config so the engine reads only the 4.4.0 new names;
+        # PR2 will rename the schema fields to match. Until then, the parity gate
+        # (test_schema_engine_key_parity.py) requires these old patterns to be
+        # explicitly allowlisted so UI writes (which still use old key_pattern values)
+        # are accepted by validate().
+        # Module enable flags (old names):
+        "fisheries.enabled",
+        "simulation.bioen.enabled",
+        "simulation.genetic.enabled",
+        # Bioenergetics maturity keys (old prefix species.bioen.maturity.*):
+        "species.bioen.maturity.eta.sp{idx}",
+        "species.bioen.maturity.r.sp{idx}",
+        "species.bioen.maturity.m0.sp{idx}",
+        "species.bioen.maturity.m1.sp{idx}",
+        # Ingestion rate keys (old names; new names already in AST-walked allowlist):
+        "predation.ingestion.rate.max.bioen.sp{idx}",
+        "predation.coef.ingestion.rate.max.larvae.bioen.sp{idx}",
         # --- Species biomass time-scale key (Java-side) ---
         "species.biomass.nsteps.year",
         # --- Conversion-to-tons keys (Java-side, H1 — 2026-05-05) ---
