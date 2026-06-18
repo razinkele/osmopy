@@ -16,6 +16,9 @@ def validate_config(
 
     Returns (errors, warnings) -- lists of human-readable messages.
     """
+    from osmose.config.aliases import canonicalize_config
+
+    config, _ = canonicalize_config(config)
     errors: list[str] = []
     warnings: list[str] = []
 

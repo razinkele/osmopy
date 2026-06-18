@@ -111,6 +111,23 @@ _SUPPLEMENTARY_ALLOWLIST: frozenset[str] = frozenset(
         # --- Population and simulation restart keys (Java-side) ---
         "population.initialization.method.sp{idx}",
         "simulation.restart.enabled",
+        # --- 4.4.0 canonical keys (RENAMES_440 targets not yet schema-known in PR1) ---
+        # These are the new canonical names introduced in OSMOSE 4.4.0 (ported from
+        # Releases.java $15). In PR1 the schema key_pattern entries are still the OLD names;
+        # the schema move is PR2. Until then, post-canonicalize new names that the AST-walked
+        # schema does not yet recognise must be allowlisted here.
+        # Module enable flags:
+        "module.bioeconomics.enabled",
+        "module.population.initialisation.enabled",
+        # Restart parameters (spinup + record-frequency):
+        "simulation.restart.spinup.nyear",
+        "simulation.restart.recordfrequency.ndt",
+        # Fishery output flags (plural form; old singular forms already allowlisted above):
+        "output.fisheries.enabled",
+        "output.fisheries.byage.enabled",
+        "output.fisheries.bysize.enabled",
+        "output.spatial.fisheries.enabled",
+        "output.number.of.eggs.bysize.enabled",
         # --- Species biomass time-scale key (Java-side) ---
         "species.biomass.nsteps.year",
         # --- Conversion-to-tons keys (Java-side, H1 — 2026-05-05) ---
@@ -501,6 +518,9 @@ def validate(cfg: dict, mode: str) -> list[UnknownKey]:
             f"validation.strict.enabled must be one of {list(_VALID_MODES)!r}; got {mode!r}"
         )
 
+    from osmose.config.aliases import canonicalize_config
+
+    cfg, _ = canonicalize_config(cfg)
     known = build_known_keys()
     unknowns: list[UnknownKey] = []
     for key in cfg:
