@@ -16,14 +16,19 @@ from hypothesis import strategies as st
 
 # --- config -----------------------------------------------------------------
 
-# Family prefixes known to round-trip cleanly (route to distinct sub-files or
-# master; never the writer-regenerated `osmose.configuration.*` reference keys).
+# Family prefixes that round-trip cleanly. They must be canonicalization-STABLE:
+# the reader canonicalizes every loaded config to NEW OSMOSE 4.4.0 keys on read
+# (canonicalize_config -> migrate_config), so any LEGACY/renamable key (e.g. the
+# pre-4.3.3 `grid.ncolumn` -> `grid.nlon` rename) would NOT survive the exact-key
+# round-trip. Production `state.config` only ever holds canonical keys, so the
+# property must feed canonical keys too. They also route to distinct sub-files or
+# master; never the writer-regenerated `osmose.configuration.*` reference keys.
 _FAMILY_PREFIXES = [
     "species.linf",
     "species.k",
     "species.lifespan",
     "predation.accessibility.stage",
-    "grid.ncolumn",
+    "grid.nlon",  # canonical form of legacy `grid.ncolumn` (renamed on read)
     "simulation.time.ndtperyear",
     "movement.distribution.method",
 ]
