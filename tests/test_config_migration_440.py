@@ -282,3 +282,51 @@ def test_reader_exposes_deprecated_keys(tmp_path):
     reader.read(f)
     assert "simulation.bioen.enabled" in reader.deprecated_keys
     assert "output.restart.enabled" in reader.deprecated_keys
+
+
+def test_to_target_keys_collapses_mixed_old_and_new():
+    from osmose.config.aliases import to_target_keys
+
+    mixed = {"module.bioenergetics.enabled": "true", "simulation.bioen.enabled": "false"}
+    out = to_target_keys(mixed, target_version="4.3.3")
+    assert "module.bioenergetics.enabled" not in out  # redundant NEW form dropped
+    assert out["simulation.bioen.enabled"] == "false"  # existing OLD value wins (base-wins)
+
+
+def test_writer_default_target_emits_old_keys(tmp_path):
+    from osmose.config.writer import OsmoseConfigWriter
+
+    cfg = {
+        "osmose.version": "4.4.0",
+        "module.bioenergetics.enabled": "true",
+        "simulation.restart.spinup.nyear": "5",
+    }
+    OsmoseConfigWriter().write(cfg, tmp_path)  # default target_version="4.3.3"
+    # The writer routes keys to sub-files by prefix, so read across all CSVs.
+    raw = "".join(p.read_text() for p in sorted(tmp_path.glob("*.csv")))
+    assert "simulation.bioen.enabled" in raw  # reverse-mapped to old
+    assert "output.restart.spinup" in raw  # routed to osm_param-output.csv
+    assert "module.bioenergetics.enabled" not in raw
+
+
+def test_write_temp_config_default_target_emits_old_keys(tmp_path):
+    from ui.pages.run import write_temp_config
+
+    master = write_temp_config(
+        {
+            "module.multispecies.fisheries.enabled": "false",
+            "module.bioenergetics.enabled": "true",
+        },
+        tmp_path,
+    )
+    raw = master.read_text()
+    assert "fisheries.enabled" in raw
+    assert "module.multispecies.fisheries.enabled" not in raw
+
+
+def test_export_writes_target_format(tmp_path):
+    from osmose.config.writer import OsmoseConfigWriter
+
+    OsmoseConfigWriter().write({"module.bioenergetics.enabled": "true"}, tmp_path)
+    raw = (tmp_path / "osm_all-parameters.csv").read_text()
+    assert "simulation.bioen.enabled" in raw  # export inherits the 4.3.3 reverse-map

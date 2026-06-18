@@ -60,6 +60,7 @@ class OsmoseConfigWriter:
         config: dict[str, Any],
         output_dir: Path,
         key_case_map: dict[str, str] | None = None,
+        target_version: str = "4.3.3",
     ) -> None:
         """Write *config* to OSMOSE files under *output_dir*.
 
@@ -73,8 +74,16 @@ class OsmoseConfigWriter:
         key_case_map:
             Optional mapping from lowercase keys to their original-case
             form. When provided, output keys use the original case.
+        target_version:
+            Engine version the files are written for. Defaults to ``"4.3.3"``
+            (the bundled jar), which reverse-maps the canonical 4.4.0 keys to
+            their legacy spellings via :func:`to_target_keys`.
         """
         output_dir.mkdir(parents=True, exist_ok=True)
+
+        from osmose.config.aliases import to_target_keys
+
+        config = to_target_keys(config, target_version=target_version)
 
         buckets = self._route_params(config)
 

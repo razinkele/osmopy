@@ -107,8 +107,9 @@ def to_target_keys(cfg: dict[str, str], target_version: str = "4.3.3") -> dict[s
         old_prefix = _INVERSE_440[new_prefix]
         for key in [k for k in result if k == new_prefix or k.startswith(new_prefix + ".")]:
             reversed_key = old_prefix + key[len(new_prefix) :]
-            if reversed_key not in result:
-                result[reversed_key] = result.pop(key)
+            value = result.pop(key)  # always drop the NEW-named key
+            if reversed_key not in result:  # keep an existing OLD value (base wins)
+                result[reversed_key] = value
     result["osmose.version"] = target_version
     return result
 
