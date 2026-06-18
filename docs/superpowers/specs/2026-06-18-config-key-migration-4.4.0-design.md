@@ -1,42 +1,39 @@
-# Config-key migration to OSMOSE 4.4.0 — Design (v2)
+# Config-key migration to OSMOSE 4.4.0 — Design (v3)
 
 **Date:** 2026-06-18
-**Status:** Approved approach (canonical = 4.4.0 keys); revised after a 4-angle in-loop spec review.
+**Status:** Approved approach; revised after 3 in-loop review rounds (incl. scite + authoritative-source verification).
 
 ## Goal
 
-Make OSMOSE 4.4.0 config-key names the **canonical** internal form throughout OSMOPY, reading OLD
-(4.3.x) keys via the migration chain and writing keys for a chosen **target engine version**. This lets
-OSMOPY emit 4.4.0-format configs natively — the prerequisite for bundling the 4.4.0 Java engine (a
-separate, sequenced follow-up), since 4.4.0 refuses 4.3.x configs and its own `-update` migration
-crashes on ours (see [[reference-osmose-java-4-4-0]]).
+Make OSMOSE 4.4.0 config-key names the **canonical** internal form in OSMOPY by **faithfully porting
+OSMOSE's own migration step** (`Releases.java` release `$15` = v4.4.0) to Python, since the engine's
+built-in `-update` is broken on our configs (crashes in `Release.commentParameter`, verified twice).
+This lets OSMOPY emit 4.4.0-format configs natively — the prerequisite for bundling the 4.4.0 Java
+engine (a separate, sequenced follow-up). See [[reference-osmose-java-4-4-0]].
 
-**This feature is the rename layer only** — not the new 4.4.0 biological features, not the jar swap.
+**Authoritative source:** `osmose-model/osmose` →
+`java/src/main/java/fr/ird/osmose/util/version/Releases.java`, the `$15` block (≈ lines 638-720+).
+The Python migration must mirror its `updateKey(old, new)` calls and semantics — NOT the release-notes
+table (which is an imperfect summary). Pull the live `$15` block at implementation time and port it.
 
-## Why v2 (review findings that reshaped the design)
+## Split into two sequenced PRs
 
-1. **Reconcile with the EXISTING migration system.** `osmose/demo.py::migrate_config` + `_MIGRATION_CHAIN`
-   already does sequential, version-stamped, prefix-based old→new renames (up to 4.3.0), invoked at
-   `ui/pages/grid.py:841` on demo load. We **extend this chain** with a `"4.4.0"` step rather than add a
-   parallel `aliases.py` canonicalizer. `migrate_config(cfg, target_version="4.4.0")` IS the forward
-   canonicalizer; a new inverse `to_target_keys` handles writing for older engines.
-2. **The Java run path is `write_temp_config` (`ui/pages/run.py:131`), NOT `OsmoseConfigWriter`.** Plus
-   un-targeted `OsmoseConfigWriter.write` calls in `ui/pages/calibration_handlers.py` (×3) and
-   `ui/pages/advanced.py:201`. EVERY write-to-disk site must reverse-map to the target engine version.
-3. **`state.config` is fed from many load sites** (demo load, `advanced.py` `read_file` import,
-   scenario load, fishbase bootstrap, per-field edits). Canonicalization must cover all of them, via a
-   single chokepoint.
-4. **Key collision (bioen-ingestion merge):** `predation.ingestion.rate.max.bioen.sp{idx}`'s new name
-   `predation.ingestion.rate.max.sp{idx}` is **already a distinct live key**. Needs a merge rule, not a
-   blind rename.
-5. **Missed rename:** `output.fishery.* → output.fisheries.*` (3 keys in our configs/schema).
+This touches ~15 files across core/engine/schema/UI/calibration, with two correctness-risky items (the
+ingestion merge, the `-P` override mapping). Implement as two plans:
 
-## The 4.4.0 rename set (complete)
+- **PR1 — core migration + tests (pure `osmose/`, parity-safe in isolation).** The chain entry +
+  applier, `canonicalize_config`/`to_target_keys`, `key_case_map` rebuild, schema moves, engine
+  literal-read updates, validators. Default write `target_version="4.3.3"` ⇒ provably no-op on disk.
+- **PR2 — load/write wiring (UI + calibration).** `AppState.load_config`, reader hook, writer/`write_temp_config`
+  `target_version`, the 3 calibration writes, `problem.py` `-P` override-key reverse-map, scenario
+  load/save, deprecation UI.
 
-Added as a new `_MIGRATION_CHAIN` entry `("4.4.0", {...})`. Clean **prefix** renames (the chain's
-existing mechanism handles these incl. indexed `spN` automatically):
+## The 4.4.0 rename set (port verbatim from Releases.java `$15`)
 
-| Old prefix | New prefix |
+`updateKey(OLD, NEW)` renames OLD→NEW **and skips if NEW already exists** (keep-existing-target). Reader
+lowercases all keys, so match case-insensitively. Confirmed entries (verify the full block at impl time):
+
+| OLD | NEW |
 |---|---|
 | `simulation.bioen.enabled` | `module.bioenergetics.enabled` |
 | `simulation.genetic.enabled` | `module.genetics.enabled` |
@@ -44,154 +41,166 @@ existing mechanism handles these incl. indexed `spN` automatically):
 | `economy.enabled` | `module.bioeconomics.enabled` |
 | `output.restart.enabled` | `simulation.restart.enabled` |
 | `output.restart.recordfrequency.ndt` | `simulation.restart.recordfrequency.ndt` |
-| `output.fishery.` | `output.fisheries.` |
-| `species.bioen.maturity.` | `species.maturity.` |
+| `output.restart.spinup` | `simulation.restart.spinup.nyear` |
+| `output.fishery.enabled` | `output.fisheries.enabled` |
+| `output.fishery.byage.enabled` | `output.fisheries.byage.enabled` |
+| `output.fishery.bysize.enabled` | `output.fisheries.bysize.enabled` |
+| `output.spatial.fishery.enabled` | `output.spatial.fisheries.enabled` |
+| `species.bioen.maturity.{eta,r,m0,m1}.sp{idx}` | `species.maturity.{eta,r,m0,m1}.sp{idx}` |
+| `predation.ingestion.rate.max.bioen.sp{idx}` | `predation.ingestion.rate.max.sp{idx}` |
+| `predation.coef.ingestion.rate.max.larvae.bioen.sp{idx}` | `predation.larval.ingestion.rate.increase.ratio.sp{idx}` |
 
-Two renames are **NOT clean prefix swaps** and need explicit handling (extend the chain applier to
-support whole-key renames + a merge hook):
-- **Leaf rename:** `output.restart.spinup` → `simulation.restart.spinup.nyear` (the leaf changes, not
-  just the prefix). Apply as a whole-key rename. NOTE: the restart renames are **full-key** entries
-  (`output.restart.enabled`, `output.restart.recordfrequency.ndt`) — there is **no** blanket
-  `output.restart.` prefix rule, so `spinup` cannot be half-rewritten by another rule. Do NOT introduce
-  a blanket `output.restart.` prefix (that WOULD then collide with `spinup`); keep the three restart
-  renames as distinct full-key entries.
-- **Merge/collision:** `predation.ingestion.rate.max.bioen.sp{idx}` → `predation.ingestion.rate.max.sp{idx}`
-  where the target already exists as the legacy (non-bioen) ingestion rate. **Merge rule:** when the
-  `.bioen.` key is present (bioenergetics mode), its value becomes the canonical
-  `predation.ingestion.rate.max.sp{idx}` (overwriting the legacy) and the `.bioen.` key is dropped;
-  when only the legacy key is present, keep it unchanged. Also
-  `predation.coef.ingestion.rate.max.larvae.bioen.sp{idx}` → `predation.larval.ingestion.rate.increase.ratio.sp{idx}`
-  (whole-key rename, no collision). **VERIFY at implementation against the 4.4.0 jar** that this is the
-  correct merge direction (the engine's accepted parameter set is the arbiter).
+These are **per-key (not blanket-prefix) renames**, exactly as `Releases.java` does them (each guarded by
+`cfg.canFind(old)`), which avoids over-matching pre-existing keys.
 
-**Watch-item:** confirm the fisheries toggle is `module.multispecies.fisheries.enabled` (one upstream
-note says `process.`); the structured release-notes table says `module.` — verify against the 4.4.0 jar
-before flipping the write default to 4.4.0.
+## Merge / collision rule — `updateKey` semantics (keep-existing-target)
+
+A rename is **skipped if the NEW key already exists** (Java's "already defined" behavior, verified). This
+single rule resolves both the conflict question and the ingestion "merge":
+
+- **Ingestion merge:** for a focal species that has BOTH `predation.ingestion.rate.max.sp{idx}` (legacy)
+  and `predation.ingestion.rate.max.bioen.sp{idx}` (e.g. `baltic_ev` sp0: 3.5 and 3.0), the rename
+  `bioen→base` is SKIPPED because base exists ⇒ **base value (3.5) is kept, the `.bioen.` value is
+  dropped.** This matches 4.4.0, where ALL ingestion reads (`PredationMortality`, `ForagingMortality`,
+  `EnergyBudget`, `BioenPredationMortality`) use the single `predation.ingestion.rate.max.sp{idx}`.
+- Same skip-if-exists rule for any other old+new collision.
+
+**This is a real, intended behavior change for bioen / Ev-OSMOSE configs** (the separate bioen ingestion
+value no longer exists in 4.4.0). It is NOT a result-preserving rename. Consequences:
+- **Engine reconciliation (PR1):** `osmose/engine/config.py` currently reads `predation.ingestion.rate.max.sp{idx}`
+  (legacy, `:606`) AND `predation.ingestion.rate.max.bioen.sp{idx}` (bioen, `:1890/1912`) as two distinct
+  values. After canonicalization there is ONE key; both reads must point at it. Update both reads to the
+  unified key, matching 4.4.0's `EnergyBudget`/`ForagingMortality`/`PredationMortality`.
+- **Bioen parity gate (PR1, blocking):** add an end-to-end bioen test asserting OSMOPY's unified-ingestion
+  behavior matches the 4.4.0 intent (one ingestion value drives both predation and the energy budget),
+  and document the change for Ev-OSMOSE users (changelog) — existing bioen configs will produce different
+  numbers than under 4.3.x. This is the "verify + re-validate parity now" the approach requires.
 
 ## Architecture
 
-**Canonical = 4.4.0 keys.** One forward canonicalizer (extended `migrate_config`), one inverse
-(`to_target_keys`), routed through single choke points on both the load and write sides.
+**Forward (ingestion → canonical 4.4.0):** extend `osmose/demo.py::_MIGRATION_CHAIN` with the `$15`
+("4.4.0") entry and extend the applier to support per-key renames + the skip-if-target-exists semantics
+(today's applier does blanket-prefix + blind `result[new]=result.pop(old)` — it must (a) match per-key,
+(b) skip when NEW exists, (c) comment/drop the OLD, (d) rebuild `key_case_map`). Bump `migrate_config`
+default `target_version` to `"4.4.0"`. Expose `osmose.config.canonicalize_config(cfg) -> (dict, deprecated)`
+(thin wrapper; logs each distinct deprecated old key once) so callers don't import from `demo`.
 
-### Forward (ingestion → canonical 4.4.0)
+**Forward choke points (PR1 core readers; PR2 UI):** `reader.read_file()` (covers `read()` and the
+`advanced.py` import path); `EngineConfig.from_dict` + `config_validation.py` + `validator.py`
+(idempotent guard); `ui/state.py` new `AppState.load_config(cfg)` (PR2) routing demo (`grid.py:841`),
+scenario (`scenarios.py:181`), and fishbase config-sets; also canonicalize in `ScenarioManager.load`
+(`osmose/scenarios.py`) so the library API (compare/fork) is covered, not just the UI.
 
-- **`osmose/demo.py`:** add the `"4.4.0"` chain entry + extend the applier for whole-key renames and the
-  ingestion merge hook. Bump `migrate_config`'s default `target_version` to `"4.4.0"`. Expose a thin
-  `osmose.config.canonicalize_config(cfg) -> (dict, deprecated: list[str])` wrapper (logs each distinct
-  deprecated old key once) so callers don't import from `demo`.
-- **Load choke points (all must canonicalize):**
-  - `osmose/config/reader.py`: canonicalize at the end of `read_file()` (which `read()` calls), so both
-    the normal and `advanced.py` import paths are covered.
-  - `EngineConfig.from_dict` + `osmose/engine/config_validation.py` + `osmose/config/validator.py`:
-    canonicalize at entry (idempotent) so old-key test hand-dicts and any old config still build/validate.
-  - **`ui/state.py`: add `AppState.load_config(cfg)`** that canonicalizes before `self.config.set(...)`;
-    route demo load (`grid.py:841`, replacing the bare `migrate_config` call), scenario load
-    (`scenarios.py:181`), and fishbase bootstrap through it. Per-field `update_config` edits already use
-    canonical keys (schema moved), so they need no change.
-- **Schema (`schema/{simulation,fishing,economics,output,bioenergetics}.py`):** move the renamed fields'
-  `key_pattern` to the NEW names. Old names live only in the migration chain.
-- **Engine literal reads:** update `osmose/engine/config.py` (the module toggles, bioen ingestion +
-  maturity reads) to the NEW names — valid because the dict is canonicalized before `from_dict` reads it.
+**Version hardening:** `migrate_config` keys off `osmose.version` via `_version_tuple`, which returns
+`(0,)` on a non-numeric string (e.g. `4.4.0-SNAPSHOT`, empty) → would force-apply ALL chain steps. Harden:
+treat an unparseable/missing version as "apply from the start ONLY where `cfg.canFind(old)`" (the per-key
+`canFind` guard already prevents corrupting keys that aren't present), and never let a malformed version
+cause a NEW-key config to be reverse-processed. Add tests for missing / `4.4.0` / `4.4.0-SNAPSHOT` / `4.2.1`.
 
-### Inverse (canonical 4.4.0 → target engine version, for writing)
+**Inverse (canonical → target engine version), generalized:** `osmose.config.to_target_keys(cfg, target_version="4.3.3")`
+derives its map by **inverting each `_MIGRATION_CHAIN` entry between the canonical version and the target**
+(so a future `4.5.0` entry auto-extends the inverse — not a hand-coded 4.4.0 mirror). For `4.3.x`: reverse
+the renames (per-key, NOT blanket prefix — e.g. `species.maturity.{eta,r,m0,m1}` reverse only those four
+leaves, never a `species.maturity.` prefix that would corrupt the pre-existing growth keys
+`species.maturity.size`/`age` at `schema/species.py:195/206`) and set `osmose.version=4.3.3`; for `4.4.0`:
+identity + stamp. The ingestion merge is **lossy/irreversible** — the inverse emits the unified value under
+the legacy `predation.ingestion.rate.max.sp{idx}` (a 4.3.3 jar reads it as the legacy key); register it as
+an explicitly non-invertible step.
 
-- **`osmose.config.to_target_keys(cfg, target_version="4.3.3") -> dict`** (new; lives with the alias
-  data, inverse of the 4.4.0 chain step): for a `4.3.x` target, reverse the 4.4.0 renames (new→old) and
-  set `osmose.version=4.3.3`; for a `4.4.0` target, identity + `osmose.version=4.4.0`.
-  **The inverse must reverse ONLY the exact keys the forward step created — never a blanket prefix that
-  could catch a pre-existing canonical key.** Two concrete hazards:
-  - `species.maturity.{eta,r,m0,m1}.sp{idx}` reverses to `species.bioen.maturity.…` **leaf-scoped (only
-    those four leaves)** — a bare `species.maturity.`→`species.bioen.maturity.` prefix reverse would
-    corrupt the **pre-existing growth keys** `species.maturity.size.sp{idx}` / `species.maturity.age.sp{idx}`
-    (schema `species.py:195/206`, never bioen). So the maturity entry needs an explicit leaf set.
-  - The ingestion **merge is intentionally lossy** — `to_target_keys` does NOT reconstruct the
-    legacy/bioen split; it emits the unified value under the legacy `predation.ingestion.rate.max.sp{idx}`,
-    which the 4.3.3 jar reads correctly as the legacy key.
-- **Route EVERY config that reaches the Java engine through the target-version inverse (default `4.3.3`):**
-  - `ui/pages/run.py::write_temp_config` (the actual Java run path) — the load-bearing one.
-  - `ui/pages/calibration_handlers.py` ×3 `OsmoseConfigWriter.write(...)`.
-  - `ui/pages/advanced.py:201` `OsmoseConfigWriter.write(...)`.
-  - **`osmose/calibration/problem.py` `_run_java_subprocess` (≈451-454)** — the Java calibration path
-    ALSO passes parameter overrides as CLI `-P<key>=<value>` args (keys come from `FreeParameter.key`
-    → `field.resolve_key(i)`, i.e. canonical 4.4.0 after the schema move). These override KEYS must be
-    reverse-mapped (new→old) for the 4.3.3 jar too — not just the base-config file. Apply a key-only
-    `to_target_keys`-style map to the `overrides` dict before building the `-P` args. (Only the
-    `use_java_engine=True` path; the default Python calibration path reads canonical keys directly.)
-  - `OsmoseConfigWriter.write` gains a `target_version` param (default `"4.3.3"`) so it reverse-maps
-    centrally BEFORE its prefix-based `ROUTING` runs (routing keys on the old prefixes); `write_temp_config`
-    either gains the same param or calls `to_target_keys` before serializing. Default `4.3.3` ⇒ this
-    feature is a **no-op on disk for the current 4.3.3 Java path**.
+**Write sites (PR2) — route every Java-bound config through the inverse (default `4.3.3`):**
+`OsmoseConfigWriter.write` (gains `target_version`, reverse-maps BEFORE its prefix-based `ROUTING` runs —
+note: `module.*`/`output.fisheries.*` have no `ROUTING` prefix, so on a `4.4.0` target the routing table
+must also gain those prefixes; for `4.3.3` the reverse-map restores old prefixes first, so routing is
+unaffected — PR1 default keeps this a no-op); `ui/pages/run.py::write_temp_config` (the real Java run
+path); `ui/pages/calibration_handlers.py` ×3; `ui/pages/advanced.py:201`; and
+`osmose/calibration/problem.py::_run_java_subprocess` (≈451-454) — its `-P<key>=<value>` CLI overrides
+carry canonical 4.4.0 keys (from `field.resolve_key`), so map the override KEYS to the target version too.
 
-### key_case_map
+**Schema (correct scope):** move `key_pattern` to NEW names in `schema/{simulation,fishing,economics,output,bioenergetics}.py`.
+`schema/species.py` is **read-only-verified** — its `species.maturity.size/age` keys do NOT move; they are
+the collision targets the inverse must dodge (and the new `species.maturity.{eta,r,m0,m1}` share that
+namespace — add a schema comment distinguishing the bioenergetic MRN params from the growth maturity
+size/age). `output.fishery.*` lives in `schema/output.py`'s `_OUTPUT_ENABLE_FLAGS` list — rename those
+**list entries**, not a `key_pattern=`.
 
-`migrate_config`/`canonicalize_config` and `to_target_keys` must rebuild `key_case_map` in lockstep:
-synthesize an entry for each renamed key and drop the orphaned old-key entry (including, for the
-ingestion **merge**, dropping the `.bioen.` key's case entry while keeping the surviving
-`predation.ingestion.rate.max.sp{idx}` entry). All renamed keys are lowercase, so identity casing is
-correct; the spec requires the rebuild explicitly so the writer never restores stale casing onto an
-unrelated key. (Today's `migrate_config` does not touch `key_case_map` at all — this is a new requirement.)
+**Engine literal reads:** update `osmose/engine/config.py` module toggles + the two ingestion reads
+(`:606`, `:1890/1912`) to the unified `predation.ingestion.rate.max.sp{idx}` + maturity reads to new names.
+
+**`key_case_map` rebuild:** the migration must synthesize a case entry for each new key and drop the
+orphaned old entry (incl. dropping the `.bioen.` entry on the ingestion skip). Today's `migrate_config`
+does not touch the case map — net-new requirement. All renamed keys are lowercase ⇒ identity casing safe.
 
 ## Data flow
 
-`old-or-new config` → (reader `read_file` | `AppState.load_config` | `from_dict`/validators)
-→ `canonicalize_config` → **canonical 4.4.0 dict** in `state.config` / `EngineConfig` (+ deprecation log)
-→ any write-to-disk site → `to_target_keys(cfg, target_version)` (default `4.3.3` → old keys + version,
-so the bundled 4.3.3 jar runs; `4.4.0` enabled by the jar-swap follow-up) → file.
+`old-or-new config` → (reader `read_file` | `AppState.load_config` | `ScenarioManager.load` | `from_dict`/validators)
+→ `canonicalize_config` (skip-if-exists, version-hardened) → **canonical 4.4.0 dict** (+ deprecation log,
++ one-time UI notification of the migrated keys) → any Java-bound write → `to_target_keys(cfg, target)`
+(default `4.3.3` → old keys + version; `4.4.0` enabled by the jar-swap follow-up) → file or `-P` args.
 
-## Error handling / edge cases
+## Reproducibility / user impact (from the review)
 
-- Already-canonical (4.4.0) config → forward chain is a no-op (idempotent: a key already new isn't in any
-  old→new entry).
-- Double canonicalize (reader then from_dict) → idempotent, safe.
-- Bioen-ingestion collision → merge rule above (bioen value wins when present; legacy kept otherwise).
-- `output.restart.spinup`/larvae renames → whole-key, longest-match-first, applied after prefix rules.
-- Conflict (both old+new present for a non-merge key) → keep NEW, drop old + its case-map entry, warn.
-- Unmapped keys → untouched.
-- `osmose.version`: the chain stamps it (4.4.0 forward / 4.3.3 on inverse). `migrate_config` already owns
-  version stamping — single owner preserved.
+- **Non-bioen Python-engine results: unchanged** (purely nominal renames). Committed parity `.npz`
+  baselines (BoB, non-bioen) are unaffected — no regeneration.
+- **Bioen Python-engine results: intentionally change** (ingestion unification) — gated by the bioen
+  parity test + changelog note. Java cross-engine parity refreshes at the jar-swap step.
+- **Saved scenarios:** load canonicalizes; save persists canonical 4.4.0 keys — note the format change in
+  scenario metadata; flag interop with older OSMOPY in the changelog.
+- **Calibration:** `-P` override keys reverse-mapped (PR2); also map stored free-param/baseline/checkpoint
+  keys through `canonicalize_config` on resume so a resumed calibration binds (add a checkpoint-resume test).
 
 ## Scope (YAGNI)
 
-- **In:** the 4.4.0 rename set (incl. `output.fishery`, the leaf rename, the ingestion merge); extend the
-  existing `migrate_config` chain (NOT a parallel system); forward canonicalize at all load choke points;
-  inverse `to_target_keys` at all write sites (default 4.3.3 = no-op for current Java path); schema
-  key_pattern moves; engine literal-read updates; key_case_map rebuild.
-- **Out:** new 4.4.0 features; the jar swap (next step); rewriting bundled example configs on disk (left
-  old, canonicalized on read); a standalone user "migrate file" command.
+In: faithful port of the `Releases$15` rename set (incl. `output.spatial.fishery`, the larvae rename, the
+ingestion merge) + skip-if-exists semantics; extend `migrate_config` (not a parallel system); forward
+canonicalize at all choke points; generalized inverse at all write sites (default 4.3.3 = no-op);
+schema moves (+ `species.py` reconciliation, `output.fishery` flag-list); engine read reconciliation;
+`key_case_map` rebuild; version hardening; bioen parity gate. Out: new 4.4.0 features; jar swap; on-disk
+rewrite of bundled example configs; a standalone user "migrate file" command.
 
 ## Testing
 
-- **`tests/test_config_migration_440.py` (new):** the forward `"4.4.0"` chain — each clean prefix rename
-  (incl. indexed `species.maturity.*`), the `output.fishery.→output.fisheries.` prefix, the
-  `spinup→spinup.nyear` leaf rename, the ingestion **merge** (bioen present → bioen value wins + legacy
-  overwritten + `.bioen` dropped; legacy-only → unchanged), idempotency on already-4.4.0 input, conflict
-  rule, deprecation list, and **log-once** (caplog: one message per distinct old key).
-- **Inverse `to_target_keys`:** 4.3.3 target restores old keys (whole-key longest-match; spinup.nyear→spinup;
-  module.*→old) + `osmose.version=4.3.3`; 4.4.0 target = identity + stamp.
-- **Round-trip THROUGH the real write paths:** (a) `write_temp_config` default → on-disk config is OLD
-  keys + `osmose.version=4.3.3` (current 4.3.3 Java path unaffected); (b) read old config → state.config
-  is canonical 4.4.0 → `write_temp_config` → old again (fixpoint). Same assertion for an
-  `OsmoseConfigWriter.write` calibration call (default target).
-- **Ingestion choke points:** `reader.read_file` (advanced import path), `AppState.load_config` (demo +
-  scenario + fishbase), and `EngineConfig.from_dict` each yield canonical 4.4.0 keys from an old-key input.
-- **Scenario round-trip:** save (from canonical state) → load via `AppState.load_config` → canonical.
-- **Validator:** bundled example configs (old keys) stay warning-free after canonicalization; new keys in
-  the schema/allowlist; `test_from_dict_warn_mode_clean_on_example_configs` green. Verify each renamed
-  key's allowlist source (schema vs `_SUPPLEMENTARY_ALLOWLIST`) so moving the `key_pattern` doesn't orphan it.
-- **Alias↔schema drift guard:** assert every NEW key produced by the `"4.4.0"` chain entry resolves to a
-  real schema field (catches a typo'd/never-added rename target).
-- **Regression:** existing `test_bioen_*`, `test_genetics_*`, `test_engine_fisheries`, `test_roundtrip`,
-  `test_config_writer`, `test_state`, scenario/calibration suites pass (old-key fixtures still work via
-  canonicalize; update only assertions that pin a specific emitted key name). **`tests/test_demo.py` and
-  `tests/test_ui_load_scenarios.py` call `migrate_config(...)` with the DEFAULT target** — bumping the
-  default to `4.4.0` shifts their output to new keys; re-check those assertions explicitly.
-- **CI gates:** pyright (clean `[dev]` venv `--pythonpath`) on touched modules incl. `demo.py`,
-  `config/*`, `ui/state.py`, `ui/pages/{run,advanced,calibration_handlers,grid,scenarios}.py`; ruff
-  check + format; full `-m "not e2e"` (modulo known `test_runner`/`test_study_fullmodel` xdist flakes).
+**PR1 (pure `osmose/`):**
+- New `tests/test_config_migration_440.py`: port-fidelity of the `$15` rename set (each entry incl.
+  `output.spatial.fishery`, indexed maturity, the larvae rename); **skip-if-target-exists** (ingestion:
+  base present → kept, `.bioen.` dropped; base absent → renamed); idempotency on already-4.4.0;
+  version-hardening (missing / `4.4.0` / `4.4.0-SNAPSHOT` / intermediate `4.2.1`); deprecation list +
+  **log-once** (caplog); `key_case_map` rebuild incl. the merge-drop.
+- Inverse `to_target_keys`: chain-inversion to `4.3.3` (per-key reverse, maturity leaf-scoped — assert it
+  does NOT touch `species.maturity.size/age`; `spinup.nyear→spinup`); `4.4.0` identity + stamp; merge
+  declared non-invertible.
+- Round-trip fixpoint: old→canonical→`to_target_keys(4.3.3)`→old (for non-merge keys); confirm the merge
+  is a stable fixpoint after the first pass (no `.bioen.` to re-merge).
+- Engine: `EngineConfig.from_dict(old-key dict)` builds identically to a new-key dict; the unified
+  ingestion read returns the kept base value; **bioen end-to-end parity gate** (the unified-ingestion run
+  is internally consistent and matches the 4.4.0 intent).
+- Validator: example configs stay warning-free post-canonicalize; `test_from_dict_warn_mode_clean_on_example_configs`
+  green; verify each renamed key's allowlist source (schema vs `_SUPPLEMENTARY_ALLOWLIST`).
+- Drift guard: every NEW key produced by the `$15` entry resolves to a real schema field (or a known
+  flag-list/allowlist entry).
+- Regression: `test_bioen_*`, `test_genetics_*`, `test_engine_fisheries`, `test_roundtrip`,
+  `test_config_writer`, `test_state`, `test_demo`, `test_ui_load_scenarios` — re-check assertions that pin
+  an emitted key name or call `migrate_config` with the (now-4.4.0) default.
+
+**PR2 (UI/calibration):** every write site → on-disk config is OLD keys + `osmose.version=4.3.3` by default
+(`write_temp_config` round-trip; a calibration `OsmoseConfigWriter.write`); `-P` override keys come out old
+for a 4.3.3 target (new test); all load choke points (reader `read_file`, `AppState.load_config` for
+demo/scenario/fishbase, `ScenarioManager.load`) yield canonical 4.4.0; scenario save→load round-trip;
+checkpoint-resume across the rename.
+
+**CI gates (both PRs):** pyright (clean `[dev]` venv `--pythonpath`) on touched modules incl. `demo.py`,
+`config/*`, `engine/config.py`, the schema files, `ui/state.py`, `ui/pages/{run,advanced,calibration_handlers,grid,scenarios}.py`,
+`calibration/problem.py`; ruff check + format; full `-m "not e2e"` (modulo known xdist flakes).
+
+## Blocking pre-implementation gate (PR1)
+
+Before writing the chain entry, pull the live `Releases.java` `$15` block and confirm: (a) the COMPLETE
+rename list (this table may be missing entries below the lines inspected, e.g. genetics/economy/other
+fishery/spatial); (b) the `updateKey` skip-if-target-exists semantics (the merge direction = base-wins);
+(c) the fisheries toggle is `module.multispecies.fisheries.enabled`. The port must match the source, not
+this table. (The crashing `-update` cannot be used to verify at runtime — read the source.)
 
 ## Follow-up (out of scope, enabled by this)
 
-Bundle `osmose_4.4.0-jar-with-dependencies.jar`; flip the write-default `target_version` to `4.4.0`;
-update the hardcoded `4.3.3` refs (`ui/state.py:42`, `tests/test_state.py:79`, `demo.py` default);
-**verify** the fisheries-toggle name + the ingestion-merge direction against the jar; refresh Java
-cross-engine parity (4.4.0 numerics differ from 4.3.3).
+Bundle `osmose_4.4.0-jar-with-dependencies.jar`; flip the write-default `target_version` to `4.4.0` (+ add
+`module.*`/`output.fisheries.*` to `OsmoseConfigWriter.ROUTING`); update the hardcoded `4.3.3` refs
+(`ui/state.py:42`, `tests/test_state.py:79`, `demo.py` default); refresh Java cross-engine parity.
