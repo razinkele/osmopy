@@ -200,3 +200,209 @@ def test_bioen_ingestion_unification_is_consistent():
     config = EngineConfig.from_dict(cfg)
     # the unified value (3.5) drives the engine's ingestion read used by both paths:
     assert config.ingestion_rate[0] == 3.5
+
+
+def test_schema_uses_new_440_key_patterns():
+    from osmose.schema import build_registry  # exported from osmose/schema/__init__.py
+
+    reg = build_registry()
+    patterns = {f.key_pattern for f in reg.all_fields()}
+    assert "module.bioenergetics.enabled" in patterns
+    assert "module.multispecies.fisheries.enabled" in patterns
+    assert "module.genetics.enabled" in patterns
+    assert "module.bioeconomics.enabled" in patterns
+    assert "simulation.restart.enabled" in patterns
+    assert "species.maturity.eta.sp{idx}" in patterns
+    assert "predation.ingestion.rate.max.bioen.sp{idx}" not in patterns  # old gone
+    assert "simulation.bioen.enabled" not in patterns
+    assert "fisheries.enabled" not in patterns
+    assert "economy.enabled" not in patterns
+    assert "output.restart.enabled" not in patterns
+    assert "output.fishery.enabled" not in patterns
+    assert "simulation.genetic.enabled" not in patterns
+    assert "species.bioen.maturity.eta.sp{idx}" not in patterns
+
+
+def test_reader_canonicalizes_and_rebuilds_case_map(tmp_path):
+    from osmose.config.reader import OsmoseConfigReader
+
+    f = tmp_path / "osm_param-simulation.csv"
+    f.write_text("simulation.bioen.enabled ; true\noutput.restart.spinup ; 5\n")
+    reader = OsmoseConfigReader()
+    cfg = reader.read_file(f)
+    assert cfg["module.bioenergetics.enabled"] == "true"  # canonicalized on read
+    assert cfg["simulation.restart.spinup.nyear"] == "5"
+    assert "simulation.bioen.enabled" not in cfg
+
+
+def test_reader_case_map_preserves_renamed_key_source_casing(tmp_path):
+    # REGRESSION: a renamed key that is camelCase in the source must survive a
+    # read -> canonicalize(new) -> to_target_keys(old) round-trip with ORIGINAL casing.
+    from osmose.config.reader import OsmoseConfigReader
+    from osmose.config.aliases import to_target_keys
+
+    f = tmp_path / "osm_param-output.csv"
+    f.write_text("output.fishery.byAge.enabled ; true\n")
+    reader = OsmoseConfigReader()
+    cfg = reader.read_file(f)  # cfg holds the NEW (4.4.0) key
+    old_cfg = to_target_keys(cfg, target_version="4.3.3")  # back to the OLD key for the jar
+    (old_key,) = [k for k in old_cfg if k.endswith("byage.enabled")]
+    assert reader.key_case_map.get(old_key) == "output.fishery.byAge.enabled"
+
+
+def test_appstate_load_config_canonicalizes():
+    from shiny import reactive
+
+    from ui.state import AppState
+
+    st = AppState()
+    st.load_config({"osmose.version": "4.3.3", "simulation.bioen.enabled": "true"})
+    with reactive.isolate():
+        cfg = st.config.get()
+    assert cfg["module.bioenergetics.enabled"] == "true"
+    assert "simulation.bioen.enabled" not in cfg
+
+
+def test_grid_load_surfaces_deprecation_notification():
+    from pathlib import Path
+
+    src = (Path(__file__).resolve().parent.parent / "ui" / "pages" / "grid.py").read_text()
+    assert "load_config" in src and "notification_show" in src
+    assert "reader.deprecated_keys" in src
+
+
+def test_reader_exposes_deprecated_keys(tmp_path):
+    from osmose.config.reader import OsmoseConfigReader
+
+    f = tmp_path / "osm_all-parameters.csv"
+    f.write_text(
+        "osmose.version ; 4.3.3\nsimulation.bioen.enabled ; true\noutput.restart.enabled ; false\n"
+    )
+    reader = OsmoseConfigReader()
+    reader.read(f)
+    assert "simulation.bioen.enabled" in reader.deprecated_keys
+    assert "output.restart.enabled" in reader.deprecated_keys
+
+
+def test_to_target_keys_collapses_mixed_old_and_new():
+    from osmose.config.aliases import to_target_keys
+
+    mixed = {"module.bioenergetics.enabled": "true", "simulation.bioen.enabled": "false"}
+    out = to_target_keys(mixed, target_version="4.3.3")
+    assert "module.bioenergetics.enabled" not in out  # redundant NEW form dropped
+    assert out["simulation.bioen.enabled"] == "false"  # existing OLD value wins (base-wins)
+
+
+def test_writer_default_target_emits_old_keys(tmp_path):
+    from osmose.config.writer import OsmoseConfigWriter
+
+    cfg = {
+        "osmose.version": "4.4.0",
+        "module.bioenergetics.enabled": "true",
+        "simulation.restart.spinup.nyear": "5",
+    }
+    OsmoseConfigWriter().write(cfg, tmp_path)  # default target_version="4.3.3"
+    # The writer routes keys to sub-files by prefix, so read across all CSVs.
+    raw = "".join(p.read_text() for p in sorted(tmp_path.glob("*.csv")))
+    assert "simulation.bioen.enabled" in raw  # reverse-mapped to old
+    assert "output.restart.spinup" in raw  # routed to osm_param-output.csv
+    assert "module.bioenergetics.enabled" not in raw
+
+
+def test_write_temp_config_default_target_emits_old_keys(tmp_path):
+    from ui.pages.run import write_temp_config
+
+    master = write_temp_config(
+        {
+            "module.multispecies.fisheries.enabled": "false",
+            "module.bioenergetics.enabled": "true",
+        },
+        tmp_path,
+    )
+    raw = master.read_text()
+    assert "fisheries.enabled" in raw
+    assert "module.multispecies.fisheries.enabled" not in raw
+
+
+def test_export_writes_target_format(tmp_path):
+    from osmose.config.writer import OsmoseConfigWriter
+
+    OsmoseConfigWriter().write({"module.bioenergetics.enabled": "true"}, tmp_path)
+    raw = (tmp_path / "osm_all-parameters.csv").read_text()
+    assert "simulation.bioen.enabled" in raw  # export inherits the 4.3.3 reverse-map
+
+
+def test_writer_roundtrip_of_canonical_config_is_faithful(tmp_path):
+    """A fully-canonical config survives write (target 4.3.3) -> read losslessly.
+
+    The writer stamps ``osmose.version=4.3.3`` and the reader's canonicalize is
+    version-gated by that stamp, so pre-4.3.3 migrations are skipped on read-back.
+    A canonical config (the production reality — state.config is always canonical)
+    round-trips faithfully because its keys are already in 4.4.0 form.
+
+    NOTE: the input here deliberately carries NO ``osmose.version`` so that
+    ``canonicalize_config`` applies the full migration chain and produces the
+    canonical ``mortality.additional.rate.sp0`` (the pre-4.3.3 rename of
+    ``mortality.natural.rate``). Stamping ``osmose.version=4.3.3`` on the input
+    would gate that rename and leave the legacy key — which is exactly the
+    anachronistic, non-production scenario we are guarding against.
+    """
+    from osmose.config.aliases import canonicalize_config
+    from osmose.config.reader import OsmoseConfigReader
+    from ui.pages.run import write_temp_config
+
+    canon, _ = canonicalize_config(
+        {
+            "simulation.bioen.enabled": "true",
+            "mortality.natural.rate.sp0": "0.2",
+        }
+    )
+    # canon holds NEW keys + mortality.additional.rate.sp0 (fully migrated).
+    assert canon["mortality.additional.rate.sp0"] == "0.2"
+    assert "mortality.natural.rate.sp0" not in canon
+
+    master = write_temp_config(canon, tmp_path)
+    back = OsmoseConfigReader().read(master)
+    assert back["module.bioenergetics.enabled"] == "true"
+    assert back["mortality.additional.rate.sp0"] == "0.2"  # survives the canonical round-trip
+    assert "mortality.natural.rate.sp0" not in back
+
+
+def test_calibration_java_cmd_reverse_maps_override_keys(tmp_path):
+    from unittest.mock import MagicMock, patch
+
+    from osmose.calibration.problem import FreeParameter
+    from tests.test_calibration_problem import _make_problem  # reuse the existing helper
+
+    problem = _make_problem(
+        tmp_path, free_params=[FreeParameter("species.maturity.eta.sp0", 0.1, 0.5)]
+    )
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=1)  # short-circuit after cmd build
+        try:
+            problem._run_single({"species.maturity.eta.sp0": 0.3}, run_id=0)
+        except Exception:
+            pass
+    cmd = mock_run.call_args[0][0]
+    p_args = [s for s in cmd if s.startswith("-P")]
+    assert any(s.startswith("-Pspecies.bioen.maturity.eta.sp0=") for s in p_args)  # reverse-mapped
+    assert not any("species.maturity.eta.sp0" in s for s in p_args)  # NEW key gone
+    assert not any(s.startswith("-Posmose.version=") for s in p_args)  # stamp skipped
+
+
+def test_pr2_load_write_roundtrip_coherent(tmp_path):
+    from osmose.config.reader import OsmoseConfigReader
+    from ui.pages.run import write_temp_config
+
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "osm_all-parameters.csv").write_text(
+        "osmose.version ; 4.3.3\nsimulation.bioen.enabled ; true\nfisheries.enabled ; false\n"
+    )
+    cfg = OsmoseConfigReader().read(src / "osm_all-parameters.csv")
+    assert cfg["module.bioenergetics.enabled"] == "true"  # reader canonicalized
+    out = tmp_path / "out"
+    master = write_temp_config(cfg, out)  # default target 4.3.3
+    raw = master.read_text()
+    assert "simulation.bioen.enabled" in raw  # reverse-mapped to old for the jar
+    assert "module.bioenergetics.enabled" not in raw

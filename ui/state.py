@@ -88,6 +88,19 @@ class AppState:
         self.config.set(cfg)
         self.dirty.set(True)
 
+    def load_config(self, cfg: dict[str, str], case_map: dict[str, str] | None = None) -> list[str]:
+        """Canonicalize a freshly-loaded config to 4.4.0 keys and set it as the active config.
+
+        Returns the list of deprecated (old) keys seen, for one-time UI notification.
+        """
+        from osmose.config.aliases import canonicalize_config
+
+        canon, deprecated = canonicalize_config(cfg)
+        self.config.set(canon)
+        if case_map is not None:
+            self.key_case_map.set(dict(case_map))
+        return deprecated
+
     def reset_to_defaults(self) -> None:
         """Reset config to default values from the schema registry.
 

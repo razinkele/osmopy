@@ -24,10 +24,14 @@ def test_roundtrip_survives_and_keyset(d):
     for k, v in d.items():
         assert result[k] == v
     # (b) the substantive key set is preserved exactly — catches a routing change
-    # that INVENTS a spurious substantive key (part (a) is blind to that).
+    # that INVENTS a spurious substantive key (part (a) is blind to that). Exclude
+    # writer/reader-injected framing metadata: the config-dir sentinel, the
+    # `osmose.configuration.*` sub-file reference keys, and `osmose.version` (the
+    # target-version writer stamps it into the master file). None are substantive
+    # parameters the strategy generated; a spurious *substantive* key still fails.
     substantive = (
         set(result)
-        - {"_osmose.config.dir"}
+        - {"_osmose.config.dir", "osmose.version"}
         - {k for k in result if k.startswith("osmose.configuration.")}
     )
     assert substantive == set(d)

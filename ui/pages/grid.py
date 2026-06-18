@@ -18,7 +18,7 @@ from shiny_deckgl import (  # type: ignore[import-untyped]
     scale_widget,
 )
 
-from osmose.demo import list_demos, migrate_config, osmose_demo
+from osmose.demo import list_demos, osmose_demo
 from osmose.logging import setup_logging
 from osmose.schema.grid import GRID_FIELDS
 from ui.components.collapsible import collapsible_card_header, expand_tab
@@ -838,9 +838,15 @@ def grid_server(input, output, session, state):
         state.busy.set(f"Loading example '{example}'…")
         try:
             reader = OsmoseConfigReader()
-            cfg = migrate_config(reader.read(master))
-            state.key_case_map.set(dict(reader.key_case_map))
-            state.config.set(cfg)
+            cfg = reader.read(master)
+            state.load_config(cfg, reader.key_case_map)
+            if reader.deprecated_keys:
+                ui.notification_show(
+                    f"Config migrated to OSMOSE 4.4.0 keys ({len(reader.deprecated_keys)} renamed). "
+                    "Files written for the engine stay 4.3.x-compatible.",
+                    type="message",
+                    duration=8,
+                )
             state.config_dir.set(config_dir)
             state.config_name.set(example.replace("_", " ").title())
 

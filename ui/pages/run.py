@@ -133,6 +133,7 @@ def write_temp_config(
     output_dir: Path,
     source_dir: Path | None = None,
     key_case_map: dict[str, str] | None = None,
+    target_version: str = "4.3.3",
 ) -> Path:
     """Write config to a directory, copy data files, and return the master file path.
 
@@ -152,6 +153,13 @@ def write_temp_config(
     # Auto-inject ncell = nlon * nlat - 1 for any species using random movement.
     # H3: now returns a new dict (was in-place mutation).
     config = _inject_random_movement_ncell(config)
+
+    # Reverse-map canonical 4.4.0 keys to the target engine's spellings
+    # (default 4.3.3, the bundled jar). The injected movement.* key is not
+    # renamed, so it passes through untouched.
+    from osmose.config.aliases import to_target_keys
+
+    config = to_target_keys(config, target_version=target_version)
 
     # Write a single flat master file with all params, stripping sub-config
     # references to avoid the Java engine loading duplicate parameters from

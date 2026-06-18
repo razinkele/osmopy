@@ -461,3 +461,39 @@ def test_live_snapshot_replace_via_dataclasses_replace():
     assert snap2.snapshot_monotonic == 99.0
     assert snap2.active is sentinel
     assert snap.snapshot_monotonic == 42.0
+
+
+def test_read_checkpoint_migrates_old_param_keys(tmp_path):
+    """A checkpoint persisted with legacy (pre-4.4.0) config keys reads back
+    migrated to the NEW canonical keys, still 'ok' (not 'corrupt'), with no
+    osmose.version shim leaking into param_keys."""
+    cp_path = tmp_path / "phase12_checkpoint.json"
+    old_key = "species.bioen.maturity.eta.sp0"
+    ckpt = CalibrationCheckpoint(
+        optimizer="de",
+        phase="12",
+        generation=10,
+        generation_budget=200,
+        best_fun=3.14,
+        per_species_residuals=None,
+        per_species_sim_biomass=None,
+        species_labels=None,
+        best_x_log10=(-0.3,),
+        best_parameters={old_key: 0.5},
+        param_keys=(old_key,),
+        bounds_log10={old_key: (-1.0, 0.0)},
+        gens_since_improvement=3,
+        elapsed_seconds=42.0,
+        timestamp_iso="2026-05-12T10:30:00+00:00",
+        banded_targets=None,
+        proxy_source="objective_disabled",
+    )
+    write_checkpoint(cp_path, ckpt)  # path FIRST
+    result = read_checkpoint(cp_path)
+    cp = result.checkpoint
+    assert cp is not None and result.kind == "ok"
+    assert "species.maturity.eta.sp0" in cp.param_keys
+    assert "species.bioen.maturity.eta.sp0" not in cp.param_keys
+    assert "species.maturity.eta.sp0" in cp.best_parameters
+    assert "species.maturity.eta.sp0" in cp.bounds_log10
+    assert "osmose.version" not in cp.param_keys  # guard against shim-leak regression

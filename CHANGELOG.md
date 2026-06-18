@@ -45,6 +45,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ### Changed
 
+- **config (OSMOSE 4.4.0 keys):** OSMOPY now uses the OSMOSE 4.4.0 config-key names internally
+  (e.g. `module.bioenergetics.enabled`, `simulation.restart.*`, `species.maturity.*`,
+  `output.fisheries.*`), reading 4.3.x configs transparently. Engine-bound writes — the run config
+  **and** the **Export config** download — are emitted in the bundled engine's 4.3.x format, so they
+  still run on the shipped jar. **Saved scenarios** (JSON) are stored with 4.4.0 keys; a scenario
+  saved by this version may need manual key edits to load in an older OSMOPY.
+- **bioenergetics (ingestion):** following OSMOSE 4.4.0, the bioenergetic and base
+  maximum-ingestion-rate parameters are unified into a single `predation.ingestion.rate.max.spN`.
+  A bioenergetics / Ev-OSMOSE config that previously set both now uses the base value for both
+  predation and the energy budget, which changes bioenergetic results relative to 4.3.x. Re-check
+  calibrated `baltic_ev` / Ev-OSMOSE setups.
 - **deps:** promoted shiny to the **1.6.x** line (`shiny>=1.6.3,<1.7`), lifting the long-standing
   `<1.6` cap now that the UI is verified compatible (full e2e green under 1.6.3). Bumped
   `shinyswatch>=0.11` (bundled Bootstrap 5.3.8 matches shiny 1.6.3 → precompiled theme, no libsass)

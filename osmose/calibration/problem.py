@@ -450,7 +450,15 @@ class OsmoseCalibrationProblem(Problem):
 
         cmd = [self.java_cmd, "-jar", str(self.jar_path), str(self.base_config_path)]
         cmd.append(f"-Poutput.dir.path={output_dir}")
-        for key, value in overrides.items():
+
+        # The internal model uses NEW 4.4.0 keys, but the bundled Java engine is
+        # 4.3.3 — reverse-map the override keys to the names that engine reads.
+        from osmose.config.aliases import to_target_keys
+
+        java_overrides = to_target_keys(dict(overrides), target_version="4.3.3")
+        for key, value in java_overrides.items():
+            if key == "osmose.version":  # to_target_keys stamps this; not a real override
+                continue
             cmd.append(f"-P{key}={value}")
 
         result = subprocess.run(cmd, capture_output=True, timeout=self.subprocess_timeout)

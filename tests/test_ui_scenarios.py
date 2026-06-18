@@ -16,14 +16,16 @@ def test_scenario_load_config(tmp_path):
     mgr = ScenarioManager(tmp_path)
     mgr.save(Scenario(name="s1", config={"x": "42"}))
     loaded = mgr.load("s1")
-    assert loaded.config == {"x": "42"}
+    # load() canonicalizes to 4.4.0 keys (stamps osmose.version); other values preserved.
+    assert {k: v for k, v in loaded.config.items() if k != "osmose.version"} == {"x": "42"}
 
 
 def test_scenario_fork(tmp_path):
     mgr = ScenarioManager(tmp_path)
     mgr.save(Scenario(name="base", config={"a": "1"}))
     forked = mgr.fork("base", "derived")
-    assert forked.config == {"a": "1"}
+    # fork() canonicalizes to 4.4.0 keys (stamps osmose.version); other values preserved.
+    assert {k: v for k, v in forked.config.items() if k != "osmose.version"} == {"a": "1"}
     assert forked.parent_scenario == "base"
 
 

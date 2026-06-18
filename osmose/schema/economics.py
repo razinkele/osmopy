@@ -4,7 +4,7 @@ from osmose.schema.base import OsmoseField, ParamType
 
 ECONOMICS_FIELDS: list[OsmoseField] = [
     OsmoseField(
-        key_pattern="economy.enabled",
+        key_pattern="module.bioeconomics.enabled",
         param_type=ParamType.BOOL,
         default=False,
         description="Enable the economics module",

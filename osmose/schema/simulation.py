@@ -84,7 +84,7 @@ SIMULATION_FIELDS: list[OsmoseField] = [
         required=False,
     ),
     OsmoseField(
-        key_pattern="simulation.bioen.enabled",
+        key_pattern="module.bioenergetics.enabled",
         param_type=ParamType.BOOL,
         default=False,
         description="Enable bioenergetics module",
@@ -92,7 +92,7 @@ SIMULATION_FIELDS: list[OsmoseField] = [
         advanced=True,
     ),
     OsmoseField(
-        key_pattern="simulation.genetic.enabled",
+        key_pattern="module.genetics.enabled",
         param_type=ParamType.BOOL,
         default=False,
         description="Enable genetic module",
