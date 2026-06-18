@@ -88,21 +88,34 @@ def _full_config() -> dict[str, str]:
 
 
 def test_full_roundtrip():
-    """Every key-value pair from the original config survives write+read."""
-    config = _full_config()
+    """A CANONICAL config round-trips faithfully through write+read.
+
+    This mirrors production: ``state.config`` is ALWAYS canonicalized on load
+    (the reader and ``AppState.load_config`` both run ``canonicalize_config``),
+    so the writer only ever receives canonical 4.4.0 keys.
+
+    We must start the round-trip from the canonical form, NOT from a raw config
+    that still carries pre-4.3.3 key spellings. The writer reverse-maps to the
+    target engine version (default 4.3.3) and STAMPS ``osmose.version=4.3.3`` on
+    the written file. On read-back the reader's ``canonicalize_config`` is
+    version-gated by that stamp, so it applies only the 4.4.0 renames and SKIPS
+    older migrations (e.g. ``mortality.natural.rate`` -> ``mortality.additional.rate``,
+    which lives only in the pre-4.3.3 migration chain, not in ``RENAMES_440``).
+    Feeding a raw ``mortality.natural.rate`` key (a pre-4.3.3 spelling) would not
+    round-trip and is not a real scenario; only a canonical input does
+    (``read(write(canon)) == canon``, modulo the re-stamped ``osmose.version``).
+    """
+    from osmose.config.aliases import canonicalize_config
+
+    canon, _ = canonicalize_config(_full_config())
     with tempfile.TemporaryDirectory() as tmpdir:
         writer = OsmoseConfigWriter()
-        writer.write(config, Path(tmpdir))
+        writer.write(canon, Path(tmpdir))
 
         reader = OsmoseConfigReader()
         result = reader.read(Path(tmpdir) / "osm_all-parameters.csv")
 
-        # The reader canonicalizes to NEW 4.4.0 keys on read-back, so the renamed
-        # keys appear under their canonical names. Map the input keys accordingly.
-        from osmose.config.aliases import canonicalize_config
-
-        expected, _ = canonicalize_config(config)
-        for key, value in expected.items():
+        for key, value in canon.items():
             if key == "osmose.version":
                 continue
             assert key in result, f"Key missing after roundtrip: {key}"

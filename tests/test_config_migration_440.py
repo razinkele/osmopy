@@ -330,3 +330,39 @@ def test_export_writes_target_format(tmp_path):
     OsmoseConfigWriter().write({"module.bioenergetics.enabled": "true"}, tmp_path)
     raw = (tmp_path / "osm_all-parameters.csv").read_text()
     assert "simulation.bioen.enabled" in raw  # export inherits the 4.3.3 reverse-map
+
+
+def test_writer_roundtrip_of_canonical_config_is_faithful(tmp_path):
+    """A fully-canonical config survives write (target 4.3.3) -> read losslessly.
+
+    The writer stamps ``osmose.version=4.3.3`` and the reader's canonicalize is
+    version-gated by that stamp, so pre-4.3.3 migrations are skipped on read-back.
+    A canonical config (the production reality — state.config is always canonical)
+    round-trips faithfully because its keys are already in 4.4.0 form.
+
+    NOTE: the input here deliberately carries NO ``osmose.version`` so that
+    ``canonicalize_config`` applies the full migration chain and produces the
+    canonical ``mortality.additional.rate.sp0`` (the pre-4.3.3 rename of
+    ``mortality.natural.rate``). Stamping ``osmose.version=4.3.3`` on the input
+    would gate that rename and leave the legacy key — which is exactly the
+    anachronistic, non-production scenario we are guarding against.
+    """
+    from osmose.config.aliases import canonicalize_config
+    from osmose.config.reader import OsmoseConfigReader
+    from ui.pages.run import write_temp_config
+
+    canon, _ = canonicalize_config(
+        {
+            "simulation.bioen.enabled": "true",
+            "mortality.natural.rate.sp0": "0.2",
+        }
+    )
+    # canon holds NEW keys + mortality.additional.rate.sp0 (fully migrated).
+    assert canon["mortality.additional.rate.sp0"] == "0.2"
+    assert "mortality.natural.rate.sp0" not in canon
+
+    master = write_temp_config(canon, tmp_path)
+    back = OsmoseConfigReader().read(master)
+    assert back["module.bioenergetics.enabled"] == "true"
+    assert back["mortality.additional.rate.sp0"] == "0.2"  # survives the canonical round-trip
+    assert "mortality.natural.rate.sp0" not in back
