@@ -200,3 +200,24 @@ def test_bioen_ingestion_unification_is_consistent():
     config = EngineConfig.from_dict(cfg)
     # the unified value (3.5) drives the engine's ingestion read used by both paths:
     assert config.ingestion_rate[0] == 3.5
+
+
+def test_schema_uses_new_440_key_patterns():
+    from osmose.schema import build_registry  # exported from osmose/schema/__init__.py
+
+    reg = build_registry()
+    patterns = {f.key_pattern for f in reg.all_fields()}
+    assert "module.bioenergetics.enabled" in patterns
+    assert "module.multispecies.fisheries.enabled" in patterns
+    assert "module.genetics.enabled" in patterns
+    assert "module.bioeconomics.enabled" in patterns
+    assert "simulation.restart.enabled" in patterns
+    assert "species.maturity.eta.sp{idx}" in patterns
+    assert "predation.ingestion.rate.max.bioen.sp{idx}" not in patterns  # old gone
+    assert "simulation.bioen.enabled" not in patterns
+    assert "fisheries.enabled" not in patterns
+    assert "economy.enabled" not in patterns
+    assert "output.restart.enabled" not in patterns
+    assert "output.fishery.enabled" not in patterns
+    assert "simulation.genetic.enabled" not in patterns
+    assert "species.bioen.maturity.eta.sp{idx}" not in patterns

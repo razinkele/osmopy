@@ -5,7 +5,7 @@ from osmose.schema.base import OsmoseField, ParamType
 FISHING_FIELDS: list[OsmoseField] = [
     # ── General fisheries settings ────────────────────────────────────────
     OsmoseField(
-        key_pattern="fisheries.enabled",
+        key_pattern="module.multispecies.fisheries.enabled",
         param_type=ParamType.BOOL,
         default=False,
         description="Enable the fisheries module",

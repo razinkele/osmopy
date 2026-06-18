@@ -144,8 +144,12 @@ BIOENERGETICS_FIELDS: list[OsmoseField] = [
         indexed=True,
         min_val=0.0,
     ),
+    # NOTE: species.maturity.{eta,r,m0,m1} below are the BIOENERGETIC maturation
+    # reaction-norm parameters (renamed from species.bioen.maturity.* in 4.4.0).
+    # They are distinct from the GROWTH keys species.maturity.size / species.maturity.age
+    # defined in schema/species.py — do not conflate or touch those here.
     OsmoseField(
-        key_pattern="species.bioen.maturity.eta.sp{idx}",
+        key_pattern="species.maturity.eta.sp{idx}",
         param_type=ParamType.FLOAT,
         description="Energy density ratio eta (somatic-to-gonad conversion)",
         category="bioenergetics",
@@ -153,7 +157,7 @@ BIOENERGETICS_FIELDS: list[OsmoseField] = [
         min_val=0.0,
     ),
     OsmoseField(
-        key_pattern="species.bioen.maturity.r.sp{idx}",
+        key_pattern="species.maturity.r.sp{idx}",
         param_type=ParamType.FLOAT,
         description="Reproductive energy allocation fraction r",
         category="bioenergetics",
@@ -162,7 +166,7 @@ BIOENERGETICS_FIELDS: list[OsmoseField] = [
         max_val=1.0,
     ),
     OsmoseField(
-        key_pattern="species.bioen.maturity.m0.sp{idx}",
+        key_pattern="species.maturity.m0.sp{idx}",
         param_type=ParamType.FLOAT,
         description="LMRN intercept m0: length at maturity = m0 + m1 * age",
         category="bioenergetics",
@@ -171,7 +175,7 @@ BIOENERGETICS_FIELDS: list[OsmoseField] = [
         unit="cm",
     ),
     OsmoseField(
-        key_pattern="species.bioen.maturity.m1.sp{idx}",
+        key_pattern="species.maturity.m1.sp{idx}",
         param_type=ParamType.FLOAT,
         description="LMRN slope m1 for maturity reaction norm",
         category="bioenergetics",
@@ -226,15 +230,12 @@ BIOENERGETICS_FIELDS: list[OsmoseField] = [
         category="bioenergetics",
         indexed=True,
     ),
+    # NOTE: the 4.4.0 rename unifies the former bioen-only ingestion key
+    # (predation.ingestion.rate.max.bioen.sp{idx}) into the single
+    # predation.ingestion.rate.max.sp{idx} field already defined in schema/species.py.
+    # The field is therefore not redefined here to avoid a duplicate key_pattern.
     OsmoseField(
-        key_pattern="predation.ingestion.rate.max.bioen.sp{idx}",
-        param_type=ParamType.FLOAT,
-        description="Maximum ingestion rate I_max for bioen mode",
-        category="bioenergetics",
-        indexed=True,
-    ),
-    OsmoseField(
-        key_pattern="predation.coef.ingestion.rate.max.larvae.bioen.sp{idx}",
+        key_pattern="predation.larval.ingestion.rate.increase.ratio.sp{idx}",
         param_type=ParamType.FLOAT,
         default=1.0,
         description="Larvae ingestion multiplier theta for bioen mode",
