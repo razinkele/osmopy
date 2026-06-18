@@ -304,6 +304,15 @@ def test_to_target_keys_4_4_0_is_identity_plus_stamp():
     out = to_target_keys(cfg, target_version="4.4.0")
     assert out["module.bioenergetics.enabled"] == "true"
     assert out["osmose.version"] == "4.4.0"
+
+
+def test_to_target_keys_ingestion_merge_is_lossy_to_legacy_key():
+    # The merge is non-invertible: the unified value reverses to the LEGACY base key,
+    # NOT a reconstructed .bioen split. A 4.3.3 jar reads it as the legacy ingestion rate.
+    cfg = {"osmose.version": "4.4.0", "predation.ingestion.rate.max.sp0": "3.5"}
+    out = to_target_keys(cfg, target_version="4.3.3")
+    assert out["predation.ingestion.rate.max.sp0"] == "3.5"  # stays the legacy key
+    assert not any(".bioen." in k for k in out)              # no .bioen fabricated
 ```
 
 - [ ] **Step 2: Run, verify FAIL** (`to_target_keys` undefined).
@@ -486,12 +495,13 @@ NOTE: the entry point is `validate(cfg, mode)` (config_validation.py:489), retur
 
 - [ ] **Step 3: Implement**
 
-At the top of `validate(cfg, mode)` (config_validation.py:489) and the `osmose/config/validator.py` validation function, canonicalize first:
+At the top of `validate(cfg, mode)` (config_validation.py:489) AND `osmose/config/validator.py::validate_config(config, registry)` (validator.py:11), canonicalize first:
 ```python
     from osmose.config.aliases import canonicalize_config
     cfg, _ = canonicalize_config(cfg)
 ```
-Ensure the validation allowlist recognizes the NEW keys (`module.*`, `simulation.restart.*`, `output.fisheries.*`, `species.maturity.{eta,r,m0,m1}`, `predation.ingestion.rate.max`, `predation.larval.ingestion.rate.increase.ratio`). Add any not already present to `_SUPPLEMENTARY_ALLOWLIST` (or confirm the AST-walked schema will carry them once PR2 moves the `key_pattern`s — for PR1 they may need an explicit allowlist entry since the schema move is PR2).
+**MANDATORY — not optional:** in PR1 the schema `key_pattern`s are still OLD (the move is PR2), so the AST-walked known-keys set does NOT contain the new names. The bundled example configs (eec, baltic, eec_full) carry OLD keys that canonicalize into NEW names, so without allowlist entries `test_from_dict_warn_mode_clean_on_example_configs` WILL fail. Add these to `_SUPPLEMENTARY_ALLOWLIST` (config_validation.py:45) — the four genuinely-needed-by-example-configs are `module.multispecies.fisheries.enabled`, `simulation.restart.spinup.nyear`, `simulation.restart.recordfrequency.ndt`, `output.fisheries.enabled` (`simulation.restart.enabled` is already allowlisted at :113); add the full new set for completeness: also `module.bioenergetics.enabled`, `module.genetics.enabled`, `module.bioeconomics.enabled`, `output.fisheries.byage.enabled`, `output.fisheries.bysize.enabled`, `output.spatial.fisheries.enabled`, `species.maturity.{eta,r,m0,m1}.sp{idx}`, `predation.larval.ingestion.rate.increase.ratio.sp{idx}`. (`predation.ingestion.rate.max.sp{idx}` is already schema-known at species.py:320.)
+NOTE: canonicalizing in `validate_config` means renamed keys whose schema `key_pattern` hasn't moved yet (PR1) silently skip value-bounds validation until PR2 — acceptable (no false errors; bounds re-enabled when PR2 moves the patterns).
 
 - [ ] **Step 4: Run, verify PASS** + the existing config-validation suite
 
@@ -523,10 +533,10 @@ def test_bioen_ingestion_unification_is_consistent(tmp_path):
         "simulation.bioen.enabled": "true",
         "predation.ingestion.rate.max.sp0": "3.5",       # legacy/base
         "predation.ingestion.rate.max.bioen.sp0": "3.0",  # bioen — dropped on merge
-        # minimal bioen params required for from_dict to build (read the bioen block
-        # in osmose/engine/config.py and supply the required species.* / bioen keys):
     })
-    canon, _ = __import__("osmose.config.aliases", fromlist=["canonicalize_config"]).canonicalize_config(cfg)
+    from osmose.config.aliases import canonicalize_config
+
+    canon, _ = canonicalize_config(cfg)
     assert canon["predation.ingestion.rate.max.sp0"] == "3.5"      # base wins
     assert "predation.ingestion.rate.max.bioen.sp0" not in canon   # bioen dropped
     config = EngineConfig.from_dict(cfg)
@@ -534,9 +544,9 @@ def test_bioen_ingestion_unification_is_consistent(tmp_path):
     assert config.ingestion_rate[0] == 3.5
 ```
 
-NOTE: this asserts the unification + base-wins at the engine boundary. If `from_dict` requires more bioen params to build (it likely does — read the `simulation.bioen.enabled=true` block in `config.py`), supply the minimal set; if that proves heavy, split into (a) a pure `canonicalize_config` assertion (always runnable) and (b) a guarded full-build assertion. Do NOT weaken the base-wins assertion.
+NOTE: `from_dict` with `simulation.bioen.enabled=true` builds fine on this minimal fixture — every bioen read (config.py:1867-1913) is `_species_float_optional`/`_species_int_optional` with a default and `__post_init__` does not re-validate them, so no extra bioen params are needed (verified). The pure `canonicalize_config` assertions lock base-wins even if a future engine change makes the full build heavier.
 
-- [ ] **Step 2–4: Run, verify it passes; if `from_dict` needs more params, add them (read the bioen block) or split the test as noted.**
+- [ ] **Step 2–4: Run, verify it passes.**
 
 Run: `.venv/bin/python -m pytest tests/test_config_migration_440.py -k bioen -q`
 
