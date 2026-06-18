@@ -16,6 +16,9 @@ SOURCE_DIR="$(cd "$(dirname "$0")" && pwd)"
 SHINY_ROOT="/srv/shiny-server"
 SHINY_PYTHON="/opt/micromamba/envs/shiny/bin/python3"
 SHINY_PIP="/opt/micromamba/envs/shiny/bin/pip"
+# Deploy runs pip as root (via sudo) into the shared env by design; --root-user-action=ignore
+# silences pip's "running as root" warning. Use "${PIP_INSTALL[@]} <pkgs>" for installs.
+PIP_INSTALL=("$SHINY_PIP" install --root-user-action=ignore)
 LINK_PATH="${SHINY_ROOT}/${APP_NAME}"
 SERVICE_NAME="osmose-shiny"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
@@ -165,6 +168,18 @@ fi
 chown -h shiny:shiny "$LINK_PATH" 2>/dev/null || true
 
 # --- Step 2: Install missing + version-floored Python dependencies ---
+# Clean up leftover "~"-prefixed dist-info dirs (broken partial installs from interrupted
+# pip upgrades, e.g. ~inycss2 / ~hinyswatch / ~ma). pip warns "Ignoring invalid distribution"
+# for each on every command; removing them is safe (the real packages are the unprefixed dirs).
+SHINY_SITE_PACKAGES="$("$SHINY_PYTHON" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
+if [[ -d "$SHINY_SITE_PACKAGES" ]]; then
+    LEFTOVER=$(find "$SHINY_SITE_PACKAGES" -maxdepth 1 -name '~*' 2>/dev/null)
+    if [[ -n "$LEFTOVER" ]]; then
+        info "Removing leftover partial-install dirs in $SHINY_SITE_PACKAGES"
+        find "$SHINY_SITE_PACKAGES" -maxdepth 1 -name '~*' -exec rm -rf {} +
+    fi
+fi
+
 # Presence-only check for packages we just need installed:
 MISSING_PKGS=()
 for pkg in pymoo SALib; do
@@ -174,7 +189,7 @@ for pkg in pymoo SALib; do
 done
 if [[ ${#MISSING_PKGS[@]} -gt 0 ]]; then
     info "Installing missing packages: ${MISSING_PKGS[*]}"
-    "$SHINY_PIP" install "${MISSING_PKGS[@]}" --quiet
+    "${PIP_INSTALL[@]}" "${MISSING_PKGS[@]}" --quiet
 fi
 
 # Version-floored packages: a presence check cannot enforce a minimum, so upgrade
@@ -182,11 +197,11 @@ fi
 # compile under shiny 1.6.3; shinywidgets floor raised. shiny_deckgl must match prod's
 # layer_legend_widget API (v1.9.2).
 info "Ensuring version-floored packages (cma, shinyswatch, shinywidgets, shiny_deckgl)..."
-"$SHINY_PIP" install --quiet --upgrade "cma>=4.0" "shinyswatch>=0.11" "shinywidgets>=0.7" "pyarrow>=14"
-"$SHINY_PIP" install --quiet --upgrade "shiny_deckgl @ git+https://github.com/razinkele/shiny_deckgl.git@v1.9.2"
+"${PIP_INSTALL[@]}" --quiet --upgrade "cma>=4.0" "shinyswatch>=0.11" "shinywidgets>=0.7" "pyarrow>=14"
+"${PIP_INSTALL[@]}" --quiet --upgrade "shiny_deckgl @ git+https://github.com/razinkele/shiny_deckgl.git@v1.9.2"
 
 # Fail loudly if any floor is unmet after install.
-"$SHINY_PIP" install --quiet "packaging" || true
+"${PIP_INSTALL[@]}" --quiet "packaging" || true
 "$SHINY_PYTHON" - <<'PYCHK'
 import sys
 from importlib.metadata import version
