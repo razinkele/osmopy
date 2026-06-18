@@ -77,9 +77,9 @@ _SCENARIO_COLORS = {
 
 def _build_cfg(scenario: str, n_years: int) -> dict[str, str]:
     cfg = OsmoseConfigReader().read(MASTER)
-    if cfg.get("simulation.bioen.enabled", "false").lower() != "true":
+    if cfg.get("module.bioenergetics.enabled", "false").lower() != "true":
         raise RuntimeError(
-            "Ev-OSMOSE traits require simulation.bioen.enabled=true; "
+            "Ev-OSMOSE traits require module.bioenergetics.enabled=true; "
             "baltic_ev is misconfigured."
         )
     cfg["simulation.time.nyear"] = str(n_years)
