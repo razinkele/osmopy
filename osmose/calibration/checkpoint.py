@@ -327,6 +327,27 @@ def read_checkpoint(path: Path) -> CheckpointReadResult:
             ),
         )
 
+    # Migrate any legacy (pre-4.4.0) config keys stored in the checkpoint to the
+    # NEW canonical keys the model now uses. Use a direct RENAMES_440 prefix map
+    # (NOT canonicalize_config, which stamps an osmose.version key that would leak
+    # into param_keys and trip the length-coupling invariants).
+    from osmose.config.aliases import RENAMES_440
+
+    def _migrate_param_key(k: str) -> str:
+        for old, new in RENAMES_440.items():
+            if k == old or k.startswith(old + "."):
+                return new + k[len(old) :]
+        return k
+
+    if "param_keys" in data:
+        data["param_keys"] = [_migrate_param_key(k) for k in data["param_keys"]]
+    if "best_parameters" in data:
+        data["best_parameters"] = {
+            _migrate_param_key(k): v for k, v in data["best_parameters"].items()
+        }
+    if "bounds_log10" in data:
+        data["bounds_log10"] = {_migrate_param_key(k): v for k, v in data["bounds_log10"].items()}
+
     try:
         ckpt = CalibrationCheckpoint(
             optimizer=data["optimizer"],

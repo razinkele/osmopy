@@ -366,3 +366,25 @@ def test_writer_roundtrip_of_canonical_config_is_faithful(tmp_path):
     assert back["module.bioenergetics.enabled"] == "true"
     assert back["mortality.additional.rate.sp0"] == "0.2"  # survives the canonical round-trip
     assert "mortality.natural.rate.sp0" not in back
+
+
+def test_calibration_java_cmd_reverse_maps_override_keys(tmp_path):
+    from unittest.mock import MagicMock, patch
+
+    from osmose.calibration.problem import FreeParameter
+    from tests.test_calibration_problem import _make_problem  # reuse the existing helper
+
+    problem = _make_problem(
+        tmp_path, free_params=[FreeParameter("species.maturity.eta.sp0", 0.1, 0.5)]
+    )
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=1)  # short-circuit after cmd build
+        try:
+            problem._run_single({"species.maturity.eta.sp0": 0.3}, run_id=0)
+        except Exception:
+            pass
+    cmd = mock_run.call_args[0][0]
+    p_args = [s for s in cmd if s.startswith("-P")]
+    assert any(s.startswith("-Pspecies.bioen.maturity.eta.sp0=") for s in p_args)  # reverse-mapped
+    assert not any("species.maturity.eta.sp0" in s for s in p_args)  # NEW key gone
+    assert not any(s.startswith("-Posmose.version=") for s in p_args)  # stamp skipped
