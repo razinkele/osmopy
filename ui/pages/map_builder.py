@@ -6,6 +6,7 @@ this module is the Shiny wiring only.
 
 from __future__ import annotations
 
+import re
 import tempfile
 from pathlib import Path
 
@@ -25,10 +26,22 @@ from shiny_deckgl import (  # type: ignore[import-untyped]
 )
 
 from osmose.logging import setup_logging
-from osmose.maps.builder import GridSpec, MapGrid, lonlat_to_cell, save_map, validate
+from osmose.maps.builder import (
+    GridSpec,
+    MapGrid,
+    from_csv_text,
+    lonlat_to_cell,
+    save_map,
+    validate,
+)
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.components.renderer_badge import renderer_badge
-from ui.pages.grid_helpers import _zoom_for_span, build_grid_layers, load_mask
+from ui.pages.grid_helpers import (
+    _find_config_file,
+    _zoom_for_span,
+    build_grid_layers,
+    load_mask,
+)
 from ui.state import get_theme_mode
 
 _log = setup_logging("osmose.map_builder")
@@ -50,6 +63,28 @@ def _species_choices(cfg: dict[str, str]) -> list[str]:
         name = cfg.get(f"species.name.sp{i}")
         if name:
             out.append(name)
+    return out
+
+
+def _existing_maps(cfg: dict[str, str]) -> list[tuple[str, str]]:
+    """Discover existing on-disk map files referenced by a config.
+
+    Returns ``(label, rel_path)`` pairs for movement distribution maps
+    (``movement.file.map{N}``, N=0,1,...) and, if set, the land mask
+    (``grid.mask.file``).  Returns ``[]`` if none are referenced.
+    """
+    out: list[tuple[str, str]] = []
+    n = 0
+    while True:
+        rel = cfg.get(f"movement.file.map{n}")
+        if not rel:
+            break
+        species = cfg.get(f"movement.species.map{n}", "?")
+        out.append((f"{species} — {rel} (map{n})", rel))
+        n += 1
+    mask = cfg.get("grid.mask.file")
+    if mask:
+        out.append((f"land mask — {mask}", mask))
     return out
 
 
@@ -128,7 +163,6 @@ def map_builder_server(input, output, session, state):
     base_mask: reactive.Value[np.ndarray | None] = reactive.Value(None)
     dirty: reactive.Value[int] = reactive.Value(0)
     staged: reactive.Value[dict | None] = reactive.Value(None)
-    applied_ids: reactive.Value[set] = reactive.Value(set())
 
     def _grid_spec() -> GridSpec | None:
         """Build a GridSpec from the active config, or None if no usable grid."""
@@ -158,7 +192,6 @@ def map_builder_server(input, output, session, state):
         base_mask.set(mask)
         grid_array.set(MapGrid.blank(grid, base_mask=mask))
         staged.set(None)
-        applied_ids.set(set())
         dirty.set(dirty.get() + 1)
 
     @render.ui
@@ -174,7 +207,24 @@ def map_builder_server(input, output, session, state):
 
     @render.ui
     def mb_load_existing():
-        return ui.div()
+        state.load_trigger.get()
+        with reactive.isolate():
+            cfg = state.config.get()
+        maps = _existing_maps(cfg) if cfg else []
+        if not maps:
+            return ui.p(
+                "No existing maps in this config.",
+                style="color: var(--osm-text-muted); font-size: 12px; margin: 0;",
+            )
+        return ui.div(
+            ui.input_select(
+                "mb_existing_choice",
+                None,
+                choices={rel: label for label, rel in maps},
+            ),
+            ui.input_action_button("mb_load_existing_btn", "Load into editor", class_="btn-sm"),
+            class_="d-flex flex-column gap-1",
+        )
 
     @render.ui
     def mb_staged_indicator():
@@ -232,6 +282,45 @@ def map_builder_server(input, output, session, state):
     @reactive.event(input.mb_new_blank, ignore_none=False)
     def _on_new_blank():
         _new_blank()
+
+    # --- load-existing trigger ---------------------------------------------
+    @reactive.effect
+    @reactive.event(input.mb_load_existing_btn)
+    def _on_load_existing():
+        grid = _grid_spec()
+        if grid is None:
+            ui.notification_show("Load a config with a usable grid first.", type="warning")
+            return
+        try:
+            rel = input.mb_existing_choice()
+        except SilentException:
+            rel = None
+        if not rel:
+            return
+        with reactive.isolate():
+            cfg = state.config.get()
+            cfg_dir = state.config_dir.get()
+        if cfg_dir is None:
+            ui.notification_show(
+                "Load the config from disk first so map files can be resolved.",
+                type="warning",
+            )
+            return
+        full_path = _find_config_file(rel, cfg_dir)
+        if full_path is None:
+            ui.notification_show(f"Map file not found: {rel}", type="error")
+            return
+        try:
+            mg = from_csv_text(full_path.read_text(), grid)
+        except (OSError, ValueError) as exc:
+            ui.notification_show(f"Failed to load map {rel}: {exc}", type="error")
+            return
+        # Re-derive base mask so the editor reflects the active config's land cells.
+        base_mask.set(load_mask(cfg, config_dir=cfg_dir))
+        grid_array.set(mg)
+        staged.set(None)
+        dirty.set(dirty.get() + 1)
+        ui.notification_show(f"Loaded {rel}.", type="message")
 
     # --- initial render + draw enablement, gated on deckgl_ready -----------
     @reactive.effect
@@ -410,22 +499,16 @@ def map_builder_server(input, output, session, state):
             mode = "polygon"
         mask_edit = mode == "mask"
         value = _paint_value()
-        done = set(applied_ids.get())
         painted = False
         for feature in fc.get("features", []):
-            fid = feature.get("id")
-            if fid in done:
-                continue
             geom = feature.get("geometry") or {}
             coords = geom.get("coordinates") or []
             if not coords:
                 continue
             ring = coords[0]
             mg.apply_polygon(grid, ring, value, mask_edit=mask_edit)
-            done.add(fid)
             painted = True
         await _map.delete_drawn_features(session)
-        applied_ids.set(set())
         staged.set(None)
         if painted:
             dirty.set(dirty.get() + 1)
@@ -566,8 +649,6 @@ def map_builder_server(input, output, session, state):
 
 def _warn_on_overlap(cfg: dict[str, str], appl: dict) -> None:
     """Warn if an existing movement map already covers the same species/overlapping steps."""
-    import re
-
     species = str(appl.get("species", ""))
     steps = set(appl.get("steps") or [])
     pat = re.compile(r"^movement\.species\.map(\d+)$")
