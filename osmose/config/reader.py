@@ -75,6 +75,7 @@ class OsmoseConfigReader:
         self.deprecated_keys: list[str] = []
         self.skipped_lines: int = 0
         self.diagnostics: list[ConfigDiagnostic] = []
+        self._source_version: str = ""
 
     def read(self, master_file: Path) -> dict[str, str]:
         """Recursively read a master config and all referenced sub-configs."""
@@ -82,11 +83,23 @@ class OsmoseConfigReader:
         self.key_case_map = {}
         self.deprecated_keys = []
         self.diagnostics = []
+        self._source_version = ""
         master_file = Path(master_file)
         _log.info("Reading config from %s", master_file)
         flat: dict[str, str] = {}
         self._read_recursive(master_file, flat)
         flat["_osmose.config.dir"] = str(master_file.parent.resolve())
+
+        from osmose.config.aliases import _migrate_larva_rate, _ndtperyear
+        from osmose.demo import _version_tuple
+
+        # Native-4.4.0 source stores larval rate as rate/year; divide back to the authored value.
+        # Gate on the RAW source version (canonicalize already overwrote flat's osmose.version to
+        # 4.4.0). Runs on the FULLY-MERGED dict (ndt + rate together) — never per-file.
+        if _version_tuple(self._source_version) >= _version_tuple("4.4.0"):
+            ndt = _ndtperyear(flat)
+            if ndt:
+                flat = _migrate_larva_rate(flat, 1.0 / ndt, warn_bydt=False)
         return flat
 
     def _read_recursive(
@@ -201,6 +214,10 @@ class OsmoseConfigReader:
         from osmose.config.aliases import canonicalize_config
 
         had_version = "osmose.version" in result
+        if not self._source_version and result.get("osmose.version"):
+            self._source_version = result[
+                "osmose.version"
+            ]  # raw, pre-canonicalize (master read first)
         canon, deprecated = canonicalize_config(result)
         # canonicalize_config stamps osmose.version=4.4.0; don't fabricate it on a
         # per-file dict that never declared one (the master file carries the version).

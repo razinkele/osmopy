@@ -406,3 +406,147 @@ def test_pr2_load_write_roundtrip_coherent(tmp_path):
     raw = master.read_text()
     assert "simulation.bioen.enabled" in raw  # reverse-mapped to old for the jar
     assert "module.bioenergetics.enabled" not in raw
+
+
+def test_larva_rate_scaled_to_per_year_on_4_4_0_write():
+    from osmose.config.aliases import to_target_keys
+
+    cfg = {"simulation.time.ndtperyear": "24", "mortality.additional.larva.rate.sp0": "2.145"}
+    out = to_target_keys(cfg, "4.4.0")
+    assert abs(float(out["mortality.additional.larva.rate.sp0"]) - 2.145 * 24) < 1e-6
+
+
+def test_larva_rate_value_migration_roundtrips_through_reader(tmp_path):
+    from osmose.config.aliases import to_target_keys
+    from osmose.config.reader import OsmoseConfigReader
+
+    cfg = {"simulation.time.ndtperyear": "24", "mortality.additional.larva.rate.sp0": "2.145"}
+    native_440 = to_target_keys(cfg, "4.4.0")  # ×24 + osmose.version=4.4.0
+    f = tmp_path / "osm_all-parameters.csv"
+    f.write_text("\n".join(f"{k} ; {v}" for k, v in native_440.items()) + "\n")
+    back = OsmoseConfigReader().read(f)  # master version 4.4.0 -> ÷24
+    assert abs(float(back["mortality.additional.larva.rate.sp0"]) - 2.145) < 1e-9
+
+
+def test_larva_rate_not_scaled_for_4_3_3_target():
+    from osmose.config.aliases import to_target_keys
+
+    cfg = {"simulation.time.ndtperyear": "24", "mortality.additional.larva.rate.sp0": "2.145"}
+    out = to_target_keys(cfg, "4.3.3")
+    assert out["mortality.additional.larva.rate.sp0"] == "2.145"
+
+
+def test_reader_does_not_scale_larva_for_4_3_x_source(tmp_path):
+    from osmose.config.reader import OsmoseConfigReader
+
+    f = tmp_path / "osm_all-parameters.csv"
+    f.write_text(
+        "osmose.version ; 4.3.3\nsimulation.time.ndtperyear ; 24\n"
+        "mortality.additional.larva.rate.sp0 ; 2.145\n"
+    )
+    back = OsmoseConfigReader().read(f)
+    assert back["mortality.additional.larva.rate.sp0"] == "2.145"
+
+
+def test_reader_does_not_scale_larva_when_version_absent(tmp_path):
+    from osmose.config.reader import OsmoseConfigReader
+
+    f = tmp_path / "osm_all-parameters.csv"
+    f.write_text("simulation.time.ndtperyear ; 24\nmortality.additional.larva.rate.sp0 ; 2.145\n")
+    back = OsmoseConfigReader().read(f)
+    assert back["mortality.additional.larva.rate.sp0"] == "2.145"
+
+
+def test_larva_rate_only_scalar_key_bydt_file_left_alone():
+    from osmose.config.aliases import to_target_keys
+
+    cfg = {
+        "simulation.time.ndtperyear": "24",
+        "mortality.additional.larva.rate.bydt.file.sp0": "larva_sp0.csv",
+        "mortality.additional.larva.rate.seasonality.file.sp0": "season_sp0.csv",
+    }
+    out = to_target_keys(cfg, "4.4.0")
+    assert out["mortality.additional.larva.rate.bydt.file.sp0"] == "larva_sp0.csv"
+    assert out["mortality.additional.larva.rate.seasonality.file.sp0"] == "season_sp0.csv"
+
+
+def test_larva_migration_skipped_when_ndt_absent():
+    from osmose.config.aliases import to_target_keys
+
+    cfg = {"mortality.additional.larva.rate.sp0": "2.145"}  # no ndtperyear
+    out = to_target_keys(cfg, "4.4.0")
+    assert out["mortality.additional.larva.rate.sp0"] == "2.145"
+
+
+def test_larva_migration_skipped_when_ndt_zero():
+    from osmose.config.aliases import to_target_keys
+
+    out = to_target_keys(
+        {"simulation.time.ndtperyear": "0", "mortality.additional.larva.rate.sp0": "2.145"}, "4.4.0"
+    )
+    assert out["mortality.additional.larva.rate.sp0"] == "2.145"  # not scaled by a bogus factor
+
+
+def test_semicolon_separated_larva_rate_scaled_componentwise():
+    from osmose.config.aliases import to_target_keys
+
+    cfg = {"simulation.time.ndtperyear": "10", "mortality.additional.larva.rate.sp0": "2.0;3.0"}
+    out = to_target_keys(cfg, "4.4.0")
+    assert out["mortality.additional.larva.rate.sp0"] == "20;30"
+
+
+def test_4_4_0_write_drops_lmax_growth_cap():
+    from osmose.config.aliases import to_target_keys
+
+    out = to_target_keys({"species.lmax.sp0": "120"}, "4.4.0")
+    assert "species.lmax.sp0" not in out  # 4.4.0 removed the lmax cap
+
+
+def test_4_4_0_write_drops_nonbioen_species_beta():
+    from osmose.config.aliases import to_target_keys
+
+    out = to_target_keys(
+        {"species.beta.sp0": "2.0", "module.bioenergetics.enabled": "false"}, "4.4.0"
+    )
+    assert "species.beta.sp0" not in out  # non-bioen beta would feed 4.4.0's predation exponent
+
+
+def test_4_4_0_write_keeps_species_beta_when_bioen_on():
+    from osmose.config.aliases import to_target_keys
+
+    out = to_target_keys(
+        {"species.beta.sp0": "2.0", "module.bioenergetics.enabled": "true"}, "4.4.0"
+    )
+    assert out["species.beta.sp0"] == "2.0"
+
+
+def test_4_3_3_write_does_not_drop_lmax_or_beta():
+    from osmose.config.aliases import to_target_keys
+
+    out = to_target_keys({"species.lmax.sp0": "120", "species.beta.sp0": "2.0"}, "4.3.3")
+    assert out["species.lmax.sp0"] == "120"  # 4.3.3 still honors lmax + beta
+    assert out["species.beta.sp0"] == "2.0"
+
+
+def test_4_4_0_write_never_emits_computepercent_legacy_false():
+    from osmose.config.aliases import to_target_keys
+
+    out = to_target_keys({"module.bioenergetics.enabled": "true"}, "4.4.0")
+    assert out.get("simulation.resources.computepercent.legacy") != "false"
+
+
+def test_to_target_keys_snapshot_version_is_native():
+    from osmose.config.aliases import to_target_keys
+
+    # A 4.4.x-family target (incl. a -SNAPSHOT suffix) must take the native (identity) branch,
+    # NOT the reverse branch that would corrupt a native config back to 4.3.x key names.
+    out = to_target_keys({"module.bioenergetics.enabled": "true"}, "4.4.0-SNAPSHOT")
+    assert "simulation.bioen.enabled" not in out  # NOT reverse-mapped
+    assert out["module.bioenergetics.enabled"] == "true"
+
+
+def test_to_target_keys_4_4_1_is_native():
+    from osmose.config.aliases import to_target_keys
+
+    out = to_target_keys({"module.bioenergetics.enabled": "true"}, "4.4.1")
+    assert "simulation.bioen.enabled" not in out
