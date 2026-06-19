@@ -6,17 +6,26 @@ this module is the Shiny wiring only.
 
 from __future__ import annotations
 
+import numpy as np
 from shiny import reactive, render, ui
 
 from shiny_deckgl import (  # type: ignore[import-untyped]
+    CARTO_DARK,
     CARTO_POSITRON,
     MapWidget,
+    compass_widget,
+    fullscreen_widget,
+    polygon_layer,
+    scale_widget,
+    zoom_widget,
 )
 
 from osmose.logging import setup_logging
-from osmose.maps.builder import GridSpec
+from osmose.maps.builder import GridSpec, MapGrid
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.components.renderer_badge import renderer_badge
+from ui.pages.grid_helpers import _zoom_for_span, build_grid_layers, load_mask
+from ui.state import get_theme_mode
 
 _log = setup_logging("osmose.map_builder")
 
@@ -90,6 +99,17 @@ def map_builder_ui():
 
 
 def map_builder_server(input, output, session, state):
+    _map = MapWidget(
+        f"{_MAP_ID}",
+        view_state=_DEFAULT_VIEW_STATE,
+        style=CARTO_POSITRON,
+    )
+
+    # --- editing state -----------------------------------------------------
+    grid_array: reactive.Value[MapGrid | None] = reactive.Value(None)
+    base_mask: reactive.Value[np.ndarray | None] = reactive.Value(None)
+    dirty: reactive.Value[int] = reactive.Value(0)
+
     def _grid_spec() -> GridSpec | None:
         """Build a GridSpec from the active config, or None if no usable grid."""
         with reactive.isolate():
@@ -100,6 +120,18 @@ def map_builder_server(input, output, session, state):
             return GridSpec.from_config(cfg)
         except (KeyError, ValueError, TypeError):
             return None
+
+    def _new_blank() -> None:
+        grid = _grid_spec()
+        if grid is None:
+            return
+        with reactive.isolate():
+            cfg = state.config.get()
+            cfg_dir = state.config_dir.get()
+        mask = load_mask(cfg, config_dir=cfg_dir)
+        base_mask.set(mask)
+        grid_array.set(MapGrid.blank(grid, base_mask=mask))
+        dirty.set(dirty.get() + 1)
 
     @render.ui
     def mb_hint():
@@ -123,3 +155,106 @@ def map_builder_server(input, output, session, state):
     @render.ui
     def mb_applicability():
         return ui.div()
+
+    # --- new-blank trigger -------------------------------------------------
+    @reactive.effect
+    @reactive.event(input.mb_new_blank, ignore_none=False)
+    def _on_new_blank():
+        _new_blank()
+
+    # --- initial render, gated on deckgl_ready -----------------------------
+    @reactive.effect
+    @reactive.event(input.deckgl_ready)
+    async def _on_deckgl_ready():
+        if grid_array.get() is None:
+            _new_blank()
+        await _render_full()
+
+    def _view_state(grid: GridSpec) -> dict:
+        center_lat = (grid.upleft_lat + grid.lowright_lat) / 2
+        center_lon = (grid.upleft_lon + grid.lowright_lon) / 2
+        span = max(
+            abs(grid.upleft_lat - grid.lowright_lat),
+            abs(grid.lowright_lon - grid.upleft_lon),
+        )
+        return {
+            "latitude": center_lat,
+            "longitude": center_lon,
+            "zoom": _zoom_for_span(span),
+        }
+
+    def _value_cells_layer(mg: MapGrid, grid: GridSpec) -> dict | None:
+        """Value-colored cells layer for painted (non-zero, non-land) cells."""
+        arr = mg.array
+        rs, cs = np.where((arr != 0) & (arr != -99))
+        if len(rs) == 0:
+            return None
+        vals = arr[rs, cs]
+        vmin, vmax = float(vals.min()), float(vals.max())
+        vrange = vmax - vmin if vmax != vmin else 1.0
+        cells = []
+        for i in range(len(rs)):
+            r, c = int(rs[i]), int(cs[i])
+            v = float(vals[i])
+            t = (v - vmin) / vrange
+            r_ch = int(np.clip(68 + 187 * t * t, 0, 255))
+            g_ch = int(np.clip(1 + 209 * t, 0, 255))
+            b_ch = int(np.clip(84 + 86 * t - 170 * t * t, 0, 255))
+            a_ch = int(np.clip(150 + 80 * t, 0, 255))
+            cells.append(
+                {
+                    "polygon": grid.cell_polygon(r, c),
+                    "value": v,
+                    "fill": [r_ch, g_ch, b_ch, a_ch],
+                }
+            )
+        return polygon_layer(
+            "mb-value-cells",
+            data=cells,
+            getPolygon="@@=d.polygon",
+            getFillColor="@@=d.fill",
+            getLineColor=[0, 0, 0, 0],
+            filled=True,
+            stroked=False,
+            pickable=True,
+        )
+
+    def _build_layers(mg: MapGrid, grid: GridSpec, is_dark: bool) -> list[dict]:
+        layers = build_grid_layers(
+            grid.upleft_lat,
+            grid.upleft_lon,
+            grid.lowright_lat,
+            grid.lowright_lon,
+            grid.nlon,
+            grid.nlat,
+            is_dark,
+            base_mask.get(),
+        )
+        cells_layer = _value_cells_layer(mg, grid)
+        if cells_layer is not None:
+            layers.append(cells_layer)
+        return layers
+
+    async def _render_full() -> None:
+        grid = _grid_spec()
+        mg = grid_array.get()
+        if grid is None or mg is None:
+            return
+        is_dark = get_theme_mode(input) == "dark"
+        style = CARTO_DARK if is_dark else CARTO_POSITRON
+        if style != _map.style:
+            _map.style = style
+            await _map.set_style(session, style)
+        widgets = [
+            fullscreen_widget(placement="top-left"),
+            zoom_widget(placement="top-right"),
+            compass_widget(placement="top-right"),
+            scale_widget(placement="bottom-right"),
+        ]
+        await _map.update(
+            session,
+            layers=_build_layers(mg, grid, is_dark),
+            view_state=_view_state(grid),
+            transition_duration=600,
+            widgets=widgets,
+        )
