@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 from shiny import reactive, render, ui
+from shiny.types import SilentException
 
 from shiny_deckgl import (  # type: ignore[import-untyped]
     CARTO_DARK,
@@ -21,7 +22,7 @@ from shiny_deckgl import (  # type: ignore[import-untyped]
 )
 
 from osmose.logging import setup_logging
-from osmose.maps.builder import GridSpec, MapGrid
+from osmose.maps.builder import GridSpec, MapGrid, lonlat_to_cell
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.components.renderer_badge import renderer_badge
 from ui.pages.grid_helpers import _zoom_for_span, build_grid_layers, load_mask
@@ -121,6 +122,12 @@ def map_builder_server(input, output, session, state):
         except (KeyError, ValueError, TypeError):
             return None
 
+    def _paint_value() -> float:
+        try:
+            return float(input.paint_value() or 0)
+        except (SilentException, ValueError, TypeError):
+            return 0.0
+
     def _new_blank() -> None:
         grid = _grid_spec()
         if grid is None:
@@ -162,13 +169,19 @@ def map_builder_server(input, output, session, state):
     def _on_new_blank():
         _new_blank()
 
-    # --- initial render, gated on deckgl_ready -----------------------------
+    # --- initial render + draw enablement, gated on deckgl_ready -----------
     @reactive.effect
     @reactive.event(input.deckgl_ready)
     async def _on_deckgl_ready():
         if grid_array.get() is None:
             _new_blank()
         await _render_full()
+        try:
+            mode = input.tool_mode()
+        except SilentException:
+            mode = "polygon"
+        if mode == "polygon":
+            await _map.enable_draw(session, modes=["draw_polygon"], default_mode="draw_polygon")
 
     def _view_state(grid: GridSpec) -> dict:
         center_lat = (grid.upleft_lat + grid.lowright_lat) / 2
@@ -258,3 +271,52 @@ def map_builder_server(input, output, session, state):
             transition_duration=600,
             widgets=widgets,
         )
+
+    # --- tool-mode toggle: enable polygon draw only in polygon mode --------
+    @reactive.effect
+    @reactive.event(input.tool_mode)
+    async def _on_tool_mode():
+        try:
+            mode = input.tool_mode()
+        except SilentException:
+            return
+        if mode == "polygon":
+            await _map.enable_draw(session, modes=["draw_polygon"], default_mode="draw_polygon")
+        else:
+            await _map.disable_draw(session)
+
+    # --- single-cell paint via map click (brush/eraser/mask) ---------------
+    @reactive.effect
+    @reactive.event(getattr(input, f"{_MAP_ID}_map_click"))
+    def _on_map_click():
+        try:
+            mode = input.tool_mode()
+        except SilentException:
+            return
+        if mode not in ("brush", "eraser", "mask"):
+            return
+        click = getattr(input, f"{_MAP_ID}_map_click")()
+        if not isinstance(click, dict):
+            return
+        lon = click.get("longitude")
+        lat = click.get("latitude")
+        if lon is None or lat is None:
+            return
+        grid = _grid_spec()
+        mg = grid_array.get()
+        if grid is None or mg is None:
+            return
+        cell = lonlat_to_cell(grid, float(lon), float(lat))
+        if cell is None:
+            return
+        r, c = cell
+        # Block painting on a -99 (land) cell unless we are in mask mode.
+        if mode != "mask" and mg.array[r, c] == -99:
+            return
+        if mode == "brush":
+            mg.apply_cells([cell], _paint_value())
+        elif mode == "eraser":
+            mg.erase([cell])
+        elif mode == "mask":
+            mg.set_mask([cell], True)
+        dirty.set(dirty.get() + 1)
