@@ -153,3 +153,19 @@ def from_csv_text(text: str, grid: GridSpec) -> "MapGrid":
             f"CSV dims {len(data)}x{len(data[0]) if data else 0} != grid {grid.nlat}x{grid.nlon}"
         )
     return MapGrid(np.flipud(np.array(data, dtype=float)))
+
+
+def validate(
+    mg: "MapGrid", grid: GridSpec, *, map_type: str, base_mask: np.ndarray | None
+) -> list[str]:
+    problems: list[str] = []
+    if mg.array.shape != (grid.nlat, grid.nlon):
+        problems.append(f"dimension mismatch: {mg.array.shape} != ({grid.nlat}, {grid.nlon})")
+        return problems
+    if base_mask is not None and map_type in ("distribution", "zone"):
+        on_land = (mg.array != -99) & (mg.array != 0) & (base_mask == -99)
+        if on_land.any():
+            problems.append(
+                f"{int(on_land.sum())} cell(s) painted on base-mask land (engine treats as absent)"
+            )
+    return problems

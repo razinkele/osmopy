@@ -147,3 +147,19 @@ def test_from_csv_text_roundtrip_and_dim_validation():
     assert np.array_equal(back.array, mg.array)
     with pytest.raises(ValueError):
         from_csv_text("1;2;3;4\n1;2;3;4\n", g)
+
+
+def test_validate_dim_and_mask_and_land_warning():
+    from osmose.maps.builder import GridSpec, MapGrid, validate
+
+    g = GridSpec(4, 4, 4.0, 0.0, 0.0, 4.0)
+    base = np.zeros((4, 4))
+    base[0, 0] = -99
+    mg = MapGrid.blank(g, base_mask=base)
+    mg.apply_cells([(0, 1)], 1.0)
+    assert validate(mg, g, map_type="distribution", base_mask=base) == []
+    mg.array[0, 0] = 1.0
+    probs = validate(mg, g, map_type="distribution", base_mask=base)
+    assert any("land" in p.lower() for p in probs)
+    bad = MapGrid(np.zeros((3, 3)))
+    assert any("dim" in p.lower() for p in validate(bad, g, map_type="mask", base_mask=base))
