@@ -205,3 +205,36 @@ def test_wire_steps_defaults_to_all_when_unspecified():
         applicability={"species": "sole"},
     )
     assert out["movement.steps.map0"] == ";".join(str(i) for i in range(12))
+
+
+def test_save_map_writes_csv_and_wires(tmp_path):
+    from osmose.maps.builder import GridSpec, MapGrid, save_map
+
+    g = GridSpec(3, 2, 2.0, 0.0, 0.0, 3.0)
+    mg = MapGrid.blank(g)
+    mg.apply_cells([(0, 0)], 1.0)
+    cfg = {
+        "grid.nlon": "3",
+        "grid.nlat": "2",
+        "grid.upleft.lat": "2",
+        "grid.upleft.lon": "0",
+        "grid.lowright.lat": "0",
+        "grid.lowright.lon": "3",
+        "simulation.time.ndtperyear": "2",
+    }
+    new_cfg, summary, path = save_map(
+        mg, g, "distribution", "herring", cfg, tmp_path, applicability={"species": "herring"}
+    )
+    assert path == tmp_path / "maps" / "herring.csv" and path.exists()
+    assert new_cfg["movement.file.map0"] == "maps/herring.csv"
+
+
+def test_save_map_rejects_bad_filename(tmp_path):
+    from osmose.maps.builder import GridSpec, MapGrid, save_map
+    import pytest
+
+    g = GridSpec(3, 2, 2.0, 0.0, 0.0, 3.0)
+    mg = MapGrid.blank(g)
+    for bad in ["", "../evil", "a/b"]:
+        with pytest.raises(ValueError):
+            save_map(mg, g, "zone", bad, {}, tmp_path)

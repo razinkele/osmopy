@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
@@ -210,3 +211,25 @@ def wire_map_into_config(config, map_type, rel_path, *, applicability=None):
     if "lastyear" in appl:
         out[f"movement.lastyear.map{n}"] = str(int(appl["lastyear"]))
     return out, f"Registered movement.*.map{n} for species '{appl['species']}' → {rel_path}"
+
+
+def _sanitize_filename(name: str) -> str:
+    name = (name or "").strip()
+    if not name or "/" in name or "\\" in name or ".." in name:
+        raise ValueError(f"invalid map filename: {name!r}")
+    if not name.endswith(".csv"):
+        name = name + ".csv"
+    if name == ".csv":
+        raise ValueError("empty map filename")
+    return name
+
+
+def save_map(mg, grid, map_type, filename, config, config_dir, *, applicability=None):
+    fname = _sanitize_filename(filename)
+    subdir = "grid" if map_type == "mask" else "maps"
+    rel_path = f"{subdir}/{fname}"
+    dest = Path(config_dir) / subdir / fname
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(to_csv_text(mg))
+    new_cfg, summary = wire_map_into_config(config, map_type, rel_path, applicability=applicability)
+    return new_cfg, summary, dest
