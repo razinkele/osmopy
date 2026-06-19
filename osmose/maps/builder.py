@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 
@@ -169,3 +170,43 @@ def validate(
                 f"{int(on_land.sum())} cell(s) painted on base-mask land (engine treats as absent)"
             )
     return problems
+
+
+def _next_map_index(config: dict[str, str]) -> int:
+    used = set()
+    pat = re.compile(r"^movement\.[a-z]+\.map(\d+)$")
+    for k in config:
+        m = pat.match(k)
+        if m:
+            used.add(int(m.group(1)))
+    i = 0
+    while i in used:
+        i += 1
+    return i
+
+
+def wire_map_into_config(config, map_type, rel_path, *, applicability=None):
+    out = dict(config)
+    if map_type == "mask":
+        out["grid.mask.file"] = rel_path
+        return out, f"Set grid.mask.file = {rel_path}"
+    if map_type == "zone":
+        return out, f"Wrote zone map {rel_path} (not wired into the config)"
+    appl = applicability or {}
+    n = _next_map_index(out)
+    out[f"movement.species.map{n}"] = str(appl["species"])
+    out[f"movement.file.map{n}"] = rel_path
+    ndt = int(float(out.get("simulation.time.ndtperyear", "0") or "0"))
+    steps = appl.get("steps")
+    if not steps:
+        steps = list(range(ndt)) if ndt else []
+    out[f"movement.steps.map{n}"] = ";".join(str(int(s)) for s in steps)
+    if "initialage" in appl:
+        out[f"movement.initialage.map{n}"] = _fmt(float(appl["initialage"]))
+    if "lastage" in appl:
+        out[f"movement.lastage.map{n}"] = _fmt(float(appl["lastage"]))
+    if "initialyear" in appl:
+        out[f"movement.initialyear.map{n}"] = str(int(appl["initialyear"]))
+    if "lastyear" in appl:
+        out[f"movement.lastyear.map{n}"] = str(int(appl["lastyear"]))
+    return out, f"Registered movement.*.map{n} for species '{appl['species']}' → {rel_path}"

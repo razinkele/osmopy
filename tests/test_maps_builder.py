@@ -163,3 +163,45 @@ def test_validate_dim_and_mask_and_land_warning():
     assert any("land" in p.lower() for p in probs)
     bad = MapGrid(np.zeros((3, 3)))
     assert any("dim" in p.lower() for p in validate(bad, g, map_type="mask", base_mask=base))
+
+
+def test_wire_distribution_real_keys_and_next_index():
+    from osmose.maps.builder import wire_map_into_config
+
+    cfg = {"movement.species.map0": "cod", "movement.file.map0": "maps/cod.csv"}
+    appl = {
+        "species": "herring",
+        "initialage": 0.0,
+        "lastage": 5.0,
+        "steps": [0, 1, 2],
+        "initialyear": 0,
+        "lastyear": 9,
+    }
+    out, summary = wire_map_into_config(cfg, "distribution", "maps/herring.csv", applicability=appl)
+    assert out["movement.species.map1"] == "herring"
+    assert out["movement.file.map1"] == "maps/herring.csv"
+    assert out["movement.steps.map1"] == "0;1;2"
+    assert out["movement.initialage.map1"] == "0" and out["movement.lastage.map1"] == "5"
+    assert out["movement.initialyear.map1"] == "0" and out["movement.lastyear.map1"] == "9"
+    assert "movement.map1.species" not in out
+
+
+def test_wire_mask_and_zone():
+    from osmose.maps.builder import wire_map_into_config
+
+    out, _ = wire_map_into_config({}, "mask", "grid/mask.csv")
+    assert out["grid.mask.file"] == "grid/mask.csv"
+    out2, _ = wire_map_into_config({"a": "b"}, "zone", "maps/z.csv")
+    assert out2 == {"a": "b"}
+
+
+def test_wire_steps_defaults_to_all_when_unspecified():
+    from osmose.maps.builder import wire_map_into_config
+
+    out, _ = wire_map_into_config(
+        {"simulation.time.ndtperyear": "12"},
+        "distribution",
+        "maps/x.csv",
+        applicability={"species": "sole"},
+    )
+    assert out["movement.steps.map0"] == ";".join(str(i) for i in range(12))
