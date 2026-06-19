@@ -6,6 +6,9 @@ this module is the Shiny wiring only.
 
 from __future__ import annotations
 
+import tempfile
+from pathlib import Path
+
 import numpy as np
 from shiny import reactive, render, ui
 from shiny.types import SilentException
@@ -22,7 +25,7 @@ from shiny_deckgl import (  # type: ignore[import-untyped]
 )
 
 from osmose.logging import setup_logging
-from osmose.maps.builder import GridSpec, MapGrid, lonlat_to_cell
+from osmose.maps.builder import GridSpec, MapGrid, lonlat_to_cell, save_map, validate
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.components.renderer_badge import renderer_badge
 from ui.pages.grid_helpers import _zoom_for_span, build_grid_layers, load_mask
@@ -34,6 +37,20 @@ _DEFAULT_VIEW_STATE = {"latitude": 46.0, "longitude": -4.5, "zoom": 5, "pitch": 
 
 # MapWidget id — determines input names input.mb_map_map_click / input.mb_map_drawn_features.
 _MAP_ID = "mb_map"
+
+
+def _species_choices(cfg: dict[str, str]) -> list[str]:
+    """Return the ordered list of species names from a config dict."""
+    try:
+        n = int(float(cfg.get("simulation.nspecies", "0") or "0"))
+    except (ValueError, TypeError):
+        return []
+    out: list[str] = []
+    for i in range(n):
+        name = cfg.get(f"species.name.sp{i}")
+        if name:
+            out.append(name)
+    return out
 
 
 def map_builder_ui():
@@ -172,7 +189,43 @@ def map_builder_server(input, output, session, state):
 
     @render.ui
     def mb_applicability():
-        return ui.div()
+        """Distribution applicability form — only shown for distribution maps."""
+        try:
+            mtype = input.map_type()
+        except SilentException:
+            mtype = "distribution"
+        if mtype != "distribution":
+            return ui.div()
+
+        with reactive.isolate():
+            cfg = state.config.get()
+        species = _species_choices(cfg)
+        ndt = 0
+        try:
+            ndt = int(float(cfg.get("simulation.time.ndtperyear", "0") or "0"))
+        except (ValueError, TypeError):
+            ndt = 0
+        all_steps = ";".join(str(i) for i in range(ndt)) if ndt else ""
+
+        return ui.div(
+            ui.input_select(
+                "mb_species",
+                "Species",
+                choices={s: s for s in species} if species else {},
+            ),
+            ui.layout_columns(
+                ui.input_numeric("mb_initialage", "Initial age", value=0, min=0),
+                ui.input_numeric("mb_lastage", "Last age", value=None, min=0),  # type: ignore[arg-type]
+                col_widths=[6, 6],
+            ),
+            ui.input_text("mb_steps", "Season steps", value=all_steps, placeholder="all"),
+            ui.layout_columns(
+                ui.input_numeric("mb_initialyear", "Initial year", value=None, min=0),  # type: ignore[arg-type]
+                ui.input_numeric("mb_lastyear", "Last year", value=None, min=0),  # type: ignore[arg-type]
+                col_widths=[6, 6],
+            ),
+            class_="osm-applicability-form",
+        )
 
     # --- new-blank trigger -------------------------------------------------
     @reactive.effect
@@ -397,3 +450,139 @@ def map_builder_server(input, output, session, state):
                 stroked=False,
             )
         await _map.partial_update(session, layers=[cells_layer])
+
+    # --- save --------------------------------------------------------------
+    @reactive.effect
+    @reactive.event(input.mb_save)
+    def _on_save():
+        grid = _grid_spec()
+        mg = grid_array.get()
+        if grid is None or mg is None:
+            ui.notification_show("No map to save — start a new blank map first.", type="warning")
+            return
+        try:
+            mtype = input.map_type()
+        except SilentException:
+            mtype = "distribution"
+        try:
+            filename = (input.mb_filename() or "").strip()
+        except SilentException:
+            filename = ""
+        if not filename:
+            ui.notification_show("Enter a filename.", type="warning")
+            return
+
+        with reactive.isolate():
+            cfg = state.config.get()
+            cfg_dir = state.config_dir.get()
+        if cfg_dir is None:
+            tmp = tempfile.mkdtemp(prefix="osmose_maps_")
+            cfg_dir = Path(tmp)
+            state.config_dir.set(cfg_dir)
+            ui.notification_show(
+                f"No config dir set — saving into a session temp dir: {cfg_dir}",
+                type="message",
+            )
+
+        applicability: dict | None = None
+        if mtype == "distribution":
+            try:
+                species = input.mb_species()
+            except SilentException:
+                species = None
+            if not species:
+                ui.notification_show("Select a species for a distribution map.", type="warning")
+                return
+            applicability = {"species": species}
+            try:
+                applicability["initialage"] = float(input.mb_initialage() or 0)
+            except (SilentException, ValueError, TypeError):
+                pass
+            try:
+                lastage = input.mb_lastage()
+                if lastage is not None:
+                    applicability["lastage"] = float(lastage)
+            except (SilentException, ValueError, TypeError):
+                pass
+            try:
+                steps_txt = (input.mb_steps() or "").strip()
+                if steps_txt:
+                    applicability["steps"] = [
+                        int(s) for s in steps_txt.replace(",", ";").split(";") if s.strip()
+                    ]
+            except (SilentException, ValueError, TypeError):
+                pass
+            try:
+                iy = input.mb_initialyear()
+                if iy is not None:
+                    applicability["initialyear"] = int(iy)
+            except (SilentException, ValueError, TypeError):
+                pass
+            try:
+                ly = input.mb_lastyear()
+                if ly is not None:
+                    applicability["lastyear"] = int(ly)
+            except (SilentException, ValueError, TypeError):
+                pass
+
+        # Validate — warn but DON'T block on the land-overlap warning.
+        problems = validate(mg, grid, map_type=mtype, base_mask=base_mask.get())
+        for p in problems:
+            ui.notification_show(f"Warning: {p}", type="warning")
+
+        # Confirm-style warning on overwrite (we proceed but flag it).
+        subdir = "grid" if mtype == "mask" else "maps"
+        dest = (
+            Path(cfg_dir) / subdir / (filename if filename.endswith(".csv") else filename + ".csv")
+        )
+        if dest.exists():
+            ui.notification_show(f"Overwriting existing file {dest.name}.", type="warning")
+
+        # Warn on duplicate species/age/step overlap for distribution maps.
+        if applicability is not None:
+            _warn_on_overlap(cfg, applicability)
+
+        try:
+            new_cfg, summary, dest_path = save_map(
+                mg,
+                grid,
+                mtype,
+                filename,
+                cfg,
+                cfg_dir,
+                applicability=applicability,
+            )
+        except (ValueError, OSError) as exc:
+            ui.notification_show(f"Save failed: {exc}", type="error")
+            return
+
+        # Apply the new config via the real state API.
+        with reactive.isolate():
+            case_map = dict(state.key_case_map.get())
+        state.load_config(new_cfg, case_map=case_map)
+        state.dirty.set(True)
+        ui.notification_show(f"{summary} → {dest_path}", type="message")
+
+
+def _warn_on_overlap(cfg: dict[str, str], appl: dict) -> None:
+    """Warn if an existing movement map already covers the same species/overlapping steps."""
+    import re
+
+    species = str(appl.get("species", ""))
+    steps = set(appl.get("steps") or [])
+    pat = re.compile(r"^movement\.species\.map(\d+)$")
+    for k, v in cfg.items():
+        m = pat.match(k)
+        if not m or v != species:
+            continue
+        n = m.group(1)
+        existing = cfg.get(f"movement.steps.map{n}", "")
+        existing_steps = {
+            int(s) for s in existing.replace(",", ";").split(";") if s.strip().isdigit()
+        }
+        if steps and existing_steps and (steps & existing_steps):
+            ui.notification_show(
+                f"map{n} already covers species '{species}' on overlapping steps.",
+                type="warning",
+            )
+            return

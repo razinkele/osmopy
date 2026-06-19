@@ -10,3 +10,10 @@ def test_map_builder_imports_and_registered():
     app_src = (Path(__file__).resolve().parent.parent / "app.py").read_text()
     assert "map_builder_ui" in app_src and 'value="map_builder"' in app_src
     assert "map_builder_server" in app_src and "'map_builder'" in app_src  # nav-order array
+
+
+def test_species_choices_from_config():
+    from ui.pages.map_builder import _species_choices
+
+    cfg = {"simulation.nspecies": "2", "species.name.sp0": "cod", "species.name.sp1": "herring"}
+    assert _species_choices(cfg) == ["cod", "herring"]
