@@ -79,6 +79,21 @@ def _migrate_larva_rate(cfg: dict[str, str], factor: float, *, warn_bydt: bool) 
     return result
 
 
+def _drop_4_4_0_removed_keys(cfg: dict[str, str]) -> dict[str, str]:
+    """Drop keys that 4.4.0 removed or reinterprets, to preserve legacy behavior on write."""
+    result = dict(cfg)
+    # 4.4.0 removed the species.lmax growth cap (no clean migration; documented limitation).
+    for key in [k for k in result if k == "species.lmax" or k.startswith("species.lmax.")]:
+        del result[key]
+    # 4.4.0 species.beta feeds the predation allometric exponent (default 1 == legacy). 4.3.3 read
+    # it only under bioen; for a non-bioen config it must not be emitted.
+    bioen_on = str(result.get("module.bioenergetics.enabled", "false")).lower() == "true"
+    if not bioen_on:
+        for key in [k for k in result if k == "species.beta" or k.startswith("species.beta.")]:
+            del result[key]
+    return result
+
+
 # old_prefix -> new_prefix. Ported VERBATIM from Releases.java $15 (v4.4.0), verified Step 1.
 # The migrate_config applier matches `k == old or k.startswith(old + ".")`, so indexed
 # `...spN` keys are caught via the `.` separator (prefixes deliberately stop before `.sp`).
@@ -151,6 +166,7 @@ def to_target_keys(cfg: dict[str, str], target_version: str = "4.3.3") -> dict[s
     """
     result = dict(cfg)
     if target_version == "4.4.0":
+        result = _drop_4_4_0_removed_keys(result)
         # _ndtperyear() or 1.0 is a safe placeholder: when ndt is falsy the helper
         # early-returns (warns, no scaling) BEFORE the factor is ever applied.
         result = _migrate_larva_rate(result, _ndtperyear(result) or 1.0, warn_bydt=True)

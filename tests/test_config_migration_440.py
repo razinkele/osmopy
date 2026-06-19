@@ -493,3 +493,43 @@ def test_semicolon_separated_larva_rate_scaled_componentwise():
     cfg = {"simulation.time.ndtperyear": "10", "mortality.additional.larva.rate.sp0": "2.0;3.0"}
     out = to_target_keys(cfg, "4.4.0")
     assert out["mortality.additional.larva.rate.sp0"] == "20;30"
+
+
+def test_4_4_0_write_drops_lmax_growth_cap():
+    from osmose.config.aliases import to_target_keys
+
+    out = to_target_keys({"species.lmax.sp0": "120"}, "4.4.0")
+    assert "species.lmax.sp0" not in out  # 4.4.0 removed the lmax cap
+
+
+def test_4_4_0_write_drops_nonbioen_species_beta():
+    from osmose.config.aliases import to_target_keys
+
+    out = to_target_keys(
+        {"species.beta.sp0": "2.0", "module.bioenergetics.enabled": "false"}, "4.4.0"
+    )
+    assert "species.beta.sp0" not in out  # non-bioen beta would feed 4.4.0's predation exponent
+
+
+def test_4_4_0_write_keeps_species_beta_when_bioen_on():
+    from osmose.config.aliases import to_target_keys
+
+    out = to_target_keys(
+        {"species.beta.sp0": "2.0", "module.bioenergetics.enabled": "true"}, "4.4.0"
+    )
+    assert out["species.beta.sp0"] == "2.0"
+
+
+def test_4_3_3_write_does_not_drop_lmax_or_beta():
+    from osmose.config.aliases import to_target_keys
+
+    out = to_target_keys({"species.lmax.sp0": "120", "species.beta.sp0": "2.0"}, "4.3.3")
+    assert out["species.lmax.sp0"] == "120"  # 4.3.3 still honors lmax + beta
+    assert out["species.beta.sp0"] == "2.0"
+
+
+def test_4_4_0_write_never_emits_computepercent_legacy_false():
+    from osmose.config.aliases import to_target_keys
+
+    out = to_target_keys({"module.bioenergetics.enabled": "true"}, "4.4.0")
+    assert out.get("simulation.resources.computepercent.legacy") != "false"
