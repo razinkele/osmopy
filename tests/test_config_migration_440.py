@@ -406,3 +406,90 @@ def test_pr2_load_write_roundtrip_coherent(tmp_path):
     raw = master.read_text()
     assert "simulation.bioen.enabled" in raw  # reverse-mapped to old for the jar
     assert "module.bioenergetics.enabled" not in raw
+
+
+def test_larva_rate_scaled_to_per_year_on_4_4_0_write():
+    from osmose.config.aliases import to_target_keys
+
+    cfg = {"simulation.time.ndtperyear": "24", "mortality.additional.larva.rate.sp0": "2.145"}
+    out = to_target_keys(cfg, "4.4.0")
+    assert abs(float(out["mortality.additional.larva.rate.sp0"]) - 2.145 * 24) < 1e-6
+
+
+def test_larva_rate_value_migration_roundtrips_through_reader(tmp_path):
+    from osmose.config.aliases import to_target_keys
+    from osmose.config.reader import OsmoseConfigReader
+
+    cfg = {"simulation.time.ndtperyear": "24", "mortality.additional.larva.rate.sp0": "2.145"}
+    native_440 = to_target_keys(cfg, "4.4.0")  # ×24 + osmose.version=4.4.0
+    f = tmp_path / "osm_all-parameters.csv"
+    f.write_text("\n".join(f"{k} ; {v}" for k, v in native_440.items()) + "\n")
+    back = OsmoseConfigReader().read(f)  # master version 4.4.0 -> ÷24
+    assert abs(float(back["mortality.additional.larva.rate.sp0"]) - 2.145) < 1e-9
+
+
+def test_larva_rate_not_scaled_for_4_3_3_target():
+    from osmose.config.aliases import to_target_keys
+
+    cfg = {"simulation.time.ndtperyear": "24", "mortality.additional.larva.rate.sp0": "2.145"}
+    out = to_target_keys(cfg, "4.3.3")
+    assert out["mortality.additional.larva.rate.sp0"] == "2.145"
+
+
+def test_reader_does_not_scale_larva_for_4_3_x_source(tmp_path):
+    from osmose.config.reader import OsmoseConfigReader
+
+    f = tmp_path / "osm_all-parameters.csv"
+    f.write_text(
+        "osmose.version ; 4.3.3\nsimulation.time.ndtperyear ; 24\n"
+        "mortality.additional.larva.rate.sp0 ; 2.145\n"
+    )
+    back = OsmoseConfigReader().read(f)
+    assert back["mortality.additional.larva.rate.sp0"] == "2.145"
+
+
+def test_reader_does_not_scale_larva_when_version_absent(tmp_path):
+    from osmose.config.reader import OsmoseConfigReader
+
+    f = tmp_path / "osm_all-parameters.csv"
+    f.write_text("simulation.time.ndtperyear ; 24\nmortality.additional.larva.rate.sp0 ; 2.145\n")
+    back = OsmoseConfigReader().read(f)
+    assert back["mortality.additional.larva.rate.sp0"] == "2.145"
+
+
+def test_larva_rate_only_scalar_key_bydt_file_left_alone():
+    from osmose.config.aliases import to_target_keys
+
+    cfg = {
+        "simulation.time.ndtperyear": "24",
+        "mortality.additional.larva.rate.bydt.file.sp0": "larva_sp0.csv",
+        "mortality.additional.larva.rate.seasonality.file.sp0": "season_sp0.csv",
+    }
+    out = to_target_keys(cfg, "4.4.0")
+    assert out["mortality.additional.larva.rate.bydt.file.sp0"] == "larva_sp0.csv"
+    assert out["mortality.additional.larva.rate.seasonality.file.sp0"] == "season_sp0.csv"
+
+
+def test_larva_migration_skipped_when_ndt_absent():
+    from osmose.config.aliases import to_target_keys
+
+    cfg = {"mortality.additional.larva.rate.sp0": "2.145"}  # no ndtperyear
+    out = to_target_keys(cfg, "4.4.0")
+    assert out["mortality.additional.larva.rate.sp0"] == "2.145"
+
+
+def test_larva_migration_skipped_when_ndt_zero():
+    from osmose.config.aliases import to_target_keys
+
+    out = to_target_keys(
+        {"simulation.time.ndtperyear": "0", "mortality.additional.larva.rate.sp0": "2.145"}, "4.4.0"
+    )
+    assert out["mortality.additional.larva.rate.sp0"] == "2.145"  # not scaled by a bogus factor
+
+
+def test_semicolon_separated_larva_rate_scaled_componentwise():
+    from osmose.config.aliases import to_target_keys
+
+    cfg = {"simulation.time.ndtperyear": "10", "mortality.additional.larva.rate.sp0": "2.0;3.0"}
+    out = to_target_keys(cfg, "4.4.0")
+    assert out["mortality.additional.larva.rate.sp0"] == "20;30"
