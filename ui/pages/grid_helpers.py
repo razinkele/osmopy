@@ -18,6 +18,7 @@ import pandas as pd
 import xarray as xr
 
 from osmose.logging import setup_logging
+from osmose.maps.builder import GridSpec
 
 _log = setup_logging("osmose.grid.helpers")
 
@@ -334,18 +335,23 @@ def build_grid_layers(
         )
     )
 
-    # Individual grid cells as lat/lon rectangles — vectorised with NumPy meshgrid
+    # Individual grid cells as lat/lon rectangles — vectorised via GridSpec.cell_polygons
     if nx > 0 and ny > 0:
-        dx = (lr_lon - ul_lon) / nx
-        dy = (ul_lat - lr_lat) / ny
-
         col_arr = np.arange(nx)
         row_arr = np.arange(ny)
-        lo0 = ul_lon + col_arr * dx  # (nx,)
-        la0 = ul_lat - row_arr * dy  # (ny,)
-        lo0g, la0g = np.meshgrid(lo0, la0)  # (ny, nx)
-        lo1g = lo0g + dx
-        la1g = la0g - dy
+        gs = GridSpec(
+            nlon=nx,
+            nlat=ny,
+            upleft_lat=ul_lat,
+            upleft_lon=ul_lon,
+            lowright_lat=lr_lat,
+            lowright_lon=lr_lon,
+        )
+        corners = gs.cell_polygons()  # (ny, nx, 4, 2) in [UL,UR,LR,LL] / [lon,lat]
+        lo0g = corners[:, :, 0, 0]
+        la0g = corners[:, :, 0, 1]
+        lo1g = corners[:, :, 1, 0]
+        la1g = corners[:, :, 2, 1]
 
         if mask is not None:
             mny = min(mask.shape[0], ny)
