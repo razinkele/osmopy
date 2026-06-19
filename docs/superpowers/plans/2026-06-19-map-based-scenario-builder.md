@@ -4,7 +4,7 @@
 
 **Goal:** A "Map Builder" Shiny page to author OSMOSE spatial grid maps (species distribution / land mask / generic zone) by drawing polygons + brushing cells on the loaded config's georeferenced grid, saving them as the engine's `;`-separated grid CSVs with type-aware config wiring.
 
-**Architecture:** A pure, browser-free core (`osmose/maps/builder.py`: grid geometry, numpy ray-cast rasterization, paint/erase/mask ops, CSV (de)serialization with the south-row-0 flip, config-key wiring, save orchestration) + a thin Shiny page (`ui/pages/map_builder.py`: `shiny_deckgl` interactive map with stage-then-Apply polygon draw + cell brush, reactive grid state, save). All testable logic lives in the core; the deck.gl draw/pick seam is the only e2e-only part.
+**Architecture:** A pure, browser-free core (`osmose/maps/builder.py`: grid geometry, numpy ray-cast rasterization, paint/erase/mask ops, CSV (de)serialization with the south-row-0 flip, config-key wiring, save orchestration) + a thin Shiny page (`ui/pages/map_builder.py`: `shiny_deckgl` interactive map with stage-then-Apply polygon draw + **click-to-paint per cell** — `_map_click` is click-only, there is no drag-paint event — reactive grid state, save). The page renders/updates the map via async `@reactive.effect` → `MapWidget.update`/`partial_update(session, layers=...)` (there is NO render decorator; the `MapWidget` is instantiated twice with the same id — once in `*_ui()`, once in `*_server()`, per `map_viewer.py`/`grid.py`). All testable logic lives in the core; the deck.gl draw/pick seam is the only e2e-only part.
 
 **Tech Stack:** Python 3.12, numpy (declared dep — no matplotlib), Shiny for Python, `shiny_deckgl`, pytest + Hypothesis. Run with `.venv/bin/python`.
 
@@ -44,6 +44,11 @@ def test_gridspec_cell_polygon_and_center():
     assert poly == [[10.0, 66.0], [10.4, 66.0], [10.4, 65.7], [10.0, 65.7]]  # [UL,UR,LR,LL]
     lat, lon = g.cell_center(0, 0)
     assert abs(lat - 65.85) < 1e-9 and abs(lon - 10.2) < 1e-9
+    # vectorized cell_polygons() agrees with scalar cell_polygon() cell-for-cell
+    polys = g.cell_polygons()
+    assert polys.shape == (40, 50, 4, 2)
+    assert polys[0, 0].tolist() == g.cell_polygon(0, 0)
+    assert polys[39, 49].tolist() == g.cell_polygon(39, 49)
 
 def test_gridspec_from_config():
     from osmose.maps.builder import GridSpec
@@ -94,6 +99,22 @@ class GridSpec:
 
     def cell_center(self, row: int, col: int) -> tuple[float, float]:
         return (self.upleft_lat - (row + 0.5) * self.dy, self.upleft_lon + (col + 0.5) * self.dx)
+
+    def cell_polygons(self) -> "np.ndarray":
+        """Vectorized corners for ALL cells, shape (nlat, nlon, 4, 2) in [UL,UR,LR,LL] / [lon,lat]
+        order — the single source of truth `build_grid_layers` consumes (preserves its meshgrid
+        vectorization; `cell_polygon` is the scalar form for the builder's per-click use)."""
+        import numpy as np
+        cols = np.arange(self.nlon)
+        rows = np.arange(self.nlat)
+        lo0 = self.upleft_lon + cols * self.dx          # (nlon,)
+        la0 = self.upleft_lat - rows * self.dy          # (nlat,)
+        lo0g, la0g = np.meshgrid(lo0, la0)              # (nlat, nlon)
+        lo1g, la1g = lo0g + self.dx, la0g - self.dy
+        return np.stack([
+            np.stack([lo0g, la0g], -1), np.stack([lo1g, la0g], -1),
+            np.stack([lo1g, la1g], -1), np.stack([lo0g, la1g], -1),
+        ], axis=2)  # (nlat, nlon, 4, 2)
 ```
 - [ ] **Step 4: Run, verify PASS.** Same `-k gridspec`. ruff + format clean on the new file.
 - [ ] **Step 5: Commit**
@@ -111,7 +132,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 **Files:** Modify `ui/pages/grid_helpers.py`; Test: existing `tests/test_ui_grid.py` (characterization guard — do NOT modify it)
 
 - [ ] **Step 1: Run the existing characterization tests GREEN first** (baseline): `.venv/bin/python -m pytest tests/test_ui_grid.py tests/test_grid_helpers.py -q` → all pass. These assert `build_grid_layers` per-cell `data` shape (`polygon`/`row`/`col`/`type`), the UL-corner value (`poly[0]==(-6.0,48.0)`), and the ocean/land layer split — they are the regression guard.
-- [ ] **Step 2: Refactor** `build_grid_layers` (grid_helpers.py ~339-348): replace the inline corner math with `GridSpec(...).cell_polygon(row, col)` (build a `GridSpec` from the same bounds it already reads). Keep EVERYTHING else identical — the same per-cell dict keys, the same `[UL,UR,LR,LL]` corner order, the same north-row-0 row/col indexing, the same ocean/land split. Import `GridSpec` at module level (or in-function if a cycle appears — `osmose.maps.builder` has no UI deps, so module-level is fine).
+- [ ] **Step 2: Refactor** `build_grid_layers` (grid_helpers.py ~339-364). NOTE: that block is **vectorized** (`np.meshgrid` + `.ravel()`), NOT per-cell — so do NOT replace it with scalar `cell_polygon(r,c)` in a loop (that would be a perf/structure regression). Instead build `gs = GridSpec(nlon=nx, nlat=ny, upleft_lat=ul_lat, upleft_lon=ul_lon, lowright_lat=lr_lat, lowright_lon=lr_lon)` (direct constructor from the locals it already has — `from_config` doesn't fit, it has bounds not a dict) and replace the inline corner-meshgrid with `corners = gs.cell_polygons()` (shape `(ny,nx,4,2)`); ravel it the same way the current code ravels its arrays to build the per-cell `data` dicts. Keep EVERYTHING else identical — the per-cell dict keys (`polygon`/`row`/`col`/`type`), the `[UL,UR,LR,LL]` corner order, north-row-0 row/col indexing, the ocean/land split. This keeps the meshgrid vectorization AND makes `GridSpec` the single source of truth. Import `GridSpec` at module level (`osmose.maps.builder` has no UI deps → no cycle).
 - [ ] **Step 3: Run, verify the characterization tests STILL PASS unchanged.** `.venv/bin/python -m pytest tests/test_ui_grid.py tests/test_grid_helpers.py -q` → identical green. If any corner/orientation/shape assertion changes, the refactor diverged — fix until byte-identical. `.venv/bin/python -c "import ui.pages.grid, ui.pages.map_viewer"` clean.
 - [ ] **Step 4: Commit**
 ```bash
@@ -493,7 +514,7 @@ def test_save_map_rejects_bad_filename(tmp_path):
     from osmose.maps.builder import GridSpec, MapGrid, save_map
     import pytest
     g = GridSpec(3, 2, 2.0, 0.0, 0.0, 3.0); mg = MapGrid.blank(g)
-    for bad in ["", "../evil", "a/b", "no_ext"]:
+    for bad in ["", "../evil", "a/b"]:   # NB: "no_ext" is VALID — gets ".csv" appended, not rejected
         with pytest.raises(ValueError):
             save_map(mg, g, "zone", bad, {}, tmp_path)
 ```
@@ -596,7 +617,7 @@ git commit -m "feat(ui): map builder brush/eraser/mask + tool-mode draw toggle"
 - [ ] **Step 1: Implement:**
   - `staged = reactive.Value(None)`, `applied_ids = reactive.Value(set())`.
   - `@reactive.effect @reactive.event(input.{mapid}_drawn_features)`: store the FeatureCollection in `staged` (empty ⇒ no-op); update an "N staged" indicator. Do NOT paint here.
-  - `@reactive.effect @reactive.event(input.apply_polygons)` (Apply button): for each feature in `staged` whose `feature.id` ∉ `applied_ids`, `rasterize_polygon`→`apply_polygon` at the CURRENT paint value (mask_edit if mode==mask), add the id to `applied_ids`; then `await map.delete_drawn_features(session)` and reset `applied_ids`/`staged`; bump dirty-flag.
+  - `@reactive.effect @reactive.event(input.apply_polygons)` (Apply button): for each feature in `staged` whose `feature["id"]` (top-level GeoJSON id, NOT `properties.id`) ∉ `applied_ids`, take `feature["geometry"]["coordinates"][0]` (outer ring) → `rasterize_polygon`→`apply_polygon` at the CURRENT paint value (mask_edit if mode==mask), add the id to `applied_ids`; then `await map.delete_drawn_features(session)` and reset `applied_ids`/`staged`; bump dirty-flag.
 - [ ] **Step 2: Verify** import + ruff/format/pyright clean.
 - [ ] **Step 3: Commit**
 ```bash
@@ -610,7 +631,7 @@ git commit -m "feat(ui): map builder polygon draw (stage-then-Apply, id-diff, cl
 
 **Files:** Modify `ui/pages/map_builder.py`
 
-- [ ] **Step 1: Implement:** a `dirty = reactive.Value(0)` bumped by every paint op; a debounced/coalesced effect (mirror the `live_movement` `reactive.poll`/timer change-detection pattern) that, when `dirty` changed since last render, rebuilds ONLY the value-cells layer and `await map.partial_update(session, layers=[cells_layer])` (not a full `update()` of the whole stack).
+- [ ] **Step 1: Implement:** a `dirty = reactive.Value(0)` bumped by every paint op; an async `@reactive.effect` watching `dirty` that rebuilds ONLY the value-cells layer and `await map.partial_update(session, layers=[cells_layer])` (merges by layer id — touches just that layer, not a full `update()` of the whole stack). This is event-driven coalescing off the `dirty` counter — NOT the time-driven `reactive.poll` pattern. (Real `partial_update`/`enable_draw`/`disable_draw`/`delete_drawn_features` precedent: `ui/pages/run.py`; `_map_click`/`_drawn_features` input precedent: `ui/pages/spatial_results.py` — there is no `live_movement.py`.)
 - [ ] **Step 2: Verify** import + ruff/format/pyright clean.
 - [ ] **Step 3: Commit**
 ```bash
