@@ -376,3 +376,24 @@ def map_builder_server(input, output, session, state):
         staged.set(None)
         if painted:
             dirty.set(dirty.get() + 1)
+
+    # --- coalesced render: rebuild only the value-cells layer on dirty -----
+    @reactive.effect
+    async def _on_dirty():
+        dirty.get()
+        grid = _grid_spec()
+        mg = grid_array.get()
+        if grid is None or mg is None:
+            return
+        cells_layer = _value_cells_layer(mg, grid)
+        if cells_layer is None:
+            # Nothing painted — send an empty cells layer to clear prior fills.
+            cells_layer = polygon_layer(
+                "mb-value-cells",
+                data=[],
+                getPolygon="@@=d.polygon",
+                getFillColor="@@=d.fill",
+                filled=True,
+                stroked=False,
+            )
+        await _map.partial_update(session, layers=[cells_layer])
