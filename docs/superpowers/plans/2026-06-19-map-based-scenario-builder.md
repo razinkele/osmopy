@@ -13,7 +13,7 @@
 ## File structure
 
 - Create `osmose/maps/__init__.py`, `osmose/maps/builder.py` — the pure core.
-- Modify `ui/pages/grid_helpers.py` — DRY: `build_grid_layers` calls `GridSpec.cell_polygon` (the ONLY shipped-code change; output must stay byte-identical, `tests/test_ui_grid.py` is the characterization guard).
+- Modify `ui/pages/grid_helpers.py` — DRY: `build_grid_layers` calls the VECTORIZED `GridSpec.cell_polygons()` (the ONLY shipped-code change; output must stay byte-identical, `tests/test_ui_grid.py` is the characterization guard).
 - Create `ui/pages/map_builder.py` — the Shiny page (`map_builder_ui`, `map_builder_server`).
 - Modify `app.py` — 4 nav touch-points (import, `nav_panel`, server call, JS nav-order array).
 - Tests: `tests/test_maps_builder.py` (pure core), `tests/test_ui_map_builder.py` (save_map orchestration + page import + nav registration).
@@ -127,7 +127,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 ---
 
-## Task 2: DRY — `build_grid_layers` calls `GridSpec.cell_polygon`
+## Task 2: DRY — `build_grid_layers` calls `GridSpec.cell_polygons()`
 
 **Files:** Modify `ui/pages/grid_helpers.py`; Test: existing `tests/test_ui_grid.py` (characterization guard — do NOT modify it)
 
@@ -137,7 +137,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - [ ] **Step 4: Commit**
 ```bash
 git add ui/pages/grid_helpers.py
-git commit -m "refactor(grid): build_grid_layers uses GridSpec.cell_polygon (single source of truth)
+git commit -m "refactor(grid): build_grid_layers uses GridSpec.cell_polygons (single source of truth)
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
@@ -218,9 +218,9 @@ def lonlat_to_cell(grid: GridSpec, lon: float, lat: float):
         return (r, c)
     return None
 ```
-- [ ] **Step 4: Add the Hypothesis property test** (in-memory ONLY — no `tmp_path`/fixtures under `@given`):
+- [ ] **Step 4: Add the Hypothesis property test** (in-memory ONLY — no `tmp_path`/fixtures under `@given`). **Put `from hypothesis import given, strategies as st` at the TOP of the test file with the other imports — NOT mid-file (ruff E402 = "module import not at top of file" will fail the lint gate otherwise).**
 ```python
-from hypothesis import given, strategies as st
+# at top of file: from hypothesis import given, strategies as st
 
 @given(
     lons=st.lists(st.floats(0.1, 3.9), min_size=3, max_size=6),
@@ -631,7 +631,7 @@ git commit -m "feat(ui): map builder polygon draw (stage-then-Apply, id-diff, cl
 
 **Files:** Modify `ui/pages/map_builder.py`
 
-- [ ] **Step 1: Implement:** a `dirty = reactive.Value(0)` bumped by every paint op; an async `@reactive.effect` watching `dirty` that rebuilds ONLY the value-cells layer and `await map.partial_update(session, layers=[cells_layer])` (merges by layer id — touches just that layer, not a full `update()` of the whole stack). This is event-driven coalescing off the `dirty` counter — NOT the time-driven `reactive.poll` pattern. (Real `partial_update`/`enable_draw`/`disable_draw`/`delete_drawn_features` precedent: `ui/pages/run.py`; `_map_click`/`_drawn_features` input precedent: `ui/pages/spatial_results.py` — there is no `live_movement.py`.)
+- [ ] **Step 1: Implement:** a `dirty = reactive.Value(0)` bumped by every paint op; an async `@reactive.effect` watching `dirty` that rebuilds ONLY the value-cells layer and `await map.partial_update(session, layers=[cells_layer])` (merges by layer id — touches just that layer, not a full `update()` of the whole stack). This is event-driven coalescing off the `dirty` counter — NOT the time-driven `reactive.poll` pattern. (`partial_update` precedent: `ui/pages/run.py:558`. `enable_draw`/`disable_draw`/`delete_drawn_features` are real shiny_deckgl APIs (`map_widget.py`) but FIRST use in this repo. `input.{id}_map_click` precedent: `ui/pages/spatial_results.py`; `input.{id}_drawn_features` is FIRST use in this repo — there is no `live_movement.py`.)
 - [ ] **Step 2: Verify** import + ruff/format/pyright clean.
 - [ ] **Step 3: Commit**
 ```bash
