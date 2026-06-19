@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 import numpy as np
@@ -97,3 +98,36 @@ def lonlat_to_cell(grid: GridSpec, lon: float, lat: float):
     if 0 <= r < grid.nlat and 0 <= c < grid.nlon:
         return (r, c)
     return None
+
+
+class MapGrid:
+    def __init__(self, array: np.ndarray):
+        self._a = array
+
+    @classmethod
+    def blank(cls, grid: GridSpec, base_mask: np.ndarray | None = None) -> "MapGrid":
+        a = np.zeros((grid.nlat, grid.nlon), dtype=float)
+        if base_mask is not None:
+            a[base_mask == -99] = -99
+        return cls(a)
+
+    @property
+    def array(self) -> np.ndarray:
+        return self._a
+
+    def apply_cells(self, cells: Iterable[tuple[int, int]], value: float) -> None:
+        for r, c in cells:
+            self._a[r, c] = value
+
+    def apply_polygon(
+        self, grid: GridSpec, polygon_lonlat, value: float, *, mask_edit: bool = False
+    ) -> None:
+        self.apply_cells(
+            rasterize_polygon(grid, polygon_lonlat, self._a, mask_edit=mask_edit), value
+        )
+
+    def erase(self, cells: Iterable[tuple[int, int]]) -> None:
+        self.apply_cells(cells, 0.0)
+
+    def set_mask(self, cells: Iterable[tuple[int, int]], masked: bool) -> None:
+        self.apply_cells(cells, -99.0 if masked else 0.0)

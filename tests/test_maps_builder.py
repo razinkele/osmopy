@@ -87,3 +87,37 @@ def test_rasterize_matches_center_membership(lons, lats):
         if _point_in_ring(*(lambda la, lo: (lo, la))(*g.cell_center(r, c)), _open_ring(ring))
     }
     assert got == expected
+
+
+def test_mapgrid_apply_erase_mask():
+    from osmose.maps.builder import GridSpec, MapGrid
+
+    g = GridSpec(4, 4, 4.0, 0.0, 0.0, 4.0)
+    mg = MapGrid.blank(g)
+    mg.apply_cells([(0, 0), (1, 1)], 1.0)
+    assert mg.array[0, 0] == 1.0 and mg.array[1, 1] == 1.0
+    mg.erase([(0, 0)])
+    assert mg.array[0, 0] == 0.0
+    mg.set_mask([(2, 2)], True)
+    assert mg.array[2, 2] == -99
+    mg.set_mask([(2, 2)], False)
+    assert mg.array[2, 2] == 0.0
+
+
+def test_mapgrid_blank_seeds_base_mask():
+    from osmose.maps.builder import GridSpec, MapGrid
+
+    g = GridSpec(4, 4, 4.0, 0.0, 0.0, 4.0)
+    base = np.zeros((4, 4))
+    base[0, 0] = -99
+    mg = MapGrid.blank(g, base_mask=base)
+    assert mg.array[0, 0] == -99 and mg.array[1, 1] == 0.0
+
+
+def test_mapgrid_apply_polygon():
+    from osmose.maps.builder import GridSpec, MapGrid
+
+    g = GridSpec(4, 4, 4.0, 0.0, 0.0, 4.0)
+    mg = MapGrid.blank(g)
+    mg.apply_polygon(g, [[0.0, 4.0], [2.0, 4.0], [2.0, 2.0], [0.0, 2.0]], 1.0)
+    assert mg.array[0, 0] == 1.0 and mg.array[3, 3] == 0.0
