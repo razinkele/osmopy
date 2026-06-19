@@ -81,7 +81,13 @@ def _open_ring(ring: list[list[float]]) -> list[list[float]]:
     return ring[:-1] if len(ring) > 1 and ring[0] == ring[-1] else ring
 
 
-def rasterize_polygon(grid: GridSpec, polygon_lonlat, mask=None, *, mask_edit: bool = False):
+def rasterize_polygon(
+    grid: GridSpec,
+    polygon_lonlat: Iterable[Iterable[float]],
+    mask: np.ndarray | None = None,
+    *,
+    mask_edit: bool = False,
+) -> list[tuple[int, int]]:
     ring = _open_ring([list(p) for p in polygon_lonlat])
     out: list[tuple[int, int]] = []
     for r in range(grid.nlat):
@@ -94,7 +100,7 @@ def rasterize_polygon(grid: GridSpec, polygon_lonlat, mask=None, *, mask_edit: b
     return out
 
 
-def lonlat_to_cell(grid: GridSpec, lon: float, lat: float):
+def lonlat_to_cell(grid: GridSpec, lon: float, lat: float) -> tuple[int, int] | None:
     c = int((lon - grid.upleft_lon) / grid.dx)
     r = int((grid.upleft_lat - lat) / grid.dy)
     if 0 <= r < grid.nlat and 0 <= c < grid.nlon:
@@ -104,7 +110,9 @@ def lonlat_to_cell(grid: GridSpec, lon: float, lat: float):
 
 class MapGrid:
     def __init__(self, array: np.ndarray):
-        self._a = array
+        # Own our buffer: copy so a caller-supplied array (or a flipud view) can't
+        # be mutated out from under us, nor we under it.
+        self._a = np.array(array, dtype=float, copy=True)
 
     @classmethod
     def blank(cls, grid: GridSpec, base_mask: np.ndarray | None = None) -> "MapGrid":
@@ -122,7 +130,12 @@ class MapGrid:
             self._a[r, c] = value
 
     def apply_polygon(
-        self, grid: GridSpec, polygon_lonlat, value: float, *, mask_edit: bool = False
+        self,
+        grid: GridSpec,
+        polygon_lonlat: Iterable[Iterable[float]],
+        value: float,
+        *,
+        mask_edit: bool = False,
     ) -> None:
         self.apply_cells(
             rasterize_polygon(grid, polygon_lonlat, self._a, mask_edit=mask_edit), value
@@ -186,7 +199,13 @@ def _next_map_index(config: dict[str, str]) -> int:
     return i
 
 
-def wire_map_into_config(config, map_type, rel_path, *, applicability=None):
+def wire_map_into_config(
+    config: dict[str, str],
+    map_type: str,
+    rel_path: str,
+    *,
+    applicability: dict | None = None,
+) -> tuple[dict[str, str], str]:
     out = dict(config)
     if map_type == "mask":
         out["grid.mask.file"] = rel_path
@@ -224,7 +243,16 @@ def _sanitize_filename(name: str) -> str:
     return name
 
 
-def save_map(mg, grid, map_type, filename, config, config_dir, *, applicability=None):
+def save_map(
+    mg: "MapGrid",
+    grid: GridSpec,
+    map_type: str,
+    filename: str,
+    config: dict[str, str],
+    config_dir: str | Path,
+    *,
+    applicability: dict | None = None,
+) -> tuple[dict[str, str], str, Path]:
     fname = _sanitize_filename(filename)
     subdir = "grid" if map_type == "mask" else "maps"
     rel_path = f"{subdir}/{fname}"

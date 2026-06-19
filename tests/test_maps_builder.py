@@ -186,6 +186,18 @@ def test_wire_distribution_real_keys_and_next_index():
     assert "movement.map1.species" not in out
 
 
+def test_wire_reuses_lowest_free_index_when_noncontiguous():
+    from osmose.maps.builder import wire_map_into_config
+
+    # map0 + map2 present, map1 free -> next index is the lowest free (1), not max+1 (3)
+    cfg = {"movement.species.map0": "cod", "movement.species.map2": "sprat"}
+    out, _ = wire_map_into_config(
+        cfg, "distribution", "maps/h.csv", applicability={"species": "herring"}
+    )
+    assert out["movement.species.map1"] == "herring"
+    assert "movement.species.map3" not in out
+
+
 def test_wire_mask_and_zone():
     from osmose.maps.builder import wire_map_into_config
 
