@@ -29,6 +29,7 @@ from ui.pages.sensitivity_explorer import sensitivity_explorer_ui, sensitivity_e
 from ui.pages.scenarios import scenarios_ui, scenarios_server
 from ui.pages.advanced import advanced_ui, advanced_server
 from ui.pages.map_viewer import map_viewer_ui, map_viewer_server
+from ui.pages.map_builder import map_builder_ui, map_builder_server
 from ui.pages.genetics import genetics_ui, genetics_server
 from ui.pages.economic import economic_ui, economic_server
 from ui.pages.diagnostics import diagnostics_ui, diagnostics_server
@@ -232,7 +233,7 @@ app_ui = ui.page_fillable(
                 }
             }
             var pageIds = ['setup','grid','forcing','fishing','movement','genetics','economic',
-                           'results','spatial_results','diagnostics','calibration','scenarios','advanced','map_viewer'];
+                           'results','spatial_results','diagnostics','calibration','scenarios','advanced','map_viewer','map_builder'];
 
             document.addEventListener('DOMContentLoaded', function() {
                 // Restore the initially active tab's panel
@@ -373,6 +374,7 @@ app_ui = ui.page_fillable(
         ui.nav_panel("Scenarios", scenarios_ui(), value="scenarios"),
         ui.nav_panel("Advanced", advanced_ui(), value="advanced"),
         ui.nav_panel("Map Viewer", map_viewer_ui(), value="map_viewer"),
+        ui.nav_panel("Map Builder", map_builder_ui(), value="map_builder"),
         id="main_nav",
         selected="grid",
         widths=(2, 10),
@@ -650,6 +652,7 @@ def server(input, output, session):
     scenarios_server(input, output, session, state)
     advanced_server(input, output, session, state)
     map_viewer_server(input, output, session, state)
+    map_builder_server(input, output, session, state)
     genetics_server(input, output, session, state)
     economic_server(input, output, session, state)
     diagnostics_server(input, output, session, state)
