@@ -131,3 +131,25 @@ class MapGrid:
 
     def set_mask(self, cells: Iterable[tuple[int, int]], masked: bool) -> None:
         self.apply_cells(cells, -99.0 if masked else 0.0)
+
+
+def _fmt(v: float) -> str:
+    return str(int(v)) if float(v).is_integer() else f"{v:.10g}"
+
+
+def to_csv_text(mg: "MapGrid") -> str:
+    south_first = np.flipud(mg.array)
+    lines = []
+    for row in south_first:
+        lines.append(";".join(_fmt(v) for v in row))
+    return "\n".join(lines) + "\n"
+
+
+def from_csv_text(text: str, grid: GridSpec) -> "MapGrid":
+    rows = [ln for ln in text.splitlines() if ln.strip()]
+    data = [[float(x) for x in ln.split(";")] for ln in rows]
+    if len(data) != grid.nlat or any(len(r) != grid.nlon for r in data):
+        raise ValueError(
+            f"CSV dims {len(data)}x{len(data[0]) if data else 0} != grid {grid.nlat}x{grid.nlon}"
+        )
+    return MapGrid(np.flipud(np.array(data, dtype=float)))

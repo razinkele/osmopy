@@ -121,3 +121,29 @@ def test_mapgrid_apply_polygon():
     mg = MapGrid.blank(g)
     mg.apply_polygon(g, [[0.0, 4.0], [2.0, 4.0], [2.0, 2.0], [0.0, 2.0]], 1.0)
     assert mg.array[0, 0] == 1.0 and mg.array[3, 3] == 0.0
+
+
+def test_csv_roundtrip_through_engine_loader(tmp_path):
+    from osmose.maps.builder import GridSpec, MapGrid, to_csv_text
+    from osmose.engine.movement_maps import _load_csv_grid
+
+    g = GridSpec(3, 2, 2.0, 0.0, 0.0, 3.0)
+    mg = MapGrid.blank(g)
+    mg.apply_cells([(0, 0)], 1.0)
+    f = tmp_path / "m.csv"
+    f.write_text(to_csv_text(mg))
+    loaded = _load_csv_grid(f, 2, 3)
+    assert np.array_equal(loaded, mg.array)
+
+
+def test_from_csv_text_roundtrip_and_dim_validation():
+    from osmose.maps.builder import GridSpec, MapGrid, to_csv_text, from_csv_text
+    import pytest
+
+    g = GridSpec(3, 2, 2.0, 0.0, 0.0, 3.0)
+    mg = MapGrid.blank(g)
+    mg.apply_cells([(1, 2)], 5.0)
+    back = from_csv_text(to_csv_text(mg), g)
+    assert np.array_equal(back.array, mg.array)
+    with pytest.raises(ValueError):
+        from_csv_text("1;2;3;4\n1;2;3;4\n", g)
