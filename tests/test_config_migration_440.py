@@ -533,3 +533,20 @@ def test_4_4_0_write_never_emits_computepercent_legacy_false():
 
     out = to_target_keys({"module.bioenergetics.enabled": "true"}, "4.4.0")
     assert out.get("simulation.resources.computepercent.legacy") != "false"
+
+
+def test_to_target_keys_snapshot_version_is_native():
+    from osmose.config.aliases import to_target_keys
+
+    # A 4.4.x-family target (incl. a -SNAPSHOT suffix) must take the native (identity) branch,
+    # NOT the reverse branch that would corrupt a native config back to 4.3.x key names.
+    out = to_target_keys({"module.bioenergetics.enabled": "true"}, "4.4.0-SNAPSHOT")
+    assert "simulation.bioen.enabled" not in out  # NOT reverse-mapped
+    assert out["module.bioenergetics.enabled"] == "true"
+
+
+def test_to_target_keys_4_4_1_is_native():
+    from osmose.config.aliases import to_target_keys
+
+    out = to_target_keys({"module.bioenergetics.enabled": "true"}, "4.4.1")
+    assert "simulation.bioen.enabled" not in out

@@ -41,6 +41,13 @@ _LARVA_RATE_RE = re.compile(r"^mortality\.additional\.larva\.rate\.sp\d+$")
 _NDT_KEY = "simulation.time.ndtperyear"
 
 
+def _numeric_version(v: str) -> tuple[int, ...]:
+    """Parse the numeric prefix of a version, tolerant of -SNAPSHOT/+build suffixes."""
+    from osmose.demo import _version_tuple
+
+    return _version_tuple(re.split(r"[-+]", v.strip())[0])
+
+
 def _ndtperyear(cfg: dict[str, str]) -> float | None:
     raw = cfg.get(_NDT_KEY)
     if raw in (None, ""):
@@ -164,13 +171,19 @@ def to_target_keys(cfg: dict[str, str], target_version: str = "4.3.3") -> dict[s
     species.maturity.size/age growth keys) pass through. The ingestion merge is non-invertible:
     the unified value reverses to the legacy predation.ingestion.rate.max.sp{idx} (NOT .bioen).
     """
+    from osmose.demo import _version_tuple
+
     result = dict(cfg)
-    if target_version == "4.4.0":
+    # Suffix-tolerant: any 4.4.x-or-higher target (incl. "4.4.0-SNAPSHOT", "4.4.1") takes the
+    # native (identity) branch. A bare _version_tuple returns (0,) for suffixed strings, so the
+    # suffix MUST be stripped (via _numeric_version) before the compare or it would fall through
+    # to the reverse branch and corrupt a native config back to 4.3.x key names.
+    if _numeric_version(target_version) >= _version_tuple("4.4.0"):
         result = _drop_4_4_0_removed_keys(result)
         # _ndtperyear() or 1.0 is a safe placeholder: when ndt is falsy the helper
         # early-returns (warns, no scaling) BEFORE the factor is ever applied.
         result = _migrate_larva_rate(result, _ndtperyear(result) or 1.0, warn_bydt=True)
-        result["osmose.version"] = "4.4.0"
+        result["osmose.version"] = target_version  # stamp the ACTUAL target, not a hardcoded 4.4.0
         return result
     for new_prefix in sorted(_INVERSE_440, key=len, reverse=True):
         old_prefix = _INVERSE_440[new_prefix]
