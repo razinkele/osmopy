@@ -8,6 +8,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ### Added
 
+- **ui (maps):** a **Map Builder** page to author OSMOSE spatial grid maps — species distribution
+  (movement), land mask, or generic zone — directly on the loaded config's georeferenced grid.
+  Draw polygons (stage, then **Apply**) and click-to-paint individual cells; brush / eraser / mask
+  tools with a numeric paint value; load an existing map back into the editor. Saving writes the
+  engine's `;`-separated grid CSV (with the south-row-0 ↔ north-row-0 orientation flip handled, and
+  the round-trip verified through the engine's own loader) and does type-aware config wiring —
+  registering the real `movement.{species,file,steps,initialage,lastage,initialyear,lastyear}.map{N}`
+  keys at the next free index for distribution maps, or `grid.mask.file` for a mask. New pure
+  `osmose/maps/builder.py` (grid geometry, numpy ray-cast rasterization, paint/erase/mask ops, CSV
+  (de)serialization, validation, config wiring — all browser-free and unit-tested) + a thin
+  `ui/pages/map_builder.py` Shiny page over `shiny_deckgl`. `ui/pages/grid_helpers.py` now derives its
+  grid-cell polygons from the same `GridSpec` (single source of truth). Distribution maps painted on
+  base-mask land warn (engine treats them as absent) rather than block.
 - **diagnostics (community):** a community ecosystem-state diagnostics suite. The Results page gains a
   **Sheldon (mass) spectrum** chart — the canonical normalized biomass size spectrum over equal log₂
   (octave) body-mass bins, converting OSMOSE's by-length classes to body mass per species via the
