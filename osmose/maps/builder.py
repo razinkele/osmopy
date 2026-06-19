@@ -59,3 +59,41 @@ class GridSpec:
             ],
             axis=2,
         )
+
+
+def _point_in_ring(px: float, py: float, ring: list[list[float]]) -> bool:
+    n = len(ring)
+    inside = False
+    j = n - 1
+    for i in range(n):
+        xi, yi = ring[i][0], ring[i][1]
+        xj, yj = ring[j][0], ring[j][1]
+        if ((yi > py) != (yj > py)) and (px < (xj - xi) * (py - yi) / (yj - yi) + xi):
+            inside = not inside
+        j = i
+    return inside
+
+
+def _open_ring(ring: list[list[float]]) -> list[list[float]]:
+    return ring[:-1] if len(ring) > 1 and ring[0] == ring[-1] else ring
+
+
+def rasterize_polygon(grid: GridSpec, polygon_lonlat, mask=None, *, mask_edit: bool = False):
+    ring = _open_ring([list(p) for p in polygon_lonlat])
+    out: list[tuple[int, int]] = []
+    for r in range(grid.nlat):
+        for c in range(grid.nlon):
+            if mask is not None and not mask_edit and mask[r, c] == -99:
+                continue
+            lat, lon = grid.cell_center(r, c)
+            if _point_in_ring(lon, lat, ring):
+                out.append((r, c))
+    return out
+
+
+def lonlat_to_cell(grid: GridSpec, lon: float, lat: float):
+    c = int((lon - grid.upleft_lon) / grid.dx)
+    r = int((grid.upleft_lat - lat) / grid.dy)
+    if 0 <= r < grid.nlat and 0 <= c < grid.nlon:
+        return (r, c)
+    return None
