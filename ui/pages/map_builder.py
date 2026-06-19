@@ -110,6 +110,8 @@ def map_builder_server(input, output, session, state):
     grid_array: reactive.Value[MapGrid | None] = reactive.Value(None)
     base_mask: reactive.Value[np.ndarray | None] = reactive.Value(None)
     dirty: reactive.Value[int] = reactive.Value(0)
+    staged: reactive.Value[dict | None] = reactive.Value(None)
+    applied_ids: reactive.Value[set] = reactive.Value(set())
 
     def _grid_spec() -> GridSpec | None:
         """Build a GridSpec from the active config, or None if no usable grid."""
@@ -138,6 +140,8 @@ def map_builder_server(input, output, session, state):
         mask = load_mask(cfg, config_dir=cfg_dir)
         base_mask.set(mask)
         grid_array.set(MapGrid.blank(grid, base_mask=mask))
+        staged.set(None)
+        applied_ids.set(set())
         dirty.set(dirty.get() + 1)
 
     @render.ui
@@ -157,7 +161,14 @@ def map_builder_server(input, output, session, state):
 
     @render.ui
     def mb_staged_indicator():
-        return ui.div()
+        fc = staged.get()
+        n = len(fc.get("features", [])) if isinstance(fc, dict) else 0
+        if not n:
+            return ui.div()
+        return ui.p(
+            f"{n} polygon(s) staged — click 'Apply polygon(s)'.",
+            style="color: var(--osm-accent); font-size: 12px; margin: 4px 0;",
+        )
 
     @render.ui
     def mb_applicability():
@@ -320,3 +331,48 @@ def map_builder_server(input, output, session, state):
         elif mode == "mask":
             mg.set_mask([cell], True)
         dirty.set(dirty.get() + 1)
+
+    # --- polygon staging + apply -------------------------------------------
+    @reactive.effect
+    @reactive.event(getattr(input, f"{_MAP_ID}_drawn_features"))
+    def _on_drawn_features():
+        fc = getattr(input, f"{_MAP_ID}_drawn_features")()
+        if not isinstance(fc, dict) or not fc.get("features"):
+            return
+        staged.set(fc)
+
+    @reactive.effect
+    @reactive.event(input.apply_polygons)
+    async def _on_apply_polygons():
+        fc = staged.get()
+        if not isinstance(fc, dict):
+            return
+        grid = _grid_spec()
+        mg = grid_array.get()
+        if grid is None or mg is None:
+            return
+        try:
+            mode = input.tool_mode()
+        except SilentException:
+            mode = "polygon"
+        mask_edit = mode == "mask"
+        value = _paint_value()
+        done = set(applied_ids.get())
+        painted = False
+        for feature in fc.get("features", []):
+            fid = feature.get("id")
+            if fid in done:
+                continue
+            geom = feature.get("geometry") or {}
+            coords = geom.get("coordinates") or []
+            if not coords:
+                continue
+            ring = coords[0]
+            mg.apply_polygon(grid, ring, value, mask_edit=mask_edit)
+            done.add(fid)
+            painted = True
+        await _map.delete_drawn_features(session)
+        applied_ids.set(set())
+        staged.set(None)
+        if painted:
+            dirty.set(dirty.get() + 1)
