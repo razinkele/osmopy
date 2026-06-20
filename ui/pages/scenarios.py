@@ -248,7 +248,7 @@ def scenarios_server(input, output, session, state):
             wizard_error.set("Could not save the scenario. Check server logs.")
             return
         # Load into the editor. load_config's RETURN is the deprecated-keys list (NOT names);
-        # re-derive species names from cfg, exactly as handle_load (scenarios.py:186-194).
+        # re-derive species names from cfg, exactly as handle_load does.
         state.busy.set(f"Creating '{new_name}'…")
         try:
             state.load_config(cfg)
