@@ -149,6 +149,24 @@ async def test_runner_custom_output_dir_in_result(
     assert result.output_dir == out
 
 
+async def test_runner_cancel_reports_cancelled_status(fake_config: Path, tmp_path: Path) -> None:
+    """A cancelled run reports status='cancelled', not a bare 'Failed (exit -15)'.
+
+    Regression: cancel() only terminated the process; run() always returned the
+    default status='ok', so the UI (run.py: `if result.status == 'cancelled'`)
+    fell through to 'Failed (exit code -15)' for a user-cancelled Java run.
+    """
+    script = tmp_path / "slow_osmose.py"
+    script.write_text("import time\nprint('start', flush=True)\ntime.sleep(30)\n")
+    runner = _ScriptRunner(jar_path=script, java_cmd=sys.executable)
+    task = asyncio.create_task(runner.run(config_path=fake_config))
+    await asyncio.sleep(0.5)  # let the process actually start
+    runner.cancel()
+    result = await task
+    assert result.status == "cancelled"
+    assert result.returncode != 0
+
+
 def test_get_java_version() -> None:
     """Just verify the method doesn't crash. Java may or may not be installed."""
     result = OsmoseRunner.get_java_version()
