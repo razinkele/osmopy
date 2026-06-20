@@ -11,7 +11,7 @@ A guided **"New Scenario"** wizard that lets a user bootstrap a working scenario
 
 A **"+ New Scenario"** button on the existing **Scenarios** page opens a modal 3-step stepper:
 
-1. **Preset** — choose a starting point: a bundled demo (from `list_demos()`) or a saved scenario (from `ScenarioManager.list_scenarios()`), shown as two `<optgroup>` sections in one select. When the chosen source is a **saved scenario**, an inline note warns: *"Saved scenarios don't include map files — Grid/Map pages may be empty. Start from a bundled demo for full maps."*
+1. **Preset** — choose a starting point: a bundled demo (from `list_demos()`) or a saved scenario (from `ScenarioManager.list_scenarios()`), shown as two `<optgroup>` sections in one select. A static caption under the select sets expectations: *"Saved scenarios don't include map files, so Grid/Map pages may be empty — bundled demos include full maps."* (A static caption rather than a selection-conditional note, so changing the select never re-renders/resets it.)
 2. **Basics** — set headline parameters, each pre-filled from the chosen source's current value:
    - **Years** → `simulation.time.nyear`
    - **Steps/year** → `simulation.time.ndtperyear`

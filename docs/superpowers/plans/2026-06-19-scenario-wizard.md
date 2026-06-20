@@ -220,7 +220,7 @@ def parse_source(value: str) -> tuple[str, str]:
     for kind in ("demo", "scenario"):
         prefix = f"{kind}:"
         if value.startswith(prefix):
-            return (kind, value[len(prefix):])
+            return (kind, value[len(prefix) :])
     raise ValueError(f"unknown source value: {value!r}")
 
 
@@ -452,9 +452,13 @@ git commit -m "feat(ui): scenarios page New-Scenario button + Fork relabel"
 
 **Files:** Modify `ui/pages/scenarios.py` (test: import-clean gate — the reactive/modal seam is exercised by the Task 10 e2e)
 
-- [ ] **Step 1: Implement.** Add imports at the TOP of `ui/pages/scenarios.py` (with the existing imports):
+**Design note (why a static footer):** the Back/Next nav buttons live in the modal's STATIC `footer=` (created once per `modal_show`, exactly like the existing `btn_confirm_overwrite` overwrite-modal at `scenarios.py:125-141`), NOT inside the `@render.ui wizard_body`. Action buttons recreated by a re-rendering `@render.ui` can have their click-counter rebound (swallowed clicks / spurious double-advance) — so `wizard_body` renders ONLY the per-step inputs, and the nav buttons are stable across step changes. A single "Next" button advances/creates depending on `wizard_step` (relabelled "Create" on step 3).
+
+- [ ] **Step 1: Implement.** Add imports at the TOP of `ui/pages/scenarios.py` (with the existing imports — note `Scenario`, `reactive`, `render`, `ui`, and the module-level `_log` are ALREADY imported at `scenarios.py:6-13`):
 
 ```python
+import atexit
+import shutil
 import tempfile
 
 from osmose.demo import list_demos
@@ -471,7 +475,7 @@ from osmose.scenario_wizard import (
 )
 ```
 
-Then, inside `scenarios_server(...)` (after `_scenario_names` is defined, ~line 86), add the wizard state, the two renderers, and the open/back/next handlers:
+Then, inside `scenarios_server(...)` (after `_scenario_names` is defined, ~line 86), add the wizard state, the two renderers, and the open/back/next handlers. The nav buttons are in the modal footer (static); `wizard_body` renders inputs only:
 
 ```python
     # --- New Scenario wizard ---
@@ -497,18 +501,10 @@ Then, inside `scenarios_server(...)` (after `_scenario_names` is defined, ~line 
                     "empty — bundled demos include full maps.",
                     class_="text-muted small mb-2",
                 ),
-                ui.div(
-                    ui.tags.button(
-                        "Cancel", class_="btn btn-secondary",
-                        **{"data-bs-dismiss": "modal"},
-                    ),
-                    ui.input_action_button("btn_wizard_next", "Next", class_="btn-primary"),
-                    class_="d-flex justify-content-between mt-3",
-                ),
             )
         if step == 2:
             src = wizard_source.get()
-            b = read_basics(src.config) if src is not None else Basics(10, 24, False)
+            b = read_basics(src.config) if src is not None else read_basics({})
             return ui.div(
                 ui.input_numeric("wizard_nyear", "Years", value=b.nyear, min=1),
                 ui.input_numeric("wizard_ndt", "Steps/year", value=b.ndtperyear, min=1),
@@ -516,19 +512,9 @@ Then, inside `scenarios_server(...)` (after `_scenario_names` is defined, ~line 
                     "wizard_rng", "Reproducible runs (Python engine)",
                     value=b.reproducible_rng,
                 ),
-                ui.div(
-                    ui.input_action_button("btn_wizard_back", "Back", class_="btn-secondary"),
-                    ui.input_action_button("btn_wizard_next", "Next", class_="btn-primary"),
-                    class_="d-flex justify-content-between mt-3",
-                ),
             )
         return ui.div(
             ui.input_text("wizard_name", "New scenario name"),
-            ui.div(
-                ui.input_action_button("btn_wizard_back", "Back", class_="btn-secondary"),
-                ui.input_action_button("btn_wizard_create", "Create", class_="btn-success"),
-                class_="d-flex justify-content-between mt-3",
-            ),
         )
 
     @reactive.effect
@@ -544,7 +530,19 @@ Then, inside `scenarios_server(...)` (after `_scenario_names` is defined, ~line 
                 ui.output_ui("wizard_body"),
                 title="New Scenario",
                 easy_close=False,
-                footer=None,
+                footer=ui.div(
+                    ui.tags.button(
+                        "Cancel", class_="btn btn-secondary",
+                        **{"data-bs-dismiss": "modal"},
+                    ),
+                    ui.input_action_button(
+                        "btn_wizard_back", "Back", class_="btn-secondary"
+                    ),
+                    ui.input_action_button(
+                        "btn_wizard_next", "Next", class_="btn-primary"
+                    ),
+                    class_="d-flex gap-2",
+                ),
             )
         )
 
@@ -554,6 +552,8 @@ Then, inside `scenarios_server(...)` (after `_scenario_names` is defined, ~line 
         wizard_error.set("")
         step = wizard_step.get()
         if step >= 2:
+            if step == 3:
+                ui.update_action_button("btn_wizard_next", label="Next")
             wizard_step.set(step - 1)
 
     @reactive.effect
@@ -570,11 +570,10 @@ Then, inside `scenarios_server(...)` (after `_scenario_names` is defined, ~line 
             key = f"{kind}:{name}"
             if key != wizard_source_key.get() or wizard_source.get() is None:
                 try:
-                    dest = (
-                        Path(tempfile.mkdtemp(prefix="osmose_wizard_"))
-                        if kind == "demo"
-                        else None
-                    )
+                    dest = None
+                    if kind == "demo":
+                        dest = Path(tempfile.mkdtemp(prefix="osmose_wizard_"))
+                        atexit.register(shutil.rmtree, str(dest), True)
                     resolved = resolve_source(
                         kind, name, scenarios_dir=state.scenarios_dir, dest_dir=dest
                     )
@@ -587,9 +586,17 @@ Then, inside `scenarios_server(...)` (after `_scenario_names` is defined, ~line 
             wizard_step.set(2)
         elif step == 2:
             wizard_step.set(3)
+            ui.update_action_button("btn_wizard_next", label="Create")
+        elif step == 3:
+            pass  # Create wired in Task 8 (replaced with _do_wizard_create())
 ```
 
-NOTE: `wizard_body` reads `wizard_step` and `wizard_source` only (NOT `wizard_error`), so a validation error re-renders `wizard_error_msg` alone and never clears the user's typed inputs. Step-2 inputs are prefilled directly from the cached source in the `@render.ui` (no `update_numeric` race). Going Back from step 3→2 re-renders step-2 from the source defaults (any step-2 edits are re-read from source) — acceptable for this short wizard.
+NOTES:
+- The nav buttons (`btn_wizard_back`/`btn_wizard_next`) are in the STATIC modal footer — created once per `modal_show`, never recreated by a step change — so clicks are reliable (the proven `btn_confirm_overwrite` pattern). The single "Next" button is relabelled "Create" on step 3 via `ui.update_action_button` and back to "Next" on Back from step 3.
+- `wizard_body` depends on `wizard_step` + `wizard_source` only (NOT `wizard_error`), so a validation error re-renders `wizard_error_msg` alone and never clears the user's typed inputs.
+- Step-2 inputs are prefilled directly from the cached source in the `@render.ui` (`value=b.nyear` at creation — no `update_numeric` race); `read_basics({})` supplies the 10/24/False fallback when no source (single source of truth for the defaults).
+- The demo tempdir is registered for `atexit` cleanup (matching `export_all_scenarios`), so it's removed at process exit but still outlives the handler for run-time map resolution.
+- The step-3 branch is `pass` at this checkpoint (the wizard is fully navigable; Create is wired in Task 8). No undefined-symbol reference, so `import app` + pyright are clean at this commit.
 
 - [ ] **Step 2: Verify.** `.venv/bin/python -c "import app"` clean; `.venv/bin/ruff check ui/pages/scenarios.py` + `.venv/bin/ruff format --check ui/pages/scenarios.py` clean; `.venv/bin/pyright --pythonpath .venv/bin/python ui/pages/scenarios.py` → 0 NEW errors.
 
@@ -597,7 +604,7 @@ NOTE: `wizard_body` reads `wizard_step` and `wizard_source` only (NOT `wizard_er
 
 ```bash
 git add ui/pages/scenarios.py
-git commit -m "feat(ui): scenario wizard modal stepper (state + body + open/back/next)"
+git commit -m "feat(ui): scenario wizard modal stepper (static footer, state, body, nav)"
 ```
 
 ---
@@ -606,12 +613,10 @@ git commit -m "feat(ui): scenario wizard modal stepper (state + body + open/back
 
 **Files:** Modify `ui/pages/scenarios.py` (test: import-clean gate + Task 10 e2e)
 
-- [ ] **Step 1: Implement.** Add the Create handler inside `scenarios_server(...)`, after `_wizard_next` (Task 7):
+- [ ] **Step 1: Implement.** Add the `_do_wizard_create()` function inside `scenarios_server(...)`, after `_wizard_next` (Task 7). It is called from the step-3 branch of `_wizard_next` (see Step 2). The load section is wrapped in `state.busy` for parity with `handle_load` (so `sync_inputs` doesn't fire mid-update):
 
 ```python
-    @reactive.effect
-    @reactive.event(input.btn_wizard_create)
-    def _wizard_create():
+    def _do_wizard_create():
         wizard_error.set("")
         resolved = wizard_source.get()
         if resolved is None:
@@ -646,30 +651,49 @@ git commit -m "feat(ui): scenario wizard modal stepper (state + body + open/back
             _log.error("wizard save failed: %s", exc, exc_info=True)
             wizard_error.set("Could not save the scenario. Check server logs.")
             return
-        # Load into the editor (load_config's return is the deprecated-keys list, NOT names).
-        state.load_config(cfg)
-        state.config_name.set(new_name)
-        state.key_case_map.set(dict(resolved.case_map))
-        if resolved.config_dir is not None:
-            state.config_dir.set(resolved.config_dir)
-        state.dirty.set(False)
+        # Load into the editor. load_config's RETURN is the deprecated-keys list (NOT names);
+        # re-derive species names from cfg, exactly as handle_load (scenarios.py:186-194).
+        state.busy.set(f"Creating '{new_name}'…")
         try:
-            n_species = int(float(cfg.get("simulation.nspecies", "3") or "3"))
-        except (ValueError, TypeError):
-            n_species = 3
-        names = [cfg.get(f"species.name.sp{i}", f"Species {i}") for i in range(n_species)]
-        state.species_names.set(names)
-        ui.update_numeric("n_species", value=n_species)
-        with reactive.isolate():
-            state.load_trigger.set(state.load_trigger.get() + 1)
+            state.load_config(cfg)
+            state.config_name.set(new_name)
+            state.key_case_map.set(dict(resolved.case_map))
+            if resolved.config_dir is not None:
+                state.config_dir.set(resolved.config_dir)
+            state.dirty.set(False)
+            try:
+                n_species = int(float(cfg.get("simulation.nspecies", "3") or "3"))
+            except (ValueError, TypeError):
+                n_species = 3
+            names = [cfg.get(f"species.name.sp{i}", f"Species {i}") for i in range(n_species)]
+            state.species_names.set(names)
+            ui.update_numeric("n_species", value=n_species)
+            with reactive.isolate():
+                state.load_trigger.set(state.load_trigger.get() + 1)
+        finally:
+            state.busy.set(None)
         _bump()
         ui.modal_remove()
         ui.notification_show(f"Created scenario '{new_name}'.", type="message", duration=4)
 ```
 
-- [ ] **Step 2: Verify.** `.venv/bin/python -c "import app"` clean; ruff check/format clean on `ui/pages/scenarios.py`; `.venv/bin/pyright --pythonpath .venv/bin/python ui/pages/scenarios.py` → 0 NEW errors.
+- [ ] **Step 2: Wire it into `_wizard_next`.** In the `_wizard_next` handler from Task 7, replace the step-3 placeholder:
 
-- [ ] **Step 3: Commit**
+```python
+        elif step == 3:
+            pass  # Create wired in Task 8 (replaced with _do_wizard_create())
+```
+
+with:
+
+```python
+        elif step == 3:
+            _do_wizard_create()
+```
+
+- [ ] **Step 3: Verify.** `.venv/bin/python -c "import app"` clean; ruff check/format clean on `ui/pages/scenarios.py`; `.venv/bin/pyright --pythonpath .venv/bin/python ui/pages/scenarios.py` → 0 errors.
+
+- [ ] **Step 4: Commit**
 
 ```bash
 git add ui/pages/scenarios.py
@@ -706,7 +730,7 @@ git commit -m "feat(ui): point Grid 'Load example' at the Scenarios wizard"
 
 **Files:** Create `tests/test_e2e_scenario_wizard.py`
 
-- [ ] **Step 1: Write the e2e test** (named `test_e2e_*` so conftest collect-ignore + `[viztest]` gating apply):
+- [ ] **Step 1: Write the e2e test** (named `test_e2e_*` so conftest collect-ignore + `[viztest]` gating apply). The nav is a single "Next" button (relabelled "Create" on step 3), so `#btn_wizard_next` is clicked three times. After Create, the test reads back the saved `scenario.json` and asserts `simulation.time.nyear == "7"` (proves `apply_basics` reached the save path — the spec's key assertion), using a unique name + cleanup so re-runs don't collide:
 
 ```python
 """End-to-end test for the New Scenario wizard.
@@ -716,8 +740,14 @@ Run explicitly:
 
 Excluded from the default suite (`-m 'not e2e'`). The wizard's pure logic
 (apply_basics override, validation, resolve) is covered by
-tests/test_scenario_wizard.py; this asserts the modal stepper flow end to end.
+tests/test_scenario_wizard.py; this asserts the modal stepper flow end to end
+plus that the override actually reached the persisted config.
 """
+
+import json
+import shutil
+import uuid
+from pathlib import Path
 
 import pytest
 from playwright.sync_api import Page, expect
@@ -731,6 +761,7 @@ pytestmark = pytest.mark.e2e
 app = create_app_fixture("../app.py")
 
 _LOAD_TIMEOUT = 15_000
+_SCENARIOS_DIR = Path("data/scenarios")  # state.scenarios_dir default (ui/state.py:35)
 
 
 def _goto_scenarios(page: Page, app: ShinyAppProc) -> None:
@@ -742,25 +773,35 @@ def _goto_scenarios(page: Page, app: ShinyAppProc) -> None:
 
 
 def test_wizard_creates_scenario_from_demo(page: Page, app: ShinyAppProc):
-    _goto_scenarios(page, app)
-    # Open the wizard
-    page.click("#btn_new_scenario")
-    page.wait_for_selector("#wizard_source_sel", timeout=_LOAD_TIMEOUT)
-    # Step 1: pick a bundled demo
-    page.select_option("#wizard_source_sel", "demo:baltic")
-    page.click("#btn_wizard_next")
-    # Step 2: set years, then Next
-    page.wait_for_selector("#wizard_nyear", timeout=_LOAD_TIMEOUT)
-    page.fill("#wizard_nyear", "7")
-    page.click("#btn_wizard_next")
-    # Step 3: name + Create
-    page.wait_for_selector("#wizard_name", timeout=_LOAD_TIMEOUT)
-    page.fill("#wizard_name", "e2e_wizard_baltic")
-    page.click("#btn_wizard_create")
-    # Success: toast + the new scenario appears in the list
-    note = page.locator(".shiny-notification").last
-    expect(note).to_be_visible(timeout=_LOAD_TIMEOUT)
-    expect(page.get_by_text("e2e_wizard_baltic")).to_be_visible(timeout=_LOAD_TIMEOUT)
+    name = f"e2e_wiz_{uuid.uuid4().hex[:8]}"
+    scen_dir = _SCENARIOS_DIR / name
+    try:
+        _goto_scenarios(page, app)
+        # Open the wizard
+        page.click("#btn_new_scenario")
+        page.wait_for_selector("#wizard_source_sel", timeout=_LOAD_TIMEOUT)
+        # Step 1: pick a bundled demo, Next
+        page.select_option("#wizard_source_sel", "demo:baltic")
+        page.click("#btn_wizard_next")
+        # Step 2: set years, Next
+        page.wait_for_selector("#wizard_nyear", timeout=_LOAD_TIMEOUT)
+        page.fill("#wizard_nyear", "7")
+        page.click("#btn_wizard_next")
+        # Step 3: name, then Create (the same button, now labelled "Create")
+        page.wait_for_selector("#wizard_name", timeout=_LOAD_TIMEOUT)
+        page.fill("#wizard_name", name)
+        page.click("#btn_wizard_next")
+        # Success: toast + the new scenario appears in the list
+        note = page.locator(".shiny-notification").last
+        expect(note).to_be_visible(timeout=_LOAD_TIMEOUT)
+        expect(page.get_by_text(name)).to_be_visible(timeout=_LOAD_TIMEOUT)
+        # Read back the persisted config — the Years override must have reached the save path.
+        scen_json = scen_dir / "scenario.json"
+        assert scen_json.exists(), f"expected saved scenario at {scen_json}"
+        saved = json.loads(scen_json.read_text())
+        assert saved["config"]["simulation.time.nyear"] == "7"
+    finally:
+        shutil.rmtree(scen_dir, ignore_errors=True)
 ```
 
 - [ ] **Step 2: Run (if Playwright/chromium available).** `.venv/bin/python -m pytest tests/test_e2e_scenario_wizard.py -v -m e2e`. Expected: PASS. If the browser is unavailable, document the manual check (open Scenarios → + New Scenario → baltic → Next → years 7 → Next → name → Create → toast + name in list).
