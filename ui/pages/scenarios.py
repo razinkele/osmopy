@@ -1,11 +1,22 @@
 """Scenario management page."""
 
+import atexit
+import shutil
+import tempfile
 import zipfile
 from pathlib import Path
 
 from shiny import reactive, render, ui
 
+from osmose.demo import list_demos
 from osmose.logging import setup_logging
+from osmose.scenario_wizard import (
+    ResolvedSource,
+    parse_source,
+    read_basics,
+    resolve_source,
+    source_choices,
+)
 from osmose.scenarios import Scenario, ScenarioManager
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.styles import STYLE_DIFF_ROW, STYLE_EMPTY
@@ -86,6 +97,116 @@ def scenarios_server(input, output, session, state):
     def _scenario_names() -> list[str]:
         """Return a sorted list of scenario names."""
         return [s["name"] for s in mgr.list_scenarios()]
+
+    # --- New Scenario wizard ---
+    wizard_step = reactive.Value(1)
+    wizard_source: reactive.Value[ResolvedSource | None] = reactive.Value(None)
+    wizard_source_key = reactive.Value("")
+    wizard_error = reactive.Value("")
+
+    @render.ui
+    def wizard_error_msg():
+        msg = wizard_error.get()
+        return ui.div(msg, class_="text-danger mb-2") if msg else None
+
+    @render.ui
+    def wizard_body():
+        step = wizard_step.get()
+        if step == 1:
+            choices = source_choices(list_demos(), _scenario_names())
+            return ui.div(
+                ui.input_select("wizard_source_sel", "Start from", choices=choices),
+                ui.div(
+                    "Saved scenarios don't include map files, so Grid/Map pages may be "
+                    "empty — bundled demos include full maps.",
+                    class_="text-muted small mb-2",
+                ),
+            )
+        if step == 2:
+            src = wizard_source.get()
+            b = read_basics(src.config) if src is not None else read_basics({})
+            return ui.div(
+                ui.input_numeric("wizard_nyear", "Years", value=b.nyear, min=1),
+                ui.input_numeric("wizard_ndt", "Steps/year", value=b.ndtperyear, min=1),
+                ui.input_switch(
+                    "wizard_rng",
+                    "Reproducible runs (Python engine)",
+                    value=b.reproducible_rng,
+                ),
+            )
+        return ui.div(
+            ui.input_text("wizard_name", "New scenario name"),
+        )
+
+    @reactive.effect
+    @reactive.event(input.btn_new_scenario)
+    def _wizard_open():
+        wizard_step.set(1)
+        wizard_source.set(None)
+        wizard_source_key.set("")
+        wizard_error.set("")
+        ui.modal_show(
+            ui.modal(
+                ui.output_ui("wizard_error_msg"),
+                ui.output_ui("wizard_body"),
+                title="New Scenario",
+                easy_close=False,
+                footer=ui.div(
+                    ui.tags.button(
+                        "Cancel",
+                        class_="btn btn-secondary",
+                        **{"data-bs-dismiss": "modal"},
+                    ),
+                    ui.input_action_button("btn_wizard_back", "Back", class_="btn-secondary"),
+                    ui.input_action_button("btn_wizard_next", "Next", class_="btn-primary"),
+                    class_="d-flex gap-2",
+                ),
+            )
+        )
+
+    @reactive.effect
+    @reactive.event(input.btn_wizard_back)
+    def _wizard_back():
+        wizard_error.set("")
+        step = wizard_step.get()
+        if step >= 2:
+            if step == 3:
+                ui.update_action_button("btn_wizard_next", label="Next")
+            wizard_step.set(step - 1)
+
+    @reactive.effect
+    @reactive.event(input.btn_wizard_next)
+    def _wizard_next():
+        wizard_error.set("")
+        step = wizard_step.get()
+        if step == 1:
+            value = input.wizard_source_sel()
+            if not value:
+                wizard_error.set("Pick a starting point.")
+                return
+            kind, name = parse_source(value)
+            key = f"{kind}:{name}"
+            if key != wizard_source_key.get() or wizard_source.get() is None:
+                try:
+                    dest = None
+                    if kind == "demo":
+                        dest = Path(tempfile.mkdtemp(prefix="osmose_wizard_"))
+                        atexit.register(shutil.rmtree, str(dest), True)
+                    resolved = resolve_source(
+                        kind, name, scenarios_dir=state.scenarios_dir, dest_dir=dest
+                    )
+                except (OSError, ValueError, KeyError) as exc:
+                    _log.error("wizard resolve failed: %s", exc, exc_info=True)
+                    wizard_error.set("Could not load that source. Check server logs.")
+                    return
+                wizard_source.set(resolved)
+                wizard_source_key.set(key)
+            wizard_step.set(2)
+        elif step == 2:
+            wizard_step.set(3)
+            ui.update_action_button("btn_wizard_next", label="Create")
+        elif step == 3:
+            pass  # Create wired in Task 8 (replaced with _do_wizard_create())
 
     # --- Scenario list (radio buttons) ---
 
