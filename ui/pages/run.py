@@ -184,6 +184,7 @@ def run_ui():
             # Left: Run controls with engine tabs
             ui.card(
                 body_collapse_header("Run Configuration", "run_config"),
+                ui.output_ui("engine_indicator"),
                 ui.panel_conditional(
                     "input.engine_mode !== 'python'",
                     ui.output_ui("jar_selector"),
@@ -219,6 +220,7 @@ def run_ui():
                         rows=4,
                     ),
                 ),
+                ui.output_ui("engine_capability"),
                 ui.hr(),
                 ui.layout_columns(
                     ui.input_action_button(
@@ -560,6 +562,17 @@ def run_server(input, output, session, state):
         val = input.jar_path()
         if val:
             state.jar_path.set(val)
+
+    @render.ui
+    def engine_indicator():
+        mode = state.engine_mode.get()
+        label = "Python" if mode == "python" else "Java"
+        return ui.p(
+            ui.tags.strong("Active engine: "),
+            label,
+            ui.tags.span(" — change in the header toggle ↗", class_="text-muted"),
+            class_="mb-2",
+        )
 
     @render.text
     def run_status():

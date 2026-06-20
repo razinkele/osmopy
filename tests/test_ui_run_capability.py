@@ -24,3 +24,9 @@ def test_run_page_uses_panel_conditional_for_engine_settings():
         "py_param_overrides",
     ):
         assert input_id in text
+
+
+def test_run_page_source_has_indicator_and_capability_slots():
+    text = open(run_page.__file__, encoding="utf-8").read()
+    assert 'output_ui("engine_indicator")' in text
+    assert 'output_ui("engine_capability")' in text
