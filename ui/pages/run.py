@@ -20,6 +20,7 @@ from shiny_deckgl import (  # type: ignore[import-untyped]
 
 from osmose.config.validator import summarize_config_validation
 from osmose.engine import PythonEngine, SimulationCancelled
+from osmose.engine_capabilities import describe_engine
 from osmose.live_movement import make_step_observer
 from osmose.logging import setup_logging
 from osmose.runner import (
@@ -572,6 +573,26 @@ def run_server(input, output, session, state):
             label,
             ui.tags.span(" — change in the header toggle ↗", class_="text-muted"),
             class_="mb-2",
+        )
+
+    @render.ui
+    def engine_capability():
+        config = state.config.get()
+        if not config:
+            return ui.p("Load a configuration to see engine capabilities.", class_="text-muted")
+        cap = describe_engine(state.engine_mode.get(), config)
+        if not cap.can_run:
+            return ui.div(
+                ui.tags.strong("This engine can't run this configuration. "),
+                cap.block_reason or "",
+                class_="alert alert-warning",
+            )
+        populated = ", ".join(cap.pages_populated) or "—"
+        empty = ", ".join(cap.pages_empty) or "—"
+        return ui.div(
+            ui.p(ui.tags.strong("Will populate: "), populated),
+            ui.p(ui.tags.strong("Won't populate (this engine): "), empty, class_="text-muted"),
+            ui.p(cap.notable_outputs, class_="small text-muted"),
         )
 
     @render.text

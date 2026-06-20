@@ -30,3 +30,9 @@ def test_run_page_source_has_indicator_and_capability_slots():
     text = open(run_page.__file__, encoding="utf-8").read()
     assert 'output_ui("engine_indicator")' in text
     assert 'output_ui("engine_capability")' in text
+
+
+def test_run_page_imports_describe_engine_and_renders_capability():
+    text = open(run_page.__file__, encoding="utf-8").read()
+    assert "from osmose.engine_capabilities import describe_engine" in text
+    assert "def engine_capability" in text
