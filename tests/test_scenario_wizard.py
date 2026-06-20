@@ -1,4 +1,12 @@
-from osmose.scenario_wizard import Basics, apply_basics, read_basics
+import pytest
+
+from osmose.scenario_wizard import (
+    Basics,
+    apply_basics,
+    parse_source,
+    read_basics,
+    source_choices,
+)
 
 
 def test_apply_basics_sets_exactly_the_four_keys_and_copies():
@@ -32,3 +40,22 @@ def test_read_basics_rng_true_only_when_both_booleans_true():
     assert read_basics({"movement.randomseed.fixed": "true"}).reproducible_rng is False
     both = {"movement.randomseed.fixed": "true", "stochastic.mortality.randomseed.fixed": "true"}
     assert read_basics(both).reproducible_rng is True
+
+
+def test_parse_source():
+    assert parse_source("demo:baltic") == ("demo", "baltic")
+    assert parse_source("scenario:my_run") == ("scenario", "my_run")
+    with pytest.raises(ValueError):
+        parse_source("bogus")
+
+
+def test_source_choices_groups_and_prefixes():
+    ch = source_choices(["baltic", "eec"], ["my_run"])
+    assert ch["Bundled demos"] == {"demo:baltic": "baltic", "demo:eec": "eec"}
+    assert ch["Saved scenarios"] == {"scenario:my_run": "my_run"}
+
+
+def test_source_choices_omits_saved_group_when_empty():
+    ch = source_choices(["baltic"], [])
+    assert "Saved scenarios" not in ch
+    assert ch["Bundled demos"] == {"demo:baltic": "baltic"}

@@ -56,3 +56,20 @@ def read_basics(config: dict[str, str]) -> Basics:
         ndtperyear=_to_int(config.get(_NDT_KEY), _DEFAULT_NDT),
         reproducible_rng=move and mort,
     )
+
+
+def parse_source(value: str) -> tuple[str, str]:
+    """Split a select value 'demo:<name>' / 'scenario:<name>' into (kind, name)."""
+    for kind in ("demo", "scenario"):
+        prefix = f"{kind}:"
+        if value.startswith(prefix):
+            return (kind, value[len(prefix) :])
+    raise ValueError(f"unknown source value: {value!r}")
+
+
+def source_choices(demos: list[str], scenarios: list[str]) -> dict[str, dict[str, str]]:
+    """Grouped <optgroup> choices for input_select; omit the saved group when empty."""
+    choices: dict[str, dict[str, str]] = {"Bundled demos": {f"demo:{d}": d for d in demos}}
+    if scenarios:
+        choices["Saved scenarios"] = {f"scenario:{s}": s for s in scenarios}
+    return choices
