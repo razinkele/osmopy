@@ -6,6 +6,7 @@ from osmose.scenario_wizard import (
     default_description,
     parse_source,
     read_basics,
+    resolve_source,
     source_choices,
     validate_name,
 )
@@ -78,3 +79,31 @@ def test_default_description():
     b = Basics(nyear=50, ndtperyear=24, reproducible_rng=False)
     assert default_description("demo", "baltic", b) == "Created from baltic demo, 50 yr"
     assert default_description("scenario", "my_run", b) == "Created from scenario 'my_run', 50 yr"
+
+
+def test_resolve_source_demo(tmp_path):
+    dest = tmp_path / "demo_dest"
+    dest.mkdir()
+    r = resolve_source("demo", "baltic", scenarios_dir=tmp_path / "scen", dest_dir=dest)
+    assert r.kind == "demo" and r.name == "baltic"
+    assert r.parent is None
+    assert r.config_dir is not None and r.config_dir.exists()
+    assert "grid.nlon" in r.config and r.case_map
+
+
+def test_resolve_source_scenario(tmp_path):
+    from osmose.scenarios import Scenario, ScenarioManager
+
+    scen_dir = tmp_path / "scen"
+    mgr = ScenarioManager(scen_dir)
+    mgr.save(Scenario(name="base", config={"simulation.nspecies": "2"}, key_case_map={"a": "A"}))
+    r = resolve_source("scenario", "base", scenarios_dir=scen_dir, dest_dir=None)
+    assert r.kind == "scenario" and r.name == "base"
+    assert r.config_dir is None
+    assert r.parent == "base"
+    assert r.config["simulation.nspecies"] == "2"
+
+
+def test_resolve_source_unknown_kind(tmp_path):
+    with pytest.raises(ValueError):
+        resolve_source("bogus", "x", scenarios_dir=tmp_path, dest_dir=None)

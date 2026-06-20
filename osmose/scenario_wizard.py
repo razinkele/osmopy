@@ -3,6 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from osmose.config.reader import OsmoseConfigReader
+from osmose.demo import osmose_demo
+from osmose.scenarios import ScenarioManager
+
 _NYEAR_KEY = "simulation.time.nyear"
 _NDT_KEY = "simulation.time.ndtperyear"
 _MOVE_RNG_KEY = "movement.randomseed.fixed"
@@ -91,3 +95,43 @@ def validate_name(name: str, existing: set[str]) -> list[str]:
 def default_description(kind: str, name: str, basics: Basics) -> str:
     src = f"{name} demo" if kind == "demo" else f"scenario '{name}'"
     return f"Created from {src}, {basics.nyear} yr"
+
+
+def resolve_source(
+    kind: str,
+    name: str,
+    *,
+    scenarios_dir: Path,
+    dest_dir: Path | None = None,
+) -> ResolvedSource:
+    """Resolve a wizard source to a config (+ dir + case_map + parent).
+
+    demo: materialize into `dest_dir` (caller-owned, persistent) and read it.
+    scenario: load the stored config dict (no files; config_dir is None).
+    """
+    if kind == "demo":
+        if dest_dir is None:
+            raise ValueError("dest_dir is required for a demo source")
+        result = osmose_demo(name, dest_dir)
+        config_file = Path(result["config_file"])
+        reader = OsmoseConfigReader()
+        cfg = reader.read(config_file)
+        return ResolvedSource(
+            kind="demo",
+            name=name,
+            config=cfg,
+            config_dir=config_file.parent,
+            case_map=dict(reader.key_case_map),
+            parent=None,
+        )
+    if kind == "scenario":
+        s = ScenarioManager(scenarios_dir).load(name)
+        return ResolvedSource(
+            kind="scenario",
+            name=name,
+            config=dict(s.config),
+            config_dir=None,
+            case_map=dict(s.key_case_map),
+            parent=name,
+        )
+    raise ValueError(f"unknown source kind: {kind!r}")
