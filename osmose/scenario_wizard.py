@@ -17,6 +17,14 @@ _DEFAULT_NDT = 24
 
 @dataclass(frozen=True)
 class Basics:
+    """Headline params the wizard sets on a source config.
+
+    ``reproducible_rng`` controls the ``movement.randomseed.fixed`` and
+    ``stochastic.mortality.randomseed.fixed`` engine flags together (a single
+    toggle); a source with only one of the two flags set reads back as False,
+    and applying writes both — mixed states are not represented.
+    """
+
     nyear: int
     ndtperyear: int
     reproducible_rng: bool

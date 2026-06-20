@@ -107,3 +107,8 @@ def test_resolve_source_scenario(tmp_path):
 def test_resolve_source_unknown_kind(tmp_path):
     with pytest.raises(ValueError):
         resolve_source("bogus", "x", scenarios_dir=tmp_path, dest_dir=None)
+
+
+def test_resolve_source_demo_requires_dest_dir(tmp_path):
+    with pytest.raises(ValueError, match="dest_dir"):
+        resolve_source("demo", "baltic", scenarios_dir=tmp_path, dest_dir=None)
