@@ -26,6 +26,7 @@ osmose/          # Core library (usable without Shiny)
   schema/        # Parameter definitions + registry (223 params)
   config/        # Config reader/writer (OSMOSE .csv/.properties format)
   calibration/   # pymoo NSGA-II, GP surrogate, SALib sensitivity
+  forcing/       # Pure CMEMS->OSMOSE forcing conversion (grid-general, LTL + physics)
   runner.py      # Async Java subprocess manager
   results.py     # CSV/NetCDF output reader (xarray)
   scenarios.py   # Save/load/compare/fork (JSON)
