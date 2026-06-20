@@ -17,7 +17,7 @@ This sub-project (**A**) makes that conversion a first-class OSMOPY capability: 
 
 ## Goals
 
-1. A pure `osmose/forcing/` package (numpy/xarray/scipy only) that converts a **downloaded** CMEMS BGC NetCDF → 6-group LTL forcing, and a CMEMS PHY NetCDF → temperature/salinity forcing, for **any config's grid**.
+1. A pure `osmose/forcing/` package (numpy/xarray/scipy only) that converts a **downloaded** CMEMS BGC NetCDF → 6-group LTL forcing, and a CMEMS PHY NetCDF → temperature/salinity forcing, regridding to **any config's grid** (24 biweekly steps). *Caveat: only the grid is generalized — the conversion coefficients (C:wet ratios, seasonal community splits) remain Baltic-calibrated and are tagged as such in the output `calibration` attr; they are not validated for other seas/hemispheres. A warning fires when the target grid extends beyond the source data extent (nearest-edge extrapolation).*
 2. The MCP `generate_osmose_*` tools refactored to thin wrappers over this core (single source of truth, no drift; unchanged tool behavior).
 3. A convert-only CLI `scripts/convert_cmems_forcing.py` (bring-your-own downloaded NetCDF → forcing NetCDF).
 4. Full CI coverage with synthetic source datasets — no credentials, no network.
@@ -78,12 +78,13 @@ Generalized versions of the MCP helpers, each taking a `GridSpec` instead of clo
   - **Mode B** when only `chl`(+`nppv`) present (reanalysis): chl-derived estimate with seasonal community splits.
   - Raises `ValueError` if neither pathway's variables are present.
   - Applies `ocean_mask` (if given) as the final step.
-  - Returns an `xr.Dataset` with one variable per group (`Diatoms`, `Dinoflagellates`, `Microzooplankton`, `Mesozooplankton`, `Macrozooplankton`, `Benthos`), dims `(time=24, latitude=nlat, longitude=nlon)`, plus `time`/`latitude`/`longitude` coords and a `mode` attribute. (Structure mirrors the current output so the existing config reader and UI consume it unchanged.)
+  - Returns an `xr.Dataset` with one variable per group (`Diatoms`, `Dinoflagellates`, `Microzooplankton`, `Mesozooplankton`, `Macrozooplankton`, `Benthos`), dims `(time=24, latitude=nlat, longitude=nlon)`, plus `time`/`latitude`/`longitude` coords and `mode`/`calibration` attrs. (Structure mirrors the current LTL output so the existing config reader and UI consume it unchanged — the OSMOSE engine resolves resource forcing by *species name*, so sub-project C wires the six group names into `species.name.spN`.)
 
 ### `osmose/forcing/physics.py` — PHY → temperature/salinity
 - `phy_to_physics(ds: xr.Dataset, grid: GridSpec, *, year: int = 0, depth_surface_m: float = 10.0) -> dict[str, xr.Dataset]`
   - Year-select, surface-depth-select (nearest), regrid, resample to 24.
   - Returns `{"temperature": <ds>, "salinity": <ds>}` for whichever of `thetao`/`so` are present (a missing variable is omitted with a logged note, not an error — matches current behavior).
+  - **Consumer caveat (for C/D):** these gridded physics NetCDFs target the **Java** engine (and bioen NetCDF-temperature, currently unwired). The default **Python** engine reads only the scalar `temperature.value` and has no salinity input — so wiring `temperature.varname`/salinity into a Python-engine config is a no-op until an engine-side NetCDF loader lands. Physics file generation is faithful to the MCP; engine consumption is out of scope for A.
 
 ### `osmose/forcing/io.py` — NetCDF writers
 - `write_ltl(ds: xr.Dataset, path: Path) -> Path` — write the LTL dataset (latitude descending, attrs incl. `source`, `title`, conventions note).

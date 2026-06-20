@@ -62,13 +62,33 @@ def test_target_coords_descending_lat_ascending_lon():
 
 
 def test_regrid_picks_nearest_src_cell():
-    # src grid coarse; a constant field regrids to the same constant
-    src_lat = np.array([66.0, 60.0, 54.0])
-    src_lon = np.array([10.0, 20.0, 30.0])
-    data = np.ones((1, 3, 3)) * 7.0
+    # NON-constant field so the test distinguishes correct nearest-neighbour
+    # selection (and lat/lon orientation) from a degenerate/transposed impl.
+    src_lat = np.array([66.0, 60.0, 54.0])  # descending
+    src_lon = np.array([10.0, 20.0, 30.0])  # ascending
+    # value encodes (lat_index, lon_index): 10*li + ci
+    data = np.array([[[10 * li + ci for ci in range(3)] for li in range(3)]], dtype=float)
     out = regrid(data, src_lat, src_lon, SMALL)
     assert out.shape == (1, 8, 10)
-    assert np.allclose(out, 7.0)
+    # northern-most target row (high lat) must map to src lat index 0; southern to 2
+    assert out[0, 0, 0] == 0.0  # NW corner -> src (lat0, lon0)
+    assert out[0, -1, -1] == 22.0  # SE corner -> src (lat2, lon2)
+    assert out[0, 0, -1] == 2.0  # NE corner -> src (lat0, lon2)
+
+
+def test_regrid_warns_when_target_exceeds_source_extent(caplog):
+    import logging
+
+    # source covers only a small central patch; SMALL grid spans the full Baltic box
+    src_lat = np.array([60.0, 59.0])
+    src_lon = np.array([19.0, 20.0])
+    data = np.ones((1, 2, 2)) * 5.0
+    with caplog.at_level(logging.WARNING):
+        out = regrid(data, src_lat, src_lon, SMALL)
+    assert out.shape == (1, 8, 10)
+    assert any("beyond source coverage" in r.message for r in caplog.records)
+    # out-of-coverage cells are nearest-edge filled (still the source value here)
+    assert np.allclose(out, 5.0)
 
 
 def test_resample_to_24_identity_and_interp():
@@ -123,6 +143,10 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'osmose.forcing'`
 
 Pure: numpy/xarray + osmose.maps.builder.GridSpec only. No CMEMS/MCP deps,
 so this module (and its tests) run in the clean CI venv.
+
+regrid/resample use O(nlat*nlon) Python loops (verbatim from the MCP source),
+intended for OSMOSE-scale config grids (~1e3-1e4 cells, coarse by construction).
+A much finer grid would want a vectorized scipy.spatial.cKDTree / np.searchsorted.
 """
 
 from __future__ import annotations
@@ -150,8 +174,28 @@ def target_coords(grid: GridSpec) -> tuple[np.ndarray, np.ndarray]:
 def regrid(
     data_3d: np.ndarray, src_lat: np.ndarray, src_lon: np.ndarray, grid: GridSpec
 ) -> np.ndarray:
-    """Nearest-neighbor regrid (time, src_lat, src_lon) -> (time, nlat, nlon)."""
+    """Nearest-neighbor regrid (time, src_lat, src_lon) -> (time, nlat, nlon).
+
+    Warns once when the target grid extends beyond the source data extent:
+    out-of-coverage cells are silently filled by nearest-EDGE extrapolation
+    (argmin always returns an in-bounds index). The MCP path was implicitly
+    safe (download bbox always covered the grid); the grid-general + BYO-file
+    surface this package adds removes that guarantee, so surface it loudly.
+    """
     tlat, tlon = target_coords(grid)
+    if (
+        tlat.min() < src_lat.min()
+        or tlat.max() > src_lat.max()
+        or tlon.min() < src_lon.min()
+        or tlon.max() > src_lon.max()
+    ):
+        _log.warning(
+            "target grid (lat %.2f-%.2f lon %.2f-%.2f) extends beyond source "
+            "coverage (lat %.2f-%.2f lon %.2f-%.2f); out-of-coverage cells are "
+            "filled by nearest-edge extrapolation",
+            tlat.min(), tlat.max(), tlon.min(), tlon.max(),
+            src_lat.min(), src_lat.max(), src_lon.min(), src_lon.max(),
+        )
     nlat, nlon = len(tlat), len(tlon)
     nt = data_3d.shape[0]
     out = np.zeros((nt, nlat, nlon), dtype=np.float64)
@@ -308,6 +352,20 @@ def test_land_mask_applied():
     mask[0, 0] = False
     out = bgc_to_ltl(ds, SMALL, ocean_mask=mask)
     assert np.isnan(out["Diatoms"].values[0, 0, 0])
+
+
+def test_depth_slice_empty_raises():
+    # all source depth levels are deeper than depth_integrate_m -> empty slice -> raise
+    # (not a silent all-zero forcing). Also covers a descending depth axis via sortby.
+    lat = np.linspace(66, 54, 4)
+    lon = np.linspace(10, 30, 5)
+    ds = xr.Dataset(
+        {"phyc": (["time", "depth", "latitude", "longitude"], np.ones((12, 1, 4, 5)) * 10.0),
+         "zooc": (["time", "depth", "latitude", "longitude"], np.ones((12, 1, 4, 5)) * 5.0)},
+        coords={"time": np.arange(12), "depth": [100.0], "latitude": lat, "longitude": lon},
+    )
+    with pytest.raises(ValueError, match="depth"):
+        bgc_to_ltl(ds, SMALL, depth_integrate_m=50.0)
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -319,11 +377,19 @@ Expected: FAIL — `ModuleNotFoundError`
 
 ```python
 # osmose/forcing/ltl.py
-"""BGC NetCDF -> OSMOSE 6-group LTL forcing. Pure port of the MCP logic."""
+"""BGC NetCDF -> OSMOSE 6-group LTL forcing. Pure port of the MCP logic.
+
+IMPORTANT: the default coefficients in LtlParams are BALTIC-CALIBRATED (carried
+verbatim from the MCP source). The seasonal diatom_frac arrays encode Northern-
+Hemisphere Baltic phytoplankton succession and assume Jan-start MONTHLY input
+(index 0 = January). The C:wet ratios were calibrated against Baltic standing
+stock. The conversion regrids to ANY config grid, but these coefficients are NOT
+validated for other seas / hemispheres — non-Baltic use needs explicit params.
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 import xarray as xr
@@ -351,17 +417,18 @@ GROUP_NAMES = [
 
 @dataclass(frozen=True)
 class LtlParams:
+    """LTL conversion coefficients. Defaults are BALTIC-calibrated (see module docstring)."""
+
     # Mode A (direct phyc/zooc biomass)
-    phyto_c_to_wet: float = 0.012  # gC/mmol * 1:1 wet:C
-    zoo_c_to_wet: float = 0.12  # gC/mmol * 10:1 wet:C
+    phyto_c_to_wet: float = 0.012  # gC/mmol * 1:1 wet:C (Baltic standing-stock calibrated)
+    zoo_c_to_wet: float = 0.12  # gC/mmol * 10:1 wet:C (crustacean zooplankton)
+    # Baltic phytoplankton succession: spring diatom bloom, summer cyano/dino (NH, Jan-start)
     diatom_frac_a: tuple[float, ...] = (
         0.40, 0.60, 0.75, 0.80, 0.70, 0.40, 0.25, 0.20, 0.25, 0.35, 0.40, 0.40,
     )
-    micro_frac: float = 0.40
-    meso_frac: float = 0.45
-    macro_frac: float = 0.15
-    benthos_npp_frac: float = 0.05 / 3.0
-    benthos_zoo_frac: float = 0.3  # fallback when nppv absent
+    micro_frac: float = 0.40  # Baltic zoo size split: ~40% micro
+    meso_frac: float = 0.45  # ~45% meso (copepods)
+    macro_frac: float = 0.15  # ~15% macro (mysids, krill)
     # Mode B (chl-derived)
     chl_to_biomass_factor: float = 50.0
     diatom_frac_b: tuple[float, ...] = (
@@ -370,11 +437,14 @@ class LtlParams:
     micro_npp_div: float = 50.0
     meso_npp_div: float = 15.0
     macro_npp_div: float = 8.0
-    benthos_npp_div: float = 3.0
     micro_npp_frac: float = 0.30
     meso_npp_frac: float = 0.10
     macro_npp_frac: float = 0.03
-    benthos_npp_frac_b: float = 0.05
+    # Benthos: shared across modes — reproduces server.py:478 (Mode A) / :512 (Mode B)
+    # as npp_tonnes * benthos_npp_frac / benthos_npp_div = npp_tonnes * 0.05 / 3.0.
+    benthos_npp_frac: float = 0.05
+    benthos_npp_div: float = 3.0
+    benthos_zoo_frac: float = 0.3  # Mode-A fallback when nppv absent
 
 
 def _seasonal(frac_tuple: tuple[float, ...], n_steps: int, nlat: int, nlon: int) -> np.ndarray:
@@ -407,7 +477,16 @@ def bgc_to_ltl(
     if year > 0 and "time" in work.dims:
         work = work.sel(time=work.time.dt.year == year)
     if "depth" in work.dims:
-        work = work.sel(depth=slice(0, depth_integrate_m)).mean(dim="depth", skipna=True)
+        # sortby so the slice works regardless of depth-axis order; raise (not
+        # silently produce an all-zero field) if no levels fall in the range.
+        work = work.sortby("depth")
+        sliced = work.sel(depth=slice(0, depth_integrate_m))
+        if sliced.sizes.get("depth", 0) == 0:
+            raise ValueError(
+                f"no source depth levels within [0, {depth_integrate_m}] m; "
+                f"source depth range is [{float(work.depth.min())}, {float(work.depth.max())}]"
+            )
+        work = sliced.mean(dim="depth", skipna=True)
 
     src_lat, src_lon = get_coords(work)
     has_phyc = "phyc" in work
@@ -432,7 +511,7 @@ def bgc_to_ltl(
 
         if nppv is not None:
             npp_tonnes = regrid(nppv, src_lat, src_lon, grid) * cell_vol / 1e9 * 365
-            benthos = npp_tonnes * params.benthos_npp_frac
+            benthos = npp_tonnes * params.benthos_npp_frac / params.benthos_npp_div
         else:
             benthos = zoo_tonnes * params.benthos_zoo_frac
     else:
@@ -459,7 +538,7 @@ def bgc_to_ltl(
         microzoo = npp_tonnes * params.micro_npp_frac / params.micro_npp_div
         mesozoo = npp_tonnes * params.meso_npp_frac / params.meso_npp_div
         macrozoo = npp_tonnes * params.macro_npp_frac / params.macro_npp_div
-        benthos = npp_tonnes * params.benthos_npp_frac_b / params.benthos_npp_div
+        benthos = npp_tonnes * params.benthos_npp_frac / params.benthos_npp_div
 
     groups = {
         "Diatoms": resample_to_24(diatoms),
@@ -483,6 +562,14 @@ def bgc_to_ltl(
             "mode": mode,
             "description": "6 lower trophic level groups, 24 biweekly timesteps",
             "depth_integration_m": depth_integrate_m,
+            "calibration": (
+                "Baltic Sea (CMEMS BAL products); coefficients (C:wet, seasonal "
+                "splits) not validated for other seas/hemispheres"
+            ),
+            "seasonal_split_assumption": (
+                "diatom_frac mapped positionally as Jan-start monthly, Northern-"
+                "Hemisphere phenology; n_steps!=12 uses a flat 0.5 split"
+            ),
             "conventions": "Latitude descending (north to south) to match grid.nc; NaN on land",
         },
     )
@@ -638,6 +725,7 @@ git commit -m "feat(forcing): phy_to_physics temperature/salinity conversion"
 ```python
 # tests/test_forcing_io.py
 import numpy as np
+import pytest
 import xarray as xr
 
 from osmose.forcing import bgc_to_ltl, phy_to_physics, write_ltl, write_physics
@@ -667,6 +755,15 @@ def test_write_ltl_roundtrip(tmp_path):
     reopened.close()
 
 
+def test_write_ltl_refuses_clobber(tmp_path):
+    ds = bgc_to_ltl(_bgc(), SMALL)
+    path = tmp_path / "ltl.nc"
+    write_ltl(ds, path)
+    with pytest.raises(FileExistsError):
+        write_ltl(ds, path)  # default overwrite=False
+    write_ltl(ds, path, overwrite=True)  # explicit overwrite OK
+
+
 def test_write_physics_roundtrip(tmp_path):
     src = xr.Dataset(
         {"thetao": (["time", "latitude", "longitude"], np.ones((12, 4, 5)) * 8.0)},
@@ -675,7 +772,8 @@ def test_write_physics_roundtrip(tmp_path):
     dsets = phy_to_physics(src, SMALL)
     paths = write_physics(dsets, tmp_path, prefix="test")
     assert (tmp_path / "test_temperature.nc").exists()
-    assert any("temperature" in str(p) for p in paths)
+    # write_physics returns a {name: path} mapping
+    assert paths["temperature"].name == "test_temperature.nc"
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -696,25 +794,45 @@ from pathlib import Path
 import xarray as xr
 
 
-def write_ltl(ds: xr.Dataset, path: Path | str) -> Path:
-    """Write an LTL forcing dataset to NetCDF; returns the path."""
+def write_ltl(ds: xr.Dataset, path: Path | str, *, overwrite: bool = False) -> Path:
+    """Write an LTL forcing dataset to NetCDF; returns the path.
+
+    Refuses to clobber an existing file unless overwrite=True (the convert CLI
+    is a new write surface; the in-tree Baltic forcing asset must not be
+    silently destroyed). The MCP wrapper passes overwrite=True to preserve its
+    always-regenerate behavior.
+    """
     out = Path(path)
+    if out.exists() and not overwrite:
+        raise FileExistsError(f"{out} exists; pass overwrite=True (CLI: --force) to replace it")
     out.parent.mkdir(parents=True, exist_ok=True)
     ds.to_netcdf(str(out))
     return out
 
 
 def write_physics(
-    dsets: dict[str, xr.Dataset], out_dir: Path | str, prefix: str = "baltic"
-) -> list[Path]:
-    """Write each physics dataset to f'{prefix}_{name}.nc'; returns the paths."""
+    dsets: dict[str, xr.Dataset],
+    out_dir: Path | str,
+    prefix: str = "baltic",
+    *,
+    overwrite: bool = False,
+) -> dict[str, Path]:
+    """Write each physics dataset to f'{prefix}_{name}.nc'; returns {name: path}.
+
+    Returns a name->path mapping (not a bare list) so consumers get the
+    explicit pairing. Refuses to clobber unless overwrite=True.
+    """
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    paths: list[Path] = []
+    paths: dict[str, Path] = {}
     for name, ds in dsets.items():
         fpath = out / f"{prefix}_{name}.nc"
+        if fpath.exists() and not overwrite:
+            raise FileExistsError(
+                f"{fpath} exists; pass overwrite=True (CLI: --force) to replace it"
+            )
         ds.to_netcdf(str(fpath))
-        paths.append(fpath)
+        paths[name] = fpath
     return paths
 ```
 
@@ -820,6 +938,31 @@ def test_cli_run_missing_vars_returns_nonzero(tmp_path):
     ).to_netcdf(str(src))
     rc = _run(source=str(src), config=_grid_cfg(), kind="ltl", out=str(tmp_path / "x.nc"), grid_file=None)
     assert rc != 0
+
+
+def test_cli_resolves_config_directory(tmp_path):
+    # A directory containing a single *all-parameters*.csv master resolves cleanly.
+    cfgdir = tmp_path / "cfg"
+    cfgdir.mkdir()
+    (cfgdir / "x_all-parameters.csv").write_text(
+        "grid.nlon ; 10\ngrid.nlat ; 8\ngrid.upleft.lat ; 66\ngrid.upleft.lon ; 10\n"
+        "grid.lowright.lat ; 54\ngrid.lowright.lon ; 30\n"
+    )
+    src = tmp_path / "bgc.nc"
+    _write_bgc(src)
+    rc = _run(source=str(src), config=str(cfgdir), kind="ltl", out=str(tmp_path / "ltl.nc"), grid_file=None)
+    assert rc == 0
+
+
+def test_cli_refuses_clobber_without_force(tmp_path):
+    src = tmp_path / "bgc.nc"
+    _write_bgc(src)
+    out = tmp_path / "ltl.nc"
+    assert _run(source=str(src), config=_grid_cfg(), kind="ltl", out=str(out), grid_file=None) == 0
+    # second run without force -> FileExistsError caught -> nonzero
+    assert _run(source=str(src), config=_grid_cfg(), kind="ltl", out=str(out), grid_file=None) != 0
+    # with force -> succeeds
+    assert _run(source=str(src), config=_grid_cfg(), kind="ltl", out=str(out), grid_file=None, force=True) == 0
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -861,11 +1004,20 @@ _log = setup_logging("osmose.forcing.cli")
 
 
 def _load_config(config: str | dict) -> dict:
-    """Accept a pre-resolved dict (tests) or a path to a master config file."""
+    """Accept a pre-resolved dict (tests) or a path to a config DIR or master file."""
     if isinstance(config, dict):
         return config
+    p = Path(config)
+    if p.is_dir():
+        masters = sorted(p.glob("*all-parameters*.csv"))
+        if len(masters) != 1:
+            raise ValueError(
+                f"expected exactly one *all-parameters*.csv in {p}, found {len(masters)}: "
+                f"{[m.name for m in masters]}; pass the master file directly"
+            )
+        p = masters[0]
     reader = OsmoseConfigReader()
-    return reader.read(Path(config))  # read(master_file: Path) -> dict[str, str]
+    return reader.read(p)  # read(master_file: Path) -> dict[str, str]
 
 
 def _run(
@@ -879,11 +1031,21 @@ def _run(
     depth_integrate_m: float = 50.0,
     depth_surface_m: float = 10.0,
     prefix: str = "baltic",
+    force: bool = False,
 ) -> int:
     """Core CLI logic; returns a process exit code."""
     try:
         cfg = _load_config(config)
         grid = GridSpec.from_config(cfg)
+        # A produces 24 biweekly steps; warn (don't fail) if the config wants otherwise,
+        # so a future non-24 target is visible rather than silently mismatched.
+        ndt = cfg.get("simulation.time.ndtPerYear")
+        if ndt is not None and str(ndt).strip() not in ("", "24"):
+            _log.warning(
+                "config simulation.time.ndtPerYear=%s but forcing is generated with 24 "
+                "biweekly steps (sub-project A is 24-step only)",
+                ndt,
+            )
         src = Path(source)
         if not src.exists():
             _log.error("source file not found: %s", source)
@@ -895,21 +1057,26 @@ def _run(
                 result = bgc_to_ltl(
                     ds, grid, year=year, depth_integrate_m=depth_integrate_m, ocean_mask=mask
                 )
-                path = write_ltl(result, out)
+                path = write_ltl(result, out, overwrite=force)
                 _log.info("wrote LTL forcing: %s", path)
+                for g in result.data_vars:
+                    _log.info("  %s: total=%.0f t", g, float(result[g].sum(skipna=True)))
             elif kind == "physics":
                 dsets = phy_to_physics(ds, grid, year=year, depth_surface_m=depth_surface_m)
                 if not dsets:
                     _log.error("no physics variables (thetao/so) found in source")
                     return 1
-                paths = write_physics(dsets, out, prefix=prefix)
-                _log.info("wrote physics forcing: %s", ", ".join(str(p) for p in paths))
+                paths = write_physics(dsets, out, prefix=prefix, overwrite=force)
+                _log.info(
+                    "wrote physics forcing: %s",
+                    ", ".join(str(p) for p in paths.values()),
+                )
             else:
                 _log.error("unknown --kind %r (use 'ltl' or 'physics')", kind)
                 return 2
         finally:
             ds.close()
-    except (ValueError, OSError, KeyError) as exc:
+    except (ValueError, OSError, KeyError) as exc:  # FileExistsError ⊂ OSError
         _log.error("conversion failed: %s", exc)
         return 1
     return 0
@@ -921,15 +1088,26 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         "--config",
         required=True,
-        help="master config file (e.g. data/baltic/baltic_all-parameters.csv) for the target grid",
+        help="config directory or master config file (for the target grid)",
     )
     p.add_argument("--kind", required=True, choices=["ltl", "physics"])
     p.add_argument("--out", required=True, help="output file (ltl) or directory (physics)")
     p.add_argument("--grid-file", default=None, help="grid NetCDF for the ocean mask (optional)")
-    p.add_argument("--year", type=int, default=0)
-    p.add_argument("--depth-integrate", type=float, default=50.0)
-    p.add_argument("--depth-surface", type=float, default=10.0)
-    p.add_argument("--prefix", default="baltic")
+    p.add_argument("--year", type=int, default=0, help="year to extract (0 = all available)")
+    p.add_argument(
+        "--depth-integrate",
+        type=float,
+        default=50.0,
+        help="LTL integration depth (m); default 50 is Baltic-tuned, set per region",
+    )
+    p.add_argument(
+        "--depth-surface",
+        type=float,
+        default=10.0,
+        help="physics surface-layer depth (m); default 10 is Baltic-tuned",
+    )
+    p.add_argument("--prefix", default="baltic", help="physics output filename prefix")
+    p.add_argument("--force", action="store_true", help="overwrite existing output file(s)")
     a = p.parse_args(argv)
     return _run(
         source=a.source,
@@ -941,6 +1119,7 @@ def main(argv: list[str] | None = None) -> int:
         depth_integrate_m=a.depth_integrate,
         depth_surface_m=a.depth_surface,
         prefix=a.prefix,
+        force=a.force,
     )
 
 
@@ -968,9 +1147,12 @@ git commit -m "feat(forcing): convert-only CLI (bring-your-own downloaded file)"
 
 **Files:**
 - Modify: `mcp_servers/copernicus/server.py`
+- Modify: `tests/test_copernicus_ltl_mask.py` (repoint — it imports the deleted helpers)
 - Test: `tests/test_forcing_mcp_parity.py`
 
 The MCP `generate_osmose_ltl` / `generate_osmose_physics` lose their inline math and call the core with a Baltic `GridSpec`. The MCP-local helpers (`_make_target_coords`, `_regrid`, `_resample_to_24`, `_cell_volume_m3`, `_get_coords`, `_get_var`, `_load_baltic_ocean_mask`, `_apply_land_mask`) and the `OSMOSE_GRID` constant are removed.
+
+**Existing-test breakage (must fix in this task):** `tests/test_copernicus_ltl_mask.py` imports `_apply_land_mask` / `_load_baltic_ocean_mask` from the MCP server inside its test bodies (after a module-level `pytest.importorskip("mcp_servers.copernicus.server")`). In the dev venv the MCP deps are present so `importorskip` does NOT skip — deleting the helpers turns those 3 tests into ERRORS, failing Task 7's full suite. Repoint that test to the new home: change its imports to `from osmose.forcing.grid import apply_land_mask, load_ocean_mask` (drop the leading underscores) and keep its real-grid assertion `load_ocean_mask(data/baltic/baltic_grid.nc)` returns shape `(40, 50)` with 616 ocean cells, so the real-grid regression coverage survives the extraction. Since the test now uses pure-core symbols, replace the `importorskip("mcp_servers.copernicus.server")` with a plain import of `osmose.forcing.grid` (no skip needed — it runs in the clean venv too).
 
 - [ ] **Step 1: Write the failing parity test**
 
@@ -1018,11 +1200,17 @@ def test_mcp_wrapper_matches_core(tmp_path):
     srv.generate_osmose_ltl(source_bgc_file=str(src), output_file=str(out_file))
     mcp_ds = xr.open_dataset(out_file)
 
+    # Reuse the wrapper's OWN Baltic grid so the two can never silently disagree.
+    # (BALTIC above must equal it; cell_volume_m3's mid-lat = (66+54)/2 = 60.0, which
+    # is exactly the old hardcoded cos(radians(60)) — so this Baltic-only parity check
+    # cannot detect the cos-factor GENERALIZATION, only Baltic-grid value drift.)
+    assert srv._baltic_grid() == BALTIC
     # The MCP wrapper applies the Baltic ocean mask (land -> NaN). Pass the SAME
     # mask to the core call so both sides NaN identical land cells; otherwise the
     # core leaves land cells as real biomass and nan_to_num(0) != real value fails.
     mask = load_ocean_mask(_BALTIC_GRID_NC)
-    core_ds = bgc_to_ltl(xr.open_dataset(src), BALTIC, ocean_mask=mask)
+    with xr.open_dataset(src) as core_src:
+        core_ds = bgc_to_ltl(core_src, srv._baltic_grid(), ocean_mask=mask)
     for g in ["Diatoms", "Dinoflagellates", "Microzooplankton", "Mesozooplankton", "Macrozooplankton", "Benthos"]:
         assert np.allclose(np.nan_to_num(mcp_ds[g].values), np.nan_to_num(core_ds[g].values), rtol=1e-6)
     mcp_ds.close()
@@ -1053,7 +1241,8 @@ def generate_osmose_ltl(
     if not src.exists():
         return f"Error: Source file not found: {source_bgc_file}"
     grid = _baltic_grid()
-    mask = load_ocean_mask(Path(__file__).resolve().parents[2] / "data" / "baltic" / "baltic_grid.nc")
+    grid_nc = Path(__file__).resolve().parents[2] / "data" / "baltic" / "baltic_grid.nc"
+    mask = load_ocean_mask(grid_nc)
     ds = xr.open_dataset(src)
     try:
         result = bgc_to_ltl(
@@ -1066,7 +1255,8 @@ def generate_osmose_ltl(
     result.attrs["source"] = str(source_bgc_file)
     if not output_file:
         output_file = str(Path(DEFAULT_OUTPUT_DIR) / "baltic_ltl_biomass_cmems.nc")
-    path = write_ltl(result, output_file)
+    # overwrite=True preserves the MCP's pre-existing always-regenerate behavior.
+    path = write_ltl(result, output_file, overwrite=True)
     lines = [f"Generated OSMOSE LTL forcing: {path}", f"Mode: {result.attrs['mode']}",
              f"Grid: {grid.nlat} x {grid.nlon}, 24 biweekly steps"]
     for g in result.data_vars:
@@ -1077,7 +1267,44 @@ def generate_osmose_ltl(
     return "\n".join(lines)
 ```
 
-Replace `generate_osmose_physics` similarly (delegate to `phy_to_physics` + `write_physics`). Add a Baltic-grid helper near the top (after `BALTIC_BBOX`):
+Replace `generate_osmose_physics` with the delegating body below — spelled out (not "similarly") so the original per-variable `range X - Y units` summary is preserved (server.py:623). `write_physics` now returns a `{name: path}` dict:
+
+```python
+@mcp.tool()
+def generate_osmose_physics(
+    source_phy_file: Annotated[str, "Path to downloaded PHY NetCDF file (with thetao, so)"],
+    output_dir: Annotated[str, "Output directory for OSMOSE physics NetCDF files"] = "",
+    year: Annotated[int, "Year to extract (0 = use all available)"] = 0,
+    depth_surface_m: Annotated[float, "Depth for surface fields (meters)"] = 10.0,
+) -> str:
+    """Convert downloaded CMEMS physics into OSMOSE temperature/salinity forcing (Baltic grid)."""
+    from osmose.forcing import phy_to_physics, write_physics
+
+    src = Path(source_phy_file)
+    if not src.exists():
+        return f"Error: Source file not found: {source_phy_file}"
+    grid = _baltic_grid()
+    ds = xr.open_dataset(src)
+    try:
+        dsets = phy_to_physics(ds, grid, year=year, depth_surface_m=depth_surface_m)
+    finally:
+        ds.close()
+    if not dsets:
+        return "Error: no physics variables (thetao/so) found in source"
+    if not output_dir:
+        output_dir = DEFAULT_OUTPUT_DIR
+    paths = write_physics(dsets, output_dir, overwrite=True)  # name -> Path
+    results = []
+    for name, fds in dsets.items():
+        arr = fds[name].values
+        units = fds.attrs.get("units", "")
+        results.append(
+            f"  {name}: {paths[name]} (range {np.nanmin(arr):.2f} - {np.nanmax(arr):.2f} {units})"
+        )
+    return "Generated OSMOSE physics forcing:\n" + "\n".join(results)
+```
+
+Add a Baltic-grid helper near the top (after `BALTIC_BBOX`):
 
 ```python
 def _baltic_grid():
@@ -1098,7 +1325,7 @@ Also: `.venv/bin/python -c "import ast; ast.parse(open('mcp_servers/copernicus/s
 - [ ] **Step 5: Commit**
 
 ```bash
-git add mcp_servers/copernicus/server.py tests/test_forcing_mcp_parity.py
+git add mcp_servers/copernicus/server.py tests/test_forcing_mcp_parity.py tests/test_copernicus_ltl_mask.py
 git commit -m "refactor(mcp): delegate generate_osmose_* to osmose.forcing core"
 ```
 
@@ -1111,7 +1338,7 @@ git commit -m "refactor(mcp): delegate generate_osmose_* to osmose.forcing core"
 - [ ] **Step 1: Full test suite**
 
 Run: `.venv/bin/python -m pytest -q -n auto`
-Expected: all pass (the 6 new forcing test files + the existing suite). The MCP parity test passes in the dev venv (MCP deps present).
+Expected: all pass (the 6 new forcing test files + the existing suite, including the **repointed** `tests/test_copernicus_ltl_mask.py` from Task 6). The MCP parity test passes in the dev venv (MCP deps present). Note: do NOT add `scripts/__init__.py` — `from scripts.convert_cmems_forcing import _run` already resolves via pytest's rootdir (same pattern as the existing `from scripts.calibrate_baltic import ...`); adding one would diverge from repo convention.
 
 - [ ] **Step 2: Lint + format (matches CI "lint" job — BOTH)**
 
@@ -1131,14 +1358,31 @@ Confirm the core imports with NO MCP deps: `osmose/forcing/` and its tests (exce
 Run: `grep -rnE "fastmcp|copernicusmarine|dotenv" osmose/forcing/`
 Expected: no matches.
 
-- [ ] **Step 5: Commit any fixups**
+- [ ] **Step 5: Document the new package in the architecture tree**
+
+Add one line to the `CLAUDE.md` architecture tree (the `osmose/` block, alongside `config/`, `calibration/`), matching the existing prose-tree style:
+
+```
+  forcing/       # Pure CMEMS->OSMOSE forcing conversion (grid-general, LTL + physics)
+```
+
+- [ ] **Step 6: Commit any fixups**
 
 ```bash
 git add -A
-git commit -m "chore(forcing): lint/format/pyright fixups" || echo "nothing to commit"
+git commit -m "chore(forcing): lint/format/pyright fixups + CLAUDE.md tree" || echo "nothing to commit"
 ```
 
 ---
+
+## Deep-review hardening notes (doc-only, applied)
+
+These came out of the multi-angle workflow review; they are documentation/scoping clarifications, not code behavior:
+
+- **Physics output targets the Java engine, NOT the default Python engine.** The Python engine reads only the scalar `temperature.value` (under bioen) and has no salinity input (`PhysicalData.from_netcdf` is currently unwired; no salinity consumer). `phy_to_physics` faithfully emits the gridded temperature/salinity NetCDFs the MCP already produced, but sub-project C must not assume wiring `temperature.varname`/salinity into a *Python-engine* config does anything — that needs an engine-side loader first. Sub-project D's physics view should be export/preview-only until then.
+- **LTL group-name contract:** the OSMOSE engine resolves resource forcing by *species name* (`species.name.spN`), so consumers (sub-project C) must write the six `GROUP_NAMES` (exported from `osmose.forcing`) into the resource species-name keys. This is the load-bearing "consumed unchanged" contract for LTL (already true for the bundled Baltic config, sp8–sp13).
+- **CLI is dev-tree-only:** `scripts/convert_cmems_forcing.py` is not packaged in the wheel (`packages.find include=["osmose*"]`) and has no `[project.scripts]` entry point — runnable via `python scripts/convert_cmems_forcing.py` from a source checkout (same as `scripts/calibrate_baltic.py`). If a shipped console command is later wanted, move the module under `osmose/` and add an entry point.
+- **Temporal resolution:** sub-project A produces 24 biweekly steps only (faithful to source); the CLI warns when `simulation.time.ndtPerYear != 24`. A non-24 target would need a future keyword-only `n_out_steps` arg (backward-compatible to add later — does not force rework now).
 
 ## Self-Review notes (applied)
 
