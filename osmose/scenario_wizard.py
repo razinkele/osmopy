@@ -73,3 +73,21 @@ def source_choices(demos: list[str], scenarios: list[str]) -> dict[str, dict[str
     if scenarios:
         choices["Saved scenarios"] = {f"scenario:{s}": s for s in scenarios}
     return choices
+
+
+def validate_name(name: str, existing: set[str]) -> list[str]:
+    """Problems with a proposed scenario name (empty list = valid)."""
+    problems: list[str] = []
+    n = (name or "").strip()
+    if not n:
+        return ["Name must not be empty"]
+    if "/" in n or "\\" in n or ".." in n:
+        problems.append(f"Name contains invalid characters: {n!r}")
+    if n in existing:
+        problems.append(f"A scenario named '{n}' already exists")
+    return problems
+
+
+def default_description(kind: str, name: str, basics: Basics) -> str:
+    src = f"{name} demo" if kind == "demo" else f"scenario '{name}'"
+    return f"Created from {src}, {basics.nyear} yr"

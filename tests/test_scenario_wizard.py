@@ -3,9 +3,11 @@ import pytest
 from osmose.scenario_wizard import (
     Basics,
     apply_basics,
+    default_description,
     parse_source,
     read_basics,
     source_choices,
+    validate_name,
 )
 
 
@@ -59,3 +61,20 @@ def test_source_choices_omits_saved_group_when_empty():
     ch = source_choices(["baltic"], [])
     assert "Saved scenarios" not in ch
     assert ch["Bundled demos"] == {"demo:baltic": "baltic"}
+
+
+def test_validate_name():
+    existing = {"baltic_run"}
+    assert validate_name("new_run", existing) == []
+    assert validate_name("", existing)
+    assert validate_name("   ", existing)
+    assert validate_name("../evil", existing)
+    assert validate_name("a/b", existing)
+    assert validate_name("a\\b", existing)
+    assert validate_name("baltic_run", existing)
+
+
+def test_default_description():
+    b = Basics(nyear=50, ndtperyear=24, reproducible_rng=False)
+    assert default_description("demo", "baltic", b) == "Created from baltic demo, 50 yr"
+    assert default_description("scenario", "my_run", b) == "Created from scenario 'my_run', 50 yr"
