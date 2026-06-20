@@ -184,53 +184,40 @@ def run_ui():
             # Left: Run controls with engine tabs
             ui.card(
                 body_collapse_header("Run Configuration", "run_config"),
-                ui.navset_tab(
-                    ui.nav_panel(
-                        "Java",
-                        ui.output_ui("jar_selector"),
-                        ui.input_text(
-                            "java_opts",
-                            "Java options",
-                            value="-Xmx2g",
-                            placeholder="-Xmx4g -Xms1g",
-                        ),
-                        ui.input_numeric(
-                            "run_timeout",
-                            "Timeout (seconds)",
-                            value=3600,
-                            min=60,
-                            max=86400,
-                        ),
-                        ui.input_text_area(
-                            "param_overrides",
-                            "Parameter overrides (key=value, one per line)",
-                            rows=4,
-                        ),
-                        value="run_java_tab",
+                ui.panel_conditional(
+                    "input.engine_mode !== 'python'",
+                    ui.output_ui("jar_selector"),
+                    ui.input_text(
+                        "java_opts",
+                        "Java options",
+                        value="-Xmx2g",
+                        placeholder="-Xmx4g -Xms1g",
                     ),
-                    ui.nav_panel(
-                        "Python",
-                        ui.input_numeric(
-                            "py_threads",
-                            "Threads (Numba prange)",
-                            value=1,
-                            min=1,
-                            max=32,
-                        ),
-                        ui.input_select(
-                            "py_verbosity",
-                            "Verbosity",
-                            choices={"0": "Quiet", "1": "Normal", "2": "Verbose"},
-                            selected="1",
-                        ),
-                        ui.input_text_area(
-                            "py_param_overrides",
-                            "Parameter overrides (key=value, one per line)",
-                            rows=4,
-                        ),
-                        value="run_python_tab",
+                    ui.input_numeric(
+                        "run_timeout", "Timeout (seconds)", value=3600, min=60, max=86400
                     ),
-                    id="run_engine_tabs",
+                    ui.input_text_area(
+                        "param_overrides",
+                        "Parameter overrides (key=value, one per line)",
+                        rows=4,
+                    ),
+                ),
+                ui.panel_conditional(
+                    "input.engine_mode === 'python'",
+                    ui.input_numeric(
+                        "py_threads", "Threads (Numba prange)", value=1, min=1, max=32
+                    ),
+                    ui.input_select(
+                        "py_verbosity",
+                        "Verbosity",
+                        choices={"0": "Quiet", "1": "Normal", "2": "Verbose"},
+                        selected="1",
+                    ),
+                    ui.input_text_area(
+                        "py_param_overrides",
+                        "Parameter overrides (key=value, one per line)",
+                        rows=4,
+                    ),
                 ),
                 ui.hr(),
                 ui.layout_columns(
@@ -573,12 +560,6 @@ def run_server(input, output, session, state):
         val = input.jar_path()
         if val:
             state.jar_path.set(val)
-
-    @reactive.effect
-    def _sync_engine_tab():
-        mode = state.engine_mode.get()
-        tab = "run_java_tab" if mode == "java" else "run_python_tab"
-        ui.update_navset("run_engine_tabs", selected=tab, session=session)
 
     @render.text
     def run_status():
