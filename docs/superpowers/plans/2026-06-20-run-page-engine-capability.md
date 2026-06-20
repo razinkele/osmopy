@@ -423,8 +423,22 @@ Expected: PASS and clean import (no exception).
 
 Then confirm no dangling references to the removed navset/tab values remain anywhere:
 
-Run: `grep -rnE "run_engine_tabs|run_java_tab|run_python_tab" osmose/ ui/ app.py tests/`
-Expected: no matches (exit code 1). If any appear outside this plan, remove them.
+Run: `grep -rnE "run_engine_tabs|run_java_tab|run_python_tab|_sync_engine_tab" osmose/ ui/ app.py tests/`
+Expected: exactly ONE match — an explanatory comment in `tests/test_e2e_live_movement.py:47` (the test still passes; it clicks the header `#engineBtnPython`, not the deleted navset). **Update** (do not delete) that comment so it describes the new mechanism. Replace:
+
+```python
+    # engine nav_panel to "run_python_tab" (_sync_engine_tab, run.py), which is what makes
+    # #py_param_overrides visible — that field lives inside the Python tab (run.py:214-218),
+```
+
+with:
+
+```python
+    # engine_mode to "python" (app.py engine toggle), which reveals the Python panel_conditional
+    # in run.py so #py_param_overrides becomes visible — that field lives inside that panel,
+```
+
+If any OTHER match appears (e.g. in `osmose/` or `ui/`), remove it — it is a real dangling reference.
 
 - [ ] **Step 5: Commit**
 
