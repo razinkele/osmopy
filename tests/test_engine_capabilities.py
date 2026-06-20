@@ -77,3 +77,30 @@ def test_java_background_species_blocked():
 def test_java_notable_outputs_mentions_equivalence():
     cap = describe_engine("java", {})
     assert "statistically equivalent" in cap.notable_outputs
+
+
+def test_unknown_engine_returns_total_fallback():
+    cap = describe_engine("rust", {})
+    assert cap.engine == "rust"
+    assert cap.can_run is False
+    assert cap.block_reason is not None
+    assert "rust" in cap.block_reason
+    assert cap.pages_populated == []
+    assert cap.pages_empty == []
+
+
+def test_describe_engine_does_not_share_list_state_across_calls():
+    first = describe_engine("java", {})
+    first.pages_empty.append("MUTATED")
+    second = describe_engine("java", {})
+    assert "MUTATED" not in second.pages_empty
+
+
+def test_is_enabled_only_true_and_one_count_as_enabled():
+    # Truthy-looking but not the sanctioned tokens → disabled.
+    assert _is_enabled({"k": "yes"}, "k") is False
+    assert _is_enabled({"k": "0"}, "k") is False
+    # Non-string values are coerced safely.
+    assert _is_enabled({"k": 1}, "k") is True
+    assert _is_enabled({"k": 0}, "k") is False
+    assert _is_enabled({"k": True}, "k") is True
