@@ -1,4 +1,4 @@
-from osmose.engine_capabilities import EngineCapability, _is_enabled
+from osmose.engine_capabilities import EngineCapability, _is_enabled, describe_engine
 
 
 def test_is_enabled_truthiness():
@@ -22,3 +22,36 @@ def test_capability_dataclass_fields():
     assert cap.engine == "python"
     assert cap.can_run is True
     assert cap.pages_populated == ["Results"]
+
+
+def test_python_base_pages_always_populate():
+    cap = describe_engine("python", {})
+    assert cap.engine == "python"
+    assert cap.can_run is True
+    assert cap.block_reason is None
+    assert "Results" in cap.pages_populated
+    assert "Diagnostics" in cap.pages_populated
+    # disabled-by-default modules are empty
+    assert "Genetics" in cap.pages_empty
+    assert "Economic" in cap.pages_empty
+    assert "Spatial Results" in cap.pages_empty
+
+
+def test_python_genetics_gated_on_module_flag():
+    cap = describe_engine("python", {"module.genetics.enabled": "true"})
+    assert "Genetics" in cap.pages_populated
+    assert "Genetics" not in cap.pages_empty
+
+
+def test_python_economics_and_spatial_gates():
+    cap = describe_engine(
+        "python",
+        {"module.bioeconomics.enabled": "true", "output.spatial.enabled": "true"},
+    )
+    assert "Economic" in cap.pages_populated
+    assert "Spatial Results" in cap.pages_populated
+
+
+def test_python_notable_outputs_mentions_java_only_families():
+    cap = describe_engine("python", {})
+    assert "sizeSpectrum" in cap.notable_outputs
