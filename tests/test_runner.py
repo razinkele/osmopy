@@ -405,6 +405,9 @@ async def test_run_timeout_kills_process(tmp_path: Path) -> None:
     result = await runner.run(config_path=config, timeout_sec=1)
     assert result.returncode == -1
     assert "timed out" in result.stderr.lower()
+    # status must reflect the failure (not the default 'ok') so the UI labels it correctly.
+    assert result.status == "failed"
+    assert "timed out" in (result.message or "").lower()
 
 
 def test_build_cmd_includes_verbose_flag(tmp_path):

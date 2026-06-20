@@ -117,6 +117,16 @@ def test_biomass_skips_empty_csv(output_dir):
     assert set(df["species"].unique()) == {"Anchovy", "Sardine"}
 
 
+def test_biomass_skips_unreadable_path(output_dir):
+    """A glob-matched path that can't be read (here a directory; in practice a file
+    that vanished mid-read) is skipped via OSError, not aborting the whole read."""
+    (output_dir / "osm_biomass_Ghost.csv").mkdir()  # matches osm_biomass*.csv but isn't a file
+    results = OsmoseResults(output_dir)
+    df = results.biomass()
+    assert not df.empty
+    assert set(df["species"].unique()) == {"Anchovy", "Sardine"}
+
+
 def test_yield_biomass(output_dir):
     results = OsmoseResults(output_dir)
     df = results.yield_biomass()
