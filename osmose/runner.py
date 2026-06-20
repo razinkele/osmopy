@@ -223,6 +223,8 @@ class OsmoseRunner:
                 output_dir=result_output_dir,
                 stdout="\n".join(stdout_lines),
                 stderr=f"Run timed out after {timeout_sec}s (process killed)",
+                status="failed",
+                message=f"Run timed out after {timeout_sec}s",
             )
 
         await self._process.wait()

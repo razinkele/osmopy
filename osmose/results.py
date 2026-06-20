@@ -386,7 +386,7 @@ class OsmoseResults:
         for f in _find_output_files(self.output_dir, pattern):
             try:
                 result[f.stem] = _read_output_csv(f)
-            except (pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
+            except (pd.errors.ParserError, pd.errors.EmptyDataError, OSError) as exc:
                 _log.warning("Skipping malformed CSV %s: %s", f.name, exc)
         return result
 
@@ -553,7 +553,7 @@ class OsmoseResults:
         for filepath in _find_output_files(self.output_dir, pattern):
             try:
                 df = _read_output_csv(filepath)
-            except (pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
+            except (pd.errors.ParserError, pd.errors.EmptyDataError, OSError) as exc:
                 _log.warning("Skipping malformed CSV %s: %s", filepath.name, exc)
                 continue
             frames.append(df)
@@ -605,7 +605,7 @@ class OsmoseResults:
                 continue
             try:
                 df = _read_output_csv(filepath)
-            except (pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
+            except (pd.errors.ParserError, pd.errors.EmptyDataError, OSError) as exc:
                 _log.warning("Skipping malformed CSV %s: %s", filepath.name, exc)
                 continue
             sp_name = _extract_species(filepath.stem, output_type, self.prefix)
@@ -669,7 +669,7 @@ class OsmoseResults:
                         df = _read_mortality_rate_csv(filepath)
                     else:
                         df = _read_output_csv(filepath)
-                except (pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
+                except (pd.errors.ParserError, pd.errors.EmptyDataError, OSError) as exc:
                     _log.warning("Skipping malformed CSV %s: %s", filepath.name, exc)
                     continue
                 sp_name = _extract_species(filepath.stem, output_type, self.prefix)

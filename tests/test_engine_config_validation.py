@@ -6,6 +6,16 @@ import pytest
 from osmose.engine.config import EngineConfig
 
 
+@pytest.fixture(autouse=True)
+def _clear_unapplied_warning_cache():
+    """The parsed-but-unapplied-feature warnings are deduped via a process-global set;
+    clear it before each test so warning-asserting tests aren't suppressed by prior runs."""
+    from osmose.engine.config import _WARNED_UNSUPPORTED_MORTALITY
+
+    _WARNED_UNSUPPORTED_MORTALITY.clear()
+    yield
+
+
 def _minimal_config(n_species: int = 2, n_background: int = 0, **overrides) -> dict:
     """Build a minimal kwargs dict for EngineConfig with valid defaults."""
     n_total = n_species + n_background
@@ -166,6 +176,21 @@ def test_warns_on_by_class_fishing_rate(caplog) -> None:
     msgs = " ".join(r.message for r in caplog.records)
     assert "fishing rate" in msgs.lower() and "NOT applied" in msgs
     assert "sp1" in msgs
+
+
+def test_unapplied_warning_is_deduped(caplog) -> None:
+    """Rebuilding the same config (as calibration does per candidate) warns ONCE,
+    not once per construction — the warning is throttled by a process-global set."""
+    import logging
+
+    cfg = _minimal_config(n_species=2)
+    cfg["fishing_catches"] = np.array([1000.0, np.nan])
+    with caplog.at_level(logging.WARNING, logger="osmose.engine.config"):
+        EngineConfig(**cfg)
+        EngineConfig(**cfg)  # same message — must be suppressed the 2nd time
+        EngineConfig(**cfg)
+    catch_warnings = [r for r in caplog.records if "catch-based fishing" in r.message.lower()]
+    assert len(catch_warnings) == 1
 
 
 def test_clean_config_emits_no_unapplied_warning(caplog) -> None:
