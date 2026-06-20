@@ -124,6 +124,60 @@ def test_zero_linf_raises() -> None:
         EngineConfig(**cfg)
 
 
+# --- Parsed-but-unapplied mortality features: loud-warning guard (deep-review PR-1) ---
+# The interleaved Python mortality loop applies only flat F-rate fishing and flat/by-step
+# additional mortality. Catch-based fishing, by-class fishing rates, and by-class additional
+# mortality are parsed but never reach the loop, so configs relying on them would silently get
+# wrong results. __post_init__ must warn (not silently ignore).
+
+
+def test_warns_on_catch_based_fishing(caplog) -> None:
+    import logging
+
+    cfg = _minimal_config(n_species=2)
+    cfg["fishing_catches"] = np.array([1000.0, np.nan])  # sp0 set, sp1 unset
+    with caplog.at_level(logging.WARNING, logger="osmose.engine.config"):
+        EngineConfig(**cfg)
+    msgs = " ".join(r.message for r in caplog.records)
+    assert "catch-based fishing" in msgs.lower()
+    assert "NOT applied" in msgs
+    assert "sp0" in msgs and "sp1" not in msgs
+
+
+def test_warns_on_by_class_additional_mortality(caplog) -> None:
+    import logging
+
+    cfg = _minimal_config(n_species=2)
+    cfg["additional_mortality_by_dt_by_class"] = [object(), None]  # sp0 set
+    with caplog.at_level(logging.WARNING, logger="osmose.engine.config"):
+        EngineConfig(**cfg)
+    msgs = " ".join(r.message for r in caplog.records)
+    assert "additional mortality" in msgs.lower() and "NOT applied" in msgs
+    assert "sp0" in msgs
+
+
+def test_warns_on_by_class_fishing_rate(caplog) -> None:
+    import logging
+
+    cfg = _minimal_config(n_species=2)
+    cfg["fishing_rate_by_dt_by_class"] = [None, object()]  # sp1 set
+    with caplog.at_level(logging.WARNING, logger="osmose.engine.config"):
+        EngineConfig(**cfg)
+    msgs = " ".join(r.message for r in caplog.records)
+    assert "fishing rate" in msgs.lower() and "NOT applied" in msgs
+    assert "sp1" in msgs
+
+
+def test_clean_config_emits_no_unapplied_warning(caplog) -> None:
+    import logging
+
+    cfg = _minimal_config(n_species=2)
+    with caplog.at_level(logging.WARNING, logger="osmose.engine.config"):
+        EngineConfig(**cfg)
+    msgs = " ".join(r.message for r in caplog.records)
+    assert "NOT applied" not in msgs
+
+
 def test_negative_k_raises() -> None:
     """Negative k should raise ValueError."""
     cfg = _minimal_config(n_species=2)
