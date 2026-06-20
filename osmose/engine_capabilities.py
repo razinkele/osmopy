@@ -58,9 +58,34 @@ def _describe_python(config: dict[str, str]) -> EngineCapability:
     )
 
 
+_JAVA_EMPTY_PAGES = ["Diagnostics", "Genetics", "Economic", "Spatial Results"]
+
+
+def _describe_java(config: dict[str, str]) -> EngineCapability:
+    block = java_engine_block_reason(config)
+    return EngineCapability(
+        engine="java",
+        can_run=block is None,
+        block_reason=block,
+        pages_populated=["Results"],
+        pages_empty=list(_JAVA_EMPTY_PAGES),
+        notable_outputs=_JAVA_NOTABLE,
+    )
+
+
 def describe_engine(engine: str, config: dict[str, str]) -> EngineCapability:
     """Describe what ``engine`` will produce for ``config``. Total — never raises."""
     config = config or {}
     if engine == "python":
         return _describe_python(config)
-    raise NotImplementedError  # Java handled in Task 3
+    if engine == "java":
+        return _describe_java(config)
+    # Unknown engine — neutral, total fallback.
+    return EngineCapability(
+        engine=engine,
+        can_run=False,
+        block_reason=f"Unknown engine: {engine!r}",
+        pages_populated=[],
+        pages_empty=[],
+        notable_outputs="",
+    )

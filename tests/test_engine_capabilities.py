@@ -55,3 +55,25 @@ def test_python_economics_and_spatial_gates():
 def test_python_notable_outputs_mentions_java_only_families():
     cap = describe_engine("python", {})
     assert "sizeSpectrum" in cap.notable_outputs
+
+
+def test_java_plain_config_runs_results_only():
+    cap = describe_engine("java", {})
+    assert cap.engine == "java"
+    assert cap.can_run is True
+    assert cap.block_reason is None
+    assert cap.pages_populated == ["Results"]
+    for page in ("Diagnostics", "Genetics", "Economic", "Spatial Results"):
+        assert page in cap.pages_empty
+
+
+def test_java_background_species_blocked():
+    cap = describe_engine("java", {"simulation.nbackground": "2"})
+    assert cap.can_run is False
+    assert cap.block_reason is not None
+    assert "background" in cap.block_reason.lower()
+
+
+def test_java_notable_outputs_mentions_equivalence():
+    cap = describe_engine("java", {})
+    assert "statistically equivalent" in cap.notable_outputs
