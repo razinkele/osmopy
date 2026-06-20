@@ -1509,6 +1509,58 @@ class EngineConfig:
                             f"focal species '{self.species_names[i]}'"
                         )
 
+        self._warn_unsupported_mortality_features()
+
+    def _warn_unsupported_mortality_features(self) -> None:
+        """Warn loudly about mortality features that are PARSED but NOT applied.
+
+        The interleaved per-cell mortality loop applies fishing as a flat F-rate and
+        additional mortality as flat/by-step rates only. Catch-based fishing, by-age/size
+        fishing rates, and by-age/size additional mortality are parsed into the config but
+        never reach the loop, so a config relying on them would silently get wrong results.
+        Surface that as a clear warning rather than a silent divergence. (Wiring these is
+        deferred until a config needs them — so the work can be parity-validated as part of
+        delivering it; see docs/superpowers/plans/2026-06-20-deep-review-remediation.md PR-1.)
+        """
+
+        def _sp(i: int) -> str:
+            return self.species_names[i] if i < len(self.species_names) else f"sp{i}"
+
+        fc = self.fishing_catches
+        if fc is not None:
+            affected = [_sp(i) for i in range(len(fc)) if np.isfinite(fc[i]) and fc[i] > 0]
+            if affected:
+                _log.warning(
+                    "Catch-based fishing (mortality.fishing.catches.*) is configured for %s but "
+                    "the Python engine applies fishing as an F-rate only — catch-based fishing is "
+                    "NOT applied. Use mortality.fishing.rate.* instead, or run the Java engine.",
+                    ", ".join(affected),
+                )
+
+        abc = self.additional_mortality_by_dt_by_class
+        if abc is not None:
+            affected = [_sp(i) for i, ts in enumerate(abc) if ts is not None]
+            if affected:
+                _log.warning(
+                    "Per-age/size additional mortality (mortality.additional.rate.byDt."
+                    "byAge/bySize.*) is configured for %s but the Python engine applies only flat "
+                    "and by-step additional mortality — the by-class rates are NOT applied. Use "
+                    "mortality.additional.rate(.byDt).* instead, or run the Java engine.",
+                    ", ".join(affected),
+                )
+
+        frc = self.fishing_rate_by_dt_by_class
+        if frc is not None:
+            affected = [_sp(i) for i, ts in enumerate(frc) if ts is not None]
+            if affected:
+                _log.warning(
+                    "Per-age/size fishing rate (mortality.fishing.rate.byDt.byAge/bySize.*) is "
+                    "configured for %s but the Python engine applies a flat F-rate only — the "
+                    "by-class fishing rates are NOT applied. Use mortality.fishing.rate.* instead, "
+                    "or run the Java engine.",
+                    ", ".join(affected),
+                )
+
     @classmethod
     def from_dict(cls, cfg: dict[str, str]) -> EngineConfig:
         from osmose.engine.config_validation import validate as _validate_cfg
