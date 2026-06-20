@@ -448,6 +448,34 @@ def test_reader_does_not_scale_larva_for_4_3_x_source(tmp_path):
     assert back["mortality.additional.larva.rate.sp0"] == "2.145"
 
 
+def test_reader_scales_larva_for_snapshot_4_4_0_source(tmp_path):
+    """A '4.4.0-SNAPSHOT' source must trigger the read-side divide-back.
+
+    Regression: the read gate used the suffix-intolerant _version_tuple, so
+    '4.4.0-SNAPSHOT' parsed to (0,) and the ÷ndt was silently skipped — leaving
+    larval mortality mis-scaled ~24x. The gate now uses _numeric_version.
+    """
+    from osmose.config.reader import OsmoseConfigReader
+
+    f = tmp_path / "osm_all-parameters.csv"
+    f.write_text(
+        "osmose.version ; 4.4.0-SNAPSHOT\nsimulation.time.ndtperyear ; 24\n"
+        f"mortality.additional.larva.rate.sp0 ; {2.145 * 24}\n"
+    )
+    back = OsmoseConfigReader().read(f)
+    assert abs(float(back["mortality.additional.larva.rate.sp0"]) - 2.145) < 1e-9
+
+
+def test_scale_rate_value_passes_through_sentinels():
+    """Sentinel/unset components must pass through verbatim, not raise ValueError."""
+    from osmose.config.aliases import _scale_rate_value
+
+    assert _scale_rate_value("0.5;null;0.3", 2.0) == "1;null;0.6"
+    assert _scale_rate_value("null", 24.0) == "null"
+    assert _scale_rate_value("", 24.0) == ""
+    assert _scale_rate_value("2.145", 24.0) == f"{2.145 * 24:.10g}"
+
+
 def test_reader_does_not_scale_larva_when_version_absent(tmp_path):
     from osmose.config.reader import OsmoseConfigReader
 

@@ -60,7 +60,15 @@ def _ndtperyear(cfg: dict[str, str]) -> float | None:
 
 def _scale_rate_value(value: str, factor: float) -> str:
     # ';'-separated per-stage arrays scaled component-wise; :.10g trims float noise.
-    return ";".join(f"{float(p) * factor:.10g}" for p in value.split(";"))
+    # Unset/sentinel components ('', null/none/na/nan) pass through verbatim so a
+    # recoverable config isn't turned into an uncaught ValueError.
+    def _scale(part: str) -> str:
+        s = part.strip()
+        if not s or s.lower() in ("null", "none", "na", "nan"):
+            return part
+        return f"{float(s) * factor:.10g}"
+
+    return ";".join(_scale(p) for p in value.split(";"))
 
 
 def _migrate_larva_rate(cfg: dict[str, str], factor: float, *, warn_bydt: bool) -> dict[str, str]:
