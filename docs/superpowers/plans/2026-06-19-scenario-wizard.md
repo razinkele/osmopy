@@ -708,7 +708,7 @@ git commit -m "feat(ui): scenario wizard Create handler (apply + auto-save + loa
 
 **Files:** Modify `ui/pages/grid.py`
 
-- [ ] **Step 1: Implement.** In `ui/pages/grid.py` `grid_ui()` (def at line 75), the "Grid Type" card holds a `ui.div(ui.layout_columns(load_example + btn_load_example ...))` block whose inner div ends ~line 118, immediately followed by `ui.hr()` (line 120). Insert the muted pointer as a new sibling element BETWEEN that `ui.div(...)` block and `ui.hr()` (i.e. just before the `ui.hr()`), matching the surrounding indentation:
+- [ ] **Step 1: Implement.** In `ui/pages/grid.py` `grid_ui()` (def at line 75), the "Grid Type" card holds a `ui.div(ui.layout_columns(load_example + btn_load_example ...))` block whose inner div ends at line 118, immediately followed by `ui.hr()` (line 119). Insert the muted pointer as a new sibling element BETWEEN that `ui.div(...)` block and `ui.hr()` (i.e. just before the `ui.hr()`), matching the surrounding indentation. (The select's label is "Example configuration" with a "Load" button — the pointer text below is unaffected.):
 
 ```python
                 ui.div(
