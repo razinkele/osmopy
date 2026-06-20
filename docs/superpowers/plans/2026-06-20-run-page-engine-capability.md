@@ -318,6 +318,7 @@ git commit -m "feat(capabilities): describe_engine for the Java engine + total f
 
 **Files:**
 - Modify: `ui/pages/run.py` (`run_ui` ~185–234; `_sync_engine_tab` ~577–581)
+- Create: `tests/test_ui_run_capability.py`
 
 The `run_engine_tabs` `navset_tab` looks like an engine chooser but is a read-only mirror of the header toggle (`_sync_engine_tab` pushes `engine_mode` → selected tab; clicking a tab does NOT change `engine_mode`). Remove both.
 
@@ -415,10 +416,15 @@ In `run_server()`, delete the entire `_sync_engine_tab` effect:
         ui.update_navset("run_engine_tabs", selected=tab, session=session)
 ```
 
-- [ ] **Step 4: Run test + import smoke**
+- [ ] **Step 4: Run test + import smoke + stale-reference grep**
 
 Run: `.venv/bin/python -m pytest tests/test_ui_run_capability.py -v && .venv/bin/python -c "import app"`
 Expected: PASS and clean import (no exception).
+
+Then confirm no dangling references to the removed navset/tab values remain anywhere:
+
+Run: `grep -rnE "run_engine_tabs|run_java_tab|run_python_tab" osmose/ ui/ app.py tests/`
+Expected: no matches (exit code 1). If any appear outside this plan, remove them.
 
 - [ ] **Step 5: Commit**
 
@@ -583,7 +589,7 @@ Expected: 0 errors. (Per the CI-pyright-reproduction gotcha, do not run bare `py
 
 - [ ] **Step 4: e2e smoke — confirm per-engine inputs still wire through to a real run**
 
-The default suite excludes e2e (`-m 'not e2e'`), but `tests/test_e2e_live_movement.py` and `tests/test_e2e_baltic.py` are the ONLY coverage that the per-engine inputs (e.g. `#py_param_overrides`) actually drive a run. The `panel_conditional` design keeps those inputs always-registered and visible-when-active, so these should pass unchanged; run them explicitly to confirm the chooser change didn't break the run path.
+The default suite excludes e2e (`-m 'not e2e'`), but `tests/test_e2e_live_movement.py` and `tests/test_e2e_baltic.py` are the ONLY coverage that the per-engine inputs (e.g. `#py_param_overrides`) actually drive a run. The `panel_conditional` design keeps those inputs always-registered and visible-when-active, so these should pass unchanged; run them explicitly to confirm the chooser change didn't break the run path. Note: both `#param_overrides` (Java) and `#py_param_overrides` (Python) now coexist in the DOM at all times (one CSS-hidden) — the e2e selectors target distinct ids, so there is no ambiguity.
 
 Run: `.venv/bin/python -m pytest tests/test_e2e_live_movement.py -m e2e -v`
 Expected: PASS (the Python-engine run completes; `#py_param_overrides` is filled and honored). If Playwright/browser is unavailable in this environment, note that explicitly and fall back to a manual check that `input.engine_mode === 'python'` reveals `#py_param_overrides` (it is in the DOM at all times via `panel_conditional`).
