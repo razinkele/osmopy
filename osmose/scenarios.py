@@ -7,6 +7,7 @@ import os
 import shutil
 import tempfile
 import zipfile
+import dataclasses
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path
@@ -30,9 +31,18 @@ class Scenario:
     key_case_map: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
-        if not self.name:
+        if not self.name or not self.name.strip():
             raise ValueError("Scenario name must not be empty")
-        if "/" in self.name or "\\" in self.name or ".." in self.name:
+        if (
+            "/" in self.name
+            or "\\" in self.name
+            or ".." in self.name
+            or self.name.strip()
+            in (
+                ".",
+                "..",
+            )
+        ):
             raise ValueError(f"Scenario name contains invalid characters: {self.name!r}")
         now = datetime.now().isoformat()
         if not self.created_at:
@@ -62,7 +72,11 @@ class ScenarioManager:
         if not name or not name.strip():
             raise ValueError(f"Invalid scenario name: {name!r}")
         target = (self.storage_dir / name).resolve()
-        if not target.is_relative_to(self.storage_dir.resolve()):
+        storage = self.storage_dir.resolve()
+        # target == storage means a reserved/relative name like "." resolved to the
+        # store root itself (is_relative_to is True for equal paths) — reject it so a
+        # save can't rename/clobber the whole store.
+        if target == storage or not target.is_relative_to(storage):
             raise ValueError(f"Unsafe scenario name: {name!r}")
         return target
 
@@ -109,7 +123,10 @@ class ScenarioManager:
 
         config, _ = canonicalize_config(data.get("config", {}))
         data["config"] = config
-        return Scenario(**data)
+        # Filter to known dataclass fields so an extra / forward-version key in the
+        # JSON doesn't make the scenario permanently unloadable (TypeError on **data).
+        known = {f.name for f in dataclasses.fields(Scenario)}
+        return Scenario(**{k: v for k, v in data.items() if k in known})
 
     def list_scenarios(self) -> list[dict[str, str]]:
         """List all saved scenarios with basic metadata."""
@@ -120,12 +137,16 @@ class ScenarioManager:
                 try:
                     with open(json_path) as f:
                         data = json.load(f)
-                except (json.JSONDecodeError, KeyError) as exc:
-                    _log.warning("Corrupt scenario file %s: %s", json_path, exc)
+                except (json.JSONDecodeError, OSError) as exc:
+                    _log.warning("Skipping corrupt scenario file %s: %s", json_path, exc)
+                    continue
+                name = data.get("name")
+                if not name:
+                    _log.warning("Skipping scenario file with no 'name': %s", json_path)
                     continue
                 results.append(
                     {
-                        "name": data["name"],
+                        "name": name,
                         "description": data.get("description", ""),
                         "modified_at": data.get("modified_at", ""),
                         "tags": data.get("tags", []),
@@ -203,14 +224,18 @@ class ScenarioManager:
                         info.file_size,
                     )
                     continue
-                data = json.loads(zf.read(name))
-                scenario_name = data["name"]
-                # Validate name does not escape storage directory
-                target = (self.storage_dir / scenario_name).resolve()
-                if not target.is_relative_to(storage_resolved):
-                    _log.warning("Skipping scenario with unsafe name: %s", scenario_name)
-                    continue
+                scenario_name = None
                 try:
+                    data = json.loads(zf.read(name))
+                    scenario_name = data.get("name")
+                    if not scenario_name:
+                        _log.warning("Skipping ZIP entry with no 'name': %s", name)
+                        continue
+                    # Validate name does not escape storage directory
+                    target = (self.storage_dir / scenario_name).resolve()
+                    if target == storage_resolved or not target.is_relative_to(storage_resolved):
+                        _log.warning("Skipping scenario with unsafe name: %s", scenario_name)
+                        continue
                     scenario = Scenario(
                         name=scenario_name,
                         description=data.get("description", ""),
@@ -223,10 +248,11 @@ class ScenarioManager:
                     )
                     self.save(scenario, preserve_modified_at=True)
                     count += 1
-                except ValueError as exc:
+                except (ValueError, KeyError, json.JSONDecodeError) as exc:
                     _log.warning(
-                        "Skipping scenario with invalid name %r: %s",
-                        scenario_name,
+                        "Skipping malformed ZIP entry %r (%s): %s",
+                        scenario_name or name,
+                        type(exc).__name__,
                         exc,
                     )
         return count

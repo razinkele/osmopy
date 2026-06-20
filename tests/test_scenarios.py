@@ -368,3 +368,58 @@ def test_import_all_skips_invalid_scenario_names(tmp_path, caplog):
         "invalid" in rec.message.lower() or "skipping" in rec.message.lower()
         for rec in caplog.records
     ), "A skip warning should have been logged for the bad entry"
+
+
+# --- deep-review v2 PR-B: scenario-store deserialization/validation hardening ---
+
+
+def test_list_scenarios_skips_nameless_file(tmp_path):
+    """One scenario.json missing 'name' must be skipped, not crash the whole listing."""
+    mgr = ScenarioManager(tmp_path)
+    mgr.save(Scenario(name="good", config={"a": "1"}))
+    bad = tmp_path / "bad"
+    bad.mkdir()
+    (bad / "scenario.json").write_text('{"config": {}}')  # no 'name'
+    names = {s["name"] for s in mgr.list_scenarios()}
+    assert names == {"good"}
+
+
+def test_load_ignores_unknown_forward_version_keys(tmp_path):
+    """An extra/forward-version key in scenario.json must not make it unloadable."""
+    import json
+
+    mgr = ScenarioManager(tmp_path)
+    mgr.save(Scenario(name="s1", config={"a": "1"}))
+    p = tmp_path / "s1" / "scenario.json"
+    data = json.loads(p.read_text())
+    data["future_field_v999"] = "x"
+    p.write_text(json.dumps(data))
+    loaded = mgr.load("s1")  # must not raise TypeError
+    assert loaded.config["a"] == "1"
+
+
+def test_import_all_skips_malformed_entries(tmp_path):
+    """A name-less or non-JSON ZIP entry is skipped per-entry; valid ones still import."""
+    import json
+    import zipfile
+
+    z = tmp_path / "scen.zip"
+    with zipfile.ZipFile(z, "w") as zf:
+        zf.writestr("good.json", json.dumps({"name": "imp_good", "config": {"a": "1"}}))
+        zf.writestr("nameless.json", json.dumps({"config": {}}))
+        zf.writestr("broken.json", "{ not valid json")
+    mgr = ScenarioManager(tmp_path / "store")
+    count = mgr.import_all(z)
+    assert count == 1
+    assert {s["name"] for s in mgr.list_scenarios()} == {"imp_good"}
+
+
+def test_scenario_and_validate_path_reject_dot_name(tmp_path):
+    """A bare-dot name must not pass validation (it resolves to the store root)."""
+    with pytest.raises(ValueError):
+        Scenario(name=".", config={})
+    with pytest.raises(ValueError):
+        Scenario(name="..", config={})
+    mgr = ScenarioManager(tmp_path)
+    with pytest.raises(ValueError):
+        mgr._validate_path(".")

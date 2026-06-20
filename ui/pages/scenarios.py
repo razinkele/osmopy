@@ -254,8 +254,9 @@ def scenarios_server(input, output, session, state):
             state.load_config(cfg)
             state.config_name.set(new_name)
             state.key_case_map.set(dict(resolved.case_map))
-            if resolved.config_dir is not None:
-                state.config_dir.set(resolved.config_dir)
+            # Demo sources carry a config_dir (maps resolve there); scenario sources
+            # don't — clear it so refs don't resolve against an unrelated demo's tempdir.
+            state.config_dir.set(resolved.config_dir)
             state.dirty.set(False)
             try:
                 n_species = int(float(cfg.get("simulation.nspecies", "3") or "3"))
@@ -363,12 +364,24 @@ def scenarios_server(input, output, session, state):
         selected = input.selected_scenario()
         if not selected:
             return
-        loaded = mgr.load(selected)
+        try:
+            loaded = mgr.load(selected)
+        except (OSError, ValueError, KeyError) as exc:
+            _log.error("Failed to load scenario %r: %s", selected, exc, exc_info=True)
+            ui.notification_show(
+                f"Failed to load scenario '{selected}'. Check server logs for details.",
+                type="error",
+                duration=10,
+            )
+            return
         state.busy.set(f"Loading scenario '{selected}'…")
         try:
             state.load_config(loaded.config)
             state.config_name.set(selected)
             state.key_case_map.set(dict(loaded.key_case_map))
+            # Scenarios persist only the config dict (no map files); clear config_dir so
+            # relative file refs resolve against the standard data paths, not a stale dir.
+            state.config_dir.set(None)
             state.dirty.set(False)
 
             try:
