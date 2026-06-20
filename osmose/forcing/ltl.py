@@ -141,6 +141,7 @@ def bgc_to_ltl(
         phyc = get_var(work, "phyc")
         zooc = get_var(work, "zooc")
         nppv = get_var(work, "nppv")
+        assert phyc is not None and zooc is not None  # guaranteed by has_phyc/has_zooc
         phyto_tonnes = regrid(phyc, src_lat, src_lon, grid) * params.phyto_c_to_wet * cell_vol / 1e6
         zoo_tonnes = regrid(zooc, src_lat, src_lon, grid) * params.zoo_c_to_wet * cell_vol / 1e6
 
