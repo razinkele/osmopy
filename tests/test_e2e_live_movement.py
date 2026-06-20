@@ -44,8 +44,8 @@ def test_live_movement_renders_during_python_run(page: Page, app: ShinyAppProc):
     # The engine defaults to Java (ui/state.py:65), so clicking #engineBtnPython is
     # REQUIRED (not defensive) to enable the Python-only live view (engine toggle buttons
     # #engineBtnJava — app.py:195, #engineBtnPython — app.py:201). It also switches the
-    # engine nav_panel to "run_python_tab" (_sync_engine_tab, run.py), which is what makes
-    # #py_param_overrides visible — that field lives inside the Python tab (run.py:214-218),
+    # engine_mode to "python" (app.py engine toggle), which reveals the Python panel_conditional
+    # in run.py so #py_param_overrides becomes visible — that field lives inside that panel,
     # so the fill MUST come after the engine switch or Playwright sees a hidden element.
     page.locator("#engineBtnPython").click()
 

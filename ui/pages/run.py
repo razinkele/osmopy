@@ -20,6 +20,7 @@ from shiny_deckgl import (  # type: ignore[import-untyped]
 
 from osmose.config.validator import summarize_config_validation
 from osmose.engine import PythonEngine, SimulationCancelled
+from osmose.engine_capabilities import describe_engine
 from osmose.live_movement import make_step_observer
 from osmose.logging import setup_logging
 from osmose.runner import (
@@ -184,54 +185,43 @@ def run_ui():
             # Left: Run controls with engine tabs
             ui.card(
                 body_collapse_header("Run Configuration", "run_config"),
-                ui.navset_tab(
-                    ui.nav_panel(
-                        "Java",
-                        ui.output_ui("jar_selector"),
-                        ui.input_text(
-                            "java_opts",
-                            "Java options",
-                            value="-Xmx2g",
-                            placeholder="-Xmx4g -Xms1g",
-                        ),
-                        ui.input_numeric(
-                            "run_timeout",
-                            "Timeout (seconds)",
-                            value=3600,
-                            min=60,
-                            max=86400,
-                        ),
-                        ui.input_text_area(
-                            "param_overrides",
-                            "Parameter overrides (key=value, one per line)",
-                            rows=4,
-                        ),
-                        value="run_java_tab",
+                ui.output_ui("engine_indicator"),
+                ui.panel_conditional(
+                    "input.engine_mode !== 'python'",
+                    ui.output_ui("jar_selector"),
+                    ui.input_text(
+                        "java_opts",
+                        "Java options",
+                        value="-Xmx2g",
+                        placeholder="-Xmx4g -Xms1g",
                     ),
-                    ui.nav_panel(
-                        "Python",
-                        ui.input_numeric(
-                            "py_threads",
-                            "Threads (Numba prange)",
-                            value=1,
-                            min=1,
-                            max=32,
-                        ),
-                        ui.input_select(
-                            "py_verbosity",
-                            "Verbosity",
-                            choices={"0": "Quiet", "1": "Normal", "2": "Verbose"},
-                            selected="1",
-                        ),
-                        ui.input_text_area(
-                            "py_param_overrides",
-                            "Parameter overrides (key=value, one per line)",
-                            rows=4,
-                        ),
-                        value="run_python_tab",
+                    ui.input_numeric(
+                        "run_timeout", "Timeout (seconds)", value=3600, min=60, max=86400
                     ),
-                    id="run_engine_tabs",
+                    ui.input_text_area(
+                        "param_overrides",
+                        "Parameter overrides (key=value, one per line)",
+                        rows=4,
+                    ),
                 ),
+                ui.panel_conditional(
+                    "input.engine_mode === 'python'",
+                    ui.input_numeric(
+                        "py_threads", "Threads (Numba prange)", value=1, min=1, max=32
+                    ),
+                    ui.input_select(
+                        "py_verbosity",
+                        "Verbosity",
+                        choices={"0": "Quiet", "1": "Normal", "2": "Verbose"},
+                        selected="1",
+                    ),
+                    ui.input_text_area(
+                        "py_param_overrides",
+                        "Parameter overrides (key=value, one per line)",
+                        rows=4,
+                    ),
+                ),
+                ui.output_ui("engine_capability"),
                 ui.hr(),
                 ui.layout_columns(
                     ui.input_action_button(
@@ -574,11 +564,36 @@ def run_server(input, output, session, state):
         if val:
             state.jar_path.set(val)
 
-    @reactive.effect
-    def _sync_engine_tab():
+    @render.ui
+    def engine_indicator():
         mode = state.engine_mode.get()
-        tab = "run_java_tab" if mode == "java" else "run_python_tab"
-        ui.update_navset("run_engine_tabs", selected=tab, session=session)
+        label = "Python" if mode == "python" else "Java"
+        return ui.p(
+            ui.tags.strong("Active engine: "),
+            label,
+            ui.tags.span(" — change in the header toggle ↗", class_="text-muted"),
+            class_="mb-2",
+        )
+
+    @render.ui
+    def engine_capability():
+        config = state.config.get()
+        if not config:
+            return ui.p("Load a configuration to see engine capabilities.", class_="text-muted")
+        cap = describe_engine(state.engine_mode.get(), config)
+        if not cap.can_run:
+            return ui.div(
+                ui.tags.strong("This engine can't run this configuration. "),
+                cap.block_reason or "",
+                class_="alert alert-warning",
+            )
+        populated = ", ".join(cap.pages_populated) or "—"
+        empty = ", ".join(cap.pages_empty) or "—"
+        return ui.div(
+            ui.p(ui.tags.strong("Will populate: "), populated),
+            ui.p(ui.tags.strong("Won't populate (this engine): "), empty, class_="text-muted"),
+            ui.p(cap.notable_outputs, class_="small text-muted"),
+        )
 
     @render.text
     def run_status():
