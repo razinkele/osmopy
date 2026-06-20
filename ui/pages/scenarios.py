@@ -11,11 +11,15 @@ from shiny import reactive, render, ui
 from osmose.demo import list_demos
 from osmose.logging import setup_logging
 from osmose.scenario_wizard import (
+    Basics,
     ResolvedSource,
+    apply_basics,
+    default_description,
     parse_source,
     read_basics,
     resolve_source,
     source_choices,
+    validate_name,
 )
 from osmose.scenarios import Scenario, ScenarioManager
 from ui.components.collapsible import collapsible_card_header, expand_tab
@@ -206,7 +210,67 @@ def scenarios_server(input, output, session, state):
             wizard_step.set(3)
             ui.update_action_button("btn_wizard_next", label="Create")
         elif step == 3:
-            pass  # Create wired in Task 8 (replaced with _do_wizard_create())
+            _do_wizard_create()
+
+    def _do_wizard_create():
+        wizard_error.set("")
+        resolved = wizard_source.get()
+        if resolved is None:
+            wizard_error.set("No source resolved — go back to step 1.")
+            return
+        try:
+            nyear = int(float(input.wizard_nyear()))
+            ndt = int(float(input.wizard_ndt()))
+        except (ValueError, TypeError):
+            wizard_error.set("Years and Steps/year must be integers.")
+            return
+        if nyear < 1 or ndt < 1:
+            wizard_error.set("Years and Steps/year must be at least 1.")
+            return
+        basics = Basics(nyear=nyear, ndtperyear=ndt, reproducible_rng=bool(input.wizard_rng()))
+        new_name = (input.wizard_name() or "").strip()
+        errs = validate_name(new_name, set(_scenario_names()))
+        if errs:
+            wizard_error.set(errs[0] + " — try a different name.")
+            return
+        cfg = apply_basics(resolved.config, basics)
+        scenario = Scenario(
+            name=new_name,
+            description=default_description(resolved.kind, resolved.name, basics),
+            config=cfg,
+            key_case_map=dict(resolved.case_map),
+            parent_scenario=resolved.parent,
+        )
+        try:
+            mgr.save(scenario)
+        except (OSError, ValueError) as exc:
+            _log.error("wizard save failed: %s", exc, exc_info=True)
+            wizard_error.set("Could not save the scenario. Check server logs.")
+            return
+        # Load into the editor. load_config's RETURN is the deprecated-keys list (NOT names);
+        # re-derive species names from cfg, exactly as handle_load (scenarios.py:186-194).
+        state.busy.set(f"Creating '{new_name}'…")
+        try:
+            state.load_config(cfg)
+            state.config_name.set(new_name)
+            state.key_case_map.set(dict(resolved.case_map))
+            if resolved.config_dir is not None:
+                state.config_dir.set(resolved.config_dir)
+            state.dirty.set(False)
+            try:
+                n_species = int(float(cfg.get("simulation.nspecies", "3") or "3"))
+            except (ValueError, TypeError):
+                n_species = 3
+            names = [cfg.get(f"species.name.sp{i}", f"Species {i}") for i in range(n_species)]
+            state.species_names.set(names)
+            ui.update_numeric("n_species", value=n_species)
+            with reactive.isolate():
+                state.load_trigger.set(state.load_trigger.get() + 1)
+        finally:
+            state.busy.set(None)
+        _bump()
+        ui.modal_remove()
+        ui.notification_show(f"Created scenario '{new_name}'.", type="message", duration=4)
 
     # --- Scenario list (radio buttons) ---
 
