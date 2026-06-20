@@ -429,12 +429,14 @@ def test_scenarios_page_has_new_scenario_button_and_quick_duplicate():
         ),
 ```
 
-(b) Relabel the Fork button (currently `ui/pages/scenarios.py:37-40`) — change the label string only, keep the id `btn_fork_scenario`:
+(b) Relabel the Fork button — change ONLY the label literal `"Fork"` → `"Quick Duplicate"`, keep the id `btn_fork_scenario`. The real source is a single line at `ui/pages/scenarios.py:37`; Edit that exact line:
 
 ```python
-                    ui.input_action_button(
-                        "btn_fork_scenario", "Quick Duplicate", class_="btn-info w-100"
-                    ),
+# old (scenarios.py:37 — one line):
+                    ui.input_action_button("btn_fork_scenario", "Fork", class_="btn-info w-100"),
+# new (after the label change this line is 108 cols, so `ruff format` in Step 4 will
+# auto-wrap it to a 3-line call — that's expected, let the formatter do it):
+                    ui.input_action_button("btn_fork_scenario", "Quick Duplicate", class_="btn-info w-100"),
 ```
 
 - [ ] **Step 4: Run, verify PASS.** `.venv/bin/python -m pytest tests/test_ui_scenarios_wizard.py -q`; `.venv/bin/python -c "import app"` clean; ruff check/format clean on `ui/pages/scenarios.py tests/test_ui_scenarios_wizard.py`.
@@ -706,7 +708,7 @@ git commit -m "feat(ui): scenario wizard Create handler (apply + auto-save + loa
 
 **Files:** Modify `ui/pages/grid.py`
 
-- [ ] **Step 1: Implement.** In `ui/pages/grid.py` `grid_ui()` (def at line 75), the "Grid Type" card holds a `ui.div(ui.layout_columns(load_example + btn_load_example ...))` block ending at line 119, immediately followed by `ui.hr()` (line 120). Insert the muted pointer as a new sibling element BETWEEN that `ui.div(...)` block and `ui.hr()` (i.e. before the `ui.hr()` on line 120), matching the surrounding indentation:
+- [ ] **Step 1: Implement.** In `ui/pages/grid.py` `grid_ui()` (def at line 75), the "Grid Type" card holds a `ui.div(ui.layout_columns(load_example + btn_load_example ...))` block whose inner div ends ~line 118, immediately followed by `ui.hr()` (line 120). Insert the muted pointer as a new sibling element BETWEEN that `ui.div(...)` block and `ui.hr()` (i.e. just before the `ui.hr()`), matching the surrounding indentation:
 
 ```python
                 ui.div(
