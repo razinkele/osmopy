@@ -20,6 +20,29 @@ def test_osmose_demo_unknown_scenario(tmp_path):
         osmose_demo("nonexistent", tmp_path)
 
 
+def test_osmose_demo_honors_data_dir_env(tmp_path, monkeypatch):
+    """OSMOSE_DATA_DIR overrides the bundled-data location (wheel/Docker installs
+    where data/ is not a sibling of the installed osmose package)."""
+    custom = tmp_path / "custom_data" / "minimal"
+    custom.mkdir(parents=True)
+    (custom / "osm_all-parameters.csv").write_text("simulation.nspecies ; 2\nMARKER ; from_env\n")
+    monkeypatch.setenv("OSMOSE_DATA_DIR", str(tmp_path / "custom_data"))
+    result = osmose_demo("minimal", tmp_path / "out")
+    # Config came from the env-pointed dir, not the repo bundle.
+    assert "MARKER ; from_env" in result["config_file"].read_text()
+
+
+def test_osmose_demo_warns_when_data_missing(tmp_path, monkeypatch, caplog):
+    """A missing data bundle warns loudly (not a silent stub) but still produces a file."""
+    import logging
+
+    monkeypatch.setenv("OSMOSE_DATA_DIR", str(tmp_path / "empty"))  # no subdirs present
+    with caplog.at_level(logging.WARNING, logger="osmose.demo"):
+        result = osmose_demo("minimal", tmp_path / "out")
+    assert result["config_file"].exists()  # stub still written — no crash
+    assert any("Bundled demo data not found" in r.message for r in caplog.records)
+
+
 def test_osmose_demo_list():
     from osmose.demo import list_demos
 

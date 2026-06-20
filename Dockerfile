@@ -26,7 +26,12 @@ COPY pyproject.toml .
 COPY osmose/ osmose/
 COPY ui/ ui/
 COPY data/ data/
+COPY www/ www/
 COPY app.py .
+
+# osmose is pip-installed into site-packages, so demo.py's data/-sibling lookup
+# misses the /app/data copy above — point it at the bundled data explicitly.
+ENV OSMOSE_DATA_DIR=/app/data
 
 # Copy OSMOSE Java JAR (wildcard avoids failure if directory is empty/missing)
 COPY osmose-java* osmose-java/
