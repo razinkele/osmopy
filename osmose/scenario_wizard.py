@@ -93,7 +93,7 @@ def validate_name(name: str, existing: set[str]) -> list[str]:
     n = (name or "").strip()
     if not n:
         return ["Name must not be empty"]
-    if "/" in n or "\\" in n or ".." in n:
+    if "/" in n or "\\" in n or ".." in n or n in (".", ".."):
         problems.append(f"Name contains invalid characters: {n!r}")
     if n in existing:
         problems.append(f"A scenario named '{n}' already exists")

@@ -75,6 +75,14 @@ def test_validate_name():
     assert validate_name("baltic_run", existing)
 
 
+def test_validate_name_rejects_dot_and_dotdot():
+    """Bare '.'/'..' must be flagged (they resolve to / escape the store root)."""
+    from osmose.scenario_wizard import validate_name
+
+    assert validate_name(".", set())
+    assert validate_name("..", set())
+
+
 def test_default_description():
     b = Basics(nyear=50, ndtperyear=24, reproducible_rng=False)
     assert default_description("demo", "baltic", b) == "Created from baltic demo, 50 yr"
