@@ -80,7 +80,10 @@ class ScenarioManager:
                 json.dump(data, f, indent=2)
 
             if target.exists():
-                backup = target.with_suffix(".bak")
+                # Append '.bak' (do NOT use with_suffix, which REPLACES the last
+                # dotted segment: a scenario named 'v1.2' would back up to 'v1.bak'
+                # and rmtree an unrelated scenario literally named 'v1.bak').
+                backup = target.parent / (target.name + ".bak")
                 if backup.exists():
                     shutil.rmtree(backup)
                 os.rename(target, backup)

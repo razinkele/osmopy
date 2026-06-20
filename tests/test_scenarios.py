@@ -205,6 +205,22 @@ def test_save_with_existing_stale_backup(tmp_path):
     assert not stale.exists()
 
 
+def test_save_dotted_name_does_not_clobber_unrelated_scenario(tmp_path):
+    """Overwriting a dotted-name scenario must not destroy an unrelated scenario.
+
+    Regression: the backup path used ``target.with_suffix('.bak')``, which REPLACES
+    the last dotted segment — so overwriting ``v1.2`` produced backup ``v1.bak`` and
+    rmtree'd it, destroying an unrelated scenario literally named ``v1.bak``.
+    """
+    manager = ScenarioManager(tmp_path)
+    manager.save(Scenario(name="v1.2", config={"a": "1"}))  # dotted-name scenario
+    manager.save(Scenario(name="v1.bak", config={"keep": "yes"}))  # unrelated scenario
+    # Overwrite v1.2 — must not touch the unrelated v1.bak scenario.
+    manager.save(Scenario(name="v1.2", config={"a": "2"}))
+    assert manager.load("v1.2").config["a"] == "2"  # overwrite succeeded
+    assert manager.load("v1.bak").config["keep"] == "yes"  # unrelated scenario intact
+
+
 def test_save_rejects_path_traversal(tmp_path):
     from osmose.scenarios import Scenario, ScenarioManager
 
