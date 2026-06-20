@@ -88,6 +88,17 @@ def _existing_maps(cfg: dict[str, str]) -> list[tuple[str, str]]:
     return out
 
 
+def _polygon_paint_value(mode: str, paint_value: float) -> float:
+    """Value to write when applying a drawn polygon.
+
+    In mask mode the polygon marks LAND (-99) — same result as the single-cell
+    mask path (set_mask -> -99); otherwise it writes the paint value. (Bug fix:
+    the apply handler previously wrote the paint value even in mask mode,
+    corrupting cells instead of masking them.)
+    """
+    return -99.0 if mode == "mask" else paint_value
+
+
 def map_builder_ui():
     builder_map = MapWidget(
         f"{_MAP_ID}",
@@ -498,7 +509,7 @@ def map_builder_server(input, output, session, state):
         except SilentException:
             mode = "polygon"
         mask_edit = mode == "mask"
-        value = _paint_value()
+        value = _polygon_paint_value(mode, _paint_value())
         painted = False
         for feature in fc.get("features", []):
             geom = feature.get("geometry") or {}
