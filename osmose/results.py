@@ -551,7 +551,11 @@ class OsmoseResults:
         pattern = f"{self.prefix}_sizeSpectrum*.csv"
         frames = []
         for filepath in _find_output_files(self.output_dir, pattern):
-            df = _read_output_csv(filepath)
+            try:
+                df = _read_output_csv(filepath)
+            except (pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
+                _log.warning("Skipping malformed CSV %s: %s", filepath.name, exc)
+                continue
             frames.append(df)
         if not frames:
             self._raise_if_strict(pattern)
@@ -599,7 +603,11 @@ class OsmoseResults:
         for filepath in _find_output_files(self.output_dir, pattern):
             if not _matches_output_type(filepath.stem, output_type, self.prefix):
                 continue
-            df = _read_output_csv(filepath)
+            try:
+                df = _read_output_csv(filepath)
+            except (pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
+                _log.warning("Skipping malformed CSV %s: %s", filepath.name, exc)
+                continue
             sp_name = _extract_species(filepath.stem, output_type, self.prefix)
             if sp_name is None:
                 sp_name = "all"
@@ -656,10 +664,14 @@ class OsmoseResults:
                 # plus a trailing comma that breaks the single-header reader with a
                 # ParserError. Route it through the MultiIndex-aware reader; synthetic
                 # flat-header fixtures fall through to the normal path.
-                if output_type == "mortalityRate" and _is_two_row_header_mortality(filepath):
-                    df = _read_mortality_rate_csv(filepath)
-                else:
-                    df = _read_output_csv(filepath)
+                try:
+                    if output_type == "mortalityRate" and _is_two_row_header_mortality(filepath):
+                        df = _read_mortality_rate_csv(filepath)
+                    else:
+                        df = _read_output_csv(filepath)
+                except (pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
+                    _log.warning("Skipping malformed CSV %s: %s", filepath.name, exc)
+                    continue
                 sp_name = _extract_species(filepath.stem, output_type, self.prefix)
                 if sp_name is None:
                     sp_name = "all"
