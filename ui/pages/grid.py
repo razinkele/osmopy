@@ -116,6 +116,10 @@ def grid_ui():
                         col_widths=[8, 4],
                     ),
                 ),
+                ui.div(
+                    "Want to name and save it? Use Scenarios → + New Scenario.",
+                    class_="text-muted small mt-1",
+                ),
                 ui.hr(),
                 ui.output_ui("grid_overlay_selector"),
                 ui.output_ui("overlay_nc_controls"),
