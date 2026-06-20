@@ -143,15 +143,11 @@ DATASETS = {
     },
 }
 
-# OSMOSE grid parameters (must match baltic_param-grid.csv)
-OSMOSE_GRID = {
-    "nlon": 50,
-    "nlat": 40,
-    "lon_min": 10.0,
-    "lon_max": 30.0,
-    "lat_min": 54.0,
-    "lat_max": 66.0,
-}
+def _baltic_grid():
+    from osmose.maps.builder import GridSpec
+
+    return GridSpec(nlon=50, nlat=40, upleft_lat=66, upleft_lon=10, lowright_lat=54, lowright_lon=30)
+
 
 # Default output directory
 DEFAULT_OUTPUT_DIR = str(Path.home() / "osmose" / "osmose-python" / "data" / "cmems_cache" / "cmems_downloads")
@@ -279,111 +275,6 @@ def download_field(
 
 
 # ---------------------------------------------------------------------------
-# Shared regridding helpers
-# ---------------------------------------------------------------------------
-def _make_target_coords() -> tuple[np.ndarray, np.ndarray]:
-    """Return (target_lat, target_lon) cell centers for the OSMOSE 50x40 grid."""
-    g = OSMOSE_GRID
-    nlat, nlon = g["nlat"], g["nlon"]
-    lat = np.linspace(
-        g["lat_max"] - (g["lat_max"] - g["lat_min"]) / nlat / 2,
-        g["lat_min"] + (g["lat_max"] - g["lat_min"]) / nlat / 2,
-        nlat,
-    )
-    lon = np.linspace(
-        g["lon_min"] + (g["lon_max"] - g["lon_min"]) / nlon / 2,
-        g["lon_max"] - (g["lon_max"] - g["lon_min"]) / nlon / 2,
-        nlon,
-    )
-    return lat, lon
-
-
-def _regrid(data_3d: np.ndarray, src_lat: np.ndarray, src_lon: np.ndarray) -> np.ndarray:
-    """Nearest-neighbor regrid (time, src_lat, src_lon) -> (time, nlat, nlon)."""
-    target_lat, target_lon = _make_target_coords()
-    nlat, nlon = len(target_lat), len(target_lon)
-    nt = data_3d.shape[0]
-    result = np.zeros((nt, nlat, nlon), dtype=np.float64)
-    for j in range(nlat):
-        lat_idx = int(np.argmin(np.abs(src_lat - target_lat[j])))
-        for i in range(nlon):
-            lon_idx = int(np.argmin(np.abs(src_lon - target_lon[i])))
-            result[:, j, i] = data_3d[:, lat_idx, lon_idx]
-    return result
-
-
-def _resample_to_24(data: np.ndarray) -> np.ndarray:
-    """Interpolate (time, lat, lon) to 24 biweekly timesteps."""
-    nt, nlat, nlon = data.shape
-    if nt == 24:
-        return data
-    out = np.zeros((24, nlat, nlon), dtype=np.float64)
-    for j in range(nlat):
-        for i in range(nlon):
-            out[:, j, i] = np.interp(
-                np.linspace(0, 1, 24), np.linspace(0, 1, nt), data[:, j, i]
-            )
-    return out
-
-
-def _cell_volume_m3(depth_m: float) -> float:
-    """Approximate cell volume in m3 for the OSMOSE Baltic grid."""
-    g = OSMOSE_GRID
-    dlat = (g["lat_max"] - g["lat_min"]) / g["nlat"]
-    dlon = (g["lon_max"] - g["lon_min"]) / g["nlon"]
-    cos_lat = np.cos(np.radians(60.0))
-    area = (dlat * 111320) * (dlon * 111320 * cos_lat)
-    return area * depth_m
-
-
-def _get_coords(ds: xr.Dataset) -> tuple[np.ndarray, np.ndarray]:
-    """Extract lat/lon coordinate arrays from a dataset."""
-    lat = ds.latitude.values if "latitude" in ds.coords else ds.lat.values
-    lon = ds.longitude.values if "longitude" in ds.coords else ds.lon.values
-    return lat, lon
-
-
-def _get_var(ds: xr.Dataset, name: str) -> np.ndarray | None:
-    """Get a variable as 3D array (time, lat, lon), NaN filled to 0."""
-    if name not in ds:
-        return None
-    arr = np.nan_to_num(ds[name].values, nan=0.0)
-    if arr.ndim == 2:
-        arr = arr[np.newaxis, :, :]
-    return arr
-
-
-def _load_baltic_ocean_mask() -> np.ndarray | None:
-    """Load the authoritative (nlat, nlon) ocean mask from baltic_grid.nc.
-
-    Returns a bool array (True = ocean, False = land) or None if the grid
-    file is not available. Callers apply this as the final step before
-    writing output so land cells become NaN (matching the EEC convention
-    the OSMOSE UI expects).
-    """
-    grid_path = Path(__file__).resolve().parents[2] / "data" / "baltic" / "baltic_grid.nc"
-    if not grid_path.exists():
-        return None
-    try:
-        with xr.open_dataset(grid_path) as gds:
-            return gds["mask"].values.astype(bool)
-    except (OSError, KeyError):
-        return None
-
-
-def _apply_land_mask(groups: dict[str, np.ndarray], ocean_mask: np.ndarray) -> None:
-    """Set land cells to NaN in every (time, lat, lon) array, in-place.
-
-    Shape mismatch is a silent no-op so the generator still runs if the
-    grid file is stale relative to OSMOSE_GRID dimensions.
-    """
-    for arr in groups.values():
-        if arr.shape[1:] != ocean_mask.shape:
-            return
-        arr[:, ~ocean_mask] = np.nan
-
-
-# ---------------------------------------------------------------------------
 # Tool 3: Generate OSMOSE LTL forcing NetCDF
 # ---------------------------------------------------------------------------
 @mcp.tool()
@@ -392,170 +283,38 @@ def generate_osmose_ltl(
     output_file: Annotated[str, "Output path for OSMOSE-compatible LTL NetCDF"] = "",
     year: Annotated[int, "Year to extract (0 = use all available)"] = 0,
     depth_integrate_m: Annotated[float, "Depth range to integrate over (meters)"] = 50.0,
-    chl_to_biomass_factor: Annotated[float, "C:Chl ratio for fallback mode (only used if phyc missing)"] = 50.0,
+    chl_to_biomass_factor: Annotated[float, "C:Chl ratio for fallback mode"] = 50.0,
 ) -> str:
-    """Convert CMEMS biogeochemistry data into OSMOSE 6-group LTL forcing.
+    """Convert CMEMS biogeochemistry data into OSMOSE 6-group LTL forcing (Baltic grid)."""
+    from osmose.forcing import LtlParams, bgc_to_ltl, load_ocean_mask, write_ltl
 
-    Two modes depending on source data:
-
-    **Mode A (preferred): Direct biomass from forecast product**
-    When `phyc` and `zooc` are present (bgc_monthly_forecast / bgc_daily_forecast),
-    uses phytoplankton and zooplankton carbon biomass directly. Silicate (`si`) is
-    used to identify diatom-dominated vs dinoflagellate-dominated regimes.
-
-    **Mode B (fallback): Estimated from reanalysis**
-    When only `chl` and `nppv` are available (bgc_monthly_reanalysis), estimates
-    plankton biomass from chlorophyll using C:Chl ratio and seasonal community splits.
-
-    Both modes produce 6 LTL groups on the OSMOSE 50x40 grid with 24 biweekly steps:
-      Diatoms, Dinoflagellates, Microzooplankton, Mesozooplankton, Macrozooplankton, Benthos
-    """
     src = Path(source_bgc_file)
     if not src.exists():
         return f"Error: Source file not found: {source_bgc_file}"
-
-    g = OSMOSE_GRID
-    nlat, nlon = g["nlat"], g["nlon"]
-    target_lat, target_lon = _make_target_coords()
-    cell_vol = _cell_volume_m3(depth_integrate_m)
-
+    grid = _baltic_grid()
+    grid_nc = Path(__file__).resolve().parents[2] / "data" / "baltic" / "baltic_grid.nc"
+    mask = load_ocean_mask(grid_nc)
     ds = xr.open_dataset(src)
-    if year > 0 and "time" in ds.dims:
-        ds = ds.sel(time=ds.time.dt.year == year)
-    if "depth" in ds.dims:
-        ds = ds.sel(depth=slice(0, depth_integrate_m)).mean(dim="depth", skipna=True)
-
-    src_lat, src_lon = _get_coords(ds)
-    has_phyc = "phyc" in ds
-    has_zooc = "zooc" in ds
-    mode = "A (direct biomass)" if (has_phyc and has_zooc) else "B (chl-derived)"
-
-    if has_phyc and has_zooc:
-        # ---- Mode A: Direct phyto/zoo carbon from forecast ----
-        phyc = _get_var(ds, "phyc")   # mmolC/m3
-        zooc = _get_var(ds, "zooc")   # mmolC/m3
-        chl = _get_var(ds, "chl")     # mg/m3 (for diagnostics)
-        nppv = _get_var(ds, "nppv")   # mgC/m3/day
-
-        # Convert mmolC/m3 -> tonnes wet weight per cell
-        # 1 mmolC = 0.012 gC
-        # Phytoplankton: ERGOM phyc includes all autotrophic C; calibrated
-        #   against Baltic standing stock ~2 Mt wet. Use C:wet = 1:1 (carbon-equiv).
-        # Zooplankton: use C:wet = 1:10 (standard for crustacean zooplankton).
-        PHYTO_C_TO_WET = 0.012 * 1.0   # gC/mmol * 1:1 wet:C
-        ZOO_C_TO_WET = 0.012 * 10.0    # gC/mmol * 10:1 wet:C
-        phyto_tonnes = _regrid(phyc, src_lat, src_lon) * PHYTO_C_TO_WET * cell_vol / 1e6
-        zoo_tonnes = _regrid(zooc, src_lat, src_lon) * ZOO_C_TO_WET * cell_vol / 1e6
-
-        # Split phytoplankton into diatoms vs dinoflagellates/cyanobacteria.
-        # Baltic silicate is non-limiting (~60+ mmol/m3 year-round), so a
-        # Michaelis-Menten approach doesn't work. Instead use a seasonal
-        # community split based on Baltic phytoplankton succession:
-        #   Spring (Feb-May): diatom-dominated bloom (70-80%)
-        #   Summer (Jun-Sep): cyanobacteria + dinoflagellate bloom (70-80%)
-        #   Autumn/Winter: mixed, low biomass (40-50% diatom)
-        n_steps = phyto_tonnes.shape[0]
-        if n_steps == 12:
-            #               Jan  Feb  Mar  Apr  May  Jun  Jul  Aug  Sep  Oct  Nov  Dec
-            diatom_frac = [0.40, 0.60, 0.75, 0.80, 0.70, 0.40, 0.25, 0.20, 0.25, 0.35, 0.40, 0.40]
-            diatom_frac = np.array(diatom_frac)[:, np.newaxis, np.newaxis] * np.ones((1, nlat, nlon))
-        else:
-            diatom_frac = np.ones((n_steps, nlat, nlon)) * 0.5
-
-        diatoms = phyto_tonnes * diatom_frac
-        dinoflagellates = phyto_tonnes * (1.0 - diatom_frac)
-
-        # Split zooplankton into micro/meso/macro by size fraction
-        # Baltic zooplankton: ~40% micro, ~45% meso (copepods), ~15% macro (mysids, krill)
-        microzoo = zoo_tonnes * 0.40
-        mesozoo = zoo_tonnes * 0.45
-        macrozoo = zoo_tonnes * 0.15
-
-        # Benthos: estimate from NPP bottom flux if available, else from zoo
-        if nppv is not None:
-            npp_grid = _regrid(nppv, src_lat, src_lon)
-            npp_tonnes = npp_grid * cell_vol / 1e9 * 365
-            benthos = npp_tonnes * 0.05 / 3.0
-        else:
-            benthos = zoo_tonnes * 0.3  # rough benthic fraction
-
-    else:
-        # ---- Mode B: Fallback from chl/nppv (reanalysis) ----
-        chl = _get_var(ds, "chl")
-        nppv = _get_var(ds, "nppv")
-        if chl is None:
-            ds.close()
-            return (
-                "Error: Neither phyc/zooc nor chl found. Download with "
-                "variables=['phyc','zooc','chl','nppv','si'] from bgc_monthly_forecast, "
-                "or ['chl','nppv'] from bgc_monthly_reanalysis."
-            )
-        if nppv is None:
-            nppv = chl * 5.0
-
-        chl_grid = _regrid(chl, src_lat, src_lon)
-        nppv_grid = _regrid(nppv, src_lat, src_lon)
-
-        phyto_tonnes = chl_grid * chl_to_biomass_factor * cell_vol / 1e9
-
-        n_steps = chl_grid.shape[0]
-        diatom_frac = np.ones(n_steps) * 0.5
-        if n_steps == 12:
-            diatom_frac = np.array([0.3, 0.5, 0.7, 0.8, 0.7, 0.5, 0.3, 0.2, 0.2, 0.3, 0.3, 0.3])
-        diatoms = phyto_tonnes * diatom_frac[:, np.newaxis, np.newaxis]
-        dinoflagellates = phyto_tonnes * (1.0 - diatom_frac[:, np.newaxis, np.newaxis])
-
-        npp_tonnes = nppv_grid * cell_vol / 1e9 * 365
-        microzoo = npp_tonnes * 0.30 / 50
-        mesozoo = npp_tonnes * 0.10 / 15
-        macrozoo = npp_tonnes * 0.03 / 8
-        benthos = npp_tonnes * 0.05 / 3
-
-    ds.close()
-
-    # Resample all to 24 biweekly steps and ensure non-negative
-    groups = {
-        "Diatoms": _resample_to_24(diatoms),
-        "Dinoflagellates": _resample_to_24(dinoflagellates),
-        "Microzooplankton": _resample_to_24(microzoo),
-        "Mesozooplankton": _resample_to_24(mesozoo),
-        "Macrozooplankton": _resample_to_24(macrozoo),
-        "Benthos": _resample_to_24(benthos),
-    }
-    for arr in groups.values():
-        arr[arr < 0] = 0.0
-
-    # Stamp land cells with NaN so the OSMOSE UI overlay does not render them.
-    # Matches the EEC LTL file convention; the UI's ocean_mask fallback
-    # handles older 0.0-on-land files too, but NaN is the canonical form.
-    ocean_mask = _load_baltic_ocean_mask()
-    if ocean_mask is not None:
-        _apply_land_mask(groups, ocean_mask)
-
-    out_ds = xr.Dataset(
-        {name: (["time", "latitude", "longitude"], data) for name, data in groups.items()},
-        coords={"time": np.arange(24), "latitude": target_lat, "longitude": target_lon},
-        attrs={
-            "title": "Baltic Sea OSMOSE LTL Forcing (from CMEMS)",
-            "source": str(source_bgc_file),
-            "mode": mode,
-            "description": "6 lower trophic level groups, 24 biweekly timesteps",
-            "depth_integration_m": depth_integrate_m,
-            "conventions": "Latitude descending (north to south) to match grid.nc; NaN on land",
-        },
-    )
-
+    try:
+        result = bgc_to_ltl(
+            ds, grid, year=year, depth_integrate_m=depth_integrate_m,
+            params=LtlParams(chl_to_biomass_factor=chl_to_biomass_factor), ocean_mask=mask,
+        )
+    except ValueError as exc:
+        ds.close()
+        return f"Error: {exc}"
+    result.attrs["source"] = str(source_bgc_file)
     if not output_file:
         output_file = str(Path(DEFAULT_OUTPUT_DIR) / "baltic_ltl_biomass_cmems.nc")
-    out_path = Path(output_file)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_ds.to_netcdf(str(out_path))
-
-    lines = [f"Generated OSMOSE LTL forcing: {out_path}", f"Mode: {mode}"]
-    lines.append(f"Grid: {nlat} x {nlon}, 24 biweekly steps")
-    for name, data in groups.items():
-        lines.append(f"  {name}: total={np.nansum(data):.0f} t, max/cell={np.nanmax(data):.1f} t")
-    out_ds.close()
+    # overwrite=True preserves the MCP's pre-existing always-regenerate behavior.
+    path = write_ltl(result, output_file, overwrite=True)
+    lines = [f"Generated OSMOSE LTL forcing: {path}", f"Mode: {result.attrs['mode']}",
+             f"Grid: {grid.nlat} x {grid.nlon}, 24 biweekly steps"]
+    for g in result.data_vars:
+        lines.append(f"  {g}: total={float(result[g].sum(skipna=True)):.0f} t, "
+                     f"max/cell={float(result[g].max(skipna=True)):.1f} t")
+    ds.close()
+    result.close()
     return "\n".join(lines)
 
 
@@ -569,60 +328,30 @@ def generate_osmose_physics(
     year: Annotated[int, "Year to extract (0 = use all available)"] = 0,
     depth_surface_m: Annotated[float, "Depth for surface fields (meters)"] = 10.0,
 ) -> str:
-    """Convert downloaded CMEMS physics data into OSMOSE-compatible forcing.
+    """Convert downloaded CMEMS physics into OSMOSE temperature/salinity forcing (Baltic grid)."""
+    from osmose.forcing import phy_to_physics, write_physics
 
-    Creates temperature and salinity NetCDF files regridded to the OSMOSE
-    50x40 Baltic grid with 24 biweekly timesteps.
-    These files can be used with the OSMOSE bioenergetics module.
-    """
     src = Path(source_phy_file)
     if not src.exists():
         return f"Error: Source file not found: {source_phy_file}"
-
-    target_lat, target_lon = _make_target_coords()
-
+    grid = _baltic_grid()
     ds = xr.open_dataset(src)
-    if year > 0 and "time" in ds.dims:
-        ds = ds.sel(time=ds.time.dt.year == year)
-    if "depth" in ds.dims:
-        ds = ds.sel(depth=depth_surface_m, method="nearest")
-
-    src_lat, src_lon = _get_coords(ds)
-    results = []
-
+    try:
+        dsets = phy_to_physics(ds, grid, year=year, depth_surface_m=depth_surface_m)
+    finally:
+        ds.close()
+    if not dsets:
+        return "Error: no physics variables (thetao/so) found in source"
     if not output_dir:
         output_dir = DEFAULT_OUTPUT_DIR
-    out_path = Path(output_dir)
-    out_path.mkdir(parents=True, exist_ok=True)
-
-    for var_name, osmose_name, units in [
-        ("thetao", "temperature", "degC"),
-        ("so", "salinity", "PSU"),
-    ]:
-        data = _get_var(ds, var_name)
-        if data is None:
-            results.append(f"  {var_name}: not found in source file, skipped")
-            continue
-
-        regridded = _resample_to_24(_regrid(data, src_lat, src_lon))
-
-        fpath = out_path / f"baltic_{osmose_name}.nc"
-        out_ds = xr.Dataset(
-            {osmose_name: (["time", "latitude", "longitude"], regridded)},
-            coords={"time": np.arange(24), "latitude": target_lat, "longitude": target_lon},
-            attrs={
-                "title": f"Baltic Sea OSMOSE {osmose_name.title()} Forcing (from CMEMS)",
-                "source": str(source_phy_file),
-                "units": units,
-                "depth_m": depth_surface_m,
-                "conventions": "Latitude descending (north to south) to match grid.nc",
-            },
+    paths = write_physics(dsets, output_dir, overwrite=True)  # name -> Path
+    results = []
+    for name, fds in dsets.items():
+        arr = fds[name].values
+        units = fds.attrs.get("units", "")
+        results.append(
+            f"  {name}: {paths[name]} (range {np.nanmin(arr):.2f} - {np.nanmax(arr):.2f} {units})"
         )
-        out_ds.to_netcdf(str(fpath))
-        out_ds.close()
-        results.append(f"  {osmose_name}: {fpath} (range {regridded.min():.2f} - {regridded.max():.2f} {units})")
-
-    ds.close()
     return "Generated OSMOSE physics forcing:\n" + "\n".join(results)
 
 
