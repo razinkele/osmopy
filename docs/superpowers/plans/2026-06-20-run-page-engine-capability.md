@@ -14,7 +14,7 @@
 
 - **Create:** `osmose/engine_capabilities.py` — pure capability core (dataclass + `describe_engine` + truthiness helper). No Shiny, no engine imports except `osmose.runner.java_engine_block_reason`.
 - **Create:** `tests/test_engine_capabilities.py` — unit tests for the pure core.
-- **Modify:** `ui/pages/run.py` — remove `run_engine_tabs` navset (~187–234) + `_sync_engine_tab` (~577–581); add `engine_settings` + `engine_indicator` + `engine_capability` render slots in `run_ui()` and `run_server()`.
+- **Modify:** `ui/pages/run.py` — remove `run_engine_tabs` navset (~187–234) + `_sync_engine_tab` (~577–581); replace the navset with two `ui.panel_conditional` blocks keyed on `input.engine_mode` (per-engine inputs stay always-registered); add `engine_indicator` + `engine_capability` render slots in `run_ui()` and `run_server()`.
 - **Modify (if present):** `tests/test_ui_run.py` — a smoke test that the page imports and the new slots exist; otherwise create `tests/test_ui_run_capability.py`.
 
 ---
@@ -112,7 +112,12 @@ git commit -m "feat(capabilities): EngineCapability dataclass + truthiness helpe
 - Modify: `osmose/engine_capabilities.py`
 - Test: `tests/test_engine_capabilities.py`
 
-The canonical 4.4.0 config keys (verified in `osmose/config/aliases.py:118-120` and `config_validation.py:120`): `module.genetics.enabled`, `module.bioeconomics.enabled`, `output.spatial.enabled`. `state.config` is canonicalized on load, so these are read directly.
+The config keys this gates on, with their canonical source-of-truth:
+- `module.genetics.enabled` — canonical 4.4.0 rename target (`osmose/config/aliases.py:119`, from `simulation.genetic.enabled`). `state.config` is canonicalized on load, so it holds this spelling.
+- `module.bioeconomics.enabled` — canonical rename target (`osmose/config/aliases.py:120`; also in `config_validation.py:120`).
+- `output.spatial.enabled` — master spatial-output toggle; a real schema key (`osmose/schema/output.py:141`) read by the engine (`osmose/engine/config.py:924`). Not renamed across versions.
+
+These are read directly off `state.config` (a plain dict).
 
 Page names match the real nav values in `app.py`: `Results`, `Spatial Results`, `Diagnostics`, `Genetics`, `Economic`. Community/Sheldon metrics live inside the Diagnostics page (which gates on `engine_mode=="python"` at `diagnostics.py:57`), so they are covered by `Diagnostics`.
 
@@ -309,12 +314,18 @@ git commit -m "feat(capabilities): describe_engine for the Java engine + total f
 
 ---
 
-## Task 4: Remove the misleading engine tabs from the Run page
+## Task 4: Replace the misleading engine tabs with client-side conditional settings
 
 **Files:**
 - Modify: `ui/pages/run.py` (`run_ui` ~185–234; `_sync_engine_tab` ~577–581)
 
-The `run_engine_tabs` `navset_tab` looks like an engine chooser but is a read-only mirror of the header toggle (`_sync_engine_tab` pushes `engine_mode` → selected tab; clicking a tab does NOT change `engine_mode`). Remove both. The per-engine inputs move into a render slot in Task 6 — for THIS task, keep the input widgets by relocating them temporarily into a static `ui.div` so existing `input.java_opts()` / `input.py_threads()` references in `handle_run` / `_run_java_engine` keep resolving and tests stay green. Task 6 replaces that static div with the dynamic slot.
+The `run_engine_tabs` `navset_tab` looks like an engine chooser but is a read-only mirror of the header toggle (`_sync_engine_tab` pushes `engine_mode` → selected tab; clicking a tab does NOT change `engine_mode`). Remove both.
+
+**Critical design note (resolves the in-loop review BLOCKER):** Do NOT move the per-engine inputs into a dynamic `@render.ui` slot. A dynamic slot renders only the active engine's inputs, so `input.java_opts()` / `input.py_param_overrides()` would move from always-registered (the old navset keeps both tabs in the DOM, merely CSS-hidden) to conditionally-registered — racing the freshly-rendered input's websocket round-trip against the `btn_run` click. Reading an unregistered input raises `SilentException`, which silently aborts `handle_run` (the "Load does nothing" failure class).
+
+Instead use **`ui.panel_conditional`** keyed on the client-side `input.engine_mode` input (set on page load via `Shiny.setInputValue('engine_mode', mode)` in `app.py:432`). `panel_conditional` keeps ALL widgets in the DOM and only CSS-hides the inactive set — so every input stays registered and every existing `input.*()` read in `handle_run` / `_run_java_engine` / `sync_jar_path` keeps resolving. This shows only the active engine's settings (the spec's intent) without the silent-failure race.
+
+Use `input.engine_mode !== 'python'` for the Java block so the default/uninitialized state shows Java (matching `state.engine_mode` default `"java"` at `ui/state.py:64`).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -324,23 +335,41 @@ import ui.pages.run as run_page
 
 
 def test_run_page_has_no_engine_tabs_navset():
-    # The misleading read-only navset must be gone.
+    # The misleading read-only navset and its mirror observer must be gone.
     text = open(run_page.__file__, encoding="utf-8").read()
     assert "run_engine_tabs" not in text
     assert "_sync_engine_tab" not in text
+
+
+def test_run_page_uses_panel_conditional_for_engine_settings():
+    text = open(run_page.__file__, encoding="utf-8").read()
+    # Per-engine inputs stay always-registered, visibility via client-side condition.
+    assert "panel_conditional" in text
+    assert "input.engine_mode" in text
+    # All per-engine input ids still present (registered).
+    for input_id in (
+        "java_opts",
+        "run_timeout",
+        "param_overrides",
+        "py_threads",
+        "py_verbosity",
+        "py_param_overrides",
+    ):
+        assert input_id in text
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `.venv/bin/python -m pytest tests/test_ui_run_capability.py -v`
-Expected: FAIL — `run_engine_tabs` still present in the source.
+Expected: FAIL — `run_engine_tabs` still present; `panel_conditional` absent.
 
 - [ ] **Step 3: Make the change**
 
-In `run_ui()`, replace the entire `ui.navset_tab(...)` block (the call beginning `ui.navset_tab(` and ending at `id="run_engine_tabs",\n                ),`) with a static settings div that preserves all input ids:
+In `run_ui()`, replace the entire `ui.navset_tab(...)` block (the call beginning `ui.navset_tab(` and ending at `id="run_engine_tabs",\n                ),`) with two `panel_conditional` blocks that preserve every input id:
 
 ```python
-                ui.div(
+                ui.panel_conditional(
+                    "input.engine_mode !== 'python'",
                     ui.output_ui("jar_selector"),
                     ui.input_text(
                         "java_opts",
@@ -356,6 +385,9 @@ In `run_ui()`, replace the entire `ui.navset_tab(...)` block (the call beginning
                         "Parameter overrides (key=value, one per line)",
                         rows=4,
                     ),
+                ),
+                ui.panel_conditional(
+                    "input.engine_mode === 'python'",
                     ui.input_numeric(
                         "py_threads", "Threads (Numba prange)", value=1, min=1, max=32
                     ),
@@ -370,7 +402,6 @@ In `run_ui()`, replace the entire `ui.navset_tab(...)` block (the call beginning
                         "Parameter overrides (key=value, one per line)",
                         rows=4,
                     ),
-                    id="run_engine_settings_static",
                 ),
 ```
 
@@ -393,7 +424,7 @@ Expected: PASS and clean import (no exception).
 
 ```bash
 git add ui/pages/run.py tests/test_ui_run_capability.py
-git commit -m "refactor(run): remove read-only engine tabs + mirror observer"
+git commit -m "refactor(run): engine tabs -> client-side conditional settings (no input race)"
 ```
 
 ---
@@ -420,13 +451,13 @@ Expected: FAIL — slots absent.
 
 - [ ] **Step 3: Make the change**
 
-In `run_ui()`, immediately after `body_collapse_header("Run Configuration", "run_config"),` and before the static settings div, insert:
+In `run_ui()`, immediately after `body_collapse_header("Run Configuration", "run_config"),` and before the first `panel_conditional` block, insert:
 
 ```python
                 ui.output_ui("engine_indicator"),
 ```
 
-Then add the capability slot after the static settings div and before `ui.hr()`:
+Then add the capability slot after the second (Python) `panel_conditional` block and before `ui.hr()`:
 
 ```python
                 ui.output_ui("engine_capability"),
@@ -463,28 +494,27 @@ git commit -m "feat(run): active-engine indicator slot"
 
 ---
 
-## Task 6: Dynamic engine-settings slot + capability panel
+## Task 6: Capability panel render
 
 **Files:**
-- Modify: `ui/pages/run.py` (`run_ui` + `run_server`)
+- Modify: `ui/pages/run.py` (`run_server` + import)
 
-Replace the static settings div with a dynamic slot that renders ONLY the active engine's inputs, and render the capability panel from `describe_engine`.
+The per-engine settings are already handled by the `panel_conditional` blocks (Task 4) and the `engine_capability` output_ui is already declared in `run_ui` (Task 5). This task wires the server render that fills it from `describe_engine`.
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
 # append to tests/test_ui_run_capability.py
-def test_run_page_has_dynamic_settings_slot_and_imports_capabilities():
+def test_run_page_imports_describe_engine_and_renders_capability():
     text = open(run_page.__file__, encoding="utf-8").read()
-    assert 'output_ui("engine_settings")' in text
-    assert "run_engine_settings_static" not in text
-    assert "from osmose.engine_capabilities import" in text
+    assert "from osmose.engine_capabilities import describe_engine" in text
+    assert "def engine_capability" in text
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `.venv/bin/python -m pytest tests/test_ui_run_capability.py::test_run_page_has_dynamic_settings_slot_and_imports_capabilities -v`
-Expected: FAIL — static div still present, no dynamic slot.
+Run: `.venv/bin/python -m pytest tests/test_ui_run_capability.py::test_run_page_imports_describe_engine_and_renders_capability -v`
+Expected: FAIL — import + render absent.
 
 - [ ] **Step 3: Make the change**
 
@@ -494,47 +524,9 @@ Add the import near the top of `ui/pages/run.py` (with the other `osmose` import
 from osmose.engine_capabilities import describe_engine
 ```
 
-In `run_ui()`, replace the entire `ui.div(..., id="run_engine_settings_static")` block with:
+In `run_server()`, add the capability render function (next to `engine_indicator`):
 
 ```python
-                ui.output_ui("engine_settings"),
-```
-
-In `run_server()`, add the two render functions (next to `engine_indicator`):
-
-```python
-    @render.ui
-    def engine_settings():
-        if state.engine_mode.get() == "java":
-            return ui.div(
-                ui.output_ui("jar_selector"),
-                ui.input_text(
-                    "java_opts", "Java options", value="-Xmx2g", placeholder="-Xmx4g -Xms1g"
-                ),
-                ui.input_numeric(
-                    "run_timeout", "Timeout (seconds)", value=3600, min=60, max=86400
-                ),
-                ui.input_text_area(
-                    "param_overrides",
-                    "Parameter overrides (key=value, one per line)",
-                    rows=4,
-                ),
-            )
-        return ui.div(
-            ui.input_numeric("py_threads", "Threads (Numba prange)", value=1, min=1, max=32),
-            ui.input_select(
-                "py_verbosity",
-                "Verbosity",
-                choices={"0": "Quiet", "1": "Normal", "2": "Verbose"},
-                selected="1",
-            ),
-            ui.input_text_area(
-                "py_param_overrides",
-                "Parameter overrides (key=value, one per line)",
-                rows=4,
-            ),
-        )
-
     @render.ui
     def engine_capability():
         config = state.config.get()
@@ -565,7 +557,7 @@ Expected: PASS and clean import.
 
 ```bash
 git add ui/pages/run.py tests/test_ui_run_capability.py
-git commit -m "feat(run): dynamic engine-settings slot + capability panel"
+git commit -m "feat(run): capability panel render from describe_engine"
 ```
 
 ---
@@ -589,7 +581,14 @@ Expected: no errors. If format fails, run `.venv/bin/ruff format osmose/ ui/ tes
 Run: `.venv/bin/python -m pyright --pythonpath .venv/bin/python osmose/engine_capabilities.py ui/pages/run.py`
 Expected: 0 errors. (Per the CI-pyright-reproduction gotcha, do not run bare `pyright` — it may pick up a pandas-blind sibling venv.)
 
-- [ ] **Step 4: Commit any lint/format fixups**
+- [ ] **Step 4: e2e smoke — confirm per-engine inputs still wire through to a real run**
+
+The default suite excludes e2e (`-m 'not e2e'`), but `tests/test_e2e_live_movement.py` and `tests/test_e2e_baltic.py` are the ONLY coverage that the per-engine inputs (e.g. `#py_param_overrides`) actually drive a run. The `panel_conditional` design keeps those inputs always-registered and visible-when-active, so these should pass unchanged; run them explicitly to confirm the chooser change didn't break the run path.
+
+Run: `.venv/bin/python -m pytest tests/test_e2e_live_movement.py -m e2e -v`
+Expected: PASS (the Python-engine run completes; `#py_param_overrides` is filled and honored). If Playwright/browser is unavailable in this environment, note that explicitly and fall back to a manual check that `input.engine_mode === 'python'` reveals `#py_param_overrides` (it is in the DOM at all times via `panel_conditional`).
+
+- [ ] **Step 5: Commit any lint/format fixups**
 
 ```bash
 git add -A
@@ -600,7 +599,14 @@ git commit -m "chore(run): lint/format/pyright fixups" || echo "nothing to commi
 
 ## Self-Review notes (already applied)
 
-- **Spec coverage:** Component 1 (pure core) → Tasks 1–3; Component 2 (Run-page changes: remove navset+observer, add indicator/settings/capability slots) → Tasks 4–6.
-- **Type consistency:** `EngineCapability` field names (`pages_populated`, `pages_empty`, `notable_outputs`, `block_reason`, `can_run`) are identical across the dataclass def (Task 1), `describe_engine` (Tasks 2–3), and the render slot (Task 6). Page-name strings (`Results`, `Diagnostics`, `Genetics`, `Economic`, `Spatial Results`) match `app.py` nav values and are used identically in tests and impl.
+- **Spec coverage:** Component 1 (pure core) → Tasks 1–3; Component 2 (Run-page changes: remove navset+observer, show active engine's settings, add indicator/capability slots) → Tasks 4–6.
+- **Type consistency:** `EngineCapability` field names (`pages_populated`, `pages_empty`, `notable_outputs`, `block_reason`, `can_run`) are identical across the dataclass def (Task 1), `describe_engine` (Tasks 2–3), and the render slot (Task 6). Page-name strings (`Results`, `Diagnostics`, `Genetics`, `Economic`, `Spatial Results`) are arbitrary panel labels used identically in tests and impl (they correspond to the `app.py` nav display labels; the lowercase nav `value=` tokens are `results`/`spatial_results`/`diagnostics`/`genetics`/`economic`).
 - **No `app.py` change** → no nav / visual-baseline change (the header engine toggle is untouched).
 - **Out of scope (per spec):** Python progress streaming, timeout-vs-failed label, post-run View-Results, run-history `duration_sec`, engine-filtered Results dropdown.
+
+## In-loop review resolutions (Round 1)
+
+- **BLOCKER — dynamic-render input race (Shiny reviewer):** the original plan moved per-engine inputs into a dynamic `@render.ui` slot, making `input.*()` conditionally-registered and racing the `btn_run` click → `SilentException` silently aborts `handle_run`. **Fixed:** Task 4 now uses `ui.panel_conditional` keyed on the client-side `input.engine_mode` input (`app.py:432`), keeping all inputs always-registered (CSS-hide only). Also fixes the `sync_jar_path` / `jar_selector` conditional-existence concern (the `output_ui` binding stays active under `panel_conditional`).
+- **BLOCKER — e2e coverage (Shiny reviewer):** `tests/test_e2e_{live_movement,baltic}.py` fill `#py_param_overrides`; default suite excludes e2e. **Fixed:** Task 7 Step 4 runs the e2e live-movement test explicitly.
+- **FALSE ALARM — `output.spatial.enabled` "does not exist" (accuracy reviewer):** it IS a real schema key (`osmose/schema/output.py:141`) read by the engine (`osmose/engine/config.py:924`); the reviewer only checked `aliases.py`/`config_validation.py`. The gate is correct; only the plan's citation was imprecise — now fixed in Task 2.
+- **MINOR — imprecise citations (accuracy reviewer):** Task 2 now cites the exact source-of-truth line for each of the three flags.
