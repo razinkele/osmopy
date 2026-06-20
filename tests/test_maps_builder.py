@@ -69,6 +69,20 @@ def test_lonlat_to_cell():
     assert lonlat_to_cell(g, -1.0, 3.5) is None
 
 
+def test_lonlat_to_cell_just_outside_nw_returns_none():
+    """A click just north/west of the grid must return None, not edge cell 0.
+
+    Regression: int() truncates negative offsets toward 0, mapping (lon<upleft_lon)
+    or (lat>upleft_lat) onto cell index 0 instead of rejecting the click.
+    """
+    from osmose.maps.builder import GridSpec, lonlat_to_cell
+
+    g = GridSpec(4, 4, 4.0, 0.0, 0.0, 4.0)  # lon 0..4, lat 0..4
+    assert lonlat_to_cell(g, -0.3, 2.0) is None  # just west of the grid
+    assert lonlat_to_cell(g, 2.0, 4.3) is None  # just north of the grid
+    assert lonlat_to_cell(g, -0.3, 4.3) is None  # NW corner, just outside
+
+
 @given(
     lons=st.lists(st.floats(0.1, 3.9), min_size=3, max_size=6),
     lats=st.lists(st.floats(0.1, 3.9), min_size=3, max_size=6),
@@ -112,6 +126,22 @@ def test_mapgrid_blank_seeds_base_mask():
     base[0, 0] = -99
     mg = MapGrid.blank(g, base_mask=base)
     assert mg.array[0, 0] == -99 and mg.array[1, 1] == 0.0
+
+
+def test_mapgrid_blank_ignores_mismatched_mask_shape():
+    """A base_mask whose shape disagrees with the grid is skipped (all-sea) with a
+    warning, not an IndexError that breaks 'New blank map'."""
+    import pytest
+
+    from osmose.maps.builder import GridSpec, MapGrid
+
+    g = GridSpec(4, 4, 4.0, 0.0, 0.0, 4.0)
+    wrong = np.zeros((3, 5))  # shape != (4, 4)
+    wrong[0, 0] = -99
+    with pytest.warns(UserWarning, match="base_mask shape"):
+        mg = MapGrid.blank(g, base_mask=wrong)
+    assert mg.array.shape == (4, 4)
+    assert (mg.array == 0).all()  # mask ignored -> all sea
 
 
 def test_mapgrid_apply_polygon():

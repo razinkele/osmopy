@@ -38,3 +38,16 @@ def test_existing_maps_empty_when_none():
     from ui.pages.map_builder import _existing_maps
 
     assert _existing_maps({}) == []
+
+
+def test_polygon_paint_value_mask_writes_land():
+    """Applying a polygon in mask mode writes land (-99), not the paint value.
+
+    Regression: the apply handler wrote the paint value even in mask mode, so the
+    polygon mask tool corrupted cells instead of masking them.
+    """
+    from ui.pages.map_builder import _polygon_paint_value
+
+    assert _polygon_paint_value("mask", 5.0) == -99.0
+    assert _polygon_paint_value("brush", 5.0) == 5.0
+    assert _polygon_paint_value("polygon", 1.0) == 1.0

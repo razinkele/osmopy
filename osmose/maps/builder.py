@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import warnings
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -101,8 +102,14 @@ def rasterize_polygon(
 
 
 def lonlat_to_cell(grid: GridSpec, lon: float, lat: float) -> tuple[int, int] | None:
-    c = int((lon - grid.upleft_lon) / grid.dx)
-    r = int((grid.upleft_lat - lat) / grid.dy)
+    # Compute float offsets and reject negatives BEFORE truncating: int() truncates
+    # toward zero, so a click just north/west of the grid (negative offset) would
+    # otherwise map to edge cell 0 instead of correctly returning None.
+    cf = (lon - grid.upleft_lon) / grid.dx
+    rf = (grid.upleft_lat - lat) / grid.dy
+    if cf < 0 or rf < 0:
+        return None
+    c, r = int(cf), int(rf)
     if 0 <= r < grid.nlat and 0 <= c < grid.nlon:
         return (r, c)
     return None
@@ -118,7 +125,17 @@ class MapGrid:
     def blank(cls, grid: GridSpec, base_mask: np.ndarray | None = None) -> "MapGrid":
         a = np.zeros((grid.nlat, grid.nlon), dtype=float)
         if base_mask is not None:
-            a[base_mask == -99] = -99
+            if base_mask.shape == a.shape:
+                a[base_mask == -99] = -99
+            else:
+                # grid.mask.file dims disagree with grid.nlon/nlat — skip the mask
+                # (all-sea) rather than IndexError-ing 'New blank map'; warn so the
+                # config mismatch is visible.
+                warnings.warn(
+                    f"base_mask shape {base_mask.shape} != grid ({grid.nlat}, {grid.nlon}); "
+                    "ignoring the mask for the blank map.",
+                    stacklevel=2,
+                )
         return cls(a)
 
     @property
