@@ -1,4 +1,4 @@
-from osmose.scenario_wizard import Basics, apply_basics
+from osmose.scenario_wizard import Basics, apply_basics, read_basics
 
 
 def test_apply_basics_sets_exactly_the_four_keys_and_copies():
@@ -16,3 +16,19 @@ def test_apply_basics_false_rng():
     out = apply_basics({}, Basics(nyear=10, ndtperyear=24, reproducible_rng=False))
     assert out["movement.randomseed.fixed"] == "false"
     assert out["stochastic.mortality.randomseed.fixed"] == "false"
+
+
+def test_read_basics_roundtrips_with_apply_basics():
+    cfg = apply_basics({}, Basics(nyear=33, ndtperyear=12, reproducible_rng=True))
+    assert read_basics(cfg) == Basics(nyear=33, ndtperyear=12, reproducible_rng=True)
+
+
+def test_read_basics_falls_back_on_missing_or_garbage():
+    assert read_basics({}) == Basics(nyear=10, ndtperyear=24, reproducible_rng=False)
+    assert read_basics({"simulation.time.nyear": "x"}).nyear == 10
+
+
+def test_read_basics_rng_true_only_when_both_booleans_true():
+    assert read_basics({"movement.randomseed.fixed": "true"}).reproducible_rng is False
+    both = {"movement.randomseed.fixed": "true", "stochastic.mortality.randomseed.fixed": "true"}
+    assert read_basics(both).reproducible_rng is True

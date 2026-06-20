@@ -37,3 +37,22 @@ def apply_basics(config: dict[str, str], basics: Basics) -> dict[str, str]:
     out[_MOVE_RNG_KEY] = flag
     out[_MORT_RNG_KEY] = flag
     return out
+
+
+def _to_int(value: object, default: int) -> int:
+    try:
+        n = int(float(str(value)))
+    except (ValueError, TypeError):
+        return default
+    return n if n >= 1 else default
+
+
+def read_basics(config: dict[str, str]) -> Basics:
+    """Parse the four headline keys from a config (sane fallbacks for missing/garbage)."""
+    move = str(config.get(_MOVE_RNG_KEY, "false")).lower() == "true"
+    mort = str(config.get(_MORT_RNG_KEY, "false")).lower() == "true"
+    return Basics(
+        nyear=_to_int(config.get(_NYEAR_KEY), _DEFAULT_NYEAR),
+        ndtperyear=_to_int(config.get(_NDT_KEY), _DEFAULT_NDT),
+        reproducible_rng=move and mort,
+    )
