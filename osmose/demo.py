@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
@@ -70,6 +71,34 @@ def _version_tuple(v: str) -> tuple[int, ...]:
         return (0,)
 
 
+def _data_root() -> Path:
+    """Root of the bundled demo data.
+
+    Overridable via ``OSMOSE_DATA_DIR`` — required for non-editable installs
+    (wheel / Docker) where ``data/`` is NOT a sibling of the installed ``osmose``
+    package, so the default ``Path(__file__).parent.parent / "data"`` misses it.
+    """
+    env = os.environ.get("OSMOSE_DATA_DIR")
+    return Path(env) if env else Path(__file__).parent.parent / "data"
+
+
+def _bundled_data_dir(subdir: str) -> Path | None:
+    """Return the bundled data subdir if present, else warn and return None.
+
+    A missing data bundle previously fell through silently to a 5-line stub config
+    (non-runnable) — surface it loudly so the cause is obvious.
+    """
+    d = _data_root() / subdir
+    if d.exists():
+        return d
+    _log.warning(
+        "Bundled demo data not found at %s — writing a minimal (non-runnable) stub config. "
+        "Demos need the data bundle: use an editable install or set OSMOSE_DATA_DIR.",
+        d,
+    )
+    return None
+
+
 def list_demos() -> list[str]:
     """List available demo scenarios."""
     return ["baltic", "bay_of_biscay", "eec", "eec_full", "minimal"]
@@ -102,12 +131,12 @@ def osmose_demo(scenario: str, output_dir: Path) -> dict:
 
 def _generate_baltic(output_dir: Path) -> dict:
     """Generate Baltic Sea multi-species demo configuration."""
-    data_dir = Path(__file__).parent.parent / "data" / "baltic"
+    data_dir = _bundled_data_dir("baltic")
     config_dir = output_dir / "config"
     sim_output = output_dir / "output"
     sim_output.mkdir(parents=True, exist_ok=True)
 
-    if data_dir.exists():
+    if data_dir is not None:
         shutil.copytree(data_dir, config_dir, dirs_exist_ok=True)
     else:
         config_dir.mkdir(parents=True, exist_ok=True)
@@ -127,12 +156,12 @@ def _generate_baltic(output_dir: Path) -> dict:
 def _generate_bay_of_biscay(output_dir: Path) -> dict:
     """Generate Bay of Biscay 8-species demo."""
     # Copy from bundled examples if available
-    examples_dir = Path(__file__).parent.parent / "data" / "examples"
+    examples_dir = _bundled_data_dir("examples")
     config_dir = output_dir / "config"
     sim_output = output_dir / "output"
     sim_output.mkdir(parents=True, exist_ok=True)
 
-    if examples_dir.exists():
+    if examples_dir is not None:
         shutil.copytree(examples_dir, config_dir, dirs_exist_ok=True)
     else:
         # Generate minimal config
@@ -152,12 +181,12 @@ def _generate_bay_of_biscay(output_dir: Path) -> dict:
 
 def _generate_eec(output_dir: Path) -> dict:
     """Generate Eastern English Channel 6-species demo."""
-    data_dir = Path(__file__).parent.parent / "data" / "eec"
+    data_dir = _bundled_data_dir("eec")
     config_dir = output_dir / "config"
     sim_output = output_dir / "output"
     sim_output.mkdir(parents=True, exist_ok=True)
 
-    if data_dir.exists():
+    if data_dir is not None:
         shutil.copytree(data_dir, config_dir, dirs_exist_ok=True)
     else:
         config_dir.mkdir(parents=True, exist_ok=True)
@@ -181,12 +210,12 @@ def _generate_eec_full(output_dir: Path) -> dict:
     with 14 focal species, 10 plankton/benthos resource groups, 42 movement maps,
     and NetCDF LTL forcing.
     """
-    data_dir = Path(__file__).parent.parent / "data" / "eec_full"
+    data_dir = _bundled_data_dir("eec_full")
     config_dir = output_dir / "config"
     sim_output = output_dir / "output"
     sim_output.mkdir(parents=True, exist_ok=True)
 
-    if data_dir.exists():
+    if data_dir is not None:
         shutil.copytree(data_dir, config_dir, dirs_exist_ok=True)
     else:
         config_dir.mkdir(parents=True, exist_ok=True)
@@ -205,12 +234,12 @@ def _generate_eec_full(output_dir: Path) -> dict:
 
 def _generate_minimal(output_dir: Path) -> dict:
     """Generate minimal 2-species demo for testing and tutorials."""
-    data_dir = Path(__file__).parent.parent / "data" / "minimal"
+    data_dir = _bundled_data_dir("minimal")
     config_dir = output_dir / "config"
     sim_output = output_dir / "output"
     sim_output.mkdir(parents=True, exist_ok=True)
 
-    if data_dir.exists():
+    if data_dir is not None:
         shutil.copytree(data_dir, config_dir, dirs_exist_ok=True)
     else:
         config_dir.mkdir(parents=True, exist_ok=True)
