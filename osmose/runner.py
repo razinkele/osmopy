@@ -93,6 +93,7 @@ class OsmoseRunner:
         self.jar_path = jar_path
         self.java_cmd = java_cmd
         self._process: asyncio.subprocess.Process | None = None
+        self._cancelled = False
 
     def _build_cmd(
         self,
@@ -169,6 +170,7 @@ class OsmoseRunner:
         )
         _log.info("Starting OSMOSE: %s", " ".join(cmd))
 
+        self._cancelled = False
         self._process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
@@ -226,6 +228,18 @@ class OsmoseRunner:
         await self._process.wait()
         _log.info("OSMOSE finished with exit code %d", self._process.returncode)
 
+        if self._cancelled:
+            # Process was terminated by cancel() (exits with a negative signal code);
+            # report it as cancelled per the RunResult contract, not a bare failure.
+            return RunResult(
+                returncode=-1,
+                output_dir=result_output_dir,
+                stdout="\n".join(stdout_lines),
+                stderr="\n".join(stderr_lines),
+                status="cancelled",
+                message="Run cancelled by user",
+            )
+
         return RunResult(
             returncode=self._process.returncode if self._process.returncode is not None else -1,
             output_dir=result_output_dir,
@@ -235,6 +249,7 @@ class OsmoseRunner:
 
     def cancel(self) -> None:
         """Terminate the running OSMOSE process."""
+        self._cancelled = True
         if self._process and self._process.returncode is None:
             try:
                 self._process.terminate()

@@ -102,6 +102,21 @@ def test_abundance(output_dir):
     assert "abundance" in df.columns
 
 
+def test_biomass_skips_empty_csv(output_dir):
+    """An empty/partial output CSV is skipped with a warning, not aborting the read.
+
+    Regression: the per-output getters called _read_output_csv directly, so an
+    empty file (EmptyDataError) crashed biomass()/abundance() entirely — unlike
+    read_csv, which already skips malformed files. Reachable by interrupted runs
+    and the live-during-run streaming features.
+    """
+    (output_dir / "osm_biomass_Empty.csv").write_text("")  # 0-byte -> EmptyDataError
+    results = OsmoseResults(output_dir)
+    df = results.biomass()
+    assert not df.empty
+    assert set(df["species"].unique()) == {"Anchovy", "Sardine"}
+
+
 def test_yield_biomass(output_dir):
     results = OsmoseResults(output_dir)
     df = results.yield_biomass()
