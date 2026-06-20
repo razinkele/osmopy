@@ -125,10 +125,17 @@ class OsmoseField:
         if value is None:
             return errors
         if self.param_type in (ParamType.FLOAT, ParamType.INT):
-            if self.min_val is not None and value < self.min_val:
-                errors.append(f"Value {value} below min {self.min_val}")
-            if self.max_val is not None and value > self.max_val:
-                errors.append(f"Value {value} above max {self.max_val}")
+            # Coerce first: values arrive as strings from config files, and comparing
+            # str < float raises TypeError (the original silent-crash bug).
+            try:
+                num = float(value)
+            except (ValueError, TypeError):
+                errors.append(f"Value {value!r} is not a number")
+                return errors
+            if self.min_val is not None and num < self.min_val:
+                errors.append(f"Value {num} below min {self.min_val}")
+            if self.max_val is not None and num > self.max_val:
+                errors.append(f"Value {num} above max {self.max_val}")
         if self.param_type == ParamType.ENUM and self.choices:
             if value not in self.choices:
                 errors.append(f"Value '{value}' not in choices: {self.choices}")

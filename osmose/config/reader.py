@@ -90,13 +90,14 @@ class OsmoseConfigReader:
         self._read_recursive(master_file, flat)
         flat["_osmose.config.dir"] = str(master_file.parent.resolve())
 
-        from osmose.config.aliases import _migrate_larva_rate, _ndtperyear
-        from osmose.demo import _version_tuple
+        from osmose.config.aliases import _migrate_larva_rate, _ndtperyear, _numeric_version
 
         # Native-4.4.0 source stores larval rate as rate/year; divide back to the authored value.
         # Gate on the RAW source version (canonicalize already overwrote flat's osmose.version to
         # 4.4.0). Runs on the FULLY-MERGED dict (ndt + rate together) — never per-file.
-        if _version_tuple(self._source_version) >= _version_tuple("4.4.0"):
+        # _numeric_version (NOT bare _version_tuple) so a suffixed source like '4.4.0-SNAPSHOT'
+        # is recognized as 4.4.0 — matches the write-side gate in aliases.to_target_keys.
+        if _numeric_version(self._source_version) >= _numeric_version("4.4.0"):
             ndt = _ndtperyear(flat)
             if ndt:
                 flat = _migrate_larva_rate(flat, 1.0 / ndt, warn_bydt=False)

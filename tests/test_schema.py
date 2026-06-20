@@ -89,6 +89,25 @@ def test_validate_value_below_min():
     assert "min" in errors[0].lower()
 
 
+def test_validate_value_coerces_string_numbers():
+    """Numeric fields must coerce string values (config values are strings).
+
+    Regression: ``value < min_val`` with a str raised TypeError (silent crash).
+    """
+    field = OsmoseField(
+        key_pattern="species.k.sp{idx}",
+        param_type=ParamType.FLOAT,
+        min_val=0.01,
+        max_val=2.0,
+        indexed=True,
+    )
+    assert field.validate_value("0.5") == []  # string numeric, in range (was TypeError)
+    assert any("max" in e.lower() for e in field.validate_value("5.0"))
+    assert any("min" in e.lower() for e in field.validate_value("-0.5"))
+    errs = field.validate_value("abc")
+    assert len(errs) == 1 and "number" in errs[0].lower()
+
+
 def test_param_type_enum():
     assert ParamType.FLOAT.value == "float"
     assert ParamType.MATRIX.value == "matrix"
