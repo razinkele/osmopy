@@ -23,6 +23,35 @@ def test_env_example_documents_cmems_vars():
     assert "CMEMS_PASSWORD" in body
 
 
+def test_burned_credential_absent_from_whole_tracked_tree():
+    """The burned CMEMS/ICES password must not appear in ANY tracked file except
+    the two hygiene detectors that scan for it.
+
+    The original scan only checked ``.mcp.json`` — which is why the literal leaked
+    into plan docs undetected (deep-review v2, 2026-06-20). This greps the whole
+    tracked tree so any re-introduction (docs, code, config) fails CI.
+    """
+    import subprocess
+
+    burned = "Razinka@2026"  # this file is in the allow-list below, so its own copy is fine
+    out = subprocess.run(
+        ["git", "grep", "--no-color", "-l", burned],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    matches = {line.strip() for line in out.stdout.splitlines() if line.strip()}
+    allowed = {
+        "tests/test_mcp_config_hygiene.py",
+        "tests/test_copernicus_mcp_env.py",
+    }
+    leaked = matches - allowed
+    assert not leaked, (
+        f"burned credential literal found in tracked file(s) outside the detectors: "
+        f"{sorted(leaked)} — redact and rotate"
+    )
+
+
 def test_mcp_json_has_no_literal_cmems_credentials():
     """Detect literal CMEMS credentials under any server's env block.
 
