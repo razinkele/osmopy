@@ -16,6 +16,7 @@ _log = setup_logging("osmose.scenarios_ui")
 def scenarios_ui():
     return ui.div(
         expand_tab("Save Scenario", "scenarios"),
+        ui.input_action_button("btn_new_scenario", "+ New Scenario", class_="btn-success mb-3"),
         ui.layout_columns(
             # Left: Save & manage
             ui.card(
@@ -34,7 +35,9 @@ def scenarios_ui():
                 ui.hr(),
                 ui.layout_columns(
                     ui.input_action_button("btn_load_scenario", "Load", class_="btn-primary w-100"),
-                    ui.input_action_button("btn_fork_scenario", "Fork", class_="btn-info w-100"),
+                    ui.input_action_button(
+                        "btn_fork_scenario", "Quick Duplicate", class_="btn-info w-100"
+                    ),
                     ui.input_action_button(
                         "btn_delete_scenario", "Delete", class_="btn-danger w-100"
                     ),
