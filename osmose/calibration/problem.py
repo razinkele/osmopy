@@ -243,7 +243,17 @@ class OsmoseCalibrationProblem(Problem):
         out["F"] = F
 
     def _evaluate_candidate(self, i: int, params: np.ndarray) -> list[float]:
-        """Evaluate a single candidate and return objective values."""
+        """Evaluate a single candidate and return objective values.
+
+        Centralized per-candidate failure policy: objective-function and engine
+        errors (``_python_engine_errors``, which includes ValueError/KeyError/
+        RuntimeError raised while computing objectives at ``_run_single`` line ~389)
+        are caught here and scored as ``inf``, so one bad candidate never kills the
+        run on ANY backend. Previously only the process backend's ``_worker_eval``
+        absorbed these; the thread/serial loops caught only the narrow
+        ``_expected_errors``, so a Python-engine objective error propagated and
+        aborted the whole NSGA-II run. Unexpected errors (real bugs) still propagate.
+        """
         overrides = {}
         for j, fp in enumerate(self.free_params):
             val = params[j]
@@ -251,7 +261,11 @@ class OsmoseCalibrationProblem(Problem):
                 val = 10**val
             overrides[fp.key] = str(val)
 
-        return self._run_single(overrides, run_id=i)
+        try:
+            return self._run_single(overrides, run_id=i)
+        except _python_engine_errors as exc:
+            _log.warning("Candidate %d failed (%s: %s)", i, type(exc).__name__, exc)
+            return [float("inf")] * self.n_obj
 
     def _evaluate_process(self, X, F) -> None:
         """Evaluate the population via the persistent process pool, recovering from a dead worker.

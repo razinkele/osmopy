@@ -51,6 +51,52 @@ def _make_problem(tmp_path, objective_fns=None, free_params=None, *, use_java_en
     )
 
 
+# --- failure-policy tests ---
+
+
+def test_bad_candidate_scored_inf_not_propagated(tmp_path):
+    """A candidate whose objective/engine raises a Python-engine error (e.g. KeyError)
+    must be scored inf, NOT propagated — otherwise one bad candidate kills the whole
+    NSGA-II run on the thread/serial backends (the process backend already absorbs it).
+    Regression for the deep-review PR-2 failure-policy asymmetry.
+    """
+    problem = _make_problem(tmp_path)  # n_parallel=1 -> serial backend
+
+    def fake_run_single(overrides, run_id):
+        if run_id == 0:
+            raise KeyError("missing biomass target for species 'cod'")  # objective-style failure
+        return [1.0, 2.0]
+
+    X = np.array([[0.3, 100.0], [0.4, 120.0], [0.35, 110.0], [0.45, 130.0]])
+    out: dict = {}
+    with patch.object(problem, "_run_single", side_effect=fake_run_single):
+        problem._evaluate(X, out)  # must NOT raise
+
+    F = out["F"]
+    assert np.all(np.isinf(F[0])), "the failing candidate must be scored inf"
+    assert np.all(np.isfinite(F[1:])), "the other candidates must still be scored"
+
+
+def test_bad_candidate_scored_inf_thread_backend(tmp_path):
+    """Same failure policy under the thread backend (n_parallel>1)."""
+    problem = _make_problem(tmp_path)
+    problem.n_parallel = 2
+
+    def fake_run_single(overrides, run_id):
+        if run_id == 1:
+            raise ValueError("objective blew up")
+        return [1.0, 2.0]
+
+    X = np.array([[0.3, 100.0], [0.4, 120.0], [0.35, 110.0], [0.45, 130.0]])
+    out: dict = {}
+    with patch.object(problem, "_run_single", side_effect=fake_run_single):
+        problem._evaluate(X, out)  # must NOT raise
+
+    F = out["F"]
+    assert np.all(np.isinf(F[1]))
+    assert np.all(np.isfinite(F[[0, 2, 3]]))
+
+
 # --- _run_single tests ---
 
 
