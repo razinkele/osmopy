@@ -26,8 +26,10 @@ Run tests with `.venv/bin/python -m pytest`. Lint with `.venv/bin/ruff check` + 
 ## Task 1: Grid helpers (`osmose/forcing/grid.py`)
 
 **Files:**
-- Create: `osmose/forcing/grid.py`
+- Create: `osmose/forcing/__init__.py` (empty for now — populated in Task 4), `osmose/forcing/grid.py`
 - Test: `tests/test_forcing_grid.py`
+
+> **Why an empty `__init__.py` now:** `pyproject.toml` uses `setuptools` `packages.find` (NOT `find_namespace`) with `include = ["osmose*"]`, which only discovers packages that contain `__init__.py`. Without one, `osmose/forcing/` would import fine in editable/dev installs but be silently dropped from a built wheel/Docker image. Create it as a regular package from the first task.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -234,8 +236,11 @@ Expected: PASS
 
 - [ ] **Step 5: Commit**
 
+First create the empty package marker, then commit both:
+
 ```bash
-git add osmose/forcing/grid.py tests/test_forcing_grid.py
+touch osmose/forcing/__init__.py
+git add osmose/forcing/__init__.py osmose/forcing/grid.py tests/test_forcing_grid.py
 git commit -m "feat(forcing): grid-parameterized regrid/resample/mask helpers"
 ```
 
@@ -624,7 +629,8 @@ git commit -m "feat(forcing): phy_to_physics temperature/salinity conversion"
 ## Task 4: NetCDF writers + package exports (`osmose/forcing/io.py`, `__init__.py`)
 
 **Files:**
-- Create: `osmose/forcing/io.py`, `osmose/forcing/__init__.py`
+- Create: `osmose/forcing/io.py`
+- Modify: `osmose/forcing/__init__.py` (populate the empty marker created in Task 1)
 - Test: `tests/test_forcing_io.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -713,7 +719,7 @@ def write_physics(
 ```
 
 ```python
-# osmose/forcing/__init__.py
+# osmose/forcing/__init__.py  (replace the empty marker from Task 1 with this)
 """Pure CMEMS->OSMOSE forcing conversion (grid-general, browser/MCP-free)."""
 
 from osmose.forcing.grid import (
@@ -972,11 +978,13 @@ The MCP `generate_osmose_ltl` / `generate_osmose_physics` lose their inline math
 # tests/test_forcing_mcp_parity.py
 import importlib.util
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 import xarray as xr
 
-from osmose.forcing import bgc_to_ltl
+from osmose.forcing import bgc_to_ltl, load_ocean_mask
 from osmose.maps.builder import GridSpec
 
 # The MCP wrapper module imports fastmcp/copernicusmarine, absent in the clean venv.
@@ -984,6 +992,7 @@ _HAS_MCP = importlib.util.find_spec("fastmcp") is not None and (
     importlib.util.find_spec("copernicusmarine") is not None
 )
 BALTIC = GridSpec(nlon=50, nlat=40, upleft_lat=66, upleft_lon=10, lowright_lat=54, lowright_lon=30)
+_BALTIC_GRID_NC = Path("data/baltic/baltic_grid.nc")
 
 
 def _bgc(tmp_path):
@@ -1009,7 +1018,11 @@ def test_mcp_wrapper_matches_core(tmp_path):
     srv.generate_osmose_ltl(source_bgc_file=str(src), output_file=str(out_file))
     mcp_ds = xr.open_dataset(out_file)
 
-    core_ds = bgc_to_ltl(xr.open_dataset(src), BALTIC)
+    # The MCP wrapper applies the Baltic ocean mask (land -> NaN). Pass the SAME
+    # mask to the core call so both sides NaN identical land cells; otherwise the
+    # core leaves land cells as real biomass and nan_to_num(0) != real value fails.
+    mask = load_ocean_mask(_BALTIC_GRID_NC)
+    core_ds = bgc_to_ltl(xr.open_dataset(src), BALTIC, ocean_mask=mask)
     for g in ["Diatoms", "Dinoflagellates", "Microzooplankton", "Mesozooplankton", "Macrozooplankton", "Benthos"]:
         assert np.allclose(np.nan_to_num(mcp_ds[g].values), np.nan_to_num(core_ds[g].values), rtol=1e-6)
     mcp_ds.close()
@@ -1102,8 +1115,10 @@ Expected: all pass (the 6 new forcing test files + the existing suite). The MCP 
 
 - [ ] **Step 2: Lint + format (matches CI "lint" job — BOTH)**
 
-Run: `.venv/bin/ruff check osmose/ ui/ tests/ scripts/ && .venv/bin/ruff format --check osmose/ ui/ tests/ scripts/`
-Expected: clean. If format fails, run `.venv/bin/ruff format ...` and re-commit.
+CI lints only `osmose/ ui/ tests/` (`.github/workflows/ci.yml`), NOT all of `scripts/` — and `scripts/` has ~31 pre-existing ruff errors + 16 unformatted legacy files. So lint CI's targets PLUS only the one new script file; do NOT run ruff over all of `scripts/` (it would fail on unrelated legacy and reformat stray files).
+
+Run: `.venv/bin/ruff check osmose/ ui/ tests/ scripts/convert_cmems_forcing.py && .venv/bin/ruff format --check osmose/ ui/ tests/ scripts/convert_cmems_forcing.py`
+Expected: clean. If format fails, run `.venv/bin/ruff format` on the SAME targets and re-commit.
 
 - [ ] **Step 3: Pyright on the new code**
 
