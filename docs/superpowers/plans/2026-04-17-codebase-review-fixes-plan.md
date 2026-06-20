@@ -21,7 +21,7 @@ Every finding in `docs/review-findings.md` was re-checked from cwd `/home/razink
 | 2401 tests passing | Engine passes; suite may now be 2169/15 (per MEMORY.md) — verify in Task 0 | `.venv/bin/python -m pytest` |
 | Ruff passes | **Partially true:** `ruff check osmose/ ui/ tests/` (CI scope) passes; `ruff check .` fails with 6 errors (4 fixable) in `mcp_servers/copernicus/server.py` and `scripts/calibrate_baltic.py` | `.venv/bin/ruff check .` |
 | 22 Pyright errors | **Confirmed:** exact count = 22 across 5 files, detailed triage below | `.venv/bin/python -m pyright` |
-| Committed Copernicus credentials | **Mitigated but not gone:** password `Razinka@2026` and email are in the *working tree* (`.mcp.json` unstaged diff + untracked `mcp_servers/copernicus/server.py`). Not yet in git history, but one `git add -A && commit` will leak them. | `git log -S CMEMS_PASSWORD` returns empty; `git status --short` shows ` M .mcp.json` and `?? mcp_servers/copernicus/server.py`; `grep CMEMS_PASSWORD .mcp.json mcp_servers/copernicus/server.py` shows the literal password |
+| Committed Copernicus credentials | **Mitigated but not gone:** password `<redacted-rotate-at-provider>` and email are in the *working tree* (`.mcp.json` unstaged diff + untracked `mcp_servers/copernicus/server.py`). Not yet in git history, but one `git add -A && commit` will leak them. | `git log -S CMEMS_PASSWORD` returns empty; `git status --short` shows ` M .mcp.json` and `?? mcp_servers/copernicus/server.py`; `grep CMEMS_PASSWORD .mcp.json mcp_servers/copernicus/server.py` shows the literal password |
 | `pom.xml` skips tests by default | **Confirmed:** `<skipTests>true</skipTests>` at `osmose-master/pom.xml:59` | read file |
 | Workflow packages with `-DskipTests=true` | **Confirmed:** `mvn -B package -DskipTests=true` at `osmose-master/.github/workflows/java-compile.yml:58` | read file |
 | 18 Java test files exist but never run | Confirmed | `find osmose-master/java/src/test -name "*.java"` |
@@ -109,7 +109,7 @@ SERVER_PATH = Path(__file__).resolve().parent.parent / "mcp_servers" / "copernic
 def test_server_py_has_no_hardcoded_credentials():
     src = SERVER_PATH.read_text()
     # No password literal, no quoted email default for CMEMS_USERNAME
-    assert "Razinka@2026" not in src
+    assert "<redacted-rotate-at-provider>" not in src
     # The os.environ.get call must not have a string default for password
     pw_line = next(
         (line for line in src.splitlines() if "CMEMS_PASSWORD" in line and "os.environ" in line),
@@ -145,7 +145,7 @@ def test_server_py_module_globals_reflect_env(monkeypatch):
 .venv/bin/python -m pytest tests/test_copernicus_mcp_env.py -v
 ```
 
-Expected: `FAILED test_server_py_has_no_hardcoded_credentials` (literal `Razinka@2026` still present).
+Expected: `FAILED test_server_py_has_no_hardcoded_credentials` (literal `<redacted-rotate-at-provider>` still present).
 
 - [ ] **Step 3: Edit `mcp_servers/copernicus/server.py`**
 
@@ -196,7 +196,7 @@ git commit -m "security: require CMEMS credentials from env, remove hardcoded fa
 - Create: `mcp_servers/copernicus/README.md` (setup instructions)
 - Modify: `.gitignore` (already ignores `.env`; no change needed — verify)
 
-**Context:** `.mcp.json` is tracked. The current unstaged diff adds literal credentials under `"copernicus-marine": { "env": { "CMEMS_PASSWORD": "Razinka@2026" } }`. The correct pattern: commit the server registration without an `env` block, and require the user to export `CMEMS_USERNAME` / `CMEMS_PASSWORD` in their shell (or via a `.env` loaded by their shell init) before starting Claude Code.
+**Context:** `.mcp.json` is tracked. The current unstaged diff adds literal credentials under `"copernicus-marine": { "env": { "CMEMS_PASSWORD": "<redacted-rotate-at-provider>" } }`. The correct pattern: commit the server registration without an `env` block, and require the user to export `CMEMS_USERNAME` / `CMEMS_PASSWORD` in their shell (or via a `.env` loaded by their shell init) before starting Claude Code.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -216,7 +216,7 @@ def test_mcp_json_has_no_cmems_password():
     assert "CMEMS_PASSWORD" not in text or '"CMEMS_PASSWORD": ""' in text, (
         ".mcp.json must not ship a CMEMS_PASSWORD value"
     )
-    assert "Razinka@2026" not in text
+    assert "<redacted-rotate-at-provider>" not in text
 
 
 def test_env_example_documents_cmems_vars():
@@ -306,7 +306,7 @@ git commit -m "security: remove committed CMEMS credentials from .mcp.json, docu
 
 - [ ] **Step 1: Rotate the password at https://data.marine.copernicus.eu**
 
-Log in to the Copernicus portal and change the password. The current value `Razinka@2026` must be treated as compromised — it was present in plaintext in the working tree of a folder that has been indexed by editors, shells, and possibly Claude transcripts.
+Log in to the Copernicus portal and change the password. The current value `<redacted-rotate-at-provider>` must be treated as compromised — it was present in plaintext in the working tree of a folder that has been indexed by editors, shells, and possibly Claude transcripts.
 
 - [ ] **Step 2: Update local shell env with the new password**
 

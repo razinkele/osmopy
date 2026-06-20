@@ -9,7 +9,7 @@ Source: a multi-agent deep review of the whole codebase (7 subsystems, every fin
 ## P0 — Security (do first; partly done)
 
 - [x] **`chmod 600 .env`** — done 2026-06-20 (was world-readable `-rw-rw-r--`).
-- [ ] **Rotate the leaked credentials** (USER ACTION — needs provider login). `Razinka@2026` (CMEMS + ICES) was committed historically (`git log -S 'Razinka@2026'` shows 3 commits) and is still the live value; `tests/test_mcp_config_hygiene.py` already treats it as burned. Change both passwords at Copernicus Marine and ICES.
+- [ ] **Rotate the leaked credentials** (USER ACTION — needs provider login). `<redacted-rotate-at-provider>` (CMEMS + ICES) was committed historically (`git log -S '<redacted-rotate-at-provider>'` shows 3 commits) and is still the live value; `tests/test_mcp_config_hygiene.py` already treats it as burned. Change both passwords at Copernicus Marine and ICES.
 - [ ] **Move secrets out of a repo-root file for good.** Keep them only in a `0600` systemd `EnvironmentFile` / deployment secret store; have `load_dotenv` fall back to env vars. Add a deploy-time check that `.env` (if present) is mode `600`.
 
 ---
