@@ -50,7 +50,7 @@ def make_run_observer(
     given. Never raises into the engine."""
 ```
 
-- Progress push every step: `(step + 1, int(config.n_steps), now() - start)` where `start` is captured at first call. Drop-oldest on a maxsize-1 queue (same pattern as the live queue).
+- Progress push every step: `(done, int(config.n_steps), now() - start)` where **`done = step + 1`** is the **1-based count of completed steps** (ranges 1..n_steps), and `start` is captured at first call. Drop-oldest on a maxsize-1 queue. (The tuple element is the 1-based `done`, NOT the 0-based loop index — the render formulas below depend on this convention.)
 - If `live_observer` is not None, call it after the progress push (it self-throttles).
 - Wrapped in try/except so it never raises into the running simulation (preserves the existing guarantee).
 
@@ -67,17 +67,18 @@ Implemented by attempting `GridSpec.from_config(config)` and returning False on 
 ### 3. `ui/pages/run.py` — progress plumbing + auto live map + thread wiring
 
 **Progress state + poll (Python runs):**
-- New `_progress_q: queue.Queue` (maxsize 1, drop-oldest) and `_progress: reactive.Value` holding `None | (current_step, n_steps, elapsed_s)`. (The existing `_live_queue` is maxsize 4 drained-to-latest; progress uses maxsize-1 drop-oldest — both coalesce to the latest tuple, fine.)
+- New `_progress_q: queue.Queue` (maxsize 1, drop-oldest) and `_progress: reactive.Value` holding `None | (done, n_steps, elapsed_s)` where `done` is the 1-based completed-step count. (The existing `_live_queue` is maxsize 4 drained-to-latest; progress uses maxsize-1 drop-oldest — both coalesce to the latest tuple, fine.)
 - New `_drain_progress` `@reactive.poll(lambda: time.time(), interval_secs=0.2)` + `_consume_progress` effect (mirrors `_drain_live_queue`/`_consume_live_poll`), setting `_progress` from the latest queued tuple.
 - **Reset `_progress` to `None` at the very TOP of `handle_run`** (before ALL early returns — Java-block, validation-error, etc.), symmetric with how `run_log` is managed, so a blocked/early-return run never leaves a stale progress bar. The `_drain_run_done` terminal handler also clears `_progress` to `None` on done/failed/cancelled.
 - **Python-only invariant:** the progress queue/observer is fed only by the Python engine. The Java path (`_run_java_engine`) streams to `run_log` via `on_progress` and never touches `_progress`, so `run_progress` renders nothing during a Java run. `run_progress` renders only when `_progress` is set (i.e. a Python run is active).
 
 **Progress bar render:**
 - `run_progress` `@render.ui`: when `_progress` is set, render a Bootstrap progress bar (`ui.div(ui.div(class_="progress-bar", style=f"width:{pct}%"), class_="progress")`) with a label; when `None`, render nothing. Placed in `run_ui` in the always-visible Run Status block (NOT inside the python `panel_conditional`).
-- **Year derivation (defensive):** the progress tuple carries only `(step, n_steps, elapsed)`; the render reads steps-per-year from `state.config` using the **lowercase canonical key** `simulation.time.ndtperyear` (the reader lowercases keys — the raw file's `ndtPerYear` is stored lowercase in `state.config`; mirror grid.py:392 / map_builder.py:266: `int(float(cfg.get("simulation.time.ndtperyear", "0") or "0"))`). If `ndt > 0` → label `f"Year {step // ndt + 1}/{ceil(n / ndt)} · step {step}/{n} · {pct}%"`; if `ndt <= 0` (missing/unparseable) → fall back to a step-only label `f"Step {step}/{n} · {pct}%"` (no division). Never raises.
+- **Year derivation (defensive, using the 1-based `done`):** the progress tuple carries `(done, n_steps, elapsed)` with `done` = completed steps (1..n). The render reads steps-per-year from `state.config` using the **lowercase canonical key** `simulation.time.ndtperyear` (the reader lowercases keys — the raw file's `ndtPerYear` is stored lowercase in `state.config`; mirror grid.py:392 / map_builder.py:266: `int(float(cfg.get("simulation.time.ndtperyear", "0") or "0"))`). Let `pct = round(done / n * 100)`. If `ndt > 0` → label `f"Year {(done - 1) // ndt + 1}/{ceil(n / ndt)} · step {done}/{n} · {pct}%"` (note `(done - 1) // ndt` converts the 1-based `done` back to a 0-based index for the year bucket — so a 1-year run's final tick `done == ndt` gives `(ndt-1)//ndt + 1 == 1` → "Year 1/1", not "Year 2/1"); if `ndt <= 0` (missing/unparseable) → fall back to a step-only label `f"Step {done}/{n} · {pct}%"` (no division). Never raises.
+- **Extract this into a pure helper** `format_progress_label(done: int, n_steps: int, ndt: int) -> str` (in `osmose/live_movement.py`) so the off-by-one year math is unit-testable independent of Shiny; the `run_progress` render and the console line both call it.
 
 **Console in-place line:**
-- `run_console` (a `@render.ui` currently reading `run_log.get()`) is recomputed each tick from `run_log.get()` AND `_progress.get()` as: the existing `run_log` lines (warnings/errors), then — when `_progress` is set — **one** trailing progress line. Because the render is recomputed (not appended to `run_log`), the progress line overwrites in place every tick (no flood, bounded history). When idle and `run_log` is empty, the existing placeholder still shows. To avoid literal duplication with the progress-bar label two inches away, keep the console line **terse** — e.g. `running · step {step}/{n} ({pct}%)` — leaving the Year/elapsed detail to the bar label.
+- `run_console` (a `@render.ui` currently reading `run_log.get()`) is recomputed each tick from `run_log.get()` AND `_progress.get()` as: the existing `run_log` lines (warnings/errors), then — when `_progress` is set — **one** trailing progress line. Because the render is recomputed (not appended to `run_log`), the progress line overwrites in place every tick (no flood, bounded history). When idle and `run_log` is empty, the existing placeholder still shows. To avoid literal duplication with the progress-bar label two inches away, keep the console line **terse** — e.g. `running · step {done}/{n} ({pct}%)` (same 1-based `done`) — leaving the Year/elapsed detail to the bar label.
 
 **handle_run (Python branch) changes:**
 - Always create the progress queue + `make_run_observer(progress_q, live_observer)`; pass the composed observer to the engine thread (replacing the bare `live_observer`).
@@ -89,7 +90,7 @@ Implemented by attempting `GridSpec.from_config(config)` and returning False on 
 - **Changed-only guard** (mirror the existing `_last_live_species` pattern, run.py:423): the effect fires the `update_switch` only when the config's spatial-ness *changes* (track the last applied value in a plain mutable cell), so it auto-sets on config-LOAD only and does not re-stomp a user's manual toggle on every unrelated `state.config` write.
 
 **Dead inputs:**
-- `py_threads`: redefault to **0 = Auto (all cores)** (min stays 0), labeled "Threads (Numba; 0 = auto/all cores)"; wired to `numba.set_num_threads` per the handle_run rule above.
+- `py_threads`: **lower the input's `min` from 1 to 0** and set its default `value` to **0 = Auto (all cores)** (current widget is `value=1, min=1, max=32` at run.py:210 — change to `value=0, min=0`), labeled "Threads (Numba; 0 = auto/all cores)"; wired to `numba.set_num_threads` per the handle_run rule above.
 - `py_verbosity`: **remove** the `ui.input_select("py_verbosity", …)` widget entirely (it is never read).
 
 ### Data flow
@@ -113,6 +114,7 @@ engine step loop ──step_observer(step,state,grid,config)──> make_run_obs
 - `make_run_observer`: a fake observer call sequence pushes `(step+1, n_steps, elapsed)` to the queue each step; elapsed is monotonic-nondecreasing; delegates to a provided `live_observer` (spy called with the same args); with `live_observer=None` only progress is pushed; an exception in the live observer is swallowed (never propagates).
 - **Progress independent of live frames:** with `live_observer=None` (non-spatial config), `make_run_observer` still pushes a progress tuple every step — progress works even when the live map produces no frames.
 - `config_is_spatial`: Baltic config (regular-grid keys) → True; eec_full-like config (only `grid.netcdf.file`) → False; empty/partial grid → False.
+- `format_progress_label`: **off-by-one regression lock** — `format_progress_label(done=ndt, n_steps=ndt, ndt=ndt)` (1-year run, final tick) → contains `"Year 1/1"` (NOT "Year 2/1"); a mid-year tick → correct year/step/pct; `ndt=0` (or missing) → step-only label `"Step {done}/{n}"` with no "Year" and no ZeroDivisionError.
 
 **Page/render (`tests/test_ui_run*.py`):**
 - `import app` clean after removing `py_verbosity` and adding `run_progress`.
@@ -129,7 +131,7 @@ engine step loop ──step_observer(step,state,grid,config)──> make_run_obs
 
 ## Files
 
-- **Modify:** `osmose/live_movement.py` (add `make_run_observer`, `config_is_spatial`).
+- **Modify:** `osmose/live_movement.py` (add `make_run_observer`, `config_is_spatial`, `format_progress_label`).
 - **Modify:** `ui/pages/run.py` (progress queue/poll/`_progress`, `run_progress` render, console progress line, compose run observer, wire `py_threads` → `numba.set_num_threads`, remove `py_verbosity`, auto-enable switch effect).
 - **Modify/Add tests:** `tests/test_run_observer.py` (or extend `tests/test_live_movement.py`), `tests/test_ui_run_capability.py` (drop `py_verbosity` from the input-id assertion), `tests/test_e2e_live_movement.py` (remove the manual `#live_movement_view` clicks at lines 58/96; add the plain-run progress assertion), `tests/test_e2e_baltic.py` (remove the manual `#live_movement_view` click at line 57).
 
