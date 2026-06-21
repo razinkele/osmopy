@@ -23,6 +23,9 @@ _OSMOSE_PREFIXES = (
     "osmose_sens_",
     "osmose_export_",
     "osmose_demo_",
+    "osmose_wizard_",
+    "osmose_maps_",
+    "osmose_val_",
 )
 _MAX_AGE_HOURS = 24
 

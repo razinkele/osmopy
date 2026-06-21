@@ -88,6 +88,9 @@ def test_cleanup_all_prefixes_recognised(tmp_path, monkeypatch):
         "osmose_sens_",
         "osmose_export_",
         "osmose_demo_",
+        "osmose_wizard_",
+        "osmose_maps_",
+        "osmose_val_",
     }
     assert set(_OSMOSE_PREFIXES) == expected_prefixes
 
