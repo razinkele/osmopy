@@ -17,6 +17,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from osmose.logging import setup_logging
+from osmose.maps.builder import GridSpec
 
 _log = setup_logging("osmose.live_movement")
 
@@ -145,3 +146,71 @@ def make_step_observer(
                 pass
 
     return observer
+
+
+def make_run_observer(
+    progress_q: "queue.Queue[tuple[int, int, float]]",
+    live_observer: "Callable[[int, object, object, object], None] | None" = None,
+    *,
+    now: Callable[[], float] = time.monotonic,
+) -> Callable[[int, object, object, object], None]:
+    """Step-observer that pushes (done, n_steps, elapsed_s) to progress_q every step
+    (done = step + 1, 1-based) and delegates to live_observer when given.
+
+    Never raises into the engine. Progress is pushed BEFORE delegating, so a failing
+    live_observer cannot suppress progress. Drop-oldest on a maxsize-1 queue.
+    """
+    start: list[float | None] = [None]
+
+    def observer(step: int, state, grid, config) -> None:
+        try:
+            if start[0] is None:
+                start[0] = now()
+            done = step + 1
+            n = int(config.n_steps)
+            elapsed = now() - start[0]
+            try:
+                progress_q.put_nowait((done, n, elapsed))
+            except queue.Full:
+                try:
+                    progress_q.get_nowait()
+                except queue.Empty:
+                    pass
+                try:
+                    progress_q.put_nowait((done, n, elapsed))
+                except queue.Full:
+                    pass
+            if live_observer is not None:
+                live_observer(step, state, grid, config)
+        except Exception:  # noqa: BLE001 — never crash the running simulation
+            _log.warning("run observer failed at step %s", step, exc_info=True)
+
+    return observer
+
+
+def config_is_spatial(config: dict[str, str]) -> bool:
+    """True when the config has a regular grid that yields live-movement frames
+    (GridSpec.from_config succeeds — needs grid.nlon/nlat/upleft.*/lowright.*).
+    Configs lacking those regular-grid keys (e.g. NcGrid configs that specify only
+    grid.netcdf.file) -> False.
+    """
+    try:
+        GridSpec.from_config(config)
+        return True
+    except (KeyError, ValueError, TypeError):
+        return False
+
+
+def format_progress_label(done: int, n_steps: int, ndt: int) -> str:
+    """Human progress label from 1-based completed-step count `done`.
+
+    ndt > 0 -> 'Year y/ny · step done/n · pct%' (year bucket uses (done-1)//ndt to
+    convert the 1-based done back to a 0-based index, so a 1-year run's final tick
+    done==ndt gives Year 1/1, not Year 2/1). ndt <= 0 -> step-only label (no division).
+    """
+    pct = round(done / n_steps * 100) if n_steps else 0
+    if ndt and ndt > 0:
+        year = (done - 1) // ndt + 1
+        n_years = -(-n_steps // ndt)  # ceil division
+        return f"Year {year}/{n_years} · step {done}/{n_steps} · {pct}%"
+    return f"Step {done}/{n_steps} · {pct}%"
