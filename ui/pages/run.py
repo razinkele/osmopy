@@ -22,6 +22,7 @@ from osmose.config.validator import summarize_config_validation
 from osmose.engine import PythonEngine, SimulationCancelled
 from osmose.engine_capabilities import describe_engine
 from osmose.live_movement import (
+    config_is_spatial,
     format_progress_label,
     make_run_observer,
     make_step_observer,
@@ -529,6 +530,19 @@ def run_server(input, output, session, state):
         choices = {"__all__": "All species"}
         choices.update({name: name for name in snap.species})
         ui.update_select("live_movement_species", choices=choices)
+
+    _last_spatial: list[bool | None] = [None]  # changed-only guard for auto-enable
+
+    @reactive.effect
+    def _auto_enable_live_for_spatial():
+        config = state.config.get()
+        if not config:
+            return
+        spatial = config_is_spatial(config)
+        if spatial == _last_spatial[0]:
+            return
+        _last_spatial[0] = spatial
+        ui.update_switch("live_movement_view", value=spatial, session=session)
 
     @render.ui
     def live_movement_status():

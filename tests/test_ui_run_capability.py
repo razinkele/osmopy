@@ -32,6 +32,13 @@ def test_py_threads_wired_and_verbosity_removed():
     assert "py_threads" in text                # input still present (wired, not dead)
 
 
+def test_run_page_auto_enables_live_for_spatial():
+    text = open(run_page.__file__, encoding="utf-8").read()
+    # discriminating: the effect's own symbols, not just the imported name
+    assert "def _auto_enable_live_for_spatial" in text
+    assert 'update_switch("live_movement_view"' in text
+
+
 def test_run_page_source_has_indicator_and_capability_slots():
     text = open(run_page.__file__, encoding="utf-8").read()
     assert 'output_ui("engine_indicator")' in text
