@@ -163,7 +163,9 @@ def make_run_observer(
 
 def config_is_spatial(config: dict[str, str]) -> bool:
     """True when the config has a regular grid that yields live-movement frames
-    (GridSpec.from_config succeeds). NcGrid configs (only grid.netcdf.file) -> False.
+    (GridSpec.from_config succeeds — needs grid.nlon/nlat/upleft.*/lowright.*).
+    Configs lacking those regular-grid keys (e.g. NcGrid configs that specify only
+    grid.netcdf.file) -> False.
     """
     try:
         GridSpec.from_config(config)
@@ -345,7 +347,9 @@ from osmose.live_movement import (
             ).start()
 ```
 
-(i) In `_drain_run_done`, clear `_progress` on every terminal outcome — and **drain `_progress_q` first**. The engine pushes the final `(n, n, …)` tuple to `_progress_q` microseconds before the "done" message; if we only `set(None)`, the independent `_drain_progress` poll (no ordering guarantee between polls) reads that buffered tuple and re-sets `_progress` → a permanent 100% bar / "running" console line after completion. Drain the queue then clear (mirrors the `_live_queue` drain in `handle_run`):
+(i) In `_drain_run_done`, clear `_progress` on every terminal outcome — and **drain `_progress_q` first**. The engine pushes the final `(n, n, …)` tuple to `_progress_q` microseconds before the "done" message; if we only `set(None)`, the independent `_drain_progress` poll (no ordering guarantee between polls) reads that buffered tuple and re-sets `_progress` → a permanent 100% bar / "running" console line after completion. Drain the queue then clear (mirrors the `_live_queue` drain in `handle_run`).
+
+**Placement (critical):** `_drain_run_done` early-`return`s on `queue.Empty` (run.py:435-436) and only reaches terminal processing after a successful `get_nowait()`. Append this block at the **END of the function, after the `_handle_result(...)` call** — NOT at the top — so it runs only when an outcome was actually dequeued (never on the empty-queue early-return tick, which would otherwise wipe live progress every 0.2s mid-run):
 
 ```python
         while True:
@@ -549,6 +553,8 @@ In all three Baltic+Python cases, delete the manual `page.locator("#live_movemen
 - `tests/test_e2e_live_movement.py:58` (`test_live_movement_renders_during_python_run`) and `:96` (`test_live_movement_cancel_path`).
 - `tests/test_e2e_baltic.py:57`.
 
+Also fix the now-stale comments above the two removed clicks (cosmetic but keeps the tests honest): `tests/test_e2e_live_movement.py:57` (`# Enable the live movement view, then run.` → e.g. `# Baltic is spatial: the live switch is auto-on; sync on the echo, then run.`) and `tests/test_e2e_baltic.py:56` (`# 3. Live movement + run.` → similar). The cancel-test click (`:96`) has no preceding "enable" comment, so no comment change there.
+
 - [ ] **Step 2: Add a plain-run progress assertion**
 
 Append to `tests/test_e2e_live_movement.py`:
@@ -566,18 +572,21 @@ def test_run_progress_shows_during_python_run(page: Page, app: ShinyAppProc):
     page.locator("#engineBtnPython").click()
     py_overrides = page.locator("#py_param_overrides")
     expect(py_overrides).to_be_visible(timeout=_LOAD_TIMEOUT)
-    # nyear=10 (~10-14s warm), NOT 1: #run_progress and the console "step" line are
-    # TRANSIENT — _drain_run_done clears _progress on completion, so a ~1s nyear=1 run
-    # can finish before Playwright samples them. A longer run keeps the mid-run state on
-    # screen across Playwright's poll window (mirrors the cancel test's nyear=10 rationale).
-    py_overrides.fill("simulation.time.nyear=10")
+    # nyear=3 (~3-5s warm), NOT 1: #run_progress and the console "step" line are TRANSIENT
+    # (_drain_run_done clears _progress on completion), so a ~1s run can finish before
+    # Playwright samples them. 3 years (~72 steps, pushed from step 0) keeps the mid-run
+    # state on screen across many Playwright poll windows, yet completes comfortably within
+    # the completion budget below (a 10-yr run would risk the 60s budget — the repo's 1-yr
+    # Baltic completion budget is already 120s, test_e2e_baltic.py:25).
+    py_overrides.fill("simulation.time.nyear=3")
     # Do NOT touch the live toggle — progress must appear regardless of streaming.
     page.locator("#btn_run").click()
-    # Assert the TRANSIENT mid-run signals FIRST (they are cleared on completion), then
-    # the terminal status. Order matters: do not assert "Complete" before "step".
+    # Assert the TRANSIENT mid-run signals FIRST (cleared on completion), then the terminal
+    # status. Order matters: do not assert "Complete" before "step". Give "Complete" a
+    # generous budget (cold numba JIT + 2-core CI), matching test_e2e_baltic.py:25.
     expect(page.locator("#run_progress")).to_contain_text("step", timeout=_RUN_TIMEOUT)
     expect(page.locator("#run_console")).to_contain_text("step", timeout=_RUN_TIMEOUT)
-    expect(page.locator("#run_status")).to_contain_text("Complete", timeout=_RUN_TIMEOUT)
+    expect(page.locator("#run_status")).to_contain_text("Complete", timeout=120_000)
 ```
 
 - [ ] **Step 3: Run the e2e**
