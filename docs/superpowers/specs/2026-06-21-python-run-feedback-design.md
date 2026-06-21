@@ -121,13 +121,17 @@ engine step loop ──step_observer(step,state,grid,config)──> make_run_obs
 
 **e2e (`tests/test_e2e_live_movement.py`):**
 - Add/adjust a case for a **plain Python run without manually toggling** the live switch: load Baltic → switch to Python → set `nyear` → Start Run → assert `#run_progress` appears and the Console shows a `step N/` progress line during the run, and the live map auto-streams (toggle auto-on for Baltic).
-- **Required fix to the existing two cases:** both `test_live_movement_renders_during_python_run` and `test_live_movement_cancel_path` currently do `page.locator("#live_movement_view").click()` (lines 58, 96) to turn the switch ON. With auto-enable, Baltic is spatial so the switch is ALREADY on → that click would turn it OFF and break the run. Remove those manual clicks (the switch is auto-on for Baltic), or assert-it's-on instead of clicking. (Note: the e2e does NOT reference `py_verbosity` — no change needed there; the earlier "update e2e if it relied on py_verbosity" was incorrect.)
+- **Required fix to THREE existing Baltic+Python cases that manually click the switch ON** — with auto-enable, Baltic is spatial so the switch is ALREADY on, and the click turns it OFF, breaking the `#live_movement_status` "running"/"done" assertions. Remove the manual click (or assert-it's-on instead) in all three:
+  - `tests/test_e2e_live_movement.py:58` (`test_live_movement_renders_during_python_run`)
+  - `tests/test_e2e_live_movement.py:96` (`test_live_movement_cancel_path`)
+  - `tests/test_e2e_baltic.py:57` (Baltic+Python run asserting live_movement_status running/done at :62-63)
+  (`grep -rn "live_movement_view" tests/` confirms these are the only manual-click sites; `tests/test_ui_run.py:109` merely asserts the id exists in source — the switch is kept, so no change there. The e2e does NOT reference `py_verbosity` — the earlier "update e2e if it relied on py_verbosity" was incorrect.)
 
 ## Files
 
 - **Modify:** `osmose/live_movement.py` (add `make_run_observer`, `config_is_spatial`).
 - **Modify:** `ui/pages/run.py` (progress queue/poll/`_progress`, `run_progress` render, console progress line, compose run observer, wire `py_threads` → `numba.set_num_threads`, remove `py_verbosity`, auto-enable switch effect).
-- **Modify/Add tests:** `tests/test_run_observer.py` (or extend `tests/test_live_movement.py`), `tests/test_ui_run_capability.py` (drop `py_verbosity` from the input-id assertion), `tests/test_e2e_live_movement.py` (remove the manual `#live_movement_view` clicks at lines 58/96; add the plain-run progress assertion).
+- **Modify/Add tests:** `tests/test_run_observer.py` (or extend `tests/test_live_movement.py`), `tests/test_ui_run_capability.py` (drop `py_verbosity` from the input-id assertion), `tests/test_e2e_live_movement.py` (remove the manual `#live_movement_view` clicks at lines 58/96; add the plain-run progress assertion), `tests/test_e2e_baltic.py` (remove the manual `#live_movement_view` click at line 57).
 
 ## Reused infrastructure
 
