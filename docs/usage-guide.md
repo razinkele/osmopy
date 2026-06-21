@@ -4,7 +4,7 @@ Task-oriented recipes for working with OSMOSE Python **outside the web UI** — 
 runs, reading outputs, comparing scenarios, and calibrating from Python or the command
 line. New to the model? Start with the hands-on
 [30-minute tutorial](tutorials/30-minute-ecosystem.md); for install see the
-[README](../README.md#quick-start).
+[README](https://github.com/razinkele/osmopy/blob/master/README.md#quick-start).
 
 Every Python snippet below runs against the bundled 2-species smoke config
 `data/minimal/osm_all-parameters.csv` (finishes in seconds). Swap in a real config for
@@ -81,7 +81,7 @@ run = asyncio.run(runner.run(
 ))
 ```
 
-See [§6](#6-choose-an-engine--reproduce-results) for when to pick which engine.
+See [§6](#choose-an-engine-reproduce-results) for when to pick which engine.
 
 ---
 
@@ -219,6 +219,7 @@ Pass `--help` to any script for its full argument list.
 
 ---
 
+(choose-an-engine-reproduce-results)=
 ## 6. Choose an engine & reproduce results
 
 | | Python engine | Java engine |
@@ -243,8 +244,8 @@ calibration, `OsmoseCalibrationProblem(use_java_engine=True)`. (Full caveat in t
 | Goal | Doc |
 |---|---|
 | Hands-on: run and perturb a Baltic ecosystem in 30 min | [`tutorials/30-minute-ecosystem.md`](tutorials/30-minute-ecosystem.md) |
-| The Baltic example config and where its parameters come from | [`baltic_example.md`](baltic_example.md) |
-| Model F/biomass vs ICES advice | [`baltic_ices_validation_2026-04-18.md`](baltic_ices_validation_2026-04-18.md) |
-| Python-vs-Java port status | [`parity-roadmap.md`](parity-roadmap.md) |
-| Short API reference (engine, config I/O, results, calibration) | [README → API sketch](../README.md#api-sketch) |
-| Per-release change history | [`../CHANGELOG.md`](../CHANGELOG.md) |
+| The Baltic example config and where its parameters come from | [`baltic_example.md`](https://github.com/razinkele/osmopy/blob/master/docs/baltic_example.md) |
+| Model F/biomass vs ICES advice | [`baltic_ices_validation_2026-04-18.md`](https://github.com/razinkele/osmopy/blob/master/docs/baltic_ices_validation_2026-04-18.md) |
+| Python-vs-Java port status | [`parity-roadmap.md`](https://github.com/razinkele/osmopy/blob/master/docs/parity-roadmap.md) |
+| Short API reference (engine, config I/O, results, calibration) | [README → API sketch](https://github.com/razinkele/osmopy/blob/master/README.md#api-sketch) |
+| Per-release change history | [`../CHANGELOG.md`](https://github.com/razinkele/osmopy/blob/master/CHANGELOG.md) |

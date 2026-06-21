@@ -1,7 +1,8 @@
 """Fishing selectivity functions for the OSMOSE Python engine.
 
 Selectivity determines what fraction of a species is vulnerable to fishing
-based on body size. Four types matching Java FisherySelectivity:
+based on body size. Four types matching Java FisherySelectivity::
+
   0 = knife-edge (age or length)
   1 = sigmoid (logistic, parameterized by L50/L75)
   2 = Gaussian (normal, peak at L50)

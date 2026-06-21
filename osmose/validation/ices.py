@@ -4,7 +4,7 @@ Reads frozen ICES SAG JSON snapshots (produced by `_pull_ices_snapshots.py`
 or fetched live via the ICES MCP server) and compares model run outputs
 against per-species SSB envelopes.
 
-Snapshot layout (matches `data/baltic/reference/ices_snapshots/`):
+Snapshot layout (matches ``data/baltic/reference/ices_snapshots/``)::
 
     <snapshot_dir>/
         index.json                          # manifest: model_species_to_ices_stocks, units_by_stock
@@ -12,6 +12,7 @@ Snapshot layout (matches `data/baltic/reference/ices_snapshots/`):
         <stock>.reference_points.json       # {blim, bpa, fmsy, msy_btrigger, ...}
 
 The validator:
+
 1. Loads the snapshot manifest + per-stock assessments.
 2. Computes the model's mean biomass per species over a configurable
    window (e.g. last 5 years of the run).
