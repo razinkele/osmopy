@@ -635,8 +635,9 @@ def server(input, output, session):
         if msg is None:
             return ui.div()
         return ui.div(
-            ui.div(ui.div(class_="osm-spinner"), ui.p(msg), class_="osm-loading-content"),
-            class_="osm-loading-overlay",
+            ui.div(class_="osm-spinner osm-spinner-sm"),
+            ui.span(msg),
+            class_="osm-busy-pill",
         )
 
     setup_server(input, output, session, state)
