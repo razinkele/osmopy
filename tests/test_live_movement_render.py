@@ -6,6 +6,7 @@ import numpy as np
 
 from osmose.live_movement import MovementSnapshot
 from ui.pages.live_movement_render import (
+    choose_live_layer,
     dots_layer_from_points,
     heatmap_layer_from_points,
     species_color,
@@ -82,3 +83,72 @@ def test_empty_snapshot_yields_empty_layer():
     d = dots_layer_from_points(snap, None)
     assert h["data"] == [] and d["data"] == []
     assert h["id"] == "live_movement" and d["id"] == "live_movement"
+
+
+def _choose_snap(n, n_species=8):
+    rng = np.random.default_rng(0)
+    sp = rng.integers(0, n_species, n).astype(np.int32)
+    sp[: n // 2] = 0  # half are species 0 ("cod")
+    return MovementSnapshot(
+        step=1,
+        n_steps=10,
+        status="running",
+        species=[
+            "cod",
+            "herring",
+            "sprat",
+            "flounder",
+            "perch",
+            "pikeperch",
+            "smelt",
+            "stickleback",
+        ][:n_species],
+        sp_id=sp,
+        lon=rng.uniform(10, 30, n).astype(np.float64),
+        lat=rng.uniform(54, 66, n).astype(np.float64),
+        biomass=rng.uniform(1e-3, 1e3, n).astype(np.float64),
+        truncated=False,
+        n_total=n,
+        lon_min=10.0,
+        lon_max=30.0,
+        lat_min=54.0,
+        lat_max=66.0,
+        lon_step=0.4,
+        lat_step=0.3,
+    )
+
+
+def test_dots_below_threshold_renders_dots():
+    layer, note = choose_live_layer(_choose_snap(200), None, "dots", dots_max=1500)
+    assert layer["type"] == "ScatterplotLayer"
+    assert note is None
+
+
+def test_dots_above_threshold_falls_back_to_heatmap():
+    # 2000 points, all species (filter None) -> > 1500 -> heatmap + note
+    layer, note = choose_live_layer(_choose_snap(2000), None, "dots", dots_max=1500)
+    assert layer["type"] == "HeatmapLayer"
+    assert note is not None and "heatmap" in note.lower()
+
+
+def test_heatmap_mode_always_heatmap():
+    layer, note = choose_live_layer(_choose_snap(3000), None, "heatmap", dots_max=1500)
+    assert layer["type"] == "HeatmapLayer"
+    assert note is None
+
+
+def test_filter_reduces_count_so_dots_stays_dots():
+    # 2400 pts but only ~half are cod (~1200 < 1500) -> dots kept for the cod filter
+    layer, note = choose_live_layer(_choose_snap(2400), "cod", "dots", dots_max=1500)
+    assert layer["type"] == "ScatterplotLayer"
+    assert note is None
+
+
+def test_dot_cap_default_is_2000():
+    # The LIVE path's cap is make_step_observer's default, which is what reaches
+    # build_snapshot at runtime (it passes dot_cap through). Assert THAT default.
+    import inspect
+
+    from osmose.live_movement import make_step_observer
+
+    assert inspect.signature(make_step_observer).parameters["dot_cap"].default == 2000
