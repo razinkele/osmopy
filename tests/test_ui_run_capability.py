@@ -20,10 +20,16 @@ def test_run_page_uses_panel_conditional_for_engine_settings():
         "run_timeout",
         "param_overrides",
         "py_threads",
-        "py_verbosity",
         "py_param_overrides",
     ):
         assert input_id in text
+
+
+def test_py_threads_wired_and_verbosity_removed():
+    text = open(run_page.__file__, encoding="utf-8").read()
+    assert "py_verbosity" not in text          # widget removed
+    assert "set_num_threads" in text           # py_threads now wired
+    assert "py_threads" in text                # input still present (wired, not dead)
 
 
 def test_run_page_source_has_indicator_and_capability_slots():

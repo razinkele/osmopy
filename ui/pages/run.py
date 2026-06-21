@@ -211,13 +211,11 @@ def run_ui():
                 ui.panel_conditional(
                     "input.engine_mode === 'python'",
                     ui.input_numeric(
-                        "py_threads", "Threads (Numba prange)", value=1, min=1, max=32
-                    ),
-                    ui.input_select(
-                        "py_verbosity",
-                        "Verbosity",
-                        choices={"0": "Quiet", "1": "Normal", "2": "Verbose"},
-                        selected="1",
+                        "py_threads",
+                        "Threads (Numba; 0 = auto/all cores)",
+                        value=0,
+                        min=0,
+                        max=32,
                     ),
                     ui.input_text_area(
                         "py_param_overrides",
@@ -267,7 +265,7 @@ def run_ui():
     )
 
 
-def _python_engine_thread(run_config, output_dir, cancel_token, step_observer, done_q):
+def _python_engine_thread(run_config, output_dir, cancel_token, step_observer, done_q, n_threads=0):
     """Run the Python engine in a background thread; post the outcome to ``done_q``.
 
     Fire-and-forget (the calibration-dashboard pattern): runs OFF the main thread so the
@@ -281,6 +279,13 @@ def _python_engine_thread(run_config, output_dir, cancel_token, step_observer, d
     button / ``_handle_result`` updates. Posts ``(kind, result_or_None, message)`` where
     ``kind`` is ``"done" | "cancelled" | "failed"``.
     """
+    try:
+        import numba  # type: ignore[import-untyped]  # optional extra; engine has a pure-Python fallback
+
+        cap = numba.config.NUMBA_NUM_THREADS  # type: ignore[attr-defined]
+        numba.set_num_threads(min(n_threads, cap) if n_threads >= 1 else cap)  # n<1 = auto/all cores
+    except Exception:  # noqa: BLE001 — never block a run on numba absence/bad count
+        _log.warning("could not apply py_threads; using Numba default", exc_info=True)
     engine = PythonEngine()
     try:
         result = engine.run(
@@ -749,9 +754,10 @@ def run_server(input, output, session, state):
             status.set("Running (Python engine)...")
             _run_config_cell[0] = config
             run_observer = make_run_observer(_progress_q, live_observer)
+            n_threads = int(input.py_threads() or 0)
             threading.Thread(
                 target=_python_engine_thread,
-                args=(run_config, output_dir, cancel_token, run_observer, _run_done_q),
+                args=(run_config, output_dir, cancel_token, run_observer, _run_done_q, n_threads),
                 daemon=True,
             ).start()
             # handle_run returns now; _drain_run_done finishes the run on the main thread.
