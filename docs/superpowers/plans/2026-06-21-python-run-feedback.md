@@ -213,19 +213,16 @@ Add the progress queue/value/poll, the `run_progress` render, the console progre
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# append to tests/test_ui_run_capability.py
-import ui.pages.run as _run_page  # noqa: E402  (module already imported in this file)
-
-
+# append to tests/test_ui_run_capability.py  (reuse the existing top-of-file
+# `import ui.pages.run as run_page` alias — do NOT re-import)
 def test_run_page_has_progress_machinery():
-    text = open(_run_page.__file__, encoding="utf-8").read()
+    text = open(run_page.__file__, encoding="utf-8").read()
     assert 'output_ui("run_progress")' in text
     assert "make_run_observer" in text
-    assert "_progress" in text
+    assert "_progress_q" in text          # discriminating: NOT matched by existing "on_progress"
+    assert "_progress.set(" in text       # the new reactive value, not the Java on_progress fn
     assert "format_progress_label" in text
 ```
-
-(If `import ui.pages.run as run_page` already exists at the top of the file, reuse that name instead of re-importing.)
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -234,11 +231,10 @@ Expected: FAIL — machinery absent.
 
 - [ ] **Step 3: Make the change**
 
-(a) Update the import at the top of `ui/pages/run.py`:
+(a) Update the import at the top of `ui/pages/run.py` (add only what Task 2 uses — `config_is_spatial` is added in Task 4, where it's first used, to avoid an F401 in this commit):
 
 ```python
 from osmose.live_movement import (
-    config_is_spatial,
     format_progress_label,
     make_run_observer,
     make_step_observer,
@@ -294,16 +290,19 @@ from osmose.live_movement import (
             ndt = 0
         label = format_progress_label(done, n, ndt)
         pct = round(done / n * 100) if n else 0
+        # The label must be a SIBLING of the .progress track, not a child: Bootstrap 5
+        # .progress is display:flex; overflow:hidden, so a nested <small> gets clipped.
         return ui.div(
             ui.div(
-                f"{pct}%",
-                class_="progress-bar",
-                role="progressbar",
-                style=f"width: {pct}%",
+                ui.div(
+                    f"{pct}%",
+                    class_="progress-bar",
+                    role="progressbar",
+                    style=f"width: {pct}%",
+                ),
+                class_="progress mb-1",
             ),
             ui.tags.small(label, class_="text-muted"),
-            class_="progress mb-1",
-            style="height: auto;",
         )
 ```
 
@@ -346,9 +345,14 @@ from osmose.live_movement import (
             ).start()
 ```
 
-(i) In `_drain_run_done`, clear `_progress` on every terminal outcome (add near where it sets `_live_status_val`/buttons):
+(i) In `_drain_run_done`, clear `_progress` on every terminal outcome — and **drain `_progress_q` first**. The engine pushes the final `(n, n, …)` tuple to `_progress_q` microseconds before the "done" message; if we only `set(None)`, the independent `_drain_progress` poll (no ordering guarantee between polls) reads that buffered tuple and re-sets `_progress` → a permanent 100% bar / "running" console line after completion. Drain the queue then clear (mirrors the `_live_queue` drain in `handle_run`):
 
 ```python
+        while True:
+            try:
+                _progress_q.get_nowait()
+            except queue.Empty:
+                break
         _progress.set(None)
 ```
 
@@ -374,13 +378,14 @@ git commit -m "feat(run): Python progress bar + in-place console line (reuses st
 
 - [ ] **Step 1: Update the existing assertion test (failing first)**
 
-In `tests/test_ui_run_capability.py`, the `test_run_page_uses_panel_conditional_for_engine_settings` tuple includes `"py_verbosity"` (~line 23). Remove `"py_verbosity"` from that tuple. Add a positive assertion that `py_threads` is wired:
+In `tests/test_ui_run_capability.py`, the `test_run_page_uses_panel_conditional_for_engine_settings` tuple includes `"py_verbosity"` (~line 23). Remove `"py_verbosity"` from that tuple (keep `"py_threads"`). Add a positive assertion that `py_threads` is wired — and that the wiring lives in the engine thread (`set_num_threads` is thread-local; see Step 3):
 
 ```python
 def test_py_threads_wired_and_verbosity_removed():
     text = open(run_page.__file__, encoding="utf-8").read()
     assert "py_verbosity" not in text          # widget removed
     assert "set_num_threads" in text           # py_threads now wired
+    assert "py_threads" in text                # input still present (wired, not dead)
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -410,24 +415,39 @@ Expected: FAIL — `py_verbosity` still present, `set_num_threads` absent.
                 ),
 ```
 
-(b) Add the import at the top of `ui/pages/run.py`:
+(b) Do **NOT** import numba at module top. Two verified reasons: (1) `numba.set_num_threads` is **thread-local** (confirmed: a value set on the Shiny session thread is NOT seen by a child `threading.Thread` — it runs at the default) so the wiring MUST execute on the engine thread, not in `handle_run`; (2) numba is an **optional** extra (not a base dependency; the engine has a pure-Python fallback in `mortality.py`), so a hard top-level `import numba` in `run.py` would break `import app` on a numba-less install. Instead, wire threads **inside `_python_engine_thread`** with a guarded lazy import.
+
+(c) In the Python branch of `handle_run`, read the thread count and pass it to the thread (it is applied inside the thread, step d):
 
 ```python
-import numba  # type: ignore[import-untyped]
+            n_threads = int(input.py_threads() or 0)
+            ...
+            threading.Thread(
+                target=_python_engine_thread,
+                args=(run_config, output_dir, cancel_token, run_observer, _run_done_q, n_threads),
+                daemon=True,
+            ).start()
 ```
 
-(c) In the Python branch of `handle_run`, before starting the thread, wire threads:
+(This supersedes Task 2 step (h)'s `Thread(...)` call — the final `args` tuple adds `n_threads`.)
+
+(d) Add `n_threads` to `_python_engine_thread` and apply it as the FIRST thing in the thread body (so the thread-local Numba count governs the prange in this very thread), with a guarded lazy import:
 
 ```python
-            try:
-                n_threads = int(input.py_threads() or 0)
-                if n_threads >= 1:
-                    numba.set_num_threads(min(n_threads, numba.config.NUMBA_NUM_THREADS))
-                else:
-                    numba.set_num_threads(numba.config.NUMBA_NUM_THREADS)  # Auto = all cores
-            except Exception:  # noqa: BLE001 — never block a run on a bad thread count
-                _log.warning("could not apply py_threads; using Numba default", exc_info=True)
+def _python_engine_thread(run_config, output_dir, cancel_token, step_observer, done_q, n_threads=0):
+    """... (existing docstring) ..."""
+    try:
+        import numba  # type: ignore[import-untyped]  # optional extra; engine has a pure-Python fallback
+
+        cap = numba.config.NUMBA_NUM_THREADS  # type: ignore[attr-defined]
+        numba.set_num_threads(min(n_threads, cap) if n_threads >= 1 else cap)  # n<1 = auto/all cores
+    except Exception:  # noqa: BLE001 — never block a run on numba absence/bad count
+        _log.warning("could not apply py_threads; using Numba default", exc_info=True)
+    engine = PythonEngine()
+    ...  # rest unchanged
 ```
+
+NOTE (pyright + ruff, both verified): the `# type: ignore[import-untyped]` on the import does NOT cover the `numba.config.NUMBA_NUM_THREADS` attribute access — that needs its own `# type: ignore[attr-defined]` on the `cap = …` line (verified pyright-clean). Extracting `cap` to a variable also keeps the `set_num_threads` line under the 100-char ruff limit. NOTE (correctness, verified): a `set_num_threads` called inside the engine thread DOES govern that thread's prange (`get_num_threads()` returns the set value); it is thread-local, so it does NOT contaminate concurrent in-process calibration workers.
 
 - [ ] **Step 4: Run test + import smoke**
 
@@ -454,7 +474,8 @@ git commit -m "feat(run): wire py_threads -> numba.set_num_threads (0=auto), dro
 # append to tests/test_ui_run_capability.py
 def test_run_page_auto_enables_live_for_spatial():
     text = open(run_page.__file__, encoding="utf-8").read()
-    assert "config_is_spatial" in text
+    # discriminating: the effect's own symbols, not just the imported name
+    assert "def _auto_enable_live_for_spatial" in text
     assert 'update_switch("live_movement_view"' in text
 ```
 
@@ -465,7 +486,18 @@ Expected: FAIL — auto-enable effect absent.
 
 - [ ] **Step 3: Make the change**
 
-In `run_server()`, add a changed-only auto-enable effect (mirrors the `_last_live_species` guard pattern). Near the other effects, add a plain mutable cell and the effect:
+First, add `config_is_spatial` to the `from osmose.live_movement import (...)` block in `ui/pages/run.py` (it was intentionally left out of Task 2's import to avoid an F401; this task is its first use):
+
+```python
+from osmose.live_movement import (
+    config_is_spatial,
+    format_progress_label,
+    make_run_observer,
+    make_step_observer,
+)
+```
+
+Then in `run_server()`, add a changed-only auto-enable effect (mirrors the `_last_live_species` guard pattern). Near the other effects, add a plain mutable cell and the effect:
 
 ```python
     _last_spatial: list[bool | None] = [None]  # changed-only guard for auto-enable
@@ -505,10 +537,17 @@ git commit -m "feat(run): auto-enable live movement for spatial (regular-grid) c
 
 With auto-enable, Baltic is spatial → the live switch is already on; the existing manual `.click()` would turn it OFF. Remove those clicks and add a plain-run progress assertion.
 
-- [ ] **Step 1: Remove the manual toggle clicks**
+- [ ] **Step 1: Remove the manual toggle clicks + add a sync point**
 
-- `tests/test_e2e_live_movement.py:58` and `:96` — delete `page.locator("#live_movement_view").click()` (the switch is auto-on for Baltic). Keep the rest.
-- `tests/test_e2e_baltic.py:57` — delete `page.locator("#live_movement_view").click()`.
+In all three Baltic+Python cases, delete the manual `page.locator("#live_movement_view").click()` (the switch is auto-on for Baltic) AND, immediately before the `#btn_run` click, add a deterministic wait for the server's `update_switch` echo to land (otherwise the `live_movement_status` "running" assertion races the auto-enable round-trip):
+
+```python
+    expect(page.locator("#live_movement_view")).to_be_checked(timeout=_LOAD_TIMEOUT)
+    page.locator("#btn_run").click()
+```
+
+- `tests/test_e2e_live_movement.py:58` (`test_live_movement_renders_during_python_run`) and `:96` (`test_live_movement_cancel_path`).
+- `tests/test_e2e_baltic.py:57`.
 
 - [ ] **Step 2: Add a plain-run progress assertion**
 
@@ -527,10 +566,15 @@ def test_run_progress_shows_during_python_run(page: Page, app: ShinyAppProc):
     page.locator("#engineBtnPython").click()
     py_overrides = page.locator("#py_param_overrides")
     expect(py_overrides).to_be_visible(timeout=_LOAD_TIMEOUT)
-    py_overrides.fill("simulation.time.nyear=1")
-    # Do NOT touch the live toggle — progress must appear regardless.
+    # nyear=10 (~10-14s warm), NOT 1: #run_progress and the console "step" line are
+    # TRANSIENT — _drain_run_done clears _progress on completion, so a ~1s nyear=1 run
+    # can finish before Playwright samples them. A longer run keeps the mid-run state on
+    # screen across Playwright's poll window (mirrors the cancel test's nyear=10 rationale).
+    py_overrides.fill("simulation.time.nyear=10")
+    # Do NOT touch the live toggle — progress must appear regardless of streaming.
     page.locator("#btn_run").click()
-    # The progress bar appears and the console shows a 'step N/' line during the run.
+    # Assert the TRANSIENT mid-run signals FIRST (they are cleared on completion), then
+    # the terminal status. Order matters: do not assert "Complete" before "step".
     expect(page.locator("#run_progress")).to_contain_text("step", timeout=_RUN_TIMEOUT)
     expect(page.locator("#run_console")).to_contain_text("step", timeout=_RUN_TIMEOUT)
     expect(page.locator("#run_status")).to_contain_text("Complete", timeout=_RUN_TIMEOUT)
@@ -588,7 +632,8 @@ git commit -m "chore(run): lint/format/pyright fixups" || echo "nothing to commi
 
 - **Spec coverage:** pure helpers (Task 1) → progress plumbing/bar/console (Task 2) → threads/verbosity (Task 3) → auto-enable (Task 4) → e2e (Task 5) → gates (Task 6). All spec components covered.
 - **1-based `done` convention** is used consistently: `make_run_observer` pushes `done = step+1`; `_progress`, `run_progress`, `run_console`, and `format_progress_label` all treat the first element as 1-based; the year math is `(done-1)//ndt+1` (regression-locked in Task 1's `test_format_progress_label_year_off_by_one`).
-- **Lifecycle:** `_progress` reset at top of `handle_run` (before all early returns) + cleared in `_drain_run_done`; Java path never feeds `_progress` → `run_progress` is Python-only.
-- **ndtperyear** read with the lowercase in-memory key (mirrors grid.py:392), with a step-only fallback when `ndt<=0` (no division-by-zero).
-- **py_threads** idempotent (always `set_num_threads`; `n<1`→all cores), default flipped to `0`/min `0` to avoid the single-thread slowdown; **process-wide side effect** noted.
+- **Lifecycle:** `_progress` reset at top of `handle_run` (before all early returns) + cleared in `_drain_run_done` (which also **drains `_progress_q`** so the independent `_drain_progress` poll can't re-populate a stale 100% bar); Java path never feeds `_progress` → `run_progress` is Python-only.
+- **ndtperyear** read with the lowercase in-memory key (verified precedent: `osmose/maps/builder.py:236` / `osmose/engine/config.py:1588`; lowercasing guaranteed by `osmose/config/reader.py:173`), with a step-only fallback when `ndt<=0` (no division-by-zero).
+- **py_threads** wired **inside `_python_engine_thread`** because `numba.set_num_threads` is **thread-local** (verified: a value set on the Shiny session thread is not seen by the engine's worker thread) — so it must run on the thread that launches the `prange`. Default `0`/min `0` = auto/all-cores (avoids the single-thread slowdown); `n<1`→all cores. numba is imported **lazily + guarded** in the thread (it's an optional extra with a pure-Python engine fallback). Because it's thread-local, it does **not** contaminate concurrent in-process calibration workers.
+- **pyright/ruff:** `numba.config.NUMBA_NUM_THREADS` needs a `# type: ignore[attr-defined]` (the import-untyped ignore doesn't cover the attr access); extracting `cap` to a variable also keeps the line under the 100-char limit (both verified).
 - **Out of scope:** Java-path changes, engine internals, per-step ecology stats.
