@@ -478,7 +478,7 @@ app_ui = ui.page_fillable(
 
             // 4. Restore engine mode from localStorage
             if (document.getElementById('engineBtnJava')) {
-                var savedEngine = localStorage.getItem('osmose-engine') || 'java';
+                var savedEngine = localStorage.getItem('osmose-engine') || 'python';
                 setEngineMode(savedEngine);
             }
         }

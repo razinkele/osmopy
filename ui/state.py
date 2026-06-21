@@ -61,7 +61,7 @@ class AppState:
         self.species_names: reactive.Value[list[str]] = reactive.Value([])
         self.results_loaded: reactive.Value[bool] = reactive.Value(False)
         self.key_case_map: reactive.Value[dict[str, str]] = reactive.Value({})
-        self.engine_mode: reactive.Value[str] = reactive.Value("java")
+        self.engine_mode: reactive.Value[str] = reactive.Value("python")
 
     def get_config_value(self, key: str, default: str = "") -> str:
         """Read a single config value without copying the entire dict.

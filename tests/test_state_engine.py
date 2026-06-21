@@ -5,10 +5,10 @@ from shiny import reactive
 from ui.state import AppState
 
 
-def test_engine_mode_default_is_java():
+def test_engine_mode_default_is_python():
     state = AppState()
     with reactive.isolate():
-        assert state.engine_mode.get() == "java"
+        assert state.engine_mode.get() == "python"
 
 
 def test_engine_mode_can_be_set_to_python():
