@@ -34,11 +34,7 @@ from osmose.runner import (
     validate_java_opts,
 )
 from ui.components.collapsible import body_collapse_header
-from ui.pages.live_movement_render import (
-    choose_live_layer,
-    dots_layer_from_points,  # noqa: F401 — re-export kept for source-asserting tests
-    heatmap_layer_from_points,  # noqa: F401 — re-export kept for source-asserting tests
-)
+from ui.pages.live_movement_render import choose_live_layer
 from ui.state import get_theme_mode
 from ui.styles import STYLE_CONSOLE
 
