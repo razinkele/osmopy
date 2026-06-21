@@ -318,6 +318,7 @@ async def _run_java_engine(
     run_log,
     status,
     runner_ref,
+    start_monotonic=None,
 ):
     """Run the simulation using the Java JAR subprocess."""
     jar_path = Path(state.jar_path.get())
@@ -374,10 +375,10 @@ async def _run_java_engine(
         ui.update_action_button("btn_run", disabled=False, session=session)
         ui.update_action_button("btn_cancel", disabled=True, session=session)
 
-    _handle_result(result, config, state, run_log, status)
+    _handle_result(result, config, state, run_log, status, start_monotonic)
 
 
-def _handle_result(result, config, state, run_log, status):
+def _handle_result(result, config, state, run_log, status, start_monotonic=None):
     """Process a RunResult from either engine.
 
     Pre-C4, state.output_dir was set unconditionally; on a failed or
@@ -396,9 +397,12 @@ def _handle_result(result, config, state, run_log, status):
             from osmose.history import RunRecord, default_run_history
 
             history = default_run_history()
+            duration_sec = (
+                max(0.0, time.monotonic() - start_monotonic) if start_monotonic is not None else 0.0
+            )
             record = RunRecord(
                 config_snapshot=config,
-                duration_sec=0,
+                duration_sec=duration_sec,
                 output_dir=str(result.output_dir),
                 summary={},
             )
@@ -442,6 +446,7 @@ def run_server(input, output, session, state):
     # ── Python-run completion (fire-and-forget thread → main-thread poll) ─────────
     _run_done_q: queue.Queue = queue.Queue(maxsize=1)  # (kind, result|None, message)
     _run_config_cell: list = [None]  # config captured at run start, for _handle_result
+    _run_start_cell: list = [None]  # run start (time.monotonic) for duration_sec
 
     _progress_q: queue.Queue = queue.Queue(maxsize=1)  # (done, n_steps, elapsed_s)
     _progress: reactive.Value = reactive.Value(None)  # None | (done, n_steps, elapsed_s)
@@ -500,7 +505,7 @@ def run_server(input, output, session, state):
             state.busy.set(None)
             ui.update_action_button("btn_run", disabled=False, session=session)
             ui.update_action_button("btn_cancel", disabled=True, session=session)
-            _handle_result(result, _run_config_cell[0], state, run_log, status)
+            _handle_result(result, _run_config_cell[0], state, run_log, status, _run_start_cell[0])
             while True:
                 try:
                     _progress_q.get_nowait()
@@ -800,6 +805,7 @@ def run_server(input, output, session, state):
             _live_status_val.set("running")
             live_observer = make_step_observer(_live_queue, throttle_s=0.5)  # ≤2 fps (was 0.2)
 
+        run_t0 = time.monotonic()
         if engine_mode == "python":
             # Fire-and-forget: launch the engine in a background thread and RETURN, so the
             # reactive polls (_drain_live_queue + _drain_run_done) flush live frames and the
@@ -818,6 +824,7 @@ def run_server(input, output, session, state):
             state.busy.set("Running simulation (Python)...")
             status.set("Running (Python engine)...")
             _run_config_cell[0] = config
+            _run_start_cell[0] = run_t0
             run_observer = make_run_observer(_progress_q, live_observer)
             n_threads = int(input.py_threads() or 0)
             threading.Thread(
@@ -837,6 +844,7 @@ def run_server(input, output, session, state):
                 run_log,
                 status,
                 runner_ref,
+                start_monotonic=run_t0,
             )
 
     @reactive.effect
