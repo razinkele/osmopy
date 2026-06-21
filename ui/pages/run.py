@@ -450,48 +450,71 @@ def run_server(input, output, session, state):
     _progress_q: queue.Queue = queue.Queue(maxsize=1)  # (done, n_steps, elapsed_s)
     _progress: reactive.Value = reactive.Value(None)  # None | (done, n_steps, elapsed_s)
 
+    # ── Session-teardown hardening ───────────────────────────────
+    # When the browser tab/session dies, Shiny tears down the session; reactive
+    # consumers that still touch it raise DestroyedReactiveError / CancelledError,
+    # cascading. We flip _session_alive on session end and cancel the running
+    # engine thread, then guard each consumer below.
+    _session_alive = [True]
+    _active_cancel_token: list = [None]  # plain ref so on_ended needn't read a reactive
+
+    def _on_session_end():
+        _session_alive[0] = False
+        tok = _active_cancel_token[0]
+        if tok is not None:
+            tok.set()  # stop the daemon engine thread instead of running against a dead session
+
+    session.on_ended(_on_session_end)
+
     @reactive.poll(lambda: time.time(), interval_secs=0.2)
     def _drain_run_done():
-        try:
-            kind, result, msg = _run_done_q.get_nowait()
-        except queue.Empty:
+        if not _session_alive[0]:
             return
-        lines = list(run_log.get())
-        if kind == "cancelled":
-            lines.append(f"--- CANCELLED ---\n{msg}")
-            _live_status_val.set("cancelled")
-            result = RunResult(
-                returncode=-1,
-                output_dir=Path(""),
-                stdout="",
-                stderr=msg,
-                status="cancelled",
-                message=msg or "user cancelled",
-            )
-        elif kind == "failed":
-            lines.append(f"--- ERROR ---\n{msg}")
-            _live_status_val.set("failed")
-            result = RunResult(
-                returncode=1,
-                output_dir=Path(""),
-                stdout="",
-                stderr=msg,
-                status="failed",
-                message=msg,
-            )
-        else:  # done
-            _live_status_val.set("done")
-        run_log.set(lines)
-        state.busy.set(None)
-        ui.update_action_button("btn_run", disabled=False, session=session)
-        ui.update_action_button("btn_cancel", disabled=True, session=session)
-        _handle_result(result, _run_config_cell[0], state, run_log, status)
-        while True:
+        try:
             try:
-                _progress_q.get_nowait()
+                kind, result, msg = _run_done_q.get_nowait()
             except queue.Empty:
-                break
-        _progress.set(None)
+                return
+            lines = list(run_log.get())
+            if kind == "cancelled":
+                lines.append(f"--- CANCELLED ---\n{msg}")
+                _live_status_val.set("cancelled")
+                result = RunResult(
+                    returncode=-1,
+                    output_dir=Path(""),
+                    stdout="",
+                    stderr=msg,
+                    status="cancelled",
+                    message=msg or "user cancelled",
+                )
+            elif kind == "failed":
+                lines.append(f"--- ERROR ---\n{msg}")
+                _live_status_val.set("failed")
+                result = RunResult(
+                    returncode=1,
+                    output_dir=Path(""),
+                    stdout="",
+                    stderr=msg,
+                    status="failed",
+                    message=msg,
+                )
+            else:  # done
+                _live_status_val.set("done")
+            run_log.set(lines)
+            state.busy.set(None)
+            ui.update_action_button("btn_run", disabled=False, session=session)
+            ui.update_action_button("btn_cancel", disabled=True, session=session)
+            _handle_result(result, _run_config_cell[0], state, run_log, status)
+            while True:
+                try:
+                    _progress_q.get_nowait()
+                except queue.Empty:
+                    break
+            _progress.set(None)
+        except BaseException:  # noqa: BLE001
+            if _session_alive[0]:
+                raise  # genuine bug during a live session — surface it
+            _log.debug("run-done poll skipped (session ending)", exc_info=True)
 
     @reactive.effect
     def _consume_run_done():
@@ -499,14 +522,21 @@ def run_server(input, output, session, state):
 
     @reactive.poll(lambda: time.time(), interval_secs=0.2)
     def _drain_live_queue():
-        latest = None
-        while True:
-            try:
-                latest = _live_queue.get_nowait()
-            except queue.Empty:
-                break
-        if latest is not None:
-            _live_snapshot.set(latest)
+        if not _session_alive[0]:
+            return
+        try:
+            latest = None
+            while True:
+                try:
+                    latest = _live_queue.get_nowait()
+                except queue.Empty:
+                    break
+            if latest is not None:
+                _live_snapshot.set(latest)
+        except BaseException:  # noqa: BLE001
+            if _session_alive[0]:
+                raise  # genuine bug during a live session — surface it
+            _log.debug("live poll skipped (session ending)", exc_info=True)
 
     @reactive.effect
     def _consume_live_poll():
@@ -514,14 +544,21 @@ def run_server(input, output, session, state):
 
     @reactive.poll(lambda: time.time(), interval_secs=0.2)
     def _drain_progress():
-        latest = None
-        while True:
-            try:
-                latest = _progress_q.get_nowait()
-            except queue.Empty:
-                break
-        if latest is not None:
-            _progress.set(latest)
+        if not _session_alive[0]:
+            return
+        try:
+            latest = None
+            while True:
+                try:
+                    latest = _progress_q.get_nowait()
+                except queue.Empty:
+                    break
+            if latest is not None:
+                _progress.set(latest)
+        except BaseException:  # noqa: BLE001
+            if _session_alive[0]:
+                raise  # genuine bug during a live session — surface it
+            _log.debug("progress poll skipped (session ending)", exc_info=True)
 
     @reactive.effect
     def _consume_progress():
@@ -529,15 +566,22 @@ def run_server(input, output, session, state):
 
     @reactive.effect
     def _populate_live_species():
-        snap = _live_snapshot.get()
-        if snap is None:
+        if not _session_alive[0]:
             return
-        if snap.species == _last_live_species[0]:
-            return
-        _last_live_species[0] = list(snap.species)
-        choices = {"__all__": "All species"}
-        choices.update({name: name for name in snap.species})
-        ui.update_select("live_movement_species", choices=choices)
+        try:
+            snap = _live_snapshot.get()
+            if snap is None:
+                return
+            if snap.species == _last_live_species[0]:
+                return
+            _last_live_species[0] = list(snap.species)
+            choices = {"__all__": "All species"}
+            choices.update({name: name for name in snap.species})
+            ui.update_select("live_movement_species", choices=choices)
+        except BaseException:  # noqa: BLE001
+            if _session_alive[0]:
+                raise  # genuine bug during a live session — surface it
+            _log.debug("species populate skipped (session ending)", exc_info=True)
 
     @render.ui
     def live_movement_status():
@@ -557,42 +601,49 @@ def run_server(input, output, session, state):
 
     @reactive.effect
     async def _render_live_map():
+        if not _session_alive[0]:
+            return
         try:
             if not input.live_view_expanded():
                 return
         except Exception:
             return  # input unset -> collapsed -> nothing to render
-        snap = _live_snapshot.get()
-        mode = input.live_movement_mode()
-        sel = input.live_movement_species()
-        species_filter = None if sel in ("__all__", None) else sel
-        style = CARTO_DARK if get_theme_mode(input) == "dark" else CARTO_POSITRON
-        if style != _live_map.style:
-            _live_map.style = style
-            await _live_map.set_style(session, style)
-        if snap is None:
-            return
-        layer, note = choose_live_layer(snap, species_filter, mode)
-        _live_note.set(note)
-        if not _live_framed[0]:
-            await _live_map.update(
-                session,
-                layers=[layer],
-                view_state={
-                    "latitude": (snap.lat_min + snap.lat_max) / 2,
-                    "longitude": (snap.lon_min + snap.lon_max) / 2,
-                    "zoom": 5,
-                },
-                widgets=[
-                    fullscreen_widget(placement="top-left"),
-                    zoom_widget(placement="top-right"),
-                    compass_widget(placement="top-right"),
-                    scale_widget(placement="bottom-left"),
-                ],
-            )
-            _live_framed[0] = True
-        else:
-            await _live_map.partial_update(session, layers=[layer])
+        try:
+            snap = _live_snapshot.get()
+            mode = input.live_movement_mode()
+            sel = input.live_movement_species()
+            species_filter = None if sel in ("__all__", None) else sel
+            style = CARTO_DARK if get_theme_mode(input) == "dark" else CARTO_POSITRON
+            if style != _live_map.style:
+                _live_map.style = style
+                await _live_map.set_style(session, style)
+            if snap is None:
+                return
+            layer, note = choose_live_layer(snap, species_filter, mode)
+            _live_note.set(note)
+            if not _live_framed[0]:
+                await _live_map.update(
+                    session,
+                    layers=[layer],
+                    view_state={
+                        "latitude": (snap.lat_min + snap.lat_max) / 2,
+                        "longitude": (snap.lon_min + snap.lon_max) / 2,
+                        "zoom": 5,
+                    },
+                    widgets=[
+                        fullscreen_widget(placement="top-left"),
+                        zoom_widget(placement="top-right"),
+                        compass_widget(placement="top-right"),
+                        scale_widget(placement="bottom-left"),
+                    ],
+                )
+                _live_framed[0] = True
+            else:
+                await _live_map.partial_update(session, layers=[layer])
+        except BaseException:  # noqa: BLE001
+            if _session_alive[0]:
+                raise  # genuine bug during a live session — surface it
+            _log.debug("live map render skipped (session ending)", exc_info=True)
 
     @render.ui
     def jar_selector():
@@ -767,6 +818,7 @@ def run_server(input, output, session, state):
             output_dir.mkdir(parents=True, exist_ok=True)
             cancel_token = threading.Event()
             state.run_cancel_token.set(cancel_token)
+            _active_cancel_token[0] = cancel_token
             state.busy.set("Running simulation (Python)...")
             status.set("Running (Python engine)...")
             _run_config_cell[0] = config

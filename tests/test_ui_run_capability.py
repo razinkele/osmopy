@@ -59,3 +59,9 @@ def test_live_view_uses_expand_gate_not_switch():
     assert "live_view_expanded" in text  # expand gate present
     assert "_auto_enable_live_for_spatial" not in text  # superseded
     assert "choose_live_layer" in text  # heatmap fallback wired
+
+
+def test_run_server_hardens_against_session_teardown():
+    text = open(run_page.__file__, encoding="utf-8").read()
+    assert "session.on_ended" in text
+    assert "_session_alive" in text
