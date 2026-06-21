@@ -41,12 +41,12 @@ def test_live_movement_renders_during_python_run(page: Page, app: ShinyAppProc):
     # Navigate to the Run page.
     page.locator(".nav-pills .nav-link[data-value='run']").click()
 
-    # The engine defaults to Java (ui/state.py:65), so clicking #engineBtnPython is
-    # REQUIRED (not defensive) to enable the Python-only live view (engine toggle buttons
-    # #engineBtnJava — app.py:195, #engineBtnPython — app.py:201). It also switches the
-    # engine_mode to "python" (app.py engine toggle), which reveals the Python panel_conditional
-    # in run.py so #py_param_overrides becomes visible — that field lives inside that panel,
-    # so the fill MUST come after the engine switch or Playwright sees a hidden element.
+    # The engine now defaults to Python (ui/state.py), so clicking #engineBtnPython is
+    # harmless/defensive — it just keeps the engine on "python" (engine toggle buttons
+    # #engineBtnJava — app.py:279, #engineBtnPython — app.py:285). It also keeps the Python
+    # panel_conditional in run.py visible so #py_param_overrides is shown — that field lives
+    # inside that panel, so the fill MUST come after the engine switch or Playwright sees a
+    # hidden element.
     page.locator("#engineBtnPython").click()
 
     # Shorten the run: 1 year. (#py_param_overrides on the Run page — run.py:217.)
@@ -54,8 +54,13 @@ def test_live_movement_renders_during_python_run(page: Page, app: ShinyAppProc):
     expect(py_overrides).to_be_visible(timeout=_LOAD_TIMEOUT)
     py_overrides.fill("simulation.time.nyear=1")
 
-    # Baltic is spatial: the live switch is auto-on; sync on the echo, then run.
-    expect(page.locator("#live_movement_view")).to_be_checked(timeout=_LOAD_TIMEOUT)
+    # Expand the Live Movement card (collapsed by default) to enable streaming.
+    card = page.locator('.card:has(button[data-osm-card-toggle="run_live_movement"])')
+    btn = page.locator('button[data-osm-card-toggle="run_live_movement"]')
+    if "osm-body-collapsed" in (card.get_attribute("class") or ""):
+        btn.click()
+    expect(card).not_to_have_class("osm-body-collapsed")  # expanded
+    page.wait_for_timeout(250)  # let Shiny.setInputValue('live_view_expanded', true) round-trip
     page.locator("#btn_run").click()
 
     # The live map container renders (note: #live_map is a static basemap, present as soon
@@ -93,7 +98,13 @@ def test_live_movement_cancel_path(page: Page, app: ShinyAppProc):
     py_overrides = page.locator("#py_param_overrides")
     expect(py_overrides).to_be_visible(timeout=_LOAD_TIMEOUT)
     py_overrides.fill("simulation.time.nyear=10")  # ~10-14s warm; long cancel window
-    expect(page.locator("#live_movement_view")).to_be_checked(timeout=_LOAD_TIMEOUT)
+    # Expand the Live Movement card (collapsed by default) to enable streaming.
+    card = page.locator('.card:has(button[data-osm-card-toggle="run_live_movement"])')
+    btn = page.locator('button[data-osm-card-toggle="run_live_movement"]')
+    if "osm-body-collapsed" in (card.get_attribute("class") or ""):
+        btn.click()
+    expect(card).not_to_have_class("osm-body-collapsed")  # expanded
+    page.wait_for_timeout(250)  # let Shiny.setInputValue('live_view_expanded', true) round-trip
     page.locator("#btn_run").click()
     # Gate the cancel on a REAL emitted frame — "running step N/M" appears only after the
     # observer has pushed a snapshot (bare "running" is set pre-dispatch and would not prove
