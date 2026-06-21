@@ -67,23 +67,26 @@ Implemented by attempting `GridSpec.from_config(config)` and returning False on 
 ### 3. `ui/pages/run.py` — progress plumbing + auto live map + thread wiring
 
 **Progress state + poll (Python runs):**
-- New `_progress_q: queue.Queue` (maxsize 1) and `_progress: reactive.Value` holding `None | (current_step, n_steps, elapsed_s)`.
+- New `_progress_q: queue.Queue` (maxsize 1, drop-oldest) and `_progress: reactive.Value` holding `None | (current_step, n_steps, elapsed_s)`. (The existing `_live_queue` is maxsize 4 drained-to-latest; progress uses maxsize-1 drop-oldest — both coalesce to the latest tuple, fine.)
 - New `_drain_progress` `@reactive.poll(lambda: time.time(), interval_secs=0.2)` + `_consume_progress` effect (mirrors `_drain_live_queue`/`_consume_live_poll`), setting `_progress` from the latest queued tuple.
-- Reset `_progress` to `None` at run start and on completion (the `_drain_run_done` terminal handler clears it).
+- **Reset `_progress` to `None` at the very TOP of `handle_run`** (before ALL early returns — Java-block, validation-error, etc.), symmetric with how `run_log` is managed, so a blocked/early-return run never leaves a stale progress bar. The `_drain_run_done` terminal handler also clears `_progress` to `None` on done/failed/cancelled.
+- **Python-only invariant:** the progress queue/observer is fed only by the Python engine. The Java path (`_run_java_engine`) streams to `run_log` via `on_progress` and never touches `_progress`, so `run_progress` renders nothing during a Java run. `run_progress` renders only when `_progress` is set (i.e. a Python run is active).
 
 **Progress bar render:**
-- `run_progress` `@render.ui`: when `_progress` is set, render a Bootstrap progress bar with a label `f"Year {y}/{ny} · step {s}/{n} · {pct}%"` (year derived from step and `ndtPerYear`); when `None`, render nothing. Placed in `run_ui` near the Run Status block.
+- `run_progress` `@render.ui`: when `_progress` is set, render a Bootstrap progress bar (`ui.div(ui.div(class_="progress-bar", style=f"width:{pct}%"), class_="progress")`) with a label; when `None`, render nothing. Placed in `run_ui` in the always-visible Run Status block (NOT inside the python `panel_conditional`).
+- **Year derivation (defensive):** the progress tuple carries only `(step, n_steps, elapsed)`; the render reads steps-per-year from `state.config` using the **lowercase canonical key** `simulation.time.ndtperyear` (the reader lowercases keys — the raw file's `ndtPerYear` is stored lowercase in `state.config`; mirror grid.py:392 / map_builder.py:266: `int(float(cfg.get("simulation.time.ndtperyear", "0") or "0"))`). If `ndt > 0` → label `f"Year {step // ndt + 1}/{ceil(n / ndt)} · step {step}/{n} · {pct}%"`; if `ndt <= 0` (missing/unparseable) → fall back to a step-only label `f"Step {step}/{n} · {pct}%"` (no division). Never raises.
 
 **Console in-place line:**
-- `run_console` is recomputed each tick as: the existing `run_log` lines (warnings/errors), then — when `_progress` is set — **one** trailing progress line derived from `_progress`. Because the render is recomputed (not appended to `run_log`), the progress line overwrites in place every tick (no flood, bounded history). When idle and `run_log` is empty, the existing placeholder still shows.
+- `run_console` (a `@render.ui` currently reading `run_log.get()`) is recomputed each tick from `run_log.get()` AND `_progress.get()` as: the existing `run_log` lines (warnings/errors), then — when `_progress` is set — **one** trailing progress line. Because the render is recomputed (not appended to `run_log`), the progress line overwrites in place every tick (no flood, bounded history). When idle and `run_log` is empty, the existing placeholder still shows. To avoid literal duplication with the progress-bar label two inches away, keep the console line **terse** — e.g. `running · step {step}/{n} ({pct}%)` — leaving the Year/elapsed detail to the bar label.
 
 **handle_run (Python branch) changes:**
 - Always create the progress queue + `make_run_observer(progress_q, live_observer)`; pass the composed observer to the engine thread (replacing the bare `live_observer`).
 - `live_observer` is built only when streaming is active (see auto-enable below).
-- Read `input.py_threads()` before dispatch: when `n >= 1`, call `numba.set_num_threads(min(n, numba.config.NUMBA_NUM_THREADS))`; when `n == 0` (Auto), do **not** call it (Numba keeps its all-cores default — avoids the default-1 slowdown). Wrapped so an invalid value falls back to Auto.
+- Read `input.py_threads()` before dispatch and **always** call `numba.set_num_threads` (so the setting is idempotent across successive runs in one session — `set_num_threads` is process-wide and sticky): `n = int(input.py_threads() or 0)`; if `n >= 1` → `numba.set_num_threads(min(n, numba.config.NUMBA_NUM_THREADS))`; if `n < 1` (Auto, including a negative typed value) → `numba.set_num_threads(numba.config.NUMBA_NUM_THREADS)` (restore all cores). Wrap in try/except so an unexpected value can't abort the run. NOTE (process-wide side effect): this is a global numba setting; acceptable here, but the plan should note it could affect a concurrent in-process calibration run.
 
 **Auto-enable live map (spatial configs):**
-- The `live_movement_view` switch **default flips to on when a spatial config is loaded**, off otherwise. Implementation: an effect that, when `state.config` changes, sets the switch via `ui.update_switch("live_movement_view", value=config_is_spatial(config))`. The toggle remains a user override; `handle_run`'s existing gate (`if input.live_movement_view() and engine_mode == "python"`) is unchanged.
+- The `live_movement_view` switch **default flips to on when a spatial config is loaded**, off otherwise. Implementation: an effect on `state.config` that sets the switch via `ui.update_switch("live_movement_view", value=config_is_spatial(config))`. The toggle remains a user override; `handle_run`'s existing gate (`if input.live_movement_view() and engine_mode == "python"`) is unchanged.
+- **Changed-only guard** (mirror the existing `_last_live_species` pattern, run.py:423): the effect fires the `update_switch` only when the config's spatial-ness *changes* (track the last applied value in a plain mutable cell), so it auto-sets on config-LOAD only and does not re-stomp a user's manual toggle on every unrelated `state.config` write.
 
 **Dead inputs:**
 - `py_threads`: redefault to **0 = Auto (all cores)** (min stays 0), labeled "Threads (Numba; 0 = auto/all cores)"; wired to `numba.set_num_threads` per the handle_run rule above.
@@ -108,20 +111,23 @@ engine step loop ──step_observer(step,state,grid,config)──> make_run_obs
 
 **Pure (`tests/test_live_movement.py` or a new `tests/test_run_observer.py`):**
 - `make_run_observer`: a fake observer call sequence pushes `(step+1, n_steps, elapsed)` to the queue each step; elapsed is monotonic-nondecreasing; delegates to a provided `live_observer` (spy called with the same args); with `live_observer=None` only progress is pushed; an exception in the live observer is swallowed (never propagates).
+- **Progress independent of live frames:** with `live_observer=None` (non-spatial config), `make_run_observer` still pushes a progress tuple every step — progress works even when the live map produces no frames.
 - `config_is_spatial`: Baltic config (regular-grid keys) → True; eec_full-like config (only `grid.netcdf.file`) → False; empty/partial grid → False.
 
 **Page/render (`tests/test_ui_run*.py`):**
 - `import app` clean after removing `py_verbosity` and adding `run_progress`.
-- The source exposes `run_progress` and no longer references `py_verbosity`; `py_threads` is wired (handle_run reads it).
+- The source exposes `run_progress` and no longer references `py_verbosity`; `py_threads` is wired (handle_run reads it + calls `numba.set_num_threads`).
+- **Edit `tests/test_ui_run_capability.py`:** the existing `test_run_page_uses_panel_conditional_for_engine_settings` asserts a tuple of per-engine input ids that includes `"py_verbosity"` (lines ~22-23). Remove `"py_verbosity"` from that tuple (the widget is deleted); keep `"py_threads"`.
 
-**e2e (`tests/test_e2e_live_movement.py` or a new case):**
-- A **plain Python run without manually toggling** the live switch: load Baltic → switch to Python → set `nyear` → Start Run → assert `#run_progress` appears and the Console shows a `step N/` progress line during the run, and the live map auto-streams (toggle auto-on for Baltic). Update the existing e2e if it relied on `py_verbosity`.
+**e2e (`tests/test_e2e_live_movement.py`):**
+- Add/adjust a case for a **plain Python run without manually toggling** the live switch: load Baltic → switch to Python → set `nyear` → Start Run → assert `#run_progress` appears and the Console shows a `step N/` progress line during the run, and the live map auto-streams (toggle auto-on for Baltic).
+- **Required fix to the existing two cases:** both `test_live_movement_renders_during_python_run` and `test_live_movement_cancel_path` currently do `page.locator("#live_movement_view").click()` (lines 58, 96) to turn the switch ON. With auto-enable, Baltic is spatial so the switch is ALREADY on → that click would turn it OFF and break the run. Remove those manual clicks (the switch is auto-on for Baltic), or assert-it's-on instead of clicking. (Note: the e2e does NOT reference `py_verbosity` — no change needed there; the earlier "update e2e if it relied on py_verbosity" was incorrect.)
 
 ## Files
 
 - **Modify:** `osmose/live_movement.py` (add `make_run_observer`, `config_is_spatial`).
 - **Modify:** `ui/pages/run.py` (progress queue/poll/`_progress`, `run_progress` render, console progress line, compose run observer, wire `py_threads` → `numba.set_num_threads`, remove `py_verbosity`, auto-enable switch effect).
-- **Modify/Add tests:** `tests/test_run_observer.py` (or extend `tests/test_live_movement.py`), `tests/test_ui_run*.py`, `tests/test_e2e_live_movement.py`.
+- **Modify/Add tests:** `tests/test_run_observer.py` (or extend `tests/test_live_movement.py`), `tests/test_ui_run_capability.py` (drop `py_verbosity` from the input-id assertion), `tests/test_e2e_live_movement.py` (remove the manual `#live_movement_view` clicks at lines 58/96; add the plain-run progress assertion).
 
 ## Reused infrastructure
 
