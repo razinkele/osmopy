@@ -1,0 +1,55 @@
+name: Docs
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        # numba is installed so autodoc renders the JIT code path identically;
+        # osmose modules import fine without it (import-guarded pure fallback).
+        run: pip install -e ".[docs]" numba
+
+      - name: Build docs (warnings are errors)
+        run: sphinx-build -W --keep-going -b html docs docs/_build/html
+
+      - name: Upload Pages artifact
+        # PR runs upload too (validates the artifact packs cleanly); only the
+        # deploy job below publishes, and only on master.
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/_build/html
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    # Serialize deploys so two quick master merges cannot race; let an
+    # in-flight publish finish rather than cancelling it.
+    concurrency:
+      group: "pages"
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
