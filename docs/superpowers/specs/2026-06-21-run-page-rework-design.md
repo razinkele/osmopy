@@ -73,7 +73,7 @@ session.on_ended → cancel token (stop thread) + _session_alive=False (polls no
 
 ## Error handling
 
-- `_render_live_map` + all three poll consumers: `_session_alive` early-return + `try/except DestroyedReactiveError` → no cascade on teardown.
+- `_render_live_map` + the poll consumers (and `_populate_live_species`): `_session_alive` early-return + a broad `try/except BaseException` that **re-raises when the session is still alive** (so real bugs aren't masked) and only swallows during teardown. Catch `BaseException`/`asyncio.CancelledError` (NOT just `Exception`) — `CancelledError` is a `BaseException` and is the cascade named above. Do NOT import the non-exported `DestroyedReactiveError`.
 - `session.on_ended` cancels the run → the daemon engine thread exits promptly (no runaway compute against a dead session).
 - `choose_live_layer` never raises (pure); empty filtered set → empty layer (already handled).
 - Heatmap fallback is a render-time choice; no new failure path.
@@ -94,7 +94,7 @@ session.on_ended → cancel token (stop thread) + _session_alive=False (polls no
 
 ## Files
 
-- **Modify:** `ui/state.py` (engine default), `app.py` (localStorage default, `loading_overlay` compaction, `toggleCardBody` → `live_view_expanded` input + collapsed-by-default for `run_live_movement`), `www/osmose.css` (compact busy indicator), `ui/pages/run.py` (remove switch + auto-enable effect; `live_view_expanded` gate in `handle_run`; `session.on_ended`; `_session_alive` + `DestroyedReactiveError` guards in the 3 polls + `_render_live_map`; use `choose_live_layer`), `osmose/live_movement.py` (`dot_cap` 5000→2000; live throttle 0.2→0.5), `ui/pages/live_movement_render.py` (`choose_live_layer` helper).
+- **Modify:** `ui/state.py` (engine default), `app.py` (localStorage default, `loading_overlay` compaction, `toggleCardBody` → `live_view_expanded` input + collapsed-by-default for `run_live_movement`), `www/osmose.css` (compact busy indicator), `ui/pages/run.py` (remove switch + auto-enable effect; `live_view_expanded` gate in `handle_run` + `_render_live_map`; `session.on_ended`; `_session_alive` + broad-except guards in the 3 polls + `_render_live_map` + `_populate_live_species`; use `choose_live_layer`), `osmose/live_movement.py` (`dot_cap` 5000→2000; live throttle 0.2→0.5), `ui/pages/live_movement_render.py` (`choose_live_layer` helper).
 - **Tests:** `tests/test_live_movement_render.py` (new/extended), `tests/test_state.py`, `tests/test_ui_run_capability.py`, `tests/test_e2e_live_movement.py`, `tests/test_e2e_baltic.py`.
 
 ## Reused infrastructure
