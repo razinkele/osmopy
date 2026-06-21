@@ -1228,6 +1228,24 @@ hr {
 }
 @keyframes osm-spin { to { transform: rotate(360deg); } }
 
+/* Compact busy indicator (replaces the full-screen loading overlay) */
+.osm-busy-pill {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  z-index: 1080;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.8rem;
+  background: rgba(20, 30, 45, 0.92);
+  color: #e8eef5;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+.osm-spinner-sm { width: 1rem; height: 1rem; border-width: 2px; }
+
 /* ── Dirty changes banner ───────────────────────────────────── */
 .osm-dirty-banner {
     background: rgba(232, 168, 56, 0.15);

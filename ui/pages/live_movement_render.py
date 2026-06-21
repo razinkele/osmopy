@@ -111,3 +111,22 @@ def dots_layer_from_points(snap: MovementSnapshot, species_filter: str | None) -
         radiusMinPixels=2,
         pickable=True,
     )
+
+
+def choose_live_layer(
+    snap: MovementSnapshot, species_filter: str | None, mode: str, *, dots_max: int = 1500
+) -> tuple[dict, str | None]:
+    """Pick the live layer, returning (layer, note).
+
+    Dots (per-point ScatterplotLayer) only when the FILTERED point count <= dots_max;
+    above that, fall back to the aggregated heatmap, because thousands of per-point dots
+    streamed every frame over a long run exhaust the browser's WebGL/memory (the diagnosed
+    live-stream crash). Heatmap mode is always heatmap.
+    """
+    if mode == "dots":
+        n = int(_filter_mask(snap, species_filter).sum())
+        if n > dots_max:
+            note = f"Too many schools for dots ({n}) — showing heatmap"
+            return heatmap_layer_from_points(snap, species_filter), note
+        return dots_layer_from_points(snap, species_filter), None
+    return heatmap_layer_from_points(snap, species_filter), None

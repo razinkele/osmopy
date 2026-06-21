@@ -53,8 +53,15 @@ def test_baltic_full_run_and_outputs(page: Page, app: ShinyAppProc):
         "simulation.time.nyear=1\noutput.spatial.enabled=true\noutput.spatial.biomass.enabled=true"
     )
 
-    # 3. Live movement + run. Baltic is spatial: the live switch is auto-on; sync on the echo.
-    expect(page.locator("#live_movement_view")).to_be_checked(timeout=_LOAD_TIMEOUT)
+    # 3. Live movement + run. The Live Movement card is collapsed by default and is now the
+    # stream gate (the engine defaults to Python; button ids #engineBtnJava — app.py:279,
+    # #engineBtnPython — app.py:285). Expand the card to enable streaming before the run.
+    card = page.locator('.card:has(button[data-osm-card-toggle="run_live_movement"])')
+    btn = page.locator('button[data-osm-card-toggle="run_live_movement"]')
+    if "osm-body-collapsed" in (card.get_attribute("class") or ""):
+        btn.click()
+    expect(card).not_to_have_class("osm-body-collapsed")  # expanded
+    page.wait_for_timeout(250)  # let Shiny.setInputValue('live_view_expanded', true) round-trip
     page.locator("#btn_run").click()
     expect(page.locator("#run_status")).not_to_contain_text(
         "Validation failed", timeout=_LOAD_TIMEOUT

@@ -60,13 +60,14 @@ def resolve_grid_latlon(grid) -> tuple[NDArray[np.float64], NDArray[np.float64]]
 
 
 def build_snapshot(
-    step: int, state, grid, config, *, status: str = "running", dot_cap: int = 5000
+    step: int, state, grid, config, *, status: str = "running", dot_cap: int = 2000
 ) -> MovementSnapshot:
     """Build a snapshot of focal + located + living schools at ``step`` (pure).
 
     Selection mask = focal (``species_id < n_species``) & in-domain (``~is_out``) &
     located (``cell_x/cell_y >= 0``, drops freshly-spawned eggs at ``-1``) & living
-    (``biomass > 0``). Samples to ``dot_cap`` deterministically when exceeded.
+    (``biomass > 0``). Samples to ``dot_cap`` (default 2000) deterministically when
+    exceeded.
     """
     lat_arr, lon_arr = resolve_grid_latlon(grid)
     mask = (
@@ -110,14 +111,16 @@ def build_snapshot(
 def make_step_observer(
     q: "queue.Queue[MovementSnapshot]",
     *,
-    dot_cap: int = 5000,
+    dot_cap: int = 2000,
     throttle_s: float = 0.2,
     now: Callable[[], float] = time.monotonic,
 ) -> Callable[[int, object, object, object], None]:
     """Return a step-observer that builds a snapshot and enqueues it (drop-oldest).
 
     Always emits step 0 and the final step (``config.n_steps - 1``); throttles the
-    rest by wall-clock. Never blocks the engine thread and never raises into it.
+    rest by wall-clock. ``dot_cap`` (default 2000) is passed through to
+    ``build_snapshot`` and bounds the points streamed to the client per frame. Never
+    blocks the engine thread and never raises into it.
     """
     last_emit: list[float | None] = [None]
 
