@@ -110,7 +110,15 @@ def test_all_osmose_modules_import():
     dev-only dep (e.g. httpx, pillow) -- that is caught only by the -W docs build.
     """
     failures: list[str] = []
-    for mod in pkgutil.walk_packages(osmose.__path__, "osmose."):
+    # walk_packages imports each sub-PACKAGE itself (to read __path__ for
+    # recursion); that import is outside the loop's try, so a raising package
+    # __init__ would abort the walk with a raw traceback. onerror collects it.
+    walker = pkgutil.walk_packages(
+        osmose.__path__,
+        "osmose.",
+        onerror=lambda name: failures.append(f"{name}: package import error during walk"),
+    )
+    for mod in walker:
         try:
             importlib.import_module(mod.name)
         except Exception as exc:  # noqa: BLE001 - collect all, not just the first
@@ -386,12 +394,16 @@ api/index
 Run: `.venv/bin/sphinx-build -b html docs docs/_build/html`
 Expected: exits 0 (warnings ARE expected at this stage — docstring RST quirks and the usage-guide link warnings; they are fixed in Tasks 6–7). The build must COMPLETE.
 
-Run: `test -f docs/api/_autosummary/osmose.html && echo STUBS_OK`
-Expected: prints `STUBS_OK` (recursive autosummary generated the package page).
+Run: `test -f docs/api/_autosummary/osmose.rst && echo STUBS_OK`
+Expected: prints `STUBS_OK`. Recursive autosummary writes generated `.rst` STUBS
+into the SOURCE dir `docs/api/_autosummary/`; the rendered `.html` lands only in
+`docs/_build/html/api/_autosummary/` — so check the `.rst` stub, not an `.html`.
 
-If `STUBS_OK` does NOT print, `api/index.rst` was not picked up by the
-`api/**` whitelist glob. Fallback: in `docs/conf.py`, add the explicit entry
-`"api/index.rst"` to `include_patterns` (alongside `"api/**"`), then re-run.
+If `STUBS_OK` does NOT print, no stubs were generated — inspect the contents of
+`docs/api/_autosummary/`. The likely cause is `api/index.rst` not being picked up
+by the `api/**` whitelist glob; fallback: in `docs/conf.py`, add the explicit
+entry `"api/index.rst"` to `include_patterns` (alongside `"api/**"`), then re-run.
+(In Sphinx ≥7 `api/**` already matches `api/index.rst`, so this is only a safety net.)
 
 - [ ] **Step 4: Commit**
 
@@ -412,8 +424,14 @@ Each emits `myst.xref_missing`, fatal under `-W`. Rewrite all six to absolute
 GitHub blob URLs (external links are not resolved as xrefs). Leave the two
 `tutorials/30-minute-ecosystem.md` links relative — that page is whitelisted.
 
-The same-document anchor `[§6](#6-choose-an-engine--reproduce-results)` is already
-handled by `myst_heading_anchors = 3` (Task 3) — no edit needed for it.
+The same-document anchor `[§6](#6-choose-an-engine--reproduce-results)` in
+`usage-guide.md:84` targets heading "## 6. Choose an engine & reproduce results",
+whose actual Sphinx section id is `choose-an-engine-reproduce-results` (the
+leading digit is dropped and "& " collapses to a single dash). With
+`myst_heading_anchors = 3` (Task 3) the existing link resolves via MyST's
+*tolerant* cross-reference matching (verified clean under `-W` in myst-parser
+5.1.0), but Step 1 also rewrites it to the exact id so it does not depend on fuzzy
+matching that a stricter future MyST could drop.
 
 **Files:**
 - Modify: `docs/usage-guide.md`
@@ -431,6 +449,7 @@ parenthesized link target only):
 | `(baltic_example.md)` | `(https://github.com/razinkele/osmopy/blob/master/docs/baltic_example.md)` |
 | `(baltic_ices_validation_2026-04-18.md)` | `(https://github.com/razinkele/osmopy/blob/master/docs/baltic_ices_validation_2026-04-18.md)` |
 | `(parity-roadmap.md)` | `(https://github.com/razinkele/osmopy/blob/master/docs/parity-roadmap.md)` |
+| `(#6-choose-an-engine--reproduce-results)` | `(#choose-an-engine-reproduce-results)` |
 
 - [ ] **Step 2: Verify no `myst.xref_missing` warnings remain**
 
@@ -453,13 +472,18 @@ This is the open-ended cleanup. Warnings are discovered at build time. Fixes are
 **never** changes to code behavior, signatures, or logic, and **never** a blanket
 `suppress_warnings`.
 
+(All `-W` builds in this plan use `--keep-going`, which intentionally supersedes
+the spec's bare `sphinx-build -W`: the zero-warning gate is identical — both exit
+non-zero on any warning — `--keep-going` only collects every warning per pass so
+the cleanup loop converges faster.)
+
 **Files:**
 - Modify: `osmose/**/*.py` docstrings as needed (text only)
 
 - [ ] **Step 1: Run the strict build and capture the warnings**
 
-Run: `.venv/bin/sphinx-build -W --keep-going -b html docs docs/_build/html 2>&1 | tee /tmp/sphinx_warnings.txt`
-Expected initially: exits non-zero; `/tmp/sphinx_warnings.txt` lists each warning with `file:line: WARNING: ...`. (`--keep-going` collects ALL warnings in one pass instead of stopping at the first.)
+Run: `rm -rf docs/_build docs/api/_autosummary && .venv/bin/sphinx-build -W --keep-going -b html docs docs/_build/html 2>&1 | tee /tmp/sphinx_warnings.txt`
+Expected initially: exits non-zero; `/tmp/sphinx_warnings.txt` lists each warning with `file:line: WARNING: ...`. (`--keep-going` collects ALL warnings in one pass instead of stopping at the first. The `rm -rf` forces a from-scratch read so Sphinx's incremental cache cannot silently skip an unchanged-but-still-broken module — without it a partial fix can show a false "build succeeded" locally that then fails on the fresh-checkout CI build.)
 
 - [ ] **Step 2: Fix each warning at its source**
 
@@ -468,13 +492,16 @@ For each warning, open the cited `file:line` and fix the docstring. Common class
 - **"Unexpected indentation" / "Block quote ends without a blank line"**: a wrapped line or list item is mis-indented — align continuation lines and add the required blank line before/after blocks.
 - **"Title underline too short"**: only in `.rst` docstrings — extend the underline to match the title length.
 - **"duplicate object description"**: a symbol documented twice (e.g. re-exported). Prefer documenting it once at its definition; if it is an intentional re-export, the autosummary public-filter usually avoids this — verify it is not caused by a manual `automodule` elsewhere.
+- **"Undefined substitution referenced"** (a docutils ERROR — fatal under `-W`): a bar-delimited token in prose is parsed as a `|substitution|` reference. The real repo emits this for `osmose/analysis.py` (`|% change|` at lines ~240/287; field refs `|pct_delta|` / `|abs_delta|` at ~244). Fix by escaping the pipes (`\|% change\|`) or wrapping the phrase in double backticks (` ``% change`` `). Note it can appear with `<autosummary>:N` provenance because the one-line summary is re-parsed standalone.
 
 Edit docstring TEXT only. Do not alter signatures, defaults, or logic.
 
 - [ ] **Step 3: Re-run until clean**
 
-Run: `.venv/bin/sphinx-build -W --keep-going -b html docs docs/_build/html`
-Repeat Step 2 until this command exits 0 with no warnings.
+Run: `rm -rf docs/_build docs/api/_autosummary && .venv/bin/sphinx-build -W --keep-going -b html docs docs/_build/html`
+Repeat Step 2 until this command exits 0 with no warnings. (The `rm -rf` each
+pass is essential — see Step 1; an incremental rebuild can hide a still-broken
+module and report a false "build succeeded".)
 Expected (final): `build succeeded.` and exit code 0.
 
 - [ ] **Step 4: Confirm the runtime test suite still passes (no behavior changed)**
@@ -593,7 +620,7 @@ In `README.md`, in the `## Documentation index` table, add this row directly und
 the header row (above the 30-minute-tutorial row at ~line 327):
 
 ```markdown
-| Rendered docs site (API reference + guides) | https://razinkele.github.io/osmopy/ |
+| Rendered docs site (API reference + guides) | [razinkele.github.io/osmopy](https://razinkele.github.io/osmopy/) |
 ```
 
 - [ ] **Step 2: Add `[project.urls]` to pyproject**
@@ -625,7 +652,7 @@ git commit -m "docs: link the published Pages site from README and pyproject url
 
 - [ ] `.venv/bin/python -m pytest tests/test_docs_build.py -v` → both tests pass.
 - [ ] `.venv/bin/sphinx-build -W --keep-going -b html docs docs/_build/html` → exits 0, `build succeeded.`, zero warnings.
-- [ ] `docs/api/_autosummary/osmose.html` exists; spot-check that a private module page (e.g. `osmose.engine._netcdf`) was NOT generated.
+- [ ] `docs/api/_autosummary/osmose.rst` exists (and the rendered `docs/_build/html/api/_autosummary/osmose.html`); spot-check that a private-module stub `docs/api/_autosummary/osmose.engine._netcdf.rst` was NOT generated.
 - [ ] `.venv/bin/python -m pytest -n auto -q` → full suite green (no behavior changed).
 - [ ] `.venv/bin/ruff check osmose/ ui/ tests/` and `.venv/bin/ruff format --check osmose/ ui/ tests/` → clean.
 - [ ] `.venv/bin/pyright --pythonpath .venv/bin/python` (or per repo convention) → no new errors in changed files.
