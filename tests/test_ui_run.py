@@ -106,7 +106,7 @@ def test_live_movement_wired_into_run_page():
 
     src = (pathlib.Path(__file__).resolve().parent.parent / "ui" / "pages" / "run.py").read_text()
     assert "make_step_observer" in src
-    assert "live_movement_view" in src
+    assert "live_view_expanded" in src
     assert "heatmap_layer_from_points" in src
     assert "dots_layer_from_points" in src
     assert "partial_update" in src

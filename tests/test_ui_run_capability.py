@@ -32,13 +32,6 @@ def test_py_threads_wired_and_verbosity_removed():
     assert "py_threads" in text  # input still present (wired, not dead)
 
 
-def test_run_page_auto_enables_live_for_spatial():
-    text = open(run_page.__file__, encoding="utf-8").read()
-    # discriminating: the effect's own symbols, not just the imported name
-    assert "def _auto_enable_live_for_spatial" in text
-    assert 'update_switch("live_movement_view"' in text
-
-
 def test_run_page_source_has_indicator_and_capability_slots():
     text = open(run_page.__file__, encoding="utf-8").read()
     assert 'output_ui("engine_indicator")' in text
@@ -58,3 +51,11 @@ def test_run_page_has_progress_machinery():
     assert "_progress_q" in text  # discriminating: NOT matched by existing "on_progress"
     assert "_progress.set(" in text  # the new reactive value, not the Java on_progress fn
     assert "format_progress_label" in text
+
+
+def test_live_view_uses_expand_gate_not_switch():
+    text = open(run_page.__file__, encoding="utf-8").read()
+    assert "input.live_movement_view" not in text  # switch gate removed
+    assert "live_view_expanded" in text  # expand gate present
+    assert "_auto_enable_live_for_spatial" not in text  # superseded
+    assert "choose_live_layer" in text  # heatmap fallback wired

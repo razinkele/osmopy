@@ -22,7 +22,6 @@ from osmose.config.validator import summarize_config_validation
 from osmose.engine import PythonEngine, SimulationCancelled
 from osmose.engine_capabilities import describe_engine
 from osmose.live_movement import (
-    config_is_spatial,
     format_progress_label,
     make_run_observer,
     make_step_observer,
@@ -35,7 +34,11 @@ from osmose.runner import (
     validate_java_opts,
 )
 from ui.components.collapsible import body_collapse_header
-from ui.pages.live_movement_render import dots_layer_from_points, heatmap_layer_from_points
+from ui.pages.live_movement_render import (
+    choose_live_layer,
+    dots_layer_from_points,  # noqa: F401 — re-export kept for source-asserting tests
+    heatmap_layer_from_points,  # noqa: F401 — re-export kept for source-asserting tests
+)
 from ui.state import get_theme_mode
 from ui.styles import STYLE_CONSOLE
 
@@ -248,8 +251,10 @@ def run_ui():
             col_widths=[4, 8],
         ),
         ui.card(
-            body_collapse_header("Live Movement (Python engine)", "run_live_movement"),
-            ui.input_switch("live_movement_view", "Stream movement during run", value=False),
+            body_collapse_header(
+                "Live Movement (Python engine) — expand to stream during a run",
+                "run_live_movement",
+            ),
             ui.input_radio_buttons(
                 "live_movement_mode",
                 "Mode",
@@ -436,6 +441,7 @@ def run_server(input, output, session, state):
     _last_live_species: list[list[str] | None] = [
         None
     ]  # plain flag for the species-selector changed-only guard
+    _live_note: reactive.Value = reactive.Value(None)  # heatmap-fallback note | None
 
     # ── Python-run completion (fire-and-forget thread → main-thread poll) ─────────
     _run_done_q: queue.Queue = queue.Queue(maxsize=1)  # (kind, result|None, message)
@@ -533,19 +539,6 @@ def run_server(input, output, session, state):
         choices.update({name: name for name in snap.species})
         ui.update_select("live_movement_species", choices=choices)
 
-    _last_spatial: list[bool | None] = [None]  # changed-only guard for auto-enable
-
-    @reactive.effect
-    def _auto_enable_live_for_spatial():
-        config = state.config.get()
-        if not config:
-            return
-        spatial = config_is_spatial(config)
-        if spatial == _last_spatial[0]:
-            return
-        _last_spatial[0] = spatial
-        ui.update_switch("live_movement_view", value=spatial, session=session)
-
     @render.ui
     def live_movement_status():
         status_v = _live_status_val.get()
@@ -553,15 +546,22 @@ def run_server(input, output, session, state):
         if not status_v:
             if state.engine_mode.get() != "python":
                 return ui.p("Live view available for the Python engine.", class_="text-muted")
-            return ui.p("Enable the toggle before running to stream movement.", class_="text-muted")
+            return ui.p("Expand this card before running to stream movement.", class_="text-muted")
         prog = f"step {snap.step + 1}/{snap.n_steps}" if snap is not None else ""
         extra = ""
         if snap is not None and snap.truncated:
             extra = f" — showing {snap.sp_id.size} of {snap.n_total} schools"
-        return ui.p(f"{status_v} {prog}{extra}".strip())
+        note = _live_note.get()
+        suffix = f" · {note}" if note else ""
+        return ui.p(f"{status_v} {prog}{extra}{suffix}".strip())
 
     @reactive.effect
     async def _render_live_map():
+        try:
+            if not input.live_view_expanded():
+                return
+        except Exception:
+            return  # input unset -> collapsed -> nothing to render
         snap = _live_snapshot.get()
         mode = input.live_movement_mode()
         sel = input.live_movement_species()
@@ -572,11 +572,8 @@ def run_server(input, output, session, state):
             await _live_map.set_style(session, style)
         if snap is None:
             return
-        layer = (
-            dots_layer_from_points(snap, species_filter)
-            if mode == "dots"
-            else heatmap_layer_from_points(snap, species_filter)
-        )
+        layer, note = choose_live_layer(snap, species_filter, mode)
+        _live_note.set(note)
         if not _live_framed[0]:
             await _live_map.update(
                 session,
@@ -740,7 +737,11 @@ def run_server(input, output, session, state):
         source_dir = state.config_dir.get()
 
         live_observer = None
-        if input.live_movement_view() and engine_mode == "python":
+        try:
+            _live_expanded = bool(input.live_view_expanded())
+        except Exception:
+            _live_expanded = False  # input unset (card never toggled) -> collapsed
+        if _live_expanded and engine_mode == "python":
             while True:
                 try:
                     _live_queue.get_nowait()
@@ -750,7 +751,7 @@ def run_server(input, output, session, state):
             _live_framed[0] = False
             _last_live_species[0] = None
             _live_status_val.set("running")
-            live_observer = make_step_observer(_live_queue)
+            live_observer = make_step_observer(_live_queue, throttle_s=0.5)  # ≤2 fps (was 0.2)
 
         if engine_mode == "python":
             # Fire-and-forget: launch the engine in a background thread and RETURN, so the

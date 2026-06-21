@@ -202,6 +202,9 @@ app_ui = ui.page_fillable(
             if (panelId) {
                 localStorage.setItem('osmose-card-collapsed-' + panelId, collapsed ? '1' : '0');
             }
+            if (panelId === 'run_live_movement' && typeof Shiny !== 'undefined' && Shiny.setInputValue) {
+                Shiny.setInputValue('live_view_expanded', !collapsed);
+            }
         }
         // Idempotent: applies persisted collapse state to every body-collapsible
         // card currently in the DOM. Safe to call repeatedly (on connect / tab show).
@@ -211,10 +214,14 @@ app_ui = ui.page_fillable(
                 var panelId = btn.getAttribute('data-osm-card-toggle');
                 var card = btn.closest('.card');
                 if (!card) return;
-                var want = localStorage.getItem('osmose-card-collapsed-' + panelId) === '1';
+                var stored = localStorage.getItem('osmose-card-collapsed-' + panelId);
+                var want = stored === null ? (panelId === 'run_live_movement') : (stored === '1');
                 card.classList.toggle('osm-body-collapsed', want);
                 btn.textContent = want ? '»' : '«';
                 btn.setAttribute('aria-expanded', want ? 'false' : 'true');
+                if (panelId === 'run_live_movement' && typeof Shiny !== 'undefined' && Shiny.setInputValue) {
+                    Shiny.setInputValue('live_view_expanded', !want);
+                }
             });
         }
         document.addEventListener('shiny:connected', function() { restoreCardBodies(); });
