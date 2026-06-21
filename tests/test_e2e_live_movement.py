@@ -54,8 +54,8 @@ def test_live_movement_renders_during_python_run(page: Page, app: ShinyAppProc):
     expect(py_overrides).to_be_visible(timeout=_LOAD_TIMEOUT)
     py_overrides.fill("simulation.time.nyear=1")
 
-    # Enable the live movement view, then run.
-    page.locator("#live_movement_view").click()
+    # Baltic is spatial: the live switch is auto-on; sync on the echo, then run.
+    expect(page.locator("#live_movement_view")).to_be_checked(timeout=_LOAD_TIMEOUT)
     page.locator("#btn_run").click()
 
     # The live map container renders (note: #live_map is a static basemap, present as soon
@@ -93,7 +93,7 @@ def test_live_movement_cancel_path(page: Page, app: ShinyAppProc):
     py_overrides = page.locator("#py_param_overrides")
     expect(py_overrides).to_be_visible(timeout=_LOAD_TIMEOUT)
     py_overrides.fill("simulation.time.nyear=10")  # ~10-14s warm; long cancel window
-    page.locator("#live_movement_view").click()
+    expect(page.locator("#live_movement_view")).to_be_checked(timeout=_LOAD_TIMEOUT)
     page.locator("#btn_run").click()
     # Gate the cancel on a REAL emitted frame — "running step N/M" appears only after the
     # observer has pushed a snapshot (bare "running" is set pre-dispatch and would not prove
@@ -104,3 +104,32 @@ def test_live_movement_cancel_path(page: Page, app: ShinyAppProc):
     page.locator("#btn_cancel").click()
     expect(page.locator("#live_movement_status")).to_contain_text("cancelled", timeout=_RUN_TIMEOUT)
     expect(page.locator("#live_map")).to_be_visible()
+
+
+def test_run_progress_shows_during_python_run(page: Page, app: ShinyAppProc):
+    page.goto(app.url)
+    page.wait_for_selector(".nav-pills", timeout=_LOAD_TIMEOUT)
+    dismiss_changelog_modal(page)
+    page.locator(".nav-pills .nav-link[data-value='grid']").click()
+    page.select_option("#load_example", "baltic")
+    page.click("#btn_load_example")
+    page.wait_for_selector(".shiny-notification", timeout=_LOAD_TIMEOUT)
+    page.locator(".nav-pills .nav-link[data-value='run']").click()
+    page.locator("#engineBtnPython").click()
+    py_overrides = page.locator("#py_param_overrides")
+    expect(py_overrides).to_be_visible(timeout=_LOAD_TIMEOUT)
+    # nyear=3 (~3-5s warm), NOT 1: #run_progress and the console "step" line are TRANSIENT
+    # (_drain_run_done clears _progress on completion), so a ~1s run can finish before
+    # Playwright samples them. 3 years (~72 steps, pushed from step 0) keeps the mid-run
+    # state on screen across many Playwright poll windows, yet completes comfortably within
+    # the completion budget below (a 10-yr run would risk the 60s budget — the repo's 1-yr
+    # Baltic completion budget is already 120s, test_e2e_baltic.py:25).
+    py_overrides.fill("simulation.time.nyear=3")
+    # Do NOT touch the live toggle — progress must appear regardless of streaming.
+    page.locator("#btn_run").click()
+    # Assert the TRANSIENT mid-run signals FIRST (cleared on completion), then the terminal
+    # status. Order matters: do not assert "Complete" before "step". Give "Complete" a
+    # generous budget (cold numba JIT + 2-core CI), matching test_e2e_baltic.py:25.
+    expect(page.locator("#run_progress")).to_contain_text("step", timeout=_RUN_TIMEOUT)
+    expect(page.locator("#run_console")).to_contain_text("step", timeout=_RUN_TIMEOUT)
+    expect(page.locator("#run_status")).to_contain_text("Complete", timeout=120_000)

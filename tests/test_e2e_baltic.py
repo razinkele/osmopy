@@ -53,8 +53,8 @@ def test_baltic_full_run_and_outputs(page: Page, app: ShinyAppProc):
         "simulation.time.nyear=1\noutput.spatial.enabled=true\noutput.spatial.biomass.enabled=true"
     )
 
-    # 3. Live movement + run.
-    page.locator("#live_movement_view").click()
+    # 3. Live movement + run. Baltic is spatial: the live switch is auto-on; sync on the echo.
+    expect(page.locator("#live_movement_view")).to_be_checked(timeout=_LOAD_TIMEOUT)
     page.locator("#btn_run").click()
     expect(page.locator("#run_status")).not_to_contain_text(
         "Validation failed", timeout=_LOAD_TIMEOUT
