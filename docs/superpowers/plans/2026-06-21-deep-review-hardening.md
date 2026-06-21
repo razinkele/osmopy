@@ -49,8 +49,12 @@ import logging
 from osmose.engine import config as config_module
 from osmose.engine.config import EngineConfig
 
-# A minimal valid 1-species config (mirrors tests/test_engine_config_validation.py).
+# A minimal valid 1-species config (adapted from tests/test_engine_config_validation.py
+# ::test_from_dict_still_works). The two simulation.time.* keys are REQUIRED — from_dict
+# reads simulation.time.ndtperyear unconditionally and raises KeyError without them.
 _MINIMAL = {
+    "simulation.time.ndtperyear": "24",
+    "simulation.time.nyear": "1",
     "simulation.nspecies": "1",
     "simulation.nschool.sp0": "20",
     "species.name.sp0": "Anchovy",
@@ -162,7 +166,6 @@ prompt rmtree in their create handler.
 """
 
 import tempfile
-from pathlib import Path
 
 from osmose.cleanup import _OSMOSE_PREFIXES, cleanup_old_temp_dirs
 
@@ -172,11 +175,15 @@ def test_new_prefixes_registered():
         assert prefix in _OSMOSE_PREFIXES
 
 
-def test_sweep_removes_new_prefix_dirs():
-    made = [Path(tempfile.mkdtemp(prefix=p))
-            for p in ("osmose_wizard_", "osmose_maps_", "osmose_val_")]
+def test_sweep_removes_new_prefix_dirs(tmp_path, monkeypatch):
+    # Isolate the sweep to a private temp root — cleanup_old_temp_dirs(0) rmtrees
+    # EVERY osmose-prefixed dir under gettempdir(); without this it would delete
+    # real /tmp osmose dirs that concurrent xdist tests are using. Mirrors the
+    # pattern in tests/test_cleanup.py.
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    made = [tmp_path / f"{p}x" for p in ("osmose_wizard_", "osmose_maps_", "osmose_val_")]
     for d in made:
-        assert d.exists()
+        d.mkdir()
     cleanup_old_temp_dirs(max_age_hours=0)  # 0 == remove all osmose temp dirs
     for d in made:
         assert not d.exists(), f"{d} was not swept"
@@ -204,20 +211,44 @@ _OSMOSE_PREFIXES = (
 )
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [ ] **Step 3b: Update the existing exact-set test (it will otherwise go red)**
 
-Run: `.venv/bin/python -m pytest tests/test_cleanup_prefixes.py -q`
-Expected: both PASS.
+`tests/test_cleanup.py::test_cleanup_all_prefixes_recognised` (lines ~85-91)
+asserts `set(_OSMOSE_PREFIXES)` equals an exact 5-entry `expected_prefixes` set
+AND loops over it to create one dir per prefix, asserting the removed count. Adding
+the three new prefixes breaks the exact-set assertion. Update `expected_prefixes`
+to include them:
+
+```python
+    expected_prefixes = {
+        "osmose_run_",
+        "osmose_cal_",
+        "osmose_sens_",
+        "osmose_export_",
+        "osmose_demo_",
+        "osmose_wizard_",
+        "osmose_maps_",
+        "osmose_val_",
+    }
+```
+
+(This single edit fixes both the exact-set assertion and the per-prefix removal
+loop, which iterates the same set.)
+
+- [ ] **Step 4: Run both cleanup test files to verify they pass**
+
+Run: `.venv/bin/python -m pytest tests/test_cleanup_prefixes.py tests/test_cleanup.py -q`
+Expected: all PASS.
 
 - [ ] **Step 5: Lint**
 
-Run: `.venv/bin/ruff check osmose/cleanup.py tests/test_cleanup_prefixes.py && .venv/bin/ruff format --check osmose/cleanup.py tests/test_cleanup_prefixes.py`
+Run: `.venv/bin/ruff check osmose/cleanup.py tests/test_cleanup_prefixes.py tests/test_cleanup.py && .venv/bin/ruff format --check osmose/cleanup.py tests/test_cleanup_prefixes.py tests/test_cleanup.py`
 Expected: clean.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add osmose/cleanup.py tests/test_cleanup_prefixes.py
+git add osmose/cleanup.py tests/test_cleanup_prefixes.py tests/test_cleanup.py
 git commit -m "cleanup: sweep osmose_wizard_/osmose_maps_/osmose_val_ temp dirs"
 ```
 
@@ -272,13 +303,21 @@ def test_handle_result_records_real_duration(monkeypatch, tmp_path):
 
 
 def test_both_engine_paths_thread_start_time():
-    """Guard the wiring: the start time is threaded as a parameter through both
-    engine paths (not read from a single Python-only cell)."""
+    """Guard the wiring: the start time is threaded as a parameter through BOTH
+    engine paths (not read from a single Python-only cell). A bare
+    'start_monotonic in src' would pass on just the signature add, so assert the
+    Java call-site literal and that both functions accept the parameter."""
+    import inspect
     import pathlib
 
+    # Both functions must accept the parameter (catches a dropped signature).
+    assert "start_monotonic" in inspect.signature(run_mod._handle_result).parameters
+    assert "start_monotonic" in inspect.signature(run_mod._run_java_engine).parameters
+
     src = pathlib.Path(run_mod.__file__).read_text()
-    assert "start_monotonic" in src
     assert "_run_start_cell" in src  # Python fire-and-forget path
+    # Java call site forwards t0 (run.py ~L830) — fails if that site is not wired.
+    assert "start_monotonic=run_t0" in src
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
@@ -439,7 +478,7 @@ git commit -m "ci: add numba-disabled leg exercising pure-Python engine fallback
 
 ## Final verification (before finishing the branch)
 
-- [ ] `.venv/bin/python -m pytest tests/test_engine_selectivity_warning.py tests/test_cleanup_prefixes.py tests/test_run_duration.py -q` → all pass.
+- [ ] `.venv/bin/python -m pytest tests/test_engine_selectivity_warning.py tests/test_cleanup_prefixes.py tests/test_cleanup.py tests/test_run_duration.py -q` → all pass.
 - [ ] Full suite (numba path): `.venv/bin/python -m pytest -n auto -q` → green (no behavior regression).
 - [ ] `.venv/bin/ruff check osmose/ ui/ tests/` and `.venv/bin/ruff format --check osmose/ ui/ tests/` → clean.
 - [ ] `.venv/bin/pyright --pythonpath .venv/bin/python` (or per repo convention) → no new errors in the changed files.
