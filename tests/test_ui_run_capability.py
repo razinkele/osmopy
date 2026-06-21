@@ -36,3 +36,12 @@ def test_run_page_imports_describe_engine_and_renders_capability():
     text = open(run_page.__file__, encoding="utf-8").read()
     assert "from osmose.engine_capabilities import describe_engine" in text
     assert "def engine_capability" in text
+
+
+def test_run_page_has_progress_machinery():
+    text = open(run_page.__file__, encoding="utf-8").read()
+    assert 'output_ui("run_progress")' in text
+    assert "make_run_observer" in text
+    assert "_progress_q" in text          # discriminating: NOT matched by existing "on_progress"
+    assert "_progress.set(" in text       # the new reactive value, not the Java on_progress fn
+    assert "format_progress_label" in text

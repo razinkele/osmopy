@@ -21,7 +21,11 @@ from shiny_deckgl import (  # type: ignore[import-untyped]
 from osmose.config.validator import summarize_config_validation
 from osmose.engine import PythonEngine, SimulationCancelled
 from osmose.engine_capabilities import describe_engine
-from osmose.live_movement import make_step_observer
+from osmose.live_movement import (
+    format_progress_label,
+    make_run_observer,
+    make_step_observer,
+)
 from osmose.logging import setup_logging
 from osmose.runner import (
     OsmoseRunner,
@@ -234,6 +238,7 @@ def run_ui():
                 ),
                 ui.hr(),
                 ui.h5("Run Status"),
+                ui.output_ui("run_progress"),
                 ui.output_text("run_status"),
             ),
             # Right: Console output
@@ -428,6 +433,9 @@ def run_server(input, output, session, state):
     _run_done_q: queue.Queue = queue.Queue(maxsize=1)  # (kind, result|None, message)
     _run_config_cell: list = [None]  # config captured at run start, for _handle_result
 
+    _progress_q: queue.Queue = queue.Queue(maxsize=1)  # (done, n_steps, elapsed_s)
+    _progress: reactive.Value = reactive.Value(None)  # None | (done, n_steps, elapsed_s)
+
     @reactive.poll(lambda: time.time(), interval_secs=0.2)
     def _drain_run_done():
         try:
@@ -464,6 +472,12 @@ def run_server(input, output, session, state):
         ui.update_action_button("btn_run", disabled=False, session=session)
         ui.update_action_button("btn_cancel", disabled=True, session=session)
         _handle_result(result, _run_config_cell[0], state, run_log, status)
+        while True:
+            try:
+                _progress_q.get_nowait()
+            except queue.Empty:
+                break
+        _progress.set(None)
 
     @reactive.effect
     def _consume_run_done():
@@ -483,6 +497,21 @@ def run_server(input, output, session, state):
     @reactive.effect
     def _consume_live_poll():
         _drain_live_queue()
+
+    @reactive.poll(lambda: time.time(), interval_secs=0.2)
+    def _drain_progress():
+        latest = None
+        while True:
+            try:
+                latest = _progress_q.get_nowait()
+            except queue.Empty:
+                break
+        if latest is not None:
+            _progress.set(latest)
+
+    @reactive.effect
+    def _consume_progress():
+        _drain_progress()
 
     @reactive.effect
     def _populate_live_species():
@@ -600,17 +629,50 @@ def run_server(input, output, session, state):
         return status.get()
 
     @render.ui
+    def run_progress():
+        prog = _progress.get()
+        if prog is None:
+            return None
+        done, n, _elapsed = prog
+        try:
+            ndt = int(float(state.config.get().get("simulation.time.ndtperyear", "0") or "0"))
+        except (TypeError, ValueError):
+            ndt = 0
+        label = format_progress_label(done, n, ndt)
+        pct = round(done / n * 100) if n else 0
+        # The label must be a SIBLING of the .progress track, not a child: Bootstrap 5
+        # .progress is display:flex; overflow:hidden, so a nested <small> gets clipped.
+        return ui.div(
+            ui.div(
+                ui.div(
+                    f"{pct}%",
+                    class_="progress-bar",
+                    role="progressbar",
+                    style=f"width: {pct}%",
+                ),
+                class_="progress mb-1",
+            ),
+            ui.tags.small(label, class_="text-muted"),
+        )
+
+    @render.ui
     def run_console():
         lines = run_log.get()
-        text = "\n".join(lines[-200:]) if lines else "No output yet. Click 'Start Run' to begin."
-        return ui.tags.pre(
-            text,
-            style=STYLE_CONSOLE,
-        )
+        prog = _progress.get()
+        text = "\n".join(lines[-200:]) if lines else ""
+        if prog is not None:
+            done, n, _elapsed = prog
+            pct = round(done / n * 100) if n else 0
+            prog_line = f"running · step {done}/{n} ({pct}%)"
+            text = f"{text}\n{prog_line}" if text else prog_line
+        if not text:
+            text = "No output yet. Click 'Start Run' to begin."
+        return ui.tags.pre(text, style=STYLE_CONSOLE)
 
     @reactive.effect
     @reactive.event(input.btn_run)
     async def handle_run():
+        _progress.set(None)
         engine_mode = state.engine_mode.get()
 
         # Validate config before run (common to both engines)
@@ -686,9 +748,10 @@ def run_server(input, output, session, state):
             state.busy.set("Running simulation (Python)...")
             status.set("Running (Python engine)...")
             _run_config_cell[0] = config
+            run_observer = make_run_observer(_progress_q, live_observer)
             threading.Thread(
                 target=_python_engine_thread,
-                args=(run_config, output_dir, cancel_token, live_observer, _run_done_q),
+                args=(run_config, output_dir, cancel_token, run_observer, _run_done_q),
                 daemon=True,
             ).start()
             # handle_run returns now; _drain_run_done finishes the run on the main thread.
