@@ -1571,6 +1571,17 @@ class EngineConfig:
                     "mortality.fishing.rate.* instead, or run the Java engine."
                 )
 
+        sel = self.fishing_selectivity_type
+        affected = [_sp(i) for i in range(self.n_species) if sel[i] in (2, 3)]
+        if affected:
+            _warn_once(
+                "Fishing selectivity type 2 (Gaussian) / 3 (log-normal) is configured for "
+                f"{', '.join(affected)} but the Python engine's interleaved mortality loop "
+                "applies only knife-edge (type 0) and logistic (type 1) selectivity — types "
+                "2/3 are silently treated as length knife-edge. Use selectivity type 0 or 1, "
+                "or run the Java engine."
+            )
+
     @classmethod
     def from_dict(cls, cfg: dict[str, str]) -> EngineConfig:
         from osmose.engine.config_validation import validate as _validate_cfg
