@@ -237,11 +237,11 @@ def run_delta(
     window_years: int = 10,
     top_n: int | None = None,
 ) -> list[SpeciesDelta]:
-    """Per-species delta of `metric` (windowed mean) between two runs, ranked by |% change|.
+    """Per-species delta of ``metric`` (windowed mean) between two runs, ranked by ``|% change|``.
 
     Species set = union of both runs (a species absent from one contributes mean 0 there).
     pct_delta is None for a zero-baseline species (reported via from_zero + abs_delta).
-    Sorted by |pct_delta| desc (from-zero species sort to the top); ties by |abs_delta| desc.
+    Sorted by ``|pct_delta|`` desc (from-zero species sort to the top); ties by ``|abs_delta|`` desc.
     """
     bmeans = _per_species_window_mean(baseline, metric, window_years)
     vmeans = _per_species_window_mean(variant, metric, window_years)

@@ -219,6 +219,7 @@ Pass `--help` to any script for its full argument list.
 
 ---
 
+(choose-an-engine-reproduce-results)=
 ## 6. Choose an engine & reproduce results
 
 | | Python engine | Java engine |

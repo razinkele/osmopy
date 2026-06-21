@@ -1,6 +1,6 @@
-"""Community size-spectrum diagnostics from OSMOSE *DistribBySize output.
+"""Community size-spectrum diagnostics from OSMOSE ``*DistribBySize`` output.
 
-Reads the community size-distribution file directly (the OsmoseResults *_by_size
+Reads the community size-distribution file directly (the OsmoseResults ``*_by_size``
 accessors target a different, per-species layout), sums species per (Time, Size),
 windows by Time, and derives community indicators: the size spectrum, its log-log
 slope (reusing osmose.analysis.size_spectrum_slope), the Large-Fish Indicator, the

@@ -1,6 +1,7 @@
 """Predation process.
 
-Public API:
+Public API::
+
     predation_for_cell(cell_indices, state, config, rng, n_subdt, ...)
         Apply predation within a single cell. In-place on state.
     enable_diet_tracking / disable_diet_tracking / get_diet_matrix
@@ -8,7 +9,8 @@ Public API:
     compute_size_overlap, compute_appetite, compute_feeding_stages
         Utility predicates.
 
-Test-exposed private helpers (leading underscore — not stable API):
+Test-exposed private helpers (leading underscore — not stable API)::
+
     _predation_in_cell_python, _predation_in_cell_numba
     _predation_on_resources
         Used by targeted tests that need to exercise a specific backend
