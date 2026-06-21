@@ -35,7 +35,7 @@ dependencies = [
 
 [project.optional-dependencies]
 numba = ["numba>=0.60"]
-docs = ["sphinx>=7", "myst-parser>=2", "furo>=2024.1"]
+docs = ["sphinx>=8", "myst-parser>=4", "furo>=2024.1"]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
