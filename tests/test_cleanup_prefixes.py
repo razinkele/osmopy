@@ -27,3 +27,14 @@ def test_sweep_removes_new_prefix_dirs(tmp_path, monkeypatch):
     cleanup_old_temp_dirs(max_age_hours=0)  # 0 == remove all osmose temp dirs
     for d in made:
         assert not d.exists(), f"{d} was not swept"
+
+
+def test_fresh_session_dir_survives_normal_sweep(tmp_path, monkeypatch):
+    # The osmose_wizard_/osmose_maps_ dirs back a LIVE session's state.config_dir,
+    # so the age-gated sweep must NOT yank a freshly-created one mid-session. A
+    # normal-age sweep leaves a just-made dir in place.
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    fresh = tmp_path / "osmose_wizard_live"
+    fresh.mkdir()
+    cleanup_old_temp_dirs(max_age_hours=24)
+    assert fresh.exists(), "a fresh session config_dir must survive a normal-age sweep"
