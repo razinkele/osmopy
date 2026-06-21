@@ -27,9 +27,9 @@ def test_run_page_uses_panel_conditional_for_engine_settings():
 
 def test_py_threads_wired_and_verbosity_removed():
     text = open(run_page.__file__, encoding="utf-8").read()
-    assert "py_verbosity" not in text          # widget removed
-    assert "set_num_threads" in text           # py_threads now wired
-    assert "py_threads" in text                # input still present (wired, not dead)
+    assert "py_verbosity" not in text  # widget removed
+    assert "set_num_threads" in text  # py_threads now wired
+    assert "py_threads" in text  # input still present (wired, not dead)
 
 
 def test_run_page_auto_enables_live_for_spatial():
@@ -55,6 +55,6 @@ def test_run_page_has_progress_machinery():
     text = open(run_page.__file__, encoding="utf-8").read()
     assert 'output_ui("run_progress")' in text
     assert "make_run_observer" in text
-    assert "_progress_q" in text          # discriminating: NOT matched by existing "on_progress"
-    assert "_progress.set(" in text       # the new reactive value, not the Java on_progress fn
+    assert "_progress_q" in text  # discriminating: NOT matched by existing "on_progress"
+    assert "_progress.set(" in text  # the new reactive value, not the Java on_progress fn
     assert "format_progress_label" in text

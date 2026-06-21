@@ -284,7 +284,9 @@ def _python_engine_thread(run_config, output_dir, cancel_token, step_observer, d
         import numba  # type: ignore[import-untyped]  # optional extra; engine has a pure-Python fallback
 
         cap = numba.config.NUMBA_NUM_THREADS  # type: ignore[attr-defined]
-        numba.set_num_threads(min(n_threads, cap) if n_threads >= 1 else cap)  # n<1 = auto/all cores
+        numba.set_num_threads(
+            min(n_threads, cap) if n_threads >= 1 else cap
+        )  # n<1 = auto/all cores
     except Exception:  # noqa: BLE001 — never block a run on numba absence/bad count
         _log.warning("could not apply py_threads; using Numba default", exc_info=True)
     engine = PythonEngine()
