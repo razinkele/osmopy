@@ -76,6 +76,10 @@ viztest = [
     "pytest-rerunfailures>=14",
 ]
 
+[project.urls]
+Documentation = "https://razinkele.github.io/osmopy/"
+Repository = "https://github.com/razinkele/osmopy"
+
 [project.scripts]
 osmose = "osmose.cli:main"
 

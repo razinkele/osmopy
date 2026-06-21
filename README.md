@@ -324,6 +324,7 @@ Start here depending on what you want:
 
 | Goal | Doc |
 |---|---|
+| Rendered docs site (API reference + guides) | [razinkele.github.io/osmopy](https://razinkele.github.io/osmopy/) |
 | Learn OSMOSE by running and perturbing a real Baltic ecosystem in 30 min | [`docs/tutorials/30-minute-ecosystem.md`](docs/tutorials/30-minute-ecosystem.md) |
 | Script runs, read outputs, compare, and calibrate (Python + CLI) | [`docs/usage-guide.md`](docs/usage-guide.md) |
 | Run an existing example | [Quick start](#quick-start) above |
