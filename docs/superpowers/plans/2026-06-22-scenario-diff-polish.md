@@ -108,15 +108,18 @@ def test_render_returns_count_and_table():
     assert "species.linf.sp0" in html
 
 
-def test_render_none_cell_shows_dash():
+def test_render_none_cell_shows_exactly_one_dash():
     html = str(render_config_diff_table([{"key": "a", "value_a": None, "value_b": "x"}]))
-    assert "—" in html
+    assert html.count("—") == 1  # exactly the one None cell, nothing else
 
 
-def test_render_empty_string_cell_is_not_a_dash():
-    # value_a="" must render an empty cell, NOT the em-dash reserved for None.
+def test_render_empty_string_cell_is_empty_not_dash():
+    # value_a="" must render an EMPTY cell (<td></td>), NOT the em-dash reserved
+    # for None. Assert the positive structure AND zero dashes (a strong pin, not
+    # a global "no dash anywhere" negative).
     html = str(render_config_diff_table([{"key": "a", "value_a": "", "value_b": "x"}]))
-    assert "—" not in html
+    assert "<td></td>" in html
+    assert html.count("—") == 0
 
 
 def test_render_large_diff_builds_without_error():
@@ -261,7 +264,7 @@ to:
 from ui.components.config_diff import classify_config_diffs
 ```
 
-Then rename all 8 call sites in that file (lines ~9, 14, 19, 25, 36, 49, 54, 58): `_classify_config_diffs(` → `classify_config_diffs(`. (Use a single find-replace of the bare token `_classify_config_diffs` → `classify_config_diffs` within this file.)
+Then, **with the import line already repointed above**, rename the 8 call sites (lines ~9, 14, 19, 25, 36, 49, 54, 58): `_classify_config_diffs(` → `classify_config_diffs(`. ORDER MATTERS — fix the import FIRST, then a find-replace of the remaining bare token `_classify_config_diffs` → `classify_config_diffs` is safe (the import no longer contains the old token, so it won't be rewritten to the wrong module). Do NOT blanket-replace before fixing the import, or you'd produce `from ui.pages.scenario_diff import classify_config_diffs` — a deleted symbol → ImportError.
 
 - [ ] **Step 2: Run the repointed test (it should pass immediately)**
 
@@ -328,6 +331,7 @@ git commit -m "refactor(scenario-diff): delegate config table to shared componen
 
 **Files:**
 - Modify: `ui/pages/scenarios.py` (UI: add button, remove Compare card, reflow col_widths, drop `STYLE_DIFF_ROW` import; Server: pure `_resolve_compare_state`, modal, handler, render; delete `update_compare_choices` effect + old `compare_diffs`/`handle_compare`/`compare_results`)
+- Modify: `ui/styles.py` (delete the now-dead `STYLE_DIFF_ROW` constant, line 30)
 - Test: `tests/test_scenario_compare_state.py` (new — pure state-resolver)
 
 **Interfaces:**
@@ -377,6 +381,14 @@ def test_diffs_adapter_shape():
     assert rows == [{"key": "k", "value_a": "1", "value_b": "2"}]
 
 
+def test_diffs_adapter_passes_none_through():
+    # An added/removed key has a None side; the adapter must preserve it so
+    # classify_config_diffs can later tag it added/removed (not coerce to "").
+    tag, rows = _resolve_compare_state("x", "y", lambda a, b: [_PD("k", None, "5")])
+    assert tag == "diffs"
+    assert rows == [{"key": "k", "value_a": None, "value_b": "5"}]
+
+
 def test_success_then_same_yields_no_stale_table():
     # The resolver is stateless, so a real diff followed by an a==b selection
     # returns ("same", None) with no leftover list — this is what keeps the
@@ -419,7 +431,7 @@ def _resolve_compare_state(name_a, name_b, compare):
 - [ ] **Step 4: Run the resolver test to verify it passes**
 
 Run: `.venv/bin/python -m pytest tests/test_scenario_compare_state.py -q`
-Expected: PASS (6 passed).
+Expected: PASS (7 passed).
 
 - [ ] **Step 5: Add the component import**
 
@@ -442,6 +454,8 @@ to:
 ```python
 from ui.styles import STYLE_EMPTY
 ```
+
+Then delete the now-orphaned constant definition `STYLE_DIFF_ROW = ...` at `ui/styles.py:30` — this was its only consumer. First confirm with `grep -rn "STYLE_DIFF_ROW" osmose/ ui/ tests/`: after the import change, the only remaining hit should be the definition line itself; delete it. (It's a module constant, not an import, so leaving it would not fail ruff — but it's dead code, so remove it.)
 
 (b) In `scenarios_ui`, add the Compare button right after the `btn_new_scenario` button (line ~34):
 
@@ -541,7 +555,7 @@ Expected: no new errors.
 - [ ] **Step 11: Commit**
 
 ```bash
-git add ui/pages/scenarios.py tests/test_scenario_compare_state.py
+git add ui/pages/scenarios.py ui/styles.py tests/test_scenario_compare_state.py
 git commit -m "feat(scenarios): compare in a modal with shared diff table + edge states"
 ```
 
@@ -613,7 +627,7 @@ def test_compare_modal_renders_diff(page: Page, app: ShinyAppProc):
         page.select_option(".modal #compare_b", name_b)
         page.click(".modal #btn_compare")
 
-        expect(modal.locator("table")).to_be_visible(timeout=_LOAD_TIMEOUT)
+        expect(modal.locator("table").first).to_be_visible(timeout=_LOAD_TIMEOUT)
         expect(modal.locator(".badge")).to_have_count(1)
         expect(modal).to_contain_text("1 differing config key")
     finally:
