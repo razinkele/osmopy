@@ -23,15 +23,37 @@ from osmose.scenario_wizard import (
 )
 from osmose.scenarios import Scenario, ScenarioManager
 from ui.components.collapsible import collapsible_card_header, expand_tab
-from ui.styles import STYLE_DIFF_ROW, STYLE_EMPTY
+from ui.components.config_diff import render_config_diff_table
+from ui.styles import STYLE_EMPTY
 
 _log = setup_logging("osmose.scenarios_ui")
+
+
+def _resolve_compare_state(name_a, name_b, compare):
+    """Classify a scenario A/B selection into a tagged-union state for the
+    compare modal. `compare` is ScenarioManager.compare (or a stub).
+
+    Returns ("none"|"same"|"identical"|"error", None) or ("diffs", rows) where
+    rows are the run-diff dict shape [{key, value_a, value_b}]. Pure."""
+    if not name_a or not name_b:
+        return ("none", None)
+    if name_a == name_b:
+        return ("same", None)
+    try:
+        diffs = compare(name_a, name_b)
+    except Exception:  # noqa: BLE001 — missing/corrupt/deleted scenario: degrade
+        return ("error", None)
+    if not diffs:
+        return ("identical", None)
+    rows = [{"key": d.key, "value_a": d.value_a, "value_b": d.value_b} for d in diffs]
+    return ("diffs", rows)
 
 
 def scenarios_ui():
     return ui.div(
         expand_tab("Save Scenario", "scenarios"),
         ui.input_action_button("btn_new_scenario", "+ New Scenario", class_="btn-success mb-3"),
+        ui.input_action_button("btn_compare_open", "Compare Scenarios", class_="btn-warning mb-3"),
         ui.layout_columns(
             # Left: Save & manage
             ui.card(
@@ -59,16 +81,7 @@ def scenarios_ui():
                     col_widths=[4, 4, 4],
                 ),
             ),
-            # Right: Compare
-            ui.card(
-                ui.card_header("Compare Scenarios"),
-                ui.input_select("compare_a", "Scenario A", choices={}),
-                ui.input_select("compare_b", "Scenario B", choices={}),
-                ui.input_action_button("btn_compare", "Compare", class_="btn-warning w-100"),
-                ui.hr(),
-                ui.output_ui("compare_results"),
-            ),
-            col_widths=[3, 5, 4],
+            col_widths=[4, 8],
         ),
         ui.card(
             ui.card_header("Bulk Operations"),
@@ -476,60 +489,53 @@ def scenarios_server(input, output, session, state):
         _bump()
         ui.notification_show("Scenario deleted.", type="message", duration=3)
 
-    # --- Update compare dropdowns when scenario list changes ---
+    # --- Compare (modal) ---
+    # Tagged-union state so untouched/same/identical/error/diffs never share a
+    # stale list. ("none", None) is the untouched sentinel + reset-on-open value.
+    compare_state: reactive.Value[tuple[str, list[dict[str, str | None]] | None]] = reactive.value(
+        ("none", None)
+    )
 
     @reactive.effect
-    def update_compare_choices():
-        refresh_trigger.get()  # depend on trigger
-        names = _scenario_names()
-        choices = {n: n for n in names}
-        ui.update_select("compare_a", choices=choices, session=session)
-        ui.update_select("compare_b", choices=choices, session=session)
-
-    # --- Compare ---
-
-    compare_diffs = reactive.value([])
+    @reactive.event(input.btn_compare_open)
+    def _compare_open():
+        compare_state.set(("none", None))  # reset so no prior table flashes
+        choices = _scenario_names()
+        ui.modal_show(
+            ui.modal(
+                ui.input_select("compare_a", "Scenario A", choices=choices),
+                ui.input_select("compare_b", "Scenario B", choices=choices),
+                ui.input_action_button("btn_compare", "Compare", class_="btn-warning"),
+                ui.hr(),
+                ui.output_ui("compare_results"),
+                title="Compare Scenarios",
+                size="l",
+                easy_close=True,
+                footer=ui.tags.button(
+                    "Close", class_="btn btn-secondary", **{"data-bs-dismiss": "modal"}
+                ),
+            )
+        )
 
     @reactive.effect
     @reactive.event(input.btn_compare)
     def handle_compare():
-        a = input.compare_a()
-        b = input.compare_b()
-        if not a or not b or a == b:
-            compare_diffs.set([])
-            return
-        diffs = mgr.compare(a, b)
-        compare_diffs.set(diffs)
+        compare_state.set(_resolve_compare_state(input.compare_a(), input.compare_b(), mgr.compare))
 
     @render.ui
     def compare_results():
-        diffs = compare_diffs.get()
-        if not diffs:
-            return ui.div(
-                "Select two scenarios and click Compare.",
-                style=STYLE_EMPTY,
-            )
-        rows = []
-        for d in diffs:
-            rows.append(
-                ui.tags.tr(
-                    ui.tags.td(d.key, style="font-weight: bold;"),
-                    ui.tags.td(str(d.value_a) if d.value_a is not None else "(missing)"),
-                    ui.tags.td(str(d.value_b) if d.value_b is not None else "(missing)"),
-                    style=STYLE_DIFF_ROW,
-                )
-            )
-        return ui.tags.table(
-            ui.tags.thead(
-                ui.tags.tr(
-                    ui.tags.th("Parameter"),
-                    ui.tags.th("Value A"),
-                    ui.tags.th("Value B"),
-                )
-            ),
-            ui.tags.tbody(*rows),
-            class_="table table-sm table-bordered",
-        )
+        tag, payload = compare_state.get()
+        # payload is the adapted rows list ONLY for the "diffs" tag; this guard
+        # also narrows the type for pyright (None elsewhere).
+        if payload is not None:
+            return render_config_diff_table(payload)
+        messages = {
+            "none": "Select two scenarios and click Compare.",
+            "same": "Same scenario selected — no differences.",
+            "identical": "Identical configuration — no differences.",
+            "error": "One or both scenarios could not be loaded — they may have been deleted.",
+        }
+        return ui.div(messages[tag], style=STYLE_EMPTY)
 
     # --- Bulk Export ---
 
