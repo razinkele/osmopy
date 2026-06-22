@@ -9,8 +9,6 @@ differs per surface) and pass only NON-empty diff lists to the renderer.
 
 from __future__ import annotations
 
-from typing import Any, Literal, TypedDict, cast
-
 from shiny import ui
 
 from ui.styles import STYLE_MONO_KEY, STYLE_SCROLL_TABLE
@@ -18,18 +16,9 @@ from ui.styles import STYLE_MONO_KEY, STYLE_SCROLL_TABLE
 _CHANGE_ORDER = {"changed": 0, "added": 1, "removed": 2}
 
 
-class DiffRow(TypedDict):
-    """A row in a config diff table with classification."""
-
-    key: str
-    value_a: str | None
-    value_b: str | None
-    change: Literal["changed", "added", "removed"]
-
-
 def classify_config_diffs(
     diffs: list[dict[str, str | None]],
-) -> list[DiffRow]:
+) -> list[dict[str, str | None]]:
     """Tag each {key, value_a, value_b} row with a change type and sort.
 
     change is "added"   when value_a is None (key only in B),
@@ -39,27 +28,18 @@ def classify_config_diffs(
     Sorted changed-group-first, then added, then removed; alphabetical by key
     within each group. Deterministic and independent of input order. Pure.
     """
-    rows: list[DiffRow] = []
+    rows: list[dict[str, str | None]] = []
     for d in diffs:
         va = d.get("value_a")
         vb = d.get("value_b")
         if va is None:
-            change: Literal["changed", "added", "removed"] = "added"
+            change = "added"
         elif vb is None:
             change = "removed"
         else:
             change = "changed"
-        row: DiffRow = cast(
-            DiffRow,
-            {
-                "key": d["key"],
-                "value_a": va,
-                "value_b": vb,
-                "change": change,
-            },
-        )
-        rows.append(row)
-    rows.sort(key=lambda r: (_CHANGE_ORDER[r["change"]], r["key"]))
+        rows.append({"key": d["key"], "value_a": va, "value_b": vb, "change": change})
+    rows.sort(key=lambda r: (_CHANGE_ORDER[r["change"]], r["key"]))  # type: ignore[index]
     return rows
 
 
@@ -78,7 +58,7 @@ def render_config_diff_table(diffs: list[dict[str, str | None]]):
             ui.tags.td(r["key"], style=STYLE_MONO_KEY),
             _val_cell(r["value_a"]),
             _val_cell(r["value_b"]),
-            ui.tags.td(ui.tags.span(r["change"], class_=f"badge {badge_cls[r['change']]}")),
+            ui.tags.td(ui.tags.span(r["change"], class_=f"badge {badge_cls[r['change']]}")),  # type: ignore[index]
         )
         for r in rows
     ]
