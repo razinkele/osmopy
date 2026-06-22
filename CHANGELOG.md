@@ -4,280 +4,648 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
-## [Unreleased]
+## [1.0.0] - 2026-06-22
 
-### Added
+### Features
 
-- **ui (maps):** a **Map Builder** page to author OSMOSE spatial grid maps — species distribution
-  (movement), land mask, or generic zone — directly on the loaded config's georeferenced grid.
-  Draw polygons (stage, then **Apply**) and click-to-paint individual cells; brush / eraser / mask
-  tools with a numeric paint value; load an existing map back into the editor. Saving writes the
-  engine's `;`-separated grid CSV (with the south-row-0 ↔ north-row-0 orientation flip handled, and
-  the round-trip verified through the engine's own loader) and does type-aware config wiring —
-  registering the real `movement.{species,file,steps,initialage,lastage,initialyear,lastyear}.map{N}`
-  keys at the next free index for distribution maps, or `grid.mask.file` for a mask. New pure
-  `osmose/maps/builder.py` (grid geometry, numpy ray-cast rasterization, paint/erase/mask ops, CSV
-  (de)serialization, validation, config wiring — all browser-free and unit-tested) + a thin
-  `ui/pages/map_builder.py` Shiny page over `shiny_deckgl`. `ui/pages/grid_helpers.py` now derives its
-  grid-cell polygons from the same `GridSpec` (single source of truth). Distribution maps painted on
-  base-mask land warn (engine treats them as absent) rather than block.
-- **diagnostics (community):** a community ecosystem-state diagnostics suite. The Results page gains a
-  **Sheldon (mass) spectrum** chart — the canonical normalized biomass size spectrum over equal log₂
-  (octave) body-mass bins, converting OSMOSE's by-length classes to body mass per species via the
-  config length–weight law `W = a·L^b` — an **ABC (W-statistic)** chart (Warwick Abundance-Biomass
-  Comparison: cumulative biomass-vs-abundance dominance curves; W>0 undisturbed, W<0 disturbed), and a
-  **Community Metrics** panel summarising the NBSS slope, **size diversity** (Shannon evenness over
-  per-octave biomass), community totals + mean body mass, **Mean Trophic Level / Marine Trophic Index**
-  (biomass-weighted standing-stock; TL ≥ 3.25), and the W-statistic. New pure `osmose/community_metrics.py`
-  (each indicator degrades to a note rather than failing when its output is absent) reusing the
-  `osmose/size_spectrum.py` readers and `OsmoseResults`; plots in `osmose/plotting.py`. Also extends
-  `OsmoseResults` to find Java-engine outputs written into `Trophic/`/`Indicators/` subdirectories.
-- **ui (species):** a **"Bootstrap from FishBase"** panel on the Species setup page that populates
-  a focal species' life-history traits — von Bertalanffy growth (Linf, K, t0), max length,
-  length–weight `a`/`b`, maturity size, and lifespan — from FishBase (fish) / SeaLifeBase (non-fish).
-  Enter a scientific or common name → Fetch → pick among candidates if ambiguous → review each
-  trait (current value vs. the FishBase median, study count, and min–max range) → apply the ones you
-  want. New pure `osmose/fishbase.py` reads the rfishbase-5 parquet snapshots from Source Cooperative
-  (cached on disk), aggregates each trait to a median across studies, and falls back FishBase→SeaLifeBase;
-  values are starting points to calibrate, not authoritative. Data: FishBase/SeaLifeBase via rOpenSci /
-  Source Cooperative (CC-BY-NC). Adds `pyarrow` as a runtime dependency (parquet engine).
-- **calibration (perf):** an opt-in ProcessPoolExecutor backend for NSGA-II
-  (`parallel_backend="process"`) that evaluates candidates in separate processes (GIL-free),
-  recovering more than the prior ~3.02× thread-bound speedup. Objectives are now picklable functors
-  (`BiomassRMSEObjective`/`DietDistanceObjective`); the dashboard selects the process backend
-  automatically when objectives are picklable (banded loss falls back to threads). Worker count via
-  `OSMOSE_NSGA2_WORKERS`; `scripts/benchmark_calibration.py --backend {thread,process}` compares them.
-- **ui (feedback):** a header "Feedback" modal for bug reports / suggestions that appends to a JSONL
-  store (`data/feedback/feedback.jsonl`), plus a token-gated read-only `GET /osmose/api/feedback`
-  (disabled unless `OSMOSE_FEEDBACK_TOKEN` is set) for a maintainer to retrieve reports. New pure
-  `osmose/feedback.py`; submission is in-session (no public write endpoint).
-- **ui (docs):** the project docs are now surfaced in the app — the **About** modal renders
-  `README.md` and `CHANGELOG.md` in tabs (replacing a stale hardcoded changelog), and a dismissable
-  startup "What's new" modal shows the latest release notes once per version (client-side, keyed on
-  `__version__` via `localStorage`). New pure `osmose/docs_content.py` loader/parser.
+- **scenarios:** compare in a modal with shared diff table + edge states (95fef3b)
+- **config-diff:** shared classify + render component (88138d7)
+- **run:** live card collapse = stream gate; heatmap fallback; 0.5s throttle; drop switch/auto-enable (d4027c6)
+- **run:** compact busy indicator (corner pill, not full overlay) (ab69f7f)
+- **run:** default the UI engine to Python (Java still selectable) (a36f170)
+- **run:** choose_live_layer (dots->heatmap fallback) + dot_cap 5000->2000 (acbe0e2)
+- **run:** auto-enable live movement for spatial (regular-grid) configs (d363ee1)
+- **run:** wire py_threads -> numba.set_num_threads (0=auto), drop dead py_verbosity (54ac7f6)
+- **run:** Python progress bar + in-place console line (reuses step_observer) (c7b4bb6)
+- **run:** pure run-observer + spatial predicate + progress label (af9617d)
+- **forcing:** convert-only CLI (bring-your-own downloaded file) (a2f1a00)
+- **forcing:** NetCDF writers + package public API (fee1ec7)
+- **forcing:** phy_to_physics temperature/salinity conversion (5787f18)
+- **forcing:** bgc_to_ltl 6-group conversion (Mode A/B), grid-general (00c1feb)
+- **forcing:** grid-parameterized regrid/resample/mask helpers (a8605c9)
+- **run:** capability panel render from describe_engine (65ed363)
+- **run:** active-engine indicator slot (ab6e08d)
+- **capabilities:** describe_engine for the Java engine + total fallback (26623d5)
+- **capabilities:** describe_engine for the Python engine (c1e0e36)
+- **capabilities:** EngineCapability dataclass + truthiness helper (3e3814a)
+- **ui:** Scenario Wizard — guided New-Scenario flow on the Scenarios page (#82) (a8f3b80)
+- **maps:** Map Builder page — author spatial grid maps on the config grid (#81) (2fd868d)
+- **config:** canonicalize at validators + allowlist 4.4.0 keys (717934d)
+- **engine:** canonicalize config at from_dict + unified-ingestion/new-key reads (1c93a4a)
+- **config:** to_target_keys inverse (leaf-scoped, merge non-invertible) + drift guard (882f70f)
+- **config:** canonicalize_config wrapper + malformed-version hardening (bc9f1cf)
+- **config:** add 4.4.0 migration chain entry + skip-if-target-exists applier (e98b064)
+- **config:** lock OSMOSE 4.4.0 rename set (ported from Releases.java $15) (cefad37)
+- **engine:** enable meanTL in Baltic config + e2e community-output integration test (cb8d6b8)
+- **engine:** write community biomass/abundanceDistribBySize CSVs (1839706)
+- **engine:** write 1D meanTL CSV from captured per-species mean TL (915fd89)
+- **engine:** capture biomass-weighted per-species meanTL into StepOutput (337179b)
+- **engine:** add output.meanTL.enabled config flag (output_meantl) (77914a3)
+- **results:** wire Sheldon spectrum, ABC chart + community-metrics panel into Diagnostics (ad43ab3)
+- **plotting:** Sheldon NBSS + ABC dominance-curve charts (00ae25e)
+- **community-metrics:** community_report orchestrator + markdown formatter (f11c4ba)
+- **community-metrics:** Warwick ABC W-statistic + dominance curves (ed3f4e1)
+- **community-metrics:** Mean Trophic Level + Marine Trophic Index (1cff03b)
+- **community-metrics:** Sheldon NBSS mass spectrum + size diversity + totals (37102a4)
+- **community-metrics:** shared helpers (window-mean, species cols, L-W coeffs) (966b884)
+- **fishbase-ui:** surface inline bootstrap panel on the species setup page (683fe08)
+- **fishbase-ui:** review/apply helpers + inline bootstrap panel server (4568075)
+- **fishbase:** TRAIT_MAP + fetch_traits (median/range, Speccode quirk, a/b check) (6420e7f)
+- **fishbase:** resolve_species (scientific/common, FB→SLB fallback) (6c0c03e)
+- **fishbase:** client skeleton — _load_table with disk cache + typed errors (d1c26a9)
+- **run:** make the three Run-page cards body-collapsible (22abf2d)
+- **calibration:** select process backend at NSGA-II sites + benchmark switch (7a87c86)
+- **calibration:** ProcessPoolExecutor backend for NSGA-II (forkserver, broken-pool recovery) (681bd7f)
+- **calibration:** picklable BiomassRMSE/DietDistance objective functors (6cde163)
+- **feedback:** header modal + token-gated read API route (insert before catch-all) (602cc3b)
+- **ui:** feedback modal + submit handler (appends, no HTTP POST) (6d435ff)
+- **feedback:** osmose/feedback store + token check (pure core) (ace5320)
+- **ui:** wire startup changelog modal (shiny:connected, once per version) (1fb2a3b)
+- **ui:** About modal renders README/Changelog + startup changelog modal (f802f42)
+- **docs:** osmose/docs_content loader + changelog parser (9370244)
+- **ui:** Parameter Sensitivity Explorer page + app registration (9d4690b)
+- **calibration:** persist live sensitivity result via sobol_io (148c874)
+- **ui:** make_sobol_tornado horizontal Sobol chart builder (22898ee)
+- **calibration:** sobol_io artifact store + pure view helpers (b43baa2)
+- **scenario-diff:** render config-diff panel + wire accordion (4685459)
+- **scenario-diff:** add _classify_config_diffs classifier (50ff30c)
+- **ui:** live movement view on the Run page (map + queue + poll + render) (46be06a)
+- **engine:** optional step_observer hook in the Python simulate loop (6aeadb8)
+- **live-movement:** add deck.gl heatmap + dots layer builders (b088c0e)
+- **live-movement:** add MovementSnapshot + build_snapshot + queue observer (aa171a2)
+- **ui:** embed Scenario Diff tab + sub-server in Results page (26ab806)
+- **ui:** add scenario_diff tab module (nav panel + server) (782e1de)
+- add biomass_long normalizer + make_biomass_overlay chart (fb4c536)
+- **ui:** add make_diff_map + shared NaN→None serializer (a6b685a)
+- **spatial:** add spatial_diff_2d + grid_latlon for scenario diff (78bb307)
+- **calibration:** Pareto solution picker + config export (0ade369)
+- **ui:** per-cell time-series panel on Spatial Results (14f0093)
+- **spatial:** cell_timeseries backend for per-cell NetCDF extraction (14491a3)
+- **ui:** live config validation panel on the Setup page (2a331b6)
+- **config:** add summarize_config_validation helper (single source of truth) (dc198d8)
+- **ui:** Results Trophic Network sub-tab (pyvis iframe, cached layout, index slider) (3c843ad)
+- **trophic:** species_layout fixed positions + make_trophic_network_html pyvis builder (82e338d)
+- **trophic:** diet_network_at per-timestep species aggregation (prey-sum, dead-stage-excluded predator mean) (e13ffac)
+- **trophic:** pyvis dep + dietMatrix wildcard reader + label/time/universe helpers (7a3adc6)
+- **config:** check_config.py CLI for parse diagnostics (2ed40a4)
+- **config:** recursive-ref diagnostics + shipped-config regression (2b59546)
+- **config:** line-numbered unparseable/empty_key/duplicate_key diagnostics (7261f73)
+- **config:** ConfigDiagnostic dataclass + format/has-errors helpers (eaf0f7f)
+- **size-spectrum:** compute_size_spectrum.py CLI (945978a)
+- **plotting:** make_size_indicator_timeseries trend chart (873269f)
+- **size-spectrum:** per-timestep indicator series + markdown report (70ec335)
+- **size-spectrum:** compute_size_spectrum + LFI/slope/mean-size indicators (07ed094)
+- **size-spectrum:** community by-size reader + reshape/window helpers (09d6dd5)
+- **history:** RUN_HISTORY_DIR constant + default_run_history() helper (ba9cc28)
+- **ui:** Compare Runs output-delta chart + table (run_delta wired) (908fc2a)
+- **ui:** _delta_for_selected helper for Compare Runs output delta (320bd4b)
+- **delta:** compare_runs CLI (5c17d7d)
+- **delta:** diverging-bar run-delta chart (0e757e0)
+- **delta:** markdown delta report (dac5f7e)
+- **delta:** SpeciesDelta + run_delta (union, abs/pct, from-zero, ranked) (2a7927f)
+- **delta:** per-species windowed-mean normalizer (wide + long output shapes) (bc160fe)
+- **fisheries:** fix mortalityRate reader + compute_mortality_balance CLI (b55b15e)
+- **fisheries:** F/M bar chart (d046c55)
+- **fisheries:** F/M markdown report (7d32137)
+- **fisheries:** MortalityBalance + compute_mortality_balance (F/M) (d00dedf)
+- **fisheries:** annual_rate aggregation (per-step → annual, windowed) (b48beae)
+- **fisheries:** mortalityRate CSV reader (2-row header + trailing comma) (23bd3b7)
+- **fr:** shepherd-fr eval mode + FR-on/off process diagnostic (4c1f111)
+- **fr:** phase-14 calibration scaffolding + reconstructed phase-13 base (a5846c1)
+- **fr:** functional-response branch in numba kernel + njit arg threading (92efe26)
+- **fr:** functional-response branch in Python predation kernel + kernel-vs-oracle value test (e909dee)
+- **fr:** EngineConfig fr_shape/fr_halfsat 4-layer wiring + fixture fix (ddf84a9)
+- **fr:** parse functional-response keys on background-predator path (8eb65f3)
+- **fr:** parse functional-response keys with strict validation (focal path) (861610e)
+- **fr:** add predator functional-response schema fields (d9465df)
+- **tutorial:** pivot substrate to data/baltic/ subset (5 synthetic-3sp T4 attempts BLOCKED) (6a193ea)
+- **tutorial:** stub _tutorial_config helper module (f69b435)
+- **calibration-ui:** N-other-live-runs disclosure badge with [switch] stub (6523583)
+- **calibration-ui:** current best parameters block with bound-distance hints (cb987ee)
+- **calibration-ui:** convergence chart shows best-ever reference line from history (44de081)
+- **calibration-ui:** per-species ICES proxy table with magnitude factor (3d5432b)
+- **calibration-ui:** run header + liveness_state + pure-helper tests (e4dc2f7)
+- **calibration-ui:** module-level RESULTS_DIR + scan helpers + LiveSnapshot reactive (3affb6e)
+- **calibration:** NSGA-II callback writes checkpoint + save_run; chart-update regression-pinned (98d5596)
+- **calibration:** surrogate-DE writes CalibrationCheckpoint per real-eval round (fe97352)
+- **calibration:** CMA-ES writes CalibrationCheckpoint each generation (e518c3c)
+- **calibration:** DE wires save_run on completion with tempfile 0o600 fallback (167e6f3)
+- **calibration:** DE writes CalibrationCheckpoint with main-thread residual re-eval (4d0603c)
+- **calibration:** make_banded_objective returns (callable, residuals_accessor) (d8f6631)
+- **calibration:** _ObjectiveWrapper captures per-species residuals + sim_biomass (51b5723)
+- **calibration:** LiveSnapshot for atomic per-tick scan results (ab9ed59)
+- **calibration:** is_live + probe_writable + liveness_state classifier with boundary tests (1cd64b5)
+- **calibration:** read_checkpoint with 4-kind discriminator, size guard, invariant-error catch (07c004b)
+- **calibration:** write_checkpoint with atomic tmp+rename and numpy coercion (636623e)
+- **calibration:** CheckpointReadResult discriminated union with two-sided invariants (e70ca55)
+- **calibration:** CalibrationCheckpoint dataclass with 14 __post_init__ invariants (3cabd6c)
+- **calibration:** scaffold checkpoint module with default_results_dir (b950754)
+- **economics:** DSVM bioeconomic demo + spatial-output bugfix (#47) (cd590c1)
+- **validation:** ICES output validation harness (#46) (969351f)
 
-### Changed
+### Bug Fixes
 
-- **config (OSMOSE 4.4.0 keys):** OSMOPY now uses the OSMOSE 4.4.0 config-key names internally
-  (e.g. `module.bioenergetics.enabled`, `simulation.restart.*`, `species.maturity.*`,
-  `output.fisheries.*`), reading 4.3.x configs transparently. Engine-bound writes — the run config
-  **and** the **Export config** download — are emitted in the bundled engine's 4.3.x format, so they
-  still run on the shipped jar. **Saved scenarios** (JSON) are stored with 4.4.0 keys; a scenario
-  saved by this version may need manual key edits to load in an older OSMOPY.
-- **bioenergetics (ingestion):** following OSMOSE 4.4.0, the bioenergetic and base
-  maximum-ingestion-rate parameters are unified into a single `predation.ingestion.rate.max.spN`.
-  A bioenergetics / Ev-OSMOSE config that previously set both now uses the base value for both
-  predation and the energy budget, which changes bioenergetic results relative to 4.3.x. Re-check
-  calibrated `baltic_ev` / Ev-OSMOSE setups.
-- **deps:** promoted shiny to the **1.6.x** line (`shiny>=1.6.3,<1.7`), lifting the long-standing
-  `<1.6` cap now that the UI is verified compatible (full e2e green under 1.6.3). Bumped
-  `shinyswatch>=0.11` (bundled Bootstrap 5.3.8 matches shiny 1.6.3 → precompiled theme, no libsass)
-  and `shinywidgets>=0.7`; declared `cma>=4.0` (was transitive via pymoo; <=3.3.0 breaks under
-  numpy 2); pinned `shiny_deckgl@v1.9.2` to match production's `layer_legend_widget` path.
+- **config-diff:** use plain-dict impl per spec, drop unused typing imports (97b757e)
+- **run:** session.on_ended cancels the run + _session_alive guards (no DestroyedReactiveError cascade) (b00f674)
+- **forcing:** narrow phyc/zooc to non-None for pyright in Mode A (7d3abe2)
+- complete the incomplete remediation edges (PR-C) (#93) (c0728e7)
+- **scenarios:** harden scenario-store deserialization + validation (PR-B) (#92) (701d026)
+- **maps:** Map Builder correctness (polygon mask-edit, lonlat edge, blank shape) (#91) (f3846ac)
+- **packaging:** working Docker image + runtime CI gate + demo data resolution (#89) (dc65979)
+- **config:** config/schema hardening (validate_value coercion + 4.4.0 migration gates) (#88) (286d375)
+- **calibration:** one failure policy — a bad candidate scores inf on all backends (#87) (643aac9)
+- **engine:** warn loudly on parsed-but-unapplied mortality features (#86) (f5b0fcf)
+- PR-4 IO robustness (cancelled-run status + empty-CSV reader) (#85) (922dd59)
+- **scenarios:** backup path appends '.bak' instead of replacing the suffix (#84) (ac5bdea)
+- **plotting:** apply theme template + title dict to new charts (house style) (19f9f44)
+- **community-metrics:** cast pd.to_numeric for pyright (08dd7df)
+- **trophic:** parse the Python-engine diet matrix (<pred>_<prey>) — fixes KeyError 'Prey' (888a482)
+- **results:** isolate _get_result_data memo cache to stop diet_chart recalc desync (578879d)
+- **fishbase:** ruff format + rename e2e to test_e2e_fishbase.py (CI collect-ignore glob) (d184810)
+- **fishbase:** pyright-clean reductions (numpy float array + casts for pandas stubs) (cb0071e)
+- **fishbase:** defensive column guards in _match_in_db (review finding) (6747143)
+- **deploy:** poll the HTTP health check instead of a single early probe (9ed8a7f)
+- **deploy:** run prod from a git clone + guard Shiny OTel source extraction (1dcac33)
+- **run:** block the Java engine for background-species configs (Baltic is Python-only) (9f45cff)
+- **ui:** render diet heatmap from the engine's <predator>_<prey> matrix (9d1359f)
+- **calibration:** OSMOSE_RESULTS_DIR override + StateDirectory so prod checkpoints are writable (8b48545)
+- **types:** suppress reportPrivateImportUsage for layer_legend_widget under shiny_deckgl v1.9.2 (6182b4b)
+- **ci:** declare httpx in [dev] for the feedback-endpoint TestClient tests (003336c)
+- **tests:** skip copernicus mcp-env tests when fastmcp/copernicusmarine absent (6fa0769)
+- **ui:** fire-and-forget Python run so the live view streams mid-run (476071b)
+- **scenario-diff:** resolve pyright errors, show real time in map titles, add changelog (eb7dcc0)
+- **ui:** render species-dimmed spatial output in Map/Flat views (81d6609)
+- **types:** cast pandas reductions to silence real groupby unions; drop mis-diagnosed pyright pin (93e2413)
+- **ci:** pin shiny<1.6 and pyright<1.1.410 to stop unpinned CI drift (6a56528)
+- **types:** resolve pyright errors in trophic_network/size_spectrum/fisheries (2ab217a)
+- **ui:** keep validation panel full-width above the split layout (aebfb6b)
+- **trophic:** don't double-apply threshold (sub-5% slider was silently clamped) (5197f15)
+- **ui:** populate Compare Runs selector from run history on Results-tab entry (7215809)
+- **ui:** drop vestigial output_dir guards from Compare Runs readers (2958eee)
+- **ui:** Run tab + Compare Runs use canonical run-history dir (default_run_history) (b0b96cc)
+- **fisheries:** F/M on exploited life stage(s), excluding unfished-stage natural mortality (fec2172)
+- **fisheries:** sum F and M across life stages (fishing is on Pre-recruits, not Recruits) (ccbcebb)
+- **fr:** diagnostic preserves per-predator calibrated K + seeds=1 warning (b4fa377)
+- **fr:** phase-14 raises (not warns) when frozen phase-13 base is missing (fcff417)
+- scope bit-exact parity to Python 3.12 and omit JIT modules from coverage (2e9fcc9)
+- **pyright:** silence 57 errors only visible against the CI-mirror venv (eda4273)
+- resolve pyright errors (28 -> 0) — incl. one real runtime bug (2bc6305)
+- **docker:** install git so pip can resolve shiny_deckgl git+https dep (d437597)
+- **deps:** correct shiny_deckgl git URL and pin tag that exists (599dd1d)
+- **ui:** Results tab now displays after a Run (df48294)
+- **tutorial:** preserve Beat 6 edits across re-runs (conditional copytree) + enforce strict-key validation in regression test (75c2a32)
+- **calibration:** reject duplicate param_keys + banded_loss-without-targets (8dbe54e)
 
-### Fixed
+### Performance
 
-- **calibration (deploy):** `default_results_dir()` now honors an `OSMOSE_RESULTS_DIR` env
-  override, so a deployment whose package tree is read-only to the service user can point
-  calibration checkpoints at a writable directory. The systemd unit (`deploy.sh`) sets
-  `StateDirectory=osmose/calibration_results` + `OSMOSE_RESULTS_DIR=/var/lib/osmose/calibration_results`,
-  fixing the `RESULTS_DIR probe failed: [Errno 13] Permission denied` startup error and the
-  resulting checkpoint-write failures in production (app runs as `shiny` from a source tree
-  under another user's home).
+- **engine:** replace np.add.at with np.bincount in _collect_spatial_outputs (P2) (#41) (c59ae85)
+- **engine:** hoist predation scratch buffers per-cell (K1/P1) (#40) (255f060)
 
-## [0.13.0] - 2026-06-14
+### CI/CD
 
-### Added
+- add numba-disabled leg exercising pure-Python engine fallbacks (98d3e53)
+- **visual:** target the visual test file so collection skips [dev]-only-dep modules (c1b1c16)
+- **visual:** drop ini addopts in workflow (xdist's --dist not in [viztest]) (b2d0721)
+- **visual:** runbook + opt-in digest-pinned gate with per-page baseline updates (a342100)
+- **actions:** bump checkout/setup-python/upload-artifact to Node 24 majors (4d22db9)
+- **type-check:** type-check the 3.13 path via pyright --pythonversion matrix (032a87e)
+- install numba in dev deps so tests don't run the slow fallback path (f854978)
 
-- **ui (sensitivity):** a top-level "Sensitivity" page that browses persisted Sobol sensitivity
-  results — a ranked S1/ST tornado (with 95% CIs and an influence-threshold highlight), a sortable
-  table, and CSV / influential-key exports. Backed by a new `osmose.calibration.sobol_io` artifact
-  store (`save_sobol_result`/`load_sobol_result`/`list_sobol_results` + pure `rank_rows`/
-  `influential_keys`/`rows_to_csv`); the existing live calibration sensitivity run now persists its
-  result so the explorer can discover it. The Sobol analyzer itself is unchanged.
-- **ui (run):** a live-during-run movement view on the Run page (Python engine) streams living
-  schools onto a deck.gl map as the simulation runs — as a biomass-weighted heatmap or individual
-  dots, toggled, with a per-species filter. Backed by an opt-in `step_observer` hook in the Python
-  `simulate` loop (parity-safe, off by default), a bounded snapshot queue, and a fire-and-forget
-  run dispatch so frames flush mid-run. New `osmose/live_movement.py` and
-  `ui/pages/live_movement_render.py`. (Java engine runs show a "Python engine only" note.)
-- **ui (scenario diff):** a new Results "Scenario Diff" tab compares two runs (baseline A vs
-  variant B) — overlaid per-species biomass curves (A solid, B dashed) plus side-by-side spatial
-  maps and a B−A difference map. Each map title shows that run's real time value (so a single
-  slider position reads correctly even when A and B have different cadence/start), and the diff
-  map aligns the two runs by their nearest time index. New `osmose.analysis.biomass_long` and
-  `osmose.plotting.make_biomass_overlay` helpers back the overlay.
-- **ui (scenario diff):** a "Config differences" panel on the Scenario Diff tab lists the config
-  keys that differ between the two compared runs (changed / added / removed, with a badge per
-  row), so the tab reads top-to-bottom as *what you changed → what it did*. Reuses
-  `RunHistory.compare_runs`; collapsible (open by default) and shown above the biomass overlay.
-- **ui (calibration):** a Pareto solution picker on the calibration Results → Best Parameters tab.
-  Pick a non-dominated solution from a multi-objective (NSGA-II) front (live run or a loaded
-  historical run), inspect its full parameter vector and objective values, and download those
-  parameters as an OSMOSE `key ; value` override file. New `osmose.calibration.pareto` helpers
-  (`nondominated_indices`, `select_solution`, `solution_overrides_csv`). NSGA-II runs now persist
-  the full front (`pareto_X`/`pareto_F`) so the History tab can reload it; the history loader is
-  hardened to handle single-objective runs (no front) and both parameter record shapes without error.
-- **ui (spatial results):** a "Cell Series" tab on the Spatial Results page shows a single grid
-  cell's value over time. Pick a cell with row/col inputs (or click one on the Map View) and a
-  species selector (sum / mean / per-species); the panel reads the trajectory from the loaded
-  spatial NetCDF and plots it, with empty states for land cells and runs without spatial output.
-  New `osmose.spatial_series` module (`cell_timeseries` / `cell_timeseries_from_dataset`) reads one
-  cell without materialising the full `(time, species, lat, lon)` cube.
-- **docs (usage guide):** a task-oriented [`docs/usage-guide.md`](docs/usage-guide.md) with
-  copy-pasteable, executed-and-verified recipes — run a simulation (Python engine / CLI / Java),
-  read outputs with `OsmoseResults`, compare two runs (`run_delta`), calibrate, run post-run
-  diagnostics, and choose an engine (with the RNG/parity caveat) — plus a [`docs/README.md`](docs/README.md)
-  index of the `docs/` tree. Every code snippet runs against the bundled `data/minimal/` config.
-- **ui (config validation):** the Setup page now shows a live validation summary panel
-  (type/range/enum errors, missing species names, missing file references) as you edit,
-  mirroring the Run gate via a new `summarize_config_validation` helper that the Run gate
-  and the `osmose validate` CLI now also use. The panel caps long issue lists and announces
-  updates via `aria-live`. Informational only — the Run gate keeps its blocking authority.
-- **config (parser diagnostics):** `OsmoseConfigReader` now collects structured, line-located
-  parse issues in `reader.diagnostics` — unparseable lines, empty keys (e.g. a `=value` that lost
-  its key), within-file duplicate keys, and recursive-reference problems (circular / missing
-  sub-config / path-escape) — plus `format_diagnostics()` and a `scripts/check_config.py` CLI.
-  Additive only: the parsed config dict is unchanged.
-- **analysis (size spectrum):** community size-spectrum diagnostics from `*DistribBySize`
-  output — `osmose.size_spectrum.compute_size_spectrum` (spectrum curve, log-log slope with a
-  `min_size_cm` cutoff, Large-Fish Indicator, mean size, peak bin) + `size_spectrum_timeseries`,
-  a `scripts/compute_size_spectrum.py` CLI, and a `make_size_indicator_timeseries` trend chart.
-  A length–biomass spectrum for trend/comparison (not the Sheldon exponent). Validated on the
-  EEC config; works on any run that emits by-size output.
-- **ui (trophic network):** a Results → Trophic Network sub-tab renders the per-timestep diet
-  matrix as an interactive pyvis node-link graph (predator→prey, cannibalism self-loops) with a
-  fixed layout and a time-slider, so the diet network can be stepped through over time. Shows diet
-  composition (proportions), predator size-stages averaged unweighted — not consumption-weighted
-  flow. New `osmose.trophic_network` module + a `pyvis` dependency.
-- **tests (property-based):** Hypothesis property tests for four pure-Python targets — config
-  writer↔reader round-trip (every key/value survives + no spurious keys; separator-invariance),
-  output-preamble detection (planted-header, no-raise, cache-invalidation), diet_network_at
-  (non-negativity, threshold monotonicity, prey-sum exactness, dead-stage exclusion), and the
-  size-spectrum helpers (mean-size convexity, LFI threshold boundary, bin-width order-invariance,
-  time-window). New `tests/strategies.py` + a deterministic Hypothesis `ci` profile.
+### Chores
 
-### Changed
+- gitignore e2e screenshot + calibration-history artifacts (f623fc6)
+- **run:** ruff format fixups for run-feedback UI changes (9ef440a)
+- **config:** PR1 final gate fixes (001c530)
+- **deploy:** silence benign pip noise (root-user warning + leftover ~dist dirs) (c608a06)
+- **live-movement:** widen dot-jitter period, drop dead test branch, fix stale comment (dc97ad0)
 
-- **ci (python matrix):** the `type-check` job now runs pyright across the supported Python
-  range (3.12 and 3.13), matching the `test` job. Because `pyrightconfig.json` pins
-  `pythonVersion` to 3.12, each leg passes `--pythonversion ${{ matrix.python-version }}` so it
-  actually analyzes its target version (stdlib stubs and `sys.version_info` narrowing) — the test
-  job only exercises 3.13 at runtime, so this is what type-checks the 3.13 path. `fail-fast` is
-  off so both versions' errors surface together. The `lint` job stays single-version by design
-  (ruff is governed by `target-version`, not the runtime), and `docker` stays single-version
-  (the image pins its own runtime).
-- **ci (actions):** bumped GitHub Actions to their first Node 24 majors — `actions/checkout@v5`,
-  `actions/setup-python@v6`, `actions/upload-artifact@v6` — clearing the Node 20 deprecation
-  warning ahead of GitHub forcing Node 24 on the runners.
+### Documentation
 
-### Fixed
+- amend scenario-diff plan per 3-angle in-loop review (19b48fb)
+- implementation plan for scenario-diff polish (19d8e1e)
+- round-2 clarity fixes to scenario-diff spec (90e95d0)
+- amend scenario-diff spec per 3-angle in-loop review (ce4768d)
+- design spec for scenario-diff polish (shared component + modal) (4ba0f51)
+- amend hardening plan per in-loop plan review (blocker + 2 major + minor) (380228d)
+- implementation plan for deep-review latent-item hardening (dc15a7d)
+- amend hardening spec per in-loop review (2 major + minors) (115b562)
+- design spec for deep-review latent-item hardening (a1edda0)
+- Sphinx + GitHub Pages API reference site (#94) (1f3a37e)
+- harden Run-page-rework plan per workflow review (dot_cap override, layer key, stale tests, CancelledError, e2e race) (910e1ab)
+- implementation plan for Run-page rework (547d112)
+- spec for Run-page rework (python default, compact UI, live-stream crash fix) (be4c323)
+- **jar-swap:** retarget resume plan to v4.4.1 (v4.4.0 resource-forcing bug fixed upstream) (d1aee23)
+- run-feedback plan 2nd-pass review fixes (drain placement, e2e budget, comments, docstring) (73fa6c3)
+- harden run-feedback plan per multi-angle workflow review (025b296)
+- implementation plan for Python run-progress feedback (f50cf91)
+- spec round-3 fixes (year off-by-one via 1-based done + pure label helper, py_threads min=0) (7bb1816)
+- spec round-2 fix (e2e_baltic.py:57 also clicks the live toggle) (809da1d)
+- spec round-1 review fixes (progress lifecycle, ndtperyear key, e2e toggle, threads idempotency) (5380229)
+- spec for Python run-progress feedback (788c978)
+- **forcing:** add osmose/forcing to CLAUDE.md architecture tree (ef6438b)
+- harden CMEMS-forcing plan per multi-angle workflow review (984651f)
+- plan round-1 review fixes (parity mask, package init, lint scope) (7a40c22)
+- implementation plan for CMEMS forcing conversion core (sub-project A) (30b1d4f)
+- spec for CMEMS forcing conversion core (sub-project A) (c3c7654)
+- plan round-3 fix (update stale e2e comment, don't delete) (de825df)
+- plan round-2 polish (stale-ref grep, files header, e2e id note) (416d766)
+- plan round-1 review fixes (panel_conditional, e2e, citations) (156dcce)
+- implementation plan for Run-page engine-capability transparency (bb15f0c)
+- spec for Run-page engine-capability transparency (f227a49)
+- deep-review remediation plan (2026-06-20) (#83) (271e2c7)
+- OSMOSE 4.4.0 jar-swap resume plan (cross-engine + ICES validation) (#80) (64ba5ec)
+- **plan:** PR1 2nd in-loop review fixes (CI/pitfalls/DRY angles) (eab16dd)
+- **plan:** PR1 in-loop review fixes (3 angles, all verified) (ed86058)
+- **plan:** PR1 (core config migration to 4.4.0) — 8 TDD tasks (9be003e)
+- **spec:** config-migration v3 — ground in Releases.java, fix merge direction (1f28b6d)
+- **spec:** config-key migration v2 after in-loop review (2 rounds) (a52bdfa)
+- **spec:** config-key migration to OSMOSE 4.4.0 (canonical=new, read-aliases) (57a465d)
+- in-loop review fixes for community-outputs spec+plan (8be75f7)
+- **plan:** Python-engine community outputs (DistribBySize + meanTL) (c47bb31)
+- **spec:** Python-engine community outputs (DistribBySize + meanTL) (396ac22)
+- **changelog:** community size-spectrum extension (Sheldon NBSS + MTL/MTI/ABC) (b172c43)
+- in-loop review fixes for community size-spectrum spec+plan (e3a4cae)
+- **plan:** community size-spectrum extension implementation plan (e32bd24)
+- **spec:** community size-spectrum extension (Sheldon NBSS + community metrics) (0644eb0)
+- **plan:** full Baltic e2e test implementation plan (inline, 3 phases) (98e5fd3)
+- **spec:** full Baltic e2e (run + live movement + Results outputs) design (8a3432a)
+- **changelog:** add FishBase/SeaLifeBase trait bootstrap to Unreleased (33e00a1)
+- **plan:** round-3 review fixes — SLB per-table degrade, cache evict, sentinel filter, multi-candidate picker, inline panel (drop render-in-modal) (2c700bd)
+- **plan:** round-2 nit — correct Task 7 e2e header (modal-open smoke, no network) (4eccb08)
+- **plan:** round-1 review fixes — pyarrow dep, field.description, Shiny-safe ids, modal reset, busy indicator (b4f6858)
+- **plan:** FishBase trait bootstrap implementation plan (8 tasks, TDD) (810db98)
+- **spec:** correct FishBase access to Source Cooperative parquet snapshots (4081c8a)
+- **spec:** FishBase/SeaLifeBase species-trait bootstrap design (c53dc2f)
+- fix visual plan/spec per live-run findings (#main_nav clip, gate-tolerance self-consistency) (369b936)
+- revise visual-regression spec+plan per efficacy/maintenance/cost/operability review (b8a9553)
+- revise visual-regression plan per in-loop review (upload-artifact@v6, branches/permissions, max_ratio doc) (c5a1241)
+- implementation plan for UI visual regression tests (5cc4291)
+- revise visual-regression spec per 3-round in-loop review (eb7e125)
+- design spec for UI visual regression tests (1c8d73d)
+- record shiny 1.6.x as the supported runtime (DEPLOY.md, CHANGELOG) (1e91671)
+- implementation plan for the shiny 1.6.3 port (6996297)
+- round-2 spec fixes (Bootstrap-match rationale, deploy.sh version-aware, cma np.Inf, floor-vs-lock) (2d71206)
+- revise shiny-1.6 spec per round-1 review (6de1284)
+- design spec for porting to shiny 1.6.3 everywhere (9d79645)
+- DEPLOY.md — restart osmose-shiny.service after every pull (96b43d1)
+- round-2 plan review of NSGA-II (blocker + major, verified by running) (729a60e)
+- address plan review of NSGA-II speedup (blocker + majors) (ec21408)
+- implementation plan for NSGA-II ProcessPoolExecutor speedup (b056407)
+- round-4 review of NSGA-II spec (1 major guardrail + nit) (8df47d0)
+- round-3 review of NSGA-II spec (1 major + nit) (9579e41)
+- round-2 review of NSGA-II spec (blocker + 2 majors) (7e55f5d)
+- address round-1 review of NSGA-II process-pool spec (3 majors) (2e13f64)
+- spec for NSGA-II ProcessPoolExecutor speedup (8db6640)
+- round-2 plan-review fix — read_feedback docstring <=100 cols (b78b7b1)
+- plan-review nits for feedback system (all 3 angles converged) (81b169f)
+- implementation plan for feedback system (sub-project 2) (436f9c3)
+- address round-1 review of feedback-system spec (blocker + 2 majors) (b0c3375)
+- spec for feedback system (sub-project 2) (826ac0e)
+- freshen README + cut CHANGELOG v0.13.0; bump __version__ (86adb6b)
+- plan-review nits for docs-in-app (all 3 angles converged) (e5e8969)
+- implementation plan for docs-in-app (sub-project 1) (4acac33)
+- round-2 review fix for docs-in-app spec (converged) (5db432b)
+- address round-1 review of docs-in-app spec (ab06a22)
+- spec for Docs-in-app (sub-project 1) (15b7bf9)
+- plan-review fix — structure test asserts unique nav value (d40cf59)
+- implementation plan for Parameter Sensitivity Explorer (c6ca9a4)
+- round-4 review fixes for sensitivity-explorer spec (converged) (5155f83)
+- address round-3 review of sensitivity-explorer spec (917f685)
+- address round-2 review of sensitivity-explorer spec (4 majors) (736d985)
+- address round-1 review of sensitivity-explorer spec (78b9c45)
+- spec for Parameter Sensitivity Explorer page (f92a86e)
+- plan-review nits (badge cell format-clean; spec table font-size) (1ca2790)
+- implementation plan for config-diff panel (e67b7bf)
+- round-2 review fixes for config-diff spec (converged) (42da847)
+- address in-loop review of config-diff spec (e5b5149)
+- spec for Scenario Diff config-diff panel (1929afd)
+- **live-movement:** add CHANGELOG entry; clarify MovementSnapshot.status (3cb20a1)
+- **live-movement:** add converged spec + implementation plan (d8644e5)
+- **scenario-diff:** add converged spec + implementation plan (a1289a1)
+- **usage:** add task-oriented usage guide + docs index; fix stale README API sketch (a1fc860)
+- **plans:** add backlog infra+viewers plan (CI matrix, narrative docs, viewers) (b85de20)
+- **changelog:** note live config validation panel (51869ab)
+- implementation plan for real-time config validation (e1c1b43)
+- fold round-2 in-loop spec review (fresh angles, executed vs real code) (79acb47)
+- fold in-loop spec review (2 reviewers, executed vs real code) (d1fac36)
+- real-time config validation in the form — design (5a06504)
+- **changelog:** property-based tests via Hypothesis (e61407d)
+- fold in-loop plan review (executed the plan's code) (18df305)
+- property-based tests (Hypothesis) implementation plan — 7 tasks (2e81fea)
+- fold round-3 in-loop review (empirical mutation + post-edit consistency) (26cd978)
+- fold round-2 in-loop review (teeth + operational angles) (728f4b1)
+- fold in-loop spec review (2 executing reviewers, prototyped vs real code) (f59a87d)
+- property-based tests (Hypothesis) design — focused 4 targets (1cbc91f)
+- **changelog:** trophic-network animation (pyvis) (42827db)
+- trophic-network animation (pyvis) implementation plan (738a16a)
+- round-2 clean — fix debounce primitive (throttle/debounce, not reactive.event) (4144166)
+- fold pyvis in-loop review (2 BLOCKERs) into trophic-network spec (3eedc61)
+- revise trophic-network spec to pyvis node-link (Sankey killed by review) (bdc5bde)
+- **changelog:** config parser diagnostics (d335964)
+- in-loop review fixes for config-parser-diagnostics plan (395cdd8)
+- config parser diagnostics implementation plan (b13cbd2)
+- round-2 clean — classify empty-key on the post-rstrip value (f892ef8)
+- in-loop review fixes for config-parser-diagnostics spec (b115f95)
+- CMEMS temperature forcing design spec (engine NetCDF-temp loader + baltic_ev) (7dc9627)
+- **changelog:** community size-spectrum diagnostics (d7003de)
+- in-loop review fixes for size-spectrum plan (2c4a6ac)
+- size-spectrum diagnostics implementation plan (356c782)
+- round-2 clean — note the private _read_output_csv coupling (bf62283)
+- revise size-spectrum spec per round-1 in-loop review (b0945c3)
+- community size-spectrum diagnostics design spec (1d38809)
+- **changelog:** Compare Runs works without a loaded output dir (32347e4)
+- in-loop review fixes for compare-runs decouple plan (c3401ac)
+- compare-runs decouple-from-output-dir implementation plan (d62e850)
+- in-loop review fixes for compare-runs decouple spec (4a4ba3a)
+- compare-runs decouple-from-output-dir design spec (3ec348c)
+- in-loop review fixes for run-history plan (126aaae)
+- run-history canonical-dir implementation plan (e679f05)
+- run-history canonical-dir reconciliation design spec (49ebd70)
+- **ui:** document Compare Runs output-delta section (110b011)
+- **ui:** in-loop review polish (broaden render guards, prompt clarity, structure note) (8a64263)
+- **ui:** Compare Runs output-delta implementation plan (3d990f8)
+- **ui:** Compare Runs output-delta section design spec (7070a0e)
+- **delta:** document compare_runs CLI + deferred follow-ons (dfcb422)
+- **delta:** round-2 deep-review fixes (fixture preamble + window guard) (8760cd9)
+- **delta:** fix plan after deep 4-angle in-loop review (eb7dd6e)
+- **delta:** implementation plan + spec wide-format correction (9773993)
+- **delta:** result delta-tracking design spec (5de6746)
+- **fisheries:** document F/M diagnostics CLI + deferred Kobe follow-up (6d8b2f5)
+- **fisheries:** rescope to F/M diagnostics after 4-angle in-loop review (0c2c9f6)
+- **fisheries:** fisheries-diagnostics implementation plan (535ea90)
+- **fisheries:** fisheries stock-status diagnostics design spec (78f64cc)
+- percid overshoot diagnostic — proven cause, fix deferred (9dad350)
+- **fr:** phase-14 Baltic FR verdict + diagnostic per-predator K reporting (f04b2c2)
+- **fr:** clarify PR-B review nits (predator-set sync note, override comment) (0370697)
+- **fr:** config keys + cross-feature caveats + prey-predation-reduction consequence test (e1f4173)
+- **fr:** final clean-pass polish (prey-survival test robustness) (89d274b)
+- **fr:** round-7 confirmation-review fixes (a7054a0)
+- **fr:** round-6 plan rewrite after 4-angle in-loop review (7bb68bc)
+- **fr:** round-5 spec re-review fix + implementation plan (705525d)
+- rewrite FR spec after round-4 review (2 CRITICALs) (93e88b8)
+- fold round-3 diagnostic refinements into FR spec (44cb1e9)
+- revise FR spec after round-1+2 in-loop review (e58c942)
+- add predator functional response (aggregate, opt-in) design spec (7d18047)
+- **plan:** refine density-dependent recruitment plan per review (441ac54)
+- **plan:** density-dependent recruitment implementation plan (c01684c)
+- **plan:** density-dependent recruitment design (hockey-stick + Shepherd) (5198ed9)
+- revise PR #48 plan after second deep review (3b33118)
+- implementation plan for PR #48 rebase + Task 11 (3dcd2cc)
+- revise PR #48 design after deep multi-angle review (6fde858)
+- design for PR #48 rebase + Task 11 resolution (c2122b9)
+- **plan:** Ev-OSMOSE FIE-on-cod spec + r2 plan with review fixes (03941da)
+- **tutorial:** polish — log_y axis + honest narrative about Baltic transient dynamics (c2ba915)
+- **tutorial:** top-of-page README callout + doc-index row + tutorials index (735f350)
+- **tutorial:** Beats 2-6 + closing + troubleshooting (Baltic substrate) (aa3631c)
+- **tutorial:** preamble + Beat 1 paste-and-run script (Baltic substrate) (694bc99)
+- **plan:** r3 of 30-min tutorial plan — fix duplicated suffix, wire numba_warmup, add Predator-extinct branch (3c582ba)
+- **plan:** r2 of 30-min tutorial plan — apply round-1 review (TDD discipline, parameter pre-tuning, stopping criterion, conditional commits) (4b1654e)
+- **plan:** 30-min 3-species tutorial implementation plan (12 tasks) (f9c3ee3)
+- **spec:** r6 of 30-min tutorial — fix stale 0.8/0.99 reference in Task 9 (5502bf2)
+- **spec:** r5 of 30-min tutorial — apply round-5 polish (CONFIG/build_config cleanup, accessibility 0.99, BASELINE_PERTURBATION used, ruff-clean skeleton, task ordering) (1585599)
+- **spec:** r4 of 30-min tutorial — apply round-4 review (CONFIG/build_config naming, row count, relativefecundity, accessibility scaling, headless fallback) (2349b62)
+- **spec:** r3 of 30-min tutorial — apply rounds 1-3 in-loop review (8bd86c9)
+- **spec:** 30-minute 3-species tutorial design (e35625a)
+- **calibration:** design spec + implementation plan for progress dashboard (95039b2)
+- **perf:** 2026-05-08 perf arc overview (#45) (09bdb8a)
+- **perf:** P4b not-shipping — __post_init__ bypass below 2% gate (#44) (45a0556)
+- **perf:** P4 not-shipping — state.replace cache below noise floor (#43) (9b8ed62)
+- **perf:** P3/A4 not-shipping — compute_feeding_stages already below gate (#42) (8a2f9da)
+- **plan:** post-v0.12.0 perf plan — K1 + np.add.at + state.replace (r3) (#39) (d5e71d5)
 
-- **ui (spatial results):** the Map View and Flat View now render the engine's spatial output. The
-  engine writes `(time, species, lat, lon)`, so the renderers were left with a 3-D slice after
-  selecting a timestep and bailed ("Expected 2D spatial slice") — showing nothing. They now collapse
-  the species dimension via `spatial_series.spatial_slice_2d` (sum across species, or a single
-  species via a new selector), and the Flat heatmap maps land-cell NaNs to gaps (plotly+shinywidgets
-  rejected NaN in JSON).
-- **docs (README API sketch):** corrected code snippets that didn't match the real API and would
-  fail on copy-paste — the engine import (`JavaEngine`/`Engine` don't exist), the results reader
-  (`get_biomass()`/`get_mortality()`/`get_diet()` → `biomass()`/`mortality()`/`diet_matrix()`,
-  returning DataFrames not xarray), and the calibration block (`CalibratorConfig`/`Calibrator`
-  don't exist → `list_runs`/`load_run`/`OsmoseCalibrationProblem`); plus the Java `runner.run` is a
-  coroutine and `writer.write` targets a directory.
-- **ui (run history):** Run-tab history writer and the Results "Compare Runs" selector now share a
-  canonical directory (`data/history` via `osmose.history.RUN_HISTORY_DIR` / `default_run_history()`).
-  Previously the writer used `data/history` while the reader looked for `<output_dir>/../.osmose_history`
-  — a path that was never created — so the Compare Runs tab (selector, config-diff, comparison chart,
-  and output-delta section) was entirely non-functional. This fix resurrects it; all existing run
-  records in `data/history` now appear in the Compare Runs selector.
-- **ui (Compare Runs):** the Results → Compare Runs tab now works without first loading
-  an output directory — its run selector populates from the canonical run history
-  (`data/history`) on entry to the Results tab, and the readers no longer require a
-  loaded output dir. Previously the tab showed "Invalid output directory" / an empty
-  selector until an unrelated output dir was loaded.
+### Other
 
-## [0.12.0] - 2026-05-08
+- Merge feat/scenario-diff-polish: shared config-diff component + compare modal (3624c11)
+- record real run duration_sec across both engine paths (f77528d)
+- sweep osmose_wizard_/osmose_maps_/osmose_val_ temp dirs (e4b411c)
+- warn on unsupported fishing selectivity types 2/3 (silently knife-edged) (8f40eea)
+- Merge feat/run-page-rework: Python default, compact Run UI, live-stream crash fix (70c9499)
+- Merge feat/python-run-feedback: Python-engine run-progress feedback (f1682ae)
+- Merge feat/cmems-forcing-core: CMEMS->OSMOSE forcing conversion core (sub-project A) (9d39da0)
+- Merge feat/run-engine-capability: Run-page engine-capability transparency (8560cc6)
+- redact leaked credential from tracked docs + scan whole tree (#90) (de6537d)
+- OSMOSE 4.4.0 jar swap — PR-A: config value-migration layer (#79) (c9454d9)
+- Config-key migration to OSMOSE 4.4.0 — PR2 (UI/writer/calibration wiring) (#78) (dc2d701)
+- declare pyarrow runtime dep for fishbase parquet reads (6094c84)
+- version-aware dependency upgrade (cma/shinyswatch/shinywidgets/deckgl) with floor check (d8eadad)
+- promote shiny to 1.6.x; pin shinyswatch>=0.11, shinywidgets>=0.7, cma>=4.0, shiny_deckgl@v1.9.2 (1e71007)
+- Apply ruff formatting to app.py (fix: code-quality) (c82d27c)
+- **trophic:** fold in-loop plan-review fixes (5d46d25)
+- **temperature-forcing:** close the line — no engine bug, blocked behind calibration (34c558b)
+- **helcom:** freeze HOLAS-3 fish snapshot; no validator (rescoped after in-loop review) (c890e12)
+- test(history)+docs: lock writer==reader run-history dir invariant (77c1324)
+- **run-history:** round-3 clean — sync File Structure header with Step-1b files (818a059)
+- **run-history:** fold round-2 findings — writer-test CWD-pollution fix + grep-count correction (77e8f5f)
+- Density-dependent recruitment: Shepherd stock-recruitment (+ hockey-stick) (#50) (0b1fc27)
+- Ev-OSMOSE FIE-on-cod: genetics plumbing + engine fixes + baltic_ev fixture (#48) (29b5206)
+- Merge pull request #49 from razinkele/fix/shiny-deckgl-pin (3e58091)
 
-Headline: **−37.8 % engine wall-time on eec_full 5-yr** (4.872 s → 3.030 s) from vectorising the non-JIT'd Python-side hot paths, plus density-dependent recruitment, calibration speedup roadmap, DE bounded-runtime guards, and the deep-review remediation suite.
+### Refactoring
 
-### Added
+- **scenario-diff:** delegate config table to shared component (e2c8ba1)
+- **run:** assert choose_live_layer (drop dead layer-builder re-exports + noqa) (e2c3ae7)
+- **mcp:** delegate generate_osmose_* to osmose.forcing core (55b47fb)
+- **run:** engine tabs -> client-side conditional settings (no input race) (4ef6746)
+- **config:** route Run gate and CLI through summarize_config_validation (DRY) (a394bb1)
+- **ui:** extract _compare_run_choices helper (0fdf6c0)
 
-- **Stock-recruitment subsystem.** Per-species `stock.recruitment.type` ∈ `{none, beverton_holt, ricker}` plus `stock.recruitment.ssbhalf` for the shape parameter. Default is `none` (linear, Java parity preserved). Opt-in fix for the cod / perch / pikeperch / flounder structural overshoots observed in the 2026-04-27 phase-12 cod-floor calibration. See `docs/parity-roadmap.md` § Post-parity divergences.
-- **Calibration speedup roadmap (Tier A+B+C1+C2+D4).** New `--optimizer {de,cmaes,surrogate-de}` flag in `scripts/calibrate_baltic.py` dispatching to standalone runners under `osmose/calibration/` (`cmaes_runner.py`, `surrogate_de.py`). Sobol sensitivity at `scripts/sensitivity_phase12.py`. Combined Tier A+B speedup wrapper at `scripts/launch_phase12_bh_fast.sh`. Empirical 175 evals/h at 8 workers.
-- **DE bounded-runtime guards.** `differential_evolution` now uses `--patience 20 --wall-clock-cap-h 12 --checkpoint-every 5` by default; the `_make_checkpoint_callback` helper bounds every scipy DE call by construction. Solves the failure mode where scipy's tol-based termination stalls indefinitely on multi-modal landscapes (post-incident: 75h+ phase-12 run on 2026-04-30 → 2026-05-03).
-- **Phase 12 wiring with B-H.** 27 calibration parameters (cod sp0 ssb_half FIXED at 120 kt Bpa; sp3/4/5 ssb_half DE-tunable). Cod-floor reverted in favour of B-H as the structural fix.
-- **Benchmark infrastructure.** `scripts/benchmark_engine.py --config <name|path>` supports per-fixture grid resolution (eec_full, baltic, examples) with documented baselines. `--compare baseline.json current.json` reports side-by-side wall-time + per-species final-biomass parity.
-- **Bench fixtures + perf docs.** New `docs/perf/` directory documenting the K4 profile gate, A3 not-shipping post-mortem, and per-K go/no-go decisions.
+### Styling
 
-### Changed
-
-- **engine (perf):** vectorise `AccessibilityMatrix.compute_school_indices` via per-species `np.searchsorted` over precomputed `_stages_by_role` arrays — **17.7 % wall-time reduction** alone, exact bit-for-bit parity preserved.
-- **engine (perf):** vectorise `_precompute_map_indices` per-species with explicit pre-mask before `ms.index_maps[ages, step]` indexing (avoids the silent NumPy negative-index wrap for `age_dt == 0` schools) — **24.4 % wall-time reduction** on top of A1, exact parity.
-- **engine (perf):** vectorise `biomass_by_cell` DSVM accumulator (H7) via `np.add.at` instead of per-school Python loop.
-- **engine (mortality):** drop redundant `n_dead` zeros allocation when `state.n_dead` already starts zeroed (H6 partial cleanup).
-- **calibration:** `OSMOSE_DE_WORKERS` default lowered 24 → 16 (memory-bandwidth contention on 28-core box; 16 delivers higher total throughput).
-- **schema:** Phase 2 field-quality bundle — predation, bioenergetics, LTL, fishing param refinements.
-- **schema:** `output.bioen.sizeInf` → `sizeinf` (camelCase fix; the engine never read camelCase, was a schema-only typo).
-- **schema:** movement keys (C1) — engine reads `movement.{property}.map{N}`.
-- **ui:** `_inject_random_movement_ncell` made pure (H3); `state.loading` consolidated into `state.busy` (M10); multi-value (`;`-separated) config entries render as read-only text inputs (H12); `input_id_for_field/key` helpers extracted (M13).
-- **ui+engine:** cooperative cancellation now plumbed through `simulate()` (C4 Phase B); failed/cancelled runs invalidate `state.output_dir` (C4 Phase A).
-
-### Fixed
-
-- **engine (background):** set `length` on background schools so `_apply_predation_numba` sees the right size for size-overlap computation. Without this, mult=0/1/10 ramps showed no scaled predator effects on Baltic seal/cormorant. Verified by re-calibration showing strong predation gradients.
-- **engine (validation):** broad schema-engine parity TODO closed (C1) — config_validation now scans `simulate.py` + `__init__.py` keys; `_SUPPLEMENTARY_ALLOWLIST` extended with 90 Java-side keys; the previously-xfail'd parity test now passes.
-- **engine:** Phase 3 — Gompertz length bounds (M4); accessibility / `n_dead` clamps (M5); RNG reproducibility documented (`osmose/engine/rng.py` module docstring) — Python-side `simulation.rng.fixed=true` is bit-reproducible across Python-engine runs but NOT against Java (PCG64 vs MT19937 streams diverge on first draw).
-- **engine:** reproduction parameter bounds (H10); `relativefecundity >= 0` legitimate-zero relaxation; starvation NaN clamp documented in test (H8).
-- **engine:** average distribution dicts across the recording window (M1) — was previously taking last-step semantics, broke Java parity.
-- **schema:** field-quality fixes from Phase 2 plan (H1, H4, H2 schema-coverage gaps closed).
-- **schema:** `output.bioen.sizeInf` lowercased (C2).
-- **schema:** ENUM `fisheries.selectivity.type` now displays friendly labels via the new `OsmoseField.choice_labels` field — UI shows "Knife-edge", "Sigmoid", etc. instead of raw enum values.
-- **ui:** path-traversal hardening in results page (C3).
-- **app:** defer `cleanup_old_temp_dirs()` until first session start (H11).
-- **validation:** allowlist baltic background-species keys (C5).
+- **e2e:** ruff format test_e2e_baltic.py (lint = check + format) (584979a)
+- **fishbase:** apply ruff format (the format changes that the prior bad git-add aborted) (2603697)
+- apply ruff format to 91 drifted files (6a7e941)
+- **test:** drop unused pytest import in test_ices_proxy (2cfb168)
+- **test:** hoist E402 imports (7e13ed0)
 
 ### Tests
 
-- New parity / regression tests for: NaN propagation through fishing_mortality (H8 final), reproduction / accessibility / starvation NaN extensions (H8), JIT determinism across thread counts (H9), feeding-stage Java parity (M2), size-bin Java parity (M3), Phase 5a — L brittleness fix + M7 lifespan boundary + M8 runner failure modes, A1 cross-check vs `_compute_school_indices_loop` (8 cases including all-finite-thresholds and predator-only species), A2 cross-check vs `_precompute_map_indices_loop` (7 cases including the `age_dt == 0` wrap-around trap).
-- Suite: 2733 → **2740 passed** at v0.12.0, 22 skipped, 41 deselected, ruff clean. Full Java parity tests 12/12 remain bit-exact.
+- **e2e:** compare-scenarios modal renders a diff (e483786)
+- assert a fresh session config_dir survives a normal-age cleanup sweep (c3d5bff)
+- **e2e:** expand live card (new stream gate) instead of the removed switch (a0de6b8)
+- **e2e:** drop manual live-toggle clicks (auto-on); assert plain-run progress (df47e80)
+- **capabilities:** cover unknown-engine fallback, list isolation, truthiness edges (f9d34ce)
+- **config:** bioen ingestion-unification parity gate (base-wins, intended change) (b6babf8)
+- **engine:** parity note + final gates for community outputs (a9a3017)
+- **community-metrics:** real-data eec smoke + final gate pass (9d176d3)
+- **e2e:** assert Baltic spatial output renders (pill enables + map) + screenshot (ac92437)
+- **e2e:** assert Baltic biomass chart + diet heatmap render (regression guard) (dc9daf3)
+- **e2e:** Baltic full-run skeleton — load + Python run + live movement (1912dec)
+- **visual:** refresh setup baseline for the FishBase bootstrap panel (3afae99)
+- **fishbase:** e2e smoke — bootstrap panel renders on setup page (aa3a40e)
+- **fishbase:** record cod + green-crab parquet fixtures (634b637)
+- **otel-guard:** defer app import into test bodies to fix CI collection (b141bfa)
+- **visual:** suppress Shiny toast to fix movement-page snapshot flake (b9179af)
+- **visual:** authoritative container baselines (5 pages, inspected) (82428a2)
+- **visual:** retry-until-stable capture (fixes Setup non-determinism in CI container) (46612f5)
+- **visual:** use top-level import re instead of __import__ (final-review nit) (19f3d78)
+- **visual:** Fishing, Movement, Advanced page snapshots (b55d81f)
+- **visual:** Playwright harness + nav-chrome and Setup snapshots (4b50b32)
+- **visual:** pure compare_images core (ratio + pixel-floor + mean-delta) with unit tests (d769c55)
+- **visual:** add viztest extra, visual marker, collection guard, gitattributes (eb942f9)
+- **e2e:** dismiss the startup changelog modal before nav clicks (4e740cb)
+- **feedback:** e2e submit→store + CHANGELOG entry (ab6e6ed)
+- **docs:** restore hardened e2e modal dismissal (focus-independent + localStorage poll) (044db54)
+- **docs:** restore plan-verbatim e2e modal dismissal (fix: spec-compliance) (e5439bb)
+- **docs:** e2e startup modal + About tabs; CHANGELOG entry (06e6541)
+- **sensitivity:** e2e explorer page + CHANGELOG (3eb4873)
+- **scenario-diff:** e2e config-diff panel + CHANGELOG (0624769)
+- **e2e:** live movement view streams during a Python run + cancel path (da7a430)
+- **e2e:** scenario diff tab renders overlay + spatial maps (cfaf086)
+- harden csv-overlay perf guard against xdist contention (02c43d3)
+- parallelize suite with pytest-xdist (~3.5x faster) (30efbca)
+- skip eec/baltic data-dependent tests when gitignored artifacts absent (7d07de7)
+- **hypothesis:** make window property two-sided (final-review teeth fix) (e7268bb)
+- **hypothesis:** size-spectrum helper properties (convexity, LFI boundary, bin-width, window) (1c09159)
+- **hypothesis:** diet_network_at properties (bounds, monotonicity, prey-sum, dead-stage) (512559b)
+- **hypothesis:** preamble-detection properties (detect-k, no-raise, cache-invalidation) (2baea1b)
+- **hypothesis:** config writer->reader round-trip properties (aa6d5a0)
+- **hypothesis:** shared property-test strategies (f9c15bb)
+- **hypothesis:** add hypothesis dev dep + deterministic ci profile (34f73a6)
+- **fr:** background-inclusive diet aggregator + width-16 diagnostic test (4aefd36)
+- **fr:** bit-exact parity-off gate + type1==absent + background-on + inert-prey-only (8356f54)
+- **fr:** wire numba=False to the Python predation fallback via _HAS_NUMBA patch (57fa1ba)
+- **fr:** shared run harness + FR config-injection helpers (cb8211e)
+- **tutorial:** share Baltic sim across tutorial tests via module-scoped fixtures (06163ca)
+- **conftest:** ignore e2e modules at collection when playwright missing (9e523d8)
+- **tutorial:** encode measured equilibrium bounds (Baltic, seed=42) (3db8d5f)
+- **tutorial:** replace numba_warmup stub with real session-scoped warmup (8e261f7)
+- **tutorial:** regression test in final form (RED until Tasks 4-9) (3a23a3c)
+- add tmp_results_dir + synthetic species fixtures for calibration tests (c3f573f)
 
-### Deferred
+## [0.12.0] - 2026-05-08
 
-- **A3 (fused prey + pred `compute_school_indices_both`)** — measured 0.7 % wall-time delta, within the 100 ms / 2 % noise floor. After A1 collapsed the per-call cost from ~1460 µs to ~290 µs, the surface for fusion is no longer measurable. The fused method is functionally correct (verified locally) but contributes nothing to the gate. Post-mortem at `docs/perf/2026-05-08-A3-not-shipping.md`.
-- **K1 (predation scratch buffer hoisting)** — kernel-surgery item with conditional gate per the K4 profile (3-12 % straddles the 2 % gate). Awaiting a fresh post-A1+A2 profile to re-evaluate before pursuing.
-- **K2, K3 (kernel-surgery sub-items)** — dropped per the K4 profile gate. K2: ~1 % saving with high cost (RNG-stream divergence + calibration cache invalidation). K3: 0.41 % `numpy.ndarray.copy` ceiling, below half the gate. Post-mortems at `docs/perf/2026-05-08-K2-not-shipping.md` and `docs/perf/2026-05-08-K3-not-shipping.md`.
-- **A4 (compute_feeding_stages per-cell)** — flagged in the perf plan as a deferred candidate; needs a fresh post-A2 profile to re-prioritise.
+### Features
 
-### Migration notes
+- **schema:** choice_labels for fisheries.selectivity.type ENUM (Phase 2 finisher) (#27) (f436be5)
 
-- B-H is opt-in via `stock.recruitment.type=beverton_holt` per species. Existing configs without the key keep linear recruitment (Java parity).
-- The 37.8 % perf gain is automatic for any caller of the Python engine; no API change. Outputs are bit-for-bit identical to v0.11.0 across all parity tests, so calibration caches remain valid (cache key is `python-{__version__}` — caches will miss on the first v0.12.0 run, then warm).
-- DE checkpoint files from < v0.12.0 remain compatible — the new bounded-runtime guards add patience + wall-clock-cap on TOP of the existing checkpoint mechanism, no on-disk format change.
+### Bug Fixes
+
+- **validation:** close broad schema-engine parity TODO from C1 (#28) (8b5908d)
+- **engine:** average distribution dicts across recording window (M1) (#22) (f8dfd42)
+- **ui+engine:** cooperative cancellation through simulate() (C4 Phase B) (#18) (f7d8e28)
+- **ui:** render multi-value config entries as read-only text inputs (H12) (#17) (3958b41)
+- **app:** defer cleanup_old_temp_dirs() until first session start (H11) (#15) (e0ead58)
+- **engine:** Phase 3 — M4 Gompertz bounds, M5 accessibility/n_dead clamps, RNG docs (#11) (f16a057)
+- **engine:** reproduction parameter bounds (H10) (#10) (8ff56a7)
+- **schema:** field-quality fixes from Phase 2 plan (#9) (dc95f55)
+- **validation:** close schema-coverage gaps on examples + minimal (H1, H4, H2) (#8) (dd55620)
+- **schema:** movement keys (C1) — engine reads movement.{property}.map{N} (#5) (06b432e)
+- **ui:** invalidate state.output_dir on failed/cancelled run (C4 Phase A) (#7) (65b0d7e)
+- **ui:** path-traversal hardening in results page (C3) (#6) (de9bfa0)
+- **schema:** output.bioen.sizeInf -> sizeinf; engine never read camelCase (C2) (#4) (b62ff8e)
+- **validation:** allowlist baltic background-species keys (C5) (#3) (d7b9a6d)
+
+### Performance
+
+- **engine:** vectorise _precompute_map_indices per-species (A2) (#36) (1f717fe)
+- **engine:** vectorise accessibility school-index lookup (A1) (#35) (70cc1da)
+- **mortality:** drop redundant n_dead zeros allocation (H6 partial) (#31) (e0e1d94)
+- **bench:** --config flag + per-fixture grid resolution + name-list guard (#30) (38dc8f3)
+- **engine:** vectorise biomass_by_cell DSVM accumulator (H7) (#29) (8c6621e)
+
+### Documentation
+
+- **perf:** A3 not-shipping post-mortem (#37) (3c0b66c)
+- **plan:** vectorise the non-JIT'd Python-side perf hot paths (#34) (ceb59f5)
+- **plan:** kernel-surgery plan for remaining Phase 4 perf items (r2, post-review) (#32) (39725cf)
+- **plan:** add deep-review remediation plan (9-iter loop-converged) (3851b9e)
+
+### Other
+
+- v0.12.0 — Python-side perf wins + deep-review remediation + B-H (#38) (31a2386)
+- K4 — eec_full 5yr profile + go/no-go decisions for K1/K2/K3 (#33) (1839a1c)
+- Merge origin/master into local master (ebe8343)
+- bounded-runtime DE — patience + wall-clock cap (post-incident) (cf5cb8e)
+- DE intermediate checkpointing — interrupt-safe long runs (a6c596b)
+- optimizer benchmark on synthetic problems (fe0c04c)
+- --optimizer flag wires CMA-ES + surrogate-DE into calibrate_baltic (135aa8f)
+- **surrogate-de:** nfev accounting, GP fit recovery, warm-start warn (8edffa4)
+- **cmaes:** correctness fixes for success flag, bounds, NaN handling (54b61d1)
+- harden D4 sensitivity script against silent data loss (b7a5708)
+- add GP surrogate-assisted DE runner (Tier C1 speedup) (8649e55)
+- add CMA-ES runner (Tier C2 speedup) (6a90cf6)
+- add Sobol sensitivity script for phase 12 param pruning (D4) (15e610f)
+- launch wrapper for Tier A+B fast phase 12 calibration (f775df3)
+- warm-start, tunable tol, and Tier A speedup knobs (1ae7630)
+- **phase12:** enable Beverton-Holt density-dependent recruitment (816d5c1)
+- **background:** set length on background schools (bg-predation fix) (92088c9)
+- v0.10.0 — calibration on PythonEngine in-memory (d4eebe1)
+
+### Refactoring
+
+- **schema:** Phase 2 field-quality bundle — predation, bioen, ltl, fishing (#26) (936769c)
+- **ui:** consolidate state.loading into state.busy (M10) (#19) (27fe142)
+- **ui:** extract input_id_for_field/key helpers (M13) (#16) (6dda518)
+- **ui:** make _inject_random_movement_ncell pure (H3) (#14) (7133fa3)
+
+### Tests
+
+- **engine:** NaN propagation through fishing_mortality (H8 — final) (#25) (c654f7d)
+- **engine:** JIT determinism across thread counts (H9 — verified) (#24) (399339c)
+- **engine:** NaN propagation extensions for reproduction/accessibility/starvation (H8) (#23) (30b04f6)
+- **engine:** pin size-bin Java parity (M3 — verified, no code change) (#21) (6aa5cc4)
+- **engine:** NaN/Inf propagation audit through mortality processes (H8) (#20) (9c85a8b)
+- Phase 5a — L brittleness fix, M7 lifespan boundary, M8 runner failure modes (#13) (64a623a)
+- **engine:** pin feeding-stage Java parity (M2 — verified, no code change) (#12) (a0574e4)
+
+## [0.11.0] - 2026-04-28
+
+### Bug Fixes
+
+- **engine:** slice per-species arrays to focal-only in reproduction (37bc1d1)
+
+### Documentation
+
+- **plan:** Beverton-Holt + Ricker stock-recruitment implementation plan (c6b1b2f)
+- **spec:** add .docx version of non-rectangular grids study (2daf029)
+- **spec:** non-rectangular grid feasibility study (a5481b1)
+- **plan:** round-3 cleanups — commit-message pattern + _expected_errors note (15673e7)
+- **plan:** tighten __init__ signature decision (round-2) (d1202f3)
+- **plan:** calibration plan round-1 review fixes (836625b)
+- **plan:** calibration-python-engine implementation plan (dc5faae)
+- **spec:** round-3 final-pass fixes (cb94146)
+- **spec:** pin cache-key authoritative source (round-2 cleanup) (080fd78)
+- **spec:** calibration spec round-1 review fixes (ea185fa)
+- **spec:** calibration throughput — port NSGA-II to PythonEngine in-memory (d7fa894)
+
+### Other
+
+- bump 0.10.0 -> 0.11.0 (origin already has v0.10.0 tag at d4eebe1) (a24090d)
+- docs+version: Beverton-Holt SR documented as post-parity divergence (e74326d)
+- **reproduction:** apply stock-recruitment to per-step eggs (1c9cb28)
+- **reproduction:** cleanup — NDArray annotations, diagnostic mismatch error, sharper zero-SSB test (57ad8b4)
+- **reproduction:** add apply_stock_recruitment helper (B-H + Ricker) (db9338e)
+- **config:** cleanup — docstring, schema desc trim, top-level pytest import, n_bkg consistency (bdaa398)
+- **config:** parse stock.recruitment.{type,ssbhalf} per species (33c216f)
+- add stock.recruitment.{type,ssbhalf} fields per species (05eed2f)
+- compare two phase-12 calibration runs (d8df5db)
+- activate grey seal + cormorant background species (f54bb26)
+- widen mortality bounds instead of background species (edcea8b)
+- handle --phase 12 (joint optimization) (a9b43d4)
+- add joint phase 1+2 option (--phase 12, 24 params) (ef802c2)
+- cap DE workers at 8 (from -1) to avoid RAM exhaustion (8b42497)
+- enable DE process-pool parallelism (da7956d)
+- widen flounder + pikeperch fishing upper bounds (8c8a349)
+- Revert "baltic: add grey seal + cormorant as background species" (6541e9f)
+- add grey seal + cormorant as background species (4d5e7fb)
+- 2026-04-21/22/23/24 session work — map fixes, calibration, plan (0d1cdf3)
+
+### Tests
+
+- **reproduction:** multi-step integration smoke for B-H + Ricker (9e74dd8)
+- **reproduction:** derive season from cfg.n_dt_per_year, isolate rng per call (c58f702)
+- **reproduction:** pin linear-formula regression for type=none across SSB sweep (52653ab)
+- **reproduction:** fix misleading SSB comment, isolate RNG per call (62c715c)
 
 ## [0.10.0] - 2026-04-21
 
-### Changed
+### Documentation
 
-- **calibration:** port NSGA-II to PythonEngine in-memory by default (spec: `docs/superpowers/specs/2026-04-19-calibration-python-engine-design.md`). `OsmoseCalibrationProblem._run_single` now evaluates candidates in-process via the Python engine instead of shelling out to a Java subprocess per candidate. Measured speedup on Baltic 3-gen × 10-candidate NSGA-II at saturated `n_parallel=4`: **Python 4027.72s vs Java 12149.11s = 3.02× wall-clock speedup**. A half-saturated smoke point (1-gen × 2-cand at `n_parallel=4`) reports 4.34×; the ratio drops at full saturation because Numba's `prange` hot path (`_mortality_all_cells_parallel`) benefits from unrestricted core access in the pre-port Java path, while the in-process Python workers compete over a single GIL + single OS process. A `ProcessPoolExecutor` swap (post-v0.10.0) is expected to recover the higher ratio. Java subprocess path preserved as an opt-in fallback via `OsmoseCalibrationProblem(use_java_engine=True, jar_path=...)`.
-- **BREAKING:** `OsmoseCalibrationProblem.__init__` signature — `work_dir` moves from position 5 to position 4; `jar_path` moves from required positional (was position 4) to optional keyword-only (`jar_path: Path | None = None`); all previously-positional kwargs (`java_cmd`, `n_parallel`, `enable_cache`, `cache_dir`, `registry`, `subprocess_timeout`, `cleanup_after_eval`) are now keyword-only; new `use_java_engine: bool = False` flag gates the Java path. Existing callers that constructed `OsmoseCalibrationProblem(..., jar_path=p)` expecting the Java subprocess path must now also pass `use_java_engine=True`. Without the flag, `jar_path` is ignored and the Python engine runs. Python/Java parity is complete (14/14 EEC, 8/8 BoB within 1 OoM), so accidental migration produces equivalent objective values in most configs.
-- **BREAKING (runtime behavior):** NSGA-II Pareto fronts may differ slightly after this release, because the Python engine uses a different RNG stream than the Java engine. Numerical equivalence is within 1 OoM (documented parity). If bit-exact reproducibility with Java is required, set `use_java_engine=True`.
+- parity roadmap STATUS-COMPLETE audit — mark Phases 2/3/4 shipped (9f8af75)
 
-### Added
+### Other
 
-- `OsmoseResults.from_outputs(outputs, engine_config, grid)` classmethod — constructs an in-memory results object from a list of `StepOutput` returned by `simulate()`. No disk I/O.
-- `PythonEngine.run_in_memory(config, seed)` — runs the Python engine and returns `OsmoseResults` directly, skipping the disk round-trip.
-- `scripts/benchmark_calibration.py` — benchmarks NSGA-II calibration wall-clock for Python vs Java engines. Release gate for v0.10.x.
-
-### Fixed
-
-- **engine:** thread-safe NetCDF opens for parallel calibration. The netCDF4-python C extension is not thread-safe; under `ThreadPoolExecutor` calibration (`n_parallel > 1`) generation 1 would succeed but generation 2 onwards would crash with `NetCDF: Can't open HDF5 attribute` and eventually `double free or corruption`, as stale `Dataset` handles from the previous generation raced new opens. New `osmose/engine/_netcdf.open_dataset_safe()` helper serializes `xr.open_dataset` through a module-level `threading.Lock` and eagerly loads the data into memory, releasing the file handle before return. Applied at every engine NetCDF open site (`resources.py`, `grid.py`, `physical_data.py`, `background.py`). Engine forcing files on Baltic are small enough that eager-load is negligible; multi-GiB forcing would need a chunked+locked strategy instead.
-
-### Migration notes
-
-- Long-lived calibration `work_dir` directories from v0.9.x will have cached objective values keyed by the Java `jar_mtime`. v0.10.0 uses `python-{__version__}` for the Python path, so old cache files never match new runs (no corruption, just cache misses). Optionally `rm -rf <work_dir>/cache` before running v0.10.0 NSGA-II to reclaim disk.
-- **Benchmark results (2026-04-20, Ubuntu 24.04, 28 cores, Baltic config):** 3-gen × 10-pop NSGA-II at `n_parallel=4`: Python 4027.72s (~67 min) vs Java 12149.11s (~202 min) = **3.02× wall-clock speedup**. Scaled-down from the originally-targeted 10×20 to fit a single workday; the per-wave timing is steady-state so the 3×10 ratio should hold for 10×20. This is below the originally-aspirational 4× goal: at full `parallel=4` the Python workers share one process and contend on GIL-bound code paths, while each Java candidate is its own JVM subprocess with independent scheduling. The 1×2 half-saturated smoke (2 candidates on 4-way parallel, 2 idle workers) showed 4.34×, indicating the bottleneck is CPU contention rather than per-candidate cost.
-- **Known limitation + follow-up:** swapping `concurrent.futures.ThreadPoolExecutor` → `ProcessPoolExecutor` in `OsmoseCalibrationProblem._evaluate` would give each worker its own GIL and likely raise the ratio materially. Not in v0.10.0 scope because candidate-object picklability, Numba-cache per-process warmup, and the NetCDF backend per-process repeat-load all need validating.
+- v0.10.0 — calibration on PythonEngine in-memory (d4eebe1)
 
 ## [0.9.3] - 2026-04-19
 
@@ -296,6 +664,10 @@ Headline: **−37.8 % engine wall-time on eec_full 5-yr** (4.872 s → 3.030 s) 
 - **spec:** Phase 7.1 round-4 review — bug-hunting pass (4fec5c8)
 - **spec:** Phase 7.1 review-driven revisions (6c3aced)
 - **spec:** Phase 7.1 predation-reconciliation design (0f16837)
+
+### Other
+
+- v0.9.3 (ea31ac8)
 
 ### Refactoring
 
