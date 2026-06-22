@@ -23,41 +23,12 @@ from osmose.logging import setup_logging
 from osmose.plotting import make_biomass_overlay
 from osmose.results import OsmoseResults
 from osmose.spatial_series import grid_latlon, spatial_diff_2d
+from ui.components.config_diff import render_config_diff_table
 from ui.pages.grid_helpers import make_diff_map, make_spatial_map
-from ui.styles import STYLE_MONO_KEY, STYLE_SCROLL_TABLE
 
 _log = setup_logging("osmose.scenario_diff")
 
 _SPATIAL_VAR_HINT = "spatial_biomass"  # preferred diff variable when present
-
-# Display priority for the config-diff panel: changed group first, then added, then
-# removed (NOT the change string's alphabetical order, which would put "added" first).
-_CHANGE_ORDER = {"changed": 0, "added": 1, "removed": 2}
-
-
-def _classify_config_diffs(diffs: list[dict]) -> list[dict]:
-    """Tag each {key, value_a, value_b} row with a change type and sort for display.
-
-    change is "added"   when value_a is None (key only in B),
-              "removed" when value_b is None (key only in A),
-              "changed" otherwise (both present, differ — incl. an empty-string value,
-              since only None means a missing key).
-    Sorted changed-group-first, then added, then removed; alphabetical by key within
-    each group. Deterministic and independent of input order. Pure (no I/O).
-    """
-    rows: list[dict] = []
-    for d in diffs:
-        va = d.get("value_a")
-        vb = d.get("value_b")
-        if va is None:
-            change = "added"
-        elif vb is None:
-            change = "removed"
-        else:
-            change = "changed"
-        rows.append({"key": d["key"], "value_a": va, "value_b": vb, "change": change})
-    rows.sort(key=lambda r: (_CHANGE_ORDER[r["change"]], r["key"]))
-    return rows
 
 
 def _run_choices(runs) -> dict[str, str]:
@@ -298,39 +269,7 @@ def scenario_diff_server(input, output, session, state):
         if not diffs:
             return ui.p("Identical configuration — no differences.", class_="text-muted")
 
-        rows = _classify_config_diffs(diffs)
-        n = len(rows)
-        badge_cls = {"changed": "bg-secondary", "added": "bg-success", "removed": "bg-danger"}
-
-        def _val_cell(v):
-            return ui.tags.td("—" if v is None else v)
-
-        body = [
-            ui.tags.tr(
-                ui.tags.td(r["key"], style=STYLE_MONO_KEY),
-                _val_cell(r["value_a"]),
-                _val_cell(r["value_b"]),
-                ui.tags.td(ui.tags.span(r["change"], class_=f"badge {badge_cls[r['change']]}")),
-            )
-            for r in rows
-        ]
-        table = ui.tags.table(
-            ui.tags.thead(
-                ui.tags.tr(
-                    ui.tags.th("Key"),
-                    ui.tags.th("A"),
-                    ui.tags.th("B"),
-                    ui.tags.th("Change"),
-                )
-            ),
-            ui.tags.tbody(*body),
-            class_="table table-sm table-striped",
-            style="font-size: 13px;",
-        )
-        return ui.div(
-            ui.p(f"{n} differing config key{'s' if n != 1 else ''}", class_="text-muted"),
-            ui.div(table, style=STYLE_SCROLL_TABLE),
-        )
+        return render_config_diff_table(diffs)
 
     # ── Spatial: common species + variable helpers ──
     def _has_latlon(ds, v):
