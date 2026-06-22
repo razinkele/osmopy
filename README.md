@@ -133,6 +133,15 @@ Three ready-to-run configurations ship in-tree.
 
 The Baltic example is the newest and most documented. It covers cod, herring, sprat, flounder, perch, pikeperch, smelt, stickleback plus six CMEMS-forced LTL groups, 50 × 40 cells over 10–30° E × 54–66° N, 24 dt/yr.
 
+**Live movement during a run.** The Run page streams every timestep of a Python-engine simulation onto the map — toggle between an aggregated density **heatmap** and individual **dots** coloured by species. Below is the Baltic ecosystem at the end of a 1-year run (216k schools sampled to 2 000 points):
+
+<table>
+  <tr>
+    <td width="50%" align="center"><img src="screenshots/live-movement-heatmap-baltic.png" alt="Live movement heatmap mode — Baltic Sea" width="100%"><br><sub><b>Heatmap</b> — school density</sub></td>
+    <td width="50%" align="center"><img src="screenshots/live-movement-dots-baltic.png" alt="Live movement dots mode — Baltic Sea" width="100%"><br><sub><b>Dots</b> — individual schools by species</sub></td>
+  </tr>
+</table>
+
 - **Full provenance** — every parameter family, every value source, every DOI: [`docs/baltic_example.md`](docs/baltic_example.md).
 - **Validation vs ICES** — F rates and biomass envelopes cross-checked against the 2024 advice cycle: [`docs/baltic_ices_validation_2026-04-18.md`](docs/baltic_ices_validation_2026-04-18.md). Unit-aware (the ICES API mislabels some stocks' SSB units; the validator detects this via Blim magnitude).
 - **Refresh workflow** — [`data/baltic/reference/ices_snapshots/README.md`](data/baltic/reference/ices_snapshots/README.md).
