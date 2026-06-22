@@ -123,10 +123,12 @@ grid**, `scenarios.py:73-85`).
   its four reactive values, `scenarios.py:148-151`) — otherwise a prior
   comparison's table flashes on the next open, because `compare_results` is
   defined once at server-build time and re-binds to its placeholder on every
-  modal render. Use `size="l"` so wide key/value rows and large diffs are
-  readable; the inner `STYLE_SCROLL_TABLE` div stays (modal body must not clip
-  it — confirm no `overflow:hidden` fight; large-diff smoke test below). The
-  modal contains:
+  modal render. Use `size="l"` and `easy_close=True` (read-only view, backdrop
+  dismiss is fine — matches the export/import modals, NOT the multi-step wizard
+  which uses `easy_close=False`; because open always resets, backdrop-dismiss
+  needs no close handler). The inner `STYLE_SCROLL_TABLE` div stays (modal body
+  must not clip it — confirm no `overflow:hidden` fight; large-diff smoke test
+  below). The modal contains:
   - `input_select("compare_a", "Scenario A", choices=<computed>)`
   - `input_select("compare_b", "Scenario B", choices=<computed>)`
   - `input_action_button("btn_compare", "Compare", class_="btn-warning")`
@@ -134,8 +136,10 @@ grid**, `scenarios.py:73-85`).
   - footer: a single Close button (`data-bs-dismiss="modal"`).
   The modal's selectors are created **fresh on each open**, so pass the
   current choices directly into `input_select(choices=...)` at modal-build
-  time (compute from the saved-scenario list — the same data that fed the old
-  `update_select` effect at `scenarios.py:486-487`). Do **not** rely on a
+  time. Compute them from **`_scenario_names()`** (`ui/pages/scenarios.py:101-103`)
+  — the same source the old `update_compare_choices` effect used. NOTE: that
+  helper returns names in `mgr.list_scenarios()` order, **not** alphabetical
+  (despite its docstring), so don't assert alphabetical order in tests. Do **not** rely on a
   separate post-render `update_select`: the inputs don't exist until the modal
   renders, so an update-by-id effect would be a no-op against a freshly built
   modal. Delete the now-dead `update_compare_choices` effect entirely
@@ -159,10 +163,11 @@ grid**, `scenarios.py:73-85`).
   to drift. The untouched sentinel `("none", None)` is distinct from
   `("identical", None)`, so a freshly opened modal shows the prompt, never
   "Identical".
-- **Guard `mgr.compare`**: it is **unguarded today** — `compare()` →
-  `load()` does a bare `open()`/`json.load` (`scenarios.py:120-121`) and can
-  raise `FileNotFoundError` / `json.JSONDecodeError` / `ValueError` (e.g. a
-  scenario deleted between modal-open and Compare-click). Wrap the call in
+- **Guard `mgr.compare`**: it is **unguarded today** — `compare()`
+  (`osmose/scenarios.py:165`) → `load()` does a bare `open()`/`json.load`
+  (`osmose/scenarios.py:120-121`) and can raise `FileNotFoundError` /
+  `json.JSONDecodeError` / `ValueError` (e.g. a scenario deleted between
+  modal-open and Compare-click). Wrap the call in
   `try/except Exception` inside `handle_compare` and set `("error", None)` on
   failure (mirror the run-diff page's broad `except` at
   `scenario_diff.py:294-297`; do NOT catch only `FileNotFoundError`).
@@ -222,10 +227,12 @@ wording** stays caller-local (a run says "Select two runs", a scenario says
 
 The two surfaces do **not** normalize keys identically, and the shared component
 must not assume they do:
-- **Scenario compare** (`scenarios.py:167-168`) runs `canonicalize_config()` on
-  load → **canonical (lower-cased / renamed) keys**, `key_case_map` dropped.
-- **Run compare** (`history.py:74-85`) diffs the **raw** `config_snapshot` — no
-  re-canonicalization.
+- **Scenario compare** — `ScenarioManager.load` (`osmose/scenarios.py:116`) runs
+  `canonicalize_config()` at `osmose/scenarios.py:122-124`, so `compare()`
+  (`osmose/scenarios.py:165`) diffs **canonical (lower-cased / renamed) keys**,
+  `key_case_map` dropped.
+- **Run compare** (`osmose/history.py:74-85`) diffs the **raw** `config_snapshot`
+  — no re-canonicalization.
 
 `classify_config_diffs` sorts by `r["key"]` with Python's **case-sensitive** str
 order, so mixed-case run keys sort differently than canonical scenario keys. This
@@ -254,12 +261,22 @@ keys as-is. Pin the sort behavior with a mixed-case input test so any future
 - **Regression**: existing `scenario_diff` page tests stay green (the page now
   delegates but renders the same structure); `tests/test_ui_results.py:360`
   asserts `"diff_config_table" in html` — unaffected (run page unchanged).
-- **New e2e** (`tests/test_e2e_*.py`): no Scenarios-page Compare e2e exists
-  today, so the modal-open path is otherwise uncovered. Add one: dismiss the
-  changelog modal FIRST (`_e2e_support.dismiss_changelog_modal`), nav to
-  Scenarios, click "Compare Scenarios", pick A/B, click Compare, assert the
-  badged table renders. Mind **two stacked modals** (changelog then compare) —
-  dismiss order matters.
+- **New e2e** `tests/test_e2e_scenario_compare.py`: no Scenarios-page Compare
+  e2e exists today, so the modal-open path is otherwise uncovered.
+  - **State setup (required — the modal needs ≥2 differing scenarios):** the
+    selectors are empty in a fresh app, so the test must seed two scenarios
+    before comparing. Two options, pick the simpler that fits the conftest:
+    (a) write two `data/scenarios/<name>/scenario.json` files with differing
+    `config` dicts in a fixture (with `shutil.rmtree` teardown — mirror the
+    setup/teardown in `tests/test_e2e_scenario_wizard.py`), or (b) drive the
+    "+ New Scenario" wizard twice from two different demos. Prefer (a) — it's
+    deterministic and fast.
+  - **Flow:** `dismiss_changelog_modal(page)` FIRST, nav to Scenarios, click
+    "Compare Scenarios", pick A/B, click Compare, assert a badged diff table.
+  - **Scope locators to the compare modal** (e.g. `page.locator(".modal
+    #btn_compare")`, `.modal #compare_a`) — a bare `#compare_a` could match a
+    detached/stale node. Mind **two stacked modals** (changelog dismissed before
+    the compare modal opens).
 - Full suite + ruff check/format + **pyright on changed files** (annotate the
   component's return as `list[dict[str, str | None]]` to avoid stub noise) per
   repo gate conventions.
@@ -310,3 +327,20 @@ keys as-is. Pin the sort behavior with a mixed-case input test so any future
   are the likely first failures if missed.
 - **pyright** on changed files against the clean `[dev]` venv (annotate the
   component dict type).
+
+## Acceptance (definition of done)
+
+1. Full suite green, including the new/repointed test files
+   (`test_config_diff_component.py`, repointed `test_scenario_diff_config.py`,
+   the adapter/state test).
+2. `ruff check` and `ruff format --check` clean on `osmose/ ui/ tests/` (the two
+   F401 style-import removals done).
+3. `pyright` clean on the changed files.
+4. New e2e `tests/test_e2e_scenario_compare.py` passes when run explicitly
+   (`-m e2e`); modal opens, seeded A/B compare renders a badged table.
+5. Post-edit grep: exactly **one** occurrence each of `compare_a`, `compare_b`,
+   `btn_compare`, `compare_results` (all inside the modal builder); the
+   `update_compare_choices` effect and the crude inline `compare_results` table
+   are fully gone.
+6. Run-diff page (`scenario_diff.py`) renders an identical config-diff table to
+   before (its existing tests stay green); no visual baseline re-bless needed.
