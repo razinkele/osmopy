@@ -133,7 +133,7 @@ Three ready-to-run configurations ship in-tree.
 
 The Baltic example is the newest and most documented. It covers cod, herring, sprat, flounder, perch, pikeperch, smelt, stickleback plus six CMEMS-forced LTL groups, 50 × 40 cells over 10–30° E × 54–66° N, 24 dt/yr.
 
-**Live movement during a run.** The Run page streams every timestep of a Python-engine simulation onto the map — toggle between an aggregated density **heatmap** and individual **dots** coloured by species. Below is the Baltic ecosystem at the end of a 1-year run (216k schools sampled to 2 000 points):
+**Live movement during a run.** The Run page streams every timestep of a Python-engine simulation onto the map — toggle between an aggregated density **heatmap** and individual **dots** coloured by species. Below is the Baltic ecosystem (8 fish species over the 50 × 40-cell domain) at the end of a 1-year run:
 
 <table>
   <tr>
