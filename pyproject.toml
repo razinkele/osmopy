@@ -95,6 +95,7 @@ asyncio_mode = "auto"
 markers = [
     "e2e: end-to-end browser tests (Playwright)",
     "visual: screenshot visual-regression tests (Playwright; opt-in, run with -m visual)",
+    "slow: long-running tests incl. the Java cross-check (opt-in; run with -m slow)",
 ]
 # --dist loadfile: when run in parallel (-n N), keep each file's tests on one
 # worker. Preserves implicit intra-file ordering (e.g. module-level cache state)
