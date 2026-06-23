@@ -117,7 +117,7 @@ git commit -m "fix(calibration): let _worker_eval propagate unexpected errors (n
 ### Task 2: Fix 2 — fleet-effort on the Python fishing fallback
 
 **Files:**
-- Modify: `osmose/engine/processes/mortality.py` (add `_fleet_effort_factor`; use it in `_precompute_effective_rates:778-794` and `_apply_fishing_for_school:180`; pass `ctx.fleet_state` at the Python fishing call site `:1737`)
+- Modify: `osmose/engine/processes/mortality.py` (add `_fleet_effort_factor`; use it in `_precompute_effective_rates:786-802` and `_apply_fishing_for_school:180`; pass `ctx.fleet_state` at the Python fishing call site `:1745`)
 - Test: `tests/test_engine_fishing_fleet_python_path.py` (new)
 
 **Interfaces:**
@@ -187,7 +187,7 @@ def _fleet_effort_factor(sp_id, cell_y, cell_x, fleet_state) -> float:
     """Multiplicative fishing-effort factor for a school. Returns 1.0 when
     fleet_state is None OR sp_id is not targeted by any fleet (base F unchanged).
     For a TARGETED species: the sum of effort_map across fleets at (cell_y,
-    cell_x), or 0.0 if that cell is out of bounds. Mirrors mortality.py:778-794."""
+    cell_x), or 0.0 if that cell is out of bounds. Mirrors mortality.py:786-802."""
     if fleet_state is None:
         return 1.0
     targeted: set[int] = set()
@@ -208,7 +208,7 @@ Expected: PASS (4 passed).
 
 - [ ] **Step 5: Refactor `_precompute_effective_rates` to use the helper (behavior-preserving)**
 
-In `_precompute_effective_rates`, replace the fleet block at lines 778-794 (the `if fleet_state is not None:` two-loop block ending at `eff_fishing[i] *= effort_factor[i]`) with:
+In `_precompute_effective_rates`, replace the fleet block at lines **786-802** (the `if fleet_state is not None:` two-loop block ending at `eff_fishing[i] *= effort_factor[i]`) with:
 
 ```python
         # Scale fishing by fleet effort when economic module is active
@@ -252,7 +252,7 @@ Then, immediately AFTER the MPA-reduction block and BEFORE the seasonality/`F = 
 
 - [ ] **Step 7: Pass `ctx.fleet_state` at the Python fishing call site**
 
-At `mortality.py:1737` (inside `_mortality_in_cell`'s pure-Python loop, the `elif cause == _FISHING:` branch), change the call:
+At `mortality.py:1745` (inside `_mortality_in_cell`'s pure-Python loop, the `elif cause == _FISHING:` branch starts ~`:1740`), change the call:
 
 ```python
                 _apply_fishing_for_school(
@@ -314,7 +314,7 @@ git commit -m "fix(engine): apply fleet-effort on the pure-Python fishing fallba
 ### Task 3: Fix 1 — egg-retention gates predation on the released fraction
 
 **Files:**
-- Modify: `osmose/engine/processes/mortality.py` — `_apply_predation_numba` (def `:810`, prey-avail `:886`) + its three callers (`_mortality_in_cell_numba` call `:1139`, `_mortality_all_cells_numba` call `:1306`, `_mortality_all_cells_parallel` call `:1485`) + the driver signatures + the `mortality()` dispatch call (`:~1939`) + the `_mortality_in_cell` dispatch; and `_apply_predation_for_school` (prey-avail `:397`).
+- Modify: `osmose/engine/processes/mortality.py` — `_apply_predation_numba` (def `:810`, prey-avail `:894`) + its three callers (`_mortality_in_cell_numba` call `:1139`, `_mortality_all_cells_numba` call `:1306`, `_mortality_all_cells_parallel` call `:1485`) + the driver signatures (`:1077`/`:1219`/`:1386`) + the `mortality()` dispatch call (`:~1939`) + the `_mortality_in_cell` dispatch; and `_apply_predation_for_school` (prey-avail `:397`); plus `tests/test_engine_functional_response.py:780` (existing direct kernel call gets the new arg).
 - Test: `tests/test_engine_egg_retention.py` (new)
 
 **Interfaces:**
@@ -325,13 +325,12 @@ git commit -m "fix(engine): apply fleet-effort on the pure-Python fishing fallba
 
 - [ ] **Step 1: Write the failing test**
 
-Create `tests/test_engine_egg_retention.py`. Model the config/state on `tests/test_engine_mortality_loop.py::TestPredation` (it builds a 2-species predator/prey cell). Set the prey school as an egg cohort and give the predator an appetite strictly between `egg_abundance/n_subdt` and `egg_abundance`:
+The full-`mortality()` path is awkward to make falsifiable (config size-ratio parsing). Instead drive `_apply_predation_for_school` directly — the pure-Python predation path that reads `state.egg_retained` after the fix — using the **verified working harness** at `tests/test_engine_functional_response.py:551-668` (its config dict, weights, and the exact `_apply_predation_for_school(...)` positional call). The Numba production kernel gets the same one-line clamp and is validated end-to-end by Task 4's Java cross-check + parity baselines. Create `tests/test_engine_egg_retention.py`:
 
 ```python
-"""Egg-retention: a graduated egg cohort must NOT be fully eaten in sub-dt 1.
-egg_retained is released abundance/n_subdt per sub-dt; predation must only see the
-released fraction. Deep review 2026-06-22 (HIGH-1). Runs on the default (Numba) path.
-"""
+"""Egg-retention: predation must only see the RELEASED egg fraction, not the full
+egg cohort. Drives _apply_predation_for_school directly with the verified harness
+from tests/test_engine_functional_response.py:551. Deep review 2026-06-22 (HIGH-1)."""
 
 from __future__ import annotations
 
@@ -339,42 +338,87 @@ import numpy as np
 
 from osmose.engine.config import EngineConfig
 from osmose.engine.grid import Grid
-from osmose.engine.processes.mortality import mortality
+from osmose.engine.processes.mortality import _apply_predation_for_school
 from osmose.engine.resources import ResourceState
-from osmose.engine.state import SchoolState
-from tests.test_engine_mortality_loop import TestPredation  # reuse its _make_2sp_config
+from osmose.engine.state import MortalityCause, SchoolState
+
+_CFG = {
+    "simulation.time.ndtperyear": "24", "simulation.time.nyear": "1",
+    "simulation.nspecies": "2", "simulation.nschool.sp0": "1", "simulation.nschool.sp1": "1",
+    "species.name.sp0": "Egg", "species.name.sp1": "Predator",
+    "species.linf.sp0": "15.0", "species.linf.sp1": "50.0",
+    "species.k.sp0": "0.5", "species.k.sp1": "0.2",
+    "species.t0.sp0": "-0.1", "species.t0.sp1": "-0.1",
+    "species.egg.size.sp0": "0.1", "species.egg.size.sp1": "0.1",
+    "species.length2weight.condition.factor.sp0": "0.006",
+    "species.length2weight.condition.factor.sp1": "0.006",
+    "species.length2weight.allometric.power.sp0": "3.0",
+    "species.length2weight.allometric.power.sp1": "3.0",
+    "species.lifespan.sp0": "5", "species.lifespan.sp1": "10",
+    "species.vonbertalanffy.threshold.age.sp0": "1.0",
+    "species.vonbertalanffy.threshold.age.sp1": "1.0",
+    "mortality.subdt": "10",
+    "predation.ingestion.rate.max.sp0": "3.5", "predation.ingestion.rate.max.sp1": "3.5",
+    "predation.efficiency.critical.sp0": "0.57", "predation.efficiency.critical.sp1": "0.57",
+    "predation.predPrey.sizeRatio.min.sp0": "1.0", "predation.predPrey.sizeRatio.min.sp1": "1.0",
+    "predation.predPrey.sizeRatio.max.sp0": "0.3", "predation.predPrey.sizeRatio.max.sp1": "0.3",
+    "mortality.additional.rate.sp0": "0.0", "mortality.additional.rate.sp1": "0.0",
+    "mortality.starvation.rate.max.sp0": "0.0", "mortality.starvation.rate.max.sp1": "0.0",
+    "simulation.fishing.mortality.enabled": "false",
+}
 
 
-def test_egg_cohort_not_fully_consumed_in_first_subdt():
-    cfg = EngineConfig.from_dict(TestPredation()._make_2sp_config())
+def _eaten_eggs(egg_retained_frac: float) -> float:
+    n_subdt = 10
+    cfg = EngineConfig.from_dict(dict(_CFG))
     grid = Grid.from_dimensions(ny=1, nx=1)
-    # School 0 = predator (sp1), school 1 = egg-cohort prey (sp0).
+    rs = ResourceState(config=cfg.raw_config, grid=grid)
     state = SchoolState.create(n_schools=2, species_id=np.array([1, 0], dtype=np.int32))
-    # ... configure: prey is_egg=True with a known abundance; predator large+hungry;
-    #     same cell; n_subdt >= 4 so the released slice << full cohort.
-    # (Use the field setup from TestPredation.test_total_eaten_never_exceeds_max_eatable
-    #  as the template for sizes/weights/feeding_stage/accessibility.)
-    egg_abundance = 1e6
-    # ... assign state.is_egg[1]=True, state.abundance[1]=egg_abundance, etc.
-    resources = ResourceState.empty(grid, cfg)
-    rng = np.random.default_rng(0)
-    out = mortality(state, cfg, grid, resources, n_subdt=4, step=0, rng=rng)
-    survivors = out.abundance[1]
-    # Buggy code eats the whole cohort in sub-dt 1 -> ~0 survivors.
-    # Fixed code can eat at most the released slices -> a clear positive remainder.
-    assert survivors > 0.1 * egg_abundance
-```
+    pred_w = 0.006 * 30**3 * 1e-6
+    prey_w = 0.006 * 10**3 * 1e-6
+    pred_abundance = 100.0
+    pred_biomass = pred_abundance * pred_w
+    max_eatable = pred_biomass * 3.5 / (24 * n_subdt)
+    prey_abundance = (2.0 * max_eatable) / prey_w  # r=2: prey plentiful, predator appetite-bound
+    state = state.replace(
+        abundance=np.array([pred_abundance, prey_abundance]),
+        length=np.array([30.0, 10.0]),  # ratio 3.0, within [1.0, 1/0.3)
+        weight=np.array([pred_w, prey_w]),
+        biomass=np.array([pred_biomass, prey_abundance * prey_w]),
+        age_dt=np.array([48, 24], dtype=np.int32),
+        cell_x=np.array([0, 0], dtype=np.int32),
+        cell_y=np.array([0, 0], dtype=np.int32),
+        feeding_stage=np.array([0, 0], dtype=np.int32),
+        is_egg=np.array([False, True]),
+        egg_retained=np.array([0.0, egg_retained_frac * prey_abundance]),
+    )
+    rng = np.random.default_rng(42)
+    cell_indices = np.array([0, 1], dtype=np.int32)
+    _apply_predation_for_school(
+        0, cell_indices, state, cfg, rs, 0, 0, rng, n_subdt,
+        None, False, False, None, None, inst_abd=state.abundance.copy(),
+    )
+    return float(state.preyed_biomass[0])  # eaten biomass by the predator
 
-**NOTE to implementer:** fill the `...` setup by copying the concrete field assignments from `TestPredation.test_total_eaten_never_exceeds_max_eatable` (`tests/test_engine_mortality_loop.py:180`), then set `state.is_egg[1] = True` and a predator appetite large enough to clear the whole cohort in one sub-dt. The assertion threshold (`> 0.1 * egg_abundance`) must FAIL on current code (cohort wiped) — verify that in Step 2; if current code leaves survivors (appetite too small), increase predator size/ingestion until the buggy run wipes the cohort, so the test is falsifiable.
+
+def test_fully_retained_eggs_are_not_eaten():
+    # egg_retained == full abundance -> eatable (inst_abd - egg_retained) == 0.
+    assert _eaten_eggs(egg_retained_frac=1.0) == 0.0
+
+
+def test_released_eggs_are_eaten():
+    # Baseline: with nothing retained the predator eats eggs (proves the harness bites).
+    assert _eaten_eggs(egg_retained_frac=0.0) > 0.0
+```
 
 - [ ] **Step 2: Run the test to verify it fails**
 
 Run: `.venv/bin/python -m pytest tests/test_engine_egg_retention.py -q`
-Expected: FAIL — `survivors` is ~0 (egg cohort fully consumed in sub-dt 1). If it does not fail, the predator appetite is too small; increase it until the buggy path wipes the cohort.
+Expected: `test_fully_retained_eggs_are_not_eaten` FAILS — current code reads `inst_abd[q_idx]` (ignores `egg_retained`), so the predator eats the plentiful prey and `preyed_biomass[0] > 0`. `test_released_eggs_are_eaten` PASSES already (confirms the harness produces predation). If `test_released_eggs_are_eaten` is 0 (no predation at all), the size-ratio/age setup is wrong — re-check against the cited template before proceeding.
 
 - [ ] **Step 3: Thread `egg_retained` into the Numba kernel (prey-avail clamp)**
 
-In `_apply_predation_numba` (def at `:810`), add `egg_retained` as the FINAL positional parameter. At the prey-availability read inside the prey scan (the `abd_q = inst_abd[q_idx]` line, `:886`), change to:
+In `_apply_predation_numba` (def at `:810`), add `egg_retained` as the FINAL positional parameter. At the prey-availability read inside the prey scan (the `abd_q = inst_abd[q_idx]` line, **`:894`**), change to:
 
 ```python
             abd_q = inst_abd[q_idx] - egg_retained[q_idx]
@@ -382,13 +426,15 @@ In `_apply_predation_numba` (def at `:810`), add `egg_retained` as the FINAL pos
                 abd_q = 0.0
 ```
 
+**Also update the existing direct kernel-call test** `tests/test_engine_functional_response.py:780` (`_mort._apply_predation_numba(...)`) — it passes the kernel's full positional arg list and will fail to JIT-compile with the new param. Append a final `egg_retained` argument there: `np.zeros(n_schools, dtype=np.float64)`. (This is the only direct `_apply_predation_numba` call in `tests/`.)
+
 - [ ] **Step 4: Thread `egg_retained` through the three driver kernels**
 
-Add `egg_retained` as the FINAL positional parameter to the signatures of `_mortality_in_cell_numba` (`:1069`), `_mortality_all_cells_numba` (`:1211`), and `_mortality_all_cells_parallel` (`:1377`); and pass `egg_retained` as the final arg at each `_apply_predation_numba(...)` call site (`:1139`, `:1306`, `:1485`).
+Add `egg_retained` as the FINAL positional parameter to the signatures of `_mortality_in_cell_numba` (`:1077`), `_mortality_all_cells_numba` (`:1219`), and `_mortality_all_cells_parallel` (`:1386`); and pass `egg_retained` as the final arg at each `_apply_predation_numba(...)` call site (`:1139`, `:1306`, `:1485`).
 
 - [ ] **Step 5: Pass `work_state.egg_retained` at the dispatch sites**
 
-In `mortality()`, at the `_batch_fn(...)` call (`:~1939`), add `work_state.egg_retained` as the final argument. In the `_mortality_in_cell` fallback dispatch (the `else:` per-cell loop calling `_mortality_in_cell`), pass `work_state.egg_retained` through to `_mortality_in_cell` (add the param there too, final position, and forward to its internal `_mortality_in_cell_numba` call).
+In `mortality()`, at the `_batch_fn(...)` call (`:~1939`), add `work_state.egg_retained` as the final argument — this is the **production hot path**. For the `else:` per-cell fallback (only reached when `_HAS_NUMBA=False`), add `egg_retained` as a final param to `_mortality_in_cell` and pass `work_state.egg_retained`; thread it to the internal `_mortality_in_cell_numba` call for signature consistency. (Note: that internal Numba branch is dead under `_HAS_NUMBA=False` — `use_full_numba` is always False there, `:1623` — so the *active* fallback fix is Step 6's pure-Python `_apply_predation_for_school` change. Still thread the param to keep arg counts consistent.)
 
 - [ ] **Step 6: Thread into the pure-Python predation fallback**
 
@@ -409,15 +455,17 @@ Expected: PASS — survivors now exceed `0.1 * egg_abundance`.
 
 - [ ] **Step 8: Engine regression (NOT the parity baselines yet)**
 
-Run: `.venv/bin/python -m pytest tests/test_engine_mortality_loop.py tests/test_engine_predation.py tests/test_engine_mortality.py tests/test_engine_bioen_integration.py -q`
-Expected: PASS. (Predation outputs change for egg prey, but these tests assert invariants/directions, not stored baselines. If any asserts an exact pre-fix egg-predation number, that's an expected shift — report it; do not blindly edit the assertion.)
+Run: `.venv/bin/python -m pytest tests/test_engine_mortality_loop.py tests/test_engine_predation.py tests/test_engine_mortality.py tests/test_engine_bioen_integration.py tests/test_engine_functional_response.py -q`
+Expected: PASS — `test_engine_functional_response.py` must be green (proves the `:780` kernel-call update + the new param compile). Predation outputs change for egg prey, but these tests assert invariants/directions, not stored baselines. If any asserts an exact pre-fix egg-predation number, that's an expected shift — report it; do not blindly edit the assertion.
+
+**Baseline-staleness note (for the reviewer):** this commit shifts BoB/EEC biomass, so the bit-exact `TestBaselineParity` cases in `tests/test_engine_parity.py` (local-only) WILL fail until Task 4 regenerates the baselines. Do NOT run `tests/test_engine_parity.py` in this task and do NOT treat its failure as a Task-3 regression — Task 4 restores it after the Java cross-check confirms the shift is Java-correct.
 Run: `.venv/bin/ruff check osmose/engine/processes/mortality.py tests/test_engine_egg_retention.py && .venv/bin/ruff format --check osmose/engine/processes/mortality.py tests/test_engine_egg_retention.py && .venv/bin/pyright osmose/engine/processes/mortality.py`
 Expected: clean.
 
 - [ ] **Step 9: Commit (the code fix; parity gate is Task 4)**
 
 ```bash
-git add osmose/engine/processes/mortality.py tests/test_engine_egg_retention.py
+git add osmose/engine/processes/mortality.py tests/test_engine_egg_retention.py tests/test_engine_functional_response.py
 git commit -m "fix(engine): gate egg predation on the released fraction (Numba + Python paths)"
 ```
 
@@ -427,7 +475,7 @@ git commit -m "fix(engine): gate egg predation on the released fraction (Numba +
 
 **Files:**
 - Create: `tests/test_egg_retention_java_parity.py` (Python-vs-Java cross-check)
-- Modify: `scripts/save_parity_baseline.py` (emit an EEC baseline), `tests/test_engine_parity.py` (add the EEC case)
+- Modify: `scripts/save_parity_baseline.py` (emit an EEC baseline), `tests/test_engine_parity.py` (add the EEC case), `pyproject.toml` (register the `slow` marker)
 - New baselines (committed only after the Java check passes): `tests/baselines/parity_baseline_eec_1yr_seed42.npz`, regenerated `parity_baseline_bob_1yr_seed42.npz`
 
 **Interfaces:**
@@ -435,16 +483,27 @@ git commit -m "fix(engine): gate egg predation on the released fraction (Numba +
 
 **This task is a verification gate, not a behavior change. Its DELIVERABLE is evidence that Fix 1 moves Python toward Java, plus regenerated baselines.**
 
+- [ ] **Step 0: Register the `slow` marker**
+
+In `pyproject.toml` add to the `[tool.pytest.ini_options] markers` list (currently only `e2e`, `visual`, around `:95-98`):
+
+```toml
+    "slow: long-running tests incl. the Java cross-check (opt-in; run with -m slow)",
+```
+
+This silences the unknown-marker warning. Note `addopts` (`-m 'not e2e and not visual'`) does NOT exclude `slow`, so isolation relies on the `OSMOSE_JAR` skip guard above — do not rely on the marker alone.
+
 - [ ] **Step 1: Write the Java cross-check test**
 
-Create `tests/test_egg_retention_java_parity.py`. Mark it `@pytest.mark.slow` and skip when the JAR is absent. Run one short EEC config (`data/eec_full/`) on BOTH engines and compare per-species final biomass within the established parity band (the repo's parity tolerance — "within 1 OoM"; reuse the tolerance constant/asserts from `tests/test_engine_parity.py`'s statistical/portable section).
+Create `tests/test_egg_retention_java_parity.py`. **Gate it on the `OSMOSE_JAR` env var** (the repo's opt-in pattern at `tests/test_calibration_problem_python_engine.py:113-116`) — NOT on a JAR-glob `skipif`, because the JAR is present in-tree so a glob guard never skips and the multi-minute Java run would execute on every default `pytest`. Also register the `slow` marker (Step 0 below). Use the **cross-engine ratio band** `0.1 <= py/java <= 10.0` (the "within 1 OoM" check the repo uses at `tests/test_calibration_problem_python_engine.py:135`), NOT `test_engine_parity.py`'s 5% Python-vs-Python tolerance.
 
 ```python
 """Python-vs-Java cross-check for the egg-retention fix: the FIXED Python engine
-must agree with Java within the parity band (Java implements graduated egg
-release). If Python diverges from Java, the fix's direction is wrong — STOP.
-Slow/JAR-gated; not in the default suite."""
+must agree with Java within ~1 order of magnitude per species (Java implements
+graduated egg release). If Python DIVERGES from Java, the fix's direction is
+wrong — STOP. Opt-in via OSMOSE_JAR; excluded from the default suite."""
 
+import os
 import pathlib
 
 import numpy as np
@@ -452,33 +511,33 @@ import pytest
 
 pytestmark = pytest.mark.slow
 
-_REPO = pathlib.Path(__file__).resolve().parent.parent
-_JAR = next((_REPO / "osmose-java").glob("*jar-with-dependencies*.jar"), None)
+_JAR = os.environ.get("OSMOSE_JAR")
 
 
-@pytest.mark.skipif(_JAR is None, reason="OSMOSE Java JAR not present")
+@pytest.mark.skipif(not _JAR, reason="set OSMOSE_JAR to the 4.3.3 jar to run")
 def test_python_matches_java_eec_biomass():
-    # 1. Run EEC on Java via OsmoseRunner(_JAR).run(config_path, output_dir) (async ->
-    #    asyncio.run); read with OsmoseResults(output_dir).
-    # 2. Run the same EEC config on the Python engine (simulate(...)) with matching
-    #    nyear/seed.
-    # 3. Compare per-species final-year mean biomass within the parity tolerance.
-    # Assert each species agrees within the band; on failure, print the per-species
-    # ratio so a divergence is diagnosable.
+    # 1. Java: OsmoseRunner(Path(_JAR)).run(config_path, output_dir) is async ->
+    #    asyncio.run(...); read with OsmoseResults(output_dir, prefix="eec")
+    #    (EEC sets output.file.prefix=eec; the default "osm" prefix finds no files).
+    # 2. Python: run the SAME EEC config via simulate(...) (model the load +
+    #    final-year mean biomass extraction on tests/test_engine_parity.py::_run_engine,
+    #    but pointed at data/eec_full/).
+    # 3. For each species assert 0.1 <= py_biomass/java_biomass <= 10.0; on failure
+    #    print the per-species ratio so a divergence is diagnosable.
     ...
 ```
 
-**NOTE to implementer:** model the Java run on the existing runner usage (`osmose/runner.py:OsmoseRunner.run` is async — wrap in `asyncio.run`) and the output read on `osmose.results.OsmoseResults`. Model the Python run + biomass extraction on `tests/test_engine_parity.py::_run_engine`. Use a short horizon (1-2 years) to keep it tractable. If no existing Python-vs-Java comparison helper exists, this test defines the first one — keep the tolerance identical to the repo's stated parity band; do NOT invent a looser one.
+**NOTE to implementer:** `OsmoseRunner.run` (`osmose/runner.py:131`) is async — wrap in `asyncio.run`. Use a short horizon (1-2 years). The 4.3.3 jar has historically struggled to load `eec_full` — if the Java run errors on config load (not a biomass divergence), that is a JAR/config-compat blocker, not a fix problem: report it and treat Task 4 as blocked pending a runnable Java EEC config (the fix's unit test in Task 3 still stands).
 
 - [ ] **Step 2: Run the Java cross-check (with Fix 1 applied)**
 
-Run: `.venv/bin/python -m pytest tests/test_egg_retention_java_parity.py -q -m slow`
-Expected: PASS — fixed Python agrees with Java within tolerance.
+Run: `OSMOSE_JAR=osmose-java/<the-4.3.3-jar>.jar .venv/bin/python -m pytest tests/test_egg_retention_java_parity.py -q -m slow`
+Expected: PASS — fixed Python agrees with Java within the 0.1–10× band. (Without `OSMOSE_JAR` set, it SKIPS — confirm it's skipped, not silently passing, in the default suite.)
 **STOP CONDITION:** if it FAILS with Python *further* from Java than before Fix 1, do not proceed. Report the per-species ratios — this falsifies the assumption that Java gradually releases eggs, and the fix direction needs human review before any baseline is touched.
 
 - [ ] **Step 3: Add the EEC baseline tooling**
 
-In `scripts/save_parity_baseline.py`, add an EEC variant: a `--config {bob,eec}` flag (default `bob`) selecting `data/eec_full/` (find its top-level `*all-parameters*.csv`) and writing `tests/baselines/parity_baseline_eec_<years>yr_seed<seed>.npz`. Mirror the existing `save_baseline` body (read config, set nyear, build grid, `simulate`, save biomass/abundance/mortality/species_names).
+In `scripts/save_parity_baseline.py`, add an EEC variant: a `--config {bob,eec}` flag (default `bob`) selecting the EEC config under `data/eec_full/` and writing `tests/baselines/parity_baseline_eec_<years>yr_seed<seed>.npz`. **Parameterize the base directory, not just the CSV path:** the existing `save_baseline` hardcodes `data/examples/` as the base for grid/NetCDF resolution (`EXAMPLES_CONFIG` + the `grid.netcdf.file` lookup); for EEC the base must be `data/eec_full/` (its grid `eec_grid-mask.nc` and background-species NetCDFs live there). Mirror the rest of the body (read config, set nyear, build grid via `Grid.from_netcdf(base / grid_file, ...)`, `simulate`, save biomass/abundance/mortality/species_names).
 
 In `tests/test_engine_parity.py`, add an EEC case mirroring the BoB fixture: an `_eec_baseline_path()`, an `_run_engine_eec()` (or parametrize `_run_engine` on config), and a parity test that loads `parity_baseline_eec_*.npz` and compares (same tolerance structure as the BoB case; skip if the baseline is absent).
 
@@ -503,7 +562,7 @@ Expected: clean.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add tests/test_egg_retention_java_parity.py scripts/save_parity_baseline.py tests/test_engine_parity.py tests/baselines/parity_baseline_eec_1yr_seed42.npz tests/baselines/parity_baseline_bob_1yr_seed42.npz
+git add tests/test_egg_retention_java_parity.py scripts/save_parity_baseline.py tests/test_engine_parity.py pyproject.toml tests/baselines/parity_baseline_eec_1yr_seed42.npz tests/baselines/parity_baseline_bob_1yr_seed42.npz
 git commit -m "test(engine): Java cross-check + EEC/BoB parity baselines for egg-retention fix
 
 Java cross-check confirms the fixed Python engine agrees with Java within
@@ -515,7 +574,7 @@ Biomass deltas vs prior baseline: <fill in from Step 4>."
 
 ### Final verification (before finishing the branch)
 
-- [ ] Full suite (default, no slow/e2e): `.venv/bin/python -m pytest -n auto -q -m "not slow"` → green.
+- [ ] Full suite (default): `.venv/bin/python -m pytest -n auto -q -m "not e2e and not visual and not slow"` → green. (Plain `-m "not slow"` would OVERRIDE `addopts` and re-admit e2e/visual — keep all three exclusions.)
 - [ ] `.venv/bin/ruff check osmose/ ui/ tests/ scripts/` and `.venv/bin/ruff format --check osmose/ ui/ tests/ scripts/` → clean.
 - [ ] `.venv/bin/pyright osmose/engine/processes/mortality.py osmose/calibration/problem.py` → no new errors.
 - [ ] Java cross-check ran green (Task 4 Step 2) — the egg fix is Java-confirmed.
