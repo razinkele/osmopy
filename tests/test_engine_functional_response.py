@@ -818,6 +818,7 @@ def _run_single_predation_step_numba(r: float, shape: int, k: float):
         prey_type_buf,
         prey_id_buf,
         prey_eligible_buf,
+        np.zeros(n_schools, dtype=np.float64),
     )
     eaten = float(preyed_biomass[0])
     return eaten, max_eatable

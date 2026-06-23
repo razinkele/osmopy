@@ -401,7 +401,9 @@ def _apply_predation_for_school(
         q_idx = int(q_idx_val)
         if q_idx == p_idx:
             continue
-        inst_abd_q = inst_abd[q_idx]
+        inst_abd_q = inst_abd[q_idx] - state.egg_retained[q_idx]
+        if inst_abd_q < 0.0:
+            inst_abd_q = 0.0
         if inst_abd_q <= 0:
             continue
         prey_len = state.length[q_idx]
@@ -864,6 +866,7 @@ if _HAS_NUMBA:
         prey_type_buf,
         prey_id_buf,
         prey_eligible_buf,
+        egg_retained,
     ):
         """Numba-compiled single-predator predation (schools + resources).
 
@@ -907,7 +910,9 @@ if _HAS_NUMBA:
             q_idx = cell_indices[q_pos]
             if q_idx == p_idx:
                 continue
-            abd_q = inst_abd[q_idx]
+            abd_q = inst_abd[q_idx] - egg_retained[q_idx]
+            if abd_q < 0.0:
+                abd_q = 0.0
             if abd_q <= 0:
                 continue
             prey_len = length[q_idx]
@@ -1136,6 +1141,7 @@ if _HAS_NUMBA:
         tl_tracking,
         diet_matrix,
         diet_enabled,
+        egg_retained,
     ):
         """Numba-compiled full interleaved mortality for all 4 causes."""
         n_local = len(cell_indices)
@@ -1193,6 +1199,7 @@ if _HAS_NUMBA:
                         prey_type_buf,
                         prey_id_buf,
                         prey_eligible_buf,
+                        egg_retained,
                     )
                 elif cause == 1:
                     idx = cell_indices[seq_starv[i]]
@@ -1275,6 +1282,7 @@ if _HAS_NUMBA:
         tl_tracking,
         diet_matrix,
         diet_enabled,
+        egg_retained,
     ):
         """Numba-compiled batch mortality for ALL cells in one call.
 
@@ -1360,6 +1368,7 @@ if _HAS_NUMBA:
                             prey_type_buf,
                             prey_id_buf,
                             prey_eligible_buf,
+                            egg_retained,
                         )
                     elif cause == 1:
                         idx = cell_indices[seq_starv[i]]
@@ -1442,6 +1451,7 @@ if _HAS_NUMBA:
         tl_tracking,
         diet_matrix,
         diet_enabled,
+        egg_retained,
     ):
         """Parallel batch mortality — prange over cells for multi-core execution.
 
@@ -1539,6 +1549,7 @@ if _HAS_NUMBA:
                             prey_type_buf,
                             prey_id_buf,
                             prey_eligible_buf,
+                            egg_retained,
                         )
                     elif cause == 1:
                         idx = cell_indices[seq_starv[i]]
@@ -1612,6 +1623,7 @@ def _mortality_in_cell(
     eff_fishing: NDArray[np.float64] | None = None,
     fishing_discard: NDArray[np.float64] | None = None,
     ctx: SimulationContext | None = None,
+    egg_retained: NDArray[np.float64] | None = None,
 ) -> None:
     """Apply interleaved mortality within one cell, matching Java's computeMortality().
 
@@ -1710,6 +1722,9 @@ def _mortality_in_cell(
             tl_track,
             d_mat,
             d_en,
+            egg_retained
+            if egg_retained is not None
+            else np.zeros(len(state.abundance), dtype=np.float64),
         )
         return
 
@@ -2011,6 +2026,7 @@ def mortality(
                 tl_track,
                 d_mat,
                 d_en,
+                work_state.egg_retained,
             )
         else:
             # Python fallback: per-cell dispatch (unchanged)
@@ -2049,6 +2065,7 @@ def mortality(
                     fishing_discard=f_disc,
                     grid_nx=grid.nx,
                     ctx=ctx,
+                    egg_retained=work_state.egg_retained,
                 )
 
     # Update abundance from accumulated n_dead
