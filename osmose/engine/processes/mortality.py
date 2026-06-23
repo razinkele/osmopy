@@ -184,6 +184,7 @@ def _apply_fishing_for_school(
     n_subdt: int,
     inst_abd: NDArray[np.float64],
     step: int = 0,
+    fleet_state=None,
 ) -> None:
     """Apply fishing mortality to a single school (in-place on n_dead)."""
     if state.is_background[idx]:
@@ -248,6 +249,12 @@ def _apply_fishing_for_school(
                 continue
             if 0 <= cy < mpa.grid.shape[0] and 0 <= cx < mpa.grid.shape[1] and mpa.grid[cy, cx] > 0:
                 f_rate *= 1.0 - mpa.percentage
+
+    # Fleet-effort (DSVM economics) — parity with the Numba path's
+    # _precompute_effective_rates. 1.0 when no fleet_state / species not targeted.
+    f_rate = f_rate * _fleet_effort_factor(
+        sp, int(state.cell_y[idx]), int(state.cell_x[idx]), fleet_state
+    )
 
     # Seasonality
     if config.fishing_seasonality is not None:
@@ -658,6 +665,24 @@ def _zero_exempt(arr: NDArray[np.float64], work_state) -> None:
     arr[arr < 0] = 0.0
 
 
+def _fleet_effort_factor(sp_id, cell_y, cell_x, fleet_state) -> float:
+    """Multiplicative fishing-effort factor for a school. Returns 1.0 when
+    fleet_state is None OR sp_id is not targeted by any fleet (base F unchanged).
+    For a TARGETED species: the sum of effort_map across fleets at (cell_y,
+    cell_x), or 0.0 if that cell is out of bounds. Mirrors mortality.py:786-802."""
+    if fleet_state is None:
+        return 1.0
+    targeted: set[int] = set()
+    for f in fleet_state.fleets:
+        targeted.update(f.target_species)
+    if int(sp_id) not in targeted:
+        return 1.0
+    ny, nx = fleet_state.effort_map.shape[1], fleet_state.effort_map.shape[2]
+    if 0 <= cell_y < ny and 0 <= cell_x < nx:
+        return float(fleet_state.effort_map[:, cell_y, cell_x].sum())
+    return 0.0
+
+
 def _precompute_effective_rates(work_state, config, n_subdt, step, fleet_state=None):
     """Pre-compute per-school effective mortality rates for the Numba path.
 
@@ -784,22 +809,13 @@ def _precompute_effective_rates(work_state, config, n_subdt, step, fleet_state=N
 
         # Scale fishing by fleet effort when economic module is active
         if fleet_state is not None:
-            targeted_species: set[int] = set()
-            for fleet_cfg in fleet_state.fleets:
-                targeted_species.update(fleet_cfg.target_species)
-
-            effort_factor = np.zeros(n, dtype=np.float64)
             for i in range(n):
-                sp_id = work_state.species_id[i]
-                if sp_id in targeted_species:
-                    cy, cx = work_state.cell_y[i], work_state.cell_x[i]
-                    ny, nx = fleet_state.effort_map.shape[1], fleet_state.effort_map.shape[2]
-                    if 0 <= cy < ny and 0 <= cx < nx:
-                        effort_factor[i] = fleet_state.effort_map[:, cy, cx].sum()
-
-            for i in range(n):
-                if work_state.species_id[i] in targeted_species:
-                    eff_fishing[i] *= effort_factor[i]
+                eff_fishing[i] *= _fleet_effort_factor(
+                    work_state.species_id[i],
+                    work_state.cell_y[i],
+                    work_state.cell_x[i],
+                    fleet_state,
+                )
 
     return eff_starv, eff_additional, eff_fishing, fishing_discard
 
@@ -1742,7 +1758,15 @@ def _mortality_in_cell(
                     raise RuntimeError("inst_abd must not be None for FISHING cause")
                 f_local = seq_fish[i]
                 f_idx = int(cell_indices[f_local])
-                _apply_fishing_for_school(f_idx, state, config, n_subdt, inst_abd, step=step)
+                _apply_fishing_for_school(
+                    f_idx,
+                    state,
+                    config,
+                    n_subdt,
+                    inst_abd,
+                    step=step,
+                    fleet_state=(ctx.fleet_state if ctx is not None else None),
+                )
             elif cause == _FORAGING:
                 if inst_abd is None:
                     raise RuntimeError("inst_abd must not be None for FORAGING cause")
