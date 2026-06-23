@@ -59,13 +59,18 @@ def _get_mortality_causes(config: EngineConfig) -> list[int]:
     """Get the list of mortality causes for the interleaved loop.
 
     Without bioen: [PREDATION, STARVATION, ADDITIONAL, FISHING]
-    With bioen: [PREDATION, STARVATION, ADDITIONAL, FISHING, FORAGING]
-    Matches Java MortalityProcess lines 512-517.
+    With bioen:    [PREDATION, ADDITIONAL, FISHING, FORAGING]
+
+    Bioen starvation is applied authoritatively in `_bioen_step` (simulate.py)
+    using the freshly-computed current-step energy budget. Including STARVATION
+    in the interleaved loop as well would apply it a SECOND time with the
+    previous step's stale `e_net`, double-counting starvation deaths in
+    `n_dead[:, STARVATION]` — so it is excluded from the interleaved set when
+    bioen is enabled. Matches Java MortalityProcess lines 512-517.
     """
-    causes = [_PREDATION, _STARVATION, _ADDITIONAL, _FISHING]
     if config.bioen_enabled:
-        causes.append(_FORAGING)
-    return causes
+        return [_PREDATION, _ADDITIONAL, _FISHING, _FORAGING]
+    return [_PREDATION, _STARVATION, _ADDITIONAL, _FISHING]
 
 
 # ---------------------------------------------------------------------------
