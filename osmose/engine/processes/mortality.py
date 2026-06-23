@@ -672,6 +672,14 @@ def _precompute_effective_rates(work_state, config, n_subdt, step, fleet_state=N
     eff_starv = work_state.starvation_rate / denom
     eff_starv = eff_starv.copy()  # don't modify state array
     _zero_exempt(eff_starv, work_state)
+    if config.bioen_enabled:
+        # Bioen owns starvation via _bioen_step's gonad-depletion formula. The
+        # standard (pred-success) starvation rate must NOT also be applied by the
+        # Numba kernels, or n_dead[STARVATION] is double-counted on every
+        # Numba-accelerated path (the production path). This is the Numba-path
+        # mirror of the _get_mortality_causes STARVATION exclusion that covers
+        # the innermost pure-Python interleaved loop.
+        eff_starv[:] = 0.0
 
     # Additional mortality (vectorized over species)
     sp = work_state.species_id

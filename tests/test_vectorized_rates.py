@@ -68,6 +68,7 @@ def test_vectorized_rates_correctness():
     config = SimpleNamespace(
         n_species=n_species,
         n_dt_per_year=n_dt_per_year,
+        bioen_enabled=False,
         additional_mortality_rate=np.array([0.1, 0.2]),
         additional_mortality_by_dt=None,
         additional_mortality_spatial=None,
