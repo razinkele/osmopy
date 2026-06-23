@@ -40,7 +40,8 @@ This spec covers the remaining work: HIGH-1 (egg-retention), HIGH-2
 baseline within tolerance.
 
 **Non-goals (deferred):** the 14 `_shared_*` calibration nonlocal refactor; all
-medium/low review findings; a Java/EEC cross-parity harness (see Open Questions).
+medium/low review findings. (A Java/EEC cross-parity check IS in scope — for
+Fix 1's gate only, not a general harness.)
 
 ---
 
@@ -87,21 +88,42 @@ three driver kernels: `_mortality_in_cell_numba` (`:1139`),
 4. `@njit(cache=True)` signature changes invalidate the Numba cache
    automatically on first run; no manual action, but the test run will recompile.
 
-### Change — pure-Python fallback (SECONDARY, for behavioural parity)
+### Change — pure-Python fallback (REQUIRED, same change set)
 
 `_apply_predation_for_school` already receives `state: SchoolState`, and
 `state.egg_retained` is current at call time — **no new parameter needed**
 (v1 over-specified this). At the school-prey availability read
 (`inst_abd_q = inst_abd[q_idx]`, `:397`) subtract `state.egg_retained[q_idx]`
-with a ≥0 clamp. Resource prey are never eggs → unchanged.
+with a ≥0 clamp. Resource prey are never eggs → unchanged. This lands together
+with the Numba change so the two paths stay behaviourally identical (decision
+resolved below).
 
-### Parity gate (REQUIRED)
+### Parity gate (REQUIRED — BoB baseline + EEC baseline + Java cross-check)
 
-This changes egg predation for **every** config. After implementing, re-run
-`tests/test_engine_parity.py` (BoB Python-vs-stored-baseline; **note this file is
-BoB-only — no EEC, no Java cross-check**, see Open Questions). If it shifts
-beyond tolerance: **stop and report the deltas** for a human decision — do not
-loosen the tolerance or re-bless the baseline without sign-off.
+This changes egg predation for **every** config and is *expected* to shift
+Python outputs (toward Java, which gradually releases eggs). The gate therefore
+has three parts and an explicit order — **do not regenerate any baseline until
+the Java cross-check confirms the shift is toward Java**:
+
+1. **Java cross-check (the source of truth).** Add
+   `tests/test_egg_retention_java_parity.py` (mark `@pytest.mark.slow`/`java`,
+   needs the bundled 4.3.3 JAR via `OsmoseRunner`): run one short EEC and one
+   short BoB config on **both** the Java engine and the Python engine, and assert
+   per-species final biomass agree within the established parity tolerance
+   (the "within 1 OoM" band the existing parity claim uses). Run this with Fix 1
+   applied. **If Python (fixed) does NOT move closer to Java — i.e. it diverges —
+   stop:** that falsifies the assumption that Java implements graduated egg
+   release, and the fix's direction must be re-examined before anything lands.
+2. **EEC baseline.** Extend `scripts/save_parity_baseline.py` to emit an EEC
+   `.npz` baseline and add an EEC case to `tests/test_engine_parity.py` (mirror
+   the existing BoB case). Capture the pre-fix EEC baseline, then after Fix 1 +
+   a green Java cross-check, regenerate it and record the biomass deltas in the
+   PR description.
+3. **BoB baseline.** Same regenerate-after-Java-confirm flow for the existing
+   `parity_baseline_bob_1yr_seed42.npz`.
+
+Never loosen the tolerance or re-bless a baseline to make a run pass; baseline
+regeneration is allowed only once (1) confirms the change is Java-correct.
 
 ### Test
 
@@ -203,8 +225,10 @@ vacuous.)*
   their notes).
 - Per-fix: `.venv/bin/ruff check` + `format --check` + `.venv/bin/pyright` on
   changed files.
-- **Fix 1:** re-run `tests/test_engine_parity.py` (stop-and-report on a
-  tolerance breach).
+- **Fix 1:** the three-part parity gate (§Fix 1 / Parity gate) — Java
+  cross-check first (`tests/test_egg_retention_java_parity.py`), then regenerate
+  EEC + BoB baselines only after it confirms the shift is Java-correct;
+  stop-and-report on a Java-divergence or unexplained delta.
 - Engine regression: `tests/test_engine_mortality*.py`,
   `tests/test_engine_predation*.py`, `tests/test_engine_bioen_*.py`,
   `tests/test_vectorized_rates.py`.
@@ -223,7 +247,12 @@ vacuous.)*
   docstring.
 - **New** `tests/test_engine_egg_retention.py`,
   `tests/test_engine_fishing_fleet_python_path.py`,
-  `tests/test_calibration_worker_eval.py`.
+  `tests/test_calibration_worker_eval.py`,
+  `tests/test_egg_retention_java_parity.py` (Python-vs-Java cross-check).
+- **Mod** `scripts/save_parity_baseline.py` (emit an EEC baseline),
+  `tests/test_engine_parity.py` (add the EEC case).
+- **New baseline** `tests/baselines/parity_baseline_eec_1yr_seed42.npz` (+
+  regenerated BoB baseline) — committed only after the Java cross-check passes.
 
 ## Risks
 
@@ -237,16 +266,15 @@ vacuous.)*
   objective raises something outside `_python_engine_errors` — intended (surface
   real bugs); confirm the bundled objectives only raise expected types.
 
-## Open Questions (for human decision)
+## Resolved decisions (2026-06-23)
 
-1. **Parity gate scope.** `tests/test_engine_parity.py` is **BoB-only,
-   Python-vs-stored-baseline** — no EEC, no Python-vs-Java cross-check (the
-   "14/14 EEC" cited in CLAUDE.md lives elsewhere / is historical). Fix 1 changes
-   egg predation in *all* configs. Is the BoB baseline gate sufficient, or should
-   an EEC and/or Java cross-check be added before Fix 1 lands?
-2. **Fix 2 priority.** Given the fleet-effort bug is `_HAS_NUMBA=False`-only
-   (uncommon in production), keep it in this remediation or defer it?
-3. **Fix 1 fallback completeness.** Is fixing the pure-Python
-   `_apply_predation_for_school` (the SECONDARY change) required now for
-   behavioural parity, or acceptable as a documented follow-up while landing the
-   Numba hot-path fix?
+1. **Parity gate scope → add EEC + Java.** Fix 1's gate is the three-part gate
+   in §Fix 1 / Parity gate: a Python-vs-Java cross-check (4.3.3 JAR, source of
+   truth) plus regenerated EEC *and* BoB `.npz` baselines. The Java cross-check
+   must confirm the shift is toward Java before any baseline is regenerated.
+2. **Fix 2 → kept in scope.** The fleet-effort fix stays in this remediation
+   despite being `_HAS_NUMBA=False`-only; its test forces the fallback via
+   `mock.patch(_HAS_NUMBA, False)`.
+3. **Fix 1 fallback → included now.** The pure-Python
+   `_apply_predation_for_school` change lands together with the Numba hot-path
+   change (not deferred), so both paths stay behaviourally identical.
