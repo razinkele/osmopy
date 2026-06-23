@@ -360,8 +360,11 @@ _CFG = {
     "mortality.subdt": "10",
     "predation.ingestion.rate.max.sp0": "3.5", "predation.ingestion.rate.max.sp1": "3.5",
     "predation.efficiency.critical.sp0": "0.57", "predation.efficiency.critical.sp1": "0.57",
-    "predation.predPrey.sizeRatio.min.sp0": "1.0", "predation.predPrey.sizeRatio.min.sp1": "1.0",
-    "predation.predPrey.sizeRatio.max.sp0": "0.3", "predation.predPrey.sizeRatio.max.sp1": "0.3",
+    # NOTE: the parser keys are ALL-LOWERCASE (config.py:646-647); camelCase
+    # sizeRatio keys are silently ignored -> defaults. Use lowercase + the real
+    # operating window so the test exercises the guard, not a default fallback.
+    "predation.predprey.sizeratio.min.sp0": "1.0", "predation.predprey.sizeratio.min.sp1": "1.0",
+    "predation.predprey.sizeratio.max.sp0": "3.5", "predation.predprey.sizeratio.max.sp1": "3.5",
     "mortality.additional.rate.sp0": "0.0", "mortality.additional.rate.sp1": "0.0",
     "mortality.starvation.rate.max.sp0": "0.0", "mortality.starvation.rate.max.sp1": "0.0",
     "simulation.fishing.mortality.enabled": "false",
@@ -382,7 +385,7 @@ def _eaten_eggs(egg_retained_frac: float) -> float:
     prey_abundance = (2.0 * max_eatable) / prey_w  # r=2: prey plentiful, predator appetite-bound
     state = state.replace(
         abundance=np.array([pred_abundance, prey_abundance]),
-        length=np.array([30.0, 10.0]),  # ratio 3.0, within [1.0, 1/0.3)
+        length=np.array([30.0, 10.0]),  # predator/prey length ratio 3.0, within [1.0, 3.5)
         weight=np.array([pred_w, prey_w]),
         biomass=np.array([pred_biomass, prey_abundance * prey_w]),
         age_dt=np.array([48, 24], dtype=np.int32),
