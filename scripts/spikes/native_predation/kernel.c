@@ -319,6 +319,79 @@ void apply_predation_bench(
 }
 
 /*
+ * reset_only_bench: identical signature to apply_predation_bench.
+ * Performs the same per-iteration memcpy reset of the 7 mutated arrays but
+ * does NOT call leaf.  Used by Task 6 to isolate reset cost from leaf cost.
+ */
+void reset_only_bench(
+    i32 p_idx, const i32* cell_indices, i32 n_local,
+    double* inst_abd, double* n_dead,
+    const i32* species_id, const double* length, const double* weight,
+    const i32* age_dt, const i32* first_feeding_age_dt, const i32* feeding_stage,
+    double* pred_success_rate, double* preyed_biomass, const double* trophic_level,
+    const double* size_ratio_min, const double* size_ratio_max,
+    const double* ingestion_rate, const i32* fr_shape, const double* fr_halfsat,
+    double n_dt_per_year, double n_subdt,
+    const double* access_matrix,
+    int has_access, int use_stage_access,
+    const i32* prey_access_idx, const i32* pred_access_idx,
+    double* rsc_biomass, const double* rsc_size_min,
+    const double* rsc_size_max, const double* rsc_tl, const i32* rsc_access_rows,
+    i32 n_resources, i32 n_species, i32 cell_id,
+    double* tl_weighted_sum, int tl_tracking,
+    double* diet_matrix, int diet_enabled,
+    i32* prey_type_buf, i32* prey_id_buf, double* prey_eligible_buf,
+    const double* egg_retained,
+    /* 7 auxiliary shape args */
+    int srm_ncol, int acc_nrow, int acc_ncol,
+    int n_cells, int n_causes, int diet_nrow, int diet_ncol,
+    /* bench-only args */
+    int n_iter, int n_schools,
+    const double* snap_inst_abd,
+    const double* snap_n_dead,
+    const double* snap_pred_success_rate,
+    const double* snap_preyed_biomass,
+    const double* snap_rsc_biomass,
+    const double* snap_tl_weighted_sum,
+    const double* snap_diet_matrix)
+{
+    size_t sz_schools = (size_t)n_schools * sizeof(double);
+    size_t sz_n_dead  = (size_t)n_schools * (size_t)n_causes * sizeof(double);
+    size_t sz_rsc     = (size_t)n_resources * (size_t)n_cells * sizeof(double);
+    size_t sz_diet    = (size_t)diet_nrow * (size_t)diet_ncol * sizeof(double);
+
+    /* silence unused-parameter warnings */
+    (void)p_idx; (void)cell_indices; (void)n_local;
+    (void)species_id; (void)length; (void)weight;
+    (void)age_dt; (void)first_feeding_age_dt; (void)feeding_stage;
+    (void)preyed_biomass; (void)trophic_level;
+    (void)size_ratio_min; (void)size_ratio_max;
+    (void)ingestion_rate; (void)fr_shape; (void)fr_halfsat;
+    (void)n_dt_per_year; (void)n_subdt;
+    (void)access_matrix;
+    (void)has_access; (void)use_stage_access;
+    (void)prey_access_idx; (void)pred_access_idx;
+    (void)rsc_size_min; (void)rsc_size_max; (void)rsc_tl; (void)rsc_access_rows;
+    (void)n_resources; (void)n_species; (void)cell_id;
+    (void)tl_tracking;
+    (void)diet_enabled;
+    (void)prey_type_buf; (void)prey_id_buf; (void)prey_eligible_buf;
+    (void)egg_retained;
+    (void)srm_ncol; (void)acc_nrow; (void)acc_ncol;
+
+    for (int iter = 0; iter < n_iter; iter++) {
+        memcpy(inst_abd,          snap_inst_abd,          sz_schools);
+        memcpy(n_dead,            snap_n_dead,            sz_n_dead);
+        memcpy(pred_success_rate, snap_pred_success_rate, sz_schools);
+        memcpy(preyed_biomass,    snap_preyed_biomass,    sz_schools);
+        memcpy(rsc_biomass,       snap_rsc_biomass,       sz_rsc);
+        memcpy(tl_weighted_sum,   snap_tl_weighted_sum,   sz_schools);
+        memcpy(diet_matrix,       snap_diet_matrix,       sz_diet);
+        /* intentionally NO leaf call */
+    }
+}
+
+/*
  * noop: identical signature to apply_predation_once, empty body.
  * Used by Task 6 as a boundary-cost probe.
  */
