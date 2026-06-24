@@ -20,6 +20,44 @@
 - **Gate metric:** call-count-weighted C-vs-Numba boundary-free math-throughput ratio on the **portable `-O3`** build (not `-march=native`). PASS (≥1.3×) authorizes only a follow-on integration spike, nothing more.
 - Spec: `docs/superpowers/specs/2026-06-24-native-predation-kernel-spike-design.md`.
 
+### Setup (do once, before Task 1)
+
+This is a **git worktree** — it has **no `.venv`** (the venv is gitignored and lives in the
+main checkout). Every `Run:` command below uses `.venv/bin/python`; make that resolve by
+symlinking the main-repo venv into the worktree once:
+
+```bash
+ln -s /home/razinka/osmose/osmose-python/.venv \
+      /home/razinka/osmose/osmose-python/.claude/worktrees/feat+native-predation-kernel-spike/.venv
+```
+
+(The system `python3` is NOT a fallback — it crashes importing numba in this environment.)
+All commands also require `PYTHONPATH=.` (run from the worktree root) so the imported
+`osmose` is the worktree's, not the installed copy — the provenance guard enforces this.
+
+### C ⇄ Python argument contract (read before Task 4/5/6)
+
+The C `leaf` needs **auxiliary shape arguments that are NOT among the 41 Python leaf args**
+(`LEAF_ARG_ORDER`). The marshaller (parity.py / bench glue) MUST compute these from array
+shapes and pass them explicitly, in addition to the 41 data args:
+
+| C param | value (from captured arrays) |
+|---|---|
+| `srm_ncol` | `size_ratio_min.shape[1]` |
+| `acc_nrow`, `acc_ncol` | `access_matrix.shape[0]`, `.shape[1]` |
+| `n_cells` | `rsc_biomass.shape[1]` |
+| `n_causes` | `n_dead.shape[1]` (4 in production) |
+| `diet_nrow`, `diet_ncol` | `diet_matrix.shape[0]`, `.shape[1]` |
+
+Additional preconditions the C cannot self-enforce (silent parity break if violated):
+- `n_dt_per_year` and `n_subdt` must be marshalled as C **`double`** (the signature/CDEF
+  declare them `double`), never Python `int`.
+- every 2D array (`access_matrix`, `rsc_biomass`, `n_dead`, `diet_matrix`, `size_ratio_*`)
+  must be `np.ascontiguousarray` (row-major) before its `.ctypes.data` pointer is passed.
+- scalar leaf args (`p_idx`, flags) are produced by `build_leaf_args` as `np.int32`/`bool`;
+  the `@njit` driver and the C call must consume those exact types (mixing `int` vs
+  `np.int32` forces a Numba recompile and can mismatch the C ABI).
+
 ---
 
 ### Task 1: Harness scaffold + provenance guards
@@ -85,13 +123,14 @@ def assert_provenance(worktree_root: Path) -> dict:
 
     mfile = Path(mortality.__file__).resolve()
     root = Path(worktree_root).resolve()
-    if root not in mfile.parents and root != mfile.parent.parent.parent.parent:
-        # mortality.py lives at <root>/osmose/engine/processes/mortality.py
-        if str(root) not in str(mfile):
-            raise RuntimeError(
-                f"mortality.py resolved to {mfile}, not under worktree {root}. "
-                "Set PYTHONPATH to the worktree before running the spike."
-            )
+    # mortality.py must live at <root>/osmose/engine/processes/mortality.py, so `root`
+    # must be one of its ACTUAL parent directories — not merely a path-string prefix or an
+    # ancestor several levels up (which a substring check would wrongly accept).
+    if str(root) not in {str(p) for p in mfile.parents}:
+        raise RuntimeError(
+            f"mortality.py resolved to {mfile}, not under worktree {root}. "
+            "Set PYTHONPATH to the worktree before running the spike."
+        )
     if not getattr(mortality, "_HAS_NUMBA", False):
         raise RuntimeError(
             "mortality._HAS_NUMBA is False — the per-cell Python path is dead "
@@ -192,13 +231,15 @@ def capture_cellloop(config_path: Path, capture_call_index: int, out_dir: Path,
     try:
         reader = OsmoseConfigReader()
         raw = reader.read(config_path)
-        raw["simulation.time.nyear"] = "2"  # enough to pass warmup and reach capture_call_index
-        # Calibration workload: diet + meanTL OFF (spec §4.0) — calibration is the
-        # stated motivation and diet aggregation is output-gated/skipped there, so the
-        # gate must measure the leaf as calibration exercises it. The captured flags are
-        # recorded in meta.json regardless; a second default-on capture is optional.
+        raw["simulation.time.nyear"] = "2"  # 24 dt/yr x 2 x subdt(10) = 480 kernel calls > 200
+        # Calibration workload: diet output OFF (spec §4.0). Calibration skips diet
+        # aggregation (output-gated), so disabling it makes the captured `diet_enabled`
+        # scalar False and measures the leaf as calibration exercises it.
+        # NOTE: `tl_tracking` CANNOT be forced off from config — the engine sets
+        # ctx.tl_weighted_sum unconditionally whenever a ctx exists (mortality.py:1824),
+        # so the captured `tl_tracking` scalar is always True. We accept TL-on; the C port
+        # handles both branches and the real flag value is recorded in meta.json.
         raw["output.diet.composition.enabled"] = "false"
-        raw["output.meantl.enabled"] = "false"
         cfg = EngineConfig.from_dict(raw)
         grid = G.from_netcdf(config_path.parent / raw["grid.netcdf.file"],
                              mask_var=raw.get("grid.var.mask", "mask"))
@@ -358,10 +399,15 @@ def _n_local(arrays):
 
 
 def select_cells(arrays) -> dict[str, int]:
+    import warnings
+
     nl = _n_local(arrays)
     nonempty = np.where(nl > 0)[0]
     if nonempty.size == 0:
         raise ValueError("no non-empty cells in capture")
+    if np.unique(nl[nonempty]).size == 1:
+        warnings.warn("all non-empty cells share one n_local; p10/p50/p95/small collapse "
+                      "to identical cells — the distribution measurement is degenerate")
     # call-weighted distribution: repeat each cell's n_local that many times
     weighted = np.repeat(nl[nonempty], nl[nonempty])
     p10, p50, p95 = np.percentile(weighted, [10, 50, 95])
@@ -387,8 +433,14 @@ def build_leaf_args(arrays, meta, cell: int):
     cell_indices = np.asarray(arrays["sorted_indices"][start:end], dtype=np.int32)
     n_local = end - start
     n_resources = int(_scalar(meta, "n_resources", arrays["rsc_biomass"].shape[0]))
-    n_dt = int(_scalar(meta, "n_dt_per_year", arrays["fr_shape"].shape[0]))  # fallback
-    n_subdt = int(_scalar(meta, "n_subdt", 1))
+    # n_dt_per_year/n_subdt MUST come from the captured scalars — there is no safe
+    # default (fr_shape.shape[0] is n_species, not n_dt; substituting it silently
+    # corrupts max_eatable and the p_idx selection). Fail loudly if absent.
+    _sc = meta.get("scalars", {})
+    if "n_dt_per_year" not in _sc or "n_subdt" not in _sc:
+        raise ValueError("n_dt_per_year/n_subdt missing from captured scalars; re-run capture.py")
+    n_dt = int(_sc["n_dt_per_year"])
+    n_subdt = int(_sc["n_subdt"])
 
     inst_abd = arrays["inst_abd"]
     age_dt = arrays["age_dt"]
@@ -497,7 +549,7 @@ static void leaf(
     const double* rsc_size_max, const double* rsc_tl, const i32* rsc_access_rows,
     i32 n_resources, i32 n_species, i32 cell_id,
     double* tl_weighted_sum, int tl_tracking,
-    double* diet_matrix, i32 diet_ncol, int diet_enabled,
+    double* diet_matrix, i32 diet_nrow, i32 diet_ncol, int diet_enabled,
     i32* prey_type_buf, i32* prey_id_buf, double* prey_eligible_buf,
     const double* egg_retained)
 {
@@ -630,7 +682,7 @@ static void leaf(
             }
             if (diet_enabled) {
                 i32 prey_sp = species_id[q_idx];
-                if (p_idx < diet_ncol /*rows*/ && prey_sp < diet_ncol)
+                if (p_idx < diet_nrow && prey_sp < diet_ncol)  /* rows=preds, cols=prey+rsc */
                     diet_matrix[p_idx * diet_ncol + prey_sp] += eaten_from_prey;
             }
         } else {
@@ -644,7 +696,7 @@ static void leaf(
             }
             if (diet_enabled) {
                 i32 rsc_col = n_species + r_idx;
-                if (rsc_col < diet_ncol)
+                if (p_idx < diet_nrow && rsc_col < diet_ncol)
                     diet_matrix[p_idx * diet_ncol + rsc_col] += eaten_from_prey;
             }
         }
@@ -657,7 +709,7 @@ static void leaf(
 }
 ```
 
-> **Diet-matrix bounds note:** the Python checks `p_idx < diet_matrix.shape[0]` and `col < diet_matrix.shape[1]` separately. Pass `diet_nrow` too and use it for the `p_idx` bound; the snippet above collapses both to `diet_ncol` for brevity — **fix this to use the real row/col bounds** when wiring `build_ffi.py` (Task 4 Step 2), since `p_idx` indexes rows.
+> **Diet-matrix bounds (now correct in the C above):** the kernel takes **both** `diet_nrow` and `diet_ncol` and bounds `p_idx < diet_nrow` (rows = predators) and `col < diet_ncol` (cols = n_species + n_resources) in both the school and resource branches — matching the Python's separate `shape[0]`/`shape[1]` checks (mortality.py:1031, 1047). The marshaller passes `diet_nrow = diet_matrix.shape[0]`, `diet_ncol = diet_matrix.shape[1]` per the "C ⇄ Python argument contract" above.
 
 Add the public wrappers (`apply_predation_once`, `apply_predation_bench` with pristine-snapshot reset, `noop`) below `leaf` — `apply_predation_bench` memcpy's the mutated arrays from pristine snapshots each of `n_iter` iterations before calling `leaf`.
 
