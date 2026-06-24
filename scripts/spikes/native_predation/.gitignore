@@ -1,0 +1,6 @@
+# cffi build artifacts + captured fixtures (regenerate via build_ffi.py / capture.py)
+*.so
+*.o
+_leaf_*.c
+_fixtures/
+__pycache__/
