@@ -224,9 +224,11 @@ def movement(
 
     sp = state.species_id
 
-    # Determine which schools use which method
-    uses_random = np.array([config.movement_method[s] == "random" for s in sp])
-    uses_maps = np.array([config.movement_method[s] == "maps" for s in sp])
+    # Determine which schools use which method. Fancy-index the precomputed
+    # per-species masks by the school species_id array — vectorized O(n_schools)
+    # instead of a Python comprehension with a per-school dict lookup each step.
+    uses_random = config.movement_is_random[sp]
+    uses_maps = config.movement_is_maps[sp]
 
     def _rng_for(sp_id: int) -> np.random.Generator:
         """Return per-species RNG if available and fixed seeds enabled, else global."""

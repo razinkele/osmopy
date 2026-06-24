@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 from typing import Any, cast
 
@@ -1461,6 +1462,23 @@ class EngineConfig:
     output_spatial_biomass: bool = False
     output_spatial_abundance: bool = False
     output_spatial_yield_biomass: bool = False
+
+    @cached_property
+    def movement_is_random(self) -> NDArray[np.bool_]:
+        """Per-species mask: True where the movement method is ``"random"``.
+
+        Length ``len(movement_method)`` (focal + background; background entries are
+        ``"none"`` and never indexed during ``movement()``). Precomputed once so the
+        per-timestep movement hot path can fancy-index by the school ``species_id``
+        array instead of a Python comprehension over every school (A1/A2 template).
+        """
+        return np.array([m == "random" for m in self.movement_method], dtype=np.bool_)
+
+    @cached_property
+    def movement_is_maps(self) -> NDArray[np.bool_]:
+        """Per-species mask: True where the movement method is ``"maps"``. See
+        :attr:`movement_is_random`."""
+        return np.array([m == "maps" for m in self.movement_method], dtype=np.bool_)
 
     def __post_init__(self) -> None:
         """Validate invariants after construction.
