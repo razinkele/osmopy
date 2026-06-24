@@ -147,4 +147,26 @@ The C median is consistent and positive in the single-cell sanity run (184ns for
 
 Files committed: `numba_driver.py`, `bench.py`, `kernel.c` (reset_only_bench), `build_ffi.py` (CDEF update).
 
-Commits: c5e5dd6 (implementation), a2c6d91 (this report).
+Commits: 4fb9d0d (implementation, amended), cfd867b + 1dba643 (report). The wide-C-IQR limitation is accepted by the coordinator and will be documented in Task 7 (not re-engineered).
+
+---
+
+## Post-review fixes (coordinator-requested)
+
+The bench commit was amended (`c5e5dd6` → `4fb9d0d`) with two fixes. Methodology, subtraction, interleaving, and bench_cell's n_iter/n_samples were left unchanged.
+
+**Fix 1 (important): `run_all` defaults.** `run_all` still defaulted to the noise-prone `n_iter=2000, n_samples=15` that produces negative C medians. Changed to `n_iter=100_000, n_samples=30` to match `bench_cell`, so a default `run_all()` no longer emits the diagnosed negative medians.
+
+**Fix 2 (cleanup): `boundary_probe` marshalling hoist.** The per-sample loop re-built the entire cffi marshalling (`_f64`/`_i32` closures, `ascontiguousarray`, `ffi.cast`) every iteration. All one-time setup is now hoisted above the sample loop; only the `lib.noop` boundary crossing is timed. The dead `import ctypes` (numpy's `.ctypes.data` needs no explicit import) was removed.
+
+Side effect of the hoist: the noop boundary probe now measures the true ABI cost (~1.8 µs median) instead of ~10 µs that previously included per-iteration marshalling — a genuine accuracy improvement, not a regression.
+
+**Structural smoke (confirms no breakage, no multi-minute run):**
+
+```
+$ PYTHONPATH=. .venv/bin/python -c "from scripts.spikes.native_predation import bench, leaf_args; a,m=leaf_args.load_capture(leaf_args.Path('scripts/spikes/native_predation/_fixtures/cellloop.npz')); sel=leaf_args.select_cells(a); r=bench.run_all(a,m,sel,'portable',n_iter=500,n_samples=5); print(list(r.keys())); print('weighted_ratio' in r or r)"
+['p10', 'p50', 'p95', 'small', 'weighted_ratio', 'boundary']
+True
+```
+
+run_all returns per-cell results (p10/p50/p95/small) + the call-count-weighted `weighted_ratio` key + `boundary`.
