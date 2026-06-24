@@ -49,9 +49,15 @@ shapes and pass them explicitly, in addition to the 41 data args:
 | `n_causes` | `n_dead.shape[1]` (4 in production) |
 | `diet_nrow`, `diet_ncol` | `diet_matrix.shape[0]`, `.shape[1]` |
 
+The C `leaf` is `static`; the three **public** wrappers (`apply_predation_once`,
+`apply_predation_bench`, `noop`) MUST re-export all seven aux ints above in their own
+signatures and in the `build_ffi.py` `CDEF` — they are passed through to `leaf`.
+
 Additional preconditions the C cannot self-enforce (silent parity break if violated):
 - `n_dt_per_year` and `n_subdt` must be marshalled as C **`double`** (the signature/CDEF
-  declare them `double`), never Python `int`.
+  declare them `double`), never Python `int`. Note `build_leaf_args` emits them as
+  `np.int32` (fine for the Numba side); the **C** marshaller must cast int32→double
+  (the values, e.g. 24.0/10.0, are exact).
 - every 2D array (`access_matrix`, `rsc_biomass`, `n_dead`, `diet_matrix`, `size_ratio_*`)
   must be `np.ascontiguousarray` (row-major) before its `.ctypes.data` pointer is passed.
 - scalar leaf args (`p_idx`, flags) are produced by `build_leaf_args` as `np.int32`/`bool`;
@@ -124,8 +130,9 @@ def assert_provenance(worktree_root: Path) -> dict:
     mfile = Path(mortality.__file__).resolve()
     root = Path(worktree_root).resolve()
     # mortality.py must live at <root>/osmose/engine/processes/mortality.py, so `root`
-    # must be one of its ACTUAL parent directories — not merely a path-string prefix or an
-    # ancestor several levels up (which a substring check would wrongly accept).
+    # must be one of its ACTUAL parent directories — rejecting a path that merely shares a
+    # string prefix (e.g. /home/razinka). The guard's real job: if the WRONG osmose is
+    # imported, mfile resolves outside this tree and `root` is absent from its parents.
     if str(root) not in {str(p) for p in mfile.parents}:
         raise RuntimeError(
             f"mortality.py resolved to {mfile}, not under worktree {root}. "
