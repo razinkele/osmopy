@@ -73,12 +73,15 @@ _CASCADE_SPRAT_MAX_DELTA: float = 0.10  # |mean(Sp_pert)/mean(Sp_base) - 1| <= t
 
 # Equilibrium bands per focal species. Measured from equilibrium window
 # (years 5-25, seed=42) and encoded as ± 20%. Values are (lower, upper) in tonnes.
-# Measured 2026-05-17 against the Baltic substrate. Re-measure if build_config
-# values or engine version change.
+# Re-measured 2026-06-24 after the egg-retention fix (94f1bfb): gating predation
+# on the released egg fraction lets more eggs survive, so cod recovers to ~2x its
+# prior equilibrium (sprat/stickleback barely move). The fix mechanism was
+# Java-validated on EEC (14 species within 0.807-1.724x of the 4.3.3 engine).
+# Re-measure if build_config values or engine version change.
 _PYRAMID_BOUNDS: dict[str, tuple[float, float]] = {
-    "cod": (7.238e02, 1.086e03),
-    "sprat": (4.418e06, 6.627e06),
-    "stickleback": (4.342e05, 6.513e05),
+    "cod": (1.270e03, 1.905e03),
+    "sprat": (4.424e06, 6.636e06),
+    "stickleback": (3.805e05, 5.707e05),
 }
 
 
@@ -177,15 +180,6 @@ def test_script_runs_to_completion(baseline_run: pd.DataFrame) -> None:
 
 
 # === Assertion #2: biomass pyramid at equilibrium ===
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "Egg-retention fix (94f1bfb) lets more eggs survive -> cod recovers above the"
-        " pre-fix _PYRAMID_BOUNDS band (Baltic 3-species). The fix mechanism is"
-        " Java-validated on EEC; the Baltic post-fix band needs recalibration via"
-        " multi-run analysis. Not a pyramid-emergence regression."
-    ),
-)
 def test_biomass_pyramid_emerges(baseline_run: pd.DataFrame) -> None:
     """Two layers: (a) strict ordering sprat > stickleback > cod at equilibrium —
     always tested. (b) ±20% bands around measured equilibrium —
