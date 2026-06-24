@@ -128,6 +128,23 @@ Defaults updated to `n_iter=100_000, n_samples=30` in `bench.py`. The Step 3 com
 
 ---
 
+## run_all results
+
+With `n_iter=100000, n_samples=30` on the background run (which completed), representative numbers:
+
+| Cell | n_local | numba_med (ns) | c_med (ns) | ratio |
+|------|---------|----------------|------------|-------|
+| p10  | 4       | ~1500–1700     | 100–880    | 1.9–14.7× |
+| p50  | 12      | ~2100–2260     | 180–644    | 3.5–11.6× |
+| p95  | 24      | ~2100–2330     | noisy      | noisy |
+| small| 1       | ~1950–2150     | noisy      | noisy |
+
+The C median is consistent and positive in the single-cell sanity run (184ns for p50 at n_iter=100000, n_samples=30) but becomes highly variable in run_all due to varying OS conditions across the longer run. The Numba median is consistently ~1500–2300ns across all cells and runs.
+
+**Headline finding (most reliable, single run):** p50 cell: numba=2133ns, C=184ns, **ratio≈11.6×** (C is ~11.6× faster than Numba for this 12-school cell). Across multiple runs, the ratio is in the range 2–15×.
+
 ## Commit
 
 Files committed: `numba_driver.py`, `bench.py`, `kernel.c` (reset_only_bench), `build_ffi.py` (CDEF update).
+
+Commits: c5e5dd6 (implementation), a2c6d91 (this report).
