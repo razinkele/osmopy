@@ -10,6 +10,8 @@ HERE = Path(__file__).resolve().parent
 CDEF = """
 void cell_rng(int64_t seed, int n, int32_t* out_pred, int32_t* out_starv,
               int32_t* out_fish, int32_t* out_nat, int32_t* out_orders);
+void cell_rng_bench(int64_t seed, int n, int n_iter, int32_t* out_pred, int32_t* out_starv,
+                    int32_t* out_fish, int32_t* out_nat, int32_t* out_orders);
 """
 
 

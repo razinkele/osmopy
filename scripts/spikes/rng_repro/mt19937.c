@@ -88,3 +88,9 @@ void cell_rng(int64_t seed, int n, int32_t* out_pred, int32_t* out_starv,
         out_orders[i*4 + 3] = causes[3];
     }
 }
+
+void cell_rng_bench(int64_t seed, int n, int n_iter, int32_t* out_pred, int32_t* out_starv,
+                    int32_t* out_fish, int32_t* out_nat, int32_t* out_orders) {
+    for (int it = 0; it < n_iter; it++)
+        cell_rng(seed, n, out_pred, out_starv, out_fish, out_nat, out_orders);
+}
