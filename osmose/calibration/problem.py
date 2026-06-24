@@ -91,12 +91,15 @@ def _worker_init(spec: _EvalSpec) -> None:
 
 
 def _worker_eval(run_id: int, params: np.ndarray) -> list[float]:
-    """Evaluate one candidate in the worker; never raise into the pool."""
+    """Evaluate one candidate in the worker.
+
+    Expected model failures are caught inside `_evaluate_candidate` and returned
+    as `[inf]*n_obj`. UNEXPECTED errors (e.g. a TypeError/AttributeError bug in an
+    objective) propagate so the pool future re-raises and the bug surfaces, rather
+    than being silently turned into `inf` (which would poison the Pareto front).
+    """
     assert _WORKER_PROBLEM is not None
-    try:
-        return _WORKER_PROBLEM._evaluate_candidate(run_id, params)
-    except Exception:  # noqa: BLE001 — one bad candidate must not kill the generation
-        return [float("inf")] * _WORKER_PROBLEM.n_obj
+    return _WORKER_PROBLEM._evaluate_candidate(run_id, params)
 
 
 def _resolve_worker_count(n_parallel: int) -> int:

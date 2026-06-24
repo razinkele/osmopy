@@ -24,6 +24,8 @@ from osmose.engine.simulate import simulate
 
 PROJECT_DIR = Path(__file__).parent.parent
 EXAMPLES_CONFIG = PROJECT_DIR / "data" / "examples" / "osm_all-parameters.csv"
+EEC_CONFIG = PROJECT_DIR / "data" / "eec_full" / "eec_all-parameters.csv"
+EEC_BASE_DIR = PROJECT_DIR / "data" / "eec_full"
 BASELINE_DIR = PROJECT_DIR / "tests" / "baselines"
 
 # Default baseline parameters
@@ -60,6 +62,10 @@ _exact_match_local_only = pytest.mark.skipif(
 
 def _baseline_path(n_years: int = DEFAULT_YEARS, seed: int = DEFAULT_SEED) -> Path:
     return BASELINE_DIR / f"parity_baseline_bob_{n_years}yr_seed{seed}.npz"
+
+
+def _eec_baseline_path(n_years: int = DEFAULT_YEARS, seed: int = DEFAULT_SEED) -> Path:
+    return BASELINE_DIR / f"parity_baseline_eec_{n_years}yr_seed{seed}.npz"
 
 
 def _run_engine(n_years: int, seed: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -107,6 +113,60 @@ def _load_baseline(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[str]]:
     """Load baseline arrays. Returns (biomass, abundance, mortality, species_names)."""
     path = _baseline_path(n_years, seed)
+    data = np.load(path)
+    return (
+        data["biomass"],
+        data["abundance"],
+        data["mortality"],
+        list(data["species_names"]),
+    )
+
+
+def _run_engine_eec(n_years: int, seed: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Run the Python engine on EEC config; return (biomass, abundance, mortality)."""
+    from osmose.config.reader import OsmoseConfigReader
+
+    reader = OsmoseConfigReader()
+    raw = reader.read(EEC_CONFIG)
+    raw["simulation.time.nyear"] = str(n_years)
+
+    cfg = EngineConfig.from_dict(raw)
+
+    grid_file = raw.get("grid.netcdf.file", "")
+    if grid_file:
+        grid = Grid.from_netcdf(
+            EEC_BASE_DIR / grid_file,
+            mask_var=raw.get("grid.var.mask", "mask"),
+        )
+    else:
+        ny = int(raw.get("grid.nline", "1"))
+        nx = int(raw.get("grid.ncolumn", "1"))
+        grid = Grid.from_dimensions(ny=ny, nx=nx)
+
+    rng = np.random.default_rng(seed)
+    outputs = simulate(cfg, grid, rng)
+
+    n_steps = len(outputs)
+    n_species = len(outputs[0].biomass)
+    n_causes = outputs[0].mortality_by_cause.shape[1]
+
+    biomass = np.zeros((n_steps, n_species), dtype=np.float64)
+    abundance = np.zeros((n_steps, n_species), dtype=np.float64)
+    mortality = np.zeros((n_steps, n_species, n_causes), dtype=np.float64)
+
+    for i, out in enumerate(outputs):
+        biomass[i] = out.biomass
+        abundance[i] = out.abundance
+        mortality[i] = out.mortality_by_cause
+
+    return biomass, abundance, mortality
+
+
+def _load_eec_baseline(
+    n_years: int = DEFAULT_YEARS, seed: int = DEFAULT_SEED
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[str]]:
+    """Load EEC baseline arrays. Returns (biomass, abundance, mortality, species_names)."""
+    path = _eec_baseline_path(n_years, seed)
     data = np.load(path)
     return (
         data["biomass"],
@@ -303,4 +363,83 @@ class TestStatisticalParity:
             rtol=0.05,
             atol=1.0,
             err_msg="Statistical parity failed — mean biomass drifted >5% from baseline",
+        )
+
+
+# ---------------------------------------------------------------------------
+# EEC baseline parity tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def eec_baseline_and_current():
+    """Run the EEC engine once and load the EEC baseline for comparison."""
+    path = _eec_baseline_path()
+    if not path.exists():
+        pytest.skip(
+            f"No EEC baseline file: {path}. "
+            "Run: scripts/save_parity_baseline.py --config eec --years 1 --seed 42"
+        )
+    if not EEC_CONFIG.exists():
+        pytest.skip(f"No EEC config: {EEC_CONFIG}")
+
+    b_bio, b_abd, b_mort, species = _load_eec_baseline()
+    c_bio, c_abd, c_mort = _run_engine_eec(DEFAULT_YEARS, DEFAULT_SEED)
+
+    return {
+        "baseline_biomass": b_bio,
+        "baseline_abundance": b_abd,
+        "baseline_mortality": b_mort,
+        "current_biomass": c_bio,
+        "current_abundance": c_abd,
+        "current_mortality": c_mort,
+        "species": species,
+    }
+
+
+class TestEecBaselineParity:
+    """EEC config: current output must match the EEC baseline within tolerance.
+
+    Like BoB (TestBaselineParity), exact match is enforced only locally on the
+    baseline-generating interpreter; shape and statistical checks are portable.
+    Regenerate with: scripts/save_parity_baseline.py --config eec --years 1 --seed 42
+    """
+
+    @_exact_match_local_only
+    def test_biomass_match(self, eec_baseline_and_current):
+        d = eec_baseline_and_current
+        np.testing.assert_array_equal(
+            d["current_biomass"],
+            d["baseline_biomass"],
+            err_msg="EEC biomass differs from baseline — regenerate if arithmetic changed",
+        )
+
+    @_exact_match_local_only
+    def test_abundance_match(self, eec_baseline_and_current):
+        d = eec_baseline_and_current
+        np.testing.assert_array_equal(
+            d["current_abundance"],
+            d["baseline_abundance"],
+            err_msg="EEC abundance differs from baseline — regenerate if arithmetic changed",
+        )
+
+    @_exact_match_local_only
+    def test_mortality_match(self, eec_baseline_and_current):
+        d = eec_baseline_and_current
+        np.testing.assert_array_equal(
+            d["current_mortality"],
+            d["baseline_mortality"],
+            err_msg="EEC mortality differs from baseline — regenerate if arithmetic changed",
+        )
+
+    def test_step_count_matches(self, eec_baseline_and_current):
+        d = eec_baseline_and_current
+        assert d["current_biomass"].shape[0] == d["baseline_biomass"].shape[0], (
+            "EEC step count changed!"
+        )
+
+    def test_species_count_matches(self, eec_baseline_and_current):
+        d = eec_baseline_and_current
+        assert d["current_biomass"].shape[1] == d["baseline_biomass"].shape[1], (
+            "EEC species count changed!"
         )

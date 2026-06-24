@@ -6,11 +6,12 @@ and mortality arrays to a compressed .npz file. Used by test_engine_parity.py
 to verify that optimizations produce identical outputs.
 
 Usage:
-    .venv/bin/python scripts/save_parity_baseline.py [--years N] [--seed S]
+    .venv/bin/python scripts/save_parity_baseline.py [--config bob|eec] [--years N] [--seed S]
     .venv/bin/python scripts/save_parity_baseline.py --statistical [--years N] [--seeds N]
 
 Output:
     tests/baselines/parity_baseline_bob_<years>yr_seed<seed>.npz
+    tests/baselines/parity_baseline_eec_<years>yr_seed<seed>.npz
     tests/baselines/statistical_baseline_bob_<years>yr_<n>seeds.npz
 """
 
@@ -24,18 +25,36 @@ import numpy as np
 
 PROJECT_DIR = Path(__file__).parent.parent
 EXAMPLES_CONFIG = PROJECT_DIR / "data" / "examples" / "osm_all-parameters.csv"
+EEC_CONFIG = PROJECT_DIR / "data" / "eec_full" / "eec_all-parameters.csv"
 BASELINE_DIR = PROJECT_DIR / "tests" / "baselines"
 
+# Per-config metadata: (config_csv, base_dir, baseline_name_prefix)
+_CONFIG_META = {
+    "bob": (EXAMPLES_CONFIG, PROJECT_DIR / "data" / "examples", "bob"),
+    "eec": (EEC_CONFIG, PROJECT_DIR / "data" / "eec_full", "eec"),
+}
 
-def save_baseline(n_years: int, seed: int) -> Path:
-    """Run engine and save outputs as baseline .npz file."""
+
+def save_baseline(n_years: int, seed: int, config: str = "bob") -> Path:
+    """Run engine and save outputs as baseline .npz file.
+
+    Args:
+        n_years: Number of simulation years.
+        seed: RNG seed.
+        config: Which config to run — "bob" (Bay of Biscay) or "eec" (Eastern English Channel).
+    """
     from osmose.config.reader import OsmoseConfigReader
     from osmose.engine.config import EngineConfig
     from osmose.engine.grid import Grid
     from osmose.engine.simulate import simulate
 
+    if config not in _CONFIG_META:
+        raise ValueError(f"Unknown config {config!r}; choose from {list(_CONFIG_META)}")
+
+    config_path, base_dir, name_prefix = _CONFIG_META[config]
+
     reader = OsmoseConfigReader()
-    raw = reader.read(EXAMPLES_CONFIG)
+    raw = reader.read(config_path)
     raw["simulation.time.nyear"] = str(n_years)
 
     cfg = EngineConfig.from_dict(raw)
@@ -43,7 +62,7 @@ def save_baseline(n_years: int, seed: int) -> Path:
     grid_file = raw.get("grid.netcdf.file", "")
     if grid_file:
         grid = Grid.from_netcdf(
-            PROJECT_DIR / "data" / "examples" / grid_file,
+            base_dir / grid_file,
             mask_var=raw.get("grid.var.mask", "mask"),
         )
     else:
@@ -53,7 +72,7 @@ def save_baseline(n_years: int, seed: int) -> Path:
 
     rng = np.random.default_rng(seed)
 
-    print(f"Running engine: {n_years}yr, seed={seed}...")
+    print(f"Running engine ({config}): {n_years}yr, seed={seed}...")
     outputs = simulate(cfg, grid, rng)
 
     n_steps = len(outputs)
@@ -71,7 +90,7 @@ def save_baseline(n_years: int, seed: int) -> Path:
         mortality[i] = out.mortality_by_cause
 
     BASELINE_DIR.mkdir(parents=True, exist_ok=True)
-    filename = f"parity_baseline_bob_{n_years}yr_seed{seed}.npz"
+    filename = f"parity_baseline_{name_prefix}_{n_years}yr_seed{seed}.npz"
     out_path = BASELINE_DIR / filename
 
     np.savez_compressed(
@@ -155,6 +174,12 @@ def main() -> None:
     parser.add_argument("--years", type=int, default=1, help="Simulation years (default: 1)")
     parser.add_argument("--seed", type=int, default=42, help="RNG seed (default: 42)")
     parser.add_argument(
+        "--config",
+        choices=list(_CONFIG_META),
+        default="bob",
+        help="Which config to baseline: 'bob' (Bay of Biscay) or 'eec' (E. English Channel)",
+    )
+    parser.add_argument(
         "--statistical", action="store_true", help="Save multi-seed statistical baseline"
     )
     parser.add_argument(
@@ -162,14 +187,15 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    if not EXAMPLES_CONFIG.exists():
-        print(f"ERROR: Config not found at {EXAMPLES_CONFIG}")
+    config_path, _, _ = _CONFIG_META[args.config]
+    if not config_path.exists():
+        print(f"ERROR: Config not found at {config_path}")
         sys.exit(1)
 
     if args.statistical:
         save_statistical_baseline(args.years, args.seeds)
     else:
-        save_baseline(args.years, args.seed)
+        save_baseline(args.years, args.seed, config=args.config)
 
 
 if __name__ == "__main__":
