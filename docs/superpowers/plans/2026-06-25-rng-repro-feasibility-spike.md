@@ -44,8 +44,12 @@ from scripts.spikes.rng_repro.oracle import cpython_reference, oracle_cell_rng
 
 def test_oracle_matches_cpython_legacy_randomstate():
     # The premise (spec 0a): the @njit oracle == CPython legacy RandomState, bit-identical.
-    for seed in (0, 1, 7919, 12345, 2**40 + 7919 * 3):
-        for n in (1, 2, 4, 12, 24, 33):
+    # Seeds MUST span up to the large value the Task 3 parity grid uses (2**62+...): the
+    # parity gate compares C-vs-oracle and ASSUMES oracle==RandomState there, so the premise
+    # must be proven at that seed too — else a real Numba-vs-NumPy gap (a STOP/beta-signal)
+    # would be misread as a C bug.
+    for seed in (0, 1, 7919, 12345, 2**40 + 7919 * 3, 2**62 + 12345 + 990 * 7919):
+        for n in (1, 2, 4, 12, 24, 33, 100):
             got = oracle_cell_rng(seed, n)
             ref = cpython_reference(seed, n)
             for g, r in zip(got, ref):
@@ -152,7 +156,7 @@ git commit -m "spike(rng): scaffold + njit cell-RNG oracle (mirrors mortality.py
 
 ```c
 /* scripts/spikes/rng_repro/mt19937.c
- * NumPy-legacy MT19937 + init_by_array seeding + rk_interval masked-rejection
+ * NumPy-legacy MT19937 + init_genrand scalar seeding + rk_interval masked-rejection
  * bounded integers + Fisher-Yates permutation/shuffle. Targets CPython legacy
  * RandomState (== Numba np.random, per spec 0a). Parity gate (Task 3) validates.
  */
@@ -166,31 +170,15 @@ git commit -m "spike(rng): scaffold + njit cell-RNG oracle (mirrors mortality.py
 
 typedef struct { uint32_t mt[N]; int mti; } mt_state;
 
+/* NumPy-legacy RandomState(scalar) and Numba np.random.seed(scalar) seed the MT state via
+ * the SINGLE-INTEGER path init_genrand(seed) — NOT init_by_array. (Verified empirically:
+ * RandomState(0)'s first uint32 == init_genrand(0) == 2357136044, whereas init_by_array({0})
+ * gives a different stream.) cell_rng therefore seeds with init_genrand. */
 static void init_genrand(mt_state* s, uint32_t seed) {
     s->mt[0] = seed;
     for (int i = 1; i < N; i++)
         s->mt[i] = (uint32_t)(1812433253UL * (s->mt[i-1] ^ (s->mt[i-1] >> 30)) + (uint32_t)i);
     s->mti = N;
-}
-
-static void init_by_array(mt_state* s, uint32_t* key, int key_length) {
-    init_genrand(s, 19650218UL);
-    int i = 1, j = 0;
-    int k = (N > key_length ? N : key_length);
-    for (; k; k--) {
-        s->mt[i] = (uint32_t)((s->mt[i] ^ ((s->mt[i-1] ^ (s->mt[i-1] >> 30)) * 1664525UL))
-                              + key[j] + (uint32_t)j);
-        i++; j++;
-        if (i >= N) { s->mt[0] = s->mt[N-1]; i = 1; }
-        if (j >= key_length) j = 0;
-    }
-    for (k = N - 1; k; k--) {
-        s->mt[i] = (uint32_t)((s->mt[i] ^ ((s->mt[i-1] ^ (s->mt[i-1] >> 30)) * 1566083941UL))
-                              - (uint32_t)i);
-        i++;
-        if (i >= N) { s->mt[0] = s->mt[N-1]; i = 1; }
-    }
-    s->mt[0] = 0x80000000UL;
 }
 
 static uint32_t genrand_uint32(mt_state* s) {
@@ -241,7 +229,7 @@ void cell_rng(int64_t seed, int n, int32_t* out_pred, int32_t* out_starv,
               int32_t* out_fish, int32_t* out_nat, int32_t* out_orders) {
     mt_state s;
     uint32_t key = (uint32_t)(seed & 0xFFFFFFFF);  /* uint32 reduction (spec 0a) */
-    init_by_array(&s, &key, 1);
+    init_genrand(&s, key);                          /* scalar seeding (matches RandomState/Numba) */
 
     int32_t* outs[4] = {out_pred, out_starv, out_fish, out_nat};
     for (int p = 0; p < 4; p++) {
@@ -401,10 +389,11 @@ def compare_cell(seed: int, n: int, lib, ffi) -> dict[str, bool]:
 ```
 
 > **If parity fails on content** (not import): the C has a transcription bug — debug by finding
-> the FIRST diverging draw. Likely culprits in priority order: (1) `causes` reset each loop
-> instead of carried over; (2) Fisher-Yates loop direction or `rk_interval(i)` vs `(i+1)`
-> bound (legacy uses inclusive `[0, i]`); (3) `init_by_array` word order / the `seed & 0xFFFFFFFF`
-> reduction for the wrap-edge seed; (4) mask computation in `rk_interval`. NEVER loosen the bar.
+> the FIRST diverging draw. Likely culprits in priority order: (1) wrong SEEDING routine —
+> must be `init_genrand(seed)` (the scalar path RandomState/Numba use), NOT `init_by_array`;
+> (2) `causes` reset each loop instead of carried over; (3) Fisher-Yates loop direction or
+> `rk_interval(i)` vs `(i+1)` bound (legacy uses inclusive `[0, i]`); (4) the `seed & 0xFFFFFFFF`
+> reduction for the large-seed edge; (5) mask computation in `rk_interval`. NEVER loosen the bar.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -428,16 +417,87 @@ git commit -m "spike(rng): bit-exact parity gate (C vs njit oracle across n x se
 
 **Interfaces:**
 - Consumes: `_njit_cell_rng` (Task 1, the `@njit` oracle — call it directly so timing excludes Python wrapping), `_rng_portable` (Task 2).
-- Produces: `bench_rng(n: int, n_iter: int, n_samples: int, lib, ffi) -> dict` returning `{"numba_med_ns", "numba_iqr_ns", "c_med_ns", "c_iqr_ns", "ratio", "n"}` — boundary-free per-cell RNG-gen time each side (loop the full per-cell draw `n_iter` times inside an `@njit` driver vs inside C via a small `cell_rng_bench` loop — OR, if simpler, time single calls with `n_iter`-call medians and accept the Python→C boundary symmetrically), interleaved A/B sampling, median + IQR. `ratio = numba_med / c_med`.
+- Produces: `bench_rng(n: int, n_iter: int, n_samples: int, lib, ffi) -> dict` returning `{"numba_med_ns", "numba_iqr_ns", "c_med_ns", "c_iqr_ns", "ratio", "n"}` — **boundary-free** per-cell RNG-gen time per side: the full per-cell draw is looped `n_iter` times inside native code on both sides (one `@njit` dispatch vs one C/cffi call), so neither side pays a per-cell Python→C boundary. Interleaved A/B sampling, median + IQR. `ratio = numba_med / c_med` (>1 = C faster).
 
-- [ ] **Step 1: Implement `speed.py`** — warm both sides once (JIT compile / first call), then collect `n_samples` interleaved A/B timings via `time.perf_counter_ns`, each timing `n_iter` repetitions of the full per-cell draw at the given `n`. Report median + IQR per side and the ratio. Keep it simple: time `_njit_cell_rng(seed, n)` in a tight `@njit` loop for the Numba side; for C, add a tiny `cell_rng_bench(seed, n, n_iter, <out buffers>)` to `mt19937.c` (loops `cell_rng` `n_iter` times, reseeding each iteration so the work is identical) + its CDEF, rebuild, and time one FFI call. Document in the report whether you used the in-driver (boundary-free) or single-call timing.
+- [ ] **Step 1: Add `cell_rng_bench` to `mt19937.c`** (boundary-free C loop — reseeds each iter so every iteration does identical work)
 
-- [ ] **Step 2: Sanity-run at p50/p95-representative n**
+```c
+/* append to mt19937.c, after cell_rng */
+void cell_rng_bench(int64_t seed, int n, int n_iter, int32_t* out_pred, int32_t* out_starv,
+                    int32_t* out_fish, int32_t* out_nat, int32_t* out_orders) {
+    for (int it = 0; it < n_iter; it++)
+        cell_rng(seed, n, out_pred, out_starv, out_fish, out_nat, out_orders);
+}
+```
+
+- [ ] **Step 2: Add its declaration to the `CDEF` in `build_ffi.py` and rebuild**
+
+Append to `CDEF` (must match the C signature exactly):
+```c
+void cell_rng_bench(int64_t seed, int n, int n_iter, int32_t* out_pred, int32_t* out_starv,
+                    int32_t* out_fish, int32_t* out_nat, int32_t* out_orders);
+```
+Run: `PYTHONPATH=. .venv/bin/python -m scripts.spikes.rng_repro.build_ffi` (rebuilds both variants).
+
+- [ ] **Step 3: Implement `speed.py`**
+
+```python
+# scripts/spikes/rng_repro/speed.py
+"""Boundary-free per-cell RNG-gen timing: C cell_rng_bench vs an @njit driver."""
+from __future__ import annotations
+
+import time
+
+import numpy as np
+from numba import njit
+
+from .oracle import _njit_cell_rng
+
+
+@njit(cache=True)
+def _numba_bench(seed, n, n_iter):
+    acc = np.int64(0)
+    for _ in range(n_iter):
+        a, b, c, d, orders = _njit_cell_rng(seed, n)
+        acc += a[0] + b[0] + c[0] + d[0] + orders[0, 0]  # defeat dead-code elimination
+    return acc
+
+
+def bench_rng(n: int, n_iter: int, n_samples: int, lib, ffi) -> dict:
+    seed = np.int64(12345)
+    out = [np.empty(n if k < 4 else n * 4, dtype=np.int32) for k in range(5)]
+    cast = lambda a: ffi.cast("int32_t *", a.ctypes.data)  # noqa: E731
+    cargs = (int(seed), n, int(n_iter), cast(out[0]), cast(out[1]),
+             cast(out[2]), cast(out[3]), cast(out[4]))
+
+    _numba_bench(seed, n, 1)             # warm JIT
+    lib.cell_rng_bench(*cargs)           # warm C
+
+    numba_ns, c_ns = [], []
+    for _ in range(n_samples):           # interleaved A/B to cancel drift
+        t = time.perf_counter_ns(); _numba_bench(seed, n, n_iter)
+        numba_ns.append((time.perf_counter_ns() - t) / n_iter)
+        t = time.perf_counter_ns(); lib.cell_rng_bench(*cargs)
+        c_ns.append((time.perf_counter_ns() - t) / n_iter)
+
+    def med_iqr(xs):
+        s = sorted(xs)
+        med = s[len(s) // 2]
+        iqr = s[int(len(s) * 0.75)] - s[int(len(s) * 0.25)]
+        return med, iqr
+
+    nm, ni = med_iqr(numba_ns)
+    cm, ci = med_iqr(c_ns)
+    return {"numba_med_ns": nm, "numba_iqr_ns": ni, "c_med_ns": cm,
+            "c_iqr_ns": ci, "ratio": (nm / cm if cm else float("inf")), "n": n}
+```
+
+- [ ] **Step 4: Sanity-run at p50/p95-representative n**
 
 Run: `PYTHONPATH=. .venv/bin/python -c "from scripts.spikes.rng_repro import speed, _rng_portable as R; print(speed.bench_rng(12, 50000, 20, R.lib, R.ffi)); print(speed.bench_rng(33, 50000, 20, R.lib, R.ffi))"`
 Expected: dicts with positive `numba_med_ns`/`c_med_ns` and a finite `ratio`.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add scripts/spikes/rng_repro/speed.py scripts/spikes/rng_repro/mt19937.c scripts/spikes/rng_repro/build_ffi.py
@@ -455,7 +515,15 @@ git commit -m "spike(rng): C-vs-Numba per-cell RNG-gen speed probe"
 **Interfaces:**
 - Consumes: every prior module + `scripts.spikes.native_predation.provenance.assert_provenance` (reuse the leaf-spike guard).
 
-- [ ] **Step 1: Implement `run_spike.py`** — end-to-end: (a) `assert_provenance(worktree_root)` first, abort on failure; (b) build both variants if absent, import; (c) run `compare_cell` across the full `GRID_N × GRID_SEEDS` grid, collect every result, HARD-FAIL the verdict if any mismatch (record the first-diverging draw); (d) run `bench_rng` at n∈{12,33} on the portable build; (e) write the artifact + print the PASS/STOP verdict.
+- [ ] **Step 1: Implement `run_spike.py`** — end-to-end: (a) derive the worktree root as
+  `worktree_root = Path(__file__).resolve().parents[3]` (run_spike.py is at
+  `scripts/spikes/rng_repro/run_spike.py` → parents[0]=`rng_repro`, [1]=`spikes`, [2]=`scripts`,
+  [3]=worktree root) and call `assert_provenance(worktree_root)` FIRST (import it via
+  `from scripts.spikes.native_predation.provenance import assert_provenance`), aborting on
+  failure; (b) build both variants if absent, import; (c) run `compare_cell` across the full
+  `GRID_N × GRID_SEEDS` grid, collect every result, HARD-FAIL the verdict if any mismatch
+  (record the first-diverging `(seed, n, array, index)`); (d) run `bench_rng` at n∈{12,33} on
+  the portable build; (e) write the artifact + print the PASS/STOP verdict.
 
 - [ ] **Step 2: Run the full spike**
 

@@ -69,10 +69,12 @@ then per `i in range(n)`: `np.random.shuffle(causes)` over `causes=[0,1,2,3]`, r
 This is ground truth — the exact draws the parity baselines encode.
 
 ### 4.2 C reproduction (the feasibility artifact)
-Implement NumPy-legacy MT19937 in C (`rng.c`, compiled via cffi), faithfully:
-- **Seeding:** NumPy-legacy `init_by_array` over the seed's uint32 words, with the int64→
-  uint32 reduction confirmed in 0a (the per-cell seed `rng_seed + cell*7919` masked to
-  `seed & 0xFFFFFFFF`). Match `RandomState(seed)` seeding exactly.
+Implement NumPy-legacy MT19937 in C (`mt19937.c`, compiled via cffi), faithfully:
+- **Seeding:** NumPy-legacy **scalar** seeding `init_genrand(seed)` — the single-integer path
+  that `RandomState(scalar)` and Numba `np.random.seed(scalar)` use (NOT `init_by_array`;
+  verified empirically during plan review — `init_by_array` produces a different stream). The
+  int64→uint32 reduction confirmed in 0a applies first: the per-cell seed `rng_seed + cell*7919`
+  masked to `seed & 0xFFFFFFFF`. Match `RandomState(seed)` exactly.
 - **Bounded integer:** NumPy-legacy `rk_interval(max)` — smallest mask `2^k − 1 ≥ max`,
   draw `genrand_uint32() & mask` rejecting until `≤ max`. (NOT Lemire — legacy uses masked
   rejection.)
