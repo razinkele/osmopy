@@ -234,6 +234,8 @@ _CROSS_SPECIES_OUTPUT_TYPES = {
     "biomassDistribBySize",
     "abundanceDistribBySize",
     "meanTL",
+    "yieldN",
+    "meanSize",
 }
 
 
@@ -263,10 +265,12 @@ def _build_dataframes_from_outputs(
         _build_diet_dataframe,
         _build_distrib_bysize_community_dataframes,
         _build_distribution_dataframes,
+        _build_meansize_dataframe,
         _build_meantl_dataframe,
         _build_mortality_dataframes,
         _build_species_dataframes,
         _build_yield_dataframes,
+        _build_yieldn_dataframes,
     )
 
     disk_shape: dict[str, pd.DataFrame] = {}
@@ -276,6 +280,8 @@ def _build_dataframes_from_outputs(
     disk_shape.update(_build_distribution_dataframes(outputs, config))
     disk_shape.update(_build_distrib_bysize_community_dataframes(outputs, config))
     disk_shape.update(_build_meantl_dataframe(outputs, config))
+    disk_shape.update(_build_yieldn_dataframes(outputs, config))
+    disk_shape.update(_build_meansize_dataframe(outputs, config))
     if config.bioen_enabled:
         disk_shape.update(_build_bioen_dataframes(outputs, config))
     if config.diet_output_enabled:

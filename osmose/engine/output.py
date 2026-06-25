@@ -60,6 +60,8 @@ def write_outputs(
     _write_yield_csv(output_dir, prefix, outputs, config)
     _write_distribution_csvs(output_dir, prefix, outputs, config)
     _write_meantl_csv(output_dir, prefix, outputs, config)
+    _write_yieldn_csv(output_dir, prefix, outputs, config)
+    _write_meansize_csv(output_dir, prefix, outputs, config)
     _write_distrib_bysize_community_csvs(output_dir, prefix, outputs, config)
 
     if config.bioen_enabled:
@@ -228,6 +230,54 @@ def _write_meantl_csv(
 ) -> None:
     """Write {prefix}_meanTL_Simu0.csv (clean header; readers auto-detect preamble)."""
     for key, df in _build_meantl_dataframe(outputs, config).items():
+        df.to_csv(output_dir / f"{prefix}_{key}_Simu0.csv", index=False)
+
+
+def _build_yieldn_dataframes(
+    outputs: list[StepOutput], config: EngineConfig
+) -> dict[str, pd.DataFrame]:
+    """Wide Time + per-focal-species fishing catch in numbers. Empty when disabled/absent."""
+    if not config.output_yield_abundance or not any(o.yield_n is not None for o in outputs):
+        return {}
+    times = np.array([o.step / config.n_dt_per_year for o in outputs])
+    data = np.array(
+        [o.yield_n if o.yield_n is not None else np.zeros(config.n_species) for o in outputs]
+    )
+    df = pd.DataFrame(data, columns=list(config.species_names))  # type: ignore[arg-type]
+    df.insert(0, "Time", times)
+    return {"yieldN": df}
+
+
+def _build_meansize_dataframe(
+    outputs: list[StepOutput], config: EngineConfig
+) -> dict[str, pd.DataFrame]:
+    """Wide Time + per-focal-species abundance-weighted mean length (cm), NaN where empty."""
+    if not config.output_mean_size or not any(o.mean_size is not None for o in outputs):
+        return {}
+    times = np.array([o.step / config.n_dt_per_year for o in outputs])
+    sp_names = config.species_names
+    data = np.full((len(outputs), len(sp_names)), np.nan, dtype=np.float64)
+    for t_idx, o in enumerate(outputs):
+        if o.mean_size:
+            for sp_idx, val in o.mean_size.items():
+                if sp_idx < len(sp_names):
+                    data[t_idx, sp_idx] = val
+    df = pd.DataFrame(data, columns=sp_names)  # type: ignore[arg-type]
+    df.insert(0, "Time", times)
+    return {"meanSize": df}
+
+
+def _write_yieldn_csv(
+    output_dir: Path, prefix: str, outputs: list[StepOutput], config: EngineConfig
+) -> None:
+    for key, df in _build_yieldn_dataframes(outputs, config).items():
+        df.to_csv(output_dir / f"{prefix}_{key}_Simu0.csv", index=False)
+
+
+def _write_meansize_csv(
+    output_dir: Path, prefix: str, outputs: list[StepOutput], config: EngineConfig
+) -> None:
+    for key, df in _build_meansize_dataframe(outputs, config).items():
         df.to_csv(output_dir / f"{prefix}_{key}_Simu0.csv", index=False)
 
 

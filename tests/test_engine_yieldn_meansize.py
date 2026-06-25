@@ -99,3 +99,52 @@ def test_collect_mean_size_applies_cutoff_and_omits_empty():
     # a state with no qualifying school → species omitted
     empty = _collect_mean_size(SchoolState.create(0), _Cfg())
     assert empty == {}
+
+
+def _cfg(flags: dict[str, str]) -> EngineConfig:
+    return EngineConfig.from_dict({**_base_cfg(), **flags})
+
+
+def _step(step: int, yield_n=None, mean_size=None, n_sp: int = 1):
+    """A StepOutput with required biomass/abundance/mortality set + known yield_n/mean_size."""
+    from osmose.engine.simulate import StepOutput
+
+    return StepOutput(
+        step=step,
+        biomass=np.full(n_sp, 100.0),
+        abundance=np.full(n_sp, 1000.0),
+        mortality_by_cause=np.zeros((n_sp, len(MortalityCause)), dtype=np.float64),
+        yield_n=yield_n,
+        mean_size=mean_size,
+    )
+
+
+def test_yieldn_meansize_csv_written_with_real_values(tmp_path):
+    from osmose.engine.output import write_outputs
+    from osmose.results import OsmoseResults
+
+    cfg = _cfg({"output.yield.abundance.enabled": "true", "output.size.enabled": "true"})
+    sp = cfg.species_names[0]
+    outputs = [_step(0, np.array([3.0]), {0: 12.0}), _step(1, np.array([7.0]), {0: 20.0})]
+    write_outputs(outputs, tmp_path, cfg, prefix="run")
+    assert (tmp_path / "run_yieldN_Simu0.csv").exists()
+    assert (tmp_path / "run_meanSize_Simu0.csv").exists()
+    res = OsmoseResults(tmp_path, prefix="run")
+    assert res.yield_abundance()[sp].tolist() == [3.0, 7.0]  # NON-vacuous
+    assert res.mean_size()[sp].tolist() == [12.0, 20.0]
+
+
+def test_yieldn_meansize_csv_matches_in_memory(tmp_path):
+    from osmose.engine.grid import Grid
+    from osmose.engine.output import write_outputs
+    from osmose.results import OsmoseResults, _build_dataframes_from_outputs
+
+    cfg = _cfg({"output.yield.abundance.enabled": "true", "output.size.enabled": "true"})
+    sp = cfg.species_names[0]
+    outputs = [_step(0, np.array([3.0]), {0: 12.0}), _step(1, np.array([7.0]), {0: 20.0})]
+    write_outputs(outputs, tmp_path, cfg, prefix="run")
+    disk = OsmoseResults(tmp_path, prefix="run")
+    mem = _build_dataframes_from_outputs(outputs, cfg, Grid.from_dimensions(ny=1, nx=1))
+    assert "yieldN" in mem and "meanSize" in mem
+    assert disk.yield_abundance()[sp].tolist() == mem["yieldN"][sp].tolist() == [3.0, 7.0]
+    assert disk.mean_size()[sp].tolist() == mem["meanSize"][sp].tolist() == [12.0, 20.0]
