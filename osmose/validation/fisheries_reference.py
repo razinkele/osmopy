@@ -74,7 +74,7 @@ class ReferencePoint:
     @property
     def b_ref_label(self) -> str:
         """Human-readable label for the B-axis reference kind."""
-        return "Bmsy [user]"
+        return "Bmsy [model]" if self.b_ref_kind == "bmsy_model" else "Bmsy [user]"
 
 
 def ecosystem_of(config_dir: Path | None) -> str:
@@ -183,6 +183,10 @@ def load_reference_points(
     if ices_snapshot_dir is not None and Path(ices_snapshot_dir).exists():
         snapshot = load_snapshot(Path(ices_snapshot_dir))
 
+    # Load model sidecar once (may be absent)
+    model_path = Path(ref_dir) / "fisheries_model_reference_points.json"
+    model: dict[str, dict] = json.loads(model_path.read_text()) if model_path.exists() else {}
+
     refs: dict[str, ReferencePoint] = {}
     for sp in species_list:
         rp = ReferencePoint(species=sp)
@@ -191,7 +195,16 @@ def load_reference_points(
         if snapshot is not None:
             _autofill_fmsy(sp, snapshot, rp)
 
-        # Layer 2: user overrides (win over ICES auto-fill)
+        # Layer 1b: model sidecar fill (Fmsy + Bmsy; overrides ICES, beaten by user)
+        m = model.get(sp, {})
+        if _to_float(m.get("fmsy")) is not None:
+            rp.fmsy = _to_float(m["fmsy"])
+            rp.source = "model" if rp.fmsy_stock is None else "model+ices"
+        if _to_float(m.get("bmsy")) is not None:
+            rp.bmsy = _to_float(m["bmsy"])
+            rp.b_ref_kind = "bmsy_model"
+
+        # Layer 2: user overrides (win over ICES auto-fill and model sidecar)
         u = user_data.get(sp, {})
         user_fmsy = _to_float(u.get("fmsy"))
         user_bmsy = _to_float(u.get("bmsy"))

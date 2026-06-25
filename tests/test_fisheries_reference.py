@@ -66,3 +66,30 @@ def test_save_does_not_persist_ices_autofill_fmsy(tmp_path):
 def test_ecosystem_of():
     assert fr.ecosystem_of(Path("/x/data/baltic")) == "baltic"
     assert fr.ecosystem_of(Path("/x/data/eec_full")) == "eec_full"
+
+
+# Task 5: model sidecar tests
+
+
+def _write_model(ref_dir, payload):
+    ref_dir.mkdir(parents=True, exist_ok=True)
+    (ref_dir / "fisheries_model_reference_points.json").write_text(json.dumps(payload))
+
+
+def test_model_fills_fmsy_and_bmsy(tmp_path):
+    _write_model(tmp_path, {"sprat": {"fmsy": 0.5, "bmsy": 600000.0}})
+    refs, _ = fr.load_reference_points(tmp_path, ["sprat"], ices_snapshot_dir=ICES)
+    assert refs["sprat"].fmsy == 0.5 and refs["sprat"].bmsy == 600000.0
+    assert refs["sprat"].b_ref_kind == "bmsy_model"
+    assert refs["sprat"].b_ref_label == "Bmsy [model]"
+    assert "model" in refs["sprat"].source
+
+
+def test_precedence_user_over_model_over_ices(tmp_path):
+    _write_model(tmp_path, {"sprat": {"fmsy": 0.5, "bmsy": 600000.0}})
+    (tmp_path / "fisheries_reference_points.json").write_text(
+        json.dumps({"sprat": {"bmsy": 999000.0}})
+    )  # user Bmsy wins
+    refs, _ = fr.load_reference_points(tmp_path, ["sprat"], ices_snapshot_dir=ICES)
+    assert refs["sprat"].bmsy == 999000.0 and refs["sprat"].b_ref_kind == "bmsy_user"
+    assert refs["sprat"].fmsy == 0.5  # model Fmsy kept (no user/ICES override of fmsy here)
