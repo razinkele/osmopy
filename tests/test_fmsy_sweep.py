@@ -4,7 +4,7 @@ import pytest
 
 from osmose.config.reader import OsmoseConfigReader
 from osmose.engine.config import EngineConfig
-from osmose.validation.fmsy_sweep import fishing_override
+from osmose.validation.fmsy_sweep import SweepPoint, derive_reference_points, fishing_override
 
 BALTIC = "data/baltic/baltic_all-parameters.csv"
 
@@ -58,3 +58,52 @@ def test_legacy_mode_override():
     bumped = dict(raw)
     bumped[key] = "0.9"
     assert EngineConfig.from_dict(bumped).fishing_rate[0] == pytest.approx(0.9)
+
+
+def _curve(species, fs, yields, ssbs, frealized=None):
+    fr = frealized or fs
+    return [SweepPoint(species, fn, r, y, s) for fn, r, y, s in zip(fs, fr, yields, ssbs)]
+
+
+def test_single_peak_fmsy_bmsy_b0_blim():
+    # yield rises then falls; peak at f_nominal=0.6 (realized 0.5); SSB declines with F
+    fs = [0.0, 0.3, 0.6, 0.9, 1.2]
+    rs = [0.0, 0.25, 0.5, 0.75, 1.0]
+    yields = [0.0, 8.0, 10.0, 7.0, 3.0]
+    ssbs = [1000.0, 700.0, 500.0, 300.0, 150.0]
+    rp = derive_reference_points({"cod": _curve("cod", fs, yields, ssbs, rs)})["cod"]
+    assert rp.fmsy == pytest.approx(0.5)  # realized F at the yield peak
+    assert rp.bmsy == pytest.approx(500.0)  # SSB at the peak
+    assert rp.b0 == pytest.approx(1000.0)  # SSB at F=0
+    assert rp.blim == pytest.approx(200.0)  # 0.2 * B0
+    assert not rp.fmsy_at_boundary and not rp.multi_peak
+
+
+def test_monotone_increasing_is_boundary():
+    fs = [0.0, 0.5, 1.0]
+    rp = derive_reference_points({"x": _curve("x", fs, [0.0, 5.0, 9.0], [900.0, 500.0, 200.0])})[
+        "x"
+    ]
+    assert rp.fmsy_at_boundary and any("boundary" in c.lower() for c in rp.caveats)
+
+
+def test_monotone_decreasing_no_fmsy():
+    fs = [0.0, 0.5, 1.0]
+    rp = derive_reference_points({"x": _curve("x", fs, [9.0, 5.0, 1.0], [900.0, 500.0, 200.0])})[
+        "x"
+    ]
+    assert rp.fmsy is None and any("no" in c.lower() for c in rp.caveats)
+
+
+def test_two_peaks_flagged():
+    fs = [0.0, 0.25, 0.5, 0.75, 1.0]
+    rp = derive_reference_points(
+        {"x": _curve("x", fs, [0, 9, 2, 8, 1], [900, 700, 500, 300, 150])}
+    )["x"]
+    assert rp.multi_peak
+
+
+def test_b0_nonpositive_no_blim():
+    fs = [0.0, 0.5]
+    rp = derive_reference_points({"x": _curve("x", fs, [0.0, 5.0], [0.0, -1.0])})["x"]
+    assert rp.blim is None
