@@ -1,162 +1,198 @@
 # Model-internal fishery reference points (Fmsy / Bmsy / Blim) — design
 
-> Status: design (awaiting review) · 2026-06-25
-> The deferred **v2** of the fisheries stock-status feature (`docs/superpowers/specs/2026-06-25-fisheries-stock-status-diagnostics-design.md`).
-> Derives per-species reference points from the model's OWN yield-vs-F response — the
-> established OSMOSE/EwE practice (Travers-Trolet 2020; Mackinson 2018) — so the Kobe page
-> auto-populates both axes with no user-entered Bmsy and no ICES dependency.
+> Status: design (revised after in-loop workflow review) · 2026-06-25
+> The deferred **v2** of the fisheries stock-status feature. Derives per-species reference points
+> from the model's OWN yield-vs-F response (Travers-Trolet 2020; Mackinson 2018) so the Kobe page
+> auto-populates both axes. The first review found the original draft's central mechanism broken
+> three ways (wrong fishing knob, wrong yield reader, SSB output disabled) and the cost badly
+> understated — all corrected below.
 
 ## 1. Why
 
-The shipped fisheries page is *indicative* and requires a **user-supplied Bmsy** per species
-(ICES publishes none); out-of-the-box the Kobe scatter is empty. The literature's preferred fix
-is to compute reference points **internally**: run the model across a grid of fishing mortalities,
-read equilibrium yield and spawning biomass, and take Fmsy = the F that maximises equilibrium
-yield, Bmsy = the equilibrium SSB at Fmsy, and Blim = 0.2·B0 (B0 = unfished SSB). These are
-internally consistent with the model's own dynamics (single-stock ICES reference points are not
-simultaneously achievable in an interacting system). This feature adds that sweep as a library +
-CLI; the existing page reads the result.
+The shipped fisheries page is *indicative* and needs a **user-supplied Bmsy** per species; the Kobe
+scatter is empty out-of-the-box. The literature's fix: compute reference points **internally** by
+sweeping fishing mortality, reading equilibrium yield + spawning biomass, and taking Fmsy = the F
+maximising equilibrium yield, Bmsy = the equilibrium SSB at Fmsy, Blim = 0.2·B0. This is an
+**offline, parallel, cached-per-config batch** (tens of minutes to a few hours — §2 cost) exposed
+as a library + CLI; the page reads the resulting sidecar.
 
-## 2. Scope decisions (from brainstorming)
+## 2. Scope decisions
 
-- **Surface = library + CLI** (not a UI button). A function + a script run the sweep (minutes,
-  offline) and write a sidecar JSON; the fisheries page auto-reads it. A UI "compute" button is a
-  deferred follow-up.
-- **Per-species "conditional" Fmsy** (the defensible multispecies method): sweep ONE species' F
-  while holding every other species at its **baseline** config F. Fmsy is therefore conditional on
-  the current fishing of the rest of the system — surfaced as a caveat. (Cost: `n_species × |f_grid|`
-  runs + replicates, on the calibration process-pool.)
-- **The model provides the FULL set** per species: `fmsy`, `bmsy` (SSB at Fmsy), `b0` (unfished
-  SSB), `blim` (= 0.2·b0) — fully populating both Kobe axes.
+- **Surface = library + CLI** (no UI button). The CLI runs the sweep once per config and writes a
+  model sidecar; the page auto-reads it. A "Compute" UI button is deferred.
+- **Per-species conditional Fmsy:** sweep ONE species' fishing rate while holding all others at their
+  **baseline** config rate — Fmsy is conditional on the rest of the system's baseline fishing (a
+  surfaced caveat; the assembled Kobe is NOT a mutual-MSY equilibrium).
+- **Full reference set** per species: `fmsy`, `bmsy` (SSB at Fmsy), `b0` (conditional unfished SSB =
+  species *i* at F=0, others at baseline), `blim` (= 0.2·b0).
+- **Cost is real (re-baselined from the review's measurement: ~4.4 s/sim-year on baltic).** The sweep
+  is `n_species × |grid| × replicates` runs of `n_years` each. With the tuned defaults below
+  (grid 7, n_years 30, replicates 3) baltic (8 sp) ≈ 168 runs × ~130 s ≈ 6 h serial / **~30–45 min on
+  an 8-core ProcessPool**; eec_full (14 sp, slower) is larger. It is a deliberate **one-time offline
+  computation per config**, cached in the sidecar and reused — acceptable like a calibration run, but
+  the CLI prints an up-front time estimate and the defaults are tuned for tractability, not speed.
 
 ## 3. Methodology
 
-- **Per-species sweep.** For species *i*: build configs at each F in an **absolute** grid `f_grid`
-  (default `np.linspace(0.0, 2.0, 11)` = `0.0, 0.2, …, 2.0` /yr, 11 points; configurable), overriding
-  only species *i*'s fishing rate
-  (`mortality.fishing.rate.sp{i}`) and leaving all other species at their baseline config value.
-  An absolute grid (not a multiplier of the baseline) is required because a species' baseline F may
-  be 0. The `F=0` point doubles as the B0 (unfished SSB) reference.
-- **Equilibrium.** Each run executes `n_years` (default = `max(config nyear, 50)`, so the trailing
-  window has ≥40 spin-up years before it); the equilibrium yield/SSB is the **trailing-window
-  mean** of the per-year series (the codebase's existing convention — `annual_by_year(..., how="mean")`
-  over the last `window_years`, default 10). The engine is stochastic (PCG64), so each grid point is
-  the mean over `replicates` runs (default a small number, e.g. 1–3; configurable) with distinct seeds.
-- **Reference points.** `fmsy` = the grid F maximising equilibrium yield (parabolic-refine the peak
-  from the three points around the max for sub-grid precision); `bmsy` = equilibrium SSB at that F
-  (interpolated); `b0` = equilibrium SSB at F=0; `blim = 0.2 · b0`. If the yield maximum is at the
-  **last grid point** (no interior peak), emit a boundary warning and mark the species' Fmsy
-  unreliable (the grid did not bracket the peak — `f_grid` should be extended).
-- **Caveats** recorded per species: conditional-Fmsy (depends on others' baseline F); ecosystem-state
-  dependence; model-internal (not an external assessment) — consistent with the page's indicative
-  framing. Species with no fishing in the baseline config (and thus no meaningful yield curve) are
-  reported with a caveat and no Fmsy.
+- **Which fishing knob to override (THE crux — was wrong).** `EngineConfig.from_dict` branches: when
+  `module.multispecies.fisheries.enabled==true` AND `simulation.nfisheries>0` (the **v4 fisheries
+  mode** — BOTH bundled configs: eec_full nfisheries=14, baltic=8), the legacy
+  `mortality.fishing.rate.sp{i}` is **never read**; F comes from `fisheries.rate.base.fsh{j}` with the
+  species→fishery map built from the catchability matrix (`config.py:296-315`). So the runner must
+  **detect the mode** and override the active knob:
+  - **fisheries mode:** map species *i* → its fishery *j* (the first catchability column > 0 for that
+    species), override `fisheries.rate.base.fsh{j}`. Guard **shared fisheries**: if fishery *j* lands
+    >1 species, overriding it moves F for all of them — in that case sweep at the fishery level (and
+    record which species share it) or skip with a caveat. (Both bundled configs are 1:1 species↔fishery
+    — verified — so per-species overrides are clean there.)
+  - **legacy mode** (`nfisheries==0`): override `mortality.fishing.rate.sp{i}`.
+  - The runner asserts the override actually changed `EngineConfig.fishing_rate[i]` before running (a
+    no-op override = a silent flat curve = garbage Fmsy — the original bug).
+- **Outputs the sweep must force on.** A default `run_in_memory` does NOT produce SSB (it is gated on
+  `output.ssb.enabled`; the in-memory `"yield"` output is unconditional, but the flag is still set so
+  the disk/CLI path matches). Each sweep config override sets `output.ssb.enabled=true` **and**
+  `output.yield.biomass.enabled=true` **and** the mortality output needed for the realized-F basis
+  (below); other heavy/spatial outputs are disabled for speed.
+- **Reading equilibrium yield + SSB (readers were wrong).** Per-species **yield = `results.yield_biomass(species)`** (the in-memory `"yield"` output, tonnes — NOT `results.fishery_yield`, which reads a Java-only `fisheryYieldBiomass` and raises in-memory); **SSB = `results.ssb(species)`**. Equilibrium = the **trailing-window mean** (`annual_by_year(..., how="mean")`, last `window_years`, default 10) of each run, averaged over `replicates`.
+- **Realized-F basis (so Fmsy matches the page).** The grid overrides the *nominal* fishing rate, but
+  selectivity makes the realized population F lower; the page's model F is the **realized
+  exploited-stage F** (from `mortalityRate`). To keep `F/Fmsy` consistent, the sweep indexes each
+  run's equilibrium yield by its **realized exploited-stage annual F** (read from that run's
+  `mortalityRate`, the same extraction `stock_status.py` uses), and reports Fmsy on that realized
+  basis — not the nominal grid value.
+- **Equilibrium convergence (50yr may not suffice after an F step).** `n_years` default
+  `max(config nyear, 30)`; the runner checks convergence — compare the last window's mean to the prior
+  window's; if yield or SSB still trends beyond a tolerance, flag the grid point as `not_converged`
+  (and the species' Fmsy as lower-confidence). Predation-release/trophic transients on the held-baseline
+  species are the reason this matters.
+- **Deriving Fmsy (single-peak is NOT guaranteed).** In a multispecies model, fishing species *i* down
+  can release prey/predators → a non-monotone or multi-peaked yield-vs-F curve. `derive_reference_points`
+  therefore: (a) finds the global yield max; (b) counts interior local maxima (gradient sign changes) —
+  if >1, flags `multi_peak`; (c) **parabolic-refines** the peak from the 3 bracketing points, clamping
+  the vertex to `[f_lo, f_hi]` and falling back to the grid argmax if the refine leaves the bracket;
+  (d) max-at-first-point (F=0, yield monotonically decreasing — over-fished at baseline) → no valid
+  Fmsy + caveat; (e) max-at-last-point → `fmsy_at_boundary` + caveat (grid didn't bracket the peak).
+  `bmsy` = SSB at the Fmsy point (interpolated); `b0` = SSB at F=0; `blim = 0.2·b0` (require `b0 > 0`).
+- **Parallelization (don't oversubscribe).** A single engine run already saturates cores via the
+  `@njit(parallel=True)` mortality kernel. So each pool worker sets `numba.set_num_threads(1)`
+  (per-run single-threaded) and the sweep parallelizes ACROSS runs on a **ProcessPool** sized to
+  `cpu_count` — reusing the calibration process backend's pattern.
+- **Replicates.** Default `3` (the PCG64 engine is stochastic; 1 replicate puts Fmsy on a noise-jittered
+  grid point and makes the sidecar non-reproducible). Guidance: ~5–10 for noisy small-pelagic/
+  recruitment-driven species. Replicate-mean the yield + SSB before deriving.
 
-## 4. Components (each isolated, testable)
+## 4. Components
 
-1. **`osmose/validation/fmsy_sweep.py`** (new) — the sweep core (pure compute over the engine; no UI).
-   - `@dataclass SweepPoint`: `species`, `f`, `yield_eq`, `ssb_eq` (per grid point, per replicate-mean).
-   - `@dataclass ModelReferencePoint`: `species`, `fmsy: float|None`, `bmsy: float|None`,
-     `b0: float|None`, `blim: float|None`, `fmsy_at_boundary: bool`, `caveats: list[str]`,
-     `curve: list[SweepPoint]` (for plotting/debug).
-   - `run_yield_f_sweep(base_config, grid, species_list, config, *, n_years, replicates, window_years,
-     max_workers, seed0) -> dict[str, list[SweepPoint]]`: builds the per-(species, F, replicate) config
-     overrides, runs them via `PythonEngine.run_in_memory` on a `ThreadPoolExecutor`/`ProcessPoolExecutor`
-     (reuse the calibration backend choice), reads equilibrium yield (`results.fishery_yield`) + SSB
-     (`results.ssb`), averages replicates. Pure given a base config dict; deterministic per seed.
-   - `derive_reference_points(curves) -> dict[str, ModelReferencePoint]`: the Fmsy/Bmsy/B0/Blim +
-     boundary logic above. Separated from the runner so it is unit-testable on synthetic curves.
-   - `compute_model_reference_points(base_config, *, grid=None, n_years=None, replicates=1,
-     window_years=10, max_workers=None) -> dict[str, ModelReferencePoint]`: the top-level convenience
-     (build config → sweep → derive). `grid=None` picks a sensible default absolute grid.
-2. **`scripts/compute_model_reference_points.py`** (new CLI) — `--config <path>` (a base config CSV/dir),
-   `--grid`/`--n-years`/`--replicates`/`--workers` overrides, `--out` (default
-   `data/<ecosystem>/reference/fisheries_model_reference_points.json`). Reads the config via the
-   existing `OsmoseConfigReader`, calls `compute_model_reference_points`, writes the sidecar (Fmsy,
-   Bmsy, B0, Blim, fmsy_at_boundary, caveats per species) + a one-line progress log per run.
+1. **`osmose/validation/fmsy_sweep.py`** (new) — the sweep core (pure compute over the engine).
+   - `@dataclass SweepPoint`: `species`, `f_nominal`, `f_realized`, `yield_eq`, `ssb_eq`, `not_converged: bool`.
+   - `@dataclass ModelReferencePoint`: `species`, `fmsy`, `bmsy`, `b0`, `blim`, `fmsy_at_boundary: bool`,
+     `multi_peak: bool`, `caveats: list[str]`, `curve: list[SweepPoint]`.
+   - `_fishing_override(config, species_idx) -> tuple[str, float]`: detect mode, return the active key
+     to override for species *i* (`fisheries.rate.base.fsh{j}` or `mortality.fishing.rate.sp{i}`) + its
+     baseline value; raises on a shared-fishery species (handled by the caller's caveat path).
+   - `run_yield_f_sweep(base_config, config, species_list, *, grid, n_years, replicates, window_years,
+     max_workers, seed0) -> dict[str, list[SweepPoint]]`: builds the per-(species,F,replicate) override
+     configs (active fishing key + forced `output.ssb.enabled`/`output.yield.biomass.enabled`/mortality
+     + reduced n_years), runs them on a ProcessPool (numba single-threaded per worker), reads
+     `yield_biomass`/`ssb`/realized-F, asserts the override took effect, replicate-means, returns curves.
+   - `derive_reference_points(curves) -> dict[str, ModelReferencePoint]`: the peak/boundary/multi-peak/
+     B0/Blim logic above. **Pure** — unit-tested on synthetic curves with no engine.
+   - `compute_model_reference_points(base_config, *, grid=None, n_years=None, replicates=3,
+     window_years=10, max_workers=None) -> dict[str, ModelReferencePoint]`: top-level (build config →
+     sweep → derive). `grid=None` → default `np.linspace(0.0, 2.0, 7)`.
+2. **`scripts/compute_model_reference_points.py`** (new CLI) — `--config`, grid/n-years/replicates/
+   workers overrides, `--out` (default `data/<ecosystem>/reference/fisheries_model_reference_points.json`).
+   Reads config via `OsmoseConfigReader`, **prints an up-front run-count + time estimate**, runs the
+   sweep with a per-run progress log, writes the sidecar.
 3. **`osmose/validation/fisheries_reference.py`** (extend) — read the model sidecar.
-   - `ReferencePoint` gains nothing structurally beyond the existing `source` string; add a model
-     branch to `load_reference_points`: read `ref_dir/fisheries_model_reference_points.json`, and for
-     each species fill `fmsy`/`bmsy` from the model when present, tagging `source="model"` and
-     `b_ref_kind="bmsy_model"`. **Precedence: user > model > ICES** — user JSON overrides model;
-     model overrides ICES-auto-filled Fmsy; ICES is the fallback only where neither user nor model
-     has a value. `b_ref_label` returns `"Bmsy [model]"` vs `"Bmsy [user]"` per the kind. Model-derived
-     values are NOT written back by `save_reference_points` (they live in their own sidecar, regenerated
-     by the CLI).
-4. **`ui/pages/fisheries.py`** (minor) — surface the provenance: the reference-point table shows a
-   `source` column ("model" / "ICES" / "user"); with a model sidecar present the Kobe auto-populates
-   both axes (model Bmsy → B-axis). A short note tells the user a model sidecar exists / how it was
-   produced. No new background-job machinery (the CLI produces the sidecar).
+   `load_reference_points` gains a model branch: read `ref_dir/fisheries_model_reference_points.json`;
+   fill `fmsy`/`bmsy` from the model where present, `source="model"`, `b_ref_kind="bmsy_model"`.
+   **Precedence: user > model > ICES.** `b_ref_label` becomes conditional — `"Bmsy [user]"` /
+   `"Bmsy [model]"` per `b_ref_kind` (this also fixes the parent feature's always-"[user]" minor).
+   `save_reference_points` never writes model values.
+4. **`ui/pages/fisheries.py`** (minor) — the reference-point table shows a `source` column
+   (model/ICES/user); with a model sidecar the Kobe auto-populates both axes. A note states the
+   reference points are model-internal + conditional, and how to (re)generate them via the CLI.
 
 ## 5. Data flow
 
-`compute_model_reference_points(base_config)`:
-base config → for each (species *i*, F in grid, replicate): override `mortality.fishing.rate.sp{i}`
-→ `PythonEngine.run_in_memory` (pool) → trailing-window-mean equilibrium yield + SSB → average
-replicates → per-species yield-vs-F curve → `derive_reference_points` (Fmsy/Bmsy/B0/Blim) →
-sidecar JSON. Then, independently, the page: `load_reference_points` merges user > model > ICES →
-`compute_stock_status` → Kobe (now populated by model Bmsy + Fmsy).
+`compute_model_reference_points(base_config)`: for each (species *i*, F in grid, replicate) → override
+the **active fishing key** for *i* + force SSB/yield/mortality outputs → `PythonEngine.run_in_memory`
+(ProcessPool, numba 1 thread) → trailing-window-mean equilibrium `yield_biomass` + `ssb` + realized
+exploited-stage F → replicate-mean → per-species yield-vs-(realized F) curve → `derive_reference_points`
+→ sidecar JSON. Then the page: `load_reference_points` merges user > model > ICES → `compute_stock_status`
+→ Kobe (populated by model Bmsy + Fmsy).
 
 ## 6. Sidecar format
 
 `data/<ecosystem>/reference/fisheries_model_reference_points.json`:
 ```json
 {
-  "_meta": { "grid": [0.0, 0.1, "…"], "n_years": 50, "replicates": 1, "window_years": 10 },
-  "cod":   { "fmsy": 0.31, "bmsy": 118000, "b0": 410000, "blim": 82000, "fmsy_at_boundary": false },
-  "sprat": { "fmsy": 0.62, "bmsy": 540000, "b0": 1800000, "blim": 360000, "fmsy_at_boundary": false }
+  "_meta": { "grid": [0.0, 0.33, 0.67, 1.0, 1.33, 1.67, 2.0], "n_years": 30,
+             "replicates": 3, "window_years": 10, "f_basis": "realized_exploited_stage" },
+  "cod":   { "fmsy": 0.29, "bmsy": 118000, "b0": 410000, "blim": 82000,
+             "fmsy_at_boundary": false, "multi_peak": false },
+  "sprat": { "fmsy": 0.55, "bmsy": 540000, "b0": 1800000, "blim": 360000,
+             "fmsy_at_boundary": false, "multi_peak": true }
 }
 ```
-Distinct from the user sidecar (`fisheries_reference_points.json`) and never written by the UI.
+Fmsy/Bmsy in realized-F / SSB-tonnes basis. Distinct from the user sidecar; never UI-written.
 
 ## 7. Error handling / edge cases
 
-- **No interior yield peak** (max at the last grid F) → `fmsy_at_boundary=True`, Fmsy still reported
-  but flagged unreliable + a caveat ("extend the F grid"); the page shows the badge.
-- **Species unfished in the baseline config** (its yield curve is ~flat/zero because selectivity or
-  catchability zero it out) → no Fmsy, caveat.
-- **A sweep run fails / returns empty outputs** → that grid point is dropped with a warning; if too
-  few points remain to find a peak, the species gets no Fmsy + a caveat (the sweep does not crash).
-- **B0 ≤ 0** (degenerate F=0 SSB) → no Blim, caveat.
-- **No model sidecar present** → the page behaves exactly as today (user/ICES only) — this feature is
-  purely additive.
-- **`grid` not bracketing 0** → the runner inserts F=0 (needed for B0); documented.
-- Reuse the engine's existing config validation; the only overridden key is `mortality.fishing.rate.sp{i}`.
+- **Fishing-mode mismatch (the original critical bug):** detect fisheries vs legacy mode and override
+  the active key; **assert `fishing_rate[i]` actually changed** before the run, else raise (never a
+  silent flat curve).
+- **Shared fishery** (one fishery, >1 species): sweeping it moves all its species — record the shared
+  set + caveat (or sweep at fishery level). Bundled configs are 1:1 so this is the non-default path.
+- **SSB/yield outputs off:** forced on per-run; assert `results.ssb()`/`results.yield_biomass()`
+  non-empty, else raise with a clear message.
+- **Multi-peak / plateau yield curve:** `multi_peak=True` + caveat; report the global max but warn the
+  reference point is ambiguous.
+- **No interior peak:** max at first point → no Fmsy + caveat; max at last point → `fmsy_at_boundary`
+  + caveat (extend grid).
+- **Not converged in `n_years`:** grid point flagged `not_converged`; if the Fmsy point is unconverged,
+  lower-confidence caveat.
+- **B0 ≤ 0 / failed run:** no Blim / drop the point with a warning; too few points to find a peak → no
+  Fmsy + caveat. The sweep never crashes the whole batch on one bad run.
+- **Selectivity basis:** Fmsy reported on the realized exploited-stage F basis (matches the page's F),
+  not the nominal grid value.
+- **No model sidecar present:** the page behaves exactly as today (user/ICES) — purely additive.
 
 ## 8. Testing
 
-- `derive_reference_points` (pure, fast): on a synthetic monotone-rise-then-fall yield curve, Fmsy is
-  the interior max (with parabolic sub-grid refinement); Bmsy = SSB at that F; B0/Blim from the F=0
-  point; a monotone-increasing curve → `fmsy_at_boundary=True` + caveat; a zero-yield curve → no Fmsy.
+- `derive_reference_points` (pure, fast): synthetic single-peak curve → interior Fmsy (parabolic-refined,
+  vertex clamped to bracket); monotone-increasing → `fmsy_at_boundary`; monotone-decreasing → no Fmsy +
+  caveat; two-peak curve → `multi_peak`; B0/Blim from the F=0 point; B0≤0 → no Blim.
+- `_fishing_override` (the no-op trap): for a **fisheries-mode** config (build a tiny one with
+  `nfisheries>0`) it returns a `fisheries.rate.base.fsh{j}` key, and applying it CHANGES
+  `EngineConfig.from_dict(...).fishing_rate[i]` (assert before/after); for a **legacy-mode** config it
+  returns `mortality.fishing.rate.sp{i}` and that changes `fishing_rate[i]`. This is the regression
+  guard against the original critical bug.
 - `run_yield_f_sweep` (integration, a TINY fast config, few species, small grid, 1 replicate): produces
-  per-species curves; the F=0 run yields the largest SSB (unfished); higher F lowers SSB; the override
-  only touches the swept species (others' baseline F unchanged — assert via the produced configs).
-- `fisheries_reference`: model sidecar loads; **precedence** user > model > ICES (a species with a
-  user Bmsy keeps it; a species with only a model entry gets `source="model"`, `b_ref_kind="bmsy_model"`,
-  `b_ref_label="Bmsy [model]"`; ICES Fmsy used only where neither). `save_reference_points` never writes
-  model values.
-- CLI: writes a valid sidecar for a tiny config that `load_reference_points` then reads; `_meta` present.
-- UI: `build_fisheries_view` with a model sidecar → Kobe `kobe_ready` True with no user input; source
-  column reflects "model".
+  curves; the F=0 run has the largest SSB; higher F lowers SSB; `results.yield_biomass`/`results.ssb`
+  are non-empty (the forced-output + correct-reader guard); the override touches only the swept species.
+- `fisheries_reference`: model sidecar loads; **precedence** user > model > ICES; `b_ref_kind="bmsy_model"`,
+  `b_ref_label="Bmsy [model]"`; `save` never writes model values.
+- CLI: writes a valid sidecar (with `_meta`) for a tiny config that `load_reference_points` then reads.
+- UI: `build_fisheries_view` with a model sidecar → `kobe_ready` True with no user input; source column "model".
 - No engine/dynamics change → EEC/BoB parity suites untouched (the sweep only RUNS the engine with
-  varied fishing-rate config, exactly as calibration already does).
+  varied fishing config + output flags, as calibration already does).
 
 ## 9. Out of scope (deferred)
 
-- **UI "Compute Fmsy/Blim" button** + background-job progress (the deferred richer surface; the CLI is v1).
-- **Whole-system F-multiplier sweep** (cheaper, scales all species together) — the per-species method is
-  the defensible default; a multi-species-MSY mode is a future option.
-- **Mixed-fishery / multi-gear F** decomposition; selectivity-pattern sweeps; per-fishery reference points.
-- **Climate/environment-conditioned reference points** (Fmsy shifts with ecosystem state — Travers-Trolet
-  2020); the sweep is run under the config's fixed forcing.
-- **Auto-extending the F grid** when Fmsy hits the boundary (v1 warns; the user re-runs with a wider grid).
+- UI "Compute Fmsy/Blim" button + background-job progress (the CLI is v1).
+- Whole-system F-multiplier (mutual-MSY) sweep; per-fishery / multi-gear reference points; shared-fishery
+  per-species decomposition beyond the caveat path.
+- Climate/environment-conditioned reference points (Fmsy shifts with ecosystem state).
+- Auto-extending the grid on a boundary Fmsy (v1 warns; user re-runs wider).
 
-## 10. Scientific basis
+## 10. Scientific basis & caveats
 
-Model-internal reference points are the established ecosystem-model practice precisely because
-single-stock reference points are not simultaneously achievable in an interacting system and shift
-with ecosystem/climate state (Travers-Trolet et al., 2020, 10.3389/fmars.2020.568232; Mackinson et
-al., 2018, 10.1371/journal.pone.0190015; Briton et al., 2019). Fmsy as the yield-maximising F and
-Blim ≈ 0.2·B0 follow Mackinson et al.'s OSMOSE/EwE methodology. The per-species conditional reading
-(others held at baseline) is the standard single-species-in-ecosystem reference; its dependence on the
-assumed fishing of the rest of the system is a known limitation, surfaced as a caveat.
+Model-internal reference points are the established ecosystem-model practice — single-stock reference
+points are not simultaneously achievable in an interacting system and shift with ecosystem/climate state
+(Travers-Trolet et al., 2020, 10.3389/fmars.2020.568232; Mackinson et al., 2018, 10.1371/journal.pone.0190015;
+Briton et al., 2019). Fmsy = yield-maximising F and Blim ≈ 0.2·B0 follow Mackinson et al. Surfaced caveats:
+per-species **conditional** (others at baseline F — not mutual-MSY); `b0` is conditional-unfished, not
+ecosystem-unfished; multi-peak/boundary/non-converged flags; realized-F basis. The assembled Kobe is an
+indicative, internally-consistent snapshot, not a multi-species optimum.
