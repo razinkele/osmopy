@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 
 from osmose.config.reader import OsmoseConfigReader
+from osmose.engine.config import EngineConfig
 from osmose.validation.fmsy_sweep import compute_model_reference_points
 
 
@@ -42,7 +43,7 @@ def write_model_sidecar(refs, out_path: Path, meta: dict) -> None:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--config", required=True, help="path to the master parameters file")
-    ap.add_argument("--grid", type=float, nargs="*", default=None, help="absolute F grid")
+    ap.add_argument("--grid", type=float, nargs="+", default=None, help="absolute F grid")
     ap.add_argument("--n-years", type=int, default=None)
     ap.add_argument("--replicates", type=int, default=3)
     ap.add_argument("--workers", type=int, default=None)
@@ -53,8 +54,6 @@ def main(argv=None) -> int:
     base = dict(OsmoseConfigReader().read(str(cfg_path)))  # injects _osmose.config.dir
     grid = np.asarray(a.grid, dtype=float) if a.grid else None
     n_grid = len(grid) if grid is not None else 7
-    from osmose.engine.config import EngineConfig
-
     n_sp = EngineConfig.from_dict(dict(base)).n_species
     n_years = a.n_years or max(int(base.get("simulation.time.nyear", "30")), 30)
     print(
@@ -64,7 +63,7 @@ def main(argv=None) -> int:
     )
     t0 = time.time()
     refs = compute_model_reference_points(
-        base, grid=grid, n_years=a.n_years, replicates=a.replicates, max_workers=a.workers
+        base, grid=grid, n_years=n_years, replicates=a.replicates, max_workers=a.workers
     )
     ecosystem = cfg_path.parent.name
     out = (
