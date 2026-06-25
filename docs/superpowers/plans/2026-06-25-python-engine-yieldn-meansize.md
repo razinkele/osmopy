@@ -473,11 +473,13 @@ def test_netcdf_written_only_when_flag_on(tmp_path):
     from osmose.engine.output import write_outputs
     outputs = [_step(0, np.array([3.0]), {0: 12.0}), _step(1, np.array([7.0]), {0: 20.0})]
     # default config (no .netcdf flag): no .nc written (early-return guard)
-    a = tmp_path / "a"; a.mkdir()
+    a = tmp_path / "a"
+    a.mkdir()
     write_outputs(outputs, a, _cfg({}), prefix="run")
     assert not (a / "run_Simu0.nc").exists()
     # netcdf-enabled: .nc with yieldN + meanSize vars
-    b = tmp_path / "b"; b.mkdir()
+    b = tmp_path / "b"
+    b.mkdir()
     cfgN = _cfg({"output.yield.abundance.netcdf.enabled": "true",
                  "output.size.netcdf.enabled": "true"})
     write_outputs(outputs, b, cfgN, prefix="run")
