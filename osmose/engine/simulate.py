@@ -103,6 +103,7 @@ class StepOutput:
     yield_n: NDArray[np.float64] | None = None
     # Abundance-weighted mean length (cm) per focal species, or None if disabled
     mean_size: dict[int, float] | None = None
+    ssb: NDArray[np.float64] | None = None  # spawning-stock biomass per species
 
     # Bioenergetics: mean net energy per species, shape (n_species,), or None if bioen disabled
     bioen_e_net_by_species: NDArray[np.float64] | None = None
@@ -863,6 +864,22 @@ def _collect_mean_size(state: SchoolState, config: EngineConfig) -> dict[int, fl
     return {i: float(wsum[i] / asum[i]) for i in range(n_sp) if asum[i] > 0}
 
 
+def _collect_ssb(state: SchoolState, config: EngineConfig) -> NDArray[np.float64]:
+    """Spawning-stock biomass per focal species — the engine's own maturity conjunction
+    (length >= maturity_size AND age_dt >= maturity_age_dt AND abundance > 0), matching
+    reproduction.py. SSB = Σ abundance*weight over mature schools (tonnes)."""
+    ssb = np.zeros(config.n_species, dtype=np.float64)
+    if len(state) > 0:
+        mature = (
+            (state.length >= config.maturity_size[state.species_id])
+            & (state.age_dt >= config.maturity_age_dt[state.species_id])
+            & (state.abundance > 0)
+            & (state.species_id < config.n_species)
+        )
+        np.add.at(ssb, state.species_id[mature], state.abundance[mature] * state.weight[mature])
+    return ssb
+
+
 def _collect_distributions(
     state: SchoolState,
     config: EngineConfig,
@@ -1087,6 +1104,7 @@ def _collect_outputs(
         if (config.output_mean_size or config.output_mean_size_netcdf)
         else None
     )
+    ssb = _collect_ssb(state, config) if (config.output_ssb or config.output_ssb_netcdf) else None
     bioen_e_net, bioen_ingestion, bioen_maint, bioen_rho, bioen_size_inf = _collect_bioen(
         state, config
     )
@@ -1112,6 +1130,7 @@ def _collect_outputs(
         mean_tl=mean_tl,
         yield_n=yield_n,
         mean_size=mean_size,
+        ssb=ssb,
         bioen_e_net_by_species=bioen_e_net,
         bioen_ingestion_by_species=bioen_ingestion,
         bioen_maint_by_species=bioen_maint,
@@ -1236,6 +1255,7 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
             mean_tl=accumulated[0].mean_tl,
             yield_n=accumulated[0].yield_n,
             mean_size=accumulated[0].mean_size,
+            ssb=accumulated[0].ssb,
             bioen_e_net_by_species=bioen_e_net_avg,
             bioen_ingestion_by_species=bioen_ingestion_avg,
             bioen_maint_by_species=bioen_maint_avg,
@@ -1255,6 +1275,8 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
     )
     _yn = [o.yield_n for o in accumulated if o.yield_n is not None]
     yield_n_sum = np.sum(_yn, axis=0) if _yn else None
+    _ssb = [o.ssb for o in accumulated if o.ssb is not None]
+    ssb_avg = np.mean(_ssb, axis=0) if _ssb else None
     # M1: Java parity (verified 2026-05-06 against
     # AbstractDistribOutput.java#write):
     #     array[iClass][cpt++] = values[iSpec][iClass] / getRecordFrequency();
@@ -1304,6 +1326,7 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
         mean_tl=_avg_scalar_dict("mean_tl"),
         yield_n=yield_n_sum,
         mean_size=_avg_scalar_dict("mean_size"),
+        ssb=ssb_avg,
         bioen_e_net_by_species=bioen_e_net_avg,
         bioen_ingestion_by_species=bioen_ingestion_avg,
         bioen_maint_by_species=bioen_maint_avg,

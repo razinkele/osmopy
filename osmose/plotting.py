@@ -359,6 +359,84 @@ def make_fm_ratio_bars(balances) -> go.Figure:
     return fig
 
 
+def make_kobe_plot(statuses, *, year=None) -> go.Figure:
+    """Indicative Kobe scatter: x=B/Bmsy, y=F/Fmsy, soft-shaded quadrants. Points only for
+    species with BOTH ratios defined at the selected year (default: each species' latest)."""
+    fig = go.Figure()
+    xmax, ymax = 2.0, 2.0
+    quads = [  # (x0,x1,y0,y1,color) — green healthy bottom-right, red top-left
+        (1, xmax, 0, 1, "rgba(0,160,80,0.10)"),
+        (0, 1, 1, ymax, "rgba(200,30,30,0.10)"),
+        (1, xmax, 1, ymax, "rgba(230,160,0,0.10)"),
+        (0, 1, 0, 1, "rgba(230,200,0,0.10)"),
+    ]
+    for x0, x1, y0, y1, c in quads:
+        fig.add_shape(
+            type="rect", x0=x0, x1=x1, y0=y0, y1=y1, fillcolor=c, line=dict(width=0), layer="below"
+        )
+    fig.add_hline(y=1, line=dict(color="grey", dash="dash"))
+    fig.add_vline(x=1, line=dict(color="grey", dash="dash"))
+    xs, ys, names = [], [], []
+    for s in statuses:
+        idx = (
+            len(s.years) - 1 if year is None else (s.years.index(year) if year in s.years else None)
+        )
+        if idx is None:
+            continue
+        b, f = s.b_over_bmsy[idx], s.f_over_fmsy[idx]
+        if b is None or f is None:
+            continue
+        xs.append(b)
+        ys.append(f)
+        names.append(s.species)
+    if xs:
+        fig.add_trace(
+            go.Scatter(
+                x=xs,
+                y=ys,
+                mode="markers+text",
+                text=names,
+                textposition="top center",
+                marker=dict(size=12),
+            )
+        )
+    fig.add_annotation(
+        x=0.5,
+        y=1.06,
+        xref="paper",
+        yref="paper",
+        showarrow=False,
+        text="Indicative — relative to supplied reference points, not a formal assessment",
+    )
+    label = statuses[0].b_ref_label if statuses else "Bmsy"
+    fig.update_layout(
+        template=TEMPLATE,
+        xaxis_title=f"SSB / {label}",
+        yaxis_title="F / Fmsy",
+        xaxis_range=[0, xmax],
+        yaxis_range=[0, ymax],
+    )
+    return fig
+
+
+def make_ratio_timeseries(statuses, which) -> go.Figure:
+    """Time-series of B/Bmsy (which='b') or F/Fmsy (which='f') per species."""
+    fig = go.Figure()
+    for s in statuses:
+        vals = s.b_over_bmsy if which == "b" else s.f_over_fmsy
+        xy = [(y, v) for y, v in zip(s.years, vals) if v is not None]
+        if xy:
+            fig.add_trace(
+                go.Scatter(
+                    x=[y for y, _ in xy], y=[v for _, v in xy], mode="lines+markers", name=s.species
+                )
+            )
+    fig.add_hline(y=1, line=dict(color="grey", dash="dash"))
+    title = "SSB / Bmsy" if which == "b" else "F / Fmsy"
+    fig.update_layout(template=TEMPLATE, xaxis_title="Year", yaxis_title=title)
+    return fig
+
+
 def make_run_delta_chart(deltas, *, metric: str = "biomass") -> go.Figure:
     """Horizontal diverging bar of per-species % change (variant vs baseline).
 
