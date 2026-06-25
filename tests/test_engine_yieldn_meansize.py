@@ -193,3 +193,13 @@ def test_csv_equals_netcdf(tmp_path):
         # same focal-species columns (sp), non-vacuous values
         np.testing.assert_allclose(csv_df[sp].to_numpy(), nc_df[sp].to_numpy(), rtol=1e-6)
     assert res.yield_abundance(source="netcdf")[sp].tolist() == [3.0, 7.0]
+
+
+def test_capability_note_no_longer_lists_yieldn_meansize():
+    from osmose.engine_capabilities import _PYTHON_NOTABLE
+
+    assert "yieldN" not in _PYTHON_NOTABLE
+    assert "meanSize" not in _PYTHON_NOTABLE
+    # still lists the genuinely-unproduced ones
+    assert "sizeSpectrum" in _PYTHON_NOTABLE
+    assert "fishery-yield" in _PYTHON_NOTABLE

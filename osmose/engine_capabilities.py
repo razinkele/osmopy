@@ -34,8 +34,8 @@ _PYTHON_GATED_PAGES = [
 ]
 
 _PYTHON_NOTABLE = (
-    "Not produced on the Python engine: sizeSpectrum, meanSize, meanTLByAge, "
-    "yieldN, fishery-yield (run these on the Java engine)."
+    "Not produced on the Python engine: sizeSpectrum, meanTLByAge, "
+    "fishery-yield (run these on the Java engine)."
 )
 _JAVA_NOTABLE = (
     "Java run: no genetics, economics, or community size-spectrum outputs; "
