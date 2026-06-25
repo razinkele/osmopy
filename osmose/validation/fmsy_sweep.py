@@ -14,6 +14,10 @@ from osmose.engine.config import EngineConfig
 from osmose.validation import fisheries as fis
 
 _DEFAULT_GRID = np.linspace(0.0, 2.0, 7)
+
+# Force outputs required for the sweep. Note: output.ssb.enabled gates SSB in-memory
+# (required for results.ssb()); output.yield.biomass.enabled is inert for in-memory runs
+# (yield is collected unconditionally), but kept defensively for a future disk-write path.
 _FORCE_OUTPUTS = {"output.ssb.enabled": "true", "output.yield.biomass.enabled": "true"}
 
 
