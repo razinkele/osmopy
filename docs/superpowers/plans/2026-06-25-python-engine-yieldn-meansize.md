@@ -190,7 +190,7 @@ def test_collect_mean_size_abundance_weighted():
 
 def test_collect_mean_size_applies_cutoff_and_omits_empty():
     class CutCfg(_Cfg):
-        output_cutoff_age = np.array([1.5])  # 1.5 yr = 18 dt at ndt=12; excludes the age_dt=12 school
+        output_cutoff_age = np.array([1.5])  # cutoff 1.5 yr; age_dt=12 is 1.0 yr (excluded), age_dt=24 is 2.0 yr (included)
     ms = _collect_mean_size(_two_school_state(), CutCfg())
     # only the age_dt=24 (2 yr) school survives → mean length = 30
     assert ms[0] == pytest.approx(30.0)
@@ -302,50 +302,62 @@ git commit -m "feat(output): yieldN/meanSize collectors + StepOutput fields + ac
 - Consumes: `StepOutput.yield_n`/`.mean_size` (Task 2).
 - Produces: `_build_yieldn_dataframes(outputs, config) -> {"yieldN": df}`, `_build_meansize_dataframe(outputs, config) -> {"meanSize": df}` (wide: `["Time"] + config.species_names`, NaN-filled); disk files `{prefix}_yieldN_Simu0.csv` / `{prefix}_meanSize_Simu0.csv`; in-memory cache keys `"yieldN"`/`"meanSize"`.
 
-- [ ] **Step 1: Write the failing test** (end-to-end CSV via a tiny run helper)
+- [ ] **Step 1: Write the failing test** (hand-built non-zero StepOutputs — a real engine run
+  on a minimal config produces an EMPTY population, so the round-trip tests must use synthetic
+  StepOutputs with KNOWN non-zero values to be non-vacuous. Mirrors `tests/test_engine_output.py`'s
+  `_step_output` pattern. Signatures verified: `write_outputs(outputs, output_dir, config, prefix=..., *, grid=None)`; `OsmoseResults(output_dir, prefix=...)`.)
 
 ```python
 # add to tests/test_engine_yieldn_meansize.py
-def _run_tiny(tmp_path, extra):
-    from osmose.engine.grid import Grid
-    from osmose.engine.simulate import simulate
-    raw = {**_base_cfg(), "simulation.time.nyear": "1", **extra,
-           "mortality.fishing.rate.method.sp0": "constant",
-           "mortality.fishing.rate.sp0": "0.2"}
-    cfg = EngineConfig.from_dict(raw)
-    grid = Grid.from_dimensions(ny=2, nx=2)
-    outputs = simulate(cfg, grid, np.random.default_rng(0))
-    return cfg, outputs
+def _cfg(flags: dict[str, str]) -> EngineConfig:
+    return EngineConfig.from_dict({**_base_cfg(), **flags})
 
 
-def test_yieldn_meansize_csv_written_and_readable(tmp_path):
+def _step(step: int, yield_n=None, mean_size=None, n_sp: int = 1):
+    """A StepOutput with required biomass/abundance/mortality set + known yield_n/mean_size."""
+    from osmose.engine.simulate import StepOutput
+    return StepOutput(
+        step=step,
+        biomass=np.full(n_sp, 100.0),
+        abundance=np.full(n_sp, 1000.0),
+        mortality_by_cause=np.zeros((n_sp, len(MortalityCause)), dtype=np.float64),
+        yield_n=yield_n,
+        mean_size=mean_size,
+    )
+
+
+def test_yieldn_meansize_csv_written_with_real_values(tmp_path):
     from osmose.engine.output import write_outputs
     from osmose.results import OsmoseResults
-    cfg, outputs = _run_tiny(tmp_path, {"output.yield.abundance.enabled": "true",
-                                        "output.size.enabled": "true"})
-    write_outputs(outputs, tmp_path, prefix="run", config=cfg, grid=None)
+    cfg = _cfg({"output.yield.abundance.enabled": "true", "output.size.enabled": "true"})
+    sp = cfg.species_names[0]
+    outputs = [_step(0, np.array([3.0]), {0: 12.0}), _step(1, np.array([7.0]), {0: 20.0})]
+    write_outputs(outputs, tmp_path, cfg, prefix="run")
     assert (tmp_path / "run_yieldN_Simu0.csv").exists()
     assert (tmp_path / "run_meanSize_Simu0.csv").exists()
-    res = OsmoseResults(output_dir=tmp_path, prefix="run")
-    assert not res.yield_abundance().empty
-    assert not res.mean_size().empty
+    res = OsmoseResults(tmp_path, prefix="run")
+    assert res.yield_abundance()[sp].tolist() == [3.0, 7.0]   # NON-vacuous
+    assert res.mean_size()[sp].tolist() == [12.0, 20.0]
 
 
 def test_yieldn_meansize_csv_matches_in_memory(tmp_path):
+    from osmose.engine.grid import Grid
     from osmose.engine.output import write_outputs
     from osmose.results import OsmoseResults, _build_dataframes_from_outputs
-    from osmose.engine.grid import Grid
-    cfg, outputs = _run_tiny(tmp_path, {"output.yield.abundance.enabled": "true",
-                                        "output.size.enabled": "true"})
-    write_outputs(outputs, tmp_path, prefix="run", config=cfg, grid=None)
-    disk = OsmoseResults(output_dir=tmp_path, prefix="run").yield_abundance()
-    mem_cache = _build_dataframes_from_outputs(outputs, cfg, Grid.from_dimensions(ny=2, nx=2))
-    assert "yieldN" in mem_cache and "meanSize" in mem_cache
-    # disk wide frame's species columns sum == in-memory yieldN column sum
-    disk_total = disk.drop(columns=[c for c in ("Time", "species") if c in disk]).to_numpy().sum()
-    mem_total = mem_cache["yieldN"].drop(columns=[c for c in ("Time", "species") if c in mem_cache["yieldN"]]).to_numpy()
-    assert np.isclose(disk_total, np.nan_to_num(mem_total).sum())
+    cfg = _cfg({"output.yield.abundance.enabled": "true", "output.size.enabled": "true"})
+    sp = cfg.species_names[0]
+    outputs = [_step(0, np.array([3.0]), {0: 12.0}), _step(1, np.array([7.0]), {0: 20.0})]
+    write_outputs(outputs, tmp_path, cfg, prefix="run")
+    disk = OsmoseResults(tmp_path, prefix="run")
+    mem = _build_dataframes_from_outputs(outputs, cfg, Grid.from_dimensions(ny=1, nx=1))
+    assert "yieldN" in mem and "meanSize" in mem
+    assert disk.yield_abundance()[sp].tolist() == mem["yieldN"][sp].tolist() == [3.0, 7.0]
+    assert disk.mean_size()[sp].tolist() == mem["meanSize"][sp].tolist() == [12.0, 20.0]
 ```
+
+> **Note:** if a default-config engine run is ever wanted as an extra smoke, seed a live
+> population first — the minimal `_base_cfg()` has no seeding biomass so `simulate()` yields 0
+> schools. The synthetic-StepOutput tests above are the authoritative round-trip check.
 
 - [ ] **Step 2: Run test — verify it fails**
 
@@ -455,41 +467,41 @@ git commit -m "feat(output): yieldN/meanSize CSV writers + in-memory results wir
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# add to tests/test_engine_yieldn_meansize.py
+# add to tests/test_engine_yieldn_meansize.py  (reuses _cfg + _step from Task 3)
 def test_netcdf_written_only_when_flag_on(tmp_path):
-    from osmose.engine.output import write_outputs
-    # default config: no .nc
-    cfg0, out0 = _run_tiny(tmp_path / "a", {})
-    (tmp_path / "a").mkdir(parents=True, exist_ok=True)
-    write_outputs(out0, tmp_path / "a", prefix="run", config=cfg0, grid=None)
-    assert not (tmp_path / "a" / "run_Simu0.nc").exists()
-    # netcdf-enabled: .nc with yieldN + meanSize vars
-    cfgN, outN = _run_tiny(tmp_path / "b", {"output.yield.abundance.netcdf.enabled": "true",
-                                            "output.size.netcdf.enabled": "true"})
-    (tmp_path / "b").mkdir(parents=True, exist_ok=True)
-    write_outputs(outN, tmp_path / "b", prefix="run", config=cfgN, grid=None)
     import xarray as xr
-    ds = xr.open_dataset(tmp_path / "b" / "run_Simu0.nc")
+    from osmose.engine.output import write_outputs
+    outputs = [_step(0, np.array([3.0]), {0: 12.0}), _step(1, np.array([7.0]), {0: 20.0})]
+    # default config (no .netcdf flag): no .nc written (early-return guard)
+    a = tmp_path / "a"; a.mkdir()
+    write_outputs(outputs, a, _cfg({}), prefix="run")
+    assert not (a / "run_Simu0.nc").exists()
+    # netcdf-enabled: .nc with yieldN + meanSize vars
+    b = tmp_path / "b"; b.mkdir()
+    cfgN = _cfg({"output.yield.abundance.netcdf.enabled": "true",
+                 "output.size.netcdf.enabled": "true"})
+    write_outputs(outputs, b, cfgN, prefix="run")
+    ds = xr.open_dataset(b / "run_Simu0.nc")
     assert "yieldN" in ds and "meanSize" in ds
 
 
 def test_csv_equals_netcdf(tmp_path):
     from osmose.engine.output import write_outputs
     from osmose.results import OsmoseResults
-    cfg, outputs = _run_tiny(tmp_path, {
+    cfg = _cfg({
         "output.yield.abundance.enabled": "true", "output.size.enabled": "true",
         "output.yield.abundance.netcdf.enabled": "true", "output.size.netcdf.enabled": "true",
     })
-    write_outputs(outputs, tmp_path, prefix="run", config=cfg, grid=None)
-    res = OsmoseResults(output_dir=tmp_path, prefix="run")
+    sp = cfg.species_names[0]
+    outputs = [_step(0, np.array([3.0]), {0: 12.0}), _step(1, np.array([7.0]), {0: 20.0})]
+    write_outputs(outputs, tmp_path, cfg, prefix="run")
+    res = OsmoseResults(tmp_path, prefix="run")
     for getter in ("yield_abundance", "mean_size"):
         csv_df = getattr(res, getter)()
         nc_df = getattr(res, getter)(source="netcdf")
-        cols = [c for c in csv_df.columns if c not in ("Time", "species")]
-        np.testing.assert_allclose(
-            np.nan_to_num(csv_df[cols].to_numpy()),
-            np.nan_to_num(nc_df[cols].to_numpy()), rtol=1e-6,
-        )
+        # same focal-species columns (sp), non-vacuous values
+        np.testing.assert_allclose(csv_df[sp].to_numpy(), nc_df[sp].to_numpy(), rtol=1e-6)
+    assert res.yield_abundance(source="netcdf")[sp].tolist() == [3.0, 7.0]
 ```
 
 - [ ] **Step 2: Run test — verify it fails**
@@ -517,13 +529,17 @@ and in the data_vars section (after the `if want["yield"]:` block):
         data_vars["yieldN"] = (["time", "focal_species"], yn_arr)
         coords["focal_species"] = config.species_names[: yn_arr.shape[1]]
     if want["meanSize"]:
-        ms_arr = np.full((len(outputs), n_species), np.nan)
+        # FOCAL species only (config.n_species), NOT the shared `species` dim (which is
+        # all_species_names = focal+background). This makes the NetCDF column set match the
+        # CSV (config.species_names), so the csv_equals test aligns. Mirrors yieldN/yield.
+        ms_arr = np.full((len(outputs), config.n_species), np.nan)
         for t_idx, o in enumerate(outputs):
             if o.mean_size:
                 for sp_idx, val in o.mean_size.items():
-                    if sp_idx < n_species:
+                    if sp_idx < config.n_species:
                         ms_arr[t_idx, sp_idx] = val
-        data_vars["meanSize"] = (["time", "species"], ms_arr)
+        data_vars["meanSize"] = (["time", "focal_species"], ms_arr)
+        coords.setdefault("focal_species", config.species_names[: ms_arr.shape[1]])
 ```
 
 - [ ] **Step 4: Wire `write_outputs_netcdf` into `write_outputs`** — at the END of `write_outputs` (after the spatial-NetCDF block), add:
@@ -535,13 +551,13 @@ and in the data_vars section (after the `if want["yield"]:` block):
     write_outputs_netcdf(outputs, output_dir / f"{prefix}_Simu0.nc", config)
 ```
 
-- [ ] **Step 5: Add the `source="netcdf"` accessors** — in `osmose/results.py`, replace the `mean_size` and `yield_abundance` methods with `source`-aware versions and add the helper:
+- [ ] **Step 5: Add the `source="netcdf"` accessors** — in `osmose/results.py`. First add `import numpy as np` to the top-level imports (results.py currently has NO numpy import — verified; without it the helper below raises `NameError: name 'np' is not defined`). Then replace the `mean_size` and `yield_abundance` methods with `source`-aware versions and add the helper. Both variables live on the `focal_species` dim in the NetCDF:
 
 ```python
     def mean_size(self, species: str | None = None, source: str = "csv") -> pd.DataFrame:
         """Read mean size time series. source='csv' (default) or 'netcdf'."""
         if source == "netcdf":
-            return self._read_netcdf_species_var("meanSize", "species", species)
+            return self._read_netcdf_species_var("meanSize", "focal_species", species)
         return self._read_species_output("meanSize", species)
 
     def yield_abundance(self, species: str | None = None, source: str = "csv") -> pd.DataFrame:
@@ -638,6 +654,7 @@ git commit -m "feat(output): mark yieldN/meanSize produced; regression sweep gre
 ## Notes for the executor
 
 - **Do NOT touch engine dynamics** — these are output collectors only. If any EEC/BoB parity test changes, something is wrong; stop and investigate (do not re-baseline).
-- The `_run_tiny` helper writes a 1-species fished config; if `simulate`/`write_outputs` need an arg the helper omits (e.g. `bkg_output`), pass the minimal value the existing output tests use (check `tests/test_engine_output.py` for the call shape) — keep the helper faithful to a real run.
+- The round-trip tests build StepOutputs directly (the minimal `_base_cfg()` seeds NO population, so a live `simulate()` run yields 0 schools — vacuous). Set `yield_n`/`mean_size` to known non-zero values and assert they survive — never assert only "non-empty".
+- The subdt multi-step accumulation branch (`yield_n_sum` / `_avg_scalar_dict("mean_size")`) is a 2-line mirror of the already-tested `yield_sum` / `mean_tl` paths, so it's covered by analogy; if you want explicit coverage, build ≥2 StepOutputs and call the subdt-accumulation function directly with the same `yield_n`/`mean_size` and assert the sum/average.
 - `meanSize` is **abundance**-weighted (not biomass like meanTL); `yieldN` is deaths in **numbers** (not ×weight like yield). These two one-word differences from the templates are the whole point — get them right.
 - Keep the wide all-species/NaN convention across CSV/in-memory/NetCDF so the `csv_equals` test holds.
