@@ -41,6 +41,21 @@ def annual_rate(per_step: pd.Series, steps_per_year: int, window_years: int) -> 
     return float(annual[-w:].mean())
 
 
+def annual_by_year(values, time, *, how: str) -> dict[int, float]:
+    """Aggregate a per-saved-step series to one value per ABSOLUTE simulation year.
+
+    Groups by ``int(floor(time))`` so any output.recordfrequency.ndt works. ``how="sum"``
+    for accumulating quantities (F), ``how="mean"`` for stock levels (SSB).
+    """
+    if how not in ("sum", "mean"):
+        raise ValueError(f"how must be 'sum' or 'mean', got {how!r}")
+    s = pd.Series(np.asarray(values, dtype=float))
+    years = np.floor(np.asarray(time, dtype=float)).astype(int)
+    grouped = s.groupby(years)
+    agg = grouped.sum() if how == "sum" else grouped.mean()
+    return {int(y): float(v) for y, v in agg.items()}
+
+
 def read_mortality(path: Path) -> pd.DataFrame:
     """Read a `mortalityRate-{sp}` CSV into a (cause, stage) MultiIndex frame.
 
