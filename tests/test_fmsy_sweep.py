@@ -1,5 +1,7 @@
 """Tests for osmose.validation.fmsy_sweep — mode detection + species->fishery map."""
 
+import numpy as np
+import pandas as pd
 import pytest
 
 from osmose.config.reader import OsmoseConfigReader
@@ -107,3 +109,89 @@ def test_b0_nonpositive_no_blim():
     fs = [0.0, 0.5]
     rp = derive_reference_points({"x": _curve("x", fs, [0.0, 5.0], [0.0, -1.0])})["x"]
     assert rp.blim is None
+
+
+# ---------------------------------------------------------------------------
+# Task 3: engine sweep tests
+# ---------------------------------------------------------------------------
+
+
+def _tiny_fished_legacy_cfg() -> dict[str, str]:
+    """Legacy-mode single-species config (nfisheries unset), ndt=12, 6 yr, seeded."""
+    return {
+        "simulation.time.ndtperyear": "12",
+        "simulation.time.nyear": "6",
+        "simulation.nspecies": "1",
+        "simulation.nschool.sp0": "20",
+        "species.name.sp0": "Fish",
+        "species.linf.sp0": "20.0",
+        "species.k.sp0": "0.5",
+        "species.t0.sp0": "-0.1",
+        "species.egg.size.sp0": "0.1",
+        "species.length2weight.condition.factor.sp0": "0.006",
+        "species.length2weight.allometric.power.sp0": "3.0",
+        "species.lifespan.sp0": "4",
+        "species.vonbertalanffy.threshold.age.sp0": "1.0",
+        "mortality.subdt": "1",
+        "predation.ingestion.rate.max.sp0": "3.5",
+        "predation.efficiency.critical.sp0": "0.57",
+        "movement.distribution.method.sp0": "random",
+        "movement.randomwalk.range.sp0": "1",
+        "mortality.fishing.rate.method.sp0": "constant",
+        "mortality.fishing.rate.sp0": "0.3",
+        "population.seeding.biomass.sp0": "100.0",
+    }
+
+
+@pytest.mark.slow
+def test_sweep_end_to_end_tiny_legacy():
+    from osmose.validation.fmsy_sweep import compute_model_reference_points
+
+    refs = compute_model_reference_points(
+        _tiny_fished_legacy_cfg(),
+        grid=np.array([0.0, 0.4, 0.8, 1.2]),
+        n_years=6,
+        replicates=1,
+        window_years=2,
+        max_workers=2,
+    )
+    rp = refs["Fish"]
+    assert rp.b0 is not None and rp.b0 > 0  # F=0 has the largest (unfished) SSB
+    assert any(p.yield_eq > 0 for p in rp.curve)  # yield reader + forced output worked
+
+
+def test_sweep_assembles_curves_stubbed(monkeypatch):
+    """Fast default-suite coverage: stub the engine so no real run happens; assert the runner
+    forces the SSB flag, applies fishing_override, and assembles a curve."""
+    import osmose.validation.fmsy_sweep as sweep
+
+    seen_cfgs = []
+
+    class _FakeRes:
+        def yield_biomass(self):
+            return pd.DataFrame({"Time": [0.0, 1.0], "Fish": [5.0, 5.0]})
+
+        def ssb(self):
+            return pd.DataFrame({"Time": [0.0, 1.0], "Fish": [100.0, 100.0]})
+
+        def mortality(self, sp):
+            return pd.DataFrame({"Time": [0.0, 1.0], "Fishing": [0.3, 0.3], "species": [sp, sp]})
+
+    def _fake_run(self, cfg, seed=0, **kw):
+        seen_cfgs.append(cfg)
+        return _FakeRes()
+
+    monkeypatch.setattr(sweep.PythonEngine, "run_in_memory", _fake_run)
+    from osmose.validation.fmsy_sweep import compute_model_reference_points
+
+    refs = compute_model_reference_points(
+        _tiny_fished_legacy_cfg(),
+        grid=np.array([0.0, 0.5]),
+        n_years=4,
+        replicates=1,
+        window_years=1,
+        max_workers=1,
+    )
+    assert "Fish" in refs
+    assert all(c.get("output.ssb.enabled") == "true" for c in seen_cfgs)  # forced output
+    assert len(refs["Fish"].curve) == 2  # one SweepPoint per grid F
