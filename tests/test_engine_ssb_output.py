@@ -58,3 +58,32 @@ def test_collect_ssb_uses_maturity_conjunction():
     ssb = _collect_ssb(s, Cfg())
     # mature = length>=12 AND age_dt>=0 AND abundance>0 → schools 1,2: 100*0.05 + 100*0.1 = 15.0
     assert ssb[0] == pytest.approx(15.0)
+
+
+def _step(step, ssb=None, n_sp=1):
+    from osmose.engine.simulate import StepOutput
+    from osmose.engine.state import MortalityCause
+
+    return StepOutput(
+        step=step,
+        biomass=np.full(n_sp, 100.0),
+        abundance=np.full(n_sp, 1000.0),
+        mortality_by_cause=np.zeros((n_sp, len(MortalityCause)), dtype=np.float64),
+        ssb=ssb,
+    )
+
+
+def test_ssb_csv_and_reader_roundtrip(tmp_path):
+    from osmose.engine.output import write_outputs
+    from osmose.engine.grid import Grid
+    from osmose.results import OsmoseResults, _build_dataframes_from_outputs
+
+    cfg = EngineConfig.from_dict({**_base_cfg(), "output.ssb.enabled": "true"})
+    sp = cfg.species_names[0]
+    outputs = [_step(0, np.array([40.0])), _step(1, np.array([60.0]))]
+    write_outputs(outputs, tmp_path, cfg, prefix="run")
+    assert (tmp_path / "run_SSB_Simu0.csv").exists()
+    res = OsmoseResults(tmp_path, prefix="run")
+    assert res.ssb()[sp].tolist() == [40.0, 60.0]
+    mem = _build_dataframes_from_outputs(outputs, cfg, Grid.from_dimensions(ny=1, nx=1))
+    assert "SSB" in mem and mem["SSB"][sp].tolist() == [40.0, 60.0]

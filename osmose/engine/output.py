@@ -62,6 +62,7 @@ def write_outputs(
     _write_meantl_csv(output_dir, prefix, outputs, config)
     _write_yieldn_csv(output_dir, prefix, outputs, config)
     _write_meansize_csv(output_dir, prefix, outputs, config)
+    _write_ssb_csv(output_dir, prefix, outputs, config)
     _write_distrib_bysize_community_csvs(output_dir, prefix, outputs, config)
 
     if config.bioen_enabled:
@@ -272,6 +273,19 @@ def _build_meansize_dataframe(
     return {"meanSize": df}
 
 
+def _build_ssb_dataframe(
+    outputs: list[StepOutput], config: EngineConfig
+) -> dict[str, pd.DataFrame]:
+    """Wide Time + per-focal-species spawning-stock biomass. Empty when disabled/absent."""
+    if not config.output_ssb or not any(o.ssb is not None for o in outputs):
+        return {}
+    times = np.array([o.step / config.n_dt_per_year for o in outputs])
+    data = np.array([o.ssb if o.ssb is not None else np.zeros(config.n_species) for o in outputs])
+    df = pd.DataFrame(data, columns=list(config.species_names))  # type: ignore[arg-type]
+    df.insert(0, "Time", times)
+    return {"SSB": df}
+
+
 def _write_yieldn_csv(
     output_dir: Path, prefix: str, outputs: list[StepOutput], config: EngineConfig
 ) -> None:
@@ -283,6 +297,13 @@ def _write_meansize_csv(
     output_dir: Path, prefix: str, outputs: list[StepOutput], config: EngineConfig
 ) -> None:
     for key, df in _build_meansize_dataframe(outputs, config).items():
+        df.to_csv(output_dir / f"{prefix}_{key}_Simu0.csv", index=False)
+
+
+def _write_ssb_csv(
+    output_dir: Path, prefix: str, outputs: list[StepOutput], config: EngineConfig
+) -> None:
+    for key, df in _build_ssb_dataframe(outputs, config).items():
         df.to_csv(output_dir / f"{prefix}_{key}_Simu0.csv", index=False)
 
 
@@ -722,6 +743,7 @@ def write_outputs_netcdf(
         and any(o.yield_n is not None for o in outputs),
         "meanSize": config.output_mean_size_netcdf
         and any(o.mean_size is not None for o in outputs),
+        "SSB": config.output_ssb_netcdf and any(o.ssb is not None for o in outputs),
     }
     if not any(want.values()):
         return
@@ -776,6 +798,12 @@ def write_outputs_netcdf(
                         ms_arr[t_idx, sp_idx] = val
         data_vars["meanSize"] = (["time", "focal_species"], ms_arr)
         coords.setdefault("focal_species", config.species_names[: ms_arr.shape[1]])
+    if want["SSB"]:
+        ssb_arr = np.array(
+            [o.ssb if o.ssb is not None else np.full(config.n_species, np.nan) for o in outputs]
+        )
+        data_vars["SSB"] = (["time", "focal_species"], ssb_arr)
+        coords.setdefault("focal_species", config.species_names[: ssb_arr.shape[1]])
 
     def _pad(attr: str) -> tuple[np.ndarray, int]:
         max_bins = 0

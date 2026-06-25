@@ -237,6 +237,7 @@ _CROSS_SPECIES_OUTPUT_TYPES = {
     "meanTL",
     "yieldN",
     "meanSize",
+    "SSB",
 }
 
 
@@ -270,6 +271,7 @@ def _build_dataframes_from_outputs(
         _build_meantl_dataframe,
         _build_mortality_dataframes,
         _build_species_dataframes,
+        _build_ssb_dataframe,
         _build_yield_dataframes,
         _build_yieldn_dataframes,
     )
@@ -283,6 +285,7 @@ def _build_dataframes_from_outputs(
     disk_shape.update(_build_meantl_dataframe(outputs, config))
     disk_shape.update(_build_yieldn_dataframes(outputs, config))
     disk_shape.update(_build_meansize_dataframe(outputs, config))
+    disk_shape.update(_build_ssb_dataframe(outputs, config))
     if config.bioen_enabled:
         disk_shape.update(_build_bioen_dataframes(outputs, config))
     if config.diet_output_enabled:
@@ -439,6 +442,10 @@ class OsmoseResults:
         if source == "netcdf":
             return self._read_netcdf_species_var("meanSize", "focal_species", species)
         return self._read_species_output("meanSize", species)
+
+    def ssb(self, species: str | None = None) -> pd.DataFrame:
+        """Read spawning-stock biomass time series (wide: Time + per-species columns)."""
+        return self._read_species_output("SSB", species)
 
     def mean_trophic_level(self, species: str | None = None) -> pd.DataFrame:
         """Read mean trophic level time series."""
