@@ -13,7 +13,7 @@
 - **Parity-safe:** the engine SSB output is gated and additive; the 14/14 EEC `atol=0` + 8/8 BoB suites MUST stay green (they assert biomass, not SSB).
 - **Indicative, not authoritative:** soft Kobe shading + a "relative to supplied reference points — not a formal assessment" disclaimer. No fabricated references (no SSB-derived Bmsy auto-fill).
 - **SSB = the engine's own conjunction** `length ≥ maturity_size AND age_dt ≥ maturity_age_dt AND abundance > 0` (from `reproduction.py`). Never reconstruct from marginal by-age/by-size.
-- **Annual aggregation cadence:** saved series are written every `output.recordfrequency.ndt` steps. The per-year reshape uses `saved_steps_per_year = config.n_dt_per_year // config.output_record_frequency` — NOT `n_dt_per_year`.
+- **Annual aggregation cadence:** saved series are written every `output.recordfrequency.ndt` steps (Baltic = once/year, pre-summed). Aggregate to annual via `fis.annual_by_year` (groupby `int(Time)` = absolute simulation year) — SSB `how="mean"`, F `how="sum"` — which is correct for ANY record frequency and labels both axes by absolute year. Never positional `np.arange`/`reshape`.
 - **B-axis = user `Bmsy` only** (`b_ref_kind ∈ {"bmsy_user","none"}`); **ICES auto-fills `Fmsy` only**, from the deterministic primary tonnes-unit stock (largest `msy_btrigger`, tie → latest `advice_year`).
 - **Exploited stage** for model F = the fished stage (`F > _FISHED_TOL`, excluding `Eggs`) with the **largest annual F**; caveat when >1 fished stage.
 - **Module paths:** `osmose.validation.{fisheries, stock_status, fisheries_reference}`, `osmose.plotting`, `ui.pages.fisheries`. Reference sidecar: `data/<ecosystem>/reference/fisheries_reference_points.json`.
@@ -274,14 +274,16 @@ git commit -m "feat(engine): SSB CSV/in-memory/NetCDF writers + results.ssb read
 
 ---
 
-### Task 3: `annual_series` + `saved_steps_per_year` helpers
+### Task 3: `annual_by_year` aggregator (cadence-correct, absolute-year)
 
 **Files:**
-- Modify: `osmose/validation/fisheries.py` (factor `annual_series` out of `annual_rate` ~27; add `saved_steps_per_year`)
+- Modify: `osmose/validation/fisheries.py` (add `annual_by_year`; leave `annual_rate` untouched)
 - Test: `tests/test_validation_stock_status.py` (new)
 
+**Why this shape:** the saved series are written every `output.recordfrequency.ndt` steps. Grouping by the integer `Time` (= absolute simulation year) aggregates however many saved rows fall in each year — correct for ANY record frequency without needing a `steps_per_year` reshape — and labels every value by **absolute year** so the two axes intersect correctly (never positionally). F accumulates → `how="sum"`; SSB is a stock level → `how="mean"`.
+
 **Interfaces:**
-- Produces: `fisheries.annual_series(per_step, saved_steps_per_year) -> np.ndarray` (one value per complete year, summed within year); `fisheries.saved_steps_per_year(config) -> int`.
+- Produces: `fisheries.annual_by_year(values, time, *, how) -> dict[int, float]` (`values`/`time` array-likes; `how ∈ {"sum","mean"}`; keys are `int(floor(time))`).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -292,81 +294,54 @@ import pandas as pd
 import pytest
 
 from osmose.validation import fisheries as fis
+from osmose.validation import stock_status as ss
+from osmose.validation.fisheries_reference import ReferencePoint
 
 
-def test_annual_series_reshapes_per_year():
-    # 3 years * 2 saved-steps each, value = step index → yearly sums 0+1, 2+3, 4+5
-    s = pd.Series([0.0, 1.0, 2.0, 3.0, 4.0, 5.0])
-    np.testing.assert_array_equal(fis.annual_series(s, 2), np.array([1.0, 5.0, 9.0]))
+def test_annual_by_year_sum_and_mean():
+    # 2 saved rows in year 0 (Time 0.0, 0.5), 1 in year 1 (Time 1.0)
+    time = [0.0, 0.5, 1.0]
+    assert fis.annual_by_year([2.0, 3.0, 10.0], time, how="sum") == {0: 5.0, 1: 10.0}
+    assert fis.annual_by_year([2.0, 4.0, 10.0], time, how="mean") == {0: 3.0, 1: 10.0}
 
 
-def test_annual_series_one_saved_step_per_year_is_identity():
-    s = pd.Series([10.0, 20.0, 30.0])  # recordfreq == ndtPerYear → 1 saved row per year
-    np.testing.assert_array_equal(fis.annual_series(s, 1), np.array([10.0, 20.0, 30.0]))
-
-
-def test_annual_rate_still_windowed_scalar():
-    s = pd.Series([0.0, 1.0, 2.0, 3.0, 4.0, 5.0])
-    assert fis.annual_rate(s, 2, window_years=1) == pytest.approx(9.0)  # last year 4+5
-
-
-def test_saved_steps_per_year():
-    class C:
-        n_dt_per_year = 24
-        output_record_frequency = 24
-    assert fis.saved_steps_per_year(C()) == 1
-    class C2:
-        n_dt_per_year = 24
-        output_record_frequency = 2
-    assert fis.saved_steps_per_year(C2()) == 12
+def test_annual_by_year_one_row_per_year_identity():
+    assert fis.annual_by_year([10.0, 20.0], [0.0, 1.0], how="sum") == {0: 10.0, 1: 20.0}
 ```
 
 - [ ] **Step 2: Run test — verify it fails**
 
-Run: `PYTHONPATH=. .venv/bin/python -m pytest tests/test_validation_stock_status.py -k "annual or saved" -v`
-Expected: FAIL (`annual_series` / `saved_steps_per_year` not defined).
+Run: `PYTHONPATH=. .venv/bin/python -m pytest tests/test_validation_stock_status.py -k annual_by_year -v`
+Expected: FAIL (`annual_by_year` not defined).
 
-- [ ] **Step 3: Factor `annual_series` + add `saved_steps_per_year`** — in `osmose/validation/fisheries.py`, replace `annual_rate` with:
+- [ ] **Step 3: Add `annual_by_year`** — in `osmose/validation/fisheries.py` (after `annual_rate`):
 
 ```python
-def annual_series(per_step: pd.Series, steps_per_year: int) -> np.ndarray:
-    """Per-year totals: sum a per-saved-step rate within each complete year.
+def annual_by_year(values, time, *, how: str) -> dict[int, float]:
+    """Aggregate a per-saved-step series to one value per ABSOLUTE simulation year.
 
-    A trailing partial year is dropped. `steps_per_year` is the number of SAVED rows
-    per year (== n_dt_per_year // output.recordfrequency.ndt), NOT n_dt_per_year.
+    Groups by ``int(floor(time))`` so any output.recordfrequency.ndt works. ``how="sum"``
+    for accumulating quantities (F), ``how="mean"`` for stock levels (SSB).
     """
-    if steps_per_year < 1:
-        raise ValueError(f"steps_per_year must be >= 1, got {steps_per_year}")
-    vals = np.asarray(per_step, dtype=float)
-    n_years = len(vals) // steps_per_year
-    if n_years == 0:
-        raise ValueError("series shorter than one full year")
-    return vals[: n_years * steps_per_year].reshape(n_years, steps_per_year).sum(axis=1)
-
-
-def annual_rate(per_step: pd.Series, steps_per_year: int, window_years: int) -> float:
-    """Per-year totals (annual_series) meaned over the trailing window."""
-    annual = annual_series(per_step, steps_per_year)
-    w = min(window_years, len(annual))
-    return float(annual[-w:].mean())
-
-
-def saved_steps_per_year(config) -> int:
-    """SAVED rows per year = n_dt_per_year // output.recordfrequency.ndt (>= 1)."""
-    rec = max(1, int(config.output_record_frequency))
-    return max(1, config.n_dt_per_year // rec)
+    if how not in ("sum", "mean"):
+        raise ValueError(f"how must be 'sum' or 'mean', got {how!r}")
+    s = pd.Series(np.asarray(values, dtype=float))
+    years = np.floor(np.asarray(time, dtype=float)).astype(int)
+    grouped = s.groupby(years)
+    agg = grouped.sum() if how == "sum" else grouped.mean()
+    return {int(y): float(v) for y, v in agg.items()}
 ```
 
 - [ ] **Step 4: Run test — verify it passes**
 
-Run: `PYTHONPATH=. .venv/bin/python -m pytest tests/test_validation_stock_status.py -k "annual or saved" tests/test_validation_fisheries.py -q`
-Expected: PASS (new + the existing F/M tests, which still use `annual_rate`).
+Run: `PYTHONPATH=. .venv/bin/python -m pytest tests/test_validation_stock_status.py -k annual_by_year tests/test_validation_fisheries.py -q`
+Expected: PASS (new + the existing F/M tests, which still use `annual_rate`, untouched).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add osmose/validation/fisheries.py tests/test_validation_stock_status.py
-git commit -m "refactor(fisheries): factor annual_series + saved_steps_per_year (cadence-correct)"
+git commit -m "feat(fisheries): annual_by_year aggregator (cadence-correct, absolute-year)"
 ```
 
 ---
@@ -409,9 +384,9 @@ def test_autofill_fmsy_from_primary_tonnes_stock():
 
 def test_herring_multistock_deterministic_primary_with_caveat():
     refs, _ = fr.load_reference_points(Path("/nonexistent"), ["herring"], ices_snapshot_dir=ICES)
-    # 3 tonnes stocks; primary = largest msy_btrigger, deterministic; caveat present
-    assert refs["herring"].fmsy is not None
-    assert refs["herring"].fmsy_stock in {"her.27.28", "her.27.3031", "her.27.20-24"}
+    # 3 tonnes stocks; primary = largest msy_btrigger (her.27.3031 = 613355) — DETERMINISTIC
+    assert refs["herring"].fmsy_stock == "her.27.3031"
+    assert refs["herring"].fmsy == 0.218
     assert any("stock" in c.lower() for c in refs["herring"].caveats)
 
 
@@ -547,12 +522,19 @@ def load_reference_points(
 
 
 def save_reference_points(ref_dir: Path, refs: dict[str, ReferencePoint]) -> None:
+    """Persist only USER-owned fields: bmsy always; fmsy ONLY when user-supplied (source
+    user/mixed), never the ICES-auto-filled value — so reload re-derives Fmsy from the live
+    snapshot rather than freezing a stale auto-fill."""
     ref_dir.mkdir(parents=True, exist_ok=True)
-    payload = {
-        sp: {k: v for k, v in (("fmsy", r.fmsy), ("bmsy", r.bmsy)) if v is not None}
-        for sp, r in refs.items()
-        if r.fmsy is not None or r.bmsy is not None
-    }
+    payload = {}
+    for sp, r in refs.items():
+        entry = {}
+        if r.bmsy is not None:
+            entry["bmsy"] = r.bmsy
+        if r.fmsy is not None and r.source in ("user", "mixed"):
+            entry["fmsy"] = r.fmsy
+        if entry:
+            payload[sp] = entry
     (ref_dir / _SIDECAR).write_text(json.dumps(payload, indent=2))
 ```
 
@@ -577,15 +559,13 @@ git commit -m "feat(validation): fisheries reference-point resolver (user Bmsy +
 - Test: `tests/test_validation_stock_status.py`
 
 **Interfaces:**
-- Consumes: `results.ssb` / `read_mortality` / `annual_series` / `saved_steps_per_year` (Tasks 2-3); `ReferencePoint` (Task 4).
+- Consumes: `results.ssb` / `read_mortality` / `annual_by_year` (Tasks 2-3); `ReferencePoint` (Task 4).
 - Produces: `StockStatus` dataclass; `compute_stock_status(results, refs, config, *, species_list=None) -> list[StockStatus]`.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the failing test** (imports `ss`/`ReferencePoint` are already at the top of the file from Task 3 — do NOT re-import here)
 
 ```python
 # add to tests/test_validation_stock_status.py
-from osmose.validation import stock_status as ss
-from osmose.validation.fisheries_reference import ReferencePoint
 
 
 class _Cfg:
@@ -595,38 +575,47 @@ class _Cfg:
 
 class _FakeResults:
     """Minimal results stub: ssb() wide-form (Time + species col)."""
-    def __init__(self, ssb_by_year):
-        self._ssb = ssb_by_year
+    def __init__(self, ssb_rows, time=(0.0, 1.0)):
+        self._ssb = list(ssb_rows)
+        self._time = list(time)
+
     def ssb(self, species=None):
-        return pd.DataFrame({"Time": [0.0, 1.0], "cod": self._ssb})
+        return pd.DataFrame({"Time": self._time, "cod": self._ssb})
 
 
 def test_quadrant_and_ratios():
     refs = {"cod": ReferencePoint(species="cod", fmsy=0.3, bmsy=100.0, b_ref_kind="bmsy_user")}
-    # monkeypatch the F extractor to a known per-year F series via a tiny shim
     statuses = ss.compute_stock_status(
         _FakeResults([120.0, 80.0]), refs, _Cfg(), species_list=["cod"],
-        _f_series_override={"cod": (np.array([0, 1]), np.array([0.15, 0.45]))})
+        _f_override={"cod": {0: 0.15, 1: 0.45}})
     s = statuses[0]
-    # year0: B/Bmsy=1.2 (>=1), F/Fmsy=0.5 (<=1) → green; year1: 0.8, 1.5 → red
+    # year0: B/Bmsy=1.2, F/Fmsy=0.5 → green; year1: 0.8, 1.5 → red
     assert s.b_over_bmsy == [1.2, 0.8]
     assert s.f_over_fmsy == pytest.approx([0.5, 1.5])
     assert s.latest_quadrant == "red"
     assert s.takeaway is not None
 
 
+def test_ssb_annual_mean_over_subannual_rows():
+    # 2 saved rows in year 0 (Time 0.0, 0.5) → MEAN 110, 1 row in year 1 → 80 (NOT last-row)
+    res = _FakeResults([100.0, 120.0, 80.0], time=(0.0, 0.5, 1.0))
+    refs = {"cod": ReferencePoint(species="cod", bmsy=100.0, b_ref_kind="bmsy_user")}
+    s = ss.compute_stock_status(res, refs, _Cfg(), species_list=["cod"])[0]
+    assert s.b_over_bmsy == [1.1, 0.8]
+
+
 def test_data_limited_single_axis():
     refs = {"cod": ReferencePoint(species="cod", fmsy=0.3)}  # no bmsy → no B-axis
     statuses = ss.compute_stock_status(
         _FakeResults([120.0, 80.0]), refs, _Cfg(), species_list=["cod"],
-        _f_series_override={"cod": (np.array([0, 1]), np.array([0.15, 0.45]))})
+        _f_override={"cod": {0: 0.15, 1: 0.45}})
     s = statuses[0]
     assert all(v is None for v in s.b_over_bmsy)
     assert s.latest_quadrant is None  # needs both axes
     assert any("Bmsy" in c for c in s.caveats)
 ```
 
-(The `_f_series_override` keeps the test independent of the mortalityRate CSV format; production derives the F series from `read_mortality` — see Step 3.)
+(The `_f_override` (a `{year: F}` dict) keeps the test independent of the mortalityRate CSV format; production derives F via `_exploited_f_by_year` — see Step 3. `test_ssb_annual_mean_over_subannual_rows` pins the cadence-correct MEAN aggregation.)
 
 - [ ] **Step 2: Run test — verify it fails**
 
@@ -641,10 +630,6 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass, field
-from typing import cast
-
-import numpy as np
-import pandas as pd
 
 from osmose.validation import fisheries as fis
 from osmose.validation.fisheries_reference import ReferencePoint
@@ -674,61 +659,58 @@ def _quadrant(b: float | None, f: float | None) -> str | None:
     return "yellow" if b >= 1 else "orange"
 
 
-def _exploited_f_series(results, species, config, caveats) -> tuple[np.ndarray, np.ndarray] | None:
-    """(years, annual-F) on the single exploited stage = largest-annual-F fished stage."""
-    from osmose.validation.fisheries import read_mortality, _mortality_path, _FISHED_TOL
+def _exploited_f_by_year(results, species, caveats) -> dict[int, float] | None:
+    """{absolute_year: annual F} on the exploited stage = the fished stage (Eggs excluded)
+    with the largest total annual F. Years come from the mortalityRate Time column."""
+    from osmose.validation.fisheries import _FISHED_TOL, _mortality_path, read_mortality
+
     try:
         df = read_mortality(_mortality_path(results.output_dir, results.prefix, species))
     except (FileNotFoundError, KeyError, ValueError) as e:
         print(f"WARN: no mortalityRate for {species!r}: {e}", file=sys.stderr)
         return None
-    spy = fis.saved_steps_per_year(config)
-    per_stage = {}
-    for s in _EXPLOITABLE:
-        if ("F", s) in df.columns:
-            per_stage[s] = fis.annual_series(cast(pd.Series, df[("F", s)]), spy)
-    fished = {s: arr for s, arr in per_stage.items() if float(arr.sum()) > _FISHED_TOL}
+    time = df.iloc[:, 0]  # first column = Time (fractional sim-year)
+    per_stage = {
+        s: fis.annual_by_year(df[("F", s)].to_numpy(), time.to_numpy(), how="sum")
+        for s in _EXPLOITABLE
+        if ("F", s) in df.columns
+    }
+    fished = {s: d for s, d in per_stage.items() if sum(d.values()) > _FISHED_TOL}
     if not fished:
         return None
-    stage = max(fished, key=lambda s: float(fished[s].sum()))
+    stage = max(fished, key=lambda s: sum(fished[s].values()))
     if len(fished) > 1:
         caveats.append(f"F measured on '{stage}'; other fished stages present")
-    f_annual = fished[stage]
-    years = np.arange(len(f_annual))  # absolute sim-year index (year 0..N-1)
-    return years, f_annual
+    return fished[stage]
 
 
-def compute_stock_status(results, refs, config, *, species_list=None, _f_series_override=None):
+def compute_stock_status(results, refs, config, *, species_list=None, _f_override=None):
     species_list = species_list or list(refs)
     out: list[StockStatus] = []
     for sp in species_list:
         rp: ReferencePoint = refs.get(sp, ReferencePoint(species=sp))
         caveats = list(rp.caveats)
 
-        # F series (years, annual F)
-        if _f_series_override and sp in _f_series_override:
-            f_years, f_vals = _f_series_override[sp]
+        # F per absolute year (dict {year: annual F})
+        if _f_override and sp in _f_override:
+            f_map = dict(_f_override[sp])
         else:
-            fr = _exploited_f_series(results, sp, config, caveats)
-            f_years, f_vals = fr if fr is not None else (np.array([], int), np.array([]))
+            f_map = _exploited_f_by_year(results, sp, caveats) or {}
 
-        # SSB per year (year = int(floor(Time)))
+        # SSB per absolute year — annual MEAN of the saved rows in each year (cadence-correct)
+        b_map: dict[int, float] = {}
         try:
             sdf = results.ssb(sp)
-            b_years = sdf["Time"].astype(float).astype(int).to_numpy()
-            b_vals = sdf[sp].astype(float).to_numpy() if sp in sdf.columns else np.array([])
+            if sp in sdf.columns:
+                b_map = fis.annual_by_year(sdf[sp].to_numpy(), sdf["Time"].to_numpy(), how="mean")
         except (FileNotFoundError, KeyError, ValueError):
-            b_years, b_vals = np.array([], int), np.array([])
             caveats.append("SSB unavailable (enable output.ssb.enabled)")
 
-        years = sorted(set(f_years.tolist()) | set(b_years.tolist()))
-        f_map = dict(zip(f_years.tolist(), f_vals.tolist()))
-        b_map = dict(zip(b_years.tolist(), b_vals.tolist()))
+        years = sorted(set(f_map) | set(b_map))
         b_ratio: list[float | None] = []
         f_ratio: list[float | None] = []
         for y in years:
-            b = b_map.get(y)
-            f = f_map.get(y)
+            b, f = b_map.get(y), f_map.get(y)
             b_ratio.append(b / rp.bmsy if (rp.has_b_axis and b is not None) else None)
             f_ratio.append(f / rp.fmsy if (rp.has_f_axis and f is not None) else None)
         if not rp.has_b_axis:
@@ -746,13 +728,22 @@ def compute_stock_status(results, refs, config, *, species_list=None, _f_series_
                     f"SSB {'below' if b_ratio[i] < 1 else 'at/above'} your Bmsy"
                 )
                 break
-        out.append(StockStatus(species=sp, years=years, b_over_bmsy=b_ratio, f_over_fmsy=f_ratio,
-                               b_ref_label=rp.b_ref_label, latest_quadrant=quad,
-                               takeaway=takeaway, caveats=caveats))
+        out.append(
+            StockStatus(
+                species=sp,
+                years=years,
+                b_over_bmsy=b_ratio,
+                f_over_fmsy=f_ratio,
+                b_ref_label=rp.b_ref_label,
+                latest_quadrant=quad,
+                takeaway=takeaway,
+                caveats=caveats,
+            )
+        )
     return out
 ```
 
-Add a `_mortality_path(output_dir, prefix, species)` helper to `fisheries.py` if it is not module-level (check; the existing `_mortality_path` at fisheries.py:66 builds `{output_dir}/Mortality/{prefix}_mortalityRate-{species}_Simu0.csv` — reuse it).
+Reuse the module-level `_mortality_path(output_dir, prefix, species)` at `fisheries.py:66` (builds `{output_dir}/Mortality/{prefix}_mortalityRate-{species}_Simu0.csv`); confirm its exact signature before relying on it.
 
 - [ ] **Step 4: Run test — verify it passes**
 
@@ -818,14 +809,12 @@ def test_ratio_timeseries_builds():
 Run: `PYTHONPATH=. .venv/bin/python -m pytest tests/test_plotting_kobe.py -v`
 Expected: FAIL (functions not defined).
 
-- [ ] **Step 3: Implement** — in `osmose/plotting.py`, after `make_fm_ratio_bars`:
+- [ ] **Step 3: Implement** — in `osmose/plotting.py`, after `make_fm_ratio_bars`. Use the module-level `go` import and the `TEMPLATE` constant already imported at the top of `plotting.py` (`from osmose.plotly_theme import PLOTLY_TEMPLATE as TEMPLATE`); do NOT add inline imports or hardcode `"osmose"`.
 
 ```python
 def make_kobe_plot(statuses, *, year=None):
     """Indicative Kobe scatter: x=B/Bmsy, y=F/Fmsy, soft-shaded quadrants. Points only for
     species with BOTH ratios defined at the selected year (default: each species' latest)."""
-    import plotly.graph_objects as go
-
     fig = go.Figure()
     xmax, ymax = 2.0, 2.0
     quads = [  # (x0,x1,y0,y1,color) — green healthy bottom-right, red top-left
@@ -847,22 +836,22 @@ def make_kobe_plot(statuses, *, year=None):
         b, f = s.b_over_bmsy[idx], s.f_over_fmsy[idx]
         if b is None or f is None:
             continue
-        xs.append(b); ys.append(f); names.append(s.species)
+        xs.append(b)
+        ys.append(f)
+        names.append(s.species)
     if xs:
         fig.add_trace(go.Scatter(x=xs, y=ys, mode="markers+text", text=names,
                                  textposition="top center", marker=dict(size=12)))
     fig.add_annotation(x=0.5, y=1.06, xref="paper", yref="paper", showarrow=False,
                        text="Indicative — relative to supplied reference points, not a formal assessment")
     label = statuses[0].b_ref_label if statuses else "Bmsy"
-    fig.update_layout(template="osmose", xaxis_title=f"SSB / {label}", yaxis_title="F / Fmsy",
+    fig.update_layout(template=TEMPLATE, xaxis_title=f"SSB / {label}", yaxis_title="F / Fmsy",
                       xaxis_range=[0, xmax], yaxis_range=[0, ymax])
     return fig
 
 
 def make_ratio_timeseries(statuses, which):
     """Time-series of B/Bmsy (which='b') or F/Fmsy (which='f') per species."""
-    import plotly.graph_objects as go
-
     fig = go.Figure()
     for s in statuses:
         vals = s.b_over_bmsy if which == "b" else s.f_over_fmsy
@@ -872,7 +861,7 @@ def make_ratio_timeseries(statuses, which):
                                      mode="lines+markers", name=s.species))
     fig.add_hline(y=1, line=dict(color="grey", dash="dash"))
     title = "SSB / Bmsy" if which == "b" else "F / Fmsy"
-    fig.update_layout(template="osmose", xaxis_title="Year", yaxis_title=title)
+    fig.update_layout(template=TEMPLATE, xaxis_title="Year", yaxis_title=title)
     return fig
 ```
 
@@ -905,15 +894,32 @@ git commit -m "feat(plotting): indicative Kobe + B/Bmsy & F/Fmsy ratio timeserie
 
 ```python
 # tests/test_ui_fisheries.py
+from osmose.validation.stock_status import StockStatus
 from ui.pages.fisheries import build_fisheries_view
 
 
-def test_build_view_leads_with_fm_then_f_then_gated_kobe(tmp_path, monkeypatch):
-    # build_fisheries_view returns a dict the server renders; Kobe gated on >=1 both-axis species.
-    view = build_fisheries_view(output_dir=None, config=None, ecosystem="baltic")
-    assert view["kobe_ready"] is False  # no run loaded → empty-state CTA, not a blank plot
+def test_empty_state_when_no_run():
+    view = build_fisheries_view(None, None, "baltic")
+    assert view["kobe_ready"] is False  # no run → CTA, not a blank plot
     assert "Enter a Bmsy" in view["kobe_cta"]
-    assert view["lead"] in ("fm_bars", "f_timeseries")  # never leads with an empty Kobe
+    assert view["lead"] == "fm_bars"  # never leads with an empty Kobe
+
+
+def test_kobe_gated_until_a_species_has_both_axes(monkeypatch):
+    import ui.pages.fisheries as page
+    monkeypatch.setattr(page, "load_reference_points", lambda *a, **k: ({}, []))
+    cfg = type("C", (), {"species_names": ["cod"]})()
+    res = object()
+    # F-only status → no quadrant → Kobe NOT ready
+    monkeypatch.setattr(page, "compute_stock_status", lambda *a, **k: [
+        StockStatus("cod", [0], [None], [0.5], "Bmsy [user]", latest_quadrant=None)])
+    assert build_fisheries_view(res, cfg, "baltic")["kobe_ready"] is False
+    # both-axis status → quadrant → Kobe ready, save target shown
+    monkeypatch.setattr(page, "compute_stock_status", lambda *a, **k: [
+        StockStatus("cod", [0], [1.2], [0.5], "Bmsy [user]", latest_quadrant="green")])
+    v = build_fisheries_view(res, cfg, "baltic")
+    assert v["kobe_ready"] is True
+    assert v["save_target"].endswith("baltic/reference")
 ```
 
 - [ ] **Step 2: Run test — verify it fails**
@@ -926,31 +932,31 @@ Expected: FAIL (module/function missing).
 ```python
 from pathlib import Path
 
-from osmose.engine.config import EngineConfig
-from osmose.validation import fisheries as fis
-from osmose.validation.fisheries_reference import (
-    ecosystem_of, load_reference_points, save_reference_points)
+from osmose.validation.fisheries_reference import load_reference_points
 from osmose.validation.stock_status import compute_stock_status
 
 
-def build_fisheries_view(output_dir, config, ecosystem, ices_snapshot_dir=None):
-    """Pure assembly of what the page renders. Leads with zero-config content; the Kobe is
-    gated on >=1 species having BOTH ratios (else an explicit CTA, never a blank plot)."""
+def build_fisheries_view(results, config, ecosystem, *, ices_snapshot_dir=None):
+    """Pure assembly of what the page renders (given an OsmoseResults-like `results` + an
+    EngineConfig). Leads with zero-config content; the Kobe is gated on >=1 species having
+    BOTH ratios (latest_quadrant is not None) — else an explicit CTA, never a blank plot."""
     view = {"lead": "fm_bars", "kobe_ready": False,
             "kobe_cta": "Enter a Bmsy for >=1 species in the table to populate the Kobe quadrant.",
             "statuses": [], "unmatched": [], "save_target": None}
-    if output_dir is None or config is None:
+    if results is None or config is None:
         return view
     ref_dir = Path("data") / ecosystem / "reference"
     view["save_target"] = str(ref_dir)
     species = list(config.species_names)
     refs, unmatched = load_reference_points(ref_dir, species, ices_snapshot_dir=ices_snapshot_dir)
     view["unmatched"] = unmatched
-    # (results object is built by the server from output_dir; here it is passed in via config closure)
-    return view  # the server fills statuses via compute_stock_status(results, refs, config)
+    statuses = compute_stock_status(results, refs, config, species_list=species)
+    view["statuses"] = statuses
+    view["kobe_ready"] = any(s.latest_quadrant is not None for s in statuses)
+    return view
 ```
 
-Then the `fisheries_server` builds `EngineConfig.from_dict(state.config.get())`, an `OsmoseResults(state.output_dir.get(), prefix=...)`, resolves `ecosystem_of(state.config_dir.get())`, calls `compute_stock_status`, and renders: F/M bars (via `compute_mortality_balance` + `make_fm_ratio_bars`) and the F/Fmsy timeseries first, the Kobe panel gated on `any(s.latest_quadrant for s in statuses)`, the editable `bmsy`/`fmsy` numeric inputs per species (showing the run's current mean SSB beside each `bmsy` for scale), a Save button (shows `view["save_target"]` + "shared across <ecosystem> runs"), the unmatched-key warning, and the disclaimer banner. Keep `build_fisheries_view` pure and unit-tested; keep the Shiny wiring thin.
+Then `fisheries_server` builds `EngineConfig.from_dict(state.config.get())`, an `OsmoseResults(state.output_dir.get(), prefix=...)`, resolves the ecosystem via `ecosystem_of(state.config_dir.get())`, calls `build_fisheries_view(results, config, ecosystem, ices_snapshot_dir=...)`, and renders: F/M bars (`compute_mortality_balance` + `make_fm_ratio_bars`) and the F/Fmsy timeseries first; the Kobe panel only when `view["kobe_ready"]` (else the `kobe_cta`); the editable `bmsy`/`fmsy` numeric inputs per species (showing each species' current mean SSB beside its `bmsy` input for scale); a Save button (`save_reference_points`, showing `view["save_target"]` + "shared across <ecosystem> runs"); the `view["unmatched"]` warning; and the disclaimer banner. Keep `build_fisheries_view` pure (unit-tested above); keep the `@render` wiring thin (exercised by the app-import smoke).
 
 - [ ] **Step 4: Register in `app.py`** — add `from ui.pages.fisheries import fisheries_server, fisheries_ui`; a `ui.nav_panel("Fisheries", fisheries_ui(), value="fisheries")` next to the Results panel (line ~368); and `fisheries_server(input, output, session, state)` in the server body (line ~656).
 
@@ -975,8 +981,9 @@ git commit -m "feat(ui): indicative Fisheries stock-status page (Kobe + F/Fmsy +
 ## Notes for the executor
 
 - **Do NOT touch engine dynamics.** Task 1's SSB collector is read-only over `state`; if any EEC/BoB parity test changes, stop and investigate (do not re-baseline).
-- **SSB is mean-aggregated** across the record window (like biomass), F is summed — get the two right (Task 1 step 5d vs the `yield_n_sum` it sits beside).
-- **`saved_steps_per_year`, not `n_dt_per_year`** — every annual reshape in Task 5 goes through `fis.saved_steps_per_year(config)` (Task 3). This is the cadence-correctness crux.
+- **SSB is mean-aggregated** across the record window in the engine collector (Task 1 step 5d uses `np.mean` for `ssb_avg`); F accumulates. Get these two right where they sit beside `yield_n_sum`.
+- **Annual aggregation = `fis.annual_by_year` (groupby `int(Time)`)** — SSB `how="mean"`, F `how="sum"` (Task 3/5). This labels every value by ABSOLUTE simulation year and is correct for ANY `output.recordfrequency.ndt` (multiple saved rows/year collapse correctly). Never use a positional `np.arange`/`reshape`. `test_ssb_annual_mean_over_subannual_rows` pins this.
 - The plan reuses the just-merged yieldN/meanSize output as the SSB template — open `git show af19fa0 -- osmose/engine/simulate.py osmose/engine/output.py osmose/results.py` if a wiring location is unclear.
-- Verify `ices.load_snapshot`'s real return attributes before Task 4 (the test asserts `.manifest`/`.reference_points`); adapt if they differ.
-- Keep `build_fisheries_view` pure + tested; the Shiny `@render` wiring is thin and exercised by the app-import smoke, matching the project's UI-test convention.
+- Verify `ices.load_snapshot`'s real return attributes before Task 4 (the test asserts `.manifest`/`.reference_points`) and `_mortality_path`'s signature before Task 5; adapt if they differ.
+- Keep `build_fisheries_view` pure + tested (monkeypatch `load_reference_points`/`compute_stock_status` for the gating test); the Shiny `@render` wiring is thin and exercised by the app-import smoke.
+- **Pre-format the code blocks** before committing each task: run `.venv/bin/ruff check --fix` + `.venv/bin/ruff format` on the new/edited files so the Task-7 lint gate (`ruff check osmose/ ui/ tests/` + `ruff format --check`) passes; the plan's blocks are logically correct but may need whitespace/import-order normalization.
