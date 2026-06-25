@@ -1,224 +1,230 @@
 # Fisheries stock-status diagnostics (indicative Kobe / B/Bmsy / F/Fmsy) — design
 
-> Status: design (revised after a literature-grounded methodological review) · 2026-06-25
-> Unblocks the follow-up deferred by the 2026-06-03 fisheries-diagnostics spec. Two in-loop
-> reviews shaped it: a code-grounding workflow (15 findings) and a **deep scientific-literature +
-> ICES-data review** (scite + ICES MCP, ~25 papers + real Baltic reference points). The literature
-> review reframed the feature from an *authoritative* single-stock Kobe to an **indicative**
-> diagnostic and simplified the B-axis (see §3, §10).
+> Status: design (revised after THREE in-loop reviews) · 2026-06-25
+> Reviews: (1) code-grounding workflow (15 findings); (2) deep scite + ICES-MCP literature
+> review (reframed to *indicative*, dropped summed-Btrigger); (3) multi-angle workflow —
+> UX/product, Shiny-impl, codebase-integration, residual-science, adversarial (22 findings,
+> incl. a CRITICAL aggregation-cadence bug and a structural SSB-reconstruction limit). This
+> revision folds all three. **Key change this round: the model's own SSB is now an explicit,
+> parity-safe engine output** (wiring the dormant `output.ssb.enabled`), because SSB cannot be
+> faithfully reconstructed from the marginal by-age/by-size outputs.
 
 ## 1. Why
 
-The Python layer can read per-species biomass-by-age, realized fishing mortality (from the
-`mortalityRate` CSV), and catch. It cannot place a stock on the **Kobe** quadrant (`B/Bmsy` vs
-`F/Fmsy`) — the headline fisheries-management diagnostic. The 2026-06-03 spec built the F/M
-(fishing-vs-natural mortality) library but deferred Kobe / `B/Bmsy` / `F/Fmsy` for reference-point
-coverage and methodological reasons. This feature adds an **indicative**, scientifically-honest
-stock-status layer and gives fisheries diagnostics a proper Shiny home, including the existing
-F/M bars.
+The Python layer can read per-species biomass, fishing mortality (from the `mortalityRate` CSV),
+and catch, but cannot place a stock on the **Kobe** quadrant (`B/Bmsy` vs `F/Fmsy`). The
+2026-06-03 spec built the F/M (fishing-vs-natural mortality) library but deferred Kobe. This
+feature adds an **indicative**, scientifically-honest stock-status layer and a proper Shiny home
+for fisheries diagnostics (including the existing F/M bars, surfaced for the first time).
 
-## 2. Framing (the headline decision from the literature review)
+## 2. Framing (from the literature review — unchanged)
 
-This page is an **indicative, relative diagnostic — NOT a formal stock assessment.** The literature
-gives no precedent for placing an OSMOSE "species" on a single-stock Kobe plot scored against
-borrowed ICES reference points; published OSMOSE/EwE practice derives reference points *internally*
-from the model, and treats model-vs-assessment biomass as a calibration target compared only
-*relatively* (Travers-Trolet et al., 2020; Mackinson et al., 2018; Bănaru et al., 2019). Therefore:
-- Quadrant shading is **soft/indicative**; the page carries a visible "indicative — relative to the
-  supplied reference points, not a formal assessment" disclaimer.
-- The **F-axis is the transferable one** (F/Fmsy is effort-linked); ICES **auto-fills `Fmsy` only**.
-  The **B-axis is user-owned**: `Bmsy` is supplied by the user on a model-consistent (whole-domain
-  SSB) basis. We do **not** auto-fill a B-reference from ICES — ICES publishes no `Bmsy`, and
-  summing `MSY-Btrigger` across a species' sub-stocks masks depleted components (Eero et al., 2014;
-  Forrest et al., 2023). That summed-Btrigger fallback is **removed** vs the prior draft.
-- **Data-limited stocks are first-class:** a species with no `Fmsy` simply has no F-axis; a species
-  with no user `Bmsy` has no B-axis. Nothing is fabricated. (Real example: eastern Baltic cod
-  `cod.27.24-32` returns `null` Fmsy and `null` MSY-Btrigger.)
-- **Surface:** a new dedicated `Fisheries` Shiny page bundling the indicative Kobe, the `B/Bmsy` &
-  `F/Fmsy` time-series, and the existing F/M bars (first time surfaced). It links to (does not
-  rebuild) the existing community size-spectrum / mean-trophic-level pages.
+Indicative, relative diagnostic — **NOT a formal stock assessment.** No precedent exists for an
+OSMOSE species on a single-stock Kobe with borrowed ICES reference points; OSMOSE/EwE derive
+reference points internally and compare biomass *relatively* (Travers-Trolet 2020; Mackinson
+2018; Bănaru 2019). So: soft/indicative quadrant shading + a disclaimer; **F-axis ICES-fillable,
+B-axis user-owned**; data-limited stocks first-class; no cross-stock reference summing (masking —
+Eero 2014, Forrest 2023). Model-internal reference points (a yield-vs-F sweep) are the deferred v2.
 
-## 3. Methodological basis (the scientifically-honest calls)
+## 3. Page information hierarchy (review finding R3-1 — deliver value with zero input)
 
-- **B = SSB (spawning-stock biomass).** `B/Bmsy` is conventionally SSB-relative. Model B = Σ
-  mature-class biomass from `results.biomass_by_age(species)` keeping age classes `≥` the species
-  `maturity_age` (config) — NOT total biomass (which is always `>` SSB and would bias status green).
-  Falls back to `biomass_by_size ≥ maturity_size` if a config uses size-at-maturity; if neither is
-  configured nor the by-age/by-size output is present, the **B-axis is unavailable** for that species
-  with a caveat (graceful).
-- **`Bmsy` is user-supplied only** (no ICES auto-fill). The user provides `Bmsy` on the same
-  whole-domain SSB basis as the model B. If absent → no B-axis for that species. `b_ref_kind ∈
-  {"bmsy_user", "none"}`; the axis is labelled **`SSB / Bmsy [user]`**.
-- **`F/Fmsy` (the ICES-fillable, indicative axis).** `Fmsy` comes from ICES (auto-filled) or the
-  user. The model F is the **single exploited-stage** OSMOSE fishing mortality (the stage with
-  `F > _FISHED_TOL`), an annual instantaneous rate matching Fmsy's basis — but **not** the ICES
-  age-ranged `Fbar` that `Fmsy` is defined on (real Fbar windows: sprat 3–5, cod 4–6, herring 3–6),
-  and the model's exploited-stage selectivity need not match that window. So F/Fmsy is **indicative
-  / ordinal**, labelled `F / Fmsy [ICES, indicative]` with the selectivity caveat (Vasilakopoulos
-  et al., 2020). Do NOT use the cross-stage F-sum the F/M bars use. For a multi-stock species, take
-  `Fmsy` from the primary tonnes-unit stock with a caveat (F is not summable across stocks).
-- **Reference-point provenance & vintage.** Each species records `fmsy` source (`ices:<stock>@<year>`
-  vs `user`) and the assessment year (ICES reference points move — Silvar-Viladomiu et al., 2021).
-- **Kobe quadrants (indicative):** green `B/Bmsy ≥ 1 ∧ F/Fmsy ≤ 1`; red `B/Bmsy < 1 ∧ F/Fmsy > 1`;
-  the off-diagonals yellow/orange — rendered as **soft shading**, not a hard verdict. A point needs
-  **both** ratios; partial-reference species (one axis) are excluded from the scatter but shown on
-  the available single-axis time-series.
+Because `Bmsy` is never auto-filled, the **Kobe scatter is empty out-of-the-box** for every
+bundled config. The page must NOT lead with an empty plot. Layout, top to bottom:
+1. **F/M bars** (`make_fm_ratio_bars`, already built) — zero-config, never surfaced before. The
+   immediate win.
+2. **F/Fmsy time-series** — populated for species with an ICES (or user) `Fmsy` (Baltic: cod,
+   herring, sprat).
+3. **Kobe scatter** — a gated panel that renders only once ≥1 species has BOTH ratios; its
+   empty-state is an explicit call-to-action ("Enter a `Bmsy` for ≥1 species in the table to
+   populate the Kobe quadrant"), never a blank plot.
+4. **B/Bmsy time-series** — for species with a user `Bmsy`.
+5. The editable reference-point table + the methodology/disclaimer panel.
 
-## 4. Components (each isolated, testable)
+## 4. Model SSB as an engine output (resolves the SSB-reconstruction cluster R3-12/17/20)
 
-1. **`osmose/fisheries_reference.py`** (new) — reference-point resolution (simplified: no
-   cross-stock aggregation).
-   - `@dataclass ReferencePoint`: `species`, `fmsy: float | None`, `bmsy: float | None`,
-     `fmsy_stock: str | None`, `fmsy_year: int | None`, `b_ref_kind: str`
-     (`"bmsy_user"` | `"none"`), `source: str` (`"ices:<stock>@<year>"` | `"user"` | `"mixed"`),
-     `caveats: list[str]`. Properties: `b_ref` → `bmsy`; `has_b_axis` → `bmsy is not None`;
-     `has_f_axis` → `fmsy is not None`; `b_ref_label` → `"Bmsy [user]"`.
-   - `load_reference_points(ref_dir, species_list, *, ices_snapshot_dir=None) ->
-     dict[str, ReferencePoint]`. `ref_dir` is an **ecosystem-scoped, stable** directory
-     (`data/<ecosystem>/`), NOT a per-run output dir (runs use fresh `mkdtemp` dirs). Reads optional
-     `ref_dir/fisheries_reference_points.json` (`{species: {fmsy?, bmsy?}}`). For each species with
-     no user `fmsy`, **auto-fills `fmsy` only** from `osmose.validation.ices.load_snapshot`: the
-     primary tonnes-unit stock (via `manifest["model_species_to_ices_stocks"]` + the snapshot's
-     `units_by_stock`), `float()`-coerced (ICES values are JSON strings), with `fmsy_stock`/
-     `fmsy_year` recorded and a multi-stock caveat where applicable. `bmsy` is **never** auto-filled.
-   - `save_reference_points(ref_dir, refs)` — writes back the user-editable fields (`fmsy`, `bmsy`).
+The engine already computes the correct per-species SSB every step in `reproduction.py` using the
+**joint** maturity rule `length ≥ maturity_size AND age_dt ≥ maturity_age_dt AND abundance > 0`,
+then discards it. The marginal `biomass_by_age` / `biomass_by_size` outputs **cannot** reproduce
+that joint mask (a species with both size- and age-at-maturity needs per-school age+size jointly,
+which binned marginals don't preserve), and `maturity_age_dt` defaults to `0` when
+`species.maturity.age` is unset — so an age-only reconstruction silently yields `SSB = total
+biomass`. Therefore SSB becomes a first-class output (the same parity-safe pattern as the
+just-shipped yieldN/meanSize):
 
-2. **`osmose/validation/stock_status.py`** (new) — pure computation.
-   - `@dataclass StockStatus`: `species`, `years: list[int]`, `b_over_bmsy: list[float | None]`,
-     `f_over_fmsy: list[float | None]`, `b_ref_label: str`, `latest_quadrant: str | None`,
-     `caveats: list[str]`.
-   - `compute_stock_status(results, refs, config, *, species_list=None) -> list[StockStatus]`.
-     Per species:
-     - **F (per-year series):** reuse `fisheries.read_mortality` + `_STAGES` + the `F > _FISHED_TOL`
-       single-exploited-stage rule, and a NEW `fisheries.annual_series(per_step, steps_per_year) ->
-       np.ndarray` factored out of `annual_rate` (which keeps its windowed-scalar behaviour by
-       calling `annual_series` then window-mean — no behaviour change).
-     - **B (SSB per-year series):** from `results.biomass_by_age(species)`, which the 2D reader
-       returns **long-form** (`time, species, bin, value`); `bin` is the **age-class in years**
-       (note: it arrives as a *string* `"0","1",…` — `pd.to_numeric` before comparing).
-       SSB(t) = Σ `value` over bins `≥ floor(maturity_age_years)`, where
-       `maturity_age_years = config.maturity_age_dt[sp] / config.n_dt_per_year`; reduce to one value
-       per year by **year-mean**. (Size-at-maturity configs use `biomass_by_size`.)
-     - `B/Bmsy` (only if `has_b_axis`) and `F/Fmsy` (only if `has_f_axis`) per year, intersecting the
-       integer-year indices; `None` where a reference/input is missing; divide-by-zero guarded
-       (`bmsy`/`fmsy` `≤ 0 → None`). `latest_quadrant` from the most-recent year with both ratios.
-   - `steps_per_year` (= `config.n_dt_per_year`), `maturity_age_dt`, species come from the
-     `EngineConfig`; the output `prefix` from the page / `OsmoseResults.prefix`. All passed
-     explicitly — never inferred.
+- **`osmose/engine/config.py`** — parse `output.ssb.enabled` → `output_ssb: bool = False` (the key
+  is already in the validation allowlist) and `output.ssb.netcdf.enabled` → `output_ssb_netcdf`.
+- **`osmose/engine/simulate.py`** — `StepOutput.ssb: NDArray | None`; `_collect_ssb(state, config)`
+  reusing the exact reproduction maturity conjunction; gated on `output_ssb or output_ssb_netcdf`;
+  subdt-accumulated as a **mean** across the record window (like a biomass mean), wired into both
+  accumulation branches.
+- **`osmose/engine/output.py`** — `_write_ssb_csv` → `{prefix}_SSB_Simu0.csv` + `_build_ssb_dataframe`
+  → `{"SSB": df}` (wide Time + focal-species, mirrors meanTL); NetCDF want/data_var on
+  `["time","focal_species"]`; register in `write_outputs`.
+- **`osmose/results.py`** — add `"SSB"` to `_CROSS_SPECIES_OUTPUT_TYPES` + `_build_dataframes_from_outputs`;
+  `results.ssb(species)` reader (`_read_species_output("SSB")`, wide-form).
+- The stock-status B-axis reads `results.ssb(species)` directly. If a run did not enable
+  `output.ssb.enabled`, the **B-axis is unavailable** with a caveat ("enable SSB output"); no
+  reconstruction is attempted.
 
-3. **`osmose/plotting.py`** (extend) — add `make_kobe_plot(statuses, *, year=None) -> go.Figure`
-   (four **soft-shaded** quadrants, one marker per species at the selected year, faint per-species
-   trajectory, latest year emphasised, axis labels from the reference labels, an "indicative"
-   annotation) and `make_ratio_timeseries(statuses, which) -> go.Figure`. Both confirmed absent
-   today. `make_fm_ratio_bars` **already exists** (`osmose/plotting.py:337`) — **reused**, not built.
+This is output-only and parity-safe (the EEC/BoB suites assert biomass, not SSB).
 
-4. **`ui/pages/fisheries.py`** (new Shiny page) — `fisheries_ui()` + `fisheries_server()`.
-   - Run selection reusing the `_safe_output_dir` pattern (factor the shared helper out of
-     `ui/pages/results.py` if not already shared). Obtains the run's `EngineConfig` from app state
-     (for `steps_per_year`, `maturity_age_dt`, species) and `prefix` from the `OsmoseResults`; SSB
-     needs the config's maturity, so the B-axis is unavailable without it (caveat).
-   - An **editable reference-point table** (`bmsy`, `fmsy` per species) pre-filled by
-     `load_reference_points` (only `fmsy` is ICES-auto-filled), a provenance + assessment-year
-     column, and a "Save" action → `save_reference_points` (ecosystem-scoped path). Empty `bmsy` →
-     that species has no B-axis, noted.
-   - Plots: indicative Kobe (year slider), `B/Bmsy` & `F/Fmsy` time-series, F/M bars (reused). A
-     prominent **methodology/disclaimer panel**: indicative-not-assessment; B = SSB; Bmsy user-owned;
-     F = single-exploited-stage vs ICES Fbar (selectivity caveat); reference-point provenance/year;
-     a link to the existing community size-spectrum / MTL pages.
-   - Register in `app.py` (nav entry + server wiring), following the existing page pattern.
+## 5. Methodological basis
 
-## 5. Data flow
+- **B = model SSB** (§4), compared to a **user-supplied `Bmsy`** (no ICES auto-fill — ICES
+  publishes no Bmsy, and summing Btrigger masks components). `b_ref_kind ∈ {"bmsy_user","none"}`;
+  axis labelled `SSB / Bmsy [user]`.
+- **`F/Fmsy` (ICES-fillable, indicative).** `Fmsy` from ICES (auto-filled) or user. Model F = the
+  **exploited-stage** OSMOSE fishing mortality, an annual instantaneous rate. It is **not** the ICES
+  age-ranged `Fbar` (real windows sprat 3–5, cod 4–6, herring 3–6) → F/Fmsy is indicative/ordinal,
+  with a selectivity caveat (Vasilakopoulos 2020).
+  - **Exploited-stage disambiguation (R3-14/21):** among the fished stages
+    (`F > _FISHED_TOL`, excluding `Eggs`), select the stage with the **largest annual F**; emit a
+    caveat when >1 stage exceeds the tolerance ("F measured on `<stage>`; other fished stages
+    present"). Do NOT use the F/M bars' cross-stage F-sum.
+  - **Multi-stock `Fmsy` (R3-13/19):** "primary" stock is defined **deterministically** as the
+    tonnes-unit stock with the **largest `msy_btrigger`** (a stock-size proxy; ties broken by most
+    recent `advice_year`). Record `fmsy_stock` + `fmsy_year` in provenance and emit a caveat when
+    the species maps to >1 tonnes-unit stock (e.g. Baltic herring → 3 tonnes stocks, Fmsy 0.218–0.31).
+- **Annual aggregation cadence (R3-11/18 — was a CRITICAL bug).** The saved series are written
+  every `output.recordfrequency.ndt` steps, NOT every step, and the engine **sums** mortality and
+  **means** biomass over each record window. So the per-year reshape uses
+  **`saved_steps_per_year = config.n_dt_per_year // config.output_record_frequency`** (asserted to
+  divide evenly; caveat otherwise) — NOT `n_dt_per_year`. For the Baltic flagship
+  (`recordfrequency.ndt = ndtPerYear = 24`) `saved_steps_per_year = 1`: each saved row is already
+  one year, so the annual F is the saved value directly and SSB is the saved annual-mean.
+- **Year alignment (R3-15).** Both axes are labelled by **absolute simulation year** taken from the
+  readers' `Time` column (`year = int(floor(time))`), and the Kobe/ratio intersect on those year
+  labels — never on positional array index.
+- **B-axis basis caveat (R3-16).** Whenever a user `Bmsy` is present, show a spatial/SSB-basis
+  caveat AND display the model's whole-domain mean SSB next to the `Bmsy` input so the user can
+  sanity-check that their value is on the same basis (whole-domain SSB tonnes), not an ICES-area SSB.
+- **Kobe quadrants (indicative):** green `B/Bmsy ≥ 1 ∧ F/Fmsy ≤ 1`; red `< 1 ∧ > 1`; off-diagonals
+  yellow/orange — soft shading, not a verdict. A point needs both ratios; single-axis species go to
+  the time-series, not the scatter.
 
-run output dir → `OsmoseResults` → (`biomass_by_age` for SSB, `mortalityRate` CSV for
-exploited-stage F) ⨉ `EngineConfig` (`n_dt_per_year`, `maturity_age_dt`, species) +
-`OsmoseResults.prefix` ⨉ `load_reference_points(ecosystem_dir, species, ices_snapshot_dir)`
-(Fmsy auto-fill only) → `compute_stock_status` → per-species `StockStatus` →
-`make_kobe_plot` / `make_ratio_timeseries` / `make_fm_ratio_bars` on the Fisheries page.
-(Module paths: `osmose.validation.fisheries`, `osmose.validation.stock_status`,
-`osmose.fisheries_reference`, `osmose.plotting`.)
+## 6. Components
 
-## 6. Reference-point storage
+0. **Engine SSB output** — §4.
+1. **`osmose/validation/fisheries_reference.py`** (new; placed under `validation/` for cohesion with
+   `fisheries.py`/`ices.py`/`stock_status.py` — R3-9).
+   - `@dataclass ReferencePoint`: `species`, `fmsy`, `bmsy`, `fmsy_stock`, `fmsy_year`,
+     `b_ref_kind` (`"bmsy_user"`|`"none"`), `source`, `caveats: list[str]`; properties `has_b_axis`,
+     `has_f_axis`, `b_ref_label`.
+   - `load_reference_points(ref_dir, species_list, *, ices_snapshot_dir=None)`. `ref_dir` =
+     **`data/<ecosystem>/reference/`** (R3-6 — alongside `biomass_targets.csv` + `ices_snapshots/`).
+     Reads optional `ref_dir/fisheries_reference_points.json` (`{species: {fmsy?, bmsy?}}`);
+     **auto-fills `fmsy` only** from the deterministic primary tonnes-unit stock (§5). **Validates
+     every JSON key against `species_list`** and returns unmatched keys for a UI warning (R3-22).
+     `bmsy` never auto-filled.
+   - `save_reference_points(ref_dir, refs)` — writes user fields back.
+   - **Contrast with `osmose/calibration/targets.py` (R3-8):** that store (`biomass_targets.csv`,
+     `BiomassTarget`) holds *total-biomass calibration* targets; this sidecar holds *SSB-relative
+     status* reference points (`Bmsy`/`Fmsy`). Different quantity, different consumer — a second file
+     is warranted; documented here so they're not conflated.
+2. **`osmose/validation/stock_status.py`** (new).
+   - `@dataclass StockStatus`: `species`, `years`, `b_over_bmsy`, `f_over_fmsy`, `b_ref_label`,
+     `latest_quadrant`, `takeaway: str | None`, `caveats`.
+   - `compute_stock_status(results, refs, config, *, species_list=None)`. F per year from
+     `read_mortality` + the exploited-stage rule (§5) + a NEW
+     `fisheries.annual_series(per_step, saved_steps_per_year, year_labels) -> dict[int,float]`
+     factored from `annual_rate` (which keeps its windowed-scalar behaviour); B per year from
+     `results.ssb(species)` (annual-labelled). `B/Bmsy` (if `has_b_axis`) and `F/Fmsy` (if
+     `has_f_axis`) per absolute year, divide-by-zero guarded; a one-line `takeaway` per populated
+     latest point (R3-3, e.g. "Indicative: F above Fmsy and SSB below your Bmsy"). `steps_per_year`
+     is computed as in §5; never `n_dt_per_year`.
+3. **`osmose/plotting.py`** (extend) — `make_kobe_plot` (soft-shaded quadrants + indicative
+   annotation) and `make_ratio_timeseries`; both new. `make_fm_ratio_bars` already exists
+   (`plotting.py:337`) — reused.
+4. **`ui/pages/fisheries.py`** (new page) — `fisheries_ui()`/`fisheries_server()`.
+   - Builds the run config via **`EngineConfig.from_dict(state.config.get())`** (R3-5 — app state
+     holds a flat `config: reactive.Value[dict]` + `output_dir`/`config_dir`, NOT an `EngineConfig`);
+     `prefix` from the `OsmoseResults`. Run selection reuses `_safe_output_dir`.
+   - **Ecosystem derivation (R3-10):** a small shared helper `ecosystem_of(config_dir)` (in
+     `osmose/validation/`) maps the run's `config_dir` basename to `<ecosystem>`; reused by the page
+     and `load_reference_points`. Falls back to a user-config dir keyed by config name.
+   - Layout per §3. Editable reference-point table (per-species `bmsy`/`fmsy` numeric inputs — the
+     concrete widget, since no existing page uses a data-frame editor (R3-5); provenance +
+     assessment-year column; each `bmsy` input shows the basis label and the model's current mean SSB
+     for scale-checking (R3-2/16); an explicit "enter ≥1 Bmsy to populate the Kobe" hint). A
+     **"Save" action** that shows its target ("saved to `data/<ecosystem>/reference/` — shared across
+     `<ecosystem>` runs"; R3-4) + a load-time note for unmatched keys.
+   - One concise global **disclaimer banner** (R3-3) separate from the per-point takeaways.
+   - Links to the **Size Spectrum / Mean Trophic Level views on the Results page** (result-type
+     selections, not standalone pages — R3-7).
+   - Register in `app.py` (nav entry + server wiring).
 
-`data/<ecosystem>/fisheries_reference_points.json` — an **ecosystem-scoped, stable** location (NOT
-a per-run output dir). The page derives `<ecosystem>` from the run's config/data dir; failing that,
-a user-config dir keyed by config name. Format (only `fmsy`/`bmsy` user-editable; `fmsy` may be
-ICES-auto-filled and overridden, `bmsy` is always user-entered):
+## 7. Data flow
+
+run dir → `OsmoseResults` (`ssb` for B, `mortalityRate` for exploited-stage F) ⨉
+`EngineConfig.from_dict(state.config)` (`n_dt_per_year`, `output_record_frequency`,
+`maturity_*`, species) + `OsmoseResults.prefix` ⨉
+`load_reference_points(data/<ecosystem>/reference/, species, ices_snapshot_dir)` (Fmsy only) →
+`compute_stock_status` (annual aggregation at `saved_steps_per_year`, absolute-year labels) →
+`make_fm_ratio_bars` / `make_ratio_timeseries` / `make_kobe_plot`.
+Modules: `osmose.validation.{fisheries, stock_status, fisheries_reference}`, `osmose.plotting`.
+
+## 8. Reference-point storage
+
+`data/<ecosystem>/reference/fisheries_reference_points.json` (R3-6). Only `fmsy`/`bmsy` user-editable
+(`fmsy` may be ICES-auto-filled then overridden; `bmsy` always user-entered):
 ```json
-{
-  "sprat": { "fmsy": 0.34, "bmsy": 600000 },
-  "cod":   { "fmsy": 0.31 }
-}
+{ "sprat": { "fmsy": 0.34, "bmsy": 600000 }, "cod": { "fmsy": 0.31 } }
 ```
-`bmsy` present ⇒ `b_ref_kind="bmsy_user"`; absent ⇒ `"none"` (no B-axis).
+`bmsy` present ⇒ `b_ref_kind="bmsy_user"`; absent ⇒ `"none"`.
 
-## 7. Error handling / edge cases
+## 9. Error handling / edge cases
 
-- **Reader shapes differ by dimensionality.** 1D `biomass(species)` is WIDE-form (capital `Time` +
-  per-species columns, constant `species="all"`) — `biomass(species="cod")` returns **0 rows**;
-  select `df["cod"]` keyed on `Time`. 2D `biomass_by_age(species)` is **long-form** (`time, species,
-  bin, value`) via `_read_2d_output` — SSB uses this. Do not reuse `ices.model_biomass_window_mean`'s
-  `df["value"]` logic against the 1D reader.
-- **Data-limited / missing references** → no F-axis if `fmsy` is `null` (e.g. eastern Baltic cod);
-  no B-axis if no user `bmsy`; species excluded from the Kobe scatter, shown on whichever single
-  axis it has; distinct caveats ("no Fmsy" / "no Bmsy supplied").
-- **By-age output absent / no maturity configured** → B-axis unavailable; caveat "SSB unavailable
-  (enable biomass-by-age output)".
-- **`Fmsy ≤ 0` or `Bmsy ≤ 0`** → ratio `None` (divide-by-zero guard).
-- **No ICES snapshot** (EEC/BoB) → Fmsy auto-fill is a no-op; all values come from the user file /
-  inline edits. Page still works.
-- **Multi-stock species** → `Fmsy` from the primary tonnes-unit stock with a caveat (F not summed).
-- **Reference-point JSON malformed** → clear validation message; page degrades to inline entry.
-- **Indicative disclaimer** always shown; a **spatial-scope caveat** (model domain vs ICES stock
-  area) shown when any ICES-derived `Fmsy` is in use.
+- **Reader shapes:** 1D `biomass`/`ssb` are WIDE (Time + per-species cols); 2D readers are LONG.
+  Select the species column keyed on `Time`.
+- **SSB output disabled in the run** → no B-axis, caveat ("enable `output.ssb.enabled`").
+- **Data-limited references** → no F-axis if `fmsy` null (eastern Baltic cod); no B-axis if no user
+  `bmsy`; species excluded from the Kobe scatter, shown on the available single axis.
+- **`Fmsy ≤ 0` / `Bmsy ≤ 0`** → ratio `None` (guard).
+- **`output_record_frequency` does not divide `n_dt_per_year` evenly** → caveat, best-effort annual
+  reshape with a warning.
+- **No ICES snapshot** (EEC/BoB) → no Fmsy auto-fill; all values manual; page still works.
+- **Multi-tonnes-stock species** → deterministic primary stock (§5) recorded + caveat.
+- **Unmatched reference-JSON keys** (typo/casing) → explicit UI warning (R3-22), not silent.
+- **Malformed JSON** → validation message; degrade to inline entry.
+- Indicative disclaimer always shown; spatial/basis caveat whenever a user `Bmsy` or ICES `Fmsy` is in use.
 
-## 8. Testing
+## 10. Testing
 
-- `fisheries_reference`: ICES auto-fill resolves `fmsy` (+ stock + year) for sprat from a snapshot
-  fixture (`float()` coercion); a data-limited stock with `null` fmsy → `has_f_axis == False`; `bmsy`
-  is **never** auto-filled (only user-supplied); user file overrides ICES `fmsy`; round-trip
-  save/load of user fields.
-- `stock_status`: `annual_series` returns the per-year array (and `annual_rate` still returns its
-  windowed scalar — no behaviour change); SSB = Σ mature age-class biomass on the **long-form**
-  (`time, species, bin, value`) by-age output (hand-figured); `B/Bmsy` only when a user `bmsy` is
-  set; `F/Fmsy` only when `fmsy` set; the Kobe quadrants classified; divide-by-zero guards;
-  single-exploited-stage F (not the cross-stage sum); a no-B-axis / data-limited species returns the
-  available single axis + caveat.
-- `plotting`: `make_kobe_plot` returns a Figure with soft-shaded quadrants + the indicative
-  annotation; markers at the right coordinates; partial-reference species omitted from the scatter.
-- UI: page renders for a Baltic run (Fmsy auto-filled, Bmsy user-entered) and a no-ICES config
-  (inline-only); the disclaimer + provenance panel present; the ecosystem-scoped sidecar **survives
-  a re-run** (saved under `data/<ecosystem>/`, not the run dir).
-- No engine/dynamics change → EEC/BoB parity suites untouched (read-only analysis over outputs).
+- **Engine SSB output:** `_collect_ssb` matches the reproduction conjunction on a hand-built state
+  (size-only, age-only, and both-criteria species — the case reconstruction can't do); CSV +
+  in-memory + reader round-trip; gating (None when disabled); subdt mean. EEC/BoB parity suites
+  stay green (output-only).
+- **stock_status:** `annual_series` at `saved_steps_per_year` (incl. the Baltic
+  `recordfreq=ndtPerYear ⇒ saved_steps_per_year=1` case — each saved row already annual);
+  absolute-year alignment (no positional off-by-one); exploited-stage tie-break (largest-F stage,
+  Eggs excluded, caveat when >1); `B/Bmsy` only with a user `bmsy`; `F/Fmsy` only with `fmsy`;
+  divide-by-zero; data-limited single-axis + caveat; the `takeaway` line.
+- **fisheries_reference:** Fmsy auto-fill from the deterministic primary stock (largest Btrigger;
+  herring multi-stock → caveat + recorded `fmsy_stock`); data-limited `null` fmsy → `has_f_axis`
+  False; `bmsy` never auto-filled; unmatched-key warning; round-trip save/load.
+- **plotting:** soft-shaded Kobe + indicative annotation; partial-reference species omitted from the
+  scatter; markers at the right coords.
+- **UI:** empty-state CTA renders (no blank Kobe); F/M bars + F/Fmsy lead the layout; save-target +
+  unmatched-key notes shown; sidecar under `data/<ecosystem>/reference/` survives a re-run.
 
-## 9. Out of scope (deferred)
+## 11. Out of scope (deferred)
 
-- **Model-internal reference points** (Fmsy & Blim≈0.2·B0 from an OSMOSE yield-vs-F sweep) — the
-  literature's preferred approach (Travers-Trolet et al., 2020; Mackinson et al., 2018) and the
-  natural **v2**: it adds a reference-point *source* without changing the page. A separate feature
-  (needs multi-run sweep orchestration + equilibrium detection).
+- **Model-internal reference points** (Fmsy & Blim≈0.2·B0 from a yield-vs-F sweep) — the literature's
+  preferred approach and the natural v2.
 - **Per-stock spatial resolution** (clipping model biomass to each ICES stock area; per-stock
-  small-multiples Kobe; min-component masking guards) — needs per-stock-area grid masks.
-- **Cross-stock reference aggregation** — deliberately removed (masking risk).
-- **Age-ranged `Fbar`** matching each stock's `f_age_range`; **SSB fecundity refinements** beyond
-  mature-biomass; per-fishery status; uncertainty envelopes.
-- **Community/ecosystem indicators** (LFI, MTL, size spectrum) — already shipped elsewhere; the page
-  links to them rather than rebuilding.
+  small-multiples; min-component masking guards) — needs per-stock-area grid masks.
+- **Cross-stock reference aggregation** (removed — masking).
+- **Age-ranged `Fbar`** matching `f_age_range`; fecundity-based SSB refinements; per-fishery status;
+  uncertainty envelopes; SSB-derived Bmsy *suggestions* (deliberately not auto-populated — would
+  fabricate a reference, contradicting §2).
+- **Community indicators** (LFI/MTL/size spectrum) — already shipped; the page links to them.
 
-## 10. Scientific basis & provenance
+## 12. Scientific basis & provenance
 
-Design choices grounded in a scite + ICES-MCP literature review (2026-06-25):
-- Kobe conventions; SSB as the B basis; ICES publishes no Bmsy and `MSY-Btrigger = Bpa` (verified in
-  the real Baltic fixtures: sprat `541000 = 541000`) sitting below Bmsy — so it must not be used as a
-  Bmsy proxy (Silvar-Viladomiu et al., 2021; ICES guidance).
-- Summing reference points across a species' sub-stocks masks depleted components — *the* documented
-  failure mode for Baltic cod and herring (Eero et al., 2014; Forrest et al., 2023). → B-aggregate
-  removed.
-- No precedent for OSMOSE-on-a-single-stock-Kobe; OSMOSE/EwE derive reference points internally and
-  compare biomass *relatively* (Travers-Trolet et al., 2020; Mackinson et al., 2018; Briton et al.,
-  2019; Bănaru et al., 2019). → indicative framing; F-axis transferable, B-axis user-owned.
-- Model exploited-stage F vs ICES `Fbar` is selectivity-conditional (Vasilakopoulos et al., 2020). →
-  F/Fmsy indicative with a selectivity caveat.
-
-(Full citations with DOIs are in the review transcript; key DOIs: 10.1111/faf.12591, 10.1093/icesjms/fsu060,
-10.1139/cjfas-2022-0168, 10.3389/fmars.2020.568232, 10.1371/journal.pone.0190015, 10.1016/j.ecolmodel.2019.03.005,
-10.1111/faf.12451.)
+Grounded in a scite + ICES-MCP literature review (2026-06-25): Kobe conventions; SSB as the B basis;
+ICES publishes no Bmsy and `MSY-Btrigger = Bpa` < Bmsy (Silvar-Viladomiu 2021); summing references
+masks depleted components (Eero 2014; Forrest 2023); no OSMOSE-on-single-stock-Kobe precedent —
+internal/relative practice (Travers-Trolet 2020; Mackinson 2018; Briton 2019; Bănaru 2019); model F
+vs ICES `Fbar` is selectivity-conditional (Vasilakopoulos 2020). Key DOIs: 10.1111/faf.12591,
+10.1093/icesjms/fsu060, 10.1139/cjfas-2022-0168, 10.3389/fmars.2020.568232, 10.1371/journal.pone.0190015,
+10.1016/j.ecolmodel.2019.03.005, 10.1111/faf.12451.
