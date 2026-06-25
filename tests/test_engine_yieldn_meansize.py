@@ -148,3 +148,48 @@ def test_yieldn_meansize_csv_matches_in_memory(tmp_path):
     assert "yieldN" in mem and "meanSize" in mem
     assert disk.yield_abundance()[sp].tolist() == mem["yieldN"][sp].tolist() == [3.0, 7.0]
     assert disk.mean_size()[sp].tolist() == mem["meanSize"][sp].tolist() == [12.0, 20.0]
+
+
+def test_netcdf_written_only_when_flag_on(tmp_path):
+    import xarray as xr
+    from osmose.engine.output import write_outputs
+
+    outputs = [_step(0, np.array([3.0]), {0: 12.0}), _step(1, np.array([7.0]), {0: 20.0})]
+    # default config (no .netcdf flag): no .nc written (early-return guard)
+    a = tmp_path / "a"
+    a.mkdir()
+    write_outputs(outputs, a, _cfg({}), prefix="run")
+    assert not (a / "run_Simu0.nc").exists()
+    # netcdf-enabled: .nc with yieldN + meanSize vars
+    b = tmp_path / "b"
+    b.mkdir()
+    cfgN = _cfg(
+        {"output.yield.abundance.netcdf.enabled": "true", "output.size.netcdf.enabled": "true"}
+    )
+    write_outputs(outputs, b, cfgN, prefix="run")
+    ds = xr.open_dataset(b / "run_Simu0.nc")
+    assert "yieldN" in ds and "meanSize" in ds
+
+
+def test_csv_equals_netcdf(tmp_path):
+    from osmose.engine.output import write_outputs
+    from osmose.results import OsmoseResults
+
+    cfg = _cfg(
+        {
+            "output.yield.abundance.enabled": "true",
+            "output.size.enabled": "true",
+            "output.yield.abundance.netcdf.enabled": "true",
+            "output.size.netcdf.enabled": "true",
+        }
+    )
+    sp = cfg.species_names[0]
+    outputs = [_step(0, np.array([3.0]), {0: 12.0}), _step(1, np.array([7.0]), {0: 20.0})]
+    write_outputs(outputs, tmp_path, cfg, prefix="run")
+    res = OsmoseResults(tmp_path, prefix="run")
+    for getter in ("yield_abundance", "mean_size"):
+        csv_df = getattr(res, getter)()
+        nc_df = getattr(res, getter)(source="netcdf")
+        # same focal-species columns (sp), non-vacuous values
+        np.testing.assert_allclose(csv_df[sp].to_numpy(), nc_df[sp].to_numpy(), rtol=1e-6)
+    assert res.yield_abundance(source="netcdf")[sp].tolist() == [3.0, 7.0]

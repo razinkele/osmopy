@@ -96,6 +96,11 @@ def write_outputs(
             grid=grid,
         )
 
+    # Combined per-species NetCDF. Inert unless a `.netcdf.enabled` flag is set
+    # (write_outputs_netcdf early-returns when no want is true), so default/parity
+    # configs write nothing.
+    write_outputs_netcdf(outputs, output_dir / f"{prefix}_Simu0.nc", config)
+
 
 def _build_species_dataframes(
     outputs: list[StepOutput],
@@ -713,6 +718,10 @@ def write_outputs_netcdf(
         "abundance_by_size": config.output_abundance_bysize_netcdf
         and any(o.abundance_by_size is not None for o in outputs),
         "mortality_by_cause": config.output_mortality_netcdf,
+        "yieldN": config.output_yield_abundance_netcdf
+        and any(o.yield_n is not None for o in outputs),
+        "meanSize": config.output_mean_size_netcdf
+        and any(o.mean_size is not None for o in outputs),
     }
     if not any(want.values()):
         return
@@ -745,6 +754,28 @@ def write_outputs_netcdf(
         )
         data_vars["yield"] = (["time", "focal_species"], yield_arr)
         coords["focal_species"] = config.species_names[: yield_arr.shape[1]]
+
+    if want["yieldN"]:
+        yn_arr = np.array(
+            [
+                o.yield_n if o.yield_n is not None else np.full(config.n_species, np.nan)
+                for o in outputs
+            ]
+        )
+        data_vars["yieldN"] = (["time", "focal_species"], yn_arr)
+        coords["focal_species"] = config.species_names[: yn_arr.shape[1]]
+    if want["meanSize"]:
+        # FOCAL species only (config.n_species), NOT the shared `species` dim (which is
+        # all_species_names = focal+background). This makes the NetCDF column set match the
+        # CSV (config.species_names), so the csv_equals test aligns. Mirrors yieldN/yield.
+        ms_arr = np.full((len(outputs), config.n_species), np.nan)
+        for t_idx, o in enumerate(outputs):
+            if o.mean_size:
+                for sp_idx, val in o.mean_size.items():
+                    if sp_idx < config.n_species:
+                        ms_arr[t_idx, sp_idx] = val
+        data_vars["meanSize"] = (["time", "focal_species"], ms_arr)
+        coords.setdefault("focal_species", config.species_names[: ms_arr.shape[1]])
 
     def _pad(attr: str) -> tuple[np.ndarray, int]:
         max_bins = 0

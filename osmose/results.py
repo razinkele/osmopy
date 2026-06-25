@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import numpy as np
 import pandas as pd
 import xarray as xr
 
@@ -433,8 +434,10 @@ class OsmoseResults:
         """Read diet composition matrix."""
         return self._read_species_output("dietMatrix", species)
 
-    def mean_size(self, species: str | None = None) -> pd.DataFrame:
-        """Read mean size time series."""
+    def mean_size(self, species: str | None = None, source: str = "csv") -> pd.DataFrame:
+        """Read mean size time series. source='csv' (default) or 'netcdf'."""
+        if source == "netcdf":
+            return self._read_netcdf_species_var("meanSize", "focal_species", species)
         return self._read_species_output("meanSize", species)
 
     def mean_trophic_level(self, species: str | None = None) -> pd.DataFrame:
@@ -509,9 +512,25 @@ class OsmoseResults:
 
     # --- Additional 1D output methods ---
 
-    def yield_abundance(self, species: str | None = None) -> pd.DataFrame:
-        """Read yield in abundance (number of individuals caught)."""
+    def yield_abundance(self, species: str | None = None, source: str = "csv") -> pd.DataFrame:
+        """Read yield in abundance (numbers caught). source='csv' (default) or 'netcdf'."""
+        if source == "netcdf":
+            return self._read_netcdf_species_var("yieldN", "focal_species", species)
         return self._read_species_output("yieldN", species)
+
+    def _read_netcdf_species_var(
+        self, var: str, species_dim: str, species: str | None
+    ) -> pd.DataFrame:
+        """Read one (time, species) variable from the combined {prefix}_Simu0.nc into a
+        wide frame: ['Time'] + species columns — the same shape as the CSV reader."""
+        ds = self.read_netcdf(f"{self.prefix}_Simu0.nc")
+        da = ds[var]  # dims (time, <species_dim>)
+        sp_names = [str(s) for s in ds.coords[species_dim].values]
+        wide = pd.DataFrame(np.asarray(da.values), columns=sp_names)
+        wide.insert(0, "Time", np.asarray(ds.coords["time"].values))
+        if species is not None and species in wide.columns:
+            wide = wide[["Time", species]]
+        return wide
 
     def mortality_rate(self, species: str | None = None) -> pd.DataFrame:
         """Read mortality rate time series."""
