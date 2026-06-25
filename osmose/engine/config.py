@@ -915,6 +915,10 @@ def _parse_output_flags(cfg: dict[str, str], n_sp: int, n_bkg: int) -> dict[str,
         "output_biomass_netcdf": _enabled(cfg, "output.biomass.netcdf.enabled"),
         "output_abundance_netcdf": _enabled(cfg, "output.abundance.netcdf.enabled"),
         "output_yield_biomass_netcdf": _enabled(cfg, "output.yield.biomass.netcdf.enabled"),
+        "output_yield_abundance": _enabled(cfg, "output.yield.abundance.enabled"),
+        "output_mean_size": _enabled(cfg, "output.size.enabled"),
+        "output_yield_abundance_netcdf": _enabled(cfg, "output.yield.abundance.netcdf.enabled"),
+        "output_mean_size_netcdf": _enabled(cfg, "output.size.netcdf.enabled"),
         # Five new keys
         "output_biomass_byage_netcdf": _enabled(cfg, "output.biomass.byage.netcdf.enabled"),
         "output_abundance_byage_netcdf": _enabled(cfg, "output.abundance.byage.netcdf.enabled"),
@@ -1437,6 +1441,10 @@ class EngineConfig:
     output_abundance_byage: bool = False
     output_abundance_bysize: bool = False
     output_meantl: bool = False
+    output_yield_abundance: bool = False
+    output_mean_size: bool = False
+    output_yield_abundance_netcdf: bool = False
+    output_mean_size_netcdf: bool = False
     output_size_min: float = 0.0
     output_size_max: float = 205.0
     output_size_incr: float = 10.0
@@ -2181,6 +2189,10 @@ class EngineConfig:
             output_abundance_byage=_output["output_abundance_byage"],
             output_abundance_bysize=_output["output_abundance_bysize"],
             output_meantl=_output["output_meantl"],
+            output_yield_abundance=_output["output_yield_abundance"],
+            output_mean_size=_output["output_mean_size"],
+            output_yield_abundance_netcdf=_output["output_yield_abundance_netcdf"],
+            output_mean_size_netcdf=_output["output_mean_size_netcdf"],
             output_size_min=_output["output_size_min"],
             output_size_max=_output["output_size_max"],
             output_size_incr=_output["output_size_incr"],

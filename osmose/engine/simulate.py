@@ -99,6 +99,11 @@ class StepOutput:
     # Per-species realized mean trophic level (sp_idx -> biomass-weighted mean TL), or None
     mean_tl: dict[int, float] | None = None
 
+    # Fishing catch in numbers per species (yieldN), or None if disabled
+    yield_n: NDArray[np.float64] | None = None
+    # Abundance-weighted mean length (cm) per focal species, or None if disabled
+    mean_size: dict[int, float] | None = None
+
     # Bioenergetics: mean net energy per species, shape (n_species,), or None if bioen disabled
     bioen_e_net_by_species: NDArray[np.float64] | None = None
     bioen_ingestion_by_species: NDArray[np.float64] | None = None
@@ -822,6 +827,42 @@ def _collect_yield(
     return yield_by_species
 
 
+def _collect_yield_n(state: SchoolState, config: EngineConfig) -> NDArray[np.float64]:
+    """Fishing catch in NUMBERS per focal species (Java yieldN = Σ getNdead(FISHING)).
+
+    Identical to _collect_yield but WITHOUT the × weight, and (like yield) no age cutoff.
+    """
+    yield_n = np.zeros(config.n_species, dtype=np.float64)
+    if len(state) > 0:
+        fishing_dead = state.n_dead[:, int(MortalityCause.FISHING)]
+        focal_mask = state.species_id < config.n_species
+        np.add.at(yield_n, state.species_id[focal_mask], fishing_dead[focal_mask])
+    return yield_n
+
+
+def _collect_mean_size(state: SchoolState, config: EngineConfig) -> dict[int, float]:
+    """Abundance-weighted mean length (cm) per FOCAL species — Java MeanSizeOutput:
+    ``Σ(abundance × length) / Σ(abundance)``, applying the same output cutoff-age filter as
+    meanTL/biomass. Species with no qualifying abundance are omitted (the wide output frame
+    NaN-fills them).
+    """
+    n_sp = config.n_species
+    wsum = np.zeros(n_sp, dtype=np.float64)  # Σ abundance*length
+    asum = np.zeros(n_sp, dtype=np.float64)  # Σ abundance
+    if len(state) > 0:
+        sp = state.species_id
+        length = state.length
+        abd = state.abundance
+        mask = (sp < n_sp) & (abd > 0) & (length > 0)
+        if config.output_cutoff_age is not None:
+            age_years = state.age_dt.astype(np.float64) / config.n_dt_per_year
+            cutoff = config.output_cutoff_age[sp]
+            mask = mask & (age_years >= cutoff)
+        np.add.at(wsum, sp[mask], abd[mask] * length[mask])
+        np.add.at(asum, sp[mask], abd[mask])
+    return {i: float(wsum[i] / asum[i]) for i in range(n_sp) if asum[i] > 0}
+
+
 def _collect_distributions(
     state: SchoolState,
     config: EngineConfig,
@@ -1036,6 +1077,16 @@ def _collect_outputs(
         state, config
     )
     mean_tl = _collect_mean_tl(state, config) if config.output_meantl else None
+    yield_n = (
+        _collect_yield_n(state, config)
+        if (config.output_yield_abundance or config.output_yield_abundance_netcdf)
+        else None
+    )
+    mean_size = (
+        _collect_mean_size(state, config)
+        if (config.output_mean_size or config.output_mean_size_netcdf)
+        else None
+    )
     bioen_e_net, bioen_ingestion, bioen_maint, bioen_rho, bioen_size_inf = _collect_bioen(
         state, config
     )
@@ -1059,6 +1110,8 @@ def _collect_outputs(
         biomass_by_size=biomass_by_size,
         abundance_by_size=abundance_by_size,
         mean_tl=mean_tl,
+        yield_n=yield_n,
+        mean_size=mean_size,
         bioen_e_net_by_species=bioen_e_net,
         bioen_ingestion_by_species=bioen_ingestion,
         bioen_maint_by_species=bioen_maint,
@@ -1181,6 +1234,8 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
             biomass_by_size=accumulated[0].biomass_by_size,
             abundance_by_size=accumulated[0].abundance_by_size,
             mean_tl=accumulated[0].mean_tl,
+            yield_n=accumulated[0].yield_n,
+            mean_size=accumulated[0].mean_size,
             bioen_e_net_by_species=bioen_e_net_avg,
             bioen_ingestion_by_species=bioen_ingestion_avg,
             bioen_maint_by_species=bioen_maint_avg,
@@ -1198,6 +1253,8 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
     yield_sum = np.sum(
         [o.yield_by_species for o in accumulated if o.yield_by_species is not None], axis=0
     )
+    _yn = [o.yield_n for o in accumulated if o.yield_n is not None]
+    yield_n_sum = np.sum(_yn, axis=0) if _yn else None
     # M1: Java parity (verified 2026-05-06 against
     # AbstractDistribOutput.java#write):
     #     array[iClass][cpt++] = values[iSpec][iClass] / getRecordFrequency();
@@ -1245,6 +1302,8 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
         biomass_by_size=_avg_spatial("biomass_by_size", "mean"),
         abundance_by_size=_avg_spatial("abundance_by_size", "mean"),
         mean_tl=_avg_scalar_dict("mean_tl"),
+        yield_n=yield_n_sum,
+        mean_size=_avg_scalar_dict("mean_size"),
         bioen_e_net_by_species=bioen_e_net_avg,
         bioen_ingestion_by_species=bioen_ingestion_avg,
         bioen_maint_by_species=bioen_maint_avg,

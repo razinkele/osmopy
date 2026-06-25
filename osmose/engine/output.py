@@ -60,6 +60,8 @@ def write_outputs(
     _write_yield_csv(output_dir, prefix, outputs, config)
     _write_distribution_csvs(output_dir, prefix, outputs, config)
     _write_meantl_csv(output_dir, prefix, outputs, config)
+    _write_yieldn_csv(output_dir, prefix, outputs, config)
+    _write_meansize_csv(output_dir, prefix, outputs, config)
     _write_distrib_bysize_community_csvs(output_dir, prefix, outputs, config)
 
     if config.bioen_enabled:
@@ -93,6 +95,11 @@ def write_outputs(
             config=config,
             grid=grid,
         )
+
+    # Combined per-species NetCDF. Inert unless a `.netcdf.enabled` flag is set
+    # (write_outputs_netcdf early-returns when no want is true), so default/parity
+    # configs write nothing.
+    write_outputs_netcdf(outputs, output_dir / f"{prefix}_Simu0.nc", config)
 
 
 def _build_species_dataframes(
@@ -228,6 +235,54 @@ def _write_meantl_csv(
 ) -> None:
     """Write {prefix}_meanTL_Simu0.csv (clean header; readers auto-detect preamble)."""
     for key, df in _build_meantl_dataframe(outputs, config).items():
+        df.to_csv(output_dir / f"{prefix}_{key}_Simu0.csv", index=False)
+
+
+def _build_yieldn_dataframes(
+    outputs: list[StepOutput], config: EngineConfig
+) -> dict[str, pd.DataFrame]:
+    """Wide Time + per-focal-species fishing catch in numbers. Empty when disabled/absent."""
+    if not config.output_yield_abundance or not any(o.yield_n is not None for o in outputs):
+        return {}
+    times = np.array([o.step / config.n_dt_per_year for o in outputs])
+    data = np.array(
+        [o.yield_n if o.yield_n is not None else np.zeros(config.n_species) for o in outputs]
+    )
+    df = pd.DataFrame(data, columns=list(config.species_names))  # type: ignore[arg-type]
+    df.insert(0, "Time", times)
+    return {"yieldN": df}
+
+
+def _build_meansize_dataframe(
+    outputs: list[StepOutput], config: EngineConfig
+) -> dict[str, pd.DataFrame]:
+    """Wide Time + per-focal-species abundance-weighted mean length (cm), NaN where empty."""
+    if not config.output_mean_size or not any(o.mean_size is not None for o in outputs):
+        return {}
+    times = np.array([o.step / config.n_dt_per_year for o in outputs])
+    sp_names = config.species_names
+    data = np.full((len(outputs), len(sp_names)), np.nan, dtype=np.float64)
+    for t_idx, o in enumerate(outputs):
+        if o.mean_size:
+            for sp_idx, val in o.mean_size.items():
+                if sp_idx < len(sp_names):
+                    data[t_idx, sp_idx] = val
+    df = pd.DataFrame(data, columns=sp_names)  # type: ignore[arg-type]
+    df.insert(0, "Time", times)
+    return {"meanSize": df}
+
+
+def _write_yieldn_csv(
+    output_dir: Path, prefix: str, outputs: list[StepOutput], config: EngineConfig
+) -> None:
+    for key, df in _build_yieldn_dataframes(outputs, config).items():
+        df.to_csv(output_dir / f"{prefix}_{key}_Simu0.csv", index=False)
+
+
+def _write_meansize_csv(
+    output_dir: Path, prefix: str, outputs: list[StepOutput], config: EngineConfig
+) -> None:
+    for key, df in _build_meansize_dataframe(outputs, config).items():
         df.to_csv(output_dir / f"{prefix}_{key}_Simu0.csv", index=False)
 
 
@@ -663,6 +718,10 @@ def write_outputs_netcdf(
         "abundance_by_size": config.output_abundance_bysize_netcdf
         and any(o.abundance_by_size is not None for o in outputs),
         "mortality_by_cause": config.output_mortality_netcdf,
+        "yieldN": config.output_yield_abundance_netcdf
+        and any(o.yield_n is not None for o in outputs),
+        "meanSize": config.output_mean_size_netcdf
+        and any(o.mean_size is not None for o in outputs),
     }
     if not any(want.values()):
         return
@@ -695,6 +754,28 @@ def write_outputs_netcdf(
         )
         data_vars["yield"] = (["time", "focal_species"], yield_arr)
         coords["focal_species"] = config.species_names[: yield_arr.shape[1]]
+
+    if want["yieldN"]:
+        yn_arr = np.array(
+            [
+                o.yield_n if o.yield_n is not None else np.full(config.n_species, np.nan)
+                for o in outputs
+            ]
+        )
+        data_vars["yieldN"] = (["time", "focal_species"], yn_arr)
+        coords["focal_species"] = config.species_names[: yn_arr.shape[1]]
+    if want["meanSize"]:
+        # FOCAL species only (config.n_species), NOT the shared `species` dim (which is
+        # all_species_names = focal+background). This makes the NetCDF column set match the
+        # CSV (config.species_names), so the csv_equals test aligns. Mirrors yieldN/yield.
+        ms_arr = np.full((len(outputs), config.n_species), np.nan)
+        for t_idx, o in enumerate(outputs):
+            if o.mean_size:
+                for sp_idx, val in o.mean_size.items():
+                    if sp_idx < config.n_species:
+                        ms_arr[t_idx, sp_idx] = val
+        data_vars["meanSize"] = (["time", "focal_species"], ms_arr)
+        coords.setdefault("focal_species", config.species_names[: ms_arr.shape[1]])
 
     def _pad(attr: str) -> tuple[np.ndarray, int]:
         max_bins = 0

@@ -155,6 +155,7 @@ _OUTPUT_ENABLE_FLAGS = [
     "output.abundance.bysize.netcdf.enabled",
     "output.mortality.netcdf.enabled",
     "output.yield.abundance.netcdf.enabled",
+    "output.size.netcdf.enabled",
     "output.diet.composition.netcdf.enabled",
     "output.diet.pressure.netcdf.enabled",
     "output.nschool.enabled",
