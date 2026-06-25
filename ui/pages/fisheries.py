@@ -21,6 +21,13 @@ from ui.styles import STYLE_EMPTY
 
 _log = setup_logging("osmose.fisheries.ui")
 
+
+def _ices_snapshot_dir(ecosystem: str) -> Path | None:
+    """Return the bundled ICES snapshot dir for *ecosystem* if it exists, else None."""
+    candidate = Path("data") / ecosystem / "reference" / "ices_snapshots"
+    return candidate if candidate.is_dir() else None
+
+
 _DISCLAIMER = (
     "**Disclaimer:** These are indicative stock-status metrics relative to user-supplied "
     "or ICES-auto-filled reference points. They are **not** a formal stock assessment. "
@@ -100,6 +107,14 @@ def fisheries_ui():
     return ui.div(
         ui.h4("Fisheries Stock Status"),
         ui.p(ui.markdown(_DISCLAIMER), class_="text-muted small"),
+        ui.p(
+            ui.markdown(
+                "**Tip:** For community-level size-spectrum and mean trophic level indicators, "
+                "see the **Results** page (select *Size Spectrum* or *Mean Trophic Level* "
+                "from the output type dropdown)."
+            ),
+            class_="text-muted small",
+        ),
         ui.hr(),
         # Top row: F/M bars (zero-config) + F/Fmsy timeseries
         ui.layout_columns(
@@ -135,11 +150,6 @@ def fisheries_server(input, output, session, state: AppState):
     """Fisheries page server: wires reactive computations to the UI outputs."""
 
     # ------------------------------------------------------------------
-    # Internal state
-    # ------------------------------------------------------------------
-    _refs: reactive.Value[dict[str, ReferencePoint]] = reactive.Value({})
-
-    # ------------------------------------------------------------------
     # Reactive calc: build view when navigating to this tab
     # ------------------------------------------------------------------
 
@@ -163,10 +173,8 @@ def fisheries_server(input, output, session, state: AppState):
             config = EngineConfig.from_dict(raw_config)
             results = OsmoseResults(Path(out_dir), strict=False)
             eco = ecosystem_of(config_dir)
-            view = build_fisheries_view(results, config, eco)
-            # Keep refs in sync for the Save button
-            _refs.set({s.species: ReferencePoint(species=s.species) for s in view["statuses"]})
-            return view
+            snapshot_dir = _ices_snapshot_dir(eco)
+            return build_fisheries_view(results, config, eco, ices_snapshot_dir=snapshot_dir)
         except Exception as exc:  # noqa: BLE001 — graceful degrade
             _log.warning("Fisheries view error: %s", exc)
             return build_fisheries_view(None, None, "unknown")
@@ -290,13 +298,14 @@ def fisheries_server(input, output, session, state: AppState):
                     if st.species in sdf.columns:
                         mean_ssb = float(sdf[st.species].mean())
                         ssb_means[st.species] = f"{mean_ssb:,.0f} t"
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as e:  # noqa: BLE001
+                _log.warning("SSB scale-hint unavailable: %s", e)
 
         rows = []
         for st in statuses:
-            bmsy_id = f"bmsy_{st.species}"
-            fmsy_id = f"fmsy_{st.species}"
+            sid = st.species.replace(".", "_")
+            bmsy_id = f"bmsy_{sid}"
+            fmsy_id = f"fmsy_{sid}"
             ssb_hint = ssb_means.get(st.species, "—")
             rows.append(
                 ui.tags.tr(
@@ -366,16 +375,18 @@ def fisheries_server(input, output, session, state: AppState):
             return
 
         # Collect user values from numeric inputs
+        # Input IDs use sanitized species names (dots → underscores); map back to real names.
         updated_refs: dict[str, ReferencePoint] = {}
         for st in statuses:
+            sid = st.species.replace(".", "_")
             bmsy_val = None
             fmsy_val = None
             try:
-                bmsy_val = float(input[f"bmsy_{st.species}"]())
+                bmsy_val = float(input[f"bmsy_{sid}"]())
             except Exception:  # noqa: BLE001
                 pass
             try:
-                fmsy_val = float(input[f"fmsy_{st.species}"]())
+                fmsy_val = float(input[f"fmsy_{sid}"]())
             except Exception:  # noqa: BLE001
                 pass
 

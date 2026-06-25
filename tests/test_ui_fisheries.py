@@ -37,3 +37,29 @@ def test_kobe_gated_until_a_species_has_both_axes(monkeypatch):
     v = build_fisheries_view(res, cfg, "baltic")
     assert v["kobe_ready"] is True
     assert v["save_target"].endswith("baltic/reference")
+
+
+def test_build_fisheries_view_forwards_ices_snapshot_dir(monkeypatch):
+    """ices_snapshot_dir kwarg must reach load_reference_points."""
+    import ui.pages.fisheries as page
+    from pathlib import Path
+
+    captured = {}
+
+    def _mock_load(ref_dir, species, *, ices_snapshot_dir=None):
+        captured["ices_snapshot_dir"] = ices_snapshot_dir
+        return ({}, [])
+
+    monkeypatch.setattr(page, "load_reference_points", _mock_load)
+    monkeypatch.setattr(
+        page,
+        "compute_stock_status",
+        lambda *a, **k: [],
+    )
+
+    cfg = type("C", (), {"species_names": ["cod"]})()
+    res = object()
+    fake_dir = Path("/tmp/fake_ices_snapshots")
+    build_fisheries_view(res, cfg, "baltic", ices_snapshot_dir=fake_dir)
+
+    assert captured["ices_snapshot_dir"] == fake_dir
