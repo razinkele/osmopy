@@ -1,4 +1,9 @@
+import numpy as np
+import pytest
+
 from osmose.engine.config import EngineConfig
+from osmose.engine.simulate import _collect_mean_size, _collect_yield_n
+from osmose.engine.state import MortalityCause, SchoolState
 
 
 def _base_cfg() -> dict[str, str]:
@@ -46,3 +51,51 @@ def test_config_yieldn_meansize_flags_default_false():
     assert cfg.output_mean_size is False
     assert cfg.output_yield_abundance_netcdf is False
     assert cfg.output_mean_size_netcdf is False
+
+
+def _two_school_state() -> SchoolState:
+    # 2 focal schools of species 0: lengths 10 & 30, abundance 100 & 300,
+    # fishing deaths 4 & 6.
+    s = SchoolState.create(n_schools=2, species_id=np.zeros(2, dtype=np.int32))
+    s = s.replace(
+        length=np.array([10.0, 30.0]),
+        abundance=np.array([100.0, 300.0]),
+        weight=np.array([0.01, 0.27]),
+        biomass=np.array([1.0, 81.0]),
+        age_dt=np.array([12, 24], dtype=np.int32),
+    )
+    nd = s.n_dead.copy()
+    nd[:, int(MortalityCause.FISHING)] = np.array([4.0, 6.0])
+    return s.replace(n_dead=nd)
+
+
+class _Cfg:
+    n_species = 1
+    n_dt_per_year = 12
+    output_cutoff_age = None
+
+
+def test_collect_yield_n_is_fishing_deaths_in_numbers():
+    yn = _collect_yield_n(_two_school_state(), _Cfg())
+    assert yn.shape == (1,)
+    assert yn[0] == pytest.approx(10.0)  # 4 + 6 deaths, NO weight
+
+
+def test_collect_mean_size_abundance_weighted():
+    ms = _collect_mean_size(_two_school_state(), _Cfg())
+    # (100*10 + 300*30) / (100+300) = 10000/400 = 25.0
+    assert ms[0] == pytest.approx(25.0)
+
+
+def test_collect_mean_size_applies_cutoff_and_omits_empty():
+    class CutCfg(_Cfg):
+        output_cutoff_age = np.array(
+            [1.5]
+        )  # cutoff 1.5 yr; age_dt=12 is 1.0 yr (excluded), age_dt=24 is 2.0 yr (included)
+
+    ms = _collect_mean_size(_two_school_state(), CutCfg())
+    # only the age_dt=24 (2 yr) school survives → mean length = 30
+    assert ms[0] == pytest.approx(30.0)
+    # a state with no qualifying school → species omitted
+    empty = _collect_mean_size(SchoolState.create(0), _Cfg())
+    assert empty == {}
