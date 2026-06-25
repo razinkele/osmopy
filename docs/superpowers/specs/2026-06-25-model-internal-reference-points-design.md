@@ -68,11 +68,13 @@ as a library + CLI; the page reads the resulting sidecar.
 - **Deriving Fmsy (single-peak is NOT guaranteed).** In a multispecies model, fishing species *i* down
   can release prey/predators → a non-monotone or multi-peaked yield-vs-F curve. `derive_reference_points`
   therefore: (a) finds the global yield max; (b) counts interior local maxima (gradient sign changes) —
-  if >1, flags `multi_peak`; (c) **parabolic-refines** the peak from the 3 bracketing points, clamping
-  the vertex to `[f_lo, f_hi]` and falling back to the grid argmax if the refine leaves the bracket;
+  if >1, flags `multi_peak`; (c) reports the **grid-argmax point** — Fmsy = that point's realized F,
+  `bmsy` = that point's SSB (sub-grid parabolic refinement + Bmsy interpolation **deferred to §9**:
+  with the realized-F basis, refining nominal F then reporting realized F is incoherent, and the
+  7-point grid makes it a minor precision nicety);
   (d) max-at-first-point (F=0, yield monotonically decreasing — over-fished at baseline) → no valid
   Fmsy + caveat; (e) max-at-last-point → `fmsy_at_boundary` + caveat (grid didn't bracket the peak).
-  `bmsy` = SSB at the Fmsy point (interpolated); `b0` = SSB at F=0; `blim = 0.2·b0` (require `b0 > 0`).
+  `b0` = SSB at F=0; `blim = 0.2·b0` (require `b0 > 0`).
 - **Parallelization (don't oversubscribe).** A single engine run already saturates cores via the
   `@njit(parallel=True)` mortality kernel. So each pool worker sets `numba.set_num_threads(1)`
   (per-run single-threaded) and the sweep parallelizes ACROSS runs on a **ProcessPool** sized to
@@ -161,7 +163,7 @@ Fmsy/Bmsy in realized-F / SSB-tonnes basis. Distinct from the user sidecar; neve
 
 ## 8. Testing
 
-- `derive_reference_points` (pure, fast): synthetic single-peak curve → interior Fmsy (parabolic-refined,
+- `derive_reference_points` (pure, fast): synthetic single-peak curve → interior Fmsy (grid-argmax realized F,
   vertex clamped to bracket); monotone-increasing → `fmsy_at_boundary`; monotone-decreasing → no Fmsy +
   caveat; two-peak curve → `multi_peak`; B0/Blim from the F=0 point; B0≤0 → no Blim.
 - `_fishing_override` (the no-op trap): for a **fisheries-mode** config (build a tiny one with
@@ -186,6 +188,8 @@ Fmsy/Bmsy in realized-F / SSB-tonnes basis. Distinct from the user sidecar; neve
   per-species decomposition beyond the caveat path.
 - Climate/environment-conditioned reference points (Fmsy shifts with ecosystem state).
 - Auto-extending the grid on a boundary Fmsy (v1 warns; user re-runs wider).
+- **Sub-grid parabolic Fmsy refinement + Bmsy interpolation** (v1 reports the grid-argmax point's
+  realized F + SSB; incoherent with the realized-F basis and a minor precision gain on a 7-point grid).
 
 ## 10. Scientific basis & caveats
 

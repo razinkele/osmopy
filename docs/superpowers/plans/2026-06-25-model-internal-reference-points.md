@@ -114,13 +114,23 @@ def _fisheries_enabled(cfg: dict) -> bool:
     )
 
 
-def _species_to_fishery(cfg: dict, config_dir: Path) -> dict[str, int]:
-    """species_name.lower() -> fishery column index (first catchability column > 0)."""
+def _species_to_fishery(cfg: dict) -> dict[str, int]:
+    """species_name.lower() -> fishery column index (first catchability column > 0).
+
+    Resolve the catchability file the SAME way the engine does: the reader injects the config dir
+    under `_osmose.config.dir`, and the engine resolves the relative path via
+    osmose.engine.path_resolution.resolve_data_path (which also globs data/*/). Verify the exact
+    resolve_data_path signature during implementation.
+    """
+    from osmose.engine.path_resolution import resolve_data_path
+
     catch_rel = cfg.get("fisheries.catchability.file")
-    catch_path = (config_dir / catch_rel) if catch_rel else None
-    if catch_path is None or not Path(catch_path).exists():
-        # fall back: resolve like the engine (cfg dir of the catchability key)
-        raise FileNotFoundError(f"catchability file not found: {catch_rel}")
+    if not catch_rel:
+        raise FileNotFoundError("fisheries.catchability.file not set")
+    config_dir = cfg.get("_osmose.config.dir", "")
+    catch_path = resolve_data_path(catch_rel, config_dir=config_dir)  # -> Path | None
+    if catch_path is None:
+        raise FileNotFoundError(f"catchability file not resolvable: {catch_rel!r}")
     df = pd.read_csv(catch_path, index_col=0)
     out: dict[str, int] = {}
     for r in range(len(df)):
@@ -140,8 +150,7 @@ def fishing_override(base_config: dict, config: EngineConfig, species_idx: int) 
     """
     sp_name = config.species_names[species_idx].strip().lower()
     if _fisheries_enabled(base_config):
-        config_dir = Path(base_config["__config_dir__"]) if "__config_dir__" in base_config else Path(".")
-        s2f = _species_to_fishery(base_config, config_dir)
+        s2f = _species_to_fishery(base_config)
         fsh = s2f.get(sp_name)
         if fsh is None:
             raise ValueError(f"species {sp_name!r} maps to no fishery")
@@ -154,7 +163,7 @@ def fishing_override(base_config: dict, config: EngineConfig, species_idx: int) 
     return key, float(config.fishing_rate[species_idx])
 ```
 
-Resolve the config dir: the runner passes `base_config["__config_dir__"]` (set by the CLI from the config path's parent). If the catchability path is absolute or the key already resolves, handle both. Verify `fisheries.catchability.file`'s real value + resolution against a bundled config during implementation; adapt the path join if the engine resolves it differently (`osmose/engine/config.py:_require_file`).
+The config dir comes from `_osmose.config.dir` (injected by `OsmoseConfigReader`), and the file is resolved by the engine's own `resolve_data_path` (which globs `data/*/` as a fallback — verified: this is why `EngineConfig.from_dict(raw)` itself resolves the file). Confirm `resolve_data_path`'s signature (`osmose/engine/path_resolution.py`) and `fisheries.catchability.file`'s value against a bundled config during implementation.
 
 - [ ] **Step 4: Run test — verify it passes**
 
@@ -355,18 +364,44 @@ def _tiny_fished_legacy_cfg() -> dict[str, str]:
     return raw
 
 
+@pytest.mark.slow
 def test_sweep_end_to_end_tiny_legacy():
     refs = compute_model_reference_points(
         _tiny_fished_legacy_cfg(), grid=np.array([0.0, 0.4, 0.8, 1.2]),
         n_years=6, replicates=1, window_years=2, max_workers=2)
     rp = refs["Fish"]
-    # the F=0 run must have the largest SSB (unfished), so b0 > the SSB at higher F
-    assert rp.b0 is not None and rp.b0 > 0
-    # yield is non-zero at some fished F (the yield reader + forced output worked)
-    assert any(p.yield_eq > 0 for p in rp.curve) if hasattr(rp, "curve") else True
+    assert rp.b0 is not None and rp.b0 > 0  # F=0 has the largest (unfished) SSB
+    assert any(p.yield_eq > 0 for p in rp.curve)  # yield reader + forced output worked
+
+
+def test_sweep_assembles_curves_stubbed(monkeypatch):
+    """Fast default-suite coverage: stub the engine so no real run happens; assert the runner
+    forces the SSB flag, applies fishing_override, and assembles a curve."""
+    import osmose.validation.fmsy_sweep as sweep
+    seen_cfgs = []
+
+    class _FakeRes:
+        def yield_biomass(self):
+            return pd.DataFrame({"Time": [0.0, 1.0], "Fish": [5.0, 5.0]})
+        def ssb(self):
+            return pd.DataFrame({"Time": [0.0, 1.0], "Fish": [100.0, 100.0]})
+        def mortality(self, sp):
+            return pd.DataFrame({"Time": [0.0, 1.0], "Fishing": [0.3, 0.3], "species": [sp, sp]})
+
+    def _fake_run(self, cfg, seed=0, **kw):
+        seen_cfgs.append(cfg)
+        return _FakeRes()
+
+    monkeypatch.setattr(sweep.PythonEngine, "run_in_memory", _fake_run)
+    refs = compute_model_reference_points(
+        _tiny_fished_legacy_cfg(), grid=np.array([0.0, 0.5]), n_years=4,
+        replicates=1, window_years=1, max_workers=1)
+    assert "Fish" in refs
+    assert all(c.get("output.ssb.enabled") == "true" for c in seen_cfgs)  # forced output
+    assert len(refs["Fish"].curve) == 2  # one SweepPoint per grid F
 ```
 
-(If running the real engine in the unit test is too slow/heavy for CI, mark it `@pytest.mark.slow` and additionally add a `monkeypatch`-based test that stubs `PythonEngine.run_in_memory` to return canned `yield_biomass`/`ssb`/`mortality` frames and asserts the sweep assembles curves + forces the output flags + applies `fishing_override`. Keep at least one stubbed fast test in the default suite.)
+(The real-engine test is `slow`-marked — the default suite runs only the stubbed test; the full sweep is the offline CLI batch. If a ProcessPool makes `monkeypatch` ineffective across processes, pass `max_workers=1` so the stub runs in-process, as above.)
 
 - [ ] **Step 2: Run test — verify it fails**
 
@@ -405,23 +440,22 @@ def equilibrium_mean(df, sp, window_years):
 
 
 def realized_exploited_f(results, sp, window_years):
-    """Realized annual exploited-stage F from the in-memory mortalityRate (matches the page basis)."""
-    from osmose.validation.stock_status import _EXPLOITABLE
+    """Realized annual fishing mortality F per absolute year, mean over the trailing window.
+
+    IMPORTANT: the IN-MEMORY `results.mortality(sp)` is a FLAT frame (columns Time, Predation,
+    Starvation, Additional, Fishing, Out, Foraging, Discards, Aging, species) — NOT the
+    ('cause','stage') MultiIndex of the on-disk CSV that stock_status.py reads. So read the flat
+    'Fishing' column (the per-saved-step fishing mortality for this species) and sum per year.
+    """
     try:
         df = results.mortality(sp)
     except (FileNotFoundError, KeyError, ValueError, TypeError):
         return 0.0
-    time = df.iloc[:, 0]
-    per_stage = {
-        s: fis.annual_by_year(df[("F", s)].to_numpy(), time.to_numpy(), how="sum")
-        for s in _EXPLOITABLE if ("F", s) in df.columns
-    }
-    fished = {s: d for s, d in per_stage.items() if sum(d.values()) > 0}
-    if not fished:
+    if "Fishing" not in df.columns or "Time" not in df.columns:
         return 0.0
-    stage = max(fished, key=lambda s: sum(fished[s].values()))
-    years = sorted(fished[stage])[-window_years:]
-    return float(np.mean([fished[stage][y] for y in years])) if years else 0.0
+    by_year = fis.annual_by_year(df["Fishing"].to_numpy(), df["Time"].to_numpy(), how="sum")
+    years = sorted(by_year)[-window_years:]
+    return float(np.mean([by_year[y] for y in years])) if years else 0.0
 
 
 def _run_one(args):
@@ -457,11 +491,14 @@ def run_yield_f_sweep(base_config, config, species_list, *, grid, n_years, repli
             for r in range(replicates):
                 tasks.append((base, key, float(f_val), seed0 + r, sp_name, window_years))
                 meta.append((sp_name, float(f_val)))
-    results = [None] * len(tasks)
     workers = max_workers or os.cpu_count() or 1
-    with ProcessPoolExecutor(max_workers=workers) as ex:
-        for i, out in enumerate(ex.map(_run_one, tasks)):
-            results[i] = out
+    if workers <= 1:
+        results = [_run_one(t) for t in tasks]  # serial, in-process (testable; no pool overhead)
+    else:
+        results = [None] * len(tasks)
+        with ProcessPoolExecutor(max_workers=workers) as ex:
+            for i, out in enumerate(ex.map(_run_one, tasks)):
+                results[i] = out
     # group by (species, f) → mean over replicates
     curves: dict[str, dict[float, list]] = {}
     for (sp_name, f_val), (fv, fr, y, b, nc) in zip(meta, results):
@@ -483,8 +520,8 @@ def compute_model_reference_points(base_config, *, grid=None, n_years=None, repl
                                    window_years=10, max_workers=None):
     config = EngineConfig.from_dict(dict(base_config))
     grid = _DEFAULT_GRID if grid is None else np.asarray(grid, dtype=float)
-    n_years = max(config.n_years if hasattr(config, "n_years") else int(base_config.get(
-        "simulation.time.nyear", "30")), 30) if n_years is None else n_years
+    # EngineConfig's field is n_year (singular), not n_years.
+    n_years = max(config.n_year, 30) if n_years is None else n_years
     species_list = list(enumerate(config.species_names))
     curves = run_yield_f_sweep(base_config, config, species_list, grid=grid, n_years=n_years,
                                replicates=replicates, window_years=window_years,
@@ -584,8 +621,7 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
 
     cfg_path = Path(a.config)
-    base = dict(OsmoseConfigReader().read(str(cfg_path)))
-    base["__config_dir__"] = str(cfg_path.parent)
+    base = dict(OsmoseConfigReader().read(str(cfg_path)))  # injects _osmose.config.dir
     grid = np.asarray(a.grid, dtype=float) if a.grid else None
     n_grid = len(grid) if grid is not None else 7
     from osmose.engine.config import EngineConfig
@@ -683,23 +719,31 @@ Expected: FAIL.
         return "Bmsy [model]" if self.b_ref_kind == "bmsy_model" else "Bmsy [user]"
 ```
 
-(c) in `load_reference_points`, after the ICES auto-fill and BEFORE the user-file merge, read the model sidecar and apply it (model overrides ICES; the subsequent user merge overrides model):
+(c) read the model sidecar ONCE before the existing per-species loop:
 
 ```python
     model_path = ref_dir / "fisheries_model_reference_points.json"
     model = json.loads(model_path.read_text()) if model_path.exists() else {}
-    for sp in species_list:
-        m = model.get(sp, {})
-        if _float(m.get("fmsy")) is not None:
-            rp = refs[sp]
-            rp.fmsy = _float(m["fmsy"])
-            rp.source = "model" if rp.fmsy_stock is None else "mixed"
-        if _float(m.get("bmsy")) is not None:
-            refs[sp].bmsy = _float(m["bmsy"])
-            refs[sp].b_ref_kind = "bmsy_model"
 ```
 
-Then the existing user-file loop (which sets `bmsy` + `b_ref_kind="bmsy_user"`) runs AFTER, so a user `bmsy` overrides the model one. Verify the exact ordering in the current `load_reference_points` and place the model block so precedence is user > model > ICES.
+then INTERLEAVE the model fill INSIDE the existing per-species loop — AFTER the Layer-1 ICES
+`_autofill_fmsy(...)` call (≈ fisheries_reference.py:192) and BEFORE the Layer-2 user-override block
+(≈ :195-205), so precedence is **ICES → model → user** (user last = user wins). Use the module's
+real coercion helper `_to_float` (NOT `_float`):
+
+```python
+        m = model.get(sp, {})
+        if _to_float(m.get("fmsy")) is not None:
+            rp.fmsy = _to_float(m["fmsy"])
+            rp.source = "model" if rp.fmsy_stock is None else "model+ices"
+        if _to_float(m.get("bmsy")) is not None:
+            rp.bmsy = _to_float(m["bmsy"])
+            rp.b_ref_kind = "bmsy_model"
+```
+
+The user-override block (which sets `bmsy` + `b_ref_kind="bmsy_user"`) runs after, so a user `bmsy`
+beats the model one. `source` always contains `"model"` when a model Fmsy is applied (so the Task-5
+test's `"model" in source` holds even when ICES had also filled it).
 
 - [ ] **Step 4: Run test — verify it passes**
 
@@ -760,7 +804,7 @@ Expected: PASS + clean import.
 
 Run: `PYTHONPATH=. .venv/bin/python -m pytest tests/test_fmsy_sweep.py tests/test_fisheries_reference.py tests/test_ui_fisheries.py tests/test_validation_stock_status.py tests/test_engine_parity.py -q`
 Expected: all pass (parity untouched).
-Run: `.venv/bin/ruff check osmose/ ui/ scripts/ tests/ && .venv/bin/ruff format --check osmose/validation/fmsy_sweep.py scripts/compute_model_reference_points.py`
+Run (scoped to the touched files — `scripts/spikes/` carries pre-existing lint debt outside this plan): `.venv/bin/ruff check osmose/validation/fmsy_sweep.py osmose/validation/fisheries_reference.py scripts/compute_model_reference_points.py ui/pages/fisheries.py tests/test_fmsy_sweep.py tests/test_fisheries_reference.py tests/test_ui_fisheries.py && .venv/bin/ruff format --check osmose/validation/fmsy_sweep.py scripts/compute_model_reference_points.py`
 Expected: clean.
 ```bash
 git add ui/pages/fisheries.py tests/test_ui_fisheries.py
