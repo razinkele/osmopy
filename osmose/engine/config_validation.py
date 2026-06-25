@@ -206,6 +206,7 @@ _SUPPLEMENTARY_ALLOWLIST: frozenset[str] = frozenset(
         "output.spatial.size.enabled",
         "output.spatial.yield.abundance.enabled",
         "output.ssb.enabled",
+        "output.ssb.netcdf.enabled",
         "output.start.year",
         "output.tl.catch.enabled",
         "output.tl.enabled",

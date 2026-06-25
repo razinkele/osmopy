@@ -919,6 +919,8 @@ def _parse_output_flags(cfg: dict[str, str], n_sp: int, n_bkg: int) -> dict[str,
         "output_mean_size": _enabled(cfg, "output.size.enabled"),
         "output_yield_abundance_netcdf": _enabled(cfg, "output.yield.abundance.netcdf.enabled"),
         "output_mean_size_netcdf": _enabled(cfg, "output.size.netcdf.enabled"),
+        "output_ssb": _enabled(cfg, "output.ssb.enabled"),
+        "output_ssb_netcdf": _enabled(cfg, "output.ssb.netcdf.enabled"),
         # Five new keys
         "output_biomass_byage_netcdf": _enabled(cfg, "output.biomass.byage.netcdf.enabled"),
         "output_abundance_byage_netcdf": _enabled(cfg, "output.abundance.byage.netcdf.enabled"),
@@ -1445,6 +1447,8 @@ class EngineConfig:
     output_mean_size: bool = False
     output_yield_abundance_netcdf: bool = False
     output_mean_size_netcdf: bool = False
+    output_ssb: bool = False
+    output_ssb_netcdf: bool = False
     output_size_min: float = 0.0
     output_size_max: float = 205.0
     output_size_incr: float = 10.0
@@ -2193,6 +2197,8 @@ class EngineConfig:
             output_mean_size=_output["output_mean_size"],
             output_yield_abundance_netcdf=_output["output_yield_abundance_netcdf"],
             output_mean_size_netcdf=_output["output_mean_size_netcdf"],
+            output_ssb=_output["output_ssb"],
+            output_ssb_netcdf=_output["output_ssb_netcdf"],
             output_size_min=_output["output_size_min"],
             output_size_max=_output["output_size_max"],
             output_size_incr=_output["output_size_incr"],
