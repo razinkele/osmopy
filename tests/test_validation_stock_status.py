@@ -1,14 +1,8 @@
-import numpy as np
-import pandas as pd
-import pytest
-
 from osmose.validation import fisheries as fis
-from osmose.validation import stock_status as ss
-from osmose.validation.fisheries_reference import ReferencePoint
 
-
-# NOTE: imports at top per brief Step 1 (stock_status + ReferencePoint
-# are used by later tasks; kept here to avoid E402)
+# NOTE: Task 5 will add `from osmose.validation import stock_status as ss` and
+# `from osmose.validation.fisheries_reference import ReferencePoint` HERE (at the
+# top, with these imports) when it appends its tests — do not import them mid-file.
 
 
 def test_annual_by_year_sum_and_mean():
