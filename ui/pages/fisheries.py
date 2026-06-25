@@ -34,6 +34,13 @@ _DISCLAIMER = (
     "No uncertainty or retrospective pattern analysis is performed."
 )
 
+_SOURCE_NOTE = (
+    "Reference points may be model-internal — run "
+    "`scripts/compute_model_reference_points.py --config <cfg>` to (re)generate; "
+    "ICES-auto-filled; or user-entered. "
+    "Precedence: user > model > ICES."
+)
+
 
 # ---------------------------------------------------------------------------
 # Pure view-assembly helper (unit-tested; no Shiny dependencies)
@@ -301,12 +308,22 @@ def fisheries_server(input, output, session, state: AppState):
             except Exception as e:  # noqa: BLE001
                 _log.warning("SSB scale-hint unavailable: %s", e)
 
+        # Collect reference points to show their source in the table
+        with reactive.isolate():
+            _rp_dir = Path("data") / ecosystem_of(config_dir) / "reference"
+        try:
+            _refs, _ = load_reference_points(_rp_dir, [st.species for st in statuses])
+        except Exception:  # noqa: BLE001
+            _refs = {}
+
         rows = []
         for st in statuses:
             sid = st.species.replace(".", "_")
             bmsy_id = f"bmsy_{sid}"
             fmsy_id = f"fmsy_{sid}"
             ssb_hint = ssb_means.get(st.species, "—")
+            rp = _refs.get(st.species)
+            source_label = rp.source if rp is not None else "none"
             rows.append(
                 ui.tags.tr(
                     ui.tags.td(ui.tags.strong(st.species)),
@@ -319,11 +336,17 @@ def fisheries_server(input, output, session, state: AppState):
                             class_="text-muted",
                         )
                     ),
+                    ui.tags.td(
+                        ui.tags.small(source_label, class_="text-muted font-monospace")
+                    ),
                 )
             )
 
         eco = ecosystem_of(config_dir)
         return ui.div(
+            ui.p(
+                ui.tags.small(ui.markdown(_SOURCE_NOTE), class_="text-muted"),
+            ),
             ui.tags.table(
                 ui.tags.thead(
                     ui.tags.tr(
@@ -332,6 +355,7 @@ def fisheries_server(input, output, session, state: AppState):
                         ui.tags.th("Bmsy (t)"),
                         ui.tags.th("Fmsy (yr⁻¹)"),
                         ui.tags.th("Status"),
+                        ui.tags.th("Source"),
                     )
                 ),
                 ui.tags.tbody(*rows),
