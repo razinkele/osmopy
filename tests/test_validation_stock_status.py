@@ -28,7 +28,15 @@ class _Cfg:
 
 
 class _FakeResults:
-    """Minimal results stub: ssb() wide-form (Time + species col)."""
+    """Minimal results stub: ssb() wide-form (Time + species col).
+
+    Carries production-matching ``output_dir`` and ``prefix`` so that
+    ``_exploited_f_by_year`` reaches the file-read path (and fails on the
+    None/missing path) rather than on a missing attribute.
+    """
+
+    output_dir = None  # no real run → mortalityRate path → TypeError → graceful WARN
+    prefix = "run"
 
     def __init__(self, ssb_rows, time=(0.0, 1.0)):
         self._ssb = list(ssb_rows)

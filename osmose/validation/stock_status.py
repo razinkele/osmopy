@@ -40,7 +40,7 @@ def _exploited_f_by_year(results, species: str, caveats: list[str]) -> dict[int,
 
     try:
         df = read_mortality(_mortality_path(results.output_dir, results.prefix, species))
-    except (FileNotFoundError, KeyError, ValueError, AttributeError) as e:
+    except (FileNotFoundError, KeyError, ValueError, TypeError) as e:
         print(f"WARN: no mortalityRate for {species!r}: {e}", file=sys.stderr)
         return None
     time = df.iloc[:, 0]  # first column = Time (fractional sim-year)
