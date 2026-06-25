@@ -1,5 +1,7 @@
 """Tests for osmose.validation.fmsy_sweep — mode detection + species->fishery map."""
 
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -195,3 +197,30 @@ def test_sweep_assembles_curves_stubbed(monkeypatch):
     assert "Fish" in refs
     assert all(c.get("output.ssb.enabled") == "true" for c in seen_cfgs)  # forced output
     assert len(refs["Fish"].curve) == 2  # one SweepPoint per grid F
+
+
+# ---------------------------------------------------------------------------
+# Task 4: CLI + sidecar tests
+# ---------------------------------------------------------------------------
+
+
+def test_write_model_sidecar(tmp_path):
+    from osmose.validation.fmsy_sweep import ModelReferencePoint
+    from scripts.compute_model_reference_points import write_model_sidecar
+
+    refs = {
+        "cod": ModelReferencePoint(
+            "cod",
+            fmsy=0.3,
+            bmsy=118000.0,
+            b0=410000.0,
+            blim=82000.0,
+            fmsy_at_boundary=False,
+            multi_peak=False,
+        )
+    }
+    out = tmp_path / "fisheries_model_reference_points.json"
+    write_model_sidecar(refs, out, meta={"grid": [0.0, 1.0], "replicates": 3})
+    d = json.loads(out.read_text())
+    assert d["cod"]["fmsy"] == 0.3 and d["cod"]["blim"] == 82000.0
+    assert d["_meta"]["replicates"] == 3
