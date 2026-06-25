@@ -33,6 +33,7 @@ from ui.pages.map_builder import map_builder_ui, map_builder_server
 from ui.pages.genetics import genetics_ui, genetics_server
 from ui.pages.economic import economic_ui, economic_server
 from ui.pages.diagnostics import diagnostics_ui, diagnostics_server
+from ui.pages.fisheries import fisheries_ui, fisheries_server
 
 from osmose.cleanup import cleanup_old_temp_dirs, register_cleanup
 
@@ -366,6 +367,7 @@ app_ui = ui.page_fillable(
         _nav_section("Execute"),
         ui.nav_panel("Run", run_ui(), value="run"),
         ui.nav_panel("Results", results_ui(), value="results"),
+        ui.nav_panel("Fisheries", fisheries_ui(), value="fisheries"),
         ui.nav_panel("Spatial Results", spatial_results_ui(), value="spatial_results"),
         ui.nav_panel(
             ui.span("Diagnostics", class_="osm-engine-gated osm-disabled"),
@@ -654,6 +656,7 @@ def server(input, output, session):
     movement_server(input, output, session, state)
     run_server(input, output, session, state)
     results_server(input, output, session, state)
+    fisheries_server(input, output, session, state)
     spatial_results_server(input, output, session, state)
     calibration_server(input, output, session, state)
     sensitivity_explorer_server(input, output, session, state)
