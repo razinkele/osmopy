@@ -863,3 +863,36 @@ class TestKeyCaseMapRoundTrip:
                 found_original_case = True
                 break
         assert found_original_case, "Writer should use original case from key_case_map"
+
+
+class TestCrossSpeciesDistrib:
+    """Java writes 2D distribution outputs cross-species — one file holding
+    (Time, <bin>, <species columns>) named {metric}DistribBy{X} — whereas the
+    in-memory engine + the reader methods use the per-species {metric}By{X}.
+    The disk reader must fall back to the Java spelling and reshape per-species.
+    """
+
+    def _write_distrib(self, d):
+        (d / "osm_abundanceDistribBySize_Simu0.csv").write_text(
+            '"Distribution of fish abundance by Size class"\n'
+            '"Time","Size","Anchovy","Sardine"\n'
+            "0.5,0.0,100,50\n"
+            "0.5,10.0,80,40\n"
+            "1.5,0.0,90,45\n"
+            "1.5,10.0,70,35\n"
+        )
+
+    def test_reshapes_java_cross_species_per_species(self, tmp_path):
+        self._write_distrib(tmp_path)
+        df = OsmoseResults(tmp_path).abundance_by_size("Anchovy")
+        assert list(df.columns) == ["time", "species", "bin", "value"]
+        assert set(df["species"].unique()) == {"Anchovy"}
+        assert {float(b) for b in df["bin"]} == {0.0, 10.0}
+        row = df[(df["time"] == 0.5) & (df["bin"].astype(float) == 0.0)]
+        assert float(row["value"].iloc[0]) == 100.0
+
+    def test_all_species_when_unfiltered(self, tmp_path):
+        self._write_distrib(tmp_path)
+        df = OsmoseResults(tmp_path).abundance_by_size()
+        assert set(df["species"].unique()) == {"Anchovy", "Sardine"}
+        assert len(df) == 8  # 2 time x 2 size x 2 species

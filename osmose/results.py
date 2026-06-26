@@ -630,6 +630,19 @@ class OsmoseResults:
                 )
             return _melt_wide_to_long(self._csv_cache[output_type], species)
 
+        # The Java engine writes 2D distribution outputs cross-species as
+        # "{metric}DistribBy{X}" — one file holding (Time, <bin>, <species columns>) —
+        # rather than the per-species "{metric}By{X}" the in-memory engine + these
+        # readers use. When the per-species name isn't on disk, read + reshape the
+        # Java cross-species file so callers get the same (time, species, bin, value).
+        if "By" in output_type and not _find_output_files(
+            self.output_dir, f"{self.prefix}_{output_type}*.csv"
+        ):
+            alt = output_type.replace("By", "DistribBy", 1)
+            alt_files = _find_output_files(self.output_dir, f"{self.prefix}_{alt}*.csv")
+            if alt_files:
+                return self._read_cross_species_distrib(alt_files[0], species)
+
         pattern = f"{self.prefix}_{output_type}*.csv"
         frames = []
         for filepath in _find_output_files(self.output_dir, pattern):
@@ -666,6 +679,31 @@ class OsmoseResults:
         if species:
             combined = combined[combined["species"] == species]  # type: ignore[assignment]
         return combined  # type: ignore[return-value]
+
+    def _read_cross_species_distrib(self, filepath: Path, species: str | None) -> pd.DataFrame:
+        """Reshape a Java cross-species distribution file to per-species long format.
+
+        Java distribution outputs (abundanceDistribBySize, biomassDistribByAge, …) hold all
+        species in one file: a leading Time column, a bin column (Size/Age/TL), then one column
+        per species. Melt to (time, species, bin, value), matching the per-species readers'
+        contract so callers don't care which engine produced the output.
+        """
+        df = _read_output_csv(filepath)
+        if df.shape[1] < 3:
+            return pd.DataFrame(columns=["time", "species", "bin", "value"])
+        time_col, bin_col = df.columns[0], df.columns[1]
+        species_cols = list(df.columns[2:])
+        melted = df.melt(
+            id_vars=[time_col, bin_col],
+            value_vars=species_cols,
+            var_name="species",
+            value_name="value",
+        )
+        melted = melted.rename(columns={time_col: "time", bin_col: "bin"})
+        melted = melted[["time", "species", "bin", "value"]]
+        if species:
+            melted = melted[melted["species"] == species]
+        return melted
 
     def _read_species_output(self, output_type: str, species: str | None) -> pd.DataFrame:
         """Read CSV output files for a given output type.
