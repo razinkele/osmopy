@@ -44,9 +44,9 @@ apptainer exec --contain -B $RES:/results -B $PWD/data:/cfg:ro osmose.sif \
 apptainer exec --contain -B $RES:/results osmose.sif \
   python /app/scripts/calibrate_baltic.py --phase 1 --maxiter 200
 
-# Java reference engine:
+# Java reference engine (the image sets $OSMOSE_JAR; osmose run falls back to it — no --jar needed):
 apptainer run --contain -B $RES:/results osmose.sif \
-  run /app/data/examples/osm_all-parameters.csv --jar $OSMOSE_JAR --output /results/java
+  run /app/data/examples/osm_all-parameters.csv --output /results/java
 ```
 
 ## SLURM (job-array fan-out of independent runs)
@@ -57,15 +57,16 @@ would need a new `--species` flag — not yet supported.)
 
 ```bash
 #!/bin/bash
-#SBATCH --array=0-3
+#SBATCH --array=0-2
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=32G
 #SBATCH --time=08:00:00
-CONFIGS=(baltic eec_full minimal examples)
-ECO=${CONFIGS[$SLURM_ARRAY_TASK_ID]}
+CONFIGS=(baltic/baltic_all-parameters.csv eec_full/eec_all-parameters.csv minimal/osm_all-parameters.csv)
+CFG=${CONFIGS[$SLURM_ARRAY_TASK_ID]}
+ECO=$(dirname "$CFG")
 apptainer exec --contain -B /scratch/$USER/results:/results -B $PWD/data:/cfg:ro osmose.sif \
   python /app/scripts/compute_model_reference_points.py \
-  --config /cfg/$ECO/${ECO}_all-parameters.csv --workers $SLURM_CPUS_PER_TASK \
+  --config /cfg/$CFG --workers $SLURM_CPUS_PER_TASK \
   --out /results/${ECO}_rp.json
 ```
 
@@ -79,5 +80,6 @@ apptainer exec -B /tmp:/results osmose.sif python /app/scripts/compute_model_ref
 
 ## Notes
 - `data/` is bundled in the image (~14 MB) as a baseline; bind your own configs read-only to `/cfg`.
+- `OSMOSE_RESULTS_DIR` is pre-set to `/results` in the image; override with `--env OSMOSE_RESULTS_DIR=...` if you bind elsewhere.
 - The `.def` and the web `Dockerfile` share the apt/pip/Java steps — keep them in sync (a shared
   install script is a future refactor).
