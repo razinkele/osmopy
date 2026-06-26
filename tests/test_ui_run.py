@@ -109,3 +109,12 @@ def test_live_movement_wired_into_run_page():
     assert "live_view_expanded" in src
     assert "choose_live_layer" in src  # the layer chooser (dots/heatmap) the live map now uses
     assert "partial_update" in src
+
+
+def test_species_choices_from_config():
+    from ui.pages.run import _species_choices
+
+    cfg = {"simulation.nspecies": "2", "species.name.sp0": "Cod", "species.name.sp1": "Sprat"}
+    assert _species_choices(cfg) == {"__all__": "All species", "Cod": "Cod", "Sprat": "Sprat"}
+    # empty / missing config -> just the all-option
+    assert _species_choices({}) == {"__all__": "All species"}

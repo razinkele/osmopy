@@ -22,6 +22,7 @@ from osmose.config.validator import summarize_config_validation
 from osmose.engine import PythonEngine, SimulationCancelled
 from osmose.engine_capabilities import describe_engine
 from osmose.live_movement import (
+    STAGE_LABELS,
     format_progress_label,
     make_run_observer,
     make_step_observer,
@@ -41,6 +42,20 @@ from ui.styles import STYLE_CONSOLE
 _log = setup_logging("osmose.run")
 
 JAR_DIR = Path("osmose-java")
+
+
+def _species_choices(config: dict[str, str]) -> dict[str, str]:
+    """Live-movement species dropdown choices from a flat config dict (focal species)."""
+    choices = {"__all__": "All species"}
+    try:
+        n = int(float(config.get("simulation.nspecies", 0) or 0))
+    except (ValueError, TypeError):
+        n = 0
+    for i in range(n):
+        name = config.get(f"species.name.sp{i}")
+        if name:
+            choices[name] = name
+    return choices
 
 
 def parse_overrides(text: str) -> dict[str, str]:
@@ -251,14 +266,27 @@ def run_ui():
                 "Live Movement (Python engine) — expand to stream during a run",
                 "run_live_movement",
             ),
-            ui.input_radio_buttons(
-                "live_movement_mode",
-                "Mode",
-                {"heatmap": "Heatmap", "dots": "Dots"},
-                selected="heatmap",
-                inline=True,
+            ui.layout_columns(
+                ui.input_radio_buttons(
+                    "live_movement_mode",
+                    "Mode",
+                    {"heatmap": "Heatmap", "dots": "Dots"},
+                    selected="heatmap",
+                    inline=True,
+                ),
+                ui.input_select(
+                    "live_movement_species", "Species", choices={"__all__": "All species"}
+                ),
+                ui.input_select(
+                    "live_movement_stage",
+                    "Stage",
+                    choices={
+                        "__all__": "All stages",
+                        **{str(k): v for k, v in STAGE_LABELS.items()},
+                    },
+                ),
+                col_widths=[3, 5, 4],
             ),
-            ui.input_select("live_movement_species", "Species", choices={"__all__": "All species"}),
             ui.output_ui("live_movement_status"),
             live_map.ui(height="420px"),
         ),
@@ -584,6 +612,12 @@ def run_server(input, output, session, state):
                 raise  # genuine bug during a live session — surface it
             _log.debug("species populate skipped (session ending)", exc_info=True)
 
+    @reactive.effect
+    def _populate_species_from_config():
+        if not _session_alive[0]:
+            return
+        ui.update_select("live_movement_species", choices=_species_choices(state.config.get()))
+
     @render.ui
     def live_movement_status():
         status_v = _live_status_val.get()
@@ -591,7 +625,11 @@ def run_server(input, output, session, state):
         if not status_v:
             if state.engine_mode.get() != "python":
                 return ui.p("Live view available for the Python engine.", class_="text-muted")
-            return ui.p("Expand this card before running to stream movement.", class_="text-muted")
+            return ui.p(
+                "Expand this card and run the model to stream movement, "
+                "then filter by species / stage.",
+                class_="text-muted",
+            )
         prog = f"step {snap.step + 1}/{snap.n_steps}" if snap is not None else ""
         extra = ""
         if snap is not None and snap.truncated:
@@ -614,13 +652,15 @@ def run_server(input, output, session, state):
             mode = input.live_movement_mode()
             sel = input.live_movement_species()
             species_filter = None if sel in ("__all__", None) else sel
+            stage_sel = input.live_movement_stage()
+            stage_filter = None if stage_sel in ("__all__", None) else int(stage_sel)
             style = CARTO_DARK if get_theme_mode(input) == "dark" else CARTO_POSITRON
             if style != _live_map.style:
                 _live_map.style = style
                 await _live_map.set_style(session, style)
             if snap is None:
                 return
-            layer, note = choose_live_layer(snap, species_filter, mode)
+            layer, note = choose_live_layer(snap, species_filter, mode, stage_filter=stage_filter)
             _live_note.set(note)
             if not _live_framed[0]:
                 await _live_map.update(
