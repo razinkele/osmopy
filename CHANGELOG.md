@@ -4,6 +4,128 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.1.0] - 2026-06-26
+
+### Features
+
+- **hpc:** Apptainer definition (Python+Java+numba, JAR + baked numba cache, read-only-friendly) (87c3e34)
+- **cli:** osmose run --jar defaults to $OSMOSE_JAR (container-friendly) (bb1493d)
+- **ui:** show reference-point source (model/ICES/user) on the Fisheries page (95d652a)
+- **fmsy:** load model reference sidecar (precedence user>model>ICES; conditional label) (716d2db)
+- **fmsy:** CLI to compute + write the model reference-point sidecar (d69ae70)
+- **fmsy:** yield-vs-F sweep runner + compute_model_reference_points (ProcessPool, realized-F) (ff336e3)
+- **fmsy:** derive_reference_points (peak/boundary/multi-peak/B0/Blim, pure) (ae3b680)
+- **fmsy:** fishing-override resolver (mode detection + species->fishery map) (3bf5c0c)
+- **ui:** indicative Fisheries stock-status page (Kobe + F/Fmsy + F/M bars) (e536b03)
+- **plotting:** indicative Kobe + B/Bmsy & F/Fmsy ratio timeseries (b93c282)
+- **validation:** indicative stock-status computation (SSB/Bmsy, exploited-stage F/Fmsy) (12d2b93)
+- add fisheries_reference.py — per-species reference-point resolver (Task 4) (908e6e2)
+- **fisheries:** annual_by_year aggregator (cadence-correct, absolute-year) (deb4df3)
+- **engine:** SSB CSV/in-memory/NetCDF writers + results.ssb reader (4b3086b)
+- **engine:** SSB collector + config flags + StepOutput (parity-safe output) (a9fe0ec)
+- **output:** mark yieldN/meanSize produced; regression sweep green (9d76477)
+- **output:** yieldN/meanSize NetCDF writer + run-path wiring + source=netcdf reader (1aaf672)
+- **output:** yieldN/meanSize CSV writers + in-memory results wiring (82fa38a)
+- **output:** yieldN/meanSize collectors + StepOutput fields + accumulation (175f00d)
+- **output:** config flags + schema key for yieldN/meanSize (3d00653)
+
+### Bug Fixes
+
+- **hpc:** harden build-provided-JAR copy under set -eu (store glob result in a var) (cb9a531)
+- **calibrate:** honor OSMOSE_RESULTS_DIR (container-friendly results dir) (cf85484)
+- **fmsy-cli:** --grid nargs=+ (reject empty), honest n_years estimate, top-level import (0180e21)
+- **ui:** wire ices_snapshot_dir, drop dead _refs, sanitize input IDs, log SSB-hint errors, add Results links (4a0e7d0)
+- **validation:** narrow _exploited_f_by_year catch (drop AttributeError; stub carries output_dir) (07795aa)
+- **test:** Task 3 test self-contained — drop premature stock_status/ReferencePoint imports (407858d)
+- **engine:** gate egg predation on the released fraction (Numba + Python paths) (94f1bfb)
+- **engine:** apply fleet-effort on the pure-Python fishing fallback path (41337c9)
+- **calibration:** let _worker_eval propagate unexpected errors (no inf-swallow) (8cef769)
+- **engine:** suppress standard starvation on the Numba path for bioen (c273c8f)
+- **engine:** stop double-counting bioen starvation mortality (457ac55)
+
+### Performance
+
+- **engine:** vectorize movement method masks + bincount diet aggregation (c99097c)
+
+### CI/CD
+
+- **hpc:** build the Apptainer image with --fakeroot + smoke (CLI/engine/numba-cache/java/sweep) (be4f19f)
+
+### Documentation
+
+- **hpc:** fix SLURM config paths (real masters) + drop --jar under --contain (env default) (5e57de1)
+- **hpc:** Apptainer build + run guide (read-only rule, SLURM job array, smoke) (557e2b8)
+- implementation plan for OSMOSE HPC Apptainer container (3c9fae7)
+- revise HPC Apptainer spec per in-loop review (3 reviewers) (d058fa8)
+- spec for OSMOSE HPC Apptainer/Singularity container (82fb7b7)
+- **fmsy:** clarify _FORCE_OUTPUTS — only output.ssb.enabled gates in-memory; yield flag inert (6564063)
+- fix model-refpoints plan per apply-and-run workflow review (21 findings) (a1d6cf1)
+- implementation plan for model-internal fishery reference points (188a3b3)
+- revise model-refpoints spec per in-loop workflow review (19 findings, 5 critical) (e367ba7)
+- spec for model-internal fishery reference points (Fmsy/Bmsy/Blim sweep) (3488090)
+- fix fisheries plan per in-loop workflow review (9 findings) (8788990)
+- implementation plan for fisheries stock-status diagnostics (e5dc3f6)
+- revise fisheries spec per round-3 multi-angle review (22 findings) (b923bae)
+- reframe fisheries spec per deep literature review (indicative; B=user Bmsy; ICES Fmsy only) (d728c31)
+- revise fisheries stock-status spec per in-loop workflow review (77afc6e)
+- spec for fisheries stock-status diagnostics (Kobe / B-ref / F-Fmsy) (07b8f79)
+- split semicolon-joined test statements (ruff E702) in yieldN/meanSize plan (1cad736)
+- fix yieldN/meanSize plan per multi-angle workflow review (4b07d1e)
+- implementation plan for Python-engine yieldN + meanSize (CSV + NetCDF) (799c71a)
+- revise yieldN/meanSize spec per in-loop review (b56b0f5)
+- spec for Python-engine yieldN + meanSize outputs (CSV + NetCDF) (5d0bb80)
+- **perf:** fix RNG-spike plan per in-loop workflow review (e6f2bd8)
+- **perf:** implementation plan for Stage-0 RNG-reproduction spike (d2c7191)
+- **perf:** spec for Stage-0 RNG-reproduction feasibility spike (0270755)
+- **spike:** task-6 post-review fixes note (run_all defaults + boundary_probe hoist) (d65ef8c)
+- **spike:** update task-6 report with run_all results (1dba643)
+- **spike:** task-6 boundary-free bench report (cfd867b)
+- **spike:** task-4 C kernel build report (7812235)
+- **perf:** round-2 plan clarifications (non-blocking) (5f55b78)
+- **perf:** fix kernel-spike plan per in-loop review round 1 (6c7aeab)
+- **perf:** implementation plan for native-predation-kernel spike (7b93119)
+- **perf:** revise kernel-spike spec per in-loop review (2766c05)
+- **perf:** spec for native predation-kernel feasibility spike (83d65e6)
+- round-2 plan review (execution-ready) + fix egg-test size-ratio keys (7bcbe76)
+- rework remediation plan per 5-angle plan-review workflow (24 defects) (e44dfb6)
+- implementation plan for high-findings remediation (08f16b7)
+- resolve high-findings spec open questions (EEC/Java parity, keep Fix 2, fallback now) (6007478)
+- rework high-findings spec against the production (Numba) dispatch path (b76aa89)
+- design spec for deep-review high-findings remediation (f06190b)
+- **readme:** fix dots screenshot (was a heatmap) + clearer caption (b163fa6)
+- **readme:** add live-movement screenshots (heatmap + dots) from Baltic (90c2807)
+
+### Other
+
+- OSMOSE HPC Apptainer/Singularity container (ddc0d2c)
+- model-internal fishery reference points (Fmsy/Bmsy/Blim sweep) (c78c15d)
+- indicative fisheries stock-status diagnostics (ede0a77)
+- Python-engine yieldN + meanSize outputs (CSV + NetCDF) (af19fa0)
+- Merge Stage-0 RNG-reproduction feasibility spike (dbca0e1)
+- **rng:** orchestrator + RNG-reproduction feasibility artifact + verdict (a552a31)
+- **rng:** C-vs-Numba per-cell RNG-gen speed probe (3f42aff)
+- **rng:** bit-exact parity gate (C vs njit oracle across n x seed grid) (57081bf)
+- **rng:** C NumPy-legacy MT19937 (seed+permutation+shuffle) + cffi build (a9e9ae7)
+- **rng:** scaffold + njit cell-RNG oracle (mirrors mortality.py:1479-1497) (4b2c925)
+- Merge engine perf: vectorize movement masks + bincount diet aggregation (c415c19)
+- Merge native-predation-kernel feasibility spike (610f517)
+- **perf:** gitignore build artifacts + untrack SDD scratch (4a9dbb8)
+- **perf:** orchestrator + native-predation-kernel spike artifact + verdict (b1a8d90)
+- **perf:** boundary-free throughput bench + boundary-cost probes (4fb9d0d)
+- **perf:** C-vs-Numba parity gate (<=1e-12 op-order rounding) (a75b830)
+- **perf:** C leaf transcription + cffi build (portable & native) (eed83a6)
+- **perf:** leaf-arg reconstruction + p10/p50/p95 cell selection (7a374c5)
+- **perf:** capture cell-loop pre-state via monkeypatched parallel kernel (79c31c6)
+- **perf:** native-predation harness scaffold + provenance guards (67dfdff)
+- Merge fix/high-findings-remediation: deep-review high findings (668021f)
+
+### Tests
+
+- **engine:** recalibrate the two Baltic bands shifted by the egg-retention fix (f2e1834)
+- **tutorial:** xfail biomass-pyramid band shifted by the Java-validated egg-retention fix (a4a2a00)
+- **engine:** Java cross-check + EEC/BoB parity baselines for egg-retention fix (02b14b0)
+- **engine:** xfail type-III FR invariant flipped by the egg-retention equilibrium shift (9b0d9ba)
+
 ## [1.0.0] - 2026-06-22
 
 ### Features
@@ -415,6 +537,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ### Other
 
+- v1.0.0 (2849b96)
 - Merge feat/scenario-diff-polish: shared config-diff component + compare modal (3624c11)
 - record real run duration_sec across both engine paths (f77528d)
 - sweep osmose_wizard_/osmose_maps_/osmose_val_ temp dirs (e4b411c)
