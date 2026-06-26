@@ -6,7 +6,8 @@ confirm Java-4.4.1 agrees with the pure-Python engine *at least as well as* Java
 multi-replicate, distributional + equivalence comparison (NOT a single-seed run). Cross-engine streams
 diverge by construction (Python PCG64 vs Java MT19937), so the test is statistical:
 
-  - per species and per metric (biomass, yield, abundance), final-year mean over N varied-seed reps;
+  - per species and per metric (biomass, yield, abundance, and mean individual weight =
+    biomass/abundance as a size-structure proxy), final-year mean over N varied-seed reps;
   - work on log10 (these are ~ log-normal);
   - EQUIVALENCE (formal TOST, two one-sided t-tests vs +-Delta; Lakens & Delacre 2020);
   - DISTRIBUTION: two-sample KS p-value; variance ratio;
@@ -15,8 +16,9 @@ diverge by construction (Python PCG64 vs Java MT19937), so the test is statistic
   - COLLAPSE frequency per engine; 1-OoM only as a catastrophic tripwire;
   - precision: achieved 90% CI half-width per species = the minimum detectable difference at this N.
 
-Metrics deferred (need output-flag enablement + Java support, not in EEC's default output set):
-F (fishing mortality), mean trophic level, size-structure.
+Size-structure is covered via mean individual weight (biomass/abundance, derived from the two
+collected ensembles). Metrics still deferred (need output-flag enablement + Java support, not in
+EEC's default output set): F (fishing mortality), mean trophic level, full size spectra.
 
 Usage: PYTHONPATH=. .venv/bin/python scripts/cross_engine_parity_440.py --n 16 --years 10
 """
@@ -112,13 +114,13 @@ def ensemble(engine: str, years: int, n: int, spinup: int, tmp: Path):
     return out
 
 
-def _log(a):
-    return np.log10(np.clip(a, COLLAPSE, None))
+def _log(a, floor: float = COLLAPSE):
+    return np.log10(np.clip(a, floor, None))
 
 
-def tost(py, jv, delta: float):
+def tost(py, jv, delta: float, floor: float = COLLAPSE):
     """Formal TOST: returns (mean_log_diff, ci90_halfwidth, p_tost, equivalent, ks_p, var_ratio)."""
-    lp, lj = _log(py), _log(jv)
+    lp, lj = _log(py, floor), _log(jv, floor)
     n1, n2 = len(lp), len(lj)
     d = lp.mean() - lj.mean()
     se = np.sqrt(lp.var(ddof=1) / n1 + lj.var(ddof=1) / n2)
@@ -135,9 +137,9 @@ def tost(py, jv, delta: float):
     return d, ci, p_tost, p_tost < 0.05, ks_p, vr
 
 
-def mef_spearman(py_vec, jv_vec):
+def mef_spearman(py_vec, jv_vec, floor: float = COLLAPSE):
     """Community skill on the per-species log-gm vectors: MEF (Java=obs, Python=pred) + Spearman."""
-    obs, pred = _log(np.array(jv_vec)), _log(np.array(py_vec))
+    obs, pred = _log(np.array(jv_vec), floor), _log(np.array(py_vec), floor)
     ss_res = np.sum((obs - pred) ** 2)
     ss_tot = np.sum((obs - obs.mean()) ** 2)
     mef = 1 - ss_res / ss_tot if ss_tot > 0 else np.nan
@@ -169,17 +171,30 @@ def main() -> None:
         f"[run] done in {time.perf_counter() - t0:.0f}s  (delta={args.delta:.2f} log10 = {10**args.delta:.1f}x)\n"
     )
 
+    # Derive a size-structure metric: mean individual weight = biomass / abundance, paired per
+    # replicate (both come from the same run). Captures growth/larval-units shifts that biomass alone
+    # hides. floor 1e-9 t/ind (biomass/abundance are in tonnes/numbers).
+    for eng in (py, j441, j433):
+        eng["mean_weight"] = {
+            sp: eng["biomass"][sp] / np.clip(eng["abundance"][sp], 1e-9, None)
+            for sp in eng["biomass"]
+            if sp in eng["abundance"]
+        }
+    analysis_metrics = METRICS + ("mean_weight",)
+    floors = {"mean_weight": 1e-9}
+
     overall_fail = []
-    for m in METRICS:
+    for m in analysis_metrics:
+        floor = floors.get(m, COLLAPSE)
         sp_all = [s for s in py[m] if s in j441[m] and s in j433[m]]
         print(f"==================== METRIC: {m} ====================")
         hdr = f"{'species':<22}{'d(py-441)':>10}{'±CI90':>7}{'TOST_p':>8}{'equiv':>6}{'KS':>6}{'441≤433':>8}{'coll p/441/433':>16}"
         print(hdr)
         for sp in sp_all:
-            d1, ci1, p1, eq1, ks1, vr1 = tost(py[m][sp], j441[m][sp], args.delta)
-            d3, _, _, _, _, _ = tost(py[m][sp], j433[m][sp], args.delta)
+            d1, ci1, p1, eq1, ks1, vr1 = tost(py[m][sp], j441[m][sp], args.delta, floor)
+            d3, _, _, _, _, _ = tost(py[m][sp], j433[m][sp], args.delta, floor)
             no_worse = abs(d1) <= abs(d3) + args.delta
-            cp = lambda a: int(np.sum(np.asarray(a) < COLLAPSE))  # noqa: E731
+            cp = lambda a: int(np.sum(np.asarray(a) < floor))  # noqa: E731
             if not no_worse or abs(d1) >= 1.0:
                 overall_fail.append(f"{m}:{sp}")
             print(
@@ -187,12 +202,12 @@ def main() -> None:
                 f"{'Y' if no_worse else 'N':>8}{cp(py[m][sp]):>6}/{cp(j441[m][sp])}/{cp(j433[m][sp]):<7}"
             )
         # community skill on per-species geometric-mean vectors
-        v_py = [10 ** _log(py[m][s]).mean() for s in sp_all]
-        v441 = [10 ** _log(j441[m][s]).mean() for s in sp_all]
-        v433 = [10 ** _log(j433[m][s]).mean() for s in sp_all]
-        mef1, rho1 = mef_spearman(v_py, v441)
-        mef3, rho3 = mef_spearman(v_py, v433)
-        n_eq = sum(tost(py[m][s], j441[m][s], args.delta)[3] for s in sp_all)
+        v_py = [10 ** _log(py[m][s], floor).mean() for s in sp_all]
+        v441 = [10 ** _log(j441[m][s], floor).mean() for s in sp_all]
+        v433 = [10 ** _log(j433[m][s], floor).mean() for s in sp_all]
+        mef1, rho1 = mef_spearman(v_py, v441, floor)
+        mef3, rho3 = mef_spearman(v_py, v433, floor)
+        n_eq = sum(tost(py[m][s], j441[m][s], args.delta, floor)[3] for s in sp_all)
         print(
             f"  community: Py~441 MEF={mef1:.2f} Spearman={rho1:.2f} | Py~433 MEF={mef3:.2f} "
             f"Spearman={rho3:.2f} | TOST-equivalent {n_eq}/{len(sp_all)} species\n"

@@ -41,3 +41,26 @@ Community modelling efficiency (Python predicting each Java version's per-specie
   migration is inert for Baltic (default 4.3.3 write target; no file-forced resources) — covered by
   `test_non_resource_species_get_no_forcing_keys` + `test_reverse_to_4_3_3_does_not_add_forcing_keys`.
   Task 2.4 (Baltic round-trip) is moot without a cutover.
+
+## Update: 4th metric (size structure) + the dogfish/mackerel diagnosis
+
+Added **mean individual weight = biomass/abundance** as a size-structure proxy (derived from the two
+collected ensembles — no new outputs). Result (N=16): **14/14 species TOST-equivalent**, community
+MEF=0.98 / Spearman=0.98 for BOTH Java versions. GATE PASS on all 4 metrics.
+
+**The 2 strict-equivalence misses (lesserSpottedDogfish, mackerel) — diagnosed:**
+- Both have **inverted predator/prey size ratios** in the EEC config (`sizeRatio.min > max`:
+  dogfish 50>3, mackerel 100>2.5).
+- The **Python engine swaps** min↔max (config.py:1717 "Swapping size ratios" warning → a valid wide
+  prey window); **Java uses the raw values** → a different (effectively inverted) window. So the two
+  engines feed these predators different prey-size windows → a population-level biomass/abundance gap.
+- Empirically decisive for mackerel: swapping its ratio in the Java config swung Java mackerel **8×**
+  (33,540 → 4,077 t). dogfish is less ratio-sensitive (single-seed) — likely ratio + propagated prey
+  effects + high apex-predator variance.
+- **Confined to population, NOT growth:** the disagreement appears in biomass + abundance but the
+  species are **equivalent on mean weight** — Python has more individuals, each the same size.
+- **Pre-existing in BOTH 4.3.3 and 4.4.1** → NOT introduced by the jar swap; orthogonal to the swap
+  gate (which is relative — both versions carry it equally).
+- **Proper fix (separate work):** correct the EEC config so `min < max`, and/or align the two
+  engines' inverted-ratio handling. Not a one-line fix — single-seed tests show correcting the config
+  doesn't fully reconcile them, implying a residual size-window-semantics difference to chase down.
