@@ -48,19 +48,28 @@ Added **mean individual weight = biomass/abundance** as a size-structure proxy (
 collected ensembles — no new outputs). Result (N=16): **14/14 species TOST-equivalent**, community
 MEF=0.98 / Spearman=0.98 for BOTH Java versions. GATE PASS on all 4 metrics.
 
-**The 2 strict-equivalence misses (lesserSpottedDogfish, mackerel) — diagnosed:**
-- Both have **inverted predator/prey size ratios** in the EEC config (`sizeRatio.min > max`:
+**The 2 strict-equivalence misses (lesserSpottedDogfish, mackerel):**
+- Both have inverted predator/prey size ratios in the EEC config (`sizeRatio.min > max`:
   dogfish 50>3, mackerel 100>2.5).
-- The **Python engine swaps** min↔max (config.py:1717 "Swapping size ratios" warning → a valid wide
-  prey window); **Java uses the raw values** → a different (effectively inverted) window. So the two
-  engines feed these predators different prey-size windows → a population-level biomass/abundance gap.
-- Empirically decisive for mackerel: swapping its ratio in the Java config swung Java mackerel **8×**
-  (33,540 → 4,077 t). dogfish is less ratio-sensitive (single-seed) — likely ratio + propagated prey
-  effects + high apex-predator variance.
 - **Confined to population, NOT growth:** the disagreement appears in biomass + abundance but the
-  species are **equivalent on mean weight** — Python has more individuals, each the same size.
+  species are **equivalent on mean weight** — Python has ~3× more individuals, each the same size.
 - **Pre-existing in BOTH 4.3.3 and 4.4.1** → NOT introduced by the jar swap; orthogonal to the swap
   gate (which is relative — both versions carry it equally).
-- **Proper fix (separate work):** correct the EEC config so `min < max`, and/or align the two
-  engines' inverted-ratio handling. Not a one-line fix — single-seed tests show correcting the config
-  doesn't fully reconcile them, implying a residual size-window-semantics difference to chase down.
+
+**Size-ratio "inverted-handling" hypothesis — INVESTIGATED AND REFUTED (source-verified).** An
+earlier draft of this note blamed the gap on Python swapping inverted ratios while Java used them
+raw. Reading BOTH engines' source disproves that — the handling is **identical**:
+- **Java** (`PredationMortality.getAccessibility` + `init`): `preyMin = L/sizeRatioMin`,
+  `preyMax = L/sizeRatioMax`; `init` swaps when `max > min` → ends with `min ≥ max`.
+- **Python** (`osmose/engine/config.py:664` + `processes/predation.py:451-452`): `preyMin = L/r_max`,
+  `preyMax = L/r_min`; swaps when `min > max` → ends with `max ≥ min`.
+- These are exact **mirror images**: for any `(a,b)` both yield the window `[L/max(a,b), L/min(a,b)]`
+  (mackerel → `[0.01L, 0.4L]` in both). The "Swapping size ratios" warning is Python normalizing to
+  its own opposite convention — correct, not a bug. (The earlier single-seed "8× swing" test was
+  unreliable: it contradicted the N=16 ensemble on direction and likely hit a config key-case
+  artifact in a hand-edit.)
+- **Conclusion: there is no inverted-ratio bug to fix.** The dogfish/mackerel gap has a different,
+  unidentified cause — or it is ordinary cross-engine spread for two low-biomass, high-variance
+  species (they pass the relative gate and are size-structure-equivalent). Per systematic-debugging,
+  no fix is warranted without a confirmed root cause; a future investigation would look elsewhere
+  (predation accessibility matrix, recruitment, natural-mortality), NOT the size ratios.
