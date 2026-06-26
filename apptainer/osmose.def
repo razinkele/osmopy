@@ -25,7 +25,8 @@ From: python:3.12-slim
     # and verified (sha256sum osmose-4.3.3-jar-with-dependencies.jar) to harden supply-chain.
     # The JAR is currently unverified when downloaded from GitHub.
     if ls /opt/osmose-build-jar/*.jar >/dev/null 2>&1; then
-        cp "$(ls /opt/osmose-build-jar/*.jar | head -n1)" /opt/osmose/osmose.jar
+        _jar=$(ls /opt/osmose-build-jar/*.jar | head -n1)
+        cp "$_jar" /opt/osmose/osmose.jar
         echo "OSMOSE JAR: used build-provided jar"
     elif curl -fsSL "$JAR_URL" -o /opt/osmose/osmose.jar; then
         echo "OSMOSE JAR: downloaded from GitHub (unverified — pin sha256 in osmose.def to harden)"
