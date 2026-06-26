@@ -42,19 +42,28 @@ def species_color(sp_id: int) -> list[int]:
     return list(_SPECIES_PALETTE[int(sp_id) % len(_SPECIES_PALETTE)])
 
 
-def _filter_mask(snap: MovementSnapshot, species_filter: str | None) -> np.ndarray:
+def _filter_mask(
+    snap: MovementSnapshot, species_filter: str | None, stage_filter: int | None = None
+) -> np.ndarray:
     if species_filter is None:
-        return np.ones(snap.sp_id.size, dtype=bool)
-    try:
-        target = snap.species.index(species_filter)  # name -> sp_id (species in sp_id order)
-    except ValueError:
-        return np.zeros(snap.sp_id.size, dtype=bool)
-    return snap.sp_id == target
+        sp_mask = np.ones(snap.sp_id.size, dtype=bool)
+    else:
+        try:
+            target = snap.species.index(species_filter)  # name -> sp_id (species in sp_id order)
+        except ValueError:
+            sp_mask = np.zeros(snap.sp_id.size, dtype=bool)
+        else:
+            sp_mask = snap.sp_id == target
+    if stage_filter is None:
+        return sp_mask
+    return sp_mask & (snap.stage == stage_filter)
 
 
-def _points_to_rows(snap: MovementSnapshot, species_filter: str | None) -> list[dict]:
+def _points_to_rows(
+    snap: MovementSnapshot, species_filter: str | None, stage_filter: int | None = None
+) -> list[dict]:
     """Base rows: position + weight + fill. Heatmap ignores fill (one builder, both modes)."""
-    m = _filter_mask(snap, species_filter)
+    m = _filter_mask(snap, species_filter, stage_filter)
     sp_id, lon, lat, bm = snap.sp_id[m], snap.lon[m], snap.lat[m], snap.biomass[m]
     return [
         {"position": [float(lo), float(la)], "weight": float(b), "fill": species_color(s)}
@@ -62,18 +71,22 @@ def _points_to_rows(snap: MovementSnapshot, species_filter: str | None) -> list[
     ]
 
 
-def heatmap_layer_from_points(snap: MovementSnapshot, species_filter: str | None) -> dict:
+def heatmap_layer_from_points(
+    snap: MovementSnapshot, species_filter: str | None, stage_filter: int | None = None
+) -> dict:
     """Native deck.gl HeatmapLayer weighted by biomass, from un-jittered cell centers."""
     return heatmap_layer(
         _LAYER_ID,
-        data=_points_to_rows(snap, species_filter),
+        data=_points_to_rows(snap, species_filter, stage_filter),
         getPosition="@@=d.position",
         getWeight="@@=d.weight",
         colorRange=color_range(palette=PALETTE_THERMAL),
     )
 
 
-def dots_layer_from_points(snap: MovementSnapshot, species_filter: str | None) -> dict:
+def dots_layer_from_points(
+    snap: MovementSnapshot, species_filter: str | None, stage_filter: int | None = None
+) -> dict:
     """ScatterplotLayer: one dot per school, colored by species, biomass-sized.
 
     Deterministic per-school in-cell jitter (seeded by row index, no RNG) bounded to ±¼ of
@@ -82,7 +95,7 @@ def dots_layer_from_points(snap: MovementSnapshot, species_filter: str | None) -
     (a per-occupied-coord estimate would collapse to 0 there). ``*_step == 0`` (a 1-cell
     grid) → no jitter; ``radiusMinPixels`` still separates dots visually.
     """
-    m = _filter_mask(snap, species_filter)
+    m = _filter_mask(snap, species_filter, stage_filter)
     sp_id, lon, lat, bm = snap.sp_id[m], snap.lon[m], snap.lat[m], snap.biomass[m]
     jx = snap.lon_step * 0.25
     jy = snap.lat_step * 0.25
@@ -114,7 +127,12 @@ def dots_layer_from_points(snap: MovementSnapshot, species_filter: str | None) -
 
 
 def choose_live_layer(
-    snap: MovementSnapshot, species_filter: str | None, mode: str, *, dots_max: int = 1500
+    snap: MovementSnapshot,
+    species_filter: str | None,
+    mode: str,
+    *,
+    dots_max: int = 1500,
+    stage_filter: int | None = None,
 ) -> tuple[dict, str | None]:
     """Pick the live layer, returning (layer, note).
 
@@ -124,9 +142,9 @@ def choose_live_layer(
     live-stream crash). Heatmap mode is always heatmap.
     """
     if mode == "dots":
-        n = int(_filter_mask(snap, species_filter).sum())
+        n = int(_filter_mask(snap, species_filter, stage_filter).sum())
         if n > dots_max:
             note = f"Too many schools for dots ({n}) — showing heatmap"
-            return heatmap_layer_from_points(snap, species_filter), note
-        return dots_layer_from_points(snap, species_filter), None
-    return heatmap_layer_from_points(snap, species_filter), None
+            return heatmap_layer_from_points(snap, species_filter, stage_filter), note
+        return dots_layer_from_points(snap, species_filter, stage_filter), None
+    return heatmap_layer_from_points(snap, species_filter, stage_filter), None
