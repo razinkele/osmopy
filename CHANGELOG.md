@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.2.0] - 2026-06-26
+
+### Features
+
+- **validate:** add size-structure metric (mean weight) + dogfish/mackerel diagnosis (d555226)
+- **validate:** deepen Phase 2 — multi-metric + formal TOST/MEF (N=16) (8ff4ded)
+- **validate:** Phase 2 cross-engine ensemble parity harness + EEC results (8320ffc)
+- **config:** emit 4.4.x species.biomass.{file,varname,nsteps.year,mode} for NetCDF resources (94e2254)
+
+### Bug Fixes
+
+- **results:** read Java cross-species distribution outputs per-species (70b6a8a)
+
+### Documentation
+
+- **validate:** refute the inverted-size-ratio diagnosis (source-verified) (5a2a1fc)
+
+### Other
+
+- read Java cross-species distribution outputs per-species (7686cd9)
+- correct the inverted-size-ratio diagnosis (refuted by source) (77668fb)
+- Java 4.4.1 EEC adoption — resource-forcing migration + Phase 2 cross-engine validation (a421681)
+
 ## [1.1.0] - 2026-06-26
 
 ### Features
@@ -97,6 +120,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ### Other
 
+- v1.1.0 (1b96984)
 - OSMOSE HPC Apptainer/Singularity container (ddc0d2c)
 - model-internal fishery reference points (Fmsy/Bmsy/Blim sweep) (c78c15d)
 - indicative fisheries stock-status diagnostics (ede0a77)
