@@ -39,6 +39,43 @@ def test_kobe_gated_until_a_species_has_both_axes(monkeypatch):
     assert v["save_target"].endswith("baltic/reference")
 
 
+def test_view_reports_model_source(tmp_path, monkeypatch):
+    import ui.pages.fisheries as page
+    from osmose.validation.fisheries_reference import ReferencePoint
+    from osmose.validation.stock_status import StockStatus
+
+    monkeypatch.setattr(
+        page,
+        "load_reference_points",
+        lambda *a, **k: (
+            {
+                "cod": ReferencePoint(
+                    species="cod",
+                    fmsy=0.3,
+                    bmsy=100.0,
+                    b_ref_kind="bmsy_model",
+                    source="model",
+                )
+            },
+            [],
+        ),
+    )
+    monkeypatch.setattr(
+        page,
+        "compute_stock_status",
+        lambda *a, **k: [
+            StockStatus("cod", [0], [1.2], [0.5], "Bmsy [model]", latest_quadrant="green")
+        ],
+    )
+    cfg = type("C", (), {"species_names": ["cod"]})()
+    view = page.build_fisheries_view(object(), cfg, "baltic")
+    assert view["kobe_ready"] is True
+    assert any(
+        getattr(r, "source", "") == "model"
+        for r in page.load_reference_points(None, ["cod"])[0].values()
+    )
+
+
 def test_build_fisheries_view_forwards_ices_snapshot_dir(monkeypatch):
     """ices_snapshot_dir kwarg must reach load_reference_points."""
     import ui.pages.fisheries as page
