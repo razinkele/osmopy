@@ -1,0 +1,77 @@
+Bootstrap: docker
+From: python:3.12-slim
+
+%files
+    pyproject.toml /app/pyproject.toml
+    osmose /app/osmose
+    scripts /app/scripts
+    data /app/data
+    osmose-java /opt/osmose-build-jar
+
+%post
+    set -eu
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends libhdf5-dev curl git openjdk-17-jre-headless
+    rm -rf /var/lib/apt/lists/*
+
+    cd /app
+    pip install --no-cache-dir ".[numba]"
+
+    # OSMOSE JAR: build-provided is primary (offline-friendly); else download pinned 4.3.3.
+    mkdir -p /opt/osmose
+    JAR_URL="https://github.com/osmose-model/osmose/releases/download/v4.3.3/osmose-4.3.3-jar-with-dependencies.jar"
+    # NOTE: sha256 verification is deferred — pin the sha256 here once the jar is downloaded
+    # and verified (sha256sum osmose-4.3.3-jar-with-dependencies.jar) to harden supply-chain.
+    # The JAR is currently unverified when downloaded from GitHub.
+    if ls /opt/osmose-build-jar/*.jar >/dev/null 2>&1; then
+        cp "$(ls /opt/osmose-build-jar/*.jar | head -n1)" /opt/osmose/osmose.jar
+        echo "OSMOSE JAR: used build-provided jar"
+    elif curl -fsSL "$JAR_URL" -o /opt/osmose/osmose.jar; then
+        echo "OSMOSE JAR: downloaded from GitHub (unverified — pin sha256 in osmose.def to harden)"
+    else
+        echo "WARN: no OSMOSE JAR (build-provided absent + download failed); 'osmose run' will error at runtime"
+    fi
+
+    # Bake the numba JIT cache so the read-only runtime reads it (no per-run re-JIT).
+    mkdir -p /opt/numba-cache /results
+    export NUMBA_CACHE_DIR=/opt/numba-cache OSMOSE_DATA_DIR=/app/data PYTHONPATH=/app
+    python - <<'PY'
+import warnings; warnings.filterwarnings("ignore")
+from osmose.config.reader import OsmoseConfigReader
+from osmose.engine import PythonEngine
+raw = dict(OsmoseConfigReader().read("/app/data/examples/osm_all-parameters.csv"))
+raw["simulation.time.nyear"] = "1"
+PythonEngine().run_in_memory(raw, seed=0)  # warms @njit(cache=True) artifacts into NUMBA_CACHE_DIR
+print("numba cache warmed")
+PY
+
+%environment
+    export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+    export PATH="${JAVA_HOME}/bin:${PATH}"
+    export PYTHONPATH=/app
+    export OSMOSE_DATA_DIR=/app/data
+    export OSMOSE_RESULTS_DIR=/results
+    export OSMOSE_JAR=/opt/osmose/osmose.jar
+    export NUMBA_CACHE_DIR=/opt/numba-cache
+
+%runscript
+    exec osmose "$@"
+
+%help
+    OSMOSE HPC batch image (Python + Java engines, numba).
+    The image is READ-ONLY: bind a writable host dir to /results and send all output there.
+      Fmsy sweep:
+        apptainer exec -B $CFG:/cfg:ro -B $OUT:/results osmose.sif \
+          python /app/scripts/compute_model_reference_points.py \
+          --config /cfg/osm_all-parameters.csv --workers $SLURM_CPUS_PER_TASK --out /results/rp.json
+      Calibration (honors OSMOSE_RESULTS_DIR=/results):
+        apptainer exec -B $OUT:/results osmose.sif python /app/scripts/calibrate_baltic.py --phase 1
+      Java reference engine:
+        apptainer run osmose.sif run /cfg/osm_all-parameters.csv --jar $OSMOSE_JAR --output /results/java
+    The primary batch jobs use 'apptainer exec ... python scripts/...', NOT 'apptainer run'.
+
+%labels
+    Maintainer OSMOSE/OSMOPY
+    Description Headless HPC batch image (Python + Java engines, numba)
+    Version 4.3.3
