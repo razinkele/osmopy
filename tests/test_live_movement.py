@@ -16,7 +16,7 @@ from osmose.live_movement import (
 )
 
 
-def _state(species_id, cell_x, cell_y, biomass, is_out=None):
+def _state(species_id, cell_x, cell_y, biomass, is_out=None, length=None, age_dt=None, is_egg=None):
     """A lightweight stand-in exposing only the fields build_snapshot reads."""
     n = len(species_id)
     return types.SimpleNamespace(
@@ -25,11 +25,26 @@ def _state(species_id, cell_x, cell_y, biomass, is_out=None):
         cell_y=np.array(cell_y, dtype=np.int32),
         biomass=np.array(biomass, dtype=np.float64),
         is_out=np.array(is_out if is_out is not None else [False] * n, dtype=bool),
+        length=np.array(length if length is not None else [10.0] * n, dtype=np.float64),
+        age_dt=np.array(age_dt if age_dt is not None else [12] * n, dtype=np.int32),
+        is_egg=np.array(is_egg if is_egg is not None else [False] * n, dtype=bool),
     )
 
 
-def _config(n_species=2, n_steps=12, names=("cod", "sprat")):
-    return types.SimpleNamespace(n_species=n_species, n_steps=n_steps, species_names=list(names))
+def _config(
+    n_species=2,
+    n_steps=12,
+    names=("cod", "sprat"),
+    maturity_size=(5.0, 5.0),
+    maturity_age_dt=(6, 6),
+):
+    return types.SimpleNamespace(
+        n_species=n_species,
+        n_steps=n_steps,
+        species_names=list(names),
+        maturity_size=np.array(maturity_size, dtype=np.float64),
+        maturity_age_dt=np.array(maturity_age_dt, dtype=np.int32),
+    )
 
 
 def test_resolve_grid_latlon_uses_grid_arrays_when_present():
@@ -157,3 +172,41 @@ def test_make_step_observer_swallows_build_errors():
     obs = make_step_observer(q, throttle_s=0.0, now=lambda: 0.0)
     obs(0, object(), bad_grid, cfg)  # must not raise
     assert q.empty()
+
+
+def test_build_snapshot_assigns_life_stage():
+    from osmose.live_movement import build_snapshot, STAGE_LABELS
+
+    g = Grid.from_dimensions(ny=3, nx=3)
+    # 3 cod schools: egg (is_egg), juvenile (small/young, immature), adult (mature)
+    st = _state(
+        species_id=[0, 0, 0],
+        cell_x=[0, 1, 2],
+        cell_y=[0, 1, 2],
+        biomass=[1.0, 1.0, 1.0],
+        length=[0.1, 2.0, 50.0],
+        age_dt=[0, 2, 30],
+        is_egg=[True, False, False],
+    )
+    snap = build_snapshot(0, st, g, _config(maturity_size=(5.0, 5.0), maturity_age_dt=(6, 6)))
+    assert list(snap.stage) == [0, 1, 2]  # egg/larva, juvenile, adult
+    assert STAGE_LABELS == {0: "Egg/larva", 1: "Juvenile", 2: "Adult"}
+
+
+def test_build_snapshot_stage_sliced_under_dot_cap():
+    from osmose.live_movement import build_snapshot
+
+    g = Grid.from_dimensions(ny=3, nx=3)
+    n = 30
+    st = _state(
+        species_id=[0] * n,
+        cell_x=[1] * n,
+        cell_y=[1] * n,
+        biomass=[1.0] * n,
+        length=[50.0] * n,
+        age_dt=[30] * n,
+        is_egg=[False] * n,
+    )
+    snap = build_snapshot(0, st, g, _config(), dot_cap=10)
+    assert snap.stage.size == snap.sp_id.size == 10  # sampled in lockstep
+    assert set(snap.stage.tolist()) == {2}  # all adult

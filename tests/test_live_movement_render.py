@@ -13,7 +13,9 @@ from ui.pages.live_movement_render import (
 )
 
 
-def _snap(sp_id, lon, lat, biomass, species=("cod", "sprat"), lon_step=1.0, lat_step=1.0):
+def _snap(
+    sp_id, lon, lat, biomass, species=("cod", "sprat"), lon_step=1.0, lat_step=1.0, stage=None
+):
     lo, la = list(lon), list(lat)
     return MovementSnapshot(
         step=0,
@@ -24,6 +26,7 @@ def _snap(sp_id, lon, lat, biomass, species=("cod", "sprat"), lon_step=1.0, lat_
         lon=np.array(lon, dtype=np.float64),
         lat=np.array(lat, dtype=np.float64),
         biomass=np.array(biomass, dtype=np.float64),
+        stage=np.array(stage if stage is not None else [1] * len(sp_id), dtype=np.int8),
         truncated=False,
         n_total=len(sp_id),
         lon_min=float(min(lo)) if lo else 0.0,
@@ -107,6 +110,7 @@ def _choose_snap(n, n_species=8):
         lon=rng.uniform(10, 30, n).astype(np.float64),
         lat=rng.uniform(54, 66, n).astype(np.float64),
         biomass=rng.uniform(1e-3, 1e3, n).astype(np.float64),
+        stage=np.ones(n, dtype=np.int8),  # default all juvenile
         truncated=False,
         n_total=n,
         lon_min=10.0,
@@ -152,3 +156,35 @@ def test_dot_cap_default_is_2000():
     from osmose.live_movement import make_step_observer
 
     assert inspect.signature(make_step_observer).parameters["dot_cap"].default == 2000
+
+
+def test_filter_mask_stage_and_species_compose():
+    from ui.pages.live_movement_render import _filter_mask
+
+    snap = _snap(
+        sp_id=[0, 0, 1], lon=[0, 1, 2], lat=[0, 1, 2], biomass=[1, 1, 1], stage=[1, 2, 2]
+    )  # cod-juv, cod-adult, sprat-adult
+    # species cod + stage adult -> only the 2nd school
+    m = _filter_mask(snap, "cod", 2)
+    assert list(m) == [False, True, False]
+    # stage only (adult) -> schools 2 and 3
+    assert list(_filter_mask(snap, None, 2)) == [False, True, True]
+    # no filters -> all
+    assert list(_filter_mask(snap, None, None)) == [True, True, True]
+
+
+def test_choose_live_layer_fallback_uses_composed_count():
+    from ui.pages.live_movement_render import choose_live_layer
+
+    # 5 cod schools, only 1 adult; dots_max=2 -> species-only count (5) would fall back to
+    # heatmap, but the composed (stage=adult) count is 1 -> must STAY in dots.
+    snap = _snap(
+        sp_id=[0, 0, 0, 0, 0],
+        lon=[0, 1, 2, 3, 4],
+        lat=[0, 1, 2, 3, 4],
+        biomass=[1, 1, 1, 1, 1],
+        stage=[1, 1, 1, 1, 2],
+    )
+    layer, note = choose_live_layer(snap, "cod", "dots", dots_max=2, stage_filter=2)
+    assert note is None  # stayed in dots (composed count = 1 <= 2)
+    assert layer["type"] == "ScatterplotLayer"

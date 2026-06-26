@@ -21,6 +21,9 @@ from osmose.maps.builder import GridSpec
 
 _log = setup_logging("osmose.live_movement")
 
+# Ontogenetic life stage per school for the live-movement filter.
+STAGE_LABELS = {0: "Egg/larva", 1: "Juvenile", 2: "Adult"}
+
 
 @dataclass
 class MovementSnapshot:
@@ -37,6 +40,7 @@ class MovementSnapshot:
     lon: NDArray[np.float64]
     lat: NDArray[np.float64]
     biomass: NDArray[np.float64]
+    stage: NDArray[np.int8]  # per-school life stage: 0=egg/larva, 1=juvenile, 2=adult
     truncated: bool
     n_total: int
     lon_min: float
@@ -81,11 +85,18 @@ def build_snapshot(
     cx = state.cell_x[mask]
     cy = state.cell_y[mask]
     bm = state.biomass[mask]
+    # Life stage: egg/larva if is_egg; adult if mature (length>=maturity_size AND
+    # age>=maturity_age, per reproduction.py); else juvenile. Computed on the mask.
+    is_egg_m = state.is_egg[mask]
+    mature_m = (state.length[mask] >= config.maturity_size[sp_id]) & (
+        state.age_dt[mask] >= config.maturity_age_dt[sp_id]
+    )
+    stage = np.where(is_egg_m, 0, np.where(mature_m, 2, 1)).astype(np.int8)
     n_total = int(sp_id.size)
     truncated = n_total > dot_cap
     if truncated:
         idx = np.linspace(0, n_total - 1, dot_cap).astype(np.intp)
-        sp_id, cx, cy, bm = sp_id[idx], cx[idx], cy[idx], bm[idx]
+        sp_id, cx, cy, bm, stage = sp_id[idx], cx[idx], cy[idx], bm[idx], stage[idx]
     lon_step = float(np.median(np.diff(lon_arr))) if lon_arr.size > 1 else 0.0
     lat_step = float(np.median(np.diff(lat_arr))) if lat_arr.size > 1 else 0.0
     return MovementSnapshot(
@@ -97,6 +108,7 @@ def build_snapshot(
         lon=lon_arr[cx].astype(np.float64),
         lat=lat_arr[cy].astype(np.float64),
         biomass=np.asarray(bm, dtype=np.float64),
+        stage=np.asarray(stage, dtype=np.int8),
         truncated=truncated,
         n_total=n_total,
         lon_min=float(lon_arr.min()),
