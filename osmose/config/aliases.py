@@ -109,6 +109,42 @@ def _drop_4_4_0_removed_keys(cfg: dict[str, str]) -> dict[str, str]:
     return result
 
 
+def _emit_resource_biomass_forcing(cfg: dict[str, str]) -> dict[str, str]:
+    """Emit 4.4.x NETCDF_BIOMASS resource-forcing keys for file-forced resource species.
+
+    4.4.x ``ResourceForcing.init()`` (Simulation.initResourceForcing) hard-requires, per
+    NetCDF-forced resource species:
+      - ``species.biomass.file.spN``    — the NetCDF path (``species.file.spN`` is only an
+                                          ``isNull`` guard, NOT what the forcing reads);
+      - ``species.biomass.varname.spN`` — the variable name inside the NetCDF, NO engine
+                                          default (``getString``→error if absent);
+      - ``species.biomass.nsteps.year.spN`` — per-species steps/year (global
+                                          ``species.biomass.nsteps.year`` is an accepted fallback);
+      - ``species.biomass.mode.spN``    — optional (defaults ``NETCDF_BIOMASS``); emitted for clarity.
+    OSMOPY 4.3.x configs carry only ``species.{type,name,file}.spN``, so 4.4.x dies with
+    "NETCDF_BIOMASS resource forcing is used but parameters are missing". This fills the keys
+    additively. ``varname = species.name.spN`` (verified 1:1 with the EEC NetCDF data vars —
+    NOT sniffed from the NetCDF, whose 10 vars are otherwise ambiguous). Cite:
+    ``ResourceForcing.java::init()`` @ v4.4.1.
+    """
+    result = dict(cfg)
+    global_nsteps = cfg.get("simulation.time.ndtperyear") or cfg.get("species.biomass.nsteps.year")
+    for key, val in cfg.items():
+        if not key.startswith("species.type.sp") or str(val).strip().lower() != "resource":
+            continue
+        idx = key[len("species.type.sp") :]
+        if not idx.isdigit() or f"species.file.sp{idx}" not in cfg:
+            continue  # only file-forced resources need the NETCDF_BIOMASS keys
+        result.setdefault(f"species.biomass.mode.sp{idx}", "NETCDF_BIOMASS")
+        result.setdefault(f"species.biomass.file.sp{idx}", cfg[f"species.file.sp{idx}"])
+        name = cfg.get(f"species.name.sp{idx}")
+        if name:
+            result.setdefault(f"species.biomass.varname.sp{idx}", name)
+        if global_nsteps:
+            result.setdefault(f"species.biomass.nsteps.year.sp{idx}", str(global_nsteps))
+    return result
+
+
 # old_prefix -> new_prefix. Ported VERBATIM from Releases.java $15 (v4.4.0), verified Step 1.
 # The migrate_config applier matches `k == old or k.startswith(old + ".")`, so indexed
 # `...spN` keys are caught via the `.` separator (prefixes deliberately stop before `.sp`).
@@ -191,6 +227,7 @@ def to_target_keys(cfg: dict[str, str], target_version: str = "4.3.3") -> dict[s
         # _ndtperyear() or 1.0 is a safe placeholder: when ndt is falsy the helper
         # early-returns (warns, no scaling) BEFORE the factor is ever applied.
         result = _migrate_larva_rate(result, _ndtperyear(result) or 1.0, warn_bydt=True)
+        result = _emit_resource_biomass_forcing(result)  # 4.4.x NETCDF_BIOMASS required keys
         result["osmose.version"] = target_version  # stamp the ACTUAL target, not a hardcoded 4.4.0
         return result
     for new_prefix in sorted(_INVERSE_440, key=len, reverse=True):

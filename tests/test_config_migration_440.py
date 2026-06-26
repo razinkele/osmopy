@@ -578,3 +578,59 @@ def test_to_target_keys_4_4_1_is_native():
 
     out = to_target_keys({"module.bioenergetics.enabled": "true"}, "4.4.1")
     assert "simulation.bioen.enabled" not in out
+
+
+# --- Phase 1 Task 1.1: 4.4.x NETCDF_BIOMASS resource-forcing required keys ---
+# 4.4.x ResourceForcing.init() hard-requires species.biomass.{file,varname,nsteps.year}.spN
+# for resource species; OSMOPY 4.3.x configs carry only species.{type,name,file}.spN, so
+# 4.4.x fails "NETCDF_BIOMASS resource forcing ... parameters are missing". The migration
+# emits them additively (varname = species.name, NOT NetCDF-sniffed).
+
+
+def _resource_cfg() -> dict[str, str]:
+    return {
+        "species.type.sp14": "resource",
+        "species.name.sp14": "Dinoflagellates",
+        "species.file.sp14": "eec_ltlbiomassTons.nc",
+        "simulation.time.ndtperyear": "24",
+    }
+
+
+def test_4_4_x_write_adds_resource_biomass_forcing_keys():
+    out = to_target_keys(_resource_cfg(), "4.4.0")
+    assert out["species.biomass.mode.sp14"] == "NETCDF_BIOMASS"
+    assert out["species.biomass.file.sp14"] == "eec_ltlbiomassTons.nc"  # the path 4.4.x reads
+    assert out["species.biomass.varname.sp14"] == "Dinoflagellates"  # = species.name
+    assert out["species.biomass.nsteps.year.sp14"] == "24"  # from ndtperyear
+
+
+def test_4_4_1_target_also_adds_resource_forcing():
+    out = to_target_keys(_resource_cfg(), "4.4.1")
+    assert out["species.biomass.varname.sp14"] == "Dinoflagellates"
+    assert out["osmose.version"] == "4.4.1"
+
+
+def test_resource_forcing_global_nsteps_fallback():
+    cfg = _resource_cfg()
+    del cfg["simulation.time.ndtperyear"]
+    cfg["species.biomass.nsteps.year"] = "24"  # global fallback
+    out = to_target_keys(cfg, "4.4.0")
+    assert out["species.biomass.nsteps.year.sp14"] == "24"
+
+
+def test_resource_forcing_is_additive_not_overwriting():
+    cfg = _resource_cfg()
+    cfg["species.biomass.varname.sp14"] = "ExplicitVar"  # pre-existing wins
+    out = to_target_keys(cfg, "4.4.0")
+    assert out["species.biomass.varname.sp14"] == "ExplicitVar"
+
+
+def test_non_resource_species_get_no_forcing_keys():
+    cfg = {"species.type.sp0": "focal", "species.name.sp0": "Cod", "simulation.time.ndtperyear": "24"}
+    out = to_target_keys(cfg, "4.4.0")
+    assert not any(k.startswith("species.biomass.") for k in out)
+
+
+def test_reverse_to_4_3_3_does_not_add_forcing_keys():
+    out = to_target_keys(_resource_cfg(), "4.3.3")
+    assert not any(k.startswith("species.biomass.") for k in out)
