@@ -30,13 +30,14 @@ from pathlib import Path
 import numpy as np
 from scipy.optimize import differential_evolution
 
+from osmose.calibration.checkpoint import RESULTS_DIR  # honors OSMOSE_RESULTS_DIR
+
 # ---------------------------------------------------------------------------
 # Project paths
 # ---------------------------------------------------------------------------
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 BALTIC_CONFIG = PROJECT_ROOT / "data" / "baltic" / "baltic_all-parameters.csv"
 TARGETS_CSV = PROJECT_ROOT / "data" / "baltic" / "reference" / "biomass_targets.csv"
-RESULTS_DIR = PROJECT_ROOT / "data" / "baltic" / "calibration_results"
 
 SPECIES_NAMES = [
     "cod", "herring", "sprat", "flounder",

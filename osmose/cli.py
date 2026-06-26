@@ -3,8 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
+
+
+def _jar_from(args_jar: str | None) -> str | None:
+    """JAR path: explicit --jar, else $OSMOSE_JAR, else None."""
+    return args_jar or os.environ.get("OSMOSE_JAR")
 
 
 def cmd_validate(args: argparse.Namespace) -> int:
@@ -46,7 +52,11 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"Error: config file not found: {config_path}", file=sys.stderr)
         return 1
 
-    jar_path = Path(args.jar)
+    jar = _jar_from(args.jar)
+    if not jar:
+        print("Error: no JAR specified (pass --jar or set OSMOSE_JAR)", file=sys.stderr)
+        return 1
+    jar_path = Path(jar)
     if not jar_path.exists():
         print(f"Error: JAR not found: {jar_path}", file=sys.stderr)
         return 1
@@ -110,7 +120,7 @@ def main() -> None:
     # run
     p_run = subparsers.add_parser("run", help="Run simulation")
     p_run.add_argument("config", help="Path to config CSV file")
-    p_run.add_argument("--jar", required=True, help="Path to OSMOSE JAR")
+    p_run.add_argument("--jar", help="Path to OSMOSE JAR (default: $OSMOSE_JAR)")
     p_run.add_argument("--output", help="Output directory")
     p_run.add_argument("--java-opts", help="Java options (e.g. '-Xmx4g')")
     p_run.add_argument("--timeout", type=int, help="Timeout in seconds")

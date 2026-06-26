@@ -138,3 +138,26 @@ jobs:
             tests/test_engine_map_movement.py \
             tests/test_engine_diet.py \
             tests/test_engine_natural.py
+
+  apptainer-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Apptainer
+        uses: eWaterCycle/setup-apptainer@v2
+      - name: Build the HPC image
+        run: apptainer build --fakeroot osmose.sif apptainer/osmose.def
+      - name: Smoke — CLI + engine import + numba cache + java
+        run: |
+          apptainer exec osmose.sif osmose --help
+          apptainer exec osmose.sif python -c "import osmose.engine"
+          apptainer exec osmose.sif java -version
+          apptainer exec osmose.sif sh -c 'ls -A "$NUMBA_CACHE_DIR" | grep -q . && echo numba-cache-baked'
+      - name: Smoke — tiny sweep into a writable bind mount
+        run: |
+          mkdir -p "$RUNNER_TEMP/results"
+          apptainer exec -B "$RUNNER_TEMP/results:/results" osmose.sif \
+            python /app/scripts/compute_model_reference_points.py \
+            --config /app/data/examples/osm_all-parameters.csv \
+            --grid 0 0.5 --n-years 3 --replicates 1 --workers 1 --out /results/rp.json
+          test -f "$RUNNER_TEMP/results/rp.json" && echo sweep-wrote-to-bind-mount
