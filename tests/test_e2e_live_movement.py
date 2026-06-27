@@ -25,6 +25,16 @@ _RUN_TIMEOUT = 60_000
 
 
 def test_live_movement_renders_during_python_run(page: Page, app: ShinyAppProc):
+    # Capture deck.gl draw errors: swapping the layer CLASS (HeatmapLayer <-> ScatterplotLayer)
+    # under one layer id crashes deck.gl ("shaderInputs" undefined) -> blank map. The dots and
+    # heatmap layers must use distinct ids; deck_errors guards against a regression.
+    deck_errors: list[str] = []
+    page.on(
+        "console",
+        lambda m: deck_errors.append(m.text)
+        if (m.type == "error" and ("shaderInputs" in m.text or "deck: drawing" in m.text))
+        else None,
+    )
     page.goto(app.url)
     page.wait_for_selector(".nav-pills", timeout=_LOAD_TIMEOUT)
     dismiss_changelog_modal(page)
@@ -79,6 +89,13 @@ def test_live_movement_renders_during_python_run(page: Page, app: ShinyAppProc):
     # Toggle to dots mode (re-renders the retained final frame).
     page.locator("#live_movement_mode").get_by_text("Dots").click()
     page.screenshot(path=str(_REPO / "screenshots" / "live_movement_e2e.png"))
+
+    # Regression: filtering to one species in dots mode drops the count below the dots cap,
+    # so the ScatterplotLayer actually renders (all-species stays in the heatmap fallback).
+    # Selecting a species must NOT crash deck.gl on the heatmap->dots layer-class swap.
+    page.select_option("#live_movement_species", "cod")
+    page.wait_for_timeout(800)
+    assert not deck_errors, f"deck.gl draw error on heatmap->dots swap: {deck_errors[:2]}"
 
 
 def test_live_movement_cancel_path(page: Page, app: ShinyAppProc):

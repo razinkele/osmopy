@@ -466,6 +466,7 @@ def run_server(input, output, session, state):
         ""
     )  # "" | running | done | cancelled | failed
     _live_framed = [False]  # plain mutable flag (NOT reactive — render effect reads+writes it)
+    _live_layer_id: list[str | None] = [None]  # last rendered deck.gl layer id (heatmap vs dots)
     _last_live_species: list[list[str] | None] = [
         None
     ]  # plain flag for the species-selector changed-only guard
@@ -679,8 +680,15 @@ def run_server(input, output, session, state):
                     ],
                 )
                 _live_framed[0] = True
+            elif layer["id"] != _live_layer_id[0]:
+                # The active representation switched (heatmap <-> dots), which have distinct
+                # layer ids. deck.gl cannot swap a layer's class under one id, and partial_update
+                # would leave the old layer lingering — so do a full update (no view_state, to
+                # keep the user's camera), which removes the old id and creates the new one fresh.
+                await _live_map.update(session, layers=[layer])
             else:
                 await _live_map.partial_update(session, layers=[layer])
+            _live_layer_id[0] = layer["id"]
         except BaseException:  # noqa: BLE001
             if _session_alive[0]:
                 raise  # genuine bug during a live session — surface it
@@ -841,6 +849,7 @@ def run_server(input, output, session, state):
                     break
             _live_snapshot.set(None)
             _live_framed[0] = False
+            _live_layer_id[0] = None
             _last_live_species[0] = None
             _live_status_val.set("running")
             live_observer = make_step_observer(_live_queue, throttle_s=0.5)  # ≤2 fps (was 0.2)
