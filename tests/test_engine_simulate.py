@@ -347,7 +347,7 @@ def test_step_observer_fires_once_per_step(minimal_config):
         cfg,
         grid,
         np.random.default_rng(42),
-        step_observer=lambda step, state, g, c: calls.append((step, c.n_steps)),
+        step_observer=lambda step, state, g, c, map_sets=None: calls.append((step, c.n_steps)),
     )
     assert [s for s, _ in calls] == list(range(cfg.n_steps))
     assert all(n == cfg.n_steps for _, n in calls)
@@ -376,7 +376,7 @@ def test_step_observer_survives_cancel(minimal_config):
     token = threading.Event()
     calls = []
 
-    def obs(step, state, g, c):
+    def obs(step, state, g, c, map_sets=None):
         calls.append(step)
         if step == 3:
             token.set()  # request cancel; loop checks the token at the next step's top
