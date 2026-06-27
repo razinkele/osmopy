@@ -31,9 +31,11 @@ def test_live_movement_renders_during_python_run(page: Page, app: ShinyAppProc):
     deck_errors: list[str] = []
     page.on(
         "console",
-        lambda m: deck_errors.append(m.text)
-        if (m.type == "error" and ("shaderInputs" in m.text or "deck: drawing" in m.text))
-        else None,
+        lambda m: (
+            deck_errors.append(m.text)
+            if (m.type == "error" and ("shaderInputs" in m.text or "deck: drawing" in m.text))
+            else None
+        ),
     )
     page.goto(app.url)
     page.wait_for_selector(".nav-pills", timeout=_LOAD_TIMEOUT)
@@ -96,6 +98,12 @@ def test_live_movement_renders_during_python_run(page: Page, app: ShinyAppProc):
     page.select_option("#live_movement_species", "cod")
     page.wait_for_timeout(800)
     assert not deck_errors, f"deck.gl draw error on heatmap->dots swap: {deck_errors[:2]}"
+
+    # Same-id refresh path: a stage filter on cod stays in dots (so the layer id does NOT flip),
+    # exercising the standalone set_widgets legend refresh. Must not crash deck.gl either.
+    page.select_option("#live_movement_stage", "2")  # Adult
+    page.wait_for_timeout(800)
+    assert not deck_errors, f"deck.gl draw error on same-id legend refresh: {deck_errors[:2]}"
 
 
 def test_live_movement_cancel_path(page: Page, app: ShinyAppProc):

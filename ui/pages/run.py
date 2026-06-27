@@ -35,7 +35,7 @@ from osmose.runner import (
     validate_java_opts,
 )
 from ui.components.collapsible import body_collapse_header
-from ui.pages.live_movement_render import choose_live_layer
+from ui.pages.live_movement_render import choose_live_layer, live_legend_widget
 from ui.state import get_theme_mode
 from ui.styles import STYLE_CONSOLE
 
@@ -467,6 +467,7 @@ def run_server(input, output, session, state):
     )  # "" | running | done | cancelled | failed
     _live_framed = [False]  # plain mutable flag (NOT reactive — render effect reads+writes it)
     _live_layer_id: list[str | None] = [None]  # last rendered deck.gl layer id (heatmap vs dots)
+    _live_widget_sig: list[tuple | None] = [None]  # (layer_id, species_filter, stage_filter)
     _last_live_species: list[list[str] | None] = [
         None
     ]  # plain flag for the species-selector changed-only guard
@@ -626,11 +627,7 @@ def run_server(input, output, session, state):
         if not status_v:
             if state.engine_mode.get() != "python":
                 return ui.p("Live view available for the Python engine.", class_="text-muted")
-            return ui.p(
-                "Expand this card and run the model to stream movement, "
-                "then filter by species / stage.",
-                class_="text-muted",
-            )
+            return ui.div()
         prog = f"step {snap.step + 1}/{snap.n_steps}" if snap is not None else ""
         extra = ""
         if snap is not None and snap.truncated:
@@ -663,6 +660,15 @@ def run_server(input, output, session, state):
                 return
             layer, note = choose_live_layer(snap, species_filter, mode, stage_filter=stage_filter)
             _live_note.set(note)
+            legend = live_legend_widget(snap, species_filter, stage_filter, layer["id"])
+            widgets = [
+                fullscreen_widget(placement="top-left"),
+                zoom_widget(placement="top-right"),
+                compass_widget(placement="top-right"),
+                scale_widget(placement="bottom-left"),
+                legend,
+            ]
+            sig = (layer["id"], species_filter, stage_filter)
             if not _live_framed[0]:
                 await _live_map.update(
                     session,
@@ -672,23 +678,21 @@ def run_server(input, output, session, state):
                         "longitude": (snap.lon_min + snap.lon_max) / 2,
                         "zoom": 5,
                     },
-                    widgets=[
-                        fullscreen_widget(placement="top-left"),
-                        zoom_widget(placement="top-right"),
-                        compass_widget(placement="top-right"),
-                        scale_widget(placement="bottom-left"),
-                    ],
+                    widgets=widgets,
                 )
                 _live_framed[0] = True
             elif layer["id"] != _live_layer_id[0]:
-                # The active representation switched (heatmap <-> dots), which have distinct
-                # layer ids. deck.gl cannot swap a layer's class under one id, and partial_update
-                # would leave the old layer lingering — so do a full update (no view_state, to
-                # keep the user's camera), which removes the old id and creates the new one fresh.
-                await _live_map.update(session, layers=[layer])
+                # The active representation switched (heatmap <-> dots), distinct layer ids.
+                # deck.gl cannot swap a layer's class under one id; a full update (no view_state,
+                # to keep the camera) removes the old id and carries the fresh legend in one message.
+                await _live_map.update(session, layers=[layer], widgets=widgets)
             else:
                 await _live_map.partial_update(session, layers=[layer])
+                if sig != _live_widget_sig[0]:
+                    # same layer id, species/stage changed -> refresh the legend only.
+                    await _live_map.set_widgets(session, widgets)
             _live_layer_id[0] = layer["id"]
+            _live_widget_sig[0] = sig
         except BaseException:  # noqa: BLE001
             if _session_alive[0]:
                 raise  # genuine bug during a live session — surface it
@@ -850,6 +854,7 @@ def run_server(input, output, session, state):
             _live_snapshot.set(None)
             _live_framed[0] = False
             _live_layer_id[0] = None
+            _live_widget_sig[0] = None
             _last_live_species[0] = None
             _live_status_val.set("running")
             live_observer = make_step_observer(_live_queue, throttle_s=0.5)  # ≤2 fps (was 0.2)
