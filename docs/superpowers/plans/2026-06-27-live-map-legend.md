@@ -145,7 +145,8 @@ git commit -m "feat(live): live_legend_widget — mode-aware legend (species swa
 
 **Files:**
 - Modify: `ui/pages/run.py` (imports, `live_movement_status`, `_render_live_map`, state init + run-start reset)
-- Test: `import app` smoke + existing `tests/test_e2e_live_movement.py`
+- Modify: `tests/test_e2e_live_movement.py` (add a same-id `set_widgets`-path assertion)
+- Verify: `import app` smoke
 
 **Interfaces:**
 - Consumes: `live_legend_widget` (Task 1).
@@ -229,15 +230,34 @@ Expected: `app imports OK`.
 Run: `/home/razinka/osmose/osmose-python/.venv/bin/ruff check ui/pages/run.py ui/pages/live_movement_render.py && /home/razinka/osmose/osmose-python/.venv/bin/ruff format --check ui/pages/run.py ui/pages/live_movement_render.py`
 Expected: clean.
 
-- [ ] **Step 7: e2e regression (the legend + set_widgets path renders without a deck error)**
+- [ ] **Step 7: Extend the e2e to exercise the `set_widgets`-only (same-id) path.**
+The existing `test_live_movement_renders_during_python_run` selects a species (all→cod), which
+*flips* the layer id (heatmap fallback → dots) and so only hits the `update(widgets=...)` branch.
+The new standalone `set_widgets` branch (same layer id, species/stage changed) is NOT covered.
+Add a same-id change: a stage filter on cod stays in dots (cod+adult ⊂ cod, still under the dots
+cap) → layer id unchanged, sig changes → the `set_widgets` branch. In
+`tests/test_e2e_live_movement.py`, after the existing
+`assert not deck_errors, f"deck.gl draw error on heatmap->dots swap: {deck_errors[:2]}"` line,
+append:
+```python
+    # Same-id refresh path: a stage filter on cod stays in dots (so the layer id does NOT flip),
+    # exercising the standalone set_widgets legend refresh. Must not crash deck.gl either.
+    page.select_option("#live_movement_stage", "2")  # Adult
+    page.wait_for_timeout(800)
+    assert not deck_errors, f"deck.gl draw error on same-id legend refresh: {deck_errors[:2]}"
+```
+
+- [ ] **Step 8: Run the e2e (both the id-flip and the same-id set_widgets paths)**
 
 Run: `PYTHONPATH=. /home/razinka/osmose/osmose-python/.venv/bin/python -m pytest tests/test_e2e_live_movement.py::test_live_movement_renders_during_python_run -m e2e -q`
-Expected: PASS — the test runs Baltic → expands → Dots → selects a species (exercising the legend build + `set_widgets`) and asserts zero deck.gl draw errors (`deck_errors` is empty). Confirms the legend wiring doesn't crash deck.gl.
+Expected: PASS — Baltic → expand → Dots → select cod (id-flip `update(widgets=)` path) → select Adult
+(same-id `set_widgets` path), with `deck_errors` empty at both checkpoints. Confirms both legend-push
+paths render without crashing deck.gl.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add ui/pages/run.py
+git add ui/pages/run.py tests/test_e2e_live_movement.py
 git commit -m "feat(run): wire mode-aware legend into live map + remove pre-run hint"
 ```
 
