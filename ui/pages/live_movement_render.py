@@ -19,7 +19,12 @@ from shiny_deckgl import (  # type: ignore[import-untyped]
 
 from osmose.live_movement import MovementSnapshot
 
-_LAYER_ID = "live_movement"
+# deck.gl reconciles layers by id and cannot swap a layer's CLASS under a stable id
+# (HeatmapLayer -> ScatterplotLayer on the same id crashes: "shaderInputs" undefined -> blank
+# map). The heatmap and dots representations therefore use distinct ids; the render effect does
+# a full update (which removes the other id's layer) when the active id changes (run.py).
+_HEATMAP_ID = "live_movement_heatmap"
+_DOTS_ID = "live_movement_dots"
 
 # Deterministic categorical RGBA palette (NOT shiny_deckgl.SPECIES_COLORS — that is a
 # 3-entry seal palette unusable for fish).
@@ -76,7 +81,7 @@ def heatmap_layer_from_points(
 ) -> dict:
     """Native deck.gl HeatmapLayer weighted by biomass, from un-jittered cell centers."""
     return heatmap_layer(
-        _LAYER_ID,
+        _HEATMAP_ID,
         data=_points_to_rows(snap, species_filter, stage_filter),
         getPosition="@@=d.position",
         getWeight="@@=d.weight",
@@ -115,7 +120,7 @@ def dots_layer_from_points(
             }
         )
     return scatterplot_layer(
-        _LAYER_ID,
+        _DOTS_ID,
         data=rows,
         getPosition="@@=d.position",
         getFillColor="@@=d.fill",

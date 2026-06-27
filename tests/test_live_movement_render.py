@@ -48,7 +48,7 @@ def test_species_color_distinct_and_deterministic():
 def test_heatmap_layer_structure():
     snap = _snap([0, 1], [10.0, 11.0], [54.0, 55.0], [5.0, 3.0])
     layer = heatmap_layer_from_points(snap, None)
-    assert layer["id"] == "live_movement"
+    assert layer["id"] == "live_movement_heatmap"
     assert layer["getPosition"] == "@@=d.position"
     assert layer["getWeight"] == "@@=d.weight"
     assert len(layer["data"]) == 2
@@ -66,7 +66,7 @@ def test_species_filter_reduces_rows():
 def test_dots_layer_structure_and_jitter_bounded_deterministic():
     snap = _snap([0, 0], [10.0, 10.0], [54.0, 54.0], [4.0, 9.0])  # same cell
     layer = dots_layer_from_points(snap, None)
-    assert layer["id"] == "live_movement"
+    assert layer["id"] == "live_movement_dots"
     assert layer["getFillColor"] == "@@=d.fill"
     assert layer["getRadius"] == "@@=d.radius"
     assert layer["pickable"] is True
@@ -85,7 +85,10 @@ def test_empty_snapshot_yields_empty_layer():
     h = heatmap_layer_from_points(snap, None)
     d = dots_layer_from_points(snap, None)
     assert h["data"] == [] and d["data"] == []
-    assert h["id"] == "live_movement" and d["id"] == "live_movement"
+    # deck.gl reconciles layers by id; a HeatmapLayer and a ScatterplotLayer sharing one id
+    # crashes on the class swap (shaderInputs undefined) -> blank map. They MUST differ.
+    assert h["id"] == "live_movement_heatmap" and d["id"] == "live_movement_dots"
+    assert h["id"] != d["id"]
 
 
 def _choose_snap(n, n_species=8):
