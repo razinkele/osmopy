@@ -1707,7 +1707,7 @@ def simulate(
         accumulated.append(step_out)
 
         if step_observer is not None:
-            step_observer(step, state, grid, config)
+            step_observer(step, state, grid, config, map_sets)
 
         # Write averaged output at recording frequency
         if (step + 1) % record_freq == 0:
