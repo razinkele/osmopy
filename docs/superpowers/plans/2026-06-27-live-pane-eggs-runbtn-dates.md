@@ -94,6 +94,16 @@ def test_egg_random_fallback_no_map():
     assert snap.stage.tolist() == [0]  # placed on an ocean cell, stage 0
 
 
+def test_no_unlocated_eggs_off_season():
+    from osmose.live_movement import build_snapshot
+    g = Grid.from_dimensions(ny=2, nx=2)
+    # only a located adult, no unlocated eggs -> nothing to place, no stage-0
+    st = _state(species_id=[0], cell_x=[0], cell_y=[0], biomass=[5.0],
+                is_egg=[False], length=[50.0], age_dt=[30])
+    snap = build_snapshot(0, st, g, _config(n_species=1), map_sets={0: _StubMap(np.ones((2, 2)))})
+    assert 0 not in snap.stage.tolist()
+
+
 def test_date_label_one_based_year():
     from osmose.live_movement import build_snapshot
     g = Grid.from_dimensions(ny=2, nx=2)
@@ -248,14 +258,19 @@ git commit -m "feat(live): place unlocated eggs on spawning grounds + phenology 
 ```
 (`map_sets` is the `dict[int, MovementMapSet]` already in scope, built ~line 1427.)
 
-- [ ] **Step 2: Run — see the strict lambda break**
+- [ ] **Step 2: Run — see the strict observers break**
 
-Run: `PYTHONPATH=. /home/razinka/osmose/osmose-python/.venv/bin/python -m pytest tests/test_engine_simulate.py -k observer -q`
-Expected: FAIL — the 4-arg lambda at `tests/test_engine_simulate.py:350` raises `TypeError: <lambda>() takes 4 positional arguments but 5 were given` (the `lambda *a: None` observers are unaffected).
+Run: `PYTHONPATH=. /home/razinka/osmose/osmose-python/.venv/bin/python -m pytest tests/test_engine_simulate.py -q`
+Expected: FAIL — the strict 4-arg observers raise `TypeError: ... takes 4 positional arguments but 5 were given`. There are **TWO**: the lambda at `tests/test_engine_simulate.py:350` and the `def obs(step, state, g, c):` at `tests/test_engine_simulate.py:379` (the `lambda *a: None` at :362 is unaffected).
 
-- [ ] **Step 3: Fix the strict observer lambda** at `tests/test_engine_simulate.py:350` to accept the new positional arg:
+- [ ] **Step 3: Fix BOTH strict observers** to accept the new positional arg.
+At `tests/test_engine_simulate.py:350`:
 ```python
         step_observer=lambda step, state, g, c, map_sets=None: calls.append((step, c.n_steps)),
+```
+At `tests/test_engine_simulate.py:379` (the `def obs` in `test_step_observer_survives_cancel`):
+```python
+    def obs(step, state, g, c, map_sets=None):
 ```
 
 - [ ] **Step 4: Run — verify the suite passes**
@@ -313,16 +328,21 @@ git commit -m "feat(engine): pass map_sets to the step observer (output-side; en
     async def handle_run():
 ```
 
-- [ ] **Step 3: Add the `_set_run_buttons` helper + toggle both buttons.** Define the helper in the server scope (e.g. just above `handle_run`):
+- [ ] **Step 3: Add a MODULE-LEVEL `_set_run_buttons` helper + toggle both buttons.** The 5 `btn_run`
+toggle sites live in **two different functions** — 3 in the module-level `_run_java_engine` (def ~339) and 2
+in `run_server` (def ~456) — each with its own `session` local. A helper closed over one `session` would
+`NameError` in the other. So define the helper at **module scope** taking `session` as an argument (place it
+near the top of `ui/pages/run.py`, after the imports):
 ```python
-    def _set_run_buttons(disabled: bool) -> None:
-        ui.update_action_button("btn_run", disabled=disabled, session=session)
-        ui.update_action_button("btn_run_live", disabled=disabled, session=session)
+def _set_run_buttons(disabled: bool, session) -> None:
+    """Toggle both Run buttons (top-of-page + the Live Movement pane) together."""
+    ui.update_action_button("btn_run", disabled=disabled, session=session)
+    ui.update_action_button("btn_run_live", disabled=disabled, session=session)
 ```
-Then replace the existing `btn_run` toggles (both occurrences-by-value) so `btn_run_live` is kept in sync:
-- Replace ALL `ui.update_action_button("btn_run", disabled=False, session=session)` → `_set_run_buttons(False)` (4 sites: run.py 355, 370, 403, 536).
-- Replace `ui.update_action_button("btn_run", disabled=True, session=session)` → `_set_run_buttons(True)` (1 site: run.py 837).
-(The `btn_cancel` toggles are unchanged.)
+Then replace the existing `btn_run` toggles (passing the in-scope `session`):
+- Replace ALL `ui.update_action_button("btn_run", disabled=False, session=session)` → `_set_run_buttons(False, session)` (4 sites: run.py 355, 370, 403, 536 — `session` is a local in both `_run_java_engine` and `run_server`).
+- Replace `ui.update_action_button("btn_run", disabled=True, session=session)` → `_set_run_buttons(True, session)` (1 site: run.py 837).
+(The `btn_cancel` toggles are unchanged. `ui` is module-level-imported, so the helper can call it.)
 
 - [ ] **Step 4: Show the phenology date in the status** — in `live_movement_status`, change the final return (run.py ~637):
 ```python
@@ -339,11 +359,18 @@ Expected: `app imports OK`.
 Run: `/home/razinka/osmose/osmose-python/.venv/bin/ruff check ui/pages/run.py && /home/razinka/osmose/osmose-python/.venv/bin/ruff format --check ui/pages/run.py`
 Expected: clean.
 
-- [ ] **Step 6: Extend the e2e to click the pane Run button.** In `tests/test_e2e_live_movement.py`, in `test_live_movement_renders_during_python_run`, replace the existing `page.locator("#btn_run").click()` with the pane button (it triggers the same run):
+- [ ] **Step 6: Extend the e2e to click the pane Run button.** In `tests/test_e2e_live_movement.py`, in
+`test_live_movement_renders_during_python_run` (the FIRST test, ~line 76), replace its `#btn_run` click with
+the pane button. **The bare string `page.locator("#btn_run").click()` appears 3× (lines 76, 133, 165)** — use
+the surrounding context so only the first-test occurrence is edited; it is uniquely preceded by the
+`page.wait_for_timeout(250)` line (the `live_view_expanded` round-trip comment):
 ```python
+    page.wait_for_timeout(250)  # let Shiny.setInputValue('live_view_expanded', true) round-trip
     page.locator("#btn_run_live").click()
 ```
-(The rest of the test — status reaching "running"/"done", the dots/legend assertions — is unchanged and now also exercises `btn_run_live` + the date label in the status.)
+(The rest of the test — status reaching "running"/"done", the dots/legend assertions — is unchanged and now
+also exercises `btn_run_live` + the date label in the status. Do NOT touch the `#btn_run` clicks in the other
+two tests.)
 
 - [ ] **Step 7: Run the e2e**
 
