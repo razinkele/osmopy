@@ -88,10 +88,7 @@ def build_snapshot(
     cy_full = state.cell_y.copy()
     is_out_full = state.is_out.copy()
     egg = (
-        (state.species_id < config.n_species)
-        & state.is_egg
-        & (state.cell_x < 0)
-        & (state.biomass > 0.0)
+        (state.species_id < config.n_species) & state.is_egg & (cx_full < 0) & (state.biomass > 0.0)
     )
     if egg.any():
         ocean = getattr(grid, "ocean_mask", None)

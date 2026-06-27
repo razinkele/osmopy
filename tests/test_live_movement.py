@@ -276,6 +276,7 @@ def test_egg_random_fallback_no_map():
     from osmose.live_movement import build_snapshot
 
     g = Grid.from_dimensions(ny=2, nx=2)
+    g.ocean_mask = np.ones((2, 2), dtype=bool)
     st = _state(
         species_id=[0],
         cell_x=[-1],
