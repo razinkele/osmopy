@@ -191,3 +191,42 @@ def test_choose_live_layer_fallback_uses_composed_count():
     layer, note = choose_live_layer(snap, "cod", "dots", dots_max=2, stage_filter=2)
     assert note is None  # stayed in dots (composed count = 1 <= 2)
     assert layer["type"] == "ScatterplotLayer"
+
+
+def test_live_legend_dots_lists_displayed_species():
+    from ui.pages.live_movement_render import _DOTS_ID, live_legend_widget, species_color
+
+    snap = _snap([0, 1], [0, 1], [0, 1], [1, 1], species=("cod", "sprat"))
+    w = live_legend_widget(snap, None, None, _DOTS_ID)
+    assert w["title"] == "All species · All stages"
+    assert [e["label"] for e in w["entries"]] == ["cod", "sprat"]
+    assert w["entries"][0]["color"] == list(species_color(0))
+    assert w["entries"][0]["shape"] == "circle"
+
+
+def test_live_legend_dots_species_filter_single_entry():
+    from ui.pages.live_movement_render import _DOTS_ID, live_legend_widget
+
+    snap = _snap([0, 1], [0, 1], [0, 1], [1, 1], species=("cod", "sprat"))
+    w = live_legend_widget(snap, "cod", None, _DOTS_ID)
+    assert [e["label"] for e in w["entries"]] == ["cod"]
+    assert w["title"].startswith("cod · ")
+
+
+def test_live_legend_stage_in_title():
+    from ui.pages.live_movement_render import _DOTS_ID, live_legend_widget
+
+    snap = _snap([0], [0], [0], [1], species=("cod",))
+    w = live_legend_widget(snap, None, 2, _DOTS_ID)
+    assert w["title"].endswith("· Adult")
+
+
+def test_live_legend_heatmap_is_gradient():
+    from shiny_deckgl import PALETTE_THERMAL
+    from ui.pages.live_movement_render import _HEATMAP_ID, live_legend_widget
+
+    snap = _snap([0, 1], [0, 1], [0, 1], [1, 1])
+    w = live_legend_widget(snap, None, None, _HEATMAP_ID)
+    assert len(w["entries"]) == 1
+    assert w["entries"][0]["shape"] == "gradient"
+    assert w["entries"][0]["colors"] == [list(c) for c in PALETTE_THERMAL]

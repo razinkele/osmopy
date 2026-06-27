@@ -14,10 +14,11 @@ from shiny_deckgl import (  # type: ignore[import-untyped]
     PALETTE_THERMAL,
     color_range,
     heatmap_layer,
+    layer_legend_widget,
     scatterplot_layer,
 )
 
-from osmose.live_movement import MovementSnapshot
+from osmose.live_movement import STAGE_LABELS, MovementSnapshot
 
 # deck.gl reconciles layers by id and cannot swap a layer's CLASS under a stable id
 # (HeatmapLayer -> ScatterplotLayer on the same id crashes: "shaderInputs" undefined -> blank
@@ -153,3 +154,36 @@ def choose_live_layer(
             return heatmap_layer_from_points(snap, species_filter, stage_filter), note
         return dots_layer_from_points(snap, species_filter, stage_filter), None
     return heatmap_layer_from_points(snap, species_filter, stage_filter), None
+
+
+def live_legend_widget(
+    snap: MovementSnapshot,
+    species_filter: str | None,
+    stage_filter: int | None,
+    layer_id: str,
+) -> dict:
+    """Legend reflecting the displayed features, keyed off the rendered layer id.
+
+    Dots (``layer_id == _DOTS_ID``): one circle swatch per displayed species (filtered to
+    ``species_filter`` when set). Heatmap (the >1500 dots fallback included): a single
+    biomass-density gradient. Title carries the active species + stage filter.
+    """
+    stage_label = "All stages" if stage_filter is None else STAGE_LABELS[stage_filter]
+    title = f"{species_filter or 'All species'} · {stage_label}"
+    if layer_id == _DOTS_ID:
+        entries = [
+            {"label": name, "color": list(species_color(i)), "shape": "circle"}
+            for i, name in enumerate(snap.species)
+            if species_filter is None or name == species_filter
+        ]
+    else:
+        entries = [
+            {
+                "label": "biomass density",
+                "shape": "gradient",
+                "colors": [list(c) for c in PALETTE_THERMAL],
+            }
+        ]
+    return layer_legend_widget(
+        entries=entries, title=title, placement="bottom-right", show_checkbox=False
+    )
