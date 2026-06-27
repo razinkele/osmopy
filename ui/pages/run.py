@@ -44,6 +44,12 @@ _log = setup_logging("osmose.run")
 JAR_DIR = Path("osmose-java")
 
 
+def _set_run_buttons(disabled: bool, session) -> None:
+    """Toggle both Run buttons (top-of-page + the Live Movement pane) together."""
+    ui.update_action_button("btn_run", disabled=disabled, session=session)
+    ui.update_action_button("btn_run_live", disabled=disabled, session=session)
+
+
 def _species_choices(config: dict[str, str]) -> dict[str, str]:
     """Live-movement species dropdown choices from a flat config dict (focal species)."""
     choices = {"__all__": "All species"}
@@ -267,6 +273,7 @@ def run_ui():
                 "run_live_movement",
             ),
             ui.layout_columns(
+                ui.input_action_button("btn_run_live", "▶ Run", class_="btn-success"),
                 ui.input_radio_buttons(
                     "live_movement_mode",
                     "Mode",
@@ -285,7 +292,7 @@ def run_ui():
                         **{str(k): v for k, v in STAGE_LABELS.items()},
                     },
                 ),
-                col_widths=[3, 5, 4],
+                col_widths=[2, 2, 4, 4],
             ),
             ui.output_ui("live_movement_status"),
             live_map.ui(height="420px"),
@@ -352,7 +359,7 @@ async def _run_java_engine(
     jar_path = Path(state.jar_path.get())
     if not jar_path.exists():
         status.set(f"Error: JAR not found at {jar_path}")
-        ui.update_action_button("btn_run", disabled=False, session=session)
+        _set_run_buttons(False, session)
         ui.update_action_button("btn_cancel", disabled=True, session=session)
         return
 
@@ -367,7 +374,7 @@ async def _run_java_engine(
         validate_java_opts(java_opts)  # type: ignore[arg-type]
     except ValueError as exc:
         ui.notification_show(str(exc), type="error", duration=15)
-        ui.update_action_button("btn_run", disabled=False, session=session)
+        _set_run_buttons(False, session)
         ui.update_action_button("btn_cancel", disabled=True, session=session)
         status.set(f"Error: {exc}")
         return
@@ -400,7 +407,7 @@ async def _run_java_engine(
         )
     finally:
         state.busy.set(None)
-        ui.update_action_button("btn_run", disabled=False, session=session)
+        _set_run_buttons(False, session)
         ui.update_action_button("btn_cancel", disabled=True, session=session)
 
     _handle_result(result, config, state, run_log, status, start_monotonic)
@@ -533,7 +540,7 @@ def run_server(input, output, session, state):
                 _live_status_val.set("done")
             run_log.set(lines)
             state.busy.set(None)
-            ui.update_action_button("btn_run", disabled=False, session=session)
+            _set_run_buttons(False, session)
             ui.update_action_button("btn_cancel", disabled=True, session=session)
             _handle_result(result, _run_config_cell[0], state, run_log, status, _run_start_cell[0])
             while True:
@@ -634,7 +641,8 @@ def run_server(input, output, session, state):
             extra = f" — showing {snap.sp_id.size} of {snap.n_total} schools"
         note = _live_note.get()
         suffix = f" · {note}" if note else ""
-        return ui.p(f"{status_v} {prog}{extra}{suffix}".strip())
+        date = f" · {snap.date_label}" if snap is not None and snap.date_label else ""
+        return ui.p(f"{status_v}{date} {prog}{extra}{suffix}".strip())
 
     @reactive.effect
     async def _render_live_map():
@@ -792,7 +800,7 @@ def run_server(input, output, session, state):
         return ui.tags.pre(text, style=STYLE_CONSOLE)
 
     @reactive.effect
-    @reactive.event(input.btn_run)
+    @reactive.event(input.btn_run, input.btn_run_live)
     async def handle_run():
         _progress.set(None)
         engine_mode = state.engine_mode.get()
@@ -834,7 +842,7 @@ def run_server(input, output, session, state):
             run_log.set([])
 
         status.set("Writing config...")
-        ui.update_action_button("btn_run", disabled=True, session=session)
+        _set_run_buttons(True, session)
         ui.update_action_button("btn_cancel", disabled=False, session=session)
 
         work_dir = Path(tempfile.mkdtemp(prefix="osmose_run_"))

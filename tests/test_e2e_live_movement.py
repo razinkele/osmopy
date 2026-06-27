@@ -73,7 +73,7 @@ def test_live_movement_renders_during_python_run(page: Page, app: ShinyAppProc):
         btn.click()
     expect(card).not_to_have_class("osm-body-collapsed")  # expanded
     page.wait_for_timeout(250)  # let Shiny.setInputValue('live_view_expanded', true) round-trip
-    page.locator("#btn_run").click()
+    page.locator("#btn_run_live").click()
 
     # The live map container renders (note: #live_map is a static basemap, present as soon
     # as the Run page is active — it does NOT prove the run started).
