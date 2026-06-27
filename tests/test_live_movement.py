@@ -37,6 +37,7 @@ def _config(
     names=("cod", "sprat"),
     maturity_size=(5.0, 5.0),
     maturity_age_dt=(6, 6),
+    n_dt_per_year=12,
 ):
     return types.SimpleNamespace(
         n_species=n_species,
@@ -44,7 +45,16 @@ def _config(
         species_names=list(names),
         maturity_size=np.array(maturity_size, dtype=np.float64),
         maturity_age_dt=np.array(maturity_age_dt, dtype=np.int32),
+        n_dt_per_year=n_dt_per_year,
     )
+
+
+class _StubMap:
+    def __init__(self, grid):
+        self._grid = grid
+
+    def get_map(self, age_dt, step):
+        return self._grid
 
 
 def test_resolve_grid_latlon_uses_grid_arrays_when_present():
@@ -210,3 +220,107 @@ def test_build_snapshot_stage_sliced_under_dot_cap():
     snap = build_snapshot(0, st, g, _config(), dot_cap=10)
     assert snap.stage.size == snap.sp_id.size == 10  # sampled in lockstep
     assert set(snap.stage.tolist()) == {2}  # all adult
+
+
+def test_unlocated_egg_placed_on_spawning_map():
+    from osmose.live_movement import build_snapshot
+
+    g = Grid.from_dimensions(ny=3, nx=3)
+    # one located adult (idx0) + one unlocated egg of sp0 (idx1, cell=-1, is_egg)
+    st = _state(
+        species_id=[0, 0],
+        cell_x=[1, -1],
+        cell_y=[1, -1],
+        biomass=[5.0, 0.1],
+        is_egg=[False, True],
+        length=[50.0, 0.1],
+        age_dt=[30, 0],
+    )
+    m = np.zeros((3, 3), dtype=np.float64)
+    m[2, 0] = 1.0  # only (row=2, col=0) is a spawning cell
+    snap = build_snapshot(0, st, g, _config(n_species=1), map_sets={0: _StubMap(m)})
+    # the egg is now in the snapshot at the spawning cell with stage 0
+    assert 0 in snap.stage.tolist()  # egg/larva present
+    egg_i = snap.stage.tolist().index(0)
+    lat_arr, lon_arr = (np.arange(3.0), np.arange(3.0))
+    assert snap.lon[egg_i] == lon_arr[0] and snap.lat[egg_i] == lat_arr[2]  # placed at (col0,row2)
+    # within-build deterministic
+    snap2 = build_snapshot(0, st, g, _config(n_species=1), map_sets={0: _StubMap(m)})
+    assert snap2.lon.tolist() == snap.lon.tolist()
+
+
+def test_egg_placement_probability_weighted():
+    from osmose.live_movement import build_snapshot
+
+    g = Grid.from_dimensions(ny=1, nx=3)
+    n = 60
+    st = _state(
+        species_id=[0] * n,
+        cell_x=[-1] * n,
+        cell_y=[-1] * n,
+        biomass=[0.1] * n,
+        is_egg=[True] * n,
+        length=[0.1] * n,
+        age_dt=[0] * n,
+    )
+    m = np.array([[0.01, 0.01, 5.0]], dtype=np.float64)  # cell (0,2) dominates
+    snap = build_snapshot(0, st, g, _config(n_species=1), map_sets={0: _StubMap(m)})
+    # most eggs land on the high-proba cell (col=2)
+    from collections import Counter
+
+    modal_col = Counter(snap.lon.tolist()).most_common(1)[0][0]
+    assert modal_col == 2.0
+
+
+def test_egg_random_fallback_no_map():
+    from osmose.live_movement import build_snapshot
+
+    g = Grid.from_dimensions(ny=2, nx=2)
+    st = _state(
+        species_id=[0],
+        cell_x=[-1],
+        cell_y=[-1],
+        biomass=[0.1],
+        is_egg=[True],
+        length=[0.1],
+        age_dt=[0],
+    )
+    snap = build_snapshot(0, st, g, _config(n_species=1), map_sets=None)
+    assert snap.stage.tolist() == [0]  # placed on an ocean cell, stage 0
+
+
+def test_no_unlocated_eggs_off_season():
+    from osmose.live_movement import build_snapshot
+
+    g = Grid.from_dimensions(ny=2, nx=2)
+    # only a located adult, no unlocated eggs -> nothing to place, no stage-0
+    st = _state(
+        species_id=[0],
+        cell_x=[0],
+        cell_y=[0],
+        biomass=[5.0],
+        is_egg=[False],
+        length=[50.0],
+        age_dt=[30],
+    )
+    snap = build_snapshot(0, st, g, _config(n_species=1), map_sets={0: _StubMap(np.ones((2, 2)))})
+    assert 0 not in snap.stage.tolist()
+
+
+def test_date_label_one_based_year():
+    from osmose.live_movement import build_snapshot
+
+    g = Grid.from_dimensions(ny=2, nx=2)
+    st = _state(
+        species_id=[0],
+        cell_x=[0],
+        cell_y=[0],
+        biomass=[5.0],
+        is_egg=[False],
+        length=[50.0],
+        age_dt=[30],
+    )
+    cfg = _config(n_species=1, n_dt_per_year=24)
+    assert build_snapshot(0, st, g, cfg).date_label == "Y1 · 01 Jan"
+    assert build_snapshot(24, st, g, cfg).date_label.startswith("Y2 · 01 Jan")
+    assert build_snapshot(12, st, g, cfg).date_label.startswith("Y1 · ")  # mid-year

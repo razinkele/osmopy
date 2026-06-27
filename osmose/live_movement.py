@@ -11,6 +11,7 @@ from __future__ import annotations
 import queue
 import time
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Callable
 
 import numpy as np
@@ -49,6 +50,7 @@ class MovementSnapshot:
     lat_max: float
     lon_step: float  # grid cell spacing (median diff of full lon array); 0 if < 2 cells
     lat_step: float
+    date_label: str = ""  # phenology label e.g. "Y2 · 11 Mar"; "" if not computed
 
 
 def resolve_grid_latlon(grid) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
@@ -64,7 +66,7 @@ def resolve_grid_latlon(grid) -> tuple[NDArray[np.float64], NDArray[np.float64]]
 
 
 def build_snapshot(
-    step: int, state, grid, config, *, status: str = "running", dot_cap: int = 2000
+    step: int, state, grid, config, *, map_sets=None, status: str = "running", dot_cap: int = 2000
 ) -> MovementSnapshot:
     """Build a snapshot of focal + located + living schools at ``step`` (pure).
 
@@ -72,18 +74,59 @@ def build_snapshot(
     located (``cell_x/cell_y >= 0``, drops freshly-spawned eggs at ``-1``) & living
     (``biomass > 0``). Samples to ``dot_cap`` (default 2000) deterministically when
     exceeded.
+
+    Unlocated focal eggs (``cell_x < 0`` & ``is_egg``) are placed onto the species'
+    egg-stage spawning map via a deterministic probability-weighted pick. When
+    ``map_sets`` is None or the species has no map, an ocean-mask uniform fallback
+    is used. The state arrays are NEVER mutated (local copies only).
     """
     lat_arr, lon_arr = resolve_grid_latlon(grid)
+    # Place unlocated eggs (cell=-1) on the species' egg-stage spawning map so "Egg/larva"
+    # shows the current spawning cloud (eggs are created unlocated and were always dropped).
+    # Read-only on the frozen state: work on local copies.
+    cx_full = state.cell_x.copy()
+    cy_full = state.cell_y.copy()
+    is_out_full = state.is_out.copy()
+    egg = (
+        (state.species_id < config.n_species)
+        & state.is_egg
+        & (state.cell_x < 0)
+        & (state.biomass > 0.0)
+    )
+    if egg.any():
+        ocean = getattr(grid, "ocean_mask", None)
+        ocean_cells = np.argwhere(ocean) if ocean is not None else np.empty((0, 2), dtype=np.intp)
+        for i in np.nonzero(egg)[0]:
+            i = int(i)
+            sp = int(state.species_id[i])
+            m = None
+            if map_sets is not None and sp in map_sets:
+                m = map_sets[sp].get_map(int(state.age_dt[i]), int(step))
+            if m is not None and m.max() > 0:
+                cells = np.argwhere(m > 0)
+                w = m[m > 0].astype(np.float64)
+                cdf = np.cumsum(w)
+                cdf /= cdf[-1]
+                frac = ((i * 2654435761) % 10_000) / 10_000.0
+                k = min(int(np.searchsorted(cdf, frac)), len(cells) - 1)
+                j, ix = cells[k]
+            elif len(ocean_cells) > 0:
+                j, ix = ocean_cells[(i * 2654435761) % len(ocean_cells)]
+            else:
+                continue  # no valid cell — leave dropped
+            cx_full[i] = ix
+            cy_full[i] = j
+            is_out_full[i] = False
     mask = (
         (state.species_id < config.n_species)
-        & ~state.is_out
-        & (state.cell_x >= 0)
-        & (state.cell_y >= 0)
+        & ~is_out_full
+        & (cx_full >= 0)
+        & (cy_full >= 0)
         & (state.biomass > 0.0)
     )
     sp_id = state.species_id[mask]
-    cx = state.cell_x[mask]
-    cy = state.cell_y[mask]
+    cx = cx_full[mask]
+    cy = cy_full[mask]
     bm = state.biomass[mask]
     # Life stage: egg/larva if is_egg; adult if mature (length>=maturity_size AND
     # age>=maturity_age, per reproduction.py); else juvenile. Computed on the mask.
@@ -99,6 +142,10 @@ def build_snapshot(
         sp_id, cx, cy, bm, stage = sp_id[idx], cx[idx], cy[idx], bm[idx], stage[idx]
     lon_step = float(np.median(np.diff(lon_arr))) if lon_arr.size > 1 else 0.0
     lat_step = float(np.median(np.diff(lat_arr))) if lat_arr.size > 1 else 0.0
+    ndt = max(1, int(getattr(config, "n_dt_per_year", 0)) or 1)
+    year = step // ndt + 1
+    doy = int((step % ndt) / ndt * 365)
+    date_label = f"Y{year} · {datetime(2001, 1, 1) + timedelta(days=doy):%d %b}"
     return MovementSnapshot(
         step=int(step),
         n_steps=int(config.n_steps),
@@ -117,6 +164,7 @@ def build_snapshot(
         lat_max=float(lat_arr.max()),
         lon_step=lon_step,
         lat_step=lat_step,
+        date_label=date_label,
     )
 
 
@@ -136,7 +184,7 @@ def make_step_observer(
     """
     last_emit: list[float | None] = [None]
 
-    def observer(step: int, state, grid, config) -> None:
+    def observer(step: int, state, grid, config, map_sets=None) -> None:
         n_steps = int(config.n_steps)
         is_edge = step == 0 or step == n_steps - 1
         t = now()
@@ -144,7 +192,7 @@ def make_step_observer(
             return
         last_emit[0] = t
         try:
-            snap = build_snapshot(step, state, grid, config, dot_cap=dot_cap)
+            snap = build_snapshot(step, state, grid, config, map_sets=map_sets, dot_cap=dot_cap)
         except Exception:  # noqa: BLE001 — never crash the running simulation
             _log.warning("live snapshot build failed at step %s", step, exc_info=True)
             return
@@ -177,7 +225,7 @@ def make_run_observer(
     """
     start: list[float | None] = [None]
 
-    def observer(step: int, state, grid, config) -> None:
+    def observer(step: int, state, grid, config, map_sets=None) -> None:
         try:
             if start[0] is None:
                 start[0] = now()
@@ -196,7 +244,7 @@ def make_run_observer(
                 except queue.Full:
                     pass
             if live_observer is not None:
-                live_observer(step, state, grid, config)
+                live_observer(step, state, grid, config, map_sets)
         except Exception:  # noqa: BLE001 — never crash the running simulation
             _log.warning("run observer failed at step %s", step, exc_info=True)
 
