@@ -30,7 +30,8 @@
 **Interfaces:**
 - Produces: `DEMO_INFO: dict[str, dict[str, str]]`; `demo_info(name: str) -> dict[str, str] | None`.
 
-- [ ] **Step 1: Write the failing tests** — create/extend `tests/test_demo.py`:
+- [ ] **Step 1: Write the failing tests** — `tests/test_demo.py` ALREADY EXISTS, so **append** these
+  (do not overwrite):
 
 ```python
 from osmose.demo import DEMO_INFO, demo_info, list_demos
@@ -140,7 +141,8 @@ git commit -m "feat(demo): DEMO_INFO registry + demo_info() accessor (per-model 
 - Consumes: `DEMO_INFO`, `demo_info` (Task 1).
 - Produces: `_model_info_modal()` (module-level, returns a `ui.modal`).
 
-- [ ] **Step 1: Write the failing test** — create/extend `tests/test_ui_grid.py`:
+- [ ] **Step 1: Write the failing tests** — `tests/test_ui_grid.py` ALREADY EXISTS, so **append** these
+  (do not overwrite):
 
 ```python
 def test_model_info_modal_lists_all_models_with_engine_facts():
@@ -153,12 +155,23 @@ def test_model_info_modal_lists_all_models_with_engine_facts():
     # engine facts present
     assert "Python only" in html and "Java + Python" in html
     assert "Available models" in html  # modal title
+
+
+def test_grid_loader_rename_and_labels():
+    # The headline user-facing change: assert the rename + registry-driven labels on the rendered
+    # loader (grid_ui() is a zero-arg module-level function that renders to HTML).
+    from ui.pages.grid import grid_ui
+    html = str(grid_ui())
+    assert "Model selection" in html          # was "Example configuration"
+    assert "— Select model —" in html         # was "— Select example —"
+    assert "Eastern English Channel" in html  # eec registry title (auto-title "Eec" gone)
+    assert "btn_example_info" in html          # the info button is present
 ```
 
 - [ ] **Step 2: Run — verify it fails**
 
-Run: `PYTHONPATH=. /home/razinka/osmose/osmose-python/.venv/bin/python -m pytest tests/test_ui_grid.py -k model_info -q`
-Expected: FAIL (`cannot import name '_model_info_modal'`).
+Run: `PYTHONPATH=. /home/razinka/osmose/osmose-python/.venv/bin/python -m pytest tests/test_ui_grid.py -k "model_info or rename" -q`
+Expected: FAIL (the `model_info` test fails on `cannot import name '_model_info_modal'`; the `rename` test fails because the rendered loader still says "Example configuration" / "— Select example —").
 
 - [ ] **Step 3a: Import** — in `ui/pages/grid.py` line 21, extend the demo import:
 ```python
@@ -251,7 +264,7 @@ button, `col_widths=[8, 4]`) with:
 
 - [ ] **Step 4: Run — verify it passes + app imports**
 
-Run: `PYTHONPATH=. /home/razinka/osmose/osmose-python/.venv/bin/python -m pytest tests/test_ui_grid.py -k model_info -q`
+Run: `PYTHONPATH=. /home/razinka/osmose/osmose-python/.venv/bin/python -m pytest tests/test_ui_grid.py -k "model_info or rename" -q`
 Expected: PASS.
 Run: `PYTHONPATH=. /home/razinka/osmose/osmose-python/.venv/bin/python -c "import app; print('app imports OK')"`
 Expected: `app imports OK`.
