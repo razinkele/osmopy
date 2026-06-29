@@ -4,6 +4,10 @@
 > species — egg → larva → juvenile → adult — and how the OSMOSE engine realizes each phase.
 > Sources: `data/baltic/baltic_param-*.csv` (the configuration) and `osmose/engine/` (the
 > mechanics). Config version `osmose.version = 4.3.3`.
+>
+> **An external-evidence review of the parameters and claims below — against scite (literature),
+> ICES (stock assessments) and HELCOM (HOLAS 3) — is in
+> [`baltic-fish-lifecycle-scientific-review.md`](baltic-fish-lifecycle-scientific-review.md).**
 
 ---
 
