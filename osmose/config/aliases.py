@@ -145,6 +145,26 @@ def _emit_resource_biomass_forcing(cfg: dict[str, str]) -> dict[str, str]:
     return result
 
 
+def _emit_background_species_keys(cfg: dict[str, str]) -> dict[str, str]:
+    """Emit the source-dir-free 4.4.x keys that BackgroundSpecies.<init> requires.
+
+    For each ``species.type.spN == "background"`` species, emit ``species.multiplier.spN`` (a
+    scalar — 4.4.x reads it via getFloat; no per-class form) and ``species.beta.spN`` (the
+    predation allometric exponent; legacy default 1). Only fills absent keys (never overwrites).
+    The inline ``species.biomass.spN`` array is NOT emitted here — it needs the predator NetCDF,
+    materialized at staging time (see scripts/baltic_440_smoke.py); ``species.biomass.{mode,file,
+    varname}`` are the *resource* contract and are NOT used by background species.
+    """
+    result = dict(cfg)
+    for key, val in cfg.items():
+        if not key.startswith("species.type.sp") or str(val).strip().lower() != "background":
+            continue
+        idx = key[len("species.type.sp") :]
+        result.setdefault(f"species.multiplier.sp{idx}", "1")
+        result.setdefault(f"species.beta.sp{idx}", "1")
+    return result
+
+
 # old_prefix -> new_prefix. Ported VERBATIM from Releases.java $15 (v4.4.0), verified Step 1.
 # The migrate_config applier matches `k == old or k.startswith(old + ".")`, so indexed
 # `...spN` keys are caught via the `.` separator (prefixes deliberately stop before `.sp`).
@@ -228,6 +248,7 @@ def to_target_keys(cfg: dict[str, str], target_version: str = "4.3.3") -> dict[s
         # early-returns (warns, no scaling) BEFORE the factor is ever applied.
         result = _migrate_larva_rate(result, _ndtperyear(result) or 1.0, warn_bydt=True)
         result = _emit_resource_biomass_forcing(result)  # 4.4.x NETCDF_BIOMASS required keys
+        result = _emit_background_species_keys(result)  # 4.4.x background-species keys
         result["osmose.version"] = target_version  # stamp the ACTUAL target, not a hardcoded 4.4.0
         return result
     for new_prefix in sorted(_INVERSE_440, key=len, reverse=True):
