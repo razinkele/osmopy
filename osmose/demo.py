@@ -104,6 +104,60 @@ def list_demos() -> list[str]:
     return ["baltic", "bay_of_biscay", "eec", "eec_full", "minimal"]
 
 
+# Per-model metadata for the UI model picker (title shown in the dropdown; the rest in the
+# info modal). Keys MUST match list_demos(). Engine "Python only" = declares background species
+# (simulation.nbackground > 0), which the bundled Java engine cannot load.
+DEMO_INFO: dict[str, dict[str, str]] = {
+    "bay_of_biscay": {
+        "title": "Bay of Biscay",
+        "region": "NE Atlantic (Bay of Biscay)",
+        "species": "8 focal species",
+        "resources": "6 LTL/plankton groups",
+        "engine": "Java + Python",
+        "summary": "The OSMOSE reference example (anchovy, sardine, hake, …); runs on both engines.",
+    },
+    "eec": {
+        "title": "Eastern English Channel",
+        "region": "English Channel (reduced)",
+        "species": "6 focal species",
+        "resources": "no LTL resources",
+        "engine": "Java + Python",
+        "summary": "A reduced Eastern English Channel configuration; quick to run.",
+    },
+    "eec_full": {
+        "title": "Eastern English Channel (full)",
+        "region": "English Channel",
+        "species": "14 focal species",
+        "resources": "10 LTL + 1 background group",
+        "engine": "Python only",
+        "summary": "The full 14-species EEC — the cross-engine parity benchmark; uses a background "
+        "species, so it runs on the Python engine only.",
+    },
+    "baltic": {
+        "title": "Baltic Sea",
+        "region": "Central/Eastern Baltic",
+        "species": "8 focal species",
+        "resources": "6 LTL + 2 background groups",
+        "engine": "Python only",
+        "summary": "Cod, herring, sprat, flounder, perch, pike-perch, smelt, stickleback; uses "
+        "background species + LTL forcing, so it runs on the Python engine only.",
+    },
+    "minimal": {
+        "title": "Minimal",
+        "region": "Toy configuration",
+        "species": "2 focal species",
+        "resources": "no LTL resources",
+        "engine": "Java + Python",
+        "summary": "A 2-species toy configuration for quick tests and smoke runs.",
+    },
+}
+
+
+def demo_info(name: str) -> dict[str, str] | None:
+    """Return the metadata dict for a demo model, or None if unknown."""
+    return DEMO_INFO.get(name)
+
+
 def osmose_demo(scenario: str, output_dir: Path) -> dict:
     """Generate a demo OSMOSE configuration.
 

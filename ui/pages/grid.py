@@ -18,7 +18,7 @@ from shiny_deckgl import (  # type: ignore[import-untyped]
     scale_widget,
 )
 
-from osmose.demo import list_demos, osmose_demo
+from osmose.demo import demo_info, list_demos, osmose_demo
 from osmose.logging import setup_logging
 from osmose.schema.grid import GRID_FIELDS
 from ui.components.collapsible import collapsible_card_header, expand_tab
@@ -72,6 +72,31 @@ def _validate_overlay_path(overlay_val: str, cfg_dir: Path | None) -> Path | Non
     return candidate
 
 
+def _model_info_modal():
+    """Modal listing all available demo models with their key facts (from DEMO_INFO)."""
+    blocks = []
+    for name in list_demos():
+        info = demo_info(name)
+        if not info:
+            continue
+        facts = " · ".join([info["region"], info["species"], info["resources"], info["engine"]])
+        blocks.append(
+            ui.div(
+                ui.tags.h5(info["title"]),
+                ui.tags.p(facts, class_="text-muted small mb-1"),
+                ui.tags.p(info["summary"], class_="mb-0"),
+                class_="mb-3",
+            )
+        )
+    return ui.modal(
+        *blocks,
+        title="Available models",
+        easy_close=True,
+        size="l",
+        footer=ui.modal_button("Close"),
+    )
+
+
 def grid_ui():
     grid_map = MapWidget(
         "grid_map",
@@ -91,8 +116,11 @@ def grid_ui():
     )
 
     demo_choices = {
-        "": "— Select example —",
-        **{d: d.replace("_", " ").title() for d in list_demos()},
+        "": "— Select model —",
+        **{
+            d: (demo_info(d) or {}).get("title") or d.replace("_", " ").title()
+            for d in list_demos()
+        },
     }
     return ui.div(
         expand_tab("Grid Type", "grid"),
@@ -103,9 +131,17 @@ def grid_ui():
                     ui.layout_columns(
                         ui.input_select(
                             "load_example",
-                            "Example configuration",
+                            "Model selection",
                             choices=demo_choices,
                             selected="",
+                        ),
+                        ui.div(
+                            ui.input_action_button(
+                                "btn_example_info",
+                                "ℹ Info",
+                                class_="btn-outline-secondary w-100",
+                            ),
+                            style="display: flex; align-items: flex-end; height: 100%;",
                         ),
                         ui.div(
                             ui.input_action_button(
@@ -113,7 +149,7 @@ def grid_ui():
                             ),
                             style="display: flex; align-items: flex-end; height: 100%;",
                         ),
-                        col_widths=[8, 4],
+                        col_widths=[7, 2, 3],
                     ),
                 ),
                 ui.div(
@@ -807,6 +843,12 @@ def grid_server(input, output, session, state):
     @reactive.effect
     def sync_grid_inputs():
         sync_inputs(input, state, GRID_GLOBAL_KEYS)
+
+    @reactive.effect
+    @reactive.event(input.btn_example_info)
+    def handle_example_info():
+        """Show the per-model info modal."""
+        ui.modal_show(_model_info_modal())
 
     @reactive.effect
     @reactive.event(input.btn_load_example)

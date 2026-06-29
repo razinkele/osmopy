@@ -2,7 +2,7 @@
 
 import pytest
 
-from osmose.demo import osmose_demo, migrate_config
+from osmose.demo import DEMO_INFO, demo_info, migrate_config, osmose_demo, list_demos
 
 
 def test_osmose_demo_bay_of_biscay(tmp_path):
@@ -267,3 +267,22 @@ def test_migrate_no_version_key():
     result = migrate_config(config, target_version="4.3.3")
     assert "population.seeding.biomass.sp0" in result
     assert "grid.nlon" in result
+
+
+_REQUIRED = ("title", "region", "species", "resources", "engine", "summary")
+
+
+def test_demo_info_covers_all_demos_with_full_fields():
+    for name in list_demos():
+        assert name in DEMO_INFO, f"DEMO_INFO missing {name}"
+        entry = DEMO_INFO[name]
+        for field in _REQUIRED:
+            assert entry.get(field), f"{name}.{field} empty"
+
+
+def test_demo_info_accessor_and_engine_facts():
+    assert demo_info("baltic")["engine"] == "Python only"
+    assert demo_info("eec_full")["engine"] == "Python only"
+    assert demo_info("bay_of_biscay")["engine"].startswith("Java")
+    assert demo_info("eec")["title"] == "Eastern English Channel"
+    assert demo_info("unknown") is None
