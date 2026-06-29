@@ -72,22 +72,29 @@ def _validate_overlay_path(overlay_val: str, cfg_dir: Path | None) -> Path | Non
     return candidate
 
 
-def _model_info_modal():
-    """Modal listing all available demo models with their key facts (from DEMO_INFO)."""
-    blocks = []
-    for name in list_demos():
-        info = demo_info(name)
-        if not info:
-            continue
+def _model_info_modal(selected: str | None = None):
+    """Per-model info modal. With a known ``selected`` model, show only that model; otherwise
+    list all available models (the overview)."""
+
+    def _block(info):
         facts = " · ".join([info["region"], info["species"], info["resources"], info["engine"]])
-        blocks.append(
-            ui.div(
-                ui.tags.h5(info["title"]),
-                ui.tags.p(facts, class_="text-muted small mb-1"),
-                ui.tags.p(info["summary"], class_="mb-0"),
-                class_="mb-3",
-            )
+        return ui.div(
+            ui.tags.h5(info["title"]),
+            ui.tags.p(facts, class_="text-muted small mb-1"),
+            ui.tags.p(info["summary"], class_="mb-0"),
+            class_="mb-3",
         )
+
+    info = demo_info(selected) if selected else None
+    if info is not None:
+        return ui.modal(
+            _block(info),
+            title=f"Model: {info['title']}",
+            easy_close=True,
+            size="l",
+            footer=ui.modal_button("Close"),
+        )
+    blocks = [_block(demo_info(name)) for name in list_demos() if demo_info(name)]
     return ui.modal(
         *blocks,
         title="Available models",
@@ -139,7 +146,7 @@ def grid_ui():
                             ui.input_action_button(
                                 "btn_example_info",
                                 "ℹ Info",
-                                class_="btn-outline-secondary w-100",
+                                class_="btn-outline-secondary w-100 text-nowrap",
                             ),
                             style="display: flex; align-items: flex-end; height: 100%;",
                         ),
@@ -149,7 +156,7 @@ def grid_ui():
                             ),
                             style="display: flex; align-items: flex-end; height: 100%;",
                         ),
-                        col_widths=[7, 2, 3],
+                        col_widths=[6, 3, 3],
                     ),
                 ),
                 ui.div(
@@ -848,7 +855,7 @@ def grid_server(input, output, session, state):
     @reactive.event(input.btn_example_info)
     def handle_example_info():
         """Show the per-model info modal."""
-        ui.modal_show(_model_info_modal())
+        ui.modal_show(_model_info_modal(input.load_example()))
 
     @reactive.effect
     @reactive.event(input.btn_load_example)
