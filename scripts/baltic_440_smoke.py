@@ -53,6 +53,8 @@ def assert_predators_feed(out_dir: Path, control_out_dir: Path | None = None) ->
     Primary: check diet matrix CSV for non-zero predation by GreySeal/Cormorant columns.
     Fallback: compare focal biomass between with-background and no-background runs (>5% difference
     for at least one species proves predation impact).
+
+    Raises AssertionError if feeding cannot be confirmed.
     """
     import csv as csv_mod
 
@@ -111,18 +113,18 @@ def assert_predators_feed(out_dir: Path, control_out_dir: Path | None = None) ->
                 print("PASS: Background predators exert measurable predation (>5% biomass impact).")
                 return
             else:
-                print(
-                    f"WARNING: Max diff {max_diff:.1%} < 5% — predation may be negligible. "
-                    "Check BG_ACCESS values."
+                raise AssertionError(
+                    f"FAIL: Max biomass diff {max_diff:.1%} < 5% threshold. "
+                    "Background predators not confirming significant feeding. Check BG_ACCESS values."
                 )
-                return  # Non-fatal: low impact may reflect short run (3yr) or low ingestion
-        print("WARNING: Could not compare biomass (missing output). Skipping feeding assertion.")
-        return
+        raise AssertionError(
+            "FAIL: Could not compare biomass with control run (missing or incomplete output)."
+        )
 
     # Neither check was conclusive
-    print(
-        "WARNING: Could not confirm GreySeal/Cormorant feeding from diet output. "
-        "Diet files found: " + str([f.name for f in diet_files[:5]])
+    raise AssertionError(
+        f"FAIL: Could not confirm GreySeal/Cormorant feeding from diet output. "
+        f"Diet files found: {[f.name for f in diet_files[:5]]}"
     )
 
 
@@ -134,6 +136,7 @@ def _read_biomass_means(out_dir: Path) -> dict[str, float]:
     import csv as csv_mod
 
     result: dict[str, float] = {}
+    files_failed = 0
     for f in out_dir.rglob("*biomass*.csv"):
         try:
             lines = [ln for ln in f.read_text().splitlines() if not ln.startswith('"Mean')]
@@ -155,8 +158,11 @@ def _read_biomass_means(out_dir: Path) -> dict[str, float]:
             for sp, vals in cols.items():
                 if vals:
                     result[sp] = float(np.mean(vals))
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"WARNING: Failed to parse biomass file {f.name}: {exc}")
+            files_failed += 1
+    if files_failed > 0:
+        print(f"Note: {files_failed} biomass file(s) failed to parse.")
     return result
 
 
@@ -299,7 +305,7 @@ def stage_and_run(years: int = 3, out: Path | None = None) -> int:
         if biomass:
             collapsed = [sp for sp, v in biomass.items() if v == 0.0]
             if collapsed:
-                print(f"WARNING: Focal species collapsed to zero: {collapsed}")
+                raise AssertionError(f"FAIL: Focal species collapsed to zero: {collapsed}")
             else:
                 print(f"PASS: All {len(biomass)} focal species have non-zero mean biomass.")
         # Feeding check (primary: diet files; fallback: comparison run)
@@ -309,4 +315,9 @@ def stage_and_run(years: int = 3, out: Path | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(0 if stage_and_run() == 0 else 1)
+    try:
+        exit_code = stage_and_run()
+        sys.exit(0 if exit_code == 0 else 1)
+    except AssertionError as e:
+        print(f"\n{e}")
+        sys.exit(1)
