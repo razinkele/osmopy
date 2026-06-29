@@ -383,6 +383,27 @@ reference parameterization.
   the diet shift comes only from the fixed size-ratio window scaling with predator growth, plus the
   age-structured accessibility matrix.
 - **No bioenergetics.** Growth is classic feeding-gated vBGF, not a `bioen` energy budget.
+- **No salinity/oxygen forcing of cod recruitment — the "reproductive volume" gap.** In reality,
+  eastern-Baltic-cod recruitment is governed largely by the *reproductive volume*: the volume of
+  deep-basin water that is simultaneously saline enough (≳ 11 PSU, for cod eggs to stay neutrally
+  buoyant) and oxygenated enough (≳ 2 mL·L⁻¹, for them to survive), which is replenished only by
+  sporadic **Major Baltic Inflows** of dense, saline, oxygenated North Sea water. **The model does
+  not represent this.** There is no salinity or oxygen state variable and no inflow forcing anywhere
+  in the configuration (a search of `data/baltic/` for salinity/oxygen/inflow/halocline returns
+  nothing); the only environmental forcing is LTL plankton/benthos **biomass**
+  (`baltic_ltl_biomass.nc`) plus the static grid. Cod spawning is fixed in **space** (the
+  `cod_spawning` deep-basin maps, §6) and **time** (the static spawning-season file, §4); egg
+  production is `SSB × fecundity × season` only (§2); and egg/larval survival is a **constant
+  calibrated mortality rate** (`mortality.additional.larva.rate`, §2). The inflow →
+  reproductive-volume → egg-survival pathway is therefore absorbed into that constant as a static
+  long-term average, **with no inter-annual inflow variability** — so the model cannot reproduce the
+  inflow-driven boom/bust of cod year-classes (the dominant real-world recruitment driver). HELCOM
+  HOLAS 3 confirms the deep basins are hypoxic in reality (the oxygen-debt indicator fails in every
+  cod-spawning basin — see the
+  [scientific review](baltic-fish-lifecycle-scientific-review.md)); the model captures that only as
+  the fixed mortality average. Closing the gap would require salinity + oxygen forcing fields (the
+  CMEMS pipeline in `osmose/forcing/` that already generates the LTL NetCDF could be extended)
+  driving an egg-survival function of the reproductive volume.
 - **Base config vs. calibration.** The CSV files describe the *structure*; the phase-13 Shepherd
   JSON supplies the *canonical values* for recruitment and additional mortality. A run that does not
   load phase-13 will use the (uncalibrated) base rates and behave differently.
