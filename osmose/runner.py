@@ -14,30 +14,45 @@ from osmose.logging import setup_logging
 _log = setup_logging("osmose.runner")
 
 
-def java_engine_block_reason(config) -> str | None:
+def java_engine_block_reason(config, jar_version: str | None = None) -> str | None:
     """Reason the Java reference engine cannot run this configuration, or None.
 
-    Configurations that declare BACKGROUND species (``simulation.nbackground`` > 0) are
-    Python-engine-only here. The Java engine requires every background species to appear
-    in the catchability, discards, AND predation-accessibility matrices using OSMOSE's
-    ';'-separated matrix format; the Python-side configs (e.g. Baltic, with GreySeal /
-    Cormorant) store comma-separated fishery matrices and omit the background species, so
-    a Java run crashes at year 0 ("No catchability found for prey ..."). The Python engine
-    models background species natively, so it runs these configs fine -- use it instead.
+    Background-species configs (``simulation.nbackground`` > 0) need extra keys/matrices the bundled
+    OSMOPY configs omit (inline biomass, the background species in the accessibility / catchability /
+    discards matrices, movement maps, ...). They ARE runnable on a **>= 4.4.0 jar** when a staging
+    recipe exists for their background species
+    (:func:`osmose.java_background_staging.background_staging_supported`) — the UI Java path stages
+    them (C2). On a ``< 4.4.0`` jar, an unknown ``jar_version`` (conservative), or for an unrecognised
+    background species, they remain Python-engine-only and are blocked here.
     """
     try:
         n_bg = int(float(str(config.get("simulation.nbackground", 0) or 0)))
     except (TypeError, ValueError):
         n_bg = 0
-    if n_bg > 0:
-        return (
-            "The Java reference engine does not support this configuration: it declares "
-            f"{n_bg} background species, which the Java engine requires in every fishery and "
-            "predation matrix (OSMOSE ';'-separated format). These are Python-engine "
-            "configurations (e.g. Baltic: GreySeal, Cormorant). Switch to the Python engine "
-            "to run it."
+    if n_bg <= 0:
+        return None
+
+    from osmose.config.aliases import _numeric_version
+
+    if jar_version is not None and _numeric_version(jar_version) >= _numeric_version("4.4.0"):
+        from osmose.java_background_staging import (
+            BG_ACCESS,
+            _background_species,
+            background_staging_supported,
         )
-    return None
+
+        if background_staging_supported(config):
+            return None  # the UI stages these and the >=4.4.0 jar runs them
+        unsupported = sorted({n for _, n in _background_species(config) if n not in BG_ACCESS})
+        return (
+            f"The Java engine cannot run this configuration: background species {unsupported} have "
+            "no staging recipe (only Baltic's GreySeal/Cormorant are supported). Use the Python engine."
+        )
+    return (
+        "The Java reference engine does not support this configuration: it declares "
+        f"{n_bg} background species, which require OSMOSE 4.4.x. Select the 4.4.1 jar to run a "
+        "supported background config (e.g. Baltic), or use the Python engine."
+    )
 
 
 _OSMOSE_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9._]*$")

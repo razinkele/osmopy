@@ -364,7 +364,7 @@ async def _run_java_engine(
         ui.update_action_button("btn_cancel", disabled=True, session=session)
         return
 
-    from osmose.config.aliases import target_version_for_jar
+    from osmose.config.aliases import _numeric_version, target_version_for_jar
 
     config_path = write_temp_config(
         config,
@@ -375,6 +375,18 @@ async def _run_java_engine(
     )
 
     overrides = parse_overrides(input.param_overrides() or "")
+    # C2: stage background species for a >=4.4.0 jar (e.g. Baltic). The run gate has already
+    # confirmed the config is staging-supported; merge the staging's -P overrides (cutoff workaround).
+    try:
+        _n_bg = int(float(config.get("simulation.nbackground", 0) or 0))
+    except (TypeError, ValueError):
+        _n_bg = 0
+    if _n_bg > 0 and _numeric_version(target_version_for_jar(jar_path)) >= _numeric_version(
+        "4.4.0"
+    ):
+        from osmose.java_background_staging import stage_background_for_java
+
+        overrides = {**overrides, **stage_background_for_java(config_path.parent, config)}
     java_opts_text = input.java_opts() or ""
     java_opts = java_opts_text.split() if java_opts_text.strip() else []
     try:
@@ -746,7 +758,11 @@ def run_server(input, output, session, state):
         config = state.config.get()
         if not config:
             return ui.p("Load a configuration to see engine capabilities.", class_="text-muted")
-        cap = describe_engine(state.engine_mode.get(), config)
+        from osmose.config.aliases import target_version_for_jar
+
+        cap = describe_engine(
+            state.engine_mode.get(), config, target_version_for_jar(Path(state.jar_path.get()))
+        )
         if not cap.can_run:
             return ui.div(
                 ui.tags.strong("This engine can't run this configuration. "),
@@ -821,7 +837,11 @@ def run_server(input, output, session, state):
         # predation matrices. Block early with a clear message instead of launching a
         # doomed Java subprocess.
         if engine_mode != "python":
-            block = java_engine_block_reason(config)
+            from osmose.config.aliases import target_version_for_jar
+
+            block = java_engine_block_reason(
+                config, target_version_for_jar(Path(state.jar_path.get()))
+            )
             if block:
                 run_log.set(["--- RUN BLOCKED (engine not supported) ---", block])
                 status.set("Java engine not supported for this configuration")

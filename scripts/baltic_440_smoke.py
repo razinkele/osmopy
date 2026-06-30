@@ -1,4 +1,8 @@
-"""Stage Baltic for OSMOSE 4.4.1 (background-species adaptation) and validate it loads + runs."""
+"""Stage Baltic for OSMOSE 4.4.1 (background-species adaptation) and validate it loads + runs.
+
+The staging recipe lives in ``osmose.java_background_staging`` (shared with the UI Java run path);
+this script stages Baltic, runs the 4.4.1 jar, and asserts it loads + the predators feed.
+"""
 
 from __future__ import annotations
 
@@ -7,44 +11,12 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import xarray as xr
+
+from osmose.java_background_staging import stage_background_for_java
 
 ROOT = Path("/home/razinka/osmose/osmose-python")
 BALTIC = ROOT / "data" / "baltic" / "baltic_all-parameters.csv"
 JAR = ROOT / "osmose-java" / "osmose-4.4.1-jar-with-dependencies.jar"
-
-# Authored accessibility (prey -> value) for each background PREDATOR, from baltic_param-background.csv
-# diet intent + size-ratio windows. Starter values; tune if the positive feeding check is weak.
-BG_ACCESS = {
-    "GreySeal": {"herring": 0.4, "sprat": 0.4, "cod": 0.3, "flounder": 0.2, "pikeperch": 0.1},
-    "Cormorant": {"perch": 0.4, "herring": 0.3, "sprat": 0.3, "cod": 0.1},
-}
-
-
-def inline_biomass_series(nc_path: str | Path, varname: str) -> list[float]:
-    """Per-step domain-total biomass (length = n time steps) for a background species' NetCDF var."""
-    ds = xr.open_dataset(nc_path)
-    a = ds[varname]
-    spatial = [d for d in a.dims if d != a.dims[0]]  # sum all but the leading (time) dim
-    return [float(v) for v in np.nan_to_num(a.sum(dim=spatial).values)]
-
-
-def augment_accessibility(csv_path: Path, predators: dict[str, dict[str, float]]) -> None:
-    """Add background predators as columns (authored prey access) + apex prey rows (0), in place."""
-    lines = [ln for ln in csv_path.read_text().splitlines() if ln.strip()]
-    header = lines[0].split(";")
-    names = list(predators)
-    header += names
-    rows = [header]
-    for ln in lines[1:]:
-        cells = ln.split(";")
-        prey = cells[0]
-        cells += [str(predators[p].get(prey, 0.0)) for p in names]
-        rows.append(cells)
-    ncol = len(header)
-    for p in names:  # apex prey rows: 0 accessibility to every predator
-        rows.append([p] + ["0"] * (ncol - 1))
-    csv_path.write_text("\n".join(";".join(c) for c in rows) + "\n")
 
 
 def assert_predators_feed(out_dir: Path, control_out_dir: Path | None = None) -> None:
@@ -166,56 +138,6 @@ def _read_biomass_means(out_dir: Path) -> dict[str, float]:
     return result
 
 
-def _write_background_movement_maps(
-    stage: Path,
-    bg_species: list[tuple[str, int]],
-    all_steps: list[int],
-    ref_map_csv: Path,
-) -> list[str]:
-    """Create uniform sea-distribution CSV maps for background species and return the config lines.
-
-    BackgroundMapSet (4.4.1) requires explicit movement.{species,file,steps,class}.mapN entries
-    for every background species and class — it has no 'random' mode, unlike focal species.
-    We copy the sea-cell mask from an existing focal-species map (1=sea, -99=land) and use it
-    as a uniform all-sea distribution for wide-ranging top predators.
-    """
-    # Build uniform sea mask from any existing map (cod_juvenile has representative coverage)
-    ref_lines = ref_map_csv.read_text().splitlines()
-    ref_arr = [
-        [float(x) for x in ln.strip().split(";") if x.strip()] for ln in ref_lines if ln.strip()
-    ]
-    # Replace any positive value with 1 (uniform); keep land as -99
-    sea_rows = [";".join("-99" if v < -90 else "1" for v in row) for row in ref_arr]
-    sea_text = "\n".join(sea_rows) + "\n"
-
-    maps_dir = stage / "maps"
-    maps_dir.mkdir(parents=True, exist_ok=True)
-
-    config_lines: list[str] = []
-    step_str = ";".join(str(s) for s in all_steps)
-
-    # Find the next free map index in the stage master to avoid collision
-    master_text = (stage / "osm_all-parameters.csv").read_text()
-    existing = [
-        int(m.group(1))
-        for m in __import__("re").finditer(r"movement\.species\.map(\d+)", master_text)
-    ]
-    next_idx = (max(existing) + 1) if existing else 26
-
-    for sp_name, n_class in bg_species:
-        map_file = maps_dir / f"background_{sp_name.lower()}_all.csv"
-        map_file.write_text(sea_text)
-        for cls in range(n_class):
-            idx = next_idx
-            next_idx += 1
-            rel_path = f"maps/background_{sp_name.lower()}_all.csv"
-            config_lines.append(f"movement.species.map{idx} ; {sp_name}")
-            config_lines.append(f"movement.file.map{idx} ; {rel_path}")
-            config_lines.append(f"movement.steps.map{idx} ; {step_str}")
-            config_lines.append(f"movement.class.map{idx} ; {cls}")
-    return config_lines
-
-
 def stage_and_run(years: int = 3, out: Path | None = None) -> int:
     import tempfile
 
@@ -223,58 +145,11 @@ def stage_and_run(years: int = 3, out: Path | None = None) -> int:
     from ui.pages.run import write_temp_config
 
     raw = dict(OsmoseConfigReader().read(str(BALTIC)))
-    ndt = int(float(raw.get("simulation.time.ndtperyear", "24") or "24"))
     tmp = Path(out or tempfile.mkdtemp(prefix="baltic440_"))
     stage = tmp / "stage"
     write_temp_config(raw, stage, source_dir=BALTIC.parent, target_version="4.4.1")
     master = stage / "osm_all-parameters.csv"
-    # materialize inline biomass into the flat master
-    nc = stage / "baltic_predator_biomass.nc"
-    extra = []
-    for idx, var in (("14", "GreySeal"), ("15", "Cormorant")):
-        series = inline_biomass_series(nc, var)
-        extra.append(f"species.biomass.sp{idx} ; {';'.join(f'{v:.6g}' for v in series)}")
-        extra.append(f"species.biomass.nsteps.year.sp{idx} ; {ndt}")
-    # Add explicit movement map assignments for background species.
-    # BackgroundMapSet in 4.4.1 has no 'random' mode; it always reads movement.{species,file,
-    # steps,class}.mapN entries. We create uniform all-sea maps (GreySeal=2 classes, Cormorant=2)
-    # from the cod_juvenile reference map and assign them to all ndt steps.
-    ref_map = stage / "maps" / "cod_juvenile.csv"
-    bg_species = [("GreySeal", 2), ("Cormorant", 2)]
-    movement_lines = _write_background_movement_maps(stage, bg_species, list(range(ndt)), ref_map)
-    extra.extend(movement_lines)
-    # nschool is required by BackgroundProcess.init() for each background species.
-    # Use a small value (10 schools each) — background species represent aggregated populations.
-    for idx in ("14", "15"):
-        extra.append(f"simulation.nschool.sp{idx} ; 10")
-    # Diet output stage thresholds are required for all species in the predation-accessibility
-    # universe (including background species). Add representative size thresholds:
-    # GreySeal sp14: juvenile (<90cm) / adult (>=90cm). Cormorant sp15: juv (<65cm) / adult.
-    extra.append("output.diet.stage.threshold.sp14 ; 90")
-    extra.append("output.diet.stage.threshold.sp15 ; 65")
-    # 4.4.1 OutputRegion.include() indexes getCutoffAge()[school.getSpeciesIndex()] where the
-    # index is the background-local (0,1) or focal (0-7) species index. However, with
-    # simulation.nbackground > 0, the 4.4.1 output manager appears to iterate over MORE schools
-    # (including resources at species-file indices 8+) in getCutoffAge() causing Index 8 OOB.
-    # Workaround: disable cutoff (output.cutoff.enabled=false) in the staged config so the
-    # faload branch in include() is never taken. The SOURCE output config has cutoff=true;
-    # only the staged copy is overridden here.
-    extra.append("output.cutoff.enabled ; false")
-    master.write_text(master.read_text() + "\n".join(extra) + "\n")
-    # augment the STAGED accessibility matrix (source untouched)
-    augment_accessibility(stage / "predation-accessibility.csv", BG_ACCESS)
-    # Add zero-catchability/discards rows for background species to the STAGED matrices only.
-    # The 4.4.1 Matrix class resolves prey indices from the accessibility matrix universe,
-    # so any prey row added there must also appear in catchability/discards (even as zeros).
-    # Source matrices are untouched; only the staged copies are modified.
-    for fname in ("fishery-catchability.csv", "fishery-discards.csv"):
-        fpath = stage / fname
-        text = fpath.read_text()
-        n_fisheries = len(text.splitlines()[0].split(",")) - 1
-        zeros = ",".join(["0"] * n_fisheries)
-        for sp_name in ("GreySeal", "Cormorant"):
-            text += f"{sp_name},{zeros}\n"
-        fpath.write_text(text)
+    overrides = stage_background_for_java(stage, raw)  # shared staging recipe (osmose module)
     odir = tmp / "out"
     odir.mkdir(parents=True, exist_ok=True)
     cmd = [
@@ -286,11 +161,7 @@ def stage_and_run(years: int = 3, out: Path | None = None) -> int:
         f"-Poutput.dir.path={odir}",
         f"-Psimulation.time.nyear={years}",
         "-Poutput.start.year=0",
-        # 4.4.1 OutputRegion.include indexes getCutoffAge()[school.getSpeciesIndex()] across
-        # ALL school types (focal+background+resource). With nbackground=2, the resource
-        # species at file index 8 causes ArrayIndexOutOfBounds on a length-8 cutoffAge array.
-        # Override cutoff to false via command-line (-P takes precedence over file values).
-        "-Poutput.cutoff.enabled=false",
+        *[f"-P{k}={v}" for k, v in overrides.items()],  # incl. output.cutoff.enabled=false
     ]
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
     print("exit:", r.returncode)
