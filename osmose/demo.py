@@ -129,18 +129,19 @@ DEMO_INFO: dict[str, dict[str, str]] = {
         "region": "English Channel",
         "species": "14 focal species",
         "resources": "10 LTL + 1 background group",
-        "engine": "Python only",
-        "summary": "The full 14-species EEC — the cross-engine parity benchmark; uses a background "
-        "species, so it runs on the Python engine only.",
+        "engine": "Java 4.4.1 + Python",
+        "summary": "The full 14-species EEC — the cross-engine parity benchmark. Runs on the "
+        "Python engine and the Java 4.4.1 jar.",
     },
     "baltic": {
         "title": "Baltic Sea",
         "region": "Central/Eastern Baltic",
         "species": "8 focal species",
         "resources": "6 LTL + 2 background groups",
-        "engine": "Python only",
+        "engine": "Java 4.4.1 + Python",
         "summary": "Cod, herring, sprat, flounder, perch, pike-perch, smelt, stickleback; uses "
-        "background species + LTL forcing, so it runs on the Python engine only.",
+        "background species + LTL forcing. Runs on the Python engine, and on the Java 4.4.1 jar "
+        "(background staging).",
     },
     "minimal": {
         "title": "Minimal",

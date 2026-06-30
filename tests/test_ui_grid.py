@@ -106,8 +106,8 @@ def test_model_info_modal_lists_all_models_with_engine_facts():
         "Minimal",
     ]:
         assert title in html
-    # engine facts present
-    assert "Python only" in html and "Java + Python" in html
+    # engine facts present (baltic/eec_full now run on the 4.4.1 jar too)
+    assert "Java 4.4.1 + Python" in html and "Java + Python" in html
     assert "Available models" in html  # modal title
 
 

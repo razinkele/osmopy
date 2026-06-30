@@ -281,8 +281,9 @@ def test_demo_info_covers_all_demos_with_full_fields():
 
 
 def test_demo_info_accessor_and_engine_facts():
-    assert demo_info("baltic")["engine"] == "Python only"
-    assert demo_info("eec_full")["engine"] == "Python only"
+    # baltic + eec_full run on the Java 4.4.1 jar too (sub-projects A/C1/C2), not Python-only
+    assert demo_info("baltic")["engine"] == "Java 4.4.1 + Python"
+    assert demo_info("eec_full")["engine"] == "Java 4.4.1 + Python"
     assert demo_info("bay_of_biscay")["engine"].startswith("Java")
     assert demo_info("eec")["title"] == "Eastern English Channel"
     assert demo_info("unknown") is None
