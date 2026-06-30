@@ -29,6 +29,7 @@ needs. The transient intermediate key is therefore intentionally omitted.
 
 from __future__ import annotations
 
+import logging
 import re
 import warnings
 
@@ -282,16 +283,29 @@ def to_target_keys(
     return result
 
 
-def canonicalize_config(cfg: dict[str, str]) -> tuple[dict[str, str], list[str]]:
-    """Migrate a config dict to canonical 4.4.0 keys; return (new_cfg, deprecated_old_keys).
+_LEGACY_DEPRECATION_LOGGED = False
 
-    ``deprecated_old_keys`` = the OLD keys from RENAMES_440 present in the input (for
-    one-time deprecation logging by callers). Idempotent on already-4.4.0 configs (NEW
-    keys are never in RENAMES_440's OLD set, so they pass through untouched).
+
+def canonicalize_config(cfg: dict[str, str]) -> tuple[dict[str, str], list[str]]:
+    """LEGACY ADAPTER: migrate an old (pre-4.4.0) config to canonical 4.4.0 keys.
+
+    The bundled configs are now native 4.4.0, so this is a no-op for them (NEW keys are never in
+    RENAMES_440's OLD set). It survives only as backward-compat tolerance for a user loading an old
+    4.3.x config; the native 4.4.x path does NOT depend on it. Returns (new_cfg, deprecated_old_keys)
+    and logs a one-time notice when it actually converts old keys.
     """
     from osmose.demo import migrate_config
 
     deprecated = sorted(
         k for k in cfg if any(k == old or k.startswith(old + ".") for old in RENAMES_440)
     )
+    global _LEGACY_DEPRECATION_LOGGED
+    if deprecated and not _LEGACY_DEPRECATION_LOGGED:
+        _LEGACY_DEPRECATION_LOGGED = True
+        logging.getLogger("osmose.config").info(
+            "Loaded a legacy pre-4.4.0 config: %d deprecated key(s) auto-migrated to 4.4.0 "
+            "(e.g. %s). Convert to native 4.4.x to retire the compat shim.",
+            len(deprecated),
+            deprecated[0],
+        )
     return migrate_config(cfg, target_version="4.4.0"), deprecated
