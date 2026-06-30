@@ -61,8 +61,8 @@ def _describe_python(config: dict[str, str]) -> EngineCapability:
 _JAVA_EMPTY_PAGES = ["Diagnostics", "Genetics", "Economic", "Spatial Results"]
 
 
-def _describe_java(config: dict[str, str]) -> EngineCapability:
-    block = java_engine_block_reason(config)
+def _describe_java(config: dict[str, str], jar_version: str | None = None) -> EngineCapability:
+    block = java_engine_block_reason(config, jar_version)
     return EngineCapability(
         engine="java",
         can_run=block is None,
@@ -73,13 +73,19 @@ def _describe_java(config: dict[str, str]) -> EngineCapability:
     )
 
 
-def describe_engine(engine: str, config: dict[str, str]) -> EngineCapability:
-    """Describe what ``engine`` will produce for ``config``. Total — never raises."""
+def describe_engine(
+    engine: str, config: dict[str, str], jar_version: str | None = None
+) -> EngineCapability:
+    """Describe what ``engine`` will produce for ``config``. Total — never raises.
+
+    ``jar_version`` (the selected Java jar's version, e.g. "4.4.1") makes the Java capability
+    version-aware: a >= 4.4.0 jar can run a staging-supported background config (C2).
+    """
     config = config or {}
     if engine == "python":
         return _describe_python(config)
     if engine == "java":
-        return _describe_java(config)
+        return _describe_java(config, jar_version)
     # Unknown engine — neutral, total fallback.
     return EngineCapability(
         engine=engine,
