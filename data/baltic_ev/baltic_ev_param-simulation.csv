@@ -2,9 +2,9 @@ simulation.ncpu;1
 simulation.nresource;6
 simulation.nsimulation;1
 simulation.nspecies;8
-simulation.time.ndtPerYear;24
+simulation.time.ndtperyear;24
 simulation.time.nyear;50
-simulation.bioen.enabled;true
+module.bioenergetics.enabled;true
 simulation.bioen.phit.enabled;false
-simulation.genetic.enabled;true
+module.genetics.enabled;true
 evolution.seeding.year;10

@@ -95,10 +95,16 @@ def test_grid_layers_dark_mode():
 
 def test_model_info_modal_lists_all_models_with_engine_facts():
     from ui.pages.grid import _model_info_modal
+
     html = str(_model_info_modal())
     # all five model titles present
-    for title in ["Bay of Biscay", "Eastern English Channel", "Eastern English Channel (full)",
-                  "Baltic Sea", "Minimal"]:
+    for title in [
+        "Bay of Biscay",
+        "Eastern English Channel",
+        "Eastern English Channel (full)",
+        "Baltic Sea",
+        "Minimal",
+    ]:
         assert title in html
     # engine facts present
     assert "Python only" in html and "Java + Python" in html
@@ -109,15 +115,17 @@ def test_grid_loader_rename_and_labels():
     # The headline user-facing change: assert the rename + registry-driven labels on the rendered
     # loader (grid_ui() is a zero-arg module-level function that renders to HTML).
     from ui.pages.grid import grid_ui
+
     html = str(grid_ui())
-    assert "Model selection" in html          # was "Example configuration"
-    assert "— Select model —" in html         # was "— Select example —"
+    assert "Model selection" in html  # was "Example configuration"
+    assert "— Select model —" in html  # was "— Select example —"
     assert "Eastern English Channel" in html  # eec registry title (auto-title "Eec" gone)
-    assert "btn_example_info" in html          # the info button is present
+    assert "btn_example_info" in html  # the info button is present
 
 
 def test_model_info_modal_single_model_when_selected():
     from ui.pages.grid import _model_info_modal
+
     html = str(_model_info_modal("baltic"))
     assert "Model: Baltic Sea" in html  # single-model modal title
     assert "Baltic Sea" in html
@@ -126,6 +134,7 @@ def test_model_info_modal_single_model_when_selected():
 
 def test_model_info_modal_none_shows_overview():
     from ui.pages.grid import _model_info_modal
+
     html = str(_model_info_modal(None))
     assert "Available models" in html
     for title in ["Bay of Biscay", "Baltic Sea", "Minimal"]:
@@ -134,6 +143,7 @@ def test_model_info_modal_none_shows_overview():
 
 def test_model_info_modal_unknown_falls_back_to_overview():
     from ui.pages.grid import _model_info_modal
+
     html = str(_model_info_modal("bogus"))
     assert "Available models" in html
     assert "Baltic Sea" in html

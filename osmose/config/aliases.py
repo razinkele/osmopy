@@ -29,6 +29,7 @@ needs. The transient intermediate key is therefore intentionally omitted.
 
 from __future__ import annotations
 
+import logging
 import re
 import warnings
 
@@ -226,6 +227,21 @@ _INVERSE_440: dict[str, str] = {
 }
 
 
+DEFAULT_TARGET_VERSION = "4.4.1"  # the Python setup defaults to native OSMOSE 4.4.x (C1)
+
+
+def target_version_for_jar(jar_path) -> str:
+    """Map a jar path to its config write-target by parsing the version triplet from the filename.
+
+    ``osmose-4.4.1-...jar`` -> "4.4.1"; ``osmose_4.3.3-...jar`` -> "4.3.3"; unparseable -> default.
+    The real run/calibration/UI paths derive their write-target from the SELECTED jar via this
+    helper (default jar is 4.4.1), so they write native 4.4.x. The *bare* to_target_keys/writer
+    default stays "4.3.3" so a no-jar round-trip is string-faithful (no rate ×ndt/÷ndt reformat).
+    """
+    m = re.search(r"(\d+\.\d+\.\d+)", str(jar_path))
+    return m.group(1) if m else DEFAULT_TARGET_VERSION
+
+
 def to_target_keys(cfg: dict[str, str], target_version: str = "4.3.3") -> dict[str, str]:
     """Emit config keys for a target engine version (inverse of canonicalize).
 
@@ -242,6 +258,11 @@ def to_target_keys(cfg: dict[str, str], target_version: str = "4.3.3") -> dict[s
     # native (identity) branch. A bare _version_tuple returns (0,) for suffixed strings, so the
     # suffix MUST be stripped (via _numeric_version) before the compare or it would fall through
     # to the reverse branch and corrupt a native config back to 4.3.x key names.
+    # The reader (canonicalize_config) is the inverse of this writer: it ALWAYS normalizes its
+    # output to canonical 4.4.0 (per-cohort larval rate via the source>=4.4.0 ÷ndt, osmose.version
+    # stamped 4.4.0). So to_target_keys always receives a per-cohort rate and must ×ndt for a 4.4.x
+    # target (and leave it per-cohort for a 4.3.x target). A native-4.4.0 config round-trips
+    # reader(÷ndt) -> writer(×ndt) exactly; there is no double-scale path, so NO source-awareness.
     if _numeric_version(target_version) >= _version_tuple("4.4.0"):
         result = _drop_4_4_0_removed_keys(result)
         # _ndtperyear() or 1.0 is a safe placeholder: when ndt is falsy the helper
@@ -262,16 +283,29 @@ def to_target_keys(cfg: dict[str, str], target_version: str = "4.3.3") -> dict[s
     return result
 
 
-def canonicalize_config(cfg: dict[str, str]) -> tuple[dict[str, str], list[str]]:
-    """Migrate a config dict to canonical 4.4.0 keys; return (new_cfg, deprecated_old_keys).
+_LEGACY_DEPRECATION_LOGGED = False
 
-    ``deprecated_old_keys`` = the OLD keys from RENAMES_440 present in the input (for
-    one-time deprecation logging by callers). Idempotent on already-4.4.0 configs (NEW
-    keys are never in RENAMES_440's OLD set, so they pass through untouched).
+
+def canonicalize_config(cfg: dict[str, str]) -> tuple[dict[str, str], list[str]]:
+    """LEGACY ADAPTER: migrate an old (pre-4.4.0) config to canonical 4.4.0 keys.
+
+    The bundled configs are now native 4.4.0, so this is a no-op for them (NEW keys are never in
+    RENAMES_440's OLD set). It survives only as backward-compat tolerance for a user loading an old
+    4.3.x config; the native 4.4.x path does NOT depend on it. Returns (new_cfg, deprecated_old_keys)
+    and logs a one-time notice when it actually converts old keys.
     """
     from osmose.demo import migrate_config
 
     deprecated = sorted(
         k for k in cfg if any(k == old or k.startswith(old + ".") for old in RENAMES_440)
     )
+    global _LEGACY_DEPRECATION_LOGGED
+    if deprecated and not _LEGACY_DEPRECATION_LOGGED:
+        _LEGACY_DEPRECATION_LOGGED = True
+        logging.getLogger("osmose.config").info(
+            "Loaded a legacy pre-4.4.0 config: %d deprecated key(s) auto-migrated to 4.4.0 "
+            "(e.g. %s). Convert to native 4.4.x to retire the compat shim.",
+            len(deprecated),
+            deprecated[0],
+        )
     return migrate_config(cfg, target_version="4.4.0"), deprecated

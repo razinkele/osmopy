@@ -159,7 +159,8 @@ def write_temp_config(
     output_dir: Path,
     source_dir: Path | None = None,
     key_case_map: dict[str, str] | None = None,
-    target_version: str = "4.3.3",
+    target_version: str = "4.3.3",  # bare default 4.3.3 (string-faithful); the run path passes
+    # target_version_for_jar(jar_path) -> 4.4.1 (C1)
 ) -> Path:
     """Write config to a directory, copy data files, and return the master file path.
 
@@ -363,8 +364,14 @@ async def _run_java_engine(
         ui.update_action_button("btn_cancel", disabled=True, session=session)
         return
 
+    from osmose.config.aliases import target_version_for_jar
+
     config_path = write_temp_config(
-        config, work_dir, source_dir, key_case_map=state.key_case_map.get()
+        config,
+        work_dir,
+        source_dir,
+        key_case_map=state.key_case_map.get(),
+        target_version=target_version_for_jar(jar_path),  # write keys matching the selected jar
     )
 
     overrides = parse_overrides(input.param_overrides() or "")

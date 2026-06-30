@@ -1,4 +1,4 @@
-fisheries.enabled;true
+module.multispecies.fisheries.enabled;true
 
 ######################### Selectivities
 # Define age-selectivity for fisheries
@@ -83,20 +83,20 @@ fisheries.period.number.fsh12;1
 fisheries.period.number.fsh13;1
 
 # Defaults: fisheries season equals 1
-fisheries.rate.byPeriod.fsh0;1
-fisheries.rate.byPeriod.fsh1;1
-fisheries.rate.byPeriod.fsh2;1
-fisheries.rate.byPeriod.fsh3;1
-fisheries.rate.byPeriod.fsh4;1
-fisheries.rate.byPeriod.fsh5;1
-fisheries.rate.byPeriod.fsh6;1
-fisheries.rate.byPeriod.fsh7;1
-fisheries.rate.byPeriod.fsh8;1
-fisheries.rate.byPeriod.fsh9;1
-fisheries.rate.byPeriod.fsh10;1
-fisheries.rate.byPeriod.fsh11;1
-fisheries.rate.byPeriod.fsh12;1
-fisheries.rate.byPeriod.fsh13;1
+fisheries.rate.byperiod.fsh0;1
+fisheries.rate.byperiod.fsh1;1
+fisheries.rate.byperiod.fsh2;1
+fisheries.rate.byperiod.fsh3;1
+fisheries.rate.byperiod.fsh4;1
+fisheries.rate.byperiod.fsh5;1
+fisheries.rate.byperiod.fsh6;1
+fisheries.rate.byperiod.fsh7;1
+fisheries.rate.byperiod.fsh8;1
+fisheries.rate.byperiod.fsh9;1
+fisheries.rate.byperiod.fsh10;1
+fisheries.rate.byperiod.fsh11;1
+fisheries.rate.byperiod.fsh12;1
+fisheries.rate.byperiod.fsh13;1
 
 # Seasons start at 0.
 # Osmose 4.3.3 - Renamed parameter fisheries.season.start.fsh0 into fisheries.period.start.fsh0

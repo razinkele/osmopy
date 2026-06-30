@@ -368,7 +368,7 @@ def test_writer_roundtrip_of_canonical_config_is_faithful(tmp_path):
     assert "mortality.natural.rate.sp0" not in back
 
 
-def test_calibration_java_cmd_reverse_maps_override_keys(tmp_path):
+def test_calibration_java_cmd_writes_keys_for_jar_version(tmp_path):
     from unittest.mock import MagicMock, patch
 
     from osmose.calibration.problem import FreeParameter
@@ -385,8 +385,10 @@ def test_calibration_java_cmd_reverse_maps_override_keys(tmp_path):
             pass
     cmd = mock_run.call_args[0][0]
     p_args = [s for s in cmd if s.startswith("-P")]
-    assert any(s.startswith("-Pspecies.bioen.maturity.eta.sp0=") for s in p_args)  # reverse-mapped
-    assert not any("species.maturity.eta.sp0" in s for s in p_args)  # NEW key gone
+    # The override target now follows the jar version (C1). `fake.jar` has no version triplet ->
+    # target_version_for_jar -> 4.4.1 (default) -> NATIVE keys, no reverse-map.
+    assert any(s.startswith("-Pspecies.maturity.eta.sp0=") for s in p_args)  # native key kept
+    assert not any("species.bioen.maturity" in s for s in p_args)  # NOT reverse-mapped
     assert not any(s.startswith("-Posmose.version=") for s in p_args)  # stamp skipped
 
 

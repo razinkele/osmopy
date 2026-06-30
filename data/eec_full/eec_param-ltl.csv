@@ -64,14 +64,14 @@ species.size.min.sp21;1
 species.size.min.sp22;5
 species.size.min.sp23;10
 
-species.TL.sp14;1
-species.TL.sp15;1
-species.TL.sp16;2
-species.TL.sp17;2.6
-species.TL.sp18;3.3
-species.TL.sp19;3
-species.TL.sp20;2.9
-species.TL.sp21;2.2
-species.TL.sp22;2.3
-species.TL.sp23;3.6
+species.tl.sp14;1
+species.tl.sp15;1
+species.tl.sp16;2
+species.tl.sp17;2.6
+species.tl.sp18;3.3
+species.tl.sp19;3
+species.tl.sp20;2.9
+species.tl.sp21;2.2
+species.tl.sp22;2.3
+species.tl.sp23;3.6
 species.biomass.nsteps.year;24

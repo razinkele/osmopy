@@ -39,7 +39,7 @@ class AppState:
         self.scenarios_dir: Path = scenarios_dir
         self.registry = REGISTRY
         self.jar_path: reactive.Value[str] = reactive.Value(
-            "osmose-java/osmose_4.3.3-jar-with-dependencies.jar"
+            "osmose-java/osmose-4.4.1-jar-with-dependencies.jar"
         )
         self.config_dir: reactive.Value[Path | None] = reactive.Value(None)
         # M10 (2026-05-06): state.loading was consolidated into state.busy.

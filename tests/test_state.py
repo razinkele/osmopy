@@ -76,7 +76,7 @@ def test_appstate_reset_to_defaults():
 def test_appstate_jar_path_default():
     state = AppState()
     with reactive.isolate():
-        assert state.jar_path.get() == "osmose-java/osmose_4.3.3-jar-with-dependencies.jar"
+        assert state.jar_path.get() == "osmose-java/osmose-4.4.1-jar-with-dependencies.jar"
 
 
 def test_appstate_jar_path_set():

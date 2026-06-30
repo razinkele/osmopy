@@ -43,24 +43,24 @@ species.lifespan.sp6;7
 species.lifespan.sp7;4
 
 # Von Bertalanffy growth: L-infinity (cm)
-species.lInf.sp0;110.0
-species.lInf.sp1;27.0
-species.lInf.sp2;16.0
-species.lInf.sp3;42.0
-species.lInf.sp4;45.0
-species.lInf.sp5;90.0
-species.lInf.sp6;25.0
-species.lInf.sp7;8.0
+species.linf.sp0;110.0
+species.linf.sp1;27.0
+species.linf.sp2;16.0
+species.linf.sp3;42.0
+species.linf.sp4;45.0
+species.linf.sp5;90.0
+species.linf.sp6;25.0
+species.linf.sp7;8.0
 
 # Von Bertalanffy growth: K (year^-1)
-species.K.sp0;0.15
-species.K.sp1;0.35
-species.K.sp2;0.45
-species.K.sp3;0.20
-species.K.sp4;0.15
-species.K.sp5;0.18
-species.K.sp6;0.35
-species.K.sp7;0.80
+species.k.sp0;0.15
+species.k.sp1;0.35
+species.k.sp2;0.45
+species.k.sp3;0.20
+species.k.sp4;0.15
+species.k.sp5;0.18
+species.k.sp6;0.35
+species.k.sp7;0.80
 
 # Von Bertalanffy growth: t0 (years)
 species.t0.sp0;-0.20

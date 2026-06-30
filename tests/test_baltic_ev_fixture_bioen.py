@@ -9,9 +9,11 @@ def test_baltic_ev_all_parameters_exists() -> None:
 
 
 def test_baltic_ev_has_bioen_enabled() -> None:
+    # native 4.4.0: the bioen toggle is now module.bioenergetics.enabled (renamed from
+    # simulation.bioen.enabled by RENAMES_440)
     text = (Path("data/baltic_ev") / "baltic_ev_param-simulation.csv").read_text()
-    assert "simulation.bioen.enabled" in text
-    assert "true" in text.split("simulation.bioen.enabled")[1].split("\n")[0].lower()
+    assert "module.bioenergetics.enabled" in text
+    assert "true" in text.split("module.bioenergetics.enabled")[1].split("\n")[0].lower()
 
 
 def test_baltic_ev_cod_has_bioen_imax() -> None:

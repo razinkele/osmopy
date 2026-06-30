@@ -17,8 +17,8 @@ species.type.sp14;background
 species.name.sp14;GreySeal
 species.length2weight.allometric.power.sp14;3.0
 species.length2weight.condition.factor.sp14;0.04
-predation.predPrey.sizeRatio.max.sp14;12
-predation.predPrey.sizeRatio.min.sp14;3
+predation.predprey.sizeratio.max.sp14;12
+predation.predprey.sizeratio.min.sp14;3
 predation.ingestion.rate.max.sp14;13.0
 
 species.file.sp14 = baltic_predator_biomass.nc
@@ -40,8 +40,8 @@ species.length2weight.allometric.power.sp15;3.0
 # condition factor tuned to give ~2 kg at 80 cm (adult cormorant mass).
 # W = 0.004 * 80^3 ≈ 2048 g, matches the ~2 kg/bird literature value.
 species.length2weight.condition.factor.sp15;0.004
-predation.predPrey.sizeRatio.max.sp15;8
-predation.predPrey.sizeRatio.min.sp15;2.5
+predation.predprey.sizeratio.max.sp15;8
+predation.predprey.sizeratio.min.sp15;2.5
 predation.ingestion.rate.max.sp15;40.0
 
 species.file.sp15 = baltic_predator_biomass.nc

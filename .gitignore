@@ -1,3 +1,6 @@
+# C1 native-4.4.0 cutover parity baselines (scratch; captured pre-conversion)
+scripts/_parity_baselines/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
