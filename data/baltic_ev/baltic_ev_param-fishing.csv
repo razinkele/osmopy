@@ -1,7 +1,7 @@
 # Baltic Sea fishing parameters
 # One fishery per focal species
 
-fisheries.enabled;true
+module.multispecies.fisheries.enabled;true
 simulation.nfisheries;8
 
 # Fishery names
@@ -58,14 +58,14 @@ fisheries.period.number.fsh5;1
 fisheries.period.number.fsh6;1
 fisheries.period.number.fsh7;1
 
-fisheries.rate.byPeriod.fsh0;1
-fisheries.rate.byPeriod.fsh1;1
-fisheries.rate.byPeriod.fsh2;1
-fisheries.rate.byPeriod.fsh3;1
-fisheries.rate.byPeriod.fsh4;1
-fisheries.rate.byPeriod.fsh5;1
-fisheries.rate.byPeriod.fsh6;1
-fisheries.rate.byPeriod.fsh7;1
+fisheries.rate.byperiod.fsh0;1
+fisheries.rate.byperiod.fsh1;1
+fisheries.rate.byperiod.fsh2;1
+fisheries.rate.byperiod.fsh3;1
+fisheries.rate.byperiod.fsh4;1
+fisheries.rate.byperiod.fsh5;1
+fisheries.rate.byperiod.fsh6;1
+fisheries.rate.byperiod.fsh7;1
 
 fisheries.period.start.fsh0;0
 fisheries.period.start.fsh1;0

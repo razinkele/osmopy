@@ -30,4 +30,30 @@ simulation.nschool.sp5;30
 simulation.nschool.sp6;30
 simulation.nschool.sp7;40
 
-osmose.version;4.3.3
+osmose.version;4.4.1
+
+# --- 4.4.x resource forcing (C1) ---
+species.biomass.file.sp10 ; baltic_ltl_biomass.nc
+species.biomass.file.sp11 ; baltic_ltl_biomass.nc
+species.biomass.file.sp12 ; baltic_ltl_biomass.nc
+species.biomass.file.sp13 ; baltic_ltl_biomass.nc
+species.biomass.file.sp8 ; baltic_ltl_biomass.nc
+species.biomass.file.sp9 ; baltic_ltl_biomass.nc
+species.biomass.mode.sp10 ; NETCDF_BIOMASS
+species.biomass.mode.sp11 ; NETCDF_BIOMASS
+species.biomass.mode.sp12 ; NETCDF_BIOMASS
+species.biomass.mode.sp13 ; NETCDF_BIOMASS
+species.biomass.mode.sp8 ; NETCDF_BIOMASS
+species.biomass.mode.sp9 ; NETCDF_BIOMASS
+species.biomass.nsteps.year.sp10 ; 24
+species.biomass.nsteps.year.sp11 ; 24
+species.biomass.nsteps.year.sp12 ; 24
+species.biomass.nsteps.year.sp13 ; 24
+species.biomass.nsteps.year.sp8 ; 24
+species.biomass.nsteps.year.sp9 ; 24
+species.biomass.varname.sp10 ; Microzooplankton
+species.biomass.varname.sp11 ; Mesozooplankton
+species.biomass.varname.sp12 ; Macrozooplankton
+species.biomass.varname.sp13 ; Benthos
+species.biomass.varname.sp8 ; Diatoms
+species.biomass.varname.sp9 ; Dinoflagellates
