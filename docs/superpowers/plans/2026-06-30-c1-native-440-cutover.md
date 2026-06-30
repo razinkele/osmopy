@@ -123,13 +123,17 @@ def run_outputs(config_dir, years=3, seed=42):
     raw = dict(OsmoseConfigReader().read(str(master)))
     raw["simulation.time.nyear"] = str(years)
     raw["simulation.rng.fixed"] = "true"
-    res = PythonEngine().run_in_memory(raw, seed=seed)
-    # OsmoseResults -> numeric arrays (resolve exact accessor at impl: res.biomass etc.)
+    res = PythonEngine().run_in_memory(raw, seed=seed)  # seed param drives determinism
+    # OsmoseResults accessors are METHODS (results.py:416/424/428): biomass(), abundance(),
+    # yield_biomass() -- NOT attributes, and "yield" is yield_biomass.
     out = {}
-    for k in ("biomass", "abundance", "yield"):
-        df = getattr(res, k, None)
-        if df is not None:
-            out[k] = np.asarray(getattr(df, "to_numpy", lambda: df)(), dtype=float)
+    for name, fn in (("biomass", res.biomass), ("abundance", res.abundance),
+                     ("yield", res.yield_biomass)):
+        try:
+            df = fn()
+            out[name] = np.asarray(df.to_numpy(), dtype=float)
+        except Exception:  # accessor absent for this config -> skip that metric
+            pass
     return out
 
 def max_rel_diff(a, b):
@@ -173,12 +177,20 @@ Add `scripts/_parity_baselines/` to `.gitignore`.
 **Interfaces:** `convert_config(config_dir)` — rewrites each sub-file to native 4.4.0 in place, preserving structure.
 
 - [ ] **Step 1: Implement `scripts/migrate_bundled_to_440.py`** — per-file rewrite (reader tracks no key→file origin, so process each `.csv` independently):
-  - Read the merged config once (for `ndt` + `osmose.version` guard: skip if already 4.4.x).
-  - For each `*.csv` sub-file: read its raw lines; for each `key;value`: apply `RENAMES_440` forward to the key; if the key matches `_LARVA_RATE_RE`, scale value `×ndt`; write back preserving separator/case/comments.
-  - Append `_emit_resource_biomass_forcing` output for resource species to the species/ltl sub-file (the keys absent there).
-  - **Do NOT drop `species.lmax`/`species.beta`** (keep — Python engine reads them).
-  - Stamp `osmose.version ; 4.4.1` in the master.
-  - Guard: refuse to touch `data/examples` (BoB).
+  - Read the merged config once (for `ndt` + the `osmose.version` guard: skip the whole config if already ≥4.4.0).
+  - A **per-key prefix-aware forward-rename** helper (mirror `to_target_keys`'s inverse loop, forward direction — `RENAMES_440` is a longest-prefix-first OLD→NEW map; the larva-rate key is NOT in it):
+    ```python
+    def _rename_forward(key):
+        for old in sorted(RENAMES_440, key=len, reverse=True):
+            if key == old or key.startswith(old + "."):
+                return RENAMES_440[old] + key[len(old):]
+        return key
+    ```
+  - For each `*.csv` sub-file: read raw lines; for each `key;value` line, `key=_rename_forward(key)`; if the key matches `_LARVA_RATE_RE`, scale `value ×ndt`; write back **preserving the line's original separator, key case, blank lines and `#` comments** (rewrite only `key;value` lines).
+  - Append `_emit_resource_biomass_forcing` output (resource species) to the sub-file that defines those species (`species`/`ltl`), only for keys not already present.
+  - **Do NOT drop `species.lmax`/`species.beta`** (keep — Python engine reads them; the Java write path drops them later via `to_target_keys`).
+  - Stamp `osmose.version ; 4.4.1` in the master (replace the existing `osmose.version` line).
+  - Guard: refuse to touch `data/examples` (BoB) — assert the target dir is one of the 4 in-scope.
 
 - [ ] **Step 2: Convert EEC + GATE**
 `PYTHONPATH=. .venv/bin/python scripts/migrate_bundled_to_440.py data/eec_full` then `PYTHONPATH=. .venv/bin/python scripts/native_440_parity.py gate eec_full`.
