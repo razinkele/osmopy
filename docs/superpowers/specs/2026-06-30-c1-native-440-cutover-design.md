@@ -47,9 +47,15 @@ old user configs).
 
 ## 4. Design
 
-### 4.1 Make `to_target_keys` source-version-aware (idempotent) — CORE, do first
-Read the input's existing `osmose.version` as the **source version**. Transform the larval rate by the
-*net* factor `ndt^[target≥4.4] ÷ ndt^[source≥4.4]`:
+### 4.1 Make `to_target_keys`'s larval-rate transform source-version-aware — CORE, do first
+**Only the larval-rate transform** needs the fix (verified): the key RENAMES_440 (forward and inverse) have
+disjoint old/new key sets so they are already idempotent, and `_drop_4_4_0_removed_keys` is a no-op when the
+key is absent and **must keep firing on the Java write** (Java 4.4.0 needs `lmax`/`beta` gone — see §4.2,
+where native *source* keeps them). The emits are `setdefault`-safe. So leave renames/drops/emits as-is and
+change ONLY the rate.
+
+Read the input's existing `osmose.version` as the **source version** and scale the rate by the *net* factor
+`ndt^[target≥4.4] ÷ ndt^[source≥4.4]`:
 
 | source → target | rate factor | meaning |
 |---|---|---|
@@ -58,10 +64,8 @@ Read the input's existing `osmose.version` as the **source version**. Transform 
 | 4.4.x → 4.3.3 | `÷ndt` | **the fix** — restore per-cohort for the 4.3.3 jar |
 | 4.3.3 → 4.3.3 | `×1` | unchanged |
 
-`_drop_4_4_0_removed_keys` and the resource/background emits become idempotent (skip when source already
-≥4.4.0; the emits are `setdefault`-safe already). Reverse-map (RENAMES_440 inverse) for `target<4.4.0` must
-also only fire when source ≥4.4.0. Unit-tested with a full source×target matrix; this is independently a
-latent-bug fix and is the foundation the native configs stand on.
+(`_ndtperyear` missing/0 → already warns + skips, unchanged.) Unit-tested with a full source×target matrix;
+this is independently a latent-bug fix and the foundation the native configs stand on.
 
 ### 4.2 Config-conversion tool — `scripts/migrate_bundled_to_440.py`
 For each in-scope config, produce native 4.4.0 SOURCE that the **Python engine reads identically**:
@@ -120,8 +124,12 @@ Snapshots stored under the script / a baseline dir. This gate is the safety net 
 - **Parity-gate chaos**: a ~1-ULP rate perturbation could amplify over years; 3-yr fixed-RNG run keeps it
   bounded. If a config exceeds 1e-9, investigate (likely a real semantic drift, not float noise) before
   loosening the gate.
-- **Shared sub-files**: if any in-scope config shares an include with BoB/`examples`, converting it could
-  perturb BoB. Audit includes first; never write a file BoB reads.
+- **Shared sub-files**: *verified clear* — EEC and BoB/`examples` share no CSV includes (distinct
+  `eec_param-*` vs `osm_param-*` prefixes); Baltic is its own tree. Re-confirm at plan time before writing
+  any file; never write a file BoB reads.
+- **Resource-forcing emit into EEC source (H3) — benign**: `config.py` does not read `species.biomass.*`,
+  so the emitted resource keys are inert extra keys for the Python engine (unlike `lmax`/`beta`); the parity
+  gate confirms. (Contrast H2, where the engine *does* read the dropped keys.)
 
 ## 7. Plan-time task ordering (recommendation)
 1. §4.1 idempotent `to_target_keys` (+ unit matrix) — foundation.
