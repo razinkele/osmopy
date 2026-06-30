@@ -242,27 +242,20 @@ def to_target_keys(cfg: dict[str, str], target_version: str = "4.3.3") -> dict[s
     # native (identity) branch. A bare _version_tuple returns (0,) for suffixed strings, so the
     # suffix MUST be stripped (via _numeric_version) before the compare or it would fall through
     # to the reverse branch and corrupt a native config back to 4.3.x key names.
-    # Source-AND-target-aware larval-rate transform: the rate KEY name is version-stable (not in
-    # RENAMES_440); only its unit changes (per-cohort <-> rate/year). Net factor =
-    # ndt^[target>=4.4] / ndt^[source>=4.4], so: 4.3.3->4.4 x ndt; 4.4->4.4 = 1 (no double-scale
-    # when a native config is staged for the jar); 4.4->4.3.3 = / ndt (restore for the 4.3.3 jar);
-    # 4.3.3->4.3.3 = 1. Read the source version from the input config's existing stamp.
-    src_ge = _numeric_version(cfg.get("osmose.version", "4.3.3")) >= _version_tuple("4.4.0")
-    tgt_ge = _numeric_version(target_version) >= _version_tuple("4.4.0")
-    ndt = _ndtperyear(result) or 1.0  # falsy ndt -> 1.0; _migrate_larva_rate still warns if missing
-    rate_factor = (ndt if tgt_ge else 1.0) / (ndt if src_ge else 1.0)
-
-    if tgt_ge:
+    # The reader (canonicalize_config) is the inverse of this writer: it ALWAYS normalizes its
+    # output to canonical 4.4.0 (per-cohort larval rate via the source>=4.4.0 ÷ndt, osmose.version
+    # stamped 4.4.0). So to_target_keys always receives a per-cohort rate and must ×ndt for a 4.4.x
+    # target (and leave it per-cohort for a 4.3.x target). A native-4.4.0 config round-trips
+    # reader(÷ndt) -> writer(×ndt) exactly; there is no double-scale path, so NO source-awareness.
+    if _numeric_version(target_version) >= _version_tuple("4.4.0"):
         result = _drop_4_4_0_removed_keys(result)
-        # Called unconditionally so the missing-ndt warning still fires (factor 1.0 is a no-op).
-        result = _migrate_larva_rate(result, rate_factor, warn_bydt=True)
+        # _ndtperyear() or 1.0 is a safe placeholder: when ndt is falsy the helper
+        # early-returns (warns, no scaling) BEFORE the factor is ever applied.
+        result = _migrate_larva_rate(result, _ndtperyear(result) or 1.0, warn_bydt=True)
         result = _emit_resource_biomass_forcing(result)  # 4.4.x NETCDF_BIOMASS required keys
         result = _emit_background_species_keys(result)  # 4.4.x background-species keys
         result["osmose.version"] = target_version  # stamp the ACTUAL target, not a hardcoded 4.4.0
         return result
-    # reverse branch (target < 4.4.0): un-scale a native source before reversing the renames.
-    if rate_factor != 1.0:  # native 4.4 -> 4.3.3 jar: / ndt restores the per-cohort value
-        result = _migrate_larva_rate(result, rate_factor, warn_bydt=False)
     for new_prefix in sorted(_INVERSE_440, key=len, reverse=True):
         old_prefix = _INVERSE_440[new_prefix]
         for key in [k for k in result if k == new_prefix or k.startswith(new_prefix + ".")]:
