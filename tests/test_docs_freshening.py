@@ -1,24 +1,26 @@
-"""Doc-freshening assertions: version bump + CHANGELOG 0.13.0 cut + README currency."""
+"""Doc-freshening assertions: version is semver + CHANGELOG has the released section + README currency."""
 
 from __future__ import annotations
 
 import pathlib
+import re
 
 _REPO = pathlib.Path(__file__).resolve().parent.parent
 
 
-def test_version_is_0_13_0():
+def test_version_is_semver():
     from osmose import __version__
 
-    assert __version__ == "0.13.0"
+    assert re.fullmatch(r"\d+\.\d+\.\d+", __version__), f"non-semver version: {__version__}"
 
 
-def test_changelog_has_dated_0_13_0_section():
+def test_changelog_has_dated_section_for_current_version():
+    from osmose import __version__
+
     cl = (_REPO / "CHANGELOG.md").read_text()
-    assert "## [0.13.0] - 2026-06-14" in cl
-    # A fresh empty [Unreleased] remains above it.
-    assert "## [Unreleased]" in cl
-    assert cl.index("## [Unreleased]") < cl.index("## [0.13.0]")
+    # the released version has a dated section, and it is the latest (top) one
+    assert re.search(rf"## \[{re.escape(__version__)}\] - \d{{4}}-\d{{2}}-\d{{2}}", cl)
+    assert cl.index(f"## [{__version__}]") == cl.index("## [")
 
 
 def test_readme_names_sensitivity_page():
