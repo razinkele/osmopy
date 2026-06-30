@@ -344,25 +344,16 @@ def _python_engine_thread(run_config, output_dir, cancel_token, step_observer, d
         done_q.put(("failed", None, str(exc)))
 
 
-async def _run_java_engine(
-    input,
-    state,
-    session,
-    config,
-    work_dir,
-    source_dir,
-    run_log,
-    status,
-    runner_ref,
-    start_monotonic=None,
-):
-    """Run the simulation using the Java JAR subprocess."""
+def _java_engine_setup(input, state, config, work_dir, source_dir):
+    """Sync setup for a Java run: jar check, write + stage the config, build the runner.
+
+    Returns a params dict for the run thread, or an error STRING on a known failure (jar missing,
+    background-staging failure, bad java opts). No reactive side effects, so handle_run can call it
+    once on the main thread before launching the off-thread run.
+    """
     jar_path = Path(state.jar_path.get())
     if not jar_path.exists():
-        status.set(f"Error: JAR not found at {jar_path}")
-        _set_run_buttons(False, session)
-        ui.update_action_button("btn_cancel", disabled=True, session=session)
-        return
+        return f"Error: JAR not found at {jar_path}"
 
     from osmose.config.aliases import _numeric_version, target_version_for_jar
 
@@ -373,10 +364,9 @@ async def _run_java_engine(
         key_case_map=state.key_case_map.get(),
         target_version=target_version_for_jar(jar_path),  # write keys matching the selected jar
     )
-
     overrides = parse_overrides(input.param_overrides() or "")
-    # C2: stage background species for a >=4.4.0 jar (e.g. Baltic). The run gate has already
-    # confirmed the config is staging-supported; merge the staging's -P overrides (cutoff workaround).
+    # C2: stage background species for a >=4.4.0 jar (e.g. Baltic). The run gate already confirmed
+    # the config is staging-supported; merge the staging's -P overrides (cutoff workaround).
     try:
         _n_bg = int(float(config.get("simulation.nbackground", 0) or 0))
     except (TypeError, ValueError):
@@ -386,50 +376,60 @@ async def _run_java_engine(
     ):
         from osmose.java_background_staging import stage_background_for_java
 
-        overrides = {**overrides, **stage_background_for_java(config_path.parent, config)}
+        try:
+            overrides = {**overrides, **stage_background_for_java(config_path.parent, config)}
+        except Exception as exc:  # noqa: BLE001 — surface staging failures, never silently
+            _log.error("Java background staging failed", exc_info=True)
+            return f"Background staging failed: {exc}"
     java_opts_text = input.java_opts() or ""
     java_opts = java_opts_text.split() if java_opts_text.strip() else []
     try:
         validate_java_opts(java_opts)  # type: ignore[arg-type]
     except ValueError as exc:
-        ui.notification_show(str(exc), type="error", duration=15)
-        _set_run_buttons(False, session)
-        ui.update_action_button("btn_cancel", disabled=True, session=session)
-        status.set(f"Error: {exc}")
-        return
-    java_opts = java_opts or None
+        return f"Error: {exc}"
+    return {
+        "runner": OsmoseRunner(jar_path=jar_path),
+        "config_path": config_path,
+        "output_dir": work_dir / "output",
+        "java_opts": java_opts or None,
+        "overrides": overrides,
+        "timeout_sec": input.run_timeout(),
+    }
 
-    runner = OsmoseRunner(jar_path=jar_path)
-    runner_ref.set(runner)  # type: ignore[arg-type]
 
-    status.set("Running (Java engine)...")
+def _java_engine_thread(
+    runner, config_path, output_dir, java_opts, overrides, timeout_sec, log_q, done_q
+):
+    """Run the Java jar OFF the main thread; stream output lines to ``log_q``, post the outcome to
+    ``done_q`` as ``(kind, result_or_None, message)``.
 
-    def on_progress(line: str):
-        with reactive.isolate():
-            lines = list(run_log.get())
-        lines.append(line)
-        if len(lines) > 500:
-            lines = lines[-500:]
-        run_log.set(lines)
+    Fire-and-forget (mirrors ``_python_engine_thread``): handle_run launches this and returns, so
+    Shiny keeps flushing — ``_drain_run_log`` streams the jar console live and ``_drain_run_done``
+    finishes the run. Touches NO reactive state.
+    """
+    import asyncio
 
-    timeout_sec = input.run_timeout()
+    def on_progress(line: str) -> None:
+        try:
+            log_q.put_nowait(line)
+        except queue.Full:
+            pass
 
-    state.busy.set("Running simulation (Java)...")
     try:
-        result = await runner.run(
-            config_path=config_path,
-            output_dir=work_dir / "output",
-            java_opts=java_opts,  # type: ignore[arg-type]
-            overrides=overrides,
-            on_progress=on_progress,
-            timeout_sec=timeout_sec,
+        result = asyncio.run(
+            runner.run(
+                config_path=config_path,
+                output_dir=output_dir,
+                java_opts=java_opts,
+                overrides=overrides,
+                on_progress=on_progress,
+                timeout_sec=timeout_sec,
+            )
         )
-    finally:
-        state.busy.set(None)
-        _set_run_buttons(False, session)
-        ui.update_action_button("btn_cancel", disabled=True, session=session)
-
-    _handle_result(result, config, state, run_log, status, start_monotonic)
+        done_q.put(("done", result, ""))  # _handle_result handles returncode 0 or non-zero
+    except Exception as exc:  # noqa: BLE001
+        _log.error("Java engine failed: %s", exc, exc_info=True)
+        done_q.put(("failed", None, str(exc)))
 
 
 def _handle_result(result, config, state, run_log, status, start_monotonic=None):
@@ -505,10 +505,13 @@ def run_server(input, output, session, state):
     ]  # plain flag for the species-selector changed-only guard
     _live_note: reactive.Value = reactive.Value(None)  # heatmap-fallback note | None
 
-    # ── Python-run completion (fire-and-forget thread → main-thread poll) ─────────
+    # ── Run completion (fire-and-forget thread → main-thread poll), both engines ──
     _run_done_q: queue.Queue = queue.Queue(maxsize=1)  # (kind, result|None, message)
     _run_config_cell: list = [None]  # config captured at run start, for _handle_result
     _run_start_cell: list = [None]  # run start (time.monotonic) for duration_sec
+
+    # Java console lines streamed off-thread → drained to run_log by _drain_run_log (live console).
+    _run_log_q: queue.Queue = queue.Queue()
 
     _progress_q: queue.Queue = queue.Queue(maxsize=1)  # (done, n_steps, elapsed_s)
     _progress: reactive.Value = reactive.Value(None)  # None | (done, n_steps, elapsed_s)
@@ -582,6 +585,27 @@ def run_server(input, output, session, state):
     @reactive.effect
     def _consume_run_done():
         _drain_run_done()
+
+    @reactive.poll(lambda: time.time(), interval_secs=0.2)
+    def _drain_run_log():
+        """Stream the Java run's console lines (posted off-thread) into run_log on the main thread."""
+        if not _session_alive[0]:
+            return
+        new_lines: list[str] = []
+        while True:
+            try:
+                new_lines.append(_run_log_q.get_nowait())
+            except queue.Empty:
+                break
+        if new_lines:
+            lines = list(run_log.get()) + new_lines
+            if len(lines) > 500:
+                lines = lines[-500:]
+            run_log.set(lines)
+
+    @reactive.effect
+    def _consume_run_log():
+        _drain_run_log()
 
     @reactive.poll(lambda: time.time(), interval_secs=0.2)
     def _drain_live_queue():
@@ -929,32 +953,49 @@ def run_server(input, output, session, state):
             ).start()
             # handle_run returns now; _drain_run_done finishes the run on the main thread.
         else:
-            # Surface ANY failure to the UI — without this, an exception (e.g. background staging,
-            # config write, or run setup) would die in the awaited handler with NO status/console
-            # update, which reads as "Java run produced no output".
+            # Java: set up synchronously (jar check + stage), then run OFF the main thread so
+            # handle_run returns and Shiny keeps flushing — _drain_run_log streams the jar console
+            # live and _drain_run_done finishes the run (mirrors the Python fire-and-forget path).
             try:
-                await _run_java_engine(
-                    input,
-                    state,
-                    session,
-                    config,
-                    work_dir,
-                    source_dir,
-                    run_log,
-                    status,
-                    runner_ref,
-                    start_monotonic=run_t0,
-                )
-            except Exception as exc:  # noqa: BLE001 — report, never swallow silently
+                params = _java_engine_setup(input, state, config, work_dir, source_dir)
+            except Exception as exc:  # noqa: BLE001 — surface setup/config-write errors, never silently
                 import traceback
 
-                _log.error("Java run failed before/around the subprocess", exc_info=True)
+                _log.error("Java run setup failed", exc_info=True)
                 status.set(f"Java run failed: {exc}")
-                lines = list(run_log.get())
-                lines.append(f"--- JAVA RUN ERROR ---\n{traceback.format_exc()}")
-                run_log.set(lines)
+                run_log.set(
+                    list(run_log.get()) + [f"--- JAVA SETUP ERROR ---\n{traceback.format_exc()}"]
+                )
                 _set_run_buttons(False, session)
                 ui.update_action_button("btn_cancel", disabled=True, session=session)
+                return
+            if isinstance(params, str):  # known setup error (jar missing / staging / bad java opts)
+                status.set(params)
+                run_log.set([params])
+                _set_run_buttons(False, session)
+                ui.update_action_button("btn_cancel", disabled=True, session=session)
+                return
+            runner_ref.set(params["runner"])  # type: ignore[arg-type]
+            _run_config_cell[0] = config
+            _run_start_cell[0] = run_t0
+            state.busy.set("Running simulation (Java)...")
+            status.set("Running (Java engine)...")
+            run_log.set([])  # fresh console for the new run
+            threading.Thread(
+                target=_java_engine_thread,
+                args=(
+                    params["runner"],
+                    params["config_path"],
+                    params["output_dir"],
+                    params["java_opts"],
+                    params["overrides"],
+                    params["timeout_sec"],
+                    _run_log_q,
+                    _run_done_q,
+                ),
+                daemon=True,
+            ).start()
+            # handle_run returns now; _drain_run_log streams the console + _drain_run_done finishes.
 
     @reactive.effect
     @reactive.event(input.btn_cancel)

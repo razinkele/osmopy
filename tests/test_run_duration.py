@@ -30,18 +30,16 @@ def test_handle_result_records_real_duration(monkeypatch, tmp_path):
 
 
 def test_both_engine_paths_thread_start_time():
-    """Guard the wiring: the start time is threaded as a parameter through BOTH
-    engine paths (not read from a single Python-only cell). A bare
-    'start_monotonic in src' would pass on just the signature add, so assert the
-    Java call-site literal and that both functions accept the parameter."""
+    """Guard the wiring: the run start time reaches _handle_result for BOTH engine paths.
+
+    Both paths are now fire-and-forget (background thread + _drain_run_done), so each captures the
+    start time in ``_run_start_cell`` at launch; _drain_run_done forwards it to _handle_result."""
     import inspect
     import pathlib
 
-    # Both functions must accept the parameter (catches a dropped signature).
     assert "start_monotonic" in inspect.signature(run_mod._handle_result).parameters
-    assert "start_monotonic" in inspect.signature(run_mod._run_java_engine).parameters
 
     src = pathlib.Path(run_mod.__file__).read_text()
-    assert "_run_start_cell" in src  # Python fire-and-forget path
-    # Java call site forwards t0 (run.py ~L830) — fails if that site is not wired.
-    assert "start_monotonic=run_t0" in src
+    assert "_run_start_cell" in src
+    # Both engine branches (Python + Java) capture the start time at launch — fails if a site is dropped.
+    assert src.count("_run_start_cell[0] = run_t0") >= 2
