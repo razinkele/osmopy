@@ -234,15 +234,15 @@ def target_version_for_jar(jar_path) -> str:
     """Map a jar path to its config write-target by parsing the version triplet from the filename.
 
     ``osmose-4.4.1-...jar`` -> "4.4.1"; ``osmose_4.3.3-...jar`` -> "4.3.3"; unparseable -> default.
-    Lets the write path follow the selected jar (4.4.1 default; the 4.3.3 jar still reverse-maps).
+    The real run/calibration/UI paths derive their write-target from the SELECTED jar via this
+    helper (default jar is 4.4.1), so they write native 4.4.x. The *bare* to_target_keys/writer
+    default stays "4.3.3" so a no-jar round-trip is string-faithful (no rate ×ndt/÷ndt reformat).
     """
     m = re.search(r"(\d+\.\d+\.\d+)", str(jar_path))
     return m.group(1) if m else DEFAULT_TARGET_VERSION
 
 
-def to_target_keys(
-    cfg: dict[str, str], target_version: str = DEFAULT_TARGET_VERSION
-) -> dict[str, str]:
+def to_target_keys(cfg: dict[str, str], target_version: str = "4.3.3") -> dict[str, str]:
     """Emit config keys for a target engine version (inverse of canonicalize).
 
     target 4.4.0 -> identity + version stamp. target 4.3.x -> reverse the 4.4.0 renames

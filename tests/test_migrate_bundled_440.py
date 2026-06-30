@@ -14,13 +14,23 @@ def test_rename_forward_prefix():
 
 
 def test_convert_line_rate_scale_and_version():
-    assert _convert_line("mortality.additional.larva.rate.sp0;2.145\n", 24.0).strip() == (
+    ok: set[str] = set()  # no pre-existing keys -> no skip-if-exists drops
+    assert _convert_line("mortality.additional.larva.rate.sp0;2.145\n", 24.0, ok).strip() == (
         f"mortality.additional.larva.rate.sp0;{2.145 * 24.0!r}"
     )
-    assert _convert_line("osmose.version;4.3.3\n", 24.0).strip() == "osmose.version;4.4.1"
+    assert _convert_line("osmose.version;4.3.3\n", 24.0, ok).strip() == "osmose.version;4.4.1"
     # comments + blanks + non-rate keys untouched (key only renamed)
-    assert _convert_line("# a comment\n", 24.0) == "# a comment\n"
-    assert _convert_line("species.linf.sp0;100\n", 24.0).strip() == "species.linf.sp0;100"
+    assert _convert_line("# a comment\n", 24.0, ok) == "# a comment\n"
+    assert _convert_line("species.linf.sp0;100\n", 24.0, ok).strip() == "species.linf.sp0;100"
+
+
+def test_convert_line_skip_if_exists_drops_colliding_rename():
+    # fisheries.enabled -> module.multispecies.fisheries.enabled; if the NEW key already exists in
+    # the source, the OLD line is dropped (no duplicate).
+    assert (
+        _convert_line("fisheries.enabled;true\n", 24.0, {"module.multispecies.fisheries.enabled"})
+        is None
+    )
 
 
 def test_param_file_guard_excludes_matrices():

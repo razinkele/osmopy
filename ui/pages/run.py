@@ -159,7 +159,8 @@ def write_temp_config(
     output_dir: Path,
     source_dir: Path | None = None,
     key_case_map: dict[str, str] | None = None,
-    target_version: str = "4.4.1",  # == aliases.DEFAULT_TARGET_VERSION (native 4.4.x default, C1)
+    target_version: str = "4.3.3",  # bare default 4.3.3 (string-faithful); the run path passes
+    # target_version_for_jar(jar_path) -> 4.4.1 (C1)
 ) -> Path:
     """Write config to a directory, copy data files, and return the master file path.
 

@@ -60,7 +60,8 @@ class OsmoseConfigWriter:
         config: dict[str, Any],
         output_dir: Path,
         key_case_map: dict[str, str] | None = None,
-        target_version: str = "4.4.1",  # == aliases.DEFAULT_TARGET_VERSION (native 4.4.x default, C1)
+        target_version: str = "4.3.3",  # bare default stays 4.3.3 (string-faithful round-trip);
+        # real paths pass aliases.target_version_for_jar(jar) -> 4.4.1 (C1)
     ) -> None:
         """Write *config* to OSMOSE files under *output_dir*.
 
