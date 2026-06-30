@@ -11,7 +11,7 @@ Python orchestration layer, simulation engine, and Shiny web interface for the [
 | Surface | State |
 |---|---|
 | Python engine | Full Java parity on Bay of Biscay (8/8) and Eastern English Channel (14/14), within 1 order of magnitude. Faster than Java on every benchmarked config. |
-| Java engine | Wrapped as async subprocess runner. OSMOSE 4.3.3 JAR supported. |
+| Java engine | Async subprocess runner. OSMOSE **4.4.1 JAR by default** (4.3.3 still selectable). Bundled configs are native 4.4.0; background-species configs (e.g. Baltic) stage + run on the 4.4.1 jar from the UI. |
 | Shiny UI | End-to-end UI: Setup · Grid · Forcing · Fishing · Movement · Run · Results (with Scenario Diff & Config Diff) · Spatial Results · Diagnostics · Calibration · **Sensitivity** · Scenarios · Advanced · Map Viewer. Live-during-run movement map; in-app About (README/Changelog) + a per-version startup "what's new" modal. |
 | Calibration | pymoo NSGA-II, GP surrogate, SALib Morris/Sobol sensitivity; preflight stage + Pareto `find_optimum`. |
 | Examples | Bay of Biscay (8 sp), Eastern English Channel (14 sp), **Baltic Sea (8 sp + 6 LTL)** with ICES SAG cross-validation. |
@@ -56,7 +56,7 @@ Both engines implement the same `Engine` protocol and produce identical output s
 
 |  | Python engine | Java engine |
 |---|---|---|
-| Implementation | Pure Python (NumPy + Numba JIT) | Java subprocess (OSMOSE 4.3.3 JAR) |
+| Implementation | Pure Python (NumPy + Numba JIT) | Java subprocess (OSMOSE 4.4.1 JAR default; 4.3.3 selectable) |
 | Dependencies | Python packages only | Java 17+ and an OSMOSE JAR |
 | Parity | Bay of Biscay 8/8, EEC 14/14 within 1 OoM | Reference implementation |
 | Speed | 1.2×–5.7× faster than Java (below) | Production-ready |

@@ -28,8 +28,10 @@ def test_read_doc_readme_has_marker():
 
 
 def test_read_doc_changelog_has_marker():
+    from osmose import __version__
+
     text = read_doc("changelog")
-    assert "Changelog" in text and "## [0.13.0]" in text
+    assert "Changelog" in text and f"## [{__version__}]" in text
 
 
 def test_read_doc_unknown_kind_raises():

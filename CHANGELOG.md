@@ -4,6 +4,96 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.3.0] - 2026-06-30
+
+### Features
+
+- **c2:** wire background staging + version-aware gate into the UI Java run path (8d1471e)
+- **c2:** version-aware java_engine_block_reason + thread jar_version through engine_capabilities (77e033f)
+- **c2:** extract+generalize Baltic Java-4.4.1 staging into osmose/java_background_staging.py (7e2239b)
+- **440:** flip write/jar/calibration defaults to 4.4.1 + keep native source validator-clean (880d7c0)
+- **440:** convert minimal/baltic/baltic_ev to native 4.4.0 (parity PASS, Baltic Java 4.4.1 smoke green) (5faa67d)
+- **440:** conversion tool + convert EEC to native 4.4.0 (canary, parity PASS 0.00) (2708965)
+- **parity:** round-trip parity harness for the 4.4.0 cutover + capture 4.3.3 baselines (C1 Task 2) (b286a34)
+- **baltic:** stage + run Baltic on Java 4.4.1 (inline bg biomass + authored accessibility) + smoke harness (257c21a)
+- **aliases:** emit 4.4.x background-species keys (species.multiplier/beta) on the 4.4.x write path (d87ddec)
+- **grid:** info button opens the selected model's modal + fix clipped label (cd988ad)
+- **grid:** Model-selection rename + per-model info modal (ℹ button) (3f50c52)
+- **demo:** DEMO_INFO registry + demo_info() accessor (per-model metadata) (2946024)
+- **run:** Run button in the Live Movement pane + phenology date in the status (e844b3d)
+- **engine:** pass map_sets to the step observer (output-side; enables egg placement) (b0c3b41)
+- **live:** place unlocated eggs on spawning grounds + phenology date_label + map_sets observer arg (7b2a0b4)
+- **run:** wire mode-aware legend into live map + remove pre-run hint (40a6867)
+- **live:** live_legend_widget — mode-aware legend (species swatches / biomass gradient) (44abe6e)
+- **run:** Live Movement species-from-config + stage selector + 3-col layout + empty-state (1ac7875)
+- **live:** stage_filter threaded through the render call graph (composed mask + count) (73b36a5)
+- **live:** MovementSnapshot carries per-school life stage (egg/larva/juvenile/adult) (22273d2)
+
+### Bug Fixes
+
+- **ui:** DEMO_INFO baltic/eec_full are no longer 'Python only' (run on Java 4.4.1) (9a1d0a1)
+- **440:** keep bare write defaults at 4.3.3 (jar-derived 4.4.1) + skip-if-exists conversion + test sweep (C1 Task 7) (6a28e3e)
+- **aliases:** make to_target_keys larval-rate transform source-version-aware (no double-scale on native 4.4.0) (fdf00e7)
+- **baltic-smoke:** fail the harness on species collapse / no predator feeding (6662bf1)
+- **live:** explicit ocean_mask in egg-fallback test + use cx_full in egg mask (review) (8766d5a)
+- **live:** distinct deck.gl layer ids for heatmap vs dots (filter no longer blanks the map) (3743122)
+
+### Documentation
+
+- implementation plan for C2 (UI Java-4.4.1 for nbackground>0) + in-loop review (5de28e2)
+- revise C2 spec per in-loop review (run directly; subagents spend-limited) (a412954)
+- spec for C2 — run nbackground>0 configs on Java 4.4.1 from the UI (208c805)
+- revise C1 plan per in-loop review (run directly; subagents spend-limited) (f29a70e)
+- implementation plan for C1 native 4.4.0 cutover (76776a8)
+- revise C1 spec per in-loop review (run directly; subagents spend-limited) (43cac24)
+- spec for C1 — standardise bundled Python stack to native OSMOSE 4.4.0 (984efa1)
+- revise Baltic-4.4.x plan per in-loop review (2 reviewers; jar-bytecode-resolved) (3e635a4)
+- implementation plan for Baltic 4.4.x background-key adaptation (245da82)
+- revise Baltic-4.4.x spec per in-loop review (2 reviewers, jar-bytecode-grounded) (b5f65d8)
+- spec for adapting Baltic background species to OSMOSE 4.4.x keys (sub-project A) (09df6c7)
+- implementation plan for context-sensitive info button + visibility fix (0d1adda)
+- spec for context-sensitive info button + visibility fix (7f5bed4)
+- revise plan per in-loop review (2 reviewers) (2a1e758)
+- implementation plan for Model-selection rename + info modal (cc24c43)
+- spec for Model-selection rename + per-model info modal (c395463)
+- **baltic-lifecycle:** document the reproductive-volume / saltwater-inflow gap (0e67da8)
+- scientific review of the Baltic fish life-cycle document (scite/ICES/HELCOM) (91a1a4e)
+- detailed Baltic fish life-cycle description (a468793)
+- revise plan per in-loop review (2 reviewers) (ad8ef5f)
+- implementation plan for live-pane eggs + run button + dates (2a938e9)
+- revise live-pane spec per in-loop review (2 reviewers) (c6696c7)
+- spec for live-pane egg-placement + run button + phenology dates (cab2fef)
+- revise plan per in-loop review (2 reviewers) (8624fba)
+- implementation plan for live-map legend + hint removal (e3bb357)
+- revise live-map legend spec per in-loop review (2 reviewers) (ca22b4d)
+- spec for live-map legend widget + empty-state hint removal (7abe781)
+- implementation plan for Live Movement stage filter + species fix (73d4ed4)
+- revise Live Movement spec per in-loop review (2 reviewers) (bd7c8a8)
+- spec for Live Movement species fix + life-stage filter + horizontal layout (ee0b9dc)
+
+### Other
+
+- fix stale 'Python only' model-info labels for baltic/eec_full (now Java 4.4.1 + Python) (23d9762)
+- C2 — run nbackground>0 configs on Java 4.4.1 from the UI (de169f9)
+- C1 — standardise bundled Python stack to native OSMOSE 4.4.0 (ac03be0)
+- **aliases:** undo the source-aware larval-rate change from fdf00e7 (H1 was a phantom) (6cc1ea6)
+- Baltic background species adapted to OSMOSE 4.4.x keys (sub-project A) (072b388)
+- info button opens the selected model's modal + fix clipped label (4f0e57d)
+- Baltic fish life-cycle documentation + scientific review (cdfc66c)
+- 'Model selection' rename + per-model info modal (2fabefc)
+- Live Movement pane — eggs on spawning grounds + run button + phenology dates (f694660)
+- live-map legend widget + remove pre-run hint (bacc17b)
+- fix Live Movement filter blanking the map (deck.gl layer-id swap) (ee2031c)
+- Live Movement species fix + life-stage filter + horizontal layout (ed5ab21)
+
+### Refactoring
+
+- **440:** demote canonicalize_config to a documented legacy 4.3.3 adapter (C1 Task 6) (ccf861a)
+
+### Tests
+
+- **baltic-smoke:** assert augment_accessibility leaves the source matrix byte-identical (9bc9c4c)
+
 ## [1.2.0] - 2026-06-26
 
 ### Features
@@ -23,6 +113,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), generated from 
 
 ### Other
 
+- v1.2.0 (b296dcf)
 - read Java cross-species distribution outputs per-species (7686cd9)
 - correct the inverted-size-ratio diagnosis (refuted by source) (77668fb)
 - Java 4.4.1 EEC adoption — resource-forcing migration + Phase 2 cross-engine validation (a421681)
