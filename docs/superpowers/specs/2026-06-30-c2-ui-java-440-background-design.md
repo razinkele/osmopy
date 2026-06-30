@@ -40,16 +40,24 @@ smoke script then imports from it — DRY, and its integration run proves the ex
 - `inline_biomass_series(nc_path, varname) -> list[float]` — per-step domain-total biomass (moved verbatim).
 - `augment_accessibility(csv_path, predators) -> None` — staged-copy accessibility authoring (moved verbatim).
 - `_write_background_movement_maps(...)` — uniform all-sea movement maps (moved verbatim).
+- Baltic-specific value tables (A's hand-authored constants, verbatim): `BG_ACCESS` (prey→accessibility) and
+  `BG_DIET_STAGE_THRESHOLD` (GreySeal sp14 → 90, Cormorant sp15 → 65 — a **5th workaround the smoke harness
+  applies**, `output.diet.stage.threshold.spN`, that the orchestrator must include).
 - `background_staging_supported(config) -> bool` — true iff **every** `species.type.spN == "background"`
   species name (`species.name.spN`) is a key in `BG_ACCESS`. Baltic/baltic_ev → true; an unknown background
   species → false.
-- `stage_background_for_java(stage_dir: Path, raw_config: dict) -> None` — the orchestrator (A's
-  `stage_and_run` minus the jar launch + validation): for each `type=background` species, append inline
-  `species.biomass.spN` + `species.biomass.nsteps.year.spN` (from the staged predator NetCDF), `nschool`,
-  movement-map keys to the staged master; author the accessibility + catchability/discards rows on the staged
-  matrices; and write `output.cutoff.enabled=false` **into the staged config** (so the UI runner needs no
-  special CLI flag — the 4.4.1 `OutputRegion.include` OOB with nbackground>0 is avoided). Idempotent /
-  staged-copy only; never touches `data/`.
+- `stage_background_for_java(stage_dir: Path, raw_config: dict) -> dict[str, str]` — the orchestrator,
+  **generalized** from A's `stage_and_run` (which hardcodes sp14/sp15, GreySeal/Cormorant, nclass=2,
+  `cod_juvenile.csv`): it **iterates** the `type=background` species, deriving each species' index, name
+  (`species.name.spN`), class count (`species.nclass.spN`), and predator-NetCDF var (= the name) from
+  `raw_config`. For each, append inline `species.biomass.spN` + `species.biomass.nsteps.year.spN` (materialized
+  from the staged predator NetCDF), `simulation.nschool.spN`, `output.diet.stage.threshold.spN` (from
+  `BG_DIET_STAGE_THRESHOLD`), and per-class movement-map keys (using a sea-mask reference map found in the
+  staged `maps/`) to the staged master; author the accessibility + catchability/discards rows on the staged
+  matrices (from `BG_ACCESS`). It **returns the extra `-P` overrides** the run needs — `{"output.cutoff.enabled":
+  "false"}` (the 4.4.1 `OutputRegion.include` OOB with nbackground>0; A passes this on the CLI, so the UI must
+  too — see §3.3) — and also writes that key into the staged config (belt-and-suspenders). Staged-copy only;
+  never touches `data/`.
 
 `scripts/baltic_440_smoke.py` keeps its CLI + validation (`assert_predators_feed`, `_read_biomass_means`) and
 imports the staging helpers + `stage_background_for_java` from the new module.
@@ -69,18 +77,28 @@ not create an import cycle (the staging module imports only stdlib + numpy/xarra
 
 **Callers** pass the jar version (derived from the selected jar via `target_version_for_jar`):
 - `ui/pages/run.py:824` gate: `java_engine_block_reason(config, target_version_for_jar(Path(state.jar_path.get())))`.
-- `osmose/engine_capabilities.py:65`: thread the jar version through (its caller supplies the selected jar; if
-  none is available there, pass `None` → conservative block, preserving today's behaviour).
+- **`engine_capabilities`**: `_describe_java(config)` (`:65`) has no jar today, so the capability display
+  would wrongly show "Java blocked" for Baltic even on the 4.4.1 jar. Thread a `jar_version` param through
+  `describe_engine(engine, config, jar_version=None)` → `_describe_java(config, jar_version)` →
+  `java_engine_block_reason(config, jar_version)`. The UI caller (`run.py:23`) passes the selected jar's
+  version; the default `None` keeps any other caller conservative (block), so the change is back-compatible.
 
 ### 3.3 UI wiring — `_run_java_engine` (`run.py`)
 After `write_temp_config` (line 369) produces `config_path` and before `OsmoseRunner` runs (line 390): if
 `int(nbackground) > 0` **and** `_numeric_version(target_version_for_jar(jar_path)) >= (4,4,0)`, call
-`stage_background_for_java(config_path.parent, raw_config)`. (The gate at §3.2 has already guaranteed the
-config is staging-supported, so this only runs for supported configs.) The runner then runs the staged config.
+`extra_overrides = stage_background_for_java(config_path.parent, raw_config)`. (The gate at §3.2 has already
+guaranteed the config is staging-supported, so this only runs for supported configs.) Pass `extra_overrides`
+to the runner: `runner.run(config_path, output_dir, java_opts, overrides=extra_overrides)` — `OsmoseRunner.run`
+already accepts `overrides: dict` and emits them as `-Pkey=value` (`runner.py:128`), so the cutoff override
+reaches the jar on the CLI exactly as A's validated harness does. (Default `overrides={}` for the non-staged
+path — unchanged behaviour.) The `raw_config` is the merged config read for the run (carries the background
+species' `type`/`name`/`file`); confirm the exact variable at the insertion point during implementation.
 
 ## 4. Validation
 - **Unit (`tests/test_java_background_staging.py`):** `background_staging_supported` (Baltic source → true; a
-  synthetic config with an unknown `type=background` species → false); `augment_accessibility` /
+  synthetic config with an unknown `type=background` species → false); `stage_background_for_java` on a staged
+  Baltic dir emits the per-background `species.biomass`/`nschool`/`diet.stage.threshold`/movement keys + the
+  accessibility/catchability rows AND returns `{"output.cutoff.enabled": "false"}`; `augment_accessibility` /
   `inline_biomass_series` (moved from `tests/test_baltic_440_staging.py`, re-pointed at the new module, incl.
   the source-untouched guard).
 - **Unit (`tests/test_runner.py` or `test_engine_capabilities.py`):** the §3.2 block matrix — all 4 rows
@@ -96,10 +114,18 @@ config is staging-supported, so this only runs for supported configs.) The runne
 ## 5. Risks
 - **Allow/block correctness:** allowing a config the staging can't handle launches a doomed Java run. The
   `background_staging_supported` predicate is the guard; the integration test confirms the supported path runs.
-- **Import cycle:** `runner.py` importing `background_staging_supported` from the staging module — the staging
-  module must NOT import `runner`/`ui`. Keep its deps to the reader + numpy/xarray.
-- **`engine_capabilities` caller:** if it can't supply the selected jar, default `jar_version=None` →
-  conservative block (today's behaviour) — no regression, just no new capability surfaced there.
+- **Import cycle (specific):** `runner.py` imports `background_staging_supported` from the new staging module,
+  so that module must NOT import `runner` **or `ui.pages.run`** — i.e. it must NOT call `write_temp_config`
+  (which lives in `ui.pages.run`, which imports `runner` → a cycle). The orchestrator therefore takes an
+  **already-staged dir** (the UI calls `write_temp_config` first, then `stage_background_for_java`). Staging
+  deps stay: the reader, numpy, xarray, stdlib. (Verified: `osmose.config.reader` does not import `runner`.)
+- **Cutoff override must reach the jar (resolved):** A's harness passes `-Poutput.cutoff.enabled=false` on the
+  CLI (precedence over file values); relying only on the staged-config entry is unverified. So
+  `stage_background_for_java` returns it as a `-P` override and the UI passes it to `runner.run(overrides=...)`
+  — the validated path. The integration test (real 4.4.1 run via the UI runner path) confirms it.
+- **Extraction fidelity:** the orchestrator is *generalized* from A's Baltic-hardcoded `stage_and_run`
+  (iterates background species vs hardcoded sp14/sp15), so the integration run (smoke harness on the module)
+  must reproduce A's exact result (exit 0 + predators feed) to prove no behaviour drift.
 
 ## 6. Out of scope
 Non-Baltic background species; BoB (C3); Python-engine changes; source-matrix authoring; the predator-NetCDF
