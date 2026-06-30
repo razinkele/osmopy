@@ -473,10 +473,16 @@ def _handle_result(result, config, state, run_log, status, start_monotonic=None)
         status.set(f"Cancelled: {result.message or 'user cancelled'}")
     else:
         status.set(f"Failed (exit code {result.returncode})")
+    # Surface BOTH streams on failure: the Java engine writes its `osmose[severe] ...` errors to
+    # STDOUT and the stacktrace to STDERR, so showing only stderr can read as "no output".
+    extra: list[str] = []
+    if result.stdout:
+        tail = "\n".join(result.stdout.splitlines()[-40:])
+        extra.append(f"--- OUTPUT (last 40 lines) ---\n{tail}")
     if result.stderr:
-        lines = list(run_log.get())
-        lines.append(f"--- STDERR ---\n{result.stderr}")
-        run_log.set(lines)
+        extra.append(f"--- STDERR ---\n{result.stderr}")
+    if extra:
+        run_log.set(list(run_log.get()) + extra)
 
 
 def run_server(input, output, session, state):
@@ -923,18 +929,32 @@ def run_server(input, output, session, state):
             ).start()
             # handle_run returns now; _drain_run_done finishes the run on the main thread.
         else:
-            await _run_java_engine(
-                input,
-                state,
-                session,
-                config,
-                work_dir,
-                source_dir,
-                run_log,
-                status,
-                runner_ref,
-                start_monotonic=run_t0,
-            )
+            # Surface ANY failure to the UI — without this, an exception (e.g. background staging,
+            # config write, or run setup) would die in the awaited handler with NO status/console
+            # update, which reads as "Java run produced no output".
+            try:
+                await _run_java_engine(
+                    input,
+                    state,
+                    session,
+                    config,
+                    work_dir,
+                    source_dir,
+                    run_log,
+                    status,
+                    runner_ref,
+                    start_monotonic=run_t0,
+                )
+            except Exception as exc:  # noqa: BLE001 — report, never swallow silently
+                import traceback
+
+                _log.error("Java run failed before/around the subprocess", exc_info=True)
+                status.set(f"Java run failed: {exc}")
+                lines = list(run_log.get())
+                lines.append(f"--- JAVA RUN ERROR ---\n{traceback.format_exc()}")
+                run_log.set(lines)
+                _set_run_buttons(False, session)
+                ui.update_action_button("btn_cancel", disabled=True, session=session)
 
     @reactive.effect
     @reactive.event(input.btn_cancel)

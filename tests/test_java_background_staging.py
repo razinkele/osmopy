@@ -82,3 +82,15 @@ def test_stage_background_for_java_emits_keys_and_returns_cutoff_override(tmp_pa
     assert "GreySeal" in (stage / "predation-accessibility.csv").read_text().splitlines()[0]
     # source untouched
     assert (src / "predation-accessibility.csv").read_text().splitlines()[0].count("GreySeal") == 0
+
+
+def test_stage_background_raises_clear_error_when_predator_nc_missing(tmp_path):
+    """A missing predator NetCDF -> a clear FileNotFoundError, not a silent StopIteration."""
+    import pytest
+
+    from osmose.java_background_staging import stage_background_for_java
+
+    (tmp_path / "osm_all-parameters.csv").write_text("simulation.time.ndtperyear ; 24\n")
+    raw = {"species.type.sp14": "background", "species.name.sp14": "GreySeal"}
+    with pytest.raises(FileNotFoundError, match="predator-biomass NetCDF"):
+        stage_background_for_java(tmp_path, raw)

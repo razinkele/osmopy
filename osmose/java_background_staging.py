@@ -153,10 +153,22 @@ def stage_background_for_java(stage_dir: Path, raw_config: dict) -> dict[str, st
     stage_dir = Path(stage_dir)
     master = stage_dir / "osm_all-parameters.csv"
     ndt = int(float(raw_config.get("simulation.time.ndtperyear", "24") or "24"))
-    nc = next(stage_dir.glob("*predator*biomass*.nc"))  # the background-forcing NetCDF
-    ref_map = next((stage_dir / "maps").glob("*juvenile*.csv"), None)
-    if ref_map is None:
-        ref_map = next((stage_dir / "maps").glob("*.csv"))
+    nc_matches = sorted(stage_dir.glob("*predator*biomass*.nc"))  # the background-forcing NetCDF
+    if not nc_matches:
+        raise FileNotFoundError(
+            f"Background staging needs a predator-biomass NetCDF (*predator*biomass*.nc) in the "
+            f"staged config dir {stage_dir}, but none was found. Was the source data copied?"
+        )
+    nc = nc_matches[0]
+    ref_maps = sorted((stage_dir / "maps").glob("*juvenile*.csv")) or sorted(
+        (stage_dir / "maps").glob("*.csv")
+    )
+    if not ref_maps:
+        raise FileNotFoundError(
+            f"Background staging needs a reference sea-mask movement map (maps/*.csv) in {stage_dir}, "
+            "but none was found."
+        )
+    ref_map = ref_maps[0]
 
     extra: list[str] = []
     predators: dict[str, dict[str, float]] = {}
