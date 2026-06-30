@@ -33,8 +33,50 @@ simulation.nschool.sp13;28
 # Osmose 4.3.1 - Updated parameter osmose.version to 4.3.1
 # Osmose 4.3.2 - Updated parameter osmose.version to 4.3.2
 # Osmose 4.3.3 - Updated parameter osmose.version to 4.3.3
-osmose.version;4.3.3
+osmose.version;4.4.1
 
 #osmose.configuration.regional;regional_outputs/regional.csv
 #osmose.configuration.surveys;regional_outputs/surveys.csv
 #osmose.configuration.background;eec_param-background.csv
+
+# --- 4.4.x resource forcing (C1) ---
+species.biomass.file.sp14 ; eec_ltlbiomassTons.nc
+species.biomass.file.sp15 ; eec_ltlbiomassTons.nc
+species.biomass.file.sp16 ; eec_ltlbiomassTons.nc
+species.biomass.file.sp17 ; eec_ltlbiomassTons.nc
+species.biomass.file.sp18 ; eec_ltlbiomassTons.nc
+species.biomass.file.sp19 ; eec_ltlbiomassTons.nc
+species.biomass.file.sp20 ; eec_ltlbiomassTons.nc
+species.biomass.file.sp21 ; eec_ltlbiomassTons.nc
+species.biomass.file.sp22 ; eec_ltlbiomassTons.nc
+species.biomass.file.sp23 ; eec_ltlbiomassTons.nc
+species.biomass.mode.sp14 ; NETCDF_BIOMASS
+species.biomass.mode.sp15 ; NETCDF_BIOMASS
+species.biomass.mode.sp16 ; NETCDF_BIOMASS
+species.biomass.mode.sp17 ; NETCDF_BIOMASS
+species.biomass.mode.sp18 ; NETCDF_BIOMASS
+species.biomass.mode.sp19 ; NETCDF_BIOMASS
+species.biomass.mode.sp20 ; NETCDF_BIOMASS
+species.biomass.mode.sp21 ; NETCDF_BIOMASS
+species.biomass.mode.sp22 ; NETCDF_BIOMASS
+species.biomass.mode.sp23 ; NETCDF_BIOMASS
+species.biomass.nsteps.year.sp14 ; 24
+species.biomass.nsteps.year.sp15 ; 24
+species.biomass.nsteps.year.sp16 ; 24
+species.biomass.nsteps.year.sp17 ; 24
+species.biomass.nsteps.year.sp18 ; 24
+species.biomass.nsteps.year.sp19 ; 24
+species.biomass.nsteps.year.sp20 ; 24
+species.biomass.nsteps.year.sp21 ; 24
+species.biomass.nsteps.year.sp22 ; 24
+species.biomass.nsteps.year.sp23 ; 24
+species.biomass.varname.sp14 ; Dinoflagellates
+species.biomass.varname.sp15 ; Diatoms
+species.biomass.varname.sp16 ; Microzoo
+species.biomass.varname.sp17 ; Mesozoo
+species.biomass.varname.sp18 ; Macrozoo
+species.biomass.varname.sp19 ; VSBVerySmallBenthos
+species.biomass.varname.sp20 ; SmallBenthos
+species.biomass.varname.sp21 ; MediumBenthos
+species.biomass.varname.sp22 ; LargeBenthos
+species.biomass.varname.sp23 ; VLBVeryLargeBenthos
