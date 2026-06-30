@@ -226,7 +226,22 @@ _INVERSE_440: dict[str, str] = {
 }
 
 
-def to_target_keys(cfg: dict[str, str], target_version: str = "4.3.3") -> dict[str, str]:
+DEFAULT_TARGET_VERSION = "4.4.1"  # the Python setup defaults to native OSMOSE 4.4.x (C1)
+
+
+def target_version_for_jar(jar_path) -> str:
+    """Map a jar path to its config write-target by parsing the version triplet from the filename.
+
+    ``osmose-4.4.1-...jar`` -> "4.4.1"; ``osmose_4.3.3-...jar`` -> "4.3.3"; unparseable -> default.
+    Lets the write path follow the selected jar (4.4.1 default; the 4.3.3 jar still reverse-maps).
+    """
+    m = re.search(r"(\d+\.\d+\.\d+)", str(jar_path))
+    return m.group(1) if m else DEFAULT_TARGET_VERSION
+
+
+def to_target_keys(
+    cfg: dict[str, str], target_version: str = DEFAULT_TARGET_VERSION
+) -> dict[str, str]:
     """Emit config keys for a target engine version (inverse of canonicalize).
 
     target 4.4.0 -> identity + version stamp. target 4.3.x -> reverse the 4.4.0 renames

@@ -41,3 +41,20 @@ def test_background_keys_not_emitted_on_433_path():
     }
     out = to_target_keys(dict(cfg), target_version="4.3.3")
     assert "species.multiplier.sp14" not in out
+
+
+def test_target_version_for_jar():
+    from osmose.config.aliases import DEFAULT_TARGET_VERSION, target_version_for_jar
+
+    assert DEFAULT_TARGET_VERSION == "4.4.1"
+    assert target_version_for_jar("osmose-java/osmose-4.4.1-jar-with-dependencies.jar") == "4.4.1"
+    assert target_version_for_jar("osmose-java/osmose_4.3.3-jar-with-dependencies.jar") == "4.3.3"
+    assert target_version_for_jar("weird.jar") == DEFAULT_TARGET_VERSION  # unparseable -> default
+
+
+def test_to_target_keys_default_is_native_440():
+    # default write-target is now 4.4.1: stamps the version + keeps canonical keys (4.4.x is
+    # identity, NOT a forward-rename -- canonicalize does old->new on the read side).
+    out = to_target_keys({"osmose.version": "4.3.3", "module.bioenergetics.enabled": "true"})
+    assert out["osmose.version"] == "4.4.1"
+    assert out["module.bioenergetics.enabled"] == "true"  # canonical key kept (no reverse-map)

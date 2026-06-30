@@ -18,7 +18,6 @@ from pathlib import Path
 
 from osmose.config.aliases import (
     RENAMES_440,
-    _emit_resource_biomass_forcing,
     _LARVA_RATE_RE,
     _ndtperyear,
     _numeric_version,
@@ -100,17 +99,11 @@ def convert_config(config_dir: Path) -> None:
         f.write_text(
             "".join(_convert_line(ln, ndt) for ln in f.read_text().splitlines(keepends=True))
         )
-    # resource-forcing keys: inert for the Python engine (H3), needed by the 4.4.1 jar; append the
-    # NEW ones to the master (species.biomass.* names are version-stable).
-    emitted = _emit_resource_biomass_forcing(dict(merged))
-    new_keys = {k: v for k, v in emitted.items() if k not in merged}
-    if new_keys:
-        extra = "".join(f"{k} ; {v}\n" for k, v in sorted(new_keys.items()))
-        master.write_text(master.read_text() + "\n# --- 4.4.x resource forcing (C1) ---\n" + extra)
-    print(
-        f"{name}: converted {len(param_files)} param file(s) -> native 4.4.0 "
-        f"({len(new_keys)} resource-forcing keys emitted)"
-    )
+    # NOTE: the Java-only NETCDF_BIOMASS resource-forcing keys (species.biomass.{file,mode,varname})
+    # are NOT baked into source — they are a write-for-Java concern that write_temp_config ->
+    # to_target_keys emits at stage time, and the Python engine does not read them (H3). Baking them
+    # in would make the Python validator flag them as unknown keys.
+    print(f"{name}: converted {len(param_files)} param file(s) -> native 4.4.0")
 
 
 if __name__ == "__main__":

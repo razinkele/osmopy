@@ -293,7 +293,7 @@ def test_to_target_keys_collapses_mixed_old_and_new():
     assert out["simulation.bioen.enabled"] == "false"  # existing OLD value wins (base-wins)
 
 
-def test_writer_default_target_emits_old_keys(tmp_path):
+def test_writer_default_native_explicit_433_reverse_maps(tmp_path):
     from osmose.config.writer import OsmoseConfigWriter
 
     cfg = {
@@ -301,35 +301,49 @@ def test_writer_default_target_emits_old_keys(tmp_path):
         "module.bioenergetics.enabled": "true",
         "simulation.restart.spinup.nyear": "5",
     }
-    OsmoseConfigWriter().write(cfg, tmp_path)  # default target_version="4.3.3"
-    # The writer routes keys to sub-files by prefix, so read across all CSVs.
-    raw = "".join(p.read_text() for p in sorted(tmp_path.glob("*.csv")))
-    assert "simulation.bioen.enabled" in raw  # reverse-mapped to old
-    assert "output.restart.spinup" in raw  # routed to osm_param-output.csv
-    assert "module.bioenergetics.enabled" not in raw
+    # default target is now native 4.4.x -> canonical keys kept
+    OsmoseConfigWriter().write(cfg, tmp_path / "native")
+    native = "".join(p.read_text() for p in sorted((tmp_path / "native").glob("*.csv")))
+    assert "module.bioenergetics.enabled" in native
+    assert "simulation.restart.spinup.nyear" in native
+    # explicit 4.3.3 reverse-maps to legacy spellings for the old jar
+    OsmoseConfigWriter().write(cfg, tmp_path / "legacy", target_version="4.3.3")
+    legacy = "".join(p.read_text() for p in sorted((tmp_path / "legacy").glob("*.csv")))
+    assert "simulation.bioen.enabled" in legacy  # reverse-mapped to old
+    assert "module.bioenergetics.enabled" not in legacy
 
 
-def test_write_temp_config_default_target_emits_old_keys(tmp_path):
+def test_write_temp_config_default_native_explicit_433_legacy(tmp_path):
     from ui.pages.run import write_temp_config
 
-    master = write_temp_config(
-        {
-            "module.multispecies.fisheries.enabled": "false",
-            "module.bioenergetics.enabled": "true",
-        },
-        tmp_path,
-    )
-    raw = master.read_text()
-    assert "fisheries.enabled" in raw
-    assert "module.multispecies.fisheries.enabled" not in raw
+    cfg = {
+        "module.multispecies.fisheries.enabled": "false",
+        "module.bioenergetics.enabled": "true",
+    }
+    # default target is now native 4.4.x -> canonical keys kept, stamped 4.4.1
+    native = write_temp_config(cfg, tmp_path / "native").read_text()
+    assert "module.multispecies.fisheries.enabled" in native
+    assert native.replace(" ", "").count("osmose.version;4.4.1") >= 1
+    # explicit 4.3.3 still reverse-maps for the legacy jar
+    legacy = write_temp_config(cfg, tmp_path / "legacy", target_version="4.3.3").read_text()
+    assert "fisheries.enabled" in legacy
+    assert "module.multispecies.fisheries.enabled" not in legacy
 
 
 def test_export_writes_target_format(tmp_path):
     from osmose.config.writer import OsmoseConfigWriter
 
-    OsmoseConfigWriter().write({"module.bioenergetics.enabled": "true"}, tmp_path)
-    raw = (tmp_path / "osm_all-parameters.csv").read_text()
-    assert "simulation.bioen.enabled" in raw  # export inherits the 4.3.3 reverse-map
+    # default export is native 4.4.x -> canonical key kept
+    OsmoseConfigWriter().write({"module.bioenergetics.enabled": "true"}, tmp_path / "native")
+    native = (tmp_path / "native" / "osm_all-parameters.csv").read_text()
+    assert "module.bioenergetics.enabled" in native
+    # explicit 4.3.3 export still reverse-maps to legacy keys
+    OsmoseConfigWriter().write(
+        {"module.bioenergetics.enabled": "true"}, tmp_path / "legacy", target_version="4.3.3"
+    )
+    assert (
+        "simulation.bioen.enabled" in (tmp_path / "legacy" / "osm_all-parameters.csv").read_text()
+    )
 
 
 def test_writer_roundtrip_of_canonical_config_is_faithful(tmp_path):
@@ -368,7 +382,7 @@ def test_writer_roundtrip_of_canonical_config_is_faithful(tmp_path):
     assert "mortality.natural.rate.sp0" not in back
 
 
-def test_calibration_java_cmd_reverse_maps_override_keys(tmp_path):
+def test_calibration_java_cmd_writes_keys_for_jar_version(tmp_path):
     from unittest.mock import MagicMock, patch
 
     from osmose.calibration.problem import FreeParameter
@@ -385,8 +399,10 @@ def test_calibration_java_cmd_reverse_maps_override_keys(tmp_path):
             pass
     cmd = mock_run.call_args[0][0]
     p_args = [s for s in cmd if s.startswith("-P")]
-    assert any(s.startswith("-Pspecies.bioen.maturity.eta.sp0=") for s in p_args)  # reverse-mapped
-    assert not any("species.maturity.eta.sp0" in s for s in p_args)  # NEW key gone
+    # The override target now follows the jar version. `fake.jar` has no version triplet ->
+    # target_version_for_jar -> 4.4.1 (default) -> NATIVE keys (no reverse-map).
+    assert any(s.startswith("-Pspecies.maturity.eta.sp0=") for s in p_args)  # native key kept
+    assert not any("species.bioen.maturity" in s for s in p_args)  # NOT reverse-mapped
     assert not any(s.startswith("-Posmose.version=") for s in p_args)  # stamp skipped
 
 
@@ -402,10 +418,12 @@ def test_pr2_load_write_roundtrip_coherent(tmp_path):
     cfg = OsmoseConfigReader().read(src / "osm_all-parameters.csv")
     assert cfg["module.bioenergetics.enabled"] == "true"  # reader canonicalized
     out = tmp_path / "out"
-    master = write_temp_config(cfg, out)  # default target 4.3.3
+    master = write_temp_config(cfg, out)  # default target is now native 4.4.1
     raw = master.read_text()
-    assert "simulation.bioen.enabled" in raw  # reverse-mapped to old for the jar
-    assert "module.bioenergetics.enabled" not in raw
+    assert "module.bioenergetics.enabled" in raw  # canonical key kept (native default)
+    # explicit 4.3.3 still reverse-maps to the legacy spelling for the old jar
+    legacy = write_temp_config(cfg, tmp_path / "legacy", target_version="4.3.3").read_text()
+    assert "simulation.bioen.enabled" in legacy
 
 
 def test_larva_rate_scaled_to_per_year_on_4_4_0_write():
@@ -626,7 +644,11 @@ def test_resource_forcing_is_additive_not_overwriting():
 
 
 def test_non_resource_species_get_no_forcing_keys():
-    cfg = {"species.type.sp0": "focal", "species.name.sp0": "Cod", "simulation.time.ndtperyear": "24"}
+    cfg = {
+        "species.type.sp0": "focal",
+        "species.name.sp0": "Cod",
+        "simulation.time.ndtperyear": "24",
+    }
     out = to_target_keys(cfg, "4.4.0")
     assert not any(k.startswith("species.biomass.") for k in out)
 
