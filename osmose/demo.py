@@ -198,7 +198,9 @@ def _generate_baltic(output_dir: Path) -> dict:
         master = config_dir / "baltic_all-parameters.csv"
         master.write_text(
             "simulation.time.ndtperyear ; 24\n"
-            "simulation.time.nyear ; 50\n"
+            # Baltic is dynamically stable only over a ~15-yr horizon; past ~yr30 the config
+            # collapses to herring+sprat on BOTH engines (calibration limit, not an engine bug).
+            "simulation.time.nyear ; 15\n"
             "simulation.nspecies ; 8\n"
             "simulation.nresource ; 6\n"
             "simulation.ncpu ; 1\n"

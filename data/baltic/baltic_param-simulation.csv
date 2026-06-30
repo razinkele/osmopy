@@ -3,4 +3,4 @@ simulation.nresource;6
 simulation.nsimulation;1
 simulation.nspecies;8
 simulation.time.ndtperyear;24
-simulation.time.nyear;50
+simulation.time.nyear;15
