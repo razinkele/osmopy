@@ -5,6 +5,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from osmose.config import OsmoseConfigReader
+from osmose.engine import PythonEngine
 from osmose.engine.config import _load_rv_gate
 from osmose.engine.processes.recruitment_gate import rv_gate_factor
 from osmose.schema import build_registry
@@ -214,3 +216,59 @@ def test_rv_gate_factor_wraps_and_offsets():
     assert rv_gate_factor(cfg, 0).tolist() == [1.0]
     # model year 4 -> idx (2+4)%3 = 0 -> 0.5 (wrap)
     assert rv_gate_factor(cfg, 4 * 24).tolist() == [0.5]
+
+
+BALTIC = Path("/home/razinka/osmose/osmose-python/data/baltic/baltic_all-parameters.csv")
+SERIES = Path("/home/razinka/osmose/osmose-python/data/baltic/forcing/baltic_rv_gate_series.csv")
+
+
+def _baltic_cfg(**over):
+    cfg = dict(OsmoseConfigReader().read(BALTIC))
+    cfg["simulation.time.nyear"] = "6"
+    cfg.update(over)
+    return cfg
+
+
+def test_gate_off_bit_identical():
+    base = PythonEngine().run_in_memory(_baltic_cfg(), seed=0).biomass()
+    gated_off = (
+        PythonEngine()
+        .run_in_memory(_baltic_cfg(**{"reproduction.rv.gate.enabled": "false"}), seed=0)
+        .biomass()
+    )
+    np.testing.assert_array_equal(base["cod"].to_numpy(), gated_off["cod"].to_numpy())
+
+
+def test_gate_on_changes_cod_and_cod_dominates():
+    off = PythonEngine().run_in_memory(_baltic_cfg(), seed=0).biomass()
+    on = (
+        PythonEngine()
+        .run_in_memory(
+            _baltic_cfg(
+                **{
+                    "reproduction.rv.gate.enabled": "true",
+                    "reproduction.rv.gate.mode": "raw_cap",
+                    "reproduction.rv.gate.ref": "0.20",
+                    "reproduction.rv.gate.series.file": str(SERIES),
+                    "reproduction.rv.gate.start.year": "1993",
+                    "reproduction.rv.gate.species.enabled.sp0": "true",
+                }
+            ),
+            seed=0,
+        )
+        .biomass()
+    )
+
+    def rel_change(sp):
+        a, b = off[sp].to_numpy(), on[sp].to_numpy()
+        denom = float(np.abs(a).sum())
+        return float(np.abs(b - a).sum()) / denom if denom else 0.0
+
+    # Cod (the only gated species) changes; and its relative change dominates a
+    # coupled species (sprat), whose change is only a secondary predation/RNG
+    # effect. We do NOT assert sprat is bit-identical — cod preys on sprat and
+    # cod's changed survival desyncs the shared RNG stream, so sprat legitimately
+    # shifts. The per-species enable-mask restriction to sp0 is proven directly
+    # by the helper unit tests (Task 4).
+    assert rel_change("cod") > 0.05  # gate meaningfully changes cod
+    assert rel_change("cod") > rel_change("sprat")  # cod is the primary effect

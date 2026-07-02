@@ -120,10 +120,12 @@ def reproduction(
         season_factor = np.full(n_sp, 1.0 / config.n_dt_per_year)
 
     # Seeding: if SSB is zero and within seeding period, use seeding biomass
+    seeded_this_step = np.zeros(n_sp, dtype=np.bool_)
     for sp in range(n_sp):
         if ssb[sp] == 0.0:
             if step < config.seeding_max_step[sp]:
                 ssb[sp] = config.seeding_biomass[sp]
+                seeded_this_step[sp] = True
 
     # Egg count per species
     # Java: nEgg = sexRatio * beta * season * SSB * 1_000_000
@@ -150,6 +152,17 @@ def reproduction(
         config.recruitment_type[:n_sp],
         config.shepherd_beta[:n_sp],
     )
+
+    # Reproductive-volume recruitment gate (Baltic cod). Inert unless enabled;
+    # skipped on steps where SSB was seeded (bootstrap must not be gated).
+    if config.rv_gate_factor_by_index is not None:
+        from osmose.engine.processes.recruitment_gate import rv_gate_factor
+
+        assert config.rv_gate_enabled is not None  # invariant: set together in _load_rv_gate
+        gate = rv_gate_factor(config, step)
+        for sp in range(n_sp):
+            if config.rv_gate_enabled[sp] and not seeded_this_step[sp]:
+                n_eggs[sp] *= gate[sp]
 
     # Create new schools from eggs
     new_schools_list = []
