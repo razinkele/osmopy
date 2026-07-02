@@ -142,7 +142,7 @@ def e_clip_first_guess(
     return max(0.0, min(d0, d1)), e_clip
 
 
-RECAL_RATE: float | None = None  # set from scripts/recalibrate_sp1b.py output (SP1b Task 4)
+RECAL_RATE: float | None = 14.655061270634512  # SP1b solved: converged, rel_err=0.66% (mean_on=2067.8 vs baseline=2054.3)
 
 
 class _UseRecal:
