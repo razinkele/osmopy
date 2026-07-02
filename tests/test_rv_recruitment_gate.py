@@ -1,10 +1,12 @@
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
 from osmose.engine.config import _load_rv_gate
+from osmose.engine.processes.recruitment_gate import rv_gate_factor
 from osmose.schema import build_registry
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
@@ -176,3 +178,39 @@ def test_load_rv_gate_nonascending_years_raises(tmp_path):
     cfg["reproduction.rv.gate.series.file"] = str(bad)  # now point at the bad file
     with pytest.raises(ValueError, match="contiguous"):
         _load_rv_gate(cfg, 1, 24, 3)
+
+
+def _fake_cfg(factor, enabled, offset=0, n_dt=24):
+    return SimpleNamespace(
+        rv_gate_factor_by_index=factor,
+        rv_gate_enabled=enabled,
+        rv_gate_offset=offset,
+        n_dt_per_year=n_dt,
+        n_species=len(enabled) if enabled is not None else 1,
+    )
+
+
+def test_rv_gate_factor_disabled_all_ones():
+    cfg = _fake_cfg(None, None)
+    cfg.n_species = 3
+    assert rv_gate_factor(cfg, 100).tolist() == [1.0, 1.0, 1.0]
+
+
+def test_rv_gate_factor_selects_year_and_species():
+    factor = np.array([0.5, 2.0, 1.0])  # 3-year series
+    enabled = np.array([True, False])
+    cfg = _fake_cfg(factor, enabled, offset=0, n_dt=24)
+    # model year 0 -> idx 0 -> 0.5 for cod, 1.0 for the disabled species
+    assert rv_gate_factor(cfg, 0).tolist() == [0.5, 1.0]
+    # model year 1 (step 24..47) -> idx 1 -> 2.0
+    assert rv_gate_factor(cfg, 30).tolist() == [2.0, 1.0]
+
+
+def test_rv_gate_factor_wraps_and_offsets():
+    factor = np.array([0.5, 2.0, 1.0])
+    enabled = np.array([True])
+    cfg = _fake_cfg(factor, enabled, offset=2, n_dt=24)
+    # model year 0 -> idx (2+0)%3 = 2 -> 1.0
+    assert rv_gate_factor(cfg, 0).tolist() == [1.0]
+    # model year 4 -> idx (2+4)%3 = 0 -> 0.5 (wrap)
+    assert rv_gate_factor(cfg, 4 * 24).tolist() == [0.5]
