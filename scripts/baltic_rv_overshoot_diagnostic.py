@@ -536,6 +536,26 @@ def _auto_find_all(patterns: list[str]) -> list[Path]:
     return []
 
 
+def build_rv_gate_series(rv: dict, out_path: Path) -> Path:
+    """Write per-year spawning-season RV (year,spawning_rv) for the engine gate.
+
+    Requires the full salinity+oxygen RV (not the oxygen-only proxy) and a
+    calendar time axis spanning >= 2 years. Raises rather than emitting a
+    degenerate/optimistic file.
+    """
+    if not rv.get("available") or not rv.get("both_criteria"):
+        raise ValueError("RV gate series requires both criteria (salinity + oxygen).")
+    yrs, spawn = annual_rv(rv.get("times"), rv["fraction"], months=SPAWNING_MONTHS)
+    if yrs is None or spawn is None:
+        raise ValueError("RV series needs a calendar time axis spanning >= 2 years.")
+    if np.any(~np.isfinite(spawn)):
+        raise ValueError("RV series has NaN spawning-season year(s); cannot emit gate series.")
+    lines = ["year,spawning_rv"] + ["%d,%.6f" % (int(y), v) for y, v in zip(yrs, spawn)]
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text("\n".join(lines) + "\n")
+    return out_path
+
+
 def annual_rv(times, fraction: np.ndarray, months: tuple[int, ...] | None = None):
     """Aggregate a monthly RV series to per-calendar-year means.
 
@@ -569,6 +589,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--sal-threshold", type=float, default=11.0, help="min salinity (PSU)")
     ap.add_argument("--o2-threshold", type=float, default=2.0, help="min oxygen (mL/L)")
     ap.add_argument("--out", type=Path, default=DIAG_DIR, help="output dir for plot/csv")
+    ap.add_argument(
+        "--emit-gate-series",
+        type=Path,
+        default=None,
+        help="write the per-year RV gate series CSV for the engine and exit",
+    )
     args = ap.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -589,6 +615,11 @@ def main(argv: list[str] | None = None) -> int:
     forcing = model_forcing_audit()
     model = cod_biomass_series(args.run_model, args.years)
     rv = reproductive_volume(phy, bgc, grid, deep_mask, args.sal_threshold, args.o2_threshold)
+
+    if args.emit_gate_series is not None:
+        path = build_rv_gate_series(rv, args.emit_gate_series)
+        log.info("wrote gate series %s", path)
+        return 0
 
     write_csv(rv, args.out / "baltic_rv_fraction.csv")
     if write_plot(model, rv, args.out / "baltic_rv_overshoot.png"):
