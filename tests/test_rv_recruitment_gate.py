@@ -272,3 +272,12 @@ def test_gate_on_changes_cod_and_cod_dominates():
     # by the helper unit tests (Task 4).
     assert rel_change("cod") > 0.05  # gate meaningfully changes cod
     assert rel_change("cod") > rel_change("sprat")  # cod is the primary effect
+
+
+def test_characterise_instability_window():
+    t = np.arange(15.0)
+    b = np.array([1, 2, 3, 100, 50, 40, 30, 25, 22, 20, 18, 16, 15, 14, 13], dtype=float)
+    full = diag.characterise_instability(t, b)
+    win = diag.characterise_instability(t, b, window=(3, 14))
+    # windowed max/min excludes the tiny spin-up values (1,2,3)
+    assert win["boom_bust_ratio"] < full["boom_bust_ratio"]

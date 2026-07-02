@@ -290,9 +290,19 @@ def model_forcing_audit() -> dict:
     }
 
 
-def characterise_instability(t: np.ndarray, b: np.ndarray) -> dict:
-    """Summary stats describing how unstable the cod trajectory is."""
+def characterise_instability(
+    t: np.ndarray, b: np.ndarray, window: tuple[int, int] | None = None
+) -> dict:
+    """Summary stats describing how unstable the trajectory is.
+
+    window=(lo, hi) restricts to model years [lo, hi] (inclusive) before the
+    stats, so the spin-up transient can be excluded.
+    """
+    t = np.asarray(t, dtype=float)
     b = np.asarray(b, dtype=float)
+    if window is not None:
+        sel = (t >= window[0]) & (t <= window[1])
+        b = b[sel]
     finite = b[np.isfinite(b) & (b > 0)]
     if finite.size == 0:
         return {"empty": True}
