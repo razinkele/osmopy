@@ -67,8 +67,43 @@ best case is -1% (noise), and start-year variation makes it worse, not better.
 Mean-preservation target (±10%) is met only for some starts (e.g. 1993 +5%,
 1996 -2%) and violated for others (1999 +49%, 2005 -25%). The negative result
 is **robust**: RV recruitment gating in mean_preserving mode does not stabilise
-the Baltic cod overshoot. Recorded as an honest finding, not tuned. Remaining
-untested levers (out of scope here): a recalibrated `raw_cap` mode (needs
-`ssb_half`/larval-mortality re-fit to avoid collapse), a longer horizon, or a
-non-mean-preserving normalisation — but the mean_preserving variability
-hypothesis is not supported.
+the Baltic cod overshoot. Recorded as an honest finding, not tuned.
+
+## raw_cap mode + ssb_half recalibration
+
+The literal environmental cap `m = clip(rv/ref, 0, 1)` (ref=0.20, start=1994)
+was tested and, per the spec §3.2/§10 caveat, `ssb_half` was swept to try to keep
+cod viable. Baseline (gate off) boom/bust = 2.58, mean = 2054.
+
+```
+ssb_half | boom/bust | vs_off | mean | mean_vs_off | viable
+ 120000  |   6.40    | +148%  | 1617 |   -21%      | yes
+  40000  |   5.97    | +131%  |  396 |   -81%      | yes
+  15000  |   6.30    | +144%  |  126 |   -94%      | yes
+   6000  |   5.76    |   -    |   41 |   -98%      | COLLAPSE
+   2500  |   6.06    |   -    |   14 |   -99%      | COLLAPSE
+   1000  |   5.89    |   -    |    7 |  -100%      | COLLAPSE
+```
+
+raw_cap is **worse than mean_preserving**: boom/bust rises to ~6× (+130–148%)
+and the mean drops even at the current ssb_half (−21%). **Recalibrating
+`ssb_half` cannot rescue it** — this is structural: cod's B-H term is near-inactive
+(ssb_half=120000 ≫ cod SSB ~2000), and B-H can only *suppress* recruitment below
+the linear rate, never restore the mean the gate removes. Lowering `ssb_half`
+therefore adds suppression on top of the gate and drives cod to collapse
+(mean 1617 → 41 → 7) without ever damping boom/bust. Raising `ssb_half` does
+nothing (the term is already ≈1). The mean-restoring lever would be larval
+mortality / fecundity, not `ssb_half` — but with raw_cap already worsening
+boom/bust at the viable end, restoring the mean would not change the sign.
+
+## Overall conclusion
+
+RV recruitment gating **does not stabilise the Baltic cod overshoot in either
+mode**, across start years (mean_preserving) and across `ssb_half` (raw_cap):
+every viable configuration leaves boom/bust unchanged-to-much-worse. The
+mechanism injects the real, strongly-pulsed interannual RV signal into
+recruitment, and the model amplifies that variance into larger biomass swings
+rather than damping them. The reproductive-volume-as-recruitment-multiplier
+hypothesis is **not supported** by this model. The gate remains a correct,
+inert-by-default, config-gated mechanism (useful for further LTL/coupling
+experiments), but it is not the lever that stabilises Baltic cod here.
