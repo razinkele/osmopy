@@ -1,6 +1,6 @@
 import math
 
-from osmose.calibration.larva_recal import solve_larva_rate
+from osmose.calibration.larva_recal import e_clip_first_guess, solve_larva_rate
 
 GRID = [0.0, 5.0, 10.0, 15.0]
 
@@ -48,3 +48,16 @@ def test_solve_max_iter_not_converged_reports_best():
     r = solve_larva_rate(71.0, lambda d: 100.0 - 4.0 * d, grid_points=GRID, tol=1e-12, max_iter=2)
     assert r.feasible and not r.converged and r.rate is not None
     assert 5.0 < r.rate < 10.0
+
+
+SP_FIELD = "data/baltic/forcing/baltic_rv_field.nc"
+SPAWN = "data/baltic/maps/cod_spawning.csv"
+
+
+def test_e_clip_first_guess_bounds():
+    d1, e_clip = e_clip_first_guess(SP_FIELD, SPAWN, d0=15.0)
+    assert 0.0 < e_clip < 1.0  # some but not all viable
+    assert 0.0 <= d1 <= 15.0  # a valid rate inside the bracket
+    # d1 = d0 + ln(e_clip); ln(e_clip) < 0 so d1 < d0
+    assert d1 < 15.0
+    assert abs(d1 - max(0.0, 15.0 + math.log(e_clip))) < 1e-9

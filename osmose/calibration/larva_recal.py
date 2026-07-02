@@ -6,8 +6,12 @@ bisection. Engine-free (the caller injects run_mean_on); see the SP1b design spe
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from pathlib import Path
+
+import numpy as np
 
 
 @dataclass
@@ -105,3 +109,24 @@ def solve_larva_rate(
         iters,
         f"max_iter={max_iter} reached, rel_err={rel(m_mid):.3f} > tol={tol}",
     )
+
+
+def e_clip_first_guess(
+    field_path: str | Path, spawn_path: str | Path, d0: float
+) -> tuple[float, float]:
+    """Analytical first-guess rate d1 = clip(d0 + ln E[clip], 0, d0), and E[clip].
+
+    E[clip] = presence-weighted mean of clip(RV_timemean(cell)/RV_ref) over cod_spawning
+    cells. This restores the *instantaneous* egg-weighted average survival; it is only a
+    grid seed (the empirical solve finds the true equilibrium root, which — because the
+    biomass effect is buffered by density dependence — is usually much closer to d0).
+    """
+    import xarray as xr
+
+    da = xr.open_dataset(field_path)["reproductive_volume"]
+    rv = da.values.mean(axis=0)  # time-mean (nlat, nlon), north-first
+    ref = float(da.attrs["RV_ref"])
+    spawn = np.flipud(np.genfromtxt(spawn_path, delimiter=";")) > 0
+    e_clip = float(np.clip(rv[spawn] / ref, 0.0, 1.0).mean())
+    d1 = d0 + math.log(e_clip) if e_clip > 0.0 else 0.0
+    return max(0.0, min(d0, d1)), e_clip
