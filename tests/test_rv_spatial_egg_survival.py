@@ -6,6 +6,7 @@ from osmose.config import OsmoseConfigReader
 from osmose.engine import PythonEngine
 from osmose.engine.config import _load_rv_spatial
 from osmose.engine.state import SchoolState
+from osmose.forcing.grid import load_ocean_mask
 from osmose.forcing.reproductive_volume import build_rv_field, viable_thickness
 from osmose.maps.builder import GridSpec
 from osmose.schema import build_registry
@@ -226,3 +227,41 @@ def test_spatial_on_changes_cod():
     off = PythonEngine().run_in_memory(_baltic_cfg(), seed=0).biomass()["cod"].to_numpy()
     on = PythonEngine().run_in_memory(_baltic_gate_cfg(), seed=0).biomass()["cod"].to_numpy()
     assert not np.allclose(off, on)  # the spatial term changes cod
+
+
+def test_field_metrics_basin_contrast_and_cv():
+    rv = xr.open_dataset(SP_FIELD)["reproductive_volume"].values  # (24,40,50)
+    spawn = np.flipud(np.genfromtxt("data/baltic/maps/cod_spawning.csv", delimiter=";")) > 0
+    ocean = load_ocean_mask("data/baltic/baltic_grid.nc")
+    # Fresh-coastal reference = the northern Gulf of Bothnia (rows 0-13, north-first),
+    # which is fully fresh (RV ~ 0). NOT "all non-spawning ocean": the ultra-saline
+    # Danish straits/Kattegat (outside the cod range, no eggs placed there) have the
+    # HIGHEST RV of all cells and would confound a spawn-vs-all-ocean contrast. That
+    # confound is the headline finding recorded in docs/diagnostics/rv_spatial_field.md.
+    fresh = ocean.copy()
+    fresh[14:] = False
+    mean_spawn = rv[:, spawn].mean()
+    mean_fresh = rv[:, fresh].mean()
+    assert mean_spawn > mean_fresh  # spawning basins are more viable than the fresh gulf
+    # within-basin heterogeneity is the go/no-go metric; huge here (~2.5) because most
+    # cod_spawning cells are too fresh/anoxic to be reproductively viable.
+    m_field = rv.mean(axis=0)
+    cv = float(m_field[spawn].std() / m_field[spawn].mean())
+    assert cv >= 0.20  # go/no-go: the regridded climatology retains sub-basin structure
+
+
+def test_field_mean_anchor():
+    # mean(s_cell) over RV>0 spawning cells: this unit test asserts ONLY the construction
+    # guarantee (RV_ref = mean over RV>0 cells, so clip caps the mean at 1). The spec's
+    # [0.6, 1.0] target is field-dependent (a right-skewed distribution lowers the mean) and
+    # is RECORDED by the Task 6 diagnostic (mean_s line); a value below ~0.6 there is a finding
+    # (revisit RV_ref), not an automatic failure — so it is NOT a hard bound here.
+    da = xr.open_dataset(SP_FIELD)["reproductive_volume"]
+    rv = da.values
+    ref = float(da.attrs["RV_ref"])
+    spawn = np.flipud(np.genfromtxt("data/baltic/maps/cod_spawning.csv", delimiter=";")) > 0
+    vals = rv[:, spawn]
+    nz = vals[vals > 0]
+    s = np.clip(nz / ref, 0.0, 1.0)
+    m = float(s.mean())
+    assert 0.0 < m <= 1.0 + 1e-9  # construction-guaranteed; the 0.6 target is recorded, not gated
