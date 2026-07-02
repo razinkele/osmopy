@@ -195,3 +195,34 @@ def test_load_rv_spatial_nan_at_spawning_raises(tmp_path):
     cfg["reproduction.rv.spatial.field.file"] = str(p)
     with pytest.raises(ValueError, match="NaN"):
         _load_rv_spatial(cfg, 1)
+
+
+SP_FIELD = "data/baltic/forcing/baltic_rv_field.nc"
+
+
+def _baltic_gate_cfg(**over):
+    return _baltic_cfg(
+        **{
+            "reproduction.rv.spatial.enabled": "true",
+            "reproduction.rv.spatial.field.file": SP_FIELD,
+            "reproduction.rv.spatial.species.enabled.sp0": "true",
+            **over,
+        }
+    )
+
+
+def test_spatial_off_bit_identical():
+    off = PythonEngine().run_in_memory(_baltic_cfg(), seed=0).biomass()["cod"].to_numpy()
+    off2 = (
+        PythonEngine()
+        .run_in_memory(_baltic_cfg(**{"reproduction.rv.spatial.enabled": "false"}), seed=0)
+        .biomass()["cod"]
+        .to_numpy()
+    )
+    np.testing.assert_array_equal(off, off2)
+
+
+def test_spatial_on_changes_cod():
+    off = PythonEngine().run_in_memory(_baltic_cfg(), seed=0).biomass()["cod"].to_numpy()
+    on = PythonEngine().run_in_memory(_baltic_gate_cfg(), seed=0).biomass()["cod"].to_numpy()
+    assert not np.allclose(off, on)  # the spatial term changes cod
