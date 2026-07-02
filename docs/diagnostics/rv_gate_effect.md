@@ -28,22 +28,47 @@ baseline (+5%, inside tolerance) but did not reduce — and in this 15-year
 window made worse — the boom/bust ratio. A plausible mechanism: the gate
 series (`baltic_rv_gate_series.csv`) starts at `spawning_rv=0.0` in its first
 year (1993) and only rises gradually (0.069, 0.057, 0.043, ...) over the next
-few years. With `reproduction.rv.gate.start.year=1993` landing near the start
-of the 15-year run, recruitment is heavily suppressed during the early
-transient and then released as the RV series recovers, which can sharpen
-rather than dampen the early bust/rebound cycle that dominates the 3-14
-window's max/min. This is a genuine dynamical interaction between the gate's
-transient ramp-up and the model's own spin-up transient, not a wiring bug —
-the config keys were checked against `osmose/engine/config.py:_load_rv_gate`
-and match exactly.
+few years. This was initially hypothesised as a spin-up collision (RV=0 at
+1993 landing on the model's own bootstrap transient). **That hypothesis was
+subsequently tested and refuted** — see the start-year sweep below. The config
+keys were checked against `osmose/engine/config.py:_load_rv_gate` and match
+exactly, so this is a genuine dynamical outcome, not a wiring bug.
+
+## Start-year sweep (refutes the spin-up hypothesis)
+
+Re-ran the measurement varying `reproduction.rv.gate.start.year` (mean_preserving,
+nyear=15, seed=0), so model-year-0 lands on years with different RV. Baseline
+(gate off) boom/bust = 2.58.
+
+```
+start_year | rv@yr0 | boom/bust | vs_off | mean_delta
+   1993    | 0.000  |   3.91    | +52%   |  +5%
+   1994    | 0.069  |   3.84    | +49%   |  -9%
+   1996    | 0.043  |   2.55    |  -1%   |  -2%
+   1999    | 0.039  |   3.52    | +36%   | +49%
+   2003    | 0.094  |   4.56    | +77%   | -12%
+   2005    | 0.169  |   4.93    | +91%   | -25%
+   2007    | 0.146  |   2.88    | +12%   | -11%
+```
+
+**No start year damps the overshoot.** The best case (1996) is neutral within
+noise (-1%, far short of the ≥25% target); every other start makes boom/bust
+worse, and the highest-RV-window starts (2003, 2005 — which include the 2004
+and 2016 inflow pulses) make it *much* worse (+77%, +91%). Moving off the 1993
+spin-up window does not help, so the reversal is not a spin-up artifact — it is
+intrinsic to mean_preserving gating: normalising a strongly-pulsed RV series to
+mean-1 amplifies recruitment variance in years around the inflow pulses, which
+the model converts into larger biomass swings, not smaller ones.
 
 ## Status
 
-Boom/bust target (≥25% reduction) **not met** — reversed sign, -52% (i.e. a
-52% *increase*). Mean-preservation target (±10%) **met** (+5%). This is
-recorded as an honest finding per the task brief (spec §3.2's closed-loop
-mean-shift caveat), not tuned to hit the target. Candidates for follow-up
-(out of scope for Task 6): fit/shift the gate series' effective start year
-away from the model spin-up window, or evaluate the boom/bust window over a
-longer run (nyear > 15) where the early-transient interaction is a smaller
-fraction of the windowed years.
+Boom/bust target (≥25% reduction) **not met at any tested start year** — the
+best case is -1% (noise), and start-year variation makes it worse, not better.
+Mean-preservation target (±10%) is met only for some starts (e.g. 1993 +5%,
+1996 -2%) and violated for others (1999 +49%, 2005 -25%). The negative result
+is **robust**: RV recruitment gating in mean_preserving mode does not stabilise
+the Baltic cod overshoot. Recorded as an honest finding, not tuned. Remaining
+untested levers (out of scope here): a recalibrated `raw_cap` mode (needs
+`ssb_half`/larval-mortality re-fit to avoid collapse), a longer horizon, or a
+non-mean-preserving normalisation — but the mean_preserving variability
+hypothesis is not supported.
