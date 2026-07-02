@@ -111,6 +111,16 @@ def solve_larva_rate(
     )
 
 
+def mean_cod(cfg: dict[str, str], *, seed: int = 0) -> float:
+    """Mean cod biomass over years index [3:15] (finite & >0), matching the SP1 diagnostic."""
+    from osmose.engine import PythonEngine
+
+    b = PythonEngine().run_in_memory(cfg, seed=seed).biomass()["cod"].to_numpy()
+    w = b[3:15]
+    w = w[np.isfinite(w) & (w > 0)]
+    return float(w.mean())
+
+
 def e_clip_first_guess(
     field_path: str | Path, spawn_path: str | Path, d0: float
 ) -> tuple[float, float]:

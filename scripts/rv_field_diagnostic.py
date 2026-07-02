@@ -9,20 +9,13 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
+from osmose.calibration.larva_recal import mean_cod
 from osmose.config import OsmoseConfigReader
-from osmose.engine import PythonEngine
 from osmose.forcing.grid import load_ocean_mask
 
 ROOT = Path(__file__).resolve().parent.parent
 FIELD = ROOT / "data" / "baltic" / "forcing" / "baltic_rv_field.nc"
 SPAWN = ROOT / "data" / "baltic" / "maps" / "cod_spawning.csv"
-
-
-def _mean_cod(cfg):
-    b = PythonEngine().run_in_memory(cfg, seed=0).biomass()["cod"].to_numpy()
-    w = b[3:15]
-    w = w[np.isfinite(w) & (w > 0)]
-    return float(w.mean())
 
 
 def main() -> int:
@@ -62,8 +55,8 @@ def main() -> int:
             "reproduction.rv.spatial.species.enabled.sp0": "true",
         },
     )
-    off_mean = _mean_cod(base)
-    on_mean = _mean_cod(on)
+    off_mean = mean_cod(base)
+    on_mean = mean_cod(on)
 
     lines = [
         "# Spatial RV field diagnostic",
