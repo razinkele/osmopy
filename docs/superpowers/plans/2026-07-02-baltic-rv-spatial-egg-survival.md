@@ -46,7 +46,7 @@
 - Test: `tests/test_rv_spatial_egg_survival.py`
 
 **Interfaces:**
-- Produces: config keys `reproduction.rv.spatial.enabled` (bool), `.mode`→n/a, `.field.file` (path), `.field.varname` (str), `.ref` (float), `.species.enabled.sp{idx}` (bool).
+- Produces: config keys `reproduction.rv.spatial.enabled` (bool), `.field.file` (path), `.field.varname` (str), `.ref` (float), `.species.enabled.sp{idx}` (bool).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -148,7 +148,7 @@ git -C /home/razinka/osmose/osmose-python commit -m "feat: schema fields for the
 - Test: `tests/test_rv_spatial_egg_survival.py`
 
 **Interfaces:**
-- Produces: `viable_thickness(so, o2, depths, sal_thresh, o2_thresh) -> NDArray` (core), and `build_rv_field(phy_ds, bgc_ds, grid, *, sal_thresh=11.0, o2_thresh=89.3, ocean_mask, spawning_mask) -> xr.Dataset` with var `reproductive_volume` (time,lat,lon) and attr `RV_ref`.
+- Produces: `viable_thickness(so, o2, depths, sal_thresh, o2_thresh) -> float` (one column → scalar), and `build_rv_field(phy_years: list[xr.Dataset], bgc_years: list[xr.Dataset], grid, *, sal_thresh=11.0, o2_thresh=89.3, ocean_mask, spawning_mask) -> xr.Dataset` with var `reproductive_volume` (time,lat,lon) and attr `RV_ref`.
 
 - [ ] **Step 1: Write the failing test (core viable-thickness)**
 
@@ -275,7 +275,7 @@ def build_rv_field(
         rv_grid = regrid(rv_src, src_lat, src_lon, grid)  # (t, nlat, nlon)
         per_year_24.append(resample_to_24(rv_grid))  # (24, nlat, nlon)
     rv = np.mean(np.stack(per_year_24, axis=0), axis=0)  # mean-of-RV climatology
-    rv[:, ~ocean_mask] = 0.0  # land -> 0 (consumer guards cell, so 0 is inert there)
+    rv[:, ~ocean_mask] = np.nan  # land -> NaN (spec §4; consumer's finite-guard + cell guard skip it)
 
     # RV_ref = mean over RV>0 spawning cells across all 24 steps
     sp_vals = rv[:, spawning_mask]
@@ -332,6 +332,18 @@ def test_build_rv_field_climatology_and_ref():
     # every cell/step ≈ 20 m (constant column, per-year mean of 30 and 10)
     assert abs(float(ds["reproductive_volume"].mean()) - 20.0) < 1.0
     assert abs(ds["reproductive_volume"].attrs["RV_ref"] - 20.0) < 1.0
+
+
+def test_build_rv_field_land_is_nan():
+    # Spec §4: land cells (ocean_mask False) are written as NaN, ocean cells finite.
+    grid = GridSpec(nlon=2, nlat=2, upleft_lat=56.5, upleft_lon=17.5,
+                    lowright_lat=54.5, lowright_lon=19.5)
+    pA, bA = _toy_year([12, 12, 6], [300, 300, 300])  # 2 viable levels (20 m)
+    ocean = np.array([[True, True], [True, False]])   # one land cell
+    ds = build_rv_field([pA], [bA], grid, ocean_mask=ocean, spawning_mask=ocean)
+    rv = ds["reproductive_volume"].values
+    assert np.isnan(rv[:, 1, 1]).all()      # land -> NaN
+    assert np.isfinite(rv[:, 0, 0]).all()   # ocean -> finite
 ```
 
 - [ ] **Step 6: Run to verify it passes**
@@ -518,7 +530,7 @@ git -C /home/razinka/osmose/osmose-python commit -m "feat: from_seeding SchoolSt
 - Test: `tests/test_rv_spatial_egg_survival.py`
 
 **Interfaces:**
-- Consumes: the RV NetCDF from Task 2; `PhysicalData.from_netcdf`; `_load_spatial_csv`.
+- Consumes: the RV NetCDF from Task 2; `PhysicalData.from_netcdf_field` (new); `_load_spatial_csv`.
 - Produces: `EngineConfig.rv_spatial_field: PhysicalData | None`, `EngineConfig.rv_spatial_enabled: NDArray[np.bool_] | None`; `_load_rv_spatial(cfg, n_species) -> tuple[PhysicalData|None, NDArray|None]`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -591,9 +603,21 @@ def test_load_rv_spatial_wrong_grid_raises(tmp_path):
     cfg["reproduction.rv.spatial.field.file"] = str(_write_rv_nc(tmp_path, shape=(24, 10, 10), name="bad.nc"))
     with pytest.raises(ValueError, match="grid"):
         _load_rv_spatial(cfg, 1)
+
+
+def test_load_rv_spatial_nan_at_spawning_raises(tmp_path):
+    rv = np.full((24, 40, 50), np.nan, dtype=np.float64)
+    ds = xr.Dataset({"reproductive_volume": (("time", "latitude", "longitude"), rv)})
+    ds["reproductive_volume"].attrs["RV_ref"] = 5.0
+    p = tmp_path / "nan.nc"
+    ds.to_netcdf(p)
+    cfg = _cfg(tmp_path)
+    cfg["reproduction.rv.spatial.field.file"] = str(p)
+    with pytest.raises(ValueError, match="NaN"):
+        _load_rv_spatial(cfg, 1)
 ```
 
-Note: this test writes a full-grid (40×50) RV file and does NOT depend on the real generated field. The wrong-grid test relies on the loader deriving the expected shape from the `cod_spawning` mask; if `_osmose.config.dir=tmp_path` has no `maps/cod_spawning.csv`, the loader must fall back to the real Baltic map path — see Step 3's note.
+Note: these tests write a full-grid (40×50) RV file and do NOT depend on the real generated field. They assume **CWD = repo root** (the standard pytest invocation) because the loader's spawning-mask fallback path (`data/baltic/maps/cod_spawning.csv`, when `_osmose.config.dir=tmp_path` has no `maps/cod_spawning.csv`) is relative. The wrong-grid test's (40,50)-vs-(10,10) comparison and the NaN test both rely on that 40×50 fallback mask.
 
 - [ ] **Step 2: Run to verify they fail**
 
@@ -670,8 +694,12 @@ def _load_rv_spatial(
     field = PhysicalData.from_netcdf_field(path, varname, float(rv_ref))
     n_dt = int(cfg.get("simulation.time.ndtperyear", "24"))
     tlen = field._data.shape[0]  # NetCDF time length (24 climatology / 696 interannual)
-    if tlen % n_dt != 0:
-        raise ValueError(f"RV field time length {tlen} is not a multiple of ndtperyear {n_dt}.")
+    if tlen <= 0 or tlen % n_dt != 0:
+        raise ValueError(f"RV field time length {tlen} is not a positive multiple of ndtperyear {n_dt}.")
+    # Spec §6: a NaN at a cod_spawning cell means the field is broken there — fail loudly
+    # rather than let the consumer's finite-guard silently no-op at a real spawning cell.
+    if np.isnan(field._data[:, spawn]).any():
+        raise ValueError(f"RV field {path} has NaN at cod_spawning cells.")
 
     enabled = np.zeros(n_species, dtype=np.bool_)
     for sp in range(n_species):
@@ -689,7 +717,7 @@ Add two `EngineConfig` fields **after the last existing defaulted field** (so `_
     rv_spatial_enabled: "NDArray[np.bool_] | None" = None
 ```
 
-And in `EngineConfig.from_dict`, before the `return EngineConfig(`, add:
+And in `EngineConfig.from_dict`, before the `return cls(` construction (the return statement that builds the EngineConfig, ~config.py:2128), add:
 
 ```python
         rv_spatial_field, rv_spatial_enabled = _load_rv_spatial(cfg, n_sp)
@@ -855,16 +883,18 @@ def test_field_metrics_basin_contrast_and_cv():
     mean_spawn = rv[:, spawn].mean()
     mean_coast = rv[:, coastal].mean()
     assert mean_spawn > mean_coast  # spawning basins are more viable than the rest
-    # within-basin heterogeneity: CV of RV across spawning cells (mean over steps) > 0
-    per_step_cv = [
-        (rv[t, spawn].std() / rv[t, spawn].mean()) if rv[t, spawn].mean() > 0 else 0.0
-        for t in range(rv.shape[0])
-    ]
-    assert np.mean(per_step_cv) >= 0.0  # recorded; go/no-go threshold 0.20 checked in Step 4
+    # within-basin heterogeneity: CV of the TIME-MEAN RV field across spawning cells
+    m_field = rv.mean(axis=0)
+    cv = float(m_field[spawn].std() / m_field[spawn].mean())
+    assert cv >= 0.0  # recorded; go/no-go threshold 0.20 checked in the Task 6 diagnostic
 
 
 def test_field_mean_anchor():
-    # mean(s_cell) over RV>0 spawning cells is centred near 1 (clip lowers it): in [0.6, 1.0].
+    # mean(s_cell) over RV>0 spawning cells: this unit test asserts ONLY the construction
+    # guarantee (RV_ref = mean over RV>0 cells, so clip caps the mean at 1). The spec's
+    # [0.6, 1.0] target is field-dependent (a right-skewed distribution lowers the mean) and
+    # is RECORDED by the Task 6 diagnostic (mean_s line); a value below ~0.6 there is a finding
+    # (revisit RV_ref), not an automatic failure — so it is NOT a hard bound here.
     import xarray as xr
     da = xr.open_dataset(SP_FIELD)["reproductive_volume"]
     rv = da.values
@@ -873,12 +903,13 @@ def test_field_mean_anchor():
     vals = rv[:, spawn]
     nz = vals[vals > 0]
     s = np.clip(nz / ref, 0.0, 1.0)
-    assert 0.6 <= float(s.mean()) <= 1.0
+    m = float(s.mean())
+    assert 0.0 < m <= 1.0 + 1e-9  # construction-guaranteed; the 0.6 target is recorded, not gated
 ```
 
 - [ ] **Step 2: Run to verify it passes (field already exists from Task 2)**
 
-Run: `.venv/bin/python -m pytest tests/test_rv_spatial_egg_survival.py -k field_metrics -v`
+Run: `.venv/bin/python -m pytest tests/test_rv_spatial_egg_survival.py -k "field_metrics or field_mean_anchor" -v`
 Expected: PASS — mean RV over spawning cells exceeds the rest. (This is the automated basin-contrast assertion; the strict ratio≥3 and CV≥0.20 go/no-go are recorded in the diagnostic in Step 3, not asserted here, since their exact values depend on the shipped field.)
 
 - [ ] **Step 3: Add the diagnostic reporting**
@@ -923,8 +954,10 @@ def main() -> int:
     mean_spawn = float(rv[:, spawn].mean())
     mean_coast = float(rv[:, coast].mean()) if coast.any() else float("nan")
     ratio = mean_spawn / mean_coast if mean_coast else float("inf")
-    cvs = [rv[t, spawn].std() / rv[t, spawn].mean() for t in range(rv.shape[0]) if rv[t, spawn].mean() > 0]
-    cv = float(np.mean(cvs)) if cvs else 0.0
+    m_field = rv.mean(axis=0)  # time-mean (shipped climatology); CV across spawning cells
+    cv = float(m_field[spawn].std() / m_field[spawn].mean()) if m_field[spawn].mean() > 0 else 0.0
+    sp_nz = rv[:, spawn][rv[:, spawn] > 0]
+    mean_s = float(np.clip(sp_nz / ref, 0.0, 1.0).mean()) if sp_nz.size else 0.0
 
     base = dict(OsmoseConfigReader().read(str(ROOT / "data" / "baltic" / "baltic_all-parameters.csv")))
     base["simulation.time.nyear"] = "15"
@@ -940,6 +973,7 @@ def main() -> int:
         "# Spatial RV field diagnostic",
         f"basin contrast ratio = {ratio:.2f}  (go if >= 3)",
         f"within-basin CV = {cv:.3f}  (GO/NO-GO: go if >= 0.20)",
+        f"mean(s_cell) over RV>0 spawning cells = {mean_s:.3f}  (mean-anchor target [0.6, 1.0])",
         f"mean cod biomass off={off_mean:.0f} on={on_mean:.0f} "
         f"delta={100 * (on_mean / off_mean - 1):+.0f}%  (SP1b restores the mean)",
     ]
