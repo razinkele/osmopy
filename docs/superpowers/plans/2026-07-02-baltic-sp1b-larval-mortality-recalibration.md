@@ -36,13 +36,14 @@
 
 Create `tests/test_sp1b_recalibration.py`:
 
+Only import what the tests actually use — ruff's default `F401` fails the lint gate on unused imports.
+`numpy`/`pytest`/`RecalResult` are NOT used by any Task 1 test (`pytest` is added in Task 5 where
+`pytest.skip` first appears; later tasks extend this one import line).
+
 ```python
 import math
 
-import numpy as np
-import pytest
-
-from osmose.calibration.larva_recal import RecalResult, solve_larva_rate
+from osmose.calibration.larva_recal import solve_larva_rate
 
 GRID = [0.0, 5.0, 10.0, 15.0]
 
@@ -64,8 +65,9 @@ def test_solve_near_zero_shortcircuit_returns_grid_point():
 
 
 def test_solve_d0_already_within_tol_means_no_recalibration():
-    # SP1 barely moved the mean: mean(d0=15) within tol of baseline -> rate == d0.
-    r = solve_larva_rate(60.5, lambda d: 100.0 - 4.0 * d, grid_points=[0.0, 7.5, 15.0], tol=0.02)
+    # SP1 barely moved the mean: mean(d0=15)=40 == baseline 40 -> near-zero hit at the last
+    # grid point -> rate == d0, no recalibration. (mean(0)=100, mean(7.5)=70 are far off.)
+    r = solve_larva_rate(40.0, lambda d: 100.0 - 4.0 * d, grid_points=[0.0, 7.5, 15.0], tol=0.02)
     assert r.feasible and r.converged and r.rate == 15.0
 
 
@@ -84,9 +86,10 @@ def test_solve_infeasible_multiple_crossings():
 
 
 def test_solve_max_iter_not_converged_reports_best():
+    # baseline 71 -> root at d=7.25 (NON-dyadic, so bisection midpoints never hit it exactly);
     # impossibly tight tol + tiny max_iter -> feasible bracket but converged=False.
     r = solve_larva_rate(
-        70.0, lambda d: 100.0 - 4.0 * d, grid_points=GRID, tol=1e-12, max_iter=2
+        71.0, lambda d: 100.0 - 4.0 * d, grid_points=GRID, tol=1e-12, max_iter=2
     )
     assert r.feasible and not r.converged and r.rate is not None
     assert 5.0 < r.rate < 10.0
@@ -209,11 +212,16 @@ git -C /home/razinka/osmose/osmose-python commit -m "feat: SP1b solver core (gri
 
 - [ ] **Step 1: Write the failing test (uses the real SP1 field)**
 
-Append to `tests/test_sp1b_recalibration.py`:
+First, **edit the top import line** of `tests/test_sp1b_recalibration.py` to add the new symbol
+(all test imports stay at the top — appending an `import` mid-file trips ruff E402):
 
 ```python
-from osmose.calibration.larva_recal import e_clip_first_guess
+from osmose.calibration.larva_recal import e_clip_first_guess, solve_larva_rate
+```
 
+Then append the module-level constants + test (constants are not imports, so mid-file is fine):
+
+```python
 SP_FIELD = "data/baltic/forcing/baltic_rv_field.nc"
 SPAWN = "data/baltic/maps/cod_spawning.csv"
 
@@ -230,7 +238,8 @@ def test_e_clip_first_guess_bounds():
 - [ ] **Step 2: Run to verify it fails**
 
 Run: `.venv/bin/python -m pytest tests/test_sp1b_recalibration.py::test_e_clip_first_guess_bounds -q`
-Expected: FAIL (`e_clip_first_guess` not defined).
+Expected: collection error (ImportError: cannot import name `e_clip_first_guess`) — the whole file
+fails to collect until Step 3 implements it. That is the intended "red" for this step.
 
 - [ ] **Step 3: Implement**
 
@@ -284,16 +293,27 @@ git -C /home/razinka/osmose/osmose-python commit -m "feat: SP1b analytical first
 - Produces:
   - `RECAL_RATE: float | None` (module constant, initially `None`; hand-set in Task 4).
   - `with_determinism(cfg: dict[str, str]) -> dict[str, str]` — returns a copy with the two fixed-seed keys set to `"true"`.
-  - `sp1_on_config(base_cfg: dict[str, str], field_path: str | Path, *, larva_rate: float | None | object = _USE_RECAL) -> dict[str, str]` — SP1 flags + determinism keys + (recalibrated rate unless `None`). Default reads the *current* module `RECAL_RATE` at call time.
+  - `sp1_on_config(base_cfg: dict[str, str], field_path: str | Path, *, larva_rate: float | None | _UseRecal = _USE_RECAL) -> dict[str, str]` — SP1 flags + determinism keys + (recalibrated rate unless `None`). Default reads the *current* module `RECAL_RATE` at call time. `_UseRecal` is a dedicated sentinel class (typed, so `isinstance` narrows the union and pyright accepts `float(rate)`).
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `tests/test_sp1b_recalibration.py`:
+**Add the new imports to the top of `tests/test_sp1b_recalibration.py`** (keep imports at top for
+E402): add `from osmose.calibration import larva_recal` and extend the existing
+`from osmose.calibration.larva_recal import ...` line to include `sp1_on_config, with_determinism`:
 
 ```python
 from osmose.calibration import larva_recal
-from osmose.calibration.larva_recal import sp1_on_config, with_determinism
+from osmose.calibration.larva_recal import (
+    e_clip_first_guess,
+    solve_larva_rate,
+    sp1_on_config,
+    with_determinism,
+)
+```
 
+Then append the constants + tests:
+
+```python
 RATE_KEY = "mortality.additional.larva.rate.sp0"
 DET_KEYS = ("movement.randomseed.fixed", "stochastic.mortality.randomseed.fixed")
 
@@ -335,7 +355,8 @@ def test_sp1_on_config_default_reads_current_recal_rate(monkeypatch):
 - [ ] **Step 2: Run to verify they fail**
 
 Run: `.venv/bin/python -m pytest tests/test_sp1b_recalibration.py -k "determinism or sp1_on_config" -q`
-Expected: FAIL (`sp1_on_config` / `with_determinism` not defined).
+Expected: collection error (ImportError: cannot import name `sp1_on_config`) until Step 3 implements
+the helpers. That is the intended "red".
 
 - [ ] **Step 3: Implement**
 
@@ -344,7 +365,12 @@ Add to `osmose/calibration/larva_recal.py`:
 ```python
 RECAL_RATE: float | None = None  # set from scripts/recalibrate_sp1b.py output (SP1b Task 4)
 
-_USE_RECAL = object()  # sentinel: read the current module RECAL_RATE at call time
+
+class _UseRecal:
+    """Sentinel type for sp1_on_config's default (typed so isinstance narrows the union)."""
+
+
+_USE_RECAL = _UseRecal()  # read the current module RECAL_RATE at call time
 
 _DET_KEYS = {
     "movement.randomseed.fixed": "true",
@@ -362,7 +388,7 @@ def sp1_on_config(
     base_cfg: dict[str, str],
     field_path: str | Path,
     *,
-    larva_rate: float | None | object = _USE_RECAL,
+    larva_rate: float | None | _UseRecal = _USE_RECAL,
 ) -> dict[str, str]:
     """SP1-on config: SP1 flags + determinism keys + recalibrated cod larva rate.
 
@@ -370,7 +396,7 @@ def sp1_on_config(
     it; the default reads the current module RECAL_RATE at call time (so freezing RECAL_RATE
     in Task 4 takes effect without editing this default).
     """
-    rate = RECAL_RATE if larva_rate is _USE_RECAL else larva_rate
+    rate: float | None = RECAL_RATE if isinstance(larva_rate, _UseRecal) else larva_rate
     cfg = with_determinism(base_cfg)
     cfg["reproduction.rv.spatial.enabled"] = "true"
     cfg["reproduction.rv.spatial.field.file"] = str(field_path)
@@ -425,11 +451,12 @@ git -C /home/razinka/osmose/osmose-python commit -m "feat: SP1b overlay helpers 
 **Files:**
 - Create: `scripts/recalibrate_sp1b.py`
 - Modify: `osmose/calibration/larva_recal.py` (add the shared `mean_cod` helper; set `RECAL_RATE` from the CLI output)
+- Modify: `scripts/rv_field_diagnostic.py` (replace its local `_mean_cod` with the shared helper — DRY, per the spec's "extract rather than re-derive")
 
 **Interfaces:**
-- Produces: `mean_cod(cfg: dict[str, str], *, seed: int = 0) -> float` — years `[3:15]`, finite & >0 mean of cod biomass (the shared window helper). Used by the CLI and the neutrality test.
+- Produces: `mean_cod(cfg: dict[str, str], *, seed: int = 0) -> float` — years `[3:15]`, finite & >0 mean of cod biomass (the shared window helper). Used by the CLI, the neutrality test, and the SP1 diagnostic.
 
-- [ ] **Step 1: Add the shared `mean_cod` helper (engine-coupled) to the module**
+- [ ] **Step 1: Add the shared `mean_cod` helper (engine-coupled) to the module, and adopt it in the SP1 diagnostic**
 
 Add to `osmose/calibration/larva_recal.py`:
 
@@ -443,6 +470,14 @@ def mean_cod(cfg: dict[str, str], *, seed: int = 0) -> float:
     w = w[np.isfinite(w) & (w > 0)]
     return float(w.mean())
 ```
+
+Then make `scripts/rv_field_diagnostic.py` the single-source consumer: delete its local `_mean_cod`
+(lines ~21-26), add `from osmose.calibration.larva_recal import mean_cod` to its imports, **and delete
+its now-orphaned `from osmose.engine import PythonEngine` import** (it was used only inside `_mean_cod`
+— leaving it trips ruff `F401`). Replace its two call sites `off_mean = _mean_cod(base)` /
+`on_mean = _mean_cod(on)` with `mean_cod(base)` / `mean_cod(on)`. The window logic is byte-identical,
+so the SP1 diagnostic output is unchanged.
+(Sanity-check after: `.venv/bin/python -c "import ast, pathlib; ast.parse(pathlib.Path('scripts/rv_field_diagnostic.py').read_text())"` parses clean.)
 
 - [ ] **Step 2: Write the CLI**
 
@@ -463,7 +498,7 @@ import sys
 from pathlib import Path
 
 import numba
-import numpy as np  # noqa: F401  (kept for parity with module conventions)
+import numpy as np
 
 from osmose.calibration.larva_recal import (
     e_clip_first_guess,
@@ -528,9 +563,9 @@ if __name__ == "__main__":
 - [ ] **Step 3: Lint/types the new code, then commit the CLI + helper (before running)**
 
 ```bash
-cd /home/razinka/osmose/osmose-python && .venv/bin/ruff check osmose/ scripts/recalibrate_sp1b.py && .venv/bin/ruff format osmose/calibration/larva_recal.py scripts/recalibrate_sp1b.py && .venv/bin/pyright osmose/calibration/larva_recal.py scripts/recalibrate_sp1b.py
-git -C /home/razinka/osmose/osmose-python add osmose/calibration/larva_recal.py scripts/recalibrate_sp1b.py
-git -C /home/razinka/osmose/osmose-python commit -m "feat: SP1b recalibration CLI + shared mean_cod helper"
+cd /home/razinka/osmose/osmose-python && .venv/bin/ruff check osmose/ scripts/recalibrate_sp1b.py scripts/rv_field_diagnostic.py && .venv/bin/ruff format osmose/calibration/larva_recal.py scripts/recalibrate_sp1b.py scripts/rv_field_diagnostic.py && .venv/bin/pyright osmose/calibration/larva_recal.py scripts/recalibrate_sp1b.py
+git -C /home/razinka/osmose/osmose-python add osmose/calibration/larva_recal.py scripts/recalibrate_sp1b.py scripts/rv_field_diagnostic.py
+git -C /home/razinka/osmose/osmose-python commit -m "feat: SP1b recalibration CLI + shared mean_cod helper (DRY with SP1 diagnostic)"
 ```
 
 - [ ] **Step 4: Run the solve (SLOW — foreground, generous timeout)**
@@ -573,14 +608,13 @@ git -C /home/razinka/osmose/osmose-python commit -m "chore: freeze SP1b RECAL_RA
 
 - [ ] **Step 1: Write the mean-neutrality test**
 
-Append to `tests/test_sp1b_recalibration.py`:
+**Add the new imports to the top of `tests/test_sp1b_recalibration.py`** (E402): add `import numba`
+and `import pytest` to the third-party group (`pytest` is first used here, by `pytest.skip`),
+`from osmose.config import OsmoseConfigReader`, and extend the
+`from osmose.calibration.larva_recal import (...)` line to include `RECAL_RATE, mean_cod`. Then append
+the constant + helper + test:
 
 ```python
-import numba
-
-from osmose.calibration.larva_recal import RECAL_RATE, mean_cod
-from osmose.config import OsmoseConfigReader
-
 BALTIC = "data/baltic/baltic_all-parameters.csv"
 
 
@@ -704,3 +738,4 @@ git -C /home/razinka/osmose/osmose-python commit -m "feat: SP1b mean-neutrality 
 - [ ] ruff check + `ruff format --check` on all changed files; pyright clean on `osmose/calibration/larva_recal.py` and the two scripts.
 - [ ] `docs/diagnostics/sp1b_recalibration.md` records the recalibrated rate (or the infeasible grid), the achieved rel-err, and the measured overshoot ratio.
 - [ ] If infeasible, that negative result is recorded honestly (mean-neutrality unreachable via the cod larva rate alone); do NOT tune to force a number.
+- [ ] Side-fix (optional, non-blocking): correct CLAUDE.md's stale `simulation.rng.fixed=true` reproducibility note to the two real keys (`movement.randomseed.fixed` + `stochastic.mortality.randomseed.fixed`); can be a standalone one-line commit.
