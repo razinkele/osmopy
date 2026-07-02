@@ -1,6 +1,12 @@
 import math
 
-from osmose.calibration.larva_recal import e_clip_first_guess, solve_larva_rate
+from osmose.calibration import larva_recal
+from osmose.calibration.larva_recal import (
+    e_clip_first_guess,
+    solve_larva_rate,
+    sp1_on_config,
+    with_determinism,
+)
 
 GRID = [0.0, 5.0, 10.0, 15.0]
 
@@ -61,3 +67,41 @@ def test_e_clip_first_guess_bounds():
     # d1 = d0 + ln(e_clip); ln(e_clip) < 0 so d1 < d0
     assert d1 < 15.0
     assert abs(d1 - max(0.0, 15.0 + math.log(e_clip))) < 1e-9
+
+
+RATE_KEY = "mortality.additional.larva.rate.sp0"
+DET_KEYS = ("movement.randomseed.fixed", "stochastic.mortality.randomseed.fixed")
+
+
+def test_with_determinism_sets_both_keys_without_mutating():
+    base = {"a": "1"}
+    out = with_determinism(base)
+    assert all(out[k] == "true" for k in DET_KEYS)
+    assert "a" in out and base == {"a": "1"}  # original untouched
+
+
+def test_sp1_on_config_flags_and_determinism():
+    cfg = sp1_on_config({"x": "y"}, SP_FIELD, larva_rate=None)
+    assert cfg["reproduction.rv.spatial.enabled"] == "true"
+    assert cfg["reproduction.rv.spatial.field.file"] == SP_FIELD
+    assert cfg["reproduction.rv.spatial.species.enabled.sp0"] == "true"
+    assert all(cfg[k] == "true" for k in DET_KEYS)
+
+
+def test_sp1_on_config_none_omits_rate_key():
+    cfg = sp1_on_config({}, SP_FIELD, larva_rate=None)
+    assert RATE_KEY not in cfg  # infeasible path: base d0 stands
+
+
+def test_sp1_on_config_value_sets_rate_key():
+    cfg = sp1_on_config({}, SP_FIELD, larva_rate=12.5)
+    assert float(cfg[RATE_KEY]) == 12.5
+
+
+def test_sp1_on_config_default_reads_current_recal_rate(monkeypatch):
+    monkeypatch.setattr(larva_recal, "RECAL_RATE", 9.0)
+    cfg = sp1_on_config({}, SP_FIELD)  # default -> current module RECAL_RATE
+    assert float(cfg[RATE_KEY]) == 9.0
+    monkeypatch.setattr(larva_recal, "RECAL_RATE", None)
+    cfg2 = sp1_on_config({}, SP_FIELD)
+    assert RATE_KEY not in cfg2

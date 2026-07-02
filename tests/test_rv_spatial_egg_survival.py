@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
+from osmose.calibration.larva_recal import sp1_on_config
 from osmose.config import OsmoseConfigReader
 from osmose.engine import PythonEngine
 from osmose.engine.config import _load_rv_spatial
@@ -201,17 +202,6 @@ def test_load_rv_spatial_nan_at_spawning_raises(tmp_path):
 SP_FIELD = "data/baltic/forcing/baltic_rv_field.nc"
 
 
-def _baltic_gate_cfg(**over):
-    return _baltic_cfg(
-        **{
-            "reproduction.rv.spatial.enabled": "true",
-            "reproduction.rv.spatial.field.file": SP_FIELD,
-            "reproduction.rv.spatial.species.enabled.sp0": "true",
-            **over,
-        }
-    )
-
-
 def test_spatial_off_bit_identical():
     off = PythonEngine().run_in_memory(_baltic_cfg(), seed=0).biomass()["cod"].to_numpy()
     off2 = (
@@ -225,7 +215,8 @@ def test_spatial_off_bit_identical():
 
 def test_spatial_on_changes_cod():
     off = PythonEngine().run_in_memory(_baltic_cfg(), seed=0).biomass()["cod"].to_numpy()
-    on = PythonEngine().run_in_memory(_baltic_gate_cfg(), seed=0).biomass()["cod"].to_numpy()
+    on_cfg = sp1_on_config(_baltic_cfg(), SP_FIELD, larva_rate=None)  # SP1 on, no recal
+    on = PythonEngine().run_in_memory(on_cfg, seed=0).biomass()["cod"].to_numpy()
     assert not np.allclose(off, on)  # the spatial term changes cod
 
 

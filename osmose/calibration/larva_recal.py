@@ -130,3 +130,46 @@ def e_clip_first_guess(
     e_clip = float(np.clip(rv[spawn] / ref, 0.0, 1.0).mean())
     d1 = d0 + math.log(e_clip) if e_clip > 0.0 else 0.0
     return max(0.0, min(d0, d1)), e_clip
+
+
+RECAL_RATE: float | None = None  # set from scripts/recalibrate_sp1b.py output (SP1b Task 4)
+
+
+class _UseRecal:
+    """Sentinel type for sp1_on_config's default (typed so isinstance narrows the union)."""
+
+
+_USE_RECAL = _UseRecal()  # read the current module RECAL_RATE at call time
+
+_DET_KEYS = {
+    "movement.randomseed.fixed": "true",
+    "stochastic.mortality.randomseed.fixed": "true",
+}
+
+
+def with_determinism(cfg: dict[str, str]) -> dict[str, str]:
+    """Return a copy of cfg with the two fixed-seed keys set (required for a reproducible
+    solve; the runtime numba single-thread pin is set separately by the caller)."""
+    return {**cfg, **_DET_KEYS}
+
+
+def sp1_on_config(
+    base_cfg: dict[str, str],
+    field_path: str | Path,
+    *,
+    larva_rate: float | None | _UseRecal = _USE_RECAL,
+) -> dict[str, str]:
+    """SP1-on config: SP1 flags + determinism keys + recalibrated cod larva rate.
+
+    larva_rate=None omits the rate key (base d0 stands — the infeasible path); a float sets
+    it; the default reads the current module RECAL_RATE at call time (so freezing RECAL_RATE
+    in Task 4 takes effect without editing this default).
+    """
+    rate: float | None = RECAL_RATE if isinstance(larva_rate, _UseRecal) else larva_rate
+    cfg = with_determinism(base_cfg)
+    cfg["reproduction.rv.spatial.enabled"] = "true"
+    cfg["reproduction.rv.spatial.field.file"] = str(field_path)
+    cfg["reproduction.rv.spatial.species.enabled.sp0"] = "true"
+    if rate is not None:
+        cfg["mortality.additional.larva.rate.sp0"] = repr(float(rate))  # resolved per-cohort value
+    return cfg
