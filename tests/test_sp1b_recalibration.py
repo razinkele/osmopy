@@ -1,12 +1,18 @@
 import math
 
+import numba
+import pytest
+
 from osmose.calibration import larva_recal
 from osmose.calibration.larva_recal import (
+    RECAL_RATE,
     e_clip_first_guess,
+    mean_cod,
     solve_larva_rate,
     sp1_on_config,
     with_determinism,
 )
+from osmose.config import OsmoseConfigReader
 
 GRID = [0.0, 5.0, 10.0, 15.0]
 
@@ -105,3 +111,24 @@ def test_sp1_on_config_default_reads_current_recal_rate(monkeypatch):
     monkeypatch.setattr(larva_recal, "RECAL_RATE", None)
     cfg2 = sp1_on_config({}, SP_FIELD)
     assert RATE_KEY not in cfg2
+
+
+BALTIC = "data/baltic/baltic_all-parameters.csv"
+
+
+def _baltic_15yr():
+    cfg = dict(OsmoseConfigReader().read(BALTIC))
+    cfg["simulation.time.nyear"] = "15"
+    return cfg
+
+
+def test_sp1b_mean_neutral_drift_guard():
+    numba.set_num_threads(1)  # runtime determinism pin (config keys added by the helpers)
+    if RECAL_RATE is None:
+        pytest.skip(
+            "SP1b infeasible: RECAL_RATE is None (see docs/diagnostics/sp1b_recalibration.md)"
+        )
+    base = _baltic_15yr()
+    baseline = mean_cod(with_determinism(base))
+    on = mean_cod(sp1_on_config(base, SP_FIELD))  # default larva_rate -> RECAL_RATE
+    assert abs(on - baseline) / baseline <= 0.02
