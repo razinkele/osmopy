@@ -192,10 +192,12 @@ def reproduction(
             # Eggs cannot feed for their first timestep (Java convention: first_feeding_age_dt=1)
             first_feeding_age_dt=np.ones(n_new, dtype=np.int32),
         )
-        # Eggs are created unlocated; movement places them on the next step
+        # Eggs are created unlocated; movement places them on the next step.
+        # Tag seeded-derived eggs so environmental egg-survival terms skip them.
         new = new.replace(
             cell_x=np.full(n_new, -1, dtype=np.int32),
             cell_y=np.full(n_new, -1, dtype=np.int32),
+            from_seeding=np.full(n_new, bool(seeded_this_step[sp]), dtype=np.bool_),
         )
         new_schools_list.append(new)
 

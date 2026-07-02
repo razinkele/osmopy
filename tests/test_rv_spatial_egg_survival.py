@@ -1,6 +1,9 @@
 import numpy as np
 import xarray as xr
 
+from osmose.config import OsmoseConfigReader
+from osmose.engine import PythonEngine
+from osmose.engine.state import SchoolState
 from osmose.forcing.reproductive_volume import build_rv_field, viable_thickness
 from osmose.maps.builder import GridSpec
 from osmose.schema import build_registry
@@ -88,3 +91,26 @@ def test_build_rv_field_land_is_nan():
     rv = ds["reproductive_volume"].values
     assert np.isnan(rv[:, 1, 1]).all()  # land -> NaN
     assert np.isfinite(rv[:, 0, 0]).all()  # ocean -> finite
+
+
+def test_schoolstate_has_from_seeding_default_false():
+    s = SchoolState.create(n_schools=3)
+    assert s.from_seeding is not None
+    assert s.from_seeding.tolist() == [False, False, False]
+    # replace/append thread it generically
+    s2 = s.replace(from_seeding=np.array([True, False, True]))
+    assert s2.append(s).from_seeding.tolist() == [True, False, True, False, False, False]
+
+
+def _baltic_cfg(**over):
+    cfg = dict(OsmoseConfigReader().read("data/baltic/baltic_all-parameters.csv"))
+    cfg["simulation.time.nyear"] = "3"
+    cfg.update(over)
+    return cfg
+
+
+def test_from_seeding_inert_by_default_parity():
+    # Adding the field must not change engine output.
+    a = PythonEngine().run_in_memory(_baltic_cfg(), seed=0).biomass()["cod"].to_numpy()
+    b = PythonEngine().run_in_memory(_baltic_cfg(), seed=0).biomass()["cod"].to_numpy()
+    np.testing.assert_array_equal(a, b)

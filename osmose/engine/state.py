@@ -88,6 +88,11 @@ class SchoolState:
     # docs/superpowers/specs/2026-05-18-ev-osmose-activation-design.md §7.
     imax_trait: NDArray[np.float64] | None = None
 
+    # True for egg schools created from seeded (bootstrap) biomass; excluded from
+    # environmental egg-survival terms. Optional (mirrors imax_trait) so raw
+    # SchoolState(...) constructions that omit it stay valid; create() populates it.
+    from_seeding: NDArray[np.bool_] | None = None
+
     def __post_init__(self) -> None:
         n = len(self.species_id)
         for f in fields(self):
@@ -144,6 +149,7 @@ class SchoolState:
             is_egg=np.zeros(n, dtype=np.bool_),
             first_feeding_age_dt=np.ones(n, dtype=np.int32),
             egg_retained=np.zeros(n, dtype=np.float64),
+            from_seeding=np.zeros(n, dtype=np.bool_),
         )
 
     def replace(self, **kwargs: NDArray) -> SchoolState:
