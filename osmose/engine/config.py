@@ -1078,6 +1078,69 @@ def _load_spawning_seasons(
     return seasons
 
 
+def _load_rv_gate(
+    cfg: dict[str, str], n_species: int, n_dt_per_year: int, n_year: int
+) -> tuple[NDArray[np.float64] | None, NDArray[np.bool_] | None, int]:
+    """Load the reproductive-volume recruitment gate (spec §3.2/§4/§8).
+
+    Returns (factor_by_index, enabled_mask, offset). factor_by_index has length
+    n_years (number of series rows), is indexed by series index, and has the
+    mode formula already applied. All three are (None, None, 0) when the master
+    switch is off. Raises a clear error on any invalid configuration (fail-fast):
+    ValueError for bad content/values, FileNotFoundError for a missing file.
+    """
+    if cfg.get("reproduction.rv.gate.enabled", "false").lower() != "true":
+        return None, None, 0
+
+    file_key = cfg.get("reproduction.rv.gate.series.file", "")
+    if not file_key:
+        raise ValueError("RV gate enabled but reproduction.rv.gate.series.file is empty.")
+    path = _require_file(file_key, _cfg_dir(cfg), "reproduction.rv.gate.series.file")
+    df = pd.read_csv(path)
+    if df.shape[0] == 0 or "year" not in df.columns or "spawning_rv" not in df.columns:
+        raise ValueError(f"RV gate series {path} has no data rows or wrong columns.")
+    years = df["year"].to_numpy()
+    rv = df["spawning_rv"].to_numpy(dtype=np.float64)
+    first_year = int(years[0])
+    if not np.array_equal(years, np.arange(first_year, first_year + len(years))):
+        raise ValueError(f"RV gate series {path} years must be contiguous and ascending.")
+    if np.any(~np.isfinite(rv)) or np.any(rv < 0):
+        raise ValueError(f"RV gate series {path} has NaN or negative spawning_rv.")
+
+    enabled = np.zeros(n_species, dtype=np.bool_)
+    for sp in range(n_species):
+        if cfg.get(f"reproduction.rv.gate.species.enabled.sp{sp}", "false").lower() == "true":
+            enabled[sp] = True
+    if not enabled.any():
+        raise ValueError("RV gate enabled but no species enabled (…species.enabled.sp{idx}).")
+
+    mode = cfg.get("reproduction.rv.gate.mode", "mean_preserving")
+    floor = float(cfg.get("reproduction.rv.gate.floor", "0.0"))
+    if not (0.0 <= floor <= 1.0):
+        raise ValueError(f"reproduction.rv.gate.floor must be in [0,1], got {floor}.")
+    start_year = int(cfg.get("reproduction.rv.gate.start.year", str(first_year)))
+    n_years = len(rv)
+    offset = start_year - first_year
+
+    if mode == "mean_preserving":
+        # Multiset mean over the sampled model years y=0..n_year-1 (with repeats).
+        window_idx = [(offset + y) % n_years for y in range(n_year)]
+        denom = float(np.mean(rv[window_idx]))
+        if denom == 0.0:
+            raise ValueError("RV gate mean_preserving denominator is 0 over the run window.")
+        factor = rv / denom
+    elif mode == "raw_cap":
+        ref = float(cfg.get("reproduction.rv.gate.ref", "0.20"))
+        if ref <= 0.0:
+            raise ValueError(f"reproduction.rv.gate.ref must be > 0, got {ref}.")
+        factor = np.clip(rv / ref, 0.0, 1.0)
+    else:
+        raise ValueError(f"unknown reproduction.rv.gate.mode: {mode!r}")
+
+    factor = np.maximum(factor, floor)
+    return factor.astype(np.float64), enabled, offset
+
+
 def _load_additional_mortality_by_dt(
     cfg: dict[str, str], n_species: int
 ) -> list[NDArray[np.float64] | None] | None:
@@ -1331,6 +1394,11 @@ class EngineConfig:
 
     # Reproduction
     spawning_season: NDArray[np.float64] | None  # (n_species, n_dt_per_year) or None
+
+    # Reproductive-volume recruitment gate (all None when disabled)
+    rv_gate_factor_by_index: NDArray[np.float64] | None  # (n_years,), mode already applied
+    rv_gate_enabled: NDArray[np.bool_] | None  # (n_species,) per-species enable mask
+    rv_gate_offset: int  # start_year - first_year (see _load_rv_gate)
 
     # Movement
     movement_method: list[str]
@@ -2053,6 +2121,10 @@ class EngineConfig:
                 f"invalid at indices {bad_allo.tolist()}: {allometric_power[bad_allo].tolist()}"
             )
 
+        rv_gate_factor_by_index, rv_gate_enabled, rv_gate_offset = _load_rv_gate(
+            cfg, n_sp, n_dt, n_yr
+        )
+
         return cls(
             n_species=n_sp,
             n_dt_per_year=n_dt,
@@ -2114,6 +2186,9 @@ class EngineConfig:
                 cfg.get("predation.accessibility.dynamic.floor", "0.05")
             ),
             spawning_season=_load_spawning_seasons(cfg, n_sp, n_dt),
+            rv_gate_factor_by_index=rv_gate_factor_by_index,
+            rv_gate_enabled=rv_gate_enabled,
+            rv_gate_offset=rv_gate_offset,
             fishing_enabled=(
                 cfg.get("simulation.fishing.mortality.enabled", "true").lower() == "true"
                 or fisheries_enabled

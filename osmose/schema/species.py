@@ -437,4 +437,76 @@ SPECIES_FIELDS: list[OsmoseField] = [
         unit="tonnes",
         indexed=True,
     ),
+    # ── Recruitment: RV gate ────────────────────────────────────────────────
+    OsmoseField(
+        key_pattern="reproduction.rv.gate.enabled",
+        param_type=ParamType.BOOL,
+        default=False,
+        description=(
+            "Master switch for the reproductive-volume recruitment gate "
+            "(Baltic cod). When false the gate is inert and output is unchanged."
+        ),
+        category="reproduction",
+        required=False,
+    ),
+    OsmoseField(
+        key_pattern="reproduction.rv.gate.mode",
+        param_type=ParamType.ENUM,
+        default="mean_preserving",
+        choices=["mean_preserving", "raw_cap"],
+        description=(
+            "RV gate mode. 'mean_preserving' normalises the per-year factor to "
+            "mean 1 over the run window (variability test). 'raw_cap' applies "
+            "clip(rv/ref, 0, 1) (literal environmental cap; needs recalibration)."
+        ),
+        category="reproduction",
+        required=False,
+    ),
+    OsmoseField(
+        key_pattern="reproduction.rv.gate.series.file",
+        param_type=ParamType.FILE_PATH,
+        default="",
+        description="CSV of per-year spawning-season reproductive volume (year,spawning_rv).",
+        category="reproduction",
+        required=False,
+    ),
+    OsmoseField(
+        key_pattern="reproduction.rv.gate.ref",
+        param_type=ParamType.FLOAT,
+        default=0.20,
+        min_val=1e-9,
+        max_val=1.0,
+        description="Reference RV at which raw_cap saturates to 1.0 (~95th pctile).",
+        category="reproduction",
+        required=False,
+    ),
+    OsmoseField(
+        key_pattern="reproduction.rv.gate.floor",
+        param_type=ParamType.FLOAT,
+        default=0.0,
+        min_val=0.0,
+        max_val=1.0,
+        description="Optional lower bound on the gate factor (sensitivity knob).",
+        category="reproduction",
+        required=False,
+    ),
+    OsmoseField(
+        key_pattern="reproduction.rv.gate.start.year",
+        param_type=ParamType.INT,
+        default=1993,
+        min_val=0,
+        max_val=3000,
+        description="Real calendar year that model year 0 maps to for the RV series.",
+        category="reproduction",
+        required=False,
+    ),
+    OsmoseField(
+        key_pattern="reproduction.rv.gate.species.enabled.sp{idx}",
+        param_type=ParamType.BOOL,
+        default=False,
+        description="Per-species enable for the RV gate (cod only for Baltic).",
+        category="reproduction",
+        indexed=True,
+        required=False,
+    ),
 ]
