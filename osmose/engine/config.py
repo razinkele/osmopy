@@ -10,7 +10,7 @@ import warnings
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pandas as pd
@@ -24,6 +24,9 @@ from osmose.engine.background import (
 )
 from osmose.engine.path_resolution import resolve_data_path
 from osmose.logging import setup_logging
+
+if TYPE_CHECKING:
+    from osmose.engine.physical_data import PhysicalData
 
 _log = setup_logging("osmose.engine.config")
 
@@ -1141,6 +1144,67 @@ def _load_rv_gate(
     return factor.astype(np.float64), enabled, offset
 
 
+def _load_rv_spatial(
+    cfg: dict[str, str], n_species: int
+) -> tuple[PhysicalData | None, NDArray[np.bool_] | None]:
+    """Load the spatial RV egg-survival field (spec §5/§6). Returns (field, enable_mask)
+    or (None, None) when the master switch is off. Fail-fast on invalid config."""
+    from osmose.engine.physical_data import PhysicalData
+
+    if cfg.get("reproduction.rv.spatial.enabled", "false").lower() != "true":
+        return None, None
+
+    file_key = cfg.get("reproduction.rv.spatial.field.file", "")
+    if not file_key:
+        raise ValueError("RV spatial enabled but reproduction.rv.spatial.field.file is empty.")
+    path = _require_file(file_key, _cfg_dir(cfg), "reproduction.rv.spatial.field.file")
+    varname = cfg.get("reproduction.rv.spatial.field.varname", "reproductive_volume")
+
+    # Expected grid shape + spawning mask from the cod_spawning map (read directly;
+    # MovementMapSet is not built at config time). Prefer a map under the config dir;
+    # fall back to the bundled Baltic map.
+    cfg_dir = Path(_cfg_dir(cfg))
+    spawn_path = cfg_dir / "maps" / "cod_spawning.csv"
+    if not spawn_path.exists():
+        spawn_path = Path("data/baltic/maps/cod_spawning.csv")
+    spawn = _load_spatial_csv(spawn_path) > 0  # north-first, (nlat, nlon)
+
+    ref_cfg = float(cfg.get("reproduction.rv.spatial.ref", "-1"))
+    import xarray as xr
+
+    with xr.open_dataset(path) as ds:
+        if varname not in ds:
+            raise ValueError(f"RV field {path} has no variable {varname!r}.")
+        grid_shape = ds[varname].shape[-2:]
+        attr_ref = ds[varname].attrs.get("RV_ref", None)
+    if tuple(grid_shape) != spawn.shape:
+        raise ValueError(f"RV field grid {tuple(grid_shape)} != engine grid {spawn.shape}.")
+    rv_ref = ref_cfg if ref_cfg > 0 else attr_ref
+    if rv_ref is None or float(rv_ref) <= 0:
+        raise ValueError("RV_ref not resolvable (ref<=0 and no positive RV_ref attr).")
+
+    field = PhysicalData.from_netcdf_field(path, varname, float(rv_ref))
+    n_dt = int(cfg.get("simulation.time.ndtperyear", "24"))
+    assert field._data is not None
+    tlen = field._data.shape[0]  # NetCDF time length (24 climatology / 696 interannual)
+    if tlen <= 0 or tlen % n_dt != 0:
+        raise ValueError(
+            f"RV field time length {tlen} is not a positive multiple of ndtperyear {n_dt}."
+        )
+    # Spec §6: a NaN at a cod_spawning cell means the field is broken there — fail loudly
+    # rather than let the consumer's finite-guard silently no-op at a real spawning cell.
+    if np.isnan(field._data[:, spawn]).any():
+        raise ValueError(f"RV field {path} has NaN at cod_spawning cells.")
+
+    enabled = np.zeros(n_species, dtype=np.bool_)
+    for sp in range(n_species):
+        if cfg.get(f"reproduction.rv.spatial.species.enabled.sp{sp}", "false").lower() == "true":
+            enabled[sp] = True
+    if not enabled.any():
+        raise ValueError("RV spatial enabled but no species enabled (…species.enabled.sp{idx}).")
+    return field, enabled
+
+
 def _load_additional_mortality_by_dt(
     cfg: dict[str, str], n_species: int
 ) -> list[NDArray[np.float64] | None] | None:
@@ -1542,6 +1606,10 @@ class EngineConfig:
     output_spatial_biomass: bool = False
     output_spatial_abundance: bool = False
     output_spatial_yield_biomass: bool = False
+
+    # Spatial reproductive-volume egg-survival field (Task 2/4; consumed in larva_mortality)
+    rv_spatial_field: PhysicalData | None = None
+    rv_spatial_enabled: NDArray[np.bool_] | None = None
 
     @cached_property
     def movement_is_random(self) -> NDArray[np.bool_]:
@@ -2124,6 +2192,7 @@ class EngineConfig:
         rv_gate_factor_by_index, rv_gate_enabled, rv_gate_offset = _load_rv_gate(
             cfg, n_sp, n_dt, n_yr
         )
+        rv_spatial_field, rv_spatial_enabled = _load_rv_spatial(cfg, n_sp)
 
         return cls(
             n_species=n_sp,
@@ -2189,6 +2258,8 @@ class EngineConfig:
             rv_gate_factor_by_index=rv_gate_factor_by_index,
             rv_gate_enabled=rv_gate_enabled,
             rv_gate_offset=rv_gate_offset,
+            rv_spatial_field=rv_spatial_field,
+            rv_spatial_enabled=rv_spatial_enabled,
             fishing_enabled=(
                 cfg.get("simulation.fishing.mortality.enabled", "true").lower() == "true"
                 or fisheries_enabled

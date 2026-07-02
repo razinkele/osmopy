@@ -1,8 +1,10 @@
 import numpy as np
+import pytest
 import xarray as xr
 
 from osmose.config import OsmoseConfigReader
 from osmose.engine import PythonEngine
+from osmose.engine.config import _load_rv_spatial
 from osmose.engine.state import SchoolState
 from osmose.forcing.reproductive_volume import build_rv_field, viable_thickness
 from osmose.maps.builder import GridSpec
@@ -114,3 +116,82 @@ def test_from_seeding_inert_by_default_parity():
     a = PythonEngine().run_in_memory(_baltic_cfg(), seed=0).biomass()["cod"].to_numpy()
     b = PythonEngine().run_in_memory(_baltic_cfg(), seed=0).biomass()["cod"].to_numpy()
     np.testing.assert_array_equal(a, b)
+
+
+def _write_rv_nc(tmp_path, rv_const=5.0, ref=5.0, shape=(24, 40, 50), name="rv.nc"):
+    rv = np.full(shape, rv_const, dtype=np.float64)
+    ds = xr.Dataset({"reproductive_volume": (("time", "latitude", "longitude"), rv)})
+    ds["reproductive_volume"].attrs["RV_ref"] = ref
+    p = tmp_path / name
+    ds.to_netcdf(p)
+    return p
+
+
+def _cfg(tmp_path, **over):
+    base = {
+        "reproduction.rv.spatial.enabled": "true",
+        "reproduction.rv.spatial.field.file": str(_write_rv_nc(tmp_path)),
+        "reproduction.rv.spatial.field.varname": "reproductive_volume",
+        "reproduction.rv.spatial.ref": "-1",
+        "reproduction.rv.spatial.species.enabled.sp0": "true",
+        "_osmose.config.dir": str(tmp_path),
+        "simulation.time.ndtperyear": "24",
+    }
+    base.update(over)
+    return base
+
+
+def test_load_rv_spatial_disabled():
+    field, mask = _load_rv_spatial({"reproduction.rv.spatial.enabled": "false"}, 3)
+    assert field is None and mask is None
+
+
+def test_load_rv_spatial_reads_attr_and_mask(tmp_path):
+    field, mask = _load_rv_spatial(_cfg(tmp_path), n_species=1)
+    assert field is not None
+    assert field.get_grid(0).shape == (40, 50)
+    assert mask.tolist() == [True]
+
+
+def test_load_rv_spatial_ref_from_config_overrides(tmp_path):
+    # ref > 0 uses the config value, not the attr; stored for the consumer via a known accessor.
+    field, _ = _load_rv_spatial(_cfg(tmp_path, **{"reproduction.rv.spatial.ref": "12.5"}), 1)
+    assert abs(field.rv_ref - 12.5) < 1e-9
+
+
+def test_load_rv_spatial_ref_from_attr(tmp_path):
+    field, _ = _load_rv_spatial(_cfg(tmp_path), 1)  # ref=-1 -> attr (5.0)
+    assert abs(field.rv_ref - 5.0) < 1e-9
+
+
+@pytest.mark.parametrize(
+    "bad,exc",
+    [
+        ({"reproduction.rv.spatial.species.enabled.sp0": "false"}, "no species"),
+        ({"reproduction.rv.spatial.field.file": ""}, "empty"),
+    ],
+)
+def test_load_rv_spatial_fail_fast(tmp_path, bad, exc):
+    with pytest.raises(ValueError, match=exc):
+        _load_rv_spatial(_cfg(tmp_path, **bad), 1)
+
+
+def test_load_rv_spatial_wrong_grid_raises(tmp_path):
+    cfg = _cfg(tmp_path)
+    cfg["reproduction.rv.spatial.field.file"] = str(
+        _write_rv_nc(tmp_path, shape=(24, 10, 10), name="bad.nc")
+    )
+    with pytest.raises(ValueError, match="grid"):
+        _load_rv_spatial(cfg, 1)
+
+
+def test_load_rv_spatial_nan_at_spawning_raises(tmp_path):
+    rv = np.full((24, 40, 50), np.nan, dtype=np.float64)
+    ds = xr.Dataset({"reproductive_volume": (("time", "latitude", "longitude"), rv)})
+    ds["reproductive_volume"].attrs["RV_ref"] = 5.0
+    p = tmp_path / "nan.nc"
+    ds.to_netcdf(p)
+    cfg = _cfg(tmp_path)
+    cfg["reproduction.rv.spatial.field.file"] = str(p)
+    with pytest.raises(ValueError, match="NaN"):
+        _load_rv_spatial(cfg, 1)

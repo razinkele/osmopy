@@ -23,6 +23,7 @@ class PhysicalData:
         self._data = data
         self._constant = constant
         self._nsteps_year = nsteps_year
+        self.rv_ref: float | None = None
 
     @classmethod
     def from_constant(cls, value: float, factor: float = 1.0, offset: float = 0.0) -> PhysicalData:
@@ -47,6 +48,19 @@ class PhysicalData:
             raw = raw[np.newaxis, :, :]
         data = factor * (raw.astype(np.float64) + offset)
         return cls(data=data, constant=None, nsteps_year=nsteps_year)
+
+    @classmethod
+    def from_netcdf_field(cls, path: Path, varname: str, rv_ref: float) -> PhysicalData:
+        """Load a per-cell field NetCDF (no factor/offset), carrying an rv_ref scalar."""
+        from osmose.engine._netcdf import open_dataset_safe
+
+        ds = open_dataset_safe(path)
+        raw = ds[varname].values
+        if raw.ndim == 2:
+            raw = raw[np.newaxis, :, :]
+        obj = cls(data=raw.astype(np.float64), constant=None, nsteps_year=raw.shape[0])
+        obj.rv_ref = rv_ref
+        return obj
 
     @property
     def is_constant(self) -> bool:
