@@ -1,7 +1,9 @@
 # Baltic recruitment ceiling (unfished-level cap) — design
 
 **Date:** 2026-07-03
-**Status:** approved design, pre-implementation
+**Status:** approved design, scientifically validated (2026-07-03, scite + primary
+sources: McGregor 2019 quote verified verbatim & non-retracted, Bossier 2018
+verified, framing tightened), pre-implementation
 **Author:** brainstormed with the user
 **Related:** `docs/baltic_recruitment_literature_review_2026-07-03.md` (candidate #1),
 `osmose/engine/processes/reproduction.py` (`apply_stock_recruitment`),
@@ -22,11 +24,23 @@ the model amplifies.
 
 The 2026-07-03 literature review identified **one untried lever that is not a
 gate**: a recruitment *ceiling*. McGregor, Fulton & Dunn (2019, *PeerJ* 7:e7308)
-show analytically that a Beverton–Holt stock-recruitment curve makes a depleted
-population "very productive under persistent predation release" — precisely the
-boom this config shows — and recommend **limiting recruitment to its unfished
-level**. The Baltic config added an explicit Beverton–Holt / Shepherd SR curve
-during phase-12 calibration, so this warning applies directly.
+show that a Beverton–Holt stock-recruitment curve produces "sudden and excessive
+increase when the population expands" and recommend **limiting recruitment to its
+unfished level** (verbatim: "To avoid implausible increases in biomass, we
+propose limiting recruitment to its unfished level"). The Baltic config added an
+explicit Beverton–Holt / Shepherd SR curve during phase-12 calibration, so this
+warning applies directly.
+
+**Framing precision (from the 2026-07-03 scientific validation).** McGregor's
+demonstration system is myctophids (a *prey* species) on the Chatham Rise, NZ,
+and their trigger is *fishing-induced predation release* — prey booming once
+their predators are fished down. Cod is a top predator, so the modeled cod boom
+is **not** classic predation release; it is the *general* B-H failure mode
+McGregor also proves — excessive recruitment upside whenever the population
+expands, for any reason (a good-recruitment run, reduced fishing, or predation
+release). The ceiling is justified by that general result, which covers the cod
+case directly. We keep the causal language precise: "expansion," not "predation
+release," is what drives the cod overshoot.
 
 Note the OSMOSE B-H curve already saturates (recruitment → `k·ssb_half` as
 SSB→∞, `reproduction.py:69`), but its asymptote is the curve's
@@ -38,8 +52,8 @@ natural unfished equilibrium. This spec measures that level and clamps to it.
 
 **Goals**
 - Cap each enabled focal species' per-step recruitment (egg output) at its
-  unfished-equilibrium level, removing the SR-curve's runaway upside under
-  predation release.
+  unfished-equilibrium level, removing the SR-curve's runaway upside whenever the
+  population expands.
 - Derive the ceiling by *measurement*, not by a guessed constant: an F=0
   reference run's late-window mean recruitment, recorded per within-year season
   index (preserving spawning-season shape).
@@ -168,6 +182,19 @@ reproduction.recruitment.ceiling.species.enabled.sp{i} = true|false   # per-spec
   itself booms.
 - **Orthogonality:** ceiling and RV gate compose — RV gate multiplies, ceiling
   clamps; either, both, or neither can be enabled.
+- **Conservative and non-distorting (scientific strength):** the real Baltic cod
+  stock currently recruits *below* its unfished level, so an unfished-level cap
+  rarely binds in realistic low-recruitment regimes — it only clips the model's
+  implausible boom. The fix corrects the artifact without distorting realistic
+  low-recruitment dynamics; this is the main reason it is preferable to
+  re-tuning the SR curve.
+- **Per-season vector is an extension, not a literal McGregor quantity:**
+  McGregor's R₀ is a single (annual) unfished-recruitment value; the per-season
+  vector is this project's adaptation to OSMOSE's sub-annual spawning, chosen to
+  preserve the within-year spawning shape. The `n_cols`-row late-window mean is
+  our empirical estimator of R₀ per season index. The stationarity check on the
+  F=0 run (above) guards the one real risk — an ill-defined R₀ if the reference
+  run does not settle.
 
 ## 7. Alternatives considered (derivation orchestration)
 
