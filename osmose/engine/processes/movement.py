@@ -462,6 +462,12 @@ if _HAS_NUMBA:
             use_gate = gated
             wmax = 0.0
             if gated:
+                # wmax = nan-skipping max of current_map*sal_w (mirrors the Python
+                # path's nanmax normalizer). The isnan-only check (vs isfinite) is
+                # safe ONLY because current_map is a presence/[0,1] map and
+                # sal_w=clip(...,0,1), so the product is bounded and never +inf.
+                # Revisit if a future field (e.g. real CMEMS 'so') can carry inf/
+                # fill-value sentinels — then isnan-only would diverge from Python.
                 for jj in range(ny):
                     for ii in range(nx):
                         v = current_map[jj, ii] * sal_w[jj, ii]
