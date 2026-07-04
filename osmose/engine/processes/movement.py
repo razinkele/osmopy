@@ -11,6 +11,7 @@ from numpy.typing import NDArray
 from osmose.engine.config import EngineConfig
 from osmose.engine.grid import Grid
 from osmose.engine.movement_maps import MovementMapSet
+from osmose.engine.processes.salinity_gate import salinity_weighted_map
 from osmose.engine.state import SchoolState
 from osmose.logging import setup_logging
 
@@ -30,6 +31,23 @@ if not _HAS_NUMBA:
     )
 
 
+def _movement_salinity_weight(config, grid, step) -> NDArray[np.float64] | None:
+    """Per-step salinity occupancy-weight grid for the gate, or None when off.
+
+    Reads config.salinity_gate_enabled / .salinity_field / .salinity_gate_s_low /
+    .salinity_gate_s_high and grid.ny/nx. Constant fields broadcast to the grid.
+    """
+    if not (config.salinity_gate_enabled and config.salinity_field is not None):
+        return None
+    from osmose.engine.processes.salinity_gate import salinity_weight
+
+    if config.salinity_field.is_constant:
+        S = np.full((grid.ny, grid.nx), config.salinity_field.get_scalar())
+    else:
+        S = config.salinity_field.get_grid(step)
+    return salinity_weight(S, config.salinity_gate_s_low, config.salinity_gate_s_high)
+
+
 def _map_move_school(
     age_dt: int,
     cx: int,
@@ -41,6 +59,7 @@ def _map_move_school(
     walk_range: int,
     step: int,
     rng: np.random.Generator,
+    salinity_weight_grid: NDArray[np.float64] | None = None,
 ) -> tuple[int, int, bool]:
     """Move a single school using map-based distribution.
 
@@ -64,11 +83,24 @@ def _map_move_school(
         Global simulation step.
     rng : np.random.Generator
         Random number generator.
+    salinity_weight_grid : NDArray[np.float64] | None
+        Optional per-cell salinity occupancy weight (Task 1's
+        ``salinity_weight``). When set, occupancy is proportional to
+        ``current_map * salinity_weight_grid`` in both placement and
+        random-walk. ``None`` reproduces the ungated behavior bit-identically.
     """
     # Step 1 — Out-of-domain check
     current_map = map_set.get_map(age_dt, step)
     if current_map is None:
         return -1, -1, True
+
+    # Salinity-gated occupancy (inert when salinity_weight_grid is None).
+    if salinity_weight_grid is not None:
+        wmap = salinity_weighted_map(current_map, salinity_weight_grid)
+        gated = wmap is not current_map  # guard returns the original object on all-zero
+    else:
+        wmap = current_map
+        gated = False
 
     # Step 2 — Same-map detection
     index_map = map_set.get_index(age_dt, step)
@@ -80,12 +112,12 @@ def _map_move_school(
     # Step 3a — New placement (rejection sampling)
     if not same_map or cx < 0:
         n_cells = grid_nx * grid_ny
-        max_p = map_set.max_proba[index_map]
+        max_p = float(np.nanmax(wmap)) if gated else map_set.max_proba[index_map]
         for _ in range(10_000):
             flat_idx = rng.integers(0, n_cells)
             j = int(flat_idx // grid_nx)
             i = int(flat_idx % grid_nx)
-            proba = current_map[j, i]
+            proba = wmap[j, i]
             if proba > 0 and not np.isnan(proba):
                 if max_p == 0.0 or proba >= rng.random() * max_p:
                     return i, j, False
@@ -93,13 +125,20 @@ def _map_move_school(
 
     # Step 3b — Random walk (same map, school is located)
     accessible: list[tuple[int, int]] = []
+    weights: list[float] = []
     for yi in range(max(0, cy - walk_range), min(grid_ny, cy + walk_range + 1)):
         for xi in range(max(0, cx - walk_range), min(grid_nx, cx + walk_range + 1)):
-            if ocean_mask[yi, xi] and current_map[yi, xi] > 0 and not np.isnan(current_map[yi, xi]):
+            v = wmap[yi, xi]
+            if ocean_mask[yi, xi] and v > 0 and not np.isnan(v):
                 accessible.append((xi, yi))
+                weights.append(float(v))
     if len(accessible) == 0:
         return cx, cy, False  # stranded — stay in place
-    idx = rng.integers(0, len(accessible))
+    if gated:
+        w = np.asarray(weights, dtype=np.float64)
+        idx = int(rng.choice(len(accessible), p=w / w.sum()))
+    else:
+        idx = rng.integers(0, len(accessible))
     return accessible[idx][0], accessible[idx][1], False
 
 
@@ -262,6 +301,15 @@ def movement(
     # Map-based movement for "maps" species
     if uses_maps.any() and map_sets is not None:
         if _HAS_NUMBA and flat_map_data is not None:
+            if config.salinity_gate_enabled:
+                warnings.warn(
+                    "movement.salinity.gate is enabled but has NO effect on the Numba "
+                    "movement path (prototype: Python path only). Gate applies only when "
+                    "the Python fallback is used (flat_map_data=None). See "
+                    "docs/superpowers/specs/2026-07-04-salinity-gated-cod-occupancy-design.md.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
             flat_maps, flat_max_proba, flat_is_null, sp_offsets = flat_map_data
             map_school_indices = np.where(uses_maps)[0].astype(np.int32)
             current_idx, same_map_flags = _precompute_map_indices(
@@ -324,6 +372,7 @@ def movement(
             new_cx = state.cell_x.copy()
             new_cy = state.cell_y.copy()
             new_out = state.is_out.copy()
+            sal_w = _movement_salinity_weight(config, grid, step)
             for i in np.where(uses_maps)[0]:
                 sp_id = int(sp[i])
                 if sp_id in map_sets:
@@ -338,6 +387,11 @@ def movement(
                         int(config.random_walk_range[sp_id]),
                         step,
                         _rng_for(sp_id),
+                        salinity_weight_grid=(
+                            sal_w
+                            if (sal_w is not None and config.salinity_gate_species[sp_id])
+                            else None
+                        ),
                     )
                     new_cx[i], new_cy[i], new_out[i] = x, y, out
             state = state.replace(cell_x=new_cx, cell_y=new_cy, is_out=new_out)

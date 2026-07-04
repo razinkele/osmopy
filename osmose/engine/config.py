@@ -23,6 +23,7 @@ from osmose.engine.background import (
     parse_background_species,
 )
 from osmose.engine.path_resolution import resolve_data_path
+from osmose.engine.physical_data import PhysicalData
 from osmose.logging import setup_logging
 
 _log = setup_logging("osmose.engine.config")
@@ -1141,6 +1142,49 @@ def _load_rv_gate(
     return factor.astype(np.float64), enabled, offset
 
 
+def _load_salinity_gate(
+    cfg: dict[str, str], n_species: int
+) -> tuple[bool, NDArray[np.bool_] | None, float, float, PhysicalData | None]:
+    """Load the salinity-gated occupancy config (spec 2026-07-04).
+
+    Returns (enabled, species_mask, s_low, s_high, salinity_field). Off →
+    (False, None, 3.0, 6.0, None). Fail-fast (ValueError / FileNotFoundError)
+    on bad config: s_high <= s_low, no gated species, or no resolvable field.
+    """
+    s_low = float(cfg.get("movement.salinity.gate.s.low", "3.0"))
+    s_high = float(cfg.get("movement.salinity.gate.s.high", "6.0"))
+    if cfg.get("movement.salinity.gate.enabled", "false").lower() != "true":
+        return False, None, s_low, s_high, None
+
+    if s_high <= s_low:
+        raise ValueError(f"movement.salinity.gate.s.high ({s_high}) must be > s.low ({s_low})")
+
+    mask = np.zeros(n_species, dtype=np.bool_)
+    for sp in range(n_species):
+        if cfg.get(f"movement.salinity.gate.species.enabled.sp{sp}", "false").lower() == "true":
+            mask[sp] = True
+    if not mask.any():
+        raise ValueError(
+            "salinity gate enabled but no species enabled "
+            "(movement.salinity.gate.species.enabled.sp{idx})."
+        )
+
+    const_str = cfg.get("movement.salinity.field.constant", "")
+    file_str = cfg.get("movement.salinity.field.file", "")
+    if const_str:
+        field = PhysicalData.from_constant(float(const_str))
+    elif file_str:
+        path = _require_file(file_str, _cfg_dir(cfg), "movement.salinity.field.file")
+        varname = cfg.get("movement.salinity.field.varname", "so")
+        field = PhysicalData.from_netcdf(path, varname=varname)
+    else:
+        raise ValueError(
+            "salinity gate enabled but no salinity field "
+            "(set movement.salinity.field.constant or .file)."
+        )
+    return True, mask, s_low, s_high, field
+
+
 def _load_recruitment_ceiling(
     cfg: dict[str, str],
     n_species: int,
@@ -1466,6 +1510,13 @@ class EngineConfig:
     rv_gate_factor_by_index: NDArray[np.float64] | None  # (n_years,), mode already applied
     rv_gate_enabled: NDArray[np.bool_] | None  # (n_species,) per-species enable mask
     rv_gate_offset: int  # start_year - first_year (see _load_rv_gate)
+
+    # Salinity-gated occupancy (prototype spike; feature inert when disabled)
+    salinity_gate_enabled: bool
+    salinity_gate_species: NDArray[np.bool_] | None
+    salinity_gate_s_low: float
+    salinity_gate_s_high: float
+    salinity_field: PhysicalData | None
 
     # Unfished-level recruitment ceiling (both None when disabled)
     recruitment_ceiling_by_season: NDArray[np.float64] | None  # (n_cols, n_species)
@@ -2195,6 +2246,13 @@ class EngineConfig:
         rv_gate_factor_by_index, rv_gate_enabled, rv_gate_offset = _load_rv_gate(
             cfg, n_sp, n_dt, n_yr
         )
+        (
+            salinity_gate_enabled,
+            salinity_gate_species,
+            salinity_gate_s_low,
+            salinity_gate_s_high,
+            salinity_field,
+        ) = _load_salinity_gate(cfg, n_sp)
         _spawning_season = _load_spawning_seasons(cfg, n_sp, n_dt)
         recruitment_ceiling_by_season, recruitment_ceiling_enabled = _load_recruitment_ceiling(
             cfg, n_sp, n_dt, _spawning_season
@@ -2264,6 +2322,11 @@ class EngineConfig:
             rv_gate_factor_by_index=rv_gate_factor_by_index,
             rv_gate_enabled=rv_gate_enabled,
             rv_gate_offset=rv_gate_offset,
+            salinity_gate_enabled=salinity_gate_enabled,
+            salinity_gate_species=salinity_gate_species,
+            salinity_gate_s_low=salinity_gate_s_low,
+            salinity_gate_s_high=salinity_gate_s_high,
+            salinity_field=salinity_field,
             recruitment_ceiling_by_season=recruitment_ceiling_by_season,
             recruitment_ceiling_enabled=recruitment_ceiling_enabled,
             fishing_enabled=(
