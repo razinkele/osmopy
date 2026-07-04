@@ -301,15 +301,6 @@ def movement(
     # Map-based movement for "maps" species
     if uses_maps.any() and map_sets is not None:
         if _HAS_NUMBA and flat_map_data is not None:
-            if config.salinity_gate_enabled:
-                warnings.warn(
-                    "movement.salinity.gate is enabled but has NO effect on the Numba "
-                    "movement path (prototype: Python path only). Gate applies only when "
-                    "the Python fallback is used (flat_map_data=None). See "
-                    "docs/superpowers/specs/2026-07-04-salinity-gated-cod-occupancy-design.md.",
-                    RuntimeWarning,
-                    stacklevel=2,
-                )
             flat_maps, flat_max_proba, flat_is_null, sp_offsets = flat_map_data
             map_school_indices = np.where(uses_maps)[0].astype(np.int32)
             current_idx, same_map_flags = _precompute_map_indices(
@@ -319,6 +310,15 @@ def movement(
             new_cx = state.cell_x.copy()
             new_cy = state.cell_y.copy()
             new_out = state.is_out.copy()
+            sal_w = _movement_salinity_weight(config, grid, step)
+            if sal_w is not None:
+                sal_w_arr = sal_w
+                gate_active = True
+                gate_species_arr = config.salinity_gate_species
+            else:
+                sal_w_arr = np.zeros((1, 1), dtype=np.float64)
+                gate_active = False
+                gate_species_arr = np.zeros(config.n_species, dtype=np.bool_)
             _map_move_batch_numba(
                 rng_seed,
                 map_school_indices,
@@ -340,6 +340,9 @@ def movement(
                 new_cx,
                 new_cy,
                 new_out,
+                sal_w_arr,
+                gate_active,
+                gate_species_arr,
             )
             # Warn only about schools that failed rejection sampling, not
             # intentional null-map migrations (which are expected out-of-domain
@@ -421,6 +424,9 @@ if _HAS_NUMBA:
         out_cx,
         out_cy,
         out_is_out,
+        sal_w,
+        gate_active,
+        gate_species,
     ):
         """Numba-compiled batch map-based movement for all schools.
 
@@ -452,20 +458,48 @@ if _HAS_NUMBA:
             current_map = all_maps[global_map_idx]
             max_p = all_max_proba[global_map_idx]
 
+            gated = gate_active and gate_species[sp]
+            use_gate = gated
+            wmax = 0.0
+            if gated:
+                # wmax = nan-skipping max of current_map*sal_w (mirrors the Python
+                # path's nanmax normalizer). The isnan-only check (vs isfinite) is
+                # safe ONLY because current_map is a presence/[0,1] map and
+                # sal_w=clip(...,0,1), so the product is bounded and never +inf.
+                # Revisit if a future field (e.g. real CMEMS 'so') can carry inf/
+                # fill-value sentinels — then isnan-only would diverge from Python.
+                for jj in range(ny):
+                    for ii in range(nx):
+                        v = current_map[jj, ii] * sal_w[jj, ii]
+                        if not np.isnan(v) and v > wmax:
+                            wmax = v
+                if wmax <= 0.0:
+                    use_gate = False  # all-zero guard: behave exactly ungated
+
             if not same_map[k] or cell_x[idx] < 0:
                 placed = False
                 for _ in range(10_000):
                     flat_idx = np.random.randint(0, n_cells)
                     j = flat_idx // nx
                     i = flat_idx % nx
-                    proba = current_map[j, i]
-                    if proba > 0 and not np.isnan(proba):
-                        if max_p == 0.0 or proba >= np.random.random() * max_p:
-                            out_cx[idx] = i
-                            out_cy[idx] = j
-                            out_is_out[idx] = False
-                            placed = True
-                            break
+                    if use_gate:
+                        proba = current_map[j, i] * sal_w[j, i]
+                        if proba > 0 and not np.isnan(proba):
+                            if proba >= np.random.random() * wmax:
+                                out_cx[idx] = i
+                                out_cy[idx] = j
+                                out_is_out[idx] = False
+                                placed = True
+                                break
+                    else:
+                        proba = current_map[j, i]
+                        if proba > 0 and not np.isnan(proba):
+                            if max_p == 0.0 or proba >= np.random.random() * max_p:
+                                out_cx[idx] = i
+                                out_cy[idx] = j
+                                out_is_out[idx] = False
+                                placed = True
+                                break
                 if not placed:
                     out_cx[idx] = -1
                     out_cy[idx] = -1
@@ -475,15 +509,26 @@ if _HAS_NUMBA:
             cx_k = cell_x[idx]
             cy_k = cell_y[idx]
             wr = walk_range[sp]
-            n_accessible = 0
             y_lo = max(0, cy_k - wr)
             y_hi = min(ny, cy_k + wr + 1)
             x_lo = max(0, cx_k - wr)
             x_hi = min(nx, cx_k + wr + 1)
+
+            n_accessible = 0
+            W = 0.0
             for yi in range(y_lo, y_hi):
                 for xi in range(x_lo, x_hi):
-                    if ocean_mask[yi, xi] and current_map[yi, xi] > 0:
-                        if not np.isnan(current_map[yi, xi]):
+                    if (
+                        ocean_mask[yi, xi]
+                        and current_map[yi, xi] > 0
+                        and not np.isnan(current_map[yi, xi])
+                    ):
+                        if use_gate:
+                            wv = current_map[yi, xi] * sal_w[yi, xi]
+                            if wv > 0 and not np.isnan(wv):
+                                n_accessible += 1
+                                W += wv
+                        else:
                             n_accessible += 1
 
             if n_accessible == 0:
@@ -492,12 +537,42 @@ if _HAS_NUMBA:
                 out_is_out[idx] = False
                 continue
 
-            target = np.random.randint(0, n_accessible)
-            count = 0
-            for yi in range(y_lo, y_hi):
-                for xi in range(x_lo, x_hi):
-                    if ocean_mask[yi, xi] and current_map[yi, xi] > 0:
-                        if not np.isnan(current_map[yi, xi]):
+            if use_gate:
+                r = np.random.random() * W
+                acc = 0.0
+                sel_x = cx_k
+                sel_y = cy_k
+                found = False
+                for yi in range(y_lo, y_hi):
+                    for xi in range(x_lo, x_hi):
+                        if (
+                            ocean_mask[yi, xi]
+                            and current_map[yi, xi] > 0
+                            and not np.isnan(current_map[yi, xi])
+                        ):
+                            wv = current_map[yi, xi] * sal_w[yi, xi]
+                            if wv > 0 and not np.isnan(wv):
+                                acc += wv
+                                sel_x = xi
+                                sel_y = yi
+                                if acc >= r:
+                                    found = True
+                                    break
+                    if found:
+                        break
+                out_cx[idx] = sel_x
+                out_cy[idx] = sel_y
+                out_is_out[idx] = False
+            else:
+                target = np.random.randint(0, n_accessible)
+                count = 0
+                for yi in range(y_lo, y_hi):
+                    for xi in range(x_lo, x_hi):
+                        if (
+                            ocean_mask[yi, xi]
+                            and current_map[yi, xi] > 0
+                            and not np.isnan(current_map[yi, xi])
+                        ):
                             if count == target:
                                 out_cx[idx] = xi
                                 out_cy[idx] = yi
@@ -505,8 +580,8 @@ if _HAS_NUMBA:
                             count += 1
                             if count > target:
                                 break
-                if count > target:
-                    break
+                    if count > target:
+                        break
 
 
 def _flatten_all_map_sets(
