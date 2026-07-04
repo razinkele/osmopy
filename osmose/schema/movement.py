@@ -104,4 +104,63 @@ MOVEMENT_FIELDS: list[OsmoseField] = [
         category="movement",
         advanced=True,
     ),
+    # ── Salinity-gated occupancy (prototype spike) ────────────────────────
+    OsmoseField(
+        key_pattern="movement.salinity.gate.enabled",
+        param_type=ParamType.BOOL,
+        default=False,
+        description=(
+            "Master switch for salinity-gated predator occupancy. When false "
+            "the gate is inert and movement output is bit-identical."
+        ),
+        category="movement",
+        advanced=True,
+    ),
+    OsmoseField(
+        key_pattern="movement.salinity.gate.species.enabled.sp{idx}",
+        param_type=ParamType.BOOL,
+        default=False,
+        description="Per-species enable for salinity occupancy gating (cod only for Baltic).",
+        category="movement",
+        indexed=True,
+        advanced=True,
+    ),
+    OsmoseField(
+        key_pattern="movement.salinity.gate.s.low",
+        param_type=ParamType.FLOAT,
+        default=3.0,
+        description="Salinity (psu) at/below which occupancy weight is 0.",
+        category="movement",
+        advanced=True,
+    ),
+    OsmoseField(
+        key_pattern="movement.salinity.gate.s.high",
+        param_type=ParamType.FLOAT,
+        default=6.0,
+        description="Salinity (psu) at/above which occupancy weight is 1.",
+        category="movement",
+        advanced=True,
+    ),
+    OsmoseField(
+        key_pattern="movement.salinity.field.constant",
+        param_type=ParamType.FLOAT,
+        description="Constant salinity (psu) forcing (alternative to a NetCDF field).",
+        category="movement",
+        advanced=True,
+    ),
+    OsmoseField(
+        key_pattern="movement.salinity.field.file",
+        param_type=ParamType.FILE_PATH,
+        description="NetCDF salinity field (alternative to a constant).",
+        category="movement",
+        advanced=True,
+    ),
+    OsmoseField(
+        key_pattern="movement.salinity.field.varname",
+        param_type=ParamType.STRING,
+        default="so",
+        description="Variable name in the salinity NetCDF (CMEMS 'so').",
+        category="movement",
+        advanced=True,
+    ),
 ]

@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from osmose.engine.processes.salinity_gate import salinity_weight, salinity_weighted_map
+from osmose.schema import build_registry
 
 
 def test_salinity_weight_ramp_scalar():
@@ -35,3 +36,14 @@ def test_weighted_map_all_zero_guard_returns_original():
     w = np.zeros((2, 2))
     out = salinity_weighted_map(m, w)
     assert out is m  # identity: guard fell back to original
+
+
+def test_salinity_gate_keys_registered():
+    keys = {f.key_pattern for f in build_registry().all_fields()}
+    assert "movement.salinity.gate.enabled" in keys
+    assert "movement.salinity.gate.species.enabled.sp{idx}" in keys
+    assert "movement.salinity.gate.s.low" in keys
+    assert "movement.salinity.gate.s.high" in keys
+    assert "movement.salinity.field.constant" in keys
+    assert "movement.salinity.field.file" in keys
+    assert "movement.salinity.field.varname" in keys
