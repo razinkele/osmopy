@@ -509,4 +509,37 @@ SPECIES_FIELDS: list[OsmoseField] = [
         indexed=True,
         required=False,
     ),
+    # ── Recruitment: unfished-level ceiling (McGregor et al. 2019) ───────────
+    OsmoseField(
+        key_pattern="reproduction.recruitment.ceiling.enabled",
+        param_type=ParamType.BOOL,
+        default=False,
+        description=(
+            "Master switch for the unfished-level recruitment ceiling. When "
+            "false the ceiling is inert and output is bit-identical."
+        ),
+        category="reproduction",
+        required=False,
+    ),
+    OsmoseField(
+        key_pattern="reproduction.recruitment.ceiling.series.file",
+        param_type=ParamType.FILE_PATH,
+        default="",
+        description=(
+            "CSV of the per-season unfished-equilibrium recruitment ceiling "
+            "(season_idx,ceiling_sp0,...), produced by "
+            "scripts/derive_recruitment_ceiling.py."
+        ),
+        category="reproduction",
+        required=False,
+    ),
+    OsmoseField(
+        key_pattern="reproduction.recruitment.ceiling.species.enabled.sp{idx}",
+        param_type=ParamType.BOOL,
+        default=False,
+        description="Per-species enable for the recruitment ceiling (cod only for Baltic).",
+        category="reproduction",
+        indexed=True,
+        required=False,
+    ),
 ]
