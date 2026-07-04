@@ -104,6 +104,8 @@ def seeding_overlap_warnings(seeding_max_step, total_steps, n_dt, frac):
 def check_stationarity(records, n_cols, n_species, n_dt, frac, tol=0.25) -> list[str]:
     """Warn if the last-window per-season mean differs from the preceding window
     by more than `tol` (relative). Returns a list of warning strings (empty = ok)."""
+    if not (0.0 < frac <= 0.5):
+        raise ValueError(f"check_stationarity frac must be in (0, 0.5], got {frac}")
     late = late_window_ceiling(records, n_cols, n_species, n_dt, frac)
     # Preceding window of the same width, immediately before the late window.
     max_step = max(s for s, _ in records)
@@ -120,9 +122,13 @@ def check_stationarity(records, n_cols, n_species, n_dt, frac, tol=0.25) -> list
     if np.any(counts == 0):
         return ["Preceding window empty; cannot assess stationarity (run longer)."]
     prev = sums / counts[:, None]
+    # Only assess drift on seasons with meaningful recruitment; near-zero
+    # buckets make the relative metric explode without signalling real drift.
+    scale = np.nanmax(late) if np.isfinite(np.nanmax(late)) else 0.0
+    significant = late > 1e-3 * scale
     with np.errstate(divide="ignore", invalid="ignore"):
-        rel = np.abs(late - prev) / np.where(late > 0, late, np.nan)
-    bad = np.nanmax(rel) if np.isfinite(np.nanmax(rel)) else 0.0
+        rel = np.abs(late - prev) / np.where(significant, late, np.nan)
+    bad = np.nanmax(rel) if np.any(significant) and np.isfinite(np.nanmax(rel)) else 0.0
     if bad > tol:
         warnings.append(
             f"Unfished run may not be stationary: max per-season drift "

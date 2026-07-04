@@ -306,3 +306,20 @@ def test_overshoot_ratio_basic():
     series = np.array([100.0, 300.0, 200.0, 150.0, 150.0, 150.0])
     # max=300, late-mean over last 3 = 150 -> ratio 2.0
     assert abs(abdiag.overshoot_ratio(series, late_frac=0.5) - 2.0) < 1e-9
+
+
+def test_check_stationarity_rejects_frac_above_half():
+    records = [(s, np.array([100.0])) for s in range(8)]
+    with pytest.raises(ValueError, match="frac"):
+        derive.check_stationarity(records, n_cols=2, n_species=1, n_dt=2, frac=0.6)
+
+
+def test_check_stationarity_ignores_near_zero_buckets():
+    # Season 0 near-zero in both windows (would blow up rel metric); season 1
+    # perfectly stable. Should NOT warn.
+    records = []
+    for step in range(12):  # 6 years x 2 seasons
+        val = 1e-9 if step % 2 == 0 else 500.0
+        records.append((step, np.array([val])))
+    warns = derive.check_stationarity(records, n_cols=2, n_species=1, n_dt=2, frac=0.5)
+    assert warns == []
