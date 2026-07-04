@@ -284,3 +284,16 @@ def test_write_ceiling_csv_roundtrips(tmp_path):
         None,
     )
     np.testing.assert_array_equal(loaded, ceil)
+
+
+def test_seeding_overlap_warns_when_late_window_inside_seeding_window():
+    # 360 steps, n_dt 24 -> 15 years; frac 1/3 -> late window starts step 240.
+    smax = np.array([480, 100])  # sp0 eligible past 240 -> warn; sp1 (100) -> no warn
+    w = derive.seeding_overlap_warnings(smax, 360, 24, 1.0 / 3.0)
+    assert len(w) == 1
+    assert "sp0" in w[0]
+
+
+def test_seeding_overlap_no_warning_when_clear():
+    smax = np.array([50, 100])  # both well before step 240
+    assert derive.seeding_overlap_warnings(smax, 360, 24, 1.0 / 3.0) == []

@@ -77,6 +77,30 @@ def late_window_ceiling(records, n_cols: int, n_species: int, n_dt: int, frac: f
     return sums / counts[:, None]
 
 
+def seeding_overlap_warnings(seeding_max_step, total_steps, n_dt, frac):
+    """Warn per species whose seeding-eligible window overlaps the late window.
+
+    Seeded eggs are indistinguishable from natural eggs here (no from_seeding
+    field on schools), so a species that collapses to SSB=0 inside the late
+    averaging window would have its ceiling contaminated by the configured
+    seeding biomass rather than a natural equilibrium. Non-fatal: returns a
+    list of warning strings (empty = no overlap).
+    """
+    n_years = total_steps / n_dt
+    start_step = int(n_years * (1.0 - frac) * n_dt)
+    warnings = []
+    for sp, smax in enumerate(seeding_max_step):
+        if int(smax) > start_step:
+            warnings.append(
+                f"sp{sp}: seeding-eligible until step {int(smax)} overlaps the late "
+                f"averaging window (starts step {start_step}); if this species "
+                f"collapses to SSB=0 in that window its derived ceiling may be "
+                f"contaminated by seeding biomass. Increase simulation.time.nyear "
+                f"or --late-frac."
+            )
+    return warnings
+
+
 def check_stationarity(records, n_cols, n_species, n_dt, frac, tol=0.25) -> list[str]:
     """Warn if the last-window per-season mean differs from the preceding window
     by more than `tol` (relative). Returns a list of warning strings (empty = ok)."""
@@ -145,6 +169,11 @@ def main(argv=None) -> int:
         PythonEngine().run(cfg, Path(td), seed=0, step_observer=recorder)
 
     for w in check_stationarity(recorder.records, n_cols, n_sp, n_dt, args.late_frac):
+        print("WARNING:", w)
+    _total_steps = max(s for s, _ in recorder.records) + 1
+    for w in seeding_overlap_warnings(
+        engine_cfg.seeding_max_step, _total_steps, n_dt, args.late_frac
+    ):
         print("WARNING:", w)
     ceiling = late_window_ceiling(recorder.records, n_cols, n_sp, n_dt, args.late_frac)
     out = write_ceiling_csv(ceiling, args.out)
