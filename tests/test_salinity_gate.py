@@ -229,26 +229,6 @@ def test_gate_off_is_bit_identical():
     np.testing.assert_array_equal(base.to_numpy(), off.to_numpy())
 
 
-def test_gate_enabled_warns_on_numba_path():
-    """Enabling the gate on a config that uses map-based (Numba) movement must
-    warn loudly that the gate has no effect there (prototype: Python path only).
-
-    eec_full's sp0 (lesserSpottedDogfish) uses movement.distribution.method=maps
-    and the engine runs with Numba available (flat_map_data populated), so this
-    exercises the real Numba branch in `movement()`, not a mock.
-    """
-    cfg = OsmoseConfigReader().read("data/eec_full/eec_all-parameters.csv")
-    cfg["simulation.time.nyear"] = "1"
-    cfg["simulation.rng.fixed"] = "true"
-    cfg["movement.randomseed.fixed"] = "true"
-    cfg["stochastic.mortality.randomseed.fixed"] = "true"
-    cfg["movement.salinity.gate.enabled"] = "true"
-    cfg["movement.salinity.field.constant"] = "8.0"
-    cfg["movement.salinity.gate.species.enabled.sp0"] = "true"
-    with pytest.warns(RuntimeWarning, match="Numba movement path"):
-        PythonEngine().run_in_memory(dict(cfg), seed=0).biomass()
-
-
 import sys  # noqa: E402
 from pathlib import Path  # noqa: E402
 
@@ -330,3 +310,14 @@ def test_numba_gated_local_stranding_stays_in_place():
     out_cx, out_cy, is_out = _batch_placement(sal_w, n=50, same_map=True, cx0=1, cy0=2, walk=1)
     assert not is_out.any()
     assert np.all(out_cx == 1) and np.all(out_cy == 2)  # stays in place
+
+
+def test_numba_python_agreement_statistical():
+    sal_w = _three_band_sal_w()
+    # Numba path: per-column occupancy fractions.
+    ncx, _, _ = _batch_placement(sal_w, n=4000, seed=0, same_map=False)
+    frac_numba = np.bincount(ncx, minlength=6) / 4000.0
+    # Python path: same fixture via the existing _draw_columns helper.
+    pcols = _draw_columns(sal_w, n=4000)  # from the Python-path tests in this file
+    frac_python = pcols / pcols.sum()
+    np.testing.assert_allclose(frac_numba, frac_python, atol=0.05)
