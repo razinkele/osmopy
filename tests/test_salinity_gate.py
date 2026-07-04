@@ -172,3 +172,58 @@ def test_random_walk_weighted(monkeypatch):
     mid = cols[2] + cols[3]
     assert cols[0] == 0 and cols[1] == 0
     assert high / mid == pytest.approx(2.0, rel=0.2)
+
+
+from types import SimpleNamespace  # noqa: E402
+
+from osmose.engine.physical_data import PhysicalData  # noqa: E402
+from osmose.engine.processes.movement import _movement_salinity_weight  # noqa: E402
+
+
+def _cfg_grid(enabled, field):
+    cfg = SimpleNamespace(
+        salinity_gate_enabled=enabled,
+        salinity_field=field,
+        salinity_gate_s_low=3.0,
+        salinity_gate_s_high=6.0,
+    )
+    grid = SimpleNamespace(ny=5, nx=6)
+    return cfg, grid
+
+
+def test_movement_weight_off_returns_none():
+    cfg, grid = _cfg_grid(False, None)
+    assert _movement_salinity_weight(cfg, grid, 0) is None
+
+
+def test_movement_weight_enabled_but_no_field_returns_none():
+    cfg, grid = _cfg_grid(True, None)
+    assert _movement_salinity_weight(cfg, grid, 0) is None
+
+
+def test_movement_weight_constant_high_all_ones():
+    cfg, grid = _cfg_grid(True, PhysicalData.from_constant(8.0))
+    w = _movement_salinity_weight(cfg, grid, 0)
+    assert w.shape == (5, 6)
+    np.testing.assert_array_equal(w, np.ones((5, 6)))
+
+
+def test_movement_weight_constant_low_all_zeros():
+    cfg, grid = _cfg_grid(True, PhysicalData.from_constant(2.0))
+    np.testing.assert_array_equal(_movement_salinity_weight(cfg, grid, 0), np.zeros((5, 6)))
+
+
+from osmose.config import OsmoseConfigReader  # noqa: E402
+from osmose.engine import PythonEngine  # noqa: E402
+
+
+def test_gate_off_is_bit_identical():
+    cfg = OsmoseConfigReader().read("data/eec_full/eec_all-parameters.csv")
+    cfg["simulation.time.nyear"] = "2"
+    cfg["simulation.rng.fixed"] = "true"
+    cfg["movement.randomseed.fixed"] = "true"
+    cfg["stochastic.mortality.randomseed.fixed"] = "true"
+    base = PythonEngine().run_in_memory(dict(cfg), seed=0).biomass()
+    cfg["movement.salinity.gate.enabled"] = "false"
+    off = PythonEngine().run_in_memory(dict(cfg), seed=0).biomass()
+    np.testing.assert_array_equal(base.to_numpy(), off.to_numpy())

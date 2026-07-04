@@ -31,6 +31,23 @@ if not _HAS_NUMBA:
     )
 
 
+def _movement_salinity_weight(config, grid, step):
+    """Per-step salinity occupancy-weight grid for the gate, or None when off.
+
+    Reads config.salinity_gate_enabled / .salinity_field / .salinity_gate_s_low /
+    .salinity_gate_s_high and grid.ny/nx. Constant fields broadcast to the grid.
+    """
+    if not (config.salinity_gate_enabled and config.salinity_field is not None):
+        return None
+    from osmose.engine.processes.salinity_gate import salinity_weight
+
+    if config.salinity_field.is_constant:
+        S = np.full((grid.ny, grid.nx), config.salinity_field.get_scalar())
+    else:
+        S = config.salinity_field.get_grid(step)
+    return salinity_weight(S, config.salinity_gate_s_low, config.salinity_gate_s_high)
+
+
 def _map_move_school(
     age_dt: int,
     cx: int,
@@ -346,6 +363,7 @@ def movement(
             new_cx = state.cell_x.copy()
             new_cy = state.cell_y.copy()
             new_out = state.is_out.copy()
+            sal_w = _movement_salinity_weight(config, grid, step)
             for i in np.where(uses_maps)[0]:
                 sp_id = int(sp[i])
                 if sp_id in map_sets:
@@ -360,6 +378,11 @@ def movement(
                         int(config.random_walk_range[sp_id]),
                         step,
                         _rng_for(sp_id),
+                        salinity_weight_grid=(
+                            sal_w
+                            if (sal_w is not None and config.salinity_gate_species[sp_id])
+                            else None
+                        ),
                     )
                     new_cx[i], new_cy[i], new_out[i] = x, y, out
             state = state.replace(cell_x=new_cx, cell_y=new_cy, is_out=new_out)
