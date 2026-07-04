@@ -31,7 +31,7 @@ if not _HAS_NUMBA:
     )
 
 
-def _movement_salinity_weight(config, grid, step):
+def _movement_salinity_weight(config, grid, step) -> NDArray[np.float64] | None:
     """Per-step salinity occupancy-weight grid for the gate, or None when off.
 
     Reads config.salinity_gate_enabled / .salinity_field / .salinity_gate_s_low /
@@ -301,6 +301,15 @@ def movement(
     # Map-based movement for "maps" species
     if uses_maps.any() and map_sets is not None:
         if _HAS_NUMBA and flat_map_data is not None:
+            if config.salinity_gate_enabled:
+                warnings.warn(
+                    "movement.salinity.gate is enabled but has NO effect on the Numba "
+                    "movement path (prototype: Python path only). Gate applies only when "
+                    "the Python fallback is used (flat_map_data=None). See "
+                    "docs/superpowers/specs/2026-07-04-salinity-gated-cod-occupancy-design.md.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
             flat_maps, flat_max_proba, flat_is_null, sp_offsets = flat_map_data
             map_school_indices = np.where(uses_maps)[0].astype(np.int32)
             current_idx, same_map_flags = _precompute_map_indices(

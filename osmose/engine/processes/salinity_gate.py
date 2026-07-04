@@ -11,7 +11,9 @@ import numpy as np
 from numpy.typing import NDArray
 
 
-def salinity_weight(salinity, s_low: float, s_high: float):
+def salinity_weight(
+    salinity: NDArray[np.float64] | float, s_low: float, s_high: float
+) -> NDArray[np.float64] | float:
     """Per-cell occupancy weight in [0,1]: clip((S - s_low)/(s_high - s_low), 0, 1).
 
     Weight 0 at/below s_low (predator excluded), 1 at/above s_high (full), linear

@@ -227,3 +227,23 @@ def test_gate_off_is_bit_identical():
     cfg["movement.salinity.gate.enabled"] = "false"
     off = PythonEngine().run_in_memory(dict(cfg), seed=0).biomass()
     np.testing.assert_array_equal(base.to_numpy(), off.to_numpy())
+
+
+def test_gate_enabled_warns_on_numba_path():
+    """Enabling the gate on a config that uses map-based (Numba) movement must
+    warn loudly that the gate has no effect there (prototype: Python path only).
+
+    eec_full's sp0 (lesserSpottedDogfish) uses movement.distribution.method=maps
+    and the engine runs with Numba available (flat_map_data populated), so this
+    exercises the real Numba branch in `movement()`, not a mock.
+    """
+    cfg = OsmoseConfigReader().read("data/eec_full/eec_all-parameters.csv")
+    cfg["simulation.time.nyear"] = "1"
+    cfg["simulation.rng.fixed"] = "true"
+    cfg["movement.randomseed.fixed"] = "true"
+    cfg["stochastic.mortality.randomseed.fixed"] = "true"
+    cfg["movement.salinity.gate.enabled"] = "true"
+    cfg["movement.salinity.field.constant"] = "8.0"
+    cfg["movement.salinity.gate.species.enabled.sp0"] = "true"
+    with pytest.warns(RuntimeWarning, match="Numba movement path"):
+        PythonEngine().run_in_memory(dict(cfg), seed=0).biomass()
