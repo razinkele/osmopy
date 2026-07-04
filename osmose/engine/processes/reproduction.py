@@ -164,6 +164,19 @@ def reproduction(
             if config.rv_gate_enabled[sp] and not seeded_this_step[sp]:
                 n_eggs[sp] *= gate[sp]
 
+    # Unfished-level recruitment ceiling (McGregor et al. 2019). Inert unless
+    # enabled; caps recruitment at its per-season unfished-equilibrium level.
+    # Skipped on seeded steps (bootstrap must not be clipped), like the RV gate.
+    if config.recruitment_ceiling_by_season is not None:
+        assert config.recruitment_ceiling_enabled is not None  # set together
+        n_cols_ceil = config.recruitment_ceiling_by_season.shape[0]
+        col = step % n_cols_ceil
+        for sp in range(n_sp):
+            if config.recruitment_ceiling_enabled[sp] and not seeded_this_step[sp]:
+                cap = config.recruitment_ceiling_by_season[col, sp]
+                if n_eggs[sp] > cap:
+                    n_eggs[sp] = cap
+
     # Create new schools from eggs
     new_schools_list = []
     for sp in range(n_sp):

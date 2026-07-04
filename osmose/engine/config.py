@@ -1141,6 +1141,73 @@ def _load_rv_gate(
     return factor.astype(np.float64), enabled, offset
 
 
+def _load_recruitment_ceiling(
+    cfg: dict[str, str],
+    n_species: int,
+    n_dt: int,
+    spawning_season: NDArray[np.float64] | None,
+) -> tuple[NDArray[np.float64] | None, NDArray[np.bool_] | None]:
+    """Load the unfished-level recruitment ceiling (spec 2026-07-03).
+
+    Returns (ceiling_by_season, enabled_mask). ceiling_by_season has shape
+    (n_cols, n_species) where n_cols is the model's within-year season count;
+    enabled_mask has shape (n_species,). Both are None when the master switch is
+    off. Fail-fast (ValueError / FileNotFoundError) on invalid configuration.
+    """
+    if cfg.get("reproduction.recruitment.ceiling.enabled", "false").lower() != "true":
+        return None, None
+
+    n_cols = spawning_season.shape[1] if spawning_season is not None else n_dt
+
+    file_key = cfg.get("reproduction.recruitment.ceiling.series.file", "")
+    if not file_key:
+        raise ValueError(
+            "Recruitment ceiling enabled but reproduction.recruitment.ceiling.series.file is empty."
+        )
+    path = _require_file(file_key, _cfg_dir(cfg), "reproduction.recruitment.ceiling.series.file")
+    df = pd.read_csv(path)
+    if "season_idx" not in df.columns:
+        raise ValueError(f"Recruitment ceiling {path} missing 'season_idx' column.")
+    seasons = df["season_idx"].to_numpy()
+    if not np.array_equal(seasons, np.arange(n_cols)):
+        raise ValueError(
+            f"Recruitment ceiling {path} season_idx must be 0..{n_cols - 1} "
+            f"contiguous (model has {n_cols} season columns), got {seasons.tolist()}."
+        )
+
+    ceiling = np.full((n_cols, n_species), np.inf, dtype=np.float64)
+    for sp in range(n_species):
+        col = f"ceiling_sp{sp}"
+        if col in df.columns:
+            ceiling[:, sp] = df[col].to_numpy(dtype=np.float64)
+    # Disabled species keep the inf sentinel (harmless); only real values are
+    # checked. NaN is caught here; the finite-column check for ENABLED species
+    # is the last loop below.
+    finite = np.isfinite(ceiling)
+    if np.any(ceiling[finite] < 0):
+        raise ValueError(f"Recruitment ceiling {path} has negative values.")
+    if np.any(np.isnan(ceiling)):
+        raise ValueError(f"Recruitment ceiling {path} has NaN values.")
+
+    enabled = np.zeros(n_species, dtype=np.bool_)
+    for sp in range(n_species):
+        key = f"reproduction.recruitment.ceiling.species.enabled.sp{sp}"
+        if cfg.get(key, "false").lower() == "true":
+            enabled[sp] = True
+    if not enabled.any():
+        raise ValueError(
+            "Recruitment ceiling enabled but no species enabled "
+            "(reproduction.recruitment.ceiling.species.enabled.sp{idx})."
+        )
+    # An enabled species must have a finite ceiling column.
+    for sp in np.where(enabled)[0]:
+        if not np.all(np.isfinite(ceiling[:, sp])):
+            raise ValueError(
+                f"Recruitment ceiling enabled for sp{sp} but no ceiling_sp{sp} column in {path}."
+            )
+    return ceiling, enabled
+
+
 def _load_additional_mortality_by_dt(
     cfg: dict[str, str], n_species: int
 ) -> list[NDArray[np.float64] | None] | None:
@@ -1399,6 +1466,10 @@ class EngineConfig:
     rv_gate_factor_by_index: NDArray[np.float64] | None  # (n_years,), mode already applied
     rv_gate_enabled: NDArray[np.bool_] | None  # (n_species,) per-species enable mask
     rv_gate_offset: int  # start_year - first_year (see _load_rv_gate)
+
+    # Unfished-level recruitment ceiling (both None when disabled)
+    recruitment_ceiling_by_season: NDArray[np.float64] | None  # (n_cols, n_species)
+    recruitment_ceiling_enabled: NDArray[np.bool_] | None  # (n_species,) enable mask
 
     # Movement
     movement_method: list[str]
@@ -2124,6 +2195,10 @@ class EngineConfig:
         rv_gate_factor_by_index, rv_gate_enabled, rv_gate_offset = _load_rv_gate(
             cfg, n_sp, n_dt, n_yr
         )
+        _spawning_season = _load_spawning_seasons(cfg, n_sp, n_dt)
+        recruitment_ceiling_by_season, recruitment_ceiling_enabled = _load_recruitment_ceiling(
+            cfg, n_sp, n_dt, _spawning_season
+        )
 
         return cls(
             n_species=n_sp,
@@ -2185,10 +2260,12 @@ class EngineConfig:
             dynamic_accessibility_floor=float(
                 cfg.get("predation.accessibility.dynamic.floor", "0.05")
             ),
-            spawning_season=_load_spawning_seasons(cfg, n_sp, n_dt),
+            spawning_season=_spawning_season,
             rv_gate_factor_by_index=rv_gate_factor_by_index,
             rv_gate_enabled=rv_gate_enabled,
             rv_gate_offset=rv_gate_offset,
+            recruitment_ceiling_by_season=recruitment_ceiling_by_season,
+            recruitment_ceiling_enabled=recruitment_ceiling_enabled,
             fishing_enabled=(
                 cfg.get("simulation.fishing.mortality.enabled", "true").lower() == "true"
                 or fisheries_enabled
