@@ -1,6 +1,9 @@
+import numpy as np
 import pytest
 
-from osmose.engine.config import _load_recruitment_ceiling
+from osmose.engine.config import EngineConfig, _load_recruitment_ceiling
+from osmose.engine.processes.reproduction import reproduction
+from osmose.engine.state import SchoolState
 from osmose.schema import build_registry
 
 
@@ -109,3 +112,111 @@ def test_ceiling_missing_season_idx_column(tmp_path):
     cfg = _cfg(tmp_path, csv_path)
     with pytest.raises(ValueError, match="season_idx"):
         _load_recruitment_ceiling(cfg, 1, 12, None)
+
+
+def _repro_cfg_dict():
+    # Single-species config that produces a large per-step n_eggs at step 0.
+    return {
+        "simulation.time.ndtperyear": "12",
+        "simulation.time.nyear": "10",
+        "simulation.nspecies": "1",
+        "simulation.nschool.sp0": "5",
+        "species.name.sp0": "TestFish",
+        "species.linf.sp0": "30.0",
+        "species.k.sp0": "0.3",
+        "species.t0.sp0": "-0.1",
+        "species.egg.size.sp0": "0.1",
+        "species.length2weight.condition.factor.sp0": "0.006",
+        "species.length2weight.allometric.power.sp0": "3.0",
+        "species.lifespan.sp0": "5",
+        "species.vonbertalanffy.threshold.age.sp0": "1.0",
+        "mortality.subdt": "10",
+        "predation.ingestion.rate.max.sp0": "3.5",
+        "predation.efficiency.critical.sp0": "0.57",
+        "species.sexratio.sp0": "0.5",
+        "species.relativefecundity.sp0": "800",
+        "species.maturity.size.sp0": "12.0",
+        "population.seeding.biomass.sp0": "50000",
+    }
+
+
+def _mature_state():
+    s = SchoolState.create(n_schools=1, species_id=np.array([0], dtype=np.int32))
+    return s.replace(
+        abundance=np.array([1000.0]),
+        length=np.array([15.0]),  # > maturity_size 12
+        weight=np.array([20.25]),
+        biomass=np.array([20250.0]),
+        age_dt=np.array([24], dtype=np.int32),
+    )
+
+
+def _eggs_produced(new_state, sp=0):
+    fresh = (new_state.age_dt == 0) & new_state.is_egg & (new_state.species_id == sp)
+    return float(new_state.abundance[fresh].sum())
+
+
+def _enable_ceiling(cfg, tmp_path, n_cols, sp0_ceiling):
+    csv = _write_ceiling_csv(tmp_path / "c.csv", n_cols, {0: [sp0_ceiling] * n_cols})
+    cfg = dict(cfg)
+    cfg["_osmose.config.dir"] = str(tmp_path)
+    cfg["reproduction.recruitment.ceiling.enabled"] = "true"
+    cfg["reproduction.recruitment.ceiling.series.file"] = csv.name
+    cfg["reproduction.recruitment.ceiling.species.enabled.sp0"] = "true"
+    return cfg
+
+
+def test_reproduction_uncapped_baseline(tmp_path):
+    cfg = EngineConfig.from_dict(_repro_cfg_dict())
+    eggs = _eggs_produced(reproduction(_mature_state(), cfg, step=0, rng=np.random.default_rng(0)))
+    assert eggs > 0  # sanity: this state produces eggs
+
+
+def test_reproduction_clamps_when_above_ceiling(tmp_path):
+    base = EngineConfig.from_dict(_repro_cfg_dict())
+    uncapped = _eggs_produced(
+        reproduction(_mature_state(), base, step=0, rng=np.random.default_rng(0))
+    )
+    cap = uncapped / 2.0
+    cfg = EngineConfig.from_dict(_enable_ceiling(_repro_cfg_dict(), tmp_path, 12, cap))
+    capped = _eggs_produced(
+        reproduction(_mature_state(), cfg, step=0, rng=np.random.default_rng(0))
+    )
+    assert abs(capped - cap) < 1e-3  # clamped to the ceiling
+
+
+def test_reproduction_unchanged_when_below_ceiling(tmp_path):
+    base = EngineConfig.from_dict(_repro_cfg_dict())
+    uncapped = _eggs_produced(
+        reproduction(_mature_state(), base, step=0, rng=np.random.default_rng(0))
+    )
+    cfg = EngineConfig.from_dict(_enable_ceiling(_repro_cfg_dict(), tmp_path, 12, uncapped * 2.0))
+    result = _eggs_produced(
+        reproduction(_mature_state(), cfg, step=0, rng=np.random.default_rng(0))
+    )
+    assert abs(result - uncapped) < 1e-3  # ceiling above production: identical
+
+
+def test_reproduction_ceiling_skips_seeded_step(tmp_path):
+    # Empty state -> SSB is seeded from population.seeding.biomass; seeded eggs
+    # must NOT be clipped even with a tiny ceiling.
+    cfg = EngineConfig.from_dict(_enable_ceiling(_repro_cfg_dict(), tmp_path, 12, 1.0))
+    empty = SchoolState.create(n_schools=0, species_id=np.array([], dtype=np.int32))
+    eggs = _eggs_produced(reproduction(empty, cfg, step=0, rng=np.random.default_rng(0)))
+    assert eggs > 1.0  # seeded bootstrap exceeds the ceiling, proving it was skipped
+
+
+def test_ceiling_off_is_bit_identical():
+    from osmose.config import OsmoseConfigReader
+    from osmose.engine import PythonEngine
+
+    cfg = OsmoseConfigReader().read("data/eec_full/eec_all-parameters.csv")
+    cfg["simulation.time.nyear"] = "2"
+    cfg["simulation.rng.fixed"] = "true"
+    cfg["movement.randomseed.fixed"] = "true"
+    cfg["stochastic.mortality.randomseed.fixed"] = "true"
+
+    base = PythonEngine().run_in_memory(dict(cfg), seed=0).biomass()
+    cfg["reproduction.recruitment.ceiling.enabled"] = "false"
+    off = PythonEngine().run_in_memory(dict(cfg), seed=0).biomass()
+    np.testing.assert_array_equal(base.to_numpy(), off.to_numpy())
