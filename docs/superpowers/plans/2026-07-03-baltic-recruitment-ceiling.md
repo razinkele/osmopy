@@ -345,56 +345,100 @@ git commit -m "feat: _load_recruitment_ceiling loader + EngineConfig wiring"
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `tests/test_recruitment_ceiling.py`. These drive one full Baltic-shaped step through `reproduction`; use the existing engine test scaffolding pattern from `tests/test_engine_reproduction.py` (import its config/state builders). Minimal direct test of the clamp math via a small helper config:
+Append to `tests/test_recruitment_ceiling.py`. Test the clamp **through the real `reproduction()`** (not by re-implementing the clamp expression), using the same scaffolding as `tests/test_engine_reproduction.py`: build a config dict, `EngineConfig.from_dict`, create a mature `SchoolState`, call `reproduction()`, and sum the abundance of the new egg schools (`is_egg`, `age_dt == 0`) for the target species — that sum is the (possibly clamped) recruitment.
 
 ```python
+from osmose.engine.config import EngineConfig
 from osmose.engine.processes.reproduction import reproduction
 from osmose.engine.state import SchoolState
 
 
-def _run_repro_once(monkeypatch_eggs, ceiling, enabled, n_cols=2, step=0):
-    """Run reproduction with apply_stock_recruitment stubbed to a fixed n_eggs,
-    returning the per-species egg counts actually used to build schools."""
-    import osmose.engine.processes.reproduction as repro_mod
-
-    captured = {}
-    real_create = SchoolState.create
-
-    # Stub apply_stock_recruitment to return a known linear n_eggs vector.
-    def fake_sr(linear_eggs, ssb, ssb_half, rtype, beta=None):
-        return monkeypatch_eggs.copy()
-
-    return fake_sr, captured  # see Step 3 for the concrete integration test
-```
-
-Because `reproduction()` is tightly coupled to `SchoolState`, write the clamp test as a **focused unit test on the clamp expression** plus an **integration parity test**. Focused unit test:
-
-```python
-def test_clamp_expression_caps_above_and_leaves_below():
-    ceiling = np.array([[100.0, 50.0], [100.0, 50.0]])  # (n_cols=2, n_sp=2)
-    enabled = np.array([True, False])
-    n_eggs = np.array([250.0, 250.0])
-    seeded = np.array([False, False])
-    step = 0
-    n_cols = ceiling.shape[0]
-    col = step % n_cols
-    for sp in range(2):
-        if enabled[sp] and not seeded[sp]:
-            if n_eggs[sp] > ceiling[col, sp]:
-                n_eggs[sp] = ceiling[col, sp]
-    assert n_eggs[0] == 100.0  # capped
-    assert n_eggs[1] == 250.0  # disabled species untouched
+def _repro_cfg_dict():
+    # Single-species config that produces a large per-step n_eggs at step 0.
+    return {
+        "simulation.time.ndtperyear": "12",
+        "simulation.time.nyear": "10",
+        "simulation.nspecies": "1",
+        "simulation.nschool.sp0": "5",
+        "species.name.sp0": "TestFish",
+        "species.linf.sp0": "30.0",
+        "species.k.sp0": "0.3",
+        "species.t0.sp0": "-0.1",
+        "species.egg.size.sp0": "0.1",
+        "species.length2weight.condition.factor.sp0": "0.006",
+        "species.length2weight.allometric.power.sp0": "3.0",
+        "species.lifespan.sp0": "5",
+        "species.vonbertalanffy.threshold.age.sp0": "1.0",
+        "mortality.subdt": "10",
+        "predation.ingestion.rate.max.sp0": "3.5",
+        "predation.efficiency.critical.sp0": "0.57",
+        "species.sexratio.sp0": "0.5",
+        "species.relativefecundity.sp0": "800",
+        "species.maturity.size.sp0": "12.0",
+        "population.seeding.biomass.sp0": "50000",
+    }
 
 
-def test_clamp_skips_seeded_step():
-    ceiling = np.array([[100.0], [100.0]])
-    enabled = np.array([True])
-    n_eggs = np.array([250.0])
-    seeded = np.array([True])
-    col = 0
-    if enabled[0] and not seeded[0]:
-        n_eggs[0] = min(n_eggs[0], ceiling[col, 0])
-    assert n_eggs[0] == 250.0  # not clipped because seeded
+def _mature_state():
+    s = SchoolState.create(n_schools=1, species_id=np.array([0], dtype=np.int32))
+    return s.replace(
+        abundance=np.array([1000.0]),
+        length=np.array([15.0]),  # > maturity_size 12
+        weight=np.array([20.25]),
+        biomass=np.array([20250.0]),
+        age_dt=np.array([24], dtype=np.int32),
+    )
+
+
+def _eggs_produced(new_state, sp=0):
+    fresh = (new_state.age_dt == 0) & new_state.is_egg & (new_state.species_id == sp)
+    return float(new_state.abundance[fresh].sum())
+
+
+def _enable_ceiling(cfg, tmp_path, n_cols, sp0_ceiling):
+    csv = _write_ceiling_csv(tmp_path / "c.csv", n_cols, {0: [sp0_ceiling] * n_cols})
+    cfg = dict(cfg)
+    cfg["_osmose.config.dir"] = str(tmp_path)
+    cfg["reproduction.recruitment.ceiling.enabled"] = "true"
+    cfg["reproduction.recruitment.ceiling.series.file"] = csv.name
+    cfg["reproduction.recruitment.ceiling.species.enabled.sp0"] = "true"
+    return cfg
+
+
+def test_reproduction_uncapped_baseline(tmp_path):
+    cfg = EngineConfig.from_dict(_repro_cfg_dict())
+    eggs = _eggs_produced(reproduction(_mature_state(), cfg, step=0, rng=np.random.default_rng(0)))
+    assert eggs > 0  # sanity: this state produces eggs
+
+
+def test_reproduction_clamps_when_above_ceiling(tmp_path):
+    base = EngineConfig.from_dict(_repro_cfg_dict())
+    uncapped = _eggs_produced(
+        reproduction(_mature_state(), base, step=0, rng=np.random.default_rng(0))
+    )
+    cap = uncapped / 2.0
+    cfg = EngineConfig.from_dict(_enable_ceiling(_repro_cfg_dict(), tmp_path, 12, cap))
+    capped = _eggs_produced(reproduction(_mature_state(), cfg, step=0, rng=np.random.default_rng(0)))
+    assert abs(capped - cap) < 1e-3  # clamped to the ceiling
+
+
+def test_reproduction_unchanged_when_below_ceiling(tmp_path):
+    base = EngineConfig.from_dict(_repro_cfg_dict())
+    uncapped = _eggs_produced(
+        reproduction(_mature_state(), base, step=0, rng=np.random.default_rng(0))
+    )
+    cfg = EngineConfig.from_dict(_enable_ceiling(_repro_cfg_dict(), tmp_path, 12, uncapped * 2.0))
+    result = _eggs_produced(reproduction(_mature_state(), cfg, step=0, rng=np.random.default_rng(0)))
+    assert abs(result - uncapped) < 1e-3  # ceiling above production: identical
+
+
+def test_reproduction_ceiling_skips_seeded_step(tmp_path):
+    # Empty state -> SSB is seeded from population.seeding.biomass; seeded eggs
+    # must NOT be clipped even with a tiny ceiling.
+    cfg = EngineConfig.from_dict(_enable_ceiling(_repro_cfg_dict(), tmp_path, 12, 1.0))
+    empty = SchoolState.create(n_schools=0, species_id=np.array([], dtype=np.int32))
+    eggs = _eggs_produced(reproduction(empty, cfg, step=0, rng=np.random.default_rng(0)))
+    assert eggs > 1.0  # seeded bootstrap exceeds the ceiling, proving it was skipped
 ```
 
 Integration parity test (bit-identical when off) — run the EEC engine with the master switch absent vs explicitly false and compare the full biomass frame. `run_in_memory(cfg, seed=0)` returns an `OsmoseResults`; `.biomass()` is a wide DataFrame (a Time column + one column per species name):
@@ -419,8 +463,8 @@ def test_ceiling_off_is_bit_identical():
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `.venv/bin/python -m pytest tests/test_recruitment_ceiling.py -k "clamp or bit_identical" -v`
-Expected: the two clamp-expression tests PASS immediately (they inline the logic — they are guard tests documenting intended behavior); the `bit_identical` test FAILS only if the engine can't load the config yet. If `bit_identical` errors because `recruitment_ceiling_by_season` isn't a recognized kwarg, that means Task 2 wiring is incomplete — fix Task 2 first.
+Run: `.venv/bin/python -m pytest tests/test_recruitment_ceiling.py -k "reproduction or bit_identical" -v`
+Expected: `test_reproduction_uncapped_baseline` PASSES (no clamp involved); `test_reproduction_clamps_when_above_ceiling` and `test_reproduction_ceiling_skips_seeded_step` FAIL — the clamp block does not exist yet, so `reproduction()` returns the uncapped eggs (the "clamps" test sees `uncapped`, not `cap`). `test_ceiling_off_is_bit_identical` should PASS once Task 2 wiring is in place. If any test errors on an unknown `recruitment_ceiling_*` attribute, Task 2 wiring is incomplete — fix Task 2 first.
 
 - [ ] **Step 3: Add the clamp block**
 
