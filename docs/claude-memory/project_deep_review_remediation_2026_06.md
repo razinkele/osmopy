@@ -10,7 +10,7 @@ metadata:
 Multi-agent deep review of the whole OSMOSE codebase, 2026-06-20 (7 subsystems, every finding adversarially verified refute-by-default; two complementary workflow runs — server-side rate-limiting thrashed which verifier batch failed each run, so coverage came from the union). **No confirmed CRITICAL active bug** — engine sound on all bundled-config/exercised paths (parity holds). Remediation plan: `docs/superpowers/plans/2026-06-20-deep-review-remediation.md` (branch `docs/deep-review-remediation`).
 
 ## ▶▶ OWED: rotate leaked credentials (USER action, provider login)
-`.env` held `Razinka@2026` (CMEMS + ICES), world-readable AND in git history (`git log -S 'Razinka@2026'`, 3 commits). `tests/test_mcp_config_hygiene.py` already treats it as burned but it was still the LIVE value. **Done:** `chmod 600 .env` (2026-06-20). **Still owed:** rotate both passwords at Copernicus Marine + ICES; move secrets to a 0600 systemd EnvironmentFile (not a repo-root file).
+`.env` held the burned CMEMS + ICES password (literal redacted — see `tests/test_mcp_config_hygiene.py` for the burned string it scans for), world-readable AND in git history (find via `git log -S` on that burned literal, 3 commits). `tests/test_mcp_config_hygiene.py` already treats it as burned but it was still the LIVE value. **Done:** `chmod 600 .env` (2026-06-20). **Still owed:** rotate both passwords at Copernicus Marine + ICES; move secrets to a 0600 systemd EnvironmentFile (not a repo-root file).
 
 ## ▶▶ DEEP-REVIEW V2 (2026-06-20, post-features): all actionable PRs SHIPPED #90–#93
 Second adversarial whole-codebase workflow (retry-resilient verify, 0 unverified) after Map Builder + Scenario Wizard + the 5 v1 remediation PRs. Found real defects in THIS session's merges:
