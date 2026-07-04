@@ -247,3 +247,86 @@ def test_gate_enabled_warns_on_numba_path():
     cfg["movement.salinity.gate.species.enabled.sp0"] = "true"
     with pytest.warns(RuntimeWarning, match="Numba movement path"):
         PythonEngine().run_in_memory(dict(cfg), seed=0).biomass()
+
+
+import sys  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from test_movement_numba import _call_numba  # noqa: E402
+
+
+def _three_band_sal_w(ny=5, nx=6):
+    # cols 0-1 = 0.0 (weight 0), cols 2-3 = 0.5, cols 4-5 = 1.0
+    w = np.zeros((ny, nx), dtype=np.float64)
+    w[:, 2:4] = 0.5
+    w[:, 4:6] = 1.0
+    return w
+
+
+def _batch_placement(sal_w, n=4000, seed=0, same_map=False, cx0=-1, cy0=-1, walk=9):
+    ny, nx = sal_w.shape
+    all_maps = np.ones((1, ny, nx), dtype=np.float64)  # presence map (max_proba 0.0)
+    out_cx, out_cy, is_out = _call_numba(
+        seed,
+        np.arange(n, dtype=np.int32),  # school_indices
+        np.zeros(n, dtype=np.int32),  # map_idx -> map 0
+        np.full(n, same_map, dtype=np.bool_),  # same_map
+        np.full(n, cx0, dtype=np.int32),  # cx
+        np.full(n, cy0, dtype=np.int32),  # cy
+        np.zeros(n, dtype=np.int32),  # sp_ids -> species 0
+        all_maps,
+        np.array([0.0]),  # all_max_proba (presence)
+        np.array([False]),  # all_is_null
+        np.array([0], dtype=np.int32),  # sp_offsets
+        np.ones((ny, nx), dtype=np.bool_),  # ocean_mask
+        np.array([walk], dtype=np.int32),  # walk_range
+        ny,
+        nx,
+        sal_w=sal_w,
+        gate_active=True,
+        gate_species=np.array([True]),
+    )
+    return out_cx, out_cy, is_out
+
+
+def test_numba_gated_placement_graded():
+    out_cx, _, is_out = _batch_placement(_three_band_sal_w(), same_map=False)
+    assert not is_out.any()
+    cols = np.bincount(out_cx, minlength=6)
+    assert cols[0] == 0 and cols[1] == 0
+    high = cols[4] + cols[5]
+    mid = cols[2] + cols[3]
+    assert mid > 0 and high > 0
+    assert high / mid == pytest.approx(2.0, rel=0.15)
+
+
+def test_numba_gated_random_walk_graded():
+    # Located schools on the same map, started at col 3 (mid band), walk spans cols 2-5.
+    out_cx, _, is_out = _batch_placement(_three_band_sal_w(), same_map=True, cx0=3, cy0=2, walk=3)
+    assert not is_out.any()
+    cols = np.bincount(out_cx, minlength=6)
+    assert cols[0] == 0 and cols[1] == 0
+    high = cols[4] + cols[5]
+    mid = cols[2] + cols[3]
+    assert mid > 0 and high > 0
+    assert high / mid == pytest.approx(2.0, rel=0.2)
+
+
+def test_numba_gated_all_zero_guard_places_not_annihilated():
+    # sal_w all zero over the whole map -> wmax<=0 -> fall back to ungated placement.
+    ny, nx = 5, 6
+    sal_w = np.zeros((ny, nx), dtype=np.float64)
+    out_cx, out_cy, is_out = _batch_placement(sal_w, n=200, same_map=False)
+    assert not is_out.any()  # cod is placed, never annihilated
+
+
+def test_numba_gated_local_stranding_stays_in_place():
+    # Gated located school whose walk window is all-zero-weight but map has weight elsewhere.
+    ny, nx = 5, 8
+    sal_w = np.zeros((ny, nx), dtype=np.float64)
+    sal_w[:, 6:8] = 1.0  # weight only far from the school
+    # school located at (cx=1, cy=2), walk_range=1 -> window cols 0-2 all weight 0
+    out_cx, out_cy, is_out = _batch_placement(sal_w, n=50, same_map=True, cx0=1, cy0=2, walk=1)
+    assert not is_out.any()
+    assert np.all(out_cx == 1) and np.all(out_cy == 2)  # stays in place
