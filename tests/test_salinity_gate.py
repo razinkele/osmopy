@@ -2,6 +2,8 @@ import numpy as np
 import pytest
 
 from osmose.engine.config import _load_salinity_gate
+from osmose.engine.movement_maps import MovementMapSet
+from osmose.engine.processes.movement import _map_move_school
 from osmose.engine.processes.salinity_gate import salinity_weight, salinity_weighted_map
 from osmose.schema import build_registry
 
@@ -100,3 +102,73 @@ def test_salinity_gate_no_field_raises():
     }
     with pytest.raises(ValueError, match="salinity field|field"):
         _load_salinity_gate(cfg, 3)
+
+
+def _uniform_map_set(ny, nx):
+    """A MovementMapSet whose single presence map is 1.0 over all cells."""
+    ms = MovementMapSet.__new__(MovementMapSet)
+    ms.maps = [np.ones((ny, nx), dtype=np.float64)]
+    # shape (lifespan_dt, n_total_steps); index 0 for ALL age/step so get_map is
+    # valid for age_dt 0 AND 1 (the random-walk test uses age_dt=1, step=1).
+    ms.index_maps = np.zeros((10, 1000), dtype=np.int32)
+    ms.max_proba = np.array([0.0])  # presence/absence -> uniform accept
+    ms.n_maps = 1
+    return ms
+
+
+def _draw_columns(gate_grid, n=4000):
+    ny, nx = 5, 6
+    ms = _uniform_map_set(ny, nx)
+    ocean = np.ones((ny, nx), dtype=np.bool_)
+    rng = np.random.default_rng(0)
+    cols = np.zeros(nx, dtype=np.int64)
+    for _ in range(n):
+        x, y, out = _map_move_school(
+            0, -1, -1, ny, nx, ocean, ms, 1, 0, rng, salinity_weight_grid=gate_grid
+        )
+        assert not out
+        cols[x] += 1
+    return cols
+
+
+def test_placement_excludes_low_and_grades_mid_vs_high():
+    ny, nx = 5, 6
+    # three salinity bands by column: cols 0-1 = 2 psu, 2-3 = 4.5 psu, 4-5 = 8 psu
+    S = np.zeros((ny, nx))
+    S[:, 0:2] = 2.0
+    S[:, 2:4] = 4.5
+    S[:, 4:6] = 8.0
+    w = salinity_weight(S, 3.0, 6.0)  # weights 0 / 0.5 / 1.0
+    cols = _draw_columns(w)
+    assert cols[0] == 0 and cols[1] == 0  # excluded (weight 0)
+    high = cols[4] + cols[5]
+    mid = cols[2] + cols[3]
+    assert mid > 0 and high > 0
+    assert high / mid == pytest.approx(2.0, rel=0.15)  # graded ~2x (Step 3a path)
+
+
+def test_placement_ungated_is_uniform():
+    cols = _draw_columns(None)
+    # No gate: all 6 columns populated roughly equally
+    assert (cols > 0).all()
+
+
+def test_random_walk_weighted(monkeypatch):
+    # Force Step 3b (same-map, located school): weighted selection ~2x high vs mid.
+    ny, nx = 5, 6
+    ms = _uniform_map_set(ny, nx)
+    ocean = np.ones((ny, nx), dtype=np.bool_)
+    S = np.zeros((ny, nx))
+    S[:, 2:4] = 4.5
+    S[:, 4:6] = 8.0
+    w = salinity_weight(S, 3.0, 6.0)
+    rng = np.random.default_rng(1)
+    cols = np.zeros(nx, dtype=np.int64)
+    # start located at (cx=3, cy=2), walk_range large enough to reach cols 2-5
+    for _ in range(4000):
+        x, y, out = _map_move_school(1, 3, 2, ny, nx, ocean, ms, 5, 1, rng, salinity_weight_grid=w)
+        cols[x] += 1
+    high = cols[4] + cols[5]
+    mid = cols[2] + cols[3]
+    assert cols[0] == 0 and cols[1] == 0
+    assert high / mid == pytest.approx(2.0, rel=0.2)

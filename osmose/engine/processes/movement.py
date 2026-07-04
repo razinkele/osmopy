@@ -11,6 +11,7 @@ from numpy.typing import NDArray
 from osmose.engine.config import EngineConfig
 from osmose.engine.grid import Grid
 from osmose.engine.movement_maps import MovementMapSet
+from osmose.engine.processes.salinity_gate import salinity_weighted_map
 from osmose.engine.state import SchoolState
 from osmose.logging import setup_logging
 
@@ -41,6 +42,7 @@ def _map_move_school(
     walk_range: int,
     step: int,
     rng: np.random.Generator,
+    salinity_weight_grid: NDArray[np.float64] | None = None,
 ) -> tuple[int, int, bool]:
     """Move a single school using map-based distribution.
 
@@ -64,11 +66,24 @@ def _map_move_school(
         Global simulation step.
     rng : np.random.Generator
         Random number generator.
+    salinity_weight_grid : NDArray[np.float64] | None
+        Optional per-cell salinity occupancy weight (Task 1's
+        ``salinity_weight``). When set, occupancy is proportional to
+        ``current_map * salinity_weight_grid`` in both placement and
+        random-walk. ``None`` reproduces the ungated behavior bit-identically.
     """
     # Step 1 — Out-of-domain check
     current_map = map_set.get_map(age_dt, step)
     if current_map is None:
         return -1, -1, True
+
+    # Salinity-gated occupancy (inert when salinity_weight_grid is None).
+    if salinity_weight_grid is not None:
+        wmap = salinity_weighted_map(current_map, salinity_weight_grid)
+        gated = wmap is not current_map  # guard returns the original object on all-zero
+    else:
+        wmap = current_map
+        gated = False
 
     # Step 2 — Same-map detection
     index_map = map_set.get_index(age_dt, step)
@@ -80,12 +95,12 @@ def _map_move_school(
     # Step 3a — New placement (rejection sampling)
     if not same_map or cx < 0:
         n_cells = grid_nx * grid_ny
-        max_p = map_set.max_proba[index_map]
+        max_p = float(np.nanmax(wmap)) if gated else map_set.max_proba[index_map]
         for _ in range(10_000):
             flat_idx = rng.integers(0, n_cells)
             j = int(flat_idx // grid_nx)
             i = int(flat_idx % grid_nx)
-            proba = current_map[j, i]
+            proba = wmap[j, i]
             if proba > 0 and not np.isnan(proba):
                 if max_p == 0.0 or proba >= rng.random() * max_p:
                     return i, j, False
@@ -93,13 +108,20 @@ def _map_move_school(
 
     # Step 3b — Random walk (same map, school is located)
     accessible: list[tuple[int, int]] = []
+    weights: list[float] = []
     for yi in range(max(0, cy - walk_range), min(grid_ny, cy + walk_range + 1)):
         for xi in range(max(0, cx - walk_range), min(grid_nx, cx + walk_range + 1)):
-            if ocean_mask[yi, xi] and current_map[yi, xi] > 0 and not np.isnan(current_map[yi, xi]):
+            v = wmap[yi, xi]
+            if ocean_mask[yi, xi] and v > 0 and not np.isnan(v):
                 accessible.append((xi, yi))
+                weights.append(float(v))
     if len(accessible) == 0:
         return cx, cy, False  # stranded — stay in place
-    idx = rng.integers(0, len(accessible))
+    if gated:
+        w = np.asarray(weights, dtype=np.float64)
+        idx = int(rng.choice(len(accessible), p=w / w.sum()))
+    else:
+        idx = rng.integers(0, len(accessible))
     return accessible[idx][0], accessible[idx][1], False
 
 
