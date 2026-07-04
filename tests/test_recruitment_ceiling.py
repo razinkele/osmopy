@@ -72,3 +72,40 @@ def test_ceiling_missing_file_raises(tmp_path):
     cfg = _cfg(tmp_path, tmp_path / "does_not_exist.csv")
     with pytest.raises(FileNotFoundError):
         _load_recruitment_ceiling(cfg, 1, 12, None)
+
+
+def test_ceiling_enabled_species_missing_column(tmp_path):
+    # Test 1: Enabled species (sp1) but CSV only has ceiling_sp0 column
+    _write_ceiling_csv(tmp_path / "c.csv", 12, {0: [10.0] * 12})
+    cfg = {
+        "_osmose.config.dir": str(tmp_path),
+        "reproduction.recruitment.ceiling.enabled": "true",
+        "reproduction.recruitment.ceiling.series.file": "c.csv",
+        "reproduction.recruitment.ceiling.species.enabled.sp1": "true",
+    }
+    with pytest.raises(ValueError, match="no ceiling_sp1 column"):
+        _load_recruitment_ceiling(cfg, 2, 12, None)
+
+
+def test_ceiling_empty_file_key(tmp_path):
+    # Test 2: Empty series.file with master switch on
+    cfg = {
+        "_osmose.config.dir": str(tmp_path),
+        "reproduction.recruitment.ceiling.enabled": "true",
+        "reproduction.recruitment.ceiling.series.file": "",
+        "reproduction.recruitment.ceiling.species.enabled.sp0": "true",
+    }
+    with pytest.raises(ValueError, match="empty"):
+        _load_recruitment_ceiling(cfg, 1, 12, None)
+
+
+def test_ceiling_missing_season_idx_column(tmp_path):
+    # Test 3: CSV missing season_idx column
+    csv_path = tmp_path / "c.csv"
+    # Write CSV without season_idx column, only ceiling_sp0
+    csv_path.write_text(
+        "ceiling_sp0\n10.0\n10.0\n10.0\n10.0\n10.0\n10.0\n10.0\n10.0\n10.0\n10.0\n10.0\n10.0\n"
+    )
+    cfg = _cfg(tmp_path, csv_path)
+    with pytest.raises(ValueError, match="season_idx"):
+        _load_recruitment_ceiling(cfg, 1, 12, None)
