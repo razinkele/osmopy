@@ -297,3 +297,12 @@ def test_seeding_overlap_warns_when_late_window_inside_seeding_window():
 def test_seeding_overlap_no_warning_when_clear():
     smax = np.array([50, 100])  # both well before step 240
     assert derive.seeding_overlap_warnings(smax, 360, 24, 1.0 / 3.0) == []
+
+
+import baltic_recruitment_ceiling_diagnostic as abdiag  # noqa: E402
+
+
+def test_overshoot_ratio_basic():
+    series = np.array([100.0, 300.0, 200.0, 150.0, 150.0, 150.0])
+    # max=300, late-mean over last 3 = 150 -> ratio 2.0
+    assert abs(abdiag.overshoot_ratio(series, late_frac=0.5) - 2.0) < 1e-9
