@@ -66,7 +66,7 @@ Inside the per-school loop, after `current_map`/`max_p` are resolved (after the 
                 for jj in range(ny):
                     for ii in range(nx):
                         v = current_map[jj, ii] * sal_w[jj, ii]
-                        if not np.isnan(v) and v > wmax:
+                        if not np.isnan(v) and v > wmax:   # mirrors Python nanmax normalizer
                             wmax = v
                 if wmax <= 0.0:
                     use_gate = False   # all-zero guard: behave exactly ungated
@@ -177,15 +177,22 @@ Inside the per-school loop, after `current_map`/`max_p` are resolved (after the 
 
 The ungated 3b branch is the verbatim original (`randint(0, n_accessible)` + walk-to-target). The gated branch's `sel_x/sel_y` default + last-valid tracking guarantees a selection even under floating-point rounding (`r = random()·W < W`, so `acc` reaches `W ≥ r` at the final accessible cell).
 
-## 6. Testing
+All numba-kernel-direct tests must run only when numba is available: gate them with `pytest.importorskip("numba")` (or `@pytest.mark.skipif(not _HAS_NUMBA, reason="numba unavailable")`) and say so in the skip reason. Reuse the existing `_call_numba` helper from `tests/test_movement_numba.py` (extended per §6-last-bullet) to build the flattened single-map inputs, so the kernel tests aren't independently improvised.
 
-- **Numba kernel graded behavior (direct):** call `_map_move_batch_numba` directly with a constructed flattened single presence map + a 3-band synthetic `sal_w` (weights 0 / 0.5 / 1.0 by column, as in the Python-path test), `gate_active=True`, `gate_species=[True]`. Over many schools/draws assert: excluded columns get 0 placements; high band ≈ 2× the mid band — for **both** a fresh-placement batch (`same_map=False`) and a random-walk batch (`same_map=True`, located schools). (`_HAS_NUMBA` must be true; skip with a clear reason if numba is unavailable in the env.)
-- **Numba-vs-Python agreement (statistical):** run the identical gated config through both paths (Python via `flat_map_data=None`, Numba via populated `flat_map_data`) and assert the per-column occupancy *distribution* matches within tolerance — same ∝-weight shape, not bit-identical RNG.
-- **Bit-identical-when-off (Numba path):** an engine run with the gate off is bit-identical to master on the Numba path (the existing `test_gate_off_is_bit_identical` already exercises the Numba path since eec_full uses it; confirm/keep it).
-- **Warning removed:** delete the prototype's Numba-no-op warning test (`test_...numba...` that asserted the `RuntimeWarning`); the warning no longer exists.
-- **Regression:** `tests/test_engine_map_movement.py` stays green (ungated Numba path unchanged).
+- **Numba kernel graded 3a (direct):** call `_map_move_batch_numba` with a `Grid.from_dimensions(ny=5, nx=6)`, a single presence map (`1.0` everywhere), a 3-band `sal_w` (cols 0–1 = 0.0, cols 2–3 = 0.5, cols 4–5 = 1.0), `gate_active=True`, `gate_species=np.array([True])`, `same_map=False` (fresh placement), N=4000 schools, fixed `rng_seed=0`. Assert: cols 0–1 get 0 placements; `(cols[4]+cols[5]) / (cols[2]+cols[3]) == pytest.approx(2.0, rel=0.15)`.
+- **Numba kernel graded 3b (direct):** same fixture but `same_map=True` and located schools, mirroring the Python-path `test_random_walk_weighted` (`tests/test_salinity_gate.py:156-174`) for the start-cell and `walk_range` (start at a mid/high boundary cell with a `walk_range` large enough to span cols 2–5); N=4000, `rng_seed=0`. Assert cols 0–1 == 0 and the high/mid ratio `== pytest.approx(2.0, rel=0.2)`. (Exercises the cumulative-weight 3b path specifically.)
+- **All-zero guard (direct):** a gated school whose entire `sal_w` is `0.0` (so `wmax<=0`, `use_gate` falls back). Assert the school is still PLACED (not `is_out=True`) — i.e. cod is never annihilated — matching the ungated presence-map placement.
+- **Gated local stranding (direct):** a gated located school whose walk window is entirely zero-weight (`sal_w=0` around it) but non-zero elsewhere. Assert it STAYS in place (`out_cx==cx, out_cy==cy, is_out=False`), matching the Python path's empty-accessible fallback.
+- **Numba-vs-Python agreement (statistical):** run the SAME 3-band gated fixture through the Python path (`_map_move_school` per school) and the Numba kernel (`_map_move_batch_numba`), each N=4000, their own fixed seeds. Compute per-column occupancy FRACTIONS for both. Assert every column fraction agrees within absolute tolerance `0.05` (`np.testing.assert_allclose(frac_numba, frac_python, atol=0.05)`) — same ∝-weight shape, not bit-identical RNG. (0.05 abs on a 6-column fraction vector at N=4000 is comfortably above sampling noise while catching any real distributional divergence.)
+- **Bit-identical-when-off (Numba path):** keep the existing `test_gate_off_is_bit_identical` — it runs `movement()` (which this change updates) through the real Numba path on eec_full; confirm it still passes unchanged.
+- **Warning removed:** delete `test_gate_enabled_warns_on_numba_path` from `tests/test_salinity_gate.py` (the `RuntimeWarning` it asserts no longer exists).
+- **Regression — direct kernel callers:** adding three REQUIRED trailing params to `_map_move_batch_numba` breaks the 5 tests in `tests/test_movement_numba.py` that call the kernel via the `_call_numba` helper (hardcoded to today's 18 positional args). Extend `_call_numba` to append the three new args with off-defaults (`sal_w=np.zeros((1, 1)), gate_active=False, gate_species=np.zeros(1, dtype=bool)`) so those 5 tests pass unchanged; this also gives the new kernel tests a shared builder. `gate_species` can be size-1 here because `gated = gate_active and gate_species[sp]` short-circuits on `gate_active=False`, so it is never indexed — no `n_sp` needed in the helper's scope. (The new gated kernel tests pass their own `gate_active=True, gate_species=np.array([True])`.)
+- **Regression — engine:** `tests/test_engine_map_movement.py` stays green (ungated Numba path unchanged).
+
+**Finite-check note (from review R2):** `inf` cannot occur in `wmap` because `current_map` is a presence/probability map and `sal_w = clip(...,0,1) ∈ [0,1]`, so the product is bounded. The gated code uses `not np.isnan(...)` (mirroring the Python path's `nanmax` normalizer and its `isnan`-only 3b admission); the isfinite-vs-isnan distinction is unreachable and therefore immaterial.
 
 ## 7. Deliverables
 
 - `osmose/engine/processes/movement.py` — kernel signature + gated 3a/3b logic; caller threading in the Numba branch; delete the `RuntimeWarning` block.
-- `tests/test_salinity_gate.py` — Numba graded tests + Numba-vs-Python agreement test; remove the warning test.
+- `tests/test_salinity_gate.py` — Numba graded 3a/3b tests, all-zero-guard + gated-stranding tests, Numba-vs-Python agreement test; remove `test_gate_enabled_warns_on_numba_path`.
+- `tests/test_movement_numba.py` — extend `_call_numba` to pass the three new off-default args (keeps the 5 existing direct-kernel tests green; shared builder for the new kernel tests).
