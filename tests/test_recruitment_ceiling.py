@@ -220,3 +220,67 @@ def test_ceiling_off_is_bit_identical():
     cfg["reproduction.recruitment.ceiling.enabled"] = "false"
     off = PythonEngine().run_in_memory(dict(cfg), seed=0).biomass()
     np.testing.assert_array_equal(base.to_numpy(), off.to_numpy())
+
+
+import sys  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+import derive_recruitment_ceiling as derive  # noqa: E402
+
+
+def test_zero_fishing_disables_both_modes():
+    cfg = {
+        "module.multispecies.fisheries.enabled": "true",
+        "simulation.fishing.mortality.enabled": "true",
+    }
+    out = derive.zero_fishing(cfg)
+    assert out["module.multispecies.fisheries.enabled"] == "false"
+    assert out["simulation.fishing.mortality.enabled"] == "false"
+    assert cfg["module.multispecies.fisheries.enabled"] == "true"  # original untouched
+
+
+def test_per_species_recruitment_counts_fresh_natural_eggs():
+    from osmose.engine.state import SchoolState
+
+    s = SchoolState.create(n_schools=3, species_id=np.array([0, 0, 1], dtype=np.int32))
+    s = s.replace(
+        abundance=np.array([100.0, 50.0, 7.0]),
+        age_dt=np.array([0, 1, 0], dtype=np.int32),  # 2nd is last-step egg
+        is_egg=np.array([True, True, True]),
+    )
+    r = derive.per_species_recruitment(s, n_species=2)
+    assert r[0] == 100.0  # only the age_dt==0 school for sp0
+    assert r[1] == 7.0
+
+
+def test_late_window_ceiling_buckets_by_season():
+    # 2 seasons/year, 4 years; recruitment = season_idx*10 + noise-free
+    records = []
+    for step in range(8):  # 4 years * 2 seasons
+        col = step % 2
+        records.append((step, np.array([10.0 * col + 100.0])))
+    ceil = derive.late_window_ceiling(records, n_cols=2, n_species=1, n_dt=2, frac=0.5)
+    assert ceil.shape == (2, 1)
+    assert ceil[0, 0] == 100.0  # season 0
+    assert ceil[1, 0] == 110.0  # season 1
+
+
+def test_write_ceiling_csv_roundtrips(tmp_path):
+    ceil = np.array([[100.0, 200.0], [110.0, 210.0]])
+    out = derive.write_ceiling_csv(ceil, tmp_path / "c.csv")
+    text = out.read_text().strip().splitlines()
+    assert text[0] == "season_idx,ceiling_sp0,ceiling_sp1"
+    assert text[1].startswith("0,")
+    loaded, mask = _load_recruitment_ceiling(
+        {
+            "_osmose.config.dir": str(tmp_path),
+            "reproduction.recruitment.ceiling.enabled": "true",
+            "reproduction.recruitment.ceiling.series.file": out.name,
+            "reproduction.recruitment.ceiling.species.enabled.sp0": "true",
+        },
+        2,
+        2,
+        None,
+    )
+    np.testing.assert_array_equal(loaded, ceil)
