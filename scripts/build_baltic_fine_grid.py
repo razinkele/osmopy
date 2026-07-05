@@ -38,12 +38,21 @@ def fetch_emodnet(lat0, lat1, lon0, lon1):
         return elev, np.linspace(b.top, b.bottom, ds.height), np.linspace(b.left, b.right, ds.width)
 
 
-def build_shallow_fraction(depth_max_m: float):
-    """Per-4x-cell shallow-fraction + ocean over the whole extent. Tiled in
-    row-disjoint lat strips x lon blocks; per-tile cells are disjoint, so ratios
-    are exact per tile — assign directly, no cross-tile accumulation."""
-    frac = np.zeros((FINE.nlat, FINE.nlon))
-    ocean = np.zeros((FINE.nlat, FINE.nlon), bool)
+def build_shallow_fractions(depth_maxes) -> dict[float, tuple[np.ndarray, np.ndarray]]:
+    """Per-4x-cell shallow-fraction + ocean over the whole extent, for MULTIPLE
+    depth_max thresholds in a single pass over the EMODnet tile grid — each
+    tile is fetched over the network exactly once, regardless of how many
+    depth_maxes are requested (``ocean`` is depth-independent; only the fraction
+    differs per depth). Tiled in row-disjoint lat strips x lon blocks; per-tile
+    cells are disjoint, so ratios are exact per tile — assign directly, no
+    cross-tile accumulation. Memory stays bounded: only the small (nlat,nlon)
+    output arrays per depth plus one raw tile at a time are held, never all
+    raw tiles."""
+    depth_maxes = list(dict.fromkeys(depth_maxes))  # dedupe, preserve order
+    results = {
+        dmax: (np.zeros((FINE.nlat, FINE.nlon)), np.zeros((FINE.nlat, FINE.nlon), bool))
+        for dmax in depth_maxes
+    }
     lat_edges = np.linspace(FINE.upleft_lat, FINE.lowright_lat, FINE.nlat + 1)  # desc
     lon_edges = np.linspace(FINE.upleft_lon, FINE.lowright_lon, FINE.nlon + 1)  # asc
     RSTRIP, CSTRIP = 8, 50  # 4x-cells per fetch (keep GeoTIFF < ~40M px)
@@ -54,10 +63,22 @@ def build_shallow_fraction(depth_max_m: float):
             elev, lat_hi, lon_hi = fetch_emodnet(
                 lat_edges[r1], lat_edges[r0], lon_edges[c0], lon_edges[c1]
             )
-            f, oc = shallow_fraction(elev, lat_hi, lon_hi, FINE, depth_max_m)
-            frac[r0:r1, c0:c1] = f[r0:r1, c0:c1]
-            ocean[r0:r1, c0:c1] = oc[r0:r1, c0:c1]
-    return frac, ocean
+            for dmax in depth_maxes:
+                f, oc = shallow_fraction(elev, lat_hi, lon_hi, FINE, dmax)
+                frac, ocean = results[dmax]
+                frac[r0:r1, c0:c1] = f[r0:r1, c0:c1]
+                ocean[r0:r1, c0:c1] = oc[r0:r1, c0:c1]
+    return results
+
+
+def build_shallow_fraction(depth_max_m: float):
+    """Per-4x-cell shallow-fraction + ocean over the whole extent, for a single
+    depth_max threshold. Thin wrapper over ``build_shallow_fractions`` — kept
+    for existing single-depth callers (``main()``). Callers needing several
+    depth_max values over the same extent should call
+    ``build_shallow_fractions`` directly to avoid re-fetching the tiles once
+    per depth."""
+    return build_shallow_fractions([depth_max_m])[depth_max_m]
 
 
 def _cell_of(lat, lon):

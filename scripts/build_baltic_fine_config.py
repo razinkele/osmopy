@@ -47,6 +47,19 @@ MOVEMENT_KEY = "osmose.configuration.movement"
 # perch: map13-15 (juvenile/adult/spawning); pikeperch: map16-18
 PERCID_MAP_INDICES = frozenset(range(13, 19))
 
+# Non-grid aux data files referenced (by relative path) from the copied
+# baltic_param-*.csv includes: species x species / species x time matrices
+# that do NOT depend on grid resolution, so a verbatim copy is correct (NOT
+# regridded, unlike grid.mask.file/grid.netcdf.file/movement maps). Without
+# these, data/baltic-fine/ resolves them via a glob fallback onto
+# data/baltic/, leaving the fine tree non-self-contained.
+AUX_DATA_FILES = [
+    "predation-accessibility.csv",
+    "fishery-catchability.csv",
+    "fishery-discards.csv",
+    *(f"reproduction/reproduction-seasonality-sp{i}.csv" for i in range(8)),
+]
+
 # grid.csv text edits: 50x40 coarse -> 200x160 fine, + fine mask/netcdf files.
 GRID_EDITS = {
     "grid.nlon;50": "grid.nlon;200",
@@ -114,8 +127,22 @@ def _strip_percid_file_lines(text: str) -> tuple[str, dict[int, str]]:
     return "\n".join(out_lines) + "\n", real_paths
 
 
+def _copy_aux_data_files() -> None:
+    """Verbatim-copy the non-grid aux data files (see AUX_DATA_FILES) into
+    data/baltic-fine/, preserving relative subpaths (e.g. ``reproduction/``),
+    so the fine config tree is self-contained and doesn't fall back to
+    data/baltic/ via glob resolution."""
+    for rel in AUX_DATA_FILES:
+        src = SRC / rel
+        dst = OUT / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_bytes(src.read_bytes())
+        print(f"copied {dst}")
+
+
 def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
+    _copy_aux_data_files()
     includes, master_only_lines = _parse_master(MASTER.read_text())
 
     # Copy every include, editing grid keys and stripping the percid movement

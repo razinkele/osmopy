@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from osmose.forcing.percid_habitat import percid_stage_map, vacuity_ok
-from scripts.build_baltic_fine_grid import build_shallow_fraction, OUT
+from scripts.build_baltic_fine_grid import build_shallow_fractions, OUT
 
 # (stage_file, depth_max_m, sal_ceiling, sal_gate)
 STAGES = {
@@ -31,8 +31,14 @@ def main() -> int:
     maps_dir = OUT / "maps"
     maps_dir.mkdir(parents=True, exist_ok=True)
     sal = _annual_mean_salinity()
+    # Fetch each EMODnet tile ONCE across the whole extent, computing
+    # shallow-fraction for every distinct depth_max the stages need (instead
+    # of re-fetching the full tiled bathymetry per stage) -- see
+    # build_shallow_fractions docstring.
+    depth_maxes = sorted({dmax for dmax, _, _ in STAGES.values()})
+    fractions = build_shallow_fractions(depth_maxes)
     for fname, (dmax, ceil, gate) in STAGES.items():
-        frac, ocean = build_shallow_fraction(depth_max_m=dmax)
+        frac, ocean = fractions[dmax]
         m = percid_stage_map(frac, ocean, sal, tau=args.tau, sal_ceiling=ceil, sal_gate=gate)
         up = pd.read_csv(
             maps_dir / (fname[:-4] + "_upsampled.csv"), sep=";", header=None
