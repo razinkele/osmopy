@@ -36,6 +36,11 @@ dependencies = [
 [project.optional-dependencies]
 numba = ["numba>=0.60"]
 docs = ["sphinx>=8", "myst-parser>=4", "furo>=2024.1"]
+# GeoTIFF I/O for the EMODnet fine-grid bathymetry fetch (scripts/build_baltic_fine_grid.py).
+# Kept out of [dev]: the pure shallow-fraction core (osmose/forcing/bathymetry.py) that IS
+# unit-tested has no rasterio dependency, and the network-fetch script itself is not
+# unit-tested -- only opt in when actually building the fine grid.
+forcing = ["rasterio>=1.3"]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
