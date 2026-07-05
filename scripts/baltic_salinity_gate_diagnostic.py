@@ -52,8 +52,9 @@ def main(argv=None) -> int:
         d = (n - o) / o * 100.0 if o else float("nan")
         print(f"  {sp:10s} {o:12.1f} {n:12.1f} {d:+7.1f}%")
     print("\nNOTE: gating cod out of low-salinity coastal cells is a SPATIAL-REALISM")
-    print("correction. Higher percid biomass here means less cod predation in the")
-    print("refuge — it is NOT an overshoot fix (raising percids worsens overshoot).")
+    print("correction, NOT an overshoot fix. The percid response is an EMERGENT food-web")
+    print("effect and may go either way (observed here: percids DOWN, cod UP as cod")
+    print("concentrates in the saline basins) — read the delta% above, not a preset direction.")
     return 0
 
 
