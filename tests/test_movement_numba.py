@@ -160,11 +160,18 @@ def _call_numba(
     walk_range,
     ny,
     nx,
+    sal_w=None,
+    gate_active=False,
+    gate_species=None,
 ):
     """Helper to call _map_move_batch_numba with in-place output arrays."""
     out_cx = cx.copy()
     out_cy = cy.copy()
     out_is_out = np.zeros(len(cx), dtype=np.bool_)
+    if sal_w is None:
+        sal_w = np.zeros((1, 1), dtype=np.float64)
+    if gate_species is None:
+        gate_species = np.zeros(1, dtype=np.bool_)  # never indexed when gate_active=False
     _map_move_batch_numba(
         seed,
         school_indices,
@@ -184,6 +191,9 @@ def _call_numba(
         out_cx,
         out_cy,
         out_is_out,
+        sal_w,
+        gate_active,
+        gate_species,
     )
     return out_cx, out_cy, out_is_out
 

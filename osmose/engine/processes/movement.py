@@ -11,6 +11,7 @@ from numpy.typing import NDArray
 from osmose.engine.config import EngineConfig
 from osmose.engine.grid import Grid
 from osmose.engine.movement_maps import MovementMapSet
+from osmose.engine.processes.salinity_gate import salinity_weighted_map
 from osmose.engine.state import SchoolState
 from osmose.logging import setup_logging
 
@@ -30,6 +31,23 @@ if not _HAS_NUMBA:
     )
 
 
+def _movement_salinity_weight(config, grid, step) -> NDArray[np.float64] | None:
+    """Per-step salinity occupancy-weight grid for the gate, or None when off.
+
+    Reads config.salinity_gate_enabled / .salinity_field / .salinity_gate_s_low /
+    .salinity_gate_s_high and grid.ny/nx. Constant fields broadcast to the grid.
+    """
+    if not (config.salinity_gate_enabled and config.salinity_field is not None):
+        return None
+    from osmose.engine.processes.salinity_gate import salinity_weight
+
+    if config.salinity_field.is_constant:
+        S = np.full((grid.ny, grid.nx), config.salinity_field.get_scalar())
+    else:
+        S = config.salinity_field.get_grid(step)
+    return salinity_weight(S, config.salinity_gate_s_low, config.salinity_gate_s_high)
+
+
 def _map_move_school(
     age_dt: int,
     cx: int,
@@ -41,6 +59,7 @@ def _map_move_school(
     walk_range: int,
     step: int,
     rng: np.random.Generator,
+    salinity_weight_grid: NDArray[np.float64] | None = None,
 ) -> tuple[int, int, bool]:
     """Move a single school using map-based distribution.
 
@@ -64,11 +83,24 @@ def _map_move_school(
         Global simulation step.
     rng : np.random.Generator
         Random number generator.
+    salinity_weight_grid : NDArray[np.float64] | None
+        Optional per-cell salinity occupancy weight (Task 1's
+        ``salinity_weight``). When set, occupancy is proportional to
+        ``current_map * salinity_weight_grid`` in both placement and
+        random-walk. ``None`` reproduces the ungated behavior bit-identically.
     """
     # Step 1 — Out-of-domain check
     current_map = map_set.get_map(age_dt, step)
     if current_map is None:
         return -1, -1, True
+
+    # Salinity-gated occupancy (inert when salinity_weight_grid is None).
+    if salinity_weight_grid is not None:
+        wmap = salinity_weighted_map(current_map, salinity_weight_grid)
+        gated = wmap is not current_map  # guard returns the original object on all-zero
+    else:
+        wmap = current_map
+        gated = False
 
     # Step 2 — Same-map detection
     index_map = map_set.get_index(age_dt, step)
@@ -80,12 +112,12 @@ def _map_move_school(
     # Step 3a — New placement (rejection sampling)
     if not same_map or cx < 0:
         n_cells = grid_nx * grid_ny
-        max_p = map_set.max_proba[index_map]
+        max_p = float(np.nanmax(wmap)) if gated else map_set.max_proba[index_map]
         for _ in range(10_000):
             flat_idx = rng.integers(0, n_cells)
             j = int(flat_idx // grid_nx)
             i = int(flat_idx % grid_nx)
-            proba = current_map[j, i]
+            proba = wmap[j, i]
             if proba > 0 and not np.isnan(proba):
                 if max_p == 0.0 or proba >= rng.random() * max_p:
                     return i, j, False
@@ -93,13 +125,20 @@ def _map_move_school(
 
     # Step 3b — Random walk (same map, school is located)
     accessible: list[tuple[int, int]] = []
+    weights: list[float] = []
     for yi in range(max(0, cy - walk_range), min(grid_ny, cy + walk_range + 1)):
         for xi in range(max(0, cx - walk_range), min(grid_nx, cx + walk_range + 1)):
-            if ocean_mask[yi, xi] and current_map[yi, xi] > 0 and not np.isnan(current_map[yi, xi]):
+            v = wmap[yi, xi]
+            if ocean_mask[yi, xi] and v > 0 and not np.isnan(v):
                 accessible.append((xi, yi))
+                weights.append(float(v))
     if len(accessible) == 0:
         return cx, cy, False  # stranded — stay in place
-    idx = rng.integers(0, len(accessible))
+    if gated:
+        w = np.asarray(weights, dtype=np.float64)
+        idx = int(rng.choice(len(accessible), p=w / w.sum()))
+    else:
+        idx = rng.integers(0, len(accessible))
     return accessible[idx][0], accessible[idx][1], False
 
 
@@ -271,6 +310,15 @@ def movement(
             new_cx = state.cell_x.copy()
             new_cy = state.cell_y.copy()
             new_out = state.is_out.copy()
+            sal_w = _movement_salinity_weight(config, grid, step)
+            if sal_w is not None:
+                sal_w_arr = sal_w
+                gate_active = True
+                gate_species_arr = config.salinity_gate_species
+            else:
+                sal_w_arr = np.zeros((1, 1), dtype=np.float64)
+                gate_active = False
+                gate_species_arr = np.zeros(config.n_species, dtype=np.bool_)
             _map_move_batch_numba(
                 rng_seed,
                 map_school_indices,
@@ -292,6 +340,9 @@ def movement(
                 new_cx,
                 new_cy,
                 new_out,
+                sal_w_arr,
+                gate_active,
+                gate_species_arr,
             )
             # Warn only about schools that failed rejection sampling, not
             # intentional null-map migrations (which are expected out-of-domain
@@ -324,6 +375,7 @@ def movement(
             new_cx = state.cell_x.copy()
             new_cy = state.cell_y.copy()
             new_out = state.is_out.copy()
+            sal_w = _movement_salinity_weight(config, grid, step)
             for i in np.where(uses_maps)[0]:
                 sp_id = int(sp[i])
                 if sp_id in map_sets:
@@ -338,6 +390,11 @@ def movement(
                         int(config.random_walk_range[sp_id]),
                         step,
                         _rng_for(sp_id),
+                        salinity_weight_grid=(
+                            sal_w
+                            if (sal_w is not None and config.salinity_gate_species[sp_id])
+                            else None
+                        ),
                     )
                     new_cx[i], new_cy[i], new_out[i] = x, y, out
             state = state.replace(cell_x=new_cx, cell_y=new_cy, is_out=new_out)
@@ -367,6 +424,9 @@ if _HAS_NUMBA:
         out_cx,
         out_cy,
         out_is_out,
+        sal_w,
+        gate_active,
+        gate_species,
     ):
         """Numba-compiled batch map-based movement for all schools.
 
@@ -398,20 +458,48 @@ if _HAS_NUMBA:
             current_map = all_maps[global_map_idx]
             max_p = all_max_proba[global_map_idx]
 
+            gated = gate_active and gate_species[sp]
+            use_gate = gated
+            wmax = 0.0
+            if gated:
+                # wmax = nan-skipping max of current_map*sal_w (mirrors the Python
+                # path's nanmax normalizer). The isnan-only check (vs isfinite) is
+                # safe ONLY because current_map is a presence/[0,1] map and
+                # sal_w=clip(...,0,1), so the product is bounded and never +inf.
+                # Revisit if a future field (e.g. real CMEMS 'so') can carry inf/
+                # fill-value sentinels — then isnan-only would diverge from Python.
+                for jj in range(ny):
+                    for ii in range(nx):
+                        v = current_map[jj, ii] * sal_w[jj, ii]
+                        if not np.isnan(v) and v > wmax:
+                            wmax = v
+                if wmax <= 0.0:
+                    use_gate = False  # all-zero guard: behave exactly ungated
+
             if not same_map[k] or cell_x[idx] < 0:
                 placed = False
                 for _ in range(10_000):
                     flat_idx = np.random.randint(0, n_cells)
                     j = flat_idx // nx
                     i = flat_idx % nx
-                    proba = current_map[j, i]
-                    if proba > 0 and not np.isnan(proba):
-                        if max_p == 0.0 or proba >= np.random.random() * max_p:
-                            out_cx[idx] = i
-                            out_cy[idx] = j
-                            out_is_out[idx] = False
-                            placed = True
-                            break
+                    if use_gate:
+                        proba = current_map[j, i] * sal_w[j, i]
+                        if proba > 0 and not np.isnan(proba):
+                            if proba >= np.random.random() * wmax:
+                                out_cx[idx] = i
+                                out_cy[idx] = j
+                                out_is_out[idx] = False
+                                placed = True
+                                break
+                    else:
+                        proba = current_map[j, i]
+                        if proba > 0 and not np.isnan(proba):
+                            if max_p == 0.0 or proba >= np.random.random() * max_p:
+                                out_cx[idx] = i
+                                out_cy[idx] = j
+                                out_is_out[idx] = False
+                                placed = True
+                                break
                 if not placed:
                     out_cx[idx] = -1
                     out_cy[idx] = -1
@@ -421,15 +509,26 @@ if _HAS_NUMBA:
             cx_k = cell_x[idx]
             cy_k = cell_y[idx]
             wr = walk_range[sp]
-            n_accessible = 0
             y_lo = max(0, cy_k - wr)
             y_hi = min(ny, cy_k + wr + 1)
             x_lo = max(0, cx_k - wr)
             x_hi = min(nx, cx_k + wr + 1)
+
+            n_accessible = 0
+            W = 0.0
             for yi in range(y_lo, y_hi):
                 for xi in range(x_lo, x_hi):
-                    if ocean_mask[yi, xi] and current_map[yi, xi] > 0:
-                        if not np.isnan(current_map[yi, xi]):
+                    if (
+                        ocean_mask[yi, xi]
+                        and current_map[yi, xi] > 0
+                        and not np.isnan(current_map[yi, xi])
+                    ):
+                        if use_gate:
+                            wv = current_map[yi, xi] * sal_w[yi, xi]
+                            if wv > 0 and not np.isnan(wv):
+                                n_accessible += 1
+                                W += wv
+                        else:
                             n_accessible += 1
 
             if n_accessible == 0:
@@ -438,12 +537,42 @@ if _HAS_NUMBA:
                 out_is_out[idx] = False
                 continue
 
-            target = np.random.randint(0, n_accessible)
-            count = 0
-            for yi in range(y_lo, y_hi):
-                for xi in range(x_lo, x_hi):
-                    if ocean_mask[yi, xi] and current_map[yi, xi] > 0:
-                        if not np.isnan(current_map[yi, xi]):
+            if use_gate:
+                r = np.random.random() * W
+                acc = 0.0
+                sel_x = cx_k
+                sel_y = cy_k
+                found = False
+                for yi in range(y_lo, y_hi):
+                    for xi in range(x_lo, x_hi):
+                        if (
+                            ocean_mask[yi, xi]
+                            and current_map[yi, xi] > 0
+                            and not np.isnan(current_map[yi, xi])
+                        ):
+                            wv = current_map[yi, xi] * sal_w[yi, xi]
+                            if wv > 0 and not np.isnan(wv):
+                                acc += wv
+                                sel_x = xi
+                                sel_y = yi
+                                if acc >= r:
+                                    found = True
+                                    break
+                    if found:
+                        break
+                out_cx[idx] = sel_x
+                out_cy[idx] = sel_y
+                out_is_out[idx] = False
+            else:
+                target = np.random.randint(0, n_accessible)
+                count = 0
+                for yi in range(y_lo, y_hi):
+                    for xi in range(x_lo, x_hi):
+                        if (
+                            ocean_mask[yi, xi]
+                            and current_map[yi, xi] > 0
+                            and not np.isnan(current_map[yi, xi])
+                        ):
                             if count == target:
                                 out_cx[idx] = xi
                                 out_cy[idx] = yi
@@ -451,8 +580,8 @@ if _HAS_NUMBA:
                             count += 1
                             if count > target:
                                 break
-                if count > target:
-                    break
+                    if count > target:
+                        break
 
 
 def _flatten_all_map_sets(

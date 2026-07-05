@@ -23,6 +23,7 @@ from osmose.engine.background import (
     parse_background_species,
 )
 from osmose.engine.path_resolution import resolve_data_path
+from osmose.engine.physical_data import PhysicalData
 from osmose.logging import setup_logging
 
 if TYPE_CHECKING:
@@ -1205,6 +1206,116 @@ def _load_rv_spatial(
     return field, enabled
 
 
+def _load_salinity_gate(
+    cfg: dict[str, str], n_species: int
+) -> tuple[bool, NDArray[np.bool_] | None, float, float, PhysicalData | None]:
+    """Load the salinity-gated occupancy config (spec 2026-07-04).
+
+    Returns (enabled, species_mask, s_low, s_high, salinity_field). Off →
+    (False, None, 3.0, 6.0, None). Fail-fast (ValueError / FileNotFoundError)
+    on bad config: s_high <= s_low, no gated species, or no resolvable field.
+    """
+    s_low = float(cfg.get("movement.salinity.gate.s.low", "3.0"))
+    s_high = float(cfg.get("movement.salinity.gate.s.high", "6.0"))
+    if cfg.get("movement.salinity.gate.enabled", "false").lower() != "true":
+        return False, None, s_low, s_high, None
+
+    if s_high <= s_low:
+        raise ValueError(f"movement.salinity.gate.s.high ({s_high}) must be > s.low ({s_low})")
+
+    mask = np.zeros(n_species, dtype=np.bool_)
+    for sp in range(n_species):
+        if cfg.get(f"movement.salinity.gate.species.enabled.sp{sp}", "false").lower() == "true":
+            mask[sp] = True
+    if not mask.any():
+        raise ValueError(
+            "salinity gate enabled but no species enabled "
+            "(movement.salinity.gate.species.enabled.sp{idx})."
+        )
+
+    const_str = cfg.get("movement.salinity.field.constant", "")
+    file_str = cfg.get("movement.salinity.field.file", "")
+    if const_str:
+        field = PhysicalData.from_constant(float(const_str))
+    elif file_str:
+        path = _require_file(file_str, _cfg_dir(cfg), "movement.salinity.field.file")
+        varname = cfg.get("movement.salinity.field.varname", "so")
+        field = PhysicalData.from_netcdf(path, varname=varname)
+    else:
+        raise ValueError(
+            "salinity gate enabled but no salinity field "
+            "(set movement.salinity.field.constant or .file)."
+        )
+    return True, mask, s_low, s_high, field
+
+
+def _load_recruitment_ceiling(
+    cfg: dict[str, str],
+    n_species: int,
+    n_dt: int,
+    spawning_season: NDArray[np.float64] | None,
+) -> tuple[NDArray[np.float64] | None, NDArray[np.bool_] | None]:
+    """Load the unfished-level recruitment ceiling (spec 2026-07-03).
+
+    Returns (ceiling_by_season, enabled_mask). ceiling_by_season has shape
+    (n_cols, n_species) where n_cols is the model's within-year season count;
+    enabled_mask has shape (n_species,). Both are None when the master switch is
+    off. Fail-fast (ValueError / FileNotFoundError) on invalid configuration.
+    """
+    if cfg.get("reproduction.recruitment.ceiling.enabled", "false").lower() != "true":
+        return None, None
+
+    n_cols = spawning_season.shape[1] if spawning_season is not None else n_dt
+
+    file_key = cfg.get("reproduction.recruitment.ceiling.series.file", "")
+    if not file_key:
+        raise ValueError(
+            "Recruitment ceiling enabled but reproduction.recruitment.ceiling.series.file is empty."
+        )
+    path = _require_file(file_key, _cfg_dir(cfg), "reproduction.recruitment.ceiling.series.file")
+    df = pd.read_csv(path)
+    if "season_idx" not in df.columns:
+        raise ValueError(f"Recruitment ceiling {path} missing 'season_idx' column.")
+    seasons = df["season_idx"].to_numpy()
+    if not np.array_equal(seasons, np.arange(n_cols)):
+        raise ValueError(
+            f"Recruitment ceiling {path} season_idx must be 0..{n_cols - 1} "
+            f"contiguous (model has {n_cols} season columns), got {seasons.tolist()}."
+        )
+
+    ceiling = np.full((n_cols, n_species), np.inf, dtype=np.float64)
+    for sp in range(n_species):
+        col = f"ceiling_sp{sp}"
+        if col in df.columns:
+            ceiling[:, sp] = df[col].to_numpy(dtype=np.float64)
+    # Disabled species keep the inf sentinel (harmless); only real values are
+    # checked. NaN is caught here; the finite-column check for ENABLED species
+    # is the last loop below.
+    finite = np.isfinite(ceiling)
+    if np.any(ceiling[finite] < 0):
+        raise ValueError(f"Recruitment ceiling {path} has negative values.")
+    if np.any(np.isnan(ceiling)):
+        raise ValueError(f"Recruitment ceiling {path} has NaN values.")
+
+    enabled = np.zeros(n_species, dtype=np.bool_)
+    for sp in range(n_species):
+        key = f"reproduction.recruitment.ceiling.species.enabled.sp{sp}"
+        if cfg.get(key, "false").lower() == "true":
+            enabled[sp] = True
+    if not enabled.any():
+        raise ValueError(
+            "Recruitment ceiling enabled but no species enabled "
+            "(reproduction.recruitment.ceiling.species.enabled.sp{idx})."
+        )
+    # An enabled species must have a finite ceiling column.
+    for sp in np.where(enabled)[0]:
+        if not np.all(np.isfinite(ceiling[:, sp])):
+            raise ValueError(
+                f"Recruitment ceiling enabled for sp{sp} but no ceiling_sp{sp} column in {path}."
+            )
+    return ceiling, enabled
+
+
 def _load_additional_mortality_by_dt(
     cfg: dict[str, str], n_species: int
 ) -> list[NDArray[np.float64] | None] | None:
@@ -1463,6 +1574,17 @@ class EngineConfig:
     rv_gate_factor_by_index: NDArray[np.float64] | None  # (n_years,), mode already applied
     rv_gate_enabled: NDArray[np.bool_] | None  # (n_species,) per-species enable mask
     rv_gate_offset: int  # start_year - first_year (see _load_rv_gate)
+
+    # Salinity-gated occupancy (prototype spike; feature inert when disabled)
+    salinity_gate_enabled: bool
+    salinity_gate_species: NDArray[np.bool_] | None
+    salinity_gate_s_low: float
+    salinity_gate_s_high: float
+    salinity_field: PhysicalData | None
+
+    # Unfished-level recruitment ceiling (both None when disabled)
+    recruitment_ceiling_by_season: NDArray[np.float64] | None  # (n_cols, n_species)
+    recruitment_ceiling_enabled: NDArray[np.bool_] | None  # (n_species,) enable mask
 
     # Movement
     movement_method: list[str]
@@ -2193,6 +2315,17 @@ class EngineConfig:
             cfg, n_sp, n_dt, n_yr
         )
         rv_spatial_field, rv_spatial_enabled = _load_rv_spatial(cfg, n_sp)
+        (
+            salinity_gate_enabled,
+            salinity_gate_species,
+            salinity_gate_s_low,
+            salinity_gate_s_high,
+            salinity_field,
+        ) = _load_salinity_gate(cfg, n_sp)
+        _spawning_season = _load_spawning_seasons(cfg, n_sp, n_dt)
+        recruitment_ceiling_by_season, recruitment_ceiling_enabled = _load_recruitment_ceiling(
+            cfg, n_sp, n_dt, _spawning_season
+        )
 
         return cls(
             n_species=n_sp,
@@ -2254,12 +2387,19 @@ class EngineConfig:
             dynamic_accessibility_floor=float(
                 cfg.get("predation.accessibility.dynamic.floor", "0.05")
             ),
-            spawning_season=_load_spawning_seasons(cfg, n_sp, n_dt),
+            spawning_season=_spawning_season,
             rv_gate_factor_by_index=rv_gate_factor_by_index,
             rv_gate_enabled=rv_gate_enabled,
             rv_gate_offset=rv_gate_offset,
             rv_spatial_field=rv_spatial_field,
             rv_spatial_enabled=rv_spatial_enabled,
+            salinity_gate_enabled=salinity_gate_enabled,
+            salinity_gate_species=salinity_gate_species,
+            salinity_gate_s_low=salinity_gate_s_low,
+            salinity_gate_s_high=salinity_gate_s_high,
+            salinity_field=salinity_field,
+            recruitment_ceiling_by_season=recruitment_ceiling_by_season,
+            recruitment_ceiling_enabled=recruitment_ceiling_enabled,
             fishing_enabled=(
                 cfg.get("simulation.fishing.mortality.enabled", "true").lower() == "true"
                 or fisheries_enabled

@@ -217,3 +217,5 @@ movement.initialage.map24;1
 movement.lastage.map24;5
 movement.file.map24;maps/stickleback_spawning.csv
 movement.steps.map24;8;9;10;11;12;13
+movement.salinity.field.file;baltic_salinity_bottom_climatology.nc
+movement.salinity.field.varname;salinity
