@@ -628,7 +628,11 @@ def test_resource_forcing_is_additive_not_overwriting():
 
 
 def test_non_resource_species_get_no_forcing_keys():
-    cfg = {"species.type.sp0": "focal", "species.name.sp0": "Cod", "simulation.time.ndtperyear": "24"}
+    cfg = {
+        "species.type.sp0": "focal",
+        "species.name.sp0": "Cod",
+        "simulation.time.ndtperyear": "24",
+    }
     out = to_target_keys(cfg, "4.4.0")
     assert not any(k.startswith("species.biomass.") for k in out)
 

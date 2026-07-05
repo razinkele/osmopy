@@ -336,9 +336,7 @@ def fisheries_server(input, output, session, state: AppState):
                             class_="text-muted",
                         )
                     ),
-                    ui.tags.td(
-                        ui.tags.small(source_label, class_="text-muted font-monospace")
-                    ),
+                    ui.tags.td(ui.tags.small(source_label, class_="text-muted font-monospace")),
                 )
             )
 
