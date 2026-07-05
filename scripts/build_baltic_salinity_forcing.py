@@ -68,6 +68,11 @@ def accumulate_climatology(so_files):
                 cnt = np.zeros((12, nlat, nlon), dtype=np.float64)
                 src_lat = ds["latitude"].values
                 src_lon = ds["longitude"].values
+            else:
+                if bottom.shape[1:] != sum_.shape[1:]:
+                    raise ValueError(
+                        f"source grid mismatch in {f}: {bottom.shape[1:]} != {sum_.shape[1:]}"
+                    )
             for k in range(len(months)):
                 m = int(months[k]) - 1
                 b = bottom[k]
@@ -109,8 +114,14 @@ def build(config_dir: str, out_path: str) -> Path:
 
     grid_nc = Path(config_dir) / "baltic_grid.nc"
     ocean_mask = load_ocean_mask(grid_nc)
-    if ocean_mask is not None:
-        field24 = fill_ocean_nan(field24, ocean_mask)
+    if ocean_mask is None:
+        raise FileNotFoundError(
+            f"ocean mask not loadable from {grid_nc} (need a 'mask' var); refusing to write a "
+            f"salinity field with unfilled ocean NaN that the gate would misread as exclusions."
+        )
+    field24 = fill_ocean_nan(field24, ocean_mask)
+    if bool(np.isnan(field24[np.broadcast_to(ocean_mask, field24.shape)]).any()):
+        raise ValueError("salinity field has NaN in ocean cells after gap-fill; refusing to write.")
 
     tlat, tlon = target_coords(grid)
     out = xr.Dataset(

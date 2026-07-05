@@ -131,6 +131,22 @@ def test_gate_loads_real_field_and_grades():
     assert (finite > 0).any() and (finite < 1).any()
 
 
+def test_accumulate_climatology_grid_mismatch(tmp_path):
+    depth = np.array([0.5, 5.0])  # ascending
+    lat_a = np.array([60.0, 59.0])  # nlat=2
+    lat_b = np.array([60.0, 59.0, 58.0])  # nlat=3, different
+    lon = np.array([15.0, 16.0])
+    fA = tmp_path / "so_2001.nc"
+    fB = tmp_path / "so_2002.nc"
+    # File A with 2 lat points
+    _write_so_file(fA, [1], depth, lat_a, lon, lambda m: np.full((2, 2, 2), 10.0))
+    # File B with 3 lat points (mismatch)
+    _write_so_file(fB, [1], depth, lat_b, lon, lambda m: np.full((2, 3, 2), 20.0))
+    # Should raise ValueError on grid mismatch
+    with pytest.raises(ValueError, match="grid mismatch"):
+        bld.accumulate_climatology([str(fA), str(fB)])
+
+
 import baltic_salinity_gate_diagnostic as abdiag  # noqa: E402
 
 
