@@ -1,5 +1,17 @@
 import subprocess
 import sys
+from pathlib import Path
+
+import pytest
+
+_FINE_READY = (
+    Path("data/baltic-fine/baltic_fine_grid.nc").exists()
+    and Path("data/baltic-fine/maps/perch_adult.csv").exists()
+)
+pytestmark = pytest.mark.skipif(
+    not _FINE_READY,
+    reason="needs end-to-end fine-grid build (EMODnet fetch + real percid maps + fine salinity)",
+)
 
 
 def test_ladder_runs_three_rungs_and_verdict():
