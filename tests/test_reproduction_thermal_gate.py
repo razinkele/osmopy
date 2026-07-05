@@ -1,6 +1,7 @@
 """Gate is inert by default (bit-identical) and, when on, deterministically
 reduces percid recruitment. Uses the bundled Baltic config and the real engine
 API (same as scripts/baltic_recruitment_ceiling_diagnostic.py)."""
+
 from pathlib import Path
 
 import numpy as np
@@ -16,7 +17,9 @@ DET = {"movement.randomseed.fixed": "true", "stochastic.mortality.randomseed.fix
 def _series(overrides):
     base = dict(OsmoseConfigReader().read(str(BALTIC)))
     base.update(DET)
-    base["simulation.time.nyear"] = "6"  # shrink the in-suite Baltic run (RV-gate test does the same)
+    base["simulation.time.nyear"] = (
+        "6"  # shrink the in-suite Baltic run (RV-gate test does the same)
+    )
     base.update(overrides)
     return PythonEngine().run_in_memory(base, seed=0).biomass()
 
@@ -35,13 +38,15 @@ def _rel_change(off, on, sp):
 
 def test_gate_on_targets_percids_and_reduces_perch():
     off = _series({})
-    on = _series({
-        "reproduction.thermal.gate.enabled": "true",
-        "reproduction.thermal.gate.series.file": str(THERMAL),
-        "reproduction.thermal.gate.mode": "thermal_cap",
-        "reproduction.thermal.gate.species.enabled.sp4": "true",
-        "reproduction.thermal.gate.species.enabled.sp5": "true",
-    })
+    on = _series(
+        {
+            "reproduction.thermal.gate.enabled": "true",
+            "reproduction.thermal.gate.series.file": str(THERMAL),
+            "reproduction.thermal.gate.mode": "thermal_cap",
+            "reproduction.thermal.gate.species.enabled.sp4": "true",
+            "reproduction.thermal.gate.species.enabled.sp5": "true",
+        }
+    )
     # The gate fired on the intended species: both percids move materially.
     assert _rel_change(off, on, "perch") > 0.02
     assert _rel_change(off, on, "pikeperch") > 0.02

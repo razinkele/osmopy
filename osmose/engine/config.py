@@ -1196,7 +1196,9 @@ def _load_thermal_gate(
             continue
         col = f"temp_sp{sp}"
         if col not in df.columns:
-            raise ValueError(f"Thermal gate series {path} missing column {col!r} for enabled sp{sp}.")
+            raise ValueError(
+                f"Thermal gate series {path} missing column {col!r} for enabled sp{sp}."
+            )
         temp = df[col].to_numpy(dtype=np.float64)
         if np.any(~np.isfinite(temp)) or np.any(temp < -2.0) or np.any(temp > 30.0):
             raise ValueError(
@@ -2339,8 +2341,8 @@ class EngineConfig:
         recruitment_ceiling_by_season, recruitment_ceiling_enabled = _load_recruitment_ceiling(
             cfg, n_sp, n_dt, _spawning_season
         )
-        thermal_gate_factor_by_index, thermal_gate_enabled, thermal_gate_offset = _load_thermal_gate(
-            cfg, n_sp, n_dt, n_yr
+        thermal_gate_factor_by_index, thermal_gate_enabled, thermal_gate_offset = (
+            _load_thermal_gate(cfg, n_sp, n_dt, n_yr)
         )
 
         return cls(

@@ -71,7 +71,9 @@ def _habitat_mask(cfg: dict[str, str], sp: int, cfg_dir: Path) -> np.ndarray:
             mask = m if mask is None else (mask | m)
         n += 1
     if mask is None:
-        raise ValueError(f"no movement map found for {sp_name} (sp{sp}); check movement.species.map* keys")
+        raise ValueError(
+            f"no movement map found for {sp_name} (sp{sp}); check movement.species.map* keys"
+        )
     return mask
 
 
@@ -129,9 +131,13 @@ def main() -> int:
     OUT.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(OUT, index=False)
     print(f"wrote {OUT} ({len(df)} years, cols {list(df.columns)})")
-    print("per-year index range:",
-          {f"sp{sp}": (round(df[f'temp_sp{sp}'].min(), 2), round(df[f'temp_sp{sp}'].max(), 2))
-           for sp in SPECIES})  # finding 3 sanity check
+    print(
+        "per-year index range:",
+        {
+            f"sp{sp}": (round(df[f"temp_sp{sp}"].min(), 2), round(df[f"temp_sp{sp}"].max(), 2))
+            for sp in SPECIES
+        },
+    )  # finding 3 sanity check
     return 0
 
 

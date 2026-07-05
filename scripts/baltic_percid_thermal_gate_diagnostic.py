@@ -26,8 +26,13 @@ import numpy as np
 from osmose.config import OsmoseConfigReader
 from osmose.engine import PythonEngine
 
-SERIES = (Path(__file__).resolve().parent.parent
-          / "data" / "baltic" / "forcing" / "baltic_percid_thermal_series_example.csv")
+SERIES = (
+    Path(__file__).resolve().parent.parent
+    / "data"
+    / "baltic"
+    / "forcing"
+    / "baltic_percid_thermal_series_example.csv"
+)
 DET = {"movement.randomseed.fixed": "true", "stochastic.mortality.randomseed.fixed": "true"}
 PERCIDS = (("perch", 4), ("pikeperch", 5))
 
@@ -39,15 +44,19 @@ def overshoot_ratio(series: np.ndarray, late_frac: float = 1.0 / 3.0) -> float:
     ~0 does not masquerade as a finite ratio (review finding 3).
     """
     b = np.asarray(series, dtype=np.float64)
-    late = b[int(len(b) * (1.0 - late_frac)):]
+    late = b[int(len(b) * (1.0 - late_frac)) :]
     lm = float(np.mean(late))
     return float("inf") if lm <= 0.0 else float(np.max(b)) / lm
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--nyear", type=int, default=None,
-                    help="override simulation.time.nyear (small = cheap smoke run; omit for full A/B)")
+    ap.add_argument(
+        "--nyear",
+        type=int,
+        default=None,
+        help="override simulation.time.nyear (small = cheap smoke run; omit for full A/B)",
+    )
     args = ap.parse_args()
 
     cfg_path = sorted((Path("data") / "baltic").glob("*all-parameters*.csv"))[0]
@@ -55,19 +64,23 @@ def main() -> int:
     if args.nyear is not None:
         base["simulation.time.nyear"] = str(args.nyear)
     off_cfg = {**base, **DET}
-    on_cfg = {**off_cfg,
-              "reproduction.thermal.gate.enabled": "true",
-              "reproduction.thermal.gate.series.file": str(SERIES),
-              "reproduction.thermal.gate.mode": "thermal_cap",
-              "reproduction.thermal.gate.species.enabled.sp4": "true",
-              "reproduction.thermal.gate.species.enabled.sp5": "true"}
+    on_cfg = {
+        **off_cfg,
+        "reproduction.thermal.gate.enabled": "true",
+        "reproduction.thermal.gate.series.file": str(SERIES),
+        "reproduction.thermal.gate.mode": "thermal_cap",
+        "reproduction.thermal.gate.species.enabled.sp4": "true",
+        "reproduction.thermal.gate.species.enabled.sp5": "true",
+    }
 
     off = PythonEngine().run_in_memory(off_cfg, seed=0).biomass()
     on = PythonEngine().run_in_memory(on_cfg, seed=0).biomass()
 
     print("PRIMARY axis (finding 2) = absolute mean biomass; lower = toward the ICES envelope.")
-    print(f"{'species':<11} {'mean_off':>11} {'mean_on':>11} {'abs_change':>11}  "
-          f"{'stability_off':>13} {'stability_on':>12}  verdict")
+    print(
+        f"{'species':<11} {'mean_off':>11} {'mean_on':>11} {'abs_change':>11}  "
+        f"{'stability_off':>13} {'stability_on':>12}  verdict"
+    )
     for name, _sp in PERCIDS:
         so, sn = off[name].to_numpy(), on[name].to_numpy()
         mo, mn = float(np.mean(so)), float(np.mean(sn))
@@ -84,11 +97,14 @@ def main() -> int:
             verdict = "no change"
         so_s = f"{oo:.3f}" if np.isfinite(oo) else "collapsed"
         on_s = f"{on_r:.3f}" if np.isfinite(on_r) else "collapsed"
-        print(f"{name:<11} {mo:>11.4g} {mn:>11.4g} {pct:>+10.1f}%  "
-              f"{so_s:>13} {on_s:>12}  {verdict}")
-    print("\nNOTE: 'stability' = peak/late-window boom-bust ratio (temporal), NOT the "
-          "absolute overshoot the feature targets. pikeperch is the load-bearing "
-          "signal (perch near-collapse; finding 3).")
+        print(
+            f"{name:<11} {mo:>11.4g} {mn:>11.4g} {pct:>+10.1f}%  {so_s:>13} {on_s:>12}  {verdict}"
+        )
+    print(
+        "\nNOTE: 'stability' = peak/late-window boom-bust ratio (temporal), NOT the "
+        "absolute overshoot the feature targets. pikeperch is the load-bearing "
+        "signal (perch near-collapse; finding 3)."
+    )
     return 0
 
 

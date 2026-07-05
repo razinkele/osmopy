@@ -64,8 +64,7 @@ def test_factor_all_ones_when_off():
 
 
 def test_factor_applies_only_to_enabled_species_for_current_year():
-    factor = np.array([[1.0, 1.0, 1.0, 1.0, 0.3, 0.7],
-                       [1.0, 1.0, 1.0, 1.0, 0.9, 0.8]])
+    factor = np.array([[1.0, 1.0, 1.0, 1.0, 0.3, 0.7], [1.0, 1.0, 1.0, 1.0, 0.9, 0.8]])
     enabled = np.array([False, False, False, False, True, True])
     out = thermal_gate_factor(_stub(factor, enabled), step=0)
     assert out[4] == pytest.approx(0.3) and out[5] == pytest.approx(0.7)

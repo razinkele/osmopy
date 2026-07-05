@@ -34,7 +34,9 @@ def test_thermal_cap_shapes_and_enabled_mask():
 
 
 def test_mean_preserving_unit_mean():
-    f, e, o = _load_thermal_gate(_cfg(**{"reproduction.thermal.gate.mode": "mean_preserving"}), 6, 24, 4)
+    f, e, o = _load_thermal_gate(
+        _cfg(**{"reproduction.thermal.gate.mode": "mean_preserving"}), 6, 24, 4
+    )
     assert np.mean(f[:, 4]) == pytest.approx(1.0)
 
 
@@ -44,8 +46,12 @@ def test_missing_file_raises():
 
 
 def test_no_species_enabled_raises():
-    cfg = _cfg(**{"reproduction.thermal.gate.species.enabled.sp4": "false",
-                  "reproduction.thermal.gate.species.enabled.sp5": "false"})
+    cfg = _cfg(
+        **{
+            "reproduction.thermal.gate.species.enabled.sp4": "false",
+            "reproduction.thermal.gate.species.enabled.sp5": "false",
+        }
+    )
     with pytest.raises(ValueError, match="no species enabled"):
         _load_thermal_gate(cfg, 6, 24, 4)
 
@@ -70,9 +76,15 @@ def test_mean_preserving_rejects_floor(tmp_path):
     # review finding 4: floor>0 under mean_preserving must fail-fast in the loader.
     with pytest.raises(ValueError, match="floor"):
         _load_thermal_gate(
-            _cfg(**{"reproduction.thermal.gate.mode": "mean_preserving",
-                    "reproduction.thermal.gate.floor": "0.1"}),
-            6, 24, 4,
+            _cfg(
+                **{
+                    "reproduction.thermal.gate.mode": "mean_preserving",
+                    "reproduction.thermal.gate.floor": "0.1",
+                }
+            ),
+            6,
+            24,
+            4,
         )
 
 
@@ -81,6 +93,7 @@ def test_thermal_keys_are_recognized_by_config_validation():
     unknown keys for the thermal keys. Real API:
     config_validation.validate(cfg, mode) -> list[UnknownKey]."""
     from osmose.engine import config_validation as cv
+
     keys = {
         "reproduction.thermal.gate.enabled": "true",
         "reproduction.thermal.gate.series.file": str(FIX),

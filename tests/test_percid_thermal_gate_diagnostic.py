@@ -7,7 +7,9 @@ def test_diagnostic_runs_and_reports_both_percids():
     # is run by hand with the full horizon.
     out = subprocess.run(
         [sys.executable, "scripts/baltic_percid_thermal_gate_diagnostic.py", "--nyear", "4"],
-        capture_output=True, text=True, timeout=900,
+        capture_output=True,
+        text=True,
+        timeout=900,
     )
     assert out.returncode == 0, out.stderr
     lo = out.stdout.lower()
