@@ -77,8 +77,14 @@ CMEMS BAL (~2 km: so, thetao, LTL, predators)                     │
   littoral depth). This sub-grid fraction captures sub-km lagoons/flads that a binary 4× threshold or the
   CMEMS validity mask would miss (review-critical fix). Emits `data/baltic-fine/baltic_fine_grid.nc` +
   mask CSV + a per-species `shallow_fraction` array consumed by [B].
-- **Fallback if EMODnet ingest proves impractical:** GEBCO 2024 (~450 m) — coarser but still ≫ CMEMS and
-  covers the lagoons. The choice is isolated in [A]; [B] onward is source-agnostic.
+- **EMODnet access CONFIRMED (spike 2026-07-05):** WCS `GetCoverage` (coverage `emodnet__mean`,
+  `version=2.0.1`, `subset=Lat(..)&subset=Long(..)`, `format=image/tiff`) returns real ~115 m EPSG:4326
+  32-bit depth; read with **rasterio** (new offline-builder dependency, GDAL-based — installs cleanly,
+  scoped to the builder NOT the engine/UI). Convention: **negative = below sea level**, so `depth = -elev`
+  and land is `elev >= 0`. Full extent (~221 M cells) is fetched **tiled** via per-super-cell/strip WCS
+  bbox requests, accumulating `shallow_fraction` — never one giant download.
+- **Fallback (not needed given the spike, kept for robustness):** GEBCO 2024 (~450 m). The source choice
+  is isolated in [A]; [B] onward is source-agnostic.
 
 ### 4.2 [B] Percid habitat builder (`osmose/forcing/percid_habitat.py` pure core + script)
 - **Adult / juvenile maps:** occupancy weight = `shallow_fraction` (from [A]) — i.e. the realistic
