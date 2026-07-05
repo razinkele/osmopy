@@ -12,6 +12,7 @@ import queue as _queue_mod
 import stat
 import subprocess
 import tempfile
+from typing import Any
 import threading
 import time
 from pathlib import Path
@@ -409,7 +410,7 @@ def _make_progress_callback(
         def __init__(self):
             super().__init__()
 
-        def notify(self, algorithm):
+        def notify(self, algorithm: Any):
             if cancel_check():
                 algorithm.termination.force_termination = True
                 return

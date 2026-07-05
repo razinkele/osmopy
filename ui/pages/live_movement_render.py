@@ -14,9 +14,9 @@ from shiny_deckgl import (  # type: ignore[import-untyped]
     PALETTE_THERMAL,
     color_range,
     heatmap_layer,
-    layer_legend_widget,
     scatterplot_layer,
 )
+from shiny_deckgl.widgets import layer_legend_widget  # type: ignore[import-untyped]
 
 from osmose.live_movement import STAGE_LABELS, MovementSnapshot
 

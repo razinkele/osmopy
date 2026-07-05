@@ -304,7 +304,7 @@ def fisheries_server(input, output, session, state: AppState):
                 for st in statuses:
                     sdf = results.ssb(st.species)
                     if st.species in sdf.columns:
-                        mean_ssb = float(sdf[st.species].mean())
+                        mean_ssb = float(cast("float", sdf[st.species].mean()))
                         ssb_means[st.species] = f"{mean_ssb:,.0f} t"
             except Exception as e:  # noqa: BLE001
                 _log.warning("SSB scale-hint unavailable: %s", e)
