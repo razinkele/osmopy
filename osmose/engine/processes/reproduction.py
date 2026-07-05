@@ -177,6 +177,18 @@ def reproduction(
                 if n_eggs[sp] > cap:
                     n_eggs[sp] = cap
 
+    # Percid thermal recruitment gate (per-year summer-SST factor; spec 2026-07-05;
+    # Pekcan-Hekim et al. 2011, Olin et al. 2019). Inert unless enabled. Percid-only
+    # and independent of the cod-only RV gate / recruitment ceiling.
+    if config.thermal_gate_factor_by_index is not None:
+        from osmose.engine.processes.thermal_gate import thermal_gate_factor
+
+        assert config.thermal_gate_enabled is not None  # set together in _load_thermal_gate
+        tgate = thermal_gate_factor(config, step)
+        for sp in range(n_sp):
+            if config.thermal_gate_enabled[sp] and not seeded_this_step[sp]:
+                n_eggs[sp] *= tgate[sp]
+
     # Create new schools from eggs
     new_schools_list = []
     for sp in range(n_sp):

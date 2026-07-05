@@ -41,6 +41,7 @@ BBOX = dict(
 
 FIELDS = {
     "so": {"dataset_id": "cmems_mod_bal_phy_my_P1M-m", "tag": "phy_monthly_reanalysis"},
+    "thetao": {"dataset_id": "cmems_mod_bal_phy_my_P1M-m", "tag": "phy_monthly_reanalysis"},
     "o2": {"dataset_id": "cmems_mod_bal_bgc_my_P1M-m", "tag": "bgc_monthly_reanalysis"},
 }
 

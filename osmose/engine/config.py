@@ -1206,6 +1206,85 @@ def _load_rv_spatial(
     return field, enabled
 
 
+def _load_thermal_gate(
+    cfg: dict[str, str], n_species: int, n_dt_per_year: int, n_year: int
+) -> tuple[NDArray[np.float64] | None, NDArray[np.bool_] | None, int]:
+    """Load the percid thermal recruitment gate (spec 2026-07-05).
+
+    Returns (factor_by_index, enabled_mask, offset). factor_by_index has shape
+    (n_years, n_species) with the logistic response + mode already applied;
+    columns for disabled species are 1.0. All three are (None, None, 0) when the
+    master switch is off. Raises a clear error on any invalid configuration.
+    """
+    from osmose.engine.processes.thermal_gate import logistic_response, normalize_factor
+
+    if cfg.get("reproduction.thermal.gate.enabled", "false").lower() != "true":
+        return None, None, 0
+
+    file_key = cfg.get("reproduction.thermal.gate.series.file", "")
+    if not file_key:
+        raise ValueError("Thermal gate enabled but reproduction.thermal.gate.series.file is empty.")
+    path = _require_file(file_key, _cfg_dir(cfg), "reproduction.thermal.gate.series.file")
+    df = pd.read_csv(path)
+    if df.shape[0] == 0 or "year" not in df.columns:
+        raise ValueError(f"Thermal gate series {path} has no data rows or missing 'year' column.")
+    years = df["year"].to_numpy()
+    first_year = int(years[0])
+    if not np.array_equal(years, np.arange(first_year, first_year + len(years))):
+        raise ValueError(f"Thermal gate series {path} years must be contiguous and ascending.")
+    n_years = len(years)
+
+    enabled = np.zeros(n_species, dtype=np.bool_)
+    for sp in range(n_species):
+        if cfg.get(f"reproduction.thermal.gate.species.enabled.sp{sp}", "false").lower() == "true":
+            enabled[sp] = True
+    if not enabled.any():
+        raise ValueError(
+            "Thermal gate enabled but no species enabled "
+            "(reproduction.thermal.gate.species.enabled.sp{idx})."
+        )
+
+    mode = cfg.get("reproduction.thermal.gate.mode", "thermal_cap")
+    if mode not in ("thermal_cap", "mean_preserving"):
+        raise ValueError(f"unknown reproduction.thermal.gate.mode: {mode!r}")
+    floor = float(cfg.get("reproduction.thermal.gate.floor", "0.0"))
+    if not (0.0 <= floor <= 1.0):
+        raise ValueError(f"reproduction.thermal.gate.floor must be in [0,1], got {floor}.")
+    start_year = int(cfg.get("reproduction.thermal.gate.start.year", str(first_year)))
+    offset = start_year - first_year
+    window_idx = [(offset + y) % n_years for y in range(n_year)]
+
+    factor = np.ones((n_years, n_species), dtype=np.float64)
+    for sp in range(n_species):
+        if not enabled[sp]:
+            continue
+        col = f"temp_sp{sp}"
+        if col not in df.columns:
+            raise ValueError(
+                f"Thermal gate series {path} missing column {col!r} for enabled sp{sp}."
+            )
+        temp = df[col].to_numpy(dtype=np.float64)
+        if np.any(~np.isfinite(temp)) or np.any(temp < -2.0) or np.any(temp > 30.0):
+            raise ValueError(
+                f"Thermal gate series {path} column {col} has NaN or out-of-range (-2..30 C) values."
+            )
+        t50 = float(cfg.get(f"reproduction.thermal.gate.t50.sp{sp}", "18.5"))
+        slope = float(cfg.get(f"reproduction.thermal.gate.slope.sp{sp}", "1.5"))
+        if slope <= 0.0:
+            raise ValueError(f"reproduction.thermal.gate.slope.sp{sp} must be > 0, got {slope}.")
+        r = logistic_response(temp, t50, slope)
+        if mode == "thermal_cap":
+            tref = float(cfg.get(f"reproduction.thermal.gate.tref.sp{sp}", "20.0"))
+            r_ref = float(logistic_response(np.array([tref]), t50, slope)[0])
+            if r_ref <= 0.0:
+                raise ValueError(f"thermal_cap r_ref for sp{sp} is 0 (check tref/t50/slope).")
+        else:
+            r_ref = 0.0
+        factor[:, sp] = normalize_factor(r, mode, r_ref, window_idx, floor)
+
+    return factor.astype(np.float64), enabled, offset
+
+
 def _load_salinity_gate(
     cfg: dict[str, str], n_species: int
 ) -> tuple[bool, NDArray[np.bool_] | None, float, float, PhysicalData | None]:
@@ -1585,6 +1664,11 @@ class EngineConfig:
     # Unfished-level recruitment ceiling (both None when disabled)
     recruitment_ceiling_by_season: NDArray[np.float64] | None  # (n_cols, n_species)
     recruitment_ceiling_enabled: NDArray[np.bool_] | None  # (n_species,) enable mask
+
+    # Percid thermal recruitment gate (all None/0 when disabled)
+    thermal_gate_factor_by_index: NDArray[np.float64] | None  # (n_years, n_species)
+    thermal_gate_enabled: NDArray[np.bool_] | None  # (n_species,) per-species enable mask
+    thermal_gate_offset: int  # start_year - first_year
 
     # Movement
     movement_method: list[str]
@@ -2326,6 +2410,9 @@ class EngineConfig:
         recruitment_ceiling_by_season, recruitment_ceiling_enabled = _load_recruitment_ceiling(
             cfg, n_sp, n_dt, _spawning_season
         )
+        thermal_gate_factor_by_index, thermal_gate_enabled, thermal_gate_offset = (
+            _load_thermal_gate(cfg, n_sp, n_dt, n_yr)
+        )
 
         return cls(
             n_species=n_sp,
@@ -2400,6 +2487,9 @@ class EngineConfig:
             salinity_field=salinity_field,
             recruitment_ceiling_by_season=recruitment_ceiling_by_season,
             recruitment_ceiling_enabled=recruitment_ceiling_enabled,
+            thermal_gate_factor_by_index=thermal_gate_factor_by_index,
+            thermal_gate_enabled=thermal_gate_enabled,
+            thermal_gate_offset=thermal_gate_offset,
             fishing_enabled=(
                 cfg.get("simulation.fishing.mortality.enabled", "true").lower() == "true"
                 or fisheries_enabled
