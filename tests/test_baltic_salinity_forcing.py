@@ -2,6 +2,8 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
+import xarray as xr
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import build_baltic_salinity_forcing as bld  # noqa: E402
@@ -41,3 +43,61 @@ def test_fill_ocean_nan_leaves_land():
     ocean = np.array([[False, True]])  # cell 0 is land
     out = bld.fill_ocean_nan(field, ocean)
     assert np.isnan(out[0, 0, 0])  # land NaN untouched
+
+
+def _month_times(path, months):
+    # distinct year per file inferred from the filename's 4-digit year
+    import re
+
+    yr = int(re.search(r"(\d{4})", Path(path).name).group(1))
+    return [np.datetime64(f"{yr}-{m:02d}-15") for m in months]
+
+
+def _write_so_file(path, months, depth, lat, lon, fill):
+    # so shape (time, depth, lat, lon); `fill(m)` returns a (depth,lat,lon) array
+    data = np.stack([fill(m) for m in months], axis=0)
+    ds = xr.Dataset(
+        {"so": (["time", "depth", "latitude", "longitude"], data)},
+        coords={
+            "time": _month_times(path, months),
+            "depth": depth,
+            "latitude": lat,
+            "longitude": lon,
+        },
+    )
+    ds.to_netcdf(path)
+
+
+def test_accumulate_climatology_two_years(tmp_path):
+    depth = np.array([0.5, 5.0])  # ascending
+    lat = np.array([60.0, 59.0])  # descending
+    lon = np.array([15.0, 16.0])
+    # year A: bottom (depth1) salinity = 10 in Jan; year B: 20 in Jan -> clim Jan = 15
+    fA = tmp_path / "so_2001.nc"
+    fB = tmp_path / "so_2002.nc"
+    _write_so_file(fA, [1], depth, lat, lon, lambda m: np.full((2, 2, 2), 10.0))
+    _write_so_file(fB, [1], depth, lat, lon, lambda m: np.full((2, 2, 2), 20.0))
+    clim, slat, slon = bld.accumulate_climatology([str(fA), str(fB)])
+    assert clim.shape == (12, 2, 2)
+    assert np.allclose(clim[0], 15.0)  # Jan mean across the two years
+    assert np.all(np.isnan(clim[1]))  # Feb had no data
+    np.testing.assert_array_equal(slat, lat)
+
+
+def test_artifact_shape_and_orientation():
+    p = Path("data/baltic/baltic_salinity_bottom_climatology.nc")
+    if not p.exists():
+        pytest.skip("run scripts/build_baltic_salinity_forcing.py first")
+    with xr.open_dataset(p) as ds:
+        s = ds["salinity"].values  # (24, 40, 50)
+    assert s.shape == (24, 40, 50)
+    # every finite value is a plausible Baltic salinity
+    fin = s[np.isfinite(s)]
+    assert fin.min() >= 0.0 and fin.max() <= 40.0
+    # ORIENTATION: mean salinity of the northern rows (low cell_y) must be LOWER
+    # than the southern rows (high cell_y). North Baltic (Bothnian Bay) is ~2-3
+    # psu; south-west (Arkona/Kattegat) is ~15-25 psu. If flipped, this fails.
+    t0 = s[0]
+    north = np.nanmean(t0[:10, :])  # cell_y 0-9 (≈ 66-63 N)
+    south = np.nanmean(t0[30:, :])  # cell_y 30-39 (≈ 57-54 N)
+    assert south > north, f"orientation wrong: north={north:.2f} !< south={south:.2f}"
