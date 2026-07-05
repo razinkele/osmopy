@@ -6,6 +6,7 @@ import atexit
 import shutil
 import tempfile
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -196,7 +197,7 @@ def make_diet_heatmap(df: pd.DataFrame, template: str = "osmose") -> go.Figure:
     pair_cols = [c for c in df.columns if "_" in c and c not in _DIET_META_COLS]
     if not pair_cols:
         return go.Figure().update_layout(title="Diet Composition (no prey data)", template=template)
-    means = df[pair_cols].mean(numeric_only=True)
+    means = cast("pd.Series", df[pair_cols].mean(numeric_only=True))
     predators: list[str] = []
     prey_names = []
     cells: dict[tuple[str, str], float] = {}

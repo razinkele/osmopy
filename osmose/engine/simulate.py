@@ -1349,7 +1349,7 @@ def simulate(
     *,
     output_dir: Path | None = None,
     cancel_token: "threading.Event | None" = None,
-    step_observer: "Callable[[int, object, object, object], None] | None" = None,
+    step_observer: "Callable[[int, object, object, object, object], None] | None" = None,
 ) -> list[StepOutput]:
     """Run the OSMOSE simulation loop.
 

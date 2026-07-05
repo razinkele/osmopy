@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import warnings
 from collections import deque
+from typing import cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -45,7 +46,11 @@ def _movement_salinity_weight(config, grid, step) -> NDArray[np.float64] | None:
         S = np.full((grid.ny, grid.nx), config.salinity_field.get_scalar())
     else:
         S = config.salinity_field.get_grid(step)
-    return salinity_weight(S, config.salinity_gate_s_low, config.salinity_gate_s_high)
+    # S is always an ndarray here, so salinity_weight returns an ndarray.
+    return cast(
+        "NDArray[np.float64]",
+        salinity_weight(S, config.salinity_gate_s_low, config.salinity_gate_s_high),
+    )
 
 
 def _map_move_school(
@@ -376,6 +381,7 @@ def movement(
             new_cy = state.cell_y.copy()
             new_out = state.is_out.copy()
             sal_w = _movement_salinity_weight(config, grid, step)
+            sal_species = config.salinity_gate_species
             for i in np.where(uses_maps)[0]:
                 sp_id = int(sp[i])
                 if sp_id in map_sets:
@@ -392,7 +398,9 @@ def movement(
                         _rng_for(sp_id),
                         salinity_weight_grid=(
                             sal_w
-                            if (sal_w is not None and config.salinity_gate_species[sp_id])
+                            if (
+                                sal_w is not None and sal_species is not None and sal_species[sp_id]
+                            )
                             else None
                         ),
                     )

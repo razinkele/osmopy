@@ -333,10 +333,9 @@ def run_yield_f_sweep(
         # Serial in-process: monkeypatch-friendly, no pickling overhead
         raw_results = [_run_one(t) for t in tasks]
     else:
-        raw_results = [None] * len(tasks)
         with ProcessPoolExecutor(max_workers=workers) as ex:
-            for i, out in enumerate(ex.map(_run_one, tasks)):
-                raw_results[i] = out
+            # ex.map yields results in task-submission order
+            raw_results = list(ex.map(_run_one, tasks))
 
     # Group by (species, f_nominal) → average over replicates
     curves: dict[str, dict[float, list[tuple[float, float, float, bool]]]] = {}

@@ -17,8 +17,9 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import cast
 
-from osmose.validation.ices import load_snapshot
+from osmose.validation.ices import IcesSnapshot, load_snapshot
 
 _SIDECAR = "fisheries_reference_points.json"
 
@@ -91,12 +92,12 @@ def _to_float(v: object) -> float | None:
     if v is None:
         return None
     try:
-        return float(v)
+        return float(cast("str | float", v))
     except (TypeError, ValueError):
         return None
 
 
-def _autofill_fmsy(species: str, snapshot: object, rp: ReferencePoint) -> None:
+def _autofill_fmsy(species: str, snapshot: IcesSnapshot, rp: ReferencePoint) -> None:
     """Populate *rp* with Fmsy from the primary tonnes-unit ICES stock.
 
     Primary stock selection

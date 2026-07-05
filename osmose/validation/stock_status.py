@@ -115,8 +115,12 @@ def compute_stock_status(
         for y in years:
             b = b_map.get(y)
             f = f_map.get(y)
-            b_ratio.append(b / rp.bmsy if (rp.has_b_axis and b is not None) else None)
-            f_ratio.append(f / rp.fmsy if (rp.has_f_axis and f is not None) else None)
+            b_ratio.append(
+                b / rp.bmsy if (rp.has_b_axis and rp.bmsy is not None and b is not None) else None
+            )
+            f_ratio.append(
+                f / rp.fmsy if (rp.has_f_axis and rp.fmsy is not None and f is not None) else None
+            )
 
         if not rp.has_b_axis:
             caveats.append("No Bmsy supplied — B-axis unavailable")
@@ -131,6 +135,8 @@ def compute_stock_status(
             if quad is not None:
                 br = b_ratio[i]
                 fr = f_ratio[i]
+                # _quadrant returns non-None only when both operands are non-None
+                assert br is not None and fr is not None
                 takeaway = (
                     f"Indicative: F {'above' if fr > 1 else 'at/below'} Fmsy and "
                     f"SSB {'below' if br < 1 else 'at/above'} your Bmsy"

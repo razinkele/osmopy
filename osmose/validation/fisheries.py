@@ -53,7 +53,7 @@ def annual_by_year(values, time, *, how: str) -> dict[int, float]:
     years = np.floor(np.asarray(time, dtype=float)).astype(int)
     grouped = s.groupby(years)
     agg = grouped.sum() if how == "sum" else grouped.mean()
-    return {int(y): float(v) for y, v in agg.items()}
+    return {int(cast(int, y)): float(cast(float, v)) for y, v in agg.items()}
 
 
 def read_mortality(path: Path) -> pd.DataFrame:
