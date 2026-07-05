@@ -171,7 +171,7 @@ def make_step_observer(
     dot_cap: int = 2000,
     throttle_s: float = 0.2,
     now: Callable[[], float] = time.monotonic,
-) -> Callable[[int, object, object, object], None]:
+) -> Callable[[int, object, object, object, object], None]:
     """Return a step-observer that builds a snapshot and enqueues it (drop-oldest).
 
     Always emits step 0 and the final step (``config.n_steps - 1``); throttles the
@@ -210,10 +210,10 @@ def make_step_observer(
 
 def make_run_observer(
     progress_q: "queue.Queue[tuple[int, int, float]]",
-    live_observer: "Callable[[int, object, object, object], None] | None" = None,
+    live_observer: "Callable[[int, object, object, object, object], None] | None" = None,
     *,
     now: Callable[[], float] = time.monotonic,
-) -> Callable[[int, object, object, object], None]:
+) -> Callable[[int, object, object, object, object], None]:
     """Step-observer that pushes (done, n_steps, elapsed_s) to progress_q every step
     (done = step + 1, 1-based) and delegates to live_observer when given.
 

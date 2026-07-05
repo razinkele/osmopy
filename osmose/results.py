@@ -5,8 +5,9 @@ from __future__ import annotations
 import csv
 import io
 import re
+from collections.abc import Hashable
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import pandas as pd
@@ -533,11 +534,11 @@ class OsmoseResults:
         ds = self.read_netcdf(f"{self.prefix}_Simu0.nc")
         da = ds[var]  # dims (time, <species_dim>)
         sp_names = [str(s) for s in ds.coords[species_dim].values]
-        wide = pd.DataFrame(np.asarray(da.values), columns=sp_names)
+        wide = pd.DataFrame(np.asarray(da.values), columns=pd.Index(sp_names))
         wide.insert(0, "Time", np.asarray(ds.coords["time"].values))
         if species is not None and species in wide.columns:
             wide = wide[["Time", species]]
-        return wide
+        return cast(pd.DataFrame, wide)
 
     def mortality_rate(self, species: str | None = None) -> pd.DataFrame:
         """Read mortality rate time series."""
@@ -690,7 +691,7 @@ class OsmoseResults:
         """
         df = _read_output_csv(filepath)
         if df.shape[1] < 3:
-            return pd.DataFrame(columns=["time", "species", "bin", "value"])
+            return pd.DataFrame(columns=pd.Index(["time", "species", "bin", "value"]))
         time_col, bin_col = df.columns[0], df.columns[1]
         species_cols = list(df.columns[2:])
         melted = df.melt(
@@ -699,11 +700,13 @@ class OsmoseResults:
             var_name="species",
             value_name="value",
         )
-        melted = melted.rename(columns={time_col: "time", bin_col: "bin"})
+        melted = melted.rename(
+            columns={cast(Hashable, time_col): "time", cast(Hashable, bin_col): "bin"}
+        )
         melted = melted[["time", "species", "bin", "value"]]
         if species:
             melted = melted[melted["species"] == species]
-        return melted
+        return cast(pd.DataFrame, melted)
 
     def _read_species_output(self, output_type: str, species: str | None) -> pd.DataFrame:
         """Read CSV output files for a given output type.

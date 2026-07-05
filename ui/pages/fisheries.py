@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import plotly.graph_objects as go
 from shiny import reactive, render, ui
@@ -328,8 +329,16 @@ def fisheries_server(input, output, session, state: AppState):
                 ui.tags.tr(
                     ui.tags.td(ui.tags.strong(st.species)),
                     ui.tags.td(f"mean SSB ≈ {ssb_hint}"),
-                    ui.tags.td(ui.input_numeric(bmsy_id, label=None, value=None, min=0, step=1000)),
-                    ui.tags.td(ui.input_numeric(fmsy_id, label=None, value=None, min=0, step=0.01)),
+                    ui.tags.td(
+                        ui.input_numeric(
+                            bmsy_id, label=None, value=cast("float", None), min=0, step=1000
+                        )
+                    ),
+                    ui.tags.td(
+                        ui.input_numeric(
+                            fmsy_id, label=None, value=cast("float", None), min=0, step=0.01
+                        )
+                    ),
                     ui.tags.td(
                         ui.tags.small(
                             st.takeaway or ("—" if not st.caveats else "; ".join(st.caveats)),
