@@ -218,8 +218,8 @@ def test_rv_gate_factor_wraps_and_offsets():
     assert rv_gate_factor(cfg, 4 * 24).tolist() == [0.5]
 
 
-BALTIC = Path("/home/razinka/osmose/osmose-python/data/baltic/baltic_all-parameters.csv")
-SERIES = Path("/home/razinka/osmose/osmose-python/data/baltic/forcing/baltic_rv_gate_series.csv")
+BALTIC = Path("data/baltic/baltic_all-parameters.csv")
+SERIES = Path("data/baltic/forcing/baltic_rv_gate_series.csv")
 
 
 def _baltic_cfg(**over):
