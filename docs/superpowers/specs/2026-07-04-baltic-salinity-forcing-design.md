@@ -1,7 +1,7 @@
 # Real CMEMS salinity forcing for the salinity gate — design (BLOCKED on data)
 
 **Date:** 2026-07-04
-**Status:** design settled, **BLOCKED on a user action** (see §2). Not yet planned/implemented — resume at writing-plans once the full-depth `so` data is downloaded.
+**Status:** design settled, **DATA BLOCKER CLEARED 2026-07-05** — full-depth `so` (1993–2021, 36 levels 0.5–245 m, 26 GB) downloaded to `data/cmems_cache/cmems_downloads/` (deep-only preserved in `so_deep_only_backup/`); shallow coastal coverage verified (145,478 ocean columns, bottom salinity 0.01–35.14 psu). Proceeding to writing-plans + build.
 **Author:** brainstormed with the user
 **Related:** `docs/superpowers/specs/2026-07-04-salinity-gated-cod-occupancy-design.md` (the gate this feeds); `docs/superpowers/specs/2026-07-04-salinity-gate-numba-path-design.md` (gate now on both movement paths); `osmose/forcing/physics.py` + `osmose/forcing/grid.py` (regrid/resample primitives to reuse); `scripts/download_baltic_rv_forcing.py` (the download tool).
 
@@ -9,7 +9,7 @@
 
 Replace the gate's synthetic/constant salinity field with a **real, Baltic-grid bottom-salinity climatology** derived from CMEMS `so`, wire it into the Baltic config, and run the Baltic A/B (gate off vs on) to measure the cod–percid effect.
 
-## 2. BLOCKER (must clear first — user action)
+## 2. BLOCKER — CLEARED 2026-07-05 (retained for context)
 
 The local CMEMS `so` (`data/cmems_cache/cmems_downloads/baltic_phy_monthly_reanalysis_so_*.nc`, 29 files, 1993–2021) is **deep-only**: depth levels 41 m → 245 m (shallow levels were deliberately dropped for the RV/reproductive-volume work — see that script's docstring). The gate needs salinity in the **shallow coastal cells (<41 m)** — exactly where percids live and low salinity should exclude cod — and those cells are all-NaN in this data. Building on it would degenerate the gate into a ">41 m depth mask," not a salinity ramp.
 
