@@ -142,6 +142,37 @@ def larva_mortality(state: SchoolState, config: EngineConfig, step: int = 0) -> 
     n_dead = np.zeros_like(state.abundance)
     n_dead[eggs] = state.abundance[eggs] * mortality_fraction[eggs]
 
+    # Spatial reproductive-volume egg survival (Baltic cod). Inert unless enabled;
+    # multiplies egg survival by clip(RV(cell)/RV_ref, 0, 1) for enabled, non-seeded,
+    # located eggs. Increases n_dead by the extra kill (survival deficit).
+    field = config.rv_spatial_field
+    if field is not None:
+        assert config.rv_spatial_enabled is not None  # set together in _load_rv_spatial
+        rv_grid = field.get_grid(step)  # (ny, nx)
+        rv_ref = field.rv_ref or 1.0
+        for i in range(len(state)):
+            if not eggs[i]:
+                continue
+            spi = int(sp[i])
+            if spi >= len(config.rv_spatial_enabled) or not config.rv_spatial_enabled[spi]:
+                continue
+            if state.is_out[i]:
+                continue
+            fs = state.from_seeding
+            if fs is not None and fs[i]:
+                continue
+            cy = int(state.cell_y[i])
+            cx = int(state.cell_x[i])
+            if cy < 0 or cx < 0:
+                continue
+            rv = rv_grid[cy, cx]
+            if not np.isfinite(rv):
+                continue
+            s = min(1.0, max(0.0, rv / rv_ref))  # clip
+            survivors_after = state.abundance[i] * (1.0 - mortality_fraction[i]) * s
+            extra_dead = state.abundance[i] * (1.0 - mortality_fraction[i]) - survivors_after
+            n_dead[i] += extra_dead
+
     new_abundance = state.abundance - n_dead
     new_biomass = new_abundance * state.weight
     new_n_dead = state.n_dead.copy()

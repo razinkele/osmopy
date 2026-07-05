@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import multiprocessing
 import os
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
@@ -333,7 +334,13 @@ def run_yield_f_sweep(
         # Serial in-process: monkeypatch-friendly, no pickling overhead
         raw_results = [_run_one(t) for t in tasks]
     else:
-        with ProcessPoolExecutor(max_workers=workers) as ex:
+        # Use a "spawn" context: the default "fork" start method deadlocks / raises
+        # BrokenProcessPool when the parent already has threads running (numba's
+        # threadpool, or a pytest-xdist worker). spawn re-imports cleanly; _run_one
+        # takes a single picklable tuple so it works under either start method.
+        with ProcessPoolExecutor(
+            max_workers=workers, mp_context=multiprocessing.get_context("spawn")
+        ) as ex:
             # ex.map yields results in task-submission order
             raw_results = list(ex.map(_run_one, tasks))
 
