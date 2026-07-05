@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -101,3 +102,30 @@ def test_artifact_shape_and_orientation():
     north = np.nanmean(t0[:10, :])  # cell_y 0-9 (≈ 66-63 N)
     south = np.nanmean(t0[30:, :])  # cell_y 30-39 (≈ 57-54 N)
     assert south > north, f"orientation wrong: north={north:.2f} !< south={south:.2f}"
+
+
+def test_gate_loads_real_field_and_grades():
+    from osmose.config.reader import OsmoseConfigReader
+    from osmose.engine.config import _load_salinity_gate
+    from osmose.engine.processes.movement import _movement_salinity_weight
+
+    cfg = OsmoseConfigReader().read("data/baltic/baltic_all-parameters.csv")
+    if "movement.salinity.field.file" not in cfg:
+        pytest.skip("config not wired yet")
+    cfg["movement.salinity.gate.enabled"] = "true"
+    cfg["movement.salinity.gate.species.enabled.sp0"] = "true"
+    n_sp = int(float(cfg["simulation.nspecies"]))
+    enabled, mask, lo, hi, field = _load_salinity_gate(cfg, n_sp)
+    assert enabled and field is not None and not field.is_constant
+    assert field.get_grid(0).shape == (40, 50)  # (ny, nx)
+    ecfg = SimpleNamespace(
+        salinity_gate_enabled=True,
+        salinity_field=field,
+        salinity_gate_s_low=lo,
+        salinity_gate_s_high=hi,
+    )
+    w = _movement_salinity_weight(ecfg, SimpleNamespace(ny=40, nx=50), 0)
+    finite = w[np.isfinite(w)]
+    # GRADED: not all-0, not all-1 — a real spread of weights across [0,1]
+    assert 0.0 < finite.mean() < 1.0
+    assert (finite > 0).any() and (finite < 1).any()
