@@ -129,3 +129,12 @@ def test_gate_loads_real_field_and_grades():
     # GRADED: not all-0, not all-1 — a real spread of weights across [0,1]
     assert 0.0 < finite.mean() < 1.0
     assert (finite > 0).any() and (finite < 1).any()
+
+
+import baltic_salinity_gate_diagnostic as abdiag  # noqa: E402
+
+
+def test_late_mean_basic():
+    series = np.array([100.0, 200.0, 300.0, 400.0])
+    # late third = last ~1 element (400) ; helper uses last third by default
+    assert abdiag.late_mean(series, frac=0.5) == pytest.approx(350.0)  # mean of last 2
