@@ -26,13 +26,11 @@ import numpy as np
 from osmose.config import OsmoseConfigReader
 from osmose.engine import PythonEngine
 
-SERIES = (
-    Path(__file__).resolve().parent.parent
-    / "data"
-    / "baltic"
-    / "forcing"
-    / "baltic_percid_thermal_series_example.csv"
-)
+_FORCING = Path(__file__).resolve().parent.parent / "data" / "baltic" / "forcing"
+# Prefer the REAL CMEMS-thetao sidecar; fall back to the committed example.
+SERIES = _FORCING / "baltic_percid_thermal_series.csv"
+if not SERIES.exists():
+    SERIES = _FORCING / "baltic_percid_thermal_series_example.csv"
 DET = {"movement.randomseed.fixed": "true", "stochastic.mortality.randomseed.fixed": "true"}
 PERCIDS = (("perch", 4), ("pikeperch", 5))
 
