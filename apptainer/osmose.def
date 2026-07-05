@@ -1,5 +1,7 @@
 Bootstrap: docker
-From: python:3.12-slim
+# Pin to bookworm (Debian 12): trixie (13) dropped openjdk-17-jre-headless
+# ("no installation candidate"), which JAVA_HOME below still targets.
+From: python:3.12-slim-bookworm
 
 %files
     pyproject.toml /app/pyproject.toml
