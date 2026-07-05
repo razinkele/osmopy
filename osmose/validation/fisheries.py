@@ -52,7 +52,7 @@ def annual_by_year(values, time, *, how: str) -> dict[int, float]:
     s = pd.Series(np.asarray(values, dtype=float))
     years = np.floor(np.asarray(time, dtype=float)).astype(int)
     grouped = s.groupby(years)
-    agg = grouped.sum() if how == "sum" else grouped.mean()
+    agg = cast("pd.Series", grouped.sum() if how == "sum" else grouped.mean())
     return {int(cast(int, y)): float(cast(float, v)) for y, v in agg.items()}
 
 
