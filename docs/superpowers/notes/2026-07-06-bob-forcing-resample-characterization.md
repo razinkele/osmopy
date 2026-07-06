@@ -24,10 +24,14 @@ not merely "small." This was independently checked: the two LTL forcing files ge
 24×20×20, mean `SmallPhyto`≈1.4075), and the resource-predation code path (`_predation_on_resources`
 in `osmose/engine/processes/predation.py`) does deduct eaten biomass from the resource pool each
 step — so the forcing is genuinely read and consumed on both arms, it just doesn't move the fish
-population outputs at BoB's resource-abundance level. That is consistent with the resource pool
-being non-limiting for this config: predators reach their ration cap regardless of which forcing
-file backs it, so small (sub-1%) shifts in the LTL time/space discretization don't propagate to
-biomass, abundance, or yield.
+population outputs at BoB's resource-abundance level. This zero-divergence result reflects a 
+**pre-existing wrong-quadrant defect in `data/examples/predation/accessibility_matrix.csv`**: the engine's 
+stage-accessibility lookup reads `access_matrix[row=prey, col=predator]`, and every fish-species→resource 
+cell it accesses reads as 0.0 (e.g., `[row=SmallPhyto=8, col=Anchovy=0] = 0.0`), while the biologically-sensible 
+nonzero accessibility values (e.g., 0.3) sit in the transposed, unread quadrant. Consequently, BoB's fish 
+never actually consume resources regardless of forcing magnitude, making the forcing change structurally inert 
+for fish dynamics here. This is a configuration defect unrelated to the migration — the accessibility matrix 
+is byte-identical between `data/examples_433_orig` and `data/examples` — and is out of scope for this task.
 
 ## Framing: this is a deliberate change, not a regression
 
