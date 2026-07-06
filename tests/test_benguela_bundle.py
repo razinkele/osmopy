@@ -2,6 +2,9 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
+from osmose.config.reader import OsmoseConfigReader
+from osmose.engine.config import EngineConfig
+from osmose.engine import PythonEngine
 from osmose.engine.movement_maps import _load_csv_grid
 from osmose.engine.grid import Grid
 
@@ -14,6 +17,7 @@ MAPS_DIR = BUNDLE / "maps"
 MOVE_KEYS = BUNDLE / "_movement_keys.txt"
 GRID_NC = BUNDLE / "input" / "grid-mask.nc"
 SEED_KEYS = BUNDLE / "_seeding_keys.txt"
+MASTER = BUNDLE / "benguela_all-parameters.csv"
 EXPECTED_SEED = {
     0: 3129213,
     1: 3888750,
@@ -95,3 +99,36 @@ def test_seeding_block_matches_authors_values():
     for sp, exp in EXPECTED_SEED.items():
         assert abs(got[sp] - exp) < 1.0, f"sp{sp} seed {got[sp]} != {exp}"
         assert got[sp] > 0
+
+
+def test_master_loads_and_is_wired():
+    assert MASTER.exists(), "run scripts/build_benguela_config.py <SRC>"
+    raw = dict(OsmoseConfigReader().read(str(MASTER)))
+    for sp in range(300, 304):
+        assert raw[f"species.file.sp{sp}"].endswith("roms_climatological_merged.nc")
+    assert "fisheries.catchability.file" not in raw
+    assert "fisheries.discards.file" not in raw
+    assert not any(k.startswith("fisheries.movement.") for k in raw)
+    assert raw["simulation.nfisheries"] == "0"
+    assert "population.initialization.file" not in raw
+    assert float(raw["population.seeding.biomass.sp1"]) == 3888750
+    assert raw["output.file.prefix"] == "benguela"
+
+
+def test_master_loads_without_fisheries_dir():
+    raw = dict(OsmoseConfigReader().read(str(MASTER)))
+    cfg = EngineConfig.from_dict(raw)  # raises if any _require_file is unmet
+    assert cfg.n_species == 10
+    assert not (BUNDLE / "input" / "fisheries").exists()
+
+
+def test_master_runs_without_nan_integration_smoke():
+    # nyear=1 engine run: catches the class of integration failure (mis-oriented maps -> NaN) at
+    # Task 4's own gate, not only at Task 5. Spike-confirmed to be NaN-free with correct maps.
+    raw = dict(OsmoseConfigReader().read(str(MASTER)))
+    raw["simulation.time.nyear"] = "1"
+    res = PythonEngine().run_in_memory(raw, seed=42)
+    b = res.biomass()
+    cols = [c for c in b.columns if c not in ("Time", "time", "species")]
+    v = b[cols].to_numpy(dtype=float)
+    assert not np.isnan(v).any(), "integration produced NaN biomass (check map orientation flip)"
