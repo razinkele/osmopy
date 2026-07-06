@@ -198,11 +198,19 @@ def model_biomass_window_mean(
     if df is None or len(df) == 0 or "value" not in getattr(df, "columns", []):
         wide = results.biomass()
         if wide is not None and species in getattr(wide, "columns", []):
-            s = wide.sort_values("Time")[species] if "Time" in wide.columns else wide[species]
-            n_window = min(window_years, len(s))
-            if n_window <= 0:
+            if "Time" in wide.columns:
+                # Time is in fractional YEARS, not row index — some configs
+                # (e.g. eec/BoB) write multiple rows per year (e.g. 24), so a
+                # row-count window would average a few weeks, not
+                # `window_years` calendar years. Filter by Time value instead.
+                wide = wide.sort_values("Time")
+                tmax = float(wide["Time"].max())
+                tail = wide.loc[wide["Time"] > tmax - window_years, species]
+            else:
+                tail = wide[species]
+            if len(tail) == 0:
                 raise ValueError(f"empty biomass window for {species!r}")
-            return float(s.iloc[-n_window:].mean())
+            return float(tail.mean())
         raise ValueError(f"no biomass time series for {species!r} in {results.output_dir}")
 
     if "time" in df.columns:

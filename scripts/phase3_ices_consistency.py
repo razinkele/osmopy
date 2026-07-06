@@ -45,7 +45,12 @@ def run(config: Path, snap_dir: Path, persisted: Path, prefix: str, years: int =
     fails = []
     print(f"{'species':<16}{'Python':>10}{'4.3.3':>10}{'4.4.1':>10}{'agree<=D':>10}")
     for sp in common:
-        vals = np.log10([py[sp], j433[sp], j441[sp]])
+        # Defensive floor only: without it, a species genuinely ~0 in all
+        # three engines gives log10(0) = -inf in every arm, so
+        # (-inf) - (-inf) = nan fails `<= DELTA` and mis-flags a true
+        # 0==0==0 agreement as a disagreement. 1e-9 is far below any real
+        # biomass value, so it does not mask genuine divergences.
+        vals = np.log10(np.clip([py[sp], j433[sp], j441[sp]], 1e-9, None))
         agree = (vals.max() - vals.min()) <= DELTA
         if not agree:
             fails.append(sp)
