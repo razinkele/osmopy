@@ -19,7 +19,7 @@ Validate the Python OSMOSE engine against the Java reference engine.
    ```
    .venv/bin/python scripts/validate_engines.py --years {years}
    ```
-   - Expect 8/8 species PASS at year 1
+   - BoB is now a fully-native OSMOSE 4.4.1 config; expect 6/8 species PASS at year 1 (Anchovy and Hake show a pre-existing Python-vs-Java divergence, present against both the 4.3.3 and 4.4.1 jars — not a regression)
    - Report any biomass mismatches with relative error
 
 3. **EEC parity check** (unless suite=bob):

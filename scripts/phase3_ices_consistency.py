@@ -4,6 +4,7 @@ Reuses the persisted Java OsmoseResults from Task 9; recomputes the Python arm d
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
 import numpy as np
@@ -62,13 +63,30 @@ def run(config: Path, snap_dir: Path, persisted: Path, prefix: str, years: int =
     )
 
 
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument(
+        "--config", type=Path, default=ROOT / "data" / "examples" / "osm_all-parameters.csv"
+    )
+    ap.add_argument(
+        "--snap-dir",
+        type=Path,
+        default=ROOT / "data" / "examples" / "reference" / "ices_snapshots",
+    )
+    ap.add_argument(
+        "--persisted",
+        type=Path,
+        required=True,
+        help=(
+            "Directory holding the persisted Java 4.4.1/4.3.3 OsmoseResults "
+            "(e.g. from cross_engine_parity_440.py --persist-results)."
+        ),
+    )
+    ap.add_argument("--prefix", default="biscay")
+    ap.add_argument("--years", type=int, default=10)
+    args = ap.parse_args()
+    run(args.config, args.snap_dir, args.persisted, prefix=args.prefix, years=args.years)
+
+
 if __name__ == "__main__":
-    persisted = Path(
-        "/tmp/claude-1000/-home-razinka-osmose/f7b91731-5bf2-427b-aaab-4e339882ae8b/scratchpad/phase3_results"
-    )
-    run(
-        ROOT / "data" / "examples" / "osm_all-parameters.csv",
-        ROOT / "data" / "examples" / "reference" / "ices_snapshots",
-        persisted,
-        prefix="biscay",
-    )
+    main()

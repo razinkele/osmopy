@@ -155,7 +155,7 @@ def _original_keys(param_files: list[Path]) -> set[str]:
 def convert_config(config_dir: Path) -> None:
     name = config_dir.name
     if name not in IN_SCOPE:
-        raise SystemExit(f"{name} not in scope {IN_SCOPE} (BoB/examples excluded)")
+        raise SystemExit(f"{name} not in scope {IN_SCOPE}")
     master = next(iter(config_dir.glob("*all-parameters*.csv")))
     if _numeric_version(_raw_version(master)) >= _version_tuple("4.4.0"):
         print(f"{name}: already >= 4.4.0, skipping")
