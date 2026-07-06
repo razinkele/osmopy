@@ -472,7 +472,7 @@ def main() -> int:
         print(f"conserved-regrid {fname}")
     # salinity: import accumulate_climatology from the salinity builder, regrid to FINE, gap-fill, guard
     from scripts.build_baltic_salinity_forcing import accumulate_climatology, fill_ocean_nan
-    so_files = sorted((SRC / "cmems_cache" / "cmems_downloads").glob("baltic_phy_monthly_reanalysis_so_*.nc"))
+    so_files = sorted((Path("data") / "cmems_cache" / "cmems_downloads").glob("baltic_phy_monthly_reanalysis_so_*.nc"))
     clim, src_lat, src_lon = accumulate_climatology([str(p) for p in so_files])  # (12, src_lat, src_lon)
     field24 = resample_to_24(regrid(clim, src_lat, src_lon, FINE))               # (24,160,200), NaN in gaps
     mask = load_ocean_mask(OUT / "baltic_fine_grid.nc")

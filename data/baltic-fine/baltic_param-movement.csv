@@ -1,0 +1,215 @@
+# Baltic Sea movement parameters
+# All species use map-based distribution with life-stage and seasonal maps
+#
+# SPAWNING SEASON VALIDATION (2026-04-16):
+# Cod: Steps 4-15 = Mar-Aug. VERIFIED — Bleil et al. (2009, doi:10.1111/j.1439-0426.2008.01172.x):
+#   Bornholm Basin main spawning May-Aug, with shift to peak Jul since 1990s.
+#   Western Baltic spring spawning Mar-Apr. Combined Mar-Aug covers both stocks.
+# Herring: Steps 4-11 = Mar-Jun. VERIFIED — Western Baltic spring-spawning (WBSS)
+#   herring spawns Mar-Jun (Ory et al. 2024, doi:10.1111/jfb.15811). Central Baltic
+#   spring-spawning also peaks Apr-Jun. Autumn-spawning herring NOT represented.
+# Sprat: Steps 6-13 = Apr-Jul. VERIFIED — Haslob et al. (2013, doi:10.1016/j.fishres.2012.08.002):
+#   Baltic sprat spawning Jan-Jun, peak Apr-Jun in Bornholm Basin. Config covers peak.
+# Flounder: Steps 2-9 = Feb-May. VERIFIED — pelagic spawner (P. flesus) spawns Feb-May
+#   in deep southern Baltic; demersal spawner (P. solemdali) spawns Apr-Jun coastal.
+#   Config captures the pelagic spawner timing well.
+# Perch: Steps 8-11 = May-Jun. VERIFIED — standard Baltic coastal perch spawning.
+# Smelt: Steps 4-11 = Feb-May. Spring spawner (coastal/estuarine).
+
+movement.distribution.method.sp0;maps
+movement.distribution.method.sp1;maps
+movement.distribution.method.sp2;maps
+movement.distribution.method.sp3;maps
+movement.distribution.method.sp4;maps
+movement.distribution.method.sp5;maps
+movement.distribution.method.sp6;maps
+movement.distribution.method.sp7;maps
+
+movement.randomwalk.range.sp0;2
+movement.randomwalk.range.sp1;3
+movement.randomwalk.range.sp2;3
+movement.randomwalk.range.sp3;1
+movement.randomwalk.range.sp4;1
+movement.randomwalk.range.sp5;1
+movement.randomwalk.range.sp6;2
+movement.randomwalk.range.sp7;1
+
+# ============================================
+# sp0: Cod — juvenile (age 0-1), adult (1-4), spawning adults (4+, Mar-Aug)
+# ============================================
+movement.species.map0;cod
+movement.initialage.map0;0
+movement.lastage.map0;1
+movement.file.map0;maps/cod_juvenile.csv
+movement.steps.map0;0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16;17;18;19;20;21;22;23
+
+movement.species.map1;cod
+movement.initialage.map1;1
+movement.lastage.map1;4
+movement.file.map1;maps/cod_adult.csv
+movement.steps.map1;0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16;17;18;19;20;21;22;23
+
+movement.species.map2;cod
+movement.initialage.map2;4
+movement.lastage.map2;21
+movement.file.map2;maps/cod_spawning.csv
+movement.steps.map2;4;5;6;7;8;9;10;11;12;13;14;15
+
+movement.species.map3;cod
+movement.initialage.map3;4
+movement.lastage.map3;21
+movement.file.map3;maps/cod_adult.csv
+movement.steps.map3;0;1;2;3;16;17;18;19;20;21;22;23
+
+# ============================================
+# sp1: Herring — juvenile (0-1), adult (1+), spring spawning (Mar-Jun, coastal),
+#   autumn spawning (Sep-Nov, coastal). Both spawning components use coastal areas.
+#   Autumn-spawning herring are ~20-30% of Baltic herring reproductive output
+#   (mainly western Baltic SD22-24 and some central Baltic).
+# ============================================
+movement.species.map4;herring
+movement.initialage.map4;0
+movement.lastage.map4;1
+movement.file.map4;maps/herring_juvenile.csv
+movement.steps.map4;0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16;17;18;19;20;21;22;23
+
+movement.species.map5;herring
+movement.initialage.map5;1
+movement.lastage.map5;13
+movement.file.map5;maps/herring_adult.csv
+movement.steps.map5;0;1;2;3;12;13;14;15;22;23
+
+movement.species.map6;herring
+movement.initialage.map6;1
+movement.lastage.map6;13
+movement.file.map6;maps/herring_spawning.csv
+movement.steps.map6;4;5;6;7;8;9;10;11
+
+# Autumn spawning season (Sep-Nov, steps 16-21)
+movement.species.map25;herring
+movement.initialage.map25;1
+movement.lastage.map25;13
+movement.file.map25;maps/herring_spawning_autumn.csv
+movement.steps.map25;16;17;18;19;20;21
+
+# ============================================
+# sp2: Sprat — juvenile (0-1), adult (1+), spawning (Apr-Jul, deep)
+# ============================================
+movement.species.map7;sprat
+movement.initialage.map7;0
+movement.lastage.map7;1
+movement.file.map7;maps/sprat_juvenile.csv
+movement.steps.map7;0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16;17;18;19;20;21;22;23
+
+movement.species.map8;sprat
+movement.initialage.map8;1
+movement.lastage.map8;9
+movement.file.map8;maps/sprat_adult.csv
+movement.steps.map8;0;1;2;3;4;5;14;15;16;17;18;19;20;21;22;23
+
+movement.species.map9;sprat
+movement.initialage.map9;1
+movement.lastage.map9;9
+movement.file.map9;maps/sprat_spawning.csv
+movement.steps.map9;6;7;8;9;10;11;12;13
+
+# ============================================
+# sp3: Flounder — juvenile (0-2, coastal), adult (2+), spawning (Feb-May, deep south)
+# ============================================
+movement.species.map10;flounder
+movement.initialage.map10;0
+movement.lastage.map10;2
+movement.file.map10;maps/flounder_juvenile.csv
+movement.steps.map10;0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16;17;18;19;20;21;22;23
+
+movement.species.map11;flounder
+movement.initialage.map11;2
+movement.lastage.map11;16
+movement.file.map11;maps/flounder_adult.csv
+movement.steps.map11;0;1;10;11;12;13;14;15;16;17;18;19;20;21;22;23
+
+movement.species.map12;flounder
+movement.initialage.map12;2
+movement.lastage.map12;16
+movement.file.map12;maps/flounder_spawning.csv
+movement.steps.map12;2;3;4;5;6;7;8;9
+
+# ============================================
+# sp4: Perch — juvenile (0-2, coastal), adult (2+, coastal), spawning (May-Jun)
+# ============================================
+movement.species.map13;perch
+movement.initialage.map13;0
+movement.lastage.map13;2
+movement.steps.map13;0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16;17;18;19;20;21;22;23
+
+movement.species.map14;perch
+movement.initialage.map14;2
+movement.lastage.map14;16
+movement.steps.map14;0;1;2;3;4;5;6;7;12;13;14;15;16;17;18;19;20;21;22;23
+
+movement.species.map15;perch
+movement.initialage.map15;2
+movement.lastage.map15;16
+movement.steps.map15;8;9;10;11
+
+# ============================================
+# sp5: Pike-perch — juvenile (0-2, coastal), adult (2+), spawning (Apr-Jun)
+# ============================================
+movement.species.map16;pikeperch
+movement.initialage.map16;0
+movement.lastage.map16;2
+movement.steps.map16;0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16;17;18;19;20;21;22;23
+
+movement.species.map17;pikeperch
+movement.initialage.map17;2
+movement.lastage.map17;16
+movement.steps.map17;0;1;2;3;4;5;12;13;14;15;16;17;18;19;20;21;22;23
+
+movement.species.map18;pikeperch
+movement.initialage.map18;2
+movement.lastage.map18;16
+movement.steps.map18;6;7;8;9;10;11
+
+# ============================================
+# sp6: Smelt — juvenile (0-1, everywhere), adult (1-6, pelagic), spawning (Feb-May, coastal)
+# ============================================
+movement.species.map19;smelt
+movement.initialage.map19;0
+movement.lastage.map19;1
+movement.file.map19;maps/smelt_juvenile.csv
+movement.steps.map19;0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16;17;18;19;20;21;22;23
+
+movement.species.map20;smelt
+movement.initialage.map20;1
+movement.lastage.map20;8
+movement.file.map20;maps/smelt_adult.csv
+movement.steps.map20;0;1;2;3;12;13;14;15;16;17;18;19;20;21;22;23
+
+movement.species.map21;smelt
+movement.initialage.map21;1
+movement.lastage.map21;8
+movement.file.map21;maps/smelt_spawning.csv
+movement.steps.map21;4;5;6;7;8;9;10;11
+
+# ============================================
+# sp7: Stickleback — juvenile (0-1, everywhere), adult (1+, coastal), spawning (May-Jul)
+# ============================================
+movement.species.map22;stickleback
+movement.initialage.map22;0
+movement.lastage.map22;1
+movement.file.map22;maps/stickleback_juvenile.csv
+movement.steps.map22;0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16;17;18;19;20;21;22;23
+
+movement.species.map23;stickleback
+movement.initialage.map23;1
+movement.lastage.map23;5
+movement.file.map23;maps/stickleback_adult.csv
+movement.steps.map23;0;1;2;3;4;5;6;7;14;15;16;17;18;19;20;21;22;23
+
+movement.species.map24;stickleback
+movement.initialage.map24;1
+movement.lastage.map24;5
+movement.file.map24;maps/stickleback_spawning.csv
+movement.steps.map24;8;9;10;11;12;13
+movement.salinity.field.file;baltic_salinity_bottom_climatology.nc
+movement.salinity.field.varname;salinity
