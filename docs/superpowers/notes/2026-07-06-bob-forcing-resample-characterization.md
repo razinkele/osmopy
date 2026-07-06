@@ -17,14 +17,13 @@ biomass            0.000         0.000
 yield              0.000         0.000
 ```
 
-Divergence on all three metrics (biomass/abundance/yield, 120 timesteps × 9 species = 1080 values
+Divergence on all three metrics (biomass/abundance/yield, 120 timesteps × 8 species = 960 values
 each) is **exactly zero** — the two arms produce bit-identical Python-engine population output,
 not merely "small." This was independently checked: the two LTL forcing files genuinely differ
 (`roms_n2p2z2d2_biscay.nc`: 365×20×30, mean `SmallPhyto`≈1.4053; `roms_n2p2z2d2_biscay_24step.nc`:
-24×20×20, mean `SmallPhyto`≈1.4075), and the resource-predation code path (`_predation_on_resources`
-in `osmose/engine/processes/predation.py`) does deduct eaten biomass from the resource pool each
-step — so the forcing is genuinely read and consumed on both arms, it just doesn't move the fish
-population outputs at BoB's resource-abundance level. This zero-divergence result reflects a 
+24×20×20, mean `SmallPhyto`≈1.4075), and the resource biomass is genuinely read from the
+forcing and regenerated each step on both arms — so the zero divergence is not the forcing being
+ignored. It instead reflects a 
 **pre-existing wrong-quadrant defect in `data/examples/predation/accessibility_matrix.csv`**: the engine's 
 stage-accessibility lookup reads `access_matrix[row=prey, col=predator]`, and every fish-species→resource 
 cell it accesses reads as 0.0 (e.g., `[row=SmallPhyto=8, col=Anchovy=0] = 0.0`), while the biologically-sensible 
