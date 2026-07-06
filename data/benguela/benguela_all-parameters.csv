@@ -545,7 +545,7 @@ population.seeding.biomass.sp6 ; 198865
 population.seeding.biomass.sp7 ; 81054
 population.seeding.biomass.sp8 ; 575361
 population.seeding.biomass.sp9 ; 591907
-population.seeding.year.max ; 30
+population.seeding.year.max ; 5
 predation.accessibility.file ; input/predation-accessibility-25mars2015.csv
 predation.accessibility.stage.structure ; age
 predation.efficiency.critical.sp0 ; 0.57
@@ -631,7 +631,7 @@ simulation.nsimulation ; 1
 simulation.nspecies ; 10
 simulation.restart.recordfrequency.ndt ; 24
 simulation.time.ndtperyear ; 24
-simulation.time.nyear ; 50
+simulation.time.nyear ; 15
 species.accessibility2fish.sp300 ; 0.026894718
 species.accessibility2fish.sp301 ; 0.002977831
 species.accessibility2fish.sp302 ; 0.014176891
