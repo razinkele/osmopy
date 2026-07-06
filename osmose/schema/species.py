@@ -509,6 +509,53 @@ SPECIES_FIELDS: list[OsmoseField] = [
         indexed=True,
         required=False,
     ),
+    # ── Recruitment: Spatial RV egg-survival term ───────────────────────────
+    OsmoseField(
+        key_pattern="reproduction.rv.spatial.enabled",
+        param_type=ParamType.BOOL,
+        default=False,
+        description=(
+            "Master switch for the spatial reproductive-volume cod egg-survival "
+            "term (Baltic). Off = inert, output unchanged."
+        ),
+        category="reproduction",
+        required=False,
+    ),
+    OsmoseField(
+        key_pattern="reproduction.rv.spatial.field.file",
+        param_type=ParamType.FILE_PATH,
+        default="",
+        description="Per-cell reproductive-volume NetCDF forcing file (time,lat,lon).",
+        category="reproduction",
+        required=False,
+    ),
+    OsmoseField(
+        key_pattern="reproduction.rv.spatial.field.varname",
+        param_type=ParamType.STRING,
+        default="reproductive_volume",
+        description="Variable name of the RV field in the NetCDF.",
+        category="reproduction",
+        required=False,
+    ),
+    OsmoseField(
+        key_pattern="reproduction.rv.spatial.ref",
+        param_type=ParamType.FLOAT,
+        default=-1.0,
+        min_val=-1.0,
+        max_val=1e9,
+        description="RV_ref saturating thickness (m); <=0 means use the field's RV_ref attr.",
+        category="reproduction",
+        required=False,
+    ),
+    OsmoseField(
+        key_pattern="reproduction.rv.spatial.species.enabled.sp{idx}",
+        param_type=ParamType.BOOL,
+        default=False,
+        description="Per-species enable for the spatial RV egg-survival term (cod only).",
+        category="reproduction",
+        indexed=True,
+        required=False,
+    ),
     # ── Recruitment: unfished-level ceiling (McGregor et al. 2019) ───────────
     OsmoseField(
         key_pattern="reproduction.recruitment.ceiling.enabled",

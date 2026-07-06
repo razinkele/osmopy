@@ -25,7 +25,7 @@ def test_run_observer_pushes_one_based_done_every_step():
 def test_run_observer_delegates_to_live_observer():
     q: queue.Queue = queue.Queue(maxsize=1)
     seen = []
-    obs = make_run_observer(q, live_observer=lambda s, st, g, c: seen.append(s))
+    obs = make_run_observer(q, live_observer=lambda s, st, g, c, m: seen.append(s))
     obs(3, "st", "g", _cfg(10))
     assert seen == [3]
     assert q.get_nowait()[0] == 4  # done = step+1
@@ -41,7 +41,7 @@ def test_run_observer_without_live_observer_still_pushes_progress():
 def test_run_observer_swallows_live_observer_exception():
     q: queue.Queue = queue.Queue(maxsize=1)
 
-    def boom(s, st, g, c):
+    def boom(s, st, g, c, m):
         raise RuntimeError("live boom")
 
     obs = make_run_observer(q, live_observer=boom)

@@ -26,9 +26,15 @@ def test_species_fields_count():
 
 
 def test_all_species_fields_indexed():
+    # Per-species fields carry the {idx} placeholder and must be marked indexed.
+    # Reproduction master-switch fields (e.g. reproduction.rv.gate.enabled,
+    # reproduction.rv.spatial.enabled, reproduction.recruitment.ceiling.enabled)
+    # live in the species schema module but are scalar, non-indexed switches.
     for f in SPECIES_FIELDS:
-        assert f.indexed, f"Species field {f.key_pattern} should be indexed"
-        assert "{idx}" in f.key_pattern
+        if "{idx}" in f.key_pattern:
+            assert f.indexed, f"Species field {f.key_pattern} should be indexed"
+        else:
+            assert not f.indexed, f"Non-{{idx}} field {f.key_pattern} must not be indexed"
 
 
 def test_species_growth_params_present():

@@ -155,7 +155,11 @@ def test_sweep_end_to_end_tiny_legacy():
         n_years=6,
         replicates=1,
         window_years=2,
-        max_workers=2,
+        # Serial in-process path (workers<=1): the sweep's ProcessPoolExecutor uses a
+        # spawn context (correct for production's fork-after-numba-threads case) but
+        # spawning a pool from inside a pytest-xdist worker deadlocks. This end-to-end
+        # test only needs the sweep logic, which the serial path exercises identically.
+        max_workers=1,
     )
     rp = refs["Fish"]
     assert rp.b0 is not None and rp.b0 > 0  # F=0 has the largest (unfished) SSB
