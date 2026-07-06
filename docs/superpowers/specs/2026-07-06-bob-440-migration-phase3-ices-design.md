@@ -4,6 +4,14 @@
 **Status:** APPROVED — in-loop review CONVERGED (5 rounds, 5 reviewer types; rounds 4-5 clean:
 "READY" / "CONFIRMED ready for writing-plans"). Ready for writing-plans on user sign-off.
 **Author:** cutover-completion session
+
+**Correction (2026-07-06, during execution — supersedes ALL `species.tl`→`species.trophic.level`
+rename text below):** do NOT rename `species.tl`→`species.trophic.level`. Implementation verified the
+4.4.1 Java jar reads `species.tl` (`ResourceSpecies.java`), and native EEC keeps `species.tl` too, so
+the migration KEEPS `species.tl` unchanged; the Python `species.type` path simply defaults resource
+trophic level (diagnostic-only, traced to `mortality.py:551-556` — never affects biomass/abundance/
+yield; EEC does the same and parity passed). Every "rename" mention in A2/A4.2/§7 below is stale — the
+executed plan (`docs/superpowers/plans/2026-07-06-bob-440-migration-phase3-ices.md`) is authoritative.
 **Supersedes/extends:** `docs/superpowers/plans/2026-06-19-jar-swap-440-validated-resume.md`
 (Phase 1 Task 1.2 = BoB resource-forcing; Phase 3 = ICES consistency). Builds on the C1
 native-4.4.1 conversion (`project-c1-native-440-cutover`, master `ac03be0`) and the EEC

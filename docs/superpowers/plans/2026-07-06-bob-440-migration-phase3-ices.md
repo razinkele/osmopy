@@ -4,7 +4,7 @@
 
 **Goal:** Migrate `data/examples` (Bay of Biscay) from Java 4.3.3 to a fully-native 4.4.1 config by bin-averaging its 365-day resource forcing to 24 steps, gate the migration, then run a Phase-3 ICES cross-engine consistency check across EEC + BoB.
 
-**Architecture:** BoB's resource forcing NetCDF has 365 daily steps but the sim runs 24 steps/year; the 4.4.1 engine requires the forcing's steps/year to divide 24. We resample the NetCDF to 24 bin-averaged steps, convert the config to fully-native 4.4.1 (drop legacy `ltl.*`, add `species.file`/rename `species.tl`), then verify with a Python baseline, a 4.4.1 jar smoke, a load-path-equivalence bit-exact gate, and a cross-engine statistical parity gate. Phase 3 reuses those runs for an ICES `magnitude_factor` consistency check.
+**Architecture:** BoB's resource forcing NetCDF has 365 daily steps but the sim runs 24 steps/year; the 4.4.1 engine requires the forcing's steps/year to divide 24. We resample the NetCDF to 24 bin-averaged steps, convert the config to fully-native 4.4.1 (drop legacy `ltl.*`, add `species.file`, keep `species.tl`), then verify with a Python baseline, a 4.4.1 jar smoke, a load-path-equivalence bit-exact gate, and a cross-engine statistical parity gate. Phase 3 reuses those runs for an ICES `magnitude_factor` consistency check.
 
 **Tech Stack:** Python 3.12, xarray/netCDF4 (NetCDF), NumPy/SciPy (stats), pytest, the OSMOSE Java jar (subprocess), the ICES MCP tools + `osmose/validation/ices.py`. Run with `.venv/bin/python`, `PYTHONPATH=.` for scripts that import `ui.pages.run`.
 
@@ -12,7 +12,7 @@
 
 - Design spec: `docs/superpowers/specs/2026-07-06-bob-440-migration-phase3-ices-design.md` — read it; every task traces to it.
 - **Resampling method:** bin-average — input day `d` → output step `floor(d * 24 / 365)`, mean each bin. Conserves each window's mean. Do NOT subsample/interpolate.
-- **Fully-native, matching EEC:** the migrated BoB carries per-species `species.type/name/file/size.min/size.max/trophic.level/accessibility2fish` and NO `ltl.*` keys. `species.biomass.*` keys are NOT baked on disk (emitted at Java-stage time by `_emit_resource_biomass_forcing`).
+- **Fully-native, matching EEC:** the migrated BoB carries per-species `species.type/name/file/size.min/size.max/tl/accessibility2fish` and NO `ltl.*` keys. **Keep `species.tl` (do NOT rename to `species.trophic.level`)** — the 4.4.1 Java jar reads `species.tl` (`ResourceSpecies.java`), native EEC keeps it too, and the Python `species.type` path just defaults resource TL (diagnostic-only, harmless — EEC does this and parity passed). `species.biomass.*` keys are NOT baked on disk (emitted at Java-stage time by `_emit_resource_biomass_forcing`).
 - **BoB is not dynamics-neutral:** the resample changes what the Python engine reads (it subsamples the 365 file today). So the migration↔old comparison is characterized, not gated bit-exact; only the *key conversion* is gated bit-exact (Task 6).
 - **Determinism:** `PythonEngine().run_in_memory(raw, seed=<int>)` — the `seed=` arg drives determinism. Do NOT rely on `simulation.rng.fixed` (dead key the engine never reads).
 - **Both jars stay bundled** (`osmose-java/osmose_4.3.3-*.jar` = rollback; `osmose-java/osmose-4.4.1-*.jar` = default). No bare write-default flip; no prod redeploy.
@@ -235,7 +235,7 @@ git commit -m "chore(bob): snapshot pre-migration 4.3.3 config (parity baseline 
 
 **Interfaces:**
 - Consumes: `_collect_param_files(master) -> list[Path]` (existing), `_SEP_RE` (existing).
-- Produces: after running `convert_config(data/examples)`, the config has `osmose.version;4.4.1`, `species.trophic.level.sp8-13` (no `species.tl.sp8-13`), `species.file.sp8-13 = ltl/roms_n2p2z2d2_biscay_24step.nc`, and ZERO `ltl.*` keys.
+- Produces: after running `convert_config(data/examples)`, the config has `osmose.version;4.4.1`, `species.file.sp8-13 = ltl/roms_n2p2z2d2_biscay_24step.nc`, KEEPS `species.tl.sp8-13` unchanged (no `species.trophic.level`), and ZERO `ltl.*` keys.
 
 - [ ] **Step 1: Write the failing test** (operate on a temp copy so the test is repeatable)
 
@@ -266,10 +266,11 @@ def test_bob_converts_to_fully_native(tmp_path):
     convert_config(cfg)
     keys = _all_keys(cfg / "osm_all-parameters.csv")
     assert keys["osmose.version"] == "4.4.1"
-    # species.tl renamed to species.trophic.level (engine species.type path reads the latter)
-    assert "species.tl.sp10" not in keys
-    assert keys["species.trophic.level.sp10"] == "2.0"
-    assert keys["species.trophic.level.sp11"] == "2.5"
+    # species.tl is KEPT (mirror EEC; the 4.4.1 Java jar reads species.tl; Python species.type
+    # path defaults resource TL, diagnostic-only, exactly as native EEC does). NOT renamed.
+    assert keys["species.tl.sp10"] == "2.0"
+    assert keys["species.tl.sp11"] == "2.5"
+    assert not any(k.startswith("species.trophic.level.sp") for k in keys)
     # per-species forcing path added, pointing at the 24-step file
     assert keys["species.file.sp8"] == "ltl/roms_n2p2z2d2_biscay_24step.nc"
     assert keys["species.file.sp13"] == "ltl/roms_n2p2z2d2_biscay_24step.nc"
@@ -301,11 +302,13 @@ _FORCING_24 = "ltl/roms_n2p2z2d2_biscay_24step.nc"
 def _convert_bob_native(config_dir: Path) -> None:
     """BoB-specific fully-native fixups (run AFTER the generic per-line conversion).
 
-    (a) rename species.tl.spN -> species.trophic.level.spN (Python species.type path reads
-        species.trophic.level; BoB carries species.tl); (b) add per-species species.file.spN ->
-        the 24-step forcing (drives both the Python species.type forcing read AND the Java-stage
-        species.biomass.file emit); (c) drop every ltl.* key across all param files (a single
-        leftover ltl.name.rscN re-routes the Python engine back onto _load_config_ltl).
+    (a) add per-species species.file.spN -> the 24-step forcing (drives both the Python
+        species.type forcing read AND the Java-stage species.biomass.file emit); (b) drop every
+        ltl.* key across all param files (a single leftover ltl.name.rscN re-routes the Python
+        engine back onto _load_config_ltl). We KEEP species.tl.spN unchanged — native EEC does the
+        same, the 4.4.1 Java jar reads species.tl (ResourceSpecies.java), and the Python
+        species.type path simply defaults resource TL (diagnostic-only; EEC does this and parity
+        passed). Do NOT rename species.tl -> species.trophic.level (that would break the Java read).
     """
     master = next(iter(config_dir.glob("*all-parameters*.csv")))
     for f in _collect_param_files(master):
@@ -318,10 +321,6 @@ def _convert_bob_native(config_dir: Path) -> None:
                     key = ln[: m.start()].strip().lower()
                     if key.startswith("ltl."):
                         continue  # drop the whole ltl.* family
-                    if key.startswith("species.tl.sp"):
-                        idx = key.rsplit("sp", 1)[1]
-                        out.append(f"species.trophic.level.sp{idx}{m.group(0)}{ln[m.end():]}")
-                        continue
             out.append(ln)
         f.write_text("".join(out))
     # append the per-species forcing paths to the master (idempotent: skip if present)
@@ -359,7 +358,7 @@ Verify no ltl keys remain: `grep -rc 'ltl\.' data/examples/*.csv | grep -v ':0'`
 
 ```bash
 git add scripts/migrate_bundled_to_440.py tests/test_migrate_bob_native.py data/examples
-git commit -m "feat(bob): fully-native 4.4.1 conversion (drop ltl.*, add species.file, rename tl->trophic.level)"
+git commit -m "feat(bob): fully-native 4.4.1 conversion (drop ltl.*, add species.file, keep species.tl)"
 ```
 
 ---
