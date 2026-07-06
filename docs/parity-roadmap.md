@@ -287,6 +287,59 @@ are set.
 
 ---
 
+## Post-parity: Bay of Biscay Java 4.4.1 migration (2026-07-06)
+
+Separate from the Python↔Java parity work above (which measured Python vs.
+Java 4.3.3 within 1 OoM): `data/examples` (Bay of Biscay) was migrated from
+the legacy `ltl.*` Java-4.3.3 config to a fully-native OSMOSE 4.4.1 config —
+the 5th native bundled config (after minimal, baltic, baltic_ev, EEC). This
+is a config/jar migration, not a parity-gap fix, but it re-exercises the same
+cross-engine comparison machinery this roadmap tracks, so the result is
+recorded here.
+
+**What changed:** the 365-day resource-forcing NetCDF was bin-averaged onto a
+24-step/year axis (4.4.1 requires forcing steps to divide the 24-step year)
+and regridded 20×30 → 20×20 to match `grid.nlon`/`grid.nlat` (the native
+`species.file` forcing path requires an exact grid match; the legacy `ltl.*`
+path had silently tolerated the mismatch via a runtime nearest-neighbor
+lookup). `species.tl` was kept unchanged — the 4.4.1 Java jar still reads
+`species.tl` directly (the Python `species.type` path only defaults a
+resource's diagnostic trophic level; no biomass impact). The `ltl.*` →
+native `species.*` key conversion was proven **bit-exact** on the Python
+engine via a load-path-equivalence gate.
+
+**Cross-engine result — REVIEW, not PASS, and that's an honest result, not a
+regression:**
+- Ensemble parity (Python-24 ↔ Java-4.4.1-24, N=16): **6 of 8 species
+  equivalent; Anchovy and Hake diverge.**
+- Phase 3 ICES cross-engine consistency gate: **REVIEW for Anchovy + Hake**
+  (the same two species); Sardine and Sole agree — consistent with the
+  ensemble finding.
+- Both divergences are **pre-existing** Python-port-vs-Java disagreements,
+  not introduced by the jar swap: the same two species diverge by the same
+  magnitude against the retained 4.3.3 reference jar (confirmed by re-running
+  the old 4.3.3 snapshot). This mirrors the EEC parity history above
+  (dogfish/mackerel diverged the same way under the 4.4.1 EEC adoption). The
+  migration does not degrade cross-engine agreement — it surfaces a gap that
+  already existed.
+- Frame Phase 3 honestly as **cross-engine consistency on an uncalibrated
+  demo config, not empirical realism**: BoB and EEC are demo configs with no
+  formal calibration target. The real empirical anchor for this codebase
+  remains Baltic-on-Python (HOLAS-3/ICES-validated).
+- The forcing bin-average/regrid is **dynamically inert** for BoB fish
+  outputs: biomass divergence between the old-forcing and new-forcing Python
+  runs is exactly 0.000. Traced to a pre-existing, migration-independent
+  defect — `data/examples/predation/accessibility_matrix.csv` has
+  fish→resource accessibility values in the wrong (transposed) quadrant, so
+  every fish→resource cell the engine reads is 0.0 and BoB fish never
+  consume resources. This is a **backlog item**, not fixed as part of this
+  migration.
+
+**Retained:** the 4.3.3 jar (rollback); no bare write-default flip; no
+production redeploy.
+
+---
+
 ## What's next (post-parity)
 
 The parity roadmap is exhausted against standard OSMOSE + Ev-OSMOSE. Future work falls outside this document. Possible directions (no commitment implied):

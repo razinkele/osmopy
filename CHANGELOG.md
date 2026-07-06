@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [Unreleased]
+
+### Features
+
+- **bob:** migrate `data/examples` (Bay of Biscay) to fully-native OSMOSE 4.4.1 — the 5th native bundled config; loads and runs on the 4.4.1 Java jar (4955a2a, bce7afb)
+- **bob:** bin-average the 365-day resource-forcing NetCDF onto a 24-step/year axis (4.4.1 requires forcing steps to divide the 24-step year) (2bb85db)
+- **bob:** regrid resource forcing 20×30 → 20×20 to match `grid.nlon`/`grid.nlat` — the native `species.file` forcing path requires an exact grid match, where the legacy `ltl.*` path had silently tolerated the mismatch via nearest-neighbor lookup (bce7afb)
+- **parity:** parametrize the cross-engine harness (`--config`/`--engines`/`--persist-results`) so it can run against BoB in addition to EEC/Baltic (3c4240d)
+- **ices:** Phase 3 cross-engine `magnitude_factor` consistency gate (`scripts/phase3_ices_consistency.py`) + BoB/EEC ICES snapshots (181f919, f5b0120)
+
+### Fixes
+
+- **bob:** keep `species.tl` unchanged instead of renaming to `trophic.level` — the 4.4.1 Java jar reads `species.tl`; the Python `species.type` path only defaults a resource's diagnostic trophic level and has no biomass impact (761e130, fdb3d72)
+- **ices:** `model_biomass_window_mean` now reads the wide cross-species biomass frame (BoB/EEC tag `species="all"`) instead of only the long-form per-species frame, and windows by calendar year via the `Time` column instead of by row count (BoB/EEC write 24 rows/year, so row-count windowing silently averaged the wrong span) (f5b0120, 1526d01)
+
+### Documentation
+
+- **bob:** cross-engine parity (Python-24 ↔ 4.4.1-Java-24, N=16 ensemble): 6 of 8 species equivalent; Anchovy and Hake diverge. The divergence is a **pre-existing** Python-port-vs-Java disagreement, not introduced by the migration — the same two species show the identical divergence magnitude against the 4.3.3 reference jar, mirroring the EEC dogfish/mackerel pattern
+- **bob:** Phase 3 ICES cross-engine consistency: REVIEW for Anchovy + Hake (the same two species), Sardine + Sole agree — consistent with the parity finding. This is cross-engine *consistency* on an uncalibrated demo config, not empirical realism; the real empirical anchor remains Baltic-on-Python
+- **bob:** the forcing bin-average/regrid is dynamically **inert** for BoB fish outputs (biomass divergence exactly 0.000 Python-old-forcing vs Python-new-forcing) — traced to a pre-existing wrong-quadrant defect in `data/examples/predation/accessibility_matrix.csv` (fish→resource accessibility is all 0.0). Noted as a backlog item, not fixed in this migration
+- retained the 4.3.3 jar for rollback; no bare write-default flip; no production redeploy
+
 ## [1.3.0] - 2026-06-30
 
 ### Features
