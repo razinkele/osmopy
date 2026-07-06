@@ -67,6 +67,15 @@ def test_benguela_smoke_bounded_and_positive(tmp_path):
         assert np.all(v <= 1000.0 * EXPECTED_SEED[i]), f"{c} exceeds 1000x seed (explosion)"
         assert np.all(v <= 1e9), f"{c} exceeds 1e9 t (explosion)"
 
+    # Nine of ten species stay healthy at the pinned 15-yr horizon; mesopelagic (sp5) is a known,
+    # documented uncalibrated-example decliner (ends ~1e-10 of seed). This guard keeps the gate
+    # honest: `v[-1] > 0` alone can't distinguish healthy from collapsing, so require >=9/10 species
+    # above a meaningful floor — a regression collapsing a SECOND species then fails here.
+    n_healthy = sum(
+        b[c].to_numpy(dtype=float)[-1] >= 1e-3 * EXPECTED_SEED[i] for i, c in enumerate(sp_cols)
+    )
+    assert n_healthy >= 9, f"only {n_healthy}/10 species above the healthy floor (expected >=9)"
+
 
 def test_benguela_resources_load_nonzero(tmp_path):
     ds = xr.open_dataset(

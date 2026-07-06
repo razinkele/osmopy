@@ -306,6 +306,18 @@ unfished-v1 decision is revisited at that gate.
 4. All new + auto-parametrized tests pass; ruff + pyright clean; the full suite stays green.
 5. The bundle is self-contained (~1.6 MB) and needs no external files or network.
 
+## Known limitations
+
+- **Mesopelagic (sp5) decline.** At the pinned 15-yr horizon, mesopelagic biomass decays ~2.3×/year
+  and ends near-extinct (~0.00066 t vs a seed of 1,439,984 t; final/seed ≈ 4.6e-10) — functionally
+  collapsed, though still `> 0`. The other 9 species end healthy (0.10×–2.4× seed). This is accepted
+  as an uncalibrated-example artifact (calibration is explicitly out of scope, see "Scope" above),
+  documented rather than fixed — mirroring the Baltic precedent (`demo.py` nyear=15 pin comment,
+  "collapses to herring+sprat... calibration limit, not an engine bug"). The smoke test's
+  `v[-1] > 0` check alone can't certify non-degeneracy, so `test_benguela_smoke_bounded_and_positive`
+  also asserts at least 9 of 10 species stay above a `1e-3 × seed` floor, so a regression collapsing
+  a second species is caught.
+
 ## Risks
 
 - **Stability (primary).** The config explodes on osmopy today; blockers 1–4 are necessary but not
