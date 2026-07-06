@@ -1,6 +1,7 @@
 # scripts/build_baltic_fine_grid.py
 from __future__ import annotations
 import io
+import time
 from pathlib import Path
 
 import numpy as np
@@ -30,9 +31,25 @@ def fetch_emodnet(lat0, lat1, lon0, lon1):
         "subset": [f"Lat({lat0},{lat1})", f"Long({lon0},{lon1})"],
         "format": "image/tiff",
     }
-    r = requests.get(WCS, params=params, timeout=180)
-    r.raise_for_status()
-    with rasterio.open(io.BytesIO(r.content)) as ds:
+    # Retry transient server/network errors (EMODnet WCS returns intermittent
+    # 502/503/504 under load); give up immediately on client (4xx) errors.
+    last_err = None
+    content = None
+    for attempt in range(6):
+        try:
+            r = requests.get(WCS, params=params, timeout=180)
+            r.raise_for_status()
+            content = r.content
+            break
+        except requests.exceptions.RequestException as e:
+            last_err = e
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            if status is not None and 400 <= status < 500:
+                raise
+            time.sleep(min(60, 5 * (2**attempt)))
+    if content is None:
+        raise last_err
+    with rasterio.open(io.BytesIO(content)) as ds:
         elev = ds.read(1).astype(np.float64)
         b = ds.bounds
         return elev, np.linspace(b.top, b.bottom, ds.height), np.linspace(b.left, b.right, ds.width)
