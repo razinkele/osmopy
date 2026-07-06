@@ -106,8 +106,18 @@ def bob_loadpath_equiv(years: int = 3, seed: int = 42) -> float:
         inter = _build_ltl_24_intermediate(Path(td) / "examples")
         a = run_outputs(inter, years=years, seed=seed)
         b = run_outputs(native, years=years, seed=seed)
+    # Guard against a vacuous "0.0 == bit-exact" pass: if run_outputs silently produced no
+    # metrics for either config (its per-metric try/except swallows failures), the intersection
+    # would be empty and worst would stay 0.0 without ever comparing anything.
+    common = set(a) & set(b)
+    if not common:
+        raise RuntimeError(
+            f"no comparable metrics produced (a={sorted(a)}, b={sorted(b)}) — gate cannot validate"
+        )
+    if set(a) != set(b):
+        raise RuntimeError(f"metric set mismatch: a={sorted(a)} vs b={sorted(b)}")
     worst = 0.0
-    for k in set(a) & set(b):
+    for k in common:
         if a[k].shape != b[k].shape:
             return float("inf")
         worst = max(worst, float(np.nanmax(np.abs(a[k] - b[k])) if a[k].size else 0.0))

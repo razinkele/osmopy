@@ -193,6 +193,12 @@ def main() -> None:
         print("no python arm — nothing to gate")
         return
     present = [v for v in ("4.4.1", "4.3.3") if ens.get(v) is not None]
+    # A selected Java arm that produced ZERO comparable species (every replicate errored) must be
+    # reported, not silently omitted — otherwise present/sp_all filter it out and the gate prints a
+    # vacuous PASS (the design's "a dropped arm degrades the reference invisibly" hazard).
+    empty_arms = [v for v in present if not any(ens[v][m] for m in analysis_metrics)]
+    for v in empty_arms:
+        print(f"[warn] engine {v} produced ZERO comparable species — dropped arm, NOT a clean PASS")
     overall_fail = []
     for m in analysis_metrics:
         floor = floors.get(m, COLLAPSE)
@@ -214,7 +220,13 @@ def main() -> None:
         if j441 is not None
         else "reference run (no 4.4.1 arm — not gated)"
     )
-    print(f"GATE ({tag}): {'PASS' if not overall_fail else 'REVIEW: ' + ', '.join(overall_fail)}")
+    if empty_arms:
+        verdict = f"FAIL (dropped arm(s) with zero comparable species: {', '.join(empty_arms)})"
+    elif overall_fail:
+        verdict = "REVIEW: " + ", ".join(overall_fail)
+    else:
+        verdict = "PASS"
+    print(f"GATE ({tag}): {verdict}")
 
     if args.persist_results:
         args.persist_results.mkdir(parents=True, exist_ok=True)

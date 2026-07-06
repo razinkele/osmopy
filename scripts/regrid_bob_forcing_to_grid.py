@@ -51,6 +51,16 @@ def main() -> None:
     out.attrs = ds.attrs
     ds.close()
 
+    # interp() leaves out-of-bounds target cells as NaN by default. If the target grid extends
+    # beyond the source lat/lon range, writing this back would silently corrupt the forcing file.
+    # Abort loudly instead (source/target here share bounds, so this should never fire).
+    nan_vars = [v for v in src_vars if bool(out[v].isnull().any())]
+    if nan_vars:
+        raise ValueError(
+            f"regrid introduced NaN in {nan_vars} — target grid extends beyond source coords; "
+            f"aborting to avoid corrupting {SRC}"
+        )
+
     tmp = SRC.with_suffix(".nc.tmp")
     out.to_netcdf(tmp)
     os.replace(tmp, SRC)

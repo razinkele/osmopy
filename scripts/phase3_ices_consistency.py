@@ -38,11 +38,14 @@ def run(config: Path, snap_dir: Path, persisted: Path, prefix: str, years: int =
     )
     common = sorted(set(py) & set(j441) & set(j433))
     # Fail LOUDLY if nothing mapped, rather than printing a vacuous PASS (review finding).
-    assert common, (
-        f"Phase 3 compared ZERO species — check snapshot species-name case and that "
-        f"model_biomass_window_mean read the persisted results (py={len(py)}, "
-        f"441={len(j441)}, 433={len(j433)})."
-    )
+    # Explicit raise, NOT assert — assert is stripped under `python -O` / PYTHONOPTIMIZE=1,
+    # which would silently restore the vacuous-PASS this guard exists to prevent.
+    if not common:
+        raise SystemExit(
+            f"Phase 3 compared ZERO species — check snapshot species-name case and that "
+            f"model_biomass_window_mean read the persisted results (py={len(py)}, "
+            f"441={len(j441)}, 433={len(j433)})."
+        )
     fails = []
     print(f"{'species':<16}{'Python':>10}{'4.3.3':>10}{'4.4.1':>10}{'agree<=D':>10}")
     for sp in common:
