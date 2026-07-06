@@ -13,6 +13,19 @@ RES_VARS = ["sphy", "lphy", "szoo", "lzoo"]
 MAPS_DIR = BUNDLE / "maps"
 MOVE_KEYS = BUNDLE / "_movement_keys.txt"
 GRID_NC = BUNDLE / "input" / "grid-mask.nc"
+SEED_KEYS = BUNDLE / "_seeding_keys.txt"
+EXPECTED_SEED = {
+    0: 3129213,
+    1: 3888750,
+    2: 3029155,
+    3: 1286364,
+    4: 1138339,
+    5: 1439984,
+    6: 198865,
+    7: 81054,
+    8: 575361,
+    9: 591907,
+}
 BEN_SPECIES = [
     "euphausiids",
     "anchovy",
@@ -69,3 +82,16 @@ def test_movement_csv_loads_ocean_within_grid_via_real_loader():
         grid = _load_csv_grid(str(csv), 62, 56)
         present = (grid > 0) & (grid != -99)
         assert present[~ocean].sum() == 0, f"{csv.name} places presence on land (flip/orientation)"
+
+
+def test_seeding_block_matches_authors_values():
+    assert SEED_KEYS.exists(), "run scripts/derive_benguela_seeding.py <SRC>"
+    got = {}
+    for ln in SEED_KEYS.read_text().splitlines():
+        if "seeding.biomass.sp" in ln:
+            k, v = ln.split(";", 1)
+            got[int(k.strip().split(".sp")[1])] = float(v)
+    assert set(got) == set(range(10))
+    for sp, exp in EXPECTED_SEED.items():
+        assert abs(got[sp] - exp) < 1.0, f"sp{sp} seed {got[sp]} != {exp}"
+        assert got[sp] > 0
