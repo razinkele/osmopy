@@ -204,13 +204,16 @@ def model_biomass_window_mean(
                 # row-count window would average a few weeks, not
                 # `window_years` calendar years. Filter by Time value instead.
                 wide = wide.sort_values("Time")
-                tmax = float(wide["Time"].max())
+                # .to_numpy() before the reduction: the .loc[...] slice types as
+                # `Series | Any | Unknown`, and float(Series) is a type error under
+                # pandas-stubs — going through numpy yields an unambiguous scalar.
+                tmax = float(wide["Time"].to_numpy().max())
                 tail = wide.loc[wide["Time"] > tmax - window_years, species]
             else:
                 tail = wide[species]
             if len(tail) == 0:
                 raise ValueError(f"empty biomass window for {species!r}")
-            return float(tail.mean())
+            return float(tail.to_numpy().mean())
         raise ValueError(f"no biomass time series for {species!r} in {results.output_dir}")
 
     if "time" in df.columns:
