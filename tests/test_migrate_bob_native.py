@@ -25,10 +25,11 @@ def test_bob_converts_to_fully_native(tmp_path):
     convert_config(cfg)
     keys = _all_keys(cfg / "osm_all-parameters.csv")
     assert keys["osmose.version"] == "4.4.1"
-    # species.tl renamed to species.trophic.level (engine species.type path reads the latter)
-    assert "species.tl.sp10" not in keys
-    assert keys["species.trophic.level.sp10"] == "2.0"
-    assert keys["species.trophic.level.sp11"] == "2.5"
+    # species.tl is KEPT (mirror EEC; the 4.4.1 Java jar reads species.tl; Python species.type
+    # path defaults resource TL, diagnostic-only, exactly as native EEC does). NOT renamed.
+    assert keys["species.tl.sp10"] == "2.0"
+    assert keys["species.tl.sp11"] == "2.5"
+    assert not any(k.startswith("species.trophic.level.sp") for k in keys)
     # per-species forcing path added, pointing at the 24-step file
     assert keys["species.file.sp8"] == "ltl/roms_n2p2z2d2_biscay_24step.nc"
     assert keys["species.file.sp13"] == "ltl/roms_n2p2z2d2_biscay_24step.nc"

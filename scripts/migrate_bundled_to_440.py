@@ -106,11 +106,13 @@ _FORCING_24 = "ltl/roms_n2p2z2d2_biscay_24step.nc"
 def _convert_bob_native(config_dir: Path) -> None:
     """BoB-specific fully-native fixups (run AFTER the generic per-line conversion).
 
-    (a) rename species.tl.spN -> species.trophic.level.spN (Python species.type path reads
-        species.trophic.level; BoB carries species.tl); (b) add per-species species.file.spN ->
-        the 24-step forcing (drives both the Python species.type forcing read AND the Java-stage
-        species.biomass.file emit); (c) drop every ltl.* key across all param files (a single
-        leftover ltl.name.rscN re-routes the Python engine back onto _load_config_ltl).
+    (a) add per-species species.file.spN -> the 24-step forcing (drives both the Python
+        species.type forcing read AND the Java-stage species.biomass.file emit); (b) drop every
+        ltl.* key across all param files (a single leftover ltl.name.rscN re-routes the Python
+        engine back onto _load_config_ltl). We KEEP species.tl.spN unchanged — native EEC does the
+        same, the 4.4.1 Java jar reads species.tl (ResourceSpecies.java), and the Python
+        species.type path simply defaults resource TL (diagnostic-only; EEC does this and parity
+        passed). Do NOT rename species.tl -> species.trophic.level (that would break the Java read).
     """
     master = next(iter(config_dir.glob("*all-parameters*.csv")))
     for f in _collect_param_files(master):
@@ -123,10 +125,6 @@ def _convert_bob_native(config_dir: Path) -> None:
                     key = ln[: m.start()].strip().lower()
                     if key.startswith("ltl."):
                         continue  # drop the whole ltl.* family
-                    if key.startswith("species.tl.sp"):
-                        idx = key.rsplit("sp", 1)[1]
-                        out.append(f"species.trophic.level.sp{idx}{m.group(0)}{ln[m.end():]}")
-                        continue
             out.append(ln)
         f.write_text("".join(out))
     # append the per-species forcing paths to the master (idempotent: skip if present)
