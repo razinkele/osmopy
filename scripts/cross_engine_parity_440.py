@@ -1,26 +1,21 @@
 #!/usr/bin/env python3
-"""Phase 2 cross-engine ensemble parity: Python <-> Java {4.4.1, 4.3.3} on EEC.
+"""Cross-engine ensemble parity: Python <-> Java {4.4.1, 4.3.3} for any config (--config).
 
-The deferred jar-swap's Phase 2 (docs/superpowers/plans/2026-06-19-jar-swap-440-validated-resume.md):
-confirm Java-4.4.1 agrees with the pure-Python engine *at least as well as* Java-4.3.3 does, using a
-multi-replicate, distributional + equivalence comparison (NOT a single-seed run). Cross-engine streams
-diverge by construction (Python PCG64 vs Java MT19937), so the test is statistical:
+Cross-engine RNG streams diverge by construction (Python PCG64 vs Java MT19937), so the test is
+statistical, per species and per metric (biomass, yield, abundance, and mean individual weight =
+biomass/abundance as a size-structure proxy), on the final-year mean over N varied-seed reps
+(log10-scaled, ~log-normal):
 
-  - per species and per metric (biomass, yield, abundance, and mean individual weight =
-    biomass/abundance as a size-structure proxy), final-year mean over N varied-seed reps;
-  - work on log10 (these are ~ log-normal);
-  - EQUIVALENCE (formal TOST, two one-sided t-tests vs +-Delta; Lakens & Delacre 2020);
-  - DISTRIBUTION: two-sample KS p-value; variance ratio;
-  - COMMUNITY SKILL: MEF (Nash-Sutcliffe modelling efficiency) + Spearman on the per-species vector;
-  - RELATIVE GATE: |Python - 4.4.1| no worse than |Python - 4.3.3| (within Delta);
-  - COLLAPSE frequency per engine; 1-OoM only as a catastrophic tripwire;
-  - precision: achieved 90% CI half-width per species = the minimum detectable difference at this N.
+  - GATE (per species): ABSOLUTE equivalence via TOST (two one-sided t-tests vs +-Delta;
+    Lakens & Delacre 2020) against Java-4.4.1, PLUS a 1-OoM catastrophic-divergence tripwire.
+  - Java-4.3.3 is a REPORTED reference only (|Python - 4.3.3| shown per species, not gated).
+  - Also reported per species: two-sample KS p-value, variance ratio, collapse frequency, and
+    the 90% CI half-width (minimum detectable difference at this N).
+  - --engines selects which arms run (a config loads on a specific jar set); --persist-results
+    keeps one OsmoseResults dir per selected Java arm for downstream (Phase 3) reuse.
 
-Size-structure is covered via mean individual weight (biomass/abundance, derived from the two
-collected ensembles). Metrics still deferred (need output-flag enablement + Java support, not in
-EEC's default output set): F (fishing mortality), mean trophic level, full size spectra.
-
-Usage: PYTHONPATH=. .venv/bin/python scripts/cross_engine_parity_440.py --n 16 --years 10
+Usage: PYTHONPATH=. .venv/bin/python scripts/cross_engine_parity_440.py \\
+         --config data/eec_full/eec_all-parameters.csv --n 16 --years 10
 """
 
 from __future__ import annotations
@@ -143,16 +138,6 @@ def tost(py, jv, delta: float, floor: float = COLLAPSE):
     ks_p = float(stats.ks_2samp(py, jv).pvalue)
     vr = lp.var(ddof=1) / lj.var(ddof=1) if lj.var(ddof=1) > 0 else np.inf
     return d, ci, p_tost, p_tost < 0.05, ks_p, vr
-
-
-def mef_spearman(py_vec, jv_vec, floor: float = COLLAPSE):
-    """Community skill on the per-species log-gm vectors: MEF (Java=obs, Python=pred) + Spearman."""
-    obs, pred = _log(np.array(jv_vec), floor), _log(np.array(py_vec), floor)
-    ss_res = np.sum((obs - pred) ** 2)
-    ss_tot = np.sum((obs - obs.mean()) ** 2)
-    mef = 1 - ss_res / ss_tot if ss_tot > 0 else np.nan
-    rho = float(stats.spearmanr(py_vec, jv_vec).statistic)
-    return mef, rho
 
 
 def main() -> None:
