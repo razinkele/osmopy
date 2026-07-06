@@ -1,32 +1,28 @@
 #!/usr/bin/env python3
-"""Phase 2 cross-engine ensemble parity: Python <-> Java {4.4.1, 4.3.3} on EEC.
+"""Cross-engine ensemble parity: Python <-> Java {4.4.1, 4.3.3} for any config (--config).
 
-The deferred jar-swap's Phase 2 (docs/superpowers/plans/2026-06-19-jar-swap-440-validated-resume.md):
-confirm Java-4.4.1 agrees with the pure-Python engine *at least as well as* Java-4.3.3 does, using a
-multi-replicate, distributional + equivalence comparison (NOT a single-seed run). Cross-engine streams
-diverge by construction (Python PCG64 vs Java MT19937), so the test is statistical:
+Cross-engine RNG streams diverge by construction (Python PCG64 vs Java MT19937), so the test is
+statistical, per species and per metric (biomass, yield, abundance, and mean individual weight =
+biomass/abundance as a size-structure proxy), on the final-year mean over N varied-seed reps
+(log10-scaled, ~log-normal):
 
-  - per species and per metric (biomass, yield, abundance, and mean individual weight =
-    biomass/abundance as a size-structure proxy), final-year mean over N varied-seed reps;
-  - work on log10 (these are ~ log-normal);
-  - EQUIVALENCE (formal TOST, two one-sided t-tests vs +-Delta; Lakens & Delacre 2020);
-  - DISTRIBUTION: two-sample KS p-value; variance ratio;
-  - COMMUNITY SKILL: MEF (Nash-Sutcliffe modelling efficiency) + Spearman on the per-species vector;
-  - RELATIVE GATE: |Python - 4.4.1| no worse than |Python - 4.3.3| (within Delta);
-  - COLLAPSE frequency per engine; 1-OoM only as a catastrophic tripwire;
-  - precision: achieved 90% CI half-width per species = the minimum detectable difference at this N.
+  - GATE (per species): ABSOLUTE equivalence via TOST (two one-sided t-tests vs +-Delta;
+    Lakens & Delacre 2020) against Java-4.4.1, PLUS a 1-OoM catastrophic-divergence tripwire.
+  - Java-4.3.3 is a REPORTED reference only (|Python - 4.3.3| shown per species, not gated).
+  - Also reported per species: two-sample KS p-value, variance ratio, collapse frequency, and
+    the 90% CI half-width (minimum detectable difference at this N).
+  - --engines selects which arms run (a config loads on a specific jar set); --persist-results
+    keeps one OsmoseResults dir per selected Java arm for downstream (Phase 3) reuse.
 
-Size-structure is covered via mean individual weight (biomass/abundance, derived from the two
-collected ensembles). Metrics still deferred (need output-flag enablement + Java support, not in
-EEC's default output set): F (fishing mortality), mean trophic level, full size spectra.
-
-Usage: PYTHONPATH=. .venv/bin/python scripts/cross_engine_parity_440.py --n 16 --years 10
+Usage: PYTHONPATH=. .venv/bin/python scripts/cross_engine_parity_440.py \\
+         --config data/eec_full/eec_all-parameters.csv --n 16 --years 10
 """
 
 from __future__ import annotations
 
 import argparse
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 
@@ -39,7 +35,6 @@ from osmose.results import OsmoseResults
 from ui.pages.run import write_temp_config
 
 ROOT = Path(__file__).resolve().parent.parent
-EEC = ROOT / "data" / "eec_full" / "eec_all-parameters.csv"
 JARS = {
     "4.4.1": ROOT / "osmose-java" / "osmose-4.4.1-jar-with-dependencies.jar",
     "4.3.3": ROOT / "osmose-java" / "osmose_4.3.3-jar-with-dependencies.jar",
@@ -67,14 +62,20 @@ def _final_mean(df, years: int, spinup: int) -> dict[str, float]:
     return {c: float(np.nanmean(tail[c].to_numpy(dtype=float))) for c in cols}
 
 
-def python_rep(years: int, seed: int, spinup: int) -> dict[str, dict[str, float]]:
-    raw = dict(OsmoseConfigReader().read(str(EEC)))
+def _read_prefix(config: Path) -> str:
+    """The Java output-file prefix (OsmoseResults globs '{prefix}_{type}*.csv')."""
+    raw = dict(OsmoseConfigReader().read(str(config)))
+    return raw.get("output.file.prefix", config.parent.name)
+
+
+def python_rep(config: Path, years: int, seed: int, spinup: int) -> dict[str, dict[str, float]]:
+    raw = dict(OsmoseConfigReader().read(str(config)))
     raw["simulation.time.nyear"] = str(years)
     res = PythonEngine().run_in_memory(raw, seed=seed)
     return {m: _final_mean(_reader(res, m), years, spinup) for m in METRICS}
 
 
-def java_rep(ver: str, master: Path, years: int, odir: Path, spinup: int):
+def java_rep(ver: str, master: Path, years: int, odir: Path, spinup: int, prefix: str):
     odir.mkdir(parents=True, exist_ok=True)
     cmd = [
         "java",
@@ -88,23 +89,25 @@ def java_rep(ver: str, master: Path, years: int, odir: Path, spinup: int):
     ]
     if subprocess.run(cmd, capture_output=True, text=True, timeout=900).returncode != 0:
         return None
-    res = OsmoseResults(odir, prefix="eec")
+    res = OsmoseResults(
+        odir, prefix=prefix, strict=False
+    )  # strict=False: report-empty, don't crash
     return {m: _final_mean(_reader(res, m), years, spinup) for m in METRICS}
 
 
-def ensemble(engine: str, years: int, n: int, spinup: int, tmp: Path):
+def ensemble(engine: str, config: Path, prefix: str, years: int, n: int, spinup: int, tmp: Path):
     """-> {metric: {species: array(N)}}."""
     reps = []
     if engine == "python":
         for s in range(n):
-            reps.append(python_rep(years, 1000 + s, spinup))
+            reps.append(python_rep(config, years, 1000 + s, spinup))
     else:
-        raw = dict(OsmoseConfigReader().read(str(EEC)))
+        raw = dict(OsmoseConfigReader().read(str(config)))
         master = tmp / f"stage_{engine}"
-        write_temp_config(raw, master, source_dir=EEC.parent, target_version=engine)
+        write_temp_config(raw, master, source_dir=config.parent, target_version=engine)
         master = master / "osm_all-parameters.csv"
         for s in range(n):
-            r = java_rep(engine, master, years, tmp / f"out_{engine}_{s}", spinup)
+            r = java_rep(engine, master, years, tmp / f"out_{engine}_{s}", spinup, prefix)
             if r is not None:
                 reps.append(r)
     out: dict[str, dict[str, np.ndarray]] = {}
@@ -137,16 +140,6 @@ def tost(py, jv, delta: float, floor: float = COLLAPSE):
     return d, ci, p_tost, p_tost < 0.05, ks_p, vr
 
 
-def mef_spearman(py_vec, jv_vec, floor: float = COLLAPSE):
-    """Community skill on the per-species log-gm vectors: MEF (Java=obs, Python=pred) + Spearman."""
-    obs, pred = _log(np.array(jv_vec), floor), _log(np.array(py_vec), floor)
-    ss_res = np.sum((obs - pred) ** 2)
-    ss_tot = np.sum((obs - obs.mean()) ** 2)
-    mef = 1 - ss_res / ss_tot if ss_tot > 0 else np.nan
-    rho = float(stats.spearmanr(py_vec, jv_vec).statistic)
-    return mef, rho
-
-
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=16)
@@ -155,18 +148,31 @@ def main() -> None:
     ap.add_argument(
         "--delta", type=float, default=np.log10(3), help="equivalence margin, log10 units"
     )
+    ap.add_argument(
+        "--config", type=Path, default=ROOT / "data" / "eec_full" / "eec_all-parameters.csv"
+    )
+    ap.add_argument("--engines", default="python,4.4.1,4.3.3", help="comma list subset")
+    ap.add_argument("--persist-results", type=Path, default=None)
     args = ap.parse_args()
-    tmp = Path("/home/razinka/.claude/jobs/18a62785/tmp/phase2v2")
-    tmp.mkdir(parents=True, exist_ok=True)
+    tmp = Path(tempfile.mkdtemp(prefix="xengine_"))
+    prefix = _read_prefix(args.config)
+    engines = [e.strip() for e in args.engines.split(",")]
 
-    a, b = python_rep(3, 7, 1), python_rep(3, 7, 1)
-    det = all(np.isclose(a["biomass"][k], b["biomass"][k]) for k in a["biomass"])
-    print(f"[determinism] Python same-seed reproducible: {det}")
+    if "python" in engines:  # determinism check
+        a, b = python_rep(args.config, 3, 7, 1), python_rep(args.config, 3, 7, 1)
+        det = all(np.isclose(a["biomass"][k], b["biomass"][k]) for k in a["biomass"])
+        print(f"[determinism] Python same-seed reproducible: {det}")
     t0 = time.perf_counter()
-    print(f"[run] {args.n} reps x 3 engines x {args.years}yr x {len(METRICS)} metrics ...")
-    py = ensemble("python", args.years, args.n, args.spinup_years, tmp)
-    j441 = ensemble("4.4.1", args.years, args.n, args.spinup_years, tmp)
-    j433 = ensemble("4.3.3", args.years, args.n, args.spinup_years, tmp)
+    print(
+        f"[run] {args.n} reps x {len(engines)} engines x {args.years}yr x {len(METRICS)} metrics ..."
+    )
+
+    ens = {}  # only the selected engines (each config supports a specific set)
+    for e in engines:
+        ens[e] = ensemble(e, args.config, prefix, args.years, args.n, args.spinup_years, tmp)
+    py = ens.get("python")
+    j441 = ens.get("4.4.1")
+    j433 = ens.get("4.3.3")
     print(
         f"[run] done in {time.perf_counter() - t0:.0f}s  (delta={args.delta:.2f} log10 = {10**args.delta:.1f}x)\n"
     )
@@ -174,7 +180,7 @@ def main() -> None:
     # Derive a size-structure metric: mean individual weight = biomass / abundance, paired per
     # replicate (both come from the same run). Captures growth/larval-units shifts that biomass alone
     # hides. floor 1e-9 t/ind (biomass/abundance are in tonnes/numbers).
-    for eng in (py, j441, j433):
+    for eng in filter(None, (py, j441, j433)):
         eng["mean_weight"] = {
             sp: eng["biomass"][sp] / np.clip(eng["abundance"][sp], 1e-9, None)
             for sp in eng["biomass"]
@@ -183,40 +189,60 @@ def main() -> None:
     analysis_metrics = METRICS + ("mean_weight",)
     floors = {"mean_weight": 1e-9}
 
+    if py is None:
+        print("no python arm — nothing to gate")
+        return
+    present = [v for v in ("4.4.1", "4.3.3") if ens.get(v) is not None]
+    # A selected Java arm that produced ZERO comparable species (every replicate errored) must be
+    # reported, not silently omitted — otherwise present/sp_all filter it out and the gate prints a
+    # vacuous PASS (the design's "a dropped arm degrades the reference invisibly" hazard).
+    empty_arms = [v for v in present if not any(ens[v][m] for m in analysis_metrics)]
+    for v in empty_arms:
+        print(f"[warn] engine {v} produced ZERO comparable species — dropped arm, NOT a clean PASS")
     overall_fail = []
     for m in analysis_metrics:
         floor = floors.get(m, COLLAPSE)
-        sp_all = [s for s in py[m] if s in j441[m] and s in j433[m]]
+        sp_all = [s for s in py[m] if all(s in ens[v][m] for v in present)]
         print(f"==================== METRIC: {m} ====================")
-        hdr = f"{'species':<22}{'d(py-441)':>10}{'±CI90':>7}{'TOST_p':>8}{'equiv':>6}{'KS':>6}{'441≤433':>8}{'coll p/441/433':>16}"
-        print(hdr)
         for sp in sp_all:
-            d1, ci1, p1, eq1, ks1, vr1 = tost(py[m][sp], j441[m][sp], args.delta, floor)
-            d3, _, _, _, _, _ = tost(py[m][sp], j433[m][sp], args.delta, floor)
-            no_worse = abs(d1) <= abs(d3) + args.delta
-            cp = lambda a: int(np.sum(np.asarray(a) < floor))  # noqa: E731
-            if not no_worse or abs(d1) >= 1.0:
-                overall_fail.append(f"{m}:{sp}")
-            print(
-                f"{sp:<22}{d1:>10.2f}{ci1:>7.2f}{p1:>8.3f}{'Y' if eq1 else 'n':>6}{ks1:>6.2f}"
-                f"{'Y' if no_worse else 'N':>8}{cp(py[m][sp]):>6}/{cp(j441[m][sp])}/{cp(j433[m][sp]):<7}"
-            )
-        # community skill on per-species geometric-mean vectors
-        v_py = [10 ** _log(py[m][s], floor).mean() for s in sp_all]
-        v441 = [10 ** _log(j441[m][s], floor).mean() for s in sp_all]
-        v433 = [10 ** _log(j433[m][s], floor).mean() for s in sp_all]
-        mef1, rho1 = mef_spearman(v_py, v441, floor)
-        mef3, rho3 = mef_spearman(v_py, v433, floor)
-        n_eq = sum(tost(py[m][s], j441[m][s], args.delta, floor)[3] for s in sp_all)
-        print(
-            f"  community: Py~441 MEF={mef1:.2f} Spearman={rho1:.2f} | Py~433 MEF={mef3:.2f} "
-            f"Spearman={rho3:.2f} | TOST-equivalent {n_eq}/{len(sp_all)} species\n"
-        )
-
-    print(
-        f"GATE (4.4.1 no worse than 4.3.3 + within 1 OoM, all metrics): "
-        f"{'PASS' if not overall_fail else 'REVIEW: ' + ', '.join(overall_fail)}"
+            row = f"{sp:<22}"
+            if j441 is not None:
+                d1, ci1, p1, eq1, ks1, vr1 = tost(py[m][sp], j441[m][sp], args.delta, floor)
+                if not eq1 or abs(d1) >= 1.0:  # PRIMARY gate: absolute equivalence + 1-OoM tripwire
+                    overall_fail.append(f"{m}:{sp}")
+                row += f"  441 d={d1:>6.2f} eq={'Y' if eq1 else 'n'} KS={ks1:.2f}"
+            if j433 is not None:  # reference / reported only, never gated
+                d3, _, _, eq3, _, _ = tost(py[m][sp], j433[m][sp], args.delta, floor)
+                row += f"  | 433 d={d3:>6.2f} eq={'Y' if eq3 else 'n'}"
+            print(row)
+    tag = (
+        "absolute Python<->4.4.1 equivalence + within 1 OoM"
+        if j441 is not None
+        else "reference run (no 4.4.1 arm — not gated)"
     )
+    if empty_arms:
+        verdict = f"FAIL (dropped arm(s) with zero comparable species: {', '.join(empty_arms)})"
+    elif overall_fail:
+        verdict = "REVIEW: " + ", ".join(overall_fail)
+    else:
+        verdict = "PASS"
+    print(f"GATE ({tag}): {verdict}")
+
+    if args.persist_results:
+        args.persist_results.mkdir(parents=True, exist_ok=True)
+        for ver in [e for e in engines if e != "python"]:  # only selected java arms
+            raw = dict(OsmoseConfigReader().read(str(args.config)))
+            st = tmp / f"persist_stage_{ver}"
+            write_temp_config(raw, st, source_dir=args.config.parent, target_version=ver)
+            java_rep(
+                ver,
+                st / "osm_all-parameters.csv",
+                args.years,
+                args.persist_results / f"{prefix}_{ver}",
+                args.spinup_years,
+                prefix,
+            )
+        # Python arm is in-memory; Task 12 recomputes it directly (no persist needed).
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ Python orchestration layer, simulation engine, and Shiny web interface for the [
 
 | Surface | State |
 |---|---|
-| Python engine | Full Java parity on Bay of Biscay (8/8) and Eastern English Channel (14/14), within 1 order of magnitude. Faster than Java on every benchmarked config. |
+| Python engine | Full Java parity on Eastern English Channel (14/14); Bay of Biscay 6/8 (Anchovy/Hake show a pre-existing divergence), within 1 order of magnitude. Faster than Java on every benchmarked config. |
 | Java engine | Async subprocess runner. OSMOSE **4.4.1 JAR by default** (4.3.3 still selectable). Bundled configs are native 4.4.0; background-species configs (e.g. Baltic) stage + run on the 4.4.1 jar from the UI. |
 | Shiny UI | End-to-end UI: Setup · Grid · Forcing · Fishing · Movement · Run · Results (with Scenario Diff & Config Diff) · Spatial Results · Diagnostics · Calibration · **Sensitivity** · Scenarios · Advanced · Map Viewer. Live-during-run movement map; in-app About (README/Changelog) + a per-version startup "what's new" modal. |
 | Calibration | pymoo NSGA-II, GP surrogate, SALib Morris/Sobol sensitivity; preflight stage + Pareto `find_optimum`. |
@@ -58,7 +58,7 @@ Both engines implement the same `Engine` protocol and produce identical output s
 |---|---|---|
 | Implementation | Pure Python (NumPy + Numba JIT) | Java subprocess (OSMOSE 4.4.1 JAR default; 4.3.3 selectable) |
 | Dependencies | Python packages only | Java 17+ and an OSMOSE JAR |
-| Parity | Bay of Biscay 8/8, EEC 14/14 within 1 OoM | Reference implementation |
+| Parity | Bay of Biscay 6/8, EEC 14/14 within 1 OoM | Reference implementation |
 | Speed | 1.2×–5.7× faster than Java (below) | Production-ready |
 | Use case | Production runs, calibration, development | Legacy compatibility, reference |
 
@@ -111,13 +111,15 @@ EEC 1-year biomass parity (Python vs Java, tonnes):
 | sardine | 14 968 | 14 126 | 1.06 |
 | squids | 131 280 | 119 896 | 1.09 |
 
-All 14 species within 1 order of magnitude of Java. Re-run the validation:
+All 14 species within 1 order of magnitude of Java.
+
+Bay of Biscay is now a fully-native OSMOSE 4.4.1 config. The rigorous N=16 cross-engine parity gate finds 6 of 8 species equivalent — Anchovy and Hake show a pre-existing Python-port-vs-Java divergence, present against both the 4.3.3 and 4.4.1 jars. Re-run it:
 
 ```bash
-.venv/bin/python scripts/validate_engines.py --years 5
+.venv/bin/python scripts/cross_engine_parity_440.py --config data/examples/osm_all-parameters.csv --engines python,4.4.1
 ```
 
-Bay of Biscay (8 species) passes on all 8 with the same tolerance. See `docs/parity-roadmap.md` for the 7-phase closure history of the final parity gaps.
+See `docs/parity-roadmap.md` for the 7-phase closure history of the final parity gaps.
 
 ## Examples
 

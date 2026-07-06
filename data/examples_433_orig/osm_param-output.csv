@@ -10,7 +10,7 @@ output.trophiclevel.enabled ; true
 output.meansize.enabled ; true
 output.mortality.enabled ; true
 # Osmose 3.1.0 - Renamed parameter output.size.spectrum.enabled into output.abundance.bySize.enabled
-output.abundance.bysize.enabled ; true
+output.abundance.bySize.enabled ; true
 output.spatial.enabled ; false
 output.start.year ; 20
 output.frequency.ndtperyear ; 24

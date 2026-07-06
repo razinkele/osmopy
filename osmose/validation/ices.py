@@ -183,19 +183,38 @@ def model_biomass_window_mean(
     averages. Returns model biomass in TONNES — the same unit OSMOSE
     writes biomass outputs in (per `output.biomass.unit`).
 
+    Some configs (e.g. eec/BoB) instead emit a WIDE cross-species frame from
+    `results.biomass()` — species are columns, and the frame's own `species`
+    column is the literal string `"all"` — so `results.biomass(species=X)`
+    returns 0 rows for any real species name. In that case, fall back to the
+    unfiltered wide frame and pull out the species' column directly.
+
     Raises
     ------
     KeyError if `species` has no biomass output in the results dir.
     ValueError if the biomass time series is empty.
     """
     df = results.biomass(species=species)
-    if df is None or len(df) == 0:
+    if df is None or len(df) == 0 or "value" not in getattr(df, "columns", []):
+        wide = results.biomass()
+        if wide is not None and species in getattr(wide, "columns", []):
+            if "Time" in wide.columns:
+                # Time is in fractional YEARS, not row index — some configs
+                # (e.g. eec/BoB) write multiple rows per year (e.g. 24), so a
+                # row-count window would average a few weeks, not
+                # `window_years` calendar years. Filter by Time value instead.
+                wide = wide.sort_values("Time")
+                # .to_numpy() before the reduction: the .loc[...] slice types as
+                # `Series | Any | Unknown`, and float(Series) is a type error under
+                # pandas-stubs — going through numpy yields an unambiguous scalar.
+                tmax = float(wide["Time"].to_numpy().max())
+                tail = wide.loc[wide["Time"] > tmax - window_years, species]
+            else:
+                tail = wide[species]
+            if len(tail) == 0:
+                raise ValueError(f"empty biomass window for {species!r}")
+            return float(tail.to_numpy().mean())
         raise ValueError(f"no biomass time series for {species!r} in {results.output_dir}")
-
-    if "value" not in df.columns:
-        raise ValueError(
-            f"biomass DataFrame for {species!r} missing 'value' column (got {list(df.columns)})"
-        )
 
     if "time" in df.columns:
         df = df.sort_values("time")

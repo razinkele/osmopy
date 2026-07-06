@@ -7,11 +7,20 @@ TIGHT RELATIVE TOLERANCE (default 1e-9), not bit-exact.
 
   python scripts/native_440_parity.py capture <name>   # run on the CURRENT source, save baseline
   python scripts/native_440_parity.py gate <name>       # run again, assert within tolerance
+
+Also provides `bob-loadpath` (A4.2): a load-path-equivalence gate isolating the Bay-of-Biscay
+config KEY conversion (ltl.* -> native species.*) from the forcing resample. It builds a
+test-only intermediate (Task 3's original ltl config repointed at the Task 2 24-step file) and
+compares it bit-exact against the native config, both reading the identical 24-step forcing.
+
+  python scripts/native_440_parity.py bob-loadpath      # asserts max abs diff == 0.0
 """
 
 from __future__ import annotations
 
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -63,6 +72,58 @@ def max_rel_diff(a, b) -> float:
     return float(np.nanmax(np.abs(a - b) / denom))
 
 
+def _build_ltl_24_intermediate(dst: Path) -> Path:
+    """Copy the ORIGINAL ltl config (examples_433_orig) and repoint ltl.netcdf.file at the
+    24-step file, so the Python _load_config_ltl path reads the same forcing the native config
+    does."""
+    src = ROOT / "data" / "examples_433_orig"
+    shutil.copytree(src, dst)
+    ltl = dst / "osm_param-ltl.csv"
+    lines = []
+    for ln in ltl.read_text().splitlines(keepends=True):
+        if ln.strip().lower().startswith("ltl.netcdf.file"):
+            lines.append("ltl.netcdf.file ; ltl/roms_n2p2z2d2_biscay_24step.nc\n")
+        else:
+            lines.append(ln)
+    ltl.write_text("".join(lines))
+    # bring the 24-step NetCDF into the intermediate's ltl/ dir (it's the Task 5 20x20 regrid,
+    # same file the native config points at -- so any diff is a key-conversion defect, not a
+    # forcing-resample artifact).
+    shutil.copy(
+        ROOT / "data" / "examples" / "ltl" / "roms_n2p2z2d2_biscay_24step.nc",
+        dst / "ltl" / "roms_n2p2z2d2_biscay_24step.nc",
+    )
+    return dst
+
+
+def bob_loadpath_equiv(years: int = 3, seed: int = 42) -> float:
+    """Max abs diff (biomass/abundance/yield) between the ltl-24 intermediate and native-24 BoB.
+
+    Both read identical 24-step forcing; a nonzero result is a key-conversion defect.
+    """
+    native = ROOT / "data" / "examples"  # already native after Task 4
+    with tempfile.TemporaryDirectory() as td:
+        inter = _build_ltl_24_intermediate(Path(td) / "examples")
+        a = run_outputs(inter, years=years, seed=seed)
+        b = run_outputs(native, years=years, seed=seed)
+    # Guard against a vacuous "0.0 == bit-exact" pass: if run_outputs silently produced no
+    # metrics for either config (its per-metric try/except swallows failures), the intersection
+    # would be empty and worst would stay 0.0 without ever comparing anything.
+    common = set(a) & set(b)
+    if not common:
+        raise RuntimeError(
+            f"no comparable metrics produced (a={sorted(a)}, b={sorted(b)}) — gate cannot validate"
+        )
+    if set(a) != set(b):
+        raise RuntimeError(f"metric set mismatch: a={sorted(a)} vs b={sorted(b)}")
+    worst = 0.0
+    for k in common:
+        if a[k].shape != b[k].shape:
+            return float("inf")
+        worst = max(worst, float(np.nanmax(np.abs(a[k] - b[k])) if a[k].size else 0.0))
+    return worst
+
+
 def capture_baseline(name: str) -> None:
     BASELINE.mkdir(parents=True, exist_ok=True)
     out = run_outputs(ROOT / "data" / name)
@@ -80,7 +141,13 @@ def gate(name: str, tol: float = 1e-9) -> None:
 
 
 if __name__ == "__main__":
-    cmd, target = sys.argv[1], sys.argv[2]
-    if target not in IN_SCOPE:
-        raise SystemExit(f"{target} not in scope {IN_SCOPE}")
-    capture_baseline(target) if cmd == "capture" else gate(target)
+    cmd = sys.argv[1]  # read cmd FIRST -- bob-loadpath takes no target (avoid IndexError)
+    if cmd == "bob-loadpath":
+        w = bob_loadpath_equiv()
+        print(f"bob load-path equiv: max abs diff = {w:.2e} {'PASS' if w == 0.0 else 'FAIL'}")
+        assert w == 0.0, f"BoB key conversion NOT lossless: {w:.2e}"
+    else:
+        target = sys.argv[2]
+        if target not in IN_SCOPE:
+            raise SystemExit(f"{target} not in scope {IN_SCOPE}")
+        capture_baseline(target) if cmd == "capture" else gate(target)

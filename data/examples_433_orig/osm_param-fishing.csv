@@ -1,0 +1,10 @@
+# Fishing parameters — 8 species (OSMOSE 3 format)
+# Annual fishing mortality rate (year^-1)
+mortality.fishing.rate.sp0 ; 0.35
+mortality.fishing.rate.sp1 ; 0.30
+mortality.fishing.rate.sp2 ; 0.25
+mortality.fishing.rate.sp3 ; 0.30
+mortality.fishing.rate.sp4 ; 0.30
+mortality.fishing.rate.sp5 ; 0.50
+mortality.fishing.rate.sp6 ; 0.30
+mortality.fishing.rate.sp7 ; 0.25

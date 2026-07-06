@@ -27,7 +27,7 @@ from osmose.config.reader import OsmoseConfigReader
 from osmose.demo import _version_tuple
 
 ROOT = Path(__file__).resolve().parents[1]
-IN_SCOPE = {"eec_full", "minimal", "baltic", "baltic_ev"}
+IN_SCOPE = {"eec_full", "minimal", "baltic", "baltic_ev", "examples"}
 TARGET = "4.4.1"
 _SEP_RE = re.compile(r"\s*[=;,:\t]\s*")
 
@@ -99,6 +99,46 @@ def _convert_line(line: str, ndt: float, original_keys: set[str]) -> str | None:
     return f"{new_key}{sep}{value}\n"
 
 
+_BOB_RESOURCE_SP = range(8, 14)  # sp8..sp13 resources
+_FORCING_24 = "ltl/roms_n2p2z2d2_biscay_24step.nc"
+
+
+def _convert_bob_native(config_dir: Path) -> None:
+    """BoB-specific fully-native fixups (run AFTER the generic per-line conversion).
+
+    (a) add per-species species.file.spN -> the 24-step forcing (drives both the Python
+        species.type forcing read AND the Java-stage species.biomass.file emit); (b) drop every
+        ltl.* key across all param files (a single leftover ltl.name.rscN re-routes the Python
+        engine back onto _load_config_ltl). We KEEP species.tl.spN unchanged — native EEC does the
+        same, the 4.4.1 Java jar reads species.tl (ResourceSpecies.java), and the Python
+        species.type path simply defaults resource TL (diagnostic-only; EEC does this and parity
+        passed). Do NOT rename species.tl -> species.trophic.level (that would break the Java read).
+    """
+    master = next(iter(config_dir.glob("*all-parameters*.csv")))
+    for f in _collect_param_files(master):
+        out = []
+        for ln in f.read_text().splitlines(keepends=True):
+            s = ln.strip()
+            if s and not s.startswith("#"):
+                m = _SEP_RE.search(ln)
+                if m:
+                    key = ln[: m.start()].strip().lower()
+                    if key.startswith("ltl."):
+                        continue  # drop the whole ltl.* family
+            out.append(ln)
+        f.write_text("".join(out))
+    # append the per-species forcing paths to the master (idempotent: skip if present)
+    text = master.read_text()
+    existing = {ln.split(_SEP_RE.search(ln).group(0))[0].strip().lower()
+                for ln in text.splitlines() if _SEP_RE.search(ln) and not ln.strip().startswith("#")}
+    add = [f"species.file.sp{i} ; {_FORCING_24}\n"
+           for i in _BOB_RESOURCE_SP if f"species.file.sp{i}" not in existing]
+    if add:
+        if not text.endswith("\n"):
+            text += "\n"
+        master.write_text(text + "# Osmose 4.4.1 - per-species resource forcing (24-step)\n" + "".join(add))
+
+
 def _original_keys(param_files: list[Path]) -> set[str]:
     """All lowercased keys present across the source param files (pre-rename)."""
     keys: set[str] = set()
@@ -115,7 +155,7 @@ def _original_keys(param_files: list[Path]) -> set[str]:
 def convert_config(config_dir: Path) -> None:
     name = config_dir.name
     if name not in IN_SCOPE:
-        raise SystemExit(f"{name} not in scope {IN_SCOPE} (BoB/examples excluded)")
+        raise SystemExit(f"{name} not in scope {IN_SCOPE}")
     master = next(iter(config_dir.glob("*all-parameters*.csv")))
     if _numeric_version(_raw_version(master)) >= _version_tuple("4.4.0"):
         print(f"{name}: already >= 4.4.0, skipping")
@@ -129,6 +169,8 @@ def convert_config(config_dir: Path) -> None:
             _convert_line(ln, ndt, original_keys) for ln in f.read_text().splitlines(keepends=True)
         ]
         f.write_text("".join(ln for ln in out_lines if ln is not None))
+    if name == "examples":
+        _convert_bob_native(config_dir)
     # NOTE: the Java-only NETCDF_BIOMASS resource-forcing keys (species.biomass.{file,mode,varname})
     # are NOT baked into source — they are a write-for-Java concern that write_temp_config ->
     # to_target_keys emits at stage time, and the Python engine does not read them (H3). Baking them

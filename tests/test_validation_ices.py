@@ -161,6 +161,46 @@ class TestModelBiomassWindowMean:
             model_biomass_window_mean(results, "hake", window_years=5)
 
 
+def test_window_mean_reads_wide_all_species_frame():
+    # eec/BoB OsmoseResults.biomass() returns a WIDE cross-species frame:
+    # species are columns, and biomass(species=X) returns 0 rows because the
+    # 'species' column is literally "all" (not the species name).
+    wide = pd.DataFrame(
+        {"Time": [0, 1, 2, 3, 4, 5], "Anchovy": [10, 10, 10, 20, 20, 20], "species": ["all"] * 6}
+    )
+
+    class R:
+        output_dir = "x"
+
+        def biomass(self, species=None):
+            return wide[wide["species"] == species] if species is not None else wide
+
+    assert model_biomass_window_mean(R(), "Anchovy", window_years=3) == 20.0
+
+
+def test_window_mean_wide_frame_windows_by_calendar_year_not_row_count():
+    # Distinguishes row-count windowing (WRONG, old bug) from calendar-year
+    # windowing (correct): 2 rows/year, matching BoB/eec's sub-annual output
+    # cadence (24 rows/year in the real config). window_years=1 must average
+    # the last calendar YEAR of Time (Time > 1.0 -> rows at 1.5, 2.0 ->
+    # mean(10, 100) == 55.0), NOT the last 1 ROW (which would be just 100.0).
+    wide = pd.DataFrame(
+        {
+            "Time": [0.0, 0.5, 1.0, 1.5, 2.0],
+            "Anchovy": [1, 1, 10, 10, 100],
+            "species": ["all"] * 5,
+        }
+    )
+
+    class R:
+        output_dir = "x"
+
+        def biomass(self, species=None):
+            return wide[wide["species"] == species] if species is not None else wide
+
+    assert model_biomass_window_mean(R(), "Anchovy", window_years=1) == 55.0
+
+
 class TestCompareOutputsToIces:
     def test_in_range_species(self, tmp_path):
         # Cod ICES envelope from snapshot is [100, 140]. Model mean 120 → in range.

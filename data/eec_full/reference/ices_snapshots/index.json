@@ -1,0 +1,32 @@
+{
+  "advice_year": 2024,
+  "created": "2026-07-06",
+  "model_species_to_ices_stocks": {
+    "lesserSpottedDogfish": [],
+    "redMullet": [],
+    "pouting": [],
+    "whiting": [],
+    "poorCod": [],
+    "cod": [],
+    "dragonet": [],
+    "sole": [
+      "sol.27.7d"
+    ],
+    "plaice": [
+      "ple.27.7d"
+    ],
+    "horseMackerel": [],
+    "mackerel": [],
+    "herring": [],
+    "sardine": [],
+    "squids": []
+  },
+  "units_by_stock": {
+    "sol.27.7d": "tonnes",
+    "ple.27.7d": "tonnes"
+  },
+  "advice_year_by_stock": {
+    "sol.27.7d": 2024,
+    "ple.27.7d": 2024
+  }
+}
