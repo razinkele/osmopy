@@ -183,19 +183,27 @@ def model_biomass_window_mean(
     averages. Returns model biomass in TONNES — the same unit OSMOSE
     writes biomass outputs in (per `output.biomass.unit`).
 
+    Some configs (e.g. eec/BoB) instead emit a WIDE cross-species frame from
+    `results.biomass()` — species are columns, and the frame's own `species`
+    column is the literal string `"all"` — so `results.biomass(species=X)`
+    returns 0 rows for any real species name. In that case, fall back to the
+    unfiltered wide frame and pull out the species' column directly.
+
     Raises
     ------
     KeyError if `species` has no biomass output in the results dir.
     ValueError if the biomass time series is empty.
     """
     df = results.biomass(species=species)
-    if df is None or len(df) == 0:
+    if df is None or len(df) == 0 or "value" not in getattr(df, "columns", []):
+        wide = results.biomass()
+        if wide is not None and species in getattr(wide, "columns", []):
+            s = wide.sort_values("Time")[species] if "Time" in wide.columns else wide[species]
+            n_window = min(window_years, len(s))
+            if n_window <= 0:
+                raise ValueError(f"empty biomass window for {species!r}")
+            return float(s.iloc[-n_window:].mean())
         raise ValueError(f"no biomass time series for {species!r} in {results.output_dir}")
-
-    if "value" not in df.columns:
-        raise ValueError(
-            f"biomass DataFrame for {species!r} missing 'value' column (got {list(df.columns)})"
-        )
 
     if "time" in df.columns:
         df = df.sort_values("time")

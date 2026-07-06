@@ -161,6 +161,23 @@ class TestModelBiomassWindowMean:
             model_biomass_window_mean(results, "hake", window_years=5)
 
 
+def test_window_mean_reads_wide_all_species_frame():
+    # eec/BoB OsmoseResults.biomass() returns a WIDE cross-species frame:
+    # species are columns, and biomass(species=X) returns 0 rows because the
+    # 'species' column is literally "all" (not the species name).
+    wide = pd.DataFrame(
+        {"Time": [0, 1, 2, 3, 4, 5], "Anchovy": [10, 10, 10, 20, 20, 20], "species": ["all"] * 6}
+    )
+
+    class R:
+        output_dir = "x"
+
+        def biomass(self, species=None):
+            return wide[wide["species"] == species] if species is not None else wide
+
+    assert model_biomass_window_mean(R(), "Anchovy", window_years=3) == 20.0
+
+
 class TestCompareOutputsToIces:
     def test_in_range_species(self, tmp_path):
         # Cod ICES envelope from snapshot is [100, 140]. Model mean 120 → in range.
