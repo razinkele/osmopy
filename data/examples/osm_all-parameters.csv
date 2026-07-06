@@ -46,7 +46,6 @@ osmose.configuration.predation ; osm_param-predation.csv
 osmose.configuration.fishing ; osm_param-fishing.csv
 osmose.configuration.ltl ; osm_param-ltl.csv
 osmose.configuration.movement ; osm_param-movement.csv
-output.restart.enabled ; false
 # Osmose 3.1.0 - Added parameter osmose.version;3.1.0
 # Osmose 3.2.0 - Updated parameter osmose.version to 3.2.0
 # Osmose 3.3.0 - Updated parameter osmose.version to 3.3.0
@@ -61,7 +60,7 @@ output.restart.enabled ; false
 # Osmose 4.3.1 - Updated parameter osmose.version to 4.3.1
 # Osmose 4.3.2 - Updated parameter osmose.version to 4.3.2
 # Osmose 4.3.3 - Updated parameter osmose.version to 4.3.3
-osmose.version;4.3.3
+osmose.version;4.4.1
 # Osmose 4.3.0 - Added parameter species.type.sp0;focal
 species.type.sp0;focal
 # Osmose 4.3.0 - Added parameter species.type.sp1;focal
@@ -111,12 +110,12 @@ species.size.min.sp12 ; 0.001
 species.size.max.sp12 ; 0.01
 species.size.min.sp13 ; 0.01
 species.size.max.sp13 ; 0.1
-species.tl.sp8 ; 1.0
-species.tl.sp9 ; 1.0
-species.tl.sp10 ; 2.0
-species.tl.sp11 ; 2.5
-species.tl.sp12 ; 1.0
-species.tl.sp13 ; 1.0
+species.trophic.level.sp8 ; 1.0
+species.trophic.level.sp9 ; 1.0
+species.trophic.level.sp10 ; 2.0
+species.trophic.level.sp11 ; 2.5
+species.trophic.level.sp12 ; 1.0
+species.trophic.level.sp13 ; 1.0
 species.accessibility2fish.sp8 ; 0.01
 species.accessibility2fish.sp9 ; 0.02
 species.accessibility2fish.sp10 ; 0.05
@@ -129,3 +128,10 @@ species.conversion2tons.sp10 ; 1.0
 species.conversion2tons.sp11 ; 1.0
 species.conversion2tons.sp12 ; 1.0
 species.conversion2tons.sp13 ; 1.0
+# Osmose 4.4.1 - per-species resource forcing (24-step)
+species.file.sp8 ; ltl/roms_n2p2z2d2_biscay_24step.nc
+species.file.sp9 ; ltl/roms_n2p2z2d2_biscay_24step.nc
+species.file.sp10 ; ltl/roms_n2p2z2d2_biscay_24step.nc
+species.file.sp11 ; ltl/roms_n2p2z2d2_biscay_24step.nc
+species.file.sp12 ; ltl/roms_n2p2z2d2_biscay_24step.nc
+species.file.sp13 ; ltl/roms_n2p2z2d2_biscay_24step.nc
