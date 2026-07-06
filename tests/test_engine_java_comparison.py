@@ -37,7 +37,10 @@ from osmose.engine.state import SchoolState
 
 PROJECT_DIR = Path(__file__).parent.parent
 JAR_PATH = PROJECT_DIR / "osmose-java" / "osmose_4.3.3-jar-with-dependencies.jar"
-EXAMPLES_DIR = PROJECT_DIR / "data" / "examples"
+# data/examples is now the native 4.4.1 config (Task 4 in-place migration); the
+# 4.3.3 jar can no longer load it (e.g. missing species.biomass.nsteps.year).
+# Point this 4.3.3-only comparison at the preserved original snapshot instead.
+EXAMPLES_DIR = PROJECT_DIR / "data" / "examples_433_orig"
 EXAMPLES_CONFIG = EXAMPLES_DIR / "osm_all-parameters.csv"
 
 # Check if Java and the JAR are available

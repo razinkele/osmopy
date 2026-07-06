@@ -61,8 +61,13 @@ class TestLoadExampleConfig:
         assert "mortality.fishing.rate.sp0" in config
         # Movement keys
         assert "movement.distribution.method.sp0" in config
-        # LTL keys
-        assert "ltl.name.rsc0" in config
+        # Resource (formerly LTL) keys — the 4.4.1 migration drops the legacy
+        # ltl.* family entirely (a leftover ltl.name.rscN would re-route the
+        # Python engine's config loader back onto the deprecated LTL path;
+        # see scripts/migrate_bundled_to_440.py). Resources are now native
+        # species.* entries (sp8..sp13 = rsc0..rsc5).
+        assert "species.name.sp8" in config
+        assert "ltl.name.rsc0" not in config
 
     def test_reader_loads_correct_values(self):
         reader = OsmoseConfigReader()
@@ -206,18 +211,24 @@ class TestFullRoundtrip:
             writer = OsmoseConfigWriter()
             writer.write(content, Path(tmpdir))
 
-            # Check that expected sub-files were created
+            # Check that expected sub-files were created.
+            # NOTE: no osm_param-ltl.csv here post-4.4.1-migration — the ltl.*
+            # key family is dropped entirely (resources are native species.*
+            # entries living in osm_param-species.csv), so the writer has
+            # nothing left to put in a dedicated ltl sub-file.
             expected_subfiles = [
                 "osm_param-species.csv",
                 "osm_param-grid.csv",
                 "osm_param-output.csv",
                 "osm_param-predation.csv",
                 "osm_param-fishing.csv",
-                "osm_param-ltl.csv",
                 "osm_param-movement.csv",
             ]
             for fname in expected_subfiles:
                 assert (Path(tmpdir) / fname).exists(), f"Expected sub-file not generated: {fname}"
+            assert not (Path(tmpdir) / "osm_param-ltl.csv").exists(), (
+                "Unexpected osm_param-ltl.csv: no ltl.* keys should survive the 4.4.1 migration"
+            )
 
     def test_roundtrip_master_has_references(self):
         reader = OsmoseConfigReader()
@@ -235,13 +246,14 @@ class TestFullRoundtrip:
             master = reader.read_file(Path(tmpdir) / "osm_all-parameters.csv")
             refs = {k for k in master if k.startswith("osmose.configuration.")}
 
+            # No osmose.configuration.ltl post-4.4.1-migration: the ltl.* key
+            # family is dropped entirely, so there is nothing to reference.
             expected_refs = {
                 "osmose.configuration.species",
                 "osmose.configuration.grid",
                 "osmose.configuration.output",
                 "osmose.configuration.predation",
                 "osmose.configuration.fishing",
-                "osmose.configuration.ltl",
                 "osmose.configuration.movement",
             }
             assert refs == expected_refs, (
