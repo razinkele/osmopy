@@ -42,16 +42,21 @@ def convert_maps(src_dir: Path, maps_out: Path, keys_out: Path) -> list[dict]:
         a0 = raw[f"movement.initialage.map{si}"]
         a1 = raw[f"movement.lastage.map{si}"]
         da = xr.open_dataset(src_dir / raw[f"movement.file.map{si}"])[stage].values  # (24,62,56)
+
+        # Decide orientation from ALL time slices, not just t==0: an empty/land-only first slice must
+        # not lock the whole series into the wrong flip. Pick the orientation with fewer presence-on-
+        # land cells summed across every step (the real-loader test still guards the emitted CSVs).
+        def _land_hits(arr: np.ndarray) -> int:
+            return int((((arr > 0) & ~np.isnan(arr)) & ~ocean).sum())
+
+        land_asis = sum(_land_hits(da[t]) for t in range(da.shape[0]))
+        land_flip = sum(_land_hits(np.flipud(da[t])) for t in range(da.shape[0]))
+        flip = land_flip < land_asis
+
         groups: dict[bytes, list[int]] = {}
         oriented = []
-        flip = False
         for t in range(da.shape[0]):
-            s = da[t]
-            if t == 0:
-                pa = ((s > 0) & ~np.isnan(s)) & ~ocean
-                pf = ((np.flipud(s) > 0) & ~np.isnan(np.flipud(s))) & ~ocean
-                flip = pf.sum() < pa.sum()
-            s = np.flipud(s) if flip else s
+            s = np.flipud(da[t]) if flip else da[t]
             g = np.where(ocean, np.nan_to_num(s), -99.0)
             oriented.append(g)
             groups.setdefault(g.tobytes(), []).append(t)

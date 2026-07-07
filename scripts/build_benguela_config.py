@@ -8,6 +8,13 @@ from pathlib import Path
 
 
 def _flatten(master: Path) -> dict[str, str]:
+    """Flatten an OSMOSE master + its osmose.configuration.* includes into a RAW key dict.
+
+    Deliberately NOT OsmoseConfigReader().read(): that canonicalizes/migrates 4.3.3 keys to 4.4.0 on
+    read (e.g. fisheries.enabled -> module.multispecies.fisheries.enabled), which would collide with
+    this script's raw edit-set (which sets/strips 4.3.3-named keys) and emit duplicate raw+migrated
+    keys. We keep everything in raw 4.3.3 key-space here and let osmopy migrate ONCE at demo-read time.
+    """
     out: dict[str, str] = {}
 
     def read(p: Path):
