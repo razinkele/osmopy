@@ -1,0 +1,10 @@
+population.seeding.biomass.sp0 ; 3129213
+population.seeding.biomass.sp1 ; 3888750
+population.seeding.biomass.sp2 ; 3029155
+population.seeding.biomass.sp3 ; 1286364
+population.seeding.biomass.sp4 ; 1138339
+population.seeding.biomass.sp5 ; 1439984
+population.seeding.biomass.sp6 ; 198865
+population.seeding.biomass.sp7 ; 81054
+population.seeding.biomass.sp8 ; 575361
+population.seeding.biomass.sp9 ; 591907
