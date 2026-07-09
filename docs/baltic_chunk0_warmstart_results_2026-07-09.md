@@ -96,12 +96,13 @@ unchanged.
 
 ## Caveats (honest)
 
-1. **Cod-axis verdict *string* carries v3 egg-only framing.** The `--warmstart --contrast cod-axis`
-   run's JSON verdict text still reads "egg-only ICs … add the warm-start primitive (Task 7)" — this is a
-   cosmetic artifact of preserving the parity-locked v3 cod-axis verdict text; **this run used the
-   warm-start primitive**, so ignore that phrasing. The MONOSTABLE conclusion is correct and is the
-   point of the run. (A parity-safe fix — branching the verdict text on `warmstart` — is a small
-   follow-up; it does not change any conclusion.)
+1. **Cod-axis verdict prose is now warm-start-aware (resolved).** `_cod_axis_verdict(points, warmstart)`
+   branches the prose on the flag: the egg-only path keeps the v3 text byte-identical (parity), while the
+   `--warmstart` path emits "MONOSTABLE (warm-start standing ICs) … Bistability must be CREATED (Chunk C
+   … Chunk A2 …)" instead of the misleading "add the warm-start primitive (Task 7)". The committed
+   `baltic_chunk0_warmstart_bistability_cod-axis.json` verdict was regenerated from its existing points
+   (no sim re-run); all summary fields (bistable, establishment_fraction 0.8, undetermined [1.0]) are
+   unchanged.
 2. **Regime-shift formal verdict is horizon-limited, not genuinely ambiguous.** The `instrument-limited`
    label comes from the 15-year stationarity gate on clupeid stocks (several arms still drifting / seed-
    split), not from any basin ambiguity. The raw biomasses show clear convergence on both axes. A longer

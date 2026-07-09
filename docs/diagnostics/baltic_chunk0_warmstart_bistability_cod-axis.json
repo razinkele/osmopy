@@ -114,6 +114,6 @@
   ],
   "establishment_fraction": 0.8,
   "trustworthy": true,
-  "verdict": "MONOSTABLE by this CONSERVATIVE method \u2014 no basin split at any established scale (undetermined: [1.0]). Cannot rule out bistability (egg-only ICs, and the single-cod-axis ICs omit the sprat-dominated start); add the warm-start primitive (Task 7) for a definitive test, or proceed to Chunks C & A2 to CREATE a self-locking bistability. Read the rich/poor cod response curve.",
+  "verdict": "MONOSTABLE (warm-start standing ICs) \u2014 no basin split at any established scale (undetermined: [1.0]). Genuine cod-rich vs cod-poor standing stocks converge; the starting cod stock does not change cod's fate (larval mortality alone sets it). Bistability must be CREATED (Chunk C clupeid->cod-egg predation; Chunk A2 depletable plankton).",
   "complete": true
 }

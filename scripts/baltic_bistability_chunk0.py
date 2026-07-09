@@ -438,6 +438,81 @@ def _regime_shift_verdict(points) -> dict:
     }
 
 
+def _cod_axis_verdict(points, warmstart: bool = False) -> dict:
+    """Cod-axis sweep verdict. The egg-only (warmstart=False) prose is byte-identical to v3;
+    the warmstart=True prose drops the egg-only / 'add the warm-start primitive' framing (that
+    run USED the primitive) so the emitted verdict is not self-contradictory."""
+    bistable = [p["scale"] for p in points if p["outcome"] == "bistable"]
+    seed_split = [p["scale"] for p in points if p["outcome"] == "seed-split"]
+    undet = [p["scale"] for p in points if p["outcome"] == "undetermined"]
+    est_frac = sum(p["established"] for p in points) / len(points) if points else 0.0
+    trustworthy = est_frac >= 0.5
+    if not trustworthy:
+        split_note = (
+            f" (a basin split WAS seen at scale(s) {bistable} — treat as tentative)"
+            if bistable
+            else ""
+        )
+        if warmstart:
+            verdict = (
+                f"INSTRUMENT-LIMITED — standing-stock cod-rich established a non-collapsed stock "
+                f"at only {est_frac:.0%} of scales{split_note}. Raise --seeds/--years before "
+                f"concluding."
+            )
+        else:
+            verdict = (
+                f"INSTRUMENT-LIMITED — cod-rich established a non-collapsed stock at only "
+                f"{est_frac:.0%} of scales, so egg-seeding (not the biology) may set the outcome"
+                f"{split_note}. No MONOSTABLE conclusion; a definitive test needs the warm-start "
+                f"primitive (Task 7)."
+            )
+    elif bistable:
+        if warmstart:
+            verdict = (
+                f"BISTABLE — different cod basins from genuine standing-stock cod-rich vs cod-poor "
+                f"ICs at larva-scale(s) {bistable}. SCRUTINIZE: re-run with more seeds and rule out "
+                f"a seeding/parameter artifact before trusting."
+            )
+        else:
+            verdict = (
+                f"BISTABLE (conservative) — different cod basins from the two ICs at larva-scale(s) "
+                f"{bistable}. Egg-only ICs + Beverton-Holt bias this test toward MONOSTABLE, so a "
+                f"positive result is strong. Confirm with a warm-start standing IC (Task 7)."
+            )
+    elif seed_split:
+        verdict = (
+            f"AMBIGUOUS — seed-split (per-seed basin disagreement) at scale(s) {seed_split}; "
+            f"near a tipping point. Re-run with more --seeds before concluding."
+        )
+    elif warmstart:
+        verdict = (
+            f"MONOSTABLE (warm-start standing ICs) — no basin split at any established scale "
+            f"(undetermined: {undet}). Genuine cod-rich vs cod-poor standing stocks converge; the "
+            f"starting cod stock does not change cod's fate (larval mortality alone sets it). "
+            f"Bistability must be CREATED (Chunk C clupeid->cod-egg predation; Chunk A2 depletable "
+            f"plankton)."
+        )
+    else:
+        verdict = (
+            f"MONOSTABLE by this CONSERVATIVE method — no basin split at any established scale "
+            f"(undetermined: {undet}). Cannot rule out bistability (egg-only ICs, and the "
+            f"single-cod-axis ICs omit the sprat-dominated start); add the warm-start primitive "
+            f"(Task 7) for a definitive test, or proceed to Chunks C & A2 to CREATE a self-locking "
+            f"bistability. Read the rich/poor cod response curve."
+        )
+    return {
+        "points": points,
+        "bistable": bool(bistable) and trustworthy,
+        "bistable_scales": bistable,
+        "seed_split_scales": seed_split,
+        "undetermined_scales": undet,
+        "establishment_fraction": est_frac,
+        "trustworthy": trustworthy,
+        "verdict": verdict,
+        "complete": True,
+    }
+
+
 def run_bistability_sweep(
     scales,
     base_config,
@@ -475,54 +550,7 @@ def run_bistability_sweep(
             on_point(_partial(points))
     if contrast == "regime-shift":
         return _regime_shift_verdict(points)
-    # ---- cod-axis verdict (unchanged from v3) ----
-    bistable = [p["scale"] for p in points if p["outcome"] == "bistable"]
-    seed_split = [p["scale"] for p in points if p["outcome"] == "seed-split"]
-    undet = [p["scale"] for p in points if p["outcome"] == "undetermined"]
-    est_frac = sum(p["established"] for p in points) / len(points) if points else 0.0
-    trustworthy = est_frac >= 0.5
-    if not trustworthy:
-        split_note = (
-            f" (a basin split WAS seen at scale(s) {bistable} — treat as tentative)"
-            if bistable
-            else ""
-        )
-        verdict = (
-            f"INSTRUMENT-LIMITED — cod-rich established a non-collapsed stock at only "
-            f"{est_frac:.0%} of scales, so egg-seeding (not the biology) may set the outcome"
-            f"{split_note}. No MONOSTABLE conclusion; a definitive test needs the warm-start "
-            f"primitive (Task 7)."
-        )
-    elif bistable:
-        verdict = (
-            f"BISTABLE (conservative) — different cod basins from the two ICs at larva-scale(s) "
-            f"{bistable}. Egg-only ICs + Beverton-Holt bias this test toward MONOSTABLE, so a "
-            f"positive result is strong. Confirm with a warm-start standing IC (Task 7)."
-        )
-    elif seed_split:
-        verdict = (
-            f"AMBIGUOUS — seed-split (per-seed basin disagreement) at scale(s) {seed_split}; "
-            f"near a tipping point. Re-run with more --seeds before concluding."
-        )
-    else:
-        verdict = (
-            f"MONOSTABLE by this CONSERVATIVE method — no basin split at any established scale "
-            f"(undetermined: {undet}). Cannot rule out bistability (egg-only ICs, and the "
-            f"single-cod-axis ICs omit the sprat-dominated start); add the warm-start primitive "
-            f"(Task 7) for a definitive test, or proceed to Chunks C & A2 to CREATE a self-locking "
-            f"bistability. Read the rich/poor cod response curve."
-        )
-    return {
-        "points": points,
-        "bistable": bool(bistable) and trustworthy,
-        "bistable_scales": bistable,
-        "seed_split_scales": seed_split,
-        "undetermined_scales": undet,
-        "establishment_fraction": est_frac,
-        "trustworthy": trustworthy,
-        "verdict": verdict,
-        "complete": True,
-    }
+    return _cod_axis_verdict(points, warmstart)
 
 
 def run_accessibility_ab(

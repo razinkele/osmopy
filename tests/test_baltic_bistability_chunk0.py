@@ -518,3 +518,21 @@ def test_cli_preflight(tmp_path, monkeypatch):
     monkeypatch.setattr(c0, "_DIAG_DIR", tmp_path)
     rc = c0.main(["--preflight"])
     assert rc == 0  # _runner_regime cod-dominated arm returns a persisting stock
+
+
+# ---------------------------------------------------------------- cod-axis verdict framing
+def test_cod_axis_verdict_warmstart_reframes_text():
+    pts = [
+        {"scale": 0.1, "outcome": "same-basin", "established": True},
+        {"scale": 1.0, "outcome": "same-basin", "established": True},
+    ]
+    egg = c0._cod_axis_verdict(pts, warmstart=False)
+    ws = c0._cod_axis_verdict(pts, warmstart=True)
+    # summary fields are identical (only the verdict prose differs)
+    assert egg["bistable"] == ws["bistable"] is False
+    assert egg["establishment_fraction"] == ws["establishment_fraction"] == 1.0
+    # egg-only path keeps the v3 framing verbatim (parity)
+    assert "egg-only" in egg["verdict"].lower() and "task 7" in egg["verdict"].lower()
+    # warm-start path drops the egg-only / Task-7 framing (this run USED the primitive)
+    assert "egg-only" not in ws["verdict"].lower() and "task 7" not in ws["verdict"].lower()
+    assert "warm-start" in ws["verdict"].lower() and "monostable" in ws["verdict"].lower()
