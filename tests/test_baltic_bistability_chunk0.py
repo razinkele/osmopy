@@ -536,3 +536,52 @@ def test_cod_axis_verdict_warmstart_reframes_text():
     # warm-start path drops the egg-only / Task-7 framing (this run USED the primitive)
     assert "egg-only" not in ws["verdict"].lower() and "task 7" not in ws["verdict"].lower()
     assert "warm-start" in ws["verdict"].lower() and "monostable" in ws["verdict"].lower()
+
+
+# ---------------------------------------------------------------- Chunk C CLI
+def test_chunkc_output_name():
+    assert c0.chunkc_output_name(0.2) == "baltic_chunkc_regime-shift_s0.2.json"
+    assert c0.chunkc_output_name(0.4) == "baltic_chunkc_regime-shift_s0.4.json"
+
+
+def test_cli_chunk_c_writes_variant_and_runs_sweep(tmp_path, monkeypatch):
+    import pandas as pd
+
+    dep = tmp_path / "predation-accessibility.csv"
+    dep.write_text(
+        "v Prey / Predator >;cod;herring;sprat;smelt\n"
+        "cod;0.05;0;0;0.05\n"
+        "herring;0.4;0;0;0\n"
+        "sprat;0.4;0;0;0\n"
+        "smelt;0.1;0.2;0.2;0\n"
+    )
+    tgts = [
+        Tgt("cod", 120_000, 60_000, 250_000),
+        Tgt("herring", 1_500_000, 800_000, 3_000_000),
+        Tgt("sprat", 1_500_000, 800_000, 2_500_000),
+    ]
+    captured = {}
+
+    def fake_runner(config, overrides, n_years, seed):
+        captured["accessibility_file"] = config.get("predation.accessibility.file")
+        return _stats(cod=120_000, herring=400_000, sprat=300_000)
+
+    monkeypatch.setattr(
+        c0,
+        "read_base_config",
+        lambda: {"predation.accessibility.file": str(dep), "_osmose.config.dir": str(tmp_path)},
+    )
+    monkeypatch.setattr(c0, "read_base_larva_rates", lambda cfg, n_focal=8: {0: 15.0})
+    monkeypatch.setattr(c0, "_load_targets", lambda: tgts)
+    monkeypatch.setattr(c0, "_default_runner", fake_runner)
+    monkeypatch.setattr(c0, "_DIAG_DIR", tmp_path)
+
+    rc = c0.main(["--chunk-c-strength", "0.2", "--smoke"])
+    assert rc == 0
+    variant = tmp_path / "predation-accessibility-chunkc-s0.2.csv"
+    assert variant.exists()
+    v = pd.read_csv(str(variant), sep=";", index_col=0)
+    assert v.loc["cod", "herring"] == 0.2 and v.loc["cod", "sprat"] == 0.2
+    # the sweep ran against the variant matrix, not the deployed one
+    assert captured["accessibility_file"] == str(variant.resolve())
+    assert (tmp_path / c0.chunkc_output_name(0.2)).exists()

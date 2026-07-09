@@ -623,6 +623,20 @@ def _load_targets():
     return load_targets()
 
 
+def chunkc_output_name(strength: float) -> str:
+    return f"baltic_chunkc_regime-shift_s{strength:g}.json"
+
+
+def _deployed_accessibility_csv(base_config) -> str:
+    from osmose.engine.path_resolution import resolve_data_path
+
+    key = base_config.get("predation.accessibility.file", "")
+    path = resolve_data_path(key, base_config.get("_osmose.config.dir", ""))
+    if path is None:
+        raise FileNotFoundError(f"could not resolve deployed accessibility file {key!r}")
+    return str(path)
+
+
 def _clupeid_targets_from(targets):
     return [t for t in targets if t.species in ("herring", "sprat")]
 
@@ -682,6 +696,7 @@ def main(argv=None) -> int:
     ap.add_argument("--warmstart", action="store_true")
     ap.add_argument("--contrast", choices=["cod-axis", "regime-shift", "both"], default="cod-axis")
     ap.add_argument("--preflight", action="store_true")
+    ap.add_argument("--chunk-c-strength", type=float, nargs="+", default=None)
     args = ap.parse_args(argv)
 
     seeds = [args.seeds[0]] if args.smoke else args.seeds
@@ -708,6 +723,39 @@ def main(argv=None) -> int:
         ok, msg = preflight_check(stats)
         print(f"\n=== PRE-FLIGHT (cod-dominated standing stock, warm-start ON) ===\n{msg}")
         return 0 if ok else 1
+
+    if args.chunk_c_strength:
+        from chunkc_accessibility import write_chunkc_matrix
+
+        clup = _clupeid_targets_from(targets)
+        deployed_csv = _deployed_accessibility_csv(base_config)
+        for strength in args.chunk_c_strength:
+            variant = (_DIAG_DIR / f"predation-accessibility-chunkc-s{strength:g}.csv").resolve()
+            write_chunkc_matrix(deployed_csv, strength, str(variant))
+            cfg = dict(base_config)
+            cfg["predation.accessibility.file"] = str(variant)
+            out_path = _DIAG_DIR / chunkc_output_name(strength)
+            result = run_bistability_sweep(
+                scales,
+                cfg,
+                base_rates,
+                cod_bands,
+                seeds,
+                runner=_default_runner,
+                n_years=years,
+                ic_a=cod_dominated_seeding,
+                ic_b=clupeid_dominated_seeding,
+                warmstart=True,
+                contrast="regime-shift",
+                clupeid_targets=clup,
+                on_point=lambda payload, p=out_path: p.write_text(json.dumps(payload, indent=2)),
+            )
+            print(f"\n=== CHUNK C (cod->clupeid accessibility {strength:g}) ===")
+            for pt in result["points"]:
+                print(f"  larva x{pt['scale']:<5} outcome={pt['outcome']}")
+            print(f"VERDICT: {result['verdict']}")
+            out_path.write_text(json.dumps(result, indent=2))
+        return 0
 
     if args.warmstart:
         for spec in contrast_specs(args.contrast, targets):
