@@ -1,0 +1,119 @@
+{
+  "points": [
+    {
+      "scale": 0.03,
+      "rich_state": "overshoot",
+      "poor_state": "overshoot",
+      "per_seed_rich": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "per_seed_poor": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "rich_cod_median": 19444620.826412134,
+      "poor_cod_median": 21610331.253634006,
+      "gap": 0.1002164335931339,
+      "established": true,
+      "outcome": "same-basin",
+      "bistable": false
+    },
+    {
+      "scale": 0.1,
+      "rich_state": "overshoot",
+      "poor_state": "overshoot",
+      "per_seed_rich": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "per_seed_poor": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "rich_cod_median": 14327579.650013318,
+      "poor_cod_median": 15899204.104152452,
+      "gap": 0.09884924710661586,
+      "established": true,
+      "outcome": "same-basin",
+      "bistable": false
+    },
+    {
+      "scale": 0.3,
+      "rich_state": "overshoot",
+      "poor_state": "overshoot",
+      "per_seed_rich": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "per_seed_poor": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "rich_cod_median": 9243727.462594973,
+      "poor_cod_median": 9698000.72169664,
+      "gap": 0.04684194457146298,
+      "established": true,
+      "outcome": "same-basin",
+      "bistable": false
+    },
+    {
+      "scale": 0.5,
+      "rich_state": "overshoot",
+      "poor_state": "overshoot",
+      "per_seed_rich": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "per_seed_poor": [
+        "undetermined",
+        "overshoot",
+        "overshoot"
+      ],
+      "rich_cod_median": 6860720.539820075,
+      "poor_cod_median": 6783643.207805474,
+      "gap": 0.011234581022890797,
+      "established": true,
+      "outcome": "same-basin",
+      "bistable": false
+    },
+    {
+      "scale": 1.0,
+      "rich_state": "undetermined",
+      "poor_state": "collapsed",
+      "per_seed_rich": [
+        "undetermined",
+        "undetermined",
+        "undetermined"
+      ],
+      "per_seed_poor": [
+        "collapsed",
+        "collapsed",
+        "collapsed"
+      ],
+      "rich_cod_median": 0.0,
+      "poor_cod_median": 896.8771922476133,
+      "gap": 0.9988862619424637,
+      "established": false,
+      "outcome": "undetermined",
+      "bistable": false
+    }
+  ],
+  "bistable": false,
+  "bistable_scales": [],
+  "seed_split_scales": [],
+  "undetermined_scales": [
+    1.0
+  ],
+  "establishment_fraction": 0.8,
+  "trustworthy": true,
+  "verdict": "MONOSTABLE (warm-start standing ICs) \u2014 no basin split at any established scale (undetermined: [1.0]). Genuine cod-rich vs cod-poor standing stocks converge; the starting cod stock does not change cod's fate (larval mortality alone sets it). Bistability must be CREATED (Chunk C clupeid->cod-egg predation; Chunk A2 depletable plankton).",
+  "complete": true
+}
