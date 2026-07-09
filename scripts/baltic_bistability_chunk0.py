@@ -317,13 +317,29 @@ def regime_shift_outcome(
 
 
 def run_bistability_point(
-    scale, base_config, base_rates, cod_bands, seeds, *, runner, n_years
+    scale,
+    base_config,
+    base_rates,
+    cod_bands,
+    seeds,
+    *,
+    runner,
+    n_years,
+    ic_a=cod_rich_seeding,
+    ic_b=cod_poor_seeding,
+    warmstart=False,
+    contrast="cod-axis",
+    clupeid_targets=None,
 ) -> dict:
     driver = larva_scale_override(scale, base_rates)
+    ws = warmstart_override(warmstart)
     rich_states, poor_states, rich_means, poor_means = [], [], [], []
+    a_runs, b_runs = [], []
     for seed in seeds:
-        r = safe_run(runner, base_config, {**driver, **cod_rich_seeding()}, n_years, seed)
-        p = safe_run(runner, base_config, {**driver, **cod_poor_seeding()}, n_years, seed)
+        r = safe_run(runner, base_config, {**driver, **ic_a(), **ws}, n_years, seed)
+        p = safe_run(runner, base_config, {**driver, **ic_b(), **ws}, n_years, seed)
+        a_runs.append(r)
+        b_runs.append(p)
         rs, rm = _cod_state(r, cod_bands)
         ps, pm = _cod_state(p, cod_bands)
         rich_states.append(rs)
@@ -334,37 +350,131 @@ def run_bistability_point(
         rich_states
     )  # consensus band (all valid seeds agree) or 'seed-split'
     poor_agg = aggregate_states(poor_states)
-    gap = bistability_gap(
-        _median_valid(rich_states, rich_means), _median_valid(poor_states, poor_means)
-    )
+    rich_med = _median_valid(rich_states, rich_means)
+    poor_med = _median_valid(poor_states, poor_means)
+    gap = bistability_gap(rich_med, poor_med)
     established = rich_agg in ("low", "in_range", "overshoot")
-    outcome = cod_axis_outcome(rich_agg, poor_agg, gap)
-    return {
+    out = {
         "scale": scale,
         "rich_state": rich_agg,
         "poor_state": poor_agg,
         "per_seed_rich": rich_states,
         "per_seed_poor": poor_states,
-        "rich_cod_median": _median_valid(rich_states, rich_means),
-        "poor_cod_median": _median_valid(poor_states, poor_means),
+        "rich_cod_median": rich_med,
+        "poor_cod_median": poor_med,
         "gap": gap,
         "established": established,
-        "outcome": outcome,
-        "bistable": outcome == "bistable",
+    }
+    if contrast == "regime-shift":
+        ct = clupeid_targets or []
+        clup_a, clup_a_valid = clupeid_axis(a_runs, ct)
+        clup_b, clup_b_valid = clupeid_axis(b_runs, ct)
+        outcome = regime_shift_outcome(
+            rich_agg, poor_agg, clup_a, clup_b, clup_a_valid, clup_b_valid
+        )
+        out.update(
+            {
+                "a_clupeid_biomass": clup_a,
+                "b_clupeid_biomass": clup_b,
+                "a_clupeid_valid": clup_a_valid,
+                "b_clupeid_valid": clup_b_valid,
+                "clupeid_gap": bistability_gap(clup_a, clup_b),
+                "outcome": outcome,
+                "regime_shift": outcome == "regime-shift",
+            }
+        )
+    else:
+        outcome = cod_axis_outcome(rich_agg, poor_agg, gap)
+        out.update({"outcome": outcome, "bistable": outcome == "bistable"})
+    return out
+
+
+def _regime_shift_verdict(points) -> dict:
+    shift = [p["scale"] for p in points if p["outcome"] == "regime-shift"]
+    partial = [p["scale"] for p in points if p["outcome"] == "partial"]
+    provisional = [p["scale"] for p in points if p["outcome"] == "provisional"]
+    det = [p for p in points if p["outcome"] != "provisional"]
+    det_frac = len(det) / len(points) if points else 0.0
+    trustworthy = det_frac >= 0.5
+    if not trustworthy:
+        verdict = (
+            f"INSTRUMENT-LIMITED — only {det_frac:.0%} of scales gave a determinate outcome "
+            f"(provisional at {provisional}); withhold. Raise --seeds/--years."
+        )
+    elif shift:
+        verdict = (
+            f"REGIME SHIFT / BISTABLE — both axes diverge in the regime-shift direction at "
+            f"scale(s) {shift}: cod persists in the cod-dominated IC and collapses in the "
+            f"clupeid-dominated IC, while clupeids boom. SCRUTINIZE before trusting — re-run "
+            f"with more seeds and rule out a seeding/parameter artifact (Chunks C & A2 are the "
+            f"expected source of a real second attractor)."
+        )
+    elif partial:
+        verdict = (
+            f"PARTIAL — NOT a regime shift. Only one axis moved at scale(s) {partial} "
+            f"(cod-only or clupeid-only); the other axis is monostable. A regime shift "
+            f"requires BOTH axes to diverge."
+        )
+    else:
+        verdict = (
+            f"MONOSTABLE (warm-start) — cod-dominated and clupeid-dominated standing-stock ICs "
+            f"converge at every determinate scale (provisional: {provisional}). No alternative "
+            f"regime-shift attractor under the deployed parameters; bistability must be CREATED "
+            f"(Chunk C clupeid->cod-egg predation; Chunk A2 depletable plankton)."
+        )
+    return {
+        "points": points,
+        "contrast": "regime-shift",
+        "regime_shift": bool(shift) and trustworthy,
+        "bistable": bool(shift) and trustworthy,
+        "regime_shift_scales": shift,
+        "partial_scales": partial,
+        "provisional_scales": provisional,
+        "determinate_fraction": det_frac,
+        "trustworthy": trustworthy,
+        "verdict": verdict,
+        "complete": True,
     }
 
 
 def run_bistability_sweep(
-    scales, base_config, base_rates, cod_bands, seeds, *, runner, n_years, on_point=None
+    scales,
+    base_config,
+    base_rates,
+    cod_bands,
+    seeds,
+    *,
+    runner,
+    n_years,
+    on_point=None,
+    ic_a=cod_rich_seeding,
+    ic_b=cod_poor_seeding,
+    warmstart=False,
+    contrast="cod-axis",
+    clupeid_targets=None,
 ) -> dict:
     points = []
     for s in scales:
         pt = run_bistability_point(
-            s, base_config, base_rates, cod_bands, seeds, runner=runner, n_years=n_years
+            s,
+            base_config,
+            base_rates,
+            cod_bands,
+            seeds,
+            runner=runner,
+            n_years=n_years,
+            ic_a=ic_a,
+            ic_b=ic_b,
+            warmstart=warmstart,
+            contrast=contrast,
+            clupeid_targets=clupeid_targets,
         )
         points.append(pt)
         if on_point is not None:
             on_point(_partial(points))
+    if contrast == "regime-shift":
+        return _regime_shift_verdict(points)
+    # ---- cod-axis verdict (unchanged from v3) ----
     bistable = [p["scale"] for p in points if p["outcome"] == "bistable"]
     seed_split = [p["scale"] for p in points if p["outcome"] == "seed-split"]
     undet = [p["scale"] for p in points if p["outcome"] == "undetermined"]

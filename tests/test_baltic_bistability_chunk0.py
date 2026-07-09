@@ -362,3 +362,105 @@ def test_regime_shift_outcome_withheld_when_undetermined_or_invalid():
         c0.regime_shift_outcome("in_range", "collapsed", 500_000.0, 4_000_000.0, False, True)
         == "provisional"
     )
+
+
+# ---------------------------------------------------------------- Task 4 (generalized sweep)
+def _runner_regime(config, overrides, n_years, seed):
+    """Cod-dominated arm (cod seed >= 100k) -> cod in_range + clupeids 'low';
+    clupeid-dominated arm -> cod collapsed + clupeids booming."""
+    cod_seed = float(overrides.get("population.seeding.biomass.sp0", "0"))
+    if cod_seed >= 100_000:
+        return _stats(cod=120_000, herring=400_000, sprat=300_000)
+    return _stats(cod=0, herring=1_500_000, sprat=2_500_000)
+
+
+def test_point_regime_shift_records_clupeid_and_outcome():
+    pt = c0.run_bistability_point(
+        1.0,
+        {},
+        {0: 15.0},
+        _bands(),
+        [0, 1, 2],
+        runner=_runner_regime,
+        n_years=15,
+        ic_a=c0.cod_dominated_seeding,
+        ic_b=c0.clupeid_dominated_seeding,
+        contrast="regime-shift",
+        clupeid_targets=_clup_targets(),
+    )
+    assert pt["rich_state"] == "in_range"  # cod persists in cod-dominated arm
+    assert pt["poor_state"] == "collapsed"  # cod collapses in clupeid-dominated arm
+    assert pt["b_clupeid_biomass"] > pt["a_clupeid_biomass"]
+    assert pt["a_clupeid_valid"] is True and pt["b_clupeid_valid"] is True
+    assert pt["outcome"] == "regime-shift"
+    assert pt["regime_shift"] is True
+
+
+def test_regime_shift_sweep_verdict_and_incremental():
+    seen = []
+    out = c0.run_bistability_sweep(
+        [1.0, 0.3],
+        {},
+        {0: 15.0},
+        _bands(),
+        [0, 1, 2],
+        runner=_runner_regime,
+        n_years=15,
+        on_point=seen.append,
+        ic_a=c0.cod_dominated_seeding,
+        ic_b=c0.clupeid_dominated_seeding,
+        contrast="regime-shift",
+        clupeid_targets=_clup_targets(),
+    )
+    assert out["regime_shift"] is True
+    assert 1.0 in out["regime_shift_scales"]
+    assert "regime shift" in out["verdict"].lower()
+    assert out["complete"] is True
+    assert seen[0]["complete"] is False
+
+
+def test_regime_shift_sweep_monostable_when_convergent():
+    def convergent(config, overrides, n_years, seed):
+        # both arms -> cod in_range + clupeids in_range: no divergence on either axis
+        return _stats(cod=120_000, herring=1_500_000, sprat=1_500_000)
+
+    out = c0.run_bistability_sweep(
+        [1.0, 0.3],
+        {},
+        {0: 15.0},
+        _bands(),
+        [0, 1],
+        runner=convergent,
+        n_years=15,
+        ic_a=c0.cod_dominated_seeding,
+        ic_b=c0.clupeid_dominated_seeding,
+        contrast="regime-shift",
+        clupeid_targets=_clup_targets(),
+    )
+    assert out["regime_shift"] is False
+    assert "monostable" in out["verdict"].lower()
+
+
+def test_warmstart_flag_injected_into_overrides():
+    captured = []
+
+    def spy(config, overrides, n_years, seed):
+        captured.append(dict(overrides))
+        return _stats(cod=120_000, herring=400_000, sprat=300_000)
+
+    c0.run_bistability_point(
+        1.0,
+        {},
+        {0: 15.0},
+        _bands(),
+        [0],
+        runner=spy,
+        n_years=5,
+        warmstart=True,
+        ic_a=c0.cod_dominated_seeding,
+        ic_b=c0.clupeid_dominated_seeding,
+        contrast="regime-shift",
+        clupeid_targets=_clup_targets(),
+    )
+    assert captured  # both arms ran
+    assert all(o.get("module.population.initialisation.enabled") == "true" for o in captured)
