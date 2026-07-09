@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import statistics
 from pathlib import Path
 
@@ -588,6 +589,58 @@ def _default_runner(config, overrides, n_years, seed):
     return run_simulation(config, overrides, n_years=n_years, seed=seed)
 
 
+def _load_targets():
+    from calibrate_baltic import load_targets
+
+    return load_targets()
+
+
+def _clupeid_targets_from(targets):
+    return [t for t in targets if t.species in ("herring", "sprat")]
+
+
+def contrast_specs(contrast: str, targets) -> list[dict]:
+    """Sweep specs to run for the requested contrast (label, IC pair, clupeid targets, out file)."""
+    cod_axis = {
+        "label": "cod-axis",
+        "ic_a": cod_rich_seeding,
+        "ic_b": cod_poor_seeding,
+        "clupeid_targets": None,
+        "out_name": "baltic_chunk0_warmstart_bistability_cod-axis.json",
+    }
+    regime = {
+        "label": "regime-shift",
+        "ic_a": cod_dominated_seeding,
+        "ic_b": clupeid_dominated_seeding,
+        "clupeid_targets": _clupeid_targets_from(targets),
+        "out_name": "baltic_chunk0_warmstart_bistability_regime-shift.json",
+    }
+    if contrast == "cod-axis":
+        return [cod_axis]
+    if contrast == "regime-shift":
+        return [regime]
+    return [cod_axis, regime]
+
+
+def preflight_check(stats: dict, species=("cod", "herring", "sprat")) -> tuple[bool, str]:
+    """De-risk gate: one standing-stock run must complete finite and non-vanishing.
+    A pathological t=0 decay is itself a finding — stop, do not run the full sweep."""
+    if stats.get("_failed"):
+        return False, f"FAILED — run crashed/empty: {stats.get('_error')}"
+    total = 0.0
+    for sp in species:
+        mean = stats.get(f"{sp}_mean")
+        if mean is None or not math.isfinite(float(mean)):
+            return False, f"NON-FINITE — {sp}_mean = {mean!r}"
+        total += float(mean)
+    if total <= 0.0:
+        return False, (
+            "VANISHED — cod+herring+sprat summed to zero; the standing-stock IC is not "
+            "self-consistent with the deployed parameters. Stop and reassess."
+        )
+    return True, f"OK — standing stock persists (cod+herring+sprat mean = {total:.0f} t)."
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Baltic Chunk 0 de-risk experiments (v3)")
     ap.add_argument(
@@ -598,9 +651,10 @@ def main(argv=None) -> int:
     ap.add_argument("--scales", type=float, nargs="+", default=_DEFAULT_SCALES)
     ap.add_argument("--low-accessibility", type=float, default=0.1)
     ap.add_argument("--smoke", action="store_true")
+    ap.add_argument("--warmstart", action="store_true")
+    ap.add_argument("--contrast", choices=["cod-axis", "regime-shift", "both"], default="cod-axis")
+    ap.add_argument("--preflight", action="store_true")
     args = ap.parse_args(argv)
-
-    from calibrate_baltic import load_targets
 
     seeds = [args.seeds[0]] if args.smoke else args.seeds
     scales = [1.0, 0.1] if args.smoke else args.scales
@@ -608,10 +662,49 @@ def main(argv=None) -> int:
 
     base_config = read_base_config()
     base_rates = read_base_larva_rates(base_config)
-    targets = load_targets()
+    targets = _load_targets()
     cod_bands = read_cod_bands(targets)
     _DIAG_DIR.mkdir(parents=True, exist_ok=True)
     print(f"base larva rates (post-migration, per-dt): {base_rates}")
+
+    if args.preflight:
+        ic = cod_dominated_seeding()
+        driver = larva_scale_override(1.0, base_rates)
+        stats = safe_run(
+            _default_runner,
+            base_config,
+            {**driver, **ic, **warmstart_override(True)},
+            years,
+            seeds[0],
+        )
+        ok, msg = preflight_check(stats)
+        print(f"\n=== PRE-FLIGHT (cod-dominated standing stock, warm-start ON) ===\n{msg}")
+        return 0 if ok else 1
+
+    if args.warmstart:
+        for spec in contrast_specs(args.contrast, targets):
+            out_path = _DIAG_DIR / spec["out_name"]
+            result = run_bistability_sweep(
+                scales,
+                base_config,
+                base_rates,
+                cod_bands,
+                seeds,
+                runner=_default_runner,
+                n_years=years,
+                ic_a=spec["ic_a"],
+                ic_b=spec["ic_b"],
+                warmstart=True,
+                contrast=spec["label"],
+                clupeid_targets=spec["clupeid_targets"],
+                on_point=lambda payload, p=out_path: p.write_text(json.dumps(payload, indent=2)),
+            )
+            print(f"\n=== WARM-START {spec['label'].upper()} ===")
+            for pt in result["points"]:
+                print(f"  larva x{pt['scale']:<5} outcome={pt['outcome']}")
+            print(f"VERDICT: {result['verdict']}")
+            out_path.write_text(json.dumps(result, indent=2))
+        return 0
 
     if args.experiment in ("bistability", "both"):
         out_path = _DIAG_DIR / "baltic_chunk0_bistability.json"

@@ -464,3 +464,57 @@ def test_warmstart_flag_injected_into_overrides():
     )
     assert captured  # both arms ran
     assert all(o.get("module.population.initialisation.enabled") == "true" for o in captured)
+
+
+# ---------------------------------------------------------------- Task 5 (CLI + preflight)
+def test_contrast_specs():
+    tgts = [
+        Tgt("cod", 120_000, 60_000, 250_000),
+        Tgt("herring", 1_500_000, 800_000, 3_000_000),
+        Tgt("sprat", 1_500_000, 800_000, 2_500_000),
+    ]
+    both = c0.contrast_specs("both", tgts)
+    assert [s["label"] for s in both] == ["cod-axis", "regime-shift"]
+    assert both[0]["clupeid_targets"] is None
+    assert both[1]["ic_a"] is c0.cod_dominated_seeding
+    assert both[1]["ic_b"] is c0.clupeid_dominated_seeding
+    assert {t.species for t in both[1]["clupeid_targets"]} == {"herring", "sprat"}
+    assert both[1]["out_name"] == "baltic_chunk0_warmstart_bistability_regime-shift.json"
+    assert len(c0.contrast_specs("cod-axis", tgts)) == 1
+    assert len(c0.contrast_specs("regime-shift", tgts)) == 1
+
+
+def test_preflight_check():
+    ok, msg = c0.preflight_check(_stats(cod=120_000, herring=800_000, sprat=600_000))
+    assert ok is True and "ok" in msg.lower()
+    assert c0.preflight_check({"_failed": True, "_error": "boom"})[0] is False
+    nan_stats = {"cod_mean": float("nan"), "herring_mean": 1.0, "sprat_mean": 1.0}
+    assert c0.preflight_check(nan_stats)[0] is False
+    assert c0.preflight_check(_stats(cod=0, herring=0, sprat=0))[0] is False
+
+
+def test_cli_warmstart_writes_both_contrasts(tmp_path, monkeypatch):
+    tgts = [
+        Tgt("cod", 120_000, 60_000, 250_000),
+        Tgt("herring", 1_500_000, 800_000, 3_000_000),
+        Tgt("sprat", 1_500_000, 800_000, 2_500_000),
+    ]
+    monkeypatch.setattr(c0, "read_base_config", lambda: {})
+    monkeypatch.setattr(c0, "read_base_larva_rates", lambda cfg, n_focal=8: {0: 15.0})
+    monkeypatch.setattr(c0, "_load_targets", lambda: tgts)
+    monkeypatch.setattr(c0, "_default_runner", _runner_regime)
+    monkeypatch.setattr(c0, "_DIAG_DIR", tmp_path)
+    rc = c0.main(["--warmstart", "--contrast", "both", "--smoke"])
+    assert rc == 0
+    assert (tmp_path / "baltic_chunk0_warmstart_bistability_cod-axis.json").exists()
+    assert (tmp_path / "baltic_chunk0_warmstart_bistability_regime-shift.json").exists()
+
+
+def test_cli_preflight(tmp_path, monkeypatch):
+    monkeypatch.setattr(c0, "read_base_config", lambda: {})
+    monkeypatch.setattr(c0, "read_base_larva_rates", lambda cfg, n_focal=8: {0: 15.0})
+    monkeypatch.setattr(c0, "_load_targets", lambda: [Tgt("cod", 120_000, 60_000, 250_000)])
+    monkeypatch.setattr(c0, "_default_runner", _runner_regime)
+    monkeypatch.setattr(c0, "_DIAG_DIR", tmp_path)
+    rc = c0.main(["--preflight"])
+    assert rc == 0  # _runner_regime cod-dominated arm returns a persisting stock
