@@ -21,6 +21,7 @@ _DEFAULT_SEEDS = [0, 1, 2]
 _PLANKTON_GROUPS = (8, 10, 11, 12)
 _SEEDING_WINDOW_Y = 4
 _NONBANDS = ("failed", "undetermined")
+_ENABLE_KEY = "module.population.initialisation.enabled"  # canonical warm-start flag
 
 
 def is_stationary(cv: float, trend: float, cv_max: float = 0.30, trend_max: float = 0.05) -> bool:
@@ -173,6 +174,33 @@ def cod_rich_seeding(window: int = _SEEDING_WINDOW_Y) -> dict:
 
 def cod_poor_seeding(window: int = _SEEDING_WINDOW_Y) -> dict:
     return {"population.seeding.biomass.sp0": "1000", "population.seeding.year.max": str(window)}
+
+
+def warmstart_override(enabled: bool) -> dict:
+    """Merge-in override that turns the warm-start standing-stock init ON (canonical flag).
+    Empty when off, so an egg-only run's overrides stay byte-identical."""
+    return {_ENABLE_KEY: "true"} if enabled else {}
+
+
+def cod_dominated_seeding(window: int = _SEEDING_WINDOW_Y) -> dict:
+    """Cod-dominated standing-stock IC: cod at the ICES upper band, clupeids suppressed."""
+    return {
+        "population.seeding.biomass.sp0": "250000",  # cod, ICES upper
+        "population.seeding.biomass.sp1": "800000",  # herring, lower
+        "population.seeding.biomass.sp2": "600000",  # sprat, suppressed
+        "population.seeding.year.max": str(window),
+    }
+
+
+def clupeid_dominated_seeding(window: int = _SEEDING_WINDOW_Y) -> dict:
+    """Clupeid-dominated (sprat-dominated) standing-stock IC: cod a remnant/invader,
+    herring + sprat at target/upper — the real post-1990 Baltic regime."""
+    return {
+        "population.seeding.biomass.sp0": "1000",  # cod, remnant/invader
+        "population.seeding.biomass.sp1": "1500000",  # herring, target
+        "population.seeding.biomass.sp2": "2500000",  # sprat, upper
+        "population.seeding.year.max": str(window),
+    }
 
 
 def safe_run(runner, config, overrides, n_years, seed) -> dict:

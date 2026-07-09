@@ -248,3 +248,24 @@ def test_loaders():
         "lower": 60000.0,
         "upper": 250000.0,
     }
+
+
+# ---------------------------------------------------------------- Task 1 (warm-start)
+def test_warmstart_override():
+    assert c0.warmstart_override(False) == {}
+    assert c0.warmstart_override(True) == {"module.population.initialisation.enabled": "true"}
+
+
+def test_regime_shift_ic_builders():
+    cd = c0.cod_dominated_seeding()
+    cl = c0.clupeid_dominated_seeding()
+    # cod axis: cod high in the cod-dominated IC, a remnant in the clupeid-dominated IC
+    assert float(cd["population.seeding.biomass.sp0"]) > float(cl["population.seeding.biomass.sp0"])
+    # clupeid axis: herring (sp1) + sprat (sp2) high in clupeid-dominated, suppressed in cod-dominated
+    assert float(cl["population.seeding.biomass.sp1"]) > float(cd["population.seeding.biomass.sp1"])
+    assert float(cl["population.seeding.biomass.sp2"]) > float(cd["population.seeding.biomass.sp2"])
+    # exact spec values
+    assert cd["population.seeding.biomass.sp0"] == "250000"
+    assert cl["population.seeding.biomass.sp2"] == "2500000"
+    # both carry the (now-inert-under-warmstart) global seeding window key
+    assert "population.seeding.year.max" in cd and "population.seeding.year.max" in cl
