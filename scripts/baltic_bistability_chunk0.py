@@ -22,6 +22,7 @@ _PLANKTON_GROUPS = (8, 10, 11, 12)
 _SEEDING_WINDOW_Y = 4
 _NONBANDS = ("failed", "undetermined")
 _ENABLE_KEY = "module.population.initialisation.enabled"  # canonical warm-start flag
+_VALID_BANDS = ("collapsed", "low", "in_range", "overshoot")  # determinate bands
 
 
 def is_stationary(cv: float, trend: float, cv_max: float = 0.30, trend_max: float = 0.05) -> bool:
@@ -232,6 +233,37 @@ def _cod_state(stats: dict, bands: dict) -> tuple[str, float]:
 def _median_valid(states, means) -> float:
     vals = [m for s, m in zip(states, means) if s not in _NONBANDS]
     return statistics.median(vals) if vals else 0.0
+
+
+def clupeid_axis(runs, clupeid_targets) -> tuple[float, bool]:
+    """Clupeid regime signal for ONE arm: median summed herring+sprat biomass over non-failed
+    seeds, plus a validity flag. Valid iff BOTH stocks aggregate to a determinate band across
+    seeds (stationary + seed-consensus). Summing sidesteps banding two stocks with different
+    ICES ranges; validity gating mirrors the cod-axis stationarity discipline."""
+    bands = {t.species: [] for t in clupeid_targets}
+    sums = []
+    for st in runs:
+        if st.get("_failed"):
+            continue
+        total = 0.0
+        for t in clupeid_targets:
+            mean = float(st.get(f"{t.species}_mean", 0.0))
+            total += mean
+            bands[t.species].append(
+                classify_state(
+                    mean,
+                    float(st.get(f"{t.species}_cv", 10.0)),
+                    float(st.get(f"{t.species}_trend", 1.0)),
+                    float(t.target),
+                    float(t.lower),
+                    float(t.upper),
+                )
+            )
+        sums.append(total)
+    if not sums:
+        return 0.0, False
+    valid = all(aggregate_states(bands[t.species]) in _VALID_BANDS for t in clupeid_targets)
+    return statistics.median(sums), valid
 
 
 def _partial(points: list) -> dict:

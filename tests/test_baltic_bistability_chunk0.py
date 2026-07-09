@@ -269,3 +269,42 @@ def test_regime_shift_ic_builders():
     assert cl["population.seeding.biomass.sp2"] == "2500000"
     # both carry the (now-inert-under-warmstart) global seeding window key
     assert "population.seeding.year.max" in cd and "population.seeding.year.max" in cl
+
+
+# ---------------------------------------------------------------- Task 2 (clupeid axis)
+def _clup_targets():
+    return [
+        Tgt("herring", 1_500_000, 800_000, 3_000_000),
+        Tgt("sprat", 1_500_000, 800_000, 2_500_000),
+    ]
+
+
+def test_clupeid_axis_valid_and_sum():
+    runs = [
+        _stats(herring=1_500_000, sprat=2_500_000),
+        _stats(herring=1_500_000, sprat=2_500_000),
+    ]
+    biomass, valid = c0.clupeid_axis(runs, _clup_targets())
+    assert valid is True
+    assert biomass == 4_000_000
+
+
+def test_clupeid_axis_nonstationary_is_invalid():
+    drifting = _stats(herring=1_500_000, sprat=2_500_000)
+    drifting["herring_cv"] = 0.9  # non-stationary -> herring 'undetermined'
+    biomass, valid = c0.clupeid_axis([drifting, drifting], _clup_targets())
+    assert valid is False
+
+
+def test_clupeid_axis_seed_split_is_invalid():
+    runs = [
+        _stats(herring=1_500_000, sprat=2_500_000),  # in_range
+        _stats(herring=100_000, sprat=2_500_000),  # herring 'collapsed' -> disagreement
+    ]
+    _, valid = c0.clupeid_axis(runs, _clup_targets())
+    assert valid is False
+
+
+def test_clupeid_axis_all_failed():
+    biomass, valid = c0.clupeid_axis([{"_failed": True}], _clup_targets())
+    assert biomass == 0.0 and valid is False
