@@ -1,0 +1,148 @@
+{
+  "points": [
+    {
+      "scale": 0.03,
+      "rich_state": "overshoot",
+      "poor_state": "overshoot",
+      "per_seed_rich": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "per_seed_poor": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "rich_cod_median": 4767003.137482862,
+      "poor_cod_median": 5025018.546669638,
+      "gap": 0.05134615035632589,
+      "established": true,
+      "a_clupeid_biomass": 585928.5947817739,
+      "b_clupeid_biomass": 570805.0597028745,
+      "a_clupeid_valid": true,
+      "b_clupeid_valid": true,
+      "clupeid_gap": 0.02581118143474563,
+      "outcome": "same-basin",
+      "regime_shift": false
+    },
+    {
+      "scale": 0.1,
+      "rich_state": "overshoot",
+      "poor_state": "overshoot",
+      "per_seed_rich": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "per_seed_poor": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "rich_cod_median": 4088804.040399133,
+      "poor_cod_median": 3877246.8811339224,
+      "gap": 0.05174058366073611,
+      "established": true,
+      "a_clupeid_biomass": 687625.1993047704,
+      "b_clupeid_biomass": 725007.9176957769,
+      "a_clupeid_valid": false,
+      "b_clupeid_valid": true,
+      "clupeid_gap": 0.05156173597121565,
+      "outcome": "provisional",
+      "regime_shift": false
+    },
+    {
+      "scale": 0.3,
+      "rich_state": "overshoot",
+      "poor_state": "overshoot",
+      "per_seed_rich": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "per_seed_poor": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "rich_cod_median": 3137569.239121892,
+      "poor_cod_median": 3118994.353997108,
+      "gap": 0.005920149577267311,
+      "established": true,
+      "a_clupeid_biomass": 847008.2197535783,
+      "b_clupeid_biomass": 859802.0316849637,
+      "a_clupeid_valid": true,
+      "b_clupeid_valid": false,
+      "clupeid_gap": 0.014879933496295399,
+      "outcome": "provisional",
+      "regime_shift": false
+    },
+    {
+      "scale": 0.5,
+      "rich_state": "overshoot",
+      "poor_state": "overshoot",
+      "per_seed_rich": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "per_seed_poor": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "rich_cod_median": 2212069.833484977,
+      "poor_cod_median": 2242734.9299685447,
+      "gap": 0.013673074958939914,
+      "established": true,
+      "a_clupeid_biomass": 836447.2935003003,
+      "b_clupeid_biomass": 878297.2925932324,
+      "a_clupeid_valid": false,
+      "b_clupeid_valid": true,
+      "clupeid_gap": 0.04764895872604656,
+      "outcome": "provisional",
+      "regime_shift": false
+    },
+    {
+      "scale": 1.0,
+      "rich_state": "collapsed",
+      "poor_state": "collapsed",
+      "per_seed_rich": [
+        "collapsed",
+        "collapsed",
+        "collapsed"
+      ],
+      "per_seed_poor": [
+        "collapsed",
+        "collapsed",
+        "collapsed"
+      ],
+      "rich_cod_median": 1686.1502412879647,
+      "poor_cod_median": 11.154560130983297,
+      "gap": 0.9927958045267476,
+      "established": false,
+      "a_clupeid_biomass": 2743236.0364344097,
+      "b_clupeid_biomass": 2873621.752255515,
+      "a_clupeid_valid": true,
+      "b_clupeid_valid": true,
+      "clupeid_gap": 0.045373289071700657,
+      "outcome": "same-basin",
+      "regime_shift": false
+    }
+  ],
+  "contrast": "regime-shift",
+  "regime_shift": false,
+  "bistable": false,
+  "regime_shift_scales": [],
+  "partial_scales": [],
+  "provisional_scales": [
+    0.1,
+    0.3,
+    0.5
+  ],
+  "determinate_fraction": 0.4,
+  "trustworthy": false,
+  "verdict": "INSTRUMENT-LIMITED \u2014 only 40% of scales gave a determinate outcome (provisional at [0.1, 0.3, 0.5]); withhold. Raise --seeds/--years.",
+  "complete": true
+}
