@@ -243,6 +243,8 @@ class ResourceState:
             else:
                 access = rsc.accessibility
 
+            # Carrying capacity K for this resource (the value the reset would assign)
+            k_row = np.zeros(grid.ny * grid.nx, dtype=np.float64)
             if self._forcing_data is not None and rsc.name in self._forcing_data:
                 # Map simulation timestep to forcing timestep
                 # Forcing has _n_forcing_steps per year, simulation has n_dt_per_year
@@ -259,14 +261,20 @@ class ResourceState:
 
                 # Apply multiplier and accessibility coefficient, then flatten
                 cell_biomass = biomass_2d.flatten() * rsc.multiplier * access
-                self.biomass[i, : len(cell_biomass)] = cell_biomass[: grid.ny * grid.nx]
+                k_row[: len(cell_biomass)] = cell_biomass[: grid.ny * grid.nx]
 
             elif self._uniform_biomass[i] > 0:
                 # Uniform distribution: multiplier * (per_cell + offset) * accessibility
-                per_cell = rsc.multiplier * (self._uniform_biomass[i] + rsc.offset) * access
-                self.biomass[i, :] = per_cell
+                k_row[:] = rsc.multiplier * (self._uniform_biomass[i] + rsc.offset) * access
+
+            if self.depletable:
+                # Regrow the carried-over (grazed) biomass toward K rather than resetting,
+                # yielding a cross-timestep self-limiting feedback.
+                self.biomass[i, :] = logistic_regrow(
+                    self.biomass[i, :], k_row, rsc.regrowth_rate, self.depletable_floor
+                )
             else:
-                self.biomass[i, :] = 0.0
+                self.biomass[i, :] = k_row
 
     def _regrid_to_model(self, data: NDArray) -> NDArray:
         """Regrid forcing data to model grid via nearest-neighbor index mapping."""

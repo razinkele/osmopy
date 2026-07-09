@@ -302,3 +302,48 @@ def test_regrowth_rate_parsed_per_resource():
     assert rs.depletable is True
     assert rs.depletable_floor == 0.05
     assert rs.species[0].regrowth_rate == 0.3
+
+
+def _uniform_resource_config(depletable: bool, rate: str = "0.3") -> dict:
+    cfg = {
+        "simulation.nresource": "1",
+        "simulation.time.ndtperyear": "24",
+        "ltl.name.rsc0": "Zoo",
+        "ltl.size.min.rsc0": "0.01",
+        "ltl.size.max.rsc0": "0.1",
+        "ltl.tl.rsc0": "2.0",
+        "ltl.accessibility2fish.rsc0": "0.5",
+        "ltl.biomass.total.rsc0": "900.0",
+    }
+    if depletable:
+        cfg.update(
+            {
+                "ltl.depletable.enabled": "true",
+                "ltl.depletable.floor": "0.05",
+                "ltl.regrowth.rate.rsc0": rate,
+            }
+        )
+    return cfg
+
+
+def test_update_off_is_full_reset_parity():
+    grid = Grid.from_dimensions(ny=3, nx=3)
+    rs = ResourceState(config=_uniform_resource_config(depletable=False), grid=grid)
+    rs.update(step=0)
+    k = rs.biomass.copy()
+    rs.biomass[:] = 0.0  # deplete
+    rs.update(step=0)
+    assert np.allclose(rs.biomass, k)  # non-depletable resets fully to K
+
+
+def test_update_on_regrows_instead_of_resetting():
+    grid = Grid.from_dimensions(ny=3, nx=3)
+    rs = ResourceState(config=_uniform_resource_config(depletable=True, rate="0.3"), grid=grid)
+    k_val = 900.0 / 9 * 0.5  # carrying capacity per cell = 50 (uniform 900 / 9 cells * access 0.5)
+    rs.biomass[:] = 0.5 * k_val  # graze down to half of K
+    rs.update(step=0)
+    assert np.all(rs.biomass < k_val - 1e-9)  # regrew but NOT reset to K
+    assert np.all(rs.biomass > 0.5 * k_val)  # and grew from the grazed level
+    rs.biomass[:] = 0.0  # fully grazed
+    rs.update(step=0)
+    assert np.all(rs.biomass >= 0.05 * k_val - 1e-9)  # recovers above floor, not stuck at 0
