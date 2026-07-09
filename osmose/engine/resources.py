@@ -17,6 +17,26 @@ from osmose.engine.grid import Grid
 from osmose.engine.path_resolution import resolve_data_path
 
 
+def logistic_regrow(
+    biomass: NDArray[np.float64],
+    k: NDArray[np.float64],
+    rate: float,
+    floor: float,
+) -> NDArray[np.float64]:
+    """Per-cell logistic regrowth of a depletable resource toward carrying capacity K.
+
+    B = max(B_carried, floor*K);  B_new = min(K, B + rate*B*(1 - B/K));  K<=0 -> 0.
+    The floor seeds recovery so a fully-grazed cell (B_carried=0) is not a permanent dead
+    zone; the min(.,K) caps at carrying capacity; K<=0 cells (land / off-season) stay empty.
+    """
+    k = np.asarray(k, dtype=np.float64)
+    b = np.maximum(np.asarray(biomass, dtype=np.float64), floor * k)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        grown = b + rate * b * (1.0 - b / k)
+    grown = np.minimum(grown, k)
+    return np.where(k > 0.0, grown, 0.0)
+
+
 @dataclass
 class ResourceSpeciesInfo:
     """Metadata for one resource species."""
@@ -29,6 +49,7 @@ class ResourceSpeciesInfo:
     multiplier: float = 1.0  # biomass scaling multiplier
     offset: float = 0.0  # biomass offset (for uniform distribution)
     accessibility_ts: NDArray[np.float64] | None = None  # time-varying accessibility
+    regrowth_rate: float = 1.0  # per-step logistic regrowth rate (used only when depletable)
 
     def __post_init__(self) -> None:
         if self.size_min >= self.size_max:
@@ -50,6 +71,9 @@ class ResourceState:
         self.config = config
         self.grid = grid
         self.n_resources = int(config.get("simulation.nresource", "0"))
+        self.depletable = str(config.get("ltl.depletable.enabled", "false")).lower() == "true"
+        self.depletable_floor = float(config.get("ltl.depletable.floor", "0.05"))
+        self._regrowth_default = float(config.get("ltl.regrowth.rate.default", "1.0"))
         self.species: list[ResourceSpeciesInfo] = []
         # Per-cell biomass: shape (n_resources, n_cells) where n_cells = ny * nx
         self.biomass: NDArray[np.float64] = np.zeros(
@@ -92,6 +116,9 @@ class ResourceState:
                     size_max=float(cfg.get(f"ltl.size.max.rsc{i}", "0.01")),
                     trophic_level=float(cfg.get(f"ltl.tl.rsc{i}", "1.0")),
                     accessibility=min(raw_access, 0.99),  # Cap at 0.99
+                    regrowth_rate=float(
+                        cfg.get(f"ltl.regrowth.rate.rsc{i}", str(self._regrowth_default))
+                    ),
                 )
             )
             self._forcing_var_names.append(name)
@@ -157,6 +184,9 @@ class ResourceState:
                     multiplier=multiplier,
                     offset=offset,
                     accessibility_ts=access_ts,
+                    regrowth_rate=float(
+                        cfg.get(f"species.regrowth.rate.sp{fi}", str(self._regrowth_default))
+                    ),
                 )
             )
             self._forcing_var_names.append(name)

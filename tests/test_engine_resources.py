@@ -5,7 +5,7 @@ import pytest
 import xarray as xr
 
 from osmose.engine.grid import Grid
-from osmose.engine.resources import ResourceSpeciesInfo, ResourceState
+from osmose.engine.resources import ResourceSpeciesInfo, ResourceState, logistic_regrow
 
 
 class TestResourceSpeciesInfo:
@@ -253,3 +253,52 @@ class TestResourceState:
         np.testing.assert_allclose(val_step0, 10.0 * 0.99, rtol=1e-6)
         np.testing.assert_allclose(val_step2, 30.0 * 0.99, rtol=1e-6)
         rs.close()
+
+
+# ---------------------------------------------------------------- Chunk A2 (depletable)
+def test_logistic_regrow_at_capacity_is_stable():
+    k = np.array([100.0, 100.0])
+    out = logistic_regrow(np.array([100.0, 100.0]), k, rate=0.5, floor=0.05)
+    assert np.allclose(out, k)
+
+
+def test_logistic_regrow_partial_leaves_below_k():
+    k = np.array([100.0])
+    out = logistic_regrow(np.array([50.0]), k, rate=0.5, floor=0.05)
+    assert np.allclose(out, [62.5])  # 50 + 0.5*50*(1-0.5)
+    assert out[0] < k[0]
+
+
+def test_logistic_regrow_floor_recovers_from_zero():
+    k = np.array([100.0])
+    out = logistic_regrow(np.array([0.0]), k, rate=0.5, floor=0.05)
+    assert out[0] >= 5.0  # seeded to floor*K = 5
+
+
+def test_logistic_regrow_caps_at_k_and_handles_zero_k():
+    k = np.array([100.0, 0.0])
+    out = logistic_regrow(np.array([90.0, 50.0]), k, rate=5.0, floor=0.05)
+    assert out[0] == 100.0
+    assert out[1] == 0.0
+    assert not np.isnan(out).any()
+
+
+def test_regrowth_rate_parsed_per_resource():
+    grid = Grid.from_dimensions(ny=3, nx=3)
+    config = {
+        "simulation.nresource": "1",
+        "ltl.name.rsc0": "Zoo",
+        "ltl.size.min.rsc0": "0.01",
+        "ltl.size.max.rsc0": "0.1",
+        "ltl.tl.rsc0": "2.0",
+        "ltl.accessibility2fish.rsc0": "0.5",
+        "ltl.biomass.total.rsc0": "900.0",
+        "ltl.depletable.enabled": "true",
+        "ltl.depletable.floor": "0.05",
+        "ltl.regrowth.rate.rsc0": "0.3",
+        "ltl.regrowth.rate.default": "1.0",
+    }
+    rs = ResourceState(config=config, grid=grid)
+    assert rs.depletable is True
+    assert rs.depletable_floor == 0.05
+    assert rs.species[0].regrowth_rate == 0.3
