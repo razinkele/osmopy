@@ -1186,13 +1186,18 @@ def _collect_trait_stats(
 
 
 def initialize(config: EngineConfig, grid: Grid, rng: np.random.Generator) -> SchoolState:
-    """Create an empty initial population (Java convention).
+    """Create the initial population.
 
-    Java's PopulatingProcess creates zero initial schools. All schools
-    are created by reproduction's seeding mechanism (SSB=0 triggers
-    seeding_biomass injection as SSB for egg production).
+    Default (Java convention): zero initial schools — all schools are created by
+    reproduction's seeding mechanism (SSB=0 triggers seeding_biomass injection as
+    SSB for egg production). If ``module.population.initialisation.enabled`` is true,
+    seed an age-structured standing stock from ``seeding_biomass`` instead (warm-start;
+    see osmose/engine/initialization.py). The builder returns the same empty SchoolState
+    when the flag is off, so the default path is unchanged.
     """
-    return SchoolState.create(n_schools=0)
+    from osmose.engine.initialization import build_initial_population
+
+    return build_initial_population(config, grid, rng)
 
 
 def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step: int) -> StepOutput:
