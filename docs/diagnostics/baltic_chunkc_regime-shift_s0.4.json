@@ -1,0 +1,149 @@
+{
+  "points": [
+    {
+      "scale": 0.03,
+      "rich_state": "overshoot",
+      "poor_state": "overshoot",
+      "per_seed_rich": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "per_seed_poor": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "rich_cod_median": 18521851.25862374,
+      "poor_cod_median": 18726757.905345194,
+      "gap": 0.01094191727234582,
+      "established": true,
+      "a_clupeid_biomass": 2838201.1082611834,
+      "b_clupeid_biomass": 2626056.9881349346,
+      "a_clupeid_valid": false,
+      "b_clupeid_valid": true,
+      "clupeid_gap": 0.07474595255523163,
+      "outcome": "provisional",
+      "regime_shift": false
+    },
+    {
+      "scale": 0.1,
+      "rich_state": "overshoot",
+      "poor_state": "overshoot",
+      "per_seed_rich": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "per_seed_poor": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "rich_cod_median": 14079639.983380383,
+      "poor_cod_median": 14125069.018409709,
+      "gap": 0.003216198926456035,
+      "established": true,
+      "a_clupeid_biomass": 3539115.400891506,
+      "b_clupeid_biomass": 3957633.923633966,
+      "a_clupeid_valid": true,
+      "b_clupeid_valid": false,
+      "clupeid_gap": 0.1057496537245455,
+      "outcome": "provisional",
+      "regime_shift": false
+    },
+    {
+      "scale": 0.3,
+      "rich_state": "overshoot",
+      "poor_state": "overshoot",
+      "per_seed_rich": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "per_seed_poor": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "rich_cod_median": 9691874.334488746,
+      "poor_cod_median": 9851092.221344016,
+      "gap": 0.01616245865081237,
+      "established": true,
+      "a_clupeid_biomass": 5425460.586732558,
+      "b_clupeid_biomass": 5610278.589409866,
+      "a_clupeid_valid": true,
+      "b_clupeid_valid": true,
+      "clupeid_gap": 0.03294274371390981,
+      "outcome": "same-basin",
+      "regime_shift": false
+    },
+    {
+      "scale": 0.5,
+      "rich_state": "overshoot",
+      "poor_state": "overshoot",
+      "per_seed_rich": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "per_seed_poor": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "rich_cod_median": 4659515.75107002,
+      "poor_cod_median": 4780958.673899503,
+      "gap": 0.025401369413858895,
+      "established": true,
+      "a_clupeid_biomass": 11200134.433415392,
+      "b_clupeid_biomass": 12082357.274593158,
+      "a_clupeid_valid": true,
+      "b_clupeid_valid": false,
+      "clupeid_gap": 0.07301743758359722,
+      "outcome": "provisional",
+      "regime_shift": false
+    },
+    {
+      "scale": 1.0,
+      "rich_state": "collapsed",
+      "poor_state": "collapsed",
+      "per_seed_rich": [
+        "collapsed",
+        "collapsed",
+        "collapsed"
+      ],
+      "per_seed_poor": [
+        "collapsed",
+        "collapsed",
+        "collapsed"
+      ],
+      "rich_cod_median": 5890.456104407964,
+      "poor_cod_median": 5.56567792551061,
+      "gap": 0.9988855593915742,
+      "established": false,
+      "a_clupeid_biomass": 22706326.615867443,
+      "b_clupeid_biomass": 23096776.83315724,
+      "a_clupeid_valid": false,
+      "b_clupeid_valid": true,
+      "clupeid_gap": 0.01690496484445878,
+      "outcome": "provisional",
+      "regime_shift": false
+    }
+  ],
+  "contrast": "regime-shift",
+  "regime_shift": false,
+  "bistable": false,
+  "regime_shift_scales": [],
+  "partial_scales": [],
+  "provisional_scales": [
+    0.03,
+    0.1,
+    0.5,
+    1.0
+  ],
+  "determinate_fraction": 0.2,
+  "trustworthy": false,
+  "verdict": "INSTRUMENT-LIMITED \u2014 only 20% of scales gave a determinate outcome (provisional at [0.03, 0.1, 0.5, 1.0]); withhold. Raise --seeds/--years.",
+  "complete": true
+}
