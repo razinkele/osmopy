@@ -531,6 +531,12 @@ def _parse_reproduction_params(
         seeding_max_step = np.full(n_sp, int(seeding_max_years * n_dt), dtype=np.int32)
     else:
         seeding_max_step = (lifespan_years * n_dt).astype(np.int32)
+    # Warm-start standing-stock init disables egg-seeding: the standing population IS the
+    # initialization, so the SSB==0 egg-rescue must not continuously re-inject a suppressed
+    # species (which would stop a cod-absent / clupeid-dominated basin from being maintained).
+    # Gated on the (default-off) canonical flag, so parity is preserved when warm-start is off.
+    if cfg.get("module.population.initialisation.enabled", "false").lower() == "true":
+        seeding_max_step = np.zeros(n_sp, dtype=np.int32)
     larva_mortality_rate = _species_float_optional(
         cfg, "mortality.additional.larva.rate.sp{i}", n_sp, default=0.0
     )
