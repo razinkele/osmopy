@@ -1,0 +1,117 @@
+{
+  "points": [
+    {
+      "scale": 0.03,
+      "rich_state": "overshoot",
+      "poor_state": "overshoot",
+      "per_seed_rich": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "per_seed_poor": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "rich_cod_median": 19370155.385730103,
+      "poor_cod_median": 21729919.539868634,
+      "gap": 0.10859515799006218,
+      "established": true,
+      "outcome": "same-basin",
+      "bistable": false
+    },
+    {
+      "scale": 0.1,
+      "rich_state": "overshoot",
+      "poor_state": "overshoot",
+      "per_seed_rich": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "per_seed_poor": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "rich_cod_median": 14414228.259180373,
+      "poor_cod_median": 15797736.930146644,
+      "gap": 0.08757637815513684,
+      "established": true,
+      "outcome": "same-basin",
+      "bistable": false
+    },
+    {
+      "scale": 0.3,
+      "rich_state": "overshoot",
+      "poor_state": "overshoot",
+      "per_seed_rich": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "per_seed_poor": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "rich_cod_median": 8968325.223798027,
+      "poor_cod_median": 9925495.15451585,
+      "gap": 0.09643547444047258,
+      "established": true,
+      "outcome": "same-basin",
+      "bistable": false
+    },
+    {
+      "scale": 0.5,
+      "rich_state": "overshoot",
+      "poor_state": "overshoot",
+      "per_seed_rich": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "per_seed_poor": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "rich_cod_median": 6916395.668534975,
+      "poor_cod_median": 6920562.802459678,
+      "gap": 0.0006021379245462701,
+      "established": true,
+      "outcome": "same-basin",
+      "bistable": false
+    },
+    {
+      "scale": 1.0,
+      "rich_state": "collapsed",
+      "poor_state": "collapsed",
+      "per_seed_rich": [
+        "collapsed",
+        "collapsed",
+        "collapsed"
+      ],
+      "per_seed_poor": [
+        "collapsed",
+        "collapsed",
+        "collapsed"
+      ],
+      "rich_cod_median": 2653.316715672393,
+      "poor_cod_median": 8.855877012446031,
+      "gap": 0.9962868496610626,
+      "established": false,
+      "outcome": "same-basin",
+      "bistable": false
+    }
+  ],
+  "bistable": false,
+  "bistable_scales": [],
+  "seed_split_scales": [],
+  "undetermined_scales": [],
+  "establishment_fraction": 0.8,
+  "trustworthy": true,
+  "verdict": "MONOSTABLE by this CONSERVATIVE method \u2014 no basin split at any established scale (undetermined: []). Cannot rule out bistability (egg-only ICs, and the single-cod-axis ICs omit the sprat-dominated start); add the warm-start primitive (Task 7) for a definitive test, or proceed to Chunks C & A2 to CREATE a self-locking bistability. Read the rich/poor cod response curve.",
+  "complete": true
+}

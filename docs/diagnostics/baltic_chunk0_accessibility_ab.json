@@ -1,0 +1,36 @@
+{
+  "baseline_states": {
+    "cod": "collapsed",
+    "herring": "overshoot",
+    "sprat": "undetermined",
+    "flounder": "undetermined",
+    "perch": "collapsed",
+    "pikeperch": "collapsed",
+    "smelt": "collapsed",
+    "stickleback": "undetermined"
+  },
+  "lowered_states": {
+    "cod": "collapsed",
+    "herring": "overshoot",
+    "sprat": "low",
+    "flounder": "collapsed",
+    "perch": "collapsed",
+    "pikeperch": "collapsed",
+    "smelt": "collapsed",
+    "stickleback": "undetermined"
+  },
+  "transition": {
+    "in_range_base": 0,
+    "in_range_low": 0,
+    "overshoot_base": 1,
+    "overshoot_low": 1,
+    "new_undershoot": 0,
+    "undetermined": 1,
+    "gated_species": 3,
+    "collapsed_lowered": 3
+  },
+  "low_value": 0.1,
+  "n_failed": 0,
+  "relaxed": false,
+  "verdict": "PROVISIONAL \u2014 1 species non-stationary/absent in one arm; verdict withheld (raise --years or --seeds)."
+}

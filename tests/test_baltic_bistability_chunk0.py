@@ -1,0 +1,250 @@
+import sys
+from collections import namedtuple
+from pathlib import Path
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_SCRIPTS = _PROJECT_ROOT / "scripts"
+if str(_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS))
+
+import baltic_bistability_chunk0 as c0  # noqa: E402
+
+Tgt = namedtuple("Tgt", "species target lower upper weight", defaults=(1.0,))
+COD = dict(target=120000.0, lower=60000.0, upper=250000.0)
+
+
+# ---------------------------------------------------------------- Task 1
+def test_collapsed_wins_over_stationarity_sentinel():
+    assert c0.classify_state(0.0, 10.0, 1.0, **COD) == "collapsed"
+    assert c0.classify_state(3000.0, 10.0, 1.0, **COD) == "collapsed"
+
+
+def test_classify_bands_and_stationarity():
+    assert c0.classify_state(120000, 0.5, 0.01, **COD) == "undetermined"
+    assert c0.classify_state(30000, 0.1, 0.01, **COD) == "low"
+    assert c0.classify_state(120000, 0.1, 0.01, **COD) == "in_range"
+    assert c0.classify_state(400000, 0.1, 0.01, **COD) == "overshoot"
+
+
+def test_basins_differ():
+    assert c0.basins_differ("in_range", "collapsed", 0.9) is True
+    assert c0.basins_differ("collapsed", "collapsed", 0.9) is False
+    assert c0.basins_differ("overshoot", "overshoot", 0.9) is False
+    assert c0.basins_differ("in_range", "in_range", 0.8) is True
+    assert c0.basins_differ("in_range", "in_range", 0.1) is False
+
+
+def test_aggregate_states():
+    assert c0.aggregate_states(["in_range", "in_range", "in_range"]) == "in_range"
+    assert c0.aggregate_states(["in_range", "collapsed", "in_range"]) == "seed-split"
+    assert c0.aggregate_states(["in_range", "in_range", "failed"]) == "in_range"
+    assert c0.aggregate_states(["failed", "undetermined"]) == "undetermined"
+
+
+# ---------------------------------------------------------------- Task 2
+def _targets():
+    return [
+        Tgt("cod", 120000, 60000, 250000),
+        Tgt("sprat", 1_500_000, 800_000, 2_500_000),
+        Tgt("herring", 1_500_000, 800_000, 3_000_000),
+    ]
+
+
+def _stats(**means):
+    d = {}
+    for sp, m in means.items():
+        d[f"{sp}_mean"] = m
+        d[f"{sp}_cv"] = 0.05 if m > 0 else 10.0
+        d[f"{sp}_trend"] = 0.01
+    return d
+
+
+def test_partial_collapse_vetoes_relaxation():
+    targets = _targets()
+    base = c0.species_states(_stats(cod=120000, sprat=25_000_000, herring=1_500_000), targets)
+    low = c0.species_states(_stats(cod=120000, sprat=300_000, herring=1_500_000), targets)
+    t = c0.accessibility_transition(base, low, targets)
+    assert t["new_undershoot"] == 1
+    assert c0.accessibility_verdict(t)[0] is False
+    assert "collapse" in c0.accessibility_verdict(t)[1].lower()
+
+
+def test_genuine_relaxation_passes():
+    targets = _targets()
+    base = c0.species_states(_stats(cod=120000, sprat=25_000_000, herring=20_000_000), targets)
+    low = c0.species_states(_stats(cod=120000, sprat=1_500_000, herring=1_500_000), targets)
+    t = c0.accessibility_transition(base, low, targets)
+    assert t["new_undershoot"] == 0
+    ok, msg = c0.accessibility_verdict(t)
+    assert ok is True and "real lever" in msg.lower()
+
+
+def test_nonstationary_withholds_verdict():
+    targets = _targets()
+    drifting = _stats(cod=120000, sprat=25_000_000, herring=1_500_000)
+    drifting["sprat_cv"] = 0.9
+    base = c0.species_states(drifting, targets)
+    low = c0.species_states(_stats(cod=120000, sprat=1_500_000, herring=1_500_000), targets)
+    t = c0.accessibility_transition(base, low, targets)
+    assert t["undetermined"] >= 1
+    assert c0.accessibility_verdict(t)[0] is False
+    assert "provisional" in c0.accessibility_verdict(t)[1].lower()
+
+
+def test_seed_split_species_withholds_accessibility_verdict():
+    targets = _targets()
+    base = {"cod": "in_range", "sprat": "overshoot", "herring": "in_range"}
+    low = {"cod": "in_range", "sprat": "seed-split", "herring": "in_range"}
+    t = c0.accessibility_transition(base, low, targets)
+    assert t["undetermined"] >= 1
+    assert c0.accessibility_verdict(t)[0] is False
+
+
+def test_low_weight_species_does_not_gate():
+    targets = _targets() + [Tgt("perch", 20000, 8000, 50000, 0.2)]
+    base = {"cod": "in_range", "sprat": "overshoot", "herring": "overshoot", "perch": "overshoot"}
+    low = {"cod": "in_range", "sprat": "in_range", "herring": "in_range", "perch": "low"}
+    t = c0.accessibility_transition(base, low, targets)
+    assert t["gated_species"] == 3
+    assert t["new_undershoot"] == 0
+    assert c0.accessibility_verdict(t)[0] is True
+
+
+def test_collapsed_stock_in_lowered_arm_blocks_real_lever():
+    targets = _targets()
+    base = {"cod": "collapsed", "sprat": "overshoot", "herring": "overshoot"}
+    low = {"cod": "collapsed", "sprat": "in_range", "herring": "in_range"}
+    t = c0.accessibility_transition(base, low, targets)
+    assert t["collapsed_lowered"] >= 1
+    ok, msg = c0.accessibility_verdict(t)
+    assert ok is False and "still broken" in msg.lower()
+
+
+def test_medium_weight_collapse_blocks_real_lever():
+    targets = _targets() + [Tgt("flounder", 50000, 20000, 100000, 0.5)]
+    base = {"cod": "in_range", "sprat": "overshoot", "herring": "overshoot", "flounder": "in_range"}
+    low = {"cod": "in_range", "sprat": "in_range", "herring": "in_range", "flounder": "collapsed"}
+    t = c0.accessibility_transition(base, low, targets)
+    assert t["collapsed_lowered"] >= 1
+    assert c0.accessibility_verdict(t)[0] is False
+
+
+# ---------------------------------------------------------------- Task 3
+def test_ics_vary_only_cod():
+    rich, poor = c0.cod_rich_seeding(), c0.cod_poor_seeding()
+    assert set(rich) == {"population.seeding.biomass.sp0", "population.seeding.year.max"}
+    assert set(poor) == set(rich)
+    assert float(rich["population.seeding.biomass.sp0"]) > float(
+        poor["population.seeding.biomass.sp0"]
+    )
+    assert rich["population.seeding.year.max"] == "4"
+
+
+def test_accessibility_scope_and_safe_run():
+    assert set(c0.accessibility_override(0.1)) == {
+        f"species.accessibility2fish.sp{i}" for i in (8, 10, 11, 12)
+    }
+    assert c0.safe_run(lambda *a: {"cod_mean": 5.0}, {}, {}, 5, 0) == {"cod_mean": 5.0}
+    assert c0.safe_run(lambda *a: {}, {}, {}, 5, 0)["_failed"] is True
+    assert c0.safe_run(lambda *a: {"herring_mean": 1.0}, {}, {}, 5, 0)["_failed"] is True
+
+    def boom(*a):
+        raise RuntimeError("x")
+
+    assert c0.safe_run(boom, {}, {}, 5, 0)["_failed"] is True
+
+
+# ---------------------------------------------------------------- Task 4
+def _bands():
+    return {"target": 120000.0, "lower": 60000.0, "upper": 250000.0}
+
+
+def _runner_bistable(config, overrides, n_years, seed):
+    scale = float(overrides["mortality.additional.larva.rate.sp0"]) / 15.0
+    seeded = float(overrides.get("population.seeding.biomass.sp0", "0"))
+    if abs(scale - 0.3) < 1e-9:
+        cod = 120000.0 if seeded >= 100000 else 0.0
+    else:
+        cod = 120000.0 if scale < 0.9 else 0.0
+    cv = 0.05 if cod > 0 else 10.0
+    return {"cod_mean": cod, "cod_cv": cv, "cod_trend": 0.01}
+
+
+def test_point_detects_bistable_including_collapsed_basin():
+    pt = c0.run_bistability_point(
+        0.3, {}, {0: 15.0}, _bands(), [0, 1, 2], runner=_runner_bistable, n_years=15
+    )
+    assert pt["rich_state"] == "in_range"
+    assert pt["poor_state"] == "collapsed"
+    assert pt["outcome"] == "bistable"
+    assert pt["established"] is True
+
+
+def test_seed_split_outcome():
+    def flaky(config, overrides, n_years, seed):
+        seeded = float(overrides.get("population.seeding.biomass.sp0", "0"))
+        cod = 120000.0 if (seeded >= 100000 and seed != 1) else 0.0
+        return {"cod_mean": cod, "cod_cv": 0.05 if cod > 0 else 10.0, "cod_trend": 0.01}
+
+    pt = c0.run_bistability_point(0.3, {}, {0: 15.0}, _bands(), [0, 1, 2], runner=flaky, n_years=15)
+    assert pt["rich_state"] == "seed-split"
+    assert pt["outcome"] == "seed-split"
+
+
+def test_sweep_verdict_and_stable_persistence():
+    seen = []
+    out = c0.run_bistability_sweep(
+        [0.1, 0.3, 1.0],
+        {},
+        {0: 15.0},
+        _bands(),
+        [0, 1, 2],
+        runner=_runner_bistable,
+        n_years=15,
+        on_point=seen.append,
+    )
+    assert out["bistable"] is True and 0.3 in out["bistable_scales"]
+    assert "conservative" in out["verdict"].lower()
+    assert 0.0 <= out["establishment_fraction"] <= 1.0
+    assert set(seen[-1]) >= {"points", "bistable", "verdict", "complete"}
+    assert seen[0]["complete"] is False
+
+
+# ---------------------------------------------------------------- Task 5
+def test_ab_excludes_failed_and_flags_all_failed():
+    targets = _targets()
+
+    def low_crashes(config, overrides, n_years, seed):
+        if "species.accessibility2fish.sp11" in overrides:
+            raise RuntimeError("blowup")
+        return _stats(cod=120000, sprat=1_500_000, herring=1_500_000)
+
+    out = c0.run_accessibility_ab({}, targets, [0, 1, 2], runner=low_crashes, n_years=15)
+    assert out["relaxed"] is False
+    assert "instrument-failed" in out["verdict"].lower()
+    assert "collapse" not in out["verdict"].lower()
+
+
+def test_ab_real_relaxation():
+    targets = _targets()
+
+    def runner(config, overrides, n_years, seed):
+        low = "species.accessibility2fish.sp11" in overrides
+        if low:
+            return _stats(cod=120000, sprat=1_500_000, herring=1_500_000)
+        return _stats(cod=120000, sprat=25_000_000, herring=20_000_000)
+
+    out = c0.run_accessibility_ab({}, targets, [0, 1], runner=runner, n_years=15)
+    assert out["relaxed"] is True and out["n_failed"] == 0
+
+
+# ---------------------------------------------------------------- Task 6
+def test_loaders():
+    cfg = {f"mortality.additional.larva.rate.sp{i}": str(i + 1) for i in range(8)}
+    rates = c0.read_base_larva_rates(cfg)
+    assert rates[0] == 1.0 and rates[7] == 8.0
+    assert c0.read_cod_bands([Tgt("cod", 120000, 60000, 250000)]) == {
+        "target": 120000.0,
+        "lower": 60000.0,
+        "upper": 250000.0,
+    }
