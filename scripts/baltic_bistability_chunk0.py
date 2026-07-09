@@ -280,6 +280,42 @@ def _partial(points: list) -> dict:
     }
 
 
+_ESTABLISHED = ("low", "in_range", "overshoot")  # cod-present (non-collapsed) bands
+
+
+def cod_axis_outcome(rich_agg, poor_agg, gap) -> str:
+    """Cod-axis point outcome (extracted verbatim from the v3 inline branch)."""
+    if rich_agg == "seed-split" or poor_agg == "seed-split":
+        return "seed-split"
+    if rich_agg == "undetermined" or poor_agg == "undetermined":
+        return "undetermined"
+    if basins_differ(rich_agg, poor_agg, gap):
+        return "bistable"
+    return "same-basin"
+
+
+def regime_shift_outcome(
+    cod_a, cod_b, clup_a, clup_b, clup_a_valid, clup_b_valid, gap_thresh: float = 0.5
+) -> str:
+    """Directional regime-shift point outcome. A regime shift is the SPECIFIC pattern of cod
+    down where clupeids are up, so BOTH axes must diverge in that direction:
+      - cod-collapse axis: cod persists in the cod-dominated arm (a) AND is collapsed in the
+        clupeid-dominated arm (b);
+      - clupeid-boom axis: summed clupeid biomass is higher in b than a by a relative gap.
+    Any non-stationary / seed-split / invalid gated arm withholds the call ('provisional')."""
+    if cod_a in ("seed-split", "undetermined") or cod_b in ("seed-split", "undetermined"):
+        return "provisional"
+    if not (clup_a_valid and clup_b_valid):
+        return "provisional"
+    cod_diverge = cod_a in _ESTABLISHED and cod_b == "collapsed"
+    clup_diverge = clup_b > clup_a and bistability_gap(clup_a, clup_b) >= gap_thresh
+    if cod_diverge and clup_diverge:
+        return "regime-shift"
+    if cod_diverge or clup_diverge:
+        return "partial"
+    return "same-basin"
+
+
 def run_bistability_point(
     scale, base_config, base_rates, cod_bands, seeds, *, runner, n_years
 ) -> dict:
@@ -302,14 +338,7 @@ def run_bistability_point(
         _median_valid(rich_states, rich_means), _median_valid(poor_states, poor_means)
     )
     established = rich_agg in ("low", "in_range", "overshoot")
-    if rich_agg == "seed-split" or poor_agg == "seed-split":
-        outcome = "seed-split"
-    elif rich_agg == "undetermined" or poor_agg == "undetermined":
-        outcome = "undetermined"
-    elif basins_differ(rich_agg, poor_agg, gap):
-        outcome = "bistable"
-    else:
-        outcome = "same-basin"
+    outcome = cod_axis_outcome(rich_agg, poor_agg, gap)
     return {
         "scale": scale,
         "rich_state": rich_agg,

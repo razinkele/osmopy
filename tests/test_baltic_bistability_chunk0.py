@@ -308,3 +308,57 @@ def test_clupeid_axis_seed_split_is_invalid():
 def test_clupeid_axis_all_failed():
     biomass, valid = c0.clupeid_axis([{"_failed": True}], _clup_targets())
     assert biomass == 0.0 and valid is False
+
+
+# ---------------------------------------------------------------- Task 3 (outcome helpers)
+def test_cod_axis_outcome_extracted_logic():
+    assert c0.cod_axis_outcome("in_range", "collapsed", 0.9) == "bistable"
+    assert c0.cod_axis_outcome("seed-split", "in_range", 0.0) == "seed-split"
+    assert c0.cod_axis_outcome("undetermined", "in_range", 0.0) == "undetermined"
+    assert c0.cod_axis_outcome("in_range", "in_range", 0.1) == "same-basin"
+    assert c0.cod_axis_outcome("in_range", "in_range", 0.8) == "bistable"  # gap-driven split
+
+
+def test_regime_shift_outcome_both_axes_diverge():
+    # cod persists in cod-dominated arm (a), collapses in clupeid-dominated arm (b);
+    # clupeids boom in b (4.0M) vs suppressed in a (0.5M)
+    assert (
+        c0.regime_shift_outcome("in_range", "collapsed", 500_000.0, 4_000_000.0, True, True)
+        == "regime-shift"
+    )
+
+
+def test_regime_shift_outcome_cod_only_is_partial():
+    # cod diverges but clupeid gap is tiny (3.9M vs 4.0M)
+    assert (
+        c0.regime_shift_outcome("in_range", "collapsed", 3_900_000.0, 4_000_000.0, True, True)
+        == "partial"
+    )
+
+
+def test_regime_shift_outcome_clupeid_only_is_partial():
+    # clupeids diverge but cod persists in BOTH arms (no collapse in b)
+    assert (
+        c0.regime_shift_outcome("in_range", "in_range", 500_000.0, 4_000_000.0, True, True)
+        == "partial"
+    )
+
+
+def test_regime_shift_outcome_neither_is_monostable():
+    assert (
+        c0.regime_shift_outcome("in_range", "in_range", 3_900_000.0, 4_000_000.0, True, True)
+        == "same-basin"
+    )
+
+
+def test_regime_shift_outcome_withheld_when_undetermined_or_invalid():
+    # cod arm undetermined -> provisional
+    assert (
+        c0.regime_shift_outcome("seed-split", "collapsed", 500_000.0, 4_000_000.0, True, True)
+        == "provisional"
+    )
+    # clupeid arm invalid -> provisional
+    assert (
+        c0.regime_shift_outcome("in_range", "collapsed", 500_000.0, 4_000_000.0, False, True)
+        == "provisional"
+    )
