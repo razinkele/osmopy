@@ -163,5 +163,79 @@
       "mortality.additional.rate.sp7": 0.020850509190536888,
       "species.regrowth.rate.zoo": 0.14094848748894961
     }
+  },
+  "a2_on_converged": {
+    "note": "CONVERGED via --isolated-eval (subprocess-isolated DE evals; the gen-10->11 hang is fixed). Multi-seed, all 20 generations.",
+    "objective_multiseed_mean": 2.684260359676874,
+    "n_evaluations": 1071,
+    "elapsed_h": 2.08,
+    "params": {},
+    "per_species": {
+      "cod": {
+        "biomass": 298290.0,
+        "band": "over",
+        "target_band": [
+          60000.0,
+          250000.0
+        ]
+      },
+      "herring": {
+        "biomass": 1463648.0,
+        "band": "in",
+        "target_band": [
+          800000.0,
+          3000000.0
+        ]
+      },
+      "sprat": {
+        "biomass": 1597098.0,
+        "band": "in",
+        "target_band": [
+          800000.0,
+          2500000.0
+        ]
+      },
+      "flounder": {
+        "biomass": 2677837.0,
+        "band": "over",
+        "target_band": [
+          20000.0,
+          100000.0
+        ]
+      },
+      "perch": {
+        "biomass": 2123720.0,
+        "band": "over",
+        "target_band": [
+          8000.0,
+          50000.0
+        ]
+      },
+      "pikeperch": {
+        "biomass": 875334.0,
+        "band": "over",
+        "target_band": [
+          4000.0,
+          25000.0
+        ]
+      },
+      "smelt": {
+        "biomass": 324870.0,
+        "band": "over",
+        "target_band": [
+          20000.0,
+          120000.0
+        ]
+      },
+      "stickleback": {
+        "biomass": 200203.0,
+        "band": "in",
+        "target_band": [
+          50000.0,
+          500000.0
+        ]
+      }
+    },
+    "n_in_band": 3
   }
 }

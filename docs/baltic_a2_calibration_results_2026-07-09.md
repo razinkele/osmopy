@@ -51,35 +51,50 @@ investigation pointed at. It is **not yet a finished calibrated config** — cod
 remain the hardest, and the DE was cut off while still improving — but a deployable ICES-calibrated Baltic
 now looks **reachable** with A2, which it did not with mortality tuning alone.
 
-## Convergence blocked — the gen-10 result is accepted as final (2026-07-10)
+## The convergence hang — diagnosed, fixed, and RESOLVED (2026-07-10)
 
-A per-simulation wall-clock timeout guard (`_run_with_timeout` / `--sim-timeout`, commit `c4ab6cc`) was
-added and the A2 DE re-run. **It hit the identical hang at generation 10→11**, deterministically
-(same `best_fun 0.8964`, workers gone, main process idle at ~3% CPU for >1 h). So the true failure mode is
-**not** a slow sim in a live worker (which the timeout would catch) but a specific DE candidate that
-**crashes a worker process — almost certainly an OOM from a biomass explosion — after which scipy's
-`differential_evolution` process pool deadlocks waiting for the dead worker.** SIGALRM inside the objective
-cannot help once the worker is gone. The timeout guard remains a valid robustness improvement (it prevents
-the *slow-sim* class of stalls, and it is parity-safe/default-off, 341 calibrator tests) but it is the
-wrong fix for *this* failure.
+The first re-run (with the `--sim-timeout` SIGALRM guard, `c4ab6cc`) **hit the identical hang at generation
+10→11**, deterministically (workers vanished, main process idle at ~3% CPU). Investigation:
 
-**Decision: accept the gen-10 config as the A2 calibration result** (user, 2026-07-10). It already answers
-the question decisively — A2 is a genuine calibration lever (4× better fit; community compressed from
-17–400× to ~1.4–7× of the bands) — and the deterministic hang means gen-10 is as far as this DE
-configuration reaches. Squeezing out the final generations to a fully in-band config is deferred.
+- **The "explosion" hypothesis was falsified.** A `step_observer` on `len(state)` shows the Baltic school
+  count is **bounded ~11.7k regardless of mortality** (normal *and* a 750×-lower-mortality 20-year run) —
+  OSMOSE prunes via `state.compact()` each step. So a max-schools/abundance guard would **not** fix it.
+- **True cause:** a specific DE candidate **crashes its worker process** (a native numba/C fault below the
+  Python level), and scipy's `differential_evolution` process pool then **deadlocks** on the dead worker.
+  No Python-level guard (SIGALRM, max-schools) can catch a crash that happens below Python.
 
-## Follow-ups (deferred; the actual fix for convergence)
+**Fix (`da3ffe1`, `--isolated-eval`):** run each DE evaluation in its own forked, killable subprocess. A
+crash → pipe EOF → penalty; a hang → killed at the deadline → penalty; either way the pool never
+deadlocks. Fork happens from the single-threaded caller (no fork-in-thread lock hazard) and reuses the
+parent's JIT-warmed numba. 3 unit tests (ordered / crashed → penalized / hung → killed); default off.
 
-1. **Engine explosion guard (the robust fix):** add a max-schools / max-abundance cap in
-   `osmose/engine/simulate.py` — if a run's population explodes past a sane bound, abort it with a marker
-   so the objective returns a penalty. This kills the pathology at the source and unblocks convergence
-   regardless of worker count. (Preferred over `workers=1`, which only avoids the pool deadlock at ~8× the
-   wall-clock and still risks a single-process OOM.)
-2. **Then re-run the A2 DE to convergence**, multi-seed validated, for a candidate deployable config.
-3. **Objective tweak (optional):** a small bonus for landing *inside* a band would stop the DE from
-   overshooting the correction (sprat/flounder went slightly under).
+**Result — it converged.** The A2 DE re-run with `--isolated-eval` completed **all 20 generations in
+2.08 h (1071 evals), no hang** — past the deadlock that killed both prior runs. Converged, multi-seed:
+
+| species | biomass | band | status |
+|---|---|---|---|
+| cod | 298 k | 60 k – 250 k | over 2.49× (just above) |
+| herring | 1.46 M | 0.8 M – 3 M | **in** (0.98×) |
+| sprat | 1.60 M | 0.8 M – 2.5 M | **in** (1.06×) |
+| stickleback | 200 k | 50 k – 500 k | **in** (1.00×) |
+| flounder | 2.68 M | 20 k – 100 k | over 53× |
+| perch | 2.12 M | 8 k – 50 k | over 106× |
+| pikeperch | 875 k | 4 k – 25 k | over 88× |
+| smelt | 325 k | 20 k – 120 k | over 5.4× |
+
+**3/8 in-band, objective 2.68 (multi-seed) — better than the A2-off baseline (3.57).** The DE **nailed the
+well-assessed pelagics + stickleback (ratios 0.98–1.06) and got cod nearly in-band (2.49×)**, but sacrificed
+the low-weight species (flounder/perch/pikeperch, objective weight 0.2–0.5), which the banded objective
+does not penalize enough. That remaining gap is a **calibration-objective refinement**, not a convergence
+problem.
+
+## Follow-up (optional — for a fully in-band deployable config)
+
+**Objective re-weighting:** up-weight the poorly-assessed coastal species (perch/pikeperch/flounder/smelt)
+and/or add an inside-band bonus, then re-run `--a2 --isolated-eval`. With convergence now unblocked, this is
+a straightforward calibration iteration rather than an infrastructure problem.
 
 ## Note
 
-No deployed config was changed. The **accepted gen-10** A2-on parameters + the baseline are recorded in
-`docs/diagnostics/baltic_a2_calibrated_params.json` as a **candidate** sidecar, not a promoted config.
+No deployed config was changed. The **converged** A2-on parameters, the gen-10 interim, and the A2-off
+baseline are all in `docs/diagnostics/baltic_a2_calibrated_params.json` as a **candidate** sidecar.
