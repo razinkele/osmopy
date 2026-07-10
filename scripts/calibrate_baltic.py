@@ -25,7 +25,7 @@ import signal
 import tempfile
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from multiprocessing.connection import wait as _mp_wait
@@ -159,7 +159,9 @@ def _eval_child(func, x, conn) -> None:
         conn.close()
 
 
-def isolated_eval_map(timeout_s: float, n_workers: int, penalty: float = 1e6):
+def isolated_eval_map(
+    timeout_s: float, n_workers: int, penalty: float = 1e6
+) -> Callable[[Callable[..., float], Iterable], list[float]]:
     """A scipy-DE ``workers``-compatible parallel map that isolates every objective evaluation
     in its own forked subprocess with a hard kill-timeout.
 
@@ -200,8 +202,11 @@ def isolated_eval_map(timeout_s: float, n_workers: int, penalty: float = 1e6):
             for i in wave:
                 p = procs[i]
                 if p.is_alive():
-                    p.terminate()  # hung candidate -> kill it
+                    p.terminate()  # hung candidate -> SIGTERM
                 p.join(timeout=5)
+                if p.is_alive():
+                    p.kill()  # SIGTERM ignored (e.g. stuck in a native call) -> SIGKILL
+                    p.join(timeout=5)
                 conns[i].close()
         return results
 
