@@ -68,15 +68,32 @@ the question decisively — A2 is a genuine calibration lever (4× better fit; c
 17–400× to ~1.4–7× of the bands) — and the deterministic hang means gen-10 is as far as this DE
 configuration reaches. Squeezing out the final generations to a fully in-band config is deferred.
 
+## Re-diagnosis (2026-07-10): a max-schools guard is NOT the fix (hypothesis falsified)
+
+The originally-proposed convergence fix — an engine max-schools/abundance explosion guard — was
+**empirically falsified before building it**. A `step_observer` on `len(state)` shows:
+- **Normal Baltic: ~11.7k schools.**
+- **Pathological (larval mortality 750x lower, 20-year run): ALSO ~11.7k, completed fine.**
+
+School count is **bounded (~12k) regardless of mortality** — OSMOSE caps school proliferation
+(`state.compact()` each step) — so a school/abundance-count explosion is *not* the failure, and a
+max-schools guard would not touch the hang.
+
+**Corrected root cause:** the deterministic gen-10->11 stall (workers vanished, main process idle at ~3%
+CPU = deadlocked) is a **worker-process crash** — most likely a numba/C segfault or OS-kill from an
+inf/NaN numerical pathology in one specific DE candidate's sim, *below* the Python level. Neither the
+SIGALRM per-sim timeout (the worker is already dead) nor any Python-level guard catches it, and scipy's DE
+process pool then deadlocks on the dead worker.
+
 ## Follow-ups (deferred; the actual fix for convergence)
 
-1. **Engine explosion guard (the robust fix):** add a max-schools / max-abundance cap in
-   `osmose/engine/simulate.py` — if a run's population explodes past a sane bound, abort it with a marker
-   so the objective returns a penalty. This kills the pathology at the source and unblocks convergence
-   regardless of worker count. (Preferred over `workers=1`, which only avoids the pool deadlock at ~8× the
-   wall-clock and still risks a single-process OOM.)
-2. **Then re-run the A2 DE to convergence**, multi-seed validated, for a candidate deployable config.
-3. **Objective tweak (optional):** a small bonus for landing *inside* a band would stop the DE from
+1. **Subprocess-isolated DE evaluation with a hard kill-timeout (the robust fix).** Run each objective
+   evaluation in its own subprocess and terminate it on timeout, so *any* worker death/hang — segfault,
+   OS-kill, or infinite kernel — becomes a penalized eval rather than a pool deadlock. This is a change to
+   the calibrator's execution model (scipy's daemon workers cannot spawn children), not a one-line guard.
+   Alternatively, pin down the exact numerical pathology (needs the exact gen-11 candidate) and fix it at
+   source. The gen-10 result stands regardless.
+2. **Objective tweak (optional):** a small bonus for landing *inside* a band would stop the DE from
    overshooting the correction (sprat/flounder went slightly under).
 
 ## Note
