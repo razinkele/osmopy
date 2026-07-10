@@ -47,3 +47,21 @@ def test_enable_a2_base_config_sets_keys_without_mutating_input():
     assert out["species.regrowth.rate.sp8"] == "5.0"
     assert out["species.regrowth.rate.sp9"] == "5.0"
     assert "ltl.depletable.enabled" not in base  # input untouched
+
+
+# ---------------------------------------------------------------- sim timeout guard
+def test_run_with_timeout_returns_when_fast():
+    assert cb._run_with_timeout(lambda: 42, 5.0) == 42
+
+
+def test_run_with_timeout_no_limit_passthrough():
+    assert cb._run_with_timeout(lambda: 7, None) == 7
+
+
+def test_run_with_timeout_raises_on_slow():
+    import time
+
+    import pytest
+
+    with pytest.raises(cb._SimTimeout):
+        cb._run_with_timeout(lambda: time.sleep(3), 0.3)

@@ -20,7 +20,9 @@ import csv
 import json
 import logging
 import os
+import signal
 import tempfile
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -112,11 +114,42 @@ def load_targets(path: Path = TARGETS_CSV) -> list[BiomassTarget]:
 # ---------------------------------------------------------------------------
 # Engine runner
 # ---------------------------------------------------------------------------
+class _SimTimeout(Exception):
+    """Raised when a single simulation exceeds its wall-clock budget."""
+
+
+def _run_with_timeout(fn, timeout_s):
+    """Run ``fn()`` under a SIGALRM wall-clock limit and return its result.
+
+    Raises :class:`_SimTimeout` if ``fn`` exceeds ``timeout_s`` seconds. The alarm
+    fires between OSMOSE timesteps (the sim loops in Python), so a pathological
+    candidate that grinds ever-slower is interrupted instead of stalling a whole
+    ``differential_evolution`` generation. No-op (plain ``fn()``) when ``timeout_s``
+    is falsy or when not on the main thread (SIGALRM is main-thread-only); DE
+    ``workers`` each run the objective in their own process's main thread, so the
+    guard is active there.
+    """
+    if not timeout_s or threading.current_thread() is not threading.main_thread():
+        return fn()
+
+    def _handler(signum, frame):
+        raise _SimTimeout()
+
+    old = signal.signal(signal.SIGALRM, _handler)
+    try:
+        signal.setitimer(signal.ITIMER_REAL, float(timeout_s))
+        return fn()
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, old)
+
+
 def run_simulation(
     config: dict[str, str],
     overrides: dict[str, str],
     n_years: int = 40,
     seed: int = 42,
+    timeout_s: float | None = None,
 ) -> dict[str, float]:
     """Run PythonEngine with overrides, return last-10-year mean biomass per species.
 
@@ -132,7 +165,13 @@ def run_simulation(
     with tempfile.TemporaryDirectory(prefix="baltic_cal_") as tmpdir:
         output_dir = Path(tmpdir) / "output"
         engine = PythonEngine()
-        result = engine.run(cfg, output_dir=output_dir, seed=seed)
+        try:
+            result = _run_with_timeout(
+                lambda: engine.run(cfg, output_dir=output_dir, seed=seed), timeout_s
+            )
+        except _SimTimeout:
+            # A pathological candidate hung; treat as a failed eval (objective -> 1e6 penalty).
+            return {}
 
         if result.returncode != 0:
             return {}
@@ -194,6 +233,7 @@ class _ObjectiveWrapper:
         use_log_space: bool = True,
         w_stability: float = 5.0,
         w_worst: float = 0.5,
+        sim_timeout_s: float | None = None,
     ):
         self.base_config = base_config
         self.targets = targets
@@ -204,6 +244,7 @@ class _ObjectiveWrapper:
         self.use_log_space = use_log_space
         self.w_stability = w_stability
         self.w_worst = w_worst
+        self.sim_timeout_s = sim_timeout_s
         self.last_per_species_residuals: list[tuple[str, float, float]] | None = None
 
     def __call__(self, x: np.ndarray) -> float:
@@ -272,7 +313,13 @@ class _ObjectiveWrapper:
         """
         overrides = expand_param_overrides(self.param_keys, x, self.use_log_space)
 
-        stats = run_simulation(self.base_config, overrides, n_years=self.n_years, seed=self.seed)
+        stats = run_simulation(
+            self.base_config,
+            overrides,
+            n_years=self.n_years,
+            seed=self.seed,
+            timeout_s=self.sim_timeout_s,
+        )
         return stats or {}
 
 
@@ -285,6 +332,7 @@ def make_objective(
     use_log_space: bool = True,
     w_stability: float = 5.0,
     w_worst: float = 0.5,
+    sim_timeout_s: float | None = None,
 ) -> Callable[[np.ndarray], float]:
     """Create objective function for differential evolution.
 
@@ -306,6 +354,7 @@ def make_objective(
         use_log_space=use_log_space,
         w_stability=w_stability,
         w_worst=w_worst,
+        sim_timeout_s=sim_timeout_s,
     )
 
 
@@ -970,6 +1019,7 @@ def run_calibration(
     patience: int = 20,
     wall_clock_cap_h: float = 12.0,
     a2: bool = False,
+    sim_timeout_s: float | None = None,
 ) -> dict:
     """Run differential evolution calibration for the specified phase."""
     from osmose.config.reader import OsmoseConfigReader
@@ -1151,6 +1201,7 @@ def run_calibration(
         n_years=n_years,
         seed=42,
         use_log_space=True,
+        sim_timeout_s=sim_timeout_s,
     )
 
     # Initialize DE population: mixed strategy
@@ -1291,6 +1342,7 @@ def run_calibration(
             n_years=n_years,
             seed=rs,
             use_log_space=True,
+            sim_timeout_s=sim_timeout_s,
         )
         obj_val = obj_fn(best_x)
         rerank_objectives.append(obj_val)
@@ -1571,6 +1623,13 @@ def main():
         help="Calibrate with Chunk A2 depletion ON + a shared zoo regrowth-rate "
         "param (overrides --phase param set; uses phase-1 mortality + zoo).",
     )
+    parser.add_argument(
+        "--sim-timeout",
+        type=float,
+        default=0.0,
+        help="Per-simulation wall-clock timeout in seconds (0=off). A candidate whose sim "
+        "exceeds this returns a large penalty instead of stalling a deferred DE generation.",
+    )
     args = parser.parse_args()
 
     if args.validate:
@@ -1592,6 +1651,7 @@ def main():
             patience=args.patience,
             wall_clock_cap_h=args.wall_clock_cap_h,
             a2=args.a2,
+            sim_timeout_s=(args.sim_timeout or None),
         )
 
 
