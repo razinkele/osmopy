@@ -137,6 +137,12 @@ _SUPPLEMENTARY_ALLOWLIST: frozenset[str] = frozenset(
         # unknown-key warnings on the examples / minimal fixtures.
         "species.conversion2tons.sp{idx}",
         "ltl.conversion2tons.rsc{idx}",
+        # --- Chunk A2 depletable plankton (opt-in; read by ResourceState) ---
+        "ltl.depletable.enabled",
+        "ltl.depletable.floor",
+        "ltl.regrowth.rate.default",
+        "ltl.regrowth.rate.rsc{idx}",
+        "species.regrowth.rate.sp{idx}",
         # --- Java-side schema fields (broad-parity TODO closure, 2026-05-08) ---
         # Every entry below is in osmose/schema/ (so the UI auto-renders an
         # input for it) but the Python engine does not read it. They cover:

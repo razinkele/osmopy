@@ -5,7 +5,7 @@ import pytest
 import xarray as xr
 
 from osmose.engine.grid import Grid
-from osmose.engine.resources import ResourceSpeciesInfo, ResourceState
+from osmose.engine.resources import ResourceSpeciesInfo, ResourceState, logistic_regrow
 
 
 class TestResourceSpeciesInfo:
@@ -253,3 +253,127 @@ class TestResourceState:
         np.testing.assert_allclose(val_step0, 10.0 * 0.99, rtol=1e-6)
         np.testing.assert_allclose(val_step2, 30.0 * 0.99, rtol=1e-6)
         rs.close()
+
+
+# ---------------------------------------------------------------- Chunk A2 (depletable)
+def test_logistic_regrow_at_capacity_is_stable():
+    k = np.array([100.0, 100.0])
+    out = logistic_regrow(np.array([100.0, 100.0]), k, rate=0.5, floor=0.05)
+    assert np.allclose(out, k)
+
+
+def test_logistic_regrow_partial_leaves_below_k():
+    k = np.array([100.0])
+    out = logistic_regrow(np.array([50.0]), k, rate=0.5, floor=0.05)
+    assert np.allclose(out, [62.5])  # 50 + 0.5*50*(1-0.5)
+    assert out[0] < k[0]
+
+
+def test_logistic_regrow_floor_recovers_from_zero():
+    k = np.array([100.0])
+    out = logistic_regrow(np.array([0.0]), k, rate=0.5, floor=0.05)
+    assert out[0] >= 5.0  # seeded to floor*K = 5
+
+
+def test_logistic_regrow_caps_at_k_and_handles_zero_k():
+    k = np.array([100.0, 0.0])
+    out = logistic_regrow(np.array([90.0, 50.0]), k, rate=5.0, floor=0.05)
+    assert out[0] == 100.0
+    assert out[1] == 0.0
+    assert not np.isnan(out).any()
+
+
+def test_regrowth_rate_parsed_per_resource():
+    grid = Grid.from_dimensions(ny=3, nx=3)
+    config = {
+        "simulation.nresource": "1",
+        "ltl.name.rsc0": "Zoo",
+        "ltl.size.min.rsc0": "0.01",
+        "ltl.size.max.rsc0": "0.1",
+        "ltl.tl.rsc0": "2.0",
+        "ltl.accessibility2fish.rsc0": "0.5",
+        "ltl.biomass.total.rsc0": "900.0",
+        "ltl.depletable.enabled": "true",
+        "ltl.depletable.floor": "0.05",
+        "ltl.regrowth.rate.rsc0": "0.3",
+        "ltl.regrowth.rate.default": "1.0",
+    }
+    rs = ResourceState(config=config, grid=grid)
+    assert rs.depletable is True
+    assert rs.depletable_floor == 0.05
+    assert rs.species[0].regrowth_rate == 0.3
+
+
+def test_regrowth_rate_parsed_species_type_path():
+    # The EEC / Baltic config uses the species.type.sp{N}=resource loader, not the legacy
+    # ltl.*.rsc{i} keys — cover it: explicit per-resource rate + global-default fallback.
+    grid = Grid.from_dimensions(ny=3, nx=3)
+    config = {
+        "simulation.nresource": "2",
+        "species.type.sp8": "resource",
+        "species.name.sp8": "Zoo",
+        "species.size.min.sp8": "0.01",
+        "species.size.max.sp8": "0.1",
+        "species.trophic.level.sp8": "2.0",
+        "species.accessibility2fish.sp8": "0.5",
+        "species.type.sp9": "resource",
+        "species.name.sp9": "Phyto",
+        "species.size.min.sp9": "0.001",
+        "species.size.max.sp9": "0.01",
+        "species.trophic.level.sp9": "1.0",
+        "species.accessibility2fish.sp9": "0.5",
+        "ltl.depletable.enabled": "true",
+        "ltl.regrowth.rate.default": "0.9",
+        "species.regrowth.rate.sp8": "0.4",  # explicit per-resource key
+        # sp9 has no explicit key -> falls back to ltl.regrowth.rate.default
+    }
+    rs = ResourceState(config=config, grid=grid)
+    assert rs.depletable is True
+    rates = {s.name: s.regrowth_rate for s in rs.species}
+    assert rates["Zoo"] == 0.4  # per-resource key wins
+    assert rates["Phyto"] == 0.9  # global default fallback
+
+
+def _uniform_resource_config(depletable: bool, rate: str = "0.3") -> dict:
+    cfg = {
+        "simulation.nresource": "1",
+        "simulation.time.ndtperyear": "24",
+        "ltl.name.rsc0": "Zoo",
+        "ltl.size.min.rsc0": "0.01",
+        "ltl.size.max.rsc0": "0.1",
+        "ltl.tl.rsc0": "2.0",
+        "ltl.accessibility2fish.rsc0": "0.5",
+        "ltl.biomass.total.rsc0": "900.0",
+    }
+    if depletable:
+        cfg.update(
+            {
+                "ltl.depletable.enabled": "true",
+                "ltl.depletable.floor": "0.05",
+                "ltl.regrowth.rate.rsc0": rate,
+            }
+        )
+    return cfg
+
+
+def test_update_off_is_full_reset_parity():
+    grid = Grid.from_dimensions(ny=3, nx=3)
+    rs = ResourceState(config=_uniform_resource_config(depletable=False), grid=grid)
+    rs.update(step=0)
+    k = rs.biomass.copy()
+    rs.biomass[:] = 0.0  # deplete
+    rs.update(step=0)
+    assert np.allclose(rs.biomass, k)  # non-depletable resets fully to K
+
+
+def test_update_on_regrows_instead_of_resetting():
+    grid = Grid.from_dimensions(ny=3, nx=3)
+    rs = ResourceState(config=_uniform_resource_config(depletable=True, rate="0.3"), grid=grid)
+    k_val = 900.0 / 9 * 0.5  # carrying capacity per cell = 50 (uniform 900 / 9 cells * access 0.5)
+    rs.biomass[:] = 0.5 * k_val  # graze down to half of K
+    rs.update(step=0)
+    assert np.all(rs.biomass < k_val - 1e-9)  # regrew but NOT reset to K
+    assert np.all(rs.biomass > 0.5 * k_val)  # and grew from the grazed level
+    rs.biomass[:] = 0.0  # fully grazed
+    rs.update(step=0)
+    assert np.all(rs.biomass >= 0.05 * k_val - 1e-9)  # recovers above floor, not stuck at 0

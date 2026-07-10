@@ -1,0 +1,146 @@
+{
+  "points": [
+    {
+      "scale": 0.03,
+      "rich_state": "overshoot",
+      "poor_state": "overshoot",
+      "per_seed_rich": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "per_seed_poor": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "rich_cod_median": 4635981.271051167,
+      "poor_cod_median": 4680914.046289561,
+      "gap": 0.009599143499519772,
+      "established": true,
+      "a_clupeid_biomass": 776151.3360751396,
+      "b_clupeid_biomass": 800619.2279632686,
+      "a_clupeid_valid": true,
+      "b_clupeid_valid": true,
+      "clupeid_gap": 0.030561171243916677,
+      "outcome": "same-basin",
+      "regime_shift": false
+    },
+    {
+      "scale": 0.1,
+      "rich_state": "overshoot",
+      "poor_state": "overshoot",
+      "per_seed_rich": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "per_seed_poor": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "rich_cod_median": 4011942.138317471,
+      "poor_cod_median": 3947650.082913123,
+      "gap": 0.016025166157093304,
+      "established": true,
+      "a_clupeid_biomass": 659884.2351400838,
+      "b_clupeid_biomass": 780635.6422906892,
+      "a_clupeid_valid": true,
+      "b_clupeid_valid": true,
+      "clupeid_gap": 0.15468324263677158,
+      "outcome": "same-basin",
+      "regime_shift": false
+    },
+    {
+      "scale": 0.3,
+      "rich_state": "overshoot",
+      "poor_state": "overshoot",
+      "per_seed_rich": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "per_seed_poor": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "rich_cod_median": 2955362.2772358567,
+      "poor_cod_median": 3099841.6496260623,
+      "gap": 0.04660861492683644,
+      "established": true,
+      "a_clupeid_biomass": 947453.6374297824,
+      "b_clupeid_biomass": 891333.0840282207,
+      "a_clupeid_valid": true,
+      "b_clupeid_valid": true,
+      "clupeid_gap": 0.05923297135766131,
+      "outcome": "same-basin",
+      "regime_shift": false
+    },
+    {
+      "scale": 0.5,
+      "rich_state": "overshoot",
+      "poor_state": "overshoot",
+      "per_seed_rich": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "per_seed_poor": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "rich_cod_median": 1846937.9512500402,
+      "poor_cod_median": 1826899.0057700123,
+      "gap": 0.010849814752385415,
+      "established": true,
+      "a_clupeid_biomass": 909992.9564848635,
+      "b_clupeid_biomass": 994694.51966463,
+      "a_clupeid_valid": true,
+      "b_clupeid_valid": false,
+      "clupeid_gap": 0.0851532569567864,
+      "outcome": "provisional",
+      "regime_shift": false
+    },
+    {
+      "scale": 1.0,
+      "rich_state": "collapsed",
+      "poor_state": "collapsed",
+      "per_seed_rich": [
+        "collapsed",
+        "collapsed",
+        "collapsed"
+      ],
+      "per_seed_poor": [
+        "collapsed",
+        "collapsed",
+        "collapsed"
+      ],
+      "rich_cod_median": 1483.2846218318748,
+      "poor_cod_median": 2.3288883155401496,
+      "gap": 0.9977572439499969,
+      "established": false,
+      "a_clupeid_biomass": 2720746.3931931853,
+      "b_clupeid_biomass": 2877170.178212201,
+      "a_clupeid_valid": true,
+      "b_clupeid_valid": true,
+      "clupeid_gap": 0.05436721534108149,
+      "outcome": "same-basin",
+      "regime_shift": false
+    }
+  ],
+  "contrast": "regime-shift",
+  "regime_shift": false,
+  "bistable": false,
+  "regime_shift_scales": [],
+  "partial_scales": [],
+  "provisional_scales": [
+    0.5
+  ],
+  "determinate_fraction": 0.8,
+  "trustworthy": true,
+  "verdict": "MONOSTABLE (warm-start) \u2014 cod-dominated and clupeid-dominated standing-stock ICs converge at every determinate scale (provisional: [0.5]). No alternative regime-shift attractor under the deployed parameters; bistability must be CREATED (Chunk C clupeid->cod-egg predation; Chunk A2 depletable plankton).",
+  "complete": true
+}

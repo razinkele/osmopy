@@ -17,6 +17,26 @@ from osmose.engine.grid import Grid
 from osmose.engine.path_resolution import resolve_data_path
 
 
+def logistic_regrow(
+    biomass: NDArray[np.float64],
+    k: NDArray[np.float64],
+    rate: float,
+    floor: float,
+) -> NDArray[np.float64]:
+    """Per-cell logistic regrowth of a depletable resource toward carrying capacity K.
+
+    B = max(B_carried, floor*K);  B_new = min(K, B + rate*B*(1 - B/K));  K<=0 -> 0.
+    The floor seeds recovery so a fully-grazed cell (B_carried=0) is not a permanent dead
+    zone; the min(.,K) caps at carrying capacity; K<=0 cells (land / off-season) stay empty.
+    """
+    k = np.asarray(k, dtype=np.float64)
+    b = np.maximum(np.asarray(biomass, dtype=np.float64), floor * k)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        grown = b + rate * b * (1.0 - b / k)
+    grown = np.minimum(grown, k)
+    return np.where(k > 0.0, grown, 0.0)
+
+
 @dataclass
 class ResourceSpeciesInfo:
     """Metadata for one resource species."""
@@ -29,6 +49,7 @@ class ResourceSpeciesInfo:
     multiplier: float = 1.0  # biomass scaling multiplier
     offset: float = 0.0  # biomass offset (for uniform distribution)
     accessibility_ts: NDArray[np.float64] | None = None  # time-varying accessibility
+    regrowth_rate: float = 1.0  # per-step logistic regrowth rate (used only when depletable)
 
     def __post_init__(self) -> None:
         if self.size_min >= self.size_max:
@@ -50,6 +71,9 @@ class ResourceState:
         self.config = config
         self.grid = grid
         self.n_resources = int(config.get("simulation.nresource", "0"))
+        self.depletable = str(config.get("ltl.depletable.enabled", "false")).lower() == "true"
+        self.depletable_floor = float(config.get("ltl.depletable.floor", "0.05"))
+        self._regrowth_default = float(config.get("ltl.regrowth.rate.default", "1.0"))
         self.species: list[ResourceSpeciesInfo] = []
         # Per-cell biomass: shape (n_resources, n_cells) where n_cells = ny * nx
         self.biomass: NDArray[np.float64] = np.zeros(
@@ -92,6 +116,9 @@ class ResourceState:
                     size_max=float(cfg.get(f"ltl.size.max.rsc{i}", "0.01")),
                     trophic_level=float(cfg.get(f"ltl.tl.rsc{i}", "1.0")),
                     accessibility=min(raw_access, 0.99),  # Cap at 0.99
+                    regrowth_rate=float(
+                        cfg.get(f"ltl.regrowth.rate.rsc{i}", str(self._regrowth_default))
+                    ),
                 )
             )
             self._forcing_var_names.append(name)
@@ -157,6 +184,9 @@ class ResourceState:
                     multiplier=multiplier,
                     offset=offset,
                     accessibility_ts=access_ts,
+                    regrowth_rate=float(
+                        cfg.get(f"species.regrowth.rate.sp{fi}", str(self._regrowth_default))
+                    ),
                 )
             )
             self._forcing_var_names.append(name)
@@ -192,10 +222,12 @@ class ResourceState:
             self._n_forcing_steps = self._forcing_data[first_var].shape[0]
 
     def update(self, step: int) -> None:
-        """Load resource biomass for the given simulation timestep.
+        """Set resource biomass for the given simulation timestep toward its carrying capacity K.
 
-        Resources regenerate from forcing each timestep (predation effects
-        are temporary -- biomass resets from the forcing data).
+        Non-depletable (default): biomass is reset to K = forcing x multiplier x accessibility
+        each timestep, so grazing effects are temporary. Depletable (``self.depletable``): the
+        carried-over (grazed) biomass is regrown toward K via :func:`logistic_regrow` instead of
+        reset, so grazing persists across timesteps (a cross-timestep self-limiting feedback).
         """
         if self.n_resources == 0:
             return
@@ -213,6 +245,8 @@ class ResourceState:
             else:
                 access = rsc.accessibility
 
+            # Carrying capacity K for this resource (the value the reset would assign)
+            k_row = np.zeros(grid.ny * grid.nx, dtype=np.float64)
             if self._forcing_data is not None and rsc.name in self._forcing_data:
                 # Map simulation timestep to forcing timestep
                 # Forcing has _n_forcing_steps per year, simulation has n_dt_per_year
@@ -229,14 +263,20 @@ class ResourceState:
 
                 # Apply multiplier and accessibility coefficient, then flatten
                 cell_biomass = biomass_2d.flatten() * rsc.multiplier * access
-                self.biomass[i, : len(cell_biomass)] = cell_biomass[: grid.ny * grid.nx]
+                k_row[: len(cell_biomass)] = cell_biomass[: grid.ny * grid.nx]
 
             elif self._uniform_biomass[i] > 0:
                 # Uniform distribution: multiplier * (per_cell + offset) * accessibility
-                per_cell = rsc.multiplier * (self._uniform_biomass[i] + rsc.offset) * access
-                self.biomass[i, :] = per_cell
+                k_row[:] = rsc.multiplier * (self._uniform_biomass[i] + rsc.offset) * access
+
+            if self.depletable:
+                # Regrow the carried-over (grazed) biomass toward K rather than resetting,
+                # yielding a cross-timestep self-limiting feedback.
+                self.biomass[i, :] = logistic_regrow(
+                    self.biomass[i, :], k_row, rsc.regrowth_rate, self.depletable_floor
+                )
             else:
-                self.biomass[i, :] = 0.0
+                self.biomass[i, :] = k_row
 
     def _regrid_to_model(self, data: NDArray) -> NDArray:
         """Regrid forcing data to model grid via nearest-neighbor index mapping."""
