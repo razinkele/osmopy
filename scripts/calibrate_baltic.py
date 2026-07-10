@@ -19,6 +19,7 @@ import argparse
 import csv
 import json
 import logging
+import multiprocessing as mp
 import os
 import signal
 import tempfile
@@ -27,6 +28,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from multiprocessing.connection import wait as _mp_wait
 from pathlib import Path
 
 import numpy as np
@@ -142,6 +144,68 @@ def _run_with_timeout(fn, timeout_s):
     finally:
         signal.setitimer(signal.ITIMER_REAL, 0)
         signal.signal(signal.SIGALRM, old)
+
+
+def _eval_child(func, x, conn) -> None:
+    """Child-process entry: evaluate func(x) and send the scalar back, or None on failure."""
+    try:
+        conn.send(float(func(x)))
+    except BaseException:  # noqa: BLE001 — any failure in the child becomes a penalty upstream
+        try:
+            conn.send(None)
+        except BaseException:  # noqa: BLE001 — pipe already broken; parent will see EOF
+            pass
+    finally:
+        conn.close()
+
+
+def isolated_eval_map(timeout_s: float, n_workers: int, penalty: float = 1e6):
+    """A scipy-DE ``workers``-compatible parallel map that isolates every objective evaluation
+    in its own forked subprocess with a hard kill-timeout.
+
+    A pathological candidate that crashes its worker (native segfault / OS-kill), hangs, or
+    raises becomes ``penalty`` instead of deadlocking the pool. Fork happens from the caller's
+    (single-threaded) main thread — so the classic fork-in-a-thread inherited-lock hazard does
+    not apply — and each child reuses the parent's JIT-warmed numba (no per-eval recompile).
+    Results are returned in input order.
+    """
+    ctx = mp.get_context("fork")
+
+    def _map(func, iterable):
+        tasks = list(iterable)
+        results = [penalty] * len(tasks)
+        for start in range(0, len(tasks), n_workers):
+            wave = list(range(start, min(start + n_workers, len(tasks))))
+            conns: dict[int, object] = {}
+            procs: dict[int, object] = {}
+            for i in wave:
+                parent_conn, child_conn = ctx.Pipe(duplex=False)
+                p = ctx.Process(target=_eval_child, args=(func, tasks[i], child_conn))
+                p.start()
+                child_conn.close()  # only the child holds the write end -> clean EOF on crash
+                conns[i] = parent_conn
+                procs[i] = p
+            deadline = time.monotonic() + timeout_s
+            pending = {conns[i]: i for i in wave}
+            while pending and time.monotonic() < deadline:
+                ready = _mp_wait(list(pending), timeout=max(0.0, deadline - time.monotonic()))
+                for conn in ready:
+                    i = pending.pop(conn)
+                    try:
+                        val = conn.recv()
+                        if val is not None:
+                            results[i] = float(val)
+                    except (EOFError, OSError):
+                        pass  # crashed before sending -> keep penalty
+            for i in wave:
+                p = procs[i]
+                if p.is_alive():
+                    p.terminate()  # hung candidate -> kill it
+                p.join(timeout=5)
+                conns[i].close()
+        return results
+
+    return _map
 
 
 def run_simulation(
@@ -1020,6 +1084,7 @@ def run_calibration(
     wall_clock_cap_h: float = 12.0,
     a2: bool = False,
     sim_timeout_s: float | None = None,
+    isolated_eval: bool = False,
 ) -> dict:
     """Run differential evolution calibration for the specified phase."""
     from osmose.config.reader import OsmoseConfigReader
@@ -1243,9 +1308,16 @@ def run_calibration(
     # 2026-04-24). 8 × 400 MB = 3.2 GB — comfortable. Override with
     # OSMOSE_DE_WORKERS env var.
     workers = int(os.environ.get("OSMOSE_DE_WORKERS", "8"))
+    if isolated_eval:
+        # Isolate every eval in a killable subprocess so a pathological candidate that crashes
+        # or hangs its worker becomes a penalty instead of deadlocking the DE pool.
+        kill_to = sim_timeout_s or 600.0
+        n_iso = workers
+        workers = isolated_eval_map(kill_to, n_iso, penalty=1e6)
+        print(f"Isolated-eval executor ON ({n_iso} procs, per-eval kill-timeout {kill_to:.0f}s).")
     print(
         f"\nStarting optimizer={optimizer!r} (eff_popsize={eff_popsize}, "
-        f"maxiter={maxiter}, workers={workers})..."
+        f"maxiter={maxiter}, workers={'isolated' if isolated_eval else workers})..."
     )
     print(
         f"Init: {n_r18} near R18, {n_lhs} LHS global "
@@ -1630,6 +1702,13 @@ def main():
         help="Per-simulation wall-clock timeout in seconds (0=off). A candidate whose sim "
         "exceeds this returns a large penalty instead of stalling a deferred DE generation.",
     )
+    parser.add_argument(
+        "--isolated-eval",
+        action="store_true",
+        help="Run each DE evaluation in a killable subprocess so a candidate that crashes or "
+        "hangs its worker becomes a penalty instead of deadlocking the pool. Uses --sim-timeout "
+        "(default 600s) as the per-eval kill-timeout. Recommended for the A2 calibration.",
+    )
     args = parser.parse_args()
 
     if args.validate:
@@ -1652,6 +1731,7 @@ def main():
             wall_clock_cap_h=args.wall_clock_cap_h,
             a2=args.a2,
             sim_timeout_s=(args.sim_timeout or None),
+            isolated_eval=args.isolated_eval,
         )
 
 
