@@ -133,3 +133,21 @@ def test_weight_floor_default_is_noop():
 
     obj = make_objective({}, [], [])  # no weight_floor -> attribute defaults 0.0
     assert obj.weight_floor == 0.0
+
+
+def test_weight_floor_scales_stability_penalty(monkeypatch):
+    from calibrate_baltic import BiomassTarget, _ObjectiveWrapper
+
+    targets = [BiomassTarget("perch", 20000, 8000, 50000, weight=0.2)]
+    # In-band mean (banded error 0) but non-stationary (cv > 0.2) -> only the stability
+    # penalty contributes, which also scales with eff_weight = max(weight, weight_floor).
+    stats = {"perch_mean": 20000.0, "perch_cv": 0.5, "perch_trend": 0.01}
+
+    def obj(wf):
+        w = _ObjectiveWrapper(base_config={}, targets=targets, param_keys=[], weight_floor=wf)
+        monkeypatch.setattr(w, "_simulate_and_compute_stats", lambda x: stats)
+        return w(np.array([]))
+
+    low, high = obj(0.0), obj(0.9)
+    assert low > 0.0  # stability penalty is active (cv 0.5 > 0.2)
+    assert high > low  # and it scales with the floored weight
