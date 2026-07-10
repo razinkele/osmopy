@@ -51,18 +51,35 @@ investigation pointed at. It is **not yet a finished calibrated config** — cod
 remain the hardest, and the DE was cut off while still improving — but a deployable ICES-calibrated Baltic
 now looks **reachable** with A2, which it did not with mortality tuning alone.
 
-## Follow-ups (not done here)
+## Convergence blocked — the gen-10 result is accepted as final (2026-07-10)
 
-1. **Harden the calibrator against the hang:** add a per-simulation wall-clock timeout in `run_simulation`
-   / the objective so a pathological DE candidate returns a large penalty instead of stalling the whole
-   `deferred` generation. This is the fix that lets the A2 DE run to completion.
-2. **Re-run the A2 DE to convergence** (with the timeout guard), multi-seed validated, to get the true
-   best A2 config and a candidate deployable config.
+A per-simulation wall-clock timeout guard (`_run_with_timeout` / `--sim-timeout`, commit `c4ab6cc`) was
+added and the A2 DE re-run. **It hit the identical hang at generation 10→11**, deterministically
+(same `best_fun 0.8964`, workers gone, main process idle at ~3% CPU for >1 h). So the true failure mode is
+**not** a slow sim in a live worker (which the timeout would catch) but a specific DE candidate that
+**crashes a worker process — almost certainly an OOM from a biomass explosion — after which scipy's
+`differential_evolution` process pool deadlocks waiting for the dead worker.** SIGALRM inside the objective
+cannot help once the worker is gone. The timeout guard remains a valid robustness improvement (it prevents
+the *slow-sim* class of stalls, and it is parity-safe/default-off, 341 calibrator tests) but it is the
+wrong fix for *this* failure.
+
+**Decision: accept the gen-10 config as the A2 calibration result** (user, 2026-07-10). It already answers
+the question decisively — A2 is a genuine calibration lever (4× better fit; community compressed from
+17–400× to ~1.4–7× of the bands) — and the deterministic hang means gen-10 is as far as this DE
+configuration reaches. Squeezing out the final generations to a fully in-band config is deferred.
+
+## Follow-ups (deferred; the actual fix for convergence)
+
+1. **Engine explosion guard (the robust fix):** add a max-schools / max-abundance cap in
+   `osmose/engine/simulate.py` — if a run's population explodes past a sane bound, abort it with a marker
+   so the objective returns a penalty. This kills the pathology at the source and unblocks convergence
+   regardless of worker count. (Preferred over `workers=1`, which only avoids the pool deadlock at ~8× the
+   wall-clock and still risks a single-process OOM.)
+2. **Then re-run the A2 DE to convergence**, multi-seed validated, for a candidate deployable config.
 3. **Objective tweak (optional):** a small bonus for landing *inside* a band would stop the DE from
    overshooting the correction (sprat/flounder went slightly under).
 
 ## Note
 
-No deployed config was changed. The calibrated A2-on parameters (gen-10) + the baseline are recorded in
-`docs/diagnostics/baltic_a2_calibrated_params.json` as a **candidate/interim** sidecar, not a promoted
-config.
+No deployed config was changed. The **accepted gen-10** A2-on parameters + the baseline are recorded in
+`docs/diagnostics/baltic_a2_calibrated_params.json` as a **candidate** sidecar, not a promoted config.
