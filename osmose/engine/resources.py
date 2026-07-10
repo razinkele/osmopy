@@ -222,10 +222,12 @@ class ResourceState:
             self._n_forcing_steps = self._forcing_data[first_var].shape[0]
 
     def update(self, step: int) -> None:
-        """Load resource biomass for the given simulation timestep.
+        """Set resource biomass for the given simulation timestep toward its carrying capacity K.
 
-        Resources regenerate from forcing each timestep (predation effects
-        are temporary -- biomass resets from the forcing data).
+        Non-depletable (default): biomass is reset to K = forcing x multiplier x accessibility
+        each timestep, so grazing effects are temporary. Depletable (``self.depletable``): the
+        carried-over (grazed) biomass is regrown toward K via :func:`logistic_regrow` instead of
+        reset, so grazing persists across timesteps (a cross-timestep self-limiting feedback).
         """
         if self.n_resources == 0:
             return

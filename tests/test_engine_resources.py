@@ -304,6 +304,36 @@ def test_regrowth_rate_parsed_per_resource():
     assert rs.species[0].regrowth_rate == 0.3
 
 
+def test_regrowth_rate_parsed_species_type_path():
+    # The EEC / Baltic config uses the species.type.sp{N}=resource loader, not the legacy
+    # ltl.*.rsc{i} keys — cover it: explicit per-resource rate + global-default fallback.
+    grid = Grid.from_dimensions(ny=3, nx=3)
+    config = {
+        "simulation.nresource": "2",
+        "species.type.sp8": "resource",
+        "species.name.sp8": "Zoo",
+        "species.size.min.sp8": "0.01",
+        "species.size.max.sp8": "0.1",
+        "species.trophic.level.sp8": "2.0",
+        "species.accessibility2fish.sp8": "0.5",
+        "species.type.sp9": "resource",
+        "species.name.sp9": "Phyto",
+        "species.size.min.sp9": "0.001",
+        "species.size.max.sp9": "0.01",
+        "species.trophic.level.sp9": "1.0",
+        "species.accessibility2fish.sp9": "0.5",
+        "ltl.depletable.enabled": "true",
+        "ltl.regrowth.rate.default": "0.9",
+        "species.regrowth.rate.sp8": "0.4",  # explicit per-resource key
+        # sp9 has no explicit key -> falls back to ltl.regrowth.rate.default
+    }
+    rs = ResourceState(config=config, grid=grid)
+    assert rs.depletable is True
+    rates = {s.name: s.regrowth_rate for s in rs.species}
+    assert rates["Zoo"] == 0.4  # per-resource key wins
+    assert rates["Phyto"] == 0.9  # global default fallback
+
+
 def _uniform_resource_config(depletable: bool, rate: str = "0.3") -> dict:
     cfg = {
         "simulation.nresource": "1",
