@@ -65,3 +65,46 @@ def test_run_with_timeout_raises_on_slow():
 
     with pytest.raises(cb._SimTimeout):
         cb._run_with_timeout(lambda: time.sleep(3), 0.3)
+
+
+# ---------------------------------------------------------------- isolated-eval executor
+def _fake_ok(x):
+    return float(x[0]) * 10.0
+
+
+def _fake_crash(x):
+    if int(x[0]) == 99:
+        import os
+
+        os._exit(1)  # simulate a native worker crash (process dies, no result)
+    return float(x[0])
+
+
+def _fake_hang(x):
+    if int(x[0]) == 99:
+        import time as _t
+
+        _t.sleep(30)  # hang far past the timeout
+    return float(x[0])
+
+
+def test_isolated_map_normal_returns_ordered_results():
+    m = cb.isolated_eval_map(timeout_s=15.0, n_workers=4, penalty=1e6)
+    tasks = [np.array([i]) for i in range(6)]
+    assert m(_fake_ok, tasks) == [0.0, 10.0, 20.0, 30.0, 40.0, 50.0]
+
+
+def test_isolated_map_penalizes_crashed_eval():
+    m = cb.isolated_eval_map(timeout_s=15.0, n_workers=4, penalty=1e6)
+    tasks = [np.array([1]), np.array([99]), np.array([2])]  # 99 hard-crashes
+    res = m(_fake_crash, tasks)
+    assert res[0] == 1.0 and res[2] == 2.0
+    assert res[1] == 1e6  # crash -> penalty, others unaffected
+
+
+def test_isolated_map_penalizes_hung_eval():
+    m = cb.isolated_eval_map(timeout_s=0.5, n_workers=4, penalty=1e6)
+    tasks = [np.array([1]), np.array([99]), np.array([2])]  # 99 hangs
+    res = m(_fake_hang, tasks)
+    assert res[0] == 1.0 and res[2] == 2.0
+    assert res[1] == 1e6  # killed at timeout -> penalty
