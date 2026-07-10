@@ -20,7 +20,9 @@ import csv
 import json
 import logging
 import os
+import signal
 import tempfile
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -40,10 +42,34 @@ BALTIC_CONFIG = PROJECT_ROOT / "data" / "baltic" / "baltic_all-parameters.csv"
 TARGETS_CSV = PROJECT_ROOT / "data" / "baltic" / "reference" / "biomass_targets.csv"
 
 SPECIES_NAMES = [
-    "cod", "herring", "sprat", "flounder",
-    "perch", "pikeperch", "smelt", "stickleback",
+    "cod",
+    "herring",
+    "sprat",
+    "flounder",
+    "perch",
+    "pikeperch",
+    "smelt",
+    "stickleback",
 ]
 N_SPECIES = len(SPECIES_NAMES)
+
+_ZOO_REGROWTH_SENTINEL = "species.regrowth.rate.zoo"
+_ZOO_RESOURCE_INDICES = (10, 11, 12, 13)  # depletable zooplankton + benthos (Chunk A2)
+
+
+def expand_param_overrides(param_keys, x, use_log_space: bool = True) -> dict[str, str]:
+    """Build the DE override dict, expanding the grouped zoo-regrowth sentinel to the four
+    depletable resource keys (equal value). Non-sentinel keys are byte-identical to the prior
+    inline construction."""
+    overrides: dict[str, str] = {}
+    for i, key in enumerate(param_keys):
+        val = 10.0 ** x[i] if use_log_space else x[i]
+        if key == _ZOO_REGROWTH_SENTINEL:
+            for r in _ZOO_RESOURCE_INDICES:
+                overrides[f"species.regrowth.rate.sp{r}"] = str(val)
+        else:
+            overrides[key] = str(val)
+    return overrides
 
 
 def _save_run_for_de(payload: dict) -> None:
@@ -73,24 +99,57 @@ def load_targets(path: Path = TARGETS_CSV) -> list[BiomassTarget]:
         lines = [line for line in f if not line.startswith("#")]
     reader = csv.DictReader(lines)
     for row in reader:
-        targets.append(BiomassTarget(
-            species=row["species"],
-            target=float(row["target_tonnes"]),
-            lower=float(row["lower_tonnes"]),
-            upper=float(row["upper_tonnes"]),
-            weight=float(row.get("weight", "1.0")),
-        ))
+        targets.append(
+            BiomassTarget(
+                species=row["species"],
+                target=float(row["target_tonnes"]),
+                lower=float(row["lower_tonnes"]),
+                upper=float(row["upper_tonnes"]),
+                weight=float(row.get("weight", "1.0")),
+            )
+        )
     return targets
 
 
 # ---------------------------------------------------------------------------
 # Engine runner
 # ---------------------------------------------------------------------------
+class _SimTimeout(Exception):
+    """Raised when a single simulation exceeds its wall-clock budget."""
+
+
+def _run_with_timeout(fn, timeout_s):
+    """Run ``fn()`` under a SIGALRM wall-clock limit and return its result.
+
+    Raises :class:`_SimTimeout` if ``fn`` exceeds ``timeout_s`` seconds. The alarm
+    fires between OSMOSE timesteps (the sim loops in Python), so a pathological
+    candidate that grinds ever-slower is interrupted instead of stalling a whole
+    ``differential_evolution`` generation. No-op (plain ``fn()``) when ``timeout_s``
+    is falsy or when not on the main thread (SIGALRM is main-thread-only); DE
+    ``workers`` each run the objective in their own process's main thread, so the
+    guard is active there.
+    """
+    if not timeout_s or threading.current_thread() is not threading.main_thread():
+        return fn()
+
+    def _handler(signum, frame):
+        raise _SimTimeout()
+
+    old = signal.signal(signal.SIGALRM, _handler)
+    try:
+        signal.setitimer(signal.ITIMER_REAL, float(timeout_s))
+        return fn()
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, old)
+
+
 def run_simulation(
     config: dict[str, str],
     overrides: dict[str, str],
     n_years: int = 40,
     seed: int = 42,
+    timeout_s: float | None = None,
 ) -> dict[str, float]:
     """Run PythonEngine with overrides, return last-10-year mean biomass per species.
 
@@ -106,7 +165,13 @@ def run_simulation(
     with tempfile.TemporaryDirectory(prefix="baltic_cal_") as tmpdir:
         output_dir = Path(tmpdir) / "output"
         engine = PythonEngine()
-        result = engine.run(cfg, output_dir=output_dir, seed=seed)
+        try:
+            result = _run_with_timeout(
+                lambda: engine.run(cfg, output_dir=output_dir, seed=seed), timeout_s
+            )
+        except _SimTimeout:
+            # A pathological candidate hung; treat as a failed eval (objective -> 1e6 penalty).
+            return {}
 
         if result.returncode != 0:
             return {}
@@ -168,6 +233,7 @@ class _ObjectiveWrapper:
         use_log_space: bool = True,
         w_stability: float = 5.0,
         w_worst: float = 0.5,
+        sim_timeout_s: float | None = None,
     ):
         self.base_config = base_config
         self.targets = targets
@@ -178,6 +244,7 @@ class _ObjectiveWrapper:
         self.use_log_space = use_log_space
         self.w_stability = w_stability
         self.w_worst = w_worst
+        self.sim_timeout_s = sim_timeout_s
         self.last_per_species_residuals: list[tuple[str, float, float]] | None = None
 
     def __call__(self, x: np.ndarray) -> float:
@@ -244,16 +311,14 @@ class _ObjectiveWrapper:
         monkeypatch this seam. Returns {} on a failed simulation — the caller
         short-circuits to 1e6.
         """
-        overrides: dict[str, str] = {}
-        for i, key in enumerate(self.param_keys):
-            if self.use_log_space:
-                val = 10.0 ** x[i]
-            else:
-                val = x[i]
-            overrides[key] = str(val)
+        overrides = expand_param_overrides(self.param_keys, x, self.use_log_space)
 
         stats = run_simulation(
-            self.base_config, overrides, n_years=self.n_years, seed=self.seed
+            self.base_config,
+            overrides,
+            n_years=self.n_years,
+            seed=self.seed,
+            timeout_s=self.sim_timeout_s,
         )
         return stats or {}
 
@@ -267,6 +332,7 @@ def make_objective(
     use_log_space: bool = True,
     w_stability: float = 5.0,
     w_worst: float = 0.5,
+    sim_timeout_s: float | None = None,
 ) -> Callable[[np.ndarray], float]:
     """Create objective function for differential evolution.
 
@@ -288,6 +354,7 @@ def make_objective(
         use_log_space=use_log_space,
         w_stability=w_stability,
         w_worst=w_worst,
+        sim_timeout_s=sim_timeout_s,
     )
 
 
@@ -313,14 +380,14 @@ def get_phase1_params() -> tuple[list[str], list[tuple[float, float]], list[floa
     # Bounds: log10(0.1)=-1.0 to log10(100)=2.0
     r18_larval = [15.0, 8.0, 9.0, 12.0, 13.0, 15.0, 13.5, 3.5]
     larval_bounds = [
-        (-1.0, 2.0),   # sp0 cod
-        (-1.0, 2.0),   # sp1 herring — may need very high larval mort
-        (-1.0, 2.0),   # sp2 sprat
-        (-1.0, 2.0),   # sp3 flounder
-        (-1.0, 2.0),   # sp4 perch
-        (-1.0, 2.0),   # sp5 pikeperch
-        (-1.0, 2.0),   # sp6 smelt
-        (-1.0, 2.0),   # sp7 stickleback
+        (-1.0, 2.0),  # sp0 cod
+        (-1.0, 2.0),  # sp1 herring — may need very high larval mort
+        (-1.0, 2.0),  # sp2 sprat
+        (-1.0, 2.0),  # sp3 flounder
+        (-1.0, 2.0),  # sp4 perch
+        (-1.0, 2.0),  # sp5 pikeperch
+        (-1.0, 2.0),  # sp6 smelt
+        (-1.0, 2.0),  # sp7 stickleback
     ]
     for i in range(N_SPECIES):
         keys.append(f"mortality.additional.larva.rate.sp{i}")
@@ -336,14 +403,14 @@ def get_phase1_params() -> tuple[list[str], list[tuple[float, float]], list[floa
     # the linear-eggs compensation pathway is closed at the egg stage.
     r18_adult = [0.05, 0.001, 0.05, 0.05, 0.02, 0.03, 0.02, 0.001]
     adult_bounds = [
-        (-3.0, 0.7),   # sp0 cod — seal predation
-        (-3.0, 0.7),   # sp1 herring — heavy seal predation (16-19% per Gårdmark 2012)
-        (-3.0, 0.7),   # sp2 sprat — seal predation + cormorant on juveniles
-        (-3.0, 0.7),   # sp3 flounder — seal predation + some cormorant
-        (-3.0, 0.7),   # sp4 perch — cormorant predation (4-10% per Heikinheimo 2021)
-        (-3.0, 0.7),   # sp5 pikeperch — cormorant predation (4-23% per Heikinheimo 2016)
-        (-3.0, 0.3),   # sp6 smelt — no documented top predator in model, keep default
-        (-3.0, 0.3),   # sp7 stickleback — boom-bust, not predator-limited
+        (-3.0, 0.7),  # sp0 cod — seal predation
+        (-3.0, 0.7),  # sp1 herring — heavy seal predation (16-19% per Gårdmark 2012)
+        (-3.0, 0.7),  # sp2 sprat — seal predation + cormorant on juveniles
+        (-3.0, 0.7),  # sp3 flounder — seal predation + some cormorant
+        (-3.0, 0.7),  # sp4 perch — cormorant predation (4-10% per Heikinheimo 2021)
+        (-3.0, 0.7),  # sp5 pikeperch — cormorant predation (4-23% per Heikinheimo 2016)
+        (-3.0, 0.3),  # sp6 smelt — no documented top predator in model, keep default
+        (-3.0, 0.3),  # sp7 stickleback — boom-bust, not predator-limited
     ]
     for i in range(N_SPECIES):
         keys.append(f"mortality.additional.rate.sp{i}")
@@ -355,6 +422,25 @@ def get_phase1_params() -> tuple[list[str], list[tuple[float, float]], list[floa
         x0.append(log_x0)
 
     return keys, bounds, x0
+
+
+def get_a2_params():
+    """Phase-1 mortality params + one grouped zooplankton regrowth-rate param (Chunk A2)."""
+    keys, bounds, x0 = get_phase1_params()
+    keys.append(_ZOO_REGROWTH_SENTINEL)
+    bounds.append((-1.0, float(np.log10(2.0))))  # rate 0.1 .. 2.0 in log10 space
+    x0.append(float(np.log10(0.6)))
+    return keys, bounds, x0
+
+
+def enable_a2_base_config(base_config) -> dict:
+    """Copy of base_config with A2 depletion enabled (phytoplankton regrowth fixed fast)."""
+    cfg = dict(base_config)
+    cfg["ltl.depletable.enabled"] = "true"
+    cfg["ltl.depletable.floor"] = "0.05"
+    cfg["species.regrowth.rate.sp8"] = "5.0"
+    cfg["species.regrowth.rate.sp9"] = "5.0"
+    return cfg
 
 
 def get_phase1b_params() -> tuple[list[str], list[tuple[float, float]], list[float]]:
@@ -595,13 +681,13 @@ def get_phase13_shepherd_params() -> tuple[list[str], list[tuple[float, float]],
 
     # ssb_half for sp1..sp7 (cod sp0 fixed). log10(tonnes).
     ssbhalf_log_bounds = {
-        1: (4.7, 6.3),   # herring: 50k-2M t
-        2: (4.7, 6.3),   # sprat:   50k-2M t
-        3: (3.7, 5.3),   # flounder: 5k-200k t
-        4: (2.7, 4.7),   # perch:    0.5k-50k t
-        5: (2.7, 4.7),   # pikeperch:0.5k-50k t
-        6: (3.0, 5.0),   # smelt:    1k-100k t
-        7: (3.0, 5.7),   # stickleback: 1k-500k t (recent HELCOM bloom estimates 150-300k t)
+        1: (4.7, 6.3),  # herring: 50k-2M t
+        2: (4.7, 6.3),  # sprat:   50k-2M t
+        3: (3.7, 5.3),  # flounder: 5k-200k t
+        4: (2.7, 4.7),  # perch:    0.5k-50k t
+        5: (2.7, 4.7),  # pikeperch:0.5k-50k t
+        6: (3.0, 5.0),  # smelt:    1k-100k t
+        7: (3.0, 5.7),  # stickleback: 1k-500k t (recent HELCOM bloom estimates 150-300k t)
     }
     ssbhalf_x0_tonnes = {1: 3e5, 2: 3e5, 3: 5e4, 4: 1e4, 5: 1e4, 6: 1e4, 7: 1e4}
     ssbhalf_keys, ssbhalf_bounds, ssbhalf_x0 = [], [], []
@@ -639,8 +725,8 @@ def get_phase14_params() -> tuple[list[str], list[tuple[float, float]], list[flo
     ``stock.recruitment.shape.sp{i}`` beta exponent frozen from phase 13.
     """
     keys = [
-        "predation.functional.response.halfsat.sp0",   # cod
-        "predation.functional.response.halfsat.sp5",   # pikeperch
+        "predation.functional.response.halfsat.sp0",  # cod
+        "predation.functional.response.halfsat.sp5",  # pikeperch
         "predation.functional.response.halfsat.sp14",  # GreySeal (background)
         "predation.functional.response.halfsat.sp15",  # Cormorant (background)
     ]
@@ -756,9 +842,18 @@ def _make_checkpoint_callback(
         # via main-thread evaluator re-eval when evaluator is provided.
         if every_n > 0 and state["gen"] % every_n == 0:
             _write_progress_checkpoint(
-                checkpoint_path, state, best_x, best_fun,
-                optimizer, phase, generation_budget, param_keys, bounds,
-                evaluator, banded_targets, logger,
+                checkpoint_path,
+                state,
+                best_x,
+                best_fun,
+                optimizer,
+                phase,
+                generation_budget,
+                param_keys,
+                bounds,
+                evaluator,
+                banded_targets,
+                logger,
             )
 
         # Patience-based early stop.
@@ -840,6 +935,7 @@ def _dispatch_optimizer(
         }
     if optimizer == "cmaes":
         from osmose.calibration.cmaes_runner import run_cmaes
+
         return run_cmaes(
             objective,
             bounds,
@@ -854,6 +950,7 @@ def _dispatch_optimizer(
         )
     if optimizer == "surrogate-de":
         from osmose.calibration.surrogate_de import surrogate_assisted_de
+
         n_dim = len(bounds)
         result = surrogate_assisted_de(
             objective,
@@ -875,9 +972,7 @@ def _dispatch_optimizer(
             f"completed; nfev={result['nfev']}"
         )
         return result
-    raise ValueError(
-        f"unknown optimizer: {optimizer!r}; choices are {_OPTIMIZER_CHOICES}"
-    )
+    raise ValueError(f"unknown optimizer: {optimizer!r}; choices are {_OPTIMIZER_CHOICES}")
 
 
 def apply_warm_start(
@@ -923,6 +1018,8 @@ def run_calibration(
     checkpoint_every: int = 5,
     patience: int = 20,
     wall_clock_cap_h: float = 12.0,
+    a2: bool = False,
+    sim_timeout_s: float | None = None,
 ) -> dict:
     """Run differential evolution calibration for the specified phase."""
     from osmose.config.reader import OsmoseConfigReader
@@ -934,6 +1031,9 @@ def run_calibration(
     # Load base config
     reader = OsmoseConfigReader()
     base_config = reader.read(BALTIC_CONFIG)
+    if a2:
+        base_config = enable_a2_base_config(base_config)
+        print("Chunk A2 depletion ENABLED for calibration (zoo regrowth co-optimized).", flush=True)
 
     # Load targets
     targets = load_targets()
@@ -942,7 +1042,9 @@ def run_calibration(
         print(f"  {t.species}: {t.target:,.0f} t (range {t.lower:,.0f}–{t.upper:,.0f})")
 
     # Get phase params
-    if phase == "1":
+    if a2:
+        param_keys, bounds, x0 = get_a2_params()
+    elif phase == "1":
         param_keys, bounds, x0 = get_phase1_params()
     elif phase == "1b":
         param_keys, bounds, x0 = get_phase1b_params()
@@ -1007,25 +1109,33 @@ def run_calibration(
                 p1_data = json.load(f)
             for key, val in p1_data.get("parameters", {}).items():
                 base_config[key.lower()] = str(val)
-            print(f"Phase 2: inherited {len(p1_data.get('parameters', {}))} "
-                  f"calibrated params from phase1_results.json")
+            print(
+                f"Phase 2: inherited {len(p1_data.get('parameters', {}))} "
+                f"calibrated params from phase1_results.json"
+            )
         else:
-            print("Phase 2 WARNING: no phase1_results.json found — running on R18 defaults "
-                  "(risks re-introducing smelt/stickleback extinction).")
+            print(
+                "Phase 2 WARNING: no phase1_results.json found — running on R18 defaults "
+                "(risks re-introducing smelt/stickleback extinction)."
+            )
 
     # Phase 12: joint optimization. No inheritance needed; both phase 1 + 2 params are free.
     # This captures predator-prey feedback that sequential phase1→phase2 missed.
     if phase == "12":
-        print("Phase 12: joint optimization of 27 params (16 mortality + 8 fishing "
-              "+ 3 B-H ssb_half). Captures trophic cascade feedback + density-dependent "
-              "recruitment.")
+        print(
+            "Phase 12: joint optimization of 27 params (16 mortality + 8 fishing "
+            "+ 3 B-H ssb_half). Captures trophic cascade feedback + density-dependent "
+            "recruitment."
+        )
 
     if phase == "13":
         for sp_idx in range(8):
             base_config[f"stock.recruitment.type.sp{sp_idx}"] = "shepherd"
         base_config["stock.recruitment.ssbhalf.sp0"] = "120000"  # cod Bpa, fixed
-        print("Phase 13: all 8 species on Shepherd SR; tuning mortality + fishing "
-              "+ ssb_half (sp1-7) + shape beta (sp0-7). cod sp0 ssb_half fixed at 120 kt.")
+        print(
+            "Phase 13: all 8 species on Shepherd SR; tuning mortality + fishing "
+            "+ ssb_half (sp1-7) + shape beta (sp0-7). cod sp0 ssb_half fixed at 120 kt."
+        )
 
     if phase == "14":
         # Freeze all phase-13 params (mortality + fishing + SR) from the reconstructed
@@ -1037,8 +1147,9 @@ def run_calibration(
                 p13_data = json.load(f)
             for key, val in p13_data.get("parameters", {}).items():
                 base_config[key.lower()] = str(val)
-            print(f"Phase 14: inherited {len(p13_data.get('parameters', {}))} "
-                  "frozen phase-13 params")
+            print(
+                f"Phase 14: inherited {len(p13_data.get('parameters', {}))} frozen phase-13 params"
+            )
         else:
             raise FileNotFoundError(
                 f"Phase 14 requires the frozen phase-13 base at {p13_file}, which is missing. "
@@ -1053,8 +1164,10 @@ def run_calibration(
         # (not imported here to avoid a circular import); keep the two in sync.
         for sp_idx in (0, 5, 14, 15):
             base_config[f"predation.functional.response.shape.sp{sp_idx}"] = "type3"
-        print("Phase 14: FR type-III on cod(sp0)/pikeperch(sp5)/GreySeal(sp14)/"
-              "Cormorant(sp15); tuning 4 halfsat K.")
+        print(
+            "Phase 14: FR type-III on cod(sp0)/pikeperch(sp5)/GreySeal(sp14)/"
+            "Cormorant(sp15); tuning 4 halfsat K."
+        )
 
     # Apply warm-start (Tier B1): override x0 entries from a prior result JSON.
     # Keys absent from the JSON keep their computed default (e.g. new B-H
@@ -1064,18 +1177,13 @@ def run_calibration(
     # which biases the new (-3.0, 0.7) search incorrectly post-B-H).
     if warm_start_path is not None:
         skip_set = set(skip_warm_start_keys or [])
-        x0, applied, skipped = apply_warm_start(
-            warm_start_path, param_keys, x0, skip_set
-        )
+        x0, applied, skipped = apply_warm_start(warm_start_path, param_keys, x0, skip_set)
         print(f"\nWarm-start: loaded {len(applied)} params from {warm_start_path}")
         if applied:
             print(f"  Applied: {', '.join(applied)}")
         if skipped:
             print(f"  Skipped (explicit): {', '.join(skipped)}")
-        not_in_json = [
-            k for k in param_keys
-            if k not in applied and k not in skipped
-        ]
+        not_in_json = [k for k in param_keys if k not in applied and k not in skipped]
         if not_in_json:
             print(f"  Not in JSON (kept default x0): {', '.join(not_in_json)}")
 
@@ -1087,8 +1195,13 @@ def run_calibration(
 
     # Build objective
     objective = make_objective(
-        base_config, targets, param_keys,
-        n_years=n_years, seed=42, use_log_space=True,
+        base_config,
+        targets,
+        param_keys,
+        n_years=n_years,
+        seed=42,
+        use_log_space=True,
+        sim_timeout_s=sim_timeout_s,
     )
 
     # Initialize DE population: mixed strategy
@@ -1118,6 +1231,7 @@ def run_calibration(
 
     # Latin Hypercube Sampling for global coverage
     from scipy.stats.qmc import LatinHypercube
+
     lhs_sampler = LatinHypercube(d=n_params, seed=rng)
     lhs_samples = lhs_sampler.random(n=n_lhs)  # [0, 1]^d
     for i in range(n_lhs):
@@ -1129,10 +1243,14 @@ def run_calibration(
     # 2026-04-24). 8 × 400 MB = 3.2 GB — comfortable. Override with
     # OSMOSE_DE_WORKERS env var.
     workers = int(os.environ.get("OSMOSE_DE_WORKERS", "8"))
-    print(f"\nStarting optimizer={optimizer!r} (eff_popsize={eff_popsize}, "
-          f"maxiter={maxiter}, workers={workers})...")
-    print(f"Init: {n_r18} near R18, {n_lhs} LHS global "
-          f"(consumed by DE; CMA-ES and surrogate-DE generate their own)")
+    print(
+        f"\nStarting optimizer={optimizer!r} (eff_popsize={eff_popsize}, "
+        f"maxiter={maxiter}, workers={workers})..."
+    )
+    print(
+        f"Init: {n_r18} near R18, {n_lhs} LHS global "
+        f"(consumed by DE; CMA-ES and surrogate-DE generate their own)"
+    )
 
     # Build the DE callback combining checkpointing + early-stop. Only the
     # DE path consumes it; CMA-ES and surrogate-DE have their own iteration
@@ -1149,9 +1267,7 @@ def run_calibration(
         if evaluator_instance is not None
         else None
     )
-    if optimizer == "de" and (
-        checkpoint_every > 0 or patience > 0 or wall_clock_cap_h > 0
-    ):
+    if optimizer == "de" and (checkpoint_every > 0 or patience > 0 or wall_clock_cap_h > 0):
         RESULTS_DIR.mkdir(parents=True, exist_ok=True)
         checkpoint_path = RESULTS_DIR / f"phase{phase.replace('/', '_')}_checkpoint.json"
         wall_clock_cap_s = wall_clock_cap_h * 3600.0 if wall_clock_cap_h > 0 else None
@@ -1162,7 +1278,10 @@ def run_calibration(
         # because the engine rebuilds its PCG64 state from evaluator.seed
         # on every run. See spec §6.5.1.
         de_callback = _make_checkpoint_callback(
-            checkpoint_path, checkpoint_every, param_keys, bounds,
+            checkpoint_path,
+            checkpoint_every,
+            param_keys,
+            bounds,
             patience=patience,
             wall_clock_max_seconds=wall_clock_cap_s,
             phase=phase,
@@ -1211,14 +1330,19 @@ def run_calibration(
     best_overrides: dict[str, str] = {}
     for i, key in enumerate(param_keys):
         log_val = best_x[i]
-        actual_val = 10.0 ** log_val
+        actual_val = 10.0**log_val
         best_overrides[key] = str(actual_val)
 
     rerank_objectives = []
     for rs in rerank_seeds:
         obj_fn = make_objective(
-            base_config, targets, param_keys,
-            n_years=n_years, seed=rs, use_log_space=True,
+            base_config,
+            targets,
+            param_keys,
+            n_years=n_years,
+            seed=rs,
+            use_log_space=True,
+            sim_timeout_s=sim_timeout_s,
         )
         obj_val = obj_fn(best_x)
         rerank_objectives.append(obj_val)
@@ -1234,7 +1358,7 @@ def run_calibration(
     print("\n=== Optimized Parameters ===")
     for i, key in enumerate(param_keys):
         log_val = best_x[i]
-        actual_val = 10.0 ** log_val
+        actual_val = 10.0**log_val
         optimized[key] = actual_val
         print(f"  {key}: {actual_val:.6f} (log10: {log_val:.4f})")
 
@@ -1246,9 +1370,10 @@ def run_calibration(
         for seed in range(n_seeds):
             stats = run_simulation(base_config, overrides, n_years=n_years, seed=seed)
             all_stats.append(stats)
-            print(f"  Seed {seed}: " + ", ".join(
-                f"{sp}={stats.get(f'{sp}_mean', 0):.0f}" for sp in SPECIES_NAMES
-            ))
+            print(
+                f"  Seed {seed}: "
+                + ", ".join(f"{sp}={stats.get(f'{sp}_mean', 0):.0f}" for sp in SPECIES_NAMES)
+            )
 
         # Mean across seeds
         print("\n  Mean across seeds:")
@@ -1277,29 +1402,27 @@ def run_calibration(
     else:
         final_residuals = None
 
-    _save_run_for_de({
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "algorithm": "de",
-        "phase": phase,
-        "parameters": list(param_keys),
-        "results": {
-            "best_objective": float(result["fun"]),
-            "best_parameters": {
-                k: float(10.0 ** v) for k, v in zip(param_keys, best_x_log10)
+    _save_run_for_de(
+        {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "algorithm": "de",
+            "phase": phase,
+            "parameters": list(param_keys),
+            "results": {
+                "best_objective": float(result["fun"]),
+                "best_parameters": {k: float(10.0**v) for k, v in zip(param_keys, best_x_log10)},
+                "duration_seconds": time.time() - t0,
+                "n_evaluations": int(result.get("nfev", 0)),
+                "per_species_residuals_final": (
+                    [r for _, r, _ in final_residuals] if final_residuals else None
+                ),
+                "per_species_sim_biomass_final": (
+                    [b for _, _, b in final_residuals] if final_residuals else None
+                ),
+                "species_labels": ([s for s, _, _ in final_residuals] if final_residuals else None),
             },
-            "duration_seconds": time.time() - t0,
-            "n_evaluations": int(result.get("nfev", 0)),
-            "per_species_residuals_final": (
-                [r for _, r, _ in final_residuals] if final_residuals else None
-            ),
-            "per_species_sim_biomass_final": (
-                [b for _, _, b in final_residuals] if final_residuals else None
-            ),
-            "species_labels": (
-                [s for s, _, _ in final_residuals] if final_residuals else None
-            ),
-        },
-    })
+        }
+    )
 
     # Save results
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -1367,8 +1490,10 @@ def validate_calibration(n_years: int = 50, n_seeds: int = 3) -> None:
     # Summary
     target_dict = {t.species: t for t in targets}
     print("\n" + "=" * 90)
-    print(f"{'Species':>15}  {'Mean Biomass':>14}  {'Target':>10}  "
-          f"{'Ratio':>7}  {'CV':>6}  {'Trend':>7}  {'Status'}")
+    print(
+        f"{'Species':>15}  {'Mean Biomass':>14}  {'Target':>10}  "
+        f"{'Ratio':>7}  {'CV':>6}  {'Trend':>7}  {'Status'}"
+    )
     print("-" * 90)
 
     all_pass = True
@@ -1417,45 +1542,94 @@ def validate_calibration(n_years: int = 50, n_seeds: int = 3) -> None:
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(description="Baltic Sea OSMOSE calibration")
-    parser.add_argument("--phase", type=str, default="1b",
-                        help="Calibration phase: 1=all 16p, 1b=focused 8p, 2=fishing 8p, 12=joint 27p (B-H), 13=Shepherd 39p (8 spp), 14=FR halfsat K 4p (frozen phase-13 base)")
+    parser.add_argument(
+        "--phase",
+        type=str,
+        default="1b",
+        help="Calibration phase: 1=all 16p, 1b=focused 8p, 2=fishing 8p, 12=joint 27p (B-H), 13=Shepherd 39p (8 spp), 14=FR halfsat K 4p (frozen phase-13 base)",
+    )
     parser.add_argument("--maxiter", type=int, default=200, help="DE max iterations")
     parser.add_argument("--popsize", type=int, default=15, help="DE absolute population size floor")
-    parser.add_argument("--popsize-mult", type=int, default=10,
-                        help="DE population size multiplier of n_params (default 10)")
+    parser.add_argument(
+        "--popsize-mult",
+        type=int,
+        default=10,
+        help="DE population size multiplier of n_params (default 10)",
+    )
     parser.add_argument("--seeds", type=int, default=3, help="Number of seeds for validation")
     parser.add_argument("--years", type=int, default=40, help="Simulation years per eval")
-    parser.add_argument("--tol", type=float, default=0.005,
-                        help="DE convergence tolerance (default 0.005; scipy default 0.01; "
-                             "pre-2026-04-29 hardcoded 0.001 — Tier A3 speedup)")
-    parser.add_argument("--warm-start", type=str, default=None,
-                        help="Path to prior calibration JSON to warm-start x0 from (Tier B1)")
-    parser.add_argument("--skip-warm-start-keys", type=str, default="",
-                        help="Comma-separated param keys to exclude from warm-start "
-                             "(e.g. when their bounds changed)")
-    parser.add_argument("--optimizer", type=str, default="de",
-                        choices=list(_OPTIMIZER_CHOICES),
-                        help="Optimization algorithm. 'de' (default): scipy "
-                             "differential_evolution, broad-search workhorse. 'cmaes': "
-                             "CMA-ES via the cma package, 2-3× fewer evals on smooth "
-                             "continuous landscapes (Tier C2). 'surrogate-de': GP-assisted "
-                             "DE — trains a surrogate on real evals and runs DE on the "
-                             "predicted objective; 5-10× fewer real evals when the "
-                             "surrogate fits well (Tier C1).")
-    parser.add_argument("--checkpoint-every", type=int, default=5,
-                        help="DE only: snapshot best-x to a JSON file every N "
-                             "generations. Lets you SIGTERM a long DE run and still "
-                             "recover the best known parameters. Set to 0 to disable.")
-    parser.add_argument("--patience", type=int, default=20,
-                        help="DE only: terminate after N consecutive generations "
-                             "without best-fun improvement. Solves the multi-modal "
-                             "landscape problem where scipy's tol never triggers "
-                             "(observed 2026-05-03). Set to 0 to disable.")
-    parser.add_argument("--wall-clock-cap-h", type=float, default=12.0,
-                        help="DE only: hard wall-clock cap in hours regardless of "
-                             "convergence. Hard ceiling so a forgotten run can't "
-                             "grow unbounded. Set to 0 to disable.")
+    parser.add_argument(
+        "--tol",
+        type=float,
+        default=0.005,
+        help="DE convergence tolerance (default 0.005; scipy default 0.01; "
+        "pre-2026-04-29 hardcoded 0.001 — Tier A3 speedup)",
+    )
+    parser.add_argument(
+        "--warm-start",
+        type=str,
+        default=None,
+        help="Path to prior calibration JSON to warm-start x0 from (Tier B1)",
+    )
+    parser.add_argument(
+        "--skip-warm-start-keys",
+        type=str,
+        default="",
+        help="Comma-separated param keys to exclude from warm-start "
+        "(e.g. when their bounds changed)",
+    )
+    parser.add_argument(
+        "--optimizer",
+        type=str,
+        default="de",
+        choices=list(_OPTIMIZER_CHOICES),
+        help="Optimization algorithm. 'de' (default): scipy "
+        "differential_evolution, broad-search workhorse. 'cmaes': "
+        "CMA-ES via the cma package, 2-3× fewer evals on smooth "
+        "continuous landscapes (Tier C2). 'surrogate-de': GP-assisted "
+        "DE — trains a surrogate on real evals and runs DE on the "
+        "predicted objective; 5-10× fewer real evals when the "
+        "surrogate fits well (Tier C1).",
+    )
+    parser.add_argument(
+        "--checkpoint-every",
+        type=int,
+        default=5,
+        help="DE only: snapshot best-x to a JSON file every N "
+        "generations. Lets you SIGTERM a long DE run and still "
+        "recover the best known parameters. Set to 0 to disable.",
+    )
+    parser.add_argument(
+        "--patience",
+        type=int,
+        default=20,
+        help="DE only: terminate after N consecutive generations "
+        "without best-fun improvement. Solves the multi-modal "
+        "landscape problem where scipy's tol never triggers "
+        "(observed 2026-05-03). Set to 0 to disable.",
+    )
+    parser.add_argument(
+        "--wall-clock-cap-h",
+        type=float,
+        default=12.0,
+        help="DE only: hard wall-clock cap in hours regardless of "
+        "convergence. Hard ceiling so a forgotten run can't "
+        "grow unbounded. Set to 0 to disable.",
+    )
     parser.add_argument("--validate", action="store_true", help="Run validation only")
+    parser.add_argument(
+        "--a2",
+        action="store_true",
+        help="Calibrate with Chunk A2 depletion ON + a shared zoo regrowth-rate "
+        "param (overrides --phase param set; uses phase-1 mortality + zoo).",
+    )
+    parser.add_argument(
+        "--sim-timeout",
+        type=float,
+        default=0.0,
+        help="Per-simulation wall-clock timeout in seconds (0=off). A candidate whose sim "
+        "exceeds this returns a large penalty instead of stalling a deferred DE generation.",
+    )
     args = parser.parse_args()
 
     if args.validate:
@@ -1476,6 +1650,8 @@ def main():
             checkpoint_every=args.checkpoint_every,
             patience=args.patience,
             wall_clock_cap_h=args.wall_clock_cap_h,
+            a2=args.a2,
+            sim_timeout_s=(args.sim_timeout or None),
         )
 
 
