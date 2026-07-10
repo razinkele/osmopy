@@ -1,0 +1,148 @@
+{
+  "points": [
+    {
+      "scale": 0.03,
+      "rich_state": "overshoot",
+      "poor_state": "overshoot",
+      "per_seed_rich": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "per_seed_poor": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "rich_cod_median": 19360653.620222695,
+      "poor_cod_median": 19281383.943159737,
+      "gap": 0.0040943696697197055,
+      "established": true,
+      "a_clupeid_biomass": 2777442.3031122284,
+      "b_clupeid_biomass": 2851783.824647068,
+      "a_clupeid_valid": true,
+      "b_clupeid_valid": false,
+      "clupeid_gap": 0.02606841893972138,
+      "outcome": "provisional",
+      "regime_shift": false
+    },
+    {
+      "scale": 0.1,
+      "rich_state": "overshoot",
+      "poor_state": "overshoot",
+      "per_seed_rich": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "per_seed_poor": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "rich_cod_median": 14638730.591642773,
+      "poor_cod_median": 14438581.559704613,
+      "gap": 0.013672566552994562,
+      "established": true,
+      "a_clupeid_biomass": 3693938.2085215803,
+      "b_clupeid_biomass": 3470458.643406882,
+      "a_clupeid_valid": true,
+      "b_clupeid_valid": true,
+      "clupeid_gap": 0.060498982928346906,
+      "outcome": "same-basin",
+      "regime_shift": false
+    },
+    {
+      "scale": 0.3,
+      "rich_state": "overshoot",
+      "poor_state": "overshoot",
+      "per_seed_rich": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "per_seed_poor": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "rich_cod_median": 10642885.172958313,
+      "poor_cod_median": 10380540.058822058,
+      "gap": 0.024649809259712545,
+      "established": true,
+      "a_clupeid_biomass": 5041387.974191597,
+      "b_clupeid_biomass": 4884222.331258226,
+      "a_clupeid_valid": true,
+      "b_clupeid_valid": false,
+      "clupeid_gap": 0.031175067771590185,
+      "outcome": "provisional",
+      "regime_shift": false
+    },
+    {
+      "scale": 0.5,
+      "rich_state": "overshoot",
+      "poor_state": "overshoot",
+      "per_seed_rich": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "per_seed_poor": [
+        "overshoot",
+        "overshoot",
+        "overshoot"
+      ],
+      "rich_cod_median": 5595750.314554244,
+      "poor_cod_median": 4275933.250991754,
+      "gap": 0.23586056444819442,
+      "established": true,
+      "a_clupeid_biomass": 9500980.9687712,
+      "b_clupeid_biomass": 11166919.442793014,
+      "a_clupeid_valid": true,
+      "b_clupeid_valid": true,
+      "clupeid_gap": 0.14918512964753752,
+      "outcome": "same-basin",
+      "regime_shift": false
+    },
+    {
+      "scale": 1.0,
+      "rich_state": "undetermined",
+      "poor_state": "collapsed",
+      "per_seed_rich": [
+        "undetermined",
+        "undetermined",
+        "undetermined"
+      ],
+      "per_seed_poor": [
+        "collapsed",
+        "collapsed",
+        "collapsed"
+      ],
+      "rich_cod_median": 0.0,
+      "poor_cod_median": 9.476470055506624,
+      "gap": 0.9045480018840524,
+      "established": false,
+      "a_clupeid_biomass": 22792271.31549664,
+      "b_clupeid_biomass": 22965374.882622678,
+      "a_clupeid_valid": false,
+      "b_clupeid_valid": true,
+      "clupeid_gap": 0.0075375891085250005,
+      "outcome": "provisional",
+      "regime_shift": false
+    }
+  ],
+  "contrast": "regime-shift",
+  "regime_shift": false,
+  "bistable": false,
+  "regime_shift_scales": [],
+  "partial_scales": [],
+  "provisional_scales": [
+    0.03,
+    0.3,
+    1.0
+  ],
+  "determinate_fraction": 0.4,
+  "trustworthy": false,
+  "verdict": "INSTRUMENT-LIMITED \u2014 only 40% of scales gave a determinate outcome (provisional at [0.03, 0.3, 1.0]); withhold. Raise --seeds/--years.",
+  "complete": true
+}
