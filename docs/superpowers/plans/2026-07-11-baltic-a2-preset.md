@@ -15,6 +15,7 @@
 - **No CI gate on emergent simulation outcomes** (biomass bands) — non-reproducible across CI cores. Emergent validation is a local, documented run only.
 - **Honest framing everywhere the preset is named:** best-achievable, 3/8 in-band, NOT "ICES-calibrated". Pelagics + stickleback in-band, cod ~2.5× over, coastal percids structurally over.
 - Config includes resolve as `master.parent / value` with an `is_relative_to(config_dir)` guard (`osmose/config/reader.py:124`): **bare basenames only**, and every referenced basename must exist flat in the generated `config/`.
+- **LARVAL-RATE UNIT MIGRATION (critical):** `OsmoseConfigReader` divides every `mortality.additional.larva.rate.spN` by `ndtperyear` (=24) on load when `osmose.version >= 4.4.0` (`reader.py:100-104`, regex `aliases._LARVA_RATE_RE`). Baltic stores `360.0` to yield the engine's `15.0`. The A2 DE calibrated in the divided/engine space, so the a2 CSV **must store larval rates as `converged × 24`**; adult `mortality.additional.rate.spN` and all `species.regrowth.rate.*` are NOT matched by the regex and are stored verbatim. Verified empirically (baltic `larva.rate.sp0` loads as 15). This is the single most load-bearing fact in the plan — do not bake the raw converged larval values.
 - Species indices: sp0 cod, sp1 herring, sp2 sprat, sp3 flounder, sp4 perch, sp5 pike-perch, sp6 smelt, sp7 stickleback. LTL resources sp8 Diatoms, sp9 Dinoflagellates, sp10 Microzoo, sp11 Mesozoo, sp12 Macrozoo, sp13 Benthos.
 - Run tests with `.venv/bin/python -m pytest`.
 
@@ -26,6 +27,7 @@
 - **Create** `data/baltic_a2/baltic_a2_param-additional-mortality.csv` — 16 converged mortality values.
 - **Create** `data/baltic_a2/baltic_a2_param-depletion.csv` — 10 depletion/regrowth keys.
 - **Modify** `osmose/demo.py` — add `_generate_baltic_a2`, register in `list_demos()`, `DEMO_INFO`, `osmose_demo` generators dict.
+- **Modify** `osmose/engine/config_validation.py` — allowlist the new `osmose.configuration.a2.depletion` include key.
 - **Modify** `osmose/runner.py` — add the `ltl.depletable.enabled` guard to `java_engine_block_reason`.
 - **Create** `tests/test_baltic_a2_demo.py` — CI-safe unit tests.
 - **Modify** `docs/baltic_a2_calibration_results_2026-07-09.md` — add "Deployed as `baltic_a2` preset" section with local-validation numbers.
@@ -48,22 +50,35 @@
 ```python
 from pathlib import Path
 
+import pytest
+
 from osmose.config.reader import OsmoseConfigReader
 from osmose.demo import demo_info, list_demos, osmose_demo
+from osmose.engine.config_validation import validate
 from osmose.runner import java_engine_block_reason
 
 DATA = Path(__file__).resolve().parent.parent / "data"
 BALTIC_A2_DIR = DATA / "baltic_a2"
 
-EXPECTED_MORTALITY = {
-    "mortality.additional.larva.rate.sp0": "1.8495054614929225",
-    "mortality.additional.larva.rate.sp1": "0.6091614461276307",
-    "mortality.additional.larva.rate.sp2": "1.7574285062912955",
-    "mortality.additional.larva.rate.sp3": "0.3277205467582994",
-    "mortality.additional.larva.rate.sp4": "5.024141712395672",
-    "mortality.additional.larva.rate.sp5": "1.1869723413415985",
-    "mortality.additional.larva.rate.sp6": "0.3791432328547528",
-    "mortality.additional.larva.rate.sp7": "0.27314862986759136",
+NDT = 24  # baltic simulation.time.ndtperyear
+
+# Converged ENGINE-SPACE values (a2_on_converged.params) — what the engine must receive.
+# CRITICAL UNIT NOTE: OsmoseConfigReader divides every mortality.additional.larva.rate.spN by
+# NDT on load (osmose.version >= 4.4.0; osmose/config/reader.py:100-104 via aliases._LARVA_RATE_RE).
+# The DE calibrated in this divided/engine space and injected overrides AFTER the reader, so the
+# larval CSV must store converged x NDT (exactly like baltic stores 360.0 to yield 15.0). Adult
+# mortality.additional.rate.spN and all species.regrowth.rate.* are NOT matched by the regex -> stored verbatim.
+CONVERGED_LARVA = {
+    "mortality.additional.larva.rate.sp0": 1.8495054614929225,
+    "mortality.additional.larva.rate.sp1": 0.6091614461276307,
+    "mortality.additional.larva.rate.sp2": 1.7574285062912955,
+    "mortality.additional.larva.rate.sp3": 0.3277205467582994,
+    "mortality.additional.larva.rate.sp4": 5.024141712395672,
+    "mortality.additional.larva.rate.sp5": 1.1869723413415985,
+    "mortality.additional.larva.rate.sp6": 0.3791432328547528,
+    "mortality.additional.larva.rate.sp7": 0.27314862986759136,
+}
+CONVERGED_ADULT = {
     "mortality.additional.rate.sp0": "4.288045380663061",
     "mortality.additional.rate.sp1": "0.2636287453341465",
     "mortality.additional.rate.sp2": "0.003071941136699811",
@@ -73,6 +88,19 @@ EXPECTED_MORTALITY = {
     "mortality.additional.rate.sp6": "0.0036156979635421347",
     "mortality.additional.rate.sp7": "0.19494616193531136",
 }
+# Exactly what the CSV stores for larval rates (= converged x NDT; = repr(conv*24)). Literal
+# strings so the raw-file parse test is an exact string compare.
+STORED_LARVA = {
+    "mortality.additional.larva.rate.sp0": "44.38813107583014",
+    "mortality.additional.larva.rate.sp1": "14.619874707063136",
+    "mortality.additional.larva.rate.sp2": "42.17828415099109",
+    "mortality.additional.larva.rate.sp3": "7.865293122199186",
+    "mortality.additional.larva.rate.sp4": "120.57940109749615",
+    "mortality.additional.larva.rate.sp5": "28.487336192198363",
+    "mortality.additional.larva.rate.sp6": "9.099437588514068",
+    "mortality.additional.larva.rate.sp7": "6.555567116822193",
+}
+EXPECTED_MORTALITY_RAW = {**STORED_LARVA, **CONVERGED_ADULT}  # what the CSV literally contains
 EXPECTED_DEPLETION = {
     "ltl.depletable.enabled": "true",
     "ltl.depletable.floor": "0.05",
@@ -98,7 +126,7 @@ def _parse_csv(path: Path) -> dict[str, str]:
 
 def test_a2_mortality_deltas_exact():
     got = _parse_csv(BALTIC_A2_DIR / "baltic_a2_param-additional-mortality.csv")
-    assert got == EXPECTED_MORTALITY
+    assert got == EXPECTED_MORTALITY_RAW
 
 
 def test_a2_depletion_deltas_exact():
@@ -120,16 +148,22 @@ Expected: FAIL (files do not exist → FileNotFoundError).
 # because depletion, not extreme larval mortality, brakes over-production under A2.
 # Source: docs/diagnostics/baltic_a2_calibrated_params.json -> a2_on_converged.params
 # (objective 2.68 multi-seed; DE via scripts/calibrate_baltic.py --a2 --isolated-eval).
-# Larval mortality (year^-1)
-mortality.additional.larva.rate.sp0;1.8495054614929225
-mortality.additional.larva.rate.sp1;0.6091614461276307
-mortality.additional.larva.rate.sp2;1.7574285062912955
-mortality.additional.larva.rate.sp3;0.3277205467582994
-mortality.additional.larva.rate.sp4;5.024141712395672
-mortality.additional.larva.rate.sp5;1.1869723413415985
-mortality.additional.larva.rate.sp6;0.3791432328547528
-mortality.additional.larva.rate.sp7;0.27314862986759136
-# Adult additional mortality (year^-1)
+#
+# UNIT CONVENTION (CRITICAL): larval rates are stored x ndtperyear(24) because
+# OsmoseConfigReader divides mortality.additional.larva.rate.spN by ndt on load
+# (osmose.version>=4.4.0), exactly as baltic stores 360.0 to yield 15.0. These stored
+# values = converged x 24, so the engine receives the calibrated per-cohort rate
+# (sp0 -> 44.388.../24 = 1.8495, ...). Adult + regrowth keys are NOT migrated -> stored verbatim.
+# Larval mortality — stored as converged x ndtperyear(24)
+mortality.additional.larva.rate.sp0;44.38813107583014
+mortality.additional.larva.rate.sp1;14.619874707063136
+mortality.additional.larva.rate.sp2;42.17828415099109
+mortality.additional.larva.rate.sp3;7.865293122199186
+mortality.additional.larva.rate.sp4;120.57940109749615
+mortality.additional.larva.rate.sp5;28.487336192198363
+mortality.additional.larva.rate.sp6;9.099437588514068
+mortality.additional.larva.rate.sp7;6.555567116822193
+# Adult additional mortality (year^-1) — verbatim converged values (reader does not migrate these)
 mortality.additional.rate.sp0;4.288045380663061
 mortality.additional.rate.sp1;0.2636287453341465
 mortality.additional.rate.sp2;0.003071941136699811
@@ -217,6 +251,7 @@ git commit -m "feat(baltic): baltic_a2 preset delta CSVs (converged A2 mortality
 
 **Files:**
 - Modify: `osmose/demo.py` (add `_generate_baltic_a2`; edit `list_demos`, `DEMO_INFO`, `osmose_demo`)
+- Modify: `osmose/engine/config_validation.py` (allowlist the new `osmose.configuration.a2.depletion` include key)
 - Test: `tests/test_baltic_a2_demo.py`
 
 **Interfaces:**
@@ -244,10 +279,25 @@ def test_a2_generates_and_loads(tmp_path):
     assert not any(p.suffix == ".nc" for p in BALTIC_A2_DIR.iterdir())
     # Loads cleanly through the reader (proves basename includes resolve after overlay).
     loaded = dict(OsmoseConfigReader().read(str(cfg)))
-    for key, val in {**EXPECTED_MORTALITY, **EXPECTED_DEPLETION}.items():
-        assert key in loaded, f"missing {key} in loaded config"
-        assert float(loaded[key]) == float(val), f"{key}: {loaded[key]} != {val}"
+    # Depletion keys are STRINGS (never float('true')) and are not migrated -> exact match.
+    for key, val in EXPECTED_DEPLETION.items():
+        assert loaded[key] == val, f"{key}: {loaded[key]!r} != {val!r}"
+    # Larval rates: reader divides by NDT and reformats via .10g -> the ENGINE receives the
+    # converged per-cohort value. Compare with tolerance (.10g truncates to ~10 sig figs).
+    for key, conv in CONVERGED_LARVA.items():
+        assert float(loaded[key]) == pytest.approx(conv, rel=1e-6), key
+    # Adult rates: not migrated -> engine gets the verbatim converged value.
+    for key, val in CONVERGED_ADULT.items():
+        assert float(loaded[key]) == pytest.approx(float(val), rel=1e-9), key
     assert loaded["simulation.time.nyear"] == "15"  # inherited from baltic
+
+
+def test_a2_passes_strict_validation(tmp_path):
+    # The new include key osmose.configuration.a2.depletion must be allowlisted so baltic_a2 is
+    # clean under strict validation (validate() returns [] and does not raise on mode "error").
+    out = osmose_demo("baltic_a2", tmp_path)
+    loaded = dict(OsmoseConfigReader().read(str(out["config_file"])))
+    assert validate(loaded, "error") == []
 
 
 def _includes(path: Path) -> dict[str, str]:
@@ -270,7 +320,7 @@ def test_a2_master_includes_parity(tmp_path):
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `.venv/bin/python -m pytest tests/test_baltic_a2_demo.py -k "registered or generates or parity" -v`
+Run: `.venv/bin/python -m pytest tests/test_baltic_a2_demo.py -k "registered or generates or parity or strict_validation" -v`
 Expected: FAIL (`baltic_a2` not in `list_demos()`; `osmose_demo` raises `ValueError: Unknown scenario`).
 
 - [ ] **Step 3: Add `baltic_a2` to `list_demos()`** (`osmose/demo.py:102-104`)
@@ -346,16 +396,31 @@ def _generate_baltic_a2(output_dir: Path) -> dict:
     return {"config_file": config_file, "output_dir": sim_output}
 ```
 
-- [ ] **Step 7: Run tests to verify they pass**
+- [ ] **Step 7: Allowlist the new include key** (`osmose/engine/config_validation.py`)
 
-Run: `.venv/bin/python -m pytest tests/test_baltic_a2_demo.py -k "registered or generates or parity" -v`
-Expected: PASS (3 passed).
+The a2 master adds a brand-new `osmose.configuration.a2.depletion` include. Every other
+`osmose.configuration.*` key is in `_SUPPLEMENTARY_ALLOWLIST` (lines 51-69); without this entry
+`baltic_a2` would raise under `validation.strict.enabled="error"` while plain baltic passes. Add the
+literal to the reader-injected-metadata block (keep alphabetical-ish placement — insert right after the
+opening of the block, before `"osmose.configuration.background"`):
 
-- [ ] **Step 8: Commit**
+```python
+        "osmose.configuration.a2.depletion",
+        "osmose.configuration.background",
+```
+
+(The depletion *content* keys `ltl.depletable.enabled` / `ltl.depletable.floor` / `species.regrowth.rate.sp{idx}` are already allowlisted at lines 141-145 — no other change needed.)
+
+- [ ] **Step 8: Run tests to verify they pass**
+
+Run: `.venv/bin/python -m pytest tests/test_baltic_a2_demo.py -k "registered or generates or parity or strict_validation" -v`
+Expected: PASS (4 passed).
+
+- [ ] **Step 9: Commit**
 
 ```bash
-git add osmose/demo.py tests/test_baltic_a2_demo.py
-git commit -m "feat(baltic): register baltic_a2 demo preset (overlay generator + picker metadata)"
+git add osmose/demo.py osmose/engine/config_validation.py tests/test_baltic_a2_demo.py
+git commit -m "feat(baltic): register baltic_a2 demo preset (overlay generator + picker metadata + allowlist)"
 ```
 
 ---
@@ -486,7 +551,15 @@ git commit -m "docs(baltic): record baltic_a2 preset local validation + deployme
 
 ## Self-Review (completed during authoring)
 
-- **Spec coverage:** every spec section maps to a task — delta files (T1), generator+registration (T2), Java guard (T3), local validation + honest-framing doc (T4). All 6 spec tests are placed (test1→T2, test2/3→T1+T2, test4→T2, test5→T2, test6→T3).
+- **Spec coverage:** every spec section maps to a task — delta files (T1), generator+registration+allowlist (T2), Java guard (T3), local validation + honest-framing doc (T4). Spec tests placed (test1→T2, test2/3→T1+T2, test4→T2, test5→T2, test6→T3) plus two added by review: strict-validation (T2) and split raw/loaded mortality expectations (T1+T2).
 - **Placeholder scan:** no TBD/TODO; all CSV contents, code, and commands are literal.
-- **Type consistency:** `_parse_csv`/`_includes` helpers, `EXPECTED_MORTALITY`/`EXPECTED_DEPLETION` constants, and `osmose_demo`/`java_engine_block_reason`/`OsmoseConfigReader().read` signatures are consistent across tasks.
+- **Type consistency:** `_parse_csv`/`_includes` helpers, the `CONVERGED_LARVA`/`CONVERGED_ADULT`/`STORED_LARVA`/`EXPECTED_MORTALITY_RAW`/`EXPECTED_DEPLETION` constants, and `osmose_demo`/`java_engine_block_reason`/`OsmoseConfigReader().read`/`validate` signatures are consistent across tasks.
 - **TDD-red integrity (resolved):** `test_a2_blocks_java_engine` pins `jar_version="4.4.1"` so the nbackground path returns `None` (baltic_a2 inherits supported GreySeal/Cormorant staging) — making the depletion guard the *only* thing that can block it, a clean red→green. Without the pin it would spuriously pass pre-fix via the background message.
+
+## Multi-agent review incorporation (2026-07-11)
+
+A 4-lens adversarial workflow review (13 agents, 9 confirmed / 0 refuted, all verified against the real code) surfaced three real defects, now folded in:
+
+1. **[CRITICAL — 4 independent lenses] Larval-rate unit scale.** The reader divides larval rates by `ndt=24` on load; the DE calibrated in that divided space and injected overrides post-reader, so the converged larval values are engine-space. Baking them raw would have fed the engine larval mortality **24× too weak** → percids explode 17–400× → the "A2-calibrated" label would be a lie, *and* the plan's own reader-load test would have failed. **Fix:** store larval as `converged × 24` (T1 Step 3 CSV + `STORED_LARVA`); adult/regrowth stored verbatim. Confirmed empirically (baltic `larva.sp0` loads as 15 = 360/24).
+2. **[HIGH] Reader-load test was broken 3 ways** — `float("true")` crash, larval ÷24 mismatch, and `.10g` reformat defeating exact `==`. **Fix:** split `EXPECTED_MORTALITY_RAW` (×24, raw-file test) from `CONVERGED_LARVA`/`CONVERGED_ADULT` (reader-load test); string-compare depletion keys; `pytest.approx` for larval.
+3. **[MEDIUM — 5 lenses] New include key unallowlisted.** `osmose.configuration.a2.depletion` isn't in `_SUPPLEMENTARY_ALLOWLIST`, so `baltic_a2` would raise under `validation.strict.enabled="error"` while baltic passes. **Fix:** T2 Step 7 allowlists it + `test_a2_passes_strict_validation`.

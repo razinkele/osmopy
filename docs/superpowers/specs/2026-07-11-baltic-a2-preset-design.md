@@ -68,26 +68,16 @@ bare basename, and every referenced basename **must** exist flat in the generate
      override-precedence conflict with baltic's `baltic_param-output.csv` include.
 
 2. **`baltic_a2_param-additional-mortality.csv`** — the 16 converged mortality values (replaces baltic's
-   R18 values), with provenance comments. Exact values (from `a2_on_converged.params`):
-
-   ```
-   mortality.additional.larva.rate.sp0;1.8495054614929225
-   mortality.additional.larva.rate.sp1;0.6091614461276307
-   mortality.additional.larva.rate.sp2;1.7574285062912955
-   mortality.additional.larva.rate.sp3;0.3277205467582994
-   mortality.additional.larva.rate.sp4;5.024141712395672
-   mortality.additional.larva.rate.sp5;1.1869723413415985
-   mortality.additional.larva.rate.sp6;0.3791432328547528
-   mortality.additional.larva.rate.sp7;0.27314862986759136
-   mortality.additional.rate.sp0;4.288045380663061
-   mortality.additional.rate.sp1;0.2636287453341465
-   mortality.additional.rate.sp2;0.003071941136699811
-   mortality.additional.rate.sp3;0.0045211280482306045
-   mortality.additional.rate.sp4;0.005680413608708062
-   mortality.additional.rate.sp5;0.855951786667689
-   mortality.additional.rate.sp6;0.0036156979635421347
-   mortality.additional.rate.sp7;0.19494616193531136
-   ```
+   R18 values), with provenance comments. **UNIT CONVENTION (critical):** `OsmoseConfigReader` divides
+   every `mortality.additional.larva.rate.spN` by `ndtperyear` (=24) on load when `osmose.version >= 4.4.0`
+   (`reader.py:100-104`), exactly as baltic stores `360.0` to yield the engine's `15.0`. The A2 DE
+   calibrated in the *divided/engine* space (its overrides were injected after the reader), so the 8
+   **larval** values are stored as `converged × 24`, and the 8 **adult** `mortality.additional.rate.spN`
+   values are stored verbatim (the reader does not migrate them). Converged engine-space values (from
+   `a2_on_converged.params`): larval sp0..7 = 1.8495, 0.6092, 1.7574, 0.3277, 5.0241, 1.1870, 0.3791,
+   0.2731 → **stored ×24** = 44.3881, 14.6199, 42.1783, 7.8653, 120.5794, 28.4873, 9.0994, 6.5556; adult
+   sp0..7 = 4.2880, 0.2636, 0.003072, 0.004521, 0.005680, 0.85595, 0.003616, 0.19495 (verbatim). Exact
+   full-precision values are in the plan (`docs/superpowers/plans/2026-07-11-baltic-a2-preset.md`).
    (species: sp0 cod, sp1 herring, sp2 sprat, sp3 flounder, sp4 perch, sp5 pikeperch, sp6 smelt,
    sp7 stickleback.)
 
@@ -152,6 +142,9 @@ This makes `baltic_a2` Python-gated in the UI run page exactly like `benguela`.
   species "8 focal species", resources "6 LTL (depletable) + 2 background groups", engine **"Python"**,
   summary framing it as best-achievable-not-fully-calibrated (see Honest framing).
 - `osmose_demo`'s `generators` dict — map `"baltic_a2"` → `_generate_baltic_a2`.
+- `osmose/engine/config_validation.py` — add `"osmose.configuration.a2.depletion"` to
+  `_SUPPLEMENTARY_ALLOWLIST` (the new include key; every other `osmose.configuration.*` is already
+  allowlisted, so without this `baltic_a2` would raise under `validation.strict.enabled="error"`).
 
 The UI (`ui/pages/grid.py`, `ui/pages/scenarios.py`) builds picker choices generically from
 `list_demos()`/`demo_info()`, so no UI-page edits are required.
@@ -166,8 +159,10 @@ Split along the CI-flakiness boundary.
 2. `osmose_demo("baltic_a2", tmp)` returns a config whose flattened (reader-loaded) keys include:
    `ltl.depletable.enabled == "true"`, `ltl.depletable.floor == "0.05"`, and the 8 `species.regrowth.rate`
    keys with the expected values.
-3. The 16 converged mortality values are present in the loaded config (spot-check a representative subset
-   incl. the extremes: `larva.rate.sp4 == 5.024...`, `rate.sp0 == 4.288...`, `rate.sp2 == 0.00307...`).
+3. The 16 mortality values round-trip correctly. Raw CSV holds larval `×24` (e.g. `larva.rate.sp4` stored
+   `120.579...`) and adult verbatim; the reader-*loaded* config gives the engine the converged values
+   (`larva.rate.sp4 ≈ 5.024` after ÷24, `rate.sp0 == 4.288...`). Larval compared with `pytest.approx`
+   (the reader's `.10g` reformat defeats exact `==`); depletion keys compared as strings.
 4. The generated config loads cleanly through `osmose/config/reader.py` (no missing-include / escape
    errors) — proves the overlay's basename includes resolve.
 5. The a2 master's `osmose.configuration.*` keys equal baltic's keys **plus** `a2.depletion`, and every
