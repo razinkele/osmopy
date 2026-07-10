@@ -88,13 +88,34 @@ the low-weight species (flounder/perch/pikeperch, objective weight 0.2–0.5), w
 does not penalize enough. That remaining gap is a **calibration-objective refinement**, not a convergence
 problem.
 
-## Follow-up (optional — for a fully in-band deployable config)
+## Objective re-weighting iteration — NEGATIVE (the low weights are correct)
 
-**Objective re-weighting:** up-weight the poorly-assessed coastal species (perch/pikeperch/flounder/smelt)
-and/or add an inside-band bonus, then re-run `--a2 --isolated-eval`. With convergence now unblocked, this is
-a straightforward calibration iteration rather than an infrastructure problem.
+Ran `--a2 --isolated-eval --weight-floor 0.7` (a new knob: raise every species' objective weight to ≥ 0.7,
+so the DE can't trade away the low-weight coastal species). It **converged cleanly** (isolated-eval, no hang,
+2.08 h) but the calibration got **worse, not better**:
+
+| | no-floor converged | weight-floor 0.7 |
+|---|---|---|
+| in-band | **3/8** | **1/8** |
+| objective (multi-seed) | **2.68** | **6.77** (worse than baseline 3.57) |
+| cod | over 2.49× | over 4.6× |
+| sprat | **in** (1.06×) | **under** (0.19×) |
+| stickleback | **in** (1.00×) | over 10.6× |
+| perch / pikeperch | 106× / 88× over | 25× / 85× over (barely moved) |
+
+**Up-weighting the coastal species does not land them in-band — it wrecks the well-assessed ones.** The
+percids stayed 16–85× over (structurally unreachable at this grid resolution), while the DE sacrificed sprat
+(→ under) and stickleback/cod (→ worse) chasing targets it cannot hit. This **confirms the low objective
+weights are correct**: the poorly-assessed coastal species genuinely cannot be calibrated on the coarse grid
+— the same *structural* percid overshoot the whole 2026-06/07 investigation established (9 levers ruled out,
+fine-grid NO-GO) — and A2's overshoot relief does not change that.
+
+**Conclusion:** the **no-floor A2 converged config (3/8, cod nearly in-band, pelagics + stickleback nailed,
+objective 2.68 > baseline 3.57) is the best achievable Baltic calibration** and the candidate deployable
+config. The `--weight-floor` knob is retained (default off) as a general calibration tool.
 
 ## Note
 
-No deployed config was changed. The **converged** A2-on parameters, the gen-10 interim, and the A2-off
-baseline are all in `docs/diagnostics/baltic_a2_calibrated_params.json` as a **candidate** sidecar.
+No deployed config was changed. The **no-floor converged** A2-on parameters (the best config), the gen-10
+interim, the A2-off baseline, and the weight-floor-0.7 negative are all in
+`docs/diagnostics/baltic_a2_calibrated_params.json` as a **candidate** sidecar.
