@@ -303,6 +303,7 @@ class _ObjectiveWrapper:
         w_stability: float = 5.0,
         w_worst: float = 0.5,
         sim_timeout_s: float | None = None,
+        weight_floor: float = 0.0,
     ):
         self.base_config = base_config
         self.targets = targets
@@ -314,6 +315,7 @@ class _ObjectiveWrapper:
         self.w_stability = w_stability
         self.w_worst = w_worst
         self.sim_timeout_s = sim_timeout_s
+        self.weight_floor = weight_floor
         self.last_per_species_residuals: list[tuple[str, float, float]] | None = None
 
     def __call__(self, x: np.ndarray) -> float:
@@ -356,17 +358,18 @@ class _ObjectiveWrapper:
             else:
                 sp_error = 0.0
 
-            weighted_error = target.weight * sp_error
+            eff_weight = max(target.weight, self.weight_floor)
+            weighted_error = eff_weight * sp_error
             total_error += weighted_error
             worst_error = max(worst_error, weighted_error)
             residuals_local.append((sp, weighted_error, float(recorded_biomass)))
 
             cv = stats.get(cv_key, 0.0)
             if cv > 0.2:
-                total_error += self.w_stability * target.weight * (cv - 0.2) ** 2
+                total_error += self.w_stability * eff_weight * (cv - 0.2) ** 2
             trend = stats.get(trend_key, 0.0)
             if trend > 0.05:
-                total_error += self.w_stability * target.weight * (trend - 0.05) ** 2
+                total_error += self.w_stability * eff_weight * (trend - 0.05) ** 2
 
         total_error += self.w_worst * worst_error
         # LOAD-BEARING: assign-at-end — see spec §6.5.1.
@@ -402,6 +405,7 @@ def make_objective(
     w_stability: float = 5.0,
     w_worst: float = 0.5,
     sim_timeout_s: float | None = None,
+    weight_floor: float = 0.0,
 ) -> Callable[[np.ndarray], float]:
     """Create objective function for differential evolution.
 
@@ -424,6 +428,7 @@ def make_objective(
         w_stability=w_stability,
         w_worst=w_worst,
         sim_timeout_s=sim_timeout_s,
+        weight_floor=weight_floor,
     )
 
 
@@ -1090,6 +1095,7 @@ def run_calibration(
     a2: bool = False,
     sim_timeout_s: float | None = None,
     isolated_eval: bool = False,
+    weight_floor: float = 0.0,
 ) -> dict:
     """Run differential evolution calibration for the specified phase."""
     from osmose.config.reader import OsmoseConfigReader
@@ -1272,6 +1278,7 @@ def run_calibration(
         seed=42,
         use_log_space=True,
         sim_timeout_s=sim_timeout_s,
+        weight_floor=weight_floor,
     )
 
     # Initialize DE population: mixed strategy
@@ -1420,6 +1427,7 @@ def run_calibration(
             seed=rs,
             use_log_space=True,
             sim_timeout_s=sim_timeout_s,
+            weight_floor=weight_floor,
         )
         obj_val = obj_fn(best_x)
         rerank_objectives.append(obj_val)
@@ -1714,6 +1722,14 @@ def main():
         "hangs its worker becomes a penalty instead of deadlocking the pool. Uses --sim-timeout "
         "(default 600s) as the per-eval kill-timeout. Recommended for the A2 calibration.",
     )
+    parser.add_argument(
+        "--weight-floor",
+        type=float,
+        default=0.0,
+        help="Raise every species' objective weight to at least this value (0=off). Forces the DE "
+        "to attend to poorly-assessed, low-weight species (perch/pikeperch/flounder/smelt) instead "
+        "of trading them away.",
+    )
     args = parser.parse_args()
 
     if args.validate:
@@ -1737,6 +1753,7 @@ def main():
             a2=args.a2,
             sim_timeout_s=(args.sim_timeout or None),
             isolated_eval=args.isolated_eval,
+            weight_floor=args.weight_floor,
         )
 
 
