@@ -8,6 +8,7 @@ import pytest
 from osmose.config.reader import OsmoseConfigReader
 from osmose.demo import demo_info, list_demos, osmose_demo
 from osmose.engine.config_validation import validate
+from osmose.runner import java_engine_block_reason
 
 DATA = Path(__file__).resolve().parent.parent / "data"
 BALTIC_A2_DIR = DATA / "baltic_a2"
@@ -139,3 +140,21 @@ def test_a2_master_includes_parity(tmp_path):
     cfgdir = Path(out["config_file"]).parent
     for target in a2_inc.values():
         assert (cfgdir / target).exists(), f"include target missing: {target}"
+
+
+def test_a2_blocks_java_engine(tmp_path):
+    out = osmose_demo("baltic_a2", tmp_path)
+    loaded = dict(OsmoseConfigReader().read(str(out["config_file"])))
+    # Pin jar 4.4.1 so the nbackground path is NOT what blocks it (baltic_a2 inherits
+    # nbackground=2 with GreySeal/Cormorant staging, which 4.4.1 supports -> that path
+    # returns None). The ONLY thing that must block it is the depletable-plankton guard.
+    reason = java_engine_block_reason(loaded, jar_version="4.4.1")
+    assert reason is not None
+    assert "depletable" in reason.lower()
+
+
+def test_java_guard_depletion_check_direct():
+    assert java_engine_block_reason({"ltl.depletable.enabled": "true"}) is not None
+    # Non-depletable config with no background is still Java-runnable (regression guard).
+    assert java_engine_block_reason({"ltl.depletable.enabled": "false"}) is None
+    assert java_engine_block_reason({}) is None

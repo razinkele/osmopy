@@ -25,6 +25,11 @@ def java_engine_block_reason(config, jar_version: str | None = None) -> str | No
     them (C2). On a ``< 4.4.0`` jar, an unknown ``jar_version`` (conservative), or for an unrecognised
     background species, they remain Python-engine-only and are blocked here.
     """
+    if str(config.get("ltl.depletable.enabled", "")).strip().lower() == "true":
+        return (
+            "This configuration uses depletable plankton (ltl.depletable.enabled), a "
+            "Python-engine feature with no Java-jar equivalent. Run it on the Python engine."
+        )
     if str(config.get("output.file.prefix", "")).strip().lower() == "benguela":
         return (
             "The Southern Benguela demo is a Python-engine example (merged resource forcing and "
