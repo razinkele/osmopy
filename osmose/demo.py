@@ -105,8 +105,9 @@ def list_demos() -> list[str]:
 
 
 # Per-model metadata for the UI model picker (title shown in the dropdown; the rest in the
-# info modal). Keys MUST match list_demos(). Engine "Python only" = declares background species
-# (simulation.nbackground > 0), which the bundled Java engine cannot load.
+# info modal). Keys MUST match list_demos(). The "engine" field is display text only; the actual
+# Java/Python gating runs through osmose.runner.java_engine_block_reason (background-species
+# staging support, depletable plankton, benguela forcing, ...).
 DEMO_INFO: dict[str, dict[str, str]] = {
     "bay_of_biscay": {
         "title": "Bay of Biscay",
