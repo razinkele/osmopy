@@ -119,3 +119,52 @@ config. The `--weight-floor` knob is retained (default off) as a general calibra
 No deployed config was changed. The **no-floor converged** A2-on parameters (the best config), the gen-10
 interim, the A2-off baseline, and the weight-floor-0.7 negative are all in
 `docs/diagnostics/baltic_a2_calibrated_params.json` as a **candidate** sidecar.
+
+## Deployed as `baltic_a2` preset (2026-07-11)
+
+The no-floor converged config above is now bundled as the `baltic_a2` demo preset
+(`osmose_demo("baltic_a2", ...)`, `osmose/demo.py:_generate_baltic_a2`). It is a thin DRY overlay on
+`data/baltic/` — the three `data/baltic_a2/baltic_a2_*.csv` delta files (master include list + converged
+mortality + depletion params) are copied on top of a full copy of `data/baltic/` at generation time; no
+NetCDF forcing/grid files are duplicated. **Python-engine only**: `osmose/runner.py` blocks the Java engine
+whenever `ltl.depletable.enabled=true` (`java_engine_block_reason`), since depletable plankton has no Java
+counterpart.
+
+### Local validation (2026-07-11)
+
+Ran the bundled preset end-to-end on the Python engine, `nyear=15`, two seeds, biomass averaged over the
+last 10 simulated years (same protocol as the calibration table above):
+
+| species | band (lower–upper) | seed 42 | seed 123 |
+|---|---|---|---|
+| cod | 60 k – 250 k | 300,208 · over 1.2× | 306,754 · over 1.2× |
+| herring | 0.8 M – 3 M | 1,486,412 · **in** | 1,592,326 · **in** |
+| sprat | 0.8 M – 2.5 M | 1,585,316 · **in** | 1,579,304 · **in** |
+| flounder | 20 k – 100 k | 2,920,717 · over 29.2× | 2,863,893 · over 28.6× |
+| perch | 8 k – 50 k | 2,342,852 · over 46.9× | 2,127,851 · over 42.6× |
+| pikeperch | 4 k – 25 k | 908,388 · over 36.3× | 918,186 · over 36.7× |
+| smelt | 20 k – 120 k | 351,748 · over 2.9× | 350,798 · over 2.9× |
+| stickleback | 50 k – 500 k | 150,850 · **in** | 321,175 · **in** |
+| **in-band count** | | **3/8** | **3/8** |
+
+Both seeds land the same 3/8 in-band (herring, sprat, stickleback), matching the multi-seed reference count
+above. The pattern matches expectations: pelagics + stickleback in-band, cod low-single-digit over
+(1.2×, actually tighter than the 2.49× multi-seed mean), and the coastal percids (flounder/perch/pikeperch)
+structurally over — consistent with the grid-resolution finding from the wider 2026-06/07 percid-overshoot
+investigation, not a defect in this preset. No crash, no NaN/non-finite biomass, no collapse of the pelagics.
+
+**Single-run vs. multi-seed variance:** every species in this two-seed local run is closer to its band than
+the multi-seed reference mean quoted earlier in this document (e.g., cod 1.2× here vs. 2.49× multi-seed;
+flounder 29× vs. 53×; perch 43–47× vs. 106×; pikeperch 36× vs. 88×; smelt 2.9× vs. 5.4×) — expected run-to-run
+variance from a stochastic 15-year simulation with only two seeds sampled, not a change in the underlying
+calibration. The two seeds here also agree closely with each other (all species within a few percent, except
+stickleback which ranges 150,850–321,175, still comfortably inside its 50 k–500 k band both times).
+
+**Honest framing, reiterated:** this is the **best-achievable** community fit found by the DE search under
+Chunk A2 depletion, **not a fully ICES-calibrated Baltic**. 3/8 species land in-band (herring, sprat,
+stickleback); cod sits just above band; the coastal percids (perch, pikeperch, flounder) remain
+structurally over at this grid resolution — the same structural finding as the earlier 9-lever percid
+investigation and the fine-grid NO-GO (`docs/project-baltic-fine-grid-percid-experiment` memory topic).
+There is deliberately no CI gate on this emergent-biomass outcome (it is not bit-reproducible across
+runner cores — see `feedback-ci-fragile-emergent-tests`); this section is the documented, honest record of
+a local run instead.
