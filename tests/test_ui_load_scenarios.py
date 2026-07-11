@@ -200,12 +200,19 @@ def test_all_demos_produce_unique_configs(tmp_path):
         _, cfg = _load_scenario_into_state(scenario, sub)
         configs[scenario] = cfg
 
-    # Each pair of demos should differ in species count or species names
+    # Each pair of demos must produce a distinct config. Species count/name is the usual
+    # discriminator, but baltic_a2 shares baltic's species roster by design (it's a DRY overlay
+    # that differs in depletable plankton + calibrated mortality), so also treat those as
+    # distinguishers.
     demo_list = list_demos()
     for i, a in enumerate(demo_list):
         for b in demo_list[i + 1 :]:
-            assert configs[a].get("simulation.nspecies") != configs[b].get(
-                "simulation.nspecies"
-            ) or configs[a].get("species.name.sp0") != configs[b].get("species.name.sp0"), (
+            distinguishers = (
+                "simulation.nspecies",
+                "species.name.sp0",
+                "ltl.depletable.enabled",
+                "mortality.additional.rate.sp0",
+            )
+            assert any(configs[a].get(k) != configs[b].get(k) for k in distinguishers), (
                 f"Demos {a} and {b} produced identical configs"
             )

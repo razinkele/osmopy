@@ -48,6 +48,7 @@ _SUPPLEMENTARY_ALLOWLIST: frozenset[str] = frozenset(
         # Injected by OsmoseConfigReader when loading sub-config files; never
         # registered in the schema and never read by EngineConfig.from_dict.
         "osmose.version",
+        "osmose.configuration.a2.depletion",
         "osmose.configuration.background",
         "osmose.configuration.bioen",
         "osmose.configuration.fishing",

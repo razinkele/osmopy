@@ -3,6 +3,12 @@
 # java_engine_block_reason, ...) to this header when they add the tests that use them.
 from pathlib import Path
 
+import pytest
+
+from osmose.config.reader import OsmoseConfigReader
+from osmose.demo import demo_info, list_demos, osmose_demo
+from osmose.engine.config_validation import validate
+
 DATA = Path(__file__).resolve().parent.parent / "data"
 BALTIC_A2_DIR = DATA / "baltic_a2"
 
@@ -78,3 +84,58 @@ def test_a2_mortality_deltas_exact():
 def test_a2_depletion_deltas_exact():
     got = _parse_csv(BALTIC_A2_DIR / "baltic_a2_param-depletion.csv")
     assert got == EXPECTED_DEPLETION
+
+
+def test_a2_registered_python_only():
+    assert "baltic_a2" in list_demos()
+    info = demo_info("baltic_a2")
+    assert info is not None
+    for field in ("title", "region", "species", "resources", "engine", "summary"):
+        assert info.get(field), f"DEMO_INFO['baltic_a2'] missing {field}"
+    assert info["engine"] == "Python"
+    assert "a2" in info["title"].lower() or "calibrat" in info["title"].lower()
+
+
+def test_a2_generates_and_loads(tmp_path):
+    out = osmose_demo("baltic_a2", tmp_path)
+    cfg = Path(out["config_file"])
+    assert cfg.name == "baltic_a2_all-parameters.csv" and cfg.exists()
+    # Overlay must NOT duplicate NetCDFs: baltic_a2 dir is text-only.
+    assert not any(p.suffix == ".nc" for p in BALTIC_A2_DIR.iterdir())
+    # Loads cleanly through the reader (proves basename includes resolve after overlay).
+    loaded = dict(OsmoseConfigReader().read(str(cfg)))
+    # Depletion keys are STRINGS (never float('true')) and are not migrated -> exact match.
+    for key, val in EXPECTED_DEPLETION.items():
+        assert loaded[key] == val, f"{key}: {loaded[key]!r} != {val!r}"
+    # Larval rates: reader divides by NDT and reformats via .10g -> the ENGINE receives the
+    # converged per-cohort value. Compare with tolerance (.10g truncates to ~10 sig figs).
+    for key, conv in CONVERGED_LARVA.items():
+        assert float(loaded[key]) == pytest.approx(conv, rel=1e-6), key
+    # Adult rates: not migrated -> engine gets the verbatim converged value.
+    for key, val in CONVERGED_ADULT.items():
+        assert float(loaded[key]) == pytest.approx(float(val), rel=1e-9), key
+    assert loaded["simulation.time.nyear"] == "15"  # inherited from baltic
+
+
+def test_a2_passes_strict_validation(tmp_path):
+    # The new include key osmose.configuration.a2.depletion must be allowlisted so baltic_a2 is
+    # clean under strict validation (validate() returns [] and does not raise on mode "error").
+    out = osmose_demo("baltic_a2", tmp_path)
+    loaded = dict(OsmoseConfigReader().read(str(out["config_file"])))
+    assert validate(loaded, "error") == []
+
+
+def _includes(path: Path) -> dict[str, str]:
+    return {k: v for k, v in _parse_csv(path).items() if k.startswith("osmose.configuration.")}
+
+
+def test_a2_master_includes_parity(tmp_path):
+    baltic_inc = _includes(DATA / "baltic" / "baltic_all-parameters.csv")
+    a2_inc = _includes(BALTIC_A2_DIR / "baltic_a2_all-parameters.csv")
+    # Same include KEYS plus the one new depletion include.
+    assert set(a2_inc) == set(baltic_inc) | {"osmose.configuration.a2.depletion"}
+    # Every include TARGET basename exists in the generated config dir.
+    out = osmose_demo("baltic_a2", tmp_path)
+    cfgdir = Path(out["config_file"]).parent
+    for target in a2_inc.values():
+        assert (cfgdir / target).exists(), f"include target missing: {target}"
