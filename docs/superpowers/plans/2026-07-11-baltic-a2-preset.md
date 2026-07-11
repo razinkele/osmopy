@@ -48,14 +48,10 @@
 - [ ] **Step 1: Write the failing test** (`tests/test_baltic_a2_demo.py`)
 
 ```python
+# NOTE: import only what THIS task's tests use, so each commit stays ruff-clean (no F401).
+# Tasks 2 and 3 add their own imports (pytest, osmose_demo, OsmoseConfigReader, validate,
+# java_engine_block_reason, ...) to this header when they add the tests that use them.
 from pathlib import Path
-
-import pytest
-
-from osmose.config.reader import OsmoseConfigReader
-from osmose.demo import demo_info, list_demos, osmose_demo
-from osmose.engine.config_validation import validate
-from osmose.runner import java_engine_block_reason
 
 DATA = Path(__file__).resolve().parent.parent / "data"
 BALTIC_A2_DIR = DATA / "baltic_a2"
@@ -252,6 +248,7 @@ git commit -m "feat(baltic): baltic_a2 preset delta CSVs (converged A2 mortality
 **Files:**
 - Modify: `osmose/demo.py` (add `_generate_baltic_a2`; edit `list_demos`, `DEMO_INFO`, `osmose_demo`)
 - Modify: `osmose/engine/config_validation.py` (allowlist the new `osmose.configuration.a2.depletion` include key)
+- Modify: `tests/test_ui_load_scenarios.py` (`test_all_demos_produce_unique_configs` — baltic_a2 shares baltic's species roster by design, so add `ltl.depletable.enabled` + `mortality.additional.rate.sp0` as distinguishers)
 - Test: `tests/test_baltic_a2_demo.py`
 
 **Interfaces:**
@@ -259,6 +256,18 @@ git commit -m "feat(baltic): baltic_a2 preset delta CSVs (converged A2 mortality
 - Produces: `osmose_demo("baltic_a2", out) -> {"config_file": <config/baltic_a2_all-parameters.csv>, "output_dir": <output/>}`. `demo_info("baltic_a2")` with engine `"Python"`. `"baltic_a2"` in `list_demos()`.
 
 - [ ] **Step 1: Write the failing tests** (append to `tests/test_baltic_a2_demo.py`)
+
+First add the imports this task's tests use to the file header (below `from pathlib import Path`):
+
+```python
+import pytest
+
+from osmose.config.reader import OsmoseConfigReader
+from osmose.demo import demo_info, list_demos, osmose_demo
+from osmose.engine.config_validation import validate
+```
+
+Then append the tests:
 
 ```python
 def test_a2_registered_python_only():
@@ -436,6 +445,14 @@ git commit -m "feat(baltic): register baltic_a2 demo preset (overlay generator +
 - Produces: returns a non-None Python-only reason when `config["ltl.depletable.enabled"]` is truthy.
 
 - [ ] **Step 1: Write the failing tests** (append to `tests/test_baltic_a2_demo.py`)
+
+First add this task's import to the file header:
+
+```python
+from osmose.runner import java_engine_block_reason
+```
+
+Then append the tests:
 
 ```python
 def test_a2_blocks_java_engine(tmp_path):
