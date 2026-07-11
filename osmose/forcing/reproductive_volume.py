@@ -97,3 +97,45 @@ def build_rv_field(
     ds["reproductive_volume"].attrs["RV_ref"] = rv_ref
     ds["reproductive_volume"].attrs["units"] = "m"
     return ds
+
+
+def build_rv_field_interannual(
+    phy_years: list[xr.Dataset],
+    bgc_years: list[xr.Dataset],
+    grid,
+    *,
+    sal_thresh: float = 11.0,
+    o2_thresh: float = 89.3,
+    ocean_mask: NDArray[np.bool_],
+    spawning_mask: NDArray[np.bool_],
+    start_year: int,
+) -> xr.Dataset:
+    """Build the CHRONOLOGICAL interannual RV field (per-year 24-step blocks concatenated).
+
+    Same per-year viable-thickness metric and regridding as build_rv_field, but the years are
+    stacked in order (year 0 = start_year, steps 0-23; year 1, steps 24-47; ...) instead of
+    averaged. Returns var `reproductive_volume` (len(phy_years)*24, nlat, nlon), north-first,
+    land -> NaN, with RV_ref (over RV>0 spawning cells across ALL steps) + start_year attrs.
+    """
+    per_year_24 = []
+    for phy, bgc in zip(phy_years, bgc_years):
+        rv_src = _rv_year(phy, bgc, sal_thresh, o2_thresh)
+        src_lat, src_lon = get_coords(phy)
+        rv_grid = regrid(rv_src, src_lat, src_lon, grid)
+        per_year_24.append(resample_to_24(rv_grid))  # (24, nlat, nlon)
+    rv = np.concatenate(per_year_24, axis=0).astype(np.float32)  # (nyear*24, nlat, nlon)
+    rv[:, ~ocean_mask] = np.nan  # land -> NaN
+
+    sp_vals = rv[:, spawning_mask]
+    nonzero = sp_vals[sp_vals > 0]
+    rv_ref = float(nonzero.mean()) if nonzero.size else 1.0
+
+    lat, lon = target_coords(grid)
+    ds = xr.Dataset(
+        {"reproductive_volume": (("time", "latitude", "longitude"), rv)},
+        coords={"time": np.arange(rv.shape[0]), "latitude": lat, "longitude": lon},
+    )
+    ds["reproductive_volume"].attrs["RV_ref"] = rv_ref
+    ds["reproductive_volume"].attrs["start_year"] = int(start_year)
+    ds["reproductive_volume"].attrs["units"] = "m"
+    return ds

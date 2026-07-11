@@ -1,0 +1,79 @@
+import numpy as np
+import xarray as xr
+
+from osmose.forcing.reproductive_volume import build_rv_field, build_rv_field_interannual
+from osmose.maps.builder import GridSpec
+
+# Real GridSpec (dx/dy are @property, computed from the corners — a plain stub lacks them and
+# regrid()/target_coords() would AttributeError).
+GRID = GridSpec(
+    nlon=5, nlat=4, upleft_lat=65.5, upleft_lon=10.5, lowright_lat=54.5, lowright_lon=29.5
+)
+
+
+def _fake_year(seed):
+    # minimal (time=12, depth=3, lat=4, lon=5) so/o2 datasets on a source grid
+    rng = np.random.default_rng(seed)
+    depth = np.array([5.0, 20.0, 40.0])
+    lat = np.linspace(54.5, 65.5, 4)
+    lon = np.linspace(10.5, 29.5, 5)
+    so = 6.0 + 8.0 * rng.random((12, 3, 4, 5))  # spans the 11-psu threshold
+    o2 = 50.0 + 100.0 * rng.random((12, 3, 4, 5))  # spans the 89.3 threshold
+    coords = {"time": np.arange(12), "depth": depth, "latitude": lat, "longitude": lon}
+    phy = xr.Dataset({"so": (("time", "depth", "latitude", "longitude"), so)}, coords=coords)
+    bgc = xr.Dataset({"o2": (("time", "depth", "latitude", "longitude"), o2)}, coords=coords)
+    return phy, bgc
+
+
+def _masks():
+    ocean = np.ones((4, 5), dtype=bool)
+    spawning = np.zeros((4, 5), dtype=bool)
+    spawning[1:3, 1:4] = True
+    return ocean, spawning
+
+
+def test_interannual_shape_and_chronological():
+    ph = [_fake_year(i) for i in range(3)]
+    phy_years = [p for p, _ in ph]
+    bgc_years = [b for _, b in ph]
+    ocean, spawning = _masks()
+    ds = build_rv_field_interannual(
+        phy_years, bgc_years, GRID, ocean_mask=ocean, spawning_mask=spawning, start_year=1993
+    )
+    rv = ds["reproductive_volume"].values
+    assert rv.shape == (3 * 24, 4, 5)  # concatenate, not average
+    assert ds["reproductive_volume"].attrs["start_year"] == 1993
+    # Year k's 24-step block equals that single year's standalone climatology-of-one build.
+    for k in range(3):
+        one = build_rv_field(
+            [phy_years[k]], [bgc_years[k]], GRID, ocean_mask=ocean, spawning_mask=spawning
+        )["reproductive_volume"].values
+        block = rv[k * 24 : (k + 1) * 24]
+        np.testing.assert_allclose(np.nan_to_num(block), np.nan_to_num(one), rtol=1e-6)
+
+
+def test_interannual_differs_from_climatology_mean():
+    ph = [_fake_year(i) for i in range(3)]
+    phy_years, bgc_years = [p for p, _ in ph], [b for _, b in ph]
+    ocean, spawning = _masks()
+    inter = build_rv_field_interannual(
+        phy_years, bgc_years, GRID, ocean_mask=ocean, spawning_mask=spawning, start_year=1993
+    )["reproductive_volume"].values
+    clim = build_rv_field(phy_years, bgc_years, GRID, ocean_mask=ocean, spawning_mask=spawning)[
+        "reproductive_volume"
+    ].values
+    # interannual is 72 steps; its per-year blocks are NOT all equal to the 24-step climatology
+    assert inter.shape[0] == 72 and clim.shape[0] == 24
+    assert not np.allclose(np.nan_to_num(inter[:24]), np.nan_to_num(inter[24:48]))
+
+
+def test_climatology_builder_deterministic():
+    # build_rv_field is not edited by this task; same inputs -> identical output (sanity).
+    phy, bgc = _fake_year(7)
+    ocean, spawning = _masks()
+    a = build_rv_field([phy], [bgc], GRID, ocean_mask=ocean, spawning_mask=spawning)
+    b = build_rv_field([phy], [bgc], GRID, ocean_mask=ocean, spawning_mask=spawning)
+    np.testing.assert_array_equal(
+        np.nan_to_num(a["reproductive_volume"].values),
+        np.nan_to_num(b["reproductive_volume"].values),
+    )
