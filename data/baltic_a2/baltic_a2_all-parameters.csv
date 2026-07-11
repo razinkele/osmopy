@@ -1,0 +1,35 @@
+# Baltic Sea (A2-calibrated) OSMOSE configuration - Main parameter file
+# Overlay on the baltic demo: depletable plankton (Chunk A2) + converged DE mortality.
+# BEST-ACHIEVABLE community fit (3/8 in-band, objective 2.68), NOT a full ICES calibration:
+# herring, sprat, stickleback land in-band; cod ~2.5x over; coastal percids structurally over.
+# All baltic_param-*.csv includes are resolved from the generated config/ dir (see osmose.demo).
+# See docs/baltic_a2_calibration_results_2026-07-09.md.
+
+osmose.configuration.simulation;baltic_param-simulation.csv
+osmose.configuration.species;baltic_param-species.csv
+osmose.configuration.grid;baltic_param-grid.csv
+osmose.configuration.output;baltic_param-output.csv
+osmose.configuration.mortality.predation;baltic_param-predation.csv
+osmose.configuration.mortality.fishing;baltic_param-fishing.csv
+osmose.configuration.mortality.starvation;baltic_param-starvation.csv
+osmose.configuration.mortality.additional;baltic_a2_param-additional-mortality.csv
+osmose.configuration.reproduction;baltic_param-reproduction.csv
+osmose.configuration.movement;baltic_param-movement.csv
+osmose.configuration.plankton;baltic_param-ltl.csv
+osmose.configuration.background;baltic_param-background.csv
+osmose.configuration.initialization;baltic_param-init-pop.csv
+osmose.configuration.migration;baltic_param-out-mortality.csv
+osmose.configuration.a2.depletion;baltic_a2_param-depletion.csv
+
+mortality.subdt;10
+
+simulation.nschool.sp0;50
+simulation.nschool.sp1;60
+simulation.nschool.sp2;60
+simulation.nschool.sp3;40
+simulation.nschool.sp4;30
+simulation.nschool.sp5;30
+simulation.nschool.sp6;30
+simulation.nschool.sp7;40
+
+osmose.version;4.4.1

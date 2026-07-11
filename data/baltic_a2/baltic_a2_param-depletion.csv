@@ -1,0 +1,12 @@
+# Chunk A2 depletable-plankton keys for the baltic_a2 preset.
+# Phytoplankton (sp8/sp9) regrow fast (fixed 5.0, ~non-limiting); depletable zooplankton +
+# benthos (sp10-13) use the converged zoo regrowth rate. Python engine only.
+# Source: enable_a2_base_config() + a2_on_converged zoo regrowth (scripts/calibrate_baltic.py).
+ltl.depletable.enabled;true
+ltl.depletable.floor;0.05
+species.regrowth.rate.sp8;5.0
+species.regrowth.rate.sp9;5.0
+species.regrowth.rate.sp10;1.0580953986747008
+species.regrowth.rate.sp11;1.0580953986747008
+species.regrowth.rate.sp12;1.0580953986747008
+species.regrowth.rate.sp13;1.0580953986747008
