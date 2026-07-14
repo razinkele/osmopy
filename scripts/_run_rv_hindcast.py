@@ -1,9 +1,10 @@
 import sys
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, "/home/razinka/osmopy/scripts")
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # this scripts/ dir, wherever it lives
 from baltic_rv_hindcast import ROOT, WINDOW, run_hindcast
 
 r = run_hindcast()  # default seeds (0,1,2,3,4)

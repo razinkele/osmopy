@@ -1,9 +1,15 @@
+from pathlib import Path
+
 import numpy as np
 import pytest
 import xarray as xr
 
 from osmose.forcing.reproductive_volume import build_rv_field, build_rv_field_interannual
 from osmose.maps.builder import GridSpec
+
+# Repo root, resolved from this test file's location — do NOT hardcode an absolute path
+# (CI checks out under a different prefix, e.g. /home/runner/work/...).
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # Real GridSpec (dx/dy are @property, computed from the corners — a plain stub lacks them and
 # regrid()/target_coords() would AttributeError).
@@ -108,7 +114,7 @@ def _rv_cfg(tmp_path, n_steps, nyear):
 
 
 def test_wrap_guard_raises_when_run_exceeds_forcing(tmp_path, monkeypatch):
-    monkeypatch.chdir("/home/razinka/osmopy")  # cod_spawning.csv fallback path
+    monkeypatch.chdir(REPO_ROOT)  # cod_spawning.csv fallback path
     from osmose.engine.config import _load_rv_spatial
 
     cfg = _rv_cfg(tmp_path, n_steps=696, nyear=30)  # 30*24=720 > 696 -> would wrap
@@ -117,7 +123,7 @@ def test_wrap_guard_raises_when_run_exceeds_forcing(tmp_path, monkeypatch):
 
 
 def test_wrap_guard_ok_when_exact_and_climatology(tmp_path, monkeypatch):
-    monkeypatch.chdir("/home/razinka/osmopy")
+    monkeypatch.chdir(REPO_ROOT)
     from osmose.engine.config import _load_rv_spatial
 
     field, en = _load_rv_spatial(_rv_cfg(tmp_path, n_steps=696, nyear=29), 1)  # 696==696 ok
@@ -127,10 +133,7 @@ def test_wrap_guard_ok_when_exact_and_climatology(tmp_path, monkeypatch):
 
 
 def test_lagged_correlations_recovers_known_lag():
-    import sys
-
-    sys.path.insert(0, "/home/razinka/osmopy/scripts")
-    from baltic_rv_cod_offline import lagged_correlations
+    from scripts.baltic_rv_cod_offline import lagged_correlations
 
     rng = np.random.default_rng(0)
     rv = rng.random(29)
@@ -143,10 +146,7 @@ def test_lagged_correlations_recovers_known_lag():
 
 
 def test_arm_overrides_shared_ref_and_files():
-    import sys
-
-    sys.path.insert(0, "/home/razinka/osmopy/scripts")
-    from baltic_rv_hindcast import arm_overrides
+    from scripts.baltic_rv_hindcast import arm_overrides
 
     off = arm_overrides("off", rv_ref=12.0, inter_path="i.nc", clim_path="c.nc")
     clim = arm_overrides("clim", rv_ref=12.0, inter_path="i.nc", clim_path="c.nc")
@@ -163,10 +163,7 @@ def test_arm_overrides_shared_ref_and_files():
 
 
 def test_skill_delta_positive_when_b_tracks_observed():
-    import sys
-
-    sys.path.insert(0, "/home/razinka/osmopy/scripts")
-    from baltic_rv_hindcast import skill_delta
+    from scripts.baltic_rv_hindcast import skill_delta
 
     obs = np.array([1.0, 2, 3, 2, 1, 2, 3], float)
     a = np.array([1.0, 1.1, 0.9, 1.05, 0.95, 1.02, 0.98], float)  # nonzero var, ~uncorrelated
@@ -175,10 +172,7 @@ def test_skill_delta_positive_when_b_tracks_observed():
 
 
 def test_skill_delta_nan_safe_on_collapsed_arm():
-    import sys
-
-    sys.path.insert(0, "/home/razinka/osmopy/scripts")
-    from baltic_rv_hindcast import skill_delta
+    from scripts.baltic_rv_hindcast import skill_delta
 
     obs = np.array([1.0, 2, 3, 2, 1, 2, 3], float)
     flat = np.ones(7)  # a collapsed arm (zero variance) -> nan, NOT a crash / not 0
