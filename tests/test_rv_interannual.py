@@ -124,3 +124,19 @@ def test_wrap_guard_ok_when_exact_and_climatology(tmp_path, monkeypatch):
     assert field is not None and en[0]
     field2, _ = _load_rv_spatial(_rv_cfg(tmp_path, n_steps=24, nyear=50), 1)  # climatology cycles
     assert field2 is not None
+
+
+def test_lagged_correlations_recovers_known_lag():
+    import sys
+
+    sys.path.insert(0, "/home/razinka/osmopy/scripts")
+    from baltic_rv_cod_offline import lagged_correlations
+
+    rng = np.random.default_rng(0)
+    rv = rng.random(29)
+    cod = np.empty(29)
+    cod[2:] = rv[:-2]  # cod lags rv by 2 yr
+    cod[:2] = rng.random(2)
+    lc = lagged_correlations(rv, cod, max_lag=4)  # dict lag->corr
+    best = max(lc, key=lambda k: lc[k])
+    assert best == 2 and lc[2] > 0.9
