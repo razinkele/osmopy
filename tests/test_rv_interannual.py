@@ -140,3 +140,46 @@ def test_lagged_correlations_recovers_known_lag():
     lc = lagged_correlations(rv, cod, max_lag=4)  # dict lag->corr
     best = max(lc, key=lambda k: lc[k])
     assert best == 2 and lc[2] > 0.9
+
+
+def test_arm_overrides_shared_ref_and_files():
+    import sys
+
+    sys.path.insert(0, "/home/razinka/osmopy/scripts")
+    from baltic_rv_hindcast import arm_overrides
+
+    off = arm_overrides("off", rv_ref=12.0, inter_path="i.nc", clim_path="c.nc")
+    clim = arm_overrides("clim", rv_ref=12.0, inter_path="i.nc", clim_path="c.nc")
+    inter = arm_overrides("inter", rv_ref=12.0, inter_path="i.nc", clim_path="c.nc")
+    assert off.get("reproduction.rv.spatial.enabled", "false") == "false"
+    # both enabled arms share the forced RV_ref, differ only in the field file
+    assert clim["reproduction.rv.spatial.ref"] == "12.0"
+    assert inter["reproduction.rv.spatial.ref"] == "12.0"
+    assert clim["reproduction.rv.spatial.field.file"].endswith("c.nc")
+    assert inter["reproduction.rv.spatial.field.file"].endswith("i.nc")
+    assert clim["reproduction.rv.spatial.species.enabled.sp0"] == "true"
+    # SSB enabled on ALL arms (incl. off) so .ssb() works uniformly
+    assert off["output.ssb.enabled"] == "true" and inter["output.ssb.enabled"] == "true"
+
+
+def test_skill_delta_positive_when_b_tracks_observed():
+    import sys
+
+    sys.path.insert(0, "/home/razinka/osmopy/scripts")
+    from baltic_rv_hindcast import skill_delta
+
+    obs = np.array([1.0, 2, 3, 2, 1, 2, 3], float)
+    a = np.array([1.0, 1.1, 0.9, 1.05, 0.95, 1.02, 0.98], float)  # nonzero var, ~uncorrelated
+    b = obs * 0.5 + 0.1  # tracks observed
+    assert skill_delta(a, b, obs) > 0.5
+
+
+def test_skill_delta_nan_safe_on_collapsed_arm():
+    import sys
+
+    sys.path.insert(0, "/home/razinka/osmopy/scripts")
+    from baltic_rv_hindcast import skill_delta
+
+    obs = np.array([1.0, 2, 3, 2, 1, 2, 3], float)
+    flat = np.ones(7)  # a collapsed arm (zero variance) -> nan, NOT a crash / not 0
+    assert np.isnan(skill_delta(flat, obs, obs))
