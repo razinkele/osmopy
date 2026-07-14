@@ -1198,6 +1198,16 @@ def _load_rv_spatial(
         raise ValueError(
             f"RV field time length {tlen} is not a positive multiple of ndtperyear {n_dt}."
         )
+    # Interannual field (tlen > one year): a run longer than the forcing period would silently
+    # wrap (step % tlen repeats year 0). Fail fast rather than hindcast against wrapped years.
+    if tlen > n_dt:
+        nyear = int(float(cfg.get("simulation.time.nyear", "0") or 0))
+        if nyear * n_dt > tlen:
+            raise ValueError(
+                f"RV field is interannual ({tlen} steps = {tlen // n_dt} yr) but the run is "
+                f"{nyear} yr ({nyear * n_dt} steps) — it would wrap past the forcing period. "
+                f"Set simulation.time.nyear <= {tlen // n_dt}."
+            )
     # Spec §6: a NaN at a cod_spawning cell means the field is broken there — fail loudly
     # rather than let the consumer's finite-guard silently no-op at a real spawning cell.
     if np.isnan(field._data[:, spawn]).any():

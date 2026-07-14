@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import xarray as xr
 
 from osmose.forcing.reproductive_volume import build_rv_field, build_rv_field_interannual
@@ -77,3 +78,49 @@ def test_climatology_builder_deterministic():
         np.nan_to_num(a["reproductive_volume"].values),
         np.nan_to_num(b["reproductive_volume"].values),
     )
+
+
+def _write_rv_nc(path, n_steps):
+    lat = np.linspace(54.5, 65.5, 40)
+    lon = np.linspace(10.5, 29.5, 50)
+    rv = np.ones((n_steps, 40, 50), dtype=np.float32)
+    ds = xr.Dataset(
+        {"reproductive_volume": (("time", "latitude", "longitude"), rv)},
+        coords={"time": np.arange(n_steps), "latitude": lat, "longitude": lon},
+    )
+    ds["reproductive_volume"].attrs["RV_ref"] = 10.0
+    ds.to_netcdf(path)
+
+
+def _rv_cfg(tmp_path, n_steps, nyear):
+    from osmose.engine.config import _load_rv_spatial  # noqa: F401 (import path check)
+
+    p = tmp_path / "rv.nc"
+    _write_rv_nc(p, n_steps)
+    return {
+        "reproduction.rv.spatial.enabled": "true",
+        "reproduction.rv.spatial.field.file": str(p),
+        "reproduction.rv.spatial.species.enabled.sp0": "true",
+        "simulation.time.ndtperyear": "24",
+        "simulation.time.nyear": str(nyear),
+        "_osmose.config.dir": str(tmp_path),
+    }
+
+
+def test_wrap_guard_raises_when_run_exceeds_forcing(tmp_path, monkeypatch):
+    monkeypatch.chdir("/home/razinka/osmopy")  # cod_spawning.csv fallback path
+    from osmose.engine.config import _load_rv_spatial
+
+    cfg = _rv_cfg(tmp_path, n_steps=696, nyear=30)  # 30*24=720 > 696 -> would wrap
+    with pytest.raises(ValueError, match="wrap|exceed|forcing"):
+        _load_rv_spatial(cfg, n_species=1)
+
+
+def test_wrap_guard_ok_when_exact_and_climatology(tmp_path, monkeypatch):
+    monkeypatch.chdir("/home/razinka/osmopy")
+    from osmose.engine.config import _load_rv_spatial
+
+    field, en = _load_rv_spatial(_rv_cfg(tmp_path, n_steps=696, nyear=29), 1)  # 696==696 ok
+    assert field is not None and en[0]
+    field2, _ = _load_rv_spatial(_rv_cfg(tmp_path, n_steps=24, nyear=50), 1)  # climatology cycles
+    assert field2 is not None
