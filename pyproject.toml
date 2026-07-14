@@ -118,6 +118,12 @@ omit = [
     "osmose/engine/processes/mortality.py",
     "osmose/engine/processes/predation.py",
     "osmose/engine/processes/movement.py",
+    # Jinja renders osmose/templates/report.html by compiling it to Python whose
+    # co_filename is the template path under this source tree, so coverage traces it
+    # as a measured "osmose" file. The HTML report then feeds the raw template (CSS/HTML)
+    # to ast.parse (find_soft_key_lines) and crashes with SyntaxError. Templates are not
+    # Python source — exclude them from measurement entirely.
+    "osmose/templates/*",
 ]
 
 [tool.ruff]
