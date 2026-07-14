@@ -81,9 +81,31 @@ The selected solution is already resolved by the existing helper **`_picked_solu
 (`calibration.py:574-587`) — it reads `cal_X`/`cal_F`/`input.cal_pareto_idx`/param-keys and returns
 `select_solution(...)` → `{"index", "params", "objectives"}` or `None`. The download handler
 `cal_export_params` (`calibration.py:607-610`) already consumes it, so the Apply handler reuses the
-exact same picked solution — no divergence. On button click:
+exact same picked solution — no divergence.
+
+**This is the same operation as `advanced.py::confirm_import` (merge an external `{key: value}`
+override dict into `state.config`), so it MUST follow that handler's full config-write wiring —
+`state.config.set` + `state.dirty.set(True)` + a `state.load_trigger` bump** (`advanced.py:174-186`,
+in-loop-review finding). Missing either flag is a real bug: without `dirty` the "modified" badge
+(`app.py:627-636`) never lights; **without the `load_trigger` bump, already-rendered pages
+(Domain/Species/Movement/…) keep showing stale values** because they read `state.config` inside
+`reactive.isolate()` and re-render only on `load_trigger` (`setup.py:109-133` etc.). Extract the
+apply into a plain function so it is unit-testable without the Shiny event machinery:
 
 ```python
+def apply_picked_solution(state, params) -> int:
+    """Merge a picked solution's params into state.config with the app's standard config-write
+    wiring, so every page re-reads and the modified badge lights. Returns keys_changed."""
+    with reactive.isolate():
+        cfg = dict(state.config.get())
+    new_cfg, n = apply_solution_overrides(cfg, params)
+    state.config.set(new_cfg)
+    state.dirty.set(True)                                     # "modified" badge
+    with reactive.isolate():
+        state.load_trigger.set(state.load_trigger.get() + 1)  # already-rendered pages re-read
+    return n
+
+
 @reactive.effect
 @reactive.event(input.cal_apply_solution)
 def _apply_pareto_solution():
@@ -91,21 +113,38 @@ def _apply_pareto_solution():
     if not sol or not sol.get("params"):
         ui.notification_show("Pick a Pareto solution first.", type="warning")
         return
-    new_cfg, n = apply_solution_overrides(state.config.get(), sol["params"])
-    state.config.set(new_cfg)
+    n = apply_picked_solution(state, sol["params"])
     ui.notification_show(
-        f"Applied {n} parameter{'s' if n != 1 else ''} to the current config.", type="message"
+        f"Applied {n} parameter{'s' if n != 1 else ''} to the current config.",
+        type="message", duration=5,
     )
 ```
+
+No `state.key_case_map` update is needed (unlike `advanced.py`'s arbitrary imports): the solution's
+keys are **pre-existing free-parameter config keys** already present in `state.config`, so Apply
+only updates existing keys' values — it introduces none.
+
+### 4. Preview the change before applying (in-loop-review finding)
+
+A calibration solution can change many parameters at once, and there is no undo in the UI — a
+silent whole-config mutation with only a count is risky. The `cal_selected_solution` render
+(`calibration.py:589-605`) already draws a **Parameter / Value** table for the picked solution in
+exactly this spot; upgrade it to **Parameter / Current / New** (current = `state.config.get(k)` or
+"(not set)", new = `str(v)`, changed rows emphasized). This is a near-free preview-before-commit —
+the user sees precisely what Apply will change, and a stale solution whose keys aren't in the live
+config surfaces as "(not set)" current values. Reuse `ui/components/config_diff.py`
+(`classify_config_diffs`/`render_config_diff_table`, already used by Scenarios Compare / Scenario
+Diff) if its `[{key, value_a, value_b}]` shape fits; otherwise render the 3-column table inline.
 
 ### Behaviour
 
 - No solution selected → warning notification, config untouched.
-- Applied → `state.config` updated (live across Domain/Species/Run/etc.), success notification with
-  the changed-key count. The user then Runs it or saves it via Scenarios.
-- `state.config` is the same reactive the rest of the app reads/writes via `state.config.set()`
-  (pattern: `advanced.py:175`, `forcing.py:132`, `setup.py:178`), so the applied values are
-  immediately consistent everywhere.
+- Before applying, the Current/New preview (§4) shows exactly which keys change.
+- Applied → `state.config` updated, `dirty` set (modified badge lights), `load_trigger` bumped so
+  every already-rendered page re-reads and shows the new values; success notification with the
+  changed-key count. The user then Runs it or saves it via Scenarios → Save Current Config.
+- This is the same config-write contract as `advanced.py::confirm_import` (set + dirty +
+  load_trigger); with all three, the applied values are consistent across Domain/Species/Run/etc.
 
 ## Testing strategy
 
@@ -116,13 +155,20 @@ def _apply_pareto_solution():
    - `keys_changed` counts only genuinely-changed/new keys (a param already equal to the config's
      value is not counted); does not mutate the input config.
    - Empty params → `(copy_of_config, 0)`.
-2. **Handler smoke** (light): the `_apply_pareto_solution` logic is a 6-line effect; its only
-   non-trivial piece is the pure helper (tested in 1) and the `state.config.set` call. An e2e is
-   **not** warranted (a real NSGA-II run to populate the front is heavy and the emergent
-   calibration e2e is CI-fragile) — the pure helper + a manual UI smoke (run/load a front → pick →
-   Apply → confirm a config field on the Domain/Species page reflects the value) is the verification.
-3. **No regression:** the existing download button and picker are unchanged; the calibration page's
-   existing tests stay green.
+2. **`apply_picked_solution` reactive-state test** (in-loop-review finding — this is the test that
+   mechanically catches the two wiring bugs): follow the `tests/test_ui_state.py` +
+   `tests/helpers.py` pattern — build an `AppState`, seed `state.config` with a small config,
+   call `apply_picked_solution(state, params)` inside `reactive.isolate()`, and assert:
+   `state.config.get()` has the merged values; `state.dirty.get() is True`; `state.load_trigger`
+   incremented. No NSGA-II run, no browser — fully deterministic. (This is why the apply logic is
+   extracted into a plain function rather than living only in the `@reactive.event` effect.)
+3. **Preview helper** (if a new diff helper is added rather than reusing `config_diff.py`): unit-test
+   that current-vs-new rows classify changed / unchanged / not-set correctly.
+4. **Manual UI smoke** (verification, not CI): run/load a front → pick a solution → confirm the
+   Current/New preview → Apply → confirm the "modified" badge lights and a free-parameter field on
+   Species/Advanced shows the new value. An e2e is **not** warranted — a real NSGA-II run is heavy
+   and the emergent calibration e2e is CI-fragile ([[feedback-ci-fragile-emergent-tests]]).
+5. **No regression:** the existing download button and picker are unchanged; calibration tests green.
 
 ## Verification
 
@@ -134,5 +180,7 @@ and `ruff` clean.
 
 ## Rollback
 
-Additive: one pure helper in `pareto.py`, one button + one effect in `calibration.py`, plus tests.
-No change to existing behaviour, data, or config format. Revertible.
+Mostly additive: one pure helper (`apply_solution_overrides`) in `pareto.py`; one button, one
+`apply_picked_solution` function + effect in `calibration.py`; plus tests. The one modification to
+existing UI is upgrading the `cal_selected_solution` table from 2 to 3 columns (Current/New). No
+change to the optimizers, the picker, the download, data, or config format. Revertible.
