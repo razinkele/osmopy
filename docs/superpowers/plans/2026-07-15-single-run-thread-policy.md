@@ -464,8 +464,16 @@ git commit -m "feat(run): apply single-run thread policy in UI run + benchmark"
 First add `import numpy as np` to the **top-of-file import block** (created in Task 1 Step 1, next to `import os` / `import sys` / `import pytest`) — a mid-file module import triggers ruff `E402` (non-auto-fixable). Then append the following to `tests/test_thread_policy.py` (no `import numpy as np` line here — it now lives at the top):
 
 ```python
-def _run_minimal(n_years: int, seed: int, threads: int):
-    """Run the `minimal` fixture at a fixed Numba thread count; return outputs."""
+def _run_eec_for_determinism(n_years: int, seed: int, threads: int):
+    """Run the eec_full fixture at a fixed Numba thread count; return (grid, outputs).
+
+    CRITICAL: use eec_full (460 ocean cells), NOT data/minimal — minimal's grid mask
+    has ZERO ocean cells, so every school stays at cell (-1,-1), mortality()'s
+    valid_indices is empty every timestep, n_cells==0, and the prange kernel under
+    test is NEVER invoked. A determinism check on minimal would pass vacuously
+    (kernel skipped), proving nothing. eec_full's 460 cells make the parallel
+    cell-loop actually run.
+    """
     import numba
 
     from osmose.config.reader import OsmoseConfigReader
@@ -474,35 +482,36 @@ def _run_minimal(n_years: int, seed: int, threads: int):
     from osmose.engine.simulate import simulate
 
     cfg_path = os.path.join(
-        os.path.dirname(os.path.dirname(__file__)), "data", "minimal", "osm_all-parameters.csv"
+        os.path.dirname(os.path.dirname(__file__)), "data", "eec_full", "eec_all-parameters.csv"
     )
     reader = OsmoseConfigReader()
     raw = reader.read(cfg_path)
     raw["simulation.time.nyear"] = str(n_years)
     cfg = EngineConfig.from_dict(raw)
-    grid_file = raw.get("grid.netcdf.file", "")
-    if grid_file:
-        grid = Grid.from_netcdf(
-            os.path.join(os.path.dirname(cfg_path), grid_file),
-            mask_var=raw.get("grid.var.mask", "mask"),
-        )
-    else:
-        grid = Grid.from_dimensions(
-            ny=int(raw.get("grid.nline", "1")), nx=int(raw.get("grid.ncolumn", "1"))
-        )
+    grid = Grid.from_netcdf(
+        os.path.join(os.path.dirname(cfg_path), raw["grid.netcdf.file"]),
+        mask_var=raw.get("grid.var.mask", "mask"),
+    )
     numba.set_num_threads(threads)
-    return simulate(cfg, grid, np.random.default_rng(seed))
+    return grid, simulate(cfg, grid, np.random.default_rng(seed))
 
 
+@pytest.mark.filterwarnings("ignore:Swapping size ratios")
 @pytest.mark.skipif((os.cpu_count() or 1) < 2, reason="needs >=2 cores to compare thread counts")
 def test_mortality_bit_identical_across_thread_counts(restore_numba_threads):
-    """The mortality prange is race-free: 1 thread vs many threads must be
-    EXACTLY equal (np.array_equal, not allclose). Two hardcoded, different counts
-    so this cannot degenerate into comparing a run against itself."""
+    """The mortality prange is race-free: 1 thread vs many threads must be EXACTLY
+    equal (np.array_equal, not allclose). Two hardcoded, different counts so this
+    cannot degenerate into comparing a run against itself. Uses eec_full so the
+    kernel actually runs; the ocean-cell assertion guarantees this can never pass
+    vacuously (see `_run_eec_for_determinism`)."""
     pytest.importorskip("numba")
     hi = os.cpu_count()
-    out1 = _run_minimal(2, 123, 1)
-    outN = _run_minimal(2, 123, hi)
+    grid1, out1 = _run_eec_for_determinism(1, 123, 1)
+    assert grid1.ocean_mask.sum() > 1, (
+        "fixture has no ocean cells — the mortality kernel would be skipped and this "
+        "determinism test would pass vacuously"
+    )
+    _, outN = _run_eec_for_determinism(1, 123, hi)
     b1 = np.asarray(out1[-1].biomass, dtype=np.float64)
     bN = np.asarray(outN[-1].biomass, dtype=np.float64)
     assert np.array_equal(b1, bN), f"biomass differs between 1 and {hi} threads"
@@ -597,7 +606,7 @@ Expected: all tests PASS. If `test_cap_does_not_leak_into_forkserver_worker` err
 - [ ] **Step 5: Run the broader engine suite (no regressions)**
 
 Run: `.venv/bin/python -m pytest tests/test_thread_policy.py tests/ -q -k "thread or determinism or mortality" 2>&1 | tail -20`
-Expected: green; the pre-existing `test_mortality_deterministic_across_thread_counts` (if present) still passes alongside the new stricter test.
+Expected: green. NOTE: the pre-existing `tests/test_jit_determinism.py::test_mortality_deterministic_across_thread_counts` runs against `data/minimal` (0 ocean cells) and is therefore **vacuous** (the mortality prange kernel is never dispatched) — do NOT treat its pass as determinism coverage. This task's `test_mortality_bit_identical_across_thread_counts` uses `eec_full` (460 cells) with an ocean-cell guard and is the real coverage. Fixing the pre-existing `test_jit_determinism.py` vacuity is a **separate follow-up**, out of scope here.
 
 - [ ] **Step 6: Lint**
 
