@@ -20,6 +20,7 @@ from shiny_deckgl import (  # type: ignore[import-untyped]
 
 from osmose.config.validator import summarize_config_validation
 from osmose.engine import PythonEngine, SimulationCancelled
+from osmose.engine.thread_policy import apply_single_run_threads
 from osmose.engine_capabilities import describe_engine
 from osmose.live_movement import (
     STAGE_LABELS,
@@ -234,7 +235,7 @@ def run_ui():
                     "input.engine_mode === 'python'",
                     ui.input_numeric(
                         "py_threads",
-                        "Threads (Numba; 0 = auto/all cores)",
+                        "Threads (Numba; 0 = auto — physical cores)",
                         value=0,
                         min=0,
                         max=32,
@@ -317,15 +318,9 @@ def _python_engine_thread(run_config, output_dir, cancel_token, step_observer, d
     button / ``_handle_result`` updates. Posts ``(kind, result_or_None, message)`` where
     ``kind`` is ``"done" | "cancelled" | "failed"``.
     """
-    try:
-        import numba  # type: ignore[import-untyped]  # optional extra; engine has a pure-Python fallback
-
-        cap = numba.config.NUMBA_NUM_THREADS  # type: ignore[attr-defined]
-        numba.set_num_threads(
-            min(n_threads, cap) if n_threads >= 1 else cap
-        )  # n<1 = auto/all cores
-    except Exception:  # noqa: BLE001 — never block a run on numba absence/bad count
-        _log.warning("could not apply py_threads; using Numba default", exc_info=True)
+    # Cap single-run threads to ~physical cores (0/<1 = auto). Never raises;
+    # no-op if numba is absent. See osmose/engine/thread_policy.py.
+    apply_single_run_threads(n_threads)
     engine = PythonEngine()
     try:
         result = engine.run(

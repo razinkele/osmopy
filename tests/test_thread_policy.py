@@ -97,3 +97,58 @@ def test_apply_sets_and_returns_resolved(monkeypatch, restore_numba_threads):
     n = tp.apply_single_run_threads(999)
     assert n == 3
     assert numba.get_num_threads() == 3
+
+
+def test_python_engine_thread_applies_policy(monkeypatch):
+    """_python_engine_thread must pass the raw py_threads value to the policy
+    and post a 'done' outcome — without running a real engine."""
+    import queue
+
+    from ui.pages import run as run_mod
+
+    recorded = {}
+
+    def _fake_apply(requested):
+        recorded["requested"] = requested
+        return 14
+
+    monkeypatch.setattr(run_mod, "apply_single_run_threads", _fake_apply)
+
+    class _FakeEngine:
+        def run(self, *a, **k):
+            return "RESULT"
+
+    monkeypatch.setattr(run_mod, "PythonEngine", _FakeEngine)
+    done_q: queue.Queue = queue.Queue()
+    run_mod._python_engine_thread("cfg", "out", None, None, done_q, n_threads=7)
+
+    assert recorded["requested"] == 7
+    kind, result, msg = done_q.get_nowait()
+    assert kind == "done"
+    assert result == "RESULT"
+
+
+def test_benchmark_main_applies_policy(monkeypatch):
+    """benchmark_engine.main() must call apply_single_run_threads without running
+    the engine (run_benchmark is stubbed)."""
+    import scripts.benchmark_engine as be
+
+    called = {}
+
+    def _fake_apply(requested=None):
+        called["hit"] = True
+        return 12
+
+    monkeypatch.setattr(be, "apply_single_run_threads", _fake_apply)
+    monkeypatch.setattr(
+        be,
+        "run_benchmark",
+        lambda *a, **k: {"elapsed_s": 0.1, "final_biomass": {"sp0": 1.0}},
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["benchmark_engine.py", "--config", "minimal", "--years", "1", "--repeats", "1"],
+    )
+    be.main()
+    assert called.get("hit") is True
