@@ -229,9 +229,16 @@ def test_cap_is_thread_local_same_process(restore_numba_threads):
 
 @pytest.mark.skipif((os.cpu_count() or 1) < 2, reason="needs >=2 cores to observe a cap")
 def test_cap_does_not_leak_into_forkserver_worker(monkeypatch, restore_numba_threads):
-    """Calibration's ProcessPoolExecutor(forkserver) workers must NOT inherit a
-    single-run cap. Cap the main process to 1, then a forkserver worker must still
-    see the unrestricted default."""
+    """Regression guard: the single-run cap must stay a *thread-local runtime*
+    call (`numba.set_num_threads`), so calibration's forkserver workers keep the
+    unrestricted default. Note the cap cannot leak into a forkserver worker via
+    the runtime path anyway — workers fork from the persistent server process, not
+    the calling thread, and set_num_threads is thread-local (see the sibling
+    thread-local test). So a RED here most likely means the cap was reintroduced
+    as an inherited env var / process-global (the exact bug this file's
+    NUMBA_NUM_THREADS cleanup defuses), NOT a runtime-cap leak — debug there, not
+    in apply_single_run_threads. Cap to 1, then a forkserver worker must still see
+    the default."""
     import multiprocessing
     import multiprocessing.forkserver
     from concurrent.futures import ProcessPoolExecutor
