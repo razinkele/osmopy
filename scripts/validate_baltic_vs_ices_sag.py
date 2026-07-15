@@ -169,10 +169,18 @@ def _parse_model_fishing_rates() -> dict[int, float]:
 
 
 def _parse_model_targets() -> list[dict]:
+    """Parse biomass targets, excluding `catch`-type rows.
+
+    biomass_targets.csv holds one biomass/SSB row per species plus optional
+    catch-band rows (`reference_point_type=catch`). This script is biomass-
+    only (`_compare_biomass` collapses rows to a `{species: row}` dict), so
+    catch rows must be dropped here — otherwise a later catch row for the
+    same species silently overwrites its biomass row (last-wins).
+    """
     with TARGETS_CSV.open() as f:
         lines = [line for line in f if not line.lstrip().startswith("#")]
     reader = csv.DictReader(lines)
-    return list(reader)
+    return [row for row in reader if row.get("reference_point_type", "biomass") != "catch"]
 
 
 # Model species → fsh index (from baltic_param-fishing.csv fisheries.name.fshN rows).
