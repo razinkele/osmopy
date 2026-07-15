@@ -28,12 +28,64 @@ import argparse
 import json
 from pathlib import Path
 
+import numpy as np
+
 from calibrate_baltic import (
     BALTIC_CONFIG,
     SPECIES_NAMES,
     load_targets,
     run_simulation,
 )
+from validate_baltic_vs_ices_sag import (  # reuse snapshot loaders (dependency-free leaf)
+    WINDOW_YEARS,
+    _load_assessment,
+    _load_manifest,
+    _load_reference_points,
+    _series_by_year,
+)
+
+RECRUITMENT_ASSESSED = ("cod", "herring", "sprat", "flounder")
+
+
+def _species_recruitment_age(species: str) -> str | None:
+    """Common ICES recruitment_age (as a string) across a species' mapped stocks, or None if
+    the species has no mapped stocks, a stock lacks the age, or the stocks disagree."""
+    stocks = _load_manifest()["model_species_to_ices_stocks"].get(species, [])
+    if not stocks:
+        return None
+    ages = set()
+    for st in stocks:
+        a = _load_reference_points(st).get("recruitment_age")
+        if a in (None, ""):
+            return None
+        ages.add(str(a))
+    return ages.pop() if len(ages) == 1 else None
+
+
+def _ices_recruitment_geomean(species: str) -> tuple[float, float, float] | None:
+    """(geomean, min, max) of the per-year SUMMED ICES recruitment across a species' mapped
+    stocks over WINDOW_YEARS, keeping only years all stocks report R. None if no clean numeric R.
+
+    Summability is an inferred assumption: the snapshot records SSB units but not recruitment
+    units; the mapped stocks' recruitments are all absolute counts on a self-consistent scale.
+    """
+    if _species_recruitment_age(species) is None:
+        return None
+    stocks = _load_manifest()["model_species_to_ices_stocks"][species]
+    series = [_series_by_year(_load_assessment(st), "recruitment") for st in stocks]
+    per_year = [sum(s[y] for s in series) for y in WINDOW_YEARS if all(y in s for s in series)]
+    if not per_year:
+        return None
+    arr = np.asarray(per_year, dtype=float)
+    geomean = float(np.exp(np.mean(np.log(arr))))
+    return geomean, float(arr.min()), float(arr.max())
+
+
+def _recruitment_verdict(model_R: float, ices_geomean: float) -> tuple[float, str]:
+    """(ratio, verdict). OK if 1/3 <= ratio <= 3 (order-of-magnitude), else FLAG."""
+    ratio = model_R / ices_geomean if ices_geomean > 0 else float("inf")
+    verdict = "OK" if (1.0 / 3.0) <= ratio <= 3.0 else "FLAG"
+    return ratio, verdict
 
 
 # The 4 FR-calibrated predators (phase 14): cod sp0, pikeperch sp5, GreySeal
@@ -79,6 +131,31 @@ def _apply_mode(base_config: dict[str, str], mode: str, params: dict | None = No
     raise ValueError(f"unknown mode {mode!r}; expected 'bh', 'shepherd' or 'shepherd-fr'")
 
 
+def _format_recruitment_section(rows: list[dict]) -> str:
+    """Pure formatter for the recruitment table (never runs the engine)."""
+    lines = ["\nRecruitment (model vs ICES R geomean, 2018-2022)"]
+    lines.append(
+        f"  {'species':10s} {'age':>3s} {'model_R':>14s} "
+        f"{'ICES_geomean [min-max]':>38s} {'ratio':>7s}  verdict"
+    )
+    for r in rows:
+        if r.get("ices_geomean") is None:
+            lines.append(
+                f"  {r['species']:10s} {'—':>3s} {'—':>14s} {'—':>38s} {'—':>7s}  {r['reason']}"
+            )
+        else:
+            ref = f"{r['ices_geomean']:,.0f} [{r['ices_min']:,.0f}-{r['ices_max']:,.0f}]"
+            model = f"{r['model_R']:,.0f}" if r["model_R"] is not None else "—"
+            ratio = f"{r['ratio']:.2f}x" if r["ratio"] is not None else "—"
+            verdict = r["verdict"] or "—"
+            note = "  (age-0: model reads ~0.4-0.6x low)" if r["age"] == "0" else ""
+            lines.append(
+                f"  {r['species']:10s} {r['age']:>3s} {model:>14s} {ref:>38s} "
+                f"{ratio:>7s}  {verdict}{note}"
+            )
+    return "\n".join(lines)
+
+
 def evaluate(params_path: Path, mode: str, n_years: int, seed: int) -> dict:
     from osmose.config.reader import OsmoseConfigReader
 
@@ -95,7 +172,13 @@ def evaluate(params_path: Path, mode: str, n_years: int, seed: int) -> dict:
     # FR halfsat keys present in the JSON are raw K (not log10).
     overrides = {k.lower(): str(v) for k, v in params.items()}
 
-    stats = run_simulation(base_config, overrides, n_years=n_years, seed=seed)
+    base_config["output.abundance.byage.enabled"] = "true"
+    recruitment_ages = {
+        sp: age for sp in RECRUITMENT_ASSESSED if (age := _species_recruitment_age(sp)) is not None
+    }
+    stats = run_simulation(
+        base_config, overrides, n_years=n_years, seed=seed, recruitment_ages=recruitment_ages
+    )
     if not stats:
         raise RuntimeError("simulation failed (run_simulation returned {})")
 
@@ -134,6 +217,50 @@ def evaluate(params_path: Path, mode: str, n_years: int, seed: int) -> dict:
                 "cv": stats.get(f"{sp}_cv", 0.0),
             }
         )
+    recruitment = []
+    for sp in RECRUITMENT_ASSESSED:
+        age = _species_recruitment_age(sp)
+        geo = _ices_recruitment_geomean(sp) if age is not None else None
+        if age is None or geo is None:
+            reason = (
+                "no clean ICES R (eastern index + age mismatch 0 vs 1)"
+                if sp == "cod"
+                else "no clean ICES R (none reported)"
+            )
+            recruitment.append(
+                {
+                    "species": sp,
+                    "age": None,
+                    "model_R": None,
+                    "ices_geomean": None,
+                    "ices_min": None,
+                    "ices_max": None,
+                    "ratio": None,
+                    "verdict": None,
+                    "reason": reason,
+                }
+            )
+            continue
+        geomean, gmin, gmax = geo
+        model_R = stats.get(f"{sp}_recruitment_mean")
+        if model_R is None:
+            ratio, verdict = None, None
+        else:
+            ratio, verdict = _recruitment_verdict(model_R, geomean)
+        recruitment.append(
+            {
+                "species": sp,
+                "age": age,
+                "model_R": model_R,
+                "ices_geomean": geomean,
+                "ices_min": gmin,
+                "ices_max": gmax,
+                "ratio": ratio,
+                "verdict": verdict,
+                "reason": None,
+            }
+        )
+
     return {
         "params_path": str(params_path),
         "mode": mode,
@@ -141,6 +268,7 @@ def evaluate(params_path: Path, mode: str, n_years: int, seed: int) -> dict:
         "seed": seed,
         "in_range_count": in_range,
         "species": rows,
+        "recruitment": recruitment,
     }
 
 
@@ -159,6 +287,7 @@ def _print_report(result: dict) -> None:
             f"{r['status']:>9s} {r['factor_vs_target']:>8.2f} {r['cv']:>5.2f}"
         )
     print(f"\nIN ICES RANGE: {result['in_range_count']} / {len(result['species'])}")
+    print(_format_recruitment_section(result.get("recruitment", [])))
 
 
 def main() -> None:
