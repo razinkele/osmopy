@@ -127,6 +127,31 @@ def test_format_recruitment_section_is_pure():
     assert "sprat" in out and "0.86" in out
     assert "no clean ICES R" in out
     assert "age-0" in out.lower()  # the herring caveat text
+    assert "see note" not in out  # caveat is self-contained; no dangling footnote ref
+
+
+def test_format_recruitment_section_degraded_row_shows_dash_not_none():
+    # ICES R present but the model stat is missing (verdict/ratio None):
+    # the row must render em-dashes, never the literal string "None".
+    from evaluate_calibration_vs_ices import (
+        _format_recruitment_section,
+    )  # scripts/ on path (top of file)
+
+    rows = [
+        {
+            "species": "sprat",
+            "age": "1",
+            "model_R": None,
+            "ices_geomean": 7.0e7,
+            "ices_min": 2.4e7,
+            "ices_max": 1.1e8,
+            "ratio": None,
+            "verdict": None,
+            "reason": None,
+        }
+    ]
+    out = _format_recruitment_section(rows)
+    assert "None" not in out
 
 
 def test_evaluate_adds_recruitment_rows(monkeypatch):

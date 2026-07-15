@@ -136,21 +136,22 @@ def _format_recruitment_section(rows: list[dict]) -> str:
     lines = ["\nRecruitment (model vs ICES R geomean, 2018-2022)"]
     lines.append(
         f"  {'species':10s} {'age':>3s} {'model_R':>14s} "
-        f"{'ICES_geomean [min-max]':>34s} {'ratio':>7s}  verdict"
+        f"{'ICES_geomean [min-max]':>38s} {'ratio':>7s}  verdict"
     )
     for r in rows:
         if r.get("ices_geomean") is None:
             lines.append(
-                f"  {r['species']:10s} {'—':>3s} {'—':>14s} {'—':>34s} {'—':>7s}  {r['reason']}"
+                f"  {r['species']:10s} {'—':>3s} {'—':>14s} {'—':>38s} {'—':>7s}  {r['reason']}"
             )
         else:
             ref = f"{r['ices_geomean']:,.0f} [{r['ices_min']:,.0f}-{r['ices_max']:,.0f}]"
             model = f"{r['model_R']:,.0f}" if r["model_R"] is not None else "—"
             ratio = f"{r['ratio']:.2f}x" if r["ratio"] is not None else "—"
-            note = "  (age-0: model reads ~0.4-0.6x low; see note)" if r["age"] == "0" else ""
+            verdict = r["verdict"] or "—"
+            note = "  (age-0: model reads ~0.4-0.6x low)" if r["age"] == "0" else ""
             lines.append(
-                f"  {r['species']:10s} {r['age']:>3s} {model:>14s} {ref:>34s} "
-                f"{ratio:>7s}  {r['verdict']}{note}"
+                f"  {r['species']:10s} {r['age']:>3s} {model:>14s} {ref:>38s} "
+                f"{ratio:>7s}  {verdict}{note}"
             )
     return "\n".join(lines)
 
