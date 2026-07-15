@@ -69,3 +69,88 @@ def test_verdict_thresholds_inclusive():
     assert _recruitment_verdict(3.0, 1.0)[1] == "OK"  # ratio 3 -> OK (inclusive)
     assert _recruitment_verdict(0.33, 1.0)[1] == "FLAG"  # just below 1/3
     assert _recruitment_verdict(5.0, 1.0)[1] == "FLAG"
+
+
+def test_format_recruitment_section_is_pure():
+    from evaluate_calibration_vs_ices import (
+        _format_recruitment_section,
+    )  # scripts/ on path (top of file)
+
+    rows = [
+        {
+            "species": "sprat",
+            "age": "1",
+            "model_R": 6.0e7,
+            "ices_geomean": 7.0e7,
+            "ices_min": 2.4e7,
+            "ices_max": 1.1e8,
+            "ratio": 0.86,
+            "verdict": "OK",
+            "reason": None,
+        },
+        {
+            "species": "herring",
+            "age": "0",
+            "model_R": 2.0e7,
+            "ices_geomean": 4.5e7,
+            "ices_min": 2.7e7,
+            "ices_max": 7.3e7,
+            "ratio": 0.44,
+            "verdict": "OK",
+            "reason": None,
+        },
+        {
+            "species": "cod",
+            "age": None,
+            "model_R": None,
+            "ices_geomean": None,
+            "ices_min": None,
+            "ices_max": None,
+            "ratio": None,
+            "verdict": None,
+            "reason": "no clean ICES R (eastern index + age mismatch 0 vs 1)",
+        },
+        {
+            "species": "flounder",
+            "age": None,
+            "model_R": None,
+            "ices_geomean": None,
+            "ices_min": None,
+            "ices_max": None,
+            "ratio": None,
+            "verdict": None,
+            "reason": "no clean ICES R (none reported)",
+        },
+    ]
+    out = _format_recruitment_section(rows)
+    assert "Recruitment" in out
+    assert "sprat" in out and "0.86" in out
+    assert "no clean ICES R" in out
+    assert "age-0" in out.lower()  # the herring caveat text
+
+
+def test_evaluate_adds_recruitment_rows(monkeypatch):
+    import evaluate_calibration_vs_ices as ev  # scripts/ on path (top of file)
+
+    # Stub the sim so no engine runs; return biomass + recruitment stats.
+    def _fake_run(base_config, overrides, n_years, seed, recruitment_ages=None):
+        assert base_config.get("output.abundance.byage.enabled") == "true"
+        assert recruitment_ages == {"sprat": "1", "herring": "0"}
+        stats = {f"{sp}_mean": 1000.0 for sp in ev.SPECIES_NAMES}
+        stats["sprat_recruitment_mean"] = 6.0e7
+        stats["herring_recruitment_mean"] = 2.0e7
+        return stats
+
+    monkeypatch.setattr(ev, "run_simulation", _fake_run)
+    # Minimal params file
+    import json
+    import tempfile
+    from pathlib import Path
+
+    p = Path(tempfile.mkstemp(suffix=".json")[1])
+    p.write_text(json.dumps({"parameters": {}}))
+    result = ev.evaluate(p, mode="bh", n_years=1, seed=0)
+    rec = {r["species"]: r for r in result["recruitment"]}
+    assert set(rec) == {"cod", "herring", "sprat", "flounder"}
+    assert rec["sprat"]["verdict"] in ("OK", "FLAG") and rec["sprat"]["ices_geomean"] is not None
+    assert rec["cod"]["ices_geomean"] is None and "no clean ICES R" in rec["cod"]["reason"]
