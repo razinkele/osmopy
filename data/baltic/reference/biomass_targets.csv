@@ -1,5 +1,5 @@
 #! version: 1.1
-#! last_updated: 2026-04-16
+#! last_updated: 2026-07-15
 #! ices_advice_year: 2022-2023
 # Baltic Sea equilibrium biomass targets for calibration
 # Sources: ICES stock assessments (2018-2022 averages), FishBase, published literature
@@ -27,3 +27,7 @@ perch,20000,8000,50000,0.2,biomass,Literature estimate for coastal Baltic,Poorly
 pikeperch,10000,4000,25000,0.2,biomass,Literature estimate for coastal Baltic,Concentrated in estuaries/lagoons; coarse grid under-resolves
 smelt,60000,20000,120000,0.3,biomass,Baltic smelt (Osmerus eperlanus) — widely distributed; dominant forage fish in Gulf of Bothnia/Finland
 stickleback,200000,50000,500000,0.2,biomass,Olsson et al. 2019 (doi:10.1093/icesjms/fsz078); highly uncertain,Boom-bust dynamics; wide range acceptable
+cod,9470.04844292329,1146.0,21549.13372189737,0.5,catch,ICES landings 2018-2022 summed over cod.27.24-32; cod.27.22-24,mean+/-1.5sigma; floored at window min (5 yr)
+herring,21807.81079617132,6251.26570605491,39350.85319620659,0.5,catch,ICES landings 2018-2022 summed over her.27.25-2932; her.27.28; her.27.3031; her.27.20-24,mean+/-1.5sigma; floored at window min (5 yr)
+sprat,298061.8,274100.0,322655.87414724124,0.5,catch,ICES landings 2018-2022 summed over spr.27.22-32,mean+/-1.5sigma; floored at window min (5 yr)
+flounder,709.24326,322.0,1112.6891882367197,0.5,catch,ICES landings 2018-2022 summed over fle.27.2223,mean+/-1.5sigma; floored at window min (5 yr)
