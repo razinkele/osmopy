@@ -317,6 +317,10 @@ class _ObjectiveWrapper:
         self.weight_floor = weight_floor
         self.last_per_species_residuals: list[tuple[str, float, float]] | None = None
 
+        # Fail loud at construction on an unknown reference_point_type (mirrors losses.py).
+        for _t in self.targets:
+            quantity_key(getattr(_t, "reference_point_type", "biomass"))
+
     def __call__(self, x: np.ndarray) -> float:
         """Evaluate objective function at point x.
 

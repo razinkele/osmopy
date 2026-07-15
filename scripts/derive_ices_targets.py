@@ -98,7 +98,13 @@ def _rewrite_csv(catch_rows: list[dict]) -> None:
     data_rows = [ln for ln in data_rows if ",catch," not in f",{ln},"]
     today = date.today().isoformat()
     comments = [
-        (f"#! last_updated: {today}" if ln.startswith("#! last_updated:") else ln)
+        (
+            f"#! last_updated: {today}"
+            if ln.startswith("#! last_updated:")
+            else "#! version: 1.2"
+            if ln.startswith("#! version:")
+            else ln
+        )
         for ln in comments
     ]
     for r in catch_rows:

@@ -121,3 +121,51 @@ def test_objective_wrapper_dispatches_catch(monkeypatch):
     # biomass in band -> 0; catch 200 < 400 -> 0.5*log10(400/200)**2; + w_worst*worst
     catch_err = 0.5 * math.log10(400.0 / 200.0) ** 2
     assert val == pytest.approx(catch_err + 0.5 * catch_err, rel=1e-12)
+
+
+def test_objective_wrapper_catch_target_adds_no_stability_penalty(monkeypatch):
+    # Closes a coverage gap: the DE-driver (_ObjectiveWrapper), not just
+    # make_banded_objective, must gate CV/trend stability penalties to
+    # STABILITY_TYPES targets only. cod carries BOTH a biomass and a catch
+    # target sharing the same cod_cv/cod_trend stats; a high CV/trend must
+    # add exactly ONE stability penalty (from the biomass target), never a
+    # second one from the catch target.
+    import math
+
+    import numpy as np
+
+    import scripts.calibrate_baltic as cb
+    from osmose.calibration.targets import BiomassTarget
+
+    targets = [
+        BiomassTarget("cod", 100.0, 50.0, 200.0, weight=1.0, reference_point_type="biomass"),
+        BiomassTarget("cod", 800.0, 400.0, 1600.0, weight=0.5, reference_point_type="catch"),
+    ]
+    obj = cb.make_objective({"x": "1"}, targets, ["x"])
+    monkeypatch.setattr(
+        obj,
+        "_simulate_and_compute_stats",
+        lambda x: {"cod_mean": 100.0, "cod_cv": 0.9, "cod_trend": 0.9, "cod_yield_mean": 200.0},
+    )
+    val = obj(np.array([1.0]))
+    # biomass in band -> 0 sp_error, but its CV(0.9)>0.2 & trend(0.9)>0.05 DO add stability.
+    catch_err = 0.5 * math.log10(400.0 / 200.0) ** 2
+    stab = 5.0 * 1.0 * (0.9 - 0.2) ** 2 + 5.0 * 1.0 * (0.9 - 0.05) ** 2
+    expected = 0.0 + catch_err + stab + 0.5 * max(0.0, catch_err)
+    assert val == pytest.approx(expected, rel=1e-12)
+
+
+def test_objective_wrapper_raises_on_unknown_type_at_construction(monkeypatch):
+    # Spec: unknown reference_point_type -> ValueError at objective-CONSTRUCTION
+    # time, not silently swallowed until inside __call__ after a wasted simulation.
+    import scripts.calibrate_baltic as cb
+    from osmose.calibration.targets import BiomassTarget
+
+    def _boom(self, x):
+        raise AssertionError("simulation must not run for a construction-time error")
+
+    monkeypatch.setattr(cb._ObjectiveWrapper, "_simulate_and_compute_stats", _boom)
+
+    targets = [BiomassTarget("cod", 100.0, 50.0, 200.0, reference_point_type="bogus")]
+    with pytest.raises(ValueError, match="reference_point_type"):
+        cb.make_objective({"x": "1"}, targets, ["x"])
