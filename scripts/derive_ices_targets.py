@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Derive ICES landings-based CATCH calibration targets from the in-repo snapshot.
+"""Derive ICES catch-based CATCH calibration targets from the in-repo snapshot.
 
 One-shot: reads data/baltic/reference/ices_snapshots/, sums each model species' stock
-landings over 2018-2022, and emits `catch` target rows (band = mean +/- 1.5*std, floored at
-the window min). Writes biomass_targets.csv in place, preserving comment/provenance lines.
+catches (falling back to landings where catches are unreported) over 2018-2022, and emits
+`catch` target rows (band = mean +/- 1.5*std, floored at the window min). Writes
+biomass_targets.csv in place, preserving comment/provenance lines.
 
 Run: .venv/bin/python scripts/derive_ices_targets.py
 """
@@ -25,33 +26,39 @@ CATCH_WEIGHT = 0.5
 ASSESSED = ("cod", "herring", "sprat", "flounder")
 
 
-def _stock_landings(snapshot_dir: Path, stock: str) -> dict[int, float]:
-    """year -> landings (tonnes) for a stock, complete years only."""
+def _stock_catch(snapshot_dir: Path, stock: str) -> dict[int, float]:
+    """year -> catch (tonnes) for a stock, complete years only.
+
+    Prefers ICES `catches` (landings + discards, the correct analog to the model's
+    total-fished-biomass `yield`); falls back to `landings` for years/stocks where
+    `catches` is unreported (empty string or missing).
+    """
     recs = json.load(open(snapshot_dir / f"{stock}.assessment.json"))
     out: dict[int, float] = {}
     for r in recs:
-        y, land = r.get("year"), r.get("landings")
-        if y and land not in (None, ""):
-            out[int(y)] = float(land)
+        y = r.get("year")
+        catch = r.get("catches") or r.get("landings")
+        if y and catch not in (None, ""):
+            out[int(y)] = float(catch)
     return out
 
 
 def derive_catch_targets(snapshot_dir: Path) -> list[dict]:
-    """One catch-target row dict per assessed species (landings summed across its stocks)."""
+    """One catch-target row dict per assessed species (catches summed across its stocks)."""
     index = json.load(open(snapshot_dir / "index.json"))
     mapping = index["model_species_to_ices_stocks"]
     lo_y, hi_y = WINDOW
     rows: list[dict] = []
     for sp in ASSESSED:
-        # Sum landings across the species' stocks per year (only years present contribute).
+        # Sum catches across the species' stocks per year (only years present contribute).
         per_year: dict[int, float] = {}
         for stock in mapping[sp]:
-            for y, land in _stock_landings(snapshot_dir, stock).items():
+            for y, catch in _stock_catch(snapshot_dir, stock).items():
                 if lo_y <= y <= hi_y:
-                    per_year[y] = per_year.get(y, 0.0) + land
+                    per_year[y] = per_year.get(y, 0.0) + catch
         vals = np.array([per_year[y] for y in sorted(per_year)], dtype=float)
         if vals.size == 0:
-            raise ValueError(f"no landings in window {WINDOW} for {sp}")
+            raise ValueError(f"no catches in window {WINDOW} for {sp}")
         mean, std, vmin = float(vals.mean()), float(vals.std()), float(vals.min())
         lower = max(mean - K_STD * std, vmin)
         upper = mean + K_STD * std
@@ -60,7 +67,7 @@ def derive_catch_targets(snapshot_dir: Path) -> list[dict]:
                 "species": sp,
                 # Full precision (not rounded to whole tonnes): rounding here would lose the
                 # sub-tonne precision that test_sprat_catch_matches_snapshot_mean checks to
-                # rel=1e-9 against the raw ICES landings mean.
+                # rel=1e-9 against the raw ICES catches (fallback landings) mean.
                 "target_tonnes": str(mean),
                 "lower_tonnes": str(lower),
                 "upper_tonnes": str(upper),
@@ -70,7 +77,8 @@ def derive_catch_targets(snapshot_dir: Path) -> list[dict]:
                 # csv.DictReader downstream — any literal "," here would silently shift
                 # columns. Use "; " (matching the file's existing convention) instead.
                 "source": (
-                    f"ICES landings {WINDOW[0]}-{WINDOW[1]} summed over {'; '.join(mapping[sp])}"
+                    f"ICES catches (fallback landings) {WINDOW[0]}-{WINDOW[1]} summed over "
+                    f"{'; '.join(mapping[sp])}"
                 ),
                 "notes": f"mean+/-{K_STD}sigma; floored at window min ({vals.size} yr)",
             }

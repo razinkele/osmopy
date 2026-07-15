@@ -27,11 +27,24 @@ def test_catch_targets_for_all_assessed_species():
 
 def test_sprat_catch_matches_snapshot_mean(tmp_path):
     # Sprat is a single-stock species (spr.27.22-32); its catch target mean must equal the
-    # mean of that stock's landings over 2018-2022.
+    # mean of that stock's catches (falling back to landings where catches are empty) over
+    # 2018-2022 — the same catches-preferred field the derivation code reads.
     import json
     import numpy as np
 
     recs = json.load(open(SNAP / "spr.27.22-32.assessment.json"))
-    lands = [float(r["landings"]) for r in recs if r["landings"] and 2018 <= int(r["year"]) <= 2022]
+    catches = [
+        float(r["catches"] or r["landings"])
+        for r in recs
+        if (r["catches"] or r["landings"]) and 2018 <= int(r["year"]) <= 2022
+    ]
     rows = {r["species"]: r for r in derive_catch_targets(SNAP)}
-    assert float(rows["sprat"]["target_tonnes"]) == pytest.approx(np.mean(lands), rel=1e-9)
+    assert float(rows["sprat"]["target_tonnes"]) == pytest.approx(np.mean(catches), rel=1e-9)
+
+
+def test_herring_catch_target_includes_central_stock():
+    # her.27.25-2932 (central Baltic, dominant stock) has EMPTY `landings` for 2018-2022 —
+    # only `catches` is populated. Regression guard: if the derivation regresses to reading
+    # landings only, this stock's ~84-241 kt/yr drops out and the target collapses to ~20 kt.
+    rows = {r["species"]: r for r in derive_catch_targets(SNAP)}
+    assert float(rows["herring"]["target_tonnes"]) > 100_000
