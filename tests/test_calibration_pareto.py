@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from osmose.calibration.pareto import (
+    apply_solution_overrides,
     nondominated_indices,
     select_solution,
     solution_overrides_csv,
@@ -60,3 +61,32 @@ def test_solution_overrides_csv_format():
 
 def test_solution_overrides_csv_empty():
     assert solution_overrides_csv({}) == ""
+
+
+def test_apply_solution_overrides_merges_and_counts():
+    cfg = {"a": "1", "b": "2"}
+    new, n = apply_solution_overrides(cfg, {"a": 5.0, "c": 3.5})
+    assert new == {"a": "5.0", "b": "2", "c": "3.5"}
+    assert n == 2  # "a" changed, "c" added
+    assert cfg == {"a": "1", "b": "2"}  # input not mutated
+
+
+def test_apply_solution_overrides_unchanged_value_not_counted():
+    new, n = apply_solution_overrides({"a": "5.0"}, {"a": 5.0})
+    assert new == {"a": "5.0"} and n == 0
+
+
+def test_apply_solution_overrides_empty_params():
+    cfg = {"a": "1"}
+    new, n = apply_solution_overrides(cfg, {})
+    assert new == cfg and n == 0
+
+
+def test_apply_solution_overrides_matches_csv_rendering():
+    """Apply and Download must render identical string values for the same params."""
+    params = {"x.y": 0.125, "z": 3.0}
+    new, _ = apply_solution_overrides({}, params)
+    csv_vals = dict(
+        line.split(" ; ") for line in solution_overrides_csv(params).strip().split("\n")
+    )
+    assert new == csv_vals
