@@ -271,7 +271,8 @@ def run_simulation(
             if yld is not None and sp in yld.columns:
                 yvals = yld[sp].values.astype(float)
                 yeval = yvals[-n_eval_years:] if len(yvals) > n_eval_years else yvals
-                species_stats[f"{sp}_yield_mean"] = float(np.mean(yeval))
+                if yeval.size > 0:
+                    species_stats[f"{sp}_yield_mean"] = float(np.mean(yeval))
 
             # CV for stability penalty
             if mean_val > 0:
