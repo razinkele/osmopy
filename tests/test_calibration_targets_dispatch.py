@@ -43,7 +43,9 @@ def test_biomass_only_backward_compatible():
 
     cod_err = 1.0 * math.log10(50.0 / 30.0) ** 2
     expected = cod_err + 0.0 + 0.5 * max(cod_err, 0.0)  # total + w_worst*worst
-    assert obj(stats) == pytest.approx(expected, rel=1e-12)
+    # Strict equality: backward-compat parity with the pre-change objective must be
+    # EXACT, not approximate (fuzz-verified bit-identical by a prior reviewer).
+    assert obj(stats) == expected
 
 
 def test_catch_target_dispatches_to_yield_and_no_stability():
@@ -62,7 +64,7 @@ def test_catch_target_dispatches_to_yield_and_no_stability():
     # biomass target: in band -> 0 error, but its CV(0.9)>0.2 & trend(0.9)>0.05 DO add stability.
     stab = 5.0 * 1.0 * (0.9 - 0.2) ** 2 + 5.0 * 1.0 * (0.9 - 0.05) ** 2
     expected = 0.0 + catch_err + stab + 0.5 * max(0.0, catch_err)
-    assert obj(stats) == pytest.approx(expected, rel=1e-12)
+    assert obj(stats) == expected
 
 
 def test_missing_yield_stat_penalizes_catch_target():
@@ -71,4 +73,12 @@ def test_missing_yield_stat_penalizes_catch_target():
     stats = {"cod_mean": 100.0}  # no cod_yield_mean
     # missing quantity -> 100.0 penalty (matches the existing missing-_mean path), weighted? No:
     # the missing path adds a flat 100.0 (as today) + w_worst*100.0.
-    assert obj(stats) == pytest.approx(100.0 + 0.5 * 100.0, rel=1e-12)
+    assert obj(stats) == 100.0 + 0.5 * 100.0
+
+
+def test_unknown_reference_point_type_raises_at_construction():
+    # Must fail loud at make_banded_objective(...) time, not on the first
+    # objective(stats) call after a wasted simulation.
+    targets = [BiomassTarget("cod", 100.0, 50.0, 200.0, reference_point_type="bogus")]
+    with pytest.raises(ValueError, match="reference_point_type"):
+        make_banded_objective(targets, ["cod"])

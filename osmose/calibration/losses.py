@@ -75,7 +75,14 @@ def make_banded_objective(
         objective call. Cleared to None at START of each call (mid-call raise
         leaves None — spec §6.5.2 parity with Path A). Re-populated as LAST
         statement before return.
+
+    Iterates over ALL targets and dispatches each by its `reference_point_type`,
+    so a single species may carry multiple targets (e.g. biomass + catch).
     """
+    # Fail loud at construction time on an unknown reference_point_type.
+    for _t in targets:
+        quantity_key(getattr(_t, "reference_point_type", "biomass"))
+
     state: dict[str, tuple | None] = {"residuals": None}
 
     def objective(species_stats: dict[str, float]) -> float:
