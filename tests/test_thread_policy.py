@@ -195,8 +195,14 @@ def test_mortality_bit_identical_across_thread_counts(restore_numba_threads):
     cannot degenerate into comparing a run against itself. Uses eec_full so the
     kernel actually runs; the ocean-cell assertion guarantees this can never pass
     vacuously (see `_run_eec_for_determinism`)."""
-    pytest.importorskip("numba")
-    hi = os.cpu_count()
+    numba = pytest.importorskip("numba")
+    # Numba freezes its max thread count from the affinity set at import, and
+    # set_num_threads(n > max) RAISES. Under taskset/cgroup pinning os.cpu_count()
+    # can exceed that max (the HPC/Apptainer target), so drive the test off Numba's
+    # own max, not the host cpu count, or it errors instead of running.
+    hi = numba.config.NUMBA_NUM_THREADS
+    if hi < 2:
+        pytest.skip("Numba thread max is 1 (affinity-pinned); cannot compare thread counts")
     grid1, out1 = _run_eec_for_determinism(1, 123, 1)
     assert grid1.ocean_mask.sum() > 1, (
         "fixture has no ocean cells — the mortality kernel would be skipped and this "
