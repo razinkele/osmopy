@@ -620,15 +620,17 @@ def calibration_server(input, output, session, state):
             return ui.div()
         rows = _solution_diff_rows(state.config.get(), sol["params"])
         badge = {"changed": "bg-secondary", "added": "bg-success", "removed": "bg-danger"}
-        body = [
-            ui.tags.tr(
-                ui.tags.td(r["key"]),
-                ui.tags.td("(not set)" if r["value_a"] is None else r["value_a"]),
-                ui.tags.td(r["value_b"]),
-                ui.tags.td(ui.tags.span(r["change"], class_=f"badge {badge[r['change']]}")),
+        body = []
+        for r in rows:
+            change = r["change"] or "changed"  # str | None -> str (always set in practice)
+            body.append(
+                ui.tags.tr(
+                    ui.tags.td(r["key"]),
+                    ui.tags.td("(not set)" if r["value_a"] is None else r["value_a"]),
+                    ui.tags.td(r["value_b"]),
+                    ui.tags.td(ui.tags.span(change, class_=f"badge {badge[change]}")),
+                )
             )
-            for r in rows
-        ]
         obj_str = ", ".join(f"{v:.4g}" for v in sol["objectives"])
         return ui.div(
             ui.p(ui.tags.strong(f"Solution #{sol['index']} — objectives: "), obj_str),
