@@ -14,6 +14,7 @@ from shiny.types import SilentException
 from shinywidgets import output_widget, render_plotly
 
 from osmose.calibration.pareto import (
+    apply_solution_overrides,
     nondominated_indices,
     select_solution,
     solution_overrides_csv,
@@ -35,6 +36,7 @@ from ui.pages.calibration_handlers import (
 )
 from ui.pages.run import copy_data_files
 from ui.components.collapsible import collapsible_card_header, expand_tab
+from ui.components.config_diff import classify_config_diffs
 from ui.state import get_theme_mode
 from ui.styles import STYLE_EMPTY, STYLE_HINT_BLOCK
 
@@ -178,6 +180,26 @@ def _render_weighted_summary(optimum: dict | None, weights: list[float] | None):
         ui.tags.span(f"parameters = {np.round(params, 4).tolist()}"),
     ]
     return ui.div(*rows, class_="p-3 border rounded bg-light")
+
+
+def _solution_diff_rows(config, params):
+    """Classified Current(value_a)/New(value_b) rows for a picked solution vs the live config."""
+    diffs = [{"key": k, "value_a": config.get(k), "value_b": str(v)} for k, v in params.items()]
+    return classify_config_diffs(diffs)
+
+
+def apply_picked_solution(state, params) -> int:
+    """Merge a picked solution's params into ``state.config`` with the app's standard config-write
+    wiring (dirty flag + load_trigger bump so every already-rendered page re-reads). Returns the
+    number of changed keys. Plain function (no Shiny event machinery) so it is unit-testable."""
+    with reactive.isolate():
+        cfg = dict(state.config.get())
+    new_cfg, n = apply_solution_overrides(cfg, params)
+    state.config.set(new_cfg)
+    state.dirty.set(True)
+    with reactive.isolate():
+        state.load_trigger.set(state.load_trigger.get() + 1)
+    return n
 
 
 # -- Shiny UI / Server --------------------------------------------------------
@@ -331,6 +353,11 @@ def calibration_ui():
                                     "cal_export_params",
                                     "Download parameters (CSV)",
                                     class_="btn-outline-primary btn-sm",
+                                ),
+                                ui.input_action_button(
+                                    "cal_apply_solution",
+                                    "Apply to current config",
+                                    class_="btn-outline-success btn-sm",
                                 ),
                                 ui.hr(),
                                 ui.h6("Multi-Seed Validation"),
@@ -591,15 +618,30 @@ def calibration_server(input, output, session, state):
         sol = _picked_solution()
         if sol is None:
             return ui.div()
-        param_rows = [
-            ui.tags.tr(ui.tags.td(k), ui.tags.td(f"{v:.6g}")) for k, v in sol["params"].items()
+        rows = _solution_diff_rows(state.config.get(), sol["params"])
+        badge = {"changed": "bg-secondary", "added": "bg-success", "removed": "bg-danger"}
+        body = [
+            ui.tags.tr(
+                ui.tags.td(r["key"]),
+                ui.tags.td("(not set)" if r["value_a"] is None else r["value_a"]),
+                ui.tags.td(r["value_b"]),
+                ui.tags.td(ui.tags.span(r["change"], class_=f"badge {badge[r['change']]}")),
+            )
+            for r in rows
         ]
         obj_str = ", ".join(f"{v:.4g}" for v in sol["objectives"])
         return ui.div(
             ui.p(ui.tags.strong(f"Solution #{sol['index']} — objectives: "), obj_str),
             ui.tags.table(
-                ui.tags.thead(ui.tags.tr(ui.tags.th("Parameter"), ui.tags.th("Value"))),
-                ui.tags.tbody(*param_rows),
+                ui.tags.thead(
+                    ui.tags.tr(
+                        ui.tags.th("Parameter"),
+                        ui.tags.th("Current"),
+                        ui.tags.th("New"),
+                        ui.tags.th("Change"),
+                    )
+                ),
+                ui.tags.tbody(*body),
                 class_="table table-sm table-striped",
             ),
         )
@@ -608,6 +650,20 @@ def calibration_server(input, output, session, state):
     def cal_export_params():
         sol = _picked_solution()
         yield solution_overrides_csv(sol["params"] if sol else {})
+
+    @reactive.effect
+    @reactive.event(input.cal_apply_solution)
+    def _apply_pareto_solution():
+        sol = _picked_solution()
+        if not sol or not sol.get("params"):
+            ui.notification_show("Pick a Pareto solution first.", type="warning")
+            return
+        n = apply_picked_solution(state, sol["params"])
+        ui.notification_show(
+            f"Applied {n} parameter{'s' if n != 1 else ''} to the current config.",
+            type="message",
+            duration=5,
+        )
 
     @render.ui
     def validation_table():
