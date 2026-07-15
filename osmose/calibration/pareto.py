@@ -72,3 +72,22 @@ def solution_overrides_csv(params):
     if not params:
         return ""
     return "\n".join(f"{k} ; {v}" for k, v in params.items()) + "\n"
+
+
+def apply_solution_overrides(config, params):
+    """Merge a picked solution's ``{key: value}`` params into an OSMOSE config dict.
+
+    OSMOSE config values are strings; solution params are floats — each is rendered with
+    ``str(value)``, identical to :func:`solution_overrides_csv`, so Apply and Download never
+    diverge. Returns ``(new_config, keys_changed)`` where ``keys_changed`` counts params whose
+    stringified value differs from the config's current value (a not-yet-present key counts as
+    changed). Does not mutate the input config.
+    """
+    new_config = dict(config)
+    changed = 0
+    for k, v in params.items():
+        sv = str(v)
+        if new_config.get(k) != sv:
+            changed += 1
+        new_config[k] = sv
+    return new_config, changed
