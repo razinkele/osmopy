@@ -209,6 +209,7 @@ def run_simulation(
     n_years: int = 40,
     seed: int = 42,
     timeout_s: float | None = None,
+    recruitment_ages: dict[str, str] | None = None,
 ) -> dict[str, float]:
     """Run PythonEngine with overrides, return last-10-year mean biomass per species.
 
@@ -241,6 +242,12 @@ def run_simulation(
             yld = results.yield_biomass()
         except Exception:  # noqa: BLE001 — yield CSV absent/empty: leave yield stats unset
             yld = None
+        abd = None
+        if recruitment_ages:
+            try:
+                abd = results.abundance_by_age()
+            except Exception:  # noqa: BLE001 — abundance-by-age absent: leave recruitment unset
+                abd = None
         results.close()
 
     # Extract last 10 years of biomass
@@ -277,6 +284,18 @@ def run_simulation(
                 species_stats[f"{sp}_trend"] = float(abs(slope) / (mean_val + 1.0))
             else:
                 species_stats[f"{sp}_trend"] = 0.0
+
+    # Recruitment stat (diagnostic only; DE loop passes recruitment_ages=None -> skipped).
+    # abundance_by_age() is LONG [time, species, bin, value] with string bins; mean the
+    # ICES recruitment-age bin over the same trailing window as {sp}_mean.
+    if recruitment_ages and abd is not None and not abd.empty and "bin" in abd.columns:
+        for sp, age in recruitment_ages.items():
+            sub = abd[(abd["species"] == sp) & (abd["bin"].astype(str) == str(age))]
+            if not sub.empty:
+                rvals = sub.sort_values("time")["value"].to_numpy(dtype=float)
+                reval = rvals[-n_eval_years:] if len(rvals) > n_eval_years else rvals
+                if reval.size > 0:
+                    species_stats[f"{sp}_recruitment_mean"] = float(np.mean(reval))
 
     return species_stats
 
