@@ -205,3 +205,11 @@ def make_multi_input(default: Any = _MISSING, **kwargs: Any):
             raise AttributeError(name)
 
     return FakeInput()
+
+
+def numba_thread_count(_=None) -> int:
+    """Return Numba's active thread count. Module-level + picklable so a
+    forkserver/spawn worker can run it (used by the thread-policy isolation test)."""
+    import numba
+
+    return numba.get_num_threads()

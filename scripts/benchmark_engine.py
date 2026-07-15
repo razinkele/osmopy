@@ -19,6 +19,8 @@ from pathlib import Path
 
 import numpy as np
 
+from osmose.engine.thread_policy import apply_single_run_threads
+
 PROJECT_DIR = Path(__file__).parent.parent
 EXAMPLES_CONFIG = PROJECT_DIR / "data" / "examples" / "osm_all-parameters.csv"
 
@@ -185,6 +187,9 @@ def main() -> None:
         f"{args.years}yr, seed={args.seed}, repeats={args.repeats}"
     )
     print()
+
+    n_threads = apply_single_run_threads()
+    print(f"  Numba threads: {n_threads or 'default (numba absent)'}\n")
 
     timings = []
     result = None
