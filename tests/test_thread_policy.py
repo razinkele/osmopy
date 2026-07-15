@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import sys
 
+import numpy as np
 import pytest
 
 from osmose.engine import thread_policy as tp
@@ -152,3 +153,131 @@ def test_benchmark_main_applies_policy(monkeypatch):
     )
     be.main()
     assert called.get("hit") is True
+
+
+def _run_eec_for_determinism(n_years: int, seed: int, threads: int):
+    """Run the eec_full fixture at a fixed Numba thread count; return (grid, outputs).
+
+    CRITICAL: use eec_full (460 ocean cells), NOT data/minimal — minimal's grid mask
+    has ZERO ocean cells, so every school stays at cell (-1,-1), mortality()'s
+    valid_indices is empty every timestep, n_cells==0, and the prange kernel under
+    test is NEVER invoked. A determinism check on minimal would pass vacuously
+    (kernel skipped), proving nothing. eec_full's 460 cells make the parallel
+    cell-loop actually run.
+    """
+    import numba
+
+    from osmose.config.reader import OsmoseConfigReader
+    from osmose.engine.config import EngineConfig
+    from osmose.engine.grid import Grid
+    from osmose.engine.simulate import simulate
+
+    cfg_path = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)), "data", "eec_full", "eec_all-parameters.csv"
+    )
+    reader = OsmoseConfigReader()
+    raw = reader.read(cfg_path)
+    raw["simulation.time.nyear"] = str(n_years)
+    cfg = EngineConfig.from_dict(raw)
+    grid = Grid.from_netcdf(
+        os.path.join(os.path.dirname(cfg_path), raw["grid.netcdf.file"]),
+        mask_var=raw.get("grid.var.mask", "mask"),
+    )
+    numba.set_num_threads(threads)
+    return grid, simulate(cfg, grid, np.random.default_rng(seed))
+
+
+@pytest.mark.filterwarnings("ignore:Swapping size ratios")
+@pytest.mark.skipif((os.cpu_count() or 1) < 2, reason="needs >=2 cores to compare thread counts")
+def test_mortality_bit_identical_across_thread_counts(restore_numba_threads):
+    """The mortality prange is race-free: 1 thread vs many threads must be EXACTLY
+    equal (np.array_equal, not allclose). Two hardcoded, different counts so this
+    cannot degenerate into comparing a run against itself. Uses eec_full so the
+    kernel actually runs; the ocean-cell assertion guarantees this can never pass
+    vacuously (see `_run_eec_for_determinism`)."""
+    pytest.importorskip("numba")
+    hi = os.cpu_count()
+    grid1, out1 = _run_eec_for_determinism(1, 123, 1)
+    assert grid1.ocean_mask.sum() > 1, (
+        "fixture has no ocean cells — the mortality kernel would be skipped and this "
+        "determinism test would pass vacuously"
+    )
+    _, outN = _run_eec_for_determinism(1, 123, hi)
+    b1 = np.asarray(out1[-1].biomass, dtype=np.float64)
+    bN = np.asarray(outN[-1].biomass, dtype=np.float64)
+    assert np.array_equal(b1, bN), f"biomass differs between 1 and {hi} threads"
+
+
+@pytest.mark.skipif((os.cpu_count() or 1) < 2, reason="needs >=2 cores to observe a cap")
+def test_cap_is_thread_local_same_process(restore_numba_threads):
+    """Same-process (thread-backed) calibration paths are unaffected: a main-thread
+    cap is invisible to a sibling thread (numba.set_num_threads is thread-local)."""
+    import threading
+
+    numba = pytest.importorskip("numba")
+    default = numba.config.NUMBA_NUM_THREADS
+    if default < 2:
+        pytest.skip("default thread count is 1; cannot distinguish a cap")
+    tp.apply_single_run_threads(1)
+    assert numba.get_num_threads() == 1
+    seen = []
+    t = threading.Thread(target=lambda: seen.append(numba.get_num_threads()))
+    t.start()
+    t.join()
+    assert seen[0] == default, "single-run cap leaked into a sibling thread"
+
+
+@pytest.mark.skipif((os.cpu_count() or 1) < 2, reason="needs >=2 cores to observe a cap")
+def test_cap_does_not_leak_into_forkserver_worker(monkeypatch, restore_numba_threads):
+    """Calibration's ProcessPoolExecutor(forkserver) workers must NOT inherit a
+    single-run cap. Cap the main process to 1, then a forkserver worker must still
+    see the unrestricted default."""
+    import multiprocessing
+    import multiprocessing.forkserver
+    from concurrent.futures import ProcessPoolExecutor
+
+    numba = pytest.importorskip("numba")
+    default = numba.config.NUMBA_NUM_THREADS
+    if default < 2:
+        pytest.skip("default thread count is 1; cannot distinguish a cap")
+
+    from tests.helpers import numba_thread_count
+
+    # Defuse a cross-file hazard: tests/test_jit_determinism.py sets
+    # os.environ["NUMBA_NUM_THREADS"] and never restores it. multiprocessing's
+    # forkserver process is a singleton that persists (and is reused) for the
+    # rest of THIS interpreter's life once started, so if any earlier test in
+    # the same process (e.g. a real ProcessPoolExecutor(forkserver) pool, as
+    # osmose/calibration's "process" backend uses) started it while that env
+    # var was polluted, every worker forked from it inherits the stale value
+    # forever after — clearing the env here would be too late for an
+    # already-running server. `_stop()` is multiprocessing's own sanctioned
+    # test hook ("Method used by unit tests to stop the server") to force a
+    # fresh respawn once the env is clean, regardless of what ran before.
+    monkeypatch.delenv("NUMBA_NUM_THREADS", raising=False)
+    multiprocessing.forkserver._forkserver._stop()
+    tp.apply_single_run_threads(1)
+    assert numba.get_num_threads() == 1
+    ctx = multiprocessing.get_context("forkserver")
+    with ProcessPoolExecutor(max_workers=1, mp_context=ctx) as ex:
+        worker_threads = ex.submit(numba_thread_count, None).result(timeout=120)
+    assert worker_threads == default, "single-run cap leaked into a forkserver worker"
+
+
+def test_worker_init_does_not_reset_numba_threads():
+    """Calibration's real worker initializer (osmose/calibration/problem.py::_worker_init)
+    must NOT set a Numba thread count — the single-run cap must never be reintroduced
+    there. Static guard so this invariant survives future edits to _worker_init.
+
+    (The thread-ISOLATION guarantee itself comes from the forkserver boundary + Numba's
+    thread-locality, exercised by the two tests above. Reconstructing a full
+    OsmoseCalibrationProblem via _worker_init here — it takes an _EvalSpec and rebuilds
+    the whole problem — would add heavy, fragile calibration coupling for no extra thread
+    coverage, since _worker_init is thread-agnostic; this static guard is the proportionate
+    check that it cannot reintroduce a cap.)"""
+    import inspect
+
+    from osmose.calibration import problem
+
+    src = inspect.getsource(problem._worker_init)
+    assert "set_num_threads" not in src, "_worker_init must not touch the Numba thread count"
