@@ -36,12 +36,22 @@ SPECIES = ["cod", "herring", "sprat", "flounder",
 
 
 def load_targets():
+    """Load species -> (target, lower, upper) biomass envelope.
+
+    Excludes `catch`-type rows (column 6, reference_point_type) — this report
+    is biomass-only (compares mean simulated biomass to the ICES envelope),
+    and the dict is keyed by species, so a species' catch-band row would
+    otherwise silently overwrite its biomass row (last-wins).
+    """
     t = {}
     for ln in TARGETS_CSV.read_text().splitlines():
         if ln.startswith("#") or ln.startswith("species,") or not ln.strip():
             continue
-        p = ln.split(",", 4)
+        p = ln.split(",", 6)
         if len(p) >= 4:
+            reference_point_type = p[5].strip() if len(p) >= 6 else "biomass"
+            if reference_point_type == "catch":
+                continue
             try:
                 t[p[0].strip()] = (float(p[1]), float(p[2]), float(p[3]))
             except ValueError:

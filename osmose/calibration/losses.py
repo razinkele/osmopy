@@ -6,6 +6,24 @@ import math
 
 from osmose.calibration.targets import BiomassTarget
 
+STABILITY_TYPES = frozenset({"biomass", "ssb"})
+
+_QUANTITY_SUFFIX = {"biomass": "_mean", "ssb": "_mean", "catch": "_yield_mean"}
+
+
+def quantity_key(reference_point_type: str) -> str:
+    """Model-stat suffix a target of this reference_point_type is scored against.
+
+    `biomass`/`ssb` -> `_mean` (equilibrium biomass); `catch` -> `_yield_mean` (yield tonnes).
+    """
+    try:
+        return _QUANTITY_SUFFIX[reference_point_type]
+    except KeyError:
+        raise ValueError(
+            f"unknown reference_point_type {reference_point_type!r}; "
+            f"expected one of {sorted(_QUANTITY_SUFFIX)}"
+        ) from None
+
 
 def banded_log_ratio_loss(sim_biomass: float, lower: float, upper: float) -> float:
     """Per-species loss: 0 inside [lower, upper], squared log-distance outside."""
@@ -57,8 +75,14 @@ def make_banded_objective(
         objective call. Cleared to None at START of each call (mid-call raise
         leaves None — spec §6.5.2 parity with Path A). Re-populated as LAST
         statement before return.
+
+    Iterates over ALL targets and dispatches each by its `reference_point_type`,
+    so a single species may carry multiple targets (e.g. biomass + catch).
     """
-    target_dict = {t.species: t for t in targets}
+    # Fail loud at construction time on an unknown reference_point_type.
+    for _t in targets:
+        quantity_key(getattr(_t, "reference_point_type", "biomass"))
+
     state: dict[str, tuple | None] = {"residuals": None}
 
     def objective(species_stats: dict[str, float]) -> float:
@@ -67,42 +91,44 @@ def make_banded_objective(
         residuals_local: list[tuple[str, float, float]] = []
         total_error = 0.0
         worst_error = 0.0
-        for sp in species_names:
-            mean_key = f"{sp}_mean"
-            cv_key = f"{sp}_cv"
-            trend_key = f"{sp}_trend"
+        for target in targets:
+            sp = target.species
+            # getattr default: legacy/duck-typed target objects (e.g. the
+            # standalone BiomassTarget in scripts/calibrate_baltic.py) predate
+            # reference_point_type and were always implicitly "biomass".
+            rpt = getattr(target, "reference_point_type", "biomass")
+            key = f"{sp}{quantity_key(rpt)}"
 
-            if mean_key not in species_stats or sp not in target_dict:
+            if key not in species_stats:
                 total_error += 100.0
                 worst_error = max(worst_error, 100.0)
                 residuals_local.append((sp, 100.0, 0.0))
                 continue
 
-            sim_biomass = species_stats[mean_key]
-            target = target_dict[sp]
-            recorded_biomass = sim_biomass
-
-            if sim_biomass <= 0:
+            sim_value = species_stats[key]
+            recorded = sim_value
+            if sim_value <= 0:
                 sp_error = 100.0
-                recorded_biomass = 0.0
-            elif sim_biomass < target.lower:
-                sp_error = float(math.log10(target.lower / sim_biomass) ** 2)
-            elif sim_biomass > target.upper:
-                sp_error = float(math.log10(sim_biomass / target.upper) ** 2)
+                recorded = 0.0
+            elif sim_value < target.lower:
+                sp_error = float(math.log10(target.lower / sim_value) ** 2)
+            elif sim_value > target.upper:
+                sp_error = float(math.log10(sim_value / target.upper) ** 2)
             else:
                 sp_error = 0.0
 
             weighted_error = target.weight * sp_error
             total_error += weighted_error
             worst_error = max(worst_error, weighted_error)
-            residuals_local.append((sp, weighted_error, float(recorded_biomass)))
+            residuals_local.append((sp, weighted_error, float(recorded)))
 
-            cv = species_stats.get(cv_key, 0.0)
-            if cv > 0.2:
-                total_error += w_stability * target.weight * (cv - 0.2) ** 2
-            trend = species_stats.get(trend_key, 0.0)
-            if trend > 0.05:
-                total_error += w_stability * target.weight * (trend - 0.05) ** 2
+            if rpt in STABILITY_TYPES:
+                cv = species_stats.get(f"{sp}_cv", 0.0)
+                if cv > 0.2:
+                    total_error += w_stability * target.weight * (cv - 0.2) ** 2
+                trend = species_stats.get(f"{sp}_trend", 0.0)
+                if trend > 0.05:
+                    total_error += w_stability * target.weight * (trend - 0.05) ** 2
 
         total_error += w_worst * worst_error
 

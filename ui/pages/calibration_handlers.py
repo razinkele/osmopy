@@ -595,10 +595,15 @@ def build_free_params(selected: list[dict]) -> list:
 
 
 def _extract_species_stats(results, species_names: list[str], n_eval_years: int = 10) -> dict:
-    """Extract mean/cv/trend per species from simulation results."""
+    """Extract mean/cv/trend/yield-mean per species from simulation results."""
     bio = results.biomass()
     total_years = len(bio)
     eval_data = bio.iloc[-n_eval_years:] if total_years > n_eval_years else bio
+
+    try:
+        yld = results.yield_biomass()
+    except Exception:  # noqa: BLE001 — yield CSV absent/empty: leave yield stats unset
+        yld = None
 
     stats: dict[str, float] = {}
     for sp in species_names:
@@ -607,6 +612,12 @@ def _extract_species_stats(results, species_names: list[str], n_eval_years: int 
         vals = eval_data[sp].values.astype(float)
         mean_val = float(np.mean(vals))
         stats[f"{sp}_mean"] = mean_val
+
+        if yld is not None and sp in yld.columns:
+            yvals = yld[sp].values.astype(float)
+            yeval = yvals[-n_eval_years:] if len(yvals) > n_eval_years else yvals
+            if yeval.size > 0:
+                stats[f"{sp}_yield_mean"] = float(np.mean(yeval))
 
         if mean_val > 0:
             stats[f"{sp}_cv"] = float(np.std(vals) / mean_val)

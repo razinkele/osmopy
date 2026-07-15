@@ -16,7 +16,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import logging
 import multiprocessing as mp
@@ -35,6 +34,7 @@ import numpy as np
 from scipy.optimize import differential_evolution
 
 from osmose.calibration.checkpoint import RESULTS_DIR  # honors OSMOSE_RESULTS_DIR
+from osmose.calibration.losses import STABILITY_TYPES, quantity_key
 
 # ---------------------------------------------------------------------------
 # Project paths
@@ -95,21 +95,11 @@ class BiomassTarget:
 
 
 def load_targets(path: Path = TARGETS_CSV) -> list[BiomassTarget]:
-    """Load calibration targets from CSV (skips # comment lines)."""
-    targets = []
-    with open(path) as f:
-        lines = [line for line in f if not line.startswith("#")]
-    reader = csv.DictReader(lines)
-    for row in reader:
-        targets.append(
-            BiomassTarget(
-                species=row["species"],
-                target=float(row["target_tonnes"]),
-                lower=float(row["lower_tonnes"]),
-                upper=float(row["upper_tonnes"]),
-                weight=float(row.get("weight", "1.0")),
-            )
-        )
+    """Load calibration targets (delegates to the canonical loader, which reads
+    reference_point_type and #! metadata). Returns the target list only."""
+    from osmose.calibration.targets import load_targets as _load
+
+    targets, _meta = _load(path)
     return targets
 
 
@@ -247,6 +237,10 @@ def run_simulation(
 
         results = OsmoseResults(output_dir, strict=False)
         bio = results.biomass()
+        try:
+            yld = results.yield_biomass()
+        except Exception:  # noqa: BLE001 — yield CSV absent/empty: leave yield stats unset
+            yld = None
         results.close()
 
     # Extract last 10 years of biomass
@@ -263,6 +257,12 @@ def run_simulation(
             vals = eval_data[sp].values.astype(float)
             mean_val = float(np.mean(vals))
             species_stats[f"{sp}_mean"] = mean_val
+
+            if yld is not None and sp in yld.columns:
+                yvals = yld[sp].values.astype(float)
+                yeval = yvals[-n_eval_years:] if len(yvals) > n_eval_years else yvals
+                if yeval.size > 0:
+                    species_stats[f"{sp}_yield_mean"] = float(np.mean(yeval))
 
             # CV for stability penalty
             if mean_val > 0:
@@ -307,7 +307,6 @@ class _ObjectiveWrapper:
     ):
         self.base_config = base_config
         self.targets = targets
-        self.target_dict = {t.species: t for t in targets}
         self.param_keys = param_keys
         self.n_years = n_years
         self.seed = seed
@@ -317,6 +316,10 @@ class _ObjectiveWrapper:
         self.sim_timeout_s = sim_timeout_s
         self.weight_floor = weight_floor
         self.last_per_species_residuals: list[tuple[str, float, float]] | None = None
+
+        # Fail loud at construction on an unknown reference_point_type (mirrors losses.py).
+        for _t in self.targets:
+            quantity_key(getattr(_t, "reference_point_type", "biomass"))
 
     def __call__(self, x: np.ndarray) -> float:
         """Evaluate objective function at point x.
@@ -333,28 +336,29 @@ class _ObjectiveWrapper:
         residuals_local: list[tuple[str, float, float]] = []
         total_error = 0.0
         worst_error = 0.0
-        for sp in (t.species for t in self.targets):
-            mean_key = f"{sp}_mean"
-            cv_key = f"{sp}_cv"
-            trend_key = f"{sp}_trend"
+        for target in self.targets:
+            sp = target.species
+            # getattr default: the legacy fieldless BiomassTarget defined in this module
+            # (still used by tests/conftest.py::synthetic_two_species_targets) predates
+            # reference_point_type and was always implicitly "biomass".
+            rpt = getattr(target, "reference_point_type", "biomass")
+            key = f"{sp}{quantity_key(rpt)}"
 
-            if mean_key not in stats or sp not in self.target_dict:
+            if key not in stats:
                 total_error += 100.0
                 worst_error = max(worst_error, 100.0)
                 residuals_local.append((sp, 100.0, 0.0))
                 continue
 
-            sim_biomass = stats[mean_key]
-            target = self.target_dict[sp]
-            recorded_biomass = sim_biomass
-
-            if sim_biomass <= 0:
+            sim_value = stats[key]
+            recorded = sim_value
+            if sim_value <= 0:
                 sp_error = 100.0
-                recorded_biomass = 0.0
-            elif sim_biomass < target.lower:
-                sp_error = float(np.log10(target.lower / sim_biomass) ** 2)
-            elif sim_biomass > target.upper:
-                sp_error = float(np.log10(sim_biomass / target.upper) ** 2)
+                recorded = 0.0
+            elif sim_value < target.lower:
+                sp_error = float(np.log10(target.lower / sim_value) ** 2)
+            elif sim_value > target.upper:
+                sp_error = float(np.log10(sim_value / target.upper) ** 2)
             else:
                 sp_error = 0.0
 
@@ -362,14 +366,15 @@ class _ObjectiveWrapper:
             weighted_error = eff_weight * sp_error
             total_error += weighted_error
             worst_error = max(worst_error, weighted_error)
-            residuals_local.append((sp, weighted_error, float(recorded_biomass)))
+            residuals_local.append((sp, weighted_error, float(recorded)))
 
-            cv = stats.get(cv_key, 0.0)
-            if cv > 0.2:
-                total_error += self.w_stability * eff_weight * (cv - 0.2) ** 2
-            trend = stats.get(trend_key, 0.0)
-            if trend > 0.05:
-                total_error += self.w_stability * eff_weight * (trend - 0.05) ** 2
+            if rpt in STABILITY_TYPES:
+                cv = stats.get(f"{sp}_cv", 0.0)
+                if cv > 0.2:
+                    total_error += self.w_stability * eff_weight * (cv - 0.2) ** 2
+                trend = stats.get(f"{sp}_trend", 0.0)
+                if trend > 0.05:
+                    total_error += self.w_stability * eff_weight * (trend - 0.05) ** 2
 
         total_error += self.w_worst * worst_error
         # LOAD-BEARING: assign-at-end — see spec §6.5.1.

@@ -99,7 +99,14 @@ def evaluate(params_path: Path, mode: str, n_years: int, seed: int) -> dict:
     if not stats:
         raise RuntimeError("simulation failed (run_simulation returned {})")
 
-    targets = {t.species: t for t in load_targets()}
+    # Biomass-only comparison (mean simulated biomass vs. envelope) — exclude
+    # catch-type rows so a species' catch band doesn't shadow its biomass row
+    # in this species-keyed dict (last-wins on duplicate species).
+    targets = {
+        t.species: t
+        for t in load_targets()
+        if getattr(t, "reference_point_type", "biomass") != "catch"
+    }
     rows = []
     in_range = 0
     for sp in SPECIES_NAMES:
