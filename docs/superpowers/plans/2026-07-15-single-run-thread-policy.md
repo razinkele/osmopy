@@ -24,7 +24,8 @@
 ## File Structure
 
 - **Create** `osmose/engine/thread_policy.py` — the resolver: `logical_budget`, `_core_key`, `physical_budget`, `resolve_engine_threads`, `apply_single_run_threads`.
-- **Create** `tests/test_thread_policy.py` — unit tests for the resolver (pure, mocked topology) + `apply_single_run_threads` behavior + the same-process thread-local + forkserver-boundary isolation tests + the engine determinism test.
+- **Create** `tests/test_thread_policy.py` — unit tests for the resolver (pure, mocked topology) + `apply_single_run_threads` behavior + engine determinism + the calibration-isolation guards (same-process thread-local, forkserver-boundary, and a static `_worker_init` guard).
+- **Create** `docs/perf/2026-07-15-mortality-thread-oversubscription.md` — the investigation record (thread-scaling sweep tables + root-cause), which the spec's Motivation commits to alongside this work (matching the sibling perf-spike docs).
 - **Modify** `ui/pages/run.py` — replace the inline numba cap in `_python_engine_thread` (lines 320–328) with a call to `apply_single_run_threads`; add a module-level import; change the `py_threads` label (line 237).
 - **Modify** `scripts/benchmark_engine.py` — apply the single-run policy once in `main()` before the timed runs.
 - **Modify** `tests/helpers.py` — add one picklable worker function (`numba_thread_count()`) used by the forkserver-boundary test.
@@ -318,10 +319,12 @@ def test_python_engine_thread_applies_policy(monkeypatch):
     from ui.pages import run as run_mod
 
     recorded = {}
-    monkeypatch.setattr(
-        run_mod, "apply_single_run_threads",
-        lambda requested: recorded.setdefault("requested", requested) or 14,
-    )
+
+    def _fake_apply(requested):
+        recorded["requested"] = requested
+        return 14
+
+    monkeypatch.setattr(run_mod, "apply_single_run_threads", _fake_apply)
 
     class _FakeEngine:
         def run(self, *a, **k):
@@ -343,7 +346,12 @@ def test_benchmark_main_applies_policy(monkeypatch):
     import scripts.benchmark_engine as be
 
     called = {}
-    monkeypatch.setattr(be, "apply_single_run_threads", lambda requested=None: called.setdefault("hit", True) or 12)
+
+    def _fake_apply(requested=None):
+        called["hit"] = True
+        return 12
+
+    monkeypatch.setattr(be, "apply_single_run_threads", _fake_apply)
     monkeypatch.setattr(
         be, "run_benchmark",
         lambda *a, **k: {"elapsed_s": 0.1, "final_biomass": {"sp0": 1.0}},
@@ -387,6 +395,13 @@ with:
     # no-op if numba is absent. See osmose/engine/thread_policy.py.
     apply_single_run_threads(n_threads)
 ```
+
+> Note: passing the raw `n_threads` is intentionally simpler than the spec's
+> `apply_single_run_threads(n_threads if n_threads >= 1 else None)` and is
+> behaviorally identical — `resolve_engine_threads` treats `requested < 1` (the
+> literal `0` the UI always sends) and `None` the same, both falling through to
+> `physical_budget()`. The only difference is the `%r` value in the debug log
+> line (`requested=0` vs `requested=None`). Use `apply_single_run_threads(n_threads)`.
 
 Change the `py_threads` input label (line 237) from:
 
@@ -444,27 +459,11 @@ git commit -m "feat(run): apply single-run thread policy in UI run + benchmark"
 - Consumes: `apply_single_run_threads` (Task 1); the engine `simulate()`.
 - Produces: `tests.helpers.numba_thread_count() -> int` (module-level, picklable for forkserver).
 
-- [ ] **Step 1: Add the picklable worker helper**
+- [ ] **Step 1: Write the guard tests (determinism + calibration isolation)**
 
-Append to `tests/helpers.py`:
-
-```python
-def numba_thread_count(_=None) -> int:
-    """Return Numba's active thread count. Module-level + picklable so a
-    forkserver/spawn worker can run it (used by the thread-policy isolation test)."""
-    import numba
-
-    return numba.get_num_threads()
-```
-
-- [ ] **Step 2: Write the failing determinism + isolation tests**
-
-Append to `tests/test_thread_policy.py`:
+First add `import numpy as np` to the **top-of-file import block** (created in Task 1 Step 1, next to `import os` / `import sys` / `import pytest`) — a mid-file module import triggers ruff `E402` (non-auto-fixable). Then append the following to `tests/test_thread_policy.py` (no `import numpy as np` line here — it now lives at the top):
 
 ```python
-import numpy as np
-
-
 def _run_minimal(n_years: int, seed: int, threads: int):
     """Run the `minimal` fixture at a fixed Numba thread count; return outputs."""
     import numba
@@ -549,12 +548,46 @@ def test_cap_does_not_leak_into_forkserver_worker(restore_numba_threads):
     with ProcessPoolExecutor(max_workers=1, mp_context=ctx) as ex:
         worker_threads = ex.submit(numba_thread_count, None).result(timeout=120)
     assert worker_threads == default, "single-run cap leaked into a forkserver worker"
+
+
+def test_worker_init_does_not_reset_numba_threads():
+    """Calibration's real worker initializer (osmose/calibration/problem.py::_worker_init)
+    must NOT set a Numba thread count — the single-run cap must never be reintroduced
+    there. Static guard so this invariant survives future edits to _worker_init.
+
+    (The thread-ISOLATION guarantee itself comes from the forkserver boundary + Numba's
+    thread-locality, exercised by the two tests above. Reconstructing a full
+    OsmoseCalibrationProblem via _worker_init here — it takes an _EvalSpec and rebuilds
+    the whole problem — would add heavy, fragile calibration coupling for no extra thread
+    coverage, since _worker_init is thread-agnostic; this static guard is the proportionate
+    check that it cannot reintroduce a cap.)"""
+    import inspect
+
+    from osmose.calibration import problem
+
+    src = inspect.getsource(problem._worker_init)
+    assert "set_num_threads" not in src, "_worker_init must not touch the Numba thread count"
 ```
 
-- [ ] **Step 3: Run tests to verify they fail (for the right reason)**
+- [ ] **Step 2: Run the tests (guard-test expectations, not red-green)**
 
-Run: `.venv/bin/python -m pytest tests/test_thread_policy.py::test_cap_does_not_leak_into_forkserver_worker -q`
-Expected: FAIL with `ImportError: cannot import name 'numba_thread_count' from 'tests.helpers'` — until Step 1's helper exists. (If Step 1 was already applied, this test PASSES; the determinism test may already pass because the engine is unchanged — that is fine, it is a regression guard. Confirm all three at least COLLECT and run.)
+These are **regression/property guards**, not feature red-green — they assert behavior that already exists (the engine's race-free prange, Numba's thread-locality, and that `_worker_init` never touches threads), so they PASS immediately, with one exception: `test_cap_does_not_leak_into_forkserver_worker` imports `numba_thread_count`, which does not exist until Step 3.
+
+Run: `.venv/bin/python -m pytest tests/test_thread_policy.py -q`
+Expected: the determinism, thread-local, and `_worker_init` static-guard tests PASS; `test_cap_does_not_leak_into_forkserver_worker` ERRORS with `ImportError: cannot import name 'numba_thread_count' from 'tests.helpers'` (its real red — goes green after Step 3).
+
+- [ ] **Step 3: Add the picklable worker helper**
+
+Append to `tests/helpers.py`:
+
+```python
+def numba_thread_count(_=None) -> int:
+    """Return Numba's active thread count. Module-level + picklable so a
+    forkserver/spawn worker can run it (used by the thread-policy isolation test)."""
+    import numba
+
+    return numba.get_num_threads()
+```
 
 - [ ] **Step 4: Run the full thread-policy test file**
 
@@ -580,6 +613,74 @@ git commit -m "test(engine): bit-identical determinism + calibration-isolation g
 
 ---
 
+## Task 4: Investigation-record doc (spec-committed artifact)
+
+**Files:**
+- Create: `docs/perf/2026-07-15-mortality-thread-oversubscription.md`
+
+**Interfaces:** none (documentation only).
+
+- [ ] **Step 1: Write the investigation record**
+
+Create `docs/perf/2026-07-15-mortality-thread-oversubscription.md` with exactly this content (the thread-scaling data measured during the investigation):
+
+```markdown
+# Mortality thread oversubscription — investigation record
+
+**Date:** 2026-07-15
+**Box:** Intel i9-10940X — 14 physical cores × 2 hyperthreads = 28 logical, 1 socket, 1 NUMA node.
+
+## Finding
+
+The mortality cell-loop (`osmose/engine/processes/mortality.py::_mortality_all_cells_parallel`,
+`@njit(cache=True, parallel=True)`, `prange` over cells) is ALREADY parallel and bit-identical at
+every thread count. It does NOT scale past ~physical cores: a single run defaults to all 28 logical
+(hyperthread) cores, which is the PESSIMAL point — ~1.5–2× slower than the ~physical-core optimum.
+
+## Thread-scaling sweep (whole-engine wall-time)
+
+eec_full (990 cells):
+
+| threads | 2yr median (3 reps) | 3yr median (7 reps) |
+|--------:|--------------------:|--------------------:|
+| 1  | 1.608 s | 3.081 s |
+| 4  | 0.913 s | 1.650 s |
+| 8  | 0.714 s | 1.274 s |
+| 12 | —       | **1.155 s (peak)** |
+| 14 | —       | 1.172 s |
+| 16 | 0.718 s | —       |
+| 28 (default) | 1.485 s | 1.779 s |
+
+baltic (2000 cells, 1yr, 5 reps): 1t 0.713 s → 8t 0.278 s → **14t 0.250 s (peak)** → 28t 0.412 s.
+
+Determinism: final biomass was **bit-identical across all thread counts** in both configs (the
+per-cell disjoint-slice + per-cell-seed prange is race-free).
+
+## Root cause
+
+A fork/join per timestep over ~1–2k uneven cells. Past the physical-core count, thread-team
+coordination + hyperthread cache/port contention + memory bandwidth swamp the compute saved. Same
+oversubscription pathology already documented for DE calibration workers (24→16 default).
+
+## Conclusion
+
+Cap single-run Numba threads to affinity-capped physical cores (~5-line change, bit-exact). The
+backlog's "parallelize the cell-loop" and "native C+OpenMP port" levers are STALE: the loop is
+already parallel, and a C+OpenMP port would hit the same fork/join + bandwidth + hyperthread walls.
+Scope: single-run entry points only — calibration's nested-parallelism regime is unaffected.
+
+Design: `docs/superpowers/specs/2026-07-15-single-run-thread-policy-design.md`.
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add docs/perf/2026-07-15-mortality-thread-oversubscription.md
+git commit -m "docs(perf): mortality thread-oversubscription investigation record"
+```
+
+---
+
 ## Verification (whole-branch, after all tasks)
 
 - [ ] Full suite: `.venv/bin/python -m pytest tests/ -q -n auto` — green (or only the documented CI-fragile-emergent skips).
@@ -594,9 +695,10 @@ git commit -m "test(engine): bit-identical determinism + calibration-isolation g
 **1. Spec coverage:**
 - §1 resolver (`logical_budget`/`physical_budget`+floor+tolerance/`resolve_engine_threads`/`apply_single_run_threads`) → Task 1. ✅
 - §2a UI wiring + label → Task 2. ✅ §2b benchmark wiring → Task 2. ✅ §2c "helper as mechanism, no specific batch script wired" → satisfied (only UI + benchmark wired; helper is public). ✅
-- §3 calibration untouched → no calibration file in any task; guarded by Task 3 thread-local + forkserver-boundary tests. ✅
-- Testing items 1 (cases i–viii) → Task 1; item 2 (determinism, exact, two hardcoded counts, skip<2) → Task 3; item 3 (real forkserver boundary) → Task 3; item 4 (apply behavior) → Task 1; item 5 (no regression, UI honors explicit value) → Task 2 wiring test + Verification suite. ✅
+- §3 calibration untouched → no calibration file modified; the isolation guarantee is guarded three ways in Task 3: the same-process thread-local test, the forkserver-boundary test (production `mp_context="forkserver"`), and a static guard that `_worker_init` contains no `set_num_threads`. (Reconstructing a full `OsmoseCalibrationProblem` via the real `_worker_init` was considered and rejected — heavy/fragile coupling for no extra thread coverage, since `_worker_init` is thread-agnostic; see the note in Task 3.) ✅
+- Testing items 1 (cases i–viii) → Task 1; item 2 (determinism, exact `np.array_equal`, two hardcoded counts, skip<2) → Task 3; item 3 (calibration isolation: real forkserver boundary + thread-locality + static `_worker_init` guard) → Task 3; item 4 (apply behavior) → Task 1; item 5 (no regression, UI honors explicit value) → Task 2 wiring test + Verification suite. ✅
 - Edge cases (no-HT, container quota, unreadable/degenerate topology, numba absent, explicit>budget) → Task 1 unit tests. ✅
+- Spec Motivation's committed `docs/perf/2026-07-15-mortality-thread-oversubscription.md` artifact → Task 4. ✅
 
 **2. Placeholder scan:** No TBD/TODO/"handle errors" placeholders; every code step shows complete code and exact commands. ✅
 
