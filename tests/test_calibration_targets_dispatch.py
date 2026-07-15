@@ -82,3 +82,42 @@ def test_unknown_reference_point_type_raises_at_construction():
     targets = [BiomassTarget("cod", 100.0, 50.0, 200.0, reference_point_type="bogus")]
     with pytest.raises(ValueError, match="reference_point_type"):
         make_banded_objective(targets, ["cod"])
+
+
+def test_script_load_targets_reads_reference_point_type(tmp_path):
+    import scripts.calibrate_baltic as cb
+
+    csv = tmp_path / "t.csv"
+    csv.write_text(
+        "species,target_tonnes,lower_tonnes,upper_tonnes,weight,reference_point_type\n"
+        "cod,100,50,200,1.0,biomass\n"
+        "cod,800,400,1600,0.5,catch\n"
+    )
+    targets = cb.load_targets(csv)
+    assert len(targets) == 2
+    assert {t.reference_point_type for t in targets} == {"biomass", "catch"}
+
+
+def test_objective_wrapper_dispatches_catch(monkeypatch):
+    import scripts.calibrate_baltic as cb
+    from osmose.calibration.targets import BiomassTarget
+
+    targets = [
+        BiomassTarget("cod", 100.0, 50.0, 200.0, weight=1.0, reference_point_type="biomass"),
+        BiomassTarget("cod", 800.0, 400.0, 1600.0, weight=0.5, reference_point_type="catch"),
+    ]
+    obj = cb.make_objective({"x": "1"}, targets, ["x"])
+    # Bypass the real sim: feed stats directly.
+    monkeypatch.setattr(
+        obj,
+        "_simulate_and_compute_stats",
+        lambda x: {"cod_mean": 100.0, "cod_cv": 0.0, "cod_trend": 0.0, "cod_yield_mean": 200.0},
+    )
+    import math
+
+    import numpy as np
+
+    val = obj(np.array([1.0]))
+    # biomass in band -> 0; catch 200 < 400 -> 0.5*log10(400/200)**2; + w_worst*worst
+    catch_err = 0.5 * math.log10(400.0 / 200.0) ** 2
+    assert val == pytest.approx(catch_err + 0.5 * catch_err, rel=1e-12)
