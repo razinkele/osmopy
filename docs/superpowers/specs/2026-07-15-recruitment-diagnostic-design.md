@@ -98,7 +98,7 @@ From `data/baltic/reference/ices_snapshots/`. **Reuse the existing snapshot plum
 quantity per year across mapped stocks over that window and keeps only years all stocks cover). Import those
 helpers rather than re-deriving JSON parsing; only the recruitment-specific aggregation is new.
 
-- **`_species_recruitment_age(snapshot_dir, species) -> str | None`** — single source of truth for the age:
+- **`_species_recruitment_age(species) -> str | None`** — single source of truth for the age:
   reads each mapped stock's `*.reference_points.json` `recruitment_age`; returns the common value if the mapped
   stocks agree (herring all `"0"`, sprat `"1"`), else `None` = "no clean ICES R". BOTH the ICES aggregation
   (below) and the model-side extraction (§1) consume this — no second hardcoded derivation.
@@ -139,12 +139,12 @@ Recruitment (model vs ICES R geomean, 2018-2022)
 
 ### 4. Boundaries
 
-- **`_species_recruitment_age(snapshot_dir, species) -> str | None`** — lives in
+- **`_species_recruitment_age(species) -> str | None`** — lives in
   `evaluate_calibration_vs_ices.py` (alongside `_ices_recruitment_geomean`), the single source of the
   recruitment age (§2). `evaluate()` calls it once per species to build the `recruitment_ages` dict it passes
   to `run_simulation`; the ICES aggregation uses the same helper. `run_simulation` never calls it (it receives
   the resolved ages as a parameter — §1), so `calibrate_baltic.py` gains no dependency on the snapshot code.
-- **`_ices_recruitment_geomean(snapshot_dir, species) -> tuple[float, float, float] | None`** — pure,
+- **`_ices_recruitment_geomean(species) -> tuple[float, float, float] | None`** — pure,
   unit-testable: `(geomean, min, max)` of the per-year summed recruitment over 2018–2022; `None` if no clean
   numeric R. Reuses `validate_baltic_vs_ices_sag.py`'s snapshot helpers.
 - **Model recruitment** is emitted as `{sp}_recruitment_mean` by `run_simulation` (§1) — a scalar in the

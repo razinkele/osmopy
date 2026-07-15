@@ -53,11 +53,21 @@ Create `tests/test_recruitment_diagnostic.py`:
 from __future__ import annotations
 
 import math
+import sys
+from pathlib import Path
 
 import numpy as np
 import pytest
 
-from scripts.evaluate_calibration_vs_ices import (
+# scripts/ modules use BARE sibling imports (e.g. `from calibrate_baltic import ...`), so scripts/
+# must be on sys.path and we import UNQUALIFIED — mirrors tests/test_fr_diagnostic.py. A dotted
+# `from scripts.evaluate_calibration_vs_ices import ...` fails at collection (ModuleNotFoundError:
+# calibrate_baltic), because a package-qualified import never puts scripts/ itself on sys.path.
+_SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
+if str(_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS))
+
+from evaluate_calibration_vs_ices import (  # noqa: E402
     _ices_recruitment_geomean,
     _recruitment_verdict,
     _species_recruitment_age,
@@ -115,7 +125,7 @@ def test_verdict_thresholds_inclusive():
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `.venv/bin/python -m pytest tests/test_recruitment_diagnostic.py -q`
-Expected: FAIL — `ImportError: cannot import name '_species_recruitment_age' from 'scripts.evaluate_calibration_vs_ices'`.
+Expected: FAIL — `ImportError: cannot import name '_species_recruitment_age' from 'evaluate_calibration_vs_ices'` (the module imports fine via the sys.path shim; the name doesn't exist yet).
 
 - [ ] **Step 3: Implement the helpers**
 
@@ -250,14 +260,16 @@ def _wire(monkeypatch, R, Engine):
 def test_recruitment_mean_from_age_bin(monkeypatch):
     bio = pd.DataFrame({"sprat": np.full(12, 1000.0), "herring": np.full(12, 2000.0)})
     yld = pd.DataFrame({"sprat": np.full(12, 100.0), "herring": np.full(12, 200.0)})
-    # long abundance-by-age: sprat age-1 = 5e7 (last 10), herring age-0 = 4e7 (last 10);
-    # include a decoy age bin to prove selection.
+    # Long abundance-by-age. Vary EARLY (t<2) vs TRAILING (last 10) values so a wrong-window slice
+    # (full-mean / head-slice / off-by-one) is actually caught; a decoy wrong-age bin proves age
+    # selection. mean of the LAST 10 = 5e7/4e7; a full-12 mean would be inflated by the early decoy.
     rows = []
     for t in range(12):
+        early = t < 2
         rows += [
-            {"time": t, "species": "sprat", "bin": "1", "value": 5e7},
-            {"time": t, "species": "sprat", "bin": "0", "value": 9e9},  # decoy wrong age
-            {"time": t, "species": "herring", "bin": "0", "value": 4e7},
+            {"time": t, "species": "sprat", "bin": "1", "value": 9e9 if early else 5e7},
+            {"time": t, "species": "sprat", "bin": "0", "value": 1e11},  # decoy wrong age
+            {"time": t, "species": "herring", "bin": "0", "value": 9e9 if early else 4e7},
         ]
     abd = pd.DataFrame(rows)
     R, Engine = _fake_results(bio, yld, abd)
@@ -265,8 +277,23 @@ def test_recruitment_mean_from_age_bin(monkeypatch):
 
     stats = cb.run_simulation({"x": "1"}, {}, n_years=1, seed=0,
                               recruitment_ages={"sprat": "1", "herring": "0"})
-    assert stats["sprat_recruitment_mean"] == pytest.approx(5e7)
+    assert stats["sprat_recruitment_mean"] == pytest.approx(5e7)   # last-10 window, not full mean
     assert stats["herring_recruitment_mean"] == pytest.approx(4e7)
+
+
+def test_missing_bin_for_one_species(monkeypatch):
+    # Non-empty, correctly-columned frame but with NO herring rows: exercises the per-species
+    # no-matching-(species,bin) path (distinct from the bare-empty-frame guard) — herring stat
+    # stays unset while sprat is still emitted.
+    bio = pd.DataFrame({"sprat": np.full(12, 1000.0), "herring": np.full(12, 2000.0)})
+    yld = pd.DataFrame({"sprat": np.full(12, 100.0), "herring": np.full(12, 200.0)})
+    abd = pd.DataFrame([{"time": t, "species": "sprat", "bin": "1", "value": 5e7} for t in range(12)])
+    R, Engine = _fake_results(bio, yld, abd)
+    _wire(monkeypatch, R, Engine)
+    stats = cb.run_simulation({"x": "1"}, {}, n_years=1, seed=0,
+                              recruitment_ages={"sprat": "1", "herring": "0"})
+    assert stats["sprat_recruitment_mean"] == pytest.approx(5e7)
+    assert "herring_recruitment_mean" not in stats  # no matching rows -> unset, no crash
 
 
 def test_no_recruitment_ages_emits_nothing(monkeypatch):
@@ -390,7 +417,7 @@ Append to `tests/test_recruitment_diagnostic.py`:
 
 ```python
 def test_format_recruitment_section_is_pure():
-    from scripts.evaluate_calibration_vs_ices import _format_recruitment_section
+    from evaluate_calibration_vs_ices import _format_recruitment_section  # scripts/ on path (top of file)
 
     rows = [
         {"species": "sprat", "age": "1", "model_R": 6.0e7, "ices_geomean": 7.0e7,
@@ -412,7 +439,7 @@ def test_format_recruitment_section_is_pure():
 
 
 def test_evaluate_adds_recruitment_rows(monkeypatch):
-    import scripts.evaluate_calibration_vs_ices as ev
+    import evaluate_calibration_vs_ices as ev  # scripts/ on path (top of file)
 
     # Stub the sim so no engine runs; return biomass + recruitment stats.
     def _fake_run(base_config, overrides, n_years, seed, recruitment_ages=None):
@@ -537,8 +564,8 @@ Expected: all tests PASS (7 total).
 
 - [ ] **Step 6: Lint + import-sanity**
 
-Run: `.venv/bin/python -m ruff check scripts/evaluate_calibration_vs_ices.py tests/test_recruitment_diagnostic.py && .venv/bin/python -m ruff format --check scripts/evaluate_calibration_vs_ices.py && .venv/bin/python -c "import scripts.evaluate_calibration_vs_ices"`
-Expected: clean; the import exits 0 (no circular import from reusing `validate_baltic_vs_ices_sag`).
+Run: `.venv/bin/python -m ruff check scripts/evaluate_calibration_vs_ices.py tests/test_recruitment_diagnostic.py && .venv/bin/python -m ruff format --check scripts/evaluate_calibration_vs_ices.py && PYTHONPATH=scripts .venv/bin/python -c "import evaluate_calibration_vs_ices"`
+Expected: clean; the import exits 0 (scripts/ on path via PYTHONPATH; no circular import from reusing `validate_baltic_vs_ices_sag`).
 
 - [ ] **Step 7: Commit**
 
