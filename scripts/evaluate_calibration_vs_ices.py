@@ -28,12 +28,64 @@ import argparse
 import json
 from pathlib import Path
 
+import numpy as np
+
 from calibrate_baltic import (
     BALTIC_CONFIG,
     SPECIES_NAMES,
     load_targets,
     run_simulation,
 )
+from validate_baltic_vs_ices_sag import (  # reuse snapshot loaders (dependency-free leaf)
+    WINDOW_YEARS,
+    _load_assessment,
+    _load_manifest,
+    _load_reference_points,
+    _series_by_year,
+)
+
+RECRUITMENT_ASSESSED = ("cod", "herring", "sprat", "flounder")
+
+
+def _species_recruitment_age(species: str) -> str | None:
+    """Common ICES recruitment_age (as a string) across a species' mapped stocks, or None if
+    the species has no mapped stocks, a stock lacks the age, or the stocks disagree."""
+    stocks = _load_manifest()["model_species_to_ices_stocks"].get(species, [])
+    if not stocks:
+        return None
+    ages = set()
+    for st in stocks:
+        a = _load_reference_points(st).get("recruitment_age")
+        if a in (None, ""):
+            return None
+        ages.add(str(a))
+    return ages.pop() if len(ages) == 1 else None
+
+
+def _ices_recruitment_geomean(species: str) -> tuple[float, float, float] | None:
+    """(geomean, min, max) of the per-year SUMMED ICES recruitment across a species' mapped
+    stocks over WINDOW_YEARS, keeping only years all stocks report R. None if no clean numeric R.
+
+    Summability is an inferred assumption: the snapshot records SSB units but not recruitment
+    units; the mapped stocks' recruitments are all absolute counts on a self-consistent scale.
+    """
+    if _species_recruitment_age(species) is None:
+        return None
+    stocks = _load_manifest()["model_species_to_ices_stocks"][species]
+    series = [_series_by_year(_load_assessment(st), "recruitment") for st in stocks]
+    per_year = [sum(s[y] for s in series) for y in WINDOW_YEARS if all(y in s for s in series)]
+    if not per_year:
+        return None
+    arr = np.asarray(per_year, dtype=float)
+    geomean = float(np.exp(np.mean(np.log(arr))))
+    return geomean, float(arr.min()), float(arr.max())
+
+
+def _recruitment_verdict(model_R: float, ices_geomean: float) -> tuple[float, str]:
+    """(ratio, verdict). OK if 1/3 <= ratio <= 3 (order-of-magnitude), else FLAG."""
+    ratio = model_R / ices_geomean if ices_geomean > 0 else float("inf")
+    verdict = "OK" if (1.0 / 3.0) <= ratio <= 3.0 else "FLAG"
+    return ratio, verdict
 
 
 # The 4 FR-calibrated predators (phase 14): cod sp0, pikeperch sp5, GreySeal
