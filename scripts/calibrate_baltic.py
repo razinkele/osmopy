@@ -247,6 +247,10 @@ def run_simulation(
 
         results = OsmoseResults(output_dir, strict=False)
         bio = results.biomass()
+        try:
+            yld = results.yield_biomass()
+        except Exception:  # noqa: BLE001 — yield CSV absent/empty: leave yield stats unset
+            yld = None
         results.close()
 
     # Extract last 10 years of biomass
@@ -263,6 +267,11 @@ def run_simulation(
             vals = eval_data[sp].values.astype(float)
             mean_val = float(np.mean(vals))
             species_stats[f"{sp}_mean"] = mean_val
+
+            if yld is not None and sp in yld.columns:
+                yvals = yld[sp].values.astype(float)
+                yeval = yvals[-n_eval_years:] if len(yvals) > n_eval_years else yvals
+                species_stats[f"{sp}_yield_mean"] = float(np.mean(yeval))
 
             # CV for stability penalty
             if mean_val > 0:
