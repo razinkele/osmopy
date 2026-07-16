@@ -26,8 +26,9 @@ monostable. This spec turns that proof-of-mechanism into a config-plumbed featur
 
 ## Scope decisions (locked during brainstorming)
 
-- **Deliverable:** the gate feature **+** a validated bistable config overlay (SP1). Reproducing the
-  historical trajectory is SP2.
+- **Deliverable:** the gate feature **+** a validated bistable config overlay **+** a demonstrated
+  hysteresis-loop-vs-control (Unit 3 is mandatory per Success Criterion #2, not optional polish).
+  Reproducing the historical trajectory is SP2.
 - **Search method:** deterministic **grid sweep** using the warm-start reciprocal-invasion classifier
   (not an optimizer — bistability is an emergent binary property).
 - **Healthy-basin target:** **realistic magnitude** — O(100kt) SSB, stable (non-transient), with a
@@ -99,8 +100,10 @@ def depensation_factor(
 ### Config loader: `_load_depensation_gate(cfg, n_sp)` in `osmose/engine/config.py`
 
 Mirrors `_load_thermal_gate`'s **structure** but is simpler (per-species scalars, no CSV/time-series,
-no normalization mode). Returns `(enabled: NDArray[np.bool_], s50: NDArray, theta: NDArray)` or `None`
-when the global flag is off/absent. **Eager validation, fail-fast to match all four sibling loaders**
+no normalization mode). **Returns a 3-tuple `(enabled, s50, theta)` where each element is `None` when
+the global flag is off/absent** — NOT a bare `None` (every sibling returns an N-tuple of Nones, e.g.
+`_load_thermal_gate` returns `None, None, 0`; a bare `None` would crash the `dep = ...` unpack at the
+call site). **Eager validation, fail-fast to match all four sibling loaders**
 (`_load_rv_gate`, `_load_salinity_gate`, `_load_recruitment_ceiling`, `_load_thermal_gate` all raise
 `ValueError` in these cases — do the same, do NOT return inert `None`):
 - global flag on but **no species enabled** → `raise ValueError` (fail-fast, like the siblings).
@@ -194,11 +197,17 @@ monkeypatch), reusing `scripts/baltic_bistability_chunk0.py` helpers.
 SP1's target sits *near* an Allee/fold bifurcation, where trajectories can flatten (low CV, low trend)
 while still slowly sliding toward the other basin — a "ghost attractor" that a single trailing-window
 CV+trend cannot distinguish from genuine stability (this is exactly the spike's transient-185kt
-confound). So a healthy basin is judged **stable only if**:
-1. per-decade mean SSB is **non-decreasing across successive decades** over the full horizon (not just
-   low trend in the last decade), AND
-2. a **confirmatory long re-run (≥80–100 yr)** at any candidate operating point keeps the healthy basin
-   above the collapse threshold (does not eventually slide down).
+confound). **But note the cod-rich IC is seeded at 300kt while the target healthy basin is O(100kt), so
+a legitimate GO candidate must DECLINE from 300kt toward equilibrium during warm-up** — a naive
+"non-decreasing across decades" check would wrongly reject it. The discriminator must separate
+*converging down to a plateau* (OK) from *making ever-new lows toward collapse* (fail). A healthy basin
+is judged **stable only if**:
+1. **After a burn-in exclusion** of ≥ cod's relaxation time (~25–30 yr, i.e. drop decades 1–3), the SSB
+   makes **no new low below its post-burn-in running minimum** for the remainder of the 50-yr run (it
+   has settled onto a plateau, not still sliding), AND
+2. a **confirmatory long re-run (80–100 yr)** at any candidate operating point keeps the healthy basin
+   above the collapse threshold with the same no-new-lows-after-burn-in property (does not eventually
+   slide down over the longer horizon).
 
 Reuse `baltic_bistability_chunk0.py`'s `basins_differ`/`classify_state` for the rich-vs-poor split, but
 **do not rely on `is_stationary`'s original thresholds alone** (`cv_max=0.30`, `trend_max=0.05` were
@@ -226,13 +235,18 @@ checks above.
 
 Per point classify: `{bistable?, healthy_ssb_mean, healthy_stable?, collapsed_ssb_mean, det_frac}`.
 - **GO** — ≥1 point is bistable (rich vs poor differ, `basins_differ` gap ≥ 0.5) AND healthy basin
-  O(100kt) SSB AND healthy_stable (per-decade-monotone + long-re-run) AND collapsed basin
-  distinctly lower (same `gap_thresh=0.5`). **Selection when multiple qualify:** healthy basin closest
-  to Bpa (~120kt), stable, lowest CV tie-break.
-- **Instrument-limited / AMBIGUOUS** — like `baltic_bistability_chunk0.py`'s own verdicts, if the
-  determinate fraction is low (`det_frac < 0.5`: many seed-splits/undetermined points) OR a
-  candidate falls between grid nodes, report **ambiguous / under-resolved**, NOT a structural negative.
-  Preserve this branch in the machine-readable output — do not collapse it into GO or NO-GO.
+  **SSB ∈ [40_000, 300_000] t** (the concrete "O(100kt)" gate — roughly ½Bpa to ~2.5×Bpa; excludes
+  both the ~220t collapse and the multi-Mt overshoot) AND healthy_stable (burn-in + no-new-lows +
+  long-re-run) AND collapsed basin distinctly lower (same `gap_thresh=0.5`). **Selection when multiple
+  qualify:** healthy basin closest to Bpa (~120kt), stable, lowest CV tie-break.
+- **Instrument-limited / AMBIGUOUS** — if the determinate fraction is low (`det_frac < 0.5`: many
+  seed-splits/undetermined points) OR a candidate falls between grid nodes, report **ambiguous /
+  under-resolved**, NOT a structural negative. Preserve this branch in the machine-readable output — do
+  not collapse it into GO or NO-GO. **Note:** only the *concept* of `det_frac` carries over from
+  `baltic_bistability_chunk0.py` — its concrete verdict functions are tied to `run_simulation`'s
+  `cod_mean`/`cod_cv`/`cod_trend` stats dict, which Unit 2 deliberately does NOT reuse (it needs the
+  full-horizon SSB trajectory via `.ssb()`). The harness defines its own "determinate outcome"
+  bookkeeping (per-seed: clean split / seed-split / undetermined) against the new per-decade SSB data.
 - **NO-GO** — the grid is determinate (`det_frac ≥ 0.5`) and no point satisfies the GO criteria →
   documented negative (ships the gate feature only; see Success criteria).
 
@@ -241,7 +255,7 @@ Report `healthy_ssb_mean` **only when the aggregate state is determinate** — d
 
 ### Compute budget (explicit)
 
-6 scales × 4 S50 × 2 θ = 48 grid points × 2 ICs × 3–5 seeds × 50 yr ≈ **300–480 multi-decade
+6 scales × 4 S50 × 2 θ = 48 grid points × 2 ICs × 3–5 seeds × 50 yr ≈ **288–480 multi-decade
 Python-engine runs**, plus confirmatory 80–100-yr re-runs at candidates — far heavier than the 15-yr
 spike. This must run with the engine's parallel-run path and an explicit runtime budget; **do NOT
 silently trim seeds or years to fit** (that reintroduces the exact transient-vs-stable confound the
@@ -256,10 +270,14 @@ At the chosen operating point:
    low).
 2. **Fishing-hysteresis F-ramp** — from a healthy warm-start, sweep cod F via the validated `byyear`-F
    tooling (`mortality.fishing.rate.byyear.file.sp0`, per `scripts/spikes/ssb_f_hindcast_spike.py`):
-   - **Quasi-static, stepped ramp**: hold each F level for **≫ cod's ~20–25-yr relaxation time**
-     (both spikes pin this) — e.g. dwell ~30–40 yr per level so SSB equilibrates — going up
-     (F_low→F_high, e.g. 0.5×→~8× base) then symmetrically down. A fast ramp produces an apparent loop
-     from pure lag in *any* system; the dwell is what makes it a real test.
+   - **Quasi-static, stepped ramp**: **~8 F levels** spanning F_low→F_high (e.g. 0.5×→~8× base), each
+     held for **≫ cod's ~20–25-yr relaxation time** — dwell ~30–40 yr per level so SSB equilibrates —
+     going up then symmetrically back down. A fast ramp produces an apparent loop from pure lag in
+     *any* system; the dwell is what makes it a real test.
+   - **Compute budget (explicit, like Unit 2):** ~8 levels × ~35-yr dwell × 2 directions ≈ 560
+     simulated yr per seed-arm × 3–5 seeds × 2 arms (depensation + control) ≈ **~3,000–5,600 simulated
+     years**. Same rule as Unit 2: do NOT trim the dwell to fit (a short dwell reintroduces the
+     lag-artifact this test exists to rule out); cut level count before dwell.
    - **3–5 seeds** (a single realization near a saddle is weak evidence).
    - **No-depensation CONTROL ramp**: run the identical stepped F-ramp on the gate-off config;
      expect **no** comparable loop. The loop counts as hysteresis only if it appears with depensation
@@ -302,9 +320,10 @@ cod + chosen S50/θ + adjusted larval-M (the operating point). Registered as a l
   `tests/test_baltic_a2_demo.py::test_a2_blocks_java_engine`).
 - Overlay: loads + runs on the Python engine; **passes strict validation** (mirror
   `test_baltic_a2_demo.py::test_a2_passes_strict_validation`).
-- **Fixture note:** adding 3 new required `EngineConfig` fields breaks tests that construct it directly
-  (`test_engine_config_validation.py::_minimal_config`, `test_demo.py`, `test_engine_eec_compat.py`,
-  `test_engine_state.py`) — update those fixtures (self-revealing via test failure).
+- **Fixture note:** adding 3 new required `EngineConfig` fields breaks
+  `test_engine_config_validation.py::_minimal_config`, which constructs `EngineConfig(**cfg)` directly —
+  update that fixture (self-revealing via test failure). (Tests that go through `EngineConfig.from_dict`
+  / `osmose_demo()` auto-populate the new fields via the loader and are unaffected.)
 - Integration "gate-on changes cod recruitment": **mark `@pytest.mark.skipif(CI)`** — real-engine
   Baltic rel-change is non-reproducible across runner core counts (`feedback-ci-fragile-emergent-tests`;
   both the thermal and RV gate on-effect tests carry this marker).
