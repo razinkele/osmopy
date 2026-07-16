@@ -30,6 +30,12 @@ def java_engine_block_reason(config, jar_version: str | None = None) -> str | No
             "This configuration uses depletable plankton (ltl.depletable.enabled), a "
             "Python-engine feature with no Java-jar equivalent. Run it on the Python engine."
         )
+    if str(config.get("reproduction.depensation.gate.enabled", "")).strip().lower() == "true":
+        return (
+            "This configuration uses the recruitment depensation/Allee gate "
+            "(reproduction.depensation.gate.enabled), a Python-engine feature the Java engine "
+            "would silently ignore. Run it on the Python engine."
+        )
     if str(config.get("output.file.prefix", "")).strip().lower() == "benguela":
         return (
             "The Southern Benguela demo is a Python-engine example (merged resource forcing and "

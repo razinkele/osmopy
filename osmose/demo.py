@@ -101,7 +101,16 @@ def _bundled_data_dir(subdir: str) -> Path | None:
 
 def list_demos() -> list[str]:
     """List available demo scenarios."""
-    return ["baltic", "baltic_a2", "bay_of_biscay", "eec", "eec_full", "minimal", "benguela"]
+    return [
+        "baltic",
+        "baltic_a2",
+        "baltic_depensation",
+        "bay_of_biscay",
+        "eec",
+        "eec_full",
+        "minimal",
+        "benguela",
+    ]
 
 
 # Per-model metadata for the UI model picker (title shown in the dropdown; the rest in the
@@ -157,6 +166,17 @@ DEMO_INFO: dict[str, dict[str, str]] = {
         "compresses the A2-off overshoot (17-400x) down to near-band. Python engine only "
         "(depletable plankton has no Java equivalent).",
     },
+    "baltic_depensation": {
+        "title": "Baltic Sea (depensation/Allee)",
+        "region": "Central/Eastern Baltic",
+        "species": "8 focal species",
+        "resources": "6 LTL + 2 background groups",
+        "engine": "Python",
+        "summary": "The Baltic demo with the recruitment depensation/Allee gate enabled for cod "
+        "— a low-SSB recruitment trap that can create bistability (a healthy and a collapsed cod "
+        "state). Operating point (s50/theta/larval-M) is a placeholder pending the placement "
+        "sweep. Python engine only (the depensation gate has no Java equivalent).",
+    },
     "minimal": {
         "title": "Minimal",
         "region": "Toy configuration",
@@ -198,6 +218,7 @@ def osmose_demo(scenario: str, output_dir: Path) -> dict:
     generators = {
         "baltic": _generate_baltic,
         "baltic_a2": _generate_baltic_a2,
+        "baltic_depensation": _generate_baltic_depensation,
         "bay_of_biscay": _generate_bay_of_biscay,
         "eec": _generate_eec,
         "eec_full": _generate_eec_full,
@@ -263,6 +284,38 @@ def _generate_baltic_a2(output_dir: Path) -> dict:
         )
 
     config_file = config_dir / "baltic_a2_all-parameters.csv"
+    return {"config_file": config_file, "output_dir": sim_output}
+
+
+def _generate_baltic_depensation(output_dir: Path) -> dict:
+    """Generate the depensation/Allee Baltic preset (SP1 overlay scaffold).
+
+    A thin overlay on the baltic demo: copy baltic's full config (grid/forcing/maps/sub-CSVs),
+    then overlay the baltic_depensation master (same includes as baltic + the depensation gate
+    keys). No NetCDFs are duplicated. Python-engine only (the depensation gate has no Java
+    equivalent). The operating point (s50/theta/larval-M) is a placeholder pending Task 8's
+    placement sweep.
+    """
+    data_dir = _bundled_data_dir("baltic")
+    dep_dir = _bundled_data_dir("baltic_depensation")
+    config_dir = output_dir / "config"
+    sim_output = output_dir / "output"
+    sim_output.mkdir(parents=True, exist_ok=True)
+
+    if data_dir is not None and dep_dir is not None:
+        shutil.copytree(data_dir, config_dir, dirs_exist_ok=True)
+        shutil.copytree(dep_dir, config_dir, dirs_exist_ok=True)
+    else:
+        config_dir.mkdir(parents=True, exist_ok=True)
+        (config_dir / "baltic_depensation_all-parameters.csv").write_text(
+            "simulation.time.ndtperyear ; 24\n"
+            "simulation.time.nyear ; 15\n"
+            "simulation.nspecies ; 8\n"
+            "simulation.nresource ; 6\n"
+            "simulation.ncpu ; 1\n"
+        )
+
+    config_file = config_dir / "baltic_depensation_all-parameters.csv"
     return {"config_file": config_file, "output_dir": sim_output}
 
 

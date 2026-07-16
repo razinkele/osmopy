@@ -684,4 +684,46 @@ SPECIES_FIELDS: list[OsmoseField] = [
         indexed=True,
         required=False,
     ),
+    # ── Recruitment: depensation / Allee gate ────────────────────────────
+    OsmoseField(
+        key_pattern="reproduction.depensation.gate.enabled",
+        param_type=ParamType.BOOL,
+        default=False,
+        description=(
+            "Master switch for the recruitment depensation/Allee gate. When false "
+            "the gate is inert and output is bit-identical."
+        ),
+        category="reproduction",
+        required=False,
+    ),
+    OsmoseField(
+        key_pattern="reproduction.depensation.gate.species.enabled.sp{idx}",
+        param_type=ParamType.BOOL,
+        default=False,
+        description="Per-species enable for the depensation/Allee gate.",
+        category="reproduction",
+        indexed=True,
+        required=False,
+    ),
+    OsmoseField(
+        key_pattern="reproduction.depensation.gate.s50.sp{idx}",
+        param_type=ParamType.FLOAT,
+        default=0.0,
+        min_val=0.0,
+        description="SSB (t) at which the Allee multiplier A(SSB) equals 0.5, per species.",
+        category="reproduction",
+        unit="t",
+        indexed=True,
+        required=False,
+    ),
+    OsmoseField(
+        key_pattern="reproduction.depensation.gate.theta.sp{idx}",
+        param_type=ParamType.FLOAT,
+        default=1.0,
+        min_val=1.0,
+        description="Allee curve steepness (>=1: 1=hyperbolic, higher=sharper trap), per species.",
+        category="reproduction",
+        indexed=True,
+        required=False,
+    ),
 ]

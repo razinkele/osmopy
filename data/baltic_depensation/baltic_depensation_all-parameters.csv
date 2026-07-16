@@ -1,0 +1,48 @@
+# Baltic Sea (depensation/Allee) OSMOSE configuration - Main parameter file
+# Overlay on the baltic demo: enables the recruitment depensation/Allee gate for cod (sp0),
+# which introduces a low-SSB recruitment trap capable of creating bistability (SP1).
+# Python-engine only (the depensation gate is a Python-engine feature; Java-guarded).
+#
+# OPERATING POINT IS A PLACEHOLDER — the real (s50, theta, larval-M scale) come from the
+# placement grid sweep (Task 8: scripts/calibrate_depensation_bistability.py). Until then this
+# scaffold uses nominal values (s50=90kt, theta=4, larval-M inherited from baltic = deployed).
+# All baltic_param-*.csv includes are resolved from the generated config/ dir (see osmose.demo).
+
+osmose.configuration.simulation;baltic_param-simulation.csv
+osmose.configuration.species;baltic_param-species.csv
+osmose.configuration.grid;baltic_param-grid.csv
+osmose.configuration.output;baltic_param-output.csv
+osmose.configuration.mortality.predation;baltic_param-predation.csv
+osmose.configuration.mortality.fishing;baltic_param-fishing.csv
+osmose.configuration.mortality.starvation;baltic_param-starvation.csv
+osmose.configuration.mortality.additional;baltic_param-additional-mortality.csv
+osmose.configuration.reproduction;baltic_param-reproduction.csv
+osmose.configuration.movement;baltic_param-movement.csv
+osmose.configuration.plankton;baltic_param-ltl.csv
+osmose.configuration.background;baltic_param-background.csv
+osmose.configuration.initialization;baltic_param-init-pop.csv
+osmose.configuration.migration;baltic_param-out-mortality.csv
+
+mortality.subdt;10
+
+simulation.nschool.sp0;50
+simulation.nschool.sp1;60
+simulation.nschool.sp2;60
+simulation.nschool.sp3;40
+simulation.nschool.sp4;30
+simulation.nschool.sp5;30
+simulation.nschool.sp6;30
+simulation.nschool.sp7;40
+
+# --- Recruitment depensation/Allee gate (cod, sp0) ---
+# TBD from placement sweep (Task 8): s50 and theta are the fitted operating point.
+reproduction.depensation.gate.enabled;true
+reproduction.depensation.gate.species.enabled.sp0;true
+reproduction.depensation.gate.s50.sp0;90000
+reproduction.depensation.gate.theta.sp0;4.0
+# NOTE (Task 8): the operating point also adjusts cod larval-M. When found, add a
+# baltic_depensation_param-additional-mortality.csv overlay (larval rate STORED as
+# scale x 15.0 x 24, per the ndt-migration gotcha) and repoint the
+# osmose.configuration.mortality.additional include above to it. Placeholder = deployed larval-M.
+
+osmose.version;4.4.1

@@ -189,6 +189,22 @@ def reproduction(
             if config.thermal_gate_enabled[sp] and not seeded_this_step[sp]:
                 n_eggs[sp] *= tgate[sp]
 
+    # Recruitment depensation / Allee gate (SSB-dependent, not step-dependent). Inert unless
+    # enabled; skipped on seeded steps so the SSB=0 bootstrap can't be trapped, like the other gates.
+    if config.depensation_gate_enabled is not None:
+        from osmose.engine.processes.depensation_gate import depensation_factor
+
+        assert (
+            config.depensation_s50 is not None
+        )  # invariant: set together in _load_depensation_gate
+        assert config.depensation_theta is not None
+        dfac = depensation_factor(
+            ssb, config.depensation_s50, config.depensation_theta, config.depensation_gate_enabled
+        )
+        for sp in range(n_sp):
+            if config.depensation_gate_enabled[sp] and not seeded_this_step[sp]:
+                n_eggs[sp] *= dfac[sp]
+
     # Create new schools from eggs
     new_schools_list = []
     for sp in range(n_sp):
