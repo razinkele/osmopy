@@ -1301,6 +1301,40 @@ def _load_thermal_gate(
     return factor.astype(np.float64), enabled, offset
 
 
+def _load_depensation_gate(
+    cfg: dict[str, str], n_species: int
+) -> tuple[NDArray[np.bool_] | None, NDArray[np.float64] | None, NDArray[np.float64] | None]:
+    """Load the recruitment depensation / Allee gate (spec 2026-07-16).
+
+    Returns (enabled, s50, theta), each None when the gate is off. Raises a
+    clear error on any invalid configuration (global-on with no species
+    enabled, theta < 1, or s50 <= 0).
+    """
+    if not _enabled(cfg, "reproduction.depensation.gate.enabled"):
+        return None, None, None
+
+    enabled = np.zeros(n_species, dtype=np.bool_)
+    s50 = np.zeros(n_species, dtype=np.float64)
+    theta = np.ones(n_species, dtype=np.float64)
+    for sp in range(n_species):
+        if _enabled(cfg, f"reproduction.depensation.gate.species.enabled.sp{sp}"):
+            enabled[sp] = True
+            s50[sp] = float(cfg.get(f"reproduction.depensation.gate.s50.sp{sp}", "0"))
+            theta[sp] = float(cfg.get(f"reproduction.depensation.gate.theta.sp{sp}", "1"))
+            if theta[sp] < 1.0:
+                raise ValueError(
+                    f"reproduction.depensation.gate.theta.sp{sp}={theta[sp]} must be >= 1.0"
+                )
+            if s50[sp] <= 0.0:
+                raise ValueError(f"reproduction.depensation.gate.s50.sp{sp}={s50[sp]} must be > 0")
+    if not enabled.any():
+        raise ValueError(
+            "Depensation gate enabled but no species enabled "
+            "(reproduction.depensation.gate.species.enabled.sp{idx})."
+        )
+    return enabled, s50, theta
+
+
 def _load_salinity_gate(
     cfg: dict[str, str], n_species: int
 ) -> tuple[bool, NDArray[np.bool_] | None, float, float, PhysicalData | None]:
@@ -1685,6 +1719,11 @@ class EngineConfig:
     thermal_gate_factor_by_index: NDArray[np.float64] | None  # (n_years, n_species)
     thermal_gate_enabled: NDArray[np.bool_] | None  # (n_species,) per-species enable mask
     thermal_gate_offset: int  # start_year - first_year
+
+    # Recruitment depensation / Allee gate (all None when disabled)
+    depensation_gate_enabled: NDArray[np.bool_] | None  # (n_species,) per-species enable mask
+    depensation_s50: NDArray[np.float64] | None  # (n_species,) SSB at which A=0.5, tonnes
+    depensation_theta: NDArray[np.float64] | None  # (n_species,) Allee steepness, >= 1
 
     # Movement
     movement_method: list[str]
@@ -2429,6 +2468,9 @@ class EngineConfig:
         thermal_gate_factor_by_index, thermal_gate_enabled, thermal_gate_offset = (
             _load_thermal_gate(cfg, n_sp, n_dt, n_yr)
         )
+        depensation_gate_enabled, depensation_s50, depensation_theta = _load_depensation_gate(
+            cfg, n_sp
+        )
 
         return cls(
             n_species=n_sp,
@@ -2506,6 +2548,9 @@ class EngineConfig:
             thermal_gate_factor_by_index=thermal_gate_factor_by_index,
             thermal_gate_enabled=thermal_gate_enabled,
             thermal_gate_offset=thermal_gate_offset,
+            depensation_gate_enabled=depensation_gate_enabled,
+            depensation_s50=depensation_s50,
+            depensation_theta=depensation_theta,
             fishing_enabled=(
                 cfg.get("simulation.fishing.mortality.enabled", "true").lower() == "true"
                 or fisheries_enabled

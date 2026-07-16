@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+from osmose.engine.config import _load_depensation_gate
 from osmose.engine.processes.depensation_gate import depensation_factor
 
 
@@ -54,3 +55,43 @@ def test_multi_species_isolation():
     f = depensation_factor(ssb, s50, theta, enabled)
     assert f[0] < 1e-4
     assert f[1] == 1.0
+
+
+# --- Task 2: config loader ---
+
+
+def _cfg(**over):
+    base = {
+        "reproduction.depensation.gate.enabled": "true",
+        "reproduction.depensation.gate.species.enabled.sp0": "true",
+        "reproduction.depensation.gate.s50.sp0": "60000",
+        "reproduction.depensation.gate.theta.sp0": "4.0",
+    }
+    base.update(over)
+    return base
+
+
+def test_loader_off_returns_triple_of_none():
+    assert _load_depensation_gate({}, 2) == (None, None, None)
+
+
+def test_loader_parses_enabled_species():
+    enabled, s50, theta = _load_depensation_gate(_cfg(), 2)
+    assert list(enabled) == [True, False]
+    assert s50[0] == 60000.0
+    assert theta[0] == 4.0
+
+
+def test_loader_failfast_theta_below_one():
+    with pytest.raises(ValueError):
+        _load_depensation_gate(_cfg(**{"reproduction.depensation.gate.theta.sp0": "0.5"}), 2)
+
+
+def test_loader_failfast_s50_nonpositive():
+    with pytest.raises(ValueError):
+        _load_depensation_gate(_cfg(**{"reproduction.depensation.gate.s50.sp0": "0"}), 2)
+
+
+def test_loader_failfast_global_on_no_species():
+    with pytest.raises(ValueError):
+        _load_depensation_gate({"reproduction.depensation.gate.enabled": "true"}, 2)
