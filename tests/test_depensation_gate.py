@@ -208,3 +208,23 @@ def test_gate_on_changes_cod_recruitment():
         }
     )
     assert not np.array_equal(base, on)  # a strong Allee at high S50 must move cod
+
+
+# --- Task 4: Java-engine guard ---
+
+from osmose.runner import java_engine_block_reason  # noqa: E402
+
+
+def test_java_engine_blocked_for_depensation_gate():
+    reason = java_engine_block_reason(
+        {"reproduction.depensation.gate.enabled": "true"}, jar_version="4.4.1"
+    )
+    assert reason is not None and "depensation" in reason.lower()
+
+
+def test_java_engine_not_blocked_when_gate_off():
+    reason = java_engine_block_reason(
+        {"reproduction.depensation.gate.enabled": "false"}, jar_version="4.4.1"
+    )
+    # off => the gate itself does not block (other guards may still apply for other configs)
+    assert reason is None or "depensation" not in (reason or "").lower()
