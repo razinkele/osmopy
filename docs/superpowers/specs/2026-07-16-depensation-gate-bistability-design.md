@@ -200,14 +200,19 @@ CV+trend cannot distinguish from genuine stability (this is exactly the spike's 
 confound). **But note the cod-rich IC is seeded at 300kt while the target healthy basin is O(100kt), so
 a legitimate GO candidate must DECLINE from 300kt toward equilibrium during warm-up** — a naive
 "non-decreasing across decades" check would wrongly reject it. The discriminator must separate
-*converging down to a plateau* (OK) from *making ever-new lows toward collapse* (fail). A healthy basin
-is judged **stable only if**:
-1. **After a burn-in exclusion** of ≥ cod's relaxation time (~25–30 yr, i.e. drop decades 1–3), the SSB
-   makes **no new low below its post-burn-in running minimum** for the remainder of the 50-yr run (it
-   has settled onto a plateau, not still sliding), AND
-2. a **confirmatory long re-run (80–100 yr)** at any candidate operating point keeps the healthy basin
-   above the collapse threshold with the same no-new-lows-after-burn-in property (does not eventually
-   slide down over the longer horizon).
+*converging down to a plateau* (OK) from *making ever-new lows toward collapse* (fail). This is
+genuinely hard in a short window because settling to within a few percent of equilibrium takes ~3τ ≈
+60–75 yr (τ ≈ cod's 20–25-yr relaxation time), longer than a 50-yr screen. So the **long confirmatory
+re-run is the ARBITER**, and the 50-yr pass is only a cheap coarse filter:
+1. **Screen (50 yr, coarse, permissive):** shortlist a point if its healthy basin is in the GO
+   magnitude band AND its decline is *decelerating* — the final-decade mean is within a tolerance
+   **≤10%** below the prior decade's mean (a still-steeply-declining trajectory is culled; a
+   converging-toward-plateau trajectory passes). Deliberately loose — it only drops the obvious slides.
+2. **Arbiter (confirmatory 150–200-yr re-run):** at each shortlisted point, the healthy basin is judged
+   **genuinely stable iff it persists above the collapse threshold for the full 150–200 yr** — a true
+   attractor settles to a plateau; a slow ghost-attractor slide eventually collapses within 150–200 yr
+   (many multiples of τ) and is rejected. This long horizon, not the 50-yr screen, resolves
+   converging-down-to-plateau vs sliding-to-collapse.
 
 Reuse `baltic_bistability_chunk0.py`'s `basins_differ`/`classify_state` for the rich-vs-poor split, but
 **do not rely on `is_stationary`'s original thresholds alone** (`cv_max=0.30`, `trend_max=0.05` were
@@ -235,9 +240,12 @@ checks above.
 
 Per point classify: `{bistable?, healthy_ssb_mean, healthy_stable?, collapsed_ssb_mean, det_frac}`.
 - **GO** — ≥1 point is bistable (rich vs poor differ, `basins_differ` gap ≥ 0.5) AND healthy basin
-  **SSB ∈ [40_000, 300_000] t** (the concrete "O(100kt)" gate — roughly ½Bpa to ~2.5×Bpa; excludes
-  both the ~220t collapse and the multi-Mt overshoot) AND healthy_stable (burn-in + no-new-lows +
-  long-re-run) AND collapsed basin distinctly lower (same `gap_thresh=0.5`). **Selection when multiple
+  **SSB ∈ [40_000, 300_000] t** (the concrete "O(100kt)" gate — ~⅓Bpa to ~2.5×Bpa, deliberately wider
+  than the canonical cod SSB band in `data/baltic/reference/biomass_targets.csv` [lower 60k … upper
+  250k], per the realistic-magnitude scope; comfortably brackets Bpa while excluding the spike's
+  collapse and overshoot basins — those spike figures were total *biomass*, cited only as an
+  order-of-magnitude sanity check) AND healthy_stable (coarse 50-yr screen + the
+  150–200-yr arbiter re-run) AND collapsed basin distinctly lower (same `gap_thresh=0.5`). **Selection when multiple
   qualify:** healthy basin closest to Bpa (~120kt), stable, lowest CV tie-break.
 - **Instrument-limited / AMBIGUOUS** — if the determinate fraction is low (`det_frac < 0.5`: many
   seed-splits/undetermined points) OR a candidate falls between grid nodes, report **ambiguous /
@@ -270,14 +278,22 @@ At the chosen operating point:
    low).
 2. **Fishing-hysteresis F-ramp** — from a healthy warm-start, sweep cod F via the validated `byyear`-F
    tooling (`mortality.fishing.rate.byyear.file.sp0`, per `scripts/spikes/ssb_f_hindcast_spike.py`):
-   - **Quasi-static, stepped ramp**: **~8 F levels** spanning F_low→F_high (e.g. 0.5×→~8× base), each
-     held for **≫ cod's ~20–25-yr relaxation time** — dwell ~30–40 yr per level so SSB equilibrates —
-     going up then symmetrically back down. A fast ramp produces an apparent loop from pure lag in
-     *any* system; the dwell is what makes it a real test.
-   - **Compute budget (explicit, like Unit 2):** ~8 levels × ~35-yr dwell × 2 directions ≈ 560
-     simulated yr per seed-arm × 3–5 seeds × 2 arms (depensation + control) ≈ **~3,000–5,600 simulated
-     years**. Same rule as Unit 2: do NOT trim the dwell to fit (a short dwell reintroduces the
-     lag-artifact this test exists to rule out); cut level count before dwell.
+   - **Quasi-static, stepped ramp**: **~8 F levels** spanning F_low→F_high (e.g. 0.5×→~8× base). **Hold
+     each level until SSB EQUILIBRATES, not for a fixed dwell** — a per-level convergence check (SSB
+     slope over the last ~2 decades ≈ 0) with a generous cap of **≥3τ (~75 yr)**. Fixed dwell is
+     wrong here: relaxation time **inflates near the fold points** (F_collapse/F_recover) via critical
+     slowing down — the very levels the ramp must cross — so ~30–40 yr (only ~1.3–2τ off-fold) is too
+     short exactly where it matters. Go up then symmetrically back down.
+   - **Critical-slowing-down caveat:** the no-depensation control is monostable and cannot reproduce
+     fold-adjacent slowing, so "loop in depensation, none in control" is **necessary but not
+     sufficient** — additionally require that every depensation-arm level actually passed its per-level
+     convergence check, so the loop reflects genuine alternative equilibria rather than unconverged lag
+     near the fold. If a level hits the cap without converging, flag it (do not silently treat the
+     capped state as an equilibrium).
+   - **Compute budget (explicit, like Unit 2):** ~8 levels × up-to-~75-yr equilibration × 2 directions
+     ≈ up to 1,200 simulated yr per seed-arm × 3–5 seeds × 2 arms (depensation + control) ≈
+     **~7,000–12,000 simulated years**. Same rule as Unit 2: never trim the equilibration cap to fit
+     (that reintroduces the lag artifact this test exists to rule out); cut level count first.
    - **3–5 seeds** (a single realization near a saddle is weak evidence).
    - **No-depensation CONTROL ramp**: run the identical stepped F-ramp on the gate-off config;
      expect **no** comparable loop. The loop counts as hysteresis only if it appears with depensation
