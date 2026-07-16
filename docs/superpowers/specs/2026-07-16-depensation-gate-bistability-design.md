@@ -299,9 +299,15 @@ At the chosen operating point:
    If the gate-off control is itself bistable/ambiguous at the chosen scale, the point does not qualify.
 2. **Fishing-hysteresis F-ramp** — from a healthy warm-start, sweep cod F via the validated `byyear`-F
    tooling (`mortality.fishing.rate.byyear.file.sp0`, per `scripts/spikes/ssb_f_hindcast_spike.py`):
-   - **Base F and range (must bracket REAL historical F).** "base F" ≡ cod's calibrated
-     `mortality.fishing.rate.sp0` (the same normalization `ssb_f_hindcast_spike.py` uses to build
-     historical byyear-F) — define it concretely, do not leave "base" implicit. The ramp must span from
+   - **Base F and range (must bracket REAL historical F).** "base F" ≡ cod's calibrated fishing rate.
+     **Use the fisheries-mode key `fisheries.rate.base.fsh0` (=0.08 for the Baltic config), NOT the
+     legacy `mortality.fishing.rate.sp{i}`** — `data/baltic` runs `module.multispecies.fisheries.enabled=true`,
+     under which `config.py`'s `_parse_fisheries` branch is taken exclusively and the legacy key is never
+     read (grep confirms it is absent from `data/baltic`). The mode-agnostic resolved value is
+     `EngineConfig.fishing_rate[0]`; `osmose/validation/fmsy_sweep.py::override_key_for_species` already
+     encapsulates the fisheries-vs-legacy dispatch — reuse it. (`ssb_f_hindcast_spike.py` hardcodes the
+     literal `0.08`, which happens to equal `fisheries.rate.base.fsh0`.) Define base concretely, do not
+     leave it implicit. The ramp must span from
      **F_low ≈ 0.5× base up to ≥ the observed historical peak**: eastern Baltic cod F reached **~2.3**
      (ICES `cod.27.24-32`, 1999) which is **~15–30× base**, so use **~10 levels up to ≥30× base**. An
      8× ceiling is structurally too narrow to reach the F cod actually experienced and would invalidate
@@ -388,7 +394,7 @@ SP1 succeeds when **all** of:
 2. A documented operating point exists that is **bistable + healthy-O(100kt)-SSB + stable** (per the
    critical-slowing-down discriminator, incl. the arbiter tail stationarity check and the same-scale
    no-Allee control), delivered as the `data/baltic_depensation` overlay, with the
-   warm-start split and the hysteresis-loop-vs-control demonstrated in a diagnostics doc — AND
+   warm-start split and the hysteresis-loop-vs-control demonstrated in a diagnostics doc.
 3. **F-reachability (the condition that makes SP2 executable, not optional):** the fold thresholds are
    consistent with the *real* eastern Baltic cod F history (ICES `cod.27.24-32`, already in-repo):
    **F_collapse ≤ the observed historical peak F (~2.3)** — so a realistic historical F trajectory can
