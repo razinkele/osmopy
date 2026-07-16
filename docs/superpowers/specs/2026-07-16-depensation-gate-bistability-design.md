@@ -304,7 +304,7 @@ At the chosen operating point:
      legacy `mortality.fishing.rate.sp{i}`** — `data/baltic` runs `module.multispecies.fisheries.enabled=true`,
      under which `config.py`'s `_parse_fisheries` branch is taken exclusively and the legacy key is never
      read (grep confirms it is absent from `data/baltic`). The mode-agnostic resolved value is
-     `EngineConfig.fishing_rate[0]`; `osmose/validation/fmsy_sweep.py::override_key_for_species` already
+     `EngineConfig.fishing_rate[0]`; `osmose/validation/fmsy_sweep.py::fishing_override` already
      encapsulates the fisheries-vs-legacy dispatch — reuse it. (`ssb_f_hindcast_spike.py` hardcodes the
      literal `0.08`, which happens to equal `fisheries.rate.base.fsh0`.) Define base concretely, do not
      leave it implicit. The ramp must span from
