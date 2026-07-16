@@ -34,7 +34,6 @@ from baltic_bistability_chunk0 import (  # noqa: E402
 from calibrate_depensation_bistability import (  # noqa: E402
     COLLAPSE_T,
     GO_BAND,
-    classify_point,
     gate_overrides,
 )
 
@@ -128,8 +127,8 @@ def main(scale, s50, theta):
     print(f"base F (cod) = {base_f}; scale={scale} s50={s50} theta={theta}", flush=True)
 
     print("\n=== (1) same-scale NO-ALLEE control (gate off must be MONOSTABLE) ===", flush=True)
-    ctl = classify_point(base, base_rates, scale, s50, theta)  # gate-on reference (for contrast)
-    # gate-off rich vs poor at the same scale via the placement harness with gate=False:
+    # The operating point was already GO-classified by the placement sweep; here we only need the
+    # gate-OFF rich-vs-poor at the same scale (must be monostable -> the split is gate-attributable).
     from calibrate_depensation_bistability import cod_ssb_series
 
     rich0 = float(
@@ -144,7 +143,6 @@ def main(scale, s50, theta):
         f"({'MONOSTABLE (good)' if gap0 <= 0.5 else 'SPLIT (bad — not gate-attributable!)'})",
         flush=True,
     )
-    print(f"gate-on reference verdict: {ctl.get('verdict')}", flush=True)
 
     print("\n=== (2) depensation F-ramp (quasi-static, per-level equilibration) ===", flush=True)
     up, down = ramp(base, base_rates, scale, s50, theta, base_f, seed=0, gate=True)
@@ -167,7 +165,11 @@ def main(scale, s50, theta):
         f"F_collapse={fc} (abs), F_recover={fr} (abs) [x base = {fc and fc / base_f}, {fr and fr / base_f}]",
         flush=True,
     )
-    reach = (fc is not None and fc <= HIST_PEAK_F) and (fr is not None and fr > PRESENT_F)
+    reach = (
+        not unconv
+        and (fc is not None and fc <= HIST_PEAK_F)
+        and (fr is not None and fr > PRESENT_F)
+    )
     print(
         f"reachability (F_collapse<={HIST_PEAK_F} AND F_recover>{PRESENT_F}): "
         f"{'PASS' if reach else 'FAIL/AMBIGUOUS'}",
