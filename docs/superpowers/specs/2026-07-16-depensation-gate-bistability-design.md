@@ -216,7 +216,11 @@ re-run is the ARBITER**, and the 50-yr pass is only a cheap coarse filter:
    point that settles genuinely-stably but *below* the GO floor (e.g. 15–35kt: non-transient yet not
    healthy, merely above the ~6kt collapse threshold = `classify_state`'s `collapse_frac`×target) would
    slip through. This long horizon, not the 50-yr screen, resolves converging-down-to-plateau vs
-   sliding-to-collapse AND pins the true equilibrium magnitude.
+   sliding-to-collapse AND pins the true equilibrium magnitude. **Additionally, the arbiter's own final
+   ~2 decades must pass a stationarity check** (`is_stationary`'s `cv_max=0.30`, `trend_max=0.05`) — a
+   magnitude-in-band snapshot alone is insufficient, because near a fold a trajectory can still be
+   slowly sliding at year 200 while momentarily sitting inside `[40k,300k]` (critical slowing down); the
+   stationarity check on the arbiter's tail catches that residual false-GO path.
 
 Reuse `baltic_bistability_chunk0.py`'s `basins_differ`/`classify_state` for the rich-vs-poor split, but
 **do not rely on `is_stationary`'s original thresholds alone** (`cv_max=0.30`, `trend_max=0.05` were
@@ -250,8 +254,12 @@ Per point classify: `{bistable?, healthy_ssb_mean, healthy_stable?, collapsed_ss
   collapse and overshoot basins — those spike figures were total *biomass*, cited only as an
   order-of-magnitude sanity check) AND healthy_stable (coarse 50-yr screen + the
   150–200-yr arbiter re-run) AND collapsed basin distinctly lower (same `gap_thresh=0.5`). **Selection when multiple
-  qualify:** healthy basin (arbiter final-decade mean) closest to Bpa (~120kt), lowest arbiter
-  final-decade CV as tie-break.
+  qualify:** healthy basin (arbiter final-decade mean) closest to Bpa (~120kt); then, as a **secondary
+  tie-break, prefer the larval-M scale closest to 1.0** (the DE-calibrated baseline — a smaller
+  departure is more physically defensible, and reduces the risk that bistability is an artifact of a
+  large larval-M cut rather than the depensation mechanism); lowest arbiter final-decade CV breaks
+  remaining ties. **The diagnostics doc must state how far the selected scale sits from the calibrated
+  baseline** (e.g. "scale 0.85 = a 15% cut") so SP2 inherits a documented justification trail.
 - **Instrument-limited / AMBIGUOUS** — if the determinate fraction is low (`det_frac < 0.5`: many
   seed-splits/undetermined points) OR a candidate falls between grid nodes, report **ambiguous /
   under-resolved**, NOT a structural negative. Preserve this branch in the machine-readable output — do
@@ -278,15 +286,29 @@ never horizon or seeds.
 ## Unit 3 — Validation (analysis → diagnostics doc)
 
 At the chosen operating point:
-1. **Warm-start basin split** — rerun cod-rich vs cod-poor with extra seeds + the long horizon;
-   confirm a robust, non-transient split (healthy stable per the Unit-2 discriminator, collapsed stays
-   low).
+1. **Warm-start basin split — WITH a matched no-Allee control (causal attribution).** Rerun cod-rich
+   vs cod-poor with extra seeds + the long horizon; confirm a robust, non-transient split (healthy
+   stable per the Unit-2 discriminator, collapsed stays low). **Then rerun the identical
+   configuration — same scale, same seeding, same seeds/horizon — with the gate OFF** and require it to
+   be **monostable** (cod-poor recovers / no split), exactly as Unit 3 §2's F-ramp mandates a gate-off
+   control. This is load-bearing here: no scale in Unit 2's search grid (0.6–1.0) has a *previously*
+   confirmed no-Allee monostable baseline — the closest tested scale (1.0) came back `undetermined`/
+   instrument-limited in the CLOSED warm-start JSONs, and the spike's only no-Allee baselines were at
+   {0.5, 1.0} (1.0 transient-contaminated). Without this control, a "GO" cannot distinguish *the gate
+   creates the bistability* from *this larval-M window happens to be IC-sensitive for other reasons*.
+   If the gate-off control is itself bistable/ambiguous at the chosen scale, the point does not qualify.
 2. **Fishing-hysteresis F-ramp** — from a healthy warm-start, sweep cod F via the validated `byyear`-F
    tooling (`mortality.fishing.rate.byyear.file.sp0`, per `scripts/spikes/ssb_f_hindcast_spike.py`):
-   - **Quasi-static, stepped ramp**: **~8 F levels** spanning F_low→F_high (e.g. 0.5×→~8× base). **Hold
-     each level until SSB EQUILIBRATES, not for a fixed dwell** — a per-level convergence check
-     (**|decade-over-decade relative change in SSB| < 5%**, matching `trend_max=0.05`) with a generous
-     cap of **≥3τ (~75 yr)**. Fixed dwell is
+   - **Base F and range (must bracket REAL historical F).** "base F" ≡ cod's calibrated
+     `mortality.fishing.rate.sp0` (the same normalization `ssb_f_hindcast_spike.py` uses to build
+     historical byyear-F) — define it concretely, do not leave "base" implicit. The ramp must span from
+     **F_low ≈ 0.5× base up to ≥ the observed historical peak**: eastern Baltic cod F reached **~2.3**
+     (ICES `cod.27.24-32`, 1999) which is **~15–30× base**, so use **~10 levels up to ≥30× base**. An
+     8× ceiling is structurally too narrow to reach the F cod actually experienced and would invalidate
+     the reachability check below.
+   - **Quasi-static, stepped ramp**: **Hold each level until SSB EQUILIBRATES, not for a fixed dwell**
+     — a per-level convergence check (**|decade-over-decade relative change in SSB| < 5%**, matching
+     `trend_max=0.05`) with a generous cap of **≥3τ (~75 yr)**. Fixed dwell is
      wrong here: relaxation time **inflates near the fold points** (F_collapse/F_recover) via critical
      slowing down — the very levels the ramp must cross — so ~30–40 yr (only ~1.3–2τ off-fold) is too
      short exactly where it matters. Go up then symmetrically back down.
@@ -298,9 +320,9 @@ At the chosen operating point:
      levels most prone to critical slowing down) hits the cap without converging, **WITHHOLD the
      hysteresis verdict as AMBIGUOUS / instrument-limited** (mirroring Unit 2's branch) — never use a
      capped, unconverged level to place F_collapse/F_recover on the loop.
-   - **Compute budget (explicit, like Unit 2):** ~8 levels × up-to-~75-yr equilibration × 2 directions
-     ≈ up to 1,200 simulated yr per seed-arm × 3–5 seeds × 2 arms (depensation + control) ≈
-     **~7,000–12,000 simulated years**. Same rule as Unit 2: never trim the equilibration cap to fit
+   - **Compute budget (explicit, like Unit 2):** ~10 levels × up-to-~75-yr equilibration × 2 directions
+     ≈ up to 1,500 simulated yr per seed-arm × 3–5 seeds × 2 arms (depensation + control) ≈
+     **~9,000–15,000 simulated years**. Same rule as Unit 2: never trim the equilibration cap to fit
      (that reintroduces the lag artifact this test exists to rule out); cut level count first.
    - **3–5 seeds** (a single realization near a saddle is weak evidence).
    - **No-depensation CONTROL ramp**: run the identical stepped F-ramp on the gate-off config;
@@ -308,6 +330,8 @@ At the chosen operating point:
      and NOT in the control (rules out the relaxation-lag artifact both prior spikes flagged).
    - Plot cod SSB **parametrically vs F**; confirm the depensation legs form a loop (collapse at
      F_collapse up-leg; recovery only at F_recover < F_collapse down-leg) while the control legs overlap.
+   - **Report F_collapse and F_recover in REAL (absolute) F terms** (× base and as absolute F), for the
+     reachability check in Success Criterion #2 below.
 
 ## Unit 4 — Config overlay: `data/baltic_depensation/`
 
@@ -358,12 +382,21 @@ A light 1-point smoke test may live behind a skip-CI marker.
 
 ## Success criteria
 
-SP1 succeeds when **both**:
+SP1 succeeds when **all** of:
 1. The gate feature is shipped — config-plumbed, default-off byte-identical, Java-guarded, schema-
    registered, unit tests green.
 2. A documented operating point exists that is **bistable + healthy-O(100kt)-SSB + stable** (per the
-   critical-slowing-down discriminator), delivered as the `data/baltic_depensation` overlay, with the
-   warm-start split and the hysteresis-loop-vs-control demonstrated in a diagnostics doc.
+   critical-slowing-down discriminator, incl. the arbiter tail stationarity check and the same-scale
+   no-Allee control), delivered as the `data/baltic_depensation` overlay, with the
+   warm-start split and the hysteresis-loop-vs-control demonstrated in a diagnostics doc — AND
+3. **F-reachability (the condition that makes SP2 executable, not optional):** the fold thresholds are
+   consistent with the *real* eastern Baltic cod F history (ICES `cod.27.24-32`, already in-repo):
+   **F_collapse ≤ the observed historical peak F (~2.3)** — so a realistic historical F trajectory can
+   actually drive the collapse — AND **F_recover > present-day reduced F (~0.16, the 2018–2022 mean)**
+   — so today's low F stays trapped in the collapsed basin (the no-recovery hysteresis SP2 must
+   reproduce). If the loop exists but its thresholds fall outside this envelope, SP1 is **not** a clean
+   GO for SP2's purpose — report it as AMBIGUOUS with the measured thresholds, since SP2 would be dead
+   on arrival.
 
 ### Three-way outcome / honest-negative fallback
 
@@ -384,6 +417,28 @@ We do not report a null (or an under-powered/ambiguous sweep) as a success.
 - Depensation for species other than cod (the gate is general; only cod is calibrated here).
 - Extending depensation to the bioenergetic reproduction path (`_bioen_reproduction`).
 - Any change to the deployed Baltic default config.
+
+## Assumptions SP2 inherits (carry forward explicitly; do not silently assume)
+
+The SP1 deliverable is validated under specific conditions; SP2 must inherit or re-verify these, and
+SP1's diagnostics doc must state them:
+- **Permanent warm-start.** SP1 validates the trap under warm-start (which zeroes `seeding_max_step`,
+  so there is no seeding window). The gate is **skipped on seeded steps** by design, so under a cold
+  bootstrap it is inert for the whole seeding window and the "genuine trap" property does not transfer.
+  SP2 must run the overlay under permanent warm-start (matching SP1) or re-validate under its own start.
+- **Single-species, phenomenological gate.** The gate reads only cod's own SSB; it is **not** the
+  cross-species cultivation-depensation / predator-pit mechanism the cited literature describes (and
+  which the model's own Chunk C clupeid→cod-egg-predation attempt tested NEGATIVE). S50/θ are
+  magnitude-fit free parameters with no independent empirical anchor — the citations motivate *that*
+  depensation should exist, not this functional form or these values.
+- **Ecosystem-context transferability.** Unit 2 holds non-cod species at baseline F while sweeping cod
+  only; SP2 applies historical F to the whole fleet (clupeid pressure changed substantially over the
+  same period). Because the gate has no coupling to clupeid abundance, the calibrated (S50, θ,
+  larval-M) triple could behave differently under SP2's ecosystem context — SP2 must re-verify that the
+  bistability and the healthy basin still hold before trusting a trajectory result.
+- **Healthy-basin starting artifact.** SP2 needs a near-equilibrium healthy state to initialize from
+  (else redo a 150–200-yr spin-up). SP1's diagnostics doc must document the **validated spin-up
+  duration and the exact seeding recipe** at the chosen operating point as an SP2-consumable artifact.
 
 ## Key references
 
