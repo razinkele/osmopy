@@ -1,12 +1,12 @@
 # Depensation gate + bistability placement (SP1) — Design
 
-**Status:** design approved 2026-07-16. **Branch:** `feat/depensation-gate`.
+**Status:** design approved 2026-07-16; revised after in-loop review round 1. **Branch:** `feat/depensation-gate`.
 
 ## Goal
 
 Give the Baltic OSMOSE model a **recruitment depensation / Allee** mechanism that can create
 **bistability** (two alternative stable cod states — a healthy basin and a collapsed basin), and
-**place** that bistability at a realistic operating point (healthy basin O(100kt), stable). This is
+**place** that bistability at a realistic operating point (healthy basin O(100kt) SSB, stable). This is
 sub-project 1 of the regime-shift effort; SP2 (a committed follow-on, not in this spec) will drive the
 resulting bistable model with the historical annual F to attempt to reproduce the observed eastern
 Baltic cod collapse-and-no-recovery.
@@ -15,10 +15,9 @@ Baltic cod collapse-and-no-recovery.
 
 The deployed model is robustly **monostable**: its four stock-recruitment forms (`beverton_holt`,
 `ricker`, `hockey_stick`, `shepherd`) are all *compensatory* — per-capita recruitment is maximal as
-SSB→0, so a single attractor. The warm-start / Chunk-C / Chunk-A2 investigations never found a second
-basin. The three-mechanism exploration (2026-07-16) concluded that **recruitment depensation/Allee is
-the root lever** (fishing hysteresis and historical-state init are downstream diagnostics that need
-bistability to exist first), and the de-risk spike
+SSB→0, so a single attractor. The three-mechanism exploration (2026-07-16) concluded that **recruitment
+depensation/Allee is the root lever** (fishing hysteresis and historical-state init are downstream
+diagnostics that need bistability to exist first), and the de-risk spike
 (`docs/diagnostics/2026-07-16-depensation-bistability-spike.md`, PR #117) proved a monkeypatched cod
 Allee factor manufactures bistability: at cod-viable larval scales, the warm-start cod-rich IC
 overshoots while the cod-poor IC collapses, at identical parameters, where the no-Allee control is
@@ -31,8 +30,8 @@ monostable. This spec turns that proof-of-mechanism into a config-plumbed featur
   historical trajectory is SP2.
 - **Search method:** deterministic **grid sweep** using the warm-start reciprocal-invasion classifier
   (not an optimizer — bistability is an emergent binary property).
-- **Healthy-basin target:** **realistic magnitude** — O(100kt), stable (non-transient over a long
-  horizon), with a distinct collapsed basin. NOT a strict ICES-band match (that is SP2's concern).
+- **Healthy-basin target:** **realistic magnitude** — O(100kt) SSB, stable (non-transient), with a
+  distinct collapsed basin. NOT a strict ICES-band match (that is SP2's concern).
 - **Functional form:** Hill / Liermann-Hilborn `A(SSB)=SSB^θ/(S50^θ+SSB^θ)` applied as a **post-hoc
   multiplicative gate** on egg production (the spike-validated form; composes with any base SR type).
 - **Species:** the gate is built **per-species-configurable** (general), but only **cod (sp0)** is
@@ -43,10 +42,10 @@ monostable. This spec turns that proof-of-mechanism into a config-plumbed featur
 ## Architecture — four units
 
 ```
-1. Depensation GATE (engine feature)   osmose/engine/processes/depensation_gate.py
+1. Depensation GATE (engine feature)   osmose/engine/processes/depensation_gate.py  (+ config plumbing + Java guard + schema)
 2. Placement HARNESS (analysis)        scripts/calibrate_depensation_bistability.py
-3. VALIDATION (analysis)               warm-start basin split + fishing-hysteresis F-ramp
-4. Config OVERLAY (deliverable)        data/baltic_depensation/  (DRY overlay, Java-guarded)
+3. VALIDATION (analysis)               warm-start basin split + fishing-hysteresis F-ramp (with control)
+4. Config OVERLAY (deliverable)        data/baltic_depensation/  (DRY overlay, explicit new Java guard)
 ```
 
 Unit 1 is unit-tested production code (a CI gate). Units 2–4 are emergent analysis + a deliverable
@@ -70,12 +69,12 @@ def depensation_factor(
     ssb: NDArray[np.float64],
     s50: NDArray[np.float64],
     theta: NDArray[np.float64],
-    enabled: list[bool],
+    enabled: NDArray[np.bool_],
 ) -> NDArray[np.float64]:
     """Per-species Allee multiplier A(SSB)=SSB^θ/(S50^θ+SSB^θ), in (0, 1].
 
     1.0 where disabled. A→0 as SSB→0, A=0.5 at SSB==S50, A→1 as SSB→∞.
-    ssb, s50, theta are all length n_sp; enabled is length n_sp.
+    ssb, s50, theta, enabled are all length n_sp.
     """
     out = np.ones(ssb.shape[0], dtype=np.float64)
     for sp in range(ssb.shape[0]):
@@ -83,45 +82,58 @@ def depensation_factor(
             continue
         s = ssb[sp]
         if s <= 0.0:
-            out[sp] = 0.0  # SSB=0 → full suppression (the trap); guarded by seeded-step skip upstream
+            out[sp] = 0.0  # SSB=0 → full suppression; harmless (n_eggs already 0) + skipped-when-seeded
             continue
         out[sp] = s ** theta[sp] / (s50[sp] ** theta[sp] + s ** theta[sp])
     return out
 ```
 
-### Config keys (namespace mirrors the RV/thermal gates)
+### Config keys (namespace mirrors the RV/thermal gates: `reproduction.<name>.gate.<attr>`)
 
 - `reproduction.depensation.gate.enabled` — global bool (default false)
 - `reproduction.depensation.gate.species.enabled.sp{i}` — per-species bool (default false)
 - `reproduction.depensation.gate.s50.sp{i}` — half-suppression SSB in tonnes (float > 0)
-- `reproduction.depensation.gate.theta.sp{i}` — Allee exponent (float ≥ 1)
+- `reproduction.depensation.gate.theta.sp{i}` — Allee exponent (float ≥ 1; **θ>1 gives a genuine
+  sigmoidal trap; θ=1 is the weak-Allee boundary — SP1's grid uses θ∈{2,4}**)
 
 ### Config loader: `_load_depensation_gate(cfg, n_sp)` in `osmose/engine/config.py`
 
-Mirrors `_load_thermal_gate` but simpler (per-species scalars, no CSV/time-series, no normalization
-mode). Returns `(enabled: list[bool], s50: NDArray, theta: NDArray)` or `None` when the global flag is
-off/absent. **Eager validation** (like the thermal gate's mode/floor checks):
-- `theta[sp] >= 1.0` for every enabled species (θ<1 is not a real Allee trap — reject with a clear
-  message).
-- `s50[sp] > 0.0` for every enabled species.
-- If the global flag is on but no species is enabled → return `None` (inert), do not error.
+Mirrors `_load_thermal_gate`'s **structure** but is simpler (per-species scalars, no CSV/time-series,
+no normalization mode). Returns `(enabled: NDArray[np.bool_], s50: NDArray, theta: NDArray)` or `None`
+when the global flag is off/absent. **Eager validation, fail-fast to match all four sibling loaders**
+(`_load_rv_gate`, `_load_salinity_gate`, `_load_recruitment_ceiling`, `_load_thermal_gate` all raise
+`ValueError` in these cases — do the same, do NOT return inert `None`):
+- global flag on but **no species enabled** → `raise ValueError` (fail-fast, like the siblings).
+- any enabled species with `theta[sp] < 1.0` → `raise ValueError` (θ<1 is not an Allee trap).
+- any enabled species with `s50[sp] <= 0.0` → `raise ValueError`.
 
-### EngineConfig fields (dataclass, `config.py` ~1600 block)
+### EngineConfig plumbing — mirror `thermal_gate`, which BYPASSES `_merge_focal_background`
 
-```python
-depensation_gate_enabled: list[bool] | None
-depensation_s50: NDArray[np.float64] | None
-depensation_theta: NDArray[np.float64] | None
-```
-
-Set together (all `None` when off). Plumbed through the same focal/background merge blocks as
-`thermal_gate_enabled` / `shepherd_beta` (the merge points near config.py ~605, ~821, ~875, ~2048,
-~2154, ~2471 — follow the existing `thermal_gate_*` pattern exactly).
+**Correction from review:** `thermal_gate_*` is NOT plumbed through the `_merge_focal_background`
+blocks (those handle `shepherd_beta`/`recruitment_type`, which need per-species background defaults).
+`thermal_gate` is loaded once, directly, *after* the merge, on focal-only `n_sp`, and passed straight
+to the constructor. Follow that exactly:
+- **Dataclass fields** (near `config.py:1684-1687`, beside `thermal_gate_*`):
+  ```python
+  depensation_gate_enabled: NDArray[np.bool_] | None
+  depensation_s50: NDArray[np.float64] | None
+  depensation_theta: NDArray[np.float64] | None
+  ```
+  (set together — all `None` when off).
+- **Load call site** (near `config.py:2429-2431`, right beside the `_load_thermal_gate(...)` call,
+  after `_merge_focal_background` has run, using focal-only `n_sp`):
+  `dep = _load_depensation_gate(cfg, n_sp)` → unpack to three locals (or `None,None,None`).
+- **Constructor kwargs** (near `config.py:2506-2508`, beside the `thermal_gate_*=` kwargs).
+- Do **NOT** touch the `_merge_focal_background` blocks (config.py ~607/~825/~877/~2050/~2156/~2473)
+  — those are `shepherd_beta`'s path, not this one. Because it's focal-only length `n_sp`, the wiring
+  needs no `[:n_sp]` slice (unlike the merged `shepherd_beta`/`sex_ratio` arrays).
 
 ### Wiring in `osmose/engine/processes/reproduction.py`
 
-A new guarded block **after** the thermal-gate block (currently ends ~line 190), before "Create new
-schools from eggs":
+A new guarded block **after** the thermal-gate block (ends line 190), before "Create new schools from
+eggs" (line 192). **Include the `assert ... is not None` narrowing** — all three sibling gates do this
+(reproduction.py:161,171,186); omitting it fails the required pyright CI leg with `reportArgumentType`
+(verified):
 
 ```python
 # Recruitment depensation / Allee gate (SSB-dependent, not step-dependent). Inert unless
@@ -129,19 +141,33 @@ schools from eggs":
 if config.depensation_gate_enabled is not None:
     from osmose.engine.processes.depensation_gate import depensation_factor
 
+    assert config.depensation_s50 is not None  # invariant: set together in _load_depensation_gate
+    assert config.depensation_theta is not None
     dfac = depensation_factor(
-        ssb[:n_sp], config.depensation_s50, config.depensation_theta, config.depensation_gate_enabled
+        ssb, config.depensation_s50, config.depensation_theta, config.depensation_gate_enabled
     )
     for sp in range(n_sp):
         if config.depensation_gate_enabled[sp] and not seeded_this_step[sp]:
             n_eggs[sp] *= dfac[sp]
 ```
 
+(`ssb` is already length `n_sp` — no slice needed.)
+
+### Schema registration: `osmose/schema/species.py`
+
+Add `OsmoseField(key_pattern=...)` entries for the four keys, mirroring the `reproduction.thermal.gate.*`
+entries (species.py ~594/~655/~666), so the UI Setup panel renders them and `validate_config` enforces
+`theta≥1` / `s50>0` bounds pre-run. (Not CI-blocking — the strict-key AST walker auto-discovers the
+`cfg.get("...sp{sp}", ...)` literals — but the schema is the complete pattern all four siblings follow.)
+
 ### Determinism
 
-Default-off → `depensation_gate_enabled is None` → block skipped → **byte-identical** to current output.
-Guard identical in spirit to the RV/thermal gates. Plain Python (no Numba); reproduction is not on a
-compiled path.
+Default-off → `depensation_gate_enabled is None` → block skipped → **byte-identical** to current output
+(the same mechanism `tests/test_reproduction_thermal_gate.py::test_gate_off_is_bit_identical_to_baseline`
+verifies). Plain Python (no Numba). **Caveat:** the gate is wired only into `reproduction()`; the
+bioenergetic path `_bioen_reproduction` (used by `data/baltic_ev`, `config.bioen_enabled=true`) does not
+call it and would be silently inert there. SP1's target `data/baltic` has no bioen keys, so this is a
+documented non-issue for SP1; a follow-up would be needed to extend depensation to the bioen path.
 
 ---
 
@@ -150,81 +176,162 @@ compiled path.
 Deterministic grid sweep using the **real config-plumbed gate** via overrides (not the spike's
 monkeypatch), reusing `scripts/baltic_bistability_chunk0.py` helpers.
 
-- **Grid**: `S50 ∈ {30_000, 60_000, 90_000, 120_000}` × `θ ∈ {2.0, 4.0}` ×
-  `larval-M scale ∈ {0.6, 0.75, 0.85, 1.0}`. Weighted to the higher larval scales — the only regime
-  where cod is viable-but-not-overshooting (low scales overshoot to millions per the spike).
+### Measure SSB (not biomass), over the FULL horizon (two review corrections)
+
+- **SSB, not total biomass.** `run_simulation`'s `{sp}_mean` is mean *total biomass*, but the target
+  "healthy basin ~cod Bpa (~120kt)" is an **SSB** reference point. The harness must enable
+  `output.ssb.enabled=true` and read the **cod SSB** series (via `PythonEngine().run_in_memory(raw,
+  seed).ssb()["cod"]`, as `scripts/spikes/ssb_f_hindcast_spike.py` does) — a consistent SSB-vs-SSB
+  comparison.
+- **Full-horizon stability, not `run_simulation`'s trailing-10-year window.** `run_simulation` hardcodes
+  `n_eval_years=10` (calibrate_baltic.py:254) — a 50-yr run there evaluates only years 41–50, which
+  merely *relocates* the window, it does not widen it. The harness must extract the **full annual SSB
+  trajectory** itself (from `.ssb()`) and apply a stability discriminator strong enough for a
+  near-bifurcation regime (see next).
+
+### Stability discriminator (critical-slowing-down guard)
+
+SP1's target sits *near* an Allee/fold bifurcation, where trajectories can flatten (low CV, low trend)
+while still slowly sliding toward the other basin — a "ghost attractor" that a single trailing-window
+CV+trend cannot distinguish from genuine stability (this is exactly the spike's transient-185kt
+confound). So a healthy basin is judged **stable only if**:
+1. per-decade mean SSB is **non-decreasing across successive decades** over the full horizon (not just
+   low trend in the last decade), AND
+2. a **confirmatory long re-run (≥80–100 yr)** at any candidate operating point keeps the healthy basin
+   above the collapse threshold (does not eventually slide down).
+
+Reuse `baltic_bistability_chunk0.py`'s `basins_differ`/`classify_state` for the rich-vs-poor split, but
+**do not rely on `is_stationary`'s original thresholds alone** (`cv_max=0.30`, `trend_max=0.05` were
+tuned for the monostable, non-bifurcating investigation) — add the per-decade-monotonicity + long-re-run
+checks above.
+
+### Grid
+
+- `S50 ∈ {30_000, 60_000, 90_000, 120_000}` × `θ ∈ {2.0, 4.0}` × `larval-M scale ∈
+  {0.6, 0.75, 0.85, 0.90, 0.95, 1.0}`. The scale grid is **densified near 0.85–1.0** because the spike
+  showed healthy-basin magnitude swings ~20× between scale 0.7 (overshoot) and 1.0 (transient) — the
+  O(100kt) target plausibly lives at scale ≈0.90–0.97, between the original nodes. **Note:** the spike
+  only tested scales {0.3,0.5,0.7,1.0}; 0.6/0.75/0.85/0.9/0.95 are extrapolation, so a structurally
+  empty result must be checked for under-resolution (see the ambiguous outcome below) before being
+  called a negative. If a promising-but-between-nodes point appears, do **one documented refinement
+  pass** (finer scale/S50 around it) — still a grid, not an optimizer.
 - **Overrides per point**: `reproduction.depensation.gate.enabled=true`,
   `reproduction.depensation.gate.species.enabled.sp0=true`,
   `reproduction.depensation.gate.s50.sp0=<S50>`, `reproduction.depensation.gate.theta.sp0=<θ>`,
-  plus `warmstart_override(True)` + `cod_rich_seeding()` / `cod_poor_seeding()` +
-  `larva_scale_override(scale, base_rates)`.
-- **Per point**: run cod-rich and cod-poor warm-start ICs over a **long horizon (40–50 yr)**,
-  **3–5 seeds**. Classify with `baltic_bistability_chunk0.py`'s `classify_state` / `basins_differ`
-  and compute healthy-basin magnitude + a stability check (CV + linear trend over the eval window —
-  a stable basin has low CV and ~0 trend; a transient shows a decaying trend).
-- **Output** (to a diagnostics doc + a machine-readable table): `(S50, θ, scale) →
-  {bistable?, healthy_mean, healthy_stable?, collapsed_mean}`. **Select** the operating point =
-  bistable AND healthy_mean ~O(100kt) AND healthy_stable AND collapsed_mean distinctly lower.
-  **Selection rule when multiple points qualify:** prefer the point whose healthy basin is closest to
-  cod Bpa (~120kt) among the stable ones (lowest CV as the tie-breaker) — this leaves SP2 the least
-  distance to travel toward the ICES band.
-- Runner: `run_simulation` from `calibrate_baltic` (in-process; the gate is now real config, so no
-  monkeypatch). Long horizon = the fix for the spike's 15-yr instrument-limit.
+  `output.ssb.enabled=true`, plus `warmstart_override(True)` + `cod_rich_seeding()`/`cod_poor_seeding()`
+  + `larva_scale_override(scale, base_rates)`.
+- **Per point**: run cod-rich and cod-poor warm-start ICs over a **50-yr horizon, 3–5 seeds**.
+
+### Operating-point selection (three-way outcome)
+
+Per point classify: `{bistable?, healthy_ssb_mean, healthy_stable?, collapsed_ssb_mean, det_frac}`.
+- **GO** — ≥1 point is bistable (rich vs poor differ, `basins_differ` gap ≥ 0.5) AND healthy basin
+  O(100kt) SSB AND healthy_stable (per-decade-monotone + long-re-run) AND collapsed basin
+  distinctly lower (same `gap_thresh=0.5`). **Selection when multiple qualify:** healthy basin closest
+  to Bpa (~120kt), stable, lowest CV tie-break.
+- **Instrument-limited / AMBIGUOUS** — like `baltic_bistability_chunk0.py`'s own verdicts, if the
+  determinate fraction is low (`det_frac < 0.5`: many seed-splits/undetermined points) OR a
+  candidate falls between grid nodes, report **ambiguous / under-resolved**, NOT a structural negative.
+  Preserve this branch in the machine-readable output — do not collapse it into GO or NO-GO.
+- **NO-GO** — the grid is determinate (`det_frac ≥ 0.5`) and no point satisfies the GO criteria →
+  documented negative (ships the gate feature only; see Success criteria).
+
+Report `healthy_ssb_mean` **only when the aggregate state is determinate** — do not surface
+`_median_valid`'s `0.0` fallback (returned when no seed is stationary) as a "collapsed" measurement.
+
+### Compute budget (explicit)
+
+6 scales × 4 S50 × 2 θ = 48 grid points × 2 ICs × 3–5 seeds × 50 yr ≈ **300–480 multi-decade
+Python-engine runs**, plus confirmatory 80–100-yr re-runs at candidates — far heavier than the 15-yr
+spike. This must run with the engine's parallel-run path and an explicit runtime budget; **do NOT
+silently trim seeds or years to fit** (that reintroduces the exact transient-vs-stable confound the
+long horizon is there to prevent). If the full grid is infeasible, cut grid *breadth* (fewer S50/θ),
+never horizon or seeds.
 
 ## Unit 3 — Validation (analysis → diagnostics doc)
 
 At the chosen operating point:
 1. **Warm-start basin split** — rerun cod-rich vs cod-poor with extra seeds + the long horizon;
-   confirm a robust, non-transient split (healthy stable, collapsed stays low).
-2. **Fishing-hysteresis F-ramp** — from a healthy warm-start, ramp cod F low→high→low over N years
-   using the validated `byyear`-F tooling (`mortality.fishing.rate.byyear.file.sp0`, per
-   `scripts/spikes/ssb_f_hindcast_spike.py`), extract annual SSB, and plot SSB **parametrically vs F**.
-   Confirm a **hysteresis loop**: collapse at F_collapse on the up-leg, recovery only at
-   F_recover < F_collapse on the down-leg (the two legs do not overlap). This is the payoff — the
-   bistability manifesting as genuine fishing hysteresis.
+   confirm a robust, non-transient split (healthy stable per the Unit-2 discriminator, collapsed stays
+   low).
+2. **Fishing-hysteresis F-ramp** — from a healthy warm-start, sweep cod F via the validated `byyear`-F
+   tooling (`mortality.fishing.rate.byyear.file.sp0`, per `scripts/spikes/ssb_f_hindcast_spike.py`):
+   - **Quasi-static, stepped ramp**: hold each F level for **≫ cod's ~20–25-yr relaxation time**
+     (both spikes pin this) — e.g. dwell ~30–40 yr per level so SSB equilibrates — going up
+     (F_low→F_high, e.g. 0.5×→~8× base) then symmetrically down. A fast ramp produces an apparent loop
+     from pure lag in *any* system; the dwell is what makes it a real test.
+   - **3–5 seeds** (a single realization near a saddle is weak evidence).
+   - **No-depensation CONTROL ramp**: run the identical stepped F-ramp on the gate-off config;
+     expect **no** comparable loop. The loop counts as hysteresis only if it appears with depensation
+     and NOT in the control (rules out the relaxation-lag artifact both prior spikes flagged).
+   - Plot cod SSB **parametrically vs F**; confirm the depensation legs form a loop (collapse at
+     F_collapse up-leg; recovery only at F_recover < F_collapse down-leg) while the control legs overlap.
 
 ## Unit 4 — Config overlay: `data/baltic_depensation/`
 
 DRY overlay on `data/baltic` (like the `baltic_a2` preset): only the changed keys — gate enabled for
-cod + chosen S50/θ + adjusted larval-M (the operating point). **Python-engine-only, Java-guarded**
-(the existing `nbackground>0` Java guard applies). Registered as a loadable demo/preset like
-`baltic_a2`. This is the bistable Baltic variant SP2 consumes.
+cod + chosen S50/θ + adjusted larval-M (the operating point). Registered as a loadable demo/preset like
+`baltic_a2`. Two review-mandated requirements:
+- **`mortality.additional.larva.rate.sp{i}` MUST be stored as `engine_value × ndtperyear` (×24).**
+  The reader divides by ndt on load (`osmose/config/aliases.py::_migrate_larva_rate`, v≥4.4.0) — the
+  named `feedback-larval-rate-ndt-migration-gotcha`. `baltic_a2`'s test encodes `STORED = CONVERGED ×
+  24`; carry that forward or the overlay silently applies a 1/24 larval mortality.
+- **Java guard needs an explicit NEW check** — the existing `nbackground>0` guard does NOT block this
+  overlay (Baltic bg species have staging + jar 4.4.1, so `java_engine_block_reason` returns `None`;
+  verified via `tests/test_baltic_a2_demo.py`). Add a check to `osmose/runner.py::java_engine_block_reason`
+  that returns a Python-only reason when `reproduction.depensation.gate.enabled=true` (the gate is a
+  Python-engine feature the Java engine ignores → would silently run without depensation). Otherwise the
+  Unit-1 "Java-guard rejects the overlay" test cannot pass.
 
 ## Testing
 
 **Unit 1 (CI gate)** — new `tests/test_depensation_gate.py` (+ config-parse cases), mirroring
-`tests/test_reproduction_thermal_gate.py` and `tests/test_engine_stock_recruitment.py`:
-- `depensation_factor` math: `A(S50)=0.5`; `A→0` as SSB→0 (and `=0` at SSB=0); `A→1` at large SSB;
-  `=1.0` where disabled.
-- Per-species isolation: only enabled species' factor differs from 1.0.
-- **Off → byte-identical**: a short Baltic run with the gate off produces output identical to the
-  current baseline (the determinism guarantee).
-- Seeded-step skip: on a step where SSB is seeded, the factor is not applied.
-- Config parse: keys → EngineConfig fields; `θ<1` rejected; `s50≤0` rejected; global-on/no-species →
-  inert (`None`).
-- Integration: gate-on measurably changes cod recruitment; the overlay config loads and runs; the
-  Java-guard rejects the overlay on the Java engine (mirrors the existing Baltic Java-guard test).
+`tests/test_reproduction_thermal_gate.py`, `tests/test_recruitment_ceiling.py`, and
+`tests/test_engine_stock_recruitment.py`:
+- `depensation_factor` math: `A(S50)=0.5`; `A→0` as SSB→0 (`=0` at SSB=0); `A→1` at large SSB; `=1.0`
+  where disabled; **θ=1 boundary case**; **≥2 species enabled simultaneously** (isolation + correct
+  per-species values).
+- **Off → byte-identical**: a short Baltic run with the gate off == the current baseline
+  (`np.testing.assert_array_equal`), the determinism guarantee.
+- **Seeded-step skip**: integration-level (the skip lives in the wiring, not the pure fn) — copy
+  `tests/test_recruitment_ceiling.py::test_reproduction_ceiling_skips_seeded_step` (empty `SchoolState`
+  → seeded SSB → assert not gated).
+- Config parse: keys → EngineConfig fields; **fail-fast** on `θ<1`, `s50≤0`, and global-on/no-species
+  (all `ValueError`, matching the siblings).
+- Java guard: `java_engine_block_reason` returns a reason for a depensation-enabled config (mirror
+  `tests/test_baltic_a2_demo.py::test_a2_blocks_java_engine`).
+- Overlay: loads + runs on the Python engine; **passes strict validation** (mirror
+  `test_baltic_a2_demo.py::test_a2_passes_strict_validation`).
+- **Fixture note:** adding 3 new required `EngineConfig` fields breaks tests that construct it directly
+  (`test_engine_config_validation.py::_minimal_config`, `test_demo.py`, `test_engine_eec_compat.py`,
+  `test_engine_state.py`) — update those fixtures (self-revealing via test failure).
+- Integration "gate-on changes cod recruitment": **mark `@pytest.mark.skipif(CI)`** — real-engine
+  Baltic rel-change is non-reproducible across runner core counts (`feedback-ci-fragile-emergent-tests`;
+  both the thermal and RV gate on-effect tests carry this marker).
 
 **Units 2–3** — emergent analysis, **NOT CI gates** (long-running, seed/core-sensitive). Deliverable
-is the diagnostics doc (mapped bistable region + chosen operating point + hysteresis loop). A light
-1-point smoke test may live behind a skip-CI marker.
+is the diagnostics doc (mapped bistable region + chosen operating point + hysteresis loop vs control).
+A light 1-point smoke test may live behind a skip-CI marker.
 
 ## Success criteria
 
 SP1 succeeds when **both**:
-1. The gate feature is shipped — config-plumbed, default-off byte-identical, unit tests green.
-2. A documented operating point exists that is **bistable + healthy-O(100kt) + stable**, delivered as
-   the `data/baltic_depensation` overlay, with the warm-start split and the hysteresis loop
-   demonstrated in a diagnostics doc.
+1. The gate feature is shipped — config-plumbed, default-off byte-identical, Java-guarded, schema-
+   registered, unit tests green.
+2. A documented operating point exists that is **bistable + healthy-O(100kt)-SSB + stable** (per the
+   critical-slowing-down discriminator), delivered as the `data/baltic_depensation` overlay, with the
+   warm-start split and the hysteresis-loop-vs-control demonstrated in a diagnostics doc.
 
-### Honest-negative fallback
+### Three-way outcome / honest-negative fallback
 
-The spike's healthy basins were either overshoot (millions, low larval-M) or transient (185kt at
-deployed larval-M). Whether a point exists that is bistable **and** healthy-O(100kt) **and** stable is
-the empirical question SP1 answers — it may not. **If the grid comes up empty**, SP1 still ships the
-**gate feature** (valuable, tested, config-plumbed) plus a **documented negative** ("a bistable region
-exists but the healthy basin cannot be placed at realistic-and-stable magnitude"), which reframes SP2.
-We do not report a null as a success.
+- **GO** — as above.
+- **AMBIGUOUS / instrument-limited** — `det_frac<0.5` or a between-nodes candidate → ship the gate
+  feature + a documented *ambiguous* result and a proposed refinement, NOT a structural claim.
+- **NO-GO** — determinate grid, no qualifying point → ship the **gate feature** (valuable, tested,
+  config-plumbed) + a documented negative ("a bistable region exists but the healthy basin cannot be
+  placed at realistic-and-stable magnitude"), which reframes SP2.
+
+We do not report a null (or an under-powered/ambiguous sweep) as a success.
 
 ## Out of scope (SP2 and beyond)
 
@@ -232,18 +339,23 @@ We do not report a null as a success.
   collapse-and-no-recovery (SP2 — committed follow-on, its own spec).
 - Strict ICES-band match / full multi-species biomass-band recalibration of the healthy basin.
 - Depensation for species other than cod (the gate is general; only cod is calibrated here).
+- Extending depensation to the bioenergetic reproduction path (`_bioen_reproduction`).
 - Any change to the deployed Baltic default config.
 
 ## Key references
 
 - Spike (GO): `docs/diagnostics/2026-07-16-depensation-bistability-spike.md`, script
   `scripts/spikes/depensation_bistability_spike.py` (PR #117).
-- Warm-start harness: `scripts/baltic_bistability_chunk0.py` (classifier + seeding/warmstart helpers).
-- byyear-F tooling: `scripts/spikes/ssb_f_hindcast_spike.py`,
-  `mortality.fishing.rate.byyear.file.sp{i}`.
+- Warm-start harness: `scripts/baltic_bistability_chunk0.py` (classifier + seeding/warmstart helpers,
+  incl. the `det_frac`/instrument-limited verdict branch).
+- byyear-F tooling: `scripts/spikes/ssb_f_hindcast_spike.py`, `mortality.fishing.rate.byyear.file.sp{i}`.
 - Gate pattern to mirror: `osmose/engine/processes/thermal_gate.py`,
-  `osmose/engine/config.py::_load_thermal_gate`, `tests/test_reproduction_thermal_gate.py`.
-- SR wiring: `osmose/engine/processes/reproduction.py:15-190`.
+  `osmose/engine/config.py::_load_thermal_gate` (+ its direct-load call site ~2429 and fields ~1684),
+  `osmose/schema/species.py` (thermal gate `OsmoseField`s), `tests/test_reproduction_thermal_gate.py`,
+  `tests/test_recruitment_ceiling.py` (seeded-step test).
+- Overlay + Java guard: `data/baltic_a2`, `tests/test_baltic_a2_demo.py`,
+  `osmose/runner.py::java_engine_block_reason`; `feedback-larval-rate-ndt-migration-gotcha`.
+- SR wiring: `osmose/engine/processes/reproduction.py:15-190`; eval-window `calibrate_baltic.py:254`.
 - Science: Casini et al. 2009 (PNAS 10.1073/pnas.0906620106); Köster & Möllmann 2000
   (10.1006/jmsc.1999.0528); Möllmann tipping-points (10.1111/nrm.12336) — cultivation-depensation /
   predator-pit basis for Baltic-cod depensation.
