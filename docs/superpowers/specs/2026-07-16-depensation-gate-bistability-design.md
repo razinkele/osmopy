@@ -209,10 +209,14 @@ re-run is the ARBITER**, and the 50-yr pass is only a cheap coarse filter:
    **≤10%** below the prior decade's mean (a still-steeply-declining trajectory is culled; a
    converging-toward-plateau trajectory passes). Deliberately loose — it only drops the obvious slides.
 2. **Arbiter (confirmatory 150–200-yr re-run):** at each shortlisted point, the healthy basin is judged
-   **genuinely stable iff it persists above the collapse threshold for the full 150–200 yr** — a true
-   attractor settles to a plateau; a slow ghost-attractor slide eventually collapses within 150–200 yr
-   (many multiples of τ) and is rejected. This long horizon, not the 50-yr screen, resolves
-   converging-down-to-plateau vs sliding-to-collapse.
+   **genuinely stable iff it persists for the full 150–200 yr** — a true attractor settles to a plateau;
+   a slow ghost-attractor slide eventually collapses within 150–200 yr (many multiples of τ) and is
+   rejected. Crucially, **the GO magnitude check (`healthy_ssb_mean ∈ [40k,300k]`) is re-measured from
+   the arbiter run's OWN final decade**, not the (still-declining) 50-yr screen snapshot — otherwise a
+   point that settles genuinely-stably but *below* the GO floor (e.g. 15–35kt: non-transient yet not
+   healthy, merely above the ~6kt collapse threshold = `classify_state`'s `collapse_frac`×target) would
+   slip through. This long horizon, not the 50-yr screen, resolves converging-down-to-plateau vs
+   sliding-to-collapse AND pins the true equilibrium magnitude.
 
 Reuse `baltic_bistability_chunk0.py`'s `basins_differ`/`classify_state` for the rich-vs-poor split, but
 **do not rely on `is_stationary`'s original thresholds alone** (`cv_max=0.30`, `trend_max=0.05` were
@@ -246,7 +250,8 @@ Per point classify: `{bistable?, healthy_ssb_mean, healthy_stable?, collapsed_ss
   collapse and overshoot basins — those spike figures were total *biomass*, cited only as an
   order-of-magnitude sanity check) AND healthy_stable (coarse 50-yr screen + the
   150–200-yr arbiter re-run) AND collapsed basin distinctly lower (same `gap_thresh=0.5`). **Selection when multiple
-  qualify:** healthy basin closest to Bpa (~120kt), stable, lowest CV tie-break.
+  qualify:** healthy basin (arbiter final-decade mean) closest to Bpa (~120kt), lowest arbiter
+  final-decade CV as tie-break.
 - **Instrument-limited / AMBIGUOUS** — if the determinate fraction is low (`det_frac < 0.5`: many
   seed-splits/undetermined points) OR a candidate falls between grid nodes, report **ambiguous /
   under-resolved**, NOT a structural negative. Preserve this branch in the machine-readable output — do
@@ -264,7 +269,7 @@ Report `healthy_ssb_mean` **only when the aggregate state is determinate** — d
 ### Compute budget (explicit)
 
 6 scales × 4 S50 × 2 θ = 48 grid points × 2 ICs × 3–5 seeds × 50 yr ≈ **288–480 multi-decade
-Python-engine runs**, plus confirmatory 80–100-yr re-runs at candidates — far heavier than the 15-yr
+Python-engine runs**, plus confirmatory 150–200-yr arbiter re-runs at candidates — far heavier than the 15-yr
 spike. This must run with the engine's parallel-run path and an explicit runtime budget; **do NOT
 silently trim seeds or years to fit** (that reintroduces the exact transient-vs-stable confound the
 long horizon is there to prevent). If the full grid is infeasible, cut grid *breadth* (fewer S50/θ),
@@ -279,8 +284,9 @@ At the chosen operating point:
 2. **Fishing-hysteresis F-ramp** — from a healthy warm-start, sweep cod F via the validated `byyear`-F
    tooling (`mortality.fishing.rate.byyear.file.sp0`, per `scripts/spikes/ssb_f_hindcast_spike.py`):
    - **Quasi-static, stepped ramp**: **~8 F levels** spanning F_low→F_high (e.g. 0.5×→~8× base). **Hold
-     each level until SSB EQUILIBRATES, not for a fixed dwell** — a per-level convergence check (SSB
-     slope over the last ~2 decades ≈ 0) with a generous cap of **≥3τ (~75 yr)**. Fixed dwell is
+     each level until SSB EQUILIBRATES, not for a fixed dwell** — a per-level convergence check
+     (**|decade-over-decade relative change in SSB| < 5%**, matching `trend_max=0.05`) with a generous
+     cap of **≥3τ (~75 yr)**. Fixed dwell is
      wrong here: relaxation time **inflates near the fold points** (F_collapse/F_recover) via critical
      slowing down — the very levels the ramp must cross — so ~30–40 yr (only ~1.3–2τ off-fold) is too
      short exactly where it matters. Go up then symmetrically back down.
@@ -288,8 +294,10 @@ At the chosen operating point:
      fold-adjacent slowing, so "loop in depensation, none in control" is **necessary but not
      sufficient** — additionally require that every depensation-arm level actually passed its per-level
      convergence check, so the loop reflects genuine alternative equilibria rather than unconverged lag
-     near the fold. If a level hits the cap without converging, flag it (do not silently treat the
-     capped state as an equilibrium).
+     near the fold. **Consequence rule:** if any fold-adjacent level (near F_collapse/F_recover — the
+     levels most prone to critical slowing down) hits the cap without converging, **WITHHOLD the
+     hysteresis verdict as AMBIGUOUS / instrument-limited** (mirroring Unit 2's branch) — never use a
+     capped, unconverged level to place F_collapse/F_recover on the loop.
    - **Compute budget (explicit, like Unit 2):** ~8 levels × up-to-~75-yr equilibration × 2 directions
      ≈ up to 1,200 simulated yr per seed-arm × 3–5 seeds × 2 arms (depensation + control) ≈
      **~7,000–12,000 simulated years**. Same rule as Unit 2: never trim the equilibration cap to fit
