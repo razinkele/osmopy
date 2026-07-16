@@ -184,7 +184,7 @@ monkeypatch), reusing `scripts/baltic_bistability_chunk0.py` helpers.
 - **SSB, not total biomass.** `run_simulation`'s `{sp}_mean` is mean *total biomass*, but the target
   "healthy basin ~cod Bpa (~120kt)" is an **SSB** reference point. The harness must enable
   `output.ssb.enabled=true` and read the **cod SSB** series (via `PythonEngine().run_in_memory(raw,
-  seed).ssb()["cod"]`, as `scripts/spikes/ssb_f_hindcast_spike.py` does) — a consistent SSB-vs-SSB
+  seed=seed).ssb()["cod"]`, as `scripts/spikes/ssb_f_hindcast_spike.py` does) — a consistent SSB-vs-SSB
   comparison.
 - **Full-horizon stability, not `run_simulation`'s trailing-10-year window.** `run_simulation` hardcodes
   `n_eval_years=10` (calibrate_baltic.py:254) — a 50-yr run there evaluates only years 41–50, which
