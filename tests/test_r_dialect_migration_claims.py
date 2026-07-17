@@ -25,6 +25,7 @@ claims. Those are dated prose in the guide, not testable constants.
 # CI runs `ruff check osmose/ ui/ tests/`, so BOTH are red. Editing the header is the
 # only shape that satisfies both, and it keeps every commit independently lint-clean.
 import logging
+import subprocess
 import warnings
 from pathlib import Path
 
@@ -258,3 +259,35 @@ def test_a_one_sided_assertion_would_be_vacuous():
     base = OsmoseConfigReader().read(MINIMAL_CONFIG)
     # An invented key satisfies the one-sided half trivially:
     assert _probe(base, **{"banana.enabled": "true"}).output_meantl is False
+
+
+def test_spatial_inputs_trap_movement_loader_is_csv_only():
+    """Pins §2's headline trap: osmopy's movement-map loader is CSV-only, so a binary .nc map
+    fails to parse and the run silently continues with that grid dropped.
+
+    Two guards, because the guide's most important claim must not rot silently (that is the
+    guide's own thesis). Unlike the Benguela counts (unvendored, prose-tier), this is about
+    osmopy's OWN source and is trivially pinnable — it would go stale the day someone adds
+    NetCDF support, which is exactly when the guide would need to change.
+    """
+    from osmose.engine.movement_maps import _load_csv_grid
+
+    # Guard 1 — the loader has no NetCDF path at all (CSV-only).
+    hits = subprocess.run(
+        ["grep", "-icE", r"netcdf|xarray|\.nc\b|Dataset", "osmose/engine/movement_maps.py"],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+    ).stdout.strip()
+    assert hits == "0", (
+        f"movement_maps.py gained NetCDF tokens ({hits}); §2's CSV-only claim is stale"
+    )
+
+    # Guard 2 — the mechanism: a binary .nc-like file raises ValueError (UnicodeDecodeError
+    # subclasses it), which movement_maps.py:220 catches → grid set to None → run continues.
+    import tempfile
+
+    nc = Path(tempfile.mkdtemp()) / "map.nc"
+    nc.write_bytes(b"\x89HDF\r\n\x1a\n" + bytes(range(256)) * 4)  # binary, non-UTF-8
+    with pytest.raises(ValueError):
+        _load_csv_grid(nc, 10, 10)

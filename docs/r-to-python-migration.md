@@ -52,8 +52,9 @@ all — while quietly ignoring parts of it. This section is about the gap betwee
 
 ### The exhibit
 
-Measured 2026-07-17 against the real `osmose-ben.R` (`osmose-model/osmose-ben`, the v4.x-develop
-branch): **844 keys parsed, 0 skipped lines** — and **236 of them unknown to osmopy** under
+Measured 2026-07-17 against the real `osmose-ben.R` (`osmose-model/osmose-ben`, the
+`osmose-ben_v4.x_develop` config directory): **844 keys parsed, 0 skipped lines** — and **236
+of them unknown to osmopy** under
 `validation.strict.enabled=error`. That contingency is not a footnote on the exhibit, it *is*
 the exhibit: the same parse's sub-config resolution *failed* —
 `osmose.configuration.initialization = input/initial_conditions.osm` (`osmose-ben.R:1021`)
@@ -237,7 +238,10 @@ not by which mechanism is more interesting.
 both the 4.3.3 and 4.4.1 jars), and it appears in 7 of this guide's surveyed R config files —
 set to `true` in **two of them, from two different upstream models**:
 `osmose-eec/eec_param-output_papierTROPHIC.csv:54` and `osmose-gog/osm_param-output.csv:43`.
-osmopy recognizes the key (it's allowlisted — `config_validation.py:219` — so `validate()` says
+(The key is case-insensitive — the reader lowercases every key on load — and both cited files
+actually write it as `output.TL.enabled;true`; this guide's lowercase form is the normalized
+spelling, not the on-disk one.) osmopy recognizes the key (it's allowlisted —
+`config_validation.py:219` — so `validate()` says
 nothing), but the engine's actual mean-trophic-level output switch is a different key,
 `output.meantl.enabled` (`engine/config.py:923`), a name that appears in **zero** R config files
 and **zero** jars — an osmopy invention. Both of those real users turn on mean-TL output,
@@ -260,7 +264,7 @@ osmopy's own engine actually checks (`engine/config.py:2431`) — appears in **z
 **zero** jars: osmopy's engine invented it. So `simulation.economic.enabled` works only on the
 Python engine; aiming at Java, `module.bioeconomics.enabled` is the correct key, not a
 workaround. The honest UI claim is narrow, too: setting `module.bioeconomics.enabled` adds
-"Economic" to the Run page's "Will populate:" label (`ui/pages/run.py:797`) — and that label
+"Economic" to the Run page's "Will populate:" label (`ui/pages/run.py:797-800`) — and that label
 then doesn't populate, because the Economic page itself gates on which engine is selected and
 plainly says the module isn't implemented yet.
 
@@ -381,7 +385,9 @@ runModel  = function(param, names, ...) {
 
 (`osmose-gog/runModel.R:10`, `:13`, `:18-19`, `:32-34`, `:37` verbatim; the two `...` mark the
 elided middle, which reshapes monthly biomass/yield into yearly, per-replicate values before
-assembling the returned list.)
+assembling the returned list — a few adjacent comment/blank lines between those cited numbers
+are dropped too, without a `...` marker, which is why the numbers themselves aren't
+contiguous.)
 
 `calibrate.R` then chains four calibrar calls around that driver:
 
