@@ -463,8 +463,163 @@ mechanics.
 
 ## 6. Verify your port
 
-*(filled in Task 8)*
+A naive check — "run both engines on my config and compare biomass" — conflates two different
+variables. You most likely arrive with a v3- or v4.3-era config (§1); osmopy's default jar is
+4.4.1. If the two runs disagree, you cannot tell whether that is your port breaking or several
+years of upstream OSMOSE changes. Split it into two comparisons instead, so a divergence at each
+step means only one thing.
+
+### Before either step: confirm your inputs actually loaded
+
+§2's spatial-inputs trap means a run can complete and report success while some species have no
+spatial distribution at all — a silently dropped `.nc` movement map. Check this *before* trusting
+either comparison below, or a "divergence" you attribute to the port or the engine may just be
+that trap, present on one side and not the other. osmopy logs to stderr
+(`osmose/logging.py:25`), so:
+
+```bash
+grep "Failed to load movement map file" your_run.log
+```
+
+If that string appears, resolve it first — convert the map to CSV, or run that species on the
+Java engine (§2) — before chasing a numerical difference that a dropped map fully explains.
+
+### Step 1 — isolate the port: same jar, new driver
+
+Run your **original** jar — whatever version your R config was validated against — through
+osmopy's own driver instead of R's. `OsmoseRunner.__init__(self, jar_path: Path, java_cmd: str =
+"java")` (`osmose/runner.py:123`) takes an arbitrary jar path; it is not pinned to the bundled
+4.4.1 jar. The CLI's `run` subcommand is a thin wrapper around exactly this constructor
+(`runner = OsmoseRunner(jar_path=jar_path)`, `osmose/cli.py:64`):
+
+```bash
+.venv/bin/osmose run your_config.csv --jar /path/to/your/original-jar-with-dependencies.jar \
+    --output output_step1/
+```
+
+Verified against this repo's own pre-migration Bay of Biscay config and its bundled 4.3.3 jar:
+
+```bash
+.venv/bin/osmose run data/examples_433_orig/osm_all-parameters.csv \
+    --jar osmose-java/osmose_4.3.3-jar-with-dependencies.jar --output /tmp/step1
+# ... osmose[info] Simulation 0 completed ...
+# Complete. Output: /tmp/step1
+# exit 0
+```
+
+Same engine (your jar), same config, only the driver changed — R's `run_osmose()`/`runOsmose()`
+(§3) replaced by osmopy's `OsmoseRunner`. **Any difference between this run and your original
+R-driven run, beyond ordinary run-to-run RNG variance, is the port** — a config-reading,
+path-resolution, or invocation difference in osmopy's driver — not an OSMOSE engine change,
+because the engine binary is identical. OSMOSE is stochastic, so a single unreplicated run on
+either side of this comparison can differ from another for no reason but the seed, whether or
+not the driver changed; if your config doesn't pin its randomseed keys, compare several
+replicates (or their means) rather than one run each, the same discipline §6's tolerance
+discussion below asks for across engines.
+
+### Step 2 — isolate the engine: same config, the new engine
+
+Now run the same config through what you'll actually use going forward — the Python engine
+(§3's `PythonEngine().run(config, output_dir, seed)`, no jar at all):
+
+```bash
+.venv/bin/python -c "
+from pathlib import Path
+from osmose.config.reader import OsmoseConfigReader
+from osmose.engine import PythonEngine
+config = OsmoseConfigReader().read(Path('your_config.csv'))
+PythonEngine().run(config, output_dir=Path('output_step2'), seed=0)
+"
+```
+
+Verified on the same pre-migration Bay of Biscay config used above — it runs to completion,
+`returncode=0`, real biomass/yield CSVs written (the config's one pre-4.4.0 key auto-migrates
+via the shim §2 already covers, logged as `Loaded a legacy pre-4.4.0 config: ...`).
+
+If you want a Java-side comparison instead — the same engine language, only the version bumped —
+point `.venv/bin/osmose run --jar` at the bundled 4.4.1 jar. Be aware this is not always a like-for-like
+swap: the same command above, run against the 4.4.1 jar unmodified, refuses outright rather than
+running: `osmose[severe] Your configuration file must be updated. Please run osmose with the
+-update option.` (verified). The 4.4.1 jar requires an explicit `-update` conversion of a
+pre-4.4.0 config before it will run it at all; the Python engine's shim (§2) does the equivalent
+migration automatically, silently, on load. That asymmetry is itself worth knowing before you
+read anything into a "the Java 4.4.1 arm won't even start" result.
+
+**Any difference between Step 1's result and this one is the engine or the version — not the
+port** — the port was already isolated and cleared in Step 1.
+
+### How much difference is "no difference"
+
+Don't expect bit-equality. `usage-guide.md` §6 documents Python-vs-Java agreeing only **"within
+1 order of magnitude"** (per the parity suite: 14/14 EEC, 8/8 Bay of Biscay) — and that figure is
+for osmopy's own bundled, already-verified configs, not yours. The same section explains why
+tighter agreement isn't the goal: NumPy's PCG64 and Java's `java.util.Random` (MT19937) are
+different generators that diverge at the first draw, so don't chase seed-level agreement either.
+Full port status, including which configs that 14/14 and 8/8 cover: `docs/parity-roadmap.md`.
+
+### If Step 1 or Step 2 still disagrees
+
+Before concluding "the port is broken" or "the engine changed behavior," rule out two things §2
+already found:
+
+- **Is this a split config?** osmopy resolves a key set in both a master file and a sub-config
+  silently, last-write-wins; the Java engine warns (`Parameter already defined`) and keeps
+  first-write-wins (§2, "Cross-file precedence"). The same split config can legitimately produce
+  different parameter values on the two engines — check precedence before concluding they
+  disagree about anything else.
+- **Did a shim or rename land differently than you expect?** (§2's eight-bucket taxonomy) — a
+  key that silently changed meaning changes the run's outcome, and that outcome is neither the
+  port nor an engine bug.
 
 ## Appendix
 
-*(filled in Task 8)*
+### R → Python symbol table
+
+Every symbol below is read from the R corpus (§§3–5), not recalled.
+
+| R symbol | Source | osmopy counterpart |
+|---|---|---|
+| `runOsmose("osm_all-parameters.csv", version=4, osmose=jarfile)` | `osmose-gog/run.R:7` | `PythonEngine().run(config=, output_dir=, seed=)` (§3) |
+| `run_osmose(input=, output=, osmose=, version=)` | `osmose-ben/launcher.R:20` | `PythonEngine().run(config=, output_dir=, seed=)` (§3) |
+| `read_osmose(path=, version=)` | `osmose-ben/launcher.R:21`; `osmose-gog/runModel.R:37` | `OsmoseResults(output_dir, prefix=...)` (§4) |
+| `read_osmose(...)` → `$biomass` / `$yield` | `osmose-gog/runModel.R:41`, `:43` | `.biomass()` / `.yield_biomass()` (§4) |
+| `get_var(obj, what="biomass", how="list")` | `osmose-ben/launcher.R:53` | `.biomass()` (§4) |
+| `plot(obj, what=, initialYear=, freq=, col=, lwd=)` | `osmose-ben/launcher.R:23`, `:24`, `:47` | no single call — the plotting-function module `osmose/plotting.py`, or the Shiny results UI's `ui/pages/results.py` chart builders, chosen per `what=` (§4) |
+| `plot(obj, what="biomass.acousticSurvey")` | `osmose-ben/launcher.R:44` | **no Python equivalent** — reads a survey output; `surveys.*` is unsupported by the Python engine (§2, §4) |
+| `initialize_osmose(input=, file=, output=, type="climatology"\|"ncdf", run=)` | `osmose-ben/launcher.R:32-34`, `:36-38` | **no Python-engine restart** — use the Java engine ([#120](https://github.com/razinkele/osmopy/issues/120)) |
+| `.readConfiguration(configFile4)` | `osmose-ben/launcher.R:27` | R-internal, no counterpart by design |
+| `.getPar(conf, "osmose.configuration.initialization")` | `osmose-ben/launcher.R:28` | R-internal, no counterpart by design |
+| `getCalibrationInfo(path=".", file=)` → `getObservedData(calInfo, path=".", data.folder=)` | `osmose-gog/calibrate.R:17`, `:22` | `osmose.calibration.targets.load_targets(path)` for ICES-band targets (one call does both steps); no loader for time-series objectives — read your own DataFrame (§5) |
+| `createObjectiveFunction(runModel=, aggFn=, aggregate=)` | `osmose-gog/calibrate.R:33-38` | splits three ways: the run/read loop is `OsmoseCalibrationProblem._run_single`; the per-run score is a function in `osmose/calibration/objectives.py`; the aggregation is `weighted_multi_objective` or `losses.make_banded_objective` (§5) |
+| `calibrate(..., phases=calibData['parphase'], control=control, replicates=2)` | `osmose-gog/calibrate.R:40-53` | `phases` → `MultiPhaseCalibrator`/`CalibrationPhase`; `control$popsize`/`maxgen` → plain optimizer keyword arguments, not a control object; `control$restart.file`/`REPORT` → no counterpart, no resume-on-crash mechanism exists; `replicates` → no calibration-side counterpart, see `OsmoseRunner.run_ensemble` (§5) |
+| user-written `runModel(param, names, ...)` | `osmose-gog/runModel.R:10` | **no counterpart, by design** — `OsmoseCalibrationProblem` owns the run/read loop for both engines (§5) |
+
+`initialize_osmose`, `.readConfiguration`, and `.getPar` have no body section above — they're
+table-only. `initialize_osmose` is finding 6 restated (no Python restart; use the Java engine);
+`.readConfiguration`/`.getPar` are R-internal helpers with no Python counterpart by design.
+
+### The two verified traps (reference)
+
+Taught in prose in §2; repeated here for lookup. Deliberately two rows, not a table of plausible
+ones — the general case can't be safely enumerated this way (below).
+
+| R key (provenance + value) | Bites? | Python key actually read |
+|---|---|---|
+| `output.tl.enabled` — 7 R files, `true` in `osmose-eec/eec_param-output_papierTROPHIC.csv:54` and `osmose-gog/osm_param-output.csv:43` | **Yes — the guide's headline trap** | `output.meantl.enabled` (`engine/config.py:923`) — an osmopy-invented name, 0 hits in the R corpus or either jar |
+| `economy.enabled` — one occurrence corpus-wide, `osmose-ben.R:1048`, value `FALSE` | **No — latent.** Only bites a config that sets it `TRUE`; none surveyed does | shim target `module.bioeconomics.enabled` (dead — the engine never reads it for economics); the engine's real switch is `simulation.economic.enabled` (`engine/config.py:2431`), a Python-only key |
+
+The general case — every other allowlisted-but-unread key — is not enumerable this way: cheap
+derivations fail in both directions (a `startswith` read looks unread to a literal grep; an
+allowlisted key looks read to a validator), and the R corpus alone sets roughly 2,000 distinct
+tokens. It's tracked in [#121](https://github.com/razinkele/osmopy/issues/121). The real fix is
+tooling that names the correct key at the point a config is loaded, not a static table that goes
+stale the next time a key is renamed.
+
+### Honest gaps, and their workaround
+
+| Gap | Workaround |
+|---|---|
+| `surveys.*` (21 keys) — no support in the Python engine | Java engine — `fr/ird/osmose/output/Surveys.class` is present in both the 4.3.3 and 4.4.1 jars (§1) |
+| Python-engine restart (`simulation.restart.*`) — loads and validates clean, does nothing | Java engine ([#120](https://github.com/razinkele/osmopy/issues/120)) |
+| Temperature/oxygen forcing — the Python engine has constant-only forcing (`temperature.value` / `oxygen.value`, gated on `bioen_enabled`), not the time-varying NetCDF field R/Java configs supply | **None.** This is a genuine capability downgrade, not a renamed key — there is nothing to point at instead (§1) |
+| `plot()` one-liner convenience — no single Python call dispatches on `what=` the way R's `plot()` does | `osmose/plotting.py` (one function per chart type) or the Shiny results UI, `ui/pages/results.py` (§4) |
