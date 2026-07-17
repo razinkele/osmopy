@@ -95,22 +95,46 @@ on *your* config."
 
 ## Gap taxonomy
 
-Gaps fail in **seven directions** — six needing a workaround, plus value coercion (latent; one
-sentence, no remedy). An earlier draft claimed three and called the taxonomy complete; two
-fresh-eyes rounds found four more. **Assume it is still incomplete.**
+Gaps fail in **eight directions** — seven needing a workaround, plus value coercion (latent; one
+sentence, no remedy). An earlier draft claimed three and called the taxonomy complete; three
+fresh-eyes rounds found five more, the last of which is the one that actually breaks a real
+port. **Assume it is still incomplete.**
 
 | Bucket | Signal | Example | Reader's move |
 |---|---|---|---|
+| **Unreadable input file** | **silent — invisible to BOTH tools** | `.nc` movement maps; osmopy's loader is CSV-only | Convert to CSV, or Java engine |
 | Capability absent | silent | `simulation.restart.enabled` | Java engine |
 | Key renamed | silent | `output.tl.enabled` → engine reads `output.meantl.enabled` | Use the right key |
-| Shim → dead key | silent | `economy.enabled` → `module.bioeconomics.enabled` | Set the engine's key |
+| Shim → dead key | silent (engine); changes one UI label | `economy.enabled` → `module.bioeconomics.enabled` | Set the engine's key |
 | Unsupported module | loud, opt-in only | `surveys.*` (21 keys) | Java engine |
 | Missing sub-config | silent, **invisible to strict mode** | a referenced file that isn't there | `scripts/check_config.py` |
 | Cross-file collision | silent, no diagnostic | sub-config overrides master | `check_config.py` won't catch it either |
-| Value coercion | silent | `= 1` / `yes` / `T` → `False` | Use `true`/`TRUE` |
+| Value coercion | latent | `= 1` / `yes` / `T` → `False` | Use `true`/`TRUE` |
 
-"Recognized", "implemented", "implemented under another name", and "present in the file you
-think you read" are four different sets, and **no default-mode signal distinguishes any**.
+"Recognized", "implemented", "implemented under another name", "present in the file you think
+you read", and **"present, but in a format we cannot read"** are five different sets, and **no
+default-mode signal distinguishes any**.
+
+**The first row is the most important thing in this guide, and it was found last.** The whole
+config-key investigation — four review rounds, two filed issues — is about keys. But the trap
+that actually breaks a real R port is **spatial inputs**:
+
+- `osmose/engine/movement_maps.py` has **zero** NetCDF support (`grep -icE "netcdf|xarray|\.nc\b|Dataset"` → 0). `_load_csv_grid` (`:38`) does a text-mode `open()`.
+- The handler at `:220` catches `(FileNotFoundError, OSError, ValueError)` — and `UnicodeDecodeError` **subclasses `ValueError`** — so a binary `.nc` file logs to `logger.error` (`:221`), sets `raw_grids[i] = None` (`:222`), and **the run completes reporting success**.
+- The real `osmose-ben.R` sets `movement.netcdf.enabled = TRUE`, `movement.distribution.method.sp0 = maps`, and references **27 `.nc` map files**.
+
+So the reader's fish silently ignore their spatial distribution and the run says it worked.
+`check_config.py` reports only the duplicate-key and missing-subconfig; `validate()` flags none
+of the ~185 `movement.*` keys. **Both prescribed tools are blind.**
+
+§2 must therefore carry a spatial-inputs subsection, not just keys: prescribe running with
+`logger.error` visible and grepping stderr for `Failed to load movement map file`. Workaround:
+convert `.nc` → semicolon CSV, or use the Java engine (which reads `.nc` natively). Note also
+the in-tree Benguela port's scar — movement CSVs must be `np.flipud`'d or fish land on land.
+
+⚠️ **§6 interaction:** §6 sets tolerance at "within 1 order of magnitude", so a reader would
+shrug off a dropped-maps divergence as normal variance. §6 must require **confirming maps
+loaded** before either comparison.
 
 Two, newly verified, change the guide's advice:
 
@@ -124,9 +148,16 @@ Two, newly verified, change the guide's advice:
   across files with no diagnostic. **Sub always beats master, independent of where the
   reference sits** (parent written first in a depth-first walk; among siblings, last-referenced
   wins). OSMOSE configs are split by design, so this is live for every reader.
-  ⚠️ **Verify Java's precedence before publishing this rule** — it was not checked, and
-  publishing a rule that differs from the engine the reader is migrating *from* would be worse
-  than saying nothing.
+
+  **Java's precedence was the spec's one open item. It is now settled — and Java DIVERGES,
+  which makes this far more valuable than a footnote.** The 4.4.1 jar's `Configuration.class`
+  carries the string `{0}Parameter already defined {1}`: **Java warns loudly and takes
+  first-encountered-wins (position-dependent); osmopy is silent and takes last-write-wins.**
+  The same split config can therefore produce **different parameter values on the two engines,
+  with only one of them telling you.** The guide must state this plainly — it is exactly the
+  fact a porter needs, and it directly threatens §6 (a port that "diverges" may be a precedence
+  difference, not an engine difference). An earlier draft was ready to publish osmopy's rule as
+  if it were OSMOSE's; the probe cost seconds.
 
 **Non-gap worth showing for contrast:** some mismatches fail *loudly* — `species.lw.*` without
 its `species.length2weight.*` twin raises `KeyError: Required OSMOSE config key missing:
@@ -135,10 +166,19 @@ reader learns a crash is the *friendly* case and silence is the dangerous one.
 
 ### The two verified traps
 
-| R key (provenance) | What happens | Python key actually read |
-|---|---|---|
-| `output.tl.enabled` (7 R files, case-insensitive; real 4.4.1 jar string) | Loads clean, validates clean, mean-TL output silently absent | `output.meantl.enabled` (osmopy name; 0 R files, 0 jars) |
-| `economy.enabled` (`osmose-ben.R:1048`) | Shim → `module.bioeconomics.enabled` (**the correct upstream 4.4.1 key**) → validates clean → engine never runs economics | `simulation.economic.enabled` (osmopy invention; 0 R files, 0 jars) |
+**Ranked by whether they actually bite — not by how interesting the mechanism is.** An earlier
+draft had these inverted, making the harmless one the headline and success-criterion #1.
+Severity must track real-world impact: check the **values** in the corpus, not just the keys.
+
+| R key (provenance + value) | Bites? | What happens | Python key actually read |
+|---|---|---|---|
+| **`output.tl.enabled`** — 7 R files, **2 of them `true`**: `osmose-eec/eec_param-output_papierTROPHIC.csv:54` and `osmose-gog/osm_param-output.csv:43` (two different upstream models). Real 4.4.1 jar string. | **YES** | Real configs turn on mean-TL output, validate clean, and silently get none | `output.meantl.enabled` (osmopy name; 0 R files, 0 jars) |
+| `economy.enabled` — **one** occurrence corpus-wide (`osmose-ben.R:1048`), value **`FALSE`** | **No — latent** | `FALSE` → shim → dead key → engine reads the absent key → `False` → economics off, **which is what the user asked for**. Only bites someone writing `= TRUE`, which no surveyed R config does. | `simulation.economic.enabled` (osmopy invention; 0 R files, 0 jars) |
+
+**`output.tl.enabled` is the guide's headline trap** and the one success criteria build on.
+`economy.enabled` is the richer *mechanism* — worth telling, because it teaches that the shim
+both rescues and strands — but it is **latent**, and the guide must say so. Do **not** call it
+"the worst gap found anywhere": that claim was mechanism-led and the corpus refutes it.
 
 **On `economy.enabled`, say which engine is at fault.** `module.bioeconomics.enabled` has 2
 hits in the 4.4.1 jar (including `Releases$15`, upstream's own 4.4.0 renames table) and 0 in
@@ -308,28 +348,47 @@ comments, `TRUE`/`FALSE`, a pre-4.4.0 key the shim migrates, a `surveys.*` key (
 unknown), a `simulation.restart.*` key (asserted **not** unknown). Pins that the phenomena
 exist.
 
-**Tier 2 — the two verified traps, pinned by a TWO-SIDED assertion.** An earlier draft proposed
-"the R key leaves the attribute at its default; the mapped key flips it." **That is vacuous** —
-it passes for `banana.enabled`, i.e. any key osmopy doesn't read, real or invented. It would
-have shipped all seven fabricated rows green. It pins the *Python* half; the wrong half was the
-*R* half. So:
-- **Python side:** the R key leaves the attribute at default; the mapped key **changes** it
-  (not "flips" — some targets are ints, not bools).
-- **Provenance side:** the R key must be greppable in a **named upstream file**, carried as a
-  citation in the fixture. A row whose R key appears in no real config cannot pass.
+**Tier 2 — the two verified traps, pinned on the Python side + a citation-presence check.**
 
-  ⚠️ Honest limit: since we don't vendor R configs, this asserts the *citation is present*, not
-  that it is *true*. It forces every row to name a file instead of guessing from the allowlist —
-  a real improvement — but re-verification when the guide is next edited remains a human step.
-  Do not let the test's existence imply otherwise.
+An earlier draft proposed "the R key leaves the attribute at its default; the mapped key flips
+it." **That is vacuous** — it passes for `banana.enabled`, i.e. any key osmopy doesn't read,
+real or invented. So the Python side must be **both** halves:
+- the R key leaves the attribute at its default, **and** the mapped key **changes** it (not
+  "flips" — some targets are ints, not bools).
+
+**The provenance side must be stated honestly, and an earlier draft did not.** It claimed
+"a row whose R key appears in no real config **cannot pass**" — and made that a success
+criterion. **That is false and undeliverable as specified.** Proven by execution: the retracted
+row `output.trophiclevel.enabled → output.meantl.enabled` **passes the full Python-side shape**,
+because both halves are Python-side and never touch the R corpus. Since we do not vendor R
+configs, CI cannot check whether an R key is real.
+
+So choose, and do not blur it:
+- **What CI does:** assert every trap row carries a **non-empty `file:line` citation** (a
+  `TRAPS` table parametrising both tests). This forces every row to *name a file* rather than be
+  guessed from the allowlist — a real improvement, and it is the improvement that would have
+  made the fabricated table's authorship obvious.
+- **What CI does NOT do:** verify the citation is *true*. That is a **human step** at authoring
+  and edit time.
+
+Any docstring, comment, or criterion claiming the tests are "asserted on both sides
+(python + provenance)" is **false** and must not ship. The tests cannot stop a fabricated row;
+they can only stop an *uncited* one.
 
 **Tier 3 — could be pinned, DECLINED with reasons.** The jar-classfile claims (`Surveys.class`
 in both jars) **are** pinnable — the jars are vendored and `zipfile.ZipFile(...).namelist()`
 settles it offline in four lines. We decline: the failure mode (a future jar bump drops
 `Surveys.class` and invalidates the workaround) is real but rare, and a test that unzips jars to
-protect a doc sentence buys little. Mitigate with a comment at the jar-version sites — there is
-no single site: `config/aliases.py:230` (`DEFAULT_TARGET_VERSION`), `runner.py:123`, plus
-version strings in `demo.py`, `runner.py`, `calibration/problem.py`.
+protect a doc sentence buys little.
+
+**The claim therefore ships with neither test nor comment, and the spec must say so rather than
+gesture at a mitigation nobody delivers.** An earlier draft prescribed comments at the
+jar-version sites (`config/aliases.py:230`, `runner.py:123`, plus version strings in `demo.py`
+and `calibration/problem.py`) — but listed no success criterion for them, so nothing would ever
+check, and the plan dropped them while its self-review still asserted "mitigated by comments".
+That is a mitigation existing only in prose about itself. If a future author wants the
+protection, add the four-line `zipfile` test; it is cheap and honest. Until then this is an
+**accepted, unmitigated risk**, and any claim otherwise is false.
 
 The Benguela counts (844/236/21/8) are **genuinely un-pinnable** — a one-time read of an
 unvendored upstream repo — hence §2's dated-exhibit framing.
@@ -351,15 +410,26 @@ is it wasn't worth protecting. Say which.
 
 ## Success criteria
 
-- A reader whose config sets `economy.enabled` learns — from the guide, not a support thread —
-  that their run has no economics on the Python engine even though the key migrated to
-  upstream's correct 4.4.0 name, and that "Will populate: Economic" is a promise it won't keep.
+- **A reader whose config uses `.nc` movement maps finds out that none of them loaded** — even
+  though the run reported success and both prescribed tools said nothing. This is the criterion
+  that matters most: it is the only one where the reader's *science* is silently wrong rather
+  than an output merely being absent.
+- A reader whose config sets `output.tl.enabled = true` (two real upstream configs do) learns
+  why their mean-TL output is missing and which key to set instead. **This is the highest-impact
+  key-level outcome** — not `economy.enabled`, whose only real occurrence is `FALSE` and is
+  therefore latent.
 - A reader whose config references a missing sub-config finds out, because the guide sent them
   to `check_config.py` and not to strict mode alone.
+- A reader with a split config learns that **osmopy and Java resolve duplicate keys differently**
+  (osmopy: silent last-write-wins; Java: loud first-wins), so a "divergence" in §6 may be
+  precedence, not the engine.
 - All gap buckets are stated with their differing workarounds; the temperature/oxygen downgrade
   says plainly it has none.
-- Every R-side key named is greppable in a named upstream file. **No row exists because the
-  allowlist mentioned it.**
+- Every R-side key named is greppable in a named upstream file, **and its real-world VALUE was
+  checked** — a key set to `FALSE` everywhere is latent, not a headline. **No row exists because
+  the allowlist mentioned it.**
+- Nothing claims the tests verify R-side provenance. They check *citation presence* only; truth
+  is a human step (Tier 2).
 - Every R snippet cites a real file in a real repo.
 - No Python mechanics restated from `usage-guide.md`.
 - Nothing claimed as CI-protected that isn't; nothing called unprotectable that was merely
