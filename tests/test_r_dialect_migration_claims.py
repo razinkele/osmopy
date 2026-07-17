@@ -28,6 +28,8 @@ import logging
 import warnings
 from pathlib import Path
 
+import pytest
+
 from osmose.config.reader import OsmoseConfigReader
 from osmose.engine.config import EngineConfig
 from osmose.engine.config_validation import validate
@@ -36,6 +38,24 @@ FIXTURES = Path(__file__).parent / "fixtures"
 RDIALECT = FIXTURES / "rdialect_config.R"
 REPO_ROOT = Path(__file__).parent.parent
 MINIMAL_CONFIG = REPO_ROOT / "data" / "minimal" / "osm_all-parameters.csv"
+
+# COLUMN SEMANTICS -- read carefully, a reviewer already misread this:
+#   [0] r_key   : the key an R config actually contains (provenance-cited).
+#   [1] py_key  : the key you must SET so the Python ENGINE acts on it, i.e. the key the
+#                 engine literally reads. This is NOT the alias/shim target.
+#   [2] citation: file:line in the upstream corpus. Asserted PRESENT, never TRUE.
+#
+# The economy row is the one that confuses people. THREE distinct keys are involved:
+#   economy.enabled              -- what the R config says            (osmose-ben.R:1048)
+#   module.bioeconomics.enabled  -- what the SHIM migrates it to; upstream's real 4.4.0
+#                                   name, and DEAD on our engine. NOT the py_key.
+#   simulation.economic.enabled  -- what our ENGINE reads (config.py:2431). THE py_key.
+# So py_key is deliberately NOT the alias target: the alias target is precisely the key that
+# does nothing. That IS the trap.
+TRAPS = [
+    ("output.tl.enabled", "output.meantl.enabled", "osmose-gog/osm_param-output.csv:43"),
+    ("economy.enabled", "simulation.economic.enabled", "osmose-ben.R:1048"),
+]
 
 
 def test_r_dialect_parses_with_no_skipped_lines():
@@ -144,3 +164,97 @@ def test_engine_does_not_yet_warn_on_ignored_restart(caplog):
         "The engine now warns about ignored restart — #120 may be fixed. "
         "Update docs/r-to-python-migration.md §2 and the appendix, then update this test."
     )
+
+
+@pytest.fixture
+def minimal_cfg() -> dict[str, str]:
+    return OsmoseConfigReader().read(MINIMAL_CONFIG)
+
+
+def _probe(base: dict[str, str], **overrides: str) -> EngineConfig:
+    cfg = dict(base)
+    cfg.update(overrides)
+    return EngineConfig.from_dict(cfg)
+
+
+def test_trap_output_tl_enabled_is_silently_ignored(minimal_cfg):
+    """TRAP 1 — THE HEADLINE TRAP, because it actually bites.
+
+    output.tl.enabled is the REAL upstream Java name (a 4.4.1 jar string) and is set to `true`
+    in TWO real configs from two different upstream models: osmose-eec's
+    eec_param-output_papierTROPHIC.csv:54 and osmose-gog's osm_param-output.csv:43. Those users
+    turn on mean-TL output and silently get none, because osmopy's engine reads
+    output.meantl.enabled — an osmopy name present in 0 R configs and 0 jars.
+
+    Both halves are PYTHON-side. Neither touches the R corpus, so this cannot detect a
+    fabricated row — see test_traps_carry_a_provenance_citation and the module docstring.
+    """
+    assert _probe(minimal_cfg).output_meantl is False, "baseline"
+
+    # The real upstream key is silently ignored.
+    assert _probe(minimal_cfg, **{"output.tl.enabled": "true"}).output_meantl is False
+
+    # The osmopy key is what actually works.
+    assert _probe(minimal_cfg, **{"output.meantl.enabled": "true"}).output_meantl is True
+
+
+def test_traps_carry_a_provenance_citation():
+    """Asserts every trap row NAMES A FILE. This is the honest, achievable half.
+
+    It does NOT prove the citation is true — CI cannot, since we do not vendor R configs.
+    What it buys: a row cannot be added by guessing from the allowlist without at least
+    naming where it came from. That is exactly the discipline whose absence produced a
+    retracted 8-row table in which 7 rows existed in zero R configs.
+
+    Proven limitation, do not paper over it: the retracted row
+    output.trophiclevel.enabled -> output.meantl.enabled PASSES both trap assertions above,
+    because both halves are Python-side. Provenance truth is a HUMAN step.
+    """
+    for r_key, py_key, citation in TRAPS:
+        assert citation, f"{r_key} has no provenance citation"
+        assert ":" in citation, f"{r_key} citation must be file:line, got {citation!r}"
+        assert r_key != py_key
+
+
+def test_trap_economy_enabled_is_silently_ignored(minimal_cfg):
+    """TRAP 2 — the richest MECHANISM, but LATENT. Not the headline.
+
+    Its only occurrence in the whole R corpus is osmose-ben.R:1048, and its value is FALSE.
+    FALSE -> shim -> dead key -> engine reads the absent key -> False -> economics off, which
+    is what the user asked for. It only bites someone who writes `= TRUE`, and no surveyed R
+    config does. An earlier draft called this "the worst gap found anywhere" and built
+    success-criterion #1 on it; that ranking was mechanism-led and the corpus refutes it.
+    Severity tracks impact — check the VALUES, not just the keys.
+
+    Worth teaching anyway, because it shows the shim both rescues and strands.
+
+    economy.enabled (osmose-ben.R:1048) is migrated by the shim to
+    module.bioeconomics.enabled — which is CORRECT: that is upstream's genuine 4.4.0 name
+    (2 hits in the 4.4.1 jar, including Releases$15, upstream's own renames table; 0 in 4.3.3).
+    The defect is that osmopy's engine reads simulation.economic.enabled (engine/config.py:2431)
+    — a key with 0 hits in either jar and 0 in the R corpus. The shim is right; we are wrong.
+
+    Do NOT rewrite this as "the shim betrays you". Tracked as issue #121.
+    """
+    assert _probe(minimal_cfg).economics_enabled is False, "baseline"
+
+    # Upstream's correct 4.4.0 key — silently ignored by osmopy's engine.
+    assert _probe(minimal_cfg, **{"module.bioeconomics.enabled": "true"}).economics_enabled is False
+
+    # osmopy's invented key — the only one that actually works, and only on the Python engine.
+    assert _probe(minimal_cfg, **{"simulation.economic.enabled": "true"}).economics_enabled is True
+
+
+def test_a_one_sided_assertion_would_be_vacuous():
+    """DOCUMENTS (does not enforce) why the trap tests assert both Python halves.
+
+    A one-sided "the R key leaves the attribute at its default" assertion passes for a key
+    that does not exist at all — demonstrated below.
+
+    Honest scope: this test cannot stop anyone weakening the traps; strip their Python halves
+    and it still passes. It is executable documentation, not a guard. An earlier draft claimed
+    "this test exists so nobody weakens the trap tests" — false.
+    """
+    base = OsmoseConfigReader().read(MINIMAL_CONFIG)
+    # An invented key satisfies the one-sided half trivially:
+    assert _probe(base, **{"banana.enabled": "true"}).output_meantl is False
