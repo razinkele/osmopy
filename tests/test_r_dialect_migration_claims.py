@@ -28,9 +28,13 @@ import logging
 from pathlib import Path
 
 from osmose.config.reader import OsmoseConfigReader
+from osmose.engine.config import EngineConfig
+from osmose.engine.config_validation import validate
 
 FIXTURES = Path(__file__).parent / "fixtures"
 RDIALECT = FIXTURES / "rdialect_config.R"
+REPO_ROOT = Path(__file__).parent.parent
+MINIMAL_CONFIG = REPO_ROOT / "data" / "minimal" / "osm_all-parameters.csv"
 
 
 def test_r_dialect_parses_with_no_skipped_lines():
@@ -69,3 +73,64 @@ def test_shim_migrates_pre_440_key(caplog):
     # economy.enabled -> module.bioeconomics.enabled, upstream's real 4.4.0 name.
     assert cfg["module.bioeconomics.enabled"] == "TRUE"
     assert "economy.enabled" not in cfg
+
+
+def _unknown_keys(cfg: dict[str, str]) -> set[str]:
+    return {u.key for u in validate(cfg, "warn")}
+
+
+def test_strict_mode_reports_unsupported_surveys_module():
+    """surveys.* is unsupported and LOUD — but only if the reader opts into strict mode.
+
+    Default validation is silent, which is why the guide tells the reader to turn it on
+    before trusting anything.
+    """
+    cfg = OsmoseConfigReader().read(RDIALECT)
+    unknown = _unknown_keys(cfg)
+
+    assert "surveys.enabled.sr1" in unknown
+    assert "surveys.name.sr1" in unknown
+
+
+def test_strict_mode_is_SILENT_on_unimplemented_restart():
+    """The asymmetry that makes strict mode necessary but NOT sufficient.
+
+    simulation.restart.enabled is a KNOWN key, so strict mode never reports it — while the
+    Python engine never implements it (engine/initialization.py exposes only
+    build_initial_population / age_structured_population). It loads clean, validates clean,
+    and silently does nothing. Tracked as issue #120.
+
+    Knownness is SYMMETRICALLY REDUNDANT: it comes from BOTH osmose/schema/output.py:52 AND
+    config_validation.py's allowlist, unioned in build_known_keys(). Removing either alone
+    leaves this green. An earlier draft claimed this test "pins the allowlist" — it does not
+    pin either source.
+
+    This test does NOT detect a #120 fix. #120's fix surface is the ENGINE (a warning), not
+    validate(); implementing #120's own suggested fix leaves this green. An earlier draft
+    claimed "if this test starts FAILING, #120 has been fixed" — false. See the companion
+    test below for the real tripwire.
+    """
+    cfg = OsmoseConfigReader().read(RDIALECT)
+    unknown = _unknown_keys(cfg)
+
+    assert "simulation.restart.enabled" not in unknown
+
+
+def test_engine_does_not_yet_warn_on_ignored_restart(caplog):
+    """The REAL #120 tripwire — asserts the actual fix surface.
+
+    Today the Python engine silently ignores simulation.restart.enabled. When #120 lands and
+    the engine warns, THIS test goes red, and that is the signal to update the guide's §2 and
+    appendix to describe the warning instead of the silence.
+    """
+    cfg = OsmoseConfigReader().read(MINIMAL_CONFIG)
+    cfg["simulation.restart.enabled"] = "true"
+
+    with caplog.at_level(logging.WARNING):
+        EngineConfig.from_dict(cfg)
+
+    restart_warnings = [r for r in caplog.records if "restart" in r.getMessage().lower()]
+    assert restart_warnings == [], (
+        "The engine now warns about ignored restart — #120 may be fixed. "
+        "Update docs/r-to-python-migration.md §2 and the appendix, then update this test."
+    )
