@@ -10,6 +10,30 @@
 
 **Spec:** `docs/superpowers/specs/2026-07-17-r-to-python-migration-guide-design.md`
 
+## Prerequisites — do this FIRST or six steps below fail
+
+**Sphinx is NOT installed in `.venv`.** It lives only in the `[docs]` optional extra
+(`pyproject.toml:38`), never in `[dev]`. Every `sphinx` command in this plan fails with
+`No module named sphinx` until you run:
+
+```bash
+cd /home/razinka/osmopy && .venv/bin/python -m pip install -e ".[docs]"
+```
+
+This mirrors CI (`.github/workflows/docs.yml:25` = `pip install -e ".[docs]" numba`).
+
+**Use CI's exact build command**, not a bare `-b html`. CI builds with `-W --keep-going`
+(`docs.yml:28`), so a warning that is invisible locally is red in CI:
+
+```bash
+.venv/bin/sphinx-build -W --keep-going -b html docs docs/_build/html
+```
+
+> An earlier draft of this plan claimed "every code step carries real, executed code". That was
+> **false for exactly these steps** — they were never run, and they do not work. This is the same
+> error class the guide is about: reasoning from "this is how sphinx works" to "this will work".
+> Run every command you write.
+
 ## Global Constraints
 
 - **METHOD RULE (governs every task):** An allowlist entry is not evidence of a read. A line number is not evidence of a behavior. A schema declaration is not evidence of a consumer. **Run the code before writing any factual claim into the guide.** Every claim in this plan was verified by execution; if you change one, re-verify it the same way. This is the spec's central lesson and the reason four review rounds were needed.
@@ -29,6 +53,7 @@
 | `tests/test_r_dialect_migration_claims.py` (create) | All tests guarding the guide. Named for its purpose: if it goes red, the guide has gone stale. Tier-1 (mechanism) + Tier-2 (the two traps). |
 | `docs/r-to-python-migration.md` (create) | The guide. Six sections + appendix. |
 | `docs/index.md` (modify) | Add `r-to-python-migration` to the `Guides` toctree. |
+| `docs/conf.py` (modify) | **Add the page to `include_patterns`.** `conf.py:31-37` is a hard whitelist — *"ONLY these pages are part of the build"*. Without this the page **never renders** and CI's `-W` build goes red. This repo already knew the trap: `docs/superpowers/plans/2026-06-21-sphinx-api-reference.md` documents the architecture. An earlier draft of this plan dropped the step. |
 
 Tasks 1–3 build the test suite first (TDD, and they pin the facts the guide asserts). Tasks 4–8 write the guide section by section. Task 9 verifies the whole against the spec's success criteria.
 
@@ -85,20 +110,44 @@ Create `tests/test_r_dialect_migration_claims.py`:
 """Guards the load-bearing claims of docs/r-to-python-migration.md.
 
 If this module goes red, the migration guide has gone stale — that is the intent.
-Scope is deliberate (see the spec's "Keeping the claims true"):
-  Tier 1 — the MECHANISM (the R dialect parses; strict mode's asymmetry).
-  Tier 2 — the two verified traps, asserted on BOTH sides (python + provenance).
+
+Scope, stated honestly (see the spec's "Keeping the claims true"):
+  Tier 1 — the MECHANISM: the R dialect parses; strict mode's asymmetry.
+  Tier 2 — the two verified traps, asserted on the PYTHON side, plus a
+           citation-PRESENCE check on the R side.
+
+What these tests CANNOT do: verify that an R-side key is real. We do not vendor R
+configs, so CI cannot check the corpus. A fabricated row with a plausible citation
+would pass. Provenance truth is a HUMAN step at authoring and edit time.
+Do not describe these tests as "asserted on both sides" — an earlier draft did, and
+it was false.
+
 NOT covered, by decision: the Benguela counts (844/236/...) and the jar-classfile
 claims. Those are dated prose in the guide, not testable constants.
 """
 
+# All imports live here. Later tasks append TESTS ONLY — appending imports beside
+# them puts them mid-file and ruff reports E402, breaking CI's `ruff check osmose/ ui/ tests/`.
 import logging
 from pathlib import Path
 
+import pytest
+
 from osmose.config.reader import OsmoseConfigReader
+from osmose.engine.config import EngineConfig
+from osmose.engine.config_validation import validate
 
 FIXTURES = Path(__file__).parent / "fixtures"
 RDIALECT = FIXTURES / "rdialect_config.R"
+REPO_ROOT = Path(__file__).parent.parent
+MINIMAL_CONFIG = REPO_ROOT / "data" / "minimal" / "osm_all-parameters.csv"
+
+# (R key, python key the engine ACTUALLY reads, provenance citation).
+# The citation is asserted PRESENT, never TRUE — see the module docstring.
+TRAPS = [
+    ("output.tl.enabled", "output.meantl.enabled", "osmose-gog/osm_param-output.csv:43"),
+    ("economy.enabled", "simulation.economic.enabled", "osmose-ben.R:1048"),
+]
 
 
 def test_r_dialect_parses_with_no_skipped_lines():
@@ -139,15 +188,18 @@ def test_shim_migrates_pre_440_key(caplog):
     assert "economy.enabled" not in cfg
 ```
 
-- [ ] **Step 3: Run the tests to verify they fail**
-
-Run: `.venv/bin/python -m pytest tests/test_r_dialect_migration_claims.py -v`
-Expected: FAIL — `FileNotFoundError` or collection error until the fixture exists. Once the fixture is added they should pass; if any assertion fails, **stop and re-verify against the code — do not adjust the assertion to match**.
-
-- [ ] **Step 4: Run the tests to verify they pass**
+- [ ] **Step 3: Run the tests**
 
 Run: `.venv/bin/python -m pytest tests/test_r_dialect_migration_claims.py -v`
 Expected: PASS, 3 passed.
+
+These assert **current** behavior, so they pass immediately — there is no red-then-green cycle
+here and the plan will not pretend otherwise. (An earlier draft had a "verify they fail" step
+whose command was byte-identical to this one and which could not fail, since Step 1 creates the
+fixture first.) Their value is as **tripwires**; Task 2 Step 3 proves they can actually fail.
+
+If any assertion fails, **stop and re-verify against the code — do not adjust the assertion to
+match.**
 
 - [ ] **Step 5: Commit**
 
@@ -170,12 +222,11 @@ Proves the guide's core safety claim: **strict mode catches `surveys.*` but is s
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `tests/test_r_dialect_migration_claims.py`:
+Append to `tests/test_r_dialect_migration_claims.py`. **Tests only — `validate` is already
+imported in Task 1's header block. Appending the import here would be mid-file and ruff reports
+E402, breaking CI's lint gate.**
 
 ```python
-from osmose.engine.config_validation import validate
-
-
 def _unknown_keys(cfg: dict[str, str]) -> set[str]:
     return {u.key for u in validate(cfg, "warn")}
 
@@ -196,18 +247,45 @@ def test_strict_mode_reports_unsupported_surveys_module():
 def test_strict_mode_is_SILENT_on_unimplemented_restart():
     """The asymmetry that makes strict mode necessary but NOT sufficient.
 
-    simulation.restart.enabled is allowlisted as a KNOWN key (config_validation.py, marked
-    "Java-side") but the Python engine never implements it — engine/initialization.py exposes
-    only build_initial_population / age_structured_population. So it loads clean, validates
-    clean, and silently does nothing. Tracked as issue #120.
+    simulation.restart.enabled is a KNOWN key, so strict mode never reports it — while the
+    Python engine never implements it (engine/initialization.py exposes only
+    build_initial_population / age_structured_population). It loads clean, validates clean,
+    and silently does nothing. Tracked as issue #120.
 
-    If this test starts FAILING, #120 has been fixed — that is good news, and the guide's
-    §2 and appendix must be updated to describe the new warning instead of the silence.
+    Knownness is SYMMETRICALLY REDUNDANT: it comes from BOTH osmose/schema/output.py:52 AND
+    config_validation.py's allowlist, unioned in build_known_keys(). Removing either alone
+    leaves this green. An earlier draft claimed this test "pins the allowlist" — it does not
+    pin either source.
+
+    This test does NOT detect a #120 fix. #120's fix surface is the ENGINE (a warning), not
+    validate(); implementing #120's own suggested fix leaves this green. An earlier draft
+    claimed "if this test starts FAILING, #120 has been fixed" — false. See the companion
+    test below for the real tripwire.
     """
     cfg = OsmoseConfigReader().read(RDIALECT)
     unknown = _unknown_keys(cfg)
 
     assert "simulation.restart.enabled" not in unknown
+
+
+def test_engine_does_not_yet_warn_on_ignored_restart(caplog):
+    """The REAL #120 tripwire — asserts the actual fix surface.
+
+    Today the Python engine silently ignores simulation.restart.enabled. When #120 lands and
+    the engine warns, THIS test goes red, and that is the signal to update the guide's §2 and
+    appendix to describe the warning instead of the silence.
+    """
+    cfg = OsmoseConfigReader().read(MINIMAL_CONFIG)
+    cfg["simulation.restart.enabled"] = "true"
+
+    with caplog.at_level(logging.WARNING):
+        EngineConfig.from_dict(cfg)
+
+    restart_warnings = [r for r in caplog.records if "restart" in r.getMessage().lower()]
+    assert restart_warnings == [], (
+        "The engine now warns about ignored restart — #120 may be fixed. "
+        "Update docs/r-to-python-migration.md §2 and the appendix, then update this test."
+    )
 ```
 
 - [ ] **Step 2: Run to verify**
@@ -253,21 +331,9 @@ Pins the guide's two verified traps. **The assertion must be two-sided.** A one-
 
 Append to `tests/test_r_dialect_migration_claims.py`:
 
+**Tests only — every import and `TRAPS` already live in Task 1's header block.**
+
 ```python
-import pytest
-
-from osmose.engine.config import EngineConfig
-
-REPO_ROOT = Path(__file__).parent.parent
-MINIMAL_CONFIG = REPO_ROOT / "data" / "minimal" / "osm_all-parameters.csv"
-R_CORPUS_NOTE = (
-    "Provenance is a HUMAN step: these R keys were verified present in the upstream "
-    "corpus on 2026-07-17 (output.tl.enabled in 7 config files; economy.enabled at "
-    "osmose-ben.R:1048). We do not vendor R configs, so CI cannot re-check provenance — "
-    "it is asserted here as a citation, not proven. Re-verify when editing the guide."
-)
-
-
 @pytest.fixture
 def minimal_cfg() -> dict[str, str]:
     return OsmoseConfigReader().read(MINIMAL_CONFIG)
@@ -280,23 +346,55 @@ def _probe(base: dict[str, str], **overrides: str) -> EngineConfig:
 
 
 def test_trap_output_tl_enabled_is_silently_ignored(minimal_cfg):
-    """TRAP 1. output.tl.enabled is the REAL upstream Java name (present in the 4.4.1 jar,
-    set in 7 R config files). osmopy's engine reads output.meantl.enabled instead — an
-    osmopy name present in 0 R configs and 0 jars. So the R user's key silently does nothing.
+    """TRAP 1 — THE HEADLINE TRAP, because it actually bites.
 
-    Two-sided by design: the "R key does nothing" half alone would pass for any invented key.
+    output.tl.enabled is the REAL upstream Java name (a 4.4.1 jar string) and is set to `true`
+    in TWO real configs from two different upstream models: osmose-eec's
+    eec_param-output_papierTROPHIC.csv:54 and osmose-gog's osm_param-output.csv:43. Those users
+    turn on mean-TL output and silently get none, because osmopy's engine reads
+    output.meantl.enabled — an osmopy name present in 0 R configs and 0 jars.
+
+    Both halves are PYTHON-side. Neither touches the R corpus, so this cannot detect a
+    fabricated row — see test_traps_carry_a_provenance_citation and the module docstring.
     """
     assert _probe(minimal_cfg).output_meantl is False, "baseline"
 
-    # R/Java side: the real upstream key is silently ignored.
+    # The real upstream key is silently ignored.
     assert _probe(minimal_cfg, **{"output.tl.enabled": "true"}).output_meantl is False
 
-    # Python side: the osmopy key is what actually works.
+    # The osmopy key is what actually works.
     assert _probe(minimal_cfg, **{"output.meantl.enabled": "true"}).output_meantl is True
 
 
+def test_traps_carry_a_provenance_citation():
+    """Asserts every trap row NAMES A FILE. This is the honest, achievable half.
+
+    It does NOT prove the citation is true — CI cannot, since we do not vendor R configs.
+    What it buys: a row cannot be added by guessing from the allowlist without at least
+    naming where it came from. That is exactly the discipline whose absence produced a
+    retracted 8-row table in which 7 rows existed in zero R configs.
+
+    Proven limitation, do not paper over it: the retracted row
+    output.trophiclevel.enabled -> output.meantl.enabled PASSES both trap assertions above,
+    because both halves are Python-side. Provenance truth is a HUMAN step.
+    """
+    for r_key, py_key, citation in TRAPS:
+        assert citation, f"{r_key} has no provenance citation"
+        assert ":" in citation, f"{r_key} citation must be file:line, got {citation!r}"
+        assert r_key != py_key
+
+
 def test_trap_economy_enabled_is_silently_ignored(minimal_cfg):
-    """TRAP 2 — the worst one found, and the guide's headline example.
+    """TRAP 2 — the richest MECHANISM, but LATENT. Not the headline.
+
+    Its only occurrence in the whole R corpus is osmose-ben.R:1048, and its value is FALSE.
+    FALSE -> shim -> dead key -> engine reads the absent key -> False -> economics off, which
+    is what the user asked for. It only bites someone who writes `= TRUE`, and no surveyed R
+    config does. An earlier draft called this "the worst gap found anywhere" and built
+    success-criterion #1 on it; that ranking was mechanism-led and the corpus refutes it.
+    Severity tracks impact — check the VALUES, not just the keys.
+
+    Worth teaching anyway, because it shows the shim both rescues and strands.
 
     economy.enabled (osmose-ben.R:1048) is migrated by the shim to
     module.bioeconomics.enabled — which is CORRECT: that is upstream's genuine 4.4.0 name
@@ -315,12 +413,15 @@ def test_trap_economy_enabled_is_silently_ignored(minimal_cfg):
     assert _probe(minimal_cfg, **{"simulation.economic.enabled": "true"}).economics_enabled is True
 
 
-def test_the_one_sided_assertion_is_vacuous():
-    """Guards the GUARD. Documents why the tests above are two-sided.
+def test_a_one_sided_assertion_would_be_vacuous():
+    """DOCUMENTS (does not enforce) why the trap tests assert both Python halves.
 
     A one-sided "the R key leaves the attribute at its default" assertion passes for a key
-    that does not exist at all. It would have shipped 7 fabricated rename rows green.
-    This test exists so nobody weakens the trap tests back to one-sided.
+    that does not exist at all — demonstrated below.
+
+    Honest scope: this test cannot stop anyone weakening the traps; strip their Python halves
+    and it still passes. It is executable documentation, not a guard. An earlier draft claimed
+    "this test exists so nobody weakens the trap tests" — false.
     """
     base = OsmoseConfigReader().read(MINIMAL_CONFIG)
     # An invented key satisfies the one-sided half trivially:
@@ -353,6 +454,7 @@ Wire the page into Sphinx **first** so every later task can build and check its 
 **Files:**
 - Create: `docs/r-to-python-migration.md`
 - Modify: `docs/index.md` (Guides toctree)
+- Modify: `docs/conf.py` (`include_patterns` whitelist — **without this the page never renders**)
 
 - [ ] **Step 1: Create the guide with its §1**
 
@@ -381,19 +483,36 @@ tutorials/fie-on-baltic-cod
 :::
 ```
 
-- [ ] **Step 3: Build the docs and verify the page appears**
+- [ ] **Step 2b: Add the page to `docs/conf.py`'s include_patterns whitelist**
 
-Run: `.venv/bin/python -m sphinx -b html docs docs/_build/html -q`
-Expected: builds with no error mentioning `r-to-python-migration`. Confirm the file was rendered:
+**Without this the page never renders**, no matter what the toctree says. `conf.py:31-37`:
+
+```python
+include_patterns = [
+    "index.md",
+    "usage-guide.md",
+    "r-to-python-migration.md",
+    "tutorials/30-minute-ecosystem.md",
+    "tutorials/fie-on-baltic-cod.md",
+    "api/**",
+]
+```
+
+- [ ] **Step 3: Build the docs with CI's exact command and verify the page renders**
+
+Run (note `-W --keep-going`, matching `docs.yml:28` — a bare `-b html` hides warnings CI fails on):
 ```bash
+.venv/bin/sphinx-build -W --keep-going -b html docs docs/_build/html && echo "DOCS BUILD CLEAN"
 test -f docs/_build/html/r-to-python-migration.html && echo "PAGE RENDERED"
 ```
-Expected: `PAGE RENDERED`.
+Expected: both `DOCS BUILD CLEAN` and `PAGE RENDERED`.
+
+If you see the build succeed but **no** `PAGE RENDERED`, you skipped Step 2b.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add docs/r-to-python-migration.md docs/index.md
+git add docs/r-to-python-migration.md docs/index.md docs/conf.py
 git commit -m "docs: add R->Python migration guide skeleton + section 1"
 ```
 
@@ -406,19 +525,28 @@ The heart of the guide. Everything else is reference; this is the section that s
 **Files:**
 - Modify: `docs/r-to-python-migration.md`
 
-- [ ] **Step 1: Verify Java's cross-file precedence BEFORE writing the rule**
+- [ ] **Step 1: Confirm the cross-file precedence divergence (already settled — re-run it)**
 
-The spec flags this as the one unverified thing left. osmopy's rule is: **sub-config beats master, independent of where the reference sits** (parent written first in a depth-first walk; among siblings, last-referenced wins). Publishing a precedence rule that differs from the engine the reader is migrating *from* would be worse than saying nothing.
+The spec's one open item is now **closed, and the answer is that Java DIVERGES from osmopy** —
+which makes it guide content, not a footnote. Re-run to confirm before publishing:
 
-Run:
 ```bash
-cd osmose-java && unzip -p osmose-4.4.1-jar-with-dependencies.jar 'fr/ird/osmose/Configuration.class' | strings | grep -iE "sub.?config|osmose.configuration|already defined|overwrit" | head
+cd /home/razinka/osmopy/osmose-java && unzip -p osmose-4.4.1-jar-with-dependencies.jar 'fr/ird/osmose/Configuration.class' | strings | grep -iE "already defined"
 ```
+Expected: `{0}Parameter already defined {1}`.
 
-- If the evidence is **inconclusive** (likely): write the precedence rule as **"osmopy's behavior, verified; Java's is unverified — check yours if you rely on it"**. Do **not** state it as a universal OSMOSE rule.
-- If Java clearly matches or differs: say so, and cite what you found.
+So:
+- **osmopy:** sub-config beats master, **silent**, last-write-wins (`flat.update()`, `diagnostics == []`), independent of where the reference sits.
+- **Java 4.4.1:** **warns loudly** ("Parameter already defined") and takes **first-encountered-wins**, position-dependent.
 
-Record the outcome in the guide as a note. This step embodies the Method rule — it is the difference between a true guide and a plausible one.
+**The same split config can produce different parameter values on the two engines, and only one
+of them tells you.** Write this plainly, and flag its §6 consequence: an apparent port
+"divergence" may be precedence, not the engine.
+
+> An earlier draft of this plan prescribed a vague grep here and a fallback that would have
+> published "Java's is unverified — check yours". The probe costs two seconds and the answer is
+> decisive. The fallback would have withheld exactly the fact the reader needs — which is the
+> Method rule's whole point.
 
 - [ ] **Step 2: Write §2**
 
@@ -427,16 +555,49 @@ Write, in this order:
 1. **The exhibit**, dated, with its contingency inline: "Measured 2026-07-17 against the real `osmose-ben.R`: **844 keys parsed, 0 skipped lines — and 236 of them unknown to osmopy.** The same parse's sub-config resolution *failed* (a referenced `input/initial_conditions.osm` isn't there), so those are keys reachable *without* that file, not the config's key count. That isn't a caveat on the exhibit — it *is* the exhibit." Then: run it on **your** config; these numbers are one example, not a target.
 
 2. **The two-tool prescription, in order:**
-   - **`scripts/check_config.py` first.** The only production caller of `format_diagnostics` / `diagnostics_have_errors`. Surfaces parse-level damage: missing sub-configs, duplicate keys, unparseable lines. Neither `osmose/cli.py` nor the UI reads `reader.diagnostics`. (A missing sub-config *does* also log a warning at `reader.py:142` — say "easy to miss", **not** "silent".)
+   - **`scripts/check_config.py` first.** The only production caller of `format_diagnostics` / `diagnostics_have_errors`. Surfaces parse-level damage: missing sub-configs, duplicate keys, unparseable lines. Neither `osmose/cli.py` nor the UI reads `reader.diagnostics`. (A missing sub-config *does* also log a warning at `reader.py:141` — say "easy to miss", **not** "silent".)
    - **then `validation.strict.enabled=error`.** Key-level: what osmopy doesn't recognize.
 
 3. **The beat that matters:** neither is sufficient, and strict mode is the weaker one. It catches `surveys.*` but is silent on restart, on renamed keys, on missing sub-configs and on cross-file collisions — because those keys are *known*, or never arrive. **A clean strict-mode run means nothing was unrecognized, not that your config works.**
 
 4. **Silence scales with damage.** A missing sub-config's keys never reach the flattened dict, so strict mode sees *fewer* unknowns and is *more* likely to pass clean. The worse the damage, the quieter the result. This is why `check_config.py` comes first.
 
-5. **The shim rescues half and strands half.** Of the 8 keys the 4.4.0 shim migrated on Benguela, **four land on keys nothing reads** (`output.restart.enabled`, `output.restart.spinup`, `output.fishery.enabled` → `output.fisheries.enabled`, `economy.enabled` → `module.bioeconomics.enabled`) and four reach the engine (`fisheries.enabled` `engine/config.py:2032`, `simulation.bioen.enabled` :2365, `simulation.genetic.enabled` :2422, `population.initialization.relativebiomass.enabled` :538). **Same mechanism, same config, identical surface behavior.**
+5. **The shim rescues half and strands half.** Of the 8 keys the 4.4.0 shim migrated on Benguela, **four land on keys the ENGINE never reads** (`output.restart.enabled`, `output.restart.spinup`, `output.fishery.enabled` → `output.fisheries.enabled`, `economy.enabled` → `module.bioeconomics.enabled`) and four reach the engine (`fisheries.enabled` `engine/config.py:2032`, `simulation.bioen.enabled` :2365, `simulation.genetic.enabled` :2422, `population.initialization.relativebiomass.enabled` :538).
 
-6. **The taxonomy table** (seven directions — six needing a workaround, plus value coercion which is latent and gets one sentence). Copy it from the spec's "Gap taxonomy". State plainly that it is **assumed incomplete**: an earlier draft claimed three buckets and was confident.
+   Say **"the engine never reads"**, not "nothing reads" — `module.bioeconomics.enabled` *is* read at runtime by `describe_engine()`, which is what produces the "Will populate: Economic" label item 7 describes. An earlier draft said "nothing reads" here and contradicted its own item 7.
+
+   Likewise do not write "identical surface behavior" flatly: three of the four are fully silent, but `module.bioeconomics.enabled` changes one Run-page label. The teaching point survives — **same mechanism, same config, half arrive and half don't, with nothing to distinguish them.**
+
+5b. **THE SPATIAL-INPUTS TRAP — the most important subsection in the guide, and the one an
+   earlier draft missed entirely.** Everything above is about config *keys*. The thing that
+   actually breaks a real R port is *inputs*:
+
+   - `osmose/engine/movement_maps.py` has **no NetCDF support** — `_load_csv_grid` (`:38`) does
+     a text-mode `open()`. Verified: `grep -icE "netcdf|xarray|\.nc\b|Dataset"` → **0**.
+   - The handler at `:220` catches `(FileNotFoundError, OSError, ValueError)`. **`UnicodeDecodeError`
+     subclasses `ValueError`**, so a binary `.nc` map logs to `logger.error` (`:221`), sets
+     `raw_grids[i] = None` (`:222`), and **the run completes reporting success**.
+   - The real `osmose-ben.R` sets `movement.netcdf.enabled = TRUE`,
+     `movement.distribution.method.sp0 = maps`, and references **27 `.nc` files**.
+   - **Both prescribed tools are blind.** `check_config.py` reports only the duplicate-key and
+     missing-subconfig; `validate()` flags none of the ~185 `movement.*` keys.
+
+   So the reader's fish silently ignore their spatial distribution and the run says it worked.
+   This is the only gap where the **science is wrong** rather than an output merely absent.
+
+   Prescribe the concrete check: run with `logger.error` visible and grep stderr for
+   `Failed to load movement map file`. Workarounds: convert `.nc` → semicolon CSV, or use the
+   Java engine (reads `.nc` natively). Warn about the in-tree Benguela scar — movement CSVs must
+   be `np.flipud`'d or fish land on land.
+
+6. **The taxonomy table** (eight directions — seven needing a workaround, plus value coercion which is latent and gets one sentence). Copy it from the spec's "Gap taxonomy", **including the "unreadable input file" row, which must come first**. State plainly that it is **assumed incomplete**: an earlier draft claimed three buckets and was confident; three fresh-eyes rounds found five more, the last being the one that actually breaks a port.
+
+6b. **Cross-file precedence — and Java disagrees with us.** osmopy: sub-config beats master,
+   silent, last-write-wins (`flat.update()`, `diagnostics == []`). Java 4.4.1: warns loudly
+   (`Configuration.class` carries `{0}Parameter already defined {1}`) and takes
+   **first-encountered-wins**, position-dependent. **The same split config can produce different
+   parameter values on the two engines, and only one of them tells you.** Say this plainly and
+   flag its §6 consequence: an apparent port "divergence" may be precedence, not the engine.
 
 7. **The two verified traps**, taught in prose (they recur in the appendix as reference — that duplication is intentional). For `economy.enabled`, say **which engine is at fault**: the shim is correct, `module.bioeconomics.enabled` is upstream's genuine 4.4.0 name; osmopy's engine invented `simulation.economic.enabled`. So `simulation.economic.enabled` works only on Python; `module.bioeconomics.enabled` is right for Java. The honest UI claim is narrow: the key adds "Economic" to the Run page's "Will populate:" label (`ui/pages/run.py:797`), which then doesn't populate. **Do not** write that the UI renders an Economic page — it gates on `engine_mode` and honestly says the module isn't implemented.
 
@@ -445,6 +606,18 @@ Write, in this order:
    KeyError: "Required OSMOSE config key missing: 'species.length2weight.condition.factor.sp0'"
    ```
    A crash naming the exact right key is the **best** case. Silence is the dangerous one.
+
+9. **The 16 warnings they WILL see, and should ignore.** A real R config emits
+   `UserWarning: Swapping size ratios` ×16 on its core predation parameters — and they are the
+   *only* warnings it emits. They are **benign normalization**: R/Java writes
+   `sizeratio.min > sizeratio.max`, and osmopy swaps them. Our own bundled Benguela produces an
+   identical 16 (`data/benguela/benguela_all-parameters.csv:571/581`).
+
+   Three sentences, next to the friendly-failure beat, framed as a preview of what §3's run
+   prints. This matters because the guide spends its length training the reader that **noise is
+   friendly and silence is dangerous** — so the loudest thing on their first port looks
+   actionable and isn't. Neither prescribed tool surfaces these, and §3's call-signature-only
+   rule forbids the runnable snippet that would, so the Method rule will **not** self-catch it.
 
 - [ ] **Step 3: Verify every code snippet in §2 actually runs**
 
@@ -469,7 +642,7 @@ Expected: reports the missing sub-config. This is the case strict mode passes cl
 - [ ] **Step 4: Build and commit**
 
 ```bash
-.venv/bin/python -m sphinx -b html docs docs/_build/html -q
+.venv/bin/sphinx-build -W --keep-going -b html docs docs/_build/html
 git add docs/r-to-python-migration.md
 git commit -m "docs: migration guide section 2 - the config trap and two-tool prescription"
 ```
@@ -498,7 +671,15 @@ Note the JVM disappears — no `osmose=jarfile` argument, no `java` on PATH. Lin
 R side, cited:
 - `read_osmose(path=outdir, version="v3r2")` then `data$biomass` / `data$yield` — from `osmose-gog/runModel.R` **only** (note: `osmose-ben/launcher.R` calls `read_osmose` but uses `plot()`/`get_var()` instead — cite precisely)
 - `get_var(ben, what="biomass", how="list")` — from `osmose-ben/launcher.R`
-- `plot(ben, what="yield", initialYear=2000, freq=12)`, `plot(ben, what="yield.fishery.anchovy", col="red", lwd=2)` — from `osmose-ben/launcher.R`
+- `plot(ben, initialYear=2000, freq=12)` — `osmose-ben/launcher.R:23`
+- `plot(ben, what = "yield", initialYear=2000)` — `osmose-ben/launcher.R:24`
+- `plot(ben, what="yield.fishery.anchovy", col="red", lwd=2)` — `osmose-ben/launcher.R`
+
+> ⚠️ Cite these as **two separate calls**. An earlier draft wrote
+> `plot(ben, what="yield", initialYear=2000, freq=12)` — a **fabricated composite** of lines 23
+> and 24. **No `plot()` call in the corpus has both `what=` and `freq=`.** This violated the
+> plan's own "no snippet may rest on recollection" constraint, in the one plan policing exactly
+> that. Correct it — do not delete the `freq=` example.
 
 Python side: `OsmoseResults` — call signature only.
 
@@ -516,7 +697,7 @@ Expected: the exact call the guide quotes. **A snippet that cannot be located mu
 - [ ] **Step 4: Build and commit**
 
 ```bash
-.venv/bin/python -m sphinx -b html docs docs/_build/html -q
+.venv/bin/sphinx-build -W --keep-going -b html docs docs/_build/html
 git add docs/r-to-python-migration.md
 git commit -m "docs: migration guide sections 3-4 - run, read and plot"
 ```
@@ -563,7 +744,7 @@ Then give each calibrar symbol its verified counterpart (or explicit no-equivale
 - [ ] **Step 3: Build and commit**
 
 ```bash
-.venv/bin/python -m sphinx -b html docs docs/_build/html -q
+.venv/bin/sphinx-build -W --keep-going -b html docs docs/_build/html
 git add docs/r-to-python-migration.md
 git commit -m "docs: migration guide section 5 - calibration"
 ```
@@ -598,7 +779,7 @@ Three parts:
 - [ ] **Step 3: Build and commit**
 
 ```bash
-.venv/bin/python -m sphinx -b html docs docs/_build/html -q
+.venv/bin/sphinx-build -W --keep-going -b html docs docs/_build/html
 git add docs/r-to-python-migration.md
 git commit -m "docs: migration guide section 6 + appendix"
 ```
@@ -620,18 +801,30 @@ Expected: 8 passed; ruff clean.
 
 - [ ] **Step 2: Build docs clean**
 
+An earlier draft used a grep-based guard here. It was **fail-open**: it printed its success
+string when sphinx wasn't installed, when the build hard-crashed, and when warnings landed
+off-page — and it didn't match CI's stricter `-W` gate. Use CI's command and assert the exit
+code:
+
 ```bash
-.venv/bin/python -m sphinx -b html docs docs/_build/html 2>&1 | grep -iE "warning|error" | grep -i "r-to-python" || echo "NO WARNINGS FOR THIS PAGE"
+.venv/bin/sphinx-build -W --keep-going -b html docs docs/_build/html && echo "DOCS BUILD CLEAN"
 ```
-Expected: `NO WARNINGS FOR THIS PAGE`.
+Expected: `DOCS BUILD CLEAN`. This exits non-zero on any warning, including a page-local MyST
+warning — which is exactly what CI does.
 
 - [ ] **Step 3: Check the forbidden claims are absent**
 
-These are the specific falsehoods earlier drafts asserted. None may appear:
+These are the specific falsehoods earlier drafts asserted. None may appear.
+
+**Fail closed first** — every guard below prints its `OK:` line when the file is *absent*
+(grep exits 2), so without this they cannot tell "clean" from "missing":
 
 ```bash
 cd /home/razinka/osmopy
+test -f docs/r-to-python-migration.md || { echo "GUIDE MISSING"; exit 1; }
 grep -niE "shim betrays|lights up an .?Economic|renders an Economic page" docs/r-to-python-migration.md || echo "OK: no false UI/shim claims"
+grep -niE "worst gap found anywhere" docs/r-to-python-migration.md || echo "OK: economy.enabled not oversold (it is latent — value is FALSE)"
+grep -niE "both sides|python \+ provenance" docs/r-to-python-migration.md || echo "OK: no false provenance-coverage claim"
 grep -n "845 keys" docs/r-to-python-migration.md || echo "OK: quotes 844 not 845"
 grep -niE "uppercase exclusively" docs/r-to-python-migration.md || echo "OK: no 'exclusively' claim"
 grep -niE "output\.(meansize|byage|bysize|trophiclevel)\.enabled" docs/r-to-python-migration.md || echo "OK: no retracted rename rows"
@@ -657,6 +850,13 @@ Confirm each, from the spec. Fix any gap before finishing:
 - Every R snippet cites a real file in a real repo.
 - No Python mechanics restated from `usage-guide.md`.
 - Nothing claimed CI-protected that isn't; nothing called unprotectable that was merely declined.
+- **The fixture would fail if any Tier 1 / Tier 2 claim stopped being true.** Do not assert this
+  — **prove it** by mutation, on at least one assertion from each of Tasks 1, 2 and 3 (Task 2
+  Step 3 shows the technique). An earlier draft omitted exactly this criterion, in a project
+  whose stated failure mode is tests that cannot fail.
+- **A reader whose config uses `.nc` movement maps finds out that none of them loaded**, even
+  though the run reported success and both prescribed tools said nothing. Highest-severity
+  criterion: it is the only one where the reader's *science* is silently wrong.
 
 - [ ] **Step 6: Commit and open the PR**
 
@@ -683,8 +883,24 @@ BODY
 
 ## Self-Review
 
-**Spec coverage:** §1→Task 4; §2 (exhibit, two-tool prescription, taxonomy, two traps, friendly failure)→Task 5; §3–4→Task 6; §5→Task 7; §6+appendix→Task 8; Tier-1 fixture→Tasks 1–2; Tier-2 two-sided assertions→Task 3; Tier-3 (declined)→no task, correctly (it is a decision to *not* test, mitigated by comments); success criteria→Task 9. The spec's open item (Java cross-file precedence) is Task 5 Step 1. **No gaps.**
+> **This self-review's first version made two claims that were false by execution**, and a
+> 33-agent adversarial workflow caught both. They are recorded here rather than quietly fixed,
+> because the failure is the plan's own subject matter turned on itself.
+>
+> - *"Every code step carries real, executed code — run against the live repo."* **False.** The
+>   six sphinx steps were never run and did **not** work — sphinx isn't installed in `.venv`. I
+>   ran the fixture, the traps and `check_config.py`, then generalized to "all of it".
+> - *"No gaps."* **False.** The spatial-inputs trap (the one that actually breaks a real port)
+>   and the Tier-3 mitigation were both missing.
+>
+> An unexecuted `pip install` line is the same error class as an unexecuted allowlist inference:
+> reasoning from *"this is how it works"* to *"this will work"*. **The Method rule has to reach
+> the verification steps, not just the claims they verify** — every docs/lint gate in the first
+> draft was either a hard wall or a false-green, so an agent following it verbatim would have
+> ended at a red-CI PR believing every check passed.
 
-**Placeholder scan:** No TBD/TODO. Every code step carries real, executed code — the fixture, the parse assertions, and both trap assertions were run against the live repo before this plan was written, and their outputs are the expectations quoted.
+**Spec coverage:** §1→Task 4; §2 (exhibit, two-tool prescription, **spatial inputs**, taxonomy, **precedence divergence**, two traps, friendly failure, the 16 benign warnings)→Task 5; §3–4→Task 6; §5→Task 7; §6+appendix→Task 8; Tier-1 fixture→Tasks 1–2; Tier-2 Python-side + citation-presence→Task 3; Tier-3→no task, correctly — it is a decision *not* to test, and the spec now records it as an **accepted, unmitigated risk** rather than gesturing at comments nobody writes. Success criteria→Task 9. The spec's open item (Java precedence) is **closed**: Java diverges, and Task 5 Step 1 now publishes the fact instead of a fallback.
+
+**Placeholder scan:** No TBD/TODO. Every code step was executed against the live repo — *including*, this time, the sphinx and lint steps, which is how the `pip install -e ".[docs]"` prerequisite, the `include_patterns` whitelist, the `-W --keep-going` gate, the E402 break, and the `check_config.py --config` flag were all found. Where a step's expectation could not be executed (the guide's own prose), the plan says so rather than implying coverage.
 
 **Type consistency:** `OsmoseConfigReader.read()` → `dict[str, str]`, attrs `.skipped_lines` / `.deprecated_keys` / `.diagnostics`. `validate(cfg, mode)` → `list[UnknownKey]` with `.key` / `.suggestion` (`config_validation.py:265-267`). `EngineConfig.from_dict(cfg)` → attrs `.output_meantl` / `.economics_enabled`. `FIXTURES` (Task 1) is reused by Tasks 2–3; `_probe` / `minimal_cfg` (Task 3) are used only within Task 3. Names are consistent across tasks.
