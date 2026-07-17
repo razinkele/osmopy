@@ -56,11 +56,17 @@ the guide must not lean on them as if they could.
    `duplicate_key` at line 870 (`output.weight.enabled`). Recursive sub-config resolution was
    attempted and **failed**; had the file been present the counts would shift. The guide
    should cite this as its opening exhibit rather than claim a clean parse.
-3. **The 4.4.0 compat shim auto-migrates legacy keys.** 8 deprecated keys migrated on
-   Benguela, e.g. `fisheries.enabled` → `module.multispecies.fisheries.enabled`,
-   `economy.enabled` → `module.bioeconomics.enabled`. Note two of the 8 are
-   `output.restart.enabled` / `output.restart.spinup` — keys that are migrated *and then*
-   silently ignored (see finding 6), which is the trap compounding itself.
+3. **The 4.4.0 compat shim auto-migrates legacy keys — but migration is not a guarantee of
+   arrival, and the guide must not present it as one.** 8 deprecated keys migrated on
+   Benguela. **Three of the 8 migrate into keys nothing reads:** `output.restart.enabled` and
+   `output.restart.spinup` (see finding 6), and `economy.enabled` →
+   `module.bioeconomics.enabled` (see the taxonomy — the engine reads
+   `simulation.economic.enabled`). The other shim-migrated module flags —
+   `fisheries.enabled` → `module.multispecies.fisheries.enabled` (`config.py:2032`),
+   `simulation.bioen.enabled`, `simulation.genetic.enabled` — **do** reach the engine.
+   So the same mechanism, on the same config, both rescues and betrays, with identical
+   surface behavior. An earlier draft cited `economy.enabled` as an uncaveated example of the
+   shim working; that was wrong and is corrected here.
 4. **844 parsed ≠ 844 supported: 236 keys are unknown to osmopy.** The reader is
    permissive; `EngineConfig.from_dict` under `validation.strict.enabled=error` is what
    reports the truth. This reframes the guide: "your config loads" is true *and is the trap*.
@@ -80,29 +86,64 @@ the guide must not lean on them as if they could.
    clean, validates clean (it is **not** reported unknown), and does nothing. This gap is
    **silent**. Restart works on the Java engine. Tracked as
    [#120](https://github.com/razinkele/osmopy/issues/120).
-7. **Restart is not alone: "allowlisted but unread" is a whole CLASS, and the worst members
-   are key-granularity mismatches.** A full sweep of the `config_validation.py` supplementary
-   allowlist (see "Gap taxonomy" below) found the Python engine frequently *has* the
-   capability but reads a **different key name** — so the R/Java-style key loads clean,
-   validates clean, and the feature silently defaults off. This is more likely to bite a real
-   porter than restart, because it hits routine output toggles that nearly every config sets.
+7. **Restart is not alone: "allowlisted but unread" is a whole CLASS.** A sweep of the
+   `config_validation.py` supplementary allowlist found the Python engine sometimes *has* the
+   capability but reads a **different key name** — so the R-style key loads clean, validates
+   clean, and the feature silently defaults off. **Two members are verified real against the
+   R corpus** (`output.tl.enabled`, `economy.enabled` — see the taxonomy). The class is
+   almost certainly larger, but its full extent **could not be safely enumerated** (see the
+   taxonomy's retraction note: a literal-grep derivation yields ~993 candidates, overwhelmingly
+   false positives, because indexed families are read via `{idx}`/`startswith`, not literals).
+   The guide therefore ships the verified two and defers the general case to tooling.
    Tracked as [#121](https://github.com/razinkele/osmopy/issues/121).
 8. **Phased calibration is NOT a gap.** `osmose/calibration/multiphase.py` provides
    `CalibrationPhase` + `MultiPhaseCalibrator` with calibrar's exact semantics: "Output of
    phase N becomes fixed params for phase N+1." The difference is plumbing — calibrar reads
    phases from a `parphase` CSV column; osmopy constructs them in code.
 
-Gaps fail in **three different directions**, and the guide's core safety contribution is
-teaching the reader to tell them apart:
+Gaps fail in **six different directions**. An earlier draft claimed three and asserted the
+taxonomy was complete; fresh-eyes review found three more, all verified. Teaching the reader
+to tell them apart is the guide's core safety contribution — the buckets differ in both
+signal and remedy:
 
 | Bucket | Signal | Example | What the reader does |
 |---|---|---|---|
 | **Capability absent** | silent | `simulation.restart.enabled` | Use the Java engine |
-| **Key-granularity mismatch** | silent | `output.meansize.enabled` → Python reads `output.size.enabled` | **Rename the key** — capability is there |
+| **Key renamed** | silent | `output.tl.enabled` → engine reads `output.meantl.enabled` | Rename — capability is there |
+| **Renamed *by the shim* into a dead key** | silent, **and the UI confirms the false belief** | `economy.enabled` → `module.bioeconomics.enabled` (dead); engine reads `simulation.economic.enabled` | Set the engine's key directly |
 | **Unsupported module** | loud, but only under opt-in strict mode | `surveys.*` (21 keys) | Use the Java engine |
+| **Missing sub-config** | silent — **and invisible to strict mode** | `osmose.configuration.initialization` → a file that isn't there | `scripts/check_config.py` |
+| **Cross-file key collision** | silent — no diagnostic at all | sub-config's value silently overrides master's | `scripts/check_config.py` won't catch it either — see below |
+| **Value coercion** | silent | `output.x.enabled = 1` / `yes` / `T` → `False` | Use exactly `true`/`TRUE` |
 
-"Recognized", "implemented", and "implemented under a different name" are three different
-sets, and no default-mode signal distinguishes any of them.
+"Recognized", "implemented", "implemented under a different name", and "present in the file
+you think you read" are four different sets, and **no default-mode signal distinguishes any
+of them**.
+
+Two of these are newly verified and change the guide's advice:
+
+- **Missing sub-config is invisible to strict mode, and silence scales with damage.**
+  `validate()` operates on the already-flattened dict; reader diagnostics live on the reader
+  object. A config referencing a missing sub-config passes `validate(mode="error")` **clean**
+  — verified. And perversely: the missing file's keys never reach the dict, so strict mode
+  sees *fewer* unknowns and is *more* likely to pass. The worse the damage, the quieter the
+  result. This is the single strongest argument for the two-tool prescription in §2.
+- **Cross-file collisions are silent and undocumented.** `reader.py` builds `seen_keys`
+  fresh per file, so `duplicate_key` only fires *within* one file; `_read_recursive` then
+  does `flat.update(...)` across files with no diagnostic. Verified: master `TRUE`, sub
+  `FALSE` → final `FALSE`, diagnostics `[]`. Sub-config beats master. OSMOSE configs are
+  split across sub-files **by design**, so this is live for every real reader. The precedence
+  direction is untested and undocumented upstream of this spec; the guide should state it and
+  #121 should cover the missing diagnostic.
+
+Value coercion is **latent, not live**: R's `TRUE`/`FALSE` do work (`_enabled` lowercases),
+and the R corpus uses uppercase exclusively (269 `FALSE` / 43 `TRUE`). Mention it in one
+sentence; do not dramatize it.
+
+Note also a **non-gap direction worth naming for contrast**: some mismatches fail *loudly*
+with a `KeyError` naming the exact correct key (e.g. `species.lw.*` without its
+`species.length2weight.*` twin). That is the best-case outcome. The guide should show one, so
+the reader learns that a crash is the *friendly* case and silence is the dangerous one.
 
 9. **The Java engine is a genuine fallback for the two Java-side gaps — verified against the
    jars**, not
@@ -118,24 +159,52 @@ sets, and no default-mode signal distinguishes any of them.
    This matters because "use the Java engine" is the workaround the guide prescribes for
    both gaps; had surveys been removed in 4.4, that advice would have been a dead end.
 
-## Gap taxonomy — the key-rename table
+## Gap taxonomy — the known specific traps
 
-This is the guide's single most actionable asset: the reader's key loads, validates, and does
-nothing, and this table tells them the key to use instead. Every row was verified at its
-consumption site (not by grep alone) during the allowlist sweep. Ships in the appendix.
+**A prior draft of this spec proposed an 8-row "key-rename table" as the guide's centerpiece.
+It was wrong and is retracted.** Recording why, because the failure is instructive and a
+future implementer will otherwise rebuild it:
 
-| Key an R/Java config sets | Python key(s) to use instead | Note |
+The table was derived from the `config_validation.py` allowlist and then published under the
+header *"Key an R/Java config sets"* — without checking the R corpus. Measured: **7 of its 8
+rows appear in zero R config files and zero jars.** They came from
+`data/examples/osm_param-output.csv` — osmopy's *own* bundled example. Worse, for three rows
+the prescribed "Python key to use instead" (`output.size.enabled`, `output.recordfrequency.ndt`)
+is a key R configs **already set** — the advice told readers to rename a key they don't have
+into one they already have. The two `species.lw.*` rows were doubly wrong: not R keys, and
+they fail **loudly** (`KeyError: Required OSMOSE config key missing:
+'species.length2weight.condition.factor.sp0'`, naming the exact correct key) rather than
+silently, so they never belonged in a silent-gap table at all.
+
+**The general set cannot be safely enumerated.** A literal-grep derivation over the R corpus
+returns ~993 candidates, almost all false positives: indexed families
+(`fisheries.movement.file.map1`) are read via `{idx}` patterns, f-strings and `startswith`,
+not string literals. Every row requires hand-verification at its consumption site **and**
+provenance in a named upstream file. There is no cheap version of this table, and a
+plausible-looking cheap version is worse than none — it is precisely the failure the guide
+exists to warn about, committed by the guide.
+
+**Therefore:** the guide ships only the traps verified real on both sides, and points at
+[#121](https://github.com/razinkele/osmopy/issues/121) for the general case. The real fix is
+tooling — an actionable warning naming the correct key — not a static table in a doc that
+rots. Two rows qualify today:
+
+| R key (provenance) | What happens | Python key actually read |
 |---|---|---|
-| `output.tl.enabled` | `output.meantl.enabled` | The *real* upstream Java name; we ignore it |
-| `output.trophiclevel.enabled` | `output.meantl.enabled` | |
-| `output.meansize.enabled` | `output.size.enabled` | |
-| `output.byage.enabled` | `output.biomass.byage.enabled` **+** `output.abundance.byage.enabled` | Coarse toggle → two finer keys |
-| `output.bysize.enabled` | `output.biomass.bysize.enabled` **+** `output.abundance.bysize.enabled` | Coarse toggle → two finer keys |
-| `output.frequency.ndtperyear` | `output.recordfrequency.ndt` | |
-| `species.lw.condition.factor.sp{idx}` | `species.length2weight.condition.factor.sp{idx}` | Latent today; every config sets both |
-| `species.lw.allpower.sp{idx}` | `species.length2weight.allometric.power.sp{idx}` | Latent today; every config sets both |
+| `output.tl.enabled` (7 R config files; real 4.4.1 jar string) | Loads clean, validates clean, mean-TL output silently absent | `output.meantl.enabled` (an osmopy name; 0 R files) |
+| `economy.enabled` (`osmose-ben.R:1048`) | Shim rewrites → `module.bioeconomics.enabled` → validates clean → **the UI lights up an "Economic" page** → engine never runs economics | `simulation.economic.enabled` (an osmopy name; 0 R files, 0 jars) |
 
-Two rows that are **not** clean renames and must be written as caveats, not swaps:
+`economy.enabled` is the worst gap found anywhere in this investigation and deserves the
+guide's emphasis: the shim **actively rewrites the key**, so a reader grepping their own
+config for the right name will never find it, and the UI **actively confirms the false
+belief** by rendering an Economic page for a run with no economics. Verified end-to-end:
+`canonicalize_config({'economy.enabled':'true'})` → `{'module.bioeconomics.enabled':'true'}`;
+`engine_capabilities.py:32` gates the UI page on that key; `config.py:2431` gates the engine
+on `simulation.economic.enabled`. It is also the one shim-migrated module flag that is dead —
+`fisheries.enabled`, `simulation.bioen.enabled`, `simulation.genetic.enabled` all reach the
+engine.
+
+Two further classes that are **not** clean renames and must be written as caveats, not swaps:
 
 - `temperature.{filename,varname,nsteps.year,factor,offset}` and the `oxygen.*` equivalents →
   the Python engine has **constant-only** forcing (`temperature.value` / `oxygen.value`,
@@ -147,7 +216,14 @@ Two rows that are **not** clean renames and must be written as caveats, not swap
 Two things the guide must NOT list as gaps (verified non-gaps):
 
 - `output.biomass.enabled` / `output.abundance.enabled` / `output.yield.biomass.enabled` are
-  unread, but `output.py:45-56` writes those CSVs unconditionally — the output appears anyway.
+  unread, but `osmose/engine/output.py` writes those CSVs unconditionally — the biomass and
+  abundance loop at ~46-47 and `_write_yield_csv` at ~60 are all ungated, so the output
+  appears anyway. (Cite the **full path**: `osmose/schema/output.py` also matches a bare
+  `output.py` and its nearby lines contain a plausible-looking `simulation.restart.enabled`
+  field def. This project has a documented history of file:line drift in review loops.)
+  One caveat the guide should note in a sentence: the *disable* direction silently doesn't
+  work either — `output.biomass.enabled = FALSE` still yields the CSV. Harmless in effect,
+  but it is the same loads-clean-does-nothing phenomenon, so it is worth one line.
 - `evolution.trait.*` is genuinely read (`genetics/trait.py:49-77`).
 
 The underlying defects are tracked in [#121](https://github.com/razinkele/osmopy/issues/121)
@@ -182,18 +258,29 @@ Six sections plus an appendix, ordered to match the reader's actual sequence.
    Losses: no surveys module, no Python-engine restart, NetCDF temperature/oxygen forcing
    downgrades to constant-only, no `plot()` one-liner convenience.
    States plainly that the Java engine remains available and is the fallback for the
-   capability-absent and unsupported-module gaps (verified: finding 9). Key-granularity
-   mismatches need no fallback — they need a rename.
+   capability-absent and unsupported-module gaps (verified: finding 9). Renamed keys need no
+   fallback — they need the right key name.
 
 2. **Your config already loads — and that's the trap**
    Opens with the Benguela exhibit, explicitly dated and framed as one example, never as
-   figures to match: 844 keys parsed, 0 skipped — **and 236 of them unknown**, plus a
-   sub-config resolution that silently *failed*. Prescribes the first action: set
-   `validation.strict.enabled=error` **before trusting anything**, and read the unknown-key
-   list. Then the crucial next beat — **strict mode is necessary but not sufficient**: it
-   catches `surveys.*` but stays silent on restart and on every key-granularity mismatch,
-   because those keys are *known*. Teaches the three-bucket taxonomy and points at the
-   key-rename table in the appendix.
+   figures to match: 844 keys parsed, 0 skipped — **and 236 of them unknown**. The counts
+   carry their contingency **inline, not as a footnote**: the same parse's sub-config
+   resolution *failed*, so 844/236 are "keys reachable without `input/initial_conditions.osm`",
+   not the config's key count. That is not a caveat on the exhibit; it *is* the exhibit.
+
+   Prescribes a **two-tool** first action, in order — one tool is not enough, and this is the
+   spec's most important correction to itself:
+   - **`scripts/check_config.py` first** — the *only* production caller of
+     `format_diagnostics` / `diagnostics_have_errors`. It surfaces parse-level damage:
+     missing sub-configs, duplicate keys, unparseable lines. Neither `osmose/cli.py` nor the
+     UI ever reads `reader.diagnostics`, so nothing else will tell the reader.
+   - **then `validation.strict.enabled=error`** — key-level: what osmopy doesn't recognize.
+
+   Then the crucial beat: **neither tool is sufficient, and strict mode is the weaker one.**
+   It catches `surveys.*` but stays silent on restart, on every rename, on missing
+   sub-configs, and on cross-file collisions — because those keys are *known*, or never
+   arrive. Teaches the taxonomy, shows the two verified traps, and states plainly that a
+   clean strict-mode run means **nothing was unrecognized**, not that the config works.
 
 3. **Run**
    `runOsmose()` / `run_osmose()` beside `PythonEngine().run()` and `.run_in_memory()`.
@@ -207,9 +294,21 @@ Six sections plus an appendix, ordered to match the reader's actual sequence.
 5. **Calibrate** (largest section)
    calibrar's idiom — hand-written `runModel(param, names, ...)` that writes params to CSV,
    runs, reads outputs, returns a named list — beside osmopy's objective/problem model.
-   Maps `phases` → `MultiPhaseCalibrator`, `control$popsize`/`control$maxgen` → optimizer
-   args. Explicit that the *shape* differs even though the capability is present.
+   Explicit that the *shape* differs even though the capability is present.
    Links `usage-guide.md` §4.
+
+   The mapping must be complete — this section is "largest" but was the thinnest-specified in
+   earlier drafts, naming counterparts for only `phases` and `control$*`. Each calibrar symbol
+   in the R API table gets a named osmopy counterpart **or** an explicit "no equivalent, do X
+   instead". At minimum: `calibrate(phases=)` → `MultiPhaseCalibrator` / `CalibrationPhase`;
+   `control$popsize` / `control$maxgen` → optimizer args; `getCalibrationInfo` /
+   `getObservedData` (CSV-driven target+observation loading) → `osmose/calibration/targets.py`
+   + `objectives.py`; `createObjectiveFunction(aggFn=, aggregate=)` →
+   `osmose/calibration/losses.py` + `problem.py`; the user-written `runModel` →
+   **no counterpart by design** (osmopy owns the run/read loop; the user supplies parameters
+   and a loss, not a driver). The implementer must verify each of these against the module
+   before writing — they are the plausible mapping, not a verified one, and this spec's
+   central lesson is what happens when those are confused.
 
 6. **Verify your port** — as **two** comparisons, not one.
    A naive "run both engines, compare biomass" conflates two independent variables, because
@@ -227,8 +326,9 @@ Six sections plus an appendix, ordered to match the reader's actual sequence.
    configs, so the reader must not expect bit-equality. Leans on `docs/parity-roadmap.md`
    rather than inventing a method.
 
-**Appendix:** the R→Python symbol table, the **key-rename table** (the taxonomy section
-above — the guide's most actionable asset), and an honest gaps list: `surveys.*`,
+**Appendix:** the R→Python symbol table, the **two verified traps** (`output.tl.enabled`,
+`economy.enabled` — see the taxonomy; deliberately two rows, not a table of plausible ones),
+and an honest gaps list: `surveys.*`,
 Python-engine restart, temperature/oxygen forcing downgrade, `plot()` convenience — each
 stating its workaround (Java engine for the first two; no workaround for the third, say so;
 plotting module / UI for the fourth).
@@ -258,28 +358,41 @@ comments, `TRUE`/`FALSE` values, a pre-4.4.0 key that the shim migrates, a `surv
 *that the phenomena exist* — the dialect parses, strict mode catches surveys, strict mode
 misses restart. Avoids vendoring third-party GPL-3.0 content.
 
-**Tier 2 — pinned by a stronger assertion (the rename table).** The fixture as scoped would
-stay green even if `output.meansize.enabled` started being read, or if the Python key were
-renamed — i.e. the guide's most actionable asset is its least protected. Pin each rename-table
-row directly: assert that setting the R/Java key leaves the Python attribute at its default
-**and** that setting the mapped Python key flips it. That is a real regression test for the
-advice, and it goes red exactly when #121 is fixed — which is the correct signal, since the
-table should then shrink to a pointer.
+**Tier 2 — the two verified traps, pinned by a TWO-SIDED assertion.** An earlier draft
+proposed: "assert that setting the R/Java key leaves the Python attribute at its default and
+that setting the mapped Python key flips it." **That assertion is vacuous** — it passes for
+`banana.enabled`, i.e. for any key osmopy doesn't read, real or invented. It pins the *Python*
+half of each row; the half that was wrong was the *R* half. It would have shipped all seven
+bogus rows green. This is the mechanism by which the retracted table would have survived CI.
 
-**Tier 3 — NOT pinnable; must be dated in prose.** Two classes cannot be regression-tested
-and must therefore never be written as load-bearing:
-- **The Benguela counts** (844 / 236 / 21 / 8) come from a one-time read of an upstream repo
-  at its default branch. They drift with the allowlist and with upstream. The guide states
-  them as a dated exhibit ("measured 2026-07-17 against osmose-ben.R"), never as figures to
-  match. The reader's instruction is always "run it on *your* config".
-- **The jar-classfile claims** (`Surveys.class` in 4.3.3 + 4.4.1). This project has cut the
-  default jar three times (4.3.3 → 4.4.0 → 4.4.1); a future bump could drop `Surveys.class`
-  and silently invalidate the "use the Java engine" workaround with nothing catching it.
-  Mitigation is a comment at the jar-selection site pointing back at the guide, not a test —
-  a test that unzips jars to protect a doc sentence is worse than the drift it prevents.
+The assertion must therefore be two-sided:
+- **Python side:** the R key leaves the attribute at its default; the mapped key changes it.
+  (Not "flips" — `output.frequency.ndtperyear` → `output.recordfrequency.ndt` is an int, not
+  a bool. An earlier draft's boolean-only recipe silently under-specified the non-bool rows.)
+- **Provenance side (the one that matters):** the R key must be greppable in a **named
+  upstream file** committed to the fixture as a citation. A row whose R key appears in no real
+  config cannot pass. This is the assertion that would have caught the retracted table.
 
-Tier 3 is not a gap to close; it is a limit to state. The failure mode being avoided is a
-spec that *claims* CI protects claims CI cannot protect.
+**Tier 3 — could be pinned, DECLINED with reasons.** An earlier draft called these "NOT
+pinnable" and, in the same breath, warned against "a spec that claims CI protects claims CI
+cannot protect." It committed the mirror error: claiming CI *cannot* protect a claim CI
+trivially could. Corrected:
+- **The jar-classfile claims** (`Surveys.class` in 4.3.3 + 4.4.1) **are pinnable** — the jars
+  are vendored in-tree and `zipfile.ZipFile(...).namelist()` settles it offline in four lines.
+  We **decline** it: the claim's stated failure mode (a future jar bump silently drops
+  `Surveys.class` and invalidates the "use the Java engine" workaround) is real but rare, and
+  a test that unzips jars to protect a doc sentence buys little. Mitigate with a comment at
+  the jar-version sites — note there is no single site: `aliases.py:230`
+  (`DEFAULT_TARGET_VERSION`), `runner.py:123` (`OsmoseRunner.__init__(jar_path)`), plus
+  version strings in `demo.py`, `runner.py`, `calibration/problem.py`. This is a cost/benefit
+  call, and it is recorded as one — not laundered in behind a real limit.
+- **The Benguela counts** (844 / 236 / 21 / 8) are **genuinely un-pinnable**: they come from a
+  one-time read of an unvendored upstream repo at its default branch, and drift with both the
+  allowlist and upstream. Hence the dated-exhibit framing in §2.
+
+The failure mode being avoided cuts both ways: do not claim CI protects what it cannot, and
+do not claim something is unprotectable when the real reason is that protecting it isn't
+worth it. Say which one it is.
 
 ## Deliberately excluded
 
@@ -297,7 +410,9 @@ spec that *claims* CI protects claims CI cannot protect.
   `module.bioeconomics.enabled` alias routing users into a dead key, and the dead toggles in
   our own bundled configs including `data/examples`. Same reasoning as #120: this guide
   documents the terrain as it stands; fixing the terrain is an engine change with its own
-  test surface. The guide's rename table is the reader's workaround **until** #121 lands.
+  test surface. The guide's two verified traps are the reader's workaround **until** #121
+  lands; the general case is explicitly deferred to #121's tooling rather than approximated
+  by a table (see the taxonomy's retraction note for why approximating it is dangerous).
 - **No R package install.** Claims are grounded by reading the real driver scripts. Should a
   future claim genuinely require runtime R behavior, install the package for that one
   question only.
@@ -305,17 +420,23 @@ spec that *claims* CI protects claims CI cannot protect.
 
 ## Success criteria
 
-- A reader whose config sets `output.byage.enabled` learns — from the guide, not from a
-  support thread — why their by-age output is missing and which key to set instead. This is
-  the single highest-frequency real outcome; `data/examples`, our own new-user starting
-  point, currently exhibits the bug.
-- No claim in the guide is stated as CI-protected unless it actually is (see the three tiers).
+- A reader whose config sets `economy.enabled` learns — from the guide, not from a support
+  thread — that their run has no economics **despite the UI showing an Economic page**. This
+  is the highest-severity verified outcome.
+- A reader whose config references a sub-config that isn't there finds out, because the guide
+  sent them to `scripts/check_config.py` and not to strict mode alone.
+- No claim in the guide is stated as CI-protected unless it actually is; and nothing is
+  called unprotectable when the truth is that protecting it wasn't worth the cost (tier 3).
+- Every R-side key named in the guide is greppable in a named upstream file. **No row exists
+  because the allowlist mentioned it.** (The retracted 8-row table failed exactly here.)
 - An R OSMOSE user can load their existing config, discover what osmopy ignores in it, run
   it, read outputs, port their calibration, and verify the port reproduces their R numbers —
   without reading the source.
 - Every R snippet cites a real file in a real repo.
-- All three gap buckets are stated plainly with their (differing) workarounds: capability
-  absent → Java engine; key-granularity mismatch → rename, per the table; unsupported module
-  → Java engine. Plus the temperature/oxygen downgrade, which has no workaround and says so.
+- All gap buckets are stated plainly with their (differing) workarounds: capability absent →
+  Java engine; renamed key → the right key name; shim-into-dead-key → set the engine's key
+  directly; unsupported module → Java engine; missing sub-config and cross-file collision →
+  `scripts/check_config.py`. Plus the temperature/oxygen downgrade, which has no workaround
+  and says so.
 - No Python mechanics are restated from `usage-guide.md`.
 - The fixture test passes and would fail if any load-bearing claim stopped being true.
