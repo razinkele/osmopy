@@ -237,6 +237,8 @@ beside your tests — that is mid-file and ruff reports E402; and Task 1 could n
 them early, because unused imports are ruff F401. Both are red in CI):
 
 ```python
+import warnings                                          # add to header
+
 from osmose.engine.config import EngineConfig          # add to header
 from osmose.engine.config_validation import validate   # add to header
 
@@ -290,20 +292,29 @@ def test_strict_mode_is_SILENT_on_unimplemented_restart():
 
 
 def test_engine_does_not_yet_warn_on_ignored_restart(caplog):
-    """The REAL #120 tripwire — asserts the actual fix surface.
+    """The REAL #120 tripwire — asserts the actual fix surface, on BOTH warning channels.
 
     Today the Python engine silently ignores simulation.restart.enabled. When #120 lands and
     the engine warns, THIS test goes red, and that is the signal to update the guide's §2 and
     appendix to describe the warning instead of the silence.
+
+    CAPTURES BOTH CHANNELS. osmose/engine/config.py emits warnings via BOTH `_log.warning`
+    (logging) AND `warnings.warn` (the warnings module) — so we do not know which #120 will
+    use. `caplog` catches only logging; `warnings.catch_warnings` catches only the warnings
+    module. A tripwire that watched one channel would silently miss a fix on the other — which
+    is the exact silent-failure class this whole guide is about. So we watch both.
     """
     cfg = OsmoseConfigReader().read(MINIMAL_CONFIG)
     cfg["simulation.restart.enabled"] = "true"
 
-    with caplog.at_level(logging.WARNING):
-        EngineConfig.from_dict(cfg)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with caplog.at_level(logging.WARNING):
+            EngineConfig.from_dict(cfg)
 
-    restart_warnings = [r for r in caplog.records if "restart" in r.getMessage().lower()]
-    assert restart_warnings == [], (
+    log_hits = [r.getMessage() for r in caplog.records if "restart" in r.getMessage().lower()]
+    warn_hits = [str(w.message) for w in caught if "restart" in str(w.message).lower()]
+    assert log_hits + warn_hits == [], (
         "The engine now warns about ignored restart — #120 may be fixed. "
         "Update docs/r-to-python-migration.md §2 and the appendix, then update this test."
     )
@@ -329,16 +340,24 @@ supplementary allowlist in `osmose/engine/config_validation.py`, then:
 Expected: **FAIL** (the key is now known, so strict mode stops reporting it). Revert the
 allowlist edit and re-run — expected PASS. This proves the test tracks real support status.
 
-**3b — prove the #120 tripwire detects the actual fix.** Temporarily add a warning to the
-Python engine's config load — i.e. simulate #120 being fixed:
+**3b — prove the #120 tripwire detects the actual fix, on EITHER channel.** Temporarily add a
+restart warning to `EngineConfig.from_dict` in `osmose/engine/config.py` — i.e. simulate #120
+being fixed. The tripwire watches **both** warning channels, so prove it against **both**
+(config.py already uses both mechanisms elsewhere, so a real fix could use either):
+
 ```python
-# in osmose/engine/config.py, near the restart-key handling, TEMPORARILY:
-import warnings; warnings.warn("restart is ignored by the Python engine")
+# TEMPORARILY, inside EngineConfig.from_dict, near where cfg is first read:
+_log.warning("simulation.restart.enabled is ignored by the Python engine")   # logging channel
+# then, separately, revert and try the other channel:
+import warnings; warnings.warn("simulation.restart.enabled ignored")          # warnings channel
 ```
 ```bash
 .venv/bin/python -m pytest tests/test_r_dialect_migration_claims.py::test_engine_does_not_yet_warn_on_ignored_restart -v
 ```
-Expected: **FAIL** — which is the signal the guide must be updated. Revert.
+Expected: **FAIL under each mutation** — which is the signal the guide must be updated. Revert
+after each. (Verified 2026-07-17: the dual-channel assertion trips on both. An earlier draft's
+`caplog`-only test caught the logging channel only and would have silently missed a
+`warnings.warn` fix — the exact silent-failure class this guide is about.)
 
 > Note `test_strict_mode_is_SILENT_on_unimplemented_restart` is **not** mutation-provable
 > against #120, and that is the point: #120's fix surface is the engine, not `validate()`. That
