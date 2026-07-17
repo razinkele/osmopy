@@ -41,8 +41,8 @@ restart is implemented in 4.4.1 via `SchoolSetSnapshot` / `ModularSchoolSetSnaps
 populator strings `simulation.restart.file` and `isRestart`. If your config depends on either,
 keep the Java engine in your toolkit for that part of the run.
 
-Renamed keys (§2 has two verified examples) are a different kind of gap. They need no fallback
-engine — they need the right key name, nothing more.
+A renamed key is a different kind of gap from either of these — it needs no fallback engine,
+just the right key name (§2 has a verified example).
 
 ## 2. Your config already loads — and that's the trap
 
