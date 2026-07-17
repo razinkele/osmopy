@@ -293,11 +293,64 @@ to ignore.
 
 ## 3. Run
 
-*(filled in Task 6)*
+Two calling conventions are both live in real R OSMOSE deployments — an older camelCase form and
+the current snake_case one. Both take a config path and an `osmose=jarfile`/`osmose = jarFile`
+argument pointing at the OSMOSE `.jar` — exactly the JVM pointer that §1 already named as the
+thing that disappears ("no `java` on `PATH`, no jar to point at").
+
+| R call | Source | Python equivalent |
+|---|---|---|
+| `runOsmose("osm_all-parameters.csv", version=4, osmose=jarfile)` | `osmose-gog/run.R:7` (legacy) | `PythonEngine().run(config=..., output_dir=..., seed=...)` — writes the CSV/NetCDF tree |
+| `run_osmose(input = configFile4, output = outputDir4, osmose = jarFile, version = "4.3.3")` | `osmose-ben/launcher.R:20` (current) | `PythonEngine().run(config=..., output_dir=..., seed=...)` |
+| *(no R equivalent — R has no in-memory mode)* | — | `PythonEngine().run_in_memory(config=..., seed=...)` — returns an `OsmoseResults` directly, no disk I/O |
+
+Both R calls take a config **path**; `PythonEngine.run`/`run_in_memory` take an already-parsed
+config **dict**, and neither has a jar argument at all — there is no JVM step left to point one
+at. For the mechanics — building that dict, seeds, ensembles, the `osmose` CLI, and the Java
+engine's own `OsmoseRunner` (still jar-based; keep it for the §1/§2 gaps that need it) — see
+[usage-guide.md §1](usage-guide.md).
 
 ## 4. Read & plot
 
-*(filled in Task 6)*
+R drivers read outputs one of two ways, and which one yours uses matters for the port:
+
+| R call | Source | Python equivalent |
+|---|---|---|
+| `read_osmose(path=outdir, version="v3r2")`, then `data$biomass` / `data$yield` | `osmose-gog/runModel.R:37`, `:41`, `:43` | `OsmoseResults(output_dir, prefix="osm").biomass()` / `.yield_biomass()` |
+| `read_osmose(path = outputDir4, version = "4.3.3")` | `osmose-ben/launcher.R:21` | same `OsmoseResults(...)` object — see below, this driver never indexes it directly |
+| `get_var(ben, what="biomass", how="list")` | `osmose-ben/launcher.R:53` | `.biomass()` |
+
+`osmose-gog/runModel.R` reads into a list and indexes it directly (`data$biomass` / `data$yield`).
+`osmose-ben/launcher.R` also calls `read_osmose` (line 21) but never touches `ben$biomass` — every
+value it needs instead comes out through `get_var()` or `plot()`. Both R idioms collapse onto the
+same `OsmoseResults` object and its typed accessors. Full accessor list and DataFrame shape:
+[usage-guide.md §2](usage-guide.md).
+
+**Plotting does not carry over as one call — be clear about this before you go looking for a
+Python `plot()`.** R's `plot(obj, what=...)` is a single function dispatching on the `what=`
+string across dozens of chart types:
+
+| R call | Source |
+|---|---|
+| `plot(ben, initialYear=2000, freq=12)` | `osmose-ben/launcher.R:23` |
+| `plot(ben, what = "yield", initialYear=2000)` | `osmose-ben/launcher.R:24` |
+| `plot(ben, what="yield.fishery.anchovy", col="red", lwd=2)` | `osmose-ben/launcher.R:47` |
+| `plot(ben, what="biomass.acousticSurvey")` | `osmose-ben/launcher.R:44` |
+
+(The first two are separate calls on adjacent lines, not one call — no `plot()` in the corpus
+takes both `freq=` and `what=` together.)
+
+No single Python call reproduces this dispatch. osmopy splits it across a plotting-function
+module — `osmose/plotting.py`, one function per chart type (`make_stacked_area`,
+`make_mortality_breakdown`, ...) — and the Shiny results UI, `ui/pages/results.py`, whose own
+`make_timeseries_chart` builds exactly the biomass/yield line charts the first three R calls above
+produce. Porting a `plot(ben, what="X")` call means finding the plotting function or UI panel for
+that `X`, not calling a Python `plot()`.
+
+The last row has **no Python equivalent at all** — not in `osmose/plotting.py`, not in the UI:
+`plot(ben, what="biomass.acousticSurvey")` reads a survey output, and `surveys.*` is unsupported
+by the Python *engine* (§2's taxonomy), even though the Java engine still implements it. Run that
+part of the model on the Java engine, same as the rest of the surveys module.
 
 ## 5. Calibrate
 
