@@ -25,6 +25,7 @@ claims. Those are dated prose in the guide, not testable constants.
 # CI runs `ruff check osmose/ ui/ tests/`, so BOTH are red. Editing the header is the
 # only shape that satisfies both, and it keeps every commit independently lint-clean.
 import logging
+import warnings
 from pathlib import Path
 
 from osmose.config.reader import OsmoseConfigReader
@@ -117,20 +118,29 @@ def test_strict_mode_is_SILENT_on_unimplemented_restart():
 
 
 def test_engine_does_not_yet_warn_on_ignored_restart(caplog):
-    """The REAL #120 tripwire — asserts the actual fix surface.
+    """The REAL #120 tripwire — asserts the actual fix surface, on BOTH warning channels.
 
     Today the Python engine silently ignores simulation.restart.enabled. When #120 lands and
     the engine warns, THIS test goes red, and that is the signal to update the guide's §2 and
     appendix to describe the warning instead of the silence.
+
+    CAPTURES BOTH CHANNELS. osmose/engine/config.py emits warnings via BOTH `_log.warning`
+    (logging) AND `warnings.warn` (the warnings module) — so we do not know which #120 will
+    use. `caplog` catches only logging; `warnings.catch_warnings` catches only the warnings
+    module. A tripwire that watched one channel would silently miss a fix on the other — which
+    is the exact silent-failure class this whole guide is about. So we watch both.
     """
     cfg = OsmoseConfigReader().read(MINIMAL_CONFIG)
     cfg["simulation.restart.enabled"] = "true"
 
-    with caplog.at_level(logging.WARNING):
-        EngineConfig.from_dict(cfg)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with caplog.at_level(logging.WARNING):
+            EngineConfig.from_dict(cfg)
 
-    restart_warnings = [r for r in caplog.records if "restart" in r.getMessage().lower()]
-    assert restart_warnings == [], (
+    log_hits = [r.getMessage() for r in caplog.records if "restart" in r.getMessage().lower()]
+    warn_hits = [str(w.message) for w in caught if "restart" in str(w.message).lower()]
+    assert log_hits + warn_hits == [], (
         "The engine now warns about ignored restart — #120 may be fixed. "
         "Update docs/r-to-python-migration.md §2 and the appendix, then update this test."
     )
