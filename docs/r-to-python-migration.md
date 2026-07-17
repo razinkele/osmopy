@@ -16,8 +16,8 @@ plainly, so you can decide before porting anything.
 - **No JVM dependency.** The Python engine runs as a pure NumPy/Numba process — nothing to
   install beyond the Python package itself, no `java` on `PATH`, no jar to point at.
 - **Faster than the Java engine on every benchmarked config.**
-- **The calibration stack:** NSGA-II, CMA-ES, surrogate-DE, and a Pareto explorer — calibration
-  machinery calibrar does not drive on its own (see §5).
+- **The calibration stack:** NSGA-II, CMA-ES, surrogate-DE, and a Pareto explorer, built in —
+  see §5 for how this maps onto your calibrar workflow.
 - **The Shiny UI** — run, read, compare, and calibrate from a browser, with no driver script to
   write at all.
 
