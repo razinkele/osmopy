@@ -13,6 +13,26 @@ scripts who has decided to switch to osmopy** ("port my model"), prefaced by a s
 Out of scope: newcomers translating R papers (subsumed), and R⇄Python interop (outputs are
 plain CSV/NetCDF; interop is near-free and needs no guide).
 
+## Method — read this before writing a line of the guide
+
+This spec went through four review rounds. The pattern in what survived and what didn't is
+sharp enough to be the implementer's working rule, because it is also the guide's thesis:
+
+> **Every claim that survived is one where someone ran the code. Every claim that failed is
+> one that reasoned from a grep hit, a line number, or an allowlist entry to a runtime
+> behavior.**
+
+The failures were not careless — they were plausible. A retracted 8-row table reasoned from
+*the allowlist* to "R users set these keys" (7 of 8 didn't exist). A retracted claim reasoned
+from `engine_capabilities.py:32` to "the UI renders an Economic page" (it doesn't). A
+retracted claim reasoned from `schema/output.py`'s flag list to "something reads this" (nothing
+does). Each was checkable in one command, and each survived a self-review that only re-read
+the prose.
+
+**An allowlist entry is not evidence of a read. A line number is not evidence of a behavior.
+A schema declaration is not evidence of a consumer.** Before any claim enters the guide, run
+the thing. This costs seconds and is the only defense that has actually worked here.
+
 ## Evidence base
 
 All R-side claims are grounded in the four public config repos, read at source rather than
@@ -58,15 +78,14 @@ the guide must not lean on them as if they could.
    should cite this as its opening exhibit rather than claim a clean parse.
 3. **The 4.4.0 compat shim auto-migrates legacy keys — but migration is not a guarantee of
    arrival, and the guide must not present it as one.** 8 deprecated keys migrated on
-   Benguela. **Three of the 8 migrate into keys nothing reads:** `output.restart.enabled` and
-   `output.restart.spinup` (see finding 6), and `economy.enabled` →
-   `module.bioeconomics.enabled` (see the taxonomy — the engine reads
-   `simulation.economic.enabled`). The other shim-migrated module flags —
-   `fisheries.enabled` → `module.multispecies.fisheries.enabled` (`config.py:2032`),
-   `simulation.bioen.enabled`, `simulation.genetic.enabled` — **do** reach the engine.
-   So the same mechanism, on the same config, both rescues and betrays, with identical
-   surface behavior. An earlier draft cited `economy.enabled` as an uncaveated example of the
-   shim working; that was wrong and is corrected here.
+   Benguela. **Four of the 8 — half — migrate into keys nothing reads:**
+   `output.restart.enabled`, `output.restart.spinup` (finding 6), `output.fishery.enabled` →
+   `output.fisheries.enabled`, and `economy.enabled` → `module.bioeconomics.enabled` (see the
+   taxonomy). The other four reach the engine: `fisheries.enabled` (`config.py:2032`),
+   `simulation.bioen.enabled` (`config.py:2365`), `simulation.genetic.enabled`
+   (`config.py:2422`), `population.initialization.relativebiomass.enabled` (`config.py:538`).
+   So the same mechanism, on the same config, rescues half and strands half, with **identical
+   surface behavior**. That is the single most useful thing §2 can teach.
 4. **844 parsed ≠ 844 supported: 236 keys are unknown to osmopy.** The reader is
    permissive; `EngineConfig.from_dict` under `validation.strict.enabled=error` is what
    reports the truth. This reframes the guide: "your config loads" is true *and is the trap*.
@@ -92,19 +111,21 @@ the guide must not lean on them as if they could.
    clean, and the feature silently defaults off. **Two members are verified real against the
    R corpus** (`output.tl.enabled`, `economy.enabled` — see the taxonomy). The class is
    almost certainly larger, but its full extent **could not be safely enumerated** (see the
-   taxonomy's retraction note: a literal-grep derivation yields ~993 candidates, overwhelmingly
-   false positives, because indexed families are read via `{idx}`/`startswith`, not literals).
-   The guide therefore ships the verified two and defers the general case to tooling.
+   taxonomy's retraction note: the R corpus's 910 strict-mode unknowns normalize to 271
+   families, and cheap derivations fail in *both* directions — `startswith` reads look unread,
+   while allowlisted keys look read). The guide ships the verified two and defers the general
+   case to tooling.
    Tracked as [#121](https://github.com/razinkele/osmopy/issues/121).
 8. **Phased calibration is NOT a gap.** `osmose/calibration/multiphase.py` provides
    `CalibrationPhase` + `MultiPhaseCalibrator` with calibrar's exact semantics: "Output of
    phase N becomes fixed params for phase N+1." The difference is plumbing — calibrar reads
    phases from a `parphase` CSV column; osmopy constructs them in code.
 
-Gaps fail in **six different directions**. An earlier draft claimed three and asserted the
-taxonomy was complete; fresh-eyes review found three more, all verified. Teaching the reader
-to tell them apart is the guide's core safety contribution — the buckets differ in both
-signal and remedy:
+Gaps fail in **seven different directions** — six that need a workaround, plus value coercion,
+which is latent and gets one sentence rather than a remedy. An earlier draft claimed three and
+asserted the taxonomy was complete; two fresh-eyes rounds found four more, all verified.
+Assume it is still incomplete. Teaching the reader to tell the buckets apart is the guide's
+core safety contribution — they differ in both signal and remedy:
 
 | Bucket | Signal | Example | What the reader does |
 |---|---|---|---|
@@ -136,9 +157,16 @@ Two of these are newly verified and change the guide's advice:
   direction is untested and undocumented upstream of this spec; the guide should state it and
   #121 should cover the missing diagnostic.
 
-Value coercion is **latent, not live**: R's `TRUE`/`FALSE` do work (`_enabled` lowercases),
-and the R corpus uses uppercase exclusively (269 `FALSE` / 43 `TRUE`). Mention it in one
-sentence; do not dramatize it.
+Value coercion is **latent, not live**: R's `TRUE`/`FALSE` do work — `_enabled` is
+`cfg.get(key,"false").lower() == "true"` (`config.py:169`), so case is handled. Do **not**
+write "the R corpus uses uppercase exclusively" (an earlier draft did; it is checkably
+false). The corpus is **mixed and splits by file type**: `.R` dialect files use uppercase,
+`.csv` param files use lowercase (`osmose-gog/osm_param-output.csv:43` →
+`output.TL.enabled;true`). Both work. Mention in one sentence; do not dramatize.
+
+One coercion case is **live and worth the sentence**, though: `= 1` reads as **enabled in the
+UI** (`engine_capabilities.py:25` accepts `("true","1")`) and **disabled in the engine**
+(`config.py:169` accepts only `"true"`). Same config, two answers.
 
 Note also a **non-gap direction worth naming for contrast**: some mismatches fail *loudly*
 with a `KeyError` naming the exact correct key (e.g. `species.lw.*` without its
@@ -176,13 +204,30 @@ they fail **loudly** (`KeyError: Required OSMOSE config key missing:
 'species.length2weight.condition.factor.sp0'`, naming the exact correct key) rather than
 silently, so they never belonged in a silent-gap table at all.
 
-**The general set cannot be safely enumerated.** A literal-grep derivation over the R corpus
-returns ~993 candidates, almost all false positives: indexed families
-(`fisheries.movement.file.map1`) are read via `{idx}` patterns, f-strings and `startswith`,
-not string literals. Every row requires hand-verification at its consumption site **and**
-provenance in a named upstream file. There is no cheap version of this table, and a
-plausible-looking cheap version is worse than none — it is precisely the failure the guide
-exists to warn about, committed by the guide.
+**The general set cannot be safely enumerated.** Two independent mechanisms defeat a cheap
+derivation, in **opposite directions**, which is why no single grep settles it:
+
+- **False positives** — a key absent from the source as a string literal may still be read.
+  Indexed families can be consumed via `startswith`: `movement.species.map{idx}` is read at
+  `osmose/engine/movement_maps.py:129` (`if key.startswith("movement.species.map")`), so a
+  literal grep calls it unread when it is not. (An earlier draft illustrated this with
+  `fisheries.movement.file.map1` — **a self-refuting choice**: the engine reads *only* the
+  literal `map0` (`config.py:2095`), with no `{idx}` loop, so `map1`+ really are silently
+  ignored. It is a *true* positive and a textbook member of finding 7's class, offered as an
+  example of a false one. The `{idx}` entry in the allowlist is hand-maintained, not derived
+  from a read — which is the whole trap.)
+- **False negatives** — the allowlist marks keys valid that nothing reads, so "validates
+  clean" proves nothing.
+
+Scale, by the honest numbers: the R corpus sets ~2,036 distinct key-like tokens; `validate()`
+reports **910** of them unknown, normalizing to **271** families. (An earlier draft cited
+"~993"; it does not reproduce under any method and is withdrawn — the figure to quote, with
+its method, is 910 raw / 271 normalized.) Either number is far past hand-verification.
+
+Every row therefore requires hand-verification **at its consumption site** — not at a grep
+hit, not at an allowlist entry — **and** provenance in a named upstream file. There is no
+cheap version of this table, and a plausible-looking cheap version is worse than none: it is
+precisely the failure the guide exists to warn about, committed by the guide.
 
 **Therefore:** the guide ships only the traps verified real on both sides, and points at
 [#121](https://github.com/razinkele/osmopy/issues/121) for the general case. The real fix is
@@ -191,18 +236,37 @@ rots. Two rows qualify today:
 
 | R key (provenance) | What happens | Python key actually read |
 |---|---|---|
-| `output.tl.enabled` (7 R config files; real 4.4.1 jar string) | Loads clean, validates clean, mean-TL output silently absent | `output.meantl.enabled` (an osmopy name; 0 R files) |
-| `economy.enabled` (`osmose-ben.R:1048`) | Shim rewrites → `module.bioeconomics.enabled` → validates clean → **the UI lights up an "Economic" page** → engine never runs economics | `simulation.economic.enabled` (an osmopy name; 0 R files, 0 jars) |
+| `output.tl.enabled` (7 R config files, case-insensitive; real 4.4.1 jar string) | Loads clean, validates clean, mean-TL output silently absent | `output.meantl.enabled` (an osmopy name; 0 R files, 0 jars) |
+| `economy.enabled` (`osmose-ben.R:1048`) | Shim rewrites → `module.bioeconomics.enabled` (**the correct upstream 4.4.1 key**) → validates clean → engine never runs economics | `simulation.economic.enabled` (an osmopy invention; 0 R files, 0 jars) |
 
-`economy.enabled` is the worst gap found anywhere in this investigation and deserves the
-guide's emphasis: the shim **actively rewrites the key**, so a reader grepping their own
-config for the right name will never find it, and the UI **actively confirms the false
-belief** by rendering an Economic page for a run with no economics. Verified end-to-end:
-`canonicalize_config({'economy.enabled':'true'})` → `{'module.bioeconomics.enabled':'true'}`;
-`engine_capabilities.py:32` gates the UI page on that key; `config.py:2431` gates the engine
-on `simulation.economic.enabled`. It is also the one shim-migrated module flag that is dead —
-`fisheries.enabled`, `simulation.bioen.enabled`, `simulation.genetic.enabled` all reach the
-engine.
+**The `economy.enabled` story is the opposite of what an earlier draft claimed, and the
+correction matters because it changes who is at fault.** Verified against the vendored jars:
+`module.bioeconomics.enabled` has 2 hits in 4.4.1 (including `Releases$15`, upstream's own
+4.4.0 renames table) and 0 in 4.3.3 — exactly the signature of a genuine 4.4.0 rename target.
+`simulation.economic.enabled` has **0 hits in either jar and 0 in the R corpus**. So the shim
+is **correct**; the defect is that osmopy's Python engine invented a key
+(`osmose/engine/config.py:2431`). The guide must therefore say *which engine*:
+`simulation.economic.enabled` works only on the Python engine, while
+`module.bioeconomics.enabled` is right for Java. Do **not** write "the shim betrays you" —
+it doesn't, and #121 was filed with that wrong framing and has been corrected in a comment.
+
+Two further corrections an earlier draft got wrong by reasoning from a citation instead of
+running the code — recorded because the guide's whole thesis is that this is how you get hurt:
+- **The UI does not "light up an Economic page".** `engine_capabilities.py:32` is the key's
+  only consumer, and it feeds one Run-page **"Will populate:"** label (`ui/pages/run.py:797`).
+  `ui/pages/economic.py` gates on `engine_mode != "python"`, not on the key, and its body
+  honestly says the module isn't implemented yet. The true claim is narrow: the key adds
+  "Economic" to a label that then doesn't populate. Write that, not the dramatic version.
+- **`canonicalize_config` returns a tuple**, `({...}, ['economy.enabled'])`, and injects
+  `osmose.version`. Any snippet in the guide must reproduce; the earlier draft's
+  dict-equality shorthand would not have.
+
+`economy.enabled` is **not** the only dead shim-migrated flag:
+`fisheries.enabled` → `module.multispecies.fisheries.enabled` (`config.py:2032`),
+`simulation.bioen.enabled` (`config.py:2365`) and `simulation.genetic.enabled`
+(`config.py:2422`) all reach the engine — but `output.fishery.enabled` →
+`output.fisheries.enabled` is dead too (allowlist + `schema/output.py:138`'s
+`_OUTPUT_ENABLE_FLAGS`, a declaration list, not a read). See finding 3: it is **4 of 8**.
 
 Two further classes that are **not** clean renames and must be written as caveats, not swaps:
 
@@ -421,8 +485,9 @@ worth it. Say which one it is.
 ## Success criteria
 
 - A reader whose config sets `economy.enabled` learns — from the guide, not from a support
-  thread — that their run has no economics **despite the UI showing an Economic page**. This
-  is the highest-severity verified outcome.
+  thread — that their run has no economics on the Python engine even though the key migrated
+  to upstream's correct 4.4.0 name, and that the Run page's "Will populate: Economic" label
+  is a promise it won't keep. (Not "the UI shows an Economic page" — that claim was false.)
 - A reader whose config references a sub-config that isn't there finds out, because the guide
   sent them to `scripts/check_config.py` and not to strict mode alone.
 - No claim in the guide is stated as CI-protected unless it actually is; and nothing is
@@ -439,4 +504,6 @@ worth it. Say which one it is.
   `scripts/check_config.py`. Plus the temperature/oxygen downgrade, which has no workaround
   and says so.
 - No Python mechanics are restated from `usage-guide.md`.
-- The fixture test passes and would fail if any load-bearing claim stopped being true.
+- The fixture test passes and would fail if any **Tier 1 or Tier 2** claim stopped being true.
+  Not "any load-bearing claim" — Tier 3 deliberately leaves the Benguela counts and the jar
+  classfiles unpinned, and the success criteria must not promise more than the tiers deliver.
