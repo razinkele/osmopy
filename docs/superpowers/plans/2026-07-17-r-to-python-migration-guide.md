@@ -83,6 +83,12 @@ Create `tests/fixtures/rdialect_config.R`:
 #   economy.enabled             -> osmose-ben/osmose-ben_v4.x_develop/osmose-ben.R:1048
 #   surveys.name.sr1            -> osmose-ben/osmose-ben_v4.x_develop/osmose-ben.R (surveys block)
 #   simulation.restart.enabled  -> osmose-ben/osmose-ben_v4.x_develop/osmose-ben.R
+#
+# VALUES HERE ARE CHOSEN FOR TEST COVERAGE AND DO NOT MIRROR THE CORPUS.
+# Notably: the real osmose-ben.R:1048 is `economy.enabled = FALSE`. We set TRUE so the
+# migration produces an observable value. Do NOT read this fixture as evidence that real
+# R configs enable economics -- none do, which is exactly why that trap is LATENT and
+# output.tl.enabled is the guide's headline instead.
 
 simulation.nspecies = 2
 species.name.sp0 = anchovy
@@ -91,7 +97,8 @@ species.name.sp1 = sardine
 fisheries.check.enabled = FALSE
 output.weight.enabled = TRUE
 
-# pre-4.4.0 key that the 4.4.0 compat shim migrates
+# pre-4.4.0 key that the 4.4.0 compat shim migrates.
+# Real corpus value is FALSE (osmose-ben.R:1048); TRUE here only to make the migration visible.
 economy.enabled = TRUE
 
 # unsupported module -> strict validation MUST report these as unknown
@@ -599,7 +606,13 @@ Write, in this order:
    parameter values on the two engines, and only one of them tells you.** Say this plainly and
    flag its §6 consequence: an apparent port "divergence" may be precedence, not the engine.
 
-7. **The two verified traps**, taught in prose (they recur in the appendix as reference — that duplication is intentional). For `economy.enabled`, say **which engine is at fault**: the shim is correct, `module.bioeconomics.enabled` is upstream's genuine 4.4.0 name; osmopy's engine invented `simulation.economic.enabled`. So `simulation.economic.enabled` works only on Python; `module.bioeconomics.enabled` is right for Java. The honest UI claim is narrow: the key adds "Economic" to the Run page's "Will populate:" label (`ui/pages/run.py:797`), which then doesn't populate. **Do not** write that the UI renders an Economic page — it gates on `engine_mode` and honestly says the module isn't implemented.
+7. **The two verified traps**, taught in prose (they recur in the appendix as reference — that duplication is intentional). **Order matters: lead with `output.tl.enabled`, because it is the one that actually bites.** Rank by real-world impact, not by how interesting the mechanism is — and that means checking the **values** in the corpus, not just the key names.
+
+   **7a. `output.tl.enabled` — the headline.** It is the *real* upstream Java name (a 4.4.1 jar string) and is set to `true` in **two real configs from two different upstream models**: `osmose-eec/eec_param-output_papierTROPHIC.csv:54` and `osmose-gog/osm_param-output.csv:43`. Those users switch on mean-TL output, validate clean, and silently get none — because osmopy's engine reads `output.meantl.enabled`, a name in 0 R configs and 0 jars. This is the highest-impact key-level outcome in the guide.
+
+   **7b. `economy.enabled` — the richer mechanism, but LATENT. Say so.** Its only occurrence corpus-wide is `osmose-ben.R:1048`, value **`FALSE`** → shim → dead key → engine reads the absent key → `False` → economics off, **which is what the user asked for**. It only bites someone who writes `= TRUE`, and no surveyed R config does. Teach it anyway — it shows the shim both rescues and strands — but **do not** call it "the worst gap found anywhere". An earlier draft did, and built success-criterion #1 on it; the corpus refutes it.
+
+   For `economy.enabled`, say **which engine is at fault**: the shim is correct, `module.bioeconomics.enabled` is upstream's genuine 4.4.0 name; osmopy's engine invented `simulation.economic.enabled`. So `simulation.economic.enabled` works only on Python; `module.bioeconomics.enabled` is right for Java. The honest UI claim is narrow: the key adds "Economic" to the Run page's "Will populate:" label (`ui/pages/run.py:797`), which then doesn't populate. **Do not** write that the UI renders an Economic page — it gates on `engine_mode` and honestly says the module isn't implemented.
 
 8. **The friendly failure, for contrast.** Show `species.lw.condition.factor.sp0` without its `species.length2weight.*` twin raising:
    ```
@@ -843,10 +856,14 @@ Expected: ≥ 4 (§§3, 4, 5, 6 each link it).
 - [ ] **Step 5: Walk the success criteria**
 
 Confirm each, from the spec. Fix any gap before finishing:
-- A reader whose config sets `economy.enabled` learns their run has no economics on the Python engine even though the key migrated to upstream's correct name — and that "Will populate: Economic" is a promise it won't keep.
+- **A reader whose config uses `.nc` movement maps finds out that none of them loaded**, even though the run reported success and both prescribed tools said nothing. **The criterion that matters most** — the only one where the reader's *science* is silently wrong rather than an output merely absent.
+- A reader whose config sets `output.tl.enabled = true` (two real upstream configs do) learns why their mean-TL output is missing and which key to set instead. **The highest-impact key-level outcome** — *not* `economy.enabled`, whose only real occurrence is `FALSE` and is therefore latent.
+- A reader whose config sets `economy.enabled` learns their run has no economics on the Python engine even though the key migrated to upstream's correct name — **and that this is latent, because the only real-world value is `FALSE`**.
+- A reader with a split config learns that **osmopy and Java resolve duplicate keys differently** (osmopy: silent last-write-wins; Java: loud first-wins), so a §6 "divergence" may be precedence, not the engine.
 - A reader with a missing sub-config finds out, because the guide sent them to `check_config.py`, not strict mode alone.
 - All gap buckets have their differing workarounds; temperature/oxygen says plainly it has none.
-- Every R-side key named is greppable in a named upstream file. **No row exists because the allowlist mentioned it.**
+- Every R-side key named is greppable in a named upstream file, **and its real-world VALUE was checked** — a key set `FALSE` everywhere is latent, not a headline. **No row exists because the allowlist mentioned it.**
+- Nothing claims the tests verify R-side provenance — they check citation *presence* only.
 - Every R snippet cites a real file in a real repo.
 - No Python mechanics restated from `usage-guide.md`.
 - Nothing claimed CI-protected that isn't; nothing called unprotectable that was merely declined.
