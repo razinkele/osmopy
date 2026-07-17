@@ -17,28 +17,20 @@ NOT covered, by decision: the Benguela counts (844/236/...) and the jar-classfil
 claims. Those are dated prose in the guide, not testable constants.
 """
 
-# All imports live here. Later tasks append TESTS ONLY — appending imports beside
-# them puts them mid-file and ruff reports E402, breaking CI's `ruff check osmose/ ui/ tests/`.
+# IMPORT RULE for later tasks (read before appending anything):
+# Import ONLY what this task uses. Later tasks ADD their imports TO THIS HEADER BLOCK —
+# they must NOT append imports beside their tests.
+#   - imports beside appended tests  -> ruff E402 (module import not at top)
+#   - imports declared before use    -> ruff F401 (unused import)
+# CI runs `ruff check osmose/ ui/ tests/`, so BOTH are red. Editing the header is the
+# only shape that satisfies both, and it keeps every commit independently lint-clean.
 import logging
 from pathlib import Path
 
-import pytest
-
 from osmose.config.reader import OsmoseConfigReader
-from osmose.engine.config import EngineConfig
-from osmose.engine.config_validation import validate
 
 FIXTURES = Path(__file__).parent / "fixtures"
 RDIALECT = FIXTURES / "rdialect_config.R"
-REPO_ROOT = Path(__file__).parent.parent
-MINIMAL_CONFIG = REPO_ROOT / "data" / "minimal" / "osm_all-parameters.csv"
-
-# (R key, python key the engine ACTUALLY reads, provenance citation).
-# The citation is asserted PRESENT, never TRUE — see the module docstring.
-TRAPS = [
-    ("output.tl.enabled", "output.meantl.enabled", "osmose-gog/osm_param-output.csv:43"),
-    ("economy.enabled", "simulation.economic.enabled", "osmose-ben.R:1048"),
-]
 
 
 def test_r_dialect_parses_with_no_skipped_lines():
