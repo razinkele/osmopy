@@ -79,10 +79,19 @@ Create `tests/fixtures/rdialect_config.R`:
 # Synthetic R-dialect OSMOSE config — hand-written for tests, NOT vendored upstream content.
 # Mirrors the shape of osmose-model/osmose-ben's osmose-ben.R: `key = value` lines in a .R file.
 #
-# Provenance for the real keys this mirrors (verified 2026-07-17):
-#   economy.enabled             -> osmose-ben/osmose-ben_v4.x_develop/osmose-ben.R:1048
-#   surveys.name.sr1            -> osmose-ben/osmose-ben_v4.x_develop/osmose-ben.R (surveys block)
-#   simulation.restart.enabled  -> osmose-ben/osmose-ben_v4.x_develop/osmose-ben.R
+# Provenance -- every key below appears VERBATIM in the cited file (re-grepped 2026-07-17):
+#   economy.enabled          -> osmose-ben/osmose-ben_v4.x_develop/osmose-ben.R:1048
+#   surveys.name.sr1         -> osmose-ben/osmose-ben_v4.x_develop/osmose-ben.R:757
+#   output.restart.enabled   -> osmose-ben/osmose-ben_v4.x_develop/osmose-ben.R:784
+#
+# NOTE: use `output.restart.enabled` (the real PRE-4.4.0 R key), NOT
+# `simulation.restart.enabled`. The latter is the POST-shim canonical name and appears in
+# ZERO R config files -- an earlier draft cited it as if osmose-ben.R contained it, which was
+# a false provenance citation in the very fixture whose job is provenance discipline.
+# Using the real key is also STRICTLY BETTER: the shim migrates it to
+# simulation.restart.enabled, so the fixture now demonstrates the actual trap end-to-end
+# (real R key -> shim -> allowlisted-but-unread canonical key -> silence). Verified: both of
+# Task 2's assertions still hold.
 #
 # VALUES HERE ARE CHOSEN FOR TEST COVERAGE AND DO NOT MIRROR THE CORPUS.
 # Notably: the real osmose-ben.R:1048 is `economy.enabled = FALSE`. We set TRUE so the
@@ -105,8 +114,10 @@ economy.enabled = TRUE
 surveys.enabled.sr1 = TRUE
 surveys.name.sr1 = acousticSurvey
 
-# allowlisted-but-unread -> strict validation must NOT report this
-simulation.restart.enabled = TRUE
+# The real pre-4.4.0 R key (osmose-ben.R:784, value FALSE there too). The shim migrates it to
+# simulation.restart.enabled, which is allowlisted-but-unread -> strict validation must NOT
+# report it, and the Python engine silently ignores it. That is the trap, end to end.
+output.restart.enabled = FALSE
 ```
 
 - [ ] **Step 2: Write the failing test**
@@ -133,28 +144,20 @@ NOT covered, by decision: the Benguela counts (844/236/...) and the jar-classfil
 claims. Those are dated prose in the guide, not testable constants.
 """
 
-# All imports live here. Later tasks append TESTS ONLY — appending imports beside
-# them puts them mid-file and ruff reports E402, breaking CI's `ruff check osmose/ ui/ tests/`.
+# IMPORT RULE for Tasks 2 and 3 (read this before appending anything):
+# Import ONLY what this task uses. Later tasks ADD their imports TO THIS HEADER BLOCK —
+# they must NOT append imports beside their tests.
+#   - imports beside appended tests  -> ruff E402 (module import not at top)
+#   - imports declared before use    -> ruff F401 (unused import)
+# CI runs `ruff check osmose/ ui/ tests/`, so BOTH are red. Editing the header is the
+# only shape that satisfies both, and it keeps every commit independently lint-clean.
 import logging
 from pathlib import Path
 
-import pytest
-
 from osmose.config.reader import OsmoseConfigReader
-from osmose.engine.config import EngineConfig
-from osmose.engine.config_validation import validate
 
 FIXTURES = Path(__file__).parent / "fixtures"
 RDIALECT = FIXTURES / "rdialect_config.R"
-REPO_ROOT = Path(__file__).parent.parent
-MINIMAL_CONFIG = REPO_ROOT / "data" / "minimal" / "osm_all-parameters.csv"
-
-# (R key, python key the engine ACTUALLY reads, provenance citation).
-# The citation is asserted PRESENT, never TRUE — see the module docstring.
-TRAPS = [
-    ("output.tl.enabled", "output.meantl.enabled", "osmose-gog/osm_param-output.csv:43"),
-    ("economy.enabled", "simulation.economic.enabled", "osmose-ben.R:1048"),
-]
 
 
 def test_r_dialect_parses_with_no_skipped_lines():
@@ -229,9 +232,20 @@ Proves the guide's core safety claim: **strict mode catches `surveys.*` but is s
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `tests/test_r_dialect_migration_claims.py`. **Tests only — `validate` is already
-imported in Task 1's header block. Appending the import here would be mid-file and ruff reports
-E402, breaking CI's lint gate.**
+**First, ADD these to the existing header block at the top of the file** (do not append them
+beside your tests — that is mid-file and ruff reports E402; and Task 1 could not have declared
+them early, because unused imports are ruff F401. Both are red in CI):
+
+```python
+from osmose.engine.config import EngineConfig          # add to header
+from osmose.engine.config_validation import validate   # add to header
+
+# add beside the other constants:
+REPO_ROOT = Path(__file__).parent.parent
+MINIMAL_CONFIG = REPO_ROOT / "data" / "minimal" / "osm_all-parameters.csv"
+```
+
+Then append the tests:
 
 ```python
 def _unknown_keys(cfg: dict[str, str]) -> set[str]:
@@ -359,7 +373,34 @@ Pins the guide's two verified traps. **The assertion must be two-sided.** A one-
 
 Append to `tests/test_r_dialect_migration_claims.py`:
 
-**Tests only — every import and `TRAPS` already live in Task 1's header block.**
+**First, ADD these to the existing header block** (same rule as Task 2 — header edit, not a
+mid-file append; and they could not have been declared earlier without tripping F401):
+
+```python
+import pytest    # add to header
+
+# add beside the other constants.
+#
+# COLUMN SEMANTICS -- read carefully, a reviewer already misread this:
+#   [0] r_key   : the key an R config actually contains (provenance-cited).
+#   [1] py_key  : the key you must SET so the Python ENGINE acts on it, i.e. the key the
+#                 engine literally reads. This is NOT the alias/shim target.
+#   [2] citation: file:line in the upstream corpus. Asserted PRESENT, never TRUE.
+#
+# The economy row is the one that confuses people. THREE distinct keys are involved:
+#   economy.enabled              -- what the R config says            (osmose-ben.R:1048)
+#   module.bioeconomics.enabled  -- what the SHIM migrates it to; upstream's real 4.4.0
+#                                   name, and DEAD on our engine. NOT the py_key.
+#   simulation.economic.enabled  -- what our ENGINE reads (config.py:2431). THE py_key.
+# So py_key is deliberately NOT the alias target: the alias target is precisely the key that
+# does nothing. That IS the trap.
+TRAPS = [
+    ("output.tl.enabled", "output.meantl.enabled", "osmose-gog/osm_param-output.csv:43"),
+    ("economy.enabled", "simulation.economic.enabled", "osmose-ben.R:1048"),
+]
+```
+
+Then append the tests:
 
 ```python
 @pytest.fixture
