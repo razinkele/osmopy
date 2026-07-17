@@ -368,46 +368,54 @@ hand-assembles a named list:
 ```r
 runModel  = function(param, names, ...) {
     names(param) = names
-    write.table(param, file="./calibration-parameters.csv", sep=";",
+    write.table(param, file="./calibration-parameters.csv", sep=";", 
                 col.names=FALSE, quote=FALSE)
     ...
-    runOsmose(osmose=osmJar, java=javaAp, input="./config.csv",
-              output=outdir, options=NULL, log="osmose.log",
-              verbose=FALSE, clean=TRUE)
+    runOsmose(osmose=osmJar, java=javaAp, input="./config.csv", 
+              output=outdir, options=NULL, log="osmose.log", 
+              verbose=FALSE, clean=TRUE)   
     data = read_osmose(path=outdir, version="v3r2")
     ...
 }
 ```
 
-(`osmose-gog/runModel.R:10`, `:18-19`, `:32-34`, `:37`; the middle section reshapes monthly
-biomass/yield into yearly, per-replicate values before assembling the returned list.)
+(`osmose-gog/runModel.R:10`, `:13`, `:18-19`, `:32-34`, `:37` verbatim; the two `...` mark the
+elided middle, which reshapes monthly biomass/yield into yearly, per-replicate values before
+assembling the returned list.)
 
 `calibrate.R` then chains four calibrar calls around that driver:
 
 ```r
 calInfo = getCalibrationInfo(path=".", file="calibration_settings.csv")
 observed = getObservedData(calInfo, path=".", data.folder="DATA")
-objfn = createObjectiveFunction(runModel=runModel,
-                                info=calInfo,
-                                observed=observed,
+objfn = createObjectiveFunction(runModel=runModel, 
+                                info=calInfo, 
+                                observed=observed, 
                                 aggFn=calibrar:::.weighted.sum,
                                 aggregate=FALSE,
                                 names=row.names(calibData))
 control = list()
-control$maxgen = 10
-control$popsize = 15
+control$maxgen = c(150, 200, 250, 300)   # maximum number of generations (former gen.max parameter)
+control$master = "master/"   # directory that will be copied
+control$run = "RUN"   # run directory
+control$restart.file = "./calib_restart"   # name of the restart file
+control$REPORT = 1    # number of generations to run before saving a restart
 control$parallel = FALSE
-control$restart.file = "./calib_restart"
-control$REPORT = 1
+#control$nCores = 5
+control$maxgen = 10   # maximum number of generations (former gen.max parameter)
+control$popsize = 15   # population  size (former seed parameter)
+
 cal1 = calibrate(calibData['paropt'], fn=objfn, method='default',
-                 lower=calibData['parmin'], upper=calibData['parmax'],
+                 lower=calibData['parmin'], upper=calibData['parmax'], 
                  phases=calibData['parphase'], control=control, replicates=2)
 ```
 
-(`osmose-gog/calibrate.R:17`, `:22`, `:33-38`, `:40-49`, `:51-53` — the `control$` field order
-above follows the file; `control$maxgen` is assigned twice in the source, first to a per-phase
-vector (`c(150, 200, 250, 300)`, line 41) and then overwritten with a single placeholder value
-(`10`, line 48) — the second assignment is the one that reaches `calibrate()`.)
+(`osmose-gog/calibrate.R:17`, `:22`, `:33-38`, `:40-53` verbatim — nothing skipped or reordered.
+Two fields never reach `calibrate()`: `control$maxgen` is set twice, so the vector on line 41 is
+overwritten by the scalar `10` on line 48; `#control$nCores` on line 47 is commented out. This
+guide's mapping below is against the values that actually take effect: `maxgen=10`, `popsize=15`.
+`control$master`/`control$run` (directory-copying for a distributed/cluster run) have no bearing
+on the calibration algorithm and aren't part of this section's mapping.)
 
 ### The osmopy shape: the framework owns the run/read loop
 
@@ -434,10 +442,10 @@ because the framework already does it, for both engines.
 |---|---|---|
 | `calibrate(..., phases=calibData['parphase'])` | `osmose.calibration.multiphase.MultiPhaseCalibrator` + `CalibrationPhase` | **Verified** — semantics match: "Output of phase N becomes fixed params for phase N+1" (`multiphase.py:47`, `:56-65`) is exactly calibrar's per-`parphase` sequencing, just constructed in code instead of read from a CSV column. **Correction:** neither class is re-exported from `osmose.calibration` — import from the submodule (`from osmose.calibration.multiphase import MultiPhaseCalibrator, CalibrationPhase`). |
 | `control$popsize` / `control$maxgen` | plain keyword arguments on whichever optimizer you call — not a control object | **Corrected.** `CalibrationPhase` only carries `max_iter` (`multiphase.py:23`); `_optimize_phase` forwards it as `differential_evolution(..., maxiter=phase.max_iter)` with **no `popsize=`** (`:101`) — a multi-phase run silently gets scipy's default population. For explicit control, call the optimizers directly: `scipy.optimize.differential_evolution(popsize=, maxiter=)` (standard scipy kwargs), or `osmose.calibration.cmaes_runner.run_cmaes(popsize=, maxiter=)` (`cmaes_runner.py:47-48`). |
-| `control$parallel` / (implicit `nCores`) | `n_parallel=` / `parallel_backend=` on `OsmoseCalibrationProblem` (`problem.py:160-167`); `workers=` on `run_cmaes` (`cmaes_runner.py:51`); `OSMOSE_NSGA2_WORKERS` env var for the process-pool path (`problem.py:105-111`) | **Verified**, split across three knobs instead of one. |
+| `control$parallel` / `control$nCores` (commented out in the corpus, line 47, but the knob calibrar exposes for it) | `n_parallel=` / `parallel_backend=` on `OsmoseCalibrationProblem` (`problem.py:160-167`); `workers=` on `run_cmaes` (`cmaes_runner.py:51`); `OSMOSE_NSGA2_WORKERS` env var for the process-pool path (`problem.py:105-111`) | **Verified**, split across three knobs instead of one. |
 | `control$restart.file` / `control$REPORT` | no equivalent — do this instead | **No counterpart.** `osmose/calibration/checkpoint.py` writes a progress snapshot every N generations for every optimizer, but per its own docstring it is "read by the Shiny dashboard at 1 Hz" (`checkpoint.py:3`) — live telemetry, not a file the optimizer reloads to resume a killed run. There is no resume-on-crash mechanism to point at. |
 | `getCalibrationInfo(...)` → `getObservedData(calInfo, ...)` | depends on which objective family you use — no single loader | **Corrected**, it doesn't collapse onto one call. For ICES-band targets, `osmose.calibration.targets.load_targets(path)` (`targets.py:24`) does both steps at once, returning `BiomassTarget` records (species/target/lower/upper/weight/reference_point_type) straight from one CSV. For time-series objectives (`biomass_rmse`, `yield_rmse`, `diet_distance`, ...) there is **no loader at all** — you read your own observed `DataFrame` (e.g. with pandas) and pass it directly to the objective; osmopy has nothing analogous to calibrar's two-step info-then-data indirection. |
-| `createObjectiveFunction(runModel=, aggFn=, aggregate=)` | splits three ways | **Corrected**, one calibrar call maps to three separate osmopy pieces: (1) the run/read/dispatch part is `OsmoseCalibrationProblem._run_single` (`problem.py:360`) — no user code, see above; (2) the per-run score is one of `osmose/calibration/objectives.py`'s functions (`biomass_rmse:41`, `diet_distance:55`, `yield_rmse:69`, ...) or the picklable wrapper classes `BiomassRMSEObjective`/`DietDistanceObjective` (`:130`, `:147`, not re-exported from `osmose.calibration` — import from `osmose.calibration.objectives`), passed as `objective_fns=[...]`; (3) the weighted-sum aggregation `aggFn=` performs is `objectives.weighted_multi_objective(objectives, weights)` (`objectives.py:95`, a plain weighted dot product) for the general case, or `osmose.calibration.losses.make_banded_objective(targets, species_names, ...)` (`losses.py:61`) for the ICES-banded aggregate (log-ratio band error + stability penalty + worst-species penalty) that the Baltic calibration driver is built around. |
+| `createObjectiveFunction(runModel=, aggFn=, aggregate=)` | splits three ways | **Corrected**, one calibrar call maps to three separate osmopy pieces: (1) the run/read/dispatch part is `OsmoseCalibrationProblem._run_single` (`problem.py:360`) — no user code, see above; (2) the per-run score is one of `osmose/calibration/objectives.py`'s functions (`biomass_rmse:41`, `diet_distance:55`, `yield_rmse:69`, ...) or the picklable wrapper classes `BiomassRMSEObjective`/`DietDistanceObjective` (`:130`, `:147`, not re-exported from `osmose.calibration` — import from `osmose.calibration.objectives`), passed as `objective_fns=[...]`; (3) the weighted-sum aggregation `aggFn=` performs is `objectives.weighted_multi_objective(objectives, weights)` (`objectives.py:95`, a plain weighted dot product) for the general case, or `osmose.calibration.losses.make_banded_objective(targets, species_names, ...)` (`losses.py:61`), the ready-made ICES-banded aggregate (log-ratio band error + stability penalty + worst-species penalty) — though `scripts/calibrate_baltic.py` itself inlines equivalent logic rather than calling this function directly (it imports only the smaller shared helpers `STABILITY_TYPES`/`quantity_key` from `losses.py:9`, `:14`), a known duplication, not a documentation error. |
 | user-written `runModel(param, names, ...)` | **no counterpart, by design** | The write-CSV/shell-to-jar/read-outputs loop is owned by `OsmoseCalibrationProblem` for both engines (`problem.py:432-513`). Writing your own version would duplicate what the framework already does. |
 
 `phases` is deliberately not in this table as a gap — `MultiPhaseCalibrator` is a real, tested
