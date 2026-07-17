@@ -354,7 +354,104 @@ part of the model on the Java engine, same as the rest of the surveys module.
 
 ## 5. Calibrate
 
-*(filled in Task 7)*
+This is the section with the most friction, because the capability calibrar gives you is fully
+present in osmopy — NSGA-II, CMA-ES, surrogate-DE, multi-phase sequential calibration, a Pareto
+explorer — but the **shape** of the workflow is completely different. Get the shape straight
+first; the symbol-by-symbol map below means nothing until you have.
+
+### The R shape: you write `runModel`, calibrar wires it up
+
+In calibrar, **you own the driver**. `runModel(param, names, ...)` (`osmose-gog/runModel.R:10`)
+writes the candidate parameters to a CSV, shells out to the jar, reads the outputs back, and
+hand-assembles a named list:
+
+```r
+runModel  = function(param, names, ...) {
+    names(param) = names
+    write.table(param, file="./calibration-parameters.csv", sep=";",
+                col.names=FALSE, quote=FALSE)
+    ...
+    runOsmose(osmose=osmJar, java=javaAp, input="./config.csv",
+              output=outdir, options=NULL, log="osmose.log",
+              verbose=FALSE, clean=TRUE)
+    data = read_osmose(path=outdir, version="v3r2")
+    ...
+}
+```
+
+(`osmose-gog/runModel.R:10`, `:18-19`, `:32-34`, `:37`; the middle section reshapes monthly
+biomass/yield into yearly, per-replicate values before assembling the returned list.)
+
+`calibrate.R` then chains four calibrar calls around that driver:
+
+```r
+calInfo = getCalibrationInfo(path=".", file="calibration_settings.csv")
+observed = getObservedData(calInfo, path=".", data.folder="DATA")
+objfn = createObjectiveFunction(runModel=runModel,
+                                info=calInfo,
+                                observed=observed,
+                                aggFn=calibrar:::.weighted.sum,
+                                aggregate=FALSE,
+                                names=row.names(calibData))
+control = list()
+control$maxgen = 10
+control$popsize = 15
+control$parallel = FALSE
+control$restart.file = "./calib_restart"
+control$REPORT = 1
+cal1 = calibrate(calibData['paropt'], fn=objfn, method='default',
+                 lower=calibData['parmin'], upper=calibData['parmax'],
+                 phases=calibData['parphase'], control=control, replicates=2)
+```
+
+(`osmose-gog/calibrate.R:17`, `:22`, `:33-38`, `:40-49`, `:51-53` — the `control$` field order
+above follows the file; `control$maxgen` is assigned twice in the source, first to a per-phase
+vector (`c(150, 200, 250, 300)`, line 41) and then overwritten with a single placeholder value
+(`10`, line 48) — the second assignment is the one that reaches `calibrate()`.)
+
+### The osmopy shape: the framework owns the run/read loop
+
+In osmopy there is no `runModel` to write, and that is the point, not a gap.
+`osmose.calibration.OsmoseCalibrationProblem` (`osmose/calibration/problem.py:142`) — a pymoo
+`Problem` subclass — *is* the driver: `_evaluate_candidate` maps a candidate parameter vector to
+config overrides (`:260-265`), `_run_single` dispatches to `_run_python_engine` (in-process,
+default) or `_run_java_subprocess` (opt-in, `use_java_engine=True`) (`:394-398`), and the results
+are handed straight to your objective callables (`:403-406`):
+
+```python
+with results as r:
+    obj_values = [float(fn(r)) for fn in self.objective_fns]
+```
+
+You supply two things — `free_params: list[FreeParameter]` (what to vary, and its bounds) and
+`objective_fns: list[Callable]` (how to score one run) — not a function that writes files and
+shells out. The write-CSV / shell-to-jar / read-outputs loop `runModel` used to hand-roll is gone
+because the framework already does it, for both engines.
+
+### Verified symbol map
+
+| calibrar | osmopy | Status |
+|---|---|---|
+| `calibrate(..., phases=calibData['parphase'])` | `osmose.calibration.multiphase.MultiPhaseCalibrator` + `CalibrationPhase` | **Verified** — semantics match: "Output of phase N becomes fixed params for phase N+1" (`multiphase.py:47`, `:56-65`) is exactly calibrar's per-`parphase` sequencing, just constructed in code instead of read from a CSV column. **Correction:** neither class is re-exported from `osmose.calibration` — import from the submodule (`from osmose.calibration.multiphase import MultiPhaseCalibrator, CalibrationPhase`). |
+| `control$popsize` / `control$maxgen` | plain keyword arguments on whichever optimizer you call — not a control object | **Corrected.** `CalibrationPhase` only carries `max_iter` (`multiphase.py:23`); `_optimize_phase` forwards it as `differential_evolution(..., maxiter=phase.max_iter)` with **no `popsize=`** (`:101`) — a multi-phase run silently gets scipy's default population. For explicit control, call the optimizers directly: `scipy.optimize.differential_evolution(popsize=, maxiter=)` (standard scipy kwargs), or `osmose.calibration.cmaes_runner.run_cmaes(popsize=, maxiter=)` (`cmaes_runner.py:47-48`). |
+| `control$parallel` / (implicit `nCores`) | `n_parallel=` / `parallel_backend=` on `OsmoseCalibrationProblem` (`problem.py:160-167`); `workers=` on `run_cmaes` (`cmaes_runner.py:51`); `OSMOSE_NSGA2_WORKERS` env var for the process-pool path (`problem.py:105-111`) | **Verified**, split across three knobs instead of one. |
+| `control$restart.file` / `control$REPORT` | no equivalent — do this instead | **No counterpart.** `osmose/calibration/checkpoint.py` writes a progress snapshot every N generations for every optimizer, but per its own docstring it is "read by the Shiny dashboard at 1 Hz" (`checkpoint.py:3`) — live telemetry, not a file the optimizer reloads to resume a killed run. There is no resume-on-crash mechanism to point at. |
+| `getCalibrationInfo(...)` → `getObservedData(calInfo, ...)` | depends on which objective family you use — no single loader | **Corrected**, it doesn't collapse onto one call. For ICES-band targets, `osmose.calibration.targets.load_targets(path)` (`targets.py:24`) does both steps at once, returning `BiomassTarget` records (species/target/lower/upper/weight/reference_point_type) straight from one CSV. For time-series objectives (`biomass_rmse`, `yield_rmse`, `diet_distance`, ...) there is **no loader at all** — you read your own observed `DataFrame` (e.g. with pandas) and pass it directly to the objective; osmopy has nothing analogous to calibrar's two-step info-then-data indirection. |
+| `createObjectiveFunction(runModel=, aggFn=, aggregate=)` | splits three ways | **Corrected**, one calibrar call maps to three separate osmopy pieces: (1) the run/read/dispatch part is `OsmoseCalibrationProblem._run_single` (`problem.py:360`) — no user code, see above; (2) the per-run score is one of `osmose/calibration/objectives.py`'s functions (`biomass_rmse:41`, `diet_distance:55`, `yield_rmse:69`, ...) or the picklable wrapper classes `BiomassRMSEObjective`/`DietDistanceObjective` (`:130`, `:147`, not re-exported from `osmose.calibration` — import from `osmose.calibration.objectives`), passed as `objective_fns=[...]`; (3) the weighted-sum aggregation `aggFn=` performs is `objectives.weighted_multi_objective(objectives, weights)` (`objectives.py:95`, a plain weighted dot product) for the general case, or `osmose.calibration.losses.make_banded_objective(targets, species_names, ...)` (`losses.py:61`) for the ICES-banded aggregate (log-ratio band error + stability penalty + worst-species penalty) that the Baltic calibration driver is built around. |
+| user-written `runModel(param, names, ...)` | **no counterpart, by design** | The write-CSV/shell-to-jar/read-outputs loop is owned by `OsmoseCalibrationProblem` for both engines (`problem.py:432-513`). Writing your own version would duplicate what the framework already does. |
+
+`phases` is deliberately not in this table as a gap — `MultiPhaseCalibrator` is a real, tested
+equivalent (`tests/test_multiphase.py`), not a stub. One genuine caveat worth carrying over: it
+also declares an `n_replicates` field (`multiphase.py:24`) that reads like calibrar's
+`replicates=2`, but `_optimize_phase` never consumes it — as of this writing it has no wired
+behavior. Multi-run replication does exist in osmopy, just decoupled from calibration:
+`osmose.runner.OsmoseRunner.run_ensemble(n_replicates=...)` (`runner.py:307-334`) runs the Java
+engine N times with different seeds.
+
+For the actual how-to — constructing `FreeParameter`s, wiring up `objective_fns`, running the
+Baltic calibration driver, reading a finished run back — see
+[usage-guide.md §4](usage-guide.md). This section only maps the shape; that one shows the
+mechanics.
 
 ## 6. Verify your port
 
