@@ -300,20 +300,41 @@ def test_engine_does_not_yet_warn_on_ignored_restart(caplog):
 Run: `.venv/bin/python -m pytest tests/test_r_dialect_migration_claims.py -v`
 Expected: PASS, 5 passed. (These assert current behavior, so they pass immediately — their value is as a **tripwire**: they go red exactly when #120 lands or when the allowlist changes.)
 
-- [ ] **Step 3: Prove the tripwire actually trips**
+- [ ] **Step 3: Prove the tripwires trip — by mutating the CODE, not the assertion**
 
-Do not skip this — a test that cannot fail is worse than none. Temporarily invert one assertion:
+A test that cannot fail is worse than none. But **do not prove liveness by inverting the
+assertion** — inverting `not in` to `in` always fails; that is tautological and proves nothing
+about whether the test can detect a real change. (An earlier draft of this plan prescribed
+exactly that `sed` inversion.) Mutate the **code under test** instead:
 
+**3a — prove the surveys test detects an allowlist change.** Temporarily add `surveys.*` to the
+supplementary allowlist in `osmose/engine/config_validation.py`, then:
 ```bash
-sed -i 's/assert "simulation.restart.enabled" not in unknown/assert "simulation.restart.enabled" in unknown/' tests/test_r_dialect_migration_claims.py
-.venv/bin/python -m pytest tests/test_r_dialect_migration_claims.py::test_strict_mode_is_SILENT_on_unimplemented_restart -v
+.venv/bin/python -m pytest tests/test_r_dialect_migration_claims.py::test_strict_mode_reports_unsupported_surveys_module -v
 ```
-Expected: FAIL. Then revert:
+Expected: **FAIL** (the key is now known, so strict mode stops reporting it). Revert the
+allowlist edit and re-run — expected PASS. This proves the test tracks real support status.
+
+**3b — prove the #120 tripwire detects the actual fix.** Temporarily add a warning to the
+Python engine's config load — i.e. simulate #120 being fixed:
+```python
+# in osmose/engine/config.py, near the restart-key handling, TEMPORARILY:
+import warnings; warnings.warn("restart is ignored by the Python engine")
+```
 ```bash
-sed -i 's/assert "simulation.restart.enabled" in unknown/assert "simulation.restart.enabled" not in unknown/' tests/test_r_dialect_migration_claims.py
+.venv/bin/python -m pytest tests/test_r_dialect_migration_claims.py::test_engine_does_not_yet_warn_on_ignored_restart -v
+```
+Expected: **FAIL** — which is the signal the guide must be updated. Revert.
+
+> Note `test_strict_mode_is_SILENT_on_unimplemented_restart` is **not** mutation-provable
+> against #120, and that is the point: #120's fix surface is the engine, not `validate()`. That
+> is why 3b exists and why the plan carries two restart tests rather than one.
+
+Then confirm the file is back to green:
+```bash
 .venv/bin/python -m pytest tests/test_r_dialect_migration_claims.py -v
 ```
-Expected: PASS, 5 passed.
+Expected: PASS, **6 passed** (3 from Task 1 + 3 here).
 
 - [ ] **Step 4: Commit**
 
