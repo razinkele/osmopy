@@ -31,6 +31,7 @@ templates_path = ["_templates"]
 include_patterns = [
     "index.md",
     "usage-guide.md",
+    "r-to-python-migration.md",
     "tutorials/30-minute-ecosystem.md",
     "tutorials/fie-on-baltic-cod.md",
     "api/**",

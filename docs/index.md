@@ -13,6 +13,7 @@ model? Start with the 30-minute tutorial in the Guides section below.
 :caption: Guides
 
 usage-guide
+r-to-python-migration
 tutorials/30-minute-ecosystem
 tutorials/fie-on-baltic-cod
 :::
