@@ -7,5 +7,4 @@ output.yield.biomass.enabled ; false
 output.mortality.enabled ; true
 output.spatial.enabled ; false
 output.start.year ; 0
-output.frequency.ndtperyear ; 12
 output.recordfrequency.ndt ; 1

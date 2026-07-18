@@ -116,33 +116,36 @@ swallows, the *fewer* unknowns strict mode has left to complain about. The worse
 quieter the result. That is the argument for running `check_config.py` first — it is the one
 tool that looks at file structure, not just the merged key set.
 
-### The shim rescues half and strands half
+### The shim rescues five keys and strands three
 
 osmopy auto-migrates a legacy pre-4.4.0 config on load. `osmose-ben.R` triggers exactly this,
 logging `Loaded a legacy pre-4.4.0 config: 8 deprecated key(s) auto-migrated to 4.4.0 (e.g.
 economy.enabled)`. All 8 keys go through the same table-driven rename mechanism
 (`osmose/config/aliases.py`), and from the outside a migrated key and a working key look
-identical — but only half of them are.
+identical — but three of them still aren't.
 
-Four migrate to a key the **engine never reads**: `output.restart.enabled` →
-`simulation.restart.enabled` (allowlisted as Java-side, `config_validation.py:114`, never
+Three migrate to a key the **engine never reads**: `output.restart.enabled` →
+`simulation.restart.enabled` (allowlisted as Java-side, `config_validation.py:113`, never
 consumed by the Python engine); `output.restart.spinup` → `simulation.restart.spinup.nyear`
-(`:124`, same story); `output.fishery.enabled` → `output.fisheries.enabled` (`:127`, no
-output-writing code reads it); and `economy.enabled` → `module.bioeconomics.enabled` (`:121`).
-Say **the engine never reads it**, not that nothing reads it — `module.bioeconomics.enabled` *is*
-read at runtime, by `engine_capabilities.py:32`, to build the Run page's "Will populate:" label.
-Setting it adds "Economic" to that label, and then nothing populates, because the simulation's
-actual economics switch is a different key (see the traps below).
+(`:123`, same story); and `output.fishery.enabled` → `output.fisheries.enabled` (`:126`, no
+output-writing code reads it).
 
-Four reach the engine and change its behavior: `fisheries.enabled` →
-`module.multispecies.fisheries.enabled`, read at `engine/config.py:2032`; `simulation.bioen.enabled`
-→ `module.bioenergetics.enabled`, `:2365`; `simulation.genetic.enabled` → `module.genetics.enabled`,
-`:2422`; `population.initialization.relativebiomass.enabled` →
-`module.population.initialisation.enabled`, `:538`.
+Five reach the engine and change its behavior: `fisheries.enabled` →
+`module.multispecies.fisheries.enabled`, read at `engine/config.py:2035`; `simulation.bioen.enabled`
+→ `module.bioenergetics.enabled`, `:2368`; `simulation.genetic.enabled` → `module.genetics.enabled`,
+`:2425`; `population.initialization.relativebiomass.enabled` →
+`module.population.initialisation.enabled`, `:538`; and, **fixed in
+[#121](https://github.com/razinkele/osmopy/issues/121)**, `economy.enabled` →
+`module.bioeconomics.enabled` (`config_validation.py:120`), which used to sit in the dead-key list
+above. Before #121, `module.bioeconomics.enabled` was only read at runtime by
+`engine_capabilities.py:32`, to build the Run page's "Will populate:" label — so setting it added
+"Economic" to that label while nothing actually populated. Since #121, `engine/config.py:2436`
+reads `module.bioeconomics.enabled` directly as the real economics switch (see the traps below for
+the old, now-fixed, mechanism).
 
-Same mechanism, same config, one log line announcing all 8 migrations — half arrive and half
-don't, and three of the four dead ones are fully silent about it. Nothing in that log line tells
-you which half you're holding.
+Same mechanism, same config, one log line announcing all 8 migrations — **five of eight arrive,
+three don't**, and the three dead ones are fully silent about it. Nothing in that log line tells
+you which group you're holding.
 
 ### The spatial-inputs trap
 
@@ -194,8 +197,8 @@ spatial-inputs trap above.
 |---|---|---|---|
 | **Unreadable input file** | **silent — invisible to both tools** | `.nc` movement maps; the loader is CSV-only | Convert to CSV, or use the Java engine |
 | Capability absent | silent | `simulation.restart.enabled` (the Python engine never consumes a restart file) | Java engine |
-| Key renamed | silent | `output.tl.enabled` → engine reads `output.meantl.enabled` | Use the right key |
-| Shim → dead key | silent (engine); changes one UI label | `economy.enabled` → `module.bioeconomics.enabled` | Set the engine's real key directly |
+| Key renamed | silent | `output.tl.enabled` → engine invented `output.meantl.enabled` instead (**fixed in #121** — engine now reads the real key first) | Use the right key |
+| Shim → dead key | silent (engine); changes one UI label | `economy.enabled` → `module.bioeconomics.enabled` (**fixed in #121** — engine now reads the migrated key) | Set the engine's real key directly |
 | Unsupported module | loud, opt-in only | `surveys.*` (21 keys, flagged by strict mode) | Java engine |
 | Missing sub-config | silent to strict mode; a log line at load | a referenced sub-config file that isn't there | `scripts/check_config.py` |
 | Cross-file collision | silent, no diagnostic at all | a sub-config silently overrides the master | `check_config.py` doesn't catch this either — see below |
@@ -229,44 +232,57 @@ first — and only one of them logs anything. Keep this for §6: if a Python-vs-
 diverges on a config split across several files, check precedence before concluding the engines
 disagree. It may be this, not the engine.
 
-### The two traps you can verify right now
+### Two traps, fixed in #121 — worked examples of the class
 
-Two of the gaps above are worth walking through by name, ranked by how much they actually bite —
-not by which mechanism is more interesting.
+Two of the gaps in the taxonomy above are worth walking through by name — not because you can
+still reproduce them (you can't; see below), but because they are the sharpest worked examples of
+the "allowlisted key, dead engine" class this guide keeps warning about. Both were **live silent
+traps until [#121](https://github.com/razinkele/osmopy/issues/121) fixed them**: the engine now
+reads both keys directly (`engine/config.py:923`, `:2436`), and two regression tests pin the fix —
+`test_output_tl_enabled_now_read_after_121` / `test_bioeconomics_enabled_now_read_after_121` in
+`tests/test_r_dialect_migration_claims.py`.
 
-**`output.tl.enabled` — the one that bites.** This is upstream's real key (a literal string in
-both the 4.3.3 and 4.4.1 jars), and it appears in 7 of this guide's surveyed R config files —
-set to `true` in **two of them, from two different upstream models**:
-`osmose-eec/eec_param-output_papierTROPHIC.csv:54` and `osmose-gog/osm_param-output.csv:43`.
-(The key is case-insensitive — the reader lowercases every key on load — and both cited files
-actually write it as `output.TL.enabled;true`; this guide's lowercase form is the normalized
-spelling, not the on-disk one.) osmopy recognizes the key (it's allowlisted —
-`config_validation.py:219` — so `validate()` says
-nothing), but the engine's actual mean-trophic-level output switch is a different key,
-`output.meantl.enabled` (`engine/config.py:923`), a name that appears in **zero** R config files
-and **zero** jars — an osmopy invention. Both of those real users turn on mean-TL output,
-validate clean, and silently get none. This is the highest-impact key-level trap in this guide.
+**`output.tl.enabled` — was the guide's headline trap; the one that actually bit real configs.**
+This is upstream's real key (a literal string in both the 4.3.3 and 4.4.1 jars), and it appears in
+7 of this guide's surveyed R config files — set to `true` in **two of them, from two different
+upstream models**: `osmose-eec/eec_param-output_papierTROPHIC.csv:54` and
+`osmose-gog/osm_param-output.csv:43`. (The key is case-insensitive — the reader lowercases every
+key on load — and both cited files actually write it as `output.TL.enabled;true`; this guide's
+lowercase form is the normalized spelling, not the on-disk one.) osmopy has always recognized the
+key (it's allowlisted — `config_validation.py:219` — so `validate()` says nothing), but before
+#121 the engine's actual mean-trophic-level output switch was a different key,
+`output.meantl.enabled`, a name that appears in **zero** R config files and **zero** jars — an
+osmopy invention. Both of those real users turned on mean-TL output, validated clean, and silently
+got none. Since #121, `engine/config.py:923-926` reads `output.tl.enabled` first, falling back to
+`output.meantl.enabled` only when the upstream key is absent, so both configs now work as written.
 
-**`economy.enabled` — a richer mechanism, but latent.** Its only occurrence anywhere in the
-surveyed corpus is `osmose-ben.R:1048`, where its value is `FALSE`. The shim migrates it to
-`module.bioeconomics.enabled`, which the engine also never reads for its actual economics
-switch — so `FALSE` → shim → dead key → the engine reads the absent key as its default (`false`)
-→ economics off, which is exactly what that config asked for. It only bites someone who sets it
-to `TRUE`, and no config surveyed here does. It's worth knowing anyway, because it's the clearest
-illustration that the shim both rescues and strands keys through the identical mechanism — but
-it is latent, not the worst gap in this guide, and shouldn't be read as one.
+**`economy.enabled` — was a richer mechanism, but latent; also fixed in #121.** Its only
+occurrence anywhere in the surveyed corpus is `osmose-ben.R:1048`, where its value is `FALSE` — so
+even while broken, it never bit anyone in this corpus. The shim migrates it to
+`module.bioeconomics.enabled`, upstream's own genuine 4.4.0 rename target (two hits in the 4.4.1
+jar, zero in 4.3.3). Before #121 the engine's actual economics switch was a different key again,
+`simulation.economic.enabled` — an osmopy invention with zero hits in either jar or the R corpus —
+so a config that set `economy.enabled = TRUE` would have migrated cleanly and still done nothing.
+It was worth knowing anyway, because it was the clearest illustration that the shim's rename
+target and the engine's real switch could silently diverge — precisely the class this section
+warns about. Since #121, `engine/config.py:2436` reads `module.bioeconomics.enabled` directly,
+keeping `simulation.economic.enabled` only as a back-compat fallback, so the migrated key now
+does exactly what it looks like it does. (`module.bioeconomics.enabled` is still the correct key
+if you're aiming at the Java engine instead — `simulation.economic.enabled` is Python-only. The
+Run page's "Economic" label (`ui/pages/run.py:797-800`, `engine_capabilities.py:32`) now matches
+that: the underlying fleet-economics state genuinely initializes when fleets are configured. The
+Economic UI page itself is still a placeholder pending a full economics UI — that part is
+unrelated to #121.)
 
-It's worth being precise about which side is actually at fault, because the two engines
-disagree about the right key. `module.bioeconomics.enabled` is upstream's own genuine 4.4.0
-rename target — it appears twice in the 4.4.1 jar, zero times in 4.3.3, the signature of a real
-rename, and it's exactly what the shim migrates to. `simulation.economic.enabled` — the key
-osmopy's own engine actually checks (`engine/config.py:2431`) — appears in **zero** R files and
-**zero** jars: osmopy's engine invented it. So `simulation.economic.enabled` works only on the
-Python engine; aiming at Java, `module.bioeconomics.enabled` is the correct key, not a
-workaround. The honest UI claim is narrow, too: setting `module.bioeconomics.enabled` adds
-"Economic" to the Run page's "Will populate:" label (`ui/pages/run.py:797-800`) — and that label
-then doesn't populate, because the Economic page itself gates on which engine is selected and
-plainly says the module isn't implemented yet.
+**What still bites you.** Both traps above are closed; the still-live ones are the spatial-inputs
+`.nc` trap above (the most important trap in this guide — the science silently changes, not just
+an output going missing), a missing sub-config (`check_config.py` catches it, strict mode
+doesn't), a cross-file key collision (neither tool catches it, above), and the Python-engine
+restart gap ([#120](https://github.com/razinkele/osmopy/issues/120), not fixed — §1 already covers
+it). Run `scripts/check_config.py` plus `validation.strict.enabled=error` on **your** config
+regardless — the general case of "allowlisted key, dead engine" is still only caught by careful
+reading, not by either tool (see the appendix's general-case note), and #121 fixed two named
+instances of it, not the class.
 
 ### The friendly failure, and the noise you should ignore
 
@@ -604,22 +620,23 @@ Every symbol below is read from the R corpus (§§3–5), not recalled.
 table-only. `initialize_osmose` is finding 6 restated (no Python restart; use the Java engine);
 `.readConfiguration`/`.getPar` are R-internal helpers with no Python counterpart by design.
 
-### The two verified traps (reference)
+### The two fixed traps (reference)
 
-Taught in prose in §2; repeated here for lookup. Deliberately two rows, not a table of plausible
-ones — the general case can't be safely enumerated this way (below).
+Taught in prose in §2 (now fixed); repeated here for lookup. Deliberately two rows, not a table of
+plausible ones — the general case can't be safely enumerated this way (below).
 
-| R key (provenance + value) | Bites? | Python key actually read |
+| R key (provenance + value) | Bit before #121? | Python key now read |
 |---|---|---|
-| `output.tl.enabled` — 7 R files, `true` in `osmose-eec/eec_param-output_papierTROPHIC.csv:54` and `osmose-gog/osm_param-output.csv:43` | **Yes — the guide's headline trap** | `output.meantl.enabled` (`engine/config.py:923`) — an osmopy-invented name, 0 hits in the R corpus or either jar |
-| `economy.enabled` — one occurrence corpus-wide, `osmose-ben.R:1048`, value `FALSE` | **No — latent.** Only bites a config that sets it `TRUE`; none surveyed does | shim target `module.bioeconomics.enabled` (dead — the engine never reads it for economics); the engine's real switch is `simulation.economic.enabled` (`engine/config.py:2431`), a Python-only key |
+| `output.tl.enabled` — 7 R files, `true` in `osmose-eec/eec_param-output_papierTROPHIC.csv:54` and `osmose-gog/osm_param-output.csv:43` | **Yes — was the guide's headline trap** | **Fixed in [#121](https://github.com/razinkele/osmopy/issues/121).** `engine/config.py:923-926` now reads `output.tl.enabled` first; the osmopy-invented `output.meantl.enabled` remains only as a fallback |
+| `economy.enabled` — one occurrence corpus-wide, `osmose-ben.R:1048`, value `FALSE` | **No — was latent.** Would only have bitten a config that set it `TRUE`; none surveyed does | **Fixed in [#121](https://github.com/razinkele/osmopy/issues/121).** `engine/config.py:2436` now reads the shim target `module.bioeconomics.enabled` directly; the osmopy-invented `simulation.economic.enabled` (`:2437`) remains only as a fallback |
 
 The general case — every other allowlisted-but-unread key — is not enumerable this way: cheap
 derivations fail in both directions (a `startswith` read looks unread to a literal grep; an
 allowlisted key looks read to a validator), and the R corpus alone sets roughly 2,000 distinct
-tokens. It's tracked in [#121](https://github.com/razinkele/osmopy/issues/121). The real fix is
-tooling that names the correct key at the point a config is loaded, not a static table that goes
-stale the next time a key is renamed.
+tokens. #121 fixed these two named instances; the systemic fix — tooling that names the correct
+key at the point a config is loaded, not a static table that goes stale the next time a key is
+renamed — is deferred and tracked in
+[#123](https://github.com/razinkele/osmopy/issues/123).
 
 ### Honest gaps, and their workaround
 

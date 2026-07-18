@@ -96,13 +96,12 @@ _SUPPLEMENTARY_ALLOWLIST: frozenset[str] = frozenset(
         "fisheries.movement.fishery.map{idx}",
         "fisheries.rate.byperiod.fsh{idx}",
         # --- Output configuration keys (Java-side output layer) ---
-        # These control the Java engine's output; the Python engine has its
-        # own output system and does not parse these.
-        "output.byage.enabled",
-        "output.bysize.enabled",
-        "output.meansize.enabled",
-        "output.trophiclevel.enabled",
-        "output.frequency.ndtperyear",
+        # These are real Java-engine output keys the Python engine does not parse.
+        # (#121 removed 5 INVENTED coarse toggles that were here — output.byage/bysize/
+        # meansize/trophiclevel.enabled, output.frequency.ndtperyear — which are in NEITHER
+        # jar and nothing read. The working keys are output.biomass.byage.enabled +
+        # output.abundance.byage.enabled, output.size.enabled, output.tl.enabled,
+        # output.recordfrequency.ndt. They are now flagged unknown, correctly.)
         "output.diet.stage.structure",
         "output.diet.stage.threshold.sp{idx}",
         "output.mortality.additionaln.byage.enabled",
@@ -131,11 +130,12 @@ _SUPPLEMENTARY_ALLOWLIST: frozenset[str] = frozenset(
         "output.number.of.eggs.bysize.enabled",
         # --- Species biomass time-scale key (Java-side) ---
         "species.biomass.nsteps.year",
-        # --- Conversion-to-tons keys (Java-side, H1 — 2026-05-05) ---
-        # Read by the Java engine for biomass-unit conversion. The Python
-        # engine does not consume them (verified: zero hits for either
-        # pattern under osmose/). Kept here so they don't surface as
-        # unknown-key warnings on the examples / minimal fixtures.
+        # --- Conversion-to-tons keys (legacy 4.3.x forms) ---
+        # The real 4.4.1 key is plankton.conversion2tons(.plk) -> resource.conversion2tons
+        # (demo.py). These species./ltl. forms are LEGACY 4.3.x names (0 hits in either jar),
+        # kept allowlisted so the live config (data/examples) and the preserved 4.3.3 original
+        # (data/examples_433_orig) don't surface unknown-key warnings. Aliasing them to
+        # resource.conversion2tons is possible future work (out of #121 scope).
         "species.conversion2tons.sp{idx}",
         "ltl.conversion2tons.rsc{idx}",
         # --- Chunk A2 depletable plankton (opt-in; read by ResourceState) ---
