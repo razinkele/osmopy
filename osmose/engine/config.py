@@ -920,7 +920,10 @@ def _parse_output_flags(cfg: dict[str, str], n_sp: int, n_bkg: int) -> dict[str,
         "output_biomass_bysize": _enabled(cfg, "output.biomass.bysize.enabled"),
         "output_abundance_byage": _enabled(cfg, "output.abundance.byage.enabled"),
         "output_abundance_bysize": _enabled(cfg, "output.abundance.bysize.enabled"),
-        "output_meantl": _enabled(cfg, "output.meantl.enabled"),
+        # #121: read the real upstream name (output.tl.enabled) first; the osmopy-invented
+        # output.meantl.enabled remains a back-compat fallback.
+        "output_meantl": _enabled(cfg, "output.tl.enabled")
+        or _enabled(cfg, "output.meantl.enabled"),
         # Three pre-existing schema keys that were declared but not parsed
         "output_biomass_netcdf": _enabled(cfg, "output.biomass.netcdf.enabled"),
         "output_abundance_netcdf": _enabled(cfg, "output.abundance.netcdf.enabled"),
@@ -2428,7 +2431,11 @@ class EngineConfig:
             _validate_trait_declarations(cfg, n_sp)
 
         # DSVM fleet economics
-        economics_enabled = _enabled(cfg, "simulation.economic.enabled")
+        # #121: read the real upstream 4.4.0 name (module.bioeconomics.enabled) first; the
+        # osmopy-invented simulation.economic.enabled remains a back-compat fallback.
+        economics_enabled = _enabled(cfg, "module.bioeconomics.enabled") or _enabled(
+            cfg, "simulation.economic.enabled"
+        )
 
         # ── Post-validation: reject non-finite / out-of-range parameters ──
         # Note: fishing_selectivity_a50 uses NaN as "unused" sentinel — skip it.
