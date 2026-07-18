@@ -35,6 +35,15 @@ is cleared Python-unread across *all* read mechanisms the engine actually uses:
 The per-key clearance (which mechanism honors it, or "none found → java-only") is a **reviewable
 artifact** the plan produces and the reviewer checks — the same three-front discipline #121 used.
 
+**Do NOT batch-classify the big "Java-side schema fields" block (`config_validation.py:147–247`) by
+its own comment** — its "Verified: zero hits … under osmose/engine/" claim is already stale for at
+least two members that the Python engine *does* read, and must go in `_ALLOWLIST_PY_HONORED`:
+`species.type.sp{idx}` (`resources.py:143` startswith + `background.py:156` regex) and
+`species.biomass.total.sp{idx}` (`background.py:328–330` membership + read). A background-species
+config (Baltic seal sp14 / cormorant sp15) legitimately sets `species.biomass.total.sp14`;
+misclassifying it JAVA_ONLY would emit a spurious #123 warning. Each entry in that block is cleared
+individually, comment notwithstanding.
+
 ## Architecture — three pieces in the existing validation seam
 
 All three live where the machinery already is; nothing new is threaded through the engine.
@@ -69,10 +78,10 @@ def java_only_keys_set(cfg: dict) -> list[str]:
          # minus _RESTART_HANDLED_BY_120, return sorted list
 ```
 
-### 3. One deduped summary warning in `from_dict` (`config.py`)
+### 3. One deduped summary warning at the Python-engine RUN seam (`PythonEngine._prepare_run`)
 
-Beside #120's restart warn, after `cfg, _ = canonicalize_config(cfg)`. Emit **one** summary line
-(not per-key), deduped by a module-global set exactly like `_WARNED_UNSUPPORTED_RESTART`:
+Emit **one** summary line (not per-key), deduped by a module-global set exactly like #120's
+`_WARNED_UNSUPPORTED_RESTART`:
 
 ```python
 _WARNED_JAVA_ONLY_KEYS: set[str] = set()
@@ -89,25 +98,49 @@ def _warn_once_java_only(keys: list[str]) -> None:
         )
 ```
 
-**Why `from_dict` = free Python-engine gating.** `from_dict` is called only from
-`osmose/engine/__init__.py:77` (the Python run path) and `osmose/validation/fmsy_sweep.py`
-(Python-side validation). No Java runner calls it (verified by grep). So the warning fires **only
-on Python-engine loads** — it can never fire on an actual Java run, which resolves the issue's
-"must not warn when the Java engine reads them" concern mechanically, without an engine flag.
+**Placement = `PythonEngine._prepare_run` (`osmose/engine/__init__.py`), NOT `from_dict`.** This
+corrects the original spec's foundational error (caught in in-loop review round 1): `from_dict` is a
+general-purpose config *constructor*, not a Python-engine marker. The Fisheries UI calls it
+**engine-agnostically** to interpret results of *either* engine (`ui/pages/fisheries.py:181,211`),
+so a warning there fires when a user opens the Fisheries tab after a **Java** run — telling them to
+"use the Java engine" for keys Java just used, the exact false positive #123 exists to prevent.
 
-## The keystone — partition-completeness test
+`_prepare_run` is the correct seam: it is called **only** from `run()` (`__init__.py:99`) and
+`run_in_memory()` (`:141`) — i.e. only when the **Python engine actually runs** a simulation — and
+the analysis paths (Fisheries UI; `fmsy_sweep` probes at `fmsy_sweep.py:321,404`) call `from_dict`
+*directly*, bypassing `_prepare_run`. Verified by grep: `_prepare_run` has exactly those two
+callers. This is genuine engine-gating by execution point, not by an inferred property of a shared
+constructor.
 
-This is what makes #123 *systemic* rather than "#120 with a longer list." A test asserts the two
-sets exactly partition the allowlist:
+`java_only_keys_set(cfg)` **canonicalizes internally** (mirrors `validate()`, which calls
+`canonicalize_config` at `config_validation.py:526`), so it can be handed the raw `config` that
+`_prepare_run` receives and still match post-rename canonical keys.
+
+> **Note (out of scope):** #120's restart warning lives in `from_dict` and so has the same latent
+> false-positive on the Fisheries-UI Java-analysis path. That is a pre-existing #120/#125 concern,
+> not reopened here; #123 is placed correctly from the start. Flag it as a possible #120 follow-up.
+
+## The keystone — partition-completeness test (against an independent snapshot)
+
+This is what makes #123 *systemic* rather than "#120 with a longer list." **Subtlety caught in
+review round 1:** because the source defines `_SUPPLEMENTARY_ALLOWLIST = _ALLOWLIST_PY_HONORED |
+_ALLOWLIST_JAVA_ONLY`, asserting `A | B == _SUPPLEMENTARY_ALLOWLIST` is tautological (`(A|B) ==
+(A|B)`) and could NOT catch a key accidentally dropped during the split — the union silently drops
+to 148, the key becomes "unknown", and `build_known_keys()` starts flagging it. The test therefore
+compares the union against an **independent frozen snapshot** of the pre-refactor 149-key set,
+captured verbatim in the test file (not derived from the source):
 
 ```python
-assert _ALLOWLIST_PY_HONORED | _ALLOWLIST_JAVA_ONLY == _SUPPLEMENTARY_ALLOWLIST
-assert _ALLOWLIST_PY_HONORED & _ALLOWLIST_JAVA_ONLY == frozenset()
+# tests/…: FROZEN_ALLOWLIST_SNAPSHOT is the exact 149-key set copied from the pre-#123 source —
+# an independent reference the source definition cannot circularly satisfy.
+assert _ALLOWLIST_PY_HONORED | _ALLOWLIST_JAVA_ONLY == FROZEN_ALLOWLIST_SNAPSHOT  # nothing lost/added
+assert _ALLOWLIST_PY_HONORED & _ALLOWLIST_JAVA_ONLY == frozenset()                # disjoint
 ```
 
-Every future allowlist addition must be consciously placed in one bucket or the suite goes red —
-the drift the issue warned about ("the validator currently cannot tell which") becomes a
-compile-time-ish obligation instead of silent rot.
+The snapshot catches an accidental drop during the initial split; disjointness catches a
+double-classification. A *legitimate* future allowlist addition updates both the source (into one
+bucket) and the snapshot, consciously — turning the drift the issue warned about ("the validator
+currently cannot tell which") into an explicit obligation instead of silent rot.
 
 ## Two reconciliations the bundled-config audit surfaced
 
@@ -126,21 +159,33 @@ They remain in `_ALLOWLIST_JAVA_ONLY` for partition-completeness (they *are* jav
 carve-out only removes them from #123's summary line. Documented so a future reader doesn't
 "fix" the apparent omission.
 
+**Exactly two, verified.** #120 warns on precisely these two keys — confirmed on the `#125` branch
+at `config.py:2040` (`simulation.restart.file`) and `:2047` (`simulation.restart.enabled`). The
+allowlist holds **four other** restart-family keys #120 does *not* touch
+(`simulation.restart.spinup.nyear`, `simulation.restart.recordfrequency.ndt`,
+`output.restart.recordfrequency.ndt`, `output.restart.spinup`); those stay java-only and #123
+**correctly warns** on them (they are inert on the Python engine and nothing else reports them).
+Because #120/#125 is not yet merged, the plan MUST re-verify #120's actual warn-set at rebase — if
+#120 grew to warn on any additional restart key, the carve-out set grows to match, or #123
+double-warns.
+
 ### `output.diet.stage.threshold.sp{idx}` — classified JAVA_ONLY
 
 Emitted only by `stage_background_for_java` (`java_background_staging.py:182`), which runs on the
-**Java-launch path** (`runner.py`) and never through `from_dict`. On a Python run the key is inert
-→ JAVA_ONLY. The issue's original "must not warn on those" was conservatism; `from_dict`'s
-Python-only scope means it never fires on the Java run where the key *is* honored. Its sibling
+**Java-launch path** (`runner.py`, via `ui/pages/run.py`) and never on the Python-engine run path.
+On a Python run the key is inert → JAVA_ONLY. The issue's original "must not warn on those" was
+conservatism; the `_prepare_run` run-seam placement (§3) means the summary never fires on the Java
+run where the key *is* honored — the Java engine never reaches `_prepare_run`. Its sibling
 `output.diet.stage.structure` classifies the same way (both under the Java `output.diet.stage`
 prefix; execution-cleared Python-unread).
 
 ## Bundled demos — flat + one line, left as-is (user decision 2026-07-18)
 
-The audit found our own demos already set java-only keys: `output.diet.stage.threshold` in
-`data/baltic`, `data/examples`, `data/eec_full`, `data/baltic-fine`; and the broader families
-(`output.ssb.enabled`, `temperature.filename`, `simulation.ncpu`, `grid.java.classname`, …) across
-`data/examples`, `data/benguela`, `data/eec_full`, `data/baltic`. **Decision: warn on all
+The audit found our own demos already set java-only keys (grep-confirmed present):
+`simulation.ncpu` (all 4 demo dirs), `output.diet.stage.threshold` (all 4), and
+`grid.java.classname` (3). (`output.ssb.enabled` / `temperature.filename` are *not* in any bundled
+demo — they are valid java-only keys used elsewhere in this spec as harm examples, not demo
+evidence.) **Decision: warn on all
 java-only keys as one deduped summary line, and do NOT touch the demo configs.** The single line is
 honest (the demos do set Java-only keys the Python engine ignores) and low-noise, and the configs
 may legitimately be run on the Java engine too. Cleaning them (or harm-tiering the message) was
@@ -154,22 +199,33 @@ them; per-key harm ranking is explicitly out of scope (YAGNI).
 
 ## Testing
 
-- **Partition completeness (keystone):** union equals `_SUPPLEMENTARY_ALLOWLIST`, intersection
-  empty. (Also guards that the refactor preserved the original 149-entry set exactly.)
+- **Partition completeness (keystone):** union equals the **independent `FROZEN_ALLOWLIST_SNAPSHOT`**
+  (149 keys, copied verbatim into the test — NOT `_SUPPLEMENTARY_ALLOWLIST`, which would be
+  circular); intersection empty. This is what proves the split lost/added no key.
 - **`java_only_keys_set`:** returns java-only keys a config sets (literal match, e.g.
-  `output.ssb.enabled`; pattern match, e.g. `output.diet.stage.threshold.sp3`); **excludes**
-  py-honored keys (e.g. `movement.species.map0`, `evolution.trait.imax.target`,
-  `ltl.depletable.enabled`); **excludes** the #120 restart carve-outs; returns `[]` for a config
+  `simulation.ncpu`; pattern match, e.g. `output.diet.stage.threshold.sp3`); **excludes** py-honored
+  keys — including `movement.species.map0`, `evolution.trait.imax.target`, `ltl.depletable.enabled`,
+  **and `species.biomass.total.sp14`** (the round-1 stale-comment landmine); **excludes** the #120
+  restart carve-outs; canonicalizes a legacy-spelled key before matching; returns `[]` for a config
   with none.
-- **`from_dict` warning:** a raw config setting java-only keys triggers exactly one summary
-  `_log.warning` naming them; deduped to once per process for the same key set; **no** warning when
-  the config sets none; the #120 restart keys do **not** appear in the #123 summary (no double
-  warn).
+- **`_prepare_run` warning (the run seam):** a Python-engine run (`run()` / `run_in_memory()`) whose
+  config sets java-only keys triggers exactly one summary `_log.warning` naming them; deduped to
+  once per process for the same key set; **no** warning when the config sets none; the #120 restart
+  keys do **not** appear in the #123 summary (no double warn).
+- **False-positive guard (the round-1 defect):** constructing a config via `EngineConfig.from_dict`
+  **directly** (the Fisheries-UI / `fmsy_sweep`-probe pattern) does **NOT** emit the #123 warning —
+  only an actual `_prepare_run` does. This test pins the placement so a future refactor can't slide
+  the warning back into the constructor and re-introduce the Java-run false positive.
+- **Dedup-global reset fixture (MANDATORY):** `_WARNED_JAVA_ONLY_KEYS` is a module-global that
+  persists across tests in a process. Add an `@pytest.fixture(autouse=True)` that clears it before
+  each test — **exactly as #120 required for `_WARNED_UNSUPPORTED_RESTART`**. Without it, the
+  "exactly one warning" and "deduped once per process" tests are mutually order-dependent (whichever
+  runs second sees a polluted global) and flake.
 - **Per-key clearance artifact:** a test (or committed data file) enumerating each
   `_ALLOWLIST_JAVA_ONLY` entry with the grep evidence it is Python-unread — the reviewable artifact
   the Method section requires.
 - **Whole-suite guard:** the existing suite must stay green. Audit any test that asserts a
-  clean/warning-free load of `examples`/`eec`/`benguela`/`baltic` (or runs pytest under
+  clean/warning-free load or **run** of `examples`/`eec`/`benguela`/`baltic` (or runs pytest under
   `-W error`); the new summary line must not break it. If such an assertion exists, update it to
   expect the summary (do not silence it globally). The known pre-existing CI-skip flake
   `test_trophic_cascade_visible` is unrelated.
@@ -189,17 +245,22 @@ them; per-key harm ranking is explicitly out of scope (YAGNI).
 
 ## Success criteria
 
-- A Python-engine load of a config that sets real OSMOSE keys the Python engine ignores (e.g.
-  `output.ssb.enabled`, `temperature.filename`) emits exactly one summary warning naming them,
+- A Python-engine **run** of a config that sets real OSMOSE keys the Python engine ignores (e.g.
+  `simulation.ncpu`, `temperature.filename`) emits exactly one summary warning naming them,
   verified by running.
-- The warning **never** fires on a Java-engine run (guaranteed by `from_dict` scope) and never
+- The warning **never** fires when a config is merely constructed for analysis
+  (`EngineConfig.from_dict` from the Fisheries UI / `fmsy_sweep` probes) — guaranteed by the
+  `_prepare_run` run-seam placement, verified by the false-positive guard test — and never
   double-warns the #120 restart keys.
-- `_ALLOWLIST_PY_HONORED` and `_ALLOWLIST_JAVA_ONLY` exactly partition the original allowlist; the
-  completeness test enforces it for all future additions.
+- `_ALLOWLIST_PY_HONORED` and `_ALLOWLIST_JAVA_ONLY` exactly partition the original allowlist,
+  verified against an independent frozen snapshot; the completeness test enforces it for all future
+  additions.
 - Every key in `_ALLOWLIST_JAVA_ONLY` was cleared Python-unread by execution, with a reviewable
-  per-key artifact — no classification rests on an allowlist comment.
+  per-key artifact — no classification rests on an allowlist comment (whose "zero engine hits"
+  claim was already caught stale in round 1).
 - No py-honored key (`movement.species.map*`, `evolution.trait.*`, `ltl.depletable.*`,
-  background/resources reads) is ever named in the summary — zero false positives on the
-  legitimately-read keys the issue was deferred to protect.
+  `species.type.sp*`, `species.biomass.total.sp*`, and the other background/resources reads) is
+  ever named in the summary — zero false positives on the legitimately-read keys the issue was
+  deferred to protect.
 - The existing suite stays green; any clean-load assertion over a bundled demo is updated, not
   silenced.
