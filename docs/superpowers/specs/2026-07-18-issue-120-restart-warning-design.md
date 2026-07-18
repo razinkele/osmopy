@@ -45,8 +45,17 @@ from `__post_init__` :1892 — "warn loudly about features PARSED but NOT applie
 module-level dedup set). Restart is the same shape.
 
 `from_dict` is effectively **Python-scoped**: the Java runner (`osmose/runner.py`) never calls
-`EngineConfig.from_dict`; only the Python engine (`engine/__init__.py:77`), `fmsy_sweep.py`, and
-the UI metadata reader do. So warning at config-load is correct (Java runs are unaffected).
+`EngineConfig.from_dict`; only the Python engine (`engine/__init__.py:77`), `fmsy_sweep.py`
+(:321/:404), and the UI metadata reader (`ui/pages/fisheries.py:181/:211`) do. So warning at
+config-load is correct — Java runs are unaffected.
+
+**Residual, acknowledged (not eliminated):** because `from_dict` fires for ALL its callers, a
+valid *Java*-restart config read through the fisheries UI (which builds a Python `EngineConfig`
+only to read `species_names`) will still LOG "…use the Java engine". This is benign — a Python
+`EngineConfig` genuinely is being built there, it is log-level only, and it exactly matches the
+reach of the mortality precedent. Warn-only is still the right call (this residual is why the
+strict *raise* — which the UI would swallow into a silent degrade — was dropped), but the fix is
+not "fully clean" of the Java-config-via-UI case, and the spec states so rather than overclaiming.
 
 In `EngineConfig.from_dict`, **immediately after `canonicalize_config(cfg)`** (config.py:~2022):
 
@@ -105,10 +114,16 @@ the set for later positive-assertion tests in *other files*.
 - Both set → **both** messages emitted (per-message dedup). 
 - No restart key → no warning. `simulation.restart.enabled=false` and empty/`"null"`
   `simulation.restart.file` → no warning.
-- **Old spelling** `output.restart.enabled=true` → also warns — **but the test must strip
-  `osmose.version` first** (or build from a version-less raw dict): `data/minimal` stamps
-  `osmose.version=4.4.1`, and `canonicalize_config` early-returns on the exact-match version, so
-  reading MINIMAL_CONFIG then injecting the old key would NOT rename it. Verified gotcha.
+- **Old spelling** `output.restart.enabled=true` → also warns — **but the test must clear TWO
+  barriers, not one** (both verified). (1) `data/minimal` stamps `osmose.version=4.4.1` and
+  `canonicalize_config` early-returns on the exact-match version, so reading MINIMAL_CONFIG then
+  injecting the old key would NOT rename it → strip `osmose.version` first. (2) `data/minimal`
+  also carries a **native** `simulation.restart.enabled ; false`; the Java `updateKey` rule
+  (keep-existing-NEW) makes that native `false` win over the injected old `true`, so even after
+  renaming the warning would NOT fire → the test must ALSO remove the native
+  `simulation.restart.enabled`. **Safest: build the old-spelling case from a fresh raw dict that
+  contains neither `osmose.version` nor a native `simulation.restart.*` key** — do not derive it
+  from MINIMAL_CONFIG.
 - **Dedup:** two `from_dict` calls with the same restart request → message logged once.
 
 ### Test coupling — the #120 tripwire flips (by design)
@@ -131,20 +146,42 @@ from the *engine* warning, in all modes, not from strict validation). No docstri
 Restart moves from "**capability absent / silent**" to "**capability absent / loud** (the engine
 warns on load)" — same shape as the surveys trap. The engine warns in **all** modes (not just
 strict), so a reader running any restart config now sees it. `validate()` stays silent, so the
-guide's strict-mode narrative is unchanged. Enumerate and reframe **every** passage (grep, don't
-trust a single hit):
+guide's strict-mode narrative is unchanged.
 
-- **L196** taxonomy row for restart: Signal `silent` → `loud (engine warns on load)`.
-- **L27-29** (§1 losses, "nothing consumes a restart file") → the Python engine still has no
-  restart, **but now warns** when a config requests it (fixed #120); Java engine to actually restart.
-- **L629** honest-gaps row ("loads and validates clean, does nothing") → "loads clean but now
-  **warns**; the engine still doesn't restart — use the Java engine". Update its `#120` link:
-  the SILENCE is fixed, so it's no longer an open tracker.
-- **All `#120` references** (there are several — L595, L604, L629; verify by grep) → "fixed in
-  #120", scoped precisely to the SILENCE, never claiming restart is implemented.
-- **L107-108** ("strict mode is silent on the restart gap"): under warn-only this stays **true**
-  (`validate()` still doesn't flag the known key). Optional one-clause clarification that the
-  *engine* now warns even though the *validator* stays silent — but no correction is required.
+> **⚠️ Sequencing dependency (#124 / #121).** This branch is on master, which does NOT yet
+> include PR #124 (the #121 fix, still open) — so the guide here is the **pre-#121** version, and
+> #124 ALSO reframes these restart passages (the "shim rescues half" arithmetic and the restart
+> trap). The two overlap and would conflict on merge. **Resolution: land #124 first, then rebase
+> `fix/issue-120-restart-warning` on the updated master, and write the guide reframe against the
+> POST-#121 guide.** Line numbers below are approximate and pre-#121; the implementer MUST
+> re-grep on the rebased base — do not trust the pre-#121 line numbers.
+
+Enumerate and reframe **every** restart passage (grep `-niE "restart|silent|#120"`, don't trust
+a single hit):
+
+- **The taxonomy row** for restart: Signal `silent` → `loud (engine warns on load)`. **AND fix
+  its description**: it currently reads `simulation.restart.enabled (the Python engine never
+  consumes a restart file)` — but "never consumes a restart file" is the `.file`/**resume**
+  behavior, wrongly attributed to `.enabled` (the **write** toggle). Reference `simulation.restart.file`
+  (or both keys) for the resume claim. This mismatch is the whole point of this fix's key-semantics
+  correction; do not leave it in the row about restart.
+- **The "shim rescues half and strands half" subsection** (pre-#121 ~L127-135, L143-145) — uses
+  `output.restart.enabled → simulation.restart.enabled` as its **leading** "engine never reads /
+  fully silent" example, and its count ("N of the dead ones are **fully silent**") includes it.
+  After this fix, `restart.enabled` now **warns on load** — so that example is falsified and the
+  silent-count drops by one. Reframe the example to "now warns (#120)" and correct the arithmetic.
+  (This is the same class of miss round 1 caught in code — a passage the fix touches that the
+  enumeration omitted. Get it.)
+- **§1 losses** ("nothing consumes a restart file") → the Python engine still has no restart,
+  **but now warns** when a config requests it; Java engine to actually restart.
+- **The honest-gaps row** ("loads and validates clean, does nothing") → "loads clean but now
+  **warns**; the engine still doesn't restart — use the Java engine". Update its `#120` link.
+- **All `#120` references** (several; grep) → past-tense "the silence is fixed", scoped precisely,
+  never claiming restart is implemented. **Note: #120 is already CLOSED** (see below) — do not
+  imply this PR closes it.
+- **The "strict mode is silent on restart" passage** stays **true** under warn-only (`validate()`
+  still doesn't flag the known key). Optional one-clause note that the *engine* now warns even
+  though the *validator* stays silent — no correction required.
 - **Leave the still-live traps untouched** (spatial-inputs `.nc`, missing sub-config, cross-file
   precedence — none fixed here).
 
@@ -170,14 +207,29 @@ autouse dedup-clear fixtures make that harmless for other tests' assertions.
 - **The Layer-D systemic warning (#123)** — this is a hand-written warning for two specific keys,
   exactly like the mortality precedent; NOT the general mechanism.
 - **Flipping `data/benguela`'s restart** — it's a faithful port; leave it.
+- **`population.initialization.method.sp{idx}`** — NOT a restart path. Verified: it is a
+  deprecated (Osmose 3, 2015) seeding-*strategy* selector (`data/eec_full/eec_param-init-pop.csv:1`
+  comments it out; its only corpus value is `biomass`), orthogonal to restart. R's
+  `initialize_osmose(type="ncdf")` reaches restart via the NetCDF referenced by
+  `simulation.restart.file` (covered), not via this key. It belongs to the general
+  allowlisted-but-unread class (#123), not #120. Recorded so it isn't re-litigated.
+
+## Issue status note
+
+**#120 is already CLOSED** (state `completed`, closed by the maintainer 2026-07-17) — but the
+DEFECT still exists in code (verified: nothing warns on restart today). This work is the
+follow-through that actually implements #120's ask. The eventual PR references #120 as origin and
+may reopen it, but must NOT frame itself as "Closes #120" (a closed issue) — it fixes the defect
+#120 described.
 
 ## Success criteria
 
 - `simulation.restart.file=<snapshot>` on the Python engine → a **loud warning** naming the file
   and the Java-engine resume workaround — verified by running.
 - `simulation.restart.enabled=true` → a **distinct** loud warning about missing restart output.
-- The old spelling `output.restart.enabled=true` triggers it too (canonicalize path), with the
-  `osmose.version` gotcha handled in the test.
+- The old spelling `output.restart.enabled=true` triggers it too (canonicalize path), with BOTH
+  test barriers handled (strip `osmose.version` AND avoid the native `simulation.restart.enabled`
+  — build from a fresh raw dict).
 - Warnings are deduped per-message (once per process) so calibration isn't spammed.
 - The #120 tripwire test is updated to assert the warning; the sibling strict-validation test is
   unchanged (its assertion stays true).
