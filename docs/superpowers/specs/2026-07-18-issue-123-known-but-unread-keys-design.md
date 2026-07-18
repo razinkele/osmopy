@@ -243,6 +243,17 @@ the plan re-runs that grep inventory to prove the list stays closed. (Cross-chec
 Java-only-classified `mortality.fishing.recruitment.age/size.sp{idx}` are genuinely unread — 0
 engine hits — so they are correctly JAVA_ONLY, not another membership landmine.)
 
+**Scope caveat for the future maintainer (round-6 latent note, non-blocking).** The guard scans
+`osmose/engine/**` only. That is sufficient *today* because every allowlist key read *outside* the
+engine tree is off the Python run path — Java launcher (`runner.py`), CMEMS preprocessing, the Map
+Builder authoring UI, and tests (e.g. `GridSpec.from_config`/`config_is_spatial` are test- and
+authoring-only; the live-movement viz reads the resolved netcdf `grid` object's `.lat`/`.lon`
+attributes, not config bounds keys). If a future change wires a **non-engine** module into the run
+path (something reachable from `_prepare_run`/`simulate`) and has it read an allowlist key, the
+guard would not see that read — the same class of blind spot documented above. Mitigation if that
+happens: widen the guard's scan roots to include the new module. Not a defect in the current
+classification; recorded so the scope assumption is explicit.
+
 ## Two reconciliations the bundled-config audit surfaced
 
 ### #120 overlap — carve out the restart keys
