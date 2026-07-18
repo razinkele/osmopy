@@ -115,8 +115,9 @@ the set for later positive-assertion tests in *other files*.
 - No restart key → no warning. `simulation.restart.enabled=false` and empty/`"null"`
   `simulation.restart.file` → no warning.
 - **Old spelling** `output.restart.enabled=true` → also warns — **but the test must clear TWO
-  barriers, not one** (both verified). (1) `data/minimal` stamps `osmose.version=4.4.1` and
-  `canonicalize_config` early-returns on the exact-match version, so reading MINIMAL_CONFIG then
+  barriers, not one** (both verified). (1) `data/minimal` stamps `osmose.version=4.4.1`, and
+  `migrate_config`'s per-step loop skips the 4.4.0 `RENAMES_440` rename step for any config already
+  at/above 4.4.0 (`current_tuple >= step_tuple: continue`), so reading MINIMAL_CONFIG then
   injecting the old key would NOT rename it → strip `osmose.version` first. (2) `data/minimal`
   also carries a **native** `simulation.restart.enabled ; false`; the Java `updateKey` rule
   (keep-existing-NEW) makes that native `false` win over the injected old `true`, so even after
@@ -184,6 +185,11 @@ a single hit):
   though the *validator* stays silent — no correction required.
 - **Leave the still-live traps untouched** (spatial-inputs `.nc`, missing sub-config, cross-file
   precedence — none fixed here).
+- **Do NOT touch the §5 calibration passages** (~L407-408, ~L452, ~L600) that mention
+  `control$restart.file` / `control$REPORT` — those are calibrar's **optimizer** resume-on-crash
+  mechanism, a different concept from `simulation.restart.*`, and are accurate as written
+  ("no resume-on-crash mechanism exists"). A literal `restart` grep will surface them as false
+  positives; skip them (they never mention `simulation.restart.*`).
 
 Clean `-W` sphinx build required (`rm -rf docs/_build/html` first).
 
