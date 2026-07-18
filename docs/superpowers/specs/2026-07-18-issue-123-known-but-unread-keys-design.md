@@ -22,27 +22,47 @@ five keys "control the Java engine's output" when they were dead on **both** eng
 never from its neighboring comment.** A key lands in `_ALLOWLIST_JAVA_ONLY` (warns) only after it
 is cleared Python-unread across *all* read mechanisms the engine actually uses:
 
-- `cfg.get(...)` / `_enabled(...)` / `_species_*` literal reads (the AST walk already covers these)
+- `cfg.get(...)` / `_enabled(...)` / `_species_*` literal reads. **The AST walk covers these only
+  for the modules in `_EXTRA_ENGINE_SOURCES`** (`config_validation.py:310–319`) — which is **NOT
+  exhaustive**: it omits `incoming_flux.py` and `timeseries.py`, both of which read config directly
+  (`incoming_flux.py:90`, `timeseries.py:422–442`). Clearance must grep the **whole** `osmose/engine/`
+  + `osmose/genetics/` tree, never assume "AST-known ⇒ read / not-AST-known ⇒ unread."
 - `key.startswith(<prefix>)` — the engine's three dynamic prefixes, verified by grep:
   `movement.species.map` (`movement_maps.py:129`), `species.type.sp` (`resources.py:143`),
   `ltl.name.rsc` (`resources.py:97`)
 - `<literal> in cfg` / `in config` membership (`background.py`, `timeseries.py`, `config.py`)
-- `for key, val in cfg.items()` iteration consumers (`background.py:156`, `resources.py:142`,
-  `movement_maps.py:128`)
+- `for key, val in cfg.items()` iteration / `re.match`-on-iterated-key consumers
+  (`background.py:156`, `resources.py:142`, `movement_maps.py:128`)
 - genetics trait reads (`evolution.trait.*`) and ResourceState reads (`ltl.depletable.*`,
   `species.regrowth.*`)
 
-The per-key clearance (which mechanism honors it, or "none found → java-only") is a **reviewable
-artifact** the plan produces and the reviewer checks — the same three-front discipline #121 used.
+**Partial-index rule (round-2 finding).** A `{idx}`/`{name}` pattern is stored once but its indices
+can have *different* fates: `fisheries.movement.file.map{idx}` is read only at the hardcoded index 0
+(`config.py:2098` reads `fisheries.movement.file.map0`; `map1+` are inert). The partition stores one
+pattern → one bucket and cannot express "map0 read, map1+ inert." **Resolution: a pattern with ANY
+read index is `_ALLOWLIST_PY_HONORED`.** This deliberately accepts a false *negative* (no warning
+for the genuinely-inert `map1+`) to guarantee zero false *positives* on the read index — the
+asymmetry #123 is built on (the issue was deferred precisely to protect read keys). State the rule
+so a reviewer doesn't "correct" `map{idx}` back to java-only.
 
 **Do NOT batch-classify the big "Java-side schema fields" block (`config_validation.py:147–247`) by
-its own comment** — its "Verified: zero hits … under osmose/engine/" claim is already stale for at
-least two members that the Python engine *does* read, and must go in `_ALLOWLIST_PY_HONORED`:
-`species.type.sp{idx}` (`resources.py:143` startswith + `background.py:156` regex) and
-`species.biomass.total.sp{idx}` (`background.py:328–330` membership + read). A background-species
-config (Baltic seal sp14 / cormorant sp15) legitimately sets `species.biomass.total.sp14`;
-misclassifying it JAVA_ONLY would emit a spurious #123 warning. Each entry in that block is cleared
-individually, comment notwithstanding.
+its own comment** — its "Verified: zero hits … under osmose/engine/" claim is provably stale for at
+least **four** members that the Python engine *does* read (two found in round 1, two more in round 2)
+and that must go in `_ALLOWLIST_PY_HONORED`:
+- `species.type.sp{idx}` — `resources.py:143` startswith + `background.py:156` regex
+- `species.biomass.total.sp{idx}` — `background.py:328–330` membership + read (Baltic seal sp14 /
+  cormorant sp15 configs legitimately set `species.biomass.total.sp14`)
+- `simulation.incoming.flux.enabled` — `incoming_flux.py:90` `config.get`, honored via
+  `get_incoming_schools` (`:191`), on the run path (`simulate.py:1384/1507`); **set `TRUE` in
+  `data/benguela/benguela_all-parameters.csv:616`** → a real false-positive if misclassified
+- `species.biomass.nsteps.year` — `resources.py:200` `cfg.get` (lower risk: `resources.py` *is*
+  AST-scanned, so it is auto-known; still under a "(Java-side)" comment)
+
+Plus the partial-index `fisheries.movement.file.map{idx}` above. Each entry in that block is cleared
+individually, comment notwithstanding — and by the **executable guard** below, not eyeballing.
+
+The per-key clearance is a **reviewable, committed artifact** (see Testing: the classification-
+correctness test), not prose — the same three-front discipline #121 used, made re-runnable.
 
 ## Architecture — three pieces in the existing validation seam
 
@@ -142,6 +162,41 @@ double-classification. A *legitimate* future allowlist addition updates both the
 bucket) and the snapshot, consciously — turning the drift the issue warned about ("the validator
 currently cannot tell which") into an explicit obligation instead of silent rot.
 
+**But the snapshot test only guards partition *mechanics*, not classification *correctness*
+(round-2 finding).** A read key wrongly placed in `_ALLOWLIST_JAVA_ONLY` keeps the union at 149 and
+keeps the buckets disjoint — both assertions pass while the false positive ships. That is exactly
+how round 1's two landmines and round 2's two more would have slipped through. Mechanics alone are
+not enough; correctness needs its own executable guard.
+
+### The classification-correctness guard (the real safety net)
+
+An executable test proves the property the whole feature depends on — **no `_ALLOWLIST_JAVA_ONLY`
+key is read by any Python engine module** — instead of trusting a hand-curated list:
+
+```python
+# Comprehensive: AST-scan EVERY osmose/engine/**.py + osmose/genetics/**.py (a SUPERSET of the
+# production _EXTRA_ENGINE_SOURCES — this is a stricter test-only scan, it does NOT change runtime
+# validation). Collect every literal/f-string config key the engine reads.
+engine_read_literals = ast_extract_over_all_engine_modules()          # e.g. "fisheries.movement.file.map0"
+startswith_prefixes  = ("movement.species.map", "species.type.sp", "ltl.name.rsc")
+
+for pattern in _ALLOWLIST_JAVA_ONLY:
+    rx = _compile_regex_for_pattern(pattern)          # {idx}->\d+, {name}->\w+
+    hit = next((lit for lit in engine_read_literals if rx.match(lit)), None)
+    assert hit is None, f"{pattern!r} classified JAVA_ONLY but engine reads {hit!r} — reclassify PY_HONORED"
+    assert not any(pattern.startswith(p) or p.startswith(pattern.split('{')[0]) for p in startswith_prefixes), \
+        f"{pattern!r} is read via startswith — reclassify PY_HONORED"
+```
+
+This single test **would have caught every landmine both review rounds found**:
+`simulation.incoming.flux.enabled` (read literal in the now-scanned `incoming_flux.py`),
+`fisheries.movement.file.map0` (read literal matching the `map{idx}` pattern — the partial-index
+case), `species.biomass.nsteps.year`, `species.type.sp*`. It is the concrete, re-runnable form of
+the "per-key clearance artifact" — the guard, not a prose table. Membership/regex-on-iterated-key
+reads that no AST scan can see (e.g. `species.biomass.total.sp{idx}` via `background.py:328`) get a
+small **curated exclusion list inside the test**, each line carrying its `file:line` read evidence —
+so even the un-AST-detectable honored keys are pinned and reviewable.
+
 ## Two reconciliations the bundled-config audit surfaced
 
 ### #120 overlap — carve out the restart keys
@@ -221,9 +276,13 @@ them; per-key harm ranking is explicitly out of scope (YAGNI).
   each test — **exactly as #120 required for `_WARNED_UNSUPPORTED_RESTART`**. Without it, the
   "exactly one warning" and "deduped once per process" tests are mutually order-dependent (whichever
   runs second sees a polluted global) and flake.
-- **Per-key clearance artifact:** a test (or committed data file) enumerating each
-  `_ALLOWLIST_JAVA_ONLY` entry with the grep evidence it is Python-unread — the reviewable artifact
-  the Method section requires.
+- **Classification-correctness guard (the correctness net, MANDATORY):** the executable test
+  described in the keystone section — AST-scan every `osmose/engine/**` + `osmose/genetics/**`
+  module (superset of `_EXTRA_ENGINE_SOURCES`, test-only), and assert no `_ALLOWLIST_JAVA_ONLY`
+  pattern matches any read literal or startswith-prefix. Membership/regex-read honored keys the scan
+  can't see (`species.biomass.total.sp{idx}`, `evolution.trait.*`) go in a curated in-test
+  exclusion list, each with its `file:line` evidence. This is what actually prevents shipping a
+  read key as java-only; the snapshot/disjointness test does NOT.
 - **Whole-suite guard:** the existing suite must stay green. Audit any test that asserts a
   clean/warning-free load or **run** of `examples`/`eec`/`benguela`/`baltic` (or runs pytest under
   `-W error`); the new summary line must not break it. If such an assertion exists, update it to
@@ -255,12 +314,15 @@ them; per-key harm ranking is explicitly out of scope (YAGNI).
 - `_ALLOWLIST_PY_HONORED` and `_ALLOWLIST_JAVA_ONLY` exactly partition the original allowlist,
   verified against an independent frozen snapshot; the completeness test enforces it for all future
   additions.
-- Every key in `_ALLOWLIST_JAVA_ONLY` was cleared Python-unread by execution, with a reviewable
-  per-key artifact — no classification rests on an allowlist comment (whose "zero engine hits"
-  claim was already caught stale in round 1).
-- No py-honored key (`movement.species.map*`, `evolution.trait.*`, `ltl.depletable.*`,
-  `species.type.sp*`, `species.biomass.total.sp*`, and the other background/resources reads) is
-  ever named in the summary — zero false positives on the legitimately-read keys the issue was
-  deferred to protect.
+- Every key in `_ALLOWLIST_JAVA_ONLY` was cleared Python-unread by the **executable
+  classification-correctness guard** (comprehensive engine AST-scan + curated dynamic-read
+  exclusions), not by an allowlist comment (whose "zero engine hits" claim was already caught stale
+  four times across two review rounds).
+- No py-honored key is ever named in the summary — zero false positives on the legitimately-read
+  keys the issue was deferred to protect. Confirmed-read keys that MUST stay py-honored:
+  `movement.species.map*`, `evolution.trait.*`, `ltl.depletable.*`, `species.regrowth.*`,
+  `species.type.sp*`, `species.biomass.total.sp*`, `species.biomass.nsteps.year`,
+  `simulation.incoming.flux.enabled`, `fisheries.movement.file.map{idx}` (read at index 0), and the
+  other background/resources/incoming-flux/timeseries reads.
 - The existing suite stays green; any clean-load assertion over a bundled demo is updated, not
   silenced.
