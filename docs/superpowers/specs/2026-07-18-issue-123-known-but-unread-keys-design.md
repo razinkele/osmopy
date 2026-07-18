@@ -175,27 +175,47 @@ key is read by any Python engine module** — instead of trusting a hand-curated
 
 ```python
 # Comprehensive: AST-scan EVERY osmose/engine/**.py + osmose/genetics/**.py (a SUPERSET of the
-# production _EXTRA_ENGINE_SOURCES — this is a stricter test-only scan, it does NOT change runtime
-# validation). Collect every literal/f-string config key the engine reads.
-engine_read_literals = ast_extract_over_all_engine_modules()          # e.g. "fisheries.movement.file.map0"
-startswith_prefixes  = ("movement.species.map", "species.type.sp", "ltl.name.rsc")
+# production _EXTRA_ENGINE_SOURCES — a stricter TEST-only scan; does NOT change runtime validation).
+# _extract_literal_keys_from_config_py returns a MIX of forms: concrete literals from subscript /
+# literal cfg.get ("fisheries.movement.file.map0") AND {idx}-pattern forms from f-strings
+# (cfg.get(f"ltl.regrowth.rate.rsc{i}") renders to "ltl.regrowth.rate.rsc{idx}"). The guard MUST
+# check both forms — verified: a naive concrete-regex-only check is BLIND to the f-string form
+# (round-3 finding).
+engine_reads        = ast_extract_over_all_engine_modules()   # concrete literals + {idx}-form patterns
+startswith_prefixes = ("movement.species.map", "species.type.sp", "ltl.name.rsc")
+
+def _is_read(pattern):
+    if pattern in engine_reads:                               # {idx}-form direct equality: f-string reads
+        return True
+    rx = _compile_regex_for_pattern(pattern)                  # {idx}->\d+, {name}->\w+
+    if any(rx.match(lit) for lit in engine_reads if "{" not in lit):  # concrete literals: map0, etc.
+        return True
+    return any(pattern.split("{")[0].startswith(p) or p.startswith(pattern.split("{")[0])
+               for p in startswith_prefixes)
 
 for pattern in _ALLOWLIST_JAVA_ONLY:
-    rx = _compile_regex_for_pattern(pattern)          # {idx}->\d+, {name}->\w+
-    hit = next((lit for lit in engine_read_literals if rx.match(lit)), None)
-    assert hit is None, f"{pattern!r} classified JAVA_ONLY but engine reads {hit!r} — reclassify PY_HONORED"
-    assert not any(pattern.startswith(p) or p.startswith(pattern.split('{')[0]) for p in startswith_prefixes), \
-        f"{pattern!r} is read via startswith — reclassify PY_HONORED"
+    assert not _is_read(pattern), f"{pattern!r} is JAVA_ONLY but the engine reads it — reclassify PY_HONORED"
 ```
 
-This single test **would have caught every landmine both review rounds found**:
-`simulation.incoming.flux.enabled` (read literal in the now-scanned `incoming_flux.py`),
-`fisheries.movement.file.map0` (read literal matching the `map{idx}` pattern — the partial-index
-case), `species.biomass.nsteps.year`, `species.type.sp*`. It is the concrete, re-runnable form of
-the "per-key clearance artifact" — the guard, not a prose table. Membership/regex-on-iterated-key
-reads that no AST scan can see (e.g. `species.biomass.total.sp{idx}` via `background.py:328`) get a
-small **curated exclusion list inside the test**, each line carrying its `file:line` read evidence —
-so even the un-AST-detectable honored keys are pinned and reviewable.
+This test **would have caught every landmine both review rounds found**:
+`simulation.incoming.flux.enabled` (literal read in the now-scanned `incoming_flux.py`),
+`fisheries.movement.file.map0` (concrete literal matching `map{idx}` — the partial-index case),
+`species.biomass.nsteps.year`, `species.type.sp*`, and any f-string-read pattern (via the
+direct-equality branch). It is the concrete, re-runnable "per-key clearance artifact" — the guard,
+not a prose table.
+
+**The guard's ONE structural blind spot — variable-key membership / regex-on-iterated-key reads —
+is bounded and enumerated, not open-ended.** No AST scan can see `total_key in config` (background)
+or `re.match(pat, key)` loops (genetics). But an exhaustive grep of those read sites
+(`background.py:309,329`; `timeseries.py:424–442`; `config.py:1559` `_FISHING_SCENARIOS` membership,
+`:2242–2283` fishing reads; `genetics/trait.py:54,60`; `config.py:1571`) shows the honored keys are
+either **not in the allowlist at all** (`species.size.proportion.file.sp{idx}`,
+`mortality.fishing.catches.*` → a `validate()` unknown-key concern, not #123) or are **exactly the
+already-classified** `species.biomass.total.sp{idx}` and `evolution.trait.*`. So the test's curated
+exclusion list is closed at those two families — each carrying its `file:line` read evidence — and
+the plan re-runs that grep inventory to prove the list stays closed. (Cross-checked: the
+Java-only-classified `mortality.fishing.recruitment.age/size.sp{idx}` are genuinely unread — 0
+engine hits — so they are correctly JAVA_ONLY, not another membership landmine.)
 
 ## Two reconciliations the bundled-config audit surfaced
 
