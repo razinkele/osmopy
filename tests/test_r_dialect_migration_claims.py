@@ -4,8 +4,10 @@ If this module goes red, the migration guide has gone stale — that is the inte
 
 Scope, stated honestly (see the spec's "Keeping the claims true"):
   Tier 1 — the MECHANISM: the R dialect parses; strict mode's asymmetry.
-  Tier 2 — the two verified traps, asserted on the PYTHON side, plus a
-           citation-PRESENCE check on the R side.
+  Tier 2 — the two traps FIXED in #121 (output.tl.enabled, economy.enabled ->
+           module.bioeconomics.enabled), retained here as regression anchors so
+           neither silently regresses to unread again; asserted on the PYTHON side,
+           plus a citation-PRESENCE check on the R side.
 
 What these tests CANNOT do: verify that an R-side key is real. We do not vendor R
 configs, so CI cannot check the corpus. A fabricated row with a plausible citation
