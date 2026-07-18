@@ -180,8 +180,9 @@ not enough; correctness needs its own executable guard.
 
 ### The classification-correctness guard (the real safety net)
 
-An executable test proves the property the whole feature depends on — **no `_ALLOWLIST_JAVA_ONLY`
-key is read by any Python engine module** — instead of trusting a hand-curated list:
+`_ALLOWLIST_JAVA_ONLY` is correct iff **every member is `unread` AND `not reader-injected`.** Two
+executable assertions prove those two properties — together they, not any prose list, are the
+authority. The first (read-clearance) proves no java-only key is read by any Python engine module:
 
 ```python
 # Comprehensive: AST-scan EVERY .py under osmose/engine/** (recursive → includes osmose/engine/
@@ -210,6 +211,14 @@ def _is_read(pattern):
 
 for pattern in _ALLOWLIST_JAVA_ONLY:
     assert not _is_read(pattern), f"{pattern!r} is JAVA_ONLY but the engine reads it — reclassify PY_HONORED"
+
+# Second assertion — metadata-clearance (round-5 finding). Reader-injected keys (osmose.version,
+# osmose.configuration.*) are genuinely UNREAD, so the read-guard above CANNOT catch one that is
+# mis-bucketed JAVA_ONLY — yet they are injected into every multi-file config by OsmoseConfigReader
+# and MUST be PY_HONORED, else the summary fires on EVERY Python run. The read-guard proves
+# JAVA_ONLY ⊆ {unread}; this proves JAVA_ONLY ⊆ {not reader-injected}. Both are required.
+_METADATA_KEYS = frozenset(k for k in FROZEN_ALLOWLIST_SNAPSHOT if k.startswith("osmose."))  # 21 keys
+assert _METADATA_KEYS <= _ALLOWLIST_PY_HONORED, "reader-injected osmose.* metadata must be PY_HONORED"
 ```
 
 This test **would have caught every landmine all four review rounds found**:
@@ -301,9 +310,10 @@ classifies java-only; per-key harm ranking is out of scope.
 - **`java_only_keys_set`:** returns java-only keys a config sets (literal match, e.g.
   `simulation.ncpu`; pattern match, e.g. `output.diet.stage.threshold.sp3`); **excludes** py-honored
   keys — including `movement.species.map0`, `evolution.trait.imax.target`, `ltl.depletable.enabled`,
-  **and `species.biomass.total.sp14`** (the round-1 stale-comment landmine); **excludes** the #120
-  restart carve-outs; canonicalizes a legacy-spelled key before matching; returns `[]` for a config
-  with none.
+  `species.biomass.total.sp14` (round-1 landmine), `output.tl.enabled` (round-4 landmine), **and
+  `osmose.version` / `osmose.configuration.background`** (reader-injected metadata — must never
+  surface, they are on every multi-file config); **excludes** the #120 restart carve-outs;
+  canonicalizes a legacy-spelled key before matching; returns `[]` for a config with none.
 - **`_prepare_run` warning (the run seam):** a Python-engine run (`run()` / `run_in_memory()`) whose
   config sets java-only keys triggers exactly one summary `_log.warning` naming them; deduped to
   once per process for the same key set; **no** warning when the config sets none; the #120 restart
@@ -319,12 +329,14 @@ classifies java-only; per-key harm ranking is out of scope.
   runs second sees a polluted global) and flake.
 - **Classification-correctness guard (the correctness net, MANDATORY):** the executable test
   described in the keystone section — AST-scan every `.py` under `osmose/engine/**` (recursive,
-  includes `osmose/engine/genetics/**` and, critically, `config.py`)
-  module (superset of `_EXTRA_ENGINE_SOURCES`, test-only), and assert no `_ALLOWLIST_JAVA_ONLY`
-  pattern matches any read literal or startswith-prefix. Membership/regex-read honored keys the scan
-  can't see (`species.biomass.total.sp{idx}`, `evolution.trait.*`) go in a curated in-test
+  includes `osmose/engine/genetics/**` and, critically, `config.py` — built by scanning the
+  directory tree, NOT by extending `_EXTRA_ENGINE_SOURCES`, which omits `config.py`), and assert
+  (1) **read-clearance:** no `_ALLOWLIST_JAVA_ONLY` pattern matches any read literal (both `{idx}`-form
+  and concrete), f-string form, or startswith-prefix; and (2) **metadata-clearance:** every
+  reader-injected `osmose.*` key is in `_ALLOWLIST_PY_HONORED`. Membership/regex-read honored keys the
+  scan can't see (`species.biomass.total.sp{idx}`, `evolution.trait.*`) go in a curated in-test
   exclusion list, each with its `file:line` evidence. This is what actually prevents shipping a
-  read key as java-only; the snapshot/disjointness test does NOT.
+  read/metadata key as java-only; the snapshot/disjointness test does NOT.
 - **Whole-suite guard:** the existing suite must stay green. Audit any test that asserts a
   clean/warning-free load or **run** of `examples`/`eec`/`benguela`/`baltic` (or runs pytest under
   `-W error`); the new summary line must not break it. If such an assertion exists, update it to
@@ -356,19 +368,21 @@ classifies java-only; per-key harm ranking is out of scope.
 - `_ALLOWLIST_PY_HONORED` and `_ALLOWLIST_JAVA_ONLY` exactly partition the original allowlist,
   verified against an independent frozen snapshot; the completeness test enforces it for all future
   additions.
-- Every key in `_ALLOWLIST_JAVA_ONLY` was cleared Python-unread by the **executable
-  classification-correctness guard** (comprehensive engine AST-scan + curated dynamic-read
-  exclusions), not by an allowlist comment (whose "zero engine hits" claim was caught stale across
-  four review rounds — a large subset of the block is actually read).
+- `_ALLOWLIST_JAVA_ONLY` satisfies both correctness properties, each by an **executable
+  assertion**: read-clearance (no member is read by any Python engine module, incl. `config.py`)
+  and metadata-clearance (no reader-injected `osmose.*` key is a member). Neither rests on an
+  allowlist comment (whose "zero engine hits" claim was caught stale across four review rounds — a
+  large subset of the block is actually read).
 - No py-honored key is ever named in the summary — zero false positives on the legitimately-read
-  keys the issue was deferred to protect. Confirmed-read keys that MUST stay py-honored include:
-  the ~25 `config.py:919–947` output flags (`output.tl.enabled`, `output.size.enabled`,
-  `output.ssb.enabled`, `output.yield.abundance.enabled`, `output.biomass.byage.enabled`,
-  `output.spatial.*.enabled`, the `.netcdf` variants, …), `module.bioeconomics.enabled`,
-  `module.population.initialisation.enabled`, `module.genetics.enabled`, `movement.species.map*`,
-  `evolution.trait.*`, `ltl.depletable.*`, `species.regrowth.*`, `species.type.sp*`,
-  `species.biomass.total.sp*`, `species.biomass.nsteps.year`, `simulation.incoming.flux.enabled`,
-  `fisheries.movement.file.map{idx}` (read at index 0) — with the authoritative set produced by the
-  guard, not this list.
+  keys the issue was deferred to protect. Allowlist-resident read keys that MUST stay py-honored
+  include: the `config.py:919–947` output flags that ARE allowlisted (`output.tl.enabled`,
+  `output.size.enabled`, `output.ssb.enabled`, `output.yield.abundance.enabled`, plus their
+  allowlisted `.netcdf` variants), `module.bioeconomics.enabled`,
+  `module.population.initialisation.enabled`, `movement.species.map*`, `evolution.trait.*`,
+  `ltl.depletable.*`, `species.regrowth.*`, `species.type.sp*`, `species.biomass.total.sp*`,
+  `species.biomass.nsteps.year`, `simulation.incoming.flux.enabled`, `fisheries.movement.file.map{idx}`
+  (read at index 0), and the 21 `osmose.*` metadata keys — with the authoritative set produced by the
+  guard, not this list. (Note: `output.spatial.egg/ltl/size.enabled` etc. ARE correctly java-only —
+  the read `output.spatial.enabled/biomass/abundance` are schema keys, not allowlist members.)
 - The existing suite stays green; any clean-load assertion over a bundled demo is updated, not
   silenced.
