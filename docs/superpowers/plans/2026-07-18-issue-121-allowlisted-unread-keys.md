@@ -16,7 +16,10 @@
 - **Jar checks are CASE-INSENSITIVE.** Java uses camelCase (`output.meanTL.byAge.enabled`), the reader lowercases. `grep -ci`, never `grep -cF`. (A case-sensitive check falsely cleared a key earlier.)
 - **`data/examples_433_orig` is a FROZEN migration source** (`test_migrate_bob_native.py:7` — "migrate a copy of the ORIGINAL"). **Do NOT edit it.** Its dead keys stay; nothing runs strict validation on it, so de-allowlisting doesn't break it.
 - **Back-compat:** the invented names (`output.meantl.enabled`, `simulation.economic.enabled`) must keep working as fallback — no existing config or test may silently break.
-- **Canonical replacement in configs:** use the real upstream name where one exists (`output.tl.enabled`, not `output.meantl.enabled`).
+- **Canonical replacement in configs:** use the real upstream name where one exists (`output.tl.enabled`, not `output.meantl.enabled`). All replacement keys are verified real Java 4.4.1 jar keys (see Task 2 Step 0), so both engines produce the same output families — **eec parity (14/14) is preserved.**
+- **CONFIG-FIX SCOPE (verified by repo-wide grep, do not narrow):** the 5 removed keys are set in exactly three LIVE configs — `data/examples`, `data/eec`, `data/minimal`. NOT `data/baltic`, NOT `data/eec_full` (clean), NOT `data/examples_433_orig` (frozen migration source — never edit). `data/minimal` sets only `output.frequency.ndtperyear`. An earlier draft missed `data/minimal`, which strands the parametrized test `test_from_dict_warn_mode_clean_on_example_configs[minimal]`.
+- **VERIFICATION RUNS THE FULL SUITE.** The final gate is `pytest tests/ -q`, not a hand-picked subset. This is the plan's own #121 lesson: an earlier draft's "prove nothing broke" gates ran a nonexistent file (`test_config.py`) and skipped the file that goes red (`test_engine_config_validation.py`) — reasoning from a plausible filename to "this guards it" without running it.
+- **`output.tl.enabled` → `output_meantl` is semantically correct, not just membership-correct** (verified by decompiling `OutputManager.class`): `output.tl.enabled` instantiates `WeightedSpeciesOutput(getTrophicLevel, getWeight)` = a weight-weighted mean trophic level per species = osmopy's `meanTL` output. The TL *distribution*/*spectrum* outputs are separate keys (`output.TL.perAge`, `output.meanTL.byAge`) with their own classes. Do not re-raise this.
 - Branch `fix/issue-121-allowlisted-unread-keys` (already checked out). Commit after every task. Use `.venv/bin/python`; shell cwd resets — absolute paths.
 
 ## File Structure
@@ -27,8 +30,9 @@
 | `tests/test_r_dialect_migration_claims.py` | update the 2 trap assertions Layer A flips (`:196`, `:243`) + their docstrings/`TRAPS` framing; add Layer A tests | 1 |
 | `data/examples/osm_param-output.csv` | replace/expand/delete dead output keys | 2 |
 | `data/eec/osm_param-output.csv` | replace/expand/delete dead output keys | 2 |
+| `data/minimal/osm_param-output.csv` | delete the one dead key (`output.frequency.ndtperyear`) | 2 |
 | `osmose/engine/config_validation.py` | remove 5 dead allowlist keys + fix 2 comment blocks | 3 |
-| `docs/r-to-python-migration.md` | reframe the "two traps" subsection + appendix to "fixed in #121" | 4 |
+| `docs/r-to-python-migration.md` | reframe the 2 fixed traps + the "shim rescues half" arithmetic; repoint the systemic-case ref at #123 | 4 |
 
 ---
 
@@ -158,8 +162,9 @@ Expected: **all pass** (count = prior 11 minus 0 net, since 2 renamed replace 2 
 
 Run: `.venv/bin/python -m ruff check osmose/ tests/ && .venv/bin/python -m ruff format --check osmose/ tests/`
 Expected: clean.
-Run: `.venv/bin/python -m pytest tests/test_config.py tests/test_config_validation.py -q` (sanity that config.py edits didn't break config tests).
-Expected: pass (or pre-existing skips only).
+Run (these files EXIST — `tests/test_config.py` does NOT; an earlier draft named it and the command ran zero tests):
+`.venv/bin/python -m pytest tests/test_engine_config.py tests/test_config_reader.py tests/test_config_validation.py tests/test_engine_config_validation.py -q`
+Expected: pass (or pre-existing skips only). `test_engine_config_validation.py` is included deliberately — it holds the parametrized clean-config test that Task 3 must not break.
 
 - [ ] **Step 8: Commit**
 
@@ -172,11 +177,23 @@ git commit -m "fix(#121): engine honors upstream output.tl/module.bioeconomics k
 
 ### Task 2: Layer B configs — fix the two live bundled configs (replace/expand/delete)
 
-Make `data/examples` and `data/eec` actually produce the output they request. **Do NOT touch `data/examples_433_orig`** (frozen migration source). These edits are per-file and per-key — no blanket replace.
+Make `data/examples`, `data/eec`, and `data/minimal` actually produce the output they request. **Do NOT touch `data/examples_433_orig`** (frozen migration source). These edits are per-file and per-key — no blanket replace.
 
 **Files:**
 - Modify: `data/examples/osm_param-output.csv`
 - Modify: `data/eec/osm_param-output.csv`
+- Modify: `data/minimal/osm_param-output.csv`
+
+- [ ] **Step 0: Confirm every replacement key is a REAL Java jar key (eec parity)**
+
+`data/eec` is parity-tested (14/14). The replacement keys must be real upstream keys so Java produces the same families. Verify (case-insensitive):
+```bash
+cd /home/razinka/osmopy/osmose-java
+for k in output.biomass.byage.enabled output.abundance.byage.enabled output.biomass.bysize.enabled output.abundance.bysize.enabled output.size.enabled output.tl.enabled; do
+  echo "$k $(unzip -p osmose-4.4.1-jar-with-dependencies.jar 'fr/ird/osmose/**' 2>/dev/null | strings | grep -ci "$k")"
+done
+```
+Expected: every key ≥ 1. (Verified 2026-07-18: all real.) If any is 0, STOP — it would break Java parity.
 
 - [ ] **Step 1: Write the config-correctness test**
 
@@ -207,24 +224,45 @@ def test_examples_requests_byage_bysize_meansize_tl():
 
 
 def test_eec_requests_byage_bysize_meansize_tl():
-    ec = _cfg("data/eec/eec_all-parameters.csv")
+    # data/eec's top-level is osm_all-parameters.csv (NOT eec_all-parameters.csv — that name
+    # exists only under the unrelated data/eec_full/).
+    ec = _cfg("data/eec/osm_all-parameters.csv")
     assert ec.output_biomass_byage and ec.output_abundance_byage
     assert ec.output_biomass_bysize and ec.output_abundance_bysize
     assert ec.output_mean_size
     assert ec.output_meantl
 
 
-def test_no_dead_output_keys_remain_in_live_examples():
-    """The 5 removed invented keys must be gone from the two live configs (not 433_orig)."""
+def test_no_dead_output_keys_remain_in_live_configs():
+    """The 5 removed invented keys must be gone from ALL THREE live configs (not 433_orig)."""
     dead = ("output.byage.enabled", "output.bysize.enabled", "output.meansize.enabled",
             "output.trophiclevel.enabled", "output.frequency.ndtperyear")
-    for rel in ("data/examples/osm_param-output.csv", "data/eec/osm_param-output.csv"):
+    for rel in ("data/examples/osm_param-output.csv", "data/eec/osm_param-output.csv",
+                "data/minimal/osm_param-output.csv"):
         text = (ROOT / rel).read_text()
         for k in dead:
             assert k not in text, f"{k} still in {rel}"
+
+
+def test_examples_actually_produces_meantl_output(tmp_path):
+    """Spec requires proving OUTPUT, not just the flag (#121's whole thesis: run it).
+
+    A True flag under-proves — the CSV writers gate on flag AND data presence. Run a short sim
+    to disk and assert the mean-TL CSV is materialized and non-empty. `mean_trophic_level()` is
+    the real OsmoseResults accessor (results.py:451) — NOT `meantl()`, which does not exist.
+    """
+    from osmose.engine import PythonEngine
+    from osmose.results import OsmoseResults
+
+    cfg = OsmoseConfigReader().read(ROOT / "data/examples/osm_all-parameters.csv")
+    cfg["simulation.time.nyear"] = "1"  # keep it fast
+    PythonEngine().run(config=cfg, output_dir=tmp_path, seed=0)
+    results = OsmoseResults.from_outputs(tmp_path)
+    tl = results.mean_trophic_level()
+    assert not tl.empty, "meanTL output empty — output.tl.enabled not honored end-to-end"
 ```
 
-Note: `test_*_requests_*` load the top-level `*_all-parameters.csv` (which includes the output sub-file). Verify the include path first: `grep -rn "param-output" data/examples/ data/eec/ | head`.
+Note: `test_*_requests_*` load the top-level `osm_all-parameters.csv` (includes the output sub-file via `osmose.configuration.output`; confirmed at `data/examples/osm_all-parameters.csv:44`). If `run()`/`from_outputs()`/`mean_trophic_level()` signatures differ from the above, correct them against the real source before running — do NOT leave a call pointing at a method that doesn't exist (that IS the #121 failure). The accessor `mean_trophic_level()` and the `meanTL` CSV are verified real (`results.py:451,453`).
 
 - [ ] **Step 2: Run — expect FAIL**
 
@@ -268,13 +306,23 @@ Apply exactly:
 - Line 16 `output.bysize.enabled ; true` → two lines: `output.biomass.bysize.enabled ; true` and `output.abundance.bysize.enabled ; true` (eec has NEITHER, so add both).
 - Line 17 `output.byage.enabled ; true` → two lines: `output.biomass.byage.enabled ; true` and `output.abundance.byage.enabled ; true`.
 
+- [ ] **Step 4b: Edit `data/minimal/osm_param-output.csv`** (missed by an earlier draft — its omission strands the `[minimal]` parametrized clean-config test)
+
+`data/minimal` sets only ONE removed key. Current relevant lines (verified):
+```
+10  output.frequency.ndtperyear ; 12            # dead
+11  output.recordfrequency.ndt ; 1              # working key ALREADY present
+```
+Apply exactly:
+- Line 10 `output.frequency.ndtperyear ; 12` → **delete the line** (working `output.recordfrequency.ndt ; 1` already present at line 11). That is the only edit `data/minimal` needs.
+
 - [ ] **Step 5: Run the config test — expect PASS, and check for duplicate keys**
 
 Run: `.venv/bin/python -m pytest tests/test_issue_121_bundled_configs.py -v`
-Expected: **PASS, 3 passed.**
-Check no key is now set twice in either file:
+Expected: **PASS** (all config-correctness + non-empty-output + no-dead-keys tests).
+Check no key is now set twice in ANY of the three edited files:
 ```bash
-for f in data/examples/osm_param-output.csv data/eec/osm_param-output.csv; do
+for f in data/examples/osm_param-output.csv data/eec/osm_param-output.csv data/minimal/osm_param-output.csv; do
   echo "$f:"; cut -d';' -f1 "$f" | grep -v '^\s*#' | sed 's/ *$//' | sort | uniq -d
 done
 ```
@@ -286,12 +334,12 @@ These configs now produce extra output families (byAge, bySize, meanSize). Find 
 ```bash
 grep -rln "data/examples\|data/eec\|eec_all-parameters\|examples/osm" tests/ | xargs grep -ln "output\|snapshot\|Simu\|results\|biomass" 2>/dev/null
 ```
-For each hit, run it. If a test breaks **because new output appeared** (not because something is wrong), re-baseline it intentionally and note it in the commit. If a test breaks for any OTHER reason, STOP — that is a real regression, not expected fallout. If none break, say so.
+For each hit, run it. If a test breaks **because new output appeared** (not because something is wrong), re-baseline it intentionally and note it in the commit. If a test breaks for any OTHER reason, STOP — that is a real regression, not expected fallout. If none break, say so. (eec parity is preserved because all added keys are real Java keys — Step 0 — so the Java engine produces the same families; but still run any eec parity test that exists.)
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add data/examples/osm_param-output.csv data/eec/osm_param-output.csv tests/test_issue_121_bundled_configs.py
+git add data/examples/osm_param-output.csv data/eec/osm_param-output.csv data/minimal/osm_param-output.csv tests/test_issue_121_bundled_configs.py
 git commit -m "fix(#121): bundled examples produce the output they request (Layer B configs)"
 ```
 
@@ -408,8 +456,11 @@ Expected: **all pass** (dead keys flagged, working keys recognized, lineage keys
 
 - [ ] **Step 8: Full guard — nothing else broke on de-allowlisting**
 
-Run: `.venv/bin/python -m pytest tests/test_config_validation.py tests/test_migrate_bob_native.py -q`
-Expected: pass. (`test_migrate_bob_native` asserts specific renames, not strict validation — de-allowlisting is safe; confirm it stays green.)
+**Run `test_engine_config_validation.py` — it holds `test_from_dict_warn_mode_clean_on_example_configs`, parametrized over `[eec, baltic, eec_full, examples, minimal]`, which runs strict validation on those configs and IS the test de-allowlisting can break.** An earlier draft ran `test_config_validation.py` (a *different* file) and would have shipped the break unobserved.
+```bash
+.venv/bin/python -m pytest tests/test_engine_config_validation.py tests/test_config_validation.py tests/test_migrate_bob_native.py -q
+```
+Expected: pass — because Task 2 already cleaned `output.frequency.ndtperyear` from `data/minimal` (the only parametrized config that set a removed key besides examples/eec, which are also cleaned). If `[minimal]` (or any) fails with an unknown-key error naming a removed key, a live config still sets it — go back to Task 2.
 Run: `.venv/bin/python -m ruff check osmose/ tests/ && .venv/bin/python -m ruff format --check osmose/ tests/` — clean.
 
 - [ ] **Step 9: Commit**
@@ -425,34 +476,42 @@ git commit -m "fix(#121): de-allowlist 5 dead invented keys + correct false comm
 
 `docs/r-to-python-migration.md` documents `output.tl.enabled` (headline) and `economy.enabled` (latent) as **live** silent traps. Layer A fixed both. Reframe without gutting: the class-level lesson and the still-live spatial-inputs trap stay.
 
+**Three passages become false after Layer A; a grep alone will NOT route you to all of them** — the "shim rescues half" arithmetic is invisible to the obvious greps. Fix all THREE by name:
+1. `### The two traps you can verify right now` (~line 232)
+2. `### The shim rescues half and strands half` (~line 119) — **the one an earlier draft missed**
+3. Appendix "The two verified traps (reference)" (~line 607) + the systemic-case reference (~line 620)
+
 **Files:**
-- Modify: `docs/r-to-python-migration.md` (§2 "The two traps you can verify right now"; appendix "two verified traps")
+- Modify: `docs/r-to-python-migration.md`
 
-- [ ] **Step 1: Locate the affected passages**
+- [ ] **Step 1: Reframe `### The two traps you can verify right now` (~line 232)**
 
-```bash
-grep -n "two traps you can verify\|two verified traps\|silently ignored\|headline trap\|latent" docs/r-to-python-migration.md
-```
-The §2 subsection (~`### The two traps you can verify right now`) and the appendix reference table are the targets.
-
-- [ ] **Step 2: Reframe the §2 subsection**
-
-Rewrite that subsection so the two keys are presented as **worked examples that were fixed in #121**, illustrating the *class* of silent-no-op bug — not as things the reader can still reproduce. Keep it short and true:
-- State plainly: `output.tl.enabled` and `economy.enabled` were silently ignored before #121; the engine now honors both (link the fix / issue #121).
+Rewrite so the two keys are **worked examples fixed in #121**, illustrating the *class* — not reproducible traps:
+- State plainly: `output.tl.enabled` and `economy.enabled` were silently ignored before #121; the engine now honors both (link #121).
 - Keep the class lesson: config keys can load clean and do nothing; run `scripts/check_config.py` + `validation.strict.enabled=error` on YOUR config.
-- Point the "what still bites you" weight at the **spatial-inputs `.nc` trap** (untouched by this fix — still the guide's #1 example), missing sub-configs, and cross-file precedence.
-- Do NOT claim the reader can reproduce the two fixed traps by setting those keys — that is now false.
+- Point "what still bites you" at the **spatial-inputs `.nc` trap** (untouched — still the guide's #1 example), missing sub-configs, cross-file precedence, and restart (#120, NOT fixed).
+- Do NOT claim the reader can reproduce the two fixed traps.
 
-- [ ] **Step 3: Update the appendix "two verified traps" table**
+- [ ] **Step 2: Fix the arithmetic in `### The shim rescues half and strands half` (~lines 119–146)**
 
-Change the appendix rows for `output.tl.enabled` / `economy.enabled` from "silently ignored" to a "fixed in #121" note (or move them to a short "formerly-live, now fixed" line). Update the "tracked in #121" reference — #121 is being **closed** by this PR, so phrase it as "fixed in #121" past-tense, not "tracked."
+Layer A moves `economy.enabled` from "strands" to "reaches the engine." Read the subsection and apply:
+- ~line 127 "**Four** migrate to a key the engine never reads" → "**Three** migrate…" (drop `economy.enabled` from this list; keep `output.restart.enabled`, `output.restart.spinup`, `output.fishery.enabled`).
+- ~line 137 "**Four** reach the engine and change its behavior" → "**Five** reach…" (add `economy.enabled → module.bioeconomics.enabled`).
+- ~lines 143–144 "half arrive and half don't … three of the four dead ones are fully silent" → "**five of eight arrive, three don't** … the three dead ones are fully silent".
+- ~lines 130–136: the mechanism claim that `economy.enabled`'s migrated key "does nothing, because the simulation's actual economics switch is a different key" is now **false** — rewrite to say the migrated key `module.bioeconomics.enabled` is now read directly (fixed in #121).
+- Also check ~line 256 (a back-reference to this subsection's "rescues and strands" framing) and adjust if it states the same arithmetic.
 
-- [ ] **Step 4: Scan for any other now-false claim**
+- [ ] **Step 3: Update ONLY the two appendix trap rows (~lines 614–615) to "fixed in #121" — LEAVE the systemic reference (~line 620) as "tracked", repointed at #123**
+
+- Rows 614–615 (`output.tl.enabled`, `economy.enabled`): change "silently ignored" → "fixed in #121". Also update their now-stale mechanism text: row 614 says the engine reads `output.meantl.enabled` (now it reads `output.tl.enabled` first); row 615 says "the engine's real switch is `simulation.economic.enabled`" (now `module.bioeconomics.enabled` works too). State the post-fix reality.
+- **Line ~620 is the GENERAL/systemic case** ("The real fix is tooling that names the correct key… tracked in #121"). This PR does NOT ship the systemic fix (Layer D) — it is deferred to **#123**. So do **NOT** change this to "fixed"; change `[#121]` → `[#123]` and keep it "tracked". A blanket "tracked→fixed" here would assert the systemic fix shipped, which is false.
+
+- [ ] **Step 4: Scan for any OTHER now-false claim**
 
 ```bash
-grep -niE "output\.tl\.enabled|economy\.enabled|simulation\.economic|module\.bioeconomics|silently (ignored|absent|get none)" docs/r-to-python-migration.md
+grep -niE "output\.tl\.enabled|economy\.enabled|simulation\.economic|module\.bioeconomics|silently (ignored|absent|get none)|Four migrate|Four reach|half arrive" docs/r-to-python-migration.md
 ```
-For each hit, confirm it is either (a) accurate historical framing, or (b) about a STILL-live trap (spatial inputs, restart #120, missing sub-config). Fix any that still asserts a live trap for the two fixed keys. **Restart (#120) is NOT fixed — leave its trap framing intact.**
+For each hit confirm it is (a) accurate post-fix / historical framing, or (b) about a STILL-live trap (spatial inputs, restart #120, missing sub-config, cross-file precedence). **Restart (#120) is NOT fixed — leave its trap framing intact.** The spatial-inputs `.nc` trap is NOT fixed — leave it. Do not accidentally reframe a still-live trap as fixed.
 
 - [ ] **Step 5: Clean build**
 
@@ -472,14 +531,15 @@ git commit -m "docs(#121): reframe the two now-fixed traps in the migration guid
 
 ### Task 5: Full verification, close #121, PR
 
-- [ ] **Step 1: Full guard suite + lint + clean docs build**
+- [ ] **Step 1: FULL suite + lint + clean docs build**
 
+Run the **whole** suite, not a hand-picked subset. This is the plan's root fix: an earlier draft's subset ran a nonexistent file and skipped the file that goes red — the exact #121 failure, committed against the plan's own gate. The full suite catches any stranded config, any snapshot fallout, any broken guide test automatically.
 ```bash
-.venv/bin/python -m pytest tests/test_r_dialect_migration_claims.py tests/test_issue_121_bundled_configs.py tests/test_config_validation.py tests/test_migrate_bob_native.py -q
+.venv/bin/python -m pytest tests/ -q
 .venv/bin/python -m ruff check osmose/ ui/ tests/ && .venv/bin/python -m ruff format --check osmose/ ui/ tests/
 rm -rf docs/_build/html && .venv/bin/sphinx-build -W --keep-going -b html docs docs/_build/html && echo "DOCS CLEAN"
 ```
-Expected: all pass; ruff clean; `DOCS CLEAN`.
+Expected: all pass (modulo pre-existing skips / known-flaky CI-only tests — compare against a clean `git stash` baseline if unsure); ruff clean; `DOCS CLEAN`. **If any test fails, it is in scope — do not ship over it.**
 
 - [ ] **Step 2: End-to-end proof — the fix actually works**
 
@@ -519,11 +579,13 @@ Fixes the two verified user-facing bugs where osmopy invented its own config key
 - `output.tl.enabled` (real 4.4.1 jar key) — the engine now reads it; `output.meantl.enabled` stays as a back-compat fallback.
 - `module.bioeconomics.enabled` (upstream's 4.4.0 name, the `RENAMES_440` target of `economy.enabled`) — now honored; `simulation.economic.enabled` stays as fallback.
 
-Removes 5 verified-dead invented `output.*` keys from the validation allowlist (each cleared on three fronts: Python-unread, 0 hits in BOTH jars case-insensitively, not staged for Java) and fixes `data/examples` + `data/eec` to produce the output they request (`data/examples` — the new-user starting point — was silently dropping by-age/by-size/mean-size output). Corrects two factually-wrong allowlist comments.
+Removes 5 verified-dead invented `output.*` keys from the validation allowlist (each cleared on three fronts: Python-unread, 0 hits in BOTH jars case-insensitively, not staged for Java) and fixes `data/examples` + `data/eec` + `data/minimal` to produce the output they request (`data/examples` — the new-user starting point — was silently dropping by-age/by-size/mean-size output). All replacement keys are real Java 4.4.1 keys, so **eec parity (14/14) is preserved**. Corrects two factually-wrong allowlist comments.
 
-Verification corrected the issue's own list twice: `output.diet.stage.threshold` is staged for Java 4.4.1 (kept), and the `conversion2tons` pair are legacy 4.3.x with real `plankton.conversion2tons` lineage (kept). `data/examples_433_orig` (a frozen migration source) is left untouched.
+Verification corrected the issue's own list twice: `output.diet.stage.threshold` is staged for Java 4.4.1 (kept), and the `conversion2tons` pair are legacy 4.3.x with real `plankton.conversion2tons` lineage (kept). `data/examples_433_orig` (a frozen migration source) is left untouched. The `output.tl.enabled` → mean-TL mapping was verified semantically (it gates Java's `WeightedSpeciesOutput(getTrophicLevel, getWeight)`), not just by jar membership.
 
-Reframes PR #122's migration guide, whose two documented "traps" this fix closes, to present them as worked examples now fixed — the class-level lesson and the still-live spatial-inputs trap remain.
+Reframes PR #122's migration guide, whose two documented "traps" this fix closes, to present them as worked examples now fixed — the class-level lesson and the still-live spatial-inputs / restart traps remain.
+
+**Scope:** this fixes the specific key-granularity mismatches, the dead keys, and the false comments. The *systemic* known-but-unread warning (#121's "real fix") and the `conversion2tons` aliasing are deferred to **#123** — the guide's systemic-case reference is repointed there.
 
 Spec: `docs/superpowers/specs/2026-07-18-issue-121-allowlisted-unread-keys-design.md`
 Plan: `docs/superpowers/plans/2026-07-18-issue-121-allowlisted-unread-keys.md`
@@ -537,8 +599,10 @@ BODY
 
 ## Self-Review
 
-**Spec coverage:** Layer A → Task 1; Layer B configs → Task 2; Layer B allowlist + Layer C comments → Task 3; guide reframe → Task 4; verify + close + PR → Task 5. The spec's ⚠️ output-snapshot risk → Task 2 Step 6. The spec's "examples_433_orig not editable" refinement → Global Constraints + Task 2 scope. The spec's "re-verify each dead-claim on three fronts" → Task 3 Step 1 (case-insensitive, both jars). **No gaps.**
+> **Revised 2026-07-18 after a 23-agent adversarial workflow (GO-WITH-FIXES, 9 survivors).** The workflow's headline: the plan's own verification gates failed the exact way #121 is about — a "prove nothing broke" command ran a nonexistent file (`test_config.py`) and skipped the file that goes red (`test_engine_config_validation.py`). All 5 blocking fixes applied: (1) real config-test filenames; (2) `data/eec/osm_all-parameters.csv` not `eec_all-parameters.csv`; (3) `data/minimal` added to the config-fix set + full-suite verification; (4) the "shim rescues half" arithmetic named in T4; (5) line-620 systemic ref stays "tracked", repointed at #123. Plus the non-empty-output test (Finding 4) and #123 filed.
 
-**Placeholder scan:** No TBD/TODO. Every code step carries exact code; every config edit gives the exact before/after line; every command has an expected result. The two config files' before-states were read verbatim and are quoted with real line numbers.
+**Spec coverage:** Layer A → Task 1; Layer B configs (examples + eec + **minimal**) → Task 2; Layer B allowlist + Layer C comments → Task 3; guide reframe (two traps + **the "shim rescues half" arithmetic** + systemic ref → #123) → Task 4; verify (**full suite**) + close #121 + PR → Task 5. Snapshot risk → Task 2 Step 6; parity → Task 2 Step 0; non-empty output → Task 2 `test_examples_actually_produces_meantl_output`; three-front re-verify → Task 3 Step 1. **No gaps.**
+
+**Placeholder scan:** No TBD/TODO. Every command names files that EXIST (verified: the config test files, `data/eec/osm_all-parameters.csv`, `mean_trophic_level()` accessor). Every config edit gives the exact before/after line, read verbatim. The final gate is the full suite, not a subset — so a mistake surfaces instead of shipping green.
 
 **Type consistency:** `EngineConfig` attrs used in tests (`output_meantl`, `economics_enabled`, `output_biomass_byage`, `output_abundance_byage`, `output_biomass_bysize`, `output_abundance_bysize`, `output_mean_size`) all match `config.py:919-929`. `_enabled(cfg, key)` and `validate(cfg, mode) -> list[UnknownKey]` (`.key`) match source. `_probe` / `minimal_cfg` are reused from the existing test file (defined there). The 5 dead keys and their working replacements are consistent across Tasks 1–3 and the config edits.

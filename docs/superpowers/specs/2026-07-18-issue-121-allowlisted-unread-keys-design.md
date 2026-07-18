@@ -2,7 +2,9 @@
 
 **Date:** 2026-07-18 · **Issue:** [#121](https://github.com/razinkele/osmopy/issues/121)
 **Branch:** `fix/issue-121-allowlisted-unread-keys`
-**Scope:** Layers A + B + C. Layer D (systemic known-but-unread warning) is deferred to its own issue.
+**Scope:** Layers A + B + C. Layer D (systemic known-but-unread warning) + `conversion2tons` aliasing are deferred to **[#123](https://github.com/razinkele/osmopy/issues/123)** (filed 2026-07-18).
+
+> **Revised after adversarial workflow review (2026-07-18).** Three corrections the review surfaced, now reflected in the plan: (1) the config-fix inventory below missed `data/minimal` (it sets `output.frequency.ndtperyear`); the true live set is `data/examples` + `data/eec` + `data/minimal` — verified by repo-wide grep, NOT `baltic`/`eec_full`/`examples_433_orig`. (2) The Layer-D follow-up is now a real issue (#123), so the guide's systemic-case reference repoints there and this PR closes #121 honestly. (3) Layer-B testing must prove the output is **produced** (run the engine, assert non-empty CSV), not merely that the flag parses. Also banked: `output.tl.enabled` → mean-TL is semantically verified (gates Java's `WeightedSpeciesOutput(getTrophicLevel, getWeight)`), and all replacement keys are real Java 4.4.1 keys so eec parity holds.
 
 ## Method — this issue is about false "it's dead" claims, so every claim here was executed
 
