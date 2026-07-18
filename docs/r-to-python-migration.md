@@ -24,9 +24,12 @@ plainly, so you can decide before porting anything.
 **What you lose:**
 
 - **No surveys module.** `surveys.*` config keys are unsupported by the Python engine (§2).
-- **No Python-engine restart.** `simulation.restart.*` loads and validates clean, but the Python
-  engine's initialization only builds populations from scratch — nothing in it consumes a
-  restart file.
+- **No Python-engine restart.** `simulation.restart.*` loads and validates clean, and if you
+  request it — `simulation.restart.file` (resume) or `simulation.restart.enabled` (checkpoint
+  write) — the engine now **warns** that it can't honor the request
+  ([#120](https://github.com/razinkele/osmopy/issues/120), closed). It still can't fulfill it:
+  initialization only builds populations from scratch, and nothing in it writes checkpoint
+  output either.
 - **Temperature/oxygen forcing downgrades to constant-only** (`temperature.value` /
   `oxygen.value`, gated on `bioen_enabled`). This is **not** a renamed key — it is a genuine
   **capability downgrade**: the Python engine has no path that reads a time-varying NetCDF
@@ -105,10 +108,11 @@ osmopy has never heard of — a different question entirely from whether your fi
 
 Neither tool is sufficient on its own, and strict mode is the weaker of the two. It catches
 `surveys.*` (genuinely unsupported, 21 keys, and loud about it) — but it is silent on the
-Python-engine restart gap, on renamed keys, on missing sub-configs, and on cross-file
-collisions, because in every one of those cases the key that arrives is *already known* to
-osmopy, or the damaged key never arrives at all. **A clean strict-mode run means nothing was
-unrecognized — not that your config works.**
+Python-engine restart gap (the validator, not the engine — the engine itself now warns on load,
+see below), on renamed keys, on missing sub-configs, and on cross-file collisions, because in
+every one of those cases the key that arrives is *already known* to osmopy, or the damaged key
+never arrives at all. **A clean strict-mode run means nothing was unrecognized — not that your
+config works.**
 
 And the failure compounds in the wrong direction: a missing sub-config's keys never reach the
 flattened dict that `validate()` inspects, so the *more* of your config a broken reference
@@ -124,11 +128,14 @@ economy.enabled)`. All 8 keys go through the same table-driven rename mechanism
 (`osmose/config/aliases.py`), and from the outside a migrated key and a working key look
 identical — but three of them still aren't.
 
-Three migrate to a key the **engine never reads**: `output.restart.enabled` →
-`simulation.restart.enabled` (allowlisted as Java-side, `config_validation.py:113`, never
-consumed by the Python engine); `output.restart.spinup` → `simulation.restart.spinup.nyear`
-(`:123`, same story); and `output.fishery.enabled` → `output.fisheries.enabled` (`:126`, no
-output-writing code reads it).
+Three migrate to a key the engine never **acts on**: `output.restart.enabled` →
+`simulation.restart.enabled` (allowlisted as Java-side, `config_validation.py:113`; the engine
+still never produces restart output from it, but as of
+[#120](https://github.com/razinkele/osmopy/issues/120) it **warns** on load if the key is set
+`true` — moot in this exact corpus, where `osmose-ben.R:784` sets it `FALSE`);
+`output.restart.spinup` → `simulation.restart.spinup.nyear` (`:123`, same story, still fully
+silent); and `output.fishery.enabled` → `output.fisheries.enabled` (`:126`, no output-writing
+code reads it, still fully silent).
 
 Five reach the engine and change its behavior: `fisheries.enabled` →
 `module.multispecies.fisheries.enabled`, read at `engine/config.py:2035`; `simulation.bioen.enabled`
@@ -144,8 +151,12 @@ reads `module.bioeconomics.enabled` directly as the real economics switch (see t
 the old, now-fixed, mechanism).
 
 Same mechanism, same config, one log line announcing all 8 migrations — **five of eight arrive,
-three don't**, and the three dead ones are fully silent about it. Nothing in that log line tells
-you which group you're holding.
+three don't**, and in *this* config all three of the dead ones are still fully silent:
+`osmose-ben.R` sets `output.restart.enabled = FALSE` (`:784`), so the new #120 warning never
+fires here. But `restart.enabled`'s silence is no longer *unconditional* the way
+`restart.spinup`'s and `fishery.enabled`'s are — set it `true` in a different config and the
+engine now **warns** ([#120](https://github.com/razinkele/osmopy/issues/120), closed) instead of
+vanishing without a trace. Nothing in that log line tells you which group you're holding.
 
 ### The spatial-inputs trap
 
@@ -196,7 +207,7 @@ spatial-inputs trap above.
 | Bucket | Signal | Example | Reader's move |
 |---|---|---|---|
 | **Unreadable input file** | **silent — invisible to both tools** | `.nc` movement maps; the loader is CSV-only | Convert to CSV, or use the Java engine |
-| Capability absent | silent | `simulation.restart.enabled` (the Python engine never consumes a restart file) | Java engine |
+| Capability absent | loud — engine warns on load (**fixed in [#120](https://github.com/razinkele/osmopy/issues/120)**) | `simulation.restart.file` (resume) / `simulation.restart.enabled` (checkpoint write) — neither is implemented, but requesting either now warns instead of loading clean and doing nothing | Java engine |
 | Key renamed | silent | `output.tl.enabled` → engine invented `output.meantl.enabled` instead (**fixed in #121** — engine now reads the real key first) | Use the right key |
 | Shim → dead key | silent (engine); changes one UI label | `economy.enabled` → `module.bioeconomics.enabled` (**fixed in #121** — engine now reads the migrated key) | Set the engine's real key directly |
 | Unsupported module | loud, opt-in only | `surveys.*` (21 keys, flagged by strict mode) | Java engine |
@@ -278,11 +289,12 @@ unrelated to #121.)
 `.nc` trap above (the most important trap in this guide — the science silently changes, not just
 an output going missing), a missing sub-config (`check_config.py` catches it, strict mode
 doesn't), a cross-file key collision (neither tool catches it, above), and the Python-engine
-restart gap ([#120](https://github.com/razinkele/osmopy/issues/120), not fixed — §1 already covers
-it). Run `scripts/check_config.py` plus `validation.strict.enabled=error` on **your** config
-regardless — the general case of "allowlisted key, dead engine" is still only caught by careful
-reading, not by either tool (see the appendix's general-case note), and #121 fixed two named
-instances of it, not the class.
+restart gap itself (still absent — §1 already covers it; only the *silence* around requesting it
+was fixed, in [#120](https://github.com/razinkele/osmopy/issues/120), now closed — the engine
+warns instead of loading clean and doing nothing). Run `scripts/check_config.py` plus
+`validation.strict.enabled=error` on **your** config regardless — the general case of
+"allowlisted key, dead engine" is still only caught by careful reading, not by either tool (see
+the appendix's general-case note), and #121 fixed two named instances of it, not the class.
 
 ### The friendly failure, and the noise you should ignore
 
@@ -608,7 +620,7 @@ Every symbol below is read from the R corpus (§§3–5), not recalled.
 | `get_var(obj, what="biomass", how="list")` | `osmose-ben/launcher.R:53` | `.biomass()` (§4) |
 | `plot(obj, what=, initialYear=, freq=, col=, lwd=)` | `osmose-ben/launcher.R:23`, `:24`, `:47` | no single call — the plotting-function module `osmose/plotting.py`, or the Shiny results UI's `ui/pages/results.py` chart builders, chosen per `what=` (§4) |
 | `plot(obj, what="biomass.acousticSurvey")` | `osmose-ben/launcher.R:44` | **no Python equivalent** — reads a survey output; `surveys.*` is unsupported by the Python engine (§2, §4) |
-| `initialize_osmose(input=, file=, output=, type="climatology"\|"ncdf", run=)` | `osmose-ben/launcher.R:32-34`, `:36-38` | **no Python-engine restart** — use the Java engine ([#120](https://github.com/razinkele/osmopy/issues/120)) |
+| `initialize_osmose(input=, file=, output=, type="climatology"\|"ncdf", run=)` | `osmose-ben/launcher.R:32-34`, `:36-38` | **no Python-engine restart** (the engine now warns if you request it, [#120](https://github.com/razinkele/osmopy/issues/120), closed) — use the Java engine |
 | `.readConfiguration(configFile4)` | `osmose-ben/launcher.R:27` | R-internal, no counterpart by design |
 | `.getPar(conf, "osmose.configuration.initialization")` | `osmose-ben/launcher.R:28` | R-internal, no counterpart by design |
 | `getCalibrationInfo(path=".", file=)` → `getObservedData(calInfo, path=".", data.folder=)` | `osmose-gog/calibrate.R:17`, `:22` | `osmose.calibration.targets.load_targets(path)` for ICES-band targets (one call does both steps); no loader for time-series objectives — read your own DataFrame (§5) |
@@ -617,8 +629,9 @@ Every symbol below is read from the R corpus (§§3–5), not recalled.
 | user-written `runModel(param, names, ...)` | `osmose-gog/runModel.R:10` | **no counterpart, by design** — `OsmoseCalibrationProblem` owns the run/read loop for both engines (§5) |
 
 `initialize_osmose`, `.readConfiguration`, and `.getPar` have no body section above — they're
-table-only. `initialize_osmose` is finding 6 restated (no Python restart; use the Java engine);
-`.readConfiguration`/`.getPar` are R-internal helpers with no Python counterpart by design.
+table-only. `initialize_osmose` is finding 6 restated (no Python restart, now warns; use the Java
+engine); `.readConfiguration`/`.getPar` are R-internal helpers with no Python counterpart by
+design.
 
 ### The two fixed traps (reference)
 
@@ -643,6 +656,6 @@ renamed — is deferred and tracked in
 | Gap | Workaround |
 |---|---|
 | `surveys.*` (21 keys) — no support in the Python engine | Java engine — `fr/ird/osmose/output/Surveys.class` is present in both the 4.3.3 and 4.4.1 jars (§1) |
-| Python-engine restart (`simulation.restart.*`) — loads and validates clean, does nothing | Java engine ([#120](https://github.com/razinkele/osmopy/issues/120)) |
+| Python-engine restart (`simulation.restart.*`) — loads clean, and the engine now **warns** if you request it ([#120](https://github.com/razinkele/osmopy/issues/120), closed); restart itself is still not implemented | Java engine |
 | Temperature/oxygen forcing — the Python engine has constant-only forcing (`temperature.value` / `oxygen.value`, gated on `bioen_enabled`), not the time-varying NetCDF field R/Java configs supply | **None.** This is a genuine capability downgrade, not a renamed key — there is nothing to point at instead (§1) |
 | `plot()` one-liner convenience — no single Python call dispatches on `what=` the way R's `plot()` does | `osmose/plotting.py` (one function per chart type) or the Shiny results UI, `ui/pages/results.py` (§4) |
