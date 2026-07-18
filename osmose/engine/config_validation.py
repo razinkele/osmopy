@@ -133,8 +133,8 @@ _SUPPLEMENTARY_ALLOWLIST: frozenset[str] = frozenset(
         # --- Conversion-to-tons keys (legacy 4.3.x forms) ---
         # The real 4.4.1 key is plankton.conversion2tons(.plk) -> resource.conversion2tons
         # (demo.py). These species./ltl. forms are LEGACY 4.3.x names (0 hits in either jar),
-        # kept allowlisted so the preserved 4.3.3 original (data/examples_433_orig) and the
-        # minimal fixtures don't surface unknown-key warnings. Aliasing them to
+        # kept allowlisted so the live config (data/examples) and the preserved 4.3.3 original
+        # (data/examples_433_orig) don't surface unknown-key warnings. Aliasing them to
         # resource.conversion2tons is possible future work (out of #121 scope).
         "species.conversion2tons.sp{idx}",
         "ltl.conversion2tons.rsc{idx}",
