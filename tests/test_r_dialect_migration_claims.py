@@ -51,7 +51,7 @@ MINIMAL_CONFIG = REPO_ROOT / "data" / "minimal" / "osm_all-parameters.csv"
 # FORMERLY-LIVE TRAPS, FIXED IN #121, RETAINED AS REGRESSION ANCHORS -- not live silent
 # gaps. Before #121, the shim correctly migrated the R dialect to the genuine upstream key,
 # but the engine read only the invented py_key below, so the real upstream name silently did
-# nothing. #121's Layer A (config.py:923, :2431) made the engine read the upstream name
+# nothing. #121's Layer A (config.py:923, :2436) made the engine read the upstream name
 # FIRST, keeping py_key as a back-compat fallback -- see
 # test_output_tl_enabled_now_read_after_121 and test_bioeconomics_enabled_now_read_after_121.
 # TRAPS and this table stay in place: test_traps_carry_a_provenance_citation and
@@ -62,7 +62,7 @@ MINIMAL_CONFIG = REPO_ROOT / "data" / "minimal" / "osm_all-parameters.csv"
 #   module.bioeconomics.enabled  -- what the SHIM migrates it to; upstream's real 4.4.0
 #                                   name. Now ALSO read directly by the engine (#121).
 #   simulation.economic.enabled  -- the osmopy-invented py_key below; still read too, as a
-#                                   back-compat fallback (engine/config.py:2431).
+#                                   back-compat fallback (engine/config.py:2437).
 TRAPS = [
     ("output.tl.enabled", "output.meantl.enabled", "osmose-gog/osm_param-output.csv:43"),
     ("economy.enabled", "simulation.economic.enabled", "osmose-ben.R:1048"),
