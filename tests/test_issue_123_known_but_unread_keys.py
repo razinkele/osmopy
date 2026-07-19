@@ -248,7 +248,15 @@ def test_partition_completeness_against_frozen_snapshot():
 
 def test_read_clearance_no_java_only_key_is_read():
     reads = _scan_engine_reads()
-    offenders = [p for p in _ALLOWLIST_JAVA_ONLY if _is_engine_read(p, reads)]
+    # _RESTART_HANDLED_BY_120 (simulation.restart.file/.enabled) are JAVA_ONLY *and* read by config.py
+    # — but only by #120's restart WARNING (read-to-warn), NOT honored/implemented. They are
+    # deliberately kept JAVA_ONLY (the Python engine does not implement restart) and carved out of
+    # #123's summary. Exclude them from the read-clearance check, like the membership families, so the
+    # guard doesn't demand reclassifying a key #120 intentionally reads to warn on. (Surfaced when
+    # #120 + #123 landed together on master; #126's CI ran before #120 was in its base.)
+    offenders = [
+        p for p in (_ALLOWLIST_JAVA_ONLY - _RESTART_HANDLED_BY_120) if _is_engine_read(p, reads)
+    ]
     assert offenders == [], (
         f"JAVA_ONLY keys the engine actually reads (reclassify PY_HONORED): {offenders}"
     )
