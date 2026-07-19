@@ -36,18 +36,30 @@ _INDEX_SUFFIXES = (
 _VALID_MODES = ("off", "warn", "error")
 _SUGGESTION_CUTOFF = 0.85
 
-# Reader-honored keys the AST walker cannot resolve statically -- e.g.,
-# reader-injected metadata (osmose.configuration.*, osmose.version),
-# legacy aliases, and keys built from caller-arg key_pattern two frames up.
-# Populated empirically during the EEC/Baltic/eec_full sweep in Step 10.
-# Prefer schema registration over allowlist growth -- allowlist is for keys
-# that genuinely belong outside the schema.
-_SUPPLEMENTARY_ALLOWLIST: frozenset[str] = frozenset(
+# Reader-honored keys the AST walker cannot resolve statically, split into two buckets (#123):
+#   _ALLOWLIST_PY_HONORED  — the Python engine reads it, OR reader-injected osmose.* metadata.
+#   _ALLOWLIST_JAVA_ONLY   — a real OSMOSE/Java key the Python engine provably does NOT read;
+#                            setting it on a Python run has no effect (warned about, see #123).
+# The membership of each bucket is proven by tests/test_issue_123_known_but_unread_keys.py
+# (read-clearance + metadata-clearance guards) — do NOT edit a key's bucket by eyeballing a
+# comment; move it, then let the guard confirm. Their union is byte-identical to the pre-#123
+# allowlist, so build_known_keys() and all unknown-key validation are unchanged.
+_ALLOWLIST_PY_HONORED: frozenset[str] = frozenset(
     [
-        # --- Reader-injected metadata keys (osmose.configuration.* and osmose.version) ---
-        # Injected by OsmoseConfigReader when loading sub-config files; never
-        # registered in the schema and never read by EngineConfig.from_dict.
-        "osmose.version",
+        "evolution.trait.{name}.envvar.sp{idx}",
+        "evolution.trait.{name}.mean.sp{idx}",
+        "evolution.trait.{name}.nlocus.sp{idx}",
+        "evolution.trait.{name}.nval.sp{idx}",
+        "evolution.trait.{name}.target",
+        "evolution.trait.{name}.var.sp{idx}",
+        "fisheries.movement.file.map{idx}",
+        "ltl.depletable.enabled",
+        "ltl.depletable.floor",
+        "ltl.regrowth.rate.default",
+        "ltl.regrowth.rate.rsc{idx}",
+        "module.bioeconomics.enabled",
+        "module.population.initialisation.enabled",
+        "movement.species.map{idx}",
         "osmose.configuration.a2.depletion",
         "osmose.configuration.background",
         "osmose.configuration.bioen",
@@ -68,108 +80,45 @@ _SUPPLEMENTARY_ALLOWLIST: frozenset[str] = frozenset(
         "osmose.configuration.reproduction",
         "osmose.configuration.simulation",
         "osmose.configuration.species",
-        # --- Background-species keys (engine reads in background.py) ---
-        # The AST walker scans only config.py. These six keys are read by
-        # osmose/engine/background.py (line 178-189) when a config declares
-        # background species via osmose.configuration.background +
-        # simulation.nbackground (e.g. baltic seal sp14, cormorant sp15).
-        # Closes C5 from docs/plans/2026-05-05-deep-review-remediation-plan.md.
-        "species.nclass.sp{idx}",
-        "species.trophic.level.sp{idx}",
-        "species.length.sp{idx}",
-        "species.size.proportion.sp{idx}",
+        "osmose.version",
+        "output.size.enabled",
+        "output.ssb.enabled",
+        "output.ssb.netcdf.enabled",
+        "output.tl.enabled",
+        "output.yield.abundance.enabled",
+        "output.yield.abundance.netcdf.enabled",
+        "simulation.incoming.flux.enabled",
         "species.age.sp{idx}",
-        # --- Legacy species.lw.* aliases ---
-        # Shipped configs use species.lw.* as aliases for
-        # species.length2weight.*; Java engine reads both forms.
-        "species.lw.condition.factor.sp{idx}",
-        "species.lw.allpower.sp{idx}",
-        # --- Movement map keys: registered in osmose/schema/movement.py
-        # as of C1 (2026-05-05). Most of them are auto-detected by the
-        # extended AST walker scanning movement_maps.py. The exception
-        # is movement.species.map{idx}, which the engine reads via
-        # key.startswith("movement.species.map") (a string method, not
-        # cfg.get) — invisible to the literal-key walker, so allowlist it.
-        "movement.species.map{idx}",
-        # --- Fisheries movement/rate keys (Java-side) ---
-        "fisheries.movement.file.map{idx}",
-        "fisheries.movement.fishery.map{idx}",
-        "fisheries.rate.byperiod.fsh{idx}",
-        # --- Output configuration keys (Java-side output layer) ---
-        # These are real Java-engine output keys the Python engine does not parse.
-        # (#121 removed 5 INVENTED coarse toggles that were here — output.byage/bysize/
-        # meansize/trophiclevel.enabled, output.frequency.ndtperyear — which are in NEITHER
-        # jar and nothing read. The working keys are output.biomass.byage.enabled +
-        # output.abundance.byage.enabled, output.size.enabled, output.tl.enabled,
-        # output.recordfrequency.ndt. They are now flagged unknown, correctly.)
-        "output.diet.stage.structure",
-        "output.diet.stage.threshold.sp{idx}",
-        "output.mortality.additionaln.byage.enabled",
-        "output.mortality.additionaln.bysize.enabled",
-        "output.restart.recordfrequency.ndt",
-        "output.restart.spinup",
-        # --- Population and simulation restart keys (Java-side) ---
-        "population.initialization.method.sp{idx}",
-        "simulation.restart.enabled",
-        # --- 4.4.0 canonical keys (RENAMES_440 targets not yet schema-known in PR1) ---
-        # These are the new canonical names introduced in OSMOSE 4.4.0 (ported from
-        # Releases.java $15). In PR1 the schema key_pattern entries are still the OLD names;
-        # the schema move is PR2. Until then, post-canonicalize new names that the AST-walked
-        # schema does not yet recognise must be allowlisted here.
-        # Module enable flags:
-        "module.bioeconomics.enabled",
-        "module.population.initialisation.enabled",
-        # Restart parameters (spinup + record-frequency):
-        "simulation.restart.spinup.nyear",
-        "simulation.restart.recordfrequency.ndt",
-        # Fishery output flags (plural form; old singular forms already allowlisted above):
-        "output.fisheries.enabled",
-        "output.fisheries.byage.enabled",
-        "output.fisheries.bysize.enabled",
-        "output.spatial.fisheries.enabled",
-        "output.number.of.eggs.bysize.enabled",
-        # --- Species biomass time-scale key (Java-side) ---
         "species.biomass.nsteps.year",
-        # --- Conversion-to-tons keys (legacy 4.3.x forms) ---
-        # The real 4.4.1 key is plankton.conversion2tons(.plk) -> resource.conversion2tons
-        # (demo.py). These species./ltl. forms are LEGACY 4.3.x names (0 hits in either jar),
-        # kept allowlisted so the live config (data/examples) and the preserved 4.3.3 original
-        # (data/examples_433_orig) don't surface unknown-key warnings. Aliasing them to
-        # resource.conversion2tons is possible future work (out of #121 scope).
-        "species.conversion2tons.sp{idx}",
-        "ltl.conversion2tons.rsc{idx}",
-        # --- Chunk A2 depletable plankton (opt-in; read by ResourceState) ---
-        "ltl.depletable.enabled",
-        "ltl.depletable.floor",
-        "ltl.regrowth.rate.default",
-        "ltl.regrowth.rate.rsc{idx}",
+        "species.biomass.total.sp{idx}",
+        "species.length.sp{idx}",
+        "species.lw.allpower.sp{idx}",
+        "species.lw.condition.factor.sp{idx}",
+        "species.nclass.sp{idx}",
         "species.regrowth.rate.sp{idx}",
-        # --- Java-side schema fields (broad-parity TODO closure, 2026-05-08) ---
-        # Every entry below is in osmose/schema/ (so the UI auto-renders an
-        # input for it) but the Python engine does not read it. They cover:
-        # (a) Java-side output flags and settings — Python engine has its own
-        #     output system (osmose/engine/output.py).
-        # (b) Java-side grid bounds + classname — Python engine reads
-        #     grid.netcdf.file / grid.nlon / grid.nlat / grid.var.{lat,lon,mask}
-        #     directly via PythonEngine._resolve_grid (already AST-walked).
-        # (c) Java-side fisheries period / name — Python fishing_mortality
-        #     reads fishing.rate.sp{idx} and selectivity, not these.
-        # (d) Java-side temperature/oxygen NetCDF forcing knobs — Python
-        #     uses temperature.value / oxygen.value scalars.
-        # (e) Java-side simulation knobs (ncpu, nsimulation, restart.file).
-        # Verified: zero hits for each under osmose/engine/ via grep.
-        # Closes the broad schema-engine-parity TODO from C1.
+        "species.size.proportion.sp{idx}",
+        "species.tl.sp{idx}",
+        "species.trophic.level.sp{idx}",
+        "species.type.sp{idx}",
+    ]
+)
+
+_ALLOWLIST_JAVA_ONLY: frozenset[str] = frozenset(
+    [
         "economic.output.stage",
         "fisheries.check.enabled",
+        "fisheries.movement.fishery.map{idx}",
         "fisheries.name.fsh{idx}",
         "fisheries.period.number.fsh{idx}",
         "fisheries.period.start.fsh{idx}",
+        "fisheries.rate.byperiod.fsh{idx}",
         "grid.java.classname",
         "grid.lowright.lat",
         "grid.lowright.lon",
         "grid.mask.file",
         "grid.upleft.lat",
         "grid.upleft.lon",
+        "ltl.conversion2tons.rsc{idx}",
         "ltl.java.classname",
         "ltl.nstep",
         "mortality.fishing.recruitment.age.sp{idx}",
@@ -192,9 +141,14 @@ _SUPPLEMENTARY_ALLOWLIST: frozenset[str] = frozenset(
         "output.diet.pressure.bysize.enabled",
         "output.diet.pressure.enabled",
         "output.diet.pressure.netcdf.enabled",
+        "output.diet.stage.structure",
+        "output.diet.stage.threshold.sp{idx}",
         "output.diet.success.enabled",
         "output.dir.path",
         "output.file.prefix",
+        "output.fisheries.byage.enabled",
+        "output.fisheries.bysize.enabled",
+        "output.fisheries.enabled",
         "output.flush.enabled",
         "output.meansize.byage.enabled",
         "output.meantl.byage.enabled",
@@ -202,26 +156,26 @@ _SUPPLEMENTARY_ALLOWLIST: frozenset[str] = frozenset(
         "output.meanweight.byage.enabled",
         "output.mortality.additional.byage.enabled",
         "output.mortality.additional.bysize.enabled",
+        "output.mortality.additionaln.byage.enabled",
+        "output.mortality.additionaln.bysize.enabled",
         "output.mortality.enabled",
         "output.mortality.perspecies.byage.enabled",
         "output.mortality.perspecies.bysize.enabled",
         "output.nschool.enabled",
+        "output.number.of.eggs.bysize.enabled",
+        "output.restart.recordfrequency.ndt",
+        "output.restart.spinup",
         "output.size.catch.enabled",
-        "output.size.enabled",
         "output.spatial.egg.enabled",
+        "output.spatial.fisheries.enabled",
         "output.spatial.ltl.enabled",
         "output.spatial.size.enabled",
         "output.spatial.yield.abundance.enabled",
-        "output.ssb.enabled",
-        "output.ssb.netcdf.enabled",
         "output.start.year",
         "output.tl.catch.enabled",
-        "output.tl.enabled",
         "output.weight.enabled",
         "output.yield.abundance.byage.enabled",
         "output.yield.abundance.bysize.enabled",
-        "output.yield.abundance.enabled",
-        "output.yield.abundance.netcdf.enabled",
         "output.yield.biomass.byage.enabled",
         "output.yield.biomass.bysize.enabled",
         "output.yield.biomass.enabled",
@@ -230,35 +184,26 @@ _SUPPLEMENTARY_ALLOWLIST: frozenset[str] = frozenset(
         "oxygen.nsteps.year",
         "oxygen.offset",
         "oxygen.varname",
+        "population.initialization.method.sp{idx}",
         "predation.accessibility.stage.structure",
         "predation.accessibility.stage.threshold.sp{idx}",
-        "simulation.incoming.flux.enabled",
         "simulation.ncpu",
         "simulation.nsimulation",
+        "simulation.restart.enabled",
         "simulation.restart.file",
-        "species.biomass.total.sp{idx}",
+        "simulation.restart.recordfrequency.ndt",
+        "simulation.restart.spinup.nyear",
+        "species.conversion2tons.sp{idx}",
         "species.first.feeding.age.sp{idx}",
-        "species.tl.sp{idx}",
-        "species.type.sp{idx}",
         "temperature.factor",
         "temperature.filename",
         "temperature.nsteps.year",
         "temperature.offset",
         "temperature.varname",
-        # --- Ev-OSMOSE genetics trait declarations (Python engine reads these) ---
-        # Keyed by a free-form trait *name* (e.g. imax), not a numeric index, so
-        # the {name} placeholder maps to \w+ (vs {idx} -> \d+). The AST walker
-        # cannot derive them: genetics/trait.py is not in _EXTRA_ENGINE_SOURCES,
-        # and config.py builds them from an f-string whose {name} segment the
-        # walker collapses to {idx} (yielding the wrong \d+ trait slot).
-        "evolution.trait.{name}.target",
-        "evolution.trait.{name}.mean.sp{idx}",
-        "evolution.trait.{name}.var.sp{idx}",
-        "evolution.trait.{name}.envvar.sp{idx}",
-        "evolution.trait.{name}.nlocus.sp{idx}",
-        "evolution.trait.{name}.nval.sp{idx}",
     ]
 )
+
+_SUPPLEMENTARY_ALLOWLIST: frozenset[str] = _ALLOWLIST_PY_HONORED | _ALLOWLIST_JAVA_ONLY
 
 
 @dataclass(frozen=True)
