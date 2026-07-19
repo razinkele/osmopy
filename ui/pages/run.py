@@ -1,5 +1,6 @@
 """Run control page - execute OSMOSE simulations."""
 
+import logging
 import queue
 import shutil
 import tempfile
@@ -19,7 +20,7 @@ from shiny_deckgl import (  # type: ignore[import-untyped]
 )
 
 from osmose.config.validator import summarize_config_validation
-from osmose.engine import PythonEngine, SimulationCancelled
+from osmose.engine import PythonEngine, SimulationCancelled, reset_run_warnings
 from osmose.engine.thread_policy import apply_single_run_threads
 from osmose.engine_capabilities import describe_engine
 from osmose.live_movement import (
@@ -304,25 +305,48 @@ def run_ui():
     )
 
 
-def _python_engine_thread(run_config, output_dir, cancel_token, step_observer, done_q, n_threads=0):
+class _QueueLogHandler(logging.Handler):
+    """Bridge osmose WARNING+ logs from ONE run's thread into that run's console queue (live, like
+    the Java jar console). Thread-filtered so a concurrent session's run cannot leak in."""
+
+    def __init__(self, log_q: "queue.Queue", thread_id: int, level: int = logging.WARNING) -> None:
+        super().__init__(level)
+        self._log_q = log_q
+        self._thread_id = thread_id  # only records emitted on THIS run's thread are forwarded
+        self.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if record.thread != self._thread_id:
+            return  # a different session's run (shared global 'osmose' logger) — not ours
+        try:
+            self._log_q.put_nowait(self.format(record))
+        except Exception:  # noqa: BLE001 — a log line must never break a run
+            self.handleError(record)
+
+
+def _python_engine_thread(
+    run_config, output_dir, cancel_token, step_observer, done_q, n_threads=0, log_q=None
+):
     """Run the Python engine in a background thread; post the outcome to ``done_q``.
 
-    Fire-and-forget (the calibration-dashboard pattern): runs OFF the main thread so the
-    event handler that launched it returns immediately, letting the reactive poll flush
-    live movement frames AND run_log/status during the run. (The previous
-    ``await loop.run_in_executor(whole run)`` kept ``handle_run`` suspended, so Shiny
-    deferred every flush until the run finished — the live view never updated mid-run.)
+    Fire-and-forget (the calibration-dashboard pattern): runs OFF the main thread so the event
+    handler that launched it returns immediately, letting the reactive poll flush live movement
+    frames AND run_log/status during the run.
 
-    Touches NO reactive state — the main-thread completion poll
-    (``run_server._drain_run_done``) turns the posted outcome into run_log / status /
-    button / ``_handle_result`` updates. Posts ``(kind, result_or_None, message)`` where
-    ``kind`` is ``"done" | "cancelled" | "failed"``.
+    When ``log_q`` is given, a thread-filtered ``_QueueLogHandler`` is attached to the ``osmose``
+    logger for the run's duration, so the engine's WARNING+ logs (the #120/#123 warnings) stream
+    live into the run console via ``_drain_run_log`` — mirroring the Java jar-console stream.
+
+    Touches NO reactive state. Posts ``(kind, result_or_None, message)``.
     """
-    # Cap single-run threads to ~physical cores (0/<1 = auto). Never raises;
-    # no-op if numba is absent. See osmose/engine/thread_policy.py.
     apply_single_run_threads(n_threads)
-    engine = PythonEngine()
+    osmose_logger = logging.getLogger("osmose")
+    handler = None
     try:
+        if log_q is not None:
+            handler = _QueueLogHandler(log_q, threading.get_ident())
+            osmose_logger.addHandler(handler)  # first, so the finally always covers it
+        engine = PythonEngine()
         result = engine.run(
             run_config,
             output_dir,
@@ -337,6 +361,9 @@ def _python_engine_thread(run_config, output_dir, cancel_token, step_observer, d
     except Exception as exc:  # noqa: BLE001
         _log.error("Python engine failed: %s", exc, exc_info=True)
         done_q.put(("failed", None, str(exc)))
+    finally:
+        if handler is not None:
+            osmose_logger.removeHandler(handler)
 
 
 def _java_engine_setup(input, state, config, work_dir, source_dir):
@@ -583,7 +610,8 @@ def run_server(input, output, session, state):
 
     @reactive.poll(lambda: time.time(), interval_secs=0.2)
     def _drain_run_log():
-        """Stream the Java run's console lines (posted off-thread) into run_log on the main thread."""
+        """Stream a run's console lines (Java jar console, or Python engine WARNING+ logs posted
+        by _QueueLogHandler) from _run_log_q into run_log on the main thread."""
         if not _session_alive[0]:
             return
         new_lines: list[str] = []
@@ -941,9 +969,18 @@ def run_server(input, output, session, state):
             _run_start_cell[0] = run_t0
             run_observer = make_run_observer(_progress_q, live_observer)
             n_threads = int(input.py_threads() or 0)
+            reset_run_warnings()  # per-UI-run: clear the engine warning-dedup so this run re-emits
             threading.Thread(
                 target=_python_engine_thread,
-                args=(run_config, output_dir, cancel_token, run_observer, _run_done_q, n_threads),
+                args=(
+                    run_config,
+                    output_dir,
+                    cancel_token,
+                    run_observer,
+                    _run_done_q,
+                    n_threads,
+                    _run_log_q,
+                ),
                 daemon=True,
             ).start()
             # handle_run returns now; _drain_run_done finishes the run on the main thread.
