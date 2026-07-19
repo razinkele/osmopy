@@ -72,8 +72,12 @@ class PythonEngine:
         tuple shared between run() and run_in_memory().
         """
         from osmose.engine.config import EngineConfig
+        from osmose.engine.config_validation import warn_unread_java_only_keys
         from osmose.engine.rng import build_rng
 
+        warn_unread_java_only_keys(
+            config
+        )  # #123: warn on Java-only keys inert on the Python engine
         engine_config = EngineConfig.from_dict(config)
         grid = self._resolve_grid(config)
 

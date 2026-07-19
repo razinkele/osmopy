@@ -229,6 +229,40 @@ def java_only_keys_set(cfg: dict) -> list[str]:
     return sorted(hits)
 
 
+# Deduped-once-per-process, like #120's _WARNED_UNSUPPORTED_RESTART. Cleared by an autouse test
+# fixture (tests/test_issue_123_known_but_unread_keys.py). Placed at the Python-run seam
+# (PythonEngine._prepare_run), NOT in from_dict — see spec §3 / Global Constraints.
+_WARNED_JAVA_ONLY_KEYS: set[str] = set()
+_MAX_NAMED_JAVA_ONLY_KEYS = (
+    10  # cap the listed keys; the rest are counted (bundled demos set ~20-44)
+)
+
+
+def warn_unread_java_only_keys(cfg: dict) -> list[str]:
+    """If `cfg` sets java-only keys, emit ONE deduped summary warning naming (up to
+    _MAX_NAMED_JAVA_ONLY_KEYS of) them. Returns the full key list (empty if none). Call only from
+    the Python-engine run seam."""
+    keys = java_only_keys_set(cfg)
+    if not keys:
+        return keys
+    # Dedup on the FULL key set so two configs differing only in the un-listed tail warn distinctly.
+    fingerprint = ",".join(keys)
+    if fingerprint not in _WARNED_JAVA_ONLY_KEYS:
+        _WARNED_JAVA_ONLY_KEYS.add(fingerprint)
+        shown = keys[:_MAX_NAMED_JAVA_ONLY_KEYS]
+        more = (
+            "" if len(keys) <= _MAX_NAMED_JAVA_ONLY_KEYS else f", and {len(keys) - len(shown)} more"
+        )
+        log.warning(
+            "%d config key(s) are valid OSMOSE keys the Python engine does not implement; on this "
+            "engine they have no effect. Use the Java engine if you need them: %s%s (see issue #123).",
+            len(keys),
+            ", ".join(shown),
+            more,
+        )
+    return keys
+
+
 @dataclass(frozen=True)
 class UnknownKey:
     key: str
