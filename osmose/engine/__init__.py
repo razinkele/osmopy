@@ -162,3 +162,18 @@ class PythonEngine:
         base_seed: int = 0,
     ) -> list[RunResult]:
         return [self.run(config, output_dir, seed=base_seed + i) for i in range(n)]
+
+
+def reset_run_warnings() -> None:
+    """Clear the engine's per-process warning-dedup caches so the next run re-emits its warnings.
+
+    UI-run-scoped: the interactive UI calls this at each run start; CLI/batch do NOT, keeping their
+    once-per-process dedup (which prevents spamming a many-sim calibration). Enumerates every engine
+    WARNING-dedup set — add new ones here.
+    """
+    from osmose.engine import config as _config
+    from osmose.engine import config_validation as _cv
+
+    _cv._WARNED_JAVA_ONLY_KEYS.clear()
+    _config._WARNED_UNSUPPORTED_RESTART.clear()
+    _config._WARNED_UNSUPPORTED_MORTALITY.clear()
