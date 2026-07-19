@@ -11,9 +11,11 @@ import pathlib
 from osmose.engine.config_validation import (
     _ALLOWLIST_JAVA_ONLY,
     _ALLOWLIST_PY_HONORED,
+    _RESTART_HANDLED_BY_120,
     _SUPPLEMENTARY_ALLOWLIST,
     _compile_regex_for_pattern,
     _extract_literal_keys_from_config_py,
+    java_only_keys_set,
 )
 
 # Independent reference: the exact 149-key allowlist as of pre-#123 (copied from Step 1 output).
@@ -258,3 +260,41 @@ def test_metadata_clearance_all_osmose_keys_py_honored():
     metadata = frozenset(k for k in FROZEN_ALLOWLIST_SNAPSHOT if k.startswith("osmose."))
     assert len(metadata) == 21
     assert metadata <= _ALLOWLIST_PY_HONORED
+
+
+def test_java_only_keys_set_matches_literal_and_pattern():
+    cfg = {
+        "simulation.ncpu": "8",                       # java-only literal
+        "output.diet.stage.threshold.sp3": "12",      # java-only {idx} pattern
+        "simulation.time.nyear": "15",                # a real read key (not allowlisted) -> ignored
+    }
+    assert java_only_keys_set(cfg) == ["output.diet.stage.threshold.sp3", "simulation.ncpu"]
+
+
+def test_java_only_keys_set_excludes_py_honored_and_metadata():
+    cfg = {
+        "output.tl.enabled": "true",                  # PY_HONORED (config.py:925) — round-4 landmine
+        "movement.species.map0": "map.csv",           # PY_HONORED via startswith
+        "evolution.trait.imax.target": "1.0",         # PY_HONORED exclusion family
+        "ltl.depletable.enabled": "true",             # PY_HONORED (resources.py:74)
+        "osmose.version": "4.4.1",                     # reader-injected metadata — must never surface
+        "osmose.configuration.background": "x.csv",   # metadata
+    }
+    assert java_only_keys_set(cfg) == []
+
+
+def test_java_only_keys_set_excludes_120_restart_carveouts():
+    cfg = {"simulation.restart.file": "snap.nc", "simulation.restart.enabled": "true"}
+    assert java_only_keys_set(cfg) == []
+    assert _RESTART_HANDLED_BY_120 == frozenset({"simulation.restart.file", "simulation.restart.enabled"})
+
+
+def test_java_only_keys_set_canonicalizes_before_matching():
+    # DISCRIMINATING (not vacuous): output.fishery.enabled canonicalizes (RENAMES_440) to the
+    # java-only output.fisheries.enabled. The legacy source is not itself allowlisted, so WITHOUT
+    # canonicalization this returns [] — the assertion proves canonicalize_config actually ran.
+    assert java_only_keys_set({"output.fishery.enabled": "true"}) == ["output.fisheries.enabled"]
+
+
+def test_java_only_keys_set_empty_when_none():
+    assert java_only_keys_set({"simulation.time.nyear": "15"}) == []

@@ -205,6 +205,29 @@ _ALLOWLIST_JAVA_ONLY: frozenset[str] = frozenset(
 
 _SUPPLEMENTARY_ALLOWLIST: frozenset[str] = _ALLOWLIST_PY_HONORED | _ALLOWLIST_JAVA_ONLY
 
+# #120 already warns on these two restart keys with a targeted message (config.py) — exclude them
+# from #123's summary to avoid double-warning. They remain in _ALLOWLIST_JAVA_ONLY for partition
+# completeness (they ARE java-only). Re-verify #120's warn-set at rebase (spec §"#120 overlap").
+_RESTART_HANDLED_BY_120: frozenset[str] = frozenset(
+    {"simulation.restart.file", "simulation.restart.enabled"}
+)
+
+
+def java_only_keys_set(cfg: dict) -> list[str]:
+    """Real OSMOSE keys present in `cfg` that the Python engine does not read (inert on a Python
+    run). Canonicalizes first (mirrors validate()); matches _ALLOWLIST_JAVA_ONLY literals + {idx}/
+    {name} patterns; excludes the #120-owned restart keys. Returns a sorted list."""
+    from osmose.config.aliases import canonicalize_config
+
+    cfg, _ = canonicalize_config(cfg)
+    java_only = _ALLOWLIST_JAVA_ONLY - _RESTART_HANDLED_BY_120
+    literals = frozenset(p for p in java_only if "{idx}" not in p and "{name}" not in p)
+    regexes = tuple(
+        _compile_regex_for_pattern(p) for p in java_only if "{idx}" in p or "{name}" in p
+    )
+    hits = [k for k in cfg if k in literals or any(rx.match(k) for rx in regexes)]
+    return sorted(hits)
+
 
 @dataclass(frozen=True)
 class UnknownKey:
