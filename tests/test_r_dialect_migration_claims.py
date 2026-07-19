@@ -37,6 +37,15 @@ from osmose.config.reader import OsmoseConfigReader
 from osmose.engine.config import EngineConfig
 from osmose.engine.config_validation import validate
 
+
+@pytest.fixture(autouse=True)
+def _clear_restart_warning_cache():
+    from osmose.engine.config import _WARNED_UNSUPPORTED_RESTART
+
+    _WARNED_UNSUPPORTED_RESTART.clear()
+    yield
+
+
 FIXTURES = Path(__file__).parent / "fixtures"
 RDIALECT = FIXTURES / "rdialect_config.R"
 REPO_ROOT = Path(__file__).parent.parent
@@ -148,18 +157,12 @@ def test_strict_mode_is_SILENT_on_unimplemented_restart():
     assert "simulation.restart.enabled" not in unknown
 
 
-def test_engine_does_not_yet_warn_on_ignored_restart(caplog):
-    """The REAL #120 tripwire — asserts the actual fix surface, on BOTH warning channels.
+def test_engine_warns_on_ignored_restart_after_120(caplog):
+    """FORMERLY a tripwire asserting the engine was SILENT on restart; FIXED in #120.
 
-    Today the Python engine silently ignores simulation.restart.enabled. When #120 lands and
-    the engine warns, THIS test goes red, and that is the signal to update the guide's §2 and
-    appendix to describe the warning instead of the silence.
-
-    CAPTURES BOTH CHANNELS. osmose/engine/config.py emits warnings via BOTH `_log.warning`
-    (logging) AND `warnings.warn` (the warnings module) — so we do not know which #120 will
-    use. `caplog` catches only logging; `warnings.catch_warnings` catches only the warnings
-    module. A tripwire that watched one channel would silently miss a fix on the other — which
-    is the exact silent-failure class this whole guide is about. So we watch both.
+    The Python engine now WARNS (does not implement restart, but no longer silently ignores it).
+    Dual-channel capture retained. Restart is still Java-only — this asserts the SILENCE is fixed,
+    not that restart is implemented.
     """
     cfg = OsmoseConfigReader().read(MINIMAL_CONFIG)
     cfg["simulation.restart.enabled"] = "true"
@@ -171,10 +174,7 @@ def test_engine_does_not_yet_warn_on_ignored_restart(caplog):
 
     log_hits = [r.getMessage() for r in caplog.records if "restart" in r.getMessage().lower()]
     warn_hits = [str(w.message) for w in caught if "restart" in str(w.message).lower()]
-    assert log_hits + warn_hits == [], (
-        "The engine now warns about ignored restart — #120 may be fixed. "
-        "Update docs/r-to-python-migration.md §2 and the appendix, then update this test."
-    )
+    assert log_hits + warn_hits, "engine no longer warns on ignored restart — #120 regressed"
 
 
 @pytest.fixture

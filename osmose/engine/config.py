@@ -36,6 +36,17 @@ _log = setup_logging("osmose.engine.config")
 # Warn once per distinct message for the process lifetime.
 _WARNED_UNSUPPORTED_MORTALITY: set[str] = set()
 
+# #120: the Python engine does not implement restart. Warn (don't silently ignore) when a
+# config requests it. Deduped per-message for the process lifetime (from_dict reruns per
+# calibration candidate). Cleared by autouse fixtures in the restart tests.
+_WARNED_UNSUPPORTED_RESTART: set[str] = set()
+
+
+def _warn_once_restart(msg: str) -> None:
+    if msg not in _WARNED_UNSUPPORTED_RESTART:
+        _WARNED_UNSUPPORTED_RESTART.add(msg)
+        _log.warning("%s", msg)
+
 
 _GROWTH_MAP: dict[str, str] = {
     # Current canonical classnames
@@ -2023,6 +2034,22 @@ class EngineConfig:
         from osmose.config.aliases import canonicalize_config
 
         cfg, _deprecated = canonicalize_config(cfg)
+
+        # #120: warn on requested-but-unsupported restart (post-canonicalize catches the old
+        # output.restart.enabled spelling too). Two distinct requests, two distinct messages.
+        _restart_file = cfg.get("simulation.restart.file", "").strip()
+        if _restart_file and _restart_file.lower() not in ("null", "none"):
+            _warn_once_restart(
+                f"simulation.restart.file={_restart_file!r} is set, but the Python engine does "
+                "not implement restart — the run will COLD-START from scratch instead of "
+                "resuming from that snapshot. Use the Java engine to resume (see issue #120)."
+            )
+        if _enabled(cfg, "simulation.restart.enabled"):
+            _warn_once_restart(
+                "simulation.restart.enabled is set, but the Python engine does not write "
+                "restart/checkpoint output — none will be produced. Use the Java engine for "
+                "restart output (see issue #120)."
+            )
 
         # config_dir is extracted from cfg by _cfg_dir() at each _resolve_file call
         n_sp = int(_get(cfg, "simulation.nspecies"))
