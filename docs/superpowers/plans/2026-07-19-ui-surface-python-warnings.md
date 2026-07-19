@@ -40,6 +40,33 @@ Create `tests/test_reset_run_warnings.py`:
 ```python
 """reset_run_warnings clears all three engine warning-dedup sets so each UI run re-emits."""
 
+import logging
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _isolate_engine_warning_state():
+    """MANDATORY hygiene: the three warning-dedup sets are PROCESS-GLOBAL. Clear them before AND
+    after each test, and restore osmose logger levels, so these tests neither pollute nor get
+    polluted by the rest of the suite (e.g. tests/test_issue_120's leaked 'snap.nc' dedup key under
+    `pytest --dist loadfile`). Mirrors tests/test_issue_123_known_but_unread_keys.py's clear fixture."""
+    from osmose.engine import config as cfg_mod
+    from osmose.engine import config_validation as cv
+
+    def _clear() -> None:
+        cv._WARNED_JAVA_ONLY_KEYS.clear()
+        cfg_mod._WARNED_UNSUPPORTED_RESTART.clear()
+        cfg_mod._WARNED_UNSUPPORTED_MORTALITY.clear()
+
+    _levels = {n: logging.getLogger(n).level
+               for n in ("osmose", "osmose.config", "osmose.engine.config")}
+    _clear()
+    yield
+    _clear()
+    for name, lvl in _levels.items():
+        logging.getLogger(name).setLevel(lvl)
+
 
 def test_reset_run_warnings_clears_all_three_dedup_sets():
     from osmose.engine import reset_run_warnings
@@ -58,8 +85,6 @@ def test_reset_run_warnings_clears_all_three_dedup_sets():
 
 
 def test_reset_run_warnings_lets_a_warning_re_emit():
-    import logging
-
     from osmose.engine import reset_run_warnings
     from osmose.engine.config_validation import warn_unread_java_only_keys
 
@@ -148,9 +173,33 @@ Create `tests/test_ui_python_warnings_console.py`:
 
 import logging
 import queue
-import tempfile
 import threading
-from pathlib import Path
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _isolate_engine_warning_state():
+    """MANDATORY hygiene: the three warning-dedup sets are PROCESS-GLOBAL and these tests add
+    handlers / set levels on the global osmose loggers. Clear the dedup sets before AND after each
+    test and restore logger levels, so this file neither pollutes nor is polluted by the suite
+    (e.g. tests/test_issue_120's leaked 'snap.nc' dedup key under `pytest --dist loadfile` would
+    otherwise suppress the #120 assertion below). Mirrors tests/test_issue_123's clear fixture."""
+    from osmose.engine import config as cfg_mod
+    from osmose.engine import config_validation as cv
+
+    def _clear() -> None:
+        cv._WARNED_JAVA_ONLY_KEYS.clear()
+        cfg_mod._WARNED_UNSUPPORTED_RESTART.clear()
+        cfg_mod._WARNED_UNSUPPORTED_MORTALITY.clear()
+
+    _levels = {n: logging.getLogger(n).level
+               for n in ("osmose", "osmose.config", "osmose.engine.config")}
+    _clear()
+    yield
+    _clear()
+    for name, lvl in _levels.items():
+        logging.getLogger(name).setLevel(lvl)
 
 
 def test_queue_log_handler_forwards_warning_on_matching_thread():
@@ -160,10 +209,10 @@ def test_queue_log_handler_forwards_warning_on_matching_thread():
     h = _QueueLogHandler(q, threading.get_ident())
     log = logging.getLogger("osmose.config")
     log.addHandler(h)
-    log.setLevel(logging.WARNING)
-    try:
+    log.setLevel(logging.INFO)  # INFO so the INFO record IS created -> only the HANDLER's WARNING
+    try:                        # level can drop it (the production gate; WARNING here would be vacuous)
         log.warning("hello from the run")
-        log.info("info is below WARNING")  # must be dropped by level
+        log.info("info is below WARNING")  # created, propagates to handler, dropped by handler level
     finally:
         log.removeHandler(h)
 
@@ -380,8 +429,9 @@ Expected: all five tests PASS (handler forwards WARNING / drops INFO / drops oth
 
 - [ ] **Step 8: Run the whole suite + lint**
 
-Run: `cd /home/razinka/osmopy && python -m pytest tests/ -q -p no:cacheprovider 2>&1 | tail -20`
-Expected: green except the known pre-existing flake `test_trophic_cascade_visible` (fails on base too). Any OTHER failure — especially in `tests/test_ui_run.py` or `tests/test_java_engine_thread.py` (they import `_python_engine_thread` / run.py) — must be understood: the new trailing `log_q=None` param is back-compatible, so existing positional callers are unaffected; if something breaks, STOP and report rather than paper over.
+Run with `CI=true` to skip the repo's known local-only emergent flakes (`test_trophic_cascade_visible` and the `skipif(CI)` gate/drift tests — all `skipif(os.environ.get("CI")=="true")`, unrelated to this change):
+`cd /home/razinka/osmopy && CI=true python -m pytest tests/ -q -p no:cacheprovider 2>&1 | tail -20`
+Expected: **fully green** (0 failed). The only direct caller of `_python_engine_thread` is `tests/test_thread_policy.py:124` (`run_mod._python_engine_thread("cfg", "out", None, None, done_q, n_threads=7)` — passes `n_threads` as a keyword, so the new trailing `log_q=None` param is back-compatible and it is unaffected). If ANY test fails, STOP and report rather than paper over — do NOT silence a warning or weaken a test to make it pass.
 
 Run: `cd /home/razinka/osmopy && ruff check osmose/ ui/ tests/ && ruff format --check osmose/ ui/ tests/`
 Expected: clean. If `ruff format --check` reports diffs, run `ruff format osmose/ ui/ tests/` and re-check.
