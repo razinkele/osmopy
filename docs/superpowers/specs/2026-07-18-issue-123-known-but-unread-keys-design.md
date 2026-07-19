@@ -115,16 +115,19 @@ Emit **one** summary line (not per-key), deduped by a module-global set exactly 
 
 ```python
 _WARNED_JAVA_ONLY_KEYS: set[str] = set()
+_MAX_NAMED_JAVA_ONLY_KEYS = 10  # bundled demos set ~20-44 java-only keys; cap the list, count the rest
 
 def _warn_once_java_only(keys: list[str]) -> None:
-    fingerprint = ",".join(keys)
+    fingerprint = ",".join(keys)  # FULL set: configs differing only in the un-listed tail dedup distinctly
     if fingerprint and fingerprint not in _WARNED_JAVA_ONLY_KEYS:
         _WARNED_JAVA_ONLY_KEYS.add(fingerprint)
+        shown = keys[:_MAX_NAMED_JAVA_ONLY_KEYS]
+        more = "" if len(keys) <= _MAX_NAMED_JAVA_ONLY_KEYS else f", and {len(keys) - len(shown)} more"
         _log.warning(
             "%d config key(s) are valid OSMOSE keys the Python engine does not implement; "
-            "on this engine they have no effect. Use the Java engine if you need them: %s "
+            "on this engine they have no effect. Use the Java engine if you need them: %s%s "
             "(see issue #123).",
-            len(keys), ", ".join(keys),
+            len(keys), ", ".join(shown), more,
         )
 ```
 
@@ -291,14 +294,18 @@ run where the key *is* honored — the Java engine never reaches `_prepare_run`.
 `output.diet.stage.structure` classifies the same way (both under the Java `output.diet.stage`
 prefix; execution-cleared Python-unread).
 
-## Bundled demos — flat + one line, left as-is (user decision 2026-07-18)
+## Bundled demos — flat + one truncated line, left as-is (user decision 2026-07-18, revised after plan-review)
 
-The audit found our own demos set some genuinely-java-only keys (grep-confirmed present):
-`simulation.ncpu` (all 4 demo dirs), `output.diet.stage.threshold` (all 4), and
-`grid.java.classname` (3). **Decision: warn on all java-only keys as one deduped summary line, and
-do NOT touch the demo configs.** The single line is honest (the demos do set Java-only keys the
-Python engine ignores) and low-noise, and the configs may legitimately be run on the Java engine
-too. Cleaning them (or harm-tiering the message) was considered and rejected as scope creep / risk.
+Our own demos set MANY genuinely-java-only keys — **~20-44 per demo** (the plan-review workflow
+measured the real counts; the earlier "2-3 keys" estimate was wrong): `simulation.ncpu`,
+`output.diet.stage.threshold`, `grid.java.classname`, `grid.upleft/lowright.*`,
+`output.dir.path`/`file.prefix`/`start.year`, `population.initialization.method.*`,
+`predation.accessibility.stage.*`, `species.conversion2tons.*`, etc. **Decision: warn on all
+java-only keys as one deduped line, but TRUNCATE the named list** to the first
+`_MAX_NAMED_JAVA_ONLY_KEYS` (10) plus "and N more" (§3) — so a demo run gets one honest line, not a
+40-key wall of text. The demo configs are NOT touched (they may legitimately be run on the Java
+engine). Cleaning them was considered and rejected as scope creep / risk. (`species.lw.*` /
+`species.tl.*` are NOT in these counts — they are PY_HONORED legacy aliases, see Out-of-scope.)
 
 **Note — the demos' `output.tl/size/yield.abundance.enabled` are NOT java-only** (config.py reads
 them, see the Method block); they are py-honored and correctly stay silent. So the demo summary line
@@ -364,8 +371,17 @@ classifies java-only; per-key harm ranking is out of scope.
   considered and rejected (B fires post-run, defeating the pre-run value, and is invasive; C is not
   systemic). Approach A chosen.
 - **Harm-tiering the message** — one flat summary line; per-key severity is not modeled.
-- **`species.lw.*`** — fails *loudly* with a `KeyError` naming the correct key; not a silent no-op,
-  not #123-class (stays py-honored/legacy-alias, no warning).
+- **Legacy aliases of read canonicals — `species.lw.*`, `species.tl.*` — are PY_HONORED (no
+  warning).** (Corrected after the plan-review workflow.) These are *not* KeyError cases: the
+  bundled demos set the legacy form **and** the canonical twin, so the engine silently reads the
+  canonical (`species.length2weight.*` at `config.py:467-468`; `species.trophic.level.sp` at
+  `background.py:196`) and ignores the legacy — a genuine silent no-op. But the feature IS
+  implemented on the Python engine, so the "use the Java engine" message would misdirect; the
+  correct remedy is to rename to the canonical key on the *same* engine. They therefore go in a
+  curated PY_HONORED exclusion (the read-clearance guard can't see it — they are unread under their
+  own name). **`conversion2tons` is the opposite case and stays JAVA_ONLY:** its canonical
+  `resource.conversion2tons` is read nowhere, so it is genuinely inert (warned about, correctly).
+  Proper aliasing of these legacy forms is the deferred `conversion2tons`-style follow-up.
 
 ## Success criteria
 

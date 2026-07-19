@@ -16,7 +16,7 @@ Copied verbatim from `docs/superpowers/specs/2026-07-18-issue-123-known-but-unre
 - **Union byte-identical:** `_SUPPLEMENTARY_ALLOWLIST = _ALLOWLIST_PY_HONORED | _ALLOWLIST_JAVA_ONLY` — the name `_SUPPLEMENTARY_ALLOWLIST` must survive so `build_known_keys()` and all existing unknown-key validation are unchanged.
 - **Placement = `PythonEngine._prepare_run` (`osmose/engine/__init__.py`), NOT `from_dict`.** The analysis paths (Fisheries UI `ui/pages/fisheries.py:181,211`; `fmsy_sweep.py:321,404`) call `from_dict` directly and MUST NOT warn.
 - **Classification by executable guard, never by allowlist comment.** Every `_ALLOWLIST_JAVA_ONLY` member is cleared Python-unread by the read-clearance guard; the guard scans every `.py` under `osmose/engine/**` **including `config.py`**, built by scanning the directory tree — NOT by extending `_EXTRA_ENGINE_SOURCES` (which omits `config.py`).
-- **Two membership/regex exclusion families** (AST-invisible reads that must be PY_HONORED): `species.biomass.total.sp{idx}` (`background.py:329`) and the six `evolution.trait.{name}.*` patterns (`config.py:1571`, `genetics/trait.py:54`).
+- **Curated PY_HONORED exclusions the read-clearance guard can't see (must be encoded by hand):** (a) membership/regex reads — `species.biomass.total.sp{idx}` (`background.py:329`) and the six `evolution.trait.{name}.*` patterns (`config.py:1571`, `genetics/trait.py:54`); (b) legacy aliases of read canonicals — `species.lw.condition.factor.sp{idx}` / `species.lw.allpower.sp{idx}` (canonical `species.length2weight.*` read at `config.py:467-468`) and `species.tl.sp{idx}` (canonical `species.trophic.level.sp` read at `background.py:196`). These are genuinely unread under their own name but the feature IS implemented on the Python engine, so "use the Java engine" would misdirect — no warning. `conversion2tons` is NOT excluded (canonical `resource.conversion2tons` is read nowhere → genuinely inert → stays JAVA_ONLY).
 - **#120 carve-out = exactly `{"simulation.restart.file", "simulation.restart.enabled"}`** — subtracted from `java_only_keys_set`'s output to avoid double-warning with #120's targeted restart message. Re-verify #120's actual warn-set at rebase.
 - **Dedup autouse-clear fixture is MANDATORY** — `_WARNED_JAVA_ONLY_KEYS` is a module-global; a `@pytest.fixture(autouse=True)` clears it before each test (as #120 required for `_WARNED_UNSUPPORTED_RESTART`).
 - **Sequencing:** #120 (PR #125) SHOULD merge before #123, so the two restart carve-out keys keep a warning (#120's) rather than none. If #123 lands first, those two keys get no warning until #120 lands — a documented gap, not a defect.
@@ -92,6 +92,17 @@ _MEMBERSHIP_EXCLUSIONS = frozenset([
     "evolution.trait.{name}.nval.sp{idx}",
 ])
 
+# LEGACY ALIASES of keys the Python engine reads under their CANONICAL spelling. Genuinely unread
+# under their own name (so the read-clearance guard can't rescue them), but the feature IS
+# implemented on the Python engine — warning "use the Java engine" would misdirect. Must be
+# PY_HONORED (no #123 warning). NOTE: conversion2tons is NOT here — its canonical
+# resource.conversion2tons is read nowhere, so it is genuinely inert and correctly JAVA_ONLY.
+_LEGACY_ALIAS_HONORED = frozenset([
+    "species.lw.condition.factor.sp{idx}",    # canonical species.length2weight.condition.factor.sp -> config.py:467
+    "species.lw.allpower.sp{idx}",            # canonical species.length2weight.allometric.power.sp -> config.py:468
+    "species.tl.sp{idx}",                     # canonical species.trophic.level.sp -> background.py:196
+])
+
 
 def _scan_engine_reads() -> set[str]:
     """Every literal/f-string config key read across osmose/engine/** (incl. config.py).
@@ -140,6 +151,15 @@ def test_membership_exclusion_families_are_py_honored():
     assert _MEMBERSHIP_EXCLUSIONS <= _ALLOWLIST_PY_HONORED
 
 
+def test_legacy_alias_keys_are_py_honored_not_warned():
+    # species.lw.* / species.tl.* are legacy aliases of keys the engine reads under canonical
+    # spellings — the Python engine implements the feature, so they must NOT be warned about
+    # ("use the Java engine" would misdirect; spec §Out-of-scope requires species.lw.* silent).
+    assert _LEGACY_ALIAS_HONORED <= _ALLOWLIST_PY_HONORED
+    # conversion2tons is the OPPOSITE case (canonical unread) and stays JAVA_ONLY:
+    assert "species.conversion2tons.sp{idx}" in _ALLOWLIST_JAVA_ONLY
+
+
 def test_metadata_clearance_all_osmose_keys_py_honored():
     # Reader-injected metadata is UNREAD but must be PY_HONORED (else fires on every run).
     metadata = frozenset(k for k in FROZEN_ALLOWLIST_SNAPSHOT if k.startswith("osmose."))
@@ -170,10 +190,14 @@ for py in (pathlib.Path("osmose") / "engine").rglob("*.py"):
         pass
 STARTSWITH = ("movement.species.map", "species.type.sp", "ltl.name.rsc")
 EXCL = {
+    # membership/regex reads (AST-invisible):
     "species.biomass.total.sp{idx}",
     "evolution.trait.{name}.target", "evolution.trait.{name}.mean.sp{idx}",
     "evolution.trait.{name}.var.sp{idx}", "evolution.trait.{name}.envvar.sp{idx}",
     "evolution.trait.{name}.nlocus.sp{idx}", "evolution.trait.{name}.nval.sp{idx}",
+    # legacy aliases of read canonicals -> feature works on Python, don't warn (conversion2tons
+    # is NOT here: its canonical is unread, so it stays JAVA_ONLY):
+    "species.lw.condition.factor.sp{idx}", "species.lw.allpower.sp{idx}", "species.tl.sp{idx}",
 }
 def is_read(p):
     if p in reads: return True
@@ -283,8 +307,10 @@ def test_java_only_keys_set_excludes_120_restart_carveouts():
 
 
 def test_java_only_keys_set_canonicalizes_before_matching():
-    # economy.enabled canonicalizes to module.bioeconomics.enabled (PY_HONORED) -> not java-only.
-    assert java_only_keys_set({"economy.enabled": "true"}) == []
+    # DISCRIMINATING (not vacuous): output.fishery.enabled canonicalizes (RENAMES_440) to the
+    # java-only output.fisheries.enabled. The legacy source is not itself allowlisted, so WITHOUT
+    # canonicalization this returns [] — the assertion proves canonicalize_config actually ran.
+    assert java_only_keys_set({"output.fishery.enabled": "true"}) == ["output.fisheries.enabled"]
 
 
 def test_java_only_keys_set_empty_when_none():
@@ -395,6 +421,19 @@ def test_warn_dedups_once_per_process(caplog):
     assert sum("issue #123" in r.getMessage() for r in caplog.records) == 1
 
 
+def test_warn_truncates_long_lists_but_counts_all(caplog):
+    # Bundled demos set ~20-44 java-only keys; the line names at most _MAX_NAMED_JAVA_ONLY_KEYS
+    # and counts the rest, while the returned list and the reported count stay complete.
+    cfg = {f"output.diet.stage.threshold.sp{i}": "12" for i in range(15)}  # 15 java-only keys
+    with caplog.at_level(logging.WARNING, logger="osmose.config"):
+        keys = cv.warn_unread_java_only_keys(cfg)
+    assert len(keys) == 15
+    msg = next(r.getMessage() for r in caplog.records if "issue #123" in r.getMessage())
+    assert "15 config key(s)" in msg                              # full count reported
+    assert "and 5 more" in msg                                   # 15 - 10 named
+    assert msg.count("output.diet.stage.threshold.sp") == 10      # only 10 named inline
+
+
 def test_warn_silent_when_no_java_only_keys(caplog):
     with caplog.at_level(logging.WARNING, logger="osmose.config"):
         cv.warn_unread_java_only_keys({"output.tl.enabled": "true", "simulation.time.nyear": "15"})
@@ -445,22 +484,28 @@ In `osmose/engine/config_validation.py`, immediately after `java_only_keys_set` 
 # fixture (tests/test_issue_123_known_but_unread_keys.py). Placed at the Python-run seam
 # (PythonEngine._prepare_run), NOT in from_dict — see spec §3 / Global Constraints.
 _WARNED_JAVA_ONLY_KEYS: set[str] = set()
+_MAX_NAMED_JAVA_ONLY_KEYS = 10  # cap the listed keys; the rest are counted (bundled demos set ~20-44)
 
 
 def warn_unread_java_only_keys(cfg: dict) -> list[str]:
-    """If `cfg` sets java-only keys, emit ONE deduped summary warning naming them. Returns the
-    keys (empty if none). Call only from the Python-engine run seam."""
+    """If `cfg` sets java-only keys, emit ONE deduped summary warning naming (up to
+    _MAX_NAMED_JAVA_ONLY_KEYS of) them. Returns the full key list (empty if none). Call only from
+    the Python-engine run seam."""
     keys = java_only_keys_set(cfg)
     if not keys:
         return keys
+    # Dedup on the FULL key set so two configs differing only in the un-listed tail warn distinctly.
     fingerprint = ",".join(keys)
     if fingerprint not in _WARNED_JAVA_ONLY_KEYS:
         _WARNED_JAVA_ONLY_KEYS.add(fingerprint)
+        shown = keys[:_MAX_NAMED_JAVA_ONLY_KEYS]
+        more = "" if len(keys) <= _MAX_NAMED_JAVA_ONLY_KEYS else f", and {len(keys) - len(shown)} more"
         log.warning(
             "%d config key(s) are valid OSMOSE keys the Python engine does not implement; on this "
-            "engine they have no effect. Use the Java engine if you need them: %s (see issue #123).",
+            "engine they have no effect. Use the Java engine if you need them: %s%s (see issue #123).",
             len(keys),
-            ", ".join(keys),
+            ", ".join(shown),
+            more,
         )
     return keys
 ```
