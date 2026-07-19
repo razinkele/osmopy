@@ -38,7 +38,8 @@ run in a different Shiny session** (each session has its own `_run_log_q` but th
 global `osmose` logger) would leak its warnings into this session's console — verified reproducible,
 and the exact leakage B was rejected for. The handler therefore filters by the engine thread's ident:
 each `_python_engine_thread` runs on its own `threading.Thread`, the #120/#123 warnings fire on that
-thread (in `_prepare_run`, verified `__init__.py:78,80`), and the handler posts only records whose
+thread (both fire in `_prepare_run` — #123 via `warn_unread_java_only_keys` at `__init__.py:78`, #120
+via `EngineConfig.from_dict` called at `__init__.py:81` → `config.py:2040-2052`), and the handler posts only records whose
 `record.thread` equals the ident captured when it was created in that thread. A concurrent session's
 warnings (different thread) are dropped — genuine per-run isolation, not merely time-boxing.
 
@@ -142,8 +143,9 @@ def reset_run_warnings() -> None:
     _config._WARNED_UNSUPPORTED_MORTALITY.clear()
 ```
 
-Called on the main thread in `handle_run`'s Python branch, right before launching the thread (after
-`run_log.set([])`), so the cleared state is in place before `engine.run()` fires the warnings.
+Called on the main thread in `handle_run`'s Python branch, right before launching the engine thread
+(after the fresh-console block at `run.py:889-894`), so the cleared state is in place before
+`engine.run()` fires the warnings.
 
 ## Data flow
 
@@ -165,6 +167,28 @@ cleared state strictly precedes the warning (which fires later, on the engine th
   `osmose` logger (which would then post stray lines into a later run's console).
 - `_run_log_q` is unbounded; `put_nowait` never blocks the engine thread.
 - `_drain_run_log` already caps `run_log` at 500 lines (`run.py:597`); no change.
+- **Required import:** `ui/pages/run.py` currently imports only `from osmose.logging import
+  setup_logging`, NOT stdlib `logging`. Add `import logging` (the `_QueueLogHandler` code uses
+  `logging.Handler`/`LogRecord`/`WARNING`/`Formatter`/`getLogger`). `threading` is already imported.
+- **Failed-run behaviour (round-2 note, intended):** on a failed Python run the except block logs
+  `_log.error("Python engine failed", exc_info=True)` on `osmose.run` (a child of `osmose`) while the
+  handler is still attached and on the engine thread — so the console ALSO shows `ERROR: Python
+  engine failed: …` plus the traceback, in addition to the `--- ERROR ---` summary line
+  `_drain_run_done` appends (`run.py:552`). This is acceptable and useful (the traceback aids
+  debugging); it is NOT pure duplication (summary line vs. full traceback). Documented so it is not a
+  surprise. The cancel path uses `_log.info` (below WARNING) and is correctly not captured.
+
+## Concurrency note (round-2)
+
+`reset_run_warnings()` clears process-global sets on the serialized main thread, but the
+dedup check-then-emit runs on the engine thread. In the rare case of **two concurrent sessions
+running configs with an identical warning fingerprint**, if both resets land before either emit, the
+first engine thread to reach the warn adds the fingerprint and the second suppresses it — so one
+session's console may omit that warning (it is still on stderr once). This is benign (a missing
+*informational* warning, never wrong data) and **cannot leak** (the thread filter still prevents one
+session's warning from appearing in another's console). Making the dedup thread-local would fix it
+but is over-engineering for this rare, harmless case — accepted as a known limitation. The
+single-session ordering (reset → launch → warn) has no race.
 
 ## Testing
 
