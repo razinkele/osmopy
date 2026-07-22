@@ -5,7 +5,8 @@ Matches Java OSMOSE 4.3.3 util/timeseries/ classes. Provides 7 TimeSeries
 types for loading parameter values that vary over time, with a factory
 function for auto-detection from config keys.
 
-Java reference: osmose-master/java/src/main/java/fr/ird/osmose/util/timeseries/
+Java reference: fr/ird/osmose/util/timeseries/ in the OSMOSE 4.3.3 Java source
+(archived locally at ~/osmose-reference/osmose-master/).
 """
 
 from __future__ import annotations
