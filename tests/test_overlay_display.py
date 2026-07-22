@@ -17,9 +17,7 @@ import xarray as xr
 
 # EEC reference NetCDF files live in the archived upstream OSMOSE Java test
 # resources (moved out of the repo during the 2026-07 osmose-folder consolidation).
-_EEC_DIR = (
-    pathlib.Path.home() / "osmose-reference/osmose-master/java/src/test/resources/osmose-eec"
-)
+_EEC_DIR = pathlib.Path.home() / "osmose-reference/osmose-master/java/src/test/resources/osmose-eec"
 _EEC_LTL = _EEC_DIR / "eec_ltlbiomassTons.nc"
 _EEC_BG = _EEC_DIR / "eec_backgroundspecies_biomass.nc"
 _EEC_AVAILABLE = _EEC_LTL.exists() and _EEC_BG.exists()
