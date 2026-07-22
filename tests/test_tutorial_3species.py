@@ -25,7 +25,6 @@ change, update `docs/tutorials/30-minute-ecosystem.md` to match.
 from __future__ import annotations
 
 import ast
-import os
 import re
 import subprocess
 import sys
@@ -58,24 +57,25 @@ TUTORIAL_MD_PATH = (
 _EQ_WINDOW_START: float = 5.0
 _EQ_WINDOW_END: float = 25.0
 
-# Measured cascade thresholds (from smoke runs on data/baltic/ with seed=42,
-# 30 yr, perturbation sprat;0.4 -> sprat;0.05, window years 5-25):
-#   sprat:       0.994x  (barely changes; cod is a minor sprat predator)
-#   stickleback: 1.133x  (rises as cod predation pressure decreases)
-# Thresholds are set conservatively below/above the measured values so they
-# catch genuine regressions but are not brittle to small RNG variation.
+# Cascade thresholds. The perturbation (drop cod->sprat accessibility 0.4 -> 0.05)
+# lowers cod predation pressure on stickleback. Only the QUALITATIVE, environment-
+# robust claims are asserted here:
+#   - stickleback stays the same order of magnitude (does not crash or explode)
+#   - sprat barely moves (cod is a minor sprat predator)
+#   - the biomass pyramid ordering sprat > stickleback > cod survives (see the test)
 #
-# Interpretation: cascade direction is STICKLEBACK UP (not down as a
-# classical top-down cascade would predict), because Baltic cod is in a
-# bottom-up-controlled state where removing its sprat access starves cod
-# slightly, reducing cod's predation on stickleback.
-# The cascade magnitude/direction is thread-topology sensitive (same seed gives
-# stickleback ratio ~1.13 on an 8-core dev box but ~0.99 on a 2-core CI runner), so
-# the robust cross-environment claim is bounded: stickleback stays roughly stable
-# (does not crash or explode) and sprat barely moves. A tight ">= 1.02 UP" direction
-# does not hold across runner core counts.
-_CASCADE_STICKLEBACK_MIN_RATIO: float = 0.92  # stickleback does not crash
-_CASCADE_STICKLEBACK_MAX_RATIO: float = 1.30  # ...nor explode
+# The cascade MAGNITUDE is NOT reproducible across environments and must not be
+# asserted tightly: same code + same seed gives stickleback ratio ~0.99 (a 2-core
+# CI runner), ~1.13 (an 8-core dev box), and ~1.35 (an i9-10940X dev box). This is
+# NOT thread count and NOT the @njit mortality kernel: a within-machine Numba thread
+# sweep (N=1..28) and a re-run at the commit where the band was first pinned
+# (94106a7) each reproduce a given machine's value bit-for-bit, and forcing Numba to
+# a generic SSE2 target reproduces the host AVX-512 value exactly. The spread is the
+# numerical library/CPU environment amplifying tiny FP differences over the 30-year
+# chaotic run — bit-reproducibility across machines is not achievable, so assert the
+# signal, not the number. (Earlier "thread-topology sensitive" comments were wrong.)
+_CASCADE_STICKLEBACK_MIN_RATIO: float = 0.5  # does not crash (within ~2x down)
+_CASCADE_STICKLEBACK_MAX_RATIO: float = 2.0  # ...nor explode (within ~2x up)
 _CASCADE_SPRAT_MAX_DELTA: float = 0.10  # |mean(Sp_pert)/mean(Sp_base) - 1| <= this
 
 # Equilibrium bands per focal species. Measured from equilibrium window
@@ -85,12 +85,14 @@ _CASCADE_SPRAT_MAX_DELTA: float = 0.10  # |mean(Sp_pert)/mean(Sp_base) - 1| <= t
 # prior equilibrium (sprat/stickleback barely move). The fix mechanism was
 # Java-validated on EEC (14 species within 0.807-1.724x of the 4.3.3 engine).
 # Re-measure if build_config values or engine version change.
-# NOTE: bands are intentionally generous. These emergent equilibria depend on the
-# FP reduction order of the parallel @njit mortality kernel, which varies with the
-# runner's core count — the same seed gives cod ~1.6e3 on an 8-core dev box but
-# ~2.0e3 on a 2-core CI runner. The load-bearing assertion is the pyramid ORDERING
-# (sprat > stickleback > cod); these bands are a coarse order-of-magnitude guard, so
-# they span the observed cross-topology range rather than a tight ±20%.
+# NOTE: bands are intentionally generous. These emergent equilibria are numerically
+# non-reproducible across environments — identical code+seed gives cod ~1.6e3 on some
+# machines and ~2.0e3 on others (a 2-core CI runner). The spread is the library/CPU
+# environment amplifying tiny FP differences over the 30-year chaotic run, NOT thread
+# count and NOT the @njit mortality kernel (both proven invariant here; see the cascade
+# constants above). The load-bearing assertion is the pyramid ORDERING (sprat >
+# stickleback > cod); these bands are a coarse order-of-magnitude guard spanning the
+# observed range.
 _PYRAMID_BOUNDS: dict[str, tuple[float, float]] = {
     "cod": (1.000e03, 2.400e03),
     "sprat": (3.500e06, 7.500e06),
@@ -219,27 +221,17 @@ def test_biomass_pyramid_emerges(baseline_run: pd.DataFrame) -> None:
 
 
 # === Assertion #3: trophic cascade visible under perturbation ===
-@pytest.mark.skipif(
-    os.environ.get("CI") == "true",
-    reason="The stickleback cascade ratio is numerically non-reproducible across CI runner "
-    "core counts (measured 0.99 on one runner, 1.35 on another, 1.13 on an 8-core dev box) — "
-    "the emergent equilibrium depends on the parallel mortality kernel's FP reduction order. "
-    "Kept as a local behavioral check; the pyramid-ordering test covers the robust signal.",
-)
 def test_trophic_cascade_visible(baseline_run: pd.DataFrame, perturbed_run: pd.DataFrame) -> None:
-    """Two layers: (a) direction of change — stickleback UP when cod-sprat acc drops;
-    (b) magnitude — stickleback ratio >= 1.02, sprat ratio within ±10% of 1.0.
+    """Environment-robust cascade signal (the magnitude is NOT reproducible — see
+    the constants above for why: it varies ~0.99/1.13/1.35 across machines for
+    identical code+seed, and that spread is library/CPU, not thread count).
 
-    Baltic cascade mechanics (measured from smoke runs):
-      Reducing cod-sprat accessibility starves cod slightly (less food) which
-      reduces cod biomass, lowering predation pressure on stickleback.
-      Result: stickleback UP ~7-13%, sprat essentially unchanged (<2%).
-      This bottom-up-controlled cascade is the ecologically realistic signal
-      for a Baltic Sea in an overfished state.
-
-    Pre-pinned thresholds from smoke run measurements (years 5-25, seed=42):
-      stickleback ratio: 1.133x measured → threshold 1.02 (conservative)
-      sprat ratio: 0.994x measured → |delta| <= 0.10 (sprat barely moves)
+    Dropping cod's accessibility to sprat lowers cod predation on stickleback. The
+    load-bearing, cross-environment claims are qualitative:
+      (a) stickleback stays the same order of magnitude (does not crash or explode),
+      (b) sprat barely moves (cod is a minor sprat predator),
+      (c) the biomass pyramid ordering sprat > stickleback > cod survives the
+          perturbation (the structural signal).
     """
     base = _equilibrium_means(baseline_run)
     pert = _equilibrium_means(perturbed_run)
@@ -247,21 +239,30 @@ def test_trophic_cascade_visible(baseline_run: pd.DataFrame, perturbed_run: pd.D
     stickleback_ratio = pert["stickleback"] / base["stickleback"]
     sprat_ratio = pert["sprat"] / base["sprat"]
 
-    # Layer (a): stickleback stays roughly stable (cross-topology robust band; the
-    # tight "UP" direction is thread-count sensitive — see the constants above).
+    # (a) stickleback stays within an order of magnitude — does not crash or explode.
+    # NOT a magnitude claim: the exact ratio is environment-specific and unpinnable.
     assert _CASCADE_STICKLEBACK_MIN_RATIO <= stickleback_ratio <= _CASCADE_STICKLEBACK_MAX_RATIO, (
         f"Stickleback perturbed/baseline = {stickleback_ratio:.3f}; expected within "
-        f"[{_CASCADE_STICKLEBACK_MIN_RATIO}, {_CASCADE_STICKLEBACK_MAX_RATIO}]. "
-        f"base={base['stickleback']:.3e}, pert={pert['stickleback']:.3e}"
+        f"[{_CASCADE_STICKLEBACK_MIN_RATIO}, {_CASCADE_STICKLEBACK_MAX_RATIO}] "
+        f"(order-of-magnitude guard). base={base['stickleback']:.3e}, pert={pert['stickleback']:.3e}"
     )
 
-    # Layer (a): sprat signal is near zero (cod is a minor sprat predator).
+    # (b) sprat signal is near zero (cod is a minor sprat predator).
     sprat_delta = abs(sprat_ratio - 1.0)
     assert sprat_delta <= _CASCADE_SPRAT_MAX_DELTA, (
         f"Sprat perturbed/baseline = {sprat_ratio:.3f} (|delta|={sprat_delta:.3f}); "
         f"expected |delta| <= {_CASCADE_SPRAT_MAX_DELTA} (sprat should barely change). "
         f"base={base['sprat']:.3e}, pert={pert['sprat']:.3e}"
     )
+
+    # (c) the perturbation does not invert the biomass pyramid in either run — the
+    # structural, environment-robust signal (ordering holds by orders of magnitude).
+    for label, means in (("baseline", base), ("perturbed", pert)):
+        assert means["sprat"] > means["stickleback"] > means["cod"], (
+            f"Pyramid ordering sprat > stickleback > cod broken in {label} run: "
+            f"sprat={means['sprat']:.3e}, stickleback={means['stickleback']:.3e}, "
+            f"cod={means['cod']:.3e}"
+        )
 
 
 # === Assertion #4: the tutorial's markdown code block parses + runs ===
