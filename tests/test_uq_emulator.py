@@ -87,3 +87,33 @@ def test_without_coscaling_length_scales_drift(design):
     ls1 = _raw_fit(Y, alpha)  # raw alpha, no co-scaling
     ls2 = _raw_fit(c * Y, (c**2) * alpha)  # raw alpha at rescaled Y
     assert not np.allclose(ls1, ls2, rtol=1e-2)
+
+
+def test_cross_validate_returns_per_fold_variances(design):
+    X, Y, alpha = design
+    cv = GPEmulator(n_restarts_optimizer=0).cross_validate(X, Y, alpha, k_folds=5, seed=0)
+    n = len(X)
+    assert cv["y_true"].shape == (n,)
+    assert cv["y_pred"].shape == (n,)
+    assert cv["pred_var"].shape == (n,)
+    assert np.all(cv["pred_var"] >= 0.0)
+    assert len(cv["fold_rmse"]) == 5
+    assert len(cv["fold_r2"]) == 5
+    assert isinstance(cv["mean_rmse"], float)
+    assert isinstance(cv["mean_r2"], float)
+    # A smooth low-noise target should cross-validate well.
+    assert cv["mean_r2"] > 0.8
+
+
+def test_cross_validate_accepts_scalar_alpha(design):
+    X, Y, _ = design
+    cv = GPEmulator(n_restarts_optimizer=0).cross_validate(X, Y, 1e-3, k_folds=4, seed=1)
+    assert cv["pred_var"].shape == (len(X),)
+
+
+def test_cross_validate_too_few_samples_raises():
+    X = np.zeros((3, 2))
+    Y = np.zeros(3)
+    alpha = np.full(3, 1e-3)
+    with pytest.raises(ValueError, match="k_folds"):
+        GPEmulator().cross_validate(X, Y, alpha, k_folds=5)

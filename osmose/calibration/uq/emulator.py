@@ -11,6 +11,7 @@ from __future__ import annotations
 import numpy as np
 from sklearn.gaussian_process import GaussianProcessRegressor  # type: ignore[import-untyped]
 from sklearn.gaussian_process.kernels import Matern  # type: ignore[import-untyped]
+from sklearn.model_selection import KFold  # type: ignore[import-untyped]
 
 
 class GPEmulator:
@@ -65,3 +66,58 @@ class GPEmulator:
             raise RuntimeError("Must call fit() before predict()")
         mean, std = self.gp.predict(np.asarray(X, dtype=float), return_std=True)
         return mean, std**2
+
+    def cross_validate(
+        self,
+        X: np.ndarray,
+        Y: np.ndarray,
+        alpha: np.ndarray | float,
+        k_folds: int = 5,
+        seed: int = 42,
+    ) -> dict:
+        """K-fold CV returning per-fold predictive variances for the Phase 1 gate.
+
+        Fits a fresh emulator per fold and predicts on the held-out points.
+        Returns ``y_true``/``y_pred``/``pred_var`` (each concatenated in fold
+        order, not input order) plus per-fold and mean RMSE/R². ``pred_var`` is
+        the latent predictive variance; the gate adds held-out seed-mean noise.
+        Raises ``ValueError`` if ``len(X) < k_folds``.
+        """
+        X = np.asarray(X, dtype=float)
+        Y = np.asarray(Y, dtype=float).ravel()
+        alpha_arr = np.asarray(alpha, dtype=float)
+        if alpha_arr.ndim == 0:
+            alpha_arr = np.full(Y.shape[0], float(alpha_arr))
+        if len(X) < k_folds:
+            raise ValueError(f"Need at least k_folds={k_folds} samples, got {len(X)}")
+
+        kf = KFold(n_splits=k_folds, shuffle=True, random_state=seed)
+        y_true: list[np.ndarray] = []
+        y_pred: list[np.ndarray] = []
+        pred_var: list[np.ndarray] = []
+        fold_rmse: list[float] = []
+        fold_r2: list[float] = []
+
+        for train_idx, test_idx in kf.split(X):
+            fold = GPEmulator(self._n_restarts_optimizer, self._random_state)
+            fold.fit(X[train_idx], Y[train_idx], alpha_arr[train_idx])
+            mean, var = fold.predict(X[test_idx])
+            truth = Y[test_idx]
+
+            y_true.append(truth)
+            y_pred.append(mean)
+            pred_var.append(var)
+            fold_rmse.append(float(np.sqrt(np.mean((truth - mean) ** 2))))
+            ss_res = float(np.sum((truth - mean) ** 2))
+            ss_tot = float(np.sum((truth - np.mean(truth)) ** 2))
+            fold_r2.append(1.0 - ss_res / ss_tot if ss_tot > 0.0 else 0.0)
+
+        return {
+            "y_true": np.concatenate(y_true),
+            "y_pred": np.concatenate(y_pred),
+            "pred_var": np.concatenate(pred_var),
+            "fold_rmse": fold_rmse,
+            "fold_r2": fold_r2,
+            "mean_rmse": float(np.mean(fold_rmse)),
+            "mean_r2": float(np.mean(fold_r2)),
+        }
