@@ -1,0 +1,114 @@
+# osmopy — Proposed GitHub Issues (from literature alerts)
+
+Ready-to-paste issue drafts. Not created on GitHub — review and open manually.
+
+---
+
+## [High] Refresh Baltic ICES SAG/WGBAST snapshots and re-validate
+
+**Source:** ICES WGBAST 2026 cycle / ICES SAG. https://ices-library.figshare.com/articles/report/Baltic_Salmon_and_Trout_Assessment_Working_Group_WGBAST_/29118545
+**Alert:** 2026-06-22
+
+**Motivation.** The Baltic example cross-validates F and biomass against the 2024 ICES advice cycle (`docs/baltic_ices_validation_2026-04-18.md`). As new WGBAST/SAG cycles land, calibration targets drift. The repo already has the ingest path (`data/baltic/reference/ices_snapshots/README.md`) and a validator — this is a recurring data-freshness task.
+
+**Proposal.**
+- Pull the latest ICES SAG snapshots via the documented refresh workflow.
+- Re-run `scripts/validate_baltic_vs_ices_sag.py --report` and `pytest tests/test_baltic_ices_validation.py`.
+- Record any envelope changes; note unit-label quirks the validator already guards against (ICES API SSB-unit mislabels detected via Blim magnitude).
+
+**Acceptance criteria.**
+- Updated snapshots committed with provenance.
+- Validation report regenerated; deltas vs previous cycle summarized.
+- Tests green.
+
+**Effort:** quick–moderate. **Labels:** data, calibration, baltic, validation.
+
+---
+
+## [Medium] Optional fish-mediated carbon-flux diagnostic in output.py
+
+**Source:** Silvar-Viladomiu, Cavan, Martin et al., *Estimating the contribution of the Irish Sea fish community to carbon sink potential*, ICES J. Marine Science (2026). https://doi.org/10.1093/icesjms/fsag095
+**Alert:** 2026-06-22
+
+**Motivation.** OSMOSE outputs biomass/diet/mortality but no carbon-export term. The Irish Sea EwE+biogeochemistry study shows faecal-pellet carbon dominates fish-mediated flux — a tractable optional diagnostic for blue-carbon/ecosystem-service framings of the Baltic config.
+
+**Proposal.** Add an opt-in per-step diagnostic computing fish-mediated carbon flux from biomass × consumption/egestion coefficients (per-species, configurable), written alongside existing CSV/NetCDF outputs.
+
+**Effort:** moderate. **Labels:** enhancement, output, ecosystem-services.
+
+---
+
+## [High] Ingest May-2026 ICES Baltic advice cycle (advice for 2027) and re-validate
+
+**Source:** ICES Advice 2026 cycle — Baltic fishing opportunities for 2027 (released late May 2026). Headline summaries: ~+74% TAC for central Baltic herring and ~+32% for sprat for 2027 on stronger recruitment estimates; western Baltic cod and herring remain zero/severe decline. FishSec overview: https://www.fishsec.org/2025/05/28/overview-ices-advice-on-baltic-sea-fishing-opportunities/ · ICES Advice collections: https://ices-library.figshare.com/
+**Alert:** 2026-06-22
+
+**Motivation.** The Baltic example cross-validates F and biomass/SSB against an earlier ICES advice cycle (`docs/baltic_ices_validation_*.md`). The new cycle materially revises clupeid targets (central herring and sprat up sharply), so existing calibration targets and the validation envelope are now stale. The repo already has the ingest path (`data/baltic/reference/ices_snapshots/`) and a validator.
+
+**Proposal.**
+- Confirm the exact 2027 advice values and SSB/F series against the ICES Advice 2026 figshare collection (do not rely on press summaries for the committed numbers).
+- Refresh `data/baltic/reference/ices_snapshots/` via the documented workflow; update cod/herring/sprat calibration targets.
+- Re-run `scripts/validate_baltic_vs_ices_sag.py --report` and `pytest tests/test_baltic_ices_validation.py`.
+- Summarize deltas vs the previous cycle, highlighting the central-herring/sprat upward revision and continued cod zero-catch.
+
+**Acceptance criteria.**
+- Updated snapshots committed with provenance (ICES Advice 2026 DOIs/links).
+- Validation report regenerated; per-stock deltas vs previous cycle documented.
+- Tests green; unit-label quirks (ICES API SSB mislabels) still guarded.
+
+**Effort:** quick–moderate. **Labels:** data, calibration, baltic, validation.
+
+---
+
+## [High] Add WGSAM SMS cod-predation-mortality (M) as a Baltic predation validation target
+
+**Source:** ICES WGSAM updated Baltic Sea SMS multispecies key-run (WGSAM, Oct 2025) — provides updated cod predation-mortality (M) time series for Baltic sprat and central herring used as natural-mortality input to single-species assessments. https://www.ices.dk/community/groups/pages/wgsam.aspx · Key-run review criteria: https://ices-eg.github.io/wg_WGSAM/ReviewCriteria.html
+**Alert:** 2026-06-22
+
+**Motivation.** The Baltic example currently cross-validates against ICES SAG SSB and F only. OSMOSE produces mortality-by-cause (incl. predation mortality) per species, so the WGSAM SMS predation-M series for sprat and central herring is a directly comparable, multispecies-specific benchmark — a stronger test of the `predation`/`mortality` engine than SSB/F envelopes alone, and exactly the kind of cross-model skill check the "decade of mizer" review (Ecological Modelling 2025/2026) calls for.
+
+**Proposal.**
+- Add the WGSAM SMS M series (sprat, central herring) to `data/baltic/reference/ices_snapshots/` with provenance (confirm exact values from the WGSAM 2025 report, not press summaries).
+- Extend `scripts/validate_baltic_vs_ices_sag.py` with an optional comparison of osmopy emergent predation-M-by-cause against the SMS M series; report deltas in the validation report.
+- Optionally adopt the WGSAM key-run review criteria as a `docs/` QA checklist.
+
+**Acceptance criteria.**
+- SMS M series committed with provenance.
+- Validator emits a predation-M comparison (per-stock deltas) alongside the existing SSB/F checks.
+- `pytest tests/test_baltic_ices_validation.py` green.
+
+**Effort:** moderate. **Labels:** data, calibration, baltic, validation, predation.
+
+---
+
+## [High] Sync osmopy to OSMOSE 4.4.x (Java-parity audit & staged port)
+
+**Source:** OSMOSE core releases v4.4.0 (2026-05-21) and v4.4.1 (2026-06-18). https://github.com/osmose-model/osmose/releases/tag/v4.4.0 · https://github.com/osmose-model/osmose/releases/tag/v4.4.1
+**Alert:** 2026-06-30
+
+**Motivation.** osmopy advertises Java-parity against OSMOSE 4.3.3. Upstream has since shipped two minor releases with **breaking** changes across almost every engine process and the output layer, so the parity claim is now stale. Closing the gap keeps osmopy a faithful port and unlocks new biological capabilities directly relevant to the Baltic config.
+
+**Key upstream changes to mirror (from the 4.4.0 release notes):**
+- **Mortality:** now region-aware — `nDead`/`ageDeath` are 2-D `[region][cause]`; `incrementNdead()` requires a timestep argument.
+- **Fishing/discards:** tracked in **numbers** (abundance) not biomass; `fishedBiomass→fishedAbundance`, `fishedBy()→fishedNBy()`, biomass derived on demand.
+- **Reproduction:** new stochastic maturity ogive (`species.maturity.l50/l75`, normal-CDF maturation) and post-reproduction mortality (`species.reproduction.strategy = iteroparous|semelparous`, `postspawning.survivaltime`).
+- **Bioenergetics:** simplified data-poor mode (`species.bioenergetics.model = full|simple`; `species.temperature.tmin/topt/tmax`); spherical egg-size model (`species.egg.density`).
+- **Movement:** gradient-based movement; NetCDF-map background distributions.
+- **Predation on LTL:** log-form `computePercent` option (`simulation.resources.computePercent.legacy`).
+- **Reproducibility:** deterministic RNG (`simulation.fixed.seed.enabled`).
+- **Config migration:** module toggles renamed (`module.bioenergetics.enabled`, `module.genetics.enabled`, `module.multispecies.fisheries.enabled`, `module.bioeconomics.enabled`), restart keys → `simulation.restart.*`, de-`bioen`-prefixed maturity/ingestion keys.
+- **Output:** background species always included; NetCDF chunking default changed to standard NetCDF-4 strategy.
+- **4.4.1 follow-ups:** corrected resource-forcing parameter names (`species.biomass.constant.spX`, `species.biomass.file.sp`); new debug params `simulation.kill.if.no.school.enabled`, `species.is.enabled.spX`.
+
+**Proposal.** Stage the port rather than one big-bang:
+1. Write a `docs/` parity note enumerating each 4.4.0/4.4.1 change vs the osmopy implementation, marking done / TODO / N-A.
+2. Phase 1 (low-risk, high-value): adopt `fixed.seed` deterministic mode for the test suite; align resource-forcing parameter names; add `species.is.enabled` / kill-on-collapse debug toggles.
+3. Phase 2 (process parity): region+timestep-aware mortality; abundance-primary fishing/discards; stochastic maturity ogive + post-reproduction mortality.
+4. Phase 3 (extensions): simplified bioenergetics + temperature, gradient movement, log `computePercent`, config-key compatibility shim.
+
+**Acceptance criteria.**
+- `docs/osmose_4.4_parity.md` committed with per-change status.
+- Phase 1 merged; deterministic test mode green.
+- Mortality and fishing outputs reviewed for 4.4.x shape; ICES-SAG validation still passes after changes.
+
+**Effort:** large (stage in phases). **Labels:** parity, upstream-sync, engine, reproduction, mortality, fishing, output.

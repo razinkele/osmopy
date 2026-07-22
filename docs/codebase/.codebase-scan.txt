@@ -1,0 +1,296 @@
+
+=== DIRECTORY TREE (max depth 3, source files only) ===
+.claude
+.claude/settings.local.json
+.github
+.github/copilot-instructions.md
+.github/skills
+.github/skills/acquire-codebase-knowledge
+.github/skills/acquire-codebase-knowledge/SKILL.md
+.github/skills/acquire-codebase-knowledge/assets
+.github/skills/acquire-codebase-knowledge/references
+.github/skills/acquire-codebase-knowledge/scripts
+.github/skills/python-numerical-debugging
+.github/skills/python-numerical-debugging/SKILL.md
+.github/skills/python-numerical-debugging/scripts
+.github/skills/scientific-validation
+.github/skills/scientific-validation/SKILL.md
+.playwright-mcp
+.playwright-mcp/console-2026-02-21T19-04-52-199Z.log
+.playwright-mcp/console-2026-02-21T19-40-35-234Z.log
+.playwright-mcp/console-2026-02-22T18-22-41-090Z.log
+.playwright-mcp/console-2026-02-22T18-23-58-698Z.log
+.playwright-mcp/console-2026-02-22T18-31-04-608Z.log
+.playwright-mcp/console-2026-02-22T19-07-49-159Z.log
+.playwright-mcp/console-2026-02-22T19-09-32-893Z.log
+.playwright-mcp/console-2026-02-22T20-51-03-278Z.log
+.playwright-mcp/console-2026-02-22T20-56-44-386Z.log
+.playwright-mcp/console-2026-02-22T20-59-46-727Z.log
+.playwright-mcp/console-2026-02-23T08-04-26-342Z.log
+.playwright-mcp/console-2026-02-23T08-07-46-860Z.log
+.playwright-mcp/console-2026-02-23T08-14-40-464Z.log
+.playwright-mcp/console-2026-02-23T08-49-29-774Z.log
+.playwright-mcp/console-2026-02-23T08-51-46-306Z.log
+.playwright-mcp/console-2026-02-23T08-55-12-738Z.log
+.playwright-mcp/console-2026-02-23T08-56-36-456Z.log
+.playwright-mcp/console-2026-02-23T09-00-15-502Z.log
+.playwright-mcp/console-2026-02-23T09-09-16-808Z.log
+.playwright-mcp/console-2026-02-23T09-11-56-804Z.log
+.playwright-mcp/console-2026-02-23T09-15-30-508Z.log
+.playwright-mcp/console-2026-03-12T09-17-13-900Z.log
+.playwright-mcp/console-2026-03-12T09-37-49-043Z.log
+.playwright-mcp/console-2026-03-12T09-39-31-286Z.log
+.playwright-mcp/console-2026-03-12T09-40-13-814Z.log
+.playwright-mcp/console-2026-03-12T09-47-22-595Z.log
+.playwright-mcp/console-2026-03-12T09-50-09-554Z.log
+.playwright-mcp/console-2026-03-12T10-35-59-137Z.log
+.playwright-mcp/console-2026-03-12T10-40-22-324Z.log
+.playwright-mcp/console-2026-03-12T10-41-30-096Z.log
+.playwright-mcp/console-2026-03-12T10-42-52-268Z.log
+.playwright-mcp/console-2026-03-12T10-44-29-279Z.log
+.playwright-mcp/console-2026-03-12T10-46-18-322Z.log
+.playwright-mcp/console-2026-03-12T10-47-54-395Z.log
+.playwright-mcp/console-2026-03-12T10-50-14-342Z.log
+.playwright-mcp/console-2026-03-12T10-52-07-928Z.log
+.playwright-mcp/console-2026-03-12T10-54-23-576Z.log
+.playwright-mcp/console-2026-03-12T10-55-37-958Z.log
+.playwright-mcp/console-2026-03-12T10-57-20-392Z.log
+.playwright-mcp/console-2026-03-12T11-03-03-515Z.log
+.playwright-mcp/console-2026-03-12T11-10-43-267Z.log
+.playwright-mcp/console-2026-03-14T18-00-36-236Z.log
+.playwright-mcp/console-2026-03-14T18-07-39-027Z.log
+.playwright-mcp/console-2026-03-14T18-11-02-544Z.log
+.playwright-mcp/console-2026-03-14T18-12-11-622Z.log
+.playwright-mcp/console-2026-03-14T18-13-57-211Z.log
+.playwright-mcp/console-2026-03-14T18-59-27-621Z.log
+.playwright-mcp/console-2026-03-14T19-10-18-043Z.log
+.playwright-mcp/console-2026-03-14T19-14-01-169Z.log
+.playwright-mcp/console-2026-03-14T19-15-41-290Z.log
+.playwright-mcp/console-2026-03-14T19-17-34-151Z.log
+.playwright-mcp/console-2026-03-14T20-41-03-930Z.log
+.playwright-mcp/console-2026-03-14T20-44-30-741Z.log
+.playwright-mcp/console-2026-03-14T20-58-17-665Z.log
+.playwright-mcp/console-2026-03-14T21-01-11-893Z.log
+.playwright-mcp/console-2026-03-14T21-03-21-714Z.log
+.playwright-mcp/console-2026-03-14T21-35-43-314Z.log
+.playwright-mcp/console-2026-03-14T21-40-18-726Z.log
+.playwright-mcp/console-2026-03-14T21-41-50-876Z.log
+.playwright-mcp/console-2026-03-14T21-43-43-132Z.log
+.playwright-mcp/console-2026-03-14T21-44-49-187Z.log
+.playwright-mcp/console-2026-03-14T21-45-55-421Z.log
+.playwright-mcp/console-2026-03-14T21-48-39-990Z.log
+.playwright-mcp/console-2026-03-14T22-20-30-709Z.log
+.playwright-mcp/console-2026-03-14T22-22-34-501Z.log
+.playwright-mcp/console-2026-03-14T22-24-29-684Z.log
+.playwright-mcp/console-2026-03-14T22-31-37-009Z.log
+.playwright-mcp/console-2026-03-14T22-32-56-962Z.log
+.playwright-mcp/console-2026-03-14T22-41-48-984Z.log
+.playwright-mcp/console-2026-03-14T22-42-41-901Z.log
+.playwright-mcp/console-2026-03-14T22-55-08-477Z.log
+.playwright-mcp/console-2026-03-14T23-06-16-616Z.log
+.playwright-mcp/console-2026-04-15T11-30-38-736Z.log
+.playwright-mcp/console-2026-04-15T11-31-45-206Z.log
+.playwright-mcp/console-2026-04-15T13-49-21-791Z.log
+.playwright-mcp/console-2026-04-15T16-42-40-187Z.log
+.playwright-mcp/console-2026-04-16T18-11-32-438Z.log
+.playwright-mcp/page-2026-02-22T18-22-48-947Z.png
+.playwright-mcp/page-2026-04-15T13-49-22-097Z.yml
+.playwright-mcp/page-2026-04-16T18-11-33-227Z.yml
+.playwright-mcp/page-2026-04-16T18-12-20-109Z.yml
+.playwright-mcp/page-2026-04-16T18-13-04-186Z.yml
+.playwright-mcp/page-2026-04-16T18-13-18-141Z.yml
+.playwright-mcp/page-2026-04-16T18-13-31-194Z.yml
+.playwright-mcp/page-2026-04-16T18-13-38-803Z.yml
+.playwright-mcp/setup-detail.yml
+.pytest_cache
+.pytest_cache/.gitignore
+.pytest_cache/CACHEDIR.TAG
+.pytest_cache/README.md
+.pytest_cache/v
+.pytest_cache/v/cache
+.pytest_cache/v/cache/nodeids
+.remember
+.remember/logs
+.remember/logs/autonomous
+.remember/logs/autonomous/save-000035.log
+.remember/logs/autonomous/save-000043.log
+.remember/logs/autonomous/save-000047.log
+.remember/logs/autonomous/save-000052.log
+.remember/logs/autonomous/save-000053.log
+.remember/logs/autonomous/save-000057.log
+.remember/logs/autonomous/save-000102.log
+.remember/logs/autonomous/save-000106.log
+.remember/logs/autonomous/save-000109.log
+.remember/logs/autonomous/save-000111.log
+.remember/logs/autonomous/save-000117.log
+.remember/logs/autonomous/save-000123.log
+.remember/logs/autonomous/save-000126.log
+.remember/logs/autonomous/save-000128.log
+.remember/logs/autonomous/save-000131.log
+.remember/logs/autonomous/save-000132.log
+.remember/logs/autonomous/save-000135.log
+.remember/logs/autonomous/save-000138.log
+.remember/logs/autonomous/save-000139.log
+.remember/logs/autonomous/save-000140.log
+.remember/logs/autonomous/save-000141.log
+.remember/logs/autonomous/save-000144.log
+.remember/logs/autonomous/save-000147.log
+.remember/logs/autonomous/save-000150.log
+.remember/logs/autonomous/save-000155.log
+.remember/logs/autonomous/save-000157.log
+.remember/logs/autonomous/save-000159.log
+.remember/logs/autonomous/save-000200.log
+.remember/logs/autonomous/save-000202.log
+.remember/logs/autonomous/save-000207.log
+.remember/logs/autonomous/save-000211.log
+.remember/logs/autonomous/save-000222.log
+.remember/logs/autonomous/save-000243.log
+.remember/logs/autonomous/save-000244.log
+.remember/logs/autonomous/save-000249.log
+.remember/logs/autonomous/save-000255.log
+.remember/logs/autonomous/save-000256.log
+.remember/logs/autonomous/save-000300.log
+.remember/logs/autonomous/save-000303.log
+.remember/logs/autonomous/save-000304.log
+.remember/logs/autonomous/save-000307.log
+.remember/logs/autonomous/save-000311.log
+.remember/logs/autonomous/save-000315.log
+.remember/logs/autonomous/save-000316.log
+.remember/logs/autonomous/save-000319.log
+.remember/logs/autonomous/save-000324.log
+.remember/logs/autonomous/save-000328.log
+.remember/logs/autonomous/save-000329.log
+.remember/logs/autonomous/save-000331.log
+.remember/logs/autonomous/save-000334.log
+.remember/logs/autonomous/save-000340.log
+.remember/logs/autonomous/save-000344.log
+.remember/logs/autonomous/save-000347.log
+.remember/logs/autonomous/save-000349.log
+.remember/logs/autonomous/save-000353.log
+.remember/logs/autonomous/save-000356.log
+.remember/logs/autonomous/save-000400.log
+.remember/logs/autonomous/save-000403.log
+.remember/logs/autonomous/save-000406.log
+.remember/logs/autonomous/save-000407.log
+.remember/logs/autonomous/save-000410.log
+.remember/logs/autonomous/save-000417.log
+.remember/logs/autonomous/save-000420.log
+.remember/logs/autonomous/save-000421.log
+.remember/logs/autonomous/save-000435.log
+.remember/logs/autonomous/save-000441.log
+.remember/logs/autonomous/save-000444.log
+.remember/logs/autonomous/save-000446.log
+.remember/logs/autonomous/save-000511.log
+.remember/logs/autonomous/save-000528.log
+.remember/logs/autonomous/save-000536.log
+.remember/logs/autonomous/save-000538.log
+.remember/logs/autonomous/save-000544.log
+.remember/logs/autonomous/save-000548.log
+.remember/logs/autonomous/save-000555.log
+.remember/logs/autonomous/save-000559.log
+.remember/logs/autonomous/save-000605.log
+.remember/logs/autonomous/save-000610.log
+.remember/logs/autonomous/save-000617.log
+.remember/logs/autonomous/save-000626.log
+.remember/logs/autonomous/save-000631.log
+.remember/logs/autonomous/save-000632.log
+.remember/logs/autonomous/save-000636.log
+.remember/logs/autonomous/save-000639.log
+.remember/logs/autonomous/save-000643.log
+.remember/logs/autonomous/save-000644.log
+.remember/logs/autonomous/save-000653.log
+.remember/logs/autonomous/save-000710.log
+
+=== STACK DETECTION (manifest files) ===
+No recognized manifest files found in project root.
+
+=== ENTRY POINTS ===
+No common entry points found. Check 'main' or 'scripts.start' in manifest files above.
+
+=== LINTING AND FORMATTING CONFIG ===
+No linting or formatting config files found in project root.
+
+=== ENVIRONMENT VARIABLE TEMPLATES ===
+No .env.example or .env.template found. Identify required environment variables by searching the code and config for environment variable reads.
+
+=== TODO / FIXME / HACK (production code only, test dirs excluded) ===
+osmose-master/java/src/main/java/fr/ird/osmose/process/mortality/fishery/FisheryMapSet.java:154: // TODO Auto-generated catch block
+osmose-master/java/src/main/java/fr/ird/osmose/background/BackgroundSchool.java:217: // TODO Auto-generated method stub
+osmose-master/java/src/main/java/fr/ird/osmose/background/BackgroundSchool.java:223: // TODO Auto-generated method stub
+osmose-master/java/src/main/java/fr/ird/osmose/background/BackgroundSchool.java:229: // TODO Auto-generated method stub
+osmose-master/java/src/main/java/fr/ird/osmose/background/BackgroundSchool.java:235: // TODO Auto-generated method stub
+osmose-master/java/src/main/java/fr/ird/osmose/background/BackgroundSchool.java:241: // TODO Auto-generated method stub
+osmose-master/java/src/main/java/fr/ird/osmose/background/BackgroundSchool.java:247: // TODO Auto-generated method stub
+osmose-master/java/src/main/java/fr/ird/osmose/background/BackgroundSchool.java:253: // TODO Auto-generated method stub
+osmose-master/java/src/main/java/fr/ird/osmose/background/BackgroundSchool.java:259: // TODO Auto-generated method stub
+osmose-master/java/src/main/java/fr/ird/osmose/background/BackgroundSchool.java:265: // TODO Auto-generated method stub
+osmose-master/java/src/main/java/fr/ird/osmose/background/BackgroundSchool.java:271: // TODO Auto-generated method stub
+osmose-master/java/src/main/java/fr/ird/osmose/output/ModularSchoolSetSnapshot.java:291: // TODO Auto-generated method stub
+osmose-master/java/src/main/java/fr/ird/osmose/output/ModularSchoolSetSnapshot.java:297: // TODO Auto-generated method stub
+osmose-master/java/src/main/java/fr/ird/osmose/output/ModularSchoolSetSnapshot.java:303: // TODO Auto-generated method stub
+osmose-master/java/src/main/java/fr/ird/osmose/output/FishingPriceAccessBiomassOutput.java:85: // TODO Auto-generated method stub
+osmose-master/java/src/main/java/fr/ird/osmose/output/FishingAccessBiomassOutput.java:85: // TODO Auto-generated method stub
+osmose-master/java/src/main/java/fr/ird/osmose/output/FishingHarvestedBiomassDistribOutput.java:36: // TODO Auto-generated method stub
+osmose-master/java/src/main/java/fr/ird/osmose/output/FishingHarvestedBiomassDistribOutput.java:148: // TODO Auto-generated method stub
+.github/skills/acquire-codebase-knowledge/scripts/scan.py:28: TODO_LIMIT = 60
+.github/skills/acquire-codebase-knowledge/scripts/scan.py:291: """Search for TODO/FIXME/HACK comments."""
+.github/skills/acquire-codebase-knowledge/scripts/scan.py:291: """Search for TODO/FIXME/HACK comments."""
+.github/skills/acquire-codebase-knowledge/scripts/scan.py:291: """Search for TODO/FIXME/HACK comments."""
+.github/skills/acquire-codebase-knowledge/scripts/scan.py:293: patterns = ["TODO", "FIXME", "HACK"]
+.github/skills/acquire-codebase-knowledge/scripts/scan.py:293: patterns = ["TODO", "FIXME", "HACK"]
+.github/skills/acquire-codebase-knowledge/scripts/scan.py:293: patterns = ["TODO", "FIXME", "HACK"]
+.github/skills/acquire-codebase-knowledge/scripts/scan.py:320: return todos[:TODO_LIMIT]
+.github/skills/acquire-codebase-knowledge/scripts/scan.py:617: # TODOs
+.github/skills/acquire-codebase-knowledge/scripts/scan.py:620: print_section("TODO / FIXME / HACK (production code only, test dirs excluded)", todos, output_file)
+.github/skills/acquire-codebase-knowledge/scripts/scan.py:620: print_section("TODO / FIXME / HACK (production code only, test dirs excluded)", todos, output_file)
+.github/skills/acquire-codebase-knowledge/scripts/scan.py:620: print_section("TODO / FIXME / HACK (production code only, test dirs excluded)", todos, output_file)
+.github/skills/acquire-codebase-knowledge/scripts/scan.py:622: print_section("TODO / FIXME / HACK (production code only, test dirs excluded)", ["None found."], output_file)
+.github/skills/acquire-codebase-knowledge/scripts/scan.py:622: print_section("TODO / FIXME / HACK (production code only, test dirs excluded)", ["None found."], output_file)
+.github/skills/acquire-codebase-knowledge/scripts/scan.py:622: print_section("TODO / FIXME / HACK (production code only, test dirs excluded)", ["None found."], output_file)
+osmose-python/osmose/engine/output.py:303: # TODO(v0.7): Spatial bioen outputs — Java has SpatialEnetOutput, SpatialEnetOutputjuv,
+osmose-python/osmose/engine/output.py:359: # TODO(v0.7): Add size/age distribution outputs — see docs/parity-roadmap.md §5.3.
+osmose-python/osmose/engine/output.py:361: # TODO(v0.7): Add spatial biomass/abundance maps — see docs/parity-roadmap.md §5.4.
+
+=== GIT RECENT COMMITS (last 20) ===
+No commits found.
+
+=== HIGH-CHURN FILES (last 90 days, top 20) ===
+None found.
+
+=== MONOREPO SIGNALS ===
+No monorepo signals detected.
+
+=== CODE METRICS ===
+Total files scanned: 6841
+Total lines of code: 113133
+
+Files by language:
+  Other: 6294
+  Python: 319
+  Java: 228
+
+Top 10 largest files:
+osmose-python/data/cmems_cache/cmems_downloads/baltic_bgc_forecast_2024.nc: 2861885.1KB
+osmose-master/inst/java/lib.zip: 25391.6KB
+osmose-python/osmose-java/osmose_4.3.3-jar-with-dependencies.jar: 23620.9KB
+osmose-python/data/examples/ltl/roms_n2p2z2d2_biscay.nc: 5150.4KB
+osmose-python/data/eec_full/output/eec_yieldByFishery_Simu0.nc: 3914.6KB
+osmose-master/data-raw/gog.zip: 3821.0KB
+docs/Huangetal.-2025-Anecosystemmodellingapproachtoassesspotentialimpactsofoffshorewindfarms.pdf: 2918.5KB
+osmose-python/data/cmems_cache/baltic_ltl_biomass_synthetic_backup.nc: 2265.8KB
+osmose-python/data/cmems_cache/baltic_ltl_biomass_cmems_2024.nc: 2264.7KB
+osmose-python/data/baltic/baltic_ltl_biomass.nc: 2264.7KB
+
+=== CI/CD PIPELINES ===
+No CI/CD pipelines detected.
+
+=== CONTAINERS & ORCHESTRATION ===
+No containerization configs detected.
+
+=== SECURITY & COMPLIANCE ===
+No security configs detected.
+
+=== PERFORMANCE & TESTING ===
+No performance testing configs detected.
+
+=== SCAN COMPLETE ===
