@@ -492,7 +492,9 @@ Milestone: a `DynestySampler` that draws the posterior from an injected `log_pos
 - **`run.py`** is the remaining integration: design → gate → `fit_emulators` → `sigma_seed_sq_by_key` (from the design's `alpha × n_seeds`) → `DynestySampler.sample` → a `UQResult` bundling posterior summaries + the gate reports + censoring counts. It is where real (or synthetic-engine) runs happen and where `target.weight`-not-in-posterior and the `lower<upper` target validation (Phase 2a watch-points) should surface to the user.
 - **`EmceeSampler`** drop-in (R̂/ESS/autocorr, `emcee` dep) — add only if a real posterior proves hard for nested sampling.
 - **Sampler-adequacy beyond ESS** — cross-run/independent-run posterior agreement (the spec's fuller envelope diagnostic). ESS + the dimension cap are the Phase 2b subset.
-- **`marginal_sd`/`correlation` use `np.cov`**, which needs ≥2 samples and non-degenerate weights — fine for real posteriors, but `run.py` should surface a clear error if a sampler returns a degenerate cloud.
+- **`marginal_sd`/`correlation` use `np.cov`**, which needs ≥2 samples and non-degenerate weights — fine for real posteriors, but `run.py` should surface a clear error if a sampler returns a degenerate cloud (`correlation()` divides by a zero marginal sd → nan/inf).
+- **Bound `run_nested` (from the Phase 2b whole-branch review).** `DynestySampler.sample` calls `run_nested(dlogz=self.dlogz)` with no `maxiter`/`maxcall`. Fine for the synthetic injected posteriors under test, but a pathological real posterior that never reaches `dlogz=0.5` would run unbounded — add `maxiter`/`maxcall` caps when `run.py` wires in real posteriors.
+- **`converged` is an ESS-adequacy flag only** (`ess >= ess_min`). `dlogz` is the `run_nested` stopping rule so it is always reached, and the flag carries no dlogz/mixing information — the name slightly over-promises. When `run.py` wraps this, either relabel it or fold in the dlogz-reached + boundary-pileup/local-emulator-variance diagnostics the spec's convergence gate lists, so the field matches what it certifies.
 
 ## Self-Review (completed during authoring)
 
