@@ -121,3 +121,24 @@ def test_marginal_coverage_target_outside_range_is_not_covered():
     ranges = _ranges({"cod_biomass_mean": (8.0, 10.0, 13.0)})
     target = BiomassTarget("cod", 20.0, 16.0, 24.0, reference_point_type="biomass")  # 20 > 13
     assert marginal_coverage(ranges, [target]) == {"cod_biomass_mean": False}
+
+
+def test_posterior_predictive_has_no_jensen_shift():
+    # Collapse the mixture to a single theta -> predictive is N(mu_emu, var +
+    # sigma_seed_sq). A large sigma_seed_sq makes a would-be Jensen shift
+    # (+0.5*sigma_seed_sq = 0.25) obvious; the median must sit at mu_emu (the
+    # geometric mean), NOT mu_emu + 0.5*sigma_seed_sq.
+    n = 500
+    theta0 = 0.4
+    samples = np.full((n, 1), theta0)
+    mu_emu = 5.0 * theta0  # _LinEmulator(slope=5.0) at theta0
+    r = posterior_predictive(
+        _result(samples, np.ones(n)),
+        {"k": _LinEmulator(var=1e-6)},
+        ["k"],
+        {"k": 0.5},
+        n_draws=20000,
+        seed=0,
+    )
+    median = r.log_ranges["k"][1]
+    assert abs(median - mu_emu) < 0.05  # ~mu_emu + 0.25 if a Jensen shift leaked in

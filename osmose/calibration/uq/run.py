@@ -33,7 +33,8 @@ class UQResult:
     ``status`` is one of ``"ok"`` (calibrated + converged), ``"gate_failed"``
     (design never calibrated -> no posterior), ``"sampled_not_converged"``
     (sampled but the convergence flag is False). ``sampler_result`` /
-    ``posterior_mean`` are ``None`` when the gate failed.
+    ``posterior_mean`` are ``None`` when the gate failed. ``predictive_ranges``
+    is ``None`` on the gate-failed path and when ``include_predictive=False``.
     """
 
     status: str
