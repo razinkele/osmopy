@@ -237,7 +237,10 @@ def make_engine_evaluator(
 
     ``n_workers > 1`` returns a batch-capable ``_ParallelEngineEvaluator`` that runs
     design points across a process pool (each worker rebuilds this serial evaluator
-    once); ``n_workers == 1`` returns the serial closure unchanged.
+    once); ``n_workers == 1`` returns the serial closure unchanged. The pool uses the
+    ``spawn`` start method, so a script that constructs a parallel evaluator MUST
+    guard its top-level code with ``if __name__ == "__main__":`` (else spawned
+    workers re-import and re-execute the entry module).
     """
     if n_workers > 1:
         factory = partial(

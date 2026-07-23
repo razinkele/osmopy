@@ -102,14 +102,67 @@ Design-point count is gate-driven (unknown a priori); rule-of-thumb ~15–25 pts
 + held-out coverage set: +30–50% runs. Phase 12/13 (27+ params) are **barred** by
 the `check_dimension` cap of 20 — the validation param set must be ≤20.
 
-**Open decisions (user's call — cost/scope):**
-1. Param set: Phase 1b (9, faster) vs Phase 1 (16, fuller). Rec: start 1b.
-2. `n_seeds`: 3 (calibrate_baltic validation default, ~3× cheaper) vs 10 (handoff).
-   Rec: 3–5 first.
-3. `nyear` = 40 (calibration default) + confirm near-stationarity (Phase 1
-   non-equilibrium watch-point). Verify the param box makes target biomass
-   interior-achievable before committing.
-4. Parallelize the design loop (process pool; points are embarrassingly parallel)
-   → hours instead of days. Engineering task; decide whether to build first.
-5. `k_by_type` = `{"biomass":1.0,"ssb":1.0,"catch":1.5}`; sweep biomass/ssb
-   k∈{1,1.5,2} against held-out coverage to pick the value landing coverage ≈ nominal.
+## Parallelization (DONE — merged 8b870a7)
+
+`run_design` now dispatches through `evaluator.evaluate_batch` when present;
+`make_engine_evaluator(n_workers>1)` returns a spawn-based process-pool evaluator,
+bit-identical to serial. 6 new tests. Measured: nyear=40 ≈ 53 s/run serial; the
+pool amortizes spawn+numba-JIT startup over the run. **Caller must guard scripts
+with `if __name__ == "__main__":`** (spawn re-imports the entry module).
+
+## Prerequisite 3 — box brackets the targets (FAIL — validation is NOT well-posed as scoped)
+
+Pre-launch probe (`scratchpad/prelaunch_check.py`): 9 Phase-1b params on the R18
+baseline box, nyear=40, driven targets, x0 + both box corners.
+
+| target | band (t) | x0 (R18) | all-low-mort | all-high-mort |
+|--------|----------|----------|--------------|---------------|
+| cod.ssb | 60k–250k | **≈0** | ≈0 | ≈0 |
+| herring.biomass | 0.8–3M | 18.9M (6×) | **0** | 0 |
+| sprat.biomass | 0.8–2.5M | 6.1M | **0** | 0 |
+| flounder.biomass | 20k–100k | **≈0** | ≈0 | ≈0 |
+| stickleback.biomass | 50k–500k | 3.85M | 3.9e7 | 0 |
+
+Two independent problems:
+1. **The box is garbage parameter space.** Centered on the R18 baseline the model
+   sits 6–8× above its own planktivore targets; cod/flounder extinct. Extinction
+   at *both* corners (all-low = competitive exclusion: stickleback 3.9e7 while
+   herring=sprat=0; all-high = over-mortality) ⇒ interaction-dominated, non-monotone
+   surface, pervasive censoring. A 9-D GP over this is what the gate is built to
+   **refuse**. `mortality` params only push biomass down, so cod/flounder targets
+   are unreachable from here regardless.
+2. **Even a *calibrated* Baltic config fits only 2/8 ICES envelopes.** Best
+   documented run (Shepherd, obj 2.1, `docs/baltic_shepherd_calibration_2026-05-30.md`):
+   herring + smelt in-range; cod ×10.9, sprat ×2.45, flounder ×5.42, stickleback
+   ×7.44, perch ×79.7, pikeperch ×167 — a spatial-resolution/aggregation limit, not
+   a calibration gap. There is **no** Baltic parameter regime where the model fits
+   the ICES bands well enough for an across-species "uncertainty around a fit".
+
+**Consequence:** launching `run_surrogate_bayes` on the R18 Phase-1b box → cod &
+flounder censor at every point → `gate_failed`, no posterior, after hours. Do not
+launch. Narrowing the R18 bounds to force a pass would *manufacture* the result.
+
+## Reframing options (AWAITING USER DIRECTION)
+
+- **A — Method validation via self-consistency (rec first).** Use a calibrated
+  config's OWN engine outputs as the "targets"; center the params in a tight box
+  around their calibrated values. Validates that the UQ layer recovers known params
+  with correct held-out coverage on REAL engine dynamics — without needing the model
+  to match ICES. Well-posed, low-censoring, the gate can certify.
+- **B — Data-realism validation on a better-fitting config.** EEC (14/14) or Bay of
+  Biscay (8/8) parity — the model fits observations far better, so an ICES/data-band
+  validation is well-posed there. Switch base config off Baltic.
+- **C — Narrow ICES validation to Baltic's fittable species** (herring; maybe smelt/
+  sprat), re-centered on the Shepherd-calibrated config with tight bounds. Limited to
+  1–3 targets and requires aligning the varied params to those species.
+- **D — Proceed on Baltic-R18 anyway** — expect `gate_failed`; informative-but-negative,
+  wastes hours. Not recommended.
+
+Once a framing is chosen: cheap ~15-min LHS censoring/gate probe at the settled
+center BEFORE the full run; confirm nyear=40 near-stationarity (last-10 vs
+prior-10-yr drift); then Phase B (held-out coverage + k-sweep, not yet built).
+
+### Carried-forward knobs (once framing settled)
+- `n_seeds` 3–5 first; `nyear`=40; `n_workers`≈12 (28 cores / 24 GB); gate n0≈40,
+  increment 20, n_max ~200; `k_by_type`={"biomass":1.0,"ssb":1.0,"catch":1.5}
+  with biomass/ssb k∈{1,1.5,2} swept against held-out coverage (Phase B).
