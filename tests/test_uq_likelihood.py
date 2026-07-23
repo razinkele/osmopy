@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import numpy as np
+from scipy.stats import norm
 
-from osmose.calibration.uq.likelihood import gaussian_log_biomass
+from osmose.calibration.uq.likelihood import (
+    _log_interval_prob,
+    band_faithful,
+    gaussian_log_biomass,
+)
 
 
 def test_gaussian_normalizer_integrates_to_one():
@@ -72,3 +77,61 @@ def test_gaussian_asymmetric_band_uses_correct_side():
         lt - 0.2, 0.0, target, lower, upper, sigma_seed_sq=0.0, sigma_disc_sq=0.0, k=1.0
     )
     assert over < under
+
+
+def test_band_faithful_high_inside_band():
+    # Prediction centered in the band with tiny variance -> P ~ 1 -> loglik ~ 0.
+    v = band_faithful(
+        np.log(100.0),
+        1e-4,
+        100.0,
+        80.0,
+        120.0,
+        sigma_seed_sq=0.0,
+        sigma_disc_sq=0.0,
+    )
+    assert v > -0.05
+
+
+def test_band_faithful_decays_and_stays_finite_far_outside():
+    inside = band_faithful(
+        np.log(100.0),
+        0.01,
+        100.0,
+        80.0,
+        120.0,
+        sigma_seed_sq=0.0,
+        sigma_disc_sq=0.0,
+    )
+    far = band_faithful(
+        np.log(1e6),
+        0.01,
+        100.0,
+        80.0,
+        120.0,
+        sigma_seed_sq=0.0,
+        sigma_disc_sq=0.0,
+    )
+    very_far = band_faithful(
+        np.log(1e-6),
+        0.01,
+        100.0,
+        80.0,
+        120.0,
+        sigma_seed_sq=0.0,
+        sigma_disc_sq=0.0,
+    )
+    assert far < inside
+    assert np.isfinite(far) and np.isfinite(very_far)
+
+
+def test_log_interval_prob_matches_naive_for_mild_case():
+    # Mild case (band around the center) where the naive difference is stable.
+    lo_z, hi_z = -1.0, 1.5
+    naive = np.log(norm.cdf(hi_z) - norm.cdf(lo_z))
+    assert abs(_log_interval_prob(lo_z, hi_z) - naive) < 1e-9
+
+
+def test_log_interval_prob_reflection_symmetry():
+    # log(Phi(b)-Phi(a)) == log(Phi(-a)-Phi(-b)) by symmetry of the normal.
+    assert abs(_log_interval_prob(2.0, 4.0) - _log_interval_prob(-4.0, -2.0)) < 1e-9

@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import math
 
+from scipy.special import log_ndtr  # type: ignore[import-untyped]
+
 _HALF_LOG_2_OVER_PI = 0.5 * math.log(2.0 / math.pi)
 _VAR_FLOOR = 1e-12
 
@@ -46,3 +48,42 @@ def gaussian_log_biomass(
     r = mu - ln_target
     var_side = var_lo if r <= 0.0 else var_hi
     return _HALF_LOG_2_OVER_PI - math.log(se_lo + se_hi) - 0.5 * r * r / var_side
+
+
+def _log_interval_prob(lo_z: float, hi_z: float) -> float:
+    """log(Phi(hi_z) - Phi(lo_z)) for lo_z < hi_z, stable in both tails.
+
+    Computing a difference of CDFs underflows to -inf far from the interval; using
+    log_ndtr with a reflection into the accurate left tail keeps it finite.
+    """
+    if lo_z + hi_z > 0.0:  # interval on the right -> reflect into the left tail
+        lo_z, hi_z = -hi_z, -lo_z
+    la = log_ndtr(lo_z)
+    lb = log_ndtr(hi_z)
+    return float(lb + math.log1p(-math.exp(la - lb)))
+
+
+def band_faithful(
+    mu_emu: float,
+    emulator_var: float,
+    target: float,
+    lower: float,
+    upper: float,
+    *,
+    sigma_seed_sq: float,
+    sigma_disc_sq: float,
+    k: float | None = None,
+) -> float:
+    """ABC tolerance kernel: log P(ln y in [ln lower, ln upper]) under the emulator's
+    Jensen-corrected predictive Gaussian.
+
+    ``k`` is accepted for signature-uniformity with ``gaussian_log_biomass`` and
+    ignored — BandFaithful scores the raw band, not a coverage multiple. Requires
+    ``lower < upper``. Prior-dominated (flat) wherever the prediction sits inside
+    the band; decays outside.
+    """
+    mu = mu_emu + 0.5 * sigma_seed_sq
+    se = math.sqrt(max(emulator_var + sigma_disc_sq, _VAR_FLOOR))
+    lo_z = (math.log(lower) - mu) / se
+    hi_z = (math.log(upper) - mu) / se
+    return _log_interval_prob(lo_z, hi_z)
