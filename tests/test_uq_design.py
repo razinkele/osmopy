@@ -147,6 +147,98 @@ def test_design_result_valid_filters_censored_rows():
     assert np.array_equal(av, np.array([0.1, 0.3]))
 
 
+# ---- parallel design loop (opt-in batch-capable evaluator) ----
+
+
+class _RecordingBatchEvaluator:
+    """In-process double exposing both the callable and batch protocol; records use."""
+
+    def __init__(self):
+        self.batch_calls = 0
+
+    def __call__(self, x, seed):
+        return {"cod_biomass_mean": 10.0}
+
+    def evaluate_batch(self, tasks):
+        self.batch_calls += 1
+        return [{"cod_biomass_mean": 10.0} for _ in tasks]
+
+
+def test_run_design_dispatches_via_evaluate_batch_when_present():
+    rec = _RecordingBatchEvaluator()
+    res = run_design(rec, _linear_fp(), ["cod_biomass_mean"], n_points=3, n_seeds=2, seed=0)
+    assert rec.batch_calls >= 1  # routed through the batch API, not the serial loop
+    assert not np.isnan(res.Y["cod_biomass_mean"]).any()
+
+
+def _analytic_factory():
+    """Picklable factory -> pure (x, seed) -> stats evaluator (no engine, real pool)."""
+
+    def ev(x, seed):
+        return {"cod_biomass_mean": float(np.exp(0.1 * (float(x[0]) + int(seed))))}
+
+    return ev
+
+
+def test_parallel_evaluator_batch_matches_serial_and_preserves_order():
+    from osmose.calibration.uq.design import _ParallelEngineEvaluator
+
+    tasks = [(i, np.array([0.1 * i]), i % 3) for i in range(6)]
+    par = _ParallelEngineEvaluator(_analytic_factory, n_workers=2)
+    try:
+        got = par.evaluate_batch(tasks)
+    finally:
+        par.close()
+    serial = _analytic_factory()
+    expected = [serial(x, s) for _, x, s in tasks]
+    assert got == expected  # values correct AND aligned to input task order
+
+
+def test_run_design_parallel_equals_serial():
+    from osmose.calibration.uq.design import _ParallelEngineEvaluator
+
+    fps, keys = _linear_fp(), ["cod_biomass_mean"]
+    serial = run_design(_analytic_factory(), fps, keys, n_points=5, n_seeds=3, seed=1)
+    par_ev = _ParallelEngineEvaluator(_analytic_factory, n_workers=2)
+    try:
+        par = run_design(par_ev, fps, keys, n_points=5, n_seeds=3, seed=1)
+    finally:
+        par_ev.close()
+    assert np.array_equal(serial.X, par.X)
+    for k in keys:
+        assert np.array_equal(serial.Y[k], par.Y[k], equal_nan=True)
+        assert np.array_equal(serial.alpha[k], par.alpha[k], equal_nan=True)
+
+
+def test_make_engine_evaluator_serial_has_no_batch_api():
+    ev = make_engine_evaluator(_linear_fp(), _EXAMPLE_CONFIG, ["cod"], nyear=1)
+    assert not hasattr(ev, "evaluate_batch")  # serial path unchanged
+
+
+def test_make_engine_evaluator_parallel_exposes_batch_api():
+    # n_workers>1 returns the batch-capable evaluator WITHOUT eagerly reading the
+    # config or starting the pool (both are lazy / worker-side).
+    ev = make_engine_evaluator(_linear_fp(), _EXAMPLE_CONFIG, ["cod"], nyear=1, n_workers=2)
+    try:
+        assert hasattr(ev, "evaluate_batch")
+    finally:
+        ev.close()
+
+
+@pytest.mark.slow
+def test_make_engine_evaluator_parallel_runs_real_engine():
+    from osmose.config import OsmoseConfigReader
+
+    cfg = OsmoseConfigReader().read(_EXAMPLE_CONFIG)
+    n_sp = int(cfg.get("simulation.nspecies", "0"))
+    species = [cfg.get(f"species.name.sp{i}") for i in range(n_sp)]
+    fps = _linear_fp()
+    with make_engine_evaluator(fps, _EXAMPLE_CONFIG, species, nyear=1, n_workers=2) as ev:
+        res = run_design(ev, fps, [f"{species[0]}_biomass_mean"], n_points=2, n_seeds=2, seed=0)
+    # Real engine + real process pool: keys produced, at least one point uncensored.
+    assert not np.isnan(res.Y[f"{species[0]}_biomass_mean"]).all()
+
+
 def test_engine_evaluator_emits_biomass_and_ssb_keys():
     from osmose.config import OsmoseConfigReader
 

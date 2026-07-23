@@ -13,7 +13,10 @@ natural ``np.log`` of the linear stat when forming the GP target Y (``run_design
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
+from functools import partial
+from multiprocessing import get_context
 from pathlib import Path
 
 import numpy as np
@@ -114,8 +117,21 @@ def run_design(
     Y = {k: np.full(n, np.nan) for k in keys}
     alpha = {k: np.full(n, np.nan) for k in keys}
 
+    # Flat (task_id, point-input, run-seed) list over every (point, seed); the run
+    # seed is deterministic per task, so results are order-independent and a batch
+    # evaluator's parallel output is bit-identical to the serial loop.
+    tasks = [
+        (i * n_seeds + k, X[i], seed_offset + i * n_seeds + k)
+        for i in range(n)
+        for k in range(n_seeds)
+    ]
+    if hasattr(evaluator, "evaluate_batch"):
+        results = evaluator.evaluate_batch(tasks)  # aligned to task order
+    else:
+        results = [evaluator(x, s) for _, x, s in tasks]
+
     for i in range(n):
-        per_seed = [evaluator(X[i], seed_offset + i * n_seeds + k) for k in range(n_seeds)]
+        per_seed = results[i * n_seeds : (i + 1) * n_seeds]
         for key in keys:
             vals = [d.get(key) for d in per_seed]
             if any(v is None or v <= 0.0 for v in vals):
@@ -127,6 +143,81 @@ def run_design(
     return DesignResult(X=X, keys=keys, Y=Y, alpha=alpha)
 
 
+_WORKER_EVALUATOR: Evaluator | None = None
+
+
+def _worker_init(factory: Callable[[], Evaluator]) -> None:
+    """ProcessPoolExecutor initializer: build the (serial) evaluator once per worker."""
+    global _WORKER_EVALUATOR
+    _WORKER_EVALUATOR = factory()
+
+
+def _worker_eval(task_id: int, x: np.ndarray, seed: int) -> tuple[int, dict[str, float]]:
+    """Evaluate one (point, seed) task in a worker; return ``(task_id, stats)``."""
+    assert _WORKER_EVALUATOR is not None  # set by _worker_init
+    return task_id, _WORKER_EVALUATOR(x, int(seed))
+
+
+class _ParallelEngineEvaluator:
+    """Batch-capable evaluator over a persistent process pool.
+
+    Each worker rebuilds the serial evaluator once from a picklable ``factory``
+    (typically ``partial(make_engine_evaluator, ..., n_workers=1)``); only
+    ``(task_id, x, seed)`` cross the process boundary. Results are scattered back
+    by ``task_id``, so batch output is aligned to input order and bit-identical to
+    the serial loop regardless of completion order. Also callable as
+    ``(x, seed) -> dict`` (a one-task batch) so serial callers still work. The pool
+    is lazy-started and reused across design-growth rounds; the caller owns its
+    lifecycle via ``close()`` / the context-manager protocol.
+    """
+
+    def __init__(self, factory: Callable[[], Evaluator], n_workers: int) -> None:
+        if n_workers < 1:
+            raise ValueError(f"n_workers must be >= 1, got {n_workers}")
+        self._factory = factory
+        self._n_workers = int(n_workers)
+        self._pool: ProcessPoolExecutor | None = None
+
+    def _ensure_pool(self) -> ProcessPoolExecutor:
+        if self._pool is None:
+            # spawn (not fork): the parent is multi-threaded (numpy/BLAS) and the
+            # engine uses numba — forking a locked threadpool risks a child deadlock.
+            # Spawn's per-worker startup cost amortizes over the long design run.
+            self._pool = ProcessPoolExecutor(
+                max_workers=self._n_workers,
+                mp_context=get_context("spawn"),
+                initializer=_worker_init,
+                initargs=(self._factory,),
+            )
+        return self._pool
+
+    def evaluate_batch(
+        self, tasks: Sequence[tuple[int, np.ndarray, int]]
+    ) -> list[dict[str, float]]:
+        """Run every task in the pool; return stats aligned to input task order."""
+        pool = self._ensure_pool()
+        futures = {pool.submit(_worker_eval, tid, x, s): tid for tid, x, s in tasks}
+        by_id: dict[int, dict[str, float]] = {}
+        for fut in as_completed(futures):
+            tid, stats = fut.result()
+            by_id[tid] = stats
+        return [by_id[tid] for tid, _, _ in tasks]
+
+    def __call__(self, x: np.ndarray, seed: int) -> dict[str, float]:
+        return self.evaluate_batch([(0, x, int(seed))])[0]
+
+    def close(self) -> None:
+        if self._pool is not None:
+            self._pool.shutdown(wait=True)
+            self._pool = None
+
+    def __enter__(self) -> _ParallelEngineEvaluator:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
+
 def make_engine_evaluator(
     free_params: list[FreeParameter],
     base_config_path: Path,
@@ -134,6 +225,7 @@ def make_engine_evaluator(
     *,
     enable_ssb: bool = True,
     nyear: int | None = None,
+    n_workers: int = 1,
 ) -> Evaluator:
     """Build the real Python-engine evaluator: point+seed -> per-species stat dict.
 
@@ -142,7 +234,23 @@ def make_engine_evaluator(
     ``.ssb()`` readable), optionally overrides ``simulation.time.nyear``, applies
     ``point_to_overrides``, runs the engine, and reduces with ``compute_uq_stats``.
     ``PythonEngine``/``OsmoseConfigReader`` are lazy-imported to keep design.py light.
+
+    ``n_workers > 1`` returns a batch-capable ``_ParallelEngineEvaluator`` that runs
+    design points across a process pool (each worker rebuilds this serial evaluator
+    once); ``n_workers == 1`` returns the serial closure unchanged.
     """
+    if n_workers > 1:
+        factory = partial(
+            make_engine_evaluator,
+            free_params,
+            base_config_path,
+            species_names,
+            enable_ssb=enable_ssb,
+            nyear=nyear,
+            n_workers=1,
+        )
+        return _ParallelEngineEvaluator(factory, n_workers)
+
     from osmose.config import OsmoseConfigReader
     from osmose.engine import PythonEngine
 
