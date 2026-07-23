@@ -765,7 +765,7 @@ Expected: FAIL — collection succeeds but the tests fail only if the posterior 
 - [ ] **Step 3: Run the tests to verify they pass**
 
 Run: `.venv/bin/python -m pytest tests/test_uq_posterior_synthetic.py -q`
-Expected: PASS — 3 passed. (Verified against the likelihood prototype: Gaussian grid-argmax = θ* exactly; BandFaithful interior pair within ~0.02 and >17 above the exterior point; misspecified drop ~3.7 > 2.0.)
+Expected: PASS — 3 passed. (Verified against the likelihood prototype: Gaussian grid-argmax = θ* exactly; BandFaithful interior pair within ~0.03 and ~6 above the exterior point (the exterior point violates only one of the three bands at `band=0.4`, so the drop is modest but comfortably clears the `>5.0` gate); misspecified drop ~3.7 > 2.0.)
 
 - [ ] **Step 4: Lint/format and commit**
 
@@ -799,6 +799,8 @@ Milestone: a complete, evaluable `log_posterior(θ) -> float` composed from a un
 - **Envelope enforcement** (sampler-adequacy diagnostic + hard nominal-dimension cap that aborts regardless of a gate pass) is Phase 2b — the gate certifies emulator fidelity only.
 - **`k` must be checked against the targets CSV** (`load_targets`) before any posterior width is trusted — the default 1.0 is the safe choice, not necessarily the physically correct one.
 - **Cross-target independence** is a documented overconfidence source (correlated multi-output GP is the Phase 3 "open question").
+- **`BiomassTarget.weight` is intentionally NOT used by the UQ posterior** (a Bayesian likelihood has no arbitrary weight term; `weight` drives only the NSGA/DE loss path). `run.py` should note this so a user with a weighted targets CSV knows the weights do not carry into the posterior.
+- **Degenerate/malformed bands** (`lower >= upper`) are rejected at `make_log_posterior` construction (added in the Phase 2a whole-branch-review fix). `load_targets`/`BiomassTarget` still do not validate `lower < upper`, so `run.py` may want to surface a clearer per-target error earlier in the pipeline.
 
 ## Self-Review (completed during authoring)
 
