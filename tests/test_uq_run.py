@@ -12,6 +12,11 @@ from osmose.calibration.uq.gate import GateReport
 from osmose.calibration.uq.run import UQResult, derive_sigma_seed_sq, run_surrogate_bayes
 from osmose.calibration.uq.sampler import DynestySampler
 
+# The real-gate acceptance test runs the calibration gate's GP fits, which emit
+# sklearn ConvergenceWarnings (length scale near its bound) on this synthetic;
+# silence that expected noise so output stays pristine. Assertions still hold.
+pytestmark = pytest.mark.filterwarnings("ignore::sklearn.exceptions.ConvergenceWarning")
+
 
 def test_derive_sigma_seed_sq_pools_per_key():
     # alpha = s^2 / n_seeds, so n_seeds * mean(alpha) recovers the pooled s^2.
