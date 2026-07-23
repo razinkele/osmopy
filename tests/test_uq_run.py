@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from osmose.calibration.problem import FreeParameter, Transform
 from osmose.calibration.targets import BiomassTarget
 from osmose.calibration.uq.design import DesignResult
 from osmose.calibration.uq.gate import GateReport
 from osmose.calibration.uq.run import UQResult, derive_sigma_seed_sq, run_surrogate_bayes
+from osmose.calibration.uq.sampler import DynestySampler
 
 
 def test_derive_sigma_seed_sq_pools_per_key():
@@ -125,3 +127,80 @@ def test_run_surrogate_bayes_result_fields_populated():
     assert set(result.n_censored) == set(_MEANS)
     assert result.sampler_result is not None
     assert result.design.X.shape[1] == 2
+
+
+def test_gate_failed_returns_no_posterior():
+    result = run_surrogate_bayes(
+        _evaluator,
+        _fp2(),
+        _targets(),
+        n_seeds=6,
+        n0=40,
+        increment=20,
+        n_max=40,
+        seed=0,
+        gate_fn=_fail_gate,
+    )
+    assert result.status == "gate_failed"
+    assert result.sampler_result is None and result.posterior_mean is None
+    assert set(result.gate_reports) == set(_MEANS)  # reports still populated
+
+
+def test_sampled_not_converged_status():
+    # An unreachable ESS floor makes the sampler report not-converged; the run
+    # still returns a posterior, flagged.
+    sampler = DynestySampler(ess_min=1e9)
+    result = run_surrogate_bayes(
+        _evaluator,
+        _fp2(),
+        _targets(),
+        n_seeds=6,
+        n0=40,
+        increment=20,
+        n_max=100,
+        seed=0,
+        gate_fn=_pass_gate,
+        sampler=sampler,
+    )
+    assert result.status == "sampled_not_converged"
+    assert result.posterior_mean is not None  # posterior surfaced, just flagged
+
+
+def test_rejects_over_dimension_before_grow():
+    # 25 params > MAX_NOMINAL_DIM: must raise before running any design.
+    big = [FreeParameter(f"p{i}.sp0", 0.0, 1.0) for i in range(25)]
+
+    def _never(x, seed):
+        raise AssertionError("evaluator must not run when the dimension cap trips")
+
+    with pytest.raises(ValueError, match="exceeds"):
+        run_surrogate_bayes(_never, big, _targets(), n_seeds=6, n0=40, increment=20, n_max=40)
+
+
+def test_rejects_degenerate_band_before_grow():
+    bad = [BiomassTarget("A", 10.0, 10.0, 10.0, reference_point_type="biomass")]
+
+    def _never(x, seed):
+        raise AssertionError("evaluator must not run when a target is malformed")
+
+    with pytest.raises(ValueError, match="lower"):
+        run_surrogate_bayes(_never, _fp2(), bad, n_seeds=6, n0=40, increment=20, n_max=40)
+
+
+def test_real_gate_default_path_recovers_theta_star():
+    # The honest end-to-end path: gate_fn=None runs the REAL calibration gate.
+    # ~3-6s (GP cross-validation per round + nested sampling). Asserts the
+    # decision (ok + recovery), not the design size (which varies with growth).
+    result = run_surrogate_bayes(
+        _evaluator,
+        _fp2(),
+        _targets(),
+        n_seeds=6,
+        n0=40,
+        increment=20,
+        n_max=100,
+        seed=0,
+    )
+    assert result.status == "ok"
+    assert np.allclose(result.posterior_mean, _THETA_STAR, atol=0.12)
+    assert result.sampler_result.converged
