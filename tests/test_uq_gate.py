@@ -69,3 +69,16 @@ def test_gate_report_is_dataclass_with_metrics():
     assert isinstance(report, GateReport)
     for field in ("coverage", "mssr", "pit_pvalue", "r2", "r2_ceiling"):
         assert isinstance(getattr(report, field), float)
+
+
+def test_gate_loo_band_runs_and_returns_finite_metrics():
+    # n=12 is in the LOO band (MIN_GATE_POINTS <= n <= LOO_MAX): gate uses
+    # leave-one-out CV. Assert it executes and yields finite metrics, not a
+    # brittle pass/fail decision.
+    X, Y, alpha = _synthetic_design(misspecified=False, n=12)
+    report = evaluate_emulator_calibration(X, Y, alpha)
+    assert report.n == 12
+    assert isinstance(report.passed, bool)
+    for field in ("coverage", "mssr", "pit_pvalue", "r2", "r2_ceiling"):
+        value = getattr(report, field)
+        assert np.isfinite(value), f"{field} is not finite: {value}"

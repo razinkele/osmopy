@@ -63,9 +63,8 @@ def _linear_fp():
     return [FreeParameter("mortality.fishing.rate.sp0", 0.0, 1.0, Transform.LINEAR)]
 
 
-def _const_evaluator(value_by_key, extinct_points=()):
-    """Evaluator returning fixed per-key values with a tiny seed-dependent wobble,
-    optionally forcing a species to 0 (extinction) at given point indices."""
+def _const_evaluator(value_by_key):
+    """Evaluator returning fixed per-key values with a tiny seed-dependent wobble."""
 
     def ev(x, seed):
         rng = np.random.default_rng(int(seed))
