@@ -9,6 +9,7 @@ import numpy as np
 from osmose.calibration.targets import BiomassTarget
 from osmose.calibration.uq.predictive import (
     EmulatorPredictiveRanges,
+    emulator_holdout_coverage,
     marginal_coverage,
     posterior_predictive,
 )
@@ -142,3 +143,34 @@ def test_posterior_predictive_has_no_jensen_shift():
     )
     median = r.log_ranges["k"][1]
     assert abs(median - mu_emu) < 0.05  # ~mu_emu + 0.25 if a Jensen shift leaked in
+
+
+# ---- held-out OSMOSE coverage (validates a certified emulator on out-of-design points) ----
+
+
+def test_emulator_holdout_coverage_matches_expected_fraction():
+    # mean 0, var 1, alpha 0 -> sd 1; at level 0.95 the interval is |resid| < 1.96.
+    emu = _LinEmulator(slope=0.0, intercept=0.0, var=1.0)
+    X = np.zeros((10, 1))
+    r = np.array([0.0] * 8 + [3.0, 3.0])  # 8 inside, 2 outside
+    cov = emulator_holdout_coverage({"k": emu}, X, {"k": r}, {"k": np.zeros(10)}, level=0.95)
+    assert cov["k"] == 0.8
+
+
+def test_emulator_holdout_coverage_masks_censored_points():
+    emu = _LinEmulator(slope=0.0, intercept=0.0, var=1.0)
+    X = np.zeros((4, 1))
+    r = np.array([0.0, np.nan, 0.0, np.nan])  # only the 2 valid points count, both covered
+    cov = emulator_holdout_coverage({"k": emu}, X, {"k": r}, {"k": np.zeros(4)}, level=0.95)
+    assert cov["k"] == 1.0
+
+
+def test_emulator_holdout_coverage_includes_seed_noise_in_interval():
+    # var ~0: alpha alone sets the interval width. resid 1.5 is outside at alpha=0
+    # (sd~0) but inside once alpha=1 widens sd to ~1 (1.5 < 1.96).
+    emu = _LinEmulator(slope=0.0, intercept=0.0, var=1e-9)
+    X = np.zeros((1, 1))
+    r = np.array([1.5])
+    cov0 = emulator_holdout_coverage({"k": emu}, X, {"k": r}, {"k": np.array([0.0])}, level=0.95)
+    cov1 = emulator_holdout_coverage({"k": emu}, X, {"k": r}, {"k": np.array([1.0])}, level=0.95)
+    assert cov0["k"] == 0.0 and cov1["k"] == 1.0

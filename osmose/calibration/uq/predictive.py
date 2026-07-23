@@ -15,6 +15,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 import numpy as np
+from scipy.stats import norm  # type: ignore[import-untyped]
 
 from osmose.calibration.targets import BiomassTarget
 from osmose.calibration.uq.keying import target_to_output_key
@@ -104,4 +105,39 @@ def marginal_coverage(
         key = target_to_output_key(target)
         lo, _median, hi = ranges.biomass_ranges[key]
         out[key] = lo <= target.target <= hi
+    return out
+
+
+def emulator_holdout_coverage(
+    emulators: Mapping[str, object],
+    holdout_X: np.ndarray,
+    holdout_Y: Mapping[str, np.ndarray],
+    holdout_alpha: Mapping[str, np.ndarray],
+    *,
+    level: float = 0.95,
+) -> dict[str, float]:
+    """Per-key fraction of held-out engine points inside the emulator's predictive interval.
+
+    The load-bearing method-validation metric: run fresh (out-of-design) points
+    through the engine, then check whether each key's log seed-mean ``holdout_Y``
+    falls within ``mu +/- z*sqrt(var + alpha)`` (z at ``level``; ``var`` the GP
+    latent variance, ``alpha`` the held-out seed-mean noise s²/S) — the SAME
+    standardization the calibration gate cross-validates, but on genuinely
+    out-of-design points. Coverage ~= ``level`` for a calibrated emulator.
+    NaN held-out entries (censored points) are excluded per key.
+    """
+    z = float(norm.ppf(0.5 + level / 2.0))
+    out: dict[str, float] = {}
+    X = np.atleast_2d(np.asarray(holdout_X, dtype=float))
+    for key, emu in emulators.items():
+        y = np.asarray(holdout_Y[key], dtype=float).ravel()
+        a = np.asarray(holdout_alpha[key], dtype=float).ravel()
+        valid = ~np.isnan(y)
+        if not valid.any():
+            out[key] = float("nan")
+            continue
+        mean, var = emu.predict(X[valid])  # type: ignore[attr-defined]
+        sd = np.sqrt(np.asarray(var, dtype=float) + a[valid])
+        inside = np.abs(y[valid] - np.asarray(mean, dtype=float)) <= z * sd
+        out[key] = float(np.mean(inside))
     return out
