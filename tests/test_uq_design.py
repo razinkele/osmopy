@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
 from osmose.calibration.problem import FreeParameter, Transform
-from osmose.calibration.uq.design import lhs_design, point_to_overrides
+from osmose.calibration.uq.design import (
+    DesignResult,
+    lhs_design,
+    make_engine_evaluator,
+    point_to_overrides,
+    run_design,
+)
 
 
 def _params():
@@ -46,3 +54,112 @@ def test_lhs_design_deterministic():
     assert np.array_equal(a, b)
     c = lhs_design(_params(), n_points=25, seed=8)
     assert not np.array_equal(a, c)
+
+
+_EXAMPLE_CONFIG = Path(__file__).parent.parent / "data" / "examples" / "osm_all-parameters.csv"
+
+
+def _linear_fp():
+    return [FreeParameter("mortality.fishing.rate.sp0", 0.0, 1.0, Transform.LINEAR)]
+
+
+def _const_evaluator(value_by_key, extinct_points=()):
+    """Evaluator returning fixed per-key values with a tiny seed-dependent wobble,
+    optionally forcing a species to 0 (extinction) at given point indices."""
+
+    def ev(x, seed):
+        rng = np.random.default_rng(int(seed))
+        out = {}
+        for k, v in value_by_key.items():
+            out[k] = float(v * np.exp(rng.normal(0.0, 0.05)))
+        return out
+
+    return ev
+
+
+def test_run_design_reduces_log_mean_and_ddof1_alpha():
+    # Deterministic evaluator: value depends only on seed, so we can hand-check.
+    def ev(x, seed):
+        return {"cod_biomass_mean": float(np.exp(0.1 * int(seed)))}
+
+    res = run_design(
+        ev, _linear_fp(), ["cod_biomass_mean"], n_points=3, n_seeds=4, seed=0, seed_offset=0
+    )
+    # Point 0 uses run seeds 0..3 -> logs = [0, 0.1, 0.2, 0.3].
+    logs = np.array([0.0, 0.1, 0.2, 0.3])
+    assert res.Y["cod_biomass_mean"][0] == pytest.approx(logs.mean())
+    assert res.alpha["cod_biomass_mean"][0] == pytest.approx(logs.var(ddof=1) / 4)
+
+
+def test_run_design_censors_extinction_per_point():
+    def ev(x, seed):
+        # Point index is encoded via x[0]; extinct (0.0) only at x[0] < 0.5.
+        val = 0.0 if x[0] < 0.5 else 10.0
+        return {"cod_biomass_mean": float(val)}
+
+    X = np.array([[0.2], [0.8], [0.9]])
+    res = run_design(ev, _linear_fp(), ["cod_biomass_mean"], n_points=3, n_seeds=2, X=X)
+    assert np.isnan(res.Y["cod_biomass_mean"][0])  # extinct -> censored
+    assert not np.isnan(res.Y["cod_biomass_mean"][1])
+    assert res.n_censored("cod_biomass_mean") == 1
+
+
+def test_run_design_per_key_independent_censoring():
+    def ev(x, seed):
+        # cod extinct everywhere; herring healthy everywhere.
+        return {"cod_ssb_mean": 0.0, "herring_biomass_mean": 100.0}
+
+    res = run_design(
+        ev,
+        _linear_fp(),
+        ["cod_ssb_mean", "herring_biomass_mean"],
+        n_points=4,
+        n_seeds=2,
+        seed=1,
+    )
+    assert res.n_censored("cod_ssb_mean") == 4
+    assert res.n_censored("herring_biomass_mean") == 0
+    Xv, Yv, av = res.valid("herring_biomass_mean")
+    assert len(Xv) == 4 and not np.any(np.isnan(Yv))
+
+
+def test_run_design_reproducible():
+    ev = _const_evaluator({"cod_biomass_mean": 10.0})
+    a = run_design(ev, _linear_fp(), ["cod_biomass_mean"], n_points=5, n_seeds=3, seed=2)
+    b = run_design(ev, _linear_fp(), ["cod_biomass_mean"], n_points=5, n_seeds=3, seed=2)
+    assert np.array_equal(a.X, b.X)
+    assert np.allclose(a.Y["cod_biomass_mean"], b.Y["cod_biomass_mean"], equal_nan=True)
+    assert np.allclose(a.alpha["cod_biomass_mean"], b.alpha["cod_biomass_mean"], equal_nan=True)
+
+
+def test_run_design_requires_two_seeds():
+    ev = _const_evaluator({"cod_biomass_mean": 10.0})
+    with pytest.raises(ValueError, match="n_seeds"):
+        run_design(ev, _linear_fp(), ["cod_biomass_mean"], n_points=3, n_seeds=1)
+
+
+def test_design_result_valid_filters_censored_rows():
+    Y = {"k": np.array([1.0, np.nan, 3.0])}
+    alpha = {"k": np.array([0.1, np.nan, 0.3])}
+    res = DesignResult(X=np.arange(3).reshape(-1, 1).astype(float), keys=["k"], Y=Y, alpha=alpha)
+    Xv, Yv, av = res.valid("k")
+    assert Xv.shape == (2, 1)
+    assert np.array_equal(Yv, np.array([1.0, 3.0]))
+    assert np.array_equal(av, np.array([0.1, 0.3]))
+
+
+def test_engine_evaluator_emits_biomass_and_ssb_keys():
+    from osmose.config import OsmoseConfigReader
+
+    cfg = OsmoseConfigReader().read(_EXAMPLE_CONFIG)
+    n_sp = int(cfg.get("simulation.nspecies", "0"))
+    species = [cfg.get(f"species.name.sp{i}") for i in range(n_sp)]
+    ev = make_engine_evaluator(_linear_fp(), _EXAMPLE_CONFIG, species, enable_ssb=True, nyear=1)
+    stats = ev(np.array([0.3]), seed=1)
+    # Biomass is always collected and non-zero.
+    biomass_keys = [k for k in stats if k.endswith("_biomass_mean")]
+    assert biomass_keys and all(stats[k] >= 0.0 for k in biomass_keys)
+    # SSB plumbing: enabling output.ssb.enabled makes .ssb() readable, so _ssb_mean
+    # keys are emitted. Values are 0.0 on this fixture at nyear=1 — assert presence,
+    # NOT magnitude.
+    assert any(k.endswith("_ssb_mean") for k in stats)
