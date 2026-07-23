@@ -11,14 +11,18 @@ short-circuits without sampling.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import numpy as np
 
-from osmose.calibration.uq.design import DesignResult
+from osmose.calibration.problem import FreeParameter
+from osmose.calibration.targets import BiomassTarget
+from osmose.calibration.uq.design import DesignResult, Evaluator, grow_until_calibrated
 from osmose.calibration.uq.gate import GateReport
-from osmose.calibration.uq.sampler import SamplerResult
+from osmose.calibration.uq.keying import target_to_output_key
+from osmose.calibration.uq.posterior import fit_emulators, make_log_posterior
+from osmose.calibration.uq.sampler import DynestySampler, SamplerResult, check_dimension
 
 
 @dataclass
@@ -56,3 +60,81 @@ def derive_sigma_seed_sq(
         _, _, alpha = design.valid(key)
         out[key] = n_seeds * float(np.mean(alpha)) if len(alpha) else 0.0
     return out
+
+
+def run_surrogate_bayes(
+    evaluator: Evaluator,
+    free_params: list[FreeParameter],
+    targets: Sequence[BiomassTarget],
+    n_seeds: int,
+    *,
+    n0: int,
+    increment: int,
+    n_max: int,
+    seed: int = 0,
+    gate_fn: Callable[..., GateReport] | None = None,
+    likelihood: str = "gaussian",
+    sigma_disc_sq: float = 0.0,
+    k_by_type: dict[str, float] | None = None,
+    sampler: DynestySampler | None = None,
+) -> UQResult:
+    """Run the full surrogate-Bayesian UQ pipeline; return a UQResult.
+
+    Fails loud up front on caller misconfiguration (over-dimension, malformed
+    target) BEFORE the expensive design. Grows a calibrated design (real gate by
+    default; ``gate_fn`` injectable); short-circuits to ``"gate_failed"`` if it
+    never calibrates; else fits emulators, derives per-key σ_seed², builds the
+    posterior, and samples it.
+    """
+    # Fail-fast validation, BEFORE grow (potentially thousands of engine runs).
+    check_dimension(len(free_params))
+    for t in targets:
+        if not (t.lower < t.upper):
+            raise ValueError(
+                f"target for species {t.species!r} has lower ({t.lower}) >= "
+                f"upper ({t.upper}); a band requires lower < upper"
+            )
+    keys = [target_to_output_key(t) for t in targets]  # raises on unknown reference_point_type
+
+    growth = grow_until_calibrated(
+        evaluator,
+        free_params,
+        keys,
+        n_seeds,
+        n0=n0,
+        increment=increment,
+        n_max=n_max,
+        seed=seed,
+        gate_fn=gate_fn,
+    )
+    n_censored = {k: growth.design.n_censored(k) for k in keys}
+    if growth.status != "calibrated":
+        return UQResult(
+            status="gate_failed",
+            gate_reports=growth.reports,
+            design=growth.design,
+            n_censored=n_censored,
+        )
+
+    emulators = fit_emulators(growth.design)
+    sigma_seed_sq = derive_sigma_seed_sq(growth.design, keys, n_seeds)
+    log_posterior = make_log_posterior(
+        emulators,
+        targets,
+        free_params,
+        sigma_seed_sq_by_key=sigma_seed_sq,
+        sigma_disc_sq=sigma_disc_sq,
+        k_by_type=k_by_type,
+        likelihood=likelihood,
+    )
+    sampler = sampler if sampler is not None else DynestySampler()
+    sampler_result = sampler.sample(log_posterior, free_params, seed=seed)
+    status = "ok" if sampler_result.converged else "sampled_not_converged"
+    return UQResult(
+        status=status,
+        gate_reports=growth.reports,
+        design=growth.design,
+        n_censored=n_censored,
+        sampler_result=sampler_result,
+        posterior_mean=sampler_result.posterior_mean(),
+    )
