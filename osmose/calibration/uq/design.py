@@ -20,6 +20,7 @@ import numpy as np
 from scipy.stats.qmc import LatinHypercube
 
 from osmose.calibration.problem import FreeParameter, Transform
+from osmose.calibration.uq.gate import GateReport, evaluate_emulator_calibration
 from osmose.calibration.uq.output_stats import compute_uq_stats
 
 
@@ -159,3 +160,75 @@ def make_engine_evaluator(
         return compute_uq_stats(results, species)
 
     return evaluate
+
+
+@dataclass
+class GrowthResult:
+    """Outcome of the bounded design-growth loop."""
+
+    design: DesignResult
+    reports: dict[str, GateReport]
+    status: str  # "calibrated" | "aborted_n_max"
+    rounds: int
+
+
+def _merge_designs(a: DesignResult, b: DesignResult) -> DesignResult:
+    """Concatenate two designs over the same targeted keys (a's keys, in order)."""
+    X = np.vstack([a.X, b.X])
+    Y = {k: np.concatenate([a.Y[k], b.Y[k]]) for k in a.keys}
+    alpha = {k: np.concatenate([a.alpha[k], b.alpha[k]]) for k in a.keys}
+    return DesignResult(X=X, keys=list(a.keys), Y=Y, alpha=alpha)
+
+
+def grow_until_calibrated(
+    evaluator: Evaluator,
+    free_params: list[FreeParameter],
+    target_keys: Sequence[str],
+    n_seeds: int,
+    *,
+    n0: int,
+    increment: int,
+    n_max: int,
+    seed: int = 0,
+    gate_fn: Callable[..., GateReport] | None = None,
+) -> GrowthResult:
+    """Build N0, gate every key, and grow by ``increment`` until all keys pass or
+    ``n_max`` aborts.
+
+    ``gate_fn(X, Y, alpha, key=...)`` defaults to the real
+    ``evaluate_emulator_calibration`` and is injectable for deterministic tests.
+    Each appended batch uses a distinct deterministic seed offset so re-runs
+    reproduce. ``n_max`` is a HARD safety ceiling, not a target — the loop never
+    grows past it and aborts with the last reports.
+    """
+    gate = gate_fn if gate_fn is not None else evaluate_emulator_calibration
+    keys = list(target_keys)
+
+    def _gate_all(result: DesignResult) -> dict[str, GateReport]:
+        reports = {}
+        for key in keys:
+            Xv, Yv, av = result.valid(key)
+            reports[key] = gate(Xv, Yv, av, key=key)
+        return reports
+
+    result = run_design(evaluator, free_params, keys, n0, n_seeds, seed=seed, seed_offset=0)
+    rounds = 0
+    while True:
+        reports = _gate_all(result)
+        if all(r.passed for r in reports.values()):
+            return GrowthResult(design=result, reports=reports, status="calibrated", rounds=rounds)
+        if len(result.X) + increment > n_max:
+            return GrowthResult(
+                design=result, reports=reports, status="aborted_n_max", rounds=rounds
+            )
+        rounds += 1
+        batch = run_design(
+            evaluator,
+            free_params,
+            keys,
+            increment,
+            n_seeds,
+            seed=seed + rounds,
+            seed_offset=rounds * 1_000_000,
+        )
+        result = _merge_designs(result, batch)
