@@ -81,6 +81,8 @@ class GPEmulator:
         Returns ``y_true``/``y_pred``/``pred_var`` (each concatenated in fold
         order, not input order) plus per-fold and mean RMSE/R². ``pred_var`` is
         the latent predictive variance; the gate adds held-out seed-mean noise.
+        Also returns ``test_idx``, the held-out row indices in fold-concatenation
+        order (a permutation of ``range(len(X))``).
         Raises ``ValueError`` if ``len(X) < k_folds``.
         """
         X = np.asarray(X, dtype=float)
@@ -95,18 +97,20 @@ class GPEmulator:
         y_true: list[np.ndarray] = []
         y_pred: list[np.ndarray] = []
         pred_var: list[np.ndarray] = []
+        test_idx: list[np.ndarray] = []
         fold_rmse: list[float] = []
         fold_r2: list[float] = []
 
-        for train_idx, test_idx in kf.split(X):
+        for train_idx, test_index in kf.split(X):
             fold = GPEmulator(self._n_restarts_optimizer, self._random_state)
             fold.fit(X[train_idx], Y[train_idx], alpha_arr[train_idx])
-            mean, var = fold.predict(X[test_idx])
-            truth = Y[test_idx]
+            mean, var = fold.predict(X[test_index])
+            truth = Y[test_index]
 
             y_true.append(truth)
             y_pred.append(mean)
             pred_var.append(var)
+            test_idx.append(test_index)
             fold_rmse.append(float(np.sqrt(np.mean((truth - mean) ** 2))))
             ss_res = float(np.sum((truth - mean) ** 2))
             ss_tot = float(np.sum((truth - np.mean(truth)) ** 2))
@@ -116,6 +120,7 @@ class GPEmulator:
             "y_true": np.concatenate(y_true),
             "y_pred": np.concatenate(y_pred),
             "pred_var": np.concatenate(pred_var),
+            "test_idx": np.concatenate(test_idx),
             "fold_rmse": fold_rmse,
             "fold_r2": fold_r2,
             "mean_rmse": float(np.mean(fold_rmse)),

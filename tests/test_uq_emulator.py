@@ -117,3 +117,15 @@ def test_cross_validate_too_few_samples_raises():
     alpha = np.full(3, 1e-3)
     with pytest.raises(ValueError, match="k_folds"):
         GPEmulator().cross_validate(X, Y, alpha, k_folds=5)
+
+
+def test_cross_validate_returns_aligned_test_idx(design):
+    X, Y, alpha = design
+    cv = GPEmulator(n_restarts_optimizer=0).cross_validate(X, Y, alpha, k_folds=5, seed=0)
+    idx = cv["test_idx"]
+    n = len(X)
+    assert idx.shape == (n,)
+    # A permutation of range(n): every row held out exactly once.
+    assert sorted(idx.tolist()) == list(range(n))
+    # Alignment: y_true equals Y indexed by test_idx (same fold-concat order).
+    assert np.allclose(cv["y_true"], Y[idx])
