@@ -56,9 +56,10 @@ def test_gaussian_symmetric_band_peaks_at_jensen_corrected_target():
 
 
 def test_gaussian_var_floor_degenerate_band_is_finite():
-    # lower == upper (zero-width band) + sigma_disc=0 + tiny var must not blow up.
+    # lower == upper (zero-width band) + sigma_disc=0 + zero emulator_var must not blow up.
+    # This proves the _VAR_FLOOR is necessary: without it, every variance contribution is zero.
     v = gaussian_log_biomass(
-        np.log(100.0), 1e-15, 100.0, 100.0, 100.0, sigma_seed_sq=0.0, sigma_disc_sq=0.0, k=1.0
+        np.log(100.0), 0.0, 100.0, 100.0, 100.0, sigma_seed_sq=0.0, sigma_disc_sq=0.0, k=1.0
     )
     assert np.isfinite(v)
 

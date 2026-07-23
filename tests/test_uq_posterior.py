@@ -83,6 +83,21 @@ def test_make_log_posterior_prior_gates_out_of_box():
     assert logp(np.array([1.5, 0.5])) == -math.inf
 
 
+def test_make_log_posterior_short_circuits_before_emulator_on_out_of_box():
+    class _RaisingEmulator:
+        def predict(self, X):
+            raise AssertionError("emulator must not be called when the prior is -inf")
+
+    logp = make_log_posterior(
+        {"cod_biomass_mean": _RaisingEmulator()},
+        [_target("cod", "biomass", 20.0, 16.0, 24.0)],
+        _fp2(),
+        sigma_seed_sq_by_key={"cod_biomass_mean": 0.02},
+    )
+    # Out-of-box theta: prior is -inf, so the emulator (which would raise) is never called.
+    assert logp(np.array([1.5, 0.5])) == -math.inf
+
+
 def test_make_log_posterior_missing_emulator_key_raises():
     tgt = _target("cod", "ssb", 20.0, 16.0, 24.0)  # key cod_ssb_mean
     with pytest.raises(KeyError, match="cod_ssb_mean"):
