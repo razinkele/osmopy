@@ -1009,6 +1009,7 @@ Milestone (from the spec): "can we build a *calibrated* emulator" — a seeded d
 - **The gate certifies emulator fidelity only, NOT the ≤~20-effective-param sampler envelope.** Phase 2 must add the sampler-adequacy diagnostic + hard nominal-dimension cap that aborts regardless of a gate pass (spec's trust-gate section).
 - **`n_max` as ceiling, not target:** if the growth loop routinely aborts, that is a signal the chunk has fallen out of the trustworthy regime — surface it to the user rather than silently returning an uncalibrated design.
 - **SSB-zero fixture:** the example config yields all-zero SSB at short horizons, so an SSB-targeted design there censors every point. Real Baltic configs at full horizon produce nonzero SSB; the integration test deliberately asserts SSB *plumbing*, not values.
+- **`total_var` has no epsilon floor (from the Phase 1 whole-branch review).** The gate standardizes by `sqrt(pred_var + alpha[test_idx])`. On the real path this is always positive (seed noise `alpha>0`, held-out latent variance `>0`), so no floor is needed now. But when Phase 2's sampler leans on this quantity, add a small epsilon floor as cheap insurance against a division by ~0 in a degenerate (zero-seed-variance + near-zero LOO variance) corner.
 - **Growth-loop seed collision:** batch seed offset is `rounds * 1_000_000`; with `increment * n_seeds` per batch far below 1e6 this cannot collide, but if `n_max`/`increment`/`n_seeds` ever grow past that budget, widen the offset.
 
 ## Deliberate Phase 1 simplifications (recorded, not dropped)
