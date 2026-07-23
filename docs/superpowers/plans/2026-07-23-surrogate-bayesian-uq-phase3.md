@@ -264,11 +264,11 @@ Does each target fall within its predictive range? The genuine, cheap check (a r
 
 - [ ] **Step 1: Write the failing tests**
 
-Add these imports to the **top** of `tests/test_uq_predictive.py` (with the existing imports):
+Add these imports to the **top** of `tests/test_uq_predictive.py` (with the existing imports). NOTE: `EmulatorPredictiveRanges` must be imported here even if Task 1 left it out of the test file (it was unused there → F401) — Task 2's `_ranges` helper constructs it:
 
 ```python
 from osmose.calibration.targets import BiomassTarget
-from osmose.calibration.uq.predictive import marginal_coverage
+from osmose.calibration.uq.predictive import EmulatorPredictiveRanges, marginal_coverage
 ```
 
 Append the tests:
