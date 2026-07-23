@@ -80,6 +80,7 @@ viztest = [
     # AssertionError visual regression -- keeps flake-red distinct from regression-red.
     "pytest-rerunfailures>=14",
 ]
+uq = ["dynesty>=3.1"]
 
 [project.urls]
 Documentation = "https://razinkele.github.io/osmopy/"
