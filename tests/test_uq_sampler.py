@@ -176,3 +176,11 @@ def test_credible_interval_is_weight_sensitive():
     lo_s, hi_s = skewed.credible_interval(0.9)
     assert np.all(lo_s > lo_u + 0.1)  # lower bound clearly shifts up
     assert np.all(hi_s >= hi_u)  # upper bound does not shift down
+
+
+def test_dynesty_maxcall_bounds_sample_count():
+    lp = lambda t: -0.5 * float(np.sum((t - 0.5) ** 2)) / 0.05  # noqa: E731
+    unbounded = DynestySampler().sample(lp, _fp2(), seed=0)
+    bounded = DynestySampler(maxcall=400).sample(lp, _fp2(), seed=0)
+    # A call budget cuts the run short -> fewer accumulated samples.
+    assert len(bounded.samples) < len(unbounded.samples)

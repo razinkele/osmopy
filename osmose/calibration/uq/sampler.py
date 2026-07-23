@@ -97,11 +97,15 @@ class DynestySampler:
         dlogz: float = 0.5,
         ess_min: float = 100.0,
         max_dim: int = MAX_NOMINAL_DIM,
+        maxiter: int | None = None,
+        maxcall: int | None = None,
     ) -> None:
         self.nlive = nlive
         self.dlogz = dlogz
         self.ess_min = ess_min
         self.max_dim = max_dim
+        self.maxiter = maxiter
+        self.maxcall = maxcall
 
     def sample(
         self,
@@ -127,7 +131,12 @@ class DynestySampler:
             nlive=self.nlive,
             rstate=np.random.default_rng(seed),
         )
-        sampler.run_nested(print_progress=False, dlogz=self.dlogz)
+        sampler.run_nested(
+            print_progress=False,
+            dlogz=self.dlogz,
+            maxiter=self.maxiter,
+            maxcall=self.maxcall,
+        )
         res = sampler.results
 
         weights = np.asarray(res.importance_weights())
