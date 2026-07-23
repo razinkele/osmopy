@@ -162,3 +162,17 @@ def test_converged_flag_false_when_ess_below_min():
     result = DynestySampler(ess_min=1e9).sample(_identifiable_log_post(), _fp2(), seed=0)
     assert result.converged is False
     assert result.ess < 1e9  # the real ESS is finite and far below the floor
+
+
+def test_credible_interval_is_weight_sensitive():
+    # Weighting mass toward the high-x samples must pull the 90% CI upward vs
+    # uniform weights -- proving credible_interval actually reads its weights
+    # (uniform-weight tests alone cannot distinguish weighted from unweighted).
+    x = np.linspace(0.0, 1.0, 101)
+    samples = np.column_stack([x, x])
+    uniform = _result(samples, np.ones_like(x))
+    skewed = _result(samples, x**4 + 1e-6)  # heavy mass on large x
+    lo_u, hi_u = uniform.credible_interval(0.9)
+    lo_s, hi_s = skewed.credible_interval(0.9)
+    assert np.all(lo_s > lo_u + 0.1)  # lower bound clearly shifts up
+    assert np.all(hi_s >= hi_u)  # upper bound does not shift down
