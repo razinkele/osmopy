@@ -15,9 +15,12 @@ would silently drop the prior term — do not swap one in without separating it.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
+
+from osmose.calibration.problem import FreeParameter
 
 MAX_NOMINAL_DIM = 20
 
@@ -78,3 +81,62 @@ class SamplerResult:
         cov = self._cov()
         sd = np.sqrt(np.diag(cov))
         return cov / np.outer(sd, sd)
+
+
+class DynestySampler:
+    """Nested-sampling posterior sampler (dynesty) over a uniform box prior.
+
+    ``sample`` runs the injected ``log_posterior`` as dynesty's log-likelihood with a
+    box ``prior_transform`` (valid only under a uniform prior — see the module
+    docstring). The dimension cap fires before any sampling.
+    """
+
+    def __init__(
+        self,
+        nlive: int = 200,
+        dlogz: float = 0.5,
+        ess_min: float = 100.0,
+        max_dim: int = MAX_NOMINAL_DIM,
+    ) -> None:
+        self.nlive = nlive
+        self.dlogz = dlogz
+        self.ess_min = ess_min
+        self.max_dim = max_dim
+
+    def sample(
+        self,
+        log_posterior: Callable[[np.ndarray], float],
+        free_params: list[FreeParameter],
+        *,
+        seed: int = 0,
+    ) -> SamplerResult:
+        n_dim = len(free_params)
+        check_dimension(n_dim, self.max_dim)  # dep-independent guard, before importing/sampling
+        import dynesty
+
+        lower = np.array([fp.lower_bound for fp in free_params])
+        upper = np.array([fp.upper_bound for fp in free_params])
+
+        def prior_transform(u: np.ndarray) -> np.ndarray:
+            return lower + u * (upper - lower)
+
+        sampler = dynesty.NestedSampler(
+            log_posterior,
+            prior_transform,
+            ndim=n_dim,
+            nlive=self.nlive,
+            rstate=np.random.default_rng(seed),
+        )
+        sampler.run_nested(print_progress=False, dlogz=self.dlogz)
+        res = sampler.results
+
+        weights = np.asarray(res.importance_weights())
+        ess = float(1.0 / np.sum(weights**2))  # Kish ESS (version-robust)
+        return SamplerResult(
+            samples=np.asarray(res.samples),
+            weights=weights,
+            logz=float(res.logz[-1]),
+            logz_err=float(res.logzerr[-1]),
+            ess=ess,
+            converged=ess >= self.ess_min,
+        )
