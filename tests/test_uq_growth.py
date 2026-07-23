@@ -124,3 +124,21 @@ def test_growth_misspecified_synthetic_aborts_loudly():
     )  # n_max == n0: one gate, then abort
     assert result.status == "aborted_n_max"
     assert not result.reports["cod_biomass_mean"].passed
+
+
+def test_growth_rejects_nonpositive_increment():
+    ev = lambda x, seed: {"k": 10.0}  # noqa: E731
+    with pytest.raises(ValueError, match="positive"):
+        grow_until_calibrated(ev, _fp2(), ["k"], n_seeds=2, n0=10, increment=0, n_max=100)
+
+
+def test_growth_rejects_n0_exceeding_n_max():
+    ev = lambda x, seed: {"k": 10.0}  # noqa: E731
+    with pytest.raises(ValueError, match="n_max"):
+        grow_until_calibrated(ev, _fp2(), ["k"], n_seeds=2, n0=50, increment=10, n_max=25)
+
+
+def test_growth_rejects_empty_target_keys():
+    ev = lambda x, seed: {"k": 10.0}  # noqa: E731
+    with pytest.raises(ValueError, match="target_keys"):
+        grow_until_calibrated(ev, _fp2(), [], n_seeds=2, n0=10, increment=10, n_max=100)

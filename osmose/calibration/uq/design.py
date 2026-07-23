@@ -201,8 +201,15 @@ def grow_until_calibrated(
     reproduce. ``n_max`` is a HARD safety ceiling, not a target — the loop never
     grows past it and aborts with the last reports.
     """
-    gate = gate_fn if gate_fn is not None else evaluate_emulator_calibration
+    if n0 <= 0 or increment <= 0:
+        raise ValueError(f"n0 and increment must be positive, got n0={n0}, increment={increment}")
+    if n0 > n_max:
+        raise ValueError(f"n0 ({n0}) must not exceed n_max ({n_max})")
     keys = list(target_keys)
+    if not keys:
+        raise ValueError("target_keys must be non-empty")
+
+    gate = gate_fn if gate_fn is not None else evaluate_emulator_calibration
 
     def _gate_all(result: DesignResult) -> dict[str, GateReport]:
         reports = {}
