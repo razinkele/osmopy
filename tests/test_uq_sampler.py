@@ -124,3 +124,41 @@ def test_dynesty_dimension_cap_aborts_before_sampling():
 
     with pytest.raises(ValueError, match="exceeds"):
         DynestySampler(max_dim=1).sample(_never, _fp2(), seed=0)
+
+
+def _ridge_log_post():
+    # ONE target sensitive only to theta0 + theta1 -> the theta0+theta1=const ridge
+    # is unconstrained: an equifinality direction (Goal 1's product).
+    emus = {"C_biomass_mean": _AnalyticEmulator([1.0, 1.0], 0.5, _EMU_VAR)}
+    mu_star, _ = emus["C_biomass_mean"].predict(_THETA_STAR.reshape(1, -1))
+    value = float(np.exp(mu_star[0] + 0.5 * _SIG_SEED))
+    targets = [
+        BiomassTarget(
+            species="C",
+            target=value,
+            lower=value * 0.8,
+            upper=value * 1.2,
+            reference_point_type="biomass",
+        )
+    ]
+    return make_log_posterior(
+        emus,
+        targets,
+        _fp2(),
+        sigma_seed_sq_by_key={"C_biomass_mean": _SIG_SEED},
+    )
+
+
+def test_underconstrained_ridge_is_wide_and_correlated():
+    result = DynestySampler().sample(_ridge_log_post(), _fp2(), seed=0)
+    # Wide marginals (the box is [0,1]; sd ~0.26 in the prototype) and a strong
+    # negative correlation along the theta0+theta1 ridge — NOT a false point.
+    assert np.all(result.marginal_sd() > 0.2)
+    assert result.correlation()[0, 1] < -0.6
+
+
+def test_converged_flag_false_when_ess_below_min():
+    # An unreachable ESS floor forces converged=False regardless of the real ESS.
+    result = DynestySampler(ess_min=1e9).sample(_identifiable_log_post(), _fp2(), seed=0)
+    assert result.converged is False
+    assert result.ess < 1e9  # the real ESS is finite and far below the floor
