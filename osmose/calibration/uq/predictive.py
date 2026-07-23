@@ -16,6 +16,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from osmose.calibration.targets import BiomassTarget
+from osmose.calibration.uq.keying import target_to_output_key
 from osmose.calibration.uq.sampler import SamplerResult
 
 
@@ -86,3 +88,20 @@ def posterior_predictive(
         cross_species_correlation=corr,
         level=level,
     )
+
+
+def marginal_coverage(
+    ranges: EmulatorPredictiveRanges,
+    targets: Sequence[BiomassTarget],
+) -> dict[str, bool]:
+    """Per-species marginal coverage: does each target fall within its predictive
+    biomass ``[lo, hi]``? The one honest, cheap posterior-predictive check available
+    now — a genuine trophic (joint) PPC needs per-seed joint design outputs, which
+    Phase 1 discarded.
+    """
+    out: dict[str, bool] = {}
+    for target in targets:
+        key = target_to_output_key(target)
+        lo, _median, hi = ranges.biomass_ranges[key]
+        out[key] = lo <= target.target <= hi
+    return out

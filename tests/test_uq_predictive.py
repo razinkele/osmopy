@@ -6,7 +6,12 @@ import dataclasses
 
 import numpy as np
 
-from osmose.calibration.uq.predictive import posterior_predictive
+from osmose.calibration.targets import BiomassTarget
+from osmose.calibration.uq.predictive import (
+    EmulatorPredictiveRanges,
+    marginal_coverage,
+    posterior_predictive,
+)
 from osmose.calibration.uq.sampler import SamplerResult
 
 
@@ -94,3 +99,25 @@ def test_posterior_predictive_cross_species_correlation_matrix():
     assert c.shape == (2, 2)
     assert np.allclose(np.diag(c), 1.0)
     assert np.allclose(c, c.T)
+
+
+def _ranges(biomass):
+    return EmulatorPredictiveRanges(
+        keys=list(biomass),
+        log_ranges={k: tuple(np.log(v)) for k, v in biomass.items()},
+        biomass_ranges=biomass,
+        cross_species_correlation=np.array([[1.0]]),
+        level=0.9,
+    )
+
+
+def test_marginal_coverage_target_within_range_is_covered():
+    ranges = _ranges({"cod_biomass_mean": (8.0, 10.0, 13.0)})
+    target = BiomassTarget("cod", 10.0, 8.0, 12.0, reference_point_type="biomass")
+    assert marginal_coverage(ranges, [target]) == {"cod_biomass_mean": True}
+
+
+def test_marginal_coverage_target_outside_range_is_not_covered():
+    ranges = _ranges({"cod_biomass_mean": (8.0, 10.0, 13.0)})
+    target = BiomassTarget("cod", 20.0, 16.0, 24.0, reference_point_type="biomass")  # 20 > 13
+    assert marginal_coverage(ranges, [target]) == {"cod_biomass_mean": False}
