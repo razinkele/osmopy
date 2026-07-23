@@ -166,3 +166,43 @@ prior-10-yr drift); then Phase B (held-out coverage + k-sweep, not yet built).
 - `n_seeds` 3–5 first; `nyear`=40; `n_workers`≈12 (28 cores / 24 GB); gate n0≈40,
   increment 20, n_max ~200; `k_by_type`={"biomass":1.0,"ssb":1.0,"catch":1.5}
   with biomass/ssb k∈{1,1.5,2} swept against held-out coverage (Phase B).
+
+## Chosen framing: A — self-consistency method validation
+
+Validate the UQ machinery on REAL engine dynamics without needing the model to
+match ICES. Since targets are engine-generated, the equilibrium concern is moot →
+shorter `nyear` (20) is fine and cheaper.
+
+**Box tuning (Goldilocks probe, `scratchpad/box_goldilocks.py`):** Baltic
+planktivores sit on collapse tipping points near θ\*=R18, so the box must be tight
+enough to avoid extinction cliffs yet wide enough for signal. Findings at nyear=20:
+- **herring** clean at ±0.15 (ln-range 4.06, 0/8 collapse) — robust, strong signal.
+- **stickleback** clean at ±0.10 (ln-range 3.58, 0/8) but collapses at ±0.15.
+- **sprat** collapses 4/8 even at ±0.10 — cliff too close; **excluded**.
+
+**Final setup** (`scratchpad/selfconsist_run.py`): **2 params / 2 targets** —
+herring (sp1) box θ\*±0.15, stickleback (sp7) box θ\*±0.10; **sprat mortality fixed
+at θ\*** (keeps sprat alive → smooth ecosystem, no collapse perturbations). Targets
+= arithmetic-mean biomass at θ\* over 10 seeds (arithmetic matches the likelihood's
+Jensen `+0.5σ²` bump), band = target × [1/1.5, 1.5]. `run_surrogate_bayes` with the
+REAL gate; n_seeds=5, nyear=20, n0=25/inc=10/n_max=60, n_workers=8, k=1.0.
+
+**Phase B built:** `emulator_holdout_coverage` (predictive.py, 7c1245e) — per-key
+fraction of fresh out-of-design engine points inside `μ ± z√(var+α)`, the gate's
+own standardization on held-out points.
+
+**Metrics (advisor-scoped):**
+- Gate certifies (status ok); watch `r2_ceiling = 1 − mean(α)/var(Y)` — a *too-tight*
+  box has low signal and the ceiling collapses (the mirror of the R18 extinction
+  failure). Pre-launch SNR check (`scratchpad/selfconsist_box_check.py`): biomass
+  must vary ≥2–3× across the box vs seed noise, else widen HALF.
+- **Single-point recovery** (NOT posterior calibration — that needs SBC): report
+  concentration = post SD / box SD (want ≪1) and centeredness = |post mean − θ\*| /
+  post SD. "θ\* in 90% CI" alone is n=1 and non-discriminating.
+- `marginal_coverage`; held-out OSMOSE coverage ≈ 0.95 — **confirmatory** (follows
+  from gate certification), framed as "certified emulator generalizes out-of-design,"
+  not as validation of the Bayesian layer.
+
+**Claim scope:** this run validates the design→gate→emulator path + single-point
+recovery on real dynamics. It does NOT validate posterior calibration (SBC) or
+reality-matching (impossible on Baltic, see Prereq 3).
