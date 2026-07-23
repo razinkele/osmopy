@@ -61,6 +61,11 @@ def make_log_posterior(
 
     resolved = []
     for t in targets:
+        if not (t.lower < t.upper):
+            raise ValueError(
+                f"target for species {t.species!r} has lower ({t.lower}) >= upper "
+                f"({t.upper}); a band requires lower < upper"
+            )
         key = target_to_output_key(t)
         if key not in emulators:
             raise KeyError(f"no emulator for target key {key!r}")

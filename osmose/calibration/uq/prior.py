@@ -18,6 +18,6 @@ from osmose.calibration.problem import FreeParameter
 def log_prior(theta: np.ndarray, free_params: list[FreeParameter]) -> float:
     """0.0 inside the box (bounds inclusive), -inf outside."""
     for j, fp in enumerate(free_params):
-        if theta[j] < fp.lower_bound or theta[j] > fp.upper_bound:
+        if not (fp.lower_bound <= theta[j] <= fp.upper_bound):
             return -math.inf
     return 0.0

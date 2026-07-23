@@ -29,3 +29,7 @@ def test_log_prior_outside_box_is_neg_inf():
 def test_log_prior_on_boundary_is_included():
     assert log_prior(np.array([0.0, 2.0]), _params()) == 0.0
     assert log_prior(np.array([1.0, -2.0]), _params()) == 0.0
+
+
+def test_log_prior_nan_is_neg_inf():
+    assert log_prior(np.array([np.nan, 0.0]), _params()) == -math.inf

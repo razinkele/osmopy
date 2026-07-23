@@ -87,3 +87,10 @@ def test_make_log_posterior_missing_emulator_key_raises():
     tgt = _target("cod", "ssb", 20.0, 16.0, 24.0)  # key cod_ssb_mean
     with pytest.raises(KeyError, match="cod_ssb_mean"):
         make_log_posterior({}, [tgt], _fp2(), sigma_seed_sq_by_key={})
+
+
+def test_make_log_posterior_rejects_degenerate_band():
+    emus = {"cod_biomass_mean": _AnalyticEmulator([1.0, 0.0], 2.0, 0.01)}
+    tgt = _target("cod", "biomass", 20.0, 20.0, 20.0)  # lower == upper
+    with pytest.raises(ValueError, match="lower"):
+        make_log_posterior(emus, [tgt], _fp2(), sigma_seed_sq_by_key={"cod_biomass_mean": 0.02})
