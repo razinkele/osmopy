@@ -9,6 +9,7 @@ from osmose.calibration.problem import FreeParameter, Transform
 from osmose.calibration.targets import BiomassTarget
 from osmose.calibration.uq.design import DesignResult
 from osmose.calibration.uq.gate import GateReport
+from osmose.calibration.uq.predictive import EmulatorPredictiveRanges, marginal_coverage
 from osmose.calibration.uq.run import UQResult, derive_sigma_seed_sq, run_surrogate_bayes
 from osmose.calibration.uq.sampler import DynestySampler
 
@@ -209,3 +210,56 @@ def test_real_gate_default_path_recovers_theta_star():
     assert result.status == "ok"
     assert np.allclose(result.posterior_mean, _THETA_STAR, atol=0.12)
     assert result.sampler_result.converged
+
+
+def test_run_populates_predictive_ranges_and_covers_targets():
+    result = run_surrogate_bayes(
+        _evaluator,
+        _fp2(),
+        _targets(),
+        n_seeds=6,
+        n0=40,
+        increment=20,
+        n_max=100,
+        seed=0,
+        gate_fn=_pass_gate,
+    )
+    assert result.status == "ok"
+    assert isinstance(result.predictive_ranges, EmulatorPredictiveRanges)
+    assert set(result.predictive_ranges.keys) == set(_MEANS)
+    # The design was built at the targets, so each target sits within its predictive range.
+    coverage = marginal_coverage(result.predictive_ranges, _targets())
+    assert all(coverage.values())
+
+
+def test_gate_failed_has_no_predictive_ranges():
+    result = run_surrogate_bayes(
+        _evaluator,
+        _fp2(),
+        _targets(),
+        n_seeds=6,
+        n0=40,
+        increment=20,
+        n_max=40,
+        seed=0,
+        gate_fn=_fail_gate,
+    )
+    assert result.status == "gate_failed"
+    assert result.predictive_ranges is None
+
+
+def test_include_predictive_false_skips_predictive():
+    result = run_surrogate_bayes(
+        _evaluator,
+        _fp2(),
+        _targets(),
+        n_seeds=6,
+        n0=40,
+        increment=20,
+        n_max=100,
+        seed=0,
+        gate_fn=_pass_gate,
+        include_predictive=False,
+    )
+    assert result.status == "ok"
+    assert result.predictive_ranges is None

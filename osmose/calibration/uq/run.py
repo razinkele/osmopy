@@ -22,6 +22,7 @@ from osmose.calibration.uq.design import DesignResult, Evaluator, grow_until_cal
 from osmose.calibration.uq.gate import GateReport
 from osmose.calibration.uq.keying import target_to_output_key
 from osmose.calibration.uq.posterior import fit_emulators, make_log_posterior
+from osmose.calibration.uq.predictive import EmulatorPredictiveRanges, posterior_predictive
 from osmose.calibration.uq.sampler import DynestySampler, SamplerResult, check_dimension
 
 
@@ -41,6 +42,7 @@ class UQResult:
     n_censored: dict[str, int]
     sampler_result: SamplerResult | None = None
     posterior_mean: np.ndarray | None = None
+    predictive_ranges: EmulatorPredictiveRanges | None = None
 
 
 def derive_sigma_seed_sq(
@@ -77,6 +79,7 @@ def run_surrogate_bayes(
     sigma_disc_sq: float = 0.0,
     k_by_type: dict[str, float] | None = None,
     sampler: DynestySampler | None = None,
+    include_predictive: bool = True,
 ) -> UQResult:
     """Run the full surrogate-Bayesian UQ pipeline; return a UQResult.
 
@@ -84,7 +87,7 @@ def run_surrogate_bayes(
     target) BEFORE the expensive design. Grows a calibrated design (real gate by
     default; ``gate_fn`` injectable); short-circuits to ``"gate_failed"`` if it
     never calibrates; else fits emulators, derives per-key σ_seed², builds the
-    posterior, and samples it.
+    posterior, samples it, and (by default) computes per-key predictive ranges.
     """
     # Fail-fast validation, BEFORE grow (potentially thousands of engine runs).
     check_dimension(len(free_params))
@@ -130,6 +133,11 @@ def run_surrogate_bayes(
     sampler = sampler if sampler is not None else DynestySampler()
     sampler_result = sampler.sample(log_posterior, free_params, seed=seed)
     status = "ok" if sampler_result.converged else "sampled_not_converged"
+    predictive_ranges = None
+    if include_predictive:
+        predictive_ranges = posterior_predictive(
+            sampler_result, emulators, keys, sigma_seed_sq, seed=seed
+        )
     return UQResult(
         status=status,
         gate_reports=growth.reports,
@@ -137,4 +145,5 @@ def run_surrogate_bayes(
         n_censored=n_censored,
         sampler_result=sampler_result,
         posterior_mean=sampler_result.posterior_mean(),
+        predictive_ranges=predictive_ranges,
     )
