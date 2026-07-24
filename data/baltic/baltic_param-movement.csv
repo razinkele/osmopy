@@ -219,3 +219,12 @@ movement.file.map24;maps/stickleback_spawning.csv
 movement.steps.map24;8;9;10;11;12;13
 movement.salinity.field.file;baltic_salinity_bottom_climatology.nc
 movement.salinity.field.varname;salinity
+
+# Salinity-gated occupancy (spec 2026-07-04): cod (sp0) avoids oligohaline cells
+# (eggs need saline basins; Neuenfeldt & Beyer 2003). Ramp 0 below 3 PSU -> 1 above
+# 6 PSU. Realism improvement; fit-neutral (5/8 preserved, pikeperch -6% via reduced
+# cod-percid overlap). See docs/baltic_salinity_gradient_exploration_2026-07-24.md.
+movement.salinity.gate.enabled;true
+movement.salinity.gate.s.low;3.0
+movement.salinity.gate.s.high;6.0
+movement.salinity.gate.species.enabled.sp0;true
