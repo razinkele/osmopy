@@ -798,7 +798,7 @@ def get_phase13_shepherd_params() -> tuple[list[str], list[tuple[float, float]],
     shape_keys, shape_bounds, shape_x0 = [], [], []
     for i in range(8):
         shape_keys.append(f"stock.recruitment.shape.sp{i}")
-        shape_bounds.append((np.log10(0.3), np.log10(5.0)))
+        shape_bounds.append((np.log10(1.0), np.log10(3.0)))  # >=1 forbids under-compensation; <=3 avoids over-crush
         shape_x0.append(np.log10(1.0))
 
     keys = keys1 + keys2 + ssbhalf_keys + shape_keys
