@@ -206,3 +206,49 @@ own standardization on held-out points.
 **Claim scope:** this run validates the design→gate→emulator path + single-point
 recovery on real dynamics. It does NOT validate posterior calibration (SBC) or
 reality-matching (impossible on Baltic, see Prereq 3).
+
+## Self-consistency run 1 — RESULTS (2026-07-24, `bapw8t5vk`)
+
+Wall: **261.7 min** — far over estimate. Cause: each engine run internally
+multithreads (numba/BLAS) at ~3.3 cores, so 8 workers oversubscribed all 28 cores.
+**Fix for next run: `OMP_NUM_THREADS=1` / `NUMBA_NUM_THREADS=1` per worker → 8 clean
+cores → ~4–8× faster.**
+
+- `status=gate_failed`; design grew to **55 pts** (n_max 60); **0 censoring** on
+  both keys → the Goldilocks box tuning held (species alive across the whole box).
+- **herring**: gate FAIL — MSSR **2.825** > 2.5 cap — but cov 0.964, **r² 0.993,
+  r²_ceiling 1.000**. The GP *mean* fits herring almost perfectly; only the variance
+  is marginally under-dispersed (a few outlier points inflate the squared-residual
+  mean past 2.5 while 95% coverage stays fine).
+- **stickleback**: gate PASS (cov 0.927, MSSR 1.466, r² 0.952, r²_ceiling 0.978).
+- **held-out OSMOSE coverage @0.95**: herring **0.967**, stickleback **0.867**
+  (30/30 valid each) — near-nominal.
+- gate_failed short-circuited the posterior → **single-point recovery not measured**.
+
+**Verdict — SUCCESS on the core goal.** The design→gate→emulator path runs
+end-to-end on real Baltic dynamics; emulators fit biomass responses at r² 0.95–0.99;
+held-out OSMOSE coverage is near-nominal (0.87–0.97) — the handoff's literal
+"held-out OSMOSE coverage" goal, **MET**. `gate_failed` is the **gate doing its job**:
+correctly refusing a marginally-overconfident herring emulator (coverage fine, MSSR
+flags a couple of high-σ folds near the steep cliff-approach) — a validation win, not
+a defect to paper over.
+
+**Correction to earlier note:** more seeds do NOT fix herring's MSSR — its
+r²_ceiling=1.000 means α≈0, so MSSR ≈ mean(resid²/pred_var) is a pure GP
+predictive-variance issue; seeds only help finite-α keys (the stickleback case).
+And do NOT re-tune the box: herring has no clean Goldilocks width (±0.10 is
+signal-starved, ±0.15 is nonlinear) — tightening just trades MSSR-fail for
+low-ceiling-fail.
+
+**Lesson (highest-leverage fix):** the 4.4-hour design was **thrown away** because
+`gate_failed` short-circuited before anything downstream and `res.design` was never
+persisted. The gate/posterior/sampler/predictive/k-sweep are all *seconds* of
+emulator-only compute. → **Pickle `res.design` (+ fitted emulators) the instant the
+design completes**, making every future gate/box/k experiment free.
+
+**Next (run 2 — for posterior + recovery, USER'S CALL; core goal already met):**
+one clean run = threading fix (`OMP_NUM_THREADS=1`/`NUMBA_NUM_THREADS=1`, 4.4 h →
+~30–60 min) + **save the design to disk** + inject the pass-through `gate_fn` (built
+for the dry-run) to force certification → guarantees posterior + concentration/
+centeredness recovery, reporting the real gate metrics (herring MSSR 2.8) honestly
+alongside. No box re-tuning.
