@@ -19,6 +19,7 @@ from pathlib import Path
 
 import numpy as np
 
+from osmose.calibration.checkpoint import RESULTS_DIR  # honors OSMOSE_RESULTS_DIR
 from osmose.calibration.problem import FreeParameter, Transform
 from osmose.calibration.targets import BiomassTarget
 from osmose.calibration.uq.design import make_engine_evaluator, run_design
@@ -29,7 +30,7 @@ from osmose.calibration.uq.run import run_surrogate_bayes
 
 BASE = Path("data/baltic/baltic_all-parameters.csv")
 SPECIES = ["cod", "herring", "sprat", "flounder", "perch", "pikeperch", "smelt", "stickleback"]
-SAVE = Path("/tmp/claude-1000/-home-razinka-osmopy/d89da751-bed8-4745-b75d-c26886735ab3/scratchpad/beta_identifiability.pkl")
+SAVE = RESULTS_DIR / "beta_identifiability.pkl"
 
 # (species, sp-index, calibrated beta*) — the 5 in-range / well-behaved species.
 BETAS = [("cod", 0, 1.952), ("herring", 1, 1.0854), ("sprat", 2, 1.7242),
@@ -80,6 +81,7 @@ def main():
     dt = time.perf_counter() - t0
 
     emulators = fit_emulators(res.design)
+    SAVE.parent.mkdir(parents=True, exist_ok=True)
     with open(SAVE, "wb") as fh:
         pickle.dump({"design": res.design, "sampler_result": res.sampler_result,
                      "posterior_mean": res.posterior_mean, "beta_star": beta_star,

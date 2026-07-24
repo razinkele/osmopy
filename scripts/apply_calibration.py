@@ -89,6 +89,9 @@ def main() -> None:
     for key, val in params.items():
         got = cfg.get(key.lower())
         assert got is not None and abs(float(got) - float(val)) < 1e-6, f"{key}: {got!r} != {val}"
+    for i in range(8):  # also verify the shepherd-type writes (not in params)
+        got = cfg.get(f"stock.recruitment.type.sp{i}")
+        assert got == "shepherd", f"stock.recruitment.type.sp{i}: {got!r} != 'shepherd'"
     print(f"applied {len(params)} params + set 8x shepherd type; roundtrip OK")
 
 

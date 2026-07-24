@@ -766,10 +766,10 @@ def get_phase13_shepherd_params() -> tuple[list[str], list[tuple[float, float]],
 
     cod sp0 ssb_half stays FIXED at 120 kt (Bpa) via base_config; only its beta
     is tunable. Bounds in log10 space (the objective applies 10**x); beta in
-    (0.3, 5.0) -> (log10(0.3), log10(5.0)), x0 = log10(1.0) = 0.0 (≡ B-H start).
-    Bounds widened from initial (0.2, 3.0) to give DE more room to find strong
-    over-compensation (beta > 2) for the perch/pikeperch x100+ overshoots
-    motivating phase 13; under-compensation (beta < 1) stays accessible.
+    (1.0, 3.0) -> (log10(1.0), log10(3.0)), x0 = log10(1.0) = 0.0 (at lower bound).
+    Bounds tightened (2026-07-24) to [1.0, 3.0]: beta >= 1 FORBIDS under-compensation
+    (which had left pikeperch uncapped at beta 0.5) and beta <= 3 avoids the
+    over-crush that collapsed flounder. See the 5/8 equilibrium re-fit.
 
     ssb_half log10 bounds are first-pass, scaled to each species' biomass target;
     verify against data/baltic/reference/biomass_targets.csv before a long run.
