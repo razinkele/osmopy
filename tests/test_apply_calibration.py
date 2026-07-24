@@ -46,3 +46,22 @@ def test_apply_calibration_roundtrips_through_reader(tmp_path):
     assert "mortality.additional.rate.sp0;3.7" in mort
     # all 8 species switched to shepherd
     assert sum(1 for line in repro if line.startswith("stock.recruitment.type.sp")) == 8
+
+
+def test_apply_calibration_scales_larval_rate_by_ndtperyear(tmp_path):
+    # The reader divides larval rate by ndtperyear on read; the file must therefore
+    # store authored_value * ndt so the reader recovers the authored value.
+    cfg = tmp_path
+    (cfg / "baltic_param-simulation.csv").write_text("simulation.time.ndtperyear;24\n")
+    (cfg / "baltic_param-reproduction.csv").write_text("")
+    (cfg / "baltic_param-additional-mortality.csv").write_text("")
+    (cfg / "baltic_param-fishing.csv").write_text("")
+    results = cfg / "r.json"
+    results.write_text(json.dumps({"parameters": {
+        "mortality.additional.larva.rate.sp0": 10.0,  # authored -> file must be 240.0
+        "mortality.additional.rate.sp0": 0.5,  # adult: identity
+    }}))
+    apply_calibration(results, cfg)
+    mort = (cfg / "baltic_param-additional-mortality.csv").read_text().splitlines()
+    assert "mortality.additional.larva.rate.sp0;240.0" in mort
+    assert "mortality.additional.rate.sp0;0.5" in mort  # adult unscaled

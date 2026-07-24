@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 DEFAULT_CONFIG_DIR = Path("data/baltic")
@@ -18,6 +19,20 @@ _FILE_FOR = {
     "mortality.additional.": "baltic_param-additional-mortality.csv",
     "fisheries.rate.base.": "baltic_param-fishing.csv",
 }
+# The reader divides the larval additional-mortality scalar by ndtperyear on read
+# (osmose/config/aliases.py); every OTHER key is identity. So the file must store
+# authored_value * ndt for larval rate keys and the raw value for all others.
+_LARVA_RATE_RE = re.compile(r"^mortality\.additional\.larva\.rate\.sp\d+$")
+
+
+def _ndtperyear(config_dir: Path) -> int:
+    sim = config_dir / "baltic_param-simulation.csv"
+    if sim.exists():
+        for line in sim.read_text().splitlines():
+            s = line.strip()
+            if s.lower().startswith("simulation.time.ndtperyear") and ";" in s:
+                return int(float(s.split(";", 1)[1].strip()))
+    return 24
 
 
 def _file_for(key: str, config_dir: Path) -> Path:
@@ -50,11 +65,13 @@ def set_key(path: Path, key: str, value) -> None:
 
 def apply_calibration(results_path: Path, config_dir: Path = DEFAULT_CONFIG_DIR) -> None:
     params = json.loads(Path(results_path).read_text())["parameters"]
+    ndt = _ndtperyear(config_dir)
     repro = config_dir / _FILE_FOR["stock.recruitment."]
     for i in range(8):
         set_key(repro, f"stock.recruitment.type.sp{i}", "shepherd")
     for key, val in params.items():
-        set_key(_file_for(key, config_dir), key, val)
+        write_val = float(val) * ndt if _LARVA_RATE_RE.match(key) else val
+        set_key(_file_for(key, config_dir), key, write_val)
 
 
 def main() -> None:
