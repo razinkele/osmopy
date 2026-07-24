@@ -1,0 +1,153 @@
+# Baltic Stock Disaggregation — Design Spec
+
+> Date: 2026-07-24. Status: design (pre-plan). Scientifically fidelity-reviewed
+> (science-reviewer + primary-literature check, 2026-07-24). Splits salinity-
+> structured Baltic stocks that the model currently aggregates into sub-populations,
+> each an OSMOSE focal species with its own reproduction/growth/fishing parameters
+> and a salinity/oxygen-niched distribution. **Phased** (cod → herring → flounder);
+> each phase is working, re-calibrated, validated software.
+
+## 1. Goal & motivation
+
+The committed model reaches 5/8 ICES envelopes but represents each species as ONE
+stock, averaging over the salinity gradient (0–35 PSU, mean 9.8) that defines Baltic
+fish ecology. `biomass_targets.csv` itself flags the aggregation: cod lumps eastern
+(collapsed) + western; herring lumps ≥4 management units; "flounder" is two species.
+Disaggregating lets the model represent the real spatial structure — e.g. a collapsed
+eastern cod coexisting with a healthier western stock — and removes the aggregation
+bias. Success = each phase's sub-stocks are individually near their ICES sub-targets
+with the correct qualitative structure (eastern-cod collapse, Bothnian vs Riga herring
+growth contrast), without regressing the unsplit species.
+
+## 2. Scientific basis (load-bearing — corrected in fidelity review)
+
+**These mechanisms drive the design; getting them right is the point of the split.**
+
+### 2.1 Cod — eastern (cod.27.24-32) vs western (cod.27.22-24)
+
+- **Division:** ICES codes verified. **SD24 (Arkona) is a mixing zone** shared by both
+  stocks (separated by otolith/genetic ID, not a clean line) — model it as a
+  transition cell, not pure eastern.
+- **Reproduction mechanism (NOT surface occupancy):** eastern cod spawn in the **deep
+  saline basin water**; egg/larval survival is gated by the **reproductive volume** —
+  water simultaneously **salinity ≥ ~11 PSU** (egg neutral buoyancy ~14 PSU; below
+  threshold eggs sink into anoxic deep and die) **AND oxygen ≥ ~2 ml/l**, with temp
+  >1.5 °C (Plikshs et al. 1993; MacKenzie/Köster/Wieland; Nissling & Westin 1997).
+  Post-inflow-decline hypoxia shrank this volume to essentially the **Bornholm Basin**.
+- **Adaptation direction (do NOT invert):** eastern cod are the **low-salinity-adapted
+  reproducers** (neutral buoyancy ~14 PSU, sperm to ~11 PSU); western cod are the
+  *higher*-salinity type (Belt Sea/Arkona). The collapse narrative is that even the
+  low-salinity specialist fails once the deep reproductive volume collapses.
+- **Collapse needs three levers together, not growth alone:** roughly-**doubled natural
+  mortality M** + chronic **recruitment failure** + **impaired growth/condition**
+  (phenotypic — hypoxia, prey loss, *Contracaecum* parasites tied to grey-seal recovery;
+  onset **2000s–2010s**, not "post-2015"; otolith ageing unreliable post-2007 → VBGF
+  params carry large uncertainty). Lowering L∞/K alone only shrinks cod; M + egg-survival
+  must move with it.
+- **What the model can/can't do:** the salinity **occupancy** gate uses a single-layer
+  bottom-salinity field and has **no oxygen field**, so it CANNOT represent the deep
+  reproductive volume. → eastern-cod recruitment must be driven by a **prescribed
+  reproductive-volume / egg-survival forcing time series** (derived from RV literature or
+  a salinity+oxygen product), coupling to the salinity-*spawning* work (the
+  `fix+baltic-salinity-spawning` worktree), NOT the occupancy gate. Adding an **oxygen
+  co-limiting field** is a prerequisite extension flagged here.
+
+### 2.2 Herring — FOUR units (not three)
+
+Verified ICES units: **`her.27.20-24`** Western Baltic Spring Spawning (spring-spawn +
+Kattegat/Skagerrak feeding migration, mixes with North Sea autumn spawners there);
+**`her.27.25-2932`** Central Baltic; **`her.27.28`** **Gulf of Riga** (distinct);
+**`her.27.3031`** **Gulf of Bothnia** (distinct). Riga (fast-growing, warm, productive,
+low-salinity embayment) and Bothnia (slow-growing, lean, cold, low-salinity) are
+biologically **opposite** and geographically far apart — **never merge them**. If a
+phase must cap at three, pair Riga with Central (adjacent), never with Bothnia. Target
+is four.
+
+### 2.3 Flounder — Platichthys flesus vs P. solemdali (best-justified split)
+
+Two reproductively-isolated species (Momigliano et al. 2017 PNAS; **2018 Front. Mar.
+Sci.** species description; 2019 ICES JMS). ***P. flesus***: **pelagic** eggs needing
+higher salinity for buoyancy → deeper southern/western basins. ***P. solemdali***
+(endemic, first Baltic endemic fish): **demersal** eggs viable to ~**6 PSU**, sperm
+motile at low salinity → shallow coastal + northern low-salinity zones. **This is the
+one split where a salinity-niched surface map is genuinely mechanistically defensible**
+(solemdali's low-salinity demersal-egg viability gates its range against flesus).
+Caveats: existing ICES flounder assessments (fle.27.2223, .2425, .2628…) **lump the two
+species** → per-species recruitment/growth/fishing are assumption-driven; ranges
+overlap (not a clean partition); the distinction is recent (2018).
+
+## 3. Representation in OSMOSE
+
+Each sub-stock = a new focal species (OSMOSE params are global per species). Its niche =
+a **region base map** (ICES SD divisions) × niche modifier:
+- **flounder** — salinity **occupancy** gate per species (solemdali low-salinity coastal;
+  flesus higher-salinity offshore). The gate mechanism (now enabled) is appropriate here.
+- **herring** — region base maps carry the units; salinity gate secondary (northern range
+  limit only).
+- **cod** — region base map for east/west adult distribution; **reproduction** driven by
+  a prescribed RV/egg-survival forcing (§2.1), not the occupancy gate. Requires the
+  spawning-stage salinity/oxygen coupling.
+
+Focal species grow 8 → **~13** (cod×2, herring×4, sprat×1, flounder×2, + perch, pikeperch,
+smelt, stickleback). Watch the **d ≤ 20 UQ-sampler cap** and DE-calibration cost as
+species/params grow.
+
+## 4. Per-sub-stock recipe (established by the cod PoC, then repeated)
+
+1. **Species params** from FishBase/ICES for that sub-stock (growth, maturity, L–W,
+   egg size) — with sub-stock specifics (eastern-cod impaired condition; Bothnian vs
+   Riga herring growth contrast).
+2. **Niche distribution:** region base map (SD divisions) × salinity gate (flounder,
+   herring-north) or × RV forcing at spawning (cod).
+3. **Predation-accessibility expansion:** the 8×8(+LTL) matrix → ~13×13(+LTL), each new
+   species hand-authored as predator AND prey from diet literature. **Main cost/error
+   surface.** Sub-stocks of one species inherit similar diet but differ by region.
+4. **Target disaggregation:** split the aggregated `biomass_targets.csv` row into
+   per-sub-stock ICES SD-level targets (via the ICES MCP/skill: cod.27.24-32 vs .22-24
+   SSB; the four herring units; flounder — assumption-driven, document it).
+5. **Calibration:** add the sub-stock's mortality/fishing/recruitment params + weight;
+   re-calibrate the expanded set with the tightened Shepherd β bounds [1.0, 3.0] and the
+   transform-aware write-back (`apply_calibration.py`).
+6. **Validate:** fresh multi-seed 40-yr run; each sub-stock near its sub-target with the
+   correct qualitative structure; unsplit species not regressed.
+
+## 5. Phases
+
+- **Phase 0 (prerequisite) — oxygen field + RV forcing for cod.** Add an oxygen
+  co-limiting input and a reproductive-volume/egg-survival forcing series (couple to the
+  salinity-spawning worktree). Without this, eastern cod cannot collapse for the right
+  reason.
+- **Phase 1 — cod E/W (PoC).** Establishes the whole recipe. SD24 as mixing cell;
+  eastern-cod recruitment on RV forcing + doubled M + impaired condition; western cod
+  standard. De-risks the pattern. Highest value.
+- **Phase 2 — herring four units.** Region base maps for the four units; Riga/Bothnia
+  growth contrast; northern salinity range limit. (Not three; never merge Riga+Bothnia.)
+- **Phase 3 — flounder two species.** The clean salinity-gate niche; document the
+  species-lumping data limitation.
+
+## 6. Key risks & open decisions
+
+- **Oxygen forcing is a real prerequisite** (Phase 0) — the model currently has none; the
+  cod collapse mechanism depends on it. Decide: full oxygen field vs prescribed RV/
+  egg-survival forcing series (lighter).
+- **Predation-matrix expansion** (~13×13) is the main hand-authoring cost and error risk.
+- **Calibration dimension** grows toward the d≤20 UQ cap; the DE re-fit cost rises per
+  phase (each ~4 h).
+- **Flounder & some herring targets are assumption-driven** (species lumping / unit data
+  quality) — the fit for these carries a documented uncertainty caveat.
+- **Coordinate with `fix+baltic-salinity-spawning`** — Phase 0/1 reproduction coupling
+  should build on it, not around it.
+
+## 7. Decomposition note
+
+This spec is deliberately phased because full fragmentation is three sub-projects. Each
+phase gets its own implementation plan (via `writing-plans`) and produces validated,
+re-calibrated software before the next begins. Phase 1 (cod PoC) must confirm the recipe
+— especially that the RV forcing reproduces the eastern collapse — before Phases 2–3.
+
+## References
+Nissling & Westin (1997, cod egg buoyancy/sperm salinity); Plikshs et al. (1993) &
+MacKenzie/Köster/Wieland (reproductive volume, salinity+oxygen); Momigliano et al.
+(2017 PNAS; 2018 Front. Mar. Sci.; 2019 ICES JMS, flounder speciation); Svedäng et al.
+(2024, cod growth decline); ICES stock codes verified live (cod.27.24-32, .22-24;
+her.27.20-24, .25-2932, .28, .3031).
