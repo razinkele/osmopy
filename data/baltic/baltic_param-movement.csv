@@ -228,3 +228,6 @@ movement.salinity.gate.enabled;true
 movement.salinity.gate.s.low;3.0
 movement.salinity.gate.s.high;6.0
 movement.salinity.gate.species.enabled.sp0;true
+movement.distribution.method.sp8;maps
+movement.randomwalk.range.sp8;2
+movement.salinity.gate.species.enabled.sp8;true

@@ -53,3 +53,5 @@ output.distrib.bysize.incr;5
 output.spatial.enabled;false
 output.spatial.ltl.enabled;false
 simulation.restart.enabled;false
+output.cutoff.age.sp8;0.5
+output.diet.stage.threshold.sp8;10;30

@@ -48,3 +48,7 @@ reproduction.rv.gate.series.file;reference/baltic_cod_reproductive_volume.csv
 reproduction.rv.gate.mode;mean_preserving
 reproduction.rv.gate.floor;0.0
 reproduction.rv.gate.species.enabled.sp0;true
+reproduction.season.file.sp8;reproduction/reproduction-seasonality-sp8.csv
+stock.recruitment.type.sp8;shepherd
+stock.recruitment.ssbhalf.sp8;60000.0
+stock.recruitment.shape.sp8;1.5

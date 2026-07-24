@@ -381,6 +381,9 @@ def test_shepherd_shape_defaults_to_one():
     cfg = _load_example_config("baltic")
     cfg["stock.recruitment.type.sp0"] = "shepherd"
     cfg["stock.recruitment.ssbhalf.sp0"] = "120000"
+    # The shipped baltic config now carries a calibrated shape.sp0; clear it so
+    # this test actually exercises the no-shape-key default path.
+    cfg.pop("stock.recruitment.shape.sp0", None)
     ec = _EC.from_dict(cfg)
     assert ec.shepherd_beta.shape[0] == ec.n_species + ec.n_background
     assert ec.shepherd_beta[0] == 1.0

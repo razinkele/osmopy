@@ -65,3 +65,8 @@ predation.predprey.stage.threshold.sp4;null
 predation.predprey.stage.threshold.sp5;null
 predation.predprey.stage.threshold.sp6;null
 predation.predprey.stage.threshold.sp7;null
+predation.efficiency.critical.sp8;0.57
+predation.ingestion.rate.max.sp8;3.5
+predation.predprey.sizeratio.max.sp8;50
+predation.predprey.sizeratio.min.sp8;3.5
+predation.predprey.stage.threshold.sp8;null

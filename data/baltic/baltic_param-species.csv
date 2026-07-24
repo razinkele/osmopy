@@ -23,7 +23,7 @@ species.type.sp6;focal
 species.type.sp7;focal
 
 # Species names
-species.name.sp0;cod
+species.name.sp0;cod_west
 species.name.sp1;herring
 species.name.sp2;sprat
 species.name.sp3;flounder
@@ -154,3 +154,17 @@ species.sexratio.sp4;0.5
 species.sexratio.sp5;0.5
 species.sexratio.sp6;0.5
 species.sexratio.sp7;0.5
+species.type.sp8;focal
+species.name.sp8;cod_east
+species.lifespan.sp8;15
+species.linf.sp8;110.0
+species.k.sp8;0.15
+species.t0.sp8;-0.20
+species.vonbertalanffy.threshold.age.sp8;0.5
+species.length2weight.condition.factor.sp8;0.00680
+species.length2weight.allometric.power.sp8;3.050
+species.egg.size.sp8;0.17
+species.egg.weight.sp8;0.0012
+species.maturity.size.sp8;22.0
+species.relativefecundity.sp8;400
+species.sexratio.sp8;0.5
