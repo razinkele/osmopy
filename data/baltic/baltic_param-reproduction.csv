@@ -17,7 +17,7 @@ stock.recruitment.type.sp0;shepherd
 stock.recruitment.type.sp3;shepherd
 stock.recruitment.type.sp4;shepherd
 stock.recruitment.type.sp5;shepherd
-stock.recruitment.ssbhalf.sp0;120000.0
+stock.recruitment.ssbhalf.sp0;15000.0
 stock.recruitment.ssbhalf.sp3;6247.219561359698
 stock.recruitment.ssbhalf.sp4;1470.7457101320415
 stock.recruitment.ssbhalf.sp5;43923.132649575884
@@ -45,10 +45,12 @@ stock.recruitment.shape.sp7;1.3605192101937935
 # docs/superpowers/plans/2026-07-24-baltic-rv-recruitment-gate.md and the series README.
 reproduction.rv.gate.enabled;true
 reproduction.rv.gate.series.file;reference/baltic_cod_reproductive_volume.csv
-reproduction.rv.gate.mode;mean_preserving
+reproduction.rv.gate.mode;raw_cap
 reproduction.rv.gate.floor;0.0
-reproduction.rv.gate.species.enabled.sp0;true
+reproduction.rv.gate.species.enabled.sp0;false
 reproduction.season.file.sp8;reproduction/reproduction-seasonality-sp8.csv
 stock.recruitment.type.sp8;shepherd
 stock.recruitment.ssbhalf.sp8;60000.0
 stock.recruitment.shape.sp8;1.5
+reproduction.rv.gate.ref;250
+reproduction.rv.gate.species.enabled.sp8;true

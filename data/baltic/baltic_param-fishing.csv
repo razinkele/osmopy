@@ -2,7 +2,7 @@
 # One fishery per focal species
 
 module.multispecies.fisheries.enabled;true
-simulation.nfisheries;8
+simulation.nfisheries;9
 
 # Fishery names
 fisheries.name.fsh0;trawlcod
@@ -104,3 +104,11 @@ fisheries.movement.file.map4;fishing/fishing-distrib.csv
 fisheries.movement.file.map5;fishing/fishing-distrib.csv
 fisheries.movement.file.map6;fishing/fishing-distrib.csv
 fisheries.movement.file.map7;fishing/fishing-distrib.csv
+fisheries.name.fsh8;trawlcod_east
+fisheries.selectivity.type.fsh8;0
+fisheries.selectivity.a50.fsh8;2.0
+fisheries.rate.base.fsh8;0.01
+fisheries.period.number.fsh8;1
+fisheries.rate.byperiod.fsh8;1
+fisheries.period.start.fsh8;0
+fisheries.seasonality.fsh8;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167;0.04167
