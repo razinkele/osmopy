@@ -306,3 +306,18 @@ unaffected). Appropriately scoped: recovery of *one* identifiable parameter + ho
 prior-domination on the second — not "parameters" plural. k-sweep is optional here (we
 set the band, so k isn't adjudicated against anything real); the pickled design makes it
 free if wanted.
+
+### k-sweep (emulator-only, `scratchpad/k_sweep.py`, no engine runs)
+
+k interprets the band as a k-σ interval (σ = ln(1.5)/k), so larger k ⇒ tighter likelihood.
+
+| k | σ | herring conc / center | sp7 conc / center |
+|---|---|-----------------------|-------------------|
+| 1.0 | 0.405 | 0.56 / 0.28 | 1.00 / 0.03 |
+| 1.5 | 0.270 | 0.44 / 0.18 | 1.01 / 0.02 |
+| 2.0 | 0.203 | 0.36 / 0.07 | 1.02 / 0.07 |
+
+- **herring**: sharpens monotonically and centers on truth as k rises — robustly recovered.
+- **sp7**: prior-dominated at *every* k — even k=2 (σ 0.203) can't constrain it, because
+  stickleback biomass is competition-driven by sp1, not sp7. Strengthens the
+  weak-identifiability finding (it's structural, not a band-width artifact).
