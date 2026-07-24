@@ -8,15 +8,32 @@ reproduction.season.file.sp5;reproduction/reproduction-seasonality-sp5.csv
 reproduction.season.file.sp6;reproduction/reproduction-seasonality-sp6.csv
 reproduction.season.file.sp7;reproduction/reproduction-seasonality-sp7.csv
 
-# Density-dependent stock-recruitment (Beverton-Holt) — v0.11.0
-# Cod (sp0): ssb_half ≈ Bpa (122 kt) per ICES cod.27.24-32; fixed.
-# Flounder (sp3), perch (sp4), pikeperch (sp5): DE-tunable initial values;
-# overridden at runtime by phase 12 calibration. Other species default to 'none'.
-stock.recruitment.type.sp0;beverton_holt
-stock.recruitment.type.sp3;beverton_holt
-stock.recruitment.type.sp4;beverton_holt
-stock.recruitment.type.sp5;beverton_holt
+# Density-dependent stock-recruitment (Shepherd) — equilibrium-calibrated 2026-07-24
+# All 8 focal species on Shepherd SR (over-compensation beta in [1.0, 3.0]); 5/8 in
+# ICES range, no collapse. Provenance: calibration_results/phase13_equilibrium.json
+# (regenerate the tracked values with: scripts/apply_calibration.py <results.json>).
+# Cod (sp0): ssb_half ≈ Bpa (120 kt) per ICES cod.27.24-32; fixed.
+stock.recruitment.type.sp0;shepherd
+stock.recruitment.type.sp3;shepherd
+stock.recruitment.type.sp4;shepherd
+stock.recruitment.type.sp5;shepherd
 stock.recruitment.ssbhalf.sp0;120000.0
-stock.recruitment.ssbhalf.sp3;50000.0
-stock.recruitment.ssbhalf.sp4;10000.0
-stock.recruitment.ssbhalf.sp5;10000.0
+stock.recruitment.ssbhalf.sp3;6247.219561359698
+stock.recruitment.ssbhalf.sp4;1470.7457101320415
+stock.recruitment.ssbhalf.sp5;43923.132649575884
+stock.recruitment.type.sp1;shepherd
+stock.recruitment.type.sp2;shepherd
+stock.recruitment.type.sp6;shepherd
+stock.recruitment.type.sp7;shepherd
+stock.recruitment.ssbhalf.sp1;725836.1478847418
+stock.recruitment.ssbhalf.sp2;212859.10683208628
+stock.recruitment.ssbhalf.sp6;20221.745294734512
+stock.recruitment.ssbhalf.sp7;7245.388349234527
+stock.recruitment.shape.sp0;1.9520476995971803
+stock.recruitment.shape.sp1;1.0853877579180908
+stock.recruitment.shape.sp2;1.7241588813021766
+stock.recruitment.shape.sp3;1.3970076277275771
+stock.recruitment.shape.sp4;1.4199991034873363
+stock.recruitment.shape.sp5;1.7246280772337788
+stock.recruitment.shape.sp6;2.1256459289734413
+stock.recruitment.shape.sp7;1.3605192101937935

@@ -1,0 +1,256 @@
+{
+  "phase": "13",
+  "optimizer": "de",
+  "objective_single_seed": 2.3313024784332304,
+  "objective_multiseed_mean": 2.383069711351711,
+  "objective_multiseed_std": 0.04445997500954564,
+  "objective_per_seed": [
+    2.3313024784332304,
+    2.4011022845602197,
+    2.3425260432789,
+    2.3850236313275843,
+    2.4553941191586213
+  ],
+  "n_evaluations": 1365,
+  "elapsed_seconds": 15692.586164474487,
+  "parameters": {
+    "mortality.additional.larva.rate.sp0": 10.156861385528304,
+    "mortality.additional.larva.rate.sp1": 4.106578712967473,
+    "mortality.additional.larva.rate.sp2": 6.1547015628561486,
+    "mortality.additional.larva.rate.sp3": 7.92634861739182,
+    "mortality.additional.larva.rate.sp4": 6.335183467235831,
+    "mortality.additional.larva.rate.sp5": 3.0014192144404754,
+    "mortality.additional.larva.rate.sp6": 0.7989622522132838,
+    "mortality.additional.larva.rate.sp7": 0.9157005249403786,
+    "mortality.additional.rate.sp0": 1.2545949046281932,
+    "mortality.additional.rate.sp1": 2.247192881951114,
+    "mortality.additional.rate.sp2": 0.21435847448826884,
+    "mortality.additional.rate.sp3": 0.005978902385314909,
+    "mortality.additional.rate.sp4": 0.09666917387416468,
+    "mortality.additional.rate.sp5": 0.013659362292110771,
+    "mortality.additional.rate.sp6": 0.44877391281589357,
+    "mortality.additional.rate.sp7": 0.8011948830304665,
+    "fisheries.rate.base.fsh0": 0.03901337537354545,
+    "fisheries.rate.base.fsh1": 0.3799687566571175,
+    "fisheries.rate.base.fsh2": 0.16365437729503968,
+    "fisheries.rate.base.fsh3": 1.367806662643799,
+    "fisheries.rate.base.fsh4": 0.02940885412976362,
+    "fisheries.rate.base.fsh5": 0.009543135539394263,
+    "fisheries.rate.base.fsh6": 0.5131935063759179,
+    "fisheries.rate.base.fsh7": 0.043006750318723266,
+    "stock.recruitment.ssbhalf.sp1": 725836.1478847418,
+    "stock.recruitment.ssbhalf.sp2": 212859.10683208628,
+    "stock.recruitment.ssbhalf.sp3": 6247.219561359698,
+    "stock.recruitment.ssbhalf.sp4": 1470.7457101320415,
+    "stock.recruitment.ssbhalf.sp5": 43923.132649575884,
+    "stock.recruitment.ssbhalf.sp6": 20221.745294734512,
+    "stock.recruitment.ssbhalf.sp7": 7245.388349234527,
+    "stock.recruitment.shape.sp0": 1.9520476995971803,
+    "stock.recruitment.shape.sp1": 1.0853877579180908,
+    "stock.recruitment.shape.sp2": 1.7241588813021766,
+    "stock.recruitment.shape.sp3": 1.3970076277275771,
+    "stock.recruitment.shape.sp4": 1.4199991034873363,
+    "stock.recruitment.shape.sp5": 1.7246280772337788,
+    "stock.recruitment.shape.sp6": 2.1256459289734413,
+    "stock.recruitment.shape.sp7": 1.3605192101937935
+  },
+  "log10_parameters": {
+    "mortality.additional.larva.rate.sp0": 1.0067595255138269,
+    "mortality.additional.larva.rate.sp1": 0.6134801515952844,
+    "mortality.additional.larva.rate.sp2": 0.7892069991443362,
+    "mortality.additional.larva.rate.sp3": 0.8990731695979706,
+    "mortality.additional.larva.rate.sp4": 0.8017591965918941,
+    "mortality.additional.larva.rate.sp5": 0.47732665847154243,
+    "mortality.additional.larva.rate.sp6": -0.09747373888718047,
+    "mortality.additional.larva.rate.sp7": -0.03824653684669521,
+    "mortality.additional.rate.sp0": 0.09850351937511381,
+    "mortality.additional.rate.sp1": 0.3516403505552834,
+    "mortality.additional.rate.sp2": -0.6688593423341749,
+    "mortality.additional.rate.sp3": -2.2233785370406554,
+    "mortality.additional.rate.sp4": -1.014711992831801,
+    "mortality.additional.rate.sp5": -1.8645695758728056,
+    "mortality.additional.rate.sp6": -0.3479723965143535,
+    "mortality.additional.rate.sp7": -0.09626183306634073,
+    "fisheries.rate.base.fsh0": -1.4087864736131146,
+    "fisheries.rate.base.fsh1": -0.420252112249637,
+    "fisheries.rate.base.fsh2": -0.7860723740427628,
+    "fisheries.rate.base.fsh3": 0.13602471486885603,
+    "fisheries.rate.base.fsh4": -1.5315218967719342,
+    "fisheries.rate.base.fsh5": -2.0203089079247305,
+    "fisheries.rate.base.fsh6": -0.28971884754837274,
+    "fisheries.rate.base.fsh7": -1.3664633724183843,
+    "stock.recruitment.ssbhalf.sp1": 5.860838593013002,
+    "stock.recruitment.ssbhalf.sp2": 5.328092235496554,
+    "stock.recruitment.ssbhalf.sp3": 3.7956867696904273,
+    "stock.recruitment.ssbhalf.sp4": 3.1675375903121106,
+    "stock.recruitment.ssbhalf.sp5": 4.6426933069408385,
+    "stock.recruitment.ssbhalf.sp6": 4.305818635882188,
+    "stock.recruitment.ssbhalf.sp7": 3.860061668400642,
+    "stock.recruitment.shape.sp0": 0.29049042573781525,
+    "stock.recruitment.shape.sp1": 0.035584918866266135,
+    "stock.recruitment.shape.sp2": 0.2365772835846803,
+    "stock.recruitment.shape.sp3": 0.14519877738902265,
+    "stock.recruitment.shape.sp4": 0.15228807019247498,
+    "stock.recruitment.shape.sp5": 0.2366954522090304,
+    "stock.recruitment.shape.sp6": 0.327490925333454,
+    "stock.recruitment.shape.sp7": 0.1337046782894339
+  },
+  "bounds_log10": {
+    "mortality.additional.larva.rate.sp0": [
+      -1.0,
+      2.0
+    ],
+    "mortality.additional.larva.rate.sp1": [
+      -1.0,
+      2.0
+    ],
+    "mortality.additional.larva.rate.sp2": [
+      -1.0,
+      2.0
+    ],
+    "mortality.additional.larva.rate.sp3": [
+      -1.0,
+      2.0
+    ],
+    "mortality.additional.larva.rate.sp4": [
+      -1.0,
+      2.0
+    ],
+    "mortality.additional.larva.rate.sp5": [
+      -1.0,
+      2.0
+    ],
+    "mortality.additional.larva.rate.sp6": [
+      -1.0,
+      2.0
+    ],
+    "mortality.additional.larva.rate.sp7": [
+      -1.0,
+      2.0
+    ],
+    "mortality.additional.rate.sp0": [
+      -3.0,
+      0.7
+    ],
+    "mortality.additional.rate.sp1": [
+      -3.0,
+      0.7
+    ],
+    "mortality.additional.rate.sp2": [
+      -3.0,
+      0.7
+    ],
+    "mortality.additional.rate.sp3": [
+      -3.0,
+      0.7
+    ],
+    "mortality.additional.rate.sp4": [
+      -3.0,
+      0.7
+    ],
+    "mortality.additional.rate.sp5": [
+      -3.0,
+      0.7
+    ],
+    "mortality.additional.rate.sp6": [
+      -3.0,
+      0.3
+    ],
+    "mortality.additional.rate.sp7": [
+      -3.0,
+      0.3
+    ],
+    "fisheries.rate.base.fsh0": [
+      -2.5,
+      0.0
+    ],
+    "fisheries.rate.base.fsh1": [
+      -2.5,
+      0.0
+    ],
+    "fisheries.rate.base.fsh2": [
+      -2.5,
+      0.0
+    ],
+    "fisheries.rate.base.fsh3": [
+      -2.5,
+      0.5
+    ],
+    "fisheries.rate.base.fsh4": [
+      -2.5,
+      0.0
+    ],
+    "fisheries.rate.base.fsh5": [
+      -2.5,
+      0.5
+    ],
+    "fisheries.rate.base.fsh6": [
+      -2.5,
+      0.0
+    ],
+    "fisheries.rate.base.fsh7": [
+      -2.5,
+      0.0
+    ],
+    "stock.recruitment.ssbhalf.sp1": [
+      4.7,
+      6.3
+    ],
+    "stock.recruitment.ssbhalf.sp2": [
+      4.7,
+      6.3
+    ],
+    "stock.recruitment.ssbhalf.sp3": [
+      3.7,
+      5.3
+    ],
+    "stock.recruitment.ssbhalf.sp4": [
+      2.7,
+      4.7
+    ],
+    "stock.recruitment.ssbhalf.sp5": [
+      2.7,
+      4.7
+    ],
+    "stock.recruitment.ssbhalf.sp6": [
+      3.0,
+      5.0
+    ],
+    "stock.recruitment.ssbhalf.sp7": [
+      3.0,
+      5.7
+    ],
+    "stock.recruitment.shape.sp0": [
+      0.0,
+      0.47712125471966244
+    ],
+    "stock.recruitment.shape.sp1": [
+      0.0,
+      0.47712125471966244
+    ],
+    "stock.recruitment.shape.sp2": [
+      0.0,
+      0.47712125471966244
+    ],
+    "stock.recruitment.shape.sp3": [
+      0.0,
+      0.47712125471966244
+    ],
+    "stock.recruitment.shape.sp4": [
+      0.0,
+      0.47712125471966244
+    ],
+    "stock.recruitment.shape.sp5": [
+      0.0,
+      0.47712125471966244
+    ],
+    "stock.recruitment.shape.sp6": [
+      0.0,
+      0.47712125471966244
+    ],
+    "stock.recruitment.shape.sp7": [
+      0.0,
+      0.47712125471966244
+    ]
+  }
+}
