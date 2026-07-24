@@ -37,29 +37,29 @@ movement.randomwalk.range.sp7;1
 # ============================================
 # sp0: Cod — juvenile (age 0-1), adult (1-4), spawning adults (4+, Mar-Aug)
 # ============================================
-movement.species.map0;cod
+movement.species.map0;cod_west
 movement.initialage.map0;0
 movement.lastage.map0;1
-movement.file.map0;maps/cod_juvenile.csv
+movement.file.map0;maps/cod_west_juvenile.csv
 movement.steps.map0;0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16;17;18;19;20;21;22;23
 
-movement.species.map1;cod
+movement.species.map1;cod_west
 movement.initialage.map1;1
 movement.lastage.map1;4
-movement.file.map1;maps/cod_adult.csv
+movement.file.map1;maps/cod_west_adult.csv
 movement.steps.map1;0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16;17;18;19;20;21;22;23
 
-movement.species.map2;cod
+movement.species.map2;cod_west
 movement.initialage.map2;4
 movement.lastage.map2;21
-movement.file.map2;maps/cod_spawning.csv
-movement.steps.map2;4;5;6;7;8;9;10;11;12;13;14;15
+movement.file.map2;maps/cod_west_spawning.csv
+movement.steps.map2;2;3;4;5;6;7;8;9
 
-movement.species.map3;cod
+movement.species.map3;cod_west
 movement.initialage.map3;4
 movement.lastage.map3;21
-movement.file.map3;maps/cod_adult.csv
-movement.steps.map3;0;1;2;3;16;17;18;19;20;21;22;23
+movement.file.map3;maps/cod_west_adult.csv
+movement.steps.map3;0;1;10;11;12;13;14;15;16;17;18;19;20;21;22;23
 
 # ============================================
 # sp1: Herring — juvenile (0-1), adult (1+), spring spawning (Mar-Jun, coastal),
@@ -231,3 +231,23 @@ movement.salinity.gate.species.enabled.sp0;true
 movement.distribution.method.sp8;maps
 movement.randomwalk.range.sp8;2
 movement.salinity.gate.species.enabled.sp8;true
+movement.species.map26;cod_east
+movement.initialage.map26;0
+movement.lastage.map26;1
+movement.file.map26;maps/cod_east_juvenile.csv
+movement.steps.map26;0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16;17;18;19;20;21;22;23
+movement.species.map27;cod_east
+movement.initialage.map27;1
+movement.lastage.map27;4
+movement.file.map27;maps/cod_east_adult.csv
+movement.steps.map27;0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16;17;18;19;20;21;22;23
+movement.species.map28;cod_east
+movement.initialage.map28;4
+movement.lastage.map28;15
+movement.file.map28;maps/cod_east_spawning.csv
+movement.steps.map28;10;11;12;13;14;15;16;17;18;19
+movement.species.map29;cod_east
+movement.initialage.map29;4
+movement.lastage.map29;15
+movement.file.map29;maps/cod_east_adult.csv
+movement.steps.map29;0;1;2;3;4;5;6;7;8;9;20;21;22;23
