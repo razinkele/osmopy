@@ -44,7 +44,7 @@ BALTIC_CONFIG = PROJECT_ROOT / "data" / "baltic" / "baltic_all-parameters.csv"
 TARGETS_CSV = PROJECT_ROOT / "data" / "baltic" / "reference" / "biomass_targets.csv"
 
 SPECIES_NAMES = [
-    "cod",
+    "cod_west",  # sp0 — western Baltic cod (cod.27.22-24)
     "herring",
     "sprat",
     "flounder",
@@ -52,6 +52,7 @@ SPECIES_NAMES = [
     "pikeperch",
     "smelt",
     "stickleback",
+    "cod_east",  # sp8 — eastern Baltic cod (cod.27.24-32), RV-gated + elevated M
 ]
 N_SPECIES = len(SPECIES_NAMES)
 
@@ -476,9 +477,9 @@ def get_phase1_params() -> tuple[list[str], list[tuple[float, float]], list[floa
 
     # Larval mortality: R18 values range 0.4-15.5
     # Bounds: log10(0.1)=-1.0 to log10(100)=2.0
-    r18_larval = [15.0, 8.0, 9.0, 12.0, 13.0, 15.0, 13.5, 3.5]
+    r18_larval = [15.0, 8.0, 9.0, 12.0, 13.0, 15.0, 13.5, 3.5, 15.0]
     larval_bounds = [
-        (-1.0, 2.0),  # sp0 cod
+        (-1.0, 2.0),  # sp0 cod_west
         (-1.0, 2.0),  # sp1 herring — may need very high larval mort
         (-1.0, 2.0),  # sp2 sprat
         (-1.0, 2.0),  # sp3 flounder
@@ -486,6 +487,7 @@ def get_phase1_params() -> tuple[list[str], list[tuple[float, float]], list[floa
         (-1.0, 2.0),  # sp5 pikeperch
         (-1.0, 2.0),  # sp6 smelt
         (-1.0, 2.0),  # sp7 stickleback
+        (-1.0, 2.0),  # sp8 cod_east
     ]
     for i in range(N_SPECIES):
         keys.append(f"mortality.additional.larva.rate.sp{i}")
@@ -499,9 +501,9 @@ def get_phase1_params() -> tuple[list[str], list[tuple[float, float]], list[floa
     # B-H stock-recruitment (v0.11.0) now provides density-dependent
     # cod recruitment, so DE no longer needs a hard mortality floor —
     # the linear-eggs compensation pathway is closed at the egg stage.
-    r18_adult = [0.05, 0.001, 0.05, 0.05, 0.02, 0.03, 0.02, 0.001]
+    r18_adult = [0.05, 0.001, 0.05, 0.05, 0.02, 0.03, 0.02, 0.001, 1.0]
     adult_bounds = [
-        (-3.0, 0.7),  # sp0 cod — seal predation
+        (-3.0, 0.7),  # sp0 cod_west — seal predation
         (-3.0, 0.7),  # sp1 herring — heavy seal predation (16-19% per Gårdmark 2012)
         (-3.0, 0.7),  # sp2 sprat — seal predation + cormorant on juveniles
         (-3.0, 0.7),  # sp3 flounder — seal predation + some cormorant
@@ -509,6 +511,7 @@ def get_phase1_params() -> tuple[list[str], list[tuple[float, float]], list[floa
         (-3.0, 0.7),  # sp5 pikeperch — cormorant predation (4-23% per Heikinheimo 2016)
         (-3.0, 0.3),  # sp6 smelt — no documented top predator in model, keep default
         (-3.0, 0.3),  # sp7 stickleback — boom-bust, not predator-limited
+        (-3.0, 0.7),  # sp8 cod_east — elevated M (hypoxia/seals/parasites) is the collapse lever; wide
     ]
     for i in range(N_SPECIES):
         keys.append(f"mortality.additional.rate.sp{i}")
@@ -703,13 +706,13 @@ def get_phase2_params() -> tuple[list[str], list[tuple[float, float]], list[floa
     bounds = []
     x0 = []
 
-    r18_fishing = [0.08, 0.06, 0.25, 0.04, 0.03, 0.03, 0.02, 0.01]
+    r18_fishing = [0.08, 0.06, 0.25, 0.04, 0.03, 0.03, 0.02, 0.01, 0.01]
     # Per-species upper bounds: widen for flounder (sp3) and pikeperch (sp5) because
     # the 2026-04-24 phase 2 calibration had fsh3 pinned at the log10=0.0 ceiling —
     # DE wanted more fishing pressure. These two species have no natural-predator
     # control in the 8-species model, so fishing is the only lever until background
-    # predators are added.
-    fishing_upper = [0.0, 0.0, 0.0, 0.5, 0.0, 0.5, 0.0, 0.0]
+    # predators are added. sp8 cod_east (fsh8): low F (2019 moratorium).
+    fishing_upper = [0.0, 0.0, 0.0, 0.5, 0.0, 0.5, 0.0, 0.0, 0.0]
     for i in range(N_SPECIES):
         keys.append(f"fisheries.rate.base.fsh{i}")
         bounds.append((-2.5, fishing_upper[i]))
@@ -761,11 +764,12 @@ def get_phase12_params() -> tuple[list[str], list[tuple[float, float]], list[flo
 
 
 def get_phase13_shepherd_params() -> tuple[list[str], list[tuple[float, float]], list[float]]:
-    """Phase 13: all 8 species on Shepherd SR; joint mortality + fishing +
-    per-species ssb_half (sp1-7) + shape beta (sp0-7).
+    """Phase 13: all 9 species on Shepherd SR; joint mortality + fishing +
+    per-species ssb_half (sp0-8, both cod stocks free) + shape beta (sp0-8).
 
-    cod sp0 ssb_half stays FIXED at 120 kt (Bpa) via base_config; only its beta
-    is tunable. Bounds in log10 space (the objective applies 10**x); beta in
+    After the cod disaggregation, cod_west (sp0) and cod_east (sp8) each have a
+    free ssb_half (different stock scales). Bounds in log10 space (the objective
+    applies 10**x); beta in
     (1.0, 3.0) -> (log10(1.0), log10(3.0)), x0 = log10(1.0) = 0.0 (at lower bound).
     Bounds tightened (2026-07-24) to [1.0, 3.0]: beta >= 1 FORBIDS under-compensation
     (which had left pikeperch uncapped at beta 0.5) and beta <= 3 avoids the
@@ -777,8 +781,9 @@ def get_phase13_shepherd_params() -> tuple[list[str], list[tuple[float, float]],
     keys1, bounds1, x01 = get_phase1_params()
     keys2, bounds2, x02 = get_phase2_params()
 
-    # ssb_half for sp1..sp7 (cod sp0 fixed). log10(tonnes).
+    # ssb_half for all 9 species (both cod stocks free after disaggregation). log10(tonnes).
     ssbhalf_log_bounds = {
+        0: (3.7, 5.0),  # cod_west: 5k-100k t (western Bpa ~15k)
         1: (4.7, 6.3),  # herring: 50k-2M t
         2: (4.7, 6.3),  # sprat:   50k-2M t
         3: (3.7, 5.3),  # flounder: 5k-200k t
@@ -786,17 +791,18 @@ def get_phase13_shepherd_params() -> tuple[list[str], list[tuple[float, float]],
         5: (2.7, 4.7),  # pikeperch:0.5k-50k t
         6: (3.0, 5.0),  # smelt:    1k-100k t
         7: (3.0, 5.7),  # stickleback: 1k-500k t (recent HELCOM bloom estimates 150-300k t)
+        8: (4.0, 5.3),  # cod_east: 10k-200k t (post-collapse SSB ~70k)
     }
-    ssbhalf_x0_tonnes = {1: 3e5, 2: 3e5, 3: 5e4, 4: 1e4, 5: 1e4, 6: 1e4, 7: 1e4}
+    ssbhalf_x0_tonnes = {0: 1.5e4, 1: 3e5, 2: 3e5, 3: 5e4, 4: 1e4, 5: 1e4, 6: 1e4, 7: 1e4, 8: 7e4}
     ssbhalf_keys, ssbhalf_bounds, ssbhalf_x0 = [], [], []
-    for i in range(1, 8):
+    for i in range(N_SPECIES):
         ssbhalf_keys.append(f"stock.recruitment.ssbhalf.sp{i}")
         ssbhalf_bounds.append(ssbhalf_log_bounds[i])
         ssbhalf_x0.append(np.log10(ssbhalf_x0_tonnes[i]))
 
-    # shape beta for all 8 species.
+    # shape beta for all 9 species.
     shape_keys, shape_bounds, shape_x0 = [], [], []
-    for i in range(8):
+    for i in range(N_SPECIES):
         shape_keys.append(f"stock.recruitment.shape.sp{i}")
         shape_bounds.append((np.log10(1.0), np.log10(3.0)))  # >=1 forbids under-compensation; <=3 avoids over-crush
         shape_x0.append(np.log10(1.0))
@@ -1229,12 +1235,13 @@ def run_calibration(
         )
 
     if phase == "13":
-        for sp_idx in range(8):
+        for sp_idx in range(N_SPECIES):
             base_config[f"stock.recruitment.type.sp{sp_idx}"] = "shepherd"
-        base_config["stock.recruitment.ssbhalf.sp0"] = "120000"  # cod Bpa, fixed
+        # cod disaggregated: cod_west (sp0) and cod_east (sp8) ssb_half are both
+        # free params now (no fixed sp0 Bpa) — the two stocks have different scales.
         print(
-            "Phase 13: all 8 species on Shepherd SR; tuning mortality + fishing "
-            "+ ssb_half (sp1-7) + shape beta (sp0-7). cod sp0 ssb_half fixed at 120 kt."
+            f"Phase 13: all {N_SPECIES} species on Shepherd SR; tuning mortality + fishing "
+            f"+ ssb_half (sp0-{N_SPECIES - 1}) + shape beta (sp0-{N_SPECIES - 1})."
         )
 
     if phase == "14":

@@ -35,6 +35,17 @@ def _ndtperyear(config_dir: Path) -> int:
     return 24
 
 
+def _nspecies(config_dir: Path) -> int:
+    """Focal-species count (simulation.nspecies); 8 pre-disaggregation, 9 after."""
+    sim = config_dir / "baltic_param-simulation.csv"
+    if sim.exists():
+        for line in sim.read_text().splitlines():
+            s = line.strip()
+            if s.lower().startswith("simulation.nspecies") and ";" in s:
+                return int(float(s.split(";", 1)[1].strip()))
+    return 8
+
+
 def _file_for(key: str, config_dir: Path) -> Path:
     for prefix, fname in _FILE_FOR.items():
         if key.startswith(prefix):
@@ -66,8 +77,9 @@ def set_key(path: Path, key: str, value) -> None:
 def apply_calibration(results_path: Path, config_dir: Path = DEFAULT_CONFIG_DIR) -> None:
     params = json.loads(Path(results_path).read_text())["parameters"]
     ndt = _ndtperyear(config_dir)
+    n_species = _nspecies(config_dir)
     repro = config_dir / _FILE_FOR["stock.recruitment."]
-    for i in range(8):
+    for i in range(n_species):
         set_key(repro, f"stock.recruitment.type.sp{i}", "shepherd")
     for key, val in params.items():
         write_val = float(val) * ndt if _LARVA_RATE_RE.match(key) else val
@@ -89,10 +101,11 @@ def main() -> None:
     for key, val in params.items():
         got = cfg.get(key.lower())
         assert got is not None and abs(float(got) - float(val)) < 1e-6, f"{key}: {got!r} != {val}"
-    for i in range(8):  # also verify the shepherd-type writes (not in params)
+    n_species = _nspecies(cfg_dir)
+    for i in range(n_species):  # also verify the shepherd-type writes (not in params)
         got = cfg.get(f"stock.recruitment.type.sp{i}")
         assert got == "shepherd", f"stock.recruitment.type.sp{i}: {got!r} != 'shepherd'"
-    print(f"applied {len(params)} params + set 8x shepherd type; roundtrip OK")
+    print(f"applied {len(params)} params + set {n_species}x shepherd type; roundtrip OK")
 
 
 if __name__ == "__main__":

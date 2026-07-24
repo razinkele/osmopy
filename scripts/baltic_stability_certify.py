@@ -35,7 +35,8 @@ _JAR = Path(os.environ.get(
 
 # ICES envelopes (data/baltic/reference/biomass_targets.csv): (lower, upper) tonnes
 ENVELOPE = {
-    "cod": (60000, 250000), "herring": (800000, 3000000), "sprat": (800000, 2500000),
+    "cod_west": (4000, 25000), "cod_east": (60000, 85000),
+    "herring": (800000, 3000000), "sprat": (800000, 2500000),
     "flounder": (20000, 100000), "perch": (8000, 50000), "pikeperch": (4000, 25000),
     "smelt": (20000, 120000), "stickleback": (50000, 500000),
 }
@@ -198,11 +199,12 @@ def main() -> int:
             f"| {sp} | {'✓' if t['persists'] else '✗'} | {'✓' if t['in_envelope'] else '✗'} "
             f"| {t['min_biomass']:.2e} | {t['late_mean_range']} |"
         )
+    n_focal = len(FOCAL)
     verdict = (
-        f"\n**Python verdict: {py_ok}/8 persistent & in-envelope.** "
-        + ("All 8 pass — candidate is certifiable; verify value round-trip before writing data/baltic."
-           if py_ok == 8
-           else "Not 8/8 — SP-B gate: the failing species (not PASS above) are candidates params alone "
+        f"\n**Python verdict: {py_ok}/{n_focal} persistent & in-envelope.** "
+        + (f"All {n_focal} pass — candidate is certifiable; verify value round-trip before writing data/baltic."
+           if py_ok == n_focal
+           else f"Not {n_focal}/{n_focal} — SP-B gate: the failing species (not PASS above) are candidates params alone "
                 "cannot stabilise; record whether sweeping their params moved them (structural vs tunable).")
     )
     lines.append(verdict)
