@@ -1,0 +1,79 @@
+"""Apply a calibration results JSON to the tracked Baltic config CSVs, in place.
+
+Switches all 8 focal species to Shepherd stock-recruitment and writes every
+calibrated mortality / fishing / recruitment parameter into its owning CSV,
+editing only the affected key lines so comments and structure are preserved.
+Run: .venv/bin/python scripts/apply_calibration.py <results.json>
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+
+DEFAULT_CONFIG_DIR = Path("data/baltic")
+_FILE_FOR = {
+    "stock.recruitment.": "baltic_param-reproduction.csv",
+    "mortality.additional.": "baltic_param-additional-mortality.csv",
+    "fisheries.rate.base.": "baltic_param-fishing.csv",
+}
+
+
+def _file_for(key: str, config_dir: Path) -> Path:
+    for prefix, fname in _FILE_FOR.items():
+        if key.startswith(prefix):
+            return config_dir / fname
+    raise KeyError(f"no tracked CSV owns key {key!r}")
+
+
+def set_key(path: Path, key: str, value) -> None:
+    """Set ``key;value`` in a ``;``-separated OSMOSE CSV, in place; append if absent."""
+    lines = path.read_text().splitlines() if path.exists() else []
+    out, found = [], False
+    for line in lines:
+        s = line.strip()
+        if (
+            s
+            and not s.startswith("#")
+            and ";" in s
+            and s.split(";", 1)[0].strip().lower() == key.lower()
+        ):
+            out.append(f"{key};{value}")
+            found = True
+        else:
+            out.append(line)
+    if not found:
+        out.append(f"{key};{value}")
+    path.write_text("\n".join(out) + "\n")
+
+
+def apply_calibration(results_path: Path, config_dir: Path = DEFAULT_CONFIG_DIR) -> None:
+    params = json.loads(Path(results_path).read_text())["parameters"]
+    repro = config_dir / _FILE_FOR["stock.recruitment."]
+    for i in range(8):
+        set_key(repro, f"stock.recruitment.type.sp{i}", "shepherd")
+    for key, val in params.items():
+        set_key(_file_for(key, config_dir), key, val)
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="Apply a calibration JSON to tracked Baltic CSVs")
+    ap.add_argument("results_json")
+    ap.add_argument("--config-dir", default=str(DEFAULT_CONFIG_DIR))
+    args = ap.parse_args()
+    cfg_dir = Path(args.config_dir)
+    apply_calibration(Path(args.results_json), cfg_dir)
+
+    from osmose.config import OsmoseConfigReader  # roundtrip check
+
+    cfg = OsmoseConfigReader().read(cfg_dir / "baltic_all-parameters.csv")
+    params = json.loads(Path(args.results_json).read_text())["parameters"]
+    for key, val in params.items():
+        got = cfg.get(key.lower())
+        assert got is not None and abs(float(got) - float(val)) < 1e-6, f"{key}: {got!r} != {val}"
+    print(f"applied {len(params)} params + set 8x shepherd type; roundtrip OK")
+
+
+if __name__ == "__main__":
+    main()
