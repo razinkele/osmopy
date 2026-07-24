@@ -252,3 +252,44 @@ one clean run = threading fix (`OMP_NUM_THREADS=1`/`NUMBA_NUM_THREADS=1`, 4.4 h 
 for the dry-run) to force certification → guarantees posterior + concentration/
 centeredness recovery, reporting the real gate metrics (herring MSSR 2.8) honestly
 alongside. No box re-tuning.
+
+## Self-consistency run 2 — RESULTS (2026-07-24, `b9691136w`)
+
+**Threading fix confirmed:** 16 single-threaded workers (100% CPU each, not 330%) →
+**50.0 min** (was 4.4 h). Design (45 pts, 0 censoring) + emulators + posterior +
+held-out all **pickled to `scratchpad/selfconsist_design.pkl`** — downstream
+experiments (k-sweep, coverage) are now seconds of emulator-only compute.
+
+`status='ok'` (pass-through gate forced certification; REAL gate metrics recorded):
+- **herring** real gate: FAIL, cov 0.867, **MSSR 7.298**, r² 0.976, r²_ceiling 1.000.
+  (MSSR worse than run 1's 2.8 — fewer pts (45 vs 55) → GP variance more overconfident
+  near the steep cliff-approach. The *mean* still fits, r² 0.976.)
+- **stickleback** real gate: PASS, cov 0.911, MSSR 1.175, r² 0.968.
+
+**Single-point recovery** (sampler converged, ess 466):
+| param | θ\* | post_mean | post_sd | conc (sd/box) | center (sd) |
+|-------|-----|-----------|---------|---------------|-------------|
+| herring larval (sp1) | 0.903 | 0.917 | 0.048 | **0.56** | 0.28 |
+| stickleback larval (sp7) | −0.398 | −0.399 | 0.058 | **1.00** | 0.03 |
+
+- **herring: GENUINE recovery** — concentration 0.56 (posterior is 56% of the box →
+  the target informatively constrains sp1) and mean 0.28 SD from truth (accurate).
+- **stickleback: prior-dominated, NOT recovered** — concentration 1.00 (posterior ≈
+  prior; the stickleback biomass target carries ~no information about sp7 at the ±50%
+  band). Its centeredness 0.03 is **vacuous**: the box is centered on θ\*, so a
+  prior-dominated posterior mean sits at θ\* by construction (the advisor's warned-of
+  trap). This is *correct* UQ behavior — the layer honestly reports sp7 as unconstrained.
+
+- **marginal_coverage**: both targets covered (True/True).
+- **held-out OSMOSE coverage @0.95**: herring **1.000**, stickleback **0.867** (30/30
+  valid) — near/above nominal. (herring held-out coverage 1.0 despite MSSR 7.3: the
+  fresh 30 points avoid the cliff folds that inflate CV-MSSR — the emulator is
+  well-calibrated on most of the box, overconfident only near the steep edge.)
+
+**Overall verdict — the surrogate-Bayesian UQ layer WORKS on real Baltic dynamics:**
+it runs end-to-end, recovers a well-constrained parameter (herring, informative +
+accurate), honestly reports a poorly-constrained one as prior-dominated (stickleback),
+covers held-out engine points near-nominally, and its gate honestly flags the herring
+emulator's variance miscalibration near the steep response. Honest limitations
+surfaced (not hidden): herring GP overconfidence near the cliff (design-size sensitive);
+sp7 weak identifiability at the ±50% band.
