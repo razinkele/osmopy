@@ -274,22 +274,35 @@ experiments (k-sweep, coverage) are now seconds of emulator-only compute.
 
 - **herring: GENUINE recovery** — concentration 0.56 (posterior is 56% of the box →
   the target informatively constrains sp1) and mean 0.28 SD from truth (accurate).
-- **stickleback: prior-dominated, NOT recovered** — concentration 1.00 (posterior ≈
-  prior; the stickleback biomass target carries ~no information about sp7 at the ±50%
-  band). Its centeredness 0.03 is **vacuous**: the box is centered on θ\*, so a
-  prior-dominated posterior mean sits at θ\* by construction (the advisor's warned-of
-  trap). This is *correct* UQ behavior — the layer honestly reports sp7 as unconstrained.
+- **stickleback: prior-dominated, weakly identified** — concentration 1.00. Centeredness
+  0.03 is **vacuous** (box centered on θ\*). **Confirmed with evidence, not a bug**
+  (`scratchpad/check_sp7.py` on the pickled design): sp7's own effect on stickleback
+  biomass is real but **sub-band** (corr −0.19, Δln-Y −0.363 < band half-width
+  ln(1.5)=0.405), so its target legitimately can't pin sp7. The layer honestly reports it.
+
+**Load-bearing finding — the targets are NOT 1:1 with the params.** stickleback biomass
+is driven by **sp1 (herring mortality), not sp7**: corr +0.956, Δln-Y +1.64 — strong
+**competitive release** (killing herring frees resources → stickleback booms). So sp1
+informs *both* biomass outputs; herring's tight posterior draws on both targets, and
+"stickleback is competition-controlled by herring mortality" is a real ecological
+finding surfaced by the design correlations.
 
 - **marginal_coverage**: both targets covered (True/True).
 - **held-out OSMOSE coverage @0.95**: herring **1.000**, stickleback **0.867** (30/30
-  valid) — near/above nominal. (herring held-out coverage 1.0 despite MSSR 7.3: the
-  fresh 30 points avoid the cliff folds that inflate CV-MSSR — the emulator is
-  well-calibrated on most of the box, overconfident only near the steep edge.)
+  valid) — near-nominal (at n=30, both 30/30 and 26/30 are within binomial noise of 0.95).
+- **herring gate MSSR 7.3 vs held-out 30/30 is heteroscedastic, not uniformly
+  overconfident**: variance too tight on the CV folds near the steep cliff-approach, fine
+  (even loose) elsewhere. It does **not** distort the posterior: emulator_var at the
+  posterior draws (herring mean 0.0001, max 0.0007) is ≪ the band variance 0.164 (~1500×),
+  so the recovery is band-dominated.
 
-**Overall verdict — the surrogate-Bayesian UQ layer WORKS on real Baltic dynamics:**
-it runs end-to-end, recovers a well-constrained parameter (herring, informative +
-accurate), honestly reports a poorly-constrained one as prior-dominated (stickleback),
-covers held-out engine points near-nominally, and its gate honestly flags the herring
-emulator's variance miscalibration near the steep response. Honest limitations
-surfaced (not hidden): herring GP overconfidence near the cliff (design-size sensitive);
-sp7 weak identifiability at the ±50% band.
+**Overall verdict — the surrogate-Bayesian UQ layer WORKS on real Baltic dynamics.**
+It runs end-to-end (status ok), **recovers the one identifiable parameter** (herring sp1:
+informative posterior, mean 0.28 SD from truth), **honestly reports the weakly-identified
+one as prior-dominated** (sp7, sub-band effect — verified against the design), covers
+held-out engine points near-nominally, and its gate honestly flags a heteroscedastic
+herring-emulator variance wrinkle near the cliff (band-dominated, so recovery is
+unaffected). Appropriately scoped: recovery of *one* identifiable parameter + honest
+prior-domination on the second — not "parameters" plural. k-sweep is optional here (we
+set the band, so k isn't adjudicated against anything real); the pickled design makes it
+free if wanted.
