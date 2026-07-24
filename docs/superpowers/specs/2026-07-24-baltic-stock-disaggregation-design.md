@@ -111,12 +111,36 @@ species/params grow.
 6. **Validate:** fresh multi-seed 40-yr run; each sub-stock near its sub-target with the
    correct qualitative structure; unsplit species not regressed.
 
+## 4a. Unified base & the stability gap (2026-07-24 reconciliation)
+
+The SP-A stability branch is reconciled onto master: the oxygen forcing infra
+(`physical_data.py`, `oxygen_function.py`) and salinity gate were already shared; the
+stability objective (`osmose/calibration/stability.py`), the **certifier**
+(`scripts/baltic_stability_certify.py`), the RV-gate design
+(`docs/baltic_habitat_followup_2026-07-02.md`), and its negative-experiment findings are
+now on master. The epsilon-constraint stability *calibration* integration
+(`baltic_stability_sweep.py` + the `calibrate_baltic.py` port) is deferred — needed only
+for stability re-calibration, not this project.
+
+**Certified stability gap (the motivation, now measured):** the committed 5/8 baseline is
+only **2/8 persistent-&-in-envelope over 50 yr × 5 seeds** (herring, stickleback PASS;
+cod, sprat, flounder are in-range on the 40-yr decade-mean but dip below the persistence
+floor over 50 yr — cod min 2.4 kt, flounder 1.1 kt; perch/pikeperch/smelt over-target).
+So the β-bounds re-fit got decade-means in range but did NOT stabilize the system — the
+branch's "params alone can't stabilize" holds for the 5/8 baseline too. The RV recruitment
+gate (Phase 0) and disaggregation are the structural levers for that gap.
+
 ## 5. Phases
 
-- **Phase 0 (prerequisite) — oxygen field + RV forcing for cod.** Add an oxygen
-  co-limiting input and a reproductive-volume/egg-survival forcing series (couple to the
-  salinity-spawning worktree). Without this, eastern cod cannot collapse for the right
-  reason.
+- **Phase 0 (prerequisite) — RV recruitment gate for cod.** The mechanism is settled
+  (branch's `baltic_habitat_followup_2026-07-02.md`, now on master): a per-step
+  reproductive-volume metric `RV = Σ deep-basin cell_volume where (bottom_salinity ≥ 11 &
+  bottom_O₂ ≥ 2)` → multiply cod B-H recruitment by `clip(RV/RV_ref, 0, 1)` in
+  `reproduction.py` (cod-only initially). Forcing: extend `osmose/forcing/` to emit bottom
+  salinity + bottom oxygen NetCDFs (the pipeline already handles `so` at depth; add the
+  bottom-field selection + `o2b`). The oxygen infra is already on master. Validate with the
+  reconciled certifier. Without this, eastern cod cannot collapse for the right reason —
+  and the whole system stays unstable (§4a).
 - **Phase 1 — cod E/W (PoC).** Establishes the whole recipe. SD24 as mixing cell;
   eastern-cod recruitment on RV forcing + doubled M + impaired condition; western cod
   standard. De-risks the pattern. Highest value.
