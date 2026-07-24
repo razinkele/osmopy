@@ -37,3 +37,14 @@ stock.recruitment.shape.sp4;1.4199991034873363
 stock.recruitment.shape.sp5;1.7246280772337788
 stock.recruitment.shape.sp6;2.1256459289734413
 stock.recruitment.shape.sp7;1.3605192101937935
+
+# Reproductive-volume recruitment gate — eastern-Baltic-cod recruitment limiter
+# (deep-basin salinity >= 11 PSU & O2 >= 2 ml/l; Plikshs et al. 1993). mean_preserving:
+# multiplies cod recruitment by rv/mean(rv) so it gains RV-driven interannual variability
+# without shifting the long-run mean. Cod (sp0) only. Inert if disabled. See
+# docs/superpowers/plans/2026-07-24-baltic-rv-recruitment-gate.md and the series README.
+reproduction.rv.gate.enabled;true
+reproduction.rv.gate.series.file;reference/baltic_cod_reproductive_volume.csv
+reproduction.rv.gate.mode;mean_preserving
+reproduction.rv.gate.floor;0.0
+reproduction.rv.gate.species.enabled.sp0;true
