@@ -69,7 +69,7 @@
 
 ### Task 7: Re-calibrate + validate
 
-- [ ] Re-run the phase-13 equilibrium calibration on the 9-species config (threading fix; ~4-6 h). Apply via `apply_calibration.py` (extend its species loop to 9). **Acceptance:** cod-west near its ICES SSB envelope; cod-east depressed toward its post-collapse SSB (the qualitative eastern-collapse structure); no *unintended* collapse of other species; the aggregate cod (east+west) not worse than the pre-split ×1.2. Re-certify long-horizon stability and compare to the 2/8 pre-split baseline. Document; commit.
+- [ ] Re-run the phase-13 equilibrium calibration on the 9-species config (threading fix; ~4-6 h). Apply via `apply_calibration.py` — **note it hardcodes `range(8)` in two places** (the shepherd-type write loop and the roundtrip-assert loop); change both to read `simulation.nspecies` from the config so the tool generalizes past 8 focal species. **Acceptance:** cod-west near its ICES SSB envelope; cod-east depressed toward its post-collapse SSB (the qualitative eastern-collapse structure); no *unintended* collapse of other species; the aggregate cod (east+west) not worse than the pre-split ×1.2. Re-certify long-horizon stability and compare to the 2/8 pre-split baseline. Document; commit.
 
 ---
 
