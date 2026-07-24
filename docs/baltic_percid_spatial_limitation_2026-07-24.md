@@ -46,13 +46,25 @@ fit-chasing an implausible diet, not a model fix.
 
 ## Conclusion
 
-Pikeperch's overshoot is a **genuine spatial-resolution limitation**: neither
-fishing nor a defensible diet correction reaches it, because the carrying capacity
-is set by LTL biomass in over-connected coarse cells. The real fix is a finer
-grid that resolves the coastal/estuarine habitat (`data/baltic-fine/`, a separate
-calibration-scale project), not a patch on this grid. Perch is fixable but is a
-data-poor, weight-0.2 stock whose target is a literature estimate; a re-calibration
-for the single-species gain (6/8) was deemed marginal.
+> **Correction (2026-07-24, reconciled with the SP-A branch):** an earlier version of
+> this note called the pikeperch overshoot a *spatial-resolution* limitation fixable by
+> a finer grid. That is **wrong** — the `fix+baltic-salinity-spawning` branch's SP-B
+> experiment upsampled the grid 2× (80×100 cells) and the percid/cod overshoot was
+> **unmoved** (×38–96), and its salinity-correct-spawning experiment left cod overshoot
+> unchanged (×63.6→×63.7). The overshoot is a **population-level** quantity (recruitment
+> magnitude × mortality balance): a spawning map or finer grid controls *where* eggs are
+> placed, not *how many* recruits the stock-recruitment produces, so no spatial refinement
+> can move it. See `docs/baltic_habitat_followup_2026-07-02.md`.
+
+Neither fishing nor a defensible diet correction reaches pikeperch on this grid, and —
+per the branch's negative experiments — **neither does a finer grid or a corrected
+spawning map**, because the overshoot is recruitment-driven, not spatial. The
+mechanistically-correct lever is a **dynamic reproductive-volume recruitment gate**
+(cod recruitment gated on deep-basin salinity ≥11 PSU + oxygen ≥2 ml/l), which caps
+recruits in low-volume years — the Phase-0 mechanism in
+`docs/superpowers/specs/2026-07-24-baltic-stock-disaggregation-design.md`. Perch is
+separately fixable via a realistic fishing correction but is a data-poor, weight-0.2
+stock; that single-species gain (6/8) was deemed marginal.
 
 **Decision:** bank 5/8 (the well-assessed-species ceiling on this grid) and treat
 the percids as a documented, proven limitation. See
