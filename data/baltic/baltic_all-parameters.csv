@@ -1,5 +1,17 @@
 # Baltic Sea OSMOSE configuration - Main parameter file
-# 8 focal species: Cod, Herring, Sprat, Flounder, Perch, Pike-perch, Smelt, Stickleback
+#
+# ============================================================================
+# EXPERIMENTAL — cod E/W disaggregation (2026-07-25). NOT a production/calibrated
+# config. Cod is split into cod_west (sp0) + cod_east (sp8) as 9 focal species.
+# The 9-species model could NOT be fitted to the ICES envelopes: suppressing the
+# eastern cod removes apex predation and releases the prey field 10-80x over
+# envelope (best re-cal obj 8.855 vs the aggregate baseline's 2.33). Running this
+# config yields non-physical biomass. For the working model, restore the 8-species
+# aggregate-cod 5/8 baseline (calibration_results/phase13_equilibrium.json,
+# obj 2.33). See docs/baltic_cod_ew_phase1_report_2026-07-25.md.
+# ============================================================================
+#
+# 9 focal species: Cod_west, Herring, Sprat, Flounder, Perch, Pike-perch, Smelt, Stickleback, Cod_east
 # 6 LTL resource groups: Diatoms, Dinoflagellates, Microzooplankton, Mesozooplankton, Macrozooplankton, Benthos
 
 osmose.configuration.simulation;baltic_param-simulation.csv
