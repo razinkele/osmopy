@@ -83,22 +83,34 @@ The one caveat that keeps a re-calibration worthwhile: the failed DE left prey
 didn't use its levers. A properly budgeted run *may* hold the prey via higher prey
 fishing, though holding flounder/pikeperch at F≈3 is itself fidelity-questionable.
 
-## Current status — proper re-calibration in progress
+## Proper re-calibration — run and result (did NOT clear the bar)
 
-Per the decision to give the disaggregation its best shot at a fitted config, a
-re-calibration is running:
+The best-shot re-calibration ran to completion (warm-start all 9 from
+`phase13_equilibrium.json`; eff_popsize 180 vs 90; `fsh8` clamped to the
+moratorium; 3240 evals, early-stop after 15 stale gens):
 
-- Warm-start all 9 species from the intact baseline (`phase13_equilibrium.json`);
-- Larger budget (eff_popsize 180 vs 90), maxiter 50, patience 15, 8 h cap;
-- `fsh8` clamped to the 2019 moratorium (F ≤ 0.05) so the eastern collapse is
-  driven by elevated M + RV recruitment failure, not fishing (fidelity review).
+- **Objective 8.855** — better than the failed 12.34 but still far above the
+  baseline's 2.33.
+- 40-yr per-species biomass: **cod_west 1.37 Mt (55× over), cod_east 1.11 Mt
+  (13× over — more suppressed than the 60× first attempt but still nowhere near
+  70 kt), herring 13 Mt (4× over), pikeperch 1.64 Mt (65×), perch 836 kt (17×),
+  flounder 1.20 Mt (12×), stickleback COLLAPSED (under floor).**
 
 **Acceptance bar (honest, structural — not 9/9):** cod_east suppressed toward
-~70 kt, cod_west near ~10 kt, and the other seven species *no worse than the
-pre-split 5/8 baseline*. If the run clears that bar, the calibrated 9-species
-config is committed; if not, the intact `phase13_equilibrium.json` baseline is
-restored and the disaggregation is finalized as this documented structural
-finding.
+~70 kt, cod_west near ~10 kt, others no worse than baseline. **NOT cleared** on
+any leg.
+
+Decisive detail: with 2× the budget, a warm start, and `fsh8` clamped, the DE
+**still left prey fishing low** (flounder F=0.02, pikeperch F=0.049) despite the
+boom. It does not use the prey-fishing lever to hold the released prey — so the
+failure is **robust and structural, not a budget artifact.** (Likely because
+raising prey F fights the prey CATCH targets; holding flounder/pikeperch at the
+F≈3 that predation-replacement would need is both unreachable-by-the-optimizer
+and fidelity-questionable.)
+
+**Conclusion:** the apex-predator-release limitation holds under a proper effort.
+The pre-split 5/8 baseline (`phase13_equilibrium.json`, obj 2.33) is intact and
+restorable; the failed params were reverted from the live config.
 
 ## Assets
 
