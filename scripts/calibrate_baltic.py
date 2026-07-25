@@ -711,8 +711,11 @@ def get_phase2_params() -> tuple[list[str], list[tuple[float, float]], list[floa
     # the 2026-04-24 phase 2 calibration had fsh3 pinned at the log10=0.0 ceiling —
     # DE wanted more fishing pressure. These two species have no natural-predator
     # control in the 8-species model, so fishing is the only lever until background
-    # predators are added. sp8 cod_east (fsh8): low F (2019 moratorium).
-    fishing_upper = [0.0, 0.0, 0.0, 0.5, 0.0, 0.5, 0.0, 0.0, 0.0]
+    # predators are added. sp8 cod_east (fsh8): CLAMPED to the 2019 moratorium
+    # (F <= 0.05, log10 -1.3) so the eastern collapse is driven by elevated M +
+    # RV recruitment failure (fidelity review), NOT by fishing — the DE otherwise
+    # exploits high F as the cheapest depression lever.
+    fishing_upper = [0.0, 0.0, 0.0, 0.5, 0.0, 0.5, 0.0, 0.0, np.log10(0.05)]
     for i in range(N_SPECIES):
         keys.append(f"fisheries.rate.base.fsh{i}")
         bounds.append((-2.5, fishing_upper[i]))
