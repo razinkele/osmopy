@@ -231,13 +231,30 @@ def _baltic_cfg(**over):
 
 
 def test_gate_off_bit_identical():
-    base = PythonEngine().run_in_memory(_baltic_cfg(), seed=0).biomass()
-    gated_off = (
+    # Gate disabled must be INERT: bit-identical biomass regardless of the
+    # (ignored) mode/ref keys. cod_east (sp8) is the gated species after the cod
+    # disaggregation. (The committed config enables the gate, so we compare two
+    # explicitly-disabled runs, not the config default.)
+    off_a = (
         PythonEngine()
         .run_in_memory(_baltic_cfg(**{"reproduction.rv.gate.enabled": "false"}), seed=0)
         .biomass()
     )
-    np.testing.assert_array_equal(base["cod"].to_numpy(), gated_off["cod"].to_numpy())
+    off_b = (
+        PythonEngine()
+        .run_in_memory(
+            _baltic_cfg(
+                **{
+                    "reproduction.rv.gate.enabled": "false",
+                    "reproduction.rv.gate.mode": "raw_cap",
+                    "reproduction.rv.gate.ref": "999",
+                }
+            ),
+            seed=0,
+        )
+        .biomass()
+    )
+    np.testing.assert_array_equal(off_a["cod_east"].to_numpy(), off_b["cod_east"].to_numpy())
 
 
 @pytest.mark.skipif(
@@ -248,7 +265,11 @@ def test_gate_off_bit_identical():
     "config/logic and bit-identical-when-off are covered by deterministic unit tests.",
 )
 def test_gate_on_changes_cod_and_cod_dominates():
-    off = PythonEngine().run_in_memory(_baltic_cfg(), seed=0).biomass()
+    off = (
+        PythonEngine()
+        .run_in_memory(_baltic_cfg(**{"reproduction.rv.gate.enabled": "false"}), seed=0)
+        .biomass()
+    )
     on = (
         PythonEngine()
         .run_in_memory(
@@ -259,7 +280,7 @@ def test_gate_on_changes_cod_and_cod_dominates():
                     "reproduction.rv.gate.ref": "0.20",
                     "reproduction.rv.gate.series.file": str(SERIES),
                     "reproduction.rv.gate.start.year": "1993",
-                    "reproduction.rv.gate.species.enabled.sp0": "true",
+                    "reproduction.rv.gate.species.enabled.sp8": "true",
                 }
             ),
             seed=0,
@@ -278,8 +299,8 @@ def test_gate_on_changes_cod_and_cod_dominates():
     # cod's changed survival desyncs the shared RNG stream, so sprat legitimately
     # shifts. The per-species enable-mask restriction to sp0 is proven directly
     # by the helper unit tests (Task 4).
-    assert rel_change("cod") > 0.05  # gate meaningfully changes cod
-    assert rel_change("cod") > rel_change("sprat")  # cod is the primary effect
+    assert rel_change("cod_east") > 0.05  # gate meaningfully changes cod_east
+    assert rel_change("cod_east") > rel_change("sprat")  # cod_east is the primary effect
 
 
 def test_characterise_instability_window():
