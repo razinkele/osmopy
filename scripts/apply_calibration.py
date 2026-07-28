@@ -18,6 +18,12 @@ _FILE_FOR = {
     "stock.recruitment.": "baltic_param-reproduction.csv",
     "mortality.additional.": "baltic_param-additional-mortality.csv",
     "fisheries.rate.base.": "baltic_param-fishing.csv",
+    # Background-predator (cormorant sp16) calibration levers. NOTE: the bare
+    # `predation.ingestion.rate.max.` prefix also matches focal sp0-8 (which live
+    # in baltic_param-predation.csv) — safe here because only sp16 is a free param;
+    # guard this if a focal ingestion is ever added to the DE free set.
+    "species.biomass.multiplier.": "baltic_param-background.csv",
+    "predation.ingestion.rate.max.": "baltic_param-background.csv",
 }
 # The reader divides the larval additional-mortality scalar by ndtperyear on read
 # (osmose/config/aliases.py); every OTHER key is identity. So the file must store
