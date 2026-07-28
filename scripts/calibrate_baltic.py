@@ -804,6 +804,17 @@ def get_phase13_shepherd_params() -> tuple[list[str], list[tuple[float, float]],
     keys = keys1 + keys2 + ssbhalf_keys + shape_keys
     bounds = bounds1 + bounds2 + ssbhalf_bounds + shape_bounds
     x0 = x01 + x02 + ssbhalf_x0 + shape_x0
+    # Cormorant top-down levers (Lever B); x0 = the Task-4 max-grounded gate values.
+    keys += ["species.biomass.multiplier.sp15", "predation.ingestion.rate.max.sp15"]
+    bounds += [(np.log10(1.0), np.log10(3.0)), (np.log10(40.0), np.log10(80.0))]
+    x0 += [np.log10(3.0), np.log10(80.0)]
+    # Lever A (percid F) is FIXED, not optimised — drop fsh4/fsh5 by NAME here.
+    # Do NOT edit the shared get_phase2_params (it also feeds phases 2/12).
+    _drop = {"fisheries.rate.base.fsh4", "fisheries.rate.base.fsh5"}
+    _keep = [i for i, k in enumerate(keys) if k not in _drop]
+    keys, bounds, x0 = [keys[i] for i in _keep], [bounds[i] for i in _keep], [x0[i] for i in _keep]
+    assert len(keys) == len(bounds) == len(x0)
+    assert not (_drop & set(keys)), "percid F must stay fixed, not a free param"
     return keys, bounds, x0
 
 
