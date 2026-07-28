@@ -122,7 +122,22 @@ def test_cormorant_biomass_multiplier_present():
     from osmose.config import OsmoseConfigReader
     cfg = dict(OsmoseConfigReader().read("data/baltic/baltic_all-parameters.csv"))
     assert "species.biomass.multiplier.sp15" in cfg   # cormorant = sp15 on this base
+
+def test_phase13_free_set_fixes_percid_F_and_frees_cormorant():
+    # The plan's most load-bearing invariant: percid F is FIXED (not in the DE free
+    # set) and the cormorant levers ARE free. (sys.path import, not importlib — the
+    # module's @dataclass resolves __module__ against sys.modules.)
+    import sys
+    sys.path.insert(0, "scripts")
+    import calibrate_baltic as cb
+    keys, bounds, x0 = cb.get_phase13_shepherd_params()
+    assert "fisheries.rate.base.fsh4" not in keys   # perch F fixed, not optimised
+    assert "fisheries.rate.base.fsh5" not in keys   # pikeperch F fixed
+    assert "species.biomass.multiplier.sp15" in keys       # cormorant levers present
+    assert "predation.ingestion.rate.max.sp15" in keys
+    assert len(keys) == len(bounds) == len(x0)
 ```
+This test **fails before Step 6** (fsh4/fsh5 present, cormorant keys absent) and is the guard that makes "Run tests → PASS" (Step 7) actually verify Lever A stays fixed.
 
 ```python
 # add to tests/test_apply_calibration.py
@@ -158,15 +173,23 @@ In `scripts/apply_calibration.py`, add to `_FILE_FOR`:
 ```
 Add a comment: `predation.ingestion.rate.max.` also matches focal sp0–7 (in `baltic_param-predation.csv`); safe ONLY while just sp15 is a free param — guard if a focal ingestion is ever freed.
 
-- [ ] **Step 6: Add cormorant levers to the calibration free-param set**
+- [ ] **Step 6: Wire cormorant levers in + remove percid F from the free set (LOAD-BEARING)**
 
-In `scripts/calibrate_baltic.py` `get_phase13_shepherd_params()`, append two free params after the shape block:
+In `scripts/calibrate_baltic.py` `get_phase13_shepherd_params()`, immediately **BEFORE** the final `return keys, bounds, x0` — i.e. AFTER the `keys = keys1 + keys2 + ssbhalf_keys + shape_keys` assembly line (the working lists do not exist until then; placing this earlier raises UnboundLocalError at call time):
 ```python
+    # Cormorant top-down levers (Lever B); x0 = the Task-4 max-grounded gate values
     keys += ["species.biomass.multiplier.sp15", "predation.ingestion.rate.max.sp15"]
     bounds += [(np.log10(1.0), np.log10(3.0)), (np.log10(40.0), np.log10(80.0))]
-    x0 += [np.log10(2.0), np.log10(70.0)]   # x0 = Task-4 max-grounded values
+    x0 += [np.log10(3.0), np.log10(80.0)]
+    # Lever A (percid F) is FIXED, not optimised — drop fsh4/fsh5 by NAME here.
+    # Do NOT edit the shared get_phase2_params (it also feeds phases 2/12).
+    _drop = {"fisheries.rate.base.fsh4", "fisheries.rate.base.fsh5"}
+    _keep = [i for i, k in enumerate(keys) if k not in _drop]
+    keys, bounds, x0 = [keys[i] for i in _keep], [bounds[i] for i in _keep], [x0[i] for i in _keep]
+    assert len(keys) == len(bounds) == len(x0)
+    assert not (_drop & set(keys)), "percid F must stay fixed, not a free param"
 ```
-Ensure percid F (`fisheries.rate.base.fsh4/fsh5`) is NOT in the free set (it is fixed) — if `get_phase2_params` frees fsh4/fsh5, remove those two indices.
+**Why this is the single most load-bearing edit:** on `646a36d`, `get_phase2_params` unconditionally frees `fisheries.rate.base.fsh0..fsh7`, so fsh4/fsh5 ARE in the phase-13 free set. If left free, `apply_warm_start` seeds them from `phase13_equilibrium.json` (0.029/0.0095), the DE optimises them per-evaluation (overriding Task 2's fixed 0.40/0.50 via `expand_param_overrides` on every sim), and `apply_calibration` then erases the fixed values from the FINAL config too — the whole 4–8h run certifies a config where Lever A was **never active**, with no error and no failing test.
 
 - [ ] **Step 7: Run tests → PASS**, then commit
 
@@ -184,9 +207,14 @@ git commit -m "feat(baltic): tunable cormorant predation on percids (matrix colu
 - Consumes: the Task 1–3 config (fixed percid F, cormorant column, levers).
 - Produces: a GO/NO-GO on whether maxed grounded levers move the percids without regressing the well-assessed stocks — gating the 4–8 h calibration.
 
-- [ ] **Step 1: Write the gate script**
+- [ ] **Step 1: Write the gate script (with lever attribution)**
 
-`scripts/percid_feasibility_gate.py`: load `baltic_all-parameters.csv`, override cormorant `species.biomass.multiplier.sp15=3.0` and `predation.ingestion.rate.max.sp15=80.0` (max grounded) and percid F already fixed; run ONE 50-yr `PythonEngine` sim (seed 42); print per-species final-decade mean vs the Task-1 baseline table and vs the ICES envelopes; compute realized cormorant consumption and compare to the Hansson perch ~2×-fishery anchor.
+`scripts/percid_feasibility_gate.py`: load `baltic_all-parameters.csv` (percid F already fixed) and run **three** 50-yr `PythonEngine` sims to *attribute* the percid response to each lever, not just detect it:
+- **both:** cormorant `species.biomass.multiplier.sp15=3.0`, `predation.ingestion.rate.max.sp15=80.0` (max grounded);
+- **F-only:** cormorant multiplier=0 (cormorant off) — isolates Lever A;
+- **cormorant-only:** percid F reset to the baseline 0.029/0.0095 — isolates Lever B.
+
+Print per-species final-decade mean for each run vs the Task-1 baseline and the ICES envelopes; compute realized cormorant consumption (total + perch-specific) vs the Hansson ~2×-fishery-for-perch anchor. (Seed 42 single-seed — this is a cheap SCREEN; the authoritative no-regression check is Task 5's 5-seed certification.)
 
 - [ ] **Step 2: Run the gate**
 
@@ -196,8 +224,8 @@ OMP_NUM_THREADS=1 NUMBA_NUM_THREADS=1 .venv/bin/python scripts/percid_feasibilit
 
 - [ ] **Step 3: Go/no-go decision (record in the branch)**
 
-- GO if: perch and/or smelt move materially toward their envelopes AND cod/herring/sprat/flounder/stickleback stay in-envelope AND realized cormorant consumption is within the documented budget.
-- NO-GO if: nothing moves, or the well-assessed stocks drop out of envelope. → Record the finding in `docs/baltic_percid_baseline_2026-07-28.md`, STOP, do not run Task 5.
+- GO if: perch and/or smelt move materially toward their envelopes, **each moving lever is causally responsible** (the F-only and cormorant-only contrasts show a non-trivial share attributable to each — so a passing perch result is not silently all-F or all-cormorant), AND cod/herring/sprat/flounder/stickleback stay in-envelope, AND realized cormorant consumption is within the documented Hansson budget (a cormorant consuming ≫ its budget means the accessibility column is mis-shaped — see should-fix, tune it down before proceeding).
+- NO-GO if: nothing moves, or the well-assessed stocks drop out of envelope, or the perch response is entirely one lever with the other inert (revisit that lever, don't launch the full run). → Record the finding in `docs/baltic_percid_baseline_2026-07-28.md`, STOP, do not run Task 5.
 
 - [ ] **Step 4: Commit the gate + result**
 
@@ -244,4 +272,5 @@ Write the outcome (what moved, cormorant consumption vs Hansson, perch/smelt res
 - **Spec coverage:** Lever A (percid F) → Task 2; Lever B (cormorant column + biomass/ingestion + routing) → Task 3; Step-0 gate → Task 4; scoped re-calibration + bar + revert + insensitivity → Task 5; base restore/verify → Task 1. All spec §§4–8 map to a task.
 - **Placeholder scan:** the only deferred value (percid F) is fixed to concrete numbers (perch 0.40, pikeperch 0.50) with a provenance task; no TBD/TODO.
 - **Type/name consistency:** `sp15` = Cormorant throughout (Tasks 3–4); `fsh4`/`fsh5` = perch/pikeperch fisheries; `_FILE_FOR` / `_file_for` used consistently with the actual `apply_calibration.py` names; the free-param append matches `get_phase13_shepherd_params`'s existing structure.
-- **Open risk:** if `get_phase2_params` (folded into phase-13) already frees fsh4/fsh5, Step 3.6 must remove them or the fixed percid F is overwritten by the DE — called out in that step.
+- **Hardened by a 3-dimension deep-review workflow (2026-07-28).** Blocking fixes applied: Task 3 Step 6's percid-F removal is now concrete name-based filter code (not conditional prose) placed after the list assembly, with an assertion; a `test_phase13_free_set_fixes_percid_F_and_frees_cormorant` test guards the invariant (fsh4/fsh5 absent, cormorant levers present) so "Run tests → PASS" actually verifies Lever A stays fixed. Non-blocking hardening: the Task-4 gate now runs F-only / cormorant-only contrasts to *attribute* perch movement (so Lever B can't mask a skipped Lever A) and flags a mis-shaped accessibility column; cormorant x0 aligned to the gate's 3.0/80.0; single-seed gate documented as a cheap screen vs the 5-seed certification.
+- **Residual (accepted):** the cormorant accessibility column (perch 0.6 vs herring/sprat 0.15) is a fixed authored shape, not calibrated — if the Task-4 attribution shows cormorant perch-removal is negligible against the forage-fish biomass advantage, tune the forage-fish accessibilities down (~0.01–0.03) before the full run, or accept that perch control rests on Lever A (F) alone.
