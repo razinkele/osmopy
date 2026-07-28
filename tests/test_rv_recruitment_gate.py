@@ -209,14 +209,18 @@ def test_rv_gate_factor_selects_year_and_species():
     assert rv_gate_factor(cfg, 30).tolist() == [2.0, 1.0]
 
 
-def test_rv_gate_factor_wraps_and_offsets():
+def test_rv_gate_factor_clamps_beyond_series_and_offsets():
     factor = np.array([0.5, 2.0, 1.0])
     enabled = np.array([True])
+    # offset test: offset=2, model year 0 -> idx min(2+0, 2) = 2 -> 1.0
     cfg = _fake_cfg(factor, enabled, offset=2, n_dt=24)
-    # model year 0 -> idx (2+0)%3 = 2 -> 1.0
     assert rv_gate_factor(cfg, 0).tolist() == [1.0]
-    # model year 4 -> idx (2+4)%3 = 0 -> 0.5 (wrap)
-    assert rv_gate_factor(cfg, 4 * 24).tolist() == [0.5]
+    # CLAMP beyond series end (offset 0): model year 4 -> idx min(4, 2) = 2 -> 1.0
+    # (NOT wrap to (4 % 3) = 1 -> 2.0). Post-series RV stays at the last (recent, low) value.
+    cfg0 = _fake_cfg(factor, enabled, offset=0, n_dt=24)
+    assert rv_gate_factor(cfg0, 4 * 24).tolist() == [1.0]
+    # within the series it still indexes normally
+    assert rv_gate_factor(cfg0, 1 * 24).tolist() == [2.0]
 
 
 BALTIC = Path("data/baltic/baltic_all-parameters.csv")
