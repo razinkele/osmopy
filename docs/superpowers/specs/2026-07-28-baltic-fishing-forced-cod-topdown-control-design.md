@@ -1,178 +1,202 @@
-# Fishing-forced cod + calibrated top-down control — design
+# Percid missing-removals + cod stability (formerly "fishing-forced cod") — design
 
-**Date:** 2026-07-28
-**Status:** design (pre-plan)
-**Depends on / supersedes:** builds on the aggregate-cod 5/8 baseline; motivated by the
-cod E/W disaggregation failure (`docs/baltic_cod_ew_phase1_report_2026-07-25.md`) and the
-percid missing-removals finding (`docs/baltic_findings_summary_2026-07-28.docx`).
+**Date:** 2026-07-28 (revised post-review 2026-07-28)
+**Status:** design — REVISED after a 3-reviewer in-loop review (science, config-integrity,
+feasibility). The revision corrects a premise error and re-centres the effort; the original
+"fishing-forced cod + top-down control" framing is superseded (see Revision note).
+**Base:** the aggregate 8-species baseline at commit `646a36d`.
+**Motivation docs:** `docs/baltic_findings_summary_2026-07-28.docx`,
+`docs/baltic_cod_ew_phase1_report_2026-07-25.md`.
+
+## Revision note — what the review changed
+
+The original design assumed cod sits too high in the baseline and releases the prey field, so
+it proposed forcing cod down and adding seal predation to hold the forage fish. **The reviews
+showed this premise is false:**
+
+- The baseline's **equilibrium cod is ~64 kt (RV-gate on) / ~167 kt (off) — in-envelope**
+  (envelope 60–250 kt), NOT the ~150 kt "apex predator" figure, which is cod's *seeding*
+  biomass (`baltic-fish-lifecycle.md:204`), not equilibrium. The `646a36d` base has the RV gate
+  on → cod ~64 kt, at the low edge (`baltic_stability_certification_2026-07-01.md`:
+  cod ✓ in-envelope at 61–68 kt).
+- At that cod level the **forage prey are already in-envelope**: herring ✓, sprat ✓, flounder ✓.
+- So forcing cod lower is a **no-op or harmful** (it would push cod, which already fails to
+  persist at min 2.4 kt, into its crash and *manufacture* the prey-release it was meant to
+  prevent). Strengthening seals to hold forage fish targets a **gap that does not exist**.
+
+The real, verified baseline gaps are the **percids and smelt** (pikeperch ~90×, perch ~2×,
+smelt ~5× over envelope) and **cod non-persistence** (dips to 2.4 kt). The genuinely valuable,
+citable idea — the **under-reported percid removals** (recreational/coastal fishing +
+seal/cormorant predation ~2× the fishery) — survives and becomes the centre of this design.
+The cod work is re-scoped from "lower cod's level" to "optionally stabilise cod."
 
 ## 1. Goal
 
-Reproduce a realistically **depressed cod stock** by forcing its fishing mortality from the
-ICES history, and use **calibrated seal/cormorant predation + realistic percid removals** to
-hold the prey field in its ICES envelopes — closing the gap the aggregate baseline (5/8
-in-envelope, 2/8 stable over 50 yr) leaves, **without** the apex-predator-release trap that
-sank the disaggregation.
+On the aggregate 8-species baseline:
+- **Primary:** reduce the percid (perch, pikeperch) and smelt overshoot using
+  *scientifically-grounded* removals the model currently omits — realistic percid fishing
+  mortality (recreational + small-scale coastal, under-reported to ICES) and cormorant
+  predation (~2× the fishery for perch; Hansson et al. 2018).
+- **Secondary (optional):** improve cod *persistence* (currently min 2.4 kt) — NOT its level.
 
-The disaggregation showed that suppressing cod releases the prey field 10–80× over envelope
-because the aggregate baseline's prey params were tuned to rely on cod's top-down predation.
-This design keeps cod a **live focal predator** (just smaller, via forced fishing) and
-supplies the *missing, scientifically-documented* top-down controls the model currently
-under-represents:
+Honest framing up front (from the review): **perch (~2×) is plausibly closable** with grounded
+removals; **pikeperch (~90×) is very likely NOT** — cormorants reach only juvenile pikeperch
+(size window 8.75–34 cm; pikeperch matures ~40 cm), and a ~90× overshoot signals missing
+*habitat density regulation* (coarse grid) that additive mortality cannot supply without
+destabilising. This design tests how far grounded removals move the percids; it does not
+promise envelope-membership for pikeperch.
 
-- **Recreational / small-scale coastal fishing** of perch and pikeperch — poorly reported,
-  not analytically assessed by ICES; recreational catch can equal or exceed commercial in
-  Lithuania (Curonian Lagoon) and the Archipelago Sea.
-- **Seal and cormorant predation** — for coastal fish, birds + seals consume 2–3× the
-  fishery (perch specifically ~2×); total Baltic removals ≈ 7×10⁵ t fisheries, 1×10⁵ t
-  seals, 1×10⁵ t birds (Hansson et al. 2018).
+## 2. Base configuration and the mandatory pre-flight
 
-## 2. Base configuration and isolation
+- **Branch** off `646a36d` (aggregate 8-species, RV gate on). `master` keeps the disaggregation
+  experiment.
+- **Restore + verify FIRST (blocking):** apply `phase13_equilibrium.json`, re-run
+  `baltic_stability_certify.py`, and confirm the 5/8 / obj-2.33 / cod ~64 kt state before
+  touching anything. `phase13_equilibrium.json` is a 39-param, 8-species-era artifact — confirm
+  it applies cleanly on the 8-species `get_phase13_shepherd_params` (NOT master's 45-param
+  9-species version). Without a verified clean baseline, later regressions are unattributable.
 
-- **Base:** the 8-species aggregate-cod 5/8 baseline (`calibration_results/phase13_equilibrium.json`,
-  obj 2.33). NOT the disaggregated experimental config currently on `master`.
-- **Isolation:** a new git branch off the pre-disaggregation commit `646a36d` (which is the
-  aggregate 5/8 baseline). `master` keeps the disaggregation experiment untouched. All work
-  in this design happens on that branch.
+## 3. Engine feasibility (verified in the review; corrections folded in)
 
-## 3. Engine feasibility (verified, from the code trace)
+- **Background predators DO predate focal fish**, scaled by prescribed biomass ×
+  `predation.ingestion.rate.max`, size-ratio gated; absent from the accessibility matrix they
+  predate at the **default coefficient 1.0** (`predation.py:211,222`). Adding a matrix column
+  lets that coefficient be tuned per prey — this is **necessary, not optional**, to raise
+  cormorant predation on perch without over-cropping herring/sprat.
+- **Predator indices on the `646a36d` base are sp14 = GreySeal, sp15 = Cormorant** (there is no
+  sp16). The sp15/sp16 in the original draft were the *disaggregated-master* indices — using
+  them would silently mis-target. All keys below use sp14/sp15.
+- **`species.biomass.multiplier.sp{i}`** scales NetCDF standing biomass (`background.py:366`);
+  **`predation.ingestion.rate.max.sp{i}`** caps realized predation (`predation.py:189`). Both
+  are read for background species and are in the validation allowlist (AST walk of
+  `background.py`).
+- **Cod-F forcing loader is `_load_fishing_rate_by_year` → `np.loadtxt(path).flatten()`**
+  (`config.py:455,466`), NOT the dead `ByYearTimeSeries` class. The forcing file must be a
+  **headerless single column of F values, one row per simulation year, padded to the full run
+  horizon** (a header row crashes; a 2-column file silently misreads; beyond the file's span F
+  falls back to the scalar base rate — `fishing.py:43` — so the final decade would silently
+  revert). `mortality.fishing.rate.byYear.file.sp{idx}` is **flagged UNKNOWN by config-validation**
+  (variable key_pattern escapes the AST walk) — add it to `_ALLOWLIST_PY_HONORED`
+  (`config_validation.py:47`) or the config is rejected under strict mode.
 
-These constraints are load-bearing and were confirmed by reading the Python engine:
+## 4. Step 0 — mandatory cheap feasibility gate (before any calibration)
 
-- **Background predators DO impose predation on focal fish** (GreySeal sp15, Cormorant sp16),
-  scaled by prescribed biomass × `predation.ingestion.rate.max`, gated by a predator/prey
-  size-ratio window. They are absent from the accessibility matrix, so they currently predate
-  at the default coefficient **1.0**; adding a matrix column lets that coefficient be tuned
-  *down* per prey. Levers: prescribed biomass, ingestion rate, size-ratio window, (new) matrix
-  column. A regression test asserts a background predator reduces focal-prey abundance.
-- **Multi-year BIOMASS forcing is NOT supported** — background/resource biomass is a
-  within-year seasonal cycle repeated identically every year (indexed `step % ndtperyear`);
-  focal species have no biomass-forcing at all. So seal/cormorant biomass is a **scalar level
-  lever**, not a trajectory.
-- **Per-year FISHING forcing IS supported** — `mortality.fishing.rate.byYear` and
-  `mortality.fishing.catches.byYear` feed an annual time series via
-  `osmose/engine/timeseries.py` (`ByYearTimeSeries`). This is the route to drive cod down.
+The disaggregation burned two multi-hour DE runs to discover a structural wall; its one
+decisive cheap check (a hand-built forward sim scoring 1817) was run *after* the fact. **Do not
+repeat that.** Before the re-calibration:
 
-## 4. Components
+1. On the restored baseline, crank the grounded levers to their **maximum defensible** values by
+   hand — percid F to the top of the real coastal range (~0.6), cormorant biomass-multiplier +
+   ingestion to their count/physiology anchors (Section 5), cormorant matrix column shaping
+   predation onto perch/young pikeperch.
+2. Run **one** forward sim (40–50 yr) and read: (a) how far perch, pikeperch and smelt move;
+   (b) whether the high-weight prey (herring/sprat/flounder) and cod stay in-envelope; (c) the
+   realized cormorant/seal consumption vs the Hansson budget.
+3. **Go/no-go:** if even maxed grounded levers barely move pikeperch (expected) but *do* move
+   perch/smelt without collateral damage → proceed, scoped to perch/smelt. If they move nothing
+   or destabilise the high-weight stocks → the re-calibration is futile; record the finding and
+   stop. This 15-minute check gates the 4–8 h run.
 
-### 4.1 Component 1 — Forced cod fishing mortality
+## 5. Components
 
-**What:** feed the ICES **cod.27.24-32** (eastern Baltic, the dominant stock) fishing-mortality
-series into `mortality.fishing.rate.byYear` for cod (sp0). Data retrieved via the ICES data
-service (F ≈ 0.4 in 1946, rising to ~0.9 in the 1960s–80s, 0.6–0.75 in the 2000s, falling to
-0.27/0.16/0.04/0.02/0.015 in 2018–2022 as the moratorium took hold).
+### 5.1 Percid missing-removals (PRIMARY)
 
-**Interface (config keys, verified):**
-- `mortality.fishing.rate.byYear.file.sp0` = a tracked CSV forcing file holding the per-year F
-  series; the engine loads it via `osmose/engine/timeseries.py` (`config.py:1554`,
-  `_load_fishing_rate_by_year`).
-- Horizon mapping: align the model's **final decade** with the recent (post-2010) collapsed
-  period so the equilibrium-target window reflects the depressed state; hold the last series
-  value beyond its end.
+**Lever A — realistic percid fishing F (fixed).** Set perch (fsh4) and pikeperch (fsh5)
+`fisheries.rate.base` to **absolute** literature-grounded values for total (commercial +
+recreational) coastal removal — real exploited Baltic coastal percid F is **~0.3–0.6**, often
+F > M — NOT a multiple of the model's calibrated artifact (0.0095 → 2× = 0.019 is negligible).
+Fixed, not a free param, so it is not optimised away. Value + provenance set in the plan from
+coastal-fishery statistics (Curonian/Baltic). Check total Z = F_commercial + F_recreational +
+M_predation stays realistic so perch does not over-crash.
 
-**Why forced-F + calibrated-M together:** the real F *fell* post-2014 while the stock stayed
-collapsed (elevated natural mortality + recruitment failure). Forced F alone will therefore
-not depress cod enough. So cod's **additional mortality M stays a calibration free param**
-(Component 4); the DE tunes M so forced-F + M reproduces the ~70–80 kt depressed cod biomass
-in the final decade.
+**Lever B — cormorant predation (predation side).** `species.biomass.multiplier.sp15` (cormorant)
+and `predation.ingestion.rate.max.sp15` as free params, **each bounded to its own realism
+anchor**: biomass to count-based standing stock; ingestion toward the physiological rate
+(~70/yr for a 2 kg bird eating ~400–500 g/day — the current 40/yr is low; prefer raising
+ingestion over inflating bird counts). Add a **cormorant column to `predation-accessibility.csv`**
+to shape the perch/pikeperch fraction (necessary — otherwise coefficient 1.0 over-crops
+herring/sprat). Honest: this reaches adult perch (window covers <34 cm) but only *juvenile*
+pikeperch — a recruitment-side lever on pikeperch, not an adult-biomass one.
 
-**Depends on:** the ICES cod F data (Section 5).
+### 5.2 Cod stability (SECONDARY, optional)
 
-### 4.2 Component 2 — Realistic percid removal (both levers)
+Cod's issue is persistence (min 2.4 kt), not level. IF pursued: force a credible F-driven cod
+trajectory (ICES cod.27.24-32 F via `mortality.fishing.rate.byYear.file.sp0`, headerless,
+horizon-padded) and **pin or tightly bound cod's additional M** (do not leave it free — else M
++ seal predation are confounded and "calibrated M" is uninterpretable). Document that this
+targets *eastern* SSB and pins the aggregate to it (a known bias), and that in the scored final
+decade F≈0.015 so the depressed level is M/predation-governed, not F-governed. **Remove cod's
+`fisheries.rate.base.fsh0` from the free-param set** (byYear overrides it) and set it to the
+hold-F. If the Step-0 gate shows cod is fine as-is, **skip this component.**
 
-The calibrated baseline's percid F (perch 0.029, pikeperch 0.0095) is implausibly low — the
-optimizer chose it because percid assessment weight is 0.2, so simply widening the F bound
-does NOT help (the bound already allows more; the objective just doesn't engage it).
+### 5.3 Seal on forage fish — DROPPED
 
-**Lever A — fixed elevated percid F (fishing side).** Set perch (fsh4) and pikeperch (fsh5)
-`fisheries.rate.base` to **fixed** literature-grounded elevated values representing total
-(commercial + recreational) removal — roughly ≥2× a defensible commercial baseline, since
-recreational ≈ or > commercial. Fixed (not a free param) so the realistic removal is *imposed*
-rather than optimized away. Exact values set in the plan from the best coastal-fishery
-statistics for the Baltic/Curonian region; documented with provenance.
+Forage prey are already in-envelope, so there is no gap to fill; strengthening seals only risks
+over-cropping and confounds cod M (seal size window reaches cod spawners). Not included. (Seal
+biomass may still be corrected to its ~2× real-standing-stock anchor for realism, but as a fixed
+value, not a calibration lever for a non-existent target.)
 
-**Lever B — cormorant predation on percids (predation side).** Strengthen cormorant predation
-reaching perch and *young* pikeperch: `species.biomass.multiplier.sp16` (scales the NetCDF
-standing biomass; `background.py:235`) and `predation.ingestion.rate.max.sp16` become free
-params; confirm the size-ratio window (2.5–8×, 70–85 cm bird) covers young pikeperch (9–34 cm
-prey); optionally add a tunable cormorant column to the accessibility matrix to shape which
-prey it takes.
+### 5.4 Re-calibration (scoped)
 
-### 4.3 Component 3 — Seal/cormorant top-down control on forage fish
+Full 8-species DE **only if** the Step-0 gate passes, warm-started from `phase13_equilibrium.json`.
+Changes vs baseline: cod fsh0 removed (or fixed); percid F fixed (Lever A); cormorant
+biomass-multiplier + ingestion added as free params with **explicit x0 = the Step-0 max-grounded
+values**; optional cod-F forcing + pinned cod M. Required plumbing:
+- `apply_calibration.py` `_FILE_FOR` extended so `species.biomass.multiplier.` and
+  `predation.ingestion.rate.max.` route to `baltic_param-background.csv` (else KeyError).
+- Confirm whether percid **catch targets** are in the objective; a fixed total-removal F will
+  miss a commercial-only catch target — exclude/adjust consistently (this is the tension that
+  neutered prey-fishing in the disaggregation; predation, unlike fishing, does NOT fight a catch
+  target — the design's one genuine structural advantage over the disaggregation).
+- State run-horizon vs forcing-horizon and check the scored final decade is quasi-stationary
+  (the disaggregation was bitten by an RV-series wrap mismatch between calibration and cert).
 
-Seals (sp15) eat herring/sprat/cod/flounder (size ratio 3–12×). To absorb the forage fish that
-lower cod releases, make `species.biomass.multiplier.sp15` (NetCDF standing-biomass scale) and
-`predation.ingestion.rate.max.sp15` free params, bounded to keep total seal consumption near
-the documented ~1×10⁵ t/yr. Same for cormorant on the forage-fish side (already in 4.2).
+## 6. Validation, acceptance bar, and revert rule
 
-### 4.4 Component 4 — Full 8-species re-calibration
+- **Pre-registered magnitude bar:** perch overshoot reduced to ≤ (target upper × 2) or better;
+  smelt toward envelope; pikeperch — record the reduction achieved, expected small. "Improved
+  toward" alone is insufficient — state the numeric threshold before running.
+- **No-regression (hard):** every high-weight prey (herring, sprat, flounder) stays in its
+  baseline envelope; cod persistence no worse. Note this is *nearly guaranteed by construction*
+  (warm-start + levers tunable to zero effect), so it does not by itself prove the mechanism
+  works — also predict the *sign and magnitude* of cormorant consumption and the percid response
+  and check them against the Hansson budget as an output test.
+- **Insensitivity test for the structural claim:** before attributing a residual pikeperch
+  overshoot to the coarse grid, push grounded removals to the top of the defensible range and
+  show the residual persists — otherwise "structural" is unproven.
+- **Pre-registered revert rule:** if any high-weight prey drops below its baseline envelope, or
+  the objective exceeds the baseline's 2.33 by more than a set margin, revert to the baseline and
+  record the finding as the structural limit (as the disaggregation did).
 
-Joint differential-evolution re-calibration over:
-- the existing phase-13 free params (per-species larval M, adult M, fishing F, ssb_half, shape β),
-- **plus** the new levers: seal biomass-multiplier + ingestion, cormorant biomass-multiplier +
-  ingestion (and matrix column if added),
-- with **cod F forcing active** and **percid F fixed** (Lever A).
+## 7. Risks (post-review)
 
-Warm-started from `phase13_equilibrium.json`. Threading fix (OMP/NUMBA=1 per worker),
-isolated-eval + sim-timeout, checkpointing, wall-clock cap (~4–8 h).
+- **Milder apex-release still possible** if cod is depressed at all (Component 5.2) — the Step-0
+  gate + pinned cod M + the dropped seal component mitigate this; a per-species predation budget
+  (baseline-cod vs depressed-cod cropping of each prey) should be computed before enabling 5.2.
+- **Percid mortality may destabilise** (prior 8-lever finding) — grounded magnitudes + the
+  Step-0 gate + the revert rule bound this; accept residual overshoot over over-cranking.
+- **Pikeperch ~90× likely not closable** — stated as the binding constraint, not hidden.
+- **SSB-vs-total-biomass** — state which metric the bar uses (cod target is ICES SSB; the harness
+  scores total biomass).
 
-**Acceptance bar (honest, structural — not 8/8):**
-- cod at its depressed level (~70–80 kt final-decade mean, tracking the forced decline);
-- the high-weight prey (herring, sprat, flounder) **no worse than the 5/8 baseline**;
-- percids **improved toward** their envelopes (reduced overshoot) via the grounded removals,
-  with any residual accepted as the coarse-grid structural limit;
-- no unintended collapse; long-horizon stability compared to the 2/8 baseline.
+## 8. Config-binding checklist (from the config review — must hold in the plan)
 
-## 5. Data requirements
+1. Indices sp14 = seal, sp15 = cormorant on `646a36d` (NOT sp15/sp16).
+2. Cod-F forcing file: headerless single column, one row per sim year, padded to horizon.
+3. `apply_calibration._FILE_FOR`: add `species.biomass.multiplier.` and
+   `predation.ingestion.rate.max.` → `baltic_param-background.csv`.
+4. Allowlist `mortality.fishing.rate.byYear.file.sp{idx}` in `config_validation.py`.
+5. Remove/fix cod `fisheries.rate.base.fsh0` when F is forced.
+6. Add the cormorant column to `predation-accessibility.csv`.
 
-- **ICES cod.27.24-32 fishing-mortality series** — via the ICES data service (already
-  accessed this cycle). Stored as a tracked forcing CSV under `data/baltic/forcing/` with a
-  provenance header (stock, retrieval date, ICES assessment year).
-- **Percid removal values** — a short provenance note citing the recreational/coastal-fishery
-  literature for the chosen perch/pikeperch F.
-- **Seal/cormorant biomass** — the existing `baltic_predator_biomass.nc` (per-cell seasonal);
-  the calibration tunes scalar multipliers, not the NetCDF.
+## 9. Out of scope / future
 
-## 6. Testing
+Finer coastal grid (the proper pikeperch fix); herring/flounder disaggregation; multi-year
+seal/cormorant biomass trajectories (needs an engine change to the seasonal-wrap indexing).
 
-- **Forcing loader test:** the cod F byYear series loads and applies the expected per-year F
-  (deterministic unit test on `timeseries.py` / config parse).
-- **Percid-F config test:** the elevated fixed percid F is present and read.
-- **Seal/cormorant lever test:** biomass-multiplier + ingestion params parse and feed the
-  background predation (extend `tests/test_engine_background.py`).
-- **Smoke run:** the forced-cod config runs end-to-end; cod tracks down; both predators active.
-- **Calibration pipeline test:** the extended free-param set builds (bounds/x0 lengths
-  consistent) and the objective evaluates finite at the warm-start x0.
-- **Post-calibration certification:** `baltic_stability_certify.py` (aggregate-cod ENVELOPE)
-  against the acceptance bar + the 2/8 baseline.
+## 10. References
 
-## 7. Risks and mitigations
-
-- **Percid mortality may destabilize** — prior work found percid mortality levers
-  destabilizing. This uses *grounded* magnitudes, not arbitrary tuning, but must be verified
-  empirically. Mitigation: fixed percid F (bounded, documented) + certify stability; accept
-  residual overshoot rather than over-crank.
-- **Transient vs equilibrium** — forced time-varying F makes the run transient; the
-  calibration targets the final-decade mean aligned with the recent collapsed period.
-- **Cormorant reaches only young pikeperch** (size ratio) — adult pikeperch ×217 may not fully
-  close; the design targets *improvement*, not envelope-exact, and is honest that the residual
-  is the coarse-grid structural limit.
-- **Seal/cormorant level is a scalar, not a trajectory** (engine limit) — acceptable; we tune
-  the standing level, not a multi-year history.
-- **Forced-F not depressing cod enough** — mitigated by keeping cod M a free param so forced-F
-  + M reaches the target; fallback is a sustained elevated F rather than the declining tail.
-
-## 8. Out of scope / future
-
-- Herring/flounder disaggregation (separate effort).
-- Finer/nested coastal grid for percid habitat (the "proper" structural fix; large engine
-  effort — this design instead adds the missing *removals*).
-- Multi-year seal/cormorant biomass trajectories (needs an engine change to the seasonal-wrap
-  biomass indexing).
-
-## 9. References
-
-See `docs/baltic_findings_summary_2026-07-28.docx` §6 for the full, verification-tagged list.
-Key: Hansson et al. (2018) *ICES JMS* 75(3):999 (removals by fisheries/seals/birds); the
-Baltic pikeperch status reviews (recreational ≥ commercial); Heikinheimo et al. (2021) and
-Östman et al. (2013) (cormorant predation on perch); ICES cod.27.24-32 assessment (cod F).
+`docs/baltic_findings_summary_2026-07-28.docx` §6 (full, verification-tagged). Key: Hansson et
+al. (2018) *ICES JMS* 75(3):999; Baltic pikeperch status reviews (recreational ≥ commercial);
+Heikinheimo et al. (2021), Östman et al. (2013) (cormorant predation on perch); ICES
+cod.27.24-32.
