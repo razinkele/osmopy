@@ -52,5 +52,5 @@ reproduction.season.file.sp8;reproduction/reproduction-seasonality-sp8.csv
 stock.recruitment.type.sp8;shepherd
 stock.recruitment.ssbhalf.sp8;60000.0
 stock.recruitment.shape.sp8;1.5
-reproduction.rv.gate.ref;250
+reproduction.rv.gate.ref;150
 reproduction.rv.gate.species.enabled.sp8;true
