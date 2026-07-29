@@ -27,10 +27,11 @@ def test_phase12_returns_expected_params():
     from scripts.calibrate_baltic import get_phase12_params
 
     keys, bounds, x0 = get_phase12_params()
-    # 16 mortality (8 larval + 8 adult) + 8 fishing + 3 B-H ssb_half (sp3/4/5)
-    assert len(keys) == 27, f"phase 12 should expose 27 params, got {len(keys)}"
-    assert len(bounds) == 27
-    assert len(x0) == 27
+    # 18 mortality (9 larval + 9 adult) + 9 fishing + 3 B-H ssb_half (sp3/4/5)
+    # 9 species / 9 fisheries after the cod_west (sp0) + cod_east (sp8) disaggregation
+    assert len(keys) == 30, f"phase 12 should expose 30 params, got {len(keys)}"
+    assert len(bounds) == 30
+    assert len(x0) == 30
     # Must contain mortality + fishing + recruitment keys
     assert any("mortality.additional.larva.rate.sp0" in k for k in keys)
     assert any("mortality.additional.rate.sp0" in k for k in keys)
@@ -465,16 +466,19 @@ def test_apply_warm_start_overrides_only_known_keys(tmp_path):
 
 
 def test_phase13_shepherd_params_shape():
-    """All 8 species get a shape key; cod sp0 ssb_half is NOT tunable (fixed)."""
+    """All 9 species get a shape key; both cod stocks' ssb_half are free (sp0-8)
+    after the cod_west + cod_east disaggregation (see get_phase13_shepherd_params)."""
     from scripts.calibrate_baltic import get_phase13_shepherd_params
 
     keys, bounds, x0 = get_phase13_shepherd_params()
     assert len(keys) == len(bounds) == len(x0)
     shape_keys = [k for k in keys if k.startswith("stock.recruitment.shape.sp")]
-    assert len(shape_keys) == 8
+    assert len(shape_keys) == 9
     ssbhalf_keys = [k for k in keys if k.startswith("stock.recruitment.ssbhalf.sp")]
-    assert "stock.recruitment.ssbhalf.sp0" not in ssbhalf_keys  # cod fixed at Bpa
-    assert len(ssbhalf_keys) == 7  # sp1..sp7
+    # both cod stocks each carry a free ssb_half (different western/eastern scales)
+    assert "stock.recruitment.ssbhalf.sp0" in ssbhalf_keys  # cod_west
+    assert "stock.recruitment.ssbhalf.sp8" in ssbhalf_keys  # cod_east
+    assert len(ssbhalf_keys) == 9  # sp0..sp8
     # beta x0 is log10(1.0) = 0.0 for every shape key
     for k, x in zip(keys, x0):
         if k.startswith("stock.recruitment.shape.sp"):

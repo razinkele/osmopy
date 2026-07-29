@@ -124,5 +124,7 @@ class TestLoadTargets:
         targets, _ = load_targets(csv)
         assert len(targets) >= 8
         species = [t.species for t in targets]
-        assert "cod" in species
+        # cod was disaggregated into cod_west (SD22-24) + cod_east (SD24-32)
+        assert "cod_west" in species and "cod_east" in species
+        assert "cod" not in species
         assert "herring" in species

@@ -17,13 +17,13 @@ def test_yield_mean_added(monkeypatch):
     # must select the *last* 10 rows, not the full 15.
     bio = pd.DataFrame(
         {
-            "cod": np.concatenate([np.full(5, 999.0), np.full(10, 100.0)]),
+            "cod_west": np.concatenate([np.full(5, 999.0), np.full(10, 100.0)]),
             "sprat": np.concatenate([np.full(5, 555.0), np.full(10, 1000.0)]),
         }
     )
     yld = pd.DataFrame(
         {
-            "cod": np.concatenate([np.full(5, 111.0), np.full(10, 800.0)]),
+            "cod_west": np.concatenate([np.full(5, 111.0), np.full(10, 800.0)]),
             "sprat": np.concatenate([np.full(5, 222.0), np.full(10, 1200.0)]),
         }
     )
@@ -52,7 +52,8 @@ def test_yield_mean_added(monkeypatch):
     stats = cb.run_simulation({"x": "1"}, {}, n_years=1, seed=0, timeout_s=None)
 
     # Last-10-row means (rows 5..14), NOT the full-15-row mean.
-    assert stats["cod_yield_mean"] == pytest.approx(800.0)
+    # cod_west/sprat are both in calibrate_baltic.SPECIES_NAMES (the post-disaggregation set).
+    assert stats["cod_west_yield_mean"] == pytest.approx(800.0)
     assert stats["sprat_yield_mean"] == pytest.approx(1200.0)
-    assert stats["cod_mean"] == pytest.approx(100.0)
+    assert stats["cod_west_mean"] == pytest.approx(100.0)
     assert stats["sprat_mean"] == pytest.approx(1000.0)
