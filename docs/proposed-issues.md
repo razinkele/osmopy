@@ -164,7 +164,9 @@ Ready-to-paste issue drafts. Not created on GitHub — review and open manually.
 
 ---
 
-## [Medium] Bistability harness retarget left two aggregate-cod coherence gaps
+## [Opened → #130] Bistability harness retarget left two aggregate-cod coherence gaps
+
+> **Opened on GitHub 2026-07-29:** https://github.com/razinkele/osmopy/issues/130 (label: bug). Draft retained below.
 
 **Source:** surfaced 2026-07-29 while retargeting `scripts/baltic_bistability_chunk0.py` from aggregate cod to `cod_east` (commit 62851df). The seeding-IC bistability experiment now seeds sp8 and measures `cod_east` coherently, but two adjacent code paths still assume the old 8-focal / aggregate-cod layout.
 
