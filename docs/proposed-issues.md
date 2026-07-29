@@ -4,7 +4,9 @@ Ready-to-paste issue drafts. Not created on GitHub — review and open manually.
 
 ---
 
-## [High] Refresh Baltic ICES SAG/WGBAST snapshots and re-validate
+## [Opened → #133] Refresh Baltic ICES SAG/WGBAST snapshots and re-validate
+
+> **Opened on GitHub 2026-07-29:** https://github.com/razinkele/osmopy/issues/133 (label: enhancement).
 
 > **Status 2026-07-28 (partial):** ICES SAG time series re-pulled and biomass targets re-checked in `docs/baltic_ices_refresh_2026-07-28.md` — targets still bracket recent ICES SSB, no revision needed. Remaining: WGBAST (salmon) snapshot + commit SAG snapshots with provenance + regenerate the automated validation report. See also the sibling advice-cycle item below (same re-check).
 
@@ -27,7 +29,9 @@ Ready-to-paste issue drafts. Not created on GitHub — review and open manually.
 
 ---
 
-## [Medium] Optional fish-mediated carbon-flux diagnostic in output.py
+## [Opened → #134] Optional fish-mediated carbon-flux diagnostic in output.py
+
+> **Opened on GitHub 2026-07-29:** https://github.com/razinkele/osmopy/issues/134 (label: enhancement).
 
 **Source:** Silvar-Viladomiu, Cavan, Martin et al., *Estimating the contribution of the Irish Sea fish community to carbon sink potential*, ICES J. Marine Science (2026). https://doi.org/10.1093/icesjms/fsag095
 **Alert:** 2026-06-22
@@ -40,7 +44,9 @@ Ready-to-paste issue drafts. Not created on GitHub — review and open manually.
 
 ---
 
-## [High → mostly addressed 2026-07-28] Ingest May-2026 ICES Baltic advice cycle (advice for 2027) and re-validate
+## [Opened → #135] Ingest May-2026 ICES Baltic advice cycle (advice for 2027) and re-validate
+
+> **Opened on GitHub 2026-07-29:** https://github.com/razinkele/osmopy/issues/135 (label: enhancement). Mostly addressed 2026-07-28 — see the status note below.
 
 > **Mostly addressed 2026-07-28** (`docs/baltic_ices_refresh_2026-07-28.md`): the 2027-advice re-check found the +74% central-herring / +32% sprat revision is **advice/TAC-driven, not an SSB shift** — the committed biomass targets + wide envelopes still bracket recent ICES SSB (sprat 0.90–1.13 Mt, central herring ~0.39 Mt, eastern cod ~65–77 kt), so targets are defensible and were **not** revised. Remaining before closing: commit the SAG snapshots with provenance and regenerate the formal `validate_baltic_vs_ices_sag.py` report.
 
@@ -64,7 +70,9 @@ Ready-to-paste issue drafts. Not created on GitHub — review and open manually.
 
 ---
 
-## [High] Add WGSAM SMS cod-predation-mortality (M) as a Baltic predation validation target
+## [Opened → #136] Add WGSAM SMS cod-predation-mortality (M) as a Baltic predation validation target
+
+> **Opened on GitHub 2026-07-29:** https://github.com/razinkele/osmopy/issues/136 (label: enhancement).
 
 **Source:** ICES WGSAM updated Baltic Sea SMS multispecies key-run (WGSAM, Oct 2025) — provides updated cod predation-mortality (M) time series for Baltic sprat and central herring used as natural-mortality input to single-species assessments. https://www.ices.dk/community/groups/pages/wgsam.aspx · Key-run review criteria: https://ices-eg.github.io/wg_WGSAM/ReviewCriteria.html
 **Alert:** 2026-06-22
@@ -85,7 +93,9 @@ Ready-to-paste issue drafts. Not created on GitHub — review and open manually.
 
 ---
 
-## [High] Sync osmopy to OSMOSE 4.4.x (Java-parity audit & staged port)
+## [Opened → #137] Sync osmopy to OSMOSE 4.4.x (Java-parity audit & staged port)
+
+> **Opened on GitHub 2026-07-29:** https://github.com/razinkele/osmopy/issues/137 (label: enhancement). Progress note below.
 
 > **Progress 2026-07-29 (Java-4.4.1 cross-check work).** Built `osmose/java_config_reconcile.py` — sanitizes species/fishery names for Java (4.4.1 `Species.java` strips `_`/`-`), dedups predator columns, reconciles fishery catchability/discards matrices — so the disaggregated Baltic config now loads and runs to completion on the Java 4.4.1 jar (wired into `baltic_stability_certify.py --java`). **Empirically confirmed the Phase-1 "align resource-forcing parameter names" item is load-bearing, not cosmetic:** the committed config uses the OLD 4.3.3 `species.file.spN` for background/LTL biomass, which Java 4.4.1 silently does NOT force — GreySeal decays 1503→30 t over a run instead of holding the NetCDF ~4500 t — because 4.4.1 renamed the keys to `species.biomass.file.spN` / `species.biomass.constant.spX`. Concrete next Phase-1 step: migrate `data/baltic` `species.file.spN` → `species.biomass.file.spN` (background sp15/16 + LTL sp9–14) and re-verify forcing. Also found: fishery names must be alphanumeric (no `_`); the biomass-multiplier key differs (Python `species.biomass.multiplier.spN` vs Java `ResourceForcing` `species.multiplier.spN`). Evidence: `docs/baltic_cod_east_M09_java_crosscheck_2026-07-29.md`.
 
