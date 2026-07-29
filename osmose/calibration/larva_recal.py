@@ -112,10 +112,16 @@ def solve_larva_rate(
 
 
 def mean_cod(cfg: dict[str, str], *, seed: int = 0) -> float:
-    """Mean cod biomass over years index [3:15] (finite & >0), matching the SP1 diagnostic."""
+    """Mean total-cod biomass over years index [3:15] (finite & >0), matching the SP1
+    diagnostic. The cod stock was disaggregated into cod_west + cod_east, so total cod
+    is their sum; falls back to the aggregate 'cod' column for undisaggregated configs."""
     from osmose.engine import PythonEngine
 
-    b = PythonEngine().run_in_memory(cfg, seed=seed).biomass()["cod"].to_numpy()
+    bio = PythonEngine().run_in_memory(cfg, seed=seed).biomass()
+    if "cod" in bio.columns:
+        b = bio["cod"].to_numpy()
+    else:
+        b = (bio["cod_west"] + bio["cod_east"]).to_numpy()
     w = b[3:15]
     w = w[np.isfinite(w) & (w > 0)]
     return float(w.mean())
