@@ -243,9 +243,9 @@ Ready-to-paste issue drafts. Not created on GitHub — review and open manually.
 
 ---
 
-## [Opened → #138] UI Java staging path never applies `reconcile_config_for_java` — Baltic run aborts on `cod_west`
+## [Resolved 2026-07-29] UI Java staging path never applies `reconcile_config_for_java` — Baltic run aborts on `cod_west`
 
-> **Opened on GitHub 2026-07-29:** https://github.com/razinkele/osmopy/issues/138 (label: bug). Draft retained below.
+> **Opened on GitHub 2026-07-29:** https://github.com/razinkele/osmopy/issues/138 (label: bug) — **closed by `832bcee`.** The three staging steps are now behind `ui.pages.run.stage_config_for_java`, used by both the Run tab and `baltic_stability_certify.py`; `tests/test_java_staging_reconcile.py` pins the staged output (jar-free, runs in CI) and the real-jar Baltic run exits 0. The **secondary** item below (missing `fisheries.movement.file.map8` → Java deactivates `trawlcodeast`) is NOT fixed and still needs its own issue. Draft retained below.
 
 **Source:** 2026-07-29 full-suite sweep — `tests/test_java_engine_thread.py::test_java_engine_thread_streams_lines_and_posts_done`. Pre-dates the index-staleness fix (`c12873f`); reproduced identically at `40300b3` in a clean worktree.
 
