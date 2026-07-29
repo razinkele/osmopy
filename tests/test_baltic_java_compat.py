@@ -132,3 +132,55 @@ def test_baltic_discards_headers_match_fishery_names():
     assert headers == names, (
         f"Discards header {headers} does not match fisheries.name.fshN order {names}."
     )
+
+
+def _fishing_entries(prefix: str) -> list[tuple[str, str]]:
+    """Extract every ``prefix*`` key/value pair from the Baltic fishing CSV."""
+    if not BALTIC_FISHING.exists():
+        pytest.skip("Baltic fishing config not present in this checkout")
+    entries: list[tuple[str, str]] = []
+    for raw in BALTIC_FISHING.read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or not line.startswith(prefix):
+            continue
+        key, sep, value = line.partition(";")
+        assert sep == ";", f"unexpected separator in {raw!r}"
+        entries.append((key.strip(), value.strip()))
+    return entries
+
+
+def _n_fisheries() -> int:
+    entries = _fishing_entries("simulation.nfisheries")
+    assert entries, "simulation.nfisheries not declared in the Baltic fishing config"
+    return int(float(entries[0][1]))
+
+
+# Java requires a spatial-distribution map per fishery: MultiSpeciesFishing assigns one from
+# `fisheries.movement.*.mapN`, and a fishery with none is DEACTIVATED for every step
+# ("No map assigned for fishery X ... will therefore be deactivated") — a warning, not an
+# error, so the run still exits 0 with that fishery's mortality silently missing. Python
+# cannot catch this: osmose/engine/config.py reads only `fisheries.movement.file.map0` and
+# applies it as a shared map to all species, so map1..mapN are never indexed. GitHub #139
+# (the cod disaggregation added fsh8=trawlcodeast but no map8, so eastern-cod fishing was
+# absent from every Java run).
+def test_baltic_every_fishery_has_a_movement_map():
+    n_fisheries = _n_fisheries()
+    files = _fishing_entries("fisheries.movement.file.map")
+    fisheries = _fishing_entries("fisheries.movement.fishery.map")
+    assert len(files) == n_fisheries, (
+        f"{len(files)} fisheries.movement.file.map* entries for {n_fisheries} fisheries — "
+        "Java deactivates every fishery without a map, at every step."
+    )
+    assert len(fisheries) == n_fisheries, (
+        f"{len(fisheries)} fisheries.movement.fishery.map* entries for {n_fisheries} fisheries."
+    )
+
+
+def test_baltic_movement_maps_cover_every_declared_fishery():
+    """Counts matching is not enough — the map set must name each fishery exactly once."""
+    declared = [v for _, v in _fishery_name_values()]
+    mapped = [v for _, v in _fishery_movement_map_values()]
+    assert sorted(mapped) == sorted(declared), (
+        f"movement maps cover {sorted(mapped)} but the declared fisheries are "
+        f"{sorted(declared)} — unmapped fisheries are silently deactivated by Java."
+    )

@@ -95,6 +95,7 @@ fisheries.movement.fishery.map4;coastalperch
 fisheries.movement.fishery.map5;coastalpikeperch
 fisheries.movement.fishery.map6;gillsmelt
 fisheries.movement.fishery.map7;coastalstickleback
+fisheries.movement.fishery.map8;trawlcodeast
 
 fisheries.movement.file.map0;fishing/fishing-distrib.csv
 fisheries.movement.file.map1;fishing/fishing-distrib.csv
@@ -104,6 +105,7 @@ fisheries.movement.file.map4;fishing/fishing-distrib.csv
 fisheries.movement.file.map5;fishing/fishing-distrib.csv
 fisheries.movement.file.map6;fishing/fishing-distrib.csv
 fisheries.movement.file.map7;fishing/fishing-distrib.csv
+fisheries.movement.file.map8;fishing/fishing-distrib.csv
 fisheries.name.fsh8;trawlcodeast
 fisheries.selectivity.type.fsh8;0
 fisheries.selectivity.a50.fsh8;2.0
