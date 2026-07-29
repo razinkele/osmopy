@@ -22,10 +22,10 @@
 
 | species | Java mean (t) | vs envelope | note |
 |---|---|---|---|
-| cod_west | **0** | extinct | collapses on Java |
-| cod_east | **0** | extinct | the Python-tuned fix does NOT transfer |
+| cod_west | **0** | this draw | seed-sensitive — alive (0.39 M) in the other Java run |
+| cod_east | **0** | this draw | seed-sensitive — alive (0.89 M) in the other Java run |
 | herring | 1,959,470 | in-envelope | holds cross-engine |
-| sprat | **0** | extinct | collapses on Java |
+| sprat | **0** | extinct | collapses on Java (both runs) |
 | flounder | 3,007,264 | ~30–150× over | prey release |
 | perch | 2,236,237 | ~45–280× over | prey release |
 | pikeperch | 8,291,256 | ~330× over | prey release |
@@ -41,25 +41,42 @@ from species/fishery names to match Java's own `Species.java` sanitization, dedu
 background-predator column, and make the fishery catchability/discards matrices structurally
 consistent. The `--java` cross-check path is now unblocked for the disaggregated config.
 
-**Scientific verdict: the disaggregated, cod-tuned config is strongly Python-engine-specific — it does
-not replicate on Java.** On Java both cod stocks and sprat collapse to zero while the mid-trophic prey
-(flounder, perch, pikeperch, smelt, stickleback) explode 10–330× over envelope — a textbook trophic
-release. Three inherent Python-vs-Java differences drive this, none of them artifacts of the staging
-pass:
+**Scientific verdict: the mid-trophic prey explode on Java, robustly — and cod's fate is a
+seed-sensitive knife-edge.** Two Java runs of this config (the production cross-check above, seed
+un-pinned, and an earlier reconciliation smoke-run) agree within ~10 % on *every* species except cod:
+flounder 3.01 M / 2.93 M, perch 2.24 M / 2.14 M, pikeperch 8.29 M / 8.60 M, smelt 3.98 M / 4.39 M,
+stickleback 4.82 M / 4.71 M, herring 1.96 M / 1.88 M, sprat 0 / 0. Cod is the sole disagreement — 0 / 0
+in this run, but 0.39 M (cod_west) and 0.89 M (cod_east) *alive* in the other. So the prey release is
+**independent of cod** (identical in the run where cod is alive at ~0.9 Mt), and "both cods extinct on
+Java" is **not a settled finding — it is one non-reproducible draw.**
 
-1. **The RV recruitment gate is Python-engine-only.** `reproduction.rv.gate.*` (the lever the cod_east
-   fix tunes, `osmose/engine/processes/recruitment_gate.py`) has no counterpart in Java 4.4.1, which
-   silently ignores those keys and uses its native recruitment. The cod_east dynamics that were
-   hand-tuned on Python simply are not the dynamics Java runs.
-2. **Background-predator forcing transfers at reduced strength.** The C2 staging inlines the raw
-   NetCDF standing biomass; the Python-side `species.biomass.multiplier.*` scaling is not applied on
-   Java, so GreySeal/Cormorant stand at ~tens of tonnes on Java and exert little top-down control.
-3. **RNG + process implementation.** NumPy PCG64 vs Java MT19937 diverge on the first draw; Baltic was
-   never bit-equal cross-engine (documented "within ~1 OoM" for the *calibrated aggregate* config —
-   this disaggregated, cod-tuned config diverges far more).
+*Reproducibility caveat.* `certify_java` builds the Java command without a seed parameter, so the
+single Java column is one draw; the two runs differing only on cod is consistent with an unpinned
+Java RNG. Pinning the Java seed is a follow-up (the Java column is currently indicative, not
+reproducible).
 
-With neither the Python-tuned cod nor the (barely-forced) background predators controlling the prey
-field on Java, the prey cascade upward — the same apex-predator-release mechanism the disaggregation
-experiment documented. **The Python 5-seed certification above remains the authoritative result;** the
-Java run is a coarse consistency check, and here it flags — correctly — that this config's stability
-is an artifact of the Python engine's calibration levers, not an engine-robust equilibrium.
+**The robust driver of the prey explosion is the background predators, which the staging represents
+far more weakly than the Python engine does** — a background-staging *fidelity* gap, not an artifact
+of the name/matrix reconciliation pass:
+
+1. **Access coefficient.** The committed `data/baltic/predation-accessibility.csv` has a Cormorant
+   column but **no GreySeal column**, so the Python engine predates GreySeal at its `access_coeff=1.0`
+   fallback (see `osmose/engine/processes/predation.py`). The C2 staging instead hands Java the
+   authored `BG_ACCESS` values (0.1–0.4). Java's seals are much weaker consumers.
+2. **Standing biomass.** The staging inlines the raw NetCDF biomass; the Python-side
+   `species.biomass.multiplier.*` scaling is not applied on Java, so GreySeal/Cormorant stand at
+   ~5–31 t in the Java run vs the multiplier-scaled levels Python uses. Weaker still.
+
+With top-down control from the background predators largely removed, the prey field on Java cascades
+upward regardless of cod — the same apex-predator-release mechanism the disaggregation experiment
+documented. Two further Python-vs-Java differences compound the mismatch but are not the primary
+driver here: the **RV recruitment gate is Python-engine-only** (`reproduction.rv.gate.*` has no Java
+counterpart, so the cod_east recruitment lever does not exist on Java), and the RNGs differ (PCG64 vs
+MT19937) — Baltic was never bit-equal cross-engine.
+
+**Bottom line.** The engineering goal is delivered: Java 4.4.1 runs the disaggregated config to
+completion, and the `--java` cross-check path is unblocked. But the cross-check is not yet a faithful
+apples-to-apples comparison — the background-predator staging under-represents Python's seal/cormorant
+control, and the Java seed is un-pinned. Closing both (match the access-coef + apply the biomass
+multiplier in staging; pin the Java seed) is the path to a trustworthy cross-engine number. **Until
+then the Python 5-seed certification remains the authoritative result.**
