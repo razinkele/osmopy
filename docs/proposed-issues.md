@@ -240,3 +240,37 @@ Ready-to-paste issue drafts. Not created on GitHub — review and open manually.
 **Acceptance criteria.** Per-stock RECAL_RATE(s) solved + committed with provenance; the skip removed and the guard passes on the disaggregated config.
 
 **Effort:** moderate (maintainer-host recalibration). **Labels:** calibration, baltic, disaggregation, sp1b.
+
+---
+
+## [Opened → #138] UI Java staging path never applies `reconcile_config_for_java` — Baltic run aborts on `cod_west`
+
+> **Opened on GitHub 2026-07-29:** https://github.com/razinkele/osmopy/issues/138 (label: bug). Draft retained below.
+
+**Source:** 2026-07-29 full-suite sweep — `tests/test_java_engine_thread.py::test_java_engine_thread_streams_lines_and_posts_done`. Pre-dates the index-staleness fix (`c12873f`); reproduced identically at `40300b3` in a clean worktree.
+
+**The bug.** Java `Species.java` strips `_` and `-` from species names, so `cod_west` is registered as `codwest`, but the **value** side of `movement.species.mapN` is not stripped. Staging the Baltic config through the UI path therefore aborts at init:
+
+```
+osmose[severe] Wrong species name in spatial map series 'movement.map*'
+java.io.IOException: Parameter movement.species.map0 = cod_west does not match any predefined species name.
+	at fr.ird.osmose.background.BackgroundMapSet.loadMapsCsv(BackgroundMapSet.java:250)
+```
+
+`osmose/java_config_reconcile.py::reconcile_config_for_java` exists precisely to fix this (name sanitization + accessibility/catchability/discards matrix rebuild) and is applied by `scripts/baltic_stability_certify.py:117`. The UI path — `ui/pages/run.py::write_temp_config` followed by `osmose/java_background_staging.py::stage_background_for_java` — never calls it, so the Java cross-check works from the certification harness but the **Run tab is broken for any config with an underscored species name**. This is a user-facing regression from the cod disaggregation, not a test-only issue.
+
+The test masks the cause: it asserts on `result.stderr[-500:]`, but OSMOSE writes the exception to **stdout**, so the pytest failure shows only SLF4J noise.
+
+**Fix plan.**
+1. Call `reconcile_config_for_java(cp.parent)` in the UI staging path after `stage_background_for_java`. The default `master_name="osm_all-parameters.csv"` already matches what `write_temp_config` writes, so this is close to a one-liner — but confirm ordering, since reconcile rewrites the master in place and must run after background staging has added its keys.
+2. Prefer hoisting the call into a shared staging helper over duplicating it, so the certification and UI paths cannot drift apart again.
+3. Widen the test assertion to include `result.stdout`, otherwise the next staging failure is equally opaque.
+
+**Acceptance criteria.**
+- `tests/test_java_engine_thread.py` passes on the disaggregated Baltic config.
+- A regression guard asserts the staged master contains no underscored `movement.species.mapN` value.
+- Failure output surfaces the OSMOSE `[severe]` line, not just SLF4J noise.
+
+**Secondary (separate, non-fatal — file separately if confirmed).** The same run emits `No map assigned for fishery trawlcodeast year 0 step 0..23` → `Fishery trawlcodeast will therefore be deactivated`. `simulation.nfisheries` is 9 but `fisheries.movement.file.map*` stops at `map7`. Python reads only `map0` as a shared map so it is Python-inert, but Java deactivates the ninth fishery for every step — eastern-cod fishing silently absent in any Java run.
+
+**Effort:** quick (the call) + moderate (shared helper + guard). **Labels:** bug, java, baltic, disaggregation, ui.
