@@ -144,7 +144,9 @@ Ready-to-paste issue drafts. Not created on GitHub — review and open manually.
 
 ---
 
-## [Low] `stage_background_for_java` is not idempotent — duplicates a predator column already in the matrix
+## [Opened → #132] `stage_background_for_java` is not idempotent — duplicates a predator column already in the matrix
+
+> **Opened on GitHub 2026-07-29:** https://github.com/razinkele/osmopy/issues/132 (label: bug). Draft retained below.
 
 **Source:** surfaced 2026-07-29 during the same Java cross-check work (`docs/baltic_cod_east_M09_java_crosscheck_2026-07-29.md`). Masked in production by the reconcile pass; filing so the root cause isn't lost.
 
