@@ -75,9 +75,10 @@ def test_stage_background_for_java_emits_keys_and_returns_cutoff_override(tmp_pa
     overrides = stage_background_for_java(stage, raw)
     assert overrides == {"output.cutoff.enabled": "false"}
     master = (stage / "osm_all-parameters.csv").read_text()
-    assert "species.biomass.sp14 ;" in master  # GreySeal inline biomass
-    assert "output.diet.stage.threshold.sp14 ; 90" in master  # diet-stage threshold
-    assert "simulation.nschool.sp14 ; 10" in master
+    # Disaggregation shifted the background block +1: GreySeal is sp15 (Cormorant sp16).
+    assert "species.biomass.sp15 ;" in master  # GreySeal inline biomass
+    assert "output.diet.stage.threshold.sp15 ; 90" in master  # diet-stage threshold
+    assert "simulation.nschool.sp15 ; 10" in master
     # accessibility matrix got the predator columns (staged copy)
     assert "GreySeal" in (stage / "predation-accessibility.csv").read_text().splitlines()[0]
     # source untouched

@@ -30,7 +30,7 @@ from osmose.engine import PythonEngine
 
 _JAR = Path(os.environ.get(
     "OSMOSE_JAR",
-    "/home/razinka/osmose/osmose-python/osmose-java/osmose-4.4.1-jar-with-dependencies.jar",
+    str(Path(__file__).resolve().parents[1] / "osmose-java" / "osmose-4.4.1-jar-with-dependencies.jar"),
 ))
 
 # ICES envelopes (data/baltic/reference/biomass_targets.csv): (lower, upper) tonnes
@@ -99,6 +99,7 @@ def certify_java(params: dict[str, str], n_years: int, seed: int = 42) -> dict |
         print(f"(Java cross-check skipped: jar not found at {_JAR})")
         return None
     from osmose.java_background_staging import stage_background_for_java
+    from osmose.java_config_reconcile import reconcile_config_for_java
     from ui.pages.run import write_temp_config
 
     tmp = Path(tempfile.mkdtemp())
@@ -109,6 +110,11 @@ def certify_java(params: dict[str, str], n_years: int, seed: int = 42) -> dict |
     write_temp_config(cfg, stage, source_dir=res["config_file"].parent, target_version="4.4.1")
     master = stage / "osm_all-parameters.csv"
     overrides = stage_background_for_java(stage, cfg)  # incl. output.cutoff.enabled=false
+    # Java 4.4.1 strips '_'/'-' from species.name but not from name-based references; the
+    # disaggregated config (cod_west/cod_east) also left the discards matrix stale. Reconcile the
+    # STAGED copy so Java can resolve names and the fishery matrices are consistent (no-op on a
+    # clean aggregate config). See osmose/java_config_reconcile.py.
+    reconcile_config_for_java(stage)
     odir = tmp / "out"
     odir.mkdir(parents=True, exist_ok=True)
     cmd = [

@@ -16,35 +16,50 @@
 
 **Python verdict: 2/9 persistent & in-envelope.** Not 9/9 — SP-B gate: the failing species (not PASS above) are candidates params alone cannot stabilise; record whether sweeping their params moved them (structural vs tunable).
 
-## Java 4.4.1 cross-check: FAILED to initialize (disaggregated-config staging incompatibility)
+**Java cross-check: 1/8 persistent (single seed).** Survivor sets DIFFER with Python — Python ['herring', 'pikeperch', 'smelt', 'stickleback'], Java ['flounder', 'herring', 'perch', 'pikeperch', 'smelt', 'stickleback']. Coarse consistency check only (Baltic is not bit-equal cross-engine); a DIFFER is a flag to inspect, not an automatic failure.
 
-The single-seed Java 4.4.1 cross-check (staged via the C2 background recipe) **could not run** on the
-disaggregated 9-species config. Java aborts during `Simulation.init`, before stepping, with:
+### Java 4.4.1 per-species (single seed 42, final-decade mean)
 
-```
-osmose[severe] Wrong species name in spatial map series 'movement.map*'
-java.io.IOException: Parameter movement.species.map0 = cod_west does not match any predefined species name.
-    at fr.ird.osmose.background.BackgroundMapSet.loadMapsCsv(BackgroundMapSet.java:250)
-    at fr.ird.osmose.background.BackgroundMapSet.loadMaps(BackgroundMapSet.java:218)
-    at fr.ird.osmose.background.BackgroundMapSet.init(BackgroundMapSet.java:150)
-    at fr.ird.osmose.background.BackgroundProcess.init(BackgroundProcess.java:29)
-```
+| species | Java mean (t) | vs envelope | note |
+|---|---|---|---|
+| cod_west | **0** | extinct | collapses on Java |
+| cod_east | **0** | extinct | the Python-tuned fix does NOT transfer |
+| herring | 1,959,470 | in-envelope | holds cross-engine |
+| sprat | **0** | extinct | collapses on Java |
+| flounder | 3,007,264 | ~30–150× over | prey release |
+| perch | 2,236,237 | ~45–280× over | prey release |
+| pikeperch | 8,291,256 | ~330× over | prey release |
+| smelt | 3,983,369 | ~33× over | prey release |
+| stickleback | 4,815,401 | ~10× over | prey release |
 
-**Root cause — Java-side, NOT the M=0.9 tuning and NOT the Python engine.** The staged config is
-internally consistent: `species.name.sp0 = cod_west`, `species.name.sp8 = cod_east`, and the shared
-34-entry `movement.species.map*` series (focal maps map0–map29, background GreySeal/Cormorant maps
-map30–map33) all reference valid, defined names. But Java 4.4.1's `BackgroundMapSet` map loader
-validates every `movement.species.mapN` against a name registry that does not recognize the renamed
-`cod_west` — it rejects the very first map (`map0 = cod_west`). The C2 background-staging path
-(`stage_background_for_java`, which here emitted only `output.cutoff.enabled=false`) was built and
-validated for the **aggregate 8-species** config; it does not reconcile the disaggregation rename
-(cod → cod_west + appended cod_east) or the +1-shifted background indices (Cormorant sp16) with the
-Java background map machinery. See [[cod-ew-disaggregation]]: the disaggregated config is a
-Python-engine experiment; a Java cross-check would require extending the staging layer to re-register
-the renamed/shifted species with Java's `BackgroundMapSet`.
+## What the cross-check establishes
 
-**Bottom line.** The Python 5-seed certification above is the authoritative result and reproduces
-exactly (cod_east in-envelope at 82.6–83.4 kt). Cross-engine bit-equivalence was never expected for
-Baltic anyway (NumPy PCG64 vs Java MT19937 diverge on the first draw; the check is a coarse
-survivor-set consistency test) — and on the disaggregated config that coarse check simply cannot be
-staged for Java without further interop work.
+**Engineering goal achieved.** Java 4.4.1 now *loads and runs the disaggregated 9-species config to
+completion* (previously it aborted in `Simulation.init` on the underscored species name `cod_west`).
+This required the Java-staging reconciliation pass (`osmose/java_config_reconcile.py`): strip `_`/`-`
+from species/fishery names to match Java's own `Species.java` sanitization, dedup the duplicated
+background-predator column, and make the fishery catchability/discards matrices structurally
+consistent. The `--java` cross-check path is now unblocked for the disaggregated config.
+
+**Scientific verdict: the disaggregated, cod-tuned config is strongly Python-engine-specific — it does
+not replicate on Java.** On Java both cod stocks and sprat collapse to zero while the mid-trophic prey
+(flounder, perch, pikeperch, smelt, stickleback) explode 10–330× over envelope — a textbook trophic
+release. Three inherent Python-vs-Java differences drive this, none of them artifacts of the staging
+pass:
+
+1. **The RV recruitment gate is Python-engine-only.** `reproduction.rv.gate.*` (the lever the cod_east
+   fix tunes, `osmose/engine/processes/recruitment_gate.py`) has no counterpart in Java 4.4.1, which
+   silently ignores those keys and uses its native recruitment. The cod_east dynamics that were
+   hand-tuned on Python simply are not the dynamics Java runs.
+2. **Background-predator forcing transfers at reduced strength.** The C2 staging inlines the raw
+   NetCDF standing biomass; the Python-side `species.biomass.multiplier.*` scaling is not applied on
+   Java, so GreySeal/Cormorant stand at ~tens of tonnes on Java and exert little top-down control.
+3. **RNG + process implementation.** NumPy PCG64 vs Java MT19937 diverge on the first draw; Baltic was
+   never bit-equal cross-engine (documented "within ~1 OoM" for the *calibrated aggregate* config —
+   this disaggregated, cod-tuned config diverges far more).
+
+With neither the Python-tuned cod nor the (barely-forced) background predators controlling the prey
+field on Java, the prey cascade upward — the same apex-predator-release mechanism the disaggregation
+experiment documented. **The Python 5-seed certification above remains the authoritative result;** the
+Java run is a coarse consistency check, and here it flags — correctly — that this config's stability
+is an artifact of the Python engine's calibration levers, not an engine-robust equilibrium.
