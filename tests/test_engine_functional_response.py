@@ -39,7 +39,7 @@ _BALTIC_CONFIG = _PROJECT_ROOT / "data" / "baltic" / "baltic_all-parameters.csv"
 def _apply_fr(cfg: dict, fr: dict | None) -> dict:
     """Inject FR config keys into *cfg* and return the mutated dict.
 
-    *fr* maps species tokens ('sp0', 'sp14') to ``(shape_int, k | None)``
+    *fr* maps species tokens ('sp0', 'sp15') to ``(shape_int, k | None)``
     tuples.
 
     Shape encoding:
@@ -47,8 +47,8 @@ def _apply_fr(cfg: dict, fr: dict | None) -> dict:
         2 → type2  — emits both shape and halfsat keys.
         3 → type3  — emits both shape and halfsat keys.
 
-    Background tokens (sp14 / sp15) are the **config** keys; the engine maps
-    them to runtime slots 8 / 9 internally.
+    Background tokens (sp15 / sp16) are the **config** keys; the engine maps
+    them to runtime slots 9 / 10 internally.
 
     When *fr* is None (or empty) the dict is returned unchanged so callers can
     safely pass ``fr=None`` for the no-FR baseline.
@@ -57,7 +57,7 @@ def _apply_fr(cfg: dict, fr: dict | None) -> dict:
         return cfg
     code_to_name = {1: "type1", 2: "type2", 3: "type3"}
     for tok, (shape_int, k) in fr.items():
-        i = tok[2:]  # 'sp0' -> '0', 'sp14' -> '14'
+        i = tok[2:]  # 'sp0' -> '0', 'sp15' -> '15'
         cfg[_FR_KEY_SHAPE.format(i=i)] = code_to_name[shape_int]
         if shape_int != 1:
             cfg[_FR_KEY_HALFSAT.format(i=i)] = k
@@ -91,7 +91,7 @@ def _base_cfg(background: bool) -> dict:
 
     background=False  → 2-species synthetic (data/minimal) — fast, no NetCDF
                         background predators.
-    background=True   → Baltic 8-focal + 2-background setup (data/baltic) —
+    background=True   → Baltic 9-focal + 2-background setup (data/baltic) —
                         exercises the background species pathway.
 
     The returned dict is always a fresh copy safe to mutate via _apply_fr.
@@ -161,7 +161,7 @@ def _run_short_sim(
         bit-identical output (requires movement.randomseed.fixed=true and
         stochastic.mortality.randomseed.fixed=true, both set by _base_cfg).
     background:
-        When True, load the Baltic 8+2 config (exercises background species).
+        When True, load the Baltic 9+2 config (exercises background species).
     force_empty_prey:
         When True, zero all resource biomass in the config so that a type-3
         predator encounters a cell with total_available ≈ 0 (exercises the
@@ -214,9 +214,9 @@ def _run_short_sim(
 
 
 def _run_baltic_short(seed: int = 11, fr: dict | None = None) -> np.ndarray:
-    """Shortcut for background=True runs (Baltic 8-focal + 2-background).
+    """Shortcut for background=True runs (Baltic 9-focal + 2-background).
 
-    Returns per-species end-of-run biomass as np.ndarray (n_focal=8).
+    Returns per-species end-of-run biomass as np.ndarray (n_focal=9).
     """
     return _run_short_sim(numba=True, fr=fr, seed=seed, background=True)
 
@@ -453,18 +453,18 @@ def test_background_parse_sets_fr_fields():
     reason="Baltic config not present in data/baltic/",
 )
 def test_fr_background_enum_maps_to_runtime_slot():
-    """Background FR config key sp14=type3 must reach runtime slot 8 (n_focal+bkg_idx).
+    """Background FR config key sp15=type3 must reach runtime slot 9 (n_focal+bkg_idx).
 
     NOTE: This test exercises the full A3+A4 pipeline.  It will fail until A4
     wires fr_shape/fr_halfsat into EngineConfig arrays — expect AttributeError
     or a missing-field error until then.  The background *parse* is validated
     independently by test_background_parse_sets_fr_fields (A3-only).
     """
-    cfg = _apply_fr(_base_cfg(background=True), {"sp14": (3, 1.0)})
+    cfg = _apply_fr(_base_cfg(background=True), {"sp15": (3, 1.0)})
     ecfg = _build_via_entry_point(cfg)
-    assert ecfg.fr_shape[8] == 3
-    assert ecfg.fr_halfsat[8] == 1.0
-    assert ecfg.fr_shape[9] == 1
+    assert ecfg.fr_shape[9] == 3
+    assert ecfg.fr_halfsat[9] == 1.0
+    assert ecfg.fr_shape[10] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -477,11 +477,11 @@ def test_fr_background_enum_maps_to_runtime_slot():
     reason="Baltic config not present in data/baltic/",
 )
 def test_fr_arrays_sized_n_total_and_registered():
-    ecfg = _build_via_entry_point(_base_cfg(background=True))  # 8 focal + 2 bkg
+    ecfg = _build_via_entry_point(_base_cfg(background=True))  # 9 focal + 2 bkg
     assert ecfg.fr_shape.dtype == np.int32
     assert ecfg.fr_halfsat.dtype == np.float64
-    assert len(ecfg.fr_shape) == ecfg.n_species + ecfg.n_background == 10
-    assert len(ecfg.fr_halfsat) == 10
+    assert len(ecfg.fr_shape) == ecfg.n_species + ecfg.n_background == 11
+    assert len(ecfg.fr_halfsat) == 11
 
 
 @pytest.mark.skipif(
@@ -872,7 +872,7 @@ def test_numba_python_parity_fr_on(shape, k, r):
     reason="Baltic config not present in data/baltic/",
 )
 def test_fr_type3_empty_cell_no_nan():
-    out = _run_short_sim(numba=True, fr={"sp14": (3, 1.0)}, background=True, force_empty_prey=True)
+    out = _run_short_sim(numba=True, fr={"sp15": (3, 1.0)}, background=True, force_empty_prey=True)
     assert np.all(np.isfinite(out))
 
 
@@ -881,8 +881,8 @@ def test_fr_type3_empty_cell_no_nan():
     reason="Baltic config not present in data/baltic/",
 )
 def test_fr_determinism():
-    a = _run_short_sim(numba=True, fr={"sp14": (3, 1.0)}, seed=42, background=True)
-    b = _run_short_sim(numba=True, fr={"sp14": (3, 1.0)}, seed=42, background=True)
+    a = _run_short_sim(numba=True, fr={"sp15": (3, 1.0)}, seed=42, background=True)
+    b = _run_short_sim(numba=True, fr={"sp15": (3, 1.0)}, seed=42, background=True)
     np.testing.assert_array_equal(a, b)
 
 
@@ -916,13 +916,12 @@ def test_fr_determinism():
 #    assertion impossible.  The test therefore asserts only that the config
 #    PARSES correctly (ecfg.fr_shape[7]==3) — runtime-inertness cannot be
 #    cleanly demonstrated for any focal species in the Baltic config since all
-#    8 focal species eat at least resources via the accessibility matrix.
+#    9 focal species eat at least resources via the accessibility matrix.
 #
-# 3. ``test_fr_on_background_predator_changes_outcome``: GreySeal (sp14,
-#    runtime slot 8) with FR=type3, k=1.0 was empirically confirmed to change
-#    end-of-run focal biomass (arrays differ with seed=11; cod biomass changes
-#    ~32%).  No smaller-k tuning was needed; k=1.0 already produces a
-#    measurable refuge effect.
+# 3. ``test_fr_on_background_predator_changes_outcome``: GreySeal (sp15,
+#    runtime slot 9) with FR=type3, k=1.0 was empirically confirmed to change
+#    end-of-run focal biomass (arrays differ with seed=11).  No smaller-k
+#    tuning was needed; k=1.0 already produces a measurable refuge effect.
 
 
 @pytest.mark.skipif(
@@ -947,20 +946,20 @@ def test_fr_explicit_type1_equals_absent_key():
     reason="Baltic config not present in data/baltic/",
 )
 def test_fr_on_background_predator_changes_outcome():
-    """FR=type3, k=1.0 on GreySeal (sp14, runtime slot 8) must produce a different
+    """FR=type3, k=1.0 on GreySeal (sp15, runtime slot 9) must produce a different
     end-of-run focal biomass compared to the FR-off baseline.
 
     At low prey-to-max_eatable ratio r, type3 has a strong refuge effect:
     g_type3 = r²/(r²+k²) << r = g_type1, so the seal eats proportionally less
-    when prey is scarce.  With k=1.0 this effect is strong enough that cod
-    biomass changes by ~32% in a 1-year Baltic run (seed=11).  The test
+    when prey is scarce.  With k=1.0 this effect is strong enough that focal
+    biomass changes in a 1-year Baltic run (seed=11).  The test
     confirms that background-predator FR is wired end-to-end into the engine
     and is not silently discarded.
     """
     base = _run_baltic_short(seed=11, fr=None)
-    fr_on = _run_baltic_short(seed=11, fr={"sp14": (3, 1.0)})
+    fr_on = _run_baltic_short(seed=11, fr={"sp15": (3, 1.0)})
     assert not np.array_equal(base, fr_on), (
-        "FR=type3,k=1.0 on GreySeal (sp14) produced identical biomass arrays — "
+        "FR=type3,k=1.0 on GreySeal (sp15) produced identical biomass arrays — "
         "background-predator FR is not reaching the predation kernel"
     )
 
@@ -992,12 +991,12 @@ def test_fr_non_type1_on_prey_only_species_inert():
     Runtime-inertness CANNOT be asserted with a full-sim equality check because
     stickleback does eat resources, and FR=type3 reduces its resource intake,
     which changes its growth/biomass.  No focal species in the Baltic config is
-    truly runtime-inert under FR, since all 8 eat at least resources via the
+    truly runtime-inert under FR, since all 9 eat at least resources via the
     accessibility matrix.
 
     The test therefore validates the CONFIG-PARSE CONTRACT: the FR shape key is
     accepted by EngineConfig.from_dict and wired into ecfg.fr_shape at the
-    correct index (7 = stickleback slot in an 8-focal-species config).
+    correct index (7 = stickleback slot in a 9-focal-species config).
     """
     ecfg = _build_via_entry_point(_apply_fr(_base_cfg(background=True), {"sp7": (3, 1.0)}))
     assert ecfg.fr_shape[7] == 3, (
@@ -1013,25 +1012,25 @@ def test_fr_non_type1_on_prey_only_species_inert():
 #   - School-prey biomass is written to ``diet_matrix[p_idx, prey_sp]`` where
 #     ``prey_sp = state.species_id[q_idx]`` (Python ~:529, numba ~:998).
 #   - Resource-prey biomass is written to ``diet_matrix[p_idx, n_species + r]``
-#     i.e. the resource column BASE is ``config.n_species`` (=8 for Baltic),
+#     i.e. the resource column BASE is ``config.n_species`` (=9 for Baltic),
 #     NOT ``n_species + n_background`` (Python ~:547, numba ~:1012).
 #   - Both writes are guarded by ``col < diet_matrix.shape[1]`` — columns
 #     beyond the matrix width are silently dropped.
 #
-#   Baltic geometry: 8 focal + 2 background predators (runtime slots 8/9) +
-#   6 resources (runtime r=0..5).  With resource base = n_species = 8 the
-#   resource columns are 8,9,10,11,12,13.  Columns 8/9 COLLIDE with the focal-
+#   Baltic geometry: 9 focal + 2 background predators (runtime slots 9/10) +
+#   6 resources (runtime r=0..5).  With resource base = n_species = 9 the
+#   resource columns are 9,10,11,12,13,14.  Columns 9/10 COLLIDE with the focal-
 #   prey columns for the two background-predators-as-prey, so the strictly-
-#   resource-only columns (that exist nowhere else) are 10..13.
+#   resource-only columns (that exist nowhere else) are 11..14.
 #
-#   Production hardwires the diet width to ``n_species + n_background`` (=10)
-#   at simulate.py:1436, so resource columns 10..15 are dropped — only cols
-#   8,9 survive (and there they collide with bg-prey-species, not pure
+#   Production hardwires the diet width to ``n_species + n_background`` (=11)
+#   at simulate.py:1436, so resource columns 11..16 are dropped — only cols
+#   9,10 survive (and there they collide with bg-prey-species, not pure
 #   resources).  The diagnostic monkeypatches enable_diet_tracking to allocate
-#   width 16 so resource cols 10..13 survive.
+#   width 16 so resource cols 11..14 survive.
 
-_RESOURCE_COL_START = 10  # = n_species(8) + first PURE-resource offset (slots 8,9 collide)
-_RESOURCE_COL_END = 14  # exclusive: resources r=2..5 -> cols 10..13
+_RESOURCE_COL_START = 11  # = n_species(9) + first PURE-resource offset (slots 9,10 collide)
+_RESOURCE_COL_END = 15  # exclusive: resources r=2..5 -> cols 11..14
 
 
 def test_aggregate_all_predators_includes_background_slots():
@@ -1064,8 +1063,8 @@ def test_aggregate_all_predators_vs_by_species_difference():
 def _run_baltic_short_with_diet(fr: dict | None = None, width: int = 16):
     """Run a short Baltic sim with diet tracking forced to *width* columns.
 
-    Production hardwires the diet width to ``n_species + n_background`` (=10)
-    at simulate.py:1436, dropping resource columns >= 10.  This helper
+    Production hardwires the diet width to ``n_species + n_background`` (=11)
+    at simulate.py:1436, dropping resource columns >= 11.  This helper
     monkeypatches ``enable_diet_tracking`` so the width arg passed by simulate
     is overridden to *width*, letting resource columns survive.
 
@@ -1105,7 +1104,7 @@ def _run_baltic_short_with_diet(fr: dict | None = None, width: int = 16):
         # would trip that shape check at end-of-run.  Truncate the aggregated
         # result back to the production width so the run completes — the raw
         # wide matrix is already captured above for the diagnostic assertions.
-        prod_width = n_pred_species + 2  # n_species + n_background (Baltic = 8 + 2)
+        prod_width = n_pred_species + 2  # n_species + n_background (Baltic = 9 + 2)
         if result.shape[1] > prod_width:
             return result[:, :prod_width]
         return result
@@ -1127,14 +1126,14 @@ def test_diagnostic_diet_width_keeps_background_and_resource_columns(monkeypatch
     pure-resource columns (10..13) that production's width-10 matrix drops."""
     from osmose.engine.output import aggregate_diet_all_predators
 
-    dm, sid = _run_baltic_short_with_diet(fr={"sp0": (3, 1.0), "sp14": (3, 1.0)}, width=16)
+    dm, sid = _run_baltic_short_with_diet(fr={"sp0": (3, 1.0), "sp15": (3, 1.0)}, width=16)
     assert dm.shape[1] == 16
 
-    agg = aggregate_diet_all_predators(dm, sid, n_total=10)
-    # Background predators (runtime rows 8, 9) ate something.
-    assert agg[8:10, :].sum() > 0, "background predators recorded no diet at width 16"
-    # Pure-resource columns survived the wider width (cols 10..13; resource base
-    # = n_species = 8, cols 8/9 collide with bg-prey-species so are excluded).
+    agg = aggregate_diet_all_predators(dm, sid, n_total=11)
+    # Background predators (runtime rows 9, 10) ate something.
+    assert agg[9:11, :].sum() > 0, "background predators recorded no diet at width 16"
+    # Pure-resource columns survived the wider width (cols 11..14; resource base
+    # = n_species = 9, cols 9/10 collide with bg-prey-species so are excluded).
     assert agg[:, _RESOURCE_COL_START:_RESOURCE_COL_END].sum() > 0, (
         "no resource-column diet mass survived at width 16"
     )
@@ -1145,15 +1144,15 @@ def test_diagnostic_diet_width_keeps_background_and_resource_columns(monkeypatch
     reason="Baltic config not present in data/baltic/",
 )
 def test_diagnostic_width10_truncates_resource_columns():
-    """Production width (n_species + n_background = 10) drops the pure-resource
-    columns: the matrix is only 10 wide, so cols 10..13 do not exist at all.
+    """Production width (n_species + n_background = 11) drops the pure-resource
+    columns: the matrix is only 11 wide, so cols 11..14 do not exist at all.
 
     This strengthens the width-16 test by proving the resource mass it observes
     is genuinely recovered by the wider allocation, not present by default.
     """
-    dm, _sid = _run_baltic_short_with_diet(fr={"sp0": (3, 1.0), "sp14": (3, 1.0)}, width=10)
-    assert dm.shape[1] == 10
-    # The pure-resource columns 10..13 are beyond the matrix entirely.
+    dm, _sid = _run_baltic_short_with_diet(fr={"sp0": (3, 1.0), "sp15": (3, 1.0)}, width=11)
+    assert dm.shape[1] == 11
+    # The pure-resource columns 11..14 are beyond the matrix entirely.
     assert dm.shape[1] <= _RESOURCE_COL_START
 
 
@@ -1164,11 +1163,13 @@ def test_diagnostic_width10_truncates_resource_columns():
 # This is the robust, non-flaky form of FR's consequence: rather than asserting
 # on whole-system biomass (which is noisy and trophically coupled), we measure
 # the change in a single predator's realized diet on its own dominant prey.  A
-# type-III refuge on GreySeal (background sp14 -> runtime slot 8) must reduce the
+# type-III refuge on GreySeal (background sp15 -> runtime slot 9) must reduce the
 # mass of its top focal prey that GreySeal actually consumes.
 #
 # Empirical calibration of this test (measured on the Baltic short config,
-# seed=11, 1-yr run, width-16 diet matrix):
+# seed=11, 1-yr run, width-16 diet matrix; magnitudes below are from the
+# pre-E/W-split 8-focal config and are illustrative only — the strict-drop
+# property is re-verified against the current 9-focal config):
 #   - GreySeal's dominant focal prey is herring (focal column 1).
 #   - Baseline GreySeal-on-herring diet mass: 580.56.
 #   - type-III at k=1.0: 572.31  (delta -8.24, ~1.4 % reduction) — STRICT drop.
@@ -1190,10 +1191,10 @@ def test_diagnostic_width10_truncates_resource_columns():
 def test_fr_type3_reduces_greyseal_predation_on_top_prey():
     from osmose.engine.output import aggregate_diet_all_predators
 
-    # 1. Baseline diet run: find GreySeal's (runtime slot 8) dominant focal prey.
+    # 1. Baseline diet run: find GreySeal's (runtime slot 9) dominant focal prey.
     dm_base, sid = _run_baltic_short_with_diet(fr=None, width=16)
-    seal = aggregate_diet_all_predators(dm_base, sid, n_total=10)[8]  # GreySeal diet row
-    prey_id = int(np.argmax(seal[:8]))  # its top FOCAL prey (cols 0..7)
+    seal = aggregate_diet_all_predators(dm_base, sid, n_total=11)[9]  # GreySeal diet row
+    prey_id = int(np.argmax(seal[:9]))  # its top FOCAL prey (cols 0..8)
     assert seal[prey_id] > 0  # GreySeal genuinely eats it (test non-vacuous)
     # 2. type-III refuge on GreySeal -> it eats LESS of that prey.
     # halfsat=2.0 (re-measured 2026-06-24): the egg-retention fix (94f1bfb) shifted the
@@ -1201,6 +1202,6 @@ def test_fr_type3_reduces_greyseal_predation_on_top_prey():
     # prior halfsat=1.0 lands in a noisy near-tie (it was always a fragile ~8-unit margin).
     # The type-III refuge itself is intact — it holds at halfsat 0.3/2.0/5.0; 2.0 gives the
     # strongest, most robust refuge margin (~-42 units) at the post-fix equilibrium.
-    dm_fr, sid2 = _run_baltic_short_with_diet(fr={"sp14": (3, 2.0)}, width=16)
-    seal_fr = aggregate_diet_all_predators(dm_fr, sid2, n_total=10)[8]
+    dm_fr, sid2 = _run_baltic_short_with_diet(fr={"sp15": (3, 2.0)}, width=16)
+    seal_fr = aggregate_diet_all_predators(dm_fr, sid2, n_total=11)[9]
     assert seal_fr[prey_id] < seal[prey_id]  # FR cut GreySeal's realized predation on its top prey

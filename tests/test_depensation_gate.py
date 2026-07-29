@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 from osmose.engine.config import _load_depensation_gate
 from osmose.engine.processes.depensation_gate import depensation_factor
+from osmose.results import total_cod
 
 
 def test_half_at_s50():
@@ -182,7 +183,7 @@ def _run_cod_ssb(overrides, seed=0, n_year=8):
     tmp = Path(tempfile.mkdtemp())
     base = dict(OsmoseConfigReader().read(str(osmose_demo("baltic", tmp)["config_file"])))
     raw = {**base, "simulation.time.nyear": str(n_year), "output.ssb.enabled": "true", **overrides}
-    return PythonEngine().run_in_memory(raw, seed=seed).ssb()["cod"].to_numpy(dtype=float)
+    return total_cod(PythonEngine().run_in_memory(raw, seed=seed).ssb())
 
 
 @pytest.mark.skipif(

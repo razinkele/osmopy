@@ -57,8 +57,9 @@ def test_dry_run_prints_plan(tmp_path):
     assert result.returncode == 0, f"stderr: {result.stderr}"
     assert "total samples" in result.stdout
     assert "Dry run" in result.stdout
-    # n_base=8, D=27 → 8 * (2*27 + 2) = 448 expected samples
-    assert "448" in result.stdout
+    # n_base=8, D=30 → 8 * (2*30 + 2) = 496 expected samples
+    # (D grew 27→30 with the cod_west+cod_east disaggregation: +cod_east mortality pair + trawlcodeast fishery)
+    assert "496" in result.stdout
 
 
 def test_sobol_pipeline_on_known_function(tmp_path):

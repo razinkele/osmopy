@@ -69,6 +69,7 @@ def equilibrate_level(base, base_rates, scale, s50, theta, base_f, f_mult, seed,
     """Hold one constant F level (= f_mult * base_f) from a cod-rich warm-start until SSB
     equilibrates (cap DWELL_CAP_Y). Returns (final_decade_mean, converged, series)."""
     from osmose.engine import PythonEngine
+    from osmose.results import total_cod
 
     tmp = Path(tempfile.mkdtemp())
     f_csv = tmp / "cod_f_byyear.csv"
@@ -84,7 +85,7 @@ def equilibrate_level(base, base_rates, scale, s50, theta, base_f, f_mult, seed,
     raw.update(larva_scale_override(scale, base_rates))
     if gate:
         raw.update(gate_overrides(s50, theta))
-    s = PythonEngine().run_in_memory(raw, seed=seed).ssb()["cod"].to_numpy(dtype=float)
+    s = total_cod(PythonEngine().run_in_memory(raw, seed=seed).ssb())
     dm = [float(np.mean(s[i : i + 10])) for i in range(0, max(1, len(s) - 9), 10)]
     converged = len(dm) >= 2 and abs(dm[-1] - dm[-2]) / max(dm[-2], 1.0) < CONV_TOL
     return float(np.mean(s[-10:])), converged, s

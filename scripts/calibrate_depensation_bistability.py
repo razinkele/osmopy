@@ -62,6 +62,7 @@ def gate_overrides(s50: float, theta: float) -> dict:
 def cod_ssb_series(base, base_rates, scale, rich, s50, theta, seed, n_year, gate=True):
     """Annual cod SSB (tonnes) over an n_year warm-start run at the given IC + gate params."""
     from osmose.engine import PythonEngine
+    from osmose.results import total_cod
 
     raw = {**base, "simulation.time.nyear": str(n_year), "output.ssb.enabled": "true"}
     raw.update(warmstart_override(True))
@@ -69,7 +70,7 @@ def cod_ssb_series(base, base_rates, scale, rich, s50, theta, seed, n_year, gate
     raw.update(larva_scale_override(scale, base_rates))
     if gate:
         raw.update(gate_overrides(s50, theta))
-    return PythonEngine().run_in_memory(raw, seed=seed).ssb()["cod"].to_numpy(dtype=float)
+    return total_cod(PythonEngine().run_in_memory(raw, seed=seed).ssb())
 
 
 def _decade_means(series: np.ndarray) -> list[float]:

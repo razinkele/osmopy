@@ -10,6 +10,7 @@ from osmose.engine.state import SchoolState
 from osmose.forcing.grid import load_ocean_mask
 from osmose.forcing.reproductive_volume import build_rv_field, viable_thickness
 from osmose.maps.builder import GridSpec
+from osmose.results import total_cod
 from osmose.schema import build_registry
 
 
@@ -115,8 +116,8 @@ def _baltic_cfg(**over):
 
 def test_from_seeding_inert_by_default_parity():
     # Adding the field must not change engine output.
-    a = PythonEngine().run_in_memory(_baltic_cfg(), seed=0).biomass()["cod"].to_numpy()
-    b = PythonEngine().run_in_memory(_baltic_cfg(), seed=0).biomass()["cod"].to_numpy()
+    a = total_cod(PythonEngine().run_in_memory(_baltic_cfg(), seed=0).biomass())
+    b = total_cod(PythonEngine().run_in_memory(_baltic_cfg(), seed=0).biomass())
     np.testing.assert_array_equal(a, b)
 
 
@@ -203,20 +204,19 @@ SP_FIELD = "data/baltic/forcing/baltic_rv_field.nc"
 
 
 def test_spatial_off_bit_identical():
-    off = PythonEngine().run_in_memory(_baltic_cfg(), seed=0).biomass()["cod"].to_numpy()
-    off2 = (
+    off = total_cod(PythonEngine().run_in_memory(_baltic_cfg(), seed=0).biomass())
+    off2 = total_cod(
         PythonEngine()
         .run_in_memory(_baltic_cfg(**{"reproduction.rv.spatial.enabled": "false"}), seed=0)
-        .biomass()["cod"]
-        .to_numpy()
+        .biomass()
     )
     np.testing.assert_array_equal(off, off2)
 
 
 def test_spatial_on_changes_cod():
-    off = PythonEngine().run_in_memory(_baltic_cfg(), seed=0).biomass()["cod"].to_numpy()
+    off = total_cod(PythonEngine().run_in_memory(_baltic_cfg(), seed=0).biomass())
     on_cfg = sp1_on_config(_baltic_cfg(), SP_FIELD, larva_rate=None)  # SP1 on, no recal
-    on = PythonEngine().run_in_memory(on_cfg, seed=0).biomass()["cod"].to_numpy()
+    on = total_cod(PythonEngine().run_in_memory(on_cfg, seed=0).biomass())
     assert not np.allclose(off, on)  # the spatial term changes cod
 
 

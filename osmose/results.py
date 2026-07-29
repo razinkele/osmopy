@@ -34,6 +34,19 @@ _ENGINE_SUBDIRS = ("Mortality", "Bioen", "Trophic", "Indicators", "SizeIndicator
 _SIMU_SUFFIX_RE = re.compile(r"_Simu\d+$")
 
 
+def total_cod(df: pd.DataFrame) -> np.ndarray:
+    """Total cod as a float64 array from a per-species frame (biomass, SSB, ...).
+
+    The Baltic cod stock was disaggregated into ``cod_west`` (sp0) + ``cod_east`` (sp8),
+    so "total cod" is their sum. Falls back to an aggregate ``cod`` column for
+    undisaggregated configs. Use this instead of ``df["cod"]`` in cod diagnostics so they
+    survive both layouts.
+    """
+    if "cod" in df.columns:
+        return df["cod"].to_numpy(dtype=float)
+    return (df["cod_west"] + df["cod_east"]).to_numpy(dtype=float)
+
+
 def _find_output_files(output_dir: Path, pattern: str) -> list[Path]:
     """Search root + known engine subdirectories for output files."""
     results: list[Path] = []
