@@ -24,7 +24,11 @@ def test_expand_param_overrides_zoo_sentinel_expands_to_four_keys():
     keys = ["mortality.additional.larva.rate.sp0", "species.regrowth.rate.zoo"]
     x = np.array([0.0, np.log10(0.6)])  # -> mort 1.0, zoo 0.6
     ov = cb.expand_param_overrides(keys, x, use_log_space=True)
-    for r in (10, 11, 12, 13):
+    # Track the module constant rather than literal indices — the resource block moves
+    # whenever a focal species is inserted (tests/test_baltic_species_index_layout.py
+    # is what pins those indices to the actual resource block).
+    assert len(cb._ZOO_RESOURCE_INDICES) == 4
+    for r in cb._ZOO_RESOURCE_INDICES:
         assert ov[f"species.regrowth.rate.sp{r}"] == str(0.6)
     assert "species.regrowth.rate.zoo" not in ov
     assert ov["mortality.additional.larva.rate.sp0"] == str(1.0)
@@ -44,8 +48,9 @@ def test_enable_a2_base_config_sets_keys_without_mutating_input():
     out = cb.enable_a2_base_config(base)
     assert out["ltl.depletable.enabled"] == "true"
     assert out["ltl.depletable.floor"] == "0.05"
-    assert out["species.regrowth.rate.sp8"] == "5.0"
+    # Diatoms + Dinoflagellates; the resource block starts at sp9 after the cod split.
     assert out["species.regrowth.rate.sp9"] == "5.0"
+    assert out["species.regrowth.rate.sp10"] == "5.0"
     assert "ltl.depletable.enabled" not in base  # input untouched
 
 

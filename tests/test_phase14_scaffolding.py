@@ -3,8 +3,8 @@
 Asserts the phase-14 problem assembles correctly:
   * ``get_phase14_params()`` returns the 4 FR halfsat keys, log10-encoded.
   * The phase-14 base_config freezes the ~40 reconstructed phase-13 params,
-    sets all 8 species to Shepherd SR, and fixes FR shape=type3 on the 4
-    calibrated predators (cod sp0, pikeperch sp5, GreySeal sp14, Cormorant sp15).
+    sets all 9 focal species to Shepherd SR, and fixes FR shape=type3 on the 4
+    calibrated predators (cod_west sp0, pikeperch sp5, GreySeal sp15, Cormorant sp16).
   * The 4 free halfsat keys are DISJOINT from base_config (base sets shape, not halfsat).
   * A single objective evaluation runs without a config-validation error and
     returns a finite float (10**x lands as a raw float K in the engine config).
@@ -31,8 +31,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 EXPECTED_HALFSAT_KEYS = [
     "predation.functional.response.halfsat.sp0",
     "predation.functional.response.halfsat.sp5",
-    "predation.functional.response.halfsat.sp14",
     "predation.functional.response.halfsat.sp15",
+    "predation.functional.response.halfsat.sp16",
 ]
 
 
@@ -137,8 +137,8 @@ def _build_phase14_base_config(cal) -> tuple[dict, list[str]]:
 def test_phase14_base_config_freezes_and_sets_fr(cal):
     base_config, param_keys = _build_phase14_base_config(cal)
 
-    # All 8 species on Shepherd
-    for sp_idx in range(8):
+    # All 9 focal species on Shepherd (cod_east sp8 included after the disaggregation)
+    for sp_idx in range(9):
         assert base_config[f"stock.recruitment.type.sp{sp_idx}"] == "shepherd"
     # FR type3 on the 4 calibrated predators
     for sp_idx in (0, 5, 14, 15):

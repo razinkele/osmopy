@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 """FR-on vs FR-off realized-predation process diagnostic (PR-B / phase 14).
 
-For the 4 phase-14 FR predators — cod sp0, pikeperch sp5, GreySeal sp14
-(runtime slot 8), Cormorant sp15 (runtime slot 9) — this script measures their
+For the 4 phase-14 FR predators — cod_west sp0, pikeperch sp5, GreySeal sp15
+(runtime slot 9), Cormorant sp16 (runtime slot 10) — this script measures their
 REALIZED predation mortality on each focal prey under two engine variants:
 
   FR-OFF : functional-response shape ``type1`` (linear, no refuge) on all 4.
@@ -61,14 +61,19 @@ from evaluate_calibration_vs_ices import FR_PREDATOR_SP, _apply_mode
 # pure-resource columns; we widen so the matrix is complete. We only normalise
 # against the 8 FOCAL prey (which have biomass in results.biomass()).
 _DIET_WIDTH = 16
-_N_FOCAL = len(SPECIES_NAMES)  # 8
-_N_TOTAL = 10  # n_focal (8) + n_background (2)
+_N_BACKGROUND = 2  # GreySeal, Cormorant
+_N_FOCAL = len(SPECIES_NAMES)
+_N_TOTAL = _N_FOCAL + _N_BACKGROUND
 
-# Config-space FR species -> runtime diet-row slot.
-#   cod sp0 -> 0, pikeperch sp5 -> 5, GreySeal sp14 -> 8, Cormorant sp15 -> 9.
-_SP_TO_SLOT = {0: 0, 5: 5, 14: 8, 15: 9}
+# Config-space FR species -> runtime diet-row slot. Focal species map to their own index;
+# background species land above the focal block at n_focal + background_index, so both the
+# config index and the slot shift when a focal species is added.
+_BACKGROUND_SP = tuple(FR_PREDATOR_SP[-_N_BACKGROUND:])  # (GreySeal, Cormorant)
+_SP_TO_SLOT = {sp: sp for sp in FR_PREDATOR_SP if sp < _N_FOCAL}
+_SP_TO_SLOT.update({sp: _N_FOCAL + i for i, sp in enumerate(_BACKGROUND_SP)})
 PREDATOR_SLOTS = {sp: _SP_TO_SLOT[sp] for sp in FR_PREDATOR_SP}
-PREDATOR_LABEL = {0: "cod(sp0)", 5: "pikeperch(sp5)", 8: "GreySeal(sp14)", 9: "Cormorant(sp15)"}
+_SP_NAME = {0: "cod_west", 5: "pikeperch", _BACKGROUND_SP[0]: "GreySeal", _BACKGROUND_SP[1]: "Cormorant"}
+PREDATOR_LABEL = {_SP_TO_SLOT[sp]: f"{_SP_NAME[sp]}(sp{sp})" for sp in FR_PREDATOR_SP}
 
 
 def realized_mortality(

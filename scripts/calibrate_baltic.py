@@ -57,7 +57,14 @@ SPECIES_NAMES = [
 N_SPECIES = len(SPECIES_NAMES)
 
 _ZOO_REGROWTH_SENTINEL = "species.regrowth.rate.zoo"
-_ZOO_RESOURCE_INDICES = (10, 11, 12, 13)  # depletable zooplankton + benthos (Chunk A2)
+
+# Resource (LTL) block: sp9=Diatoms, sp10=Dinoflagellates, sp11=Microzoo, sp12=Mesozoo,
+# sp13=Macrozoo, sp14=Benthos. Shifted up by one from sp8-sp13 when cod_east was appended
+# as sp8 — keep these derived from the block, not spelled out, so the next insertion is a
+# one-line change. Guarded by tests/test_baltic_species_index_layout.py.
+LTL_RESOURCE_INDICES = tuple(range(9, 15))
+_PHYTO_RESOURCE_INDICES = (9, 10)  # Diatoms + Dinoflagellates (regrowth pinned fast in A2)
+_ZOO_RESOURCE_INDICES = (11, 12, 13, 14)  # depletable zooplankton + benthos (Chunk A2)
 
 
 def expand_param_overrides(param_keys, x, use_log_space: bool = True) -> dict[str, str]:
@@ -539,8 +546,8 @@ def enable_a2_base_config(base_config) -> dict:
     cfg = dict(base_config)
     cfg["ltl.depletable.enabled"] = "true"
     cfg["ltl.depletable.floor"] = "0.05"
-    cfg["species.regrowth.rate.sp8"] = "5.0"
-    cfg["species.regrowth.rate.sp9"] = "5.0"
+    for sp_idx in _PHYTO_RESOURCE_INDICES:
+        cfg[f"species.regrowth.rate.sp{sp_idx}"] = "5.0"
     return cfg
 
 
@@ -598,13 +605,13 @@ def get_phase1c_params() -> tuple[list[str], list[tuple[float, float]], list[flo
     """
     keys, bounds, x0 = get_phase1b_params()
 
-    # LTL accessibility: sp8=Diatoms, sp10=Microzoo, sp11=Mesozoo, sp12=Macrozoo
-    # Skip sp9=Dinoflagellates (low accessibility already) and sp13=Benthos (not planktivore prey)
+    # LTL accessibility: sp9=Diatoms, sp11=Microzoo, sp12=Mesozoo, sp13=Macrozoo
+    # Skip sp10=Dinoflagellates (low accessibility already) and sp14=Benthos (not planktivore prey)
     ltl_species = [
-        (8, "Diatoms"),
-        (10, "Microzooplankton"),
-        (11, "Mesozooplankton"),
-        (12, "Macrozooplankton"),
+        (9, "Diatoms"),
+        (11, "Microzooplankton"),
+        (12, "Mesozooplankton"),
+        (13, "Macrozooplankton"),
     ]
     for sp_idx, _name in ltl_species:
         keys.append(f"species.accessibility2fish.sp{sp_idx}")
@@ -832,8 +839,8 @@ def get_phase14_params() -> tuple[list[str], list[tuple[float, float]], list[flo
     """Phase 14: tune predator functional-response half-saturation K for 4 predators,
     type-III fixed, on a frozen phase-13 Shepherd base. log10 space; K in [0.5, 5.0].
 
-    The 4 calibrated predators are cod (sp0), pikeperch (sp5), GreySeal (sp14, a
-    background predator), and Cormorant (sp15, a background predator). FR shape is
+    The 4 calibrated predators are cod_west (sp0), pikeperch (sp5), GreySeal (sp15, a
+    background predator), and Cormorant (sp16, a background predator). FR shape is
     fixed to type3 for these four via base_config (see the ``phase == "14"`` branch);
     only the half-saturation K is free here. Bounds are log10(0.5)..log10(5.0) — the
     objective applies 10**x, so the engine receives a raw float K in [0.5, 5.0], which
@@ -846,8 +853,8 @@ def get_phase14_params() -> tuple[list[str], list[tuple[float, float]], list[flo
     keys = [
         "predation.functional.response.halfsat.sp0",  # cod
         "predation.functional.response.halfsat.sp5",  # pikeperch
-        "predation.functional.response.halfsat.sp14",  # GreySeal (background)
-        "predation.functional.response.halfsat.sp15",  # Cormorant (background)
+        "predation.functional.response.halfsat.sp15",  # GreySeal (background)
+        "predation.functional.response.halfsat.sp16",  # Cormorant (background)
     ]
     bounds = [(float(np.log10(0.5)), float(np.log10(5.0)))] * 4
     x0 = [float(np.log10(1.0))] * 4
@@ -1192,28 +1199,28 @@ def run_calibration(
 
     # Phase 1d: pre-fix LTL plankton accessibility at 0.4 (down from R18 0.8)
     if phase == "1d":
-        for sp_idx in [8, 9, 10, 11, 12, 13]:
+        for sp_idx in LTL_RESOURCE_INDICES:
             base_config[f"species.accessibility2fish.sp{sp_idx}"] = "0.4"
         print("Phase 1d: LTL accessibility pre-fixed at 0.4 (structural correction)")
 
     # Phase 1e: pre-fix LTL accessibility at 0.3 (aggressive plankton reduction)
     # Diagnostic: sprat baseline drops from 4.2x (at 0.4) to 3.2x (at 0.3)
     if phase == "1e":
-        for sp_idx in [8, 9, 10, 11, 12, 13]:
+        for sp_idx in LTL_RESOURCE_INDICES:
             base_config[f"species.accessibility2fish.sp{sp_idx}"] = "0.3"
         print("Phase 1e: LTL accessibility pre-fixed at 0.3 + sprat fishing free")
 
     # Phase 1f: literature-adjusted accessibility matrix (already in CSV) + LTL=0.4
     # Herring/sprat plankton access differentiated per Lankov et al. 2010 & Möllmann 1998
     if phase == "1f":
-        for sp_idx in [8, 9, 10, 11, 12, 13]:
+        for sp_idx in LTL_RESOURCE_INDICES:
             base_config[f"species.accessibility2fish.sp{sp_idx}"] = "0.4"
         print("Phase 1f: Literature-adjusted matrix + LTL=0.4")
 
     # Phase 1g: literature-validated baselines + dynamic accessibility + LTL=0.4
     # All baseline corrections already applied to config files
     if phase == "1g":
-        for sp_idx in [8, 9, 10, 11, 12, 13]:
+        for sp_idx in LTL_RESOURCE_INDICES:
             base_config[f"species.accessibility2fish.sp{sp_idx}"] = "0.4"
         base_config["predation.accessibility.dynamic.enabled"] = "true"
         base_config["predation.accessibility.dynamic.exponent"] = "1.0"
@@ -1278,17 +1285,19 @@ def run_calibration(
                 "Run `python scripts/reconstruct_phase13_results.py` first. (Refusing to run "
                 "on bare defaults — that would silently waste a multi-hour calibration.)"
             )
-        # All 8 species on Shepherd (matches the frozen base).
-        for sp_idx in range(8):
+        # All focal species on Shepherd, matching phase 13. The frozen phase-13 base predates
+        # the cod split and carries no sp8 entry, so cod_east takes its shape/ssbhalf from the
+        # config CSV — leaving it on a different SR form than the other 8 would be worse.
+        for sp_idx in range(N_SPECIES):
             base_config[f"stock.recruitment.type.sp{sp_idx}"] = "shepherd"
         # FR type-III fixed on the 4 calibrated predators; K (halfsat) is the free param.
         # Predator set is the canonical FR_PREDATOR_SP in evaluate_calibration_vs_ices.py
         # (not imported here to avoid a circular import); keep the two in sync.
-        for sp_idx in (0, 5, 14, 15):
+        for sp_idx in (0, 5, 15, 16):
             base_config[f"predation.functional.response.shape.sp{sp_idx}"] = "type3"
         print(
-            "Phase 14: FR type-III on cod(sp0)/pikeperch(sp5)/GreySeal(sp14)/"
-            "Cormorant(sp15); tuning 4 halfsat K."
+            "Phase 14: FR type-III on cod_west(sp0)/pikeperch(sp5)/GreySeal(sp15)/"
+            "Cormorant(sp16); tuning 4 halfsat K."
         )
 
     # Apply warm-start (Tier B1): override x0 entries from a prior result JSON.

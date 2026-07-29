@@ -55,8 +55,8 @@ def test_predator_slot_map():
     """The 4 FR predators map to the documented runtime diet-row slots."""
     from fr_process_diagnostic import PREDATOR_SLOTS
 
-    # cod sp0 -> 0, pikeperch sp5 -> 5, GreySeal sp14 -> 8, Cormorant sp15 -> 9.
-    assert PREDATOR_SLOTS == {0: 0, 5: 5, 14: 8, 15: 9}
+    # cod_west sp0 -> 0, pikeperch sp5 -> 5, GreySeal sp15 -> 9, Cormorant sp16 -> 10.
+    assert PREDATOR_SLOTS == {0: 0, 5: 5, 15: 9, 16: 10}
 
 
 def test_shepherd_fr_mode_injects_type3_and_default_k():
@@ -85,8 +85,8 @@ def test_shepherd_fr_mode_reads_halfsat_from_params():
     params = {
         "predation.functional.response.halfsat.sp0": 2.5,
         "predation.functional.response.halfsat.sp5": 0.3,
-        "predation.functional.response.halfsat.sp14": 1.1,
-        "predation.functional.response.halfsat.sp15": 0.9,
+        "predation.functional.response.halfsat.sp15": 1.1,
+        "predation.functional.response.halfsat.sp16": 0.9,
     }
     cfg: dict[str, str] = {}
     _apply_mode(cfg, "shepherd-fr", params=params)
@@ -125,15 +125,15 @@ def test_resolve_halfsat_returns_per_predator_values():
     params = {
         "predation.functional.response.halfsat.sp0": 2.0,
         "predation.functional.response.halfsat.sp5": 3.0,
-        "predation.functional.response.halfsat.sp14": 4.0,
-        "predation.functional.response.halfsat.sp15": 0.5,
+        "predation.functional.response.halfsat.sp15": 4.0,
+        "predation.functional.response.halfsat.sp16": 0.5,
     }
     result = resolve_halfsat(params, FR_PREDATOR_SP, default_k=99.0)
 
     assert result[0] == 2.0, "sp0 should get its own K=2.0"
     assert result[5] == 3.0, "sp5 should get its own K=3.0"
-    assert result[14] == 4.0, "sp14 should get its own K=4.0"
-    assert result[15] == 0.5, "sp15 should get its own K=0.5"
+    assert result[15] == 4.0, "sp15 should get its own K=4.0"
+    assert result[16] == 0.5, "sp16 should get its own K=0.5"
 
     # Values must be distinct — confirming none were clobbered to a uniform value.
     values = list(result.values())
@@ -153,8 +153,8 @@ def test_resolve_halfsat_fallback_for_absent_key():
 
     assert result[0] == 7.5, "present key should be used"
     assert result[5] == 1.0, "absent sp5 should fall back to default_k"
-    assert result[14] == 1.0, "absent sp14 should fall back to default_k"
     assert result[15] == 1.0, "absent sp15 should fall back to default_k"
+    assert result[16] == 1.0, "absent sp16 should fall back to default_k"
 
 
 def test_resolve_halfsat_uniform_when_no_params():
@@ -180,8 +180,8 @@ def test_build_base_config_fr_on_preserves_per_predator_k(monkeypatch):
     params = {
         "predation.functional.response.halfsat.sp0": 2.0,
         "predation.functional.response.halfsat.sp5": 3.0,
-        "predation.functional.response.halfsat.sp14": 4.0,
-        "predation.functional.response.halfsat.sp15": 0.5,
+        "predation.functional.response.halfsat.sp15": 4.0,
+        "predation.functional.response.halfsat.sp16": 0.5,
         # Include some non-FR params so the param-override pass exercises both code paths.
         "stock.recruitment.r.sp0": 0.8,
     }
@@ -204,8 +204,8 @@ def test_build_base_config_fr_on_preserves_per_predator_k(monkeypatch):
     # Each predator must have its OWN K, not the uniform fallback 99.0.
     assert cfg["predation.functional.response.halfsat.sp0"] == "2.0", "sp0 K clobbered"
     assert cfg["predation.functional.response.halfsat.sp5"] == "3.0", "sp5 K clobbered"
-    assert cfg["predation.functional.response.halfsat.sp14"] == "4.0", "sp14 K clobbered"
-    assert cfg["predation.functional.response.halfsat.sp15"] == "0.5", "sp15 K clobbered"
+    assert cfg["predation.functional.response.halfsat.sp15"] == "4.0", "sp15 K clobbered"
+    assert cfg["predation.functional.response.halfsat.sp16"] == "0.5", "sp16 K clobbered"
 
     # All shapes must be type3 for FR-ON.
     for sp in FR_PREDATOR_SP:
@@ -219,7 +219,7 @@ def test_build_base_config_fr_on_fallback_for_absent_key(monkeypatch):
 
     params = {
         "predation.functional.response.halfsat.sp0": 7.5,
-        # sp5, sp14, sp15 absent
+        # sp5, sp15, sp16 absent
     }
 
     def _fake_read(self, path):
@@ -231,8 +231,8 @@ def test_build_base_config_fr_on_fallback_for_absent_key(monkeypatch):
 
     assert cfg["predation.functional.response.halfsat.sp0"] == "7.5", "present key should be used"
     assert cfg["predation.functional.response.halfsat.sp5"] == "1.0", "absent sp5 fallback to k"
-    assert cfg["predation.functional.response.halfsat.sp14"] == "1.0", "absent sp14 fallback to k"
     assert cfg["predation.functional.response.halfsat.sp15"] == "1.0", "absent sp15 fallback to k"
+    assert cfg["predation.functional.response.halfsat.sp16"] == "1.0", "absent sp16 fallback to k"
 
 
 def test_build_base_config_fr_off_has_no_halfsat_keys(monkeypatch):

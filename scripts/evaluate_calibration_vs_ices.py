@@ -88,9 +88,12 @@ def _recruitment_verdict(model_R: float, ices_geomean: float) -> tuple[float, st
     return ratio, verdict
 
 
-# The 4 FR-calibrated predators (phase 14): cod sp0, pikeperch sp5, GreySeal
-# sp14 (runtime slot 8), Cormorant sp15 (runtime slot 9). All type-III.
-FR_PREDATOR_SP = (0, 5, 14, 15)
+# The 4 FR-calibrated predators (phase 14): cod_west sp0, pikeperch sp5, GreySeal
+# sp15 (runtime slot 9), Cormorant sp16 (runtime slot 10). All type-III.
+# The background pair shifted up by one when cod_east was appended as focal sp8; keep in
+# sync with calibrate_baltic.get_phase14_params (guarded by
+# tests/test_baltic_species_index_layout.py).
+FR_PREDATOR_SP = (0, 5, 15, 16)
 _FR_KEY_SHAPE = "predation.functional.response.shape.sp{i}"
 _FR_KEY_HALFSAT = "predation.functional.response.halfsat.sp{i}"
 
