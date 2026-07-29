@@ -271,6 +271,6 @@ The test masks the cause: it asserts on `result.stderr[-500:]`, but OSMOSE write
 - A regression guard asserts the staged master contains no underscored `movement.species.mapN` value.
 - Failure output surfaces the OSMOSE `[severe]` line, not just SLF4J noise.
 
-**Secondary (separate, non-fatal — file separately if confirmed).** The same run emits `No map assigned for fishery trawlcodeast year 0 step 0..23` → `Fishery trawlcodeast will therefore be deactivated`. `simulation.nfisheries` is 9 but `fisheries.movement.file.map*` stops at `map7`. Python reads only `map0` as a shared map so it is Python-inert, but Java deactivates the ninth fishery for every step — eastern-cod fishing silently absent in any Java run.
+**Secondary — confirmed and split out as [#139](https://github.com/razinkele/osmopy/issues/139) (2026-07-29).** The same run emits `No map assigned for fishery trawlcodeast year 0 step 0..23` → `Fishery trawlcodeast will therefore be deactivated`. `simulation.nfisheries` is 9 but `fisheries.movement.file.map*` stops at `map7`. Python reads only `map0` as a shared map so it is Python-inert, but Java deactivates the ninth fishery for every step — eastern-cod fishing silently absent in any Java run. Re-measured after the #138 fix: exit 0, 24/24 timesteps deactivated.
 
 **Effort:** quick (the call) + moderate (shared helper + guard). **Labels:** bug, java, baltic, disaggregation, ui.
