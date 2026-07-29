@@ -44,7 +44,7 @@ def test_aggregate_states():
 # ---------------------------------------------------------------- Task 2
 def _targets():
     return [
-        Tgt("cod", 120000, 60000, 250000),
+        Tgt("cod_east", 120000, 60000, 250000),
         Tgt("sprat", 1_500_000, 800_000, 2_500_000),
         Tgt("herring", 1_500_000, 800_000, 3_000_000),
     ]
@@ -61,8 +61,8 @@ def _stats(**means):
 
 def test_partial_collapse_vetoes_relaxation():
     targets = _targets()
-    base = c0.species_states(_stats(cod=120000, sprat=25_000_000, herring=1_500_000), targets)
-    low = c0.species_states(_stats(cod=120000, sprat=300_000, herring=1_500_000), targets)
+    base = c0.species_states(_stats(cod_east=120000, sprat=25_000_000, herring=1_500_000), targets)
+    low = c0.species_states(_stats(cod_east=120000, sprat=300_000, herring=1_500_000), targets)
     t = c0.accessibility_transition(base, low, targets)
     assert t["new_undershoot"] == 1
     assert c0.accessibility_verdict(t)[0] is False
@@ -71,8 +71,8 @@ def test_partial_collapse_vetoes_relaxation():
 
 def test_genuine_relaxation_passes():
     targets = _targets()
-    base = c0.species_states(_stats(cod=120000, sprat=25_000_000, herring=20_000_000), targets)
-    low = c0.species_states(_stats(cod=120000, sprat=1_500_000, herring=1_500_000), targets)
+    base = c0.species_states(_stats(cod_east=120000, sprat=25_000_000, herring=20_000_000), targets)
+    low = c0.species_states(_stats(cod_east=120000, sprat=1_500_000, herring=1_500_000), targets)
     t = c0.accessibility_transition(base, low, targets)
     assert t["new_undershoot"] == 0
     ok, msg = c0.accessibility_verdict(t)
@@ -81,10 +81,10 @@ def test_genuine_relaxation_passes():
 
 def test_nonstationary_withholds_verdict():
     targets = _targets()
-    drifting = _stats(cod=120000, sprat=25_000_000, herring=1_500_000)
+    drifting = _stats(cod_east=120000, sprat=25_000_000, herring=1_500_000)
     drifting["sprat_cv"] = 0.9
     base = c0.species_states(drifting, targets)
-    low = c0.species_states(_stats(cod=120000, sprat=1_500_000, herring=1_500_000), targets)
+    low = c0.species_states(_stats(cod_east=120000, sprat=1_500_000, herring=1_500_000), targets)
     t = c0.accessibility_transition(base, low, targets)
     assert t["undetermined"] >= 1
     assert c0.accessibility_verdict(t)[0] is False
@@ -93,8 +93,8 @@ def test_nonstationary_withholds_verdict():
 
 def test_seed_split_species_withholds_accessibility_verdict():
     targets = _targets()
-    base = {"cod": "in_range", "sprat": "overshoot", "herring": "in_range"}
-    low = {"cod": "in_range", "sprat": "seed-split", "herring": "in_range"}
+    base = {"cod_east": "in_range", "sprat": "overshoot", "herring": "in_range"}
+    low = {"cod_east": "in_range", "sprat": "seed-split", "herring": "in_range"}
     t = c0.accessibility_transition(base, low, targets)
     assert t["undetermined"] >= 1
     assert c0.accessibility_verdict(t)[0] is False
@@ -102,8 +102,8 @@ def test_seed_split_species_withholds_accessibility_verdict():
 
 def test_low_weight_species_does_not_gate():
     targets = _targets() + [Tgt("perch", 20000, 8000, 50000, 0.2)]
-    base = {"cod": "in_range", "sprat": "overshoot", "herring": "overshoot", "perch": "overshoot"}
-    low = {"cod": "in_range", "sprat": "in_range", "herring": "in_range", "perch": "low"}
+    base = {"cod_east": "in_range", "sprat": "overshoot", "herring": "overshoot", "perch": "overshoot"}
+    low = {"cod_east": "in_range", "sprat": "in_range", "herring": "in_range", "perch": "low"}
     t = c0.accessibility_transition(base, low, targets)
     assert t["gated_species"] == 3
     assert t["new_undershoot"] == 0
@@ -112,8 +112,8 @@ def test_low_weight_species_does_not_gate():
 
 def test_collapsed_stock_in_lowered_arm_blocks_real_lever():
     targets = _targets()
-    base = {"cod": "collapsed", "sprat": "overshoot", "herring": "overshoot"}
-    low = {"cod": "collapsed", "sprat": "in_range", "herring": "in_range"}
+    base = {"cod_east": "collapsed", "sprat": "overshoot", "herring": "overshoot"}
+    low = {"cod_east": "collapsed", "sprat": "in_range", "herring": "in_range"}
     t = c0.accessibility_transition(base, low, targets)
     assert t["collapsed_lowered"] >= 1
     ok, msg = c0.accessibility_verdict(t)
@@ -122,8 +122,8 @@ def test_collapsed_stock_in_lowered_arm_blocks_real_lever():
 
 def test_medium_weight_collapse_blocks_real_lever():
     targets = _targets() + [Tgt("flounder", 50000, 20000, 100000, 0.5)]
-    base = {"cod": "in_range", "sprat": "overshoot", "herring": "overshoot", "flounder": "in_range"}
-    low = {"cod": "in_range", "sprat": "in_range", "herring": "in_range", "flounder": "collapsed"}
+    base = {"cod_east": "in_range", "sprat": "overshoot", "herring": "overshoot", "flounder": "in_range"}
+    low = {"cod_east": "in_range", "sprat": "in_range", "herring": "in_range", "flounder": "collapsed"}
     t = c0.accessibility_transition(base, low, targets)
     assert t["collapsed_lowered"] >= 1
     assert c0.accessibility_verdict(t)[0] is False
@@ -132,10 +132,10 @@ def test_medium_weight_collapse_blocks_real_lever():
 # ---------------------------------------------------------------- Task 3
 def test_ics_vary_only_cod():
     rich, poor = c0.cod_rich_seeding(), c0.cod_poor_seeding()
-    assert set(rich) == {"population.seeding.biomass.sp0", "population.seeding.year.max"}
+    assert set(rich) == {"population.seeding.biomass.sp8", "population.seeding.year.max"}
     assert set(poor) == set(rich)
-    assert float(rich["population.seeding.biomass.sp0"]) > float(
-        poor["population.seeding.biomass.sp0"]
+    assert float(rich["population.seeding.biomass.sp8"]) > float(
+        poor["population.seeding.biomass.sp8"]
     )
     assert rich["population.seeding.year.max"] == "4"
 
@@ -144,7 +144,7 @@ def test_accessibility_scope_and_safe_run():
     assert set(c0.accessibility_override(0.1)) == {
         f"species.accessibility2fish.sp{i}" for i in (8, 10, 11, 12)
     }
-    assert c0.safe_run(lambda *a: {"cod_mean": 5.0}, {}, {}, 5, 0) == {"cod_mean": 5.0}
+    assert c0.safe_run(lambda *a: {"cod_east_mean": 5.0}, {}, {}, 5, 0) == {"cod_east_mean": 5.0}
     assert c0.safe_run(lambda *a: {}, {}, {}, 5, 0)["_failed"] is True
     assert c0.safe_run(lambda *a: {"herring_mean": 1.0}, {}, {}, 5, 0)["_failed"] is True
 
@@ -161,13 +161,13 @@ def _bands():
 
 def _runner_bistable(config, overrides, n_years, seed):
     scale = float(overrides["mortality.additional.larva.rate.sp0"]) / 15.0
-    seeded = float(overrides.get("population.seeding.biomass.sp0", "0"))
+    seeded = float(overrides.get("population.seeding.biomass.sp8", "0"))
     if abs(scale - 0.3) < 1e-9:
         cod = 120000.0 if seeded >= 100000 else 0.0
     else:
         cod = 120000.0 if scale < 0.9 else 0.0
     cv = 0.05 if cod > 0 else 10.0
-    return {"cod_mean": cod, "cod_cv": cv, "cod_trend": 0.01}
+    return {"cod_east_mean": cod, "cod_east_cv": cv, "cod_east_trend": 0.01}
 
 
 def test_point_detects_bistable_including_collapsed_basin():
@@ -182,9 +182,10 @@ def test_point_detects_bistable_including_collapsed_basin():
 
 def test_seed_split_outcome():
     def flaky(config, overrides, n_years, seed):
-        seeded = float(overrides.get("population.seeding.biomass.sp0", "0"))
+        seeded = float(overrides.get("population.seeding.biomass.sp8", "0"))
         cod = 120000.0 if (seeded >= 100000 and seed != 1) else 0.0
-        return {"cod_mean": cod, "cod_cv": 0.05 if cod > 0 else 10.0, "cod_trend": 0.01}
+        cv = 0.05 if cod > 0 else 10.0
+        return {"cod_east_mean": cod, "cod_east_cv": cv, "cod_east_trend": 0.01}
 
     pt = c0.run_bistability_point(0.3, {}, {0: 15.0}, _bands(), [0, 1, 2], runner=flaky, n_years=15)
     assert pt["rich_state"] == "seed-split"
@@ -217,7 +218,7 @@ def test_ab_excludes_failed_and_flags_all_failed():
     def low_crashes(config, overrides, n_years, seed):
         if "species.accessibility2fish.sp11" in overrides:
             raise RuntimeError("blowup")
-        return _stats(cod=120000, sprat=1_500_000, herring=1_500_000)
+        return _stats(cod_east=120000, sprat=1_500_000, herring=1_500_000)
 
     out = c0.run_accessibility_ab({}, targets, [0, 1, 2], runner=low_crashes, n_years=15)
     assert out["relaxed"] is False
@@ -231,8 +232,8 @@ def test_ab_real_relaxation():
     def runner(config, overrides, n_years, seed):
         low = "species.accessibility2fish.sp11" in overrides
         if low:
-            return _stats(cod=120000, sprat=1_500_000, herring=1_500_000)
-        return _stats(cod=120000, sprat=25_000_000, herring=20_000_000)
+            return _stats(cod_east=120000, sprat=1_500_000, herring=1_500_000)
+        return _stats(cod_east=120000, sprat=25_000_000, herring=20_000_000)
 
     out = c0.run_accessibility_ab({}, targets, [0, 1], runner=runner, n_years=15)
     assert out["relaxed"] is True and out["n_failed"] == 0
@@ -243,7 +244,7 @@ def test_loaders():
     cfg = {f"mortality.additional.larva.rate.sp{i}": str(i + 1) for i in range(8)}
     rates = c0.read_base_larva_rates(cfg)
     assert rates[0] == 1.0 and rates[7] == 8.0
-    assert c0.read_cod_bands([Tgt("cod", 120000, 60000, 250000)]) == {
+    assert c0.read_cod_bands([Tgt("cod_east", 120000, 60000, 250000)]) == {
         "target": 120000.0,
         "lower": 60000.0,
         "upper": 250000.0,
@@ -259,13 +260,13 @@ def test_warmstart_override():
 def test_regime_shift_ic_builders():
     cd = c0.cod_dominated_seeding()
     cl = c0.clupeid_dominated_seeding()
-    # cod axis: cod high in the cod-dominated IC, a remnant in the clupeid-dominated IC
-    assert float(cd["population.seeding.biomass.sp0"]) > float(cl["population.seeding.biomass.sp0"])
+    # cod axis: cod_east high in the cod-dominated IC, a remnant in the clupeid-dominated IC
+    assert float(cd["population.seeding.biomass.sp8"]) > float(cl["population.seeding.biomass.sp8"])
     # clupeid axis: herring (sp1) + sprat (sp2) high in clupeid-dominated, suppressed in cod-dominated
     assert float(cl["population.seeding.biomass.sp1"]) > float(cd["population.seeding.biomass.sp1"])
     assert float(cl["population.seeding.biomass.sp2"]) > float(cd["population.seeding.biomass.sp2"])
     # exact spec values
-    assert cd["population.seeding.biomass.sp0"] == "250000"
+    assert cd["population.seeding.biomass.sp8"] == "85000"
     assert cl["population.seeding.biomass.sp2"] == "2500000"
     # both carry the (now-inert-under-warmstart) global seeding window key
     assert "population.seeding.year.max" in cd and "population.seeding.year.max" in cl
@@ -366,12 +367,12 @@ def test_regime_shift_outcome_withheld_when_undetermined_or_invalid():
 
 # ---------------------------------------------------------------- Task 4 (generalized sweep)
 def _runner_regime(config, overrides, n_years, seed):
-    """Cod-dominated arm (cod seed >= 100k) -> cod in_range + clupeids 'low';
-    clupeid-dominated arm -> cod collapsed + clupeids booming."""
-    cod_seed = float(overrides.get("population.seeding.biomass.sp0", "0"))
-    if cod_seed >= 100_000:
-        return _stats(cod=120_000, herring=400_000, sprat=300_000)
-    return _stats(cod=0, herring=1_500_000, sprat=2_500_000)
+    """Cod-dominated arm (cod_east seed >= 50k) -> cod_east in_range + clupeids 'low';
+    clupeid-dominated arm -> cod_east collapsed + clupeids booming."""
+    cod_seed = float(overrides.get("population.seeding.biomass.sp8", "0"))
+    if cod_seed >= 50_000:
+        return _stats(cod_west=60_000, cod_east=120_000, herring=400_000, sprat=300_000)
+    return _stats(cod_west=60_000, cod_east=0, herring=1_500_000, sprat=2_500_000)
 
 
 def test_point_regime_shift_records_clupeid_and_outcome():
@@ -422,7 +423,7 @@ def test_regime_shift_sweep_verdict_and_incremental():
 def test_regime_shift_sweep_monostable_when_convergent():
     def convergent(config, overrides, n_years, seed):
         # both arms -> cod in_range + clupeids in_range: no divergence on either axis
-        return _stats(cod=120_000, herring=1_500_000, sprat=1_500_000)
+        return _stats(cod_east=120_000, herring=1_500_000, sprat=1_500_000)
 
     out = c0.run_bistability_sweep(
         [1.0, 0.3],
@@ -446,7 +447,7 @@ def test_warmstart_flag_injected_into_overrides():
 
     def spy(config, overrides, n_years, seed):
         captured.append(dict(overrides))
-        return _stats(cod=120_000, herring=400_000, sprat=300_000)
+        return _stats(cod_east=120_000, herring=400_000, sprat=300_000)
 
     c0.run_bistability_point(
         1.0,
@@ -469,7 +470,7 @@ def test_warmstart_flag_injected_into_overrides():
 # ---------------------------------------------------------------- Task 5 (CLI + preflight)
 def test_contrast_specs():
     tgts = [
-        Tgt("cod", 120_000, 60_000, 250_000),
+        Tgt("cod_east", 120_000, 60_000, 250_000),
         Tgt("herring", 1_500_000, 800_000, 3_000_000),
         Tgt("sprat", 1_500_000, 800_000, 2_500_000),
     ]
@@ -485,17 +486,24 @@ def test_contrast_specs():
 
 
 def test_preflight_check():
-    ok, msg = c0.preflight_check(_stats(cod=120_000, herring=800_000, sprat=600_000))
+    ok, msg = c0.preflight_check(
+        _stats(cod_west=60_000, cod_east=120_000, herring=800_000, sprat=600_000)
+    )
     assert ok is True and "ok" in msg.lower()
     assert c0.preflight_check({"_failed": True, "_error": "boom"})[0] is False
-    nan_stats = {"cod_mean": float("nan"), "herring_mean": 1.0, "sprat_mean": 1.0}
+    nan_stats = {
+        "cod_west_mean": 1.0,
+        "cod_east_mean": float("nan"),
+        "herring_mean": 1.0,
+        "sprat_mean": 1.0,
+    }
     assert c0.preflight_check(nan_stats)[0] is False
-    assert c0.preflight_check(_stats(cod=0, herring=0, sprat=0))[0] is False
+    assert c0.preflight_check(_stats(cod_west=0, cod_east=0, herring=0, sprat=0))[0] is False
 
 
 def test_cli_warmstart_writes_both_contrasts(tmp_path, monkeypatch):
     tgts = [
-        Tgt("cod", 120_000, 60_000, 250_000),
+        Tgt("cod_east", 120_000, 60_000, 250_000),
         Tgt("herring", 1_500_000, 800_000, 3_000_000),
         Tgt("sprat", 1_500_000, 800_000, 2_500_000),
     ]
@@ -513,7 +521,7 @@ def test_cli_warmstart_writes_both_contrasts(tmp_path, monkeypatch):
 def test_cli_preflight(tmp_path, monkeypatch):
     monkeypatch.setattr(c0, "read_base_config", lambda: {})
     monkeypatch.setattr(c0, "read_base_larva_rates", lambda cfg, n_focal=8: {0: 15.0})
-    monkeypatch.setattr(c0, "_load_targets", lambda: [Tgt("cod", 120_000, 60_000, 250_000)])
+    monkeypatch.setattr(c0, "_load_targets", lambda: [Tgt("cod_east", 120_000, 60_000, 250_000)])
     monkeypatch.setattr(c0, "_default_runner", _runner_regime)
     monkeypatch.setattr(c0, "_DIAG_DIR", tmp_path)
     rc = c0.main(["--preflight"])
@@ -556,7 +564,7 @@ def test_cli_chunk_c_writes_variant_and_runs_sweep(tmp_path, monkeypatch):
         "smelt;0.1;0.2;0.2;0\n"
     )
     tgts = [
-        Tgt("cod", 120_000, 60_000, 250_000),
+        Tgt("cod_east", 120_000, 60_000, 250_000),
         Tgt("herring", 1_500_000, 800_000, 3_000_000),
         Tgt("sprat", 1_500_000, 800_000, 2_500_000),
     ]
@@ -564,7 +572,7 @@ def test_cli_chunk_c_writes_variant_and_runs_sweep(tmp_path, monkeypatch):
 
     def fake_runner(config, overrides, n_years, seed):
         captured["accessibility_file"] = config.get("predation.accessibility.file")
-        return _stats(cod=120_000, herring=400_000, sprat=300_000)
+        return _stats(cod_east=120_000, herring=400_000, sprat=300_000)
 
     monkeypatch.setattr(
         c0,

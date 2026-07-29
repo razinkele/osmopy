@@ -22,6 +22,7 @@ _DEFAULT_SEEDS = [0, 1, 2]
 _PLANKTON_GROUPS = (8, 10, 11, 12)
 _SEEDING_WINDOW_Y = 4
 _NONBANDS = ("failed", "undetermined")
+_COD_STOCK = "cod_east"  # bistability subject: the collapse-prone eastern stock (was aggregate 'cod' pre-disaggregation)
 _ENABLE_KEY = "module.population.initialisation.enabled"  # canonical warm-start flag
 _VALID_BANDS = ("collapsed", "low", "in_range", "overshoot")  # determinate bands
 
@@ -169,13 +170,13 @@ def accessibility_override(value: float, resource_indices=_PLANKTON_GROUPS) -> d
 
 
 def cod_rich_seeding(window: int = _SEEDING_WINDOW_Y) -> dict:
-    # Vary ONLY the cod SEEDING BIOMASS; population.seeding.year.max is a GLOBAL key that
-    # truncates the seeding window for ALL species to `window` years in both arms.
-    return {"population.seeding.biomass.sp0": "300000", "population.seeding.year.max": str(window)}
+    # Vary ONLY the cod_east SEEDING BIOMASS (~1.2x the 85k ICES upper); population.seeding.year.max
+    # is a GLOBAL key that truncates the seeding window for ALL species to `window` years in both arms.
+    return {"population.seeding.biomass.sp8": "100000", "population.seeding.year.max": str(window)}
 
 
 def cod_poor_seeding(window: int = _SEEDING_WINDOW_Y) -> dict:
-    return {"population.seeding.biomass.sp0": "1000", "population.seeding.year.max": str(window)}
+    return {"population.seeding.biomass.sp8": "1000", "population.seeding.year.max": str(window)}
 
 
 def warmstart_override(enabled: bool) -> dict:
@@ -185,9 +186,9 @@ def warmstart_override(enabled: bool) -> dict:
 
 
 def cod_dominated_seeding(window: int = _SEEDING_WINDOW_Y) -> dict:
-    """Cod-dominated standing-stock IC: cod at the ICES upper band, clupeids suppressed."""
+    """Cod-dominated standing-stock IC: cod_east at the ICES upper band, clupeids suppressed."""
     return {
-        "population.seeding.biomass.sp0": "250000",  # cod, ICES upper
+        "population.seeding.biomass.sp8": "85000",  # cod_east, ICES upper
         "population.seeding.biomass.sp1": "800000",  # herring, lower
         "population.seeding.biomass.sp2": "600000",  # sprat, suppressed
         "population.seeding.year.max": str(window),
@@ -195,10 +196,10 @@ def cod_dominated_seeding(window: int = _SEEDING_WINDOW_Y) -> dict:
 
 
 def clupeid_dominated_seeding(window: int = _SEEDING_WINDOW_Y) -> dict:
-    """Clupeid-dominated (sprat-dominated) standing-stock IC: cod a remnant/invader,
+    """Clupeid-dominated (sprat-dominated) standing-stock IC: cod_east a remnant/invader,
     herring + sprat at target/upper — the real post-1990 Baltic regime."""
     return {
-        "population.seeding.biomass.sp0": "1000",  # cod, remnant/invader
+        "population.seeding.biomass.sp8": "1000",  # cod_east, remnant/invader
         "population.seeding.biomass.sp1": "1500000",  # herring, target
         "population.seeding.biomass.sp2": "2500000",  # sprat, upper
         "population.seeding.year.max": str(window),
@@ -206,24 +207,24 @@ def clupeid_dominated_seeding(window: int = _SEEDING_WINDOW_Y) -> dict:
 
 
 def safe_run(runner, config, overrides, n_years, seed) -> dict:
-    """Model call; `_failed` sentinel (distinct from a real cod_mean==0) on crash or empty output."""
+    """Model call; `_failed` sentinel (distinct from a real cod_east_mean==0) on crash or empty output."""
     try:
         stats = runner(config, overrides, n_years, seed)
     except Exception as exc:  # noqa: BLE001 — a diagnostic must not abort the whole grid
         return {"_failed": True, "_error": repr(exc)}
-    if not stats or "cod_mean" not in stats:
-        return {"_failed": True, "_error": "empty or partial stats (no cod_mean)"}
+    if not stats or f"{_COD_STOCK}_mean" not in stats:
+        return {"_failed": True, "_error": f"empty or partial stats (no {_COD_STOCK}_mean)"}
     return stats
 
 
 def _cod_state(stats: dict, bands: dict) -> tuple[str, float]:
     if stats.get("_failed"):
         return "failed", 0.0
-    mean = float(stats.get("cod_mean", 0.0))
+    mean = float(stats.get(f"{_COD_STOCK}_mean", 0.0))
     st = classify_state(
         mean,
-        float(stats.get("cod_cv", 10.0)),
-        float(stats.get("cod_trend", 1.0)),
+        float(stats.get(f"{_COD_STOCK}_cv", 10.0)),
+        float(stats.get(f"{_COD_STOCK}_trend", 1.0)),
         bands["target"],
         bands["lower"],
         bands["upper"],
@@ -607,7 +608,7 @@ def read_base_larva_rates(base_config: dict, n_focal: int = 8) -> dict:
 
 
 def read_cod_bands(targets) -> dict:
-    t = next(x for x in targets if x.species == "cod")
+    t = next(x for x in targets if x.species == _COD_STOCK)
     return {"target": float(t.target), "lower": float(t.lower), "upper": float(t.upper)}
 
 
@@ -664,7 +665,9 @@ def contrast_specs(contrast: str, targets) -> list[dict]:
     return [cod_axis, regime]
 
 
-def preflight_check(stats: dict, species=("cod", "herring", "sprat")) -> tuple[bool, str]:
+def preflight_check(
+    stats: dict, species=("cod_west", "cod_east", "herring", "sprat")
+) -> tuple[bool, str]:
     """De-risk gate: one standing-stock run must complete finite and non-vanishing.
     A pathological t=0 decay is itself a finding — stop, do not run the full sweep."""
     if stats.get("_failed"):
@@ -677,10 +680,10 @@ def preflight_check(stats: dict, species=("cod", "herring", "sprat")) -> tuple[b
         total += float(mean)
     if total <= 0.0:
         return False, (
-            "VANISHED — cod+herring+sprat summed to zero; the standing-stock IC is not "
+            "VANISHED — the checked species summed to zero; the standing-stock IC is not "
             "self-consistent with the deployed parameters. Stop and reassess."
         )
-    return True, f"OK — standing stock persists (cod+herring+sprat mean = {total:.0f} t)."
+    return True, f"OK — standing stock persists (checked species mean = {total:.0f} t)."
 
 
 def main(argv=None) -> int:
