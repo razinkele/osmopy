@@ -185,7 +185,9 @@ Ready-to-paste issue drafts. Not created on GitHub — review and open manually.
 
 ---
 
-## [Medium] 30-minute tutorial + its doc reference the removed aggregate `cod` (disaggregation-stale)
+## [Opened → #129] 30-minute tutorial + its doc reference the removed aggregate `cod` (disaggregation-stale)
+
+> **Opened on GitHub 2026-07-29:** https://github.com/razinkele/osmopy/issues/129 (labels: bug, documentation). Draft retained below.
 
 **Source:** 2026-07-29 full-suite sweep — `tests/test_tutorial_3species.py` (4 failures: `test_script_runs_to_completion`, `test_biomass_pyramid_emerges`, `test_trophic_cascade_visible`, `test_headless_fallback_produces_equilibrium`). NOTE: an earlier triage mislabeled these "non-baltic" — they are disaggregation-stale.
 
