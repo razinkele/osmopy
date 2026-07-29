@@ -98,23 +98,19 @@ def certify_java(params: dict[str, str], n_years: int, seed: int = 42) -> dict |
     if not _JAR.exists():
         print(f"(Java cross-check skipped: jar not found at {_JAR})")
         return None
-    from osmose.java_background_staging import stage_background_for_java
-    from osmose.java_config_reconcile import reconcile_config_for_java
-    from ui.pages.run import write_temp_config
+    from ui.pages.run import stage_config_for_java
 
     tmp = Path(tempfile.mkdtemp())
     res = osmose_demo("baltic", tmp)
     cfg = dict(OsmoseConfigReader().read(str(res["config_file"])))
     cfg.update(params)  # bake the recalibrated params into the config
     stage = tmp / "stage"
-    write_temp_config(cfg, stage, source_dir=res["config_file"].parent, target_version="4.4.1")
-    master = stage / "osm_all-parameters.csv"
-    overrides = stage_background_for_java(stage, cfg)  # incl. output.cutoff.enabled=false
-    # Java 4.4.1 strips '_'/'-' from species.name but not from name-based references; the
-    # disaggregated config (cod_west/cod_east) also left the discards matrix stale. Reconcile the
-    # STAGED copy so Java can resolve names and the fishery matrices are consistent (no-op on a
-    # clean aggregate config). See osmose/java_config_reconcile.py.
-    reconcile_config_for_java(stage)
+    # Writes the master, stages background species (overrides incl. output.cutoff.enabled=false),
+    # and reconciles names/matrices so Java can resolve cod_west/cod_east. Shared with the Run
+    # tab so the two staging paths cannot drift (GitHub #138).
+    master, overrides = stage_config_for_java(
+        cfg, stage, res["config_file"].parent, target_version="4.4.1"
+    )
     odir = tmp / "out"
     odir.mkdir(parents=True, exist_ok=True)
     cmd = [

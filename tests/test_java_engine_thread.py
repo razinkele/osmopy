@@ -13,18 +13,18 @@ _JAR = Path("osmose-java/osmose-4.4.1-jar-with-dependencies.jar")
 def test_java_engine_thread_streams_lines_and_posts_done():
     from osmose.config.reader import OsmoseConfigReader
     from osmose.demo import osmose_demo
-    from osmose.java_background_staging import stage_background_for_java
     from osmose.runner import OsmoseRunner
-    from ui.pages.run import _java_engine_thread, write_temp_config
+    from ui.pages.run import _java_engine_thread, stage_config_for_java
 
     tmp = Path(tempfile.mkdtemp())
     res = osmose_demo("baltic", tmp)
     config = dict(OsmoseConfigReader().read(str(res["config_file"])))
     work = tmp / "work"
-    cp = write_temp_config(
-        config, work, source_dir=res["config_file"].parent, target_version="4.4.1"
+    # Go through the same staging helper the Run tab uses, so this exercises the production
+    # path rather than a hand-copy of it (GitHub #138).
+    cp, overrides = stage_config_for_java(
+        config, work, res["config_file"].parent, target_version="4.4.1"
     )
-    overrides = stage_background_for_java(cp.parent, config)
     overrides = {**overrides, "simulation.time.nyear": "1"}
 
     log_q: queue.Queue = queue.Queue()
@@ -44,4 +44,9 @@ def test_java_engine_thread_streams_lines_and_posts_done():
 
     kind, result, _msg = done_q.get_nowait()
     assert kind == "done"
-    assert result.returncode == 0, f"Baltic Java run failed: {result.stderr[-500:]}"
+    # OSMOSE writes its exception to STDOUT, not stderr — asserting on stderr alone surfaces
+    # only SLF4J noise and hides the real "[severe] ..." cause (GitHub #138).
+    assert result.returncode == 0, (
+        f"Baltic Java run failed.\nSTDOUT tail:\n{result.stdout[-1500:]}\n"
+        f"STDERR tail:\n{result.stderr[-500:]}"
+    )

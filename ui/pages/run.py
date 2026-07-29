@@ -206,6 +206,53 @@ def write_temp_config(
     return master
 
 
+def stage_config_for_java(
+    config: dict[str, str],
+    work_dir: Path,
+    source_dir: Path | None = None,
+    *,
+    target_version: str = "4.3.3",
+    key_case_map: dict[str, str] | None = None,
+) -> tuple[Path, dict[str, str]]:
+    """Stage *config* for the Java engine; return (master config path, -P overrides).
+
+    Three ordered steps on the staged copy: write the flat master, stage background species,
+    then reconcile names/matrices. Order matters — reconcile rewrites the master in place and
+    must see the keys background staging adds, so it runs last.
+
+    The reconcile pass is gated on >= 4.4.0 because it mirrors that engine's name stripping
+    (``cod_west`` -> ``codwest``); applying it to the 4.3.3 jar would corrupt names it resolves
+    verbatim. It is a no-op on a config that is already alphanumeric and matrix-consistent.
+
+    Every Java staging path goes through here (the Run tab and
+    scripts/baltic_stability_certify.py) so the two cannot drift apart again — the Run tab
+    skipping the reconcile step was GitHub #138.
+    """
+    from osmose.config.aliases import _numeric_version
+
+    config_path = write_temp_config(
+        config, work_dir, source_dir, key_case_map=key_case_map, target_version=target_version
+    )
+    overrides: dict[str, str] = {}
+    is_44x = _numeric_version(target_version) >= _numeric_version("4.4.0")
+
+    try:
+        n_background = int(float(config.get("simulation.nbackground", 0) or 0))
+    except (TypeError, ValueError):
+        n_background = 0
+    if n_background > 0 and is_44x:
+        from osmose.java_background_staging import stage_background_for_java
+
+        overrides.update(stage_background_for_java(config_path.parent, config))
+
+    if is_44x:
+        from osmose.java_config_reconcile import reconcile_config_for_java
+
+        reconcile_config_for_java(config_path.parent)
+
+    return config_path, overrides
+
+
 def run_ui():
     live_map = MapWidget("live_map", style=CARTO_POSITRON)
     return ui.div(
@@ -377,32 +424,23 @@ def _java_engine_setup(input, state, config, work_dir, source_dir):
     if not jar_path.exists():
         return f"Error: JAR not found at {jar_path}"
 
-    from osmose.config.aliases import _numeric_version, target_version_for_jar
+    from osmose.config.aliases import target_version_for_jar
 
-    config_path = write_temp_config(
-        config,
-        work_dir,
-        source_dir,
-        key_case_map=state.key_case_map.get(),
-        target_version=target_version_for_jar(jar_path),  # write keys matching the selected jar
-    )
-    overrides = parse_overrides(input.param_overrides() or "")
-    # C2: stage background species for a >=4.4.0 jar (e.g. Baltic). The run gate already confirmed
-    # the config is staging-supported; merge the staging's -P overrides (cutoff workaround).
+    # Write keys matching the selected jar, stage background species, and reconcile names for
+    # Java — see stage_config_for_java for why the order matters.
     try:
-        _n_bg = int(float(config.get("simulation.nbackground", 0) or 0))
-    except (TypeError, ValueError):
-        _n_bg = 0
-    if _n_bg > 0 and _numeric_version(target_version_for_jar(jar_path)) >= _numeric_version(
-        "4.4.0"
-    ):
-        from osmose.java_background_staging import stage_background_for_java
-
-        try:
-            overrides = {**overrides, **stage_background_for_java(config_path.parent, config)}
-        except Exception as exc:  # noqa: BLE001 — surface staging failures, never silently
-            _log.error("Java background staging failed", exc_info=True)
-            return f"Background staging failed: {exc}"
+        config_path, stage_overrides = stage_config_for_java(
+            config,
+            work_dir,
+            source_dir,
+            target_version=target_version_for_jar(jar_path),
+            key_case_map=state.key_case_map.get(),
+        )
+    except Exception as exc:  # noqa: BLE001 — surface staging failures, never silently
+        _log.error("Java config staging failed", exc_info=True)
+        return f"Config staging failed: {exc}"
+    # Staging overrides (the cutoff workaround) intentionally win over user-typed ones.
+    overrides = {**parse_overrides(input.param_overrides() or ""), **stage_overrides}
     java_opts_text = input.java_opts() or ""
     java_opts = java_opts_text.split() if java_opts_text.strip() else []
     try:
