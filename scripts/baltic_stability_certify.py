@@ -172,7 +172,7 @@ def _print_table(engine: str, table: dict) -> int:
         ok += good
         flag = "PASS" if good else ("persists" if t["persists"] else "COLLAPSE")
         print(f"  {sp:12s} {flag:9s} min={t['min_biomass']:.2e} late_mean={t['late_mean_range']}")
-    print(f"  --> {ok}/8 persistent & in-envelope")
+    print(f"  --> {ok}/{len(FOCAL)} persistent & in-envelope")
     return ok
 
 
@@ -220,7 +220,7 @@ def main() -> int:
             j_surv = {sp for sp in FOCAL if j_table[sp]["persists"]}
             agree = py_surv == j_surv
             lines.append(
-                f"\n**Java cross-check: {j_ok}/8 persistent (single seed).** Survivor sets "
+                f"\n**Java cross-check: {j_ok}/{len(FOCAL)} persistent (single seed).** Survivor sets "
                 f"{'AGREE' if agree else 'DIFFER'} with Python — Python {sorted(py_surv)}, "
                 f"Java {sorted(j_surv)}. Coarse consistency check only (Baltic is not bit-equal "
                 "cross-engine); a DIFFER is a flag to inspect, not an automatic failure."
