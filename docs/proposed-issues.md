@@ -115,7 +115,9 @@ Ready-to-paste issue drafts. Not created on GitHub — review and open manually.
 
 ---
 
-## [Medium] Cod disaggregation left `fishery-discards.csv` stale (silent zero-discards on Python, Java-fatal)
+## [Resolved 2026-07-29] Cod disaggregation left `fishery-discards.csv` stale (silent zero-discards on Python, Java-fatal)
+
+> **✅ Fixed 2026-07-29.** `data/baltic/fishery-discards.csv` regenerated to mirror `fishery-catchability.csv` — 9 focal-species rows (`cod_west … cod_east`), 9 fishery columns (incl. `trawlcod_east`), all-zero (discards remain disabled). Regression guard added: `tests/test_baltic_fishery_matrices.py` (asserts discards ↔ catchability structural consistency). Draft retained below for history.
 
 **Source:** surfaced 2026-07-29 while extending the Java-4.4.1 cross-check staging for the disaggregated Baltic config (`docs/baltic_cod_east_M09_java_crosscheck_2026-07-29.md`). The cod split (cod → cod_west sp0 + cod_east sp8, `scripts/disaggregate_cod.py`) updated `predation-accessibility.csv` and `fishery-catchability.csv` but **not** `fishery-discards.csv`.
 
