@@ -161,3 +161,58 @@ Ready-to-paste issue drafts. Not created on GitHub — review and open manually.
 - `reconcile_config_for_java`'s column dedup becomes a safety net rather than a necessity (verifiable by diffing pre/post reconcile — no columns removed).
 
 **Effort:** quick. **Labels:** bug, java-staging, background, baltic.
+
+---
+
+## [Medium] Bistability harness retarget left two aggregate-cod coherence gaps
+
+**Source:** surfaced 2026-07-29 while retargeting `scripts/baltic_bistability_chunk0.py` from aggregate cod to `cod_east` (commit 62851df). The seeding-IC bistability experiment now seeds sp8 and measures `cod_east` coherently, but two adjacent code paths still assume the old 8-focal / aggregate-cod layout.
+
+**The gaps.**
+1. **The larva-rate driver never reaches the retargeted subject.** `read_base_larva_rates(..., n_focal=8)` iterates sp0–sp7, so `cod_east` (sp8) is never in `base_rates`. The bistability sweep's larval-mortality lever therefore perturbs sp0–7 while the harness measures `cod_east` — the driver and the subject are decoupled. (The synthetic unit tests pass `base_rates` explicitly, so they don't surface it.)
+2. **The `--chunk-c-strength` accessibility path still labels the predator `"cod"`** (`write_chunkc_matrix` / the predation-accessibility perturbation) — a name that no longer exists in the disaggregated matrix (`cod_west`/`cod_east`).
+
+**Fix plan.**
+1. Extend `read_base_larva_rates` (and any `n_focal=8` companions in that path) to `n_focal=9` so `cod_east` (sp8) is in `base_rates` — OR confirm the intended bistability lever is seeding-IC only and document that the larva-rate driver is deliberately orthogonal to the subject.
+2. Retarget the `--chunk-c-strength` predation-matrix path to the disaggregated predator label(s) (`cod_east` to match the harness subject, or the pair).
+3. Add a smoke assertion that the sweep's active driver reaches the subject stock.
+
+**Acceptance criteria.**
+- `baltic_bistability_chunk0 --experiment bistability` runs coherently on the disaggregated config (driver reaches `cod_east`); `--chunk-c-strength` resolves the predator name.
+- Unit tests green.
+
+**Effort:** moderate (needs a science call on the intended driver). **Labels:** bug, baltic, disaggregation, bistability, calibration.
+
+---
+
+## [Medium] 30-minute tutorial + its doc reference the removed aggregate `cod` (disaggregation-stale)
+
+**Source:** 2026-07-29 full-suite sweep — `tests/test_tutorial_3species.py` (4 failures: `test_script_runs_to_completion`, `test_biomass_pyramid_emerges`, `test_trophic_cascade_visible`, `test_headless_fallback_produces_equilibrium`). NOTE: an earlier triage mislabeled these "non-baltic" — they are disaggregation-stale.
+
+**The bug.** The 30-minute tutorial runs the `data/baltic/` config with `FOCAL_SPECIES = ["cod", "sprat", "stickleback"]` and a trophic-cascade narrative built on cod↔sprat and cod↔stickleback predation (drop cod–sprat accessibility → cod has less food → stickleback up). The cod disaggregation (cod → `cod_west` sp0 + `cod_east` sp8) removed the aggregate `cod` species/column, so the tests raise `KeyError: 'cod'` and the `BASELINE_PERTURBATION` in `tests/_tutorial_config.py` targets a species that no longer exists.
+
+**Fix plan (a retarget, not a rename — the cascade story must map to a chosen stock).**
+1. Choose the stock the tutorial's cascade narrative follows — `cod_west` (sp0, the coastal western stock, nearest the stickleback story) is the likely candidate; or `total_cod` (`osmose.results.total_cod`) if the story is total-cod biomass.
+2. Update `FOCAL_SPECIES`, and `build_config` / `BASELINE_PERTURBATION` in `tests/_tutorial_config.py` (the cod–sprat accessibility perturbation) to the chosen stock.
+3. Re-measure the cascade-magnitude assertion bands from smoke runs on the retargeted config.
+4. Update the prose in `docs/tutorials/30-minute-ecosystem.md` to match — the test docstring requires the doc and config to stay in sync.
+
+**Acceptance criteria.**
+- The 4 tutorial tests pass.
+- `docs/tutorials/30-minute-ecosystem.md` matches the retargeted config; the documented cascade magnitude is re-derived from the disaggregated model.
+
+**Effort:** moderate (a stock choice + doc + re-measured bands). **Labels:** bug, baltic, disaggregation, tutorial, docs.
+
+---
+
+## [Low] SP1b larval recalibration is aggregate-cod-specific — re-solve RECAL_RATE per stock
+
+**Source:** 2026-07-29; `test_sp1b_mean_neutral_drift_guard` now skips on disaggregated configs (commit 5811575). Already documented at `docs/diagnostics/sp1b_recalibration.md`; filed here for tracking.
+
+**Motivation.** `RECAL_RATE = 14.66` (cod larval mortality, `osmose/calibration/larva_recal.py`) was solved for the ~140 kt aggregate cod stock. On the disaggregated config it drives `cod_west` extinct (6432 → 1 t under SP1) while `cod_east` barely moves — total cod drifts ~8.9%, so the neutral-drift guard is structurally invalid and is currently skipped with an evidence-bearing reason. `mean_cod` was already fixed to return total cod so the SP1b scripts no longer crash.
+
+**Fix plan.** Re-solve the SP1b larval recalibration **per stock** (cod_west and cod_east have very different scales; cod_east is separately RV-gated) on the maintainer host (the 15-yr Baltic sim is minutes/eval), then remove the disaggregated-config skip in `test_sp1b_mean_neutral_drift_guard`.
+
+**Acceptance criteria.** Per-stock RECAL_RATE(s) solved + committed with provenance; the skip removed and the guard passes on the disaggregated config.
+
+**Effort:** moderate (maintainer-host recalibration). **Labels:** calibration, baltic, disaggregation, sp1b.
