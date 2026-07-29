@@ -112,3 +112,50 @@ Ready-to-paste issue drafts. Not created on GitHub — review and open manually.
 - Mortality and fishing outputs reviewed for 4.4.x shape; ICES-SAG validation still passes after changes.
 
 **Effort:** large (stage in phases). **Labels:** parity, upstream-sync, engine, reproduction, mortality, fishing, output.
+
+---
+
+## [Medium] Cod disaggregation left `fishery-discards.csv` stale (silent zero-discards on Python, Java-fatal)
+
+**Source:** surfaced 2026-07-29 while extending the Java-4.4.1 cross-check staging for the disaggregated Baltic config (`docs/baltic_cod_east_M09_java_crosscheck_2026-07-29.md`). The cod split (cod → cod_west sp0 + cod_east sp8, `scripts/disaggregate_cod.py`) updated `predation-accessibility.csv` and `fishery-catchability.csv` but **not** `fishery-discards.csv`.
+
+**The bug.** `data/baltic/fishery-discards.csv` is structurally inconsistent with the disaggregation on **both** axes:
+- **Rows:** it still carries an aggregate `cod` row and has **no `cod_west` / `cod_east` rows** (8 species rows vs catchability's 9).
+- **Columns:** 8 fishery columns — **missing the `trawlcod_east` fishery** that `fishery-catchability.csv` added (9 columns).
+- All values are currently `0` (discards are effectively disabled in this config), which is why the inconsistency has stayed latent.
+
+**Impact.**
+- **Python — silent.** `_load_discard_rates` (`osmose/engine/config.py:1007`) resolves each species by name in the discards index; `cod_west` / `cod_east` are absent → they are silently assigned a **zero discard rate by omission**. Harmless while all values are 0, but the moment discards are populated, the disaggregated cod would silently get *no* discards while every other species does — a quiet correctness bug with no error.
+- **Java — fatal.** `FishingGear.setDiscards` → `Matrix.getIndexPrey/getIndexPred` aborts on the missing `codwest` prey row and `trawlcodeast` fishery column. Currently only survivable because the Java-staging reconcile pass (`osmose/java_config_reconcile.py::reconcile_config_for_java`) rebuilds the matrix; the underlying data is still wrong.
+
+**Fix plan.**
+1. Regenerate `data/baltic/fishery-discards.csv` to mirror `fishery-catchability.csv`'s structure: rows = the 9 focal species (`cod_west … cod_east`), columns = the 9 fisheries (incl. `trawlcod_east`), values `0` (discards remain disabled). Preserve any non-zero cells by (species, fishery) name if discards are ever enabled.
+2. Add a regression test asserting `fishery-discards.csv` rows/columns match `fishery-catchability.csv`'s species/fisheries (a cheap structural-consistency guard so future disaggregations can't drift them apart) — this is exactly the invariant `reconcile_config_for_java` enforces at stage time, hoisted to a data test.
+3. Extend `scripts/disaggregate_cod.py` (the Task-4 matrix step) to transform `fishery-discards.csv` alongside catchability, so the surgery keeps *all* fishery matrices in sync by construction.
+
+**Acceptance criteria.**
+- `fishery-discards.csv` ↔ `fishery-catchability.csv` structural-consistency test green.
+- Python discard-rate load for `cod_west` / `cod_east` is intentional (present rows), not zero-by-omission.
+- The Java reconcile's discards rebuild becomes a no-op on the committed data (verifiable by diffing pre/post reconcile).
+
+**Effort:** quick. **Labels:** bug, baltic, disaggregation, config, fishing.
+
+---
+
+## [Low] `stage_background_for_java` is not idempotent — duplicates a predator column already in the matrix
+
+**Source:** surfaced 2026-07-29 during the same Java cross-check work (`docs/baltic_cod_east_M09_java_crosscheck_2026-07-29.md`). Masked in production by the reconcile pass; filing so the root cause isn't lost.
+
+**The bug.** `osmose/java_background_staging.py::augment_accessibility` (called by `stage_background_for_java`) **unconditionally appends** a predator column for every background species in `BG_ACCESS`, with no check for a column that already exists. The reconciled disaggregated config already ships a `Cormorant` predator column in `data/baltic/predation-accessibility.csv`, so staging produces a **duplicate `Cormorant` column** in the staged matrix. It is currently only survivable because `reconcile_config_for_java` dedups columns — any other consumer of `stage_background_for_java` would get a malformed matrix.
+
+**Secondary (fidelity) concern.** The authored `BG_ACCESS` values (0.1–0.4) do not match what the Python engine actually uses for a predator **absent** from the matrix: `predation.py:211` falls back to `access_coeff = 1.0`. So for GreySeal (no column in the committed matrix) the staging under-represents Python's predation strength. This is one of the documented reasons the Java cross-check is not yet faithful; it is tracked in the cross-check doc's "Ceiling" section and is **not** required to fix the idempotency bug.
+
+**Fix plan.**
+1. Make `augment_accessibility` idempotent: skip any predator already present as a column; only add absent ones. (Add a unit test: staging a matrix that already contains `Cormorant` yields exactly one `Cormorant` column.)
+2. *(Optional, ties into cross-check fidelity — deprioritized per 2026-07-29 decision.)* For predators absent from the committed matrix, fill the added column with the Python fallback `access_coeff = 1.0` rather than the authored `BG_ACCESS`, so the staged matrix matches Python's *effective* accessibility.
+
+**Acceptance criteria.**
+- No duplicate predator columns after `stage_background_for_java` on the disaggregated config.
+- `reconcile_config_for_java`'s column dedup becomes a safety net rather than a necessity (verifiable by diffing pre/post reconcile — no columns removed).
+
+**Effort:** quick. **Labels:** bug, java-staging, background, baltic.
