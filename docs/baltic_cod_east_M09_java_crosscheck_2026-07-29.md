@@ -63,20 +63,35 @@ of the name/matrix reconciliation pass:
    column but **no GreySeal column**, so the Python engine predates GreySeal at its `access_coeff=1.0`
    fallback (see `osmose/engine/processes/predation.py`). The C2 staging instead hands Java the
    authored `BG_ACCESS` values (0.1–0.4). Java's seals are much weaker consumers.
-2. **Standing biomass.** The staging inlines the raw NetCDF biomass; the Python-side
-   `species.biomass.multiplier.*` scaling is not applied on Java, so GreySeal/Cormorant stand at
-   ~5–31 t in the Java run vs the multiplier-scaled levels Python uses. Weaker still.
+2. **Standing biomass — the forcing itself is ineffective on Java, not merely un-multiplied.** Both
+   engines force background biomass from `species.file.spN` = `baltic_predator_biomass.nc` via the
+   `ResourceForcing` path (`species.biomass.total.spN` / NetCDF; `osmose/engine/background.py:270`
+   mirrors `ResourceForcing.java`). On Java the seal biomass is **not held at the forced ~4500 t —
+   it decays monotonically (GreySeal 1503 → 30 t over the run)**, so the schools are eaten down to
+   near-zero. Java logs no forcing warning, so the root cause is non-obvious (a multi-hour debug of
+   the Java NetCDF/`ResourceForcing` background path). Compounding it, the Python-side
+   `species.biomass.multiplier.sp16 = 2.0` (Cormorant) is keyed differently from Java's
+   `ResourceForcing` multiplier (`species.multiplier.spN`), so even a working forcing would under-scale
+   Cormorant on Java.
 
-With top-down control from the background predators largely removed, the prey field on Java cascades
-upward regardless of cod — the same apex-predator-release mechanism the disaggregation experiment
-documented. Two further Python-vs-Java differences compound the mismatch but are not the primary
-driver here: the **RV recruitment gate is Python-engine-only** (`reproduction.rv.gate.*` has no Java
-counterpart, so the cod_east recruitment lever does not exist on Java), and the RNGs differ (PCG64 vs
-MT19937) — Baltic was never bit-equal cross-engine.
+With top-down control from the background predators collapsing on Java, the prey field cascades upward
+regardless of cod — the same apex-predator-release mechanism the disaggregation experiment documented.
 
-**Bottom line.** The engineering goal is delivered: Java 4.4.1 runs the disaggregated config to
-completion, and the `--java` cross-check path is unblocked. But the cross-check is not yet a faithful
-apples-to-apples comparison — the background-predator staging under-represents Python's seal/cormorant
-control, and the Java seed is un-pinned. Closing both (match the access-coef + apply the biomass
-multiplier in staging; pin the Java seed) is the path to a trustworthy cross-engine number. **Until
-then the Python 5-seed certification remains the authoritative result.**
+## Ceiling: this cross-check cannot validate cod_east
+
+Even with a perfect background-forcing fix, the cross-check **cannot validate its own subject.** The
+cod_east fix is three levers — M 2.5→0.9, `reproduction.rv.gate.ref` 250→150, and the RV-gate
+wrap→clamp — and **two of the three are the RV recruitment gate, a Python-engine-only feature Java
+4.4.1 has no counterpart for** (`osmose/engine/processes/recruitment_gate.py`; Java silently ignores
+`reproduction.rv.gate.*`). So Java runs materially different cod dynamics than the config being
+certified; cod's Java fate is additionally seed-sensitive (see above). A *faithful* cross-check of
+cod_east is therefore not achievable at any level of staging effort — the most a fully-faithful
+background fix could buy is a **prey-only** comparison, explicitly conceding cod.
+
+**Bottom line (decision recorded 2026-07-29).** The engineering goal is delivered: Java 4.4.1 runs the
+disaggregated config to completion and the `--java` path is unblocked. Making the *result* faithful
+would require debugging the broken Java background-biomass forcing, re-keying the multiplier, matching
+the access-coef, and pinning a seed OSMOSE may not expose — multi-hour work whose ceiling is a
+prey-only comparison, since cod_east is structurally unvalidatable cross-engine. **Per user decision
+that work is not pursued; the cross-check is accepted as coarse/indicative, and the Python 5-seed
+certification (cod_east 82.6–83.4 kt, in-envelope) remains the authoritative result.**
