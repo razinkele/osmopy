@@ -209,7 +209,9 @@ Ready-to-paste issue drafts. Not created on GitHub — review and open manually.
 
 ---
 
-## [Low] SP1b larval recalibration is aggregate-cod-specific — re-solve RECAL_RATE per stock
+## [Opened → #131] SP1b larval recalibration is aggregate-cod-specific — re-solve RECAL_RATE per stock
+
+> **Opened on GitHub 2026-07-29:** https://github.com/razinkele/osmopy/issues/131 (label: bug). Draft retained below.
 
 **Source:** 2026-07-29; `test_sp1b_mean_neutral_drift_guard` now skips on disaggregated configs (commit 5811575). Already documented at `docs/diagnostics/sp1b_recalibration.md`; filed here for tracking.
 
