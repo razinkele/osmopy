@@ -30,15 +30,16 @@ def test_cod_east_elevated_mortality():
 def test_cod_east_has_separate_fishery():
     cfg = _cfg()
     assert cfg["simulation.nfisheries"] == "9"
-    assert cfg["fisheries.name.fsh8"] == "trawlcod_east"
+    # java-safe canonical form (no underscore — see test_baltic_java_compat)
+    assert cfg["fisheries.name.fsh8"] == "trawlcodeast"
 
 
 def test_catchability_maps_each_stock_to_its_fishery():
     df = pd.read_csv("data/baltic/fishery-catchability.csv", index_col=0)
     assert "cod_west" in df.index and "cod_east" in df.index
     assert "cod" not in df.index
-    # cod_west -> trawlcod (fsh0), cod_east -> trawlcod_east (fsh8)
+    # cod_west -> trawlcod (fsh0), cod_east -> trawlcodeast (fsh8)
     assert df.loc["cod_west", "trawlcod"] == 1
-    assert df.loc["cod_east", "trawlcod_east"] == 1
-    assert df.loc["cod_west", "trawlcod_east"] == 0
+    assert df.loc["cod_east", "trawlcodeast"] == 1
+    assert df.loc["cod_west", "trawlcodeast"] == 0
     assert df.loc["cod_east", "trawlcod"] == 0

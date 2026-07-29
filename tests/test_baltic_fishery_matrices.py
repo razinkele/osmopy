@@ -32,4 +32,4 @@ def test_discards_reflect_cod_disaggregation():
     disc = _df(DISCARDS)
     assert "cod_west" in disc.index and "cod_east" in disc.index
     assert "cod" not in disc.index  # aggregate cod row must be gone
-    assert "trawlcod_east" in disc.columns  # cod_east fishery column present
+    assert "trawlcodeast" in disc.columns  # cod_east fishery column (java-safe, no underscore)

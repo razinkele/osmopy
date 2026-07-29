@@ -19,11 +19,14 @@ def _df() -> pd.DataFrame:
     return pd.read_csv(MATRIX, sep=";", index_col=0)
 
 
-def test_matrix_square_over_new_species_set():
+def test_matrix_covers_new_species_set_plus_background_predator():
+    """15 prey rows (focal + LTL). The predator columns add a Cormorant background
+    column on top of the prey set — the top-down control introduced by the
+    percid-removals reconciliation — so the matrix is 15x16, not square."""
     df = _df()
-    assert list(df.index) == SPECIES_ORDER
-    assert list(df.columns) == SPECIES_ORDER
-    assert df.shape == (15, 15)
+    assert list(df.index) == SPECIES_ORDER  # prey rows: focal + LTL
+    assert list(df.columns) == SPECIES_ORDER + ["Cormorant"]  # + background predator column
+    assert df.shape == (15, 16)
 
 
 def test_no_nan_and_values_in_unit_range():
@@ -55,9 +58,9 @@ def test_no_cross_predation_between_stocks():
 def test_loads_through_engine_accessibility_matrix():
     from osmose.engine.accessibility import AccessibilityMatrix
 
-    names = SPECIES_ORDER + ["GreySeal", "Cormorant"]  # background: absent from matrix, skipped
+    names = SPECIES_ORDER + ["GreySeal", "Cormorant"]  # GreySeal absent (1.0 fallback); Cormorant is a column
     am = AccessibilityMatrix.from_csv(str(MATRIX), names)
-    assert am.raw_matrix.shape == (15, 15)
+    assert am.raw_matrix.shape == (15, 16)  # 15 prey rows x 16 predators (incl. Cormorant)
     # both cod species resolve to a matrix label
     assert am.resolve_name("cod_west") is not None
     assert am.resolve_name("cod_east") is not None
