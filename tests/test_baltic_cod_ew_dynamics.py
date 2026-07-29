@@ -20,11 +20,23 @@ def test_rv_gate_on_cod_east_only_raw_cap():
     assert cfg["reproduction.rv.gate.species.enabled.sp0"] == "false"  # cod_west standard SR
 
 
-def test_cod_east_elevated_mortality():
+def test_cod_east_mortality_realistic_not_elevated():
+    """cod_east's collapse is represented by its RV recruitment gate (low
+    recruitment), NOT by elevated mortality. The original disaggregation used a
+    doubled additional M (2.5) to stand in for the collapse, but that drove
+    cod_east extinct; the persistence fix set it to a realistic eastern-Baltic-cod
+    natural M (~0.9-1.1) and lets the RV gate carry the collapse. So cod_east's
+    additional M is intentionally in the realistic band and is NOT elevated above
+    cod_west's calibrated value. See test_rv_gate_on_cod_east_only_raw_cap for the
+    collapse mechanism and docs/baltic_cod_east_fix_certification_2026-07-28.md."""
     cfg = _cfg()
     m_east = float(cfg["mortality.additional.rate.sp8"])
-    m_west = float(cfg["mortality.additional.rate.sp0"])
-    assert m_east > 1.8 * m_west, f"cod_east M {m_east} not ~doubled vs cod_west {m_west}"
+    assert 0.8 <= m_east <= 1.2, (
+        f"cod_east additional M {m_east} outside the realistic eastern-cod band [0.8, 1.2] "
+        "(the old doubled M=2.5 extincted it — the RV gate now represents the collapse)"
+    )
+    # the collapse is the RV gate, not an extreme mortality
+    assert cfg["reproduction.rv.gate.species.enabled.sp8"] == "true"
 
 
 def test_cod_east_has_separate_fishery():
