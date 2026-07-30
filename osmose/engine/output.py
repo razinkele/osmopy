@@ -85,6 +85,16 @@ def write_outputs(
             predator_names=config.species_names,
             prey_names=config.all_species_names,
         )
+        # Java's predatorPressure counterpart: same absolute biomass, Java's long orientation.
+        trophic = output_dir / "Trophic"
+        trophic.mkdir(exist_ok=True)
+        write_predator_pressure_csv(
+            path=trophic / f"{prefix}_predatorPressure_Simu0.csv",
+            step_diet_matrices=step_matrices,
+            step_times=step_times,
+            predator_names=config.species_names,
+            prey_names=config.all_species_names,
+        )
 
     # Write spatial NetCDF outputs when enabled
     if config.output_spatial_enabled:
@@ -584,6 +594,48 @@ def write_diet_csv(
             raise ValueError(f"diet matrix shape {mat.shape} != ({n_pred}, {n_prey}) at time {t}")
         rows.append([t, *mat.reshape(-1).tolist()])
     df = pd.DataFrame(rows, columns=["Time", *columns])  # type: ignore[arg-type]
+    df.to_csv(path, index=False)
+
+
+def write_predator_pressure_csv(
+    *,
+    path: Path,
+    step_diet_matrices: list[NDArray[np.float64]],
+    step_times: list[float],
+    predator_names: list[str],
+    prey_names: list[str],
+) -> None:
+    """Write predation pressure — ABSOLUTE prey biomass eaten per predator-prey pair, in tonnes.
+
+    Java's ``predatorPressure`` counterpart. Long layout matching Java's orientation: ``Time``,
+    ``Prey``, then one column per predator.
+
+    Java additionally resolves predator SIZE STAGES (``codwest in [0,10[`` etc.); this engine has no
+    size dimension, so each column is a whole-predator total. Comparable to Java after summing Java's
+    per-predator stage columns.
+
+    Note the naming trap this resolves: ``write_diet_csv`` also emits absolute biomass, so this
+    engine's ``dietMatrix`` already held Java's *predatorPressure* quantity while Java's
+    ``dietMatrix`` holds percentage composition (see ``_normalize_diet_matrix_to_percent``). The two
+    engines had no pair of like-named files carrying the same quantity.
+
+    No-op when ``step_diet_matrices`` is empty.
+    """
+    if not step_diet_matrices:
+        return
+    if len(step_diet_matrices) != len(step_times):
+        raise ValueError(
+            f"step_diet_matrices length {len(step_diet_matrices)} "
+            f"!= step_times length {len(step_times)}"
+        )
+    n_pred, n_prey = len(predator_names), len(prey_names)
+    rows: list[list[object]] = []
+    for mat, t in zip(step_diet_matrices, step_times, strict=True):
+        if mat.shape != (n_pred, n_prey):
+            raise ValueError(f"diet matrix shape {mat.shape} != ({n_pred}, {n_prey}) at time {t}")
+        for j, prey in enumerate(prey_names):
+            rows.append([t, prey, *mat[:, j].tolist()])
+    df = pd.DataFrame(rows, columns=["Time", "Prey", *predator_names])  # type: ignore[arg-type]
     df.to_csv(path, index=False)
 
 
