@@ -182,8 +182,47 @@ Fixing it is not mechanical: converting counts to rates requires choosing the ab
 denominator per cause and per life stage, and matching Java's structure means adding the stage
 split. That is a modelling decision, recorded here rather than guessed at.
 
-**Once fixed, the diagnostic to run** is the per-cause, per-stage mortality series for sprat and cod
-on both engines, restricted to the first ~10 years where the divergence originates.
+### #140 fixed, diagnostic run — and it is INCONCLUSIVE
+
+`053742b` converts the Python output to instantaneous rates. Verified on real 12-yr Baltic output:
+max rate per species is now **8.6 / 16.7 / 7.1** (sprat / cod_east / herring) against ~1e13 before.
+
+Mean rates over 12 yr, Java per life stage vs Python whole-population:
+
+| species | cause | Java Eggs | Java Juv | Java Adult | Python flat |
+|---|---|---|---|---|---|
+| sprat | Mpred | 0.0011 | **2.3612** | 1.3148 | 0.0074 |
+| sprat | Madd | 2.0550 | 0.2085 | 0.2014 | 6.5322 |
+| cod_east | Mpred | 0.0002 | **1.7233** | 0.1630 | 0.0002 |
+| cod_east | Madd | 5.0974 | 0.8734 | 0.8318 | 11.5424 |
+| herring | Mpred | 0.0277 | **1.9927** | 0.5800 | 0.0218 |
+| herring | Madd | 2.4114 | 2.1819 | 2.0815 | 6.4683 |
+
+**Why it does not answer the question.** Python's flat rate is a whole-population rate, and eggs
+outnumber every other stage by orders of magnitude, so it is numerically dominated by the egg stage.
+That shows in the data: Python's predation rate tracks Java's *egg* rate (sprat 0.0074 vs 0.0011;
+herring 0.0218 vs 0.0277; cod_east 0.0002 vs 0.0002) and is 2–3 orders of magnitude below Java's
+juvenile and adult rates. Comparing it against those is apples-to-oranges — the same
+different-quantities trap as the cutoff, one level down.
+
+**The one lead it did produce:** Java's *juvenile predation* is extreme and consistent across all
+three species — 1.7–2.4, an order of magnitude above its own adult rates and far above its egg
+rates. On Java, juveniles are being very heavily predated. Python has no per-stage figure to compare
+against, so whether this is a genuine engine difference or normal for the model is untestable right
+now. Python's additional mortality also runs 2–3× Java's egg-stage `Madd`, which is suggestive but
+rests on the same confounded comparison.
+
+**Blocking prerequisite, revised.** Completing the life-stage split (the unfinished half of #140) is
+no longer optional polish — it is the gate on diagnosing the divergence at all. A whole-population
+rate cannot be compared against a per-stage one.
+
+**Second blocker found:** `osmose/results.py::_read_mortality_rate_csv`, whose docstring says it
+reads "a real `mortalityRate-{sp}` CSV", raises
+`ParserError: Header rows must have an equal number of columns` on genuine Java 4.4.1 output.
+Java's own header is inconsistent — row 1 has 25 fields (`Time` + 8 named causes × 3 stages), row 2
+has 28 (blank + **9** stage-triples), and data rows have 29. Java emits 27 data columns but names
+only 24, leaving one group of three unnamed. The reader has evidently never been run against Java
+output. Needs its own fix; the table above was produced with a positional parser.
 
 ## What this means
 
