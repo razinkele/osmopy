@@ -92,6 +92,8 @@ class StepOutput:
     # Java-parity life-stage split (Eggs/Juvenil/Adult); None on outputs built before it existed.
     abundance_by_stage: NDArray[np.float64] | None = None  # (n_species, 3)
     mortality_by_cause_stage: NDArray[np.float64] | None = None  # (n_species, n_causes, 3)
+    # Per-step instantaneous rates; SUMMED (not averaged) over a recording window, matching Java.
+    mortality_rate_by_cause_stage: NDArray[np.float64] | None = None  # (n_species, n_causes, 3)
     yield_by_species: NDArray[np.float64] | None = None  # fishing yield biomass per species
     # Per-species age/size distribution dicts (sp_idx -> 1-D array), or None if disabled
     biomass_by_age: dict[int, NDArray[np.float64]] | None = None
@@ -817,6 +819,33 @@ def _collect_mortality(
     return mortality_by_cause
 
 
+def mortality_rates_from_counts(
+    deaths: NDArray[np.float64], n_end: NDArray[np.float64]
+) -> NDArray[np.float64]:
+    """Convert per-cause death COUNTS to additive instantaneous rates for ONE step.
+
+    ``deaths`` has causes on the last axis; ``n_end`` matches its leading axes and holds the
+    survivors of that same population slice, so each slice uses its own denominator.
+
+        N_start = N_end + D_total ;  Z = -ln(N_end / N_start) ;  m_c = (D_c / D_total) * Z
+
+    Must be applied PER STEP. Java's convention (verified empirically 2026-07-30: its annual row
+    equals the sum of its 24 per-step rows exactly for deterministic causes) is to SUM per-step
+    rates over the saving interval. Deriving one rate from window-aggregated counts instead has no
+    fixed relationship to that sum.
+    """
+    d_total = deaths.sum(axis=-1)
+    n_start = n_end + d_total
+    with np.errstate(divide="ignore", invalid="ignore"):
+        survival = np.divide(n_end, n_start, out=np.ones_like(n_end), where=n_start > 0)
+        z_total = -np.log(survival)  # inf where survival == 0 (complete removal)
+        share = np.divide(
+            deaths, d_total[..., None], out=np.zeros_like(deaths), where=d_total[..., None] > 0
+        )
+        # 0 * inf -> nan where a slice is wiped out; causes with no deaths must stay exactly 0.
+        return np.where(share > 0, share * z_total[..., None], 0.0)
+
+
 def _collect_by_life_stage(
     state: SchoolState,
     config: EngineConfig,
@@ -1130,6 +1159,10 @@ def _collect_outputs(
     biomass, abundance = _collect_biomass_abundance(state, config, bkg_output)
     mortality_by_cause = _collect_mortality(state, config)
     abundance_by_stage, mortality_by_cause_stage = _collect_by_life_stage(state, config)
+    # Rates must be formed per step; the window accumulator then sums them (Java's convention).
+    mortality_rate_by_cause_stage = mortality_rates_from_counts(
+        mortality_by_cause_stage.transpose(0, 2, 1), abundance_by_stage
+    ).transpose(0, 2, 1)
     yield_by_species = _collect_yield(state, config)
     biomass_by_age, abundance_by_age, biomass_by_size, abundance_by_size = _collect_distributions(
         state, config
@@ -1165,6 +1198,7 @@ def _collect_outputs(
         mortality_by_cause=mortality_by_cause,
         abundance_by_stage=abundance_by_stage,
         mortality_by_cause_stage=mortality_by_cause_stage,
+        mortality_rate_by_cause_stage=mortality_rate_by_cause_stage,
         yield_by_species=yield_by_species,
         biomass_by_age=biomass_by_age,
         abundance_by_age=abundance_by_age,
@@ -1297,6 +1331,7 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
             mortality_by_cause=accumulated[0].mortality_by_cause,
             abundance_by_stage=accumulated[0].abundance_by_stage,
             mortality_by_cause_stage=accumulated[0].mortality_by_cause_stage,
+            mortality_rate_by_cause_stage=accumulated[0].mortality_rate_by_cause_stage,
             yield_by_species=accumulated[0].yield_by_species,
             biomass_by_age=accumulated[0].biomass_by_age,
             abundance_by_age=accumulated[0].abundance_by_age,
@@ -1326,6 +1361,13 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
     abundance_stage = np.mean(_abs, axis=0) if _abs else None
     _mcs = [o.mortality_by_cause_stage for o in accumulated if o.mortality_by_cause_stage is not None]
     mortality_stage = np.sum(_mcs, axis=0) if _mcs else None
+    # SUM, matching Java: an interval's rate is the sum of its per-step rates.
+    _mrs = [
+        o.mortality_rate_by_cause_stage
+        for o in accumulated
+        if o.mortality_rate_by_cause_stage is not None
+    ]
+    mortality_rate_stage = np.sum(_mrs, axis=0) if _mrs else None
     yield_sum = np.sum(
         [o.yield_by_species for o in accumulated if o.yield_by_species is not None], axis=0
     )
@@ -1376,6 +1418,7 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
         mortality_by_cause=mortality,
         abundance_by_stage=abundance_stage,
         mortality_by_cause_stage=mortality_stage,
+        mortality_rate_by_cause_stage=mortality_rate_stage,
         yield_by_species=yield_sum,
         biomass_by_age=_avg_spatial("biomass_by_age", "mean"),
         abundance_by_age=_avg_spatial("abundance_by_age", "mean"),

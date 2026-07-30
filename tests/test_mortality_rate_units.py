@@ -20,6 +20,7 @@ import pandas as pd
 import pytest
 
 from osmose.engine.output import _build_mortality_dataframes
+from osmose.engine.simulate import mortality_rates_from_counts
 from osmose.engine.state import MortalityCause
 
 
@@ -98,6 +99,7 @@ class _StagedOut:
         self.mortality_by_cause = mortality
         self.abundance_by_stage = abundance_by_stage
         self.mortality_by_cause_stage = mortality_by_cause_stage
+        self.mortality_rate_by_cause_stage = None
 
 
 def test_stage_split_emits_cause_stage_multiindex_matching_java():
@@ -114,6 +116,10 @@ def test_stage_split_emits_cause_stage_multiindex_matching_java():
     mort_stage[0, int(MortalityCause.ADDITIONAL), 0] = 500.0  # eggs, additional
     flat = mort_stage.sum(axis=2)
     out = _StagedOut(0, abund_stage.sum(axis=1), flat, abund_stage, mort_stage)
+    # Mirror simulate.py: rates are formed per step from that step's counts and survivors.
+    out.mortality_rate_by_cause_stage = mortality_rates_from_counts(
+        mort_stage.transpose(0, 2, 1), abund_stage
+    ).transpose(0, 2, 1)
 
     df = _build_mortality_dataframes([out], _Cfg(["sprat"]))["mortalityRate_sprat"]
 
@@ -141,6 +147,36 @@ def test_flat_layout_retained_when_stage_arrays_absent():
     df = _build_mortality_dataframes([out], _Cfg(["sprat"]))["mortalityRate_sprat"]
     assert not isinstance(df.columns, pd.MultiIndex)
     assert df["Predation"].iloc[0] == pytest.approx(-np.log(600.0 / 1000.0))
+
+
+class _RateOut:
+    """StepOutput stand-in carrying PRE-COMPUTED per-step rates."""
+
+    def __init__(self, step, rate_by_cause_stage):
+        self.step = step
+        self.abundance = None
+        self.mortality_by_cause = None
+        self.abundance_by_stage = None
+        self.mortality_by_cause_stage = None
+        self.mortality_rate_by_cause_stage = rate_by_cause_stage
+
+
+def test_precomputed_rates_are_used_verbatim():
+    """Java sums per-step rates over the saving interval, so the accumulated value is already the
+    rate — output must NOT re-derive it from window-aggregated counts.
+
+    Verified empirically: Java's annual row equals the sum of its 24 per-step rows exactly for the
+    deterministic causes (ratio 1.000). Re-deriving a single rate from mean abundance and summed
+    deaths has no fixed relationship to that sum, which is what made Python's values non-comparable.
+    """
+    n_causes = len(MortalityCause)
+    rates = np.zeros((1, n_causes, 3))
+    rates[0, int(MortalityCause.PREDATION), 2] = 0.4242  # adult predation, already summed
+    out = _RateOut(0, rates)
+
+    df = _build_mortality_dataframes([out], _Cfg(["sprat"]))["mortalityRate_sprat"]
+    assert df[("Predation", "Adult")].iloc[0] == pytest.approx(0.4242)
+    assert df[("Predation", "Juvenil")].iloc[0] == pytest.approx(0.0)
 
 
 def test_rates_are_plausible_magnitudes_not_counts():
