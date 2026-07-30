@@ -216,6 +216,50 @@ rests on the same confounded comparison.
 no longer optional polish — it is the gate on diagnosing the divergence at all. A whole-population
 rate cannot be compared against a per-stage one.
 
+### DIRECTION OF CAUSATION: RESOLVED — larval additional mortality is applied to a different stage
+
+Juvenile-stage test (cutoff keys stripped from Python so early biomass is reported; stage boundaries
+verified identical). Per step, sprat juvenile `Additional` mortality:
+
+| step | Java | Python |
+|---|---|---|
+| 7 | 0.0000 | **6.1547** |
+| 8 | 0.0089 | 5.8430 |
+| 10 | 0.0089 | 5.3398 |
+| 12 | 0.0089 | 4.5093 |
+| 14 | 0.0089 | 2.8604 |
+| 15 | 0.0089 | **0.0089** |
+
+The numbers identify themselves exactly:
+
+* `147.71283750854758 / 24 = 6.1547` — Python charges the **larval** rate
+  (`mortality.additional.larva.rate.sp2`) to **JUVENILES**, decaying as cohorts age out of the larval
+  window, then dropping to the general rate at step 15.
+* `0.21435847448826884 / 24 = 0.008932` — Java charges the **general** rate
+  (`mortality.additional.rate.sp2`) to juveniles throughout, and the larval rate to **EGGS** (measured
+  earlier at 2.05/step).
+
+So during each cohort's larval window Python applies **~690× Java's juvenile additional mortality**
+(6.15 vs 0.0089). This is an *imposed* rate: it needs no feedback, and it is present from the very
+first step juveniles exist. Herring shows the identical pattern (Python 4.11 → 0.0936 = `98.5/24`).
+
+**Why this settles the direction.** At the steps where `Additional` already differs ~690×, total
+predator biomass has Java *below* Python (J/P 0.00 → 0.17 → 0.57), only crossing 1.0 around step 12.
+Predation cannot be driving a divergence that is already maximal while the predator field is smaller
+on the diverging engine. Juvenile predation ratios in that window are dominated by near-zero absolute
+values (0.002 vs 0.0000035) and converge to ~0.85–1.13 by steps 13–15 — i.e. the predation difference
+*ramps*, exactly as an emergent consequence would.
+
+**The magnitude differs too, not only the stage.** Java's egg `Madd` measured 49.3/yr against a
+configured larval rate of 147.7/yr — a factor of ~3 that also explains the unexplained /3 noticed when
+trying to identify the boundary arithmetically. So the two engines differ in *both* which stage carries
+the larval rate and its effective size.
+
+**Conclusion.** The Baltic Java/Python divergence originates in the **larval additional-mortality
+application — stage assignment plus a ~3× magnitude difference — not in the predation process.** The
+predation difference reported above is downstream. This is a concrete parity defect in imposed
+mortality, and it is the thing to fix before any further cross-engine comparison of this config.
+
 ### Eggs/Juvenil boundary: RESOLVED — the engines already agree
 
 Read from the Java 4.4.1 bytecode (`javap -c`), not inferred:
