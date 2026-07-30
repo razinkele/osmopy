@@ -216,6 +216,31 @@ rests on the same confounded comparison.
 no longer optional polish — it is the gate on diagnosing the divergence at all. A whole-population
 rate cannot be compared against a per-stage one.
 
+### Eggs/Juvenil boundary: RESOLVED — the engines already agree
+
+Read from the Java 4.4.1 bytecode (`javap -c`), not inferred:
+
+```
+MortalityOutput.getStage(School):  isEgg() ? Eggs : (isMature() ? Adult : Juvenil)
+School.isEgg():                    getAgeDt() < Species.getFirstFeedingAgeDt()
+```
+
+Python's is identical — `simulate.py:692`: `new_is_egg = new_age < state.first_feeding_age_dt`. So
+"Eggs" means pre-first-feeding on both engines and the three-way split has the same shape.
+**Cross-engine stage comparison is valid**, and the caveat recorded earlier in this note (and in the
+`_collect_by_life_stage` docstring) was wrong — retracted.
+
+**That converts an assumed artifact into a real finding.** The Baltic `Additional` mortality lands at
+≈0 on Eggs / ≈7 on Juvenil in Python against Java's ≈2 on Eggs. I had attributed that to differing
+stage bins. The bins are identical, so it is a genuine difference in **where each engine applies the
+larval additional-mortality rate** — Python is charging it to post-first-feeding juveniles, Java to
+pre-first-feeding eggs. `mortality.additional.larva.rate.sp2` is 147.7/yr for sprat, so this is a
+large term being applied to a different stage on each engine, and it is a strong candidate for the
+emergent-predation divergence: shifting a mortality of that size between stages changes how many
+recruits survive to be eaten.
+
+This also unblocks the juvenile-stage causation test that the section below could not run.
+
 ### Direction of causation: ATTEMPTED, design does not work — recorded so it is not repeated
 
 The plan was to compare the earliest steps, where both engines still hold near-identical seeded

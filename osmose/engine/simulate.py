@@ -857,13 +857,19 @@ def _collect_by_life_stage(
     (``length >= maturity_size AND age_dt >= maturity_age_dt``), the same one ``_collect_ssb`` and
     ``reproduction.py`` apply, so "adult" means the same thing across outputs.
 
-    CAVEAT — the Eggs/Juvenil boundary is NOT verified against Java. Here "Eggs" is exactly
-    ``state.is_egg``, so larvae past the egg stage fall in Juvenil, and the larval additional
-    mortality lands there too. On a Baltic run that shows up as ``Additional`` ≈ 0 for Eggs and
-    ≈ 7 for Juvenil, where Java reports ``Madd`` ≈ 2 for Eggs — consistent with Java binning
-    larvae (or all pre-recruits) as Eggs. Treat cross-engine STAGE assignments as unconfirmed
-    until Java's own boundary is established; the per-cause totals are comparable, the split
-    between Eggs and Juvenil may not be.
+    Boundary VERIFIED against Java 4.4.1 bytecode (2026-07-30) — the two engines agree:
+
+        MortalityOutput.getStage(School):  isEgg() ? Eggs : (isMature() ? Adult : Juvenil)
+        School.isEgg():                    getAgeDt() < Species.getFirstFeedingAgeDt()
+        this engine (simulate.py:692):     new_is_egg = new_age < state.first_feeding_age_dt
+
+    So "Eggs" means pre-first-feeding on both sides, and the three-way split is the same shape.
+    Cross-engine stage comparison is therefore valid.
+
+    Consequence worth knowing: the Baltic ``Additional`` mortality still lands differently — ≈0 on
+    Eggs / ≈7 on Juvenil here against Java's ≈2 on Eggs. Since the binning is identical, that is a
+    real difference in WHERE each engine applies the larval additional-mortality rate, not an
+    artifact of stage assignment.
     """
     n_causes = len(MortalityCause)
     abundance = np.zeros((config.n_species, 3), dtype=np.float64)
