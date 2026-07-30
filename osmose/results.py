@@ -33,6 +33,9 @@ _ENGINE_SUBDIRS = ("Mortality", "Bioen", "Trophic", "Indicators", "SizeIndicator
 # Regex to strip _SimuN suffix from filenames
 _SIMU_SUFFIX_RE = re.compile(r"_Simu\d+$")
 
+#: Placeholder cause for Java data columns the cause row does not name (see #141).
+_UNNAMED_CAUSE = "unnamed"
+
 
 def total_cod(df: pd.DataFrame) -> np.ndarray:
     """Total cod as a float64 array from a per-species frame (biomass, SSB, ...).
@@ -158,12 +161,36 @@ def _is_two_row_header_mortality(path: Path) -> bool:
 def _read_mortality_rate_csv(path: Path) -> pd.DataFrame:
     """Read a real ``mortalityRate-{sp}`` CSV with a (cause, stage) MultiIndex header.
 
-    Skips the 1-line description preamble, reads the two header rows as a
-    MultiIndex, and drops the all-NaN trailing column produced by the data rows'
-    trailing comma. Mirrors ``osmose.validation.fisheries.read_mortality``.
+    Java 4.4.1's header is internally inconsistent, so ``header=[0, 1]`` cannot read it: measured on
+    a real file the description row has 6 fields, the cause row 25 (``Time`` + 8 causes x 3 stages),
+    the stage row 28 (blank + NINE stage-triples) and the data rows 29 (time + 27 values + a trailing
+    comma). Java emits 27 data columns but names only 24 — one stage-triple is unnamed — and pandas
+    requires equal-width header rows, so it raised ``ParserError`` on every genuine Java file
+    (GitHub #141).
+
+    Reads the two header rows as raw text instead and assigns them positionally, so a mismatch
+    between named and emitted columns is tolerated. Columns past the named causes are surfaced under
+    ``_UNNAMED_CAUSE`` rather than dropped: they carry data whose meaning is simply unidentified, and
+    silently discarding it would be the same class of error as the fabricated zeros in #142.
+
+    The engine's own layout has equal-width header rows and parses through the same path.
     """
-    df = pd.read_csv(path, skiprows=1, header=[0, 1])
-    return df.dropna(axis=1, how="all")
+    with open(path, "r", newline="") as fh:
+        head = [fh.readline() for _ in range(3)]
+    cause_row = next(csv.reader(io.StringIO(head[1])), [])
+    stage_row = next(csv.reader(io.StringIO(head[2])), [])
+
+    df = pd.read_csv(path, skiprows=3, header=None)
+    df = df.dropna(axis=1, how="all")  # trailing-comma column on the data rows
+
+    causes, stages = cause_row[1:], stage_row[1:]  # column 0 is Time / blank
+    columns: list[tuple[str, str]] = [("Time", "")]
+    for i in range(df.shape[1] - 1):
+        cause = causes[i].strip() if i < len(causes) else _UNNAMED_CAUSE
+        stage = stages[i].strip() if i < len(stages) else ""
+        columns.append((cause, stage))
+    df.columns = pd.MultiIndex.from_tuples(columns)
+    return df
 
 
 def _matches_output_type(stem: str, output_type: str, prefix: str) -> bool:

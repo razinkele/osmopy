@@ -63,10 +63,14 @@ def read_mortality(path: Path) -> pd.DataFrame:
     header row, and data rows with a trailing comma (one extra field). Skip the
     preamble, read the two header rows as a MultiIndex, drop the all-NaN trailing
     column the trailing comma produces.
+
+    Delegates to ``osmose.results._read_mortality_rate_csv``, which tolerates Java 4.4.1's ragged
+    header (it names 24 data columns while emitting 27). The previous ``header=[0, 1]`` call raised
+    ParserError on every genuine Java file — GitHub #141.
     """
-    df = pd.read_csv(path, skiprows=1, header=[0, 1])
-    df = df.dropna(axis=1, how="all")
-    return df
+    from osmose.results import _read_mortality_rate_csv
+
+    return _read_mortality_rate_csv(path)
 
 
 @dataclass(frozen=True)
