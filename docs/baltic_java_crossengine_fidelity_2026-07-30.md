@@ -710,3 +710,26 @@ seeding target into schools, and how fast. Total seeded biomass is the same targ
 step and their initial size distribution — rather than inferring from standing stock. That is a
 different subsystem from anything examined so far in this note, and none of the predation-side
 conclusions carry over to it.
+
+## Seeding path — first look (2026-07-30, partial)
+
+Established, not yet conclusive:
+
+* **`population.seeding.year.max` is ABSENT from the Baltic config.** Python therefore falls back to
+  `seeding_max_step = lifespan_years × n_dt` (`config.py:544`) — seeding continues for each species'
+  full lifespan, a long window. Java's default for the same missing key is unverified, and if the two
+  differ the seeding schedules diverge for the whole early period.
+* **Python seeds through the stock-recruitment relationship**, not as pre-built age structure:
+  `simulate.py:548-556` calls `apply_stock_recruitment` whenever `gonad_ssb == 0` and
+  `step < seeding_max_step`, modulated by the spawning season. That produces EGGS — consistent with
+  the observed ~0.001 g mean weight and the trillions of individuals.
+* Java's early mean weight is also ~0.001 g, so **both engines seed as eggs**; the difference is
+  purely how many (Python ~90× more early).
+* `simulation.nschool.spN` (50/60/60/40/30/30/30/40/50) caps schools per species, so the two engines
+  may be packing very different numbers of individuals per school.
+
+**The specific next check:** Java's default when `population.seeding.year.max` is absent, and whether
+Java seeds via stock-recruitment or by constructing an initial age structure. Both are answerable from
+the jar bytecode, the method that settled the stage-boundary question. Until then the mechanism behind
+the ~90× early abundance difference is not established — only that it is an abundance difference, that
+both engines seed as eggs, and that Python's seeding window is lifespan-length by fallback.
