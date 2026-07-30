@@ -673,3 +673,40 @@ species). The clupeid-collapse / everything-else-booms pattern is the lead.
 **Sprat is the one candidate genuine contradiction**: Python ~1.06 Mt, Java 0. `sprat` has no
 underscore so it was always read correctly, and it is ungated, so neither finding 1 nor 5 explains
 it. Its collapse is plausibly Java's inflated cod field (sprat is cod prey) — untested.
+
+## Upstream signal: early clupeid ABUNDANCE, not growth (2026-07-30)
+
+Decomposing `biomass = abundance × mean weight` over year 1 (`recordfrequency=1`, Python cutoff
+stripped):
+
+**sprat**
+
+| step | Java abundance | Python abundance | abd J/P | Java wt (g) | Python wt (g) | wt J/P |
+|---|---|---|---|---|---|---|
+| 7 | 2.49e10 | 4.49e12 | 0.006 | 0.001 | 0.001 | 1.00 |
+| 8 | 9.12e10 | 8.43e12 | 0.011 | 0.001 | 0.001 | 0.96 |
+| 10 | 3.79e11 | 1.13e13 | 0.034 | 0.008 | 0.001 | 7.32 |
+| 12 | 6.57e11 | 4.58e12 | 0.143 | 0.052 | 0.004 | 14.78 |
+| 14 | 7.27e11 | 1.02e11 | **7.14** | 0.237 | 0.450 | 0.53 |
+
+**herring** follows the same shape: abundance J/P 0.013 → 0.588 → 2.15, weight J/P 0.98 → 6.30 → 0.62.
+
+**It is an abundance deficit, not a growth deficit.** In the early steps both engines carry animals of
+essentially identical mean weight (~0.001 g — eggs/larvae), so they are counting the same kind of
+individual; Java simply has **1–7% as many**. Growth is not the discriminator: mean weights match at
+step 7–8 (J/P 0.96–1.00) and only diverge later as the cohorts age differently.
+
+**The crossover is the striking part.** Java's abundance goes from 0.006× Python's at step 7 to
+**7.1×** by step 14, while its mean weight falls from 14.8× to 0.53×. The two engines populate the
+seeded stock on very different schedules — Python front-loads enormous numbers of near-weightless
+individuals that then thin out; Java starts sparse and accumulates.
+
+**So "Java's recruitment is lower" is the wrong framing.** Over year 1 Java ends with *more* clupeid
+individuals, not fewer. What differs is the early-window composition — how each engine converts the
+seeding target into schools, and how fast. Total seeded biomass is the same target
+(`population.seeding.biomass.sp2 = 600000` t); neither engine is near it during this window.
+
+**Next:** compare the seeding/initialisation path directly — number of schools created per species per
+step and their initial size distribution — rather than inferring from standing stock. That is a
+different subsystem from anything examined so far in this note, and none of the predation-side
+conclusions carry over to it.
