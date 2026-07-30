@@ -273,6 +273,7 @@ _CROSS_SPECIES_OUTPUT_TYPES = {
     "abundance",
     "yield",
     "dietMatrix",
+    "predatorPressure",
     "biomassDistribBySize",
     "abundanceDistribBySize",
     "meanTL",
@@ -306,6 +307,7 @@ def _build_dataframes_from_outputs(
     from osmose.engine.output import (
         _build_bioen_dataframes,
         _build_diet_dataframe,
+        _build_predator_pressure_dataframe,
         _build_distrib_bysize_community_dataframes,
         _build_distribution_dataframes,
         _build_meansize_dataframe,
@@ -331,6 +333,9 @@ def _build_dataframes_from_outputs(
         disk_shape.update(_build_bioen_dataframes(outputs, config))
     if config.diet_output_enabled:
         disk_shape.update(_build_diet_dataframe(outputs, config))
+        # Same source array as dietMatrix, long-form and per-step-mean — mirrors the disk writer
+        # so the in-memory and disk paths agree on output types.
+        disk_shape.update(_build_predator_pressure_dataframe(outputs, config))
     _ = grid  # reserved for future NetCDF-in-memory work
 
     cache_shape: dict[str, list[pd.DataFrame]] = {}

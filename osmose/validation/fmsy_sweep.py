@@ -203,6 +203,26 @@ def equilibrium_mean(df: pd.DataFrame, sp: str, window_years: int) -> tuple[floa
     return last, bool(not_conv)
 
 
+def _flat_cause(df, name: str):
+    """Column ``name`` as a 1-D array, tolerating the (cause, stage) MultiIndex.
+
+    Mortality output gained an Eggs/Juvenil/Adult split, so ``df["Fishing"]`` is now a sub-frame
+    rather than a Series. Fishing is an adult-directed quantity, so the Adult stage is used when the
+    split is present; that reproduces the pre-split whole-population figure far better than summing
+    instantaneous rates across stages, which applies to different populations and is not additive.
+    """
+    import numpy as _np
+
+    if name not in df.columns:
+        return None
+    col = df[name]
+    if getattr(col, "ndim", 1) == 1:
+        return col.to_numpy()
+    if "Adult" in col.columns:
+        return col["Adult"].to_numpy()
+    return _np.asarray(col.iloc[:, 0])
+
+
 def realized_exploited_f(results, sp: str, window_years: int) -> float:
     """Realized annual fishing mortality F, mean over the trailing window.
 
@@ -226,9 +246,10 @@ def realized_exploited_f(results, sp: str, window_years: int) -> float:
         df = results.mortality(sp)
     except (FileNotFoundError, KeyError, ValueError, TypeError):
         return 0.0
-    if "Fishing" not in df.columns or "Time" not in df.columns:
+    fishing, time = _flat_cause(df, "Fishing"), _flat_cause(df, "Time")
+    if fishing is None or time is None:
         return 0.0
-    by_year = fis.annual_by_year(df["Fishing"].to_numpy(), df["Time"].to_numpy(), how="sum")
+    by_year = fis.annual_by_year(fishing, time, how="sum")
     years = sorted(by_year)[-window_years:]
     return float(np.mean([by_year[y] for y in years])) if years else 0.0
 

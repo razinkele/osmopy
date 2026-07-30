@@ -650,6 +650,27 @@ def write_predator_pressure_csv(
     df.to_csv(path, index=False)
 
 
+def _build_predator_pressure_dataframe(
+    outputs: list[StepOutput],
+    config: EngineConfig,
+) -> dict[str, pd.DataFrame]:
+    """In-memory twin of ``write_predator_pressure_csv`` — same long layout and per-step mean."""
+    mats = [o.diet_by_species for o in outputs if o.diet_by_species is not None]
+    times = [o.step / config.n_dt_per_year for o in outputs if o.diet_by_species is not None]
+    if not mats:
+        return {}
+    per_step = max(1, int(config.output_record_frequency))
+    preds, preys = list(config.species_names), list(config.all_species_names)
+    rows: list[list[object]] = []
+    for mat, t in zip(mats, times, strict=True):
+        scaled = mat / float(per_step)
+        for j, prey in enumerate(preys):
+            rows.append([t, prey, *scaled[:, j].tolist()])
+    return {
+        "predatorPressure": pd.DataFrame(rows, columns=["Time", "Prey", *preds])  # type: ignore[arg-type]
+    }
+
+
 def _normalize_diet_matrix_to_percent(
     diet_by_species: NDArray[np.float64],
 ) -> NDArray[np.float64]:
