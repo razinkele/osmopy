@@ -155,7 +155,9 @@ class TestMortalityOutput:
         df = pd.read_csv(tmp_path / "Mortality" / "osm_mortalityRate-Anchovy_Simu0.csv", skiprows=1)
         assert "Fishing" in df.columns
         assert "Predation" in df.columns
-        assert df["Fishing"].iloc[0] == 10.0
+        # The file holds instantaneous RATES, not the 10.0 death count (GitHub #140): fishing is
+        # the only cause, so its rate is the whole step total Z = -ln(N_end / (N_end + deaths)).
+        assert df["Fishing"].iloc[0] == pytest.approx(-np.log(1000.0 / 1010.0))
 
 
 class TestPythonEngineWritesOutput:

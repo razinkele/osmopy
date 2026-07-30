@@ -363,10 +363,25 @@ def _build_mortality_dataframes(
     outputs: list[StepOutput],
     config: EngineConfig,
 ) -> dict[str, pd.DataFrame]:
-    """Build wide-form DataFrames for per-species mortality-rate outputs.
+    """Build wide-form DataFrames for per-species mortality-RATE outputs.
 
-    Ported verbatim from _write_mortality_csvs; only change is returning
-    DataFrames instead of writing them.
+    ``StepOutput.mortality_by_cause`` holds COUNTS of dead individuals
+    (``_collect_mortality_by_cause`` sums ``state.n_dead``). This converts them to instantaneous
+    rates, matching Java's convention — its own header says "To get annual mortality rates, sum
+    the mortality rates within one year", i.e. the per-cause rates are additive:
+
+        N_start = N_end + D_total
+        Z       = -ln(N_end / N_start)              total instantaneous mortality for the step
+        m_cause = (D_cause / D_total) * Z           apportioned by share of deaths
+
+    so ``sum(m_cause) == Z`` exactly. Writing the raw counts here put ~1e13 in a file whose Java
+    counterpart holds ~1e-4..1e0 and made cross-engine mortality comparison impossible (GitHub
+    #140).
+
+    Degenerate cases: nothing at risk (``N_start == 0``) yields all-zero rates. Complete removal
+    within one step (``N_end == 0`` with deaths) is a genuinely infinite instantaneous rate and is
+    reported as ``inf`` rather than silently clamped — a species wiped out in a single step should
+    not read as a finite rate.
 
     Returns {f"mortalityRate_{species_name}": df} with columns
     ["Time"] + [cause.name.capitalize() for cause in MortalityCause].
@@ -378,8 +393,27 @@ def _build_mortality_dataframes(
 
     result: dict[str, pd.DataFrame] = {}
     for sp_idx, sp_name in enumerate(config.species_names):
-        data = np.array([o.mortality_by_cause[sp_idx] for o in outputs])
-        df = pd.DataFrame(data, columns=cause_names)  # type: ignore[arg-type]
+        deaths = np.array([o.mortality_by_cause[sp_idx] for o in outputs], dtype=np.float64)
+        n_end = np.array([o.abundance[sp_idx] for o in outputs], dtype=np.float64)
+        d_total = deaths.sum(axis=1)
+        n_start = n_end + d_total
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            survival = np.divide(
+                n_end, n_start, out=np.ones_like(n_end), where=n_start > 0
+            )
+            z_total = -np.log(survival)  # inf where survival == 0 (complete removal)
+            share = np.divide(
+                deaths,
+                d_total[:, None],
+                out=np.zeros_like(deaths),
+                where=d_total[:, None] > 0,
+            )
+            # 0 * inf -> nan for causes with no deaths when the stock is wiped out; those
+            # columns must stay exactly 0, so compute under errstate and mask afterwards.
+            rates = np.where(share > 0, share * z_total[:, None], 0.0)
+
+        df = pd.DataFrame(rates, columns=cause_names)  # type: ignore[arg-type]
         df.insert(0, "Time", times)
         result[f"mortalityRate_{sp_name}"] = df
     return result
@@ -391,7 +425,14 @@ def _write_mortality_csvs(
     outputs: list[StepOutput],
     config: EngineConfig,
 ) -> None:
-    """Write per-species mortality rate CSVs matching Java format."""
+    """Write per-species mortality-rate CSVs.
+
+    The VALUES are instantaneous rates on Java's convention (see _build_mortality_dataframes), so
+    the two engines are numerically comparable per cause. The LAYOUT still differs: Java writes a
+    3-line header with a (cause, stage) MultiIndex — Mpred/Mstarv/Madd/F/Zout/Mfor/Mdis/Mage ×
+    Eggs/Juvenil/Adult — while this writes a 1-line header with flat per-cause totals and no
+    life-stage split. Adding the stage split is the remaining half of GitHub #140.
+    """
     mort_dir = output_dir / "Mortality"
     mort_dir.mkdir(exist_ok=True)
 
