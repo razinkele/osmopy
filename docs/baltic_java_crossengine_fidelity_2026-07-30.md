@@ -835,6 +835,11 @@ diverge by orders of magnitude when the recruitment parameters are far from the 
 a division by egg weight downstream of the interface. That affects the exact factor, not the structural
 finding.
 
+**Filed as [#143](https://github.com/razinkele/osmopy/issues/143)**, framed as a decision rather than a
+fix: seeding through the recruitment curve is arguably more dynamically consistent, matching Java's linear
+conversion is arguably more faithful to the reference. Both defensible, not equivalent, and the choice
+silently determines whether the engines are meant to agree at all during initialisation.
+
 **Status: mechanism identified.** This is a reading of both code paths, not an inference from magnitudes —
 the distinction that mattered repeatedly in this investigation. Whether Python's use of a
 stock-recruitment relationship for *seeding* is intended, or should be a linear conversion matching Java,
