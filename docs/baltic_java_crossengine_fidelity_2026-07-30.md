@@ -236,11 +236,28 @@ The defect is in the stage collector added in `22cdf22`. Per-step ordering:
 So egg deaths are binned by the stage the school occupies at *collection* time, not at time of death —
 producing Eggs ≈ 0 / Juvenil ≈ 6.15 (the larval rate) in this engine. The 690× was my instrument.
 
-**What survives.** Summing stages to cancel the attribution error still leaves Java `Madd`
-Eggs+Juvenil ≈ 2.06/step against this engine's ≈ 6.15/step — the unexplained ~3×, consistent with a
-configured larval rate of 147.7/yr against Java's realised egg rate of 49.3/yr. That is a genuine
-parity question (Java's `AnnualLarvaMortality` conversion) and is now the only live part of
-[#142](https://github.com/razinkele/osmopy/issues/142).
+**The residual ~3× is also gone — re-measured after `e7db9f6`, the engines agree to within 1%:**
+
+| species | Eggs (J/P) | Juvenil | Adult | stage-summed |
+|---|---|---|---|---|
+| sprat | 6.1740 / 6.1696 = **1.001** | 1.000 | 1.000 | 1.001 |
+| herring | 4.1937 / 4.1566 = **1.009** | 1.000 | 1.000 | 1.009 |
+
+Both engines apply the **full** configured larval rate per step to eggs
+(`147.71283750854758 / 24 = 6.1547`, measured ~6.17 on both). `natural.py`'s docstring claim that Java
+applies the full rate in one step rather than dividing by `n_dt_per_year` is correct and now confirmed.
+
+The ~3× was my analysis error: Java's "49.3/yr" egg rate was the **mean over all steps**, while the
+configured 147.7/yr is per-step-when-present. Eggs carry the mortality only in the steps they exist
+(~1/3 of them), so the all-step mean is ~1/3 of the per-step value — and both engines' means agree at
+2.0524 vs 2.0523. The `147.71 / 72 = 2.0516` "lead" was a coincidence between a time-average and an
+invented divisor; there is no egg-stage-duration division in either engine.
+
+[#142](https://github.com/razinkele/osmopy/issues/142) closed as not-a-bug. **Larval additional
+mortality is eliminated as a cause of the divergence.** The imposed mortality terms demonstrably agree
+at every life stage, which strengthens the conclusion that the divergence lives in emergent predation.
+The adult-stage predation asymmetry is unaffected by the collector bug, since mature schools do not
+change stage within a step.
 
 **Direction of causation is reopened.** It cannot be re-tested until the collector attributes deaths to
 the stage held at time of death.
