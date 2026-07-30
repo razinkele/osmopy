@@ -278,7 +278,40 @@ same different-quantities error that produced three false conclusions earlier in
 
 **To unblock:** add `predatorPressure` to the Python engine's trophic outputs (absolute biomass eaten per
 predator-prey pair, matching Java's semantics), and optionally the predator size-stage dimension to
-`dietMatrix` for full parity.
+`dietMatrix` for full parity. — **Done in `88f038d`.** No new computation was needed: `write_diet_csv`
+already emitted absolute biomass, so this engine's `dietMatrix` held Java's *predatorPressure* quantity
+while Java's `dietMatrix` holds percentages. Same filename, different quantity per engine.
+
+### Kernel comparison run — result REJECTED, contradicts an independent measurement
+
+Per-pair predation per unit predator biomass (12 yr, Java size stages summed):
+
+| prey | predator | Java | Python | J/P |
+|---|---|---|---|---|
+| sprat | cod_west | 0.16103 | 3.57447 | 0.05 |
+| sprat | cod_east | 0.32182 | 10.60964 | 0.03 |
+| sprat | pikeperch | 0.04298 | 1.71115 | 0.03 |
+| herring | cod_west | 0.21843 | 8.26356 | 0.03 |
+| herring | perch | 0.06578 | 9.11193 | 0.01 |
+| herring | pikeperch | 0.04990 | 8.63939 | 0.01 |
+
+**This says Python predates 17–100× harder than Java — the direct opposite of the mortality-based
+measurement**, which had Java's adult predation on clupeids at 1.8–3.0× Python's with the same config.
+Two measurements of the same quantity cannot disagree by two orders of magnitude *and in sign*; at least
+one is wrong, so neither is reportable until the discrepancy is resolved.
+
+**Most likely cause — time normalisation, the same class of error already found and fixed for
+mortality.** The ratios cluster around 0.01–0.06, and 1/24 = 0.042 sits inside that band with
+`ndtperyear = 24`. This engine's `diet_by_species` is accumulated over the 24-step recording window,
+whereas Java's `predatorPressure` is plausibly per saving interval or otherwise normalised — exactly the
+mismatch that made the mortality rates non-comparable until `0de82b9`. The spread (0.01–0.06, a factor
+of 6) argues it is not a single clean constant, so there may be a second effect.
+
+**Not concluded:** that Java predates less. The `predatorPressure` time convention must be established
+on both sides first — by the same method that settled the mortality case, i.e. running at
+`recordfrequency=1` versus `24` and checking whether an interval row equals the sum of its per-step rows.
+Until then the mortality-based adult comparison remains the better-supported measurement, because its
+convention *was* verified that way and its imposed-cause control reads 1.00.
 
 ### ⚠ RETRACTED (2026-07-30, later): the causation finding below is an instrumentation artifact
 
