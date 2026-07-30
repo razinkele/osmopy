@@ -802,3 +802,40 @@ eggs than a direct biomass/egg-weight division — but that is a hypothesis, not
 investigation has produced four wrong answers from exactly that kind of plausible inference. The next
 step is `javap -p -c` filtered to the `lambda$` synthetic methods, comparing whichever one implements
 `SeedingInterface` against `apply_stock_recruitment`.
+
+### FOUND: Java's seeding conversion is a LINEAR unit conversion; Python's is a stock-recruitment call
+
+The two `SeedingInterface` lambdas in `ReproductionProcess`:
+
+```
+private double lambda$init$5(int):          // when population.seeding.abundance.spN is present
+    2: invokevirtual getSeedingAbundance:(I)D
+    5: dreturn
+
+private double lambda$init$3(int):          // biomass path — the one the Baltic config takes
+    0: ldc2_w  double 1000000.0d
+    5: invokevirtual getSeedingBiomass:(I)D
+    8: dmul
+    9: dreturn                              // => 1e6 * seedingBiomass   (tonnes -> grams)
+```
+
+**Java: `seeded = 1e6 × seedingBiomass`** — a plain unit conversion, no recruitment function anywhere in
+the path.
+
+**Python: `apply_stock_recruitment(...)`** (`simulate.py:548-556`) — the stock-recruitment relationship
+(Shepherd/Beverton-Holt as configured), nonlinear and parameterised by the fitted recruitment params,
+modulated by the spawning season.
+
+**These are structurally different conversions of the same seeded biomass**, which is the mechanism the
+~90× early-abundance difference had been narrowed to. Java scales linearly; Python passes the biomass
+through a fitted recruitment curve. There is no reason for those to agree, and every reason for them to
+diverge by orders of magnitude when the recruitment parameters are far from the linear case.
+
+**One step still unread:** how Java's returned value (biomass in grams) becomes egg *numbers* — presumably
+a division by egg weight downstream of the interface. That affects the exact factor, not the structural
+finding.
+
+**Status: mechanism identified.** This is a reading of both code paths, not an inference from magnitudes —
+the distinction that mattered repeatedly in this investigation. Whether Python's use of a
+stock-recruitment relationship for *seeding* is intended, or should be a linear conversion matching Java,
+is a modelling question for the maintainer rather than something to settle from the bytecode.
