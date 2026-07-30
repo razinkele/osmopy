@@ -94,6 +94,7 @@ def write_outputs(
             step_times=step_times,
             predator_names=config.species_names,
             prey_names=config.all_species_names,
+            steps_per_record=max(1, int(config.output_record_frequency)),
         )
 
     # Write spatial NetCDF outputs when enabled
@@ -604,8 +605,17 @@ def write_predator_pressure_csv(
     step_times: list[float],
     predator_names: list[str],
     prey_names: list[str],
+    steps_per_record: int = 1,
 ) -> None:
-    """Write predation pressure — ABSOLUTE prey biomass eaten per predator-prey pair, in tonnes.
+    """Write predation pressure — prey biomass eaten per predator-prey pair, in tonnes.
+
+    ``steps_per_record`` is the recording-window length; values are DIVIDED by it so a row is the
+    per-step MEAN over the window, matching Java. Verified empirically 2026-07-30: a Java interval
+    row equals ~1/24 of the sum of its 24 per-step rows (0.025-0.054 across pairs, straddling
+    1/24 = 0.042 — Java has no numeric seed, so the two runs are different draws), whereas
+    ``diet_by_species`` arrives here already summed over the window. Without the division the two
+    engines differ by the window length, which is what made the first kernel comparison read
+    17-100x backwards.
 
     Java's ``predatorPressure`` counterpart. Long layout matching Java's orientation: ``Time``,
     ``Prey``, then one column per predator.
@@ -633,8 +643,9 @@ def write_predator_pressure_csv(
     for mat, t in zip(step_diet_matrices, step_times, strict=True):
         if mat.shape != (n_pred, n_prey):
             raise ValueError(f"diet matrix shape {mat.shape} != ({n_pred}, {n_prey}) at time {t}")
+        scaled = mat / float(steps_per_record) if steps_per_record else mat
         for j, prey in enumerate(prey_names):
-            rows.append([t, prey, *mat[:, j].tolist()])
+            rows.append([t, prey, *scaled[:, j].tolist()])
     df = pd.DataFrame(rows, columns=["Time", "Prey", *predator_names])  # type: ignore[arg-type]
     df.to_csv(path, index=False)
 

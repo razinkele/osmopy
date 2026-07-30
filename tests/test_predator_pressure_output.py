@@ -68,3 +68,21 @@ def test_engine_run_emits_the_file(tmp_path):
     df = pd.read_csv(hits[0])
     assert df.columns[0] == "Time" and df.columns[1] == "Prey"
     assert df.iloc[:, 2:].to_numpy(dtype=float).sum() > 0.0, "all-zero predation pressure"
+
+
+def test_values_are_per_step_means_over_the_recording_window(tmp_path):
+    """Java's interval row is the per-step MEAN over the window; this engine must match.
+
+    Verified empirically: a Java interval row is ~1/24 of the sum of its 24 per-step rows, while
+    `diet_by_species` arrives already summed. Without dividing by the window length the two engines
+    differ by exactly that factor — which made the first kernel comparison read 17-100x backwards.
+    """
+    mat = np.array([[24.0, 48.0]])  # biomass summed over a 24-step window
+    path = tmp_path / "p.csv"
+    write_predator_pressure_csv(
+        path=path, step_diet_matrices=[mat], step_times=[1.0],
+        predator_names=["cod"], prey_names=["sprat", "smelt"], steps_per_record=24,
+    )
+    df = pd.read_csv(path)
+    assert df[df["Prey"] == "sprat"].iloc[0]["cod"] == 1.0
+    assert df[df["Prey"] == "smelt"].iloc[0]["cod"] == 2.0
