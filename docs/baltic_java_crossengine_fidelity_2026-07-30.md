@@ -282,7 +282,48 @@ predator-prey pair, matching Java's semantics), and optionally the predator size
 already emitted absolute biomass, so this engine's `dietMatrix` held Java's *predatorPressure* quantity
 while Java's `dietMatrix` holds percentages. Same filename, different quantity per engine.
 
-### Kernel comparison run — result REJECTED, contradicts an independent measurement
+### Kernel comparison, CORRECTED (`1bc7888`) — and it undercuts the predation-process conclusion
+
+Per-pair predation per unit predator biomass, after fixing the `predatorPressure` convention:
+
+| prey | predator | Java | Python | J/P |
+|---|---|---|---|---|
+| sprat | cod_west | 0.14055 | 0.14894 | 0.94 |
+| sprat | cod_east | 0.31449 | 0.44207 | 0.71 |
+| sprat | perch | 0.06028 | 0.04675 | 1.29 |
+| sprat | pikeperch | 0.03819 | 0.07130 | 0.54 |
+| herring | cod_west | 0.21269 | 0.34431 | 0.62 |
+| herring | cod_east | 0.07357 | 0.15811 | 0.47 |
+| herring | perch | 0.06448 | 0.37966 | 0.17 |
+| herring | pikeperch | 0.05257 | 0.35997 | 0.15 |
+
+The 17–100× artefact is gone. **But Java now predates clupeids at or BELOW Python per unit predator
+biomass (0.15–1.29, mostly < 1)** — the opposite direction from the mortality-based measurement, which
+had Java's adult clupeid predation at 1.8–3.0× Python's.
+
+**The two reconcile, and the reconciliation is the important part.** They are different quantities:
+
+* mortality rate on prey = biomass eaten **/ prey biomass**
+* this kernel = biomass eaten **/ predator biomass**
+
+Java's clupeid stocks are far smaller (sprat → 0, herring 0.52×). So the *same or less* absolute
+predation, divided by a much smaller prey stock, yields a much higher per-prey mortality **rate**. Both
+measurements can hold simultaneously with no contradiction.
+
+**Consequence: the "Java's predation process is more aggressive" reading is not supported.** The
+elevated mortality rate is consistent with a **denominator effect — depleted prey — rather than a more
+intense kernel.** Per unit predator biomass Java's predators actually take *less* clupeid biomass.
+
+**This reopens the direction of causation.** The earlier early-window test rested on Java's predation
+*rate* being ~6× higher while predator biomass was lower; but prey biomass was never measured in that
+test, and if Java's clupeid prey were already depleted at those steps the rate difference is again a
+denominator artefact. The test needs redoing with prey biomass tracked alongside.
+
+**Standing conclusion, downgraded:** the divergence is in emergent predation *outcomes*, but the
+evidence no longer supports the predation kernel itself being more intense on Java. Both remaining
+candidates — kernel intensity vs. prey-depletion feedback — are live.
+
+### Superseded: kernel comparison run — result REJECTED (wrong `predatorPressure` convention)
 
 Per-pair predation per unit predator biomass (12 yr, Java size stages summed):
 
