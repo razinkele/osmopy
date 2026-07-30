@@ -216,6 +216,45 @@ rests on the same confounded comparison.
 no longer optional polish — it is the gate on diagnosing the divergence at all. A whole-population
 rate cannot be compared against a per-stage one.
 
+### Adult-stage comparison (after `22cdf22`) — a real signal
+
+With the life-stage split in place, adults are comparable: identically defined on both engines
+(mature fish, same maturity conjunction), each using its own stage's survivors as denominator. Mean
+rate over 12 yr:
+
+| species | cause | Java | Python | J/P |
+|---|---|---|---|---|
+| sprat | **Predation** | 1.4627 | 0.3074 | **4.76×** |
+| sprat | Starvation | 0.0830 | 0.0462 | 1.80× |
+| sprat | Additional | 0.2014 | 0.1610 | 1.25× |
+| sprat | Fishing | 0.1042 | 0.0661 | 1.58× |
+| cod_east | Predation | 0.1791 | 0.2154 | **0.83×** |
+| cod_east | Starvation | 0.0074 | 0.0024 | 3.12× |
+| cod_east | Additional | 0.8319 | 0.6013 | 1.38× |
+| cod_east | Fishing | 0.0024 | 0.0012 | 2.05× |
+| herring | **Predation** | 0.6876 | 0.1694 | **4.06×** |
+| herring | Starvation | 0.0605 | 0.0328 | 1.84× |
+| herring | Additional | 2.0809 | 1.0976 | 1.90× |
+| herring | Fishing | 0.1941 | 0.0957 | 2.03× |
+
+**The finding: adult predation on the clupeids is ~4–5× heavier on Java, and cod's is not.** Sprat
+4.76× and herring 4.06× stand against cod_east at 0.83× — Java actually predates adult cod slightly
+*less*. That matches the biomass pattern exactly: clupeids fail on Java while everything else booms.
+The mechanism is elevated predation pressure on clupeids specifically, not a uniform difference.
+
+**Caveat that keeps this from being conclusive.** There is a broad ~1.3–2× offset across *all* causes
+including Fishing, which is an externally imposed rate that should not differ between engines. That
+offset may be an artifact of the rate convention rather than dynamics: over a multi-step recording
+window this code sums deaths and averages abundance, and Java's own convention for its saving
+interval has not been verified against that. So the trustworthy quantity here is the clupeid
+predation signal *relative to that background offset* — roughly 2–3× above it — not the absolute
+ratios. Establishing Java's saving-interval convention would firm this up, and is the obvious next
+step.
+
+**What it does not resolve:** whether elevated clupeid predation is the cause of the divergence or a
+consequence of an already-inflated predator field. Both directions fit these numbers. Distinguishing
+them needs the first few years examined step-by-step, before the feedback establishes itself.
+
 **Second blocker found:** `osmose/results.py::_read_mortality_rate_csv`, whose docstring says it
 reads "a real `mortalityRate-{sp}` CSV", raises
 `ParserError: Header rows must have an equal number of columns` on genuine Java 4.4.1 output.
