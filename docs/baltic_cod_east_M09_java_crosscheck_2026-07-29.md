@@ -1,5 +1,20 @@
 # Baltic stability — SP-A certification
 
+> **⚠ SUPERSEDED IN PART (corrected 2026-07-30).** The **Java** `cod_west` and `cod_east` rows in
+> this note are invalid, and every conclusion drawn from them — the "cod goes extinct on Java",
+> the prey-release causal story, and the "seed-sensitive knife-edge" reading — does not hold.
+>
+> `certify_java` read Java's biomass CSV by the raw config species name, but Java writes the
+> stripped form (`codwest`/`codeast`); the missed lookup fell back to `[0.0]`, manufacturing an
+> extinction. Fixed in `2250824`. The real Java result is `cod_west` ≈ **354 kt (~14× over
+> envelope)** and `cod_east` ≈ **949 kt (~11× over)** — inflated, not extinct. Java's only genuine
+> collapse is **sprat**. The "single seed 42" attribution is also wrong: Java 4.4.1 has no numeric
+> seed and the harness silently discarded the argument.
+>
+> Full corrected table and diagnosis: `docs/baltic_cod_east_java_crosscheck_2026-07-30.md`.
+> Species without `_`/`-` in their names (herring, sprat, flounder, perch, pikeperch, smelt,
+> stickleback) were read correctly here and those values stand.
+
 **Params:** current  ·  **horizon:** 50 yr  ·  **seeds:** [42, 123, 7, 999, 2024]
 
 | species | persists | in-envelope | min biomass | final-decade mean range |

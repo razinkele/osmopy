@@ -73,3 +73,67 @@ The Python↔Java `cod_east` disagreement is now a clean open question with the 
 eliminated: Python holds it in-envelope at ~83 kt while Java drives it extinct on the same
 config. Candidate causes remain the ones recorded on 2026-07-29 — forcing decay and the
 RV recruitment gate being absent from the Java path — neither of which this fix touches.
+
+---
+
+# CORRECTION 2026-07-30 — the cod rows above are invalid
+
+**Everything below supersedes the cod_west/cod_east rows and the entire "Verdict" section above.**
+
+## What was wrong
+
+`certify_java` read Java's biomass CSV by the RAW config species name. But
+`reconcile_config_for_java` rewrites `species.name.sp*` to Java's stripped internal form, so Java
+writes its columns as `codwest`/`codeast`. The lookup missed and fell through to
+`series.get(sp, [0.0])`, fabricating a zero series that scored as min 0, late-mean 0, "COLLAPSE".
+
+**Java never drove either cod stock extinct.** Fixed in `2250824`, which resolves names through
+`sanitize_java_name` and now RAISES on a missing column instead of substituting zero.
+
+This also voids the reasoning in the superseded Verdict section. The cod zeros were byte-identical
+across the 2026-07-29 and 2026-07-30 runs because a failed dict lookup is deterministic and
+independent of any config change — so the `fsh8` fix could not have moved them, and reading that
+invariance as "the confound points away from the discrepancy" was a false confirmation. Only
+species whose names contain no `_`/`-` (herring, sprat, flounder, perch, pikeperch, smelt,
+stickleback) were ever read correctly; their values above stand.
+
+## The real Java 4.4.1 result (50 yr, Java's own RNG, `--params current`)
+
+| species | min (t) | final-decade mean (t) | envelope (t) | vs envelope |
+|---|---|---|---|---|
+| cod_west | 3,353 | **353,850** | 4,000–25,000 | **~14× OVER** |
+| cod_east | 1,844 | **948,866** | 60,000–85,000 | **~11× OVER** |
+| herring | 1,430,341 | 1,916,430 | 800,000–3,000,000 | in-envelope |
+| sprat | 0 | **0** | 800,000–2,500,000 | extinct (real) |
+| flounder | 49,287 | 3,011,791 | 20,000–100,000 | ~30× over |
+| perch | 22,501 | 2,279,394 | 8,000–50,000 | ~46× over |
+| pikeperch | 660,508 | 8,139,264 | 4,000–25,000 | ~326× over |
+| smelt | 1,654,999 | 4,019,851 | 200,000–1,500,000 | ~2.7× over |
+| stickleback | 392,845 | 5,177,973 | 20,000–200,000 | ~26× over |
+
+`cod_east` still trips the `persists` flag, but for an unrelated reason: its **minimum** (1,844 t)
+falls below `0.1 × envelope-lower` during the early seeding transient. The stock then grows to
+~949 kt. A transient dip is not a collapse, and the flag conflates the two.
+
+## The corrected diagnosis
+
+**The old "cod goes extinct → prey release → mid-trophic explosion" narrative is dead.** Cod is not
+extinct; it is 11–14× ABOVE envelope. Predation release cannot explain prey inflation when the
+predator is itself inflated an order of magnitude.
+
+The true pattern is **system-wide biomass inflation on Java — every focal species except sprat ends
+2.7–326× above envelope, cod included** — against a Python run of the same config that sits near or
+inside envelope for most species. That is a different problem with a different candidate set
+(total-mortality or forcing scaling on the Java path), and it is not addressed by anything in this
+session's commits.
+
+**Sprat is the sole genuine Java collapse** and is now the one real cross-engine contradiction worth
+chasing: Python holds it at ~1.06 Mt, Java drives it to zero. `sprat` contains no underscore, so it
+was always read correctly — this finding predates and survives the harness bug.
+
+## Also corrected
+
+The "single seed 42" attribution in this note and in the 2026-07-29 note was unfounded.
+`certify_java` accepted a `seed` argument and never passed it to Java; Java 4.4.1 exposes only a
+`simulation.fixedseed.enabled` toggle, not a numeric seed. The parameter has been removed rather
+than left as a silent no-op.

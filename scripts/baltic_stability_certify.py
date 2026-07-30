@@ -91,10 +91,16 @@ def certify_python(params: dict[str, str], n_years: int, seeds) -> dict:
     return table
 
 
-def certify_java(params: dict[str, str], n_years: int, seed: int = 42) -> dict | None:
+def certify_java(params: dict[str, str], n_years: int) -> dict | None:
     """Single Java 4.4.1 run (staged via the C2 background recipe) -> per-species table, or None if
     the jar is missing / the run fails. A coarse cross-engine consistency check (Baltic is not
-    bit-equal cross-engine), so a single seed is used."""
+    bit-equal cross-engine).
+
+    Deliberately takes no seed: Java 4.4.1 exposes only a ``simulation.fixedseed.enabled``
+    toggle, not a numeric seed, so there is no way to run it "at seed 42". This function
+    previously accepted a ``seed`` argument and silently ignored it, which is where the
+    "single seed 42" claim in the 2026-07-29/30 cross-check notes came from.
+    """
     if not _JAR.exists():
         print(f"(Java cross-check skipped: jar not found at {_JAR})")
         return None
@@ -241,15 +247,16 @@ def main() -> int:
     lines.append(verdict)
 
     if args.java:
-        print("\n=== Java 4.4.1 cross-check (single seed, staged via C2) ===")
-        j_table = certify_java(params, args.years, seed=args.seeds[0])
+        print("\n=== Java 4.4.1 cross-check (single run, Java's own RNG, staged via C2) ===")
+        j_table = certify_java(params, args.years)
         if j_table:
             j_ok = _print_table("Java 4.4.1", j_table)
             py_surv = {sp for sp in FOCAL if py_table[sp]["persists"]}
             j_surv = {sp for sp in FOCAL if j_table[sp]["persists"]}
             agree = py_surv == j_surv
             lines.append(
-                f"\n**Java cross-check: {j_ok}/{len(FOCAL)} persistent (single seed).** Survivor sets "
+                f"\n**Java cross-check: {j_ok}/{len(FOCAL)} persistent (single run, Java's own RNG "
+                f"— Java 4.4.1 has no numeric seed).** Survivor sets "
                 f"{'AGREE' if agree else 'DIFFER'} with Python — Python {sorted(py_surv)}, "
                 f"Java {sorted(j_surv)}. Coarse consistency check only (Baltic is not bit-equal "
                 "cross-engine); a DIFFER is a flag to inspect, not an automatic failure."
