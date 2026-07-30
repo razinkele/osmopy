@@ -216,7 +216,36 @@ rests on the same confounded comparison.
 no longer optional polish — it is the gate on diagnosing the divergence at all. A whole-population
 rate cannot be compared against a per-stage one.
 
-### DIRECTION OF CAUSATION: RESOLVED — larval additional mortality is applied to a different stage
+### ⚠ RETRACTED (2026-07-30, later): the causation finding below is an instrumentation artifact
+
+The section below concluded that Python applies the larval additional-mortality rate to juveniles
+while Java applies it to eggs, and built a causal story on a measured 690× difference. **Both the
+mechanism and the causal conclusion are wrong.**
+
+`osmose/engine/processes/natural.py:143` — `larva_mortality` gates on `state.is_egg`
+(`n_dead[eggs] = state.abundance[eggs] * mortality_fraction[eggs]`), exactly matching Java's
+`if (school.isEgg())`. The application is correct.
+
+The defect is in the stage collector added in `22cdf22`. Per-step ordering:
+
+1. mortality runs (incl. the `larva_mortality` pre-pass), recording `n_dead` on egg schools;
+2. reproduction increments ages and clears `is_egg` at `first_feeding_age_dt` (`simulate.py:692-693`);
+3. `_collect_outputs` runs **after reproduction** (`simulate.py:1804`), and `_collect_by_life_stage`
+   classifies by the *post-ageing* `is_egg`.
+
+So egg deaths are binned by the stage the school occupies at *collection* time, not at time of death —
+producing Eggs ≈ 0 / Juvenil ≈ 6.15 (the larval rate) in this engine. The 690× was my instrument.
+
+**What survives.** Summing stages to cancel the attribution error still leaves Java `Madd`
+Eggs+Juvenil ≈ 2.06/step against this engine's ≈ 6.15/step — the unexplained ~3×, consistent with a
+configured larval rate of 147.7/yr against Java's realised egg rate of 49.3/yr. That is a genuine
+parity question (Java's `AnnualLarvaMortality` conversion) and is now the only live part of
+[#142](https://github.com/razinkele/osmopy/issues/142).
+
+**Direction of causation is reopened.** It cannot be re-tested until the collector attributes deaths to
+the stage held at time of death.
+
+### RETRACTED — DIRECTION OF CAUSATION: larval additional mortality is applied to a different stage
 
 Juvenile-stage test (cutoff keys stripped from Python so early biomass is reported; stage boundaries
 verified identical). Per step, sprat juvenile `Additional` mortality:
