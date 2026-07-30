@@ -187,3 +187,41 @@ def test_rates_are_plausible_magnitudes_not_counts():
     vals = df[causes].iloc[0].to_numpy(dtype=float)
     assert np.all(vals < 100.0), f"values look like counts, not rates: {dict(zip(causes, vals))}"
     assert vals.sum() > 0.0
+
+
+def test_egg_deaths_are_attributed_to_the_eggs_column_end_to_end(tmp_path):
+    """Deaths must be binned by the stage held AT TIME OF DEATH, not at collection time.
+
+    Regression for the defect that produced a false root-cause claim: `larva_mortality` kills eggs,
+    then reproduction increments ages and clears `is_egg`, then `_collect_outputs` ran — so egg
+    deaths landed in Juvenil. The Baltic larval rate is huge (147.7/yr for sprat), so if it appears
+    under Juvenil instead of Eggs the misattribution is unmistakable.
+
+    This is the test whose absence let the collector be used as a measuring device untested.
+    """
+    from osmose.config.reader import OsmoseConfigReader
+    from osmose.demo import osmose_demo
+    from osmose.engine import PythonEngine
+
+    res = osmose_demo("baltic", tmp_path)
+    cfg = dict(OsmoseConfigReader().read(str(res["config_file"])))
+    cfg["simulation.time.nyear"] = "1"
+    cfg["output.recordfrequency.ndt"] = "1"
+    out = tmp_path / "out"
+    out.mkdir()
+    PythonEngine().run(cfg, out, seed=42)
+
+    f = next(out.rglob("*mortalityRate-sprat_Simu0.csv"))
+    df = pd.read_csv(f, skiprows=1, header=[0, 1])
+    egg_add = df[("Additional", "Eggs")].to_numpy(dtype=float)
+    juv_add = df[("Additional", "Juvenil")].to_numpy(dtype=float)
+
+    # The larval rate (147.71/yr / 24 = 6.15 per step) must show up on EGGS.
+    assert egg_add.max() > 1.0, (
+        f"no large Additional mortality on Eggs (max {egg_add.max():.4f}) — larval mortality is "
+        f"being attributed to the wrong stage; Juvenil max is {juv_add.max():.4f}"
+    )
+    assert egg_add.max() > juv_add.max(), (
+        f"Juvenil Additional ({juv_add.max():.4f}) exceeds Eggs ({egg_add.max():.4f}) — egg deaths "
+        "are still being binned post-ageing"
+    )

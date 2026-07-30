@@ -1160,11 +1160,19 @@ def _collect_outputs(
     *,
     grid: Grid | None = None,
     phenotypes: dict[str, NDArray[np.float64]] | None = None,
+    stage_split: tuple[NDArray[np.float64], NDArray[np.float64]] | None = None,
 ) -> StepOutput:
     """Aggregate per-species outputs from current state into a StepOutput."""
     biomass, abundance = _collect_biomass_abundance(state, config, bkg_output)
     mortality_by_cause = _collect_mortality(state, config)
-    abundance_by_stage, mortality_by_cause_stage = _collect_by_life_stage(state, config)
+    # Deaths must be binned by the stage held AT TIME OF DEATH. Reproduction increments ages and
+    # clears is_egg before this runs, so classifying here would charge egg deaths to Juvenil. The
+    # caller snapshots the split before reproduction and passes it in; recomputing is the fallback
+    # for callers that do not (e.g. the initial pre-loop collection, where nothing has aged yet).
+    if stage_split is not None:
+        abundance_by_stage, mortality_by_cause_stage = stage_split
+    else:
+        abundance_by_stage, mortality_by_cause_stage = _collect_by_life_stage(state, config)
     # Rates must be formed per step; the window accumulator then sums them (Java's convention).
     mortality_rate_by_cause_stage = mortality_rates_from_counts(
         mortality_by_cause_stage.transpose(0, 2, 1), abundance_by_stage
@@ -1750,6 +1758,9 @@ def simulate(
         else:
             state = _growth(state, config, rng)
         state = _aging_mortality(state, config)
+        # Snapshot the life-stage split BEFORE reproduction: it increments ages and clears is_egg,
+        # after which egg deaths recorded this step would be charged to Juvenil (#142 correction).
+        stage_split = _collect_by_life_stage(state, config)
         n_before_repro = len(state)
         if config.bioen_enabled:
             state = _bioen_reproduction(
@@ -1810,6 +1821,7 @@ def simulate(
             diet_by_species=step_diet,
             grid=grid,
             phenotypes=phenotypes,
+            stage_split=stage_split,
         )
         accumulated.append(step_out)
 
