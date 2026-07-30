@@ -146,10 +146,44 @@ That is a trophic restructuring, not a uniform scaling — so a single global mo
 factor does not fit either. One tension to resolve: cod eats clupeids, yet cod is 11–25× *up* on
 Java while its clupeid prey collapse. Any candidate mechanism has to explain both halves.
 
-**Next diagnostic:** Java's diet-composition and mortality-decomposition outputs
-(`output.diet.composition.enabled`, the `Mortality/` series) for sprat and cod, against the Python
-equivalents. That identifies which mortality source or which prey pathway diverges, instead of
-inferring it from standing biomass. Not run here.
+**Next diagnostic — attempted, and BLOCKED by finding 6.**
+
+## 6. Python's `mortalityRate-*.csv` emits death COUNTS, not rates
+
+Attempting the mortality-decomposition comparison surfaced a separate defect that makes it
+impossible as-is.
+
+| | Java 4.4.1 | Python engine |
+|---|---|---|
+| sprat `Mpred` (egg/juv/adult) | 2.8e-4 / 0.039 / 1.1e-4 | — |
+| sprat `Madd` (egg/juv/adult) | 2.05 / 0.143 / 0.063 | — |
+| sprat `Predation` (flat) | — | **5.46e9** |
+| sprat `Additional` (flat) | — | **5.16e13** |
+
+Roughly **13 orders of magnitude** apart. Confirmed from source, not inferred from magnitude:
+`osmose/engine/simulate.py:805-813` (`_collect_mortality_by_cause`) sums `state.n_dead[:, cause]`
+— the **number of individuals dead** — with no division by abundance-at-risk.
+`osmose/engine/output.py:388-404` then writes that array to `Mortality/{prefix}_mortalityRate-{sp}_Simu0.csv`
+under the header `"Mortality rates per time step for {sp}"`, with a docstring stating it is
+"matching Java format".
+
+Three things are wrong:
+
+1. **The quantity is counts, not rates** — the filename, header line and column semantics all claim
+   rates.
+2. **The structure does not match Java.** Java writes a 3-line header with a (cause, stage)
+   MultiIndex — `Mpred`/`Mstarv`/`Madd`/`F`/`Zout`/`Mfor`/`Mdis`/`Mage` × Eggs/Juvenil/Adult. Python
+   writes a 1-line header with flat per-cause columns and no stage split.
+3. **Any Python-side mortality analysis reading these files is wrong**, and the cross-engine
+   mortality comparison — the diagnostic needed to explain the divergence in this note — cannot be
+   done until the units are fixed.
+
+Fixing it is not mechanical: converting counts to rates requires choosing the abundance-at-risk
+denominator per cause and per life stage, and matching Java's structure means adding the stage
+split. That is a modelling decision, recorded here rather than guessed at.
+
+**Once fixed, the diagnostic to run** is the per-cause, per-stage mortality series for sprat and cod
+on both engines, restricted to the first ~10 years where the divergence originates.
 
 ## What this means
 
