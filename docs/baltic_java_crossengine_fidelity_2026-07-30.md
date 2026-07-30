@@ -248,8 +248,37 @@ cod_east 0.82×) persists in steady state.
 steps. What raises it above the earlier attempts is the in-run control plus the direction of the
 predator-biomass asymmetry, which no consequence-side explanation accommodates.
 
-**Next:** the predation kernel itself — accessibility, size-selectivity, and the functional response —
-compared per predator-prey pair rather than aggregated per prey.
+**Next step attempted — BLOCKED. The per-pair kernel comparison cannot be done with current outputs.**
+
+Discovery run (12 yr, both engines) shows the two trophic outputs are not comparable quantities:
+
+| output | Java | Python |
+|---|---|---|
+| `predatorPressure` (absolute prey biomass eaten per pair) | `(444, 33)` | **absent** |
+| `dietMatrix` | `(444, 33)` long: `Time`, `Prey` rows × predator **size-stage** columns (`codwest in [0,10[`, `[10,30[`, `[30,inf[`) | `(12, 100)` wide: flat `predator_prey` columns, one row per year |
+
+Two hard obstacles:
+
+1. **Python does not write `predatorPressure` at all.** That is the only output carrying absolute prey
+   biomass eaten per predator-prey pair, and it is exactly what the standing hypothesis needs — "Java
+   extracts more predation per unit predator biomass" requires biomass-eaten normalised by predator
+   biomass. It cannot be measured on the Python side today.
+2. **The `dietMatrix` outputs differ in orientation AND dimensionality.** Java resolves predator size
+   stages; Python emits flat predator×prey pairs with no size dimension. Java is long-form
+   (prey rows), Python wide-form (one row per year).
+
+**What is still testable:** aggregating Java's size-stage columns to whole-predator totals allows a
+comparison of diet **fractions** per predator-prey pair — i.e. kernel *shape*, which prey each predator
+selects. That is a real test of accessibility/size-selectivity, but it does **not** test per-unit-biomass
+intensity, which is the actual hypothesis.
+
+Deliberately not attempted: computing a proxy by multiplying Python's diet fractions by an assumed
+consumption rate. That would compare a modelled quantity against Java's measured one and reproduce the
+same different-quantities error that produced three false conclusions earlier in this investigation.
+
+**To unblock:** add `predatorPressure` to the Python engine's trophic outputs (absolute biomass eaten per
+predator-prey pair, matching Java's semantics), and optionally the predator size-stage dimension to
+`dietMatrix` for full parity.
 
 ### ⚠ RETRACTED (2026-07-30, later): the causation finding below is an instrumentation artifact
 
