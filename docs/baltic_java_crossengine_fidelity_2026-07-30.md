@@ -34,9 +34,16 @@ hold when the predator is itself inflated an order of magnitude.
 - **Java** does not: `osmose/java_background_staging.py:189,194` forces
   `output.cutoff.enabled=false`, commented only "belt-and-suspenders".
 
-So Python reports adult biomass and Java reports everything including young-of-year. For
-high-fecundity species that is a large multiplier, and it matches the pattern — the biggest
-divergences are the small, fast, high-fecundity species.
+So Python reports adult biomass and Java reports everything including young-of-year. The
+incomparability is real.
+
+> **⚠ But it is numerically negligible — this does NOT explain the divergence. Measured, not
+> assumed:** re-running Python with the 9 `output.cutoff.age.spN` keys removed moves its biomass by
+> only **1.0–1.4×** (see the uncut table below). A 0.5-yr cutoff cannot account for 50–70×, because
+> larvae and young-of-year carry almost no *mass* however numerous they are. An earlier draft of this
+> note claimed the cutoff was "substantially" the cause and that the pattern matched the small,
+> high-fecundity species; that claim was wrong and is retracted. Findings 3 and 4 below remain true
+> as facts about the two engines — they just don't move the numbers.
 
 ## 3. Java 4.4.1 *cannot* apply the cutoff here (hard limitation)
 
@@ -108,24 +115,65 @@ known percid overshoot — pre-existing in Python and independent of everything 
 `simulation.fixedseed.enabled` (a toggle), not a numeric seed, so no Java run can be pinned to a
 seed. The parameter was removed rather than left as a silent no-op (`6a4e224`).
 
+## The cutoff test (route 1), measured
+
+Python re-run with all 9 `output.cutoff.age.spN` keys removed, 50 yr, seed 42:
+
+| species | Py UNCUT | Py CUT | uncut/cut | Java UNCUT | Java/Py-uncut |
+|---|---|---|---|---|---|
+| cod_west | 13,913 | 14,343 | 1.0× | 353,850 | **25.4×** |
+| cod_east | 83,665 | 83,000 | 1.0× | 948,866 | **11.3×** |
+| herring | 3,691,056 | 2,591,007 | 1.4× | 1,916,430 | **0.52×** |
+| sprat | 1,105,256 | 1,060,584 | 1.0× | 0 | extinct |
+| flounder | 41,272 | 40,502 | 1.0× | 3,011,791 | **73.0×** |
+| perch | 45,505 | 45,089 | 1.0× | 2,279,394 | **50.1×** |
+| pikeperch | 1,476,229 | 1,400,444 | 1.1× | 8,139,264 | **5.5×** |
+| smelt | 726,219 | 682,441 | 1.1× | 4,019,851 | **5.5×** |
+| stickleback | 85,383 | 77,578 | 1.1× | 5,177,973 | **60.6×** |
+
+**Route 1 is dead as an explanation.** Equalising the reported quantity leaves the divergence
+essentially untouched. Whatever drives it is dynamical, not a reporting artifact.
+
+### The pattern that remains
+
+With the reporting mismatch eliminated, the residual signal is sharp and worth stating precisely:
+
+- **Clupeids fail on Java.** sprat extinct (Python 1.1 Mt); herring at 0.52× (the only species where
+  Java is *below* Python).
+- **Everything else booms**, 5.5–73× above Python.
+
+That is a trophic restructuring, not a uniform scaling — so a single global mortality or forcing
+factor does not fit either. One tension to resolve: cod eats clupeids, yet cod is 11–25× *up* on
+Java while its clupeid prey collapse. Any candidate mechanism has to explain both halves.
+
+**Next diagnostic:** Java's diet-composition and mortality-decomposition outputs
+(`output.diet.composition.enabled`, the `Mortality/` series) for sprat and cod, against the Python
+equivalents. That identifies which mortality source or which prey pathway diverges, instead of
+inferring it from standing biomass. Not run here.
+
 ## What this means
 
 **The Baltic cross-engine biomass comparison, as built, cannot be valid.** It differs in the
 reported quantity (findings 2-4) *and* in the model being simulated (finding 5). A survivor-set
 "DIFFER" between engines is therefore uninformative about engine correctness.
 
-To make it valid, one of:
+Making the *reported quantity* comparable is necessary for honesty but, as measured above, buys
+almost nothing numerically:
 
-1. **Strip `output.cutoff.age.spN` from the Python side of the cross-check** so both report uncut
-   biomass. Cheapest, and testable immediately.
-2. **Reconstruct adult-only biomass from Java's age-structured output** (`output.biomass.byage`),
-   comparing like with like without touching either engine.
-3. **Fix the Java `OutputRegion` bound** so the cutoff array covers background species. Correct but
-   upstream.
+1. ~~**Strip `output.cutoff.age.spN` from the Python side**~~ — **tested, does not work.** Moves
+   Python by 1.0–1.4×; the 5.5–73× gap survives.
+2. **Reconstruct adult-only biomass from Java's age-structured output** (`output.biomass.byage`) —
+   still the cleanest way to compare like with like, but expect it to change little.
+3. **Fix the Java `OutputRegion` bound** so the cutoff array covers background species. Correct, and
+   worth reporting upstream, but not the cause of anything here.
 
-Option 1 does not fix finding 5 — the RV and salinity gates remain invisible to Java, so cod will
-stay biased upward there regardless. Any honest cross-check has to either disable those gates on the
-Python side or exclude cod from the comparison.
+None of these touch finding 5: the RV and salinity gates remain invisible to Java, so cod stays
+biased upward there regardless. Any honest cross-check must disable those gates on the Python side or
+exclude cod from the comparison.
+
+**The real divergence is unexplained and is dynamical.** It is not the harness bug (fixed), not the
+reported quantity (tested), and not wholly the missing gates (the largest gaps are in ungated
+species). The clupeid-collapse / everything-else-booms pattern is the lead.
 
 **Sprat is the one candidate genuine contradiction**: Python ~1.06 Mt, Java 0. `sprat` has no
 underscore so it was always read correctly, and it is ungated, so neither finding 1 nor 5 explains
