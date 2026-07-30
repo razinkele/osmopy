@@ -16,6 +16,7 @@ with N_start = N_end + D_total.
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from osmose.engine.output import _build_mortality_dataframes
@@ -86,6 +87,60 @@ def test_complete_removal_reports_infinite_rate_not_a_finite_one():
     assert np.isinf(df["Predation"].iloc[0])
     assert df["Starvation"].iloc[0] == 0.0
     assert not np.isnan(df["Starvation"].iloc[0])
+
+
+class _StagedOut:
+    """StepOutput stand-in carrying the (cause, stage) arrays."""
+
+    def __init__(self, step, abundance, mortality, abundance_by_stage, mortality_by_cause_stage):
+        self.step = step
+        self.abundance = abundance
+        self.mortality_by_cause = mortality
+        self.abundance_by_stage = abundance_by_stage
+        self.mortality_by_cause_stage = mortality_by_cause_stage
+
+
+def test_stage_split_emits_cause_stage_multiindex_matching_java():
+    """Java splits every cause by Eggs/Juvenil/Adult; the Python output must too (#140).
+
+    Rates are per stage: each stage gets its own Z from its own survivors and deaths, because a
+    stage-level rate apportioned from a whole-population Z would be meaningless.
+    """
+    n_causes = len(MortalityCause)
+    # stages: 0=Eggs, 1=Juvenil, 2=Adult
+    abund_stage = np.array([[1000.0, 400.0, 200.0]])  # (1 species, 3 stages) survivors
+    mort_stage = np.zeros((1, n_causes, 3))
+    mort_stage[0, int(MortalityCause.PREDATION), 1] = 100.0  # juveniles predated
+    mort_stage[0, int(MortalityCause.ADDITIONAL), 0] = 500.0  # eggs, additional
+    flat = mort_stage.sum(axis=2)
+    out = _StagedOut(0, abund_stage.sum(axis=1), flat, abund_stage, mort_stage)
+
+    df = _build_mortality_dataframes([out], _Cfg(["sprat"]))["mortalityRate_sprat"]
+
+    assert isinstance(df.columns, pd.MultiIndex), "columns must be a (cause, stage) MultiIndex"
+    assert ("Predation", "Juvenil") in df.columns
+    assert ("Additional", "Eggs") in df.columns
+    for stage in ("Eggs", "Juvenil", "Adult"):
+        assert ("Predation", stage) in df.columns
+
+    # juvenile predation: only cause for that stage -> rate == that stage's own Z
+    z_juv = -np.log(400.0 / 500.0)
+    assert df[("Predation", "Juvenil")].iloc[0] == pytest.approx(z_juv)
+    # eggs saw no predation
+    assert df[("Predation", "Eggs")].iloc[0] == pytest.approx(0.0)
+    # egg additional mortality uses the EGG denominator, not the whole population
+    z_egg = -np.log(1000.0 / 1500.0)
+    assert df[("Additional", "Eggs")].iloc[0] == pytest.approx(z_egg)
+    # adults lost nothing
+    assert df[("Predation", "Adult")].iloc[0] == pytest.approx(0.0)
+
+
+def test_flat_layout_retained_when_stage_arrays_absent():
+    """Older StepOutputs without the stage arrays must still produce the flat frame."""
+    out = _one_step(600.0, {MortalityCause.PREDATION: 400.0})
+    df = _build_mortality_dataframes([out], _Cfg(["sprat"]))["mortalityRate_sprat"]
+    assert not isinstance(df.columns, pd.MultiIndex)
+    assert df["Predation"].iloc[0] == pytest.approx(-np.log(600.0 / 1000.0))
 
 
 def test_rates_are_plausible_magnitudes_not_counts():

@@ -89,6 +89,9 @@ class StepOutput:
     biomass: NDArray[np.float64]
     abundance: NDArray[np.float64]
     mortality_by_cause: NDArray[np.float64]  # (n_species, n_causes)
+    # Java-parity life-stage split (Eggs/Juvenil/Adult); None on outputs built before it existed.
+    abundance_by_stage: NDArray[np.float64] | None = None  # (n_species, 3)
+    mortality_by_cause_stage: NDArray[np.float64] | None = None  # (n_species, n_causes, 3)
     yield_by_species: NDArray[np.float64] | None = None  # fishing yield biomass per species
     # Per-species age/size distribution dicts (sp_idx -> 1-D array), or None if disabled
     biomass_by_age: dict[int, NDArray[np.float64]] | None = None
@@ -814,6 +817,43 @@ def _collect_mortality(
     return mortality_by_cause
 
 
+def _collect_by_life_stage(
+    state: SchoolState,
+    config: EngineConfig,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """(abundance, mortality-by-cause) split into Java's Eggs / Juvenil / Adult stages.
+
+    Returns ``(abundance (n_species, 3), deaths (n_species, n_causes, 3))``. Stage indices match
+    ``osmose.engine.output._STAGE_NAMES``. Maturity uses the engine's own conjunction
+    (``length >= maturity_size AND age_dt >= maturity_age_dt``), the same one ``_collect_ssb`` and
+    ``reproduction.py`` apply, so "adult" means the same thing across outputs.
+
+    CAVEAT — the Eggs/Juvenil boundary is NOT verified against Java. Here "Eggs" is exactly
+    ``state.is_egg``, so larvae past the egg stage fall in Juvenil, and the larval additional
+    mortality lands there too. On a Baltic run that shows up as ``Additional`` ≈ 0 for Eggs and
+    ≈ 7 for Juvenil, where Java reports ``Madd`` ≈ 2 for Eggs — consistent with Java binning
+    larvae (or all pre-recruits) as Eggs. Treat cross-engine STAGE assignments as unconfirmed
+    until Java's own boundary is established; the per-cause totals are comparable, the split
+    between Eggs and Juvenil may not be.
+    """
+    n_causes = len(MortalityCause)
+    abundance = np.zeros((config.n_species, 3), dtype=np.float64)
+    deaths = np.zeros((config.n_species, n_causes, 3), dtype=np.float64)
+    if len(state) == 0:
+        return abundance, deaths
+
+    focal = state.species_id < config.n_species
+    mature = (state.length >= config.maturity_size[state.species_id]) & (
+        state.age_dt >= config.maturity_age_dt[state.species_id]
+    )
+    stage = np.where(state.is_egg, 0, np.where(mature, 2, 1))
+    sp, st = state.species_id[focal], stage[focal]
+    np.add.at(abundance, (sp, st), state.abundance[focal])
+    for cause in range(n_causes):
+        np.add.at(deaths, (sp, cause, st), state.n_dead[focal, cause])
+    return abundance, deaths
+
+
 def _collect_yield(
     state: SchoolState,
     config: EngineConfig,
@@ -1089,6 +1129,7 @@ def _collect_outputs(
     """Aggregate per-species outputs from current state into a StepOutput."""
     biomass, abundance = _collect_biomass_abundance(state, config, bkg_output)
     mortality_by_cause = _collect_mortality(state, config)
+    abundance_by_stage, mortality_by_cause_stage = _collect_by_life_stage(state, config)
     yield_by_species = _collect_yield(state, config)
     biomass_by_age, abundance_by_age, biomass_by_size, abundance_by_size = _collect_distributions(
         state, config
@@ -1122,6 +1163,8 @@ def _collect_outputs(
         biomass=biomass,
         abundance=abundance,
         mortality_by_cause=mortality_by_cause,
+        abundance_by_stage=abundance_by_stage,
+        mortality_by_cause_stage=mortality_by_cause_stage,
         yield_by_species=yield_by_species,
         biomass_by_age=biomass_by_age,
         abundance_by_age=abundance_by_age,
@@ -1252,6 +1295,8 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
             biomass=accumulated[0].biomass,
             abundance=accumulated[0].abundance,
             mortality_by_cause=accumulated[0].mortality_by_cause,
+            abundance_by_stage=accumulated[0].abundance_by_stage,
+            mortality_by_cause_stage=accumulated[0].mortality_by_cause_stage,
             yield_by_species=accumulated[0].yield_by_species,
             biomass_by_age=accumulated[0].biomass_by_age,
             abundance_by_age=accumulated[0].abundance_by_age,
@@ -1275,6 +1320,12 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
     biomass = np.mean([o.biomass for o in accumulated], axis=0)
     abundance = np.mean([o.abundance for o in accumulated], axis=0)
     mortality = np.sum([o.mortality_by_cause for o in accumulated], axis=0)
+    # Same treatment as the flat pair: abundance is a stock (mean over the window), deaths are a
+    # flow (sum), so the rate built from them in output.py stays consistent.
+    _abs = [o.abundance_by_stage for o in accumulated if o.abundance_by_stage is not None]
+    abundance_stage = np.mean(_abs, axis=0) if _abs else None
+    _mcs = [o.mortality_by_cause_stage for o in accumulated if o.mortality_by_cause_stage is not None]
+    mortality_stage = np.sum(_mcs, axis=0) if _mcs else None
     yield_sum = np.sum(
         [o.yield_by_species for o in accumulated if o.yield_by_species is not None], axis=0
     )
@@ -1323,6 +1374,8 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
         biomass=biomass,
         abundance=abundance,
         mortality_by_cause=mortality,
+        abundance_by_stage=abundance_stage,
+        mortality_by_cause_stage=mortality_stage,
         yield_by_species=yield_sum,
         biomass_by_age=_avg_spatial("biomass_by_age", "mean"),
         abundance_by_age=_avg_spatial("abundance_by_age", "mean"),

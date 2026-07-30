@@ -359,6 +359,36 @@ def _write_distrib_bysize_community_csvs(
         df.to_csv(output_dir / f"{prefix}_{key}_Simu0.csv", index=False)
 
 
+#: Life stages in Java's column order (``Species.java`` writes Eggs/Juvenil/Adult per cause).
+#: "Juvenil" keeps Java's spelling deliberately — these labels are compared across engines.
+_STAGE_NAMES = ("Eggs", "Juvenil", "Adult")
+
+
+def _mortality_rates(
+    deaths: NDArray[np.float64], n_end: NDArray[np.float64]
+) -> NDArray[np.float64]:
+    """Convert per-cause death COUNTS to additive instantaneous rates.
+
+    ``deaths`` has causes on the last axis, ``n_end`` matches its leading axes and holds the
+    survivors for that same population slice. Each slice gets its own denominator, so a per-stage
+    rate uses that stage's survivors rather than the whole population's.
+    """
+    d_total = deaths.sum(axis=-1)
+    n_start = n_end + d_total
+    with np.errstate(divide="ignore", invalid="ignore"):
+        survival = np.divide(n_end, n_start, out=np.ones_like(n_end), where=n_start > 0)
+        z_total = -np.log(survival)  # inf where survival == 0 (complete removal)
+        share = np.divide(
+            deaths,
+            d_total[..., None],
+            out=np.zeros_like(deaths),
+            where=d_total[..., None] > 0,
+        )
+        # 0 * inf -> nan for causes with no deaths when the slice is wiped out; those must stay
+        # exactly 0, so compute under errstate and mask afterwards.
+        return np.where(share > 0, share * z_total[..., None], 0.0)
+
+
 def _build_mortality_dataframes(
     outputs: list[StepOutput],
     config: EngineConfig,
@@ -391,30 +421,32 @@ def _build_mortality_dataframes(
     times = np.array([o.step / config.n_dt_per_year for o in outputs])
     cause_names = [c.name.capitalize() for c in MortalityCause]
 
+    staged = all(
+        getattr(o, "mortality_by_cause_stage", None) is not None
+        and getattr(o, "abundance_by_stage", None) is not None
+        for o in outputs
+    )
+
     result: dict[str, pd.DataFrame] = {}
     for sp_idx, sp_name in enumerate(config.species_names):
-        deaths = np.array([o.mortality_by_cause[sp_idx] for o in outputs], dtype=np.float64)
-        n_end = np.array([o.abundance[sp_idx] for o in outputs], dtype=np.float64)
-        d_total = deaths.sum(axis=1)
-        n_start = n_end + d_total
-
-        with np.errstate(divide="ignore", invalid="ignore"):
-            survival = np.divide(
-                n_end, n_start, out=np.ones_like(n_end), where=n_start > 0
+        if staged:
+            # (T, n_stages, n_causes) so causes stay on the last axis for _mortality_rates
+            deaths = np.array(
+                [o.mortality_by_cause_stage[sp_idx].T for o in outputs], dtype=np.float64
             )
-            z_total = -np.log(survival)  # inf where survival == 0 (complete removal)
-            share = np.divide(
-                deaths,
-                d_total[:, None],
-                out=np.zeros_like(deaths),
-                where=d_total[:, None] > 0,
-            )
-            # 0 * inf -> nan for causes with no deaths when the stock is wiped out; those
-            # columns must stay exactly 0, so compute under errstate and mask afterwards.
-            rates = np.where(share > 0, share * z_total[:, None], 0.0)
-
-        df = pd.DataFrame(rates, columns=cause_names)  # type: ignore[arg-type]
-        df.insert(0, "Time", times)
+            n_end = np.array([o.abundance_by_stage[sp_idx] for o in outputs], dtype=np.float64)
+            rates = _mortality_rates(deaths, n_end)  # (T, n_stages, n_causes)
+            n_causes = rates.shape[2]
+            # Java orders columns cause-major: Mpred×(Eggs,Juvenil,Adult), Mstarv×(...), ...
+            flat = rates.transpose(0, 2, 1).reshape(len(outputs), n_causes * len(_STAGE_NAMES))
+            columns = pd.MultiIndex.from_product([cause_names, _STAGE_NAMES])
+            df = pd.DataFrame(flat, columns=columns)
+            df.insert(0, ("Time", ""), times)
+        else:
+            deaths = np.array([o.mortality_by_cause[sp_idx] for o in outputs], dtype=np.float64)
+            n_end = np.array([o.abundance[sp_idx] for o in outputs], dtype=np.float64)
+            df = pd.DataFrame(_mortality_rates(deaths, n_end), columns=cause_names)  # type: ignore[arg-type]
+            df.insert(0, "Time", times)
         result[f"mortalityRate_{sp_name}"] = df
     return result
 
