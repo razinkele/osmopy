@@ -835,6 +835,12 @@ diverge by orders of magnitude when the recruitment parameters are far from the 
 a division by egg weight downstream of the interface. That affects the exact factor, not the structural
 finding.
 
+**Related, filed separately as [#144](https://github.com/razinkele/osmopy/issues/144):** `dietMatrix`
+means different things on each engine — percentage composition on Java, absolute tonnes here. Same
+filename, different quantity, no error. Comparing the two files divides tonnes by percentages; it was
+caught only because the kernel comparison checked shapes and units before computing.
+`_normalize_diet_matrix_to_percent` exists and is never called in production.
+
 **Filed as [#143](https://github.com/razinkele/osmopy/issues/143)**, framed as a decision rather than a
 fix: seeding through the recruitment curve is arguably more dynamically consistent, matching Java's linear
 conversion is arguably more faithful to the reference. Both defensible, not equivalent, and the choice
