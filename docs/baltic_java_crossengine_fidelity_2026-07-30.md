@@ -733,3 +733,31 @@ Java seeds via stock-recruitment or by constructing an initial age structure. Bo
 the jar bytecode, the method that settled the stage-boundary question. Until then the mechanism behind
 the ~90× early abundance difference is not established — only that it is an abundance difference, that
 both engines seed as eggs, and that Python's seeding window is lifespan-length by fallback.
+
+### Java's seeding-window default: read from bytecode — it MATCHES Python
+
+`ReproductionProcess.<init>`:
+
+```
+967:  iconst_0 ; putfield yearMaxSeeding        // default 0
+975:  ldc "population.seeding.year.max" ; isNull
+988:    getInt("population.seeding.year.max")
+997:    getNStepYear()
+1001:   putfield yearMaxSeeding                 // key PRESENT  -> value * nStepYear
+1039:  Species.getLifespanDt()
+1045:  putfield yearMaxSeeding                  // key ABSENT   -> per-species lifespanDt
+```
+
+The key is absent from the Baltic config, so Java uses **per-species `lifespanDt`** — identical to
+Python's fallback `seeding_max_step = lifespan_years × n_dt` (`config.py:544`).
+
+**The seeding WINDOW is not the difference.** Both engines seed for each species' full lifespan.
+That eliminates the schedule hypothesis raised in the previous section.
+
+Also visible: Java reads `population.initialization.relativebiomass.enabled`, which is absent from the
+Baltic config (Java logs "assumes it is false"), so neither engine uses relative-biomass initialisation.
+
+**What remains:** the per-step seeding MAGNITUDE — how many eggs each engine creates on each seeded
+step. Both seed as eggs, over the same window, yet Python produces ~90× more individuals early. The
+remaining candidates are the stock-recruitment call itself and how `simulation.nschool.spN` divides a
+given egg production into schools. Not yet examined.
