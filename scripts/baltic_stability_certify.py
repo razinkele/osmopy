@@ -148,10 +148,33 @@ def certify_java(params: dict[str, str], n_years: int, seed: int = 42) -> dict |
         print("(Java biomass output not found or unparseable)")
         return None
 
-    table = {}
+    return java_table_from_series(series)
+
+
+def java_table_from_series(series: dict[str, list[float]]) -> dict:
+    """Build the per-species certification table from Java's biomass series.
+
+    Java writes every column header as the SANITIZED species name — ``Species.java`` strips
+    ``_``/``-``, and ``reconcile_config_for_java`` mirrors that into the staged config — so a
+    focal species is resolved through ``sanitize_java_name`` (identity for names that were
+    already alphanumeric).
+
+    A missing or empty column is a harness bug, never an extinction. Substituting 0.0 here is
+    what reported both cod stocks extinct in the 2026-07-29 and 2026-07-30 cross-checks while
+    Java in fact had them alive, so this raises instead.
+    """
+    from osmose.java_config_reconcile import sanitize_java_name
+
+    table: dict[str, dict] = {}
+    missing: list[str] = []
     for sp in FOCAL:
+        col = sanitize_java_name(sp)
+        values = series.get(col)
+        if not values:
+            missing.append(f"{sp} (expected column {col!r})")
+            continue
         lo, hi = ENVELOPE[sp]
-        v = np.asarray(series.get(sp, [0.0]), float)
+        v = np.asarray(values, float)
         late = v[-10:] if len(v) >= 10 else v
         vmin, late_mean = float(v.min()), float(np.mean(late))
         table[sp] = {
@@ -160,6 +183,12 @@ def certify_java(params: dict[str, str], n_years: int, seed: int = 42) -> dict |
             "min_biomass": vmin,
             "late_mean_range": [late_mean, late_mean],
         }
+    if missing:
+        raise KeyError(
+            "Java biomass output has no usable column for: "
+            + "; ".join(missing)
+            + f". Columns present: {sorted(series)}"
+        )
     return table
 
 
