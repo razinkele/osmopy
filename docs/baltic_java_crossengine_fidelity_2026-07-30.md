@@ -761,3 +761,25 @@ Baltic config (Java logs "assumes it is false"), so neither engine uses relative
 step. Both seed as eggs, over the same window, yet Python produces ~90× more individuals early. The
 remaining candidates are the stock-recruitment call itself and how `simulation.nschool.spN` divides a
 given egg production into schools. Not yet examined.
+
+### Per-step seeding magnitude — narrowed to the biomass→eggs conversion
+
+From `ReproductionProcess` bytecode, Java supports **two** seeding inputs:
+
+* `population.seeding.biomass.spN`
+* `population.seeding.abundance.spN` — read at offset 929 behind an `isNull` guard
+
+The Baltic config supplies **only the biomass keys** (verified: no `population.seeding.abundance.*`
+anywhere in `data/baltic/`). So both engines start from the same seeded biomass and must convert it into
+egg numbers themselves. The ~90× early abundance gap therefore lives in **that conversion**, not in the
+inputs, the window, or the initialisation mode — all of which are now confirmed identical.
+
+Python's conversion is `apply_stock_recruitment` (`simulate.py:548-556`), i.e. the stock-recruitment
+relationship applied to the seeded biomass with a spawning-season factor. Java's conversion path is not
+yet read.
+
+**Status: located, not explained.** Established by measurement or bytecode, in order — the gap is an
+abundance difference (not growth), both engines seed as eggs, over the same lifespan-length window, from
+the same biomass-only inputs, with relative-biomass initialisation off on both. What remains is a direct
+comparison of the two biomass→eggs conversions, Java's readable from `ReproductionProcess`/its
+`SeedingInterface` implementations.
