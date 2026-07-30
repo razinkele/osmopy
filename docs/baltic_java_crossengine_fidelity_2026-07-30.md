@@ -216,7 +216,53 @@ rests on the same confounded comparison.
 no longer optional polish — it is the gate on diagnosing the divergence at all. A whole-population
 rate cannot be compared against a per-stage one.
 
-### Adult-stage comparison (after `22cdf22`) — a real signal
+### CORRECTED adult-stage comparison (after `0de82b9`) — supersedes the table below
+
+The table further down used Python values computed under the wrong saving-interval convention. Java's
+convention was then verified empirically: **its annual row is the SUM of its 24 per-step rows**, exact
+on the deterministic causes (`Madd/Juvenil` 0.14287 vs 0.14287). Its `Madd/Eggs` ratio came out at
+0.042 ≈ 1/24, independently confirming the caveat in Java's own header — egg additional mortality is
+per model step, everything else is interval-summed. `053742b` had instead derived one rate from
+window-aggregated counts, which has no fixed relationship to that sum; `0de82b9` forms rates per step
+and sums them, and Python now reproduces its own annual row from 24 per-step rows at ratio 1.000.
+
+| species | cause | Java | Python | J/P |
+|---|---|---|---|---|
+| sprat | **Predation** | 1.2861 | 0.4266 | **3.01×** |
+| sprat | Starvation | 0.0879 | 0.0563 | 1.56× |
+| sprat | Additional | 0.2014 | 0.2022 | **1.00×** |
+| sprat | Fishing | 0.1050 | 0.0939 | 1.12× |
+| cod_east | Predation | 0.1681 | 0.2058 | **0.82×** |
+| cod_east | Starvation | 0.0083 | 0.0032 | 2.58× |
+| cod_east | Additional | 0.8319 | 0.8345 | **1.00×** |
+| cod_east | Fishing | 0.0023 | 0.0018 | 1.30× |
+| herring | **Predation** | 0.6477 | 0.3552 | **1.82×** |
+| herring | Starvation | 0.0629 | 0.0678 | 0.93× |
+| herring | Additional | 2.1124 | 2.1224 | **1.00×** |
+| herring | Fishing | 0.1999 | 0.2037 | 0.98× |
+
+**The fix is validated by a criterion it was not tuned for.** `Additional` mortality is an externally
+imposed rate, and it now agrees to within 0.5% on all three species (1.00× / 1.00× / 1.00×), where
+before it read 1.25× / 1.38× / 1.90×. `Fishing`, also imposed, collapsed from 1.58 / 2.05 / 2.03 to
+1.12 / 1.30 / 0.98. The spurious offset was arithmetic, and it is gone.
+
+**Because the imposed causes now agree, the divergence is localised to emergent predation.** That is a
+much sharper claim than the earlier table supported: the engines apply the same externally specified
+mortality identically, and differ in the predation process itself.
+
+**The clupeid signal survives, smaller and less uniform than reported.** Adult predation runs
+**3.01× on sprat** and **1.82× on herring** heavier on Java, against **0.82× on cod_east** — Java
+predates adult cod slightly *less*. The direction and the prey/predator contrast hold. But
+"clupeids ~4–5×" was overstated: sprat is the outlier, herring is modest, and the two clupeids differ
+from each other by a factor of ~1.7.
+
+**Still unresolved** (unchanged): whether elevated clupeid predation drives the divergence or follows
+from an already-inflated predator field. Starvation also runs 1.6–2.6× on Java for sprat and cod_east
+but 0.93× for herring — emergent, food-dependent, and not yet interpretable.
+
+### Superseded: adult-stage comparison (after `22cdf22`)
+
+> Wrong Python convention — see the corrected table above. Retained for the audit trail.
 
 With the life-stage split in place, adults are comparable: identically defined on both engines
 (mature fish, same maturity conjunction), each using its own stage's survivors as denominator. Mean
