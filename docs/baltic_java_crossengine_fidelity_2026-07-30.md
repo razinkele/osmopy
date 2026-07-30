@@ -216,7 +216,48 @@ rests on the same confounded comparison.
 no longer optional polish — it is the gate on diagnosing the divergence at all. A whole-population
 rate cannot be compared against a per-stage one.
 
-### DIRECTION OF CAUSATION (re-tested after `e7db9f6`): evidence favours CAUSE
+### CAUSATION, FINAL: the predation-rate signal is a DENOMINATOR EFFECT — "cause" is refuted
+
+Early-window test redone with **prey** biomass tracked, which the previous version omitted. The
+correlation is unambiguous — the rate ratio collapses toward 1 exactly as the prey ratio rises to 1:
+
+**herring**
+
+| step | rate J/P | prey J/P | predator J/P |
+|---|---|---|---|
+| 8 | **16.23** | **0.45** | 0.56 |
+| 9 | **8.99** | 0.66 | 0.71 |
+| 10 | **6.00** | 0.88 | 0.82 |
+| 11 | 1.66 | **1.03** | 0.93 |
+| 12–17 | 0.22–2.40 (scatter) | 1.15–1.36 | 0.99–1.09 |
+
+**sprat**
+
+| step | rate J/P | prey J/P |
+|---|---|---|
+| 9 | 1.39 | 0.05 |
+| 10 | **12.61** | 0.25 |
+| 11 | 1.86 | 0.91 |
+| 12–17 | 0.03–1.88 (scatter) | 2.16–4.81 |
+
+**Every elevated rate sits where Java's prey stock is smaller.** Once prey biomass equalises (herring
+step 11, prey J/P 1.03) the rate ratio drops to ~1 and thereafter scatters with no systematic
+elevation. Since rate = eaten / **prey** biomass, this is the denominator moving, not the kernel.
+
+**Conclusion: Java's predation process is NOT more intense.** That is independently consistent with the
+corrected per-pair kernel, where Java takes *less* clupeid biomass per unit predator biomass
+(J/P 0.15–1.29). Two independent measurements now agree, having previously appeared to conflict.
+
+**The real upstream signal is early clupeid biomass.** Java starts the window with far less — sprat
+J/P 0.01–0.25 at steps 8–10, herring 0.45–0.88 — while predator biomass is also *lower* (0.56–0.82), so
+predation cannot explain it. The question moves upstream to **recruitment / early survival**, not
+predation.
+
+**Every earlier causation reading in this note is superseded by this one.** The sequence was: cause
+(wrong — instrument), cause (wrong — no prey denominator), denominator effect (this). The prior sections
+are retained for the audit trail.
+
+### SUPERSEDED — DIRECTION OF CAUSATION (re-tested after `e7db9f6`): evidence favours CAUSE
 
 Re-run with the fixed collector. **In-run control:** `Additional` J/P = **1.00 at every step** for both
 species — the imposed rate agrees, so the instrument is verified within the run rather than assumed.
