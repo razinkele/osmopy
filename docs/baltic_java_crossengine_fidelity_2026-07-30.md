@@ -216,6 +216,31 @@ rests on the same confounded comparison.
 no longer optional polish — it is the gate on diagnosing the divergence at all. A whole-population
 rate cannot be compared against a per-stage one.
 
+### Direction of causation: ATTEMPTED, design does not work — recorded so it is not repeated
+
+The plan was to compare the earliest steps, where both engines still hold near-identical seeded
+populations, and see whether Java's clupeid predation is already elevated *before* predator biomass
+diverges (cause) or only after (consequence). Two hard obstacles killed it, both measured:
+
+1. **The adult stage does not exist during the early window.** Adult predation rates first appear
+   around step 16–17 of 24 — nothing has matured before that. The clean separation window and the
+   only boundary-safe stage do not overlap.
+2. **Python reports zero biomass for the first half-year.** Verified directly: `cod_west` and `sprat`
+   are 0.0 at steps 0–3. This is the output cutoff (finding 2) — `output.cutoff.age.spN` is 0.5 yr and
+   at seeding every school is younger than that, so all of it is excluded from reported biomass. Java,
+   with the cutoff forcibly disabled (finding 3), reports non-zero from step ~4. So the driver
+   variable is blanked on one engine exactly when it is needed.
+
+In the window that does have data the ratios invert (Java's adult predation ≈ 0 while Python's is
+small but non-zero, J/P ≈ 0.00–0.02), the opposite of the 12-yr average. That is **not** evidence for
+"consequence": it reflects Java having essentially no adults yet, not a milder predation process.
+Reading it either way would be over-interpretation.
+
+**What a working design needs:** strip `output.cutoff.age.spN` from the Python side so early biomass is
+reported at all, and compare at the **juvenile** stage, which does exist early — which in turn requires
+resolving the Eggs/Juvenil boundary question (unverified, see finding 6) so the stages mean the same
+thing on both engines. Until then the direction of causation is undetermined.
+
 ### CORRECTED adult-stage comparison (after `0de82b9`) — supersedes the table below
 
 The table further down used Python values computed under the wrong saving-interval convention. Java's
