@@ -216,6 +216,41 @@ rests on the same confounded comparison.
 no longer optional polish — it is the gate on diagnosing the divergence at all. A whole-population
 rate cannot be compared against a per-stage one.
 
+### DIRECTION OF CAUSATION (re-tested after `e7db9f6`): evidence favours CAUSE
+
+Re-run with the fixed collector. **In-run control:** `Additional` J/P = **1.00 at every step** for both
+species — the imposed rate agrees, so the instrument is verified within the run rather than assumed.
+
+| step | predator biomass J/P | sprat juv predation J/P | herring juv predation J/P |
+|---|---|---|---|
+| 8 | 0.55 | 0.01 | **5.72** |
+| 9 | — | 0.05 | **6.12** |
+| 10 | 0.79 | **6.37** | 2.02 |
+| 11 | — | **6.39** | 1.17 |
+| 12 | 1.06 | 1.23 | 1.96 |
+| 13 | — | 3.43 | 0.89 |
+| 14 | 1.10 | 0.31 | 0.65 |
+| 15 | — | 1.73 | 0.92 |
+
+**The decisive asymmetry: Java predates clupeid juveniles ~6× harder while holding LESS predator
+biomass.** At steps 10–11 Java's sprat-juvenile predation is 6.4× Python's with Java's predator field at
+0.79× Python's; herring shows 5.7–6.1× at steps 8–9 with the predator field at 0.55×. More predation
+from fewer predators cannot be a consequence of predator abundance — the abundance difference runs the
+wrong way. By steps 13–15 the ratios scatter around 1 as the fields converge (J/P 1.06 → 1.10).
+
+**Conclusion: the predation process itself differs, and it is upstream.** Java extracts more predation
+per unit predator biomass. That is consistent with everything downstream — clupeids collapse on Java,
+their predators are released and boom, and the adult-stage asymmetry (sprat 3.01×, herring 1.82×,
+cod_east 0.82×) persists in steady state.
+
+**Confidence: moderate, not high.** Absolute rates in the early window are small (sprat 0.0019 vs
+0.0003), Java contributes a single unseeded stochastic draw, and the evidence is two species over a few
+steps. What raises it above the earlier attempts is the in-run control plus the direction of the
+predator-biomass asymmetry, which no consequence-side explanation accommodates.
+
+**Next:** the predation kernel itself — accessibility, size-selectivity, and the functional response —
+compared per predator-prey pair rather than aggregated per prey.
+
 ### ⚠ RETRACTED (2026-07-30, later): the causation finding below is an instrumentation artifact
 
 The section below concluded that Python applies the larval additional-mortality rate to juveniles
