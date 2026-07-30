@@ -260,6 +260,24 @@ application — stage assignment plus a ~3× magnitude difference — not in the
 predation difference reported above is downstream. This is a concrete parity defect in imposed
 mortality, and it is the thing to fix before any further cross-engine comparison of this config.
 
+**Which engine is right: Java.** From `fr.ird.osmose.process.mortality.AdditionalMortality` bytecode:
+
+```
+School.isEgg()  ifeq 28
+  ->  larvaAdditionalMortality[speciesIndex].getRate(school)
+else
+  ->  general additional mortality
+```
+
+The larval rate applies **if and only if the school is pre-first-feeding**; everything else gets the
+general rate. This engine's `is_egg` predicate is already identical (`simulate.py:692`), so the
+boundary is not the problem — the *selection* is. **This engine is wrong.**
+
+Filed as [#142](https://github.com/razinkele/osmopy/issues/142), including the unresolved ~3×
+(`AnnualLarvaMortality` conversion) that must be pinned alongside the stage fix, and the likelihood
+that `mortality.additional.larva.rate.*` needs refitting since it was calibrated against the wrong
+stage.
+
 ### Eggs/Juvenil boundary: RESOLVED — the engines already agree
 
 Read from the Java 4.4.1 bytecode (`javap -c`), not inferred:
