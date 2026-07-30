@@ -783,3 +783,22 @@ abundance difference (not growth), both engines seed as eggs, over the same life
 the same biomass-only inputs, with relative-biomass initialisation off on both. What remains is a direct
 comparison of the two biomass→eggs conversions, Java's readable from `ReproductionProcess`/its
 `SeedingInterface` implementations.
+
+### `SeedingInterface` — partial read, conversion NOT located
+
+`SeedingInterface` is a functional interface (`ReproductionProcess$SeedingInterface.class`, 357 bytes —
+a stub, with the implementations as lambdas inside `ReproductionProcess` rather than named classes).
+Confirmed present: a public `getSeedingBiomass(int)` accessor, and seeding arithmetic that divides by
+`seasonSpawning` / `getNStepYear()` — the spawning-season normalisation, structurally the same shape as
+Python's `season_factor` at `simulate.py:556-560`.
+
+**The biomass→eggs conversion itself was not located.** The lambdas need resolving via their
+`invokedynamic` bootstrap targets (`lambda$...` synthetic methods) rather than by scanning the
+constructor, which is where this read stopped.
+
+**Recorded as incomplete rather than inferred.** Python routes seeding through the stock-recruitment
+relationship (`apply_stock_recruitment`), which is an unusual choice and could plausibly yield far more
+eggs than a direct biomass/egg-weight division — but that is a hypothesis, not a reading, and this
+investigation has produced four wrong answers from exactly that kind of plausible inference. The next
+step is `javap -p -c` filtered to the `lambda$` synthetic methods, comparing whichever one implements
+`SeedingInterface` against `apply_stock_recruitment`.
