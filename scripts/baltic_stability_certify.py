@@ -67,13 +67,24 @@ def _species_row(bio, sp: str) -> dict:
     return {"min": vmin, "late_mean": late_mean, "persists": persists, "in_envelope": in_env}
 
 
-def certify_python(params: dict[str, str], n_years: int, seeds) -> dict:
-    """Run Python n_years x seeds; aggregate per-species persist/in-envelope (worst-case across seeds)."""
+def certify_python(
+    params: dict[str, str], n_years: int, seeds, seeding_mode: str | None = None
+) -> dict:
+    """Run Python n_years x seeds; aggregate per-species persist/in-envelope (worst-case across seeds).
+
+    ``seeding_mode`` (GitHub #143) must match the mode the params were CALIBRATED under — certifying
+    linear-refitted parameters under stock_recruitment seeding would score them against dynamics they
+    were never fitted for. Applied after ``params`` so it cannot be silently overridden by a stale key
+    carried in a results JSON.
+    """
     tmp = Path(tempfile.mkdtemp())
     res = osmose_demo("baltic", tmp)
     cfg = dict(OsmoseConfigReader().read(str(res["config_file"])))
     cfg["simulation.time.nyear"] = str(n_years)
     cfg.update(params)
+    if seeding_mode is not None:
+        cfg["population.seeding.mode"] = seeding_mode
+        print(f"Seeding mode: {seeding_mode}")
     per_seed = []
     for seed in seeds:
         bio = PythonEngine().run_in_memory(cfg, seed=seed).biomass()
@@ -216,17 +227,26 @@ def main() -> int:
     ap.add_argument("--params", default="current", help="'current' or a stability_sweep.json path")
     ap.add_argument("--years", type=int, default=50)
     ap.add_argument("--seeds", type=int, nargs="+", default=list(CERT_SEEDS))
+    ap.add_argument(
+        "--seeding-mode",
+        choices=["stock_recruitment", "linear"],
+        default=None,
+        help="Python seeding mode (GitHub #143); must match what the params were calibrated under. "
+        "Java always seeds linearly — the key is Python-only — so --seeding-mode linear is the "
+        "setting under which the two engines are actually comparable.",
+    )
     ap.add_argument("--java", action="store_true", help="also run a single Java 4.4.1 cross-check")
     ap.add_argument("--out", default="docs/baltic_stability_certification_2026-07-01.md")
     args = ap.parse_args()
 
     params = _load_params(args.params)
-    py_table = certify_python(params, args.years, tuple(args.seeds))
+    py_table = certify_python(params, args.years, tuple(args.seeds), args.seeding_mode)
     py_ok = _print_table("Python", py_table)
 
     lines = [
         "# Baltic stability — SP-A certification\n",
-        f"**Params:** {args.params}  ·  **horizon:** {args.years} yr  ·  **seeds:** {args.seeds}\n",
+        f"**Params:** {args.params}  ·  **horizon:** {args.years} yr  ·  **seeds:** {args.seeds}"
+        f"  ·  **seeding:** {args.seeding_mode or 'config default'}\n",
         "| species | persists | in-envelope | min biomass | final-decade mean range |",
         "|---|---|---|---|---|",
     ]
