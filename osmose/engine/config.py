@@ -536,6 +536,7 @@ def _parse_reproduction_params(
     # Seeding max step: global-only key — verified 2026-04-12 against Java OSMOSE
     # source (ReproductionProcess.java:83,146). Java uses a single `int yearMaxSeeding`
     # for all species, NOT per-species. Python's np.full broadcast is correct parity.
+    seeding_mode = _parse_seeding_mode(cfg)
     seeding_max_year_str = cfg.get("population.seeding.year.max", "")
     if seeding_max_year_str:
         seeding_max_years = float(seeding_max_year_str)
@@ -611,6 +612,7 @@ def _parse_reproduction_params(
         "focal_maturity_size": maturity_size,
         "focal_seeding_biomass": seeding_biomass,
         "focal_seeding_max_step": seeding_max_step,
+        "focal_seeding_mode": seeding_mode,
         "focal_larva_mortality_rate": larva_mortality_rate,
         "focal_maturity_age_dt": maturity_age_dt,
         "focal_recruitment_type": recruitment_type,
@@ -1392,6 +1394,22 @@ def _load_salinity_gate(
     return True, mask, s_low, s_high, field
 
 
+def _parse_seeding_mode(cfg: dict[str, str]) -> str:
+    """How seeded biomass becomes eggs (GitHub #143).
+
+    ``stock_recruitment`` (default) passes the linear quantity through the stock-recruitment
+    relationship; ``linear`` uses it directly, matching Java 4.4.1's ``SeedingInterface``. An
+    unrecognised value raises rather than defaulting — silently falling back would make an A/B
+    comparison of the two modes meaningless.
+    """
+    mode = cfg.get("population.seeding.mode", "stock_recruitment").strip().lower()
+    if mode not in ("stock_recruitment", "linear"):
+        raise ValueError(
+            f"population.seeding.mode must be 'stock_recruitment' or 'linear', got {mode!r}"
+        )
+    return mode
+
+
 def _load_recruitment_ceiling(
     cfg: dict[str, str],
     n_species: int,
@@ -1885,6 +1903,12 @@ class EngineConfig:
     # Spatial reproductive-volume egg-survival field (Task 2/4; consumed in larva_mortality)
     rv_spatial_field: PhysicalData | None = None
     rv_spatial_enabled: NDArray[np.bool_] | None = None
+
+    #: How seeded biomass becomes eggs (GitHub #143): "stock_recruitment" (default — the linear
+    #: quantity passed through the stock-recruitment relationship) or "linear" (Java 4.4.1 parity —
+    #: the linear quantity used directly). Not scalings of each other: linear is proportional, the
+    #: recruitment curve saturates, so they diverge most far from the curve's linear region.
+    seeding_mode: str = "stock_recruitment"
 
     @cached_property
     def movement_is_random(self) -> NDArray[np.bool_]:
@@ -2542,6 +2566,7 @@ class EngineConfig:
             fishing_spatial_maps=fishing_spatial_maps,
             seeding_biomass=seeding_biomass,
             seeding_max_step=seeding_max_step,
+            seeding_mode=_parse_seeding_mode(cfg),
             larva_mortality_rate=larva_mortality_rate,
             larva_mortality_by_dt=_load_larva_mortality_by_dt(cfg, n_sp, n_dt, n_dt * n_yr),
             recruitment_type=recruitment_type,

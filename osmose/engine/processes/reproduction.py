@@ -145,6 +145,11 @@ def reproduction(
         * season_factor
         * TONNES_TO_GRAMS
     )
+    # GitHub #143: "linear" reproduces Java 4.4.1's SeedingInterface — the proportional
+    # tonnes->eggs conversion above, with no recruitment relationship. "stock_recruitment"
+    # (default) additionally passes it through the configured curve, which saturates.
+    # The switch applies only to SEEDED species: a species with real SSB always goes through
+    # the recruitment relationship, since that is the running model rather than initialisation.
     n_eggs = apply_stock_recruitment(
         n_eggs_linear,
         ssb,
@@ -152,6 +157,8 @@ def reproduction(
         config.recruitment_type[:n_sp],
         config.shepherd_beta[:n_sp],
     )
+    if config.seeding_mode == "linear" and seeded_this_step.any():
+        n_eggs = np.where(seeded_this_step, n_eggs_linear, n_eggs)
 
     # Reproductive-volume recruitment gate (Baltic cod). Inert unless enabled;
     # skipped on steps where SSB was seeded (bootstrap must not be gated).

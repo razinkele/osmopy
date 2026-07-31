@@ -568,13 +568,20 @@ def _bioen_reproduction(
                 * season_factor
                 * TONNES_TO_GRAMS
             )
-            n_eggs_arr = apply_stock_recruitment(
-                np.array([n_eggs_linear]),
-                np.array([ssb_seed]),
-                np.array([config.recruitment_ssb_half[sp]]),
-                [config.recruitment_type[sp]],
-            )
-            total_eggs_seed = float(n_eggs_arr[0])
+            # GitHub #143: "linear" reproduces Java 4.4.1's SeedingInterface, which converts seeded
+            # biomass to eggs proportionally (1e6 * seedingBiomass, the TONNES_TO_GRAMS factor above)
+            # with no recruitment relationship. "stock_recruitment" (default) additionally passes
+            # that quantity through the configured curve, so it saturates where Java's does not.
+            if config.seeding_mode == "linear":
+                total_eggs_seed = n_eggs_linear
+            else:
+                n_eggs_arr = apply_stock_recruitment(
+                    np.array([n_eggs_linear]),
+                    np.array([ssb_seed]),
+                    np.array([config.recruitment_ssb_half[sp]]),
+                    [config.recruitment_type[sp]],
+                )
+                total_eggs_seed = float(n_eggs_arr[0])
             if total_eggs_seed > 0:
                 ew_seed = np.nan
                 if config.egg_weight_override is not None:
