@@ -417,9 +417,12 @@ def test_write_diet_csv_emits_one_row_per_recording_period(tmp_path):
         "herring_herring",
         "herring_plankton",
     ]
-    assert df.iloc[0]["cod_plankton"] == pytest.approx(2.0)
-    assert df.iloc[1]["herring_plankton"] == pytest.approx(5.0)
-    assert df.iloc[2]["cod_cod"] == pytest.approx(2.0)
+    # dietMatrix carries per-predator PERCENTAGES, matching Java (#144); the absolute biomass is in
+    # predatorPressure. Step 0 cod ate [0,1,2] -> 2/3; step 1 herring [0,1,5] -> 5/6; step 2 cod
+    # [2,2,0] -> 2/4.
+    assert df.iloc[0]["cod_plankton"] == pytest.approx(200.0 / 3.0)
+    assert df.iloc[1]["herring_plankton"] == pytest.approx(500.0 / 6.0)
+    assert df.iloc[2]["cod_cod"] == pytest.approx(50.0)
 
 
 def test_write_diet_csv_with_empty_step_list_writes_no_file(tmp_path):

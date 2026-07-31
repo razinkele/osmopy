@@ -555,7 +555,7 @@ def _build_diet_dataframe(
     for mat, t in zip(step_matrices, step_times, strict=True):
         if mat.shape != (n_pred, n_prey):
             raise ValueError(f"diet matrix shape {mat.shape} != ({n_pred}, {n_prey}) at time {t}")
-        rows.append([t, *mat.reshape(-1).tolist()])
+        rows.append([t, *_normalize_diet_matrix_to_percent(mat).reshape(-1).tolist()])
     df = pd.DataFrame(rows, columns=["Time", *columns])  # type: ignore[arg-type]
     return {"dietMatrix": df}
 
@@ -573,9 +573,12 @@ def write_diet_csv(
 
     Schema: first column ``Time``; remaining columns are one per
     ``{predator}_{prey}`` pair in predator-major, prey-minor order.
-    Values are BIOMASS EATEN in tonnes. Per-predator percentage
-    normalization is available via ``_normalize_diet_matrix_to_percent``
-    when callers need Java's percentage layout.
+
+    Values are **per-predator PERCENTAGES**, matching Java's ``dietMatrix`` (each predator's row sums
+    to 100, or to 0 for a predator that ate nothing). The ABSOLUTE biomass eaten is written separately
+    as ``predatorPressure``, which is Java's name for that quantity — this engine previously wrote the
+    absolute values under the ``dietMatrix`` name, so the two engines' like-named files carried
+    different quantities and comparing them divided tonnes by percentages (GitHub #144).
 
     No-op when ``step_diet_matrices`` is empty.
     """
@@ -593,7 +596,7 @@ def write_diet_csv(
     for mat, t in zip(step_diet_matrices, step_times, strict=True):
         if mat.shape != (n_pred, n_prey):
             raise ValueError(f"diet matrix shape {mat.shape} != ({n_pred}, {n_prey}) at time {t}")
-        rows.append([t, *mat.reshape(-1).tolist()])
+        rows.append([t, *_normalize_diet_matrix_to_percent(mat).reshape(-1).tolist()])
     df = pd.DataFrame(rows, columns=["Time", *columns])  # type: ignore[arg-type]
     df.to_csv(path, index=False)
 
