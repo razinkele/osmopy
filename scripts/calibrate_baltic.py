@@ -1132,6 +1132,7 @@ def apply_warm_start(
 
 def run_calibration(
     phase: str,
+    seeding_mode: str | None = None,
     maxiter: int = 200,
     n_seeds: int = 1,
     n_years: int = 40,
@@ -1196,6 +1197,13 @@ def run_calibration(
         param_keys, bounds, x0 = get_phase14_params()
     else:
         raise ValueError(f"Unknown phase: {phase}")
+
+    # GitHub #143 A/B: select how seeded biomass becomes eggs. Injected here so the calibration
+    # runs under the same mode it will later be certified and scored under; without this the
+    # refit would silently optimise against the default (stock_recruitment).
+    if seeding_mode is not None:
+        base_config["population.seeding.mode"] = seeding_mode
+        print(f"Seeding mode: {seeding_mode}")
 
     # Phase 1d: pre-fix LTL plankton accessibility at 0.4 (down from R18 0.8)
     if phase == "1d":
@@ -1756,6 +1764,13 @@ def main():
         "convergence. Hard ceiling so a forgotten run can't "
         "grow unbounded. Set to 0 to disable.",
     )
+    parser.add_argument(
+        "--seeding-mode",
+        choices=["stock_recruitment", "linear"],
+        default=None,
+        help="How seeded biomass becomes eggs (GitHub #143). 'linear' matches Java 4.4.1; "
+        "omitted leaves the config's own setting (default stock_recruitment).",
+    )
     parser.add_argument("--validate", action="store_true", help="Run validation only")
     parser.add_argument(
         "--a2",
@@ -1793,6 +1808,7 @@ def main():
         skip_keys = [k.strip() for k in args.skip_warm_start_keys.split(",") if k.strip()]
         run_calibration(
             phase=args.phase,
+            seeding_mode=args.seeding_mode,
             maxiter=args.maxiter,
             n_seeds=args.seeds,
             n_years=args.years,
