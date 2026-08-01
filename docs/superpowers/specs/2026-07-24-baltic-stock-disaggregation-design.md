@@ -122,13 +122,33 @@ now on master. The epsilon-constraint stability *calibration* integration
 (`baltic_stability_sweep.py` + the `calibrate_baltic.py` port) is deferred — needed only
 for stability re-calibration, not this project.
 
-**Certified stability gap (the motivation, now measured):** the committed 5/8 baseline is
-only **2/8 persistent-&-in-envelope over 50 yr × 5 seeds** (herring, stickleback PASS;
-cod, sprat, flounder are in-range on the 40-yr decade-mean but dip below the persistence
-floor over 50 yr — cod min 2.4 kt, flounder 1.1 kt; perch/pikeperch/smelt over-target).
-So the β-bounds re-fit got decade-means in range but did NOT stabilize the system — the
-branch's "params alone can't stabilize" holds for the 5/8 baseline too. The RV recruitment
-gate (Phase 0) and disaggregation are the structural levers for that gap.
+**Certified stability gap — ⚠ THIS GAP DOES NOT EXIST (corrected 2026-08-01; see the correction
+section at the end).** The paragraph below is retained as written; every claim in it is superseded.
+
+> ~~the committed 5/8 baseline is only **2/8 persistent-&-in-envelope over 50 yr × 5 seeds** (herring,
+> stickleback PASS; cod, sprat, flounder are in-range on the 40-yr decade-mean but dip below the
+> persistence floor over 50 yr — cod min 2.4 kt, flounder 1.1 kt; perch/pikeperch/smelt over-target).
+> So the β-bounds re-fit got decade-means in range but did NOT stabilize the system — the branch's
+> "params alone can't stabilize" holds for the 5/8 baseline too. The RV recruitment gate (Phase 0) and
+> disaggregation are the structural levers for that gap.~~
+
+**What is actually true.** `556ba3d` rescoped `persists` from the whole-run minimum (dominated by the
+seeding bootstrap) to the final-decade minimum:
+
+- **It is 5/8, not 2/8.** cod, sprat and flounder read `persists ✗` / `in-envelope ✓` — the artifact
+  signature. Their "cod min 2.4 kt, flounder 1.1 kt" are **bootstrap** minima, not a 50-yr dip; these
+  species do not dip at equilibrium. Corrected PASS set: cod, herring, sprat, flounder, stickleback.
+- **The gap closes to zero.** The corrected 5/8 is *identical* to the in-envelope set, so "5/8 ICES vs
+  2/8 stable" has no daylight in it. Structural: once `persists` uses the final decade and the mean is
+  in-envelope, `in_envelope` is the only binding constraint. *(Recount from the committed table under
+  the audit's classification, not a fresh run — only `--params current` has been re-certified.)*
+- **"Params alone can't stabilize" is contradicted, not merely unsupported.** Its sole evidence was the
+  defective flag. `docs/baltic_cod_east_M_revert_test_2026-08-01.md` is a *tested* single-parameter
+  intervention moving cod_east 14.5–15.1 kt → 82.6–83.4 kt into envelope, 6/9 → 7/9.
+- **Phase 0 therefore has no success criterion as written.** The persistence gap it targets is not
+  there. The residual real failure is the percid `in_envelope` overshoot, which neither a cod-only RV
+  gate nor cod E/W disaggregation is shown to address. Anyone executing Phase 0 against this section
+  must define a target against `in_envelope`, not persistence.
 
 ## 5. Phases
 
@@ -140,9 +160,13 @@ gate (Phase 0) and disaggregation are the structural levers for that gap.
   salinity + bottom oxygen NetCDFs (the pipeline already handles `so` at depth; add the
   bottom-field selection + `o2b`). The oxygen infra is already on master. Validate with the
   reconciled certifier. Without this, eastern cod cannot collapse for the right reason —
-  and the whole system stays unstable (§4a).
+  and the whole system stays unstable (§4a) — **⚠ superseded: the system is not unstable; see the
+  §4a correction. Re-derive this phase's rationale against `in_envelope`.**
 - **Phase 1 — cod E/W (PoC).** Establishes the whole recipe. SD24 as mixing cell;
-  eastern-cod recruitment on RV forcing + doubled M + impaired condition; western cod
+  eastern-cod recruitment on RV forcing + ~~doubled M~~ **[⚠ corrected: the implemented lever runs the
+  OPPOSITE way — cod_east `sp8 = 0.9` vs cod_west `sp0 = 1.2546`, and 1.2546 puts cod_east ~5.6× below
+  envelope. §2.1's literature claim about real eastern-cod M2 stands; this build instruction does not.]**
+  + impaired condition; western cod
   standard. De-risks the pattern. Highest value.
 - **Phase 2 — herring four units.** Region base maps for the four units; Riga/Bothnia
   growth contrast; northern salinity range limit. (Not three; never merge Riga+Bothnia.)
