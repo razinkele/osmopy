@@ -18,7 +18,8 @@ verified baseline gap. Cod-forcing, cod-M pinning, and the seal lever are **out 
 
 ## 1. Goal
 
-On the aggregate 8-species baseline, reduce the **percid (perch, pikeperch) and smelt overshoot**
+On the aggregate 8-species baseline, reduce the **percid (perch, pikeperch) overshoot** ~~and smelt~~
+*(corrected 2026-08-01: smelt is percid PREY — percid-directed removals release it. Monitored, not targeted.)*
 using *scientifically-grounded* removals the model currently omits:
 - realistic **percid fishing mortality** (recreational + small-scale coastal, under-reported to
   ICES and not analytically assessed);
@@ -32,16 +33,22 @@ sprat, flounder, stickleback) are in-envelope and must stay so.
 **Honest framing (from the review):** perch (~2×) is plausibly closable with grounded removals;
 **pikeperch (~90×) very likely is NOT** — cormorants reach only *juvenile* pikeperch (size window
 8.75–34 cm; pikeperch matures ~40 cm), and a ~90× overshoot signals missing *habitat density
-regulation* (coarse grid) that additive mortality cannot supply without destabilising. This
+regulation* (coarse grid) that additive mortality cannot supply without destabilising *(the
+"destabilising" evidence is under re-derivation — see correction 5; Lever 1's in_envelope basis
+survives, Lever 8's whole-run boom/bust ratio does not)*. This
 design tests how far grounded removals move the percids; it does not promise envelope-membership
 for pikeperch.
 
 ## 2. Base configuration and the mandatory pre-flight
 
 - **Branch** off `646a36d` (aggregate 8-species). `master` keeps the disaggregation experiment.
-- **Restore + verify FIRST (blocking):** apply `phase13_equilibrium.json`, re-run
-  `baltic_stability_certify.py`, and confirm the 5/8 / obj-2.33 / cod ~64 kt state before touching
-  anything. `phase13_equilibrium.json` is a 39-param, 8-species-era artifact — confirm it applies
+- **Restore + verify FIRST (blocking):** **cherry-pick `556ba3d` onto the branch first** — the
+  certify script at base commit `646a36d` computes `vmin` over the whole run, the statistic that
+  invalidates this pre-flight. Then apply `phase13_equilibrium.json`, re-run
+  `baltic_stability_certify.py`, and confirm the **in-envelope count of 5/8** / obj-2.33 / cod ~64 kt
+  state before touching anything. *(Corrected 2026-08-01: "5/8" in the source docs is the in-envelope
+  count, but the script prints the combined persist∧in-envelope verdict — **2/8** pre-fix. The two
+  coincide only after `556ba3d`, so "confirm 5/8" is unsatisfiable on the pre-fix script.)* `phase13_equilibrium.json` is a 39-param, 8-species-era artifact — confirm it applies
   cleanly on the 8-species `get_phase13_shepherd_params` (NOT master's 45-param 9-species version).
   Without a verified clean baseline, later regressions are unattributable.
 
@@ -137,10 +144,15 @@ free params with **explicit x0 = the Step-0 max-grounded values**. Required plum
 ## 6. Validation, acceptance bar, revert rule
 
 - **Pre-registered magnitude bar:** perch overshoot reduced to ≤ (envelope-upper × 2) or better;
-  smelt toward envelope; pikeperch — record the reduction achieved (expected small). "Improved
+  ~~smelt toward envelope~~ *(dropped 2026-08-01 — percid removals release smelt; record its rise
+  as a monitored side-effect, do not bar on it)*; pikeperch — record the reduction achieved
+  (expected small). "Improved
   toward" alone is insufficient — state the numeric threshold before running.
 - **No-regression (hard):** every well-assessed stock (cod, herring, sprat, flounder, stickleback)
-  stays in its baseline envelope; cod persistence no worse. Note this is *nearly guaranteed by
+  stays in its baseline envelope; **cod's final-decade mean stays in envelope AND its final-decade
+  minimum stays above 0.1 × envelope-lower** *(corrected 2026-08-01: "cod persistence no worse" was
+  unfailable — cod read `persists ✗` in the cited baseline, so "no worse than ✗" had no teeth. Post-
+  `556ba3d` cod is a PASS, so the bar is now materially stricter than originally intended)*. Note this is *nearly guaranteed by
   construction* (warm-start + a lever tunable to zero effect), so it does not by itself prove the
   mechanism works — also predict the sign+magnitude of cormorant consumption and the percid
   response and check against the Hansson budget as an output test.
@@ -153,10 +165,13 @@ free params with **explicit x0 = the Step-0 max-grounded values**. Required plum
 
 ## 7. Risks
 
-- **Percid mortality may destabilise** (prior 8-lever finding) — grounded magnitudes + the Step-0
+- **Percid mortality may destabilise** (prior 8-lever finding — *under re-derivation: the supporting
+  certification rows are verified seeding-transient artifacts, and Lever 8's boom/bust 76→2591 rests
+  on a whole-run max/min ratio. Treat as unquantified, not established*) — grounded magnitudes + the Step-0
   gate + the revert rule bound this; accept residual overshoot over over-cranking.
 - **Pikeperch ~90× likely not closable** — stated as the binding constraint, not hidden; the
-  effort's realistic wins are perch (~2×) and smelt (~5×).
+  effort's realistic win is perch (~2×). *(Corrected 2026-08-01: smelt ~5× was listed as a win, but
+  percid removals RELEASE smelt — the executed run took it ×5.3 → ×5.8. Not a win; a side-effect.)*
 - **SSB-vs-total-biomass** — state which metric the bar uses (the harness scores total biomass).
 
 ## 8. Config-binding checklist (must hold in the plan)
@@ -186,7 +201,7 @@ Heikinheimo et al. (2021), Östman et al. (2013) (cormorant predation on perch).
 final-decade minimum. Audit: `docs/baltic_certification_reread_2026-08-01.md`. **The design's core
 motivation survives** — the percid overshoot is an `in_envelope` failure, untouched by the fix.
 
-1. **Smelt is not a reducible target — the levers push it the wrong way** (§1 L21, §6 L120, §7 L139).
+1. **[FIXED in body]** **Smelt is not a reducible target — the levers push it the wrong way** (§1 L21, §6 L120, §7 L139).
    Both levers are percid-directed mortality and smelt is perch/pikeperch prey, so removing a predator
    *releases* it. The executed run confirms: smelt **×5.3 → ×5.8** (`baltic_percid_removals_outcome_2026-07-28.md`),
    same mechanism as raising cod_east M lifting sprat +14%. Smelt is a **monitored side-effect**, not a
@@ -197,15 +212,15 @@ motivation survives** — the percid overshoot is an `in_envelope` failure, unto
    kill switch and the one gate with no multi-seed redundancy. **Redefine on final-decade statistics.**
    → **DONE**: §4 step 3 rewritten 2026-08-01 with explicit PROCEED / STOP-futile / STOP-harmful
    criteria on final-decade statistics, smelt excluded as a gate, and a `556ba3d` pre-flight check.
-3. **The blocking pre-flight (§2 L42-46) reproduces the defect.** `git show 646a36d:scripts/baltic_stability_certify.py`
+3. **[FIXED in body]** **The blocking pre-flight (§2 L42-46) reproduces the defect.** `git show 646a36d:scripts/baltic_stability_certify.py`
    has `vmin = float(v.min())`; `556ba3d` is on master only. **Cherry-pick `556ba3d` before the
    pre-flight.** Also: "5/8" in the source docs is the *in-envelope* count, while the script prints the
    combined persist∧in-envelope verdict — **2/8** pre-fix. The numbers coincide only after the fix, so
    "confirm 5/8" cannot be satisfied by the pre-fix script.
-4. **"Cod persistence no worse" (§6 L123) was vacuous and its reference has flipped.** Cod read
+4. **[FIXED in body]** **"Cod persistence no worse" (§6 L123) was vacuous and its reference has flipped.** Cod read
    `persists ✗` in the cited baseline, so "no worse than ✗" was unfailable. Post-fix cod is a PASS, so
    the bar becomes materially stricter than intended. Wrong either way as written.
-5. **Both "destabilising" premises need re-deriving** (§7 L136; §1 L34-36), by provenance:
+5. **[FLAGGED in body — needs re-derivation, not a text fix]** **Both "destabilising" premises need re-deriving** (§7 L136; §1 L34-36), by provenance:
    - the certification rows behind "the percid work destabilises" are **verified artifacts**
      (`baltic_percid_removals_certification_2026-07-28.md` is on the audit list, cod/sprat/flounder/perch);
    - **Lever 8**'s boom/bust 76→2591 rests on a whole-run max/min ratio (cf.
