@@ -161,9 +161,33 @@ seeding bootstrap) to the final-decade minimum:
   `reproduction.py` (cod-only initially). Forcing: extend `osmose/forcing/` to emit bottom
   salinity + bottom oxygen NetCDFs (the pipeline already handles `so` at depth; add the
   bottom-field selection + `o2b`). The oxygen infra is already on master. Validate with the
-  reconciled certifier. Without this, eastern cod cannot collapse for the right reason —
-  and the whole system stays unstable (§4a) — **⚠ superseded: the system is not unstable; see the
-  §4a correction. Re-derive this phase's rationale against `in_envelope`.**
+  reconciled certifier. Without this, eastern cod cannot collapse for the right reason.
+
+  **~~and the whole system stays unstable (§4a)~~ — superseded (2026-08-01): the system is not
+  unstable. Measured 5/8 on this very config under the corrected `persists`
+  (`docs/baltic_8species_recert_corrected_criterion_2026-08-01.md`), with cod already PASS
+  (60,931–68,364 t, in envelope). Phase 0 cannot be justified as closing a stability gap.**
+
+  **Success criterion, re-derived against `in_envelope` (#145).** Phase 0 is a **realism**
+  intervention, not a fit intervention — cod is already in envelope without it, so no fit improvement
+  is available to claim. It is justified by representing eastern-cod reproductive-volume limitation,
+  which is real ecology. It therefore passes on **non-regression plus demonstrated mechanism**, both
+  on final-decade statistics:
+
+  1. **Non-regression (hard).** No species leaves its envelope on the final-decade mean, and none
+     falls below `0.1 × envelope-lower` on the final-decade minimum. Baseline to beat: **5/8**, cod
+     60,931–68,364 t. A drop below 5/8 is a fail, not a trade-off to argue about.
+  2. **Mechanism demonstrated (hard).** With the gate enabled, cod recruitment must track the RV
+     series: correlate per-step recruitment against `clip(RV/RV_ref, 0, 1)` across the run and require
+     a clear positive association, plus an A/B showing recruitment differs materially between
+     gate-on and gate-off. **A gate that changes nothing has not been demonstrated to work** — it has
+     been demonstrated to be inert, which is a fail. (This engine has twice shipped switches that
+     silently no-op'd; assume nothing from configuration alone.)
+  3. **Explicitly NOT a criterion:** any improvement in the persistence count, any movement of the
+     percid overshoot. The percids are an `in_envelope` failure that a cod-only gate has no mechanism
+     to address; claiming credit there would be spurious.
+
+  **Tracked as [#145](https://github.com/razinkele/osmopy/issues/145).**
 - **Phase 1 — cod E/W (PoC).** Establishes the whole recipe. SD24 as mixing cell;
   eastern-cod recruitment on RV forcing + ~~doubled M~~ **[⚠ corrected: the implemented lever runs the
   OPPOSITE way — cod_east `sp8 = 0.9` vs cod_west `sp0 = 1.2546`, and 1.2546 puts cod_east ~5.6× below
