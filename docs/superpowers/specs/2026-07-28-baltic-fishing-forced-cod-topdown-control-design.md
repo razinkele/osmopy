@@ -98,6 +98,12 @@ cheap check was run *after* the fact. **Do not repeat that.**
    **Smelt is NOT a go/no-go criterion.** Both levers are percid-directed and smelt is percid prey, so
    removing a predator releases it — smelt is expected to rise and is **monitored, not gated**.
 
+   **Watch pikeperch inter-annual variability specifically.** Re-derivation on this spec's own base
+   commit (2026-08-01) found strong percid mortality raises pikeperch's **final-decade** boom/bust
+   **2.4×** (1.19 → 2.87) while leaving perch's near 1 (1.04 → 1.18). The destabilisation risk is real
+   but belongs to **pikeperch, not perch**. Record pikeperch's final-decade max/min each run; treat a
+   rise beyond ~3× as a STOP-harmful signal even if its mean moves toward envelope.
+
    **Pre-flight requirement:** confirm the certify script in use is at `556ba3d` or later. The copy at
    this spec's base commit `646a36d` computes `vmin = float(v.min())` over the whole run, which is the
    discredited statistic this gate must avoid.
@@ -146,7 +152,9 @@ free params with **explicit x0 = the Step-0 max-grounded values**. Required plum
 - **Pre-registered magnitude bar:** perch overshoot reduced to ≤ (envelope-upper × 2) or better;
   ~~smelt toward envelope~~ *(dropped 2026-08-01 — percid removals release smelt; record its rise
   as a monitored side-effect, do not bar on it)*; pikeperch — record the reduction achieved
-  (expected small). "Improved
+  (expected small) **and its final-decade boom/bust — the lever raises pikeperch variability 2.4× on
+  this config even when its mean barely moves, so "barely moved" is not the same as "harmless"**.
+  "Improved
   toward" alone is insufficient — state the numeric threshold before running.
 - **No-regression (hard):** every well-assessed stock (cod, herring, sprat, flounder, stickleback)
   stays in its baseline envelope; **cod's final-decade mean stays in envelope AND its final-decade
