@@ -61,7 +61,14 @@ def _species_row(bio, sp: str) -> dict:
     lo, hi = ENVELOPE[sp]
     v = np.asarray(bio[sp].values, float) if sp in bio.columns else np.array([0.0])
     late = v[-10:] if len(v) >= 10 else v
-    vmin, late_mean = float(v.min()), float(np.mean(late))
+    # `persists` describes the EQUILIBRIUM, so the minimum is scoped to the final decade like
+    # `in_envelope`'s mean. Using the whole-run minimum made it a statement about the SEEDING
+    # TRANSIENT: the 2026-08-01 seeding A/B scored two arms 2/9 vs 6/9 whose final-decade means were
+    # within +-5%, purely because one seeded more eggs and dipped less deeply during bootstrap
+    # (docs/baltic_seeding_ab_comparison_2026-08-01.md). cod_east dipping to 17 t before settling at
+    # ~83 kt inside envelope was reported as a collapse. A genuine LATE collapse still fails, because
+    # it happens within the final decade.
+    vmin, late_mean = float(late.min()), float(np.mean(late))
     persists = vmin > 0.1 * lo
     in_env = lo <= late_mean <= hi
     return {"min": vmin, "late_mean": late_mean, "persists": persists, "in_envelope": in_env}
@@ -193,7 +200,8 @@ def java_table_from_series(series: dict[str, list[float]]) -> dict:
         lo, hi = ENVELOPE[sp]
         v = np.asarray(values, float)
         late = v[-10:] if len(v) >= 10 else v
-        vmin, late_mean = float(v.min()), float(np.mean(late))
+        # Final-decade minimum, matching _species_row — see the note there.
+        vmin, late_mean = float(late.min()), float(np.mean(late))
         table[sp] = {
             "persists": vmin > 0.1 * lo,
             "in_envelope": lo <= late_mean <= hi,
