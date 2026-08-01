@@ -149,6 +149,8 @@ seeding bootstrap) to the final-decade minimum:
   there. The residual real failure is the percid `in_envelope` overshoot, which neither a cod-only RV
   gate nor cod E/W disaggregation is shown to address. Anyone executing Phase 0 against this section
   must define a target against `in_envelope`, not persistence.
+  **Tracked as [#145](https://github.com/razinkele/osmopy/issues/145)** — Phase 0 is not invalidated
+  (the RV gate may still be worth building on ecological grounds); its stated *success criterion* is.
 
 ## 5. Phases
 
