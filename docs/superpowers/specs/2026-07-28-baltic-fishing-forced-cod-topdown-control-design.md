@@ -172,7 +172,31 @@ free params with **explicit x0 = the Step-0 max-grounded values**. Required plum
   the equilibrium is stable with or without the lever. *Caveat:* the baseline whole-run figure is 338.6
   here vs 76 in the July note, so the configs differ materially (9-species master vs 8-species
   aggregate) — this re-derives the mechanism on the current config, it does not reconstruct what the
-  July run would have shown) — grounded magnitudes + the Step-0
+  July run would have shown.
+
+  **Also re-derived at the spec's own base commit `646a36d` (8-species aggregate, that commit's engine
+  code), 2026-08-01:**
+
+  | arm | species | whole-run B/B | final-decade B/B |
+  |---|---|---|---|
+  | baseline | perch | 839.4 | 1.04 |
+  | cannibalism 10× | perch | 631.5 | **1.18** |
+  | baseline | pikeperch | 10.3 | 1.19 |
+  | cannibalism 10× | pikeperch | 10.6 | **2.87** |
+
+  **The July figures do not reproduce** — baseline whole-run perch is 839.4 here, not 76. So this
+  reconstruction of the lever (percid self-accessibility 0.05→0.5, inferred from the note's prose)
+  differs from whatever was originally run, and **the 76→2591 claim cannot be directly adjudicated**.
+
+  On this reconstruction, split by species — the original claim said "destabilized *it*", meaning perch:
+  - **perch is NOT destabilised**: the lever *lowers* the whole-run ratio (839.4 → 631.5) and the final
+    decade stays near 1 (1.04 → 1.18). This holds on both configs.
+  - **pikeperch IS destabilised**: final-decade variability rises **2.4×** (1.19 → 2.87), and this is on
+    the corrected statistic, so it survives the criterion fix. Master shows the same direction, weaker
+    (1.10 → 1.55).
+
+  **Net:** the risk is real but mis-attributed — it applies to pikeperch, not perch, and only pikeperch
+  should carry a destabilisation caveat) — grounded magnitudes + the Step-0
   gate + the revert rule bound this; accept residual overshoot over over-cranking.
 - **Pikeperch ~90× likely not closable** — stated as the binding constraint, not hidden; the
   effort's realistic win is perch (~2×). *(Corrected 2026-08-01: smelt ~5× was listed as a win, but
