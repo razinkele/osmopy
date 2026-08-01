@@ -45,7 +45,8 @@ unaffected: it is an `in_envelope` failure, which the correction does not touch.
   envelope, and its final-decade minimum is 58–60 kt. The M=0.9 "fix" was tuned against a verdict that
   was measuring the bootstrap.
 * **Conclusions about which species "params alone cannot stabilise"** rest on the SP-B gate, which was
-  fed by the same flag. Those attributions are worth re-deriving.
+  fed by the same flag. Those attributions are worth re-deriving — but see the tested follow-up below
+  before assuming any of them reverse.
 
 ## What this does NOT change
 
@@ -55,6 +56,32 @@ unaffected: it is an `in_envelope` failure, which the correction does not touch.
   were byte-identical before and after the criterion change.
 * The **transient itself** is real: stocks genuinely do dip during bootstrap. What changed is whether
   that dip is reported as a stability verdict.
+
+## Follow-up: TESTED — the M=0.9 decision was warranted anyway
+
+The most consequential claim above was that `cod_east`'s M reduction (1.2545949046281932 -> 0.9) "was
+tuned against a verdict that was measuring the bootstrap". **That was tested on 2026-08-01 and is
+wrong** (`docs/baltic_cod_east_M_revert_test_2026-08-01.md`, `6b65886`):
+
+| | M = 0.9 (current) | M = 1.2546 (original) |
+|---|---|---|
+| `cod_east` final-decade mean | 82,636-83,365 | **14,520-15,077** |
+| vs envelope 60,000-85,000 | in envelope | **~5.6x too low** |
+| overall verdict | 7/9 | 6/9 |
+
+At the original M the stock does **not** collapse — it settles ~5.6x below its ICES target. So M=0.9 is
+doing substantial work on the **mean**, entirely independent of the persistence flag that prompted it.
+**No revert.**
+
+**The correction this forces on the audit's framing.** "The signal was artifactual" does **not** imply
+"the action taken was wrong". The COLLAPSE verdict for `cod_east` was indeed a bootstrap artifact — but
+the parameter response to it was warranted on its merits, for a reason the original note did not
+record. Every decision that cited a persistence flag needs testing individually; this audit identifies
+*which claims rest on a faulty signal*, not which decisions should be unwound.
+
+Also observed, and the reason the test was scoped system-wide rather than to the cod row: raising
+`cod_east` M releases predation and lifts **sprat 1.05 M -> 1.20 M (+14%)**. Read alone, `cod_east` at
+M=1.2546 shows `persists ✓` and gives no indication it sits far below target.
 
 ## Recommended follow-up
 
