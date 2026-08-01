@@ -165,9 +165,14 @@ free params with **explicit x0 = the Step-0 max-grounded values**. Required plum
 
 ## 7. Risks
 
-- **Percid mortality may destabilise** (prior 8-lever finding — *under re-derivation: the supporting
-  certification rows are verified seeding-transient artifacts, and Lever 8's boom/bust 76→2591 rests
-  on a whole-run max/min ratio. Treat as unquantified, not established*) — grounded magnitudes + the Step-0
+- ~~**Percid mortality may destabilise**~~ (prior 8-lever finding — **RE-DERIVED 2026-08-01, NOT
+  SUPPORTED**. Cannibalism 0.05→0.5, 50 yr × 3 seeds on the current master: perch boom/bust
+  **whole-run 338.6 → 261.6** (the lever *lowers* it) and **final-decade 1.11 → 1.05**; pikeperch
+  whole-run 8.7 → 8.8, final-decade 1.10 → 1.55. Both arms sit at ~1.0–1.6 on the final decade, i.e.
+  the equilibrium is stable with or without the lever. *Caveat:* the baseline whole-run figure is 338.6
+  here vs 76 in the July note, so the configs differ materially (9-species master vs 8-species
+  aggregate) — this re-derives the mechanism on the current config, it does not reconstruct what the
+  July run would have shown) — grounded magnitudes + the Step-0
   gate + the revert rule bound this; accept residual overshoot over over-cranking.
 - **Pikeperch ~90× likely not closable** — stated as the binding constraint, not hidden; the
   effort's realistic win is perch (~2×). *(Corrected 2026-08-01: smelt ~5× was listed as a win, but
@@ -220,11 +225,13 @@ motivation survives** — the percid overshoot is an `in_envelope` failure, unto
 4. **[FIXED in body]** **"Cod persistence no worse" (§6 L123) was vacuous and its reference has flipped.** Cod read
    `persists ✗` in the cited baseline, so "no worse than ✗" was unfailable. Post-fix cod is a PASS, so
    the bar becomes materially stricter than intended. Wrong either way as written.
-5. **[FLAGGED in body — needs re-derivation, not a text fix]** **Both "destabilising" premises need re-deriving** (§7 L136; §1 L34-36), by provenance:
+5. **[Lever 8 RE-DERIVED — not supported; certification rows remain artifacts]** **Both "destabilising" premises need re-deriving** (§7 L136; §1 L34-36), by provenance:
    - the certification rows behind "the percid work destabilises" are **verified artifacts**
      (`baltic_percid_removals_certification_2026-07-28.md` is on the audit list, cod/sprat/flounder/perch);
    - **Lever 8**'s boom/bust 76→2591 rests on a whole-run max/min ratio (cf.
-     `scripts/baltic_rv_overshoot_diagnostic.py:311`) — **unsupported pending re-derivation**, not false;
+     `scripts/baltic_rv_overshoot_diagnostic.py:311`) — **re-derived 2026-08-01 and NOT SUPPORTED**:
+     on the final decade both arms sit at ~1.0–1.6 and the lever *lowers* perch's whole-run ratio
+     (338.6 → 261.6). See §7 for the table and the config-drift caveat;
    - **Lever 1** cites an `in_envelope` result and **survives** — do not lump it with the above.
 
 **Verified correct, do not "fix":** pikeperch ~90× / perch ~2× / smelt ~5× are right for this spec's
