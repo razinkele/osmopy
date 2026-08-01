@@ -175,3 +175,39 @@ MacKenzie/Köster/Wieland (reproductive volume, salinity+oxygen); Momigliano et 
 (2017 PNAS; 2018 Front. Mar. Sci.; 2019 ICES JMS, flounder speciation); Svedäng et al.
 (2024, cod growth decline); ICES stock codes verified live (cod.27.24-32, .22-24;
 her.27.20-24, .25-2932, .28, .3031).
+
+---
+
+# ⚠ CORRECTION 2026-08-01 — §4a and §5 rest on a defective criterion
+
+`556ba3d` rescoped `persists` in `scripts/baltic_stability_certify.py` from the **whole-run** minimum
+(dominated by the Baltic seeding bootstrap) to the **final-decade** minimum. Audit:
+`docs/baltic_certification_reread_2026-08-01.md`. Five corrections; §1–§3, §6, §7 and §2's literature
+basis are unaffected.
+
+1. **§4a "only 2/8 persistent-&-in-envelope" is wrong — it is 5/8.** The source note
+   (`baltic_stability_certification_2026-07-01.md`) flags cod, sprat and flounder `persists ✗` /
+   `in-envelope ✓` — the artifact signature. Flipping them gives **5/8**, PASS set **cod, herring,
+   sprat, flounder, stickleback** (not "herring, stickleback"). **The "5/8 ICES vs 2/8 stable" gap
+   that §4a bills as the motivation closes to zero** — structurally, since once `persists` uses the
+   final-decade minimum and the mean is in-envelope, `in_envelope` becomes the only binding
+   constraint. *This 5/8 is a recount from the committed table under the audit's classification, not a
+   fresh run; only `--params current` has been re-certified.*
+2. **§4a's "dip below the persistence floor over 50 yr" places the dip at the wrong end.** Those
+   minima are bootstrap values. These species do not dip at equilibrium.
+3. **§4a's "params alone can't stabilize" is contradicted, not merely unsupported.** Its only evidence
+   was the defective flag. `docs/baltic_cod_east_M_revert_test_2026-08-01.md` is a *tested*
+   single-parameter intervention moving cod_east 14.5–15.1 kt → 82.6–83.4 kt into envelope, 6/9 → 7/9.
+4. **Phase 0 loses its success criterion.** The persistence gap it targets largely does not exist. The
+   residual real failure is the percid `in_envelope` overshoot, which neither a cod-only RV gate nor
+   cod E/W disaggregation is shown to address. `docs/baltic_cod_ew_phase1_report_2026-07-25.md`
+   inherits the defective number from this spec.
+5. **§5's "doubled M" build instruction runs opposite to the implementation.** Verified in
+   `data/baltic/baltic_param-additional-mortality.csv`: cod_east `sp8 = 0.9` against cod_west
+   `sp0 = 1.2545949046281932` — the eastern stock's additional mortality is *below* the western's, and
+   the revert test shows 1.2546 puts it ~5.6× below envelope. **§2.1's "roughly-doubled M" literature
+   claim about real eastern cod stands** — this correction is scoped to the build instruction only.
+   (`mortality.additional.rate` is not total natural mortality; predation is emergent.)
+
+**Not corrected:** the percid overshoot premise survives entirely — it is an `in_envelope` failure,
+untouched by the fix, and remains the outstanding calibration problem.

@@ -157,3 +157,39 @@ grid (the proper pikeperch fix); herring/flounder disaggregation.
 `docs/baltic_findings_summary_2026-07-28.docx` §6 (full, verification-tagged). Key: Hansson et al.
 (2018) *ICES JMS* 75(3):999; Baltic pikeperch status reviews (recreational ≥ commercial);
 Heikinheimo et al. (2021), Östman et al. (2013) (cormorant predation on perch).
+
+---
+
+# ⚠ CORRECTION 2026-08-01 — gates and bars read a discredited statistic
+
+`556ba3d` rescoped `persists` from the whole-run minimum (seeding-bootstrap dominated) to the
+final-decade minimum. Audit: `docs/baltic_certification_reread_2026-08-01.md`. **The design's core
+motivation survives** — the percid overshoot is an `in_envelope` failure, untouched by the fix.
+
+1. **Smelt is not a reducible target — the levers push it the wrong way** (§1 L21, §6 L120, §7 L139).
+   Both levers are percid-directed mortality and smelt is perch/pikeperch prey, so removing a predator
+   *releases* it. The executed run confirms: smelt **×5.3 → ×5.8** (`baltic_percid_removals_outcome_2026-07-28.md`),
+   same mechanism as raising cod_east M lifting sprat +14%. Smelt is a **monitored side-effect**, not a
+   target; "smelt toward envelope" is unachievable by these levers by construction.
+2. **The Step-0 go/no-go gate (§4 L76-78) would fire a false "futile → stop".** It reads an undefined
+   "destabilise" off a single sim, and every stability verdict at spec-time was the whole-run minimum —
+   on the aggregate baseline cod dips to 2.39e3 t against a 61–68 kt final-decade mean. This is the
+   kill switch and the one gate with no multi-seed redundancy. **Redefine on final-decade statistics.**
+3. **The blocking pre-flight (§2 L42-46) reproduces the defect.** `git show 646a36d:scripts/baltic_stability_certify.py`
+   has `vmin = float(v.min())`; `556ba3d` is on master only. **Cherry-pick `556ba3d` before the
+   pre-flight.** Also: "5/8" in the source docs is the *in-envelope* count, while the script prints the
+   combined persist∧in-envelope verdict — **2/8** pre-fix. The numbers coincide only after the fix, so
+   "confirm 5/8" cannot be satisfied by the pre-fix script.
+4. **"Cod persistence no worse" (§6 L123) was vacuous and its reference has flipped.** Cod read
+   `persists ✗` in the cited baseline, so "no worse than ✗" was unfailable. Post-fix cod is a PASS, so
+   the bar becomes materially stricter than intended. Wrong either way as written.
+5. **Both "destabilising" premises need re-deriving** (§7 L136; §1 L34-36), by provenance:
+   - the certification rows behind "the percid work destabilises" are **verified artifacts**
+     (`baltic_percid_removals_certification_2026-07-28.md` is on the audit list, cod/sprat/flounder/perch);
+   - **Lever 8**'s boom/bust 76→2591 rests on a whole-run max/min ratio (cf.
+     `scripts/baltic_rv_overshoot_diagnostic.py:311`) — **unsupported pending re-derivation**, not false;
+   - **Lever 1** cites an `in_envelope` result and **survives** — do not lump it with the above.
+
+**Verified correct, do not "fix":** pikeperch ~90× / perch ~2× / smelt ~5× are right for this spec's
+8-species base at `646a36d` (finding #5's "~56×" is the 9-species master — different config, both
+correct in context); the scope note's cod descoping already distinguishes seeding from equilibrium.
