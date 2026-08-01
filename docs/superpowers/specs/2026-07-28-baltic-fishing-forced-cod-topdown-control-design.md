@@ -72,10 +72,30 @@ cheap check was run *after* the fact. **Do not repeat that.**
 2. Run **one** forward sim (40–50 yr) and read: (a) how far perch, pikeperch, smelt move; (b)
    whether the well-assessed stocks (cod/herring/sprat/flounder/stickleback) stay in-envelope; (c)
    realized cormorant consumption vs the Hansson budget (~2× the fishery for perch).
-3. **Go/no-go:** if maxed grounded levers move perch/smelt without collateral damage → proceed
-   (scoped to what actually moves; expect pikeperch to barely move). If they move nothing or
-   destabilise the well-assessed stocks → the re-calibration is futile; record the finding and
-   stop. This 15-minute check gates the 4–8 h run.
+3. **Go/no-go — final-decade statistics only.** *(Revised 2026-08-01; see the correction section at
+   the end of this document. The original wording read an undefined "destabilise" off whole-run
+   extrema, which are dominated by the seeding bootstrap and would have fired a false "futile → stop"
+   on the whole effort — cod dips to 2.39e3 t on the aggregate baseline against a 61–68 kt
+   final-decade mean.)*
+
+   Evaluate **every** criterion on the final decade of the run. Never on whole-run minima or maxima.
+
+   - **PROCEED** if perch's final-decade mean moves toward its envelope, **and** no well-assessed
+     stock (cod, herring, sprat, flounder, stickleback) leaves its envelope on the final-decade mean.
+   - **STOP — futile** if perch's final-decade mean is unmoved (< 5%, i.e. inside the ~1.9%
+     seed-to-seed noise with margin) under maxed levers.
+   - **STOP — harmful** if any well-assessed stock's final-decade mean leaves its envelope, or its
+     final-decade minimum falls below `0.1 × envelope-lower` (the corrected `persists` test,
+     `scripts/baltic_stability_certify.py` at `556ba3d` or later).
+
+   **Smelt is NOT a go/no-go criterion.** Both levers are percid-directed and smelt is percid prey, so
+   removing a predator releases it — smelt is expected to rise and is **monitored, not gated**.
+
+   **Pre-flight requirement:** confirm the certify script in use is at `556ba3d` or later. The copy at
+   this spec's base commit `646a36d` computes `vmin = float(v.min())` over the whole run, which is the
+   discredited statistic this gate must avoid.
+
+   This 15-minute check gates the 4–8 h run.
 
 ## 5. Components
 
@@ -175,6 +195,8 @@ motivation survives** — the percid overshoot is an `in_envelope` failure, unto
    "destabilise" off a single sim, and every stability verdict at spec-time was the whole-run minimum —
    on the aggregate baseline cod dips to 2.39e3 t against a 61–68 kt final-decade mean. This is the
    kill switch and the one gate with no multi-seed redundancy. **Redefine on final-decade statistics.**
+   → **DONE**: §4 step 3 rewritten 2026-08-01 with explicit PROCEED / STOP-futile / STOP-harmful
+   criteria on final-decade statistics, smelt excluded as a gate, and a `556ba3d` pre-flight check.
 3. **The blocking pre-flight (§2 L42-46) reproduces the defect.** `git show 646a36d:scripts/baltic_stability_certify.py`
    has `vmin = float(v.min())`; `556ba3d` is on master only. **Cherry-pick `556ba3d` before the
    pre-flight.** Also: "5/8" in the source docs is the *in-envelope* count, while the script prints the
