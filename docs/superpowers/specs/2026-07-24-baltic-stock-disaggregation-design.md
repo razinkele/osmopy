@@ -214,6 +214,30 @@ seeding bootstrap) to the final-decade minimum:
      **1.000 across years 0–11** — inert through the seeding bootstrap, during which
      `reproduction.py:171` skips the gate anyway — **0.695 over years 12–39**, and **0.438 across the
      final decade**, its strongest bite falling in exactly the window certification scores.
+
+     **Measured 2026-08-02 — the swap is high-risk, and here is the tolerance**
+     (`docs/baltic_rv_gate_mechanism_ab_2026-08-02.md`, 50 yr × 2 seeds). The gate is not merely
+     non-inert; it is **the dominant control on cod_east's certified equilibrium**:
+
+     | arm | final-decade mean | envelope (60,000–85,000 t) |
+     |---|---|---|
+     | gate ON (master) | **83,135 t** | **IN** |
+     | gate OFF | **167,377 t** | **OUT** — 1.97× over the ceiling |
+
+     Ratio 0.497 against a mean factor of 0.438 — near-proportional pass-through; density dependence
+     does not absorb it. **cod_east's PASS is load-bearing on the gate**, so whatever a dynamic RV
+     computes lands almost directly on its envelope status. Fitting the two points
+     (`B ≈ 17,480 + 149,898 · factor`), the admissible final-decade mean factor is **0.284–0.450**,
+     and the current 0.438 sits **2.8% below the upper breach point** with only **2.2% biomass
+     headroom** to the ceiling.
+
+     A computed RV a few percent *higher* than the observed series therefore fails criterion 1 on the
+     high side. **That is the quantitative reason in-sample agreement is the bar and "the arms
+     differ" is not.** Caveat before leaning on the band: 2.2% headroom is *within* the ~1.9%
+     seed-to-seed noise, so cod_east's PASS at the ceiling is marginal — resolve any Phase 0
+     comparison at this boundary with more than 2 seeds, and treat 0.284–0.450 as indicative (a
+     two-point interpolation over a mildly sublinear response), with the upper edge the
+     better-anchored end.
   3. **Explicitly NOT a criterion:** any improvement in the persistence count, any movement of the
      percid overshoot. The percids are an `in_envelope` failure that a cod-only gate has no mechanism
      to address; claiming credit there would be spurious.
