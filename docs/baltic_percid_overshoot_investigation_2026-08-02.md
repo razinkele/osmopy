@@ -171,6 +171,73 @@ sustains 1.08 Mt, so the constraint is that **nothing removes it** — total pre
 pikeperch, F including the missing recreational component, and `Linf = 90 cm`), which act on removal
 and biomass-per-recruit rather than on intake.
 
+## The structural defect: a bay-resident predator with a tap into the basin-wide forage pool
+
+Raised by the user 2026-08-02 and **confirmed against the literature and the config**. This supersedes
+the lever-by-lever search above: none of those levers can work, because the supply side is wrong.
+
+### What the literature says
+
+**Percids are bay-resident with small feeding ranges — the association is even stronger than
+"coastal".** Site-fidelity and home-range work in the Baltic indicates a limited home range *within
+bays* (Christensen et al., 2020; Hansson et al., 2019, as reviewed in Hall et al., 2022). Stable-isotope
+work resolves feeding-range differences *between closely located sites inside one littoral area with no
+migration barriers*, i.e. individual perch are sedentary at sub-bay scale (Ahlbeck Bergendahl et al.,
+2017).
+
+**Stocks are separate, at fine spatial scale.** Pikeperch has "a very local population structure"
+(Björklund et al., 2007, as cited in Olsson et al., 2015). Anadromous Baltic perch populations <50 km
+apart are genetically differentiated with only 3–5% gene flow, and show reproductive homing (Hall et
+al., 2022). Along the Swedish coast, perch shows isolation by distance and departure from panmixia,
+with differentiation between the central Baltic and the Gulf of Bothnia — and critically **stretches of
+deep water act as barriers to gene flow**, the species being explicitly "suitable for local management"
+(Olsson et al., 2011). Olsson et al. (2015) accordingly treat Gulf of Riga SW/NE, Gulf of Finland E/W,
+Archipelago Sea, Holmön (Bothnian Bay), and the Curonian and Vistula Lagoons as **separate coastal
+ecosystems**.
+
+**On seasonal entry to the Baltic Proper food web:** the evidence found points the *other* way — toward
+percids largely not entering the offshore food web at all, rather than entering it seasonally. Perch's
+anadromous ecotype migrates into **freshwater** to spawn, then returns to coastal brackish foraging
+areas (Hall et al., 2022); that is the opposite direction from the open sea. So the model error is
+larger than "year-round instead of summer-only": it is offshore access at all.
+
+### What the config does instead
+
+| | value |
+|---|---|
+| pikeperch adult map | **27 cells** |
+| herring adult map | **593 cells**, and all 27 pikeperch cells fall inside it |
+| herring distribution weight inside pikeperch cells | **4.55%** ≈ 118 kt of the 2.60 Mt |
+| pikeperch consumption of herring | **1.46 Mt/yr** |
+
+Maps are binary presence (0/1, with −99 nodata), so herring is spread uniformly over its 593 cells.
+Pikeperch therefore sees ~118 kt of herring locally at any instant, yet consumes **1.46 Mt/yr — about
+12× the locally available standing stock every year.** OSMOSE redistributes schools across each
+species' map every timestep, so those coastal cells are *continuously restocked from the basin-wide
+pool*.
+
+**The model gives a bay-resident predator a continuously replenished tap into the entire Baltic Proper
+herring stock.** That is the supply the overshoot runs on.
+
+### Why every lever tested was weak
+
+This explains the pattern rather than adding to it:
+
+* **Diet accessibility (10× cut on herring+sprat): −25% only.** Throttling the coefficient leaves the
+  replenishment intact, so pikeperch switched to benthos and smelt.
+* **Fishing mortality (F 0.5 → 1.0): −12%, and 7/9 → 6/9.** Removal cannot outrun an unlimited supply,
+  and heavier removal releases the prey stocks into their own breaches.
+
+Both act on the *demand* side. The defect is on the *supply* side, so neither can close a 56× gap.
+
+### Implication for the fix, and for the envelope comparison
+
+The representation needs percid stocks confined to their local prey base — separate coastal units with
+their own forage, rather than one basin-wide pikeperch drawing on a well-mixed pelagic pool. Note also
+that the ICES envelope (4,000–25,000 t) is a **per-stock** figure for locally-assessed populations,
+while the model carries a single aggregated pikeperch; the comparison is not like-for-like even before
+the supply problem is addressed.
+
 ## Note on the diagnostic itself
 
 Every diet figure above required fixing #146 first: the diet prey axis was labelled with background
@@ -198,6 +265,26 @@ Kokkonen, E., Heikinheimo, O., & Pekcan‐Hekim, Z. (2019). Effects of water tem
 (*Sander lucioperca*) abundance on the stock–recruitment relationship of Eurasian perch (*Perca
 fluviatilis*) in the northern Baltic Sea. *Hydrobiologia, 841*(1), 79–94.
 https://doi.org/10.1007/s10750-019-04008-z
+
+Ahlbeck Bergendahl, I., Holliland, P. B., & Hansson, S. (2017). Feeding range of age 1+ year Eurasian
+perch *Perca fluviatilis* in the Baltic Sea. *Journal of Fish Biology, 90*(5), 2060–2072.
+https://doi.org/10.1111/jfb.13285
+
+Björklund, M., et al. (2007). Cited in Olsson et al. (2015).
+
+Christensen, E. A. F., et al. (2020); Hansson, S., et al. (2019). Cited in Hall et al. (2022).
+
+Hall, M., Koch‐Schmidt, P., & Larsson, P. (2022). Reproductive homing and fine‐scaled genetic
+structuring of anadromous Baltic Sea perch (*Perca fluviatilis*). *Fisheries Management and Ecology,
+29*(5), 586–596. https://doi.org/10.1111/fme.12542
+
+Olsson, J., Mo, K., & Florin, A.-B. (2011). Genetic population structure of perch *Perca fluviatilis*
+along the Swedish coast of the Baltic Sea. *Journal of Fish Biology, 79*(1), 122–137.
+https://doi.org/10.1111/j.1095-8649.2011.02998.x
+
+Olsson, J., Tomczak, M. T., & Ojaveer, H. (2015). Temporal development of coastal ecosystems in the
+Baltic Sea over the past two decades. *ICES Journal of Marine Science, 72*(9), 2539–2548.
+https://doi.org/10.1093/icesjms/fsv143
 
 Olin, M., Heikinheimo, O., & Lehtonen, T. K. (2023). Long‐term monitoring of pikeperch (*Sander
 lucioperca*) populations under increasing temperatures and predator abundances in the Finnish coastal
