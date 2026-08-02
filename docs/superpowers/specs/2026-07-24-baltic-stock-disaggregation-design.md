@@ -175,14 +175,45 @@ seeding bootstrap) to the final-decade minimum:
   on final-decade statistics:
 
   1. **Non-regression (hard).** No species leaves its envelope on the final-decade mean, and none
-     falls below `0.1 × envelope-lower` on the final-decade minimum. Baseline to beat: **5/8**, cod
-     60,931–68,364 t. A drop below 5/8 is a fail, not a trade-off to argue about.
-  2. **Mechanism demonstrated (hard).** With the gate enabled, cod recruitment must track the RV
-     series: correlate per-step recruitment against `clip(RV/RV_ref, 0, 1)` across the run and require
-     a clear positive association, plus an A/B showing recruitment differs materially between
-     gate-on and gate-off. **A gate that changes nothing has not been demonstrated to work** — it has
-     been demonstrated to be inert, which is a fail. (This engine has twice shipped switches that
-     silently no-op'd; assume nothing from configuration alone.)
+     falls below `0.1 × envelope-lower` on the final-decade minimum. A regression is a fail, not a
+     trade-off to argue about.
+
+     **Name the config first — the baseline differs.** On the aggregated **8-species** config the
+     baseline is **5/8** with cod at 60,931–68,364 t, and the gate must be moved to `sp0` (currently
+     explicitly `false`), since `sp8` does not exist there. On the **9-species master** `sp8` already
+     carries the prescribed gate, the baseline is **7/9**, and Phase 0 is purely a mechanism swap with
+     no expected level change in-sample.
+  2. **Mechanism demonstrated (hard) — and the A/B arms are NOT gate-on vs gate-off.**
+
+     ⚠ **Read this before designing the test.** A *prescribed-series* RV gate is **already on master
+     and already enabled** for `sp8`: `reproduction.rv.gate.enabled;true`, `series.file;
+     reference/baltic_cod_reproductive_volume.csv`, `mode;raw_cap`, `ref;150`,
+     `species.enabled.sp8;true` (and `sp0;false`). A gate-on/gate-off A/B therefore **passes today on
+     unmodified master, with none of Phase 0 built.** That is the same acceptance-test failure this
+     criterion exists to prevent, one level up.
+
+     What Phase 0 actually adds is the **mechanism**, not the gate: a per-step RV *computed from
+     forcing* (`Σ deep-basin cell_volume where bottom_salinity ≥ 11 & bottom_O₂ ≥ 2`) replacing a
+     fixed 47-row observed table. The spatial path is genuinely unbuilt — the Baltic config has **no
+     `reproduction.rv.spatial.*` keys at all**, and `natural.py`'s spatial RV egg-survival hook is
+     documented "inert unless enabled".
+
+     **Correct arms: prescribed-series gate (current master) vs dynamic spatial RV (Phase 0).** Two
+     things must hold, and "they differ" is not one of them:
+
+     * **In-sample agreement.** Over 1974–2020, where observations exist, the computed RV must
+       reproduce the prescribed series — that is the validation the data supports. A dynamic RV that
+       *disagrees* in-sample is wrong, not novel.
+     * **Out-of-sample divergence from the clamp.** Past the series end the prescribed gate is pinned
+       at `factor = 0.320` — the series minimum (2020) — **permanently**, by an intentional and
+       well-reasoned clamp (`recruitment_gate.py`: post-series years stay low, no major inflows since,
+       and it keeps the scored tail consistent across run horizons; *not* a defect). Computing RV from
+       forcing instead of holding 2020 forever is the concrete, checkable deliverable.
+
+     Measured for reference (50-yr run, offset 0, `raw_cap`/`ref=150`): the prescribed factor is
+     **1.000 across years 0–11** — inert through the seeding bootstrap, during which
+     `reproduction.py:171` skips the gate anyway — **0.695 over years 12–39**, and **0.438 across the
+     final decade**, its strongest bite falling in exactly the window certification scores.
   3. **Explicitly NOT a criterion:** any improvement in the persistence count, any movement of the
      percid overshoot. The percids are an `in_envelope` failure that a cod-only gate has no mechanism
      to address; claiming credit there would be spurious.
