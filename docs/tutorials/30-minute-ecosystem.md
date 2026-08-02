@@ -218,11 +218,26 @@ Open `tutorial-work/biomass.html` in your browser.
   configuration rather than a lower trophic level, so its position under cod is not a
   pyramid inversion; it sits at roughly sprat's trophic level.
 
-> ⚠ **Trajectory shapes below were not re-verified in the 2026-08-02 re-measurement**
-> (#129), which re-derived window means only. Earlier editions of this tutorial described a
-> stickleback boom-bust and a near-flat cod line at 10–50 t; the cod figure is now known to
-> be wrong by four orders of magnitude, so treat any remaining shape description as
-> provisional until re-checked against your own plot.
+**The shapes on the plot** (measured, seed=42):
+
+- **Sprat** overshoots early — up from 71 kt in year 1 to a peak of **1.56 Mt at year 4** — then
+  falls back and settles around 0.85–0.99 Mt for the rest of the run, ending at 950 kt.
+- **Stickleback** does boom and bust: a sharp peak of **201 kt at year 2**, down to ~62 kt by
+  year 7, then a noisy plateau between 60 and 94 kt. It does not go to zero.
+- **Total cod** starts near nothing (the seeding bootstrap: 71 t in year 1), climbs steeply to
+  **183 kt at year 10**, falls to 125 kt by year 20, climbs back to 180 kt by year 25, and is
+  falling again at year 30 (134 kt).
+
+**That last one is the most interesting line on the chart, and it is not noise.** Cod and sprat
+cycle roughly *out of phase*: cod peaks at year 10 just after sprat bottoms out (822 kt, year 9);
+cod then declines through year 20 while sprat climbs back to 973 kt; then cod recovers to another
+peak at year 25 as sprat falls again. That is a textbook predator–prey lag — the predator's peak
+trails its prey's, and each overshoot sows the next decline.
+
+It also means **30 years is not long enough for this configuration to settle**. The "equilibrium
+window" used below (years 5–25) happens to span roughly one full cycle, so its mean is a reasonable
+summary — but do not read it as a steady state. The certified Baltic runs are 50 years and score the
+final decade; there `cod_east` sits near 83 kt, well below the 145 kt this shorter window reports.
 
 The plot uses a **log y-axis** because biomass spans five or more orders of
 magnitude.  On a linear scale, cod would be a flat line indistinguishable from

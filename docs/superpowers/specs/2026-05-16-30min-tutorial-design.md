@@ -58,7 +58,7 @@ Deferred to a post-merge bookkeeping step (not in the plan): a `project_30min_tu
 - `build_config(work_dir: Path) -> dict` — returns the engine config (~80 keys) with `species.file.sp3` and `predation.accessibility.file` resolved against `work_dir`. **Must be a function, not a bare dict**, because path values vary between the tutorial's `tutorial-work/` and the test's `tmp_path`.
 - `ACCESSIBILITY_CSV: str` — the canonical `;`-separated CSV string. Written verbatim to `work_dir / "accessibility.csv"` by the test fixture and the tutorial.
 - `build_ltl(work_dir: Path) -> Path` — writes `ltl.nc` to `work_dir`, returns the path.
-- `BASELINE_PERTURBATION: tuple[str, str]` — the exact substring the tutorial tells the reader to find + the exact string they replace it with. The test substring-checks both.
+- ~~`BASELINE_PERTURBATION: tuple[str, str]` — the exact substring the tutorial tells the reader to find + the exact string they replace it with. The test substring-checks both.~~ **Replaced 2026-08-02 (#129) by `apply_cod_sprat_perturbation(path, value)`, a name-based edit over both cod columns — see the correction under acceptance test 5 for why the substring form failed silently.**
 
 The tutorial markdown's main code block is a **transcribed copy** of these objects' contents (paths inlined for `tutorial-work/`). The sync contract: the test fixture imports `_tutorial_config` directly; a separate fast test (`test_markdown_block_parses`) regex-extracts the first ```python fence from `30-minute-ecosystem.md` and runs `ast.parse()` on it to catch syntactic drift. Behavioural drift in the markdown's actual values is caught by manual reconciliation at PR review time — discipline cue in the test docstring.
 
@@ -312,7 +312,13 @@ Imports `build_config`, `ACCESSIBILITY_CSV`, `build_ltl`, `BASELINE_PERTURBATION
    - `mean(Forager_perturbed) > 2.0 × mean(Forager_baseline)` — release-from-predation produces a strong response (an 8× drop in accessibility should not just barely move the needle).
    - `mean(PlanktonEater_perturbed) < 0.6 × mean(PlanktonEater_baseline)` — the cascade reached the bottom with a strong signal.
 4. **Markdown code block parses.** A separate fast test extracts the first ```python fence from `30-minute-ecosystem.md` and runs `ast.parse()` on it. Costs ~50 ms; catches syntactic drift between the helper and the markdown.
-5. **The perturbation instruction is findable.** Unpacks `find, replace = BASELINE_PERTURBATION` from the canonical helper, then `assert find in ACCESSIBILITY_CSV and replace not in ACCESSIBILITY_CSV` — confirms both the search-for substring and the replace-with substring are unique-and-disjoint in the canonical CSV. Catches column-reorder / row-rename drift that wouldn't break the main test but *would* break the tutorial's instructions.
+5. **The perturbation instruction is findable.** ~~Unpacks `find, replace = BASELINE_PERTURBATION` from the canonical helper, then `assert find in ACCESSIBILITY_CSV and replace not in ACCESSIBILITY_CSV` — confirms both the search-for substring and the replace-with substring are unique-and-disjoint in the canonical CSV. Catches column-reorder / row-rename drift that wouldn't break the main test but *would* break the tutorial's instructions.~~
+
+   > **Superseded 2026-08-02 (#129) — and the way it failed is the point.** This guard existed to catch exactly the drift that then occurred, and it did not catch it. When Baltic cod was split into `cod_west` (sp0) + `cod_east` (sp8), a **column was added**: the substring `sprat;0.4;` still matched (it now names `cod_west`), so the assertion kept passing while the tutorial's instruction had silently become wrong — it perturbed one of two cod stocks, and not the one with the higher sprat accessibility (`cod_east`, 0.5 vs 0.4).
+   >
+   > **A substring check cannot express "and nothing else needs changing."** It verifies a string is present; it cannot notice that a *new* column now also requires the edit. Positional/textual assertions are structurally blind to insertion, which is the most common schema change here.
+   >
+   > Replaced by `apply_cod_sprat_perturbation`, which edits **by column name** and returns the prior values, plus `test_perturbation_targets_both_cod_stocks`, which asserts both cod columns moved, the canonical values have not drifted, and every other cell is byte-identical. The last clause is what a substring check could never do.
 6. **Headless fallback produces meaningful output.** Asserts the equilibrium summary `bio_long[bio_long["Time"] >= 45].groupby("species")["biomass"].mean()` returns 3 finite values (one per focal species).
 
 ### What the test does NOT assert
