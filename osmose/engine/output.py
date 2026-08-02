@@ -83,7 +83,7 @@ def write_outputs(
             step_diet_matrices=step_matrices,
             step_times=step_times,
             predator_names=config.species_names,
-            prey_names=config.all_species_names,
+            prey_names=diet_prey_names(config),
         )
         # Java's predatorPressure counterpart: same absolute biomass, Java's long orientation.
         trophic = output_dir / "Trophic"
@@ -93,7 +93,7 @@ def write_outputs(
             step_diet_matrices=step_matrices,
             step_times=step_times,
             predator_names=config.species_names,
-            prey_names=config.all_species_names,
+            prey_names=diet_prey_names(config),
             steps_per_record=max(1, int(config.output_record_frequency)),
         )
 
@@ -471,6 +471,20 @@ def _write_mortality_csvs(
 # ---------------------------------------------------------------------------
 
 
+def diet_prey_names(config) -> list[str]:
+    """PREY axis for diet / predator-pressure outputs: schools first, then resources.
+
+    This must mirror how the predation kernel fills the matrix: focal schools are written at
+    their species index, and resources at ``n_species + r_idx``
+    (``osmose/engine/processes/mortality.py``). Background species are NOT prey — the kernel
+    types prey as school (0) or resource (1) only — so using ``all_species_names`` here put
+    GreySeal/Cormorant in the slots the kernel fills with the first two resources, and pushed
+    the remaining resources past the end of the array where a bounds check silently dropped
+    them (#146).
+    """
+    return [*config.species_names, *config.resource_names]
+
+
 def aggregate_diet_by_species(
     diet_matrix: NDArray[np.float64],
     species_id: NDArray[np.int32],
@@ -548,7 +562,7 @@ def _build_diet_dataframe(
         return {}
 
     predator_names = config.species_names
-    prey_names = config.all_species_names
+    prey_names = diet_prey_names(config)
     n_pred, n_prey = len(predator_names), len(prey_names)
     columns = [f"{pred}_{prey}" for pred in predator_names for prey in prey_names]
     rows: list[list[float]] = []

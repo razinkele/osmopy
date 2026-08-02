@@ -1029,8 +1029,11 @@ def test_fr_non_type1_on_prey_only_species_inert():
 #   resources).  The diagnostic monkeypatches enable_diet_tracking to allocate
 #   width 16 so resource cols 11..14 survive.
 
-_RESOURCE_COL_START = 11  # = n_species(9) + first PURE-resource offset (slots 9,10 collide)
-_RESOURCE_COL_END = 15  # exclusive: resources r=2..5 -> cols 11..14
+# Resources occupy cols n_species + r_idx. Before #146 the prey axis was labelled with
+# background species, so slots 9/10 "collided" and these diagnostics started at 11 to avoid
+# them. That collision is fixed: cols 9..14 are all resources, correctly named.
+_RESOURCE_COL_START = 9  # = n_species; resources r=0..5 -> cols 9..14
+_RESOURCE_COL_END = 15  # exclusive
 
 
 def test_aggregate_all_predators_includes_background_slots():
@@ -1099,14 +1102,24 @@ def _run_baltic_short_with_diet(fr: dict | None = None, width: int = 16):
         captured["diet_matrix"] = np.array(diet_matrix, copy=True)
         captured["species_id"] = np.array(species_id, copy=True)
         result = real_agg(diet_matrix, species_id, n_pred_species)
-        # Downstream _build_diet_dataframe validates the per-step matrix against
-        # the PRODUCTION width (n_species + n_background = 10); our wider matrix
-        # would trip that shape check at end-of-run.  Truncate the aggregated
-        # result back to the production width so the run completes — the raw
+        # Downstream _build_diet_dataframe validates the per-step matrix against the
+        # PRODUCTION width; our deliberately-wider matrix would trip that shape check at
+        # end-of-run. Truncate the aggregated result back so the run completes — the raw
         # wide matrix is already captured above for the diagnostic assertions.
-        prod_width = n_pred_species + 2  # n_species + n_background (Baltic = 9 + 2)
+        # Derived from the config, not hardcoded: this used to read `n_pred_species + 2`
+        # (n_species + n_background), which silently encoded the #146 bug and broke the
+        # moment production was corrected to n_species + n_resources.
+        prod_width = n_pred_species + int(cfg.get("simulation.nresource", "0"))
         if result.shape[1] > prod_width:
             return result[:, :prod_width]
+        if result.shape[1] < prod_width:
+            # Pad, don't just truncate. Forcing a width BELOW production (the width-11
+            # diagnostic) otherwise fails the downstream shape check and the run cannot
+            # complete. Zero-padding keeps the harness able to exercise any width while the
+            # raw matrix captured above stays untouched for the assertions.
+            padded = np.zeros((result.shape[0], prod_width), dtype=result.dtype)
+            padded[:, : result.shape[1]] = result
+            return padded
         return result
 
     with mock.patch.object(_pred, "enable_diet_tracking", _wide_enable):
@@ -1122,8 +1135,13 @@ def _run_baltic_short_with_diet(fr: dict | None = None, width: int = 16):
     reason="Baltic config not present in data/baltic/",
 )
 def test_diagnostic_diet_width_keeps_background_and_resource_columns(monkeypatch):
-    """At width 16 the diet matrix retains background-predator rows and the
-    pure-resource columns (10..13) that production's width-10 matrix drops."""
+    """At width 16 the diet matrix retains background-PREDATOR rows plus every resource column.
+
+    The background-predator rows are the point of this diagnostic and are still not in
+    production output (``predator_names = config.species_names``, 9 focal only). The resource
+    columns, which this test was originally written to show production DROPPING, are now
+    retained by production too — see #146 and tests/test_diet_prey_axis.py.
+    """
     from osmose.engine.output import aggregate_diet_all_predators
 
     dm, sid = _run_baltic_short_with_diet(fr={"sp0": (3, 1.0), "sp15": (3, 1.0)}, width=16)
@@ -1144,16 +1162,22 @@ def test_diagnostic_diet_width_keeps_background_and_resource_columns(monkeypatch
     reason="Baltic config not present in data/baltic/",
 )
 def test_diagnostic_width10_truncates_resource_columns():
-    """Production width (n_species + n_background = 11) drops the pure-resource
-    columns: the matrix is only 11 wide, so cols 11..14 do not exist at all.
+    """The OLD production width (n_species + n_background) truncated the resource block.
 
-    This strengthens the width-16 test by proving the resource mass it observes
-    is genuinely recovered by the wider allocation, not present by default.
+    Repurposed by #146. This originally documented live production behaviour: at width 11 the
+    resource columns beyond 10 do not exist, so their diet mass was silently discarded by the
+    bounds check in the predation kernel. Production no longer allocates that width — it uses
+    n_species + n_resources — so this now guards against reintroducing the old sizing, and
+    records what went wrong for anyone reading the diagnostics above.
     """
-    dm, _sid = _run_baltic_short_with_diet(fr={"sp0": (3, 1.0), "sp15": (3, 1.0)}, width=11)
-    assert dm.shape[1] == 11
-    # The pure-resource columns 11..14 are beyond the matrix entirely.
-    assert dm.shape[1] <= _RESOURCE_COL_START
+    n_species, n_background = 9, 2
+    dm, _sid = _run_baltic_short_with_diet(
+        fr={"sp0": (3, 1.0), "sp15": (3, 1.0)}, width=n_species + n_background
+    )
+    assert dm.shape[1] == n_species + n_background
+    # Under the old sizing the last four resource groups (Microzoo, Mesozoo, Macrozoo,
+    # Benthos) fall outside the matrix entirely — this is the data loss #146 fixed.
+    assert dm.shape[1] < _RESOURCE_COL_END
 
 
 # ---------------------------------------------------------------------------

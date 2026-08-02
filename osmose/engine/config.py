@@ -7,7 +7,7 @@ into typed NumPy arrays indexed by species, ready for vectorized computation.
 from __future__ import annotations
 
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -1893,6 +1893,11 @@ class EngineConfig:
     output_biomass_bysize_netcdf: bool = False
     output_abundance_bysize_netcdf: bool = False
     output_mortality_netcdf: bool = False
+
+    # Resource (LTL) group names, in resource index order. Populated by simulate() from the
+    # Resources object, which is the single source of truth for resource discovery (#146).
+    # Used as the tail of the diet/predator-pressure PREY axis: schools first, then resources.
+    resource_names: list[str] = field(default_factory=list)
 
     # Spatial output flags (master gate + per-variant)
     output_spatial_enabled: bool = False

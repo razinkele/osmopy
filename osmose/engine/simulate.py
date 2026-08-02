@@ -1497,6 +1497,11 @@ def simulate(
 
     state = initialize(config, grid, rng)
     resources = ResourceState(config=config.raw_config, grid=grid)
+    # ResourceState performs the discovery (legacy ltl.*.rsc{i} keys or the EEC-style
+    # species.type=resource fallback), so it is the single source of truth for resource
+    # names and count. Publish them on the config for the diet/predator-pressure prey
+    # axis rather than re-deriving the discovery logic in the output layer (#146).
+    config.resource_names = [r.name for r in resources.species]
     background = BackgroundState(config=config.raw_config, grid=grid, engine_config=config)
     flux_state = IncomingFluxState(config=config.raw_config, engine_config=config, grid=grid)
     outputs: list[StepOutput] = []
@@ -1679,7 +1684,13 @@ def simulate(
         if config.diet_output_enabled:
             from osmose.engine.processes.predation import enable_diet_tracking
 
-            enable_diet_tracking(len(state), config.n_species + config.n_background, ctx=ctx)
+            # Prey axis is schools THEN resources — mortality.py writes resources at
+            # column (n_species + r_idx). Sizing this with n_background instead silently
+            # dropped every resource past the second and mislabelled the first two as the
+            # background species (#146).
+            enable_diet_tracking(
+                len(state), config.n_species + len(config.resource_names), ctx=ctx
+            )
 
         state = _mortality(
             state, resources, config, rng, grid, step=step, species_rngs=mortality_rngs, ctx=ctx
