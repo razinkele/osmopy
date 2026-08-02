@@ -52,8 +52,11 @@ breach point.~~
 > alone, so the x-axis was not the variable being interpolated over. The earlier caveat ("two-point
 > interpolation over a mildly sublinear response") named the wrong problem: the issue is not curvature.
 >
-> A real tolerance requires varying the factor directly — sweep `reproduction.rv.gate.ref`
-> (150 → 130, 170, 190), which scales the whole trajectory — at ~3–4 additional runs. **Not yet done.**
+> A real tolerance requires varying the factor directly — sweep `reproduction.rv.gate.ref`, which
+> scales the whole trajectory. **Done; see the next section.** The valid band lands at 0.331–0.449,
+> near the retracted 0.450 upper edge — which does not redeem the original fit. Landing close by luck
+> is not deriving it correctly, and had the response been less linear over that span the retracted
+> number would have been wrong.
 
 What survives without any fit, and is sufficient for the Phase 0 conclusions:
 
@@ -65,15 +68,46 @@ A dynamic RV that runs *higher* than the observed series therefore risks failing
 high side. That remains the reason the Phase 0 criterion demands **in-sample agreement** rather than
 merely "the arms differ" — the direction is established even though the magnitude is not.
 
+## The valid tolerance: sweep `reproduction.rv.gate.ref`
+
+Varying `ref` generates a **one-parameter family** of trajectories, all built the same way
+(`factor(y) = clip(rv[y]/ref, 0, 1)`). Within that family `ref → biomass` and `ref → final-decade mean
+factor` are both well defined and monotone, so biomass-against-factor along it is a genuine curve —
+unlike the retracted fit, which mixed a time-average against a constant. 3 seeds, per-seed values
+retained.
+
+| `ref` | final-decade mean factor | cod_east B | seed sd | envelope |
+|---|---|---|---|---|
+| 110 | 0.5791 | 109,023 t | 1.0% | OVER |
+| 130 | 0.5054 | 95,913 t | 0.6% | OVER |
+| **150 (shipped)** | **0.4380** | **82,968 t** | **0.3%** | **IN** |
+| 170 | 0.3865 | 72,350 t | 0.3% | IN |
+| 220 | 0.2986 | 52,843 t | 2.3% | UNDER |
+
+Monotone in factor, and **both envelope edges are bracketed by actual runs** — this is interpolation,
+not extrapolation.
+
+**Admissible final-decade mean factor: 0.331 – 0.449.** Local slope near the shipped point is
+≈1,920 t per 0.01 of factor.
+
+### The constraint is strongly asymmetric — that is the Phase 0 headline
+
+The shipped 0.438 sits **+2.4% below the upper breach** (0.449) but **24.5% above the lower** (0.331).
+A dynamic RV has ~10× more room to run *stronger* than the observed series than *weaker*. So a computed
+RV that overestimates reproductive volume by even a few percent breaches the ceiling, while a
+substantial underestimate is tolerated. **In-sample agreement matters mostly on the high side**, and a
+Phase 0 implementation should be checked there first.
+
 ## Limits — read before citing
 
-* **The headroom is within seed noise.** 2.2% biomass headroom against ~1.9% seed-to-seed noise means
-  cod_east's PASS at the ceiling is **marginal**, not comfortable. Any Phase 0 comparison at this
-  boundary needs more than 2 seeds to resolve.
-* **Two seeds, and the per-seed spread was not retained** — only the across-seed mean. The headline
-  (≈2× effect) is far larger than seed noise and is safe; the 2.2% ceiling headroom is not.
-* **No tolerance band is claimed** — see the retraction above. The two arms differ by an entire
-  trajectory, not by a scalar factor, so biomass cannot be regressed on "mean factor" from these runs.
+* **~~The headroom is within seed noise, so the PASS is marginal.~~ Retracted — measured, and it is
+  not.** Seed spread for cod_east at the shipped `ref=150` is **0.3%** (236 t on 82,968 t, 3 seeds), so
+  the 2,032 t headroom to the ceiling is **≈8.6 sd**. The PASS is comfortable. The ~1.9% figure came
+  from earlier session notes on seed noise generally and does not hold for this species on this config.
+  Noise does grow at the sweep extremes (1.0% at `ref=110`, 2.3% at `ref=220`), so the band edges are
+  softer than its middle.
+* The **2-seed A/B** above reported only across-seed means; the 5-point sweep uses 3 seeds and retains
+  per-seed values.
 * **Scope: the 9-species master only** (`cod_east` = sp8, envelope 60,000–85,000 t). The 8-species
   config is a different species and a different envelope (cod, 60,931–68,364 t); nothing here
   transfers to it.

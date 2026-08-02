@@ -240,21 +240,35 @@ seeding bootstrap) to the final-decade minimum:
 
      Ratio 0.497 against a mean factor of 0.438 — density dependence does not absorb the gate.
      **cod_east's PASS is load-bearing on it**, so whatever a dynamic RV computes lands almost
-     directly on cod_east's envelope status. With the gate on, cod_east sits **2.2% under the
-     envelope ceiling** — and that headroom is *inside* the ~1.9% seed-to-seed noise, so the PASS at
-     the ceiling is **marginal**. Resolve any Phase 0 comparison at this boundary with more than
-     2 seeds.
+     directly on cod_east's envelope status.
 
-     A computed RV running *higher* than the observed series therefore risks failing criterion 1 on
-     the high side. **That is why in-sample agreement is the bar and "the arms differ" is not.**
+     **Tolerance (measured — `ref` swept 110/130/150/170/220, 3 seeds).** Varying `ref` gives a
+     one-parameter family of trajectories, so biomass-against-factor along it is a genuine curve;
+     both envelope edges are bracketed by real runs, making this interpolation rather than
+     extrapolation.
 
-     ~~Admissible final-decade mean factor 0.284–0.450, current 0.438 sitting 2.8% below the upper
-     breach point.~~ **Retracted same day — the fit was invalid** (`B ≈ 17,480 + 149,898 · factor`
-     regressed biomass on two points that are not on the same curve: 0.438 is a *time-average* of a
-     varying trajectory, 1.000 is a *constant* held in every year). No tolerance band is claimed. A
-     real one needs `reproduction.rv.gate.ref` swept directly (150 → 130/170/190), ~3–4 runs, **not
-     yet done**. Scope of all figures here: the **9-species master** (`cod_east` sp8, envelope
-     60,000–85,000 t) — not the 8-species config, which is a different species and envelope.
+     **Admissible final-decade mean factor: 0.331 – 0.449.** Local slope ≈1,920 t per 0.01 of factor.
+
+     **The constraint is strongly asymmetric, and that is the actionable part.** The shipped 0.438
+     sits **+2.4% below the upper breach** but **24.5% above the lower** — a dynamic RV has roughly
+     10× more room to run *stronger* than the observed series than *weaker*. A computed RV that
+     overestimates reproductive volume by a few percent breaches the ceiling; a substantial
+     underestimate is tolerated. **So in-sample agreement binds mostly on the high side** — check
+     there first. This is why the bar is agreement and not "the arms differ."
+
+     ~~cod_east's PASS at the ceiling is marginal (2.2% headroom inside ~1.9% seed noise).~~
+     **Retracted — measured, and it is not.** Seed spread at `ref=150` is **0.3%** (236 t), so the
+     headroom is ≈8.6 sd. Noise does grow at the sweep extremes (2.3% at `ref=220`), so the band
+     edges are softer than its middle.
+
+     ~~Admissible factor 0.284–0.450 from `B ≈ 17,480 + 149,898 · factor`.~~ **That earlier fit was
+     invalid** — it regressed biomass on two points not on the same curve (0.438 a *time-average* of a
+     varying trajectory, 1.000 a *constant* held every year). Its 0.450 upper edge happened to land
+     near the correctly-derived 0.449, which does not redeem it: that was luck, and a less linear
+     response would have made it wrong.
+
+     Scope of all figures here: the **9-species master** (`cod_east` sp8, envelope 60,000–85,000 t) —
+     not the 8-species config, which is a different species and envelope.
   3. **Explicitly NOT a criterion:** any improvement in the persistence count, any movement of the
      percid overshoot. The percids are an `in_envelope` failure that a cod-only gate has no mechanism
      to address; claiming credit there would be spurious.
