@@ -168,6 +168,13 @@ seeding bootstrap) to the final-decade minimum:
   (`docs/baltic_8species_recert_corrected_criterion_2026-08-01.md`), with cod already PASS
   (60,931–68,364 t, in envelope). Phase 0 cannot be justified as closing a stability gap.**
 
+  **DECISION 2026-08-02 (#145): Phase 0 is GO, on scientific-grounding merit.** The stability
+  justification is withdrawn (the gap does not exist), but a state-dependent reproductive volume —
+  computed per step from bottom salinity and O₂ rather than read from a fixed 47-row table that
+  clamps at 2020 forever — is the more defensible representation of eastern-cod recruitment
+  limitation. It is approved as a **realism** improvement with **no fit improvement expected or
+  claimed**; the measured tolerance is what keeps it honest.
+
   **Success criterion, re-derived against `in_envelope` (#145).** Phase 0 is a **realism**
   intervention, not a fit intervention — cod is already in envelope without it, so no fit improvement
   is available to claim. It is justified by representing eastern-cod reproductive-volume limitation,
