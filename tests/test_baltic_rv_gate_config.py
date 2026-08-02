@@ -40,10 +40,21 @@ def test_committed_gate_bites_hardest_in_the_scored_final_decade():
     """Pin the shipped factor profile: it sets what cod_east's certification actually means.
 
     Measured 2026-08-02 (docs/baltic_rv_gate_mechanism_ab_2026-08-02.md): gate-off puts cod_east at
-    167 kt, 1.97x over its 85 kt ICES ceiling, while gate-on lands at 83 kt — IN envelope with only
-    ~2.2% headroom. So this profile is load-bearing for the certified verdict, and an edit to the RV
-    series or to `ref` would silently move it. Characterisation test, not TDD: it pins behaviour that
-    already exists precisely because that behaviour is now depended upon.
+    167 kt, 1.97x over its 85 kt ICES ceiling, while gate-on lands at 82,968 t — IN envelope, 2.4%
+    under. So this profile is load-bearing for the certified verdict, and an edit to the RV series or
+    to `ref` would silently move it. Characterisation test, not TDD: it pins behaviour that already
+    exists precisely because that behaviour is now depended upon.
+
+    **If you changed `ref` deliberately, this test SHOULD fail — update the expected values.** The
+    measured sweep (3 seeds), for the lookup:
+
+        ref=110 -> f=0.5791, 109,023 t  OVER envelope
+        ref=130 -> f=0.5054,  95,913 t  OVER
+        ref=150 -> f=0.4380,  82,968 t  IN    <- shipped, asserted below
+        ref=170 -> f=0.3865,  72,350 t  IN
+        ref=220 -> f=0.2986,  52,843 t  UNDER
+
+    Admissible final-decade mean factor is ~0.33-0.449; the upper edge is the tight one and binds.
     """
     f = _committed_factor_profile()
 

@@ -247,10 +247,14 @@ seeding bootstrap) to the final-decade minimum:
      both envelope edges are bracketed by real runs, making this interpolation rather than
      extrapolation.
 
-     **Admissible final-decade mean factor: 0.331 – 0.449.** Local slope ≈1,920 t per 0.01 of factor.
+     **Admissible final-decade mean factor: ≈0.33 – 0.449.** Local slope ≈1,920 t per 0.01 of factor.
+     The upper edge is tight (interpolated between two 0.3–0.6%-spread points) and is the one that
+     binds; the lower is anchored by a 2.3%-spread point, so treat it as "≥20% margin below the
+     shipped point" rather than a three-decimal number. Canonical shipped-arm biomass is the 3-seed
+     **82,968 t**; the 83,135 t above is the same arm at 2 seeds.
 
      **The constraint is strongly asymmetric, and that is the actionable part.** The shipped 0.438
-     sits **+2.4% below the upper breach** but **24.5% above the lower** — a dynamic RV has roughly
+     sits **+2.4% below the upper breach** but roughly **25% above the lower** — a dynamic RV has roughly
      10× more room to run *stronger* than the observed series than *weaker*. A computed RV that
      overestimates reproductive volume by a few percent breaches the ceiling; a substantial
      underestimate is tolerated. **So in-sample agreement binds mostly on the high side** — check

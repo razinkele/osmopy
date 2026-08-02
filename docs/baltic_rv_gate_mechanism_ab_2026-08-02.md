@@ -61,8 +61,11 @@ breach point.~~
 What survives without any fit, and is sufficient for the Phase 0 conclusions:
 
 * **cod_east's PASS is load-bearing on the gate** — gate-off puts it 1.97× over the ceiling.
-* cod_east sits **2.2% under the envelope ceiling** with the gate on (direct measurement, no fit).
-* That 2.2% is *inside* the ~1.9% seed-to-seed noise, so the PASS at the ceiling is **marginal**.
+* cod_east sits just under the envelope ceiling with the gate on (direct measurement, no fit).
+  **Canonical figure: 82,968 t, 2.4% under, from the 3-seed sweep below.** The 83,135 t in the table
+  above is the *same arm* measured with 2 seeds; the two differ by well under the 236 t seed spread.
+* That headroom is **≈8.6 sd**, so the PASS is comfortable — see the retraction of my "marginal"
+  claim under Limits.
 
 A dynamic RV that runs *higher* than the observed series therefore risks failing non-regression on the
 high side. That remains the reason the Phase 0 criterion demands **in-sample agreement** rather than
@@ -87,12 +90,18 @@ retained.
 Monotone in factor, and **both envelope edges are bracketed by actual runs** — this is interpolation,
 not extrapolation.
 
-**Admissible final-decade mean factor: 0.331 – 0.449.** Local slope near the shipped point is
+**Admissible final-decade mean factor: ≈0.33 – 0.449.** Local slope near the shipped point is
 ≈1,920 t per 0.01 of factor.
+
+**The two edges are not equally resolved.** The *upper* edge (0.449) interpolates between `ref=130` and
+`ref=150`, both at 0.3–0.6% seed spread — it is tight, and it is the one that binds. The *lower* edge
+is anchored by `ref=220`, whose 2.3% spread (51,192–54,106 t) straddles a 2,914 t range against a
+60,000 t target, so **do not quote it to three decimals**: read it as "≥20% of margin below the shipped
+point," not as 0.331.
 
 ### The constraint is strongly asymmetric — that is the Phase 0 headline
 
-The shipped 0.438 sits **+2.4% below the upper breach** (0.449) but **24.5% above the lower** (0.331).
+The shipped 0.438 sits **+2.4% below the upper breach** (0.449) but roughly **25% above the lower**.
 A dynamic RV has ~10× more room to run *stronger* than the observed series than *weaker*. So a computed
 RV that overestimates reproductive volume by even a few percent breaches the ceiling, while a
 substantial underestimate is tolerated. **In-sample agreement matters mostly on the high side**, and a
