@@ -185,10 +185,19 @@ seeding bootstrap) to the final-decade minimum:
      no expected level change in-sample.
   2. **Mechanism demonstrated (hard) — and the A/B arms are NOT gate-on vs gate-off.**
 
-     ⚠ **Accessor note:** use `biomass_by_age` for the recruitment series, **not** `abundance_by_age`
-     — the latter is unavailable on the in-memory path (`OsmoseResults` exposes `biomassByAge` but not
-     `abundanceByAge`), so an in-memory correlation check silently yields nothing. A disk-backed run
-     is the alternative.
+     ⚠ **Accessor note (verified 2026-08-02, not inferred).** Use `biomass_by_age` for the
+     recruitment series, **not** `abundance_by_age` — the latter is unavailable on the in-memory path
+     (`OsmoseResults` exposes `biomassByAge` but not `abundanceByAge`), so an in-memory correlation
+     check silently yields nothing. A disk-backed run is the alternative.
+
+     Two traps in the accessor that does work, both hit while checking this:
+
+     * It returns **long** format — columns `time, species, bin, value`, one row per (year, bin) —
+       **not** wide per-age columns. `df.iloc[:, 0]` grabs `time`, not age-0 biomass.
+     * **`bin` is a string.** Sorting the unique bins lexicographically puts `'10'` before `'2'`, so
+       "take the first bin" silently picks the wrong age on any species with ≥10 age classes.
+
+     Filter explicitly: `df[df["bin"] == "0"]["value"]`, ordered by `time`.
 
      ⚠ **Read this before designing the test.** A *prescribed-series* RV gate is **already on master
      and already enabled** for `sp8`: `reproduction.rv.gate.enabled;true`, `series.file;
