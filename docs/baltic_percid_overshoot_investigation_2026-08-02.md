@@ -225,10 +225,26 @@ This explains the pattern rather than adding to it:
 
 * **Diet accessibility (10× cut on herring+sprat): −25% only.** Throttling the coefficient leaves the
   replenishment intact, so pikeperch switched to benthos and smelt.
-* **Fishing mortality (F 0.5 → 1.0): −12%, and 7/9 → 6/9.** Removal cannot outrun an unlimited supply,
-  and heavier removal releases the prey stocks into their own breaches.
+* **Fishing mortality: inert beyond F = 1.0.** Full sweep, 50 yr, seed 42:
 
-Both act on the *demand* side. The defect is on the *supply* side, so neither can close a 56× gap.
+  | F | pikeperch | over 25 kt | envelope |
+  |---|---|---|---|
+  | 0.5 (base) | 1,453,313 | 58.1× | **7/9** |
+  | 1.0 | 1,284,118 | 51.4× | 6/9 |
+  | 2.0 | 1,333,002 | 53.3× | 5/9 |
+  | 4.0 | 1,298,663 | 51.9× | **4/9** |
+
+  An **8× increase in F** — to a physically absurd ~98%/yr removal, far beyond any real fishery
+  including the missing recreational component — moves pikeperch by **10.6%**, and non-monotonically
+  (F = 2.0 sits *above* F = 1.0). The envelope count meanwhile degrades monotonically, 7 → 6 → 5 → 4.
+
+  The mechanism is visible in the F = 4.0 column: **every other stock rises** — cod_west +35%, smelt
+  +26%, sprat +20%, herring +17%, flounder +16%, perch +15%. Fishing pikeperch down releases the
+  forage base, which regrows pikeperch straight back. The compensation loop closes because the forage
+  supply is replenished from the basin pool regardless of local depletion.
+
+Both act on the *demand* side. The defect is on the *supply* side, so neither can close a 56× gap —
+**the stock is supply-limited, not mortality-limited, and cannot be fished down.**
 
 ### Implication for the fix, and for the envelope comparison
 
