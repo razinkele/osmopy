@@ -134,11 +134,42 @@ problem, and the surviving candidates are all top-down:
    missing removal (see below) but cannot plausibly close 56×.
 3. **`Linf = 90 cm`** gives a large biomass-per-recruit, and biomass scales with roughly the cube of
    length.
-4. **Its access to the offshore forage base may be unrealistic.** 39% of its diet is herring, at
-   accessibility 0.3 — the same as its access to sprat. Real Baltic pikeperch is a coastal
-   bay/lagoon predator that would rarely encounter the offshore herring stock. This is the lever the
-   prior work labelled "percid diet constraint (×217, grid-unfixable)"; it is worth revisiting now
-   that the diagnostic is trustworthy, because the diet share it targets is now measurable.
+4. ~~**Its access to the offshore forage base may be unrealistic.**~~ **Tested and rejected** — see
+   below. It corroborates the prior "percid diet constraint (×217, grid-unfixable)" verdict, now on a
+   trustworthy diagnostic.
+
+## Tested and rejected: closing the offshore forage pathway
+
+Sensitivity test, not a proposed calibration: pikeperch accessibility to **herring and sprat** cut
+10× (0.3 → 0.03), i.e. roughly half its diet closed off. 50 yr, seed 42.
+
+| species | baseline | access 0.03 | ratio | envelope |
+|---|---|---|---|---|
+| **pikeperch** | 1,453,313 | 1,084,623 | **0.746** | still **43.4× over** |
+| herring | 2,600,112 | 3,052,372 | 1.174 | **breached** (3.05 vs 3.00 Mt ceiling) |
+| cod_east | 83,122 | 87,212 | 1.049 | **breached** (87.2 vs 85.0 kt) |
+| sprat | 1,059,941 | 1,196,715 | 1.129 | in |
+| smelt | 680,125 | 651,891 | 0.958 | still 5.4× over |
+| perch | 45,382 | 41,869 | 0.923 | in |
+| stickleback | 80,159 | 65,037 | 0.811 | in |
+
+**A 10× cut to half its diet bought a 25% biomass reduction** — 56× over becomes 43× over. Pikeperch
+routed around the closed pathway onto benthos and smelt, which is what an opportunistic predator with
+a broad prey base and no predators does.
+
+**It also fails non-regression: 7/9 → 5/9.** Releasing herring from its dominant predator pushed
+herring through its own ceiling, and cod_east followed. This is the failure moving, not closing —
+precisely the outcome the Phase 0 non-regression criterion exists to reject.
+
+*Limits:* single seed; the herring (+1.7%) and cod_east (+2.6%) breaches are marginal and within the
+range where seed noise matters (0.3–2.3% observed elsewhere on this config). The **primary** result —
+pikeperch remaining 43× over — is far too large to be noise and is what decides the lever.
+
+**Read-through:** the binding constraint is not what pikeperch eats. With diet closed off it still
+sustains 1.08 Mt, so the constraint is that **nothing removes it** — total predation accessibility
+0.60 against perch's 1.05, plus F = 0.5. The remaining candidates are levers 1–3 (predation on
+pikeperch, F including the missing recreational component, and `Linf = 90 cm`), which act on removal
+and biomass-per-recruit rather than on intake.
 
 ## Note on the diagnostic itself
 
