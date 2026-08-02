@@ -6,8 +6,12 @@
 > in-memory engine exclusively.
 
 This tutorial runs the **calibrated Baltic Sea 8-species OSMOSE configuration**,
-zooms in on three focal species (cod, sprat, stickleback), then perturbs
+zooms in on three focal series (total cod, sprat, stickleback), then perturbs
 cod's predation accessibility to sprat and observes the trophic cascade.
+
+Baltic cod is modelled as two separately-assessed stocks (`cod_west`, `cod_east`);
+"cod" throughout this tutorial means their **sum**, and the Beat-6 perturbation is
+applied to **both**.
 
 You do **not** need to know marine ecology to follow along.  Every ecological
 term is defined on first use, and the tutorial is structured so you see
@@ -72,7 +76,7 @@ The version shipped with this tutorial:
 
 If your installed version differs, equilibrium biomass values in Beats 2-4
 may differ from the printed reference numbers — but the qualitative story
-(cod << stickleback << sprat) will be the same.
+(sprat outweighs cod, which outweighs stickleback) will be the same.
 
 ---
 
@@ -131,19 +135,29 @@ print("Simulation complete.")
 
 # -- [Beat 4] Reshape biomass to tidy long form --------------------------------
 # result.biomass() returns a wide DataFrame:
-#   columns = [Time, cod, herring, sprat, ..., species]
+#   columns = [Time, cod_west, herring, sprat, ..., cod_east, ..., species]
 # where "species" is a constant "all" sentinel.  We drop it before melting.
+#
+# Baltic cod is modelled as TWO stocks -- cod_west (western, sp0) and cod_east
+# (eastern, sp8).  They are assessed separately by ICES and behave differently,
+# so the model keeps them apart.  For this tutorial we follow total cod, i.e.
+# their sum; osmose.results.total_cod does that (and falls back to a single
+# "cod" column on configs that were never disaggregated).
+from osmose.results import total_cod
+
 bio_wide = result.biomass()
+bio_wide["total_cod"] = total_cod(bio_wide)
 drop_cols = [c for c in ["species"] if c in bio_wide.columns]
 bio_long = bio_wide.drop(columns=drop_cols).melt(
     id_vars="Time", var_name="species", value_name="biomass"
 )
 
-# -- [Beat 5] Filter to the three focal species --------------------------------
-# Cod (Gadus morhua):  top-level predator, overfished in the Baltic.
+# -- [Beat 5] Filter to the three focal series ---------------------------------
+# Total cod (Gadus morhua):  top-level predator, overfished in the Baltic.
+#   Both stocks summed -- see Beat 4.
 # Sprat (Sprattus sprattus):  abundant planktivore; key forage fish.
 # Stickleback (Gasterosteus aculeatus):  small invertivore; indicator species.
-focal = ["cod", "sprat", "stickleback"]
+focal = ["total_cod", "sprat", "stickleback"]
 bio_focal = bio_long[bio_long["species"].isin(focal)].copy()
 
 # -- [Beat 1] Write the interactive Plotly chart -------------------------------
@@ -152,7 +166,7 @@ fig = px.line(
     x="Time",
     y="biomass",
     color="species",
-    log_y=True,  # cod (~12t) is invisible against sprat (~7M) on linear scale
+    log_y=True,  # cod is invisible against sprat (~7M) on a linear scale
     title="Baltic Sea -- 3 focal species, biomass over 30 years (seed=42)",
     labels={"Time": "Year", "biomass": "Biomass (tonnes)"},
     template="plotly_white",
@@ -181,29 +195,34 @@ Simulation complete.
 
 Open in your browser: /path/to/tutorial-work/biomass.html
 
-Equilibrium biomass (years 25-30 mean):
+Biomass over the tutorial window (years 5-25 mean, seed=42):
 species
-cod             ~1 000 t
-sprat        ~5 500 000 t
-stickleback    ~550 000 t
+total_cod        ~156 000 t     (cod_west ~10 500 + cod_east ~145 400)
+sprat            ~914 000 t
+stickleback       ~75 000 t
 ```
+
+Note how lopsided the cod split is: the eastern stock carries ~93% of the total, so
+following `cod_west` alone would track only a fourteenth of Baltic cod.
 
 Open `tutorial-work/biomass.html` in your browser.
 
 **What you should see:**
 
-- **Sprat** climbs from near-zero to a plateau around 6–7 million tonnes by
-  year 20.  It is the dominant species by biomass throughout the run.
-- **Stickleback** explodes to a peak of roughly 7 million tonnes around year 4,
-  then crashes back to near-zero by year 15.  This boom-bust is genuine Baltic
-  dynamics: stickleback population explosions during regime shifts are
-  documented in the literature.  It is not a model artefact.
-- **Cod** stays near 10–50 tonnes throughout — roughly five orders of magnitude
-  below sprat.  On the log y-axis you can trace its faint trajectory: a slight
-  rise in the first decade, then a slow decline.  Baltic cod has been
-  ecologically suppressed by overfishing and grey-seal predation for decades;
-  this model reflects that present-day state, not the historical 1970s
-  population.
+- **Sprat** is the largest of the three focal series, averaging ~914 000 t over the
+  window.  (Herring, not plotted here, is larger still at ~2.55 Mt — the three focal
+  series are a slice of the food web, not a census of it.)
+- **Total cod** averages ~156 000 t, roughly **6× below sprat**.  That ordering — a
+  forage fish outweighing its predator — is the biomass pyramid the tutorial is about.
+- **Stickleback** averages ~75 000 t, below cod.  It is a scarce species in this
+  configuration rather than a lower trophic level, so its position under cod is not a
+  pyramid inversion; it sits at roughly sprat's trophic level.
+
+> ⚠ **Trajectory shapes below were not re-verified in the 2026-08-02 re-measurement**
+> (#129), which re-derived window means only. Earlier editions of this tutorial described a
+> stickleback boom-bust and a near-flat cod line at 10–50 t; the cod figure is now known to
+> be wrong by four orders of magnitude, so treat any remaining shape description as
+> provisional until re-checked against your own plot.
 
 The plot uses a **log y-axis** because biomass spans five or more orders of
 magnitude.  On a linear scale, cod would be a flat line indistinguishable from
@@ -390,10 +409,13 @@ substrate, not an arbitrary constant.
 
 Open `tutorial-work/baltic/predation-accessibility.csv` (it was copied from
 `data/baltic/predation-accessibility.csv` when you ran `tutorial.py`).  The
-file has 14 rows × 8 columns:
+file has 15 rows × 16 columns:
 
-- **Rows:** 8 focal prey species + 6 LTL groups (total 14 potential prey types)
-- **Columns:** 8 focal predators (one column per species, no LTL predators)
+- **Rows:** 9 focal prey species + 6 LTL groups (total 15 potential prey types)
+- **Columns:** 9 focal predators + background/resource columns (no LTL predators)
+
+Note the **two cod columns**: `cod_west` (sp0) and `cod_east` (sp8). ICES assesses the
+western and eastern Baltic cod stocks separately, and the model follows suit.
 
 **What accessibility means.**  Each cell value is the fraction of *encountered*
 prey biomass that is actually consumed by that predator.  It is NOT an
@@ -402,21 +424,28 @@ kernel (predator length / prey length must fall within configured bounds) and
 by spatial overlap (both must be in the same grid cell at the same time step).
 Accessibility is the post-encounter consumption efficiency.
 
-**The cod column.**  In the csv the cod column has nonzero entries for:
+**The cod columns.**  Both cod stocks have nonzero entries; they overlap heavily but
+are not identical:
 
 ```text
-prey species          cod accessibility
-herring               0.6
-sprat                 0.4   ← you will change this in Beat 6
-flounder              0.1
-smelt                 0.5
-stickleback           0.2
-cod (cannibal)        0.05
-macrozooplankton      0.3
-benthos               0.2
+prey species          cod_west   cod_east
+herring                   0.4       0.3
+sprat                     0.4       0.5    ← you will change BOTH in Beat 6
+flounder                  0.1       0.1
+perch                     0.15      0.1
+pikeperch                 0.1       0.05
+smelt                     0.6       0.5
+stickleback               0.3       0.2
+cod (cannibal)            0.05      0.05
+mesozooplankton           0.5       0.5
+macrozooplankton          0.6       0.6
+benthos                   0.6       0.7
 ```
 
-**The cascade triangle.**  Cod (predator) → sprat (prey).  Sprat in turn
+Eastern cod has the **higher** accessibility to sprat (0.5 vs 0.4), so a perturbation that
+touched only `cod_west` would miss the larger part of the effect.
+
+**The cascade triangle.**  Cod (both stocks, predator) → sprat (prey).  Sprat in turn
 suppresses stickleback via competition for zooplankton (cross-trophic indirect
 effect).  When cod's access to sprat drops, sprat population stays higher, but
 cod also starves slightly — reducing cod's direct predation on stickleback
@@ -438,20 +467,31 @@ equilibrium biomass to the baseline.
 
 **Step 1 — Edit the accessibility matrix.**
 
-Open `tutorial-work/baltic/predation-accessibility.csv` in any text editor.
-Search for the exact substring:
+Open `tutorial-work/baltic/predation-accessibility.csv` in any text editor. Find the
+**`sprat` row** and change the values in **both cod columns** — `cod_west` and `cod_east`
+— to `0.05`:
 
 ```text
-sprat;0.4;
+before:  sprat;0.4;0;0;0;0.2;0.3;0;0;0.5;...
+                 ^^^ cod_west                ^^^ cod_east
+after:   sprat;0.05;0;0;0;0.2;0.3;0;0;0.05;...
 ```
 
-There is exactly one match (the sprat row, cod column).  Change it to:
+The file is **semicolon-separated**; keep it that way when you save.
 
-```text
-sprat;0.05;
+Edit by *column position*, not by search-and-replace on `0.4` — that value appears
+elsewhere in the matrix. If you prefer to do it in code:
+
+```python
+import pandas as pd
+path = "tutorial-work/baltic/predation-accessibility.csv"
+df = pd.read_csv(path, sep=";", index_col=0)
+df.loc["sprat", ["cod_west", "cod_east"]] = 0.05
+df.to_csv(path, sep=";")
 ```
 
-Save the file.  This reduces cod's accessibility to sprat by a factor of 8.
+This reduces western cod's accessibility to sprat by a factor of 8 and eastern cod's by
+10.
 
 **Step 2 — Re-run the script.**
 
@@ -470,24 +510,30 @@ Side by side in the terminal:
 
 ```text
                     baseline          perturbed
-cod               ~1 000 t          ~900 t        (-10 %)
-sprat          ~5 500 000 t      ~5 700 000 t      (+4 %)
-stickleback      ~550 000 t        ~635 000 t     (+13 %)
+total_cod        ~155 900 t       ~148 300 t       (-4.9 %)
+sprat            ~914 100 t     ~1 134 300 t      (+24.1 %)
+stickleback       ~74 900 t        ~74 800 t       (-0.1 %)
 ```
 
-Exact values vary slightly with version; the direction and order-of-magnitude
-should match.  Stickleback is the clearest signal: roughly +13 % higher
-biomass.
+Exact values vary with environment; the **direction** is the claim.  **Sprat is the
+clear signal: ~+24 %.**  Take both cod stocks off sprat and sprat is released — the
+direct first link of a trophic cascade.  Cod itself declines ~5 %, having lost a food
+source.  Stickleback does not measurably move.
 
-**Why this matters.**  "The cascade is real but subtler than synthetic models
-would suggest."  Cod's population in the present-day Baltic is small (kept low
-by additional mortality from grey-seal predation).  A large fractional change
-in cod's accessibility to sprat produces a modest absolute change in sprat
-biomass — which in turn produces a modest further change in stickleback.  A
-13 % biomass shift is exactly the order-of-magnitude effect that
-ecosystem-based fisheries management (EBFM) cares about: it is detectable in
-stock-assessment surveys, it changes sustainable yield estimates, and it can
-trigger gear-restriction decisions.  The model reveals the mechanism even when
+> **This reverses what earlier editions of the tutorial taught.**  They reported sprat
+> moving ~+4 % and stickleback ~+13 %, and described the sprat signal as negligible.  Two
+> things changed (#129, 2026-08-02).  The perturbation instruction only ever edited the
+> *first* cod column, so after Baltic cod was split into two stocks it silently left
+> `cod_east` untouched — and `cod_east` holds the **higher** sprat accessibility (0.5 vs
+> 0.4), so most of the intended effect was never applied.  Separately, the Baltic
+> recalibration moved cod up by two orders of magnitude.  With both stocks actually
+> perturbed, the direct release dominates and the indirect stickleback pathway is not
+> detectable.
+
+**Why this matters.**  A ~24 % shift in a forage-fish stock is squarely the
+order-of-magnitude effect that ecosystem-based fisheries management (EBFM) cares about:
+it is detectable in stock-assessment surveys, it changes sustainable yield estimates, and
+it can trigger gear-restriction decisions.  The model reveals the mechanism even when
 the magnitude is modest.
 
 ---

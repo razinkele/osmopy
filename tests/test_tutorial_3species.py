@@ -18,7 +18,7 @@ Cascade mechanics note (Baltic-substrate finding):
   measured cascade from smoke runs; they are tight enough to detect regression
   but do not pre-suppose a cascade magnitude stronger than the model produces.
 
-If `build_config` or `BASELINE_PERTURBATION` in `tests/_tutorial_config.py`
+If `build_config` or `apply_cod_sprat_perturbation` in `tests/_tutorial_config.py`
 change, update `docs/tutorials/30-minute-ecosystem.md` to match.
 """
 
@@ -38,11 +38,11 @@ from osmose.engine import PythonEngine
 from ._tutorial_config import (
     BALTIC_DIR,
     ACCESSIBILITY_CSV_RELPATH,
-    BASELINE_PERTURBATION,
+    FOCAL_SPECIES,
+    add_total_cod,
+    apply_cod_sprat_perturbation,
     build_config,
 )
-
-FOCAL_SPECIES = ["cod", "sprat", "stickleback"]
 
 # Baltic output.recordfrequency.ndt = 24 (annual records).
 # For a 30-year run: exactly 30 rows per species.
@@ -76,10 +76,25 @@ _EQ_WINDOW_END: float = 25.0
 # signal, not the number. (Earlier "thread-topology sensitive" comments were wrong.)
 _CASCADE_STICKLEBACK_MIN_RATIO: float = 0.5  # does not crash (within ~2x down)
 _CASCADE_STICKLEBACK_MAX_RATIO: float = 2.0  # ...nor explode (within ~2x up)
-_CASCADE_SPRAT_MAX_DELTA: float = 0.10  # |mean(Sp_pert)/mean(Sp_base) - 1| <= this
+# Sprat RELEASE band. Measured 1.241 (2026-08-02, #129) — the direct cascade link.
+# Deliberately wide: magnitude is environment-specific (see the note above), direction is not.
+_CASCADE_SPRAT_MIN_RATIO: float = 1.05  # sprat must go UP when cod loses access...
+_CASCADE_SPRAT_MAX_RATIO: float = 1.60  # ...without running away
 
-# Equilibrium bands per focal species. Measured from equilibrium window
-# (years 5-25, seed=42) and encoded as ± 20%. Values are (lower, upper) in tonnes.
+# Equilibrium bands per focal series. Measured from the window (years 5-25, seed=42) and
+# encoded as ± 20%. Values are (lower, upper) in tonnes.
+#
+# RE-MEASURED 2026-08-02 (#129). Every band moved, and not only because "cod" was retargeted
+# to total_cod: sprat fell ~5x (3.5-7.5e6 -> 9.14e5) and stickleback ~5x (3.0-6.5e5 -> 7.49e4)
+# against bands last set 2026-06-24. The Baltic recalibration since then moved cod up two
+# orders of magnitude (aggregate ~1-2.4 kt -> total 156 kt, consistent with cod_east now
+# sitting inside its 60-85 kt ICES envelope). Per-stock: cod_west 10,519 t, cod_east 145,419 t
+# — the split is heavily eastern, so following cod_west alone would track 6.7% of the stock.
+#
+# CAVEAT on the window: years 5-25 of a 30-year run is NOT equilibrium for this config.
+# Certification uses the final decade of 50 years and puts cod_east at ~83 kt; this window
+# shows 145 kt because it still contains the seeding transient. These bands characterise the
+# tutorial run, not the certified equilibrium — do not cite them as the latter.
 # Re-measured 2026-06-24 after the egg-retention fix (94f1bfb): gating predation
 # on the released egg fraction lets more eggs survive, so cod recovers to ~2x its
 # prior equilibrium (sprat/stickleback barely move). The fix mechanism was
@@ -94,9 +109,9 @@ _CASCADE_SPRAT_MAX_DELTA: float = 0.10  # |mean(Sp_pert)/mean(Sp_base) - 1| <= t
 # stickleback > cod); these bands are a coarse order-of-magnitude guard spanning the
 # observed range.
 _PYRAMID_BOUNDS: dict[str, tuple[float, float]] = {
-    "cod": (1.000e03, 2.400e03),
-    "sprat": (3.500e06, 7.500e06),
-    "stickleback": (3.000e05, 6.500e05),
+    "total_cod": (1.248e05, 1.871e05),
+    "sprat": (7.313e05, 1.097e06),
+    "stickleback": (5.989e04, 8.983e04),
 }
 
 
@@ -104,8 +119,9 @@ def _melt_to_long(bio_wide: pd.DataFrame) -> pd.DataFrame:
     """Reshape biomass() output from wide to tidy long form.
 
     Baltic biomass() returns a wide DataFrame with columns
-    [Time, cod, herring, ..., species] where the 'species' column holds the
-    constant value 'all'.  Drop 'species' before melting.
+    [Time, cod_west, herring, ..., species] where the 'species' column holds the
+    constant value 'all'.  Drop 'species' before melting. Callers pass the frame
+    through add_total_cod() first so 'total_cod' is present.
     """
     drop_cols = [c for c in ["species"] if c in bio_wide.columns]
     return bio_wide.drop(columns=drop_cols).melt(
@@ -132,7 +148,7 @@ def baseline_run(tmp_path_factory: pytest.TempPathFactory, numba_warmup: None) -
     cfg = build_config(workdir)
     cfg["validation.strict.enabled"] = "error"
     result = PythonEngine().run_in_memory(config=cfg, seed=42)
-    bio_wide = result.biomass()
+    bio_wide = add_total_cod(result.biomass())
     bio_long = _melt_to_long(bio_wide)
     return bio_long[bio_long["species"].isin(FOCAL_SPECIES)].reset_index(drop=True)
 
@@ -151,15 +167,14 @@ def perturbed_run(tmp_path_factory: pytest.TempPathFactory, numba_warmup: None) 
     target = workdir / "baltic"
     shutil.copytree(BALTIC_DIR, target)
 
-    # Apply perturbation to the copied CSV.
+    # Apply perturbation to the copied CSV (never touches data/baltic/).
+    # Edits BOTH cod stocks by column name — see apply_cod_sprat_perturbation for why the
+    # old positional replace silently missed cod_east.
     acc_path = target / ACCESSIBILITY_CSV_RELPATH
-    find, replace = BASELINE_PERTURBATION
-    original = acc_path.read_text()
-    assert find in original, (
-        f"Perturbation find-string {find!r} not found in copied accessibility CSV. "
-        f"CSV format may have changed."
+    before = apply_cod_sprat_perturbation(acc_path)
+    assert set(before) == {"cod_west", "cod_east"} and all(v > 0.05 for v in before.values()), (
+        f"Expected both cod stocks to start above the perturbed value; got {before}"
     )
-    acc_path.write_text(original.replace(find, replace))
 
     # Load config directly to avoid a second copytree call.
     from osmose.config.reader import OsmoseConfigReader  # noqa: PLC0415
@@ -170,7 +185,7 @@ def perturbed_run(tmp_path_factory: pytest.TempPathFactory, numba_warmup: None) 
     cfg["validation.strict.enabled"] = "error"
 
     result = PythonEngine().run_in_memory(config=cfg, seed=42)
-    bio_wide = result.biomass()
+    bio_wide = add_total_cod(result.biomass())
     bio_long = _melt_to_long(bio_wide)
     return bio_long[bio_long["species"].isin(FOCAL_SPECIES)].reset_index(drop=True)
 
@@ -196,21 +211,27 @@ def test_script_runs_to_completion(baseline_run: pd.DataFrame) -> None:
 
 # === Assertion #2: biomass pyramid at equilibrium ===
 def test_biomass_pyramid_emerges(baseline_run: pd.DataFrame) -> None:
-    """Two layers: (a) strict ordering sprat > stickleback > cod at equilibrium —
-    always tested. (b) ±20% bands around measured equilibrium —
-    wide-default in Task 3, tightened in Task 6 from measurement.
+    """Two layers: (a) prey biomass exceeds predator biomass — always tested.
+    (b) ±20% bands around the measured window (re-measured 2026-08-02, #129).
 
-    Pyramid rationale: sprat is a large-biomass planktivore (~5-7 Mt);
-    stickleback is a smaller forage fish (~100K-1Mt in early years);
-    cod is a TL4 predator with low biomass in the Baltic overfished state.
+    **The claim is sprat > total_cod, and only that.** The prior assertion was
+    sprat > stickleback > cod, which broke once "cod" correctly meant both stocks
+    (total_cod 1.56e5 > stickleback 7.49e4). It was never a pyramid statement anyway:
+    stickleback sits at roughly sprat's trophic level, so ordering the two forage fish
+    against each other says "stickleback is scarce here", not anything trophic.
+
+    What IS a biomass-pyramid statement, and what this asserts: the forage fish
+    outweighs its predator, sprat 9.14e5 vs total_cod 1.56e5 (~5.9x).
     """
     means = _equilibrium_means(baseline_run)
 
-    # Layer (a): strict pyramid ordering (measured from smoke runs, seed=42).
-    assert means["sprat"] > means["stickleback"] > means["cod"], (
-        f"Pyramid violated: sprat={means['sprat']:.3e}, "
-        f"stickleback={means['stickleback']:.3e}, cod={means['cod']:.3e}. "
-        f"Expected sprat > stickleback > cod at equilibrium (years {_EQ_WINDOW_START}-{_EQ_WINDOW_END})."
+    # Layer (a): prey outweighs predator — the actual trophic-pyramid claim.
+    assert means["sprat"] > means["total_cod"], (
+        f"Prey does not outweigh predator: sprat={means['sprat']:.3e}, "
+        f"total_cod={means['total_cod']:.3e} over years "
+        f"{_EQ_WINDOW_START}-{_EQ_WINDOW_END}. "
+        f"(stickleback={means['stickleback']:.3e}, reported for context only — it is not "
+        f"part of the ordering claim.)"
     )
 
     # Layer (b): equilibrium bands. Tightened in Task 6.
@@ -226,12 +247,18 @@ def test_trophic_cascade_visible(baseline_run: pd.DataFrame, perturbed_run: pd.D
     the constants above for why: it varies ~0.99/1.13/1.35 across machines for
     identical code+seed, and that spread is library/CPU, not thread count).
 
-    Dropping cod's accessibility to sprat lowers cod predation on stickleback. The
+    Dropping BOTH cod stocks' accessibility to sprat releases sprat directly. The
     load-bearing, cross-environment claims are qualitative:
       (a) stickleback stays the same order of magnitude (does not crash or explode),
-      (b) sprat barely moves (cod is a minor sprat predator),
-      (c) the biomass pyramid ordering sprat > stickleback > cod survives the
-          perturbation (the structural signal).
+      (b) sprat is RELEASED — it goes up, the direct first link of the cascade,
+      (c) prey still outweighs predator after the perturbation (structural signal).
+
+    **Re-measured 2026-08-02 (#129) and the story changed.** The old test asserted
+    "sprat barely moves (|delta| <= 0.10)" and the prose promised stickleback would rise.
+    With both cod stocks perturbed (the old positional edit silently missed cod_east, which
+    holds the HIGHER sprat accessibility at 0.5) the measurement is the other way round:
+    sprat +24.1%, stickleback -0.1%. The direct release is now the visible signal and the
+    indirect stickleback pathway is not detectable.
     """
     base = _equilibrium_means(baseline_run)
     pert = _equilibrium_means(perturbed_run)
@@ -247,21 +274,23 @@ def test_trophic_cascade_visible(baseline_run: pd.DataFrame, perturbed_run: pd.D
         f"(order-of-magnitude guard). base={base['stickleback']:.3e}, pert={pert['stickleback']:.3e}"
     )
 
-    # (b) sprat signal is near zero (cod is a minor sprat predator).
-    sprat_delta = abs(sprat_ratio - 1.0)
-    assert sprat_delta <= _CASCADE_SPRAT_MAX_DELTA, (
-        f"Sprat perturbed/baseline = {sprat_ratio:.3f} (|delta|={sprat_delta:.3f}); "
-        f"expected |delta| <= {_CASCADE_SPRAT_MAX_DELTA} (sprat should barely change). "
+    # (b) sprat is released upward — the direct cascade link. Measured 1.241; the band is
+    # deliberately wide because magnitude is environment-specific (see constants above),
+    # but the DIRECTION is the claim and must hold.
+    assert _CASCADE_SPRAT_MIN_RATIO <= sprat_ratio <= _CASCADE_SPRAT_MAX_RATIO, (
+        f"Sprat perturbed/baseline = {sprat_ratio:.3f}; expected release within "
+        f"[{_CASCADE_SPRAT_MIN_RATIO}, {_CASCADE_SPRAT_MAX_RATIO}]. Sprat should INCREASE "
+        f"when both cod stocks lose access to it. "
         f"base={base['sprat']:.3e}, pert={pert['sprat']:.3e}"
     )
 
-    # (c) the perturbation does not invert the biomass pyramid in either run — the
-    # structural, environment-robust signal (ordering holds by orders of magnitude).
+    # (c) prey still outweighs predator in both runs — the structural, environment-robust
+    # signal. Releasing sprat only widens this gap, so it must survive the perturbation.
     for label, means in (("baseline", base), ("perturbed", pert)):
-        assert means["sprat"] > means["stickleback"] > means["cod"], (
-            f"Pyramid ordering sprat > stickleback > cod broken in {label} run: "
-            f"sprat={means['sprat']:.3e}, stickleback={means['stickleback']:.3e}, "
-            f"cod={means['cod']:.3e}"
+        assert means["sprat"] > means["total_cod"], (
+            f"Prey no longer outweighs predator in {label} run: "
+            f"sprat={means['sprat']:.3e}, total_cod={means['total_cod']:.3e} "
+            f"(stickleback={means['stickleback']:.3e}, context only)"
         )
 
 
@@ -306,21 +335,35 @@ def test_markdown_code_block_parses_and_runs(tmp_path: Path, numba_warmup: None)
     )
 
 
-# === Assertion #5: the perturbation instruction is findable + replace string is disjoint ===
-def test_perturbation_instruction_is_findable() -> None:
-    """The Beat-6 instruction says 'find sprat;0.4;, change to sprat;0.05;'.
-    Confirm find-string is present and replace-string is absent in the canonical CSV."""
-    find, replace = BASELINE_PERTURBATION
-    canonical_csv = (BALTIC_DIR / ACCESSIBILITY_CSV_RELPATH).read_text()
+# === Assertion #5: the perturbation targets both cod stocks and is a real change ===
+def test_perturbation_targets_both_cod_stocks(tmp_path: Path) -> None:
+    """Beat 6 drops BOTH cod stocks' sprat accessibility to 0.05.
 
-    assert find in canonical_csv, (
-        f"Tutorial tells reader to find {find!r}, but it's not in the canonical CSV. "
-        f"CSV format has drifted.\nCanonical CSV path: {BALTIC_DIR / ACCESSIBILITY_CSV_RELPATH}"
+    Guards the bug that motivated #129's retarget: the old positional replace
+    ("sprat;0.4;" -> "sprat;0.05;") could only reach the FIRST predator column, so after the
+    cod split it silently left cod_east untouched — and cod_east has the higher accessibility
+    to sprat (0.5 vs 0.4), i.e. the perturbation was missing the larger half of the effect.
+    """
+    import pandas as pd  # noqa: PLC0415
+
+    canonical = BALTIC_DIR / ACCESSIBILITY_CSV_RELPATH
+    scratch = tmp_path / ACCESSIBILITY_CSV_RELPATH
+    scratch.write_text(canonical.read_text())
+
+    before = apply_cod_sprat_perturbation(scratch)
+    assert before == {"cod_west": 0.4, "cod_east": 0.5}, (
+        f"Canonical sprat accessibility drifted from the documented 0.4/0.5: {before}"
     )
-    assert replace not in canonical_csv, (
-        f"Replace string {replace!r} is already in the canonical CSV. "
-        f"BASELINE_PERTURBATION is not a real change."
+
+    after = pd.read_csv(scratch, sep=";", index_col=0)
+    assert after.loc["sprat", "cod_west"] == 0.05
+    assert after.loc["sprat", "cod_east"] == 0.05, (
+        "cod_east was not perturbed — this is exactly the silent miss #129 fixed."
     )
+    # Everything else must be untouched: the edit is surgical, not a rewrite.
+    orig = pd.read_csv(canonical, sep=";", index_col=0)
+    other = [c for c in orig.columns if c not in ("cod_west", "cod_east")]
+    pd.testing.assert_frame_equal(after[other], orig[other])
 
 
 # === Assertion #6: headless fallback produces meaningful equilibrium means ===
