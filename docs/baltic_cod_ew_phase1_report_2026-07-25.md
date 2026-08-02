@@ -74,9 +74,22 @@ calibration horizon and the 50-yr certification:
 ### The finding
 
 **A collapsed eastern-cod Baltic cannot hold the prey species in their ICES
-envelopes without the apex predator** — consistent with the prior result that even
-the aggregated 8-species model is only 2/8 stable. This is a real property of the
+envelopes without the apex predator** — ~~consistent with the prior result that even
+the aggregated 8-species model is only 2/8 stable~~. This is a real property of the
 disaggregated food web, not just a calibration nuisance.
+
+> **Correction 2026-08-01 — the finding stands, the corroboration does not.** The
+> "8-species model is only 2/8 stable" citation was the whole-run-minimum `persists`
+> criterion reading the seeding bootstrap. Re-certified under the corrected criterion
+> (`556ba3d`) that same config measures **5/8**, cod PASS at 60,931–68,364 t
+> (`docs/baltic_8species_recert_corrected_criterion_2026-08-01.md`). The aggregate model
+> was **not** unstable, so it is not evidence for anything here.
+>
+> **This report's own result is unaffected.** Its "2/9" is an *in-envelope* count with every
+> species running 10–80× over its ICES envelope — an `in_envelope` failure, which the criterion
+> fix does not touch. The finding rests on its own measurement, not on the deleted analogy.
+> See `docs/baltic_certification_reread_2026-08-01.md` and
+> [#145](https://github.com/razinkele/osmopy/issues/145).
 
 The one caveat that keeps a re-calibration worthwhile: the failed DE left prey
 *fishing* low (flounder F=0.008) despite the boom — it was under-budgeted and
