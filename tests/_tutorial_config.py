@@ -44,7 +44,9 @@ ACCESSIBILITY_CSV_RELPATH = "predation-accessibility.csv"
 PERTURBED_ACCESSIBILITY = 0.05
 
 
-def apply_cod_sprat_perturbation(acc_csv_path: Path, value: float = PERTURBED_ACCESSIBILITY) -> dict:
+def apply_cod_sprat_perturbation(
+    acc_csv_path: Path, value: float = PERTURBED_ACCESSIBILITY
+) -> dict:
     """Set cod_west and cod_east accessibility to sprat to ``value``; return the old values.
 
     Edits by column NAME, not by string offset. The previous positional replace
