@@ -677,7 +677,11 @@ def _build_predator_pressure_dataframe(
     if not mats:
         return {}
     per_step = max(1, int(config.output_record_frequency))
-    preds, preys = list(config.species_names), list(config.all_species_names)
+    # Must be the same axis as the disk twin and dietMatrix — see diet_prey_names. Using
+    # all_species_names here (the #146 defect, missed in e121c6d's first pass) dropped every
+    # resource prey row past the second, so planktivores reported impossible consumption:
+    # herring came out at Q/B = 0.12 despite feeding 61% on Mesozooplankton.
+    preds, preys = list(config.species_names), diet_prey_names(config)
     rows: list[list[object]] = []
     for mat, t in zip(mats, times, strict=True):
         scaled = mat / float(per_step)

@@ -64,12 +64,31 @@ implies prey production far above what a 2.6 Mt herring stock can deliver — ye
 comfortably inside its own envelope**, so it is not being drawn down the way a predator that large
 should draw it down.
 
-Two readings, distinguishable by measuring absolute consumed biomass (`predatorPressure`) against
-herring production:
+Both readings were tested and **both are refuted.** Measured consumption (final decade, annualised):
 
-1. Pikeperch's consumption does not actually remove the herring biomass its growth implies (an
-   accounting inconsistency between predation and growth), or
-2. Its growth is not limited by what it consumes (a bioenergetics/conversion issue).
+| predator | B (t) | Q (t/yr) | **Q/B** |
+|---|---|---|---|
+| pikeperch | 1,453,313 | 3,712,747 | **2.55** |
+| perch | 45,382 | 154,920 | 3.41 |
+| cod_east | 83,122 | 285,817 | 3.44 |
+| cod_west | 13,623 | 46,255 | 3.40 |
+| smelt | 680,125 | 1,519,300 | 2.23 |
+| herring | 2,600,112 | 11,925,219 | 4.59 |
+| sprat | 1,059,941 | 5,056,861 | 4.77 |
+| stickleback | 80,159 | 368,876 | 4.60 |
+
+Every value is in the published range — planktivores 4.6–4.8, piscivores 2.5–3.4. **There is no
+conservation violation and no growth-without-eating; the engine is internally consistent.** All
+predators together remove 1.57 Mt/yr of herring, 60.3% of its standing stock, which a 2.6 Mt stock
+sustains at a plausible P/B.
+
+Notably **pikeperch has the LOWEST Q/B of any fish in the system (2.55)** — consistent with a
+long-lived (15 yr), large-bodied (Linf 90 cm) predator. It is not eating anomalously much; there is
+simply a great deal of it.
+
+So the overshoot is not an engine defect. The model's Baltic is very productive — herring alone
+consumes 11.9 Mt/yr of zooplankton — and that productivity propagates up to a predator with almost
+nothing eating it.
 
 ## Standing structural contrasts (not yet ruled out)
 
@@ -104,12 +123,36 @@ Kokkonen et al. (2019) found pikeperch abundance *suppresses* perch recruitment 
 competition. The config encodes the predation link (0.15), yet the model has perch in envelope while
 pikeperch runs away — the documented asymmetry is inverted.
 
+## Where that leaves the problem
+
+With the LTL subsidy and the engine-defect readings both eliminated, what remains is a **regulation**
+problem, and the surviving candidates are all top-down:
+
+1. **Predation on pikeperch is negligible** — total accessibility 0.60, and only cod (0.05–0.1),
+   cannibalism (0.05) and Cormorant (0.4) contribute at all. Perch, which passes, carries 1.05.
+2. **F = 0.5 is small relative to the productivity** feeding the stock. Recreational catch is a real
+   missing removal (see below) but cannot plausibly close 56×.
+3. **`Linf = 90 cm`** gives a large biomass-per-recruit, and biomass scales with roughly the cube of
+   length.
+4. **Its access to the offshore forage base may be unrealistic.** 39% of its diet is herring, at
+   accessibility 0.3 — the same as its access to sprat. Real Baltic pikeperch is a coastal
+   bay/lagoon predator that would rarely encounter the offshore herring stock. This is the lever the
+   prior work labelled "percid diet constraint (×217, grid-unfixable)"; it is worth revisiting now
+   that the diagnostic is trustworthy, because the diet share it targets is now measurable.
+
 ## Note on the diagnostic itself
 
 Every diet figure above required fixing #146 first: the diet prey axis was labelled with background
 species instead of resources, so resource prey were mislabelled or silently discarded and **every
 predator reported as 100% fish / 0% resource**. Any percid conclusion drawn from `dietMatrix` before
 `e121c6d` is unreliable.
+
+`e121c6d` was itself **incomplete**: it corrected three of the four prey-axis sites and left
+`_build_predator_pressure_dataframe` on the old axis, so in-memory `predatorPressure` still dropped
+four of six resource groups. The full suite stayed green because nothing asserted on absolute
+consumption. It surfaced only as a biologically impossible figure — herring at Q/B 0.12 while
+feeding 61% on Mesozooplankton. Fixed, with a Q/B sanity assertion added that catches a dropped prey
+block wherever it originates.
 
 ## References
 

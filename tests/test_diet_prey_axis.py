@@ -96,3 +96,73 @@ def test_no_predator_eats_a_background_species(baltic_diet):
             assert bg not in vals, (
                 f"{predator} has a {bg!r} prey column — background species are not prey"
             )
+
+
+def test_predator_pressure_shares_the_same_prey_axis(baltic_diet):
+    """predatorPressure must use diet_prey_names too — it did not, and dietMatrix cover missed it.
+
+    e121c6d fixed three of the four prey-axis sites and left
+    ``_build_predator_pressure_dataframe`` on ``all_species_names``. The full suite stayed green
+    because nothing asserted on absolute consumption, and the defect only surfaced as a
+    biologically impossible Q/B: herring consuming 0.12x its body weight per year while feeding
+    61% on Mesozooplankton.
+
+    Asserting the row COUNT is the cheap structural guard; the Q/B sanity check below is the one
+    that would actually have caught it.
+    """
+    import shutil
+    import tempfile
+
+    work = Path(tempfile.mkdtemp())
+    target = work / "baltic"
+    shutil.copytree(BALTIC_DIR, target)
+    cfg_dict = OsmoseConfigReader().read(str(target / "baltic_all-parameters.csv"))
+    cfg_dict["simulation.time.nyear"] = "2"
+    res = PythonEngine().run_in_memory(config=cfg_dict, seed=42)
+
+    pp = res._csv_cache["predatorPressure"]
+    first_t = pp["Time"].iloc[0]
+    prey_rows = set(pp[pp["Time"] == first_t]["Prey"])
+    assert _LTL <= prey_rows, f"predatorPressure is missing resource prey rows: {_LTL - prey_rows}"
+
+    cfg = EngineConfig.from_dict(
+        dict(OsmoseConfigReader().read(str(BALTIC_DIR / "baltic_all-parameters.csv")))
+    )
+    for bg in set(cfg.all_species_names) - set(cfg.species_names):
+        assert bg not in prey_rows, (
+            f"background species {bg!r} must not be a predatorPressure prey row"
+        )
+
+
+def test_planktivore_consumption_is_biologically_possible(baltic_diet):
+    """A fish must eat on the order of its own body weight per year, at minimum.
+
+    This is the assertion that catches a dropped prey block regardless of WHICH site drops it:
+    undercounting consumption drives Q/B toward zero. Herring read 0.12 under the bug and 4.59
+    once every resource row was restored.
+    """
+    import shutil
+    import tempfile
+
+    work = Path(tempfile.mkdtemp())
+    target = work / "baltic"
+    shutil.copytree(BALTIC_DIR, target)
+    cfg_dict = OsmoseConfigReader().read(str(target / "baltic_all-parameters.csv"))
+    cfg_dict["simulation.time.nyear"] = "3"
+    res = PythonEngine().run_in_memory(config=cfg_dict, seed=42)
+
+    pp = res._csv_cache["predatorPressure"]
+    bio = res.biomass()
+    n_dt = 24
+    late_t = pp["Time"].max()
+    late_pp = pp[pp["Time"] == late_t]
+    late_b = bio[bio["Time"] == late_t]
+
+    for planktivore in ("herring", "sprat"):
+        q = float(late_pp[planktivore].sum()) * n_dt
+        b = float(late_b[planktivore].iloc[0])
+        assert b > 0, f"{planktivore} has no biomass; fixture is not exercising the food web"
+        assert q / b > 1.0, (
+            f"{planktivore} Q/B = {q / b:.2f} per year — below its own body weight, which no fish "
+            f"can sustain. A prey block is being dropped from predatorPressure (#146)."
+        )
