@@ -185,6 +185,11 @@ seeding bootstrap) to the final-decade minimum:
      no expected level change in-sample.
   2. **Mechanism demonstrated (hard) — and the A/B arms are NOT gate-on vs gate-off.**
 
+     ⚠ **Accessor note:** use `biomass_by_age` for the recruitment series, **not** `abundance_by_age`
+     — the latter is unavailable on the in-memory path (`OsmoseResults` exposes `biomassByAge` but not
+     `abundanceByAge`), so an in-memory correlation check silently yields nothing. A disk-backed run
+     is the alternative.
+
      ⚠ **Read this before designing the test.** A *prescribed-series* RV gate is **already on master
      and already enabled** for `sp8`: `reproduction.rv.gate.enabled;true`, `series.file;
      reference/baltic_cod_reproductive_volume.csv`, `mode;raw_cap`, `ref;150`,
@@ -224,20 +229,23 @@ seeding bootstrap) to the final-decade minimum:
      | gate ON (master) | **83,135 t** | **IN** |
      | gate OFF | **167,377 t** | **OUT** — 1.97× over the ceiling |
 
-     Ratio 0.497 against a mean factor of 0.438 — near-proportional pass-through; density dependence
-     does not absorb it. **cod_east's PASS is load-bearing on the gate**, so whatever a dynamic RV
-     computes lands almost directly on its envelope status. Fitting the two points
-     (`B ≈ 17,480 + 149,898 · factor`), the admissible final-decade mean factor is **0.284–0.450**,
-     and the current 0.438 sits **2.8% below the upper breach point** with only **2.2% biomass
-     headroom** to the ceiling.
+     Ratio 0.497 against a mean factor of 0.438 — density dependence does not absorb the gate.
+     **cod_east's PASS is load-bearing on it**, so whatever a dynamic RV computes lands almost
+     directly on cod_east's envelope status. With the gate on, cod_east sits **2.2% under the
+     envelope ceiling** — and that headroom is *inside* the ~1.9% seed-to-seed noise, so the PASS at
+     the ceiling is **marginal**. Resolve any Phase 0 comparison at this boundary with more than
+     2 seeds.
 
-     A computed RV a few percent *higher* than the observed series therefore fails criterion 1 on the
-     high side. **That is the quantitative reason in-sample agreement is the bar and "the arms
-     differ" is not.** Caveat before leaning on the band: 2.2% headroom is *within* the ~1.9%
-     seed-to-seed noise, so cod_east's PASS at the ceiling is marginal — resolve any Phase 0
-     comparison at this boundary with more than 2 seeds, and treat 0.284–0.450 as indicative (a
-     two-point interpolation over a mildly sublinear response), with the upper edge the
-     better-anchored end.
+     A computed RV running *higher* than the observed series therefore risks failing criterion 1 on
+     the high side. **That is why in-sample agreement is the bar and "the arms differ" is not.**
+
+     ~~Admissible final-decade mean factor 0.284–0.450, current 0.438 sitting 2.8% below the upper
+     breach point.~~ **Retracted same day — the fit was invalid** (`B ≈ 17,480 + 149,898 · factor`
+     regressed biomass on two points that are not on the same curve: 0.438 is a *time-average* of a
+     varying trajectory, 1.000 is a *constant* held in every year). No tolerance band is claimed. A
+     real one needs `reproduction.rv.gate.ref` swept directly (150 → 130/170/190), ~3–4 runs, **not
+     yet done**. Scope of all figures here: the **9-species master** (`cod_east` sp8, envelope
+     60,000–85,000 t) — not the 8-species config, which is a different species and envelope.
   3. **Explicitly NOT a criterion:** any improvement in the persistence count, any movement of the
      percid overshoot. The percids are an `in_envelope` failure that a cod-only gate has no mechanism
      to address; claiming credit there would be spurious.
