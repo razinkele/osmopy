@@ -361,8 +361,48 @@ decides the sign of the GreySeal question entirely:
 17th column and changes the matrix dimensions rather than editing a cell. Resolve the path question
 before retrying.
 
+### Resolved: GreySeal already has full access, and is ~30× too small to matter
+
+Background species **are** schools carrying an `is_background` flag. The four `is_background` guards in
+`mortality.py` (:94, :138, :190, :290) exempt them from *suffering* starvation, additional, fishing and
+foraging mortality — **none excludes them from acting as predators.** So GreySeal predates through the
+ordinary school path with `p_acc = −1`, the `p_acc >= 0` guard fails, and `access_coeff` stays at its
+**1.0** initialiser.
+
+**GreySeal therefore already has full accessibility to adult pikeperch** within its 56.7 cm window. The
+config comment confirms this was intended: *"herring, sprat, medium cod, flounder, small-medium
+pikeperch"*.
+
+It cannot matter at the configured scale. GreySeal is **4,500 t** standing biomass (30,000 individuals
+× 150 kg) with `predation.ingestion.rate.max = 13.0`, i.e. **~58,500 t/yr of total consumption across
+all prey** — herring (2.60 Mt), sprat (1.06 Mt), cod, flounder and pikeperch together. Even if seals
+ate nothing but pikeperch, that is ~4% of a 1.45 Mt stock per year; the realistic share is a small
+fraction of that.
+
+### The diagnosis, complete
+
+Adult pikeperch is effectively unpredated, by two independent routes:
+
+* **cod, cormorant and cannibalism cannot reach it by size** — windows close at 31.4 / 34.0 / 36.0 cm
+  against 40 cm maturity;
+* **grey seal can reach it (to 56.7 cm) but is ~30× too small in biomass** to exert control, and
+  **nothing at all can take a pikeperch above 56.7 cm**, against Linf 90 cm and a 15-year lifespan.
+
+Biomass accumulates in a size class no predator in the configuration can touch. This is why fishing was
+the only lever with any effect (it is the sole adult removal) and why every demand-side cut failed
+(they act on a class that was never predation-limited).
+
+### Candidate levers, in order of defensibility
+
+1. **`Linf = 90 cm`** — at the top of the plausible range for Baltic pikeperch and the parameter that
+   places the stock beyond every predator. Biomass scales with roughly the cube of length.
+2. **Cod `sizeratio.min = 3.5`** — a 110 cm cod restricted to ≤31.4 cm prey is arguably too tight for
+   Baltic cod; loosening it re-opens a predation route on sub-adult pikeperch.
+3. **GreySeal biomass** — realistic at 30,000 individuals; not a free parameter.
+
 ### Status
 
-The size-window diagnosis is supported by verified numbers but is the **third** position in this
-investigation, and the two it replaced were each supported by verified numbers too, right up to the
-control test that killed them. It has not yet faced an equivalent test.
+The size-window diagnosis is now specified end to end and each number is verified. It remains the
+**third** position in this investigation, and the two it replaced were each supported by verified
+numbers too, right up to the control test that killed them. **It has not been subjected to an
+intervention test**, which is what would settle it.
