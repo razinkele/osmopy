@@ -406,3 +406,55 @@ The size-window diagnosis is now specified end to end and each number is verifie
 **third** position in this investigation, and the two it replaced were each supported by verified
 numbers too, right up to the control test that killed them. **It has not been subjected to an
 intervention test**, which is what would settle it.
+
+
+---
+
+## 2026-08-03 (later) — the size-window diagnosis fails its intervention test
+
+Six levers have now been measured. All fail.
+
+| intervention | pikeperch | vs baseline | envelope |
+|---|---|---|---|
+| baseline | 1,453,313 | — | 7/9 |
+| diet accessibility, herring+sprat 10x cut | 1,084,623 | −25.4% | 5/9 |
+| F swept 0.5 → 4.0 | 1,298,663 | −10.6% | 4/9 |
+| gear: size-selective l50 = 40 cm | 1,345,161 | −7.4% | 7/9 |
+| gear: size-selective l50 = 45 cm | 1,565,986 | +7.8% | 7/9 |
+| **cod size window 3.5 → 2.5 (prey ≤44 cm)** | **1,502,194** | **+3.4%** | 7/9 |
+| l50 = 45 + cod 2.5 | 1,521,761 | +4.7% | 6/9 |
+| l50 = 45 + Linf 70 | 1,435,425 | −1.2% | 6/9 |
+| l50 = 45 + cod 2.5 + Linf 70 | 1,521,579 | +4.7% | 6/9 |
+
+**The cod-window arm is the decisive one and it failed.** Opening cod's feeding window from a 31.4 cm
+ceiling to 44 cm crosses pikeperch's 40 cm maturity, giving a predator access to the adult class for the
+first time. Biomass moved **the wrong way**.
+
+### Why: the predator field is too small by an order of magnitude
+
+Arithmetic that should have preceded the test. Cod totals **~97 kt** (cod_west 13.6 + cod_east 83.1)
+against pikeperch's **1.45 Mt** — a stock 15× its own size. Cod's entire annual consumption is ~330 kt
+across all prey; even at 100% pikeperch that is 23% of the stock, realistically a few percent. GreySeal,
+the only other predator reaching adult sizes, consumes ~58.5 kt/yr across all prey.
+
+**No predator in this configuration has the biomass to regulate pikeperch, whatever the size window
+permits.** The size-window finding is therefore *necessary but not sufficient*: adults are genuinely
+unreachable, and making them reachable changes nothing.
+
+### Status: four diagnoses, four failures
+
+Spatial supply (refuted by the perch control), predation release (refuted by the accessibility
+ordering), size-window escape (refuted by this intervention test), and the gear-selectivity hypothesis
+(refuted, worse at realistic landing sizes). Each was supported by verified numbers up to the point it
+was tested.
+
+**Recommendation: stop testing removal-side levers.** Six have produced between −25% and +8% against a
+58× gap. The remaining untested candidates are on the production side —
+
+* **recruitment**: pikeperch's stock–recruitment parameterisation, which no test so far has touched;
+* **the target itself**: the ICES envelope is per-stock for locally assessed populations while the model
+  carries one aggregated basin-wide stock. Even summing across the ~9 recognised Baltic coastal stocks
+  gives at most ~225 kt, still 6.4× below the model, so this cannot explain the gap alone — but it means
+  the reference point is wrong by roughly an order of magnitude before any dynamics are considered.
+
+`cod_east` breached in every `l50 = 45` arm and is confirmed as the fragile species (2.3% headroom).
