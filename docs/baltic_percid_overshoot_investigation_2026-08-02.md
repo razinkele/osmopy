@@ -458,3 +458,59 @@ was tested.
   the reference point is wrong by roughly an order of magnitude before any dynamics are considered.
 
 `cod_east` breached in every `l50 = 45` arm and is confirmed as the fragile species (2.3% headroom).
+
+
+## 2026-08-03 (later still) — the production side fails too; the overshoot is over-determined
+
+Following the recommendation above, the untested production-side lever was `stock.recruitment.ssbhalf`.
+Pikeperch carries **43,923** against perch's **1,470** — a 30× spread between two coastal percids that
+no ecological argument supports. Both species sit at ~30× their own `ssbhalf` at equilibrium, which
+suggested equilibrium biomass tracks the parameter ~1:1.
+
+**That proportionality was coincidence.** Measured:
+
+| `ssbhalf` | pikeperch | B/ssbhalf | envelope |
+|---|---|---|---|
+| 43,923 (baseline) | 1,453,313 | 33.1 | 7/9 |
+| 5,000 | 718,482 | 143.7 | 5/9 |
+| 1,470 (perch's value) | 397,363 | 270.3 | 5/9 |
+| 450 | 208,984 | 464.4 | 4/9 |
+
+**B ∝ ssbhalf^0.42.** Cutting the parameter 97.6× reduced biomass 7×. Reaching the envelope would
+require `ssbhalf ≈ 3`. Every arm breaches herring and cod_east; at 450, perch breaches too.
+
+### Seven levers, seven failures — and a floor around 200 kt
+
+| lever | best result |
+|---|---|
+| diet accessibility (10× cut) | −25% |
+| fishing mortality (F 0.5 → 4.0) | −10.6% |
+| gear selectivity (l50 40–50 cm) | −7.4% |
+| cod size window (3.5 → 2.5) | **+3.4%** |
+| Linf 90 → 70 (paired) | −1.2% |
+| grey seal access | already 1.0; predator 30× too small |
+| recruitment `ssbhalf` (97.6× cut) | −86% (to 209 kt, still 8.4× over) |
+
+Even a 97.6× cut to recruitment leaves ~209 kt. **The overshoot is over-determined**: Linf 90, a
+15-year lifespan, no predation reaching adults, and a predator field an order of magnitude too small
+jointly sustain the stock, and removing any one is compensated by the others. That is why every
+single-lever intervention returns between −25% and +8%, and why the two that bit hardest also broke
+other species.
+
+### Recommendation
+
+**Stop single-lever testing.** Seven have been measured across both the removal and production sides.
+The remaining honest options are:
+
+1. **Joint re-parameterisation** of pikeperch (Linf, lifespan, `ssbhalf`, predator field) as a
+   multi-parameter fit rather than sequential single edits — with the caveat that the phase-13
+   calibration already had these free and converged here.
+2. **Revisit the target.** The ICES envelope is per-stock for locally assessed populations against one
+   aggregated basin-wide model stock; summing the ~9 recognised Baltic coastal stocks gives at most
+   ~225 kt. Notably, the `ssbhalf = 450` arm lands at **209 kt — inside that aggregate range**, which is
+   the first result in this investigation consistent with any defensible target.
+3. **Flag pikeperch as not credibly represented** in this configuration and exclude it from calibration
+   objectives rather than continuing to tune toward a target the structure cannot reach.
+
+Option 2 deserves weight: it is the only reading under which any tested configuration is defensible,
+and it costs nothing to check against the stock-level ICES assessments.
