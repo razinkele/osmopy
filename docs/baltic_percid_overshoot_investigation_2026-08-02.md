@@ -306,3 +306,63 @@ Olin, M., Heikinheimo, O., & Lehtonen, T. K. (2023). Long‐term monitoring of p
 lucioperca*) populations under increasing temperatures and predator abundances in the Finnish coastal
 waters of the Baltic Sea. *Ecology of Freshwater Fish, 32*(4), 750–764.
 https://doi.org/10.1111/eff.12721
+
+
+---
+
+## 2026-08-03 — third diagnosis: escape from the predator size window
+
+Both hypotheses above are withdrawn (spatial supply, §1.4 of the design spec; predation release,
+round-2 review). The third position, and the first with a mechanism in the engine rather than in a
+coefficient:
+
+**The predation kernel applies the size-ratio gate BEFORE reading accessibility**
+(`osmose/engine/processes/mortality.py`:412–414, accessibility at :416), so a coefficient outside the
+size window is never applied at all.
+
+| predator | length | ratio_min | largest prey it can take | pikeperch access |
+|---|---|---|---|---|
+| cod_west / cod_east | 110 cm | 3.5 | 31.4 cm | 0.1 / 0.05 |
+| Cormorant | 70–85 cm | 2.5 | **34.0 cm** | 0.4 |
+| pikeperch (cannibalism) | 90 cm | 2.5 | 36.0 cm | 0.05 |
+| **GreySeal** | **110–170 cm** | **3** | **56.7 cm** | **no matrix column** |
+
+**Pikeperch matures at 40.0 cm** and grows to 90 cm. Every predator holding a pikeperch accessibility
+entry closes its window *below maturity*. Perch (Linf 45 cm) stays inside cod's 31.4 cm window for far
+more of its life. This makes `Linf = 90` the mechanism rather than a modifier, and explains why every
+lever failed: fishing is the only adult removal, and demand-side cuts act on a class that was never
+predation-limited.
+
+### Unresolved: what a missing predator column actually means
+
+The accessibility matrix is **16 columns — 9 focal + 6 resources + Cormorant. GreySeal is absent**,
+though it is declared as background sp15 with a size window reaching 56.7 cm.
+
+`AccessibilityMatrix.get_index` returns **−1** for a species not in the matrix, and the kernel does:
+
+```
+access_coeff = 1.0
+if ... and p_acc >= 0 and q_acc >= 0:
+    access_coeff = access_matrix[q_acc, p_acc]
+    if access_coeff <= 0: continue
+```
+
+A −1 index skips the block, leaving `access_coeff = 1.0` — **a missing predator column means maximum
+access, not zero**, and the `<= 0` skip never fires. Whether this school-vs-school path governs
+background predators (which are biomass pools rather than schools) is **not yet established**, and it
+decides the sign of the GreySeal question entirely:
+
+* if background predation takes this path, GreySeal already has *full* access to adult pikeperch, and
+  the size-window story needs re-examining;
+* if it takes another path, GreySeal may not predate pikeperch at all, and adding it is the candidate
+  remedy.
+
+**An intervention test was attempted and is invalid:** setting `df.loc["pikeperch", "GreySeal"]` adds a
+17th column and changes the matrix dimensions rather than editing a cell. Resolve the path question
+before retrying.
+
+### Status
+
+The size-window diagnosis is supported by verified numbers but is the **third** position in this
+investigation, and the two it replaced were each supported by verified numbers too, right up to the
+control test that killed them. It has not yet faced an equivalent test.
