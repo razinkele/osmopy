@@ -71,19 +71,43 @@ Time-weighted herring share, computed identically for both percids:
 discriminate between the two, so it cannot explain pikeperch specifically. *(Reproduced directly from
 `data/baltic/maps/` and `baltic_param-movement.csv` before this rewrite.)*
 
-### 1.5 The discriminator that survives: predation release
+### 1.5 ~~Predation release~~ — CORRECTED to size-window escape
 
-From `data/baltic/predation-accessibility.csv`, total accessibility **as prey**:
+**Revised 2026-08-03 (round-2 review).** The first rewrite claimed pikeperch is "the least-predated
+fish in the system" (accessibility-as-prey 0.60 vs perch 1.05). **That claim is false**, and it failed
+the same control test §1.4 used to kill the supply hypothesis — a test this document invented and then
+did not apply to its own replacement. Row sums of `predation-accessibility.csv`:
 
-| | eaten by | total | biomass |
+| cod_west | cod_east | flounder | **pikeperch** | perch | herring | sprat | stickleback | smelt |
+|---|---|---|---|---|---|---|---|---|
+| 0.20 | 0.20 | 0.35 | **0.60** | 1.05 | 1.35 | 1.55 | 1.65 | 2.55 |
+
+Pikeperch is **4th-least** predated. Three fish carry less and all three are in envelope; smelt carries
+the **most** (2.55) and is 5.7× over. The axis is contradicted at both ends.
+
+**The real mechanism is the size window, and it is not a coefficient at all.** The predation kernel
+applies the size-ratio gate **before** reading accessibility (`osmose/engine/processes/mortality.py`
+:412–414 `if ratio < r_min or ratio >= r_max: continue`, with the accessibility read at :416+), so a
+coefficient outside the window is never applied.
+
+| | Linf | ratio_min | largest prey it can take |
 |---|---|---|---|
-| perch | cod_west 0.15, pikeperch 0.15, cod_east 0.1, cannibal 0.05, **Cormorant 0.6** | **1.05** | 45 kt — IN |
-| **pikeperch** | cod_west 0.1, cod_east 0.05, cannibal 0.05, **Cormorant 0.4** | **0.60** | 1,453 kt |
+| cod_west / cod_east | 110 cm | 3.5 | **31.4 cm** |
+| pikeperch (cannibalism) | 90 cm | 2.5 | **36.0 cm** |
 
-Pikeperch is the **least-predated fish in the system** and is absent from perch's diet, while perch is
-in *its* diet at 0.15. Combined with `Linf = 90 cm` vs perch's 45 cm (≈8× mass per fish at Linf), this
-is the asymmetry that tracks the outcome. It is a hypothesis, not yet a demonstrated cause — Tier A
-tests it.
+**Pikeperch matures at 40.0 cm** (`baltic_param-species.csv`). **No predator in the configuration can
+take a pikeperch above 36 cm** — it escapes the entire predator field *before maturity* and accumulates
+biomass in a structurally invulnerable adult class. Perch, with Linf 45 cm, spends far more of its life
+inside cod's 31.4 cm window.
+
+This reframes `Linf = 90 cm` from a contributing factor to **the mechanism itself**, and it explains
+every failed lever: fishing is the only adult removal, and demand-side cuts act on a class that was
+never predation-limited.
+
+**Candidate remedies now point elsewhere entirely** — grey seal predation on large pikeperch (real, and
+currently absent from the matrix: GreySeal has no pikeperch entry), the cod size-ratio window, or
+`Linf` itself. **Tiers A and B below do not act on this mechanism** and are retained only as the record
+of what was tried.
 
 ## 2. Ecological basis, and its limits
 
@@ -119,7 +143,16 @@ Two consequences: smelt seasonality needs a time-averaged surrogate (Tier B) or 
 and the Baltic config uses a **single stage** for percids, so an ontogenetic diet shift (juvenile
 pikeperch planktivorous → adult piscivorous) cannot currently be expressed either.
 
-## 4. Design
+## 4. Design — SUPERSEDED by §1.5
+
+> **The tiers below are retained as a record, not as a recommendation.** Round-2 review established
+> that Tier A raises coefficients on size classes holding ~5% of pikeperch mass (every predator window
+> closes below maturity), and that Tier B's herring coefficient multiplies accessibility by a spatial
+> overlap the cell-based kernel already applies — while §1.4 had just rejected that same quantity as
+> non-discriminating. A narrower version of Tier B was already measured and failed 7/9 → 5/9. Any
+> revision should start from the size window, not from these tiers.
+
+## 4a. Design as originally proposed
 
 ### Tier A — test the predation-release hypothesis first (config only)
 
