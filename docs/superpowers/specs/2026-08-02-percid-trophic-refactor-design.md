@@ -1,14 +1,18 @@
 # Percid trophic refactor — design
 
-**Date:** 2026-08-02
+**Date:** 2026-08-02 · **Revised:** 2026-08-03 after adversarial review (11 agents, 8 findings upheld)
 **Status:** design, not started
-**Supersedes the lever search in:** `docs/baltic_percid_overshoot_investigation_2026-08-02.md`
+**Evidence:** `docs/baltic_percid_overshoot_investigation_2026-08-02.md`
 **Proposal:** `docs/proposals/2026-08-02-percid-trophic-refactor.md`
 
-## 1. Problem
+> **Revision note.** The first draft diagnosed the overshoot as a *spatial supply* problem — a
+> bay-resident predator with a continuously replenished tap into the basin-wide herring pool — and
+> proposed zeroing percid access to herring and sprat. **Review refuted the diagnosis and the
+> remedy**, both reproduced independently before this rewrite (§1.3, §1.4). The supply framing is
+> retained below only as a rejected hypothesis, because the numbers that killed it are the ones that
+> point at the replacement.
 
-The committed Baltic config lets both percids forage year-round on the offshore pelagic stocks. That
-is ecologically wrong and it is the supply the pikeperch overshoot runs on.
+## 1. Problem
 
 | | final-decade mean | ICES envelope | |
 |---|---|---|---|
@@ -16,143 +20,188 @@ is ecologically wrong and it is the supply the pikeperch overshoot runs on.
 | smelt | 680,125 t | 20,000–120,000 t | ~5.7× over |
 | perch | 45,382 t | 8,000–50,000 t | in envelope |
 
-### 1.1 Why this is a supply problem, not a parameter problem
+Perch is the control: same family, same coastal habitat, comparable fishery, and it passes.
 
-Both demand-side levers were measured and both are closed:
+### 1.1 Demand-side levers are closed (measured)
 
-* **Diet accessibility**, `herring`+`sprat` cut 10× (0.3 → 0.03): **−25%**. Pikeperch switched onto
+* **Diet accessibility**, `herring`+`sprat` cut 10× (0.3 → 0.03): **−25%**; pikeperch switched onto
   benthos and smelt.
-* **Fishing mortality**, swept 0.5 → 4.0: **−10.6%, non-monotonic**, and the envelope count degrades
-  monotonically 7/9 → 6/9 → 5/9 → 4/9. At F = 4.0 (~98%/yr removal) every *other* stock rises —
-  cod_west +35%, smelt +26%, sprat +20%, herring +17% — releasing the forage base that regrows
-  pikeperch straight back.
+* **Fishing mortality**, swept 0.5 → 4.0: **−10.6%, non-monotonic**, envelope count degrading
+  7/9 → 6/9 → 5/9 → 4/9. At F = 4.0 every *other* stock rises (cod_west +35%, smelt +26%, sprat +20%,
+  herring +17%), releasing the forage base that regrows pikeperch.
 
-The stock is **supply-limited, not mortality-limited: it cannot be fished down.**
+Pikeperch cannot be fished down. That much stands.
 
-### 1.2 The mechanism, measured
+### 1.2 Bioenergetics are sound
 
-| | |
-|---|---|
-| pikeperch adult map | 27 cells |
-| herring adult map | 593 cells; all 27 pikeperch cells fall inside it |
-| herring distribution weight in pikeperch cells | 4.55% ≈ 118 kt of 2.60 Mt |
-| pikeperch consumption of herring | **1.46 Mt/yr ≈ 12× the locally available standing stock** |
+Q/B at equilibrium: pikeperch 2.55, perch 3.41, cod_east 3.44, herring 4.59, sprat 4.77 — all inside
+the published range. No conservation violation, no growth-without-eating; pikeperch has the *lowest*
+Q/B of any fish. There is not anomalously much eating going on; there is anomalously much pikeperch.
 
-Maps are binary presence (0/1, −99 nodata), so herring spreads uniformly over its range, and OSMOSE
-redistributes schools across each species' map every timestep. The coastal cells are therefore
-**continuously restocked from the basin-wide pool**: a bay-resident predator holds a replenished tap
-into the entire Baltic Proper herring stock.
+### 1.3 ~~Spatial supply~~ — REJECTED, with the corrected numbers
 
-### 1.3 Ecological basis
+The first draft claimed pikeperch's 27 cells hold 4.55% of herring (≈118 kt) against 1.46 Mt/yr
+consumption — "**12× the locally available standing stock**". **That figure is wrong.** Adult herring
+occupies the 593-cell map for only **10 of 24 timesteps** (`baltic_param-movement.csv`, honoured per
+`movement.steps` in `osmose/engine/movement_maps.py`):
 
-* **Bay-resident with sub-bay feeding ranges.** Limited home range *within bays* (Christensen et al.,
-  2020; Hansson et al., 2019, reviewed in Hall et al., 2022). Stable isotopes resolve feeding-range
-  differences between closely located sites in one littoral area with no migration barriers — perch are
-  sedentary at sub-bay scale (Ahlbeck Bergendahl et al., 2017).
-* **Locally structured stocks.** Pikeperch has "a very local population structure" (Björklund et al.,
-  2007, via Olsson et al., 2015). Perch populations <50 km apart are differentiated with 3–5% gene flow
-  and show reproductive homing (Hall et al., 2022). Deep water acts as a barrier to gene flow; the
-  species is "suitable for local management" (Olsson et al., 2011).
-* **No offshore foraging phase.** No support was found for seasonal entry into the Baltic Proper food
-  web. Perch's anadromous ecotype migrates into *freshwater* to spawn (Hall et al., 2022) — the
-  opposite direction. The error is offshore access at all, not its duration.
-* **Smelt is seasonal prey.** Smelt is available to coastal percids only during its winter spawning
-  migration into low-salinity water.
+| steps | herring map | cells | share in pikeperch cells |
+|---|---|---|---|
+| 0–3, 12–15, 22–23 | herring_adult | 593 | 4.55% |
+| 4–11 | herring_spawning | 51 | 3.9–9.8% |
+| 16–21 | herring_spawning_autumn | 10 | **50.0%** |
 
-## 2. Current coefficients (the edit surface)
+Time-weighted: **16.19% ≈ 421 kt**, so **1.46 Mt/yr ≈ 3.5×**, not 12×. The all-juvenile bound gives
+9.3×, so 12× is outside the range achievable under *any* adult/juvenile combination.
 
-`data/baltic/predation-accessibility.csv`, rows = prey, cols = predators, `;`-separated.
+The dominant term is autumn, where all adult herring sits on a **10-cell coastal map of which
+pikeperch occupies half**. That is **seasonal spawning aggregation into percid cells** — a different
+mechanism from "continuous replenishment", with a different fix.
 
-| predator | herring | sprat | smelt | stickleback | perch | Mesozoo | Macrozoo | Benthos |
-|---|---|---|---|---|---|---|---|---|
-| perch | **0.2** | **0.2** | **0.5** | 0.3 | 0.05 | 0.5 | 0.4 | 0.6 |
-| pikeperch | **0.3** | **0.3** | **0.6** | 0.3 | 0.15 | 0.3 | 0.3 | 0.4 |
+### 1.4 What actually killed the supply hypothesis
 
-Bold = targeted. `pikeperch` also holds cod_west/cod_east 0.05 and cannibalism 0.05 — **out of scope,
-leave alone.**
+Time-weighted herring share, computed identically for both percids:
+
+| | herring | sprat |
+|---|---|---|
+| pikeperch | 16.19% | 3.73% |
+| **perch** | **31.56%** | 7.90% |
+
+**Perch has twice pikeperch's spatial access to herring and is in envelope.** Spatial supply does not
+discriminate between the two, so it cannot explain pikeperch specifically. *(Reproduced directly from
+`data/baltic/maps/` and `baltic_param-movement.csv` before this rewrite.)*
+
+### 1.5 The discriminator that survives: predation release
+
+From `data/baltic/predation-accessibility.csv`, total accessibility **as prey**:
+
+| | eaten by | total | biomass |
+|---|---|---|---|
+| perch | cod_west 0.15, pikeperch 0.15, cod_east 0.1, cannibal 0.05, **Cormorant 0.6** | **1.05** | 45 kt — IN |
+| **pikeperch** | cod_west 0.1, cod_east 0.05, cannibal 0.05, **Cormorant 0.4** | **0.60** | 1,453 kt |
+
+Pikeperch is the **least-predated fish in the system** and is absent from perch's diet, while perch is
+in *its* diet at 0.15. Combined with `Linf = 90 cm` vs perch's 45 cm (≈8× mass per fish at Linf), this
+is the asymmetry that tracks the outcome. It is a hypothesis, not yet a demonstrated cause — Tier A
+tests it.
+
+## 2. Ecological basis, and its limits
+
+* **Bay residency / small feeding ranges.** Limited home range *within bays* (Christensen et al.,
+  2020; Hansson et al., 2019, via Hall et al., 2022); stable isotopes resolve feeding-range differences
+  between closely located sites in one littoral area (Ahlbeck Bergendahl et al., 2017). **Scope: perch.
+  Do not extend to pikeperch without a pikeperch source.**
+* **Locally structured stocks.** Pikeperch "very local population structure" (Björklund et al., 2007,
+  via Olsson et al., 2015); perch differentiated at <50 km with 3–5% gene flow and reproductive homing
+  (Hall et al., 2022); deep water a barrier to gene flow (Olsson et al., 2011). **These are population-
+  genetic results. They bound dispersal and stock identity, not daily foraging range** — the first
+  draft used them as evidence about feeding and that inference is withdrawn.
+* **Percids DO eat herring inside bays.** Jensen, Hansson & Didrikas (2011) examine YOY herring and
+  "one of their major predators, pikeperch" in **Himmerfjärden, a brackish Baltic bay, in summer**,
+  with piscivorous targets at **>45 cm** — above this config's 40 cm maturity size. The size window
+  already restricts the link to the coastal size class (ratio 2.5–30 → a 60 cm pikeperch takes 2–24 cm
+  prey; herring Linf 27 cm). **The link is real and must not be deleted.**
+* **Herring ≠ sprat.** Baltic herring (*C. h. membras*) is a coastal spring spawner whose 0- and
+  1-group juveniles are bay-resident; sprat is genuinely offshore and deeper-dwelling. The first draft
+  treated them as one object.
+* **Smelt.** Anadromous form spawning in coastal low-salinity zones and rivers, **in spring after
+  ice-out (April–May), with runs of 20–45 days** — not winter, and ~1 month, not 3 (Sendek & Bogdanov,
+  2019). It is also among the most abundant fishes in the eastern Gulf of Finland year-round, so
+  "available *only* during the run" is too strong.
 
 ## 3. Engine constraint
 
 `AccessibilityMatrix` (`osmose/engine/accessibility.py`) is **stage-indexed only** — labels encode age
-thresholds (`"smelt < 0.45"`), giving an ontogenetic dimension. **There is no time/season axis**: one
-matrix applies at every timestep. `predation.accessibility.dynamic.*` is density-dependent scaling, not
-seasonal.
+thresholds (`"smelt < 0.45"`). **There is no time axis.** `predation.accessibility.dynamic.*` is
+density-dependent scaling, not seasonal.
 
-Consequence: **smelt seasonality cannot be expressed today.** Tier 0 must use a time-averaged
-surrogate; Tier 1 adds the axis.
+Two consequences: smelt seasonality needs a time-averaged surrogate (Tier B) or a new axis (Tier C);
+and the Baltic config uses a **single stage** for percids, so an ontogenetic diet shift (juvenile
+pikeperch planktivorous → adult piscivorous) cannot currently be expressed either.
 
 ## 4. Design
 
-### 4.1 Tier 0 — accessibility corrections (config only, no code)
+### Tier A — test the predation-release hypothesis first (config only)
 
-1. **Zero the offshore pelagic links.** `perch→herring`, `perch→sprat`, `pikeperch→herring`,
-   `pikeperch→sprat` → `0`.
-2. **Time-average smelt over its availability window.** Multiply by the fraction of the year the
-   window occupies. For a window of `W` months: `perch→smelt = 0.5 × W/12`,
-   `pikeperch→smelt = 0.6 × W/12`.
+The primary lever per §1.5, and it must be tested **before** any trophic edit, so the trophic change is
+not credited with an effect predation would have produced.
 
-   **`W` is the single free parameter and results scale linearly in it.** It must come from local
-   spawning phenology, not from a placeholder. `W = 3` (→ 0.125 / 0.15) is the working default and must
-   be recorded as an assumption, not a finding.
+Raise predation on pikeperch toward perch's level, justified by the documented cormorant pathway
+(Heikinheimo et al., 2015: 5–30% of total annual mortality for ages 2–4):
 
-Leaves percids on stickleback, benthos, zooplankton, and (pikeperch) perch and conspecifics.
+* `Cormorant → pikeperch` 0.4 → 0.6 (perch's value)
+* `cod_west → pikeperch` 0.1 → 0.15, `cod_east → pikeperch` 0.05 → 0.1 (perch's values)
 
-### 4.2 Tier 1 — seasonal accessibility (engine feature), conditional
+Total as prey: 0.60 → 0.90. **This is a diagnostic, not a proposed calibration** — it asks whether the
+asymmetry in §1.5 has the leverage the hypothesis needs.
 
-Mirrors the existing per-timestep vector idiom already in this config format
-(`fisheries.seasonality.fshN` is a 24-value vector):
+### Tier B — trophic corrections (config only)
 
-```
-predation.accessibility.seasonality.enabled;true
-predation.accessibility.seasonality.pair0;smelt,pikeperch
-predation.accessibility.seasonality.values.pair0;<n_dt values>
-```
+1. **`sprat` → 0** for both percids (0.2 perch, 0.3 pikeperch). Sprat is genuinely offshore; this is
+   the defensible half of the original proposal.
+2. **`herring` → scaled, not zeroed.** Retain the documented bay link at the coastal-available
+   fraction. Using §1.3's time-weighted overlap as the supply-side scale:
+   `pikeperch→herring 0.3 × 0.162 ≈ 0.05`, `perch→herring 0.2 × 0.316 ≈ 0.06`.
+   **Reversible and expressible**, unlike exact 0.
+3. **`smelt` → time-averaged over a corrected window.** Spring (April–May), run 20–45 days → `W ≈ 1`
+   month, not 3: `perch→smelt 0.5 × 1/12 ≈ 0.04`, `pikeperch→smelt 0.6 × 1/12 ≈ 0.05`.
+   **Caveat:** smelt is present year-round in some basins, so a pure run-length average understates
+   availability. Treat these as a lower bound and state the assumption.
 
-**Sparse by design** — only declared pairs deviate; everything else is a constant 1.0 multiplier, so
-existing configs are untouched and the default path costs nothing.
+### Tier C — seasonal accessibility (engine), conditional
 
-**Implementation constraint:** the predation kernel is Numba-compiled, so this must resolve to a dense
-`(n_dt, n_prey, n_pred)` float array built once at config time. No dict lookup in the hot loop.
+Sparse per-pair per-timestep multiplier, mirroring the existing `fisheries.seasonality.fshN` 24-value
+idiom; resolves to a dense `(n_dt, n_prey, n_pred)` array built at config time (the predation kernel is
+Numba-compiled — no dict lookup in the hot loop). Only for the smelt pulse, and only if Tier B shows
+the annual mean is insufficient.
 
-**Conditional on Tier 0's outcome.** If the time-averaged surrogate reproduces the intended behaviour,
-Tier 1 buys phenological timing rather than a different annual answer, and is scheduled on its own
-merits.
+### Out of scope
 
-### 4.3 Out of scope
-
-**Tier 2 — percid stocks as separate coastal units.** The only change that addresses supply rather than
-links, and the only one that makes the target like-for-like: the ICES envelope is a **per-stock** figure
-for locally assessed populations while the model carries one aggregated basin-wide pikeperch. High
-cost; the cod E/W disaggregation is a cautionary precedent (could not be fitted, remains a flagged
-experiment). **Not to be started on the strength of this design.**
+**Percid stocks as separate coastal units.** Also the only change that makes the target like-for-like:
+the ICES envelope is a **per-stock** figure while the model carries one aggregated basin-wide
+pikeperch. High cost; the cod E/W disaggregation (could not be fitted, remains a flagged experiment) is
+the cautionary precedent.
 
 ## 5. Acceptance criteria
 
-1. **Non-regression (hard).** **≥ 7/9 in envelope** on final-decade means, 50 yr, **≥ 3 seeds**. Below
-   7/9 is a fail, *including* a herring breach. Not a trade-off to argue about.
-2. **Mechanism demonstrated (hard).** Post-change diet composition, read from the corrected
-   `dietMatrix` (#146): percid diets dominated by benthos, zooplankton and stickleback, with
-   **herring and sprat absent**. A config edit that does not show up in realised diet has not been
-   demonstrated to work. *(This engine has repeatedly shipped switches that silently no-op'd — assume
-   nothing from configuration alone.)*
-3. **Pikeperch materially closer to envelope**, with the residual factor stated honestly. "10× over
-   instead of 56× over" is a result to report, not a success to claim.
-4. **Explicitly NOT a criterion:** smelt reaching envelope. Smelt is a separate `in_envelope` failure
-   at 5.7× and this change has no mechanism to fix it — claiming credit there would be spurious.
+Applied per tier, measured on final-decade means, 50 yr, **5 seeds** (matching
+`scripts/baltic_stability_certify.py`, which produced the 7/9 baseline — a 3-seed run is not comparable
+to it).
+
+1. **Non-regression (hard).** **≥ 7/9 in envelope.** A drop below 7/9 is a fail. This is a *floor, not a
+   target* — the baseline already passes it, so it cannot be the sole criterion.
+2. **Effect demonstrated (hard).** Pikeperch's final-decade mean must fall by **>2× the 5-seed spread**
+   of the baseline, so the change is distinguishable from noise. Report the residual factor plainly —
+   "10× over instead of 56×" is a result, not a success.
+3. **Mechanism demonstrated (hard), and not by restating the config.** For Tier A: pikeperch's
+   realised predation mortality must rise as a share of total Z (read from `mortalityRate` output),
+   not merely its accessibility coefficient. For Tier B: percid realised diet must shift *and*
+   `herring` must remain **present but reduced** — its disappearance would indicate the coefficient is
+   being applied as a hard gate rather than a scale, which is a defect, not a pass.
+4. **Not a criterion:** smelt reaching envelope (a separate 5.7× failure with no mechanism here);
+   pikeperch reaching envelope in one tier.
+5. **Collapse guard.** Pikeperch must not fall below its envelope *floor* (4,000 t) on the final-decade
+   minimum. Reaching envelope by starvation or collapse dynamics is a fail, not a fix.
 
 ## 6. Risks
 
-**Herring breach is the material one.** Percid predation is a real loss term for herring, which sits at
-2.60 Mt against a 3.00 Mt ceiling — 15% headroom. The 0.03 test *already* breached it at 3.05 Mt;
-zeroing entirely pushes harder.
+**Ranked by headroom to the nearest envelope bound, from the 5-seed baseline** — not herring alone, as
+the first draft had it:
 
-If it breaches, the reading is that **herring's mortality budget was implicitly leaning on percid
-predation that should not exist**, and needs correcting alongside — not that the percid change was
-wrong. Record it as the next finding rather than reverting Tier 0.
+| species | current | nearest bound | headroom |
+|---|---|---|---|
+| **cod_east** | 83,122 t | 85,000 upper | **2.3%** |
+| **perch** | 45,382 t | 50,000 upper | 9.2% |
+| herring | 2,600,112 t | 3,000,000 upper | 15.4% |
+| stickleback | 80,159 t | 50,000 lower | 60.2% |
 
-**Secondary:** sprat is also released (+13% in the 0.03 test) but sits at 1.06 Mt against a 2.50 Mt
-ceiling, so it has room. Stickleback takes on more percid predation and may fall; it is at 80 kt
-against a 50 kt floor, so it has less room than it looks.
+**cod_east is the tightest, not herring.** Tier A raises `cod → pikeperch` accessibility, which feeds
+cod — and cod_east has 2.3% of room. Tier B releases herring and sprat from percid predation.
+
+**No escape clause.** The first draft allowed a herring breach to be reclassified as "the next finding".
+That is withdrawn: **any species leaving envelope is a fail against criterion 1**, whatever the
+explanation. A breach may still be *informative* — it would suggest that species' mortality budget was
+leaning on a link that should not exist — but it is recorded as a failed tier, not a passed one.
 
 ## 7. References
 
@@ -164,6 +213,14 @@ Hall, M., Koch‐Schmidt, P., & Larsson, P. (2022). Reproductive homing and fine
 structuring of anadromous Baltic Sea perch (*Perca fluviatilis*). *Fisheries Management and Ecology,
 29*(5), 586–596. https://doi.org/10.1111/fme.12542
 
+Heikinheimo, O., et al. (2015). Cited in Jakubavičiūtė, E., Arula, T., & Dainys, J. (2022), *Status and
+future perspectives for pikeperch (Sander lucioperca) stocks in Europe*, openRxiv.
+https://doi.org/10.1101/2022.12.20.521162
+
+Jensen, O. P., Hansson, S., & Didrikas, T. (2011). Foraging, bioenergetic and predation constraints on
+diel vertical migration. *Journal of Fish Biology, 78*(2), 449–465.
+https://doi.org/10.1111/j.1095-8649.2010.02855.x
+
 Olsson, J., Mo, K., & Florin, A.-B. (2011). Genetic population structure of perch *Perca fluviatilis*
 along the Swedish coast of the Baltic Sea. *Journal of Fish Biology, 79*(1), 122–137.
 https://doi.org/10.1111/j.1095-8649.2011.02998.x
@@ -171,3 +228,7 @@ https://doi.org/10.1111/j.1095-8649.2011.02998.x
 Olsson, J., Tomczak, M. T., & Ojaveer, H. (2015). Temporal development of coastal ecosystems in the
 Baltic Sea over the past two decades. *ICES Journal of Marine Science, 72*(9), 2539–2548.
 https://doi.org/10.1093/icesjms/fsv143
+
+Sendek, D. S., & Bogdanov, D. V. (2019). European smelt *Osmerus eperlanus* in the eastern Gulf of
+Finland, Baltic Sea: Stock status and fishery. *Journal of Fish Biology*.
+https://doi.org/10.1111/jfb.14009
