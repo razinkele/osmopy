@@ -28,19 +28,82 @@ from osmose.config.reader import OsmoseConfigReader
 from osmose.demo import osmose_demo
 from osmose.engine import PythonEngine
 
-_JAR = Path(os.environ.get(
-    "OSMOSE_JAR",
-    str(Path(__file__).resolve().parents[1] / "osmose-java" / "osmose-4.4.1-jar-with-dependencies.jar"),
-))
+_JAR = Path(
+    os.environ.get(
+        "OSMOSE_JAR",
+        str(
+            Path(__file__).resolve().parents[1]
+            / "osmose-java"
+            / "osmose-4.4.1-jar-with-dependencies.jar"
+        ),
+    )
+)
 
-# ICES envelopes (data/baltic/reference/biomass_targets.csv): (lower, upper) tonnes
+# Envelopes (data/baltic/reference/biomass_targets.csv): (lower, upper) tonnes.
+# Kept literal so every historical certification stays byte-comparable; _load_target_weights()
+# below re-reads the source file and RAISES if the two ever diverge.
 ENVELOPE = {
-    "cod_west": (4000, 25000), "cod_east": (60000, 85000),
-    "herring": (800000, 3000000), "sprat": (800000, 2500000),
-    "flounder": (20000, 100000), "perch": (8000, 50000), "pikeperch": (4000, 25000),
-    "smelt": (20000, 120000), "stickleback": (50000, 500000),
+    "cod_west": (4000, 25000),
+    "cod_east": (60000, 85000),
+    "herring": (800000, 3000000),
+    "sprat": (800000, 2500000),
+    "flounder": (20000, 100000),
+    "perch": (8000, 50000),
+    "pikeperch": (4000, 25000),
+    "smelt": (20000, 120000),
+    "stickleback": (50000, 500000),
 }
 FOCAL = list(ENVELOPE)
+
+_TARGETS_CSV = (
+    Path(__file__).resolve().parents[1] / "data" / "baltic" / "reference" / "biomass_targets.csv"
+)
+
+# Confidence tiers, from the `weight` column of biomass_targets.csv, whose header defines
+# 1.0 = high (well-assessed), 0.5 = medium, 0.2 = low (poorly resolved at grid scale).
+# Species at or below this threshold are reported as INDICATIVE and excluded from the headline
+# verdict: ICES does not assess Baltic pikeperch, perch, smelt or stickleback at all, and the file
+# sources them as "Literature estimate for coastal Baltic" with the note "Concentrated in
+# estuaries/lagoons; coarse grid under-resolves". Scoring those pass/fail alongside category-1
+# analytical assessments was making the headline number a statement about the weakest targets
+# rather than about the model. (2026-08-04)
+INDICATIVE_MAX_WEIGHT = 0.3
+
+
+def _load_target_weights() -> dict[str, float]:
+    """Read per-species confidence weights, and verify the envelopes still match ENVELOPE.
+
+    Only ``ssb``/``biomass`` rows are stock targets; the file also carries a parallel set of
+    ``catch`` rows (a landings-based fallback with its own weights and much smaller bounds), and
+    reading those by mistake would silently swap in the wrong envelope for five species.
+    """
+    import csv
+
+    weights: dict[str, float] = {}
+    with open(_TARGETS_CSV) as fh:
+        for row in csv.DictReader(line for line in fh if not line.startswith("#")):
+            if row["reference_point_type"] not in ("ssb", "biomass"):
+                continue
+            sp = row["species"]
+            if sp not in ENVELOPE:
+                continue
+            lo, hi = float(row["lower_tonnes"]), float(row["upper_tonnes"])
+            if (lo, hi) != tuple(float(x) for x in ENVELOPE[sp]):
+                raise ValueError(
+                    f"{_TARGETS_CSV.name} envelope for {sp!r} is ({lo:g}, {hi:g}) but ENVELOPE has "
+                    f"{ENVELOPE[sp]}. Reconcile before certifying — a silent divergence here would "
+                    f"invalidate comparison against every prior certification."
+                )
+            weights[sp] = float(row["weight"])
+    missing = set(ENVELOPE) - set(weights)
+    if missing:
+        raise ValueError(f"No ssb/biomass target row in {_TARGETS_CSV.name} for: {sorted(missing)}")
+    return weights
+
+
+TARGET_WEIGHT = _load_target_weights()
+ASSESSED = [sp for sp in FOCAL if TARGET_WEIGHT[sp] > INDICATIVE_MAX_WEIGHT]
+INDICATIVE = [sp for sp in FOCAL if TARGET_WEIGHT[sp] <= INDICATIVE_MAX_WEIGHT]
 CERT_SEEDS = (42, 123, 7, 999, 2024)
 
 
@@ -104,7 +167,10 @@ def certify_python(
             "persists": all(r["persists"] for r in rows),
             "in_envelope": all(r["in_envelope"] for r in rows),
             "min_biomass": min(r["min"] for r in rows),
-            "late_mean_range": [min(r["late_mean"] for r in rows), max(r["late_mean"] for r in rows)],
+            "late_mean_range": [
+                min(r["late_mean"] for r in rows),
+                max(r["late_mean"] for r in rows),
+            ],
         }
     return table
 
@@ -138,7 +204,11 @@ def certify_java(params: dict[str, str], n_years: int) -> dict | None:
     odir = tmp / "out"
     odir.mkdir(parents=True, exist_ok=True)
     cmd = [
-        "java", "-Xmx2g", "-jar", str(_JAR), str(master),
+        "java",
+        "-Xmx2g",
+        "-jar",
+        str(_JAR),
+        str(master),
         f"-Poutput.dir.path={odir}",
         f"-Psimulation.time.nyear={n_years}",
         "-Poutput.start.year=0",
@@ -218,16 +288,36 @@ def java_table_from_series(series: dict[str, list[float]]) -> dict:
 
 
 def _print_table(engine: str, table: dict) -> int:
+    """Print the per-species table. Returns the ASSESSED-tier pass count (the headline)."""
     print(f"\n=== {engine}: per-species certification ===")
-    ok = 0
-    for sp in FOCAL:
-        t = table[sp]
-        good = t["persists"] and t["in_envelope"]
-        ok += good
-        flag = "PASS" if good else ("persists" if t["persists"] else "COLLAPSE")
-        print(f"  {sp:12s} {flag:9s} min={t['min_biomass']:.2e} late_mean={t['late_mean_range']}")
-    print(f"  --> {ok}/{len(FOCAL)} persistent & in-envelope")
-    return ok
+    counts = {}
+    for tier, members in (("ASSESSED", ASSESSED), ("INDICATIVE", INDICATIVE)):
+        if not members:
+            continue
+        print(
+            f"  -- {tier} (weight {'>' if tier == 'ASSESSED' else '<='} {INDICATIVE_MAX_WEIGHT}) --"
+        )
+        ok = 0
+        for sp in members:
+            t = table[sp]
+            good = t["persists"] and t["in_envelope"]
+            ok += good
+            flag = "PASS" if good else ("persists" if t["persists"] else "COLLAPSE")
+            print(
+                f"  {sp:12s} w={TARGET_WEIGHT[sp]:<4g} {flag:9s} "
+                f"min={t['min_biomass']:.2e} late_mean={t['late_mean_range']}"
+            )
+        counts[tier] = ok
+    a, i = counts.get("ASSESSED", 0), counts.get("INDICATIVE", 0)
+    print(f"  --> ASSESSED {a}/{len(ASSESSED)} persistent & in-envelope   (headline)")
+    if INDICATIVE:
+        print(
+            f"      indicative {i}/{len(INDICATIVE)} — low-confidence targets, not part of the verdict"
+        )
+        print(
+            f"      all species {a + i}/{len(FOCAL)} (legacy figure, for comparison with pre-2026-08-04 notes)"
+        )
+    return a
 
 
 def main() -> int:
@@ -264,13 +354,27 @@ def main() -> int:
             f"| {sp} | {'✓' if t['persists'] else '✗'} | {'✓' if t['in_envelope'] else '✗'} "
             f"| {t['min_biomass']:.2e} | {t['late_mean_range']} |"
         )
-    n_focal = len(FOCAL)
+    n_assessed, n_ind = len(ASSESSED), len(INDICATIVE)
+    ind_ok = sum(1 for sp in INDICATIVE if py_table[sp]["persists"] and py_table[sp]["in_envelope"])
     verdict = (
-        f"\n**Python verdict: {py_ok}/{n_focal} persistent & in-envelope.** "
-        + (f"All {n_focal} pass — candidate is certifiable; verify value round-trip before writing data/baltic."
-           if py_ok == n_focal
-           else f"Not {n_focal}/{n_focal} — SP-B gate: the failing species (not PASS above) are candidates params alone "
-                "cannot stabilise; record whether sweeping their params moved them (structural vs tunable).")
+        f"\n**Python verdict: {py_ok}/{n_assessed} ASSESSED species persistent & in-envelope.** "
+        + (
+            f"All {n_assessed} pass — candidate is certifiable; verify value round-trip before "
+            "writing data/baltic."
+            if py_ok == n_assessed
+            else f"Not {n_assessed}/{n_assessed} — SP-B gate: the failing ASSESSED species are candidates "
+            "params alone cannot stabilise; record whether sweeping their params moved them "
+            "(structural vs tunable)."
+        )
+        + f"\n\n*Indicative tier: {ind_ok}/{n_ind} "
+        f"({', '.join(f'{sp} w={TARGET_WEIGHT[sp]:g}' for sp in INDICATIVE)}).* "
+        "These targets are **not ICES assessments** — ICES does not assess Baltic pikeperch, perch, "
+        "smelt or stickleback. `biomass_targets.csv` sources them as literature estimates at "
+        f"weight ≤ {INDICATIVE_MAX_WEIGHT}, noting the coarse grid under-resolves species "
+        "concentrated in estuaries and lagoons. They are reported for information and are **not** "
+        "part of the verdict; do not tune against them. "
+        f"(Legacy all-species figure, for comparison with notes written before 2026-08-04: "
+        f"{py_ok + ind_ok}/{len(FOCAL)}.)"
     )
     lines.append(verdict)
 
@@ -290,7 +394,9 @@ def main() -> int:
                 "cross-engine); a DIFFER is a flag to inspect, not an automatic failure."
             )
         else:
-            lines.append("\n_Java cross-check unavailable (jar missing or run failed) — see console._")
+            lines.append(
+                "\n_Java cross-check unavailable (jar missing or run failed) — see console._"
+            )
 
     Path(args.out).write_text("\n".join(lines) + "\n")
     print(f"\nwrote certification note to {args.out}")
