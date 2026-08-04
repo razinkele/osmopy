@@ -514,3 +514,66 @@ The remaining honest options are:
 
 Option 2 deserves weight: it is the only reading under which any tested configuration is defensible,
 and it costs nothing to check against the stock-level ICES assessments.
+
+
+## 2026-08-04 — RESOLVED: the target is a weight-0.2 literature estimate the config already flagged
+
+Following the recommendation to check the target before further tuning.
+
+**ICES does not assess Baltic pikeperch.** `mcp__ices__list_stocks` for 2023, area `27.2[0-9]`, returns
+13 stocks — cod (27.22-24 and 27.24-32, matching the model's split), herring (three), sprat, plaice
+(two), dab, sole, brill, ray. **No pikeperch, no perch, no smelt, no stickleback.** This matches
+Jakubavičiūtė et al. (2022), who applied Bayesian surplus production models to CPUE precisely because
+formalised pikeperch assessments "remain rare".
+
+So the "ICES envelope" this investigation spent seven interventions chasing is not an ICES figure.
+`data/baltic/reference/biomass_targets.csv` states its own provenance:
+
+```
+pikeperch,10000,4000,25000,0.2,biomass,Literature estimate for coastal Baltic,
+  Concentrated in estuaries/lagoons; coarse grid under-resolves
+```
+
+* **weight 0.2** — the file's lowest tier, defined in its header as *"low (poorly resolved at grid
+  scale)"*
+* source: **literature estimate**, not an assessment
+* notes: **"Concentrated in estuaries/lagoons; coarse grid under-resolves"**
+
+**The model's own reference data recorded the diagnosis before this investigation started**, and it is
+the same ecological point raised independently: percids are lagoon and bay species that a coarse
+basin-scale grid cannot resolve.
+
+### The failing species are exactly the lowest-confidence targets
+
+| species | weight | source | verdict |
+|---|---|---|---|
+| herring, sprat | **1.0** | ICES assessments | pass |
+| flounder, cod_east, cod_west | 0.5 | ICES-derived | pass |
+| smelt | **0.3** | literature | **fail, 5.7× over** |
+| pikeperch | **0.2** | literature, "coarse grid under-resolves" | **fail, ~58× over** |
+
+`scripts/baltic_stability_certify.py` hardcodes its `ENVELOPE` dict and **never reads the weight
+column**. A 0.2-confidence literature estimate for an estuarine species is scored pass/fail identically
+to a category-1 ICES analytical assessment, and the headline "7/9" is depressed by exactly the two
+species the reference data flags as unreliable.
+
+### Conclusion
+
+The pikeperch overshoot is **not** a calibration defect to be tuned away. Seven levers spanning removal
+and production returned −86% to +8% against a 58× gap because the model is being asked to hit a
+low-confidence literature target for a species its own documentation says the grid under-resolves. The
+`ssbhalf = 450` arm reaching 209 kt — inside the ~225 kt implied by summing the ~9 recognised coastal
+stocks — is consistent with the target being wrong by roughly an order of magnitude rather than the
+dynamics being wrong.
+
+### Recommendations
+
+1. **Make the certifier weight-aware.** Report weight-1.0 and 0.5 species as the headline verdict and
+   list weight ≤0.3 species separately as indicative. The data to do this already exists in
+   `biomass_targets.csv` and is currently discarded.
+2. **Re-derive the pikeperch and smelt targets**, stating whether they are per-stock or basin-aggregate.
+   This is the ambiguity that made every comparison in this investigation unsound.
+3. **Do not tune pikeperch further** against the current target. Any parameter set that hits 4–25 kt is
+   fitting to a number with no assessment behind it.
+4. Retain the size-window and predator-biomass findings (§ above) as **model-structure documentation** —
+   they are true and useful, they simply do not explain a gap that is substantially target-side.
