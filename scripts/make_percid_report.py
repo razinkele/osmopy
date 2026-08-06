@@ -76,7 +76,7 @@ t = doc.add_heading("Pikeperch Overshoot in the Baltic OSMOSE Configuration", le
 for r in t.runs:
     r.font.color.rgb = RGBColor(0x1F, 0x38, 0x64)
 sub = doc.add_paragraph()
-sr = sub.add_run("Diagnostic investigation: three withdrawn hypotheses and a current diagnosis")
+sr = sub.add_run("Diagnostic investigation: seven failed interventions, four withdrawn hypotheses, and a target that holds")
 sr.italic = True
 sr.font.size = Pt(12)
 sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -121,8 +121,18 @@ bullets([
     "the corrected numbers refute the hypothesis outright (Section 5).",
     "WITHDRAWN: a predation-release explanation. Pikeperch is fourth-least predated, not least, and "
     "three less-predated species are all in envelope (Section 6).",
-    "The current diagnosis is escape from the predator size window: no predator in the configuration "
-    "can take a pikeperch above 36 cm, and pikeperch matures at 40 cm (Section 7).",
+    "Escape from the predator size window is established — no predator in the configuration can take a "
+    "pikeperch above 36 cm, and pikeperch matures at 40 cm — but it is not sufficient: opening cod's "
+    "window past maturity moved biomass the wrong way, because no predator here has the biomass to "
+    "regulate a stock fifteen times its own size (Section 7).",
+    "Seven interventions across the removal and production sides returned between -86% and +8% against "
+    "a 58-fold gap. The overshoot is over-determined (Section 8).",
+    "The target was re-derived and RETAINED. Its scope is correctly declared and its magnitude survives "
+    "an independent production-based cross-check, so the gap is real and not an artefact of the "
+    "reference point (Section 9).",
+    "Certification is now weight-aware. The model reproduces five of five targets that have a real "
+    "assessment behind them; the two failures are the two lowest-confidence literature estimates in "
+    "the reference file (Section 10).",
     "All diet-based results required first repairing a defect in the diet diagnostic itself, which had "
     "been reporting every predator as 100% piscivorous and 0% resource-feeding (Section 3).",
 ])
@@ -338,7 +348,7 @@ para(
     "applied to the hypothesis being discarded and not to the one being adopted."
 )
 
-h("7. Current diagnosis: escape from the predator size window", 1)
+h("7. Escape from the predator size window: established, but not sufficient", 1)
 para(
     "The mechanism that survives is not an accessibility coefficient at all. The predation kernel "
     "applies the predator-prey size-ratio gate before reading accessibility, so a coefficient outside "
@@ -363,15 +373,118 @@ para(
     "accounts for every lever that failed: fishing is the only source of adult removal, and every "
     "demand-side intervention acted on a size class that was never predation-limited."
 )
-note(
-    "Candidate remedies consequently point elsewhere: grey seal predation on large pikeperch, which is "
-    "documented in the Baltic and is absent from the configuration's accessibility matrix; the cod "
-    "size-ratio window; or the asymptotic length itself. This diagnosis is recent and has not yet been "
-    "tested."
+para(
+    "This mechanism is real and verified. It is nonetheless not sufficient, and the intervention that "
+    "tested it failed."
+)
+para(
+    "Opening cod's size window from a 31.4 cm ceiling to 44 cm — crossing pikeperch's 40 cm maturity, "
+    "and thereby giving a predator access to the adult class for the first time — moved pikeperch "
+    "biomass the wrong way, by +3.4%. Pairing it with realistic gear selectivity and a reduced "
+    "asymptotic length did not help.",
+)
+para(
+    "The reason is a biomass argument that should have preceded the test. Cod totals roughly 97,000 t "
+    "against pikeperch's 1.45 million, a stock fifteen times its own size, and consumes about "
+    "330,000 t per year across all prey. Grey seal, the only other predator whose size window reaches "
+    "adult pikeperch, consumes about 58,500 t per year across all prey. No predator in this "
+    "configuration has the biomass to regulate pikeperch, whatever the size window permits. Adults are "
+    "genuinely unreachable, and making them reachable changes nothing."
 )
 
-# ================= 7 =================
-h("8. Proposed refactor (superseded)", 1)
+h("8. Seven interventions, seven failures", 1)
+para(
+    "Levers were tested across both the removal and the production side of the population balance. "
+    "Results are final-decade means, 50-year runs, seed 42 unless noted."
+)
+table(
+    ["Intervention", "Pikeperch result", "Envelope"],
+    [
+        ["baseline", "1,453,313 t (58x over)", "7/9"],
+        ["diet accessibility, herring+sprat cut 10x", "-25.4%", "5/9"],
+        ["fishing mortality, F swept 0.5 to 4.0", "-10.6%, non-monotonic", "4/9"],
+        ["gear selectivity, l50 = 40 cm", "-7.4%", "7/9"],
+        ["gear selectivity, l50 = 45 cm", "+7.8%", "7/9"],
+        ["cod size window, 3.5 to 2.5", "+3.4%", "7/9"],
+        ["asymptotic length 90 to 70 cm (paired)", "-1.2%", "6/9"],
+        ["recruitment ssbhalf, cut 97.6x", "-86% (209,000 t, still 8.4x over)", "4/9"],
+    ],
+)
+para(
+    "Biomass responds to the recruitment parameter as roughly its 0.42 power, so reaching the target "
+    "would require a value near 3 t — two further orders of magnitude below anything defensible. The "
+    "overshoot is over-determined: a 90 cm asymptotic length, a fifteen-year lifespan, no predation "
+    "reaching adults, and a predator field an order of magnitude too small jointly sustain the stock, "
+    "and removing any one of them is compensated by the others."
+)
+
+h("9. The target: re-derived and retained", 1)
+para(
+    "With every dynamical lever exhausted, the target itself was re-derived. Two findings, the second "
+    "of which corrects an earlier position taken in this investigation."
+)
+para(
+    "First, ICES assesses none of these species. A query of the 2023 assessments for area 27.2x returns "
+    "thirteen stocks — cod, herring, sprat, plaice, dab, sole, brill and ray — and no pikeperch, perch, "
+    "smelt or stickleback. The phrase \"ICES envelope\", used throughout this project's certification "
+    "notes, is therefore wrong for these four species; the reference file sources them as literature "
+    "estimates for the coastal Baltic."
+)
+para(
+    "Second, an earlier suggestion in this work — that the target might be a per-stock figure wrongly "
+    "applied to an aggregated basin-wide model stock, and that this could account for an order of "
+    "magnitude of the gap — is withdrawn. The reference file's header already states the scope: total "
+    "stock biomass over the whole Baltic model domain. The targets are declared aggregates and the "
+    "ambiguity does not exist."
+)
+para(
+    "On magnitude, the one available quantitative anchor is perch production in the Curonian Lagoon "
+    "(Hansson et al., 2018): 3,200 t over 1,600 km2, or 2.0 t/km2, which at a production-to-biomass "
+    "ratio of 0.5-0.7 implies 2.9-4.0 t/km2 of biomass in prime habitat. Scaled across a 5-15% "
+    "habitat fraction of the domain and discounted two- to four-fold for the lagoon's atypically high "
+    "productivity, this gives roughly 14,000-113,000 t of perch against a committed target of "
+    "8,000-50,000 t — at the low end of the band, but inside it."
+)
+para(
+    "Both targets are retained. Pikeperch must sit below perch, having a restricted and patchy "
+    "distribution where perch is ubiquitous, and both Baltic stocks assessed by Jakubaviciute et al. "
+    "(2022) are depleted below their biomass at maximum sustainable yield, so a target near the bottom "
+    "of a plausible range is the correct reading. Smelt, the second most abundant fish of the eastern "
+    "Gulf of Finland after herring, warrants a target an order of magnitude above pikeperch's."
+)
+note(
+    "Consequence: the overshoot is not explained by the target. Its scope is correctly declared, its "
+    "magnitude is consistent with the available anchor and with the documented depleted state of the "
+    "stocks, and its relation to the perch target is internally consistent. The 58-fold gap is real."
+)
+
+h("10. Weight-aware certification", 1)
+para(
+    "The reference file has always carried a confidence weight per species — 1.0 for well-assessed "
+    "stocks, 0.5 for medium, 0.2 for those poorly resolved at grid scale — and the certifier discarded "
+    "it, scoring all nine species identically. The two species failing the headline verdict were "
+    "precisely the two lowest-weight rows in the file, so that verdict was substantially a statement "
+    "about the weakest targets rather than about the model."
+)
+table(
+    ["Tier", "Species", "Weight", "Result"],
+    [
+        ["ASSESSED", "cod_west, cod_east, herring, sprat", "1.0", "all pass"],
+        ["ASSESSED", "flounder", "0.5", "pass"],
+        ["INDICATIVE", "smelt", "0.3", "5.7x over"],
+        ["INDICATIVE", "perch, stickleback", "0.2", "pass"],
+        ["INDICATIVE", "pikeperch", "0.2", "58x over"],
+    ],
+)
+para(
+    "Certification is now tiered. The headline verdict counts only the assessed tier, and on the "
+    "current configuration reads five of five: the model reproduces every target with a real "
+    "assessment behind it. The indicative tier is reported separately and excluded from the verdict, "
+    "and the former all-species figure is retained and labelled as legacy so that earlier notes citing "
+    "it remain comparable."
+)
+
+h("11. Proposed refactor (superseded)", 1)
 para(
     "The following tiers were designed against the predation-release hypothesis withdrawn in Section 6. "
     "They are recorded for completeness and are not recommended: Tier A raises coefficients on size "
@@ -380,14 +493,14 @@ para(
     "overlap that the cell-based predation kernel already applies. A narrower variant of Tier B was "
     "measured and failed non-regression, moving the envelope count from 7/9 to 5/9."
 )
-h("8.1 Tier A — test predation release (configuration only)", 2)
+h("11.1 Tier A — test predation release (configuration only)", 2)
 para(
     "Raise predation on pikeperch toward perch's level: cormorant 0.4 → 0.6, cod_west 0.1 → 0.15, "
     "cod_east 0.05 → 0.10, taking total accessibility as prey from 0.60 to 0.90. This is a diagnostic "
     "intervention, not a proposed calibration; it asks whether the asymmetry has the leverage the "
     "hypothesis requires."
 )
-h("8.2 Tier B — trophic corrections (configuration only)", 2)
+h("11.2 Tier B — trophic corrections (configuration only)", 2)
 bullets([
     "Sprat → 0 for both percids. Sprat is genuinely offshore; this is the defensible half of the "
     "original proposal.",
@@ -397,7 +510,7 @@ bullets([
     "month rather than 3: perch ≈ 0.04, pikeperch ≈ 0.05. These are a lower bound, since smelt is "
     "present year-round in some basins.",
 ])
-h("8.3 Tier C — seasonal accessibility (engine feature, conditional)", 2)
+h("11.3 Tier C — seasonal accessibility (engine feature, conditional)", 2)
 para(
     "The accessibility matrix is stage-indexed by age threshold and carries no time axis, so seasonal "
     "prey availability cannot presently be expressed. Tier C would add a sparse per-pair, per-timestep "
@@ -405,7 +518,7 @@ para(
     "configuration time because the predation kernel is compiled. It is conditional on Tier B showing "
     "that timing rather than level is what is wrong."
 )
-h("8.4 Out of scope", 2)
+h("11.4 Out of scope", 2)
 para(
     "Representing percid stocks as separate coastal units is the only change that would address supply "
     "rather than links, and the only one that makes the envelope comparison like-for-like. It is "
@@ -414,7 +527,7 @@ para(
 )
 
 # ================= 8 =================
-h("9. Acceptance criteria", 1)
+h("12. Acceptance criteria", 1)
 para(
     "Measured on final-decade means, 50-year runs, five seeds, using the same certifier that produced "
     "the baseline verdict."
@@ -451,7 +564,7 @@ para(
 )
 
 # ================= 9 =================
-h("10. Limitations", 1)
+h("13. Limitations", 1)
 bullets([
     "Single configuration, single parameter set. Nothing here transfers to other OSMOSE configurations.",
     "Several figures derive from single-seed runs and are labelled as such in the source documents; the "
@@ -462,10 +575,19 @@ bullets([
     "independently validated here, though biomass scales with roughly the cube of length.",
     "The envelope comparison is not like-for-like: a per-stock reference target is being applied to an "
     "aggregated basin-wide model stock.",
-    "Three substantive conclusions reached during this work were subsequently withdrawn (Sections 4, 5 "
-    "and 6). Each was caught by measurement or by adversarial review rather than by the author's own "
-    "reasoning, which suggests further unexamined assumptions may remain. The current diagnosis in "
-    "Section 7 has not yet been subjected to an equivalent test.",
+    "Four substantive conclusions reached during this work were subsequently withdrawn: the "
+    "resource-subsidy, spatial-supply and predation-release explanations, and the suggestion that the "
+    "target was mis-scoped. Each was caught by measurement or by adversarial review rather than by the "
+    "author's own reasoning, which suggests further unexamined assumptions may remain.",
+    "The target re-derivation retains both figures because they are not refuted, which is weaker than "
+    "deriving them. The perch cross-check rests on a single lagoon anchor scaled by an estimated rather "
+    "than measured habitat fraction; it bounds the target to within about an order of magnitude.",
+    "No quantitative anchor was found for pikeperch or smelt specifically. Both conclusions are "
+    "relative — to perch, and to herring — rather than absolute.",
+    "The weight-aware verdict changes what is reported, not the underlying dynamics. Pikeperch remains "
+    "58-fold above a target that survived re-derivation; the configuration cannot currently represent "
+    "the species at a defensible biomass, which is what the reference file's own note about coarse-grid "
+    "under-resolution anticipated.",
 ])
 
 # ---- review outcome, filled if provided ----
@@ -474,7 +596,7 @@ if REVIEW2 and REVIEW2.exists():
         data = json.loads(REVIEW2.read_text())
         res = data.get("result", data)
         conf = res.get("confirmed", [])
-        h("11. Independent review", 1)
+        h("14. Independent review", 1)
         para(
             "The design and implementation plan underlying Sections 6–8 were subjected to two rounds of "
             "multi-agent adversarial review, in which independent reviewers raised findings that a "
@@ -505,6 +627,13 @@ REFS = [
     "https://doi.org/10.1111/jfb.13285",
 
     "Björklund, M., et al. (2007). Cited in Olsson, Tomczak & Ojaveer (2015).",
+
+    "Downing, J. A., & Plante, C. (1993); Randall, R. G., & Minns, C. K. (2000). Production/biomass "
+    "relationships, cited in Hansson, Bergström & Bonsdorff (2018).",
+
+    "Hansson, S., Bergström, U., & Bonsdorff, E. (2018). Competition for the fish — fish extraction "
+    "from the Baltic Sea by humans, aquatic mammals, and birds. ICES Journal of Marine Science, 75(3), "
+    "999–1008. https://doi.org/10.1093/icesjms/fsx207",
 
     "Christensen, E. A. F., et al. (2020); Hansson, S., et al. (2019). Cited in Hall, Koch-Schmidt & "
     "Larsson (2022).",
@@ -560,6 +689,9 @@ for s in [
     "docs/superpowers/specs/2026-08-02-percid-trophic-refactor-design.md — design",
     "docs/superpowers/plans/2026-08-02-percid-trophic-refactor.md — implementation plan",
     "docs/proposals/2026-08-02-percid-trophic-refactor.md — original proposal",
+    "docs/baltic_percid_target_rederivation_2026-08-06.md — target re-derivation and provenance",
+    "data/baltic/reference/biomass_targets.csv — targets, confidence weights and sources",
+    "scripts/baltic_stability_certify.py — weight-aware certifier",
     "docs/baltic_rv_gate_mechanism_ab_2026-08-02.md — related recruitment-gate measurement",
 ]:
     doc.add_paragraph(s, style="List Bullet")
