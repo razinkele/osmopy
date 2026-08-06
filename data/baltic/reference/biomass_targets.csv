@@ -1,5 +1,5 @@
-#! version: 1.3
-#! last_updated: 2026-07-25
+#! version: 1.4
+#! last_updated: 2026-08-06
 #! ices_advice_year: 2022-2023
 # Baltic Sea equilibrium biomass targets for calibration
 # Sources: ICES stock assessments (2018-2022 averages), FishBase, published literature
@@ -30,9 +30,9 @@ cod_west,10000,4000,25000,1.0,ssb,ICES cod.27.22-24 2018-2022 SSB ~5-15kt (norma
 herring,1500000,800000,3000000,1.0,biomass,ICES aggregate Baltic herring complex (SD22-32 incl. Gulf of Bothnia),Central Baltic SSB ~450kt; total across all stocks ~1-2Mt
 sprat,1500000,800000,2500000,1.0,biomass,ICES Baltic sprat SD22-32; SSB ~1.0Mt in 2022 (doi:10.17895/ices.advice.19453856),Total biomass > SSB; raised from 800kt to match ICES
 flounder,50000,20000,100000,0.5,biomass,ICES Baltic flounder combined,Multiple management units; rough estimate
-perch,20000,8000,50000,0.2,biomass,Literature estimate for coastal Baltic,Poorly assessed at basin scale; coarse grid under-resolves habitat
-pikeperch,10000,4000,25000,0.2,biomass,Literature estimate for coastal Baltic,Concentrated in estuaries/lagoons; coarse grid under-resolves
-smelt,60000,20000,120000,0.3,biomass,Baltic smelt (Osmerus eperlanus) — widely distributed; dominant forage fish in Gulf of Bothnia/Finland
+perch,20000,8000,50000,0.2,biomass,NOT ICES-assessed; literature estimate for coastal Baltic,Whole-domain aggregate. Cross-checked 2026-08-06 against Curonian Lagoon production (Hansson 2018: 2.0 t/km2 production -> 2.9-4.0 t/km2 biomass in prime habitat); scaling to domain gives ~14-113 kt after a productivity discount, so 8-50 kt sits at the low end but inside range. Poorly assessed at basin scale; coarse grid under-resolves habitat
+pikeperch,10000,4000,25000,0.2,biomass,NOT ICES-assessed; literature estimate for coastal Baltic (re-derived 2026-08-06),Whole-domain aggregate. ICES assesses no Baltic pikeperch stock. Retained: must sit below perch (restricted patchy distribution vs ubiquitous perch) and both assessed Baltic stocks are depleted below Bmsy (Jakubaviciute 2022). Concentrated in estuaries/lagoons; coarse grid under-resolves. See docs/baltic_percid_target_rederivation_2026-08-06.md
+smelt,60000,20000,120000,0.3,biomass,NOT ICES-assessed; literature estimate (re-derived 2026-08-06),Whole-domain aggregate. Second-most abundant fish in the eastern Gulf of Finland after herring (Sendek 2019); target an order of magnitude above pikeperch is directionally right. No basin-wide quantitative anchor found. See docs/baltic_percid_target_rederivation_2026-08-06.md
 stickleback,200000,50000,500000,0.2,biomass,Olsson et al. 2019 (doi:10.1093/icesjms/fsz078); highly uncertain,Boom-bust dynamics; wide range acceptable
 cod_east,7877.43,1181.0,19724.0,0.5,catch,ICES catches (fallback landings) 2018-2022 over cod.27.24-32,mean+/-1.5sigma; floored at window min (5 yr)
 cod_west,2742.25,88.0,5877.0,0.5,catch,ICES catches (fallback landings) 2018-2022 over cod.27.22-24,mean+/-1.5sigma; floored at window min (5 yr)
