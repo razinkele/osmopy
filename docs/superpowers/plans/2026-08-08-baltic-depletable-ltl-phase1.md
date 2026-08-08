@@ -716,3 +716,12 @@ git commit -m "docs(baltic): certify depletable-LTL production config; record go
 - Spec coverage: Phase 1 items 1 (A/B first → Tasks 1+3), 2 (exact starting keys, honest provenance → Tasks 1+4), 3 (documented bias → Task 4 Step 4 comment), 4 (contingency → Task 3 two-key rule), parity pinning (→ Task 2, wiring tested via the seam), loading-assertion test (→ Task 4), identity-pinned gate incl. OFF-arm precondition (→ Tasks 1, 3, 5). D3/F2 intentionally excluded.
 - Review findings incorporated: include-key allowlist (both copies) + corrected Global Constraint; explicit `ARM_OFF`; required `on-benthoslit` arm with literature-backed rate; corrected 8-species pre-split provenance; two-key decision rule with OFF-arm precondition and baseline-regression stop; `_prepare_java_cfg` seam so the pin wiring is tested; per-arm delta columns; `test_java_block_version.py` update; cross-file `DEPLETION_KEYS` equality (no hand copy); negative `rsc{i}` guard.
 - Type consistency: certify table shape used by `identity_gate`/`make_report` matches `certify_python`'s output; Task 4's raw-keys test imports the Task 1 constants rather than duplicating them.
+
+---
+
+## Execution outcome (2026-08-08, subagent-driven)
+
+- Tasks 1-2 implemented and reviewed clean (commits 2f34516, e4797da); Task 3 A/B run committed (6ed821f).
+- **Two-key rule fired STOP:** GATE [off] PASS; GATE [on] FAIL (cod_east -55.4%, herring -79.7%, sprat -32.0%); on-benthoslit fails harder (cod_east -85%). Tasks 4-5 NOT executed — no adoption.
+- Scientific note: pikeperch fell -74.8% under depletion (1.40 Mt -> 352 kt) — first intervention to move it beyond -25%; the non-depletable plankton subsidy is a major sustaining term of the percid overshoot.
+- Contingency (separate plan, spec item 4): bounded recalibration of species.regrowth.rate.sp11..sp14 + zooplanktivore availabilities. When it touches these files, also fix: --out parent mkdir in baltic_depletable_ab.py; add inline comment on jar_version=4.4.1 in test_certify_java_pinning.py (verified deviation, background-species guard).
