@@ -228,10 +228,18 @@ Run: `PYTHONPATH=. .venv/bin/python scripts/calibrate_baltic.py --phase a2r --ma
 
 - [ ] **Step 2: Extract the fitted point**
 
-From the phase's results JSON, take the best parameters, expand sentinels via
-`expand_param_overrides`, merge with `{"ltl.depletable.enabled": "true", "ltl.depletable.floor": "0.05", "species.regrowth.rate.sp9": "5.0", "species.regrowth.rate.sp10": "5.0"}`, and write the flat
-str→str dict to `data/baltic/calibration_results/a2r_fitted_params.json`. Record the DE loss and
-generation count in the ledger.
+From the phase's results JSON, take the **`log10_parameters`** field (NOT `parameters` — that
+field is linear-space, and feeding it to the log-space default of `expand_param_overrides` would
+double-exponentiate: zoo3 0.9116 → 8.16, silently certifying an unfitted config; review finding
+2026-08-08). Expand via `expand_param_overrides(list(d), list(d.values()))` (default
+`use_log_space=True`). **Sanity gate before writing:** every expanded value must lie inside its
+fitted bounds (zoo3 ∈ [0.05, 2.0], benthos ∈ [0.01, 0.316], accessibilities ∈ [0.1, 0.8]) — abort
+extraction on any violation. Merge with `{"ltl.depletable.enabled": "true",
+"ltl.depletable.floor": "0.05", "species.regrowth.rate.sp9": "5.0",
+"species.regrowth.rate.sp10": "5.0"}`, and write the flat str→str dict to
+`data/baltic/calibration_results/a2r_fitted_params.json`. Record the DE loss and generation count
+in the ledger. (Do NOT pass `--a2` alongside `--phase a2r` — the flags are independent and the
+hybrid is unintended.)
 
 - [ ] **Step 3: Commit the calibration artifacts**
 
