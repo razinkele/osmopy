@@ -106,6 +106,34 @@ ASSESSED = [sp for sp in FOCAL if TARGET_WEIGHT[sp] > INDICATIVE_MAX_WEIGHT]
 INDICATIVE = [sp for sp in FOCAL if TARGET_WEIGHT[sp] <= INDICATIVE_MAX_WEIGHT]
 CERT_SEEDS = (42, 123, 7, 999, 2024)
 
+# Python-only features with no Java-jar equivalent: the Java cross-check arm runs with these
+# pinned off and SAYS so, keeping the arm runnable while labelling the divergence
+# (spec 2026-08-08 §4 Phase 1; runner.java_engine_block_reason blocks Java otherwise).
+JAVA_INCOMPATIBLE_PINS = {"ltl.depletable.enabled": "false"}
+
+
+def pin_java_incompatible(cfg: dict) -> tuple[dict, list[str]]:
+    """Copy of ``cfg`` with Python-only flags forced off, plus the list of keys pinned."""
+    out = dict(cfg)
+    pinned = []
+    for key, off_value in JAVA_INCOMPATIBLE_PINS.items():
+        if str(out.get(key, "")).strip().lower() == "true":
+            out[key] = off_value
+            pinned.append(key)
+    return out, pinned
+
+
+def _prepare_java_cfg(params: dict[str, str]) -> tuple[dict, list[str]]:
+    """Demo config + params + Java pinning — the exact config certify_java stages (test seam)."""
+    tmp = Path(tempfile.mkdtemp())
+    res = osmose_demo("baltic", tmp)
+    cfg = dict(OsmoseConfigReader().read(str(res["config_file"])))
+    cfg.update(params)  # bake the recalibrated params into the config
+    cfg, pinned = pin_java_incompatible(cfg)
+    if pinned:
+        print(f"(Java arm: pinned off Python-only features: {', '.join(pinned)})")
+    return cfg, pinned
+
 
 def _load_params(source: str) -> dict[str, str]:
     """'current' -> no overrides; otherwise a sweep JSON path -> its best in-envelope point's params."""
@@ -190,10 +218,9 @@ def certify_java(params: dict[str, str], n_years: int) -> dict | None:
         return None
     from ui.pages.run import stage_config_for_java
 
+    cfg, _pinned = _prepare_java_cfg(params)
     tmp = Path(tempfile.mkdtemp())
     res = osmose_demo("baltic", tmp)
-    cfg = dict(OsmoseConfigReader().read(str(res["config_file"])))
-    cfg.update(params)  # bake the recalibrated params into the config
     stage = tmp / "stage"
     # Writes the master, stages background species (overrides incl. output.cutoff.enabled=false),
     # and reconciles names/matrices so Java can resolve cod_west/cod_east. Shared with the Run
