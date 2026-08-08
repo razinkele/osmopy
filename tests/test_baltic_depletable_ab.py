@@ -107,3 +107,44 @@ def test_make_report_three_arms_keeps_primary_delta():
     }
     rep = ab.make_report(tables, years=50, seeds=[42])
     assert "-20.0%" in rep and "-10.0%" in rep
+
+
+def test_extra_arm_loading(tmp_path):
+    import json
+
+    p = tmp_path / "fitted.json"
+    json.dump({"ltl.depletable.enabled": "true", "species.regrowth.rate.sp14": "0.05"}, p.open("w"))
+    arms = ab.build_arms(extra_arms=[("fitted", str(p))], skip_default=True)
+    assert list(arms) == ["off", "fitted"]  # 'off' baseline always present
+    assert arms["fitted"]["species.regrowth.rate.sp14"] == "0.05"
+    assert arms["off"] == ab.ARM_OFF
+
+
+def test_build_arms_default_matches_prior_three_arms():
+    # No-flag case must stay byte-identical to the pre-refactor main() body.
+    arms = ab.build_arms()
+    assert list(arms) == ["off", "on", "on-benthoslit"]
+    assert arms["off"] == ab.ARM_OFF
+    assert arms["on"] == ab.DEPLETION_KEYS
+    assert arms["on-benthoslit"] == {
+        **ab.DEPLETION_KEYS,
+        "species.regrowth.rate.sp14": ab.BENTHOS_LIT_RATE,
+    }
+
+
+def test_build_arms_sensitivity_adds_fourth_arm():
+    arms = ab.build_arms(sensitivity=True)
+    assert list(arms) == ["off", "on", "on-benthoslit", "on-a2conv"]
+    for sp in ("sp11", "sp12", "sp13", "sp14"):
+        assert arms["on-a2conv"][f"species.regrowth.rate.{sp}"] == ab.A2_SENSITIVITY_ZOO_RATE
+
+
+def test_build_arms_extra_arm_name_collision_raises(tmp_path):
+    import json
+
+    p = tmp_path / "bad.json"
+    json.dump({"x": "1"}, p.open("w"))
+    import pytest
+
+    with pytest.raises(SystemExit):
+        ab.build_arms(extra_arms=[("on", str(p))])

@@ -57,6 +57,8 @@ SPECIES_NAMES = [
 N_SPECIES = len(SPECIES_NAMES)
 
 _ZOO_REGROWTH_SENTINEL = "species.regrowth.rate.zoo"
+_ZOO3_REGROWTH_SENTINEL = "species.regrowth.rate.zoo3"  # sp11-13 (zooplankton, NOT benthos)
+_BENTHOS_REGROWTH_SENTINEL = "species.regrowth.rate.benthos"  # sp14
 
 # Resource (LTL) block: sp9=Diatoms, sp10=Dinoflagellates, sp11=Microzoo, sp12=Mesozoo,
 # sp13=Macrozoo, sp14=Benthos. Shifted up by one from sp8-sp13 when cod_east was appended
@@ -65,6 +67,8 @@ _ZOO_REGROWTH_SENTINEL = "species.regrowth.rate.zoo"
 LTL_RESOURCE_INDICES = tuple(range(9, 15))
 _PHYTO_RESOURCE_INDICES = (9, 10)  # Diatoms + Dinoflagellates (regrowth pinned fast in A2)
 _ZOO_RESOURCE_INDICES = (11, 12, 13, 14)  # depletable zooplankton + benthos (Chunk A2)
+_ZOO3_RESOURCE_INDICES = (11, 12, 13)  # zooplankton only, NOT benthos (phase a2r split)
+_BENTHOS_RESOURCE_INDEX = 14
 
 
 def expand_param_overrides(param_keys, x, use_log_space: bool = True) -> dict[str, str]:
@@ -77,6 +81,11 @@ def expand_param_overrides(param_keys, x, use_log_space: bool = True) -> dict[st
         if key == _ZOO_REGROWTH_SENTINEL:
             for r in _ZOO_RESOURCE_INDICES:
                 overrides[f"species.regrowth.rate.sp{r}"] = str(val)
+        elif key == _ZOO3_REGROWTH_SENTINEL:
+            for r in _ZOO3_RESOURCE_INDICES:
+                overrides[f"species.regrowth.rate.sp{r}"] = str(val)
+        elif key == _BENTHOS_REGROWTH_SENTINEL:
+            overrides[f"species.regrowth.rate.sp{_BENTHOS_RESOURCE_INDEX}"] = str(val)
         else:
             overrides[key] = str(val)
     return overrides
@@ -549,6 +558,31 @@ def enable_a2_base_config(base_config) -> dict:
     for sp_idx in _PHYTO_RESOURCE_INDICES:
         cfg[f"species.regrowth.rate.sp{sp_idx}"] = "5.0"
     return cfg
+
+
+_A2R_GATE_SPECIES = ("cod_west", "cod_east", "herring", "sprat", "flounder", "perch", "stickleback")
+
+
+def get_a2r_targets() -> list[BiomassTarget]:
+    """Gate species only: indicative overshoots (pikeperch, smelt) are never tuned against."""
+    return [t for t in load_targets() if t.species in _A2R_GATE_SPECIES]
+
+
+def get_a2r_params() -> tuple[list[str], list[tuple[float, float]], list[float]]:
+    """Bounded depletion refit (spec 2026-08-08 Phase 1 contingency): 6 params, nothing else.
+
+    Regrowth: zoo grouped sp11-13 (prior = the carried-over pre-split fit), benthos sp14
+    separate with literature bounds (P/B ~0.5-3/yr => 0.02-0.12/step; A/B 2026-08-08 showed
+    strong benthos sensitivity). Accessibilities: the phase-1c four, seeded at config 0.8.
+    """
+    keys = [_ZOO3_REGROWTH_SENTINEL, _BENTHOS_REGROWTH_SENTINEL]
+    bounds = [(float(np.log10(0.05)), float(np.log10(2.0))), (-2.0, -0.5)]
+    x0 = [float(np.log10(0.911553421016705)), float(np.log10(0.03))]
+    for sp_idx in (9, 11, 12, 13):
+        keys.append(f"species.accessibility2fish.sp{sp_idx}")
+        bounds.append((np.log10(0.1), np.log10(0.8)))  # 0.1 to 0.8 — same as get_phase1c_params
+        x0.append(float(np.log10(0.8)))
+    return keys, bounds, x0
 
 
 def get_phase1b_params() -> tuple[list[str], list[tuple[float, float]], list[float]]:
@@ -1179,6 +1213,8 @@ def run_calibration(
         param_keys, bounds, x0 = get_phase1b_params()
     elif phase == "1c":
         param_keys, bounds, x0 = get_phase1c_params()
+    elif phase == "a2r":
+        param_keys, bounds, x0 = get_a2r_params()
     elif phase == "1d":
         param_keys, bounds, x0 = get_phase1b_params()  # same 9 params as 1b
     elif phase == "1e":
@@ -1204,6 +1240,19 @@ def run_calibration(
     if seeding_mode is not None:
         base_config["population.seeding.mode"] = seeding_mode
         print(f"Seeding mode: {seeding_mode}")
+
+    # Phase a2r: bounded depletion refit (spec 2026-08-08 Phase 1 contingency). Depletion base
+    # config (phytoplankton regrowth pinned fast) + gate-species-only targets with a raised
+    # weight floor, so the DE can't trade away perch/flounder/stickleback while chasing the
+    # indicative-only pikeperch/smelt overshoots (which get_a2r_targets already excludes).
+    if phase == "a2r":
+        base_config = enable_a2_base_config(base_config)
+        targets = get_a2r_targets()
+        weight_floor = 0.5
+        print(
+            f"Phase a2r: depletion base ENABLED, {len(targets)} gate-species targets, "
+            f"weight_floor={weight_floor}"
+        )
 
     # Phase 1d: pre-fix LTL plankton accessibility at 0.4 (down from R18 0.8)
     if phase == "1d":
@@ -1694,7 +1743,7 @@ def main():
         "--phase",
         type=str,
         default="1b",
-        help="Calibration phase: 1=all 16p, 1b=focused 8p, 2=fishing 8p, 12=joint 27p (B-H), 13=Shepherd 39p (8 spp), 14=FR halfsat K 4p (frozen phase-13 base)",
+        help="Calibration phase: 1=all 16p, 1b=focused 8p, 2=fishing 8p, 12=joint 27p (B-H), 13=Shepherd 39p (8 spp), 14=FR halfsat K 4p (frozen phase-13 base), a2r=bounded depletion refit 6p (regrowth + accessibility, gate species only)",
     )
     parser.add_argument("--maxiter", type=int, default=200, help="DE max iterations")
     parser.add_argument("--popsize", type=int, default=15, help="DE absolute population size floor")

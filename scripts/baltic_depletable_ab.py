@@ -16,6 +16,7 @@ benthic turnover). --sensitivity adds a fourth arm with the a2_on_converged zoo 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -94,6 +95,36 @@ def make_report(tables: dict[str, dict], years: int, seeds: list[int]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def build_arms(
+    extra_arms: list[tuple[str, str]] | None = None,
+    skip_default: bool = False,
+    sensitivity: bool = False,
+) -> dict[str, dict[str, str]]:
+    """Assemble the arm dict: 'off' baseline always first, then the default arms (unless
+    skipped), then any --extra-arm entries loaded from a flat JSON {config_key: value} file."""
+    arms: dict[str, dict[str, str]] = {"off": dict(ARM_OFF)}
+    if not skip_default:
+        arms["on"] = dict(DEPLETION_KEYS)
+        arms["on-benthoslit"] = {
+            **DEPLETION_KEYS,
+            "species.regrowth.rate.sp14": BENTHOS_LIT_RATE,
+        }
+        if sensitivity:
+            sens = dict(DEPLETION_KEYS)
+            for sp in ("sp11", "sp12", "sp13", "sp14"):
+                sens[f"species.regrowth.rate.{sp}"] = A2_SENSITIVITY_ZOO_RATE
+            arms["on-a2conv"] = sens
+    for name, json_path in extra_arms or []:
+        if name in arms:
+            raise SystemExit(
+                f"--extra-arm {name!r} collides with an existing arm name "
+                f"({sorted(arms)}); choose a distinct name."
+            )
+        with open(json_path) as f:
+            arms[name] = json.load(f)
+    return arms
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--years", type=int, default=50)
@@ -103,19 +134,29 @@ def main() -> int:
         action="store_true",
         help="add a fourth arm with the a2_on_converged zoo rate (8-species co-fit)",
     )
+    ap.add_argument(
+        "--extra-arm",
+        dest="extra_arm",
+        action="append",
+        nargs=2,
+        metavar=("NAME", "JSON_PATH"),
+        default=None,
+        help="add an arm named NAME loaded from a flat {config_key: value} JSON file at "
+        "JSON_PATH (e.g. a DE result's fitted params). Repeatable.",
+    )
+    ap.add_argument(
+        "--skip-default-arms",
+        action="store_true",
+        help="omit the default on/on-benthoslit(/on-a2conv) arms — 'off' stays as the baseline",
+    )
     ap.add_argument("--out", default=None, help="write the markdown report here")
     args = ap.parse_args()
 
-    arms: dict[str, dict[str, str]] = {
-        "off": dict(ARM_OFF),
-        "on": dict(DEPLETION_KEYS),
-        "on-benthoslit": {**DEPLETION_KEYS, "species.regrowth.rate.sp14": BENTHOS_LIT_RATE},
-    }
-    if args.sensitivity:
-        sens = dict(DEPLETION_KEYS)
-        for sp in ("sp11", "sp12", "sp13", "sp14"):
-            sens[f"species.regrowth.rate.{sp}"] = A2_SENSITIVITY_ZOO_RATE
-        arms["on-a2conv"] = sens
+    arms = build_arms(
+        extra_arms=args.extra_arm,
+        skip_default=args.skip_default_arms,
+        sensitivity=args.sensitivity,
+    )
 
     tables = {}
     for name, params in arms.items():
@@ -126,7 +167,9 @@ def main() -> int:
     report = make_report(tables, args.years, args.seeds)
     print("\n" + report)
     if args.out:
-        Path(args.out).write_text(report)
+        out_path = Path(args.out)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(report)
         print(f"report written to {args.out}")
     return 0
 

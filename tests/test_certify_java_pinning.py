@@ -34,4 +34,6 @@ def test_prepare_java_cfg_passes_runner_guard():
     # certify_java stages. Must pass the runner guard even with depletion forced on.
     cfg, pinned = cert._prepare_java_cfg({"ltl.depletable.enabled": "true"})
     assert "ltl.depletable.enabled" in [k for k in pinned]
+    # jar_version is required: the Baltic config declares 2 background species, which the
+    # guard conservatively blocks when the jar version is unknown — unrelated to depletion.
     assert java_engine_block_reason(cfg, jar_version="4.4.1") is None
