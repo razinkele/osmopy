@@ -82,6 +82,7 @@ The physics side needs only an alignment/out-of-range policy, not re-indexing.
 | C1 | Temperature-dependent stock–recruitment (Voss & Quaas 2026) | small | ●● | ● | ●●● |
 | C2 | Physics→biology couplings: bottom-O₂ → benthos K; computed RV from S+O₂ | moderate (incl. oxygen wiring) | ●●● | ● | ●● |
 | C3 | Activate ported bioenergetics (temperature-dependent rates) | config + validation | ●● | risk | ●● |
+| C4 | Salinity-gated occupancy/movement (revive the July salinity-gate prototype against forced bottom-salinity fields) | low–moderate | ● | ● | ●● |
 | D3 | Seasonal `accessibility_ts` on resource pools (e.g. benthos, macrozoo) | config | ● | ○ | ○ |
 | F1 | Fishing/removals realism: historical F/catch series (ICES) for hindcast; percid-removals maintenance | data + config | ● | ●● | ● |
 | F2 | Time-varying predation accessibility for focal prey (percid Tier C, per-pair per-timestep multiplier) | engine feature | ● | ● | ○ |
@@ -190,8 +191,13 @@ verify stability at 24 steps/yr or sub-step.
 ### Scenario track (separate, after Phases 1–2)
 
 C1 (temperature-dependent SR), B2 (ERGOM RCP forcing swap), C3
-(bioenergetics activation) belong together: shared temperature-response
-interface, pay off in scenario runs. C1 is already a High roadmap item.
+(bioenergetics activation) and C4 (salinity-gated occupancy/movement — the
+freshening signal is a first-order Baltic scenario driver) belong together:
+shared physics-response interfaces, pay off in scenario runs. C1 is already a
+High roadmap item. C4 revives the July salinity-gate prototype
+(`docs/baltic_salinity_spawning_test.md`,
+`docs/baltic_salinity_gradient_exploration_2026-07-24.md`) rather than
+starting fresh.
 
 ### Out of scope
 
