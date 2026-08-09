@@ -1,0 +1,14 @@
+{
+  "ltl.depletable.enabled": "true",
+  "ltl.depletable.floor": "0.05",
+  "species.regrowth.rate.sp9": "5.0",
+  "species.regrowth.rate.sp10": "5.0",
+  "species.regrowth.rate.sp11": "1.9895756336145063",
+  "species.regrowth.rate.sp12": "1.9895756336145063",
+  "species.regrowth.rate.sp13": "1.9895756336145063",
+  "species.regrowth.rate.sp14": "0.010574145142215833",
+  "species.accessibility2fish.sp9": "0.26991953257787105",
+  "species.accessibility2fish.sp11": "0.7365817494124315",
+  "species.accessibility2fish.sp12": "0.8",
+  "species.accessibility2fish.sp13": "0.10533700447923867"
+}

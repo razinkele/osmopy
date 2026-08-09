@@ -1,0 +1,58 @@
+{
+  "phase": "a2r",
+  "optimizer": "de",
+  "objective_single_seed": 1.1226305120034727,
+  "objective_multiseed_mean": 1.1452266402278006,
+  "objective_multiseed_std": 0.013096012969008988,
+  "objective_per_seed": [
+    1.1226305120034727,
+    1.1623582584756194,
+    1.1435758819659632,
+    1.152348814991444,
+    1.145219733702504
+  ],
+  "n_evaluations": 660,
+  "elapsed_seconds": 46788.57590174675,
+  "parameters": {
+    "species.regrowth.rate.zoo3": 1.9895756336145063,
+    "species.regrowth.rate.benthos": 0.010574145142215833,
+    "species.accessibility2fish.sp9": 0.26991953257787105,
+    "species.accessibility2fish.sp11": 0.7365817494124315,
+    "species.accessibility2fish.sp12": 0.8,
+    "species.accessibility2fish.sp13": 0.10533700447923867
+  },
+  "log10_parameters": {
+    "species.regrowth.rate.zoo3": 0.2987604534784237,
+    "species.regrowth.rate.benthos": -1.9757547327023453,
+    "species.accessibility2fish.sp9": -0.5687656868260343,
+    "species.accessibility2fish.sp11": -0.1327790460399793,
+    "species.accessibility2fish.sp12": -0.0969100130080564,
+    "species.accessibility2fish.sp13": -0.9774190360510138
+  },
+  "bounds_log10": {
+    "species.regrowth.rate.zoo3": [
+      -1.3010299956639813,
+      0.3010299956639812
+    ],
+    "species.regrowth.rate.benthos": [
+      -2.0,
+      -0.5
+    ],
+    "species.accessibility2fish.sp9": [
+      -1.0,
+      -0.09691001300805639
+    ],
+    "species.accessibility2fish.sp11": [
+      -1.0,
+      -0.09691001300805639
+    ],
+    "species.accessibility2fish.sp12": [
+      -1.0,
+      -0.09691001300805639
+    ],
+    "species.accessibility2fish.sp13": [
+      -1.0,
+      -0.09691001300805639
+    ]
+  }
+}

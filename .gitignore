@@ -83,6 +83,8 @@ data/eec_full/output/
 data/cmems_cache/
 data/baltic/calibration_results/
 !data/baltic/calibration_results/phase13_equilibrium.json
+!data/baltic/calibration_results/phasea2r_results.json
+!data/baltic/calibration_results/a2r_fitted_params.json
 .worktrees/
 
 # In-place migration backups (rebuild_baltic_mask.py, apply_ices_validation_fixes.py, etc.)
