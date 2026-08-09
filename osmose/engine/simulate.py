@@ -46,16 +46,32 @@ def _load_oxygen_data(raw_config: dict, config_dir: Path | None) -> PhysicalData
         path = resolve_data_path(filename, config_dir=dir_str)
         if path is not None:
             varname = raw_config.get("oxygen.varname", "oxygen")
+            # oxygen.nsteps.year is metadata only: PhysicalData.get_value/get_grid index
+            # step % (loaded array's frame count) and never consult `_nsteps_year`. Temporal
+            # alignment is enforced below by comparing the LOADED array's actual frame count
+            # against simulation.time.ndtperyear, not by this declared value.
             nsteps_year = int(raw_config.get("oxygen.nsteps.year", "12"))
             factor = float(raw_config.get("oxygen.factor", "1.0"))
             offset = float(raw_config.get("oxygen.offset", "0.0"))
-            return PhysicalData.from_netcdf(
+            data = PhysicalData.from_netcdf(
                 path,
                 varname=varname,
                 nsteps_year=nsteps_year,
                 factor=factor,
                 offset=offset,
             )
+            assert data._data is not None  # from_netcdf always sets it (mirrors config.py:1211)
+            n_frames = data._data.shape[0]
+            n_dt_per_year = int(raw_config.get("simulation.time.ndtperyear", "24"))
+            if n_frames != n_dt_per_year:
+                raise ValueError(
+                    f"Oxygen forcing {path} has {n_frames} frame(s), but "
+                    f"simulation.time.ndtperyear={n_dt_per_year}. PhysicalData indexes "
+                    "step % frame_count, so a mismatched frame count silently misaligns the "
+                    "month-to-step mapping from that point on. Regenerate the forcing with "
+                    f"{n_dt_per_year} frames (or fix simulation.time.ndtperyear)."
+                )
+            return data
 
     o2_val = raw_config.get("oxygen.value", "")
     if o2_val:
