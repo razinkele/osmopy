@@ -24,9 +24,44 @@ from osmose.engine.background import BackgroundState
 from osmose.engine.config import EngineConfig
 from osmose.engine.grid import Grid
 from osmose.engine.incoming_flux import IncomingFluxState
+from osmose.engine.path_resolution import resolve_data_path
 from osmose.engine.physical_data import PhysicalData
 from osmose.engine.resources import ResourceState
 from osmose.engine.state import MortalityCause, SchoolState
+
+
+def _load_oxygen_data(raw_config: dict, config_dir: Path | None) -> PhysicalData | None:
+    """Load bottom-oxygen forcing: NetCDF mode when ``oxygen.filename`` is set (resolved via
+    :func:`resolve_data_path`), else constant mode from ``oxygen.value``, else None.
+
+    Module-level and called unconditionally from :func:`simulate` (independent of the
+    bioenergetics gate) because the O2->benthos K coupling (spec Phase 2a) needs the same
+    forcing bioenergetics' ``f_o2`` uses, regardless of whether bioenergetics is enabled. This
+    is also the seam integration tests target directly with a raw config dict.
+    """
+    dir_str = str(config_dir) if config_dir is not None else ""
+
+    filename = raw_config.get("oxygen.filename", "")
+    if filename:
+        path = resolve_data_path(filename, config_dir=dir_str)
+        if path is not None:
+            varname = raw_config.get("oxygen.varname", "oxygen")
+            nsteps_year = int(raw_config.get("oxygen.nsteps.year", "12"))
+            factor = float(raw_config.get("oxygen.factor", "1.0"))
+            offset = float(raw_config.get("oxygen.offset", "0.0"))
+            return PhysicalData.from_netcdf(
+                path,
+                varname=varname,
+                nsteps_year=nsteps_year,
+                factor=factor,
+                offset=offset,
+            )
+
+    o2_val = raw_config.get("oxygen.value", "")
+    if o2_val:
+        return PhysicalData.from_constant(float(o2_val))
+
+    return None
 
 
 @dataclass
@@ -1380,7 +1415,9 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
     # flow (sum), so the rate built from them in output.py stays consistent.
     _abs = [o.abundance_by_stage for o in accumulated if o.abundance_by_stage is not None]
     abundance_stage = np.mean(_abs, axis=0) if _abs else None
-    _mcs = [o.mortality_by_cause_stage for o in accumulated if o.mortality_by_cause_stage is not None]
+    _mcs = [
+        o.mortality_by_cause_stage for o in accumulated if o.mortality_by_cause_stage is not None
+    ]
     mortality_stage = np.sum(_mcs, axis=0) if _mcs else None
     # SUM, matching Java: an interval's rate is the sum of its per-step rates.
     _mrs = [
@@ -1495,8 +1532,17 @@ def simulate(
     # Per-simulation context — replaces module-level globals for thread safety
     ctx = SimulationContext(config_dir=config.raw_config.get("_osmose.config.dir", ""))
 
+    # O2 forcing: NetCDF (oxygen.filename) or constant (oxygen.value), loaded unconditionally
+    # (independent of the bioen gate) so the O2->benthos K coupling (Phase 2a) works whether or
+    # not bioenergetics is enabled. Loaded before ResourceState so it can be passed in; bioen's
+    # own use of o2_data later in the step loop is unchanged.
+    _config_dir_str = config.raw_config.get("_osmose.config.dir", "")
+    o2_data = _load_oxygen_data(
+        config.raw_config, Path(_config_dir_str) if _config_dir_str else None
+    )
+
     state = initialize(config, grid, rng)
-    resources = ResourceState(config=config.raw_config, grid=grid)
+    resources = ResourceState(config=config.raw_config, grid=grid, oxygen=o2_data)
     # ResourceState performs the discovery (legacy ltl.*.rsc{i} keys or the EEC-style
     # species.type=resource fallback), so it is the single source of truth for resource
     # names and count. Publish them on the config for the diet/predator-pressure prey
@@ -1541,13 +1587,6 @@ def simulate(
         temp_val = config.raw_config.get("temperature.value", "")
         if temp_val:
             temp_data = PhysicalData.from_constant(float(temp_val))
-
-    # Bioenergetics: load O2 forcing when enabled
-    o2_data = None
-    if config.bioen_enabled:
-        o2_val = config.raw_config.get("oxygen.value", "")
-        if o2_val:
-            o2_data = PhysicalData.from_constant(float(o2_val))
 
     from osmose.engine.movement_maps import MovementMapSet
 
@@ -1688,9 +1727,7 @@ def simulate(
             # column (n_species + r_idx). Sizing this with n_background instead silently
             # dropped every resource past the second and mislabelled the first two as the
             # background species (#146).
-            enable_diet_tracking(
-                len(state), config.n_species + len(config.resource_names), ctx=ctx
-            )
+            enable_diet_tracking(len(state), config.n_species + len(config.resource_names), ctx=ctx)
 
         state = _mortality(
             state, resources, config, rng, grid, step=step, species_rngs=mortality_rngs, ctx=ctx

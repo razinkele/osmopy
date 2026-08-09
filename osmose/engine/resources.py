@@ -15,6 +15,8 @@ from numpy.typing import NDArray
 
 from osmose.engine.grid import Grid
 from osmose.engine.path_resolution import resolve_data_path
+from osmose.engine.physical_data import PhysicalData
+from osmose.engine.processes.oxygen_function import f_o2_hill
 
 
 def logistic_regrow(
@@ -67,7 +69,12 @@ class ResourceState:
     Biomass resets from forcing each timestep (resources regenerate).
     """
 
-    def __init__(self, config: dict[str, str], grid: Grid) -> None:
+    def __init__(
+        self,
+        config: dict[str, str],
+        grid: Grid,
+        oxygen: PhysicalData | None = None,
+    ) -> None:
         self.config = config
         self.grid = grid
         self.n_resources = int(config.get("simulation.nresource", "0"))
@@ -85,6 +92,20 @@ class ResourceState:
         self._uniform_biomass: NDArray[np.float64] = np.zeros(
             max(1, self.n_resources), dtype=np.float64
         )
+
+        # O2 -> benthos K coupling (spec Phase 2a, C2a). Double-gated: the config flag AND a
+        # loaded `oxygen` forcing must both be present, and only the resource NAMED by
+        # `ltl.oxygen.benthos.rsc` is affected (name, not sp-index, so reindexing can't
+        # silently retarget it). `oxygen` is None by default so every pre-existing caller/test
+        # is unaffected.
+        self._oxygen = oxygen
+        self._oxygen_enabled = (
+            str(config.get("ltl.oxygen.benthos.enabled", "false")).lower() == "true"
+        )
+        self._oxygen_c50 = float(config.get("ltl.oxygen.benthos.c50", "60.0"))
+        self._oxygen_n = float(config.get("ltl.oxygen.benthos.n", "3.0"))
+        self._oxygen_rsc_name = config.get("ltl.oxygen.benthos.rsc", "Benthos")
+        self.oxygen_factor_last: NDArray[np.float64] | None = None
 
         if self.n_resources > 0:
             self._load_config()
@@ -228,6 +249,10 @@ class ResourceState:
         each timestep, so grazing effects are temporary. Depletable (``self.depletable``): the
         carried-over (grazed) biomass is regrown toward K via :func:`logistic_regrow` instead of
         reset, so grazing persists across timesteps (a cross-timestep self-limiting feedback).
+
+        O2->benthos K coupling (Phase 2a): when enabled and an `oxygen` forcing was supplied at
+        construction, the named resource's K row is scaled by ``f_o2_hill`` each step, BEFORE
+        the depletable/reset branch (so the depletable regrowth target already reflects hypoxia).
         """
         if self.n_resources == 0:
             return
@@ -269,6 +294,16 @@ class ResourceState:
                 # Uniform distribution: multiplier * (per_cell + offset) * accessibility
                 k_row[:] = rsc.multiplier * (self._uniform_biomass[i] + rsc.offset) * access
 
+            if (
+                self._oxygen_enabled
+                and self._oxygen is not None
+                and rsc.name == self._oxygen_rsc_name
+            ):
+                o2_row = self._oxygen_row(step)
+                factor_row = f_o2_hill(o2_row, self._oxygen_c50, self._oxygen_n)
+                k_row = k_row * factor_row
+                self.oxygen_factor_last = factor_row
+
             if self.depletable:
                 # Regrow the carried-over (grazed) biomass toward K rather than resetting,
                 # yielding a cross-timestep self-limiting feedback.
@@ -277,6 +312,18 @@ class ResourceState:
                 )
             else:
                 self.biomass[i, :] = k_row
+
+    def _oxygen_row(self, step: int) -> NDArray[np.float64]:
+        """Flatten this step's oxygen field to the model grid's `y*nx + x` cell order."""
+        grid = self.grid
+        o2 = self._oxygen
+        assert o2 is not None
+        if o2.is_constant:
+            return np.full(grid.ny * grid.nx, o2.get_scalar(), dtype=np.float64)
+        frame = o2.get_grid(step)
+        if frame.shape != (grid.ny, grid.nx):
+            frame = self._regrid_to_model(frame)
+        return frame.astype(np.float64).flatten()
 
     def _regrid_to_model(self, data: NDArray) -> NDArray:
         """Regrid forcing data to model grid via nearest-neighbor index mapping."""
