@@ -108,10 +108,45 @@ _CASCADE_SPRAT_MAX_RATIO: float = 1.60  # ...without running away
 # constants above). The load-bearing assertion is the pyramid ORDERING (sprat >
 # stickleback > cod); these bands are a coarse order-of-magnitude guard spanning the
 # observed range.
+#
+# RE-DERIVED (total_cod only) 2026-08-09, post O2->benthos coupling adoption (dcd6ba9,
+# docs/baltic_hypoxia_benthos_ab_2026-08-09.md). The bottom-oxygen -> benthos carrying-capacity
+# coupling (data/baltic/baltic_param-oxygen.csv, included via baltic_all-parameters.csv line 31)
+# went live in the production Baltic config on 2026-08-09; build_baltic_workdir copytrees
+# data/baltic/ wholesale, so this fixture now runs WITH the coupling active, while the bands
+# above were measured 2026-08-02, before it existed. Measured post-adoption total_cod
+# equilibrium mean = 1.223e5 t (was 1.56e5 t), which fell below the old floor 1.248e5 by ~2%
+# (exact failure: `assert 124800.0 <= np.float64(122308.12099492527)`). Re-derived using the
+# SAME ±20% construction as every other band in this dict: new band (9.785e4, 1.468e5).
+# sprat and stickleback are intentionally UNCHANGED — both measured inside their 2026-08-02
+# bands in the same post-adoption pytest run (5 passed, 1 failed; only total_cod tripped), so
+# this dict is now mixed-provenance on purpose: total_cod re-measured 2026-08-09,
+# sprat/stickleback still the 2026-08-02 values, both currently valid. This is mechanically
+# plausible, not just numerically lucky: the coupling scales the "Benthos" resource's K, which
+# primarily feeds benthivorous predators — cod, and per the gate report flounder -18.7% — while
+# pelagic forage fish move little (sprat -3.4%, stickleback +4.4% in the gate's 50 yr
+# certification window). Applying the gate's cod deltas (cod_east -21.4%, cod_west -10.2%) to
+# the 2026-08-02 per-stock split (cod_west 10,519 t, cod_east 145,419 t) predicts total_cod
+# ~1.238e5, within ~1% of the 1.223e5 actually measured here (different window/horizon than the
+# gate, so this is a plausibility cross-check, not a derivation of the new band).
+#
+# CAVEAT — attribution method: the decisive isolated A/B (this tutorial config with
+# ltl.oxygen.benthos.enabled forced off vs. the adopted on-by-default value) was NOT run for
+# this re-derivation. Two standalone comparison runs were started but were killed for machine
+# load before finishing (three concurrent 30-year sims plus an unrelated job pushed load to
+# ~420 on a 28-core box). Attribution instead rests on elimination:
+# `git log d989a56..HEAD -- data/baltic/` returns exactly 5 commits touching data/baltic/, and
+# only two touch files the engine actually loads — dcd6ba9 (adds baltic_param-oxygen.csv + its
+# include line) and ab50a00 (adds the baltic_oxygen_bottom.nc forcing file dcd6ba9's coupling
+# reads). The other three touch only data/baltic/calibration_results/ artifacts or
+# data/baltic/reference/biomass_targets.csv, neither of which baltic_all-parameters.csv
+# includes or the engine reads. Combined with the quantitative match above this is strong, but
+# it is not the same as a direct on/off run — re-run the isolated A/B if this attribution is
+# ever load-bearing for something more consequential than a test band.
 _PYRAMID_BOUNDS: dict[str, tuple[float, float]] = {
-    "total_cod": (1.248e05, 1.871e05),
-    "sprat": (7.313e05, 1.097e06),
-    "stickleback": (5.989e04, 8.983e04),
+    "total_cod": (9.785e04, 1.468e05),  # re-derived 2026-08-09 — see comment above
+    "sprat": (7.313e05, 1.097e06),  # unchanged since 2026-08-02 — still valid post-adoption
+    "stickleback": (5.989e04, 8.983e04),  # unchanged since 2026-08-02 — still valid post-adoption
 }
 
 
@@ -212,16 +247,25 @@ def test_script_runs_to_completion(baseline_run: pd.DataFrame) -> None:
 # === Assertion #2: biomass pyramid at equilibrium ===
 def test_biomass_pyramid_emerges(baseline_run: pd.DataFrame) -> None:
     """Two layers: (a) prey biomass exceeds predator biomass — always tested.
-    (b) ±20% bands around the measured window (re-measured 2026-08-02, #129).
+    (b) ±20% bands around the measured window. Bands last measured in full 2026-08-02 (#129);
+    total_cod was RE-MEASURED 2026-08-09 after the O2->benthos coupling was adopted into the
+    production Baltic config (see the dated comment above _PYRAMID_BOUNDS for the full story
+    and the attribution caveat). sprat and stickleback are still the 2026-08-02 values,
+    confirmed still valid in the same post-adoption run.
 
     **The claim is sprat > total_cod, and only that.** The prior assertion was
     sprat > stickleback > cod, which broke once "cod" correctly meant both stocks
-    (total_cod 1.56e5 > stickleback 7.49e4). It was never a pyramid statement anyway:
+    (total_cod exceeded stickleback). It was never a pyramid statement anyway:
     stickleback sits at roughly sprat's trophic level, so ordering the two forage fish
     against each other says "stickleback is scarce here", not anything trophic.
 
-    What IS a biomass-pyramid statement, and what this asserts: the forage fish
-    outweighs its predator, sprat 9.14e5 vs total_cod 1.56e5 (~5.9x).
+    What IS a biomass-pyramid statement, and what this asserts: the forage fish outweighs
+    its predator. Measured 2026-08-09 (post O2->benthos coupling): total_cod 1.223e5 t.
+    sprat's band is still centred on its 2026-08-02 measurement of 9.14e5 t — that side was
+    NOT re-measured on 2026-08-09 (see the caveat above _PYRAMID_BOUNDS), so the ~5.9x ratio
+    quoted by earlier versions of this docstring is not re-quoted here: only one side of it
+    was actually re-measured, and pairing a fresh number with a stale one would misrepresent
+    both.
     """
     means = _equilibrium_means(baseline_run)
 
