@@ -1,0 +1,9 @@
+{
+  "ltl.oxygen.benthos.enabled": "true",
+  "ltl.oxygen.benthos.c50": "60.0",
+  "ltl.oxygen.benthos.n": "3.0",
+  "ltl.oxygen.benthos.rsc": "Benthos",
+  "oxygen.filename": "baltic_oxygen_bottom.nc",
+  "oxygen.varname": "o2b",
+  "oxygen.nsteps.year": "24"
+}
