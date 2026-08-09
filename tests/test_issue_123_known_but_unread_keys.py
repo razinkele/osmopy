@@ -74,6 +74,7 @@ FROZEN_ALLOWLIST_SNAPSHOT = frozenset(
         "osmose.configuration.mortality.starvation",
         "osmose.configuration.movement",
         "osmose.configuration.output",
+        "osmose.configuration.oxygen",
         "osmose.configuration.plankton",
         "osmose.configuration.predation",
         "osmose.configuration.reproduction",
@@ -279,7 +280,7 @@ def test_legacy_alias_keys_are_py_honored_not_warned():
 def test_metadata_clearance_all_osmose_keys_py_honored():
     # Reader-injected metadata is UNREAD but must be PY_HONORED (else fires on every run).
     metadata = frozenset(k for k in FROZEN_ALLOWLIST_SNAPSHOT if k.startswith("osmose."))
-    assert len(metadata) == 21
+    assert len(metadata) == 22
     assert metadata <= _ALLOWLIST_PY_HONORED
 
 

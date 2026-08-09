@@ -36,6 +36,19 @@ def test_java_engine_block_reason_robust_to_bad_values():
     assert java_engine_block_reason({"simulation.nbackground": "garbage"}) is None
 
 
+def test_java_engine_block_reason_blocks_oxygen_benthos_coupling():
+    """The O2->benthos K coupling (spec Phase 2a) is Python-engine-only: Java reads oxygen.* only
+    as bioenergetics forcing and has no benthos-K coupling to apply it to. Mirrors the
+    ltl.depletable.enabled clause above."""
+    reason = java_engine_block_reason({"ltl.oxygen.benthos.enabled": "true"})
+    assert reason is not None
+    assert "oxygen" in reason.lower() and "benthos" in reason.lower()
+    assert "java" in reason.lower()
+    # Non-coupled config with no background is still Java-runnable (regression guard).
+    assert java_engine_block_reason({"ltl.oxygen.benthos.enabled": "false"}) is None
+    assert java_engine_block_reason({}) is None
+
+
 # ---------------------------------------------------------------------------
 # Test helper: a runner subclass that calls Python scripts directly.
 # In production the command is ``java [opts] -jar <jar> <config> [flags]``.

@@ -75,6 +75,7 @@ _ALLOWLIST_PY_HONORED: frozenset[str] = frozenset(
         "osmose.configuration.mortality.starvation",
         "osmose.configuration.movement",
         "osmose.configuration.output",
+        "osmose.configuration.oxygen",
         "osmose.configuration.plankton",
         "osmose.configuration.predation",
         "osmose.configuration.reproduction",

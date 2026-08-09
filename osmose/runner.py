@@ -30,6 +30,13 @@ def java_engine_block_reason(config, jar_version: str | None = None) -> str | No
             "This configuration uses depletable plankton (ltl.depletable.enabled), a "
             "Python-engine feature with no Java-jar equivalent. Run it on the Python engine."
         )
+    if str(config.get("ltl.oxygen.benthos.enabled", "")).strip().lower() == "true":
+        return (
+            "This configuration uses the oxygen->benthos carrying-capacity coupling "
+            "(ltl.oxygen.benthos.enabled), a Python-engine feature with no Java-jar equivalent. "
+            "Java reads the oxygen.* forcing keys as bioenergetics input, but has no "
+            "benthos-K coupling to apply them to. Run it on the Python engine."
+        )
     if str(config.get("reproduction.depensation.gate.enabled", "")).strip().lower() == "true":
         return (
             "This configuration uses the recruitment depensation/Allee gate "
