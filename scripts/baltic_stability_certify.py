@@ -109,7 +109,13 @@ CERT_SEEDS = (42, 123, 7, 999, 2024)
 # Python-only features with no Java-jar equivalent: the Java cross-check arm runs with these
 # pinned off and SAYS so, keeping the arm runnable while labelling the divergence
 # (spec 2026-08-08 §4 Phase 1; runner.java_engine_block_reason blocks Java otherwise).
-JAVA_INCOMPATIBLE_PINS = {"ltl.depletable.enabled": "false"}
+# ltl.oxygen.benthos.enabled (spec Phase 2a, adopted 2026-08-09): the O2->benthos
+# carrying-capacity coupling is Python-only. Java DOES read the oxygen.* forcing keys
+# (bioenergetics f_o2), so those are NOT pinned here — only the coupling flag is.
+JAVA_INCOMPATIBLE_PINS = {
+    "ltl.depletable.enabled": "false",
+    "ltl.oxygen.benthos.enabled": "false",
+}
 
 
 def pin_java_incompatible(cfg: dict) -> tuple[dict, list[str]]:
