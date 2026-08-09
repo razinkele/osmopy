@@ -41,11 +41,12 @@ def test_values_plausible_mmol_m3():
     # Baltic bottom O2 spans anoxic deeps (~0, occasionally negative-as-H2S-proxy in ERGOM,
     # clipped to >= 0 by the writer) to well-oxygenated coasts (~300-400 mmol/m3)
     assert wet.min() >= 0.0
-    # Upper bound is a plausibility guard, not a physical limit: observed max 616.7 mmol/m3
-    # (Bothnian Bay coastal, April spring-bloom supersaturation, verified spatially coherent
-    # -- not a download/regrid artifact). 650 keeps headroom above that real value without
-    # switching the x2 month duplication (load-bearing for step % nframes alignment, see
-    # test_month_duplication) for resample_to_24's smoothed interpolation just to fit 600.
+    # Observed domain max 616.74 mmol/m3 -- frame 0 (January), 61.95N/21.4E (Archipelago Sea).
+    # Verified genuine: nearest valid native pixel is 0.025 deg (~2.8 km) away and neighbouring
+    # native pixels agree (507-647), so it is a real CMEMS/ERGOM feature, not a regrid artifact.
+    # This bound is a plausibility guard, not a physical limit. 650 keeps headroom above that
+    # real value without switching the x2 month duplication (load-bearing for step % nframes
+    # alignment, see test_month_duplication) for resample_to_24's smoothed interpolation.
     assert 150.0 <= wet.max() <= 650.0
     # hypoxia must actually exist in the domain or the coupling is vacuous
     assert (wet < 90.0).mean() > 0.02
@@ -61,6 +62,8 @@ def test_no_artifact_zero_at_wet_cells():
     grid_nc = Path(__file__).resolve().parents[1] / "data" / "baltic" / "baltic_grid.nc"
     grid = Grid.from_netcdf(grid_nc)
     wet_mask = grid.ocean_mask  # (nlat, nlon) bool, True = ocean
+    # Guard against a mask-polarity bug making the assertion below pass vacuously.
+    assert wet_mask.any()
 
     ds = xr.open_dataset(NC)
     v = ds["o2b"].values  # (time, nlat, nlon)
