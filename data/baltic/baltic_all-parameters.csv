@@ -28,6 +28,7 @@ osmose.configuration.plankton;baltic_param-ltl.csv
 osmose.configuration.background;baltic_param-background.csv
 osmose.configuration.initialization;baltic_param-init-pop.csv
 osmose.configuration.migration;baltic_param-out-mortality.csv
+osmose.configuration.oxygen;baltic_param-oxygen.csv
 
 mortality.subdt;10
 

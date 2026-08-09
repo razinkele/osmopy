@@ -1,0 +1,34 @@
+# Baltic Sea bottom-oxygen -> benthos carrying-capacity coupling (spec Phase 2a, C2a)
+#
+# ADOPTED 2026-08-09 after the depletable-LTL A/B gate PASSED on both arms:
+#   GATE [off]  PASS (all 7 required species persist + in-envelope)
+#   GATE [o2on] PASS (all 7 required species persist + in-envelope)
+#   Deltas [o2on] vs [off]: cod_east -21.4%, flounder -18.7%, cod_west -10.2%,
+#   herring/sprat/perch roughly flat, stickleback +4.4%.
+#   Full gate report: docs/baltic_hypoxia_benthos_ab_2026-08-09.md
+#
+# Coupling diagnostic (pre-gate, on this config): mean factor 0.8426, median 0.9923,
+# 14.8% of wet cell-frames below 0.5 -- the coupling measurably bites (not a no-op) but
+# is not a blanket cut (median close to 1).
+#
+# Forcing: data/baltic/baltic_oxygen_bottom.nc, variable o2b, mmol O2 m-3, bottom layer.
+# MUST carry exactly 24 frames (oxygen.nsteps.year is metadata only -- PhysicalData indexes
+# step % <loaded array's frame count>, not the declared nsteps.year value; a mismatched frame
+# count would silently misalign the month-to-step mapping partway through the year). This is
+# enforced at load time by a ValueError guard in osmose.engine.simulate._load_oxygen_data that
+# compares the loaded array's actual frame count against simulation.time.ndtperyear (=24 for
+# this config, see baltic_param-simulation.csv).
+#
+# The K-scaling coupling itself (ltl.oxygen.benthos.*) is PYTHON-ENGINE ONLY -- there is no
+# Java-jar equivalent. Java DOES read the oxygen.* keys below, but only as bioenergetics (f_o2)
+# forcing for focal species; it has no benthos-K coupling to apply them to. Certification runs
+# (scripts/baltic_stability_certify.py) pin ltl.oxygen.benthos.enabled off for the Java
+# cross-check arm; osmose.runner.java_engine_block_reason blocks a direct Java run of this
+# config for the same reason.
+ltl.oxygen.benthos.enabled;true
+ltl.oxygen.benthos.c50;60.0
+ltl.oxygen.benthos.n;3.0
+ltl.oxygen.benthos.rsc;Benthos
+oxygen.filename;baltic_oxygen_bottom.nc
+oxygen.varname;o2b
+oxygen.nsteps.year;24
