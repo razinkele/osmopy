@@ -118,11 +118,19 @@ _CASCADE_SPRAT_MAX_RATIO: float = 1.60  # ...without running away
 # equilibrium mean = 1.223e5 t (was 1.56e5 t), which fell below the old floor 1.248e5 by ~2%
 # (exact failure: `assert 124800.0 <= np.float64(122308.12099492527)`). Re-derived using the
 # SAME ±20% construction as every other band in this dict: new band (9.785e4, 1.468e5).
-# sprat and stickleback are intentionally UNCHANGED — both measured inside their 2026-08-02
-# bands in the same post-adoption pytest run (5 passed, 1 failed; only total_cod tripped), so
-# this dict is now mixed-provenance on purpose: total_cod re-measured 2026-08-09,
-# sprat/stickleback still the 2026-08-02 values, both currently valid. This is mechanically
-# plausible, not just numerically lucky: the coupling scales the "Benthos" resource's K, which
+# sprat and stickleback are intentionally UNCHANGED — but NOT because the failing run above
+# measured them in-band: the loop below asserts INSIDE the loop and total_cod is first in
+# dict-insertion order, so the run that produced 122308.12099492527 raised on total_cod and
+# never reached sprat or stickleback at all. Their in-band status was confirmed by a SEPARATE
+# verification run after this band was fixed (2026-08-09): with total_cod's band corrected the
+# loop no longer short-circuits, and test_biomass_pyramid_emerges passed end-to-end
+# (`1 failed, 5 passed in 872.27s`; the one failure was test_markdown_code_block_parses_and_runs,
+# an unrelated 300s subprocess timeout under machine load, confirmed to pass in isolation at
+# 296.26s) — meaning all three bands were genuinely evaluated and sprat/stickleback held. So
+# this dict is now mixed-provenance on purpose: total_cod re-measured and re-derived 2026-08-09,
+# sprat/stickleback still the 2026-08-02 values, both confirmed valid by the verification run
+# above rather than re-derived. This is mechanically plausible, not just numerically lucky: the
+# coupling scales the "Benthos" resource's K, which
 # primarily feeds benthivorous predators — cod, and per the gate report flounder -18.7% — while
 # pelagic forage fish move little (sprat -3.4%, stickleback +4.4% in the gate's 50 yr
 # certification window). Applying the gate's cod deltas (cod_east -21.4%, cod_west -10.2%) to
@@ -248,10 +256,13 @@ def test_script_runs_to_completion(baseline_run: pd.DataFrame) -> None:
 def test_biomass_pyramid_emerges(baseline_run: pd.DataFrame) -> None:
     """Two layers: (a) prey biomass exceeds predator biomass — always tested.
     (b) ±20% bands around the measured window. Bands last measured in full 2026-08-02 (#129);
-    total_cod was RE-MEASURED 2026-08-09 after the O2->benthos coupling was adopted into the
-    production Baltic config (see the dated comment above _PYRAMID_BOUNDS for the full story
-    and the attribution caveat). sprat and stickleback are still the 2026-08-02 values,
-    confirmed still valid in the same post-adoption run.
+    total_cod's band was RE-DERIVED 2026-08-09 after the O2->benthos coupling was adopted into
+    the production Baltic config (see the dated comment above _PYRAMID_BOUNDS for the full
+    story and the attribution caveat). sprat and stickleback keep their 2026-08-02 bands
+    unchanged; that choice is confirmed correct by a separate 2026-08-09 verification run
+    (after the total_cod fix landed) in which this test passed end-to-end with all three bands
+    genuinely evaluated — not by the original failing run, which asserts inside the band loop
+    and never reached sprat/stickleback once total_cod tripped first.
 
     **The claim is sprat > total_cod, and only that.** The prior assertion was
     sprat > stickleback > cod, which broke once "cod" correctly meant both stocks
@@ -262,10 +273,10 @@ def test_biomass_pyramid_emerges(baseline_run: pd.DataFrame) -> None:
     What IS a biomass-pyramid statement, and what this asserts: the forage fish outweighs
     its predator. Measured 2026-08-09 (post O2->benthos coupling): total_cod 1.223e5 t.
     sprat's band is still centred on its 2026-08-02 measurement of 9.14e5 t — that side was
-    NOT re-measured on 2026-08-09 (see the caveat above _PYRAMID_BOUNDS), so the ~5.9x ratio
-    quoted by earlier versions of this docstring is not re-quoted here: only one side of it
-    was actually re-measured, and pairing a fresh number with a stale one would misrepresent
-    both.
+    not independently re-measured on 2026-08-09, only confirmed still in-band by the
+    verification run described above (see the caveat above _PYRAMID_BOUNDS), so the ~5.9x
+    ratio quoted by earlier versions of this docstring is not re-quoted here: pairing a fresh
+    number with a stale one would misrepresent both.
     """
     means = _equilibrium_means(baseline_run)
 
