@@ -1191,6 +1191,12 @@ def run_calibration(
     print(f"Config: {BALTIC_CONFIG}")
     print(f"Simulation years: {n_years}, DE maxiter: {maxiter}, popsize: {popsize}", flush=True)
 
+    # Guard: --a2 and --phase a2r are independent code paths and would silently hybridize.
+    if phase == "a2r" and a2:
+        raise SystemExit(
+            "--a2 cannot be combined with --phase a2r (independent code paths would silently hybridize)"
+        )
+
     # Load base config
     reader = OsmoseConfigReader()
     base_config = reader.read(BALTIC_CONFIG)

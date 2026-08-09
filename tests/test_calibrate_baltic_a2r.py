@@ -66,3 +66,13 @@ def test_a2r_targets_exclude_indicative_overshoots():
     targets = cal.get_a2r_targets()
     names = {t.species for t in targets}
     assert names == GATE_SPECIES
+
+
+def test_a2r_guard_rejects_hybrid():
+    """Verify that run_calibration guards against --a2 + --phase a2r hybrid (silent bug fix)."""
+    import pytest
+
+    with pytest.raises(SystemExit) as exc_info:
+        cal.run_calibration(phase="a2r", a2=True)
+    assert "--a2" in str(exc_info.value)
+    assert "a2r" in str(exc_info.value)
