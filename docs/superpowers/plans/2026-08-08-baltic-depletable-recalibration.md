@@ -312,3 +312,15 @@ Follow the original plan's Task 4 + Task 5 verbatim — `docs/superpowers/plans/
   loading assertions.
 - Task 2/3 compute follows the measured timings from the first A/B run (arm ≈ 17 min), not the
   earlier conservative estimates.
+
+---
+
+## Execution outcome (2026-08-09, subagent-driven)
+
+- Task 1 (phase a2r + --extra-arm): implemented, reviewed clean, 32 tests (6ff18dd). Review caught a plan defect: extraction must use log10_parameters, not the linear parameters field (plan amended, aa514f0).
+- Task 2 (DE): 12h wall-clock cap fired at gen ~10; best point from gen ~4, loss 1.1226, never improved (13.0h elapsed; 8 workers x unrestricted numba threads oversubscribed the box ~3-4x — repo issue candidate). Artifacts: 4fd9387.
+- Task 3 (gate): **GATE [fitted]: FAIL (cod_east -70%, herring -80%, sprat -26%, flounder -51%)** at 50yr x 5 seeds (784cfbf). Task 4 (adoption) not executed.
+- **Phase 1 of the improvement-avenues spec concludes NEGATIVE at bounded scope**: six parameters cannot compensate a system calibrated under prey = K. Wider refits are outside the bounded mandate and need a fresh decision.
+- Standing scientific result: depletion cut pikeperch -75 to -83% in every arm (1.4 Mt -> 240-350 kt) — the plankton subsidy is the dominant sustaining term of the percid overshoot.
+- Lesson: 40-yr DE evals flattered the candidate (cod_east 65.9 kt @40yr vs 24.8 kt @50yr — not equilibrated); future depletion fits need longer horizons or stronger drift penalties.
+- Final review: Minor-only, faithful record; fix wave added the --a2/--phase a2r guard (1ddfe36, mutation-tested).
