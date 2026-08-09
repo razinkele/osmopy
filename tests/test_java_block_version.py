@@ -5,7 +5,14 @@ from osmose.runner import java_engine_block_reason
 
 
 def _baltic():
-    return dict(OsmoseConfigReader().read("data/baltic/baltic_all-parameters.csv"))
+    cfg = dict(OsmoseConfigReader().read("data/baltic/baltic_all-parameters.csv"))
+    # Phase 2a adoption baked ltl.oxygen.benthos.enabled=true into the production Baltic config,
+    # which is now ALSO an unconditional Java block (see test_runner.py's oxygen-coupling test).
+    # This file's matrix is specifically about the background-species version gate, an orthogonal
+    # concern, so pin the coupling off here — same pattern the certification script's
+    # JAVA_INCOMPATIBLE_PINS uses to keep a Java arm runnable despite other Python-only features.
+    cfg["ltl.oxygen.benthos.enabled"] = "false"
+    return cfg
 
 
 def test_block_matrix():

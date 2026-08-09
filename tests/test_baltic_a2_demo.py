@@ -133,8 +133,13 @@ def _includes(path: Path) -> dict[str, str]:
 def test_a2_master_includes_parity(tmp_path):
     baltic_inc = _includes(DATA / "baltic" / "baltic_all-parameters.csv")
     a2_inc = _includes(BALTIC_A2_DIR / "baltic_a2_all-parameters.csv")
-    # Same include KEYS plus the one new depletion include.
-    assert set(a2_inc) == set(baltic_inc) | {"osmose.configuration.a2.depletion"}
+    # Same include KEYS plus the one new depletion include. osmose.configuration.oxygen
+    # (spec Phase 2a, adopted 2026-08-09) is baltic-only and deliberately NOT propagated here:
+    # depletable plankton (a2's whole point) stacked with the O2->benthos coupling has never
+    # been A/B gated, so a2 stays on baltic's pre-oxygen include set.
+    assert set(a2_inc) == (set(baltic_inc) - {"osmose.configuration.oxygen"}) | {
+        "osmose.configuration.a2.depletion"
+    }
     # Every include TARGET basename exists in the generated config dir.
     out = osmose_demo("baltic_a2", tmp_path)
     cfgdir = Path(out["config_file"]).parent

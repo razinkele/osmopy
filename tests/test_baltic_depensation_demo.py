@@ -56,10 +56,13 @@ def test_depensation_generates_and_loads(tmp_path):
 
 
 def test_depensation_master_includes_parity():
-    # Same includes as baltic (gate keys are inline in the master, no new include file).
+    # Same includes as baltic (gate keys are inline in the master, no new include file), EXCEPT
+    # osmose.configuration.oxygen (spec Phase 2a, adopted 2026-08-09): baltic-only, deliberately
+    # NOT propagated here — the depensation/Allee gate stacked with the O2->benthos coupling has
+    # never been A/B gated, so this demo stays on baltic's pre-oxygen include set.
     baltic_inc = _includes(DATA / "baltic" / "baltic_all-parameters.csv")
     dep_inc = _includes(DEP_DIR / "baltic_depensation_all-parameters.csv")
-    assert set(dep_inc) == set(baltic_inc)
+    assert set(dep_inc) == set(baltic_inc) - {"osmose.configuration.oxygen"}
 
 
 def test_depensation_blocks_java_engine(tmp_path):
