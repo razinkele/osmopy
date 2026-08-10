@@ -143,9 +143,14 @@ this approach).
 > (`docs/baltic_hypoxia_certification_2026-08-09.md`). C2(b) cannot follow it directly:
 > both candidate input fields (bottom salinity, bottom oxygen) are single-year 24-frame
 > climatologies, while the RV series they would replace is interannual (47 values, 48–380 km³).
-> A computed RV over climatology is a constant — the gate would silently degrade to a fixed
-> multiplier and could still pass certification. **B1 is therefore a prerequisite for C2(b), not
-> a sibling.** Full analysis: `docs/baltic_c2b_blocked_by_forcing_2026-08-10.md`.
+> A computed RV over *those* fields is a constant — the gate would silently degrade to a fixed
+> multiplier and could still pass certification. **CORRECTED the same day: C2(b) does NOT require
+> B1.** The live CMEMS catalogue (the repo's copy is incomplete) carries multi-year `sob`/`o2b`
+> and depth-resolved `so`/`o2` in the reanalysis products, and the gate consumes a **per-year CSV**,
+> not a field — so a computed RV is an *offline derivation* that touches no engine code. B1 is
+> still required for hindcast validation, which is a different goal. The constant-RV trap becomes
+> C2(b)'s acceptance criterion: assert interannual variance in the derived series before it goes
+> near the config. Full analysis + correction: `docs/baltic_c2b_blocked_by_forcing_2026-08-10.md`.
 >
 > Two further corrections from the post-adoption re-derivation
 > (`docs/baltic_rv_gate_rederivation_2026-08-09.md`, `docs/baltic_rv_ref_sweep_2026-08-09.md`):

@@ -69,6 +69,39 @@ Revised order for spec Phase 2:
 4. **F1 — historical fishing**, required to make B1's hindcast interpretable (established in the
    spec's own review); not required for C2(b) itself.
 
+## CORRECTION (same day, after querying the live CMEMS catalogue)
+
+**The conclusion above is wrong in its central claim: C2(b) does NOT require B1.** Two errors:
+
+1. **The repo's catalogue is incomplete.** `mcp_servers/copernicus/server.py` lists
+   `bgc_monthly_reanalysis` without `o2b`, and `phy_monthly_reanalysis` without `sob`. Querying
+   `copernicusmarine.describe` directly returns:
+   * `cmems_mod_bal_bgc_my_P1M-m` → `chl, nh4, no3, nppv, o2, **o2b**, ph, po4, spco2, zsd`
+   * `cmems_mod_bal_phy_my_P1M-m` → `bottomT, mlotst, siconc, sithick, sla, **so**, **sob**,
+     thetao, uo, vo`
+   So multi-year bottom oxygen AND bottom salinity are both directly available, as are the
+   depth-resolved `so` / `o2` needed for a true volume integral.
+2. **I conflated "the model needs interannual forcing" with "the RV series needs interannual
+   inputs".** The gate does not consume a field — it consumes a **per-year CSV**
+   (`reproduction.rv.gate.series.file`, columns `year,spawning_rv`). Computing RV is therefore an
+   **offline derivation**: integrate the qualifying volume per year from multi-year reanalysis
+   fields, write a series, repoint the config key. The running model still uses climatological
+   forcing; nothing in `ResourceState`, `PhysicalData`, or the time-policy code is touched.
+
+**Revised verdict: C2(b) is unblocked and is a data task, not an engine task.** B1 remains
+required for the *hindcast validation* ambition (running the model under interannual forcing), but
+that is a separate goal from replacing the prescribed RV series.
+
+What survives from the original analysis, and still matters:
+
+* The climatology fields *already in the repo* cannot produce an interannual RV — that reasoning
+  was correct, it just pointed at the wrong source. The fix is new multi-year downloads, not B1.
+* The trap it identified is real and now the acceptance criterion: a computed RV that comes out
+  effectively constant would silently degrade the gate to a fixed multiplier and could still pass
+  certification. **The plan must assert interannual variance in the computed series before the
+  series is allowed anywhere near the config.**
+* The risk direction is still inverted (gate on the low side, 7.2% floor margin).
+
 ## Cheap interim option, if C2(b) is wanted before B1
 
 Compute RV **spatially** from the climatology to obtain a domain RV *shape* (which cells qualify,
