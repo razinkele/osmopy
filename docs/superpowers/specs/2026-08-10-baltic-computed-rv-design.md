@@ -1,7 +1,16 @@
 # Computed reproductive volume for the cod recruitment gate (spec Phase 2, C2b)
 
 **Date:** 2026-08-10
-**Status:** design, for review
+**Status:** WITHDRAWN as written, 2026-08-10 — falsified by measurement before implementation.
+> See `docs/baltic_computed_rv_divergence_2026-08-10.md`. Three defects: (a) the machinery it
+> specifies already exists (`osmose/forcing/reproductive_volume.py`, `data/baltic_rv/baltic_rv_field_interannual.nc`,
+> 80 cached CMEMS files) — a search failure on my part; (b) the proposed domain excludes the
+> Bornholm Basin, the eastern stock's principal spawning ground; (c) with the domain corrected,
+> the computed series still shows NO positive rank agreement with the prescribed one
+> (Bornholm-only rho=+0.04, CV 0.14 vs 0.60; wider domains rho<0), and a 29-row series leaves the
+> certification-scored decade 100%% clamped. The acceptance criteria below did their job: they
+> falsified the design cheaply. Retained in full as the record of what was proposed and why it
+> did not survive contact with the data.
 **Parent spec:** `docs/superpowers/specs/2026-08-08-baltic-improvement-avenues-design.md` §4 Phase 2, C2(b)
 **Prerequisite status:** none. C2(b) is an **offline data derivation**, not an engine change —
 corrected 2026-08-10, see `docs/baltic_c2b_blocked_by_forcing_2026-08-10.md`.
