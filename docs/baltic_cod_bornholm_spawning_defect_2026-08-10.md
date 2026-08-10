@@ -51,6 +51,29 @@ So:
 The builder's docstring says the eastern stock covers "SD25-32 deep basins Bornholm/Gdansk/Gotland".
 The stated intent is right; the data does not implement it.
 
+## CORRECTION (2026-08-10, same day): the consequence is smaller and different than stated below
+
+A proposed fix for this defect was reviewed and withdrawn
+(`docs/superpowers/specs/2026-08-10-baltic-bornholm-spawning-fix-design.md`), and the review
+established that **egg production in this engine is spatially blind**:
+`osmose/engine/processes/reproduction.py:141-147` computes eggs as
+`sex_ratio · fecundity · SSB · seasonality · 1e6` with no spatial term; new schools are created at
+`cell_x/cell_y = -1` and placed the next step by the map covering age_dt 0 — `cod_east_juvenile`
+(`map26`, all 24 steps) — which **already contains the Bornholm cells**.
+
+So point 1 below ("cod_east cannot spawn where the real stock spawns") overstates it. The spawning
+map relocates age ≥ 4 **adults** for 10 of 24 steps; `cod_east_adult` already places them in
+Bornholm for the other 14; and presence/absence maps distribute schools uniformly, so extra cells
+*dilute* occupancy rather than concentrate reproduction. The real consequence is a partial-year
+adult-distribution difference — affecting feeding and predation exposure — not recruitment volume.
+
+Point 2 (the RV gate applies to a stock that does not spawn in Bornholm) is likewise weakened: the
+gate is a scalar egg multiplier with no spatial extent at all, so "gate and spawning ground refer
+to different water" is a statement about labelling, not about a computed pathway.
+
+Read the rest of this record with that correction attached. The geometry findings (which cells sit
+in which map) remain verified and correct; the significance claims do not.
+
 ## Why it matters
 
 1. **cod_east cannot spawn in the basin where the real stock spawns.** Its spawning footprint is
