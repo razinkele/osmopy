@@ -4,6 +4,25 @@
 gate (`reproduction.rv.gate.*`; see
 `docs/superpowers/plans/2026-07-24-baltic-rv-recruitment-gate.md`).
 
+## What it is — read this first
+
+**This series is a recruitment-failure index, not a measured reproductive volume.** It is
+labelled RV and drives a gate named `reproduction.rv.*`, but its organising feature — the
+sustained post-2003 decline — encodes the eastern-cod *recruitment collapse* (the outcome), not
+the hydrographic driver. Measurement, 2026-08-10: a reproductive volume computed from CMEMS
+reanalysis over the Bornholm Basin shows **no decline at all** across 1993–2021 (oscillating
+~300, record high in 2021) while this series falls 84% (300 → 48); Spearman rho between them is
++0.04. The computed result is the one consistent with the literature (Koster et al. 2005: Bornholm
+kept sustaining egg development while Gdansk and Gotland lost RV). See
+`docs/baltic_rv_divergence_explained_2026-08-10.md`.
+
+Consequences: (a) do not describe this input as physical RV forcing in papers or configs; (b) the
+"production refinement" proposed below was attempted and **withdrawn** — swapping in the computed
+series removes the decline that holds cod_east in envelope and degenerates the gate toward a
+constant (`docs/baltic_computed_rv_divergence_2026-08-10.md`); (c) the scenario ambition needs a
+mechanism whose driver the physics can supply — temperature-dependent stock-recruitment — not a
+projected RV.
+
 ## What it is
 
 `spawning_rv` is the eastern-Baltic-cod **reproductive volume** by `year`: the volume of

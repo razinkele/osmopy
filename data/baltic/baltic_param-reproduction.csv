@@ -43,6 +43,11 @@ stock.recruitment.shape.sp7;1.3605192101937935
 # multiplies cod recruitment by rv/mean(rv) so it gains RV-driven interannual variability
 # without shifting the long-run mean. Cod (sp0) only. Inert if disabled. See
 # docs/superpowers/plans/2026-07-24-baltic-rv-recruitment-gate.md and the series README.
+# NOTE (2026-08-10): the series below is a RECRUITMENT-FAILURE INDEX, not a measured
+# reproductive volume — see reference/baltic_cod_reproductive_volume.README.md. A physically
+# computed RV over the Bornholm Basin shows no decline (rho=+0.04 vs this series); swapping it in
+# was tested and withdrawn (docs/baltic_rv_divergence_explained_2026-08-10.md). This gate is the
+# dominant control on cod_east: disabling it puts the stock 1.61x over its envelope ceiling.
 reproduction.rv.gate.enabled;true
 reproduction.rv.gate.series.file;reference/baltic_cod_reproductive_volume.csv
 reproduction.rv.gate.mode;raw_cap
