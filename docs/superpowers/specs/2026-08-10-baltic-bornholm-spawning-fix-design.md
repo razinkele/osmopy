@@ -1,7 +1,9 @@
 # Repair the cod spawning maps: give the Bornholm Deep back to cod_east
 
 **Date:** 2026-08-10
-**Status:** design, for review
+**Status:** WITHDRAWN 2026-08-10, before implementation — three independent fatal flaws found by
+> adversarial review (11 confirmed findings, 8 critical). See the WITHDRAWAL section at the end.
+> The underlying defect is real and remains filed; this *fix* was wrong.
 **Defect record:** `docs/baltic_cod_bornholm_spawning_defect_2026-08-10.md` (verified, unfixed)
 
 ## 1. The defect, restated
@@ -102,3 +104,69 @@ reported and the decision escalated rather than absorbed by a parameter change.
    check, so the defect cannot silently return.
 4. A/B report and, on PASS + direction check, a certification record; on FAIL or a wrong-direction
    result, the negative record.
+
+
+---
+
+# WITHDRAWAL (2026-08-10)
+
+Reviewed before any code was written. Three independent flaws, each sufficient on its own.
+
+## 1. §3.1 item 2 would have destroyed cod_west's spawning grounds
+
+I called the builder's use of the adult footprint for `cod_west_spawning` a "shortcut [that] was
+wrong" and told the implementer to rebuild it from the aggregate map masked west. Measured
+consequence: `cod_west_spawning` collapses from **126 cells to 3** — and all three sit at 55.95 °N
+× 15.0–15.8 °E, i.e. in SD 25, *eastern* water. The western stock would have been left with no
+Belt Sea and no Øresund spawning at all, for 8 of 24 timesteps every year (`map2`, all
+spawning-age fish).
+
+The builder's docstring note I overrode — "the aggregate spawning map is eastern-biased" — is
+**correct**, and has been true for the file's entire git history (141 cells from col 12 at
+`396e496`; 68 in the pre-mask backup, also from col 12). The aggregate is an *eastern-stock*
+spawning map, not a two-stock aggregate, so it cannot be partitioned into a western stock. The two
+maps have different sources because the two stocks have different spawning grounds — biology, not
+a shortcut. Literature: western Baltic cod spawn in SD 22/23 (Belt Sea, Øresund), eastern in the
+deep basins of SD 25+ (Weist et al. 2019, doi:10.1371/journal.pone.0218127; Schade et al. 2022,
+doi:10.1371/journal.pone.0274476).
+
+## 2. My SD-to-column premise was inverted, making A1 unreachable
+
+§2 argued "Bornholm is SD 25, east of that transition, so the sharing precedent does not extend to
+it." In this grid that is false. `lon = 10.2 + 0.4·col`, so the Deep band (14.5–17.0 °E) is
+cols 11–17 — and cols **13–14 ARE the shared transition** (`WEST_COLS = 0..14`,
+`EAST_COLS = 13..49`), while cols 11–12 are west-only and never reach `cod_east` at all.
+
+So a column-masked split of one source cannot give the Deep to `cod_east` exclusively: cells at
+cols 13–14 land in *both* maps, cells at cols 11–12 land only in the west. **A1 ("cod_west has 0
+Deep-band cells") is unsatisfiable under every option in §3.1**, including the reviewer's own
+fallback — and the spec explicitly declined to change the masks.
+
+## 3. The benefit I predicted does not exist — egg production is spatially blind
+
+§3.2's mechanism ("cod_east gains productive spawning habitat, so recruitment should rise") has no
+pathway in this engine. `processes/reproduction.py:141-147` computes eggs as
+`sex_ratio · fecundity · SSB · seasonality · 1e6` — no spatial term; new schools are created with
+`cell_x/cell_y = -1` and placed the following step by the map covering age_dt 0, which is
+`cod_east_juvenile` (`map26`, all 24 steps) — and that map *already* contains the Bornholm cells.
+
+The spawning map only relocates age ≥ 4 adults for 10 of 24 steps, and `cod_east_adult` already
+places them in Bornholm for the other 14. Worse, presence/absence maps distribute schools
+uniformly among presence cells (`movement.py:487-515`), so adding cells **dilutes** occupancy.
+A4 ("cod_east must not fall") therefore gates on a pathway the code does not implement and could
+abort a legitimate result for the wrong reason.
+
+## What survives
+
+* **The defect is still real** (`docs/baltic_cod_bornholm_spawning_defect_2026-08-10.md`): the
+  eastern stock's principal spawning ground is in the western stock's spawning map. But its
+  practical consequence is **smaller and different** than that record implies — it misplaces adult
+  *distribution* during the spawning window, not recruitment volume. That record should be read
+  with this correction attached.
+* **Any future fix must** (a) leave `cod_west_spawning` adult-derived or build a genuine two-stock
+  spawning footprint first; (b) change the column masks, or abandon exclusivity, since the Deep
+  straddles the transition; (c) justify itself by adult distribution and predation exposure, not
+  by recruitment; and (d) replace A4 with a check tied to a mechanism that exists.
+* The cheapest correct action may be **none**: with egg production spatially blind and
+  `cod_east_adult` already covering Bornholm, the model consequence of the map defect is a
+  10-of-24-step adult distribution difference whose sign is not obvious.
