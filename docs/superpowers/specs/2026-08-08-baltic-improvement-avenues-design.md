@@ -138,6 +138,23 @@ this approach).
 
 ### Phase 2 — Baltic physics and validation upgrade (C2 + B1 + F1)
 
+> **Amended 2026-08-10 — C2(a) is DONE and ADOPTED; C2(b) is BLOCKED on B1.**
+> C2(a) (bottom-O₂ → benthos K) shipped and certified 5/5 assessed
+> (`docs/baltic_hypoxia_certification_2026-08-09.md`). C2(b) cannot follow it directly:
+> both candidate input fields (bottom salinity, bottom oxygen) are single-year 24-frame
+> climatologies, while the RV series they would replace is interannual (47 values, 48–380 km³).
+> A computed RV over climatology is a constant — the gate would silently degrade to a fixed
+> multiplier and could still pass certification. **B1 is therefore a prerequisite for C2(b), not
+> a sibling.** Full analysis: `docs/baltic_c2b_blocked_by_forcing_2026-08-10.md`.
+>
+> Two further corrections from the post-adoption re-derivation
+> (`docs/baltic_rv_gate_rederivation_2026-08-09.md`, `docs/baltic_rv_ref_sweep_2026-08-09.md`):
+> the gate remains load-bearing (gate-off → cod_east 137.3 kt, 1.61× over ceiling), and the
+> **risk direction has inverted** — cod_east's binding bound flipped from ceiling to floor, the
+> admissible `ref` band is now ~115–161 with production at 150 only 7.2% from the floor-side
+> edge, so C2(b) must be gated on the LOW side. The 0.331–0.449 factor band quoted in
+> `docs/baltic_rv_gate_mechanism_ab_2026-08-02.md` is void for the adopted config.
+
 *C2 physics couplings.* Two parts, one mechanism discipline:
 (a) bottom-O₂ scales **benthos K** (hypoxic-area food loss — flounder, cod);
 (b) **computed reproductive volume** for cod from bottom salinity + O₂ —
