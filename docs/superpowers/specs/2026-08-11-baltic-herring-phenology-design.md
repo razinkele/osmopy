@@ -1,7 +1,8 @@
 # Herring spawning phenology under warming winters (spec C1, herring arm)
 
 **Date:** 2026-08-11
-**Status:** design, for review
+**Status:** WITHDRAWN 2026-08-11, before implementation — 10 confirmed findings, 5 critical.
+> See the WITHDRAWAL section at the end. Reproduced the headline defect myself.
 **Grounded on:** `docs/baltic_recruitment_pathway_2026-08-10.md` (what the code does) and
 `docs/baltic_thermal_recruitment_shape_2026-08-10.md` (what the literature supports). Every
 mechanism claim below cites one of them or a verified file:line — the three specs withdrawn on
@@ -118,3 +119,90 @@ That is defensible for a cyclic climate signal but means the scored final decade
 **mid-series** years, not the warm tail. Any claim about "warming" behaviour in the scored window
 must account for which years the wrap actually lands on — compute and state them explicitly rather
 than assuming the run ends on the last series year.
+
+
+---
+
+# WITHDRAWAL (2026-08-11)
+
+Fourth spec written, fourth withdrawn. Five criticals; the first was found **independently by all
+four review dimensions**.
+
+## 1. "No engine change, pure data" is false — a multi-year herring file flattens the other eight species
+
+`_load_spawning_seasons` sizes the season matrix at `max_cols` = the longest per-species file, then
+pads every shorter species with `1.0 / n_dt_per_year` for all columns beyond its own length
+(`config.py:1099-1102`). Giving herring alone a multi-year file therefore **replaces every other
+species' spawning seasonality with a flat uniform vector** past column 24.
+
+Reproduced directly (herring tiled to 3 years, production config): matrix `(9, 72)`; herring's
+year 1 equals year 0, while sp0 and sp2–sp8 year 1 are **exactly flat 1/24**. cod's real vector is
+0.000000 for 12 of its 24 steps — flattening gives cod year-round spawning with the RV gate still
+applied on top.
+
+Worse, both guards are blind: a uniform vector sums to exactly 1.0 per year, so the loader's own
+warning and my A3 criterion ("every year sums to 1.0") both pass. And with a 30-year file
+(`n_cols = 720`) a 50-year run's scored final decade is `season_idx` 240–479 — **entirely inside
+the flat region**. A4 would have certified the removal of eight species' spawning seasons and
+attributed the result to herring phenology.
+
+A0/A1 use single-year variants, so they are clean — which means the phased gate I designed
+specifically to prevent a fourth failure **could not have caught this**.
+
+## 2. The pivot was wrong by 24×, and could not have been pivotal at all
+
+I called `mortality.additional.larva.rate.sp1 = 98.56` the design's pivotal uncertainty. The config
+reader migrates per-year larval rates to per-timestep on load (`reader.py:100-103`), so the engine
+applies **4.107**, i.e. 1.65% egg survival — not `exp(−98.56) ≈ 1e-43`, which would have made
+herring recruitment exactly zero and the config unrunnable. That alone should have told me the
+number was wrong.
+
+More fundamentally: the term is a step-independent constant applied identically in all three arms,
+so it **cannot mask a relative between-arm difference at any magnitude**. My "pivotal uncertainty"
+was arithmetically incapable of being pivotal, and §5's promise to report it as a finding would
+have reported something impossible.
+
+## 3. A0/A1 would have produced a false positive confirming the hypothesis
+
+Shifting the spawning window also **re-samples SSB**, which has a strong within-year cycle.
+Applying the ±2-step weights to the measured SSB-by-step profile gives spring-weighted SSB +1.8%
+(earlier arm) and +10.3% (later arm) → annual egg production +1.3% and +6.6% after Shepherd
+damping. The later arm gains — **exactly the sign A1 would have read as confirming Polte**. A false
+positive that confirms the hypothesis is worse than a null, and my direction check had no way to
+separate phenology from SSB re-sampling.
+
+## 4. The literature does not transfer to this species
+
+Polte's finding is western Baltic spring spawners (SD 22–24). The model's `sp1` is an **aggregate
+across all Baltic herring management units**, in which the western stock is a few percent; the
+config's own targets file says so. The 25% autumn weight is also not contemporary Baltic ecology,
+and holding it fixed caps the achievable perturbation.
+
+## 5. The wrap defeats A2 even if everything else were fixed
+
+`season_idx = step % n_cols` puts series years 10–19 in the scored final decade of a 50-year run,
+so a warming series' warm tail is never scored. I flagged wrap-vs-clamp as a risk in §7 but did not
+work out which years actually land — the same class of error as everything above.
+
+## What survives
+
+* **The match–mismatch pathway is real.** The claim that herring larvae are never food-limited, and
+  the claim that the LTL forcing cannot express the mechanism, were both **refuted** by the
+  verifiers. Starvation does respond to realised feeding, and the plankton has a seasonal cycle.
+  So the *science question* remains open and interesting; only this test design is dead.
+* **Two engine facts worth keeping:** the season loader's cross-species uniform padding
+  (a trap for any future multi-year vector), and that larval rates are per-year in config but
+  per-timestep in the engine.
+
+## The honest assessment
+
+Four specs, four withdrawals, all caught before implementation. The verification discipline I
+adopted after the first three (read the code, check the literature) genuinely improved this one —
+it was grounded where they were assumed — and it still shipped five criticals. The pattern is that
+I verify the *component I am thinking about* (the herring row of the season matrix) and not the
+*system that consumes it* (the loader's treatment of the other eight species).
+
+The corrective is not another spec. It is to stop designing features and run **one experiment at a
+time**, where the artifact is a measurement rather than a design: shift the window in a single-year
+file, measure what moves, and let the result decide whether any design is warranted. That is what
+A0 was trying to be, wrapped in four sections of commitments it had not earned.
