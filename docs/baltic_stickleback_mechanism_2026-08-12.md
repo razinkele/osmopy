@@ -82,31 +82,81 @@ Herring's diet is likewise stable in its dominant prey (Mesozooplankton 62.4/62.
 its only notable moves are in trace items (Diatoms +11.9%, Microzooplankton +7.3% in the later
 arm, from bases of 2.6% and 3.4% of intake).
 
-**So H1 is refuted on both limbs — starvation and diet.** Neither species' realised feeding changes
-materially, and their overlap does not move. Note also that **neither eats the other**: no fish
+**So *compositional* competition is refuted** — neither species' realised prey proportions change
+materially, and their overlap does not move. (This was originally written as "H1 refuted on both
+limbs"; see the RETRACTION below — proportions are scale-free and cannot test *quantitative*
+competition.) Note also that **neither eats the other**: no fish
 prey appears in either diet, so the interaction is not predatory between them either.
 
-## Leading hypothesis after both refutations: an equilibrium shift, not a trophic response
+## RETRACTION 2026-08-13: the equilibrium-shift hypothesis was wrong, and "refuted on both limbs" over-claimed
 
-What the three measurements jointly show for stickleback: diet composition unchanged, starvation
-unchanged, predation **up in both arms** (+12–20%), biomass **down 20.6% in one arm and up 20.7%
-in the other**. No single trophic pathway produces a symmetric-in-magnitude, opposite-in-sign
-response with unchanged feeding.
+I published an "alternative equilibria" hypothesis earlier today and am withdrawing it within the
+hour. Two errors, both mine, both in the reasoning rather than the data.
 
-That pattern is more consistent with the perturbation moving the system between **alternative
-equilibria** than with a mechanistic dose–response — and this repo has prior history with Baltic
-bistability (the cod_east bistability harness). Stickleback is the natural candidate: its juvenile
-predation rate is ~13–15/yr, so its equilibrium is held by a very tight mortality–recruitment
-balance that a small timing change could tip either way.
+### Error 1 — I mischaracterised the response shape
 
-**Decisive next test (cheap):** the A0 run already used 5 seeds. Extract stickleback's
-**per-seed** final-decade values rather than the midpoint. Bistability predicts a **wide,
-possibly bimodal** spread across seeds within an arm; a smooth mechanistic response predicts a
-tight one. That distinguishes the hypotheses without a new simulation.
+I wrote that the swing was "symmetric-in-magnitude, opposite-in-sign" and that "no single trophic
+pathway produces that". Read the actual numbers:
+
+| | shift −2 | shift 0 | shift +2 | step | step |
+|---|---|---|---|---|---|
+| stickleback (t) | 64,357 | 81,025 | 97,820 | **+16,668** | **+16,795** |
+
+That is **monotonic and very nearly perfectly linear** — the two steps agree to 0.8%. A linear
+dose–response is the signature of an *ordinary* mechanism. Bistability would show discrete jumps,
+hysteresis, or seed-dependent bimodality, and shows none of them here. Describing a straight line
+as an anomaly requiring alternative equilibria was a misreading, and the "cheap decisive test"
+I proposed off the back of it (per-seed spread across the 5-seed A0 run) would have spent ~40 min
+of compute rejecting a hypothesis I could have reasoned away for free.
+
+Herring, for contrast, moves 2,690,044 / 2,547,746 / 2,292,245 — monotonic but **convex**
+(−142,298 then −255,501), so the two species are not simply mirror images.
+
+### Error 2 — my H1 test could not detect the competition mechanism that matters
+
+Schoener overlap and diet-percentage composition are **scale-free**. If herring biomass falls, herring
+removes less zooplankton in total, leaving more per stickleback; stickleback then eats **more in
+absolute terms, in identical proportions**. Composition unchanged, overlap unchanged — and
+competition is exactly what happened.
+
+So the diet run refuted **compositional** competition (a niche-shift mechanism). It said nothing
+about **quantitative** competition, which is the standard one. "H1 refuted on both limbs" claimed
+more than the metrics can carry, and is withdrawn.
+
+I also argued past evidence already sitting in my own table. Stickleback **juvenile** starvation is
+0.111 / 0.1061 / 0.1022 — **+4.6% when it loses 20%, −3.7% when it gains 20%**: monotonic, and in
+precisely the direction competition predicts. I called it "non-monotonic" only by averaging it
+against the *adult* limb, a different life stage under a different food-limitation regime.
+
+### What survives, and the corrected hypothesis
+
+My argument that starvation *mortality* is too small to carry a 20% swing still holds: 0.106
+against juvenile predation of 13.46 is under 1% of juvenile mortality. But that argues the pathway
+is **growth and fecundity**, not that competition is absent — more food → faster growth → earlier
+maturity and higher per-capita fecundity → more recruits.
+
+That means the "production side" I inferred and the competition hypothesis I "refuted" are **one
+explanation, not two competing ones**. I set them against each other and scored a refutation
+against my own leading candidate.
+
+**Leading hypothesis: quantitative food competition acting through growth and fecundity.**
+
+### Pre-registered reading for the next run (fixed before results)
+
+* **Supported** — total zooplankton biomass rises monotonically across shift −2 → shift +2,
+  tracking herring's decline, **and** stickleback per-capita intake rises with it.
+* **Refuted** — zooplankton is materially flat while stickleback biomass swings ±20%.
+
+Measurements, all from the same three 30-yr runs: (1) total zooplankton biomass by group per arm;
+(2) stickleback per-capita intake / mean weight-at-age; (3) stickleback recruits and eggs.
+
+Caution carried forward: a linear response is consistent with an ordinary mechanism but does not
+identify *which* one. "Linear ⇒ competition" must not become the next claim I retract — the
+zooplankton and intake measurements are what would earn it.
 
 ## What failed, and what to measure next
 
-~~The diet output did not parse…~~ **Resolved 2026-08-13 — see the UPDATE above. H1 is now refuted on both limbs.**
+~~The diet output did not parse…~~ **Resolved 2026-08-13 — see the UPDATE above. Compositional competition is refuted; quantitative competition is untested and now leading.**
 
 Next measurement, in order of value:
 
