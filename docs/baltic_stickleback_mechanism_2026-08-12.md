@@ -173,3 +173,99 @@ Next measurement, in order of value:
 
 No production change; this is diagnostic work on the existing configuration. All three arms
 certify (`docs/baltic_herring_phenology_a0_2026-08-12.md`).
+
+---
+
+# Run 3 (2026-08-13): quantitative competition REFUTED on the growth limb
+
+Pre-registered in `1e3c566` before running. 3 arms × 30 yr × seed 42, final-decade means.
+
+## Verdict against the pre-registered rule: REFUTED
+
+The rule required **both** limbs. One is refuted outright; the other turns out not to be
+measurable with existing outputs, so the rule as written cannot be satisfied. Reporting it as
+refuted, not "partially tested".
+
+### Limb 1 — per-capita growth: refuted by decomposition, not inference
+
+| | shift −2 | shift 0 | shift +2 | Δ(−2) | Δ(+2) |
+|---|---|---|---|---|---|
+| stickleback **biomass** | 66,439 | 85,544 | 97,930 | −22.33% | +14.48% |
+| stickleback **abundance** | 1.796e10 | 2.307e10 | 2.634e10 | −22.15% | +14.18% |
+| stickleback **mean weight** (B/N) | 3.699e−6 | 3.708e−6 | 3.718e−6 | −0.23% | +0.26% |
+| stickleback **mean size** L | 7.5066 | 7.5137 | 7.5187 | −0.09% | +0.07% |
+
+Abundance tracks biomass to within 0.3 percentage points, while per-capita weight moves 0.5%
+across the whole range. **The biomass swing is entirely an abundance change.** Individual
+stickleback are not growing better in the arm where the stock gains 20% — there are simply more
+of them. The growth → maturity → fecundity pathway is dead.
+
+### Limb 2 — zooplankton standing stock: NOT MEASURABLE (tooling gap)
+
+`biomass()` returns only focal species plus the two forced predators
+(`GreySeal`, `Cormorant`); resource groups are absent, and `osmose/schema/output.py` defines no
+resource-biomass output key at all. Measuring LTL standing stock requires instrumenting
+`ResourceState` directly. **Recording this as a tooling gap** — it is a reasonable thing to want
+and the schema cannot express it today.
+
+## New finding: herring and stickleback respond through ORTHOGONAL channels
+
+This is the strongest constraint the run produced, and it is not about competition.
+
+| | abundance Δ(−2)/Δ(+2) | per-capita weight Δ(−2)/Δ(+2) | mean size L |
+|---|---|---|---|
+| **herring** | +4.06% / +0.69% (flat, non-monotonic) | **+3.96% / −8.40%** | 13.396 / 13.303 / 13.037 (mono ↓) |
+| **stickleback** | **−22.15% / +14.18%** (mono ↑) | −0.23% / +0.26% (flat) | flat |
+
+Herring's biomass loss is its **individuals getting smaller** — abundance barely moves while mean
+weight falls 8.4% and mean length declines monotonically. Stickleback's is **purely numerical**.
+
+Same perturbation, two species, orthogonal response channels: it hits herring's *growth* and
+stickleback's *recruitment*, by different routes. Herring's channel is at least consistent with an
+ordinary match–mismatch reading (spawning later ⇒ larvae meet a worse feeding window ⇒ poorer
+growth). Stickleback's is not yet explained by anything measured.
+
+## A candidate I checked and discarded before publishing it
+
+Egg mortality looked compelling: stickleback egg predation falls monotonically across the arms
+(1.233 / 1.088 / 1.049), and treating total egg M as an exposure integral gave **−22.04% predicted
+vs −22.15% observed** on the shift−2 limb — a 0.11 pp match.
+
+**It is arithmetic coincidence.** `mortality_rates_from_counts`
+(`osmose/engine/simulate.py:880`) documents that reported rates are **sums of per-step rates over
+the saving interval**, while an egg exists for a **single step** (`first_feeding_age_dt=1`). So
+`exp(−annual_sum)` is the wrong integral. Per-egg exposure is one step's rate:
+
+| n steps carrying eggs | survival ratio Δ(−2) | Δ(+2) |
+|---|---|---|
+| 10 | −2.46% | +0.67% |
+| 14 (spring 8 + autumn 6) | −1.76% | +0.48% |
+| 24 | −1.03% | +0.28% |
+
+One to two percent, not twenty, under **every** plausible window width — and the window is
+translated rather than widened across arms, so the step count is identical in all three. The
+shift+2 limb also missed by 2× (+6.93% predicted vs +14.18%), which should have been the tell:
+a mechanism matching one limb to 0.11 pp and missing the other by half explains half the pattern
+plus a coincidence.
+
+## Status: the mechanism is UNRESOLVED
+
+Refuted so far: compositional competition; growth-mediated quantitative competition; starvation
+mortality (<1% of juvenile mortality); egg survival; bistability. Predation moves up in *both*
+arms, so it tracks the calibration optimum rather than the trend.
+
+What survives is the bare fact plus one constraint: herring spawning timing changes stickleback
+**recruitment numbers** monotonically, through a route that is not diet, not growth, and not egg
+survival. I am not going to name a sixth mechanism without measuring one.
+
+Next measurement, and the only one I would trust: **stickleback egg production (numbers spawned)
+and SSB per arm**, which separates "more eggs laid" from "more eggs surviving" — the latter is now
+excluded. If egg production tracks the swing, the question becomes what drives stickleback SSB,
+and the answer is likely a feedback loop rather than a herring-driven forcing.
+
+## Caveat on the linearity claim
+
+This run is 30 yr × seed 42 and gives −22.33% / +14.48% — visibly **asymmetric**. The A0 numbers
+(50 yr × 5 seeds) gave −20.6% / +20.7%, whose steps agree to 0.8%. Monotonicity holds in both, so
+the bistability retraction stands, but **the near-perfect linearity is a 5-seed 50-yr property**
+and nothing further should be built on the "steps agree to 0.8%" framing.
