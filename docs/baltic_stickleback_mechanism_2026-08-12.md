@@ -60,13 +60,53 @@ Note also the sheer scale of stickleback juvenile predation — **~13–15 per y
 herring's 0.67. Stickleback is being cropped extremely hard in this configuration, so its
 equilibrium is highly sensitive to small changes in either predation or recruitment.
 
+## UPDATE 2026-08-13: diet extraction fixed — H1 refuted on BOTH limbs
+
+The earlier `StopIteration` was a defect in my script, not the engine: `diet_matrix()` returns a
+**wide** frame with `{predator}_{prey}` column names, not a stacked frame with a species column,
+and species names containing underscores (`cod_west`) require longest-prefix parsing. Fixed and
+re-run over the same three arms (30 yr, seed 42, final-decade means):
+
+| stickleback prey | shift −2 | shift 0 | shift +2 | Δ(−2) | Δ(+2) |
+|---|---|---|---|---|---|
+| Mesozooplankton | 39.76 | 40.25 | 39.90 | −1.2% | −0.9% |
+| Diatoms | 28.78 | 28.63 | 28.87 | +0.5% | +0.8% |
+| Microzooplankton | 28.08 | 27.68 | 27.82 | +1.4% | +0.5% |
+| Macrozooplankton | 2.82 | 2.88 | 2.85 | −2.0% | −1.2% |
+| Benthos | 0.53 | 0.52 | 0.53 | +0.6% | +2.2% |
+
+**Herring/stickleback dietary overlap (Schoener index): 0.4907 / 0.4967 / 0.4985** — constant to
+within 1.6% across arms in which stickleback biomass swings ±20.7%.
+
+Herring's diet is likewise stable in its dominant prey (Mesozooplankton 62.4/62.8/62.6, ±0.6%);
+its only notable moves are in trace items (Diatoms +11.9%, Microzooplankton +7.3% in the later
+arm, from bases of 2.6% and 3.4% of intake).
+
+**So H1 is refuted on both limbs — starvation and diet.** Neither species' realised feeding changes
+materially, and their overlap does not move. Note also that **neither eats the other**: no fish
+prey appears in either diet, so the interaction is not predatory between them either.
+
+## Leading hypothesis after both refutations: an equilibrium shift, not a trophic response
+
+What the three measurements jointly show for stickleback: diet composition unchanged, starvation
+unchanged, predation **up in both arms** (+12–20%), biomass **down 20.6% in one arm and up 20.7%
+in the other**. No single trophic pathway produces a symmetric-in-magnitude, opposite-in-sign
+response with unchanged feeding.
+
+That pattern is more consistent with the perturbation moving the system between **alternative
+equilibria** than with a mechanistic dose–response — and this repo has prior history with Baltic
+bistability (the cod_east bistability harness). Stickleback is the natural candidate: its juvenile
+predation rate is ~13–15/yr, so its equilibrium is held by a very tight mortality–recruitment
+balance that a small timing change could tip either way.
+
+**Decisive next test (cheap):** the A0 run already used 5 seeds. Extract stickleback's
+**per-seed** final-decade values rather than the midpoint. Bistability predicts a **wide,
+possibly bimodal** spread across seeds within an arm; a smooth mechanistic response predicts a
+tight one. That distinguishes the hypotheses without a new simulation.
+
 ## What failed, and what to measure next
 
-The **diet output did not parse** (`diet_matrix()` returned a frame whose species column the script
-could not locate — `StopIteration` on all three arms). That is the measurement that would have
-tested competition directly, by showing whether stickleback's realised prey composition shifts when
-herring larvae arrive earlier or later. Its absence is why H1 is refuted only on the starvation
-limb, not on both.
+~~The diet output did not parse…~~ **Resolved 2026-08-13 — see the UPDATE above. H1 is now refuted on both limbs.**
 
 Next measurement, in order of value:
 
