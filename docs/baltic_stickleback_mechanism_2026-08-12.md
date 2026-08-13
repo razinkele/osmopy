@@ -363,8 +363,14 @@ standing-stock snapshot, not an integral.
 | **age-0 bin** — ALL fish [0,1) yr | 8.399e10 | 8.561e10 | 8.801e10 | **−1.89%** | **+2.81%** |
 | **`abundance()`** — fish ≥0.5 yr | 1.796e10 | 2.307e10 | 2.634e10 | **−22.15%** | **+14.18%** |
 
-**The population produces essentially the same number of young in every arm; the entire swing is
-in how many get past 0.5 yr.** Both numbers are raw output — no ratios, no assumptions.
+**The swing is concentrated in survival through early life, not in egg production.** Both numbers
+are raw output — no ratios, no assumptions.
+
+> **Amended 2026-08-13 after Run 6.** This originally read "the population produces essentially the
+> same number of young in every arm". That over-claimed: the young-of-year pool's own response is
+> **sampling-dependent** — −1.9%/+2.8% snapshot-averaged here, −8.4%/+9.7% step-summed in Run 6 (see
+> Run 6's sampling note). The `abundance()`-vs-age-0-bin comparison stands as two raw numbers; the
+> word "flat" does not.
 
 Age composition of the ≥0.5 yr pool is stable, so past the cutoff everything scales uniformly:
 
@@ -431,3 +437,83 @@ First positive identification after six refutations: **the swing is survival to 
 with the number of young produced held flat.** What *drives* that survival is a new question and I
 have not measured it — and the cutoff finding is significant enough that it deserves a decision
 before more compute goes in.
+
+---
+
+# Run 6 (2026-08-13): mortality in [0,0.5) yr attributed by cause — PREDATION
+
+Death **counts**, not rates: counts are additive and carry no exponentials, so summing them over
+the final decade is safe in the way `exp(-annual_sum)` was not. Hook is the engine's own
+`_collect_by_life_stage` (`simulate.py:1834`) — called every step after all mortality and *before*
+reproduction increments ages and clears `is_egg`, which is the engine's convention for binning
+deaths by the stage held at time of death (#142). Eggs split out of the youngest window, since they
+live one step and would otherwise swamp the post-egg signal.
+
+## Answer: predation, and it carries more than all of the change
+
+Share of the **change** in YOY [0,0.5) yr deaths (the pre-registered discriminator — not share of
+the total, since a cause can dominate the count and be irrelevant to the difference):
+
+| cause | % of total deaths | Δ(−2) | Δ(+2) | **share of CHANGE** |
+|---|---|---|---|---|
+| **Predation** | 86.3% | +8.64% | −7.43% | **+112.3% / +116.6%** |
+| Additional | 12.4% | −6.75% | +7.44% | −12.6% / −16.8% (offsetting) |
+| Starvation | 1.2% | +2.00% | −0.94% | +0.4% / +0.2% |
+
+Predation over-explains the change; `Additional` partially cancels it. Starvation is 0.2–0.4% of
+the change — dead again, now on a counts basis rather than a rate one.
+
+## Per-capita mortality: only the earliest stages move monotonically
+
+Deaths per fish-step, same hook, same steps for numerator and denominator:
+
+| stage | shift −2 | shift 0 | shift +2 | Δ(−2) | Δ(+2) | |
+|---|---|---|---|---|---|---|
+| **YOY predation** | 0.3133 | 0.2643 | 0.2229 | +18.56% | **−15.64%** | **monotonic ↓ (−29% range)** |
+| egg predation | 0.4049 | 0.3525 | 0.3292 | +14.86% | −6.60% | monotonic ↓ |
+| juv [0.5,1) total | 0.0519 | 0.0489 | 0.0503 | +6.17% | +2.84% | non-monotonic |
+| adult total | 0.0589 | 0.0570 | 0.0601 | +3.38% | +5.35% | non-monotonic |
+
+**Only the two earliest stages show a monotonic per-capita change, and both fall in the same
+direction.** The older windows show the familiar U-shape — the calibration sits at a local
+optimum, so any perturbation makes things slightly worse. Predation pressure on early life stages
+falling by ~29% is the first quantity in this investigation that moves monotonically with the
+perturbation *and* is large enough to carry a ±20% swing.
+
+## This is the empirical vindication of retiring the rate outputs
+
+Counts say YOY predation falls **monotonically** (0.3133 / 0.2643 / 0.2229). The rate output said
+`Predation/Juvenil` **rose in both arms** (15.11 / 13.46 / 15.05). Same underlying quantity,
+opposite shape. The retirement in Run 5 was not merely cautious — the rates were giving the wrong
+answer.
+
+## Sampling note, and a cross-run disagreement I am not hiding
+
+Run 5 (snapshot) put the `[0,1)` yr pool at −1.89%/+2.81%; Run 6 (step-sum) puts it at
+−8.86%/+8.08%. Same sign, different magnitude. Mechanical cause: `output.recordfrequency.ndt=24`
+with window *averaging*, collected **after** reproduction (ages incremented, new eggs appended),
+against this hook summing **before** it — so age-bin membership at the boundaries and egg inclusion
+both differ.
+
+Which to trust for what: **Run 6's sampling is the commensurate one for per-capita mortality**,
+because deaths and abundance come from the same hook over the same steps. The per-capita numbers
+above are sound regardless of how the cross-run gap resolves. Run 5's raw two-number comparison
+also stands; only its "flat" wording is withdrawn (amended above).
+
+## An observation, explicitly not a mechanism
+
+Predation on stickleback early stages is **positively** correlated with herring biomass across arms
+(herring 2.69e6 / 2.55e6 / 2.29e6 against YOY predation 0.3133 / 0.2643 / 0.2229). That is the
+**opposite** of prey-switching, which would predict more herring drawing predators *away* from
+stickleback. It is a real constraint on any candidate mechanism.
+
+The predator is **unidentified** and I am not naming one. The direct test is the `*_stickleback`
+columns of `diet_matrix()` with **no threshold filter** — my earlier diet run filtered at >0.05% of
+intake, which would discard exactly the kind of predation that is negligible to a large predator's
+diet while decisive for a small prey's recruitment. That attribution by predator is the next
+measurement, and it is one run.
+
+## Status
+
+Attribution answered: **predation, on eggs and young-of-year, monotonic and large enough to carry
+the swing.** Which predator is a separate question, unmeasured.
