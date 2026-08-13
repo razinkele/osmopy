@@ -347,3 +347,87 @@ Refuted to date: compositional competition · growth-mediated quantitative compe
 mortality · egg survival · bistability · **egg production**. Six refutations, no positive
 identification. That is a legitimate state to stop at, and preferable to naming a seventh
 mechanism the data has not earned.
+
+---
+
+# Run 5 (2026-08-13): age-resolved abundance — POSITIVE IDENTIFICATION, and a convention that reframes the series
+
+3 arms × 30 yr × seed 42. Units scrutiny done before reading anything off it: age bins are
+**years** (`age_dt // n_dt_per_year`, `simulate.py:1033-1045`), and the array is an instantaneous
+standing-stock snapshot, not an integral.
+
+## The finding, from two raw numbers that need no decomposition
+
+| | shift −2 | shift 0 | shift +2 | Δ(−2) | Δ(+2) |
+|---|---|---|---|---|---|
+| **age-0 bin** — ALL fish [0,1) yr | 8.399e10 | 8.561e10 | 8.801e10 | **−1.89%** | **+2.81%** |
+| **`abundance()`** — fish ≥0.5 yr | 1.796e10 | 2.307e10 | 2.634e10 | **−22.15%** | **+14.18%** |
+
+**The population produces essentially the same number of young in every arm; the entire swing is
+in how many get past 0.5 yr.** Both numbers are raw output — no ratios, no assumptions.
+
+Age composition of the ≥0.5 yr pool is stable, so past the cutoff everything scales uniformly:
+
+| age | shift −2 | shift 0 | shift +2 |
+|---|---|---|---|
+| [0.5,1) | 47.51% | 47.70% | 47.75% |
+| 1 | 38.45% | 39.82% | 38.88% |
+| 2 | 11.17% | 10.22% | 10.67% |
+| 3 | 2.87% | 2.27% | 2.69% |
+
+Per the pre-registration this is the **recruitment-side** branch — but located more precisely than
+that branch anticipated: not egg production (Run 4 refuted it, eggs move *opposite*), and not the
+number of young produced (flat here). It is **how many survive to the cutoff age**.
+
+## The convention that made this series confusing — and that reframes every biomass number in it
+
+`abundance()` and `biomass()` apply `output.cutoff.age` (Java convention: exclude young-of-year;
+**0.5 yr for every Baltic species**, `_collect_biomass_abundance`, `simulate.py:836-855`).
+`abundance_by_age()` does **not** — it bins every school, eggs included. That is the entire reason
+the by-age total (9.77e10) and `abundance()` (2.31e10) disagree, and I could not have interpreted
+either without checking.
+
+**Consequence for the whole series:** every biomass and abundance figure here — the A0 report, the
+certification tables — counts only fish **older than six months**. "stickleback biomass +20.7%"
+means "+20.7% of fish ≥0.5 yr". That is intended and correct, but it is nowhere stated in the docs,
+and it is exactly the quantity this investigation has been chasing.
+
+Worth flagging for whoever touches fixtures next: the cutoff applies to every absolute-biomass
+assertion in the repo. Nothing is wrong today — `CLAUDE.md` already warns that fixtures asserting
+absolute Baltic biomass need re-deriving when the config changes — but the convention is now
+written down where the next person will look.
+
+## What I am NOT claiming
+
+The `[0,0.5)` pool contains egg schools. Annual egg production is ~8.45e11 spread over roughly 14
+spawning steps with eggs living one step, so order 3.5–6e10 of the 7.46e10 pool may be eggs. Any
+ratio through that pool is standing-stock over an **egg-contaminated** denominator:
+
+* `[0.5,1) / [0,0.5)` = 0.1131 / 0.1475 / 0.1668 (−23.33% / +13.06%, monotonic). Report as an
+  **index**, not as survival through the first half-year.
+* An `egg → YOY` ratio has eggs in numerator *and* denominator. It is not interpretable and I am
+  not reporting a number for it.
+
+The oddity that keeps me honest here: eggs move +7.82%/−4.62% while the pool containing them moves
++1.14%/+1.11% — non-monotonic, matching neither. Something compensates and I cannot see what, which
+is precisely why the ratio does not get called a survival rate.
+
+## Two earlier conclusions that must be corrected
+
+1. **The Run-3 exclusion of egg survival is UNSUPPORTED, not overturned.** It rested on annual-sum
+   mortality rates, which this run shows are not cohort integrals: `exp(−13.46)` = 1.4e−6 against an
+   observed ~0.15 through the first half-year — **five orders of magnitude out**. The rate-based
+   argument simply does not work. The direct measurement does not reinstate egg survival either,
+   because the age-0 bin being flat puts the action *after* the young-of-year pool exists. Two
+   different reasons, and neither is "egg survival is refuted".
+2. **The Run-4 tension was never a contradiction between measurements.** Juvenile predation rising
+   in the arm where conversion rises looked contradictory only because I was treating an annual sum
+   of per-step rates as a stage survival. It is not one. **Retiring the annual-sum mortality rates
+   as evidence for cohort survival** anywhere in this series.
+
+## Status
+
+First positive identification after six refutations: **the swing is survival to the 0.5 yr cutoff,
+with the number of young produced held flat.** What *drives* that survival is a new question and I
+have not measured it — and the cutoff finding is significant enough that it deserves a decision
+before more compute goes in.
