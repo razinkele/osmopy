@@ -269,3 +269,81 @@ This run is 30 yr × seed 42 and gives −22.33% / +14.48% — visibly **asymmet
 (50 yr × 5 seeds) gave −20.6% / +20.7%, whose steps agree to 0.8%. Monotonicity holds in both, so
 the bistability retraction stands, but **the near-perfect linearity is a 5-seed 50-yr property**
 and nothing further should be built on the "steps agree to 0.8%" framing.
+
+---
+
+# Run 4 (2026-08-13): egg production and SSB per arm — PRODUCTION REFUTED
+
+Pre-registered in the script header before running. 3 arms × 30 yr × seed 42, final-decade
+mean annual values. Egg counts captured by wrapping `reproduction()` and summing the schools it
+appends — the **final** count after every gate (RV / ceiling / thermal / depensation), which
+avoids having to be right about which gates bind on sp7.
+
+## Verdict: the change does NOT enter at egg production
+
+| | shift −2 | shift 0 | shift +2 | Δ(−2) | Δ(+2) | mono |
+|---|---|---|---|---|---|---|
+| **eggs** stickleback | 9.109e11 | 8.448e11 | 8.058e11 | **+7.82%** | **−4.62%** | ↓ |
+| **SSB** stickleback | 68,395 | 87,956 | 100,700 | −22.24% | +14.48% | ↑ |
+| **N** stickleback | 1.796e10 | 2.307e10 | 2.634e10 | −22.15% | +14.18% | ↑ |
+| **N/eggs** stickleback | 0.01972 | 0.02731 | 0.03269 | −27.80% | +19.71% | ↑ |
+
+**Egg production is anti-correlated with abundance.** The arm with the *most* eggs (shift−2,
+9.11e11) has the *fewest* stickleback (1.80e10); the arm with the *fewest* eggs has the most fish.
+This is stronger than the "eggs flat" case I pre-registered — indifference would have been
+consistent with production being irrelevant, whereas anti-correlation rules it out outright.
+
+So the swing enters **downstream of egg production**.
+
+## Why eggs run backwards: over-compensation, and it is internal
+
+`ssb_half` for sp7 is 7,245 while SSB sits at 68,395–100,700 — **9.4× to 13.9× above
+half-saturation**, deep in the declining limb of a Shepherd curve
+(`eggs = c·SSB / (1 + (SSB/h)^β)`, `reproduction.py:76-78`). For SSB ≫ h this is
+≈ `c·h^β·SSB^(1−β)`, so **β > 1 makes eggs fall as SSB rises**. The two arm-intervals imply
+β = **1.299** and **1.349** independently — consistent, and over-compensatory.
+
+`eggs/SSB` moves +38.66% / −16.69%. Per the pre-registration this is **explicitly not evidence of
+an external driver** — it is what a saturating/over-compensating curve does when SSB moves, and
+reading a mechanism into it would repeat the error that killed the egg-survival candidate.
+
+## Herring contrast sharpens it
+
+| | Δ(−2) | Δ(+2) |
+|---|---|---|
+| herring **N/eggs** | +1.41% | +0.66% (flat) |
+| stickleback **N/eggs** | −27.80% | +19.71% |
+
+Herring's egg-to-standing-stock conversion does not move; stickleback's does. Same perturbation,
+and only one species' conversion responds — consistent with the orthogonal-channels finding in
+Run 3 (herring responds through *weight*, stickleback through *numbers*).
+
+## The tension this leaves — stated, not smoothed over
+
+`N/eggs` rises 19.71% in shift+2, yet **juvenile predation is *higher* in that arm than at base**
+(15.11 / 13.46 / 15.05). Higher predation with higher egg-to-stock conversion is contradictory on
+its face. Two reasons neither number pins the stage:
+
+1. **`N/eggs` is not a survival rate.** `N` is standing abundance across all ages; eggs is annual
+   production. The ratio carries time units and moves with age structure and longevity, not only
+   with per-capita survival. More recruits shifting the age distribution would move it with no
+   survival rate changing at all.
+2. **The juvenile rates are annual SUMS of per-step rates** — the same convention that killed the
+   egg candidate. Read as a cohort integral, `exp(−13.46)` ≈ 1.4e−6 and *both* arms would sit ~80%
+   below base, which is absurd against a −22%/+14% biomass swing. So that number is not
+   interpretable as stage survival without knowing the juvenile stage duration in steps.
+
+**Honest scope: the change enters downstream of egg production; which post-egg stage is not
+pinned, and the two available measurements disagree in sign while neither is a clean survival
+estimate.**
+
+What would resolve it: an age-resolved abundance series
+(`output.abundance.byage.enabled`) separating "more recruits" from "shifted age structure" — and it
+needs the same units scrutiny applied before anything is read off it.
+
+## Running tally
+
+Refuted to date: compositional competition · growth-mediated quantitative competition · starvation
+mortality · egg survival · bistability · **egg production**. Six refutations, no positive
+identification. That is a legitimate state to stop at, and preferable to naming a seventh
+mechanism the data has not earned.
