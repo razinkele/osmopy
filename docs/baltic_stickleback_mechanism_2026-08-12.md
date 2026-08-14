@@ -517,3 +517,72 @@ measurement, and it is one run.
 
 Attribution answered: **predation, on eggs and young-of-year, monotonic and large enough to carry
 the swing.** Which predator is a separate question, unmeasured.
+
+---
+
+# Run 7 (2026-08-14): who eats stickleback — NULL, and the herring candidate is refuted
+
+`dietMatrix` (per-predator %) and `predatorPressure` (absolute tonnes), both with **no threshold
+filter**, final-decade means. The threshold in the earlier diet run (>0.05% of intake) was the
+specific concern; removing it does not rescue the measurement, for a different reason given below.
+
+## The herring candidate is refuted — both halves of its prediction fail
+
+It predicted herring's pressure on stickleback falls monotonically **while** stickleback stays
+negligible in herring's diet. The second half holds; the first does not.
+
+| | shift −2 | shift 0 | shift +2 | |
+|---|---|---|---|---|
+| herring pressure (t/step) | 172.15 | 180.51 | 171.80 | **non-monotonic** (−4.63% / −4.83%) |
+| herring's share of change | — | — | — | +4.0% / −2.2% (negligible) |
+| stickleback as % of herring diet | 0.0338% | 0.0378% | 0.0379% | flat, and tiny |
+
+Herring's pressure peaks at the *unshifted* arm and falls in **both** directions — the
+calibration-optimum U-shape, not a driver. The idea was post-hoc, it was tested rather than
+asserted, and it is dead.
+
+## But the predator is still unidentified — the measurement is confounded
+
+Everything in this output tracks stickleback abundance rather than explaining it:
+
+| | Δ(−2) | Δ(+2) | |
+|---|---|---|---|
+| stickleback biomass | −22.33% | +14.48% | |
+| **total pressure** | −12.03% | **+22.87%** | same direction as its own prey |
+| pressure per tonne of prey | +13.26% | +7.33% | **non-monotonic** (U-shape) |
+
+Three reasons this cannot identify a driver:
+
+1. **Direction.** Total pressure rises where stickleback is *more* abundant. More prey ⇒ more
+   tonnage eaten. That is predators responding to abundance, not causing it.
+2. **Uniformity.** All eight predators move the same way (pikeperch, cod_east, perch, flounder,
+   cod_west, sprat, smelt all monotonic ↑; herring alone U-shaped), and every predator's stickleback
+   *diet share* also rises monotonically. If one predator were driving the swing, its pressure should
+   move **differently** from the rest. A uniform shared response is the signature of a common cause —
+   prey availability — not of a culprit.
+3. **Wrong stage, quantitatively.** This is the limitation stated before the run, now confirmed:
+   tonnage is dominated by adult stickleback, and the two stages move in **opposite** directions.
+
+   | predation deaths (counts, Run 6) | Δ(−2) | Δ(+2) |
+   |---|---|---|
+   | YOY — carries the monotonic signal | +8.64% | **−7.43%** |
+   | adult — carries the tonnage | −14.90% | **+31.31%** |
+
+   `predatorPressure` is in tonnes, so it sees the adult channel and is blind to the young-of-year
+   channel where Run 6 located the mechanism.
+
+## What would actually answer it
+
+Numbers eaten, resolved by predator **and** prey life stage. Neither shipped output provides it:
+`predatorPressure` is biomass-pooled across stages and `dietMatrix` is a per-predator percentage of
+the same pooled quantity. It needs the predation kernel instrumented to record prey counts by
+predator × prey stage — the same technique used for Run 6's death counts, applied one level deeper.
+
+## Running tally
+
+Refuted: compositional competition · growth-mediated quantitative competition · starvation mortality
+· egg survival · bistability · egg production · **herring as the early-stage predator**.
+
+Established: the swing is carried by **predation on eggs and young-of-year**, monotonic and large
+enough (per-capita YOY predation −29% across arms, Run 6). **Which predator delivers it is
+unresolved**, and the shipped outputs cannot resolve it.
