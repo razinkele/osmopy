@@ -586,3 +586,105 @@ Refuted: compositional competition · growth-mediated quantitative competition �
 Established: the swing is carried by **predation on eggs and young-of-year**, monotonic and large
 enough (per-capita YOY predation −29% across arms, Run 6). **Which predator delivers it is
 unresolved**, and the shipped outputs cannot resolve it.
+
+---
+
+# Run 8 (2026-08-14): predation kernel instrumented — **HERRING IS THE PREDATOR**, and Run 7's refutation is retracted
+
+Prey **counts** by predator × prey life stage, from the production predation path. 3 arms × 30 yr,
+seed 42, final **1 year** recorded (Python path is ~65 s/step; the 3-year version was ~2.3 h).
+
+Method notes that mattered:
+* **`predation.py` is not production.** Its `predation_for_cell` is a test harness — the docstring
+  says "Production code uses mortality.mortality() instead". The live path is `mortality.py`'s
+  interleaved Tier-2 predation. Instrumenting the wrong module would have recorded **zeros**.
+* **Exact attribution without reimplementation.** `_apply_predation_for_school` applies predation
+  for ONE predator against all prey in a cell and records deaths in `n_dead`, so diffing
+  `n_dead[:, PREDATION]` around one call attributes every death to that predator. Engine code runs
+  unmodified between snapshots.
+* **Background predators exist.** GreySeal and Cormorant are internal species 9–10. My first
+  attempt crashed on them — and `predatorPressure` has **no columns for them at all**, so Run 7 was
+  predator-incomplete as well as stage-blind. (In the event neither takes a measurable share.)
+
+## Result: herring dominates stickleback early-stage mortality
+
+**Stickleback EGGS — numbers eaten:**
+
+| predator | shift −2 | shift 0 | shift +2 | % of total | mono | share of CHANGE |
+|---|---|---|---|---|---|---|
+| **herring** | 8.098e10 | 5.678e10 | 5.499e10 | **62.85%** | **↓** | **+87.0% / +89.3%** |
+| sprat | 2.582e10 | 2.321e10 | 2.707e10 | 25.69% | — | +9.4% / −192.3% |
+| smelt | 1.076e10 | 9.685e9 | 5.514e9 | 10.72% | ↓ | +3.8% / +208.0% |
+
+**Stickleback YOY [0,0.5) yr — numbers eaten:**
+
+| predator | shift −2 | shift 0 | shift +2 | % of total | mono | share of CHANGE |
+|---|---|---|---|---|---|---|
+| **herring** | 1.264e11 | 1.051e11 | 9.573e10 | **54.88%** | **↓** | **+315.3% / +56.8%** |
+| sprat | 3.327e10 | 4.106e10 | 3.427e10 | 21.44% | — | −115.5% / +41.2% |
+| smelt | 1.136e10 | 1.774e10 | 1.535e10 | 9.26% | — | −94.5% / +14.5% |
+| pikeperch | 1.241e10 | 1.172e10 | 1.481e10 | 6.12% | — | +10.2% / −18.7% |
+| flounder | 1.034e10 | 1.071e10 | 8.173e9 | 5.59% | — | −5.5% / +15.4% |
+
+**Herring takes ~55–63% of stickleback's early-stage deaths by number, and is the only predator
+whose take declines monotonically across the arms.** Shares above 100% are real: the other
+predators move non-monotonically and partly offset, so herring's absolute change exceeds the net.
+
+This is the **CULPRIT** branch of the pre-registration, not the diffuse one.
+
+## The asymmetry — and why six earlier measurements missed it
+
+Stickleback is **0.034–0.038% of herring's diet** (Run 7) while herring inflicts **55–63% of
+stickleback's early-stage mortality**. A rounding error to the predator; the dominant term for the
+prey. Herring biomass is ~30× stickleback's, so a negligible diet fraction of a very large stock is
+an enormous absolute take from a small one.
+
+That asymmetry is exactly why the diet-composition work (Runs 1–2) found nothing: the interaction
+is **predation, not competition**, and it is invisible in herring's own diet percentages. The
+constant Schoener overlap (0.4907/0.4967/0.4985) was never evidence against an interaction — it was
+measuring the wrong interaction.
+
+## RETRACTION: Run 7's refutation of the herring candidate was wrong
+
+Run 7 concluded "the herring candidate is refuted — both halves of its prediction fail", because
+herring's `predatorPressure` was non-monotonic (172.15 / 180.51 / 171.80 t/step). That verdict is
+**withdrawn**. `predatorPressure` is in **tonnes**, and stickleback eggs and YOY weigh almost
+nothing individually, so the output is dominated by adult stickleback and cannot see the channel
+the mechanism runs through. Measured in **numbers at the stages that matter**, herring's take is
+both dominant and monotonic.
+
+The irony is on the record: I raised herring as a post-hoc idea after Run 6, correctly flagged it
+as untested, then "refuted" it with an output incapable of testing it — and said so in the same
+document that noted the output was stage-blind. **The limitation I documented should have blocked
+the verdict I drew.**
+
+## The causal chain, end to end
+
+Herring spawns later → herring biomass falls (2.69e6 / 2.55e6 / 2.29e6 t, −10.0% at shift +2) →
+herring's predation on stickleback eggs and YOY falls (−8.9% YOY, nearly proportional) →
+more stickleback survive to the 0.5 yr cutoff (Run 5: age-0 pool roughly steady, survivors
++14.3%) → stickleback biomass rises +20.7%.
+
+At shift −2 the response is **more** than proportional (herring biomass +5.6%, egg predation
++42.6%), so biomass alone does not explain that limb — herring's own size structure shifts too
+(mean length 13.396 / 13.303 / 13.037, monotonic), which changes size-selective access to tiny
+prey. Not measured here; flagged, not claimed.
+
+## Caveats
+
+* **1-year recording window**, not the final decade. All arms share seed 42 and identical
+  trajectory structure, so the cross-arm contrast is controlled, but small predators carry more
+  noise and absolute values are not comparable to earlier runs.
+* **Backend switch mid-run** (Numba spin-up → Python recording) consumes RNG differently, so this
+  window is not bit-identical to an all-Numba run. Identical treatment across arms.
+* Consistency check passed: total YOY predation moves +3.5% / −8.6% here against Run 6's
+  +8.64% / −7.43% over the final decade — same sign and shape from independent instrumentation.
+
+## Final tally
+
+Refuted: compositional competition · growth-mediated competition · starvation mortality · egg
+survival · bistability · egg production. **Withdrawn: Run 7's refutation of herring.**
+
+**Identified: herring predation on stickleback eggs and young-of-year.** Dominant (55–63% of
+early-stage deaths), monotonic across arms, carrying the change, and asymmetric — 0.038% of the
+predator's diet, decisive for the prey.
