@@ -1,4 +1,4 @@
-"""Generate the Baltic model calibration & status report (.docx), 2026-08-07."""
+"""Generate the Baltic model calibration & status report (.docx), 2026-08-07 (upd. 2026-08-15)."""
 
 from pathlib import Path
 
@@ -72,7 +72,8 @@ for r in t.runs:
     r.font.color.rgb = RGBColor(0x1F, 0x38, 0x64)
 sub = doc.add_paragraph()
 sr = sub.add_run(
-    "Status as of 2026-08-07 · OSMOSE Python engine (osmopy), 9-species Baltic configuration"
+    "Report of 2026-08-07, updated 2026-08-15 · OSMOSE Python engine (osmopy), 9-species "
+    "Baltic configuration"
 )
 sr.italic = True
 para("Marine Research Institute, Klaipėda University")
@@ -105,6 +106,11 @@ bullets(
         "prey-axis defect in the diet diagnostic was found and repaired (it had been reporting "
         "every predator as 100% piscivorous), along with mortality-rate, header-parsing and "
         "diet-normalisation parity fixes. The test suite stands at ~4,390 tests.",
+        "A trophic control on stickleback was identified and quantified: herring predation on "
+        "stickleback eggs and young-of-year accounts for 55–63% of their early-stage mortality, "
+        "while stickleback is only 0.038% of herring's diet. Shifting herring's spawning window "
+        "by ±2 timesteps moves stickleback biomass by ∓20%. The finding is diagnostic — no "
+        "parameter was changed, and the configuration re-certifies unchanged at 5 of 5 assessed.",
         "Literature watch (2026-07-28 alert): upstream OSMOSE has been static at v4.4.1 for "
         "three consecutive months — the 4.4.x parity port now has a stable target. The most "
         "actionable new paper is Voss & Quaas (2026) on temperature-dependent stock–recruitment "
@@ -306,8 +312,63 @@ para(
     "Bogdanov, 2019) is a smaller instance of the same limitation."
 )
 
+# ================= HERRING-STICKLEBACK =================
+h("6. A trophic control on stickleback: herring predation on early life stages", 1)
+para(
+    "A phenology experiment — translating herring's spawning window by ±2 timesteps (±1 month), "
+    "holding the total spawning effort constant — moved stickleback biomass by ∓20.7%, inversely "
+    "to herring and at roughly twice its magnitude, while sprat stayed flat (±0.4%). Eight "
+    "measurement rounds were needed to explain it. The mechanism is predation, not competition."
+)
+table(
+    ["Stage of stickleback", "Herring's share of deaths", "Direction across arms"],
+    [
+        ("Eggs", "62.9% (by number)", "falls monotonically as herring spawns later"),
+        ("Young-of-year (0–0.5 yr)", "54.9% (by number)", "falls monotonically"),
+        ("Stickleback in herring's own diet", "0.038%", "flat — a rounding error to the predator"),
+    ],
+)
+para(
+    "The asymmetry is the reason this took eight rounds. Herring biomass is roughly 30× "
+    "stickleback's, so a negligible fraction of the predator's intake is the dominant term in the "
+    "prey's mortality. Every measure built on diet composition — dietary overlap, diet "
+    "percentages, predation pressure in tonnes — is structurally incapable of seeing it, and each "
+    "produced a false negative in turn."
+)
+para("The causal chain, end to end:")
+bullets(
+    [
+        "Herring spawns later → herring biomass falls ~10% → its predation on stickleback eggs "
+        "and young-of-year falls (−8.9% on young-of-year, close to proportional) → more "
+        "stickleback survive past the 0.5-year reporting cutoff → stickleback biomass +20.7%.",
+        "Six alternative hypotheses were tested and refuted along the way: dietary competition, "
+        "growth-mediated competition, starvation mortality, egg survival, alternative equilibria, "
+        "and egg production. Egg production in fact moves opposite to abundance, because "
+        "stickleback's stock–recruitment curve is over-compensatory (Shepherd β ≈ 1.3) with "
+        "spawning stock 9–14× above half-saturation.",
+    ]
+)
+note(
+    "Three interim conclusions were published and retracted during this investigation, each "
+    "because a verdict was drawn from an output that could not have detected the effect being "
+    "tested. Two output conventions that caused this are now documented in the repository: "
+    "biomass and abundance series exclude fish below an age cutoff (0.5 yr for all Baltic "
+    "species), and mortality-rate outputs are sums of per-step rates rather than cohort "
+    "integrals. Full record: docs/baltic_stickleback_mechanism_2026-08-12.md."
+)
+para(
+    "Management relevance, stated with its caveat: stickleback's certified biomass sits only 6.9% "
+    "of the way from the floor to the ceiling of its reference envelope, so its headroom is "
+    "strongly asymmetric — 38% to the floor against 517% to the ceiling. The controlling term now "
+    "lives in herring's calibration rather than any stickleback parameter, so anything that "
+    "raises herring biomass pushes stickleback toward its floor. The ±20% swing is nonetheless "
+    "absorbed by the envelope, but that is weak reassurance: stickleback's envelope spans a "
+    "factor of ten because the target is a low-confidence literature estimate, not a stock "
+    "assessment. Real 20% structure exists that the certification gate cannot resolve."
+)
+
 # ================= ENGINE =================
-h("6. Engine and cross-engine fidelity", 1)
+h("7. Engine and cross-engine fidelity", 1)
 bullets(
     [
         "Diet diagnostic defect repaired (#146): the prey axis of dietMatrix/predatorPressure "
@@ -327,7 +388,7 @@ bullets(
 )
 
 # ================= NEXT STEPS =================
-h("7. Open items and next steps", 1)
+h("8. Open items and next steps", 1)
 table(
     ["Priority", "Item", "Rationale"],
     [
@@ -373,7 +434,7 @@ table(
 )
 
 # ================= LITERATURE =================
-h("8. Literature watch (from the LITERATURE folder)", 1)
+h("9. Literature watch (from the LITERATURE folder)", 1)
 para(
     "Monthly automated alerts run against scite, ICES/HELCOM, CRAN, ecopath.org and the "
     "osmose-model GitHub org; the latest is dated 2026-07-28 (window 2026-06-23 → 2026-07-28)."
