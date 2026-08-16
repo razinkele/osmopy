@@ -688,3 +688,81 @@ survival · bistability · egg production. **Withdrawn: Run 7's refutation of he
 **Identified: herring predation on stickleback eggs and young-of-year.** Dominant (55–63% of
 early-stage deaths), monotonic across arms, carrying the change, and asymmetric — 0.038% of the
 predator's diet, decisive for the prey.
+
+---
+
+# Run 9 (2026-08-16): predation by predator SIZE CLASS — size-gate REFUTED, and the shift−2 excess is not mass-action
+
+Same instrumentation as Run 8, additionally binning by predator length (1 cm), prey length (0.25 cm)
+and predator/prey size ratio. 3 arms × 30 yr, seed 42, final 1 year.
+
+## The size-gate hypothesis is refuted
+
+Run 8 left the shift−2 limb unexplained (herring biomass +5.6%, egg predation +42.6%) and I proposed
+herring's declining mean length as the cause: `sizeratio.min = 5.0` means a herring of length *L*
+can only take prey shorter than *L/5*, and herring's mean length falls 13.396 → 13.037 cm. The test:
+do the prey taken sit near that ceiling?
+
+**They do not.**
+
+| predator/prey size ratio | share of herring's take |
+|---|---|
+| 5–6 (at the ceiling) | 6.4% |
+| 6–8 | 9.1% |
+| 8–12 | 12.1% |
+| 12–20 | 13.7% |
+| **20–50** | **24.7%** |
+| **50–150** | **31.8%** |
+| ≥150 | 2.1% |
+
+Only **15.5%** of the take sits below ratio 8; **58.6%** is at ratio ≥20, i.e. prey an order of
+magnitude smaller than the ceiling allows. The prey lengths say the same: **72.9% of what herring
+takes is ≤0.75 cm**, and only **4.5% exceeds 2.5 cm**, against a ceiling of 2.6–2.7 cm. The length
+change moves that ceiling by **0.072 cm** — across a region containing almost no predation.
+
+Per the pre-registration this is the **NOT SUPPORTED** branch. The conjecture is dead; it is the
+fourth of this investigation to fall, and I am not substituting another.
+
+## What the size-class attribution does show
+
+Herring's predation on stickleback eggs is spread across **its entire size range, 0–28 cm**, with no
+concentration — the largest 1 cm bin is 9.4% of the take, and bins from 10–18 cm each contribute
+6–9%. Young-of-year predation is similarly broad.
+
+**This is the management-relevant result, and it is a negative one:** because every herring size
+class participates roughly in proportion to its abundance, no size-selective measure on herring
+(mesh size, minimum landing size) would differentially relieve predation on stickleback. The
+coupling runs through herring's *total* abundance, not through any particular cohort.
+
+Predator ranking is unchanged from Run 8 — herring 1.62e11 early-stage prey, sprat 6.4e10, smelt
+2.7e10, pikeperch 1.2e10, flounder 1.1e10.
+
+## The residual: the coupling is NOT proportional to herring biomass
+
+Normalising herring's egg take by the eggs actually produced (which differ across arms):
+
+| | shift −2 | shift 0 | shift +2 |
+|---|---|---|---|
+| per-egg predation rate by herring | 0.0889 | 0.0672 | 0.0682 |
+| change vs base | **+32.3%** | — | **+1.5%** |
+| herring biomass change | +5.6% | — | −10.0% |
+| ratio (mass-action would be 1.0×) | **5.8×** | — | **−0.2×** |
+
+Simple mass action predicts the per-egg rate to track herring biomass one-for-one. It does not, in
+**either** direction: at shift −2 the rate rises nearly six times faster than biomass, and at
+shift +2 biomass falls 10% while the rate barely moves. The response is also **non-monotonic**,
+unlike every other quantity in this investigation.
+
+So herring's *abundance* is not the whole coupling. The obvious remaining candidate is **temporal
+overlap** — moving herring's spawning window changes when herring are feeding relative to when
+stickleback eggs are present — but that is **unmeasured**, and after four refuted conjectures it
+gets named as a candidate and nothing more. Testing it means resolving predation on stickleback eggs
+*within* the year, by timestep, against the two species' spawning curves.
+
+## Caveats
+
+* 1-year recording window (Python path ~55 s/step). The egg-predation figures reproduce Run 8's
+  exactly because they come from the same instrumentation and window — this is **not** independent
+  confirmation of them.
+* Small size bins carry real noise; several show swings of >100% on <1% of the take. The conclusions
+  above rest on the aggregate distribution, not on individual bins.
