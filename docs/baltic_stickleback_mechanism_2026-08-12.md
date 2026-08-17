@@ -901,3 +901,66 @@ shifts — which would plausibly act asymmetrically between arms.
 * `Hbar` uses biomass as a proxy for ingestion capacity; true capacity also carries the
   species ingestion-rate constant, which is common to all arms and so cancels in these ratios.
 * The 8 cm threshold is a cross-check drawn from Run 9's size distribution, not a config boundary.
+
+---
+
+# Run 12 (2026-08-17): functional response — PARTIAL. Combined model explains shift −2; shift +2 half-closed.
+
+Run 11 explained the shift −2 limb spatially and left shift +2 open (exposure flat at −1.32%
+against a −9.16% target). This tests the last candidate I named: dilution of the egg share by
+herring's alternative prey.
+
+The hypothesis is concrete in this engine rather than hand-waved —
+`eaten_from_prey = eaten_total × (prey_eligible / available)` allocates predation in proportion to
+accessible biomass, so an egg's share drops when herring's other accessible prey rises.
+
+## An error in my own predictor, corrected
+
+I wrote the predicted per-egg probability as `H × share`, with `share = E/(E+Z)`. That
+**double-counts the eggs**: the target is already normalised per egg. Correctly,
+
+    eggs eaten ≈ H_ingest · E/(E+Z)   ⇒   per-egg probability ≈ H/(E+Z)
+
+and E cancels. E/Z here is 4.25e−4, so `H/(E+Z) ≈ H/Z`. The script's printed `combined` column is
+wrong and is superseded by the figures below.
+
+## Result
+
+| | Δ(−2) | Δ(+2) |
+|---|---|---|
+| **target per-egg predation probability** | **+23.11%** | **−9.16%** |
+| H alone (Run 11 exposure) | +27.68% | −1.32% |
+| Z, alternative prey in egg cells | +2.92% | +2.95% |
+| **H/(E+Z), corrected model** | **+24.05%** | **−4.15%** |
+| residual gap | **−0.94 pp** | **−5.01 pp** |
+
+**Shift −2 is now explained essentially exactly** — the combined spatial-exposure + prey-dilution
+model lands within **0.94 pp** of the target, improved from 4.57 pp with exposure alone.
+
+**Shift +2 is roughly half explained** — the gap narrows from 7.84 pp to 5.01 pp. So the functional
+response contributes, but does not close it.
+
+Note *why* it only half-helps: Z rises by ~2.9% in **both** arms (+2.92% / +2.95%), the familiar
+calibration-optimum shape yet again. A term that moves identically in both directions cannot
+generate an asymmetric response, so it damps both limbs equally rather than discriminating between
+them.
+
+## Where the mechanism stands after twelve rounds
+
+**Established:** stickleback biomass is controlled by herring predation on its eggs and
+young-of-year (Runs 6, 8) — 55–63% of early-stage deaths, against stickleback being 0.038% of
+herring's diet. The gain is **not** size-gated (Run 9) and **not** a timing effect (Run 10). It is
+**spatial exposure modulated by prey dilution**: `H/(E+Z)` measured in the egg-containing cells
+reproduces the shift −2 response to within 1 pp.
+
+**Open:** ~5 pp of the shift +2 response. That is now a second-order discrepancy on one limb, not a
+missing mechanism — and I have exhausted every candidate I named. I am not inventing a seventh.
+
+## Caveats
+
+* Z is raw resource biomass; the kernel also filters by size ratio and per-group accessibility.
+  Those filters are identical across arms, which is what makes the cross-arm ratio meaningful, but
+  `H/(E+Z)` remains a proxy for the true accessible pool.
+* One seed (42), 3-year window, single 30-yr trajectory per arm.
+* The six resource groups move nearly identically (+2.2% to +3.8%), so no single prey group drives
+  the dilution term.
