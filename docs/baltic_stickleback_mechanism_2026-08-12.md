@@ -766,3 +766,70 @@ gets named as a candidate and nothing more. Testing it means resolving predation
   confirmation of them.
 * Small size bins carry real noise; several show swings of >100% on <1% of the take. The conclusions
   above rest on the aggregate distribution, not on individual bins.
+
+---
+
+# Run 10 (2026-08-17): temporal overlap — REFUTED, structurally. Residual reported UNEXPLAINED.
+
+Within-year resolution of herring's predation on stickleback eggs, 3 arms × 30 yr, seed 42, final
+year (24 steps = one full seasonal cycle). Decomposition fixed before running:
+`total eaten = Σ_t present[t]·rate[t]`, with the timing contribution isolated as
+`I = Σ_t (present_t/Σpresent)·(rate_t/mean_rate)`.
+
+## Refuted — and the reason is structural, not statistical
+
+**Stickleback eggs exist only in steps 9–14 of 24, and that window is IDENTICAL in all three arms.**
+Only herring's spawning file was changed, so stickleback's spawning curve never moves. Temporal
+overlap could therefore only operate through how herring's feeding varies *within* those six fixed
+steps — and it barely does:
+
+| | shift −2 | shift 0 | shift +2 |
+|---|---|---|---|
+| overlap index `I` | 1.0625 | 1.0040 | 1.0604 |
+| timing contribution | **+5.83%** | — | **+5.61%** |
+
+The timing term is small **and nearly identical in both directions**, so it cannot discriminate
+between arms whose per-egg rates move +37.7% and −6.1%. Note also the familiar shape: the
+calibrated arm sits at a local *minimum* of overlap (1.0040 against ~1.06 both ways), the same
+calibration-optimum artefact seen in Runs 3 and 6.
+
+Per the pre-registration this is the **NOT SUPPORTED** branch. Temporal overlap is the **fifth**
+conjecture of this investigation to fall.
+
+## A defect in my own index, disclosed
+
+`present[t]` was recorded in the step hook, which runs **after** mortality — so the ratio I computed
+is `eaten / survivors`, not `eaten / initial`, and it inflates when predation is heavy. Correcting
+approximately via `p = r/(1+r)`:
+
+| | shift −2 | shift +2 |
+|---|---|---|
+| level term as computed | +30.12% | −11.06% |
+| level term corrected | **+23.11%** | **−9.16%** |
+| herring abundance | +3.14% | −3.05% |
+| disproportion vs mass action | **7.4×** | **3.0×** |
+
+The correction shrinks the effect but does not remove it: the per-egg predation probability still
+moves 3–7× faster than herring abundance. The conclusion survives the defect, but the index as
+published in the script was not the quantity I intended, and the corrected figures are the ones to
+quote.
+
+## Status of the residual: UNEXPLAINED
+
+After ten measurement rounds the mechanism is identified and the *magnitude* of one limb is not.
+Established: herring predation on stickleback eggs and young-of-year is the control (Runs 6, 8), it
+is not gated by predator size (Run 9), and it is not a timing effect (this run). What remains
+unexplained is why the per-egg predation **probability** moves 3–7× faster than herring abundance.
+
+Candidates not tested: spatial co-location of herring and stickleback eggs, and a functional-response
+/ prey-switching effect (herring taking proportionally more eggs when its zooplankton supply
+changes). **I am not queuing a sixth conjecture**, as pre-registered. Anyone resuming this should
+note that five plausible mechanisms have already been refuted here, and that the honest current
+state is: *the direction and dominant predator are established; the gain is not.*
+
+## Caveats
+
+* 1-year window; per-step rates within the six-step egg window are visibly noisy (e.g. shift −2 at
+  step 11 is 0.4427 against 0.2432 at base), so the timing index rests on six numbers per arm.
+* Herring abundance here is summed standing abundance (+3.14%/−3.05%), a different quantity from the
+  biomass figures used earlier (+5.6%/−10.0%); the disproportion holds against either.
