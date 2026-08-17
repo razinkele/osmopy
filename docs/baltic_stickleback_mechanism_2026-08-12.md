@@ -833,3 +833,71 @@ state is: *the direction and dominant predator are established; the gain is not.
   step 11 is 0.4427 against 0.2432 at base), so the timing index rests on six numbers per arm.
 * Herring abundance here is summed standing abundance (+3.14%/−3.05%), a different quantity from the
   biomass figures used earlier (+5.6%/−10.0%); the disproportion holds against either.
+
+---
+
+# Run 11 (2026-08-17): spatial co-location — SUPPORTED on the shift −2 limb, unexplained on shift +2
+
+Run 10 left this residual: the per-egg predation probability moved **+23.11% / −9.16%** while
+stock-wide herring moved only ~±3%. Predation in OSMOSE is computed **per cell**, so an egg's
+encounter rate depends on herring density in its *own* cell. Measured at `_mortality`, i.e. on state
+**before** that step's predation (measuring after would deplete eggs exactly in the high-herring
+cells and bias toward a false negative). Numba stays on, so this recorded **3 years**, not 1.
+
+## A first pass I discarded
+
+I initially weighted herring by **abundance**. That was wrong: 99.3% of herring's numbers are age-0
+larvae which do ~1.9% of the egg predation (Run 9's size table), and shifting herring's spawning
+moves *when* that cohort exists — so the index swung 6× for reasons unrelated to who eats eggs, and
+put the highest exposure in the arm with the *lowest* predation. Ingestion capacity scales with
+**biomass**. Rerun with biomass weighting; the abundance-weighted numbers are discarded, not
+interpreted.
+
+## Result
+
+Exposure decomposes exactly as `Hbar = (mean herring per occupied cell) × C`, verified numerically.
+
+| | Δ(−2) | Δ(+2) |
+|---|---|---|
+| **per-egg predation probability (target)** | **+23.11%** | **−9.16%** |
+| `Hbar`, all herring (biomass) | **+27.68%** | −1.32% |
+| `Hbar`, herring ≥8 cm | **+23.47%** | +5.85% |
+| — of which local density | +17.31% | −10.56% |
+| — of which co-location `C` | +8.84% | +10.34% |
+| stock-wide herring biomass | +5.60% | −10.00% |
+
+**The shift −2 limb is explained.** This was the anomalous one — a 7.4× disproportion against stock
+abundance. Egg-weighted herring exposure rose **+27.68%** (all herring) or **+23.47%** (≥8 cm, the
+sizes that do the eating) against a target of +23.11%. The ≥8 cm figure matches to **0.36
+percentage points**. Both components contribute: herring is more *concentrated* per occupied cell
+(+17.31%, well above the +5.60% stock growth) *and* better co-located with eggs (+8.84%).
+
+**The shift +2 limb is not explained.** Exposure is roughly flat (−1.32%) against a −9.16% target, a
+7.8 pp gap, and the ≥8 cm cross-check has the **wrong sign** (+5.85%). Whatever suppresses predation
+in that arm is not spatial exposure.
+
+Note `C` rises in **both** arms (+8.84% / +10.34%) — the calibrated arm again sits at a local
+*minimum*, the same artefact as Runs 3, 6 and 10. So co-location is not a clean monotonic driver on
+its own; on the shift −2 limb it acts together with local concentration.
+
+The number of cells containing eggs is unchanged (37.8 / 38.3 / 38.2, ±1.3%), so this is not eggs
+being spread differently — it is herring moving relative to a fixed egg distribution.
+
+## Status
+
+First conjecture in five to be **supported**, and only on one limb. Honest summary of the whole
+chain: the control is herring predation on stickleback eggs and young-of-year (Runs 6, 8); it is not
+size-gated (Run 9) and not a timing effect (Run 10); the shift −2 gain is **spatial** — herring
+concentrates and co-locates with eggs (this run); the shift +2 limb remains unexplained.
+
+Not pursuing the shift +2 gap further without direction. The remaining untested candidate is a
+functional-response effect — herring taking proportionally more eggs as its zooplankton supply
+shifts — which would plausibly act asymmetrically between arms.
+
+## Caveats
+
+* One seed (42), 3-year window. The 0.36 pp agreement on the ≥8 cm shift −2 figure is a single
+  coincidence on one arm and should not be read as precision.
+* `Hbar` uses biomass as a proxy for ingestion capacity; true capacity also carries the
+  species ingestion-rate constant, which is common to all arms and so cancels in these ratios.
+* The 8 cm threshold is a cross-check drawn from Run 9's size distribution, not a config boundary.
