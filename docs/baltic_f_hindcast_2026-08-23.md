@@ -51,7 +51,7 @@ be decisively positive for the blocking stocks before any SSB result is meaningf
 | herring | 0.976 | 0.973–0.981 | yes | PASS — decisively positive |
 | sprat | 0.988 | 0.986–0.991 | yes | PASS — decisively positive |
 | cod_east | 0.996 | 0.996–0.997 | yes | PASS — decisively positive |
-| cod_west | 0.964 | 0.939–0.973 | no (reported-only; near-flat factor series, 0.90–1.21×) | strong, for context |
+| cod_west | 0.963 | 0.939–0.973 | no (reported-only; near-flat factor series, 0.90–1.21×) | strong, for context |
 
 **Instrument gate PASSES decisively.** All three blocking stocks clear rho ≥ 0.97 on every one
 of the 5 seeds; cod_west (reported-only, not a gate condition) is also strong at 0.94–0.97. The
