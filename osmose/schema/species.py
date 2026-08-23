@@ -413,6 +413,7 @@ SPECIES_FIELDS: list[OsmoseField] = [
         ),
         category="fishing",
         indexed=True,
+        required=False,
     ),
     OsmoseField(
         key_pattern="mortality.fishing.recruitment.age.sp{idx}",
