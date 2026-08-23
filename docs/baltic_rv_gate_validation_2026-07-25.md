@@ -5,6 +5,15 @@ gate is now enabled for cod (sp0, `mean_preserving`) on the committed config; th
 the gated-vs-pre-gate comparison and the go/no-go for the cod E/W disaggregation
 Phase 1.
 
+> **Status 2026-08-23 — historical, two supersessions.** (1) This ran on the **aggregated-cod**
+> config (sp0, `mean_preserving`), before the E/W disaggregation; production now runs `raw_cap`
+> on **cod_east (sp8)** with `ref=150`, gate disabled on sp0 (= cod_west). (2) The tolerance
+> lineage this doc seeded (`docs/baltic_rv_gate_mechanism_ab_2026-08-02.md`, band 0.331–0.449)
+> was voided by the 2026-08-09 O₂→benthos adoption; the current band — factor ≈0.409–0.558, tight
+> edge on the **floor** — is derived in `docs/baltic_rv_ref_sweep_2026-08-09.md`. Where the
+> improvement-avenues spec cites this doc for "the established asymmetric tolerance", its own
+> 2026-08-09 annotation overrides that citation.
+
 ## Result — 50 yr × 5 seeds, worst-case-across-seeds (`baltic_stability_certify.py`)
 
 | species | pre-gate final-decade mean | **RV-gated final-decade mean** | verdict |

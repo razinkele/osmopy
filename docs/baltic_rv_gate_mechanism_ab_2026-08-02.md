@@ -5,6 +5,19 @@
 **Motivated by:** the Phase 0 success criterion (#145, spec §5), which requires a mechanism
 demonstration rather than an assumption from configuration.
 
+> **Status 2026-08-23 — measured pre-adoption; the operating point below is void and the headline
+> asymmetry now points the wrong way.** The bottom-O₂ → benthos K adoption (2026-08-09,
+> `docs/baltic_hypoxia_certification_2026-08-09.md`) moved cod_east's gated equilibrium from
+> 82,968 t (2.4% under the 85 kt ceiling) to 65,209 t (≈8% over the 60 kt floor), and gate-off
+> from 167,377 t (1.97×) to 137,302 t (1.61×). Two conclusions **survive**: the gate is
+> load-bearing for cod_east's envelope PASS, and `ref`-sweep interpolation is the valid way to
+> derive a tolerance. What is **void**: the admissible factor band 0.331–0.449, the "2.4% under
+> the ceiling" headroom, and the asymmetry headline ("~10× more room to run stronger than
+> weaker") — post-adoption the *tight edge is the floor*, and the re-derived band is
+> `ref` ≈115–161 / factor ≈0.409–0.558 with the shipped 0.438 sitting 6.7% above the floor-side
+> edge. See `docs/baltic_rv_gate_rederivation_2026-08-09.md` and
+> `docs/baltic_rv_ref_sweep_2026-08-09.md`.
+
 ## Question
 
 Is the RV recruitment gate that is already on master for `sp8` (cod_east) doing anything, and if so
