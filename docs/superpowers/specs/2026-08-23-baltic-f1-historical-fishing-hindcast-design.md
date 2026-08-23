@@ -110,8 +110,9 @@ pre-registered gating rule in §4.
 * No production-config change: every file currently in `data/baltic/` stays byte-identical;
   certification stays climatological and constant-F (config default `nyear=15`; the certifier
   runs 50 yr via `--years`, unchanged). The hindcast is an opt-in overlay. This stage **adds**
-  five new, unreferenced CSVs under `data/baltic/reference/` (fixtures that `copytree` the
-  directory inherit them inertly — no config key points at them).
+  four new, unreferenced CSVs under `data/baltic/reference/` (sp0/sp1/sp2/sp8 — flounder gets
+  none per decision 5; fixtures that `copytree` the directory inherit them inertly — no config
+  key points at them).
 * No recalibration against the hindcast; no tuning of any parameter to improve skill.
 * No calendar-convention engine feature (`year`-column CSV + `start.year` + offset for the F
   path) — deferred to Stage 2's unified time policy. Stage 1 encodes the calendar by row order

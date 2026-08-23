@@ -112,40 +112,59 @@ _FISHING_SCENARIOS = [
   `mortality.fishing.rate.byDt.byAge.file.sp0` → `mortality.fishing.rate.bydt.byage.file.sp0`;
   `mortality.fishing.catches.byYear.file.sp0` → `mortality.fishing.catches.byyear.file.sp0`;
   `mortality.fishing.catches.byDt.byAge.file.sp0` → `mortality.fishing.catches.bydt.byage.file.sp0`.
-  Then grep the whole test suite for remaining producers of camelCase fishing keys
-  (`grep -rn "byYear\|byDt" tests/`) — any test that hand-builds these keys and feeds
-  `EngineConfig.from_dict` must be lowercased too (they bypass the reader, which is the blind
-  spot this task closes).
+  Then grep for remaining producers of camelCase FISHING keys only
+  (`grep -rn "mortality.fishing.*byYear\|mortality.fishing.*byDt" tests/`) — any test that
+  hand-builds these keys and feeds `EngineConfig.from_dict` must be lowercased too (they bypass
+  the reader, which is the blind spot this task closes). Two files the broader grep would
+  surface must stay camelCase — do NOT touch them: `tests/test_engine_timeseries.py` feeds
+  `load_timeseries` (its own camelCase lookups at `osmose/engine/timeseries.py:421-434` are out
+  of scope here), and `tests/test_engine_additional_mortality.py` exercises the larva
+  byDt detection (`config.py:1526-1542`), also intentionally untouched.
 
-- [ ] **Step 6: Add the f-string-built keys to the validation allowlist.** In
-  `osmose/engine/config_validation.py`, `_ALLOWLIST_PY_HONORED` (alphabetical, lines ~47-111),
-  add:
+- [ ] **Step 6: Add the AST-invisible keys to the validation allowlist AND its frozen-snapshot
+  guard.** Two guard tests police the allowlist and both must be updated in this same commit:
+  `tests/test_schema_engine_key_parity.py` (accept-set = AST-walked keys ∪
+  `_SUPPLEMENTARY_ALLOWLIST` — NOT the schema registry) and
+  `tests/test_issue_123_known_but_unread_keys.py` (asserts the allowlists equal a deliberately
+  independent `FROZEN_ALLOWLIST_SNAPSHOT` literal, ~149 keys).
+
+  In `osmose/engine/config_validation.py`, `_ALLOWLIST_PY_HONORED` (alphabetical, lines
+  ~47-111), add these FIVE keys:
 
 ```python
-        "mortality.fishing.catches.byyear.file.sp{idx}",
-        "mortality.fishing.rate.bydt.byage.file.sp{idx}",
-        "mortality.fishing.rate.bydt.bysize.file.sp{idx}",
         "mortality.fishing.catches.bydt.byage.file.sp{idx}",
         "mortality.fishing.catches.bydt.bysize.file.sp{idx}",
+        "mortality.fishing.rate.bydt.byage.file.sp{idx}",
+        "mortality.fishing.rate.bydt.bysize.file.sp{idx}",
+        "mortality.fishing.rate.byyear.file.sp{idx}",
 ```
 
-  (sorted into place). Then `grep -n "byYear\|byDt" osmose/engine/config_validation.py` — if any
-  camelCase variants of these five exist, delete them (they can never match a canonicalized
-  key). The AST walker cannot capture these keys because they are f-string-built — that is why
-  the allowlist is the right home (documented CLAUDE.md escape hatch). Do NOT add
-  `mortality.fishing.rate.byyear.file.sp{idx}` here — Task 3 gives it a schema field.
+  (sorted into place). Rationale per key: the bydt keys are `{variant}`-f-string-built
+  (`config.py:2296`) and the walker cannot capture them; `rate.byyear` is read via a
+  caller-arg `key_pattern` inside `_load_per_species_timeseries` (`config.py:451`) — also
+  walker-invisible, and Task 3's schema field for it would otherwise fail the parity gate.
+  Do NOT add `mortality.fishing.catches.byyear.file.sp{idx}` — after Step 4 lowercases
+  `config.py:2319` its literal f-string IS captured by the walker automatically.
+
+  Then `grep -n "byYear\|byDt" osmose/engine/config_validation.py` — delete any camelCase
+  variants found (they can never match a canonicalized key).
+
+  Finally, mirror EVERY addition and deletion into `FROZEN_ALLOWLIST_SNAPSHOT` in
+  `tests/test_issue_123_known_but_unread_keys.py` (same five keys added, same camelCase
+  removals) and update its key-count comment to match the new length.
 
 - [ ] **Step 7: Run the tests**
 
-Run: `.venv/bin/python -m pytest tests/test_engine_fishing_variants.py tests/test_engine_config_validation.py -v`
-Expected: PASS, including `test_camelcase_keys_survive_the_reader` and the warn-mode cleanliness
-test `test_from_dict_warn_mode_clean_on_example_configs` (must stay warning-free).
+Run: `.venv/bin/python -m pytest tests/test_engine_fishing_variants.py tests/test_engine_config_validation.py tests/test_schema_engine_key_parity.py tests/test_issue_123_known_but_unread_keys.py -v`
+Expected: PASS, including `test_camelcase_keys_survive_the_reader`, both allowlist guard files
+(parity + frozen snapshot), and the warn-mode cleanliness test
+`test_from_dict_warn_mode_clean_on_example_configs` (must stay warning-free).
 
 - [ ] **Step 8: Lint and commit**
 
 ```bash
 .venv/bin/ruff check osmose/ tests/
-git add osmose/engine/config.py osmose/engine/config_validation.py tests/test_engine_fishing_variants.py
+git add osmose/engine/config.py osmose/engine/config_validation.py tests/test_engine_fishing_variants.py tests/test_issue_123_known_but_unread_keys.py
 git commit -m "fix(engine): by-year/by-dt fishing keys now resolve from reader-produced configs
 
 The reader lowercases every key; three lookups in config.py were camelCase and
@@ -184,7 +203,8 @@ class TestByYearShortSeriesGuard:
     def _cfg_with_series(self, tmp_path, n_values: int, nyear: int) -> dict:
         f_csv = tmp_path / "f_byyear_sp0.csv"
         f_csv.write_text("\n".join(["0.2"] * n_values) + "\n")
-        cfg = _minimal_engine_config()  # reuse the module's existing minimal-config helper
+        cfg = _base_config(n_sp=1, n_dt=4)  # the module's existing minimal-config helper
+        cfg["_osmose.config.dir"] = str(tmp_path)
         cfg["simulation.time.nyear"] = str(nyear)
         cfg["mortality.fishing.rate.byyear.file.sp0"] = str(f_csv)
         return cfg
@@ -207,9 +227,8 @@ class TestByYearShortSeriesGuard:
             assert len(ec.fishing_rate_by_year[0]) == n
 ```
 
-  If `tests/test_engine_fishing_v2.py` has no minimal-config helper, reuse whatever config
-  fixture its existing by-year test at `:104-114` uses — copy that test's setup verbatim into
-  `_cfg_with_series` rather than inventing a new fixture.
+  (`_base_config(n_sp=1, n_dt=4)` is the module's verified existing helper; keep its import
+  path as the other tests in that file use it.)
 
 - [ ] **Step 2: Run to verify the guard test fails**
 
@@ -272,15 +291,14 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 def test_byyear_fishing_file_is_registry_known() -> None:
     """F1 spec §2c: the by-year F file key must be schema-known so overlay configs
     validate clean."""
-    from osmose.engine.config_validation import build_known_keys
+    from osmose.engine.config_validation import _check, build_known_keys
 
     known = build_known_keys()
-    assert known.matches("mortality.fishing.rate.byyear.file.sp0")
+    assert _check("mortality.fishing.rate.byyear.file.sp0", known) is None
 ```
 
-  If `KnownKeys` has no `.matches` method, check its API first
-  (`grep -n "class KnownKeys" -A 20 osmose/engine/config_validation.py`) and use the membership
-  check `_check` uses — asserting through the same path `validate()` uses, not a private detail.
+  (`KnownKeys` is a bare dataclass with no `.matches`; `_check(key, known) -> None` when the
+  key is known is the same path `validate()` uses — verified.)
 
 - [ ] **Step 2: Run to verify it fails**
 
@@ -306,19 +324,21 @@ Expected: FAIL (key unknown; the pre-fix suggester used to propose the camelCase
     ),
 ```
 
-- [ ] **Step 4: Run schema + validation + UI-adjacent tests; fix any hardcoded registry count**
+- [ ] **Step 4: Run schema + both allowlist-guard test files; update CLAUDE.md's stale count**
 
-Run: `.venv/bin/python -m pytest tests/test_schema.py tests/test_engine_config_validation.py -v`
-Then: `grep -rn "223" tests/ osmose/ CLAUDE.md | grep -i "param\|registry\|field"` — if a test
-asserts the registry size, update the count (223 → 224) in the same commit; CLAUDE.md's "223
-params" line is updated too.
-Expected: PASS after count updates.
+Run: `.venv/bin/python -m pytest tests/test_schema.py tests/test_engine_config_validation.py tests/test_schema_engine_key_parity.py tests/test_issue_123_known_but_unread_keys.py -v`
+Expected: PASS — the parity gate passes because Task 1 Step 6 already allowlisted
+`mortality.fishing.rate.byyear.file.sp{idx}` (schema fields must be engine-accepted, and this
+key is AST-invisible). No test asserts a registry count (verified), but CLAUDE.md's "223
+params" is stale twice over: set it to the actual post-change value —
+`.venv/bin/python -c "from osmose.schema import build_registry; print(len(build_registry().all_fields()))"`
+(263 before this task → 264 after).
 
 - [ ] **Step 5: Lint and commit**
 
 ```bash
 .venv/bin/ruff check osmose/ tests/
-git add osmose/schema/species.py tests/ CLAUDE.md
+git add osmose/schema/species.py tests/test_schema.py CLAUDE.md
 git commit -m "feat(schema): register mortality.fishing.rate.byyear.file.sp{idx}
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
@@ -361,7 +381,8 @@ import importlib.util
 from pathlib import Path
 
 spec = importlib.util.spec_from_file_location(
-    "build_baltic_f_byyear", Path("scripts/build_baltic_f_byyear.py")
+    "build_baltic_f_byyear",
+    Path(__file__).resolve().parent.parent / "scripts" / "build_baltic_f_byyear.py",
 )
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
@@ -408,8 +429,24 @@ def test_herring_factors_are_scale_free():
 def test_build_rows_layout_and_verbatim_spinup():
     rows = m.build_rows("0.3799687566571175", [1.0] * 31)
     assert len(rows) == 50
-    assert rows[:19] == ["0.3799687566571175"] * 19          # verbatim string
-    assert abs(float(rows[19]) - 0.3799687566571175) < 1e-15
+    assert rows[:19] == ["0.3799687566571175"] * 19   # verbatim string
+    assert float(rows[19]) == 0.3799687566571175      # repr round-trips exactly
+
+
+def test_herring_factors_weighting_unequal():
+    """3:1 catch weights, hand-computed value (transposition/indexing canary —
+    herring is a pass/fail stock)."""
+    years = m.YEARS
+    f_flat = {y: 1.0 for y in years}                 # factor 1.0 everywhere
+    f_step = {y: 1.0 for y in years}                 # factor 0.5 outside the anchor
+    for y in years:
+        if not (2018 <= y <= 2022):
+            f_step[y] = 0.5
+    big = {y: 300.0 for y in years}
+    small = {y: 100.0 for y in years}
+    agg = m.herring_factor_series([(f_flat, big), (f_step, small)])
+    assert agg[0] == 0.875                            # (3*1.0 + 1*0.5) / 4, exact in FP
+    assert agg[years.index(2020)] == 1.0              # inside the anchor window
 
 
 def test_no_flounder_in_stocks():
@@ -518,7 +555,9 @@ def read_base_f_strings(fishing_csv: Path) -> dict[int, str]:
 
 def build_rows(base_str: str, factors: list[float]) -> list[str]:
     base = float(base_str)
-    return [base_str] * SPINUP + [f"{base * f:.12g}" for f in factors]
+    # repr() is the shortest round-trip representation: float(repr(x)) == x exactly,
+    # so the scaled rows lose no precision through np.loadtxt.
+    return [base_str] * SPINUP + [repr(base * f) for f in factors]
 
 
 def write_csv(path: Path, rows: list[str], header_lines: list[str]) -> None:
@@ -555,7 +594,7 @@ if __name__ == "__main__":
 - [ ] **Step 4: Run the tests**
 
 Run: `.venv/bin/python -m pytest tests/test_build_baltic_f_byyear.py -v`
-Expected: PASS (7 tests).
+Expected: PASS (8 tests).
 
 - [ ] **Step 5: Lint and commit** (script + tests only — no data yet)
 
@@ -677,7 +716,8 @@ from pathlib import Path
 import numpy as np
 
 spec = importlib.util.spec_from_file_location(
-    "baltic_f_hindcast", Path("scripts/baltic_f_hindcast.py")
+    "baltic_f_hindcast",
+    Path(__file__).resolve().parent.parent / "scripts" / "baltic_f_hindcast.py",
 )
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
@@ -900,13 +940,16 @@ def run_hindcast(seeds=SEEDS) -> dict:
         for arm, mode in (("A", "base"), ("B", "fhist")):
             raw = {**base_cfg, **arm_overrides(mode)}
             res = PythonEngine().run_in_memory(raw, seed=seed)
-            ssb_df, yld_df = res.ssb(), res.yield_biomass()
+            ssb_df, yld_df, bio_df = res.ssb(), res.yield_biomass(), res.biomass()
             for name in SPECIES.values():
                 series = annualize(ssb_df[name].to_numpy(dtype=float), N_YEAR)[SPINUP:]
                 ssb[arm].setdefault(name, []).append(series)
                 if arm == "B":
+                    # spec §3: yield-per-BIOMASS (not SSB) — selectivity admits
+                    # pre-mature fish, so the denominators differ.
                     yld = annualize(yld_df[name].to_numpy(dtype=float), N_YEAR)[SPINUP:]
-                    ypb_inputs.setdefault(name, []).append((yld, series))
+                    bio = annualize(bio_df[name].to_numpy(dtype=float), N_YEAR)[SPINUP:]
+                    ypb_inputs.setdefault(name, []).append((yld, bio))
 
     obs = {"herring": observed_herring_z(SNAP, YEARS)}
     for name, key in OBS_STOCK.items():
@@ -939,15 +982,18 @@ def run_hindcast(seeds=SEEDS) -> dict:
     return report
 
 
+REPORT_PATH = Path("/tmp/f1_hindcast_report.json")
+
 if __name__ == "__main__":
     out = run_hindcast()
-    print(json.dumps(out, indent=2, default=float))
+    REPORT_PATH.write_text(json.dumps(out, indent=2, default=float))
+    print(f"report written to {REPORT_PATH}")
 ```
 
 - [ ] **Step 4: Run the helper tests**
 
 Run: `.venv/bin/python -m pytest tests/test_baltic_f_hindcast_helpers.py -v`
-Expected: PASS (6 tests). Also confirm scipy imports:
+Expected: PASS (5 tests). Also confirm scipy imports:
 `.venv/bin/python -c "from scipy.stats import rankdata; print('ok')"` — if scipy is absent,
 replace `_spearman` with a rank via `np.argsort(np.argsort(x))` (no new dependency).
 
@@ -971,19 +1017,22 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 Run: `uptime` — load must be low (< ~2) and no ESTAS_II job hogging cores. If busy, wait.
 
-- [ ] **Step 2: Find the standard certification invocation**
+- [ ] **Step 2: Run the certification with an explicit --out**
 
-Run: `grep -n "add_argument\|def main" scripts/baltic_stability_certify.py | head -20`
-Then run the standard 50-yr × 5-seed climatological certification exactly as the last
-re-certification did (see `docs/` note from commit `0018ec8`, "re-certify production config",
-for the invocation and its expected table). Run it in the background; it takes ~35 min.
+Run (Bash `run_in_background`, ~35 min):
+`.venv/bin/python scripts/baltic_stability_certify.py --out /tmp/f1_cert_guard.md`
 
-- [ ] **Step 3: Compare.** Expected: the identity set {cod_west, cod_east, herring, sprat,
-  flounder, perch, stickleback} all PASS with per-species figures matching the "off" column of
-  `docs/baltic_rv_gate_rederivation_2026-08-09.md` (cod_east ≈ 65,209 t etc. — same seeds, same
-  horizon; small drift only if upstream commits already moved it, in which case compare against
-  the most recent certification note instead). Any regression → STOP, bisect Tasks 1–3 (they
-  must be behaviorally inert on configs without by-year keys).
+All other flags default to the standard protocol (50 yr, seeds [42, 123, 7, 999, 2024],
+`--params current`, config-default seeding — verified against the certifier's argparse).
+`--out` is MANDATORY: the certifier's default output path is
+`docs/baltic_stability_certification_2026-07-01.md`, a committed historical doc it would
+silently overwrite.
+
+- [ ] **Step 3: Compare** `/tmp/f1_cert_guard.md` against the last committed certification
+  (`docs/baltic_certification_2026-08-14.md` — same protocol, same seeds). Expected: identical
+  verdicts for the identity set {cod_west, cod_east, herring, sprat, flounder, perch,
+  stickleback} and per-species figures matching (cod_east ≈ 65,209 t etc.). Any regression →
+  STOP, bisect Tasks 1–3 (they must be behaviorally inert on configs without by-year keys).
 
 - [ ] **Step 4: Record.** Append one line to the results doc draft (Task 8 creates it): guard
   date, invocation, verdict "unchanged".
@@ -999,8 +1048,9 @@ for the invocation and its expected table). Run it in the background; it takes ~
 - [ ] **Step 1: Machine check** — `uptime` low, no concurrent engine jobs (10 engine runs
   ≈ 2× the certification cost; run in the background).
 
-- [ ] **Step 2: Run** `.venv/bin/python scripts/baltic_f_hindcast.py` (background, capture
-  stdout JSON to a file in `/tmp/`).
+- [ ] **Step 2: Run** `.venv/bin/python scripts/baltic_f_hindcast.py` via Bash
+  `run_in_background` — the harness writes its own report to `/tmp/f1_hindcast_report.json`
+  (no shell redirection needed or allowed).
 
 - [ ] **Step 3: Instrument gate FIRST.** From `report["instrument"]`: for herring, sprat,
   cod_east (blocking), the per-seed Spearman rho of factor vs yield-per-biomass must be clearly
