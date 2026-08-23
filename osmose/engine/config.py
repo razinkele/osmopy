@@ -2286,6 +2286,20 @@ class EngineConfig:
         # Phase 2 fishing features
         fishing_seasonality = _load_fishing_seasonality(cfg, n_sp, n_dt, focal_species_names)
         fishing_rate_by_year = _load_fishing_rate_by_year(cfg, n_sp)
+        # F1 spec §2b: a by-year series shorter than the run would silently fall
+        # back to the base rate mid-run (fishing.py / mortality.py guard on
+        # `year < len(arr)`). Fail at load instead. Longer-than-run is fine
+        # (extra years ignored). Intentionally stricter than Java's fallback.
+        if fishing_rate_by_year is not None:
+            _byyear_nyear = int(cfg.get("simulation.time.nyear", "1"))
+            for _sp_i, _byyear_arr in enumerate(fishing_rate_by_year):
+                if _byyear_arr is not None and len(_byyear_arr) < _byyear_nyear:
+                    raise ValueError(
+                        f"mortality.fishing.rate.byyear.file.sp{_sp_i}: series has "
+                        f"{len(_byyear_arr)} rows but simulation.time.nyear="
+                        f"{_byyear_nyear}; past the series end the engine would "
+                        "silently revert to the base rate. Provide >= nyear rows."
+                    )
         mpa_zones = _parse_mpa_zones(cfg)
         fishing_discard_rate = _load_discard_rates(cfg, focal_species_names, n_sp)
 

@@ -352,3 +352,34 @@ class TestDiscards:
         # 40% of total should be discards
         np.testing.assert_allclose(discards_dead / total, 0.4, rtol=1e-10)
         np.testing.assert_allclose(fishing_dead / total, 0.6, rtol=1e-10)
+
+
+# ===========================================================================
+# 2.7 — By-Year Series Guard (Fail-Fast on Short Series)
+# ===========================================================================
+
+
+class TestByYearShortSeriesGuard:
+    """A by-year F series shorter than the run must fail at load, not silently
+    fall back to base F mid-run (B1 audit / F1 spec §2b)."""
+
+    def _cfg_with_series(self, tmp_path, n_values: int, nyear: int) -> dict:
+        f_csv = tmp_path / "f_byyear_sp0.csv"
+        f_csv.write_text("\n".join(["0.2"] * n_values) + "\n")
+        cfg = _base_config(n_sp=1, n_dt=4)  # the module's existing minimal-config helper
+        cfg["_osmose.config.dir"] = str(tmp_path)
+        cfg["simulation.time.nyear"] = str(nyear)
+        cfg["mortality.fishing.rate.byyear.file.sp0"] = str(f_csv)
+        return cfg
+
+    def test_short_series_raises_at_load(self, tmp_path) -> None:
+        cfg = self._cfg_with_series(tmp_path, n_values=3, nyear=5)
+        with pytest.raises(ValueError, match=r"byyear.*sp0.*3.*5"):
+            EngineConfig.from_dict(cfg)
+
+    def test_exact_and_longer_series_pass(self, tmp_path) -> None:
+        for n in (5, 8):
+            cfg = self._cfg_with_series(tmp_path, n_values=n, nyear=5)
+            ec = EngineConfig.from_dict(cfg)
+            assert ec.fishing_rate_by_year[0] is not None
+            assert len(ec.fishing_rate_by_year[0]) == n
