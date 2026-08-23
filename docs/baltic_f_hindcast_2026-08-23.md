@@ -51,7 +51,7 @@ be decisively positive for the blocking stocks before any SSB result is meaningf
 | herring | 0.976 | 0.973–0.981 | yes | PASS — decisively positive |
 | sprat | 0.988 | 0.986–0.991 | yes | PASS — decisively positive |
 | cod_east | 0.996 | 0.996–0.997 | yes | PASS — decisively positive |
-| cod_west | 0.963 | 0.939–0.973 | no (reported-only; near-flat factor series, 0.90–1.21×) | strong, for context |
+| cod_west | 0.963 | 0.939–0.973 | no (reported-only; near-flat factor series, 0.985–1.33×) | strong, for context |
 
 **Instrument gate PASSES decisively.** All three blocking stocks clear rho ≥ 0.97 on every one
 of the 5 seeds; cod_west (reported-only, not a gate condition) is also strong at 0.94–0.97. The
@@ -73,18 +73,33 @@ complex) over 1993–2023 (sim-years 19–49). Decadal trend signs are `(1993–
 | cod_east | reported-only | (+,−,−) | (−,+,−) | 1/3 | −0.261 | −0.186 | +0.077 ± 0.039 | no (non-binding) |
 | flounder | reported-only | (+,+,+) | (−,+,−) | 1/3 | 0.512 | 0.086 | −0.298 ± 0.269 | no (non-binding) |
 
+**r_A/r_B use a different statistic than "mean Δr ± sd":** r_A and r_B are the Pearson r of the
+5-seed-**mean** trajectory (z-scored) against observed; "mean Δr ± sd" is the mean and sd of the
+**per-seed** Δr = r_B(seed) − r_A(seed) — the pre-registered decision-7 metric. The two need not
+satisfy r_B − r_A = mean Δr; for herring they differ by roughly 2× (r_B − r_A = −0.237 vs
+mean Δr = −0.118).
+
 Notes on the two scored stocks:
 
-- **Herring:** arm B is *worse* than the constant-F baseline (Δr = −0.118 ± 0.112 — the mean is
-  more than 2 sd away from zero in the wrong direction, so this is a confident negative, not
-  noise). The decadal trend also fails (1/3): historical F pushes modeled herring SSB
-  monotonically upward across all three decades while the observed composite falls, rises, then
-  falls.
-- **Sprat:** the trend test passes (2/3 — arm B tracks the observed decline-then-rise-then-rise
-  in the first and third decades) but the skill test fails: Δr = +0.005 ± 0.044 is the same
-  magnitude as the July spike's own honest-negative delta (+0.009) that the decision-7 margin
-  (Δr ≥ 0.10 and > 2·sd) was calibrated specifically to reject as noise, not signal. This is the
-  margin doing its job, not a near-miss.
+- **Herring:** arm B is *worse* than the constant-F baseline (Δr = −0.118 ± 0.112, n = 5 seeds).
+  This is **not** a protocol-grade confident negative under the decision-7 margin itself — that
+  margin requires the effect to clear 2× the across-seed sd, and |−0.118| < 2×0.112 = 0.225, so
+  it does not clear that bar. What the mean/sd *do* support: the mean clears 2× the standard
+  error of the mean (SE = 0.112/√5 ≈ 0.050; |mean|/SE ≈ 2.3), so under a weaker SE-based read the
+  negative is unlikely to be pure sampling noise around zero. The committed report
+  (`docs/diagnostics/baltic_f_hindcast_report.json`) retains only the per-seed mean and sd of
+  Δr, not each seed's individual value, so whether all 5 seeds were individually negative cannot
+  be confirmed from it. We report this as a consistent directional signal under the SE-based
+  read, not as a confident negative under the pre-registered margin. The decadal trend also
+  fails (1/3): historical F pushes modeled herring SSB monotonically upward across all three
+  decades while the observed composite falls, rises, then falls.
+- **Sprat:** the trend test passes (2/3): arm B's own decadal pattern is decline-then-rise-then-
+  rise (−,+,+), matching the observed pattern (−,−,+) in the first decade (both decline) and the
+  third (both rise), while diverging in the second (observed keeps declining; arm B rises). The
+  skill test fails: Δr = +0.005 ± 0.044 is the same magnitude as the July spike's own
+  honest-negative delta (+0.009) that the decision-7 margin (Δr ≥ 0.10 and > 2·sd) was
+  calibrated specifically to reject as noise, not signal. This is the margin doing its job, not
+  a near-miss.
 
 Reported-only stocks (cod_west, cod_east, flounder) are shown for trajectory context per spec
 §4; none of their numbers are binding on the verdict. Cod is excluded from scoring by the parent
@@ -96,7 +111,7 @@ with ICES F without recalibration, out of scope here).
 ![F1 hindcast: modeled vs observed SSB, 1993-2023](diagnostics/baltic_f_hindcast.png)
 
 Five panels (cod_west, herring, sprat, flounder, cod_east); each shows observed z (blue), arm A
-z-scored 5-seed mean (orange), arm B z-scored 5-seed mean (aqua) over 1993–2023. Panel titles
+z-scored 5-seed mean (orange), arm B z-scored 5-seed mean (green) over 1993–2023. Panel titles
 mark scored vs reported-only stocks and annotate r_B. Full run report:
 `docs/diagnostics/baltic_f_hindcast_report.json`.
 
@@ -141,9 +156,10 @@ they are inert on the production Baltic config.
   5 house seeds `[42, 123, 7, 999, 2024]` × 50 simulated years, Python engine, in-memory.
 - **Calendar:** sim-year 19 = 1993 (19 spin-up years at base F, shared by both arms; 31 scored
   years 1993–2023).
-- **Commit range (this F1 stage, on `master`):** `5c4e82d..6c3646b` — spec, plan, engine
-  hardening (`1039854`, `195175e`, `62bce96`, `160c160`), by-year F derivation
-  (`3ec702c`, `a3e808a`), harness (`6c3646b`). HEAD at report time: `6c3646b`.
+- **Commit range (this F1 stage, on branch `f1-hindcast`, merge to `master` pending):**
+  `5c4e82d..6c3646b` — spec, plan, engine hardening (`1039854`, `195175e`, `62bce96`,
+  `160c160`), by-year F derivation (`3ec702c`, `a3e808a`), harness (`6c3646b`). HEAD at report
+  time: `6c3646b`.
 - **Raw report:** `docs/diagnostics/baltic_f_hindcast_report.json` (copied from the run's
   `/tmp/f1_hindcast_report.json`; committed so the numbers in this doc are independently
   re-checkable without re-running the harness).
