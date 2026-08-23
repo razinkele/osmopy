@@ -137,3 +137,12 @@ def test_mortality_additional_matches_schema():
     assert field.indexed is True
     field2 = registry.match_field("mortality.additional.larva.rate.sp0")
     assert field2 is not None, "mortality.additional.larva.rate.sp0 must match schema"
+
+
+def test_byyear_fishing_file_is_registry_known() -> None:
+    """F1 spec §2c: the by-year F file key must be schema-known so overlay configs
+    validate clean."""
+    from osmose.engine.config_validation import _check, build_known_keys
+
+    known = build_known_keys()
+    assert _check("mortality.fishing.rate.byyear.file.sp0", known) is None

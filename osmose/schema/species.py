@@ -404,6 +404,17 @@ SPECIES_FIELDS: list[OsmoseField] = [
         indexed=True,
     ),
     OsmoseField(
+        key_pattern="mortality.fishing.rate.byyear.file.sp{idx}",
+        param_type=ParamType.FILE_PATH,
+        default="",
+        description=(
+            "Per-year fishing mortality CSV (one F per line, sim-year 0 first; "
+            "overrides the annual rate; must cover >= simulation.time.nyear rows)"
+        ),
+        category="fishing",
+        indexed=True,
+    ),
+    OsmoseField(
         key_pattern="mortality.fishing.recruitment.age.sp{idx}",
         param_type=ParamType.FLOAT,
         default=1.0,
