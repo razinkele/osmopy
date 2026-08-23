@@ -350,7 +350,7 @@ class TestFishingScenarioDispatch:
     def test_rate_by_year_detected(self) -> None:
         from osmose.engine.config import detect_fishing_scenario
 
-        config = {"mortality.fishing.rate.byYear.file.sp0": "/path/to/file.csv"}
+        config = {"mortality.fishing.rate.byyear.file.sp0": "/path/to/file.csv"}
         scenario = detect_fishing_scenario(config, 0)
         assert scenario == "rate_by_year"
 
@@ -364,7 +364,7 @@ class TestFishingScenarioDispatch:
     def test_rate_by_dt_by_age_detected(self) -> None:
         from osmose.engine.config import detect_fishing_scenario
 
-        config = {"mortality.fishing.rate.byDt.byAge.file.sp0": "/path.csv"}
+        config = {"mortality.fishing.rate.bydt.byage.file.sp0": "/path.csv"}
         scenario = detect_fishing_scenario(config, 0)
         assert scenario == "rate_by_dt_by_class"
 
@@ -378,13 +378,30 @@ class TestFishingScenarioDispatch:
     def test_catches_by_year_detected(self) -> None:
         from osmose.engine.config import detect_fishing_scenario
 
-        config = {"mortality.fishing.catches.byYear.file.sp0": "/path.csv"}
+        config = {"mortality.fishing.catches.byyear.file.sp0": "/path.csv"}
         scenario = detect_fishing_scenario(config, 0)
         assert scenario == "catches_by_year"
 
     def test_catches_by_dt_by_class_detected(self) -> None:
         from osmose.engine.config import detect_fishing_scenario
 
-        config = {"mortality.fishing.catches.byDt.byAge.file.sp0": "/path.csv"}
+        config = {"mortality.fishing.catches.bydt.byage.file.sp0": "/path.csv"}
         scenario = detect_fishing_scenario(config, 0)
         assert scenario == "catches_by_dt_by_class"
+
+    def test_camelcase_keys_survive_the_reader(self, tmp_path) -> None:
+        """Keys written camelCase in a config FILE are lowercased by the reader and must
+        still be detected — regression for the dead camelCase lookups (B1 audit)."""
+        from osmose.config import OsmoseConfigReader
+        from osmose.engine.config import detect_fishing_scenario
+
+        cfg_file = tmp_path / "cfg.csv"
+        cfg_file.write_text(
+            "mortality.fishing.rate.byYear.file.sp0;f0.csv\n"
+            "mortality.fishing.catches.byYear.file.sp1;c1.csv\n"
+            "mortality.fishing.rate.byDt.byAge.file.sp2;a2.csv\n"
+        )
+        cfg = dict(OsmoseConfigReader().read(str(cfg_file)))
+        assert detect_fishing_scenario(cfg, 0) == "rate_by_year"
+        assert detect_fishing_scenario(cfg, 1) == "catches_by_year"
+        assert detect_fishing_scenario(cfg, 2) == "rate_by_dt_by_class"

@@ -1567,15 +1567,18 @@ def _load_larva_mortality_by_dt(
 # SP-1: Fishing scenario detection (matches Java FishingMortality.Scenario enum)
 # ---------------------------------------------------------------------------
 
+# NOTE: OsmoseConfigReader lowercases every key at read time (osmose/config/reader.py),
+# so these prefixes are lowercase. Scenario names still mirror Java's
+# FishingMortality.Scenario enum.
 _FISHING_SCENARIOS = [
     ("rate_annual", "mortality.fishing.rate.sp"),
-    ("rate_by_year", "mortality.fishing.rate.byYear.file.sp"),
-    ("rate_by_dt_by_class", "mortality.fishing.rate.byDt.byAge.file.sp"),
-    ("rate_by_dt_by_class", "mortality.fishing.rate.byDt.bySize.file.sp"),
+    ("rate_by_year", "mortality.fishing.rate.byyear.file.sp"),
+    ("rate_by_dt_by_class", "mortality.fishing.rate.bydt.byage.file.sp"),
+    ("rate_by_dt_by_class", "mortality.fishing.rate.bydt.bysize.file.sp"),
     ("catches_annual", "mortality.fishing.catches.sp"),
-    ("catches_by_year", "mortality.fishing.catches.byYear.file.sp"),
-    ("catches_by_dt_by_class", "mortality.fishing.catches.byDt.byAge.file.sp"),
-    ("catches_by_dt_by_class", "mortality.fishing.catches.byDt.bySize.file.sp"),
+    ("catches_by_year", "mortality.fishing.catches.byyear.file.sp"),
+    ("catches_by_dt_by_class", "mortality.fishing.catches.bydt.byage.file.sp"),
+    ("catches_by_dt_by_class", "mortality.fishing.catches.bydt.bysize.file.sp"),
 ]
 
 
@@ -2293,7 +2296,7 @@ class EngineConfig:
         _have_dt_class = False
         _dt_class_list: list = [None] * n_sp
         for i in range(n_sp):
-            for variant in ["byDt.byAge", "byDt.bySize"]:
+            for variant in ["bydt.byage", "bydt.bysize"]:
                 key = f"mortality.fishing.rate.{variant}.file.sp{i}"
                 if key in cfg and cfg[key]:
                     ts_path = _resolve_file(cfg[key], _cfg_dir(cfg))
@@ -2316,7 +2319,7 @@ class EngineConfig:
                 if fishing_catches is None:
                     fishing_catches = np.zeros(n_sp, dtype=np.float64)
                 fishing_catches[i] = float(cfg[key])
-            year_key = f"mortality.fishing.catches.byYear.file.sp{i}"
+            year_key = f"mortality.fishing.catches.byyear.file.sp{i}"
             if year_key in cfg and cfg[year_key]:
                 if fishing_catches_by_year is None:
                     fishing_catches_by_year = [None] * n_sp

@@ -23,7 +23,7 @@ from osmose.engine.config_validation import (
     java_only_keys_set,
 )
 
-# Independent reference: the exact 149-key allowlist as of pre-#123 (copied from Step 1 output).
+# Independent reference: the exact 155-key allowlist as of pre-#123 (copied from Step 1 output).
 # NOT derived from the source frozensets — that would be circular.
 FROZEN_ALLOWLIST_SNAPSHOT = frozenset(
     [
@@ -56,6 +56,11 @@ FROZEN_ALLOWLIST_SNAPSHOT = frozenset(
         "ltl.regrowth.rate.rsc{idx}",
         "module.bioeconomics.enabled",
         "module.population.initialisation.enabled",
+        "mortality.fishing.catches.bydt.byage.file.sp{idx}",
+        "mortality.fishing.catches.bydt.bysize.file.sp{idx}",
+        "mortality.fishing.rate.bydt.byage.file.sp{idx}",
+        "mortality.fishing.rate.bydt.bysize.file.sp{idx}",
+        "mortality.fishing.rate.byyear.file.sp{idx}",
         "mortality.fishing.recruitment.age.sp{idx}",
         "mortality.fishing.recruitment.size.sp{idx}",
         "movement.species.map{idx}",
