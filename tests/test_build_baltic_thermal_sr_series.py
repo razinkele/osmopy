@@ -107,3 +107,94 @@ def test_gap_detection_in_yearly_means():
     # Should detect missing years
     assert missing_years == [1995, 1998], f"expected [1995, 1998], got {missing_years}"
     assert len(missing_years) > 0, "gap detection failed"
+
+
+def test_fallback_rows():
+    """Test fallback_rows returns 50 constant-value rows (1974-2023)."""
+    rows = m.fallback_rows(tref=8.5)
+
+    # Should have exactly 50 rows
+    assert len(rows) == 50, f"expected 50 rows, got {len(rows)}"
+
+    # Should span 1974-2023
+    years = [y for y, _ in rows]
+    assert years == list(range(1974, 2024)), f"years mismatch: {years[:5]}...{years[-5:]}"
+
+    # All values should be the constant tref
+    assert all(t == 8.5 for _, t in rows), "not all temperatures equal to tref"
+
+    # First and last rows should be correct
+    assert rows[0] == (1974, 8.5)
+    assert rows[-1] == (2023, 8.5)
+
+
+def test_mixed_species_csv_assembly(tmp_path):
+    """Test CSV+README assembly with one real and one fallback species.
+
+    This tests the realistic degradation scenario: one variable succeeds,
+    the other uses PROVISIONAL fallback (no second assemble_series call).
+    """
+    # Species 0 (cod_west): real data from assemble_series
+    hist_sp0 = {1993 + i: 10.0 + i * 0.1 for i in range(31)}  # 1993-2023
+    rows_sp0 = m.assemble_series(hist_sp0, tref=11.5)
+
+    # Species 1 (herring): fallback (e.g., thetao succeeded but bottomT degraded)
+    rows_sp1 = m.fallback_rows(tref=8.5)
+
+    # Verify both have same years (both should be 1974-2023)
+    years_sp0 = [y for y, _ in rows_sp0]
+    years_sp1 = [y for y, _ in rows_sp1]
+    assert years_sp0 == years_sp1, f"species year mismatch: {len(years_sp0)} vs {len(years_sp1)}"
+
+    # Assemble and write
+    csv_path = tmp_path / "series.csv"
+    species_info = {
+        0: {
+            "variable": "thetao",
+            "status": "OK (31 years)",
+        },
+        1: {
+            "variable": "bottomT",
+            "status": "DEGRADED: no cached files",
+            "tref": "8.5 (UNSOURCED PLACEHOLDER)",
+        },
+    }
+
+    m.assemble_outputs(csv_path, csv_path, {0: rows_sp0, 1: rows_sp1}, species_info)
+
+    # Verify CSV
+    csv_text = csv_path.read_text()
+    lines = csv_text.splitlines()
+
+    # Header should have both species
+    assert lines[0] == "year,temp_sp0,temp_sp1", f"header mismatch: {lines[0]}"
+
+    # Should have 50 data rows (no '#' comments)
+    assert "#" not in csv_text, "CSV contains comment lines"
+    assert len(lines) == 51, f"expected 51 lines (1 header + 50 data), got {len(lines)}"
+
+    # Verify first data row (1974)
+    first_data = lines[1].split(",")
+    assert first_data[0] == "1974"
+    assert float(first_data[1]) == 11.5  # sp0 spinup value
+    assert float(first_data[2]) == 8.5  # sp1 fallback constant
+
+    # Verify a historical data row (1993)
+    hist_line = lines[20]  # 1974 + 19 = 1993
+    hist_data = hist_line.split(",")
+    assert hist_data[0] == "1993"
+    assert float(hist_data[1]) == 10.0  # sp0 first historical value
+    assert float(hist_data[2]) == 8.5  # sp1 fallback (still constant)
+
+    # Verify README
+    readme_path = Path(str(csv_path) + ".README.md")
+    readme_text = readme_path.read_text()
+
+    # Should mention both species
+    assert "Species 0" in readme_text
+    assert "Species 1" in readme_text
+
+    # Should label sp1 as DEGRADED with UNSOURCED PLACEHOLDER
+    assert "DEGRADED" in readme_text
+    assert "UNSOURCED PLACEHOLDER" in readme_text
+    assert "8.5" in readme_text
