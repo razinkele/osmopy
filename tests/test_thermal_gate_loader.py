@@ -203,3 +203,17 @@ class TestExponentialResponse:
         cfg["reproduction.thermal.gate.floor"] = "0.05"
         factor, _, _ = _load_thermal_gate(cfg, 1, 4, 3)
         assert (factor[:, 0] == 0.05).all()
+
+    def test_csv_float_parsing_round_trips_at_tref(self, tmp_path):
+        """Harness-probe finding: pandas' default (non-round-trip) float parser
+        mis-rounds full-precision decimals by up to 2 ULP, so a constant series at
+        T==tref could yield factor != 1.0 exactly even though exp(0.0) == 1.0 is
+        exact. This value round-trips under Python's own float parser but NOT
+        under pandas' default engine, unlike 7.0 (used elsewhere in this class),
+        which round-trips under either — so it actually exercises the bug."""
+        from osmose.engine.config import _load_thermal_gate
+
+        t = 9.670314810741907
+        cfg = self._cfg(tmp_path, [t] * 3, **{"reproduction.thermal.gate.tref.sp0": str(t)})
+        factor, _, _ = _load_thermal_gate(cfg, 1, 4, 3)
+        assert (factor[:, 0] == 1.0).all()

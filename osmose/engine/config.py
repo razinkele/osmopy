@@ -1122,7 +1122,7 @@ def _load_rv_gate(
     if not file_key:
         raise ValueError("RV gate enabled but reproduction.rv.gate.series.file is empty.")
     path = _require_file(file_key, _cfg_dir(cfg), "reproduction.rv.gate.series.file")
-    df = pd.read_csv(path)
+    df = pd.read_csv(path, float_precision="round_trip")
     if df.shape[0] == 0 or "year" not in df.columns or "spawning_rv" not in df.columns:
         raise ValueError(f"RV gate series {path} has no data rows or wrong columns.")
     years = df["year"].to_numpy()
@@ -1268,7 +1268,7 @@ def _load_thermal_gate(
     if not file_key:
         raise ValueError("Thermal gate enabled but reproduction.thermal.gate.series.file is empty.")
     path = _require_file(file_key, _cfg_dir(cfg), "reproduction.thermal.gate.series.file")
-    df = pd.read_csv(path)
+    df = pd.read_csv(path, float_precision="round_trip")
     if df.shape[0] == 0 or "year" not in df.columns:
         raise ValueError(f"Thermal gate series {path} has no data rows or missing 'year' column.")
     years = df["year"].to_numpy()
