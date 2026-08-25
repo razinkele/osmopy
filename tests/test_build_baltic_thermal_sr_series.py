@@ -110,68 +110,69 @@ def test_gap_detection_in_yearly_means():
 
 
 def test_fallback_rows():
-    """Test fallback_rows returns 50 constant-value rows (1974-2023)."""
-    rows = m.fallback_rows(tref=8.5)
+    """fallback_rows spans HIST_START-SPINUP_YEARS..hist_end (parameterized).
 
-    # Should have exactly 50 rows
-    assert len(rows) == 50, f"expected 50 rows, got {len(rows)}"
+    hist_end must be an explicit argument, not a hardcoded year — the whole
+    point of the parameter is that it can be made to match whatever the real
+    (non-degraded) species actually loaded.
+    """
+    rows = m.fallback_rows(tref=8.5, hist_end=2021)
 
-    # Should span 1974-2023
+    assert len(rows) == 48, f"expected 48 rows (1974-2021), got {len(rows)}"
+
     years = [y for y, _ in rows]
-    assert years == list(range(1974, 2024)), f"years mismatch: {years[:5]}...{years[-5:]}"
+    assert years == list(range(1974, 2022)), f"years mismatch: {years[:5]}...{years[-5:]}"
 
-    # All values should be the constant tref
     assert all(t == 8.5 for _, t in rows), "not all temperatures equal to tref"
 
-    # First and last rows should be correct
     assert rows[0] == (1974, 8.5)
-    assert rows[-1] == (2023, 8.5)
+    assert rows[-1] == (2021, 8.5)
 
 
 def test_mixed_species_csv_assembly(tmp_path):
-    """Test CSV+README assembly with one real and one fallback species.
+    """One real species + one fallback species, at the realistic 1993-2021 window.
 
-    This tests the realistic degradation scenario: one variable succeeds,
-    the other uses PROVISIONAL fallback (no second assemble_series call).
+    This is the scenario the round-3 bug broke: a successful loader spans
+    HIST_START..DOWNLOAD_END (1993-2021, 29 historical years), so the
+    degraded species' fallback_rows must be told hist_end=2021 too, not a
+    hardcoded 2023 that would desync the two columns and abort the run.
     """
-    # Species 0 (cod_west): real data from assemble_series
-    hist_sp0 = {1993 + i: 10.0 + i * 0.1 for i in range(31)}  # 1993-2023
+    # Species 0 (cod_west): real data from assemble_series, 1993-2021
+    hist_sp0 = {1993 + i: 10.0 + i * 0.1 for i in range(29)}
     rows_sp0 = m.assemble_series(hist_sp0, tref=11.5)
 
     # Species 1 (herring): fallback (e.g., thetao succeeded but bottomT degraded)
-    rows_sp1 = m.fallback_rows(tref=8.5)
+    rows_sp1 = m.fallback_rows(tref=8.5, hist_end=2021)
 
-    # Verify both have same years (both should be 1974-2023)
+    # Verify both have the same year set: 1974-2021
     years_sp0 = [y for y, _ in rows_sp0]
     years_sp1 = [y for y, _ in rows_sp1]
-    assert years_sp0 == years_sp1, f"species year mismatch: {len(years_sp0)} vs {len(years_sp1)}"
+    assert years_sp0 == years_sp1 == list(range(1974, 2022))
 
     # Assemble and write
     csv_path = tmp_path / "series.csv"
     species_info = {
         0: {
             "variable": "thetao",
-            "status": "OK (31 years)",
+            "status": "OK (29 years)",
         },
         1: {
             "variable": "bottomT",
             "status": "DEGRADED: no cached files",
             "tref": "8.5 (UNSOURCED PLACEHOLDER)",
+            "note": "UNSOURCED PLACEHOLDER — Task 4 must source real computed value",
         },
     }
 
-    m.assemble_outputs(csv_path, csv_path, {0: rows_sp0, 1: rows_sp1}, species_info)
+    m.assemble_outputs(csv_path, {0: rows_sp0, 1: rows_sp1}, species_info)
 
     # Verify CSV
     csv_text = csv_path.read_text()
     lines = csv_text.splitlines()
 
-    # Header should have both species
     assert lines[0] == "year,temp_sp0,temp_sp1", f"header mismatch: {lines[0]}"
-
-    # Should have 50 data rows (no '#' comments)
     assert "#" not in csv_text, "CSV contains comment lines"
-    assert len(lines) == 51, f"expected 51 lines (1 header + 50 data), got {len(lines)}"
+    assert len(lines) == 49, f"expected 49 lines (1 header + 48 data), got {len(lines)}"
 
     # Verify first data row (1974)
     first_data = lines[1].split(",")
@@ -186,15 +187,59 @@ def test_mixed_species_csv_assembly(tmp_path):
     assert float(hist_data[1]) == 10.0  # sp0 first historical value
     assert float(hist_data[2]) == 8.5  # sp1 fallback (still constant)
 
+    # Verify the last row lands on 2021, not a stale hardcoded 2023
+    last_data = lines[-1].split(",")
+    assert last_data[0] == "2021"
+    assert float(last_data[2]) == 8.5
+
     # Verify README
     readme_path = Path(str(csv_path) + ".README.md")
     readme_text = readme_path.read_text()
 
-    # Should mention both species
     assert "Species 0" in readme_text
     assert "Species 1" in readme_text
-
-    # Should label sp1 as DEGRADED with UNSOURCED PLACEHOLDER
     assert "DEGRADED" in readme_text
     assert "UNSOURCED PLACEHOLDER" in readme_text
     assert "8.5" in readme_text
+
+    # UNSOURCED PLACEHOLDER must appear only on the degraded species (sp1),
+    # not bleed into sp0's real-data block.
+    sp0_block, sp1_block = readme_text.split("### Species 1")
+    assert "UNSOURCED PLACEHOLDER" not in sp0_block
+    assert "UNSOURCED PLACEHOLDER" in sp1_block
+    assert "DEGRADED" in sp1_block
+
+
+def test_mixed_species_csv_assembly_different_hist_end(tmp_path):
+    """Pin that the fallback window is parameterized by hist_end, not hardcoded.
+
+    Uses hist_end=2010 (deliberately not the production DOWNLOAD_END=2021)
+    to guard against a hardcoded year constant creeping back into
+    fallback_rows or the assembly path.
+    """
+    # Species 1 (herring) real, 1993-2010 (18 years)
+    hist_sp1 = {1993 + i: 8.0 + i * 0.05 for i in range(18)}
+    rows_sp1 = m.assemble_series(hist_sp1, tref=8.2)
+
+    # Species 0 (cod_west) degraded, fallback matched to sp1's hist_end
+    rows_sp0 = m.fallback_rows(tref=11.5, hist_end=2010)
+
+    years_sp0 = [y for y, _ in rows_sp0]
+    years_sp1 = [y for y, _ in rows_sp1]
+    assert years_sp0 == years_sp1 == list(range(1974, 2011))
+
+    csv_path = tmp_path / "series2.csv"
+    species_info = {
+        0: {
+            "variable": "thetao",
+            "status": "DEGRADED: no cached files",
+            "tref": "11.5 (UNSOURCED PLACEHOLDER)",
+        },
+        1: {"variable": "bottomT", "status": "OK (18 years)"},
+    }
+    m.assemble_outputs(csv_path, {0: rows_sp0, 1: rows_sp1}, species_info)
+
+    lines = csv_path.read_text().splitlines()
+    assert lines[0] == "year,temp_sp0,temp_sp1"
+    assert len(lines) == 1 + (2010 - 1974 + 1)  # header + 37 data rows
+    assert lines[-1].split(",")[0] == "2010"

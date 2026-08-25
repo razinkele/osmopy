@@ -18,6 +18,7 @@ and uses PROVISIONAL fallback constants (marked in README for Task 4 to source r
 from __future__ import annotations
 
 import sys
+import traceback
 from datetime import datetime
 from pathlib import Path
 
@@ -33,6 +34,17 @@ BBOX_SD = {"lon_min": 9.5, "lon_max": 15.0, "lat_min": 53.5, "lat_max": 56.5}
 
 # Provisional fallback constants (UNSOURCED PLACEHOLDERS — Task 4 must replace)
 PROVISIONAL_TREF = {0: 11.5, 1: 8.5}  # cod_west, herring
+
+# --- single source of truth for the year window --------------------------
+# Every path that needs a year span (download requests, assemble_series's
+# spin-up math, fallback_rows's row count) derives from these three. Do NOT
+# hardcode a year window anywhere else in this file — three independently
+# hardcoded windows (download calls, assemble_series defaults, fallback_rows)
+# disagreeing with each other was the root cause of every regression across
+# three prior review rounds on this file.
+SPINUP_YEARS = 19
+HIST_START = 1993
+DOWNLOAD_END = 2021  # current CMEMS product-end request; move forward as the product extends
 
 
 class DataUnavailable(Exception):
@@ -64,14 +76,17 @@ def quarter_mean(monthly_temps: dict[int, float], quarter: int) -> float:
 
 
 def assemble_series(
-    hist: dict[int, float], tref: float, first_hist_year: int = 1993, spinup: int = 19
+    hist: dict[int, float],
+    tref: float,
+    first_hist_year: int = HIST_START,
+    spinup: int = SPINUP_YEARS,
 ) -> list[tuple[int, float]]:
     """Build series with spin-up years + historical years.
 
     hist: dict of {year: temperature} for historical period
     tref: reference temperature for spin-up years
-    first_hist_year: first year in hist (default 1993)
-    spinup: number of spin-up years to prepend (default 19)
+    first_hist_year: first year in hist (default HIST_START)
+    spinup: number of spin-up years to prepend (default SPINUP_YEARS)
 
     Returns list of (year, temp) tuples, with years spanning
     first_hist_year-spinup through max(hist.keys()).
@@ -108,14 +123,21 @@ def assemble_series(
     return rows
 
 
-def fallback_rows(tref: float) -> list[tuple[int, float]]:
-    """Return 50 constant-temperature rows (1974-2023) for degraded species.
+def fallback_rows(tref: float, hist_end: int) -> list[tuple[int, float]]:
+    """Return constant-temperature rows spanning HIST_START-SPINUP_YEARS..hist_end.
 
     tref: constant temperature for all rows
+    hist_end: last year of the series. In a mixed degradation (one species
+      real, one degraded) this MUST be the real species' last historical
+      year, so both columns line up. When both species are degraded, pass
+      DOWNLOAD_END. Never hardcode this — it is the one thing that made the
+      three prior rounds on this file disagree with the real data's span.
 
-    Returns list of (year, temp) tuples for the full series span.
+    Returns list of (year, temp) tuples for years
+    (HIST_START - SPINUP_YEARS) .. hist_end, inclusive.
     """
-    return [(1974 + i, tref) for i in range(50)]
+    start = HIST_START - SPINUP_YEARS
+    return [(y, tref) for y in range(start, hist_end + 1)]
 
 
 def write_series_csv(path: Path, rows_by_species: dict[int, list[tuple[int, float]]]) -> None:
@@ -422,60 +444,84 @@ def _load_bottomt_series(files: list[Path]) -> dict[int, float]:
     return bottomt_means
 
 
-def _download_variable(var: str, start_year: int, end_year: int) -> bool:
+def _download_variable(var: str, start_year: int, end_year: int) -> str | None:
     """Download missing years for a variable using download_baltic_rv_forcing machinery.
 
-    Returns True if download succeeded (at least one year), False otherwise.
+    A FIELDS lookup miss is a code bug (typo'd --vars name) and is left to
+    raise KeyError — it must not be swallowed into a silent DEGRADED.
+
+    Credential lookup (_creds()) and the `copernicusmarine` import are each
+    given their own narrow, specific handling — an expired/missing .env or
+    an uninstalled package is a clear, anticipated condition, not something
+    that should be caught by (and indistinguishable from) a catch-all around
+    the whole function.
+
+    The broad catches here wrap only the actual network calls — `cm.login`
+    and, per year, `_download_year` — because the remote client library can
+    raise a wide variety of exception types for a wide variety of transient
+    failures (bad/expired credentials, auth service down, connection reset,
+    etc.). Their tracebacks are captured (not just str(e)) so a real failure
+    is never invisible even though it's caught. `cm.login` in particular
+    used to be unguarded here: a stale password would raise straight out of
+    this function, through main() (which has no wrapper), and abort the
+    whole run with a raw traceback instead of degrading gracefully — the
+    same failure shape as the fallback-window bug this round otherwise
+    fixes, just one call earlier in the pipeline.
+
+    Returns None if every requested year ended up cached (already present or
+    freshly downloaded this run). Otherwise returns a human-readable
+    diagnostic string — naming the variable and embedding the traceback of
+    the failure(s) — for the caller to fold into the DEGRADED record
+    (printed and written to the README).
     """
+    from download_baltic_rv_forcing import FIELDS, _creds, _download_year
+
+    info = FIELDS[var]
+
     try:
-        # Import download machinery
-        from download_baltic_rv_forcing import FIELDS, _creds, _download_year
+        u, p = _creds()
+    except SystemExit as e:
+        return f"{var}: credentials unavailable ({e})"
 
-        info = FIELDS.get(var)
-        if not info:
-            print(f"  error: variable {var} not in FIELDS")
-            return False
-
-        # Get credentials
-        try:
-            u, p = _creds()
-        except SystemExit as e:
-            print(f"  DEGRADED: {e}")
-            return False
-
+    try:
         import copernicusmarine as cm
+    except ImportError as e:
+        return f"{var}: copernicusmarine not installed ({e})"
 
+    try:
         cm.login(username=u, password=p, force_overwrite=True)
+    except Exception:
+        tb = traceback.format_exc()
+        print(f"  warning: CMEMS login failed for {var}:\n{tb}")
+        return f"{var}: CMEMS login failed:\n{tb}"
 
-        # Download missing years
-        downloaded = False
-        for year in range(start_year, end_year + 1):
-            out_file = DL / f"baltic_{info['tag']}_{var}_{year}-01_{year}-12.nc"
-            if out_file.exists() and out_file.stat().st_size > 0:
-                continue  # Already cached
-            try:
-                _download_year(cm, var, year, 0.0, 5.0)
-                downloaded = True
-            except Exception as e:
-                print(f"  warning: failed to download {var} {year}: {e}")
+    failures: list[str] = []
+    for year in range(start_year, end_year + 1):
+        out_file = DL / f"baltic_{info['tag']}_{var}_{year}-01_{year}-12.nc"
+        if out_file.exists() and out_file.stat().st_size > 0:
+            continue  # already cached
+        try:
+            _download_year(cm, var, year, 0.0, 5.0)
+        except Exception:
+            tb = traceback.format_exc()
+            print(f"  warning: failed to download {var} {year}:\n{tb}")
+            failures.append(f"{var} {year} failed:\n{tb}")
 
-        return downloaded
-
-    except Exception as e:
-        print(f"  DEGRADED: failed to download {var}: {e}")
-        return False
+    if not failures:
+        return None
+    return f"{var}: {len(failures)} year(s) failed to download\n" + "\n".join(failures)
 
 
 def assemble_outputs(
     csv_path: Path,
-    readme_path: Path,
     rows_by_species: dict[int, list[tuple[int, float]]],
     species_info: dict[int, dict[str, str]],
 ) -> None:
     """Assemble and write CSV + README from species data.
 
-    csv_path: output CSV file path
-    readme_path: output README file path
+    csv_path: output CSV file path. The README is always written alongside
+      it as f"{csv_path}.README.md" by write_readme — there is no separate
+      configurable README path.
     rows_by_species: dict of {species_idx: [(year, temp), ...]}
     species_info: dict of {species_idx: metadata dict}
     """
@@ -483,35 +529,54 @@ def assemble_outputs(
     write_readme(csv_path, species_info)
 
 
+def _compose_degradation_reason(base_reason: str, download_note: str | None) -> str:
+    """Fold the download attempt's diagnostic note into a degradation reason.
+
+    Without this, the traceback captured by _download_variable only reached
+    the README when the glob found zero cached files at all. The more likely
+    real case — some years downloaded, some failed, and the loader's own
+    yearly-gap check raises DataUnavailable — discarded the download note
+    entirely, silently dropping the one piece of information that explains
+    *why* the fallback fired. Called from every branch that sets
+    degradation_reason[...] so the two species can't drift out of sync again.
+    """
+    if download_note:
+        return f"{base_reason}\ndownload diagnostics: {download_note}"
+    return base_reason
+
+
 def main() -> int:
     """Download CMEMS thetao/bottomT and build thermal series.
 
     Pulls surface thetao (Q3) for cod_west and bottom-T (Q4) for herring
-    from CMEMS. Attempts download of missing years; on genuine data absence
-    (download failure, missing files, yearly gaps) uses PROVISIONAL fallback.
+    from CMEMS over HIST_START..DOWNLOAD_END. Attempts download of missing
+    years; on genuine data absence (download failure, missing files, yearly
+    gaps) uses the PROVISIONAL fallback for that species only.
+
+    No `except Exception` appears at this level, deliberately: a code bug
+    (bad FIELDS entry, a broken loader) must crash loudly here rather than
+    be silently reported as DEGRADED alongside genuine data-absence cases.
 
     Returns 0 on success (with or without degradation).
     """
-    # Try to download missing files
-    print("[download] attempting thetao for 1993-2021 ...")
-    try:
-        _download_variable("thetao", 1993, 2021)
-    except Exception as e:
-        print(f"  warning: download attempt failed: {e}")
+    print(f"[download] attempting thetao for {HIST_START}-{DOWNLOAD_END} ...")
+    thetao_download_note = _download_variable("thetao", HIST_START, DOWNLOAD_END)
+    if thetao_download_note:
+        print(f"  {thetao_download_note}")
 
-    print("[download] attempting bottomT for 1993-2021 ...")
-    try:
-        _download_variable("bottomT", 1993, 2021)
-    except Exception as e:
-        print(f"  warning: download attempt failed: {e}")
+    print(f"[download] attempting bottomT for {HIST_START}-{DOWNLOAD_END} ...")
+    bottomt_download_note = _download_variable("bottomT", HIST_START, DOWNLOAD_END)
+    if bottomt_download_note:
+        print(f"  {bottomt_download_note}")
 
     # Glob cached files
     thetao_files = sorted(DL.glob("baltic_phy_monthly_reanalysis_thetao_*.nc"))
     bottomt_files = sorted(DL.glob("baltic_phy_monthly_reanalysis_bottomT_*.nc"))
 
-    rows_by_species = {}
-    species_info = {}
-    degradations = []
+    rows_by_species: dict[int, list[tuple[int, float]]] = {}
+    species_info: dict[int, dict[str, str]] = {}
+    last_hist_year: dict[int, int] = {}
+    degradation_reason: dict[int, str] = {}
 
     # Process thetao (cod_west, sp0) - Q3 mean
     if thetao_files:
@@ -520,8 +585,8 @@ def main() -> int:
             thetao_means = _load_thetao_series(thetao_files)
             tref = sum(thetao_means.values()) / len(thetao_means)
             rows_by_species[0] = assemble_series(thetao_means, tref=tref)
-            all_years = sorted(thetao_means.keys())
-            year_range = f"{all_years[0]}-{all_years[-1]}"
+            last_hist_year[0] = max(thetao_means)
+            year_range = f"{min(thetao_means)}-{max(thetao_means)}"
             species_info[0] = {
                 "variable": "thetao (surface temperature)",
                 "quarters": "Q3 (Jul-Sep)",
@@ -532,10 +597,12 @@ def main() -> int:
             }
             print(f"  thetao Q3: {len(thetao_means)} years, tref={tref:.2f}, range={year_range}")
         except DataUnavailable as e:
-            print(f"  DEGRADED: {e}")
-            degradations.append(str(e))
+            degradation_reason[0] = _compose_degradation_reason(str(e), thetao_download_note)
+            print(f"  DEGRADED: {degradation_reason[0]}")
     else:
-        degradations.append("thetao (no cached files after download attempt)")
+        degradation_reason[0] = _compose_degradation_reason(
+            "thetao: no cached files after download attempt", thetao_download_note
+        )
 
     # Process bottomT (herring, sp1) - Q4 mean
     if bottomt_files:
@@ -544,8 +611,8 @@ def main() -> int:
             bottomt_means = _load_bottomt_series(bottomt_files)
             tref = sum(bottomt_means.values()) / len(bottomt_means)
             rows_by_species[1] = assemble_series(bottomt_means, tref=tref)
-            all_years = sorted(bottomt_means.keys())
-            year_range = f"{all_years[0]}-{all_years[-1]}"
+            last_hist_year[1] = max(bottomt_means)
+            year_range = f"{min(bottomt_means)}-{max(bottomt_means)}"
             species_info[1] = {
                 "variable": "bottomT (bottom temperature)",
                 "quarters": "Q4 (Oct-Dec)",
@@ -556,43 +623,44 @@ def main() -> int:
             }
             print(f"  bottomT Q4: {len(bottomt_means)} years, tref={tref:.2f}, range={year_range}")
         except DataUnavailable as e:
-            print(f"  DEGRADED: {e}")
-            degradations.append(str(e))
+            degradation_reason[1] = _compose_degradation_reason(str(e), bottomt_download_note)
+            print(f"  DEGRADED: {degradation_reason[1]}")
     else:
-        degradations.append("bottomT (no cached files after download attempt)")
+        degradation_reason[1] = _compose_degradation_reason(
+            "bottomT: no cached files after download attempt", bottomt_download_note
+        )
 
-    # Use PROVISIONAL fallback for missing species (maintain fixed CSV shape)
-    if 0 not in rows_by_species:
-        reason = degradations[0] if degradations else "thetao missing"
+    # Fallback window: the surviving species' last historical year in a
+    # mixed degradation (so both columns line up), or DOWNLOAD_END if both
+    # variables failed. This is the fix for the round-3 bug: fallback_rows
+    # used to hardcode 1974-2023 while a real loader spans 1974-2021,
+    # producing mismatched year sets and an aborted run in exactly the
+    # one-real-one-degraded scenario this fallback exists for.
+    hist_end = next(iter(last_hist_year.values()), DOWNLOAD_END)
+
+    fallback_meta = {
+        0: ("thetao (surface temperature)", "Q3 (Jul-Sep)"),
+        1: ("bottomT (bottom temperature)", "Q4 (Oct-Dec)"),
+    }
+    for sp, (var_name, quarter_label) in fallback_meta.items():
+        if sp in rows_by_species:
+            continue
+        reason = degradation_reason.get(sp, f"sp{sp} missing")
         print(f"DEGRADED: {reason}")
-        tref = PROVISIONAL_TREF[0]
-        rows_by_species[0] = fallback_rows(tref)
-        species_info[0] = {
-            "variable": "thetao (surface temperature)",
-            "quarters": "Q3 (Jul-Sep)",
+        tref = PROVISIONAL_TREF[sp]
+        rows_by_species[sp] = fallback_rows(tref, hist_end)
+        species_info[sp] = {
+            "variable": var_name,
+            "quarters": quarter_label,
             "status": f"DEGRADED: {reason}",
             "tref": f"{tref} (UNSOURCED PLACEHOLDER)",
             "note": "UNSOURCED PLACEHOLDER — Task 4 must source real computed value or literature source",
         }
 
-    if 1 not in rows_by_species:
-        reason = degradations[-1] if degradations else "bottomT missing"
-        print(f"DEGRADED: {reason}")
-        tref = PROVISIONAL_TREF[1]
-        rows_by_species[1] = fallback_rows(tref)
-        species_info[1] = {
-            "variable": "bottomT (bottom temperature)",
-            "quarters": "Q4 (Oct-Dec)",
-            "status": f"DEGRADED: {reason}",
-            "tref": f"{tref} (UNSOURCED PLACEHOLDER)",
-            "note": "UNSOURCED PLACEHOLDER — Task 4 must source real computed value or literature source",
-        }
-
-    if not rows_by_species:
-        print("ERROR: no thermal data available after degradation")
-        return 1
-
-    # Ensure both species have same years (for CSV shape)
+    # Final assertion, not a routine branch: with a shared hist_end this must
+    # now be unreachable for the mixed-degradation case the fallback exists
+    # for. It stays as a guard for a real-vs-real mismatch (e.g. two loaders
+    # that both "succeeded" but over different completion windows).
     all_sps = sorted(rows_by_species.keys())
     first_sp = all_sps[0]
     first_years = {y for y, _ in rows_by_species[first_sp]}
@@ -604,7 +672,7 @@ def main() -> int:
 
     # Write output
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    assemble_outputs(OUT, OUT, rows_by_species, species_info)
+    assemble_outputs(OUT, rows_by_species, species_info)
 
     print(f"wrote {OUT} ({len(rows_by_species)} species)")
     print(f"wrote {OUT}.README.md")
