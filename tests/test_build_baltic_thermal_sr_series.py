@@ -192,8 +192,9 @@ def test_mixed_species_csv_assembly(tmp_path):
     assert last_data[0] == "2021"
     assert float(last_data[2]) == 8.5
 
-    # Verify README
-    readme_path = Path(str(csv_path) + ".README.md")
+    # Verify README (suffix REPLACED, not appended — baltic_thermal_sr_series.csv
+    # -> baltic_thermal_sr_series.README.md, matching the plan/Task-4 contract)
+    readme_path = csv_path.with_suffix(".README.md")
     readme_text = readme_path.read_text()
 
     assert "Species 0" in readme_text
@@ -243,3 +244,59 @@ def test_mixed_species_csv_assembly_different_hist_end(tmp_path):
     assert lines[0] == "year,temp_sp0,temp_sp1"
     assert len(lines) == 1 + (2010 - 1974 + 1)  # header + 37 data rows
     assert lines[-1].split(",")[0] == "2010"
+
+
+def test_spatial_nanmean_ignores_masked_cells():
+    """A NaN-masked (land) region must not propagate into the mean.
+
+    SD22-24 is ~54% land/masked in the CMEMS grids; a plain .mean() over
+    the bbox subset would average the NaNs in and return NaN for almost
+    every year. _spatial_nanmean must return the finite mean of only the
+    unmasked (non-NaN) cells.
+    """
+    import numpy as np
+
+    arr = np.array(
+        [
+            [1.0, 2.0, np.nan],
+            [3.0, np.nan, np.nan],
+            [5.0, 6.0, 7.0],
+        ]
+    )
+    result = m._spatial_nanmean(arr)
+
+    unmasked = [1.0, 2.0, 3.0, 5.0, 6.0, 7.0]
+    expected = sum(unmasked) / len(unmasked)
+    assert result == expected, f"expected {expected}, got {result}"
+    assert np.isfinite(result), "result should be finite when some cells are unmasked"
+
+
+def test_nonfinite_means_raise_loudly_not_silently():
+    """A fully-masked spatial subset, and a non-finite yearly mean, must each
+    raise loudly (ValueError) rather than ever be silently reported OK.
+
+    Two independent nets, both exercised here:
+    - _spatial_nanmean raises immediately when a subset has zero finite
+      cells — the earliest point that knows the mean would be
+      meaningless, rather than letting a NaN travel downstream through
+      quarter_mean's sum and only being caught later.
+    - _reject_nonfinite_means is the second net: it catches any
+      non-finite value that reaches a per-year means dict by any path
+      (e.g. an inf, or future code that bypasses _spatial_nanmean) — a
+      data/parsing problem, not genuine data absence, so it must crash
+      main() loudly instead of silently routing into the DEGRADED
+      fallback.
+    """
+    import numpy as np
+    import pytest
+
+    all_nan_arr = np.full((4, 5), np.nan)
+    with pytest.raises(ValueError, match="fully masked"):
+        m._spatial_nanmean(all_nan_arr)
+
+    means = {1993: 10.0, 1994: float("nan"), 1995: 10.2}
+    with pytest.raises(ValueError, match="non-finite"):
+        m._reject_nonfinite_means("thetao", means)
+
+    # A fully finite dict must NOT raise.
+    m._reject_nonfinite_means("thetao", {1993: 10.0, 1994: 10.1, 1995: 10.2})

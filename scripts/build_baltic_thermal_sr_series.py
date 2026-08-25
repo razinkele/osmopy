@@ -9,7 +9,7 @@ Download CMEMS data with scripts/download_baltic_rv_forcing.py:
 
 The script downloads missing CMEMS files, caches to data/cmems_cache/cmems_downloads/,
 and writes the series to data/baltic/forcing/baltic_thermal_sr_series.csv with
-provenance in data/baltic/forcing/baltic_thermal_sr_series.csv.README.md.
+provenance in data/baltic/forcing/baltic_thermal_sr_series.README.md.
 
 On download failure (no credentials, network error, product gap), prints DEGRADED:
 and uses PROVISIONAL fallback constants (marked in README for Task 4 to source real values).
@@ -187,12 +187,18 @@ def write_series_csv(path: Path, rows_by_species: dict[int, list[tuple[int, floa
 
 
 def write_readme(path: Path, species_info: dict[int, dict[str, str]]) -> None:
-    """Write provenance README to path.README.md.
+    """Write provenance README alongside path, with its final suffix replaced by .README.md.
+
+    e.g. baltic_thermal_sr_series.csv -> baltic_thermal_sr_series.README.md.
+    Previously this APPENDED ".README.md" (producing
+    baltic_thermal_sr_series.csv.README.md), which disagreed with the
+    plan/Task-4 contract's expected filename — fixed to replace the .csv
+    suffix instead of stacking onto it.
 
     species_info: dict of {species_idx: {key: value}} with fields like
       'variable', 'quarters', 'bbox', 'tref_mean', 'year_range', 'status', etc.
     """
-    readme_path = Path(str(path) + ".README.md")
+    readme_path = path.with_suffix(".README.md")
 
     lines = [
         "# Baltic Thermal Series (C1)",
@@ -282,6 +288,46 @@ def _months_from_time(ds: xr.Dataset) -> dict[int, np.ndarray]:
     return months_dict
 
 
+def _spatial_nanmean(arr: np.ndarray) -> float:
+    """Mean over a spatial array, excluding masked/land cells (NaN) instead of propagating them.
+
+    SD22-24 is ~54% land/masked in the CMEMS grids. A plain `.mean()` over
+    the bbox subset averages the NaNs in, so almost every yearly mean came
+    out NaN while the surrounding code still reported status: OK. This
+    returns the mean of only the finite cells.
+
+    Raises ValueError if EVERY cell in `arr` is non-finite (masked) — there
+    is nothing to average. This is checked HERE, at the one place that
+    actually knows how many cells went into the mean, rather than letting
+    `np.nanmean` return NaN silently (numpy only warns: "Mean of empty
+    slice") and relying on that NaN to survive arithmetic two call frames
+    downstream (through quarter_mean's sum, then _reject_nonfinite_means)
+    before anything notices. Catching it at the source also names the
+    actual fully-masked month/slice, instead of a NaN which the caller
+    can no longer trace back to.
+    """
+    finite_count = np.count_nonzero(np.isfinite(arr))
+    if finite_count == 0:
+        raise ValueError(f"spatial subset is fully masked (0 of {arr.size} cells finite)")
+    return float(np.nanmean(arr))
+
+
+def _reject_nonfinite_means(var_name: str, means: dict[int, float]) -> None:
+    """Raise ValueError naming var_name and the offending years if any yearly mean is non-finite.
+
+    A NaN (or inf) mean with cached files present is a data/parsing
+    problem — e.g. every cell in the bbox subset was masked for that
+    year — and must never be silently written out as an OK series. This is
+    deliberately a ValueError, not a DataUnavailable: a DataUnavailable
+    would silently route into the PROVISIONAL fallback, disguising a
+    code/data bug as ordinary data absence. It must crash main() loudly
+    instead.
+    """
+    bad_years = sorted(y for y, v in means.items() if not np.isfinite(v))
+    if bad_years:
+        raise ValueError(f"{var_name}: non-finite yearly mean(s) for years {bad_years}")
+
+
 def _load_thetao_series(files: list[Path]) -> dict[int, float]:
     """Load thetao (surface temp) Q3 means from cached files.
 
@@ -339,8 +385,10 @@ def _load_thetao_series(files: list[Path]) -> dict[int, float]:
         # Subset to SD22-24 bbox — parsing error, must propagate
         theta_subset = _subset_bbox(theta, lon, lat)
 
-        # Extract Q3 months using quarter_mean — parsing error, must propagate
-        q3_dict = {m: float(theta_subset[months_idx[m], :, :].mean()) for m in (7, 8, 9)}
+        # Extract Q3 months using quarter_mean — parsing error, must propagate.
+        # _spatial_nanmean excludes masked/land cells rather than averaging
+        # them in as NaN (SD22-24 is ~54% land/masked in the CMEMS grids).
+        q3_dict = {m: _spatial_nanmean(theta_subset[months_idx[m], :, :]) for m in (7, 8, 9)}
         q3_mean = quarter_mean(q3_dict, quarter=3)
 
         thetao_means[year] = q3_mean
@@ -352,6 +400,10 @@ def _load_thetao_series(files: list[Path]) -> dict[int, float]:
             raise DataUnavailable("thetao: no cached files (download failed or not run)")
         else:
             raise DataUnavailable(f"thetao: {len(files)} files loaded but all failed or empty")
+
+    # NaN guard: a non-finite yearly mean with files present is a data/parsing
+    # problem (e.g. every cell in the bbox was masked that year), never OK.
+    _reject_nonfinite_means("thetao", thetao_means)
 
     # Check for yearly gaps
     all_years = sorted(thetao_means.keys())
@@ -420,8 +472,10 @@ def _load_bottomt_series(files: list[Path]) -> dict[int, float]:
         # Subset to SD22-24 bbox — parsing error, must propagate
         bt_subset = _subset_bbox(bt, lon, lat)
 
-        # Extract Q4 months using quarter_mean — parsing error, must propagate
-        q4_dict = {m: float(bt_subset[months_idx[m], :, :].mean()) for m in (10, 11, 12)}
+        # Extract Q4 months using quarter_mean — parsing error, must propagate.
+        # _spatial_nanmean excludes masked/land cells rather than averaging
+        # them in as NaN (SD22-24 is ~54% land/masked in the CMEMS grids).
+        q4_dict = {m: _spatial_nanmean(bt_subset[months_idx[m], :, :]) for m in (10, 11, 12)}
         q4_mean = quarter_mean(q4_dict, quarter=4)
 
         bottomt_means[year] = q4_mean
@@ -433,6 +487,10 @@ def _load_bottomt_series(files: list[Path]) -> dict[int, float]:
             raise DataUnavailable("bottomT: no cached files (download failed or not run)")
         else:
             raise DataUnavailable(f"bottomT: {len(files)} files loaded but all failed or empty")
+
+    # NaN guard: a non-finite yearly mean with files present is a data/parsing
+    # problem (e.g. every cell in the bbox was masked that year), never OK.
+    _reject_nonfinite_means("bottomT", bottomt_means)
 
     # Check for yearly gaps
     all_years = sorted(bottomt_means.keys())
@@ -520,8 +578,8 @@ def assemble_outputs(
     """Assemble and write CSV + README from species data.
 
     csv_path: output CSV file path. The README is always written alongside
-      it as f"{csv_path}.README.md" by write_readme — there is no separate
-      configurable README path.
+      it, by write_readme, at csv_path with its suffix replaced by
+      .README.md — there is no separate configurable README path.
     rows_by_species: dict of {species_idx: [(year, temp), ...]}
     species_info: dict of {species_idx: metadata dict}
     """
@@ -675,7 +733,7 @@ def main() -> int:
     assemble_outputs(OUT, rows_by_species, species_info)
 
     print(f"wrote {OUT} ({len(rows_by_species)} species)")
-    print(f"wrote {OUT}.README.md")
+    print(f"wrote {OUT.with_suffix('.README.md')}")
     return 0
 
 
