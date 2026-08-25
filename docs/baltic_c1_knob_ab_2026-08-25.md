@@ -1,10 +1,11 @@
 # Baltic C1 thermal-recruitment knob — A/B validation (2026-08-25)
 
 **Verdict: PASS — all pre-registered criteria met.** Identity: zero violations
-(bit-identical knob+0 vs off, 5 seeds × 9 species). Instrument: exact in every
-knob arm. Monotonicity: herring declines monotonically 2,539,645 t → 1,448,408 t
-(+2°C) → 368,297 t (+4°C). Elasticity is reported without a threshold, per
-spec decision/Non-goals (below).
+(bit-identical knob+0 vs off, 5 seeds × 11 biomass series — the 9 focal
+species plus the 2 background predators, GreySeal and Cormorant). Instrument:
+exact in every knob arm. Monotonicity: herring declines monotonically
+2,539,645 t → 1,448,408 t (+2°C) → 368,297 t (+4°C). Elasticity is reported
+without a threshold, per spec decision/Non-goals (below).
 
 Spec: `docs/superpowers/specs/2026-08-25-baltic-c1-temperature-recruitment-scenario-knob-design.md`
 (binding — decisions 1-9, §4, Non-goals). Plan:
@@ -43,14 +44,21 @@ only; the knob has no effect on cod_west or any other Baltic species.
 ## (a) Identity — blocking, PASS
 
 knob+0 (series ≡ tref everywhere, factor ≡ 1.0 exactly) vs off, per seed, per
-species, raw (non-annualized) `.biomass()` arrays compared with
+column, raw (non-annualized) `.biomass()` arrays compared with
 `np.array_equal`. Multiplying eggs by exactly `1.0` preserves the RNG stream
 under `simulation.rng.fixed` semantics, so this is a bit-identity claim, not
 a tolerance-band one.
 
-| comparison | seeds | species | violations | verdict |
+| comparison | seeds | biomass series | violations | verdict |
 |---|---|---|---|---|
-| knob0 vs off | 5 (42, 123, 7, 999, 2024) | 9 (all Baltic species) | 0 | PASS |
+| knob0 vs off | 5 (42, 123, 7, 999, 2024) | 11 (9 focal species + GreySeal + Cormorant) | 0 | PASS |
+
+The harness compares every column `.biomass()` returns, not just the 9
+focal species used in the monotonicity/elasticity sections below — it also
+covers the 2 background predators (GreySeal, Cormorant). That is a superset
+of the spec's minimum ask, so the zero-violation PASS is strictly stronger
+than "the 9 focal species are unaffected": it additionally confirms the
+knob has zero side-effect on the background-predator pathway.
 
 ## (b) Instrument — PASS
 
@@ -176,7 +184,12 @@ is climatological (uses the historical/production forcing, not this knob)
 and is untouched by this work — the knob ships disabled in the production
 config and is only active when a scenario overlay
 (`data/baltic/calibration_results/c1_thermal_knob_arm.json`) is explicitly
-merged in.
+merged in. The overlay sets `reproduction.thermal.gate.mode: "raw"`
+explicitly, whereas the A/B arms above relied on the loader's implicit
+default (unset `mode` under `response=exponential` resolves to `raw` in
+`_load_thermal_gate`) — the two are loader-equivalent (verified live), and
+the explicit key is kept in the overlay only for robustness against future
+default-resolution drift (controller ruling).
 
 ## Deliverables
 
