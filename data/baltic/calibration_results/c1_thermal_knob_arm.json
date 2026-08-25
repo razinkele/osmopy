@@ -1,0 +1,9 @@
+{
+  "reproduction.thermal.gate.enabled": "true",
+  "reproduction.thermal.gate.response": "exponential",
+  "reproduction.thermal.gate.mode": "raw",
+  "reproduction.thermal.gate.series.file": "forcing/baltic_thermal_sr_series.csv",
+  "reproduction.thermal.gate.species.enabled.sp1": "true",
+  "reproduction.thermal.gate.beta.sp1": "-0.51",
+  "reproduction.thermal.gate.tref.sp1": "9.670314810741907"
+}

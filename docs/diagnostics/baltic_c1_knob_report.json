@@ -1,0 +1,55 @@
+{
+  "seeds": [
+    42,
+    123,
+    7,
+    999,
+    2024
+  ],
+  "enabled_species": {
+    "sp1": "herring"
+  },
+  "betas": {
+    "sp1": -0.51
+  },
+  "trefs": {
+    "sp1": 9.670314810741907
+  },
+  "instrument": {
+    "knob0": {
+      "sp1": true
+    },
+    "knob2": {
+      "sp1": true
+    },
+    "knob4": {
+      "sp1": true
+    }
+  },
+  "identity": {
+    "violations": [],
+    "pass": true
+  },
+  "monotonicity": {
+    "herring": {
+      "knob0": 2539645.1633340744,
+      "knob2": 1448407.6530348808,
+      "knob4": 368297.1894929554,
+      "pass": true
+    }
+  },
+  "elasticity": {
+    "herring": {
+      "knob2": {
+        "realized_ratio": 0.5703189067300233,
+        "expected_ratio": 0.3605949401730783,
+        "elasticity": 1.5816054059335434
+      },
+      "knob4": {
+        "realized_ratio": 0.145019152600614,
+        "expected_ratio": 0.1300287108784259,
+        "elasticity": 1.1152856290039193
+      }
+    }
+  }
+}
