@@ -617,11 +617,13 @@ SPECIES_FIELDS: list[OsmoseField] = [
         key_pattern="reproduction.thermal.gate.mode",
         param_type=ParamType.ENUM,
         default="thermal_cap",
-        choices=["thermal_cap", "mean_preserving"],
+        choices=["thermal_cap", "mean_preserving", "raw"],
         description=(
             "Thermal gate mode. 'thermal_cap' = clip(r(T)/r(tref),0,1) "
             "(mean-reducing; the overshoot-damping mode). 'mean_preserving' "
-            "normalises to mean 1 over the run window (realism only)."
+            "normalises to mean 1 over the run window (realism only). 'raw' is only "
+            "valid with response=exponential — the factor IS the response, deliberately "
+            "uncapped above 1.0 (tref anchoring replaces normalisation)."
         ),
         category="reproduction",
         required=False,
@@ -712,7 +714,6 @@ SPECIES_FIELDS: list[OsmoseField] = [
     OsmoseField(
         key_pattern="reproduction.thermal.gate.beta.sp{idx}",
         param_type=ParamType.FLOAT,
-        default=0.0,
         description=(
             "Exponential response coefficient (Voss & Quaas) in exp(beta*(T-tref)), per "
             "species. Signed — negative encodes warming-reduces-recruitment; no clamp."
