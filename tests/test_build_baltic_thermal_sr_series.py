@@ -41,3 +41,11 @@ def test_write_series_csv_no_comments(tmp_path):
     assert "#" not in text  # comments crash the loader
     assert text.splitlines()[0] == "year,temp_sp0,temp_sp1"
     assert text.splitlines()[1] == "1974,7.0,8.0"
+
+
+def test_assemble_series_rejects_mismatched_first_year():
+    import pytest
+
+    hist = {1995: 10.0, 1996: 10.1, 1997: 10.2}  # first year is 1995, not 1993
+    with pytest.raises(ValueError, match="does not match expected"):
+        m.assemble_series(hist, tref=10.0, first_hist_year=1993)
