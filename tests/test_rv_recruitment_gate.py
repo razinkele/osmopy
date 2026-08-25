@@ -183,6 +183,43 @@ def test_load_rv_gate_nonascending_years_raises(tmp_path):
         _load_rv_gate(cfg, 1, 24, 3)
 
 
+def test_csv_float_parsing_round_trips_for_mean_preserving(tmp_path):
+    """Sibling of TestExponentialResponse.test_csv_float_parsing_round_trips_at_tref
+    (tests/test_thermal_gate_loader.py) for the RV gate's own pd.read_csv call
+    (_load_rv_gate, osmose/engine/config.py). 9.670314810741907 does NOT round-trip
+    through pandas' default (non-round-trip) float parser -- it reads back as
+    9.670314810741909, a 2-ULP error -- but it DOES round-trip through Python's own
+    float(). Comparing the loader's output against a value computed directly from
+    the same Python float (not re-parsed from the CSV) isolates exactly the
+    parser's rounding behaviour.
+
+    mean_preserving (not raw_cap) on purpose: raw_cap clips at 1.0, and this
+    value's parsing error happens to round UP, so a raw_cap probe with rv==ref
+    would get silently clipped back to an unchanged 1.0 -- masking the bug rather
+    than exercising it. mean_preserving has no clip, and pairing the tricky value
+    with a second, round-trip-safe row means the numerator and the window mean
+    both carry any parsing error without cancelling (unlike a same-value
+    numerator/denominator pair, which would cancel regardless of parsing
+    precision)."""
+    from osmose.engine.config import _load_rv_gate
+
+    t = 9.670314810741907
+    series = tmp_path / "roundtrip.csv"
+    series.write_text(f"year,spawning_rv\n1993,{t}\n1994,1.0\n")
+    cfg = _cfg(
+        tmp_path,
+        **{
+            "reproduction.rv.gate.mode": "mean_preserving",
+            "reproduction.rv.gate.series.file": str(series),
+            "reproduction.rv.gate.start.year": "1993",
+        },
+    )
+    fac, _, _ = _load_rv_gate(cfg, 1, 24, 2)
+    expected_rv = np.array([t, 1.0], dtype=np.float64)
+    expected_fac = expected_rv / float(np.mean(expected_rv))
+    assert np.array_equal(fac, expected_fac)
+
+
 def test_rv_gate_negative_offset_raises(tmp_path):
     """B1-audit latent bug: negative offset feeds Python negative indexing (reads the
     series END). C1 spec decision 9 adds load-time rejection."""
