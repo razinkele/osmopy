@@ -183,6 +183,14 @@ def test_load_rv_gate_nonascending_years_raises(tmp_path):
         _load_rv_gate(cfg, 1, 24, 3)
 
 
+def test_rv_gate_negative_offset_raises(tmp_path):
+    """B1-audit latent bug: negative offset feeds Python negative indexing (reads the
+    series END). C1 spec decision 9 adds load-time rejection."""
+    cfg = _cfg(tmp_path, **{"reproduction.rv.gate.start.year": "1990"})  # < series first year 1993
+    with pytest.raises(ValueError, match="negative|predates"):
+        _load_rv_gate(cfg, 1, 24, 3)
+
+
 def _fake_cfg(factor, enabled, offset=0, n_dt=24):
     return SimpleNamespace(
         rv_gate_factor_by_index=factor,

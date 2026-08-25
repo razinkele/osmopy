@@ -1147,6 +1147,13 @@ def _load_rv_gate(
     start_year = int(cfg.get("reproduction.rv.gate.start.year", str(first_year)))
     n_years = len(rv)
     offset = start_year - first_year
+    if offset < 0:
+        raise ValueError(
+            f"reproduction.rv.gate.start.year={start_year} predates the series first year "
+            f"{first_year}: a negative offset feeds Python negative indexing, silently reading "
+            "from the series END instead of the requested year. Use a start.year >= the series "
+            "start."
+        )
 
     if mode == "mean_preserving":
         # Multiset mean over the sampled model years y=0..n_year-1 (with repeats).
@@ -1248,7 +1255,11 @@ def _load_thermal_gate(
     columns for disabled species are 1.0. All three are (None, None, 0) when the
     master switch is off. Raises a clear error on any invalid configuration.
     """
-    from osmose.engine.processes.thermal_gate import logistic_response, normalize_factor
+    from osmose.engine.processes.thermal_gate import (
+        exponential_response,
+        logistic_response,
+        normalize_factor,
+    )
 
     if cfg.get("reproduction.thermal.gate.enabled", "false").lower() != "true":
         return None, None, 0
@@ -1276,14 +1287,35 @@ def _load_thermal_gate(
             "(reproduction.thermal.gate.species.enabled.sp{idx})."
         )
 
-    mode = cfg.get("reproduction.thermal.gate.mode", "thermal_cap")
-    if mode not in ("thermal_cap", "mean_preserving"):
-        raise ValueError(f"unknown reproduction.thermal.gate.mode: {mode!r}")
+    response = cfg.get("reproduction.thermal.gate.response", "logistic")
+    if response not in ("logistic", "exponential"):
+        raise ValueError(f"unknown reproduction.thermal.gate.response: {response!r}")
+    mode_cfg = cfg.get("reproduction.thermal.gate.mode")
+    if response == "exponential":
+        mode = mode_cfg if mode_cfg is not None else "raw"
+        if mode != "raw":
+            raise ValueError(
+                "response=exponential requires mode 'raw' (or unset): thermal_cap/"
+                "mean_preserving would renormalise away the scenario offsets "
+                "(C1 spec decision 8)."
+            )
+    else:
+        mode = mode_cfg if mode_cfg is not None else "thermal_cap"
+        if mode == "raw":
+            raise ValueError("mode 'raw' is only valid with response=exponential.")
+        if mode not in ("thermal_cap", "mean_preserving"):
+            raise ValueError(f"unknown reproduction.thermal.gate.mode: {mode!r}")
     floor = float(cfg.get("reproduction.thermal.gate.floor", "0.0"))
     if not (0.0 <= floor <= 1.0):
         raise ValueError(f"reproduction.thermal.gate.floor must be in [0,1], got {floor}.")
     start_year = int(cfg.get("reproduction.thermal.gate.start.year", str(first_year)))
     offset = start_year - first_year
+    if offset < 0:
+        raise ValueError(
+            f"reproduction.thermal.gate.start.year={start_year} predates the series "
+            f"first year {first_year}: a negative offset silently wraps the year "
+            "index (modulo) to the wrong year. Use a start.year >= the series start."
+        )
     window_idx = [(offset + y) % n_years for y in range(n_year)]
 
     factor = np.ones((n_years, n_species), dtype=np.float64)
@@ -1300,18 +1332,33 @@ def _load_thermal_gate(
             raise ValueError(
                 f"Thermal gate series {path} column {col} has NaN or out-of-range (-2..30 C) values."
             )
-        t50 = float(cfg.get(f"reproduction.thermal.gate.t50.sp{sp}", "18.5"))
-        slope = float(cfg.get(f"reproduction.thermal.gate.slope.sp{sp}", "1.5"))
-        if slope <= 0.0:
-            raise ValueError(f"reproduction.thermal.gate.slope.sp{sp} must be > 0, got {slope}.")
-        r = logistic_response(temp, t50, slope)
-        if mode == "thermal_cap":
-            tref = float(cfg.get(f"reproduction.thermal.gate.tref.sp{sp}", "20.0"))
-            r_ref = float(logistic_response(np.array([tref]), t50, slope)[0])
-            if r_ref <= 0.0:
-                raise ValueError(f"thermal_cap r_ref for sp{sp} is 0 (check tref/t50/slope).")
-        else:
+        if response == "exponential":
+            beta_key = f"reproduction.thermal.gate.beta.sp{sp}"
+            tref_key = f"reproduction.thermal.gate.tref.sp{sp}"
+            if beta_key not in cfg:
+                raise ValueError(f"{beta_key} is required with response=exponential.")
+            if tref_key not in cfg:
+                raise ValueError(
+                    f"{tref_key} is required with response=exponential (the key's 20.0 C "
+                    "thermal_cap default would be a silently wrong anchor)."
+                )
+            r = exponential_response(temp, float(cfg[beta_key]), float(cfg[tref_key]))
             r_ref = 0.0
+        else:
+            t50 = float(cfg.get(f"reproduction.thermal.gate.t50.sp{sp}", "18.5"))
+            slope = float(cfg.get(f"reproduction.thermal.gate.slope.sp{sp}", "1.5"))
+            if slope <= 0.0:
+                raise ValueError(
+                    f"reproduction.thermal.gate.slope.sp{sp} must be > 0, got {slope}."
+                )
+            r = logistic_response(temp, t50, slope)
+            if mode == "thermal_cap":
+                tref = float(cfg.get(f"reproduction.thermal.gate.tref.sp{sp}", "20.0"))
+                r_ref = float(logistic_response(np.array([tref]), t50, slope)[0])
+                if r_ref <= 0.0:
+                    raise ValueError(f"thermal_cap r_ref for sp{sp} is 0 (check tref/t50/slope).")
+            else:
+                r_ref = 0.0
         factor[:, sp] = normalize_factor(r, mode, r_ref, window_idx, floor)
 
     return factor.astype(np.float64), enabled, offset

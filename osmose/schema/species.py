@@ -627,6 +627,19 @@ SPECIES_FIELDS: list[OsmoseField] = [
         required=False,
     ),
     OsmoseField(
+        key_pattern="reproduction.thermal.gate.response",
+        param_type=ParamType.ENUM,
+        default="logistic",
+        choices=["logistic", "exponential"],
+        description=(
+            "Thermal gate response curve. 'logistic' = saturating percid year-class "
+            "response (t50/slope). 'exponential' = Voss & Quaas exp(beta*(T-tref)) "
+            "productivity factor — scenario knob, requires mode 'raw'."
+        ),
+        category="reproduction",
+        required=False,
+    ),
+    OsmoseField(
         key_pattern="reproduction.thermal.gate.series.file",
         param_type=ParamType.FILE_PATH,
         default="",
@@ -692,6 +705,18 @@ SPECIES_FIELDS: list[OsmoseField] = [
         min_val=0.0,
         max_val=40.0,
         description="Reference temperature (C) at which thermal_cap saturates to 1.0, per species.",
+        category="reproduction",
+        indexed=True,
+        required=False,
+    ),
+    OsmoseField(
+        key_pattern="reproduction.thermal.gate.beta.sp{idx}",
+        param_type=ParamType.FLOAT,
+        default=0.0,
+        description=(
+            "Exponential response coefficient (Voss & Quaas) in exp(beta*(T-tref)), per "
+            "species. Signed — negative encodes warming-reduces-recruitment; no clamp."
+        ),
         category="reproduction",
         indexed=True,
         required=False,

@@ -28,6 +28,18 @@ def logistic_response(temp: NDArray[np.float64], t50: float, slope: float) -> ND
     return 1.0 / (1.0 + np.exp(-(temp - t50) / slope))
 
 
+def exponential_response(
+    temp: NDArray[np.float64], beta: float, tref: float
+) -> NDArray[np.float64]:
+    """Voss & Quaas (2026, doi:10.1093/icesjms/fsag033) productivity factor
+    exp(beta * (T - tref)). beta < 0 encodes warming-reduces-recruitment; the
+    factor is exactly 1.0 at T == tref and is deliberately uncapped above 1
+    (the paper's Beverton-Holt numerator has no cap). Scenario knob — see spec
+    2026-08-25; NOT a validated mechanism.
+    """
+    return np.exp(beta * (temp - tref))
+
+
 def normalize_factor(
     r: NDArray[np.float64],
     mode: str,
@@ -37,15 +49,21 @@ def normalize_factor(
 ) -> NDArray[np.float64]:
     """Turn a per-year response into a per-year egg multiplier.
 
+    raw (exponential response only): the factor IS the response; tref
+    anchoring replaces normalisation (C1 spec decision 8).
     thermal_cap (mean-reducing): clip(r / r_ref, 0, 1) — most years < 1.
     mean_preserving (realism only): r / mean(r over the sampled model years).
-    Both then floored at ``floor``.
+    All modes are then floored at ``floor``.
 
     ``floor`` > 0 is rejected under mean_preserving: a nonzero floor raises the
     small values after normalization and destroys the unit-mean property that
     is the entire point of the mode (review finding 4).
     """
-    if mode == "thermal_cap":
+    if mode == "raw":
+        # exponential response only: the factor IS the response; tref anchoring
+        # replaces normalisation (C1 spec decision 8).
+        factor = r.copy()
+    elif mode == "thermal_cap":
         factor = np.clip(r / r_ref, 0.0, 1.0)
     elif mode == "mean_preserving":
         if floor > 0.0:

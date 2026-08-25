@@ -107,3 +107,99 @@ def test_thermal_keys_are_recognized_by_config_validation():
         "reproduction.thermal.gate.tref.sp4": "20.0",
     }
     assert cv.validate(keys, mode="error") == []
+
+
+class TestExponentialResponse:
+    """C1 spec decisions 2, 8, 9 — Voss & Quaas exponential response."""
+
+    def _series_csv(self, tmp_path, temps_sp0, first_year=1974):
+        rows = ["year,temp_sp0"]
+        for i, t in enumerate(temps_sp0):
+            rows.append(f"{first_year + i},{t}")
+        p = tmp_path / "thermal.csv"
+        p.write_text("\n".join(rows) + "\n")
+        return p
+
+    def _cfg(self, tmp_path, temps, **over):
+        cfg = {
+            "simulation.nspecies": "1",
+            "simulation.time.ndtperyear": "4",
+            "simulation.time.nyear": str(len(temps)),
+            "_osmose.config.dir": str(tmp_path),
+            "reproduction.thermal.gate.enabled": "true",
+            "reproduction.thermal.gate.series.file": str(self._series_csv(tmp_path, temps)),
+            "reproduction.thermal.gate.species.enabled.sp0": "true",
+            "reproduction.thermal.gate.response": "exponential",
+            "reproduction.thermal.gate.beta.sp0": "-0.51",
+            "reproduction.thermal.gate.tref.sp0": "7.0",
+        }
+        cfg.update(over)
+        return cfg
+
+    def test_factor_is_exactly_one_at_tref(self, tmp_path):
+        from osmose.engine.config import _load_thermal_gate
+
+        factor, enabled, offset = _load_thermal_gate(self._cfg(tmp_path, [7.0] * 5), 1, 4, 5)
+        assert (factor[:, 0] == 1.0).all()  # exp(0) == 1.0 exactly — bit-identity rests on this
+
+    def test_exponential_scaling(self, tmp_path):
+        import numpy as np
+        from osmose.engine.config import _load_thermal_gate
+
+        factor, _, _ = _load_thermal_gate(self._cfg(tmp_path, [9.0] * 3), 1, 4, 3)
+        assert np.allclose(factor[:, 0], np.exp(-0.51 * 2.0))
+
+    def test_missing_beta_raises(self, tmp_path):
+        import pytest
+        from osmose.engine.config import _load_thermal_gate
+
+        cfg = self._cfg(tmp_path, [7.0] * 3)
+        del cfg["reproduction.thermal.gate.beta.sp0"]
+        with pytest.raises(ValueError, match="beta.sp0"):
+            _load_thermal_gate(cfg, 1, 4, 3)
+
+    def test_missing_tref_raises_not_defaults(self, tmp_path):
+        """The key has a silent 20.0 thermal_cap default the exponential path must refuse."""
+        import pytest
+        from osmose.engine.config import _load_thermal_gate
+
+        cfg = self._cfg(tmp_path, [7.0] * 3)
+        del cfg["reproduction.thermal.gate.tref.sp0"]
+        with pytest.raises(ValueError, match="tref.sp0"):
+            _load_thermal_gate(cfg, 1, 4, 3)
+
+    def test_mode_matrix(self, tmp_path):
+        import pytest
+        from osmose.engine.config import _load_thermal_gate
+
+        for bad in ("thermal_cap", "mean_preserving"):
+            cfg = self._cfg(tmp_path, [7.0] * 3)
+            cfg["reproduction.thermal.gate.mode"] = bad
+            with pytest.raises(ValueError, match="raw"):
+                _load_thermal_gate(cfg, 1, 4, 3)
+        cfg = self._cfg(tmp_path, [7.0] * 3)
+        cfg["reproduction.thermal.gate.mode"] = "raw"
+        _load_thermal_gate(cfg, 1, 4, 3)  # explicit raw OK
+        cfg = self._cfg(tmp_path, [7.0] * 3)
+        cfg["reproduction.thermal.gate.response"] = "logistic"
+        cfg["reproduction.thermal.gate.mode"] = "raw"
+        cfg["reproduction.thermal.gate.t50.sp0"] = "18.5"
+        with pytest.raises(ValueError, match="raw"):
+            _load_thermal_gate(cfg, 1, 4, 3)
+
+    def test_negative_offset_raises(self, tmp_path):
+        import pytest
+        from osmose.engine.config import _load_thermal_gate
+
+        cfg = self._cfg(tmp_path, [7.0] * 3)
+        cfg["reproduction.thermal.gate.start.year"] = "1960"  # < series first year 1974
+        with pytest.raises(ValueError, match="negative|predates"):
+            _load_thermal_gate(cfg, 1, 4, 3)
+
+    def test_floor_applies_under_raw(self, tmp_path):
+        from osmose.engine.config import _load_thermal_gate
+
+        cfg = self._cfg(tmp_path, [27.0] * 3)  # exp(-0.51*20) ~ 4e-5
+        cfg["reproduction.thermal.gate.floor"] = "0.05"
+        factor, _, _ = _load_thermal_gate(cfg, 1, 4, 3)
+        assert (factor[:, 0] == 0.05).all()
