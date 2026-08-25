@@ -22,6 +22,7 @@ accessible, so this self-fit is the SOLE source for cod_west's beta1; there is n
 from __future__ import annotations
 
 import csv
+import importlib.util
 import json
 from datetime import date
 from pathlib import Path
@@ -37,11 +38,22 @@ SNAPSHOT_PATH = (
 SERIES_PATH = ROOT / "data" / "baltic" / "forcing" / "baltic_thermal_sr_series.csv"
 DOC_DIR = ROOT / "docs"
 
-# hatch years start at 1993 -- matches the thermal series builder's HIST_START
-# (scripts/build_baltic_thermal_sr_series.py) and spec decision 4/5's fit window. Rows before
-# this are synthetic spin-up filler (constant tref), not observed temperature, so they are
-# excluded from the fit regardless of how many the series CSV happens to carry.
-HATCH_START = 1993
+# scripts/ is not a package, so the sibling builder module is loaded the same way the test
+# files for both scripts do (importlib.util.spec_from_file_location on the literal path).
+_builder_spec = importlib.util.spec_from_file_location(
+    "build_baltic_thermal_sr_series",
+    Path(__file__).resolve().parent / "build_baltic_thermal_sr_series.py",
+)
+_builder = importlib.util.module_from_spec(_builder_spec)
+_builder_spec.loader.exec_module(_builder)
+
+# Hatch years start where the thermal series builder's historical block starts. Imported
+# directly from build_baltic_thermal_sr_series.HIST_START rather than copied by value: a
+# hardcoded second copy of this constant is exactly the drift class that cost Task 2's builder
+# three review rounds (three independently-hardcoded year windows disagreeing with each other).
+# Rows before this year are synthetic spin-up filler (constant tref), not observed temperature,
+# and are excluded from the fit regardless of how many the series CSV happens to carry.
+HATCH_START = _builder.HIST_START
 
 
 def _bh_exp_residuals(
@@ -200,7 +212,10 @@ def _load_series_temps(path: Path, sp_col: str = "temp_sp0") -> dict[int, float]
     with open(path, newline="") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            year = int(row["year"])
+            try:
+                year = int(row["year"])
+            except (KeyError, TypeError, ValueError):
+                continue
             if year < HATCH_START:
                 continue
             value = row.get(sp_col, "")
@@ -258,10 +273,12 @@ def main() -> int:
 
     series_span = f"{min(series_temps)}-{max(series_temps)}"
     if min(series_temps) != HATCH_START:
-        print(
-            f"NOTE: series' historical block starts {min(series_temps)}, not HATCH_START="
-            f"{HATCH_START}. If this is a rebuild with a moved window, check that no "
-            f"spin-up (constant-tref) rows are being read as observed temperature."
+        raise ValueError(
+            f"series' historical block starts {min(series_temps)}, but HATCH_START="
+            f"{HATCH_START} (imported from build_baltic_thermal_sr_series.HIST_START). "
+            "The loaded series' actual first historical year has drifted from the builder's "
+            "declared window -- spin-up (constant-tref) rows would otherwise be silently read "
+            "as observed temperature, or real leading years would be silently dropped."
         )
 
     # Overlap: a hatch year y needs a temperature (from the series' historical block) AND an
