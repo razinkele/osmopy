@@ -60,7 +60,22 @@ of the spec's minimum ask, so the zero-violation PASS is strictly stronger
 than "the 9 focal species are unaffected": it additionally confirms the
 knob has zero side-effect on the background-predator pathway.
 
-## (b) Instrument — PASS
+## (b) Monotonicity — PASS
+
+Final-decade mean biomass (years 41-50 of 50, matching
+`baltic_stability_certify.py`'s convention), averaged over the 5 seeds.
+
+| arm | ΔT | herring final-decade mean (t) | vs knob0 |
+|---|---|---|---|
+| knob0 | +0°C | 2,539,645.16 | — |
+| knob2 | +2°C | 1,448,407.65 | -43.0% |
+| knob4 | +4°C | 368,297.19 | -85.5% |
+
+Strictly decreasing across knob0 → knob2 → knob4: PASS. (A non-monotone
+response was pre-registered as a FAIL and a finding per spec success
+criterion 3 — not triggered.)
+
+## (c) Instrument — PASS
 
 The A/B harness recomputes `exp(β·ΔT)` independently from each arm's series
 file + config and asserts the loader's (`_load_thermal_gate`) factor
@@ -76,21 +91,6 @@ forcing actually engaged the simulation.
 | knob4 (ΔT=+4°C) | yes |
 
 (No row for sp0/cod_west — the species is not enabled in any arm.)
-
-## (c) Monotonicity — PASS
-
-Final-decade mean biomass (years 41-50 of 50, matching
-`baltic_stability_certify.py`'s convention), averaged over the 5 seeds.
-
-| arm | ΔT | herring final-decade mean (t) | vs knob0 |
-|---|---|---|---|
-| knob0 | +0°C | 2,539,645.16 | — |
-| knob2 | +2°C | 1,448,407.65 | -43.0% |
-| knob4 | +4°C | 368,297.19 | -85.5% |
-
-Strictly decreasing across knob0 → knob2 → knob4: PASS. (A non-monotone
-response was pre-registered as a FAIL and a finding per spec success
-criterion 3 — not triggered.)
 
 ## (d) Elasticity — reported, no threshold
 
@@ -132,14 +132,24 @@ reading only the A/B result does not miss them:
   reconstructions; this implementation drives the series from CMEMS Baltic
   PHY multi-year reanalysis (`thetao`/`bottomT`) over SD22-24, a labelled
   substitution, not the paper's own product.
-- **Window 1974-2021**, not 1974-2023. The spec's original text described a
-  fixed 50-row 1974-2023 layout; the CMEMS product's actual data end
-  (2021) is earlier, so the historical file — and the constant-T arms
-  derived from its `tref`s — cover 1974-2021 (19 synthetic spin-up years at
-  `tref`, 1993-2021 real years). This is a controller ruling made during the
-  build (Task 2, spec-defect resolution), not a silent truncation: no run in
-  this stage consumes the historical series past its real extent, and the
-  fit script's lagged pairing depends only on the real (1993-2021) portion.
+- **Two windows, not one — the historical file is 1974-2021; the arms this
+  A/B runs are 1974-2023.** The spec's original text described a fixed
+  50-row 1974-2023 layout. The *historical* series
+  (`data/baltic/forcing/baltic_thermal_sr_series.csv`, built from real CMEMS
+  data and the source of `tref`, and the only series the cod_west fit
+  consumes) is shorter than that: the CMEMS product's actual data end
+  (2021) is earlier than the spec's assumed end, so the historical file is
+  48 rows, 1974-2021 (19 synthetic spin-up years at `tref`, 1993-2021 real
+  years). This is a controller ruling made during the build (Task 2,
+  spec-defect resolution), not a silent truncation: no run in this stage
+  consumes the historical series past its real extent, and the fit script's
+  lagged pairing depends only on the real (1993-2021) portion. The
+  *constant-T arm* files this A/B actually runs against
+  (`write_arm_series` in `scripts/baltic_c1_knob_ab.py`, `FIRST_YEAR=1974`,
+  `N_YEAR=50`) are synthetic — every row is `tref` or `tref+ΔT`, not a real
+  temperature — so they are unaffected by the CMEMS product's shorter real
+  extent and follow the spec's original 50-row, 1974-2023 layout exactly
+  (19 spin-up rows 1974-1992 at `tref`, 31 rows 1993-2023 at `tref`/`tref+ΔT`).
 - **tref sourced at full CSV precision** (`9.670314810741907` for herring),
   not the README's rounded display value (`9.67`). Using the rounded value
   would have broken the knob+0 bit-identity criterion — see the round-trip

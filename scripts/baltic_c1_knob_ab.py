@@ -13,7 +13,7 @@ HERRING-ONLY. sp0 (cod_west) stays UNFORCED in every arm; only sp1 (herring)
 carries reproduction.thermal.gate.* overrides. TREF is the CSV's full-
 precision bottom-T Q4 mean (9.670314810741907), not the README's rounded
 9.67 -- a rounded tref would break the exact-zero exponent the bit-identity
-arm (knob0, dT=0) rests on (docs/baltic_c1_codwest_fit_2026-08-25.md).
+arm (knob0, dT=0) rests on (docs/baltic_c1_knob_ab_2026-08-25.md).
 
 Pre-registered, NOT tunable: the arm set (off/knob0/knob2/knob4), the seed
 set, the bit-identity criterion (off == knob0 array_equal), and the
