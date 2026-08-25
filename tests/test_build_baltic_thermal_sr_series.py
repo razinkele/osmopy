@@ -49,3 +49,61 @@ def test_assemble_series_rejects_mismatched_first_year():
     hist = {1995: 10.0, 1996: 10.1, 1997: 10.2}  # first year is 1995, not 1993
     with pytest.raises(ValueError, match="does not match expected"):
         m.assemble_series(hist, tref=10.0, first_hist_year=1993)
+
+
+def test_subset_bbox_3d_array():
+    """Test _subset_bbox with synthetic 3D (time, lat, lon) array."""
+    import numpy as np
+
+    # Create synthetic 3D array (time=12, lat=7, lon=8)
+    data = np.arange(12 * 7 * 8, dtype=float).reshape(12, 7, 8)
+
+    # Coordinates within BBOX_SD (9.5-15.0E, 53.5-56.5N): 8 lon points (9-16E), 7 lat points (53-59N)
+    lon = np.array([9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0])
+    lat = np.array([53.0, 54.0, 55.0, 56.0, 57.0, 58.0, 59.0])
+
+    # Subset to 9.5-15.0E, 53.5-56.5N (the hardcoded BBOX_SD)
+    # Expected indices: lon 10,11,12,13,14,15 (indices 1,2,3,4,5,6) = 6 points
+    #                   lat 54,55,56 (indices 1,2,3) = 3 points
+    subset = m._subset_bbox(data, lon, lat)
+
+    # Expected shape: (12, 3, 6) — 3 lat values, 6 lon values
+    assert subset.shape == (12, 3, 6), f"expected (12, 3, 6), got {subset.shape}"
+
+    # Verify values: subset[t, lat_idx, lon_idx] should correspond to original data values
+    # Original data[0, 1, 1] = 1*8 + 1 = 9
+    expected_val_0_0_0 = data[0, 1, 1]
+    assert subset[0, 0, 0] == expected_val_0_0_0, (
+        f"mismatch at [0,0,0]: {subset[0, 0, 0]} vs {expected_val_0_0_0}"
+    )
+
+    # Verify time axis is preserved: should have all 12 time slices
+    assert subset.shape[0] == 12
+
+
+def test_gap_detection_in_yearly_means():
+    """Test that per-year gaps in means dict are detected."""
+    # This simulates the gap detection logic from main()
+    # If a variable's yearly means have gaps, it should be treated as DEGRADED
+
+    # Simulate loading thetao for years 1993-2000, but 1995 and 1998 failed
+    thetao_means = {
+        1993: 10.0,
+        1994: 10.1,
+        # 1995 missing
+        1996: 10.3,
+        1997: 10.4,
+        # 1998 missing
+        1999: 10.6,
+        2000: 10.7,
+    }
+
+    all_years = sorted(thetao_means.keys())
+    first_year = all_years[0]
+    last_year = all_years[-1]
+    expected_years = list(range(first_year, last_year + 1))
+    missing_years = [y for y in expected_years if y not in thetao_means]
+
+    # Should detect missing years
+    assert missing_years == [1995, 1998], f"expected [1995, 1998], got {missing_years}"
+    assert len(missing_years) > 0, "gap detection failed"

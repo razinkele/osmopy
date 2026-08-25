@@ -12,7 +12,7 @@ and writes the series to data/baltic/forcing/baltic_thermal_sr_series.csv with
 provenance in data/baltic/forcing/baltic_thermal_sr_series.csv.README.md.
 
 On download failure (no credentials, network error, product gap), prints DEGRADED:
-and uses a PROVISIONAL fallback constant for that species (marked in README).
+and uses PROVISIONAL fallback constants (marked in README for Task 4 to source real values).
 """
 
 from __future__ import annotations
@@ -31,9 +31,9 @@ OUT = ROOT / "data" / "baltic" / "forcing" / "baltic_thermal_sr_series.csv"
 # SD22-24 sub-basin (review area)
 BBOX_SD = {"lon_min": 9.5, "lon_max": 15.0, "lat_min": 53.5, "lat_max": 56.5}
 
-# Provisional fallback constants (used if download fails; Task 4 must source real values)
+# Provisional fallback constants (UNSOURCED PLACEHOLDERS — Task 4 must replace)
 PROVISIONAL_TREF = {0: 11.5, 1: 8.5}  # cod_west, herring
-PROVISIONAL_LABEL = {0: "11.5 (PROVISIONAL)", 1: "8.5 (PROVISIONAL)"}
+PROVISIONAL_LABEL = {0: "11.5 (UNSOURCED PLACEHOLDER)", 1: "8.5 (UNSOURCED PLACEHOLDER)"}
 
 
 def quarter_mean(monthly_temps: dict[int, float], quarter: int) -> float:
@@ -178,40 +178,6 @@ def write_readme(path: Path, species_info: dict[int, dict[str, str]]) -> None:
     readme_path.write_text("\n".join(lines))
 
 
-def _months_from_time(ds: xr.Dataset) -> dict[int, np.ndarray]:
-    """Extract monthly data arrays and month numbers from time coordinate.
-
-    Returns dict of {month: data_array} for all 12 months in the dataset.
-    Raises ValueError if months are incomplete or duplicated.
-    """
-    if "time" not in ds.dims:
-        raise ValueError("Dataset has no 'time' dimension")
-
-    times = ds["time"].values
-    months_dict = {}
-
-    for i, t in enumerate(times):
-        # Parse month from datetime64 timestamp
-        dt64 = np.datetime64(t)
-        # Convert to pandas Timestamp for easy month extraction
-        import pandas as pd
-
-        ts = pd.Timestamp(dt64)
-        month = ts.month
-        if month in months_dict:
-            raise ValueError(
-                f"duplicate data for month {month} at indices {months_dict[month]}, {i}"
-            )
-        months_dict[month] = i
-
-    if len(months_dict) != 12:
-        raise ValueError(
-            f"expected 12 months, got {len(months_dict)}: {sorted(months_dict.keys())}"
-        )
-
-    return months_dict
-
-
 def _subset_bbox(data: np.ndarray, coords_lon: np.ndarray, coords_lat: np.ndarray) -> np.ndarray:
     """Subset spatial data to SD22-24 bbox (9.5-15.0E, 53.5-56.5N).
 
@@ -232,44 +198,89 @@ def _subset_bbox(data: np.ndarray, coords_lon: np.ndarray, coords_lat: np.ndarra
             f"no data in bbox {BBOX_SD}; lon indices {lon_indices}, lat indices {lat_indices}"
         )
 
-    # Subset depending on data shape
+    # Subset depending on data shape — use sequential subsetting for clarity and correctness
     if data.ndim == 2:  # (lat, lon)
-        return data[np.ix_(lat_indices, lon_indices)]
+        return data[lat_indices, :][:, lon_indices]
     elif data.ndim == 3:  # (time, lat, lon)
-        return data[:, np.ix_(lat_indices, lon_indices)]
+        return data[:, lat_indices, :][:, :, lon_indices]
     elif data.ndim == 4:  # (time, depth, lat, lon)
-        return data[:, :, np.ix_(lat_indices, lon_indices)]
+        return data[:, :, lat_indices, :][:, :, :, lon_indices]
     else:
         raise ValueError(f"unexpected data shape {data.shape}")
+
+
+def _months_from_time(ds: xr.Dataset) -> dict[int, np.ndarray]:
+    """Extract monthly data arrays and month numbers from time coordinate.
+
+    Returns dict of {month: index} for all months in the dataset.
+    Raises ValueError if months are incomplete or duplicated.
+    """
+    if "time" not in ds.dims:
+        raise ValueError("Dataset has no 'time' dimension")
+
+    times = ds["time"].values
+    months_dict = {}
+
+    for i, t in enumerate(times):
+        # Parse month from datetime64 timestamp
+        import pandas as pd
+
+        dt64 = np.datetime64(t)
+        ts = pd.Timestamp(dt64)
+        month = ts.month
+        if month in months_dict:
+            raise ValueError(
+                f"duplicate data for month {month} at indices {months_dict[month]}, {i}"
+            )
+        months_dict[month] = i
+
+    if len(months_dict) != 12:
+        raise ValueError(
+            f"expected 12 months, got {len(months_dict)}: {sorted(months_dict.keys())}"
+        )
+
+    return months_dict
 
 
 def _load_thetao_series(files: list[Path]) -> dict[int, float] | None:
     """Load thetao (surface temp) Q3 means from cached files.
 
-    Returns dict of {year: mean_temp} or None on failure.
+    Returns dict of {year: mean_temp} or None on failure/missing data.
+    Raises on code bugs (parsing, indexing).
     """
     thetao_means = {}
     for f in files:
+        # I/O errors only — parsing bugs must propagate
         try:
             ds = xr.open_dataset(f)
+        except (FileNotFoundError, OSError, IOError) as e:
+            print(f"  warning: failed to open {f.name}: {e}")
+            continue
 
+        try:
             # Extract year from filename (e.g., "baltic_phy_monthly_reanalysis_thetao_1993-01_1993-12.nc")
             fname_parts = f.stem.split("_")
             year_str = fname_parts[-2].split("-")[0]
             year = int(year_str)
 
-            # Get month mapping
+            # Get month mapping — parsing error, should propagate
             months_idx = _months_from_time(ds)
 
-            # Load thetao data
-            theta = ds["thetao"].values
+            # Load thetao data — I/O error only
+            try:
+                theta = ds["thetao"].values
+            except KeyError as e:
+                print(f"  warning: no thetao variable in {f.name}: {e}")
+                ds.close()
+                continue
+
             if theta.ndim == 4:
                 # (time, depth, lat, lon) - take surface
                 theta = theta[:, 0, :, :]
             elif theta.ndim != 3:
                 raise ValueError(f"expected 3D or 4D thetao, got shape {theta.shape}")
 
-            # Get coordinates
+            # Get coordinates — parsing error, should propagate
             if "longitude" in ds.coords:
                 lon = ds["longitude"].values
             elif "lon" in ds.coords:
@@ -284,20 +295,31 @@ def _load_thetao_series(files: list[Path]) -> dict[int, float] | None:
             else:
                 raise ValueError("no latitude/lat coordinate")
 
-            # Subset to SD22-24 bbox
+            # Subset to SD22-24 bbox — parsing error, should propagate
             theta_subset = _subset_bbox(theta, lon, lat)
 
-            # Extract Q3 months and average
-            q3_indices = [months_idx[m] for m in (7, 8, 9)]
-            q3_data = theta_subset[q3_indices, :, :]
-            q3_mean = float(q3_data.mean())
+            # Extract Q3 months using quarter_mean — parsing error, should propagate
+            q3_dict = {m: float(theta_subset[months_idx[m], :, :].mean()) for m in (7, 8, 9)}
+            q3_mean = quarter_mean(q3_dict, quarter=3)
 
             thetao_means[year] = q3_mean
             ds.close()
 
+        except (KeyError, ValueError):
+            ds.close()
+            # Code bug — re-raise to avoid silent fallback
+            raise
         except Exception as e:
-            print(f"  warning: failed to read {f.name}: {e}")
+            ds.close()
+            # Other I/O-like errors
+            print(f"  warning: failed to process {f.name}: {e}")
             continue
+
+    if not thetao_means and files:
+        # Cache files exist but yielded zero data — not download-missing, parsing error
+        raise ValueError(
+            f"thetao: {len(files)} files loaded but all failed or empty; check data integrity"
+        )
 
     return thetao_means if thetao_means else None
 
@@ -305,30 +327,42 @@ def _load_thetao_series(files: list[Path]) -> dict[int, float] | None:
 def _load_bottomt_series(files: list[Path]) -> dict[int, float] | None:
     """Load bottomT (bottom temp) Q4 means from cached files.
 
-    Returns dict of {year: mean_temp} or None on failure.
+    Returns dict of {year: mean_temp} or None on failure/missing data.
+    Raises on code bugs (parsing, indexing).
     """
     bottomt_means = {}
     for f in files:
+        # I/O errors only — parsing bugs must propagate
         try:
             ds = xr.open_dataset(f)
+        except (FileNotFoundError, OSError, IOError) as e:
+            print(f"  warning: failed to open {f.name}: {e}")
+            continue
 
+        try:
             # Extract year from filename
             fname_parts = f.stem.split("_")
             year_str = fname_parts[-2].split("-")[0]
             year = int(year_str)
 
-            # Get month mapping
+            # Get month mapping — parsing error, should propagate
             months_idx = _months_from_time(ds)
 
-            # Load bottomT data
-            bt = ds["bottomT"].values
+            # Load bottomT data — I/O error only
+            try:
+                bt = ds["bottomT"].values
+            except KeyError as e:
+                print(f"  warning: no bottomT variable in {f.name}: {e}")
+                ds.close()
+                continue
+
             if bt.ndim == 4:
                 # (time, depth, lat, lon) - take bottom (last depth)
                 bt = bt[:, -1, :, :]
             elif bt.ndim != 3:
                 raise ValueError(f"expected 3D or 4D bottomT, got shape {bt.shape}")
 
-            # Get coordinates
+            # Get coordinates — parsing error, should propagate
             if "longitude" in ds.coords:
                 lon = ds["longitude"].values
             elif "lon" in ds.coords:
@@ -343,20 +377,31 @@ def _load_bottomt_series(files: list[Path]) -> dict[int, float] | None:
             else:
                 raise ValueError("no latitude/lat coordinate")
 
-            # Subset to SD22-24 bbox
+            # Subset to SD22-24 bbox — parsing error, should propagate
             bt_subset = _subset_bbox(bt, lon, lat)
 
-            # Extract Q4 months and average
-            q4_indices = [months_idx[m] for m in (10, 11, 12)]
-            q4_data = bt_subset[q4_indices, :, :]
-            q4_mean = float(q4_data.mean())
+            # Extract Q4 months using quarter_mean — parsing error, should propagate
+            q4_dict = {m: float(bt_subset[months_idx[m], :, :].mean()) for m in (10, 11, 12)}
+            q4_mean = quarter_mean(q4_dict, quarter=4)
 
             bottomt_means[year] = q4_mean
             ds.close()
 
+        except (KeyError, ValueError):
+            ds.close()
+            # Code bug — re-raise to avoid silent fallback
+            raise
         except Exception as e:
-            print(f"  warning: failed to read {f.name}: {e}")
+            ds.close()
+            # Other I/O-like errors
+            print(f"  warning: failed to process {f.name}: {e}")
             continue
+
+    if not bottomt_means and files:
+        # Cache files exist but yielded zero data — not download-missing, parsing error
+        raise ValueError(
+            f"bottomT: {len(files)} files loaded but all failed or empty; check data integrity"
+        )
 
     return bottomt_means if bottomt_means else None
 
@@ -410,7 +455,7 @@ def main() -> int:
 
     Pulls surface thetao (Q3) for cod_west and bottom-T (Q4) for herring
     from CMEMS. Attempts download of missing years; on failure prints DEGRADED:
-    and uses PROVISIONAL fallback constants (marked in README).
+    and uses PROVISIONAL fallback constants (marked in README for Task 4 to source).
 
     Returns 0 on success (with or without degradation).
     """
@@ -436,13 +481,34 @@ def main() -> int:
     degradations = []
 
     # Process thetao (cod_west, sp0) - Q3 mean
+    thetao_means = None
     if thetao_files:
         print(f"[thetao] loading {len(thetao_files)} files for Q3 (Jul-Sep) ...")
-        thetao_means = _load_thetao_series(thetao_files)
-        if thetao_means:
+        try:
+            thetao_means = _load_thetao_series(thetao_files)
+        except Exception as e:
+            # Code bug or data integrity issue — record as degradation
+            print(f"  DEGRADED: thetao parsing failed: {e}")
+            degradations.append(f"thetao: {e}")
+    else:
+        degradations.append("thetao (no cached files after download attempt)")
+
+    if thetao_means:
+        # Handle per-year gaps (partial data)
+        all_years = sorted(thetao_means.keys())
+        first_year = all_years[0]
+        last_year = all_years[-1]
+        expected_years = list(range(first_year, last_year + 1))
+        missing_years = [y for y in expected_years if y not in thetao_means]
+
+        if missing_years:
+            print(f"  DEGRADED: thetao has gaps: {missing_years}")
+            degradations.append(f"thetao (missing years: {missing_years})")
+            thetao_means = None
+        else:
             tref = sum(thetao_means.values()) / len(thetao_means)
             rows_by_species[0] = assemble_series(thetao_means, tref=tref)
-            year_range = f"{min(thetao_means.keys())}-{max(thetao_means.keys())}"
+            year_range = f"{first_year}-{last_year}"
             species_info[0] = {
                 "variable": "thetao (surface temperature)",
                 "quarters": "Q3 (Jul-Sep)",
@@ -452,19 +518,36 @@ def main() -> int:
                 "status": f"OK ({len(thetao_means)} years)",
             }
             print(f"  thetao Q3: {len(thetao_means)} years, tref={tref:.2f}, range={year_range}")
-        else:
-            degradations.append("thetao (no valid data after load attempt)")
-    else:
-        degradations.append("thetao (no cached files after download attempt)")
 
     # Process bottomT (herring, sp1) - Q4 mean
+    bottomt_means = None
     if bottomt_files:
         print(f"[bottomT] loading {len(bottomt_files)} files for Q4 (Oct-Dec) ...")
-        bottomt_means = _load_bottomt_series(bottomt_files)
-        if bottomt_means:
+        try:
+            bottomt_means = _load_bottomt_series(bottomt_files)
+        except Exception as e:
+            # Code bug or data integrity issue — record as degradation
+            print(f"  DEGRADED: bottomT parsing failed: {e}")
+            degradations.append(f"bottomT: {e}")
+    else:
+        degradations.append("bottomT (no cached files after download attempt)")
+
+    if bottomt_means:
+        # Handle per-year gaps (partial data)
+        all_years = sorted(bottomt_means.keys())
+        first_year = all_years[0]
+        last_year = all_years[-1]
+        expected_years = list(range(first_year, last_year + 1))
+        missing_years = [y for y in expected_years if y not in bottomt_means]
+
+        if missing_years:
+            print(f"  DEGRADED: bottomT has gaps: {missing_years}")
+            degradations.append(f"bottomT (missing years: {missing_years})")
+            bottomt_means = None
+        else:
             tref = sum(bottomt_means.values()) / len(bottomt_means)
             rows_by_species[1] = assemble_series(bottomt_means, tref=tref)
-            year_range = f"{min(bottomt_means.keys())}-{max(bottomt_means.keys())}"
+            year_range = f"{first_year}-{last_year}"
             species_info[1] = {
                 "variable": "bottomT (bottom temperature)",
                 "quarters": "Q4 (Oct-Dec)",
@@ -474,44 +557,36 @@ def main() -> int:
                 "status": f"OK ({len(bottomt_means)} years)",
             }
             print(f"  bottomT Q4: {len(bottomt_means)} years, tref={tref:.2f}, range={year_range}")
-        else:
-            degradations.append("bottomT (no valid data after load attempt)")
-    else:
-        degradations.append("bottomT (no cached files after download attempt)")
 
     # Use PROVISIONAL fallback for missing species (maintain fixed CSV shape)
     if 0 not in rows_by_species:
-        print(f"DEGRADED: {degradations[0] if degradations else 'thetao missing'}")
+        reason = degradations[0] if degradations else "thetao missing"
+        print(f"DEGRADED: {reason}")
         if 1 in rows_by_species:
             # Use historical years from herring
             hist_years = {y: PROVISIONAL_TREF[0] for y, _ in rows_by_species[1]}
-            rows_by_species[0] = (
-                hist_years
-                if len(hist_years) == 1
-                else assemble_series(hist_years, tref=PROVISIONAL_TREF[0])
-            )
+            rows_by_species[0] = assemble_series(hist_years, tref=PROVISIONAL_TREF[0])
             species_info[0] = {
                 "variable": "thetao (surface temperature)",
                 "quarters": "Q3 (Jul-Sep)",
-                "status": f"DEGRADED: {degradations[0]}; using PROVISIONAL constant {PROVISIONAL_LABEL[0]}",
-                "note": "Task 4 must download and recompute if this path fires",
+                "status": f"DEGRADED: {reason}",
+                "tref": PROVISIONAL_LABEL[0],
+                "note": "UNSOURCED PLACEHOLDER — Task 4 must source real computed value or literature source",
             }
 
     if 1 not in rows_by_species:
-        print(f"DEGRADED: {degradations[-1] if degradations else 'bottomT missing'}")
+        reason = degradations[-1] if degradations else "bottomT missing"
+        print(f"DEGRADED: {reason}")
         if 0 in rows_by_species:
             # Use historical years from cod_west
             hist_years = {y: PROVISIONAL_TREF[1] for y, _ in rows_by_species[0]}
-            rows_by_species[1] = (
-                hist_years
-                if len(hist_years) == 1
-                else assemble_series(hist_years, tref=PROVISIONAL_TREF[1])
-            )
+            rows_by_species[1] = assemble_series(hist_years, tref=PROVISIONAL_TREF[1])
             species_info[1] = {
                 "variable": "bottomT (bottom temperature)",
                 "quarters": "Q4 (Oct-Dec)",
-                "status": f"DEGRADED: {degradations[-1]}; using PROVISIONAL constant {PROVISIONAL_LABEL[1]}",
-                "note": "Task 4 must download and recompute if this path fires",
+                "status": f"DEGRADED: {reason}",
+                "tref": PROVISIONAL_LABEL[1],
+                "note": "UNSOURCED PLACEHOLDER — Task 4 must source real computed value or literature source",
             }
 
     if not rows_by_species:
