@@ -47,9 +47,17 @@ conditioning).
 This module's three pure helpers (`expected_knob_factor`, `arm_overlays`,
 `hill_ordering_ok`) are covered by `tests/test_baltic_b2_harness_helpers.py`. `run_b2`
 itself is NOT invoked by that test suite or by this task -- a full 6-arm x 5-seed x 50yr
-run is ~2.5-3h (spec decision 7) and is Task 4's deliverable, not Task 3's. `run_b2`'s
-wiring was instead validated with a tiny sanity load (nyear=2, 1 seed, baseline+zero only)
-run manually during development -- see task-3-report.md.
+run is ~2.5-3h (spec decision 7) and is Task 4's deliverable, not Task 3's. Its wiring was
+instead validated manually during development, without any engine simulation: (1) a tiny
+smoke run (nyear=2, one seed, arm "zero" only) proved `PythonEngine().run_in_memory(cfg,
+seed).biomass()` accepts the assembled config and returns the exact species-name columns
+this module's REPORTED section hardcodes; (2) BLOCKING 1-4 were separately run against the
+REAL production files, at the real N_YEAR=50 (not nyear=2's truncated window, which never
+leaves the knob series' spin-up block), for all five non-baseline arms -- including the
+non-dyadic RCP8.5 dT=2.9 case, which reproduced the exact 3-ULP-affected factor value
+`expected_knob_factor` predicts, and the rcp85_ref floor-interaction case (1344 wet
+cell-frames floored under its -8.9 offset), which still passed Hill ordering. See
+task-3-report.md for the full transcript.
 """
 
 from __future__ import annotations
@@ -291,6 +299,10 @@ def run_b2(seeds=SEEDS) -> dict:
             )
         with xr.open_dataset(o2_nc) as ds2:
             written = ds2[_b2._single_data_var(ds2)].values.astype(np.float64)
+        # No equal_nan=True: the production O2 file is confirmed NaN-free (land = 0.0,
+        # verified in Task 2). A future NaN-bearing forcing file would make this comparison
+        # fail loudly here, which is the right failure mode for an unreviewed convention
+        # change -- unlike the builder's own zero-check, this isn't meant to tolerate NaNs.
         ok = bool(np.array_equal(loaded._data, written))
         load_through[name] = ok
         if not ok:
