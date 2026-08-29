@@ -1,0 +1,26 @@
+{
+  "_provenance": "B2 spec 2026-08-29 (docs/superpowers/specs/2026-08-29-baltic-b2-literature-delta-scenarios-design.md). All deltas are CLIMSEA (RCO-SCOBI) ensemble means, 1976-2005 -> 2069-2098, Meier et al. 2022 (doi:10.5194/esd-13-159-2022). Applied RAW on present-day baselines (O2 file: 2024 analysis; knob tref: 1993-2021 mean) -- every arm overstates end-century forcing by the realized 1976-2005->present component (spec decision 5).",
+  "reference_periods": {"literature": "1976-2005 -> 2069-2098", "o2_baseline": "2024 CMEMS analysis", "tref_baseline": "1993-2021"},
+  "arms": [
+    {"name": "rcp45_bsap", "rcp": "RCP4.5", "load": "BSAP",
+     "dT_C": 1.9, "dT_source": "Meier2022 Table 7, CLIMSEA RCP4.5, annual mean SST",
+     "dO2": {"value_mmol_m3": 26.8, "value_mL_L": 0.6, "referent": "summer_bottom_o2",
+             "conversion_mmol_per_mL_L": 44.66,
+             "source": "Meier2022 Table 10, CLIMSEA RCP4.5 BSAP, ensemble-mean-SLR"}},
+    {"name": "rcp45_ref", "rcp": "RCP4.5", "load": "REF",
+     "dT_C": 1.9, "dT_source": "Meier2022 Table 7, CLIMSEA RCP4.5, annual mean SST",
+     "dO2": {"value_mmol_m3": 0.0, "value_mL_L": 0.0, "referent": "summer_bottom_o2",
+             "conversion_mmol_per_mL_L": 44.66,
+             "source": "Meier2022 Table 10, CLIMSEA RCP4.5 REF, ensemble-mean-SLR (sourced zero -- designed null O2 contrast)"}},
+    {"name": "rcp85_bsap", "rcp": "RCP8.5", "load": "BSAP",
+     "dT_C": 2.9, "dT_source": "Meier2022 Table 7, CLIMSEA RCP8.5, annual mean SST",
+     "dO2": {"value_mmol_m3": 17.9, "value_mL_L": 0.4, "referent": "summer_bottom_o2",
+             "conversion_mmol_per_mL_L": 44.66,
+             "source": "Meier2022 Table 10, CLIMSEA RCP8.5 BSAP, ensemble-mean-SLR"}},
+    {"name": "rcp85_ref", "rcp": "RCP8.5", "load": "REF",
+     "dT_C": 2.9, "dT_source": "Meier2022 Table 7, CLIMSEA RCP8.5, annual mean SST",
+     "dO2": {"value_mmol_m3": -8.9, "value_mL_L": -0.2, "referent": "summer_bottom_o2",
+             "conversion_mmol_per_mL_L": 44.66,
+             "source": "Meier2022 Table 10, CLIMSEA RCP8.5 REF, ensemble-mean-SLR"}}
+  ]
+}
