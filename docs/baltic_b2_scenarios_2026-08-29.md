@@ -67,6 +67,12 @@ every table below inherits this caption.
 
 ## The 2×2 results
 
+*Every number in the three tables below carries the decision-5 reference-period
+caption given under "Delta spec — citations" above: raw end-century (2069–2098
+vs 1976–2005) literature deltas applied on a present-day baseline, not adjusted
+for realized warming/deoxygenation since 1976–2005 (see "Reading: the O₂ axis"
+below for a quantified context estimate on the temperature side).*
+
 ### Predicted effective-K change per arm (builder: field + Hill, no engine run)
 
 | arm | RCP | load | ΔO₂ (mmol m⁻³) | predicted ΔK |
@@ -112,34 +118,72 @@ varied), printed against the predicted-ΔK and the measured seed-noise floor.
 
 All four contrasts are roughly an order of magnitude above the recorded
 cod_east seed-noise floor (±1.9%, from `docs/baltic_hypoxia_benthos_ab_2026-08-09.md`'s
-cod_east across-seed spread at baseline O₂) — this is not noise. It arises
-from benthos-K differences of only ~3.4 pp (RCP4.5) / ~2.9 pp (RCP8.5): strong
-nonlinear food-web amplification between the O₂→benthos-K coupling and the
-demersal stocks that feed on it. Flounder's noise floor was not separately
-computed by this harness; cod_east's ±1.9% is used as the reference order of
-magnitude for both stocks since they share the same benthos-K coupling
-mechanism.
+cod_east across-seed spread at baseline O₂) — this is not noise. The measured
+contrast (13–18%) is far larger than the ~3.4 pp (RCP4.5) / ~2.9 pp (RCP8.5)
+predicted-ΔK spread that drives it, which is consistent with strong nonlinear
+transmission from the O₂→benthos-K coupling to the demersal stocks that feed
+on it — this run measured the ratio, not the mechanism, so "consistent with"
+is as far as this evidence goes. For cod_east specifically, label 6 applies
+directly here: its trajectory is partly prescribed by the RV narrative series
+(gate factor 0.32–0.87 across the scored decade), so part of its measured
+17–18% contrast reflects that prescription, not amplification of the O₂/
+benthos-K signal alone — the two stocks' contrasts should not be read as
+equally clean measurements of the same mechanism. Flounder's noise floor was
+not separately computed by this harness; cod_east's ±1.9% is used as the
+reference order of magnitude for both stocks since they share the same
+benthos-K coupling mechanism.
 
 ## Reading: the O₂ axis
 
-Meier et al. (2022)'s own caveat, quoted verbatim in the binding spec: the
-climate impact on Baltic biogeochemistry is "still smaller than that of
-plausible nutrient input changes" — bottom-O₂'s future is nutrient-load
+Meier et al. (2022)'s own caveat, verified against the paper and carried
+through the spec's revision history: the climate impact on Baltic
+biogeochemistry is "still smaller than that of plausible nutrient input
+changes" — bottom-O₂'s future is nutrient-load
 dominated, not climate-dominated, and a climate-only O₂ delta is ill-defined
 (the scenario axis has to be RCP × load, which is exactly this run's design).
 **And per decision 5's relabel:** every number below is a raw, unadjusted
 end-century (2069–2098 vs 1976–2005) delta applied on a present-day baseline —
 it overstates end-century forcing by the realized 1976-2005→present component,
-which this run does not subtract or estimate (see caption above).
+which this run applies raw and does not subtract (see caption above).
+
+**Realized-SST context estimate (decision 5's "cited context estimate,"
+reported not subtracted):** Kniebusch et al. (2019, *J. Geophys. Res. Oceans*
+124(6), 4168–4187, doi:10.1029/2018JC013948 — verified via full-text retrieval,
+open access, no editorial notices) report that "[i]n comparison to 1856–2005,
+during 1978–2007, the annual mean SST trends strengthened tenfold, with a mean
+value of 0.4 K/decade" (their model-simulated, observation-validated Baltic-mean
+estimate); the same paper's introduction cites satellite/monitoring-based
+estimates from Belkin, Siegel et al., Lehmann et al., and Stramska &
+Białogrodzka of "approximately 0.56–0.57 K/decade during 1982–2006 and
+1990–2004 and 0.5 K/decade during 1990–2008 and 1982–2013." Linearly
+extrapolating that 0.4–0.57 K/decade range from the literature deltas'
+1976–2005 reference-period midpoint (~1990) to our present-day baseline year
+(~2024, ~34 years — the C1 knob's own `tref` window, 1993–2021 mean, ends a
+few years earlier, so this may modestly overstate the component specific to
+the temperature pathway) gives roughly **+1.4 to +1.9 °C** of Baltic mean SST
+warming plausibly already realized on our baseline — i.e., roughly three-
+quarters to essentially all of the applied **+1.9 °C RCP4.5** delta, and
+roughly half to two-thirds of the applied **+2.9 °C RCP8.5** delta. This is a
+back-of-envelope linear extrapolation for context only, not a formal
+reconstruction, and it is temperature-only — no comparably quotable observed
+ΔO₂ trend was located, so the O₂ side of decision 5's overstatement is labelled
+(above, and in label 5 below) but not similarly quantified.
 
 The model **endogenously reproduces the literature's load-dominance finding**:
 for the demersal stocks the nutrient-load axis outweighs the RCP axis (17–18%
 BSAP-vs-REF within a fixed RCP, vs only a few percent of difference in that
 same contrast between RCP4.5 and RCP8.5), while for herring the temperature
 axis dominates entirely (the O₂ axis barely touches it — herring is not
-benthos-fed). This split was not built into the model; it falls out of the two
-independently-wired forcing pathways (C1's thermal knob, the existing O₂→benthos-K
-coupling) responding to literature-sourced deltas. **Caveat on the "few
+benthos-fed). The *existence* of this split is wiring, not a finding: the C1
+knob is deliberately herring-only (sp1) and the O₂→benthos-K coupling
+deliberately routes only through benthos-feeding demersal stocks — both
+pre-existing, independently-built pathways this run did not create. What *is*
+emergent is the magnitude and cleanliness of the separation — that the
+demersal load contrast (13–18%) so clearly dwarfs the temperature-axis spread
+within a load, and that both wired pathways reproduce the literature's own
+load-dominance/temperature-dominance split quantitatively — which falls out of
+the two pathways responding to literature-sourced deltas, not out of any
+tuning toward that outcome. **Caveat on the "few
 percent" clause:** per spec §4 the harness extracts only the within-RCP
 BSAP-vs-REF load contrast for cod_east/flounder (the pre-registered clean
 read) — it does not separately measure a demersal-stock response to the RCP
