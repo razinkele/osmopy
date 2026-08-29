@@ -1,142 +1,170 @@
-# Baltic B2 — RCP scenario arms from literature deltas (evidence-adjusted)
+# Baltic B2 — RCP × load scenario arms from literature deltas (evidence-adjusted)
 
 **Date:** 2026-08-29
-**Status:** approved (design), pending adversarial review, then implementation plan.
-**Parent:** `docs/superpowers/specs/2026-08-08-baltic-improvement-avenues-design.md` scenario track
-(B2, "Scenario forcing from ERGOM RCP output (offline, one-way)").
-**Sourcing decision (user, 2026-08-29): literature deltas** — ensemble-mean changes from the
-open-access Baltic Earth assessment applied to OUR production forcing, not raw ERGOM field swaps
-(inter-model bias against the calibrated baseline would confound every scenario delta — the
-C2(b)-withdrawal trap class) and not field acquisition (no clean CDS dataset found; acquisition
-risk graded higher than the spec's original "data only"). Upgrading to field-derived deltas later
-touches only the delta-spec JSON (§2) — the same interface discipline as C1's CSV swap.
-**Related:** `docs/baltic_c1_knob_ab_2026-08-25.md` (the temperature machinery and its verified
-exactness chain), `docs/baltic_hypoxia_certification_2026-08-09.md` (the live O₂→benthos-K
-coupling and its measured response signs), `docs/baltic_f_hindcast_2026-08-23.md` (the F1-null
-doctrine: this model's scenario value is equilibrium response to sustained forcing change —
-time-slice deltas are its honest use).
+**Status:** approved (design), **revised same day after a deep 6-lens adversarial review**
+(19 agents incl. a live literature-mining lens; 13 confirmed findings, 0 refuted, ~17 minors —
+all folded in). The review resolved the spec's one pre-registered unknown itself: the ΔO₂
+numbers are tabulated in the anchor paper (Table 10), making the planned companion-paper
+sourcing pass unnecessary; it also corrected a miscopied ΔT, exposed a reference-period
+double-count, redesigned the confounded check (c), and quantified the O₂ axis's thinness on the
+actual production field.
+**Parent:** `docs/superpowers/specs/2026-08-08-baltic-improvement-avenues-design.md` scenario
+track (B2). **Sourcing decision (user, 2026-08-29): literature deltas** — not raw ERGOM field
+swaps (inter-model bias vs the calibrated baseline) and not field acquisition (no clean CDS
+dataset; C2(b)-class stall risk). Field-derived deltas later = a JSON edit only.
+**Related:** `docs/baltic_c1_knob_ab_2026-08-25.md` (temperature machinery + exactness chain),
+`docs/baltic_hypoxia_benthos_ab_2026-08-09.md` / `_certification_2026-08-09.md` (the live
+O₂→benthos-K coupling; measured −21.4 % cod_east / −18.7 % flounder for coupling-on at baseline
+O₂; cod_east across-seed spread ±1.9 % — the noise floor the O₂ axis must be read against),
+`docs/baltic_f_hindcast_2026-08-23.md` (F1 null: transient tracking is unusable; equilibrium
+time-slice response is the honest scenario mode — stated as doctrine, not as a validated
+strength).
 
-## The anchor literature, verified (2026-08-29, full-text fetch)
+## The anchor numbers, verified and corrected (review, 2026-08-29)
 
-Meier, H.E.M., et al. (2022). *Oceanographic regional climate projections for the Baltic Sea
-until 2100.* Earth Syst. Dynam. 13, 159–199, doi:10.5194/esd-13-159-2022 — open access; the
-CLIMSEA ensemble (RCO-SCOBI 3.7 km, four ESMs: MPI-ESM-LR, EC-EARTH, IPSL-CM5A-MR, HadGEM2-ES).
+Meier, H.E.M., et al. (2022). ESD 13, 159–199, doi:10.5194/esd-13-159-2022 (open access; no
+editorial notices). All values are CLIMSEA (RCO-SCOBI, four ESMs), **1976–2005 → 2069–2098**:
 
-Three findings that reshape B2 from the parent spec's assumption:
+* **ΔT (annual-mean SST, Table 7):** **RCP4.5 +1.9 °C; RCP8.5 +2.9 °C.** (The originally drafted
+  +2.0 was the RCP4.5 *summer* cell; the "+2.3…+4.7" spread belongs to the coupled RCSM's RCP8.5
+  ensemble, mean +3.5 °C, Gröger et al. 2019 — reported as context only. Secondary anchor if a
+  volume-mean is preferred: Saraiva et al. 2019b, +1.6 ± 0.5 / +2.7 ± 0.4 °C.)
+* **ΔO₂ (summer-mean BOTTOM oxygen, Table 10, CLIMSEA ensemble-mean-SLR column, mL/L →
+  mmol m⁻³ at 44.66):**
+  | | RCP4.5 | RCP8.5 |
+  |---|---|---|
+  | **BSAP** | +0.6 → **+26.8** | +0.4 → **+17.9** |
+  | **REF** | 0.0 → **0.0** | −0.2 → **−8.9** |
+  Labels that travel with every use: *summer-only* values applied year-round; *SLR-variant*
+  (ensemble-mean sea-level rise); referent = **bottom O₂** — the same referent as our forcing
+  variable `o2b`, which is what makes these numbers portable (the review showed a deep-water
+  referent would differ by ~10×; the schema forbids mixing referents).
+  **RCP4.5×REF is a sourced ZERO** — that arm is temperature-only *by the table*, a designed
+  null O₂ contrast, not a degenerate case.
+* **Load-dominance caveat** (verified verbatim) and **salinity-not-robust**: unchanged from v1.
+  "Phyto/zoo not quantified" is softened to: not quantified *in a form portable to our LTL
+  forcing* (the paper discusses phytoplankton qualitatively); LTL stays at baseline, labelled.
 
-1. **Temperature is the robust axis.** Annual-mean SST change 2069–2098 vs 1976–2005:
-   **RCP4.5 +2.0 °C; RCP8.5 +2.9 °C** (RCO-SCOBI; ESM spread +2.3…+4.7). Bottom-water warming
-   is noted (elevated in sporadically ventilated basins via warmer inflows) but **not separately
-   tabulated** — applying the SST delta to the herring bottom-T knob is a labelled proxy.
-2. **Bottom-O₂'s future is nutrient-load-dominated, not climate-dominated** (the paper's own
-   caveat: climate impact on biogeochemistry "still smaller than that of plausible nutrient
-   input changes"). Sign depends on the load trajectory: BSAP abatement → O₂ *improves* even
-   under warming; reference (REF) loads → slight decline under RCP8.5. **A climate-only O₂
-   delta is ill-defined; the scenario axis must be RCP × load.**
-3. **Phytoplankton/zooplankton changes are not quantified** in the assessment, and **salinity
-   change is not robust** (freshening ≈ offset by sea-level-rise-enhanced inflows; ensemble
-   spread exceeds signal — CLIMSEA vs the older BalticAPP/ECOSUPPORT freshening). Consequences:
-   LTL forcing stays at baseline (labelled), salinity delta is zero (labelled; also a citable
-   datum lowering C4's urgency relative to the parent spec's "first-order driver" framing).
+## The O₂ axis, quantified on our own field (review computation — design-shaping)
 
-## Decisions (recorded)
+On `data/baltic/baltic_oxygen_bottom.nc` (verified: 24 frames, `o2b`, mmol m⁻³, 2024 CMEMS
+analysis) masked to the 616 ocean cells and weighted by benthos base K: baseline K-weighted Hill
+factor **0.866**; the field is bimodal (14.8 % of ocean cell-frames below c50=60; 75.5 % ≥ 200
+where the curve is flat; 8.6 % near-anoxic). Consequences, pre-registered:
 
-1. **Sourcing: literature deltas** (user, 2026-08-29; rationale above).
-2. **Scenario matrix: baseline + {RCP4.5, RCP8.5} × {BSAP, REF}, end-century (2069–2098 vs
-   1976–2005).** Four scenario arms + baseline. Mid-century slices are out of scope this stage
-   (the delta-spec format carries a time-slice field so they can be added by JSON edit alone).
-3. **Drivers and application:**
-   * **Temperature** → the C1 thermal knob (herring-only, per its shipped verdict): constant-T
-     arm series at `tref + ΔT_RCP`. ΔT is the same for BSAP and REF cells of one RCP (loads do
-     not set temperature). SST-for-bottom-T proxy labelled.
-   * **Bottom-O₂** → the production `baltic_oxygen_bottom.nc` (24 frames — the frame-count trap
-     in CLAUDE.md; the builder asserts 24 in and 24 out): additive uniform offset in mmol m⁻³,
-     floored at 0. The Hill response (c50=60, n=3) translates the offset nonlinearly per cell —
-     that is the mechanism working, not a bug.
-   * **LTL biomass: no change** (finding 3); **salinity: no change** (finding 3); both restated
-     in every results table.
-4. **ΔO₂ numbers: to be sourced in the spec-finalisation pass, pre-registered procedure.** The
-   assessment gives signs but not portable numbers. The implementation's first task is a
-   scientific-validation pass over the BalticAPP/companion literature (Saraiva et al. 2019a/b,
-   Meier et al. 2018/2019) for ensemble-mean bottom-O₂ or deep-water-O₂ changes per
-   (RCP × load) cell, in mmol m⁻³ (1 mL/L = 44.66 mmol m⁻³). **Acceptance per cell:** a number
-   usable as a basin-scale delta with a quotable source. **Any cell without one ships
-   temperature-only and the results doc says so** — no invented numbers, no digitised-figure
-   guesses without labelling them as such.
-5. **No envelope pass/fail for scenario arms.** Scenarios legitimately exit calibration
-   envelopes. Pre-registered checks instead (§4). Certification stays climatological and
-   untouched; production `data/baltic/` existing files byte-identical (this stage ADDS one
-   delta-spec JSON and one results doc; scenario forcing files are generated at run time, never
-   committed).
+* Effective-K response to the Table-10 deltas is **thin and asymmetric**: roughly +2–3 %
+  (BSAP×RCP4.5, +26.8), +1.5–2 % (BSAP×RCP8.5), 0 (REF×RCP4.5), ~−1 % (REF×RCP8.5) — the last
+  **below the ±1.9 % cod_east seed spread**. Stock-level O₂ contrasts may legitimately drown in
+  seed noise; the design therefore separates *wiring* checks (deterministic, blocking) from
+  *ecological* contrasts (reported against a printed noise floor).
+* The **builder computes and prints the predicted effective-K change per arm** (field + Hill,
+  no engine run) and the results doc prints it beside each arm's stock deltas.
+
+## Decisions (recorded; 4–7 rewritten in the post-review revision)
+
+1. **Sourcing: literature deltas** (user). 2. **Matrix: baseline + {RCP4.5, RCP8.5} ×
+   {BSAP, REF}, end-century** — now with all four ΔO₂ cells sourced from Table 10 (above).
+3. **Drivers/application** (unchanged in structure): ΔT via the C1 knob (herring-only,
+   constant-T series at tref+ΔT); ΔO₂ as an additive offset on the O₂ NetCDF — **wet cells
+   only** (land/NaN conventions preserved), floored at 0, 24 frames asserted in and out. The
+   existing `oxygen.offset` config key is deliberately NOT used: it lacks the wet-mask/floor
+   semantics and a per-arm file is auditable; this choice is now stated rather than implicit.
+4. **ΔO₂ = Table 10 CLIMSEA ensemble-mean-SLR cells** (the sourcing pass is dissolved). The
+   delta-spec JSON schema requires per-number: value, unit, referent (`summer_bottom_o2` —
+   the only accepted value this stage), source string (table/column/variant), and the
+   conversion factor. Mixed referents are schema-invalid.
+5. **Reference-period honesty (the double-count finding):** the literature deltas are
+   end-century **vs 1976–2005**, but our baselines already sit decades later (O₂ file = 2024
+   analysis; knob tref = 1993–2021 mean). Ruled: **apply the raw deltas, relabelled** — every
+   arm is "Meier end-century delta applied on a present-day baseline; overstates end-century
+   forcing by the realized 1976-2005→present component" — recorded in the JSON, the results
+   table caption, and §4(d)'s label list, with a cited context estimate of the realized SST
+   component reported (not subtracted). Subtracting would stack a second, uncertain literature
+   layer for a labelled scenario device; the honest relabel is cheaper and clearer.
+6. **No envelope pass/fail for scenario arms** (unchanged). 7. **Timing honesty:** 6 arms ×
+   5 seeds × 50 yr ≈ **2.5–3 h** at C1's measured pace (not "~2 h").
 
 ## Design
 
-### 1. Delta-spec JSON — the single source of scenario numbers
+### 1. Delta-spec JSON — `data/baltic/scenarios/b2_literature_deltas.json`
 
-`data/baltic/scenarios/b2_literature_deltas.json`: per arm
-`{name, rcp, load, time_slice, dT_C, dO2_mmol_m3, ltl_scale: 1.0, salinity: 0.0,
-citations: {dT: "...", dO2: "..."}}` — every number carries its citation string; `null` for an
-unsourced dO2 (→ temperature-only arm). A `reference` block records the baseline periods. This
-file is the entire upgrade surface for later field-derived deltas.
+Per arm: `{name, rcp, load, dT_C, dO2: {value_mmol_m3, referent, source, conversion} | null}`.
+The dead knobs of v1 (`ltl_scale`, `salinity`, `time_slice`) are **removed** — the JSON carries
+only what machinery consumes; the upgrade path re-adds fields when their machinery exists.
+Schema validation (CI): citations present for every number; referent fixed; RCP4.5×REF's
+sourced zero carries its citation like any other value.
 
 ### 2. Builder — `scripts/build_baltic_b2_forcing.py`
 
-Reads the delta spec + production forcing; emits per-arm artifacts into a caller-supplied run
-dir: the knob's constant-T series CSV (reusing `write_arm_series`'s conventions from
-`scripts/baltic_c1_knob_ab.py`) and, for arms with `dO2`, a modified copy of
-`baltic_oxygen_bottom.nc` (additive offset, floor 0, **assert 24 frames in and out**, same
-dtype/attrs). **Zero-delta self-check (blocking, builder-level):** applying the all-zero delta
-must yield value-identical arrays to the production inputs (`np.array_equal` per variable) —
-the C1 identity discipline at the file level.
+Reads delta spec + production forcing; emits per-arm artifacts into a caller-supplied run dir:
+knob constant-T series (C1 conventions) and, for arms with non-null dO₂ (incl. the sourced
+zero, which emits a value-identical copy), the offset O₂ NetCDF (wet-only, floor 0, frames
+asserted). Prints the predicted effective-K change per arm. **Zero-delta self-check (blocking):
+the re-read written zero-arm files are value-identical (NaN-aware comparison) to the production
+inputs.**
 
 ### 3. Harness — `scripts/baltic_b2_scenario_ab.py`
 
-Arms: `baseline` (production config), `zero` (all machinery engaged, zero deltas —
-**pre-registered bit-identical to baseline per seed**, the C1 trick), plus the four scenario
-arms. Overlays per arm: C1 knob keys (herring beta/tref, tref+ΔT series file) +
-`oxygen.filename` pointed at the arm's generated NetCDF. 5 house seeds × 50 yr. Report:
-final-decade mean per species per arm, deltas vs baseline, written to a JSON + dated results
-doc.
+Arms: `baseline`, `zero` (all machinery engaged, zero deltas — **bit-identical to baseline per
+seed, blocking**), `rcp45_bsap`, `rcp45_ref` (temperature-only by source), `rcp85_bsap`,
+`rcp85_ref`. Overlays: C1 knob keys + `oxygen.filename` at the arm's generated file (absolute
+path). 5 house seeds × 50 yr. Results JSON **committed** to
+`docs/diagnostics/baltic_b2_scenario_report.json` (not /tmp-only — the C1 precedent's gap).
 
-### 4. Pre-registered checks
+### 4. Pre-registered checks — blocking vs reported, made crisp
 
-(a) **zero-arm bit-identity** to baseline (blocking — any deviation is wiring, stop);
-(b) **herring declines in every arm** (ΔT>0 in all four; direction established by C1's A/B);
-(c) **O₂-delta arms move cod_east and flounder in the coupling's known direction** (the
-2026-08-09 gate measured −21.4 % / −18.7 % for the coupling switching ON at baseline O₂; a
-positive ΔO₂ (BSAP cells) must not *decrease* their benthos-mediated food, and vice versa —
-sign check only, no magnitude threshold);
-(d) everything else is **reported, not gated** — per-species deltas with all labels (SST proxy,
-uniform-offset spatial blindness, LTL-at-baseline, load-dominated-O₂ caveat) restated.
+**BLOCKING (any failure = wiring bug, stop, no interpretation):**
+* (a) zero-arm bit-identity to baseline, per seed;
+* (b) **O₂ load-through assert**: per arm, the harness loads the arm's `EngineConfig` and
+  asserts the engine-held O₂ array equals the builder's written array (kills the verified
+  silent-fallback trap where a non-resolving `oxygen.filename` reverts to coupling-defaults);
+* (c) **deterministic Hill ordering**: per arm, f_o2_hill over the arm's field vs the baseline
+  field obeys the delta's sign per cell (guaranteed by monotonicity — a violation is wiring);
+* (d) **knob factor instrument through the loader's float path**: expected factor =
+  `exp(beta · (float(str(tref+dT)) − tref))` — exact `array_equal` (the review proved plain
+  `exp(beta·dT)` fails by 3 ULP at the non-dyadic ΔT=2.9; C1's exact recovery at 2.0/4.0 was
+  dyadic luck, recorded here so the JSON upgrade path doesn't trip on it).
+
+**REPORTED (no pass/fail):**
+* herring's decline per arm (direction context from C1's A/B — +1.9/+2.9 interpolate its
+  tested 0/+2/+4 range);
+* the **within-RCP load contrast** (BSAP vs REF at identical ΔT — the only clean ecological
+  read of the O₂ axis) for cod_east and flounder, printed beside the predicted effective-K
+  change and the ±1.9 % seed-noise floor;
+* all labels, restated in §4(d)'s list: SST-for-bottom-T proxy (annual SST applied to a Q4
+  bottom-T knob; deep warming runs *higher* than SST in ventilated basins, so the herring
+  decline is likely **understated** — direction now stated); summer-only + SLR-variant ΔO₂
+  applied year-round; uniform-offset spatial blindness + floor asymmetry; LTL-at-baseline
+  (the BSAP cells are a partial-load world: the load cut's O₂ benefit enters but its
+  plankton/nutrient pathways do not — the omitted pathways plausibly oppose the included one);
+  reference-period overstatement (decision 5); **cod_east's trajectory partly prescribed by
+  the RV narrative series** (gate factor 0.32–0.87 across the scored decade) — its scenario
+  deltas are conditioned on that prescription.
 
 ### 5. Deliverables
 
-Delta-spec JSON (with the sourcing-pass results baked in), builder + CI-safe tests
-(offset/floor/frame-assert/zero-identity on synthetic fixtures), harness + helper tests, one
-scenario run (6 arms × 5 seeds × 50 yr ≈ 2 h engine), dated results doc, memory update. The
-results doc's headline is the four-cell scenario table for the assessed stocks.
+Delta-spec JSON (all numbers cited), builder + tests, harness + tests, one 6-arm run, dated
+results doc whose headline is the 2×2 scenario table with the predicted-ΔK and noise-floor
+columns, memory update. Upgrade path restated: field-derived deltas = JSON edit.
 
 ## Non-goals (YAGNI)
 
-No field acquisition/regridding (upgrade path only). No LTL or salinity deltas. No mid-century
-slices this stage. No recalibration; no envelope claims for scenario arms. No new engine code —
-the C1 knob and the O₂ coupling are the only mechanisms, both shipped and verified. No
-projection of cod_west/cod_east recruitment via temperature (C1's fit refused cod_west;
-cod_east's RV narrative is prescribed — both restated as scenario-scope limits in the results
-doc).
+No field acquisition; no LTL/salinity deltas; no mid-century slices; no recalibration; no new
+engine mechanisms; no envelope claims; no cod-recruitment temperature response (C1's verdicts
+stand); no claim that arms represent calibrated end-century states (decision 5's relabel).
 
 ## Testing
 
-CI-safe: delta-spec schema validation (citations present for every non-null number); builder
-offset/floor/frames/zero-identity on synthetic NetCDF fixtures; harness helpers (arm-overlay
-construction, expected knob factors reusing C1's `expected_factors`). NOT CI: the scenario run.
+CI-safe: schema validation (citations/referent/no-dead-knobs); builder wet-mask/floor/frames/
+zero-identity (NaN-aware) on synthetic fixtures; predicted-ΔK computation on a synthetic field;
+harness helpers (overlay construction; the §4(d) float-path expected-factor math incl. a
+non-dyadic ΔT case; Hill-ordering check on synthetic fields). NOT CI: the 6-arm run.
 
 ## Success criteria
 
-1. Every number in the shipped delta spec carries a verified citation; unsourced dO2 cells
-   ship temperature-only and are named in the results doc.
-2. Builder zero-identity + frame asserts pass; harness zero-arm bit-identity passes.
-3. The four-cell scenario table exists with directions consistent with checks (b)/(c); the
-   results doc restates every label and the load-dominance caveat as the FIRST interpretive
-   sentence of the O₂ commentary.
-4. Upgrade path stated: field-derived deltas = a JSON edit, nothing else.
+1. Delta spec ships with every number cited to table/column/variant; RCP4.5×REF's sourced zero
+   documented as a designed null.
+2. All four BLOCKING checks pass; any failure stops interpretation.
+3. The 2×2 results table exists with predicted-ΔK and noise-floor columns; the load-dominance
+   caveat and decision-5 relabel lead the O₂ commentary; every §4 label present.
+4. Field-derived-delta upgrade = JSON edit, stated in the results doc.
