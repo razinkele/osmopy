@@ -1,0 +1,89 @@
+{
+  "seeds": [
+    42,
+    123,
+    7,
+    999,
+    2024
+  ],
+  "arms": [
+    "baseline",
+    "zero",
+    "rcp45_bsap",
+    "rcp45_ref",
+    "rcp85_bsap",
+    "rcp85_ref"
+  ],
+  "instrument": {
+    "load_through": {
+      "zero": true,
+      "rcp45_bsap": true,
+      "rcp45_ref": true,
+      "rcp85_bsap": true,
+      "rcp85_ref": true
+    },
+    "hill_ordering": {
+      "zero": true,
+      "rcp45_bsap": true,
+      "rcp45_ref": true,
+      "rcp85_bsap": true,
+      "rcp85_ref": true
+    },
+    "knob_factor": {
+      "zero": {
+        "sp1": true
+      },
+      "rcp45_bsap": {
+        "sp1": true
+      },
+      "rcp45_ref": {
+        "sp1": true
+      },
+      "rcp85_bsap": {
+        "sp1": true
+      },
+      "rcp85_ref": {
+        "sp1": true
+      }
+    }
+  },
+  "identity": {
+    "pass": true,
+    "violations": []
+  },
+  "predicted_dK": {
+    "zero": 0.0,
+    "rcp45_bsap": 0.034156995537928836,
+    "rcp45_ref": 0.0,
+    "rcp85_bsap": 0.020391654780262725,
+    "rcp85_ref": -0.008126798404308633
+  },
+  "reported": {
+    "herring_decline_vs_baseline": {
+      "zero": 0.0,
+      "rcp45_bsap": -0.40227504867200237,
+      "rcp45_ref": -0.410013131412826,
+      "rcp85_bsap": -0.6280593596909088,
+      "rcp85_ref": -0.6227418530925009
+    },
+    "within_rcp_load_contrast_bsap_vs_ref": {
+      "RCP4.5": {
+        "cod_east": 0.17744098505218098,
+        "flounder": 0.1560423475888124
+      },
+      "RCP8.5": {
+        "cod_east": 0.17026090835671148,
+        "flounder": 0.12672183522773417
+      }
+    },
+    "cod_east_seed_noise_floor": 0.019
+  },
+  "labels": [
+    "SST-for-bottom-T proxy: annual SST applied to a Q4 bottom-T knob; deep warming runs higher than SST in ventilated basins, so the herring decline is likely UNDERSTATED.",
+    "Summer-only + SLR-variant delta-O2 (Meier2022 Table 10) applied year-round.",
+    "Uniform-offset spatial blindness + floor asymmetry: the additive O2 offset is spatially uniform and floor-clipped on the negative side but uncapped on the positive side.",
+    "LTL-at-baseline: the BSAP cells are a partial-load world -- the load cut's O2 benefit enters but its plankton/nutrient pathways do not; the omitted pathways plausibly oppose the included one.",
+    "Reference-period overstatement (spec decision 5): literature deltas are end-century vs 1976-2005 but applied raw on a present-day baseline (O2: 2024 analysis; tref: 1993-2021 mean) -- overstates end-century forcing by the realized 1976-2005->present component.",
+    "cod_east's trajectory is partly prescribed by the RV narrative series (gate factor 0.32-0.87 across the scored decade) -- its scenario deltas are conditioned on that prescription."
+  ]
+}
