@@ -164,3 +164,67 @@ def test_hill_ordering_ok_ignores_land_cells():
     assert np.isnan(arm_o2[0, 3, 3])
     assert np.isnan(o2[0, 3, 3])
     assert m.hill_ordering_ok(arm_o2, o2, wet, delta_sign=1) is True
+
+
+# ---------------------------------------------------------------------------
+# load_through_ok (spec §4b, STRENGTHENED -- controller review, IMPORTANT)
+#
+# BLOCKING 2 originally only checked engine-loaded == on-disk. That check cannot catch a
+# silent no-op offset write (a written file byte-identical to production despite a nonzero
+# delta) -- it would still pass engine==disk trivially, AND would pass hill_ordering_ok
+# trivially in the flat region of the Hill curve (equality satisfies both >= and <=). The
+# added third term -- recompute the expected field via the builder's own offset_o2 and
+# require it to match too -- is the actual detector. These tests pin exactly that: the
+# no-op-write case must FAIL the strengthened check even though it would have passed the
+# original two-way check.
+# ---------------------------------------------------------------------------
+
+
+def test_load_through_ok_correctly_applied_offset_passes():
+    o2, wet = _field()
+    b2 = m._b2
+    delta = 26.8
+    disk_o2 = b2.offset_o2(o2, wet, delta)  # correctly written
+    engine_o2 = disk_o2  # engine faithfully loaded the (correct) file
+    assert m.load_through_ok(engine_o2, disk_o2, o2, wet, delta) is True
+
+
+def test_load_through_ok_zero_delta_passes():
+    o2, wet = _field()
+    b2 = m._b2
+    disk_o2 = b2.offset_o2(o2, wet, 0.0)  # value-identical copy (the sourced-zero case)
+    engine_o2 = disk_o2
+    assert m.load_through_ok(engine_o2, disk_o2, o2, wet, 0.0) is True
+
+
+def test_load_through_ok_silent_no_op_write_fails():
+    # The controller-mandated case: delta != 0, but the "written" file is byte-identical to
+    # the untouched production field (as if write_arm_dir/offset_o2 silently did nothing).
+    # The engine loads that (buggy) file faithfully, so the original two-way check
+    # (engine==disk) would have PASSED here -- the strengthened three-way check must FAIL.
+    o2, wet = _field()
+    delta = 26.8
+    disk_o2 = o2.copy()  # no-op: never actually offset despite delta != 0
+    engine_o2 = disk_o2
+    assert m.load_through_ok(engine_o2, disk_o2, o2, wet, delta) is False
+
+
+def test_load_through_ok_engine_disk_mismatch_still_fails():
+    # The original failure mode (a genuine loader bug / silent-fallback trap) must still be
+    # caught: disk is correct, but the engine held something else entirely.
+    o2, wet = _field()
+    b2 = m._b2
+    delta = 26.8
+    disk_o2 = b2.offset_o2(o2, wet, delta)
+    engine_o2 = o2.copy()  # engine never actually loaded the offset file
+    assert m.load_through_ok(engine_o2, disk_o2, o2, wet, delta) is False
+
+
+# ---------------------------------------------------------------------------
+# ZERO_ARM_DEF single source of truth (controller review MINOR 1)
+# ---------------------------------------------------------------------------
+
+
+def test_zero_arm_def_is_imported_from_the_builder():
+    assert m.ZERO_ARM_DEF is m._b2.ZERO_ARM_DEF
+    assert m.ZERO_ARM_DEF == {"name": "zero", "dT_C": 0.0, "dO2": {"value_mmol_m3": 0.0}}

@@ -67,6 +67,12 @@ DEFAULT_LTL_PATH = ROOT / "data/baltic/baltic_ltl_biomass.nc"
 BENTHOS_VAR = "Benthos"
 EXPECTED_FRAMES = 24
 
+# Single source of truth for the synthetic "all machinery engaged, zero deltas" arm used by
+# both this module's own zero-delta self-check and Task 3's harness (`baltic_b2_scenario_ab
+# .ZERO_ARM_DEF = build_baltic_b2_forcing.ZERO_ARM_DEF` -- controller review MINOR 1: this
+# dict was previously duplicated in both files).
+ZERO_ARM_DEF = {"name": "zero", "dT_C": 0.0, "dO2": {"value_mmol_m3": 0.0}}
+
 
 def _require_24_frames(n_frames: int, where: str) -> None:
     if n_frames != EXPECTED_FRAMES:
@@ -235,8 +241,9 @@ def write_arm_dir(
 def _zero_delta_self_check(out_root: Path, prod_o2_path: Path, grid_path: Path) -> bool:
     """Blocking self-check (spec §Design 2): a synthetic zero-delta arm's written O2 file
     must be value-identical (NaN-aware) to the production input it was copied from."""
-    zero_arm = {"name": "zero", "dT_C": 0.0, "dO2": {"value_mmol_m3": 0.0}}
-    artifacts = write_arm_dir(zero_arm, out_root / "zero", prod_o2_path, grid_path, TREFS, BETAS)
+    artifacts = write_arm_dir(
+        ZERO_ARM_DEF, out_root / "zero", prod_o2_path, grid_path, TREFS, BETAS
+    )
 
     with xr.open_dataset(prod_o2_path) as prod_ds, xr.open_dataset(artifacts["o2_nc"]) as zero_ds:
         prod_var = _single_data_var(prod_ds)

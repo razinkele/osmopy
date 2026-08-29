@@ -59,3 +59,10 @@ def test_predicted_k_change_uses_real_hill():
     )
     got = m.predicted_k_change(o2, wet, k, 26.8)
     assert abs(got - expect) < 1e-12
+
+
+def test_zero_arm_def_is_the_single_source_of_truth():
+    # controller review MINOR 1: ZERO_ARM_DEF must be a real module-level export (the
+    # zero-delta self-check's own zero arm), not a private local re-created every call --
+    # Task 3's harness imports this exact object rather than duplicating the dict.
+    assert m.ZERO_ARM_DEF == {"name": "zero", "dT_C": 0.0, "dO2": {"value_mmol_m3": 0.0}}

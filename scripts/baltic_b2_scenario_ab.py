@@ -19,15 +19,24 @@ and its wet-mask/zero-check helpers).
 
 BLOCKING checks (spec §4), run in this order -- any failure is a wiring bug, stop, no
 interpretation of the run that follows:
-  1. builder zero-check (`build_baltic_b2_forcing._zero_delta_self_check`): the written
-     zero-arm O2 file is value-identical (NaN-aware) to the production input.
-  2. §4(b) O2 load-through: per arm with an O2 artifact, the ENGINE's own loader
+  1. builder zero-check: the ACTUAL zero-arm O2 artifact this run's engine runs and
+     downstream checks use (`artifacts["zero"]["o2_nc"]`, written by the same
+     `write_arm_dir` call as every other arm here -- not a separate, freshly-written copy
+     under its own throwaway directory) is value-identical (NaN-aware) to the production
+     input (controller review MINOR 2: pointed at the real artifact, not a proxy for it).
+  2. §4(b) O2 load-through, STRENGTHENED to a three-way assert (controller review,
+     IMPORTANT): per arm with an O2 artifact, the ENGINE's own loader
      (`osmose.engine.simulate._load_oxygen_data`, directly importable and callable on a
      raw config dict -- confirmed by reading its signature, so the load-through route is
-     the primary one, not the NetCDF-reread fallback) is called on the assembled config
-     and its held array is asserted equal to the array on disk (kills the verified
-     silent-fallback trap where a non-resolving `oxygen.filename` reverts to coupling
-     defaults).
+     the primary one, not the NetCDF-reread fallback) is called on the assembled config,
+     and its held array, the array on disk, AND the array independently recomputed from
+     the untouched production field via the builder's own `offset_o2` must all agree
+     (`load_through_ok`). A plain engine-held == on-disk check (the original §4(b) design)
+     cannot detect a silent no-op offset write -- a written file byte-identical to
+     production despite a nonzero delta passes engine==disk trivially, and would also
+     pass §4(c)'s ordering check trivially in the flat region of the Hill curve (see
+     `hill_ordering_ok`'s docstring) -- so the recomputed-expected third term is the
+     actual detector, not a redundant belt-and-braces addition.
   3. §4(c) Hill ordering: per arm with a dO2, `f_o2_hill` over the arm's O2 field vs the
      baseline field obeys the delta's sign, wet cells only (`hill_ordering_ok`).
   4. §4(d) knob-factor instrument: the loader's actual float path -- exp(beta *
@@ -101,7 +110,9 @@ DEFAULT_O2_PATH = _b2.DEFAULT_O2_PATH
 
 SCENARIO_ARM_NAMES = ("rcp45_bsap", "rcp45_ref", "rcp85_bsap", "rcp85_ref")
 ARMS = ("baseline", "zero", *SCENARIO_ARM_NAMES)
-ZERO_ARM_DEF = {"name": "zero", "dT_C": 0.0, "dO2": {"value_mmol_m3": 0.0}}
+# Single source of truth (controller review MINOR 1): the builder module owns this dict --
+# its own zero-delta self-check uses the identical object.
+ZERO_ARM_DEF = _b2.ZERO_ARM_DEF
 
 REPORT_PATH = Path("/tmp/b2_scenario_report.json")
 
@@ -200,6 +211,15 @@ def hill_ordering_ok(
     excluded from the comparison entirely (never merely tolerated as NaN). `c50`/`n`
     default to the production coupling's values (`ltl.oxygen.benthos.c50`/`.n`,
     `data/baltic/baltic_param-oxygen.csv`).
+
+    NOT a sufficient detector on its own (controller review, IMPORTANT): a silent no-op
+    offset write (arm field == base field despite a nonzero delta) still satisfies `>=` /
+    `<=` by construction, since equality trivially satisfies either non-strict inequality --
+    and in the Hill curve's flat region (O2 far from c50) even a genuinely-applied but small
+    offset can leave `arm_hill == base_hill` to float precision. `load_through_ok`'s
+    recomputed-expected three-way check is the actual detector for that failure mode; this
+    function alone cannot distinguish "correctly zero-changed" from "silently never wrote
+    the offset".
     """
     arm_o2 = np.asarray(arm_o2, dtype=np.float64)
     base_o2 = np.asarray(base_o2, dtype=np.float64)
@@ -214,6 +234,41 @@ def hill_ordering_ok(
     if delta_sign < 0:
         return bool(np.all(arm_hill <= base_hill))
     return bool(np.array_equal(arm_hill, base_hill))
+
+
+def load_through_ok(
+    engine_o2: np.ndarray,
+    disk_o2: np.ndarray,
+    production_o2: np.ndarray,
+    wet: np.ndarray,
+    delta: float,
+) -> bool:
+    """spec §4(b), STRENGTHENED to a three-way assert (controller review, IMPORTANT --
+    an ADDED wiring assert, no pre-registered criterion changed).
+
+    The original two-way check (engine-loaded array == array on disk) only catches a
+    *loader* bug -- it cannot catch a *writer* bug where the offset was silently never
+    applied: a written file that is byte-identical to the untouched production field
+    despite a nonzero delta passes engine==disk trivially (the engine faithfully loads
+    whatever is on disk, correct or not), and would also pass `hill_ordering_ok` trivially
+    wherever `>=`/`<=` is satisfied by exact equality (see that function's docstring). The
+    actual detector is the third term: independently recompute the EXPECTED offset field
+    from the untouched production array via the builder's own `offset_o2` (single source of
+    truth for the offset math, imported from `build_baltic_b2_forcing`) and require
+    engine-loaded == on-disk == expected.
+
+    `equal_nan=True` throughout: the real production O2 field is confirmed NaN-free (land
+    cells are 0.0, verified in Task 2), but this function is also exercised directly against
+    NaN-bearing synthetic fixtures (land cells) in the test suite, so it can't assume that.
+    """
+    engine_o2 = np.asarray(engine_o2, dtype=np.float64)
+    disk_o2 = np.asarray(disk_o2, dtype=np.float64)
+    production_o2 = np.asarray(production_o2, dtype=np.float64)
+    expected = _b2.offset_o2(production_o2, wet, delta)
+    return bool(
+        np.array_equal(engine_o2, disk_o2, equal_nan=True)
+        and np.array_equal(disk_o2, expected, equal_nan=True)
+    )
 
 
 def _delta_sign(dO2: dict | None) -> int:
@@ -258,18 +313,10 @@ def run_b2(seeds=SEEDS) -> dict:
 
     out_root = Path(tempfile.mkdtemp(prefix="b2_harness_"))
 
-    # --- BLOCKING 1: builder zero-check ---
-    zero_check_ok = _b2._zero_delta_self_check(
-        out_root / "_builder_zero_check", DEFAULT_O2_PATH, DEFAULT_GRID_PATH
-    )
-    if not zero_check_ok:
-        raise AssertionError(
-            "B2 harness BLOCKED (§Design 2 builder zero-check): the written zero-arm O2 "
-            "file diverges from the production input it was supposed to copy "
-            "value-identically. Wiring bug -- no further checks or runs attempted."
-        )
-
-    # Assemble the non-baseline arm definitions and their forcing artifacts.
+    # Assemble the non-baseline arm definitions and write their forcing artifacts. This
+    # must happen before BLOCKING 1 below so BLOCKING 1 can point at the REAL zero-arm
+    # artifact this run's engine runs and downstream checks go on to use, rather than a
+    # separate, freshly-written copy (controller review MINOR 2).
     delta_spec = json.loads(DEFAULT_SPEC_PATH.read_text())
     spec_arms = {a["name"]: a for a in delta_spec["arms"]}
     arm_defs = {"zero": ZERO_ARM_DEF, **{n: spec_arms[n] for n in SCENARIO_ARM_NAMES}}
@@ -284,7 +331,22 @@ def run_b2(seeds=SEEDS) -> dict:
     with xr.open_dataset(DEFAULT_O2_PATH) as ds:
         base_o2 = ds[_b2._single_data_var(ds)].values.astype(np.float64)
 
-    # --- BLOCKING 2: §4(b) O2 load-through, per arm with an O2 artifact ---
+    # --- BLOCKING 1: builder zero-check, pointed at the actual zero-arm artifact ---
+    with xr.open_dataset(artifacts["zero"]["o2_nc"]) as ds_zero:
+        zero_vals = ds_zero[_b2._single_data_var(ds_zero)].values.astype(np.float64)
+    zero_check_ok = bool(np.array_equal(base_o2, zero_vals, equal_nan=True))
+    if not zero_check_ok:
+        raise AssertionError(
+            "B2 harness BLOCKED (§Design 2 builder zero-check): the zero arm's own O2 file "
+            f"({artifacts['zero']['o2_nc']}) -- the actual file this run's engine runs and "
+            "downstream checks will use -- diverges from the production input it was "
+            "supposed to copy value-identically. Wiring bug -- no further checks or runs "
+            "attempted."
+        )
+
+    # --- BLOCKING 2: §4(b) O2 load-through, STRENGTHENED to a three-way assert (controller
+    # review, IMPORTANT) -- see load_through_ok's docstring for why engine==disk alone
+    # cannot catch a silent no-op offset write. ---
     load_through: dict[str, bool] = {}
     for name, arm_def in arm_defs.items():
         o2_nc = artifacts[name]["o2_nc"]
@@ -299,16 +361,14 @@ def run_b2(seeds=SEEDS) -> dict:
             )
         with xr.open_dataset(o2_nc) as ds2:
             written = ds2[_b2._single_data_var(ds2)].values.astype(np.float64)
-        # No equal_nan=True: the production O2 file is confirmed NaN-free (land = 0.0,
-        # verified in Task 2). A future NaN-bearing forcing file would make this comparison
-        # fail loudly here, which is the right failure mode for an unreviewed convention
-        # change -- unlike the builder's own zero-check, this isn't meant to tolerate NaNs.
-        ok = bool(np.array_equal(loaded._data, written))
+        delta = float(arm_def["dO2"]["value_mmol_m3"])
+        ok = load_through_ok(loaded._data, written, base_o2, wet, delta)
         load_through[name] = ok
         if not ok:
             raise AssertionError(
-                f"B2 harness BLOCKED (§4b, arm={name}): engine-held O2 array != the array "
-                f"written by the builder at {o2_nc}. Wiring bug."
+                f"B2 harness BLOCKED (§4b, arm={name}): three-way load-through check failed "
+                "(engine-loaded == on-disk == recomputed-expected via offset_o2). Wiring "
+                "bug -- possibly a silent no-op offset write, not just a loader mismatch."
             )
 
     # --- BLOCKING 3: §4(c) Hill ordering, per arm with a dO2 ---
