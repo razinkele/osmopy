@@ -1,0 +1,15 @@
+{
+  "_provenance": "C4 spec 2026-08-30 (docs/superpowers/specs/2026-08-30-baltic-c4-salinity-sensitivity-arms-design.md). MECHANISM-CHARACTERIZATION arms, not projections: every ensemble generation's mean salinity change is ~0 (Meier et al. 2022, doi:10.5194/esd-13-159-2022, Table 8: BalticAPP -0.06, ECOSUPPORT -0.15, CLIMSEA ~0 g/kg SSS); only first-generation extremes reached 'decreases of as much as 45%' (Meier 2006, cited therein). The dS levers are CHOSEN, not cited.",
+  "context_citations": {
+    "modern_consensus": "Meier et al. 2022 Table 8 + Sect. 3.2.4: 'salinity changes are not robust; i.e. the ensemble spread is larger than the signal'",
+    "first_generation_extreme": "Meier 2006 via Meier et al. 2022: 'decreases of as much as 45%'"
+  },
+  "arms": [
+    {"name": "ds_m1", "dS_PSU": -1.0,
+     "rationale": "sub-ramp-width lever: characterizes redistribution transmission where exclusions cannot fire (expected TV~0.03, exclusions ~0 on cod_east)"},
+    {"name": "ds_m2", "dS_PSU": -2.0,
+     "rationale": "two-thirds-ramp lever: expected TV~0.10, exclusions <=0.23% on cod_east"},
+    {"name": "ds_m3", "dS_PSU": -3.0,
+     "rationale": "full-ramp exclusion-regime lever: baseline cells below 6 PSU reach w=0; approaches the July OFF->ON flip from below; all-zero (map,frame) events reported by the builder"}
+  ]
+}
