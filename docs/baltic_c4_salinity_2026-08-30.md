@@ -83,8 +83,10 @@ own caveat.
 
 Distinguishability test applied consistently below: **max |Δ|/baseline-seed-sd across the
 three arms**, i.e. the largest number of standard deviations any single lever moves a species
-away from baseline. A ratio ≥ ~1.8× is treated as noise-distinguishable in this run; anything
-higher is progressively more clearly a real signal.
+away from baseline. A ratio ≥ ~1.8× is a **post-hoc convention** (introduced at this revision,
+applied uniformly across every species below, with exact ratios printed rather than only the
+convention's verdict) treated as noise-distinguishable in this run; anything higher is
+progressively more clearly a real signal.
 
 | species | −1 PSU | −2 PSU | −3 PSU | baseline seed sd | max \|Δ\|/sd |
 |---|---:|---:|---:|---:|---:|
@@ -98,9 +100,9 @@ higher is progressively more clearly a real signal.
 | herring | −1.01% | +0.30% | −0.93% | 1.6% | 0.62× |
 | smelt | −0.46% | +0.18% | +0.52% | 1.1% | 0.46× |
 
-**cod_west is not the sole outlier — retracted.** It is the largest signal by a wide margin
-(5.33× its own baseline seed sd at −3 PSU), but two other species clear the same
-distinguishability bar:
+**cod_west is the dominant responder; sprat is a smaller but noise-distinguishable secondary
+signal (see below).** cod_west is the largest signal by a wide margin (5.33× its own baseline
+seed sd at −3 PSU), but two other species also clear the same distinguishability bar:
 
 - **sprat is a real secondary signal.** −0.96% / −1.69% / −2.64% is **monotone across all
   three levers** and reaches **2.25×** its baseline sd at −2 PSU and **3.51×** at −3 PSU — small
@@ -115,9 +117,9 @@ distinguishability bar:
   line used here, on the same lever (−3 PSU, the exclusion-regime arm) where cod_east's own
   `excluded_fraction` jumps from ≤0.23% to 3.4–5.2% (see Instruments below), so a direct,
   within-species mechanism is available for cod_east in a way it is not for sprat.
-- Every other species (stickleback, perch, pikeperch, flounder, herring, smelt) stays at or
-  below ~1.6× its own baseline seed sd at every lever — **the lever is cod-specific as wired**,
-  with sprat as the one clear indirect exception.
+- Every other species (stickleback, perch, pikeperch, flounder, herring, smelt) stays below the
+  ~1.8× distinguishability line (max 1.62×, perch) at every lever — **the lever is cod-specific
+  as wired**, with sprat as the one clear indirect exception.
 
 ## Instruments — the two gated species' maps
 
@@ -202,8 +204,9 @@ predation on percids → **perch −35.2%, pikeperch −33.1%**.
 
 **None of that reproduces here.** Across all three graded levers (−1/−2/−3 PSU), stickleback
 moves +2.72% / +0.14% / +0.64% (baseline seed sd 3.2%) and the percids move −2.72%…+0.96%
-(perch, sd 1.7%) and +1.64%…+1.90% (pikeperch, sd 2.2%) — every one of these sits at or below
-~1.6× its own baseline seed noise, a completely different signature from July's ±33–94% moves. This is a
+(perch, sd 1.7%) and +1.64%…+1.90% (pikeperch, sd 2.2%) — every one of these stays below the
+~1.8× distinguishability line (max 1.62×, perch), a completely different signature from July's
+±33–94% moves. This is a
 genuine, reportable "chain does not fire" result, not a null result from an underpowered
 instrument — the biomass measurement in this same run demonstrably resolves a large response
 elsewhere (cod_west +27.85% at ~5.3× its own baseline seed sd, Headline 2 below), so flat
@@ -353,52 +356,5 @@ cannot disentangle (Headline 1).
 - This results doc + copied report: `docs/baltic_c4_salinity_2026-08-30.md`,
   `docs/diagnostics/baltic_c4_salinity_report.json` (this task).
 
-## Fix report (post-review, 2026-08-30)
-
-A task review found 2 Important + 3 rounding-minor issues against the committed
-`docs/diagnostics/baltic_c4_salinity_report.json`. All five re-verified with a fresh Python
-recomputation against the committed (not the `/tmp`) JSON and fixed in this doc only — the
-committed report JSON is unchanged.
-
-**Important 1 — "cod_west is the sole outlier" was wrong.** Applying the same
-max\|Δ\|/baseline-sd distinguishability test used for cod_west (5.33× at −3 PSU, precise sd
-5.227%) to every other species turned up two more noise-distinguishable signals the original
-text missed: **sprat** at 2.25× (−2 PSU) / 3.51× (−3 PSU), monotone across all three levers on
-a 0.75% sd floor; and **cod_east** at 1.84× (−3 PSU), borderline above the ~1.8× line used
-here. Fixed: the Chain table section now states the ratio explicitly for every species (new
-`max |Δ|/sd` column), retracts "sole outlier," and gives sprat a dedicated
-measured/inferred-labelled discussion (measured: the monotone, distinguishable decline;
-inferred, flagged as unmeasured: a cod_west-predation-on-sprat pathway, since this run has no
-diet or mortality-by-cause breakdown to confirm it — it measured the correlation between the
-two series, not the mechanism) plus a shorter note on cod_east's borderline case tied to its
-own `excluded_fraction` jump at −3 PSU.
-
-**Important 2 — gate (b)'s footnote undercounted.** `scripts/baltic_c4_salinity_ab.py:318-330`
-builds `all_arm_cfgs` as `{"baseline": ...}` plus a loop over the 4 non-baseline arms, then
-gate 2 loops over `all_arm_cfgs` — **5** configs, not 4. The doc said "four times" / "4 arm
-configs," contradicting the Task 3 caveat it was itself quoting (which says five). Fixed: the
-gate table's scope cell now reads "5 arm configs (baseline + 4)" and the footnote reads "five
-times," with the script line range cited. Gates (c) and (e), which loop over `arm_defs` only
-(4 arms, no baseline), were separately re-checked against the same script and are unaffected —
-they stay at 4.
-
-**Minors — last-digit rounding, all re-derived from full float precision in the committed
-JSON, not from an already-rounded intermediate display:**
-- cod_west juvenile ΔS=−1 TV: `0.0020467080954420275` → **0.0020** (was 0.0021, an artifact of
-  rounding an already-5dp-rounded 0.00205 rather than the raw value).
-- cod_east adult ΔS=−3 TV: `0.21844878234112364` → **0.2184** (was 0.2185, same class of
-  error).
-- cod_west juvenile ΔS=−3 prey-overlap (stickleback): `0.001894696617278165` → **0.00189**
-  (was 0.00190).
-- cod_west's raw ΔS=−3 percentage is `27.8467%`; the 2-decimal table entry (+27.85%) was
-  already correct and untouched, but two 1-decimal prose mentions had been rounded to **+27.9%**
-  — both fixed to **+27.8%** (the two occurrences in the verdict banner and label 6).
-- The ΔS=−3 ratio-to-sd figure, `27.8467 / 5.2273 = 5.327×`, was reported as "≈5.4×" in two
-  places (Headline 1's cross-reference and the Headline 2 ratio table) — both fixed to
-  **≈5.3×**, and the Headline 2 table header now states the precise sd (5.227%) used for the
-  division.
-
-All five fixes were re-verified against `docs/diagnostics/baltic_c4_salinity_report.json`
-(the committed file, confirmed still byte-identical to the run's original `/tmp` output) with
-a fresh Python recomputation before this section was written; no other numbers in the doc were
-touched by this pass.
+*Revised 2026-08-30 after task review (sprat secondary signal added, gate-count and rounding
+corrections); the revision narrative lives in the SDD task report.*
