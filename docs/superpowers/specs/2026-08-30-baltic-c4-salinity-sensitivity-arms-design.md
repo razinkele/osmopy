@@ -1,118 +1,134 @@
 # Baltic C4 — salinity-gate sensitivity arms (mechanism characterization, not projection)
 
 **Date:** 2026-08-30
-**Status:** approved (design), pending adversarial review, then implementation plan.
-**Parent:** `docs/superpowers/specs/2026-08-08-baltic-improvement-avenues-design.md` scenario
-track (C4, "salinity-gated occupancy/movement — the freshening signal is a first-order Baltic
-scenario driver"). **Evidence corrections that rescoped C4 (verified live, 2026-08-30):**
-1. **The mechanism is already shipped.** The salinity occupancy gate
-   (`osmose/engine/processes/salinity_gate.py`, ramp `w(S)=clip((S−s_low)/(s_high−s_low),0,1)`
-   multiplying the movement map) has been **live in production since July** —
-   `data/baltic/baltic_param-movement.csv:220-233`: enabled for **cod_west (sp0) and cod_east
-   (sp8)**, `s_low=3.0`, `s_high=6.0`, field `baltic_salinity_bottom_climatology.nc`. It
-   survived the E/W split and is inside every certification and every F1/C1/B2 baseline.
-   "Revive the prototype" is therefore already done; C4 reduces to the scenario ambition.
-2. **The freshening scenario driver does not survive verification.** Meier et al. 2022
-   (doi:10.5194/esd-13-159-2022, Table 8 + §3.2.4, fetched and quoted): ensemble-MEAN salinity
-   changes are near-zero in every generation — BalticAPP SSS −0.06/−0.07 g kg⁻¹ (RCP4.5/8.5),
-   ECOSUPPORT −0.15, CLIMSEA +0.01/−0.01, with **bottom salinity slightly positive** in the
-   older ensembles; CLIMSEA: "salinity changes are not robust; i.e. the ensemble spread is
-   larger than the signal" (runoff increase "approximately compensated by the impact of larger
-   saltwater inflows due to the projected SLR"). Only first-generation extremes (Meier 2006 via
-   the BACC citation) reached "decreases of as much as 45 %". **No ensemble generation supplies
-   a citable mean freshening delta** — an earlier draft's "bracket the older projections"
-   framing was corrected mid-design when this was discovered (user re-decision below).
-**Scoping decisions (user, 2026-08-30):** bracketing-arms premise corrected →
-**pure sensitivity arms**: ΔS = −1 and −2 PSU as *mechanism characterization* of the production
-gate, with no climate-scenario claim anywhere; the projection context (2006-era extremes,
-modern near-zero consensus) appears as exactly one cited sentence.
-**Related:** `docs/baltic_salinity_gradient_exploration_2026-07-24.md` (gate status + effect at
-1 seed on the old config), `docs/baltic_salinity_gate_percid_mechanism_2026-07-05.md` (the
-regime-shift chain: cod exclusion → stickleback +94 % → percids −33/−35 %, on the
-pre-calibration 8-species config), `docs/baltic_b2_scenarios_2026-08-29.md` (the five-gate
-wiring discipline this clones), `docs/baltic_certification_2026-08-14.md` (stickleback sits
-6.9 % above its floor — the floor-risk context for any release response),
-`docs/baltic_herring_stickleback...` via memory: stickleback is ALSO clamped by herring
-egg/YOY predation (2026-08-14 finding) — the July release may be damped on today's config.
+**Status:** approved (design), **revised same day after a 5-lens adversarial review** (13 agents;
+2 confirmed majors, 5 downgraded-with-substance, 1 refuted, ~20 minors — all folded in). The
+review's computed numbers are now stated expectations (below); the instrument was redesigned
+around what the movement sampler actually transmits; a third lever (−3 PSU) was added
+pre-registration because the original two cannot reach the exclusion regime.
+**Parent:** improvement-avenues spec C4. **Evidence corrections (v1, verified):** the gate is
+**already live in production** (both cod stocks, ramp 3–6 PSU, since July —
+`baltic_param-movement.csv:220-233`); **no ensemble generation supplies a citable mean
+freshening delta** (Meier 2022 Table 8: BalticAPP −0.06, ECOSUPPORT −0.15, CLIMSEA ≈0 g kg⁻¹
+SSS; bottom salinity slightly positive; only 2006-era extremes reached −45 %). **Scoping
+decisions (user):** pure **sensitivity arms**, no climate-scenario claim; the projection context
+is exactly one cited sentence.
+**Related:** `docs/baltic_salinity_gate_percid_mechanism_2026-07-05.md` (the July OFF→ON chain:
+cod exclusion+concentration → stickleback +94 % → percids −33/−35 %, pre-calibration 8-species),
+`docs/baltic_b2_scenarios_2026-08-29.md` (the wiring discipline this clones),
+`docs/baltic_certification_2026-08-14.md` (stickleback envelope position).
 
-## The headline question
+## Pre-computed expectations (review, 2026-08-30 — stated up front, not discovered post hoc)
 
-**Does the July coastal regime-shift chain reproduce on the certified 9-species config, and at
-what gain?** July measured it pre-calibration, 8 species, 1 seed. Today's config differs in
-every relevant way: E/W cod split (both gated), recalibrated food web, and the
-herring–stickleback clamp. The arms quantify the transmission: salinity field → ramp occupancy
-→ cod distribution → stickleback release → percid response.
+Computed on the real field × the real production maps, engine-oriented (orientation validated
+100 % against the grid mask):
 
-## Decisions (recorded)
+* **cod_west's gate is saturated**: mean w = **1.0000** on all three maps, every month — the
+  production gate is currently a **no-op for cod_west**, and at ΔS=−1/−2 its metrics stay
+  ≈0 (−0.002…−0.021). **cod_west is therefore the experiment's built-in null control**, and
+  this is effectively a **cod_east experiment** — stated here, not discovered later.
+* **cod_east**: 93–99 % of map cells saturated; mean-Δw −0.016…−0.031 (ΔS=−1),
+  −0.115…−0.140 (ΔS=−2); TV of the normalized occupancy distribution 0.028 (−1) / 0.099 (−2);
+  newly-excluded cells ≤ **0.23 %**. **The July exclusion mechanism cannot meaningfully fire
+  at −1/−2** — those arms characterize the redistribution (pattern) pathway.
+* **ΔS=−3 (added at revision)**: the exclusion-regime lever — cells below 6 PSU at baseline
+  hit w=0. The builder prints, pre-run, the per-map exclusion fractions AND any all-zero
+  (map, frame) events (see gates — the engine's all-zero guard silently reverts a species to
+  UNGATED movement; the builder printout turns that from a silent hazard into a visible fact,
+  and any arm where it fires is reported under that label, never silently).
+* **July comparison framing (review-corrected):** July measured an OFF→ON flip — a ~10×
+  larger perturbation than −1/−2 on today's already-gated baseline. The comparison is
+  well-posed only as *graded-lever vs flip*: the arms measure the transmission gradient; −3
+  approaches the flip's exclusion regime from below.
 
-1. **Arms: baseline, zero, ΔS=−1, ΔS=−2 PSU** (uniform additive offsets on the bottom-salinity
-   climatology, wet cells only, floored at 0; 24 frames asserted in/out). 4 arms × 5 house
-   seeds × 50 yr (~1.3 h at B2's measured pace).
-2. **No climate-scenario claim.** The results doc's framing sentence: "these are mechanism-
-   characterization arms; every ensemble generation's mean salinity change is ≈0 (Meier et al.
-   2022 Table 8), and only first-generation extremes reached −45 % (Meier 2006, cited
-   therein)." Nothing in the doc may call the arms RCP-anything.
-3. **Deterministic instrument — predicted ramp-occupancy change** (the predicted-ΔK analog):
-   per arm, compute `w(S+ΔS)` vs `w(S)` over wet cells with the production ramp (3–6 PSU) and
-   report the change weighted by the gated species' movement-map cells (cod_west and cod_east
-   separately). Printed by the builder pre-run; the results doc prints it beside the stock
-   responses. If the predicted occupancy change is ~0 (few reachable cells within ramp reach),
-   that is a REPORTABLE vacuity finding, not a reason to enlarge ΔS post hoc.
-4. **The five-gate wiring discipline, transplanted from B2** (all BLOCKING, in order):
-   (a) builder zero-check — zero-arm written field value-identical (NaN-aware) to production;
-   (b) three-way load-through per arm — engine-loaded salinity field == disk == offset
-   recomputed via the builder's own offset function (import, not reimplement);
-   (c) ramp ordering per arm — `w(S_arm) ≤ w(S_base)` per wet cell for negative ΔS (ramp
-   monotone ⇒ guaranteed; violation = wiring);
-   (d) zero-arm run bit-identity to baseline per seed;
-   (no knob instrument — no thermal machinery is touched; arms differ only in
-   `movement.salinity.field.file`).
-5. **Reported, no pass/fail** (sensitivity arms make no envelope claims): per-arm final-decade
-   means for cod_west, cod_east, stickleback, perch, pikeperch, herring, sprat, flounder;
-   the chain reading (cod change → stickleback change → percid change) vs the July signature;
-   stickleback's floor distance restated (floor-risk context); seed spread printed.
-6. **Labels (every one restated in the results doc):** (i) not-a-projection (decision 2);
-   (ii) **the RV confound, prominently**: real freshening would act on cod primarily through
-   REPRODUCTION (the RV mechanism), but cod_east's recruitment is prescribed by the RV
-   narrative series — these arms exercise the OCCUPANCY pathway only, and cod_east's response
-   is conditioned on that prescription (gate factor 0.32–0.87 over the scored decade);
-   (iii) the salinity field is a single-source climatology (provenance restated from its
-   attrs); (iv) ramp bounds fixed at the production 3–6 PSU — the arms move the field, not the
-   ramp; (v) uniform-offset spatial blindness (real freshening is spatially structured).
+## Decisions (recorded; 3–4 rewritten, 1 arm added at revision)
+
+1. **Arms: baseline, zero, ΔS=−1, −2, −3 PSU** — uniform additive offsets on
+   `baltic_salinity_bottom_climatology.nc`; **wet = grid.nc mask AND finite** (the field's land
+   convention is **NaN, not 0.0** — the opposite of the O₂ file; 3 finite off-mask cells are
+   excluded by the mask-AND-finite rule); NaN-propagating arithmetic; stored salinity floored
+   at ≥ 0; 24 frames asserted in/out; dtype/encoding preserved. 5 arms × 5 house seeds ×
+   50 yr (~1.6 h at B2 pace).
+2. **No climate-scenario claim** (unchanged). ΔS values are chosen levers: the delta-spec JSON
+   gives each a `rationale` field, NOT a citation (review: fake citations for uncitable levers
+   would violate the schema's own spirit); the two context numbers (2006-era −45 %, modern ≈0)
+   carry real citations.
+3. **Instruments (redesigned — the sampler renormalizes, so level metrics are not what the
+   engine sees):** per arm, per gated-species map, per frame, computed by the builder pre-run
+   with maps obtained **via the engine's own map loader** (import-not-reimplement; the raw
+   CSVs are stored upside-down relative to the field — a naive read gives a mirrored ~5×-wrong
+   instrument; a CI test pins orientation via zero-map-positive-cells-on-land vs grid mask):
+   * (i) **TV distance** between normalized base and arm occupancy distributions (map·w) —
+     the redistribution lever the sampler transmits;
+   * (ii) **predicted change in normalized cod occupancy mass over each prey species' map
+     cells** (stickleback, perch, pikeperch, smelt overlap) — the direct chain lever;
+   * (iii) **newly-excluded-cell fraction** (w>0 → w=0) — the July-mechanism lever;
+   * (iv) mean-Δw retained as a **wiring check only** (monotone ⇒ ~0 iff nothing changed),
+     never printed beside stock responses without the framing sentence: *the gate conserves
+     total occupancy — it redistributes and excludes, it never removes fish*.
+   Vacuity criterion applies to (i)+(iii); a ≈0 reading is a reportable finding.
+4. **Blocking gates (B2 discipline + review additions), in order:** (a) builder zero-check
+   (zero-arm field value-identical NaN-aware to production); (b) three-way load-through per
+   arm — engine-loaded field (via `_load_salinity_gate`/`EngineConfig.salinity_field`) == disk
+   == builder-recomputed offset; (c) ramp ordering per wet cell (negative ΔS ⇒ w′ ≤ w);
+   (d) zero-arm run bit-identity per seed (verified achievable: no float transforms on load);
+   (e) **frame-count assert (24) on every arm field, harness-side** — the salinity loader has
+   NO frame validation (silent `step % frames` wrap; surfaced per success criterion 4,
+   recorded as a Stage-2 time-policy item, NOT fixed here); plus the harness asserts
+   `movement.salinity.field.constant` is absent from every arm config (the loader prefers
+   `.constant` over `.file`; a stray key would silently discard the arms' only lever).
+5. **Reported, no pass/fail:** per-arm final-decade means for **all nine species** (review: v1
+   omitted smelt — coastal, overlapping the affected cells); the chain reading
+   (cod_east redistribution → stickleback → perch/pikeperch/smelt) against the July signature
+   under the graded-vs-flip framing; seed spreads printed; instruments (i)–(iii) beside every
+   stock column. **Expected signature (stated pre-run):** stickleback UP (a release moves it
+   *away* from its floor, toward a ceiling +517 % distant — its certified position is 6.9 % of
+   the envelope width above the floor, headroom −38.3 %; v1 misquoted this), percids and smelt
+   DOWN; a large percid decline is a sensitivity finding, and for pikeperch it points toward
+   realism (its overshoot is the certified bias).
+6. **Labels (all restated in the results doc):** not-a-projection; the **RV confound**
+   (occupancy pathway only; cod_east recruitment RV-prescribed, gate factor 0.32–0.87);
+   single-source climatology (provenance from its attrs: CMEMS PHY, deepest-valid level);
+   fixed production ramp 3–6; uniform-offset spatial blindness; **cod_west = saturated null
+   control**; the all-zero/un-gate guard status per arm; the Java gap (Java silently ignores
+   `movement.salinity.*`; block-reason entry joins the C1 thermal item, both waiting on the
+   user-dirty runner.py — recorded, deferred).
 
 ## Non-goals (YAGNI)
 
-No ramp retuning; no percid-side (inverted-ramp) gating; no reproduction-side salinity
-mechanism; no engine changes (the gate is shipped; if a loader gap is found, it is a finding
-to surface, not to silently patch); no new scenario JSON schema (a tiny C4-local delta spec
-mirroring B2's, minus the O₂ referent machinery); no recalibration; no envelope claims.
+No ramp retuning; no percid-side gating; no reproduction-side salinity mechanism; **no engine
+changes** (both loader gaps — frame-count, all-zero un-gate — are surfaced findings for the
+Stage-2 time-policy work, guarded harness-side here); no recalibration; no envelope claims.
 
 ## Design
 
-1. **Delta spec** `data/baltic/scenarios/c4_salinity_sensitivity.json`: two ΔS values with the
-   decision-2 context citations; schema-validated (citations mandatory, no dead knobs).
-2. **Builder** `scripts/build_baltic_c4_forcing.py`: clones B2's wet-mask/floor/frames pattern
-   for the salinity NetCDF (variable per `movement.salinity.field.varname` = `salinity`);
-   emits per-arm fields + the decision-3 predicted occupancy changes; zero self-check.
-3. **Harness** `scripts/baltic_c4_salinity_ab.py`: B2's `run_*` pattern; overlays swap
-   `movement.salinity.field.file` to the arm's absolute path; gates per decision 4; report
-   JSON to /tmp + committed copy at `docs/diagnostics/baltic_c4_salinity_report.json`.
-4. **Run + results doc** `docs/baltic_c4_salinity_YYYY-MM-DD.md`: the chain table
-   (per-species, per-arm, deltas vs baseline), predicted occupancy changes beside them, the
-   July-signature comparison, all labels.
+1. **Delta spec** `data/baltic/scenarios/c4_salinity_sensitivity.json`: three ΔS with
+   rationales; two context citations; schema test (citations for context numbers, rationale
+   for levers, no dead knobs).
+2. **Builder** `scripts/build_baltic_c4_forcing.py`: B2-clone offset (mask-AND-finite wet
+   rule, NaN-propagating, ≥0 floor, frames/dtype/encoding preserved); instruments (i)–(iv)
+   printed per arm incl. the −3 arm's exclusion/all-zero report; zero self-check; maps via the
+   engine loader with the orientation CI test.
+3. **Harness** `scripts/baltic_c4_salinity_ab.py`: B2 `run_*` pattern; overlays swap
+   `movement.salinity.field.file` (absolute paths); gates per decision 4; report to /tmp +
+   committed `docs/diagnostics/baltic_c4_salinity_report.json`.
+4. **Run + results doc** `docs/baltic_c4_salinity_YYYY-MM-DD.md`: the nine-species × five-arm
+   chain table with instruments beside it; the July graded-vs-flip comparison; every label.
 
 ## Testing
 
-CI-safe: delta-spec schema; builder offset/floor/frames/zero-identity + predicted-occupancy
-math on synthetic fields (incl. a vacuity fixture where no cell is within ramp reach → 0.0);
-harness helpers (overlay construction; ramp-ordering check on synthetic fields; three-way
-equality incl. the no-op-write pathological case — B2's proven test set). NOT CI: the run.
+CI-safe: schema; builder offset/wet-rule/floor/frames/zero-identity + instruments on synthetic
+fields (incl. a saturation fixture where all cells sit at w=1 → TV=0, exclusions=0 — the
+vacuity case — and an orientation-pinning test on a real map vs the grid mask); harness helpers
+(overlay construction, `.constant` assert, frame assert, ramp ordering, three-way equality with
+the no-op-write pathological case). NOT CI: the run.
 
 ## Success criteria
 
-1. All four blocking gates pass; zero arm bit-identical.
-2. The chain table exists with predicted occupancy changes; the July-signature comparison is
-   stated either way (reproduced / damped / absent — all are findings).
-3. Every decision-6 label present; decision-2 framing sentence present; no scenario language.
-4. Anything the arms reveal about the gate's loader (e.g. silent fallback analogs) is surfaced
-   as a finding.
+1. All gates pass; zero arm bit-identical.
+2. The chain table exists with instruments (i)–(iii) beside stock responses; the
+   graded-vs-flip July comparison stated either way; the −3 arm's exclusion regime
+   characterized (or its all-zero guard status reported).
+3. Every decision-6 label present; the framing sentence (redistributes, never removes)
+   accompanies any occupancy metric.
+4. Both loader gaps surfaced in the results doc as Stage-2 items.
