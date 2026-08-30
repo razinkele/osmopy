@@ -15,7 +15,7 @@ Labels below. Two headlines, in the order they matter:
    at seed-noise level at every lever tested here, a completely different picture from July's
    OFF→ON flip (+94% / −33% / −35%).
 2. **cod_west — the spec's own pre-registered "saturated null control" — turns out to be the
-   largest responder.** It moves +5.9% / +11.0% / +27.9% (−1 / −2 / −3 PSU), monotone and, at
+   largest responder.** It moves +5.9% / +11.0% / +27.8% (−1 / −2 / −3 PSU), monotone and, at
    −2/−3, far outside its own seed noise. The spec's saturation statement was correct about the
    *baseline* field and wrong as a predictor of behaviour under an offset — see Headline 2 below
    for why.
@@ -62,7 +62,7 @@ modern estimate. The −1/−2/−3 PSU levers used here are **chosen to span th
 | gate | scope | result |
 |---|---|---|
 | (a) builder zero-check (zero-arm field value-identical NaN-aware to production) | 1 field | **PASS** |
-| (b) `movement.salinity.field.constant` absent from every arm config | 4 arm configs | **PASS**¹ |
+| (b) `movement.salinity.field.constant` absent from every arm config | 5 arm configs (baseline + 4) | **PASS**¹ |
 | (c) three-way load-through (engine-loaded via `_load_salinity_gate` == on-disk == builder-recomputed offset) | `zero`, `ds_m1`, `ds_m2`, `ds_m3` | **PASS** — true for all four |
 | (d) ramp ordering per wet cell (negative ΔS ⇒ w′ ≤ w) | `zero`, `ds_m1`, `ds_m2`, `ds_m3` | **PASS** — true for all four |
 | (e) frame-count assert (24) on every arm field, harness-side | 4 arm fields | **PASS**² |
@@ -72,32 +72,52 @@ modern estimate. The −1/−2/−3 PSU levers used here are **chosen to span th
 `zero_check`, `load_through`, `ramp_ordering`) — they pass by **non-raising harness assertion**
 (`assert_no_salinity_constant` / `assert_arm_frame_count` in `scripts/baltic_c4_salinity_ab.py`,
 which raise `ValueError` on failure), and the run completing end-to-end is the evidence they
-held. Gate (b) additionally inspects the **same inherited `base_cfg` value** four times by
-construction — `arm_overlays` never emits `.constant` for any arm — so this is not four
-independent per-arm checks; it is the harness's own poisoned-cfg unit test
+held. Gate (b) additionally inspects the **same inherited `base_cfg` value** five times by
+construction (`baseline` plus the 4 non-baseline arms, `scripts/baltic_c4_salinity_ab.py:318-330`)
+— `arm_overlays` never emits `.constant` for any arm — so this is not five independent per-arm
+checks; it is the harness's own poisoned-cfg unit test
 (`tests/test_baltic_c4_harness_helpers.py`) that proves the guard actually fires, per Task 3's
 own caveat.
 
 ## Chain table — final-decade mean vs baseline, all nine species
 
-| species | −1 PSU | −2 PSU | −3 PSU | baseline seed sd |
-|---|---:|---:|---:|---:|
-| **cod_west** | **+5.87%** | **+10.96%** | **+27.85%** | 5.2% |
-| cod_east | +0.90% | +1.68% | −2.33% | 1.3% |
-| stickleback | +2.72% | +0.14% | +0.64% | 3.2% |
-| perch | −1.14% | −2.72% | +0.96% | 1.7% |
-| pikeperch | +1.90% | +1.64% | +1.64% | 2.2% |
-| smelt | −0.46% | +0.18% | +0.52% | 1.1% |
-| herring | −1.01% | +0.30% | −0.93% | 1.6% |
-| sprat | −0.96% | −1.69% | −2.64% | 0.8% |
-| flounder | −2.13% | −0.59% | −1.80% | 2.5% |
+Distinguishability test applied consistently below: **max |Δ|/baseline-seed-sd across the
+three arms**, i.e. the largest number of standard deviations any single lever moves a species
+away from baseline. A ratio ≥ ~1.8× is treated as noise-distinguishable in this run; anything
+higher is progressively more clearly a real signal.
 
-cod_west is the sole outlier: at −2 PSU it is already ~2.1× its own baseline seed sd, and at
-−3 PSU ~5.4× — a real signal, not noise. Every other species stays within roughly 1–2× its own
-baseline seed sd at every lever — the largest non-cod_west swings are stickleback +2.72%
-(−1 PSU, sd 3.2%) and perch −2.72% (−2 PSU, sd 1.7%, ~1.6× sd) — small in absolute terms but
-not uniformly sub-noise; **the lever is cod-specific as wired**, and cod_west dominates the
-whole table.
+| species | −1 PSU | −2 PSU | −3 PSU | baseline seed sd | max \|Δ\|/sd |
+|---|---:|---:|---:|---:|---:|
+| **cod_west** | **+5.87%** | **+10.96%** | **+27.85%** | 5.2% | **5.33×** |
+| sprat | −0.96% | −1.69% | −2.64% | 0.8% | **3.51×** |
+| cod_east | +0.90% | +1.68% | −2.33% | 1.3% | 1.84× |
+| perch | −1.14% | −2.72% | +0.96% | 1.7% | 1.62× |
+| stickleback | +2.72% | +0.14% | +0.64% | 3.2% | 0.84× |
+| pikeperch | +1.90% | +1.64% | +1.64% | 2.2% | 0.88× |
+| flounder | −2.13% | −0.59% | −1.80% | 2.5% | 0.86× |
+| herring | −1.01% | +0.30% | −0.93% | 1.6% | 0.62× |
+| smelt | −0.46% | +0.18% | +0.52% | 1.1% | 0.46× |
+
+**cod_west is not the sole outlier — retracted.** It is the largest signal by a wide margin
+(5.33× its own baseline seed sd at −3 PSU), but two other species clear the same
+distinguishability bar:
+
+- **sprat is a real secondary signal.** −0.96% / −1.69% / −2.64% is **monotone across all
+  three levers** and reaches **2.25×** its baseline sd at −2 PSU and **3.51×** at −3 PSU — small
+  in absolute terms (under 3%) but not noise by the same test applied to cod_west. **Measured:**
+  the monotone, noise-distinguishable decline. **Inferred, not measured:** cod_west rises
+  strongly across the same three levers (the one species whose biomass response this run
+  resolves clearly) and cod preys on sprat in this config, so a cod_west-consumption pathway is
+  the plausible read — but this run has no diet or mortality-by-cause breakdown for sprat, so
+  it measured the correlation (both series move together, monotonically, across the same three
+  arms), not the mechanism.
+- **cod_east is borderline at −3 PSU** (1.84× its baseline sd) — close to but above the ~1.8×
+  line used here, on the same lever (−3 PSU, the exclusion-regime arm) where cod_east's own
+  `excluded_fraction` jumps from ≤0.23% to 3.4–5.2% (see Instruments below), so a direct,
+  within-species mechanism is available for cod_east in a way it is not for sprat.
+- Every other species (stickleback, perch, pikeperch, flounder, herring, smelt) stays at or
+  below ~1.6× its own baseline seed sd at every lever — **the lever is cod-specific as wired**,
+  with sprat as the one clear indirect exception.
 
 ## Instruments — the two gated species' maps
 
@@ -111,7 +131,7 @@ behaviour diverge.
 
 | species | stage | baseline mean w | baseline saturated | ΔS | TV | mean Δw | newly-excluded |
 |---|---|---:|---:|---|---:|---:|---:|
-| cod_west | juvenile | 1.0000 | 100.0% | −1 | 0.0021 | −0.0021 | 0.000% |
+| cod_west | juvenile | 1.0000 | 100.0% | −1 | 0.0020 | −0.0021 | 0.000% |
 | cod_west | juvenile |  |  | −2 | 0.0184 | −0.0209 | 0.000% |
 | cod_west | juvenile |  |  | −3 | 0.0707 | −0.0827 | 0.000% |
 | cod_west | adult/spawning | 1.0000 | 100.0% | −1 | 0.0017 | −0.0017 | 0.000% |
@@ -122,7 +142,7 @@ behaviour diverge.
 | cod_east | juvenile |  |  | −3 | 0.1963 | −0.2762 | 3.353% |
 | cod_east | adult | 0.9794 | 93.3% | −1 | 0.0278 | −0.0313 | 0.227% |
 | cod_east | adult |  |  | −2 | 0.0988 | −0.1400 | 0.227% |
-| cod_east | adult |  |  | −3 | 0.2185 | −0.3039 | 5.213% |
+| cod_east | adult |  |  | −3 | 0.2184 | −0.3039 | 5.213% |
 | cod_east | spawning | 0.9929 | 99.0% | −1 | 0.0141 | −0.0160 | 0.087% |
 | cod_east | spawning |  |  | −2 | 0.0808 | −0.1148 | 0.087% |
 | cod_east | spawning |  |  | −3 | 0.1924 | −0.2798 | 0.434% |
@@ -154,7 +174,7 @@ metric on its own.**
 | cod_west | adult | perch | 0.00000 | 0.00000 | 0.00000 |
 | cod_west | adult | pikeperch | −0.00074 | −0.00507 | −0.01934 |
 | cod_west | adult | smelt | 0.00000 | 0.00000 | 0.00000 |
-| cod_west | juvenile | stickleback | −0.00006 | +0.00018 | +0.00190 |
+| cod_west | juvenile | stickleback | −0.00006 | +0.00018 | +0.00189 |
 | cod_west | juvenile | perch | 0.00000 | 0.00000 | 0.00000 |
 | cod_west | juvenile | pikeperch | −0.00086 | −0.00594 | −0.02257 |
 | cod_west | juvenile | smelt | 0.00000 | 0.00000 | 0.00000 |
@@ -186,7 +206,7 @@ moves +2.72% / +0.14% / +0.64% (baseline seed sd 3.2%) and the percids move −2
 ~1.6× its own baseline seed noise, a completely different signature from July's ±33–94% moves. This is a
 genuine, reportable "chain does not fire" result, not a null result from an underpowered
 instrument — the biomass measurement in this same run demonstrably resolves a large response
-elsewhere (cod_west +27.85% at ~5.4× its own baseline seed sd, Headline 2 below), so flat
+elsewhere (cod_west +27.85% at ~5.3× its own baseline seed sd, Headline 2 below), so flat
 stickleback/percid biomass at every lever is not a resolution artifact of the harness; it is a
 measured absence of transmission.
 
@@ -223,11 +243,11 @@ field* is confirmed exactly by this run (mean w = 1.0000 on all three cod_west m
 month, per the instruments table above). **The prediction built on top of it — that cod_west
 would therefore be inert — is wrong**, and increasingly wrong as the lever grows:
 
-| ΔS | cod_west final-decade Δ | vs baseline seed sd (5.2%) |
+| ΔS | cod_west final-decade Δ | vs baseline seed sd (precise 5.227%) |
 |---|---:|---:|
 | −1 PSU | +5.87% | ≈1.1× sd — borderline |
 | −2 PSU | +10.96% | ≈2.1× sd — clearly above noise |
-| −3 PSU | +27.85% | ≈5.4× sd — dominant signal in the whole table |
+| −3 PSU | +27.85% | ≈5.3× sd — dominant signal in the whole table |
 
 Monotone, and by −2/−3 PSU far outside anything explainable as seed noise.
 
@@ -284,7 +304,7 @@ zero-offset limit, and its sensitivity grows fastest of any species tested.
 6. **cod_west = saturated null control — NOW CORRECTED with the empirical outcome.** The gate
    is genuinely a no-op on cod_west's *baseline* field (mean w=1.0000, all three maps, every
    frame — confirmed above). It is **not** inert once the field is offset: cod_west is the
-   largest responder in the whole chain table at −2/−3 PSU (+11.0%, +27.9%). See Headline 2.
+   largest responder in the whole chain table at −2/−3 PSU (+11.0%, +27.8%). See Headline 2.
 7. **The all-zero/un-gate guard status is reported per arm:** the engine's all-zero guard
    silently reverts a species to UNGATED movement for any (map, frame) where map·w sums to
    zero — a wiring hazard the builder turns visible, not a harness-fixed bug. **This run: 0
@@ -332,3 +352,53 @@ cannot disentangle (Headline 1).
   (commit `947533c`).
 - This results doc + copied report: `docs/baltic_c4_salinity_2026-08-30.md`,
   `docs/diagnostics/baltic_c4_salinity_report.json` (this task).
+
+## Fix report (post-review, 2026-08-30)
+
+A task review found 2 Important + 3 rounding-minor issues against the committed
+`docs/diagnostics/baltic_c4_salinity_report.json`. All five re-verified with a fresh Python
+recomputation against the committed (not the `/tmp`) JSON and fixed in this doc only — the
+committed report JSON is unchanged.
+
+**Important 1 — "cod_west is the sole outlier" was wrong.** Applying the same
+max\|Δ\|/baseline-sd distinguishability test used for cod_west (5.33× at −3 PSU, precise sd
+5.227%) to every other species turned up two more noise-distinguishable signals the original
+text missed: **sprat** at 2.25× (−2 PSU) / 3.51× (−3 PSU), monotone across all three levers on
+a 0.75% sd floor; and **cod_east** at 1.84× (−3 PSU), borderline above the ~1.8× line used
+here. Fixed: the Chain table section now states the ratio explicitly for every species (new
+`max |Δ|/sd` column), retracts "sole outlier," and gives sprat a dedicated
+measured/inferred-labelled discussion (measured: the monotone, distinguishable decline;
+inferred, flagged as unmeasured: a cod_west-predation-on-sprat pathway, since this run has no
+diet or mortality-by-cause breakdown to confirm it — it measured the correlation between the
+two series, not the mechanism) plus a shorter note on cod_east's borderline case tied to its
+own `excluded_fraction` jump at −3 PSU.
+
+**Important 2 — gate (b)'s footnote undercounted.** `scripts/baltic_c4_salinity_ab.py:318-330`
+builds `all_arm_cfgs` as `{"baseline": ...}` plus a loop over the 4 non-baseline arms, then
+gate 2 loops over `all_arm_cfgs` — **5** configs, not 4. The doc said "four times" / "4 arm
+configs," contradicting the Task 3 caveat it was itself quoting (which says five). Fixed: the
+gate table's scope cell now reads "5 arm configs (baseline + 4)" and the footnote reads "five
+times," with the script line range cited. Gates (c) and (e), which loop over `arm_defs` only
+(4 arms, no baseline), were separately re-checked against the same script and are unaffected —
+they stay at 4.
+
+**Minors — last-digit rounding, all re-derived from full float precision in the committed
+JSON, not from an already-rounded intermediate display:**
+- cod_west juvenile ΔS=−1 TV: `0.0020467080954420275` → **0.0020** (was 0.0021, an artifact of
+  rounding an already-5dp-rounded 0.00205 rather than the raw value).
+- cod_east adult ΔS=−3 TV: `0.21844878234112364` → **0.2184** (was 0.2185, same class of
+  error).
+- cod_west juvenile ΔS=−3 prey-overlap (stickleback): `0.001894696617278165` → **0.00189**
+  (was 0.00190).
+- cod_west's raw ΔS=−3 percentage is `27.8467%`; the 2-decimal table entry (+27.85%) was
+  already correct and untouched, but two 1-decimal prose mentions had been rounded to **+27.9%**
+  — both fixed to **+27.8%** (the two occurrences in the verdict banner and label 6).
+- The ΔS=−3 ratio-to-sd figure, `27.8467 / 5.2273 = 5.327×`, was reported as "≈5.4×" in two
+  places (Headline 1's cross-reference and the Headline 2 ratio table) — both fixed to
+  **≈5.3×**, and the Headline 2 table header now states the precise sd (5.227%) used for the
+  division.
+
+All five fixes were re-verified against `docs/diagnostics/baltic_c4_salinity_report.json`
+(the committed file, confirmed still byte-identical to the run's original `/tmp` output) with
+a fresh Python recomputation before this section was written; no other numbers in the doc were
+touched by this pass.
