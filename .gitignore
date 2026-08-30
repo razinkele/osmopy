@@ -117,3 +117,9 @@ tests/.preflight_wired
 # Sphinx docs build output + generated autosummary stubs
 docs/_build/
 docs/api/_autosummary/
+
+# Large generated test baselines (e.g. C3 Gate-A master fixture) — regenerate
+# locally, never commit. Pre-existing curated baselines are already tracked
+# and unaffected (gitignore does not untrack tracked files).
+tests/baselines/*.npz
+tests/baselines/*.json

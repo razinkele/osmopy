@@ -1897,6 +1897,8 @@ class EngineConfig:
     bioen_theta: NDArray[np.float64] | None = None  # larvae ingestion multiplier
     bioen_c_rate: NDArray[np.float64] | None = None  # larvae correction coefficient
     bioen_k_for: NDArray[np.float64] | None = None  # foraging mortality
+    bioen_larvae_thres_dt: NDArray[np.int32] | None = None  # Java larvaeThresDt (default 1)
+    bioen_i_max_all: NDArray[np.float64] | None = None  # Imax for focal + background predators
 
     # Foraging mortality (bioen only)
     foraging_k1_for: NDArray[np.float64] | None = None  # genetic mode base
@@ -2492,6 +2494,7 @@ class EngineConfig:
         bioen_eta = bioen_r = bioen_m0 = bioen_m1 = None
         bioen_e_mobi = bioen_e_d = bioen_tp = bioen_e_maint = None
         bioen_o2_c1 = bioen_o2_c2 = bioen_i_max = bioen_theta = bioen_c_rate = bioen_k_for = None
+        bioen_larvae_thres_dt = bioen_i_max_all = None
         if _bioen_enabled:
             bioen_beta = _species_float_optional(cfg, "species.beta.sp{i}", n_sp, 0.8)
             bioen_zlayer = _species_int_optional(cfg, "species.zlayer.sp{i}", n_sp, 0)
@@ -2508,8 +2511,8 @@ class EngineConfig:
             bioen_e_mobi = _species_float_optional(
                 cfg, "species.bioen.mobilized.e.mobi.sp{i}", n_sp, 0.65
             )
-            bioen_e_d = _species_float_optional(cfg, "species.bioen.mobilized.e.D.sp{i}", n_sp, 1.5)
-            bioen_tp = _species_float_optional(cfg, "species.bioen.mobilized.Tp.sp{i}", n_sp, 20.0)
+            bioen_e_d = _species_float_optional(cfg, "species.bioen.mobilized.e.d.sp{i}", n_sp, 1.5)
+            bioen_tp = _species_float_optional(cfg, "species.bioen.mobilized.tp.sp{i}", n_sp, 20.0)
             bioen_e_maint = _species_float_optional(
                 cfg, "species.bioen.maint.e.maint.sp{i}", n_sp, 0.65
             )
@@ -2524,6 +2527,21 @@ class EngineConfig:
             bioen_c_rate = _species_float_optional(cfg, "predation.c.bioen.sp{i}", n_sp, 0.0)
             bioen_k_for = _species_float_optional(
                 cfg, "species.bioen.forage.k_for.sp{i}", n_sp, 0.0
+            )
+            # Java Species.java:205-216: larvae->adult threshold in YEARS, default 1 dt under bioen.
+            _larv_yrs = _species_float_optional(
+                cfg, "species.larvae.growth.threshold.age.sp{i}", n_sp, -1.0
+            )
+            bioen_larvae_thres_dt = np.where(
+                _larv_yrs < 0, 1, np.rint(_larv_yrs * n_dt).astype(np.int32)
+            ).astype(np.int32)
+            # Java BioenPredationMortality.init reads Imax for every predator index (focal AND
+            # background); the canonical key is shared with the standard rate (lossy alias).
+            bioen_i_max_all = np.concatenate(
+                [
+                    bioen_i_max,
+                    np.array([b.ingestion_rate for b in background_list], dtype=np.float64),
+                ]
             )
 
         # Foraging mortality parameters (bioen only)
@@ -2745,6 +2763,8 @@ class EngineConfig:
             bioen_theta=bioen_theta,
             bioen_c_rate=bioen_c_rate,
             bioen_k_for=bioen_k_for,
+            bioen_larvae_thres_dt=bioen_larvae_thres_dt,
+            bioen_i_max_all=bioen_i_max_all,
             foraging_k1_for=foraging_k1_for,
             foraging_k2_for=foraging_k2_for,
             foraging_I_max=foraging_I_max,

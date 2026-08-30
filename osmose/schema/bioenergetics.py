@@ -191,7 +191,7 @@ BIOENERGETICS_FIELDS: list[OsmoseField] = [
         unit="eV",
     ),
     OsmoseField(
-        key_pattern="species.bioen.mobilized.e.D.sp{idx}",
+        key_pattern="species.bioen.mobilized.e.d.sp{idx}",
         param_type=ParamType.FLOAT,
         description="Deactivation energy e_D for Johnson curve",
         category="bioenergetics",
@@ -200,7 +200,7 @@ BIOENERGETICS_FIELDS: list[OsmoseField] = [
         unit="eV",
     ),
     OsmoseField(
-        key_pattern="species.bioen.mobilized.Tp.sp{idx}",
+        key_pattern="species.bioen.mobilized.tp.sp{idx}",
         param_type=ParamType.FLOAT,
         description="Peak temperature T_P for thermal performance curve",
         category="bioenergetics",

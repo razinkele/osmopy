@@ -70,9 +70,13 @@ def test_output_enable_flags_match_engine_reads():
     in `osmose/engine/config.py`.
 
     This is the OUTPUT subset of the broader "schema mirrors engine reads"
-    contract. A few non-output schema keys (e.g. `species.bioen.mobilized.Tp`,
-    `species.bioen.mobilized.e.D`) intentionally preserve mixed case because
-    the Java engine reads those exact strings; this test does not police those.
+    contract; this test does not police non-output keys. (Historical note: this
+    docstring used to carve out `species.bioen.mobilized.Tp` /
+    `species.bioen.mobilized.e.D` as an intentional mixed-case exception. That
+    was wrong -- the reader lowercases every key it loads from a config file
+    (`osmose/config/reader.py:168`), so a mixed-case key_pattern there was an
+    unreachable dead read. Fixed in C3 Task 2: both now use lowercase
+    `species.bioen.mobilized.tp` / `species.bioen.mobilized.e.d`.)
     """
     from osmose.schema.output import OUTPUT_FIELDS, _OUTPUT_ENABLE_FLAGS
 
