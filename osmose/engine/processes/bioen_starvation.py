@@ -43,3 +43,37 @@ def bioen_starvation(
         new_gonad = np.where(insufficient, 0.0, new_gonad)
 
     return n_dead, new_gonad
+
+
+def bioen_starvation_substep(
+    e_net: float,
+    gonad_weight: float,
+    weight: float,
+    eta: float,
+    n_subdt: int,
+) -> tuple[float, float, float]:
+    """Java ``BioenStarvationMortality.computeStarvation`` for ONE school, ONE sub-step.
+
+    Replicates Java's ordering quirks on purpose (spec §0): the deficit is the SCHOOL's
+    ``E_net`` (tonnes per school) divided by ``subdt`` while the gonad is per FISH; and in
+    the insufficient branch the gonad is flushed BEFORE the repayment credit and the death
+    toll are read from it, so the credit is zero and the toll is the whole deficit
+    (``BioenStarvationMortality.java:186-193``).
+
+    Called once per sub-step from the interleaved mortality loop, on the PREVIOUS step's
+    ``e_net`` (Java step order: mortality -> EnergyBudget -> reproduction). Each call sees
+    the ``e_net`` left by the previous sub-step, so the toll is not simply ``|E_net_0|``.
+
+    Returns:
+        ``(n_dead, new_gonad_weight, new_e_net)``.
+    """
+    if e_net >= 0.0:
+        return 0.0, gonad_weight, e_net
+    deficit = abs(e_net) / n_subdt
+    if gonad_weight >= eta * deficit:
+        # Enough gonadic energy: pay maintenance from the gonad and repay E_net.
+        return 0.0, gonad_weight - eta * deficit, e_net + deficit
+    if weight <= 0.0:
+        # Java would divide by zero here; flush the gonad as it does and kill nobody.
+        return 0.0, 0.0, e_net
+    return deficit / weight, 0.0, e_net

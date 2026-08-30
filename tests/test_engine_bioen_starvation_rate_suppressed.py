@@ -1,15 +1,15 @@
 """Regression: standard starvation must be suppressed on the Numba mortality path
 when bioen is enabled.
 
-Production runs `_HAS_NUMBA=True`, so mortality routes through the Numba kernels,
-which apply standard (pred-success) starvation from `_precompute_effective_rates`'
-`eff_starv`. `_bioen_step` SEPARATELY applies bioen gonad-depletion starvation.
-With no suppression, both hit `n_dead[:, STARVATION]` and both reduce abundance —
-a production double-count of starvation for every bioen run.
+Under bioen, starvation is the gonad-depletion formula
+(`BioenStarvationMortality.computeStarvation`) applied inside the interleaved loop.
+The standard (pred-success) rate must not be applied as well, or `n_dead[:, STARVATION]`
+carries both. `_precompute_effective_rates` zeroes `eff_starv` for that reason.
 
-This complements the `_get_mortality_causes` fix (commit 457ac55), which handled
-only the innermost pure-Python interleaved loop (the `_HAS_NUMBA=False` fallback).
-Bioen starvation must be applied exactly once, by `_bioen_step`, on every path.
+Since Task 4, `mortality()` never dispatches to the batched Numba kernels under bioen
+(spec decision 14), so this suppression is defence in depth rather than the load-bearing
+guard it was — `eff_starv` is only read by the Numba paths. Keeping it means a future
+bioen-aware kernel cannot silently reintroduce the double count.
 
 Source: deep review 2026-06-22 (critical) + spec review 2026-06-23 (dispatch-path).
 """
@@ -60,7 +60,8 @@ def test_bioen_suppresses_standard_starvation_on_numba_path():
     eff_s, _, _, _ = _precompute_effective_rates(
         state, _config(bioen_enabled=True), n_subdt=1, step=0
     )
-    # Bioen owns starvation (via _bioen_step); the Numba kernel must NOT also apply it.
+    # Bioen owns starvation (gonad depletion, inside the interleaved loop); the Numba
+    # kernel must NOT also apply the standard pred-success rate.
     assert np.all(eff_s == 0.0)
 
 

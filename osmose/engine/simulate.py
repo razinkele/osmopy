@@ -282,18 +282,25 @@ def _bioen_step(
     o2_data: PhysicalData | None = None,
     trait_overrides: dict[str, NDArray[np.float64]] | None = None,
 ) -> SchoolState:
-    """Replace _growth() when bioenergetics is enabled.
+    """Replace _growth() when bioenergetics is enabled — Java's EnergyBudget.run().
 
-    Steps (matches Java Bioen ordering):
-      1. Cap preyed_biomass at allometric ingestion maximum.
-      2. Compute per-school temperature response phi_t (or 1.0 if disabled).
-      3. Run energy budget per species (energy_terms -> update_enet_faced ->
+    Steps:
+      1. Compute per-school temperature response phi_t (or 1.0 if disabled).
+      2. Run energy budget per species (energy_terms -> update_enet_faced ->
          compute_energy_budget, matching Java EnergyBudget.run()'s ordering).
-      4. Apply starvation mortality per species (bioen_starvation).
-      5. Update weight, length, gonad weight, abundance.
+      3. Update weight, length, gonad weight.
+
+    Ingestion arrives already capped and already survivor-scaled: the allometric
+    per-fish cap is applied inside the mortality loop at every predator visit and
+    `School.setNdead` rescales the accumulated ingestion at every death
+    (`processes/mortality.py`). Starvation likewise runs inside that loop, on the
+    previous step's `e_net` — Java's order is mortality -> EnergyBudget ->
+    reproduction, so `computeStarvation` never sees the current step's budget.
+    Neither is re-applied here; doing so would double-count.
+
+    Out-of-domain schools (`is_out`) get no budget this step (spec decision 18):
+    their cell index is -1, so a thermal lookup would wrap to the grid corner.
     """
-    from osmose.engine.processes.bioen_predation import bioen_ingestion_cap
-    from osmose.engine.processes.bioen_starvation import bioen_starvation
     from osmose.engine.processes.energy_budget import (
         compute_energy_budget,
         energy_terms,
@@ -352,35 +359,23 @@ def _bioen_step(
             return trait_overrides[param_name][mask]
         return float(getattr(config, param_name)[sp])
 
-    # Precompute species masks only for species present in state (skip absent species)
+    # Precompute species masks only for species present in state (skip absent species).
+    # `~is_out` excludes schools outside the simulated domain from the budget entirely
+    # (spec decision 18): their cell index is -1 and Java's EnergyBudget only iterates
+    # schools in the domain.
     present_species = np.unique(state.species_id)
+    in_domain = ~state.is_out
     sp_masks: list[tuple[int, NDArray[np.bool_]]] = [
-        (sp, state.species_id == sp) for sp in present_species if sp < config.n_species
+        (sp, (state.species_id == sp) & in_domain)
+        for sp in present_species
+        if sp < config.n_species
     ]
 
-    n_subdt = config.mortality_subdt
+    # Ingestion is already capped and survivor-scaled by the mortality loop.
+    ingestion = state.preyed_biomass
 
     # ------------------------------------------------------------------ #
-    # Step 1: Cap ingested biomass per school at the allometric maximum.
-    # ------------------------------------------------------------------ #
-    is_larvae = state.age_dt < state.first_feeding_age_dt
-    capped_ingestion = state.preyed_biomass.copy()
-    for sp, mask in sp_masks:
-        cap = bioen_ingestion_cap(
-            weight=state.weight[mask],
-            i_max=cast(float, _resolve("bioen_i_max", sp, mask)),
-            beta=float(config.bioen_beta[sp]),
-            n_dt_per_year=config.n_dt_per_year,
-            n_subdt=n_subdt,
-            is_larvae=is_larvae[mask],
-            theta=float(config.bioen_theta[sp]),
-            c_rate=float(config.bioen_c_rate[sp]),
-        )
-        # cap is max per-subdt; total cap for the full timestep = cap * n_subdt
-        capped_ingestion[mask] = np.minimum(state.preyed_biomass[mask], cap * n_subdt)
-
-    # ------------------------------------------------------------------ #
-    # Step 2: Temperature response phi_t per school.
+    # Step 1: Temperature response phi_t per school.
     # ------------------------------------------------------------------ #
     if config.bioen_phit_enabled and temp_data is not None:
         if temp_data.is_constant:
@@ -447,7 +442,7 @@ def _bioen_step(
         temp_c_arr = np.full(len(state), 15.0, dtype=np.float64)
 
     # ------------------------------------------------------------------ #
-    # Step 3: Energy budget per species.
+    # Step 2: Energy budget per species.
     # ------------------------------------------------------------------ #
     dw_tonnes = np.zeros(len(state), dtype=np.float64)
     dg_tonnes = np.zeros(len(state), dtype=np.float64)
@@ -464,7 +459,7 @@ def _bioen_step(
         # enet_faced update and re-evaluated inside compute_energy_budget; keeping the
         # Java formulas in one place is worth the one redundant vectorised expression.
         _, _, e_net_sp = energy_terms(
-            capped_ingestion[mask],
+            ingestion[mask],
             state.weight[mask],
             state.abundance[mask],
             temp_c_arr[mask],
@@ -489,7 +484,7 @@ def _bioen_step(
             n_dt_per_year=config.n_dt_per_year,
         )
         dw_sp, dg_sp, en_sp, eg_sp, em_sp, rho_sp = compute_energy_budget(
-            ingestion=capped_ingestion[mask],
+            ingestion=ingestion[mask],
             weight=state.weight[mask],
             abundance=state.abundance[mask],
             gonad_weight=state.gonad_weight[mask],
@@ -518,27 +513,10 @@ def _bioen_step(
         rho_arr[mask] = rho_sp
 
     # ------------------------------------------------------------------ #
-    # Step 4: Starvation mortality per species.
-    # ------------------------------------------------------------------ #
-    starvation_dead = np.zeros(len(state), dtype=np.float64)
-    new_gonad = state.gonad_weight.copy()
-
-    for sp, mask in sp_masks:
-        n_dead_sp, gonad_sp = bioen_starvation(
-            e_net=e_net_arr[mask],
-            gonad_weight=state.gonad_weight[mask],
-            weight=state.weight[mask],
-            eta=float(config.bioen_eta[sp]),
-            n_subdt=n_subdt,
-        )
-        starvation_dead[mask] = n_dead_sp
-        new_gonad[mask] = gonad_sp
-
-    # ------------------------------------------------------------------ #
-    # Step 5: Apply updates to state arrays.
+    # Step 3: Apply updates to state arrays.
     # ------------------------------------------------------------------ #
     new_weight = np.maximum(state.weight + dw_tonnes, 0.0)
-    new_gonad = np.maximum(new_gonad + dg_tonnes, 0.0)
+    new_gonad = np.maximum(state.gonad_weight + dg_tonnes, 0.0)
 
     # Update length from weight via allometric inverse (W = a * L^b)
     # L = (W / a)^(1/b); use species-level a (condition factor * 1e-6) and b
@@ -550,26 +528,15 @@ def _bioen_step(
         safe_a = max(a, 1e-20)
         new_length[mask] = np.power(np.maximum(new_weight[mask] * 1e6 / safe_a, 1e-20), 1.0 / b)
 
-    # Eggs (lecithotrophic phase) do not starve — they carry their own yolk reserves.
-    # Zero out starvation deaths for schools that have not yet reached first feeding age.
-    starvation_dead = np.where(state.is_egg, 0.0, starvation_dead)
-
-    # Reduce abundance by starvation deaths (clamp to zero)
-    new_abundance = np.maximum(state.abundance - starvation_dead, 0.0)
-
-    # Track starvation in n_dead
-    new_n_dead = state.n_dead.copy()
-    new_n_dead[:, int(MortalityCause.STARVATION)] += starvation_dead
-
-    new_biomass = new_abundance * new_weight
+    # Abundance and n_dead pass through untouched: every bioen death — starvation
+    # included — is recorded by the mortality loop that ran earlier this step.
+    new_biomass = state.abundance * new_weight
 
     return state.replace(
         weight=new_weight,
         length=new_length,
         biomass=new_biomass,
         gonad_weight=new_gonad,
-        abundance=new_abundance,
-        n_dead=new_n_dead,
         e_net_avg=new_e_net_avg,
         e_net=e_net_arr,
         e_gross=e_gross_arr,

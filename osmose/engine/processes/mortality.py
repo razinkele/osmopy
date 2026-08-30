@@ -59,18 +59,77 @@ def _get_mortality_causes(config: EngineConfig) -> list[int]:
     """Get the list of mortality causes for the interleaved loop.
 
     Without bioen: [PREDATION, STARVATION, ADDITIONAL, FISHING]
-    With bioen:    [PREDATION, ADDITIONAL, FISHING, FORAGING]
+    With bioen:    [PREDATION, STARVATION, ADDITIONAL, FISHING, FORAGING]
 
-    Bioen starvation is applied authoritatively in `_bioen_step` (simulate.py)
-    using the freshly-computed current-step energy budget. Including STARVATION
-    in the interleaved loop as well would apply it a SECOND time with the
-    previous step's stale `e_net`, double-counting starvation deaths in
-    `n_dead[:, STARVATION]` — so it is excluded from the interleaved set when
-    bioen is enabled. Matches Java MortalityProcess lines 512-517.
+    Bioen starvation runs INSIDE the interleaved loop, competing with the other
+    causes, and consumes the PREVIOUS step's `e_net` — Java's step order is
+    mortality -> EnergyBudget -> reproduction (`SimulationStep.java:190-198`), so
+    when `BioenStarvationMortality.computeStarvation` reads `school.getENet()` the
+    only value there is last step's. `_bioen_step` therefore no longer applies
+    starvation at all; it would otherwise be applied twice.
+
+    Java builds the set as "all MortalityCause values minus DISCARDS and AGING,
+    minus FORAGING when bioen is off" (`MortalityProcess.java:506-517`). OUT is
+    handled post-loop by `out_mortality`, matching Java's own out-school pass.
     """
     if config.bioen_enabled:
-        return [_PREDATION, _ADDITIONAL, _FISHING, _FORAGING]
+        return [_PREDATION, _STARVATION, _ADDITIONAL, _FISHING, _FORAGING]
     return [_PREDATION, _STARVATION, _ADDITIONAL, _FISHING]
+
+
+def _consume(
+    state: SchoolState,
+    idx: int,
+    n_dead: float,
+    inst_abd: NDArray[np.float64],
+    bioen: bool,
+) -> None:
+    """Decrement instantaneous abundance and apply Java's survivor rescaling.
+
+    Java's `School.setNdead`/`incrementNdead` (`School.java:371-402`) multiply the
+    school's accumulated `ingestion` and its stored `e_net` by
+    `(N_inst - nDead) / N_inst` at EVERY death, so a school that eats in sub-step 1
+    and then loses half its fish carries only half that ingestion into the energy
+    budget. `AbstractSchool.incrementNdead` — the background-school override — does
+    NOT rescale (background schools have no bioen budget), hence the
+    `is_background` guard.
+
+    The denominator is the PRE-death instantaneous abundance. Java reaches the same
+    value indirectly: every cause reads `getInstantaneousAbundance()` to size its
+    own `nDead`, which clears `abundanceHasChanged`, so the read inside
+    `incrementNdead` returns the cached pre-death number. (The bioen STARVATION
+    branch does not read it first, so Java can there hit a stale-flag double
+    subtraction — order-dependent and plainly unintended; not replicated.)
+
+    For `bioen=False` this is exactly the `inst_abd[idx] -= n_dead` it replaced.
+    """
+    before = inst_abd[idx]
+    inst_abd[idx] = before - n_dead
+    if bioen and before > 0.0 and not state.is_background[idx]:
+        factor = max(inst_abd[idx], 0.0) / before
+        state.preyed_biomass[idx] *= factor
+        state.e_net[idx] *= factor
+
+
+def _kill(
+    state: SchoolState,
+    idx: int,
+    cause: int,
+    n_dead: float,
+    inst_abd: NDArray[np.float64],
+    bioen: bool,
+) -> None:
+    """Record `n_dead` deaths of one school for `cause` and consume the abundance.
+
+    Under bioen this also rescales the school's ingestion and stored E_net — see
+    `_consume`. Callers that must split one death event across two causes (fishing
+    vs discards) record the split themselves and call `_consume` once with the FULL
+    count, so the abundance decrement stays a single subtraction.
+    """
+    if n_dead <= 0.0:
+        return
+    state.n_dead[idx, cause] += n_dead
+    _consume(state, idx, n_dead, inst_abd, bioen)
 
 
 # ---------------------------------------------------------------------------
@@ -87,43 +146,52 @@ def _apply_starvation_for_school(
 ) -> None:
     """Apply starvation mortality to a single school (in-place on n_dead).
 
-    When bioen_enabled=True: uses BioenStarvationMortality (gonad depletion).
-    When bioen_enabled=False: uses standard starvation rate.
+    When bioen_enabled=True: BioenStarvationMortality.computeStarvation for ONE
+    sub-step, on the PREVIOUS step's `e_net` (Java step order mortality ->
+    EnergyBudget -> reproduction), with strict `ageDt > firstFeedingAgeDt`
+    eligibility (`Species.isStarvationEnabledBioen`).
+    When bioen_enabled=False: standard starvation rate, eligibility `>=`
+    (`Species.isStarvationEnabledNoBioen`).
     Matches Java MortalityProcess lines 604-626.
     """
     if state.is_background[idx]:
         return
-    if state.age_dt[idx] < state.first_feeding_age_dt[idx]:
+
+    if config.bioen_enabled:
+        # Java Species.isStarvationEnabledBioen: ageDt > firstFeedingAgeDt (strict).
+        if state.age_dt[idx] <= state.first_feeding_age_dt[idx]:
+            return
+        if inst_abd[idx] <= 0:
+            return
+
+        from osmose.engine.processes.bioen_starvation import bioen_starvation_substep
+
+        sp_i = state.species_id[idx]
+        eta = float(config.bioen_eta[sp_i]) if config.bioen_eta is not None else 1.0
+        n_dead, new_gonad, new_enet = bioen_starvation_substep(
+            float(state.e_net[idx]),
+            float(state.gonad_weight[idx]),
+            float(state.weight[idx]),
+            eta,
+            n_subdt,
+        )
+        state.gonad_weight[idx] = new_gonad
+        state.e_net[idx] = new_enet
+        _kill(state, idx, _STARVATION, n_dead, inst_abd, bioen=True)
         return
 
+    if state.age_dt[idx] < state.first_feeding_age_dt[idx]:
+        return
     abd = inst_abd[idx]
     if abd <= 0:
         return
 
-    if config.bioen_enabled:
-        # Bioen starvation: gonad-depletion formula
-        from osmose.engine.processes.bioen_starvation import bioen_starvation
-
-        e_net = np.array([state.e_net[idx]])
-        gonad_w = np.array([state.gonad_weight[idx]])
-        weight = np.array([state.weight[idx]])
-        sp_i = state.species_id[idx]
-        eta = float(config.bioen_eta[sp_i]) if config.bioen_eta is not None else 1.0
-
-        n_dead_arr, _new_gonad = bioen_starvation(e_net, gonad_w, weight, eta, n_subdt)
-        # bioen_starvation returns absolute n_dead (deficit/weight), NOT a fraction
-        n_dead = float(n_dead_arr[0])
-        if n_dead > 0:
-            state.n_dead[idx, _STARVATION] += n_dead
-            inst_abd[idx] -= n_dead
-    else:
-        # Standard starvation
-        M = state.starvation_rate[idx] / (config.n_dt_per_year * n_subdt)
-        if M <= 0:
-            return
-        n_dead = abd * (1.0 - np.exp(-M))
-        state.n_dead[idx, _STARVATION] += n_dead
-        inst_abd[idx] -= n_dead
+    # Standard starvation
+    M = state.starvation_rate[idx] / (config.n_dt_per_year * n_subdt)
+    if M <= 0:
+        return
+    n_dead = abd * (1.0 - np.exp(-M))
+    _kill(state, idx, _STARVATION, n_dead, inst_abd, bioen=False)
 
 
 def _apply_additional_for_school(
@@ -173,8 +241,7 @@ def _apply_additional_for_school(
     if abd <= 0:
         return
     n_dead = abd * (1.0 - np.exp(-D))
-    state.n_dead[idx, _ADDITIONAL] += n_dead
-    inst_abd[idx] -= n_dead
+    _kill(state, idx, _ADDITIONAL, n_dead, inst_abd, config.bioen_enabled)
 
 
 def _apply_fishing_for_school(
@@ -269,14 +336,19 @@ def _apply_fishing_for_school(
         return
     n_dead = abd * (1.0 - np.exp(-F))
 
-    # Discards split
+    # Discards split. Java issues TWO incrementNdead calls — FISHING with nFished
+    # then DISCARDS with nDiscarded (`MortalityProcess.java:673-674`) — whose survivor
+    # factors compose to ((I - nFished) / I) * ((I - nFished - nDiscarded) / (I - nFished))
+    # = (I - nDead) / I. So recording the split here and consuming the FULL n_dead once
+    # is Java-exact for bioen AND leaves the bioen-off arithmetic a single subtraction,
+    # exactly as before.
     if config.fishing_discard_rate is not None:
         discard_r = config.fishing_discard_rate[sp]
         state.n_dead[idx, _FISHING] += n_dead * (1.0 - discard_r)
         state.n_dead[idx, _DISCARDS] += n_dead * discard_r
     else:
         state.n_dead[idx, _FISHING] += n_dead
-    inst_abd[idx] -= n_dead
+    _consume(state, idx, n_dead, inst_abd, config.bioen_enabled)
 
 
 def _apply_foraging_for_school(
@@ -340,8 +412,7 @@ def _apply_foraging_for_school(
     if M <= 0:
         return
     n_dead = abd * (1.0 - np.exp(-M))
-    state.n_dead[idx, _FORAGING] += n_dead
-    inst_abd[idx] -= n_dead
+    _kill(state, idx, _FORAGING, n_dead, inst_abd, config.bioen_enabled)
 
 
 def _apply_predation_for_school(
@@ -361,6 +432,8 @@ def _apply_predation_for_school(
     pred_access_idx: NDArray[np.int32] | None,
     inst_abd: NDArray[np.float64] | None = None,
     ctx: SimulationContext | None = None,
+    cap_fish: NDArray[np.float64] | None = None,
+    raw_preyed: NDArray[np.float64] | None = None,
 ) -> None:
     """Apply predation for a single predator against ALL preys in the cell.
 
@@ -386,8 +459,13 @@ def _apply_predation_for_school(
     r_min = config.size_ratio_min[sp_pred, stage]
     r_max = config.size_ratio_max[sp_pred, stage]
 
-    biomass_p = inst_abd_p * state.weight[p_idx]
-    max_eatable = biomass_p * config.ingestion_rate[sp_pred] / (config.n_dt_per_year * n_subdt)
+    if cap_fish is None:
+        biomass_p = inst_abd_p * state.weight[p_idx]
+        max_eatable = biomass_p * config.ingestion_rate[sp_pred] / (config.n_dt_per_year * n_subdt)
+    else:
+        # Java BioenPredationMortality: the per-fish allometric cap is multiplied by the
+        # INSTANTANEOUS abundance at every predator visit (`:140-145`).
+        max_eatable = cap_fish[p_idx] * inst_abd_p
     if max_eatable <= 0:
         return
 
@@ -525,8 +603,7 @@ def _apply_predation_for_school(
             q_idx = prey_id
             if state.weight[q_idx] > 0:
                 n_dead_prey = eaten_from_prey / state.weight[q_idx]
-                state.n_dead[q_idx, _PREDATION] += n_dead_prey
-                inst_abd[q_idx] -= n_dead_prey
+                _kill(state, q_idx, _PREDATION, n_dead_prey, inst_abd, config.bioen_enabled)
 
             _tl_ws = ctx.tl_weighted_sum if ctx else None
             if _tl_ws is not None:
@@ -566,6 +643,13 @@ def _apply_predation_for_school(
     success = min(eaten_total / max_eatable, 1.0)
     state.pred_success_rate[p_idx] += success / n_subdt
     state.preyed_biomass[p_idx] += eaten_total
+    if raw_preyed is not None:
+        # Java keeps TWO accumulators: `ingestion` (rescaled by the survivor fraction at
+        # every death, feeds the energy budget) and `preyedBiomass` (raw, feeds the
+        # trophic-level update at MortalityProcess:396-401 and the diet outputs). The port
+        # conflates them in `preyed_biomass`; under bioen this array carries the raw total
+        # so the TL denominator stays Java's.
+        raw_preyed[p_idx] += eaten_total
 
 
 # ---------------------------------------------------------------------------
@@ -700,12 +784,12 @@ def _precompute_effective_rates(work_state, config, n_subdt, step, fleet_state=N
     eff_starv = eff_starv.copy()  # don't modify state array
     _zero_exempt(eff_starv, work_state)
     if config.bioen_enabled:
-        # Bioen owns starvation via _bioen_step's gonad-depletion formula. The
-        # standard (pred-success) starvation rate must NOT also be applied by the
-        # Numba kernels, or n_dead[STARVATION] is double-counted on every
-        # Numba-accelerated path (the production path). This is the Numba-path
-        # mirror of the _get_mortality_causes STARVATION exclusion that covers
-        # the innermost pure-Python interleaved loop.
+        # Bioen starvation is the gonad-depletion formula, applied by
+        # _apply_starvation_for_school inside the interleaved loop. The standard
+        # (pred-success) rate must never be applied on top of it. Since the batched
+        # kernels are now bypassed entirely under bioen this is defence in depth —
+        # eff_starv is read only by the Numba paths — but it keeps a future
+        # bioen-aware kernel from silently reintroducing the double count.
         eff_starv[:] = 0.0
 
     # Additional mortality (vectorized over species)
@@ -1624,6 +1708,8 @@ def _mortality_in_cell(
     fishing_discard: NDArray[np.float64] | None = None,
     ctx: SimulationContext | None = None,
     egg_retained: NDArray[np.float64] | None = None,
+    cap_fish: NDArray[np.float64] | None = None,
+    raw_preyed: NDArray[np.float64] | None = None,
 ) -> None:
     """Apply interleaved mortality within one cell, matching Java's computeMortality().
 
@@ -1646,8 +1732,10 @@ def _mortality_in_cell(
     seq_nat = rng.permutation(n_local).astype(np.int32)
     seq_for = rng.permutation(n_local).astype(np.int32)
 
-    # Full Numba path: all 4 causes compiled (Tier 3)
-    # Disable Numba when bioen is enabled (Numba kernel only handles 4 causes)
+    # Full Numba path: all 4 causes compiled (Tier 3). Disabled under bioen — the kernel
+    # knows nothing of FORAGING, the per-fish allometric cap, the survivor rescaling or
+    # the gonad-depletion starvation (spec decision 14). `mortality()` already routes
+    # bioen here rather than to the batched kernels; this is the second gate.
     use_full_numba = (
         _HAS_NUMBA
         and inst_abd is not None
@@ -1755,6 +1843,8 @@ def _mortality_in_cell(
                     pred_access_idx,
                     inst_abd=inst_abd,
                     ctx=ctx,
+                    cap_fish=cap_fish,
+                    raw_preyed=raw_preyed,
                 )
             elif cause == _STARVATION:
                 if inst_abd is None:
@@ -1842,14 +1932,21 @@ def mortality(
     egg_retained = np.where(state.is_egg, state.abundance, 0.0)
     state = state.replace(egg_retained=egg_retained)
 
-    # Make working copies for in-place modification
+    # Make working copies for in-place modification. gonad_weight and e_net join the
+    # set because the bioen starvation cause writes them from inside the interleaved
+    # loop (Java BioenStarvationMortality.computeStarvation) and _consume rescales
+    # e_net at every death — neither should reach back into the caller's state object.
     pred_success_rate = state.pred_success_rate.copy()
     preyed_biomass = state.preyed_biomass.copy()
+    gonad_weight = state.gonad_weight.copy()
+    e_net = state.e_net.copy()
 
     work_state = state.replace(
         n_dead=n_dead,
         pred_success_rate=pred_success_rate,
         preyed_biomass=preyed_biomass,
+        gonad_weight=gonad_weight,
+        e_net=e_net,
     )
 
     # Compute feeding stages for predation
@@ -1956,6 +2053,31 @@ def mortality(
         work_state, config, n_subdt, step, fleet_state=fleet_state
     )
 
+    # Bioen only: per-fish allometric ingestion cap (tonnes/fish/sub-step) used at every
+    # predator visit, and a raw ingestion accumulator that keeps the trophic-level
+    # denominator free of the survivor rescaling (Java keeps `preyedBiomass` raw while
+    # `ingestion` is rescaled). Both stay None off the bioen path, which therefore keeps
+    # its exact current arithmetic and allocations.
+    cap_fish: NDArray[np.float64] | None = None
+    raw_preyed: NDArray[np.float64] | None = None
+    if config.bioen_enabled:
+        from osmose.engine.processes.bioen_predation import per_fish_ingestion_cap
+
+        cap_fish = per_fish_ingestion_cap(
+            work_state.weight,
+            work_state.species_id,
+            work_state.age_dt,
+            config.bioen_i_max_all,
+            config.bioen_beta,
+            config.bioen_larvae_thres_dt,
+            config.bioen_theta,
+            config.bioen_c_rate,
+            config.n_species,
+            config.n_dt_per_year,
+            n_subdt,
+        )
+        raw_preyed = np.zeros(len(work_state), dtype=np.float64)
+
     for _sub in range(n_subdt):
         # Release fraction of eggs into prey pool
         release = np.where(
@@ -1966,8 +2088,11 @@ def mortality(
         new_retained = np.maximum(0, work_state.egg_retained - release)
         work_state = work_state.replace(egg_retained=new_retained)
 
-        # Per-cell mortality
-        if _HAS_NUMBA and len(valid_indices) > 0:
+        # Per-cell mortality. Under bioen the batched kernels are bypassed entirely
+        # (spec decision 14): they know nothing of the per-fish cap, the survivor
+        # rescaling or the interleaved bioen starvation, and a bioen-aware kernel is an
+        # explicit non-goal. Bioen runs pay the pure-Python cost.
+        if _HAS_NUMBA and len(valid_indices) > 0 and not config.bioen_enabled:
             # Generate a seed from Python RNG for Numba's internal PRNG
             rng_seed = int(rng.integers(0, 2**63))
 
@@ -2066,6 +2191,8 @@ def mortality(
                     grid_nx=grid.nx,
                     ctx=ctx,
                     egg_retained=work_state.egg_retained,
+                    cap_fish=cap_fish,
+                    raw_preyed=raw_preyed,
                 )
 
     # Update abundance from accumulated n_dead
@@ -2083,6 +2210,10 @@ def mortality(
         pred_success_rate=work_state.pred_success_rate,
         preyed_biomass=work_state.preyed_biomass,
         egg_retained=work_state.egg_retained,
+        # Written from inside the interleaved loop under bioen (starvation + survivor
+        # rescaling); identical to the inputs otherwise.
+        gonad_weight=work_state.gonad_weight,
+        e_net=work_state.e_net,
     )
 
     # Post-loop: out-of-domain mortality
@@ -2091,9 +2222,13 @@ def mortality(
     # Compute new starvation rate for NEXT step (lagged)
     state = update_starvation_rate(state, config)
 
-    # Update trophic level from predation: TL = 1 + sum(prey_TL * eaten) / total_preyed
+    # Update trophic level from predation: TL = 1 + sum(prey_TL * eaten) / total_preyed.
+    # Java divides by the RAW preyedBiomass (MortalityProcess:396-401), which it never
+    # rescales; under bioen `state.preyed_biomass` is the survivor-scaled ingestion, so
+    # the raw accumulator is the correct denominator there.
     _tl_weighted_sum = ctx.tl_weighted_sum if ctx else None
-    mask = state.preyed_biomass > 0
+    tl_denominator = raw_preyed if raw_preyed is not None else state.preyed_biomass
+    mask = tl_denominator > 0
     if mask.any() and _tl_weighted_sum is not None:
         new_tl = state.trophic_level.copy()
         # Handle schools that may have been appended after tl_weighted_sum was created
@@ -2104,7 +2239,7 @@ def mortality(
         )
         valid = mask & (tl_ws > 0)
         if valid.any():
-            new_tl[valid] = 1.0 + tl_ws[valid] / state.preyed_biomass[valid]
+            new_tl[valid] = 1.0 + tl_ws[valid] / tl_denominator[valid]
         state = state.replace(trophic_level=new_tl)
 
     if ctx is not None:
