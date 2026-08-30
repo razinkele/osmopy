@@ -31,9 +31,13 @@ are not what the engine sees):
         occupancy distributions (map * w, restricted to map>0 cells), the 24-frame mean;
   (ii)  `prey_overlap_shift` -- change in normalized cod occupancy mass over a prey
         species' footprint (its map>0 cells, unioned across all three life stages), the
-        24-frame mean; computed for the ADULT cod stage only (the population-dominant
-        stage) to keep the printed table tractable -- the per-stage machinery is general
-        and callable on any stage;
+        24-frame mean; computed for BOTH the adult cod stage (population-dominant, kept as
+        the headline reporting row) AND the juvenile stage (age 0-1, the most
+        coastal-skewed of the three maps and the stage most plausibly co-located with
+        stickleback in the July chain's first link -- the max-TV/max-exclusion argument
+        that picks "adult" for the (i)/(iii) headline figures does not bear on this
+        instrument, which measures WHERE redistributed mass lands, not how much w changes)
+        -- the per-stage machinery is general and callable on spawning too;
   (iii) `excluded_fraction` -- newly-excluded cell-frame fraction (w_base>0, w_arm==0),
         aggregated over all (frame, map-cell) pairs;
   (iv)  `mean_dw` -- wiring-only sanity check (the gate redistributes/excludes, it never
@@ -78,7 +82,11 @@ S_HIGH = 6.0
 GATED_SPECIES = ("cod_west", "cod_east")
 PREY_SPECIES = ("stickleback", "perch", "pikeperch", "smelt")
 STAGES = ("juvenile", "adult", "spawning")
-PREY_OVERLAP_STAGE = "adult"  # module docstring (ii): kept to one stage for tractability
+# module docstring (ii): prey_overlap_shift is computed for both stages; "adult" stays the
+# population-dominant headline row, "juvenile" is added per review (age 0-1, most
+# coastal-skewed, most plausibly co-located with stickleback in the July chain's first link).
+PREY_OVERLAP_HEADLINE_STAGE = "adult"
+PREY_OVERLAP_STAGES = (PREY_OVERLAP_HEADLINE_STAGE, "juvenile")
 
 # Single source of truth for the "all machinery engaged, zero delta" arm used by both this
 # module's own zero self-check and Task 3's harness (B2 precedent: `ZERO_ARM_DEF` is a real
@@ -220,8 +228,10 @@ def tv_distance(
 def excluded_fraction(
     map_grid: NDArray[np.float64], w_base: NDArray[np.float64], w_arm: NDArray[np.float64]
 ) -> float:
-    """Map-cell fraction with w_base>0 & w_arm==0 (newly excluded), aggregated over every
-    (frame, map-cell) pair -- the July-mechanism lever."""
+    """Map-cell fraction with w_base>0 & w_arm==0 (newly excluded) -- the July-mechanism
+    lever. The denominator is the fraction of ALL (frame, support-cell) pairs, INCLUDING
+    already-closed cells (w_base==0 at baseline, which can never be "newly" excluded) --
+    NOT the fraction of previously-open (w_base>0) cells that closed."""
     map_grid = np.asarray(map_grid, dtype=np.float64)
     w_base = np.asarray(w_base, dtype=np.float64)
     w_arm = np.asarray(w_arm, dtype=np.float64)
@@ -243,7 +253,9 @@ def mean_dw(
     """Mean (w_arm - w_base) over the map's support cells and all frames -- a WIRING CHECK
     ONLY (monotone => ~0 iff nothing changed). Never report this beside stock responses
     without the framing sentence: the gate conserves total occupancy -- it redistributes
-    and excludes, it never removes fish."""
+    and excludes, it never removes fish. Uses nanmean for robustness/consistency with the
+    other instruments' NaN-aware aggregation (no NaN occurs on real production support
+    cells -- this is defensive, not a behavior change)."""
     map_grid = np.asarray(map_grid, dtype=np.float64)
     w_base = np.asarray(w_base, dtype=np.float64)
     w_arm = np.asarray(w_arm, dtype=np.float64)
@@ -253,7 +265,7 @@ def mean_dw(
     if not support.any():
         return 0.0
 
-    return float(np.mean(w_arm[:, support] - w_base[:, support]))
+    return float(np.nanmean(w_arm[:, support] - w_base[:, support]))
 
 
 def prey_overlap_shift(
@@ -374,9 +386,10 @@ def write_arm_dir(arm: dict, out_dir: Path, prod_sal_path: Path, grid_path: Path
     `{"sal_nc": path, "instruments": {...}, "all_zero_events": [...]}`.
 
     `instruments` is `{species: {stage: {"mean_w_base", "mean_dw", "tv",
-    "excluded_fraction", "saturated_fraction"}}, "prey_overlap": {species: {prey: float}}}`
-    (prey overlap computed for the adult cod stage only, see `PREY_OVERLAP_STAGE`).
-    `all_zero_events` is a list of `{"species", "stage", "frame"}` dicts (see
+    "excluded_fraction", "saturated_fraction"}}, "prey_overlap": {species: {stage: {prey:
+    float}}}}` (prey overlap computed per named cod stage in `PREY_OVERLAP_STAGES` --
+    "adult" is the population-dominant headline row, "juvenile" the most coastal-skewed
+    stage). `all_zero_events` is a list of `{"species", "stage", "frame"}` dicts (see
     `all_zero_frames`).
     """
     out_dir = Path(out_dir).resolve()  # absolute, so Task 3's overlay never depends on cwd
@@ -422,10 +435,12 @@ def write_arm_dir(arm: dict, out_dir: Path, prod_sal_path: Path, grid_path: Path
 
     prey_overlap: dict = {}
     for species, stages in gated_maps.items():
-        cod_map = stages[PREY_OVERLAP_STAGE]
         prey_overlap[species] = {
-            prey: prey_overlap_shift(cod_map, w_base, w_arm, prey_maps[prey])
-            for prey in PREY_SPECIES
+            stage: {
+                prey: prey_overlap_shift(stages[stage], w_base, w_arm, prey_maps[prey])
+                for prey in PREY_SPECIES
+            }
+            for stage in PREY_OVERLAP_STAGES
         }
     instruments["prey_overlap"] = prey_overlap
 
@@ -470,11 +485,13 @@ def main() -> None:
                 )
         prey_overlap = result["instruments"]["prey_overlap"]
         for species in GATED_SPECIES:
-            for prey in PREY_SPECIES:
-                print(
-                    f"    prey_overlap_shift[{species} {PREY_OVERLAP_STAGE} -> {prey}] = "
-                    f"{prey_overlap[species][prey]:+.5f}"
-                )
+            for stage in PREY_OVERLAP_STAGES:
+                headline = " [headline]" if stage == PREY_OVERLAP_HEADLINE_STAGE else ""
+                for prey in PREY_SPECIES:
+                    print(
+                        f"    prey_overlap_shift[{species} {stage}{headline} -> {prey}] = "
+                        f"{prey_overlap[species][stage][prey]:+.5f}"
+                    )
         if result["all_zero_events"]:
             print(
                 f"    ALL-ZERO EVENTS ({len(result['all_zero_events'])}): "

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import xarray as xr
 
 spec = importlib.util.spec_from_file_location(
     "build_baltic_c4_forcing",
@@ -183,6 +184,61 @@ def test_prey_overlap_shift_nonzero_when_mass_moves_into_prey_domain():
     # base: p=[0.5,0.5]; arm: q=[1/1.5, 0.5/1.5]=[2/3,1/3]; prey mass base=0.5, arm=2/3
     expected = 2.0 / 3.0 - 0.5
     assert m.prey_overlap_shift(map_grid, w_base, w_arm, prey_map) == pytest.approx(expected)
+
+
+# ---------------------------------------------------------------------------
+# write_arm_dir: prey_overlap_shift is computed PER NAMED STAGE (adult AND juvenile), not
+# adult-only (review finding: the max-TV argument that justifies "adult" as the (i)/(iii)
+# headline row doesn't bear on this instrument -- it measures where redistributed mass
+# lands, not how much w changes).
+# ---------------------------------------------------------------------------
+
+
+def test_write_arm_dir_prey_overlap_computed_per_named_stage(tmp_path, monkeypatch):
+    # 1x4 synthetic grid, all wet, salinity varies per cell (a spatially-uniform ramp would
+    # trivially cancel out of every normalized ratio and hide a stage-dependent bug).
+    ny, nx = 1, 4
+    sal_row = np.array([5.0, 4.0, 4.5, 7.0])
+    sal = np.broadcast_to(sal_row, (24, ny, nx)).astype(np.float64).copy()
+    sal_path = tmp_path / "sal.nc"
+    xr.Dataset({"salinity": (("time", "latitude", "longitude"), sal)}).to_netcdf(sal_path)
+    grid_path = tmp_path / "grid.nc"
+    xr.Dataset({"mask": (("latitude", "longitude"), np.ones((ny, nx), dtype=np.int32))}).to_netcdf(
+        grid_path
+    )
+
+    # adult support = cells {0,1}; juvenile support = cells {1,2}; prey present at cell 1
+    # only. Both stages' support overlaps the prey cell, but the normalization denominator
+    # differs (adult sums over {0,1}, juvenile over {1,2}), so the SAME w_base/w_arm must
+    # yield DIFFERENT shift values for the two named stages -- proving the instrument is
+    # genuinely evaluated per stage, not collapsed onto a single hardcoded one.
+    adult_map = np.array([[1.0, 1.0, 0.0, 0.0]])
+    juvenile_map = np.array([[0.0, 1.0, 1.0, 0.0]])
+    prey_map = np.array([[0.0, 1.0, 0.0, 0.0]])
+
+    def fake_load_species_maps(species, ny_, nx_, config_dir=None):
+        return {"juvenile": juvenile_map, "adult": adult_map, "spawning": adult_map}
+
+    def fake_load_prey_union_map(species, ny_, nx_, config_dir=None):
+        return prey_map
+
+    monkeypatch.setattr(m, "load_species_maps", fake_load_species_maps)
+    monkeypatch.setattr(m, "load_prey_union_map", fake_load_prey_union_map)
+
+    result = m.write_arm_dir(
+        {"name": "test_arm", "dS_PSU": -1.0}, tmp_path / "out", sal_path, grid_path
+    )
+
+    prey_overlap = result["instruments"]["prey_overlap"]["cod_west"]
+    assert set(prey_overlap.keys()) == {"adult", "juvenile"}
+    # hand-computed: w_base=[2/3,1/3,1/2,1.0], w_arm=[1/3,0,1/6,1.0] (S_LOW=3, S_HIGH=6).
+    # adult: p=[2/3,1/3], q=[1,0] over support {0,1} -> mass at prey cell1: 1/3 -> 0 = -1/3.
+    # juvenile: p=[2/5,3/5], q=[0,1] over support {1,2} -> mass at prey cell1: 2/5 -> 0 = -2/5.
+    assert prey_overlap["adult"]["stickleback"] == pytest.approx(-1.0 / 3.0)
+    assert prey_overlap["juvenile"]["stickleback"] == pytest.approx(-2.0 / 5.0)
+    assert prey_overlap["adult"]["stickleback"] != pytest.approx(
+        prey_overlap["juvenile"]["stickleback"]
+    )
 
 
 # ---------------------------------------------------------------------------
