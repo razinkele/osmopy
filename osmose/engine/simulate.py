@@ -287,13 +287,18 @@ def _bioen_step(
     Steps (matches Java Bioen ordering):
       1. Cap preyed_biomass at allometric ingestion maximum.
       2. Compute per-school temperature response phi_t (or 1.0 if disabled).
-      3. Run energy budget per species (compute_energy_budget).
+      3. Run energy budget per species (energy_terms -> update_enet_faced ->
+         compute_energy_budget, matching Java EnergyBudget.run()'s ordering).
       4. Apply starvation mortality per species (bioen_starvation).
-      5. Update weight, length, gonad weight, abundance, e_net_avg.
+      5. Update weight, length, gonad weight, abundance.
     """
     from osmose.engine.processes.bioen_predation import bioen_ingestion_cap
     from osmose.engine.processes.bioen_starvation import bioen_starvation
-    from osmose.engine.processes.energy_budget import compute_energy_budget, update_e_net_avg
+    from osmose.engine.processes.energy_budget import (
+        compute_energy_budget,
+        energy_terms,
+        update_enet_faced,
+    )
     from osmose.engine.processes.temp_function import phi_t as phi_t_fn
 
     if len(state) == 0:
@@ -314,6 +319,7 @@ def _bioen_step(
         "bioen_i_max",
         "bioen_theta",
         "bioen_c_rate",
+        "bioen_larvae_thres_dt",
     ]
     for attr in _BIOEN_REQUIRED:
         if getattr(config, attr) is None:
@@ -334,6 +340,7 @@ def _bioen_step(
     config.bioen_i_max = cast(NDArray[np.float64], config.bioen_i_max)
     config.bioen_theta = cast(NDArray[np.float64], config.bioen_theta)
     config.bioen_c_rate = cast(NDArray[np.float64], config.bioen_c_rate)
+    config.bioen_larvae_thres_dt = cast(NDArray[np.int32], config.bioen_larvae_thres_dt)
     if hasattr(config, "bioen_o2_c1") and config.bioen_o2_c1 is not None:
         config.bioen_o2_c1 = cast(NDArray[np.float64], config.bioen_o2_c1)
     if hasattr(config, "bioen_o2_c2") and config.bioen_o2_c2 is not None:
@@ -448,11 +455,43 @@ def _bioen_step(
     e_gross_arr = np.zeros(len(state), dtype=np.float64)
     e_maint_arr = np.zeros(len(state), dtype=np.float64)
     rho_arr = np.zeros(len(state), dtype=np.float64)
+    new_e_net_avg = state.e_net_avg.copy()
 
     for sp, mask in sp_masks:
+        # Java EnergyBudget.run(): E_gross/E_maint/E_net first, then computeEnetFaced,
+        # then getRho/getDw/getDg — so rho sees the enet_faced that already includes
+        # this step's E_net. energy_terms is therefore evaluated here for the
+        # enet_faced update and re-evaluated inside compute_energy_budget; keeping the
+        # Java formulas in one place is worth the one redundant vectorised expression.
+        _, _, e_net_sp = energy_terms(
+            capped_ingestion[mask],
+            state.weight[mask],
+            state.abundance[mask],
+            temp_c_arr[mask],
+            float(config.bioen_assimilation[sp]),
+            float(config.bioen_c_m[sp]),
+            float(config.bioen_beta[sp]),
+            float(config.bioen_e_maint[sp]),
+            phi_t_arr[mask],
+            f_o2_arr[mask],
+            config.n_dt_per_year,
+        )
+        faced_sp = update_enet_faced(
+            enet_faced_prev=state.e_net_avg[mask],
+            e_net=e_net_sp,
+            abundance=state.abundance[mask],
+            weight=state.weight[mask],
+            age_dt=state.age_dt[mask],
+            first_feeding_age_dt=state.first_feeding_age_dt[mask],
+            larvae_thres_dt=int(config.bioen_larvae_thres_dt[sp]),
+            larval_coef=float(config.bioen_theta[sp]),
+            beta=float(config.bioen_beta[sp]),
+            n_dt_per_year=config.n_dt_per_year,
+        )
         dw_sp, dg_sp, en_sp, eg_sp, em_sp, rho_sp = compute_energy_budget(
             ingestion=capped_ingestion[mask],
             weight=state.weight[mask],
+            abundance=state.abundance[mask],
             gonad_weight=state.gonad_weight[mask],
             age_dt=state.age_dt[mask],
             length=state.length[mask],
@@ -468,8 +507,9 @@ def _bioen_step(
             phi_t=phi_t_arr[mask],  # Johnson thermal performance (applied to assimilation)
             f_o2=f_o2_arr[mask],
             n_dt_per_year=config.n_dt_per_year,
-            e_net_avg=state.e_net_avg[mask],
+            enet_faced=faced_sp,
         )
+        new_e_net_avg[mask] = faced_sp
         dw_tonnes[mask] = dw_sp
         dg_tonnes[mask] = dg_sp
         e_net_arr[mask] = en_sp
@@ -520,18 +560,6 @@ def _bioen_step(
     # Track starvation in n_dead
     new_n_dead = state.n_dead.copy()
     new_n_dead[:, int(MortalityCause.STARVATION)] += starvation_dead
-
-    # Update running e_net_avg
-    new_e_net_avg = np.zeros(len(state), dtype=np.float64)
-    for sp, mask in sp_masks:
-        new_e_net_avg[mask] = update_e_net_avg(
-            e_net_avg=state.e_net_avg[mask],
-            e_net=e_net_arr[mask],
-            weight=state.weight[mask],
-            age_dt=state.age_dt[mask],
-            first_feeding_age_dt=state.first_feeding_age_dt[mask],
-            n_dt_per_year=config.n_dt_per_year,
-        )
 
     new_biomass = new_abundance * new_weight
 

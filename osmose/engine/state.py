@@ -62,6 +62,12 @@ class SchoolState:
     gonad_weight: NDArray[np.float64]
 
     # Bioenergetics
+    # e_net_avg holds Java School.enet_faced (EnergyBudget.computeEnetFaced): the
+    # running mean of net energy expressed PER FISH, per g^beta of somatic weight,
+    # and annualised (x n_dt_per_year) — NOT the per-school tonnes E_net of this
+    # step. It is the denominator of the rho function (getRho). The field keeps its
+    # historical name; e_gross/e_maint/e_net below are this step's raw values in
+    # tonnes PER SCHOOL, matching Java's setEGross/setEMaint/setENet.
     e_net_avg: NDArray[np.float64]
     e_gross: NDArray[np.float64]
     e_maint: NDArray[np.float64]
