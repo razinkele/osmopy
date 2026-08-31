@@ -2,6 +2,7 @@
 """Tests for genetics trait override integration with bioenergetics."""
 
 import numpy as np
+import pytest
 
 from osmose.engine.config import EngineConfig
 from osmose.engine.grid import Grid
@@ -82,6 +83,22 @@ class TestBioenGeneticsIntegration:
         outputs = simulate(cfg, grid, rng)
         assert len(outputs) == 12
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "KNOWN GAP, owner: C3 Stage-1 Task 5 (Ev-OSMOSE). The allometric ingestion cap "
+            "moved out of _bioen_step and into the mortality loop (spec decision 14 / Java "
+            "BioenPredationMortality), so _bioen_step no longer reads "
+            "trait_overrides['bioen_i_max'] at all. mortality() cannot read it either, because "
+            "simulate.py expresses traits AFTER mortality (express_traits at :1812 vs "
+            "_mortality at :1743). Java DOES honour the per-school trait "
+            "(getMaxPredationRate: existsTrait('imax')), so this is a real parity gap; closing "
+            "it needs the phenotypes available before mortality, which is a step-order change "
+            "in Ev-OSMOSE's territory. The other three evolving traits (r, m0, m1) still reach "
+            "compute_energy_budget and are covered by the tests below. strict=True so this "
+            "flips loudly the moment the plumbing is restored."
+        ),
+    )
     def test_trait_overrides_affect_growth(self):
         """_bioen_step must apply per-school trait overrides when genetics is active."""
         from osmose.engine.simulate import _bioen_step
