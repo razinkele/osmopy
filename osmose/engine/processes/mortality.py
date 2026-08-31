@@ -101,6 +101,12 @@ def _consume(
     branch does not read it first, so Java can there hit a stale-flag double
     subtraction — order-dependent and plainly unintended; not replicated.)
 
+    The `max(..., 0.0)` clamp is a deliberate departure: Java has no clamp, so when
+    `nDead > instantaneousAbundance` its factor goes NEGATIVE and it multiplies
+    `ingestion`/`e_net` by it (`School.java:394-399`). That is reachable on the bioen
+    STARVATION path, where the toll is `deficit / weight` and nothing bounds it by the
+    abundance. Clamping to [0, 1] keeps the rescaling a survivor fraction.
+
     For `bioen=False` this is exactly the `inst_abd[idx] -= n_dead` it replaced.
     """
     before = inst_abd[idx]

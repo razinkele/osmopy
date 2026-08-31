@@ -360,9 +360,15 @@ def _bioen_step(
         return float(getattr(config, param_name)[sp])
 
     # Precompute species masks only for species present in state (skip absent species).
-    # `~is_out` excludes schools outside the simulated domain from the budget entirely
-    # (spec decision 18): their cell index is -1 and Java's EnergyBudget only iterates
-    # schools in the domain.
+    # `~is_out` excludes schools outside the simulated domain from the budget entirely.
+    # This is a DELIBERATE DIVERGENCE (spec decision 18), not a parity match: Java's
+    # `SchoolSet.getAliveSchools()` filters on `isAlive()` ONLY
+    # (`util/filter/AliveSchoolFilter.java:54`), so `EnergyBudget.run` DOES iterate
+    # out-of-domain schools — and then dereferences `matrix[-1][-1]` via
+    # `PhysicalData.getValue(School)` -> `GridPoint.getCell()`, which is an
+    # ArrayIndexOutOfBounds in Java. There is no defined Java behaviour to match here.
+    # Do not "restore parity" by dropping this mask: NumPy would silently wrap the
+    # cell -1 lookup to the grid's SE corner instead of failing.
     present_species = np.unique(state.species_id)
     in_domain = ~state.is_out
     sp_masks: list[tuple[int, NDArray[np.bool_]]] = [

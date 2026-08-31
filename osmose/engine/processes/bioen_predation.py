@@ -15,9 +15,13 @@ focal convention overshoots by a factor of ``n_dt_per_year``. Background entries
 must be supplied already in per-time-step units.
 
 A second known gap on the same path: Java reads ``species.beta.sp{fileindex}``
-for background species (``BackgroundSpecies.java:130-133``); the port has no
-background beta and uses Java's own default of 0.8. Both are Gate-B
-prerequisites for the overlay, not defects of the cap formula.
+for background species (``BackgroundSpecies.java:130-133``) via ``cfg.getDouble``,
+which has **no default** — a missing key is a fatal
+``error("Could not find parameter ...")`` in ``Configuration.getParameter``
+(``:998-1006``). The port has no background beta at all and silently substitutes
+0.8, which is the PORT's focal default (``config.py:2499``), not a Java default.
+So where Java refuses to start, the port runs with an invented exponent. Both
+gaps are Gate-B prerequisites for the overlay, not defects of the cap formula.
 """
 
 from __future__ import annotations
