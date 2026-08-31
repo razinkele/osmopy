@@ -136,23 +136,57 @@ class TestBioenGeneticsIntegration:
 
 class TestBioenReproductionOverride:
     def test_different_m0_affects_maturity(self):
-        """Per-school m0 from genetics should change which schools mature."""
-        from osmose.engine.processes.bioen_reproduction import bioen_egg_production
+        """Per-school m0 from genetics should change which schools mature.
 
-        length = np.array([12.0, 12.0, 12.0])
-        age_dt = np.array([24, 24, 24], dtype=np.int32)
-        gonad = np.array([0.01, 0.01, 0.01])
+        Maturity moved out of `bioen_egg_production` (removed in the Java-parity task 5)
+        into `_bioen_reproduction`, which is where Java decides it — `isMature` is a
+        School flag set by `EnergyBudget.getMaturation`, not by the reproduction process.
+        The assertion is therefore made through `_bioen_reproduction`; the standalone
+        LMRN cases live in
+        `test_engine_bioen_reproduction_wiring.py::TestBioenReproductionMaturity`.
+        """
+        from osmose.engine.simulate import _bioen_reproduction
+        from osmose.engine.state import SchoolState
 
-        # Scalar m0=10 → all mature (12 > 10 + 0.5*1 = 10.5)
-        eggs_scalar = bioen_egg_production(
-            gonad, length, age_dt, m0=10.0, m1=0.5, egg_weight=1e-6, n_dt_per_year=24
+        cfg_dict = _bioen_genetics_config()
+        cfg_dict["simulation.time.ndtperyear"] = "24"
+        config = EngineConfig.from_dict(cfg_dict)
+        # NOTE: this fixture's bioen keys predate the 4.4.0 renames (`species.bioen.m0.sp0`
+        # is not a key the reader knows — hence the "unknown keys" log), so m0/m1 come
+        # from config as 0.0. Both arms therefore pass m0/m1 explicitly through
+        # trait_overrides, which is exactly the genetics path under test.
+        m1 = np.full(3, 0.5)
+
+        state = SchoolState.create(n_schools=3, species_id=np.zeros(3, dtype=np.int32))
+        state = state.replace(
+            abundance=np.full(3, 1e4),
+            length=np.full(3, 12.0),
+            weight=np.full(3, 1e-6),
+            age_dt=np.full(3, 24, dtype=np.int32),
+            gonad_weight=np.full(3, 0.01),
         )
-        assert (eggs_scalar > 0).all()
+        n_before = len(state)
 
-        # Array m0 → school 2 has high m0, won't mature
-        m0_arr = np.array([10.0, 10.0, 20.0])
-        eggs_arr = bioen_egg_production(
-            gonad, length, age_dt, m0=m0_arr, m1=0.5, egg_weight=1e-6, n_dt_per_year=24
+        # Uniform m0 = 10 → all three mature (12 >= 10 + 0.5*1 = 10.5).
+        out_all = _bioen_reproduction(
+            state,
+            config,
+            step=0,
+            rng=np.random.default_rng(0),
+            trait_overrides={"bioen_m0": np.full(3, 10.0), "bioen_m1": m1},
         )
-        assert eggs_arr[0] > 0
-        assert eggs_arr[2] == 0.0  # 12 < 20 + 0.5*1 = 20.5, not mature
+        eggs_all = out_all.abundance[n_before:].sum()
+        assert eggs_all > 0
+        assert np.all(out_all.gonad_weight[:n_before] < 0.01)  # all three released
+
+        # Per-school m0 → school 2 needs 20 cm and stays immature.
+        out_two = _bioen_reproduction(
+            state,
+            config,
+            step=0,
+            rng=np.random.default_rng(0),
+            trait_overrides={"bioen_m0": np.array([10.0, 10.0, 20.0]), "bioen_m1": m1},
+        )
+        eggs_two = out_two.abundance[n_before:].sum()
+        assert eggs_two == pytest.approx(eggs_all * 2.0 / 3.0, rel=1e-9)
+        assert out_two.gonad_weight[2] == pytest.approx(0.01)  # kept its gonad

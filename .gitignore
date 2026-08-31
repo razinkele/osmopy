@@ -123,3 +123,6 @@ docs/api/_autosummary/
 # and unaffected (gitignore does not untrack tracked files).
 tests/baselines/*.npz
 tests/baselines/*.json
+# Tiny gate series CSVs generated alongside reproduction_reference_seed3.npz
+# (RV / thermal / recruitment-ceiling inputs; regenerated with the reference).
+tests/baselines/reproduction_reference_files/

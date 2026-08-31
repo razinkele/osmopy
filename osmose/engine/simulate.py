@@ -572,6 +572,26 @@ def _reproduction(
     return reproduction(state, config, step, rng, grid_ny=grid_ny, grid_nx=grid_nx)
 
 
+def _resolve_trait(
+    name: str,
+    sp: int,
+    mask: NDArray[np.bool_],
+    config: EngineConfig,
+    trait_overrides: dict[str, NDArray[np.float64]] | None,
+) -> float | NDArray[np.float64]:
+    """Per-school trait values when genetics overrides them, else the species scalar.
+
+    Same semantics as `_bioen_step`'s local `_resolve`. The array form has one entry per
+    school selected by `mask`, so it broadcasts elementwise against the masked arrays.
+    """
+    if trait_overrides and name in trait_overrides:
+        return trait_overrides[name][mask]
+    arr = getattr(config, name)
+    if arr is None:
+        raise RuntimeError(f"{name} must be set for bioenergetics species")
+    return float(arr[sp])
+
+
 def _bioen_reproduction(
     state: SchoolState,
     config: EngineConfig,
@@ -581,177 +601,134 @@ def _bioen_reproduction(
     grid_nx: int = 10,
     trait_overrides: dict[str, NDArray[np.float64]] | None = None,
 ) -> SchoolState:
-    """Bioen reproduction: create egg schools from gonad weight (replaces SSB method)."""
-    from osmose.engine.processes.bioen_reproduction import bioen_egg_production
+    """Java `BioenReproductionProcess.run()` (4.3.3, source-verified) + shared regulation.
 
-    new_egg_schools = []
+    Per species, per MATURE school (`BioenReproductionProcess.java:137-166`)::
+
+        float wEgg = school.getGonadWeight() * (float) season;   // partial, not a flush
+        if (wEgg <= 0) continue;
+        school.incrementGonadWeight(-wEgg);
+        nEgg += wEgg * sexRatio / eggWeight * 1e6 * school.getInstantaneousAbundance();
+
+    and, when no mature school exists during the seeding window (`:122-130`), the
+    old-fashioned linear release `sexRatio * beta * season * seedingBiomass * 1e6`.
+    Java then lays `nSchool` UNLOCATED egg schools (`School.java:204-207`) whose length is
+    `computeLength(eggWeight)` under bioen (`Species.java:327`), not `species.egg.size`.
+
+    Between the egg count and the schools sits `regulate_recruitment` — a labelled
+    PYTHON-SIDE EXTENSION of Java's bioen reproduction (spec 2026-08-30 decision 5). Java
+    has no stock-recruitment concept, but the certified Baltic config's recruitment lives
+    entirely in that block, so both reproduction paths must pass through it or the
+    bioen-on/off A/B would be measuring a change of recruitment model rather than of
+    bioenergetics. It is keyed on config the Gate-B (Bay of Biscay) config does not set,
+    so it is the identity there and Gate B stays parity-pure.
+
+    Maturity is recomputed here from the LMRN `L >= m0 + m1*age` rather than latched as
+    Java's sticky `School.setIsMature` (`EnergyBudget.java:256`). Equivalent this stage:
+    the spec fixes `m1 = 0` (decision 9), which makes the threshold constant, and length
+    is non-decreasing (`_bioen_step` adds `dw >= 0` and this function touches neither
+    weight nor length), so a school that has once passed the threshold cannot fall back.
+    """
+    from osmose.engine.processes.bioen_reproduction import bioen_egg_release
+    from osmose.engine.processes.reproduction import (
+        create_egg_schools,
+        merge_new_schools,
+        regulate_recruitment,
+    )
+
+    n_sp = config.n_species
+    # MUST be computed BEFORE the age increment at the bottom of this function. Java's SSB
+    # loop reads `isMature`, already latched by EnergyBudget on the PRE-increment age
+    # (`BioenReproductionProcess.java:100` runs in the same loop as `incrementAge`, but the
+    # flag was set earlier in the step). Moving this line below the increment would shift
+    # every maturity decision by one time step.
+    age_years = state.age_dt.astype(np.float64) / config.n_dt_per_year
     gonad = state.gonad_weight.copy()
 
-    for sp in range(config.n_species):
-        mask = state.species_id == sp
+    ssb = np.zeros(n_sp, dtype=np.float64)
+    n_eggs_linear = np.zeros(n_sp, dtype=np.float64)
+    seeded_this_step = np.zeros(n_sp, dtype=np.bool_)
+    egg_len = np.zeros(n_sp, dtype=np.float64)
 
-        # Seeding fallback — mirrors _reproduction's SSB=0 logic.
-        # When no mature fish have accumulated gonad weight (SSB equivalent = 0),
-        # use seeding_biomass to bootstrap the population during the warm-up period.
-        # This applies whether or not any (immature/egg) schools exist.
-        # Without this, bioen mode never produces fish because the population
-        # starts empty and _bioen_reproduction only creates eggs from gonads.
-        gonad_ssb = float(state.gonad_weight[mask].sum()) if mask.any() else 0.0
-        if (
-            gonad_ssb == 0.0
-            and step < config.seeding_max_step[sp]
-            and config.seeding_biomass[sp] > 0
-        ):
-            from osmose.engine.processes.reproduction import apply_stock_recruitment
+    # Java `getSeason` indexes a within-year series by index-in-year and a multi-year one
+    # by absolute step; `step % n_cols` covers both (identical to the standard path).
+    if config.spawning_season is not None:
+        season_all = config.spawning_season[:, step % config.spawning_season.shape[1]]
+    else:
+        season_all = np.full(n_sp, 1.0 / config.n_dt_per_year)
 
-            # Season factor (same as standard _reproduction)
-            if config.spawning_season is not None:
-                n_cols = config.spawning_season.shape[1]
-                season_factor = float(config.spawning_season[sp, step % n_cols])
-            else:
-                season_factor = 1.0 / config.n_dt_per_year
+    for sp in range(n_sp):
+        # `~is_egg` is load-bearing, not defensive. `bioen_m0` falls back to 0.0 when
+        # `species.maturity.m0.sp{i}` is absent (config.py:2509), and with m0 = m1 = 0
+        # every school of positive length reads as mature — egg schools included. That
+        # would inflate SSB (suppressing the SR curve) AND keep SSB != 0 forever, so the
+        # seeding bootstrap could never fire on a collapsed species.
+        mask = (state.species_id == sp) & (state.abundance > 0) & ~state.is_egg
+        idx = np.where(mask)[0]
 
-            ssb_seed = config.seeding_biomass[sp]
-            TONNES_TO_GRAMS = 1_000_000.0
-            n_eggs_linear = (
-                float(config.sex_ratio[sp])
-                * float(config.relative_fecundity[sp])
-                * ssb_seed
-                * season_factor
-                * TONNES_TO_GRAMS
-            )
-            # GitHub #143: "linear" reproduces Java 4.4.1's SeedingInterface, which converts seeded
-            # biomass to eggs proportionally (1e6 * seedingBiomass, the TONNES_TO_GRAMS factor above)
-            # with no recruitment relationship. "stock_recruitment" (default) additionally passes
-            # that quantity through the configured curve, so it saturates where Java's does not.
-            if config.seeding_mode == "linear":
-                total_eggs_seed = n_eggs_linear
-            else:
-                n_eggs_arr = apply_stock_recruitment(
-                    np.array([n_eggs_linear]),
-                    np.array([ssb_seed]),
-                    np.array([config.recruitment_ssb_half[sp]]),
-                    [config.recruitment_type[sp]],
-                )
-                total_eggs_seed = float(n_eggs_arr[0])
-            if total_eggs_seed > 0:
-                ew_seed = np.nan
-                if config.egg_weight_override is not None:
-                    ew_seed = float(config.egg_weight_override[sp])
-                if np.isnan(ew_seed):
-                    ew_seed = (
-                        config.condition_factor[sp]
-                        * config.egg_size[sp] ** config.allometric_power[sp]
-                        * 1e-6
-                    )
-                n_new = int(config.n_schools[sp])
-                if n_new > 0:
-                    if total_eggs_seed < n_new:
-                        n_new = 1
-                    eggs_per_school = total_eggs_seed / n_new
-                    seed_school = SchoolState.create(
-                        n_schools=n_new,
-                        species_id=np.full(n_new, sp, dtype=np.int32),
-                    )
-                    seed_school = seed_school.replace(
-                        abundance=np.full(n_new, eggs_per_school, dtype=np.float64),
-                        weight=np.full(n_new, float(ew_seed), dtype=np.float64),
-                        biomass=np.full(n_new, eggs_per_school * float(ew_seed), dtype=np.float64),
-                        length=np.full(n_new, config.egg_size[sp], dtype=np.float64),
-                        cell_x=np.full(n_new, -1, dtype=np.int32),
-                        cell_y=np.full(n_new, -1, dtype=np.int32),
-                        is_egg=np.ones(n_new, dtype=np.bool_),
-                        first_feeding_age_dt=np.ones(n_new, dtype=np.int32),
-                    )
-                    new_egg_schools.append(seed_school)
+        mature = np.zeros(len(state), dtype=np.bool_)
+        if idx.size:
+            m0 = _resolve_trait("bioen_m0", sp, mask, config, trait_overrides)
+            m1 = _resolve_trait("bioen_m1", sp, mask, config, trait_overrides)
+            mature[idx] = state.length[idx] >= (m0 + m1 * age_years[idx])
+            ssb[sp] = float((state.abundance[mature] * state.weight[mature]).sum())
 
-        if not mask.any():
-            continue
-
-        # Get egg weight (handle NaN from missing config)
+        # Egg weight in TONNES: the configured override, else allometric at egg size.
         ew = np.nan
         if config.egg_weight_override is not None:
-            ew = config.egg_weight_override[sp]
+            ew = float(config.egg_weight_override[sp])
         if np.isnan(ew):
-            # Fallback: allometric weight at egg size
-            ew = (
+            ew = float(
                 config.condition_factor[sp]
                 * config.egg_size[sp] ** config.allometric_power[sp]
                 * 1e-6
             )
+        # Java Species.getEggSize() under bioen = computeLength(eggWeight) = (W_g/c)^(1/b).
+        # With no egg-weight override this reproduces `config.egg_size` exactly.
+        safe_cf = max(float(config.condition_factor[sp]), 1e-20)
+        egg_len[sp] = (max(ew, 0.0) * 1e6 / safe_cf) ** (1.0 / float(config.allometric_power[sp]))
 
-        # Resolve m0 and m1 parameters (check trait_overrides first to avoid None subscript)
-        if trait_overrides is not None and "bioen_m0" in trait_overrides:
-            m0_val: float | NDArray[np.float64] = trait_overrides["bioen_m0"][mask]
-        else:
-            if config.bioen_m0 is None:
-                raise RuntimeError("bioen_m0 must be set for bioenergetics species")
-            m0_val = float(config.bioen_m0[sp])
+        season = float(season_all[sp])
 
-        if trait_overrides is not None and "bioen_m1" in trait_overrides:
-            m1_val: float | NDArray[np.float64] = trait_overrides["bioen_m1"][mask]
-        else:
-            if config.bioen_m1 is None:
-                raise RuntimeError("bioen_m1 must be set for bioenergetics species")
-            m1_val = float(config.bioen_m1[sp])
-
-        eggs = bioen_egg_production(
-            gonad_weight=state.gonad_weight[mask],
-            length=state.length[mask],
-            age_dt=state.age_dt[mask],
-            m0=cast(float, m0_val),
-            m1=cast(float, m1_val),
-            egg_weight=float(ew),
-            n_dt_per_year=config.n_dt_per_year,
-        )
-
-        total_eggs = eggs.sum()
-        if total_eggs <= 0:
-            continue
-
-        # Reset gonad weight for schools that spawned
-        spawned = eggs > 0
-        indices = np.where(mask)[0]
-        gonad[indices[spawned]] = 0.0
-
-        # Create a single egg school per species (matching Java convention)
-        # Place in random cell occupied by parent schools
-        parent_cells_y = state.cell_y[mask][spawned]
-        parent_cells_x = state.cell_x[mask][spawned]
-        if len(parent_cells_y) > 0:
-            idx = rng.integers(len(parent_cells_y))
-            egg_school = SchoolState.create(n_schools=1, species_id=np.array([sp], dtype=np.int32))
-            egg_school = egg_school.replace(
-                abundance=np.array([total_eggs]),
-                weight=np.array([float(ew)]),
-                biomass=np.array([total_eggs * float(ew)]),
-                length=np.array([config.egg_size[sp]]),
-                cell_x=np.array([parent_cells_x[idx]], dtype=np.int32),
-                cell_y=np.array([parent_cells_y[idx]], dtype=np.int32),
-                is_egg=np.array([True]),
-                first_feeding_age_dt=np.array([1], dtype=np.int32),
+        if ssb[sp] == 0.0 and step < config.seeding_max_step[sp] and config.seeding_biomass[sp] > 0:
+            # Java: seeding fires on SSB == 0, i.e. NO MATURE SCHOOL — not on "the gonad
+            # sum is zero" (which v1 used, re-seeding a healthy stock between spawnings).
+            seeded_this_step[sp] = True
+            ssb[sp] = float(config.seeding_biomass[sp])
+            n_eggs_linear[sp] = (
+                float(config.sex_ratio[sp])
+                * float(config.relative_fecundity[sp])
+                * ssb[sp]
+                * season
+                * 1_000_000.0  # tonnes -> grams (fecundity is eggs per gram)
             )
-            new_egg_schools.append(egg_school)
+        elif idx.size:
+            sch_eggs, w_egg = bioen_egg_release(
+                gonad[idx],
+                state.abundance[idx],
+                mature[idx],
+                season,
+                float(config.sex_ratio[sp]),
+                ew,
+            )
+            n_eggs_linear[sp] = float(sch_eggs.sum())
+            gonad[idx] -= w_egg
+
+    n_eggs = regulate_recruitment(n_eggs_linear, ssb, seeded_this_step, config, step)
+    new_egg_schools = create_egg_schools(n_eggs, seeded_this_step, config, egg_length=egg_len)
 
     state = state.replace(gonad_weight=gonad)
 
-    # Append egg schools
-    for egg_school in new_egg_schools:
-        state = state.append(egg_school)
-
-    # Age increment for existing schools only (NOT new eggs — they start at age 0)
-    # Java's BioenReproductionProcess increments age separately from egg creation
-    n_existing = len(state) - sum(len(e) for e in new_egg_schools)
-    new_age = state.age_dt.copy()
-    new_age[:n_existing] += 1
-    # Hatch eggs: clear is_egg flag for schools whose age has reached first_feeding_age_dt.
-    # Mirrors _reproduction (non-bioen) path which does the same update at line ~169.
-    # Without this, is_egg stays True forever in bioen mode, blocking starvation,
-    # feeding-stage promotion, and (downstream) growth.
+    # --- Age increment for ALL existing schools ---
+    # Java increments age in its FIRST loop, before any egg school exists
+    # (BioenReproductionProcess.java:104), so the new eggs stay at age 0. Eggs are also
+    # re-flagged here: without it `is_egg` would never clear and starvation, feeding-stage
+    # promotion and growth would stay blocked (mirrors the standard path).
+    new_age = state.age_dt + 1
     new_is_egg = new_age < state.first_feeding_age_dt
     state = state.replace(age_dt=new_age, is_egg=new_is_egg)
 
-    return state
+    return merge_new_schools(state, new_egg_schools)
 
 
 # ---------------------------------------------------------------------------
