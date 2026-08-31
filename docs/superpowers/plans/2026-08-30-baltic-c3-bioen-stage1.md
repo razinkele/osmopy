@@ -820,6 +820,165 @@ git commit -m "fix(engine): bioen mortality parity -- per-fish Imax cap in the l
 
 ---
 
+### Task 4b: Bioen-aware Numba mortality kernel (INSERTED 2026-08-31 — the A/B is infeasible without it)
+
+**Why this task exists.** Task 4 correctly stopped dispatching bioen runs to the batched Numba
+kernels, because those kernels ignore the bioen ingestion cap — which is exactly why the cap had
+been a silent no-op. Correctness was restored at a cost the spec estimated at 5–10× (decision 14).
+The measured cost is **~150×**, and it makes the branch's whole deliverable impossible:
+
+| measurement (production Baltic / baltic_ev, this machine) | result |
+|---|---|
+| bioen OFF, Numba ON, 4 yr | 3.9 s (0.99 s/yr) |
+| bioen ON, pure-Python path, 4 yr, ~12 000 schools | 442 s (110 s/yr) |
+| same-population ratio | **152×** |
+| school growth, bioen ON vs OFF | identical (~3 000/yr; not a bioen defect) |
+| extrapolated single 50-yr bioen run | ~12–18 h |
+| Task 12's A/B (10 bioen runs) | **~120 h — not runnable** |
+
+School accumulation is normal engine behaviour (cohorts leave at lifespan, 4–20 yr) and affects
+both paths equally; the only difference is the per-school constant. So one fix removes the whole
+problem: teach the batched kernels the five bioen behaviours Task 4 implemented in Python, and
+re-enable the dispatch.
+
+**Files:**
+- Modify: `osmose/engine/processes/mortality.py` — `_mortality_all_cells_numba` and
+  `_mortality_all_cells_parallel` (`:1242`, `:1411`), `_mortality_in_cell_numba` (`:1098`),
+  `_apply_single_cause` (`:1056`), `_apply_predation_numba` (`:828`), the cause-order buffer
+  (`:684-705`), and the dispatch gate in `mortality()` (`:2095`)
+- Test: `tests/test_engine_bioen_numba_kernel.py`
+
+**Interfaces:**
+- Consumes (all already built by Tasks 2–4): `config.bioen_i_max_all`, `config.bioen_larvae_thres_dt`,
+  `per_fish_ingestion_cap`, `bioen_starvation_substep`'s semantics, `_kill`/`_consume`'s survivor
+  scaling, and `raw_preyed`.
+- Produces: no new public API. The kernels gain bioen parameters and `mortality()` dispatches to
+  them under bioen. **The Python per-cell path stays and remains the reference implementation** —
+  it is what the review verified against Java, and it is the oracle this task is tested against.
+
+**The five behaviours the kernel must gain** (each already exists in Python; mirror it exactly):
+1. **Per-fish cap.** `max_eatable = cap_fish[p] * inst_abd[p]` instead of
+   `biomass_p * ingestion_rate[sp]/(ndt*subdt)`. Pass `cap_fish` plus a `bioen` flag.
+2. **Survivor scaling.** At every death site, multiply `preyed_biomass[idx]` and `e_net[idx]` by
+   `(inst_abd[idx] - n_dead)/inst_abd[idx]`, skipping background schools — Java `School.setNdead`.
+3. **Interleaved bioen starvation.** Cause STARVATION under bioen runs the gonad-buffer branch on
+   the PREVIOUS step's `e_net`, with the strict `ageDt > firstFeedingAgeDt` boundary and Java's
+   flush-before-credit ordering. Inline `bioen_starvation_substep` as scalar ops (Numba cannot
+   return the tuple form).
+4. **Five causes, not four.** Add FORAGING to the shuffled cause set under bioen. The cause-order
+   buffer is `(total, 4)`; it becomes `(total, 5)` under bioen.
+5. **Separate raw-preyed accumulator.** Trophic level divides by the RAW preyed total while the
+   budget consumes the survivor-scaled one (Java keeps `AbstractSchool.preyedBiomass` and
+   `School.ingestion` separately). Pass both arrays.
+
+**THE GATE — this is what makes the task safe.** The Python path and the kernel are two
+implementations of one specification, and the Python one was verified against Java by review. So
+the acceptance test is **bit-identity between the two paths**, not a re-derivation from Java:
+
+- [ ] **Step 1: Write the failing cross-path identity test**
+
+```python
+# tests/test_engine_bioen_numba_kernel.py
+"""The bioen Numba kernel must reproduce the pure-Python per-cell path EXACTLY.
+
+The Python path is the reference: Task 4's review verified it against Java 4.3.3 (survivor
+scaling, the cap form, starvation ordering, the raw/scaled preyed split). This file pins the
+kernel to it, so the kernel can never drift from the semantics that were actually reviewed.
+"""
+import numpy as np
+import pytest
+
+import osmose.engine.processes.mortality as M
+from osmose.config import OsmoseConfigReader
+from osmose.demo import osmose_demo
+from osmose.engine import PythonEngine
+
+
+def _run(cfg: dict, seed: int, *, numba: bool):
+    saved = M._HAS_NUMBA
+    M._HAS_NUMBA = numba
+    try:
+        return PythonEngine().run_in_memory(dict(cfg), seed=seed).biomass()
+    finally:
+        M._HAS_NUMBA = saved
+
+
+@pytest.mark.parametrize("seed", [42, 7])
+def test_bioen_numba_kernel_matches_python_path_exactly(tmp_path, seed):
+    cfg = dict(OsmoseConfigReader().read(str(osmose_demo("baltic", tmp_path)["config_file"])))
+    cfg.update(_BIOEN_OVERLAY)          # minimal bioen overlay; see Step 2
+    cfg["simulation.time.nyear"] = "3"
+    py = _run(cfg, seed, numba=False)
+    nb = _run(cfg, seed, numba=True)
+    cols = [c for c in py.columns if c not in ("Time", "species")]
+    for c in cols:
+        np.testing.assert_array_equal(
+            nb[c].to_numpy(dtype=float), py[c].to_numpy(dtype=float),
+            err_msg=f"kernel diverges from the reviewed Python path on {c!r}",
+        )
+
+
+def test_bioen_off_is_untouched(tmp_path):
+    """The non-bioen kernel path must be bit-identical to before this task."""
+    cfg = dict(OsmoseConfigReader().read(str(osmose_demo("baltic", tmp_path)["config_file"])))
+    cfg["simulation.time.nyear"] = "2"
+    np.testing.assert_array_equal(
+        _run(cfg, 42, numba=True)["cod_west"].to_numpy(dtype=float),
+        _run(cfg, 42, numba=False)["cod_west"].to_numpy(dtype=float),
+    )
+```
+
+- [ ] **Step 2: Build the minimal bioen overlay the test needs**
+
+The Baltic C3 overlay does not exist until Task 11, so this test needs a small self-contained one:
+`module.bioenergetics.enabled=true`, `simulation.bioen.phit.enabled=true`,
+`simulation.bioen.fo2.enabled=false`, `temperature.value=7.0`, and per focal species
+`species.maturity.m0 = species.maturity.size`, `m1=0`, `r=0.2`, `eta=1`, `beta=0.8`,
+`assimilation=0.7`, `c_m` set so maintenance is a MATERIAL fraction of intake (the `baltic_ev`
+value makes it ~1e-8 and would hide starvation entirely — see Task 6's carried-items file, item A),
+`mobilized.tp=10`, `e.mobi=0.65`, `e.d=1.5`, `maint.e.maint=0.65`. Put it in the test module as
+`_BIOEN_OVERLAY`. **Background species (sp15, sp16) need `species.beta` and a per-time-step
+`predation.ingestion.rate.max` — see ruling R1 in the ledger; getting this wrong makes the two
+paths agree with each other while both being wrong, which this test cannot catch.**
+
+- [ ] **Step 3: Run it and watch it fail for the right reason**
+
+Run: `.venv/bin/python -m pytest tests/test_engine_bioen_numba_kernel.py -q`
+Expected before the kernel work: the parametrised identity tests FAIL (the dispatch gate still
+sends bioen to Python regardless of `_HAS_NUMBA`, so both arms are the same path and the test
+PASSES vacuously — therefore **first remove the `and not config.bioen_enabled` from the dispatch
+gate**, re-run, and confirm it now fails with real divergence). A vacuous pass here is the single
+most likely way this task goes wrong; prove the test bites before implementing.
+
+- [ ] **Step 4: Implement the five behaviours**, one at a time, re-running the identity test after
+each. Keep every Python helper untouched — it is the oracle.
+
+- [ ] **Step 5: Re-enable dispatch and measure**
+
+Restore `mortality()`'s dispatch so bioen uses the kernel. Then re-run the cost measurement
+(`scratchpad/school_cause.py`'s arm A shape: 4 yr on baltic_ev) and record s/yr before and after.
+Target: within ~2× of the bioen-off Numba path at equal school count.
+
+- [ ] **Step 6: Full gates**
+
+`tests/test_engine_parity.py` (17), `tests/test_engine_bioen_mortality_parity.py`,
+`tests/test_engine_bioen_budget_parity.py`, `tests/test_engine_bioen_reproduction_parity.py`,
+and `scripts/c3_gate_a_reference.py --check` → `IDENTICAL`.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add osmose/engine/processes/mortality.py tests/test_engine_bioen_numba_kernel.py
+git commit -m "perf(engine): bioen-aware Numba mortality kernel -- pinned bit-identical to the reviewed Python path"
+```
+
+**If the identity test cannot be made to pass** (e.g. an RNG-consumption difference between the
+4-cause and 5-cause shuffles proves irreconcilable), STOP and report rather than relaxing it to a
+tolerance. A kernel that is approximately the reviewed path is worse than no kernel: it would make
+every later result unattributable. The fallback is then the re-scoped A/B described in the ledger.
+
+---
+
 ### Task 5: Reproduction — regulation helper extraction + Java-parity bioen reproduction
 
 **Files:**
