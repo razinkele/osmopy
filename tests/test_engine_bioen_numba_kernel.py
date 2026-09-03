@@ -529,7 +529,8 @@ def run_cell_both_paths(
     The Python arm forces ``M._HAS_NUMBA = False`` around its call -- see the module
     docstring. With ``require_kernel`` (the default) the Python arm must show 0 kernel
     entries and the Numba arm at least 1; that is what stops the comparison degenerating
-    into kernel-vs-kernel (after plan Task 4) or Python-vs-Python (under bioen today).
+    into kernel-vs-kernel (after plan Task 3 Step 2) or Python-vs-Python (under bioen
+    today).
     """
     grid = grid or Grid.from_dimensions(
         ny=int(state.cell_y.max()) + 1, nx=int(state.cell_x.max()) + 1
@@ -604,7 +605,8 @@ def run_cell_both_paths(
         assert numba_arm.kernel_calls >= 1, (
             "the candidate arm never reached _mortality_in_cell_numba -- it fell back to "
             "the Python path, so this comparison is Python-vs-Python and proves nothing. "
-            "(Expected under bioen until plan Task 4 flips the `not config.bioen_enabled` "
+            "(Expected under bioen until plan Task 3 Step 2 flips the "
+            "`not config.bioen_enabled` "
             "term in `use_full_numba`.)"
         )
     return python_arm, numba_arm
@@ -617,67 +619,204 @@ def run_cell_both_paths(
 #: The batch kernels' inline draw pattern, per non-empty cell, in order:
 #: ``seq_pred, seq_starv, seq_fish, seq_nat`` then ``n_local`` shuffles of ``[0,1,2,3]``.
 #: Plan Task 2 adds a fifth permutation (``seq_for``) and a fifth cause code under bioen.
-#: This is NOT left to a comment and a careful reader: ``_assert_batch_rng_contract`` reads
-#: the kernels' own source and refuses to run if the harness's expectation has drifted from
-#: it, so a one-sided update fails with a message naming both files instead of surfacing as
-#: an RNG desync that looks exactly like a logic bug.
+#: This is NOT left to a comment and a careful reader: ``_assert_batch_rng_contract``
+#: MEASURES what the kernel actually draws at runtime and refuses to run if the harness's
+#: expectation has drifted, so a one-sided update fails with a message naming both files
+#: instead of surfacing as an RNG desync that looks exactly like a logic bug.
 _BATCH_N_PERMS_BIOEN_OFF = 4
 _BATCH_PARALLEL_SEED_STRIDE = 7919
 
+#: (cell occupancy, seed) for the runtime draw probes. Several sizes are required: a single
+#: probe only pins the kernel's stream POSITION, and different (n_perms, width) pairs can
+#: land on the same position because permutation/shuffle consume a size-dependent number of
+#: raw 32-bit words. Measured: n_local=8 alone admits both (0, 7) and (4, 4); intersecting
+#: four probes leaves exactly (4, 4).
+_RNG_PROBES: tuple[tuple[int, int], ...] = ((8, 4242), (5, 4242), (3, 11), (7, 99))
+_MAX_PROBED_PERMS = 9
 
-def _kernel_rng_shape(fn) -> tuple[int, list[int], int]:
-    """Read (permutation count, cause literal, cause-loop width) out of a kernel's source.
 
-    Source introspection rather than behavioural probing because the quantities are
-    compile-time literals inlined in three places; ``fn.py_func`` is the undecorated
-    Python body Numba compiled.
+@numba.njit(cache=True)
+def _nb_next_random():
+    """Next draw from NUMBA's thread-local PRNG -- i.e. where a kernel left the stream.
+
+    Numba's ``np.random`` state is shared across ``njit`` functions on a thread, so calling
+    this straight after a kernel reads that kernel's own stream position. Verified against
+    NumPy's legacy MT19937 in ``test_numba_prng_state_is_shared_across_njit_functions``.
     """
-    body = inspect.getsource(fn.py_func)
-    n_perms = len(re.findall(r"np\.random\.permutation\(", body))
+    return np.random.random()
+
+
+def _candidates_from_stream_position(
+    next_draw: float, n_local: int, seed: int
+) -> set[tuple[int, int]]:
+    """Every ``(n_perms, cause_width)`` whose replay leaves the stream at ``next_draw``.
+
+    Replays ``n_perms`` permutations of ``n_local`` then ``n_local`` shuffles of a
+    ``width``-element array on NumPy's legacy stream (bit-identical to Numba's) and keeps
+    the shapes that land on the same next value. A single call is AMBIGUOUS -- see
+    ``_RNG_PROBES`` -- so callers intersect several.
+    """
+    candidates: set[tuple[int, int]] = set()
+    with legacy_rng_preserved():
+        for n_perms in range(_MAX_PROBED_PERMS):
+            for width in range(_MAX_PROBED_PERMS):
+                np.random.seed(seed)
+                for _ in range(n_perms):
+                    np.random.permutation(n_local)
+                causes = np.arange(width, dtype=np.int32)
+                for _ in range(n_local):
+                    np.random.shuffle(causes)
+                if np.random.random() == next_draw:
+                    candidates.add((n_perms, width))
+    return candidates
+
+
+def _probe_kernel_draw_shape(
+    state: SchoolState,
+    config: EngineConfig,
+    *,
+    n_local: int,
+    seed: int,
+    n_subdt: int,
+) -> set[tuple[int, int]]:
+    """Run the sequential batch kernel on one cell and report every ``(n_perms, width)``
+    consistent with how far it advanced Numba's PRNG.
+
+    RUNTIME measurement, not source introspection. Source counting was tried first and
+    rejected: it reports a bioen-CONDITIONAL draw (``if bioen: seq_for = permutation(...)``
+    -- the natural way to write Task 2's fifth permutation) as unconditional, and it
+    degrades silently to ``([], -1)`` if the triplicated cause loop is ever hoisted into a
+    shared helper. Measuring the real stream advance is immune to both, and it measures the
+    branch THIS config actually takes.
+    """
+    grid = Grid.from_dimensions(ny=1, nx=2)
+    cell_x = np.full(len(state), -1, dtype=np.int32)
+    cell_x[:n_local] = 0
+    probe_state = state.replace(cell_x=cell_x, cell_y=np.zeros(len(state), dtype=np.int32))
+    sorted_indices, boundaries, n_cells = _cell_groups(probe_state, grid)
+    assert int(boundaries[1] - boundaries[0]) == n_local, "probe fixture built wrong"
+
+    arm = _prepare_arm(probe_state, config, None, n_subdt=n_subdt, step=0, diet_tracking=True)
+    n = len(arm.state)
+    M._mortality_all_cells_numba(
+        seed,
+        sorted_indices,
+        boundaries,
+        n_cells,
+        arm.inst_abd,
+        arm.state.n_dead,
+        arm.eff_starv,
+        arm.eff_additional,
+        arm.eff_fishing,
+        arm.fishing_discard,
+        arm.state.species_id,
+        arm.state.length,
+        arm.state.weight,
+        arm.state.age_dt,
+        arm.state.first_feeding_age_dt,
+        arm.state.feeding_stage,
+        arm.state.pred_success_rate,
+        arm.state.preyed_biomass,
+        arm.state.trophic_level,
+        config.size_ratio_min,
+        config.size_ratio_max,
+        config.ingestion_rate,
+        config.fr_shape,
+        config.fr_halfsat,
+        config.n_dt_per_year,
+        n_subdt,
+        M._DUMMY_ACCESS,
+        False,
+        False,
+        np.zeros(n, dtype=np.int32),
+        np.zeros(n, dtype=np.int32),
+        M._DUMMY_RSC_2D,
+        arm.rsc_arrays[0],
+        arm.rsc_arrays[1],
+        arm.rsc_arrays[2],
+        arm.rsc_arrays[3],
+        arm.rsc_arrays[4],
+        config.n_species,
+        arm.ctx.tl_weighted_sum,
+        True,
+        arm.ctx.diet_matrix,
+        True,
+        arm.state.egg_retained,
+    )
+    return _candidates_from_stream_position(float(_nb_next_random()), n_local, seed)
+
+
+def measure_batch_kernel_rng_shape(
+    state: SchoolState, config: EngineConfig, *, n_subdt: int
+) -> tuple[int, int]:
+    """``(n_perms, cause_order_width)`` the sequential batch kernel ACTUALLY draws per cell."""
+    probes = [
+        _probe_kernel_draw_shape(state, config, n_local=n_local, seed=seed, n_subdt=n_subdt)
+        for n_local, seed in _RNG_PROBES
+        if n_local <= len(state)
+    ]
+    assert len(probes) >= 3, (
+        f"need >= 3 usable probe sizes but the fixture has only {len(state)} schools; add a "
+        "smaller entry to _RNG_PROBES -- a single probe pins only the stream position and "
+        "admits several (n_perms, width) pairs"
+    )
+    common = set.intersection(*probes)
+    assert len(common) == 1, (
+        f"runtime probes did not identify a unique draw shape (candidates {sorted(common)}). "
+        "Add another (n_local, seed) entry to _RNG_PROBES: distinct cell sizes break the "
+        "position aliasing."
+    )
+    return common.pop()
+
+
+def _source_shape_hint() -> str:
+    """Best-effort source read, used ONLY to enrich a failure message.
+
+    Never asserts. Source counting cannot see a bioen-conditional draw and returns nothing
+    useful if the cause loop is hoisted into a shared helper -- which is exactly why the
+    contract above is measured at runtime. Kept because when the runtime check DOES fire,
+    naming the two likely causes saves the reader a bisect.
+    """
+    try:
+        body = inspect.getsource(M._mortality_all_cells_numba.py_func)
+    except OSError:  # pragma: no cover - source unavailable
+        return "source unavailable"
     literal = re.search(r"causes = np\.array\(\[([^\]]*)\]", body)
-    codes = [int(tok) for tok in literal.group(1).split(",")] if literal else []
-    width = re.search(r"for c in range\((\d+)\)", body)
-    return n_perms, codes, int(width.group(1)) if width else -1
+    conditional = re.search(r"if\s+\w+\s*:\s*\n\s+\w+\s*=\s*np\.random\.permutation", body)
+    return (
+        f"source shows {len(re.findall(r'np[.]random[.]permutation[(]', body))} literal "
+        f"permutation call(s), cause literal "
+        f"{literal.group(1) if literal else '<none found -- loop may have been hoisted>'}"
+        f"{'; at least one permutation is inside a conditional' if conditional else ''}"
+    )
 
 
-def _assert_batch_rng_contract(cause_codes: Sequence[int], n_perms: int) -> None:
+def _assert_batch_rng_contract(
+    state: SchoolState, config: EngineConfig, cause_codes: Sequence[int], n_perms: int, n_subdt: int
+) -> None:
     """Refuse to replicate draws the kernels do not actually make.
 
-    ``run_batch_both_paths`` reproduces the batch kernels' internal RNG in Python. That is
+    ``run_batch_both_paths`` reproduces the batch kernels' internal RNG in Python, which is
     only valid while the harness's idea of the draw pattern matches the kernels' -- and the
     two live in different files. Today both batch kernels draw FOUR permutations
-    unconditionally with a literal ``[0, 1, 2, 3]`` (``mortality.py``'s
-    ``_mortality_all_cells_numba`` and ``_mortality_all_cells_parallel``), with no bioen
-    branch. When Task 2 adds ``seq_for`` and the five-cause order, this assertion fires
-    first and says so, instead of letting a desynchronised stream masquerade as a
-    behavioural divergence in the thing under test.
+    unconditionally over ``[0, 1, 2, 3]``, with no bioen branch. When Task 2 adds
+    ``seq_for`` and the five-cause order, this fires first and says so, instead of letting a
+    desynchronised stream masquerade as a behavioural divergence in the thing under test.
 
-    It also cross-checks the two batch kernels against each other and against
-    ``_mortality_in_cell_numba``'s cause-loop width -- the plan's "duplication hazard" says
-    every change must land in all three, and this is the cheapest place to notice it did
-    not.
+    Only the WIDTH of the cause order affects RNG consumption, so the runtime probe pins
+    ``n_perms`` and ``len(cause_codes)``. The cause CODES cannot be measured this way; a
+    wrong code set applies the wrong cause to the wrong school and shows up as an equality
+    failure in the batch comparison itself.
     """
-    seq_perms, seq_codes, seq_width = _kernel_rng_shape(M._mortality_all_cells_numba)
-    par_perms, par_codes, par_width = _kernel_rng_shape(M._mortality_all_cells_parallel)
-    _, _, cell_width = _kernel_rng_shape(M._mortality_in_cell_numba)
-
-    assert (seq_perms, seq_codes, seq_width) == (par_perms, par_codes, par_width), (
-        "the two batch kernels disagree on their own RNG/cause shape -- "
-        f"_mortality_all_cells_numba={(seq_perms, seq_codes, seq_width)} vs "
-        f"_mortality_all_cells_parallel={(par_perms, par_codes, par_width)}. "
-        "An edit landed in one inlined loop and not the other (mortality.py)."
-    )
-    assert cell_width == seq_width, (
-        f"_mortality_in_cell_numba iterates {cell_width} causes but the batch kernels "
-        f"iterate {seq_width}; the three inlined loops have diverged (mortality.py)."
-    )
-    assert (n_perms, list(cause_codes)) == (seq_perms, seq_codes), (
-        f"harness expects {n_perms} permutations and cause codes {list(cause_codes)}, but "
-        f"the batch kernels draw {seq_perms} permutations over {seq_codes} "
-        "(mortality.py: _mortality_all_cells_numba / _mortality_all_cells_parallel). "
-        "Update run_batch_both_paths's n_perms/cause_codes in the SAME commit as the "
-        "kernel change -- a one-sided update desynchronises the replicated RNG stream and "
-        "the resulting mismatch is indistinguishable from a logic bug."
+    measured_perms, measured_width = measure_batch_kernel_rng_shape(state, config, n_subdt=n_subdt)
+    assert (n_perms, len(cause_codes)) == (measured_perms, measured_width), (
+        f"harness replicates {n_perms} permutations and a {len(cause_codes)}-wide cause "
+        f"order {list(cause_codes)}, but the batch kernel actually draws {measured_perms} "
+        f"permutations and a {measured_width}-wide order "
+        f"(measured at runtime; {_source_shape_hint()}). Update run_batch_both_paths's "
+        "n_perms/cause_codes in the SAME commit as the mortality.py kernel change -- a "
+        "one-sided update desynchronises the replicated stream and the resulting mismatch "
+        "is indistinguishable from a logic bug."
     )
 
 
@@ -782,7 +921,7 @@ def run_batch_both_paths(
 
     cause_codes = M._get_mortality_causes(config)
     n_perms = 5 if config.bioen_enabled else _BATCH_N_PERMS_BIOEN_OFF
-    _assert_batch_rng_contract(cause_codes, n_perms)
+    _assert_batch_rng_contract(state, config, cause_codes, n_perms, n_subdt)
     draws = _replicate_batch_kernel_rng(
         seed,
         boundaries,
@@ -1069,31 +1208,122 @@ def test_numba_and_numpy_legacy_rng_streams_match():
         np.testing.assert_array_equal(nb_orders, py_orders)
 
 
-def test_the_batch_harness_refuses_to_replicate_draws_the_kernels_do_not_make():
+def test_numba_prng_state_is_shared_across_njit_functions():
+    """The premise of the runtime draw measurement, pinned separately from its use.
+
+    ``_probe_kernel_draw_shape`` reads a kernel's stream position by calling
+    ``_nb_next_random`` right after it. That only works because Numba's ``np.random`` state
+    is per-thread, not per-function -- and it is only *interpretable* because that state is
+    an MT19937 matching NumPy's legacy stream.
+    """
+
+    @numba.njit(cache=True)
+    def _seed_and_draw(seed, n, k):
+        np.random.seed(seed)
+        out = np.empty((k, n), dtype=np.int32)
+        for i in range(k):
+            out[i] = np.random.permutation(n).astype(np.int32)
+        return out
+
+    for seed, k in ((7, 2), (4242, 4), (999983, 5)):
+        _seed_and_draw(seed, 6, k)
+        nb_next = float(_nb_next_random())
+        with legacy_rng_preserved():
+            np.random.seed(seed)
+            for _ in range(k):
+                np.random.permutation(6)
+            py_next = float(np.random.random())
+        assert nb_next == py_next, (
+            "Numba's PRNG state is no longer shared across njit functions (or no longer "
+            "matches NumPy's legacy stream); the runtime draw measurement rests on both"
+        )
+
+
+def test_the_batch_harness_measures_the_kernel_draw_shape_at_runtime():
     """The RNG-shape contract, so a Task 2 one-sided update cannot look like a logic bug.
 
     ``run_batch_both_paths`` reproduces the batch kernels' internal draws in Python. Today
-    both kernels draw FOUR permutations unconditionally over a literal ``[0, 1, 2, 3]``,
-    with no bioen branch -- so the harness's ``n_perms = 5 if bioen`` is a promise about
-    code that does not exist yet. ``_assert_batch_rng_contract`` reads the kernels' own
-    source and refuses to run if the two have drifted apart.
+    both kernels draw FOUR permutations unconditionally over ``[0, 1, 2, 3]``, with no
+    bioen branch -- so the harness's ``n_perms = 5 if bioen`` is a promise about code that
+    does not exist yet, and Task 2 is the commit that must make it true.
+
+    Measured at runtime rather than read out of the source: source counting reports a
+    bioen-CONDITIONAL fifth permutation as unconditional, which is the natural way Task 2
+    will write it.
     """
-    seq_perms, seq_codes, seq_width = _kernel_rng_shape(M._mortality_all_cells_numba)
-    assert (seq_perms, seq_codes, seq_width) == (4, [0, 1, 2, 3], 4), (
-        "the batch kernel's RNG/cause shape changed; update run_batch_both_paths and this "
-        f"test together -- read {seq_perms} permutations over {seq_codes}, width {seq_width}"
-    )
+    config, state = base_config(), base_state()
+    assert measure_batch_kernel_rng_shape(state, config, n_subdt=2) == (4, 4)
+
     # The contract holds for what the harness asks for today...
-    _assert_batch_rng_contract([0, 1, 2, 3], 4)
-    # ...and refuses both halves of a bioen-shaped request while the kernels are unchanged.
-    with pytest.raises(AssertionError, match="harness expects 5 permutations"):
-        _assert_batch_rng_contract([0, 1, 2, 3], 5)
-    with pytest.raises(AssertionError, match=r"cause codes \[0, 1, 2, 3, 5\]"):
-        _assert_batch_rng_contract([0, 1, 2, 3, 5], 4)
+    _assert_batch_rng_contract(state, config, [0, 1, 2, 3], 4, 2)
+    # ...and refuses both halves of a bioen-shaped request while the kernel is unchanged.
+    with pytest.raises(AssertionError, match="actually draws 4 permutations"):
+        _assert_batch_rng_contract(state, config, [0, 1, 2, 3], 5, 2)
+    with pytest.raises(AssertionError, match="4-wide order"):
+        _assert_batch_rng_contract(state, config, [0, 1, 2, 3, 5], 4, 2)
 
 
-def test_replicating_the_batch_rng_does_not_leak_the_legacy_global_stream():
-    """This file seeds NumPy's legacy global RNG; six later-sorting suites use it.
+def test_runtime_measurement_sees_a_bioen_conditional_draw_that_source_counting_misses():
+    """Why the contract is measured, not read (fix round 2, NEW-3).
+
+    Task 2's fifth permutation (``seq_for``) will naturally be written as a CONDITIONAL
+    draw. A source-occurrence count reports such a kernel as drawing five permutations
+    whether or not the branch is taken, so it would have misreported the bioen-OFF shape
+    and broken the currently-green bioen-off batch tests the moment Task 2 landed. The
+    runtime probe measures the branch actually executed.
+    """
+
+    @numba.njit(cache=True)
+    def _task2_shaped_kernel(seed, n_local, bioen):
+        """Stands in for what Task 2 will write into the batch kernels."""
+        np.random.seed(seed)
+        np.random.permutation(n_local)
+        np.random.permutation(n_local)
+        np.random.permutation(n_local)
+        np.random.permutation(n_local)
+        width = 4
+        if bioen:
+            np.random.permutation(n_local)
+            width = 5
+        causes = np.arange(width).astype(np.int32)
+        for _ in range(n_local):
+            np.random.shuffle(causes)
+
+    def _measure(bioen: bool) -> set[tuple[int, int]]:
+        sets = []
+        for n_local, seed in _RNG_PROBES:
+            _task2_shaped_kernel(seed, n_local, bioen)
+            sets.append(_candidates_from_stream_position(float(_nb_next_random()), n_local, seed))
+        return set.intersection(*sets)
+
+    assert _measure(False) == {(4, 4)}, "runtime probe misread the untaken branch"
+    assert _measure(True) == {(5, 5)}, "runtime probe misread the taken branch"
+
+    # ...whereas counting occurrences in the source says 5 for BOTH, which is the defect.
+    body = inspect.getsource(_task2_shaped_kernel.py_func)
+    assert len(re.findall(r"np\.random\.permutation\(", body)) == 5
+
+
+def test_a_single_runtime_probe_would_not_have_identified_the_draw_shape():
+    """Why ``_RNG_PROBES`` has four entries: one probe pins only the stream POSITION.
+
+    ``permutation(n)`` and ``shuffle(width)`` consume a size-dependent number of raw 32-bit
+    words, so distinct ``(n_perms, width)`` pairs can leave the stream in the same place.
+    At ``n_local=8`` the kernel's advance is equally consistent with ``(0, 7)`` and the true
+    ``(4, 4)``; intersecting probes at different cell sizes removes the aliasing.
+    """
+    config, state = base_config(), base_state()
+    single = _probe_kernel_draw_shape(state, config, n_local=8, seed=4242, n_subdt=2)
+    assert (4, 4) in single
+    assert len(single) > 1, (
+        "a single probe now identifies the shape uniquely -- if that is genuinely true "
+        "_RNG_PROBES could shrink, but verify at several sizes before trusting it"
+    )
+    assert measure_batch_kernel_rng_shape(state, config, n_subdt=2) == (4, 4)
+
+
+def test_no_site_in_this_file_leaks_the_legacy_global_rng_stream():
+    """This file seeds NumPy's legacy global RNG; seven later-sorting suites use it.
 
     ``tests/conftest.py`` does no global seeding, so an unrestored seed would make
     ``test_engine_physical_data`` / ``test_ensemble`` / ``test_grid_creation`` /
@@ -1101,24 +1331,28 @@ def test_replicating_the_batch_rng_does_not_leak_the_legacy_global_stream():
     consume a stream this file chose. Same discipline the parallel batch arm already
     applies to ``numba.set_num_threads``.
     """
-    np.random.seed(123456)
-    before = np.random.get_state()
-    expected_next = np.random.random()
+    # This test seeds the global stream too, so it must sit inside the same guard it
+    # verifies -- the round-1 version did not, and was itself the only unguarded seeding
+    # site left in the file (fix round 2, NEW-1).
+    with legacy_rng_preserved():
+        np.random.seed(123456)
+        before = np.random.get_state()
+        expected_next = np.random.random()
 
-    np.random.set_state(before)
-    grid = Grid.from_dimensions(ny=1, nx=2)
-    run_batch_both_paths(
-        base_state(), base_config(), seed=4242, parallel=False, grid=grid, n_subdt=2
-    )
-    assert np.random.random() == expected_next, (
-        "run_batch_both_paths left NumPy's legacy global RNG advanced"
-    )
+        np.random.set_state(before)
+        grid = Grid.from_dimensions(ny=1, nx=2)
+        run_batch_both_paths(
+            base_state(), base_config(), seed=4242, parallel=False, grid=grid, n_subdt=2
+        )
+        assert np.random.random() == expected_next, (
+            "run_batch_both_paths left NumPy's legacy global RNG advanced"
+        )
 
-    np.random.set_state(before)
-    test_numba_and_numpy_legacy_rng_streams_match()
-    assert np.random.random() == expected_next, (
-        "test_numba_and_numpy_legacy_rng_streams_match left the legacy global RNG advanced"
-    )
+        np.random.set_state(before)
+        test_numba_and_numpy_legacy_rng_streams_match()
+        assert np.random.random() == expected_next, (
+            "test_numba_and_numpy_legacy_rng_streams_match left the legacy global RNG advanced"
+        )
 
 
 def test_exp_library_divergence_is_real_and_amplified_by_the_mortality_form():
