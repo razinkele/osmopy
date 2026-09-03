@@ -18,17 +18,23 @@
 |---|---|---|
 | production Baltic, bioen OFF, Numba ON, 4 yr | 3.9 s (0.99 s/yr) | measured |
 | `baltic_ev`, bioen ON, pure-Python path, 4 yr, ~12 000 schools | 442 s (110 s/yr) | measured |
-| same-population ratio | **152×** | measured, two different configs |
+| ratio of the two rows above | **111×** (110 ÷ 0.99) | derived, two different configs |
 | production Baltic, bioen OFF, Numba **disabled**, 4 yr | >13 min before I stopped it | **one-sided bound**, not a measurement |
 | school growth, bioen ON vs OFF | identical, ~3 000/yr | measured — **not** a bioen defect |
 | single 50-yr bioen run | ~19 h | **extrapolation** from quadratic fit (cost ∝ schools ∝ years) |
 | parent plan's Task 12 A/B, 10 bioen runs, serial | ~190 h | extrapolation |
 | same A/B with arms in parallel processes (1 thread each, 28 cores) | ~19–24 h | extrapolation; **this is the fallback, see below** |
 
-Two honest qualifications the review forced. First, the Numba-disabled row is a lower bound from a
-killed run on a *different* config, so "152×" is the cross-config ratio, not a controlled
-measurement — the conclusion it supports (the gap is JIT-versus-interpreter, not bioen-specific)
-survives, but the number should not be quoted as precise. Second, **the A/B is not strictly
+Two honest qualifications. First, the Numba-disabled row is a lower bound from a killed run on a
+*different* config, so the 111× is a cross-config ratio, not a controlled measurement — the
+conclusion it supports (the gap is JIT-versus-interpreter, not bioen-specific) survives, but the
+number should not be quoted as precise. **Corrected 2026-09-03:** this row previously read "152×",
+which does not reconcile with the two rows it divides (110 ÷ 0.99 = 111); Task 3's review caught
+the arithmetic. The controlled figure, measured after the kernel landed, is **149× (implementer)
+and 157.8× (reviewer, independent re-run)** — see Task 3's report, and note the reseeding caveat
+recorded there: the benchmarked `baltic_ev` population is under continuous artificial reseeding for
+the whole window, so that ratio belongs to that trajectory rather than to the kernel in general.
+Second, **the A/B is not strictly
 infeasible without this work**: the runs are independent and the repo already has a spawn-pool
 pattern for exactly this (`[[uq-parallel-threading]]`: one thread per worker). Running the ten
 bioen runs as parallel processes brings the A/B to roughly one day. This plan is therefore a
