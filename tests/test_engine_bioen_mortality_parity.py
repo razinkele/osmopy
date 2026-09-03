@@ -10,10 +10,14 @@ Four bioen mortality defects are pinned here, each transcribed from Java 4.3.3:
 * ``BioenStarvationMortality.computeStarvation`` — runs INSIDE the interleaved sub-step
   loop, on the previous step's ``e_net`` (Java step order mortality -> EnergyBudget ->
   reproduction), with strict ``ageDt > firstFeedingAgeDt`` eligibility.
-* ``mortality()`` must not reach the batched Numba kernels under bioen (spec decision 14).
+* ``mortality()`` DOES reach the batched Numba kernels under bioen (bioen-Numba-kernel
+  plan Task 3, 2026-09-03, reverses spec decision 14 -- Task 2 taught the kernels all
+  five bioen behaviours first, then Task 3 flipped both dispatch gates).
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -27,6 +31,8 @@ from osmose.engine.simulate import SimulationContext
 from osmose.engine.state import MortalityCause, SchoolState
 
 N_CAUSES = len(MortalityCause)
+ROOT = Path(__file__).resolve().parents[1]
+BALTIC_EV_CONFIG = ROOT / "data" / "baltic_ev" / "baltic_ev_all-parameters.csv"
 
 
 # ---------------------------------------------------------------------------
@@ -272,22 +278,222 @@ def _one_school(**overrides) -> SchoolState:
     return st.replace(**base)
 
 
-def test_mortality_never_enters_batched_numba_under_bioen(monkeypatch):
-    """The batched kernels must not be reached when bioen is on (spec §0 'Numba dispatch')."""
+def test_mortality_reaches_batched_numba_under_bioen(monkeypatch):
+    """The positive pin on the OUTER gate (`mortality()`'s own batch dispatch).
+
+    Formerly ``test_mortality_never_enters_batched_numba_under_bioen``, which asserted the
+    opposite of what bioen-Numba-kernel plan Task 3 (2026-09-03) does on purpose: Task 2
+    taught the batched kernels all five bioen behaviours, so Task 3 removed the
+    ``not config.bioen_enabled`` exclusion from ``mortality()``'s own dispatch, reversing
+    spec decision 14. Inverted here into the permanent regression gate -- if that
+    exclusion (or an equivalent one) ever comes back, this goes red instead of the batch
+    path silently stopping running under bioen. Paired with
+    ``test_bioen_dispatch_reaches_the_cell_kernel``
+    (``tests/test_engine_bioen_numba_kernel.py``), the equivalent positive pin on the
+    INNER gate (``_mortality_in_cell``'s ``use_full_numba``).
+    """
     config = _bioen_config()
     grid = Grid.from_dimensions(ny=3, nx=3)
     state = _one_school()
     calls = {"batched": 0}
 
-    def _boom(*a, **k):
+    orig_sequential = M._mortality_all_cells_numba
+    orig_parallel = M._mortality_all_cells_parallel
+
+    def _counting_sequential(*a, **k):
         calls["batched"] += 1
-        raise AssertionError("batched Numba kernel reached under bioen")
+        return orig_sequential(*a, **k)
+
+    def _counting_parallel(*a, **k):
+        calls["batched"] += 1
+        return orig_parallel(*a, **k)
 
     monkeypatch.setattr(M, "_HAS_NUMBA", True, raising=False)
-    monkeypatch.setattr(M, "_mortality_all_cells_numba", _boom, raising=False)
-    monkeypatch.setattr(M, "_mortality_all_cells_parallel", _boom, raising=False)
+    monkeypatch.setattr(M, "_mortality_all_cells_numba", _counting_sequential, raising=False)
+    monkeypatch.setattr(M, "_mortality_all_cells_parallel", _counting_parallel, raising=False)
     M.mortality(state, None, config, np.random.default_rng(0), grid, step=3)
-    assert calls["batched"] == 0
+    assert calls["batched"] > 0, (
+        "the bioen dispatch gate reverted -- mortality() once again excludes bioen from "
+        "the batched Numba path instead of routing it through _mortality_all_cells_"
+        "parallel/_numba like every other run."
+    )
+
+
+def test_end_to_end_bioen_run_reaches_kernel_with_arrays_threaded_correctly():
+    """Closes the OUTER half of the Task 2 review's P4 coverage gap.
+
+    Neither equivalence harness in ``tests/test_engine_bioen_numba_kernel.py`` can see
+    ``mortality()``'s OWN argument-threading code into the production batch kernel
+    (``_mortality_all_cells_parallel``): both harnesses call the njit kernels directly
+    with their own hand-built argument lists, and this call site was structurally
+    unreachable while the outer dispatch gate excluded bioen (see the Task 2 review, P4).
+    Now that Task 3 has flipped that gate, drive a REAL bioen simulation through
+    ``PythonEngine().run_in_memory`` on the production ``data/baltic_ev`` config --
+    genuine config parsing, grid, species population, the full ``simulate()`` step loop --
+    instead of a synthetic single-cell fixture, and prove the arrays arrived at the
+    kernel in the RIGHT ORDER, not merely that they arrived. The companion gate for the
+    INNER threading site (``_mortality_in_cell``'s own kwarg-to-positional call into
+    ``_mortality_in_cell_numba``) is ``test_cell_arms_agree_under_bioen``
+    (``tests/test_engine_bioen_numba_kernel.py``), which the ``xfail`` removal above
+    promoted into a real gate.
+
+    Three witnesses, each a targeted swap-detector rather than a generic non-zero check:
+
+    * non-zero starvation deaths -- an e_net<->gonad_weight positional swap at the
+      ``mortality()`` call site would make the kernel's ``en = e_net[idx]`` actually read
+      the (always >= 0, by construction -- ``np.maximum(..., 0.0)``) gonad array, so
+      ``if en >= 0.0: return`` fires on EVERY visit and starvation deaths would be
+      EXACTLY zero for the whole run, regardless of how much real energy deficit exists.
+    * non-zero raw_preyed -- a cap_fish<->raw_preyed swap would make
+      ``max_eatable = cap_fish[p] * inst_abd[p]`` read the zero-initialized raw_preyed
+      array, so nothing would ever be eaten and both raw_preyed and preyed_biomass would
+      stay exactly zero.
+    * gonad_weight actually changing on a school with a real (not fabricated) energy
+      deficit -- pins the flush branch executing on genuine production state. The
+      production config's own initial population starts every school's ``gonad_weight``
+      at 0.0 and this config does not accumulate a material reserve within one simulated
+      year (confirmed separately: it stays uniformly zero for 4 years of natural
+      dynamics), so this witness seeds a small gonad reserve (``1e-6`` of the school's own
+      real deficit, deliberately far BELOW it) onto the first handful of schools the RUN
+      ITSELF drives to a genuine negative ``e_net`` -- the deficit is 100% real production
+      output, only the reserve to draw it down from is supplied (a longer natural run
+      would eventually accumulate one via reproduction; this shortcuts that without
+      touching how the deficit was computed). The reserve is sized well below the deficit
+      on purpose so starvation's INSUFFICIENT branch flushes it to EXACTLY 0.0 -- a
+      magnitude-independent, precision-safe change. A fixed reserve sized to land in the
+      SUFFICIENT (partial-decrease) branch instead is not robust here: real deficits on
+      this config can be ~1e-15, and ``gonad - eta*deficit`` against a gonad of order 1
+      rounds to a float64 no-op at that scale (``eps(1.0) ~ 2.2e-16``), which would make
+      the witness fail on a fixture-dependent ULP coincidence rather than a real defect.
+
+    Two notes for a future reader:
+
+    * Only ``_mortality_all_cells_parallel`` is wrapped -- ``mortality()`` builds ONE
+      ``_batch_fn(...)`` call expression and picks which function it binds to
+      (``_mortality_all_cells_parallel`` if ``parallel`` else ``_mortality_all_cells_numba``,
+      and ``parallel`` defaults to ``True`` with nothing in ``simulate.py`` overriding it),
+      so wrapping the parallel one covers this call site's argument threading regardless
+      of which kernel ends up bound. The two kernels' own internal consistency (that they
+      each apply the bioen behaviours identically) is separately covered by
+      ``tests/test_engine_bioen_numba_kernel.py``'s
+      ``test_batch_kernel_matches_the_per_cell_kernel_under_bioen[True/False]``.
+    * This is not a controlled bioen-kernel-vs-Python-reference comparison -- it is a
+      single production run through whichever path is live today. The Numba batch path
+      seeds its own MT19937 from an int drawn off the caller's PCG64 ``Generator``, so
+      there is no meaningful "same seed, same population" comparison against the
+      Python-fallback arm here (see the plan's own caveat about its 152x cross-config
+      ratio for the same reason). The three witnesses are chosen so a threading defect
+      produces an unambiguous zero/negative signature regardless of which RNG stream
+      produced the run.
+    """
+    import inspect
+
+    from osmose.config.reader import OsmoseConfigReader
+    from osmose.engine import PythonEngine
+
+    sig = inspect.signature(M._mortality_all_cells_parallel.py_func)
+    param_names = list(sig.parameters)
+    e_net_pos = param_names.index("e_net")
+    gonad_pos = param_names.index("gonad_weight")
+    raw_preyed_pos = param_names.index("raw_preyed")
+    n_dead_pos = param_names.index("n_dead")
+    is_background_pos = param_names.index("is_background")
+    age_dt_pos = param_names.index("age_dt")
+    first_feeding_pos = param_names.index("first_feeding_age_dt")
+
+    cfg = dict(OsmoseConfigReader().read(str(BALTIC_EV_CONFIG)))
+    assert cfg.get("module.bioenergetics.enabled", "").lower() == "true", (
+        "data/baltic_ev is expected to ship bioen ON by default -- if this changed, "
+        "enable it explicitly here rather than silently testing a bioen-OFF run"
+    )
+    cfg["simulation.time.nyear"] = "1"
+
+    seeded = False
+    gonad_changed = False
+    starvation_seen = False
+    raw_preyed_seen = False
+    orig_batch_fn = M._mortality_all_cells_parallel
+    # If e_net<->gonad_weight are swapped at the call site, the array THIS wrapper reads
+    # as "gonad" (args[gonad_pos]) is actually work_state.e_net and so goes negative for
+    # real starving schools -- while the array read as "e_net" is actually gonad_weight,
+    # which is >= 0 by construction (`np.maximum(..., 0.0)`) and therefore NEVER seeds.
+    # Recording this turns "seeded never fires" from a confusing fixture-looking failure
+    # into a directly-named swap diagnosis.
+    gonad_slot_went_negative = False
+
+    n_subdt = max(1, int(cfg.get("mortality.subdt", "1")))
+
+    def _wrapper(*args, **kwargs):
+        nonlocal seeded, gonad_changed, starvation_seen, raw_preyed_seen
+        nonlocal gonad_slot_went_negative
+        e_net = args[e_net_pos]
+        gonad = args[gonad_pos]
+        eligible = (~args[is_background_pos]) & (args[age_dt_pos] > args[first_feeding_pos])
+        seed_idx = None
+        if not seeded:
+            deficit_idx = np.where((e_net < 0.0) & eligible)[0]
+            if len(deficit_idx) > 0:
+                seed_idx = deficit_idx[: min(10, len(deficit_idx))]
+                deficit = np.abs(e_net[seed_idx]) / n_subdt
+                # Seed a reserve far BELOW the real deficit (not a fixed 1.0) so the
+                # starvation branch deterministically takes the INSUFFICIENT path and
+                # flushes gonad to EXACTLY 0.0 -- a magnitude-independent, precision-safe
+                # change. A fixed seed near the SUFFICIENT branch is not robust: real
+                # deficits observed here can be ~1e-15, and `1.0 - eta*deficit` against a
+                # gonad of 1.0 rounds to a float64 no-op at that scale (eps(1.0) ~
+                # 2.2e-16), which would make this witness fail on a fixture-dependent ULP
+                # coincidence rather than a real defect.
+                gonad[seed_idx] = 1e-6 * deficit
+                seeded = True
+            elif np.any((gonad < 0.0) & eligible):
+                gonad_slot_went_negative = True
+        result = orig_batch_fn(*args, **kwargs)
+        if seed_idx is not None and np.all(gonad[seed_idx] == 0.0):
+            gonad_changed = True
+        if args[n_dead_pos][:, int(MortalityCause.STARVATION)].sum() > 0.0:
+            starvation_seen = True
+        if np.any(args[raw_preyed_pos] > 0.0):
+            raw_preyed_seen = True
+        return result
+
+    M._mortality_all_cells_parallel = _wrapper
+    try:
+        PythonEngine().run_in_memory(cfg, seed=3)
+    finally:
+        M._mortality_all_cells_parallel = orig_batch_fn
+
+    if gonad_slot_went_negative:
+        raise AssertionError(
+            "the array at the gonad_weight position went NEGATIVE for an eligible school -- "
+            "gonad_weight is always >= 0 by construction (np.maximum(..., 0.0)), so this is "
+            "direct evidence of an e_net<->gonad_weight positional swap at mortality()'s own "
+            "call site into _mortality_all_cells_parallel, not a fixture issue"
+        )
+    assert seeded, (
+        "no eligible school ever showed a real negative e_net within 1 simulated year -- "
+        "the gonad-changed witness below has nothing to attach to; this is a property of "
+        "the fixture/config, not of the dispatch flip, but re-derive the seed year count "
+        "if it fires"
+    )
+    assert starvation_seen, (
+        "zero starvation deaths across the whole run -- consistent with an "
+        "e_net<->gonad_weight positional swap at mortality()'s own call site into "
+        "_mortality_all_cells_parallel (a swap makes the bioen starvation branch read "
+        "the always-non-negative gonad array as e_net, so it returns immediately, every "
+        "time, no matter how large the real deficit is)"
+    )
+    assert raw_preyed_seen, (
+        "raw_preyed never became non-zero across the whole run -- consistent with a "
+        "cap_fish<->raw_preyed positional swap (the per-fish cap would read the "
+        "zero-initialized raw_preyed array, so max_eatable = 0 and nothing is ever eaten)"
+    )
+    assert gonad_changed, (
+        "the seeded gonad reserve (1e-6 of the school's own real deficit -- deliberately "
+        "in the INSUFFICIENT branch, so a real flush sets it to EXACTLY 0.0) never went "
+        "to zero -- the starvation branch never actually touched work_state.gonad_weight "
+        "at the position the kernel expects, which is what an e_net<->gonad_weight swap "
+        "(or any other transposition around the trailing bioen arguments) would produce"
+    )
 
 
 def test_bioen_starvation_fires_inside_the_interleaved_loop():
@@ -299,6 +505,13 @@ def test_bioen_starvation_fires_inside_the_interleaved_loop():
       gonad -> 0, e_net unchanged by the repayment, nDead = 2.0 / 1e-3 = 2000
     then ``School.incrementNdead`` scales e_net by the survivor fraction
       f = (1e5 - 2000) / 1e5 = 0.98  ->  e_net = -2.0 * 0.98 = -1.96
+
+    RNG-independent (one school, one cell -- the shuffled cause order cannot matter), so
+    since Task 3's dispatch flip this calls ``M.mortality()`` end to end and runs through
+    the REAL batched Numba kernel (`_mortality_all_cells_parallel`), not the Python
+    reference: a double count from ``eff_starv`` leaking into the bioen branch, or an
+    e_net<->gonad_weight argument-threading swap at either dispatch call site, would move
+    these exact numbers. This is the strongest deterministic regression pin the flip has.
     """
     config = _bioen_config()
     grid = Grid.from_dimensions(ny=3, nx=3)

@@ -817,12 +817,15 @@ def _precompute_effective_rates(work_state, config, n_subdt, step, fleet_state=N
     eff_starv = eff_starv.copy()  # don't modify state array
     _zero_exempt(eff_starv, work_state)
     if config.bioen_enabled:
-        # Bioen starvation is the gonad-depletion formula, applied by
-        # _apply_starvation_for_school inside the interleaved loop. The standard
-        # (pred-success) rate must never be applied on top of it. Since the batched
-        # kernels are now bypassed entirely under bioen this is defence in depth —
-        # eff_starv is read only by the Numba paths — but it keeps a future
-        # bioen-aware kernel from silently reintroducing the double count.
+        # Bioen starvation is the gonad-depletion formula, applied inside the
+        # interleaved loop (Python: _apply_starvation_for_school; Numba:
+        # _apply_single_cause's cause==1 bioen branch). The standard (pred-success)
+        # rate must never be applied on top of it. Since bioen-Numba-kernel plan Task 3
+        # flipped the dispatch, the batched kernels DO run under bioen and read
+        # eff_starv directly — this is no longer defence in depth, it is the ONLY
+        # guard against double-counting: `_apply_single_cause`'s bioen branch always
+        # returns before reaching the `D = eff_starv[idx]` tail, so this line is what
+        # keeps that tail dead code under bioen rather than a live second application.
         eff_starv[:] = 0.0
 
     # Additional mortality (vectorized over species)
@@ -1729,10 +1732,12 @@ if _HAS_NUMBA:
             # the literal below must track it (nothing but the equality gates pins the 5).
             if bioen:
                 seq_for = np.random.permutation(n_local).astype(np.int32)
-                causes = np.array([0, 1, 2, 3, 5], dtype=np.int32)
+                causes = np.array(
+                    [_PREDATION, _STARVATION, _ADDITIONAL, _FISHING, _FORAGING], dtype=np.int32
+                )
             else:
                 seq_for = seq_pred  # never read: the 4-wide order has no cause 5
-                causes = np.array([0, 1, 2, 3], dtype=np.int32)
+                causes = np.array([_PREDATION, _STARVATION, _ADDITIONAL, _FISHING], dtype=np.int32)
             n_causes = len(causes)
             cause_orders = np.empty((n_local, n_causes), dtype=np.int32)
             for ii in range(n_local):
@@ -2007,10 +2012,12 @@ if _HAS_NUMBA:
             # the literal below must track it (nothing but the equality gates pins the 5).
             if bioen:
                 seq_for = np.random.permutation(n_local).astype(np.int32)
-                causes = np.array([0, 1, 2, 3, 5], dtype=np.int32)
+                causes = np.array(
+                    [_PREDATION, _STARVATION, _ADDITIONAL, _FISHING, _FORAGING], dtype=np.int32
+                )
             else:
                 seq_for = seq_pred  # never read: the 4-wide order has no cause 5
-                causes = np.array([0, 1, 2, 3], dtype=np.int32)
+                causes = np.array([_PREDATION, _STARVATION, _ADDITIONAL, _FISHING], dtype=np.int32)
             n_causes = len(causes)
             cause_orders = np.empty((n_local, n_causes), dtype=np.int32)
             for ii in range(n_local):
@@ -2233,16 +2240,14 @@ def _mortality_in_cell(
     seq_nat = rng.permutation(n_local).astype(np.int32)
     seq_for = rng.permutation(n_local).astype(np.int32)
 
-    # Full Numba path: all 4 causes compiled (Tier 3). Disabled under bioen — the kernel
-    # knows nothing of FORAGING, the per-fish allometric cap, the survivor rescaling or
-    # the gonad-depletion starvation (spec decision 14). `mortality()` already routes
-    # bioen here rather than to the batched kernels; this is the second gate.
+    # Full Numba path: all causes compiled (Tier 3), 4 or 5 under bioen (Task 2 of the
+    # bioen-Numba-kernel plan taught the kernels FORAGING, the per-fish allometric cap,
+    # the survivor rescaling and the gonad-depletion starvation; Task 3 removed the
+    # `bioen_enabled` exclusion below that used to force this cell's loop to the Python
+    # reference under bioen — this is the SECOND, inner gate; the outer one is in
+    # `mortality()`'s own dispatch).
     use_full_numba = (
-        _HAS_NUMBA
-        and inst_abd is not None
-        and rsc_size_min is not None
-        and eff_starv is not None
-        and not config.bioen_enabled
+        _HAS_NUMBA and inst_abd is not None and rsc_size_min is not None and eff_starv is not None
     )
     if use_full_numba:
         rsc_bio = resources.biomass if resources is not None else _DUMMY_RSC_2D
@@ -2280,11 +2285,19 @@ def _mortality_in_cell(
             # Under bioen these ARE read, and the dummies are zero-length: Numba compiles
             # with boundscheck off, so a missing one would be an out-of-bounds read rather
             # than an error. `mortality()` always supplies all four.
+            missing = [
+                n
+                for n, v in (
+                    ("cap_fish", cap_fish),
+                    ("raw_preyed", raw_preyed),
+                    ("eta_school", eta_school),
+                    ("eff_foraging", eff_foraging),
+                )
+                if v is None
+            ]
             raise RuntimeError(
                 "the bioen Numba path needs cap_fish, raw_preyed, eta_school and "
-                "eff_foraging; got "
-                f"{[n for n, v in (('cap_fish', cap_fish), ('raw_preyed', raw_preyed), ('eta_school', eta_school), ('eff_foraging', eff_foraging)) if v is None]}"
-                " as None"
+                f"eff_foraging; got {missing} as None"
             )
 
         _mortality_in_cell_numba(
@@ -2631,11 +2644,12 @@ def mortality(
         new_retained = np.maximum(0, work_state.egg_retained - release)
         work_state = work_state.replace(egg_retained=new_retained)
 
-        # Per-cell mortality. Under bioen the batched kernels are bypassed entirely
-        # (spec decision 14): they know nothing of the per-fish cap, the survivor
-        # rescaling or the interleaved bioen starvation, and a bioen-aware kernel is an
-        # explicit non-goal. Bioen runs pay the pure-Python cost.
-        if _HAS_NUMBA and len(valid_indices) > 0 and not config.bioen_enabled:
+        # Per-cell mortality. The batched kernels now carry the per-fish cap, the
+        # survivor rescaling and the interleaved bioen starvation (bioen-Numba-kernel
+        # plan Task 2), so bioen runs the same batched path as bioen-off runs — this is
+        # the FIRST, outer gate (see `_mortality_in_cell`'s `use_full_numba` for the
+        # second, inner one). Reverses spec decision 14 (a bioen kernel was a non-goal).
+        if _HAS_NUMBA and len(valid_indices) > 0:
             # Generate a seed from Python RNG for Numba's internal PRNG
             rng_seed = int(rng.integers(0, 2**63))
 

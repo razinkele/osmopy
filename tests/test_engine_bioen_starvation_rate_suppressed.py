@@ -6,10 +6,17 @@ Under bioen, starvation is the gonad-depletion formula
 The standard (pred-success) rate must not be applied as well, or `n_dead[:, STARVATION]`
 carries both. `_precompute_effective_rates` zeroes `eff_starv` for that reason.
 
-Since Task 4, `mortality()` never dispatches to the batched Numba kernels under bioen
-(spec decision 14), so this suppression is defence in depth rather than the load-bearing
-guard it was — `eff_starv` is only read by the Numba paths. Keeping it means a future
-bioen-aware kernel cannot silently reintroduce the double count.
+Bioen-Numba-kernel plan Task 3 (2026-09-03) reversed spec decision 14: `mortality()` now
+DOES dispatch bioen runs to the batched Numba kernels (Task 2 taught them all five bioen
+behaviours first). This is therefore no longer defence in depth — `eff_starv` is read by
+the very kernel every bioen run now executes, and `_apply_single_cause`'s bioen branch
+(cause==1) always returns before reaching its `D = eff_starv[idx]` tail, so this line is
+the ONLY thing keeping that tail dead code instead of a live second application. The
+behavioural companion to this unit test is
+`test_bioen_starvation_fires_inside_the_interleaved_loop`
+(`tests/test_engine_bioen_mortality_parity.py`), which pins the exact post-dispatch
+`n_dead`/`e_net`/`gonad_weight` numbers end to end through `mortality()` — a double count
+there would move those numbers, not just this suppression check.
 
 Source: deep review 2026-06-22 (critical) + spec review 2026-06-23 (dispatch-path).
 """

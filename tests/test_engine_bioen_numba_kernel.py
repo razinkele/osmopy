@@ -9,36 +9,44 @@ WHY THE ``_HAS_NUMBA`` TOGGLE IS THE POINT OF THIS FILE
 ``_mortality_in_cell`` is not "the Python path". It computes
 
     use_full_numba = (_HAS_NUMBA and inst_abd is not None and rsc_size_min is not None
-                      and eff_starv is not None and not config.bioen_enabled)
+                      and eff_starv is not None)
 
-and, when true, *dispatches into* ``_mortality_in_cell_numba``. Plan **Task 3 Step 2**
-removes the ``not config.bioen_enabled`` term (Task 4 is whole-run sanity, not the flip).
-A harness that simply called ``_mortality_in_cell`` twice would, after that flip, run the
-kernel on BOTH arms and compare the kernel with itself -- green forever, pinning nothing.
-So the reference arm here sets ``M._HAS_NUMBA = False`` for the duration of its call and
-restores it afterwards, which is the only thing that guarantees the reference arm executes
-``_apply_*_for_school``.
+and, when true, *dispatches into* ``_mortality_in_cell_numba``. **Task 3 Step 2 (done)**
+removed the ``not config.bioen_enabled`` term that used to force this branch off under
+bioen (Task 4 is whole-run sanity, not the flip). A harness that simply called
+``_mortality_in_cell`` twice would, post-flip, run the kernel on BOTH arms and compare the
+kernel with itself -- green forever, pinning nothing. So the reference arm here sets
+``M._HAS_NUMBA = False`` for the duration of its call and restores it afterwards, which is
+the only thing that guarantees the reference arm executes ``_apply_*_for_school``.
 
 ``ArmResult.kernel_calls`` closes the loop from the other side: the reference arm must
 show **exactly 0** kernel entries and the candidate arm **at least 1**. ``require_kernel``
-therefore turns "the candidate silently fell back to Python" (which is what happens under
-bioen today, before Task 3's flip) into a loud failure instead of a vacuous pass.
+therefore turns "the candidate silently fell back to Python" (what happened under bioen
+before the Task 3 flip) into a loud failure instead of a vacuous pass.
 
-THE BIOEN TRIPWIRE IS ``test_bioen_still_falls_back_to_python_until_the_dispatch_flip``
----------------------------------------------------------------------------------------
-NOT the ``xfail`` on ``test_cell_arms_agree_under_bioen``. An earlier revision of this file
-claimed that xfail would XPASS at the flip and that ``strict=True`` would force someone to
-remove it deliberately. **That is false and was disproved by review**: applying the real
-dispatch flip with ZERO bioen work in the kernel still prints ``1 xfailed`` -- the test
-merely stops failing on ``require_kernel`` and starts failing on ``n_dead`` (17/64
-mismatched, max rel. diff 0.75). ``raises=AssertionError`` narrows nothing, because
-``require_kernel``, every equality exit and every witness check raise ``AssertionError``.
-So "dispatch flipped" and "bioen kernel absent or partial" were the same colour.
+THE BIOEN TRIPWIRE *WAS* ``test_bioen_still_falls_back_to_python_until_the_dispatch_flip``
+--------------------------------------------------------------------------------------------
+Historical note, kept because the reasoning still matters for anyone re-deriving a similar
+gate: an earlier revision of this file claimed the ``xfail`` on
+``test_cell_arms_agree_under_bioen`` would XPASS at the flip and that ``strict=True`` would
+force someone to remove it deliberately. **That was false and was disproved by review**:
+applying the real dispatch flip with ZERO bioen work in the kernel still printed
+``1 xfailed`` -- the test merely stopped failing on ``require_kernel`` and started failing
+on ``n_dead`` (17/64 mismatched, max rel. diff 0.75). ``raises=AssertionError`` narrowed
+nothing, because ``require_kernel``, every equality exit and every witness check all raise
+``AssertionError``. So "dispatch flipped" and "bioen kernel absent or partial" were the
+same colour, and only an unmarked test that asserted the dispatch mechanism *positively*
+could tell them apart.
 
-The unmarked ``test_bioen_still_falls_back_to_python_until_the_dispatch_flip`` asserts
-today's mechanism *positively* (``kernel_calls == 0`` under bioen). It goes RED the moment
-dispatch flips, whatever state the kernel is in, and its message says to promote the xfail
-test to a real gate. That is the tripwire; the xfail is only a placeholder for the gate.
+That unmarked test has done its job: the dispatch is flipped (Task 3 Step 2) AND the
+kernel carries all five bioen behaviours (Task 2), so it has been inverted into
+``test_bioen_dispatch_reaches_the_cell_kernel`` (``kernel_calls >= 1``) and now serves as
+the permanent positive pin on the INNER gate. ``test_cell_arms_agree_under_bioen`` no
+longer carries the ``xfail`` marker -- it is the real per-cell equivalence gate under
+bioen, and it passes bit-exact on ``bioen_fixture()``. The equivalent positive pin on the
+OUTER gate (`mortality()`'s own batch dispatch) is
+``test_mortality_reaches_batched_numba_under_bioen`` in
+``tests/test_engine_bioen_mortality_parity.py``.
 
 Because ``_HAS_NUMBA`` is toggled rather than the RNG replayed, both arms can simply be
 handed a freshly seeded ``np.random.default_rng(seed)``: the dispatch branch draws five
@@ -1533,29 +1541,42 @@ def bioen_fixture() -> tuple[EngineConfig, SchoolState]:
                 overrides[key[:-4] + f".sp{i}"] = value
     config = base_config(**overrides)
     assert config.bioen_enabled
+    # School 2's gonad (5.0) is deliberately far above its deficit (|e_net|/n_subdt = 0.25
+    # at n_subdt=2, eta=1) so it lands in the SUFFICIENT branch (absorb + repay, no kill,
+    # no flush) and stays there across `sub_steps=2` and any survivor rescale from another
+    # cause landing on it first (a rescale only shrinks |e_net| toward 0, which shrinks the
+    # deficit, never grows it) -- see Task 3 report for the derivation. Without this,
+    # `test_cell_arms_agree_under_bioen` witnesses `gonad_weight` as identically zero on
+    # BOTH arms (school 0's insufficient gonad and school 2's undersized one both flush to
+    # 0.0), which is vacuous, not evidence of a kernel defect.
     state = base_state().replace(
         e_net=np.array([-2.0, 0.0, -0.5, -1.0, 0.0, 0.0, -0.2, 0.0]),
-        gonad_weight=np.array([0.5, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0]),
+        gonad_weight=np.array([0.5, 0.0, 5.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
     )
     return config, state
 
 
-def test_bioen_still_falls_back_to_python_until_the_dispatch_flip():
-    """THE bioen tripwire. Unmarked on purpose -- read the module docstring.
+def test_bioen_dispatch_reaches_the_cell_kernel():
+    """THE positive pin on the INNER gate (`_mortality_in_cell`'s `use_full_numba`).
 
-    The ``xfail`` below cannot serve this role: with the dispatch flipped and NO bioen work
-    in the kernel it still fails (on ``n_dead`` instead of on ``require_kernel``) and still
-    prints ``1 xfailed``, so "flipped" and "under-implemented" are the same colour there.
-    This test asserts today's mechanism POSITIVELY, so it changes colour at the flip and at
-    nothing else.
+    Formerly ``test_bioen_still_falls_back_to_python_until_the_dispatch_flip``, the
+    tripwire that was supposed to go red the moment Task 3 Step 2 flipped the dispatch
+    (see the module docstring's "THE BIOEN TRIPWIRE" section for why the ``xfail`` on
+    ``test_cell_arms_agree_under_bioen`` could not serve that role). It has now done its
+    job -- inverted here into the permanent regression gate. Paired with
+    ``test_mortality_never_enters_batched_numba_under_bioen`` (renamed
+    ``test_mortality_reaches_batched_numba_under_bioen``,
+    ``tests/test_engine_bioen_mortality_parity.py``), which is the equivalent positive
+    pin on the OUTER gate (`mortality()`'s own batch dispatch). Together they are what
+    stands guard against either gate's `bioen_enabled` exclusion silently coming back.
     """
     config, state = bioen_fixture()
     _, numba_arm = run_cell_both_paths(state, config, seed=7, n_subdt=2, require_kernel=False)
-    assert numba_arm.kernel_calls == 0, (
-        "the bioen dispatch gate is flipped (`use_full_numba` no longer carries "
-        "`not config.bioen_enabled`) -- remove the xfail marker on "
-        "test_cell_arms_agree_under_bioen, make it a real gate, and delete this test. "
-        "Until then a green suite here does NOT mean the bioen kernel works."
+    assert numba_arm.kernel_calls >= 1, (
+        "the bioen dispatch gate reverted -- `use_full_numba` once again carries "
+        "`not config.bioen_enabled` (or an equivalent exclusion), so the candidate arm "
+        "fell back to the Python path under bioen instead of reaching "
+        "_mortality_in_cell_numba."
     )
 
 
@@ -1569,21 +1590,18 @@ def test_the_bioen_fixture_actually_exercises_bioen():
     assert_bioen_changes_the_answer(state, config, seed=7, n_subdt=2, label="bioen-fixture")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="Placeholder for the real bioen gate, NOT a tripwire. Today "
-    "`use_full_numba` still carries `not config.bioen_enabled` so the candidate arm falls "
-    "back to Python and `require_kernel` fires with `assert 0 >= 1`. Plan **Task 3 Step 2** "
-    "flips that (Task 4 is whole-run sanity). WARNING, verified by review: with the flip "
-    "applied and zero bioen work in the kernel this test does NOT xpass -- it fails on "
-    "`n_dead` instead (17/64 mismatched, max rel. diff 0.75) and still prints `1 xfailed`. "
-    "`raises=AssertionError` narrows nothing, because require_kernel, every equality exit "
-    "and every witness check all raise AssertionError. So do not rely on strict=True to "
-    "notice the flip: `test_bioen_still_falls_back_to_python_until_the_dispatch_flip` is "
-    "what goes red. When it does, delete this marker and make this a real gate.",
-)
 def test_cell_arms_agree_under_bioen():
+    """THE real bioen gate (promoted from an ``xfail`` placeholder by Task 3 Step 2).
+
+    Exercises `_mortality_in_cell`'s own kwarg-to-positional threading into
+    `_mortality_in_cell_numba` -- the "inner" half of the Task 2 review's P4 gap (an
+    ordering bug at either bioen call site would ship silently because both harnesses
+    call the kernels directly with their own hand-built argument lists). The "outer"
+    half (`mortality()`'s own threading into the batch kernel) is closed by
+    ``test_end_to_end_bioen_run_reaches_kernel_with_arrays_threaded_correctly`` in
+    ``tests/test_engine_bioen_mortality_parity.py``, which drives a real
+    `PythonEngine().run_in_memory` bioen simulation instead of a hand-built harness call.
+    """
     config, state = bioen_fixture()
     python_arm, numba_arm = run_cell_both_paths(state, config, seed=7, n_subdt=2, sub_steps=2)
     # Witnesses are mandatory under bioen (assert_arms_equal enforces it): without them
@@ -1699,8 +1717,9 @@ GATE_K_FOR = 0.6
 def bioen_gate_fixture(*, k_for: float = GATE_K_FOR) -> tuple[EngineConfig, SchoolState]:
     """The Task 2 fixture: all five bioen behaviours observable at once.
 
-    Distinct from ``bioen_fixture`` (Task 1's, which the dispatch tripwire and the
-    xfail placeholder use and which must keep its current answers). Each requirement of
+    Distinct from ``bioen_fixture`` (Task 1's, which the dispatch pin
+    ``test_bioen_dispatch_reaches_the_cell_kernel`` and the real per-cell equivalence gate
+    ``test_cell_arms_agree_under_bioen`` use). Each requirement of
     plan Task 2 Step 2 is met by a named school, so a reviewer can check them one at a
     time -- ``test_the_gate_fixture_makes_every_behaviour_observable`` asserts every one
     of them mechanically, because "the gate passed because the code was never reached"
@@ -1815,22 +1834,26 @@ def run_cell_bioen_both_paths(
     use_stage_access: bool = False,
     min_non_empty_cells: int = 2,
 ) -> tuple[ArmResult, ArmResult]:
-    """Python reference vs the per-cell Numba kernel UNDER BIOEN, before the flip.
+    """Python reference vs the per-cell Numba kernel UNDER BIOEN, walking EVERY cell.
 
-    THIS IS THE ONLY GATE ON BIOEN CORRECTNESS IN THIS FILE. ``run_batch_both_paths`` has
-    a kernel on BOTH arms, so it can only prove the three inlined interleaved loops
-    received the same edit -- it is structurally blind to a behaviour that is wrong in all
-    three. Every one of the five behaviours therefore needs an assertion driven from
-    *here*; a green batch run is not evidence of bioen correctness.
+    A GATE ON BIOEN CORRECTNESS ALONGSIDE ``test_cell_arms_agree_under_bioen``.
+    ``run_batch_both_paths`` has a kernel on BOTH arms, so it can only prove the three
+    inlined interleaved loops received the same edit -- it is structurally blind to a
+    behaviour that is wrong in all three. ``run_cell_both_paths`` (used by
+    ``test_cell_arms_agree_under_bioen``, post Task 3's dispatch flip) drives a single
+    named cell through the real ``_mortality_in_cell`` dispatch and is a real bioen gate
+    in its own right now, but only for one cell at a time.
 
-    ``run_cell_both_paths`` cannot do this job either: ``use_full_numba`` still carries
-    ``not config.bioen_enabled`` (plan Task 3 Step 2 removes it), so its candidate arm
-    falls back to Python -- which is precisely what
-    ``test_bioen_still_falls_back_to_python_until_the_dispatch_flip`` asserts. So this
-    harness calls ``_mortality_in_cell_numba`` DIRECTLY, exactly as
-    ``run_batch_both_paths`` does for its reference arm, and drives it with the draws the
-    reference itself would have made (``_pre_generate_cell_rng``, which Task 0 fixed to
-    emit five permutations and a cause list from ``_get_mortality_causes``).
+    This harness's job is complementary, not a pre-flip workaround: it walks EVERY
+    non-empty cell per sub-step in ``mortality()``'s own cell order, so a fixture whose
+    behaviours are spread across multiple cells (e.g. ``bioen_gate_fixture``'s background
+    school and no-death-clamp school, deliberately placed in the second cell so the batch
+    kernels' ``prange`` has something to iterate) gets every one of them exercised on the
+    gating arm, not just whichever single cell a caller happened to name. It calls
+    ``_mortality_in_cell_numba`` DIRECTLY (independent of ``use_full_numba``'s gate,
+    exactly as ``run_batch_both_paths`` does for its reference arm) and drives it with the
+    draws the reference itself would have made (``_pre_generate_cell_rng``, which Task 0
+    fixed to emit five permutations and a cause list from ``_get_mortality_causes``).
 
     Both arms walk EVERY non-empty cell per sub-step, in ``mortality()``'s own cell order
     (``_cell_groups``' argsort/searchsorted), rather than a single hand-picked cell: with
