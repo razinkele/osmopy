@@ -939,7 +939,117 @@ def _precompute_effective_rates(work_state, config, n_subdt, step, fleet_state=N
     return eff_starv, eff_additional, eff_fishing, fishing_discard
 
 
+def _precompute_foraging_rates(work_state, config, n_subdt) -> NDArray[np.float64]:
+    """Per-school FORAGING sub-step rate for the Numba kernels (bioen behaviour 4).
+
+    This is `_apply_foraging_for_school`'s `M`, precomputed the way `eff_additional` /
+    `eff_fishing` already are, so the kernel only has to evaluate `1 - exp(-D)`.
+
+    Mirrors the reference exactly:
+
+    * the division ORDER is `foraging_rate`'s `k / ndt_per_year` and then `/ n_subdt` —
+      two separate divisions. Folding them into `/(ndt * n_subdt)` is a different
+      floating-point expression and would break bit-exact agreement with the reference.
+    * `foraging_rate`'s `np.maximum(rate, 0.0)` clamp, and `_zero_exempt`, together
+      reproduce the reference's three ways of killing nobody: `is_background`,
+      `age_dt < first_feeding_age_dt`, and `M <= 0`.
+    * the genetic variant (`k1_for * exp(k2_for * (imax_trait - I_max))`) is evaluated
+      HERE, in NumPy, rather than inlined in the kernel. That keeps the exponential on
+      NumPy's implementation for BOTH paths (Numba lowers `np.exp` to libm — see the
+      kernel gate's EXP LIBRARY HAZARD), and it means the genetic branch is *supported*
+      rather than dropped or shunted back to Python. The four-way predicate is copied
+      verbatim from `_apply_foraging_for_school`, `config.foraging_I_max` included (which
+      is a different array from `config.bioen_i_max_all`).
+
+    Background schools carry `species_id >= n_species`, so every per-species lookup is
+    made through a clamped index and then zeroed by `_zero_exempt`; the reference reaches
+    the same place by returning before it reads the species array at all.
+
+    Returns all-zeros when bioen is off, so the kernels can take a real `float64[:]`
+    unconditionally — Numba needs stable argument types and must never be handed `None`.
+    """
+    n = len(work_state)
+    if not config.bioen_enabled:
+        return np.zeros(n, dtype=np.float64)
+
+    from osmose.engine.processes.foraging_mortality import foraging_rate
+
+    sp = work_state.species_id
+    sp_f = np.where(sp < config.n_species, sp, 0)
+    genetic = (
+        config.foraging_k1_for is not None
+        and config.foraging_k2_for is not None
+        and config.foraging_I_max is not None
+        and work_state.imax_trait is not None
+    )
+    if genetic:
+        rate = foraging_rate(
+            k_for=None,
+            ndt_per_year=config.n_dt_per_year,
+            k1_for=config.foraging_k1_for[sp_f],
+            k2_for=config.foraging_k2_for[sp_f],
+            imax_trait=work_state.imax_trait,
+            I_max=config.foraging_I_max[sp_f],
+        )
+    else:
+        k_for = (
+            config.bioen_k_for[sp_f]
+            if config.bioen_k_for is not None
+            else np.zeros(n, dtype=np.float64)
+        )
+        rate = foraging_rate(k_for=k_for, ndt_per_year=config.n_dt_per_year)
+
+    eff_foraging = rate / n_subdt
+    _zero_exempt(eff_foraging, work_state)
+    return eff_foraging
+
+
+def _precompute_bioen_eta(work_state, config) -> NDArray[np.float64]:
+    """Per-school `eta` (`species.maturity.eta.sp{i}`) for the kernels' bioen starvation.
+
+    Per SCHOOL rather than per species so the kernel never indexes an `n_species`-long
+    array with a background school's `species_id` (which is `>= n_species`). Background
+    schools are skipped by the starvation branch anyway and get 1.0 here, which is also
+    the reference's fallback when `config.bioen_eta is None`
+    (`_apply_starvation_for_school`).
+    """
+    n = len(work_state)
+    eta = np.ones(n, dtype=np.float64)
+    if config.bioen_eta is None:
+        return eta
+    sp = work_state.species_id
+    focal = sp < config.n_species
+    eta[focal] = config.bioen_eta[sp[focal]]
+    return eta
+
+
 if _HAS_NUMBA:
+
+    @njit(cache=True)
+    def _consume_numba(idx, dead, inst_abd, preyed_biomass, e_net, is_background, bioen):
+        """Numba twin of `_consume` — Java's survivor rescale, at EVERY death site.
+
+        `School.incrementNdead` has no switch on cause, so all five causes rescale the
+        school's accumulated ingestion and its stored `E_net` by the survivor fraction.
+        The four properties of `_consume` are carried verbatim:
+
+        * the denominator is the PRE-death instantaneous abundance;
+        * `before > 0.0` guards the 0/0 that would produce NaN;
+        * `max(inst_abd[idx], 0.0)` clamps the factor into [0, 1] — Java has no clamp and
+          its factor goes negative when `nDead > instantaneousAbundance`, which is
+          reachable on the bioen STARVATION path where the toll is `deficit / weight`;
+        * background schools are skipped (`AbstractSchool.incrementNdead` does not
+          rescale — background schools have no bioen budget).
+
+        With `bioen` false this is exactly the `inst_abd[idx] -= dead` it replaced, so the
+        bioen-OFF arithmetic (and `tests/test_engine_parity.py`) is untouched.
+        """
+        before = inst_abd[idx]
+        inst_abd[idx] = before - dead
+        if bioen and before > 0.0 and not is_background[idx]:
+            factor = max(inst_abd[idx], 0.0) / before
+            preyed_biomass[idx] *= factor
+            e_net[idx] *= factor
 
     @njit(cache=True)
     def _apply_predation_numba(
@@ -984,8 +1094,17 @@ if _HAS_NUMBA:
         prey_id_buf,
         prey_eligible_buf,
         egg_retained,
+        bioen,
+        cap_fish,
+        raw_preyed,
+        e_net,
+        is_background,
     ):
         """Numba-compiled single-predator predation (schools + resources).
+
+        The five trailing parameters are the bioen extension (plan behaviours 1, 2 and 5).
+        They are ALWAYS real arrays — zero-filled when bioen is off, never `None`, because
+        Numba needs stable argument types — and every use of them is gated on `bioen`.
 
         K1 (2026-05-08): the three scratch buffers `prey_type_buf`,
         `prey_id_buf`, `prey_eligible_buf` are allocated per-cell by the
@@ -1008,8 +1127,14 @@ if _HAS_NUMBA:
         r_min = size_ratio_min[sp_pred, stage]
         r_max = size_ratio_max[sp_pred, stage]
 
-        biomass_p = abd_p * weight[p_idx]
-        max_eatable = biomass_p * ingestion_rate[sp_pred] / (n_dt_per_year * n_subdt)
+        if bioen:
+            # Behaviour 1. Java `BioenPredationMortality` multiplies the per-fish
+            # allometric cap by the INSTANTANEOUS abundance at every predator visit
+            # (`:140-145`), so the school's biomass never enters the expression.
+            max_eatable = cap_fish[p_idx] * abd_p
+        else:
+            biomass_p = abd_p * weight[p_idx]
+            max_eatable = biomass_p * ingestion_rate[sp_pred] / (n_dt_per_year * n_subdt)
         if max_eatable <= 0:
             return
 
@@ -1134,8 +1259,18 @@ if _HAS_NUMBA:
                 q_idx = prey_id[k]
                 if weight[q_idx] > 0:
                     n_dead_prey = eaten_from_prey / weight[q_idx]
-                    n_dead[q_idx, 0] += n_dead_prey
-                    inst_abd[q_idx] -= n_dead_prey
+                    # `_kill`: guard, record, then `_consume` (behaviour 2, PREDATION).
+                    if n_dead_prey > 0.0:
+                        n_dead[q_idx, 0] += n_dead_prey
+                        _consume_numba(
+                            q_idx,
+                            n_dead_prey,
+                            inst_abd,
+                            preyed_biomass,
+                            e_net,
+                            is_background,
+                            bioen,
+                        )
 
                 if tl_tracking:
                     prey_tl = trophic_level[q_idx]
@@ -1168,6 +1303,13 @@ if _HAS_NUMBA:
         success = min(eaten_total / max_eatable, 1.0)
         pred_success_rate[p_idx] += success / n_subdt
         preyed_biomass[p_idx] += eaten_total
+        if bioen:
+            # Behaviour 5. Java keeps TWO accumulators: `ingestion` (rescaled by the
+            # survivor fraction at every death, feeds the energy budget) and
+            # `preyedBiomass` (raw, feeds the trophic-level update at
+            # MortalityProcess:396-401). `preyed_biomass` here is the rescaled one, so the
+            # TL denominator has to come from this raw accumulator.
+            raw_preyed[p_idx] += eaten_total
 
     @njit(cache=True)
     def _apply_single_cause(
@@ -1179,16 +1321,78 @@ if _HAS_NUMBA:
         eff_additional,
         eff_fishing,
         fishing_discard,
+        eff_foraging,
+        bioen,
+        is_background,
+        preyed_biomass,
+        e_net,
+        gonad_weight,
+        weight,
+        eta_school,
+        age_dt,
+        first_feeding_age_dt,
+        n_subdt,
     ):
-        """Apply one non-predation mortality cause to one school."""
+        """Apply one non-predation mortality cause to one school.
+
+        Shared by all three interleaved loops, so behaviours 2, 3 and 4 land in all three
+        by construction. The trailing parameters are the bioen extension; every use is
+        gated on `bioen`, and with it false the arithmetic and the cause set are exactly
+        what they were (which is what protects `tests/test_engine_parity.py`).
+        """
         if cause == 1:  # STARVATION
+            if bioen:
+                # Behaviour 3: `_apply_starvation_for_school`'s bioen branch plus
+                # `bioen_starvation_substep`, inlined. Java
+                # `BioenStarvationMortality.computeStarvation` for ONE sub-step, on the
+                # PREVIOUS step's `e_net` (Java step order mortality -> EnergyBudget ->
+                # reproduction).
+                if is_background[idx]:
+                    return
+                # Java `Species.isStarvationEnabledBioen`: ageDt > firstFeedingAgeDt,
+                # STRICT (the non-bioen sibling uses >=).
+                if age_dt[idx] <= first_feeding_age_dt[idx]:
+                    return
+                # Checked BEFORE any gonad/e_net write, exactly as the reference does:
+                # a school whose abundance has already gone non-positive (reachable, since
+                # the starvation toll is not clamped by the abundance) gets no writes.
+                if inst_abd[idx] <= 0:
+                    return
+                en = e_net[idx]
+                if en >= 0.0:
+                    return
+                eta = eta_school[idx]
+                deficit = abs(en) / n_subdt
+                gonad = gonad_weight[idx]
+                if gonad >= eta * deficit:
+                    # Enough gonadic energy: pay maintenance from the gonad, repay E_net,
+                    # kill nobody (so `_kill`'s `n_dead <= 0` guard means no rescale).
+                    gonad_weight[idx] = gonad - eta * deficit
+                    e_net[idx] = en + deficit
+                    return
+                w = weight[idx]
+                if w <= 0.0:
+                    # Java would divide by zero here; flush the gonad as it does and kill
+                    # nobody.
+                    gonad_weight[idx] = 0.0
+                    return
+                # Java flushes the gonad BEFORE reading the repayment credit and the toll
+                # from it, so the credit is zero and the toll is the whole deficit
+                # (`BioenStarvationMortality.java:186-193`). `e_net` is left unchanged by
+                # the substep; the survivor rescale below is what moves it.
+                gonad_weight[idx] = 0.0
+                dead = deficit / w
+                if dead > 0.0:
+                    n_dead[idx, 1] += dead
+                    _consume_numba(idx, dead, inst_abd, preyed_biomass, e_net, is_background, bioen)
+                return
             D = eff_starv[idx]
             if D > 0:
                 abd = inst_abd[idx]
                 if abd > 0:
                     dead = abd * (1.0 - np.exp(-D))
                     n_dead[idx, 1] += dead
-                    inst_abd[idx] -= dead
+                    _consume_numba(idx, dead, inst_abd, preyed_biomass, e_net, is_background, bioen)
         elif cause == 2:  # ADDITIONAL
             D = eff_additional[idx]
             if D > 0:
@@ -1196,7 +1400,7 @@ if _HAS_NUMBA:
                 if abd > 0:
                     dead = abd * (1.0 - np.exp(-D))
                     n_dead[idx, 2] += dead
-                    inst_abd[idx] -= dead
+                    _consume_numba(idx, dead, inst_abd, preyed_biomass, e_net, is_background, bioen)
         elif cause == 3:  # FISHING
             F = eff_fishing[idx]
             if F > 0:
@@ -1204,12 +1408,23 @@ if _HAS_NUMBA:
                 if abd > 0:
                     dead = abd * (1.0 - np.exp(-F))
                     discard_r = fishing_discard[idx]
+                    # Java issues TWO incrementNdead calls whose survivor factors telescope
+                    # to (I - nDead) / I, so the split is recorded first and the rescale
+                    # runs ONCE with the full count.
                     if discard_r > 0:
                         n_dead[idx, 3] += dead * (1.0 - discard_r)
                         n_dead[idx, 6] += dead * discard_r
                     else:
                         n_dead[idx, 3] += dead
-                    inst_abd[idx] -= dead
+                    _consume_numba(idx, dead, inst_abd, preyed_biomass, e_net, is_background, bioen)
+        elif cause == 5:  # FORAGING (bioen only)
+            D = eff_foraging[idx]
+            if D > 0:
+                abd = inst_abd[idx]
+                if abd > 0:
+                    dead = abd * (1.0 - np.exp(-D))
+                    n_dead[idx, 5] += dead
+                    _consume_numba(idx, dead, inst_abd, preyed_biomass, e_net, is_background, bioen)
 
     @njit(cache=True)
     def _mortality_in_cell_numba(
@@ -1218,6 +1433,7 @@ if _HAS_NUMBA:
         seq_starv,
         seq_fish,
         seq_nat,
+        seq_for,
         cause_orders,
         inst_abd,
         n_dead,
@@ -1259,9 +1475,24 @@ if _HAS_NUMBA:
         diet_matrix,
         diet_enabled,
         egg_retained,
+        bioen,
+        cap_fish,
+        raw_preyed,
+        e_net,
+        gonad_weight,
+        eta_school,
+        is_background,
+        eff_foraging,
     ):
-        """Numba-compiled full interleaved mortality for all 4 causes."""
+        """Numba-compiled full interleaved mortality: 4 causes, or 5 under bioen.
+
+        The cause count is read from `cause_orders.shape[1]`, so this kernel cannot
+        disagree with the width of the orders its caller drew. `seq_for` is the fifth
+        school sequence (the reference's fifth permutation); it is unused when
+        `cause_orders` is 4 wide.
+        """
         n_local = len(cell_indices)
+        n_causes = cause_orders.shape[1]
 
         # K1: per-cell scratch (this kernel processes one cell, allocated
         # once and reused across all predators in the per-school loop).
@@ -1271,7 +1502,7 @@ if _HAS_NUMBA:
         prey_eligible_buf = np.empty(max_prey_cell, dtype=np.float64)
 
         for i in range(n_local):
-            for c in range(4):
+            for c in range(n_causes):
                 cause = cause_orders[i, c]
                 if cause == 0:  # PREDATION
                     p_idx = cell_indices[seq_pred[i]]
@@ -1317,6 +1548,11 @@ if _HAS_NUMBA:
                         prey_id_buf,
                         prey_eligible_buf,
                         egg_retained,
+                        bioen,
+                        cap_fish,
+                        raw_preyed,
+                        e_net,
+                        is_background,
                     )
                 elif cause == 1:
                     idx = cell_indices[seq_starv[i]]
@@ -1329,6 +1565,17 @@ if _HAS_NUMBA:
                         eff_additional,
                         eff_fishing,
                         fishing_discard,
+                        eff_foraging,
+                        bioen,
+                        is_background,
+                        preyed_biomass,
+                        e_net,
+                        gonad_weight,
+                        weight,
+                        eta_school,
+                        age_dt,
+                        first_feeding_age_dt,
+                        n_subdt,
                     )
                 elif cause == 2:
                     idx = cell_indices[seq_nat[i]]
@@ -1341,6 +1588,17 @@ if _HAS_NUMBA:
                         eff_additional,
                         eff_fishing,
                         fishing_discard,
+                        eff_foraging,
+                        bioen,
+                        is_background,
+                        preyed_biomass,
+                        e_net,
+                        gonad_weight,
+                        weight,
+                        eta_school,
+                        age_dt,
+                        first_feeding_age_dt,
+                        n_subdt,
                     )
                 elif cause == 3:
                     idx = cell_indices[seq_fish[i]]
@@ -1353,6 +1611,40 @@ if _HAS_NUMBA:
                         eff_additional,
                         eff_fishing,
                         fishing_discard,
+                        eff_foraging,
+                        bioen,
+                        is_background,
+                        preyed_biomass,
+                        e_net,
+                        gonad_weight,
+                        weight,
+                        eta_school,
+                        age_dt,
+                        first_feeding_age_dt,
+                        n_subdt,
+                    )
+                elif cause == 5:  # FORAGING -- bioen only, absent from the 4-wide order
+                    idx = cell_indices[seq_for[i]]
+                    _apply_single_cause(
+                        cause,
+                        idx,
+                        inst_abd,
+                        n_dead,
+                        eff_starv,
+                        eff_additional,
+                        eff_fishing,
+                        fishing_discard,
+                        eff_foraging,
+                        bioen,
+                        is_background,
+                        preyed_biomass,
+                        e_net,
+                        gonad_weight,
+                        weight,
+                        eta_school,
+                        age_dt,
+                        first_feeding_age_dt,
+                        n_subdt,
                     )
 
     @njit(cache=True)
@@ -1400,6 +1692,14 @@ if _HAS_NUMBA:
         diet_matrix,
         diet_enabled,
         egg_retained,
+        bioen,
+        cap_fish,
+        raw_preyed,
+        e_net,
+        gonad_weight,
+        eta_school,
+        is_background,
+        eff_foraging,
     ):
         """Numba-compiled batch mortality for ALL cells in one call.
 
@@ -1422,14 +1722,23 @@ if _HAS_NUMBA:
             seq_starv = np.random.permutation(n_local).astype(np.int32)
             seq_fish = np.random.permutation(n_local).astype(np.int32)
             seq_nat = np.random.permutation(n_local).astype(np.int32)
-            causes = np.array([0, 1, 2, 3], dtype=np.int32)
-            cause_orders = np.empty((n_local, 4), dtype=np.int32)
+            # Behaviour 4. The fifth permutation and the fifth cause code exist under
+            # bioen ONLY: drawing them unconditionally would shift every bioen-OFF
+            # stream and move `tests/test_engine_parity.py`'s committed baselines.
+            # `_get_mortality_causes` is the Python-side authority for this list;
+            # the literal below must track it (nothing but the equality gates pins the 5).
+            if bioen:
+                seq_for = np.random.permutation(n_local).astype(np.int32)
+                causes = np.array([0, 1, 2, 3, 5], dtype=np.int32)
+            else:
+                seq_for = seq_pred  # never read: the 4-wide order has no cause 5
+                causes = np.array([0, 1, 2, 3], dtype=np.int32)
+            n_causes = len(causes)
+            cause_orders = np.empty((n_local, n_causes), dtype=np.int32)
             for ii in range(n_local):
                 np.random.shuffle(causes)
-                cause_orders[ii, 0] = causes[0]
-                cause_orders[ii, 1] = causes[1]
-                cause_orders[ii, 2] = causes[2]
-                cause_orders[ii, 3] = causes[3]
+                for cc in range(n_causes):
+                    cause_orders[ii, cc] = causes[cc]
 
             # K1: per-cell scratch for _apply_predation_numba's prey scan.
             # Reused across every predator in this cell — write-then-read
@@ -1440,7 +1749,7 @@ if _HAS_NUMBA:
             prey_eligible_buf = np.empty(max_prey_cell, dtype=np.float64)
 
             for i in range(n_local):
-                for c in range(4):
+                for c in range(n_causes):
                     cause = cause_orders[i, c]
                     if cause == 0:  # PREDATION
                         p_idx = cell_indices[seq_pred[i]]
@@ -1486,6 +1795,11 @@ if _HAS_NUMBA:
                             prey_id_buf,
                             prey_eligible_buf,
                             egg_retained,
+                            bioen,
+                            cap_fish,
+                            raw_preyed,
+                            e_net,
+                            is_background,
                         )
                     elif cause == 1:
                         idx = cell_indices[seq_starv[i]]
@@ -1498,6 +1812,17 @@ if _HAS_NUMBA:
                             eff_additional,
                             eff_fishing,
                             fishing_discard,
+                            eff_foraging,
+                            bioen,
+                            is_background,
+                            preyed_biomass,
+                            e_net,
+                            gonad_weight,
+                            weight,
+                            eta_school,
+                            age_dt,
+                            first_feeding_age_dt,
+                            n_subdt,
                         )
                     elif cause == 2:
                         idx = cell_indices[seq_nat[i]]
@@ -1510,6 +1835,17 @@ if _HAS_NUMBA:
                             eff_additional,
                             eff_fishing,
                             fishing_discard,
+                            eff_foraging,
+                            bioen,
+                            is_background,
+                            preyed_biomass,
+                            e_net,
+                            gonad_weight,
+                            weight,
+                            eta_school,
+                            age_dt,
+                            first_feeding_age_dt,
+                            n_subdt,
                         )
                     elif cause == 3:
                         idx = cell_indices[seq_fish[i]]
@@ -1522,6 +1858,40 @@ if _HAS_NUMBA:
                             eff_additional,
                             eff_fishing,
                             fishing_discard,
+                            eff_foraging,
+                            bioen,
+                            is_background,
+                            preyed_biomass,
+                            e_net,
+                            gonad_weight,
+                            weight,
+                            eta_school,
+                            age_dt,
+                            first_feeding_age_dt,
+                            n_subdt,
+                        )
+                    elif cause == 5:  # FORAGING -- bioen only, absent from the 4-wide order
+                        idx = cell_indices[seq_for[i]]
+                        _apply_single_cause(
+                            cause,
+                            idx,
+                            inst_abd,
+                            n_dead,
+                            eff_starv,
+                            eff_additional,
+                            eff_fishing,
+                            fishing_discard,
+                            eff_foraging,
+                            bioen,
+                            is_background,
+                            preyed_biomass,
+                            e_net,
+                            gonad_weight,
+                            weight,
+                            eta_school,
+                            age_dt,
+                            first_feeding_age_dt,
+                            n_subdt,
                         )
 
     @njit(cache=True, parallel=True)
@@ -1569,6 +1939,14 @@ if _HAS_NUMBA:
         diet_matrix,
         diet_enabled,
         egg_retained,
+        bioen,
+        cap_fish,
+        raw_preyed,
+        e_net,
+        gonad_weight,
+        eta_school,
+        is_background,
+        eff_foraging,
     ):
         """Parallel batch mortality — prange over cells for multi-core execution.
 
@@ -1584,6 +1962,24 @@ if _HAS_NUMBA:
 
         This means results are reproducible for a given seed regardless of
         thread scheduling order, provided the disjoint-index invariant holds.
+
+        The bioen extension adds three per-school WRITE targets — `e_net`,
+        `gonad_weight` and `raw_preyed` — and they inherit that same argument without
+        weakening it. Every one of them is written at an index that came from
+        `cell_indices = sorted_indices[start:end]`:
+
+        * `_consume_numba` writes `preyed_biomass[idx]` / `e_net[idx]` at the index it is
+          killing, which is either the school the cause was applied to
+          (`cell_indices[seq_*[i]]`) or a prey `q_idx` drawn from `cell_indices`;
+        * the starvation branch writes `gonad_weight[idx]` / `e_net[idx]` at
+          `cell_indices[seq_starv[i]]`;
+        * `raw_preyed[p_idx]` is written at the predator index, `cell_indices[seq_pred[i]]`.
+
+        No index escapes the cell's own slice, so the disjointness that already made
+        `n_dead`, `inst_abd`, `pred_success_rate` and `preyed_biomass` race-free covers the
+        new writes unchanged. The READ-only bioen inputs (`cap_fish`, `eta_school`,
+        `eff_foraging`, `is_background`, `weight`, `age_dt`, `first_feeding_age_dt`) are
+        never written by any iteration.
         """
         # Invariant: boundaries partition sorted_indices into disjoint slices
         for cell in prange(n_cells):
@@ -1604,14 +2000,23 @@ if _HAS_NUMBA:
             seq_starv = np.random.permutation(n_local).astype(np.int32)
             seq_fish = np.random.permutation(n_local).astype(np.int32)
             seq_nat = np.random.permutation(n_local).astype(np.int32)
-            causes = np.array([0, 1, 2, 3], dtype=np.int32)
-            cause_orders = np.empty((n_local, 4), dtype=np.int32)
+            # Behaviour 4. The fifth permutation and the fifth cause code exist under
+            # bioen ONLY: drawing them unconditionally would shift every bioen-OFF
+            # stream and move `tests/test_engine_parity.py`'s committed baselines.
+            # `_get_mortality_causes` is the Python-side authority for this list;
+            # the literal below must track it (nothing but the equality gates pins the 5).
+            if bioen:
+                seq_for = np.random.permutation(n_local).astype(np.int32)
+                causes = np.array([0, 1, 2, 3, 5], dtype=np.int32)
+            else:
+                seq_for = seq_pred  # never read: the 4-wide order has no cause 5
+                causes = np.array([0, 1, 2, 3], dtype=np.int32)
+            n_causes = len(causes)
+            cause_orders = np.empty((n_local, n_causes), dtype=np.int32)
             for ii in range(n_local):
                 np.random.shuffle(causes)
-                cause_orders[ii, 0] = causes[0]
-                cause_orders[ii, 1] = causes[1]
-                cause_orders[ii, 2] = causes[2]
-                cause_orders[ii, 3] = causes[3]
+                for cc in range(n_causes):
+                    cause_orders[ii, cc] = causes[cc]
 
             # K1: per-cell scratch (each prange iteration owns its own
             # copy — thread-safe).
@@ -1621,7 +2026,7 @@ if _HAS_NUMBA:
             prey_eligible_buf = np.empty(max_prey_cell, dtype=np.float64)
 
             for i in range(n_local):
-                for c in range(4):
+                for c in range(n_causes):
                     cause = cause_orders[i, c]
                     if cause == 0:  # PREDATION
                         p_idx = cell_indices[seq_pred[i]]
@@ -1667,6 +2072,11 @@ if _HAS_NUMBA:
                             prey_id_buf,
                             prey_eligible_buf,
                             egg_retained,
+                            bioen,
+                            cap_fish,
+                            raw_preyed,
+                            e_net,
+                            is_background,
                         )
                     elif cause == 1:
                         idx = cell_indices[seq_starv[i]]
@@ -1679,6 +2089,17 @@ if _HAS_NUMBA:
                             eff_additional,
                             eff_fishing,
                             fishing_discard,
+                            eff_foraging,
+                            bioen,
+                            is_background,
+                            preyed_biomass,
+                            e_net,
+                            gonad_weight,
+                            weight,
+                            eta_school,
+                            age_dt,
+                            first_feeding_age_dt,
+                            n_subdt,
                         )
                     elif cause == 2:
                         idx = cell_indices[seq_nat[i]]
@@ -1691,6 +2112,17 @@ if _HAS_NUMBA:
                             eff_additional,
                             eff_fishing,
                             fishing_discard,
+                            eff_foraging,
+                            bioen,
+                            is_background,
+                            preyed_biomass,
+                            e_net,
+                            gonad_weight,
+                            weight,
+                            eta_school,
+                            age_dt,
+                            first_feeding_age_dt,
+                            n_subdt,
                         )
                     elif cause == 3:
                         idx = cell_indices[seq_fish[i]]
@@ -1703,6 +2135,40 @@ if _HAS_NUMBA:
                             eff_additional,
                             eff_fishing,
                             fishing_discard,
+                            eff_foraging,
+                            bioen,
+                            is_background,
+                            preyed_biomass,
+                            e_net,
+                            gonad_weight,
+                            weight,
+                            eta_school,
+                            age_dt,
+                            first_feeding_age_dt,
+                            n_subdt,
+                        )
+                    elif cause == 5:  # FORAGING -- bioen only, absent from the 4-wide order
+                        idx = cell_indices[seq_for[i]]
+                        _apply_single_cause(
+                            cause,
+                            idx,
+                            inst_abd,
+                            n_dead,
+                            eff_starv,
+                            eff_additional,
+                            eff_fishing,
+                            fishing_discard,
+                            eff_foraging,
+                            bioen,
+                            is_background,
+                            preyed_biomass,
+                            e_net,
+                            gonad_weight,
+                            weight,
+                            eta_school,
+                            age_dt,
+                            first_feeding_age_dt,
+                            n_subdt,
                         )
 
 
@@ -1743,6 +2209,8 @@ def _mortality_in_cell(
     egg_retained: NDArray[np.float64] | None = None,
     cap_fish: NDArray[np.float64] | None = None,
     raw_preyed: NDArray[np.float64] | None = None,
+    eta_school: NDArray[np.float64] | None = None,
+    eff_foraging: NDArray[np.float64] | None = None,
 ) -> None:
     """Apply interleaved mortality within one cell, matching Java's computeMortality().
 
@@ -1787,15 +2255,37 @@ def _mortality_in_cell(
         d_mat = _diet_mat if _diet_tracking_enabled and _diet_mat is not None else _DUMMY_DIET
         d_en = _diet_tracking_enabled and _diet_mat is not None
 
-        # Pre-generate cause orders (must use same RNG sequence as Python path)
-        cause_orders = np.zeros((n_local, 4), dtype=np.int32)
-        causes = [_PREDATION, _STARVATION, _ADDITIONAL, _FISHING]
+        # Pre-generate cause orders (must use same RNG sequence as Python path). The list
+        # comes from `_get_mortality_causes` rather than a literal so the FORAGING code and
+        # the bioen/non-bioen width are decided in exactly one place; with bioen off it is
+        # the same 4-element list as before, so the RNG consumption is unchanged.
+        causes = _get_mortality_causes(config)
+        n_causes = len(causes)
+        cause_orders = np.zeros((n_local, n_causes), dtype=np.int32)
         for i in range(n_local):
             rng.shuffle(causes)
-            cause_orders[i, 0] = causes[0]
-            cause_orders[i, 1] = causes[1]
-            cause_orders[i, 2] = causes[2]
-            cause_orders[i, 3] = causes[3]
+            cause_orders[i, :] = causes
+
+        # Bioen-only kernel inputs. They are read ONLY under `bioen` (which is
+        # `config.bioen_enabled`, the same flag that makes `mortality()` build them), so a
+        # zero-length dummy keeps Numba's argument types stable without a per-cell
+        # allocation on the bioen-OFF hot path.
+        k_cap = cap_fish if cap_fish is not None else _DUMMY_RSC_1D
+        k_raw = raw_preyed if raw_preyed is not None else _DUMMY_RSC_1D
+        k_eta = eta_school if eta_school is not None else _DUMMY_RSC_1D
+        k_for = eff_foraging if eff_foraging is not None else _DUMMY_RSC_1D
+        if config.bioen_enabled and (
+            cap_fish is None or raw_preyed is None or eta_school is None or eff_foraging is None
+        ):
+            # Under bioen these ARE read, and the dummies are zero-length: Numba compiles
+            # with boundscheck off, so a missing one would be an out-of-bounds read rather
+            # than an error. `mortality()` always supplies all four.
+            raise RuntimeError(
+                "the bioen Numba path needs cap_fish, raw_preyed, eta_school and "
+                "eff_foraging; got "
+                f"{[n for n, v in (('cap_fish', cap_fish), ('raw_preyed', raw_preyed), ('eta_school', eta_school), ('eff_foraging', eff_foraging)) if v is None]}"
+                " as None"
+            )
 
         _mortality_in_cell_numba(
             cell_indices,
@@ -1803,6 +2293,7 @@ def _mortality_in_cell(
             seq_starv,
             seq_fish,
             seq_nat,
+            seq_for,
             cause_orders,
             inst_abd,
             state.n_dead,
@@ -1846,6 +2337,14 @@ def _mortality_in_cell(
             egg_retained
             if egg_retained is not None
             else np.zeros(len(state.abundance), dtype=np.float64),
+            config.bioen_enabled,
+            k_cap,
+            k_raw,
+            state.e_net,
+            state.gonad_weight,
+            k_eta,
+            state.is_background,
+            k_for,
         )
         return
 
@@ -2111,6 +2610,17 @@ def mortality(
         )
         raw_preyed = np.zeros(len(work_state), dtype=np.float64)
 
+    # Kernel-side bioen inputs, built ONCE here rather than per cell per sub-step. The
+    # FORAGING rate joins `eff_starv`/`eff_additional`/`eff_fishing` (the kernel only has
+    # to evaluate `1 - exp(-D)`), and `eta` is resolved per school so the kernel never
+    # indexes an `n_species`-long array with a background school's id. Both are real
+    # arrays whatever `bioen_enabled` says — Numba needs stable argument types — and are
+    # read only under the `bioen` flag.
+    eff_for = _precompute_foraging_rates(work_state, config, n_subdt)
+    eta_school = _precompute_bioen_eta(work_state, config)
+    k_cap = cap_fish if cap_fish is not None else _DUMMY_RSC_1D
+    k_raw = raw_preyed if raw_preyed is not None else _DUMMY_RSC_1D
+
     for _sub in range(n_subdt):
         # Release fraction of eggs into prey pool
         release = np.where(
@@ -2185,6 +2695,14 @@ def mortality(
                 d_mat,
                 d_en,
                 work_state.egg_retained,
+                config.bioen_enabled,
+                k_cap,
+                k_raw,
+                work_state.e_net,
+                work_state.gonad_weight,
+                eta_school,
+                work_state.is_background,
+                eff_for,
             )
         else:
             # Python fallback: per-cell dispatch (unchanged)
@@ -2226,6 +2744,8 @@ def mortality(
                     egg_retained=work_state.egg_retained,
                     cap_fish=cap_fish,
                     raw_preyed=raw_preyed,
+                    eta_school=eta_school,
+                    eff_foraging=eff_for,
                 )
 
     # Update abundance from accumulated n_dead

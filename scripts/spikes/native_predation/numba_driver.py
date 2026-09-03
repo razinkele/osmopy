@@ -3,12 +3,12 @@
 make_driver() -> (driver_fn, reset_only_fn)
 
 Both functions have an EXPLICIT positional signature:
-  the 41 leaf params (in LEAF_ARG_ORDER), then n_iter (int64),
+  the 46 leaf params (in LEAF_ARG_ORDER), then n_iter (int64),
   then 7 pristine snapshots for the MUTATED arrays
   (snap_inst_abd, snap_n_dead, snap_pred_success_rate, snap_preyed_biomass,
    snap_rsc_biomass, snap_tl_weighted_sum, snap_diet_matrix).
 
-Total = 41 + 1 + 7 = 49 parameters.
+Total = 46 + 1 + 7 = 54 parameters.
 
 driver_fn: per-iteration reset from snapshots + leaf call.
 reset_only_fn: per-iteration reset only, no leaf call.
@@ -34,7 +34,7 @@ _apply_predation_numba = _mortality_mod._apply_predation_numba
 
 @njit
 def _driver_with_leaf(
-    # --- 41 leaf args in LEAF_ARG_ORDER ---
+    # --- 46 leaf args in LEAF_ARG_ORDER ---
     p_idx, cell_indices,
     inst_abd, n_dead,
     species_id, length, weight,
@@ -53,6 +53,7 @@ def _driver_with_leaf(
     diet_matrix, diet_enabled,
     prey_type_buf, prey_id_buf, prey_eligible_buf,
     egg_retained,
+    bioen, cap_fish, raw_preyed, e_net, is_background,
     # --- bench args ---
     n_iter,
     # --- 7 pristine snapshots (in MUTATED order) ---
@@ -91,12 +92,13 @@ def _driver_with_leaf(
             diet_matrix, diet_enabled,
             prey_type_buf, prey_id_buf, prey_eligible_buf,
             egg_retained,
+            bioen, cap_fish, raw_preyed, e_net, is_background,
         )
 
 
 @njit
 def _reset_only(
-    # --- 41 leaf args in LEAF_ARG_ORDER ---
+    # --- 46 leaf args in LEAF_ARG_ORDER ---
     p_idx, cell_indices,
     inst_abd, n_dead,
     species_id, length, weight,
@@ -115,6 +117,7 @@ def _reset_only(
     diet_matrix, diet_enabled,
     prey_type_buf, prey_id_buf, prey_eligible_buf,
     egg_retained,
+    bioen, cap_fish, raw_preyed, e_net, is_background,
     # --- bench args ---
     n_iter,
     # --- 7 pristine snapshots (in MUTATED order) ---

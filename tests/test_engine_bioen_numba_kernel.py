@@ -403,6 +403,8 @@ class _ArmSetup:
     ctx: SimulationContext
     cap_fish: NDArray[np.float64] | None
     raw_preyed: NDArray[np.float64] | None
+    eff_foraging: NDArray[np.float64]
+    eta_school: NDArray[np.float64]
 
 
 def _prepare_arm(
@@ -466,6 +468,10 @@ def _prepare_arm(
         ctx=ctx,
         cap_fish=cap_fish,
         raw_preyed=raw_preyed,
+        # Built by the same helpers ``mortality()`` uses, so a fixture cannot disagree
+        # with production about the FORAGING rate or eta.
+        eff_foraging=M._precompute_foraging_rates(st, config, n_subdt),
+        eta_school=M._precompute_bioen_eta(st, config),
     )
 
 
@@ -587,6 +593,8 @@ def run_cell_both_paths(
                     egg_retained=setup.state.egg_retained,
                     cap_fish=setup.cap_fish,
                     raw_preyed=setup.raw_preyed,
+                    eta_school=setup.eta_school,
+                    eff_foraging=setup.eff_foraging,
                 )
         finally:
             M._HAS_NUMBA = prev_has_numba
@@ -742,6 +750,14 @@ def _probe_kernel_draw_shape(
         arm.ctx.diet_matrix,
         True,
         arm.state.egg_retained,
+        config.bioen_enabled,
+        arm.cap_fish if arm.cap_fish is not None else M._DUMMY_RSC_1D,
+        arm.raw_preyed if arm.raw_preyed is not None else M._DUMMY_RSC_1D,
+        arm.state.e_net,
+        arm.state.gonad_weight,
+        arm.eta_school,
+        arm.state.is_background,
+        arm.eff_foraging,
     )
     return _candidates_from_stream_position(float(_nb_next_random()), n_local, seed)
 
@@ -949,6 +965,7 @@ def run_batch_both_paths(
             seqs[1],
             seqs[2],
             seqs[3],
+            seqs[4] if len(seqs) > 4 else seqs[0],
             cause_orders,
             ref.inst_abd,
             ref.state.n_dead,
@@ -990,6 +1007,14 @@ def run_batch_both_paths(
             ref.ctx.diet_matrix if ref.ctx.diet_matrix is not None else M._DUMMY_DIET,
             ref.ctx.diet_matrix is not None,
             ref.state.egg_retained,
+            config.bioen_enabled,
+            ref.cap_fish if ref.cap_fish is not None else M._DUMMY_RSC_1D,
+            ref.raw_preyed if ref.raw_preyed is not None else M._DUMMY_RSC_1D,
+            ref.state.e_net,
+            ref.state.gonad_weight,
+            ref.eta_school,
+            ref.state.is_background,
+            ref.eff_foraging,
         )
         calls += 1
     per_cell_arm = _arm_result("per-cell-kernel", ref, state, calls, bioen=config.bioen_enabled)
@@ -1062,6 +1087,14 @@ def run_batch_both_paths(
             cand.ctx.diet_matrix if cand.ctx.diet_matrix is not None else M._DUMMY_DIET,
             cand.ctx.diet_matrix is not None,
             cand.state.egg_retained,
+            config.bioen_enabled,
+            cand.cap_fish if cand.cap_fish is not None else M._DUMMY_RSC_1D,
+            cand.raw_preyed if cand.raw_preyed is not None else M._DUMMY_RSC_1D,
+            cand.state.e_net,
+            cand.state.gonad_weight,
+            cand.eta_school,
+            cand.state.is_background,
+            cand.eff_foraging,
         )
     finally:
         if prev_threads is not None:
@@ -1648,6 +1681,722 @@ def test_a_bioen_comparison_must_witness_a_dormant_field():
         witness_fields=("n_dead",),
         allow_missing_bioen_witnesses=("e_net", "gonad_weight", "raw_preyed"),
         label="bioen-guard",
+    )
+
+
+# ---------------------------------------------------------------------------
+# 2b. Plan Task 2: the five bioen behaviours, against the Python reference
+# ---------------------------------------------------------------------------
+
+#: FORAGING rate for the gate fixture. ``eff_foraging = (k_for / 24) / 2 = 0.0125``, a
+#: value on which numba's libm ``exp`` and numpy's agree (checked by
+#: ``assert_exp_library_agreement`` in every test that uses it). The hazard is real at this
+#: scale, not theoretical: ``k_for = 1.2`` and ``0.48`` both land on arguments where the
+#: two implementations differ in the last ULP.
+GATE_K_FOR = 0.6
+
+
+def bioen_gate_fixture(*, k_for: float = GATE_K_FOR) -> tuple[EngineConfig, SchoolState]:
+    """The Task 2 fixture: all five bioen behaviours observable at once.
+
+    Distinct from ``bioen_fixture`` (Task 1's, which the dispatch tripwire and the
+    xfail placeholder use and which must keep its current answers). Each requirement of
+    plan Task 2 Step 2 is met by a named school, so a reviewer can check them one at a
+    time -- ``test_the_gate_fixture_makes_every_behaviour_observable`` asserts every one
+    of them mechanically, because "the gate passed because the code was never reached"
+    has happened five times on this branch.
+
+    ============ ==============================================================
+    school       what it is for
+    ============ ==============================================================
+    0 (sp0, c0)  predator; the per-fish cap BINDS; gonad 0.5 does NOT cover its
+                 deficit 1.0, so starvation kills and flushes the gonad
+    1 (sp1, c0)  prey that dies inside the sub-step; gonad 0 < deficit
+    2 (sp1, c0)  gonad 1.0 COVERS its deficit 0.25 -> repayment branch, no death
+    3 (sp0, c1)  second predator, second cell (so ``prange`` has two cells)
+    4 (sp1, c1)  prey
+    5 (sp2, c1)  BACKGROUND -- eaten by school 3, so the ``_consume`` rescale must
+                 skip it; its seeded ``preyed_biomass``/``e_net`` must come back
+                 untouched
+    6 (sp2, c1)  ``deficit/weight`` = 1.25e7 > ``inst_abd`` 3e6: the death count is
+                 deliberately NOT clamped (Java's factor goes negative there), while
+                 the survivor FACTOR is clamped to 0
+    7 (sp1, c0)  ``ageDt == firstFeedingAgeDt`` exactly -- the STRICT bioen boundary,
+                 so starvation must skip it although ``e_net < 0``
+    ============ ==============================================================
+
+    ``base_config`` already supplies ``additional > 0`` AND ``fishing > 0`` with a
+    non-zero discard rate for sp0/sp1, on schools that eat -- the case the natural bioen
+    fixture (``tests/test_engine_bioen_mortality_parity.py``'s ``_bioen_config``) cannot
+    see, because it zeroes both rates for order-independence.
+
+    ``preyed_biomass`` is SEEDED non-zero on every school except the two predators. The
+    survivor rescale multiplies ``preyed_biomass`` and ``e_net``; relying on ``e_net``
+    alone would not catch a rescale that was applied to only one of the two, and a prey
+    school's ``preyed_biomass`` is otherwise zero at its first death unless PREDATION
+    happened to precede that cause in its shuffled order. The two predators keep
+    ``preyed_biomass = 0`` so that ``raw_preyed[p] > preyed_biomass[p]`` is a clean joint
+    witness for behaviours 2 and 5.
+    """
+    config = base_config(**_bioen_overrides(k_for=k_for))
+    assert config.bioen_enabled
+    return config, bioen_gate_state()
+
+
+def _bioen_overrides(k_for: float = GATE_K_FOR) -> dict[str, str]:
+    """``BIOEN_OVERLAY``'s keys for the three synthetic species, plus a live ``k_for``.
+
+    Split out of ``bioen_gate_fixture`` so the resource-bearing variants can compose it
+    with ``resource_config_and_state``'s keys without rebuilding the list by hand.
+
+    Uses ``BIOEN_OVERLAY``'s values rather than ``apply_overlay`` itself: that helper is
+    authored for the Baltic demo config (it copies ``species.maturity.size`` into ``m0``
+    and rewrites background ingestion rates), neither of which this synthetic fixture has.
+    ``temperature.value`` is dropped for the same reason.
+    """
+    from tests._bioen_overlay import BIOEN_OVERLAY
+
+    overrides = {k: v for k, v in BIOEN_OVERLAY.items() if k != "temperature.value"}
+    overrides.update(
+        {
+            "species.maturity.m0.sp0": "30.0",
+            "species.maturity.m1.sp0": "0",
+            "species.maturity.r.sp0": "0.2",
+            "species.maturity.eta.sp0": "1",
+            "species.beta.sp0": "0.8",
+            "species.bioen.assimilation.sp0": "0.7",
+            "species.bioen.mobilized.tp.sp0": "10",
+            "species.bioen.mobilized.e.mobi.sp0": "0.65",
+            "species.bioen.mobilized.e.d.sp0": "1.5",
+            "species.bioen.maint.e.maint.sp0": "0.65",
+            "species.bioen.maint.energy.c_m.sp0": "1.0e12",
+            # BIOEN_OVERLAY deliberately leaves k_for at 0 (its module docstring says so),
+            # which makes FORAGING inert and behaviour 4 untestable. Set it here.
+            "species.bioen.forage.k_for.sp0": repr(k_for),
+        }
+    )
+    for i in (1, 2):
+        for key, value in list(overrides.items()):
+            if key.endswith(".sp0"):
+                overrides[key[:-4] + f".sp{i}"] = value
+    return overrides
+
+
+def bioen_gate_state() -> SchoolState:
+    """``base_state`` with the bioen budget fields seeded -- see ``bioen_gate_fixture``."""
+    return base_state().replace(
+        e_net=np.array([-2.0, -0.4, -0.5, -1.0, -0.3, -0.7, -100.0, -1.5]),
+        gonad_weight=np.array([0.5, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+        preyed_biomass=np.array([0.0, 3.0, 2.0, 0.0, 1.0, 5.0, 4.0, 6.0]),
+    )
+
+
+def _bioen_gate_rates(config: EngineConfig, state: SchoolState, n_subdt: int):
+    """Every rate array the gate fixture drives, for ``assert_exp_library_agreement``."""
+    st = state.replace(feeding_stage=compute_feeding_stages(state, config))
+    eff_s, eff_a, eff_f, _ = M._precompute_effective_rates(st, config, n_subdt, 0)
+    eff_for = M._precompute_foraging_rates(st, config, n_subdt)
+    return eff_s, eff_a, eff_f, eff_for
+
+
+def run_cell_bioen_both_paths(
+    state: SchoolState,
+    config: EngineConfig,
+    *,
+    seed: int,
+    n_subdt: int = 2,
+    resources: ResourceState | None = None,
+    grid: Grid | None = None,
+    step: int = 0,
+    sub_steps: int = 2,
+    diet_tracking: bool = True,
+    access_matrix: NDArray[np.float64] | None = None,
+    has_access: bool = False,
+    use_stage_access: bool = False,
+    min_non_empty_cells: int = 2,
+) -> tuple[ArmResult, ArmResult]:
+    """Python reference vs the per-cell Numba kernel UNDER BIOEN, before the flip.
+
+    THIS IS THE ONLY GATE ON BIOEN CORRECTNESS IN THIS FILE. ``run_batch_both_paths`` has
+    a kernel on BOTH arms, so it can only prove the three inlined interleaved loops
+    received the same edit -- it is structurally blind to a behaviour that is wrong in all
+    three. Every one of the five behaviours therefore needs an assertion driven from
+    *here*; a green batch run is not evidence of bioen correctness.
+
+    ``run_cell_both_paths`` cannot do this job either: ``use_full_numba`` still carries
+    ``not config.bioen_enabled`` (plan Task 3 Step 2 removes it), so its candidate arm
+    falls back to Python -- which is precisely what
+    ``test_bioen_still_falls_back_to_python_until_the_dispatch_flip`` asserts. So this
+    harness calls ``_mortality_in_cell_numba`` DIRECTLY, exactly as
+    ``run_batch_both_paths`` does for its reference arm, and drives it with the draws the
+    reference itself would have made (``_pre_generate_cell_rng``, which Task 0 fixed to
+    emit five permutations and a cause list from ``_get_mortality_causes``).
+
+    Both arms walk EVERY non-empty cell per sub-step, in ``mortality()``'s own cell order
+    (``_cell_groups``' argsort/searchsorted), rather than a single hand-picked cell: with
+    one cell the fixture's background school and its no-death-clamp school -- which live
+    in the second cell so the batch kernels' ``prange`` has something to iterate -- would
+    never be visited, and three of the five behaviours would go unexercised on the arm
+    that is supposed to gate them.
+
+    Draw replication is VERIFIED, not assumed: both arms take a freshly seeded
+    ``default_rng(seed)`` and the two generators' bit-generator states are compared after
+    every sub-step. Without it a drift between ``_pre_generate_cell_rng`` and
+    ``_mortality_in_cell``'s own draws would surface as an ``n_dead`` mismatch that reads
+    exactly like a starvation or rescale bug -- the failure mode Task 1 built
+    ``_assert_batch_rng_contract`` to avoid for the other harness.
+
+    Returns ``(python_arm, kernel_arm)``.
+    """
+    grid = grid or Grid.from_dimensions(
+        ny=int(state.cell_y.max()) + 1, nx=int(state.cell_x.max()) + 1
+    )
+    sorted_indices, boundaries, n_cells = _cell_groups(state, grid)
+    non_empty = [c for c in range(n_cells) if boundaries[c + 1] > boundaries[c]]
+    assert len(non_empty) >= min_non_empty_cells, (
+        f"fixture has {len(non_empty)} non-empty cells, need >= {min_non_empty_cells} so "
+        "every school in the fixture is actually visited"
+    )
+    acc = access_matrix if access_matrix is not None else M._DUMMY_ACCESS
+
+    # --- Arm A: the reviewed Python reference, driven exactly as mortality() drives it ---
+    ref = _prepare_arm(
+        state, config, resources, n_subdt=n_subdt, step=step, diet_tracking=diet_tracking
+    )
+    rng_ref = np.random.default_rng(seed)
+    ref_rng_states = []
+    counter = _KernelCounter(M._mortality_in_cell_numba)
+    prev_has_numba = M._HAS_NUMBA
+    prev_kernel = M._mortality_in_cell_numba
+    M._mortality_in_cell_numba = counter
+    M._HAS_NUMBA = False
+    try:
+        for _ in range(sub_steps):
+            for cell in non_empty:
+                lo, hi = int(boundaries[cell]), int(boundaries[cell + 1])
+                M._mortality_in_cell(
+                    sorted_indices[lo:hi],
+                    ref.state,
+                    config,
+                    ref.resources,
+                    cell // grid.nx,
+                    cell % grid.nx,
+                    rng_ref,
+                    n_subdt,
+                    acc,
+                    has_access,
+                    use_stage_access,
+                    np.zeros(len(ref.state), dtype=np.int32),
+                    np.zeros(len(ref.state), dtype=np.int32),
+                    inst_abd=ref.inst_abd,
+                    step=step,
+                    rsc_size_min=ref.rsc_arrays[0],
+                    rsc_size_max=ref.rsc_arrays[1],
+                    rsc_tl=ref.rsc_arrays[2],
+                    rsc_access_rows=ref.rsc_arrays[3],
+                    n_rsc=ref.rsc_arrays[4],
+                    grid_nx=grid.nx,
+                    eff_starv=ref.eff_starv,
+                    eff_additional=ref.eff_additional,
+                    eff_fishing=ref.eff_fishing,
+                    fishing_discard=ref.fishing_discard,
+                    ctx=ref.ctx,
+                    egg_retained=ref.state.egg_retained,
+                    cap_fish=ref.cap_fish,
+                    raw_preyed=ref.raw_preyed,
+                    eta_school=ref.eta_school,
+                    eff_foraging=ref.eff_foraging,
+                )
+            ref_rng_states.append(rng_ref.bit_generator.state)
+    finally:
+        M._HAS_NUMBA = prev_has_numba
+        M._mortality_in_cell_numba = prev_kernel
+    assert counter.calls == 0, (
+        f"the reference arm entered _mortality_in_cell_numba {counter.calls}x despite "
+        "_HAS_NUMBA=False -- this comparison would be kernel-vs-kernel"
+    )
+
+    # --- Arm B: the per-cell kernel, on the reference's own draws ---
+    cand = _prepare_arm(
+        state, config, resources, n_subdt=n_subdt, step=step, diet_tracking=diet_tracking
+    )
+    n = len(cand.state)
+    rsc_bio = cand.resources.biomass if cand.resources is not None else M._DUMMY_RSC_2D
+    rng_cand = np.random.default_rng(seed)
+    cand_rng_states = []
+    calls = 0
+    for _ in range(sub_steps):
+        seq_bufs, cause_orders_buf = M._pre_generate_cell_rng(rng_cand, boundaries, n_cells, config)
+        cand_rng_states.append(rng_cand.bit_generator.state)
+        for cell in non_empty:
+            lo, hi = int(boundaries[cell]), int(boundaries[cell + 1])
+            M._mortality_in_cell_numba(
+                sorted_indices[lo:hi],
+                seq_bufs[0][lo:hi],
+                seq_bufs[1][lo:hi],
+                seq_bufs[2][lo:hi],
+                seq_bufs[3][lo:hi],
+                seq_bufs[4][lo:hi],
+                cause_orders_buf[lo:hi],
+                cand.inst_abd,
+                cand.state.n_dead,
+                cand.eff_starv,
+                cand.eff_additional,
+                cand.eff_fishing,
+                cand.fishing_discard,
+                cand.state.species_id,
+                cand.state.length,
+                cand.state.weight,
+                cand.state.age_dt,
+                cand.state.first_feeding_age_dt,
+                cand.state.feeding_stage,
+                cand.state.pred_success_rate,
+                cand.state.preyed_biomass,
+                cand.state.trophic_level,
+                config.size_ratio_min,
+                config.size_ratio_max,
+                config.ingestion_rate,
+                config.fr_shape,
+                config.fr_halfsat,
+                config.n_dt_per_year,
+                n_subdt,
+                acc,
+                has_access,
+                use_stage_access,
+                np.zeros(n, dtype=np.int32),
+                np.zeros(n, dtype=np.int32),
+                rsc_bio,
+                cand.rsc_arrays[0],
+                cand.rsc_arrays[1],
+                cand.rsc_arrays[2],
+                cand.rsc_arrays[3],
+                cand.rsc_arrays[4],
+                config.n_species,
+                cell,
+                cand.ctx.tl_weighted_sum,
+                True,
+                cand.ctx.diet_matrix if cand.ctx.diet_matrix is not None else M._DUMMY_DIET,
+                cand.ctx.diet_matrix is not None,
+                cand.state.egg_retained,
+                config.bioen_enabled,
+                cand.cap_fish if cand.cap_fish is not None else M._DUMMY_RSC_1D,
+                cand.raw_preyed if cand.raw_preyed is not None else M._DUMMY_RSC_1D,
+                cand.state.e_net,
+                cand.state.gonad_weight,
+                cand.eta_school,
+                cand.state.is_background,
+                cand.eff_foraging,
+            )
+            calls += 1
+
+    assert ref_rng_states == cand_rng_states, (
+        "_pre_generate_cell_rng no longer reproduces _mortality_in_cell's own per-cell "
+        "draws: the two generators are in different states after a sub-step, so the two "
+        "arms saw different school sequences and/or cause orders. Fix the replication "
+        "before reading any field difference below as a bioen logic defect."
+    )
+    return (
+        _arm_result("python", ref, state, 0, bioen=True),
+        _arm_result("numba-cell-kernel", cand, state, calls, bioen=True),
+    )
+
+
+def test_the_gate_fixture_makes_every_behaviour_observable():
+    """Each plan Task 2 Step 2 requirement, asserted on the fixture itself.
+
+    "A gate that passes because the code under test is never reached" is the failure this
+    branch has produced five times. These assertions are on the FIXTURE, so they hold
+    whatever the kernel does, and they fail loudly if a later edit to ``base_config`` /
+    ``base_state`` quietly removes one of the conditions.
+    """
+    config, state = bioen_gate_fixture()
+    n_subdt = 2
+    st = state.replace(feeding_stage=compute_feeding_stages(state, config))
+
+    # (a) the per-fish cap BINDS for both predators: cap * N < the prey available to them
+    setup = _prepare_arm(state, config, None, n_subdt=n_subdt, step=0, diet_tracking=True)
+    assert setup.cap_fish is not None
+    for p_idx, prey in ((0, (1, 2, 7)), (3, (4, 5, 6))):
+        max_eatable = float(setup.cap_fish[p_idx] * st.abundance[p_idx])
+        available = float(sum(st.abundance[q] * st.weight[q] for q in prey))
+        assert 0.0 < max_eatable < available, (
+            f"school {p_idx}: cap {max_eatable} does not bind against {available} of prey "
+            "-- behaviour 1 would be untested"
+        )
+        standard = float(
+            st.abundance[p_idx]
+            * st.weight[p_idx]
+            * config.ingestion_rate[st.species_id[p_idx]]
+            / (config.n_dt_per_year * n_subdt)
+        )
+        assert abs(max_eatable - standard) / standard > 0.1, (
+            "the bioen cap coincides with the bioen-OFF cap, so behaviour 1 is invisible"
+        )
+
+    # (b) additional AND fishing are both live, with a non-zero discard rate, on the
+    #     schools that eat
+    _, eff_a, eff_f, eff_for = _bioen_gate_rates(config, state, n_subdt)
+    for p_idx in (0, 3):
+        assert eff_a[p_idx] > 0 and eff_f[p_idx] > 0
+        assert config.fishing_discard_rate[st.species_id[p_idx]] > 0
+
+    # (c) FORAGING is not inert
+    assert config.bioen_k_for is not None and float(config.bioen_k_for[0]) == GATE_K_FOR
+    assert eff_for[0] > 0.0
+
+    # (d) the four starvation cases
+    eta = M._precompute_bioen_eta(st, config)
+    assert st.e_net[0] < 0 and st.gonad_weight[0] < eta[0] * abs(st.e_net[0]) / n_subdt, (
+        "school 0 must be the gonad-does-NOT-cover case"
+    )
+    assert st.e_net[2] < 0 and st.gonad_weight[2] >= eta[2] * abs(st.e_net[2]) / n_subdt, (
+        "school 2 must be the gonad-COVERS case"
+    )
+    assert st.age_dt[7] == st.first_feeding_age_dt[7] and st.e_net[7] < 0, (
+        "school 7 must sit exactly on the strict ageDt > firstFeedingAgeDt boundary"
+    )
+    toll_6 = abs(st.e_net[6]) / n_subdt / st.weight[6]
+    assert toll_6 > st.abundance[6], (
+        "school 6 must have deficit/weight > inst_abd so the absent death-count clamp is "
+        f"pinned (toll {toll_6} vs abundance {st.abundance[6]})"
+    )
+
+    # (e) exactly one background school, and it is eaten by school 3
+    assert int(st.is_background.sum()) == 1 and bool(st.is_background[5])
+    ratio = float(st.length[3] / st.length[5])
+    sp3, stage3 = int(st.species_id[3]), int(st.feeding_stage[3])
+    assert config.size_ratio_min[sp3, stage3] <= ratio < config.size_ratio_max[sp3, stage3], (
+        "the background school is not inside school 3's prey size window, so the "
+        "rescale-skips-background guard is never exercised"
+    )
+
+    # (f) n_subdt >= 2 (the deficit is |e_net| / n_subdt) and the fixture is bit-exact-safe
+    assert n_subdt >= 2
+    assert_exp_library_agreement(eff_a, eff_f, eff_for, label="bioen-gate-fixture")
+
+
+def test_the_bioen_gate_fixture_actually_exercises_bioen():
+    """Negative control: with ``bioen_enabled`` off, this fixture must answer differently."""
+    config, state = bioen_gate_fixture()
+    assert_bioen_changes_the_answer(state, config, seed=7, n_subdt=2, label="bioen-gate")
+
+
+def test_cell_kernel_matches_the_python_reference_under_bioen():
+    """The Task 2 gate: all five behaviours, per-cell kernel vs the reviewed reference."""
+    config, state = bioen_gate_fixture()
+    assert_exp_library_agreement(*_bioen_gate_rates(config, state, 2), label="cell/bioen")
+    python_arm, kernel_arm = run_cell_bioen_both_paths(state, config, seed=7, n_subdt=2)
+    assert_arms_equal(
+        python_arm,
+        kernel_arm,
+        witness_fields=("n_dead", "e_net", "gonad_weight", "raw_preyed", "preyed_biomass"),
+        witness_causes=(
+            MortalityCause.PREDATION,
+            MortalityCause.STARVATION,
+            MortalityCause.ADDITIONAL,
+            MortalityCause.FISHING,
+            MortalityCause.DISCARDS,
+            MortalityCause.FORAGING,
+        ),
+        label="cell/bioen",
+    )
+
+
+@pytest.mark.parametrize("seed", [0, 13, 20250903])
+def test_cell_kernel_matches_the_python_reference_under_bioen_across_seeds(seed):
+    """Different seeds interleave the five causes differently; the arms must track it."""
+    config, state = bioen_gate_fixture()
+    python_arm, kernel_arm = run_cell_bioen_both_paths(
+        state, config, seed=seed, n_subdt=3, sub_steps=2
+    )
+    assert_arms_equal(
+        python_arm,
+        kernel_arm,
+        witness_fields=("n_dead", "e_net", "gonad_weight", "raw_preyed"),
+        witness_causes=(MortalityCause.STARVATION, MortalityCause.FORAGING),
+        label=f"cell/bioen/seed={seed}",
+    )
+
+
+def test_cell_kernel_matches_the_python_reference_under_bioen_with_resources():
+    """Resource depletion and diet tracking on the bioen path.
+
+    Adds a second ingestion source, so ``raw_preyed`` and the TL accumulator have a
+    contribution the schools-only fixture cannot produce.
+    """
+    grid = Grid.from_dimensions(ny=1, nx=2)
+    rsc_cfg, resources = resource_config_and_state(grid)
+    config = base_config(**{**_bioen_overrides(), **rsc_cfg})
+    state = bioen_gate_state()
+    python_arm, kernel_arm = run_cell_bioen_both_paths(
+        state, config, seed=3, n_subdt=2, resources=resources, grid=grid
+    )
+    assert_arms_equal(
+        python_arm,
+        kernel_arm,
+        witness_fields=("n_dead", "e_net", "gonad_weight", "raw_preyed", "diet_matrix"),
+        witness_causes=(MortalityCause.PREDATION, MortalityCause.FORAGING),
+        label="cell/bioen/resources",
+    )
+    assert python_arm.resource_biomass is not None
+    assert float(python_arm.resource_biomass.sum()) < 12.0 * grid.ny * grid.nx
+
+
+def test_bioen_behaviours_are_each_visible_in_the_gate_result():
+    """The five behaviours, read off the reference arm's OUTPUT (not just its inputs).
+
+    ``assert_arms_equal``'s witness check is a floor -- ``np.any(arr != 0.0)`` is happy
+    with one non-zero element. These are the sharp statements, and each names the
+    behaviour it would lose.
+    """
+    config, state = bioen_gate_fixture()
+    python_arm, kernel_arm = run_cell_bioen_both_paths(state, config, seed=7, n_subdt=2)
+
+    for arm in (python_arm, kernel_arm):
+        raw = arm.raw_preyed
+        pb = arm.state.preyed_biomass
+        assert raw is not None
+
+        # Behaviour 5 + behaviour 2 together: the raw ingestion total and the
+        # survivor-rescaled one must have come apart, and raw must be the LARGER.
+        movers = [p for p in (0, 3) if raw[p] > 0.0]
+        assert movers, f"{arm.label}: neither predator ate -- behaviour 5 is untested"
+        assert any(raw[p] > pb[p] for p in movers), (
+            f"{arm.label}: raw_preyed never exceeded preyed_biomass, so the survivor "
+            "rescale of the ingestion accumulator (behaviour 2) never bit"
+        )
+
+        # Behaviour 2 at a NON-predation death: school 7 is skipped by starvation
+        # (strict boundary) but still dies to additional / fishing / foraging, so its
+        # seeded preyed_biomass must have been rescaled down.
+        assert pb[7] < 6.0, (
+            f"{arm.label}: school 7's seeded preyed_biomass was not rescaled -- the "
+            "rescale is missing from at least one of ADDITIONAL / FISHING / FORAGING"
+        )
+        assert arm.state.e_net[7] > -1.5, (
+            f"{arm.label}: school 7's e_net was not rescaled towards zero"
+        )
+
+        # Behaviour 2's background skip: school 5 dies to school 3's predation, and must
+        # come back with its seeded values EXACTLY.
+        assert arm.state.n_dead[5, int(MortalityCause.PREDATION)] > 0.0, (
+            f"{arm.label}: the background school was never eaten, so the skip is untested"
+        )
+        assert pb[5] == 5.0 and arm.state.e_net[5] == -0.7, (
+            f"{arm.label}: the background school was rescaled ({pb[5]}, "
+            f"{arm.state.e_net[5]}) -- AbstractSchool.incrementNdead does not rescale"
+        )
+
+        # Behaviour 3: the gonad buffer, both branches, and the strict boundary.
+        assert arm.state.gonad_weight[0] == 0.0, (
+            f"{arm.label}: school 0's gonad was not flushed by the insufficient branch"
+        )
+        assert 0.0 < arm.state.gonad_weight[2] < 1.0, (
+            f"{arm.label}: school 2's gonad did not absorb its deficit "
+            f"({arm.state.gonad_weight[2]})"
+        )
+        assert arm.state.n_dead[2, int(MortalityCause.STARVATION)] == 0.0, (
+            f"{arm.label}: school 2's gonad covered its deficit, so nobody should starve"
+        )
+        assert arm.state.n_dead[7, int(MortalityCause.STARVATION)] == 0.0, (
+            f"{arm.label}: school 7 sits at ageDt == firstFeedingAgeDt and the bioen "
+            "eligibility is STRICT -- it must not starve"
+        )
+        assert arm.state.n_dead[0, int(MortalityCause.STARVATION)] > 0.0
+
+        # Behaviour 3's no-clamp: school 6's toll exceeds its abundance, so inst_abd goes
+        # negative and the survivor FACTOR (not the death count) is what gets clamped.
+        assert arm.state.n_dead[6, int(MortalityCause.STARVATION)] > arm.input_state.abundance[6]
+        assert arm.inst_abd[6] < 0.0, (
+            f"{arm.label}: school 6's inst_abd is {arm.inst_abd[6]}, so the absent "
+            "death-count clamp is not pinned"
+        )
+        assert pb[6] == 0.0 and arm.state.e_net[6] == 0.0, (
+            f"{arm.label}: the survivor factor was not clamped to 0 for school 6"
+        )
+
+        # Behaviour 4: FORAGING actually killed somebody.
+        assert float(arm.state.n_dead[:, int(MortalityCause.FORAGING)].sum()) > 0.0
+        assert float(arm.state.n_dead[5, int(MortalityCause.FORAGING)]) == 0.0, (
+            f"{arm.label}: the background school foraged to death"
+        )
+
+        # Behaviour 1: ingestion is capped by the per-fish cap, not by biomass * Imax.
+        setup_cap = _prepare_arm(state, config, None, n_subdt=2, step=0, diet_tracking=True)
+        assert setup_cap.cap_fish is not None
+        bioen_cap = float(setup_cap.cap_fish[0] * arm.input_state.abundance[0])
+        standard_cap = float(
+            arm.input_state.abundance[0]
+            * arm.input_state.weight[0]
+            * config.ingestion_rate[0]
+            / (config.n_dt_per_year * 2)
+        )
+        assert raw[0] <= 2.0 * bioen_cap < standard_cap, (
+            f"{arm.label}: raw ingestion {raw[0]} is not consistent with the per-fish cap "
+            f"({bioen_cap} per sub-step, 2 sub-steps) versus the bioen-OFF cap "
+            f"{standard_cap} -- behaviour 1 is not what limited it"
+        )
+
+
+def test_a_zero_abundance_school_gets_no_gonad_or_enet_write():
+    """Behaviour 3's `inst_abd <= 0` guard, placed BEFORE any gonad/e_net write.
+
+    Added after a revert probe found the guard unpinned by the main gate fixture, and the
+    reason is worth recording: with the survivor rescale correct, a school whose
+    `inst_abd` is driven non-positive by its own starvation toll has its `e_net` clamped
+    to 0 by the SAME `_consume` call, so a later visit exits on the `e_net >= 0` test
+    instead and the guard never decides anything. Removing the guard was therefore
+    invisible -- 34 passed.
+
+    A school that starts at abundance 0 makes it decidable: `_consume` never runs for it
+    (`before > 0.0` is false), so its seeded `e_net = -0.3` and `gonad_weight = 0.4`
+    survive, and only the guard stands between them and the gonad-absorbs branch, which
+    would write `gonad 0.4 -> 0.25` and `e_net -0.3 -> -0.15`. Zero-abundance schools are
+    an ordinary engine state, not a contrivance -- `mortality()` clamps abundance at 0 and
+    `n_dead` routinely takes a school there.
+    """
+    config, state = bioen_gate_fixture()
+    abundance = state.abundance.copy()
+    abundance[4] = 0.0
+    gonad = state.gonad_weight.copy()
+    gonad[4] = 0.4
+    state = state.replace(abundance=abundance, gonad_weight=gonad)
+    assert float(state.e_net[4]) == -0.3
+
+    python_arm, kernel_arm = run_cell_bioen_both_paths(state, config, seed=7, n_subdt=2)
+    assert_arms_equal(
+        python_arm,
+        kernel_arm,
+        witness_fields=("n_dead", "e_net", "gonad_weight", "raw_preyed"),
+        witness_causes=(MortalityCause.STARVATION, MortalityCause.FORAGING),
+        label="cell/bioen/zero-abundance",
+    )
+    for arm in (python_arm, kernel_arm):
+        assert arm.inst_abd[4] == 0.0, f"{arm.label}: school 4 should still be at zero"
+        assert arm.state.gonad_weight[4] == 0.4, (
+            f"{arm.label}: school 4's gonad moved to {arm.state.gonad_weight[4]} -- the "
+            "`inst_abd <= 0` guard is missing or sits AFTER the gonad write"
+        )
+        assert arm.state.e_net[4] == -0.3, (
+            f"{arm.label}: school 4's e_net moved to {arm.state.e_net[4]} -- the "
+            "`inst_abd <= 0` guard is missing or sits AFTER the repayment"
+        )
+        assert arm.state.n_dead[4].sum() == 0.0, (
+            f"{arm.label}: a school with zero abundance recorded deaths"
+        )
+
+
+def test_bioen_off_keeps_exactly_four_causes_and_its_rng_consumption():
+    """Behaviour 4's other half -- what protects ``tests/test_engine_parity.py``.
+
+    The batch kernels' fifth permutation and fifth cause code are inside ``if bioen:``.
+    Measured at runtime on the same fixture with the flag both ways: 4 permutations and a
+    4-wide order when off, 5 and 5 when on. A regression that hoisted either draw out of
+    the branch would shift every bioen-OFF stream and move the committed fixed-seed
+    baselines.
+    """
+    off_config, off_state = base_config(), base_state()
+    assert measure_batch_kernel_rng_shape(off_state, off_config, n_subdt=2) == (4, 4)
+    assert M._get_mortality_causes(off_config) == [0, 1, 2, 3]
+
+    on_config, on_state = bioen_gate_fixture()
+    assert measure_batch_kernel_rng_shape(on_state, on_config, n_subdt=2) == (5, 5)
+    assert M._get_mortality_causes(on_config) == [0, 1, 2, 3, int(MortalityCause.FORAGING)]
+
+
+@pytest.mark.parametrize("parallel", [False, True])
+def test_batch_kernel_matches_the_per_cell_kernel_under_bioen(parallel):
+    """Cross-kernel agreement under bioen -- the ONLY check that all three inlined loops
+    received the same edits.
+
+    Parametrised over ``parallel`` because ``mortality()`` dispatches to
+    ``_mortality_all_cells_parallel`` in production, and because Task 1's runtime
+    RNG-shape probe can only instrument the SEQUENTIAL kernel (a ``prange`` iteration may
+    run on a worker thread whose PRNG state the main thread cannot read). At
+    ``parallel=True`` this equality IS the three-way draw-width agreement check.
+
+    It cannot see a behaviour that is wrong in all three loops -- both arms are kernels.
+    ``test_cell_kernel_matches_the_python_reference_under_bioen`` is what pins them to the
+    reviewed reference.
+    """
+    grid = Grid.from_dimensions(ny=1, nx=2)
+    config, state = bioen_gate_fixture()
+    per_cell_arm, batch_arm = run_batch_both_paths(
+        state, config, seed=4242, parallel=parallel, grid=grid, n_subdt=2
+    )
+    assert per_cell_arm.kernel_calls == 2, "both cells must have been visited"
+    assert_arms_equal(
+        per_cell_arm,
+        batch_arm,
+        witness_fields=("n_dead", "e_net", "gonad_weight", "raw_preyed", "preyed_biomass"),
+        witness_causes=(
+            MortalityCause.PREDATION,
+            MortalityCause.STARVATION,
+            MortalityCause.ADDITIONAL,
+            MortalityCause.FISHING,
+            MortalityCause.DISCARDS,
+            MortalityCause.FORAGING,
+        ),
+        label=f"batch/bioen/parallel={parallel}",
+    )
+
+
+@pytest.mark.parametrize("parallel", [False, True])
+def test_batch_kernel_matches_the_per_cell_kernel_under_bioen_with_resources(parallel):
+    grid = Grid.from_dimensions(ny=1, nx=2)
+    rsc_cfg, resources = resource_config_and_state(grid)
+    config = base_config(**{**_bioen_overrides(), **rsc_cfg})
+    state = bioen_gate_state()
+    per_cell_arm, batch_arm = run_batch_both_paths(
+        state, config, seed=4242, parallel=parallel, grid=grid, n_subdt=2, resources=resources
+    )
+    assert_arms_equal(
+        per_cell_arm,
+        batch_arm,
+        witness_fields=("n_dead", "e_net", "gonad_weight", "raw_preyed", "diet_matrix"),
+        witness_causes=(MortalityCause.FORAGING,),
+        label=f"batch/bioen/resources/parallel={parallel}",
+    )
+    assert per_cell_arm.resource_biomass is not None
+    assert float(per_cell_arm.resource_biomass.sum()) < 12.0 * grid.ny * grid.nx
+
+
+def test_genetic_foraging_is_precomputed_not_dropped():
+    """The genetic ``ForagingMortality`` variant reaches the kernel too.
+
+    ``_apply_foraging_for_school`` switches on a four-way predicate
+    (``foraging_k1_for`` / ``foraging_k2_for`` / ``foraging_I_max`` /
+    ``state.imax_trait``). Rather than inline ``k1 * exp(k2 * (imax - I_max))`` in the
+    kernel -- where numba's libm ``exp`` would disagree with the reference's numpy ``exp``
+    in the last ULP -- ``_precompute_foraging_rates`` evaluates it in NumPy for BOTH
+    paths. So the branch is supported rather than dropped or shunted back to Python; this
+    test is what stops that claim being untested (plan Task 2 Step 4, behaviour 4).
+    """
+    config, state = bioen_gate_fixture()
+    # Chosen by search so every resulting rate is one on which numba's libm ``exp`` and
+    # numpy's agree -- the EXP LIBRARY HAZARD bites here exactly as it does elsewhere (the
+    # first parameter set tried put school 4 on 0.0073541408..., where the two differ in
+    # the last ULP and ``1 - exp(-D)`` amplifies that to ~1.5e-14).
+    config.foraging_k1_for = np.array([0.71, 0.32, 0.80])
+    config.foraging_k2_for = np.array([0.32, 0.22, 0.27])
+    config.foraging_I_max = np.array([3.5, 3.5, 3.5])
+    state = state.replace(imax_trait=np.array([2.8, 3.0, 3.9, 3.8, 3.8, 3.4, 4.4, 4.4]))
+
+    st = state.replace(feeding_stage=compute_feeding_stages(state, config))
+    eff_for = M._precompute_foraging_rates(st, config, 2)
+    # The genetic branch was taken, and it is not the constant one.
+    constant = np.full(len(st), (GATE_K_FOR / config.n_dt_per_year) / 2)
+    assert not np.allclose(eff_for[~st.is_background], constant[~st.is_background])
+    assert float(eff_for[0]) > 0.0
+    assert_exp_library_agreement(eff_for, label="genetic-foraging")
+
+    python_arm, kernel_arm = run_cell_bioen_both_paths(state, config, seed=7, n_subdt=2)
+    assert_arms_equal(
+        python_arm,
+        kernel_arm,
+        witness_fields=("n_dead", "e_net", "gonad_weight", "raw_preyed"),
+        witness_causes=(MortalityCause.FORAGING,),
+        label="cell/bioen/genetic-foraging",
     )
 
 

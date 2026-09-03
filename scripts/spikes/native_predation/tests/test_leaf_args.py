@@ -26,7 +26,7 @@ def test_build_leaf_args_isolates_one_call_and_does_not_mutate_capture():
     sel = select_cells(arrays)
     before = np.copy(arrays["inst_abd"])
     args, p_idx = build_leaf_args(arrays, meta, sel["p50"])
-    assert len(args) == 41  # full leaf signature
+    assert len(args) == 46  # full leaf signature (41 + the bioen tail)
     # building args must not touch the captured arrays (fresh copies)
     assert np.array_equal(arrays["inst_abd"], before)
     # p_idx is a real live predator

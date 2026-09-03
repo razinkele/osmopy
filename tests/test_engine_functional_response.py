@@ -819,6 +819,14 @@ def _run_single_predation_step_numba(r: float, shape: int, k: float):
         prey_id_buf,
         prey_eligible_buf,
         np.zeros(n_schools, dtype=np.float64),
+        # Bioen tail (plan Task 2 Step 1). This scenario is bioen-OFF, so the four arrays
+        # are never read; they are real zero-filled arrays rather than ``None`` because
+        # njit needs stable argument types.
+        False,  # bioen
+        np.zeros(n_schools, dtype=np.float64),  # cap_fish
+        np.zeros(n_schools, dtype=np.float64),  # raw_preyed
+        np.zeros(n_schools, dtype=np.float64),  # e_net
+        np.zeros(n_schools, dtype=np.bool_),  # is_background
     )
     eaten = float(preyed_biomass[0])
     return eaten, max_eatable

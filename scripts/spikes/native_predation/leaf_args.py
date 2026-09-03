@@ -16,6 +16,12 @@ LEAF_ARG_ORDER = [
     "rsc_access_rows", "n_resources", "n_species", "cell_id", "tl_weighted_sum",
     "tl_tracking", "diet_matrix", "diet_enabled", "prey_type_buf", "prey_id_buf",
     "prey_eligible_buf", "egg_retained",
+    # Bioen tail added by the bioen-Numba-kernel plan (Task 2 Step 1). APPENDED, so the
+    # MUTATED indices below and the by-name lookups in parity.py / bench.py are unmoved.
+    # This spike captures a bioen-OFF run, so `bioen` is False and the four arrays are
+    # zero-filled and never read -- the C kernel in kernel.c has no bioen branch and does
+    # not need one for the parity comparison to stay valid.
+    "bioen", "cap_fish", "raw_preyed", "e_net", "is_background",
 ]
 # Arrays that _apply_predation_numba mutates in-place; supply fresh copies.
 MUTATED = ["inst_abd", "n_dead", "pred_success_rate", "preyed_biomass",
@@ -139,6 +145,13 @@ def build_leaf_args(arrays: dict, meta: dict, cell: int) -> tuple[list, int]:
         "prey_type_buf": np.empty(scratch_n, dtype=np.int32),
         "prey_id_buf": np.empty(scratch_n, dtype=np.int32),
         "prey_eligible_buf": np.empty(scratch_n, dtype=np.float64),
+        # Bioen tail: this capture is a bioen-OFF run, so the flag is False and the
+        # arrays exist only to keep njit's argument types stable.
+        "bioen": False,
+        "cap_fish": np.zeros(inst_abd.shape[0], dtype=np.float64),
+        "raw_preyed": np.zeros(inst_abd.shape[0], dtype=np.float64),
+        "e_net": np.zeros(inst_abd.shape[0], dtype=np.float64),
+        "is_background": np.zeros(inst_abd.shape[0], dtype=np.bool_),
     }
 
     args = []
