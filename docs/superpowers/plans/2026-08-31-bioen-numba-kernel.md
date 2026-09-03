@@ -136,10 +136,10 @@ kernel. Gates that only pin `_mortality_in_cell_numba` pin code production never
 `tests/_bioen_overlay.py` (create), `osmose/engine/processes/mortality.py` (`_pre_generate_cell_rng`),
 `tests/test_engine_mortality_causes.py` (its `_pre_generate_cell_rng` expectations).
 
-- [ ] **Step 1:** In the parent plan, replace Task 4b's body with a one-line pointer to this
+- [x] **Step 1:** In the parent plan, replace Task 4b's body with a one-line pointer to this
   document, so two plans cannot both be executed against the same filenames.
 
-- [ ] **Step 2:** Create `tests/_bioen_overlay.py` exporting `BIOEN_OVERLAY: dict[str, str]` and a
+- [x] **Step 2:** Create `tests/_bioen_overlay.py` exporting `BIOEN_OVERLAY: dict[str, str]` and a
   helper `apply_overlay(cfg, n_species, background_indices)`. Content — copied from the parent
   plan's Task 4b and **not** to be weakened:
   `module.bioenergetics.enabled=true`, `simulation.bioen.phit.enabled=true`,
@@ -154,12 +154,12 @@ kernel. Gates that only pin `_mortality_in_cell_numba` pin code production never
   in **per-time-step** units (ledger ruling R1 — Java's `getMaxPredationRate` early-returns for
   background predators without the `/nStepYear` the focal branch applies).
 
-- [ ] **Step 3:** Fix `_pre_generate_cell_rng` to draw **five** permutations unconditionally and to
+- [x] **Step 3:** Fix `_pre_generate_cell_rng` to draw **five** permutations unconditionally and to
   build its cause list from `_get_mortality_causes(config)` rather than a literal `[0,1,2,3]`, so
   the FORAGING code comes from the enum. Update its docstring (it currently claims to be the
   reference for buffers it does not produce) and its tests.
 
-- [ ] **Step 4:** Run `tests/test_engine_mortality_causes.py`, `tests/test_engine_parity.py`. Commit.
+- [x] **Step 4:** Run `tests/test_engine_mortality_causes.py`, `tests/test_engine_parity.py`. Commit.
 
 ---
 
@@ -180,21 +180,21 @@ def run_batch_both_paths(state, config, *, seed, parallel: bool, ...)
 `resources.biomass` and the diet matrix. The first draft's tuple included `abundance` (which the
 cell path does not write) and omitted `raw_preyed`, resource depletion and the TL accumulator.
 
-- [ ] **Step 1: Write the harness.** The Python arm sets `M._HAS_NUMBA = False` for the duration of
+- [x] **Step 1: Write the harness.** The Python arm sets `M._HAS_NUMBA = False` for the duration of
   its `_mortality_in_cell` call and restores it after (see "the reference dispatches into the
   kernel" above — without this the test is vacuous). Both arms get a freshly seeded
   `np.random.default_rng(seed)`, so their `seq_*` and cause orders coincide with no replay
   machinery. **Do not monkeypatch a `Generator`** — `np.random.Generator` is a C extension type
   and attribute assignment raises.
 
-- [ ] **Step 2: `run_batch_both_paths`.** The batch kernels generate RNG internally from
+- [x] **Step 2: `run_batch_both_paths`.** The batch kernels generate RNG internally from
   `rng_seed`, so drive the comparison the other way: seed legacy `np.random` in Python with the
   same seed, draw the five permutations and the cause orders exactly as the kernel does, feed those
   to `_mortality_in_cell_numba`, and compare against a batch-kernel call on the same state. Use
   **at least two non-empty cells** so `prange` actually iterates more than once, and run the
   parallel kernel with `NUMBA_NUM_THREADS >= 2`.
 
-- [ ] **Step 3: Prove both harnesses bite — with the right sabotage for each.**
+- [x] **Step 3: Prove both harnesses bite — with the right sabotage for each.**
   **Corrected 2026-09-03 after Task 1 demonstrated the original wording was wrong.** Sabotaging
   `_apply_single_cause` (e.g. `n_dead[idx, 2] += dead * 1.001`) reddens the *cell* harness only
   (measured: 5 cell tests fail, 0 batch tests). It cannot redden `run_batch_both_paths`, because
@@ -207,7 +207,7 @@ cell path does not write) and omitted `raw_preyed`, resource depletion and the T
   Restore after each, confirm `git diff` on `mortality.py` is empty, and paste both failure outputs
   into the report. A harness that has never been seen to fail is not a harness.
 
-- [ ] **Step 4:** Bioen-OFF equivalence must pass for both harnesses before any behaviour change.
+- [x] **Step 4:** Bioen-OFF equivalence must pass for both harnesses before any behaviour change.
   **Resolved by Task 1 — recorded here because Task 2's fixtures must respect it.** There are TWO
   independent sources of last-bit divergence between the paths, and only one is fixable:
   1. FISHING's multiplication order differs between `_precompute_effective_rates` and the
@@ -223,7 +223,7 @@ cell path does not write) and omitted `raw_preyed`, resource depletion and the T
   loosened, and must not be. This is safe because every defect the gate exists to catch — a missing
   survivor rescale, a wrong cap, a missing cause — is an O(1) error, not an O(1e-13) one.
 
-- [ ] **Step 5:** Commit.
+- [x] **Step 5:** Commit.
 
 ---
 
@@ -235,7 +235,7 @@ before Task 3's cause-widening landed, so they are one unit of work.
 **Files:** `osmose/engine/processes/mortality.py`; `tests/test_engine_bioen_numba_kernel.py`;
 `tests/test_engine_bioen_mortality_parity.py` (positional-call updates, see Step 1).
 
-- [ ] **Step 1: Deal with the 41-argument problem first.** `_apply_predation_numba` has 41
+- [x] **Step 1: Deal with the 41-argument problem first.** `_apply_predation_numba` has 41
   parameters and is called positionally from `_mortality_in_cell_numba` and both batch kernels, and
   is called directly by tests. Adding trailing parameters breaks every positional caller —
   including ~24 currently-green tests. Enumerate the callers
@@ -244,7 +244,7 @@ before Task 3's cause-widening landed, so they are one unit of work.
   Numba requires stable types: pass **real arrays always** (zero-filled when bioen is off), never
   `None`, and gate every use on the `bioen` flag.
 
-- [ ] **Step 2: Write the failing tests.** Fixtures must make each behaviour observable, or the
+- [x] **Step 2: Write the failing tests.** Fixtures must make each behaviour observable, or the
   gate is green on absent code:
   - the cap must **bind** (otherwise behaviour 1 is untested);
   - a prey school must **die during the sub-step** (behaviour 2 via predation);
@@ -260,9 +260,9 @@ before Task 3's cause-widening landed, so they are one unit of work.
     `n_dead[:, int(MortalityCause.FORAGING)].sum() > 0` on both arms;
   - one background school (the rescale must skip it).
 
-- [ ] **Step 3: Run, see them fail** for real divergence, not import errors.
+- [x] **Step 3: Run, see them fail** for real divergence, not import errors.
 
-- [ ] **Step 4: Implement**, mirroring the reference exactly:
+- [x] **Step 4: Implement**, mirroring the reference exactly:
   - **Behaviour 1** in `_apply_predation_numba`: branch on `bioen` for
     `max_eatable = cap_fish[p_idx] * inst_abd_p`.
   - **Behaviour 2** as ONE shared inline rescale, called from **all five** death sites, with the
@@ -285,10 +285,10 @@ before Task 3's cause-widening landed, so they are one unit of work.
     (`e_net`, `gonad_weight`, `raw_preyed`) stay within one cell's index set so `prange` remains
     race-free, exactly as the existing per-cell writes do.
 
-- [ ] **Step 5: Cross-kernel agreement.** `run_batch_both_paths` for both batch kernels, ≥2 cells,
+- [x] **Step 5: Cross-kernel agreement.** `run_batch_both_paths` for both batch kernels, ≥2 cells,
   ≥2 threads. This is the only check that the three inlined copies received the same edits.
 
-- [ ] **Step 6:** Run the new file, `test_engine_bioen_mortality_parity.py`,
+- [x] **Step 6:** Run the new file, `test_engine_bioen_mortality_parity.py`,
   `test_engine_mortality_causes.py`, `test_engine_parity.py`. Commit.
 
 ---
@@ -299,7 +299,7 @@ before Task 3's cause-widening landed, so they are one unit of work.
 `tests/test_engine_bioen_mortality_parity.py`; `tests/test_engine_bioen_starvation_rate_suppressed.py`;
 `scripts/bench_bioen_kernel.py` (create).
 
-- [ ] **Step 1: Invert the tests that pin the old behaviour — they are expected failures, not
+- [x] **Step 1: Invert the tests that pin the old behaviour — they are expected failures, not
   surprises.** Task 4's own revert probe A ("drop `and not config.bioen_enabled`") produced **9
   failures**; that is the experiment this step performs deliberately.
   - `test_mortality_never_enters_batched_numba_under_bioen` asserts the batch kernels are NEVER
@@ -313,11 +313,11 @@ before Task 3's cause-widening landed, so they are one unit of work.
     were bypassed; after the flip it is **the only guard** against double-counted starvation. Add
     an explicit assertion that it is still applied under bioen.
 
-- [ ] **Step 2: Flip both dispatch gates** — `mortality.py:2101` (outer) and the `use_full_numba`
+- [x] **Step 2: Flip both dispatch gates** — `mortality.py:2101` (outer) and the `use_full_numba`
   term at `:1750` (inner). Keep them consistent; a mismatch silently splits behaviour between the
   two entry points.
 
-- [ ] **Step 3: Measure.** `scripts/bench_bioen_kernel.py` runs `data/baltic_ev` bioen for 4 years
+- [x] **Step 3: Measure.** `scripts/bench_bioen_kernel.py` runs `data/baltic_ev` bioen for 4 years
   with the kernel and with `_HAS_NUMBA=False`, printing s/simulated-year and the ratio, and runs
   the bioen-OFF config as the reference point. Record all three.
   **Stop rule, stated as a conjunction** (the first draft's "under 10× means object-mode fallback"
@@ -327,7 +327,7 @@ before Task 3's cause-widening landed, so they are one unit of work.
   whole-run gain is ~50–80×. Criterion: **≥ 10× required, ~50× expected**, with the measured number
   recorded either way.
 
-- [ ] **Step 4: Full gates.** `tests/test_engine_parity.py` (17); the whole new kernel file;
+- [x] **Step 4: Full gates.** `tests/test_engine_parity.py` (17); the whole new kernel file;
   `test_engine_bioen_mortality_parity.py`; `test_engine_bioen_budget_parity.py`;
   `test_engine_bioen_reproduction_parity.py`; `test_engine_bioen_starvation_rate_suppressed.py`;
   `test_engine_mortality_causes.py`; and
@@ -336,13 +336,13 @@ before Task 3's cause-widening landed, so they are one unit of work.
   (`test_engine_bioen_activation.py`, `test_bioen_orchestration.py`,
   `test_genetics_bioen_integration.py`) and report any change in their pass/fail/xfail status.
 
-- [ ] **Step 5:** Commit.
+- [x] **Step 5:** Commit.
 
 ---
 
 ### Task 4: Whole-run sanity, honestly labelled
 
-- [ ] **Step 1:** A distributional check, not a gate: run the `BIOEN_OVERLAY` config for 3 years on
+- [x] **Step 1:** A distributional check, not a gate: run the `BIOEN_OVERLAY` config for 3 years on
   ≥ 5 seeds with the kernel and ≥ 5 seeds with `_HAS_NUMBA=False`, and compare the two **sets** of
   final-year biomass per species with a two-sample test (Mann-Whitney or KS), reporting the
   p-values. The first draft's "Numba mean within 2 SD of the Python mean" compares a mean against a
@@ -350,10 +350,10 @@ before Task 3's cause-widening landed, so they are one unit of work.
   cross-kernel tests are the real gates and this is a smoke check. Mark it `@pytest.mark.slow` or
   keep it out of the default selection — it costs minutes.
 
-- [ ] **Step 2:** Update the ledger with the measured speed-up, and record whether the parent
+- [x] **Step 2:** Update the ledger with the measured speed-up, and record whether the parent
   plan's Task 12 A/B is now a serial overnight job (expected) or still needs parallel arms.
 
-- [ ] **Step 3:** Commit.
+- [x] **Step 3:** Commit.
 
 ## If the gate cannot be met
 
