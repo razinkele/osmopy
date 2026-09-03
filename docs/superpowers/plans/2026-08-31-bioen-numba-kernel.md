@@ -34,7 +34,10 @@ the arithmetic. The controlled figure, measured after the kernel landed, is **14
 and 157.8× (reviewer, independent re-run)** — see Task 3's report. One caveat on quoting it, stated
 precisely: the ratio is measured over a 4-year window during which the school count grows linearly
 at ~3,000/yr (2 464 → 5 484 → 8 493 → 11 455), and per-step cost tracks school count, so the ratio
-belongs to that horizon rather than being a horizon-free property. That growth is **standard OSMOSE
+belongs to that horizon rather than being a horizon-free property. **Measured, not just argued:**
+the same benchmark over 1 year gives **81.9×** against the 4-year run's 149×. The ratio therefore
+*grows* with horizon — the interpreted path degrades faster than the compiled one as the population
+builds — so a 50-year run should exceed 149×, not fall short of it. That growth is **standard OSMOSE
 behaviour already in this plan's cost model** ("∝ schools ∝ years"), and it is identical with bioen
 off — Task 3's reviewer first read it as a `baltic_ev` reseeding pathology undermining the
 benchmark, then measured it and withdrew that reading.
