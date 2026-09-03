@@ -2617,12 +2617,22 @@ _TASK4_FOCAL_SPECIES: tuple[str, ...] = (
 #: seed=101 on one arm corresponds to seed=101 on the other.
 _TASK4_KERNEL_SEEDS: tuple[int, ...] = (101, 102, 103, 104, 105)
 _TASK4_PYTHON_SEEDS: tuple[int, ...] = (201, 202, 203, 204, 205)
-#: Exact two-sided Mann-Whitney U p-value at complete separation (U=0 or U=25) for
-#: n1=n2=5: 2 * (1 / C(10,5)) = 2/252 = 0.0079365... A per-species assertion tighter
-#: than this can never fire (there is no smaller p this test size can produce), and one
-#: much looser than this stops discriminating "the two arms never overlap" from
-#: ordinary sampling noise. See the test's docstring for why this is checked as a
-#: MAJORITY-across-species condition rather than per-species.
+#: PROVENANCE (fix round 1, finding 2b): at n1=n2=5 the exact two-sided Mann-Whitney U
+#: null distribution has only 252 equally-likely orderings, so achievable p-values are
+#: DISCRETE and widely spaced -- ascending, they are 0.007937 (2/252, complete
+#: separation, U=0 or U=25), 0.015873 (4/252), 0.031746 (8/252), 0.055556 (14/252), ...
+#: with NOTHING achievable between consecutive values (independently enumerated over
+#: all 252 orderings, not just asserted). 0.008 sits strictly between the first two, so
+#: ``p <= 0.008`` is satisfied ONLY by the single value 0.007937 -- i.e. it is NOT a
+#: conventional alpha that happens to be strict, it is EXACTLY EQUIVALENT to "every
+#: kernel value beat every Python value, or vice versa" and no other outcome can
+#: satisfy it. This equivalence is tied to the sample sizes: it holds only because
+#: ``_TASK4_KERNEL_SEEDS`` and ``_TASK4_PYTHON_SEEDS`` are each length 5. If either seed
+#: tuple is ever resized (e.g. bumped to 8 seeds for more power), this constant no
+#: longer means "complete separation" and MUST be re-derived from the new sizes' own
+#: achievable p-value sequence, not carried over as 0.008. See the test's docstring for
+#: why the resulting count is checked as a HALF-OR-MORE-of-species condition rather than
+#: per-species.
 _TASK4_FULL_SEPARATION_P = 0.008
 
 
@@ -2669,20 +2679,86 @@ def _task4_final_year_biomass(
     for every Baltic species) -- the pool a heavy-maintenance overlay empties first, so a
     materially different result here is a meaningful signal, not an artifact of counting
     eggs.
+
+    WITNESSES DISPATCH, NOT JUST THE TOGGLE (fix round 1, finding 4). ``mortality()``'s
+    own outer gate (``if _HAS_NUMBA and len(valid_indices) > 0:``) resolves
+    ``_mortality_all_cells_parallel`` (``parallel=True`` is its default and nothing in
+    ``simulate.py`` overrides it -- the same fact
+    ``test_end_to_end_bioen_run_reaches_kernel_with_arrays_threaded_correctly`` in
+    ``tests/test_engine_bioen_mortality_parity.py`` relies on) as a bare module-global
+    name at call time, so wrapping ``M._mortality_all_cells_parallel`` with
+    ``_KernelCounter`` (already defined above, reused verbatim) before the run and
+    restoring it after gives an INDEPENDENT, positive proof of where each arm actually
+    dispatched -- not merely that a toggle variable was set. Without this: if a future
+    refactor ever breaks the toggle (dispatch starts reading a different flag, the
+    module gets re-imported and the patch lands on a stale object, ...), BOTH arms
+    would run the kernel, the two biomass sets would become IDENTICAL, and
+    ``mannwhitneyu`` would return p=1.0 for every species -- the most reassuring output
+    this test can produce, for exactly the wrong reason. Both directions are checked
+    below: a positive witness alone would still pass if both arms ran the kernel.
     """
     from osmose.engine import PythonEngine
 
     run_cfg = dict(cfg)  # copy: run_in_memory/from_dict must not mutate the shared dict
     prev_has_numba = M._HAS_NUMBA
+    prev_batch_fn = M._mortality_all_cells_parallel
+    counter = _KernelCounter(prev_batch_fn)
+    M._mortality_all_cells_parallel = counter
     if force_python:
         M._HAS_NUMBA = False
     try:
         result = PythonEngine().run_in_memory(run_cfg, seed=seed)
     finally:
         M._HAS_NUMBA = prev_has_numba
+        M._mortality_all_cells_parallel = prev_batch_fn
+
+    if force_python:
+        assert counter.calls == 0, (
+            f"force_python=True (seed={seed}) but the batch Numba kernel was still "
+            f"entered {counter.calls}x -- the _HAS_NUMBA toggle no longer controls "
+            "mortality()'s dispatch, so this run is NOT the Python reference it "
+            "claims to be. See this function's docstring (fix round 1, finding 4)."
+        )
+    else:
+        assert counter.calls > 0, (
+            f"force_python=False (seed={seed}) but the batch Numba kernel was never "
+            "entered -- this run silently fell back to the Python path, so it is NOT "
+            "the kernel arm it claims to be. See this function's docstring (fix round "
+            "1, finding 4)."
+        )
+
     bio = result.biomass().sort_values("Time")
     last = bio.iloc[-1]
     return {name: float(last[name]) for name in _TASK4_FOCAL_SPECIES}
+
+
+def _task4_separation_verdict(p_values: dict[str, float]) -> tuple[list[str], bool]:
+    """Pure verdict logic for the whole-run smoke check -- no engine, no config.
+
+    Extracted so the failure mode can be proven capable of firing on synthetic p-value
+    dicts (see ``test_task4_separation_verdict_*`` below) rather than left as an
+    inspection claim -- this branch's history has repeatedly shown that "the assertion
+    is transparently capable of failing" is not the same thing as demonstrating it.
+
+    Returns ``(separated, passed)``: ``separated`` lists every species with
+    ``p <= _TASK4_FULL_SEPARATION_P`` -- at the sample sizes this module actually uses
+    (5 kernel seeds, 5 Python seeds) that threshold is EXACTLY equivalent to "complete
+    separation", not merely strict; see ``_TASK4_FULL_SEPARATION_P``'s own comment for
+    the achievable-p-value derivation and why that equivalence is tied to those sizes.
+    ``passed`` is ``True`` unless HALF OR MORE of ``p_values`` are separated -- derived
+    from ``len(p_values)`` (this function's own argument), NOT from any module-level
+    species count, so it is a genuine pure function: pass it a 4-entry dict and "half"
+    means 2, not 4. "Half or more", not "a majority": for the production call with 8
+    species, ``len(p_values) / 2`` is exactly 4.0 and the comparison below is
+    ``count < half`` -- so 4/8 (exactly half) already fails, which is the more sensitive
+    of the two readings and the safer direction for a smoke check. The threshold value
+    itself is unchanged from the original implementation; only the word describing it
+    was wrong.
+    """
+    separated = [name for name, p in p_values.items() if p <= _TASK4_FULL_SEPARATION_P]
+    half = len(p_values) / 2
+    passed = len(separated) < half
+    return separated, passed
 
 
 @pytest.mark.slow
@@ -2694,8 +2770,12 @@ def _task4_final_year_biomass(
         "`pytest` run in this repo (`addopts` only filters e2e/visual, and CI's `pytest "
         "-n auto ...` passes no -m override), so this ALSO gates on an opt-in env var, "
         "matching tests/test_egg_retention_java_parity.py's OSMOSE_JAR precedent. Opt in "
-        "with OSMOSE_BIOEN_WHOLE_RUN_SMOKE=1. This is a smoke check, not a gate -- see "
-        "the docstring below before reading a pass here as proof of correctness."
+        "with OSMOSE_BIOEN_WHOLE_RUN_SMOKE=1 (add -s too, to actually see the p-values -- "
+        "see this test's own docstring). WHEN to opt in: after changes to the mortality "
+        "kernels or the bioen dispatch gates in mortality.py, and before closing out a "
+        "bioen-affecting plan -- not as part of routine test runs. This is a smoke "
+        "check, not a gate -- see the docstring below before reading a pass here as "
+        "proof of correctness."
     ),
 )
 def test_bioen_overlay_whole_run_kernel_vs_python_biomass_distributions():
@@ -2741,20 +2821,29 @@ def test_bioen_overlay_whole_run_kernel_vs_python_biomass_distributions():
     near-fail) on this test after those gates are green would be a genuine surprise
     worth stopping for.
 
-    WHY THE ASSERTION IS A MAJORITY-ACROSS-SPECIES CONDITION, NOT A PER-SPECIES ALPHA.
+    WHY THE ASSERTION FIRES AT HALF-OR-MORE OF THE SPECIES, NOT A PER-SPECIES ALPHA.
     8 focal species are tested, but they are not 8 independent experiments: they share
     one grid, one predation web, one RNG-consumption order per cell, so a per-species
     alpha=0.05 threshold would flake at a materially higher rate than a naive union bound
     predicts (correlated tests separate together or not at all more often than chance
     would suggest). The exact resolution-floor threshold (_TASK4_FULL_SEPARATION_P,
-    ~0.008) is used instead, and only a MAJORITY of species crossing it fails the test:
-    a real kernel-vs-reference divergence in the mortality loop moves every species in
+    ~0.008) is used instead, and the test fails as soon as HALF OR MORE of the species
+    (>= len(p_values) / 2 -- 4 of 8 here, not a strict majority which would require 5) cross
+    it: a real kernel-vs-reference divergence in the mortality loop moves every species in
     the same ecosystem at once (this is what Task 2's 13 revert probes showed: a missing
     behaviour reddens broadly, not one species in isolation), while chance clustering of
     2-3 species landing near the resolution floor together is a much weaker, more
-    plausible false-positive mode this design tolerates. All 8 p-values are printed
-    regardless of the verdict -- that is the actual reporting deliverable this test
-    exists to produce for a human reading the run.
+    plausible false-positive mode this design tolerates. All 8 p-values are ``print()``ed
+    unconditionally (fix round 1, finding 5: this does NOT mean a reader sees them on a
+    passing run by default -- pytest captures and discards stdout unless the test fails.
+    Since this test only runs when someone has deliberately set
+    ``OSMOSE_BIOEN_WHOLE_RUN_SMOKE=1``, they want the numbers either way: run with
+    ``-s`` (or ``-rP``) to see them on a PASS too, e.g.
+    ``OSMOSE_BIOEN_WHOLE_RUN_SMOKE=1 pytest tests/test_engine_bioen_numba_kernel.py::``
+    ``test_bioen_overlay_whole_run_kernel_vs_python_biomass_distributions -s``). The
+    verdict itself (``_task4_separation_verdict``) is a pure function of the p-value
+    dict, unit-tested on synthetic inputs below -- not merely inspected -- to prove it
+    is transparently capable of failing.
     """
     from scipy import stats
 
@@ -2781,18 +2870,17 @@ def test_bioen_overlay_whole_run_kernel_vs_python_biomass_distributions():
             f"python={python_vals.tolist()} mannwhitneyu p={p:.4g}"
         )
 
-    fully_separated = [name for name, p in p_values.items() if p <= _TASK4_FULL_SEPARATION_P]
+    separated, passed = _task4_separation_verdict(p_values)
     print(f"[task4 smoke] all p-values: {p_values}")
     print(
         f"[task4 smoke] species at/near complete separation (p <= "
-        f"{_TASK4_FULL_SEPARATION_P}): {fully_separated}"
+        f"{_TASK4_FULL_SEPARATION_P}): {separated}"
     )
 
-    majority = len(_TASK4_FOCAL_SPECIES) / 2
-    assert len(fully_separated) < majority, (
-        f"{len(fully_separated)}/{len(_TASK4_FOCAL_SPECIES)} species show "
+    assert passed, (
+        f"{len(separated)}/{len(_TASK4_FOCAL_SPECIES)} species show "
         f"near-complete kernel/Python separation (p <= {_TASK4_FULL_SEPARATION_P}): "
-        f"{fully_separated}. Full p-values: {p_values}. A majority of species "
+        f"{separated}. Full p-values: {p_values}. Half or more of the species "
         "separating this sharply, simultaneously, is the signature of a whole-run "
         "behavioural divergence, not sampling noise -- see this test's docstring for "
         "why a single species crossing the resolution floor is NOT, by itself, treated "
@@ -2800,4 +2888,95 @@ def test_bioen_overlay_whole_run_kernel_vs_python_biomass_distributions():
         "fails, look first at whether test_cell_arms_agree_under_bioen and the "
         "cross-kernel batch tests above are still green -- if they are, this failure "
         "needs investigation before being dismissed as noise, not the other way round."
+    )
+
+
+# ---------------------------------------------------------------------------
+# 3b. Fix round 1: prove _task4_separation_verdict can actually fire
+# ---------------------------------------------------------------------------
+# No engine, no config -- pure function of a p-value dict, so these run in
+# microseconds and belong in the default selection (NOT env-gated, NOT slow).
+
+
+def _synthetic_p_values(n_separated: int, n_total: int = 8) -> dict[str, float]:
+    """``n_separated`` species pinned exactly at the resolution floor, the rest at 1.0."""
+    names = [f"sp{i}" for i in range(n_total)]
+    return {
+        name: (_TASK4_FULL_SEPARATION_P if i < n_separated else 1.0) for i, name in enumerate(names)
+    }
+
+
+def test_task4_separation_verdict_passes_when_every_p_value_is_high():
+    separated, passed = _task4_separation_verdict(_synthetic_p_values(0))
+    assert separated == []
+    assert passed is True
+
+
+def test_task4_separation_verdict_passes_at_three_of_eight_separated():
+    separated, passed = _task4_separation_verdict(_synthetic_p_values(3))
+    assert len(separated) == 3
+    assert passed is True
+
+
+def test_task4_separation_verdict_fails_at_four_of_eight_separated():
+    """4/8 is exactly HALF, not a majority -- this is the case fix round 1 exists for.
+
+    Before the fix, the assertion message called this "a majority" while the code
+    compared against ``len(...) / 2`` (== 4.0 for 8 species) with a strict ``<``, which
+    already failed at exactly half. The wording was wrong; the threshold was not, and
+    stays exactly as sensitive here.
+    """
+    separated, passed = _task4_separation_verdict(_synthetic_p_values(4))
+    assert len(separated) == 4
+    assert passed is False
+
+
+def test_task4_separation_verdict_fails_at_eight_of_eight_separated():
+    separated, passed = _task4_separation_verdict(_synthetic_p_values(8))
+    assert len(separated) == 8
+    assert passed is False
+
+
+def test_task4_separation_verdict_counts_the_exact_floor_value_as_separated():
+    """The membership test is ``<=``, not ``<`` -- pin the boundary rather than leave it
+    to chance which side of the comparison a future edit lands on.
+    """
+    p_values = {"sp0": _TASK4_FULL_SEPARATION_P}
+    separated, _ = _task4_separation_verdict(p_values)
+    assert separated == ["sp0"], (
+        "p == _TASK4_FULL_SEPARATION_P exactly must count as separated (the code uses <=)"
+    )
+
+
+def test_task4_separation_verdict_threshold_tracks_input_size_not_a_hardcoded_constant():
+    """Fix round 1, finding 2a: the halfway threshold must come from ``len(p_values)``.
+
+    If the helper read a module-level species count instead, a 4-entry synthetic dict
+    would still be compared against 8/2=4 and every boundary test above would stop
+    meaning what it says -- extracted specifically to make this testable, then made
+    untestable by a hidden dependency on the production species count. Use a 4-entry
+    dict (not 8) to prove the threshold really does move with its own argument: 1/4
+    passes (1 < 2.0), 2/4 -- exactly half of FOUR, not of eight -- fails.
+    """
+    p_values_one_of_four = {
+        "a": _TASK4_FULL_SEPARATION_P,
+        "b": 1.0,
+        "c": 1.0,
+        "d": 1.0,
+    }
+    separated, passed = _task4_separation_verdict(p_values_one_of_four)
+    assert len(separated) == 1
+    assert passed is True
+
+    p_values_two_of_four = {
+        "a": _TASK4_FULL_SEPARATION_P,
+        "b": _TASK4_FULL_SEPARATION_P,
+        "c": 1.0,
+        "d": 1.0,
+    }
+    separated, passed = _task4_separation_verdict(p_values_two_of_four)
+    assert len(separated) == 2
+    assert passed is False, (
+        "2/4 is half of a FOUR-entry dict and must fail on its own terms, not because "
+        "it happens to also be less than half of the unrelated 8-species production count"
     )

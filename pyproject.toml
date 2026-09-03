@@ -101,7 +101,13 @@ asyncio_mode = "auto"
 markers = [
     "e2e: end-to-end browser tests (Playwright)",
     "visual: screenshot visual-regression tests (Playwright; opt-in, run with -m visual)",
-    "slow: long-running tests incl. the Java cross-check (opt-in; run with -m slow)",
+    # NOT excluded by addopts below -- a `slow`-marked test still runs in a bare
+    # `pytest` and in CI (addopts only filters e2e/visual). This marker documents
+    # intent, it does not gate execution. For a test that must not run without
+    # explicit opt-in, also gate it on an env var: see OSMOSE_JAR
+    # (tests/test_egg_retention_java_parity.py) or OSMOSE_BIOEN_WHOLE_RUN_SMOKE
+    # (tests/test_engine_bioen_numba_kernel.py) for the pattern.
+    "slow: long-running tests incl. the Java cross-check (marker only -- see comment above)",
 ]
 # --dist loadfile: when run in parallel (-n N), keep each file's tests on one
 # worker. Preserves implicit intra-file ordering (e.g. module-level cache state)
