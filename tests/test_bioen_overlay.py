@@ -18,6 +18,7 @@ import pytest
 
 from osmose.config.reader import OsmoseConfigReader
 from osmose.demo import osmose_demo
+from osmose.engine.config import EngineConfig
 from osmose.engine.processes.energy_budget import energy_terms
 from tests._bioen_overlay import C_M, apply_overlay
 from tests.test_engine_bioen_budget_parity import _three_schools
@@ -64,7 +65,15 @@ def test_apply_overlay_c_m_matches_module_constant(tmp_path: Path):
     cfg = dict(OsmoseConfigReader().read(str(demo["config_file"])))
     apply_overlay(cfg, n_species=9, background_indices=[15, 16])
 
-    assert float(cfg["species.bioen.maint.energy.c_m.sp0"]) == C_M
+    # EVERY focal index, not just sp0: an off-by-one in apply_overlay's `range(n_species)`
+    # would leave the LAST species at the engine's c_m default of 0.0 -- i.e. permanently
+    # starvation-free -- with an sp0-only assertion still green.
+    for i in range(9):
+        assert float(cfg[f"species.bioen.maint.energy.c_m.sp{i}"]) == C_M, (
+            f"sp{i} did not receive c_m"
+        )
+        assert cfg[f"species.bioen.assimilation.sp{i}"] == "0.7"
+        assert cfg[f"species.maturity.eta.sp{i}"] == "1"
     assert float(cfg["temperature.value"]) == pytest.approx(7.0)
 
     weight, abundance, ingestion, *_ = _three_schools()
@@ -79,6 +88,39 @@ def test_apply_overlay_c_m_matches_module_constant(tmp_path: Path):
     )
     ratio = e_maint / e_gross
     assert 0.3 < ratio[0] < 0.95
+
+
+def test_apply_overlay_survives_engine_config_parsing(tmp_path: Path):
+    """Read the overlay back through ``EngineConfig.from_dict``, not out of the dict.
+
+    Every other test here re-reads the same dict ``apply_overlay`` just wrote, so a
+    MISSPELLED key would round-trip perfectly while the engine silently fell back to its
+    default (``c_m`` defaults to 0.0 -- starvation-free -- and ``eta``/``e.maint`` to
+    values that are not the overlay's). Only the parser can tell a wrong key name from a
+    right one.
+    """
+    demo = osmose_demo("baltic", tmp_path)
+    cfg = dict(OsmoseConfigReader().read(str(demo["config_file"])))
+    apply_overlay(cfg, n_species=9, background_indices=[15, 16])
+
+    ec = EngineConfig.from_dict(cfg)
+    assert ec.bioen_enabled
+
+    n_focal = 9
+    np.testing.assert_array_equal(ec.bioen_c_m[:n_focal], np.full(n_focal, C_M))
+    np.testing.assert_array_equal(ec.bioen_assimilation[:n_focal], np.full(n_focal, 0.7))
+    np.testing.assert_array_equal(ec.bioen_eta[:n_focal], np.ones(n_focal))
+    np.testing.assert_array_equal(ec.bioen_e_maint[:n_focal], np.full(n_focal, 0.65))
+    np.testing.assert_array_equal(ec.bioen_tp[:n_focal], np.full(n_focal, 10.0))
+    np.testing.assert_array_equal(ec.bioen_e_mobi[:n_focal], np.full(n_focal, 0.65))
+    np.testing.assert_array_equal(ec.bioen_e_d[:n_focal], np.full(n_focal, 1.5))
+    np.testing.assert_array_equal(ec.bioen_r[:n_focal], np.full(n_focal, 0.2))
+    np.testing.assert_array_equal(ec.bioen_m1[:n_focal], np.zeros(n_focal))
+    assert np.all(ec.bioen_m0[:n_focal] > 0.0), "m0 must be copied from maturity.size"
+    # Task 0 recorded this as a known gap: BIOEN_OVERLAY does NOT set k_for, so FORAGING
+    # is inert. Pinned here so plan Task 2 discovers it from a failing expectation rather
+    # than from a silently-zero `n_dead[:, FORAGING]` witness.
+    np.testing.assert_array_equal(ec.bioen_k_for[:n_focal], np.zeros(n_focal))
 
 
 def test_apply_overlay_copies_maturity_size_into_m0(tmp_path: Path):
