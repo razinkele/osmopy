@@ -312,6 +312,16 @@ before Task 3's cause-widening landed, so they are one unit of work.
   - `eff_starv[:] = 0.0` in `_precompute_effective_rates` was defence-in-depth while the kernels
     were bypassed; after the flip it is **the only guard** against double-counted starvation. Add
     an explicit assertion that it is still applied under bioen.
+    - **CORRECTED 2026-09-03 (final review, F2) — this instruction was wrong and the code it
+      produced said so too.** `eff_starv[:] = 0.0` did NOT become the only guard after the flip; it
+      is not a guard at all. All seven exit paths of the bioen branch at `mortality.py:1349-1393`
+      end in `return` before the `D = eff_starv[idx]` tail, so that tail is unreachable regardless
+      of the array's contents — replacing the line with `pass` leaves 95 tests passing. The real
+      guard is the unconditional `return` at `:1393`; the zeroing is defence in depth, exactly as
+      it was before the flip. Task 3 propagated this error into a code comment and a test
+      docstring; both were corrected in `6de46a3`. Left in place rather than rewritten, per this
+      plan's own R10 precedent — a plan is a record of what was instructed, and silently editing it
+      would hide that the instruction was the source of the defect.
 
 - [x] **Step 2: Flip both dispatch gates** — `mortality.py:2101` (outer) and the `use_full_numba`
   term at `:1750` (inner). Keep them consistent; a mismatch silently splits behaviour between the

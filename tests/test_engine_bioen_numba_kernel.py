@@ -2269,7 +2269,7 @@ def _pre_feeding_forage_fixture() -> tuple[EngineConfig, SchoolState]:
     Final review finding F1: no bioen fixture on this branch had a school with
     ``age_dt < first_feeding_age_dt``, so the exemption applied by ``_zero_exempt``
     inside ``_precompute_foraging_rates`` (``mortality.py:1008``) -- mirroring the
-    reference's own guard in ``_apply_foraging_for_school`` (``mortality.py:369-370``) --
+    reference's own guard in ``_apply_foraging_for_school`` (``mortality.py:370-371``) --
     was exercised by nothing. ``age_dt = 0 < first_feeding_age_dt = 1`` is exactly what a
     freshly spawned egg looks like (``reproduction.py:236``), which is the failure
     scenario: the moment the parent plan's Task 8 fit sets a live ``k_for``, every step
@@ -2291,7 +2291,7 @@ def _pre_feeding_forage_fixture() -> tuple[EngineConfig, SchoolState]:
     config = base_config(**_bioen_overrides())
     assert config.bioen_enabled, (
         "_precompute_foraging_rates short-circuits to np.zeros(n) when bioen is off "
-        "(mortality.py:975-976), and FORAGING is not in the cause list either -- without "
+        "(mortality.py:977-978), and FORAGING is not in the cause list either -- without "
         "this the whole fixture would pass vacuously"
     )
     state = SchoolState.create(1, species_id=np.array([1], dtype=np.int32)).replace(
