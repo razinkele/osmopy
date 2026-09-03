@@ -96,9 +96,11 @@ from __future__ import annotations
 import contextlib
 import copy
 import inspect
+import os
 import re
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -2586,3 +2588,216 @@ def test_fishing_composition_hazard_stays_below_1e_12_relative_in_n_dead():
     )
     rel = np.abs(a - b) / np.maximum(np.abs(b), 1e-300)
     assert rel.max() < 1e-12, f"divergence grew beyond a last-ULP effect: {rel.max():.3e}"
+
+
+# ---------------------------------------------------------------------------
+# 3. Plan Task 4: whole-run distributional smoke check -- NOT a gate
+# ---------------------------------------------------------------------------
+
+ROOT = Path(__file__).resolve().parents[1]
+_TASK4_CONFIG_PATH = ROOT / "data" / "baltic_ev" / "baltic_ev_all-parameters.csv"
+_TASK4_N_SPECIES = 8
+_TASK4_BACKGROUND_INDICES = (14, 15)
+_TASK4_YEARS = 3
+_TASK4_FOCAL_SPECIES: tuple[str, ...] = (
+    "cod",
+    "herring",
+    "sprat",
+    "flounder",
+    "perch",
+    "pikeperch",
+    "smelt",
+    "stickleback",
+)
+#: Disjoint seed pools per arm. The kernel and Python arms do NOT share an RNG stream
+#: (see the plan's "THE CONSTRAINT THAT SHAPES THIS PLAN": the kernel seeds Numba's
+#: MT19937 inline from an int, the Python path consumes a caller-supplied PCG64
+#: ``Generator`` directly), so there is no notion of a "matching" seed between arms.
+#: Disjoint integer ranges make that explicit rather than inviting a reader to assume
+#: seed=101 on one arm corresponds to seed=101 on the other.
+_TASK4_KERNEL_SEEDS: tuple[int, ...] = (101, 102, 103, 104, 105)
+_TASK4_PYTHON_SEEDS: tuple[int, ...] = (201, 202, 203, 204, 205)
+#: Exact two-sided Mann-Whitney U p-value at complete separation (U=0 or U=25) for
+#: n1=n2=5: 2 * (1 / C(10,5)) = 2/252 = 0.0079365... A per-species assertion tighter
+#: than this can never fire (there is no smaller p this test size can produce), and one
+#: much looser than this stops discriminating "the two arms never overlap" from
+#: ordinary sampling noise. See the test's docstring for why this is checked as a
+#: MAJORITY-across-species condition rather than per-species.
+_TASK4_FULL_SEPARATION_P = 0.008
+
+
+def _task4_config() -> dict[str, str]:
+    """``BIOEN_OVERLAY`` on ``data/baltic_ev`` -- the config named in the plan brief.
+
+    Picked over ``osmose_demo("baltic")`` + the overlay (the base ``tests/test_bioen_overlay.py``
+    actually pins) after a pilot check (5 kernel-arm seeds x 3 yr on each): on
+    ``data/baltic_ev`` every one of the 8 focal species keeps real, non-degenerate
+    seed-to-seed spread (CV 0.2-4%) at a healthy standing biomass; on ``osmose_demo("baltic")``
+    (which splits cod into cod_west/cod_east) 4 of 9 focal species collapse to a
+    near-extinction floor (~0.02-0.5 t, essentially the reproduction seeding floor,
+    ``reproduction.py:321-323``) within 3 years under this overlay's deliberately
+    heavy maintenance burden -- a base on which a two-sample test would mostly be
+    comparing two arms that both sit on the same floor, not a meaningful check of
+    kernel-vs-Python agreement. Built once per test session (module-level cache would
+    require a fixture; called once per arm-seed loop instead, each call producing an
+    independent dict off a fresh disk read, then copied per run -- see the calling
+    test for why a shared dict is copied rather than re-read per seed).
+    """
+    from osmose.config.reader import OsmoseConfigReader
+    from tests._bioen_overlay import apply_overlay
+
+    cfg = dict(OsmoseConfigReader().read(str(_TASK4_CONFIG_PATH)))
+    apply_overlay(
+        cfg, n_species=_TASK4_N_SPECIES, background_indices=list(_TASK4_BACKGROUND_INDICES)
+    )
+    cfg["simulation.time.nyear"] = str(_TASK4_YEARS)
+    return cfg
+
+
+def _task4_final_year_biomass(
+    cfg: dict[str, str], seed: int, *, force_python: bool
+) -> dict[str, float]:
+    """Run one (arm, seed); return ``{species: final-year biomass}`` for the 8 focal species.
+
+    Only ``mortality._HAS_NUMBA`` is toggled -- the same single switch
+    ``scripts/bench_bioen_kernel.py`` and every equivalence harness in this file use, so
+    "kernel" and "Python reference" mean exactly the same thing here as everywhere else
+    on this branch. ``data/baltic_ev``'s ``output.recordfrequency.ndt`` (24) equals
+    ``simulation.time.ndtperyear`` (24), so ``biomass()`` returns exactly one row per
+    simulated year -- the last row (max ``Time``) *is* the final year; no averaging
+    needed. Per the CLAUDE.md cutoff note, this is fish >= ``output.cutoff.age`` (0.5 yr
+    for every Baltic species) -- the pool a heavy-maintenance overlay empties first, so a
+    materially different result here is a meaningful signal, not an artifact of counting
+    eggs.
+    """
+    from osmose.engine import PythonEngine
+
+    run_cfg = dict(cfg)  # copy: run_in_memory/from_dict must not mutate the shared dict
+    prev_has_numba = M._HAS_NUMBA
+    if force_python:
+        M._HAS_NUMBA = False
+    try:
+        result = PythonEngine().run_in_memory(run_cfg, seed=seed)
+    finally:
+        M._HAS_NUMBA = prev_has_numba
+    bio = result.biomass().sort_values("Time")
+    last = bio.iloc[-1]
+    return {name: float(last[name]) for name in _TASK4_FOCAL_SPECIES}
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(
+    not os.environ.get("OSMOSE_BIOEN_WHOLE_RUN_SMOKE"),
+    reason=(
+        "~30 min total (the _HAS_NUMBA=False arm alone costs ~120 s/simulated-year x 3 "
+        "yr x 5 seeds). `pytest.mark.slow` alone does not exclude this from a bare "
+        "`pytest` run in this repo (`addopts` only filters e2e/visual, and CI's `pytest "
+        "-n auto ...` passes no -m override), so this ALSO gates on an opt-in env var, "
+        "matching tests/test_egg_retention_java_parity.py's OSMOSE_JAR precedent. Opt in "
+        "with OSMOSE_BIOEN_WHOLE_RUN_SMOKE=1. This is a smoke check, not a gate -- see "
+        "the docstring below before reading a pass here as proof of correctness."
+    ),
+)
+def test_bioen_overlay_whole_run_kernel_vs_python_biomass_distributions():
+    """Whole-run distributional smoke check (bioen-Numba-kernel plan Task 4, Step 1).
+
+    THIS IS NOT A GATE. The per-cell equivalence gate (``test_cell_arms_agree_under_bioen``)
+    and the cross-kernel gates (``test_batch_kernel_matches_the_per_cell_kernel_under_bioen``)
+    above are what actually pin correctness: they compare the SAME RNG draws fed to both
+    the kernel and the Python reference and require bit-exact agreement on every field
+    either path writes. Those are the tests that catch a missing survivor rescale, a
+    wrong predation cap, a missing cause, or a threading defect at a production call site.
+
+    A whole multi-year run CANNOT be compared that way. ``_mortality_all_cells_numba``
+    seeds Numba's own MT19937 inline from an int (`rng_seed`); the pure-Python path
+    (``M._HAS_NUMBA = False``) consumes a caller-supplied PCG64 ``Generator`` directly.
+    The two streams diverge on the very first draw, and every downstream random choice
+    (which school gets eaten, which cause kills it, movement, reproduction) compounds
+    that divergence over 3 simulated years. Bit-exact -- or even close-to-exact --
+    agreement between a kernel run and a Python run on the SAME seed is therefore not
+    just untested here, it is not even a meaningful thing to ask for. What IS meaningful:
+    whether five kernel runs and five Python runs, each a legitimate independent
+    stochastic realisation of the SAME mortality arithmetic, are draws from the same
+    underlying distribution of outcomes. That is what a two-sample test answers, and it
+    is the right shape for this question -- the plan's first draft asked instead whether
+    the kernel's MEAN sat within 2 standard deviations of a SINGLE Python run, which
+    compares a mean against a one-sample spread and is both insensitive (2 SD is wide)
+    and flaky (one run's spread is itself noisy); a two-sample test over the two SETS
+    fixes both.
+
+    WHAT THIS CAN AND CANNOT DETECT, STATED HONESTLY. With 5 seeds per arm, the Mann-
+    Whitney U exact null distribution for n1=n2=5 has only 252 orderings; the smallest
+    achievable two-sided p-value is 2/252 = 0.0079 (complete separation: every kernel
+    value beats every Python value or vice versa). That is a LOT of separation to
+    require -- a subtle bug (a 1% systematic bias in one cause's rate, say) will not
+    reliably produce it against ~2-4% natural seed-to-seed CV, and this test will not
+    catch it. What complete, whole-community separation DOES reliably flag is a GROSS
+    behavioural divergence: a missing rescale, a wrong cap, or a dropped cause would bias
+    every school's survival every step, compounding over 3 years and 8 interacting
+    species into a population-scale effect that swamps ordinary seed variance -- exactly
+    the class of defect Tasks 1-3's revert probes demonstrated (O(1) errors, not O(1e-13)
+    ones). So: this test has real but narrow power. A pass is not evidence of fine-
+    grained correctness (that is the per-cell/cross-kernel gates' job); a fail (or a
+    near-fail) on this test after those gates are green would be a genuine surprise
+    worth stopping for.
+
+    WHY THE ASSERTION IS A MAJORITY-ACROSS-SPECIES CONDITION, NOT A PER-SPECIES ALPHA.
+    8 focal species are tested, but they are not 8 independent experiments: they share
+    one grid, one predation web, one RNG-consumption order per cell, so a per-species
+    alpha=0.05 threshold would flake at a materially higher rate than a naive union bound
+    predicts (correlated tests separate together or not at all more often than chance
+    would suggest). The exact resolution-floor threshold (_TASK4_FULL_SEPARATION_P,
+    ~0.008) is used instead, and only a MAJORITY of species crossing it fails the test:
+    a real kernel-vs-reference divergence in the mortality loop moves every species in
+    the same ecosystem at once (this is what Task 2's 13 revert probes showed: a missing
+    behaviour reddens broadly, not one species in isolation), while chance clustering of
+    2-3 species landing near the resolution floor together is a much weaker, more
+    plausible false-positive mode this design tolerates. All 8 p-values are printed
+    regardless of the verdict -- that is the actual reporting deliverable this test
+    exists to produce for a human reading the run.
+    """
+    from scipy import stats
+
+    kernel_cfg = _task4_config()
+    python_cfg = _task4_config()
+
+    kernel_runs = [
+        _task4_final_year_biomass(kernel_cfg, seed, force_python=False)
+        for seed in _TASK4_KERNEL_SEEDS
+    ]
+    python_runs = [
+        _task4_final_year_biomass(python_cfg, seed, force_python=True)
+        for seed in _TASK4_PYTHON_SEEDS
+    ]
+
+    p_values: dict[str, float] = {}
+    for name in _TASK4_FOCAL_SPECIES:
+        kernel_vals = np.array([r[name] for r in kernel_runs])
+        python_vals = np.array([r[name] for r in python_runs])
+        _, p = stats.mannwhitneyu(kernel_vals, python_vals, alternative="two-sided")
+        p_values[name] = float(p)
+        print(
+            f"[task4 smoke] {name}: kernel={kernel_vals.tolist()} "
+            f"python={python_vals.tolist()} mannwhitneyu p={p:.4g}"
+        )
+
+    fully_separated = [name for name, p in p_values.items() if p <= _TASK4_FULL_SEPARATION_P]
+    print(f"[task4 smoke] all p-values: {p_values}")
+    print(
+        f"[task4 smoke] species at/near complete separation (p <= "
+        f"{_TASK4_FULL_SEPARATION_P}): {fully_separated}"
+    )
+
+    majority = len(_TASK4_FOCAL_SPECIES) / 2
+    assert len(fully_separated) < majority, (
+        f"{len(fully_separated)}/{len(_TASK4_FOCAL_SPECIES)} species show "
+        f"near-complete kernel/Python separation (p <= {_TASK4_FULL_SEPARATION_P}): "
+        f"{fully_separated}. Full p-values: {p_values}. A majority of species "
+        "separating this sharply, simultaneously, is the signature of a whole-run "
+        "behavioural divergence, not sampling noise -- see this test's docstring for "
+        "why a single species crossing the resolution floor is NOT, by itself, treated "
+        "as a failure. This test is a smoke check, not the correctness gate; if it "
+        "fails, look first at whether test_cell_arms_agree_under_bioen and the "
+        "cross-kernel batch tests above are still green -- if they are, this failure "
+        "needs investigation before being dismissed as noise, not the other way round."
+    )
