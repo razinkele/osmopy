@@ -31,9 +31,13 @@ conclusion it supports (the gap is JIT-versus-interpreter, not bioen-specific) s
 number should not be quoted as precise. **Corrected 2026-09-03:** this row previously read "152×",
 which does not reconcile with the two rows it divides (110 ÷ 0.99 = 111); Task 3's review caught
 the arithmetic. The controlled figure, measured after the kernel landed, is **149× (implementer)
-and 157.8× (reviewer, independent re-run)** — see Task 3's report, and note the reseeding caveat
-recorded there: the benchmarked `baltic_ev` population is under continuous artificial reseeding for
-the whole window, so that ratio belongs to that trajectory rather than to the kernel in general.
+and 157.8× (reviewer, independent re-run)** — see Task 3's report. One caveat on quoting it, stated
+precisely: the ratio is measured over a 4-year window during which the school count grows linearly
+at ~3,000/yr (2 464 → 5 484 → 8 493 → 11 455), and per-step cost tracks school count, so the ratio
+belongs to that horizon rather than being a horizon-free property. That growth is **standard OSMOSE
+behaviour already in this plan's cost model** ("∝ schools ∝ years"), and it is identical with bioen
+off — Task 3's reviewer first read it as a `baltic_ev` reseeding pathology undermining the
+benchmark, then measured it and withdrew that reading.
 Second, **the A/B is not strictly
 infeasible without this work**: the runs are independent and the repo already has a spawn-pool
 pattern for exactly this (`[[uq-parallel-threading]]`: one thread per worker). Running the ten
