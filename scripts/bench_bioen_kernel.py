@@ -1,9 +1,18 @@
 #!/usr/bin/env python3
 """Benchmark the bioen Numba mortality kernel (bioen-Numba-kernel plan Task 3, Step 3).
 
+By default this script points ``NUMBA_CACHE_DIR`` at a FRESH scratch directory before
+anything imports Numba, forcing a genuine cold compile inside Arm A's warm-up run. This
+is not optional/operator-dependent: ``@njit(cache=True)`` skips typing/lowering entirely
+on a cache hit, so a warm on-disk cache (e.g. left over from this repo's own test suite)
+would make the "0 Numba warnings" line meaningless -- it would report zero because the
+compiler never ran, not because it ran cleanly. Pass ``--reuse-cache`` to opt out (faster
+iteration on this script itself); the run is then labelled `cache_mode` in the JSON
+output and printed loudly so a zero warning count from that mode is never mistaken for a
+real one.
+
 Three arms, each measured with a short warm-up run first (so Numba's one-time JIT
-compile cost is not folded into the timed measurement -- the on-disk ``cache=True``
-cache from a prior process run also helps, but is not assumed):
+compile cost is not folded into the timed measurement):
 
 1. ``data/baltic_ev`` bioen ON, kernel dispatch (the production path after Task 3's
    flip -- ``mortality()`` routes to ``_mortality_all_cells_parallel``).
@@ -31,6 +40,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import tempfile
 import time
 import warnings
 from pathlib import Path
@@ -151,7 +162,39 @@ def main() -> None:
         "--warmup-years", type=int, default=1, help="Untimed warm-up years (default: 1)"
     )
     parser.add_argument("--output", type=str, default=None, help="Save results to JSON file")
+    parser.add_argument(
+        "--reuse-cache",
+        action="store_true",
+        help=(
+            "Skip the self-enforced fresh NUMBA_CACHE_DIR (default behaviour) and reuse "
+            "whatever on-disk Numba cache is already warm. Faster for iterating on this "
+            "script, but the Numba-warning count it reports is NOT meaningful -- a cache "
+            "hit skips typing/lowering entirely, so it cannot emit a warning either way. "
+            "The JSON payload's cache_mode field records which mode produced a given run "
+            "so this can never be silently misread as a real zero-warning result."
+        ),
+    )
     args = parser.parse_args()
+
+    # Self-enforce a cold compile by default: NUMBA_CACHE_DIR is read once, the first
+    # time anything imports numba, so this MUST run before the first _run_once() call
+    # (the earliest point osmose.engine.processes.mortality -- and therefore numba --
+    # gets imported). Without this, "0 Numba warnings" is only meaningful if whoever
+    # invokes the script happens to remember to point NUMBA_CACHE_DIR at a fresh
+    # directory themselves -- which is exactly the operator-dependent gap fix-round-1
+    # review flagged. --reuse-cache opts out explicitly and the run is labelled
+    # accordingly rather than silently producing an uninformative zero.
+    if args.reuse_cache:
+        cache_mode = "reused (--reuse-cache): Numba warning counts below are NOT meaningful"
+        numba_cache_dir = os.environ.get("NUMBA_CACHE_DIR", "<numba default, unset>")
+    else:
+        fresh_dir = tempfile.mkdtemp(prefix="bench_bioen_kernel_nbcache_")
+        os.environ["NUMBA_CACHE_DIR"] = fresh_dir
+        cache_mode = "fresh (self-enforced cold compile): Numba warning counts are meaningful"
+        numba_cache_dir = fresh_dir
+    print(f"Numba cache: {cache_mode}")
+    print(f"NUMBA_CACHE_DIR = {numba_cache_dir}")
+    print()
 
     results = []
 
@@ -221,6 +264,13 @@ def main() -> None:
         f"{'TRIGGERED -- STOP AND REPORT' if stop_rule_triggered else 'clear'}"
     )
 
+    if args.reuse_cache:
+        print(
+            "NOTE: --reuse-cache was set -- the zero/non-zero Numba warning count above "
+            "reflects whatever the on-disk cache already held, NOT a real compile pass. "
+            "Do not cite this run for the no-warning half of the stop rule."
+        )
+
     payload = {
         "years": args.years,
         "seed": args.seed,
@@ -228,6 +278,8 @@ def main() -> None:
         "speedup_bioen_kernel_vs_python": round(speedup, 2),
         "total_numba_warnings": total_warnings,
         "stop_rule_triggered": stop_rule_triggered,
+        "cache_mode": cache_mode,
+        "numba_cache_dir": numba_cache_dir,
     }
     if args.output:
         Path(args.output).write_text(json.dumps(payload, indent=2))

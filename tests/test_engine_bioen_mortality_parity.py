@@ -337,7 +337,30 @@ def test_end_to_end_bioen_run_reaches_kernel_with_arrays_threaded_correctly():
     (``tests/test_engine_bioen_numba_kernel.py``), which the ``xfail`` removal above
     promoted into a real gate.
 
-    Three witnesses, each a targeted swap-detector rather than a generic non-zero check:
+    THE IDENTITY CHECK IS THE PRIMARY DEFENSE; THE VALUE WITNESSES BELOW ARE NOT ENOUGH
+    ON THEIR OWN. Fix-round-1 review reproduced the ``e_net<->gonad_weight`` sabotage
+    below successfully, then tried two more pairs: ``eta<->eff_foraging`` and
+    ``cap_fish<->eta`` were caught (via eta's causal centrality to the starvation
+    branch), but ``raw_preyed<->eff_foraging`` passed COMPLETELY undetected -- a real
+    positional swap at the exact call site this test exists to guard. Root cause:
+    ``raw_preyed`` is an OUTPUT the kernel writes into, so "raw_preyed ended up
+    non-zero" is satisfied almost regardless of which array occupies that slot, while
+    the semantically correct buffer (the real ``raw_preyed``, now sitting at the
+    ``eff_foraging`` position) is never touched and the corrupted ``eff_foraging`` read
+    goes unwatched. This generalises: EVERY one of the eight trailing bioen arguments is
+    an output-accumulator or accumulator-like array (``raw_preyed``, ``n_dead``,
+    ``inst_abd``, ``preyed_biomass``, ``gonad_weight``, ``e_net``), so value witnesses
+    under-guard the whole class. The fix is an identity check that does not depend on
+    numerical consequence at all: capture ``mortality()``'s own local variables at the
+    moment of the call (it is this wrapper's immediate caller -- ``sys._getframe(1)``)
+    and assert ``args[pos] is expected_local`` for all eight trailing positions. That
+    catches ANY positional transposition among them in one shot.
+
+    Three further witnesses, each a targeted swap-detector rather than a generic
+    non-zero check -- kept alongside the identity check because they additionally
+    confirm the KERNEL did real, observable work on a genuine production run (the
+    equivalence harnesses already cover kernel correctness in isolation; these confirm
+    this call site's inputs actually flow into real behaviour, not just the right slots):
 
     * non-zero starvation deaths -- an e_net<->gonad_weight positional swap at the
       ``mortality()`` call site would make the kernel's ``en = e_net[idx]`` actually read
@@ -400,6 +423,22 @@ def test_end_to_end_bioen_run_reaches_kernel_with_arrays_threaded_correctly():
     is_background_pos = param_names.index("is_background")
     age_dt_pos = param_names.index("age_dt")
     first_feeding_pos = param_names.index("first_feeding_age_dt")
+    bioen_pos = param_names.index("bioen")
+    cap_fish_pos = param_names.index("cap_fish")
+    eta_school_pos = param_names.index("eta_school")
+    eff_foraging_pos = param_names.index("eff_foraging")
+    # All eight trailing bioen positions, by name, for the identity check below --
+    # order matches _mortality_all_cells_parallel's own signature, not the call site's.
+    IDENTITY_POSITIONS = {
+        bioen_pos: "bioen",
+        cap_fish_pos: "cap_fish",
+        raw_preyed_pos: "raw_preyed",
+        e_net_pos: "e_net",
+        gonad_pos: "gonad_weight",
+        eta_school_pos: "eta_school",
+        is_background_pos: "is_background",
+        eff_foraging_pos: "eff_foraging",
+    }
 
     cfg = dict(OsmoseConfigReader().read(str(BALTIC_EV_CONFIG)))
     assert cfg.get("module.bioenergetics.enabled", "").lower() == "true", (
@@ -420,12 +459,56 @@ def test_end_to_end_bioen_run_reaches_kernel_with_arrays_threaded_correctly():
     # Recording this turns "seeded never fires" from a confusing fixture-looking failure
     # into a directly-named swap diagnosis.
     gonad_slot_went_negative = False
+    identity_checked = False
+    identity_mismatches: list[str] = []
 
     n_subdt = max(1, int(cfg.get("mortality.subdt", "1")))
 
     def _wrapper(*args, **kwargs):
         nonlocal seeded, gonad_changed, starvation_seen, raw_preyed_seen
-        nonlocal gonad_slot_went_negative
+        nonlocal gonad_slot_went_negative, identity_checked
+
+        if not identity_checked:
+            # Identity check, not a value witness: reproduced by the reviewer of the
+            # first cut of this test -- sabotaging raw_preyed<->eff_foraging at the
+            # mortality() call site passed COMPLETELY undetected by the value witnesses
+            # below, because raw_preyed is an OUTPUT the kernel writes into, so
+            # "raw_preyed ended up non-zero" is satisfied almost regardless of which
+            # array object occupies that slot. Every one of the eight trailing bioen
+            # arguments is an output-accumulator or accumulator-like array
+            # (raw_preyed, n_dead, inst_abd, preyed_biomass, gonad_weight, e_net), so
+            # value witnesses under-guard the whole class -- only an identity check
+            # against the CALLER's own locals catches a positional transposition
+            # regardless of its numerical consequence. mortality() is the immediate
+            # caller of this wrapper (it invokes `_batch_fn(...)` directly, no
+            # intermediate layer), so its locals at the moment of the call are the
+            # ground truth for what SHOULD be at each position.
+            import sys
+
+            caller_locals = sys._getframe(1).f_locals
+            work_state = caller_locals["work_state"]
+            expected_by_pos = {
+                bioen_pos: caller_locals["config"].bioen_enabled,
+                cap_fish_pos: caller_locals["k_cap"],
+                raw_preyed_pos: caller_locals["k_raw"],
+                e_net_pos: work_state.e_net,
+                gonad_pos: work_state.gonad_weight,
+                eta_school_pos: caller_locals["eta_school"],
+                is_background_pos: work_state.is_background,
+                eff_foraging_pos: caller_locals["eff_for"],
+            }
+            for pos, expected in expected_by_pos.items():
+                actual = args[pos]
+                name = IDENTITY_POSITIONS[pos]
+                ok = (actual == expected) if pos == bioen_pos else (actual is expected)
+                if not ok:
+                    identity_mismatches.append(
+                        f"position {pos} ({name}): expected the caller's own {name!r} "
+                        f"local, got a different object -- positional transposition at "
+                        "mortality()'s call site into _mortality_all_cells_parallel"
+                    )
+            identity_checked = True
+
         e_net = args[e_net_pos]
         gonad = args[gonad_pos]
         eligible = (~args[is_background_pos]) & (args[age_dt_pos] > args[first_feeding_pos])
@@ -462,6 +545,14 @@ def test_end_to_end_bioen_run_reaches_kernel_with_arrays_threaded_correctly():
     finally:
         M._mortality_all_cells_parallel = orig_batch_fn
 
+    assert identity_checked, (
+        "the wrapper was never called -- the run never reached the batch kernel, so "
+        "neither the identity check nor any witness below could run"
+    )
+    assert not identity_mismatches, (
+        "positional transposition(s) detected at mortality()'s own call site into "
+        "_mortality_all_cells_parallel:\n" + "\n".join(identity_mismatches)
+    )
     if gonad_slot_went_negative:
         raise AssertionError(
             "the array at the gonad_weight position went NEGATIVE for an eligible school -- "
