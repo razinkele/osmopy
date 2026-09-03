@@ -672,22 +672,51 @@ def _pre_generate_cell_rng(
     rng: np.random.Generator,
     boundaries: NDArray[np.int64],
     n_cells: int,
+    config: EngineConfig,
 ) -> tuple[list[NDArray[np.int32]], NDArray[np.int32]]:
     """Pre-generate all random data for all cells in one Python pass.
 
+    Mirrors ``_mortality_in_cell``'s per-cell RNG consumption exactly
+    (mortality.py's ``seq_pred, seq_starv, seq_fish, seq_nat, seq_for`` draw,
+    followed by ``n_local`` calls to ``rng.shuffle`` on a fresh
+    ``_get_mortality_causes(config)`` list): FIVE permutations are drawn per cell
+    UNCONDITIONALLY -- even without bioen, where the fifth (``seq_for``) goes
+    unused by the caller, because the reference draws it unconditionally too and a
+    stream that skips it would desync from step one. The cause-order buffer's
+    width instead follows ``_get_mortality_causes(config)``: 4 without bioen, 5
+    (FORAGING included) with it, matching Java's own cause set
+    (``MortalityProcess.java:506-517``).
+
+    This "pre-generate everything up front" pattern is only valid because NOTHING drawn
+    from ``rng`` inside the reference's cause-application step is left unaccounted for:
+    ``_apply_predation_for_school`` receives an ``rng`` parameter but never reads it
+    (predation is distributed deterministically, proportional to accessible biomass), and
+    ``_apply_starvation_for_school``/``_apply_additional_for_school``/
+    ``_apply_fishing_for_school``/``_apply_foraging_for_school`` do not take ``rng`` at
+    all. So the per-cell stream this function reproduces -- 5 permutations then
+    ``n_local`` shuffles -- is the reference's ENTIRE per-cell RNG consumption, for both
+    the Numba-dispatch branch (which pre-draws for the same reason) and the Python
+    fallback branch (verified directly against the fallback loop's cause-application
+    calls, not inferred from the dispatch branch alone).
+
     Note: Not used by the batch Numba path (which generates RNG inline).
-    Retained as a tested reference implementation and for potential future use.
+    Retained as a tested reference implementation of the per-cell RNG stream, and
+    for potential future use.
 
     Returns:
-        seq_bufs: list of 4 int32 arrays, each of length boundaries[n_cells].
-            seq_bufs[k][start:end] is rng.permutation(n_local) for cell k.
-        cause_orders_buf: int32 array of shape (total, 4).
-            cause_orders_buf[start+i] is a shuffled [PRED, STARV, ADDITIONAL, FISHING].
+        seq_bufs: list of 5 int32 arrays, each of length boundaries[n_cells], in
+            DRAW order -- ``[seq_pred, seq_starv, seq_fish, seq_nat, seq_for]``,
+            i.e. NOT cause-code order (the reference's third draw is FISHING, its
+            fourth ADDITIONAL). seq_bufs[k][start:end] is rng.permutation(n_local)
+            for cell k.
+        cause_orders_buf: int32 array of shape (total, len(_get_mortality_causes(config))).
+            cause_orders_buf[start+i] is one shuffled cause order (cause codes from
+            the ``MortalityCause`` enum), for school slot i.
     """
     total = int(boundaries[n_cells])
-    seq_bufs = [np.empty(total, dtype=np.int32) for _ in range(4)]
-    cause_orders_buf = np.empty((total, 4), dtype=np.int32)
-    causes = [_PREDATION, _STARVATION, _ADDITIONAL, _FISHING]
+    seq_bufs = [np.empty(total, dtype=np.int32) for _ in range(5)]
+    n_causes = len(_get_mortality_causes(config))
+    cause_orders_buf = np.empty((total, n_causes), dtype=np.int32)
 
     for cell in range(n_cells):
         start = int(boundaries[cell])
@@ -695,14 +724,12 @@ def _pre_generate_cell_rng(
         n_local = end - start
         if n_local == 0:
             continue
-        for k in range(4):
+        for k in range(5):
             seq_bufs[k][start:end] = rng.permutation(n_local).astype(np.int32)
+        causes = _get_mortality_causes(config)
         for i in range(n_local):
             rng.shuffle(causes)
-            cause_orders_buf[start + i, 0] = causes[0]
-            cause_orders_buf[start + i, 1] = causes[1]
-            cause_orders_buf[start + i, 2] = causes[2]
-            cause_orders_buf[start + i, 3] = causes[3]
+            cause_orders_buf[start + i, :] = causes
 
     return seq_bufs, cause_orders_buf
 
