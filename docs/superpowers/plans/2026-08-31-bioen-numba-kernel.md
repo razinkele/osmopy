@@ -181,16 +181,34 @@ cell path does not write) and omitted `raw_preyed`, resource depletion and the T
   **at least two non-empty cells** so `prange` actually iterates more than once, and run the
   parallel kernel with `NUMBA_NUM_THREADS >= 2`.
 
-- [ ] **Step 3: Prove both harnesses bite.** Sabotage one line of `_apply_single_cause` (e.g.
-  `n_dead[idx, 2] += dead * 1.001`), confirm each harness FAILS, restore, and paste the failure
-  output into the report. A harness that has never failed is not a harness.
+- [ ] **Step 3: Prove both harnesses bite — with the right sabotage for each.**
+  **Corrected 2026-09-03 after Task 1 demonstrated the original wording was wrong.** Sabotaging
+  `_apply_single_cause` (e.g. `n_dead[idx, 2] += dead * 1.001`) reddens the *cell* harness only
+  (measured: 5 cell tests fail, 0 batch tests). It cannot redden `run_batch_both_paths`, because
+  both of that harness's arms call the same shared `_apply_single_cause` and therefore move
+  together. Each harness needs the sabotage matching the defect class it exists to catch:
+  - `run_cell_both_paths` → sabotage a shared helper (`_apply_single_cause`) — expect cell tests red.
+  - `run_batch_both_paths` → sabotage ONE of the three inlined interleaved loops so it drifts from
+    the others (measured: 4 batch tests red, 0 cell tests) — that divergence is precisely what this
+    harness exists to detect.
+  Restore after each, confirm `git diff` on `mortality.py` is empty, and paste both failure outputs
+  into the report. A harness that has never been seen to fail is not a harness.
 
 - [ ] **Step 4:** Bioen-OFF equivalence must pass for both harnesses before any behaviour change.
-  **Known risk to check here, not later:** exact equality may be unattainable for FISHING because
-  `_precompute_effective_rates` composes the rate in a different multiplication order than the
-  per-school path. If that shows up, report it with the ULP magnitude and propose the narrowest
-  possible exception (a single documented field, or reordering the kernel to match) — **do not**
-  loosen the whole comparison to a tolerance.
+  **Resolved by Task 1 — recorded here because Task 2's fixtures must respect it.** There are TWO
+  independent sources of last-bit divergence between the paths, and only one is fixable:
+  1. FISHING's multiplication order differs between `_precompute_effective_rates` and the
+     per-school path — bounded at exactly 1 ULP, avoidable by choosing fixtures where the two
+     orders coincide.
+  2. **Numba lowers `np.exp` to libm while NumPy uses its own SIMD polynomial.** They disagree on
+     ~5–9 % of arguments, and `1 - exp(-D)` amplifies that by ~1/D: ~1e-13 at engine rates, 1.7e-10
+     worst case. **This cannot be fixed by reordering** — it is two different correctly-rounded-ish
+     implementations of the same function.
+  The resolution Task 1 adopted, which Task 2 must keep: gate fixtures use unit selectivity so the
+  orders coincide exactly and the comparison stays bit-exact; the one fixture where both hazards
+  land is *characterised* (bounded < 1e-12) rather than gated. `assert_arms_equal` was NOT
+  loosened, and must not be. This is safe because every defect the gate exists to catch — a missing
+  survivor rescale, a wrong cap, a missing cause — is an O(1) error, not an O(1e-13) one.
 
 - [ ] **Step 5:** Commit.
 
