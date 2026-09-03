@@ -820,12 +820,14 @@ def _precompute_effective_rates(work_state, config, n_subdt, step, fleet_state=N
         # Bioen starvation is the gonad-depletion formula, applied inside the
         # interleaved loop (Python: _apply_starvation_for_school; Numba:
         # _apply_single_cause's cause==1 bioen branch). The standard (pred-success)
-        # rate must never be applied on top of it. Since bioen-Numba-kernel plan Task 3
-        # flipped the dispatch, the batched kernels DO run under bioen and read
-        # eff_starv directly — this is no longer defence in depth, it is the ONLY
-        # guard against double-counting: `_apply_single_cause`'s bioen branch always
-        # returns before reaching the `D = eff_starv[idx]` tail, so this line is what
-        # keeps that tail dead code under bioen rather than a live second application.
+        # rate must never be applied on top of it. The REAL guard against
+        # double-counting is that every one of `_apply_single_cause`'s bioen-branch
+        # exit paths (cause==1, `if bioen:` at mortality.py:1349-1393) ends in
+        # `return` before reaching the `D = eff_starv[idx]` tail below it — that tail
+        # is unreachable under bioen regardless of what this array holds. Zeroing it
+        # here is defence in depth, not the only thing standing between this and a
+        # live second application: it costs nothing, and it is what keeps the tail
+        # dead code even if those `return`s are ever restructured.
         eff_starv[:] = 0.0
 
     # Additional mortality (vectorized over species)

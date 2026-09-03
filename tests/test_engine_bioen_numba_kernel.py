@@ -2263,6 +2263,97 @@ def test_bioen_behaviours_are_each_visible_in_the_gate_result():
         )
 
 
+def _pre_feeding_forage_fixture() -> tuple[EngineConfig, SchoolState]:
+    """A one-school bioen fixture: coverage for the FORAGING pre-first-feeding exemption.
+
+    Final review finding F1: no bioen fixture on this branch had a school with
+    ``age_dt < first_feeding_age_dt``, so the exemption applied by ``_zero_exempt``
+    inside ``_precompute_foraging_rates`` (``mortality.py:1008``) -- mirroring the
+    reference's own guard in ``_apply_foraging_for_school`` (``mortality.py:369-370``) --
+    was exercised by nothing. ``age_dt = 0 < first_feeding_age_dt = 1`` is exactly what a
+    freshly spawned egg looks like (``reproduction.py:236``), which is the failure
+    scenario: the moment the parent plan's Task 8 fit sets a live ``k_for``, every step
+    after spawning has egg schools sitting right here.
+
+    Deliberately NOT built by extending ``base_state``/``bioen_gate_fixture``: those are
+    shared by 50+ other tests in this file (see ``test_a_zero_abundance_school_gets_no_
+    gonad_or_enet_write`` for the established, safe way to locally override ONE of their
+    schools). Adding a ninth school -- or repurposing one of the existing eight -- changes
+    the RNG permutation width of whichever cell it lands in, and every existing prey
+    school there already sits inside a predator's eligible size window. If PREDATION
+    happened to drive that school's ``inst_abd`` to zero before FORAGING is evaluated in
+    the shuffled cause order, ``n_dead[idx, FORAGING] == 0`` would hold via the (also
+    present, and correct) ``abd <= 0`` guard regardless of whether the age exemption
+    fires -- exactly the ambiguity this fix exists to eliminate. A single school, alone
+    in its own cell, has no predator to introduce that confound: only the age check can
+    zero it.
+    """
+    config = base_config(**_bioen_overrides())
+    assert config.bioen_enabled, (
+        "_precompute_foraging_rates short-circuits to np.zeros(n) when bioen is off "
+        "(mortality.py:975-976), and FORAGING is not in the cause list either -- without "
+        "this the whole fixture would pass vacuously"
+    )
+    state = SchoolState.create(1, species_id=np.array([1], dtype=np.int32)).replace(
+        abundance=np.array([9.0e6]),
+        weight=np.array([1.5e-6]),
+        length=np.array([4.5]),
+        length_start=np.array([4.5]),
+        age_dt=np.array([0], dtype=np.int32),
+        trophic_level=np.array([2.1]),
+        starvation_rate=np.array([0.05]),
+        e_net=np.array([-0.3]),
+        gonad_weight=np.array([0.4]),
+        preyed_biomass=np.array([1.0]),
+    )
+    return config, state
+
+
+def test_pre_first_feeding_school_is_exempt_from_foraging():
+    """F1 fix (final whole-branch review): a school below the first-feeding age must not
+    die to FORAGING.
+
+    Two layers, both of which the reviewer's sabotage (dropping the pre-feeding line from
+    ``_zero_exempt``'s use inside ``_precompute_foraging_rates``) reddens:
+
+    1. Unit level, directly on the function the finding names: ``eff_foraging`` must
+       already be zeroed for this school before any kernel runs.
+    2. Integration level, mirroring the background-school (school 5) exemption assertion
+       in ``test_bioen_behaviours_are_each_visible_in_the_gate_result``: BOTH arms'
+       ``n_dead[idx, FORAGING]`` must come back zero.
+    """
+    config, state = _pre_feeding_forage_fixture()
+    assert (state.age_dt < state.first_feeding_age_dt).all(), (
+        "fixture must sit below the first-feeding age or the exemption is untested"
+    )
+    sp = int(state.species_id[0])
+    assert config.bioen_k_for is not None and float(config.bioen_k_for[sp]) > 0.0, (
+        "k_for must be live for this fixture, or the exemption is untestable (both a "
+        "zero rate and a correctly-applied exemption give the same zero output)"
+    )
+
+    eff_for = M._precompute_foraging_rates(state, config, n_subdt=2)
+    assert eff_for[0] == 0.0, (
+        "_precompute_foraging_rates did not zero the rate for a pre-first-feeding school"
+    )
+
+    python_arm, kernel_arm = run_cell_bioen_both_paths(
+        state, config, seed=7, n_subdt=2, min_non_empty_cells=1
+    )
+    # The reference arm must be the reviewed Python path and the candidate arm must have
+    # actually entered the kernel -- otherwise this would be comparing the kernel with
+    # itself (or the reference with itself) and the two n_dead==0.0 checks below would be
+    # vacuous, exactly the failure mode this file's module docstring warns about.
+    assert python_arm.kernel_calls == 0, "reference arm entered the Numba kernel"
+    assert kernel_arm.kernel_calls >= 1, "candidate arm never entered the Numba kernel"
+    for arm in (python_arm, kernel_arm):
+        assert float(arm.state.n_dead[0, int(MortalityCause.FORAGING)]) == 0.0, (
+            f"{arm.label}: a school below the first-feeding age must be exempt from "
+            "FORAGING mortality, mirroring the school-5 background exemption in "
+            "test_bioen_behaviours_are_each_visible_in_the_gate_result"
+        )
+
+
 def test_a_zero_abundance_school_gets_no_gonad_or_enet_write():
     """Behaviour 3's `inst_abd <= 0` guard, placed BEFORE any gonad/e_net write.
 

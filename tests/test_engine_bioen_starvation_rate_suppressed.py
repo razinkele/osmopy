@@ -8,11 +8,15 @@ carries both. `_precompute_effective_rates` zeroes `eff_starv` for that reason.
 
 Bioen-Numba-kernel plan Task 3 (2026-09-03) reversed spec decision 14: `mortality()` now
 DOES dispatch bioen runs to the batched Numba kernels (Task 2 taught them all five bioen
-behaviours first). This is therefore no longer defence in depth — `eff_starv` is read by
-the very kernel every bioen run now executes, and `_apply_single_cause`'s bioen branch
-(cause==1) always returns before reaching its `D = eff_starv[idx]` tail, so this line is
-the ONLY thing keeping that tail dead code instead of a live second application. The
-behavioural companion to this unit test is
+behaviours first), so `eff_starv` is read by the very kernel every bioen run now
+executes. It is still defence in depth, not the only guard: `_apply_single_cause`'s
+bioen branch (cause==1) has every one of its exit paths end in `return` before reaching
+its `D = eff_starv[idx]` tail, so that tail is unreachable under bioen regardless of what
+`eff_starv` holds. The REAL guard is that unconditional `return`; zeroing `eff_starv` is
+a cheap belt that keeps the tail dead code even if those `return`s are ever
+restructured. Final whole-branch review (2026-09-03, finding F2) corrected an earlier
+"the ONLY guard" version of this docstring. The behavioural companion to this unit test
+is
 `test_bioen_starvation_fires_inside_the_interleaved_loop`
 (`tests/test_engine_bioen_mortality_parity.py`), which pins the exact post-dispatch
 `n_dead`/`e_net`/`gonad_weight` numbers end to end through `mortality()` — a double count
