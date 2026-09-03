@@ -11,17 +11,34 @@ WHY THE ``_HAS_NUMBA`` TOGGLE IS THE POINT OF THIS FILE
     use_full_numba = (_HAS_NUMBA and inst_abd is not None and rsc_size_min is not None
                       and eff_starv is not None and not config.bioen_enabled)
 
-and, when true, *dispatches into* ``_mortality_in_cell_numba``. Plan Task 4 removes the
-``not config.bioen_enabled`` term. A harness that simply called ``_mortality_in_cell``
-twice would, after that flip, run the kernel on BOTH arms and compare the kernel with
-itself -- green forever, pinning nothing. So the reference arm here sets
-``M._HAS_NUMBA = False`` for the duration of its call and restores it afterwards, which
-is the only thing that guarantees the reference arm executes ``_apply_*_for_school``.
+and, when true, *dispatches into* ``_mortality_in_cell_numba``. Plan **Task 3 Step 2**
+removes the ``not config.bioen_enabled`` term (Task 4 is whole-run sanity, not the flip).
+A harness that simply called ``_mortality_in_cell`` twice would, after that flip, run the
+kernel on BOTH arms and compare the kernel with itself -- green forever, pinning nothing.
+So the reference arm here sets ``M._HAS_NUMBA = False`` for the duration of its call and
+restores it afterwards, which is the only thing that guarantees the reference arm executes
+``_apply_*_for_school``.
 
 ``ArmResult.kernel_calls`` closes the loop from the other side: the reference arm must
 show **exactly 0** kernel entries and the candidate arm **at least 1**. ``require_kernel``
 therefore turns "the candidate silently fell back to Python" (which is what happens under
-bioen today, before Task 4's flip) into a loud failure instead of a vacuous pass.
+bioen today, before Task 3's flip) into a loud failure instead of a vacuous pass.
+
+THE BIOEN TRIPWIRE IS ``test_bioen_still_falls_back_to_python_until_the_dispatch_flip``
+---------------------------------------------------------------------------------------
+NOT the ``xfail`` on ``test_cell_arms_agree_under_bioen``. An earlier revision of this file
+claimed that xfail would XPASS at the flip and that ``strict=True`` would force someone to
+remove it deliberately. **That is false and was disproved by review**: applying the real
+dispatch flip with ZERO bioen work in the kernel still prints ``1 xfailed`` -- the test
+merely stops failing on ``require_kernel`` and starts failing on ``n_dead`` (17/64
+mismatched, max rel. diff 0.75). ``raises=AssertionError`` narrows nothing, because
+``require_kernel``, every equality exit and every witness check raise ``AssertionError``.
+So "dispatch flipped" and "bioen kernel absent or partial" were the same colour.
+
+The unmarked ``test_bioen_still_falls_back_to_python_until_the_dispatch_flip`` asserts
+today's mechanism *positively* (``kernel_calls == 0`` under bioen). It goes RED the moment
+dispatch flips, whatever state the kernel is in, and its message says to promote the xfail
+test to a real gate. That is the tripwire; the xfail is only a placeholder for the gate.
 
 Because ``_HAS_NUMBA`` is toggled rather than the RNG replayed, both arms can simply be
 handed a freshly seeded ``np.random.default_rng(seed)``: the dispatch branch draws five
@@ -54,12 +71,25 @@ attainable on rates where the two ``exp`` implementations happen to agree.
 ``assert_exp_library_agreement`` checks exactly that for a fixture's own rates, so a
 libm/NumPy change fails with a message naming the cause instead of an opaque numeric diff
 that a future reader would blame on Task 2's kernel edits.
+
+GLOBAL STATE THIS FILE TOUCHES, AND PUTS BACK
+---------------------------------------------
+Three process-global handles are mutated and restored in ``finally`` blocks, because this
+file sorts before several suites that would silently inherit the change:
+``M._HAS_NUMBA`` / ``M._mortality_in_cell_numba`` (per arm), ``numba.set_num_threads``
+(parallel batch arm), and **NumPy's legacy global RNG** (``_replicate_batch_kernel_rng``
+must use the legacy stream -- it is the only one that matches Numba's -- but must not
+leave it mutated; ``tests/conftest.py`` does no global seeding and at least six modules
+using ``np.random``'s global functions sort after this one).
 """
 
 from __future__ import annotations
 
+import contextlib
 import copy
-from collections.abc import Sequence
+import inspect
+import re
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -181,6 +211,7 @@ def assert_arms_equal(
     fields: Sequence[str] = COMPARED,
     witness_fields: Sequence[str] = ("n_dead",),
     witness_causes: Sequence[int] = (),
+    allow_missing_bioen_witnesses: Sequence[str] = (),
     label: str = "",
 ) -> None:
     """Assert bit-exact equality of every COMPARED field, and that the run did work.
@@ -194,26 +225,36 @@ def assert_arms_equal(
             2-4 must extend this per behaviour, not rely on the default.
         witness_causes: ``MortalityCause`` codes whose ``n_dead`` column must be > 0 on
             both arms (e.g. FORAGING for plan behaviour 4).
+        allow_missing_bioen_witnesses: dormant fields this particular bioen comparison is
+            allowed to skip. Naming one is a deliberate, greppable statement that the
+            behaviour under test does not write it (e.g. a per-fish-cap test in which
+            starvation never fires and ``gonad_weight`` stays zero). Silence is not.
         label: prefix for assertion messages.
 
     Raises:
-        AssertionError: under bioen, if ``witness_fields`` names none of
-            ``DORMANT_FIELDS``. ``run_batch_both_paths`` bypasses ``use_full_numba``
-            entirely -- both its arms call kernels directly -- so it has no
-            ``require_kernel`` analogue and, under bioen today, happily compares two
-            kernels that BOTH ignore bioen and agree perfectly. The witness set is the
-            only thing standing between Task 2 and a green-but-vacuous bioen batch test.
+        AssertionError: under bioen, if ``witness_fields`` omits any of ``DORMANT_FIELDS``
+            without naming it in ``allow_missing_bioen_witnesses``.
+            ``run_batch_both_paths`` bypasses ``use_full_numba`` entirely -- both its arms
+            call kernels directly -- so it has no ``require_kernel`` analogue and, under
+            bioen, would happily compare two kernels that BOTH ignore bioen and agree
+            perfectly. The witness set is the only thing standing between Task 2 and a
+            green-but-vacuous bioen batch test. Note this remains a floor, not a proof:
+            ``np.any(arr != 0.0)`` accepts a single non-zero element, so pair it with
+            ``assert_bioen_changes_the_answer`` for a real sensitivity check.
     """
     prefix = f"[{label}] " if label else ""
-    if reference.bioen and not (set(witness_fields) & DORMANT_FIELDS):
-        raise AssertionError(
-            f"{prefix}a bioen comparison must witness at least one of {sorted(DORMANT_FIELDS)} "
-            "-- otherwise two arms that both ignore bioen agree perfectly and the test is "
-            "vacuous. Plan Task 2's full set is witness_fields=('n_dead', 'e_net', "
-            "'gonad_weight', 'raw_preyed') with witness_causes including STARVATION and "
-            "FORAGING (the latter needs species.bioen.forage.k_for > 0, which "
-            "BIOEN_OVERLAY deliberately does not set)."
-        )
+    if reference.bioen:
+        missing = sorted(DORMANT_FIELDS - set(witness_fields) - set(allow_missing_bioen_witnesses))
+        if missing:
+            raise AssertionError(
+                f"{prefix}a bioen comparison must witness {missing} (or name them in "
+                "allow_missing_bioen_witnesses) -- otherwise two arms that both ignore "
+                "bioen agree perfectly and the test is vacuous. Plan Task 2's full set is "
+                "witness_fields=('n_dead', 'e_net', 'gonad_weight', 'raw_preyed') with "
+                "witness_causes including STARVATION and FORAGING (the latter needs "
+                "species.bioen.forage.k_for > 0, which BIOEN_OVERLAY deliberately does "
+                "not set)."
+            )
     for name in fields:
         a = reference.get(name)
         b = candidate.get(name)
@@ -247,6 +288,66 @@ def assert_arms_equal(
                 f"{prefix}no deaths recorded for cause {int(cause)} on {arm.label} -- "
                 "the behaviour under test never fired"
             )
+
+
+def assert_bioen_changes_the_answer(
+    state: SchoolState,
+    config: EngineConfig,
+    *,
+    seed: int,
+    n_subdt: int = 10,
+    label: str = "",
+    **kwargs,
+) -> None:
+    """Negative control: turning bioen OFF on this fixture must move ``n_dead``.
+
+    Witness fields are a floor, not a proof -- ``np.any(arr != 0.0)`` is satisfied by a
+    single non-zero element, and a fixture can witness ``e_net`` while the bioen behaviour
+    under test never actually binds. This asks the sharper question directly: if flipping
+    ``bioen_enabled`` off does not change the answer, the comparison cannot be testing
+    bioen, whatever field is witnessed.
+
+    Runs only the PYTHON reference arm on both settings (cheap, and it is the fixture being
+    interrogated, not the kernel), so it is usable today, before the dispatch flip.
+    """
+    prefix = f"[{label}] " if label else ""
+    assert config.bioen_enabled, f"{prefix}negative control needs a bioen-enabled config"
+    config_off = copy.copy(config)
+    config_off.bioen_enabled = False
+
+    on, _ = run_cell_both_paths(
+        state, config, seed=seed, n_subdt=n_subdt, require_kernel=False, **kwargs
+    )
+    off, _ = run_cell_both_paths(
+        state, config_off, seed=seed, n_subdt=n_subdt, require_kernel=False, **kwargs
+    )
+    if np.array_equal(on.state.n_dead, off.state.n_dead):
+        raise AssertionError(
+            f"{prefix}n_dead is identical with bioen ON and OFF, so this fixture does not "
+            "exercise bioen at all and any equality gate built on it is vacuous. Check that "
+            "the cap binds, that e_net is negative on a school past first feeding, and that "
+            "c_m is material (tests/_bioen_overlay.py's C_M) rather than the ~1e-8 that "
+            "switches starvation off entirely."
+        )
+
+
+@contextlib.contextmanager
+def legacy_rng_preserved() -> Iterator[None]:
+    """Save/restore NumPy's LEGACY global RNG state around a block that seeds it.
+
+    Replicating the batch kernels' draws *requires* the legacy global stream -- it is the
+    only one that reproduces Numba's MT19937 (``Generator``/PCG64 does not). Leaving it
+    mutated is a different matter: ``tests/conftest.py`` does no global seeding, and
+    several suites that call ``np.random``'s module-level functions sort after this file
+    (``test_engine_physical_data``, ``test_ensemble``, ``test_grid_creation``,
+    ``test_reporting``, ``test_results``, ``test_study_workflows``, ``test_ui_results``).
+    This mirrors what the parallel batch arm already does for ``numba.set_num_threads``.
+    """
+    saved = np.random.get_state()
+    try:
+        yield
+    finally:
+        np.random.set_state(saved)
 
 
 def assert_exp_library_agreement(*rate_arrays: NDArray[np.float64], label: str = "") -> None:
@@ -515,11 +616,69 @@ def run_cell_both_paths(
 
 #: The batch kernels' inline draw pattern, per non-empty cell, in order:
 #: ``seq_pred, seq_starv, seq_fish, seq_nat`` then ``n_local`` shuffles of ``[0,1,2,3]``.
-#: Plan Task 2 adds a fifth permutation (``seq_for``) and a fifth cause code under bioen;
-#: when it does, ``n_perms``/``cause_codes`` here must be updated in the same commit or
-#: this harness silently desynchronises from the kernel it is meant to pin.
+#: Plan Task 2 adds a fifth permutation (``seq_for``) and a fifth cause code under bioen.
+#: This is NOT left to a comment and a careful reader: ``_assert_batch_rng_contract`` reads
+#: the kernels' own source and refuses to run if the harness's expectation has drifted from
+#: it, so a one-sided update fails with a message naming both files instead of surfacing as
+#: an RNG desync that looks exactly like a logic bug.
 _BATCH_N_PERMS_BIOEN_OFF = 4
 _BATCH_PARALLEL_SEED_STRIDE = 7919
+
+
+def _kernel_rng_shape(fn) -> tuple[int, list[int], int]:
+    """Read (permutation count, cause literal, cause-loop width) out of a kernel's source.
+
+    Source introspection rather than behavioural probing because the quantities are
+    compile-time literals inlined in three places; ``fn.py_func`` is the undecorated
+    Python body Numba compiled.
+    """
+    body = inspect.getsource(fn.py_func)
+    n_perms = len(re.findall(r"np\.random\.permutation\(", body))
+    literal = re.search(r"causes = np\.array\(\[([^\]]*)\]", body)
+    codes = [int(tok) for tok in literal.group(1).split(",")] if literal else []
+    width = re.search(r"for c in range\((\d+)\)", body)
+    return n_perms, codes, int(width.group(1)) if width else -1
+
+
+def _assert_batch_rng_contract(cause_codes: Sequence[int], n_perms: int) -> None:
+    """Refuse to replicate draws the kernels do not actually make.
+
+    ``run_batch_both_paths`` reproduces the batch kernels' internal RNG in Python. That is
+    only valid while the harness's idea of the draw pattern matches the kernels' -- and the
+    two live in different files. Today both batch kernels draw FOUR permutations
+    unconditionally with a literal ``[0, 1, 2, 3]`` (``mortality.py``'s
+    ``_mortality_all_cells_numba`` and ``_mortality_all_cells_parallel``), with no bioen
+    branch. When Task 2 adds ``seq_for`` and the five-cause order, this assertion fires
+    first and says so, instead of letting a desynchronised stream masquerade as a
+    behavioural divergence in the thing under test.
+
+    It also cross-checks the two batch kernels against each other and against
+    ``_mortality_in_cell_numba``'s cause-loop width -- the plan's "duplication hazard" says
+    every change must land in all three, and this is the cheapest place to notice it did
+    not.
+    """
+    seq_perms, seq_codes, seq_width = _kernel_rng_shape(M._mortality_all_cells_numba)
+    par_perms, par_codes, par_width = _kernel_rng_shape(M._mortality_all_cells_parallel)
+    _, _, cell_width = _kernel_rng_shape(M._mortality_in_cell_numba)
+
+    assert (seq_perms, seq_codes, seq_width) == (par_perms, par_codes, par_width), (
+        "the two batch kernels disagree on their own RNG/cause shape -- "
+        f"_mortality_all_cells_numba={(seq_perms, seq_codes, seq_width)} vs "
+        f"_mortality_all_cells_parallel={(par_perms, par_codes, par_width)}. "
+        "An edit landed in one inlined loop and not the other (mortality.py)."
+    )
+    assert cell_width == seq_width, (
+        f"_mortality_in_cell_numba iterates {cell_width} causes but the batch kernels "
+        f"iterate {seq_width}; the three inlined loops have diverged (mortality.py)."
+    )
+    assert (n_perms, list(cause_codes)) == (seq_perms, seq_codes), (
+        f"harness expects {n_perms} permutations and cause codes {list(cause_codes)}, but "
+        f"the batch kernels draw {seq_perms} permutations over {seq_codes} "
+        "(mortality.py: _mortality_all_cells_numba / _mortality_all_cells_parallel). "
+        "Update run_batch_both_paths's n_perms/cause_codes in the SAME commit as the "
+        "kernel change -- a one-sided update desynchronises the replicated RNG stream and "
+        "the resulting mismatch is indistinguishable from a logic bug."
+    )
 
 
 def _replicate_batch_kernel_rng(
@@ -539,25 +698,29 @@ def _replicate_batch_kernel_rng(
     before the cell loop and lets cells consume the stream in order; the parallel kernel
     re-seeds per cell with ``rng_seed + cell * 7919``. Empty cells ``continue`` before any
     draw, so they consume nothing -- replicated here by the same early skip.
+
+    The legacy global stream is restored on exit (``legacy_rng_preserved``): using it is
+    unavoidable, leaving it mutated is not.
     """
     per_cell: dict[int, tuple[list[NDArray[np.int32]], NDArray[np.int32]]] = {}
-    if not parallel:
-        np.random.seed(seed)
-    for cell in range(n_cells):
-        start = int(boundaries[cell])
-        end = int(boundaries[cell + 1])
-        if end <= start:
-            continue
-        if parallel:
-            np.random.seed(seed + cell * _BATCH_PARALLEL_SEED_STRIDE)
-        n_local = end - start
-        seqs = [np.random.permutation(n_local).astype(np.int32) for _ in range(n_perms)]
-        causes = np.array(list(cause_codes), dtype=np.int32)
-        cause_orders = np.empty((n_local, len(cause_codes)), dtype=np.int32)
-        for ii in range(n_local):
-            np.random.shuffle(causes)
-            cause_orders[ii, :] = causes
-        per_cell[cell] = (seqs, cause_orders)
+    with legacy_rng_preserved():
+        if not parallel:
+            np.random.seed(seed)
+        for cell in range(n_cells):
+            start = int(boundaries[cell])
+            end = int(boundaries[cell + 1])
+            if end <= start:
+                continue
+            if parallel:
+                np.random.seed(seed + cell * _BATCH_PARALLEL_SEED_STRIDE)
+            n_local = end - start
+            seqs = [np.random.permutation(n_local).astype(np.int32) for _ in range(n_perms)]
+            causes = np.array(list(cause_codes), dtype=np.int32)
+            cause_orders = np.empty((n_local, len(cause_codes)), dtype=np.int32)
+            for ii in range(n_local):
+                np.random.shuffle(causes)
+                cause_orders[ii, :] = causes
+            per_cell[cell] = (seqs, cause_orders)
     return per_cell
 
 
@@ -619,6 +782,7 @@ def run_batch_both_paths(
 
     cause_codes = M._get_mortality_causes(config)
     n_perms = 5 if config.bioen_enabled else _BATCH_N_PERMS_BIOEN_OFF
+    _assert_batch_rng_contract(cause_codes, n_perms)
     draws = _replicate_batch_kernel_rng(
         seed,
         boundaries,
@@ -892,16 +1056,69 @@ def test_numba_and_numpy_legacy_rng_streams_match():
 
     for seed in (1, 4242, 999983):
         nb_perms, nb_orders = _kernel_draws(seed, 6, 5)
-        np.random.seed(seed)
-        py_perms = np.empty((5, 6), dtype=np.int32)
-        py_orders = np.empty((5, 4), dtype=np.int32)
-        causes = np.array([0, 1, 2, 3], dtype=np.int32)
-        for r in range(5):
-            py_perms[r] = np.random.permutation(6).astype(np.int32)
-            np.random.shuffle(causes)
-            py_orders[r, :] = causes
+        with legacy_rng_preserved():
+            np.random.seed(seed)
+            py_perms = np.empty((5, 6), dtype=np.int32)
+            py_orders = np.empty((5, 4), dtype=np.int32)
+            causes = np.array([0, 1, 2, 3], dtype=np.int32)
+            for r in range(5):
+                py_perms[r] = np.random.permutation(6).astype(np.int32)
+                np.random.shuffle(causes)
+                py_orders[r, :] = causes
         np.testing.assert_array_equal(nb_perms, py_perms)
         np.testing.assert_array_equal(nb_orders, py_orders)
+
+
+def test_the_batch_harness_refuses_to_replicate_draws_the_kernels_do_not_make():
+    """The RNG-shape contract, so a Task 2 one-sided update cannot look like a logic bug.
+
+    ``run_batch_both_paths`` reproduces the batch kernels' internal draws in Python. Today
+    both kernels draw FOUR permutations unconditionally over a literal ``[0, 1, 2, 3]``,
+    with no bioen branch -- so the harness's ``n_perms = 5 if bioen`` is a promise about
+    code that does not exist yet. ``_assert_batch_rng_contract`` reads the kernels' own
+    source and refuses to run if the two have drifted apart.
+    """
+    seq_perms, seq_codes, seq_width = _kernel_rng_shape(M._mortality_all_cells_numba)
+    assert (seq_perms, seq_codes, seq_width) == (4, [0, 1, 2, 3], 4), (
+        "the batch kernel's RNG/cause shape changed; update run_batch_both_paths and this "
+        f"test together -- read {seq_perms} permutations over {seq_codes}, width {seq_width}"
+    )
+    # The contract holds for what the harness asks for today...
+    _assert_batch_rng_contract([0, 1, 2, 3], 4)
+    # ...and refuses both halves of a bioen-shaped request while the kernels are unchanged.
+    with pytest.raises(AssertionError, match="harness expects 5 permutations"):
+        _assert_batch_rng_contract([0, 1, 2, 3], 5)
+    with pytest.raises(AssertionError, match=r"cause codes \[0, 1, 2, 3, 5\]"):
+        _assert_batch_rng_contract([0, 1, 2, 3, 5], 4)
+
+
+def test_replicating_the_batch_rng_does_not_leak_the_legacy_global_stream():
+    """This file seeds NumPy's legacy global RNG; six later-sorting suites use it.
+
+    ``tests/conftest.py`` does no global seeding, so an unrestored seed would make
+    ``test_engine_physical_data`` / ``test_ensemble`` / ``test_grid_creation`` /
+    ``test_reporting`` / ``test_results`` / ``test_study_workflows`` / ``test_ui_results``
+    consume a stream this file chose. Same discipline the parallel batch arm already
+    applies to ``numba.set_num_threads``.
+    """
+    np.random.seed(123456)
+    before = np.random.get_state()
+    expected_next = np.random.random()
+
+    np.random.set_state(before)
+    grid = Grid.from_dimensions(ny=1, nx=2)
+    run_batch_both_paths(
+        base_state(), base_config(), seed=4242, parallel=False, grid=grid, n_subdt=2
+    )
+    assert np.random.random() == expected_next, (
+        "run_batch_both_paths left NumPy's legacy global RNG advanced"
+    )
+
+    np.random.set_state(before)
+    test_numba_and_numpy_legacy_rng_streams_match()
+    assert np.random.random() == expected_next, (
+        "test_numba_and_numpy_legacy_rng_streams_match left the legacy global RNG advanced"
+    )
 
 
 def test_exp_library_divergence_is_real_and_amplified_by_the_mortality_form():
@@ -1017,18 +1234,14 @@ def test_cell_arms_agree_across_seeds(seed):
     assert_arms_equal(python_arm, numba_arm, label=f"cell/seed={seed}")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="`use_full_numba` still carries `not config.bioen_enabled`, so the candidate "
-    "arm falls back to Python and `require_kernel` fires with `assert 0 >= 1`. Plan Task 4 "
-    "flips it; this must then XPASS and the marker be removed deliberately rather than the "
-    "bioen gate quietly never being written. `raises=AssertionError` narrows the marker so "
-    "an unrelated breakage (a config-parsing error, a None bioen array) cannot keep the "
-    "xfail satisfied after the flip and leave the gate permanently unwritten -- verify with "
-    "`pytest --runxfail` that the message is still the require_kernel one.",
-)
-def test_cell_arms_agree_under_bioen():
+def bioen_fixture() -> tuple[EngineConfig, SchoolState]:
+    """``base_config``/``base_state`` plus a material bioen budget on all three species.
+
+    Uses ``BIOEN_OVERLAY``'s values (Task 0), not ``apply_overlay`` itself: that helper is
+    authored for the Baltic demo config -- it copies ``species.maturity.size`` into ``m0``
+    and rewrites background ingestion rates -- neither of which this synthetic 3-species
+    fixture has. ``temperature.value`` is dropped for the same reason.
+    """
     from tests._bioen_overlay import BIOEN_OVERLAY
 
     overrides = {k: v for k, v in BIOEN_OVERLAY.items() if k != "temperature.value"}
@@ -1057,6 +1270,54 @@ def test_cell_arms_agree_under_bioen():
         e_net=np.array([-2.0, 0.0, -0.5, -1.0, 0.0, 0.0, -0.2, 0.0]),
         gonad_weight=np.array([0.5, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0]),
     )
+    return config, state
+
+
+def test_bioen_still_falls_back_to_python_until_the_dispatch_flip():
+    """THE bioen tripwire. Unmarked on purpose -- read the module docstring.
+
+    The ``xfail`` below cannot serve this role: with the dispatch flipped and NO bioen work
+    in the kernel it still fails (on ``n_dead`` instead of on ``require_kernel``) and still
+    prints ``1 xfailed``, so "flipped" and "under-implemented" are the same colour there.
+    This test asserts today's mechanism POSITIVELY, so it changes colour at the flip and at
+    nothing else.
+    """
+    config, state = bioen_fixture()
+    _, numba_arm = run_cell_both_paths(state, config, seed=7, n_subdt=2, require_kernel=False)
+    assert numba_arm.kernel_calls == 0, (
+        "the bioen dispatch gate is flipped (`use_full_numba` no longer carries "
+        "`not config.bioen_enabled`) -- remove the xfail marker on "
+        "test_cell_arms_agree_under_bioen, make it a real gate, and delete this test. "
+        "Until then a green suite here does NOT mean the bioen kernel works."
+    )
+
+
+def test_the_bioen_fixture_actually_exercises_bioen():
+    """Negative control on the fixture the bioen gate will use (CF-4).
+
+    A witness field only proves something is non-zero. This proves bioen is what made it
+    so: with ``bioen_enabled`` flipped off, the same fixture must give a different answer.
+    """
+    config, state = bioen_fixture()
+    assert_bioen_changes_the_answer(state, config, seed=7, n_subdt=2, label="bioen-fixture")
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=AssertionError,
+    reason="Placeholder for the real bioen gate, NOT a tripwire. Today "
+    "`use_full_numba` still carries `not config.bioen_enabled` so the candidate arm falls "
+    "back to Python and `require_kernel` fires with `assert 0 >= 1`. Plan **Task 3 Step 2** "
+    "flips that (Task 4 is whole-run sanity). WARNING, verified by review: with the flip "
+    "applied and zero bioen work in the kernel this test does NOT xpass -- it fails on "
+    "`n_dead` instead (17/64 mismatched, max rel. diff 0.75) and still prints `1 xfailed`. "
+    "`raises=AssertionError` narrows nothing, because require_kernel, every equality exit "
+    "and every witness check all raise AssertionError. So do not rely on strict=True to "
+    "notice the flip: `test_bioen_still_falls_back_to_python_until_the_dispatch_flip` is "
+    "what goes red. When it does, delete this marker and make this a real gate.",
+)
+def test_cell_arms_agree_under_bioen():
+    config, state = bioen_fixture()
     python_arm, numba_arm = run_cell_both_paths(state, config, seed=7, n_subdt=2, sub_steps=2)
     # Witnesses are mandatory under bioen (assert_arms_equal enforces it): without them
     # two arms that both ignore bioen agree perfectly. FORAGING is absent here because
@@ -1140,9 +1401,20 @@ def test_a_bioen_comparison_must_witness_a_dormant_field():
     config = base_config()
     state = base_state()
     py, nb = run_cell_both_paths(state, config, seed=7, n_subdt=2)
-    py.bioen = nb.bioen = True  # pretend, so the guard is testable without Task 4's flip
-    with pytest.raises(AssertionError, match="must witness at least one of"):
+    py.bioen = nb.bioen = True  # pretend, so the guard is testable before the dispatch flip
+    with pytest.raises(AssertionError, match="must witness"):
         assert_arms_equal(py, nb, label="bioen-guard")
+    # Every dormant field must be named, not just one...
+    with pytest.raises(AssertionError, match="gonad_weight"):
+        assert_arms_equal(py, nb, witness_fields=("n_dead", "e_net"), label="bioen-guard")
+    # ...but naming one in the opt-out is a deliberate, greppable exemption.
+    assert_arms_equal(
+        py,
+        nb,
+        witness_fields=("n_dead",),
+        allow_missing_bioen_witnesses=("e_net", "gonad_weight", "raw_preyed"),
+        label="bioen-guard",
+    )
 
 
 # ---------------------------------------------------------------------------
