@@ -76,8 +76,11 @@ length actually lives: `School.length` is set **only** from `School.incrementWei
 `(weight/c)^(1/bPower)` and its inverse) — never in `EnergyBudget`. `incrementWeight` itself is called
 from exactly one place in bioen mode: `EnergyBudget.getDw()`. Classic length growth
 (`GrowthProcess`/`AbstractGrowth`, von Bertalanffy) never runs at all when bioen is enabled
-(`SimulationStep.java:112-114` only instantiates `GrowthProcess` when `!isBioenEnabled()`), so there is
-no second length pathway to consider.
+(`SimulationStep.java:112-114` only instantiates `GrowthProcess` when `!isBioenEnabled()`) — confirmed
+not just from 4.3.3 source but directly in **both jars' bytecode**: `SimulationStep`'s constructor in
+each jar branches on `Configuration.isBioenEnabled()` and constructs `GrowthProcess` in the false arm,
+`EnergyBudget` in the true arm, byte-identically in 4.3.3 and 4.4.1 — so there is no second length
+pathway to consider in either version.
 
 That fixes *where to look*, but a full re-investigation — `javap -c` (bytecode, with method bodies, on
 every class in the actual causal chain, both jars) plus checking which of those bodies are even
@@ -92,10 +95,25 @@ the two genuinely new mechanisms 4.4.1 adds are both provably inert on this conf
   either version — ruling out an earlier "length freezes on starvation" hypothesis for the growth path.
 - `EnergyBudget.run()` **does** genuinely change between versions: 4.4.1 adds an `if (school.isOut())`
   branch that calls a wholly new method, `getDw_mig` (parametric growth from new `W0`/`c_rateBioen`
-  fields, independent of `e_net`) instead of the normal path. **This never fires on Gate B's config**:
-  the "OUT-schools sub-question" section below already instrumented this exact run and found 0/120
-  out-of-domain occurrences across the full horizon (`movement.distribution.method.spN=random` for all
-  8 species — there is no "outside the map" state to enter).
+  fields, independent of `e_net`) instead of the normal path. **This never fires on Gate B's config —
+  verified on the Java side, not inferred from the Python engine.** (An earlier draft of this section
+  argued this from the Python engine's own `is_out` instrumentation below, which says nothing about what
+  Java's `School.isOut()` does; corrected here.) `School.isOut()` returns a `boolean out` field that: is
+  forced `false` unconditionally in every `School` constructor and in `School.init()` (run at the start
+  of every step for every school, "by default the school is in the simulated area, and migration might
+  change this state") in both jars' bytecode; and is set `true` by exactly one call site in 4.3.3's
+  entire jar and exactly two in 4.4.1's (checked via `javap -c` on every class extracted from each jar,
+  ~252/~284 classes respectively, grepped for `School.out:()V`) — `MapDistribution.move()` in both, plus
+  a new `GradientDistribution.move()` in 4.4.1 only. Both are guarded behind
+  `movement.distribution.method.spN` equalling `"maps"`/`"gradient"` respectively (confirmed in 4.4.1's
+  `MovementProcess.init()` bytecode: an `equalsIgnoreCase` dispatch identical in structure to 4.3.3's,
+  `"random"` -> `new RandomDistribution(...)`, `"maps"` -> `MapDistribution`, and, new in 4.4.1 only,
+  `"gradient"` -> `GradientDistribution`). `RandomDistribution.move()` itself — the class this config's
+  `movement.distribution.method.spN=random` (all 8 species) actually dispatches to — never calls
+  `School.out()` in either jar (only `isUnlocated()`/`moveToCell()`, byte-identical between versions).
+  So `isOut()` is provably always `false` for every school in this run, in both jars, independent of the
+  Python engine's own `SchoolState.is_out` (which the separate "OUT-schools sub-question" section below
+  addresses on its own terms).
 - 4.4.1 also adds a second e_net formula, `computeEnetLite` (uses `xi_crit`, `Imax`, a new temperature
   function), dispatched per-species via `EnetComputer[]` at `init()`-time. The dispatch condition,
   read directly from `EnergyBudget.init()`'s bytecode, is config key `species.bioenergetics.model.sp%d`:
@@ -190,11 +208,16 @@ though neither changes the verdicts above:
   version of the whole-arm `empty_arms` check that already existed (a Java arm producing real data for
   4 metrics but an empty frame for a 5th would previously pass clean). Proven with a constructed
   degenerate case (`comparable_species` returns `[]` when one present arm has no entries for a metric;
-  `gate_verdict` then reports `FAIL (metric(s) with zero comparable species ...)`) and confirmed the real
-  Gate B data is unaffected: every metric in both logged runs above already had non-empty
-  `comparable_species` for every present arm (see "Java arm confirmation"), so this fix is a no-op on
-  the committed PASS/REVIEW verdicts — verified both by unit test and by re-running the harness's own
-  smoke invocation (`--n 1 --years 1 --spinup-years 0`, same config) end to end after the change.
+  `gate_verdict` then reports `FAIL (metric(s) with zero comparable species ...)`). The committed
+  PASS/REVIEW verdicts above are unaffected — not because a re-run reproduced them (an `--n 1` smoke run
+  can't: with a single rep there is no variance estimate, so `tost()` can't establish equivalence and
+  every row reads `eq=n`, `REVIEW`, regardless of this fix) but because every metric in both logged runs
+  already had non-empty `comparable_species` for every present arm (see "Java arm confirmation"), so
+  `uncompared_metrics` is structurally empty for both. What the smoke run (`--n 1 --years 1
+  --spinup-years 0`, same config, run live after the change, Java 4.3.3 genuinely executed) actually
+  confirms is narrower and still real: no `[warn] metric ...: zero species ...` line fired and every
+  metric printed real per-species rows, i.e. the new code path doesn't misfire on real (non-degenerate)
+  data. Combined with the unit-test RED/GREEN proof, that's the full claim.
 - Distinguished explicitly from the `se == 0` case above: that case still has a real entry in every
   arm's dict (so it still appears in `comparable_species`'s output) — R39 only hardens the case where a
   species/metric pair has no entry in some arm's dict at all.

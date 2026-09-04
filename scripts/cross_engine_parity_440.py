@@ -463,6 +463,13 @@ def main() -> None:
                 f"  [warn] metric {m}: zero species had a value in every present arm — NOT evaluated, NOT a pass"
             )
             continue
+        dropped = sorted(
+            set(py[m]) - set(sp_all)
+        )  # in python arm but missing from >=1 present java arm
+        if dropped:
+            print(
+                f"  [warn] metric {m}: species not compared (missing from >=1 present arm): {dropped}"
+            )
         for sp in sp_all:
             row = f"{sp:<22}"
             if j_gate is not None:

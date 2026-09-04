@@ -160,6 +160,18 @@ def test_comparable_species_drops_only_the_species_missing_from_one_arm():
     assert xeng.comparable_species(py_metric, ens, ["4.3.3"], "biomass") == ["A"]
 
 
+def test_comparable_species_result_identifies_the_dropped_species_for_a_warning():
+    # main() computes `sorted(set(py[m]) - set(comparable_species(...)))` to print which species
+    # were silently excluded from a metric's table (non-blocking note from the fix-round review) --
+    # pin that the set difference correctly isolates just the missing one.
+    py_metric = {"A": [1.0], "B": [2.0], "C": [3.0]}
+    ens = {"4.3.3": {"biomass": {"A": [1.1], "C": [3.1]}}}  # B never reported by this arm
+    sp_all = xeng.comparable_species(py_metric, ens, ["4.3.3"], "biomass")
+    dropped = sorted(set(py_metric) - set(sp_all))
+    assert sp_all == ["A", "C"]
+    assert dropped == ["B"]
+
+
 def test_gate_verdict_fails_on_an_uncompared_metric_even_with_no_other_failures():
     # The R39 fix's core assertion: a metric with zero comparable species must not be a silent
     # PASS, even when every other metric and every other check is clean.
