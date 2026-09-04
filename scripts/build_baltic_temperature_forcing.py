@@ -287,8 +287,13 @@ def build(
 
 def validate(ds: xr.Dataset, wet: NDArray[np.bool_]) -> None:
     """Fail fast on any spec 3.3 pin: shape, wet-cell finiteness, physical range, and
-    layer order (August bottom temperature must not exceed August surface temperature
-    on cells deeper than 40 m -- catches a swapped layer axis)."""
+    layer order (late-summer bottom temperature must not exceed late-summer surface
+    temperature on cells deeper than 40 m -- catches a swapped layer axis).
+
+    NB the stratification pin reads frames 16:17, which are SEPTEMBER, not August: frames
+    are month-duplicated as ``2m, 2m+1 = clim12[m]``, so 16 -> m=8 -> September. Earlier
+    revisions of this file (and the task brief it came from) called it "August"; the pin
+    itself was always correct and still discriminates -- only the label was wrong."""
     t = ds["temperature"].values
     assert t.shape[0] == 24 and t.shape[1] == 2, f"shape {t.shape}"
     wet_vals = t[:, :, wet]
@@ -297,9 +302,9 @@ def validate(ds: xr.Dataset, wet: NDArray[np.bool_]) -> None:
         "range: wet-cell temperature outside [-2, 30] C"
     )
     deep = wet & (ds["bottom_depth"].values > 40.0)
-    aug = t[16:18]
-    assert np.all(aug[:, 1][:, deep] <= aug[:, 0][:, deep] + 1e-6), (
-        "layer-order: August bottom > surface on deep cells"
+    late_summer = t[16:18]  # frames 16,17 = September (2m,2m+1 = clim12[m], m=8)
+    assert np.all(late_summer[:, 1][:, deep] <= late_summer[:, 0][:, deep] + 1e-6), (
+        "layer-order: late-summer (September) bottom > surface on deep cells"
     )
 
 

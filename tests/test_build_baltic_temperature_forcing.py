@@ -97,3 +97,40 @@ def test_masked_regrid_is_the_oxygen_builders_function():
     wet = np.array([[True]])
     out = btf.masked_regrid(raw, src_lat, src_lon, tlat, tlon, wet)
     assert out[0, 0, 0] == 3.0
+
+
+def test_shipped_forcing_file_passes_its_own_validate():
+    """The COMMITTED .nc must satisfy every pin `validate()` enforces.
+
+    Task 10's review (MINOR-1) noted that the unit tests above exercise only the pure
+    helpers on synthetic arrays -- nothing loaded the shipped artifact. A refactor of
+    the build pipeline, or a re-run of the builder against different inputs, could
+    therefore have silently corrupted the committed file's axis order, frame count,
+    land mask or physical range with every test still green. That is the failure mode
+    this branch has hit repeatedly: a gate green over the thing it exists to protect.
+
+    This test closes it by running the real `validate()` against the real file, so the
+    artifact and its checker cannot drift apart. It is a genuine gate, not a smoke
+    check: swapping the layer axis, truncating to 12 frames, or filling land with 0.0
+    instead of NaN each trips one of `validate()`'s asserts.
+    """
+    nc = ROOT / "data" / "baltic" / "forcing" / "baltic_temperature_2layer_climatology.nc"
+    assert nc.exists(), f"shipped forcing file missing: {nc}"
+
+    # Use the builder's OWN grid constant, not a hand-written path: a hard-coded path
+    # that drifts would make this test skip silently, which is the exact failure mode
+    # it exists to prevent.
+    grid = btf.DEFAULT_GRID_NC
+    assert grid.exists(), f"baltic grid missing at {grid}"
+
+    with xr.open_dataset(nc) as ds, xr.open_dataset(grid) as g:
+        wet = np.asarray(g["mask"].values).astype(bool)
+        btf.validate(ds, wet)
+
+        # Pin the two facts a reader of the results doc would rely on, beyond validate():
+        # the frame count the engine's `step % n_frames` indexing depends on, and that
+        # land really is NaN rather than 0.0 (this repo's oxygen forcing uses 0.0 for
+        # land, so the two conventions are genuinely different and easy to confuse).
+        t = ds["temperature"].values
+        assert t.shape[0] == 24, f"engine indexes step % n_frames; got {t.shape[0]} frames"
+        assert np.isnan(t[:, :, ~wet]).all(), "land cells must be NaN, not 0.0"
