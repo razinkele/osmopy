@@ -136,6 +136,15 @@ def create_offspring_genotypes(
     # config today -- there is no live cross-species-leak path to close. Revisit this
     # if a config ever turns on `evolution.neutral.nlocus`: mirror the
     # `conspecific_indices` mask used for `alleles[name]` above.
+    #
+    # One trap when you do, which the `alleles[name]` fix does not face: unlike
+    # `alleles[name]`, `neutral_alleles` can legitimately be a ZERO-ROW `(0, n_neutral, 2)`
+    # array (see the `has_parents` comment below) while `species_id` is non-empty. A bare
+    # boolean mask `neutral_alleles[species_id == offspring_species]` then raises on the
+    # length mismatch. Guard on `has_parents` (or on the row count matching
+    # `len(species_id)`) BEFORE masking, and route the no-conspecific case to the existing
+    # `elif n_offspring > 0` random-draw fallback -- which is the correct bootstrap, and is
+    # what the trait loop achieves via its empty-pool branch.
     neutral = None
     if parent_gs.neutral_alleles is not None:
         n_neutral = parent_gs.neutral_alleles.shape[1]
