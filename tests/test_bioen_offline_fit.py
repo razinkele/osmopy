@@ -1,4 +1,5 @@
 import importlib.util
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -305,3 +306,37 @@ def test_species_t_opt_zlayer_note_cover_the_same_nine_species():
     assert set(fit.SPECIES_T_OPT) == set(fit.SPECIES_ZLAYER) == set(fit.SPECIES_NOTE)
     assert len(fit.SPECIES_T_OPT) == 9
     assert {"cod_west", "cod_east"} <= set(fit.SPECIES_T_OPT)
+
+
+def test_assert_baltic_pins_fires_on_each_violation():
+    """The production `--baltic` run happened to pass every pin on the first try, so without
+    this test every branch of _assert_baltic_pins would be a gate that was never shown to be
+    able to fail -- this branch's own named recurring defect. Constructs a passing FitResult
+    (t_p actually solved for t_opt=10.0, so phi_t/argmax hold) and breaks one field at a time."""
+    fit = _load_fit_module()
+
+    tp = solve_tp(10.0, FX)
+    ok = FitResult("cod", 4.0, 0.3, 1e12, tp, 10.0, 2.0, 5e3, 5.1e3, 0.6, 400)
+    fit._assert_baltic_pins(ok, FX)  # the good case must not raise
+
+    for bad, pattern in (
+        (replace(ok, rms_len_pct=20.0), "RMS"),
+        (replace(ok, imax=0.0), "Imax"),
+        (replace(ok, r=0.0), "r = "),
+        (replace(ok, t_opt=25.0), "argmax"),  # t_p no longer solves for the (moved) t_opt
+    ):
+        with pytest.raises(AssertionError, match=pattern):
+            fit._assert_baltic_pins(bad, FX)
+
+    # phi_t(t_p) == 1.0 is NOT independently mutable this way: phi_t(x, ..., peak=x) == 1.0
+    # is a tautological identity of phi_t's own formula (any x satisfies it when evaluated at
+    # its own declared peak -- same fact test_solve_tp_puts_net_growth_optimum_at_t_opt relies
+    # on), so perturbing FitResult.t_p alone cannot make that branch fire; it falls through to
+    # the argmax check instead (verified: raises "argmax", not "phi_t"). This matches the
+    # spec's own note that "Gate F pins the argmax, not phi_t(T_p) = 1 alone" -- the phi_t
+    # pin here is a defensive invariant on phi_t's implementation, not on this function's
+    # inputs, and is exercised by phi_t's own tests
+    # (tests/test_bioen_offline_fit.py::test_solve_tp_puts_net_growth_optimum_at_t_opt), not
+    # here.
+    with pytest.raises(AssertionError, match="argmax"):
+        fit._assert_baltic_pins(replace(ok, t_p=tp + 5.0), FX)
