@@ -157,3 +157,79 @@ def test_frame_count_guard_passes_on_match(tmp_path):
     result = _load_oxygen_data(raw_config, None)
     assert result is not None
     assert not result.is_constant
+
+
+def _write_oxygen_nc_4d(path, n_frames, n_layers=2, ny=2, nx=2, value=90.0):
+    data = np.full((n_frames, n_layers, ny, nx), value, dtype=np.float64)
+    ds = xr.Dataset({"o2b": (["time", "z", "y", "x"], data)})
+    ds.to_netcdf(path)
+    ds.close()
+
+
+def test_zlayer_guard_raises_on_4d_file_with_nonzero_zlayer(tmp_path):
+    # Task 7 review Finding 1: Java's OxygenFunction resolves a per-species depth layer
+    # for oxygen exactly as TempFunction does for temperature (OxygenFunction.java:130-133,
+    # same PhysicalData.getValue(int, Cell) mechanism as TempFunction.java:162) -- oxygen
+    # forcing CAN be 4-D (time, z, y, x) in Java. This port doesn't route
+    # species.zlayer.sp{idx} into the oxygen branch of _bioen_step, so a 4-D oxygen file
+    # combined with a nonzero zlayer must raise rather than silently read layer 0 and drop
+    # the configured depth with no signal.
+    nc_path = tmp_path / "oxygen_4d.nc"
+    _write_oxygen_nc_4d(nc_path, n_frames=24, n_layers=2)
+    raw_config = {
+        "oxygen.filename": str(nc_path),
+        "oxygen.varname": "o2b",
+        "simulation.time.ndtperyear": "24",
+        "species.zlayer.sp0": "0",
+        "species.zlayer.sp1": "1",  # nonzero -- must trip the guard
+    }
+    with pytest.raises(ValueError, match=r"depth axis.*species\.zlayer\.sp1"):
+        _load_oxygen_data(raw_config, None)
+
+
+def test_zlayer_guard_passes_when_all_zlayer_zero_or_unset(tmp_path):
+    # sp0 explicitly zero, sp1 unset entirely (schema default is 0 too) -- neither should
+    # trip the guard, proving it isn't a blanket ban on 4-D oxygen files.
+    nc_path = tmp_path / "oxygen_4d_ok.nc"
+    _write_oxygen_nc_4d(nc_path, n_frames=24, n_layers=2)
+    raw_config = {
+        "oxygen.filename": str(nc_path),
+        "oxygen.varname": "o2b",
+        "simulation.time.ndtperyear": "24",
+        "species.zlayer.sp0": "0",
+    }
+    result = _load_oxygen_data(raw_config, None)
+    assert result is not None
+    assert result.n_layers == 2
+
+
+def test_zlayer_guard_passes_on_3d_file_even_with_nonzero_zlayer(tmp_path):
+    # A 3-D oxygen file has no depth axis to be wrongly ignored -- zlayer is moot here,
+    # so the guard must not fire regardless of what zlayer is configured.
+    nc_path = tmp_path / "oxygen_3d.nc"
+    _write_oxygen_nc(nc_path, n_frames=24)
+    raw_config = {
+        "oxygen.filename": str(nc_path),
+        "oxygen.varname": "o2b",
+        "simulation.time.ndtperyear": "24",
+        "species.zlayer.sp0": "1",
+    }
+    result = _load_oxygen_data(raw_config, None)
+    assert result is not None
+    assert result.n_layers == 1
+
+
+def test_zlayer_guard_passes_on_single_layer_4d_file(tmp_path):
+    # (time, 1, y, x) is technically 4-D but has only one layer, so there's no second
+    # layer to be wrongly ignored. The guard tests n_layers > 1, not raw ndim == 4.
+    nc_path = tmp_path / "oxygen_4d_single_layer.nc"
+    _write_oxygen_nc_4d(nc_path, n_frames=24, n_layers=1)
+    raw_config = {
+        "oxygen.filename": str(nc_path),
+        "oxygen.varname": "o2b",
+        "simulation.time.ndtperyear": "24",
+        "species.zlayer.sp0": "1",
+    }
+    result = _load_oxygen_data(raw_config, None)
+    assert result is not None
+    assert result.n_layers == 1

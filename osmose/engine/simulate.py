@@ -71,6 +71,46 @@ def _load_oxygen_data(raw_config: dict, config_dir: Path | None) -> PhysicalData
                     "month-to-step mapping from that point on. Regenerate the forcing with "
                     f"{n_dt_per_year} frames (or fix simulation.time.ndtperyear)."
                 )
+            # Depth-layer guard (Task 7 fix round 1, review Finding 1): in Java, oxygen
+            # forcing is just as capable of carrying a per-species depth axis as
+            # temperature is -- OxygenFunction.java:130-133 resolves
+            # `school.getSpecies().getDepthLayer()` through the same
+            # `PhysicalData.getValue(int, Cell)` mechanism TempFunction.java:162 uses for
+            # temperature. This port only wires `species.zlayer.sp{idx}` into the
+            # temperature branch of `_bioen_step` (osmose/engine/simulate.py); the oxygen
+            # branch there always reads layer 0, reachable whenever bioenergetics and its
+            # fo2 limitation are both enabled (the only code path that reads o2_data
+            # per-species -- this check itself doesn't gate on that, matching the
+            # unconditional frame-count guard above). A 4-D oxygen file combined with any
+            # species configured with a nonzero zlayer would otherwise silently drop that
+            # species' depth choice with no signal at all. Raise instead. n_layers > 1
+            # (not raw ndim == 4) is the right test: a (time, 1, y, x) file has no second
+            # layer to be wrongly ignored.
+            if data.n_layers > 1:
+
+                def _nonzero_zlayer(value: object) -> bool:
+                    try:
+                        return float(value) != 0.0
+                    except (TypeError, ValueError):
+                        return True  # unparseable -- can't prove it's zero, so stay loud
+
+                zlayer_keys = sorted(
+                    key
+                    for key, value in raw_config.items()
+                    if key.startswith("species.zlayer.sp") and _nonzero_zlayer(value)
+                )
+                if zlayer_keys:
+                    raise ValueError(
+                        f"Oxygen forcing {path} has a depth axis ({data.n_layers} layers), "
+                        f"and {', '.join(zlayer_keys)} set a nonzero depth layer. Java's "
+                        "OxygenFunction resolves a per-species depth layer for oxygen "
+                        "(OxygenFunction.java:130-133), but this port only wires "
+                        "species.zlayer.sp{idx} into the temperature branch of "
+                        "_bioen_step -- oxygen sampling always reads layer 0 here, so "
+                        "those zlayer values would be silently ignored. Set the affected "
+                        "species' zlayer to 0, or drop the depth axis from the oxygen "
+                        "forcing file."
+                    )
             return data
 
     o2_val = raw_config.get("oxygen.value", "")
@@ -496,9 +536,14 @@ def _bioen_step(
     else:
         phi_t_arr = np.ones(len(state), dtype=np.float64)
 
-    # Oxygen limitation. O2 forcing never carries a depth axis (bottom-oxygen fields
-    # are always (time, y, x)), so unlike temperature there is no per-species layer
-    # to resolve here.
+    # Oxygen limitation. Java's OxygenFunction.java:130-133 resolves a per-species depth
+    # layer for oxygen exactly as TempFunction.java:162 does for temperature -- same
+    # PhysicalData.getValue(int, Cell) mechanism, so oxygen forcing is just as capable of
+    # being 4-D (time, z, y, x) as temperature. This port does not yet route
+    # config.bioen_zlayer into the branch below, so a gridded o2_data always reads layer
+    # 0 here regardless of species. _load_oxygen_data raises when a 4-D oxygen file is
+    # combined with any nonzero species.zlayer.sp{idx}, so that gap fails loudly instead
+    # of silently reading the wrong layer.
     if config.bioen_fo2_enabled and o2_data is not None:
         from osmose.engine.processes.oxygen_function import f_o2
 

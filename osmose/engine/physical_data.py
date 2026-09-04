@@ -11,10 +11,17 @@ class PhysicalData:
 
     Two modes:
     - Constant: single value applied everywhere.
-    - NetCDF: (time, y, x) or (time, z, y, x) array with periodic time cycling. The
-      z-axis ("layer") supports per-species depth sampling (e.g. temperature.filename
-      with per-species `species.zlayer.sp{idx}`); oxygen forcing never carries one --
-      bottom-oxygen fields stay (time, y, x) and always read layer 0.
+    - NetCDF: (time, y, x) or (time, z, y, x) array with periodic time cycling. This
+      class draws no distinction between temperature and oxygen -- neither does Java's
+      ForcingFile.readVariable, which branches on shape length alone for any variable
+      name. `get_grid(step, layer=...)` plumbs the z-axis when the loaded file has one.
+      In Java, both TempFunction.java:162 and OxygenFunction.java:130-133 resolve that
+      layer per-species (`Species.getDepthLayer()`, from `species.zlayer.sp{idx}`)
+      through this same `getValue(int, Cell)` mechanism. This Python port currently only
+      wires `species.zlayer.sp{idx}` into the temperature branch of `_bioen_step`
+      (osmose/engine/simulate.py); a 4-D oxygen file is read at layer 0 regardless of
+      zlayer. `_load_oxygen_data` raises if a 4-D oxygen file is combined with any
+      nonzero `species.zlayer.sp{idx}` so that gap can't produce a silent wrong answer.
     """
 
     def __init__(

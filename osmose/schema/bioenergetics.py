@@ -122,7 +122,10 @@ BIOENERGETICS_FIELDS: list[OsmoseField] = [
         key_pattern="species.zlayer.sp{idx}",
         param_type=ParamType.INT,
         default=0,
-        description="Depth layer index for temperature sampling (oxygen forcing has no depth axis)",
+        description=(
+            "Depth layer index for temperature sampling. Oxygen sampling always uses "
+            "layer 0 and ignores this value."
+        ),
         category="bioenergetics",
         indexed=True,
         advanced=True,
