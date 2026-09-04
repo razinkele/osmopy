@@ -1857,6 +1857,8 @@ def test_build_overlay_is_flat_and_carries_every_bioen_key(tmp_path):
 
 `PYTHONPATH=. .venv/bin/python scripts/fit_baltic_bioen_params.py --baltic` → table with, per species: growth optimum, engine T_p, Imax, r, c_m, RMS %, W∞ fit vs vBGF, larval ratio, φT(T̄), inflation factor `1/(φT(T̄)(1−m))`. Sanity pins in the script (raise): `phi_t(t_p)==1.0`, argmax within 0.1 °C, `Imax>0`, `r>0`, RMS ≤ 15 %. If a species fails RMS ≤ 15 % (likely candidates: stickleback, sprat — short-lived with fast K), print its curve comparison and widen the fitted age window to ≥ 0.75 yr for that species only, recording it in the README; do not loosen the pin silently.
 
+  - **SUPERSEDED 2026-09-05 (Task 11 review, ruling R40) — the widening mechanism this step describes no longer exists.** It was implemented, never reached, and found to be *broken*: it called `fit_species(..., min_age_years=...)`, a parameter that exists nowhere in the repo, so it would have raised `TypeError` had a species ever failed. It has been removed rather than repaired — dead code that crashes if entered is worse than absent code, because it advertises a fallback that does not exist. No fallback now exists: if a future species fails the RMS pin, that is a hard failure requiring a decision, which is the honest state. In the event, all nine focal species passed on the default ≥ 1 yr window (worst: pikeperch 10.71 %), so the anticipated stickleback/sprat problem did not materialise. Left in place rather than rewritten, per this plan's own precedent for corrected instructions — a plan records what was instructed, and silently editing it hides that the instruction was the source of the defect.
+
 - [ ] **Step 4: Tests + commit**
 
 ```bash
