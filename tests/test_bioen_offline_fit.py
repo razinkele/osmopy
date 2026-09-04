@@ -1,3 +1,6 @@
+import importlib.util
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -15,6 +18,21 @@ from osmose.calibration.bioen_offline import (
 from osmose.engine.processes.temp_function import arrhenius, phi_t
 
 FX = BioenFixed()
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _load_fit_module():
+    """Load scripts/fit_baltic_bioen_params.py by path (same pattern as the Gate-B harness
+    tests, tests/test_cross_engine_parity_bioen_staging.py -- the script lives under
+    scripts/, not a package)."""
+    spec = importlib.util.spec_from_file_location(
+        "fit_baltic_bioen_params", ROOT / "scripts" / "fit_baltic_bioen_params.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_solve_tp_puts_net_growth_optimum_at_t_opt():
@@ -146,3 +164,144 @@ def test_param_lines_cover_the_java_inventory_and_background():
     ):
         assert key in text, key
     assert "T_opt 10 C" in text
+
+
+def test_param_lines_writes_background_beta_matching_the_default():
+    """species.beta.sp{background} must be authored (progress-log ruling R1, hard requirement
+    for Task 11): Java's BackgroundSpecies.java has no default and errors on absence."""
+    res = [FitResult("cod", 4.0, 0.3, 1e12, 13.0, 10.0, 2.0, 5e3, 5.1e3, 0.6, 400)]
+    kwargs = dict(
+        zlayer={"cod": 1},
+        sp_index={"cod": 0},
+        background_imax={15: 2.5},
+        notes={"cod": "x"},
+        m0={"cod": 2.0},
+    )
+    text_default = "\n".join(bioen_param_lines(res, FX, **kwargs))
+    # default beta must equal per_fish_ingestion_cap's hardcoded background exponent (0.8) --
+    # if these two numbers drift apart the "cap equals standard cap at w_mean" property that
+    # background_imax was solved for silently stops holding.
+    assert "species.beta.sp15;0.8" in text_default
+
+    text_custom = "\n".join(bioen_param_lines(res, FX, background_beta={15: 0.75}, **kwargs))
+    assert "species.beta.sp15;0.75" in text_custom
+    assert "species.beta.sp15;0.8" not in text_custom
+
+
+def test_habitat_t24_uses_engine_map_loader_and_layer(tmp_path):
+    import xarray as xr
+
+    fit = _load_fit_module()
+    temp = np.zeros((24, 2, 3, 3))
+    temp[:, 0] = 5.0
+    temp[:, 1] = np.arange(24)[:, None, None]
+    nc = tmp_path / "t.nc"
+    xr.Dataset(
+        {"temperature": (["time", "layer", "latitude", "longitude"], temp.astype(np.float32))}
+    ).to_netcdf(nc)
+    m = tmp_path / "map.csv"
+    m.write_text("0;0;0\n0;1;0\n0;0;0\n")  # one habitat cell; orientation handled by _load_csv_grid
+    t24 = fit.habitat_t24(nc, layer=1, map_files=[m], ny=3, nx=3)
+    np.testing.assert_allclose(t24, np.arange(24))
+    assert fit.habitat_t24(nc, layer=0, map_files=[m], ny=3, nx=3).mean() == 5.0
+
+
+def test_habitat_t24_raises_on_frame_count_mismatch(tmp_path):
+    """PhysicalData.get_grid indexes step % <loaded frame count>, not any declared nsteps.year
+    metadata -- a 12-frame file fed 24 engine steps would silently repeat instead of erroring
+    (CLAUDE.md frame-count gotcha). habitat_t24 must catch this itself."""
+    import xarray as xr
+
+    fit = _load_fit_module()
+    temp = np.full((12, 1, 3, 3), 5.0, dtype=np.float32)
+    nc = tmp_path / "t12.nc"
+    xr.Dataset({"temperature": (["time", "layer", "latitude", "longitude"], temp)}).to_netcdf(nc)
+    m = tmp_path / "map.csv"
+    m.write_text("0;0;0\n0;1;0\n0;0;0\n")
+    with pytest.raises(ValueError, match="frame"):
+        fit.habitat_t24(nc, layer=0, map_files=[m], ny=3, nx=3)
+
+
+def test_habitat_t24_raises_when_habitat_entirely_land_masked(tmp_path):
+    import xarray as xr
+
+    fit = _load_fit_module()
+    temp = np.full((24, 1, 3, 3), np.nan, dtype=np.float32)
+    nc = tmp_path / "tland.nc"
+    xr.Dataset({"temperature": (["time", "layer", "latitude", "longitude"], temp)}).to_netcdf(nc)
+    m = tmp_path / "map.csv"
+    m.write_text("0;0;0\n0;1;0\n0;0;0\n")
+    with pytest.raises(ValueError, match="land-masked"):
+        fit.habitat_t24(nc, layer=0, map_files=[m], ny=3, nx=3)
+
+
+def test_background_imax_matches_standard_cap_exactly_at_w_mean():
+    """Closed-form pin for ruling R1: the bioen per-fish cap at w_mean must equal the
+    standard (non-bioen) per-fish cap at w_mean. Also demonstrates the 24x hazard directly:
+    the brief's own step-2 prose formula (no /n_dt_per_year) overshoots by exactly
+    n_dt_per_year."""
+    from osmose.engine.background import BackgroundSpeciesInfo
+
+    fit = _load_fit_module()
+
+    class _EC:
+        n_dt_per_year = 24
+
+    b = BackgroundSpeciesInfo(
+        name="GreySeal",
+        species_index=0,
+        file_index=15,
+        n_class=3,
+        lengths=[50.0, 100.0, 150.0],
+        trophic_levels=[4.0, 4.0, 4.0],
+        ages_dt=[0, 24, 48],
+        condition_factor=0.01,
+        allometric_power=3.0,
+        size_ratio_min=[0.0],
+        size_ratio_max=[1.0],
+        ingestion_rate=13.0,
+        multiplier=1.0,
+        offset=0.0,
+        forcing_nsteps_year=12,
+        proportions=[0.3, 0.4, 0.3],
+    )
+    beta = 0.8
+    imax = fit.background_imax(_EC(), b, beta=beta)
+    w_mean = np.mean(
+        [b.condition_factor * length**b.allometric_power * 1e-6 for length in b.lengths]
+    )
+
+    lhs = imax * (w_mean * 1e6) ** beta * 1e-6  # bioen per-fish, per-substep cap (n_subdt cancels)
+    rhs = w_mean * b.ingestion_rate / _EC.n_dt_per_year  # standard per-fish, per-substep cap
+    assert lhs == pytest.approx(rhs, rel=1e-12)
+
+    # The 24x hazard, made concrete: without the /n_dt_per_year division this closed form
+    # requires, Imax would be exactly n_dt_per_year times too large.
+    imax_without_ndt_division = b.ingestion_rate * (w_mean * 1e6) ** (1.0 - beta)
+    assert imax_without_ndt_division == pytest.approx(imax * _EC.n_dt_per_year, rel=1e-12)
+
+
+def test_build_overlay_is_flat_and_carries_every_bioen_key(tmp_path):
+    fit = _load_fit_module()
+    csv = tmp_path / "baltic_param-bioen.csv"
+    csv.write_text("# c\nspecies.bioen.mobilized.tp.sp0;12.5\nspecies.maturity.r.sp0;0.3\n")
+    ov = fit.build_overlay(csv, tmp_path / "temp.nc")
+    assert ov["module.bioenergetics.enabled"] == "true"
+    assert ov["simulation.bioen.phit.enabled"] == "true"
+    assert ov["simulation.bioen.fo2.enabled"] == "false"
+    assert ov["species.bioen.mobilized.tp.sp0"] == "12.5"
+    assert ov["species.maturity.r.sp0"] == "0.3"
+    assert ov["temperature.filename"] == str((tmp_path / "temp.nc").resolve())
+    assert ov["temperature.varname"] == "temperature"
+    assert ov["temperature.nsteps.year"] == "24"
+    assert not any(k.startswith("osmose.configuration.") for k in ov)
+    assert "temperature.value" not in ov
+
+
+def test_species_t_opt_zlayer_note_cover_the_same_nine_species():
+    """Stale-fixture-sweep pin: the three per-species dicts must agree on their key set, or a
+    future species add/rename to data/baltic silently drops a species from one of them."""
+    fit = _load_fit_module()
+    assert set(fit.SPECIES_T_OPT) == set(fit.SPECIES_ZLAYER) == set(fit.SPECIES_NOTE)
+    assert len(fit.SPECIES_T_OPT) == 9
+    assert {"cod_west", "cod_east"} <= set(fit.SPECIES_T_OPT)
