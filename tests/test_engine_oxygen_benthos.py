@@ -173,13 +173,15 @@ def test_zlayer_guard_raises_on_4d_file_with_nonzero_zlayer(tmp_path):
     # forcing CAN be 4-D (time, z, y, x) in Java. This port doesn't route
     # species.zlayer.sp{idx} into the oxygen branch of _bioen_step, so a 4-D oxygen file
     # combined with a nonzero zlayer must raise rather than silently read layer 0 and drop
-    # the configured depth with no signal.
+    # the configured depth with no signal -- when that oxygen branch is actually reachable
+    # (bioenergetics + its fo2 limitation both enabled; fo2 defaults true so it's implicit).
     nc_path = tmp_path / "oxygen_4d.nc"
     _write_oxygen_nc_4d(nc_path, n_frames=24, n_layers=2)
     raw_config = {
         "oxygen.filename": str(nc_path),
         "oxygen.varname": "o2b",
         "simulation.time.ndtperyear": "24",
+        "module.bioenergetics.enabled": "true",
         "species.zlayer.sp0": "0",
         "species.zlayer.sp1": "1",  # nonzero -- must trip the guard
     }
@@ -189,13 +191,17 @@ def test_zlayer_guard_raises_on_4d_file_with_nonzero_zlayer(tmp_path):
 
 def test_zlayer_guard_passes_when_all_zlayer_zero_or_unset(tmp_path):
     # sp0 explicitly zero, sp1 unset entirely (schema default is 0 too) -- neither should
-    # trip the guard, proving it isn't a blanket ban on 4-D oxygen files.
+    # trip the guard, proving it isn't a blanket ban on 4-D oxygen files. Bioenergetics is
+    # enabled (fo2 defaults true) so this test actually enters the guarded block instead
+    # of short-circuiting on the bioen/fo2 gate -- it is the zero/unset handling that must
+    # carry this test, not the gate.
     nc_path = tmp_path / "oxygen_4d_ok.nc"
     _write_oxygen_nc_4d(nc_path, n_frames=24, n_layers=2)
     raw_config = {
         "oxygen.filename": str(nc_path),
         "oxygen.varname": "o2b",
         "simulation.time.ndtperyear": "24",
+        "module.bioenergetics.enabled": "true",
         "species.zlayer.sp0": "0",
     }
     result = _load_oxygen_data(raw_config, None)
@@ -205,13 +211,16 @@ def test_zlayer_guard_passes_when_all_zlayer_zero_or_unset(tmp_path):
 
 def test_zlayer_guard_passes_on_3d_file_even_with_nonzero_zlayer(tmp_path):
     # A 3-D oxygen file has no depth axis to be wrongly ignored -- zlayer is moot here,
-    # so the guard must not fire regardless of what zlayer is configured.
+    # so the guard must not fire regardless of what zlayer is configured. (n_layers == 1
+    # short-circuits before the bioen/fo2 gate is even consulted, so bioen is enabled here
+    # only for realism, not because it matters to this assertion.)
     nc_path = tmp_path / "oxygen_3d.nc"
     _write_oxygen_nc(nc_path, n_frames=24)
     raw_config = {
         "oxygen.filename": str(nc_path),
         "oxygen.varname": "o2b",
         "simulation.time.ndtperyear": "24",
+        "module.bioenergetics.enabled": "true",
         "species.zlayer.sp0": "1",
     }
     result = _load_oxygen_data(raw_config, None)
@@ -221,15 +230,99 @@ def test_zlayer_guard_passes_on_3d_file_even_with_nonzero_zlayer(tmp_path):
 
 def test_zlayer_guard_passes_on_single_layer_4d_file(tmp_path):
     # (time, 1, y, x) is technically 4-D but has only one layer, so there's no second
-    # layer to be wrongly ignored. The guard tests n_layers > 1, not raw ndim == 4.
+    # layer to be wrongly ignored. The guard tests n_layers > 1, not raw ndim == 4. (Also
+    # short-circuits before the bioen/fo2 gate; bioen enabled here only for realism.)
     nc_path = tmp_path / "oxygen_4d_single_layer.nc"
     _write_oxygen_nc_4d(nc_path, n_frames=24, n_layers=1)
     raw_config = {
         "oxygen.filename": str(nc_path),
         "oxygen.varname": "o2b",
         "simulation.time.ndtperyear": "24",
+        "module.bioenergetics.enabled": "true",
         "species.zlayer.sp0": "1",
     }
     result = _load_oxygen_data(raw_config, None)
     assert result is not None
     assert result.n_layers == 1
+
+
+def test_zlayer_guard_passes_when_fo2_disabled_even_with_nonzero_zlayer(tmp_path):
+    # Fix round 2, Problem 1: bioenergetics enabled with a nonzero zlayer driving
+    # TEMPERATURE depth sampling (simulate.py:513) is a legitimate config even when the
+    # oxygen forcing happens to be multi-layer, as long as simulation.bioen.fo2.enabled is
+    # false -- _bioen_step's oxygen branch (`if config.bioen_fo2_enabled and o2_data is
+    # not None`) never executes for any species in that case, so there is nothing for the
+    # unwired oxygen zlayer routing to silently get wrong. The round-1 guard was
+    # unconditional on this and rejected it; this must now load cleanly.
+    nc_path = tmp_path / "oxygen_4d_fo2_off.nc"
+    _write_oxygen_nc_4d(nc_path, n_frames=24, n_layers=2)
+    raw_config = {
+        "oxygen.filename": str(nc_path),
+        "oxygen.varname": "o2b",
+        "simulation.time.ndtperyear": "24",
+        "module.bioenergetics.enabled": "true",
+        "simulation.bioen.fo2.enabled": "false",
+        "species.zlayer.sp0": "1",  # nonzero, but only drives temperature sampling here
+    }
+    result = _load_oxygen_data(raw_config, None)
+    assert result is not None
+    assert result.n_layers == 2
+
+
+def test_zlayer_guard_passes_when_bioenergetics_module_disabled(tmp_path):
+    # Fix round 2, Problem 1: the production shape of the legitimate config -- bottom-O2
+    # -> benthos-K coupling (resources.py:323, ResourceState.update) is the ONLY consumer
+    # of a multi-layer oxygen file when module.bioenergetics.enabled=false. That coupling
+    # calls o2.get_grid(step) at layer 0, has no species dimension, and never consults
+    # zlayer at all, so a nonzero zlayer here is inert with respect to oxygen and must not
+    # be rejected.
+    nc_path = tmp_path / "oxygen_4d_bioen_off.nc"
+    _write_oxygen_nc_4d(nc_path, n_frames=24, n_layers=2)
+    raw_config = {
+        "oxygen.filename": str(nc_path),
+        "oxygen.varname": "o2b",
+        "simulation.time.ndtperyear": "24",
+        "species.zlayer.sp0": "1",  # nonzero, but bioenergetics module is off entirely
+    }
+    result = _load_oxygen_data(raw_config, None)
+    assert result is not None
+    assert result.n_layers == 2
+
+
+def test_zlayer_guard_treats_blank_value_as_unset(tmp_path):
+    # Fix round 2, Problem 3: the config reader's separator-stripping can legitimately
+    # produce an empty-string value for a stray "species.zlayer.spN;" line
+    # (value.rstrip(";,:\t =") -> ""). That is "unset", matching the schema default of 0
+    # -- not a suspicious, unparseable value to raise on. float("") raising and being
+    # caught would previously (fix round 1) have been treated as "unparseable -- stay
+    # loud", tripping the guard with a message asserting the user "set a nonzero depth
+    # layer", which was false for a blank value.
+    nc_path = tmp_path / "oxygen_4d_blank.nc"
+    _write_oxygen_nc_4d(nc_path, n_frames=24, n_layers=2)
+    raw_config = {
+        "oxygen.filename": str(nc_path),
+        "oxygen.varname": "o2b",
+        "simulation.time.ndtperyear": "24",
+        "module.bioenergetics.enabled": "true",
+        "species.zlayer.sp0": "",  # blank -- must not trip the guard
+    }
+    result = _load_oxygen_data(raw_config, None)
+    assert result is not None
+    assert result.n_layers == 2
+
+
+def test_zlayer_guard_still_raises_on_genuinely_unparseable_value(tmp_path):
+    # Companion to the blank-value test above: a non-blank, genuinely unparseable value
+    # (a typo, not a reader artifact) must still trip the guard -- "stay loud" survives
+    # for the case it actually protects against.
+    nc_path = tmp_path / "oxygen_4d_garbage.nc"
+    _write_oxygen_nc_4d(nc_path, n_frames=24, n_layers=2)
+    raw_config = {
+        "oxygen.filename": str(nc_path),
+        "oxygen.varname": "o2b",
+        "simulation.time.ndtperyear": "24",
+        "module.bioenergetics.enabled": "true",
+        "species.zlayer.sp0": "abc",
+    }
+    with pytest.raises(ValueError, match=r"depth axis.*species\.zlayer\.sp0"):
+        _load_oxygen_data(raw_config, None)

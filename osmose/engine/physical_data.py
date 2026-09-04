@@ -21,7 +21,12 @@ class PhysicalData:
       wires `species.zlayer.sp{idx}` into the temperature branch of `_bioen_step`
       (osmose/engine/simulate.py); a 4-D oxygen file is read at layer 0 regardless of
       zlayer. `_load_oxygen_data` raises if a 4-D oxygen file is combined with any
-      nonzero `species.zlayer.sp{idx}` so that gap can't produce a silent wrong answer.
+      nonzero `species.zlayer.sp{idx}` while bioenergetics' oxygen limitation is
+      enabled (`module.bioenergetics.enabled` and `simulation.bioen.fo2.enabled` both
+      true) -- the only combination where the *per-species* layer-0 read is reachable
+      (the O2->benthos-K coupling also reads layer 0, but unconditionally and with no
+      species dimension, so zlayer never applies to it) -- so that gap can't produce a
+      silent wrong answer.
     """
 
     def __init__(

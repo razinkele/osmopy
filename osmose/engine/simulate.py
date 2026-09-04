@@ -71,28 +71,42 @@ def _load_oxygen_data(raw_config: dict, config_dir: Path | None) -> PhysicalData
                     "month-to-step mapping from that point on. Regenerate the forcing with "
                     f"{n_dt_per_year} frames (or fix simulation.time.ndtperyear)."
                 )
-            # Depth-layer guard (Task 7 fix round 1, review Finding 1): in Java, oxygen
-            # forcing is just as capable of carrying a per-species depth axis as
+            # Depth-layer guard (Task 7 fix round 2, review Finding 1 follow-up): in Java,
+            # oxygen forcing is just as capable of carrying a per-species depth axis as
             # temperature is -- OxygenFunction.java:130-133 resolves
             # `school.getSpecies().getDepthLayer()` through the same
             # `PhysicalData.getValue(int, Cell)` mechanism TempFunction.java:162 uses for
             # temperature. This port only wires `species.zlayer.sp{idx}` into the
             # temperature branch of `_bioen_step` (osmose/engine/simulate.py); the oxygen
-            # branch there always reads layer 0, reachable whenever bioenergetics and its
-            # fo2 limitation are both enabled (the only code path that reads o2_data
-            # per-species -- this check itself doesn't gate on that, matching the
-            # unconditional frame-count guard above). A 4-D oxygen file combined with any
-            # species configured with a nonzero zlayer would otherwise silently drop that
-            # species' depth choice with no signal at all. Raise instead. n_layers > 1
-            # (not raw ndim == 4) is the right test: a (time, 1, y, x) file has no second
-            # layer to be wrongly ignored.
-            if data.n_layers > 1:
+            # branch there always reads layer 0. But that oxygen branch only executes when
+            # `config.bioen_fo2_enabled and o2_data is not None` (see `_bioen_step` below),
+            # which in turn only runs at all when `config.bioen_enabled` -- i.e. when BOTH
+            # `module.bioenergetics.enabled=true` AND `simulation.bioen.fo2.enabled=true`
+            # (default true, mirrors config.py's `_bioen_fo2_enabled`). Outside that
+            # combination, `o2_data` is still used (the O2->benthos-K coupling in
+            # resources.py, always at layer 0, with no species dimension and no zlayer
+            # involved at all -- see ResourceState.update), so a multi-layer oxygen file
+            # with a nonzero zlayer is perfectly legitimate there and must not be rejected.
+            # Gating on the same two raw flags `_bioen_step` gates on keeps this guard from
+            # firing on configs where the silently-ignored-zlayer scenario cannot occur.
+            bioen_enabled = (
+                raw_config.get("module.bioenergetics.enabled", "false").lower() == "true"
+            )
+            fo2_enabled = raw_config.get("simulation.bioen.fo2.enabled", "true").lower() == "true"
+            if data.n_layers > 1 and bioen_enabled and fo2_enabled:
 
                 def _nonzero_zlayer(value: object) -> bool:
+                    if isinstance(value, str) and value.strip() == "":
+                        # Blank is a legitimate "unset" spelling (e.g. a stray
+                        # "species.zlayer.spN;" line survives the config reader's
+                        # `value.rstrip(";,:\t =")` as ""), and the schema default for
+                        # this field is 0 -- treat it the same as a missing key, not as
+                        # a suspicious value to stay loud about.
+                        return False
                     try:
                         return float(value) != 0.0
                     except (TypeError, ValueError):
-                        return True  # unparseable -- can't prove it's zero, so stay loud
+                        return True  # non-blank and unparseable -- can't prove it's zero
 
                 zlayer_keys = sorted(
                     key
@@ -102,14 +116,16 @@ def _load_oxygen_data(raw_config: dict, config_dir: Path | None) -> PhysicalData
                 if zlayer_keys:
                     raise ValueError(
                         f"Oxygen forcing {path} has a depth axis ({data.n_layers} layers), "
-                        f"and {', '.join(zlayer_keys)} set a nonzero depth layer. Java's "
-                        "OxygenFunction resolves a per-species depth layer for oxygen "
-                        "(OxygenFunction.java:130-133), but this port only wires "
+                        "bioenergetics oxygen limitation is active for this run, and "
+                        f"{', '.join(zlayer_keys)} is not 0 (or could not be parsed as a "
+                        "number). Java's OxygenFunction resolves a per-species depth layer "
+                        "for oxygen (OxygenFunction.java:130-133), but this port only wires "
                         "species.zlayer.sp{idx} into the temperature branch of "
                         "_bioen_step -- oxygen sampling always reads layer 0 here, so "
-                        "those zlayer values would be silently ignored. Set the affected "
-                        "species' zlayer to 0, or drop the depth axis from the oxygen "
-                        "forcing file."
+                        "those zlayer values would be silently ignored by the oxygen "
+                        "limitation term. Set the affected species' zlayer to 0, drop the "
+                        "depth axis from the oxygen forcing file, or disable "
+                        "simulation.bioen.fo2.enabled."
                     )
             return data
 

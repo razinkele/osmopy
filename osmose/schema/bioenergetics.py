@@ -123,8 +123,11 @@ BIOENERGETICS_FIELDS: list[OsmoseField] = [
         param_type=ParamType.INT,
         default=0,
         description=(
-            "Depth layer index for temperature sampling. Oxygen sampling always uses "
-            "layer 0 and ignores this value."
+            "Depth layer index for temperature sampling. Oxygen sampling ignores this "
+            "value and always uses layer 0. Exception: if bioenergetics' oxygen "
+            "limitation is actually running and the oxygen forcing file has more than "
+            "one depth layer, a nonzero value here is rejected at load time instead of "
+            "being silently sampled from the wrong layer."
         ),
         category="bioenergetics",
         indexed=True,
