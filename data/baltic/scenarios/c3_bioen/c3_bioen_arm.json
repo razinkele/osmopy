@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "commit": "c825c98",
+    "commit": "113adc7",
     "generated_by": "scripts/fit_baltic_bioen_params.py --baltic",
     "spec": "docs/superpowers/specs/2026-08-30-baltic-c3-bioen-stage1-design.md Sec.1/3.4"
   },
