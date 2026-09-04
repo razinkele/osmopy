@@ -90,8 +90,8 @@ class TestBioenGeneticsIntegration:
             "moved out of _bioen_step and into the mortality loop (spec decision 14 / Java "
             "BioenPredationMortality), so _bioen_step no longer reads "
             "trait_overrides['bioen_i_max'] at all. mortality() cannot read it either, because "
-            "simulate.py expresses traits AFTER mortality (express_traits at :1812 vs "
-            "_mortality at :1743). Java DOES honour the per-school trait "
+            "simulate.py expresses traits AFTER mortality (express_traits at :1818 vs "
+            "_mortality at :1749). Java DOES honour the per-school trait "
             "(getMaxPredationRate: existsTrait('imax')), so this is a real parity gap; closing "
             "it needs the phenotypes available before mortality, which is a step-order change "
             "in Ev-OSMOSE's territory. The other three evolving traits (r, m0, m1) still reach "
@@ -190,3 +190,83 @@ class TestBioenReproductionOverride:
         eggs_two = out_two.abundance[n_before:].sum()
         assert eggs_two == pytest.approx(eggs_all * 2.0 / 3.0, rel=1e-9)
         assert out_two.gonad_weight[2] == pytest.approx(0.01)  # kept its gonad
+
+
+class TestBioenReproductionSeededOutFlag:
+    """Regression for Task 6: `_bioen_reproduction`'s population-seeding window
+    (`population.seeding.year.max`, default the species lifespan) is independent of and
+    can outlast genetics' `evolution.seeding.year`. Discovered live on baltic_ev sp6
+    (smelt, step 343, 15y genetics-on run,
+    `test_ev_osmose_activation.py::test_baltic_ev_runs_15_years_with_genetics_on`):
+    once cod's parity fix (Tasks 1-5) made the preflight pass for the first time, smelt's
+    SSB was structurally 0 (unrelated calibration gap, plan Task 7.4) past year 10, so
+    every step kept bootstrapping eggs from `population.seeding.biomass` with zero real
+    parents, while genetics' own seeding window had already closed and demanded a real
+    parent pool -- `create_offspring_genotypes` raised. The fix threads a `seeded_out`
+    dict through `_bioen_reproduction` so the caller in `simulate.py`'s main loop can OR
+    the bioen-level seeding flag into its own per-species `seeding` decision.
+    """
+
+    def test_seeded_out_flags_species_bootstrapped_this_step(self):
+        """SSB == 0 with the population-seeding window still open must set the flag."""
+        from osmose.engine.simulate import _bioen_reproduction
+        from osmose.engine.state import SchoolState
+
+        cfg_dict = _bioen_genetics_config()
+        cfg_dict["population.seeding.biomass.sp0"] = "1000.0"
+        # Long past a plausible genetics.seeding.year (10) -- the whole point of the gap.
+        cfg_dict["population.seeding.year.max"] = "100"
+        config = EngineConfig.from_dict(cfg_dict)
+
+        # Zero schools of sp0 alive: SSB is structurally 0, exactly like collapsed smelt.
+        state = SchoolState.create(n_schools=0, species_id=np.zeros(0, dtype=np.int32))
+
+        seeded_out: dict = {}
+        out = _bioen_reproduction(
+            state, config, step=50, rng=np.random.default_rng(0), seeded_out=seeded_out
+        )
+        assert "seeded_this_step" in seeded_out
+        assert bool(seeded_out["seeded_this_step"][0]) is True
+        # The bootstrap must actually have produced eggs, or the flag would be moot.
+        assert len(out) > len(state)
+
+    def test_seeded_out_omitted_is_backward_compatible(self):
+        """The default (`seeded_out=None`) must not change behaviour or crash -- every
+        call in test_engine_bioen_reproduction_wiring.py relies on this."""
+        from osmose.engine.simulate import _bioen_reproduction
+        from osmose.engine.state import SchoolState
+
+        cfg_dict = _bioen_genetics_config()
+        cfg_dict["population.seeding.biomass.sp0"] = "1000.0"
+        cfg_dict["population.seeding.year.max"] = "100"
+        config = EngineConfig.from_dict(cfg_dict)
+        state = SchoolState.create(n_schools=0, species_id=np.zeros(0, dtype=np.int32))
+
+        out = _bioen_reproduction(state, config, step=50, rng=np.random.default_rng(0))
+        assert len(out) > len(state)
+
+    def test_genetics_inheritance_survives_a_bootstrapped_species_past_its_transmission_year(
+        self,
+    ):
+        """End-to-end through `simulate()`: a species with zero SSB whose population-seeding
+        window outlives `evolution.seeding.year` must not raise. Direct regression for the
+        crash this class documents -- reverting the `seeded_out` wiring in
+        `osmose/engine/simulate.py` (the `sp_seeding` OR) reproduces the ValueError from
+        `osmose.engine.genetics.inheritance.create_offspring_genotypes`.
+        """
+        cfg_dict = _bioen_genetics_config()
+        # Genetics seeding window closes almost immediately...
+        cfg_dict["evolution.seeding.year"] = "0"
+        # ...while the population-seeding (bioen) window stays open the whole run, and
+        # sp0 never has a mature school (m0 far above any reachable length) so SSB == 0
+        # every step -- forcing the bootstrap branch on every reproduction call.
+        cfg_dict["population.seeding.biomass.sp0"] = "1000.0"
+        cfg_dict["population.seeding.year.max"] = "100"
+        cfg_dict["evolution.trait.m0.mean.sp0"] = "1000.0"
+        cfg_dict["simulation.time.nyear"] = "1"
+        config = EngineConfig.from_dict(cfg_dict)
+        grid = Grid.from_dimensions(ny=3, nx=3)
+        rng = np.random.default_rng(7)
+
+        outputs = simulate(config, grid, rng)  # must not raise
+        assert len(outputs) == 12

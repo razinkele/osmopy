@@ -110,6 +110,7 @@ class TestBioenOutputsComplete:
         result = compute_energy_budget(
             ingestion=np.full(n, 1e-4),
             weight=np.full(n, 1e-5),
+            abundance=np.full(n, 1e6),
             gonad_weight=np.zeros(n),
             age_dt=np.full(n, 24, dtype=np.int32),
             length=np.full(n, 10.0),
@@ -125,7 +126,7 @@ class TestBioenOutputsComplete:
             phi_t=np.ones(n),
             f_o2=np.ones(n),
             n_dt_per_year=24,
-            e_net_avg=np.zeros(n),
+            enet_faced=np.zeros(n),
         )
         assert len(result) == 6, f"Expected 6 return values, got {len(result)}"
         dw, dg, e_net, e_gross, e_maint, rho = result

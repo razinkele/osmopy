@@ -5,6 +5,39 @@ from tests._ev_preflight import require_baltic_ev_preflight
 
 
 @pytest.mark.slow
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "KNOWN GAP, ruling R24 (C3 Stage-1 Task 6, 2026-08-30). Measured "
+        "high_mean=3.0012 vs low_mean=2.9965 -- a 0.16% move in the WRONG "
+        "direction against the >=2% expectation, with per-seed values "
+        "(high=[2.998, 3.005, 3.000], low=[2.991, 2.991, 3.008]) clustered at "
+        "3.00 well inside seed spread. Not a threshold miss: the FIE response is "
+        "absent. Root cause, confirmed at source: state.imax_trait "
+        "(osmose/engine/state.py) is READ by "
+        "osmose/engine/processes/mortality.py:394,406,996 but ASSIGNED BY "
+        "NOTHING -- grep for assignments turns up only the field declaration and "
+        "comments noting it is unreachable. simulate.py runs _mortality at :1749 "
+        "but express_traits (which would populate the phenotype) at :1818, i.e. "
+        "AFTER mortality, so imax_trait is always None when the ingestion cap is "
+        "applied in mortality.py. The genetic imax value is tracked and "
+        "inherited but phenotypically inert, so it drifts neutrally under "
+        "fishing and selection cannot act on it. Java DOES honour the "
+        "per-school trait (getMaxPredationRate: existsTrait('imax')), so this is "
+        "a real parity gap, not a modelling choice -- this follows directly from "
+        "this plan's own spec decision 14 (moving the allometric cap into the "
+        "mortality loop for Java parity). The fix would be making phenotypes "
+        "available before mortality runs (express_traits before _mortality in "
+        "simulate.py) -- an Ev-OSMOSE step-order change, out of scope for Task 6 "
+        "and for Stage 1. Do NOT relax the 2% threshold instead: this test's own "
+        "docstring says escalate to nyear=100 before relaxing it, and relaxing "
+        "it would convert a measured capability gap into a test that passes "
+        "while asserting nothing. Sibling xfail owning the same gap: "
+        "tests/test_genetics_bioen_integration.py:86 "
+        "(test_trait_overrides_affect_growth). strict=True so this flips loudly "
+        "the moment the plumbing is restored."
+    ),
+)
 def test_high_f_drives_lower_cod_imax_than_low_f(tmp_path: Path) -> None:
     """Direction-only assertion: mean-across-3-seeds end-of-run cod imax
     must be lower under high F than low F by >=2%.

@@ -33,6 +33,11 @@ def _make_bioen_config_dict(n_species: int = 2) -> dict[str, str]:
         "simulation.bioen.enabled": "true",
         "simulation.bioen.phit.enabled": "true",
         "simulation.bioen.fo2.enabled": "false",
+        # Task 7 removes the silent 15C fallback in `_bioen_step` -- set the source
+        # explicitly so these fixtures don't start raising when that lands. Matches
+        # `const_temp_data` below (also 15.0) for the tests that call `_bioen_step`
+        # directly with that fixture rather than through `simulate()`.
+        "temperature.value": "15.0",
     }
     for i in range(n_species):
         sp = f"sp{i}"
@@ -55,19 +60,39 @@ def _make_bioen_config_dict(n_species: int = 2) -> dict[str, str]:
                 f"species.beta.{sp}": "0.75",
                 f"species.zlayer.{sp}": "0",
                 f"species.bioen.assimilation.{sp}": "0.68",
-                f"species.bioen.maint.energy.c_m.{sp}": "0.00123",
-                f"species.bioen.maturity.eta.{sp}": "1.4",
-                f"species.bioen.maturity.r.{sp}": "0.45",
-                f"species.bioen.maturity.m0.{sp}": "4.5",
-                f"species.bioen.maturity.m1.{sp}": "1.8",
+                # Item A (Task 3/reviewer, carried into Task 6): the old value (0.00123)
+                # made e_maint ~1e-8 of e_gross -- E_net == E_gross at every abundance and
+                # bioen starvation was structurally zero, so nothing built on this fixture
+                # could detect the per-fish-grams class of unit bug Tasks 3-5 fixed. 1e5
+                # makes maintenance materially bind against this fixture's realistic
+                # weight/abundance/ingestion ranges (`_make_school_state`, seed 0, T=15C):
+                # measured median e_maint/e_gross ~=0.79 (Task 3's `_three_schools()` model
+                # reaches ~0.81), with ~45% of schools landing net-negative -- both growth
+                # and starvation are exercised.
+                f"species.bioen.maint.energy.c_m.{sp}": "1e5",
+                # Canonical keys (osmose/config/aliases.py RENAMES_440 / NEW_TO_OLD):
+                # `species.bioen.maturity.*` and the two `*.bioen` predation keys below ARE
+                # aliased by canonicalize_config, so those specific legacy spellings would
+                # have worked -- but `mobilized.e.D`/`mobilized.Tp` have no case-insensitive
+                # match to config.py's lowercase `mobilized.e.d`/`mobilized.tp` reads (keys
+                # reaching the engine are lowercase; from_dict does not lowercase), so those
+                # two were silently dead, always falling back to config.py's defaults
+                # (e_d=1.5, tp=20.0) instead of this fixture's intended 1.45/18.0.
+                f"species.maturity.eta.{sp}": "1.4",
+                f"species.maturity.r.{sp}": "0.45",
+                f"species.maturity.m0.{sp}": "4.5",
+                f"species.maturity.m1.{sp}": "1.8",
                 f"species.bioen.mobilized.e.mobi.{sp}": "0.62",
-                f"species.bioen.mobilized.e.D.{sp}": "1.45",
-                f"species.bioen.mobilized.Tp.{sp}": "18.0",
+                f"species.bioen.mobilized.e.d.{sp}": "1.45",
+                f"species.bioen.mobilized.tp.{sp}": "18.0",
                 f"species.bioen.maint.e.maint.{sp}": "0.63",
                 f"species.oxygen.c1.{sp}": "0.95",
                 f"species.oxygen.c2.{sp}": "2.5",
-                f"predation.ingestion.rate.max.bioen.{sp}": "4.2",
-                f"predation.coef.ingestion.rate.max.larvae.bioen.{sp}": "1.1",
+                # `predation.ingestion.rate.max.{sp}` above (already canonical) is the one
+                # config.py reads for bioen_i_max too -- the legacy `.bioen.` suffixed key
+                # this fixture used to also set here was dead (alias merge is
+                # skip-if-canonical-key-exists), so dropping it changes nothing numerically.
+                f"predation.larval.ingestion.rate.increase.ratio.{sp}": "1.1",
                 f"predation.c.bioen.{sp}": "0.01",
                 f"species.bioen.forage.k_for.{sp}": "0.002",
             }
@@ -291,6 +316,47 @@ class TestBioenStepOutputsFinite:
         for field in ("e_net", "e_gross", "e_maint", "rho", "weight", "length"):
             arr = getattr(result, field)
             assert np.all(np.isfinite(arr)), f"Field '{field}' has non-finite values"
+
+
+class TestBioenMaintenanceBinds:
+    """Item A (carried into Task 6): the old `c_m` (0.00123) made e_maint ~1e-8 of
+    e_gross everywhere, so E_net == E_gross at every abundance and bioen starvation was
+    structurally unreachable -- every test built on `bioen_config`/`school_state` would
+    have passed against the broken per-fish-grams unit bug Tasks 3-5 fixed. These tests
+    are the "verify it does" half of that item: they fail loudly if the fixture regresses
+    back to a maintenance cost too small to matter.
+    """
+
+    def test_maintenance_is_a_material_fraction_of_gross_energy(
+        self, bioen_config, school_state, const_temp_data
+    ):
+        result = _bioen_step(school_state, bioen_config, const_temp_data, step=0)
+        gross = result.e_gross
+        maint = result.e_maint
+        has_intake = gross > 0
+        assert has_intake.any(), "fixture produced zero e_gross everywhere; can't measure a ratio"
+        ratio = maint[has_intake] / gross[has_intake]
+        # The old fixture's ratio was O(1e-8) everywhere; this checks it now lands in the
+        # neighbourhood Task 3's _three_schools() model reaches (~0.81), not just "not tiny".
+        assert np.median(ratio) > 0.1, (
+            f"median e_maint/e_gross={np.median(ratio):.3e} is too small to bind -- the "
+            "fixture regressed toward the old near-zero-maintenance bug"
+        )
+
+    def test_some_schools_go_net_negative(self, bioen_config, school_state, const_temp_data):
+        """A materially-binding maintenance cost must make starvation reachable for at
+        least some schools -- proof the fixture can exercise the starvation path at all,
+        which the old (near-zero-maintenance) fixture could never do."""
+        result = _bioen_step(school_state, bioen_config, const_temp_data, step=0)
+        assert np.any(result.e_net < 0.0), (
+            "no school went net-negative under this fixture's maintenance cost -- "
+            "bioen starvation remains structurally unreachable"
+        )
+        # ...but not a wipeout either: this fixture should still let some schools grow,
+        # so tests that assert positive growth elsewhere in this file stay meaningful.
+        assert np.any(result.e_net > 0.0), (
+            "every school went net-negative -- c_m may be too aggressive for this fixture"
+        )
 
 
 class TestBioenStepMissingConfig:

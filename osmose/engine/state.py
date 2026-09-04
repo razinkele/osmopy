@@ -55,6 +55,19 @@ class SchoolState:
 
     # Feeding / predation
     pred_success_rate: NDArray[np.float64]
+    # preyed_biomass is MODE-DEPENDENT (Task 4 review M5, deferred to and resolved by
+    # Task 6 item E.10): raw eaten total when bioen is off; survivor-rescaled ingestion
+    # (mortality.py's `_consume`) when bioen is on -- Java keeps these as two separate
+    # accumulators (`AbstractSchool.preyedBiomass` raw vs `School.ingestion` rescaled),
+    # this port collapses them into one field and switches its meaning by mode instead.
+    # The two live consumers already account for this (do not add a third without
+    # checking mode): `_bioen_step` (osmose/engine/simulate.py, "ingestion = ...") wants
+    # the bioen-on scaled value and is only ever called under bioen; the trophic-level
+    # update (osmose/engine/processes/mortality.py, `tl_denominator = raw_preyed if ...
+    # else state.preyed_biomass`) wants the raw total and falls back to this field only
+    # when raw_preyed is None, i.e. bioen off. A future per-school "preyed biomass"
+    # output must branch on config.bioen_enabled the same way or it will silently report
+    # ingestion instead of predation under bioen.
     preyed_biomass: NDArray[np.float64]
     feeding_stage: NDArray[np.int32]
 

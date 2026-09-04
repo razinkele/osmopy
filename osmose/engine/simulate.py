@@ -600,6 +600,7 @@ def _bioen_reproduction(
     grid_ny: int = 10,
     grid_nx: int = 10,
     trait_overrides: dict[str, NDArray[np.float64]] | None = None,
+    seeded_out: dict[str, NDArray[np.bool_]] | None = None,
 ) -> SchoolState:
     """Java `BioenReproductionProcess.run()` (4.3.3, source-verified) + shared regulation.
 
@@ -628,6 +629,18 @@ def _bioen_reproduction(
     the spec fixes `m1 = 0` (decision 9), which makes the threshold constant, and length
     is non-decreasing (`_bioen_step` adds `dw >= 0` and this function touches neither
     weight nor length), so a school that has once passed the threshold cannot fall back.
+
+    `seeded_out`, if given a dict, is populated with `{"seeded_this_step": <bool[n_sp]>}`
+    before return — per-species whether THIS step's eggs came from the SSB==0 population
+    bootstrap (`config.seeding_biomass`) rather than a real spawning school. That window
+    (`population.seeding.year.max`, default the species lifespan) is independent of and
+    can outlast genetics' `evolution.seeding.year`: a species whose SSB never recovers
+    (e.g. baltic_ev smelt, structurally collapsed pending bioen-param tuning, plan Task
+    7.4) keeps producing bootstrap eggs long after genetics stops treating new schools as
+    unparented seed stock. Without this flag the caller's genetics inheritance call sees
+    `n_offspring > 0` with zero real parents and raises (`inheritance.py`'s non-seeding
+    contract check) — not a bug in that check, a real gap between two independently-timed
+    seeding windows. The caller must OR this into its own seeding decision.
     """
     from osmose.engine.processes.bioen_reproduction import bioen_egg_release
     from osmose.engine.processes.reproduction import (
@@ -663,6 +676,13 @@ def _bioen_reproduction(
         # every school of positive length reads as mature — egg schools included. That
         # would inflate SSB (suppressing the SR curve) AND keep SSB != 0 forever, so the
         # seeding bootstrap could never fire on a collapsed species.
+        #
+        # Java comparison (Task 5 review M2 / Task 6 item D.7): this exclusion is a
+        # deliberate CORRECTION to Java, not a match. `EnergyBudget.getMaturation`
+        # (4.3.3) has no egg exclusion at all — with m0 = m1 = 0 Java would count egg
+        # schools as mature too. Inert on every live config in this repo (m0 > 0
+        # everywhere the bioen reproduction path is actually run), so it has never
+        # changed a certified result, but it is a divergence, not parity.
         mask = (state.species_id == sp) & (state.abundance > 0) & ~state.is_egg
         idx = np.where(mask)[0]
 
@@ -727,6 +747,9 @@ def _bioen_reproduction(
     new_age = state.age_dt + 1
     new_is_egg = new_age < state.first_feeding_age_dt
     state = state.replace(age_dt=new_age, is_egg=new_is_egg)
+
+    if seeded_out is not None:
+        seeded_out["seeded_this_step"] = seeded_this_step
 
     return merge_new_schools(state, new_egg_schools)
 
@@ -1811,6 +1834,7 @@ def simulate(
         # after which egg deaths recorded this step would be charged to Juvenil (#142 correction).
         stage_split = _collect_by_life_stage(state, config)
         n_before_repro = len(state)
+        bioen_seeded: dict[str, NDArray[np.bool_]] = {}
         if config.bioen_enabled:
             state = _bioen_reproduction(
                 state,
@@ -1820,6 +1844,7 @@ def simulate(
                 grid_ny=grid.ny,
                 grid_nx=grid.nx,
                 trait_overrides=trait_overrides if trait_overrides else None,
+                seeded_out=bioen_seeded if ctx.genetic_state is not None else None,
             )
         else:
             state = _reproduction(state, config, step, rng, grid_ny=grid.ny, grid_nx=grid.nx)
@@ -1833,6 +1858,13 @@ def simulate(
                 config.genetics_transmission_year > 0
                 and current_year < config.genetics_transmission_year
             )
+            # Per-species bioen population-seeding flag (see _bioen_reproduction's
+            # `seeded_out` docstring): its window is independent of and can outlast
+            # `seeding` above, so a species whose SSB is bootstrapped this step has no
+            # real parents either — treat those offspring as seeded too, or
+            # create_offspring_genotypes raises on an empty parent pool that was never
+            # going to exist.
+            bioen_seeded_this_step = bioen_seeded.get("seeded_this_step")
 
             n_new = len(state) - n_before_repro
             if n_new > 0:
@@ -1841,6 +1873,11 @@ def simulate(
                 for sp in np.unique(new_ids):
                     sp_mask = new_ids == sp
                     n_off = int(sp_mask.sum())
+                    sp_seeding = seeding or (
+                        bioen_seeded_this_step is not None
+                        and int(sp) < len(bioen_seeded_this_step)
+                        and bool(bioen_seeded_this_step[sp])
+                    )
                     offspring_parts.append(
                         create_offspring_genotypes(
                             parent_gs=ctx.genetic_state,
@@ -1849,7 +1886,7 @@ def simulate(
                             offspring_species=int(sp),
                             n_offspring=n_off,
                             rng=rng,
-                            seeding=seeding,
+                            seeding=sp_seeding,
                         )
                     )
                 for part in offspring_parts:

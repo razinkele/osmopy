@@ -69,6 +69,19 @@ def test_bioen_i_max_all_has_focal_then_background_entries():
     np.testing.assert_array_equal(ec.bioen_i_max_all[ec.n_species :], [7.7])
 
 
+def test_bioen_larvae_thres_dt_and_i_max_all_dtypes_are_pinned():
+    """Task 2 review Minor 2 (carried into Task 6, item C.3): nothing previously asserted
+    `bioen_larvae_thres_dt` is int32 or `bioen_i_max_all` is float64 -- both are consumed as
+    array indices / kernel inputs by `per_fish_ingestion_cap` (`ageDt < larvaeThresDt`,
+    `i_max_all[species_id]`), where a silent dtype drift (e.g. int64 or float32) would still
+    run but could change Numba specialisation or truncate/round unexpectedly. Pin both.
+    """
+    cfg = _lower(_make_bioen_config_dict(n_species=2))
+    ec = EngineConfig.from_dict(cfg)
+    assert ec.bioen_larvae_thres_dt.dtype == np.int32
+    assert ec.bioen_i_max_all.dtype == np.float64
+
+
 def test_bioen_fields_none_when_disabled():
     cfg = _lower(_make_bioen_config_dict(n_species=2))
     cfg["module.bioenergetics.enabled"] = "false"

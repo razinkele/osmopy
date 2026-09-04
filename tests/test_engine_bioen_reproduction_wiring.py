@@ -360,9 +360,20 @@ class TestBioenReproductionMaturity:
 
         assert len(result) == n_before, "Young fish with small length should not spawn"
 
-    def test_m1_slope_raises_the_threshold_with_age(self):
-        """m1 > 0 makes older fish need to be longer. L=9 is mature at 2 yr
-        (4.5 + 1.8*2 = 8.1) but not at 3 yr (4.5 + 1.8*3 = 9.9)."""
+    def test_characterization_m1_slope_recomputed_threshold_diverges_from_javas_sticky_latch(
+        self,
+    ):
+        """CHARACTERIZATION, not a requirement (Task 5 review M3 / Task 6 item C.6): this
+        pins a KNOWN divergence from Java, not a design goal. `_bioen_reproduction`
+        recomputes maturity every step from `L >= m0 + m1*age` (`_bioen_reproduction`'s
+        docstring), whereas Java latches it once true (`School.setIsMature`, never
+        cleared). With m1 > 0 a school that once qualified can stop qualifying as age
+        advances the threshold past its (non-decreasing) length -- exactly what this test
+        exercises: L=9 is mature at 2 yr (4.5 + 1.8*2 = 8.1) but the SAME fish reads
+        immature again at 3 yr (4.5 + 1.8*3 = 9.9). A future fix that latches maturity
+        (matching Java) should make `out_old` mature too and this test should then be
+        UPDATED to assert that, not preserved as-is -- the old name read like a spec this
+        divergence had to keep satisfying, which is backwards."""
         config = _make_config()
         young = _make_state_with_gonad(config, gonad=0.05, length=9.0, age_dt=48)
         old = _make_state_with_gonad(config, gonad=0.05, length=9.0, age_dt=72)

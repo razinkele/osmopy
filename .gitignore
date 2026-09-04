@@ -120,9 +120,26 @@ docs/api/_autosummary/
 
 # Large generated test baselines (e.g. C3 Gate-A master fixture) — regenerate
 # locally, never commit. Pre-existing curated baselines are already tracked
-# and unaffected (gitignore does not untrack tracked files).
+# and unaffected (gitignore does not untrack tracked files), but the bare
+# *.npz/*.json rules below would still block `git add` on a FUTURE curated
+# baseline without -f. Narrowed with the repo's own !-negation convention
+# (see data/baltic/calibration_results/ above) so a new curated file only
+# needs a line added here, not -f.
 tests/baselines/*.npz
 tests/baselines/*.json
+!tests/baselines/benchmark_5yr_post_phase_a.json
+!tests/baselines/benchmark_5yr_post_phase_b.json
+!tests/baselines/benchmark_5yr_post_tier3.json
+!tests/baselines/benchmark_5yr_pre_phase_a.json
+!tests/baselines/benchmark_eec_5yr_post_scaling.json
+!tests/baselines/benchmark_eec_5yr_pre_scaling.json
+!tests/baselines/benchmark_post_tier1.json
+!tests/baselines/benchmark_post_tier2.json
+!tests/baselines/benchmark_post_tier3.json
+!tests/baselines/benchmark_pre_tier1.json
+!tests/baselines/parity_baseline_bob_1yr_seed42.npz
+!tests/baselines/parity_baseline_eec_1yr_seed42.npz
+!tests/baselines/statistical_baseline_bob_1yr_10seeds.npz
 # Tiny gate series CSVs generated alongside reproduction_reference_seed3.npz
 # (RV / thermal / recruitment-ceiling inputs; regenerated with the reference).
 tests/baselines/reproduction_reference_files/
