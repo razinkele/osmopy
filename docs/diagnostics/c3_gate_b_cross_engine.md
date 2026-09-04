@@ -137,9 +137,12 @@ conversion and the reproduction/recruitment path that seeds it, is bytecode-iden
 the new `xi_crit`/`W0` fields) are confirmed dead code for this specific config, not "the most plausible
 candidate" as the previous version of this section claimed. The true cause of the `mean_size` divergence
 remains **unidentified** — the search space has been narrowed to "somewhere outside the classes checked
-above" (e.g. population initialization/seeding, not yet checked), not closed. Full confirmation would
-require either a 4.4.1 source checkout or a targeted instrumented run against the populator classes,
-neither done here.
+above" (e.g. population initialization/seeding, not yet checked), not closed. This negative result is a
+signpost, not a dead end: the divergence itself (0.28-0.39 log10, CI half-width 0.00, all 8 species,
+same sign) is measured, real data, so an enumeration that finds everything reachable to be
+byte-identical *must* be incomplete — something reachable was missed, not "nothing differs." Full
+confirmation would require either a 4.4.1 source checkout or a targeted instrumented run against the
+populator classes, neither done here.
 
 ## Control's Hake REVIEW: a `data/examples` fixture artifact, not a port defect
 
