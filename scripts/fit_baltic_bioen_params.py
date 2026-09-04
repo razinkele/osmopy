@@ -544,7 +544,22 @@ def _print_background_table(
         )
 
 
+# The generator's own source: what actually decides the content this function's caller writes
+# to c3_bioen_arm.json. Kept in sync with the imports at the top of this file.
+_GENERATOR_SOURCES = ("scripts/fit_baltic_bioen_params.py", "osmose/calibration/bioen_offline.py")
+
+
 def _git_commit_sha() -> str:
+    """HEAD's short SHA, for ``c3_bioen_arm.json``'s ``_meta.commit`` provenance field.
+
+    Appends ``+dirty`` whenever ``_GENERATOR_SOURCES`` differs from HEAD at generation time --
+    otherwise this field can silently record a commit that predates the code that actually
+    produced the artifact (review R42, 2026-09-05: an earlier run recorded ``cf028a1``, a
+    commit at which ``--baltic`` did not exist, because the generator itself was uncommitted
+    when it ran). Committing the generator before regenerating the artifact is what keeps this
+    field bare and reproducible; running it against a dirty generator is still allowed, but the
+    field then says so instead of implying a clean checkout can reproduce the file.
+    """
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
@@ -554,9 +569,21 @@ def _git_commit_sha() -> str:
             check=True,
             timeout=10,
         )
-        return result.stdout.strip()
+        sha = result.stdout.strip()
     except Exception:
         return "unknown"
+    try:
+        clean = (
+            subprocess.run(
+                ["git", "diff", "--quiet", "HEAD", "--", *_GENERATOR_SOURCES],
+                cwd=ROOT,
+                timeout=10,
+            ).returncode
+            == 0
+        )
+    except Exception:
+        clean = False  # can't verify -- be conservative and flag it, not silently trust HEAD
+    return sha if clean else f"{sha}+dirty"
 
 
 def _write_readme(
@@ -565,7 +592,6 @@ def _write_readme(
     background_list: list[BackgroundSpeciesInfo],
     bg_imax: dict[int, float],
     t24_by_name: dict[str, NDArray[np.float64]],
-    widened: dict[str, float] | None = None,
 ) -> None:
     fx = BioenFixed()
     lines = [
@@ -607,6 +633,25 @@ def _write_readme(
         )
     lines += [
         "",
+        "## What the RMS pin does and does not check",
+        "",
+        "The RMS <= 15% pin (`RMS len %` column above) measures how well the fitted `(Imax, r)` "
+        "reproduce the config's own vBGF weight-at-age curve, and it is sensitive to `K` "
+        "(`species.k.spN`, the config's own growth-rate parameter) -- a sustained error there "
+        "walks the residual toward the pin (a -50% K perturbation moved cod_west's RMS from "
+        "8.3% to 13.6% in a review sensitivity sweep, 2026-09-05). It is flat-to-inverted "
+        "against the other two literature/config inputs this overlay ships: an 8 C error in "
+        "`t_opt` moved that same RMS by <0.3 points, and a 30% error in `Linf` "
+        "(`species.linf.spN`) *improved* it -- `Imax`/`r` are free parameters chosen by the "
+        "fit specifically to minimize this residual, so they absorb almost any `t_opt`/`Linf` "
+        "rescaling of the target curve. `t_opt` comes from cited literature (`SPECIES_T_OPT`, "
+        "spec Sec.1 -- see each species' label above); `Linf` and `K` come from the production "
+        "Baltic config's own already-calibrated vBGF curve, not from this fit. **Passing the "
+        "RMS pin corroborates `K` and the growth-curve shape it implies; it is not evidence "
+        "that `t_opt` or `Linf` are scientifically correct** -- the separate "
+        "`phi_t(t_p)==1.0` / argmax-within-0.1 C pins only check that `T_p` was solved "
+        "correctly FROM `t_opt`, not that the cited `t_opt` itself is right.",
+        "",
         "## Background predators (GreySeal sp15, Cormorant sp16)",
         "",
         "Ruling R1 (progress log, 2026-08-30): Java's bioen predation cap skips the "
@@ -642,30 +687,22 @@ def _write_readme(
             f"| {b_sp.file_index} | {b_sp.name} | {b_sp.ingestion_rate:g} | {imax:.6g} | "
             f"{BACKGROUND_BETA:g} | [{lo:.3f}, {hi:.3f}] |"
         )
-    if widened:
-        lines += [
-            "",
-            "## Widened fit window",
-            "",
-            "The following species failed the RMS <= 15% pin at the default >= 1 yr fit "
-            "window and were re-fitted with a widened window (spec Sec.3.4 / brief step 3 "
-            "escape hatch -- a documented per-species exception, not a loosened pin):",
-            "",
-        ]
-        for name, min_age in sorted(widened.items()):
-            lines.append(f"- `{name}`: fitted ages >= {min_age:g} yr (default is >= 1.0 yr)")
     lines.append("")
     (out_dir / "README.md").write_text("\n".join(lines) + "\n")
 
 
-def run_baltic(
-    out_dir: Path | None = None, widen: dict[str, float] | None = None
-) -> list[FitResult]:
+def run_baltic(out_dir: Path | None = None) -> list[FitResult]:
     """Fit the production Baltic 9-species bioen parameter set (C3 spec Sec.1/3.4, Task 11).
 
-    ``widen``: {species name: minimum fitted age in years}, only for species that fail the
-    RMS <= 15% pin at the default >= 1 yr window (brief step 3 escape hatch). Empty by
-    default -- do not pre-widen a species that has not been shown to need it.
+    The fit met the RMS <= 15% pin on all nine species on its default >= 1 yr window (worst:
+    pikeperch at 10.71%); there is currently no automatic fallback if a future refit fails it.
+    An earlier ``widen`` escape hatch (re-fit a failing species from a later minimum age) was
+    removed (review R40, 2026-09-05): it called ``fit_species(tg, fx, min_age_years=...)``, and
+    ``fit_species`` has never accepted that keyword, so the path would raise ``TypeError`` on
+    first use. If a future fit genuinely needs window-widening, implement
+    ``min_age_years`` on ``fit_species`` itself (its ``idx_all = np.arange(ndt, n_steps + 1)``
+    would start from ``round(min_age_years * ndt)`` instead) and add a test that exercises it,
+    against a real failing case -- do not restore this parameter without that.
     """
     import tempfile
 
@@ -673,7 +710,6 @@ def run_baltic(
 
     out_dir = out_dir or (ROOT / "data" / "baltic" / "scenarios" / "c3_bioen")
     out_dir.mkdir(parents=True, exist_ok=True)
-    widen = widen or {}
 
     temp_nc = ROOT / "data" / "baltic" / "forcing" / "baltic_temperature_2layer_climatology.nc"
     if not temp_nc.exists():
@@ -694,11 +730,7 @@ def run_baltic(
         )
 
         fx = BioenFixed()
-        results = []
-        for tg in targets:
-            min_age = widen.get(tg.name)
-            kwargs = {"min_age_years": min_age} if min_age is not None else {}
-            results.append(fit_species(tg, fx, **kwargs))
+        results = [fit_species(tg, fx) for tg in targets]
         for res in results:
             _assert_baltic_pins(res, fx)
 
@@ -740,7 +772,7 @@ def run_baltic(
         arm_path = out_dir / "c3_bioen_arm.json"
         arm_path.write_text(json.dumps(overlay_with_meta, indent=2, sort_keys=True) + "\n")
 
-        _write_readme(out_dir, results, background_list, bg_imax, t24_by_name, widened=widen)
+        _write_readme(out_dir, results, background_list, bg_imax, t24_by_name)
 
         n_fail = sum(1 for res in results if res.rms_len_pct > RMS_PIN_PCT)
         print(
