@@ -14,6 +14,14 @@ outputs across engines are impossible without reimplementing the MT19937
 stream in NumPy — out of scope for this port. If bit-exact reproducibility
 against Java is required, set `OsmoseCalibrationProblem(use_java_engine=True)`
 and run the Java subprocess path.
+
+Even within the Python engine, a given RNG stream is not guaranteed stable
+across commits: the bioenergetics reproduction path's draw sequence changed
+at `77c9c94` (C3 Stage-1 Task 5) when the `rng.integers` parent-cell draw
+was removed because eggs became unlocated. No bioen-enabled output is
+bit-comparable across `39c43a2..77c9c94` — a fixed seed reproduces a given
+commit, not a given config across commits. Don't diff a Stage-2 bioen run
+against a pre-`77c9c94` baseline and read the mismatch as a regression.
 """
 
 from __future__ import annotations

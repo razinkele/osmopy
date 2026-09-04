@@ -49,6 +49,12 @@ def create_offspring_genotypes(
     """Create genotypes for n_offspring new schools of one species."""
     sp_mask = (species_id == offspring_species) & (gonad_weight > 0)
     sp_indices = np.where(sp_mask)[0]
+    # Conspecific mask for the seeding branch below: species_id only, deliberately
+    # NOT gated on gonad_weight > 0 -- the whole point of seeding is that there are
+    # no mature parents (gonad_weight may be all-zero for the whole species at this
+    # step). Kept separate from sp_indices/sp_mask above, which the non-seeding
+    # branch uses and which DOES require gonad_weight > 0.
+    conspecific_indices = np.where(species_id == offspring_species)[0]
 
     alleles: dict[str, NDArray[np.float64]] = {}
     env_noise: dict[str, NDArray[np.float64]] = {}
@@ -59,11 +65,18 @@ def create_offspring_genotypes(
         off_alleles = np.zeros((n_offspring, max_loci, 2), dtype=np.float64)
 
         if seeding:
-            # During seeding: draw alleles from the full population pool at random.
-            # If the population pool is empty (all schools died, e.g. early warm-up),
-            # fall back to drawing directly from the trait's pre-built allele pool so
-            # that new offspring can always be seeded without crashing.
-            pool_alleles = parent_gs.alleles[name]  # (N, max_loci, 2)
+            # During seeding: draw alleles from the offspring's OWN species' pool at
+            # random (restricted to conspecific_indices -- see ruling R25). Drawing
+            # from the full multi-species population here would let a species whose
+            # SSB has collapsed mid-run (see _bioen_reproduction's seeded_out
+            # mechanism) copy another species' real, evolved allele deviations onto
+            # its own offspring, silently violating that species' configured genetic
+            # variance (e.g. var=0 species would stop being all-zero). If the
+            # population pool is empty (no living conspecifics, e.g. early warm-up
+            # or a species' very first bootstrap), fall back to drawing directly from
+            # the trait's pre-built allele pool so that new offspring can always be
+            # seeded without crashing.
+            pool_alleles = parent_gs.alleles[name][conspecific_indices]  # (n_sp, max_loci, 2)
             if len(pool_alleles) > 0:
                 for j in range(n_offspring):
                     for a in range(2):
@@ -113,6 +126,16 @@ def create_offspring_genotypes(
         env_noise[name] = noise
 
     # Neutral loci
+    #
+    # NOTE (ruling R25, Task 6 fix round 1): the seeding branch below draws from
+    # `parent_gs.neutral_alleles` UNFILTERED by species -- the same shape of bug fixed
+    # above for `alleles[name]`, deliberately left as-is here. Neutral loci are gated
+    # off by default (`evolution.neutral.nlocus` defaults to "0" in config.py, and
+    # neither baltic_ev nor baltic sets it), so `create_initial_genotypes` leaves
+    # `neutral_alleles=None` and this whole block is unreachable in every production
+    # config today -- there is no live cross-species-leak path to close. Revisit this
+    # if a config ever turns on `evolution.neutral.nlocus`: mirror the
+    # `conspecific_indices` mask used for `alleles[name]` above.
     neutral = None
     if parent_gs.neutral_alleles is not None:
         n_neutral = parent_gs.neutral_alleles.shape[1]

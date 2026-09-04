@@ -93,8 +93,11 @@ class TestBioenGeneticsIntegration:
             "simulate.py expresses traits AFTER mortality (express_traits at :1818 vs "
             "_mortality at :1749). Java DOES honour the per-school trait "
             "(getMaxPredationRate: existsTrait('imax')), so this is a real parity gap; closing "
-            "it needs the phenotypes available before mortality, which is a step-order change "
-            "in Ev-OSMOSE's territory. The other three evolving traits (r, m0, m1) still reach "
+            "it needs BOTH the phenotypes available before mortality (a step-order change) AND "
+            "new wiring to populate state.imax_trait from the expressed phenotypes -- "
+            "reordering alone would not fix it, since state.imax_trait is assigned nowhere in "
+            "the codebase today (confirmed by a full-repo grep, ruling R26). Both are in "
+            "Ev-OSMOSE's territory. The other three evolving traits (r, m0, m1) still reach "
             "compute_energy_budget and are covered by the tests below. strict=True so this "
             "flips loudly the moment the plumbing is restored."
         ),
@@ -270,3 +273,157 @@ class TestBioenReproductionSeededOutFlag:
 
         outputs = simulate(config, grid, rng)  # must not raise
         assert len(outputs) == 12
+
+
+class TestSeedingConspecificFilter:
+    """Regression for ruling R25 (Task 6 fix round 1): the `seeding=True` branch of
+    `create_offspring_genotypes` used to draw its donor school from the ENTIRE
+    multi-species `parent_gs.alleles[name]` pool, unfiltered by species. `sp_seeding`
+    (see `TestBioenReproductionSeededOutFlag` above) makes that branch reachable
+    mid-run for a single collapsed species while its neighbours carry real, non-zero,
+    evolved allele deviations -- so a `var=0.0` species could silently inherit another
+    species' genetics. `TestBioenReproductionSeededOutFlag`'s three tests are
+    single-species (`simulation.nspecies: "1"`) and structurally cannot see this: with
+    only one species in the population, the unfiltered pool and the conspecific pool
+    are the same set. This class uses two species specifically so the two pools
+    differ.
+    """
+
+    def _two_species_genetic_state(self):
+        """sp0: var > 0 with real, non-zero, "evolved" allele deviations (stands in for
+        cod). sp1: var = 0.0, all-zero alleles, exactly like the rest of baltic_ev's
+        species before any cross-species leak. 3 living schools of each."""
+        from osmose.engine.genetics.genotype import GeneticState
+        from osmose.engine.genetics.trait import Trait, TraitRegistry
+
+        n_loci = np.array([3, 3], dtype=np.int32)
+        trait = Trait(
+            name="imax",
+            species_mean=np.array([3.5, 2.0]),
+            species_var=np.array([0.5, 0.0]),
+            env_var=np.array([0.0, 0.0]),
+            n_loci=n_loci,
+            n_alleles=np.array([5, 5], dtype=np.int32),
+            target_param="bioen_i_max",
+            allele_pool=[
+                [np.full(5, 9.0) for _ in range(3)],  # sp0 fallback pool -- also non-zero
+                [],  # sp1: var=0 -> no pool built (mirrors trait.py:84's guard)
+            ],
+        )
+        registry = TraitRegistry()
+        registry.register(trait)
+
+        species_id = np.array([0, 0, 0, 1, 1, 1], dtype=np.int32)
+        alleles = np.zeros((6, 3, 2), dtype=np.float64)
+        alleles[0:3, :, :] = 9.0  # sp0's "evolved" deviation: unmistakably non-zero
+        # sp1 rows (3:6) stay all-zero, matching a var=0 species whose own
+        # reproduction has only ever gone through the (correctly-filtered)
+        # non-seeding branch or the zero-filled fallback.
+        gs = GeneticState(
+            alleles={"imax": alleles},
+            env_noise={"imax": np.zeros(6)},
+            registry=registry,
+        )
+        gonad_weight = np.zeros(6)  # irrelevant to the seeding branch by design (R25)
+        return gs, species_id, gonad_weight
+
+    def test_var0_species_seeding_bootstrap_does_not_inherit_other_species_alleles(self):
+        """The whole point of the fix: sp1 (var=0.0) offspring bootstrapped via
+        seeding=True must come out all-zero, never carrying sp0's 9.0 deviation."""
+        from osmose.engine.genetics.inheritance import create_offspring_genotypes
+
+        gs, species_id, gonad_weight = self._two_species_genetic_state()
+        rng = np.random.default_rng(12345)
+
+        offspring = create_offspring_genotypes(
+            parent_gs=gs,
+            gonad_weight=gonad_weight,
+            species_id=species_id,
+            offspring_species=1,
+            n_offspring=20,
+            rng=rng,
+            seeding=True,
+        )
+
+        assert np.all(offspring.alleles["imax"] == 0.0), (
+            "sp1 (var=0.0) offspring carry non-zero alleles after a seeding bootstrap -- "
+            "cross-species contamination from sp0's donor pool (ruling R25)."
+        )
+
+    def test_var_gt0_species_seeding_bootstrap_still_draws_from_its_own_pool(self):
+        """Sanity check on the other side of the mask: sp0's own seeding bootstrap must
+        still draw from (only) sp0's real pool -- i.e. the fix must not zero everyone
+        out, just stop the cross-species leak."""
+        from osmose.engine.genetics.inheritance import create_offspring_genotypes
+
+        gs, species_id, gonad_weight = self._two_species_genetic_state()
+        rng = np.random.default_rng(999)
+
+        offspring = create_offspring_genotypes(
+            parent_gs=gs,
+            gonad_weight=gonad_weight,
+            species_id=species_id,
+            offspring_species=0,
+            n_offspring=20,
+            rng=rng,
+            seeding=True,
+        )
+
+        assert np.all(offspring.alleles["imax"] == 9.0)
+
+    def test_var0_species_with_zero_living_conspecifics_falls_back_not_to_cross_species(
+        self,
+    ):
+        """The exact smelt scenario: the collapsed species (sp1) has NO living schools
+        at all (SSB structurally 0, like baltic_ev smelt past step ~342), while sp0
+        is alive and carries real, non-zero alleles. Pre-fix, `parent_gs.alleles[name]`
+        was the WHOLE population -- with only sp0 alive, every donor draw was
+        guaranteed (not just likely) to land on sp0, so this is the single strongest
+        red case for the mask. Post-fix, `conspecific_indices` for sp1 is empty, so
+        the seeding branch must fall through to `trait.allele_pool[1]` (also empty for
+        a var=0 species), producing all-zero offspring -- never sp0's 9.0."""
+        from osmose.engine.genetics.genotype import GeneticState
+        from osmose.engine.genetics.inheritance import create_offspring_genotypes
+        from osmose.engine.genetics.trait import Trait, TraitRegistry
+
+        n_loci = np.array([3, 3], dtype=np.int32)
+        trait = Trait(
+            name="imax",
+            species_mean=np.array([3.5, 2.0]),
+            species_var=np.array([0.5, 0.0]),
+            env_var=np.array([0.0, 0.0]),
+            n_loci=n_loci,
+            n_alleles=np.array([5, 5], dtype=np.int32),
+            target_param="bioen_i_max",
+            allele_pool=[
+                [np.full(5, 9.0) for _ in range(3)],  # sp0 pool
+                [],  # sp1: var=0 -> no pool, exactly as production
+            ],
+        )
+        registry = TraitRegistry()
+        registry.register(trait)
+
+        # Only sp0 is alive. sp1 has zero living schools -- SSB == 0, no conspecifics
+        # of any kind (not even non-mature ones) to draw from.
+        species_id = np.array([0, 0, 0], dtype=np.int32)
+        alleles = np.full((3, 3, 2), 9.0)
+        gs = GeneticState(
+            alleles={"imax": alleles}, env_noise={"imax": np.zeros(3)}, registry=registry
+        )
+        gonad_weight = np.zeros(3)
+
+        offspring = create_offspring_genotypes(
+            parent_gs=gs,
+            gonad_weight=gonad_weight,
+            species_id=species_id,
+            offspring_species=1,
+            n_offspring=20,
+            rng=np.random.default_rng(42),
+            seeding=True,
+        )
+
+        assert np.all(offspring.alleles["imax"] == 0.0), (
+            "sp1 has zero living conspecifics but sp0 is alive with real alleles -- "
+            "offspring must fall back to the empty trait.allele_pool (all zeros), "
+            "never draw a sp0 donor from the whole-population pool (ruling R25)."
+        )
