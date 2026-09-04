@@ -9,7 +9,10 @@ from tests._ev_preflight import require_baltic_ev_preflight
     strict=True,
     reason=(
         "KNOWN GAP, ruling R24 (C3 Stage-1 Task 6, 2026-08-30). Measured "
-        "high_mean=3.0012 vs low_mean=2.9965 -- a 0.16% move in the WRONG "
+        "high_mean=3.0012 vs low_mean=2.9965 (measured at b46d599, BEFORE 20fdd05 "
+        "changed seeding allele sourcing -- these exact figures may not reproduce, "
+        "but the diagnosis does not depend on them: imax_trait is None whatever the "
+        "allele values are) -- a 0.16% move in the WRONG "
         "direction against the >=2% expectation, with per-seed values "
         "(high=[2.998, 3.005, 3.000], low=[2.991, 2.991, 3.008]) clustered at "
         "3.00 well inside seed spread. Not a threshold miss: the FIE response is "
