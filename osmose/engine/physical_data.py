@@ -11,7 +11,10 @@ class PhysicalData:
 
     Two modes:
     - Constant: single value applied everywhere.
-    - NetCDF: 3D array (time, y, x) with periodic cycling.
+    - NetCDF: (time, y, x) or (time, z, y, x) array with periodic time cycling. The
+      z-axis ("layer") supports per-species depth sampling (e.g. temperature.filename
+      with per-species `species.zlayer.sp{idx}`); oxygen forcing never carries one --
+      bottom-oxygen fields stay (time, y, x) and always read layer 0.
     """
 
     def __init__(
@@ -39,13 +42,18 @@ class PhysicalData:
         factor: float = 1.0,
         offset: float = 0.0,
     ) -> PhysicalData:
-        """Load from NetCDF file."""
+        """Load from NetCDF file. Accepts (time, y, x) or (time, z, y, x) -- the
+        latter enables per-species depth sampling via `get_grid(step, layer=...)`."""
         from osmose.engine._netcdf import open_dataset_safe
 
         ds = open_dataset_safe(path)
         raw = ds[varname].values
         if raw.ndim == 2:
             raw = raw[np.newaxis, :, :]
+        if raw.ndim not in (3, 4):
+            raise ValueError(
+                f"{path}:{varname} must be (time,y,x) or (time,z,y,x); got shape {raw.shape}"
+            )
         data = factor * (raw.astype(np.float64) + offset)
         return cls(data=data, constant=None, nsteps_year=nsteps_year)
 
@@ -66,13 +74,30 @@ class PhysicalData:
     def is_constant(self) -> bool:
         return self._constant is not None
 
-    def get_value(self, step: int, cell_y: int, cell_x: int) -> float:
-        """Get value at a specific cell and timestep."""
-        if self._constant is not None:
-            return self._constant
+    @property
+    def n_layers(self) -> int:
+        """Number of depth layers: 1 for constant mode or 3-D (time,y,x) data."""
+        return 1 if self._data is None or self._data.ndim == 3 else int(self._data.shape[1])
+
+    def _frame(self, step: int, layer: int) -> NDArray[np.float64]:
+        """Return the (ny, nx) grid for `step` (cycled modulo the loaded frame count)
+        at `layer`. `step % frame_count` -- NOT `_nsteps_year`, which is metadata only
+        (see `_load_temperature_data`/`_load_oxygen_data` in simulate.py)."""
         assert self._data is not None
         t_idx = step % self._data.shape[0]
-        return float(self._data[t_idx, cell_y, cell_x])
+        if self._data.ndim == 3:
+            if layer != 0:
+                raise IndexError(f"layer {layer} requested from a single-layer field")
+            return self._data[t_idx]
+        if not 0 <= layer < self._data.shape[1]:
+            raise IndexError(f"layer {layer} out of range (n_layers={self._data.shape[1]})")
+        return self._data[t_idx, layer]
+
+    def get_value(self, step: int, cell_y: int, cell_x: int, layer: int = 0) -> float:
+        """Get value at a specific cell and timestep (and depth layer, if 4-D)."""
+        if self._constant is not None:
+            return self._constant
+        return float(self._frame(step, layer)[cell_y, cell_x])
 
     def get_scalar(self) -> float:
         """Get the constant value. Raises ValueError if not constant mode."""
@@ -80,10 +105,8 @@ class PhysicalData:
             raise ValueError("PhysicalData is not in constant mode")
         return self._constant
 
-    def get_grid(self, step: int) -> NDArray[np.float64]:
-        """Return full (ny, nx) grid for a timestep."""
+    def get_grid(self, step: int, layer: int = 0) -> NDArray[np.float64]:
+        """Return full (ny, nx) grid for a timestep (and depth layer, if 4-D)."""
         if self._constant is not None:
             raise ValueError("Constant PhysicalData has no spatial grid")
-        assert self._data is not None
-        t_idx = step % self._data.shape[0]
-        return self._data[t_idx]
+        return self._frame(step, layer)

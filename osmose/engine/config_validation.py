@@ -111,6 +111,11 @@ _ALLOWLIST_PY_HONORED: frozenset[str] = frozenset(
         "species.tl.sp{idx}",
         "species.trophic.level.sp{idx}",
         "species.type.sp{idx}",
+        "temperature.factor",
+        "temperature.filename",
+        "temperature.nsteps.year",
+        "temperature.offset",
+        "temperature.varname",
     ]
 )
 
@@ -201,11 +206,6 @@ _ALLOWLIST_JAVA_ONLY: frozenset[str] = frozenset(
         "simulation.restart.spinup.nyear",
         "species.conversion2tons.sp{idx}",
         "species.first.feeding.age.sp{idx}",
-        "temperature.factor",
-        "temperature.filename",
-        "temperature.nsteps.year",
-        "temperature.offset",
-        "temperature.varname",
     ]
 )
 

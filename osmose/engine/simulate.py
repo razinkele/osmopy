@@ -80,6 +80,61 @@ def _load_oxygen_data(raw_config: dict, config_dir: Path | None) -> PhysicalData
     return None
 
 
+def _load_temperature_data(raw_config: dict, config_dir: Path | None) -> PhysicalData | None:
+    """Load bioenergetics temperature forcing: constant mode from ``temperature.value``,
+    else NetCDF mode from ``temperature.filename`` (resolved via :func:`resolve_data_path`,
+    (time,y,x) or (time,z,y,x) -- see :meth:`PhysicalData.from_netcdf`), else None.
+
+    Java precedence (``PhysicalData.init``): ``temperature.value`` wins over
+    ``temperature.filename`` when both are set -- the opposite check order from
+    :func:`_load_oxygen_data` above, which tries the file first. Mirrored here rather
+    than unified with oxygen's order because that's what Java does for this key.
+
+    Module-level and called from :func:`simulate` only when ``config.bioen_enabled``
+    (unlike the O2 loader, temperature forcing has no non-bioen consumer). The caller
+    raises ``ValueError`` when this returns ``None`` and bioen is enabled -- Java applies
+    the Arrhenius maintenance term even with ``simulation.bioen.phit.enabled=false``, so
+    there is no config-valid state in which bioen runs without a temperature source.
+    """
+    dir_str = str(config_dir) if config_dir is not None else ""
+
+    val = raw_config.get("temperature.value", "")
+    if val:
+        return PhysicalData.from_constant(
+            float(val),
+            factor=float(raw_config.get("temperature.factor", "1.0")),
+            offset=float(raw_config.get("temperature.offset", "0.0")),
+        )
+
+    filename = raw_config.get("temperature.filename", "")
+    if not filename:
+        return None
+    path = resolve_data_path(filename, config_dir=dir_str)
+    if path is None:
+        raise FileNotFoundError(
+            f"temperature.filename={filename!r} not found (config_dir={config_dir})"
+        )
+    varname = raw_config.get("temperature.varname", "temperature")
+    nsteps_year = int(raw_config.get("temperature.nsteps.year", "12"))
+    factor = float(raw_config.get("temperature.factor", "1.0"))
+    offset = float(raw_config.get("temperature.offset", "0.0"))
+    data = PhysicalData.from_netcdf(
+        path, varname=varname, nsteps_year=nsteps_year, factor=factor, offset=offset
+    )
+    assert data._data is not None  # from_netcdf always sets it
+    n_frames = data._data.shape[0]
+    n_dt_per_year = int(raw_config.get("simulation.time.ndtperyear", "24"))
+    if n_frames != n_dt_per_year:
+        raise ValueError(
+            f"Temperature forcing {path} has {n_frames} frame(s), but "
+            f"simulation.time.ndtperyear={n_dt_per_year}. PhysicalData indexes "
+            "step % frame_count, so a mismatched frame count silently misaligns the "
+            "month-to-step mapping from that point on. Regenerate the forcing with "
+            f"{n_dt_per_year} frames (or fix simulation.time.ndtperyear)."
+        )
+    return data
+
+
 @dataclass
 class SimulationContext:
     """Per-simulation mutable state -- replaces module-level globals.
@@ -167,6 +222,8 @@ class StepOutput:
     bioen_maint_by_species: NDArray[np.float64] | None = None
     bioen_rho_by_species: NDArray[np.float64] | None = None
     bioen_size_inf_by_species: NDArray[np.float64] | None = None
+    # Abundance-weighted mean e_net_avg over focal+feeding+in-domain schools ("meanEnetFaced")
+    bioen_enet_faced_by_species: NDArray[np.float64] | None = None
 
     # Diet: per-species diet composition, shape (n_predators, n_prey), or None if diet disabled
     diet_by_species: NDArray[np.float64] | None = None
@@ -281,11 +338,14 @@ def _bioen_step(
     step: int,
     o2_data: PhysicalData | None = None,
     trait_overrides: dict[str, NDArray[np.float64]] | None = None,
+    debug_capture: dict | None = None,
 ) -> SchoolState:
     """Replace _growth() when bioenergetics is enabled — Java's EnergyBudget.run().
 
     Steps:
-      1. Compute per-school temperature response phi_t (or 1.0 if disabled).
+      1. Compute per-school temperature (per-species depth `zlayer` when temp_data is
+         gridded) and thermal response phi_t (or 1.0 if disabled); oxygen limitation
+         f_o2 (or 1.0 if disabled or no o2_data).
       2. Run energy budget per species (energy_terms -> update_enet_faced ->
          compute_energy_budget, matching Java EnergyBudget.run()'s ordering).
       3. Update weight, length, gonad weight.
@@ -300,6 +360,20 @@ def _bioen_step(
 
     Out-of-domain schools (`is_out`) get no budget this step (spec decision 18):
     their cell index is -1, so a thermal lookup would wrap to the grid corner.
+
+    `temp_data=None` falls back to a neutral 15C for the Arrhenius maintenance term
+    (with phi_t=1.0, since a thermal-performance curve needs a real temperature to be
+    meaningful). Production runs never take this branch: `simulate()` requires a
+    temperature source configured (`temperature.value` or `temperature.filename`)
+    whenever bioenergetics is enabled and raises before entering the step loop
+    otherwise — Java applies the Arrhenius term even with phit disabled, so there is no
+    config-valid state in which bioen runs without one. This fallback exists only for
+    direct callers (unit tests) that construct `_bioen_step` calls by hand.
+
+    `debug_capture`, when a dict is passed, is populated (before the energy-budget loop)
+    with `{"temp_c": temp_c_arr, "f_o2": f_o2_arr, "species_id": state.species_id,
+    "is_out": state.is_out}` — a read-only hook for tests/instrumentation (Gate E,
+    Task 12); it has no effect on the computation.
     """
     from osmose.engine.processes.energy_budget import (
         compute_energy_budget,
@@ -327,6 +401,7 @@ def _bioen_step(
         "bioen_theta",
         "bioen_c_rate",
         "bioen_larvae_thres_dt",
+        "bioen_zlayer",
     ]
     for attr in _BIOEN_REQUIRED:
         if getattr(config, attr) is None:
@@ -348,6 +423,7 @@ def _bioen_step(
     config.bioen_theta = cast(NDArray[np.float64], config.bioen_theta)
     config.bioen_c_rate = cast(NDArray[np.float64], config.bioen_c_rate)
     config.bioen_larvae_thres_dt = cast(NDArray[np.int32], config.bioen_larvae_thres_dt)
+    config.bioen_zlayer = cast(NDArray[np.int32], config.bioen_zlayer)
     if hasattr(config, "bioen_o2_c1") and config.bioen_o2_c1 is not None:
         config.bioen_o2_c1 = cast(NDArray[np.float64], config.bioen_o2_c1)
     if hasattr(config, "bioen_o2_c2") and config.bioen_o2_c2 is not None:
@@ -381,35 +457,48 @@ def _bioen_step(
     ingestion = state.preyed_biomass
 
     # ------------------------------------------------------------------ #
-    # Step 1: Temperature response phi_t per school.
+    # Step 1: Per-school temperature (per-species depth `zlayer` when temp_data is
+    # gridded), thermal response phi_t, and oxygen limitation f_o2.
     # ------------------------------------------------------------------ #
+    if temp_data is not None:
+        # NaN for schools no sp_mask covers (is_out, or a species >= n_species already
+        # excluded upstream) -- they never reach energy_terms/compute_energy_budget
+        # below, which only ever read temp_c_arr through a `sp_masks` mask.
+        temp_c_arr = np.full(len(state), np.nan, dtype=np.float64)
+        for sp, mask in sp_masks:
+            if temp_data.is_constant:
+                temp_c_arr[mask] = temp_data.get_value(step, 0, 0)
+            else:
+                # Spatially explicit: per-species depth layer, vectorized grid lookup.
+                layer = int(config.bioen_zlayer[sp])
+                temp_grid = temp_data.get_grid(step, layer=layer)
+                temp_c_arr[mask] = temp_grid[state.cell_y[mask], state.cell_x[mask]]
+    else:
+        # No temperature data: use 15°C as fallback (mid-range assumption; may bias
+        # tropical/polar species). Production runs never take this branch: simulate()
+        # requires a configured temperature source (temperature.value or
+        # temperature.filename) whenever bioenergetics is enabled and raises before
+        # entering the step loop otherwise -- Java applies the Arrhenius maintenance
+        # term even with phit disabled, so there is no config-valid state in which
+        # bioen runs without one. Reachable only from direct _bioen_step callers
+        # (unit tests) that construct calls by hand.
+        temp_c_arr = np.full(len(state), 15.0, dtype=np.float64)
+
     if config.bioen_phit_enabled and temp_data is not None:
-        if temp_data.is_constant:
-            temp_scalar = temp_data.get_value(step, 0, 0)
-            phi_t_arr = np.empty(len(state), dtype=np.float64)
-            for sp, mask in sp_masks:
-                phi_t_arr[mask] = phi_t_fn(
-                    np.full(mask.sum(), temp_scalar),
-                    float(config.bioen_e_mobi[sp]),
-                    float(config.bioen_e_d[sp]),
-                    float(config.bioen_tp[sp]),
-                )
-        else:
-            # Spatially explicit: single vectorized grid lookup, then per-species phi_t.
-            temp_grid = temp_data.get_grid(step)
-            phi_t_arr = np.empty(len(state), dtype=np.float64)
-            for sp, mask in sp_masks:
-                temps = temp_grid[state.cell_y[mask], state.cell_x[mask]]
-                phi_t_arr[mask] = phi_t_fn(
-                    temps,
-                    float(config.bioen_e_mobi[sp]),
-                    float(config.bioen_e_d[sp]),
-                    float(config.bioen_tp[sp]),
-                )
+        phi_t_arr = np.ones(len(state), dtype=np.float64)
+        for sp, mask in sp_masks:
+            phi_t_arr[mask] = phi_t_fn(
+                temp_c_arr[mask],
+                float(config.bioen_e_mobi[sp]),
+                float(config.bioen_e_d[sp]),
+                float(config.bioen_tp[sp]),
+            )
     else:
         phi_t_arr = np.ones(len(state), dtype=np.float64)
 
-    # Oxygen limitation
+    # Oxygen limitation. O2 forcing never carries a depth axis (bottom-oxygen fields
+    # are always (time, y, x)), so unlike temperature there is no per-species layer
+    # to resolve here.
     if config.bioen_fo2_enabled and o2_data is not None:
         from osmose.engine.processes.oxygen_function import f_o2
 
@@ -425,27 +514,25 @@ def _bioen_step(
                     float(config.bioen_o2_c1[sp]),
                     float(config.bioen_o2_c2[sp]),
                 )
+        else:
+            o2_grid = o2_data.get_grid(step)
+            for sp, mask in sp_masks:
+                o2_vals = o2_grid[state.cell_y[mask], state.cell_x[mask]]
+                f_o2_arr[mask] = f_o2(
+                    o2_vals,
+                    float(config.bioen_o2_c1[sp]),
+                    float(config.bioen_o2_c2[sp]),
+                )
     else:
         f_o2_arr = np.ones(len(state), dtype=np.float64)
 
-    # Build per-school temperature array for Arrhenius maintenance calculation
-    if temp_data is not None and temp_data.is_constant:
-        temp_c_arr = np.full(len(state), temp_data.get_value(step, 0, 0), dtype=np.float64)
-    elif temp_data is not None:
-        temp_grid = temp_data.get_grid(step)
-        temp_c_arr = temp_grid[state.cell_y, state.cell_x]
-    else:
-        # No temperature data: use 15°C as fallback (mid-range assumption; may bias tropical/polar species)
-        import warnings
-
-        warnings.warn(
-            "No temperature forcing data configured — using 15°C fallback for bioenergetics. "
-            "This may produce inaccurate results for tropical or polar species.",
-            UserWarning,
-            stacklevel=1,
+    if debug_capture is not None:
+        debug_capture.update(
+            temp_c=temp_c_arr.copy(),
+            f_o2=f_o2_arr.copy(),
+            species_id=state.species_id.copy(),
+            is_out=state.is_out.copy(),
         )
-        # Python's warnings module suppresses duplicate warnings by default (same message+location)
-        temp_c_arr = np.full(len(state), 15.0, dtype=np.float64)
 
     # ------------------------------------------------------------------ #
     # Step 2: Energy budget per species.
@@ -1103,10 +1190,11 @@ def _collect_bioen(
     NDArray[np.float64] | None,
     NDArray[np.float64] | None,
     NDArray[np.float64] | None,
+    NDArray[np.float64] | None,
 ]:
     """Compute mean bioenergetics values per focal species."""
     if not config.bioen_enabled:
-        return None, None, None, None, None
+        return None, None, None, None, None, None
 
     focal = state.species_id < config.n_species if len(state) > 0 else np.zeros(0, dtype=np.bool_)
 
@@ -1140,7 +1228,24 @@ def _collect_bioen(
             if sp_mask.any():
                 bioen_sizeinf[sp] = state.length[sp_mask].max()
 
-    return bioen_e_net, bioen_ingestion, bioen_maint, bioen_rho, bioen_sizeinf
+    # meanEnetFaced: ABUNDANCE-WEIGHTED mean of e_net_avg over focal, FEEDING
+    # (age_dt >= first_feeding_age_dt), IN-DOMAIN (~is_out) schools per species. Unlike
+    # the four means above (unweighted _species_mean, focal-only), this one is
+    # weighted and carries two extra filters -- reaching for _species_mean here would
+    # silently drop both distinctions.
+    bioen_enet_faced = np.zeros(config.n_species, dtype=np.float64)
+    if len(state) > 0:
+        eligible = focal & (state.age_dt >= state.first_feeding_age_dt) & ~state.is_out
+        if eligible.any():
+            num = np.zeros(config.n_species, dtype=np.float64)
+            denom = np.zeros(config.n_species, dtype=np.float64)
+            np.add.at(
+                num, state.species_id[eligible], (state.e_net_avg * state.abundance)[eligible]
+            )
+            np.add.at(denom, state.species_id[eligible], state.abundance[eligible])
+            bioen_enet_faced = np.where(denom > 0, num / np.where(denom > 0, denom, 1.0), 0.0)
+
+    return bioen_e_net, bioen_ingestion, bioen_maint, bioen_rho, bioen_sizeinf, bioen_enet_faced
 
 
 def _collect_spatial_outputs(
@@ -1252,8 +1357,8 @@ def _collect_outputs(
         else None
     )
     ssb = _collect_ssb(state, config) if (config.output_ssb or config.output_ssb_netcdf) else None
-    bioen_e_net, bioen_ingestion, bioen_maint, bioen_rho, bioen_size_inf = _collect_bioen(
-        state, config
+    bioen_e_net, bioen_ingestion, bioen_maint, bioen_rho, bioen_size_inf, bioen_enet_faced = (
+        _collect_bioen(state, config)
     )
 
     spatial_biomass = spatial_abundance = spatial_yield = None
@@ -1286,6 +1391,7 @@ def _collect_outputs(
         bioen_maint_by_species=bioen_maint,
         bioen_rho_by_species=bioen_rho,
         bioen_size_inf_by_species=bioen_size_inf,
+        bioen_enet_faced_by_species=bioen_enet_faced,
         diet_by_species=diet_by_species,
         spatial_biomass=spatial_biomass,
         spatial_abundance=spatial_abundance,
@@ -1362,6 +1468,7 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
     bioen_maint_avg = _avg_bioen("bioen_maint_by_species")
     bioen_rho_avg = _avg_bioen("bioen_rho_by_species")
     bioen_size_inf_avg = _avg_bioen("bioen_size_inf_by_species")
+    bioen_enet_faced_avg = _avg_bioen("bioen_enet_faced_by_species")
 
     # Diet: sum biomass eaten across recording window (normalization happens at write time)
     diet_arrays = [o.diet_by_species for o in accumulated if o.diet_by_species is not None]
@@ -1419,6 +1526,7 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
             bioen_maint_by_species=bioen_maint_avg,
             bioen_rho_by_species=bioen_rho_avg,
             bioen_size_inf_by_species=bioen_size_inf_avg,
+            bioen_enet_faced_by_species=bioen_enet_faced_avg,
             diet_by_species=diet_summed,
             spatial_biomass=spatial_b_agg,
             spatial_abundance=spatial_a_agg,
@@ -1508,6 +1616,7 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
         bioen_maint_by_species=bioen_maint_avg,
         bioen_rho_by_species=bioen_rho_avg,
         bioen_size_inf_by_species=bioen_size_inf_avg,
+        bioen_enet_faced_by_species=bioen_enet_faced_avg,
         diet_by_species=diet_summed,
         spatial_biomass=spatial_b_agg,
         spatial_abundance=spatial_a_agg,
@@ -1598,12 +1707,23 @@ def simulate(
                 memory_decay=memory_decay,
             )
 
-    # Bioenergetics: load temperature forcing when enabled
-    temp_data = None
-    if config.bioen_enabled:
-        temp_val = config.raw_config.get("temperature.value", "")
-        if temp_val:
-            temp_data = PhysicalData.from_constant(float(temp_val))
+    # Bioenergetics: load temperature forcing when enabled. Java applies the Arrhenius
+    # maintenance term even with simulation.bioen.phit.enabled=false, so a temperature
+    # source is required whenever bioen is on -- fail loudly here rather than let
+    # _bioen_step silently substitute its 15C fallback for a production run.
+    temp_data = (
+        _load_temperature_data(
+            config.raw_config, Path(_config_dir_str) if _config_dir_str else None
+        )
+        if config.bioen_enabled
+        else None
+    )
+    if config.bioen_enabled and temp_data is None:
+        raise ValueError(
+            "Bioenergetics is enabled but no temperature source is configured "
+            "(temperature.value or temperature.filename) — Java requires one for the "
+            "Arrhenius maintenance term even with phit disabled"
+        )
 
     from osmose.engine.movement_maps import MovementMapSet
 

@@ -83,6 +83,11 @@ def _make_bioen_config(base: dict[str, str] | None = None) -> dict[str, str]:
     cfg.update(
         {
             "simulation.bioen.enabled": "true",
+            # Task 7 requires a configured temperature source whenever bioen is enabled
+            # (simulate() now raises otherwise). 15.0 reproduces the pre-Task-7 fallback
+            # _bioen_step used when no source was configured, so this is a no-op for
+            # every test built on this fixture that predates Task 7.
+            "temperature.value": "15.0",
             "simulation.bioen.phit.enabled": "true",
             "simulation.bioen.fo2.enabled": "false",
             # Per-species bioen params for sp0 and sp1

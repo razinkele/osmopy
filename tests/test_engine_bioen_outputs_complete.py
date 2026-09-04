@@ -1,8 +1,9 @@
-"""Tests for complete bioenergetic outputs (all 5 bioen CSVs)."""
+"""Tests for complete bioenergetic outputs (all 6 bioen CSVs)."""
 
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from osmose.engine.config import EngineConfig
 from osmose.engine.grid import Grid
@@ -31,7 +32,7 @@ def _run_bioen_sim(cfg: dict[str, str], tmp_path):
 
 class TestBioenOutputsComplete:
     def test_all_bioen_csvs_created(self, tmp_path):
-        """All 5 bioen CSVs are created when all output flags are enabled."""
+        """All 6 bioen CSVs are created when all output flags are enabled."""
         cfg = _make_bioen_config()
         cfg.update(
             {
@@ -47,7 +48,14 @@ class TestBioenOutputsComplete:
         assert bioen_dir.exists(), "Bioen/ directory should be created"
 
         sp_names = ["Anchovy", "Sardine"]
-        expected_labels = ["meanEnet", "ingestion", "maintenance", "rho", "sizeInf"]
+        expected_labels = [
+            "meanEnet",
+            "meanEnetFaced",
+            "ingestion",
+            "maintenance",
+            "rho",
+            "sizeInf",
+        ]
         for label in expected_labels:
             for sp in sp_names:
                 path = bioen_dir / f"osmose_{label}_{sp}_Simu0.csv"
@@ -63,9 +71,10 @@ class TestBioenOutputsComplete:
         assert bioen_dir.exists(), "Bioen/ directory should still be created for meanEnet"
 
         sp_names = ["Anchovy", "Sardine"]
-        # meanEnet is always written
-        for sp in sp_names:
-            assert (bioen_dir / f"osmose_meanEnet_{sp}_Simu0.csv").exists()
+        # meanEnet and meanEnetFaced are always written
+        for label in ["meanEnet", "meanEnetFaced"]:
+            for sp in sp_names:
+                assert (bioen_dir / f"osmose_{label}_{sp}_Simu0.csv").exists()
 
         # Optional outputs should NOT exist
         for label in ["ingestion", "maintenance", "rho", "sizeInf"]:
@@ -144,7 +153,7 @@ class TestBioenOutputsComplete:
         assert np.all(rho >= 0) and np.all(rho <= 1)
 
     def test_step_output_has_new_fields(self):
-        """StepOutput dataclass has all 4 new bioen fields."""
+        """StepOutput dataclass has all 5 new bioen fields."""
         cfg = _make_bioen_config()
         cfg.update(
             {
@@ -172,6 +181,8 @@ class TestBioenOutputsComplete:
             assert o.bioen_rho_by_species.shape == (2,)
             assert o.bioen_size_inf_by_species is not None
             assert o.bioen_size_inf_by_species.shape == (2,)
+            assert o.bioen_enet_faced_by_species is not None
+            assert o.bioen_enet_faced_by_species.shape == (2,)
 
     def test_csv_content_is_numeric(self, tmp_path):
         """All bioen CSVs contain valid numeric data (Time column + value column)."""
@@ -199,3 +210,65 @@ class TestBioenOutputsComplete:
             assert df.select_dtypes(include="number").notna().all().all(), (
                 f"{csv_path.name}: contains NaN values"
             )
+
+
+class TestMeanEnetFaced:
+    """`_collect_bioen`'s sixth return (meanEnetFaced) differs from the other four
+    per-species bioen means in two ways: it is ABUNDANCE-WEIGHTED (not a flat
+    `_species_mean`), and it filters on feeding (age_dt >= first_feeding_age_dt) AND
+    in-domain (~is_out) in addition to focal. A test that only checks "some finite
+    number came out" would still pass a regression to an unweighted or unfiltered mean
+    -- this one is built to fail under either substitution.
+    """
+
+    def test_weighted_and_filtered_not_a_plain_species_mean(self):
+        from types import SimpleNamespace
+
+        from osmose.engine.simulate import _collect_bioen, _species_mean
+        from osmose.engine.state import SchoolState
+
+        config = SimpleNamespace(bioen_enabled=True, n_species=1)
+        state = SchoolState.create(n_schools=4, species_id=np.zeros(4, dtype=np.int32))
+        state = state.replace(
+            abundance=np.array([100.0, 1.0, 1e6, 1e6]),
+            e_net_avg=np.array([10.0, 1000.0, -999.0, -999.0]),
+            # school 0, 1: feeding, in-domain (eligible). school 2: pre-feeding
+            # (age_dt < first_feeding_age_dt). school 3: feeding but out-of-domain.
+            age_dt=np.array([10, 10, 0, 10], dtype=np.int32),
+            first_feeding_age_dt=np.array([2, 2, 2, 2], dtype=np.int32),
+            is_out=np.array([False, False, False, True]),
+        )
+
+        *_, enet_faced = _collect_bioen(state, config)
+
+        # Hand-computed abundance-weighted mean over ONLY schools 0 and 1 (the two
+        # eligible schools): (100*10 + 1*1000) / (100 + 1).
+        expected = (100.0 * 10.0 + 1.0 * 1000.0) / (100.0 + 1.0)
+        assert enet_faced[0] == pytest.approx(expected)
+
+        # Negative control: an unweighted, focal-only mean over ALL FOUR schools (what
+        # you would get by reaching for `_species_mean` the way the other four bioen
+        # outputs do, with no feeding/in-domain filter) must give a DIFFERENT number --
+        # otherwise this test could not tell the two implementations apart.
+        focal = np.ones(4, dtype=bool)
+        naive = _species_mean(state.e_net_avg, state.species_id, config.n_species, focal)
+        assert naive[0] != pytest.approx(enet_faced[0])
+
+    def test_zero_when_no_eligible_schools(self):
+        """No feeding, in-domain school for a species -> 0.0, not NaN (guarded divide)."""
+        from types import SimpleNamespace
+
+        from osmose.engine.simulate import _collect_bioen
+        from osmose.engine.state import SchoolState
+
+        config = SimpleNamespace(bioen_enabled=True, n_species=1)
+        state = SchoolState.create(n_schools=1, species_id=np.zeros(1, dtype=np.int32))
+        state = state.replace(
+            abundance=np.array([1e6]),
+            e_net_avg=np.array([5.0]),
+            age_dt=np.array([0], dtype=np.int32),  # pre-feeding -> ineligible
+            first_feeding_age_dt=np.array([2], dtype=np.int32),
+        )
+        *_, enet_faced = _collect_bioen(state, config)
+        assert enet_faced[0] == 0.0
+        assert np.isfinite(enet_faced[0])

@@ -410,9 +410,7 @@ def _build_mortality_dataframes(
     # Pre-computed per-step rates, already summed over the recording window by
     # _average_step_outputs. They must be used verbatim: re-deriving a rate from window-aggregated
     # counts does not equal the sum of the per-step rates, which is Java's convention (#140).
-    staged = all(
-        getattr(o, "mortality_rate_by_cause_stage", None) is not None for o in outputs
-    )
+    staged = all(getattr(o, "mortality_rate_by_cause_stage", None) is not None for o in outputs)
 
     result: dict[str, pd.DataFrame] = {}
     for sp_idx, sp_name in enumerate(config.species_names):
@@ -772,6 +770,7 @@ def _build_bioen_dataframes(
 
     bioen_outputs = [
         ("bioen_e_net_by_species", "meanEnet", True),
+        ("bioen_enet_faced_by_species", "meanEnetFaced", True),
         ("bioen_ingestion_by_species", "ingestion", config.output_bioen_ingest),
         ("bioen_maint_by_species", "maintenance", config.output_bioen_maint),
         ("bioen_rho_by_species", "rho", config.output_bioen_rho),

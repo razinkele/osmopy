@@ -30,6 +30,11 @@ def _bioen_genetics_config() -> dict[str, str]:
         "predation.efficiency.critical.sp0": "0.57",
         # Bioenergetics
         "simulation.bioen.enabled": "true",
+        # Task 7 requires a configured temperature source whenever bioen is enabled
+        # (simulate() now raises otherwise). 15.0 reproduces the pre-Task-7 fallback
+        # _bioen_step used when no source was configured, so this is a no-op for every
+        # test built on this fixture that predates Task 7.
+        "temperature.value": "15.0",
         "species.bioen.beta.sp0": "0.8",
         "species.bioen.assimilation.sp0": "0.6",
         "species.bioen.c.m.sp0": "5.258",

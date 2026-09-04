@@ -6,5 +6,12 @@ simulation.time.ndtperyear;24
 simulation.time.nyear;50
 module.bioenergetics.enabled;true
 simulation.bioen.phit.enabled;false
+# Task 7: simulate() now requires a temperature source whenever bioen is enabled.
+# 15.0 reproduces the pre-Task-7 _bioen_step fallback exactly -- with phit disabled and
+# no oxygen source configured, temperature reaches the energy budget through only one
+# path (the Arrhenius maintenance term via temp_c_arr), which the old fallback filled
+# with the literal value 15.0. Provable numeric no-op, not a forcing-value choice;
+# placeholder pending real Baltic bottom/surface temperature forcing.
+temperature.value;15.0
 module.genetics.enabled;true
 evolution.seeding.year;10
