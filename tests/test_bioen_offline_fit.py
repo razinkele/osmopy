@@ -91,16 +91,32 @@ def test_fit_recovers_known_parameters_from_its_own_model():
     assert res.imax == pytest.approx(imax_true, rel=0.05) and res.r == pytest.approx(
         r_true, rel=0.05
     )
-    # rms_len_pct is a whole-range RELATIVE length error, and this synthetic curve is
-    # pre-maturity-CONVEX (rho=0 -> pure w' = g*w^beta growth), unlike vBGF's shape which
-    # decelerates from age 0 -- the unconstrained curve_fit above lands t0 > 1 yr, so the
-    # youngest fitted ages (just above t0) sit near the vBGF's own zero-crossing, where a few
-    # cm of absolute mismatch reads as 100s of percent relative error. That is a property of
-    # re-fitting a non-vBGF-shaped curve with a vBGF, not a defect in (imax, r) recovery, which
-    # the line above already pins to <=5%; measured 108.5% with this exact scenario (Task 8).
-    # Real species (data/examples's 8 BoB targets) all have t0 < 0, so age >= 1 yr never nears
-    # that boundary and rms_len_pct behaves as a normal small-residual diagnostic there.
-    assert res.rms_len_pct < 150.0 and res.t_p == pytest.approx(tp)
+    assert res.t_p == pytest.approx(tp)
+
+    # res.rms_len_pct is NOT asserted here: it measures the fit against the intermediate
+    # vBGF re-fit target, and this synthetic curve is pre-maturity-CONVEX (rho=0 -> pure
+    # w' = g*w^beta growth), unlike vBGF's shape which decelerates from age 0 -- the
+    # unconstrained curve_fit above lands t0 > 1 yr, so the youngest fitted ages (just above
+    # t0) sit near the vBGF's own zero-crossing, where a few cm of absolute mismatch reads as
+    # 100s of percent relative error (measured 108.5% with this exact scenario, Task 8). That
+    # is a property of re-fitting a non-vBGF-shaped curve with a vBGF, not a defect in
+    # fit_species -- real species (data/examples's 8 BoB targets) all have t0 < 0, so
+    # age >= 1 yr never nears that boundary and rms_len_pct is a normal diagnostic there.
+    #
+    # A more meaningful self-consistency check: does the recovered (imax, r, c_m, t_p)
+    # reproduce the ORIGINAL simulated curve `w` itself (not the lossy vBGF proxy)? Past the
+    # transient (age >= 3 yr, clear of the same t0-adjacent region above), it should -- this
+    # is the assertion that actually pins fit quality and the length_all > 0.0 filter.
+    w_recovered = simulate_growth(
+        res.imax, res.r, res.t_p, res.c_m, t24, 1e-3, 24 * 20, 24, 0.0087, 3.05, 38.0, 0.0, FX
+    )
+    idx_all = np.arange(24, 24 * 20 + 1)
+    ages_all = idx_all / 24.0
+    mask = ages_all >= 3.0
+    len_recovered = (w_recovered[idx_all][mask] / 0.0087) ** (1 / 3.05)
+    len_true = (w[idx_all][mask] / 0.0087) ** (1 / 3.05)
+    rms_vs_true = np.sqrt(np.mean(((len_recovered - len_true) / len_true) ** 2)) * 100
+    assert rms_vs_true < 2.0  # measured 0.34% (Task 8)
 
 
 def test_param_lines_cover_the_java_inventory_and_background():
