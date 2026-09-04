@@ -67,28 +67,61 @@ Gate B can discriminate between the two Java versions rather than passing everyt
 this one, at a threshold (`--delta-mean-weight`, log10(1.5) ~ 1.5x) five to eight times tighter than the
 gap.
 
-**What changed between 4.3.3 and 4.4.1 to cause this:** partially identified, not fully. No 4.4.1 Java
-*source* exists anywhere in this environment (checked `/home/razinka/osmose-reference` — it stops at
-the 4.3.3 release entry in `Releases.java`; checked `/srv/shiny-server/osmose-src` — jars only, no
-source tree); only the two compiled jars are available. Decompiling method/field signatures with
-`javap -p` on `fr.ird.osmose.process.bioen.EnergyBudget` in both jars shows a real structural change:
+**What changed between 4.3.3 and 4.4.1 to cause this: not identified, and the previous version of this
+document pointed at the wrong class.** Corrected in the Task 9 fix round (2026-09-04) after review
+ruling R38 flagged the original `EnergyBudget`/`W0` inference as targeting a class that structurally
+cannot own length. Reading the 4.3.3 **source** first (`/home/razinka/osmose-reference`) settles where
+length actually lives: `School.length` is set **only** from `School.incrementWeight(dw)` ->
+`species.computeLength(weight * 1e6f)` (`School.java`, `Species.computeLength`/`computeWeight` =
+`(weight/c)^(1/bPower)` and its inverse) — never in `EnergyBudget`. `incrementWeight` itself is called
+from exactly one place in bioen mode: `EnergyBudget.getDw()`. Classic length growth
+(`GrowthProcess`/`AbstractGrowth`, von Bertalanffy) never runs at all when bioen is enabled
+(`SimulationStep.java:112-114` only instantiates `GrowthProcess` when `!isBioenEnabled()`), so there is
+no second length pathway to consider.
 
-- 4.3.3's `EnergyBudget` has one energy-net computation path (`run()` calling `getMaintenance`,
-  `getEgross`, `getDw`, `getDg`, `getRho`, ...).
-- 4.4.1's `EnergyBudget` has **two** paths, `computeEnetLegacy` and `computeEnetLite` (plus
-  `computeLiteTempFunction`), dispatched per-species through a new `EnetComputer[]` array of a new
-  `GetENet` functional interface (two `init()`-time lambdas). It also carries new fields not present in
-  4.3.3: `xi_crit`, `W0`, and inlined `temperature_tmin/tmax/topt/T1/T2`. `getMaintenance`/`getEgross`
-  were renamed `updateMaintenance`/`updateEgross`, and a new `getDw_mig` method appears.
+That fixes *where to look*, but a full re-investigation — `javap -c` (bytecode, with method bodies, on
+every class in the actual causal chain, both jars) plus checking which of those bodies are even
+*reachable* by this specific Gate-B run — still could not identify a cause, for a stronger reason than
+"not tried yet": **every class in the chain is proven bytecode-identical between 4.3.3 and 4.4.1, and
+the two genuinely new mechanisms 4.4.1 adds are both provably inert on this config.** In order:
 
-This is bytecode-level evidence (`javap` method/field listing, not a decompiled formula) of *what*
-changed structurally, not *how* the formula changed — I did not decompile method bodies to find the
-exact computation. Given weight-based metrics match both versions but length alone diverges by a
-tight, deterministic, same-signed amount across every species, the most plausible locus is something
-in this same rework that touches the weight-to-length conversion specifically (the new `W0` reference-
-weight field is the best-fitting candidate) rather than the shared energy-budget/weight trajectory —
-but that is an inference from the pattern, not a verified line of code. Full confirmation would require
-either a 4.4.1 source checkout or a body-level bytecode trace, neither done here.
+- `Species.computeLength`/`computeWeight`, `School.incrementWeight`/`setLength`/`incrementLength`: byte-
+  identical (only constant-pool indices differ) in both jars.
+- `EnergyBudget.getDw`: byte-identical. It clamps `dgrowth` to 0 before any weight change when
+  `e_net <= 0` (`if (school.getENet() > 0) ... else 0`), so weight loss never runs through this path in
+  either version — ruling out an earlier "length freezes on starvation" hypothesis for the growth path.
+- `EnergyBudget.run()` **does** genuinely change between versions: 4.4.1 adds an `if (school.isOut())`
+  branch that calls a wholly new method, `getDw_mig` (parametric growth from new `W0`/`c_rateBioen`
+  fields, independent of `e_net`) instead of the normal path. **This never fires on Gate B's config**:
+  the "OUT-schools sub-question" section below already instrumented this exact run and found 0/120
+  out-of-domain occurrences across the full horizon (`movement.distribution.method.spN=random` for all
+  8 species — there is no "outside the map" state to enter).
+- 4.4.1 also adds a second e_net formula, `computeEnetLite` (uses `xi_crit`, `Imax`, a new temperature
+  function), dispatched per-species via `EnetComputer[]` at `init()`-time. The dispatch condition,
+  read directly from `EnergyBudget.init()`'s bytecode, is config key `species.bioenergetics.model.sp%d`:
+  null/absent or `"full"` -> the **legacy** path; anything else -> lite. That key does not appear
+  anywhere under `data/` (grepped) — every species in this config takes the legacy path. Disassembling
+  it (`computeEnetLegacy` = `updateEgross` + `updateMaintenance` + `setENet(eGross-eMaint)`) confirms it
+  is functionally identical, instruction-for-instruction, to 4.3.3's inlined `getEgross`/`getMaintenance`
+  sequence (`updateMaintenance`≡`getMaintenance`, `updateEgross`≡`getEgross`, just renamed).
+- The output writer (`MeanSizeOutput_Netcdf`, abundance-weighted mean of `school.getLength()`) and the
+  reproduction/recruitment path that seeds new schools' initial length (`BioenReproductionProcess` /
+  `ReproductionProcess.create_reproduction_schools`, which the refactor moved to the shared superclass
+  but left byte-identical) were also checked and are byte-identical between jars.
+- The Python-side config staging (`write_temp_config`, target_version="4.3.3" vs "4.4.1") was checked
+  too: `species.length2weight.condition.factor/allometric.power`, `species.beta`, and
+  `species.egg.weight/size` come out numerically identical in both staged configs, so this is not a
+  config-staging artifact either.
+
+**Net: every code path that is actually reachable by this Gate-B run, on both the weight->length
+conversion and the reproduction/recruitment path that seeds it, is bytecode-identical between 4.3.3 and
+4.4.1.** The real structural changes 4.4.1 does carry in this area (`computeEnetLite`, `getDw_mig`,
+the new `xi_crit`/`W0` fields) are confirmed dead code for this specific config, not "the most plausible
+candidate" as the previous version of this section claimed. The true cause of the `mean_size` divergence
+remains **unidentified** — the search space has been narrowed to "somewhere outside the classes checked
+above" (e.g. population initialization/seeding, not yet checked), not closed. Full confirmation would
+require either a 4.4.1 source checkout or a targeted instrumented run against the populator classes,
+neither done here.
 
 ## Control's Hake REVIEW: a `data/examples` fixture artifact, not a port defect
 
@@ -131,6 +164,42 @@ port: the identical species, on the identical growth/predation code, passes the 
 metric, `eq=Y`, d in the same 0.09-0.11 range as every other species — in the bioen run, which uses
 the *corrected* accessibility matrix. Nothing about Hake or its code path is unusual once it is given a
 sane input.
+
+## Reading `KS=nan` / `ci90=+-0.00` in the tables
+
+Several `mean_weight` rows (all 8 species in the bioen run; Mackerel/Sole in several metrics in the
+control run) show `KS=nan`. This is `tost()`'s `se == 0` short-circuit (`scripts/cross_engine_parity_440.py`,
+pre-existing, untouched by the fix round below): both engines' 16-rep samples had exactly zero measured
+variance on the log scale for that species/metric. It is a **real comparison on real data**, not a
+skipped one — `d`/`eq` are still computed from the actual per-rep values — it just can't run a t-test
+against zero pooled variance, so `ks_2samp` is never invoked (`KS` stays `nan`, its initializer) and the
+row's `ci90=+-0.00` is the literal `0.0` return value, not a computed confidence interval, and `eq=Y`
+there is a bare `abs(d) <= delta` threshold check, not a p-value verdict. By contrast `mean_size` never
+hits this branch (its KS values are real, 0.00-0.09), so the length-divergence argument above (a tight,
+deterministic offset, not noise) is unaffected. `tost()`'s docstring now documents this explicitly.
+
+## Fix round 1 (2026-09-04): harness hardening, no re-run needed
+
+Reviewed under `.superpowers/sdd/2026-08-30-baltic-c3-bioen-stage1/task-9-review.md`. Two changes to
+`scripts/cross_engine_parity_440.py` worth recording here because they touch what "PASS" means, even
+though neither changes the verdicts above:
+
+- **R39**: `main()`'s per-metric species-overlap computation (`sp_all`) is now `comparable_species()`,
+  and an empty result for any metric now feeds `uncompared_metrics` into `gate_verdict()`, which FAILs
+  the gate rather than silently printing zero rows for that metric. This closes a narrower, per-metric
+  version of the whole-arm `empty_arms` check that already existed (a Java arm producing real data for
+  4 metrics but an empty frame for a 5th would previously pass clean). Proven with a constructed
+  degenerate case (`comparable_species` returns `[]` when one present arm has no entries for a metric;
+  `gate_verdict` then reports `FAIL (metric(s) with zero comparable species ...)`) and confirmed the real
+  Gate B data is unaffected: every metric in both logged runs above already had non-empty
+  `comparable_species` for every present arm (see "Java arm confirmation"), so this fix is a no-op on
+  the committed PASS/REVIEW verdicts — verified both by unit test and by re-running the harness's own
+  smoke invocation (`--n 1 --years 1 --spinup-years 0`, same config) end to end after the change.
+- Distinguished explicitly from the `se == 0` case above: that case still has a real entry in every
+  arm's dict (so it still appears in `comparable_species`'s output) — R39 only hardens the case where a
+  species/metric pair has no entry in some arm's dict at all.
+
+See `tests/test_cross_engine_parity_bioen_staging.py` for the full RED/GREEN proof (16/16 pass).
 
 ## OUT-schools sub-question: could not resolve with this harness
 

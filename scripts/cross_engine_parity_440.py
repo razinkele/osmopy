@@ -4,7 +4,9 @@
 Cross-engine RNG streams diverge by construction (Python PCG64 vs Java MT19937), so the test is
 statistical, per species and per metric (biomass, yield, abundance, and mean individual weight =
 biomass/abundance as a size-structure proxy; plus mean_size when both engines actually wrote it),
-on the final-year mean over N varied-seed reps (log10-scaled, ~log-normal):
+on the post-spinup mean over N varied-seed reps (log10-scaled, ~log-normal) -- see ``_final_mean``:
+at the default --years/--spinup-years it is NOT just the final year, it is everything from
+year (years - spinup) onward (e.g. years=5, spinup=2 averages years 3-5, the last 60% of the run):
 
   - GATE (per species): ABSOLUTE equivalence via TOST (two one-sided t-tests vs +-Delta;
     Lakens & Delacre 2020) against the selected --gate-engine (default 4.4.1), PLUS a 1-OoM
@@ -58,6 +60,14 @@ def _reader(results, metric: str):
 
 
 def _final_mean(df, years: int, spinup: int) -> dict[str, float]:
+    """Post-spinup per-column mean, NOT a final-year mean.
+
+    ``spy`` = rows/year; the tail is the last ``max(spy, n - spinup*spy)`` rows, i.e. everything
+    from year ``(years - spinup)`` onward. At Gate B's own parameters (years=5, spinup=2, 24
+    rows/year -> spy=24, n=120) that tail is 72 rows = years 3-5, not the final year alone --
+    more rows averaged than "final year" suggests, which is why several TOST rows below show a
+    90% CI half-width of 0.00 (see MINOR-1 in the task-9 review / the diagnostics doc).
+    """
     cols = [
         c for c in df.columns if c not in ("Time", "species") and not str(c).startswith("Unnamed")
     ]
@@ -114,7 +124,9 @@ def inject_java_bioen_keys(master: Path, raw: dict[str, str]) -> int:
     for i in idx:
         imax = raw.get(f"predation.ingestion.rate.max.sp{i}")
         if imax is None:
-            raise KeyError(f"predation.ingestion.rate.max.sp{i} missing; cannot stage bioen for Java 4.3.3")
+            raise KeyError(
+                f"predation.ingestion.rate.max.sp{i} missing; cannot stage bioen for Java 4.3.3"
+            )
         lines.append(f"predation.ingestion.rate.max.bioen.sp{i} ; {imax}\n")
         lines.append(
             f"predation.coef.ingestion.rate.max.larvae.bioen.sp{i} ; "
@@ -153,6 +165,49 @@ def inject_java_resource_nsteps_year(master: Path, raw: dict[str, str]) -> int:
     with master.open("a") as fh:
         fh.write(f"species.biomass.nsteps.year ; {ndt}\n")
     return 1
+
+
+def comparable_species(
+    py_metric: dict[str, np.ndarray], ens: dict, present: list[str], m: str
+) -> list[str]:
+    """Species with a value from the python arm AND every present java arm, for metric ``m``.
+
+    Empty means metric ``m`` could not be compared at all for at least one arm (e.g. that
+    metric's CSV came back empty for one engine while other metrics still had data — the
+    per-metric sibling of the whole-arm ``empty_arms`` check). Callers MUST treat an empty
+    result as "not evaluated", never as a silent pass: a metric with zero rows prints nothing
+    and, unguarded, would leave the gate looking clean over a comparison that never ran (this is
+    a narrower instance of the same "gate green over code it never executed" defect that
+    ``empty_arms``, above, guards against at the whole-arm level).
+
+    This is a different signal from a *degenerate but real* comparison (e.g. ``tost()``'s
+    ``se == 0`` short-circuit on a species with zero measured variance in both engines, which
+    still appears here — it has a value in every arm, just an uninformative one). This function
+    only asks whether the species key exists in every arm's dict for this metric; it does not
+    look at the values.
+    """
+    return [s for s in py_metric if all(s in ens[v][m] for v in present)]
+
+
+def gate_verdict(
+    empty_arms: list[str],
+    uncompared_metrics: list[str],
+    degenerate_report: list[str],
+    overall_fail: list[str],
+) -> str:
+    """Roll the four failure classes (checked in this priority order) into the final GATE line."""
+    if empty_arms:
+        return f"FAIL (dropped arm(s) with zero comparable species: {', '.join(empty_arms)})"
+    if uncompared_metrics:
+        return (
+            "FAIL (metric(s) with zero comparable species across present arms: "
+            f"{', '.join(uncompared_metrics)})"
+        )
+    if degenerate_report:
+        return "FAIL (degenerate: " + ", ".join(degenerate_report) + ")"
+    if overall_fail:
+        return "REVIEW: " + ", ".join(overall_fail)
+    return "PASS"
 
 
 def nondegenerate(ens, metric: str, n: int, floor: float, frac: float = 0.9) -> dict[str, bool]:
@@ -249,7 +304,19 @@ def _log(a, floor: float = COLLAPSE):
 
 
 def tost(py, jv, delta: float, floor: float = COLLAPSE):
-    """Formal TOST: returns (mean_log_diff, ci90_halfwidth, p_tost, equivalent, ks_p, var_ratio)."""
+    """Formal TOST: returns (mean_log_diff, ci90_halfwidth, p_tost, equivalent, ks_p, var_ratio).
+
+    ``se == 0`` (both engines' N reps have exactly zero measured variance on the log scale for
+    this species/metric -- seen throughout the mean_weight rows, whose reported values are so
+    tightly clamped by the model that 16 reps don't separate) is a real, valid comparison, not a
+    dropped one: `d`/`eq` are still computed from genuine data. It just can't run a t-test with
+    zero pooled variance, so `ci90` is reported as the literal 0.0 (not a computed interval) and
+    `KS` as `nan` (`ks_2samp` is never called on this branch -- not "not significant", "not
+    applicable"). `eq` here is a bare `abs(d) <= delta` threshold check, not a p-value verdict.
+    This is unrelated to a metric having zero comparable species at all (see
+    ``comparable_species``/``uncompared_metrics`` in main()) -- that case has no `d`/`eq` to show
+    because the species never reaches this function in the first place.
+    """
     lp, lj = _log(py, floor), _log(jv, floor)
     n1, n2 = len(lp), len(lj)
     d = lp.mean() - lj.mean()
@@ -337,7 +404,10 @@ def main() -> None:
             if sp in eng["abundance"]
         }
     analysis_metrics = METRICS + ("mean_weight",)
-    floors = {"mean_weight": 1e-9, "mean_size": 1e-6}  # 1e-6 cm: below any real length, avoids log(0)
+    floors = {
+        "mean_weight": 1e-9,
+        "mean_size": 1e-6,
+    }  # 1e-6 cm: below any real length, avoids log(0)
     deltas = {"mean_weight": args.delta_mean_weight, "mean_size": args.delta_mean_weight}
 
     if py is None:
@@ -381,11 +451,18 @@ def main() -> None:
         print()
 
     overall_fail = []
+    uncompared_metrics: list[str] = []
     for m in analysis_metrics:
         floor = floors.get(m, COLLAPSE)
         delta_m = deltas.get(m, args.delta)
-        sp_all = [s for s in py[m] if all(s in ens[v][m] for v in present)]
+        sp_all = comparable_species(py[m], ens, present, m)
         print(f"==================== METRIC: {m} ====================")
+        if not sp_all:
+            uncompared_metrics.append(m)
+            print(
+                f"  [warn] metric {m}: zero species had a value in every present arm — NOT evaluated, NOT a pass"
+            )
+            continue
         for sp in sp_all:
             row = f"{sp:<22}"
             if j_gate is not None:
@@ -402,14 +479,7 @@ def main() -> None:
         if j_gate is not None
         else f"reference run (no {gate_ver} arm — not gated)"
     )
-    if empty_arms:
-        verdict = f"FAIL (dropped arm(s) with zero comparable species: {', '.join(empty_arms)})"
-    elif degenerate_report:
-        verdict = "FAIL (degenerate: " + ", ".join(degenerate_report) + ")"
-    elif overall_fail:
-        verdict = "REVIEW: " + ", ".join(overall_fail)
-    else:
-        verdict = "PASS"
+    verdict = gate_verdict(empty_arms, uncompared_metrics, degenerate_report, overall_fail)
     print(f"GATE ({tag}): {verdict}")
 
     if args.persist_results:
