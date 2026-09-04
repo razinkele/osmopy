@@ -102,7 +102,8 @@ def _read_prefix(config: Path) -> str:
 
 
 def inject_java_bioen_keys(master: Path, raw: dict[str, str]) -> int:
-    """Java 4.3.3 reads predation.ingestion.rate.max.bioen / .coef...larvae.bioen / predation.c.bioen
+    """Java 4.3.3 reads predation.ingestion.rate.max.bioen / .coef...larvae.bioen /
+    predation.c.bioen
     for EVERY predator index (focal + background) and exits on a missing key; the writer's reverse
     alias cannot losslessly reconstruct predation.ingestion.rate.max.bioen from the merged canonical
     predation.ingestion.rate.max (that merge is intentionally lossy — see osmose/config/aliases.py's
@@ -376,7 +377,8 @@ def main() -> None:
         print(f"[determinism] Python same-seed reproducible: {det}")
     t0 = time.perf_counter()
     print(
-        f"[run] {args.n} reps x {len(engines)} engines x {args.years}yr x {len(METRICS)} metrics ..."
+        f"[run] {args.n} reps x {len(engines)} engines x {args.years}yr "
+        f"x {len(METRICS)} metrics ..."
     )
 
     ens = {}  # only the selected engines (each config supports a specific set)
@@ -390,13 +392,14 @@ def main() -> None:
     j_gate = ens.get(gate_ver)
     j_report = ens.get(report_ver)
     print(
-        f"[run] done in {time.perf_counter() - t0:.0f}s  (delta={args.delta:.2f} log10 = {10**args.delta:.1f}x, "
+        f"[run] done in {time.perf_counter() - t0:.0f}s  "
+        f"(delta={args.delta:.2f} log10 = {10**args.delta:.1f}x, "
         f"gate-engine={gate_ver})\n"
     )
 
     # Derive a size-structure metric: mean individual weight = biomass / abundance, paired per
-    # replicate (both come from the same run). Captures growth/larval-units shifts that biomass alone
-    # hides. floor 1e-9 t/ind (biomass/abundance are in tonnes/numbers).
+    # replicate (both come from the same run). Captures growth/larval-units shifts that
+    # biomass alone hides. floor 1e-9 t/ind (biomass/abundance are in tonnes/numbers).
     for eng in filter(None, (py, j441, j433)):
         eng["mean_weight"] = {
             sp: eng["biomass"][sp] / np.clip(eng["abundance"][sp], 1e-9, None)
@@ -460,7 +463,8 @@ def main() -> None:
         if not sp_all:
             uncompared_metrics.append(m)
             print(
-                f"  [warn] metric {m}: zero species had a value in every present arm — NOT evaluated, NOT a pass"
+                f"  [warn] metric {m}: zero species had a value in every present arm "
+                f"— NOT evaluated, NOT a pass"
             )
             continue
         dropped = sorted(
@@ -468,7 +472,8 @@ def main() -> None:
         )  # in python arm but missing from >=1 present java arm
         if dropped:
             print(
-                f"  [warn] metric {m}: species not compared (missing from >=1 present arm): {dropped}"
+                f"  [warn] metric {m}: species not compared "
+                f"(missing from >=1 present arm): {dropped}"
             )
         for sp in sp_all:
             row = f"{sp:<22}"
@@ -476,7 +481,10 @@ def main() -> None:
                 d1, ci1, p1, eq1, ks1, vr1 = tost(py[m][sp], j_gate[m][sp], delta_m, floor)
                 if not eq1 or abs(d1) >= 1.0:  # PRIMARY gate: absolute equivalence + 1-OoM tripwire
                     overall_fail.append(f"{m}:{sp}")
-                row += f"  {gate_ver} d={d1:>6.2f} ci90=+-{ci1:.2f} eq={'Y' if eq1 else 'n'} KS={ks1:.2f}"
+                row += (
+                    f"  {gate_ver} d={d1:>6.2f} ci90=+-{ci1:.2f} "
+                    f"eq={'Y' if eq1 else 'n'} KS={ks1:.2f}"
+                )
             if j_report is not None:  # reference / reported only, never gated
                 d3, ci3, _, eq3, _, _ = tost(py[m][sp], j_report[m][sp], delta_m, floor)
                 row += f"  | {report_ver} d={d3:>6.2f} ci90=+-{ci3:.2f} eq={'Y' if eq3 else 'n'}"
