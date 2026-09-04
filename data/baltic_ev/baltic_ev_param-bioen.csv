@@ -1,3 +1,14 @@
+# C3 Task 10: layer per species for the two-layer temperature forcing (design spec
+# decision 4) -- cod, flounder read CMEMS bottomT (layer 1); the rest read the
+# surface nan-mean of thetao (layer 0, the default).
+species.zlayer.sp0;1
+species.zlayer.sp1;0
+species.zlayer.sp2;0
+species.zlayer.sp3;1
+species.zlayer.sp4;0
+species.zlayer.sp5;0
+species.zlayer.sp6;0
+species.zlayer.sp7;0
 species.beta.sp0;0.81
 species.beta.sp1;0.82
 species.beta.sp2;0.80
