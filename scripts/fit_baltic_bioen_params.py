@@ -544,21 +544,32 @@ def _print_background_table(
         )
 
 
-# The generator's own source: what actually decides the content this function's caller writes
-# to c3_bioen_arm.json. Kept in sync with the imports at the top of this file.
+# The generator's own direct-authoring source: what actually decides the content this
+# function's caller writes to c3_bioen_arm.json. Kept in sync with the imports at the top of
+# this file. Deliberately NOT the full import closure (e.g. not
+# osmose/engine/movement_maps.py, which habitat_t24 uses via _load_csv_grid and which does
+# feed the fit): widening this to "everything imported" would flag +dirty any time the user
+# has unrelated in-progress edits anywhere upstream in the repo (routinely true in this
+# project's own working tree), defeating the point of a clean-vs-dirty signal. So a bare SHA
+# here means "these two files match HEAD," not "a fresh checkout of HEAD reproduces this file
+# bit-for-bit" -- narrower than full reproducibility, but still closes the specific failure
+# R42 named (the generator itself being uncommitted).
 _GENERATOR_SOURCES = ("scripts/fit_baltic_bioen_params.py", "osmose/calibration/bioen_offline.py")
 
 
 def _git_commit_sha() -> str:
     """HEAD's short SHA, for ``c3_bioen_arm.json``'s ``_meta.commit`` provenance field.
 
-    Appends ``+dirty`` whenever ``_GENERATOR_SOURCES`` differs from HEAD at generation time --
-    otherwise this field can silently record a commit that predates the code that actually
-    produced the artifact (review R42, 2026-09-05: an earlier run recorded ``cf028a1``, a
-    commit at which ``--baltic`` did not exist, because the generator itself was uncommitted
-    when it ran). Committing the generator before regenerating the artifact is what keeps this
-    field bare and reproducible; running it against a dirty generator is still allowed, but the
-    field then says so instead of implying a clean checkout can reproduce the file.
+    Appends ``+dirty`` whenever ``_GENERATOR_SOURCES`` has uncommitted changes relative to
+    HEAD at generation time -- staged, unstaged, OR untracked (``git status --porcelain``,
+    not ``git diff``: a diff against HEAD is silent about a brand-new untracked file, which
+    would reintroduce exactly the failure this guards against). Otherwise this field can
+    silently record a commit that predates the code that actually produced the artifact
+    (review R42, 2026-09-05: an earlier run recorded ``cf028a1``, a commit at which
+    ``--baltic`` did not exist, because the generator itself was uncommitted when it ran).
+    Committing the generator before regenerating the artifact is what keeps this field bare
+    and reproducible; running it against a dirty generator is still allowed, but the field
+    then says so instead of implying a clean checkout can reproduce the file.
     """
     try:
         result = subprocess.run(
@@ -573,14 +584,15 @@ def _git_commit_sha() -> str:
     except Exception:
         return "unknown"
     try:
-        clean = (
-            subprocess.run(
-                ["git", "diff", "--quiet", "HEAD", "--", *_GENERATOR_SOURCES],
-                cwd=ROOT,
-                timeout=10,
-            ).returncode
-            == 0
+        status = subprocess.run(
+            ["git", "status", "--porcelain", "--", *_GENERATOR_SOURCES],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=10,
         )
+        clean = status.stdout.strip() == ""
     except Exception:
         clean = False  # can't verify -- be conservative and flag it, not silently trust HEAD
     return sha if clean else f"{sha}+dirty"
