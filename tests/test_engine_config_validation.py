@@ -305,7 +305,7 @@ def _load_example_config(example_name: str) -> dict:
 
 @_pytest.mark.parametrize(
     "example_name",
-    ["eec", "baltic", "eec_full", "examples", "minimal"],
+    ["eec", "baltic", "eec_full", "examples", "minimal", "examples_bioen"],
 )
 def test_from_dict_warn_mode_clean_on_example_configs(example_name, caplog):
     """Load each reference example in warn mode; assert zero WARNING records."""
