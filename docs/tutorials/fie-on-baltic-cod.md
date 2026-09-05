@@ -193,6 +193,9 @@ separate calibration sprint, likely involving one or more of:
 - Evaluating FIE on a windowed average (years 40–50) rather than a single
   year, to reduce cycle-phase sensitivity
 
+See `docs/baltic_c3_bioen_stage1_2026-09-05.md` for the bioenergetics Java-parity fix that
+this classic-growth demo does not use but that bears on any future bioen-based FIE work.
+
 **Caveat 8: Four engine bugs were found and fixed during this work.**
 Bioen seeding fallback, egg-starvation guard, inheritance allele-pool fallback
 for empty seed-phase populations, and `is_egg` recomputation in

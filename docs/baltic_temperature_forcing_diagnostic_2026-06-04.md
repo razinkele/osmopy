@@ -4,6 +4,13 @@
 **Status:** Closed via diagnostic — no feature built. Spec retained as provenance
 (`docs/superpowers/specs/2026-06-04-cmems-temperature-forcing-design.md`).
 
+**Correction (2026-09-05):** the "NO engine bug" verdict below covered only the thermal
+functions (`TempFunction`'s formula and the first line of `getMaintenance`). The full bioen
+budget — units, survivor scaling, starvation ordering, reproduction — was ported without
+parity, found by the C3 bioenergetics Stage-1 spec's own review; see
+`docs/superpowers/specs/2026-08-30-baltic-c3-bioen-stage1-design.md` §0 and
+`docs/baltic_c3_bioen_stage1_2026-09-05.md`.
+
 ## Question
 
 Can we drive the OSMOSE Baltic model with real CMEMS temperature and see it matter — i.e. the
