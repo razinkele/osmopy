@@ -1199,6 +1199,100 @@ Verified by inspection of the code on master plus the r10 commits on
 **Acceptance re-check (r10):** `tests/test_engine_config_validation.py` 24/24;
 `tests/test_engine_parity.py` 17/17; `pytest -k eec` 310 passed; ruff
 finding count on `ui/ app.py tests/ osmose/` fell from 723 (master) to 698.
-The Java-side `scripts/validate_engines.py` step was not run in the r10
-environment (no `osmose-java/*.jar` present) — re-run it locally before
-tagging a release.
+
+Full suite: **4,414 passed, 13 failed**. All 13 were run down to root cause
+rather than assumed environmental — none implicated a change in this plan:
+
+- **11 × `tests/test_uq_{sampler,run}.py`** — `ModuleNotFoundError: dynesty`.
+  The Bayesian sampler lives behind the optional `[uq]` extra, which the
+  container did not have. Proven by installing it: `pytest tests/test_uq_sampler.py
+  tests/test_uq_run.py tests/test_uq_growth.py` → **33 passed**. No code change.
+  Note for CI: the `uq` extra is not in `[dev]`, so these tests silently do
+  not run unless a leg installs it.
+- **1 × `test_probe_writable_raises_on_readonly_dir`** — a real test bug,
+  fixed in r10. root holds `CAP_DAC_OVERRIDE`, so at mode `0o500`
+  `os.access(d, W_OK)` is `True` and the sentinel write succeeds; the code
+  under test was correct and the assertion was not portable to uid 0. Now
+  guarded like the pre-existing Windows case.
+- **1 × `test_appstate_scenarios_dir_default`** — genuinely caused by this
+  plan's `scenarios_dir` anchoring change; the test still expected the old
+  CWD-relative `Path("data/scenarios")`. Updated to assert the anchored
+  absolute path.
+
+**Not verified in this environment:** the Java-side
+`scripts/validate_engines.py` cross-check — no `osmose-java/*.jar` is present
+in the container, and the skill's 6-of-8-species gate therefore never ran.
+The Python-side parity tests that do not need the JAR are green (17/17), but
+**run `validate_engines.py --years 1` locally before tagging a release**,
+since H7/M14 touched mortality and the economics revenue path.
+
+---
+
+## Discovered during r10 execution: CI has been red on master for weeks
+
+Not part of the original deep review — found while trying to establish an
+honest acceptance baseline for r10, and worth recording because it silently
+invalidates "CI is green" as a merge signal.
+
+`razinkele/osmopy` CI runs **684 → 691** (2026-08-17 → 2026-08-30, the latter
+being current master `2833ba5c`) all report `conclusion: failure`. Run 691's
+job breakdown:
+
+| Job | Result | Root cause |
+|---|---|---|
+| `lint` | **failure** | `ruff check` → "Found 721 errors" |
+| `type-check (3.12)` / `(3.13)` | **failure** | pyright, 9 errors in CI's env (13 with `[uq]` installed) |
+| `test (3.13)` | **failure** | 11 × `ModuleNotFoundError: dynesty` |
+| `test (3.12)` | cancelled | matrix fail-fast, not an independent failure |
+| `test-no-numba`, `docker`, `apptainer-smoke` | success | — |
+
+**None of it is a code defect.** Diagnosis and disposition:
+
+1. **ruff (fixed, `2a8dd5a4`).** Bisected: 0.14.0 and 0.15.x report
+   "All checks passed!"; **0.16.0** does not. 0.16 expanded its default rule
+   set beyond the historical `E4/E7/E9/F`, so the unpinned `ruff>=0.3` floor
+   adopted a new lint policy the moment 0.16 shipped. CI's logged count (721)
+   reproduces locally on untouched master to the exact number. Pinned
+   `ruff>=0.3,<0.16`. Adopting 0.16's rules is a deliberate migration —
+   379 of the 721 are auto-fixable — and should raise the ceiling in the same PR.
+2. **`ruff format` (fixed, `9e4ab29d`).** 17 files fail `format --check`. This
+   was *masked*: the check step fails first, so GitHub marks the format step
+   `skipped`, and it would have become the next red. Not version drift — every
+   ruff from 0.9.10 to 0.16.6 agrees, and `format --diff` is byte-identical
+   between 0.15.4 and 0.16.6. Applied; changes are pure line-joining.
+3. **dynesty (fixed, `2a8dd5a4`).** Only in the `[uq]` extra, which no CI leg
+   installs; the import is deferred inside `sampler.py`, so collection succeeds
+   and the failure appears only at run time. Added to `[dev]`, matching the
+   documented precedent for `numba` (end-user opt-in, dev/CI always gets it)
+   and the "clean-venv false-green trap" note on `pillow` / `httpx`.
+   Consequence to expect: pyright then resolves dynesty and reports 13 rather
+   than 9 errors — more visibility, not a regression.
+4. **pyright (NOT fixed — open).** 13 errors: 11 in `osmose/calibration/uq/`
+   (`design.py:54`, `emulator.py:48,54,68`, `posterior.py:80`,
+   `predictive.py:74`, `sampler.py:127,131,145,147,148`) plus the two engine
+   ones below. Confirmed **pre-existing**: byte-identical between untouched
+   master and this branch under the same interpreter, so nothing in this plan
+   caused them. Both engine errors were read and are **stub strictness, not
+   defects** — do not "fix" the code:
+   - `osmose/engine/output.py:420` (`reportOptionalSubscript`, was `:422`
+     before the reformat) subscripts `o.mortality_rate_by_cause_stage[sp_idx]`.
+     It **is** guarded — `staged = all(getattr(o, ..., None) is not None for o
+     in outputs)` two lines above, and the branch is `if staged:`. Pyright
+     cannot narrow an `Optional` through an `all(... is not None ...)`
+     generator, so the guard is invisible to it. An `assert` or a targeted
+     ignore is the right remedy, not a runtime change.
+   - `osmose/engine/simulate.py:947` (`reportArgumentType`) is
+     `np.add.at(deaths, (sp, cause, st), ...)` from commit `22cdf22c`, where
+     `cause` is a plain `int` from `range(n_causes)`; numpy's stubs decline an
+     index tuple mixing `int` with arrays even though it is valid at runtime.
+
+   Unlike causes 1–3 there is no pin that makes these correct. Clearing them is
+   real type work concentrated in the UQ module and is left as a follow-up
+   rather than bundled into a remediation close-out.
+
+**Reproduce:** `ruff check osmose/ ui/ tests/`,
+`ruff format --check osmose/ ui/ tests/`, and
+`pyright --pythonversion 3.12 --pythonpath .venv/bin/python` (pyright needs the
+interpreter pointed at explicitly, or every third-party import reports as
+unresolved and the count balloons to ~293 — a trap worth knowing before
+concluding the tree is badly broken).
