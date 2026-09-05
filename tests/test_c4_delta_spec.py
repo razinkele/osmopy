@@ -3,7 +3,9 @@
 import json
 from pathlib import Path
 
-SPEC_PATH = Path(__file__).resolve().parent.parent / "data/baltic/scenarios/c4_salinity_sensitivity.json"
+SPEC_PATH = (
+    Path(__file__).resolve().parent.parent / "data/baltic/scenarios/c4_salinity_sensitivity.json"
+)
 
 
 def _spec():

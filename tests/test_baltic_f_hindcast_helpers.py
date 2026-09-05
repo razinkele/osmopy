@@ -24,9 +24,9 @@ def test_annualize_per_step_and_per_year():
 
 
 def test_decadal_trend_signs():
-    rising_then_falling = [float(y) for y in YEARS[:10]] + [0.0] * 10 + [
-        float(2024 - y) for y in YEARS[20:]
-    ]
+    rising_then_falling = (
+        [float(y) for y in YEARS[:10]] + [0.0] * 10 + [float(2024 - y) for y in YEARS[20:]]
+    )
     signs = m.decadal_trend_signs(rising_then_falling, YEARS)
     assert signs[0] == 1 and signs[2] == -1
 
@@ -56,8 +56,8 @@ def test_observed_herring_z_is_catch_share_weighted(tmp_path):
         ]
         (tmp_path / f"{key}.assessment.json").write_text(json.dumps(recs))
 
-    snap("her.27.25-2932", lambda y: y - 1990, 300.0)   # rising, weight 3
-    snap("her.27.28", lambda y: 2030 - y, 100.0)        # falling, weight 1
+    snap("her.27.25-2932", lambda y: y - 1990, 300.0)  # rising, weight 3
+    snap("her.27.28", lambda y: 2030 - y, 100.0)  # falling, weight 1
     snap("her.27.3031", lambda y: 1.0, 0.0)
     snap("her.27.20-24", lambda y: 1.0, 0.0)
     z = m.observed_herring_z(tmp_path, YEARS)

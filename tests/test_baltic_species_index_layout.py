@@ -103,7 +103,9 @@ def test_phase14_fr_halfsat_keys_target_focal_and_background_predators(calibrate
     assert "resource" not in kinds, f"FR halfsat landed on a resource: {list(zip(idx, kinds))}"
 
 
-def test_fr_predator_set_matches_across_calibrator_and_evaluator(calibrate_baltic, evaluate_vs_ices):
+def test_fr_predator_set_matches_across_calibrator_and_evaluator(
+    calibrate_baltic, evaluate_vs_ices
+):
     """calibrate_baltic and evaluate_calibration_vs_ices document that these must stay in sync."""
     keys, _b, _x = calibrate_baltic.get_phase14_params()
     from_calibrator = tuple(int(k.rsplit(".sp", 1)[1]) for k in keys)
@@ -143,7 +145,9 @@ def test_a2_phytoplankton_regrowth_targets_resources(calibrate_baltic):
     cfg = calibrate_baltic.enable_a2_base_config({})
     _, types = _species_blocks()
     touched = {
-        int(k.rsplit(".sp", 1)[1]): v for k, v in cfg.items() if k.startswith("species.regrowth.rate.sp")
+        int(k.rsplit(".sp", 1)[1]): v
+        for k, v in cfg.items()
+        if k.startswith("species.regrowth.rate.sp")
     }
     kinds = {i: types[i] for i in touched}
     assert set(kinds.values()) == {"resource"}, f"A2 regrowth hits a non-resource: {kinds}"
