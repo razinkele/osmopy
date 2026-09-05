@@ -1200,8 +1200,15 @@ Verified by inspection of the code on master plus the r10 commits on
 `tests/test_engine_parity.py` 17/17; `pytest -k eec` 310 passed; ruff
 finding count on `ui/ app.py tests/ osmose/` fell from 723 (master) to 698.
 
-Full suite: **4,414 passed, 13 failed**. All 13 were run down to root cause
-rather than assumed environmental — none implicated a change in this plan:
+Full suite, final state after the CI fixes below: **4,426 passed, 50 skipped,
+0 failed** (22m51s, `-n 4`).
+
+Getting there took two runs. The first was **4,414 passed, 13 failed**; all 13
+were run down to root cause rather than assumed environmental, and the
+arithmetic of the fix reconciles exactly — 4,414 + 11 (dynesty now installed)
++ 1 (`scenarios_dir` expectation corrected) = 4,426, with skips 49 → 50 being
+the one test that now correctly skips under root. None implicated an engine or
+UI change in this plan:
 
 - **11 × `tests/test_uq_{sampler,run}.py`** — `ModuleNotFoundError: dynesty`.
   The Bayesian sampler lives behind the optional `[uq]` extra, which the
