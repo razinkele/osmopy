@@ -13,7 +13,7 @@ not the C3 bioen work, and is unaffected by anything C3 does to `data/baltic`.
 from pathlib import Path
 import pytest
 
-from tests._ev_preflight import SENTINEL
+from tests._ev_preflight import ensure_preflight_result
 
 
 def test_baltic_ev_all_parameters_exists() -> None:
@@ -83,66 +83,17 @@ def test_baltic_ev_baseline_viable_for_fie() -> None:
        (post-burnin) level, so the demo runs on a non-degenerate population
        rather than one dominated by founder-effect drift or selection collapse.
 
-    On full pass this touches `tests/.preflight_wired`; the FIE-demo and
-    genetics-activation tests call `require_baltic_ev_preflight()` and skip
-    until it exists. When either criterion fails the fixture is un-tuned (plan
-    Task 7.4): the sentinel is removed and THIS test SKIPS (not fails), so CI
-    stays clean while leaving a visible "pending Task 7.4" signal. The sentinel
-    is deterministic — a regression that breaks viability removes it and reverts
-    the downstream tests to skipped.
+    The actual probe (and the shared cache/lock that makes it safe under
+    pytest-xdist) lives in `tests/_ev_preflight.py::ensure_preflight_result` —
+    see that module's docstring for why. This test is a thin wrapper: it just
+    reports the same (viable, detail) result every downstream dependant
+    reads via `require_baltic_ev_preflight()`. If ANOTHER caller in this
+    pytest run already computed the result (e.g. it lost the race to a
+    downstream test on a different xdist worker), this test reuses that
+    cached answer instead of re-running the 50y simulation — the point of the
+    shared cache is that it does not matter who computes it first, only that
+    everyone agrees on the same answer within one run.
     """
-    from osmose.config import OsmoseConfigReader
-    from osmose.engine import PythonEngine
-
-    # Remove any stale sentinel up front so it is only valid if THIS run reaches
-    # the touch() at the end. SENTINEL is anchored on the shared module dir so
-    # the path matches every reader regardless of pytest's cwd.
-    SENTINEL.unlink(missing_ok=True)
-
-    cfg = OsmoseConfigReader().read(Path("data/baltic_ev/baltic_ev_all-parameters.csv"))
-    cfg["simulation.time.nyear"] = "50"
-    # Reader canonicalizes to the NEW 4.4.0 key; set that one (see note above).
-    cfg["module.genetics.enabled"] = "false"
-    # Zero fishing so the cod size distribution reflects bioen alone.
-    cfg["fisheries.rate.base.fsh0"] = "0.0"
-    result = PythonEngine().run_in_memory(cfg, seed=0)
-
-    # Criterion 1: cod reach the 35cm gear at the final year.
-    # biomass_by_size returns long-form [time, species, bin, value] where `bin`
-    # is the size-bin lower edge as a string (e.g. "35.0"); see
-    # osmose/engine/output.py:_build_distribution_dataframes.
-    bbs = result.biomass_by_size("cod")
-    if bbs.empty:
-        pytest.skip(
-            "baltic_ev pre-flight: biomass_by_size('cod') is empty — fixture un-tuned (Task 7.4)."
-        )
-    bbs = bbs.assign(bin_lower=bbs["bin"].astype(float))
-    t_max = bbs["time"].max()
-    last_year = bbs[bbs["time"] >= t_max - 1.0]
-    biomass_ge35 = float(last_year[last_year["bin_lower"] >= 35.0]["value"].sum())
-    biomass_total = float(last_year["value"].sum())
-    max_occupied_bin = float(last_year[last_year["value"] > 0]["bin_lower"].max())
-
-    # Criterion 2: 50y/5y (post-burnin) biomass envelope.
-    bio = result.biomass().sort_values("Time")
-    # See test_baltic_ev_runs_5_years_without_genetics for the wide-form note.
-    if "cod" not in bio.columns:
-        pytest.skip(
-            f"baltic_ev pre-flight: biomass output missing 'cod' column; "
-            f"got columns={list(bio.columns)}."
-        )
-    burnin = float(bio[(bio["Time"] >= 5.0) & (bio["Time"] < 6.0)]["cod"].mean())
-    end = float(bio[bio["Time"] >= 49.0]["cod"].mean())
-    ratio = end / burnin if burnin > 0 else float("inf")
-
-    if not (biomass_ge35 > 0.0 and 0.5 <= ratio <= 2.0):
-        pytest.skip(
-            "baltic_ev FIE pre-flight not viable — tune bioen params (Task 7.4). "
-            f"cod biomass >=35cm at year {t_max:.1f} = {biomass_ge35:.3e} "
-            f"(total = {biomass_total:.3e}, largest occupied bin = "
-            f"{max_occupied_bin:.1f}cm); 50y/5y envelope ratio = {ratio:.2f} "
-            "(need cod >=35cm present and 0.5 <= ratio <= 2.0)."
-        )
-
-    # Both criteria hold — un-gate the downstream FIE / genetics tests.
-    SENTINEL.touch()
+    viable, detail = ensure_preflight_result()
+    if not viable:
+        pytest.skip(detail)

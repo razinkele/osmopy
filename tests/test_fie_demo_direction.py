@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import pytest
 
@@ -5,6 +6,27 @@ from tests._ev_preflight import require_baltic_ev_preflight
 
 
 @pytest.mark.slow
+@pytest.mark.skipif(
+    not os.environ.get("OSMOSE_EV_FIE_DEMO"),
+    reason=(
+        "~6.8 min (six 50y baltic_ev bioen runs: 3 seeds x 2 F-arms), on top of a "
+        "one-time ~60s cost priming the shared baltic_ev viability pre-flight if "
+        "nothing else in this run has already done so (tests/_ev_preflight.py). "
+        "`pytest.mark.slow` alone does not exclude this from a bare `pytest` run in "
+        "this repo (`addopts` only filters e2e/visual, and CI's `pytest -n auto ...` "
+        "passes no -m override), so this ALSO gates on an opt-in env var, matching "
+        "tests/test_egg_retention_java_parity.py's OSMOSE_JAR and "
+        "tests/test_engine_bioen_numba_kernel.py's OSMOSE_BIOEN_WHOLE_RUN_SMOKE "
+        "precedent. Opt in with OSMOSE_EV_FIE_DEMO=1. WHEN to opt in: after any "
+        "change to trait-expression / mortality step ordering in "
+        "osmose/engine/simulate.py or osmose/engine/processes/mortality.py that "
+        "could populate state.imax_trait before _mortality runs (see the xfail "
+        "reason below for the exact gap) — this is the test that flips loudly to "
+        "XPASS (strict=True) the moment that plumbing exists. Otherwise this is a "
+        "known, root-caused, out-of-scope result (ruling R24) that does not need "
+        "re-confirming on every CI invocation."
+    ),
+)
 @pytest.mark.xfail(
     strict=True,
     reason=(

@@ -114,7 +114,12 @@ markers = [
 # worker. Preserves implicit intra-file ordering (e.g. module-level cache state)
 # and avoids redundantly rebuilding module/session-scoped fixtures across
 # workers. No-op on serial runs. Pass -n auto (or a worker count) to parallelize.
-addopts = "-m 'not e2e and not visual' --dist loadfile"
+# -ra: print the reason for every non-passing outcome (skip/xfail/etc.) in the
+# final summary. Without it, a skipif-gated test just adds to the "N skipped"
+# count with no indication of WHICH test or WHY -- verified empirically:
+# a bare `pytest` run shows only "1 skipped in 0.12s" for a skipif'd test,
+# `-ra` adds a "short test summary info" line naming the test and its reason.
+addopts = "-m 'not e2e and not visual' --dist loadfile -ra"
 
 [tool.coverage.run]
 omit = [
