@@ -155,6 +155,38 @@ def test_length_from_age_bins_drops_zero_abundance_bins():
     assert 1 in length
 
 
+def test_length_from_age_bins_drops_nan_padded_bins():
+    """task-13-14-review.md E2/E8, task-14-fix-report.md: the in-memory multi-species cache
+    NaN-pads every species except the widest to a common bin count (ragged `pd.concat` over
+    per-species wide by-age frames, `osmose/results.py:351`). A padded bin's `value` is `NaN`
+    for every row -- `float('nan') <= 0` is `False`, so the pre-fix `abundance <= 0` guard let
+    it through and poisoned the RMS. Bin 1 carries a NaN abundance (padded); bin 2 carries a
+    finite abundance but a NaN weight (the two frames need not pad in lockstep). Both must be
+    dropped, not just the non-positive case already covered above.
+    """
+    ab = pd.DataFrame(
+        {
+            "time": [1.0, 1.0, 1.0],
+            "species": ["x", "x", "x"],
+            "bin": ["0", "1", "2"],
+            "value": [10.0, float("nan"), 5.0],
+        }
+    )
+    bb = pd.DataFrame(
+        {
+            "time": [1.0, 1.0, 1.0],
+            "species": ["x", "x", "x"],
+            "bin": ["0", "1", "2"],
+            "value": [1e-5, 1e-5, float("nan")],
+        }
+    )
+    length = c3.length_from_age_bins(ab, bb, cf=0.01, b=3.0, species="x")
+    assert 1 not in length
+    assert 2 not in length
+    assert 0 in length
+    assert all(np.isfinite(v) for v in length.values())
+
+
 class _FakeSpeciesOutputRes:
     """Minimal stand-in for `OsmoseResults` exposing only `_read_species_output`, the one
     method `_final_window_mean` calls."""

@@ -719,15 +719,28 @@ def length_from_age_bins(
     non-positive abundance are dropped (no fish to average a weight over -- bin 0 in
     particular is egg-dominated, CLAUDE.md's by-age cutoff caveat). `length = (weight_g / cf)
     ** (1/b)`, the inverse of the vBGF weight-length relation `bioen_offline.vbgf_weight` uses.
+
+    NaN guard (task-13-14-review.md E2/E8, task-14-fix-report.md): the in-memory multi-species
+    cache concatenates each species' wide by-age frame at its own width (`lifespan_dt`-derived,
+    `osmose/engine/output.py:_build_distribution_dataframes`), so `pd.concat`
+    (`osmose/results.py:351`) NaN-pads every species except the widest to a common bin count.
+    A padded bin's `value` is `NaN` for every row, not a real zero -- `float('nan') <= 0` is
+    `False`, so the old `abundance <= 0` guard alone let padded bins flow through as spurious
+    RMS-poisoning entries. `np.isfinite` closes that: a padded bin is dropped exactly like a
+    non-positive one, both for `abundance` and for the derived `weight_g` (guards independently
+    in case a future caller pairs a padded abundance bin with a non-padded weight bin or vice
+    versa).
     """
     a = abundance_df[abundance_df["species"] == species].groupby("bin")["value"].mean()
     w = biomass_df[biomass_df["species"] == species].groupby("bin")["value"].mean()
     out: dict[int, float] = {}
     for bin_str in a.index:
         abundance = float(a[bin_str])
-        if abundance <= 0 or bin_str not in w.index:
+        if not np.isfinite(abundance) or abundance <= 0 or bin_str not in w.index:
             continue
         weight_g = float(w[bin_str]) * 1e6 / abundance
+        if not np.isfinite(weight_g):
+            continue
         out[int(bin_str)] = (weight_g / cf) ** (1.0 / b)
     return out
 
@@ -1123,20 +1136,35 @@ def run_c3(
         ingestion[name] = seed_means
 
     # --- length-at-age, baseline vs bioen, RMS % over ages >= 1 yr ---
+    # Restricted to the final-decade window (task-14-fix-report.md, task-13-14-review.md F2/F7):
+    # `length_from_age_bins`'s own contract says callers pass frames "already restricted to the
+    # time window of interest" -- the pre-fix call here passed the WHOLE `n_year`-long frame,
+    # so a species' reported RMS was a whole-run time-average, not a final-decade comparison
+    # (that is what produced the committed report's cod_west 71.9% figure; see the results
+    # doc's §5 for the reading that number supports). For a species already extinct in the
+    # final decade this correctly yields no shared non-padded bins -> `n_seeds: 0`, `None` --
+    # the final decade cannot measure growth for a population that is not there; a pre-collapse
+    # window is needed for that (§5/§8 of the results doc).
     length_at_age_result: dict[str, dict] = {}
     for name in sp_index:
         rms_per_seed = []
         for seed in seeds:
+            ab_base_all = results_by_arm_seed["baseline"][seed].abundance_by_age(name)
+            bb_base_all = results_by_arm_seed["baseline"][seed].biomass_by_age(name)
+            ab_bioen_all = results_by_arm_seed["bioen"][seed].abundance_by_age(name)
+            bb_bioen_all = results_by_arm_seed["bioen"][seed].biomass_by_age(name)
+            t_final = max(ab_base_all["time"].max(), ab_bioen_all["time"].max())
+            window_start = t_final - 10.0
             la_base = length_from_age_bins(
-                results_by_arm_seed["baseline"][seed].abundance_by_age(name),
-                results_by_arm_seed["baseline"][seed].biomass_by_age(name),
+                ab_base_all[ab_base_all["time"] > window_start],
+                bb_base_all[bb_base_all["time"] > window_start],
                 float(base_config.condition_factor[sp_index[name]]),
                 float(base_config.allometric_power[sp_index[name]]),
                 name,
             )
             la_bioen = length_from_age_bins(
-                results_by_arm_seed["bioen"][seed].abundance_by_age(name),
-                results_by_arm_seed["bioen"][seed].biomass_by_age(name),
+                ab_bioen_all[ab_bioen_all["time"] > window_start],
+                bb_bioen_all[bb_bioen_all["time"] > window_start],
                 float(base_config.condition_factor[sp_index[name]]),
                 float(base_config.allometric_power[sp_index[name]]),
                 name,

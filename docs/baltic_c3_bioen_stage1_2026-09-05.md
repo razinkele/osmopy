@@ -6,11 +6,20 @@ final-decade mean is **exactly 0.0 t** in the `bioen` arm, every seed (bioen/bas
 ē/ĝ = 0.000, bioen/certified = 0.000). Sprat is the sole survivor of the five, passing all three
 criteria. This is a clean pre-registered negative — nobody chose this threshold after seeing these
 numbers — arrived at with Gate A reading bit-identical to the committed master fixture throughout
-and Gate B (Task 9) PASS against Java 4.3.3, so the finding is about this parameter set's
-interaction with the Baltic config, not about port fidelity. Full numbers in §4; mechanism and
-independent corroboration (an isolated 8-yr stress test with a bioen-off control) in the box below
-and in §0/§1. Every number in this document is pulled directly from
-`docs/diagnostics/baltic_c3_bioen_report.json` — none typed by hand.
+and Gate B (Task 9) PASS against Java 4.3.3. **Bounded claim on what those two gates cover**
+(restated per an independent review, task-13-14-review.md F4): Gate A certifies only that the
+bioen path is inert when *switched off* — it says nothing about the bioen-on path itself. Gate B's
+PASS is measured on `data/examples_bioen`, a parity vehicle, not on this Baltic overlay — and this
+Baltic overlay is **not itself Java-loadable as authored**
+(`data/baltic/scenarios/c3_bioen/README.md:31`: the port's bioen parameter arrays are
+focal-species-length, so the background-predator keys Java's own bioen block would need cannot be
+authored for GreySeal/Cormorant). So: no bioen-path defect was found by any gate that ran; Gate B's
+evidence is transferred from a different config, and this overlay has not itself been cross-engine
+verified. §8 discusses what the finding *is* about, given that bound. Full numbers in §4; mechanism
+and independent corroboration (an isolated 8-yr stress test with a bioen-off control) in the box
+below and in §0/§1. Every number in §4–§7's tables is pulled directly from
+`docs/diagnostics/baltic_c3_bioen_report.json` — none typed by hand; §8's growth-deficit figures
+are read from a separate, explicitly-labelled in-engine measurement (not in that JSON — see §8).
 
 Spec: `docs/superpowers/specs/2026-08-30-baltic-c3-bioen-stage1-design.md` (binding — decisions,
 §0 table, §4 gates and decision rule).
@@ -298,12 +307,18 @@ below. **Bold** = one of the five assessed stocks (spec §4's decision rule).
 | smelt | 680,580.0 | 294,616.2 | 0.433 | 0.431 | no |
 | stickleback | 80,282.3 | 71,543.1 | 0.891 | 0.883 | yes |
 
-Six of nine species are affected (all-but-sprat among the assessed set; perch also collapses to
-exactly 0.0 among the indicative-tier species — not part of the verdict, per
-`ASSESSED_STOCKS`, but the same pattern). Every non-zero bioen mean is bit-identical to 0.0
-across **all 5 seeds** for the five zeroed species (`std: 0.0`, `per_seed: [0.0, 0.0, 0.0, 0.0,
+**Five** species have a final-decade mean of exactly 0.0 t: cod_west, cod_east, herring, flounder
+among the assessed set, plus perch among the indicative-tier species (not part of the verdict, per
+`ASSESSED_STOCKS`, but the same pattern). Every zeroed bioen mean is bit-identical to 0.0
+across **all 5 seeds** for those five species (`std: 0.0`, `per_seed: [0.0, 0.0, 0.0, 0.0,
 0.0]` in the JSON) — this is not a noisy near-collapse, it is deterministic extinction by year 50
-on every draw.
+on every draw. Under the wider "bioen/baseline < 0.10" reading of "affected", **six** of nine
+species qualify — the five zeros above plus pikeperch, whose bioen/baseline is 0.092 (a 91%
+reduction, not an exact zero: 128,120.2 t survives against a 1,400,081.1 t baseline). These are two
+different counts for two different definitions ("exactly extinct" vs. "reduced past the criterion
+(i) threshold") — elsewhere in this document, "collapsed"/"zeroed" always means the five-species,
+exactly-0.0 reading (§5, §6); "affected" in this paragraph is the wider six-species reading and is
+not used again.
 
 **Criterion (iii) anchor sanity check:** the spec text is ambiguous between anchoring the
 bounded-displacement criterion on the certified means or on this run's own baseline arm; the
@@ -330,7 +345,7 @@ window:**
 | smelt | 5.484 | 6.151 | 0.891 | 0.924 |
 | stickleback | 5.084 | 4.432 | 1.147 | 1.103 |
 
-All six zeroed species (§4) show `ē = 0.0` **exactly**, not `NaN` — `bioen_enet_faced` is an
+**Five** species (§4) show `ē = 0.0` **exactly**, not `NaN` — `bioen_enet_faced` is an
 abundance-weighted mean over focal, feeding, in-domain schools (`simulate.py:1292-1307`); with
 zero such schools left (the population extinct), the denominator guard `np.where(denom > 0, ...,
 0.0)` returns `0.0` rather than `NaN`. This is a legitimate zero, not a NaN the decision-rule fix
@@ -341,17 +356,71 @@ stickleback) all show `ē/ĝ` at or above 0.89, comfortably clearing the ≥ 0.6
 
 **Length-at-age (paired RMS %, ages ≥ 1 yr, `bioen` vs `baseline`, `length_at_age` in the
 JSON):** computed for **cod_west only** (71.9%, `n_seeds: 5`); **`NaN` for all other 8 species**,
-including sprat, pikeperch, smelt and stickleback, which did not collapse in the bioen arm. This
-was not root-caused in this task — it is a `REPORTED`, non-gating instrument (spec §4) that does
-not affect the verdict, and re-running to diagnose it would cost another engine slot. Flagged as
-an open item (§9). The one number that did compute (cod_west, 71.9%) should be read with the
-CLAUDE.md by-age/by-cutoff caveat in mind: `length_at_age` reads `abundance_by_age`/
-`biomass_by_age` (every school, eggs included, no `output.cutoff.age` filter) at the single final
-year, while cod_west's `biomass()`-based final-decade mean (§4) is a hard 0.0 across the whole
-final decade — a positive-looking RMS for a population that is extinct by the ≥0.5yr headline
-measure most likely reflects a residual egg/YOY fragment at the exact final timestep, not a
-stable growth-curve comparison. It should not be read as evidence cod_west's growth curve tracks
-its own fitted curve.
+including sprat, pikeperch, smelt and stickleback, which did not collapse in the bioen arm.
+**This was root-caused after this run, by an independent review (task-13-14-review.md E2/E8),
+and the instrument has since been fixed in the harness code (task-14-fix-report.md) — the numbers
+below are from the run as originally executed and were NOT recomputed; see the end of this
+subsection for exactly what changed and what didn't.**
+
+Root cause: the in-memory multi-species output cache concatenates each species' wide by-age frame
+at its own width (`n_bins = lifespan_dt`-derived, one width per species,
+`osmose/engine/output.py:_build_distribution_dataframes`) with `pd.concat`
+(`osmose/results.py:351`), which NaN-pads every species out to the widest species' bin count —
+cod_west (21 bins, the longest-lived species) is the only one with no padding, which is exactly
+why it is the only species that produced a number. `length_from_age_bins`'s old guard
+(`abundance <= 0`) did not reject a padded bin, because `float('nan') <= 0` is `False` in Python;
+the NaN flowed through into the RMS for the other 8 species. Reproduced deterministically on a
+fresh 2-yr, no-overlay Baltic run (no engine run was needed to find the cause, only to confirm
+it): **8 of 9 species show
+all-NaN age-bin columns in the raw `abundance_by_age()`/`biomass_by_age()` frames, cod_west the
+sole exception** — row-for-row the same pattern as the committed JSON's NaN/non-NaN split.
+**Provably non-gating**, independent of the root cause: the decision rule reads only `biomass()`
+(a single cross-species frame that is never concatenated across species,
+`_CROSS_SPECIES_OUTPUT_TYPES`) and `meanEnetFaced` (homogeneous per-species columns, also never
+raggedly concatenated) — neither can carry this padding, so nothing this defect touched could have
+changed §4's verdict.
+
+**The fix** (`length_from_age_bins`, `scripts/baltic_c3_bioen_ab.py`): an `np.isfinite` guard on
+both `abundance` and the derived `weight_g`, so a padded bin is dropped exactly like a
+non-positive one. On the same 2-yr reproduction run, after the fix, the padded bins no longer
+appear in the function's output at all (verified: 0 of the previously-NaN bins now emit a
+value — they are cleanly absent, not zero-filled). A second, independent defect in the same
+instrument was fixed alongside it: `run_c3`'s call site passed the **whole run's** frame to
+`length_from_age_bins`, against that function's own documented contract ("frames already
+restricted to the time window of interest") — now restricted to the final-decade window, matching
+the convention `_final_window_mean` already uses elsewhere in this harness.
+
+**Neither fix was applied to the committed `docs/diagnostics/baltic_c3_bioen_report.json` — the
+50-yr, 5-seed A/B was deliberately NOT re-run to regenerate it** (an engine-time decision, not a
+correctness one). Two consequences worth being explicit about, so a reader does not assume more
+was recomputed than was:
+
+1. The cod_west 71.9% figure above, and the 8 NaNs, are the **original, pre-fix, whole-run**
+   numbers — they were the actual output of the run that produced every other number in §4–§7 and
+   remain the citable numbers for that run. The one caveat about this number is corrected next.
+2. Had the fix been in place for that run, the final-window restriction would return **no** value
+   for cod_west either: `length_from_age_bins` on the final-decade frame finds no shared bins for
+   a population that has been extinct for the entire decade, so the fixed instrument yields
+   `n_seeds: 0`, not a number. **A final-decade length-at-age comparison cannot see growth for a
+   stock that is not there in the final decade — collapsed stocks need a pre-collapse window
+   instead.** §8 reports exactly that: a separate, explicitly-labelled measurement taken before
+   the collapsed stocks died out. The fix is not purely subtractive, though: the `NaN`-guard half
+   would also let the four species that *did not* collapse (sprat, pikeperch, smelt, stickleback —
+   all `NaN` today purely from the padding, not from extinction) return a real final-decade RMS on
+   a future re-run — trading cod_west's one whole-run number (which the final-window restriction
+   nulls out, per the point above) for four final-decade ones on the species the instrument can
+   actually still measure.
+
+**Correcting the previous reading of the 71.9% number itself** (task-13-14-review.md F2): the
+prior draft of this document explained it as coming from "the single final year" and as "most
+likely a residual egg/YOY fragment." **Both premises were checked against the code and are
+false.** `run_c3`'s pre-fix call (`scripts/baltic_c3_bioen_ab.py:1130-1152` at the time) passed the
+whole 50-year `abundance_by_age()`/`biomass_by_age()` frames, not a final-year slice; and bin 0 is
+explicitly excluded before the RMS is computed (`shared_bins = ... - {0}`), so it cannot be an egg
+fragment — every contributing bin is a real age ≥ 1 from a year cod_west was alive. **The number
+is a real whole-run growth-deficit average, and it agrees with the independent −75% in-engine
+length-at-age measurement in §8** — it is not an artifact to be explained away, and the prior
+framing that told a reader to disregard it was itself the error.
 
 **Realized annual ingestion (decision 17, `realized_ingestion` in the JSON), `bioen` arm:**
 cod_west/cod_east/herring/flounder/perch = 0.0 (consistent with §4's extinction); sprat 18.42,
@@ -399,7 +468,7 @@ shift — reported only, not gated on the decision rule (spec §3.5):
 Every species sits 1.7–5.3 °C below its own `t_opt` at `T̄` (§3), so +2 °C moves every species'
 habitat-mean net growth rate up (`g_net shift` positive for all 9, matching Gate F's direction
 check exactly) — this is a mechanical consequence of the fitted thermal curves, not a new
-finding. **The +2 °C arm does not rescue any of the six collapsed species** — all six remain at
+finding. **The +2 °C arm does not rescue any of the five collapsed species** — all five remain at
 exactly 0.0 in every seed, unchanged from the `bioen` arm — while the four survivors all grow
 further (+1.9% to +26.5%). A 2 °C perturbation this small cannot compensate for a mechanism
 (predation outrunning growth, per Task 13) that a warmer thermal curve does not address; the
@@ -436,6 +505,11 @@ committed JSON's `labels` field), not re-typed by hand:
 Plus the two framing obligations already stated in §0/§1 above: Gate B's config is a parity
 vehicle, not a calibrated ecosystem; the RMS pin validates `K`, not `t_opt`/`Linf`.
 
+**Label 8's departure, quantified:** label 8 names the gap between the offline fit and the
+in-engine result but does not size it. §8 below measures it directly — an 8–77% length-at-age
+deficit at ages 1–2, paired treatment vs. control — and reads the pre-registered negative in light
+of that number.
+
 ## §8 — What Stage 2 would do (or why C3 closes)
 
 **C3 closes by characterization.** The pre-registered decision rule (spec §4), applied to this
@@ -444,21 +518,98 @@ three criteria — (i) no-structural-collapse, (ii) `ē/ĝ ≥ 0.6`, (iii) bound
 `bi_mean = 0`, `ē/ĝ = 0`, `bioen/certified = 0` for cod_west, cod_east, herring and flounder, plus
 the aggregate criterion-(iii) count (`0/5` within a factor of 2, need `≥3`). No criterion came
 back `undetermined`; every failure is a hard, five-seed-identical zero. Sprat is the only
-assessed stock that passes cleanly.
+assessed stock that passes cleanly. **None of what follows changes this verdict** — it narrows
+*what the verdict is evidence of*, which the rule itself cannot determine.
+
+### What the negative is — and is not — evidence of
+
+The pre-registered rule answers one question: does the bioen parameter set, as fitted and wired,
+sustain the Baltic community at this scale? The answer is no, cleanly and reproducibly. It cannot
+by itself answer a second, different question: is that because bioenergetics as a mechanism does
+not work for the Baltic, or because *this offline-fitted parameter set's growth did not transfer
+into the coupled engine*? A rule built on final-decade population outcomes cannot distinguish those
+two — both produce the same zeros. The following measurement, taken specifically to separate them,
+points at the second.
+
+§3 reports cod_west's offline fit (growth curve alone, food-unlimited, no predation or competition)
+at **RMS 8.33%** against its literature-anchored target. That number describes only the fit's own
+internal consistency; it says nothing about what happens once the same parameters run inside the
+full coupled engine. **A paired in-engine measurement does**: a treatment/control run (seed 42,
+`population.seeding.year.max=1`, the same stress condition Task 13 used, `bioen` overlay vs the
+overlay removed) with `length_from_age_bins` read at each species' own age-1/age-2 length in
+years 2 and 3 — before the species that go extinct have done so, which the final-decade window
+(§5) cannot see. **Every species is shorter at age 1, in both years, than its own baseline
+trajectory, by 8% to 77%; eight of nine are shorter at age 2 too** (independently reproduced for
+this fix — task-14-fix-report.md — and matching an earlier, separately-run measurement in
+task-13-14-review.md E5 to within rounding). The one exception is herring's single year-3 age-2
+reading, where the bioen arm is marginally *longer* than baseline (16.56 → 17.10 cm, +3%) — a
+pervasive, directional deficit with one disclosed exception, not a universal one. Cod_west's own
+age-1 length is representative of the worst end of the 8–77% range: **37.5 cm in the
+classic-growth control at year 2, 8.8 cm under the bioen overlay at the same age (−77%); 49.6 →
+12.5 cm at age 1 and 61.6 → 15.2 cm at age 2 by year 3 (both −75%)** — one data point inside the
+same whole-run average §5 reports as 71.9% RMS.
+
+This lines up with which species collapse and which survive, closely enough to be the more
+specific and actionable reading of the two:
+
+| species | m0, length at maturity (cm) | bioen/baseline (§4) | outcome |
+|---|---:|---:|---|
+| stickleback | 4.5 | 0.891 | survives, least affected |
+| sprat | 9.0 | 0.303 | survives, sole `ASSESSED_STOCKS` pass |
+| smelt | 10.0 | 0.433 | survives |
+| herring | 18.0 | 0.000 | **extinct** |
+| perch | 18.0 | 0.000 | **extinct** |
+| flounder | 22.0 | 0.000 | **extinct** |
+| cod_east | 22.0 | 0.000 | **extinct** |
+| cod_west | 38.0 | 0.000 | **extinct** |
+| pikeperch | 40.0 | 0.092 | survives — the exception |
+
+`m0` is `species.maturity.size.sp{i}`, verified identical between the `baseline` and `bioen`
+arms for every species (`data/baltic/baltic_param-species.csv`; task-13-14-review.md E3a) — the
+overlay changes growth, not the maturity threshold a fish has to reach. If growth is running
+8–77% too slow across the board, a species that only has to reach 4.5–10 cm can still get there
+inside its lifespan; one that has to reach 18–38 cm increasingly cannot. Eight of the nine species
+sort cleanly on that line. **Pikeperch does not**: it carries the single highest `m0` of all nine
+(40.0, above even cod_west's 38.0) yet survives — reduced 91% (0.092×), the most severely affected
+survivor in the table, but not extinct. This is a genuine exception to a monotone reading, not a
+detail to omit: something about pikeperch (its own fitted `Imax`/`r`, its 15-yr lifespan versus
+cod_west's 20, its predation exposure, or some combination) lets it clear its own threshold where
+flounder and cod_east — needing a smaller size, 22.0 cm — do not. That was not chased down in this
+task and is not resolved here.
+
+**What this does and does not establish.** It does not prove the transfer-failure reading — that
+would need tracing the growth deficit to a specific step in the coupled budget (competition for a
+shared, non-infinite prey field; the ingestion cap interacting with realized prey density; or
+something else) and showing the offline fit would reproduce in-engine if that step were corrected,
+none of which was attempted here. What it does establish is that the pre-registered rule's negative
+and the offline fit's RMS 8.33% are not in tension the way reading them side by side might suggest:
+the fit describes an idealized, food-unlimited scenario, and the coupled engine is neither. A large,
+consistent, mechanistically-explicable gap between the two — not a small one, not a scattered
+one — is the evidence available, and it is evidence for "this parameter set did not transfer,"
+not proof of it, and it does not by itself indict bioenergetics as a mechanism for the Baltic more
+broadly.
 
 Spec §4 frames Stage 2 as "bounded recalibration of the bioen parameter set only" — a scalar
 rescale of `r`/`Imax` guided by the failing species' own `ē/ĝ`. **That framing does not fit what
-this run found.** A one-parameter rescale story presumes a population that is underperforming its
-own fitted ration curve (`ē/ĝ` somewhat below 1, as sprat/pikeperch/smelt/stickleback show at
-0.89–1.15); it does not have anything to act on for a population whose `ē/ĝ` is `0` because no
-feeding population survived to measure it. Task 13's independent mechanism finding (predation
-climbing to a complete-cohort wipeout while starvation stays small and declines) points at a
-timing problem — bioen's growth is slow enough that juveniles spend longer in a
-predation-vulnerable size window — not a steady-state consumption shortfall a scalar `Imax`/`r`
-rescale is built to fix. Addressing that would mean changing how fast individuals cross the
-vulnerable window relative to the certified predation-accessibility matrix, which is a different,
-larger piece of work than "recalibrate the bioen fit" and would need its own spec, its own gates,
-and its own pre-registered decision rule — not an extension of this one.
+this run found, for a more specific reason than "there is nothing to act on."** A one-parameter
+rescale presumes a population that is underperforming its own fitted ration curve by a bounded
+amount (`ē/ĝ` somewhat below 1, as sprat/pikeperch/smelt/stickleback show at 0.89–1.15) — the four
+survivors are exactly that case. It has nothing to act on for a population whose final-decade
+`ē/ĝ` is `0`, but **that `0` is where the instrument is placed, not evidence there is no signal to
+rescale against**: it is the final decade of a run in which those five stocks are already extinct,
+not a measurement of a live, underperforming population. In the years those stocks *did* have fish
+(above), the signal is large, consistent, and directional — a candidate rescale target, not an
+absence of one. Task 13's independent mechanism finding (predation climbing to a complete-cohort
+wipeout while starvation stays small and declines) is consistent with this: bioen's growth is slow
+enough that juveniles spend longer in a predation-vulnerable size window, which is exactly what an
+8–77% length-at-age deficit at ages 1–2 would produce. Whether a scalar `Imax`/`r` rescale,
+sized against the pre-collapse deficit measured above, is sufficient to close that gap — or
+whether the mismatch is structural enough (a competition or ingestion-cap interaction under
+realistic prey density, not just a scale factor) to need changing how fast individuals cross the
+vulnerable window relative to the certified predation-accessibility matrix — is the open question
+Stage 2 would need to answer, and answering it would need its own spec, its own gates, and its own
+pre-registered decision rule, informed by the deficit measured here rather than starting from
+scratch.
 
 **What this stage leaves behind, independent of the verdict** (spec §8's own success criterion):
 a Java-parity bioen budget (Tasks 0–5, Gate B PASS), a working two-layer temperature loader
@@ -479,12 +630,21 @@ before this branch.
   else) fixes this, which is the signal to re-open the question. Whether the fix belongs in the
   bioen fit, the predation-accessibility matrix, or the growth-rate structure itself was
   explicitly out of scope for both Task 13 and this task to chase.
-- **Length-at-age `NaN` for 8/9 species (§5), not root-caused.** Only cod_west computed a value;
-  sprat/pikeperch/smelt/stickleback (none of which collapsed in the bioen arm) also came back
-  `NaN`, so this is not fully explained by extinction alone. `REPORTED`, non-gating (spec §4),
-  so it did not block this task's verdict — but whoever revisits this instrument should check
-  `length_from_age_bins`/`length_at_age` (`scripts/baltic_c3_bioen_ab.py`) against a real bioen
-  run's `abundance_by_age`/`biomass_by_age` output before trusting any future number from it.
+- **Length-at-age `NaN` for 8/9 species (§5) — root-caused and fixed in code, not re-run.**
+  Cause: `pd.concat` over per-species by-age frames of different widths (`osmose/results.py:351`,
+  widths from `osmose/engine/output.py:_build_distribution_dataframes`) NaN-pads every species
+  except the widest (cod_west); the old `abundance <= 0` guard in `length_from_age_bins` did not
+  reject `NaN` (`float('nan') <= 0` is `False` in Python). Fixed: an `np.isfinite` guard on
+  `abundance` and `weight_g`, plus restricting `run_c3`'s call site to the final-decade window
+  (its previous whole-run call was a second, independent defect against the function's own
+  documented contract). Verified `REPORTED`, non-gating throughout (spec §4) — the decision rule
+  reads only `biomass()` and `meanEnetFaced`, neither of which can carry this kind of padding, so
+  §4's verdict was never at risk. **This run's committed JSON was not regenerated** (the 50-yr,
+  5-seed A/B was deliberately not re-run for this fix) — the 71.9%/NaN numbers in §5 remain the
+  original run's numbers; a future re-run with the fixed harness would report `n_seeds: 0` for
+  the extinct species at this final-decade window by construction (§5), so a length-at-age
+  comparison for the collapsed stocks will always need a pre-collapse window, not this one, to
+  produce a number. Full before/after reproduction: task-14-fix-report.md.
 - **Numba bioen kernel.** The batched Numba mortality kernels are bypassed entirely under bioen
   (5–10× slower than the bioen-off path) — `_apply_starvation_for_school`'s bioen branch and the
   interleaved survivor-rescaling loop are Python-only. A compiled specialisation would matter for

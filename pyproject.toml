@@ -108,6 +108,7 @@ markers = [
     # (tests/test_egg_retention_java_parity.py) or OSMOSE_BIOEN_WHOLE_RUN_SMOKE
     # (tests/test_engine_bioen_numba_kernel.py) for the pattern.
     "slow: long-running tests incl. the Java cross-check (marker only -- see comment above)",
+    "integration: exercises a real engine run in-process (marker only -- not deselected below)",
 ]
 # --dist loadfile: when run in parallel (-n N), keep each file's tests on one
 # worker. Preserves implicit intra-file ordering (e.g. module-level cache state)
