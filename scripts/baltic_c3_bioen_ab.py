@@ -778,6 +778,22 @@ def _annualize(x: np.ndarray, n_year: int) -> np.ndarray:
     raise ValueError(f"series of {len(x)} not divisible into {n_year} years")
 
 
+def _final_window_mean(res, output_type: str, name: str, window_years: float = 10.0) -> float:
+    """Mean of a per-species bioen output over the final `window_years` of a run.
+
+    In-memory per-species outputs (`_build_dataframes_from_outputs` -> `_read_species_output`)
+    keep columns `["Time", <output_type>, "species"]` -- capital "Time", and the value column
+    named after the output type itself -- NOT the `time`/`value` 2D-output convention
+    `length_from_age_bins` reads (confirmed against a real run, task-12-report.md; the two
+    in-memory output families use different column contracts and neither is the "wide
+    Time,age,<species>" layout the brief's original length-at-age stub assumed either).
+    """
+    df = res._read_species_output(output_type, name)
+    t_final = df["Time"].max()
+    window = df[df["Time"] > t_final - window_years]
+    return float(window[output_type].mean())
+
+
 def _habitat_mask(
     raw_cfg: dict[str, str], name: str, config_dir: Path, ny: int, nx: int
 ) -> np.ndarray:
@@ -968,13 +984,10 @@ def run_c3(
     ration: dict[str, dict] = {}
     for name in sp_index:
         sp = sp_index[name]
-        seed_vals = []
-        for seed in seeds:
-            res = results_by_arm_seed["bioen"][seed]
-            enet_faced = res._read_species_output("meanEnetFaced", name)
-            t_final_enet = enet_faced["time"].max()
-            window = enet_faced[enet_faced["time"] > t_final_enet - 10]
-            seed_vals.append(float(window["value"].mean()))
+        seed_vals = [
+            _final_window_mean(results_by_arm_seed["bioen"][seed], "meanEnetFaced", name)
+            for seed in seeds
+        ]
         e_bar = float(np.mean(seed_vals))
         g_hat = float(
             np.mean(
@@ -1005,13 +1018,10 @@ def run_c3(
             for seed in seeds:
                 res = results_by_arm_seed[arm][seed]
                 try:
-                    ing = res._read_species_output("ingestion", name)
+                    vals.append(_final_window_mean(res, "ingestion", name))
                 except FileNotFoundError:
                     vals = None
                     break
-                t_f = ing["time"].max()
-                window = ing[ing["time"] > t_f - 10]
-                vals.append(float(window["value"].mean()))
             seed_means[arm] = float(np.mean(vals)) if vals else None
         ingestion[name] = seed_means
 
