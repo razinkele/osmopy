@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "commit": "113adc7",
+    "commit": "b0db8e0",
     "generated_by": "scripts/fit_baltic_bioen_params.py --baltic",
     "spec": "docs/superpowers/specs/2026-08-30-baltic-c3-bioen-stage1-design.md Sec.1/3.4"
   },
@@ -195,7 +195,7 @@
   "species.zlayer.sp6": "0",
   "species.zlayer.sp7": "0",
   "species.zlayer.sp8": "1",
-  "temperature.filename": "/home/razinka/osmopy/data/baltic/forcing/baltic_temperature_2layer_climatology.nc",
+  "temperature.filename": "forcing/baltic_temperature_2layer_climatology.nc",
   "temperature.nsteps.year": "24",
   "temperature.varname": "temperature"
 }

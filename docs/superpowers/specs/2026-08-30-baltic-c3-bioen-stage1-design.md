@@ -205,6 +205,11 @@ records both numbers. Gate F pins the argmax, not `φT(T_p) = 1` alone.
     where the parity fixes of §3.1 live; the batched Numba kernels are gated off by
     `config.bioen_enabled` in `mortality()`. A bioen-aware Numba kernel is a recorded
     performance follow-up; Stage 1 pays the run-time (measured after Task 0, §3.5).
+    **SUPERSEDED 2026-09-05 by the bioen-Numba-kernel sub-plan (`2cc1f69`)**: both dispatch
+    gates were flipped, bioen now runs on the batched kernels (~149× faster at a 4-yr horizon),
+    and `_mortality_in_cell`/`_mortality_in_cell_numba` are the per-cell equivalence oracle, not
+    a production path. Do not copy this decision's text forward as current behavior — see
+    CLAUDE.md's bioen/Numba gotcha and `final-branch-review.md` F4.
 15. **The maintenance share is anchored at the source's 16 °C**, for every species:
     `c_m = m·a·Imax·φT(16 °C)/Arr(16 °C)`. Anchoring at the habitat mean (v1) implied a share
     of 0.5–0.8 at 16 °C, overstating maintenance 1.6–2.9× and putting surface species at

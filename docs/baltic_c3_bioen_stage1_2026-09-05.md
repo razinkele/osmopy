@@ -645,10 +645,16 @@ before this branch.
   the extinct species at this final-decade window by construction (§5), so a length-at-age
   comparison for the collapsed stocks will always need a pre-collapse window, not this one, to
   produce a number. Full before/after reproduction: task-14-fix-report.md.
-- **Numba bioen kernel.** The batched Numba mortality kernels are bypassed entirely under bioen
-  (5–10× slower than the bioen-off path) — `_apply_starvation_for_school`'s bioen branch and the
-  interleaved survivor-rescaling loop are Python-only. A compiled specialisation would matter for
-  any future work at a horizon or ensemble size beyond this stage's 50 yr × 5 seeds × 3 arms.
+- **Numba bioen kernel.** CORRECTED 2026-09-05 (final-branch-review.md F4) — this bullet
+  previously said the batched Numba mortality kernels were bypassed entirely under bioen and
+  that a compiled specialisation was future work. Both claims were the inverse of what this
+  branch shipped: the bioen-Numba-kernel sub-plan ported `_apply_starvation_for_school`'s bioen
+  branch and the interleaved survivor-rescaling loop into the batched kernels and flipped both
+  dispatch gates (`2cc1f69`), so bioen now runs on the same compiled path as bioen-off. Measured
+  ~149× faster than the pre-flip per-cell path at a 4-yr horizon (157.8× on an independent
+  re-run; the ratio grows with horizon, ~82× at 1 yr). `_mortality_in_cell_numba` remains in the
+  source as the per-cell equivalence oracle the kernel tests diff against — not a production
+  path (see CLAUDE.md's bioen/Numba gotcha).
 - **f_o2 spec.** Bioen's oxygen-limitation term is off in Stage 1 (decision 19, label 10 above).
   The bottom-oxygen → benthos-K coupling already live in production Baltic
   (`ltl.oxygen.benthos.enabled`, CLAUDE.md) is a different mechanism (resource carrying capacity,

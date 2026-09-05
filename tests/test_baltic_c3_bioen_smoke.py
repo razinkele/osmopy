@@ -85,6 +85,7 @@ OVERLAY = ROOT / "data" / "baltic" / "scenarios" / "c3_bioen" / "c3_bioen_arm.js
 @pytest.mark.integration
 @pytest.mark.xfail(
     strict=True,
+    raises=AssertionError,
     reason=(
         "KNOWN GAP, owner: C3 Stage-1 Task 14 (or whoever refits Task 11's overlay). "
         "Measured (seed=42, confirmed on seeds 1 and 7): production Baltic + the C3 bioen "
@@ -133,3 +134,22 @@ def test_bioen_arm_sustains_populations_past_the_seeding_window():
     ssb = res.ssb()
     for sp in ("cod_west", "cod_east", "herring", "sprat", "flounder"):
         assert ssb[sp].to_numpy(dtype=float)[-1] > 0.0, sp
+
+
+def test_overlay_has_no_absolute_paths():
+    """F1 recurrence guard (final-branch-review.md): a committed overlay value that is an
+    absolute path is valid only on the machine that generated it -- see this module's
+    ``temperature.filename`` history. `resolve_data_path` (osmose/engine/path_resolution.py)
+    skips its `data/*/` search fallback entirely for absolute paths, so on any other checkout
+    (CI included) the path silently fails to resolve. This is a cheap, non-integration check
+    that runs on every default `pytest` invocation, unlike the xfail'd realistic-config test
+    above, which can only ever report a diagnosis for whichever failure it happens to hit
+    first (see its ``raises=AssertionError``)."""
+    ov = json.loads(OVERLAY.read_text())
+    for key, val in ov.items():
+        if key.startswith("_") or not isinstance(val, str):
+            continue
+        assert not Path(val).is_absolute(), (
+            f"{key}={val!r} in {OVERLAY} is an absolute path -- not portable to another "
+            "checkout. See F1, final-branch-review.md."
+        )

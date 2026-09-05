@@ -10,6 +10,13 @@ simulation.bioen.phit.enabled;false
 # replacing the 15.0 compatibility placeholder from Task 7. species.zlayer.sp{i} in
 # baltic_ev_param-bioen.csv selects layer per species (cod, flounder -> bottom; the
 # rest -> surface), matching the design spec's global species/layer assignment.
+# forcing/baltic_temperature_2layer_climatology.nc under this config dir is a symlink to
+# data/baltic/forcing/baltic_temperature_2layer_climatology.nc -- baltic_ev deliberately
+# shares production data/baltic's forcing product rather than an independent copy, so the
+# two never drift out of sync (F2, final-branch-review.md 2026-09-05: this key used to read
+# a bare "forcing/..." path with no forcing/ dir here at all, resolving only by accident
+# through resolve_data_path's data/*/ glob fallback -- order-dependent on untracked local
+# dirs and silently wrong if another data/*/forcing/ carried a same-named file).
 temperature.filename;forcing/baltic_temperature_2layer_climatology.nc
 temperature.varname;temperature
 temperature.nsteps.year;24
