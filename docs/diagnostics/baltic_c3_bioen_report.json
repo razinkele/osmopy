@@ -1,0 +1,762 @@
+{
+  "seeds": [
+    42,
+    123,
+    7,
+    999,
+    2024
+  ],
+  "arms": [
+    "baseline",
+    "bioen",
+    "bioen_plus2C"
+  ],
+  "n_year": 50,
+  "certifying": true,
+  "assessed_stocks": [
+    "cod_west",
+    "cod_east",
+    "herring",
+    "sprat",
+    "flounder"
+  ],
+  "gates": {
+    "gate_d_frames_layers": "PASS",
+    "gate_c": "PASS",
+    "gate_d_structure": "PASS",
+    "gate_e": {
+      "cell": [
+        25,
+        21
+      ],
+      "step": 12,
+      "n_species_checked": 9
+    },
+    "gate_f": {
+      "cod_west": {
+        "t_bar": 8.693019019469382,
+        "t_opt": 10.0,
+        "t_p": 11.291079739187467,
+        "phi_t_at_tp": 1.0,
+        "argmax_g_net": 10.0,
+        "g_base": 8.054365753884154,
+        "g_plus2": 8.121320094579204
+      },
+      "herring": {
+        "t_bar": 8.138692769090495,
+        "t_opt": 15.0,
+        "t_p": 17.512235676610764,
+        "phi_t_at_tp": 1.0,
+        "argmax_g_net": 15.0,
+        "g_base": 6.46246935674829,
+        "g_plus2": 7.32246072740184
+      },
+      "sprat": {
+        "t_bar": 8.528736052521547,
+        "t_opt": 18.0,
+        "t_p": 21.106177172541464,
+        "phi_t_at_tp": 1.0,
+        "argmax_g_net": 18.0,
+        "g_base": 5.1554964583310845,
+        "g_plus2": 5.998712624444796
+      },
+      "flounder": {
+        "t_bar": 6.076814817551499,
+        "t_opt": 19.0,
+        "t_p": 22.261342887465734,
+        "phi_t_at_tp": 1.0,
+        "argmax_g_net": 19.0,
+        "g_base": 4.734243554180316,
+        "g_plus2": 5.632904976375261
+      },
+      "perch": {
+        "t_bar": 7.317805743097016,
+        "t_opt": 25.0,
+        "t_p": 28.862416150321142,
+        "phi_t_at_tp": 1.0,
+        "argmax_g_net": 25.0,
+        "g_base": 4.277741164237726,
+        "g_plus2": 5.138685622872018
+      },
+      "pikeperch": {
+        "t_bar": 9.240947735826428,
+        "t_opt": 27.0,
+        "t_p": 30.984345849645642,
+        "phi_t_at_tp": 1.0,
+        "argmax_g_net": 27.0,
+        "g_base": 6.558373719738377,
+        "g_plus2": 7.8574436225985504
+      },
+      "smelt": {
+        "t_bar": 7.1739245437338255,
+        "t_opt": 15.0,
+        "t_p": 17.512235676610764,
+        "phi_t_at_tp": 1.0,
+        "argmax_g_net": 15.0,
+        "g_base": 6.418917323584138,
+        "g_plus2": 7.363372078452206
+      },
+      "stickleback": {
+        "t_bar": 8.089303324204307,
+        "t_opt": 21.7,
+        "t_p": 25.28978365210885,
+        "phi_t_at_tp": 1.0,
+        "argmax_g_net": 21.7,
+        "g_base": 4.1147755249219635,
+        "g_plus2": 4.8939125315390495
+      },
+      "cod_east": {
+        "t_bar": 5.958199841437622,
+        "t_opt": 10.0,
+        "t_p": 11.291079739187467,
+        "phi_t_at_tp": 1.0,
+        "argmax_g_net": 10.0,
+        "g_base": 8.594129539439365,
+        "g_plus2": 9.268590198448992
+      }
+    },
+    "gate_a": "PASS"
+  },
+  "final_decade_means": {
+    "baseline": {
+      "cod_west": {
+        "mean": 12810.80272080565,
+        "std": 669.6551313156725,
+        "per_seed": [
+          12335.88264375406,
+          13325.943690385271,
+          12643.17349034143,
+          11948.479170111133,
+          13800.534609436358
+        ],
+        "final_decade_min": 11375.50352979434,
+        "ratio_to_certified": 0.9950519138702939,
+        "ratio_to_envelope_mid": 0.883503635917631,
+        "in_envelope": true
+      },
+      "herring": {
+        "mean": 2539645.1633340744,
+        "std": 41580.08762303586,
+        "per_seed": [
+          2523427.11871468,
+          2489031.5165172284,
+          2513619.486397288,
+          2565687.934152289,
+          2606459.760888887
+        ],
+        "final_decade_min": 2252884.229841693,
+        "ratio_to_certified": 0.996820532141856,
+        "ratio_to_envelope_mid": 1.3366553491231972,
+        "in_envelope": true
+      },
+      "sprat": {
+        "mean": 1024323.951038304,
+        "std": 7697.879244001306,
+        "per_seed": [
+          1035926.6918703874,
+          1028239.8505863824,
+          1024679.6021110369,
+          1019565.3118745157,
+          1013208.2987491975
+        ],
+        "final_decade_min": 960549.4260975908,
+        "ratio_to_certified": 0.9997622955319163,
+        "ratio_to_envelope_mid": 0.6208023945686691,
+        "in_envelope": true
+      },
+      "flounder": {
+        "mean": 33063.365154620034,
+        "std": 817.847218733494,
+        "per_seed": [
+          32401.15348080181,
+          33367.25903436498,
+          31839.751920479448,
+          33674.03599453194,
+          34034.62534292196
+        ],
+        "final_decade_min": 28622.416368038725,
+        "ratio_to_certified": 1.0038308224885317,
+        "ratio_to_envelope_mid": 0.551056085910334,
+        "in_envelope": true
+      },
+      "perch": {
+        "mean": 43773.98161159155,
+        "std": 736.1987764791983,
+        "per_seed": [
+          42554.35412166352,
+          43947.54391033268,
+          43623.389001388496,
+          44848.57463315508,
+          43896.04639141799
+        ],
+        "final_decade_min": 38082.84060884975,
+        "ratio_to_certified": 1.0016593776711002,
+        "ratio_to_envelope_mid": 1.509447641779019,
+        "in_envelope": true
+      },
+      "pikeperch": {
+        "mean": 1400081.1085122037,
+        "std": 30126.31564964344,
+        "per_seed": [
+          1375582.0819530422,
+          1387530.6193455388,
+          1459487.6104924665,
+          1389679.6281645442,
+          1388125.6026054271
+        ],
+        "final_decade_min": 1208772.2935383825,
+        "ratio_to_certified": 0.9876872602059421,
+        "ratio_to_envelope_mid": 96.55731782842784,
+        "in_envelope": false
+      },
+      "smelt": {
+        "mean": 680579.9869403907,
+        "std": 7687.073090809828,
+        "per_seed": [
+          672269.4534443791,
+          680652.2742845154,
+          694336.4623709053,
+          674510.3415571698,
+          681131.403044984
+        ],
+        "final_decade_min": 638399.9000889092,
+        "ratio_to_certified": 0.9960149872970115,
+        "ratio_to_envelope_mid": 9.72257124200558,
+        "in_envelope": false
+      },
+      "stickleback": {
+        "mean": 80282.34246657496,
+        "std": 2589.488303483698,
+        "per_seed": [
+          84954.15255095414,
+          80523.39663814072,
+          79455.72020385452,
+          77096.56215668567,
+          79381.88078323979
+        ],
+        "final_decade_min": 64167.52507186553,
+        "ratio_to_certified": 0.990829847451331,
+        "ratio_to_envelope_mid": 0.29193579078754534,
+        "in_envelope": true
+      },
+      "cod_east": {
+        "mean": 65251.205135844866,
+        "std": 827.9592182179665,
+        "per_seed": [
+          66446.06525502432,
+          65263.77052526032,
+          64861.86187656621,
+          65712.08248003166,
+          63972.24554234184
+        ],
+        "final_decade_min": 47334.150799390394,
+        "ratio_to_certified": 1.0006448440698963,
+        "ratio_to_envelope_mid": 0.9000166225633774,
+        "in_envelope": true
+      }
+    },
+    "bioen": {
+      "cod_west": {
+        "mean": 0.0,
+        "std": 0.0,
+        "per_seed": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "final_decade_min": 0.0,
+        "ratio_to_certified": 0.0,
+        "ratio_to_envelope_mid": 0.0,
+        "in_envelope": false
+      },
+      "herring": {
+        "mean": 0.0,
+        "std": 0.0,
+        "per_seed": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "final_decade_min": 0.0,
+        "ratio_to_certified": 0.0,
+        "ratio_to_envelope_mid": 0.0,
+        "in_envelope": false
+      },
+      "sprat": {
+        "mean": 309994.1974389695,
+        "std": 5139.691025505905,
+        "per_seed": [
+          318726.37764633005,
+          304041.979519575,
+          305672.17577550904,
+          310248.7946353141,
+          311281.6596181195
+        ],
+        "final_decade_min": 276603.42522006726,
+        "ratio_to_certified": 0.3025610307354504,
+        "ratio_to_envelope_mid": 0.18787527117513303,
+        "in_envelope": false
+      },
+      "flounder": {
+        "mean": 0.0,
+        "std": 0.0,
+        "per_seed": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "final_decade_min": 0.0,
+        "ratio_to_certified": 0.0,
+        "ratio_to_envelope_mid": 0.0,
+        "in_envelope": false
+      },
+      "perch": {
+        "mean": 0.0,
+        "std": 0.0,
+        "per_seed": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "final_decade_min": 0.0,
+        "ratio_to_certified": 0.0,
+        "ratio_to_envelope_mid": 0.0,
+        "in_envelope": false
+      },
+      "pikeperch": {
+        "mean": 128120.23727206393,
+        "std": 1449.1523916011918,
+        "per_seed": [
+          130829.50581593215,
+          127986.46742545783,
+          126834.8294737145,
+          128048.66474436419,
+          126901.71890085093
+        ],
+        "final_decade_min": 103796.26492568794,
+        "ratio_to_certified": 0.09038242524581357,
+        "ratio_to_envelope_mid": 8.835878432556132,
+        "in_envelope": false
+      },
+      "smelt": {
+        "mean": 294616.16246167116,
+        "std": 15848.834718353504,
+        "per_seed": [
+          320559.75655507884,
+          282811.6965426819,
+          274225.81275842676,
+          299767.4920133954,
+          295716.05443877314
+        ],
+        "final_decade_min": 194374.33913978285,
+        "ratio_to_certified": 0.4311647696708677,
+        "ratio_to_envelope_mid": 4.208802320881016,
+        "in_envelope": false
+      },
+      "stickleback": {
+        "mean": 71543.0834038989,
+        "std": 1396.6704367127802,
+        "per_seed": [
+          69952.29005972335,
+          73808.23157509092,
+          70189.62145561252,
+          72004.02344662859,
+          71761.25048243909
+        ],
+        "final_decade_min": 62815.27819369731,
+        "ratio_to_certified": 0.8829715257099823,
+        "ratio_to_envelope_mid": 0.2601566669232687,
+        "in_envelope": true
+      },
+      "cod_east": {
+        "mean": 0.0,
+        "std": 0.0,
+        "per_seed": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "final_decade_min": 0.0,
+        "ratio_to_certified": 0.0,
+        "ratio_to_envelope_mid": 0.0,
+        "in_envelope": false
+      }
+    },
+    "bioen_plus2C": {
+      "cod_west": {
+        "mean": 0.0,
+        "std": 0.0,
+        "per_seed": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "final_decade_min": 0.0,
+        "ratio_to_certified": 0.0,
+        "ratio_to_envelope_mid": 0.0,
+        "in_envelope": false
+      },
+      "herring": {
+        "mean": 0.0,
+        "std": 0.0,
+        "per_seed": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "final_decade_min": 0.0,
+        "ratio_to_certified": 0.0,
+        "ratio_to_envelope_mid": 0.0,
+        "in_envelope": false
+      },
+      "sprat": {
+        "mean": 369854.35696661094,
+        "std": 8001.7919992222205,
+        "per_seed": [
+          369738.7515720917,
+          359149.8843270734,
+          375588.71081318986,
+          381333.9177685673,
+          363460.5203521323
+        ],
+        "final_decade_min": 340476.4225557825,
+        "ratio_to_certified": 0.3609858390586364,
+        "ratio_to_envelope_mid": 0.22415415573733996,
+        "in_envelope": false
+      },
+      "flounder": {
+        "mean": 0.0,
+        "std": 0.0,
+        "per_seed": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "final_decade_min": 0.0,
+        "ratio_to_certified": 0.0,
+        "ratio_to_envelope_mid": 0.0,
+        "in_envelope": false
+      },
+      "perch": {
+        "mean": 0.0,
+        "std": 0.0,
+        "per_seed": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "final_decade_min": 0.0,
+        "ratio_to_certified": 0.0,
+        "ratio_to_envelope_mid": 0.0,
+        "in_envelope": false
+      },
+      "pikeperch": {
+        "mean": 144845.84156808694,
+        "std": 4652.110510928016,
+        "per_seed": [
+          148934.4449587067,
+          150534.89423461276,
+          138568.97249016294,
+          145703.30380136424,
+          140487.59235558804
+        ],
+        "final_decade_min": 124292.2466827208,
+        "ratio_to_certified": 0.10218150330064307,
+        "ratio_to_envelope_mid": 9.989368384005996,
+        "in_envelope": false
+      },
+      "smelt": {
+        "mean": 300235.13760691625,
+        "std": 8579.620493357374,
+        "per_seed": [
+          294834.0070314982,
+          288334.77435927244,
+          298387.1559163636,
+          312100.3272383238,
+          307519.4234891234
+        ],
+        "final_decade_min": 214128.3271642732,
+        "ratio_to_certified": 0.43938802566620405,
+        "ratio_to_envelope_mid": 4.289073394384518,
+        "in_envelope": false
+      },
+      "stickleback": {
+        "mean": 90480.36737105246,
+        "std": 3374.814279037654,
+        "per_seed": [
+          88160.04119563624,
+          96758.432693433,
+          90500.58548832104,
+          87035.99213194431,
+          89946.78534592772
+        ],
+        "final_decade_min": 69190.60851069294,
+        "ratio_to_certified": 1.1166919878667687,
+        "ratio_to_envelope_mid": 0.32901951771291804,
+        "in_envelope": true
+      },
+      "cod_east": {
+        "mean": 0.0,
+        "std": 0.0,
+        "per_seed": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "final_decade_min": 0.0,
+        "ratio_to_certified": 0.0,
+        "ratio_to_envelope_mid": 0.0,
+        "in_envelope": false
+      }
+    }
+  },
+  "realized_ration": {
+    "cod_west": {
+      "e_bar_meanEnetFaced": 0.0,
+      "g_hat_fitted": 7.507137997766925,
+      "e_over_g": 0.0,
+      "realized_ration_f": 0.30000000000000004
+    },
+    "herring": {
+      "e_bar_meanEnetFaced": 0.0,
+      "g_hat_fitted": 6.066719986602336,
+      "e_over_g": 0.0,
+      "realized_ration_f": 0.30000000000000004
+    },
+    "sprat": {
+      "e_bar_meanEnetFaced": 5.3327994869977635,
+      "g_hat_fitted": 5.190476525906153,
+      "e_over_g": 1.0274200182548294,
+      "realized_ration_f": 1.0191940127783805
+    },
+    "flounder": {
+      "e_bar_meanEnetFaced": 0.0,
+      "g_hat_fitted": 4.797935910972753,
+      "e_over_g": 0.0,
+      "realized_ration_f": 0.30000000000000004
+    },
+    "perch": {
+      "e_bar_meanEnetFaced": 0.0,
+      "g_hat_fitted": 4.829363318705148,
+      "e_over_g": 0.0,
+      "realized_ration_f": 0.30000000000000004
+    },
+    "pikeperch": {
+      "e_bar_meanEnetFaced": 8.465720540828183,
+      "g_hat_fitted": 7.4020294777187585,
+      "e_over_g": 1.1437026245722606,
+      "realized_ration_f": 1.1005918372005823
+    },
+    "smelt": {
+      "e_bar_meanEnetFaced": 5.48357018597514,
+      "g_hat_fitted": 6.151381121822233,
+      "e_over_g": 0.8914372361878194,
+      "realized_ration_f": 0.9240060653314737
+    },
+    "stickleback": {
+      "e_bar_meanEnetFaced": 5.083994170770784,
+      "g_hat_fitted": 4.432231088707265,
+      "e_over_g": 1.147050789775859,
+      "realized_ration_f": 1.1029355528431013
+    },
+    "cod_east": {
+      "e_bar_meanEnetFaced": 0.0,
+      "g_hat_fitted": 8.525843814990518,
+      "e_over_g": 0.0,
+      "realized_ration_f": 0.30000000000000004
+    }
+  },
+  "maintenance_share_m": 0.3,
+  "realized_ingestion": {
+    "cod_west": {
+      "baseline": null,
+      "bioen": 0.0
+    },
+    "herring": {
+      "baseline": null,
+      "bioen": 0.0
+    },
+    "sprat": {
+      "baseline": null,
+      "bioen": 18.415989906065583
+    },
+    "flounder": {
+      "baseline": null,
+      "bioen": 0.0
+    },
+    "perch": {
+      "baseline": null,
+      "bioen": 0.0
+    },
+    "pikeperch": {
+      "baseline": null,
+      "bioen": 15.220561771091113
+    },
+    "smelt": {
+      "baseline": null,
+      "bioen": 46.37309436163789
+    },
+    "stickleback": {
+      "baseline": null,
+      "bioen": 16.203196312156052
+    },
+    "cod_east": {
+      "baseline": null,
+      "bioen": 0.0
+    }
+  },
+  "length_at_age": {
+    "cod_west": {
+      "rms_pct_ages_ge_1": 71.89556463974415,
+      "n_seeds": 5
+    },
+    "herring": {
+      "rms_pct_ages_ge_1": NaN,
+      "n_seeds": 5
+    },
+    "sprat": {
+      "rms_pct_ages_ge_1": NaN,
+      "n_seeds": 5
+    },
+    "flounder": {
+      "rms_pct_ages_ge_1": NaN,
+      "n_seeds": 5
+    },
+    "perch": {
+      "rms_pct_ages_ge_1": NaN,
+      "n_seeds": 5
+    },
+    "pikeperch": {
+      "rms_pct_ages_ge_1": NaN,
+      "n_seeds": 5
+    },
+    "smelt": {
+      "rms_pct_ages_ge_1": NaN,
+      "n_seeds": 5
+    },
+    "stickleback": {
+      "rms_pct_ages_ge_1": NaN,
+      "n_seeds": 5
+    },
+    "cod_east": {
+      "rms_pct_ages_ge_1": NaN,
+      "n_seeds": 5
+    }
+  },
+  "seeding_diagnostics_note": "results.ssb() raises FileNotFoundError in in-memory mode (no SSB output family built by _build_dataframes_from_outputs) -- seeding/first-spawning-step diagnostic skipped per the brief's documented fallback.",
+  "bioen_plus2C_minus_bioen": {
+    "cod_west": {
+      "delta_mean": 0.0,
+      "g_net_shift": 0.06695434069504991
+    },
+    "herring": {
+      "delta_mean": 0.0,
+      "g_net_shift": 0.8599913706535496
+    },
+    "sprat": {
+      "delta_mean": 59860.15952764143,
+      "g_net_shift": 0.8432161661137112
+    },
+    "flounder": {
+      "delta_mean": 0.0,
+      "g_net_shift": 0.8986614221949454
+    },
+    "perch": {
+      "delta_mean": 0.0,
+      "g_net_shift": 0.8609444586342914
+    },
+    "pikeperch": {
+      "delta_mean": 16725.60429602301,
+      "g_net_shift": 1.2990699028601735
+    },
+    "smelt": {
+      "delta_mean": 5618.975145245087,
+      "g_net_shift": 0.944454754868068
+    },
+    "stickleback": {
+      "delta_mean": 18937.283967153562,
+      "g_net_shift": 0.779137006617086
+    },
+    "cod_east": {
+      "delta_mean": 0.0,
+      "g_net_shift": 0.6744606590096272
+    }
+  },
+  "labels": [
+    "Single optimum per species (cod's is size-dependent, Bjornsson & Steinarsson 2002).",
+    "Herring optimum (15 C) is PROVISIONAL -- no herring growth optimum was retrieved in three literature searches.",
+    "Secondary-source optima for flounder (19 C, via Kusakabe et al. 2016 quoting Fonds et al. 1992) and smelt (15 C, via Krause 2008 quoting Vinni et al. 2004).",
+    "Maintenance share m anchored on juvenile herring trials at 16 C (Bernreuther et al. 2012), transplanted to every species.",
+    "No upper thermal limit at e_D = 1.5 -- phi_t(T) never turns back down at high T in this parameterisation.",
+    "Perch and pikeperch are lagoon species fitted against the open-coast surface field -- phiT peaks at 0.7-0.8 in their actual lagoon habitat, inflating the fitted Imax.",
+    "Ingestion is capped at Imax*w^beta BEFORE phiT (Java form) -- consumption inflation for cold-habitat species, decision 17.",
+    "Food-unlimited offline fit vs a food-limited engine -- the in-engine A/B measures the emergent departure from the fitted curve, not a re-run of the fit.",
+    "Larval phase (age < 1 yr) is unfitted -- decision 10, reported not fitted.",
+    "Two-layer temperature is a proxy (surface nan-mean of 5 CMEMS depth levels; bottom = CMEMS bottomT), a climatology (1993-2021 monthly means, not a hindcast), and fo2 is off in Stage 1 (decision 19).",
+    "Reproduction under bioen keeps the certified Python-side stock-recruitment regulation (decision 5) -- this A/B changes growth structure, not recruitment structure."
+  ],
+  "decision_rule_failed": [
+    "(i) no-structural-collapse: cod_west bioen/baseline = 0.000 < 0.10",
+    "(ii) e-bar/g-hat: cod_west = 0.000 < 0.6",
+    "(i) no-structural-collapse: cod_east bioen/baseline = 0.000 < 0.10",
+    "(ii) e-bar/g-hat: cod_east = 0.000 < 0.6",
+    "(i) no-structural-collapse: herring bioen/baseline = 0.000 < 0.10",
+    "(ii) e-bar/g-hat: herring = 0.000 < 0.6",
+    "(i) no-structural-collapse: flounder bioen/baseline = 0.000 < 0.10",
+    "(ii) e-bar/g-hat: flounder = 0.000 < 0.6",
+    "(iii) bounded-displacement: cod_west bioen/certified = 0.000 outside [0.2, 5.0]",
+    "(iii) bounded-displacement: cod_east bioen/certified = 0.000 outside [0.2, 5.0]",
+    "(iii) bounded-displacement: herring bioen/certified = 0.000 outside [0.2, 5.0]",
+    "(iii) bounded-displacement: flounder bioen/certified = 0.000 outside [0.2, 5.0]",
+    "(iii) bounded-displacement: only 0/5 assessed stocks within a factor of 2 of their certified mean (need >= 3)"
+  ],
+  "decision_rule_undetermined": [],
+  "decision_rule_criteria": {
+    "cod_west": {
+      "i_no_structural_collapse": "fail",
+      "ii_ebar_ghat": "fail",
+      "iii_bounded_displacement": "fail"
+    },
+    "cod_east": {
+      "i_no_structural_collapse": "fail",
+      "ii_ebar_ghat": "fail",
+      "iii_bounded_displacement": "fail"
+    },
+    "herring": {
+      "i_no_structural_collapse": "fail",
+      "ii_ebar_ghat": "fail",
+      "iii_bounded_displacement": "fail"
+    },
+    "sprat": {
+      "i_no_structural_collapse": "pass",
+      "ii_ebar_ghat": "pass",
+      "iii_bounded_displacement": "pass"
+    },
+    "flounder": {
+      "i_no_structural_collapse": "fail",
+      "ii_ebar_ghat": "fail",
+      "iii_bounded_displacement": "fail"
+    }
+  },
+  "verdict": "CLOSE BY CHARACTERIZATION (failed: ['(i) no-structural-collapse: cod_west bioen/baseline = 0.000 < 0.10', '(ii) e-bar/g-hat: cod_west = 0.000 < 0.6', '(i) no-structural-collapse: cod_east bioen/baseline = 0.000 < 0.10', '(ii) e-bar/g-hat: cod_east = 0.000 < 0.6', '(i) no-structural-collapse: herring bioen/baseline = 0.000 < 0.10', '(ii) e-bar/g-hat: herring = 0.000 < 0.6', '(i) no-structural-collapse: flounder bioen/baseline = 0.000 < 0.10', '(ii) e-bar/g-hat: flounder = 0.000 < 0.6', '(iii) bounded-displacement: cod_west bioen/certified = 0.000 outside [0.2, 5.0]', '(iii) bounded-displacement: cod_east bioen/certified = 0.000 outside [0.2, 5.0]', '(iii) bounded-displacement: herring bioen/certified = 0.000 outside [0.2, 5.0]', '(iii) bounded-displacement: flounder bioen/certified = 0.000 outside [0.2, 5.0]', '(iii) bounded-displacement: only 0/5 assessed stocks within a factor of 2 of their certified mean (need >= 3)'])"
+}
