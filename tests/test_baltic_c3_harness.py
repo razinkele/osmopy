@@ -153,3 +153,110 @@ def test_length_from_age_bins_drops_zero_abundance_bins():
     length = c3.length_from_age_bins(ab, bb, cf=0.01, b=3.0, species="x")
     assert 0 not in length
     assert 1 in length
+
+
+class _FakeSpeciesOutputRes:
+    """Minimal stand-in for `OsmoseResults` exposing only `_read_species_output`, the one
+    method `_final_window_mean` calls."""
+
+    def __init__(self, df: pd.DataFrame):
+        self._df = df
+
+    def _read_species_output(self, output_type: str, name: str) -> pd.DataFrame:
+        return self._df
+
+
+def test_final_window_mean_reads_the_real_bioen_species_output_contract():
+    """`_final_window_mean` (used by the realized-ration and realized-ingestion REPORTED
+    sections) consumes `_read_species_output`'s real in-memory contract: capital `Time`, and
+    the value column named after the output type itself, plus a `species` column -- NOT the
+    lowercase `time`/`value` long-form contract `length_from_age_bins` reads from
+    `abundance_by_age()`/`biomass_by_age()` (see the tests above). Commit 8a574ab fixed a
+    `KeyError: 'time'` caused by assuming the wrong contract here, but nothing pinned it --
+    this test does (task-12-review.md finding 2).
+    """
+    df = pd.DataFrame(
+        {
+            "Time": [38.0, 39.0, 40.0],
+            "meanEnetFaced": [100.0, 200.0, 300.0],
+            "species": ["cod_west", "cod_west", "cod_west"],
+        }
+    )
+    res = _FakeSpeciesOutputRes(df)
+
+    ten_year_window = c3._final_window_mean(res, "meanEnetFaced", "cod_west", window_years=10.0)
+    assert ten_year_window == pytest.approx((100.0 + 200.0 + 300.0) / 3.0)
+
+    one_year_window = c3._final_window_mean(res, "meanEnetFaced", "cod_west", window_years=1.0)
+    assert one_year_window == pytest.approx(300.0)  # only Time=40.0 survives Time > 39.0
+
+
+def test_final_window_mean_raises_on_the_wrong_column_contract():
+    """Discrimination check for the test above: a frame in the OTHER in-memory family's
+    lowercase `time`/`value` shape must not be silently accepted -- `_final_window_mean`
+    looks columns up by name (`df["Time"]`, `df[output_type]`), so the wrong contract must
+    raise, not quietly compute a number over the wrong column."""
+    wrong_shape = pd.DataFrame(
+        {
+            "time": [38.0, 39.0, 40.0],
+            "value": [100.0, 200.0, 300.0],
+            "species": ["cod_west", "cod_west", "cod_west"],
+        }
+    )
+    with pytest.raises(KeyError):
+        c3._final_window_mean(_FakeSpeciesOutputRes(wrong_shape), "meanEnetFaced", "cod_west")
+
+
+def _healthy_decision_rule_inputs():
+    """final_decade/ration stubs where every assessed stock is healthy: bioen mean equals
+    its certified mean (criterion iii dead center), bioen mean equals baseline mean
+    (criterion i can't fire), e_over_g comfortably above 0.6 (criterion ii can't fire)."""
+    final_decade = {"baseline": {}, "bioen": {}}
+    ration = {}
+    for name in c3.ASSESSED_STOCKS:
+        cert = c3.CERTIFIED_MEANS[name]
+        final_decade["baseline"][name] = {"mean": cert}
+        final_decade["bioen"][name] = {"mean": cert}
+        ration[name] = {"e_over_g": 0.75}
+    return final_decade, ration
+
+
+def test_evaluate_decision_rule_passes_clean_when_everything_is_healthy():
+    final_decade, ration = _healthy_decision_rule_inputs()
+    out = c3.evaluate_decision_rule(final_decade, ration)
+    assert out["failed"] == []
+    assert out["undetermined"] == []
+    assert out["verdict"] == "STAGE 2: WARRANTED"
+
+
+def test_evaluate_decision_rule_marks_nan_e_over_g_undetermined_not_pass():
+    """task-12-review.md finding 1: g_hat == 0 makes `e_over_g` NaN. Before the fix,
+    `nan < 0.6` is `False`, so criterion (ii) silently read as satisfied and the verdict
+    printed "STAGE 2: WARRANTED" over a species whose ration never computed. The fix must
+    read this as undetermined -- distinct from both pass and fail."""
+    final_decade, ration = _healthy_decision_rule_inputs()
+    ration["cod_west"]["e_over_g"] = float("nan")
+
+    out = c3.evaluate_decision_rule(final_decade, ration)
+
+    assert out["criteria"]["cod_west"]["ii_ebar_ghat"] == "undetermined"
+    assert not any("cod_west" in f for f in out["failed"])
+    assert any("cod_west" in u and "(ii)" in u for u in out["undetermined"])
+    assert out["verdict"].startswith("UNDETERMINED")
+    assert "STAGE 2: WARRANTED" not in out["verdict"]
+
+
+def test_evaluate_decision_rule_does_not_collapse_undetermined_into_failure():
+    """A real failure (herring's bioen mean collapses to 1% of baseline) and an unrelated
+    NaN (cod_west's e_over_g) must both surface distinctly -- neither may silently absorb
+    the other into a single bucket."""
+    final_decade, ration = _healthy_decision_rule_inputs()
+    final_decade["bioen"]["herring"]["mean"] = final_decade["baseline"]["herring"]["mean"] * 0.01
+    ration["cod_west"]["e_over_g"] = float("nan")
+
+    out = c3.evaluate_decision_rule(final_decade, ration)
+
+    assert any("herring" in f for f in out["failed"])
+    assert any("cod_west" in u for u in out["undetermined"])
+    assert "CLOSE BY CHARACTERIZATION" in out["verdict"]
+    assert "undetermined:" in out["verdict"]

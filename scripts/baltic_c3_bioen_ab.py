@@ -808,6 +808,103 @@ def _habitat_mask(
     return mask
 
 
+def evaluate_decision_rule(
+    final_decade: dict[str, dict[str, dict]],
+    ration: dict[str, dict],
+) -> dict:
+    """The pre-registered decision rule (spec Sec.4), extracted from `run_c3` so it can be
+    exercised without an engine run (task-12-review.md finding 1).
+
+    Every criterion is three-way: pass / fail / undetermined. A NaN input (`bi_mean`,
+    `b_mean`, or `e_over_g`) makes that species' criterion UNDETERMINED, never a silent pass
+    (the pre-fix bug: `nan < threshold` is `False`, so a NaN `e_over_g` read as "criterion (ii)
+    satisfied") and never a silent fail either -- collapsing undetermined into failure would be
+    a different lie. Thresholds and algebra are unchanged from the original inline block; only
+    the NaN handling and the three-way status are new.
+    """
+    failed: list[str] = []
+    undetermined: list[str] = []
+    criteria: dict[str, dict[str, str]] = {name: {} for name in ASSESSED_STOCKS}
+
+    for name in ASSESSED_STOCKS:
+        b_mean = final_decade["baseline"][name]["mean"]
+        bi_mean = final_decade["bioen"][name]["mean"]
+        if not (np.isfinite(b_mean) and np.isfinite(bi_mean)):
+            criteria[name]["i_no_structural_collapse"] = "undetermined"
+            undetermined.append(
+                f"(i) no-structural-collapse: {name} bioen or baseline final-decade mean is NaN"
+            )
+        elif bi_mean < 0.10 * b_mean:
+            criteria[name]["i_no_structural_collapse"] = "fail"
+            failed.append(
+                f"(i) no-structural-collapse: {name} bioen/baseline = {bi_mean / b_mean:.3f} < 0.10"
+            )
+        else:
+            criteria[name]["i_no_structural_collapse"] = "pass"
+
+        e_over_g = ration[name]["e_over_g"]
+        if not np.isfinite(e_over_g):
+            criteria[name]["ii_ebar_ghat"] = "undetermined"
+            undetermined.append(f"(ii) e-bar/g-hat: {name} e_over_g is NaN (g_hat == 0)")
+        elif e_over_g < 0.6:
+            criteria[name]["ii_ebar_ghat"] = "fail"
+            failed.append(f"(ii) e-bar/g-hat: {name} = {e_over_g:.3f} < 0.6")
+        else:
+            criteria[name]["ii_ebar_ghat"] = "pass"
+
+    within_factor_2 = 0
+    within_factor_2_undetermined = 0
+    for name in ASSESSED_STOCKS:
+        bi_mean = final_decade["bioen"][name]["mean"]
+        cert = CERTIFIED_MEANS[name]
+        ratio = bi_mean / cert
+        if not np.isfinite(ratio):
+            criteria[name]["iii_bounded_displacement"] = "undetermined"
+            undetermined.append(f"(iii) bounded-displacement: {name} bioen/certified ratio is NaN")
+            within_factor_2_undetermined += 1
+            continue
+        if not (0.2 <= ratio <= 5.0):
+            criteria[name]["iii_bounded_displacement"] = "fail"
+            failed.append(
+                f"(iii) bounded-displacement: {name} bioen/certified = {ratio:.3f} "
+                "outside [0.2, 5.0]"
+            )
+        else:
+            criteria[name]["iii_bounded_displacement"] = "pass"
+        if 0.5 <= ratio <= 2.0:
+            within_factor_2 += 1
+
+    if within_factor_2 < 3:
+        if within_factor_2 + within_factor_2_undetermined < 3:
+            failed.append(
+                f"(iii) bounded-displacement: only {within_factor_2}/5 assessed stocks within "
+                "a factor of 2 of their certified mean (need >= 3)"
+            )
+        else:
+            undetermined.append(
+                f"(iii) bounded-displacement: only {within_factor_2}/5 assessed stocks "
+                f"confirmed within a factor of 2 of their certified mean, "
+                f"{within_factor_2_undetermined} undetermined -- cannot confirm or rule out "
+                "the >= 3 threshold"
+            )
+
+    if failed and undetermined:
+        verdict = f"CLOSE BY CHARACTERIZATION (failed: {failed}; undetermined: {undetermined})"
+    elif failed:
+        verdict = f"CLOSE BY CHARACTERIZATION (failed: {failed})"
+    elif undetermined:
+        verdict = f"UNDETERMINED (could not evaluate: {undetermined})"
+    else:
+        verdict = "STAGE 2: WARRANTED"
+
+    return {
+        "failed": failed,
+        "undetermined": undetermined,
+        "criteria": criteria,
+        "verdict": verdict,
+    }
+
+
 def run_c3(
     seeds=SEEDS,
     n_year: int = N_YEAR,
@@ -1079,41 +1176,15 @@ def run_c3(
         }
 
     # --- decision rule (spec Sec.4) ---
-    failed: list[str] = []
-    for name in ASSESSED_STOCKS:
-        b_mean = final_decade["baseline"][name]["mean"]
-        bi_mean = final_decade["bioen"][name]["mean"]
-        if bi_mean < 0.10 * b_mean:
-            failed.append(
-                f"(i) no-structural-collapse: {name} bioen/baseline = {bi_mean / b_mean:.3f} < 0.10"
-            )
-        if ration[name]["e_over_g"] < 0.6:
-            failed.append(f"(ii) e-bar/g-hat: {name} = {ration[name]['e_over_g']:.3f} < 0.6")
-    within_factor_2 = 0
-    for name in ASSESSED_STOCKS:
-        bi_mean = final_decade["bioen"][name]["mean"]
-        cert = CERTIFIED_MEANS[name]
-        ratio = bi_mean / cert
-        if not (0.2 <= ratio <= 5.0):
-            failed.append(
-                f"(iii) bounded-displacement: {name} bioen/certified = {ratio:.3f} "
-                "outside [0.2, 5.0]"
-            )
-        if 0.5 <= ratio <= 2.0:
-            within_factor_2 += 1
-    if within_factor_2 < 3:
-        failed.append(
-            f"(iii) bounded-displacement: only {within_factor_2}/5 assessed stocks within a "
-            "factor of 2 of their certified mean (need >= 3)"
-        )
-    verdict = (
-        "STAGE 2: WARRANTED" if not failed else f"CLOSE BY CHARACTERIZATION (failed: {failed})"
-    )
+    decision = evaluate_decision_rule(final_decade, ration)
+    failed = decision["failed"]
+    verdict = decision["verdict"]
 
     report = {
         "seeds": list(seeds),
         "arms": list(ARMS),
         "n_year": n_year,
+        "certifying": sorted(seeds) == sorted(SEEDS) and n_year == N_YEAR,
         "assessed_stocks": list(ASSESSED_STOCKS),
         "gates": gates,
         "final_decade_means": final_decade,
@@ -1125,6 +1196,8 @@ def run_c3(
         "bioen_plus2C_minus_bioen": plus2_deltas,
         "labels": REPORT_LABELS,
         "decision_rule_failed": failed,
+        "decision_rule_undetermined": decision["undetermined"],
+        "decision_rule_criteria": decision["criteria"],
         "verdict": verdict,
     }
     REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -1140,8 +1213,19 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--seeds", type=int, nargs="+", default=list(SEEDS))
     ap.add_argument("--years", type=int, default=N_YEAR)
     ap.add_argument("--no-recompute", action="store_true")
-    ap.add_argument("--out", type=Path, default=REPORT_PATH)
+    ap.add_argument("--out", type=Path, default=None)
     args = ap.parse_args(argv)
+
+    certifying = sorted(args.seeds) == sorted(SEEDS) and args.years == N_YEAR
+    if args.out is None:
+        if not certifying:
+            ap.error(
+                "--out is required for a non-certifying run (seeds/years differ from the "
+                f"certifying configuration SEEDS={SEEDS}, N_YEAR={N_YEAR}) -- pass --out "
+                f"explicitly to avoid silently overwriting the committed deliverable at "
+                f"{REPORT_PATH}"
+            )
+        args.out = REPORT_PATH
 
     REPORT_PATH = args.out
 
