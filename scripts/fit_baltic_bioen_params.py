@@ -360,7 +360,9 @@ def background_imax(config: EngineConfig, b: BackgroundSpeciesInfo, beta: float 
     return (b.ingestion_rate / config.n_dt_per_year) * (w_mean * 1e6) ** (1.0 - beta)
 
 
-def build_overlay(csv_path: Path, temp_nc: Path) -> dict[str, str]:
+def build_overlay(
+    csv_path: Path, temp_nc: Path, *, relative_to: Path | None = None
+) -> dict[str, str]:
     """Flat overlay dict: every key in the bioen CSV, plus the bioen/temperature switches.
 
     Deliberately excludes ``osmose.configuration.bioen`` -- spec review C6: that key would
@@ -369,14 +371,27 @@ def build_overlay(csv_path: Path, temp_nc: Path) -> dict[str, str]:
     keys are flattened directly into the overlay instead (which this does). Also excludes
     ``temperature.value``: the engine's loader precedence (spec decision 6) tries ``.value``
     before the file, so a stray scalar here would silently shadow the forcing file.
+
+    ``relative_to``: when given, ``temperature.filename`` is written as a path relative to
+    this directory instead of an absolute, machine-local path (F1, final-branch-review.md).
+    An overlay merged onto a config loaded from ``relative_to`` (or a copy of it) resolves the
+    relative key via ``resolve_data_path``'s config_dir search step, on any checkout. Omit
+    only for a caller with no fixed config_dir relationship to ``temp_nc`` (e.g. an ad hoc
+    csv/nc pair in a test tmp_path); the caller is responsible for picking a value that is
+    actually portable.
     """
     overlay = dict(OsmoseConfigReader().read_file(Path(csv_path)))
+    temp_nc_resolved = Path(temp_nc).resolve()
+    if relative_to is not None:
+        temp_nc_value = str(temp_nc_resolved.relative_to(Path(relative_to).resolve()))
+    else:
+        temp_nc_value = str(temp_nc_resolved)
     overlay.update(
         {
             "module.bioenergetics.enabled": "true",
             "simulation.bioen.phit.enabled": "true",
             "simulation.bioen.fo2.enabled": "false",
-            "temperature.filename": str(Path(temp_nc).resolve()),
+            "temperature.filename": temp_nc_value,
             "temperature.varname": "temperature",
             "temperature.nsteps.year": "24",
         }
@@ -772,7 +787,12 @@ def run_baltic(out_dir: Path | None = None) -> list[FitResult]:
         bioen_path = out_dir / "baltic_param-bioen.csv"
         bioen_path.write_text("\n".join(bioen_lines) + "\n")
 
-        overlay = build_overlay(bioen_path, temp_nc)
+        # relative_to=data/baltic (temp_nc's own parent dir minus forcing/): both the smoke
+        # test and the A/B harness merge this overlay onto a config whose _osmose.config.dir
+        # is a copy of data/baltic, so a path relative to that directory resolves on any
+        # checkout (F1, final-branch-review.md) instead of baking in this machine's absolute
+        # checkout path.
+        overlay = build_overlay(bioen_path, temp_nc, relative_to=temp_nc.parent.parent)
         overlay_with_meta: dict = dict(overlay)
         overlay_with_meta["_meta"] = {
             "spec": (
