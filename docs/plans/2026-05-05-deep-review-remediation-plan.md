@@ -1253,12 +1253,13 @@ job breakdown:
 | `test (3.12)` | cancelled | matrix fail-fast, not an independent failure |
 | `test-no-numba`, `docker`, `apptainer-smoke` | success | — |
 
-**None of it is a code defect.** All four causes are now fixed on this branch:
-locally `ruff check`, `ruff format --check` and `pyright` (3.12 and 3.13) all
-report clean, and the full suite was green (4,426 passed) at the commit before
-the pyright fixes — those being type-only (a Protocol, a `cast`, and comments),
-with the 78 UQ, 17 parity and 52 output tests re-run green afterwards.
-Diagnosis and disposition:
+**None of it is a code defect.** All four causes are now fixed on this branch,
+and every gate CI runs is green locally: `ruff check` ("All checks passed!"),
+`ruff format --check` ("600 files already formatted"), `pyright` 0 errors on
+both 3.12 and 3.13, and the full suite at **4,426 passed / 50 skipped / 0
+failed**. That suite figure was re-measured after the pyright commit and is
+identical to the run before it, confirming those edits (a Protocol, a `cast`,
+and comments) were runtime-neutral. Diagnosis and disposition:
 
 1. **ruff (fixed, `2a8dd5a4`).** Bisected: 0.14.0 and 0.15.x report
    "All checks passed!"; **0.16.0** does not. 0.16 expanded its default rule
