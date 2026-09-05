@@ -9,9 +9,21 @@ import pandas as pd
 MATRIX = Path("data/baltic/predation-accessibility.csv")
 
 SPECIES_ORDER = [
-    "cod_west", "herring", "sprat", "flounder", "perch", "pikeperch", "smelt",
-    "stickleback", "cod_east", "Diatoms", "Dinoflagellates", "Microzooplankton",
-    "Mesozooplankton", "Macrozooplankton", "Benthos",
+    "cod_west",
+    "herring",
+    "sprat",
+    "flounder",
+    "perch",
+    "pikeperch",
+    "smelt",
+    "stickleback",
+    "cod_east",
+    "Diatoms",
+    "Dinoflagellates",
+    "Microzooplankton",
+    "Mesozooplankton",
+    "Macrozooplankton",
+    "Benthos",
 ]
 
 
@@ -58,7 +70,10 @@ def test_no_cross_predation_between_stocks():
 def test_loads_through_engine_accessibility_matrix():
     from osmose.engine.accessibility import AccessibilityMatrix
 
-    names = SPECIES_ORDER + ["GreySeal", "Cormorant"]  # GreySeal absent (1.0 fallback); Cormorant is a column
+    names = SPECIES_ORDER + [
+        "GreySeal",
+        "Cormorant",
+    ]  # GreySeal absent (1.0 fallback); Cormorant is a column
     am = AccessibilityMatrix.from_csv(str(MATRIX), names)
     assert am.raw_matrix.shape == (15, 16)  # 15 prey rows x 16 predators (incl. Cormorant)
     # both cod species resolve to a matrix label

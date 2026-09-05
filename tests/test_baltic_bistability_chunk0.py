@@ -102,7 +102,12 @@ def test_seed_split_species_withholds_accessibility_verdict():
 
 def test_low_weight_species_does_not_gate():
     targets = _targets() + [Tgt("perch", 20000, 8000, 50000, 0.2)]
-    base = {"cod_east": "in_range", "sprat": "overshoot", "herring": "overshoot", "perch": "overshoot"}
+    base = {
+        "cod_east": "in_range",
+        "sprat": "overshoot",
+        "herring": "overshoot",
+        "perch": "overshoot",
+    }
     low = {"cod_east": "in_range", "sprat": "in_range", "herring": "in_range", "perch": "low"}
     t = c0.accessibility_transition(base, low, targets)
     assert t["gated_species"] == 3
@@ -122,8 +127,18 @@ def test_collapsed_stock_in_lowered_arm_blocks_real_lever():
 
 def test_medium_weight_collapse_blocks_real_lever():
     targets = _targets() + [Tgt("flounder", 50000, 20000, 100000, 0.5)]
-    base = {"cod_east": "in_range", "sprat": "overshoot", "herring": "overshoot", "flounder": "in_range"}
-    low = {"cod_east": "in_range", "sprat": "in_range", "herring": "in_range", "flounder": "collapsed"}
+    base = {
+        "cod_east": "in_range",
+        "sprat": "overshoot",
+        "herring": "overshoot",
+        "flounder": "in_range",
+    }
+    low = {
+        "cod_east": "in_range",
+        "sprat": "in_range",
+        "herring": "in_range",
+        "flounder": "collapsed",
+    }
     t = c0.accessibility_transition(base, low, targets)
     assert t["collapsed_lowered"] >= 1
     assert c0.accessibility_verdict(t)[0] is False

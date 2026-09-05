@@ -63,4 +63,6 @@ def test_apply_calibration_routes_background_predation_keys():
     spec.loader.exec_module(ac)
     d = Path("data/baltic")
     assert ac._file_for("species.biomass.multiplier.sp16", d).name == "baltic_param-background.csv"
-    assert ac._file_for("predation.ingestion.rate.max.sp16", d).name == "baltic_param-background.csv"
+    assert (
+        ac._file_for("predation.ingestion.rate.max.sp16", d).name == "baltic_param-background.csv"
+    )

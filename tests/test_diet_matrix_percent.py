@@ -23,8 +23,11 @@ def test_rows_are_per_predator_percentages(tmp_path):
     mat = np.array([[1.0, 3.0], [2.0, 0.0]])
     path = tmp_path / "osm_dietMatrix_Simu0.csv"
     write_diet_csv(
-        path=path, step_diet_matrices=[mat], step_times=[1.0],
-        predator_names=["cod", "herring"], prey_names=["sprat", "smelt"],
+        path=path,
+        step_diet_matrices=[mat],
+        step_times=[1.0],
+        predator_names=["cod", "herring"],
+        prey_names=["sprat", "smelt"],
     )
     df = pd.read_csv(path)
     row = df.iloc[0]
@@ -39,8 +42,11 @@ def test_each_predator_sums_to_100(tmp_path):
     mat = rng.random((3, 4)) * 10.0
     path = tmp_path / "d.csv"
     write_diet_csv(
-        path=path, step_diet_matrices=[mat], step_times=[1.0],
-        predator_names=["a", "b", "c"], prey_names=["w", "x", "y", "z"],
+        path=path,
+        step_diet_matrices=[mat],
+        step_times=[1.0],
+        predator_names=["a", "b", "c"],
+        prey_names=["w", "x", "y", "z"],
     )
     df = pd.read_csv(path)
     for pred in ("a", "b", "c"):
@@ -52,8 +58,11 @@ def test_predator_that_ate_nothing_is_all_zero_not_nan(tmp_path):
     mat = np.array([[0.0, 0.0], [2.0, 2.0]])
     path = tmp_path / "d.csv"
     write_diet_csv(
-        path=path, step_diet_matrices=[mat], step_times=[1.0],
-        predator_names=["starved", "fed"], prey_names=["x", "y"],
+        path=path,
+        step_diet_matrices=[mat],
+        step_times=[1.0],
+        predator_names=["starved", "fed"],
+        prey_names=["x", "y"],
     )
     df = pd.read_csv(path)
     vals = df.iloc[0][["starved_x", "starved_y"]].to_numpy(dtype=float)

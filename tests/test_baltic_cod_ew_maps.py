@@ -41,7 +41,9 @@ def test_west_is_western_east_is_eastern():
     east = _present(_load_map("cod_east_adult.csv"))
     west_col = np.argwhere(west)[:, 1].mean()
     east_col = np.argwhere(east)[:, 1].mean()
-    assert west_col < east_col - 5, f"west col {west_col:.1f} not clearly west of east {east_col:.1f}"
+    assert west_col < east_col - 5, (
+        f"west col {west_col:.1f} not clearly west of east {east_col:.1f}"
+    )
 
 
 def test_movement_config_wires_both_cod_species():

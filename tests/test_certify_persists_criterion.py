@@ -65,4 +65,6 @@ def test_genuine_late_collapse_still_fails(cert):
 def test_reported_min_is_the_final_decade_min(cert):
     series = [1.0] * 20 + [50000.0] * 10
     row = cert._species_row(pd.DataFrame({"cod_east": series}), "cod_east")
-    assert row["min"] == pytest.approx(50000.0), "min must describe the final decade, not the bootstrap"
+    assert row["min"] == pytest.approx(50000.0), (
+        "min must describe the final decade, not the bootstrap"
+    )
