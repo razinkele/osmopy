@@ -1,3 +1,15 @@
+"""Bioen fixture checks for `data/baltic_ev` (the augmented Baltic config used by the
+FIE/genetics integration tests) plus a viability pre-flight gating those downstream tests.
+
+For the realistic-config bioen regression against PRODUCTION `data/baltic` + the C3 overlay
+(`data/baltic/scenarios/c3_bioen/`), see `tests/test_baltic_c3_bioen_smoke.py` instead --
+that is the test that exercises gonad-derived spawning past
+`population.seeding.year.max`, i.e. the C3 bioen work's own smoke regression. This module's
+`test_baltic_ev_baseline_viable_for_fie` pre-flight below stays self-skipping (Task 7.4's
+un-tuned-fixture contract): it gates only the FIE/genetics demo tests on `data/baltic_ev`,
+not the C3 bioen work, and is unaffected by anything C3 does to `data/baltic`.
+"""
+
 from pathlib import Path
 import pytest
 
