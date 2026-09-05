@@ -24,4 +24,4 @@ originSessionId: 12d091cb-241b-45e7-82e3-906f4025f88b
 
 **Tooltips (Bootstrap 5):** Popovers initialized via end-of-body `setInterval(500ms)` polling for new `[data-bs-toggle="popover"]` elements. Uses `bootstrap.Popover.getInstance(el)` (BS5 API), NOT `el._bsPopover` (BS4). Show Help button removed; tooltips work via hover only. Inline `<head>` scripts run before Bootstrap loads, so head-scripts don't work here.
 
-**IMPORT RULE:** `import ui.charts` must only be in `app.py` — importing in page modules shadows `from shiny import ui`.
+**IMPORT RULE:** Plotly templates are registered once in `app.py` via `osmose.plotly_theme.ensure_templates()` (`ui/charts.py` was removed). Page modules must never bind another module to the name `ui` — it shadows `from shiny import ui`.

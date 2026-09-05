@@ -37,7 +37,7 @@ from ui.pages.calibration_handlers import (
 from ui.pages.run import copy_data_files
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.components.config_diff import classify_config_diffs
-from ui.state import get_theme_mode
+from ui.state import AppState, get_theme_mode
 from ui.styles import STYLE_EMPTY, STYLE_HINT_BLOCK
 
 # Re-export for backward compatibility (tests import these from calibration)
@@ -409,7 +409,7 @@ def calibration_ui():
     )
 
 
-def calibration_server(input, output, session, state):
+def calibration_server(input, output, session, state: AppState):
     cal_history = reactive.value([])
     cal_F: reactive.value[np.ndarray | None] = reactive.value(None)
     cal_X: reactive.value[np.ndarray | None] = reactive.value(None)

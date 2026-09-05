@@ -22,12 +22,12 @@ from osmose.engine.processes.natural import (
     larva_mortality,
     out_mortality,
 )
-from osmose.engine.simulate import SimulationContext
 from osmose.engine.processes.starvation import (
     starvation_mortality,  # noqa: F401 — used by tests
     update_starvation_rate,
 )
 from osmose.engine.resources import ResourceState
+from osmose.engine.simulate import SimulationContext
 from osmose.engine.state import MortalityCause, SchoolState
 from osmose.logging import setup_logging
 
@@ -402,8 +402,7 @@ def _apply_predation_for_school(
         if q_idx == p_idx:
             continue
         inst_abd_q = inst_abd[q_idx] - state.egg_retained[q_idx]
-        if inst_abd_q < 0.0:
-            inst_abd_q = 0.0
+        inst_abd_q = max(inst_abd_q, 0.0)
         if inst_abd_q <= 0:
             continue
         prey_len = state.length[q_idx]
@@ -504,8 +503,8 @@ def _apply_predation_for_school(
             g_form = r / (r + k_fr)
         else:  # type-III
             g_form = (r * r) / (r * r + k_fr * k_fr)
-        cap = r if r < 1.0 else 1.0  # min(r, 1)
-        g = g_form if g_form < cap else cap  # conservation clamp
+        cap = min(1.0, r)  # min(r, 1)
+        g = min(cap, g_form)  # conservation clamp
         eaten_total = max_eatable * g
 
     # cell_id is only meaningful when resources are present (used inside the
@@ -911,8 +910,7 @@ if _HAS_NUMBA:
             if q_idx == p_idx:
                 continue
             abd_q = inst_abd[q_idx] - egg_retained[q_idx]
-            if abd_q < 0.0:
-                abd_q = 0.0
+            abd_q = max(abd_q, 0.0)
             if abd_q <= 0:
                 continue
             prey_len = length[q_idx]
@@ -1005,8 +1003,8 @@ if _HAS_NUMBA:
                 g_form = r / (r + k_fr)
             else:  # type-III
                 g_form = (r * r) / (r * r + k_fr * k_fr)
-            cap = r if r < 1.0 else 1.0  # min(r, 1)
-            g = g_form if g_form < cap else cap  # conservation clamp
+            cap = min(1.0, r)  # min(r, 1)
+            g = min(cap, g_form)  # conservation clamp
             eaten_total = max_eatable * g
 
         for k in range(n_prey):
@@ -1290,6 +1288,20 @@ if _HAS_NUMBA:
         This avoids the Python loop overhead of pre-generating RNG data.
         """
         np.random.seed(rng_seed)
+        # M14/K1 (sequential path only): size the per-cell scratch once for the
+        # most populated cell instead of allocating inside the cell loop. Every
+        # entry read below is written earlier in the same cell iteration, so no
+        # zero-init or clearing is required. (The prange kernel keeps per-
+        # iteration buffers — each thread must own its scratch.)
+        max_n_local = 0
+        for cell in range(n_cells):
+            n_here = boundaries[cell + 1] - boundaries[cell]
+            max_n_local = max(max_n_local, n_here)
+        cause_orders_all = np.empty((max_n_local, 4), dtype=np.int32)
+        prey_type_buf = np.empty(max_n_local + n_resources, dtype=np.int32)
+        prey_id_buf = np.empty(max_n_local + n_resources, dtype=np.int32)
+        prey_eligible_buf = np.empty(max_n_local + n_resources, dtype=np.float64)
+
         for cell in range(n_cells):
             start = boundaries[cell]
             end = boundaries[cell + 1]
@@ -1306,21 +1318,13 @@ if _HAS_NUMBA:
             seq_fish = np.random.permutation(n_local).astype(np.int32)
             seq_nat = np.random.permutation(n_local).astype(np.int32)
             causes = np.array([0, 1, 2, 3], dtype=np.int32)
-            cause_orders = np.empty((n_local, 4), dtype=np.int32)
+            cause_orders = cause_orders_all[:n_local]
             for ii in range(n_local):
                 np.random.shuffle(causes)
                 cause_orders[ii, 0] = causes[0]
                 cause_orders[ii, 1] = causes[1]
                 cause_orders[ii, 2] = causes[2]
                 cause_orders[ii, 3] = causes[3]
-
-            # K1: per-cell scratch for _apply_predation_numba's prey scan.
-            # Reused across every predator in this cell — write-then-read
-            # so no zero-init is required.
-            max_prey_cell = n_local + n_resources
-            prey_type_buf = np.empty(max_prey_cell, dtype=np.int32)
-            prey_id_buf = np.empty(max_prey_cell, dtype=np.int32)
-            prey_eligible_buf = np.empty(max_prey_cell, dtype=np.float64)
 
             for i in range(n_local):
                 for c in range(4):

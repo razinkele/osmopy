@@ -8,10 +8,11 @@ Follows Java's SimulationStep.step() ordering:
 
 from __future__ import annotations
 
-import threading  # noqa: F401  (cancel_token type hint, used at runtime when callers pass an Event)
+import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, cast
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from osmose.engine.economics.fleet import FleetState
@@ -174,7 +175,7 @@ class StepOutput:
     # Genetic trait statistics: trait_name -> species_id -> TraitStats,
     # or None if genetics disabled. Populated by _collect_outputs from
     # ctx.genetic_state phenotypes.
-    trait_stats: dict[str, dict[int, "TraitStats"]] | None = None
+    trait_stats: dict[str, dict[int, TraitStats]] | None = None
 
     # Spatial outputs: per-species 2-D grids (ny, nx), or None if spatial disabled
     spatial_biomass: dict[int, NDArray[np.float64]] | None = None
@@ -1523,8 +1524,8 @@ def simulate(
     mortality_rngs: list[np.random.Generator] | None = None,
     *,
     output_dir: Path | None = None,
-    cancel_token: "threading.Event | None" = None,
-    step_observer: "Callable[[int, object, object, object, object], None] | None" = None,
+    cancel_token: threading.Event | None = None,
+    step_observer: Callable[[int, object, object, object, object], None] | None = None,
 ) -> list[StepOutput]:
     """Run the OSMOSE simulation loop.
 
@@ -1623,7 +1624,8 @@ def simulate(
             )
 
     # Pre-flatten map data for Numba movement path (skip if Numba unavailable)
-    from osmose.engine.processes.movement import _flatten_all_map_sets, _HAS_NUMBA as _MV_HAS_NUMBA
+    from osmose.engine.processes.movement import _HAS_NUMBA as _MV_HAS_NUMBA
+    from osmose.engine.processes.movement import _flatten_all_map_sets
 
     flat_map_data = (
         _flatten_all_map_sets(map_sets, config.n_species, grid.ny, grid.nx)
@@ -1772,31 +1774,47 @@ def simulate(
             nx_f = ctx.fleet_state.catch_memory.shape[2]
             realized = np.zeros((n_fleets, ny_f, nx_f), dtype=np.float64)
 
+            # H7: vectorised. The previous version looped over every school and,
+            # per (school x fleet), rebuilt a three-array boolean vessel mask —
+            # O(n_schools * n_fleets * n_vessels) per step. Now: bucket vessels by
+            # (fleet, cell) once, accumulate catch and revenue per (fleet, cell)
+            # with np.add.at, then hand each vessel an equal share of its own
+            # cell's revenue. Semantics are unchanged: revenue landed in a cell
+            # with no vessel of that fleet present is not attributed to anyone.
+            fs = ctx.fleet_state
             fishing_cause = int(MortalityCause.FISHING)
-            for i in range(len(state)):
-                fishing_dead = state.n_dead[i, fishing_cause]
-                if fishing_dead <= 0:
-                    continue
-                sp = int(state.species_id[i])
-                cy, cx = int(state.cell_y[i]), int(state.cell_x[i])
-                if not (0 <= cy < ny_f and 0 <= cx < nx_f):
-                    continue
-                catch_biomass = fishing_dead * state.weight[i]
+            fishing_dead = state.n_dead[:, fishing_cause]
+            sel = fishing_dead > 0
+            sel &= (state.cell_y >= 0) & (state.cell_y < ny_f)
+            sel &= (state.cell_x >= 0) & (state.cell_x < nx_f)
+            if sel.any():
+                idx = np.flatnonzero(sel)
+                sp_sel = state.species_id[idx].astype(np.intp)
+                cy_sel = state.cell_y[idx].astype(np.intp)
+                cx_sel = state.cell_x[idx].astype(np.intp)
+                catch_sel = fishing_dead[idx] * state.weight[idx]
 
-                for fi, fleet_cfg in enumerate(ctx.fleet_state.fleets):
-                    if sp in fleet_cfg.target_species:
-                        vessel_mask = (
-                            (ctx.fleet_state.vessel_fleet == fi)
-                            & (ctx.fleet_state.vessel_cell_y == cy)
-                            & (ctx.fleet_state.vessel_cell_x == cx)
-                        )
-                        n_in_cell = int(vessel_mask.sum())
-                        if n_in_cell > 0:
-                            rev_per_vessel = (
-                                catch_biomass * fleet_cfg.price_per_tonne[sp] / n_in_cell
-                            )
-                            ctx.fleet_state.vessel_revenue[vessel_mask] += rev_per_vessel
-                        realized[fi, cy, cx] += catch_biomass
+                vf = fs.vessel_fleet.astype(np.intp)
+                vy = fs.vessel_cell_y.astype(np.intp)
+                vx = fs.vessel_cell_x.astype(np.intp)
+                v_ok = (vy >= 0) & (vy < ny_f) & (vx >= 0) & (vx < nx_f)
+                v_at = (vf[v_ok], vy[v_ok], vx[v_ok])
+                n_in_cell = np.zeros((n_fleets, ny_f, nx_f), dtype=np.float64)
+                np.add.at(n_in_cell, v_at, 1.0)
+                cell_revenue = np.zeros((n_fleets, ny_f, nx_f), dtype=np.float64)
+
+                for fi, fleet_cfg in enumerate(fs.fleets):
+                    targets = np.asarray(fleet_cfg.target_species, dtype=np.intp)
+                    tgt = np.isin(sp_sel, targets)
+                    if not tgt.any():
+                        continue
+                    cells = (cy_sel[tgt], cx_sel[tgt])
+                    np.add.at(realized[fi], cells, catch_sel[tgt])
+                    price = np.asarray(fleet_cfg.price_per_tonne, dtype=np.float64)
+                    np.add.at(cell_revenue[fi], cells, catch_sel[tgt] * price[sp_sel[tgt]])
+
+                # n_in_cell >= 1 at every vessel's own cell, so no division guard needed.
+                fs.vessel_revenue[v_ok] += cell_revenue[v_at] / n_in_cell[v_at]
 
             ctx.fleet_state.catch_memory = update_catch_memory(
                 ctx.fleet_state.catch_memory, realized, ctx.fleet_state.memory_decay

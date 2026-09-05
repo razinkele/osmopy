@@ -158,6 +158,39 @@
 >   pre-r9) that r8 missed. r9 swaps it to the same `ls`-based check
 >   used everywhere else, plus corrects "13 passed" → "12 passed" (the
 >   actual test-count fallback when the rebase is incomplete).
+> - 2026-09-05 r10 — **execution close-out.** Three audit passes compared
+>   every item against master `2833ba5c` (≈1,300 commits after r9). Most of
+>   the plan had already landed; the remainder was executed in this
+>   revision. See "Status as of r10" at the end of the document for the
+>   per-item table. Summary of what r10 changed:
+>   - **Closed as already landed (no work):** C1–C5, H1, H2, H4, H8, H9,
+>     H10 (see note), H11, M1–M5, M7 (partial → done), M10, M13, L
+>     (`test_path_escape_blocked`), RNG docs, H3, H5, all "Schema
+>     field-quality" bullets.
+>   - **Executed in r10:** H7 (fleet-revenue vectorisation), M14
+>     (sequential-kernel scratch hoist), M8 (ensemble mid-flight failure +
+>     child-reap tests), M9 (generic credential sniffer), H12 step 2
+>     (Advanced-tab multi-value editor), M12 (`config_header` stats
+>     value), remaining "Misc" cleanup (E501 ×7, `scenarios_dir` anchored to
+>     `__file__`, `state: AppState` on all 19 `*_server` functions,
+>     `ui/charts.py` folded away, Genetics/Economic placeholder shell
+>     factored into `ui/components/placeholder.py`). Also: `OsmoseRunner.run`
+>     now reports `status="failed"` for any non-zero exit, so `status` and
+>     `returncode` can no longer disagree.
+>   - **Closed as invalid / not worth the risk:** M11 (`PythonEngine()` is a
+>     one-attribute constructor; Numba caches are module-level, so there is
+>     no per-run JIT cost to memoise). H6 remaining `.copy()` sites
+>     (`pred_success_rate`, `preyed_biomass`, `new_tl`): those arrays are
+>     handed to `state.replace(...)` and *become* the next immutable state's
+>     fields — reusing a ctx scratch buffer would alias consecutive states.
+>     `inst_abd` is the only pure scratch left and is one allocation per
+>     step; not worth a ctx-lifetime buffer. M14 inline Fisher-Yates:
+>     `np.random.shuffle` inside `@njit` is compiled code, not a dispatch,
+>     and replacing it would change the fixed-seed RNG stream — declined.
+>   - **H10 fecundity strictness:** the guard is `relative_fecundity < 0`
+>     (rejects negatives, allows 0). Zero fecundity is a legitimate "this
+>     species does not reproduce" switch (background species, sensitivity
+>     arms), so the plan's `<= 0` is not adopted; recorded as intentional.
 
 This plan is organised as five execution phases, each independently shippable.
 Each issue is given a **stable ID** (matches the deep-review report — `C` =
@@ -1126,4 +1159,46 @@ The plan is fully landed when:
 | **H10 reproduction bound fails on legacy fixture data** (added r3) | Run `grep -rE 'species\.(sexratio\|relativefecundity)\.sp' data/ --include='*.csv'` (r4 verified all clean); if any value is outside the new bound, soften the raise to a warning (with offending fixture path) before merge. Hard-failing master because of legacy data is worse than the bug. |
 | **Phase 1 sequencing — extending `RunResult` (C4) ripples through callers** (added r3, tightened r4) | Default the new `status` field to `"ok"` and `message` to `""` so existing `RunResult(returncode=..., output_dir=..., stdout=..., stderr=...)` constructors keep working. Verification: `grep -rn 'RunResult(' osmose/ ui/ tests/` — every call site must either keep its current keyword args (default `status="ok"` covers it) or be explicitly updated. Then `.venv/bin/python -m pytest tests/test_runner.py tests/test_run_*.py` must be green before pushing. Done when both grep and pytest commands return clean. |
 | **`_handle_result` callers other than `_run_python_engine` could synthesise a `RunResult` with default `status="ok"` while the underlying op actually failed silently** (added r5) | `grep -rn '_handle_result\|_run_python_engine' ui/ osmose/` — confirm only `run.py:274` (Java engine path) and `run.py:343` (Python engine path) call `_handle_result`, and both originate from `OsmoseRunner.run` / `_run_python_engine`. If any synthetic-`RunResult` callers exist, audit them to set `status="failed"` explicitly when not `returncode == 0`. Done when the grep returns ≤ the two known sites and any third-party caller is wired correctly. |
+| **H7 vectorised fleet revenue changes floating-point summation order** (added r10) | Per-vessel revenue is now `sum(catch·price)/n_in_cell` instead of `Σ(catch·price/n_in_cell)`; identical in exact arithmetic, differs at ~1e-16 relative. `tests/test_economics_*.py` (tolerance-based) pass unchanged. If a future bit-exact economics snapshot is added, regenerate it once from this commit. |
 | **Engineer skips the "rebase first" preflight and acceptance tests pass for the wrong reason** (added r7, check-logic corrected r8) | The "Execution prerequisite — REBASE FIRST" section near the top of this plan is the primary mitigation. Belt-and-braces: before merging any phase, run `ls data/baltic/baltic_param-background.csv` from the working branch — if the file is **missing**, the branch was not rebased and acceptance gates are not yet meaningful. (r7 originally suggested `git diff cf5cb8e -- data/` and "files appear in the diff", but after a successful rebase the diff against current master is empty for files inherited from master; the correct check is "does the file exist on disk".) Refuse to merge until the file is present. |
+
+## Status as of r10 (2026-09-05, master `2833ba5c` + this branch)
+
+Verified by inspection of the code on master plus the r10 commits on
+`claude/deep-app-review-xvuga`. "Evidence" cites where the fix lives.
+
+| Item | Status | Evidence / note |
+|---|---|---|
+| C1 movement key inversion | DONE (pre-r10) | `osmose/schema/movement.py` uses `movement.<prop>.map{idx}`; `tests/test_schema_engine_key_parity.py` |
+| C2 `sizeInf` casing | DONE (pre-r10) | `osmose/schema/output.py` → `output.bioen.sizeinf.enabled` |
+| C3 path traversal | DONE (pre-r10) | `ui/pages/results.py::_safe_output_dir`, used at all 3 privileged sites; `tests/test_results_page_path_safety.py` (incl. symlinks, tmpdir carve-out) |
+| C4 cancellation / invalidation | DONE (pre-r10) | `SimulationCancelled`, `cancel_token` through `simulate()`, `RunResult.status/message`, `_handle_result` clears `output_dir` on failure; `tests/test_simulate_cancellation.py` |
+| C5 baltic background keys | DONE (pre-r10) | via `_SUPPLEMENTARY_ALLOWLIST`, not a `schema/background.py`; validation suite 24/24 green on all 5 fixtures |
+| H1 / H4 examples coverage | DONE (pre-r10) | `rsc` in `_INDEX_SUFFIXES`; parametrize lists `eec, baltic, eec_full, examples, minimal` |
+| H2 schema count | DONE (pre-r10) | CLAUDE.md says 266; live count 266 |
+| Schema field-quality bullets | DONE (pre-r10) | `simulation.restart.file` keeps `"null"` (the OSMOSE sentinel) deliberately |
+| H10 reproduction bounds | DONE (pre-r10) | sex-ratio `[0,1]` raise; fecundity `< 0` raise (0 allowed — intentional, see r10 log); season-sum warning in `_load_spawning_seasons` |
+| M4 Gompertz guard, M5 accessibility/`n_dead` clamp | DONE (pre-r10) | `config.py` M4 block; `accessibility.py` M5 warn; `natural.py` `np.minimum(n_dead, abundance)` |
+| M2 feeding-stage side, M3 size bins, M1 averaging | DONE (pre-r10) | M2/M3 verified against Java and pinned by `test_feeding_stage_java_parity.py` / `test_size_bin_java_parity.py`; M1 distribution outputs now window-mean |
+| RNG reproducibility docs | DONE (pre-r10) | `osmose/engine/rng.py` docstring; CLAUDE.md gotcha |
+| H5 predation scratch hoist | DONE (pre-r10) | K1 buffers passed into `_apply_predation_numba` |
+| H6 per-step copies | PARTIAL → CLOSED | `n_dead` triple-alloc collapsed pre-r10. Remaining copies become state fields; aliasing them is unsafe (r10 log). |
+| H7 `biomass_by_cell` / fleet revenue | DONE (r10) | `np.add.at` for both; vessels bucketed by (fleet, cell) once per step in `simulate.py` |
+| M14 `cause_orders` scratch | DONE (sequential kernel, r10); shuffle unchanged | `_mortality_all_cells_numba` sizes `cause_orders` + K1 buffers once for the largest cell; prange kernel keeps per-thread buffers by design |
+| M11 memoise `PythonEngine` | CLOSED — invalid | constructor is trivial; no JIT cost to save |
+| H8 NaN suite, H9 JIT parity, M7 lifespan boundary | DONE (pre-r10) | `test_numerical_propagation*.py`, `test_jit_determinism.py`, `test_engine_aging_boundary.py` |
+| M8 runner failure modes | DONE (r10) | + `test_run_ensemble_continues_after_mid_flight_failure`, `test_runner_cancel_reaps_child_process`; `run()` now sets `status="failed"` on non-zero exit |
+| M9 credential sniffer | DONE (r10) | `test_no_literal_credential_assignments_in_mcp_servers`, `test_no_high_entropy_string_literals_in_mcp_servers` over `mcp_servers/**/*.py` |
+| L `test_path_escape_blocked` | DONE (pre-r10) | asserts on `etc/passwd`, not the username |
+| M10 busy/loading merge, M13 input-ID helper, H3 pure `_inject_random_movement_ncell`, H11 no import-time cleanup | DONE (pre-r10) | see `ui/state.py`, `param_form.input_id_for_field`, `run.py`, `app.py::_ensure_cleanup_registered` |
+| H12 multi-value UX | DONE (r10 completes step 2) | read-only form render + CLAUDE.md gotcha pre-r10; r10 adds the Advanced-tab banner + inline editor (`multi_value_editor`) |
+| M12 `config_header` | DONE (r10) | header reads a `(n_species, n_params)` `reactive.Value` refreshed by an effect; unchanged tuples don't re-render |
+| Misc cleanup | DONE (r10) | E501 clean on `ui/` + `app.py`; `AppState` hints on all `*_server`; `ui/charts.py` removed; placeholder pages share `ui/components/placeholder.py`; `scenarios_dir` anchored to `__file__` |
+| H11 step 2 (lazy page imports) | NOT DONE — optional | Plan marked it "if startup time is a concern"; no complaint on record |
+
+**Acceptance re-check (r10):** `tests/test_engine_config_validation.py` 24/24;
+`tests/test_engine_parity.py` 17/17; `pytest -k eec` 310 passed; ruff
+finding count on `ui/ app.py tests/ osmose/` fell from 723 (master) to 698.
+The Java-side `scripts/validate_engines.py` step was not run in the r10
+environment (no `osmose-java/*.jar` present) — re-run it locally before
+tagging a release.

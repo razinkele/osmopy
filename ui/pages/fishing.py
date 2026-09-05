@@ -6,7 +6,7 @@ from osmose.schema.fishing import FISHING_FIELDS
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.components.param_form import render_field
 from ui.pages._helpers import collect_resolved_keys
-from ui.state import sync_inputs
+from ui.state import AppState, sync_inputs
 
 FISHING_GLOBAL_KEYS: list[str] = [f.key_pattern for f in FISHING_FIELDS if not f.indexed]
 
@@ -34,7 +34,7 @@ def fishing_ui():
     )
 
 
-def fishing_server(input, output, session, state):
+def fishing_server(input, output, session, state: AppState):
     global_fields = [f for f in FISHING_FIELDS if not f.indexed]
 
     @render.ui

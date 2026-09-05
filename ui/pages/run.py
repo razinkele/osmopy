@@ -8,7 +8,7 @@ import threading
 import time
 from pathlib import Path
 
-from shiny import ui, reactive, render
+from shiny import reactive, render, ui
 from shiny_deckgl import (  # type: ignore[import-untyped]
     CARTO_DARK,
     CARTO_POSITRON,
@@ -38,7 +38,7 @@ from osmose.runner import (
 )
 from ui.components.collapsible import body_collapse_header
 from ui.pages.live_movement_render import choose_live_layer, live_legend_widget
-from ui.state import get_theme_mode
+from ui.state import AppState, get_theme_mode
 from ui.styles import STYLE_CONSOLE
 
 _log = setup_logging("osmose.run")
@@ -545,7 +545,7 @@ def _handle_result(result, config, state, run_log, status, start_monotonic=None)
         run_log.set(list(run_log.get()) + extra)
 
 
-def run_server(input, output, session, state):
+def run_server(input, output, session, state: AppState):
     run_log = reactive.value([])
     status = reactive.value("Idle")
     runner_ref = reactive.value(None)
@@ -637,7 +637,7 @@ def run_server(input, output, session, state):
                 except queue.Empty:
                     break
             _progress.set(None)
-        except BaseException:  # noqa: BLE001
+        except BaseException:
             if _session_alive[0]:
                 raise  # genuine bug during a live session — surface it
             _log.debug("run-done poll skipped (session ending)", exc_info=True)
@@ -681,7 +681,7 @@ def run_server(input, output, session, state):
                     break
             if latest is not None:
                 _live_snapshot.set(latest)
-        except BaseException:  # noqa: BLE001
+        except BaseException:
             if _session_alive[0]:
                 raise  # genuine bug during a live session — surface it
             _log.debug("live poll skipped (session ending)", exc_info=True)
@@ -703,7 +703,7 @@ def run_server(input, output, session, state):
                     break
             if latest is not None:
                 _progress.set(latest)
-        except BaseException:  # noqa: BLE001
+        except BaseException:
             if _session_alive[0]:
                 raise  # genuine bug during a live session — surface it
             _log.debug("progress poll skipped (session ending)", exc_info=True)
@@ -726,7 +726,7 @@ def run_server(input, output, session, state):
             choices = {"__all__": "All species"}
             choices.update({name: name for name in snap.species})
             ui.update_select("live_movement_species", choices=choices)
-        except BaseException:  # noqa: BLE001
+        except BaseException:
             if _session_alive[0]:
                 raise  # genuine bug during a live session — surface it
             _log.debug("species populate skipped (session ending)", exc_info=True)
@@ -801,8 +801,9 @@ def run_server(input, output, session, state):
                 _live_framed[0] = True
             elif layer["id"] != _live_layer_id[0]:
                 # The active representation switched (heatmap <-> dots), distinct layer ids.
-                # deck.gl cannot swap a layer's class under one id; a full update (no view_state,
-                # to keep the camera) removes the old id and carries the fresh legend in one message.
+                # deck.gl cannot swap a layer's class under one id; a full update (no
+                # view_state, to keep the camera) removes the old id and carries the fresh
+                # legend in one message.
                 await _live_map.update(session, layers=[layer], widgets=widgets)
             else:
                 await _live_map.partial_update(session, layers=[layer])
@@ -811,7 +812,7 @@ def run_server(input, output, session, state):
                     await _live_map.set_widgets(session, widgets)
             _live_layer_id[0] = layer["id"]
             _live_widget_sig[0] = sig
-        except BaseException:  # noqa: BLE001
+        except BaseException:
             if _session_alive[0]:
                 raise  # genuine bug during a live session — surface it
             _log.debug("live map render skipped (session ending)", exc_info=True)

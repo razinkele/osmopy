@@ -32,7 +32,7 @@ if _worker_cache is not None:
 # Register the "osmose" Plotly template once before any test runs. Without this,
 # tests that render charts (tests/test_ui_results.py, test_ui_charts.py, etc.)
 # fail in isolation because the template is normally registered only when app.py
-# imports ui.charts at server startup. Running conftest.py triggers the
+# calls ensure_templates() at server startup. Running conftest.py triggers the
 # registration during pytest collection, before any test module is imported.
 ensure_templates()
 
