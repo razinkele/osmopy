@@ -944,7 +944,10 @@ def _collect_by_life_stage(
     sp, st = state.species_id[focal], stage[focal]
     np.add.at(abundance, (sp, st), state.abundance[focal])
     for cause in range(n_causes):
-        np.add.at(deaths, (sp, cause, st), state.n_dead[focal, cause])
+        # numpy's stub types `indices` as _ArrayLikeInt_co, which rejects a tuple
+        # mixing a plain int (`cause`) with arrays even though that is a valid
+        # broadcast index at runtime.
+        np.add.at(deaths, (sp, cause, st), state.n_dead[focal, cause])  # type: ignore[arg-type]
     return abundance, deaths
 
 

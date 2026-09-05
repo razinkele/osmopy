@@ -17,7 +17,7 @@ import numpy as np
 from osmose.calibration.problem import FreeParameter
 from osmose.calibration.targets import BiomassTarget
 from osmose.calibration.uq.design import DesignResult
-from osmose.calibration.uq.emulator import GPEmulator
+from osmose.calibration.uq.emulator import GPEmulator, SupportsPredict
 from osmose.calibration.uq.keying import target_to_output_key
 from osmose.calibration.uq.likelihood import band_faithful, gaussian_log_biomass
 from osmose.calibration.uq.prior import log_prior
@@ -41,7 +41,7 @@ def fit_emulators(design: DesignResult, min_points: int = 2) -> dict[str, GPEmul
 
 
 def make_log_posterior(
-    emulators: Mapping[str, object],
+    emulators: Mapping[str, SupportsPredict],
     targets: Sequence[BiomassTarget],
     free_params: list[FreeParameter],
     *,

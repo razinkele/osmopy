@@ -8,10 +8,25 @@ Builds its OWN sklearn GP — it never touches the shared ``SurrogateCalibrator`
 
 from __future__ import annotations
 
+from typing import Protocol, cast
+
 import numpy as np
 from sklearn.gaussian_process import GaussianProcessRegressor  # type: ignore[import-untyped]
 from sklearn.gaussian_process.kernels import Matern  # type: ignore[import-untyped]
 from sklearn.model_selection import KFold  # type: ignore[import-untyped]
+
+
+class SupportsPredict(Protocol):
+    """The duck type ``make_log_posterior`` and the predictive diagnostic accept.
+
+    Those callers take INJECTED emulators so synthetic tests can substitute an
+    analytic one (see posterior.py's module docstring) — they must not require
+    ``GPEmulator`` itself. They were previously annotated ``Mapping[str, object]``,
+    which expressed "anything" rather than "anything with predict()" and made
+    every ``.predict`` call a type error. This states the actual contract.
+    """
+
+    def predict(self, X: np.ndarray) -> tuple[np.ndarray, np.ndarray]: ...
 
 
 class GPEmulator:
@@ -44,14 +59,20 @@ class GPEmulator:
         var_Y = float(np.var(Y, ddof=0))
         alpha_scaled = alpha_arr / var_Y if var_Y > 0.0 else alpha_arr
 
+        # Both ignores below are sklearn stub deficiencies, not loose typing:
+        # `length_scale` is declared `float` but an array is exactly how sklearn
+        # selects the ARD kernel (one length scale per dimension — the whole point
+        # here, see the module docstring), and `alpha` is declared `float` but an
+        # (n,) array is sklearn's documented per-point heteroscedastic noise. Both
+        # array forms are load-bearing; do not "fix" these by passing scalars.
         kernel = Matern(
-            length_scale=np.ones(X.shape[1]),
+            length_scale=np.ones(X.shape[1]),  # type: ignore[arg-type]
             length_scale_bounds=(1e-2, 1e2),
             nu=2.5,
         )
         gp = GaussianProcessRegressor(
             kernel=kernel,
-            alpha=alpha_scaled,
+            alpha=alpha_scaled,  # type: ignore[arg-type]
             normalize_y=True,
             n_restarts_optimizer=self._n_restarts_optimizer,
             random_state=self._random_state,
@@ -64,7 +85,14 @@ class GPEmulator:
         """Return ``(mean, var)`` in Y-units; ``var`` is latent (noise-free)."""
         if self.gp is None:
             raise RuntimeError("Must call fit() before predict()")
-        mean, std = self.gp.predict(np.asarray(X, dtype=float), return_std=True)
+        # sklearn's `predict` is overloaded on `return_std`; the stub collapses the
+        # return to a union including the bare-ndarray (return_std=False) form, so
+        # unpacking and `std**2` both look invalid. return_std=True always yields
+        # the 2-tuple at runtime — state that rather than suppress the symptom.
+        mean, std = cast(
+            "tuple[np.ndarray, np.ndarray]",
+            self.gp.predict(np.asarray(X, dtype=float), return_std=True),
+        )
         return mean, std**2
 
     def cross_validate(

@@ -124,11 +124,18 @@ class DynestySampler:
         def prior_transform(u: np.ndarray) -> np.ndarray:
             return lower + u * (upper - lower)
 
+        # dynesty ships no stubs, so pyright infers `NestedSampler` from the
+        # source, where it is a class whose __init__ takes internal positionals
+        # (live_points/sampling/bounding) built by the public factory path — the
+        # documented user-facing signature (ndim/nlive/rstate) is what actually
+        # runs. Same story for the `Results` attribute access below: `samples`,
+        # `logz` and `logzerr` are populated dynamically, which is why the
+        # neighbouring `res.importance_weights()` type-checks and these do not.
         sampler = dynesty.NestedSampler(
             log_posterior,
             prior_transform,
             ndim=n_dim,
-            nlive=self.nlive,
+            nlive=self.nlive,  # type: ignore[call-arg]
             rstate=np.random.default_rng(seed),
         )
         sampler.run_nested(
@@ -142,10 +149,10 @@ class DynestySampler:
         weights = np.asarray(res.importance_weights())
         ess = float(1.0 / np.sum(weights**2))  # Kish ESS (version-robust)
         return SamplerResult(
-            samples=np.asarray(res.samples),
+            samples=np.asarray(res.samples),  # type: ignore[attr-defined]
             weights=weights,
-            logz=float(res.logz[-1]),
-            logz_err=float(res.logzerr[-1]),
+            logz=float(res.logz[-1]),  # type: ignore[attr-defined]
+            logz_err=float(res.logzerr[-1]),  # type: ignore[attr-defined]
             ess=ess,
             converged=ess >= self.ess_min,
         )
