@@ -27,8 +27,13 @@ def test_appstate_initial_run_result_is_none():
 
 
 def test_appstate_scenarios_dir_default():
+    """Default is anchored to the repo root, not the process CWD (Phase 5 misc fix)."""
+    import ui.state as ui_state
+
     state = AppState()
-    assert state.scenarios_dir == Path("data/scenarios")
+    repo_root = Path(ui_state.__file__).resolve().parent.parent
+    assert state.scenarios_dir == repo_root / "data" / "scenarios"
+    assert state.scenarios_dir.is_absolute()
 
 
 def test_appstate_custom_scenarios_dir():
