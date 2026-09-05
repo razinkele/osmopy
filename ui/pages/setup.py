@@ -14,7 +14,7 @@ from ui.components.param_form import (
     render_category,
     render_species_table,
 )
-from ui.state import sync_inputs
+from ui.state import AppState, sync_inputs
 
 _log = setup_logging("osmose.setup")
 
@@ -57,7 +57,7 @@ def setup_ui():
     )
 
 
-def setup_server(input, output, session, state):
+def setup_server(input, output, session, state: AppState):
     @reactive.calc
     def _config_validation():
         """(loaded, errors, warnings). Recomputes on every edit AND on load,

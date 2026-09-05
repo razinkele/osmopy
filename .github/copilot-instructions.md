@@ -39,7 +39,7 @@ This repository is a Python orchestration layer, pure-Python simulation engine, 
 - Python-engine RNG reproducibility is not bit-equal to Java. `simulation.rng.fixed=true` makes Python runs reproducible for the same config and seed; Java parity tests compare within tolerance/order of magnitude unless explicitly using the Java engine.
 - The Python engine should remain re-entrant: keep per-run state in config/context objects, not module-level mutable globals. Calibration uses repeated `run_in_memory()` calls and process pools.
 - Config reader/writer changes must preserve Java compatibility: do not assume one separator, do not discard original key case, and do not break recursive `osmose.configuration.*` includes.
-- UI page modules should not import `ui.charts` as `ui`; `app.py` imports `ui.charts` only to register the custom Plotly template while keeping `from shiny import ui` unshadowed.
+- The custom Plotly template is registered once by `app.py` via `osmose.plotly_theme.ensure_templates()`; UI page modules must not bind anything else to the name `ui` (it shadows `from shiny import ui`).
 - `navset_pill_list` section labels need `ui.nav_control()` wrappers; bare strings are not valid section headers.
 - Package discovery is intentionally limited to `include = ["osmose*"]` in `pyproject.toml`; do not broaden it to include `ui/` or `data/`.
 - MCP credential hygiene is enforced by `tests/test_copernicus_mcp_env.py` and `tests/test_mcp_config_hygiene.py`. Keep `.env` gitignored and use `_require_creds()`-style env guards for service credentials.

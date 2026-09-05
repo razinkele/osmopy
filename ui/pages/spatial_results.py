@@ -30,7 +30,7 @@ from ui.pages.grid_helpers import (
     make_spatial_map,
     _zoom_for_span,
 )
-from ui.state import get_theme_mode
+from ui.state import AppState, get_theme_mode
 
 _log = setup_logging("osmose.spatial_results")
 
@@ -162,7 +162,7 @@ def spatial_results_ui():
     )
 
 
-def spatial_results_server(input, output, session, state):
+def spatial_results_server(input, output, session, state: AppState):
     """Server logic for the Spatial Results page."""
     _spatial_ds: reactive.Value = reactive.Value(None)  # xarray Dataset | None
     _spatial_nc_files: reactive.Value[list[str]] = reactive.Value([])

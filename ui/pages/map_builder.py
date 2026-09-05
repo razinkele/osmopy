@@ -42,7 +42,7 @@ from ui.pages.grid_helpers import (
     build_grid_layers,
     load_mask,
 )
-from ui.state import get_theme_mode
+from ui.state import AppState, get_theme_mode
 
 _log = setup_logging("osmose.map_builder")
 
@@ -162,7 +162,7 @@ def map_builder_ui():
     )
 
 
-def map_builder_server(input, output, session, state):
+def map_builder_server(input, output, session, state: AppState):
     _map = MapWidget(
         f"{_MAP_ID}",
         view_state=_DEFAULT_VIEW_STATE,

@@ -5,17 +5,16 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from shiny import ui, reactive, render
+from shiny import reactive, render, ui
 from shiny.types import SilentException
-
 from shiny_deckgl import (  # type: ignore[import-untyped]
-    MapWidget,
-    polygon_layer,
     CARTO_POSITRON,
-    zoom_widget,
+    MapWidget,
     compass_widget,
     fullscreen_widget,
+    polygon_layer,
     scale_widget,
+    zoom_widget,
 )
 
 from osmose.demo import demo_info, list_demos, osmose_demo
@@ -26,6 +25,7 @@ from ui.components.param_form import render_field
 from ui.components.renderer_badge import renderer_badge
 from ui.pages.grid_helpers import (
     _overlay_label,
+    _zoom_for_span,
     build_grid_layers,
     build_movement_cache,
     build_netcdf_grid_layers,
@@ -36,9 +36,8 @@ from ui.pages.grid_helpers import (
     load_netcdf_grid,
     load_netcdf_overlay,
     make_legend,
-    _zoom_for_span,
 )
-from ui.state import get_theme_mode, sync_inputs
+from ui.state import AppState, get_theme_mode, sync_inputs
 
 _log = setup_logging("osmose.grid.ui")
 
@@ -182,7 +181,7 @@ def grid_ui():
     )
 
 
-def grid_server(input, output, session, state):
+def grid_server(input, output, session, state: AppState):
     grid_type_field = next((f for f in GRID_FIELDS if "classname" in f.key_pattern), None)
     regular_fields = [
         f
@@ -895,7 +894,8 @@ def grid_server(input, output, session, state):
             state.load_config(cfg, reader.key_case_map)
             if reader.deprecated_keys:
                 ui.notification_show(
-                    f"Config migrated to OSMOSE 4.4.0 keys ({len(reader.deprecated_keys)} renamed). "
+                    "Config migrated to OSMOSE 4.4.0 keys "
+                    f"({len(reader.deprecated_keys)} renamed). "
                     "Files written for the engine stay 4.3.x-compatible.",
                     type="message",
                     duration=8,

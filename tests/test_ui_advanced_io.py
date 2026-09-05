@@ -61,3 +61,28 @@ def test_preview_import_diff_all_new():
     assert len(diff) == 2
     for d in diff:
         assert d["old"] is None
+
+
+def test_multi_value_keys_lists_only_semicolon_arrays():
+    """H12: the Advanced-tab editor must list exactly the ';'-array entries, sorted."""
+    from ui.pages.advanced import multi_value_keys
+
+    cfg = {
+        "species.k.sp0": "0.3",
+        "predation.predprey.sizeratio.max.sp1": "3.5;3.5",
+        "predation.predprey.sizeratio.max.sp0": "3.5;3.5;3.5",
+        "movement.file.map0": "maps/a;b.csv",  # any ';' counts — the writer round-trips it
+        "simulation.nspecies": "2",
+    }
+    assert multi_value_keys(cfg) == [
+        "movement.file.map0",
+        "predation.predprey.sizeratio.max.sp0",
+        "predation.predprey.sizeratio.max.sp1",
+    ]
+
+
+def test_multi_value_keys_empty_when_no_arrays():
+    from ui.pages.advanced import multi_value_keys
+
+    assert multi_value_keys({}) == []
+    assert multi_value_keys({"a": "1", "b": "2.5"}) == []

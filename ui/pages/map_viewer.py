@@ -32,7 +32,7 @@ from ui.pages.grid_helpers import (
     load_netcdf_overlay,
     make_legend,
 )
-from ui.state import get_theme_mode
+from ui.state import AppState, get_theme_mode
 
 _log = setup_logging("osmose.map_viewer")
 
@@ -70,7 +70,7 @@ def map_viewer_ui():
     )
 
 
-def map_viewer_server(input, output, session, state):
+def map_viewer_server(input, output, session, state: AppState):
     _map = MapWidget(
         "map_viewer_map",
         view_state=_DEFAULT_VIEW_STATE,

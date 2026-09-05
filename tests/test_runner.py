@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from tests.helpers import _ScriptRunner
 from osmose.runner import OsmoseRunner, RunResult, java_engine_block_reason
+from tests.helpers import _ScriptRunner
 
 
 def test_java_engine_block_reason_blocks_background_species():
@@ -406,6 +406,76 @@ async def test_run_ensemble_default_replicates(
     out = tmp_path / "ens_default"
     results = await runner.run_ensemble(config_path=fake_config, output_dir=out)
     assert len(results) == 5
+
+
+@pytest.fixture
+def ensemble_fail_second_jar(tmp_path: Path) -> Path:
+    """Fake JAR that succeeds except for replicate seed==1, which dies mid-run.
+
+    It emits one progress line first so the failure happens *after* output has
+    started (the realistic OOM / segfault shape), then exits 3 with a Java-style
+    stderr message. Successful replicates leave a ``done.txt`` marker.
+    """
+    script = tmp_path / "ensemble_fail1.py"
+    script.write_text(
+        "import sys, pathlib\n"
+        "output_dir = None\n"
+        "seed = None\n"
+        "for arg in sys.argv[1:]:\n"
+        '    if arg.startswith("-Poutput.dir.path="):\n'
+        '        output_dir = arg.split("=", 1)[1]\n'
+        '    if arg.startswith("-Psimulation.random.seed="):\n'
+        '        seed = arg.split("=", 1)[1]\n'
+        "pathlib.Path(output_dir).mkdir(parents=True, exist_ok=True)\n"
+        'print("step 1", flush=True)\n'
+        'if seed == "1":\n'
+        '    print("java.lang.OutOfMemoryError: Java heap space", file=sys.stderr)\n'
+        "    sys.exit(3)\n"
+        '(pathlib.Path(output_dir) / "done.txt").write_text(seed)\n'
+        'print("done")\n'
+    )
+    return script
+
+
+async def test_run_ensemble_continues_after_mid_flight_failure(
+    ensemble_fail_second_jar: Path, fake_config: Path, tmp_path: Path
+) -> None:
+    """M8: one failing replicate must neither abort the ensemble nor be reported ok."""
+    runner = _ScriptRunner(jar_path=ensemble_fail_second_jar, java_cmd=sys.executable)
+    out = tmp_path / "ens_fail"
+    results = await runner.run_ensemble(config_path=fake_config, output_dir=out, n_replicates=4)
+    assert len(results) == 4
+    assert [r.returncode for r in results] == [0, 3, 0, 0]
+    assert [r.status for r in results] == ["ok", "failed", "ok", "ok"]
+    assert "OutOfMemoryError" in results[1].stderr
+    assert "step 1" in results[1].stdout  # partial output preserved
+    assert not (out / "rep_1" / "done.txt").exists()
+    for i in (0, 2, 3):
+        assert (out / f"rep_{i}" / "done.txt").read_text() == str(i)
+
+
+async def test_runner_cancel_reaps_child_process(tmp_path: Path) -> None:
+    """M8: cancel() must leave no zombie or orphan behind once run() returns."""
+    psutil = pytest.importorskip("psutil")
+    script = tmp_path / "slow_reap.py"
+    script.write_text('import time\nprint("starting", flush=True)\ntime.sleep(60)\n')
+    config = tmp_path / "config.csv"
+    config.write_text("x ; 1\n")
+    runner = _ScriptRunner(jar_path=script, java_cmd=sys.executable)
+
+    task = asyncio.create_task(runner.run(config_path=config))
+    await asyncio.sleep(0.5)
+    assert runner._process is not None
+    child_pid = runner._process.pid
+    runner.cancel()
+    result = await asyncio.wait_for(task, timeout=5.0)
+
+    assert result.status == "cancelled"
+    assert runner._process.returncode is not None  # waited on, i.e. reaped
+    remaining = {c.pid: c for c in psutil.Process().children(recursive=True)}
+    assert child_pid not in remaining, (
+        f"cancelled child {child_pid} still present with status {remaining[child_pid].status()!r}"
+    )
 
 
 async def test_run_timeout_kills_process(tmp_path: Path) -> None:

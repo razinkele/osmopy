@@ -8,7 +8,7 @@ from osmose.schema.ltl import LTL_FIELDS
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.components.param_form import copy_species0_to_all, render_field, render_species_table
 from ui.pages._helpers import parse_nspecies
-from ui.state import sync_inputs
+from ui.state import AppState, sync_inputs
 
 FORCING_GLOBAL_KEYS: list[str] = [f.key_pattern for f in LTL_FIELDS if not f.indexed]
 _TEMP_KEYS: list[str] = [
@@ -47,7 +47,7 @@ def forcing_ui():
     )
 
 
-def forcing_server(input, output, session, state):
+def forcing_server(input, output, session, state: AppState):
     global_ltl = [f for f in LTL_FIELDS if not f.indexed]
     temp_fields = [f for f in BIOENERGETICS_FIELDS if f.key_pattern.startswith("temperature.")]
 

@@ -25,6 +25,7 @@ from osmose.results import OsmoseResults
 from osmose.spatial_series import grid_latlon, spatial_diff_2d
 from ui.components.config_diff import render_config_diff_table
 from ui.pages.grid_helpers import make_diff_map, make_spatial_map
+from ui.state import AppState
 
 _log = setup_logging("osmose.scenario_diff")
 
@@ -82,7 +83,7 @@ def scenario_diff_nav_panel():
     )
 
 
-def scenario_diff_server(input, output, session, state):
+def scenario_diff_server(input, output, session, state: AppState):
     """Reactives for the Scenario Diff tab. Called once from results_server."""
     _ds_a: reactive.Value = reactive.Value(None)  # xarray Dataset | None
     _ds_b: reactive.Value = reactive.Value(None)

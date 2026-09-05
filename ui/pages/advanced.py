@@ -10,7 +10,7 @@ from shiny import reactive, render, ui
 from osmose.config.reader import OsmoseConfigReader
 from osmose.config.writer import OsmoseConfigWriter
 from ui.components.collapsible import collapsible_card_header, expand_tab
-from ui.state import REGISTRY
+from ui.state import REGISTRY, AppState
 from ui.styles import (
     COLOR_DANGER,
     COLOR_MUTED,
@@ -34,6 +34,15 @@ def compute_import_diff(
         if old_val != new_val:
             diff.append({"key": key, "old": old_val, "new": new_val})
     return diff
+
+
+def multi_value_keys(cfg: dict[str, str]) -> list[str]:
+    """Config keys whose value is a ``;``-separated array (e.g. per-stage parameters).
+
+    The schema-driven form tabs render these read-only (see ``render_field``);
+    this page is the one place they can be edited, so it needs the same test.
+    """
+    return sorted(k for k, v in cfg.items() if isinstance(v, str) and ";" in v)
 
 
 def advanced_ui():
@@ -70,6 +79,7 @@ def advanced_ui():
         ),
         ui.card(
             ui.card_header("All Parameters"),
+            ui.output_ui("multi_value_editor"),
             ui.output_ui("param_table"),
         ),
         class_="osm-split-layout",
@@ -77,7 +87,7 @@ def advanced_ui():
     )
 
 
-def advanced_server(input, output, session, state):
+def advanced_server(input, output, session, state: AppState):
     import_pending = reactive.value({})
     pending_case_map = reactive.value({})
 
@@ -192,6 +202,74 @@ def advanced_server(input, output, session, state):
             )
         finally:
             state.busy.set(None)
+
+    # -- H12: multi-value (";"-array) editor ---------------------------------
+    # The form tabs show these entries read-only and point users here. The
+    # banner lists every such key and offers a single text editor that writes
+    # the array back verbatim, so per-stage parameters never have to be edited
+    # by re-importing a CSV.
+    _mv_selected = reactive.value("")
+
+    @render.ui
+    def multi_value_editor():
+        # Same re-render contract as param_table: explicit loads/imports only.
+        state.load_trigger.get()
+        with reactive.isolate():
+            cfg = state.config.get()
+            remembered = _mv_selected.get()
+        keys = multi_value_keys(cfg)
+        if not keys:
+            return ui.div()
+        selected = remembered if remembered in keys else keys[0]
+        return ui.div(
+            ui.tags.strong(f"{len(keys)} multi-value parameter(s)"),
+            ui.p(
+                "';'-separated arrays (e.g. per-stage values) are shown read-only in the "
+                "form tabs. Edit them here — the full array is written back verbatim.",
+                class_="mb-2 small",
+            ),
+            ui.layout_columns(
+                ui.input_select(
+                    "adv_mv_key", "Parameter", choices={k: k for k in keys}, selected=selected
+                ),
+                ui.input_text("adv_mv_value", "Value (';'-separated)", value=cfg[selected]),
+                ui.div(
+                    ui.input_action_button("adv_mv_apply", "Apply", class_="btn-primary w-100"),
+                    style="display: flex; align-items: flex-end; height: 100%;",
+                ),
+                col_widths=[5, 5, 2],
+            ),
+            class_="alert alert-info py-2 mb-2",
+        )
+
+    @reactive.effect
+    @reactive.event(input.adv_mv_key)
+    def _sync_multi_value_field():
+        key = input.adv_mv_key()
+        if not key:
+            return
+        _mv_selected.set(key)
+        ui.update_text("adv_mv_value", value=state.get_config_value(key))
+
+    @reactive.effect
+    @reactive.event(input.adv_mv_apply)
+    def _apply_multi_value():
+        key = input.adv_mv_key()
+        raw = (input.adv_mv_value() or "").strip()
+        if not key:
+            return
+        if ";" not in raw:
+            ui.notification_show(
+                "Value must remain a ';'-separated array — use the form tabs for scalars.",
+                type="warning",
+                duration=6,
+            )
+            return
+        state.update_config(key, raw)
+        # Refresh the form tabs and the table below so they show the new array.
+        with reactive.isolate():
+            state.load_trigger.set(state.load_trigger.get() + 1)
+        ui.notification_show(f"Updated {key}.", type="message", duration=3)
 
     @render.download(filename="osm_all-parameters.csv")
     def export_config():
