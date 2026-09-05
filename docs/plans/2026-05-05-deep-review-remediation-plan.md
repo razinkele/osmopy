@@ -1253,7 +1253,12 @@ job breakdown:
 | `test (3.12)` | cancelled | matrix fail-fast, not an independent failure |
 | `test-no-numba`, `docker`, `apptainer-smoke` | success | — |
 
-**None of it is a code defect.** Diagnosis and disposition:
+**None of it is a code defect.** All four causes are now fixed on this branch:
+locally `ruff check`, `ruff format --check` and `pyright` (3.12 and 3.13) all
+report clean, and the full suite was green (4,426 passed) at the commit before
+the pyright fixes — those being type-only (a Protocol, a `cast`, and comments),
+with the 78 UQ, 17 parity and 52 output tests re-run green afterwards.
+Diagnosis and disposition:
 
 1. **ruff (fixed, `2a8dd5a4`).** Bisected: 0.14.0 and 0.15.x report
    "All checks passed!"; **0.16.0** does not. 0.16 expanded its default rule
@@ -1274,7 +1279,7 @@ job breakdown:
    and the "clean-venv false-green trap" note on `pillow` / `httpx`.
    Consequence to expect: pyright then resolves dynesty and reports 13 rather
    than 9 errors — more visibility, not a regression.
-4. **pyright (NOT fixed — open).** 13 errors: 11 in `osmose/calibration/uq/`
+4. **pyright (fixed, `3d626d81`).** 13 errors: 11 in `osmose/calibration/uq/`
    (`design.py:54`, `emulator.py:48,54,68`, `posterior.py:80`,
    `predictive.py:74`, `sampler.py:127,131,145,147,148`) plus the two engine
    ones below. Confirmed **pre-existing**: byte-identical between untouched
@@ -1293,9 +1298,26 @@ job breakdown:
      `cause` is a plain `int` from `range(n_causes)`; numpy's stubs decline an
      index tuple mixing `int` with arrays even though it is valid at runtime.
 
-   Unlike causes 1–3 there is no pin that makes these correct. Clearing them is
-   real type work concentrated in the UQ module and is left as a follow-up
-   rather than bundled into a remediation close-out.
+   Unlike causes 1–3 there is no pin that makes these correct, so each was read
+   individually. Two were genuine typing weaknesses and got real fixes: a new
+   `SupportsPredict` Protocol in `uq/emulator.py` replacing
+   `Mapping[str, object]` (which said "anything", not "anything with
+   `predict()`", and so made every call an error while claiming to express the
+   documented duck typing), and a `cast` on sklearn's
+   `predict(..., return_std=True)` whose overloaded stub collapses to a union.
+   The rest are stub deficiencies carrying comments that say why and warn
+   against "fixing" the code — the sklearn `length_scale` / `alpha` arrays are
+   load-bearing (ARD kernel, per-point noise), dynesty ships no stubs, and
+   numpy declines an `np.add.at` index tuple mixing `int` with arrays.
+
+   **One trap found here and deliberately left alone:** `design.py` passes
+   `seed=` to scipy's `LatinHypercube`, which pyright rejects because the stub
+   declares only the newer `rng=`. Both are accepted at runtime and neither
+   warns — but **they seed different generators and produce different designs**
+   (verified for s in {0, 1, 42}). "Modernising" that keyword would silently
+   change every Latin-hypercube design, and with it every stored UQ result,
+   while reading in review as a no-op cleanup. It is pinned with a comment
+   saying exactly that. Result: **pyright 0 errors on both 3.12 and 3.13.**
 
 **Reproduce:** `ruff check osmose/ ui/ tests/`,
 `ruff format --check osmose/ ui/ tests/`, and
