@@ -10,10 +10,10 @@ import numpy as np
 import pytest
 
 from osmose.calibration.checkpoint import (
+    MAX_CHECKPOINT_BYTES,
     CalibrationCheckpoint,
     CheckpointReadResult,
     LiveSnapshot,
-    MAX_CHECKPOINT_BYTES,
     default_results_dir,
     is_live,
     liveness_state,
@@ -414,10 +414,18 @@ def test_probe_writable_does_not_leak_sentinel(tmp_path):
 
 
 def test_probe_writable_raises_on_readonly_dir(tmp_path):
+    import os
     import sys
 
     if sys.platform.startswith("win"):
         pytest.skip("chmod 0o555 semantics differ on Windows")
+    if os.getuid() == 0:
+        # root satisfies CAP_DAC_OVERRIDE, so the write succeeds and
+        # probe_writable correctly does not raise. Verified 2026-09-05 in a
+        # root container: os.access(d, W_OK) is True at mode 0o500 and the
+        # write goes through. Same class of environment fragility as the
+        # username-dependent assertion fixed in test_config_reader_errors.py.
+        pytest.skip("running as root bypasses the directory write permission bit")
     tmp_path.chmod(0o555)
     try:
         with pytest.raises(OSError):
