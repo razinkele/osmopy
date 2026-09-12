@@ -4,13 +4,15 @@ import ui.pages.run as run_page
 
 def test_run_page_has_no_engine_tabs_navset():
     # The misleading read-only navset and its mirror observer must be gone.
-    text = open(run_page.__file__, encoding="utf-8").read()
+    with open(run_page.__file__, encoding="utf-8") as _f:
+        text = _f.read()
     assert "run_engine_tabs" not in text
     assert "_sync_engine_tab" not in text
 
 
 def test_run_page_uses_panel_conditional_for_engine_settings():
-    text = open(run_page.__file__, encoding="utf-8").read()
+    with open(run_page.__file__, encoding="utf-8") as _f:
+        text = _f.read()
     # Per-engine inputs stay always-registered, visibility via client-side condition.
     assert "panel_conditional" in text
     assert "input.engine_mode" in text
@@ -26,26 +28,30 @@ def test_run_page_uses_panel_conditional_for_engine_settings():
 
 
 def test_py_threads_wired_and_verbosity_removed():
-    text = open(run_page.__file__, encoding="utf-8").read()
+    with open(run_page.__file__, encoding="utf-8") as _f:
+        text = _f.read()
     assert "py_verbosity" not in text  # widget removed
     assert "apply_single_run_threads" in text  # py_threads wired via thread_policy
     assert "py_threads" in text  # input still present (wired, not dead)
 
 
 def test_run_page_source_has_indicator_and_capability_slots():
-    text = open(run_page.__file__, encoding="utf-8").read()
+    with open(run_page.__file__, encoding="utf-8") as _f:
+        text = _f.read()
     assert 'output_ui("engine_indicator")' in text
     assert 'output_ui("engine_capability")' in text
 
 
 def test_run_page_imports_describe_engine_and_renders_capability():
-    text = open(run_page.__file__, encoding="utf-8").read()
+    with open(run_page.__file__, encoding="utf-8") as _f:
+        text = _f.read()
     assert "from osmose.engine_capabilities import describe_engine" in text
     assert "def engine_capability" in text
 
 
 def test_run_page_has_progress_machinery():
-    text = open(run_page.__file__, encoding="utf-8").read()
+    with open(run_page.__file__, encoding="utf-8") as _f:
+        text = _f.read()
     assert 'output_ui("run_progress")' in text
     assert "make_run_observer" in text
     assert "_progress_q" in text  # discriminating: NOT matched by existing "on_progress"
@@ -54,7 +60,8 @@ def test_run_page_has_progress_machinery():
 
 
 def test_live_view_uses_expand_gate_not_switch():
-    text = open(run_page.__file__, encoding="utf-8").read()
+    with open(run_page.__file__, encoding="utf-8") as _f:
+        text = _f.read()
     assert "input.live_movement_view" not in text  # switch gate removed
     assert "live_view_expanded" in text  # expand gate present
     assert "_auto_enable_live_for_spatial" not in text  # superseded
@@ -62,6 +69,7 @@ def test_live_view_uses_expand_gate_not_switch():
 
 
 def test_run_server_hardens_against_session_teardown():
-    text = open(run_page.__file__, encoding="utf-8").read()
+    with open(run_page.__file__, encoding="utf-8") as _f:
+        text = _f.read()
     assert "session.on_ended" in text
     assert "_session_alive" in text

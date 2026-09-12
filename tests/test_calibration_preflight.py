@@ -322,26 +322,28 @@ class TestMakePreflightEvalFn:
         def mock_objective(results):
             return 1.0
 
-        with patch("osmose.calibration.preflight.PythonEngine") as MockEngine:
-            with patch("osmose.calibration.preflight.OsmoseResults") as MockResults:
-                mock_engine_instance = MagicMock()
-                MockEngine.return_value = mock_engine_instance
-                MockResults.return_value = MagicMock()
+        with (
+            patch("osmose.calibration.preflight.PythonEngine") as MockEngine,
+            patch("osmose.calibration.preflight.OsmoseResults") as MockResults,
+        ):
+            mock_engine_instance = MagicMock()
+            MockEngine.return_value = mock_engine_instance
+            MockResults.return_value = MagicMock()
 
-                def capture_run(config, out_dir, seed=0):
-                    captured_configs.append(dict(config))
-                    return MagicMock()
+            def capture_run(config, out_dir, seed=0):
+                captured_configs.append(dict(config))
+                return MagicMock()
 
-                mock_engine_instance.run.side_effect = capture_run
+            mock_engine_instance.run.side_effect = capture_run
 
-                fn = make_preflight_eval_fn(
-                    free_params=free_params,
-                    base_config=base_config,
-                    output_dir=output_dir,
-                    objective_fns=[mock_objective],
-                )
-                X = np.array([[0.5]])
-                fn(X)
+            fn = make_preflight_eval_fn(
+                free_params=free_params,
+                base_config=base_config,
+                output_dir=output_dir,
+                objective_fns=[mock_objective],
+            )
+            X = np.array([[0.5]])
+            fn(X)
 
         assert len(captured_configs) == 1
         assert captured_configs[0]["simulation.time.nyear"] == "5"
@@ -363,26 +365,28 @@ class TestMakePreflightEvalFn:
         def mock_objective(results):
             return 1.0
 
-        with patch("osmose.calibration.preflight.PythonEngine") as MockEngine:
-            with patch("osmose.calibration.preflight.OsmoseResults") as MockResults:
-                mock_engine_instance = MagicMock()
-                MockEngine.return_value = mock_engine_instance
-                MockResults.return_value = MagicMock()
+        with (
+            patch("osmose.calibration.preflight.PythonEngine") as MockEngine,
+            patch("osmose.calibration.preflight.OsmoseResults") as MockResults,
+        ):
+            mock_engine_instance = MagicMock()
+            MockEngine.return_value = mock_engine_instance
+            MockResults.return_value = MagicMock()
 
-                def capture_run(config, out_dir, seed=0):
-                    captured_configs.append(dict(config))
-                    return MagicMock()
+            def capture_run(config, out_dir, seed=0):
+                captured_configs.append(dict(config))
+                return MagicMock()
 
-                mock_engine_instance.run.side_effect = capture_run
+            mock_engine_instance.run.side_effect = capture_run
 
-                fn = make_preflight_eval_fn(
-                    free_params=free_params,
-                    base_config=base_config,
-                    output_dir=output_dir,
-                    objective_fns=[mock_objective],
-                )
-                X = np.array([[0.5]])
-                fn(X)
+            fn = make_preflight_eval_fn(
+                free_params=free_params,
+                base_config=base_config,
+                output_dir=output_dir,
+                objective_fns=[mock_objective],
+            )
+            X = np.array([[0.5]])
+            fn(X)
 
         assert len(captured_configs) == 1
         assert captured_configs[0]["simulation.time.nyear"] == "3"
@@ -406,26 +410,28 @@ class TestMakePreflightEvalFn:
         def mock_objective(results):
             return 1.0
 
-        with patch("osmose.calibration.preflight.PythonEngine") as MockEngine:
-            with patch("osmose.calibration.preflight.OsmoseResults") as MockResults:
-                mock_engine_instance = MagicMock()
-                MockEngine.return_value = mock_engine_instance
-                MockResults.return_value = MagicMock()
+        with (
+            patch("osmose.calibration.preflight.PythonEngine") as MockEngine,
+            patch("osmose.calibration.preflight.OsmoseResults") as MockResults,
+        ):
+            mock_engine_instance = MagicMock()
+            MockEngine.return_value = mock_engine_instance
+            MockResults.return_value = MagicMock()
 
-                def capture_run(config, out_dir, seed=0):
-                    captured_configs.append(dict(config))
-                    return MagicMock()
+            def capture_run(config, out_dir, seed=0):
+                captured_configs.append(dict(config))
+                return MagicMock()
 
-                mock_engine_instance.run.side_effect = capture_run
+            mock_engine_instance.run.side_effect = capture_run
 
-                fn = make_preflight_eval_fn(
-                    free_params=free_params,
-                    base_config=base_config,
-                    output_dir=output_dir,
-                    objective_fns=[mock_objective],
-                )
-                X = np.array([[-1.0]])
-                fn(X)
+            fn = make_preflight_eval_fn(
+                free_params=free_params,
+                base_config=base_config,
+                output_dir=output_dir,
+                objective_fns=[mock_objective],
+            )
+            X = np.array([[-1.0]])
+            fn(X)
 
         assert len(captured_configs) == 1
         actual_val = float(captured_configs[0]["sp.linf"])

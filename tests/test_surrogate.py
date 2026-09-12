@@ -55,7 +55,7 @@ def test_multi_objective_fit():
     X = np.linspace(0, 10, 30).reshape(-1, 1)
     y = np.column_stack([X.ravel() ** 2, (10 - X.ravel()) ** 2])
     cal.fit(X, y)
-    means, stds = cal.predict(np.array([[5.0]]))
+    means, _stds = cal.predict(np.array([[5.0]]))
     assert means.shape == (1, 2)
 
 

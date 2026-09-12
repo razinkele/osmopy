@@ -375,9 +375,12 @@ class TestBioenStepMissingConfig:
         # Monkey-patch one required attribute to None to trigger the guard
         from unittest.mock import patch
 
-        with patch.object(
-            type(config), "bioen_beta", new_callable=lambda: property(lambda self: None)
-        ), pytest.raises(ValueError, match="Bioenergetics enabled but bioen_beta is None"):
+        with (
+            patch.object(
+                type(config), "bioen_beta", new_callable=lambda: property(lambda self: None)
+            ),
+            pytest.raises(ValueError, match="Bioenergetics enabled but bioen_beta is None"),
+        ):
             _bioen_step(school_state, config, const_temp_data, step=0)
 
 

@@ -99,7 +99,8 @@ def test_rasterize_matches_center_membership(lons, lats):
         (r, c)
         for r in range(4)
         for c in range(4)
-        if _point_in_ring(*(lambda la, lo: (lo, la))(*g.cell_center(r, c)), _open_ring(ring))
+        for la, lo in [g.cell_center(r, c)]
+        if _point_in_ring(lo, la, _open_ring(ring))
     }
     assert got == expected
 
@@ -209,7 +210,9 @@ def test_wire_distribution_real_keys_and_next_index():
         "initialyear": 0,
         "lastyear": 9,
     }
-    out, summary = wire_map_into_config(cfg, "distribution", "maps/herring.csv", applicability=appl)
+    out, _summary = wire_map_into_config(
+        cfg, "distribution", "maps/herring.csv", applicability=appl
+    )
     assert out["movement.species.map1"] == "herring"
     assert out["movement.file.map1"] == "maps/herring.csv"
     assert out["movement.steps.map1"] == "0;1;2"
@@ -266,7 +269,7 @@ def test_save_map_writes_csv_and_wires(tmp_path):
         "grid.lowright.lon": "3",
         "simulation.time.ndtperyear": "2",
     }
-    new_cfg, summary, path = save_map(
+    new_cfg, _summary, path = save_map(
         mg, g, "distribution", "herring", cfg, tmp_path, applicability={"species": "herring"}
     )
     assert path == tmp_path / "maps" / "herring.csv" and path.exists()

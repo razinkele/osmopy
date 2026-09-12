@@ -296,9 +296,11 @@ def test_evaluate_logs_candidate_failure(tmp_path, caplog):
     with patch.object(problem, "_evaluate_candidate", side_effect=OSError("boom")):
         X = np.array([[0.5]])
         out = {}
-        with caplog.at_level(logging.WARNING):
-            with pytest.raises(RuntimeError, match="Calibration aborted"):
-                problem._evaluate(X, out)
+        with (
+            caplog.at_level(logging.WARNING),
+            pytest.raises(RuntimeError, match="Calibration aborted"),
+        ):
+            problem._evaluate(X, out)
         assert "boom" in caplog.text
 
 
@@ -318,9 +320,11 @@ def test_evaluate_propagates_unexpected_exceptions(tmp_path):
     X = np.array([[0.1], [0.5], [0.9]])
     out = {}
 
-    with patch.object(problem, "_evaluate_candidate", side_effect=TypeError("bad objective")):
-        with pytest.raises(TypeError):
-            problem._evaluate(X, out)
+    with (
+        patch.object(problem, "_evaluate_candidate", side_effect=TypeError("bad objective")),
+        pytest.raises(TypeError),
+    ):
+        problem._evaluate(X, out)
 
 
 def test_evaluate_tolerates_expected_failures(tmp_path):
@@ -337,9 +341,11 @@ def test_evaluate_tolerates_expected_failures(tmp_path):
     X = np.array([[0.1], [0.5], [0.9]])
     out = {}
 
-    with patch.object(problem, "_evaluate_candidate", side_effect=OSError("disk full")):
-        with pytest.raises(RuntimeError, match="Calibration aborted"):
-            problem._evaluate(X, out)
+    with (
+        patch.object(problem, "_evaluate_candidate", side_effect=OSError("disk full")),
+        pytest.raises(RuntimeError, match="Calibration aborted"),
+    ):
+        problem._evaluate(X, out)
 
 
 def test_evaluate_parallel_handles_mixed_failures(tmp_path):
@@ -400,9 +406,11 @@ def test_run_single_accepts_valid_override_keys(tmp_path):
     )
     mock_result = MagicMock()
     mock_result.returncode = 0
-    with patch("subprocess.run", return_value=mock_result):
-        with patch("osmose.results.OsmoseResults", return_value=MagicMock()):
-            result = problem._run_single({"species.k.sp0": "0.3"}, run_id=0)
+    with (
+        patch("subprocess.run", return_value=mock_result),
+        patch("osmose.results.OsmoseResults", return_value=MagicMock()),
+    ):
+        result = problem._run_single({"species.k.sp0": "0.3"}, run_id=0)
     assert result == [0.5]
 
 

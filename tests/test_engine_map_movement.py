@@ -745,7 +745,7 @@ class TestMapMoveSchool:
         assert len(pos_ys) == 1
         gy, gx = int(pos_ys[0]), int(pos_xs[0])
         # Located at that cell, step=1 (same map) -> random walk, only accessible cell is self
-        x, y, out = _map_move_school(10, gx, gy, 5, 5, grid.ocean_mask, ms, 1, 1, rng)
+        x, y, _out = _map_move_school(10, gx, gy, 5, 5, grid.ocean_mask, ms, 1, 1, rng)
         assert x == gx and y == gy  # stays in place
 
     def test_presence_absence_uniform(self, tmp_path):

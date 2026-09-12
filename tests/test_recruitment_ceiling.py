@@ -272,7 +272,7 @@ def test_write_ceiling_csv_roundtrips(tmp_path):
     text = out.read_text().strip().splitlines()
     assert text[0] == "season_idx,ceiling_sp0,ceiling_sp1"
     assert text[1].startswith("0,")
-    loaded, mask = _load_recruitment_ceiling(
+    loaded, _mask = _load_recruitment_ceiling(
         {
             "_osmose.config.dir": str(tmp_path),
             "reproduction.recruitment.ceiling.enabled": "true",

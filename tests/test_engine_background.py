@@ -224,32 +224,32 @@ def _make_bkg_state(extra_cfg: dict | None = None) -> tuple[BackgroundState, Eng
 class TestBackgroundStateUniform:
     def test_get_schools_returns_schoolstate(self):
         """get_schools() returns a SchoolState instance."""
-        bkg, ec, grid = _make_bkg_state()
+        bkg, _ec, _grid = _make_bkg_state()
         result = bkg.get_schools(step=0)
         assert isinstance(result, SchoolState)
 
     def test_school_count_equals_nclass_times_ocean_cells(self):
         """1 species * 2 classes * 9 ocean cells = 18 schools."""
-        bkg, ec, grid = _make_bkg_state()
+        bkg, _ec, _grid = _make_bkg_state()
         result = bkg.get_schools(step=0)
         # 1 background species, 2 classes, 3x3 all-ocean grid = 9 cells
         assert len(result) == 1 * 2 * 9
 
     def test_is_background_flag(self):
         """All schools have is_background == True."""
-        bkg, ec, grid = _make_bkg_state()
+        bkg, _ec, _grid = _make_bkg_state()
         result = bkg.get_schools(step=0)
         assert result.is_background.all()
 
     def test_species_id_offset(self):
         """species_id == n_focal + bkg_idx == 1 + 0 == 1 for all schools."""
-        bkg, ec, grid = _make_bkg_state()
+        bkg, _ec, _grid = _make_bkg_state()
         result = bkg.get_schools(step=0)
         assert (result.species_id == 1).all()
 
     def test_first_feeding_age_dt_is_negative_one(self):
         """first_feeding_age_dt must be -1 (Java convention: always eligible)."""
-        bkg, ec, grid = _make_bkg_state()
+        bkg, _ec, _grid = _make_bkg_state()
         result = bkg.get_schools(step=0)
         assert (result.first_feeding_age_dt == -1).all()
 
@@ -260,7 +260,7 @@ class TestBackgroundStateUniform:
         class 0 proportion=0.3: biomass = (1000/9) * 0.3
         class 1 proportion=0.7: biomass = (1000/9) * 0.7
         """
-        bkg, ec, grid = _make_bkg_state()
+        bkg, _ec, _grid = _make_bkg_state()
         result = bkg.get_schools(step=0)
         per_cell = 1000.0 / 9
         # First 9 schools = class 0, next 9 = class 1
@@ -271,7 +271,7 @@ class TestBackgroundStateUniform:
 
     def test_abundance_consistent_with_biomass(self):
         """abundance == biomass / weight for every school."""
-        bkg, ec, grid = _make_bkg_state()
+        bkg, _ec, _grid = _make_bkg_state()
         result = bkg.get_schools(step=0)
         # Avoid division-by-zero on zero-weight schools (none expected here)
         nonzero = result.weight > 0
@@ -285,7 +285,7 @@ class TestBackgroundStateUniform:
         w0 = 0.00308 * 10^3.029
         w1 = 0.00308 * 30^3.029
         """
-        bkg, ec, grid = _make_bkg_state()
+        bkg, _ec, _grid = _make_bkg_state()
         result = bkg.get_schools(step=0)
         c, b = 0.00308, 3.029
         w0 = c * (10.0**b) * 1e-6  # grams to tonnes
@@ -304,7 +304,7 @@ class TestBackgroundStateUniform:
             "species.biomass.multiplier.sp10": "2.0",
             "species.biomass.offset.sp10": "10.0",
         }
-        bkg, ec, grid = _make_bkg_state(extra_cfg=extra)
+        bkg, _ec, _grid = _make_bkg_state(extra_cfg=extra)
         result = bkg.get_schools(step=0)
         per_cell = 2.0 * (1000.0 / 9 + 10.0)
         # class 0 proportion=0.3

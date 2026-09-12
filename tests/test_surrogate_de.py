@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import itertools
+
 import numpy as np
 import pytest
 
@@ -34,7 +36,7 @@ def test_sphere_5d_converges_below_threshold():
     assert result["fun"] < 0.1, f"got fun={result['fun']}"
     # History should record monotonic non-increase in best objective
     bests = [h["best"] for h in result["history"]]
-    for prev, nxt in zip(bests[:-1], bests[1:]):
+    for prev, nxt in itertools.pairwise(bests):
         assert nxt <= prev + 1e-9, f"best regressed: {prev} → {nxt}"
 
 

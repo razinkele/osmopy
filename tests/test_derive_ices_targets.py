@@ -33,7 +33,8 @@ def test_sprat_catch_matches_snapshot_mean(tmp_path):
 
     import numpy as np
 
-    recs = json.load(open(SNAP / "spr.27.22-32.assessment.json"))
+    with open(SNAP / "spr.27.22-32.assessment.json") as _f:
+        recs = json.load(_f)
     catches = [
         float(r["catches"] or r["landings"])
         for r in recs

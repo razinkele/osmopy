@@ -10,7 +10,7 @@ if str(_SCRIPTS) not in sys.path:
 import baltic_bistability_chunk0 as c0
 
 Tgt = namedtuple("Tgt", "species target lower upper weight", defaults=(1.0,))
-COD = dict(target=120000.0, lower=60000.0, upper=250000.0)
+COD = {"target": 120000.0, "lower": 60000.0, "upper": 250000.0}
 
 
 # ---------------------------------------------------------------- Task 1
@@ -308,7 +308,7 @@ def test_clupeid_axis_valid_and_sum():
 def test_clupeid_axis_nonstationary_is_invalid():
     drifting = _stats(herring=1_500_000, sprat=2_500_000)
     drifting["herring_cv"] = 0.9  # non-stationary -> herring 'undetermined'
-    biomass, valid = c0.clupeid_axis([drifting, drifting], _clup_targets())
+    _biomass, valid = c0.clupeid_axis([drifting, drifting], _clup_targets())
     assert valid is False
 
 

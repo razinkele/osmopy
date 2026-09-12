@@ -207,8 +207,8 @@ class TestNumbaVsPythonParity:
         """Both paths should yield identical post-predation abundance."""
         pytest.importorskip("numba")
 
-        state_numba, diet_numba = self._run_predation(use_numba=True, seed=42)
-        state_python, diet_python = self._run_predation(use_numba=False, seed=42)
+        state_numba, _diet_numba = self._run_predation(use_numba=True, seed=42)
+        state_python, _diet_python = self._run_predation(use_numba=False, seed=42)
 
         np.testing.assert_allclose(
             state_numba.abundance,

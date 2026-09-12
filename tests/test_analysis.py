@@ -209,7 +209,7 @@ class TestSizeSpectrumSlope:
         abundances = 1000 * sizes**-2.0
 
         df = pd.DataFrame({"size": sizes, "abundance": abundances})
-        slope, intercept, r2 = size_spectrum_slope(df)
+        slope, _intercept, r2 = size_spectrum_slope(df)
 
         # With log10: slope should be exactly -2.0
         assert abs(slope - (-2.0)) < 0.01

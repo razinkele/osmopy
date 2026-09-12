@@ -60,7 +60,7 @@ def test_delta_for_selected_ranks_and_signs(monkeypatch):
     by = {d.species: d for d in deltas}
     assert by["cod"].pct_delta == pytest.approx(0.10)
     assert by["herring"].pct_delta == pytest.approx(1.0)
-    assert [d.species for d in deltas][0] == "herring"  # biggest |Δ%| first
+    assert next(d.species for d in deltas) == "herring"  # biggest |Δ%| first
 
 
 def test_delta_for_selected_swap_flips_sign(monkeypatch):

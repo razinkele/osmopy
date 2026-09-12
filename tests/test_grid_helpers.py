@@ -165,7 +165,7 @@ def test_build_netcdf_grid_layers_2d():
     mask = np.ones((2, 2))
     result = build_netcdf_grid_layers(lat2d, lon2d, mask=mask)
     assert isinstance(result, tuple)
-    layers, view_state = result
+    layers, _view_state = result
     assert isinstance(layers, list)
     assert len(layers) > 0
 
@@ -178,7 +178,7 @@ def test_build_netcdf_grid_layers_with_land():
     # mask with zeros = land cells
     mask = np.array([[1, 0], [0, 1]])
     result = build_netcdf_grid_layers(lat, lon, mask=mask)
-    layers, view_state = result
+    layers, _view_state = result
     # Should have boundary + ocean + land layers
     assert len(layers) >= 2
 
@@ -190,7 +190,7 @@ def test_build_netcdf_grid_layers_all_land():
     lon = np.array([1.0, 2.0])
     mask = np.zeros((2, 2))  # all land
     result = build_netcdf_grid_layers(lat, lon, mask=mask)
-    layers, view_state = result
+    layers, _view_state = result
     # boundary + land layer
     assert isinstance(layers, list)
     assert len(layers) >= 1

@@ -177,9 +177,11 @@ def test_save_backup_restored_on_rename_failure(tmp_path):
         return original_rename(src, dst)
 
     s2 = Scenario(name="test", config={"a": "updated"})
-    with patch("os.rename", side_effect=failing_rename):
-        with pytest.raises(OSError, match="Simulated failure"):
-            manager.save(s2)
+    with (
+        patch("os.rename", side_effect=failing_rename),
+        pytest.raises(OSError, match="Simulated failure"),
+    ):
+        manager.save(s2)
 
     # Backup should be restored to target so original data is accessible
     target = tmp_path / "test" / "scenario.json"

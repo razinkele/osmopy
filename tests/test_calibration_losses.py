@@ -173,12 +173,12 @@ def test_residuals_accessor_returns_most_recent(
     obj, accessor = make_banded_objective(targets, species_names)
 
     obj(synthetic_stats_in_band)
-    labels1, residuals1, sim_biomass1 = accessor()
+    labels1, residuals1, _sim_biomass1 = accessor()
     assert tuple(labels1) == ("sp_a", "sp_b")
     assert tuple(residuals1) == (0.0, 0.0)
 
     obj(synthetic_stats_sp_b_out_of_band)
-    labels2, residuals2, sim_biomass2 = accessor()
+    _labels2, residuals2, sim_biomass2 = accessor()
     assert residuals2[1] > 0.0
     assert sim_biomass2[1] == synthetic_stats_sp_b_out_of_band["sp_b_mean"]
 

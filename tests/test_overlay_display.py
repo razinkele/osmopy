@@ -517,7 +517,7 @@ class TestNetcdfOverlayColormap:
         assert cells is not None
         # Sort by value to get the cell with value=0
         cells_sorted = sorted(cells, key=lambda c: c["value"])
-        r, g, b, a = cells_sorted[0]["fill"]
+        r, _g, b, _a = cells_sorted[0]["fill"]
         assert r < 30, f"Min-value cell should be blue (low R), got R={r}"
         assert b > 160, f"Min-value cell should be blue (high B), got B={b}"
 
@@ -530,7 +530,7 @@ class TestNetcdfOverlayColormap:
         cells = load_netcdf_overlay(p, vmin=0.0, vmax=100.0)
         assert cells is not None
         cells_sorted = sorted(cells, key=lambda c: c["value"])
-        r, g, b, a = cells_sorted[-1]["fill"]
+        r, _g, b, _a = cells_sorted[-1]["fill"]
         assert r > 200, f"Max-value cell should be yellow (high R), got R={r}"
         assert b < 30, f"Max-value cell should be yellow (low B), got B={b}"
 
@@ -877,11 +877,13 @@ class TestOverlayCatalogStructure:
         import ast
 
         for node in ast.walk(self._tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                if node.name == "grid_overlay_selector":
-                    seg = ast.get_source_segment(self._text, node)
-                    assert seg is not None
-                    return seg
+            if (
+                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name == "grid_overlay_selector"
+            ):
+                seg = ast.get_source_segment(self._text, node)
+                assert seg is not None
+                return seg
         pytest.fail("grid_overlay_selector not found in grid.py")
 
     def test_deduplication_uses_seen_paths(self):

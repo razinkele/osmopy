@@ -65,7 +65,7 @@ def _write_series(tmp_path, years, vals, name="s.csv"):
     # the same tmp_path do not overwrite each other (a good series written by
     # _cfg would otherwise clobber a bad series written for a validation test).
     p = tmp_path / name
-    rows = ["year,spawning_rv"] + ["%d,%.6f" % (y, v) for y, v in zip(years, vals)]
+    rows = ["year,spawning_rv"] + [f"{y:d},{v:.6f}" for y, v in zip(years, vals)]
     p.write_text("\n".join(rows) + "\n")
     return p
 

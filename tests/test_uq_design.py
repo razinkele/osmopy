@@ -118,7 +118,7 @@ def test_run_design_per_key_independent_censoring():
     )
     assert res.n_censored("cod_ssb_mean") == 4
     assert res.n_censored("herring_biomass_mean") == 0
-    Xv, Yv, av = res.valid("herring_biomass_mean")
+    Xv, Yv, _av = res.valid("herring_biomass_mean")
     assert len(Xv) == 4 and not np.any(np.isnan(Yv))
 
 

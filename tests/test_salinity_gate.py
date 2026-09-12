@@ -123,7 +123,7 @@ def _draw_columns(gate_grid, n=4000):
     rng = np.random.default_rng(0)
     cols = np.zeros(nx, dtype=np.int64)
     for _ in range(n):
-        x, y, out = _map_move_school(
+        x, _y, out = _map_move_school(
             0, -1, -1, ny, nx, ocean, ms, 1, 0, rng, salinity_weight_grid=gate_grid
         )
         assert not out
@@ -166,7 +166,9 @@ def test_random_walk_weighted(monkeypatch):
     cols = np.zeros(nx, dtype=np.int64)
     # start located at (cx=3, cy=2), walk_range large enough to reach cols 2-5
     for _ in range(4000):
-        x, y, out = _map_move_school(1, 3, 2, ny, nx, ocean, ms, 5, 1, rng, salinity_weight_grid=w)
+        x, _y, _out = _map_move_school(
+            1, 3, 2, ny, nx, ocean, ms, 5, 1, rng, salinity_weight_grid=w
+        )
         cols[x] += 1
     high = cols[4] + cols[5]
     mid = cols[2] + cols[3]
@@ -297,7 +299,7 @@ def test_numba_gated_all_zero_guard_places_not_annihilated():
     # sal_w all zero over the whole map -> wmax<=0 -> fall back to ungated placement.
     ny, nx = 5, 6
     sal_w = np.zeros((ny, nx), dtype=np.float64)
-    out_cx, out_cy, is_out = _batch_placement(sal_w, n=200, same_map=False)
+    _out_cx, _out_cy, is_out = _batch_placement(sal_w, n=200, same_map=False)
     assert not is_out.any()  # cod is placed, never annihilated
 
 

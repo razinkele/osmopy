@@ -5,7 +5,7 @@ from osmose.engine.config import EngineConfig
 
 
 def _cfg(variant):
-    p = sorted(Path("data/baltic-fine").glob(f"*{variant}_all-parameters*.csv"))[0]
+    p = min(Path("data/baltic-fine").glob(f"*{variant}_all-parameters*.csv"))
     return dict(OsmoseConfigReader().read(str(p)))
 
 

@@ -23,5 +23,5 @@ def test_ignores_nan_ocean_fill():
     times_year = np.array([2000, 2000])
     times_month = np.array([6, 7])
     mask = np.array([[True, True]])
-    years, means = summer_sst_by_year(temp, times_year, times_month, mask, months=(6, 7))
+    _years, means = summer_sst_by_year(temp, times_year, times_month, mask, months=(6, 7))
     assert means[0] == pytest.approx(13.0)  # nanmean over the one valid cell across 2 months

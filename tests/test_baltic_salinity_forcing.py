@@ -78,7 +78,7 @@ def test_accumulate_climatology_two_years(tmp_path):
     fB = tmp_path / "so_2002.nc"
     _write_so_file(fA, [1], depth, lat, lon, lambda m: np.full((2, 2, 2), 10.0))
     _write_so_file(fB, [1], depth, lat, lon, lambda m: np.full((2, 2, 2), 20.0))
-    clim, slat, slon = bld.accumulate_climatology([str(fA), str(fB)])
+    clim, slat, _slon = bld.accumulate_climatology([str(fA), str(fB)])
     assert clim.shape == (12, 2, 2)
     assert np.allclose(clim[0], 15.0)  # Jan mean across the two years
     assert np.all(np.isnan(clim[1]))  # Feb had no data
@@ -115,7 +115,7 @@ def test_gate_loads_real_field_and_grades():
     cfg["movement.salinity.gate.enabled"] = "true"
     cfg["movement.salinity.gate.species.enabled.sp0"] = "true"
     n_sp = int(float(cfg["simulation.nspecies"]))
-    enabled, mask, lo, hi, field = _load_salinity_gate(cfg, n_sp)
+    enabled, _mask, lo, hi, field = _load_salinity_gate(cfg, n_sp)
     assert enabled and field is not None and not field.is_constant
     assert field.get_grid(0).shape == (40, 50)  # (ny, nx)
     ecfg = SimpleNamespace(

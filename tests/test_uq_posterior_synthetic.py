@@ -74,7 +74,7 @@ def test_gaussian_posterior_recovers_theta_star():
     logp = make_log_posterior(
         emus, _targets(emus), _fp2(), sigma_seed_sq_by_key=_seed_by_key(emus), likelihood="gaussian"
     )
-    g, points = _grid()
+    _g, points = _grid()
     vals = np.array([logp(p) for p in points])
     best = points[int(np.argmax(vals))]
     assert np.allclose(best, THETA_STAR, atol=0.05)
@@ -98,7 +98,7 @@ def test_band_faithful_flat_inside_decays_outside():
 
 def test_misspecified_target_lowers_max_log_posterior():
     emus = _emulators()
-    g, points = _grid()
+    _g, points = _grid()
     seed = _seed_by_key(emus)
     well = make_log_posterior(emus, _targets(emus), _fp2(), sigma_seed_sq_by_key=seed)
     bad = make_log_posterior(

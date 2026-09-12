@@ -100,7 +100,7 @@ class TestLoadNetcdfGridPathTraversal:
         }
         result = load_netcdf_grid(cfg, config_dir=tmp_path)
         assert result is not None
-        lat_out, lon_out, mask_out = result
+        lat_out, _lon_out, _mask_out = result
         assert lat_out.shape[0] == 2
 
 

@@ -120,7 +120,7 @@ def test_run_surrogate_workflow_multi_objective():
     cal.fit(samples, Y)
     assert cal.n_objectives == 2
 
-    means, stds = cal.predict(samples[:5])
+    means, _stds = cal.predict(samples[:5])
     assert means.shape == (5, 2)
 
     result = cal.find_optimum(n_candidates=500)

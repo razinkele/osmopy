@@ -89,14 +89,14 @@ def test_inject_ncell_invalid_grid_returns_unchanged_copy():
 def test_prerun_validation_blocks_on_errors():
     registry = build_registry()
     config = {"species.linf.sp0": "not_a_number", "simulation.nspecies": "2"}
-    errors, warnings = validate_config(config, registry)
+    errors, _warnings = validate_config(config, registry)
     assert len(errors) > 0
 
 
 def test_prerun_validation_passes_valid_config():
     registry = build_registry()
     config = {"simulation.nspecies": "3", "species.linf.sp0": "50.0"}
-    errors, warnings = validate_config(config, registry)
+    errors, _warnings = validate_config(config, registry)
     assert len(errors) == 0
 
 

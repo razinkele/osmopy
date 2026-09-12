@@ -43,7 +43,7 @@ def cert():
 
 def test_deep_seeding_transient_does_not_read_as_collapse(cert):
     """A stock that dips near zero during bootstrap but recovers into envelope must PASS."""
-    lo, hi = cert.ENVELOPE["cod_east"]
+    _lo, _hi = cert.ENVELOPE["cod_east"]
     # 10 bootstrap steps crashing to 17 t, then 15 steps settled at ~83 kt (inside 60k-85k)
     series = [50000.0, 5000.0, 500.0, 17.0, 200.0, 3000.0, 20000.0, 50000.0, 70000.0, 80000.0]
     series += [83000.0] * 15
