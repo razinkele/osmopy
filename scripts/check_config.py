@@ -10,6 +10,7 @@ duplicate-key warnings print but exit 0. For config MASTER files, not data/map C
 Usage:
     PYTHONPATH=. .venv/bin/python scripts/check_config.py --config <master.csv>
 """
+
 from __future__ import annotations
 
 import argparse

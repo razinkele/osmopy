@@ -23,6 +23,13 @@ def test_oracle_shuffle_carries_over_not_reset():
     # different permutations; this pins the in-place semantics.
     _, _, _, _, orders = oracle_cell_rng(12345, 20)
     assert orders.shape == (20, 4)
-    assert {tuple(r) for r in orders}.issubset({(a, b, c, d) for a in range(4)
-            for b in range(4) for c in range(4) for d in range(4)
-            if len({a, b, c, d}) == 4})  # every row is a permutation of 0..3
+    assert {tuple(r) for r in orders}.issubset(
+        {
+            (a, b, c, d)
+            for a in range(4)
+            for b in range(4)
+            for c in range(4)
+            for d in range(4)
+            if len({a, b, c, d}) == 4
+        }
+    )  # every row is a permutation of 0..3

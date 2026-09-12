@@ -47,38 +47,54 @@ def _parse_ices_window(spec: str) -> range:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument(
-        "--results-dir", required=True, type=Path,
+        "--results-dir",
+        required=True,
+        type=Path,
         help="OSMOSE output directory (containing biomass-*.csv etc.)",
     )
     parser.add_argument(
-        "--snapshots-dir", type=Path, default=DEFAULT_SNAPSHOT_DIR,
+        "--snapshots-dir",
+        type=Path,
+        default=DEFAULT_SNAPSHOT_DIR,
         help=f"ICES snapshot directory (default: {DEFAULT_SNAPSHOT_DIR.relative_to(PROJECT_ROOT)})",
     )
     parser.add_argument(
-        "--window-years", type=int, default=5,
+        "--window-years",
+        type=int,
+        default=5,
         help="Trailing simulation years to average for the model mean (default: 5)",
     )
     parser.add_argument(
-        "--ices-window", type=_parse_ices_window, default=range(2018, 2023),
+        "--ices-window",
+        type=_parse_ices_window,
+        default=range(2018, 2023),
         metavar="YYYY-YYYY",
         help="ICES SAG year range to compute envelope over (default: 2018-2022)",
     )
     parser.add_argument(
-        "--prefix", default="osm",
+        "--prefix",
+        default="osm",
         help="OSMOSE output filename prefix (default: osm)",
     )
     parser.add_argument(
-        "--report", type=Path, default=None,
+        "--report",
+        type=Path,
+        default=None,
         help="Write markdown report to PATH (default: stdout-only)",
     )
     parser.add_argument(
-        "--json", type=Path, default=None,
+        "--json",
+        type=Path,
+        default=None,
         help="Write JSON results to PATH (default: stdout-only)",
     )
     parser.add_argument(
-        "--quiet", action="store_true",
+        "--quiet",
+        action="store_true",
         help="Suppress markdown output to stdout",
     )
     args = parser.parse_args(argv)

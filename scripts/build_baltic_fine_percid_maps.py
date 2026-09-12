@@ -1,10 +1,13 @@
 from __future__ import annotations
+
 import argparse
+
 import numpy as np
 import pandas as pd
 import xarray as xr
+
 from osmose.forcing.percid_habitat import percid_stage_map, vacuity_ok
-from scripts.build_baltic_fine_grid import build_shallow_fractions, OUT
+from scripts.build_baltic_fine_grid import OUT, build_shallow_fractions
 
 # (stage_file, depth_max_m, sal_ceiling, sal_gate)
 STAGES = {
@@ -19,7 +22,7 @@ STAGES = {
 
 def _annual_mean_salinity():
     ds = xr.open_dataset(OUT / "baltic_salinity_bottom_climatology.nc")
-    v = "salinity" if "salinity" in ds else list(ds.data_vars)[0]
+    v = "salinity" if "salinity" in ds else next(iter(ds.data_vars))
     return np.asarray(ds[v].values).mean(axis=0)  # (160,200); gap-filled in Task 4
 
 

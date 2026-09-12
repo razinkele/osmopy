@@ -29,7 +29,6 @@ import json
 from pathlib import Path
 
 import numpy as np
-
 from calibrate_baltic import (
     BALTIC_CONFIG,
     SPECIES_NAMES,

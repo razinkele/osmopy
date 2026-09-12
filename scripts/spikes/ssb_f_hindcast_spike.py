@@ -35,7 +35,8 @@ SPECIES = {
 
 
 def _series(stock: str, field: str) -> dict[int, float]:
-    d = json.load(open(SNAP / f"{stock}.assessment.json"))
+    with open(SNAP / f"{stock}.assessment.json") as _f:
+        d = json.load(_f)
     out = {}
     for r in d:
         v = r.get(field)

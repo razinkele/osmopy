@@ -1,4 +1,5 @@
 """Compile kernel.c into two cffi modules: portable (-O3) and native (-march=native)."""
+
 from __future__ import annotations
 
 from pathlib import Path

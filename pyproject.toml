@@ -186,4 +186,11 @@ ignore = [
 ]
 "scripts/*" = [
     "PLW1510", # these drive external engines and inspect returncode directly
+    # EXE001 wants a shebang file to be chmod +x. Do NOT satisfy it here: these
+    # scripts import numpy/numba/xarray and are documented (CLAUDE.md) to run as
+    # `.venv/bin/python scripts/foo.py`. Marking them executable would invite
+    # `./scripts/foo.py`, which dispatches to `#!/usr/bin/env python3` -> system
+    # python -> ImportError. The shebang is vestigial; the ignore is the honest
+    # option until someone strips the 52 shebang lines.
+    "EXE001",
 ]

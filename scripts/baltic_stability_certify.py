@@ -376,8 +376,10 @@ def main() -> int:
 
     lines = [
         "# Baltic stability — SP-A certification\n",
-        f"**Params:** {args.params}  ·  **horizon:** {args.years} yr  ·  **seeds:** {args.seeds}"
-        f"  ·  **seeding:** {args.seeding_mode or 'config default'}\n",
+        (
+            f"**Params:** {args.params}  ·  **horizon:** {args.years} yr  ·  **seeds:** {args.seeds}"
+            f"  ·  **seeding:** {args.seeding_mode or 'config default'}\n"
+        ),
         "| species | persists | in-envelope | min biomass | final-decade mean range |",
         "|---|---|---|---|---|",
     ]

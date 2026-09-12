@@ -8,9 +8,9 @@
 - Run one test: `.venv/bin/python -m pytest tests/test_schema.py::test_name -v`
 - Run a focused file or selector: `.venv/bin/python -m pytest tests/test_engine_config_validation.py -v`
 - Run coverage like CI: `.venv/bin/python -m pytest --cov=osmose --cov-report=term-missing --cov-fail-under=90`
-- Lint: `.venv/bin/ruff check osmose/ ui/ tests/`
-- Format: `.venv/bin/ruff format osmose/ ui/ tests/`
-- Check formatting only: `.venv/bin/ruff format --check osmose/ ui/ tests/`
+- Lint: `.venv/bin/ruff check osmose/ ui/ tests/ scripts/ app.py`
+- Format: `.venv/bin/ruff format osmose/ ui/ tests/ scripts/ app.py`
+- Check formatting only: `.venv/bin/ruff format --check osmose/ ui/ tests/ scripts/ app.py`
 - Type-check: `.venv/bin/pyright --pythonversion 3.12` and, for CI parity, also `--pythonversion 3.13`
 - Build docs: `.venv/bin/sphinx-build -W --keep-going -b html docs docs/_build/html`
 - Run visual snapshots only when working on UI/screenshots: `.venv/bin/python -m pytest tests/test_visual_regression.py -m visual -o addopts=""`

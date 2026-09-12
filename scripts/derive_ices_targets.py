@@ -33,7 +33,8 @@ def _stock_catch(snapshot_dir: Path, stock: str) -> dict[int, float]:
     total-fished-biomass `yield`); falls back to `landings` for years/stocks where
     `catches` is unreported (empty string or missing).
     """
-    recs = json.load(open(snapshot_dir / f"{stock}.assessment.json"))
+    with open(snapshot_dir / f"{stock}.assessment.json") as _f:
+        recs = json.load(_f)
     out: dict[int, float] = {}
     for r in recs:
         y = r.get("year")
@@ -45,7 +46,8 @@ def _stock_catch(snapshot_dir: Path, stock: str) -> dict[int, float]:
 
 def derive_catch_targets(snapshot_dir: Path) -> list[dict]:
     """One catch-target row dict per assessed species (catches summed across its stocks)."""
-    index = json.load(open(snapshot_dir / "index.json"))
+    with open(snapshot_dir / "index.json") as _f:
+        index = json.load(_f)
     mapping = index["model_species_to_ices_stocks"]
     lo_y, hi_y = WINDOW
     rows: list[dict] = []
@@ -96,7 +98,7 @@ def _rewrite_csv(catch_rows: list[dict]) -> None:
     data_rows = [ln for ln in text[header_idx + 1 :] if ln.strip()]
     # Drop any pre-existing catch rows (idempotent re-run).
     data_rows = [ln for ln in data_rows if ",catch," not in f",{ln},"]
-    today = date.today().isoformat()
+    today = date.today().isoformat()  # noqa: DTZ011 - local report date stamp, not an instant
     comments = [
         (
             f"#! last_updated: {today}"

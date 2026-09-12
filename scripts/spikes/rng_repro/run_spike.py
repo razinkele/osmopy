@@ -8,6 +8,7 @@ End-to-end:
 5. Write docs/perf/2026-06-25-rng-repro-feasibility-spike.md.
 6. Print PASS/STOP verdict.
 """
+
 from __future__ import annotations
 
 import sys
@@ -19,7 +20,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 worktree_root = Path(__file__).resolve().parents[3]
 
-from scripts.spikes.native_predation.provenance import assert_provenance  # noqa: E402
+from scripts.spikes.native_predation.provenance import assert_provenance
 
 prov = assert_provenance(worktree_root)
 print(f"[provenance] OK — mortality @ {prov['mortality_file']}, numba {prov['numba_version']}")
@@ -38,6 +39,7 @@ for variant in ("portable", "native"):
     if not _so_present(variant):
         print(f"[build] compiling _rng_{variant} …")
         from scripts.spikes.rng_repro.build_ffi import build
+
         build(variant)
         print(f"[build] _rng_{variant} done")
     else:
@@ -49,8 +51,8 @@ rng_dir = str(HERE)
 if rng_dir not in sys.path:
     sys.path.insert(0, rng_dir)
 
-import _rng_portable  # noqa: E402
-import _rng_native    # noqa: E402
+import _rng_native
+import _rng_portable
 
 lib_portable = _rng_portable.lib
 ffi_portable = _rng_portable.ffi
@@ -62,10 +64,12 @@ print("[import] _rng_portable and _rng_native imported OK")
 # ---------------------------------------------------------------------------
 # Parity grid.
 # ---------------------------------------------------------------------------
-from scripts.spikes.rng_repro.parity import GRID_N, GRID_SEEDS, compare_cell  # noqa: E402
+from scripts.spikes.rng_repro.parity import GRID_N, GRID_SEEDS, compare_cell
 
 total_combos = len(GRID_N) * len(GRID_SEEDS)
-print(f"\n[parity] running {total_combos} combos (GRID_N={GRID_N}, GRID_SEEDS len={len(GRID_SEEDS)})")
+print(
+    f"\n[parity] running {total_combos} combos (GRID_N={GRID_N}, GRID_SEEDS len={len(GRID_SEEDS)})"
+)
 
 first_divergence = None
 all_results: list[dict] = []
@@ -84,14 +88,16 @@ for seed in GRID_SEEDS:
 
 parity_pass = first_divergence is None
 mismatch_count = sum(1 for r in all_results if not r["match"])
-print(f"[parity] {'PASS' if parity_pass else 'FAIL'} — {total_combos - mismatch_count}/{total_combos} bit-identical")
+print(
+    f"[parity] {'PASS' if parity_pass else 'FAIL'} — {total_combos - mismatch_count}/{total_combos} bit-identical"
+)
 if first_divergence:
     print(f"[parity] first divergence: {first_divergence}")
 
 # ---------------------------------------------------------------------------
 # Speed benchmarks.
 # ---------------------------------------------------------------------------
-from scripts.spikes.rng_repro.speed import bench_rng  # noqa: E402
+from scripts.spikes.rng_repro.speed import bench_rng
 
 N_ITER = 200
 N_SAMPLES = 30
@@ -130,10 +136,10 @@ if first_divergence:
 
     | field | value |
     |---|---|
-    | seed | `{first_divergence['seed']}` |
-    | n    | `{first_divergence['n']}` |
-    | array | `{first_divergence['array']}` |
-    | index | `{first_divergence['index']}` |
+    | seed | `{first_divergence["seed"]}` |
+    | n    | `{first_divergence["n"]}` |
+    | array | `{first_divergence["array"]}` |
+    | index | `{first_divergence["index"]}` |
 
     **Classification:** MT19937 seeding or draw-order mismatch in `mt19937.c`.
     """)
@@ -187,8 +193,8 @@ Metric: median ± IQR (ns per iteration).
 
 | n  | Numba median (ns) | Numba IQR (ns) | C median (ns) | C IQR (ns) | ratio Numba/C |
 |----|-------------------|----------------|---------------|------------|---------------|
-| 12 | {b12['numba_med_ns']:.0f} | {b12['numba_iqr_ns']:.0f} | {b12['c_med_ns']:.0f} | {b12['c_iqr_ns']:.0f} | {b12['ratio']:.2f}x |
-| 33 | {b33['numba_med_ns']:.0f} | {b33['numba_iqr_ns']:.0f} | {b33['c_med_ns']:.0f} | {b33['c_iqr_ns']:.0f} | {b33['ratio']:.2f}x |
+| 12 | {b12["numba_med_ns"]:.0f} | {b12["numba_iqr_ns"]:.0f} | {b12["c_med_ns"]:.0f} | {b12["c_iqr_ns"]:.0f} | {b12["ratio"]:.2f}x |
+| 33 | {b33["numba_med_ns"]:.0f} | {b33["numba_iqr_ns"]:.0f} | {b33["c_med_ns"]:.0f} | {b33["c_iqr_ns"]:.0f} | {b33["ratio"]:.2f}x |
 
 Note: `-march=native` is NOT the feasibility gate.  The portable build ratio already answers
 whether a C RNG-gen call is a meaningful fraction of per-cell cost.
@@ -199,12 +205,12 @@ whether a C RNG-gen call is a meaningful fraction of per-cell cost.
 
 **{VERDICT}**
 
-{'Bit-exact RNG reproduction is FEASIBLE.' if parity_pass else 'Parity FAILED — bit-exact RNG reproduction is NOT demonstrated.'}
-{'The C implementation (`mt19937.c`) reproduces the Numba MT19937 stream bit-for-bit across the full GRID_N × GRID_SEEDS grid (portable build).' if parity_pass else f'First divergence at seed={first_divergence["seed"]}, n={first_divergence["n"]}, array={first_divergence["array"]}.'}
+{"Bit-exact RNG reproduction is FEASIBLE." if parity_pass else "Parity FAILED — bit-exact RNG reproduction is NOT demonstrated."}
+{"The C implementation (`mt19937.c`) reproduces the Numba MT19937 stream bit-for-bit across the full GRID_N × GRID_SEEDS grid (portable build)." if parity_pass else f"First divergence at seed={first_divergence['seed']}, n={first_divergence['n']}, array={first_divergence['array']}."}
 
-{'### What a PASS authorises' if parity_pass else '### What a STOP means'}
+{"### What a PASS authorises" if parity_pass else "### What a STOP means"}
 
-{'A PASS authorises **designing** Stage 1 — the cell-loop port: porting `_mortality_all_cells_parallel`, `_apply_single_cause`, and the leaf integration, adding `prange`/OpenMP parallelism, and then **measuring** end-to-end `eec_full` wall-time before deciding whether to ship.' if parity_pass else 'A STOP means the C MT19937 port has a seeding or draw-order defect. Do not proceed to Stage 1 design until the first divergence is diagnosed and `mt19937.c` is corrected.'}
+{"A PASS authorises **designing** Stage 1 — the cell-loop port: porting `_mortality_all_cells_parallel`, `_apply_single_cause`, and the leaf integration, adding `prange`/OpenMP parallelism, and then **measuring** end-to-end `eec_full` wall-time before deciding whether to ship." if parity_pass else "A STOP means the C MT19937 port has a seeding or draw-order defect. Do not proceed to Stage 1 design until the first divergence is diagnosed and `mt19937.c` is corrected."}
 
 A PASS does **not** authorise building Stage 1 blind.  The full design review must address:
 
@@ -212,8 +218,8 @@ A PASS does **not** authorise building Stage 1 blind.  The full design review mu
   of the mortality kernel that must be kept in sync with every future change to the Numba
   production path.  It adds CI/wheel/packaging complexity for what is currently ~40% of a 2.5 s
   benchmark with no workload actively blocked on it.
-- **RNG-gen cost share:** if the C RNG-gen speed ratio (Numba/C ≈ {b12['ratio']:.1f}x at n=12,
-  {b33['ratio']:.1f}x at n=33) is a large fraction of per-cell cost, it would erode the
+- **RNG-gen cost share:** if the C RNG-gen speed ratio (Numba/C ≈ {b12["ratio"]:.1f}x at n=12,
+  {b33["ratio"]:.1f}x at n=33) is a large fraction of per-cell cost, it would erode the
   integration win even if the loop + predation kernel itself is fast.  This must be quantified
   in the Stage 1 design before committing to the implementation.
 - **Stage 1 scope:** port `_apply_single_cause` + leaf integration, wire `prange`/OpenMP,
@@ -243,8 +249,10 @@ if parity_pass:
     print("Bit-exact RNG reproduction confirmed across the full parity grid.")
     print("Stage 1 (cell-loop port) design is AUTHORISED.")
 else:
-    print(f"First divergence: seed={first_divergence['seed']}, n={first_divergence['n']}, "
-          f"array={first_divergence['array']}")
+    print(
+        f"First divergence: seed={first_divergence['seed']}, n={first_divergence['n']}, "
+        f"array={first_divergence['array']}"
+    )
     print("Stage 1 is NOT authorised until the divergence is fixed.")
 print(f"Speed n=12: Numba/C ratio = {b12['ratio']:.2f}x")
 print(f"Speed n=33: Numba/C ratio = {b33['ratio']:.2f}x")

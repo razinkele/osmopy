@@ -4,7 +4,9 @@ import numpy as np
 import pytest
 
 from scripts.spikes.native_predation.leaf_args import (
-    build_leaf_args, load_capture, select_cells,
+    build_leaf_args,
+    load_capture,
+    select_cells,
 )
 
 FIX = Path(__file__).resolve().parents[1] / "_fixtures" / "cellloop.npz"
@@ -13,7 +15,7 @@ pytestmark = pytest.mark.skipif(not FIX.exists(), reason="run capture.py first")
 
 
 def test_select_cells_returns_four_valid_indices():
-    arrays, meta = load_capture(FIX)
+    arrays, _meta = load_capture(FIX)
     sel = select_cells(arrays)
     assert set(sel) == {"p10", "p50", "p95", "small"}
     n_cells = len(arrays["boundaries"]) - 1

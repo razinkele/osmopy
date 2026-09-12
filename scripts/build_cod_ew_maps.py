@@ -34,7 +34,7 @@ apply_calibration = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(apply_calibration)
 set_key = apply_calibration.set_key
 
-WEST_COLS = set(range(0, 15))  # cols <= 14  (SD22-24, incl. Arkona transition)
+WEST_COLS = set(range(15))  # cols <= 14  (SD22-24, incl. Arkona transition)
 EAST_COLS = set(range(13, 50))  # cols >= 13  (SD24 transition + deep basins east)
 
 
@@ -75,7 +75,7 @@ _ALL_STEPS = ";".join(str(i) for i in range(24))
 _WEST_SPAWN_STEPS = ";".join(str(i) for i in range(2, 10))  # Feb-May western spring
 _WEST_REST_STEPS = ";".join(str(i) for i in [0, 1] + list(range(10, 24)))
 _EAST_SPAWN_STEPS = ";".join(str(i) for i in range(10, 20))  # Jun-Oct eastern summer
-_EAST_REST_STEPS = ";".join(str(i) for i in list(range(0, 10)) + list(range(20, 24)))
+_EAST_REST_STEPS = ";".join(str(i) for i in list(range(10)) + list(range(20, 24)))
 
 
 def wire_movement() -> None:

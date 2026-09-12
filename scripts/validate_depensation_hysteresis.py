@@ -24,14 +24,14 @@ import numpy as np
 _SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(_SCRIPTS))
 
-from baltic_bistability_chunk0 import (  # noqa: E402
+from baltic_bistability_chunk0 import (
     cod_rich_seeding,
     larva_scale_override,
     read_base_config,
     read_base_larva_rates,
     warmstart_override,
 )
-from calibrate_depensation_bistability import (  # noqa: E402
+from calibrate_depensation_bistability import (
     COLLAPSE_T,
     GO_BAND,
     gate_overrides,

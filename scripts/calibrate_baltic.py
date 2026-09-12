@@ -26,7 +26,7 @@ import threading
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from multiprocessing.connection import wait as _mp_wait
 from pathlib import Path
 
@@ -157,10 +157,10 @@ def _eval_child(func, x, conn) -> None:
     """Child-process entry: evaluate func(x) and send the scalar back, or None on failure."""
     try:
         conn.send(float(func(x)))
-    except BaseException:  # noqa: BLE001 — any failure in the child becomes a penalty upstream
+    except BaseException:
         try:
             conn.send(None)
-        except BaseException:  # noqa: BLE001 — pipe already broken; parent will see EOF
+        except BaseException:
             pass
     finally:
         conn.close()
@@ -257,13 +257,13 @@ def run_simulation(
         bio = results.biomass()
         try:
             yld = results.yield_biomass()
-        except Exception:  # noqa: BLE001 — yield CSV absent/empty: leave yield stats unset
+        except Exception:
             yld = None
         abd = None
         if recruitment_ages:
             try:
                 abd = results.abundance_by_age()
-            except Exception:  # noqa: BLE001 — abundance-by-age absent: leave recruitment unset
+            except Exception:
                 abd = None
         results.close()
 
@@ -527,7 +527,10 @@ def get_phase1_params() -> tuple[list[str], list[tuple[float, float]], list[floa
         (-3.0, 0.7),  # sp5 pikeperch — cormorant predation (4-23% per Heikinheimo 2016)
         (-3.0, 0.3),  # sp6 smelt — no documented top predator in model, keep default
         (-3.0, 0.3),  # sp7 stickleback — boom-bust, not predator-limited
-        (-3.0, 0.7),  # sp8 cod_east — elevated M (hypoxia/seals/parasites) is the collapse lever; wide
+        (
+            -3.0,
+            0.7,
+        ),  # sp8 cod_east — elevated M (hypoxia/seals/parasites) is the collapse lever; wide
     ]
     for i in range(N_SPECIES):
         keys.append(f"mortality.additional.rate.sp{i}")
@@ -848,7 +851,9 @@ def get_phase13_shepherd_params() -> tuple[list[str], list[tuple[float, float]],
     shape_keys, shape_bounds, shape_x0 = [], [], []
     for i in range(N_SPECIES):
         shape_keys.append(f"stock.recruitment.shape.sp{i}")
-        shape_bounds.append((np.log10(1.0), np.log10(3.0)))  # >=1 forbids under-compensation; <=3 avoids over-crush
+        shape_bounds.append(
+            (np.log10(1.0), np.log10(3.0))
+        )  # >=1 forbids under-compensation; <=3 avoids over-crush
         shape_x0.append(np.log10(1.0))
 
     keys = keys1 + keys2 + ssbhalf_keys + shape_keys
@@ -988,10 +993,10 @@ def _make_checkpoint_callback(
         # threshold to count, otherwise tiny oscillations would forever
         # reset the patience counter.
         prior_best = state["best_fun_seen"]
-        if prior_best is None:
-            state["best_fun_seen"] = best_fun
-            state["gens_since_improvement"] = 0
-        elif best_fun < prior_best - max(abs(prior_best), 1.0) * rel_improvement_threshold:
+        if (
+            prior_best is None
+            or best_fun < prior_best - max(abs(prior_best), 1.0) * rel_improvement_threshold
+        ):
             state["best_fun_seen"] = best_fun
             state["gens_since_improvement"] = 0
         else:
@@ -1607,7 +1612,7 @@ def run_calibration(
 
     _save_run_for_de(
         {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "algorithm": "de",
             "phase": phase,
             "parameters": list(param_keys),

@@ -53,8 +53,6 @@ class DataUnavailable(Exception):
     This is the ONLY condition that may trigger the PROVISIONAL fallback.
     """
 
-    pass
-
 
 def quarter_mean(monthly_temps: dict[int, float], quarter: int) -> float:
     """Compute mean temperature for a quarter (Q1=1,Q2=2,Q3=3,Q4=4).
@@ -203,7 +201,7 @@ def write_readme(path: Path, species_info: dict[int, dict[str, str]]) -> None:
     lines = [
         "# Baltic Thermal Series (C1)",
         "",
-        f"Generated: {datetime.now().isoformat()}",
+        f"Generated: {datetime.now().isoformat()}",  # noqa: DTZ005 - local report date stamp, not an instant
         "",
         "## Series specification",
         "",
@@ -340,7 +338,7 @@ def _load_thetao_series(files: list[Path]) -> dict[int, float]:
         # I/O errors only in file open
         try:
             ds = xr.open_dataset(f)
-        except (FileNotFoundError, OSError, IOError) as e:
+        except (FileNotFoundError, OSError) as e:
             print(f"  warning: failed to open {f.name}: {e}")
             continue
 
@@ -427,7 +425,7 @@ def _load_bottomt_series(files: list[Path]) -> dict[int, float]:
         # I/O errors only in file open
         try:
             ds = xr.open_dataset(f)
-        except (FileNotFoundError, OSError, IOError) as e:
+        except (FileNotFoundError, OSError) as e:
             print(f"  warning: failed to open {f.name}: {e}")
             continue
 

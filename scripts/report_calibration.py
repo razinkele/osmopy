@@ -14,6 +14,7 @@ The --baseline flag points at a pre-existing output directory (e.g. the
 /tmp/osmose_baltic_50y folder produced during the 2026-04-22 session).
 If the baseline is missing, only post-calibration is shown.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -31,8 +32,7 @@ BALTIC_CONFIG = PROJECT_ROOT / "data" / "baltic" / "baltic_all-parameters.csv"
 TARGETS_CSV = PROJECT_ROOT / "data" / "baltic" / "reference" / "biomass_targets.csv"
 RESULTS_DIR = PROJECT_ROOT / "data" / "baltic" / "calibration_results"
 
-SPECIES = ["cod", "herring", "sprat", "flounder",
-           "perch", "pikeperch", "smelt", "stickleback"]
+SPECIES = ["cod", "herring", "sprat", "flounder", "perch", "pikeperch", "smelt", "stickleback"]
 
 
 def load_targets():
@@ -45,7 +45,7 @@ def load_targets():
     """
     t = {}
     for ln in TARGETS_CSV.read_text().splitlines():
-        if ln.startswith("#") or ln.startswith("species,") or not ln.strip():
+        if ln.startswith(("#", "species,")) or not ln.strip():
             continue
         p = ln.split(",", 6)
         if len(p) >= 4:
@@ -66,10 +66,12 @@ def load_biomass(output_dir: Path) -> pd.DataFrame:
     return pd.read_csv(bio_file, skiprows=1)
 
 
-def run_calibrated_sim(overrides: dict[str, str], n_years: int, seed: int,
-                       out_root: Path) -> pd.DataFrame:
+def run_calibrated_sim(
+    overrides: dict[str, str], n_years: int, seed: int, out_root: Path
+) -> pd.DataFrame:
     from osmose.config.reader import OsmoseConfigReader
     from osmose.engine import PythonEngine
+
     reader = OsmoseConfigReader()
     cfg = reader.read(BALTIC_CONFIG)
     cfg["_osmose.config.dir"] = str((PROJECT_ROOT / "data" / "baltic").resolve())
@@ -94,17 +96,20 @@ def verdict(sim: float, lo: float, hi: float) -> str:
     if sim <= 0:
         return "EXTINCT"
     if sim < lo:
-        return f"LOW ×{sim/lo:.2f}"
+        return f"LOW ×{sim / lo:.2f}"
     if sim > hi:
-        return f"HIGH ×{sim/hi:.1f}"
+        return f"HIGH ×{sim / hi:.1f}"
     return "in range ✓"
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--phase", default="1")
-    ap.add_argument("--baseline", default="/tmp/osmose_baltic_50y",
-                    help="Pre-calibration output dir (contains osm_biomass_Simu0.csv)")
+    ap.add_argument(
+        "--baseline",
+        default="/tmp/osmose_baltic_50y",
+        help="Pre-calibration output dir (contains osm_biomass_Simu0.csv)",
+    )
     ap.add_argument("--seeds", type=int, default=3)
     ap.add_argument("--years", type=int, default=50)
     args = ap.parse_args()
@@ -127,17 +132,18 @@ def main() -> None:
                 stacked_overrides[k] = str(v)
             print(f"Stacked: phase1 ({len(stacked_overrides)} params) + phase2")
     elif args.phase == "12":
-        print(f"Phase 12 results contain all 24 params — no stacking needed")
+        print("Phase 12 results contain all 24 params — no stacking needed")
 
     print(f"=== Calibration report — phase {args.phase} ===")
     print(f"Evaluations: {data['n_evaluations']}")
-    print(f"Runtime:     {data['elapsed_seconds']:.0f}s "
-          f"({data['elapsed_seconds']/60:.1f} min)")
+    print(f"Runtime:     {data['elapsed_seconds']:.0f}s ({data['elapsed_seconds'] / 60:.1f} min)")
     print(f"Objective (single seed): {data['objective_single_seed']:.4f}")
     mo = data.get("objective_multiseed_mean")
     if mo is not None:
-        print(f"Objective (multi-seed mean): {mo:.4f} "
-              f"(std {data.get('objective_multiseed_std', 0):.4f})")
+        print(
+            f"Objective (multi-seed mean): {mo:.4f} "
+            f"(std {data.get('objective_multiseed_std', 0):.4f})"
+        )
 
     print("\nOptimized parameters:")
     for k, v in sorted(data["parameters"].items()):
@@ -169,15 +175,17 @@ def main() -> None:
     for s in range(args.seeds):
         bio = run_calibrated_sim(overrides, args.years, seed=s, out_root=out_root)
         post_runs.append(summarise(bio))
-    print(f"  Done in {time.time()-t0:.1f}s  (outputs in {out_root})")
+    print(f"  Done in {time.time() - t0:.1f}s  (outputs in {out_root})")
 
     post_df = pd.DataFrame(post_runs)
     post_mean = post_df.mean()
     post_cv = post_df.std() / post_mean.replace(0, np.nan)
 
     # Report table
-    print(f"\n{'species':12s} {'baseline':>14s}  {'post-cal':>14s}  "
-          f"{'CV':>6s}  {'target':>11s}  {'range':>22s}  verdict")
+    print(
+        f"\n{'species':12s} {'baseline':>14s}  {'post-cal':>14s}  "
+        f"{'CV':>6s}  {'target':>11s}  {'range':>22s}  verdict"
+    )
     n_in = 0
     for sp in SPECIES:
         base = baseline[sp] if baseline is not None else None
@@ -188,10 +196,14 @@ def main() -> None:
         if "in range" in v:
             n_in += 1
         base_str = f"{base:14,.0f}" if base is not None else f"{'—':>14s}"
-        print(f"{sp:12s} {base_str}  {post:14,.0f}  {cv:6.3f}  {tgt:11,.0f}  "
-              f"{f'{lo:,.0f}-{hi:,.0f}':>22s}  {v}")
-    print(f"\n{n_in}/{len(SPECIES)} species in ICES biomass range "
-          f"after calibration (pre-cal was 1/8 per 2026-04-22 memory)")
+        print(
+            f"{sp:12s} {base_str}  {post:14,.0f}  {cv:6.3f}  {tgt:11,.0f}  "
+            f"{f'{lo:,.0f}-{hi:,.0f}':>22s}  {v}"
+        )
+    print(
+        f"\n{n_in}/{len(SPECIES)} species in ICES biomass range "
+        f"after calibration (pre-cal was 1/8 per 2026-04-22 memory)"
+    )
 
 
 if __name__ == "__main__":

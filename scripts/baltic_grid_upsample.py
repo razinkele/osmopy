@@ -1,6 +1,8 @@
 from pathlib import Path
+
 import numpy as np
 import pandas as pd
+
 from osmose.forcing.grid_upsample import block_replicate
 
 PERCID = {"perch", "pikeperch"}

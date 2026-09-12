@@ -48,18 +48,16 @@ import numpy as np
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from osmose.calibration.sensitivity import SensitivityAnalyzer  # noqa: E402
-from osmose.config.reader import OsmoseConfigReader  # noqa: E402
-from scripts.calibrate_baltic import (  # noqa: E402
+from osmose.calibration.sensitivity import SensitivityAnalyzer
+from osmose.config.reader import OsmoseConfigReader
+from scripts.calibrate_baltic import (
     BALTIC_CONFIG,
     get_phase12_params,
     load_targets,
     make_objective,
 )
 
-DEFAULT_RESULTS_DIR = (
-    PROJECT_ROOT / "data" / "baltic" / "calibration_results" / "sensitivity"
-)
+DEFAULT_RESULTS_DIR = PROJECT_ROOT / "data" / "baltic" / "calibration_results" / "sensitivity"
 DEFAULT_THRESHOLD = 0.05
 
 # ---------------------------------------------------------------------------
@@ -72,8 +70,12 @@ def _pool_init(base_config, targets, param_keys, n_years, seed):
     """Initialiser run once per worker process — builds the objective wrapper."""
     global _OBJECTIVE
     _OBJECTIVE = make_objective(
-        base_config, targets, param_keys,
-        n_years=n_years, seed=seed, use_log_space=True,
+        base_config,
+        targets,
+        param_keys,
+        n_years=n_years,
+        seed=seed,
+        use_log_space=True,
     )
 
 
@@ -142,31 +144,59 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Sobol sensitivity analysis for Baltic phase 12 parameters",
     )
-    parser.add_argument("--n-base", type=int, default=256,
-                        help="Saltelli base count; total evals = n_base * (2*D + 2)")
-    parser.add_argument("--seed", type=int, default=42,
-                        help="Seed for both Sobol sampling and OSMOSE simulations")
-    parser.add_argument("--n-years", type=int, default=50,
-                        help="Simulation years per evaluation. Note: calibrate_baltic.py "
-                             "phase 12 default is 40; using 50 here gives a longer "
-                             "equilibrium window for cleaner sensitivity signal but "
-                             "introduces a methodological gap with the DE search it "
-                             "informs. Match to 40 for strict consistency.")
-    parser.add_argument("--workers", type=int,
-                        default=int(os.environ.get("OSMOSE_DE_WORKERS", "24")),
-                        help="Parallel workers (default: $OSMOSE_DE_WORKERS or 24)")
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_RESULTS_DIR,
-                        help=f"Output directory (default: {DEFAULT_RESULTS_DIR})")
-    parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD,
-                        help=f"ST threshold for TUNE/FIX recommendation (default {DEFAULT_THRESHOLD})")
-    parser.add_argument("--resume", action="store_true",
-                        help="Resume from existing y_*.csv in output-dir; NaN'd rows "
-                             "are auto-retried.")
-    parser.add_argument("--force", action="store_true",
-                        help="Overwrite an existing y_*.csv. DESTROYS prior work — "
-                             "prefer --resume unless intentionally restarting.")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Plan only — print expected eval count + ETA, don't run")
+    parser.add_argument(
+        "--n-base",
+        type=int,
+        default=256,
+        help="Saltelli base count; total evals = n_base * (2*D + 2)",
+    )
+    parser.add_argument(
+        "--seed", type=int, default=42, help="Seed for both Sobol sampling and OSMOSE simulations"
+    )
+    parser.add_argument(
+        "--n-years",
+        type=int,
+        default=50,
+        help="Simulation years per evaluation. Note: calibrate_baltic.py "
+        "phase 12 default is 40; using 50 here gives a longer "
+        "equilibrium window for cleaner sensitivity signal but "
+        "introduces a methodological gap with the DE search it "
+        "informs. Match to 40 for strict consistency.",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=int(os.environ.get("OSMOSE_DE_WORKERS", "24")),
+        help="Parallel workers (default: $OSMOSE_DE_WORKERS or 24)",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=DEFAULT_RESULTS_DIR,
+        help=f"Output directory (default: {DEFAULT_RESULTS_DIR})",
+    )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=DEFAULT_THRESHOLD,
+        help=f"ST threshold for TUNE/FIX recommendation (default {DEFAULT_THRESHOLD})",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume from existing y_*.csv in output-dir; NaN'd rows are auto-retried.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite an existing y_*.csv. DESTROYS prior work — "
+        "prefer --resume unless intentionally restarting.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Plan only — print expected eval count + ETA, don't run",
+    )
     args = parser.parse_args()
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -195,8 +225,10 @@ def main() -> int:
         per_worker = 0.4 if args.workers <= 16 else 0.35
         rate = max(1.0, args.workers * per_worker)
         eta_h = n_samples / rate / 60.0
-        print(f"\nDry run: estimated wall-clock ≈ {eta_h:.1f}h at {rate:.1f} evals/min "
-              f"(assumes {per_worker} evals/worker/min)")
+        print(
+            f"\nDry run: estimated wall-clock ≈ {eta_h:.1f}h at {rate:.1f} evals/min "
+            f"(assumes {per_worker} evals/worker/min)"
+        )
         return 0
 
     # 3. Resume support — refuse to truncate prior work without explicit consent.
@@ -239,11 +271,14 @@ def main() -> int:
         completed = len(done)
         nan_count = 0
 
-        with ProcessPoolExecutor(
-            max_workers=args.workers,
-            initializer=_pool_init,
-            initargs=(base_config, targets, param_keys, args.n_years, args.seed),
-        ) as pool, open(y_csv, "a", buffering=1) as ylog:
+        with (
+            ProcessPoolExecutor(
+                max_workers=args.workers,
+                initializer=_pool_init,
+                initargs=(base_config, targets, param_keys, args.n_years, args.seed),
+            ) as pool,
+            open(y_csv, "a", buffering=1) as ylog,
+        ):
             futures = {pool.submit(_eval_one, t): t[0] for t in todo}
             for fut in as_completed(futures):
                 idx, val = fut.result()
@@ -284,14 +319,16 @@ def main() -> int:
     rows = []
     for i, key in enumerate(param_keys):
         st = float(Si["ST"][i])
-        rows.append({
-            "param": key,
-            "S1": round(float(Si["S1"][i]), 6),
-            "S1_conf": round(float(Si["S1_conf"][i]), 6),
-            "ST": round(st, 6),
-            "ST_conf": round(float(Si["ST_conf"][i]), 6),
-            "recommend": "TUNE" if st >= args.threshold else "FIX",
-        })
+        rows.append(
+            {
+                "param": key,
+                "S1": round(float(Si["S1"][i]), 6),
+                "S1_conf": round(float(Si["S1_conf"][i]), 6),
+                "ST": round(st, 6),
+                "ST_conf": round(float(Si["ST_conf"][i]), 6),
+                "recommend": "TUNE" if st >= args.threshold else "FIX",
+            }
+        )
     rows.sort(key=lambda r: r["ST"], reverse=True)
 
     summary_csv = args.output_dir / f"sobol_n{args.n_base}_seed{args.seed}.csv"
@@ -305,16 +342,20 @@ def main() -> int:
 
     summary_json = args.output_dir / f"sobol_n{args.n_base}_seed{args.seed}.json"
     with open(summary_json, "w") as f:
-        json.dump({
-            "n_base": args.n_base,
-            "n_samples": n_samples,
-            "seed": args.seed,
-            "n_years": args.n_years,
-            "threshold": args.threshold,
-            "n_tune": n_tune,
-            "n_fix": n_fix,
-            "ranked_by_ST": rows,
-        }, f, indent=2)
+        json.dump(
+            {
+                "n_base": args.n_base,
+                "n_samples": n_samples,
+                "seed": args.seed,
+                "n_years": args.n_years,
+                "threshold": args.threshold,
+                "n_tune": n_tune,
+                "n_fix": n_fix,
+                "ranked_by_ST": rows,
+            },
+            f,
+            indent=2,
+        )
 
     # 7. Print summary
     print("\n=== Ranked by Total Sobol Index (ST) ===")
@@ -327,8 +368,10 @@ def main() -> int:
     print(f"→ FIX:  {n_fix} params (ST < {args.threshold})")
     if n_fix > 0:
         fix_keys = [r["param"] for r in rows if r["recommend"] == "FIX"]
-        print("\nNext-run --skip-warm-start-keys candidate set "
-              "(or hardcode these to literature defaults):")
+        print(
+            "\nNext-run --skip-warm-start-keys candidate set "
+            "(or hardcode these to literature defaults):"
+        )
         print(f"  {','.join(fix_keys)}")
 
     print("\nResults written:")

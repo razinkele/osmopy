@@ -51,9 +51,7 @@ def main() -> None:
                 f" (step={lat_step:.4f}°lat, {lon_step:.4f}°lon) to match"
                 " baltic_ltl_biomass.nc and config bounding box."
             ).strip(" |"),
-            "conventions": (
-                "Cell centers. lat descending (north to south); N*step spans bbox."
-            ),
+            "conventions": ("Cell centers. lat descending (north to south); N*step spans bbox."),
         },
     )
 

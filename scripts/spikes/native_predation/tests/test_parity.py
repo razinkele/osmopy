@@ -1,4 +1,5 @@
 """Parity gate: C kernel vs Numba oracle must agree to <=1e-12 (op-order rounding)."""
+
 from pathlib import Path
 
 import pytest

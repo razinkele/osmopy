@@ -11,10 +11,10 @@ import numpy as np
 ROOT = Path("/home/razinka/osmopy")
 sys.path.insert(0, str(ROOT))
 
-from osmose.config.reader import OsmoseConfigReader  # noqa: E402
-from osmose.engine import PythonEngine  # noqa: E402
-from osmose.engine.config import EngineConfig  # noqa: E402
-from osmose.engine.initialization import build_initial_population  # noqa: E402
+from osmose.config.reader import OsmoseConfigReader
+from osmose.engine import PythonEngine
+from osmose.engine.config import EngineConfig
+from osmose.engine.initialization import build_initial_population
 
 NAMES = ["cod", "herring", "sprat", "flounder", "perch", "pikeperch", "smelt", "stickleback"]
 

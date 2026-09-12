@@ -18,8 +18,8 @@ Run from repo root:
 
 from __future__ import annotations
 
-from pathlib import Path
 import shutil
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -37,17 +37,17 @@ NEW_OCEAN_CELLS = [(35, 0), (35, 1), (35, 5), (37, 20)]
 
 COD_BITS_ONLY = [
     (26, 27),  # Eastern Baltic SE edge, lat 58.05 lon 21.00 — spawning-zone adjacent
-    (27, 2),   # Kattegat
-    (28, 1),   # Kattegat
-    (28, 2),   # Kattegat
-    (28, 3),   # Kattegat
-    (29, 3),   # Kattegat
-    (32, 6),   # Arkona/Skagerrak
-    (33, 1),   # Kattegat
-    (33, 6),   # Arkona NW
-    (35, 0),   # Øresund west (mask-land, also in NEW_OCEAN_CELLS)
-    (35, 1),   # Øresund central (mask-land)
-    (35, 5),   # Arkona NW (mask-land)
+    (27, 2),  # Kattegat
+    (28, 1),  # Kattegat
+    (28, 2),  # Kattegat
+    (28, 3),  # Kattegat
+    (29, 3),  # Kattegat
+    (32, 6),  # Arkona/Skagerrak
+    (33, 1),  # Kattegat
+    (33, 6),  # Arkona NW
+    (35, 0),  # Øresund west (mask-land, also in NEW_OCEAN_CELLS)
+    (35, 1),  # Øresund central (mask-land)
+    (35, 5),  # Arkona NW (mask-land)
     (37, 20),  # Gdańsk Bay (mask-land)
     (38, 22),  # Gdańsk Bay, deeper — Gdańsk Deep vicinity
     (38, 23),  # Gdańsk Bay — Gdańsk Deep vicinity
@@ -112,7 +112,7 @@ def open_mask_and_csvs() -> None:
     new_ds["latitude"].encoding = {"dtype": "float64"}
     new_ds["longitude"].encoding = {"dtype": "float64"}
     new_ds.to_netcdf(GRID_NC)
-    print(f"  wrote {GRID_NC}  (ocean cells: {int((mask_eng>0).sum())})")
+    print(f"  wrote {GRID_NC}  (ocean cells: {int((mask_eng > 0).sum())})")
 
     # CSV mask (stored south-first — flip row indices)
     mask_csv = pd.read_csv(MASK_CSV, sep=";", header=None).values.astype(float)
@@ -159,9 +159,12 @@ def extend_other_species_maps() -> None:
     BITS-documented cells. Spawning maps are left alone because they reflect
     species-specific spawning biology that BITS presence does not imply."""
     targets = [
-        "herring_adult.csv", "herring_juvenile.csv",
-        "sprat_adult.csv", "sprat_juvenile.csv",
-        "flounder_adult.csv", "flounder_juvenile.csv",
+        "herring_adult.csv",
+        "herring_juvenile.csv",
+        "sprat_adult.csv",
+        "sprat_juvenile.csv",
+        "flounder_adult.csv",
+        "flounder_juvenile.csv",
     ]
     storage_rows = [(39 - r, c) for (r, c) in COD_BITS_ONLY]
     for name in targets:

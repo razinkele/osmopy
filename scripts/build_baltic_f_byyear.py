@@ -26,7 +26,7 @@ FISHING_CSV = ROOT / "data/baltic/baltic_param-fishing.csv"
 OUT_DIR = ROOT / "data/baltic/reference"
 
 YEARS = list(range(1993, 2024))  # 31 hindcast years
-SPINUP = 19                      # sim-years 0-18; sim-year 19 = 1993
+SPINUP = 19  # sim-years 0-18; sim-year 19 = 1993
 ANCHOR = (2018, 2022)
 
 STOCKS: dict[int, tuple[str, list[str]]] = {
@@ -106,16 +106,18 @@ def main() -> None:
     base_strings = read_base_f_strings(FISHING_CSV)
     for sp_idx, (name, stock_keys) in STOCKS.items():
         loaded = [load_stock(SNAP, k) for k in stock_keys]
-        factors = (
-            herring_factor_series(loaded) if len(loaded) > 1 else factor_series(loaded[0][0])
-        )
+        factors = herring_factor_series(loaded) if len(loaded) > 1 else factor_series(loaded[0][0])
         rows = build_rows(base_strings[sp_idx], factors)
         header = [
-            f"F1 hindcast by-year F for {name} (sp{sp_idx}) — generated {date.today()}",
-            f"stocks: {', '.join(stock_keys)}; anchor: mean F over available years "
-            f"{ANCHOR[0]}-{ANCHOR[1]}; base F (verbatim): {base_strings[sp_idx]}",
-            f"layout: {SPINUP} spin-up rows at base F, then {len(YEARS)} rows "
-            f"base*factor for {YEARS[0]}-{YEARS[-1]} (sim-year {SPINUP} = {YEARS[0]})",
+            f"F1 hindcast by-year F for {name} (sp{sp_idx}) — generated {date.today()}",  # noqa: DTZ011 - local report date stamp, not an instant
+            (
+                f"stocks: {', '.join(stock_keys)}; anchor: mean F over available years "
+                f"{ANCHOR[0]}-{ANCHOR[1]}; base F (verbatim): {base_strings[sp_idx]}"
+            ),
+            (
+                f"layout: {SPINUP} spin-up rows at base F, then {len(YEARS)} rows "
+                f"base*factor for {YEARS[0]}-{YEARS[-1]} (sim-year {SPINUP} = {YEARS[0]})"
+            ),
             f"factor range: {min(factors):.3g}-{max(factors):.3g}",
             "spec: docs/superpowers/specs/2026-08-23-baltic-f1-historical-fishing-hindcast-design.md",
         ]

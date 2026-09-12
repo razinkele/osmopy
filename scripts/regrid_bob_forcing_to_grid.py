@@ -24,8 +24,10 @@ re-run scripts/resample_bob_forcing.py afterwards to regenerate the derived
 """
 
 from __future__ import annotations
+
 import os
 from pathlib import Path
+
 import xarray as xr
 
 ROOT = Path(__file__).resolve().parents[1]

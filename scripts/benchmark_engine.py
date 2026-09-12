@@ -308,7 +308,7 @@ def main() -> None:
         "spread_pct": round(spread_pct, 1),
         "per_year_s": round(median / args.years, 3),
         # Provenance -- compare_results uses these to refuse misleading diffs.
-        "captured_at": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),
+        "captured_at": _dt.datetime.now(_dt.UTC).isoformat(timespec="seconds"),
         "hostname": socket.gethostname(),
         "numba_threads": n_threads,
         "final_biomass": result["final_biomass"],

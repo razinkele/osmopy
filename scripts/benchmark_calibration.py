@@ -45,11 +45,12 @@ def _run_nsga2(
     backend: Literal["thread", "process"] = "thread",
 ) -> float:
     """Run a small NSGA-II problem; return wall-clock seconds."""
+    from pymoo.algorithms.moo.nsga2 import NSGA2
+    from pymoo.optimize import minimize
+
     from osmose.calibration import FreeParameter, Transform
     from osmose.calibration.problem import OsmoseCalibrationProblem
     from osmose.schema import build_registry
-    from pymoo.algorithms.moo.nsga2 import NSGA2
-    from pymoo.optimize import minimize
 
     with tempfile.TemporaryDirectory() as d:
         problem = OsmoseCalibrationProblem(

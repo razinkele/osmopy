@@ -12,8 +12,8 @@ Python orchestration layer, simulation engine, and Shiny web interface for the O
 - **Run tests:** `.venv/bin/python -m pytest`
 - **Run single test:** `.venv/bin/python -m pytest tests/test_schema.py::test_name -v`
 - **Run app:** `.venv/bin/shiny run app.py --host 0.0.0.0 --port 8000`
-- **Lint:** `.venv/bin/ruff check osmose/ ui/ tests/`
-- **Format:** `.venv/bin/ruff format osmose/ ui/ tests/`
+- **Lint:** `.venv/bin/ruff check osmose/ ui/ tests/ scripts/ app.py`
+- **Format:** `.venv/bin/ruff format osmose/ ui/ tests/ scripts/ app.py`
 
 ## Architecture
 Schema-driven: every OSMOSE parameter is defined once as an `OsmoseField` in `osmose/schema/`. The UI auto-generates forms from schema metadata. Adding a parameter = adding one field to the schema.

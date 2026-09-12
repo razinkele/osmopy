@@ -43,11 +43,11 @@ if str(PROJECT_DIR) not in sys.path:
 # Reuse the fixture map rather than duplicating it -- these paths drift.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from benchmark_engine import FIXTURES, resolve_config  # noqa: E402
+from benchmark_engine import FIXTURES, resolve_config
 
-import osmose.engine.simulate as sim  # noqa: E402
-from osmose.config.reader import OsmoseConfigReader  # noqa: E402
-from osmose.engine.thread_policy import apply_single_run_threads  # noqa: E402
+import osmose.engine.simulate as sim
+from osmose.config.reader import OsmoseConfigReader
+from osmose.engine.thread_policy import apply_single_run_threads
 
 # Step-loop callables worth separating. Missing names are skipped, so this
 # survives renames in simulate.py without crashing the profiler.

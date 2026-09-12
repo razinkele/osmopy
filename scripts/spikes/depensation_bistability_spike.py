@@ -16,7 +16,7 @@ from pathlib import Path
 _SCRIPTS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_SCRIPTS))
 
-from baltic_bistability_chunk0 import (  # noqa: E402
+from baltic_bistability_chunk0 import (
     cod_poor_seeding,
     cod_rich_seeding,
     larva_scale_override,
@@ -24,7 +24,7 @@ from baltic_bistability_chunk0 import (  # noqa: E402
     read_base_larva_rates,
     warmstart_override,
 )
-from calibrate_baltic import run_simulation  # noqa: E402
+from calibrate_baltic import run_simulation
 
 COD = 0
 N_YEAR = 15
@@ -64,7 +64,7 @@ def cod_mean(base_config, base_rates, scale, rich, s50, seed):
     ov.update(larva_scale_override(scale, base_rates))
     try:
         stats = run_simulation(base_config, ov, n_years=N_YEAR, seed=seed)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         print(f"      ! run failed (scale={scale} rich={rich} s50={s50} seed={seed}): {exc!r}")
         return float("nan")
     finally:
