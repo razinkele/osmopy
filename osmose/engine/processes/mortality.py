@@ -22,12 +22,12 @@ from osmose.engine.processes.natural import (
     larva_mortality,
     out_mortality,
 )
-from osmose.engine.simulate import SimulationContext
 from osmose.engine.processes.starvation import (
     starvation_mortality,  # noqa: F401 — used by tests
     update_starvation_rate,
 )
 from osmose.engine.resources import ResourceState
+from osmose.engine.simulate import SimulationContext
 from osmose.engine.state import MortalityCause, SchoolState
 from osmose.logging import setup_logging
 
@@ -486,8 +486,7 @@ def _apply_predation_for_school(
         if q_idx == p_idx:
             continue
         inst_abd_q = inst_abd[q_idx] - state.egg_retained[q_idx]
-        if inst_abd_q < 0.0:
-            inst_abd_q = 0.0
+        inst_abd_q = max(inst_abd_q, 0.0)
         if inst_abd_q <= 0:
             continue
         prey_len = state.length[q_idx]
@@ -588,8 +587,8 @@ def _apply_predation_for_school(
             g_form = r / (r + k_fr)
         else:  # type-III
             g_form = (r * r) / (r * r + k_fr * k_fr)
-        cap = r if r < 1.0 else 1.0  # min(r, 1)
-        g = g_form if g_form < cap else cap  # conservation clamp
+        cap = min(1.0, r)  # min(r, 1)
+        g = min(cap, g_form)  # conservation clamp
         eaten_total = max_eatable * g
 
     # cell_id is only meaningful when resources are present (used inside the
@@ -991,10 +990,10 @@ def _precompute_foraging_rates(work_state, config, n_subdt) -> NDArray[np.float6
         rate = foraging_rate(
             k_for=None,
             ndt_per_year=config.n_dt_per_year,
-            k1_for=config.foraging_k1_for[sp_f],
-            k2_for=config.foraging_k2_for[sp_f],
+            k1_for=config.foraging_k1_for[sp_f],  # type: ignore[index] - guarded by `if genetic:`
+            k2_for=config.foraging_k2_for[sp_f],  # type: ignore[index] - guarded by `if genetic:`
             imax_trait=work_state.imax_trait,
-            I_max=config.foraging_I_max[sp_f],
+            I_max=config.foraging_I_max[sp_f],  # type: ignore[index] - guarded by `if genetic:`
         )
     else:
         k_for = (
@@ -1158,8 +1157,7 @@ if _HAS_NUMBA:
             if q_idx == p_idx:
                 continue
             abd_q = inst_abd[q_idx] - egg_retained[q_idx]
-            if abd_q < 0.0:
-                abd_q = 0.0
+            abd_q = max(abd_q, 0.0)
             if abd_q <= 0:
                 continue
             prey_len = length[q_idx]
@@ -1252,8 +1250,8 @@ if _HAS_NUMBA:
                 g_form = r / (r + k_fr)
             else:  # type-III
                 g_form = (r * r) / (r * r + k_fr * k_fr)
-            cap = r if r < 1.0 else 1.0  # min(r, 1)
-            g = g_form if g_form < cap else cap  # conservation clamp
+            cap = min(1.0, r)  # min(r, 1)
+            g = min(cap, g_form)  # conservation clamp
             eaten_total = max_eatable * g
 
         for k in range(n_prey):
@@ -2614,11 +2612,11 @@ def mortality(
             work_state.weight,
             work_state.species_id,
             work_state.age_dt,
-            config.bioen_i_max_all,
-            config.bioen_beta,
-            config.bioen_larvae_thres_dt,
-            config.bioen_theta,
-            config.bioen_c_rate,
+            config.bioen_i_max_all,  # type: ignore[arg-type] - guarded by `if config.bioen_enabled:`
+            config.bioen_beta,  # type: ignore[arg-type] - guarded by `if config.bioen_enabled:`
+            config.bioen_larvae_thres_dt,  # type: ignore[arg-type] - guarded by `if config.bioen_enabled:`
+            config.bioen_theta,  # type: ignore[arg-type] - guarded by `if config.bioen_enabled:`
+            config.bioen_c_rate,  # type: ignore[arg-type] - guarded by `if config.bioen_enabled:`
             config.n_species,
             config.n_dt_per_year,
             n_subdt,

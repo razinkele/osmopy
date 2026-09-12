@@ -21,17 +21,17 @@ from osmose.engine.processes.energy_budget import (
 )
 from osmose.engine.processes.temp_function import arrhenius
 
-K = dict(
-    assimilation=0.7,
-    c_m=1.0e12,
-    beta=0.8,
-    eta=1.0,
-    r=0.5,
-    m0=30.0,
-    m1=0.0,
-    e_maint_energy=0.65,
-    n_dt_per_year=24,
-)
+K = {
+    "assimilation": 0.7,
+    "c_m": 1.0e12,
+    "beta": 0.8,
+    "eta": 1.0,
+    "r": 0.5,
+    "m0": 30.0,
+    "m1": 0.0,
+    "e_maint_energy": 0.65,
+    "n_dt_per_year": 24,
+}
 
 
 def _three_schools():

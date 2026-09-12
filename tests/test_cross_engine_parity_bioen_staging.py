@@ -201,7 +201,7 @@ def test_tost_se_zero_is_genuine_agreement_not_a_gap():
 
     py_vals = np.array([500.0] * 16)
     jv_vals = np.array([500.0] * 16)
-    d, ci, p, eq, ks_p, vr = xeng.tost(py_vals, jv_vals, delta=xeng.np.log10(1.5))
+    _d, ci, _p, eq, ks_p, vr = xeng.tost(py_vals, jv_vals, delta=xeng.np.log10(1.5))
     assert bool(eq) is True
     assert ci == 0.0
     assert np.isnan(ks_p)

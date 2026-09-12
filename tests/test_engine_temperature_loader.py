@@ -87,8 +87,8 @@ def test_loader_frame_mismatch_and_factor_offset(tmp_path):
 
 
 def test_bioen_without_temperature_source_raises():
-    from tests.test_bioen_orchestration import _make_bioen_config_dict
     from osmose.engine import PythonEngine
+    from tests.test_bioen_orchestration import _make_bioen_config_dict
 
     cfg = {k.lower(): v for k, v in _make_bioen_config_dict(n_species=2).items()}
     cfg.pop("temperature.value", None)
@@ -98,9 +98,9 @@ def test_bioen_without_temperature_source_raises():
 
 
 def test_bioen_step_reads_assigned_layer_and_skips_out_schools():
-    from tests.test_bioen_orchestration import _make_bioen_config_dict, _make_school_state
     from osmose.engine.config import EngineConfig
     from osmose.engine.simulate import _bioen_step
+    from tests.test_bioen_orchestration import _make_bioen_config_dict, _make_school_state
 
     cfg = {k.lower(): v for k, v in _make_bioen_config_dict(n_species=2).items()}
     cfg["species.zlayer.sp1"] = "1"
@@ -125,10 +125,10 @@ def test_bioen_step_reads_assigned_layer_and_skips_out_schools():
 
 
 def test_gridded_o2_reaches_f_o2():
-    from tests.test_bioen_orchestration import _make_bioen_config_dict, _make_school_state
     from osmose.engine.config import EngineConfig
     from osmose.engine.processes.oxygen_function import f_o2
     from osmose.engine.simulate import _bioen_step
+    from tests.test_bioen_orchestration import _make_bioen_config_dict, _make_school_state
 
     cfg = {k.lower(): v for k, v in _make_bioen_config_dict(n_species=2).items()}
     cfg["simulation.bioen.fo2.enabled"] = "true"

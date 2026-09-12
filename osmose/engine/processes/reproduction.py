@@ -317,10 +317,9 @@ def reproduction(
     # Seeding: if SSB is zero and within seeding period, use seeding biomass
     seeded_this_step = np.zeros(n_sp, dtype=np.bool_)
     for sp in range(n_sp):
-        if ssb[sp] == 0.0:
-            if step < config.seeding_max_step[sp]:
-                ssb[sp] = config.seeding_biomass[sp]
-                seeded_this_step[sp] = True
+        if ssb[sp] == 0.0 and step < config.seeding_max_step[sp]:
+            ssb[sp] = config.seeding_biomass[sp]
+            seeded_this_step[sp] = True
 
     # Egg count per species
     # Java: nEgg = sexRatio * beta * season * SSB * 1_000_000

@@ -478,7 +478,7 @@ def main() -> None:
         for sp in sp_all:
             row = f"{sp:<22}"
             if j_gate is not None:
-                d1, ci1, p1, eq1, ks1, vr1 = tost(py[m][sp], j_gate[m][sp], delta_m, floor)
+                d1, ci1, _p1, eq1, ks1, _vr1 = tost(py[m][sp], j_gate[m][sp], delta_m, floor)
                 if not eq1 or abs(d1) >= 1.0:  # PRIMARY gate: absolute equivalence + 1-OoM tripwire
                     overall_fail.append(f"{m}:{sp}")
                 row += (

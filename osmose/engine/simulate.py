@@ -105,7 +105,9 @@ def _load_oxygen_data(raw_config: dict, config_dir: Path | None) -> PhysicalData
                         # a suspicious value to stay loud about.
                         return False
                     try:
-                        return float(value) != 0.0
+                        # value comes from a raw config dict (object|str); the
+                        # except clause below is the guard.
+                        return float(value) != 0.0  # type: ignore[arg-type]
                     except (TypeError, ValueError):
                         return True  # non-blank and unparseable -- can't prove it's zero
 

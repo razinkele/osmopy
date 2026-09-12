@@ -265,15 +265,15 @@ def _bioen_config(**overrides: str) -> EngineConfig:
 
 def _one_school(**overrides) -> SchoolState:
     st = SchoolState.create(1)
-    base = dict(
-        abundance=np.array([1e5]),
-        weight=np.array([1e-3]),
-        length=np.array([40.0]),
-        length_start=np.array([40.0]),
-        age_dt=np.array([50], dtype=np.int32),
-        first_feeding_age_dt=np.array([1], dtype=np.int32),
-        trophic_level=np.array([3.0]),
-    )
+    base = {
+        "abundance": np.array([1e5]),
+        "weight": np.array([1e-3]),
+        "length": np.array([40.0]),
+        "length_start": np.array([40.0]),
+        "age_dt": np.array([50], dtype=np.int32),
+        "first_feeding_age_dt": np.array([1], dtype=np.int32),
+        "trophic_level": np.array([3.0]),
+    }
     base.update(overrides)
     return st.replace(**base)
 

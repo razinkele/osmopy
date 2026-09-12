@@ -13,6 +13,7 @@ step with the reference's 5-draw pattern even before bioen existed.
 
 from __future__ import annotations
 
+import itertools
 from types import SimpleNamespace
 
 import numpy as np
@@ -168,7 +169,7 @@ def test_pre_generate_cell_rng_matches_reference_stream_non_bioen():
     rng_ref = np.random.default_rng(2024)
     expected_seqs = [np.empty(7, dtype=np.int32) for _ in range(5)]
     expected_orders = np.empty((7, 4), dtype=np.int32)
-    for cell, (start, end) in enumerate(zip(boundaries[:-1], boundaries[1:])):
+    for cell, (start, end) in enumerate(itertools.pairwise(boundaries)):
         n_local = int(end - start)
         if n_local == 0:
             continue
@@ -206,7 +207,7 @@ def test_pre_generate_cell_rng_matches_reference_stream_bioen():
     rng_ref = np.random.default_rng(7)
     expected_seqs = [np.empty(5, dtype=np.int32) for _ in range(5)]
     expected_orders = np.empty((5, 5), dtype=np.int32)
-    for cell, (start, end) in enumerate(zip(boundaries[:-1], boundaries[1:])):
+    for cell, (start, end) in enumerate(itertools.pairwise(boundaries)):
         n_local = int(end - start)
         if n_local == 0:
             continue
