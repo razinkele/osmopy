@@ -1361,3 +1361,86 @@ after, with no test added in between. The later rise to 4,434 is the 8 new
 interpreter pointed at explicitly, or every third-party import reports as
 unresolved and the count balloons to ~293 — a trap worth knowing before
 concluding the tree is badly broken).
+
+---
+
+## Performance: Python vs Java, measured 2026-09-12
+
+**The Java column could not be measured.** The JAR is gitignored and comes from
+`github.com/osmose-model/osmose`, blocked by this session's egress policy (403;
+the session is scoped to `razinkele/osmopy`). A filesystem sweep found 415
+`.jar` files, all JVM internals or pytest's fake stubs — no OSMOSE JAR. So the
+Java figures below are **historical**, from commit `fcc8fd1` (2026-03-22), on
+that machine, not this container. **Do not divide the two blocks against each
+other** — different hardware, six months and ~1,300 commits apart. The
+historical Python and Java numbers were taken together, so only the ratio
+*within* that block is meaningful.
+
+Environment for the fresh numbers: Intel Xeon @ 2.80 GHz, 4 cores, 15 GB RAM,
+Python 3.12.3, numpy 2.5.2, numba 0.67.0. Warm numba cache, median of 5 runs.
+
+### Fresh Python (this branch, this container)
+
+| Config | Total | Per-year |
+|---|---|---|
+| EEC 1 yr | 0.505 s | 0.505 s/yr |
+| EEC 5 yr | 5.740 s | 1.148 s/yr |
+| Bay of Biscay 5 yr | 2.714 s | 0.543 s/yr |
+
+Per-year cost rises with run length (EEC 0.51 → 1.15 s/yr from 1 to 5 years) as
+the population fills out; per-year figures are only comparable at equal `nyear`.
+
+### Historical Python vs Java — commit `fcc8fd1`, 2026-03-22, one machine
+
+| Config | Python | Java | Ratio |
+|---|---|---|---|
+| EEC 1 yr | 0.55 s | 2.6 s | Python **4.8× faster** |
+| EEC 5 yr | 5.687 s | 8.6 s | Python **1.5× faster** |
+| Bay of Biscay 5 yr | ≈2.37 s/yr | ≈2.3 s/yr | **parity**, ≈1.0× |
+
+The BoB row is quoted per-year: the commit message's EEC lines are totals but
+its BoB line matches `per_year_s = 2.307` in
+`tests/baselines/benchmark_5yr_post_tier3.json`, so the units are mixed in the
+source. The parity conclusion holds either way (2.37 vs 2.3); the absolute
+total does not, so it is not quoted.
+
+### Same-hardware A/B of this branch's Phase-4 work
+
+The one comparison this container *can* make honestly — `origin/master` vs
+HEAD, same machine, same warm cache, median of 5:
+
+| Config | master | HEAD | Δ |
+|---|---|---|---|
+| EEC 5 yr | 5.718 s | 5.740 s | +0.4% |
+| Bay of Biscay 5 yr | 2.752 s | 2.714 s | −1.4% |
+
+**Both are noise** — master's own five EEC runs spanned 5.576–6.432 s, a 15%
+spread that swamps either delta. **Phase 4 delivered no measurable speedup on
+these configs, and the reason is mechanical, not statistical:**
+
+- **H7** (fleet-revenue vectorisation) only executes when fleet economics is
+  enabled. It is disabled in both EEC and Bay of Biscay, so the rewritten code
+  never runs here.
+- **M14** hoisted the per-cell `cause_orders` and prey scratch out of
+  `_mortality_all_cells_numba` — the **sequential** kernel. Production defaults
+  to `parallel=True` (`mortality.py:1810`) and so dispatches
+  `_mortality_all_cells_parallel`, which was deliberately left allocating
+  per-`prange`-iteration because each thread must own its scratch. The hoist
+  therefore cannot fire on a default run.
+
+So the plan's "expected 5–15%" for the scratch-buffer work should be read as
+applying to H5, which was already on master before this branch. The honest
+statement for H7/M14 is: correct, tested, allocation-reducing on the paths they
+touch, and **worth nothing measurable on a default EEC or BoB run**. Anyone
+wanting a real win in the mortality kernel needs to attack
+`_mortality_all_cells_parallel`, which is where default runs actually spend
+their time.
+
+### First-run JIT cost (measured incidentally, worth knowing)
+
+A cold numba cache costs far more than any of these deltas: the first EEC 5 yr
+run in a fresh worktree took **45.96 s** against ~5.6 s warm — an 8× penalty.
+Benchmarks that do not discard or warm the first run will report noise an order
+of magnitude larger than the effects they are trying to detect. (That artifact
+initially read as a ~10% regression on this branch until both sides were
+re-measured warm.)
