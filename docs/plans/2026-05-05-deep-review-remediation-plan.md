@@ -1445,30 +1445,51 @@ of magnitude larger than the effects they are trying to detect. (That artifact
 initially read as a ~10% regression on this branch until both sides were
 re-measured warm.)
 
-### Where the time actually goes (profiled 2026-09-12)
+### Where the time actually goes (profiled 2026-09-12, corrected)
 
-Measured by wrapping the step-loop functions in `osmose.engine.simulate` with
-timers from a throwaway script — no source change. 5-year runs, warm cache,
-4 threads. Shares are of total `engine.run()` wall time.
+Reproduce with `scripts/profile_engine.py` (added for this, so the next person
+does not rebuild it). 5-year runs, warm numba cache, 4 threads, median-ish of
+three consecutive runs that agreed to ~1%.
+
+> **An earlier revision of this section published different numbers**
+> (mortality 55.5%, movement 11.2%, "unattributed 24.5%") **and drew the wrong
+> conclusion from them.** Those came from a single cold-process invocation
+> where `_prepare_run` alone cost 2.9 s and movement 3.5 s — one-off load/JIT
+> costs, not steady state. Three repeated runs put `_prepare_run` at 0.20 s and
+> movement at 0.49 s. The figures below replace them. This is the *second* time
+> in this pass that a cold first run produced a plausible-looking but wrong
+> result; the lesson is in the script's docstring.
+
+**Stage split**
+
+| Stage | EEC 5 yr | Bay of Biscay 5 yr |
+|---|---|---|
+| config parse | 0.009 s (0.2%) | — |
+| engine setup (`_prepare_run`) | 0.213 s (3.6%) | 0.176 s (5.6%) |
+| `simulate()` | 5.655 s (94.8%) | 2.766 s (87.9%) |
+| `write_outputs()` | 0.089 s (**1.5%**) | 0.201 s (**6.4%**) |
+| **total** | **5.967 s** | **3.147 s** |
+
+**Step-loop phases** (shares of total)
 
 | Phase | EEC 5 yr | Bay of Biscay 5 yr |
 |---|---|---|
-| `_mortality` | **4.220 s (55.5%)** | **2.725 s (70.2%)** |
-| `_movement` | 0.855 s (11.2%) | 0.028 s (0.7%) |
-| `_collect_by_life_stage` | 0.208 s (2.7%) | 0.083 s (2.1%) |
-| `_growth` | 0.156 s (2.0%) | 0.077 s (2.0%) |
-| `_reproduction` | 0.134 s (1.8%) | 0.047 s (1.2%) |
-| all other step phases | < 1.2% each | < 0.8% each |
-| unattributed (state init + output I/O) | 1.863 s (24.5%) | 0.857 s (22.1%) |
+| `_mortality` | **3.918 s (65.7%)** | **2.325 s (73.9%)** |
+| `_movement` | 0.490 s (8.2%) | 0.024 s (0.8%) |
+| `_collect_by_life_stage` | 0.177 s (3.0%) | 0.063 s (2.0%) |
+| `_growth` | 0.136 s (2.3%) | 0.062 s (2.0%) |
+| `_reproduction` | 0.104 s (1.7%) | 0.036 s (1.1%) |
+| `_collect_mortality` | 0.075 s (1.3%) | 0.028 s (0.9%) |
+| all others | ≤ 0.3% each | ≤ 0.2% each |
+| state init + loop overhead | 0.667 s (11.2%) | 0.196 s (6.2%) |
 
-Mortality dominates both configs. Movement matters on EEC (map-driven) and is
-noise on Bay of Biscay. Of the unattributed serial block, config parsing is
-**not** the culprit: `OsmoseConfigReader.read` is 0.011 s and
-`EngineConfig.from_dict` 0.181 s (2.7% of the run), so the rest is state
-initialisation and output writing.
+**Retraction: output writing is not a lever.** The previous revision named the
+serial tail — "output writing" — as the remaining headroom. `write_outputs()`
+is **1.5%** on EEC and 6.4% on Bay of Biscay. Eliminating it entirely (which is
+what `run_in_memory()` already does for calibration) buys at most that. The
+recommendation was wrong and is withdrawn.
 
-**Thread scaling says the mortality kernel is already at its ceiling.** EEC
-5 yr, min of 3:
+**Thread scaling — the mortality kernel is at its ceiling.** EEC 5 yr, min of 3:
 
 | `NUMBA_NUM_THREADS` | 1 | 2 | 4 |
 |---|---|---|---|
@@ -1476,16 +1497,15 @@ initialisation and output writing.
 | speedup vs 1 thread | 1.00× | 1.47× | **2.14×** |
 
 Fitting Amdahl to the 2-thread point gives a parallel fraction p ≈ 0.64, which
-predicts **1.93×** at 4 threads. The measured 2.14× *exceeds* that. So adding
-threads is not running into contention, false sharing, or allocator pressure —
-if per-`prange`-iteration allocation were a real cost it would get worse with
-more threads, and it does the opposite.
+predicts **1.93×** at 4 threads. Measured is 2.14× — *better* than predicted.
+Allocator pressure and lock contention both worsen with thread count; this
+improves, so the parallel mortality kernel is not allocation-bound.
 
-**Consequence: do not port the M14 scratch hoist into
-`_mortality_all_cells_parallel`.** That was the obvious next step after finding
-M14 inert, and the scaling data says it would buy nothing — the same negative
-result as M14 itself, but established before spending the effort and before
-touching the engine's most parity-sensitive kernel. Remaining headroom is
-either algorithmic (fewer prey-scan operations per predator) or in the ~22–25%
-serial tail (output writing), not in shaving allocations off a kernel that is
-already scaling better than Amdahl predicts.
+**What this rules out, and what is left.** Do not port M14's scratch hoist into
+`_mortality_all_cells_parallel` — that was the obvious next step after finding
+M14 inert, and the scaling data says it buys nothing, established before
+spending effort on the engine's most parity-sensitive kernel. With mortality at
+66–74%, everything else ≤ 8%, and the kernel already scaling past its Amdahl
+prediction, there is no cheap win left. Real gains need an algorithmic change
+in the predation/mortality inner loop (fewer prey-scan operations per
+predator), not micro-optimisation.
