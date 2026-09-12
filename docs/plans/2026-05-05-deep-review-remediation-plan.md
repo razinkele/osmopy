@@ -1200,8 +1200,11 @@ Verified by inspection of the code on master plus the r10 commits on
 `tests/test_engine_parity.py` 17/17; `pytest -k eec` 310 passed; ruff
 finding count on `ui/ app.py tests/ osmose/` fell from 723 (master) to 698.
 
-Full suite, final state after the CI fixes below: **4,426 passed, 50 skipped,
-0 failed** (22m51s, `-n 4`).
+Full suite, final state: **4,434 passed, 50 skipped, 0 failed** (27m19s,
+`-n 4`). That is the 4,426 reached after the CI fixes below, plus the 8 new
+`tests/test_economics_revenue.py` cases — the count reconciles exactly, which
+is what confirms extracting `accumulate_fleet_revenue` out of the step loop
+changed nothing else.
 
 Getting there took two runs. The first was **4,414 passed, 13 failed**; all 13
 were run down to root cause rather than assumed environmental, and the
@@ -1286,11 +1289,12 @@ job breakdown:
 
 **None of it is a code defect.** All four causes are now fixed on this branch,
 and every gate CI runs is green locally: `ruff check` ("All checks passed!"),
-`ruff format --check` ("600 files already formatted"), `pyright` 0 errors on
-both 3.12 and 3.13, and the full suite at **4,426 passed / 50 skipped / 0
-failed**. That suite figure was re-measured after the pyright commit and is
-identical to the run before it, confirming those edits (a Protocol, a `cast`,
-and comments) were runtime-neutral. Diagnosis and disposition:
+`ruff format --check` ("601 files already formatted"), `pyright` 0 errors on
+both 3.12 and 3.13, and the full suite at **4,434 passed / 50 skipped / 0
+failed**. The pyright edits (a Protocol, a `cast`, and comments) were confirmed
+runtime-neutral by re-measuring immediately after them: 4,426 both before and
+after, with no test added in between. The later rise to 4,434 is the 8 new
+`test_economics_revenue.py` cases, not drift. Diagnosis and disposition:
 
 1. **ruff (fixed, `2a8dd5a4`).** Bisected: 0.14.0 and 0.15.x report
    "All checks passed!"; **0.16.0** does not. 0.16 expanded its default rule
