@@ -352,11 +352,23 @@ def test_trophic_cascade_visible(baseline_run: pd.DataFrame, perturbed_run: pd.D
 # === Assertion #4: the tutorial's markdown code block parses + runs ===
 def test_markdown_code_block_parses_and_runs(tmp_path: Path, numba_warmup: None) -> None:
     """Extract the first ```python fence from the tutorial markdown, ast.parse it,
-    then exec it in a subprocess with a 300 s timeout. Catches semantic drift —
-    e.g., a renamed import (PythonEngine -> OsmoseEngine) parses fine but fails to run.
+    then exec it in a subprocess. Catches semantic drift — e.g., a renamed import
+    (PythonEngine -> OsmoseEngine) parses fine but fails to run.
 
     The subprocess is a fresh interpreter, so it pays full Numba JIT cost (the
-    numba_warmup fixture only warms this process); 90 s was too tight on CI."""
+    numba_warmup fixture only warms this process); 90 s was too tight on CI.
+
+    TIMEOUT SIZING (raised 300 -> 900 s on 2026-09-12). 300 s was not a budget,
+    it was a coin flip: measured 296.26 s in isolation on 2026-08-09 (see the
+    provenance note near _PYRAMID_BOUNDS, which records the same test failing a
+    suite run for this reason) and 281.15 s in isolation on 2026-09-12 — i.e. a
+    1-6% margin. It duly failed four separate full-suite runs during the
+    2026-09-12 lint pass whenever the box was loaded (load average 5-18 with a
+    concurrent `-n 4` suite), each time costing an investigation into whether a
+    real regression had been introduced. The timeout is a hang-guard, not an
+    assertion — `returncode == 0` below is what actually tests anything — so
+    widening it removes a recurring false failure without weakening the test.
+    900 s still catches a genuine hang inside 15 minutes."""
     assert TUTORIAL_MD_PATH.exists(), f"Tutorial markdown not found at {TUTORIAL_MD_PATH}"
     text = TUTORIAL_MD_PATH.read_text()
     match = re.search(r"```python\n(.*?)\n```", text, re.DOTALL)
@@ -374,7 +386,7 @@ def test_markdown_code_block_parses_and_runs(tmp_path: Path, numba_warmup: None)
         cwd=tmp_path,
         capture_output=True,
         text=True,
-        timeout=300,
+        timeout=900,
         check=False,
     )
     assert result.returncode == 0, (
