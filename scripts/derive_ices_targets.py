@@ -6,12 +6,23 @@ catches (falling back to landings where catches are unreported) over 2018-2022, 
 `catch` target rows (band = mean +/- 1.5*std, floored at the window min). Writes
 biomass_targets.csv in place, preserving comment/provenance lines.
 
-Run: .venv/bin/python scripts/derive_ices_targets.py
+DESTRUCTIVE: rewrites the tracked data/baltic/reference/biomass_targets.csv in
+place. It therefore requires an explicit --write; any other argv (including
+--help, and including no argv at all) prints what it would do and exits without
+touching the file. That guard exists because the script previously rewrote the
+CSV unconditionally on import-and-run: a `--help` probe during a 2026-09-12
+tooling sweep silently reverted the file's version header and collapsed the
+cod_east/cod_west disaggregation back to an aggregate `cod` row, which only
+surfaced three test failures later. A script that overwrites committed
+scientific data must not do so as its default action.
+
+Run: .venv/bin/python scripts/derive_ices_targets.py --write
 """
 
 from __future__ import annotations
 
 import json
+import sys
 from datetime import date
 from pathlib import Path
 
@@ -121,8 +132,20 @@ def _rewrite_csv(catch_rows: list[dict]) -> None:
     TARGETS_CSV.write_text("\n".join([*comments, header, *data_rows, *new_rows]) + "\n")
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    argv = sys.argv[1:] if argv is None else argv
     rows = derive_catch_targets(SNAPSHOT_DIR)
+    if "--write" not in argv:
+        print(
+            f"DRY RUN — would rewrite {len(rows)} catch rows in {TARGETS_CSV}.\n"
+            "Pass --write to actually modify the tracked file."
+        )
+        for r in rows:
+            print(
+                f"  {r['species']:9} catch target={r['target_tonnes']} "
+                f"[{r['lower_tonnes']}, {r['upper_tonnes']}] t"
+            )
+        return
     _rewrite_csv(rows)
     print(f"Wrote {len(rows)} catch rows to {TARGETS_CSV}")
     for r in rows:
