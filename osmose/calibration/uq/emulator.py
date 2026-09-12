@@ -43,7 +43,7 @@ class GPEmulator:
         self._random_state = random_state
         self.gp: GaussianProcessRegressor | None = None
 
-    def fit(self, X: np.ndarray, Y: np.ndarray, alpha: np.ndarray | float) -> "GPEmulator":
+    def fit(self, X: np.ndarray, Y: np.ndarray, alpha: np.ndarray | float) -> GPEmulator:
         """Fit the GP. ``X`` is (n, d); ``Y`` is (n,) natural-log; ``alpha`` is
         per-point noise variance ``s²/S`` (scalar broadcast allowed)."""
         X = np.asarray(X, dtype=float)

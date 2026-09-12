@@ -117,8 +117,9 @@ class TestCsvSentinelFilter:
 
     def test_nan_cells_still_excluded(self, tmp_path):
         """NaN entries in the CSV must still be excluded (pre-existing behaviour)."""
-        from ui.pages.grid_helpers import load_csv_overlay
         import pandas as pd
+
+        from ui.pages.grid_helpers import load_csv_overlay
 
         p = tmp_path / "nan_grid.csv"
         data = np.ones((3, 3))
@@ -130,8 +131,9 @@ class TestCsvSentinelFilter:
 
     def test_small_negative_values_included(self, tmp_path):
         """Values between -9 and 0 are legitimate data and must NOT be excluded."""
-        from ui.pages.grid_helpers import load_csv_overlay
         import pandas as pd
+
+        from ui.pages.grid_helpers import load_csv_overlay
 
         p = tmp_path / "neg_grid.csv"
         data = np.array([[-0.5, -1.0, -5.0], [0.0, 1.0, 2.0], [3.0, 4.0, 5.0]])
@@ -143,8 +145,9 @@ class TestCsvSentinelFilter:
 
     def test_all_sentinel_returns_none(self, tmp_path):
         """A CSV consisting entirely of -99 must return None."""
-        from ui.pages.grid_helpers import load_csv_overlay
         import pandas as pd
+
+        from ui.pages.grid_helpers import load_csv_overlay
 
         p = tmp_path / "all_sentinel.csv"
         pd.DataFrame(np.full((3, 3), -99.0)).to_csv(p, sep=",", header=False, index=False)
@@ -153,8 +156,9 @@ class TestCsvSentinelFilter:
 
     def test_all_zeros_returns_none(self, tmp_path):
         """A CSV with only 0.0 values (after sentinel exclusion) must return None."""
-        from ui.pages.grid_helpers import load_csv_overlay
         import pandas as pd
+
+        from ui.pages.grid_helpers import load_csv_overlay
 
         p = tmp_path / "all_zeros.csv"
         data = np.array([[-99.0, -99.0, -99.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
@@ -164,8 +168,9 @@ class TestCsvSentinelFilter:
 
     def test_flipud_applied_to_csv_overlay(self, tmp_path):
         """CSV row 0 (southernmost) must map to the lowest latitude after flipud."""
-        from ui.pages.grid_helpers import load_csv_overlay
         import pandas as pd
+
+        from ui.pages.grid_helpers import load_csv_overlay
 
         # Row 0 = value 1, row 1 = value 2, row 2 = value 3
         p = tmp_path / "ordered.csv"
@@ -184,8 +189,9 @@ class TestCsvSentinelFilter:
 
     def test_viridis_gradient_produces_distinct_colors(self, tmp_path):
         """Multi-value CSVs must produce distinct colors via the viridis ramp."""
-        from ui.pages.grid_helpers import load_csv_overlay
         import pandas as pd
+
+        from ui.pages.grid_helpers import load_csv_overlay
 
         p = tmp_path / "gradient.csv"
         data = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
@@ -252,8 +258,9 @@ class TestCsvSemicolonSeparator:
 
     def test_semicolon_mask_loads_correct_shape(self, tmp_path):
         """load_mask must handle semicolon-separated mask CSVs."""
-        from ui.pages.grid_helpers import load_mask
         import pandas as pd
+
+        from ui.pages.grid_helpers import load_mask
 
         p = tmp_path / "grid" / "mask.csv"
         p.parent.mkdir()
@@ -270,8 +277,9 @@ class TestCsvSemicolonSeparator:
 
     def test_comma_mask_still_works(self, tmp_path):
         """load_mask must still handle comma-separated CSVs."""
-        from ui.pages.grid_helpers import load_mask
         import pandas as pd
+
+        from ui.pages.grid_helpers import load_mask
 
         p = tmp_path / "grid" / "mask.csv"
         p.parent.mkdir()
@@ -284,8 +292,9 @@ class TestCsvSemicolonSeparator:
 
     def test_semicolon_csv_overlay_with_nc_grid(self, tmp_path):
         """Semicolon CSV overlay mapped onto a NetCDF grid must produce cells."""
-        from ui.pages.grid_helpers import load_csv_overlay
         import pandas as pd
+
+        from ui.pages.grid_helpers import load_csv_overlay
 
         # Create a semicolon CSV matching a 3x4 grid
         p = tmp_path / "overlay.csv"
@@ -315,8 +324,9 @@ class TestReadCsvAutoSep:
     """Direct tests of the separator auto-detection function."""
 
     def test_semicolon_detected(self, tmp_path):
-        from ui.pages.grid_helpers import _read_csv_auto_sep
         import pandas as pd
+
+        from ui.pages.grid_helpers import _read_csv_auto_sep
 
         p = tmp_path / "semi.csv"
         pd.DataFrame([[1, 2, 3], [4, 5, 6]]).to_csv(p, sep=";", header=False, index=False)
@@ -324,8 +334,9 @@ class TestReadCsvAutoSep:
         assert df.shape == (2, 3)
 
     def test_comma_detected(self, tmp_path):
-        from ui.pages.grid_helpers import _read_csv_auto_sep
         import pandas as pd
+
+        from ui.pages.grid_helpers import _read_csv_auto_sep
 
         p = tmp_path / "comma.csv"
         pd.DataFrame([[1, 2, 3], [4, 5, 6]]).to_csv(p, sep=",", header=False, index=False)
@@ -334,8 +345,9 @@ class TestReadCsvAutoSep:
 
     def test_single_column_file_stays_single(self, tmp_path):
         """A genuine single-column file should not be widened by fallback."""
-        from ui.pages.grid_helpers import _read_csv_auto_sep
         import pandas as pd
+
+        from ui.pages.grid_helpers import _read_csv_auto_sep
 
         p = tmp_path / "single.csv"
         pd.DataFrame([10, 20, 30]).to_csv(p, sep=";", header=False, index=False)
@@ -950,8 +962,9 @@ class TestEecIntegration:
 
     def test_ltl_vmin_vmax_span_full_range(self):
         """vmin/vmax must cover the full range across all 24 time steps."""
-        from ui.pages.grid_helpers import list_nc_overlay_variables
         import xarray as xr
+
+        from ui.pages.grid_helpers import list_nc_overlay_variables
 
         meta = list_nc_overlay_variables(str(_EEC_LTL))
         assert meta is not None

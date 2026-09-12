@@ -377,9 +377,8 @@ class TestBioenStepMissingConfig:
 
         with patch.object(
             type(config), "bioen_beta", new_callable=lambda: property(lambda self: None)
-        ):
-            with pytest.raises(ValueError, match="Bioenergetics enabled but bioen_beta is None"):
-                _bioen_step(school_state, config, const_temp_data, step=0)
+        ), pytest.raises(ValueError, match="Bioenergetics enabled but bioen_beta is None"):
+            _bioen_step(school_state, config, const_temp_data, step=0)
 
 
 class TestBioenStepTemperatureBranches:

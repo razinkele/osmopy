@@ -81,7 +81,7 @@ def read_feedback(*, path: Path | None = None) -> list[dict]:
             continue
         try:
             out.append(json.loads(raw))
-        except Exception:  # noqa: BLE001 — skip a corrupt line, don't fail the read
+        except Exception:
             _log.warning("Skipping corrupt feedback line")
             continue
     out.reverse()

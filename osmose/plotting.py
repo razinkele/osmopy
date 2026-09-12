@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Sequence, cast
+from collections.abc import Sequence
+from typing import cast
 
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from osmose.plotly_theme import PLOTLY_TEMPLATE as TEMPLATE, ensure_templates
+from osmose.plotly_theme import PLOTLY_TEMPLATE as TEMPLATE
+from osmose.plotly_theme import ensure_templates
 
 ensure_templates()
 

@@ -21,7 +21,6 @@ from osmose.engine.config import EngineConfig
 from osmose.engine.grid import Grid
 from osmose.engine.simulate import _bioen_reproduction
 from osmose.engine.state import SchoolState
-
 from tests.test_engine_bioen_integration import _make_bioen_config
 
 # ---------------------------------------------------------------------------

@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+
 from osmose.calibration.surrogate import SurrogateCalibrator
 
 

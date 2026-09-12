@@ -1,5 +1,7 @@
 """Tests for EngineConfig — typed parameter extraction from flat config dicts."""
 
+from typing import ClassVar
+
 import numpy as np
 import pytest
 
@@ -234,7 +236,7 @@ def test_spawning_season_normalization_partial_year(tmp_path, caplog):
 class TestBioenCoupling:
     """I-2: bioen_enabled=True guarantees all bioen_* fields non-None (implicit coupling)."""
 
-    _BIOEN_FIELDS = [
+    _BIOEN_FIELDS: ClassVar[list] = [
         "bioen_beta",
         "bioen_zlayer",
         "bioen_assimilation",
@@ -489,6 +491,7 @@ class TestMPAZoneValidation:
     def test_1d_grid_rejected(self):
         import numpy as np
         import pytest
+
         from osmose.engine.config import MPAZone
 
         kwargs = self._base_kwargs()
@@ -499,6 +502,7 @@ class TestMPAZoneValidation:
     def test_3d_grid_rejected(self):
         import numpy as np
         import pytest
+
         from osmose.engine.config import MPAZone
 
         kwargs = self._base_kwargs()
@@ -509,6 +513,7 @@ class TestMPAZoneValidation:
     def test_continuous_grid_rejected(self):
         import numpy as np
         import pytest
+
         from osmose.engine.config import MPAZone
 
         kwargs = self._base_kwargs()
@@ -518,6 +523,7 @@ class TestMPAZoneValidation:
 
     def test_negative_start_year_rejected(self):
         import pytest
+
         from osmose.engine.config import MPAZone
 
         kwargs = self._base_kwargs()

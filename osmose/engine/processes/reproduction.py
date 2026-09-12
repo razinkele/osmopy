@@ -152,8 +152,7 @@ def regulate_recruitment(
         for sp in range(n_sp):
             if config.recruitment_ceiling_enabled[sp] and not seeded_this_step[sp]:
                 cap = config.recruitment_ceiling_by_season[col, sp]
-                if n_eggs[sp] > cap:
-                    n_eggs[sp] = cap
+                n_eggs[sp] = min(n_eggs[sp], cap)
 
     # Percid thermal recruitment gate (per-year summer-SST factor; spec 2026-07-05;
     # Pekcan-Hekim et al. 2011, Olin et al. 2019). Inert unless enabled. Percid-only

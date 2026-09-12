@@ -42,7 +42,7 @@ def _resolve_compare_state(name_a, name_b, compare):
         return ("same", None)
     try:
         diffs = compare(name_a, name_b)
-    except Exception:  # noqa: BLE001 — missing/corrupt/deleted scenario: degrade
+    except Exception:
         return ("error", None)
     if not diffs:
         return ("identical", None)

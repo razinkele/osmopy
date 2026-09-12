@@ -119,8 +119,8 @@ def test_unknown_mode_raises():
 
 def test_resolve_halfsat_returns_per_predator_values():
     """Each predator gets its OWN K from params — not a uniform value."""
-    from fr_process_diagnostic import resolve_halfsat
     from evaluate_calibration_vs_ices import FR_PREDATOR_SP
+    from fr_process_diagnostic import resolve_halfsat
 
     params = {
         "predation.functional.response.halfsat.sp0": 2.0,
@@ -142,8 +142,8 @@ def test_resolve_halfsat_returns_per_predator_values():
 
 def test_resolve_halfsat_fallback_for_absent_key():
     """A predator absent from params gets the default_k fallback."""
-    from fr_process_diagnostic import resolve_halfsat
     from evaluate_calibration_vs_ices import FR_PREDATOR_SP
+    from fr_process_diagnostic import resolve_halfsat
 
     # Only sp0 is present; sp5/14/15 are absent.
     params = {
@@ -159,8 +159,8 @@ def test_resolve_halfsat_fallback_for_absent_key():
 
 def test_resolve_halfsat_uniform_when_no_params():
     """With an empty params dict every predator gets the default_k."""
-    from fr_process_diagnostic import resolve_halfsat
     from evaluate_calibration_vs_ices import FR_PREDATOR_SP
+    from fr_process_diagnostic import resolve_halfsat
 
     result = resolve_halfsat({}, FR_PREDATOR_SP, default_k=2.5)
     assert all(v == 2.5 for v in result.values()), "all should equal default_k=2.5"
@@ -173,8 +173,8 @@ def test_build_base_config_fr_on_preserves_per_predator_k(monkeypatch):
     and inject a fake params dict with distinct per-predator halfsat values.
     """
     # Ensure scripts/ is on the path (already done at module level, but be safe).
-    from fr_process_diagnostic import _build_base_config
     from evaluate_calibration_vs_ices import FR_PREDATOR_SP
+    from fr_process_diagnostic import _build_base_config
 
     # Params with distinct K per predator.
     params = {
@@ -214,8 +214,9 @@ def test_build_base_config_fr_on_preserves_per_predator_k(monkeypatch):
 
 def test_build_base_config_fr_on_fallback_for_absent_key(monkeypatch):
     """A predator absent from params falls back to --k in the FR-ON config."""
-    import osmose.config.reader as _reader_mod
     from fr_process_diagnostic import _build_base_config
+
+    import osmose.config.reader as _reader_mod
 
     params = {
         "predation.functional.response.halfsat.sp0": 7.5,
@@ -237,9 +238,10 @@ def test_build_base_config_fr_on_fallback_for_absent_key(monkeypatch):
 
 def test_build_base_config_fr_off_has_no_halfsat_keys(monkeypatch):
     """FR-OFF config must not contain any halfsat keys (regression guard)."""
-    import osmose.config.reader as _reader_mod
-    from fr_process_diagnostic import _build_base_config
     from evaluate_calibration_vs_ices import FR_PREDATOR_SP
+    from fr_process_diagnostic import _build_base_config
+
+    import osmose.config.reader as _reader_mod
 
     params = {
         "predation.functional.response.halfsat.sp0": 2.0,

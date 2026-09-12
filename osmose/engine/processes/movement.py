@@ -363,9 +363,7 @@ def movement(
                     mi = current_idx[k]
                     sp_id = state.species_id[idx]
                     off = sp_offsets[sp_id]
-                    if mi < 0 or off < 0:
-                        n_null_map += 1
-                    elif off + mi < len(flat_is_null) and flat_is_null[off + mi]:
+                    if mi < 0 or off < 0 or off + mi < len(flat_is_null) and flat_is_null[off + mi]:
                         n_null_map += 1
                 n_failed = int(newly_out.sum()) - n_null_map
                 if n_failed > 0:

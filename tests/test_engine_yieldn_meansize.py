@@ -152,6 +152,7 @@ def test_yieldn_meansize_csv_matches_in_memory(tmp_path):
 
 def test_netcdf_written_only_when_flag_on(tmp_path):
     import xarray as xr
+
     from osmose.engine.output import write_outputs
 
     outputs = [_step(0, np.array([3.0]), {0: 12.0}), _step(1, np.array([7.0]), {0: 20.0})]

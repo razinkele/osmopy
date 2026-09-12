@@ -333,10 +333,10 @@ def test_netcdf_cf_conventions_attr(tmp_path):
 # Spatial output tests (Task 3)
 # ---------------------------------------------------------------------------
 
-from osmose.engine.grid import Grid  # noqa: E402
-from osmose.engine.output import write_outputs_netcdf_spatial  # noqa: E402
-from osmose.engine.simulate import _average_step_outputs, _collect_spatial_outputs  # noqa: E402
-from tests.helpers import make_schools_in_cells  # noqa: E402
+from osmose.engine.grid import Grid
+from osmose.engine.output import write_outputs_netcdf_spatial
+from osmose.engine.simulate import _average_step_outputs, _collect_spatial_outputs
+from tests.helpers import make_schools_in_cells
 
 
 def _make_grid_2x2_with_land() -> Grid:

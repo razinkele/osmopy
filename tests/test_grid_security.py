@@ -50,8 +50,9 @@ class TestLoadMaskPathTraversal:
 class TestLoadNetcdfGridPathTraversal:
     def test_rejects_traversal(self, tmp_path):
         """load_netcdf_grid must reject paths that escape the search root."""
-        from ui.pages.grid_helpers import load_netcdf_grid
         import xarray as xr
+
+        from ui.pages.grid_helpers import load_netcdf_grid
 
         # Create a NetCDF file outside tmp_path
         outside = tmp_path.parent / "outside.nc"
@@ -78,8 +79,9 @@ class TestLoadNetcdfGridPathTraversal:
 
     def test_allows_valid_file(self, tmp_path):
         """load_netcdf_grid must load valid files within the search root."""
-        from ui.pages.grid_helpers import load_netcdf_grid
         import xarray as xr
+
+        from ui.pages.grid_helpers import load_netcdf_grid
 
         lat = np.array([45.0, 46.0])
         lon = np.array([1.0, 2.0])

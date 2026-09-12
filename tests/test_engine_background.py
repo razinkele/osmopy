@@ -15,7 +15,6 @@ from osmose.engine.config import EngineConfig
 from osmose.engine.grid import Grid
 from osmose.engine.state import SchoolState
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -94,7 +93,7 @@ class TestParseBackgroundSpecies:
         # ages are "1;3" in the fixture, n_dt_per_year=24
         result = parse_background_species(cfg, n_focal=1, n_dt_per_year=24)
         bkg = result[0]
-        assert bkg.ages_dt == [int(1) * 24, int(3) * 24]
+        assert bkg.ages_dt == [1 * 24, 3 * 24]
         assert bkg.ages_dt == [24, 72]
 
     def test_multiple_species_sorted_numerically(self):
@@ -445,9 +444,9 @@ class TestBackgroundStateNetCDF:
 # ---------------------------------------------------------------------------
 
 
-from osmose.engine.processes.starvation import starvation_mortality  # noqa: E402
-from osmose.engine.processes.fishing import fishing_mortality  # noqa: E402
-from osmose.engine.processes.natural import additional_mortality  # noqa: E402
+from osmose.engine.processes.fishing import fishing_mortality
+from osmose.engine.processes.natural import additional_mortality
+from osmose.engine.processes.starvation import starvation_mortality
 
 
 class TestMortalitySkipBackground:
@@ -497,7 +496,7 @@ class TestMortalitySkipBackground:
 # ---------------------------------------------------------------------------
 
 
-from osmose.engine.simulate import simulate  # noqa: E402
+from osmose.engine.simulate import simulate
 
 
 class TestSimulateWithBackground:
@@ -551,7 +550,7 @@ class TestSimulateWithBackground:
 # ---------------------------------------------------------------------------
 
 
-from osmose.engine.processes.predation import predation_for_cell  # noqa: E402
+from osmose.engine.processes.predation import predation_for_cell
 
 
 class TestBackgroundPredation:

@@ -228,8 +228,8 @@ def test_format_delta_report():
 
 
 def test_delta_chart_builds():
-    from osmose import plotting
     from osmose import analysis as az
+    from osmose import plotting
 
     deltas = [
         az.SpeciesDelta("herring", 50.0, 100.0, 50.0, 1.0, False),

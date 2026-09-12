@@ -5,6 +5,7 @@ n_subdt, flushing gonad before computing death toll at each sub-step.
 """
 
 from __future__ import annotations
+
 import numpy as np
 from numpy.typing import NDArray
 

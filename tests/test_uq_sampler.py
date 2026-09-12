@@ -179,7 +179,7 @@ def test_credible_interval_is_weight_sensitive():
 
 
 def test_dynesty_maxcall_bounds_sample_count():
-    lp = lambda t: -0.5 * float(np.sum((t - 0.5) ** 2)) / 0.05  # noqa: E731
+    lp = lambda t: -0.5 * float(np.sum((t - 0.5) ** 2)) / 0.05
     unbounded = DynestySampler().sample(lp, _fp2(), seed=0)
     bounded = DynestySampler(maxcall=400).sample(lp, _fp2(), seed=0)
     # A call budget cuts the run short -> fewer accumulated samples.

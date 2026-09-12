@@ -1208,7 +1208,7 @@ def write_outputs_netcdf_spatial(
 
 
 def write_economic_outputs(
-    fleet_state: "FleetState",
+    fleet_state: FleetState,
     output_dir: Path,
 ) -> None:
     """Write economic CSV output files.

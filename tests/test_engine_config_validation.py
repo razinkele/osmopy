@@ -274,12 +274,12 @@ def test_from_dict_still_works() -> None:
 
 
 # --- Phase 7.3: unknown-key validation integration tests ----------------------
-import logging as _logging  # noqa: E402
-from pathlib import Path as _Path  # noqa: E402
+import logging as _logging
+from pathlib import Path as _Path
 
-import pytest as _pytest  # noqa: E402
+import pytest as _pytest
 
-from osmose.engine.config import EngineConfig as _EngineConfig  # noqa: E402
+from osmose.engine.config import EngineConfig as _EngineConfig
 
 
 def _load_example_config(example_name: str) -> dict:

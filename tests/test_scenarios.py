@@ -158,8 +158,8 @@ def test_save_creates_new_scenario(tmp_path):
 
 def test_save_backup_restored_on_rename_failure(tmp_path):
     """If os.rename fails putting new data in place, backup is restored to target."""
-    import os
     import json as _json
+    import os
     from unittest.mock import patch
 
     manager = ScenarioManager(tmp_path)
@@ -255,8 +255,9 @@ def test_fork_rejects_path_traversal(tmp_path):
 
 def test_import_all_rejects_path_traversal_in_zip(tmp_path):
     """ZIP containing scenario with traversal name should be skipped."""
-    import zipfile
     import json
+    import zipfile
+
     from osmose.scenarios import ScenarioManager
 
     mgr = ScenarioManager(tmp_path / "scenarios")
@@ -283,8 +284,9 @@ def test_save_rejects_empty_name(tmp_path):
 def test_import_all_rejects_oversized_zip_entries(tmp_path, caplog):
     """ZIP entries larger than 10 MB must be skipped with a warning, not read."""
     import json
-    import zipfile
     import logging
+    import zipfile
+
     from osmose.scenarios import ScenarioManager
 
     storage = tmp_path / "scenarios"
@@ -322,8 +324,9 @@ def test_import_all_rejects_oversized_zip_entries(tmp_path, caplog):
 def test_import_all_skips_invalid_scenario_names(tmp_path, caplog):
     """A single bad scenario name must not abort the import of the rest."""
     import json
-    import zipfile
     import logging
+    import zipfile
+
     from osmose.scenarios import ScenarioManager
 
     storage = tmp_path / "scenarios"

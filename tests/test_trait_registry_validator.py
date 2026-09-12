@@ -4,7 +4,6 @@ import pytest
 
 from osmose.engine.config import EngineConfig
 
-
 EXAMPLE_CONFIG = Path(__file__).parent.parent / "data" / "examples" / "osm_all-parameters.csv"
 
 

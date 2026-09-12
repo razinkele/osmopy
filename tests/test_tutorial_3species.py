@@ -36,8 +36,8 @@ import pytest
 from osmose.engine import PythonEngine
 
 from ._tutorial_config import (
-    BALTIC_DIR,
     ACCESSIBILITY_CSV_RELPATH,
+    BALTIC_DIR,
     FOCAL_SPECIES,
     add_total_cod,
     apply_cod_sprat_perturbation,
@@ -204,7 +204,7 @@ def perturbed_run(tmp_path_factory: pytest.TempPathFactory, numba_warmup: None) 
     avoid collision with baseline_run. The perturbation edits
     predation-accessibility.csv in the workdir copy (never touches data/baltic/).
     """
-    import shutil  # noqa: PLC0415
+    import shutil
 
     workdir = tmp_path_factory.mktemp("pert")
     target = workdir / "baltic"
@@ -220,7 +220,7 @@ def perturbed_run(tmp_path_factory: pytest.TempPathFactory, numba_warmup: None) 
     )
 
     # Load config directly to avoid a second copytree call.
-    from osmose.config.reader import OsmoseConfigReader  # noqa: PLC0415
+    from osmose.config.reader import OsmoseConfigReader
 
     reader = OsmoseConfigReader()
     cfg = reader.read(str(target / "baltic_all-parameters.csv"))
@@ -399,7 +399,7 @@ def test_perturbation_targets_both_cod_stocks(tmp_path: Path) -> None:
     cod split it silently left cod_east untouched — and cod_east has the higher accessibility
     to sprat (0.5 vs 0.4), i.e. the perturbation was missing the larger half of the effect.
     """
-    import pandas as pd  # noqa: PLC0415
+    import pandas as pd
 
     canonical = BALTIC_DIR / ACCESSIBILITY_CSV_RELPATH
     scratch = tmp_path / ACCESSIBILITY_CSV_RELPATH

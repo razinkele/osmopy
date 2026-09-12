@@ -13,7 +13,6 @@ from pathlib import Path
 import numpy as np
 from shiny import reactive, render, ui
 from shiny.types import SilentException
-
 from shiny_deckgl import (  # type: ignore[import-untyped]
     CARTO_DARK,
     CARTO_POSITRON,

@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path("scripts").resolve()))
-from apply_calibration import apply_calibration, set_key  # noqa: E402
+from apply_calibration import apply_calibration, set_key
 
 
 def test_set_key_updates_existing_line_preserving_comments(tmp_path):

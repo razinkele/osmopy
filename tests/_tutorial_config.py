@@ -57,7 +57,7 @@ def apply_cod_sprat_perturbation(
     The file is semicolon-separated (see CLAUDE.md: the config reader auto-detects the
     separator per line, so a comma-written file is read as one column and fails obscurely).
     """
-    import pandas as pd  # noqa: PLC0415
+    import pandas as pd
 
     df = pd.read_csv(acc_csv_path, sep=";", index_col=0)
     missing = [c for c in COD_STOCKS if c not in df.columns]
@@ -79,7 +79,7 @@ def add_total_cod(bio_wide):
     Uses osmose.results.total_cod, which falls back to an aggregate ``cod`` column so this
     keeps working on undisaggregated configs.
     """
-    from osmose.results import total_cod  # noqa: PLC0415
+    from osmose.results import total_cod
 
     out = bio_wide.copy()
     out["total_cod"] = total_cod(bio_wide)

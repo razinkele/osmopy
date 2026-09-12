@@ -115,7 +115,7 @@ def build_initial_population(config, grid, rng) -> SchoolState:
         for c in range(len(ages_dt)):
             if abund[c] <= 0.0 or weights[c] <= 0.0:
                 continue
-            n_new = n_schools_sp if (abund[c] >= n_schools_sp and n_schools_sp > 0) else 1
+            n_new = n_schools_sp if (abund[c] >= n_schools_sp > 0) else 1
             abund_per = abund[c] / n_new
             idx = rng.integers(0, len(ys), size=n_new)
             new = SchoolState.create(n_schools=n_new, species_id=np.full(n_new, sp, dtype=np.int32))

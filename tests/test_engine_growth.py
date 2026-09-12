@@ -2,8 +2,8 @@
 
 import numpy as np
 
-from osmose.engine.processes.growth import expected_length_gompertz, expected_length_vb, growth
 from osmose.engine.config import EngineConfig
+from osmose.engine.processes.growth import expected_length_gompertz, expected_length_vb, growth
 from osmose.engine.state import SchoolState
 
 

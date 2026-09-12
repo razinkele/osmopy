@@ -65,7 +65,7 @@ def _cache_dir() -> Path:
 def _http_get_bytes(url: str) -> bytes:
     """Single network seam (TLS-verified). Tests monkeypatch this."""
     req = urllib.request.Request(url, headers={"User-Agent": "osmose-python"})
-    with urllib.request.urlopen(req, timeout=_TIMEOUT_SEC) as resp:  # noqa: S310 (https only)
+    with urllib.request.urlopen(req, timeout=_TIMEOUT_SEC) as resp:
         return resp.read()
 
 
@@ -82,14 +82,14 @@ def _load_table(table: str, db: str = "fb") -> pd.DataFrame:
         url = _BASE.format(db=db, table=table)
         try:
             data = _http_get_bytes(url)
-        except Exception as exc:  # noqa: BLE001 — any fetch failure is "unavailable"
+        except Exception as exc:
             raise FishBaseUnavailable(f"could not fetch {url}: {exc}") from exc
         tmp = cache.with_suffix(".parquet.tmp")
         tmp.write_bytes(data)
         os.replace(tmp, cache)  # atomic publish
     try:
         return pd.read_parquet(cache)
-    except Exception as exc:  # noqa: BLE001 — corrupt/changed payload: evict + signal
+    except Exception as exc:
         cache.unlink(missing_ok=True)
         raise FishBaseUnavailable(
             f"could not parse {table} parquet (cache evicted): {exc}"

@@ -80,7 +80,7 @@ def normalize_factor(
     return np.maximum(factor, floor)
 
 
-def thermal_gate_factor(config: "EngineConfig", step: int) -> NDArray[np.float64]:
+def thermal_gate_factor(config: EngineConfig, step: int) -> NDArray[np.float64]:
     """Per-species egg-production multiplier for this timestep.
 
     1.0 for every species when the gate is off or the species is disabled;

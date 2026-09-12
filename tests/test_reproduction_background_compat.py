@@ -12,8 +12,8 @@ background species (grey seal, cormorant) activated. If reproduction.py
 ever drops the slicing, this test fails.
 """
 
-from pathlib import Path
 import tempfile
+from pathlib import Path
 
 import pytest
 

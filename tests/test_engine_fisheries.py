@@ -10,7 +10,6 @@ from osmose.engine.config import EngineConfig
 from osmose.engine.processes.fishing import fishing_mortality
 from osmose.engine.state import MortalityCause, SchoolState
 
-
 # ---------------------------------------------------------------------------
 # Helper: minimal config with fisheries
 # ---------------------------------------------------------------------------

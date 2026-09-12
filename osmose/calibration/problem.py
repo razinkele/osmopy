@@ -6,17 +6,18 @@ from __future__ import annotations
 import enum
 import hashlib
 import json
+import multiprocessing
 import os
+import pickle
 import re
 import subprocess
 import tempfile
-import multiprocessing
-import pickle
+from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Literal
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from osmose.results import OsmoseResults
@@ -65,7 +66,7 @@ class _EvalSpec:
     use_registry: bool
 
 
-_WORKER_PROBLEM: "OsmoseCalibrationProblem | None" = None
+_WORKER_PROBLEM: OsmoseCalibrationProblem | None = None
 
 
 def _worker_init(spec: _EvalSpec) -> None:
@@ -160,7 +161,7 @@ class OsmoseCalibrationProblem(Problem):
         n_parallel: int = 1,
         enable_cache: bool = False,
         cache_dir: Path | None = None,
-        registry: "ParameterRegistry | None" = None,
+        registry: ParameterRegistry | None = None,
         subprocess_timeout: int = 3600,
         cleanup_after_eval: bool = False,
         use_java_engine: bool = False,
@@ -340,7 +341,7 @@ class OsmoseCalibrationProblem(Problem):
             spec = self._eval_spec()
             try:
                 pickle.dumps(spec)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 raise RuntimeError(
                     "Objective/spec is not picklable; use parallel_backend='thread'"
                 ) from exc
@@ -429,7 +430,7 @@ class OsmoseCalibrationProblem(Problem):
 
         return obj_values
 
-    def _run_python_engine(self, overrides: dict[str, str], run_id: int) -> "OsmoseResults | None":
+    def _run_python_engine(self, overrides: dict[str, str], run_id: int) -> OsmoseResults | None:
         """Run the Python engine in-process; return OsmoseResults or None on failure."""
         from osmose.config import OsmoseConfigReader
         from osmose.engine import PythonEngine
@@ -450,7 +451,7 @@ class OsmoseCalibrationProblem(Problem):
 
     def _run_java_subprocess(
         self, overrides: dict[str, str], run_id: int
-    ) -> "OsmoseResults | None":
+    ) -> OsmoseResults | None:
         """Run the Java subprocess; return OsmoseResults or None on failure.
 
         Retained as opt-in fallback for cross-engine validation

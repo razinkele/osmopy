@@ -1,4 +1,5 @@
 from pathlib import Path
+
 from osmose.config import OsmoseConfigReader
 from osmose.engine.config import EngineConfig
 

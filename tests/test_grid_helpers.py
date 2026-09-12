@@ -417,7 +417,7 @@ def test_make_legend_importable():
 
 # --- make_diff_map ---------------------------------------------------------
 
-from ui.pages.grid_helpers import make_diff_map  # noqa: E402
+from ui.pages.grid_helpers import make_diff_map
 
 
 def test_make_diff_map_symmetric_range():

@@ -2,11 +2,10 @@
 
 import numpy as np
 
-from tests.helpers import _make_school
 from osmose.engine.config import EngineConfig
 from osmose.engine.grid import Grid
 from osmose.engine.processes.movement import movement
-
+from tests.helpers import _make_school
 
 # ---------------------------------------------------------------------------
 # Helpers

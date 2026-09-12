@@ -8,7 +8,6 @@ import pytest
 
 from osmose.config.reader import OsmoseConfigReader
 
-
 # ---------------------------------------------------------------------------
 # Circular reference
 # ---------------------------------------------------------------------------

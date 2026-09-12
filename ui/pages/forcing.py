@@ -1,6 +1,6 @@
 """Environmental forcing / LTL configuration page."""
 
-from shiny import ui, reactive, render
+from shiny import reactive, render, ui
 from shiny.types import SilentException
 
 from osmose.schema.bioenergetics import BIOENERGETICS_FIELDS

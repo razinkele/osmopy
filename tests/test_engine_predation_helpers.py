@@ -19,7 +19,6 @@ from osmose.engine.simulate import SimulationContext
 from osmose.engine.state import SchoolState
 from tests.test_engine_predation import _make_predation_config
 
-
 # ---------------------------------------------------------------------------
 # Helper to build a minimal two-school state (one predator, one prey)
 # ---------------------------------------------------------------------------

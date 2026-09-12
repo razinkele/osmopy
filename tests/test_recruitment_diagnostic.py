@@ -16,7 +16,7 @@ _SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 
-from evaluate_calibration_vs_ices import (  # noqa: E402
+from evaluate_calibration_vs_ices import (
     _ices_recruitment_geomean,
     _recruitment_verdict,
     _species_recruitment_age,

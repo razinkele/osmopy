@@ -11,8 +11,8 @@ from osmose.calibration.preflight import (
     ParameterScreening,
     PreflightIssue,
     PreflightResult,
+    detect_issues,
     run_morris_screening,
-    detect_issues,  # noqa: F401 — used in TestIssueDetection below
 )
 
 
@@ -239,7 +239,7 @@ class TestRunPreflight:
 
     def test_failure_abort(self) -> None:
         """50% failure rate triggers blowup issues."""
-        from osmose.calibration.preflight import run_preflight, IssueCategory
+        from osmose.calibration.preflight import IssueCategory, run_preflight
 
         def evaluation_fn(X: np.ndarray) -> np.ndarray:
             Y = np.ones(X.shape[0])
@@ -280,6 +280,7 @@ class TestRunPreflight:
     def test_cancellation(self) -> None:
         """cancel_event.set() before call returns quickly with empty result."""
         import threading
+
         from osmose.calibration.preflight import run_preflight
 
         cancel_event = threading.Event()
@@ -306,10 +307,11 @@ class TestMakePreflightEvalFn:
 
     def test_sim_years_clamped_to_5(self) -> None:
         """Configured 30yr -> run uses 5."""
-        from unittest.mock import MagicMock, patch
-        from osmose.calibration.problem import FreeParameter
-        from osmose.calibration.preflight import make_preflight_eval_fn
         from pathlib import Path
+        from unittest.mock import MagicMock, patch
+
+        from osmose.calibration.preflight import make_preflight_eval_fn
+        from osmose.calibration.problem import FreeParameter
 
         free_params = [FreeParameter(key="sp.linf", lower_bound=0.0, upper_bound=1.0)]
         base_config = {"simulation.time.nyear": "30", "sp.linf": "0.5"}
@@ -346,10 +348,11 @@ class TestMakePreflightEvalFn:
 
     def test_sim_years_keeps_short(self) -> None:
         """Configured 3yr -> run keeps 3."""
-        from unittest.mock import MagicMock, patch
-        from osmose.calibration.problem import FreeParameter
-        from osmose.calibration.preflight import make_preflight_eval_fn
         from pathlib import Path
+        from unittest.mock import MagicMock, patch
+
+        from osmose.calibration.preflight import make_preflight_eval_fn
+        from osmose.calibration.problem import FreeParameter
 
         free_params = [FreeParameter(key="sp.linf", lower_bound=0.0, upper_bound=1.0)]
         base_config = {"simulation.time.nyear": "3", "sp.linf": "0.5"}
@@ -386,10 +389,11 @@ class TestMakePreflightEvalFn:
 
     def test_log_transform_applied(self) -> None:
         """-1.0 with LOG transform -> config value 0.1."""
-        from unittest.mock import MagicMock, patch
-        from osmose.calibration.problem import FreeParameter, Transform
-        from osmose.calibration.preflight import make_preflight_eval_fn
         from pathlib import Path
+        from unittest.mock import MagicMock, patch
+
+        from osmose.calibration.preflight import make_preflight_eval_fn
+        from osmose.calibration.problem import FreeParameter, Transform
 
         free_params = [
             FreeParameter(key="sp.linf", lower_bound=-2.0, upper_bound=2.0, transform=Transform.LOG)
@@ -436,7 +440,7 @@ def test_preflight_eval_fn_logs_and_counts_failures(monkeypatch, caplog, tmp_pat
     from osmose.calibration.problem import FreeParameter
 
     class _FakeEngine:
-        def run(self, config, output_dir):  # noqa: ARG002
+        def run(self, config, output_dir):
             raise RuntimeError("synthetic blow-up")
 
     class _FakeResults:

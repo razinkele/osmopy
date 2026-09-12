@@ -357,7 +357,7 @@ def test_simulation_context_diet_coupling_after_enable():
     """After enable_diet_tracking(), diet_tracking_enabled and diet_matrix
     must be consistent. Deep review v3 M-14.
     """
-    from osmose.engine.processes.predation import enable_diet_tracking, disable_diet_tracking
+    from osmose.engine.processes.predation import disable_diet_tracking, enable_diet_tracking
     from osmose.engine.simulate import SimulationContext
 
     ctx = SimulationContext(config_dir="")

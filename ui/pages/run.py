@@ -367,7 +367,7 @@ class _QueueLogHandler(logging.Handler):
             return  # a different session's run (shared global 'osmose' logger) — not ours
         try:
             self._log_q.put_nowait(self.format(record))
-        except Exception:  # noqa: BLE001 — a log line must never break a run
+        except Exception:
             self.handleError(record)
 
 
@@ -405,7 +405,7 @@ def _python_engine_thread(
     except SimulationCancelled as exc:
         _log.info("Python engine cancelled: %s", exc)
         done_q.put(("cancelled", None, str(exc) or "user cancelled"))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         _log.error("Python engine failed: %s", exc, exc_info=True)
         done_q.put(("failed", None, str(exc)))
     finally:
@@ -436,7 +436,7 @@ def _java_engine_setup(input, state, config, work_dir, source_dir):
             target_version=target_version_for_jar(jar_path),
             key_case_map=state.key_case_map.get(),
         )
-    except Exception as exc:  # noqa: BLE001 — surface staging failures, never silently
+    except Exception as exc:
         _log.error("Java config staging failed", exc_info=True)
         return f"Config staging failed: {exc}"
     # Staging overrides (the cutoff workaround) intentionally win over user-typed ones.
@@ -487,7 +487,7 @@ def _java_engine_thread(
             )
         )
         done_q.put(("done", result, ""))  # _handle_result handles returncode 0 or non-zero
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         _log.error("Java engine failed: %s", exc, exc_info=True)
         done_q.put(("failed", None, str(exc)))
 
@@ -1029,7 +1029,7 @@ def run_server(input, output, session, state: AppState):
             # live and _drain_run_done finishes the run (mirrors the Python fire-and-forget path).
             try:
                 params = _java_engine_setup(input, state, config, work_dir, source_dir)
-            except Exception as exc:  # noqa: BLE001 — surface setup/config-write errors, never silently
+            except Exception as exc:
                 import traceback
 
                 _log.error("Java run setup failed", exc_info=True)

@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-import osmose.calibration.problem as problem
+from osmose.calibration import problem
 
 
 def test_worker_eval_propagates_unexpected_error(monkeypatch):

@@ -1,10 +1,11 @@
 """Tests for config validation."""
 
 import pytest
+
 from osmose.config.validator import (
-    validate_config,
     check_file_references,
     check_species_consistency,
+    validate_config,
 )
 
 
@@ -200,10 +201,10 @@ def test_summarize_does_not_raise_on_malformed():
 def test_summarize_matches_inline_composition_dry_lock(tmp_path):
     """The helper must be byte-identical to the old inline gate sequence."""
     from osmose.config.validator import (
-        summarize_config_validation,
-        validate_config,
         check_file_references,
         check_species_consistency,
+        summarize_config_validation,
+        validate_config,
     )
     from osmose.schema import build_registry
 

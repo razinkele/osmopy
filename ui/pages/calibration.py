@@ -19,7 +19,8 @@ from osmose.calibration.pareto import (
     select_solution,
     solution_overrides_csv,
 )
-
+from ui.components.collapsible import collapsible_card_header, expand_tab
+from ui.components.config_diff import classify_config_diffs
 from ui.pages.calibration_charts import (
     make_convergence_chart,
     make_correlation_chart,
@@ -35,23 +36,21 @@ from ui.pages.calibration_handlers import (
     register_calibration_handlers,
 )
 from ui.pages.run import copy_data_files
-from ui.components.collapsible import collapsible_card_header, expand_tab
-from ui.components.config_diff import classify_config_diffs
 from ui.state import AppState, get_theme_mode
 from ui.styles import STYLE_EMPTY, STYLE_HINT_BLOCK
 
 # Re-export for backward compatibility (tests import these from calibration)
 __all__ = [
-    "calibration_ui",
-    "calibration_server",
-    "get_calibratable_params",
-    "collect_selected_params",
+    "_make_progress_callback",
     "build_free_params",
+    "calibration_server",
+    "calibration_ui",
+    "collect_selected_params",
+    "get_calibratable_params",
     "make_convergence_chart",
     "make_correlation_chart",
     "make_pareto_chart",
     "make_sensitivity_chart",
-    "_make_progress_callback",
 ]
 
 
@@ -519,7 +518,7 @@ def calibration_server(input, output, session, state: AppState):
                 ph = snap.active.checkpoint.phase
             else:
                 opt = ph = None
-        except Exception:  # noqa: BLE001 — defensive fallback; should never fire
+        except Exception:
             opt = ph = None
         return make_convergence_chart(
             cal_history.get(),

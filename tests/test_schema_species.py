@@ -1,6 +1,6 @@
+from osmose.schema.base import ParamType
 from osmose.schema.simulation import SIMULATION_FIELDS
 from osmose.schema.species import SPECIES_FIELDS
-from osmose.schema.base import ParamType
 
 
 def test_simulation_fields_count():

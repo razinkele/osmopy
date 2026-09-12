@@ -94,7 +94,7 @@ def apply_single_run_threads(requested: int | None = None) -> int:
     """
     try:
         import numba  # type: ignore[import-untyped]  # optional extra
-    except Exception:  # noqa: BLE001
+    except Exception:
         return 0
     try:
         n = resolve_engine_threads(requested)
@@ -107,7 +107,7 @@ def apply_single_run_threads(requested: int | None = None) -> int:
             physical_budget(),
         )
         return n
-    except Exception:  # noqa: BLE001
+    except Exception:
         _log.warning(
             "could not apply single-run thread policy; using Numba default",
             exc_info=True,

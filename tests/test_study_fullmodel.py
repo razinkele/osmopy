@@ -734,7 +734,7 @@ class TestEnsembleAggregation:
 # ---------------------------------------------------------------------------
 
 
-from tests.helpers import _ScriptRunner  # noqa: E402
+from tests.helpers import _ScriptRunner
 
 
 class TestFullPipeline:
@@ -973,7 +973,7 @@ class TestFileReferences:
         name, result, config = study_demo
         config_dir = result["config_file"].parent
         key = "predation.accessibility.file"
-        if key in config and config[key]:
+        if config.get(key):
             ref = Path(config[key])
             if not ref.is_absolute():
                 ref = config_dir / ref
@@ -983,7 +983,7 @@ class TestFileReferences:
         name, result, config = study_demo
         config_dir = result["config_file"].parent
         key = "grid.netcdf.file"
-        if key in config and config[key]:
+        if config.get(key):
             ref = Path(config[key])
             if not ref.is_absolute():
                 ref = config_dir / ref

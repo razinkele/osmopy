@@ -17,7 +17,6 @@ from osmose.engine.processes.energy_budget import (
     update_enet_faced,
 )
 
-
 # ── Shared helpers ─────────────────────────────────────────────────────────────
 
 # c_m is ~1e12 because arrhenius(T, 0.65) ~ 1e-12 at 5–25 degC; the product is O(1).

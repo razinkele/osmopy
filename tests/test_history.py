@@ -1,6 +1,6 @@
 import pytest
 
-from osmose.history import RunRecord, RunHistory, RUN_HISTORY_DIR, default_run_history
+from osmose.history import RUN_HISTORY_DIR, RunHistory, RunRecord, default_run_history
 
 
 def test_save_and_list_records(tmp_path):

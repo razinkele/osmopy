@@ -1,6 +1,7 @@
+from pathlib import Path
+
 import numpy as np
 import pytest
-from pathlib import Path
 
 from osmose.engine.config import _load_thermal_gate
 
@@ -144,6 +145,7 @@ class TestExponentialResponse:
 
     def test_exponential_scaling(self, tmp_path):
         import numpy as np
+
         from osmose.engine.config import _load_thermal_gate
 
         factor, _, _ = _load_thermal_gate(self._cfg(tmp_path, [9.0] * 3), 1, 4, 3)
@@ -151,6 +153,7 @@ class TestExponentialResponse:
 
     def test_missing_beta_raises(self, tmp_path):
         import pytest
+
         from osmose.engine.config import _load_thermal_gate
 
         cfg = self._cfg(tmp_path, [7.0] * 3)
@@ -161,6 +164,7 @@ class TestExponentialResponse:
     def test_missing_tref_raises_not_defaults(self, tmp_path):
         """The key has a silent 20.0 thermal_cap default the exponential path must refuse."""
         import pytest
+
         from osmose.engine.config import _load_thermal_gate
 
         cfg = self._cfg(tmp_path, [7.0] * 3)
@@ -170,6 +174,7 @@ class TestExponentialResponse:
 
     def test_mode_matrix(self, tmp_path):
         import pytest
+
         from osmose.engine.config import _load_thermal_gate
 
         for bad in ("thermal_cap", "mean_preserving"):
@@ -189,6 +194,7 @@ class TestExponentialResponse:
 
     def test_negative_offset_raises(self, tmp_path):
         import pytest
+
         from osmose.engine.config import _load_thermal_gate
 
         cfg = self._cfg(tmp_path, [7.0] * 3)

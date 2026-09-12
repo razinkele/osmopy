@@ -92,10 +92,10 @@ def make_catch_all_input(value: Any):
 # Engine config test helpers
 # ---------------------------------------------------------------------------
 
-from dataclasses import replace  # noqa: E402
+from dataclasses import replace
 
-from osmose.engine.config import EngineConfig  # noqa: E402
-from osmose.engine.state import MortalityCause  # noqa: E402
+from osmose.engine.config import EngineConfig
+from osmose.engine.state import MortalityCause
 
 
 def make_schools_in_cells(

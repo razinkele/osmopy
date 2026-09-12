@@ -4,9 +4,9 @@
 from __future__ import annotations
 
 import numpy as np
+from scipy.stats.qmc import LatinHypercube
 from sklearn.gaussian_process import GaussianProcessRegressor  # type: ignore[import-untyped]
 from sklearn.gaussian_process.kernels import Matern  # type: ignore[import-untyped]
-from scipy.stats.qmc import LatinHypercube
 
 
 def _non_dominated_indices(F: np.ndarray) -> np.ndarray:

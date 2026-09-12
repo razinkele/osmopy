@@ -19,7 +19,7 @@ class GridSpec:
     lowright_lon: float
 
     @classmethod
-    def from_config(cls, cfg: dict[str, str]) -> "GridSpec":
+    def from_config(cls, cfg: dict[str, str]) -> GridSpec:
         return cls(
             nlon=int(float(cfg["grid.nlon"])),
             nlat=int(float(cfg["grid.nlat"])),
@@ -122,7 +122,7 @@ class MapGrid:
         self._a = np.array(array, dtype=float, copy=True)
 
     @classmethod
-    def blank(cls, grid: GridSpec, base_mask: np.ndarray | None = None) -> "MapGrid":
+    def blank(cls, grid: GridSpec, base_mask: np.ndarray | None = None) -> MapGrid:
         a = np.zeros((grid.nlat, grid.nlon), dtype=float)
         if base_mask is not None:
             if base_mask.shape == a.shape:
@@ -169,7 +169,7 @@ def _fmt(v: float) -> str:
     return str(int(v)) if float(v).is_integer() else f"{v:.10g}"
 
 
-def to_csv_text(mg: "MapGrid") -> str:
+def to_csv_text(mg: MapGrid) -> str:
     south_first = np.flipud(mg.array)
     lines = []
     for row in south_first:
@@ -177,7 +177,7 @@ def to_csv_text(mg: "MapGrid") -> str:
     return "\n".join(lines) + "\n"
 
 
-def from_csv_text(text: str, grid: GridSpec) -> "MapGrid":
+def from_csv_text(text: str, grid: GridSpec) -> MapGrid:
     rows = [ln for ln in text.splitlines() if ln.strip()]
     data = [[float(x) for x in ln.split(";")] for ln in rows]
     if len(data) != grid.nlat or any(len(r) != grid.nlon for r in data):
@@ -188,7 +188,7 @@ def from_csv_text(text: str, grid: GridSpec) -> "MapGrid":
 
 
 def validate(
-    mg: "MapGrid", grid: GridSpec, *, map_type: str, base_mask: np.ndarray | None
+    mg: MapGrid, grid: GridSpec, *, map_type: str, base_mask: np.ndarray | None
 ) -> list[str]:
     problems: list[str] = []
     if mg.array.shape != (grid.nlat, grid.nlon):
@@ -261,7 +261,7 @@ def _sanitize_filename(name: str) -> str:
 
 
 def save_map(
-    mg: "MapGrid",
+    mg: MapGrid,
     grid: GridSpec,
     map_type: str,
     filename: str,

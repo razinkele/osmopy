@@ -222,11 +222,11 @@ def test_ceiling_off_is_bit_identical():
     np.testing.assert_array_equal(base.to_numpy(), off.to_numpy())
 
 
-import sys  # noqa: E402
-from pathlib import Path  # noqa: E402
+import sys
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
-import derive_recruitment_ceiling as derive  # noqa: E402
+import derive_recruitment_ceiling as derive
 
 
 def test_zero_fishing_disables_both_modes():
@@ -299,7 +299,7 @@ def test_seeding_overlap_no_warning_when_clear():
     assert derive.seeding_overlap_warnings(smax, 360, 24, 1.0 / 3.0) == []
 
 
-import baltic_recruitment_ceiling_diagnostic as abdiag  # noqa: E402
+import baltic_recruitment_ceiling_diagnostic as abdiag
 
 
 def test_overshoot_ratio_basic():

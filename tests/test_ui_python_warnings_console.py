@@ -91,7 +91,7 @@ def test_queue_log_handler_never_raises_on_broken_queue():
 
 def test_python_engine_thread_streams_120_and_123_and_detaches(tmp_path):
     from osmose.config.reader import OsmoseConfigReader
-    from ui.pages.run import _QueueLogHandler, _python_engine_thread
+    from ui.pages.run import _python_engine_thread, _QueueLogHandler
 
     cfg = dict(OsmoseConfigReader().read("data/minimal/osm_all-parameters.csv"))
     cfg["_osmose.config.dir"] = "data/minimal"  # so the engine resolves the bundled data files
@@ -123,7 +123,7 @@ def test_python_engine_thread_streams_120_and_123_and_detaches(tmp_path):
 
 def test_python_engine_thread_without_log_q_attaches_no_handler(tmp_path):
     from osmose.config.reader import OsmoseConfigReader
-    from ui.pages.run import _QueueLogHandler, _python_engine_thread
+    from ui.pages.run import _python_engine_thread, _QueueLogHandler
 
     cfg = dict(OsmoseConfigReader().read("data/minimal/osm_all-parameters.csv"))
     cfg["_osmose.config.dir"] = "data/minimal"

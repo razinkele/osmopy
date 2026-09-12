@@ -127,7 +127,7 @@ def test_ensure_pool_discards_broken(tmp_path):
     class _Stub:
         _broken = True
 
-        def shutdown(self, **k):  # noqa: D401
+        def shutdown(self, **k):
             pass
 
     p._executor = _Stub()

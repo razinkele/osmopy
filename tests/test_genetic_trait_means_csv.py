@@ -6,7 +6,6 @@ import pandas as pd
 from osmose.engine.output import write_outputs
 from osmose.engine.simulate import StepOutput, TraitStats
 
-
 EXAMPLE_CONFIG = Path(__file__).parent.parent / "data" / "examples" / "osm_all-parameters.csv"
 
 # Example config has 8 focal species and 8 MortalityCause members.

@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from osmose.ensemble import aggregate_replicates, ENSEMBLE_OUTPUT_TYPES
+from osmose.ensemble import ENSEMBLE_OUTPUT_TYPES, aggregate_replicates
 
 
 @pytest.fixture

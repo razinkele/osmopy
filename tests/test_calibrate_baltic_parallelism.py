@@ -66,6 +66,7 @@ def test_phase12_returns_expected_params():
 def test_optimizer_choices_and_dispatch():
     """All three optimizers must dispatch through to a normalized result dict."""
     import numpy as np
+
     from scripts.calibrate_baltic import _OPTIMIZER_CHOICES, _dispatch_optimizer
 
     assert _OPTIMIZER_CHOICES == ("de", "cmaes", "surrogate-de")
@@ -107,8 +108,9 @@ def test_optimizer_choices_and_dispatch():
 
 
 def test_unknown_optimizer_raises():
-    import pytest
     import numpy as np
+    import pytest
+
     from scripts.calibrate_baltic import _dispatch_optimizer
 
     with pytest.raises(ValueError, match="unknown optimizer"):
@@ -153,6 +155,7 @@ def test_checkpoint_callback_writes_snapshot(tmp_path):
     """The DE checkpoint callback must serialise (gen, fun, x, params) to JSON."""
     import json
     from types import SimpleNamespace
+
     from scripts.calibrate_baltic import _make_checkpoint_callback
 
     checkpoint_path = tmp_path / "phase12_checkpoint.json"
@@ -197,6 +200,7 @@ def test_checkpoint_callback_writes_snapshot(tmp_path):
 def test_checkpoint_callback_atomic_no_partial_file(tmp_path):
     """A kill mid-write must NOT leave a partial JSON — atomic via tmp + rename."""
     from types import SimpleNamespace
+
     from scripts.calibrate_baltic import _make_checkpoint_callback
 
     checkpoint_path = tmp_path / "snap.json"
@@ -215,6 +219,7 @@ def test_checkpoint_callback_atomic_no_partial_file(tmp_path):
 def test_checkpoint_callback_disabled_with_zero_every_n(tmp_path):
     """every_n=0 means no checkpoint writes — used by --checkpoint-every 0."""
     from types import SimpleNamespace
+
     from scripts.calibrate_baltic import _make_checkpoint_callback
 
     checkpoint_path = tmp_path / "snap.json"
@@ -233,6 +238,7 @@ def test_checkpoint_callback_handles_legacy_signature(tmp_path):
     """If scipy passes the legacy (xk, convergence) signature, callback must
     not crash — just skip the snapshot."""
     import numpy as np
+
     from scripts.calibrate_baltic import _make_checkpoint_callback
 
     checkpoint_path = tmp_path / "snap.json"
@@ -253,6 +259,7 @@ def test_patience_early_stop_fires_after_n_stale_generations(tmp_path):
     """Callback returns True after `patience` consecutive stale gens — solves
     the multi-modal landscape problem where scipy's tol never triggers."""
     from types import SimpleNamespace
+
     from scripts.calibrate_baltic import _make_checkpoint_callback
 
     cb = _make_checkpoint_callback(
@@ -277,6 +284,7 @@ def test_patience_early_stop_fires_after_n_stale_generations(tmp_path):
 def test_patience_zero_disables_early_stop(tmp_path):
     """patience=0 means no patience-based early termination."""
     from types import SimpleNamespace
+
     from scripts.calibrate_baltic import _make_checkpoint_callback
 
     cb = _make_checkpoint_callback(
@@ -296,6 +304,7 @@ def test_patience_zero_disables_early_stop(tmp_path):
 def test_patience_resets_on_meaningful_improvement(tmp_path):
     """Patience counter resets when best-fun meaningfully improves."""
     from types import SimpleNamespace
+
     from scripts.calibrate_baltic import _make_checkpoint_callback
 
     cb = _make_checkpoint_callback(
@@ -320,6 +329,7 @@ def test_tiny_oscillation_does_not_reset_patience(tmp_path):
     """Floating-point noise (improvement < rel_threshold) should NOT reset
     patience — otherwise patience effectively never fires on noisy objectives."""
     from types import SimpleNamespace
+
     from scripts.calibrate_baltic import _make_checkpoint_callback
 
     cb = _make_checkpoint_callback(
@@ -341,6 +351,7 @@ def test_wall_clock_cap_fires_after_configured_seconds(tmp_path):
     """Wall-clock cap triggers regardless of convergence."""
     import time
     from types import SimpleNamespace
+
     from scripts.calibrate_baltic import _make_checkpoint_callback
 
     # Use a tiny cap so the test is fast
@@ -364,6 +375,7 @@ def test_wall_clock_none_disables_cap(tmp_path):
     """wall_clock_max_seconds=None disables the cap entirely."""
     import time
     from types import SimpleNamespace
+
     from scripts.calibrate_baltic import _make_checkpoint_callback
 
     cb = _make_checkpoint_callback(
@@ -386,6 +398,7 @@ def test_checkpoint_records_gens_since_improvement(tmp_path):
     """The snapshot JSON must include the patience counter for diagnostics."""
     import json
     from types import SimpleNamespace
+
     from scripts.calibrate_baltic import _make_checkpoint_callback
 
     snap_path = tmp_path / "snap.json"

@@ -9,15 +9,15 @@ import numpy as np
 import pytest
 
 from osmose.engine.timeseries import (
-    SingleTimeSeries,
-    GenericTimeSeries,
-    ByYearTimeSeries,
-    SeasonTimeSeries,
     ByClassTimeSeries,
-    BySpeciesTimeSeries,
     ByRegimeTimeSeries,
-    load_timeseries,
+    BySpeciesTimeSeries,
+    ByYearTimeSeries,
+    GenericTimeSeries,
+    SeasonTimeSeries,
+    SingleTimeSeries,
     TimeSeries,
+    load_timeseries,
 )
 
 

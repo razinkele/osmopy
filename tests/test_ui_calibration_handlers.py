@@ -1,12 +1,10 @@
 """Tests for calibration page handler helper functions."""
 
 import threading
-
-from shiny import reactive
-
 from pathlib import Path
 
 import pytest
+from shiny import reactive
 
 from osmose.calibration.preflight import PreflightEvalError
 from tests.helpers import make_catch_all_input, make_multi_input
@@ -287,6 +285,7 @@ def test_resolve_optimum_weights_falls_back_on_silent_exception():
 def test_weights_inputs_renders_zero_inputs_in_pareto_mode():
     """In Pareto mode, _render_weights_inputs emits no input_numeric tags."""
     import numpy as np  # noqa: F401  (kept for consistency with sibling tests)
+
     from ui.pages.calibration import _render_weights_inputs
 
     out = _render_weights_inputs(mode="pareto", optimum=None)
@@ -296,6 +295,7 @@ def test_weights_inputs_renders_zero_inputs_in_pareto_mode():
 
 def test_weights_inputs_renders_N_inputs_in_weighted_mode():
     import numpy as np
+
     from ui.pages.calibration import _render_weights_inputs
 
     optimum = {
@@ -312,6 +312,7 @@ def test_surrogate_pareto_scatter_empty_for_high_dim():
     """n_obj >= 3: scatter returns empty figure; table still produces M rows."""
     import numpy as np
     import pandas as pd
+
     from ui.pages.calibration import _render_pareto_scatter, _render_pareto_table
 
     optimum = {

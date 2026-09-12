@@ -1,12 +1,12 @@
 """Tests for loading demo scenarios into the UI state."""
 
-import pytest
 from pathlib import Path
 
+import pytest
 from shiny import reactive
 
 from osmose.config.reader import OsmoseConfigReader
-from osmose.demo import list_demos, osmose_demo, migrate_config
+from osmose.demo import list_demos, migrate_config, osmose_demo
 from tests.helpers import make_catch_all_input
 from ui.state import AppState
 

@@ -7,7 +7,7 @@ import pytest
 import xarray as xr
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
-import build_baltic_salinity_forcing as bld  # noqa: E402
+import build_baltic_salinity_forcing as bld
 
 
 def test_bottom_extract_deepest_valid():
@@ -147,7 +147,7 @@ def test_accumulate_climatology_grid_mismatch(tmp_path):
         bld.accumulate_climatology([str(fA), str(fB)])
 
 
-import baltic_salinity_gate_diagnostic as abdiag  # noqa: E402
+import baltic_salinity_gate_diagnostic as abdiag
 
 
 def test_late_mean_basic():

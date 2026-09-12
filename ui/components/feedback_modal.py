@@ -70,7 +70,7 @@ def feedback_server(input, output, session, state):
                 nav_tab=_safe_nav(input),
             )
             append_feedback(rec)
-        except Exception:  # noqa: BLE001 — never crash the session on a save failure
+        except Exception:
             _log.error("feedback save failed", exc_info=True)
             ui.notification_show("Couldn't save feedback — try again.", type="error", duration=8)
             return

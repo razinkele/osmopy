@@ -174,10 +174,10 @@ def test_random_walk_weighted(monkeypatch):
     assert high / mid == pytest.approx(2.0, rel=0.2)
 
 
-from types import SimpleNamespace  # noqa: E402
+from types import SimpleNamespace
 
-from osmose.engine.physical_data import PhysicalData  # noqa: E402
-from osmose.engine.processes.movement import _movement_salinity_weight  # noqa: E402
+from osmose.engine.physical_data import PhysicalData
+from osmose.engine.processes.movement import _movement_salinity_weight
 
 
 def _cfg_grid(enabled, field):
@@ -213,8 +213,8 @@ def test_movement_weight_constant_low_all_zeros():
     np.testing.assert_array_equal(_movement_salinity_weight(cfg, grid, 0), np.zeros((5, 6)))
 
 
-from osmose.config import OsmoseConfigReader  # noqa: E402
-from osmose.engine import PythonEngine  # noqa: E402
+from osmose.config import OsmoseConfigReader
+from osmose.engine import PythonEngine
 
 
 def test_gate_off_is_bit_identical():
@@ -229,11 +229,11 @@ def test_gate_off_is_bit_identical():
     np.testing.assert_array_equal(base.to_numpy(), off.to_numpy())
 
 
-import sys  # noqa: E402
-from pathlib import Path  # noqa: E402
+import sys
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from test_movement_numba import _call_numba  # noqa: E402
+from test_movement_numba import _call_numba
 
 
 def _three_band_sal_w(ny=5, nx=6):

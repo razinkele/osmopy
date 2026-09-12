@@ -1,5 +1,6 @@
 import numpy as np
-from hypothesis import given, strategies as st
+from hypothesis import given
+from hypothesis import strategies as st
 
 from osmose.maps.builder import GridSpec
 
@@ -88,7 +89,7 @@ def test_lonlat_to_cell_just_outside_nw_returns_none():
     lats=st.lists(st.floats(0.1, 3.9), min_size=3, max_size=6),
 )
 def test_rasterize_matches_center_membership(lons, lats):
-    from osmose.maps.builder import GridSpec, rasterize_polygon, _point_in_ring, _open_ring
+    from osmose.maps.builder import GridSpec, _open_ring, _point_in_ring, rasterize_polygon
 
     g = GridSpec(4, 4, 4.0, 0.0, 0.0, 4.0)
     n = min(len(lons), len(lats))
@@ -154,8 +155,8 @@ def test_mapgrid_apply_polygon():
 
 
 def test_csv_roundtrip_through_engine_loader(tmp_path):
-    from osmose.maps.builder import GridSpec, MapGrid, to_csv_text
     from osmose.engine.movement_maps import _load_csv_grid
+    from osmose.maps.builder import GridSpec, MapGrid, to_csv_text
 
     g = GridSpec(3, 2, 2.0, 0.0, 0.0, 3.0)
     mg = MapGrid.blank(g)
@@ -167,8 +168,9 @@ def test_csv_roundtrip_through_engine_loader(tmp_path):
 
 
 def test_from_csv_text_roundtrip_and_dim_validation():
-    from osmose.maps.builder import GridSpec, MapGrid, to_csv_text, from_csv_text
     import pytest
+
+    from osmose.maps.builder import GridSpec, MapGrid, from_csv_text, to_csv_text
 
     g = GridSpec(3, 2, 2.0, 0.0, 0.0, 3.0)
     mg = MapGrid.blank(g)
@@ -272,8 +274,9 @@ def test_save_map_writes_csv_and_wires(tmp_path):
 
 
 def test_save_map_rejects_bad_filename(tmp_path):
-    from osmose.maps.builder import GridSpec, MapGrid, save_map
     import pytest
+
+    from osmose.maps.builder import GridSpec, MapGrid, save_map
 
     g = GridSpec(3, 2, 2.0, 0.0, 0.0, 3.0)
     mg = MapGrid.blank(g)

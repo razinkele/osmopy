@@ -2,18 +2,17 @@
 
 from pathlib import Path
 
-from shiny import ui, reactive, render
+from shiny import reactive, render, ui
 from shiny.types import SilentException
-
 from shiny_deckgl import (  # type: ignore[import-untyped]
-    MapWidget,
-    polygon_layer,
-    CARTO_POSITRON,
     CARTO_DARK,
-    zoom_widget,
+    CARTO_POSITRON,
+    MapWidget,
     compass_widget,
     fullscreen_widget,
+    polygon_layer,
     scale_widget,
+    zoom_widget,
 )
 
 from osmose.logging import setup_logging

@@ -14,7 +14,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-import calibrate_baltic as cal  # noqa: E402
+import calibrate_baltic as cal
 
 GATE_SPECIES = {"cod_west", "cod_east", "herring", "sprat", "flounder", "perch", "stickleback"}
 

@@ -47,14 +47,14 @@ dev = [
     "pytest-cov>=4.1",
     "pytest-xdist>=3.5",
     "hypothesis>=6.100",
-    # ruff is PINNED below 0.16. 0.16.0 expanded the default rule set far beyond
-    # the historical E4/E7/E9/F, which turns this repo's clean tree into 721
-    # findings and reds the lint job on every push -- nothing to do with the code
-    # under review. Verified by bisection (2026-09-05): 0.14.0 and 0.15.x are
-    # clean, 0.16.0 is not. Adopting 0.16's rule set is a deliberate migration
-    # (379 of the findings are auto-fixable); do it in its own PR and raise this
-    # ceiling in the same commit -- don't float the pin and rediscover this.
-    "ruff>=0.3,<0.16",
+    # ruff is pinned to a MINOR range, not floated. 0.16.0 expanded the default
+    # rule set far beyond the historical E4/E7/E9/F; because the floor was an
+    # open `>=0.3`, that expansion landed silently and reddened CI on a clean
+    # tree (721 findings, none of them regressions). The extended set was
+    # adopted deliberately on 2026-09-12 -- see [tool.ruff.lint] below. Keep the
+    # upper bound: when 0.17 expands the defaults again, that should be a
+    # decision, not a surprise on an unrelated PR.
+    "ruff>=0.16,<0.17",
     "pre-commit>=3.5",
     "pyright>=1.1.350",
     # starlette.testclient (used by tests/test_feedback_api.py to exercise the
@@ -157,3 +157,33 @@ omit = [
 [tool.ruff]
 target-version = "py312"
 line-length = 100
+
+[tool.ruff.lint]
+# Adopted 2026-09-12: ruff 0.16's extended default rule set, rather than the
+# historical E4/E7/E9/F. 370 findings were auto-fixed and the rest triaged by
+# hand; the ignores below are the rules that are wrong for THIS codebase, each
+# with its reason. Everything not listed here is enforced.
+ignore = [
+    # Broad `except Exception` is a deliberate pattern here, not an oversight:
+    # Shiny render/effect callbacks must never propagate an exception into the
+    # reactive graph (it kills the session), and the engine's optional-feature
+    # probes fall back rather than fail. Narrowing them individually would mean
+    # enumerating every exception a third-party plotting/IO stack can raise.
+    "BLE001",
+    # try/except/pass and try/except/continue are used for genuinely optional
+    # work (best-effort cleanup, probing a capability, skipping an unreadable
+    # entry mid-scan). The bare form is the intent.
+    "S110",
+    "S112",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests legitimately do things production code should not.
+"tests/*" = [
+    "S101",    # assert IS the point
+    "S102",    # exec: test_docs_build executes doc snippets on purpose
+    "PLW1510", # subprocess check=: tests assert on returncode themselves
+]
+"scripts/*" = [
+    "PLW1510", # these drive external engines and inspect returncode directly
+]

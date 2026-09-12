@@ -9,11 +9,11 @@ import pytest
 import xarray as xr
 
 from ui.pages import results as rp
+from ui.pages.grid_helpers import make_spatial_map
 from ui.pages.results import (
     make_diet_heatmap,
     make_timeseries_chart,
 )
-from ui.pages.grid_helpers import make_spatial_map
 
 
 class _FakeResults:

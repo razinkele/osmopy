@@ -294,12 +294,11 @@ def test_python_fallback_path_runs_and_is_deterministic():
         py_call_count += 1
         return original_py(*args, **kwargs)
 
-    with mock.patch("osmose.engine.processes.mortality._HAS_NUMBA", False):
-        with mock.patch(
-            "osmose.engine.processes.mortality._apply_predation_for_school",
-            side_effect=_spy_py,
-        ):
-            _run_short_sim(numba=False, fr=None, seed=7, background=True)
+    with mock.patch("osmose.engine.processes.mortality._HAS_NUMBA", False), mock.patch(
+        "osmose.engine.processes.mortality._apply_predation_for_school",
+        side_effect=_spy_py,
+    ):
+        _run_short_sim(numba=False, fr=None, seed=7, background=True)
 
     assert py_call_count > 0, (
         "_apply_predation_for_school was never called with numba=False (Baltic config) — "

@@ -17,7 +17,6 @@ from osmose.engine.processes.reproduction import apply_stock_recruitment
 from osmose.engine.processes.starvation import update_starvation_rate
 from osmose.engine.state import SchoolState
 
-
 # ---------------------------------------------------------------------------
 # reproduction.apply_stock_recruitment
 # ---------------------------------------------------------------------------

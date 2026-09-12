@@ -1,7 +1,9 @@
 import shutil
 from pathlib import Path
+
 import pytest
-from scripts.migrate_bundled_to_440 import convert_config, _collect_param_files
+
+from scripts.migrate_bundled_to_440 import _collect_param_files, convert_config
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "data" / "examples_433_orig"  # migrate a copy of the ORIGINAL

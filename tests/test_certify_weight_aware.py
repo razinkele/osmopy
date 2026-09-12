@@ -18,7 +18,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-import baltic_stability_certify as cert  # noqa: E402
+import baltic_stability_certify as cert
 
 TARGETS = (
     Path(__file__).resolve().parents[1] / "data" / "baltic" / "reference" / "biomass_targets.csv"

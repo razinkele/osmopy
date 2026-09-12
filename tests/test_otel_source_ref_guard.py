@@ -16,16 +16,18 @@ import tokenize
 
 def test_guard_applied_on_import():
     """Importing app installs the guard on the call site Shiny actually uses."""
-    import app  # noqa: F401 — import side effect applies the guard
     from shiny.session import _session as _sess
+
+    import app  # noqa: F401 — import side effect applies the guard
 
     assert getattr(_sess.extract_source_ref, "_osmose_guarded", False) is True
 
 
 def test_guard_swallows_tokenerror(monkeypatch):
     """A TokenError (the exact uncaught type) from extraction becomes {}, not a crash."""
-    import app
     from shiny.session import _session as _sess
+
+    import app
 
     def raiser(func):
         raise tokenize.TokenError("unterminated string literal (detected at line 1)", (1, 25))
@@ -38,8 +40,9 @@ def test_guard_swallows_tokenerror(monkeypatch):
 
 def test_guard_preserves_normal_attrs(monkeypatch):
     """Non-failing extraction is passed through unchanged."""
-    import app
     from shiny.session import _session as _sess
+
+    import app
 
     def ok(func):
         return {"code.file.path": "/x.py"}

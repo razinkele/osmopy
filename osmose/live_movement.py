@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import queue
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Callable
 
 import numpy as np
 from numpy.typing import NDArray
@@ -166,7 +166,7 @@ def build_snapshot(
 
 
 def make_step_observer(
-    q: "queue.Queue[MovementSnapshot]",
+    q: queue.Queue[MovementSnapshot],
     *,
     dot_cap: int = 2000,
     throttle_s: float = 0.2,
@@ -190,7 +190,7 @@ def make_step_observer(
         last_emit[0] = t
         try:
             snap = build_snapshot(step, state, grid, config, map_sets=map_sets, dot_cap=dot_cap)
-        except Exception:  # noqa: BLE001 — never crash the running simulation
+        except Exception:
             _log.warning("live snapshot build failed at step %s", step, exc_info=True)
             return
         try:
@@ -209,8 +209,8 @@ def make_step_observer(
 
 
 def make_run_observer(
-    progress_q: "queue.Queue[tuple[int, int, float]]",
-    live_observer: "Callable[[int, object, object, object, object], None] | None" = None,
+    progress_q: queue.Queue[tuple[int, int, float]],
+    live_observer: Callable[[int, object, object, object, object], None] | None = None,
     *,
     now: Callable[[], float] = time.monotonic,
 ) -> Callable[[int, object, object, object, object], None]:
@@ -242,7 +242,7 @@ def make_run_observer(
                     pass
             if live_observer is not None:
                 live_observer(step, state, grid, config, map_sets)
-        except Exception:  # noqa: BLE001 — never crash the running simulation
+        except Exception:
             _log.warning("run observer failed at step %s", step, exc_info=True)
 
     return observer

@@ -2,23 +2,21 @@
 
 from pathlib import Path
 
-from shiny import ui, reactive, render
-from shiny.types import SilentException
-from shinywidgets import output_widget, render_plotly  # type: ignore[import-untyped]
-
 import numpy as np
 import plotly.graph_objects as go
-
+from shiny import reactive, render, ui
+from shiny.types import SilentException
 from shiny_deckgl import (  # type: ignore[import-untyped]
-    MapWidget,
-    polygon_layer,
-    CARTO_POSITRON,
     CARTO_DARK,
-    zoom_widget,
+    CARTO_POSITRON,
+    MapWidget,
     compass_widget,
     fullscreen_widget,
+    polygon_layer,
     scale_widget,
+    zoom_widget,
 )
+from shinywidgets import output_widget, render_plotly  # type: ignore[import-untyped]
 
 from osmose.logging import setup_logging
 from osmose.results import OsmoseResults
@@ -26,9 +24,9 @@ from osmose.spatial_series import cell_timeseries_from_dataset, spatial_slice_2d
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.components.renderer_badge import renderer_badge
 from ui.pages.grid_helpers import (
+    _zoom_for_span,
     make_legend,
     make_spatial_map,
-    _zoom_for_span,
 )
 from ui.state import AppState, get_theme_mode
 

@@ -87,7 +87,7 @@ def list_sobol_results(directory: Path | None = None) -> list[dict]:
                     "objective_names": d.get("objective_names"),
                 }
             )
-        except Exception:  # noqa: BLE001 — skip a corrupt/partial artifact, don't crash discovery
+        except Exception:
             _log.warning("Skipping corrupt sobol artifact %s", p, exc_info=True)
             continue
     out.sort(key=lambda s: s["timestamp"], reverse=True)

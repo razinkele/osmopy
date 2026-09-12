@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-import baltic_depletable_ab as ab  # noqa: E402
+import baltic_depletable_ab as ab
 
 FITTED_ZOO = "0.911553421016705"
 

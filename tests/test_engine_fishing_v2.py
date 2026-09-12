@@ -6,11 +6,10 @@ Covers seasonality, selectivity types, v3 scenarios, MPA, discards.
 import numpy as np
 import pytest
 
-from tests.helpers import _make_school
 from osmose.engine.config import EngineConfig
 from osmose.engine.processes.fishing import fishing_mortality
 from osmose.engine.state import MortalityCause
-
+from tests.helpers import _make_school
 
 # ---------------------------------------------------------------------------
 # Shared helpers

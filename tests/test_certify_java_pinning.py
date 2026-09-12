@@ -11,8 +11,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-import baltic_stability_certify as cert  # noqa: E402
-from osmose.runner import java_engine_block_reason  # noqa: E402
+import baltic_stability_certify as cert
+
+from osmose.runner import java_engine_block_reason
 
 
 def test_pin_flips_enabled_true():

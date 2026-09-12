@@ -238,8 +238,8 @@ def test_reader_canonicalizes_and_rebuilds_case_map(tmp_path):
 def test_reader_case_map_preserves_renamed_key_source_casing(tmp_path):
     # REGRESSION: a renamed key that is camelCase in the source must survive a
     # read -> canonicalize(new) -> to_target_keys(old) round-trip with ORIGINAL casing.
-    from osmose.config.reader import OsmoseConfigReader
     from osmose.config.aliases import to_target_keys
+    from osmose.config.reader import OsmoseConfigReader
 
     f = tmp_path / "osm_param-output.csv"
     f.write_text("output.fishery.byAge.enabled ; true\n")

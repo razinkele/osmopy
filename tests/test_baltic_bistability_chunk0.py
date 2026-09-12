@@ -7,7 +7,7 @@ _SCRIPTS = _PROJECT_ROOT / "scripts"
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 
-import baltic_bistability_chunk0 as c0  # noqa: E402
+import baltic_bistability_chunk0 as c0
 
 Tgt = namedtuple("Tgt", "species target lower upper weight", defaults=(1.0,))
 COD = dict(target=120000.0, lower=60000.0, upper=250000.0)
@@ -522,7 +522,7 @@ def test_cli_warmstart_writes_both_contrasts(tmp_path, monkeypatch):
         Tgt("herring", 1_500_000, 800_000, 3_000_000),
         Tgt("sprat", 1_500_000, 800_000, 2_500_000),
     ]
-    monkeypatch.setattr(c0, "read_base_config", lambda: {})
+    monkeypatch.setattr(c0, "read_base_config", dict)
     monkeypatch.setattr(c0, "read_base_larva_rates", lambda cfg, n_focal=8: {0: 15.0})
     monkeypatch.setattr(c0, "_load_targets", lambda: tgts)
     monkeypatch.setattr(c0, "_default_runner", _runner_regime)
@@ -534,7 +534,7 @@ def test_cli_warmstart_writes_both_contrasts(tmp_path, monkeypatch):
 
 
 def test_cli_preflight(tmp_path, monkeypatch):
-    monkeypatch.setattr(c0, "read_base_config", lambda: {})
+    monkeypatch.setattr(c0, "read_base_config", dict)
     monkeypatch.setattr(c0, "read_base_larva_rates", lambda cfg, n_focal=8: {0: 15.0})
     monkeypatch.setattr(c0, "_load_targets", lambda: [Tgt("cod_east", 120_000, 60_000, 250_000)])
     monkeypatch.setattr(c0, "_default_runner", _runner_regime)

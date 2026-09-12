@@ -430,9 +430,9 @@ def format_community_report(diag: CommunityDiagnostics) -> str:
     if diag.abc is not None:
         a = diag.abc
         w = a.w_statistic
-        if w == w and w > 0:
+        if w == w and w > 0:  # noqa: PLR0124 - x != x is the NaN test (numba-safe)
             w_interp = "biomass-dominated / undisturbed"
-        elif w == w and w < 0:
+        elif w == w and w < 0:  # noqa: PLR0124 - x != x is the NaN test (numba-safe)
             w_interp = "abundance-dominated / disturbed"
         else:
             w_interp = "n/a"

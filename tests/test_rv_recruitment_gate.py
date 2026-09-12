@@ -13,7 +13,7 @@ from osmose.engine.processes.recruitment_gate import rv_gate_factor
 from osmose.schema import build_registry
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
-import baltic_rv_overshoot_diagnostic as diag  # noqa: E402
+import baltic_rv_overshoot_diagnostic as diag
 
 
 def test_rv_gate_keys_registered():

@@ -1,11 +1,11 @@
 """Movement / spatial distribution page."""
 
-from shiny import ui, reactive, render
+from shiny import reactive, render, ui
 
 from osmose.schema.movement import MOVEMENT_FIELDS
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.components.param_form import render_field
-from ui.pages._helpers import parse_nspecies, count_map_entries
+from ui.pages._helpers import count_map_entries, parse_nspecies
 from ui.state import AppState, sync_inputs
 
 MOVEMENT_GLOBAL_KEYS: list[str] = [f.key_pattern for f in MOVEMENT_FIELDS if not f.indexed]

@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+
 from osmose.calibration.problem import FreeParameter, OsmoseCalibrationProblem, Transform
 
 
@@ -534,8 +535,8 @@ def test_clear_cache(tmp_path):
 
 def test_validate_overrides_catches_bad_value(tmp_path):
     """Schema validation rejects values outside [min_val, max_val]."""
-    from osmose.schema.registry import ParameterRegistry
     from osmose.schema.base import OsmoseField, ParamType
+    from osmose.schema.registry import ParameterRegistry
 
     registry = ParameterRegistry()
     registry.register(
@@ -584,7 +585,7 @@ def test_validate_overrides_skipped_when_no_registry(tmp_path):
 
 
 def test_subprocess_timeout_is_configurable(tmp_path):
-    from osmose.calibration.problem import OsmoseCalibrationProblem, FreeParameter
+    from osmose.calibration.problem import FreeParameter, OsmoseCalibrationProblem
 
     problem = OsmoseCalibrationProblem(
         free_params=[FreeParameter("k", 0.1, 1.0)],
@@ -598,7 +599,7 @@ def test_subprocess_timeout_is_configurable(tmp_path):
 
 
 def test_subprocess_timeout_default_is_3600(tmp_path):
-    from osmose.calibration.problem import OsmoseCalibrationProblem, FreeParameter
+    from osmose.calibration.problem import FreeParameter, OsmoseCalibrationProblem
 
     problem = OsmoseCalibrationProblem(
         free_params=[FreeParameter("k", 0.1, 1.0)],
@@ -618,7 +619,7 @@ def test_subprocess_timeout_default_is_3600(tmp_path):
 def test_run_single_persists_full_stderr_on_failure(monkeypatch, tmp_path):
     """A non-zero subprocess exit must write the full stderr to run_dir/stderr.txt."""
     import osmose.calibration.problem as prob_mod
-    from osmose.calibration.problem import OsmoseCalibrationProblem, FreeParameter
+    from osmose.calibration.problem import FreeParameter, OsmoseCalibrationProblem
 
     big_stderr = b"ERROR: " + (b"x" * 2000)
 
@@ -654,7 +655,7 @@ def test_run_single_persists_full_stderr_on_failure(monkeypatch, tmp_path):
 def test_cleanup_after_eval_true_removes_run_dir(monkeypatch, tmp_path):
     import osmose.calibration.problem as prob_mod
     import osmose.results as results_mod
-    from osmose.calibration.problem import OsmoseCalibrationProblem, FreeParameter
+    from osmose.calibration.problem import FreeParameter, OsmoseCalibrationProblem
 
     class _Result:
         returncode = 0
@@ -690,7 +691,7 @@ def test_cleanup_after_eval_true_removes_run_dir(monkeypatch, tmp_path):
 def test_cleanup_after_eval_false_keeps_run_dir(monkeypatch, tmp_path):
     import osmose.calibration.problem as prob_mod
     import osmose.results as results_mod
-    from osmose.calibration.problem import OsmoseCalibrationProblem, FreeParameter
+    from osmose.calibration.problem import FreeParameter, OsmoseCalibrationProblem
 
     class _Result:
         returncode = 0

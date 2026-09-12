@@ -176,7 +176,7 @@ def surrogate_assisted_de(
     total_real_evals = 0
 
     Y = _eval_batch(objective, init_samples, workers)
-    total_real_evals += int(len(Y))
+    total_real_evals += len(Y)
     finite = np.isfinite(Y)
     if not finite.any():
         raise RuntimeError("All initial evaluations returned NaN/inf — objective is broken")
@@ -187,7 +187,7 @@ def surrogate_assisted_de(
     history: list[dict[str, Any]] = [
         {
             "phase": "init",
-            "real_evals": int(len(Y)),
+            "real_evals": len(Y),
             "real_evals_finite": int(finite.sum()),
             "best": float(np.min(y_train)),
             "n_train": int(finite.sum()),
@@ -227,7 +227,7 @@ def surrogate_assisted_de(
                 bounds_arr[:, 1] - bounds_arr[:, 0]
             )
             new_y = _eval_batch(objective, candidates, workers)
-            total_real_evals += int(len(new_y))
+            total_real_evals += len(new_y)
             finite_new = np.isfinite(new_y)
             if finite_new.any():
                 X_train = np.vstack([X_train, candidates[finite_new]])
@@ -236,11 +236,11 @@ def surrogate_assisted_de(
             history.append(
                 {
                     "phase": f"iter{it}_lhs_fallback",
-                    "real_evals": int(len(candidates)),
+                    "real_evals": len(candidates),
                     "best": float(y_train[best_idx]),
                     "gp_de_pred": float("nan"),
                     "gp_de_real": float("nan"),
-                    "n_train": int(len(y_train)),
+                    "n_train": len(y_train),
                 }
             )
 
@@ -311,7 +311,7 @@ def surrogate_assisted_de(
 
         # Real-eval candidates
         new_y = _eval_batch(objective, candidates, workers)
-        total_real_evals += int(len(new_y))
+        total_real_evals += len(new_y)
         finite_new = np.isfinite(new_y)
         if finite_new.any():
             X_train = np.vstack([X_train, candidates[finite_new]])
@@ -321,11 +321,11 @@ def surrogate_assisted_de(
         history.append(
             {
                 "phase": f"iter{it}",
-                "real_evals": int(len(candidates)),
+                "real_evals": len(candidates),
                 "best": float(y_train[best_idx]),
                 "gp_de_pred": float(de_res.fun),
                 "gp_de_real": float(new_y[0]) if finite_new[0] else float("nan"),
-                "n_train": int(len(y_train)),
+                "n_train": len(y_train),
             }
         )
 

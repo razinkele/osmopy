@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from osmose.engine.config import EngineConfig
 
 
-def rv_gate_factor(config: "EngineConfig", step: int) -> NDArray[np.float64]:
+def rv_gate_factor(config: EngineConfig, step: int) -> NDArray[np.float64]:
     """Per-species egg-production multiplier for this timestep.
 
     1.0 for every species when the gate is off or the species is disabled;

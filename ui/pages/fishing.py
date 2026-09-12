@@ -1,6 +1,6 @@
 """Fishing configuration page."""
 
-from shiny import ui, reactive, render
+from shiny import reactive, render, ui
 
 from osmose.schema.fishing import FISHING_FIELDS
 from ui.components.collapsible import collapsible_card_header, expand_tab
