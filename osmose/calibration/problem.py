@@ -219,8 +219,7 @@ class OsmoseCalibrationProblem(Problem):
                     executor.submit(self._evaluate_candidate, i, params): i
                     for i, params in enumerate(X)
                 }
-                for future in futures:
-                    i = futures[future]
+                for future, i in futures.items():
                     try:
                         objectives = future.result()
                         for k, obj_val in enumerate(objectives):
@@ -449,9 +448,7 @@ class OsmoseCalibrationProblem(Problem):
             )
             return None
 
-    def _run_java_subprocess(
-        self, overrides: dict[str, str], run_id: int
-    ) -> OsmoseResults | None:
+    def _run_java_subprocess(self, overrides: dict[str, str], run_id: int) -> OsmoseResults | None:
         """Run the Java subprocess; return OsmoseResults or None on failure.
 
         Retained as opt-in fallback for cross-engine validation
@@ -481,7 +478,11 @@ class OsmoseCalibrationProblem(Problem):
                 continue
             cmd.append(f"-P{key}={value}")
 
-        result = subprocess.run(cmd, capture_output=True, timeout=self.subprocess_timeout)
+        # check=False: the non-zero path is handled explicitly below (stderr is
+        # captured to run_dir and the evaluation is scored as failed, not raised).
+        result = subprocess.run(
+            cmd, capture_output=True, timeout=self.subprocess_timeout, check=False
+        )
 
         if result.returncode != 0:
             raw_stderr = result.stderr

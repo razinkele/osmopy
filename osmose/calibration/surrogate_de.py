@@ -282,7 +282,7 @@ def surrogate_assisted_de(
         # Do NOT pass this closure to `_eval_batch` (which serialises across
         # worker processes); only the real `objective` should be parallelised.
         def gp_mean(x: NDArray[np.float64]) -> float:
-            return float(gp.predict(np.asarray(x).reshape(1, -1))[0])
+            return float(gp.predict(np.asarray(x).reshape(1, -1))[0])  # noqa: B023 - see comment above; DE call is synchronous
 
         de_res = differential_evolution(
             gp_mean,

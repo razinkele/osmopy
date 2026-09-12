@@ -10,7 +10,7 @@ import warnings
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -25,7 +25,6 @@ from osmose.engine.background import (
 from osmose.engine.path_resolution import resolve_data_path
 from osmose.engine.physical_data import PhysicalData
 from osmose.logging import setup_logging
-
 
 _log = setup_logging("osmose.engine.config")
 

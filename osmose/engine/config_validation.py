@@ -405,7 +405,7 @@ def _extract_literal_keys_from_config_py(tree: ast.AST) -> set[str]:
                     if rendered is not None:
                         _capture_string(rendered)
             for kw in node.keywords:
-                if kw.arg == "key" and isinstance(kw.value, ast.Constant):
+                if kw.arg == "key" and isinstance(kw.value, ast.Constant):  # noqa: SIM102 - guard order is deliberate: resolve index, then bounds-check
                     if isinstance(kw.value.value, str):
                         _capture_string(kw.value.value)
 
@@ -415,8 +415,8 @@ def _extract_literal_keys_from_config_py(tree: ast.AST) -> set[str]:
                 _capture_string(sl.value)
 
         elif isinstance(node, ast.Compare) and len(node.ops) == 1:
-            if isinstance(node.ops[0], ast.In):
-                if isinstance(node.left, ast.Constant) and isinstance(node.left.value, str):
+            if isinstance(node.ops[0], ast.In):  # noqa: SIM102 - guard order is deliberate: resolve index, then bounds-check
+                if isinstance(node.left, ast.Constant) and isinstance(node.left.value, str):  # noqa: SIM102 - guard order is deliberate: resolve index, then bounds-check
                     if "." in node.left.value:
                         _capture_string(node.left.value)
 

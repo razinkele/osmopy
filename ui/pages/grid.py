@@ -257,7 +257,7 @@ def grid_server(input, output, session, state: AppState):
             for key, val in sorted(cfg.items()):
                 if not val or not isinstance(val, str):
                     continue
-                if not (val.endswith(".nc") or val.endswith(".csv")):
+                if not val.endswith((".nc", ".csv")):
                     continue
                 if key.startswith(skip_prefixes):
                     continue

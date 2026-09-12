@@ -83,7 +83,7 @@ def _save_run_safe(
     default arg, which Python captures at function-definition time). This
     makes test monkeypatching of HISTORY_DIR effective.
     """
-    from osmose.calibration import history as hist_mod
+    from osmose.calibration import history as hist_mod  # noqa: PLW0406 - see docstring
 
     try:
         save_run(payload, history_dir=hist_mod.HISTORY_DIR)

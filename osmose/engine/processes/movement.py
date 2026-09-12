@@ -123,7 +123,7 @@ def _map_move_school(
             j = int(flat_idx // grid_nx)
             i = int(flat_idx % grid_nx)
             proba = wmap[j, i]
-            if proba > 0 and not np.isnan(proba):
+            if proba > 0 and not np.isnan(proba):  # noqa: SIM102 - guard order is deliberate: resolve index, then bounds-check
                 if max_p == 0.0 or proba >= rng.random() * max_p:
                     return i, j, False
         raise RuntimeError("Map placement failed after 10000 attempts")
@@ -490,7 +490,7 @@ if _HAS_NUMBA:
                     i = flat_idx % nx
                     if use_gate:
                         proba = current_map[j, i] * sal_w[j, i]
-                        if proba > 0 and not np.isnan(proba):
+                        if proba > 0 and not np.isnan(proba):  # noqa: SIM102 - guard order is deliberate: resolve index, then bounds-check
                             if proba >= np.random.random() * wmax:
                                 out_cx[idx] = i
                                 out_cy[idx] = j
@@ -499,7 +499,7 @@ if _HAS_NUMBA:
                                 break
                     else:
                         proba = current_map[j, i]
-                        if proba > 0 and not np.isnan(proba):
+                        if proba > 0 and not np.isnan(proba):  # noqa: SIM102 - guard order is deliberate: resolve index, then bounds-check
                             if max_p == 0.0 or proba >= np.random.random() * max_p:
                                 out_cx[idx] = i
                                 out_cy[idx] = j

@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from functools import partial
 from multiprocessing import get_context
 from pathlib import Path
+from typing import Self
 
 import numpy as np
 from scipy.stats.qmc import LatinHypercube
@@ -218,7 +219,7 @@ class _ParallelEngineEvaluator:
             self._pool.shutdown(wait=True)
             self._pool = None
 
-    def __enter__(self) -> _ParallelEngineEvaluator:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *exc: object) -> None:

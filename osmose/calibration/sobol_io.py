@@ -35,7 +35,7 @@ def save_sobol_result(result: dict, *, metadata: dict, directory: Path | None = 
     names = result.get("objective_names")
     if names is None:
         names = metadata.get("objective_names")
-    ts = metadata.get("timestamp") or result.get("timestamp") or datetime.now().isoformat()
+    ts = metadata.get("timestamp") or result.get("timestamp") or datetime.now().isoformat()  # noqa: DTZ005 - naive local ISO by design; run history sorts these as STRINGS (history.py:58), so emitting +00:00 would misorder new vs existing records. Migrating to tz-aware needs a record migration, not a lint fix.
     artifact = {
         "timestamp": ts,
         "source": metadata.get("source", "unknown"),

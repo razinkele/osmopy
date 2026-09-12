@@ -377,6 +377,7 @@ class OsmoseRunner:
                 capture_output=True,
                 text=True,
                 timeout=10,
+                check=False,  # absent/broken java is reported as None, not raised
             )
             # Java prints version to stderr
             return result.stderr.strip() or result.stdout.strip() or None

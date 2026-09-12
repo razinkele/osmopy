@@ -56,7 +56,7 @@ def _harden_shiny_otel_source_ref() -> None:
     """
     try:
         from shiny.session import _session as _sess
-    except Exception:  # noqa: BLE001 — older/newer Shiny without this internal
+    except Exception:  # older/newer Shiny without this internal
         return
     orig = getattr(_sess, "extract_source_ref", None)
     if orig is None or getattr(orig, "_osmose_guarded", False):
@@ -65,7 +65,7 @@ def _harden_shiny_otel_source_ref() -> None:
     def _guarded(func):  # type: ignore[no-untyped-def]
         try:
             return orig(func)
-        except Exception:  # noqa: BLE001 — OTel attrs are best-effort, never fatal
+        except Exception:  # OTel attrs are best-effort, never fatal
             return {}
 
     _guarded._osmose_guarded = True  # type: ignore[attr-defined]
@@ -694,7 +694,7 @@ async def _feedback_endpoint(request):
         if not check_feedback_token(request.headers.get("x-feedback-token")):
             return JSONResponse({"error": "forbidden"}, status_code=403)
         return JSONResponse(read_feedback())
-    except Exception:  # noqa: BLE001 — never leak a traceback to an unauth caller
+    except Exception:  # never leak a traceback to an unauth caller
         return JSONResponse({"error": "internal"}, status_code=500)
 
 

@@ -7,7 +7,7 @@ import io
 import re
 from collections.abc import Hashable
 from pathlib import Path
-from typing import ClassVar, TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, ClassVar, Self, cast
 
 import numpy as np
 import pandas as pd
@@ -398,7 +398,7 @@ class OsmoseResults:
         obj._in_memory = True
         return obj
 
-    def __enter__(self) -> OsmoseResults:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:

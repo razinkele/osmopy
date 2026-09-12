@@ -1220,7 +1220,7 @@ if _HAS_NUMBA:
             if use_stage_access:
                 rsc_row = rsc_access_rows[r]
                 p_acc = pred_access_idx[p_idx]
-                if rsc_row >= 0 and p_acc >= 0:
+                if rsc_row >= 0 and p_acc >= 0:  # noqa: SIM102 - guard order is deliberate: resolve index, then bounds-check
                     if rsc_row < access_matrix.shape[0] and p_acc < access_matrix.shape[1]:
                         access_coeff = access_matrix[rsc_row, p_acc]
                         if access_coeff <= 0:

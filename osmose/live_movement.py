@@ -142,7 +142,9 @@ def build_snapshot(
     ndt = max(1, int(getattr(config, "n_dt_per_year", 0)) or 1)
     year = step // ndt + 1
     doy = int((step % ndt) / ndt * 365)
-    date_label = f"Y{year} · {datetime(2001, 1, 1) + timedelta(days=doy):%d %b}"
+
+    # only to turn a day-of-year into a "05 Mar" label; a tzinfo would be meaningless.
+    date_label = f"Y{year} · {datetime(2001, 1, 1) + timedelta(days=doy):%d %b}"  # noqa: DTZ001 - arbitrary epoch, day-of-year label only
     return MovementSnapshot(
         step=int(step),
         n_steps=int(config.n_steps),

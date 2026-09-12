@@ -136,7 +136,6 @@ class OsmoseField:
                 errors.append(f"Value {num} below min {self.min_val}")
             if self.max_val is not None and num > self.max_val:
                 errors.append(f"Value {num} above max {self.max_val}")
-        if self.param_type == ParamType.ENUM and self.choices:
-            if value not in self.choices:
-                errors.append(f"Value '{value}' not in choices: {self.choices}")
+        if self.param_type == ParamType.ENUM and self.choices and value not in self.choices:
+            errors.append(f"Value '{value}' not in choices: {self.choices}")
         return errors

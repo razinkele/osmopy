@@ -304,11 +304,12 @@ def scenario_diff_server(input, output, session, state: AppState):
         var_a, var_b = _spatial_var(a), _spatial_var(b)
         if var_a is None or var_b is None:
             return "No spatial variable in one of the runs."
-        if _spatial_species() is None:  # "All (summed)" path
-            if (_has_species_dim(a, var_a) or _has_species_dim(b, var_b)) and not _common_species(
-                a, b
-            ):
-                return "No common species for spatial maps."
+        if (
+            _spatial_species() is None  # "All (summed)" path
+            and (_has_species_dim(a, var_a) or _has_species_dim(b, var_b))
+            and not _common_species(a, b)
+        ):
+            return "No common species for spatial maps."
         return None
 
     # ── Spatial controls (species + time), rendered dynamically ──

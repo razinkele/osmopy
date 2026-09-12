@@ -105,7 +105,7 @@ def bgc_to_ltl(
     *,
     year: int = 0,
     depth_integrate_m: float = 50.0,
-    params: LtlParams = LtlParams(),
+    params: LtlParams = LtlParams(),  # noqa: B008 - frozen dataclass, safe to share
     ocean_mask: np.ndarray | None = None,
 ) -> xr.Dataset:
     """Convert CMEMS biogeochemistry into OSMOSE 6-group LTL forcing.

@@ -14,6 +14,7 @@ the descending limb above the recruitment peak (see `peak_size_cm`).
 
 from __future__ import annotations
 
+import itertools
 import statistics
 from dataclasses import dataclass
 from pathlib import Path
@@ -66,7 +67,7 @@ def _infer_bin_width(edges: list[float]) -> float:
     uniq = sorted(set(edges))
     if len(uniq) < 2:
         return 1.0
-    diffs = [b - a for a, b in zip(uniq[:-1], uniq[1:])]
+    diffs = [b - a for a, b in itertools.pairwise(uniq)]
     return float(statistics.median(diffs))
 
 
@@ -240,8 +241,10 @@ def format_size_spectrum_report(spec: SizeSpectrum) -> str:
         "",
         f"- Window: last {spec.window_years} yr ({spec.n_timesteps_used} timesteps)",
         f"- Spectrum slope: {slope_txt}",
-        f"- Fit cutoff (min_size_cm): {cutoff}; peak (modal) bin midpoint: "
-        f"{spec.peak_size_cm:.1f} cm",
+        (
+            f"- Fit cutoff (min_size_cm): {cutoff}; peak (modal) bin midpoint: "
+            f"{spec.peak_size_cm:.1f} cm"
+        ),
         f"- Large-Fish Indicator (≥ {spec.lfi_threshold_cm:.0f} cm): {spec.lfi:.3f}",
         f"- Mean size ({weighting}): {spec.mean_size_cm:.2f} cm",
     ]
