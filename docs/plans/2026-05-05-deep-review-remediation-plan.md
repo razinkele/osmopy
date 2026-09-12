@@ -1591,3 +1591,67 @@ e.g. maintaining per-cell size-sorted structures incrementally across steps
 rather than rebuilding per sub-dt, which is a design change with its own parity
 cost — and should not be started without a same-hardware A/B harness and a
 regenerated baseline plan.
+
+---
+
+## CI outcome: PR #147, run 694 green (2026-09-12)
+
+Everything above was verified by running CI's exact commands locally. That is
+not the same as CI running them, and the difference mattered twice. PR #147
+finally put this branch in front of GitHub Actions; the record:
+
+| Job | master (run 692) | PR run 693 | PR run 694 |
+|---|---|---|---|
+| `lint` (check + format) | fail — 733 ruff errors | **pass** | **pass** |
+| `type-check (3.12)` | fail | fail — 2 new | **pass** |
+| `type-check (3.13)` | fail | fail — 2 new | **pass** |
+| `test (3.12)` | fail | **pass** | **pass** |
+| `test (3.13)` | fail | fail — 2 flaky | **pass** |
+| `test-no-numba`, `docker`, `apptainer-smoke` | pass | pass | pass |
+
+Run 694: <https://github.com/razinkele/osmopy/actions/runs/34718003255>. All
+eight jobs green; `test (3.13)` genuinely executed (21 min), it was not skipped.
+
+### Two things local verification could not have caught
+
+**1. pyright version drift — the same bug I had just diagnosed for ruff.**
+Run 693's type-check jobs failed on two `reportOperatorIssue` errors in
+`osmose/trophic_network.py`, a file this branch does not touch and which
+reported **zero** errors locally. Cause: `pyright>=1.1.350` is unpinned, CI
+installs the latest, local was 1.1.411. I had pinned ruff precisely because an
+unpinned checker had floated into a stricter default set, then reported
+"pyright: 0 errors" against my own version without checking CI's. Reproduce
+CI's checker with `PYRIGHT_PYTHON_FORCE_VERSION=latest` before calling the tree
+clean. Fixed by casting the two `SeriesGroupBy.transform("sum")` results to
+`pd.Series` (Series at runtime; the newer stubs type it as the generic
+`NDFrameT@GroupBy`, which defines no `>`), and pyright is left deliberately
+unpinned with the rationale recorded in `pyproject.toml`.
+
+**2. A latent flake in the bioen exp-divergence tests — still open.**
+`tests/test_engine_bioen_numba_kernel.py::test_exp_library_divergence_is_real_and_amplified_by_the_mortality_form`
+and `::test_fishing_composition_hazard_stays_below_1e_12_relative_in_n_dead`
+failed run 693 and passed run 694 **with no change to any code they exercise**
+— the only commit between the two runs was the `trophic_network.py` casts.
+
+They assert that numba's `exp` and numpy's `exp` *disagree* on at least one of
+20,000 draws. Whether they do depends on which SIMD kernel numpy selects and
+how LLVM lowers libm — i.e. on the runner's CPU. Both are labelled
+"Characterisation, not a gate" in their own docstrings, so a red build is the
+wrong response to the two libraries happening to agree.
+
+**Deliberately not changed.** The obvious fix is to skip-with-reason rather
+than fail when `mismatches == 0`, which keeps the signal visible under this
+repo's `-ra` and stops the random reds. But the assertion message is worded as
+a prompt to a human — *"if that is genuinely true this file's rate-selection
+caveats can be dropped, but verify before doing so"* — and converting it to a
+skip removes that prompt. Whether the file's mortality-rate caveats still hold
+is a bioen question, not a CI-hygiene one. Left for the owner of that work;
+expect intermittent `test (3.13)` reds until it is decided either way.
+
+### Still unverified
+
+The Java cross-check. `scripts/validate_engines.py` needs a JAR from
+`github.com/osmose-model/osmose`, blocked by this environment's egress policy
+(403). Now easier to run than before — it takes `--jar`, honours `$OSMOSE_JAR`,
+and otherwise globs `osmose-java/*.jar`, where previously it hard-coded a
+filename that did not match what the documented download produces.
