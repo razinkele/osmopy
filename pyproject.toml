@@ -82,6 +82,16 @@ dev = [
     # only shows at run time. That is the same clean-venv false-green trap the
     # pillow and httpx entries above document.
     "dynesty>=3.1",
+    # python-dotenv is imported at module scope by scripts/make_baltic_oxygen_forcing.py
+    # and scripts/download_baltic_rv_forcing.py, and reached transitively by
+    # tests/test_build_baltic_temperature_forcing.py and tests/test_baltic_c3_harness.py,
+    # which importlib-load the temperature builder, which importlib-loads the O2 builder.
+    # It was never declared anywhere: it only ever arrived as a transitive of fastmcp /
+    # copernicusmarine (see the _neuter_dotenv fixture note in test_copernicus_mcp_env.py),
+    # neither of which is in [dev] — so on CI's clean `pip install -e ".[dev]"` both test
+    # modules ERROR at collection. Same clean-venv false-green trap as pillow, httpx and
+    # dynesty above.
+    "python-dotenv>=1.0",
 ]
 viztest = [
     # Visual-regression browser tests (pytest -m visual). playwright is PINNED to match the
