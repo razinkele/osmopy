@@ -1226,12 +1226,43 @@ UI change in this plan:
   CWD-relative `Path("data/scenarios")`. Updated to assert the anchored
   absolute path.
 
-**Not verified in this environment:** the Java-side
-`scripts/validate_engines.py` cross-check — no `osmose-java/*.jar` is present
-in the container, and the skill's 6-of-8-species gate therefore never ran.
-The Python-side parity tests that do not need the JAR are green (17/17), but
-**run `validate_engines.py --years 1` locally before tagging a release**,
-since H7/M14 touched mortality and the economics revenue path.
+**Java cross-check — attempted, blocked, and partly superseded.** The JAR is
+gitignored and fetched from `github.com/osmose-model/osmose`, which this
+session's egress policy blocks (403 — the session is scoped to
+`razinkele/osmopy`; `github.com/razinkele/osmopy` returns 200 from the same
+proxy). Per `/root/.ccr/README.md` a 403 is reported, not routed around, so
+the skill's 6-of-8-species gate did not run. **Run
+`validate_engines.py --years 1` locally before tagging a release.**
+
+Three things came out of the attempt, all committed:
+
+- **`validate_engines.py` would not have found a correctly-downloaded JAR.**
+  It hard-coded `osmose_4.3.3-jar-with-dependencies.jar` (underscore), while
+  `apptainer/osmose.def` downloads `osmose-4.3.3-...` (hyphen) and every 4.4.1
+  reference uses a hyphen. It now accepts `--jar`, honours `$OSMOSE_JAR` like
+  `osmose/cli.py` and `baltic_stability_certify.py`, and otherwise globs
+  `osmose-java/*.jar`.
+- **What the parity suite actually proves.** `test_engine_parity.py` compares
+  against `tests/baselines/parity_baseline_*.npz` with
+  `np.testing.assert_array_equal` — bit-exact, atol=0. Those baselines are
+  **Python-engine snapshots** (`scripts/save_parity_baseline.py`), so 17/17
+  green means the M14 and mortality-scratch changes are numerically identical
+  to the pre-change engine. It is an optimisation-regression guard, not a Java
+  comparison; do not cite it as cross-engine evidence.
+- **H7 was covered by neither, and a Java run would not have fixed that.**
+  Fleet economics is Python-only (`java_engine_block_reason` blocks such
+  configs), so no Java comparison could ever validate it — and economics is
+  disabled in both parity configs, so the bit-exact suite never reaches the
+  code. `test_economics_output.py` only *assigns* `vessel_revenue`. The
+  accumulation is now extracted as `accumulate_fleet_revenue` and covered by
+  `tests/test_economics_revenue.py`, which transcribes the pre-H7 loop as an
+  oracle. Mutation-tested: removing the per-vessel split fails 3 tests, and
+  dropping the `cell_x >= 0` guard initially slipped through (the out-of-grid
+  case used only a negative `cell_y`), which is why that row set now exercises
+  both negative axes.
+
+Net: the one change the Java gate could still speak to is M14/mortality, and
+that is already pinned bit-exactly against a frozen baseline.
 
 ---
 
