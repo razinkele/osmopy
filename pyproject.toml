@@ -56,6 +56,15 @@ dev = [
     # decision, not a surprise on an unrelated PR.
     "ruff>=0.16,<0.17",
     "pre-commit>=3.5",
+    # pyright is deliberately NOT pinned, unlike ruff above. It ships new checks
+    # weekly, and CI installs the latest -- which is how PR #147 hit two
+    # reportOperatorIssue errors in trophic_network.py that a slightly older local
+    # pyright did not report. That is the same unpinned-checker drift the ruff pin
+    # guards against, but the remedy differs: ruff 0.16 turned a clean tree into 721
+    # findings needing a policy decision, whereas a pyright bump yields a handful of
+    # genuine type gaps that are cheap to fix. So: keep it floating, and FIX new
+    # errors rather than pinning around them. Reproduce CI's checker locally with
+    # PYRIGHT_PYTHON_FORCE_VERSION=latest before concluding the tree is clean.
     "pyright>=1.1.350",
     # starlette.testclient (used by tests/test_feedback_api.py to exercise the
     # token-gated /api/feedback endpoint) requires httpx. starlette ships with

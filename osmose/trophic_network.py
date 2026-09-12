@@ -132,7 +132,9 @@ def diet_network_at(
             for col, pred, prey in _engine_pairs(wide)
         ]
         long = pd.DataFrame(recs, columns=["predator", "prey", "biomass"])  # type: ignore[arg-type]
-        totals = long.groupby("predator")["biomass"].transform("sum")
+        # .transform("sum") on a SeriesGroupBy returns a Series at runtime, but the
+        # stubs type it as the generic NDFrameT@GroupBy, which defines no ">".
+        totals = cast("pd.Series", long.groupby("predator")["biomass"].transform("sum"))
         long = cast(pd.DataFrame, long[totals > 0].copy())
         if long.empty:
             return pd.DataFrame(columns=["predator", "prey", "proportion"])  # type: ignore[arg-type]
@@ -156,7 +158,8 @@ def diet_network_at(
         melted.groupby(["pred_stage", "pred_sp", "prey"], as_index=False)["proportion"].sum(),
     )
     # Live predator stages = those whose total over prey > 0 (a dead stage is all-zero).
-    stage_total = per_stage.groupby("pred_stage")["proportion"].transform("sum")
+    # See the note above: transform() is a Series at runtime; the stub says NDFrameT.
+    stage_total = cast("pd.Series", per_stage.groupby("pred_stage")["proportion"].transform("sum"))
     live = cast(pd.DataFrame, per_stage[stage_total > 0].copy())
 
     if predator_level == "stage":
