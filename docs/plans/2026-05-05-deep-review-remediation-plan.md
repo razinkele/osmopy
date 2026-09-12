@@ -1509,3 +1509,85 @@ spending effort on the engine's most parity-sensitive kernel. With mortality at
 prediction, there is no cheap win left. Real gains need an algorithmic change
 in the predation/mortality inner loop (fewer prey-scan operations per
 predator), not micro-optimisation.
+
+### Exploring the algorithmic improvement (2026-09-12) — negative result
+
+The profile pointed at the predation inner loop as the only place left worth
+attacking. It was explored properly and **nothing landed**. The measurements
+are recorded here so the next person does not repeat them.
+
+**The scan.** `_apply_predation_numba` Phase 1a walks every school in the
+predator's cell and keeps those inside a size-ratio window,
+`pred_len/r_max < prey_len <= pred_len/r_min`. That is O(n_local²) per cell per
+sub-dt, and the window is a contiguous interval in length — the textbook fix is
+to sort the cell by length and binary-search the bounds.
+
+**Measured selectivity and cell occupancy** (via `step_observer`, engine
+unmodified):
+
+| | EEC 1 yr | EEC 5 yr | Bay of Biscay 1 yr |
+|---|---|---|---|
+| schools/cell, mean | 6.8 | **19.0** | 13.8 |
+| schools/cell, median | 5 | 15 | 6 |
+| schools/cell, max | 36 | 101 | **271** |
+| pairs scanned | 473 k | 27.1 M | 908 k |
+| pairs eligible | 64.5 k | 3.0 M | 457 k |
+| **eligible fraction** | 13.6% | **10.9%** | **50.4%** |
+
+So 89% of EEC's scan work is wasted on prey that fail the size test — but the
+cells are *tiny*. At a median of 15 schools, sorting plus binary search loses to
+a flat scan on constant factors, and the asymptotic argument
+(sum n² = 2.8e7 vs sum n·log n = 4.3e6, "6.5×") is an operation count that
+ignores them. Selectivity is also config-dependent: Bay of Biscay keeps half of
+what it scans, so it would gain far less than EEC even if the idea worked.
+
+A second, independent objection: Phase 1 accumulates `total_available` as a
+running sum, so **changing visit order changes the floating-point result**. Any
+sort-based rewrite forfeits the bit-exact parity baseline and would need the
+baselines regenerated and the Java cross-check re-run — which cannot be done
+here. Sorting was therefore rejected on two grounds, not one.
+
+**The better hypothesis, prototyped and rejected on measurement.** The scan's
+cost looked like memory, not arithmetic: a cell's schools are scattered through
+the global arrays. Measured on EEC 5 yr — **mean index gap 565 between
+consecutive members of a cell, median 438, and only 0.1% of cells have their
+members within one 64-byte cache line.** So the fix was to gather the *static*
+per-school attributes (`length`, `weight`, `egg_retained`; not `inst_abd`, which
+predation mutates as prey are eaten) into contiguous scratch once per cell, so
+every predator afterwards scans sequential memory. This preserves visit order
+and arithmetic exactly.
+
+It was implemented across all three kernel paths and **is bit-exact — the 17
+parity tests pass at atol=0**, confirming the design intent. It is also **not
+faster.** Interleaved A/B, 5 repeats each, alternating to control for machine
+drift:
+
+| Pair | HEAD median | prototype median |
+|---|---|---|
+| 1 | 5.342 s | 5.376 s |
+| 2 | 5.286 s | 5.427 s |
+
+The prototype is consistently a shade *slower*. **Why the locality argument
+fails:** the working set per cell is only n_local × a few float64 arrays —
+roughly 600 bytes at the EEC mean. The first predator's scan pulls it all into
+L1, and the remaining n_local−1 predators hit cache regardless. The hardware
+already amortises the scattered access across the cell's predators; an explicit
+gather pays the same misses, just earlier, and adds a loop. Scattered indices
+are real but do not cost what the 0.1% figure suggests.
+
+**Measurement discipline note.** An earlier reading of this A/B showed the
+prototype 6.3% faster. That was machine drift: HEAD re-measured immediately
+afterwards came in at 5.342 s against the 5.740 s recorded earlier in the
+session. Only alternating HEAD/prototype back-to-back exposed it. This is the
+third measurement artifact in this performance pass (after the cold-cache
+"regression" and the cold-process profile), and the only reliable defence has
+been re-running the control next to the treatment every time.
+
+**Conclusion.** With mortality at 66–74% of runtime, the parallel kernel already
+exceeding its Amdahl prediction, sorting blocked by both cell size and
+bit-exactness, and the locality fix measured flat, there is no cheap win left in
+this engine. Further effort should go to a genuinely different formulation —
+e.g. maintaining per-cell size-sorted structures incrementally across steps
+rather than rebuilding per sub-dt, which is a design change with its own parity
+cost — and should not be started without a same-hardware A/B harness and a
+regenerated baseline plan.
