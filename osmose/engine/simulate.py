@@ -904,6 +904,74 @@ def _bioen_reproduction(
 
 
 # ---------------------------------------------------------------------------
+# Fleet economics
+# ---------------------------------------------------------------------------
+
+
+def accumulate_fleet_revenue(fleet_state, state: SchoolState) -> NDArray[np.float64]:
+    """Credit this step's fishing catch to fleets, and split revenue among vessels.
+
+    Returns ``realized`` catch as ``(n_fleets, ny, nx)`` tonnes, and adds each
+    vessel's share of its own cell's revenue to ``fleet_state.vessel_revenue``
+    in place.
+
+    A fleet earns only from species in its ``target_species``, and the revenue
+    raised in one cell is split equally among that fleet's vessels sitting in
+    that cell. Catch landed where the fleet has no vessel present is still
+    counted in ``realized`` (it feeds catch memory) but is not paid to anyone —
+    that asymmetry is deliberate and predates H7.
+
+    H7: this replaced a nested loop over (school x fleet) that rebuilt a
+    three-array boolean vessel mask per pair — O(n_schools * n_fleets *
+    n_vessels) per step. Vessels are now bucketed by (fleet, cell) once.
+    Extracted from the step loop so the arithmetic is directly testable; the
+    step loop had no coverage of it (see tests/test_economics_revenue.py).
+    """
+    from osmose.engine.state import MortalityCause
+
+    n_fleets = len(fleet_state.fleets)
+    ny_f = fleet_state.catch_memory.shape[1]
+    nx_f = fleet_state.catch_memory.shape[2]
+    realized = np.zeros((n_fleets, ny_f, nx_f), dtype=np.float64)
+
+    fishing_dead = state.n_dead[:, int(MortalityCause.FISHING)]
+    sel = fishing_dead > 0
+    sel &= (state.cell_y >= 0) & (state.cell_y < ny_f)
+    sel &= (state.cell_x >= 0) & (state.cell_x < nx_f)
+    if not sel.any():
+        return realized
+
+    idx = np.flatnonzero(sel)
+    sp_sel = state.species_id[idx].astype(np.intp)
+    cy_sel = state.cell_y[idx].astype(np.intp)
+    cx_sel = state.cell_x[idx].astype(np.intp)
+    catch_sel = fishing_dead[idx] * state.weight[idx]
+
+    vf = fleet_state.vessel_fleet.astype(np.intp)
+    vy = fleet_state.vessel_cell_y.astype(np.intp)
+    vx = fleet_state.vessel_cell_x.astype(np.intp)
+    v_ok = (vy >= 0) & (vy < ny_f) & (vx >= 0) & (vx < nx_f)
+    v_at = (vf[v_ok], vy[v_ok], vx[v_ok])
+    n_in_cell = np.zeros((n_fleets, ny_f, nx_f), dtype=np.float64)
+    np.add.at(n_in_cell, v_at, 1.0)
+    cell_revenue = np.zeros((n_fleets, ny_f, nx_f), dtype=np.float64)
+
+    for fi, fleet_cfg in enumerate(fleet_state.fleets):
+        targets = np.asarray(fleet_cfg.target_species, dtype=np.intp)
+        tgt = np.isin(sp_sel, targets)
+        if not tgt.any():
+            continue
+        cells = (cy_sel[tgt], cx_sel[tgt])
+        np.add.at(realized[fi], cells, catch_sel[tgt])
+        price = np.asarray(fleet_cfg.price_per_tonne, dtype=np.float64)
+        np.add.at(cell_revenue[fi], cells, catch_sel[tgt] * price[sp_sel[tgt]])
+
+    # n_in_cell >= 1 at every vessel's own cell, so no division guard is needed.
+    fleet_state.vessel_revenue[v_ok] += cell_revenue[v_at] / n_in_cell[v_at]
+    return realized
+
+
+# ---------------------------------------------------------------------------
 # Background inject/strip helpers
 # ---------------------------------------------------------------------------
 
@@ -1952,54 +2020,8 @@ def simulate(
         # -- Update fleet revenue and catch memory after fishing --
         if ctx.fleet_state is not None:
             from osmose.engine.economics.choice import update_catch_memory
-            from osmose.engine.state import MortalityCause
 
-            n_fleets = len(ctx.fleet_state.fleets)
-            ny_f = ctx.fleet_state.catch_memory.shape[1]
-            nx_f = ctx.fleet_state.catch_memory.shape[2]
-            realized = np.zeros((n_fleets, ny_f, nx_f), dtype=np.float64)
-
-            # H7: vectorised. The previous version looped over every school and,
-            # per (school x fleet), rebuilt a three-array boolean vessel mask —
-            # O(n_schools * n_fleets * n_vessels) per step. Now: bucket vessels by
-            # (fleet, cell) once, accumulate catch and revenue per (fleet, cell)
-            # with np.add.at, then hand each vessel an equal share of its own
-            # cell's revenue. Semantics are unchanged: revenue landed in a cell
-            # with no vessel of that fleet present is not attributed to anyone.
-            fs = ctx.fleet_state
-            fishing_cause = int(MortalityCause.FISHING)
-            fishing_dead = state.n_dead[:, fishing_cause]
-            sel = fishing_dead > 0
-            sel &= (state.cell_y >= 0) & (state.cell_y < ny_f)
-            sel &= (state.cell_x >= 0) & (state.cell_x < nx_f)
-            if sel.any():
-                idx = np.flatnonzero(sel)
-                sp_sel = state.species_id[idx].astype(np.intp)
-                cy_sel = state.cell_y[idx].astype(np.intp)
-                cx_sel = state.cell_x[idx].astype(np.intp)
-                catch_sel = fishing_dead[idx] * state.weight[idx]
-
-                vf = fs.vessel_fleet.astype(np.intp)
-                vy = fs.vessel_cell_y.astype(np.intp)
-                vx = fs.vessel_cell_x.astype(np.intp)
-                v_ok = (vy >= 0) & (vy < ny_f) & (vx >= 0) & (vx < nx_f)
-                v_at = (vf[v_ok], vy[v_ok], vx[v_ok])
-                n_in_cell = np.zeros((n_fleets, ny_f, nx_f), dtype=np.float64)
-                np.add.at(n_in_cell, v_at, 1.0)
-                cell_revenue = np.zeros((n_fleets, ny_f, nx_f), dtype=np.float64)
-
-                for fi, fleet_cfg in enumerate(fs.fleets):
-                    targets = np.asarray(fleet_cfg.target_species, dtype=np.intp)
-                    tgt = np.isin(sp_sel, targets)
-                    if not tgt.any():
-                        continue
-                    cells = (cy_sel[tgt], cx_sel[tgt])
-                    np.add.at(realized[fi], cells, catch_sel[tgt])
-                    price = np.asarray(fleet_cfg.price_per_tonne, dtype=np.float64)
-                    np.add.at(cell_revenue[fi], cells, catch_sel[tgt] * price[sp_sel[tgt]])
-
-                # n_in_cell >= 1 at every vessel's own cell, so no division guard needed.
-                fs.vessel_revenue[v_ok] += cell_revenue[v_at] / n_in_cell[v_at]
+            realized = accumulate_fleet_revenue(ctx.fleet_state, state)
 
             ctx.fleet_state.catch_memory = update_catch_memory(
                 ctx.fleet_state.catch_memory, realized, ctx.fleet_state.memory_decay

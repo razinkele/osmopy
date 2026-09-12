@@ -11,6 +11,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 import time
@@ -20,18 +21,40 @@ import numpy as np
 import pandas as pd
 
 PROJECT_DIR = Path(__file__).parent.parent
-JAR_PATH = PROJECT_DIR / "osmose-java" / "osmose_4.3.3-jar-with-dependencies.jar"
+JAR_DIR = PROJECT_DIR / "osmose-java"
 EXAMPLES_CONFIG = PROJECT_DIR / "data" / "examples" / "osm_all-parameters.csv"
 
 
-def run_java(output_dir: Path, n_years: int) -> float:
+def resolve_jar(explicit: str | None = None) -> Path | None:
+    """Locate the OSMOSE JAR: --jar, then $OSMOSE_JAR, then any jar in osmose-java/.
+
+    This used to be a single hard-coded filename
+    (``osmose_4.3.3-jar-with-dependencies.jar``, with an underscore), which made
+    the script unrunnable for anyone whose JAR was named anything else — and the
+    names genuinely differ across this repo: apptainer/osmose.def downloads
+    ``osmose-4.3.3-...`` with a HYPHEN, while the 4.4.1 references in
+    baltic_440_smoke.py / baltic_stability_certify.py / ui/state.py use a hyphen
+    too. The JAR is gitignored, so nothing in-tree pins the true spelling. Glob
+    instead of guessing, and honour $OSMOSE_JAR like osmose/cli.py and
+    baltic_stability_certify.py already do.
+    """
+    if explicit:
+        return Path(explicit)
+    env = os.environ.get("OSMOSE_JAR")
+    if env:
+        return Path(env)
+    found = sorted(JAR_DIR.glob("*.jar"))
+    return found[0] if found else None
+
+
+def run_java(jar_path: Path, output_dir: Path, n_years: int) -> float:
     """Run Java OSMOSE engine. Returns elapsed seconds."""
     output_dir.mkdir(parents=True, exist_ok=True)
     cmd = [
         "java",
         "-Xmx2g",
         "-jar",
-        str(JAR_PATH),
+        str(jar_path),
         str(EXAMPLES_CONFIG),
         f"-Poutput.dir.path={output_dir}",
         f"-Psimulation.time.nyear={n_years}",
@@ -121,6 +144,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Validate Python vs Java OSMOSE engine")
     parser.add_argument("--years", type=int, default=5, help="Simulation years (default: 5)")
     parser.add_argument("--seed", type=int, default=42, help="Python RNG seed (default: 42)")
+    parser.add_argument(
+        "--jar",
+        default=None,
+        help="Path to the OSMOSE JAR (default: $OSMOSE_JAR, else osmose-java/*.jar)",
+    )
     args = parser.parse_args()
 
     print("=" * 70)
@@ -132,9 +160,14 @@ def main() -> None:
     print()
 
     # Check prerequisites
-    if not JAR_PATH.exists():
-        print(f"ERROR: Java JAR not found at {JAR_PATH}")
+    jar_path = resolve_jar(args.jar)
+    if jar_path is None or not jar_path.exists():
+        where = str(jar_path) if jar_path else f"no *.jar in {JAR_DIR}"
+        print(f"ERROR: Java JAR not found ({where}).")
+        print("  Pass --jar PATH, set $OSMOSE_JAR, or drop the jar into osmose-java/.")
+        print("  The jar is gitignored; see apptainer/osmose.def for the upstream release URL.")
         sys.exit(1)
+    print(f"JAR:    {jar_path}")
     if not EXAMPLES_CONFIG.exists():
         print(f"ERROR: Config not found at {EXAMPLES_CONFIG}")
         sys.exit(1)
@@ -145,7 +178,7 @@ def main() -> None:
 
     # Run Java
     print("[1/4] Running Java engine...")
-    java_time = run_java(java_dir, args.years)
+    java_time = run_java(jar_path, java_dir, args.years)
     print(f"  Done in {java_time:.1f}s ({java_time / args.years:.2f}s/year)")
 
     # Run Python
