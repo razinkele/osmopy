@@ -847,27 +847,75 @@ before this branch.
     38 cm it needs. It cannot mature, so SSB is structurally zero, so there are no eggs. Full
     immunity also leaves juvenile biomass **126× below** the bioen-off control (36.09 vs 4 555).
 
-    **The binding constraint is realized in-engine growth: a 15–20 cm ceiling under bioen against
-    110 cm on the identical config with bioen off.** That is a factor of ~7 in length.
+    > ### ⚠️ CORRECTION, same day — the paragraph that stood here was WRONG
+    >
+    > It read: *"The binding constraint is realized in-engine growth: a 15–20 cm ceiling."* The
+    > **observation** (max occupied bin 15–20 cm under bioen, 110 cm bioen-off) is correct and
+    > stands. The **causal attribution to growth was refuted within the hour** by
+    > `scripts/c3_growth_ceiling_diagnosis.py` (pre-registered `d18a8fb`), which measured the
+    > energy budget by size class and found growth entirely healthy at the ceiling:
+    >
+    > | length cm | ing/cap | m_share | dw/w per step | mean w g |
+    > |---|---:|---:|---:|---:|
+    > | 0–5 | 0.898 | 0.155 | 0.325 | 0.15 |
+    > | 5–10 | 0.903 | 0.201 | 0.200 | 3.81 |
+    > | 10–15 | 0.924 | 0.184 | 0.158 | 17.27 |
+    > | **15–20** | **0.956** | **0.135** | **0.138** | 38.73 |
+    >
+    > (predation-immune `accALL` arm; the plain `bioen` arm is within a percent of it). cod_west
+    > eats **90–100 % of its allometric cap at every size**, `m_share` is **0.13–0.20 — *below* the
+    > fit's 0.30 target and not rising with size**, and specific growth in the top occupied bin is
+    > **13.8 % of body weight per step**. Nothing is stalling. Fish grow well and then disappear.
+    >
+    > **So the 15–20 cm ceiling is a SURVIVAL EDGE, not a growth ceiling** — case (2) of that
+    > script's pre-registered reading, ATTRITION rather than STALL, returned identically on both
+    > arms.
+    >
+    > **The error is the same class, for the third time in this investigation: inferring a
+    > mechanism from a distribution without measuring the mechanism.** The size distribution showed
+    > a ceiling; I attributed it to growth; growth was fine. Exactly as the 11–48 % egg ratios were
+    > real while the recruitment story built on them was wrong. A distribution tells you *where*
+    > things stop, never *why*.
 
-    **This is NOT the already-refuted growth account, and the distinction is the whole point.** That
-    one was about the offline *fit's* curve, and was killed by fixing the curve completely and
-    watching nothing change. This is about what the *coupled engine actually delivers* under food
-    limitation and competition — a quantity the offline forward model cannot represent, because it
-    assumes ingestion at 100 % of cap with no competitor drawing the same prey down. The fit says
-    cod_west should be on the vBGF curve by age 2 (~31 cm); the engine delivers 15–20 cm, ever.
+    **What survives from that paragraph.** The distinction it drew is still worth keeping, because
+    it now applies to the *observation* rather than to a cause: the 15–20 cm vs 110 cm gap is real,
+    is a factor of ~7 in length, and is not the already-refuted offline-fit growth account — that
+    one was about the fit's curve and died when fixing the curve changed nothing. But the gap is
+    produced by mortality, not by slow growth.
 
-    **It also reconciles every earlier result at once**, which none of the previous accounts did:
-    SSB is exactly 0 because nothing reaches 38 cm; recruitment was ill-posed because there were
-    never any spawners; Task 13's predation signature is real but downstream, killing juveniles that
-    were never going to mature anyway; and fixing the offline fit changed nothing because the fit
-    was never the thing that was broken.
+    **What now reconciles the earlier results.** SSB is exactly 0 because nothing survives to
+    38 cm — not because nothing grows to 38 cm. Recruitment was ill-posed because there were never
+    any spawners. Fixing the offline fit changed nothing because the fit was never what was broken,
+    and this run confirms why from the other side: realized intake is already at 90–100 % of cap, so
+    the fit's curve was never the limiting input.
+
+    **The open question is now sharp and small: what kills cod_west between 10 and 20 cm?** It is
+    not predation (removed entirely in `accALL`, ceiling unmoved), not starvation (`e_net` is
+    positive and `m_share` is 0.13–0.20), not the offline fit, and not fishing —
+    `fisheries.rate.base.fsh0` is **0.039 yr⁻¹**, negligible, though note
+    `fisheries.selectivity.type.fsh0 = 0` is **knife-edge by AGE at 2.0 yr**, so slow growth buys no
+    protection from whatever fishing there is. Larval additional mortality is enormous
+    (`mortality.additional.larva.rate.sp0` = 243.76 yr⁻¹) but `larva_mortality`
+    (`natural.py:103`) applies it **only to `is_egg` schools, once per cohort**, so it cannot reach
+    a 15 cm fish. That leaves `mortality.additional.rate.sp0` = 1.2546 yr⁻¹ ≈ 5.2 % per step, which
+    is far too small to explain the observed drop between size classes. **Something not yet
+    enumerated is removing them, and the next measurement is deaths BY CAUSE for cod_west resolved
+    by size class — not rates, which are summed per-step and cannot be exponentiated (CLAUDE.md).**
 
     **Verdict discipline.** The pre-registered rule returns `INCONCLUSIVE (window/growth-limited)`
     for the predation question, and that is recorded as-is — the test could not reach the question
-    it asked, because the cohort cannot mature under any predation regime. What *is* established
-    positively is narrower and stronger than a null: predation does not prevent cod_west from
-    maturing, because removing it entirely leaves the size ceiling unchanged.
+    it asked, because the cohort never survives to maturity under any predation regime. What *is*
+    established positively is narrower and stronger than a null: predation does not prevent cod_west
+    from maturing, because removing it entirely leaves the ceiling unchanged. (The branch label
+    "window/growth-limited" is itself now known to be a misnomer — see the correction above: the
+    ceiling is a survival edge, not a growth limit. The branch fired on the right *evidence*, max
+    length below 0.9 × m0, and drew the wrong *inference* from it.)
+
+    **A flaw in this pre-registration that did not bite, recorded anyway.** The rule `real SSB > 0`
+    → PREDATION CONFIRMED carries **no magnitude floor**, so it would have fired on a biologically
+    dead remnant — 0.001 t of spawners would have read as a confirmation. It happened to return
+    exactly 0.0, so nothing turned on it, but the next version of this rule needs a floor expressed
+    as a fraction of the bioen-off control's SSB.
 
     **Engagement checks all passed**, and they were worth the trouble — four separate instrument
     defects were caught and fixed before any verdict was read (`71ab3fd`, `4ab46a7`, `a91b7db`),
