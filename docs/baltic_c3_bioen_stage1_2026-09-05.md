@@ -1072,6 +1072,54 @@ before this branch.
     > 110 cm on baseline, so the weight term is live, and maturity is length-based (38 cm), which
     > couples the two. Next is again a measurement, not a search: mature abundance and mean mature
     > weight, per arm, per species.
+    >
+    > ### ✅ RESOLVED — **A MATURATION BOTTLENECK** (`c3_ssb_decomposition.py`)
+    >
+    > `SSB = N_total × frac_mature × mean_weight_mature` is an identity, so the three bioen/baseline
+    > ratios must multiply back to the SSB ratio. **They do, for every species (E1 passed)** — which
+    > is why this step is not another inference.
+    >
+    > Measured over years 2–6, while all stocks still hold real numbers. (By years 15–19 the four
+    > collapsers sit at 1e-11–1e-45 and their decomposition describes the collapse rather than its
+    > cause — the window matters, and the saved per-year arrays let it be re-cut without re-running.)
+    >
+    > | species | m0 (cm) | SSB | **N_total** | **frac_mature** | mean_w | outcome |
+    > |---|---:|---:|---:|---:|---:|---|
+    > | cod_west | **38** | 0.0000 | **0.790** | **0.0000** | 0.324 | collapse |
+    > | cod_east | 22 | 0.0000 | 0.109 | **0.0032** | 0.118 | collapse |
+    > | flounder | 22 | 0.0011 | 0.177 | **0.0115** | 0.535 | collapse |
+    > | herring | 18 | 0.0356 | 0.077 | 0.5644 | 0.821 | collapse |
+    > | **sprat** | **9** | 0.2386 | **0.839** | **0.5725** | 0.497 | **survives** |
+    >
+    > **cod_west holds 79 % of baseline's fish and essentially ZERO of them mature.** That single row
+    > is the answer: the fish are there, and they do not cross the maturity length. sprat likewise
+    > carries 84 % of baseline's fish with 57 % of the maturation — and survives on it.
+    >
+    > **The chain, every link measured rather than inferred:**
+    > 1. Mortality is identical between arms (1.00–1.01× per-capita).
+    > 2. Births are 16–24× down.
+    > 3. That is a **spawner** deficit, not a fecundity one — eggs per unit SSB are 1.02–1.24×.
+    > 4. The SSB deficit is **`frac_mature`**, with `N_total` largely preserved.
+    > 5. Maturity here is **length-based** (`species.maturity.size`; `species.maturity.age` absent),
+    >    and bioen size-at-age is **0.32–0.82×** baseline — so far fewer fish ever cross `m0`.
+    > 6. No spawners → no eggs → no recruitment → decay to extinction, mortality normal throughout.
+    >
+    > **This vindicates the `m0` ordering noticed at the very start of §9** — stickleback (4.5 cm)
+    > survives, cod (38) and flounder/cod_east (22) collapse — but now as a *measured mechanism*
+    > rather than a nine-point correlation. sprat's `m0 = 9.0 cm` is the smallest of the assessed
+    > stocks and is the survivor. pikeperch (`m0 = 40`) remains the standing exception it has been
+    > throughout, and is still unexplained.
+    >
+    > **Correcting my own earlier reading.** I wrote that realized growth was "entirely healthy" on
+    > the strength of `dw/w` at 12–33 % per step with intake at 90–100 % of cap. That was **too
+    > strong**: per-step weight *gain* is vigorous, but size-*at-age* is 0.32–0.82× baseline, and for
+    > a length-based maturity threshold it is size-at-age that decides. Both measurements are correct;
+    > the first does not support the conclusion I drew from it.
+    >
+    > **What this means for C3.** The Stage-1 negative stands and is now *explained*: bioen as
+    > parameterised cannot carry these stocks past their maturity lengths. The lever is the growth
+    > trajectory against `m0` — either the bioen parameters that set size-at-age, or `m0` itself — and
+    > that is a calibration question with a named target, not an open search.
     > 90–100 % of cap, `m_share` below target), not size (the seal explained that and fixing it
     > changes no biomass), not recruitment as originally framed (there were never spawners to begin
     > with), and not the listed predators. Something removes the numbers while leaving the energetics
