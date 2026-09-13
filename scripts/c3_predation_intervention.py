@@ -120,7 +120,7 @@ OVERLAY = ROOT / "data" / "baltic" / "scenarios" / "c3_bioen" / "c3_bioen_arm.js
 _ORIGINAL_REGULATE = repro_mod.regulate_recruitment
 
 
-def write_staged_matrix(src: Path, dst: Path, dose: float) -> list[float]:
+def write_staged_matrix(src: Path, dst: Path, dose: float, split: bool = True) -> list[float]:
     """Split SUBJECT's PREY row into juvenile/adult stages, scaling the juvenile row by `dose`.
 
     Rows are prey and columns are predators (CSV header: "v Prey / Predator >"), and
@@ -135,8 +135,15 @@ def write_staged_matrix(src: Path, dst: Path, dose: float) -> list[float]:
         if row and row[0].strip() == SUBJECT:
             original = [float(v) for v in row[1:]]
             juvenile_values = [v * dose for v in original]
-            out.append([f"{SUBJECT} < {MATURITY_AGE}"] + [repr(v) for v in juvenile_values])
-            out.append([SUBJECT] + [repr(v) for v in original])
+            if split:
+                out.append([f"{SUBJECT} < {MATURITY_AGE}"] + [repr(v) for v in juvenile_values])
+                out.append([SUBJECT] + [repr(v) for v in original])
+            else:
+                # ALL-AGES dose: one unsplit row. Needed because the stage split is by AGE while
+                # maturity is by LENGTH (38 cm) -- a fish that grows slowly becomes edible again at
+                # MATURITY_AGE while still juvenile-sized, so the age-split arm is only a PARTIAL
+                # dose. This is the unambiguous maximal dose: cod_west is inedible at every age.
+                out.append([SUBJECT] + [repr(v) for v in juvenile_values])
         else:
             out.append(row)
     if not juvenile_values:
@@ -166,7 +173,7 @@ def juvenile_row_in_effect(cfg_dict: dict) -> list[float]:
     return [float(v) for v in acc.raw_matrix[juv.matrix_index]]
 
 
-def run_arm(raw, cfg_dir, overlay, dose, focal):
+def run_arm(raw, cfg_dir, overlay, dose, focal, split=True):
     cfg = dict(raw)
     cfg["simulation.time.nyear"] = str(N_YEAR)
     cfg["population.seeding.year.max"] = "1"
@@ -175,8 +182,11 @@ def run_arm(raw, cfg_dir, overlay, dose, focal):
     else:
         cfg.update(overlay)
     if dose is not None:
-        name = f"predation-accessibility-dose{int(dose * 100):03d}.csv"
-        write_staged_matrix(cfg_dir / "predation-accessibility.csv", cfg_dir / name, dose)
+        tag_s = "split" if split else "allages"
+        name = f"predation-accessibility-{tag_s}{int(dose * 100):03d}.csv"
+        write_staged_matrix(
+            cfg_dir / "predation-accessibility.csv", cfg_dir / name, dose, split=split
+        )
         cfg["predation.accessibility.file"] = name
 
     n_sp = int(raw["simulation.nspecies"])
@@ -216,23 +226,24 @@ def run_arm(raw, cfg_dir, overlay, dose, focal):
     except Exception as exc:  # an instrument must never take the run down
         print(f"    (biomass_by_age unavailable: {exc})")
 
-    # WINDOW CHECK. The single biggest way this test can lie: if cod_west never grows near the
+    # WINDOW CHECK (E4). The single biggest way this test can lie: if cod_west never grows near the
     # 38 cm maturity length inside the run, SSB = 0 means "too small to spawn", NOT "predation is
-    # not the cause". Maturity is LENGTH-only here (species.maturity.age.sp0 absent), while the
-    # accessibility stage split is by AGE -- so the two boundaries need not coincide.
-    # `mean_size` goes through `_read_species_output` -> WIDE (Time + per-species columns), so drop
-    # the time column and take the max over the numeric remainder.
+    # not the cause". Maturity is LENGTH-only here (species.maturity.age.sp0 absent) while the
+    # accessibility stage split is by AGE, so the two boundaries need not coincide.
+    #
+    # Instrument is the LARGEST OCCUPIED SIZE BIN from abundanceBySize, not mean size: the question
+    # is whether ANY cod_west reached 38 cm, and a mean is dragged down by the juveniles that
+    # dominate the numbers. Long format (time, species, bin, value) per _read_2d_output.
     max_len = float("nan")
     try:
-        ms = res.mean_size(SUBJECT)
-        num = ms.select_dtypes(include=[np.number])
-        cols = [c for c in num.columns if str(c).strip().lower() not in ("time", "year", "step")]
-        if cols:
-            arr = num[cols].to_numpy(dtype=np.float64)
-            if arr.size and np.isfinite(arr).any():
-                max_len = float(np.nanmax(arr))
+        bs = res.abundance_by_size(SUBJECT)
+        sb = pd.to_numeric(bs["bin"], errors="coerce")
+        sv = pd.to_numeric(bs["value"], errors="coerce")
+        occupied = sb[(sv > 0) & sb.notna()]
+        if len(occupied):
+            max_len = float(occupied.max())
     except Exception as exc:
-        print(f"    (mean_size unavailable: {exc})")
+        print(f"    (abundance_by_size unavailable: {exc})")
 
     return {
         "final": {s: (float(bio[s].iloc[-1]), float(abd[s].iloc[-1])) for s in focal},
@@ -271,18 +282,21 @@ def main() -> int:
         ("acc50", overlay, 0.50),
         ("acc10", overlay, 0.10),
         ("acc00", overlay, 0.00),
+        ("accALL", overlay, 0.00, False),
     )
     out = {}
-    for tag, ov, dose in arms:
+    for spec in arms:
+        tag, ov, dose = spec[0], spec[1], spec[2]
+        split = spec[3] if len(spec) > 3 else True
         print(f"  running {tag} ...", flush=True)
-        out[tag] = run_arm(raw, cfg_dir, ov, dose, focal)
+        out[tag] = run_arm(raw, cfg_dir, ov, dose, focal, split=split)
 
     print(
         f"\n{'=' * 92}\nE1 -- juvenile prey row of {SUBJECT}, READ BACK from a built EngineConfig"
     )
     print("=" * 92)
     rows = {}
-    for tag, *_ in arms:
+    for tag, *_rest in arms:
         rows[tag] = juvenile_row_in_effect(out[tag]["cfg"])
         shown = rows[tag][:9] if rows[tag] else []
         print(f"  {tag:<10} {['%.4f' % v for v in shown]}")
@@ -291,10 +305,10 @@ def main() -> int:
     print(f"  E1 arms differ in the loaded matrix: {e1}")
 
     print(f"\n{'=' * 92}\nFINAL STATE (year {N_YEAR}, seed {SEED})\n{'=' * 92}")
-    print(f"{'species':<13}" + "".join(f"{t:>17}" for t, *_ in arms))
+    print(f"{'species':<13}" + "".join(f"{t:>17}" for t, *_r in arms))
     for s in focal:
         line = f"{s:<13}"
-        for tag, *_ in arms:
+        for tag, *_rest in arms:
             bm, ab = out[tag]["final"][s]
             line += f"{bm:>13.1f}{'  X' if ab <= 0 else '   '}"
         print(line)
@@ -306,7 +320,7 @@ def main() -> int:
         f"{'juv bio 1-3yr':>15}{'max len cm':>12}"
     )
     real = {}
-    for tag, *_ in arms:
+    for tag, *_rest in arms:
         tot = out[tag]["ssb"][SUBJECT_SP]
         sp = out[tag]["seeded"][SUBJECT_SP] * seed_b
         real[tag] = tot - sp
@@ -330,10 +344,14 @@ def main() -> int:
         return 0
 
     monotone = real["acc00"] >= real["acc10"] >= real["acc50"] >= real["bioen"]
-    if real["acc00"] > 0:
+    # accALL is the DECISIVE arm: the age-split arms only protect cod_west to MATURITY_AGE, but
+    # maturity is by LENGTH (38 cm), so a slow-growing fish becomes edible again while still
+    # juvenile-sized. accALL zeroes the prey row at every age -- inedible, full stop.
+    decisive = "accALL" if "accALL" in real else "acc00"
+    if real[decisive] > 0:
         print(
             f"\n  PREDATION CONFIRMED -- {SUBJECT} real SSB {real['bioen']:.1f} -> "
-            f"{real['acc00']:.1f} t under juvenile immunity."
+            f"{real[decisive]:.1f} t on arm {decisive!r} (total predation immunity)."
         )
         print(f"  dose ladder monotone: {monotone}")
     else:
@@ -341,8 +359,12 @@ def main() -> int:
         # SSB = 0 has two very different explanations and they must not be conflated: the cohort was
         # eaten, or the cohort survived but never grew to 38 cm. Only the first is "predation
         # refuted"; the second means the test could not reach the question.
-        reached = out["acc00"]["max_len"]
-        if not np.isfinite(reached) or reached < 0.9 * 38.0:
+        reached = out[decisive]["max_len"]
+        if not np.isfinite(reached):
+            print("\n  INCONCLUSIVE (E4 instrument dark) -- the max-occupied-size-bin readout is")
+            print("  NaN, so whether cod_west ever approached 38 cm is UNMEASURED. This is an")
+            print("  instrument failure, not a window finding and not a null. Fix E4 and re-run.")
+        elif reached < 0.9 * 38.0:
             print(
                 f"\n  INCONCLUSIVE (window/growth-limited) -- at FULL juvenile immunity "
                 f"{SUBJECT} still"
