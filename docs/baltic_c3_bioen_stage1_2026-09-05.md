@@ -938,6 +938,53 @@ before this branch.
     > not be read as "the stock cannot recover". The clean follow-up is the repaired matrix at the
     > production seeding policy over a longer horizon — which is also what re-running the Stage-1
     > verdict would require.
+    >
+    > ### ⚖️ RESTAGE AT PRODUCTION SEEDING, 50 YR — **THE STAGE-1 VERDICT STANDS** (`12e52e1`)
+    >
+    > `scripts/c3_repaired_matrix_restage.py`, pre-registered before running. Removes the
+    > single-cohort caveat entirely: **production seeding** (no `seeding.year.max` override — engine
+    > default is per-species `lifespan`, cod_west 20 yr) at the **certifying 50-yr horizon**, so the
+    > final decade sits 21–46 years past every assessed stock's seeding-window closure. Same metric
+    > as Stage 1: final-decade mean biomass.
+    >
+    > | species | baseline | bioen | repaired | floor (1 %) |
+    > |---|---:|---:|---:|---:|
+    > | cod_west | 12 335.9 | **0.0** | **0.0** | 123.4 |
+    > | herring | 2 523 427.1 | **0.0** | **0.0** | 25 234.3 |
+    > | flounder | 32 401.2 | **0.0** | **0.0** | 324.0 |
+    > | cod_east | 66 446.1 | **0.0** | **0.0** | 664.5 |
+    > | perch | 42 554.4 | 0.0 | 0.0 | 425.5 |
+    > | sprat | 1 035 926.7 | 318 726.4 | 313 900.6 | 10 359.3 |
+    > | pikeperch | 1 375 582.1 | 130 829.5 | 125 734.9 | 13 755.8 |
+    > | smelt | 672 269.5 | 320 559.8 | 285 180.0 | 6 722.7 |
+    > | stickleback | 84 954.2 | 69 952.3 | 68 277.8 | 849.5 |
+    >
+    > **E1 passed — the `bioen` arm reproduces the published Stage-1 collapse exactly**, all four
+    > assessed stocks at 0.0 final-decade mean. That is what makes these rows comparable to the
+    > Stage-1 table rather than merely similar to it. E2 and E3 passed too.
+    >
+    > **0 of 4 recover. The missing GreySeal column is NOT what collapses these stocks.** Repairing
+    > it moves nothing at this scale — `repaired` is if anything marginally *lower* than `bioen` for
+    > the survivors (food-web rebalancing, all well inside the noise of a single seed).
+    >
+    > **So the defect and the collapse are two separate things, and both conclusions hold:**
+    > - The missing column is a **real, material defect** that governs **size structure** — cod_west
+    >   and cod_east 15 → 75 cm, flounder fully restored to its baseline 40 cm. Worth fixing on its
+    >   own merits, and now recorded in CLAUDE.md.
+    > - **C3's headline negative is a genuine bioenergetics result, not a config artifact.** It
+    >   survives direct testing against the defect that looked most likely to explain it.
+    >
+    > **The open question is now precisely one thing: what caps ABUNDANCE.** Not growth (intake is
+    > 90–100 % of cap, `m_share` below target), not size (the seal explained that and fixing it
+    > changes no biomass), not recruitment as originally framed (there were never spawners to begin
+    > with), and not the listed predators. Something removes the numbers while leaving the energetics
+    > and — once the seal is sane — the growth trajectory intact.
+    >
+    > **Single-seed caveat, stated rather than buried.** This is seed 42 only. Stage 1's headline
+    > rested on the collapse being *bit-identical across five seeds*, and the `bioen` arm here
+    > reproducing it exactly is strong corroboration — but a **null** on `repaired` from one seed is
+    > weaker evidence than a positive would have been. It would take the 5-seed set to certify "the
+    > repair changes nothing" to the same standard Stage 1 met.
 
   - **PREDATION TESTED BY INTERVENTION 2026-09-13 — and the answer is a SIZE CEILING.**
     `scripts/c3_predation_intervention.py`, pre-registered at `cd7eea5` before the run. Config-only
