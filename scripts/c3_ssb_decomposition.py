@@ -83,8 +83,12 @@ from osmose.config import OsmoseConfigReader  # noqa: E402
 from osmose.demo import osmose_demo  # noqa: E402
 from osmose.engine import PythonEngine  # noqa: E402
 
-N_YEAR = 30
-TAIL_FROM = 20  # decompose over years 20-29, past cod_west's 20-yr seeding window
+# 20 yr, one ARM PER PROCESS: a 30-yr two-arm run exceeded the memory envelope (swap 87% full).
+# cod_east/herring/flounder seed for 15/12/15 yr, so years 15-19 are already 4-8 yr post-seeding
+# for them. cod_west seeds for 20 yr, so its window is still OPEN here and it is flagged, not
+# silently averaged in.
+N_YEAR = 20
+TAIL_FROM = 15
 SEED = 42
 SEAL, TEMPLATE = "GreySeal", "Cormorant"
 FOCUS = ("cod_west", "cod_east", "herring", "flounder", "sprat")
@@ -149,6 +153,8 @@ def run_arm(raw, cfg_dir, overlay, n_sp, ndt, m0_arr, m1_arr):
 
 def main() -> int:
     warnings.simplefilter("ignore")
+    arm_arg = sys.argv[1] if len(sys.argv) > 1 else None
+    out_arg = sys.argv[2] if len(sys.argv) > 2 else None
     tmp = Path(tempfile.mkdtemp(prefix="c3_ssbdec_"))
     demo = osmose_demo("baltic", tmp)
     cf = Path(demo["config_file"])
@@ -170,10 +176,22 @@ def main() -> int:
         f"{N_YEAR} yr, production seeding, seed {SEED}, repaired matrix; "
         f"decomposing years {TAIL_FROM}-{N_YEAR - 1}"
     )
+    if arm_arg in ("baseline", "bioen"):
+        # ONE arm per process, results to JSON — halves peak memory.
+        ov = None if arm_arg == "baseline" else overlay
+        print(f"  running {arm_arg} ...", flush=True)
+        r = run_arm(raw, cf.parent, ov, n_sp, ndt, m0_arr, m1_arr)
+        Path(out_arg).write_text(json.dumps({k: v.tolist() for k, v in r.items()}))
+        print(f"  wrote {out_arg}")
+        return 0
+
     res = {}
-    for tag, ov in (("baseline", None), ("bioen", overlay)):
-        print(f"  running {tag} ...", flush=True)
-        res[tag] = run_arm(raw, cf.parent, ov, n_sp, ndt, m0_arr, m1_arr)
+    for tag, fn in (("baseline", "_base.json"), ("bioen", "_bioen.json")):
+        pth = Path(sys.argv[0]).parent / fn
+        if not pth.exists():
+            print(f"  MISSING {pth} — run:  python {sys.argv[0]} {tag} {pth}")
+            return 1
+        res[tag] = {k: np.asarray(v) for k, v in json.loads(pth.read_text()).items()}
 
     w = slice(TAIL_FROM, N_YEAR)
 
