@@ -630,6 +630,49 @@ before this branch.
   else) fixes this, which is the signal to re-open the question. Whether the fix belongs in the
   bioen fit, the predation-accessibility matrix, or the growth-rate structure itself was
   explicitly out of scope for both Task 13 and this task to chase.
+
+  - **LOCATED 2026-09-13 — it is the fit's OBJECTIVE, not any of `c_m`, `Imax` or `beta`.**
+    Four measurements on the production Baltic + this overlay, 6–10 yr, seed 42, eliminating one
+    candidate each; then the age curve, which names the cause.
+
+    | candidate | measurement | verdict |
+    |---|---|---|
+    | prey supply / accessibility | realized ingestion ÷ `Imax` cap, per species, pre-collapse: cod_east 0.97, perch 0.95, cod_west 0.95, flounder 0.92, herring 0.77 | **ruled out** — the collapsing stocks eat 92–98 % of everything they are allowed. The relation is *inverted*: the two lowest ratios (pikeperch 0.36, smelt 0.38) are both survivors. |
+    | `c_m` | `m_share = e_maint/e_gross` vs the fitted 0.30 target: cod_east 0.135, cod_west 0.178, flounder 0.290, perch 0.312, herring 0.320 | **ruled out** — collapsing stocks sit *at or below* target; cod has 82–86 % of gross energy free for growth. |
+    | `beta` | `m_share` across weight terciles | **ruled out** — flat (cod_west 0.18/0.18/0.17). Both `e_gross` and `e_maint` scale as `w^beta`, so a mismatch would show as drift with size. |
+    | temperature / the `1/(φT(T̄)(1−m))` inflation | measured `phi_T` vs §3's `φT(T̄)` | **ruled out** — matches within 8–19 %, and mostly *higher* than assumed (cod_west 0.887 vs 0.963; perch 0.304 vs 0.257). The inflation is doing its job. |
+
+    Every input the fit reasons about is as designed, which leaves the objective that chose them.
+    Running `simulate_growth` (`osmose/calibration/bioen_offline.py:100`) with the **committed**
+    parameters against each species' own config vBGF:
+
+    | age | cod_west fit/vBGF | perch | stickleback |
+    |---:|---:|---:|---:|
+    | 1 | **0.58** | **0.49** | 1.01 |
+    | 2 | 1.00 | 0.81 | 0.93 |
+    | 3 | 1.14 | 1.04 | 0.94 |
+    | 4–8 | 1.16–1.17 | 0.88–0.99 | 0.95 |
+
+    **The fit is 42–51 % short at age 1 and then matches or overshoots from age 2 on.** Its RMS
+    runs over the whole ≥1 yr range on *absolute* lengths, so ages 2–8 — where cod_west is 14–17 %
+    **over** target — dominate the residual. That is how §3's 8.33 % RMS coexists with a halved
+    first year, and it is the RMS-pin caveat (§0/§1) biting in a way nobody had quantified.
+
+    This reconciles the rest of the stage rather than competing with it: the budget is healthy
+    (ingestion at the cap, `m_share` at target), so the fish are **not starving** — they start the
+    race at half size and spend an extra year inside the predation window before any size refuge,
+    which is exactly the predation-not-starvation signature Task 13 measured with its bioen-off
+    control. It also explains the `m0` ordering in §8: stickleback (m0 4.5 cm, on target from age 1)
+    survives, while cod (38), pikeperch (40), flounder/cod_east (22) and herring/perch (18) must
+    cross a far larger gap starting from half size.
+
+    **Target for a re-fit:** the juvenile regime, not the global parameters.
+    `simulate_growth` gives larvae their own cap (`imax + (theta−1)·c_rate` while
+    `age_dt < larvae_thres_dt`); weighting early ages in the residual — log-length, or an explicit
+    age-1 constraint — would raise that boost without disturbing the adult curve the present fit
+    already reproduces well. Note the pikeperch caveat from §8 still stands: at 0.47 fit/vBGF at
+    age 1 it is among the worst early-growth cases yet survives, so early growth is not the whole
+    story for every species.
 - **Length-at-age `NaN` for 8/9 species (§5) — root-caused and fixed in code, not re-run.**
   Cause: `pd.concat` over per-species by-age frames of different widths (`osmose/results.py:351`,
   widths from `osmose/engine/output.py:_build_distribution_dataframes`) NaN-pads every species
