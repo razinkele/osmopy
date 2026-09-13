@@ -817,6 +817,77 @@ before this branch.
     juvenile stages of one collapsing stock and ask whether **SSB becomes non-zero** — SSB, not
     biomass, is the instrument, because SSB is the quantity shown here to be identically zero.
 
+  - **PREDATION TESTED BY INTERVENTION 2026-09-13 — and the answer is a SIZE CEILING.**
+    `scripts/c3_predation_intervention.py`, pre-registered at `cd7eea5` before the run. Config-only
+    and surgical: `predation.accessibility.stage.structure = age` and the CSV takes `"name < T"`
+    age labels (`accessibility.py:_parse_label`), with prey ROWS and predator COLUMNS parsed
+    independently — so cod_west's PREY row is split and scaled while its predator COLUMN is left
+    alone. This changes what eats cod_west, never what cod_west eats, and touches no growth,
+    bioenergetics or reproduction parameter. cod_west has only four predators (itself, pikeperch,
+    smelt, Cormorant), all at accessibility 0.05.
+
+    | arm | juv accessibility | cod_west final t | real SSB | juv biomass 1–3 yr | **max size bin** |
+    |---|---|---:|---:|---:|---:|
+    | baseline (bioen off) | 0.05 | 1 454.5 | **129 265.5** | 4 555 | **110 cm** |
+    | bioen | 0.05 | 0.0 ✗ | 0.0 | 11.77 | 15 cm |
+    | acc50 | 0.025 | 0.0 ✗ | 0.0 | 16.44 | 15 cm |
+    | acc10 | 0.005 | 0.0 ✗ | 0.0 | 29.24 | 20 cm |
+    | acc00 | 0.0 (juveniles) | 0.0 ✗ | 0.0 | 36.09 | 15 cm |
+    | **accALL** | **0.0 at EVERY age** | **0.0 ✗** | **0.0** | 36.09 | **15 cm** |
+
+    Size bins are 5 cm wide (`output.distrib.bysize` 0–120 step 5), so "15 cm" means the largest
+    occupied bin is [15, 20). Maturity needs **38 cm** (`species.maturity.m0.sp0`, length-only —
+    `species.maturity.age.sp0` is absent).
+
+    **Predation is real but is NOT the binding constraint.** The dose ladder is clean and monotone
+    — juvenile biomass 11.77 → 16.44 → 29.24 → 36.09 as accessibility falls, a **3.07×** gain under
+    full immunity — so predation genuinely does kill cod_west juveniles, and this knob engages in a
+    way the recruitment knob never could. But **the size ceiling does not move**: at `accALL`, where
+    cod_west is inedible to every predator at every age, it still tops out at 15–20 cm against the
+    38 cm it needs. It cannot mature, so SSB is structurally zero, so there are no eggs. Full
+    immunity also leaves juvenile biomass **126× below** the bioen-off control (36.09 vs 4 555).
+
+    **The binding constraint is realized in-engine growth: a 15–20 cm ceiling under bioen against
+    110 cm on the identical config with bioen off.** That is a factor of ~7 in length.
+
+    **This is NOT the already-refuted growth account, and the distinction is the whole point.** That
+    one was about the offline *fit's* curve, and was killed by fixing the curve completely and
+    watching nothing change. This is about what the *coupled engine actually delivers* under food
+    limitation and competition — a quantity the offline forward model cannot represent, because it
+    assumes ingestion at 100 % of cap with no competitor drawing the same prey down. The fit says
+    cod_west should be on the vBGF curve by age 2 (~31 cm); the engine delivers 15–20 cm, ever.
+
+    **It also reconciles every earlier result at once**, which none of the previous accounts did:
+    SSB is exactly 0 because nothing reaches 38 cm; recruitment was ill-posed because there were
+    never any spawners; Task 13's predation signature is real but downstream, killing juveniles that
+    were never going to mature anyway; and fixing the offline fit changed nothing because the fit
+    was never the thing that was broken.
+
+    **Verdict discipline.** The pre-registered rule returns `INCONCLUSIVE (window/growth-limited)`
+    for the predation question, and that is recorded as-is — the test could not reach the question
+    it asked, because the cohort cannot mature under any predation regime. What *is* established
+    positively is narrower and stronger than a null: predation does not prevent cod_west from
+    maturing, because removing it entirely leaves the size ceiling unchanged.
+
+    **Engagement checks all passed**, and they were worth the trouble — four separate instrument
+    defects were caught and fixed before any verdict was read (`71ab3fd`, `4ab46a7`, `a91b7db`),
+    each of which would have produced a confident wrong answer:
+    - E1 the loaded matrix differs per arm, read back from a *constructed* `EngineConfig` rather
+      than from the CSV written — `accALL` resolves to a single all-ages stage with every entry 0.
+    - E2 the bioen-off control sustains all nine species.
+    - E3 juvenile survivorship differs between arms (11.77 → 36.09), so the knob demonstrably bit.
+      E3 was silently NaN on the first two runs because `abundanceByAge` is not produced in-memory
+      and `biomass_by_age` returns LONG format, not wide.
+    - E4 the size-ceiling check, added *because* an adversarial read flagged that an age-based
+      accessibility split need not coincide with a length-based maturity threshold. Without it this
+      run would have read as "predation refuted" instead of "the fish never grew".
+
+    **Next, and this one is now well-posed:** find why realized growth stalls at 15–20 cm. Measure
+    `e_gross`, `e_maint` and `e_net` for cod_west *by size class* over the run, against the offline
+    fit's expectation at the same weights. The specific suspicion worth testing first is that
+    maintenance overtakes intake at small size — `e_net → 0` — which would be a hard ceiling of
+    exactly this shape rather than a slow-growth effect.
+
   - **The boost's fitted VALUES were checked against the literature** —
     `docs/validation/juvenile_ingestion_boost_literature_2026-09-13.md` (reproducer:
     `scripts/c3_juvenile_boost_literature_check.py`). A separate question from whether the boost
