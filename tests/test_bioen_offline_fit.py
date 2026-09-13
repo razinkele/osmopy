@@ -492,3 +492,28 @@ def test_juvenile_boost_maps_onto_the_engine_cap_form():
         1,
     )
     assert float(cap_juv[0] / cap_adult[0]) == pytest.approx(j, rel=1e-12)
+
+
+def test_display_path_handles_a_directory_outside_the_repo():
+    """`run_baltic(out_dir=...)` must not crash for a path outside the repo.
+
+    The completion message used `Path.relative_to(ROOT)` unconditionally, which raises
+    `ValueError` for an external directory -- AFTER the files were written. So a fully
+    successful fit exited non-zero, and it did so on the one workflow that matters for not
+    clobbering the committed overlay: regenerate into a scratch dir, diff against the live one.
+    """
+    import importlib.util
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location(
+        "_fitmod", root / "scripts" / "fit_baltic_bioen_params.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    inside = root / "data" / "baltic" / "scenarios" / "c3_bioen" / "x.csv"
+    assert mod._display_path(inside) == "data/baltic/scenarios/c3_bioen/x.csv"
+
+    outside = Path("/tmp/regen_scratch/x.csv")
+    assert mod._display_path(outside) == "/tmp/regen_scratch/x.csv"
