@@ -732,8 +732,27 @@ before this branch.
     intervention.** The growth story had comparable correlational support and failed. Do not treat
     recruitment as established until someone raises bioen egg output and shows the stocks persist.
 
-    Reproduce all of the above with `scripts/c3_growth_deficit_diagnosis.py`; the boost re-fit and
-    the egg count are scratch experiments, not committed.
+    Reproduce all of the above with `scripts/c3_growth_deficit_diagnosis.py`. The boost re-fit has
+    since been committed as an opt-in path (`fit_species(..., juvenile_boost=True)`,
+    `osmose/calibration/bioen_offline.py`, `374bc26`, default-off and bit-identical when off); the
+    egg count remains a scratch experiment.
+
+  - **The boost's fitted VALUES were checked against the literature** —
+    `docs/validation/juvenile_ingestion_boost_literature_2026-09-13.md` (reproducer:
+    `scripts/c3_juvenile_boost_literature_check.py`). A separate question from whether the boost
+    cures the collapse, which the intervention above settled in the negative. Findings: the
+    **direction is verified** — Morell et al. (2024, *Ecol. Lett.* 27(11),
+    [10.1111/ele.70017](https://doi.org/10.1111/ele.70017)) documents higher mass-specific
+    ingestion in early life stages as a deliberate Bioen-OSMOSE assumption with a stated rationale
+    — but the **1.44–4.64× magnitude is unverified**: no retrievable source gives a larva:adult
+    ingestion ratio for any of the nine species, and both Bioen-OSMOSE papers are abstract-only
+    through scite, so the published `theta`/`c_rate`/`larvaeThresDt` values could not be read.
+    The model's `beta = 0.8` against Kiørboe & Hirst's measured `w^0.75` is **not** what generates
+    the fitted values — that predictor has ~1.2× of dynamic range against a 3.24× spread in `j`.
+    Two independent anchors do bracket the median (2.21× Wuenschel & Werner 2004; 2.5× Kaufmann
+    1990), so **if the boost is ever enabled, a single shared `j` ≈ 2.2–2.5 is defensible where
+    nine free per-species values are not.** Nothing shipped is affected — `c3_bioen_arm.json`
+    still carries `theta = 1.0`, `c_rate = 0.0`.
 - **Length-at-age `NaN` for 8/9 species (§5) — root-caused and fixed in code, not re-run.**
   Cause: `pd.concat` over per-species by-age frames of different widths (`osmose/results.py:351`,
   widths from `osmose/engine/output.py:_build_distribution_dataframes`) NaN-pads every species
