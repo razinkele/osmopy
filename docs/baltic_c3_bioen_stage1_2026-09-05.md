@@ -975,6 +975,57 @@ before this branch.
     >   survives direct testing against the defect that looked most likely to explain it.
     >
     > **The open question is now precisely one thing: what caps ABUNDANCE.** Not growth (intake is
+    >
+    > ### 🎯 ANSWERED — **THE BIRTH SIDE CAPS ABUNDANCE** (`c3_abundance_balance.py`)
+    >
+    > Abundance is an accounting identity, `N(t+1) = N(t) + births − deaths`, so this measured BOTH
+    > sides on the same run rather than measuring one and inferring a mechanism — the error that
+    > failed three times earlier in this investigation. Deaths from `step_observer` (fires after
+    > mortality, before `compact()`, so `state.n_dead` holds that step's deaths across all 8 causes
+    > with zeroed schools still present) as **counts, never rates**; births from
+    > `regulate_recruitment`. Both arms on the **repaired** matrix, 50 yr, production seeding.
+    >
+    > | stock | total per-capita mortality | **births** | fewer eggs |
+    > |---|---:|---:|---:|
+    > | cod_west | 1.00× | **0.050×** | **20×** |
+    > | cod_east | 1.00× | **0.061×** | 16× |
+    > | herring | 1.01× | **0.061×** | 16× |
+    > | flounder | 1.00× | **0.042×** | **24×** |
+    > | **sprat — SURVIVES** | 1.00× | **0.797×** | **1.3×** |
+    >
+    > **Mortality is identical.** Not similar — identical, 1.00–1.01× on every collapsed stock.
+    > `ADDITIONAL` carries 99.4–100 % of all deaths in BOTH arms at the same per-capita rate: it is
+    > the larval mortality the two configs share (`mortality.additional.larva.rate`, applied once per
+    > egg cohort). `STARVATION` is 3.4–7.2× higher under bioen but carries 0.000–0.004 of deaths —
+    > real, and immaterial. `PREDATION` 0.6–1.5×, also immaterial in share.
+    >
+    > **Births are 16–24× lower.** And the survivor contrast is the clean separator the whole
+    > investigation has been missing: sprat, the one assessed stock that survives, is at **0.797×** —
+    > barely down — while every collapsed stock sits at 4–6 %.
+    >
+    > **This VINDICATES the original §9 recruitment intuition and does NOT contradict the
+    > ill-posed verdict** — the distinction is scale, and it matters:
+    > - The earlier recruitment test ran at `seeding.year.max = 1`, where cod_west/cod_east real SSB
+    >   is **exactly 0.0 t**. The pathway carried **zero flux**, so a 10× egg boost multiplied zero by
+    >   ten. That test was ill-posed *because of its stress condition*, and remains correctly labelled.
+    > - At **production seeding** spawners exist for `lifespan` years, the pathway carries real flux,
+    >   and the deficit is measurable: 16–24×.
+    >
+    > So the original candidate was right, and the test first run against it was posed at a scale
+    > where it could not be tested. Worth recording as its own lesson: **an intervention that returns
+    > a null at one scale has not tested the hypothesis at another.**
+    >
+    > **Honest gap:** the docstring pre-registered an E4 (balance-closure check — that the abundance
+    > change tracks births minus deaths on the baseline arm) which was **not implemented**; E1–E3 ran
+    > and passed. The mortality result does not depend on it (the 1.00× ratio is a like-for-like
+    > comparison computed identically on both arms), but the accounting identity itself is asserted
+    > rather than verified here.
+    >
+    > **Next, and it is a decomposition rather than a search:** is the egg deficit fewer SPAWNERS or
+    > fewer eggs PER spawner? Under bioen eggs come from gonad energy (`rho`, `e_net`); under classic
+    > from a prescribed `fecundity × SSB`. Measure final-decade SSB and eggs/SSB per arm — one
+    > instrumented run settles which half of the product is short, and `rho` is the parameter that
+    > would follow.
     > 90–100 % of cap, `m_share` below target), not size (the seal explained that and fixing it
     > changes no biomass), not recruitment as originally framed (there were never spawners to begin
     > with), and not the listed predators. Something removes the numbers while leaving the energetics
