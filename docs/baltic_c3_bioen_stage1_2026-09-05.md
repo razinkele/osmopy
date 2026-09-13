@@ -1026,6 +1026,52 @@ before this branch.
     > from a prescribed `fecundity × SSB`. Measure final-decade SSB and eggs/SSB per arm — one
     > instrumented run settles which half of the product is short, and `rho` is the parameter that
     > would follow.
+    >
+    > ### ➡️ DECOMPOSED — **fewer SPAWNERS, not fewer eggs per spawner** (`c3_gonad_flush_test.py`)
+    >
+    > A candidate mechanism was traced and then **refuted by measurement**. The bioen starvation
+    > substep does compare a PER-SCHOOL deficit against a PER-FISH gonad
+    > (`mortality.py:1366-1391`; self-documented at `bioen_starvation.py:58`), zeroing the gonad
+    > whenever it fires — and a per-step flush predicts an egg-deficit ceiling of exactly
+    > `n_dt/sum(season)` = **24.00×**, against measured deficits of 23.8 / 20.0 / 16.4 / 16.4×.
+    > A near-perfect fit. **It is nonetheless not the mechanism**, on two independent counts:
+    >
+    > | species | frac(e_net < 0) | frac(gonad == 0) | **eggs per unit SSB** | SSB ratio |
+    > |---|---:|---:|---:|---:|
+    > | cod_west | **0.0011** | 0.248 | **1.244** | 1.143 |
+    > | cod_east | **0.0004** | 0.329 | **1.072** | 0.095 |
+    > | herring | 0.1157 | 0.169 | **1.025** | 0.188 |
+    > | flounder | 0.0295 | 0.159 | **1.159** | 0.326 |
+    > | sprat (survives) | 0.1138 | 0.068 | 0.534 | 0.290 |
+    >
+    > 1. **The trigger is far too rare.** The flush requires `e_net < 0`, which for cod_west and
+    >    cod_east happens on **0.04–0.11 %** of mature-school steps — it cannot produce 25–33 %
+    >    zero gonads. And herring (0.1157) and sprat (0.1138) trigger at an *identical* rate while
+    >    one collapses and the other survives, so the trigger does not separate the groups at all.
+    > 2. **Eggs per spawner are NORMAL — 1.02–1.24× baseline.** A gonad flush would appear here as a
+    >    16–24× shortfall in precisely this quantity. It appears as a slight *surplus*.
+    >
+    > The 24× fit was a coincidence. Recorded rather than quietly dropped, because the fit was
+    > compelling and the mechanism genuinely exists in the source — it simply is not the operative
+    > one. **That is the fourth time in this investigation that a number matching a prediction turned
+    > out not to be the cause.**
+    >
+    > **What the run establishes cleanly: the egg deficit is entirely a SPAWNER deficit.** Eggs track
+    > SSB almost exactly — cod_east SSB 0.095× → eggs 0.101×; herring 0.188× → 0.192×; flounder
+    > 0.326× → 0.377×. The reproductive machinery works per unit of spawning biomass; there is simply
+    > far less spawning biomass.
+    >
+    > **My own instrument error, recorded.** E2 was mis-specified: I expected `frac(gonad == 0) ≈ 0`
+    > on the baseline arm as a control, but classic growth never uses `gonad_weight` at all, so it is
+    > **1.0000 by construction** on every species. The check was uninformative rather than failed —
+    > it could not have discriminated anything. The `e_net` and eggs/SSB columns carried the result.
+    >
+    > **So "what caps abundance" resolves one step further: low SSB with normal per-spawner
+    > fecundity.** SSB = Σ(mature abundance × weight), so the remaining question is whether bioen has
+    > *fewer* mature fish or *smaller* ones — cod_west reaches 75 cm under the repaired matrix against
+    > 110 cm on baseline, so the weight term is live, and maturity is length-based (38 cm), which
+    > couples the two. Next is again a measurement, not a search: mature abundance and mean mature
+    > weight, per arm, per species.
     > 90–100 % of cap, `m_share` below target), not size (the seal explained that and fixing it
     > changes no biomass), not recruitment as originally framed (there were never spawners to begin
     > with), and not the listed predators. Something removes the numbers while leaving the energetics
