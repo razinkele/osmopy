@@ -1110,6 +1110,52 @@ before this branch.
     > stocks and is the survivor. pikeperch (`m0 = 40`) remains the standing exception it has been
     > throughout, and is still unexplained.
     >
+    > ### 🐟 THE PIKEPERCH EXCEPTION — it is a **beneficiary of the collapse**, not an exception to it
+    >
+    > pikeperch is **not** exempt from the maturation bottleneck. Its mature fraction is crushed as
+    > hard as any collapser: ratio **0.0888**, absolute 0.0028 against a baseline 0.0313. Its SSB
+    > ratio (0.0340) is *lower* than herring's (0.0356), and herring dies. So neither `m0`,
+    > `frac_mature` nor the SSB ratio explains it.
+    >
+    > **What the year-by-year trajectory shows** (bioen arm, mature abundance):
+    >
+    > | yr | cod_west N | cod_east N | pikeperch N_total | pikeperch N_mature |
+    > |---:|---:|---:|---:|---:|
+    > | 0–2 | 3.5e8 → 3.1e8 | 1.8e9 → 1.4e9 | 1.4e12 → 9.4e11 | **0** |
+    > | 3 | 6.7e7 | 1.7e7 | 3.6e11 | 5e-4 |
+    > | 4 | 1.3e6 | 6.7e4 | 1.2e11 | **1.3e8** |
+    > | 5 | **33** | **430** | **6.0e10** ← floor | 9.5e8 |
+    > | 6 | 0.2 | 0.4 | 2.2e11 | **3.7e9** |
+    > | 8 | ~0 | ~0 | 8.7e11 | 6.8e9 |
+    > | 10 | ~0 | ~0 | **2.8e12** | 2.6e9 |
+    >
+    > **pikeperch holds ZERO mature fish until year 3, then takes off exactly as cod_west and
+    > cod_east go extinct** — and its total abundance rebounds **22×** from a year-5 floor of 6.0e10.
+    > Both cods are listed predators of pikeperch (`cod_west 0.1`, `cod_east 0.05`).
+    >
+    > **The decisive quantity is whether the JUVENILE POOL survives the crash window.** Floors during
+    > years 3–5: pikeperch **6.0e10**; flounder 2.6e7 (then 5e-2 by yr 8); herring 4.0e10 → 9.1e8;
+    > cod_east **430**; cod_west **33**. pikeperch is the only collapsing-profile stock whose pool
+    > never drops below a recoverable level, and it banks those juveniles cheaply:
+    > `mortality.additional.rate` = **0.0137 yr⁻¹**, **92× lower than cod_west's 1.2546**, so its pool
+    > drains ~1.4 % a year while it waits for its predators to disappear.
+    >
+    > **No single factor explains it, and it would be wrong to claim one.** M alone does not separate
+    > the groups — flounder has the *lowest* M (0.006) and still dies. Pool size alone does not —
+    > herring starts largest (1.1e13) and still dies, draining at M = 2.2472, the highest of the nine.
+    > What pikeperch uniquely combines is **a large juvenile pool × a very low drain rate × predators
+    > that die first**.
+    >
+    > **Status: the timing correlation is strong; the causal claim is NOT yet tested by
+    > intervention.** Given how often that distinction has mattered here, it is labelled rather than
+    > asserted. The test: suppress cod predation on pikeperch from year 0 and ask whether its mature
+    > stock rises *earlier* than year 4; or hold the cods alive and ask whether pikeperch still
+    > recovers.
+    >
+    > **Also worth recording — perch rebounds too.** Its pool bottoms at 7.1e-9 in year 9 and returns
+    > to 1.3e9 by year 12, despite reading 0.0 in the 50-yr final decade. So the collapse is not
+    > uniformly monotonic, and a final-decade mean can hide a mid-run recovery that later fails.
+    >
     > **Correcting my own earlier reading.** I wrote that realized growth was "entirely healthy" on
     > the strength of `dw/w` at 12–33 % per step with intake at 90–100 % of cap. That was **too
     > strong**: per-step weight *gain* is vigorous, but size-*at-age* is 0.32–0.82× baseline, and for
