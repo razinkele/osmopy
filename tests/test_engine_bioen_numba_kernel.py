@@ -127,6 +127,35 @@ def _nb_exp(x):
     return np.exp(x)
 
 
+# Whether the two exp implementations actually disagree is a property of the CPU:
+# NumPy dispatches to an AVX2 or AVX-512 kernel depending on the host, and on some
+# runners the selected kernel agrees with libm bit-for-bit. Observed directly on
+# GitHub Actions during PR #147 -- `test (3.13)` failed run 693, passed 694, then
+# failed 695 on a DOCS-ONLY commit, i.e. across three runs of identical engine code.
+#
+# The two tests below characterise the divergence's downstream size; they are not
+# gates (see the module docstring and the EXP LIBRARY HAZARD note in CLAUDE.md,
+# which says to characterise rather than gate this). On a host where the libraries
+# agree there is no divergence to size, so they SKIP rather than fail -- failing
+# would be gating on the runner's instruction set. Every real assertion in them is
+# untouched; only the "does this host exhibit it at all" precondition became a skip.
+_EXP_AGREE_SKIP = (
+    "numba (libm) and numpy (SIMD) exp agree everywhere sampled on this host, so the "
+    "divergence this test characterises is absent and there is nothing to measure. "
+    "This is expected on some CPUs and is NOT a pass. If they agree on EVERY host you "
+    "care about, then this file's rate-selection caveats can genuinely be dropped -- "
+    "but verify that before doing so, and see CLAUDE.md's EXP LIBRARY HAZARD note."
+)
+
+
+def _exp_libraries_diverge() -> bool:
+    """Does this host's numpy exp disagree with numba's libm exp anywhere sampled?"""
+    draws = np.abs(np.random.default_rng(11).uniform(0.0, 1.0e-2, 20000))
+    np_vals = np.exp(-draws)
+    nb_vals = np.array([float(_nb_exp(-float(d))) for d in draws])
+    return bool((np_vals != nb_vals).any())
+
+
 # ---------------------------------------------------------------------------
 # What gets compared, and which path writes it
 # ---------------------------------------------------------------------------
@@ -1410,10 +1439,8 @@ def test_exp_library_divergence_is_real_and_amplified_by_the_mortality_form():
     np_vals = np.exp(-draws)
     nb_vals = np.array([float(_nb_exp(-float(d))) for d in draws])
     mismatches = int((np_vals != nb_vals).sum())
-    assert mismatches > 0, (
-        "numba and numpy exp now agree everywhere sampled -- if that is genuinely true "
-        "this file's rate-selection caveats can be dropped, but verify before doing so"
-    )
+    if mismatches == 0:
+        pytest.skip(_EXP_AGREE_SKIP)
     # Amplification: relative error in (1 - exp(-D)) is ~eps/D, not ~eps.
     rel = np.abs(np_vals - nb_vals) / np.maximum(1.0 - np_vals, 1e-300)
     assert rel.max() > 1e-13, f"expected >=1e-13 amplification, saw {rel.max():.3e}"
@@ -2661,6 +2688,9 @@ def test_fishing_composition_hazard_stays_below_1e_12_relative_in_n_dead():
     magnitude so the report's number is reproducible; the exact gates elsewhere in this
     file stay exact.
     """
+    if not _exp_libraries_diverge():
+        pytest.skip(_EXP_AGREE_SKIP)
+
     config = _logistic_selectivity_config(seasonality=False, spatial=True)
     grid = Grid.from_dimensions(ny=1, nx=2)
     state = base_state()
