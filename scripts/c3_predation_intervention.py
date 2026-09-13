@@ -100,6 +100,7 @@ import warnings
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -198,16 +199,20 @@ def run_arm(raw, cfg_dir, overlay, dose, focal):
     # E3 uses biomassByAge: abundanceByAge is NOT produced in in-memory mode (verified at runtime
     # 2026-09-13 -- the available set is abundance/abundanceBySize/biomassByAge/...). Age bins >= 1 yr
     # only; bin 0 carries egg schools (CLAUDE.md).
+    # `biomass_by_age` returns LONG format -- columns (time, species, bin, value), per
+    # `_read_2d_output`'s docstring -- not wide age columns. Verified at runtime 2026-09-13: the
+    # wide reading made numpy string-concatenate the object columns. Age bins >= 1 yr only; bin 0
+    # carries egg schools (CLAUDE.md).
     juv = float("nan")
     cols_seen: list[str] = []
     try:
         sub = res.biomass_by_age(SUBJECT)
         cols_seen = [str(c) for c in sub.columns]
-        keep = [c for c in sub.columns if (_age_of(c) is not None and 1.0 <= _age_of(c) < 3.0)]
-        if not keep and len(sub.columns) >= 3:
-            keep = list(sub.columns[1:3])  # positional: ordered age bins, bin 0 is eggs
-        if keep:
-            juv = float(np.nansum(sub[keep].to_numpy()))
+        bins = pd.to_numeric(sub["bin"], errors="coerce")
+        vals = pd.to_numeric(sub["value"], errors="coerce")
+        sel = (bins >= 1.0) & (bins < 3.0)
+        if bool(sel.any()):
+            juv = float(np.nansum(vals[sel].to_numpy()))
     except Exception as exc:  # an instrument must never take the run down
         print(f"    (biomass_by_age unavailable: {exc})")
 
@@ -215,10 +220,17 @@ def run_arm(raw, cfg_dir, overlay, dose, focal):
     # 38 cm maturity length inside the run, SSB = 0 means "too small to spawn", NOT "predation is
     # not the cause". Maturity is LENGTH-only here (species.maturity.age.sp0 absent), while the
     # accessibility stage split is by AGE -- so the two boundaries need not coincide.
+    # `mean_size` goes through `_read_species_output` -> WIDE (Time + per-species columns), so drop
+    # the time column and take the max over the numeric remainder.
     max_len = float("nan")
     try:
         ms = res.mean_size(SUBJECT)
-        max_len = float(np.nanmax(ms.to_numpy()))
+        num = ms.select_dtypes(include=[np.number])
+        cols = [c for c in num.columns if str(c).strip().lower() not in ("time", "year", "step")]
+        if cols:
+            arr = num[cols].to_numpy(dtype=np.float64)
+            if arr.size and np.isfinite(arr).any():
+                max_len = float(np.nanmax(arr))
     except Exception as exc:
         print(f"    (mean_size unavailable: {exc})")
 
