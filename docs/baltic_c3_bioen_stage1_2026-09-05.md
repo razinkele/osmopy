@@ -980,11 +980,28 @@ before this branch.
     > with), and not the listed predators. Something removes the numbers while leaving the energetics
     > and — once the seal is sane — the growth trajectory intact.
     >
-    > **Single-seed caveat, stated rather than buried.** This is seed 42 only. Stage 1's headline
-    > rested on the collapse being *bit-identical across five seeds*, and the `bioen` arm here
-    > reproducing it exactly is strong corroboration — but a **null** on `repaired` from one seed is
-    > weaker evidence than a positive would have been. It would take the 5-seed set to certify "the
-    > repair changes nothing" to the same standard Stage 1 met.
+    > **CERTIFIED AT 5 SEEDS** (`c3_repaired_matrix_restage.py`, Stage 1's own
+    > `(42, 123, 7, 999, 2024)` — parsed from `baltic_c3_bioen_ab.py:121` and asserted to match, so a
+    > drifted constant cannot quietly invalidate the comparison). 15 engine runs. **All four
+    > engagement checks pass, E1 on every seed individually.**
+    >
+    > | species | baseline | bioen | repaired | floor (1 %) | seeds clearing floor |
+    > |---|---:|---:|---:|---:|---:|
+    > | cod_west | 12 810.8 | **0.0** | **0.0** | 128.1 | **0/5** |
+    > | cod_east | 65 251.2 | **0.0** | **0.0** | 652.5 | **0/5** |
+    > | herring | 2 539 645.2 | **0.0** | **0.0** | 25 396.5 | **0/5** |
+    > | flounder | 33 063.4 | **0.0** | **0.0** | 330.6 | **0/5** |
+    > | sprat | 1 024 324.0 | 309 994.2 | 309 636.5 | 10 243.2 | — |
+    > | pikeperch | 1 400 081.1 | 128 120.2 | 128 024.1 | 14 000.8 | — |
+    >
+    > Across-seed means; every one of the four reads **exactly 0.0 on all five seeds** in both the
+    > `bioen` and `repaired` arms — deterministic extinction, not noisy near-collapse, exactly the
+    > character Stage 1 reported. The per-seed tables are in the script output and show no seed-level
+    > variation for an average to hide.
+    >
+    > **0 of 4 recover, 0/5 seeds each. The single-seed caveat is now discharged:** this null is held
+    > to the same 5-seed standard as the claim it tests, so it is no longer weaker evidence than a
+    > positive would have been.
 
   - **PREDATION TESTED BY INTERVENTION 2026-09-13 — and the answer is a SIZE CEILING.**
     `scripts/c3_predation_intervention.py`, pre-registered at `cd7eea5` before the run. Config-only
