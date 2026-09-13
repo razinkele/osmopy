@@ -897,6 +897,47 @@ before this branch.
     > **The headline stands: a large part of the C3 "bioenergetics collapse" is a CONFIG/ENGINE
     > DEFECT** — one missing matrix column silently promoting a top predator to twenty times the
     > accessibility of every predator that was written down.
+    >
+    > ### COLUMN REPAIR — the seal caps SIZE, not NUMBERS (`6259abb`)
+    >
+    > SEALGATE changed one cell. `scripts/c3_seal_column_repair.py` repairs the whole column:
+    > `realistic` copies **Cormorant's column verbatim** (cod_west 0.05, herring 0.15, sprat 0.15,
+    > flounder 0.1, perch 0.6, pikeperch 0.4, smelt 0.25, stickleback 0.15, cod_east 0.05,
+    > **resources 0**) as the only in-config example of what a background predator's accessibility
+    > should look like; `sealfree` zeroes it entirely as an upper bound.
+    >
+    > **Max occupied size bin (cm) — the defect is large and real:**
+    >
+    > | species | baseline | bioen | realistic | sealfree |
+    > |---|---:|---:|---:|---:|
+    > | cod_west | 110 | **15** | **75** | 75 |
+    > | cod_east | 110 | **15** | **75** | 75 |
+    > | flounder | 40 | **20** | **40** | 40 |
+    > | perch | 45 | **15** | 30 | 35 |
+    > | pikeperch | 90 | 40 | 45 | 45 |
+    >
+    > Both cods go 15 → 75 cm, **flounder is fully restored to its baseline 40 cm**, perch 15 → 30.
+    > `realistic` ≈ `sealfree` throughout, so the work is done by going from the unwritten **1.0**
+    > down to a sane coefficient — not by removing the seal altogether.
+    >
+    > **But 0 of 4 collapsed stocks recover on the pre-registered criterion** (real SSB > 1 % of its
+    > own baseline real SSB), on either arm. Real SSB does rise — cod_west 0.0 → 1.7 t, flounder
+    > 168.8 → 1 654.9 t, perch 4.4 → 377.0 t, cod_east 0.0 → 123.5 t, factors of 10–100× — and still
+    > sits **three to four orders of magnitude below the floor** (1 292.7 / 31 125.2 / 47 254.3 /
+    > 76 129.7 t). Final biomass stays 0.0 t for all four.
+    >
+    > **So the missing column is a real, material defect that governs SIZE STRUCTURE, and it is NOT
+    > the collapse mechanism.** The collapse is an **abundance** problem, not a size problem: with
+    > the seal sane, these stocks grow to normal adult lengths and there are still almost none of
+    > them. That splits the remaining question cleanly in two, and only the second is still open.
+    >
+    > **Caveat bounding the SSB half.** With `seeding.year.max = 1` exactly ONE cohort ever exists,
+    > so recovery needs that cohort's offspring to mature inside the remaining window — cod_west
+    > matures at ~2.6 yr, so its progeny are only ~1–2 generations deep by year 8. The **size**
+    > result is within-cohort and robust to this; the **SSB** result may be window-limited and must
+    > not be read as "the stock cannot recover". The clean follow-up is the repaired matrix at the
+    > production seeding policy over a longer horizon — which is also what re-running the Stage-1
+    > verdict would require.
 
   - **PREDATION TESTED BY INTERVENTION 2026-09-13 — and the answer is a SIZE CEILING.**
     `scripts/c3_predation_intervention.py`, pre-registered at `cd7eea5` before the run. Config-only
