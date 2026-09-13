@@ -147,9 +147,16 @@ def write_staged_matrix(src: Path, dst: Path, dose: float) -> list[float]:
 
 def juvenile_row_in_effect(cfg_dict: dict) -> list[float]:
     """E1: read the juvenile prey row back out of a CONSTRUCTED EngineConfig, not the CSV."""
-    cfg = EngineConfig.from_dict(dict(cfg_dict))
-    acc = getattr(cfg, "accessibility_matrix", None) or getattr(cfg, "stage_accessibility", None)
-    if acc is None:
+    # Use `stage_accessibility` (the AccessibilityMatrix object carrying prey_lookup), NOT
+    # `accessibility_matrix` -- the latter is a bare ndarray, and `a or b` on an ndarray raises
+    # "truth value of an array is ambiguous".
+    try:
+        cfg = EngineConfig.from_dict(dict(cfg_dict))
+    except Exception as exc:
+        print(f"    (E1 config build failed: {exc})")
+        return []
+    acc = getattr(cfg, "stage_accessibility", None)
+    if acc is None or not hasattr(acc, "prey_lookup"):
         return []
     stages = acc.prey_lookup.get(SUBJECT) or []
     if not stages:
@@ -188,26 +195,39 @@ def run_arm(raw, cfg_dir, overlay, dose, focal):
 
     bio, abd = res.biomass(), res.abundance()
     # E3: juvenile standing stock, age bins >= 1 yr only -- bin 0 contains egg schools (CLAUDE.md).
+    # E3 uses biomassByAge: abundanceByAge is NOT produced in in-memory mode (verified at runtime
+    # 2026-09-13 -- the available set is abundance/abundanceBySize/biomassByAge/...). Age bins >= 1 yr
+    # only; bin 0 carries egg schools (CLAUDE.md).
     juv = float("nan")
     cols_seen: list[str] = []
     try:
-        sub = res.abundance_by_age(SUBJECT)
+        sub = res.biomass_by_age(SUBJECT)
         cols_seen = [str(c) for c in sub.columns]
-        ages = [(c, _age_of(c)) for c in sub.columns]
-        keep = [c for c, a in ages if a is not None and 1.0 <= a < 3.0]
+        keep = [c for c in sub.columns if (_age_of(c) is not None and 1.0 <= _age_of(c) < 3.0)]
         if not keep and len(sub.columns) >= 3:
-            # Fall back to position: columns are ordered age bins and bin 0 holds eggs.
-            keep = list(sub.columns[1:3])
+            keep = list(sub.columns[1:3])  # positional: ordered age bins, bin 0 is eggs
         if keep:
             juv = float(np.nansum(sub[keep].to_numpy()))
     except Exception as exc:  # an instrument must never take the run down
-        print(f"    (abundance_by_age unavailable: {exc})")
+        print(f"    (biomass_by_age unavailable: {exc})")
+
+    # WINDOW CHECK. The single biggest way this test can lie: if cod_west never grows near the
+    # 38 cm maturity length inside the run, SSB = 0 means "too small to spawn", NOT "predation is
+    # not the cause". Maturity is LENGTH-only here (species.maturity.age.sp0 absent), while the
+    # accessibility stage split is by AGE -- so the two boundaries need not coincide.
+    max_len = float("nan")
+    try:
+        ms = res.mean_size(SUBJECT)
+        max_len = float(np.nanmax(ms.to_numpy()))
+    except Exception as exc:
+        print(f"    (mean_size unavailable: {exc})")
 
     return {
         "final": {s: (float(bio[s].iloc[-1]), float(abd[s].iloc[-1])) for s in focal},
         "ssb": ssb.copy(),
         "seeded": seeded.copy(),
         "juv_1to3": juv,
+        "max_len": max_len,
         "age_cols": cols_seen,
         "cfg": cfg,
     }
@@ -269,13 +289,20 @@ def main() -> int:
     print("X = zero abundance")
 
     print(f"\n{'=' * 92}\n{SUBJECT} SSB DECOMPOSITION (the primary instrument)\n{'=' * 92}")
-    print(f"{'arm':<12}{'SSB total':>16}{'seeded part':>16}{'REAL SSB':>16}{'juv abd 1-3yr':>16}")
+    print(
+        f"{'arm':<12}{'SSB total':>15}{'seeded part':>14}{'REAL SSB':>13}"
+        f"{'juv bio 1-3yr':>15}{'max len cm':>12}"
+    )
     real = {}
     for tag, *_ in arms:
         tot = out[tag]["ssb"][SUBJECT_SP]
         sp = out[tag]["seeded"][SUBJECT_SP] * seed_b
         real[tag] = tot - sp
-        print(f"{tag:<12}{tot:>16.1f}{sp:>16.1f}{real[tag]:>16.1f}{out[tag]['juv_1to3']:>16.4g}")
+        print(
+            f"{tag:<12}{tot:>15.1f}{sp:>14.1f}{real[tag]:>13.1f}"
+            f"{out[tag]['juv_1to3']:>15.4g}{out[tag]['max_len']:>12.2f}"
+        )
+    print("  (maturity length m0 = 38.0 cm — max len must approach it for SSB to be reachable)")
 
     e2 = all(out["baseline"]["final"][s][1] > 0 for s in focal)
     jb, ja = out["bioen"]["juv_1to3"], out["acc00"]["juv_1to3"]
@@ -298,11 +325,34 @@ def main() -> int:
         )
         print(f"  dose ladder monotone: {monotone}")
     else:
-        print(
-            f"\n  PREDATION REFUTED -- {SUBJECT} real SSB is still exactly 0.0 t at FULL juvenile"
-        )
-        print("  immunity, with every engagement check passing. Growth, recruitment and predation")
-        print("  are then all dead, and the cause is something not yet enumerated.")
+        # E4, the window check. Maturity here is LENGTH-only (species.maturity.age.sp0 absent), so
+        # SSB = 0 has two very different explanations and they must not be conflated: the cohort was
+        # eaten, or the cohort survived but never grew to 38 cm. Only the first is "predation
+        # refuted"; the second means the test could not reach the question.
+        reached = out["acc00"]["max_len"]
+        if not np.isfinite(reached) or reached < 0.9 * 38.0:
+            print(
+                f"\n  INCONCLUSIVE (window/growth-limited) -- at FULL juvenile immunity "
+                f"{SUBJECT} still"
+            )
+            print(f"  only reaches {reached:.2f} cm against a maturity length of 38.0 cm, so it")
+            print(
+                "  could not have spawned regardless of predation. SSB = 0 here means 'too small",
+            )
+            print("  to mature', NOT 'predation is not the cause'. The in-engine growth shortfall")
+            print("  is then the finding, and it is NOT the same claim as the refuted offline-fit")
+            print("  growth account -- that one was about the FIT's curve, this is about realized")
+            print("  in-engine growth under food limitation.")
+        else:
+            print(
+                f"\n  PREDATION REFUTED -- {SUBJECT} real SSB is still exactly 0.0 t at FULL juvenile"
+            )
+            print(f"  immunity while reaching {reached:.2f} cm (>= 0.9 x m0), so it was big enough")
+            print(
+                "  to mature and still produced no spawning stock. Every engagement check passed."
+            )
+            print("  Growth, recruitment and predation are then all dead, and the cause is")
+            print("  something not yet enumerated.")
     return 0
 
 
