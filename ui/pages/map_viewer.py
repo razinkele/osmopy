@@ -2,18 +2,17 @@
 
 from pathlib import Path
 
-from shiny import ui, reactive, render
+from shiny import reactive, render, ui
 from shiny.types import SilentException
-
 from shiny_deckgl import (  # type: ignore[import-untyped]
-    MapWidget,
-    polygon_layer,
-    CARTO_POSITRON,
     CARTO_DARK,
-    zoom_widget,
+    CARTO_POSITRON,
+    MapWidget,
     compass_widget,
     fullscreen_widget,
+    polygon_layer,
     scale_widget,
+    zoom_widget,
 )
 
 from osmose.logging import setup_logging
@@ -32,7 +31,7 @@ from ui.pages.grid_helpers import (
     load_netcdf_overlay,
     make_legend,
 )
-from ui.state import get_theme_mode
+from ui.state import AppState, get_theme_mode
 
 _log = setup_logging("osmose.map_viewer")
 
@@ -70,7 +69,7 @@ def map_viewer_ui():
     )
 
 
-def map_viewer_server(input, output, session, state):
+def map_viewer_server(input, output, session, state: AppState):
     _map = MapWidget(
         "map_viewer_map",
         view_state=_DEFAULT_VIEW_STATE,

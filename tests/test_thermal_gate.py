@@ -1,6 +1,7 @@
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
-from types import SimpleNamespace
 
 from osmose.engine.processes.thermal_gate import (
     logistic_response,

@@ -1,10 +1,11 @@
 """Tests for config validation."""
 
 import pytest
+
 from osmose.config.validator import (
-    validate_config,
     check_file_references,
     check_species_consistency,
+    validate_config,
 )
 
 
@@ -23,7 +24,7 @@ def test_validate_config_valid(registry):
         "species.name.sp0": "Anchovy",
         "species.linf.sp0": "19.5",
     }
-    errors, warnings = validate_config(config, registry)
+    errors, _warnings = validate_config(config, registry)
     assert len(errors) == 0
 
 
@@ -32,7 +33,7 @@ def test_validate_config_bad_type(registry):
         "simulation.time.ndtperyear": "not_a_number",
         "simulation.nspecies": "1",
     }
-    errors, warnings = validate_config(config, registry)
+    errors, _warnings = validate_config(config, registry)
     assert any("ndtperyear" in e for e in errors)
 
 
@@ -41,7 +42,7 @@ def test_validate_config_out_of_bounds(registry):
         "simulation.time.ndtperyear": "9999",
         "simulation.nspecies": "1",
     }
-    errors, warnings = validate_config(config, registry)
+    errors, _warnings = validate_config(config, registry)
     assert any("ndtperyear" in e for e in errors)
 
 
@@ -200,10 +201,10 @@ def test_summarize_does_not_raise_on_malformed():
 def test_summarize_matches_inline_composition_dry_lock(tmp_path):
     """The helper must be byte-identical to the old inline gate sequence."""
     from osmose.config.validator import (
-        summarize_config_validation,
-        validate_config,
         check_file_references,
         check_species_consistency,
+        summarize_config_validation,
+        validate_config,
     )
     from osmose.schema import build_registry
 

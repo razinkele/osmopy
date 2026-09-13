@@ -158,6 +158,39 @@
 >   pre-r9) that r8 missed. r9 swaps it to the same `ls`-based check
 >   used everywhere else, plus corrects "13 passed" → "12 passed" (the
 >   actual test-count fallback when the rebase is incomplete).
+> - 2026-09-05 r10 — **execution close-out.** Three audit passes compared
+>   every item against master `2833ba5c` (≈1,300 commits after r9). Most of
+>   the plan had already landed; the remainder was executed in this
+>   revision. See "Status as of r10" at the end of the document for the
+>   per-item table. Summary of what r10 changed:
+>   - **Closed as already landed (no work):** C1–C5, H1, H2, H4, H8, H9,
+>     H10 (see note), H11, M1–M5, M7 (partial → done), M10, M13, L
+>     (`test_path_escape_blocked`), RNG docs, H3, H5, all "Schema
+>     field-quality" bullets.
+>   - **Executed in r10:** H7 (fleet-revenue vectorisation), M14
+>     (sequential-kernel scratch hoist), M8 (ensemble mid-flight failure +
+>     child-reap tests), M9 (generic credential sniffer), H12 step 2
+>     (Advanced-tab multi-value editor), M12 (`config_header` stats
+>     value), remaining "Misc" cleanup (E501 ×7, `scenarios_dir` anchored to
+>     `__file__`, `state: AppState` on all 19 `*_server` functions,
+>     `ui/charts.py` folded away, Genetics/Economic placeholder shell
+>     factored into `ui/components/placeholder.py`). Also: `OsmoseRunner.run`
+>     now reports `status="failed"` for any non-zero exit, so `status` and
+>     `returncode` can no longer disagree.
+>   - **Closed as invalid / not worth the risk:** M11 (`PythonEngine()` is a
+>     one-attribute constructor; Numba caches are module-level, so there is
+>     no per-run JIT cost to memoise). H6 remaining `.copy()` sites
+>     (`pred_success_rate`, `preyed_biomass`, `new_tl`): those arrays are
+>     handed to `state.replace(...)` and *become* the next immutable state's
+>     fields — reusing a ctx scratch buffer would alias consecutive states.
+>     `inst_abd` is the only pure scratch left and is one allocation per
+>     step; not worth a ctx-lifetime buffer. M14 inline Fisher-Yates:
+>     `np.random.shuffle` inside `@njit` is compiled code, not a dispatch,
+>     and replacing it would change the fixed-seed RNG stream — declined.
+>   - **H10 fecundity strictness:** the guard is `relative_fecundity < 0`
+>     (rejects negatives, allows 0). Zero fecundity is a legitimate "this
+>     species does not reproduce" switch (background species, sensitivity
+>     arms), so the plan's `<= 0` is not adopted; recorded as intentional.
 
 This plan is organised as five execution phases, each independently shippable.
 Each issue is given a **stable ID** (matches the deep-review report — `C` =
@@ -1126,4 +1159,499 @@ The plan is fully landed when:
 | **H10 reproduction bound fails on legacy fixture data** (added r3) | Run `grep -rE 'species\.(sexratio\|relativefecundity)\.sp' data/ --include='*.csv'` (r4 verified all clean); if any value is outside the new bound, soften the raise to a warning (with offending fixture path) before merge. Hard-failing master because of legacy data is worse than the bug. |
 | **Phase 1 sequencing — extending `RunResult` (C4) ripples through callers** (added r3, tightened r4) | Default the new `status` field to `"ok"` and `message` to `""` so existing `RunResult(returncode=..., output_dir=..., stdout=..., stderr=...)` constructors keep working. Verification: `grep -rn 'RunResult(' osmose/ ui/ tests/` — every call site must either keep its current keyword args (default `status="ok"` covers it) or be explicitly updated. Then `.venv/bin/python -m pytest tests/test_runner.py tests/test_run_*.py` must be green before pushing. Done when both grep and pytest commands return clean. |
 | **`_handle_result` callers other than `_run_python_engine` could synthesise a `RunResult` with default `status="ok"` while the underlying op actually failed silently** (added r5) | `grep -rn '_handle_result\|_run_python_engine' ui/ osmose/` — confirm only `run.py:274` (Java engine path) and `run.py:343` (Python engine path) call `_handle_result`, and both originate from `OsmoseRunner.run` / `_run_python_engine`. If any synthetic-`RunResult` callers exist, audit them to set `status="failed"` explicitly when not `returncode == 0`. Done when the grep returns ≤ the two known sites and any third-party caller is wired correctly. |
+| **H7 vectorised fleet revenue changes floating-point summation order** (added r10) | Per-vessel revenue is now `sum(catch·price)/n_in_cell` instead of `Σ(catch·price/n_in_cell)`; identical in exact arithmetic, differs at ~1e-16 relative. `tests/test_economics_*.py` (tolerance-based) pass unchanged. If a future bit-exact economics snapshot is added, regenerate it once from this commit. |
 | **Engineer skips the "rebase first" preflight and acceptance tests pass for the wrong reason** (added r7, check-logic corrected r8) | The "Execution prerequisite — REBASE FIRST" section near the top of this plan is the primary mitigation. Belt-and-braces: before merging any phase, run `ls data/baltic/baltic_param-background.csv` from the working branch — if the file is **missing**, the branch was not rebased and acceptance gates are not yet meaningful. (r7 originally suggested `git diff cf5cb8e -- data/` and "files appear in the diff", but after a successful rebase the diff against current master is empty for files inherited from master; the correct check is "does the file exist on disk".) Refuse to merge until the file is present. |
+
+## Status as of r10 (2026-09-05, master `2833ba5c` + this branch)
+
+Verified by inspection of the code on master plus the r10 commits on
+`claude/deep-app-review-xvuga`. "Evidence" cites where the fix lives.
+
+| Item | Status | Evidence / note |
+|---|---|---|
+| C1 movement key inversion | DONE (pre-r10) | `osmose/schema/movement.py` uses `movement.<prop>.map{idx}`; `tests/test_schema_engine_key_parity.py` |
+| C2 `sizeInf` casing | DONE (pre-r10) | `osmose/schema/output.py` → `output.bioen.sizeinf.enabled` |
+| C3 path traversal | DONE (pre-r10) | `ui/pages/results.py::_safe_output_dir`, used at all 3 privileged sites; `tests/test_results_page_path_safety.py` (incl. symlinks, tmpdir carve-out) |
+| C4 cancellation / invalidation | DONE (pre-r10) | `SimulationCancelled`, `cancel_token` through `simulate()`, `RunResult.status/message`, `_handle_result` clears `output_dir` on failure; `tests/test_simulate_cancellation.py` |
+| C5 baltic background keys | DONE (pre-r10) | via `_SUPPLEMENTARY_ALLOWLIST`, not a `schema/background.py`; validation suite 24/24 green on all 5 fixtures |
+| H1 / H4 examples coverage | DONE (pre-r10) | `rsc` in `_INDEX_SUFFIXES`; parametrize lists `eec, baltic, eec_full, examples, minimal` |
+| H2 schema count | DONE (pre-r10) | CLAUDE.md says 266; live count 266 |
+| Schema field-quality bullets | DONE (pre-r10) | `simulation.restart.file` keeps `"null"` (the OSMOSE sentinel) deliberately |
+| H10 reproduction bounds | DONE (pre-r10) | sex-ratio `[0,1]` raise; fecundity `< 0` raise (0 allowed — intentional, see r10 log); season-sum warning in `_load_spawning_seasons` |
+| M4 Gompertz guard, M5 accessibility/`n_dead` clamp | DONE (pre-r10) | `config.py` M4 block; `accessibility.py` M5 warn; `natural.py` `np.minimum(n_dead, abundance)` |
+| M2 feeding-stage side, M3 size bins, M1 averaging | DONE (pre-r10) | M2/M3 verified against Java and pinned by `test_feeding_stage_java_parity.py` / `test_size_bin_java_parity.py`; M1 distribution outputs now window-mean |
+| RNG reproducibility docs | DONE (pre-r10) | `osmose/engine/rng.py` docstring; CLAUDE.md gotcha |
+| H5 predation scratch hoist | DONE (pre-r10) | K1 buffers passed into `_apply_predation_numba` |
+| H6 per-step copies | PARTIAL → CLOSED | `n_dead` triple-alloc collapsed pre-r10. Remaining copies become state fields; aliasing them is unsafe (r10 log). |
+| H7 `biomass_by_cell` / fleet revenue | DONE (r10) | `np.add.at` for both; vessels bucketed by (fleet, cell) once per step in `simulate.py` |
+| M14 `cause_orders` scratch | DONE (sequential kernel, r10); shuffle unchanged | `_mortality_all_cells_numba` sizes `cause_orders` + K1 buffers once for the largest cell; prange kernel keeps per-thread buffers by design |
+| M11 memoise `PythonEngine` | CLOSED — invalid | constructor is trivial; no JIT cost to save |
+| H8 NaN suite, H9 JIT parity, M7 lifespan boundary | DONE (pre-r10) | `test_numerical_propagation*.py`, `test_jit_determinism.py`, `test_engine_aging_boundary.py` |
+| M8 runner failure modes | DONE (r10) | + `test_run_ensemble_continues_after_mid_flight_failure`, `test_runner_cancel_reaps_child_process`; `run()` now sets `status="failed"` on non-zero exit |
+| M9 credential sniffer | DONE (r10) | `test_no_literal_credential_assignments_in_mcp_servers`, `test_no_high_entropy_string_literals_in_mcp_servers` over `mcp_servers/**/*.py` |
+| L `test_path_escape_blocked` | DONE (pre-r10) | asserts on `etc/passwd`, not the username |
+| M10 busy/loading merge, M13 input-ID helper, H3 pure `_inject_random_movement_ncell`, H11 no import-time cleanup | DONE (pre-r10) | see `ui/state.py`, `param_form.input_id_for_field`, `run.py`, `app.py::_ensure_cleanup_registered` |
+| H12 multi-value UX | DONE (r10 completes step 2) | read-only form render + CLAUDE.md gotcha pre-r10; r10 adds the Advanced-tab banner + inline editor (`multi_value_editor`) |
+| M12 `config_header` | DONE (r10) | header reads a `(n_species, n_params)` `reactive.Value` refreshed by an effect; unchanged tuples don't re-render |
+| Misc cleanup | DONE (r10) | E501 clean on `ui/` + `app.py`; `AppState` hints on all `*_server`; `ui/charts.py` removed; placeholder pages share `ui/components/placeholder.py`; `scenarios_dir` anchored to `__file__` |
+| H11 step 2 (lazy page imports) | NOT DONE — optional | Plan marked it "if startup time is a concern"; no complaint on record |
+
+**Acceptance re-check (r10):** `tests/test_engine_config_validation.py` 24/24;
+`tests/test_engine_parity.py` 17/17; `pytest -k eec` 310 passed; ruff
+finding count on `ui/ app.py tests/ osmose/` fell from 723 (master) to 698.
+
+Full suite, final state: **4,434 passed, 50 skipped, 0 failed** (27m19s,
+`-n 4`). That is the 4,426 reached after the CI fixes below, plus the 8 new
+`tests/test_economics_revenue.py` cases — the count reconciles exactly, which
+is what confirms extracting `accumulate_fleet_revenue` out of the step loop
+changed nothing else.
+
+Getting there took two runs. The first was **4,414 passed, 13 failed**; all 13
+were run down to root cause rather than assumed environmental, and the
+arithmetic of the fix reconciles exactly — 4,414 + 11 (dynesty now installed)
++ 1 (`scenarios_dir` expectation corrected) = 4,426, with skips 49 → 50 being
+the one test that now correctly skips under root. None implicated an engine or
+UI change in this plan:
+
+- **11 × `tests/test_uq_{sampler,run}.py`** — `ModuleNotFoundError: dynesty`.
+  The Bayesian sampler lives behind the optional `[uq]` extra, which the
+  container did not have. Proven by installing it: `pytest tests/test_uq_sampler.py
+  tests/test_uq_run.py tests/test_uq_growth.py` → **33 passed**. No code change.
+  Note for CI: the `uq` extra is not in `[dev]`, so these tests silently do
+  not run unless a leg installs it.
+- **1 × `test_probe_writable_raises_on_readonly_dir`** — a real test bug,
+  fixed in r10. root holds `CAP_DAC_OVERRIDE`, so at mode `0o500`
+  `os.access(d, W_OK)` is `True` and the sentinel write succeeds; the code
+  under test was correct and the assertion was not portable to uid 0. Now
+  guarded like the pre-existing Windows case.
+- **1 × `test_appstate_scenarios_dir_default`** — genuinely caused by this
+  plan's `scenarios_dir` anchoring change; the test still expected the old
+  CWD-relative `Path("data/scenarios")`. Updated to assert the anchored
+  absolute path.
+
+**Java cross-check — attempted, blocked, and partly superseded.** The JAR is
+gitignored and fetched from `github.com/osmose-model/osmose`, which this
+session's egress policy blocks (403 — the session is scoped to
+`razinkele/osmopy`; `github.com/razinkele/osmopy` returns 200 from the same
+proxy). Per `/root/.ccr/README.md` a 403 is reported, not routed around, so
+the skill's 6-of-8-species gate did not run. **Run
+`validate_engines.py --years 1` locally before tagging a release.**
+
+Three things came out of the attempt, all committed:
+
+- **`validate_engines.py` would not have found a correctly-downloaded JAR.**
+  It hard-coded `osmose_4.3.3-jar-with-dependencies.jar` (underscore), while
+  `apptainer/osmose.def` downloads `osmose-4.3.3-...` (hyphen) and every 4.4.1
+  reference uses a hyphen. It now accepts `--jar`, honours `$OSMOSE_JAR` like
+  `osmose/cli.py` and `baltic_stability_certify.py`, and otherwise globs
+  `osmose-java/*.jar`.
+- **What the parity suite actually proves.** `test_engine_parity.py` compares
+  against `tests/baselines/parity_baseline_*.npz` with
+  `np.testing.assert_array_equal` — bit-exact, atol=0. Those baselines are
+  **Python-engine snapshots** (`scripts/save_parity_baseline.py`), so 17/17
+  green means the M14 and mortality-scratch changes are numerically identical
+  to the pre-change engine. It is an optimisation-regression guard, not a Java
+  comparison; do not cite it as cross-engine evidence.
+- **H7 was covered by neither, and a Java run would not have fixed that.**
+  Fleet economics is Python-only (`java_engine_block_reason` blocks such
+  configs), so no Java comparison could ever validate it — and economics is
+  disabled in both parity configs, so the bit-exact suite never reaches the
+  code. `test_economics_output.py` only *assigns* `vessel_revenue`. The
+  accumulation is now extracted as `accumulate_fleet_revenue` and covered by
+  `tests/test_economics_revenue.py`, which transcribes the pre-H7 loop as an
+  oracle. Mutation-tested: removing the per-vessel split fails 3 tests, and
+  dropping the `cell_x >= 0` guard initially slipped through (the out-of-grid
+  case used only a negative `cell_y`), which is why that row set now exercises
+  both negative axes.
+
+Net: the one change the Java gate could still speak to is M14/mortality, and
+that is already pinned bit-exactly against a frozen baseline.
+
+---
+
+## Discovered during r10 execution: CI has been red on master for weeks
+
+Not part of the original deep review — found while trying to establish an
+honest acceptance baseline for r10, and worth recording because it silently
+invalidates "CI is green" as a merge signal.
+
+`razinkele/osmopy` CI runs **684 → 691** (2026-08-17 → 2026-08-30, the latter
+being current master `2833ba5c`) all report `conclusion: failure`. Run 691's
+job breakdown:
+
+| Job | Result | Root cause |
+|---|---|---|
+| `lint` | **failure** | `ruff check` → "Found 721 errors" |
+| `type-check (3.12)` / `(3.13)` | **failure** | pyright, 9 errors in CI's env (13 with `[uq]` installed) |
+| `test (3.13)` | **failure** | 11 × `ModuleNotFoundError: dynesty` |
+| `test (3.12)` | cancelled | matrix fail-fast, not an independent failure |
+| `test-no-numba`, `docker`, `apptainer-smoke` | success | — |
+
+**None of it is a code defect.** All four causes are now fixed on this branch,
+and every gate CI runs is green locally: `ruff check` ("All checks passed!"),
+`ruff format --check` ("601 files already formatted"), `pyright` 0 errors on
+both 3.12 and 3.13, and the full suite at **4,434 passed / 50 skipped / 0
+failed**. The pyright edits (a Protocol, a `cast`, and comments) were confirmed
+runtime-neutral by re-measuring immediately after them: 4,426 both before and
+after, with no test added in between. The later rise to 4,434 is the 8 new
+`test_economics_revenue.py` cases, not drift. Diagnosis and disposition:
+
+1. **ruff (fixed, `2a8dd5a4`).** Bisected: 0.14.0 and 0.15.x report
+   "All checks passed!"; **0.16.0** does not. 0.16 expanded its default rule
+   set beyond the historical `E4/E7/E9/F`, so the unpinned `ruff>=0.3` floor
+   adopted a new lint policy the moment 0.16 shipped. CI's logged count (721)
+   reproduces locally on untouched master to the exact number. Pinned
+   `ruff>=0.3,<0.16`. Adopting 0.16's rules is a deliberate migration —
+   379 of the 721 are auto-fixable — and should raise the ceiling in the same PR.
+2. **`ruff format` (fixed, `9e4ab29d`).** 17 files fail `format --check`. This
+   was *masked*: the check step fails first, so GitHub marks the format step
+   `skipped`, and it would have become the next red. Not version drift — every
+   ruff from 0.9.10 to 0.16.6 agrees, and `format --diff` is byte-identical
+   between 0.15.4 and 0.16.6. Applied; changes are pure line-joining.
+3. **dynesty (fixed, `2a8dd5a4`).** Only in the `[uq]` extra, which no CI leg
+   installs; the import is deferred inside `sampler.py`, so collection succeeds
+   and the failure appears only at run time. Added to `[dev]`, matching the
+   documented precedent for `numba` (end-user opt-in, dev/CI always gets it)
+   and the "clean-venv false-green trap" note on `pillow` / `httpx`.
+   Consequence to expect: pyright then resolves dynesty and reports 13 rather
+   than 9 errors — more visibility, not a regression.
+4. **pyright (fixed, `3d626d81`).** 13 errors: 11 in `osmose/calibration/uq/`
+   (`design.py:54`, `emulator.py:48,54,68`, `posterior.py:80`,
+   `predictive.py:74`, `sampler.py:127,131,145,147,148`) plus the two engine
+   ones below. Confirmed **pre-existing**: byte-identical between untouched
+   master and this branch under the same interpreter, so nothing in this plan
+   caused them. Both engine errors were read and are **stub strictness, not
+   defects** — do not "fix" the code:
+   - `osmose/engine/output.py:420` (`reportOptionalSubscript`, was `:422`
+     before the reformat) subscripts `o.mortality_rate_by_cause_stage[sp_idx]`.
+     It **is** guarded — `staged = all(getattr(o, ..., None) is not None for o
+     in outputs)` two lines above, and the branch is `if staged:`. Pyright
+     cannot narrow an `Optional` through an `all(... is not None ...)`
+     generator, so the guard is invisible to it. An `assert` or a targeted
+     ignore is the right remedy, not a runtime change.
+   - `osmose/engine/simulate.py:947` (`reportArgumentType`) is
+     `np.add.at(deaths, (sp, cause, st), ...)` from commit `22cdf22c`, where
+     `cause` is a plain `int` from `range(n_causes)`; numpy's stubs decline an
+     index tuple mixing `int` with arrays even though it is valid at runtime.
+
+   Unlike causes 1–3 there is no pin that makes these correct, so each was read
+   individually. Two were genuine typing weaknesses and got real fixes: a new
+   `SupportsPredict` Protocol in `uq/emulator.py` replacing
+   `Mapping[str, object]` (which said "anything", not "anything with
+   `predict()`", and so made every call an error while claiming to express the
+   documented duck typing), and a `cast` on sklearn's
+   `predict(..., return_std=True)` whose overloaded stub collapses to a union.
+   The rest are stub deficiencies carrying comments that say why and warn
+   against "fixing" the code — the sklearn `length_scale` / `alpha` arrays are
+   load-bearing (ARD kernel, per-point noise), dynesty ships no stubs, and
+   numpy declines an `np.add.at` index tuple mixing `int` with arrays.
+
+   **One trap found here and deliberately left alone:** `design.py` passes
+   `seed=` to scipy's `LatinHypercube`, which pyright rejects because the stub
+   declares only the newer `rng=`. Both are accepted at runtime and neither
+   warns — but **they seed different generators and produce different designs**
+   (verified for s in {0, 1, 42}). "Modernising" that keyword would silently
+   change every Latin-hypercube design, and with it every stored UQ result,
+   while reading in review as a no-op cleanup. It is pinned with a comment
+   saying exactly that. Result: **pyright 0 errors on both 3.12 and 3.13.**
+
+**Reproduce:** `ruff check osmose/ ui/ tests/`,
+`ruff format --check osmose/ ui/ tests/`, and
+`pyright --pythonversion 3.12 --pythonpath .venv/bin/python` (pyright needs the
+interpreter pointed at explicitly, or every third-party import reports as
+unresolved and the count balloons to ~293 — a trap worth knowing before
+concluding the tree is badly broken).
+
+---
+
+## Performance: Python vs Java, measured 2026-09-12
+
+**The Java column could not be measured.** The JAR is gitignored and comes from
+`github.com/osmose-model/osmose`, blocked by this session's egress policy (403;
+the session is scoped to `razinkele/osmopy`). A filesystem sweep found 415
+`.jar` files, all JVM internals or pytest's fake stubs — no OSMOSE JAR. So the
+Java figures below are **historical**, from commit `fcc8fd1` (2026-03-22), on
+that machine, not this container. **Do not divide the two blocks against each
+other** — different hardware, six months and ~1,300 commits apart. The
+historical Python and Java numbers were taken together, so only the ratio
+*within* that block is meaningful.
+
+Environment for the fresh numbers: Intel Xeon @ 2.80 GHz, 4 cores, 15 GB RAM,
+Python 3.12.3, numpy 2.5.2, numba 0.67.0. Warm numba cache, median of 5 runs.
+
+### Fresh Python (this branch, this container)
+
+| Config | Total | Per-year |
+|---|---|---|
+| EEC 1 yr | 0.505 s | 0.505 s/yr |
+| EEC 5 yr | 5.740 s | 1.148 s/yr |
+| Bay of Biscay 5 yr | 2.714 s | 0.543 s/yr |
+
+Per-year cost rises with run length (EEC 0.51 → 1.15 s/yr from 1 to 5 years) as
+the population fills out; per-year figures are only comparable at equal `nyear`.
+
+### Historical Python vs Java — commit `fcc8fd1`, 2026-03-22, one machine
+
+| Config | Python | Java | Ratio |
+|---|---|---|---|
+| EEC 1 yr | 0.55 s | 2.6 s | Python **4.8× faster** |
+| EEC 5 yr | 5.687 s | 8.6 s | Python **1.5× faster** |
+| Bay of Biscay 5 yr | ≈2.37 s/yr | ≈2.3 s/yr | **parity**, ≈1.0× |
+
+The BoB row is quoted per-year: the commit message's EEC lines are totals but
+its BoB line matches `per_year_s = 2.307` in
+`tests/baselines/benchmark_5yr_post_tier3.json`, so the units are mixed in the
+source. The parity conclusion holds either way (2.37 vs 2.3); the absolute
+total does not, so it is not quoted.
+
+### Same-hardware A/B of this branch's Phase-4 work
+
+The one comparison this container *can* make honestly — `origin/master` vs
+HEAD, same machine, same warm cache, median of 5:
+
+| Config | master | HEAD | Δ |
+|---|---|---|---|
+| EEC 5 yr | 5.718 s | 5.740 s | +0.4% |
+| Bay of Biscay 5 yr | 2.752 s | 2.714 s | −1.4% |
+
+**Both are noise** — master's own five EEC runs spanned 5.576–6.432 s, a 15%
+spread that swamps either delta. **Phase 4 delivered no measurable speedup on
+these configs, and the reason is mechanical, not statistical:**
+
+- **H7** (fleet-revenue vectorisation) only executes when fleet economics is
+  enabled. It is disabled in both EEC and Bay of Biscay, so the rewritten code
+  never runs here.
+- **M14** hoisted the per-cell `cause_orders` and prey scratch out of
+  `_mortality_all_cells_numba` — the **sequential** kernel. Production defaults
+  to `parallel=True` (`mortality.py:1810`) and so dispatches
+  `_mortality_all_cells_parallel`, which was deliberately left allocating
+  per-`prange`-iteration because each thread must own its scratch. The hoist
+  therefore cannot fire on a default run.
+
+So the plan's "expected 5–15%" for the scratch-buffer work should be read as
+applying to H5, which was already on master before this branch. The honest
+statement for H7/M14 is: correct, tested, allocation-reducing on the paths they
+touch, and **worth nothing measurable on a default EEC or BoB run**. Anyone
+wanting a real win in the mortality kernel needs to attack
+`_mortality_all_cells_parallel`, which is where default runs actually spend
+their time.
+
+### First-run JIT cost (measured incidentally, worth knowing)
+
+A cold numba cache costs far more than any of these deltas: the first EEC 5 yr
+run in a fresh worktree took **45.96 s** against ~5.6 s warm — an 8× penalty.
+Benchmarks that do not discard or warm the first run will report noise an order
+of magnitude larger than the effects they are trying to detect. (That artifact
+initially read as a ~10% regression on this branch until both sides were
+re-measured warm.)
+
+### Where the time actually goes (profiled 2026-09-12, corrected)
+
+Reproduce with `scripts/profile_engine.py` (added for this, so the next person
+does not rebuild it). 5-year runs, warm numba cache, 4 threads, median-ish of
+three consecutive runs that agreed to ~1%.
+
+> **An earlier revision of this section published different numbers**
+> (mortality 55.5%, movement 11.2%, "unattributed 24.5%") **and drew the wrong
+> conclusion from them.** Those came from a single cold-process invocation
+> where `_prepare_run` alone cost 2.9 s and movement 3.5 s — one-off load/JIT
+> costs, not steady state. Three repeated runs put `_prepare_run` at 0.20 s and
+> movement at 0.49 s. The figures below replace them. This is the *second* time
+> in this pass that a cold first run produced a plausible-looking but wrong
+> result; the lesson is in the script's docstring.
+
+**Stage split**
+
+| Stage | EEC 5 yr | Bay of Biscay 5 yr |
+|---|---|---|
+| config parse | 0.009 s (0.2%) | — |
+| engine setup (`_prepare_run`) | 0.213 s (3.6%) | 0.176 s (5.6%) |
+| `simulate()` | 5.655 s (94.8%) | 2.766 s (87.9%) |
+| `write_outputs()` | 0.089 s (**1.5%**) | 0.201 s (**6.4%**) |
+| **total** | **5.967 s** | **3.147 s** |
+
+**Step-loop phases** (shares of total)
+
+| Phase | EEC 5 yr | Bay of Biscay 5 yr |
+|---|---|---|
+| `_mortality` | **3.918 s (65.7%)** | **2.325 s (73.9%)** |
+| `_movement` | 0.490 s (8.2%) | 0.024 s (0.8%) |
+| `_collect_by_life_stage` | 0.177 s (3.0%) | 0.063 s (2.0%) |
+| `_growth` | 0.136 s (2.3%) | 0.062 s (2.0%) |
+| `_reproduction` | 0.104 s (1.7%) | 0.036 s (1.1%) |
+| `_collect_mortality` | 0.075 s (1.3%) | 0.028 s (0.9%) |
+| all others | ≤ 0.3% each | ≤ 0.2% each |
+| state init + loop overhead | 0.667 s (11.2%) | 0.196 s (6.2%) |
+
+**Retraction: output writing is not a lever.** The previous revision named the
+serial tail — "output writing" — as the remaining headroom. `write_outputs()`
+is **1.5%** on EEC and 6.4% on Bay of Biscay. Eliminating it entirely (which is
+what `run_in_memory()` already does for calibration) buys at most that. The
+recommendation was wrong and is withdrawn.
+
+**Thread scaling — the mortality kernel is at its ceiling.** EEC 5 yr, min of 3:
+
+| `NUMBA_NUM_THREADS` | 1 | 2 | 4 |
+|---|---|---|---|
+| EEC 5 yr | 11.586 s | 7.869 s | 5.422 s |
+| speedup vs 1 thread | 1.00× | 1.47× | **2.14×** |
+
+Fitting Amdahl to the 2-thread point gives a parallel fraction p ≈ 0.64, which
+predicts **1.93×** at 4 threads. Measured is 2.14× — *better* than predicted.
+Allocator pressure and lock contention both worsen with thread count; this
+improves, so the parallel mortality kernel is not allocation-bound.
+
+**What this rules out, and what is left.** Do not port M14's scratch hoist into
+`_mortality_all_cells_parallel` — that was the obvious next step after finding
+M14 inert, and the scaling data says it buys nothing, established before
+spending effort on the engine's most parity-sensitive kernel. With mortality at
+66–74%, everything else ≤ 8%, and the kernel already scaling past its Amdahl
+prediction, there is no cheap win left. Real gains need an algorithmic change
+in the predation/mortality inner loop (fewer prey-scan operations per
+predator), not micro-optimisation.
+
+### Exploring the algorithmic improvement (2026-09-12) — negative result
+
+The profile pointed at the predation inner loop as the only place left worth
+attacking. It was explored properly and **nothing landed**. The measurements
+are recorded here so the next person does not repeat them.
+
+**The scan.** `_apply_predation_numba` Phase 1a walks every school in the
+predator's cell and keeps those inside a size-ratio window,
+`pred_len/r_max < prey_len <= pred_len/r_min`. That is O(n_local²) per cell per
+sub-dt, and the window is a contiguous interval in length — the textbook fix is
+to sort the cell by length and binary-search the bounds.
+
+**Measured selectivity and cell occupancy** (via `step_observer`, engine
+unmodified):
+
+| | EEC 1 yr | EEC 5 yr | Bay of Biscay 1 yr |
+|---|---|---|---|
+| schools/cell, mean | 6.8 | **19.0** | 13.8 |
+| schools/cell, median | 5 | 15 | 6 |
+| schools/cell, max | 36 | 101 | **271** |
+| pairs scanned | 473 k | 27.1 M | 908 k |
+| pairs eligible | 64.5 k | 3.0 M | 457 k |
+| **eligible fraction** | 13.6% | **10.9%** | **50.4%** |
+
+So 89% of EEC's scan work is wasted on prey that fail the size test — but the
+cells are *tiny*. At a median of 15 schools, sorting plus binary search loses to
+a flat scan on constant factors, and the asymptotic argument
+(sum n² = 2.8e7 vs sum n·log n = 4.3e6, "6.5×") is an operation count that
+ignores them. Selectivity is also config-dependent: Bay of Biscay keeps half of
+what it scans, so it would gain far less than EEC even if the idea worked.
+
+A second, independent objection: Phase 1 accumulates `total_available` as a
+running sum, so **changing visit order changes the floating-point result**. Any
+sort-based rewrite forfeits the bit-exact parity baseline and would need the
+baselines regenerated and the Java cross-check re-run — which cannot be done
+here. Sorting was therefore rejected on two grounds, not one.
+
+**The better hypothesis, prototyped and rejected on measurement.** The scan's
+cost looked like memory, not arithmetic: a cell's schools are scattered through
+the global arrays. Measured on EEC 5 yr — **mean index gap 565 between
+consecutive members of a cell, median 438, and only 0.1% of cells have their
+members within one 64-byte cache line.** So the fix was to gather the *static*
+per-school attributes (`length`, `weight`, `egg_retained`; not `inst_abd`, which
+predation mutates as prey are eaten) into contiguous scratch once per cell, so
+every predator afterwards scans sequential memory. This preserves visit order
+and arithmetic exactly.
+
+It was implemented across all three kernel paths and **is bit-exact — the 17
+parity tests pass at atol=0**, confirming the design intent. It is also **not
+faster.** Interleaved A/B, 5 repeats each, alternating to control for machine
+drift:
+
+| Pair | HEAD median | prototype median |
+|---|---|---|
+| 1 | 5.342 s | 5.376 s |
+| 2 | 5.286 s | 5.427 s |
+
+The prototype is consistently a shade *slower*. **Why the locality argument
+fails:** the working set per cell is only n_local × a few float64 arrays —
+roughly 600 bytes at the EEC mean. The first predator's scan pulls it all into
+L1, and the remaining n_local−1 predators hit cache regardless. The hardware
+already amortises the scattered access across the cell's predators; an explicit
+gather pays the same misses, just earlier, and adds a loop. Scattered indices
+are real but do not cost what the 0.1% figure suggests.
+
+**Measurement discipline note.** An earlier reading of this A/B showed the
+prototype 6.3% faster. That was machine drift: HEAD re-measured immediately
+afterwards came in at 5.342 s against the 5.740 s recorded earlier in the
+session. Only alternating HEAD/prototype back-to-back exposed it. This is the
+third measurement artifact in this performance pass (after the cold-cache
+"regression" and the cold-process profile), and the only reliable defence has
+been re-running the control next to the treatment every time.
+
+**Conclusion.** With mortality at 66–74% of runtime, the parallel kernel already
+exceeding its Amdahl prediction, sorting blocked by both cell size and
+bit-exactness, and the locality fix measured flat, there is no cheap win left in
+this engine. Further effort should go to a genuinely different formulation —
+e.g. maintaining per-cell size-sorted structures incrementally across steps
+rather than rebuilding per sub-dt, which is a design change with its own parity
+cost — and should not be started without a same-hardware A/B harness and a
+regenerated baseline plan.
+
+---
+
+## CI outcome: PR #147, run 694 green (2026-09-12)
+
+Everything above was verified by running CI's exact commands locally. That is
+not the same as CI running them, and the difference mattered twice. PR #147
+finally put this branch in front of GitHub Actions; the record:
+
+| Job | master (run 692) | PR run 693 | PR run 694 |
+|---|---|---|---|
+| `lint` (check + format) | fail — 733 ruff errors | **pass** | **pass** |
+| `type-check (3.12)` | fail | fail — 2 new | **pass** |
+| `type-check (3.13)` | fail | fail — 2 new | **pass** |
+| `test (3.12)` | fail | **pass** | **pass** |
+| `test (3.13)` | fail | fail — 2 flaky | **pass** |
+| `test-no-numba`, `docker`, `apptainer-smoke` | pass | pass | pass |
+
+Run 694: <https://github.com/razinkele/osmopy/actions/runs/34718003255>. All
+eight jobs green; `test (3.13)` genuinely executed (21 min), it was not skipped.
+
+### Two things local verification could not have caught
+
+**1. pyright version drift — the same bug I had just diagnosed for ruff.**
+Run 693's type-check jobs failed on two `reportOperatorIssue` errors in
+`osmose/trophic_network.py`, a file this branch does not touch and which
+reported **zero** errors locally. Cause: `pyright>=1.1.350` is unpinned, CI
+installs the latest, local was 1.1.411. I had pinned ruff precisely because an
+unpinned checker had floated into a stricter default set, then reported
+"pyright: 0 errors" against my own version without checking CI's. Reproduce
+CI's checker with `PYRIGHT_PYTHON_FORCE_VERSION=latest` before calling the tree
+clean. Fixed by casting the two `SeriesGroupBy.transform("sum")` results to
+`pd.Series` (Series at runtime; the newer stubs type it as the generic
+`NDFrameT@GroupBy`, which defines no `>`), and pyright is left deliberately
+unpinned with the rationale recorded in `pyproject.toml`.
+
+**2. A latent flake in the bioen exp-divergence tests — still open.**
+`tests/test_engine_bioen_numba_kernel.py::test_exp_library_divergence_is_real_and_amplified_by_the_mortality_form`
+and `::test_fishing_composition_hazard_stays_below_1e_12_relative_in_n_dead`
+failed run 693 and passed run 694 **with no change to any code they exercise**
+— the only commit between the two runs was the `trophic_network.py` casts.
+
+They assert that numba's `exp` and numpy's `exp` *disagree* on at least one of
+20,000 draws. Whether they do depends on which SIMD kernel numpy selects and
+how LLVM lowers libm — i.e. on the runner's CPU. Both are labelled
+"Characterisation, not a gate" in their own docstrings, so a red build is the
+wrong response to the two libraries happening to agree.
+
+**Deliberately not changed.** The obvious fix is to skip-with-reason rather
+than fail when `mismatches == 0`, which keeps the signal visible under this
+repo's `-ra` and stops the random reds. But the assertion message is worded as
+a prompt to a human — *"if that is genuinely true this file's rate-selection
+caveats can be dropped, but verify before doing so"* — and converting it to a
+skip removes that prompt. Whether the file's mortality-rate caveats still hold
+is a bioen question, not a CI-hygiene one. Left for the owner of that work;
+expect intermittent `test (3.13)` reds until it is decided either way.
+
+### Still unverified
+
+The Java cross-check. `scripts/validate_engines.py` needs a JAR from
+`github.com/osmose-model/osmose`, blocked by this environment's egress policy
+(403). Now easier to run than before — it takes `--jar`, honours `$OSMOSE_JAR`,
+and otherwise globs `osmose-java/*.jar`, where previously it hard-coded a
+filename that did not match what the documented download produces.

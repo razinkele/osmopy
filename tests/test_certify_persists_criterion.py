@@ -43,7 +43,7 @@ def cert():
 
 def test_deep_seeding_transient_does_not_read_as_collapse(cert):
     """A stock that dips near zero during bootstrap but recovers into envelope must PASS."""
-    lo, hi = cert.ENVELOPE["cod_east"]
+    _lo, _hi = cert.ENVELOPE["cod_east"]
     # 10 bootstrap steps crashing to 17 t, then 15 steps settled at ~83 kt (inside 60k-85k)
     series = [50000.0, 5000.0, 500.0, 17.0, 200.0, 3000.0, 20000.0, 50000.0, 70000.0, 80000.0]
     series += [83000.0] * 15
@@ -65,4 +65,6 @@ def test_genuine_late_collapse_still_fails(cert):
 def test_reported_min_is_the_final_decade_min(cert):
     series = [1.0] * 20 + [50000.0] * 10
     row = cert._species_row(pd.DataFrame({"cod_east": series}), "cod_east")
-    assert row["min"] == pytest.approx(50000.0), "min must describe the final decade, not the bootstrap"
+    assert row["min"] == pytest.approx(50000.0), (
+        "min must describe the final decade, not the bootstrap"
+    )

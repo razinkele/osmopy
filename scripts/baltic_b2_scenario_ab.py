@@ -123,21 +123,31 @@ COD_EAST_SEED_NOISE_FLOOR = 0.019
 
 # spec §4's REPORTED label list, restated verbatim (design doc §4, REPORTED bullet list).
 REPORT_LABELS = [
-    "SST-for-bottom-T proxy: annual SST applied to a Q4 bottom-T knob; deep warming runs "
-    "higher than SST in ventilated basins, so the herring decline is likely UNDERSTATED.",
+    (
+        "SST-for-bottom-T proxy: annual SST applied to a Q4 bottom-T knob; deep warming runs "
+        "higher than SST in ventilated basins, so the herring decline is likely UNDERSTATED."
+    ),
     "Summer-only + SLR-variant delta-O2 (Meier2022 Table 10) applied year-round.",
-    "Uniform-offset spatial blindness + floor asymmetry: the additive O2 offset is spatially "
-    "uniform and floor-clipped on the negative side but uncapped on the positive side.",
-    "LTL-at-baseline: the BSAP cells are a partial-load world -- the load cut's O2 benefit "
-    "enters but its plankton/nutrient pathways do not; the omitted pathways plausibly "
-    "oppose the included one.",
-    "Reference-period overstatement (spec decision 5): literature deltas are end-century "
-    "vs 1976-2005 but applied raw on a present-day baseline (O2: 2024 analysis; "
-    "tref: 1993-2021 mean) -- overstates end-century forcing by the realized "
-    "1976-2005->present component.",
-    "cod_east's trajectory is partly prescribed by the RV narrative series (gate factor "
-    "0.32-0.87 across the scored decade) -- its scenario deltas are conditioned on that "
-    "prescription.",
+    (
+        "Uniform-offset spatial blindness + floor asymmetry: the additive O2 offset is spatially "
+        "uniform and floor-clipped on the negative side but uncapped on the positive side."
+    ),
+    (
+        "LTL-at-baseline: the BSAP cells are a partial-load world -- the load cut's O2 benefit "
+        "enters but its plankton/nutrient pathways do not; the omitted pathways plausibly "
+        "oppose the included one."
+    ),
+    (
+        "Reference-period overstatement (spec decision 5): literature deltas are end-century "
+        "vs 1976-2005 but applied raw on a present-day baseline (O2: 2024 analysis; "
+        "tref: 1993-2021 mean) -- overstates end-century forcing by the realized "
+        "1976-2005->present component."
+    ),
+    (
+        "cod_east's trajectory is partly prescribed by the RV narrative series (gate factor "
+        "0.32-0.87 across the scored decade) -- its scenario deltas are conditioned on that "
+        "prescription."
+    ),
 ]
 
 

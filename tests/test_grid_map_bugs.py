@@ -2,7 +2,6 @@
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # C1: Zero-height/width polygons for single-row/col NetCDF grids
 # ---------------------------------------------------------------------------
@@ -86,10 +85,12 @@ class TestSingleRowNetcdf:
 
     def test_single_row_overlay_nonzero(self):
         """ny=1 NetCDF overlay: cell polygons must have non-zero height."""
-        from ui.pages.grid_helpers import load_netcdf_overlay
-        import tempfile
         import pathlib
+        import tempfile
+
         import xarray as xr
+
+        from ui.pages.grid_helpers import load_netcdf_overlay
 
         with tempfile.TemporaryDirectory() as tmp:
             p = pathlib.Path(tmp) / "overlay.nc"
@@ -156,10 +157,12 @@ class TestNetcdfOverlayCustomVarNames:
     def test_overlay_custom_lat_lon_names(self):
         """load_netcdf_overlay should find 'latitude'/'longitude' automatically
         and also respect explicit var_lat/var_lon params."""
-        from ui.pages.grid_helpers import load_netcdf_overlay
-        import tempfile
         import pathlib
+        import tempfile
+
         import xarray as xr
+
+        from ui.pages.grid_helpers import load_netcdf_overlay
 
         with tempfile.TemporaryDirectory() as tmp:
             p = pathlib.Path(tmp) / "overlay.nc"

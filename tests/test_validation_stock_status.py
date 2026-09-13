@@ -1,5 +1,5 @@
-import pytest
 import pandas as pd
+import pytest
 
 from osmose.validation import fisheries as fis
 from osmose.validation import stock_status as ss

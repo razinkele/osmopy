@@ -312,18 +312,22 @@ def main() -> int:
     # so a wide SE isn't misread as broken and "fixed" by adjusting x0/bounds/thresholds.
     ssb_t_corr = float(np.corrcoef(ssb, temp)[0, 1]) if len(ssb) > 1 else float("nan")
 
-    today = date.today().isoformat()
+    today = date.today().isoformat()  # noqa: DTZ011 - local report date stamp, not an instant
     doc_path = DOC_DIR / f"baltic_c1_codwest_fit_{today}.md"
     lines = [
         "# cod_west thermal Beverton-Holt fit (C1, spec decision 4)",
         "",
-        f"**Generated:** {today} · **n hatch years:** {len(rows)} "
-        f"({years_used[0]}-{years_used[-1]}, series historical span {series_span}) · "
-        f"**stock:** cod.27.22-24 (cod_west, sp0)",
+        (
+            f"**Generated:** {today} · **n hatch years:** {len(rows)} "
+            f"({years_used[0]}-{years_used[-1]}, series historical span {series_span}) · "
+            f"**stock:** cod.27.22-24 (cod_west, sp0)"
+        ),
         "",
-        "Model: `ln(R) = -b0 + beta1*T + ln(SSB) - log1p(b3*SSB) + eps`, fit on the log scale "
-        "by nonlinear least squares (`scipy.optimize.least_squares`), b3 bounded >= 0. "
-        "R is age-1: R_{y+1} paired with SSB_y and SST-Q3_y (hatch year y).",
+        (
+            "Model: `ln(R) = -b0 + beta1*T + ln(SSB) - log1p(b3*SSB) + eps`, fit on the log scale "
+            "by nonlinear least squares (`scipy.optimize.least_squares`), b3 bounded >= 0. "
+            "R is age-1: R_{y+1} paired with SSB_y and SST-Q3_y (hatch year y)."
+        ),
         "",
         "## Fits",
         "",
@@ -340,17 +344,21 @@ def main() -> int:
         "",
         "## Data notes",
         "",
-        f"- corr(SSB, T) over the fitted hatch years = {ssb_t_corr:.3f}. If |corr| is large, "
-        "SSB and T are collinear regressors (both can trend over the record) and SE(beta1) "
-        "widens as a genuine consequence -- not a fit defect; do not respond by adjusting x0, "
-        "bounds, or the pre-registered thresholds.",
+        (
+            f"- corr(SSB, T) over the fitted hatch years = {ssb_t_corr:.3f}. If |corr| is large, "
+            "SSB and T are collinear regressors (both can trend over the record) and SE(beta1) "
+            "widens as a genuine consequence -- not a fit defect; do not respond by adjusting x0, "
+            "bounds, or the pre-registered thresholds."
+        ),
         "",
         "## No cross-check",
         "",
-        "Voss & Quaas (2026, ICES JMS 83(4), doi:10.1093/icesjms/fsag033) cites Conradt (2023, "
-        "Univ. Hamburg dissertation) for cod's coefficient; that value is published nowhere "
-        "accessible and the paper carries no supplement. This self-fit is therefore the SOLE "
-        "source for cod_west's beta1 -- there is no independent value to validate it against.",
+        (
+            "Voss & Quaas (2026, ICES JMS 83(4), doi:10.1093/icesjms/fsag033) cites Conradt (2023, "
+            "Univ. Hamburg dissertation) for cod's coefficient; that value is published nowhere "
+            "accessible and the paper carries no supplement. This self-fit is therefore the SOLE "
+            "source for cod_west's beta1 -- there is no independent value to validate it against."
+        ),
         "",
     ]
     DOC_DIR.mkdir(parents=True, exist_ok=True)

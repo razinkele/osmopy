@@ -73,7 +73,7 @@ def fleet_decision(
     """
     from osmose.engine.economics.costs import compute_expected_revenue, compute_travel_costs
 
-    n_species, ny, nx = biomass_by_cell_species.shape
+    _n_species, ny, nx = biomass_by_cell_species.shape
     n_cells = ny * nx
 
     for fi, fleet in enumerate(fleet_state.fleets):

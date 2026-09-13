@@ -13,6 +13,7 @@ Usage:
 Both files must have the same parameter keys; only optimized values may
 differ.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -34,18 +35,18 @@ def main() -> None:
     before = json.loads(args.before.read_text())
     after = json.loads(args.after.read_text())
 
-    print(f"=== Phase 12 comparison ===")
+    print("=== Phase 12 comparison ===")
     print(f"BEFORE: {args.before.name}")
     print(f"  obj single-seed: {before['objective_single_seed']:.4f}")
     print(f"  obj multi-seed mean: {before.get('objective_multiseed_mean', 'n/a')}")
     print(f"  evals: {before.get('n_evaluations', 'n/a')}")
-    print(f"  runtime: {before.get('elapsed_seconds', 0)/3600:.2f} h")
+    print(f"  runtime: {before.get('elapsed_seconds', 0) / 3600:.2f} h")
     print()
     print(f"AFTER:  {args.after.name}")
     print(f"  obj single-seed: {after['objective_single_seed']:.4f}")
     print(f"  obj multi-seed mean: {after.get('objective_multiseed_mean', 'n/a')}")
     print(f"  evals: {after.get('n_evaluations', 'n/a')}")
-    print(f"  runtime: {after.get('elapsed_seconds', 0)/3600:.2f} h")
+    print(f"  runtime: {after.get('elapsed_seconds', 0) / 3600:.2f} h")
     print()
 
     delta = before["objective_single_seed"] - after["objective_single_seed"]

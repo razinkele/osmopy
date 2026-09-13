@@ -1,13 +1,14 @@
 from __future__ import annotations
+
 import argparse
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
+from osmose.calibration.targets import load_targets
 from osmose.config import OsmoseConfigReader
 from osmose.engine import PythonEngine
-from osmose.calibration.targets import load_targets
 
 DET = {"movement.randomseed.fixed": "true", "stochastic.mortality.randomseed.fixed": "true"}
 PERCIDS, HIGHW = ["perch", "pikeperch"], ["cod", "herring", "sprat"]
@@ -57,8 +58,8 @@ def main() -> int:
         acc = {sp: [] for sp in PERCIDS + HIGHW}
         for s in range(args.seeds):
             bio = PythonEngine().run_in_memory(dict(base), seed=s).biomass()  # WIDE frame
-            for sp in acc:
-                acc[sp].append(late_mean(bio[sp]) / targets[sp])
+            for sp, vals in acc.items():
+                vals.append(late_mean(bio[sp]) / targets[sp])
         results[rung] = {sp: (float(np.mean(v)), float(np.std(v))) for sp, v in acc.items()}
     area = percid_area_ratio()
     print("species     " + "  ".join(f"{r:>16}" for r in RUNGS) + "   role")

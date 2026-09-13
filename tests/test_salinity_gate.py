@@ -123,7 +123,7 @@ def _draw_columns(gate_grid, n=4000):
     rng = np.random.default_rng(0)
     cols = np.zeros(nx, dtype=np.int64)
     for _ in range(n):
-        x, y, out = _map_move_school(
+        x, _y, out = _map_move_school(
             0, -1, -1, ny, nx, ocean, ms, 1, 0, rng, salinity_weight_grid=gate_grid
         )
         assert not out
@@ -166,7 +166,9 @@ def test_random_walk_weighted(monkeypatch):
     cols = np.zeros(nx, dtype=np.int64)
     # start located at (cx=3, cy=2), walk_range large enough to reach cols 2-5
     for _ in range(4000):
-        x, y, out = _map_move_school(1, 3, 2, ny, nx, ocean, ms, 5, 1, rng, salinity_weight_grid=w)
+        x, _y, _out = _map_move_school(
+            1, 3, 2, ny, nx, ocean, ms, 5, 1, rng, salinity_weight_grid=w
+        )
         cols[x] += 1
     high = cols[4] + cols[5]
     mid = cols[2] + cols[3]
@@ -174,10 +176,10 @@ def test_random_walk_weighted(monkeypatch):
     assert high / mid == pytest.approx(2.0, rel=0.2)
 
 
-from types import SimpleNamespace  # noqa: E402
+from types import SimpleNamespace
 
-from osmose.engine.physical_data import PhysicalData  # noqa: E402
-from osmose.engine.processes.movement import _movement_salinity_weight  # noqa: E402
+from osmose.engine.physical_data import PhysicalData
+from osmose.engine.processes.movement import _movement_salinity_weight
 
 
 def _cfg_grid(enabled, field):
@@ -213,8 +215,8 @@ def test_movement_weight_constant_low_all_zeros():
     np.testing.assert_array_equal(_movement_salinity_weight(cfg, grid, 0), np.zeros((5, 6)))
 
 
-from osmose.config import OsmoseConfigReader  # noqa: E402
-from osmose.engine import PythonEngine  # noqa: E402
+from osmose.config import OsmoseConfigReader
+from osmose.engine import PythonEngine
 
 
 def test_gate_off_is_bit_identical():
@@ -229,11 +231,11 @@ def test_gate_off_is_bit_identical():
     np.testing.assert_array_equal(base.to_numpy(), off.to_numpy())
 
 
-import sys  # noqa: E402
-from pathlib import Path  # noqa: E402
+import sys
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from test_movement_numba import _call_numba  # noqa: E402
+from test_movement_numba import _call_numba
 
 
 def _three_band_sal_w(ny=5, nx=6):
@@ -297,7 +299,7 @@ def test_numba_gated_all_zero_guard_places_not_annihilated():
     # sal_w all zero over the whole map -> wmax<=0 -> fall back to ungated placement.
     ny, nx = 5, 6
     sal_w = np.zeros((ny, nx), dtype=np.float64)
-    out_cx, out_cy, is_out = _batch_placement(sal_w, n=200, same_map=False)
+    _out_cx, _out_cy, is_out = _batch_placement(sal_w, n=200, same_map=False)
     assert not is_out.any()  # cod is placed, never annihilated
 
 

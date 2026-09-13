@@ -28,8 +28,12 @@ SCORED = ("herring", "sprat")
 BLOCKING_INSTRUMENT = ("herring", "sprat", "cod_east")
 DECADES = ((1993, 2002), (2003, 2012), (2013, 2023))
 HERRING_STOCKS = ["her.27.25-2932", "her.27.28", "her.27.3031", "her.27.20-24"]
-OBS_STOCK = {"cod_west": "cod.27.22-24", "sprat": "spr.27.22-32",
-             "flounder": "fle.27.2223", "cod_east": "cod.27.24-32"}
+OBS_STOCK = {
+    "cod_west": "cod.27.22-24",
+    "sprat": "spr.27.22-32",
+    "flounder": "fle.27.2223",
+    "cod_east": "cod.27.24-32",
+}
 
 
 def annualize(x, n_year: int) -> np.ndarray:
@@ -89,8 +93,9 @@ def observed_herring_z(snap_dir: Path, years) -> np.ndarray:
     zs, weights = [], []
     for key in HERRING_STOCKS:
         recs = json.loads((snap_dir / f"{key}.assessment.json").read_text())
-        catches = {int(r["year"]): float(r["catches"])
-                   for r in recs if r.get("catches") not in ("", None)}
+        catches = {
+            int(r["year"]): float(r["catches"]) for r in recs if r.get("catches") not in ("", None)
+        }
         w = np.nanmean([catches.get(y, np.nan) for y in years])
         zs.append(observed_stock_z(snap_dir, key, years))
         weights.append(0.0 if np.isnan(w) else w)
@@ -177,8 +182,10 @@ def run_hindcast(seeds=SEEDS) -> dict:
         }
     for name in SPECIES.values():
         a_runs, b_runs = np.stack(ssb["A"][name]), np.stack(ssb["B"][name])
-        dr = [pearson(zscore(b), obs[name]) - pearson(zscore(a), obs[name])
-              for a, b in zip(a_runs, b_runs)]
+        dr = [
+            pearson(zscore(b), obs[name]) - pearson(zscore(a), obs[name])
+            for a, b in zip(a_runs, b_runs)
+        ]
         report["stocks"][name] = {
             "scored": name in SCORED,
             "trend_model_B": decadal_trend_signs(b_runs.mean(axis=0), YEARS),

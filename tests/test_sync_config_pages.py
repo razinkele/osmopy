@@ -1,8 +1,8 @@
 """Tests for config page input syncing (Grid, Forcing, Fishing, Movement)."""
 
+from osmose.schema.fishing import FISHING_FIELDS
 from osmose.schema.grid import GRID_FIELDS
 from osmose.schema.ltl import LTL_FIELDS
-from osmose.schema.fishing import FISHING_FIELDS
 from osmose.schema.movement import MOVEMENT_FIELDS
 
 

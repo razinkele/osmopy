@@ -1,7 +1,8 @@
 import tempfile
 from pathlib import Path
-from osmose.config.writer import OsmoseConfigWriter
+
 from osmose.config.reader import OsmoseConfigReader
+from osmose.config.writer import OsmoseConfigWriter
 
 
 def test_write_creates_master_file():

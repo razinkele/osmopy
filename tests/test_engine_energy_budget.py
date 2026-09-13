@@ -17,7 +17,6 @@ from osmose.engine.processes.energy_budget import (
     update_enet_faced,
 )
 
-
 # ── Shared helpers ─────────────────────────────────────────────────────────────
 
 # c_m is ~1e12 because arrhenius(T, 0.65) ~ 1e-12 at 5–25 degC; the product is O(1).
@@ -25,19 +24,19 @@ _ABUNDANCE = 1e4
 
 
 def _default_params() -> dict:
-    return dict(
-        assimilation=0.7,
-        c_m=1.0e12,
-        beta=0.8,
-        eta=1.5,
-        r=0.5,
-        m0=5.0,
-        m1=2.0,
-        e_maint_energy=0.65,
-        phi_t=1.0,
-        f_o2=1.0,
-        n_dt_per_year=24,
-    )
+    return {
+        "assimilation": 0.7,
+        "c_m": 1.0e12,
+        "beta": 0.8,
+        "eta": 1.5,
+        "r": 0.5,
+        "m0": 5.0,
+        "m1": 2.0,
+        "e_maint_energy": 0.65,
+        "phi_t": 1.0,
+        "f_o2": 1.0,
+        "n_dt_per_year": 24,
+    }
 
 
 def _budget(ingestion, weight, age_dt, length, enet_faced, *, abundance=None, temp_c=15.0, **over):
@@ -99,13 +98,13 @@ class TestComputeEnergyBudget:
 
     def test_arrhenius_maintenance_increases_with_temperature(self):
         """Higher temperature -> higher maintenance cost -> lower E_net."""
-        kwargs = dict(
-            ingestion=np.array([5.0]),
-            weight=np.array([0.001]),
-            age_dt=np.array([12], dtype=np.int32),
-            length=np.array([8.0]),
-            enet_faced=np.array([1e4]),
-        )
+        kwargs = {
+            "ingestion": np.array([5.0]),
+            "weight": np.array([0.001]),
+            "age_dt": np.array([12], dtype=np.int32),
+            "length": np.array([8.0]),
+            "enet_faced": np.array([1e4]),
+        }
         _, _, e_net_cold, _, e_maint_cold, _ = _budget(temp_c=5.0, **kwargs)
         _, _, e_net_warm, _, e_maint_warm, _ = _budget(temp_c=25.0, **kwargs)
         assert e_maint_warm[0] > e_maint_cold[0]

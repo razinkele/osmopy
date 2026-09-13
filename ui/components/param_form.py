@@ -6,6 +6,7 @@ from html import escape as _esc
 from typing import TYPE_CHECKING, Any
 
 from shiny import ui
+
 from osmose.logging import setup_logging
 from osmose.schema.base import OsmoseField, ParamType
 

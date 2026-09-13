@@ -3,12 +3,12 @@
 from osmose.config.validator import validate_field
 from osmose.schema.base import OsmoseField, ParamType
 from ui.components.param_form import (
-    render_field,
-    render_category,
     _guess_step,
     constraint_hint,
     input_id_for_field,
     input_id_for_key,
+    render_category,
+    render_field,
     render_species_table,
 )
 

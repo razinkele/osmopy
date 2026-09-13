@@ -40,36 +40,36 @@ def ensure_templates() -> None:
         layout=go.Layout(
             paper_bgcolor="rgba(15, 25, 35, 0)",
             plot_bgcolor="rgba(15, 25, 35, 0.6)",
-            font=dict(
-                family="Plus Jakarta Sans, -apple-system, sans-serif",
-                color="#e2e8f0",
-                size=12,
-            ),
-            title=dict(
-                font=dict(size=15, color="#e2e8f0"),
-                x=0.02,
-                xanchor="left",
-            ),
-            xaxis=dict(
-                gridcolor="rgba(255, 255, 255, 0.06)",
-                linecolor="rgba(255, 255, 255, 0.1)",
-                zerolinecolor="rgba(255, 255, 255, 0.08)",
-                tickfont=dict(size=11),
-            ),
-            yaxis=dict(
-                gridcolor="rgba(255, 255, 255, 0.06)",
-                linecolor="rgba(255, 255, 255, 0.1)",
-                zerolinecolor="rgba(255, 255, 255, 0.08)",
-                tickfont=dict(size=11),
-            ),
+            font={
+                "family": "Plus Jakarta Sans, -apple-system, sans-serif",
+                "color": "#e2e8f0",
+                "size": 12,
+            },
+            title={
+                "font": {"size": 15, "color": "#e2e8f0"},
+                "x": 0.02,
+                "xanchor": "left",
+            },
+            xaxis={
+                "gridcolor": "rgba(255, 255, 255, 0.06)",
+                "linecolor": "rgba(255, 255, 255, 0.1)",
+                "zerolinecolor": "rgba(255, 255, 255, 0.08)",
+                "tickfont": {"size": 11},
+            },
+            yaxis={
+                "gridcolor": "rgba(255, 255, 255, 0.06)",
+                "linecolor": "rgba(255, 255, 255, 0.1)",
+                "zerolinecolor": "rgba(255, 255, 255, 0.08)",
+                "tickfont": {"size": 11},
+            },
             colorway=OSMOSE_COLORS,
-            legend=dict(
-                bgcolor="rgba(0, 0, 0, 0.2)",
-                bordercolor="rgba(255, 255, 255, 0.06)",
-                borderwidth=1,
-                font=dict(size=11),
-            ),
-            margin=dict(l=50, r=20, t=40, b=40),
+            legend={
+                "bgcolor": "rgba(0, 0, 0, 0.2)",
+                "bordercolor": "rgba(255, 255, 255, 0.06)",
+                "borderwidth": 1,
+                "font": {"size": 11},
+            },
+            margin={"l": 50, "r": 20, "t": 40, "b": 40},
         ),
     )
 
@@ -77,36 +77,36 @@ def ensure_templates() -> None:
         layout=go.Layout(
             paper_bgcolor="rgba(255, 255, 255, 0)",
             plot_bgcolor="rgba(240, 244, 248, 0.6)",
-            font=dict(
-                family="Plus Jakarta Sans, -apple-system, sans-serif",
-                color="#1a2a3a",
-                size=12,
-            ),
-            title=dict(
-                font=dict(size=15, color="#1a2a3a"),
-                x=0.02,
-                xanchor="left",
-            ),
-            xaxis=dict(
-                gridcolor="rgba(0, 0, 0, 0.06)",
-                linecolor="rgba(0, 0, 0, 0.1)",
-                zerolinecolor="rgba(0, 0, 0, 0.08)",
-                tickfont=dict(size=11, color="#4a5a6a"),
-            ),
-            yaxis=dict(
-                gridcolor="rgba(0, 0, 0, 0.06)",
-                linecolor="rgba(0, 0, 0, 0.1)",
-                zerolinecolor="rgba(0, 0, 0, 0.08)",
-                tickfont=dict(size=11, color="#4a5a6a"),
-            ),
+            font={
+                "family": "Plus Jakarta Sans, -apple-system, sans-serif",
+                "color": "#1a2a3a",
+                "size": 12,
+            },
+            title={
+                "font": {"size": 15, "color": "#1a2a3a"},
+                "x": 0.02,
+                "xanchor": "left",
+            },
+            xaxis={
+                "gridcolor": "rgba(0, 0, 0, 0.06)",
+                "linecolor": "rgba(0, 0, 0, 0.1)",
+                "zerolinecolor": "rgba(0, 0, 0, 0.08)",
+                "tickfont": {"size": 11, "color": "#4a5a6a"},
+            },
+            yaxis={
+                "gridcolor": "rgba(0, 0, 0, 0.06)",
+                "linecolor": "rgba(0, 0, 0, 0.1)",
+                "zerolinecolor": "rgba(0, 0, 0, 0.08)",
+                "tickfont": {"size": 11, "color": "#4a5a6a"},
+            },
             colorway=OSMOSE_COLORS_LIGHT,
-            legend=dict(
-                bgcolor="rgba(255, 255, 255, 0.8)",
-                bordercolor="rgba(0, 0, 0, 0.08)",
-                borderwidth=1,
-                font=dict(size=11, color="#4a5a6a"),
-            ),
-            margin=dict(l=50, r=20, t=40, b=40),
+            legend={
+                "bgcolor": "rgba(255, 255, 255, 0.8)",
+                "bordercolor": "rgba(0, 0, 0, 0.08)",
+                "borderwidth": 1,
+                "font": {"size": 11, "color": "#4a5a6a"},
+            },
+            margin={"l": 50, "r": 20, "t": 40, "b": 40},
         ),
     )
 

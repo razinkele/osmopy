@@ -1,20 +1,20 @@
 """Species & Simulation setup page."""
 
-from shiny import ui, reactive, render
+from shiny import reactive, render, ui
 from shiny.types import SilentException
 
+from osmose.config.validator import summarize_config_validation
 from osmose.logging import setup_logging
 from osmose.schema.simulation import SIMULATION_FIELDS
 from osmose.schema.species import SPECIES_FIELDS
-from osmose.config.validator import summarize_config_validation
 from ui.components.collapsible import collapsible_card_header, expand_tab
-from ui.components.fishbase_bootstrap import fishbase_bootstrap_ui, fishbase_bootstrap_server
+from ui.components.fishbase_bootstrap import fishbase_bootstrap_server, fishbase_bootstrap_ui
 from ui.components.param_form import (
     copy_species0_to_all,
     render_category,
     render_species_table,
 )
-from ui.state import sync_inputs
+from ui.state import AppState, sync_inputs
 
 _log = setup_logging("osmose.setup")
 
@@ -57,7 +57,7 @@ def setup_ui():
     )
 
 
-def setup_server(input, output, session, state):
+def setup_server(input, output, session, state: AppState):
     @reactive.calc
     def _config_validation():
         """(loaded, errors, warnings). Recomputes on every edit AND on load,
@@ -70,7 +70,7 @@ def setup_server(input, output, session, state):
             return (False, [], [])
         try:
             errors, warnings = summarize_config_validation(config, state.registry, config_dir)
-        except Exception as exc:  # noqa: BLE001 - panel must degrade, never crash the tab
+        except Exception as exc:
             return (True, [], [f"validation unavailable: {exc}"])
         return (True, errors, warnings)
 

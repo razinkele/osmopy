@@ -8,7 +8,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from osmose.engine.initialization import (  # noqa: E402
+from osmose.engine.initialization import (
     age_structured_population,
     build_initial_population,
 )
@@ -61,7 +61,7 @@ def test_age_structure_empty_when_no_biomass():
 # ---------------------------------------------------------------- builder (fake config)
 def _fake_config(enabled, seeding_biomass, key="module.population.initialisation.enabled"):
     n = len(seeding_biomass)
-    arr = lambda v: np.full(n, v, dtype=np.float64)  # noqa: E731
+    arr = lambda v: np.full(n, v, dtype=np.float64)
     return SimpleNamespace(
         n_species=n,
         raw_config={key: "true"} if enabled else {},

@@ -284,8 +284,10 @@ def format_delta_report(
     lines = [
         f"# OSMOSE run delta — {metric} (variant vs baseline)",
         "",
-        f"Per-species mean {metric} over the last {window_years} years; ranked by |% change|. "
-        "Δ% is undefined for a zero-baseline species (shown 'from 0').",
+        (
+            f"Per-species mean {metric} over the last {window_years} years; ranked by |% change|. "
+            "Δ% is undefined for a zero-baseline species (shown 'from 0')."
+        ),
         "",
         "| species | baseline | variant | Δ | Δ% |",
         "|---|---:|---:|---:|---:|",

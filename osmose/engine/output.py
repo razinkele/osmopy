@@ -416,8 +416,13 @@ def _build_mortality_dataframes(
     for sp_idx, sp_name in enumerate(config.species_names):
         if staged:
             # (T, n_stages, n_causes)
+            # `staged` above already established that no element is None, but
+            # pyright cannot narrow an Optional through an `all(... is not None
+            # ...)` generator, so it reads this as an Optional subscript. The
+            # guard is real — do not add a runtime None-check here.
             rates = np.array(
-                [o.mortality_rate_by_cause_stage[sp_idx].T for o in outputs], dtype=np.float64
+                [o.mortality_rate_by_cause_stage[sp_idx].T for o in outputs],  # type: ignore[index]
+                dtype=np.float64,
             )
             n_causes = rates.shape[2]
             # Java orders columns cause-major: Mpred×(Eggs,Juvenil,Adult), Mstarv×(...), ...
@@ -1203,7 +1208,7 @@ def write_outputs_netcdf_spatial(
 
 
 def write_economic_outputs(
-    fleet_state: "FleetState",
+    fleet_state: FleetState,
     output_dir: Path,
 ) -> None:
     """Write economic CSV output files.

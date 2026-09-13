@@ -8,12 +8,14 @@ import sys
 
 sys.path.insert(0, ".")
 
-import numpy as np
 from pathlib import Path
+
+import numpy as np
+
 from osmose.config.reader import OsmoseConfigReader
 from osmose.engine.config import EngineConfig
 from osmose.engine.grid import Grid
-from osmose.engine.simulate import initialize, _growth, _reset_step_variables
+from osmose.engine.simulate import _growth, _reset_step_variables, initialize
 
 
 def main():

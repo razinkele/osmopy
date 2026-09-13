@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import time
+from datetime import UTC
 
 import pytest
 
@@ -113,16 +114,17 @@ def test_ckpt_mtime_for_returns_timestamp_iso_when_ok(tmp_results_dir):
     kwargs["timestamp_iso"] = "2026-05-12T10:00:00+00:00"
     write_checkpoint(tmp_results_dir / "phase_x_checkpoint.json", CalibrationCheckpoint(**kwargs))
     snap = _scan_results_dir()
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    expected = datetime(2026, 5, 12, 10, 0, 0, tzinfo=timezone.utc).timestamp()
+    expected = datetime(2026, 5, 12, 10, 0, 0, tzinfo=UTC).timestamp()
     assert _ckpt_mtime_for(snap) == expected
 
 
 def test_ckpt_mtime_for_falls_back_when_no_active_checkpoint():
+    import time
+
     from osmose.calibration.checkpoint import CheckpointReadResult, LiveSnapshot
     from ui.pages.calibration_handlers import _ckpt_mtime_for
-    import time
 
     snap = LiveSnapshot(
         active=CheckpointReadResult(kind="no_run", checkpoint=None, error_summary=None),

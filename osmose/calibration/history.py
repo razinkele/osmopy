@@ -8,7 +8,7 @@ import logging
 import os
 import re
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 # Resolve relative to the project root (two levels up from osmose/calibration/)
@@ -83,7 +83,7 @@ def _save_run_safe(
     default arg, which Python captures at function-definition time). This
     makes test monkeypatching of HISTORY_DIR effective.
     """
-    from osmose.calibration import history as hist_mod
+    from osmose.calibration import history as hist_mod  # noqa: PLW0406 - see docstring
 
     try:
         save_run(payload, history_dir=hist_mod.HISTORY_DIR)
@@ -101,7 +101,7 @@ def _save_run_safe(
             _save_run_fallback(payload, e, logger)
         else:
             logger.exception("save_run failed (no fallback): %s", e.__class__.__name__)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         if with_fallback:
             _save_run_fallback(payload, e, logger)
         else:
@@ -119,7 +119,7 @@ def _save_run_fallback(payload: dict, e: BaseException, logger: logging.Logger) 
         e.__class__.__name__,
         list(payload.keys()),
     )
-    ts = payload.get("timestamp", datetime.now(timezone.utc).isoformat()).replace(":", "-")
+    ts = payload.get("timestamp", datetime.now(UTC).isoformat()).replace(":", "-")
     raw_algo = str(payload.get("algorithm", "unknown"))
     algo_sanitized = re.sub(r"[^A-Za-z0-9_-]", "_", raw_algo)[:32]
     path = Path(tempfile.gettempdir()) / f"calibration_history_fallback_{ts}_{algo_sanitized}.json"

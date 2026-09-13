@@ -3,6 +3,7 @@
 Guards the two documented benchmark traps (perf-arc-overview.md:103-104):
 importing the wrong osmose, and timing the non-numba dead-code path.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -36,8 +37,9 @@ def assert_provenance(worktree_root: Path) -> dict:
     }
 
 
-def capture_flag_config(diet_enabled: bool, tl_tracking: bool,
-                        use_stage_access: bool, has_access: bool) -> dict[str, bool]:
+def capture_flag_config(
+    diet_enabled: bool, tl_tracking: bool, use_stage_access: bool, has_access: bool
+) -> dict[str, bool]:
     return {
         "diet_enabled": bool(diet_enabled),
         "tl_tracking": bool(tl_tracking),

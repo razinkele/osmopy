@@ -264,7 +264,7 @@ def _run_one(args: tuple) -> tuple[float, float, float, float, bool]:
         import numba  # type: ignore[import-untyped]
 
         numba.set_num_threads(1)
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
     cfg = dict(base_config)
     cfg.update(_FORCE_OUTPUTS)

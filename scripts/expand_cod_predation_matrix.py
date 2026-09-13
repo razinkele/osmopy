@@ -25,20 +25,32 @@ import pandas as pd
 MATRIX = Path(__file__).resolve().parent.parent / "data" / "baltic" / "predation-accessibility.csv"
 
 SPECIES_ORDER = [
-    "cod_west", "herring", "sprat", "flounder", "perch", "pikeperch", "smelt",
-    "stickleback", "cod_east", "Diatoms", "Dinoflagellates", "Microzooplankton",
-    "Mesozooplankton", "Macrozooplankton", "Benthos",
+    "cod_west",
+    "herring",
+    "sprat",
+    "flounder",
+    "perch",
+    "pikeperch",
+    "smelt",
+    "stickleback",
+    "cod_east",
+    "Diatoms",
+    "Dinoflagellates",
+    "Microzooplankton",
+    "Mesozooplankton",
+    "Macrozooplankton",
+    "Benthos",
 ]
 
 # cod_east as PREDATOR (its column): eastern-diet adjustments vs the inherited
 # western cod diet. Prey -> accessibility.
 COD_EAST_DIET = {
-    "sprat": 0.5,        # up from 0.4 — dominant eastern pelagic prey
-    "herring": 0.3,      # down from 0.4 — more western/coastal
-    "Benthos": 0.7,      # up from 0.6 — benthos-dependent when prey-limited
-    "smelt": 0.5,        # down from 0.6 — coastal
-    "perch": 0.1,        # down from 0.15 — coastal
-    "pikeperch": 0.05,   # down from 0.1  — coastal
+    "sprat": 0.5,  # up from 0.4 — dominant eastern pelagic prey
+    "herring": 0.3,  # down from 0.4 — more western/coastal
+    "Benthos": 0.7,  # up from 0.6 — benthos-dependent when prey-limited
+    "smelt": 0.5,  # down from 0.6 — coastal
+    "perch": 0.1,  # down from 0.15 — coastal
+    "pikeperch": 0.05,  # down from 0.1  — coastal
     "stickleback": 0.2,  # down from 0.3  — coastal
 }
 

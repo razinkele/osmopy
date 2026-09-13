@@ -115,29 +115,47 @@ REPORT_PATH = Path("/tmp/c4_salinity_report.json")
 
 # spec decision 6's label list, restated verbatim (all restated in the eventual results doc).
 REPORT_LABELS = [
-    "Not a projection: no ensemble generation supplies a citable mean freshening delta "
-    "(Meier et al. 2022 Table 8: BalticAPP -0.06, ECOSUPPORT -0.15, CLIMSEA ~=0 g/kg SSS; "
-    "only 2006-era extremes reached -45%). The dS levers are chosen, not cited.",
-    "RV confound: this is an occupancy-pathway-only instrument; cod_east recruitment is "
-    "RV-prescribed (gate factor 0.32-0.87 across the scored decade), so its response here "
-    "is conditioned on that prescription, not free-running.",
-    "Single-source climatology: the bottom-salinity field's provenance is CMEMS PHY, "
-    "deepest-valid level (see the file's own attrs) -- one source, not an ensemble.",
-    "Fixed production ramp 3-6 PSU: the ramp bounds are the live production values, not "
-    "retuned by this experiment (non-goal).",
-    "Uniform-offset spatial blindness: dS is a spatially uniform additive offset -- it does "
-    "not represent any real spatial pattern of change.",
-    "cod_west = saturated null control: cod_west's gate is a no-op in production (mean "
-    "w=1.0000 on all three maps, every frame) and stays ~0 at dS=-1/-2 -- this is "
-    "effectively a cod_east experiment.",
-    "The all-zero/un-gate guard status is reported per arm (`all_zero_events`): the "
-    "engine's all-zero guard silently reverts a species to UNGATED movement for any (map, "
-    "frame) where map*w sums to zero -- a wiring hazard the builder turns visible, not a "
-    "harness-fixed bug.",
-    "Java gap: Java silently ignores movement.salinity.* -- no Java cross-check exists for "
-    "this experiment (joins the C1 thermal item, both waiting on the user-dirty runner.py).",
-    "The gate conserves total occupancy -- it redistributes and excludes, it never removes "
-    "fish. mean_dw is a wiring check only, never a stock-response metric on its own.",
+    (
+        "Not a projection: no ensemble generation supplies a citable mean freshening delta "
+        "(Meier et al. 2022 Table 8: BalticAPP -0.06, ECOSUPPORT -0.15, CLIMSEA ~=0 g/kg SSS; "
+        "only 2006-era extremes reached -45%). The dS levers are chosen, not cited."
+    ),
+    (
+        "RV confound: this is an occupancy-pathway-only instrument; cod_east recruitment is "
+        "RV-prescribed (gate factor 0.32-0.87 across the scored decade), so its response here "
+        "is conditioned on that prescription, not free-running."
+    ),
+    (
+        "Single-source climatology: the bottom-salinity field's provenance is CMEMS PHY, "
+        "deepest-valid level (see the file's own attrs) -- one source, not an ensemble."
+    ),
+    (
+        "Fixed production ramp 3-6 PSU: the ramp bounds are the live production values, not "
+        "retuned by this experiment (non-goal)."
+    ),
+    (
+        "Uniform-offset spatial blindness: dS is a spatially uniform additive offset -- it does "
+        "not represent any real spatial pattern of change."
+    ),
+    (
+        "cod_west = saturated null control: cod_west's gate is a no-op in production (mean "
+        "w=1.0000 on all three maps, every frame) and stays ~0 at dS=-1/-2 -- this is "
+        "effectively a cod_east experiment."
+    ),
+    (
+        "The all-zero/un-gate guard status is reported per arm (`all_zero_events`): the "
+        "engine's all-zero guard silently reverts a species to UNGATED movement for any (map, "
+        "frame) where map*w sums to zero -- a wiring hazard the builder turns visible, not a "
+        "harness-fixed bug."
+    ),
+    (
+        "Java gap: Java silently ignores movement.salinity.* -- no Java cross-check exists for "
+        "this experiment (joins the C1 thermal item, both waiting on the user-dirty runner.py)."
+    ),
+    (
+        "The gate conserves total occupancy -- it redistributes and excludes, it never removes "
+        "fish. mean_dw is a wiring check only, never a stock-response metric on its own."
+    ),
 ]
 
 

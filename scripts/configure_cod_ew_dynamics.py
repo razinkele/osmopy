@@ -36,10 +36,14 @@ def configure_recruitment_and_mortality() -> None:
     set_key(repro, "reproduction.rv.gate.ref", "250")  # historical-high RV; caps low-RV years
     set_key(repro, "reproduction.rv.gate.species.enabled.sp0", "false")  # cod_west: standard SR
     set_key(repro, "reproduction.rv.gate.species.enabled.sp8", "true")  # cod_east: RV-gated
-    set_key(repro, "stock.recruitment.ssbhalf.sp0", "15000.0")  # cod_west western Bpa (was cod 120k)
+    set_key(
+        repro, "stock.recruitment.ssbhalf.sp0", "15000.0"
+    )  # cod_west western Bpa (was cod 120k)
 
     addmort = CONFIG_DIR / "baltic_param-additional-mortality.csv"
-    set_key(addmort, "mortality.additional.rate.sp8", "2.5")  # ~doubled M (hypoxia, seals, parasites)
+    set_key(
+        addmort, "mortality.additional.rate.sp8", "2.5"
+    )  # ~doubled M (hypoxia, seals, parasites)
 
 
 FSH8 = {
@@ -69,8 +73,17 @@ def configure_fishing() -> None:
     df.loc["cod_east"] = 0
     df.loc["cod_east", "trawlcod_east"] = 1
     # reorder rows so cod_east sits at position 8 (matches its sp index)
-    order = ["cod_west", "herring", "sprat", "flounder", "perch", "pikeperch",
-             "smelt", "stickleback", "cod_east"]
+    order = [
+        "cod_west",
+        "herring",
+        "sprat",
+        "flounder",
+        "perch",
+        "pikeperch",
+        "smelt",
+        "stickleback",
+        "cod_east",
+    ]
     df = df.reindex(order)
     df.to_csv(catch)
     print("expanded catchability matrix + fsh8 (trawlcod_east); nfisheries 8->9")

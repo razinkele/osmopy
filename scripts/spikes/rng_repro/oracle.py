@@ -3,6 +3,7 @@
 The @njit oracle is what production actually draws; the CPython RandomState reference is
 the documented NumPy-legacy MT19937 algorithm the C port targets (spec 0a proved they agree).
 """
+
 from __future__ import annotations
 
 import numpy as np

@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+
 from osmose.engine.physical_data import PhysicalData
 
 

@@ -18,8 +18,8 @@ import sys
 from pathlib import Path
 
 from osmose.config.aliases import (
-    RENAMES_440,
     _LARVA_RATE_RE,
+    RENAMES_440,
     _ndtperyear,
     _numeric_version,
 )
@@ -129,14 +129,22 @@ def _convert_bob_native(config_dir: Path) -> None:
         f.write_text("".join(out))
     # append the per-species forcing paths to the master (idempotent: skip if present)
     text = master.read_text()
-    existing = {ln.split(_SEP_RE.search(ln).group(0))[0].strip().lower()
-                for ln in text.splitlines() if _SEP_RE.search(ln) and not ln.strip().startswith("#")}
-    add = [f"species.file.sp{i} ; {_FORCING_24}\n"
-           for i in _BOB_RESOURCE_SP if f"species.file.sp{i}" not in existing]
+    existing = {
+        ln.split(_SEP_RE.search(ln).group(0))[0].strip().lower()
+        for ln in text.splitlines()
+        if _SEP_RE.search(ln) and not ln.strip().startswith("#")
+    }
+    add = [
+        f"species.file.sp{i} ; {_FORCING_24}\n"
+        for i in _BOB_RESOURCE_SP
+        if f"species.file.sp{i}" not in existing
+    ]
     if add:
         if not text.endswith("\n"):
             text += "\n"
-        master.write_text(text + "# Osmose 4.4.1 - per-species resource forcing (24-step)\n" + "".join(add))
+        master.write_text(
+            text + "# Osmose 4.4.1 - per-species resource forcing (24-step)\n" + "".join(add)
+        )
 
 
 def _original_keys(param_files: list[Path]) -> set[str]:

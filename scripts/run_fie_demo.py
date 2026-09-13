@@ -5,6 +5,7 @@ the mean cod imax trait trajectory with a multi-seed ribbon.
 
 Usage: python scripts/run_fie_demo.py [--n-years 200] [--seeds 3] [--output-dir outputs/fie_demo]
 """
+
 from __future__ import annotations
 
 import sys
@@ -20,9 +21,9 @@ if str(_PROJECT_ROOT) not in sys.path:
 import argparse
 
 import matplotlib
+
 matplotlib.use("Agg")  # non-interactive backend; safe in headless / CI environments
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 
 from osmose.config import OsmoseConfigReader
@@ -119,8 +120,8 @@ def main() -> None:
         "--with-zero-f-control",
         action="store_true",
         help="Add a third F=0 arm as a drift-only neutral baseline. Doubles "
-             "wall-clock but quantifies the low-F selection contribution "
-             "from caveat #6.",
+        "wall-clock but quantifies the low-F selection contribution "
+        "from caveat #6.",
     )
     args = parser.parse_args()
 
@@ -143,7 +144,8 @@ def main() -> None:
             agg["Time"],
             agg["mean"] - agg["std"],
             agg["mean"] + agg["std"],
-            color=_SCENARIO_COLORS[scenario], alpha=0.2,
+            color=_SCENARIO_COLORS[scenario],
+            alpha=0.2,
         )
     ax.set_xlabel("Time (years)")
     ax.set_ylabel("Mean cod imax trait")
@@ -164,9 +166,7 @@ def main() -> None:
     _print_imax_binding_diagnostic(args.output_dir, list(scenarios), args.seeds)
 
 
-def _print_imax_binding_diagnostic(
-    output_dir: Path, scenarios: list[str], seeds: int
-) -> None:
+def _print_imax_binding_diagnostic(output_dir: Path, scenarios: list[str], seeds: int) -> None:
     """Read ingestion vs imax-cap per cod-school-timestep and report what
     fraction of timesteps the cap was actually binding. < 30% means imax
     trait is structurally not the limiting constraint and the FIE signal
@@ -181,6 +181,7 @@ def _print_imax_binding_diagnostic(
                 print(f"{scenario} seed{s}: ingestion CSV missing; skipping")
                 continue
             import pandas as pd
+
             df = pd.read_csv(ingestion_csv, sep=None, engine="python", comment="#")
             # Cap value for cod (sp0). Read from baltic_ev_param-bioen.csv.
             cap = 3.0  # matches Task 7.4's placeholder; if tuned, update.
@@ -193,19 +194,24 @@ def _print_imax_binding_diagnostic(
             bind_fracs.append(bind_frac)
         if bind_fracs:
             import statistics
+
             mean_bind = statistics.mean(bind_fracs)
-            print(f"{scenario}: cod imax-binding fraction across seeds = "
-                  f"{mean_bind*100:.1f}% (per-seed: {[f'{x*100:.1f}%' for x in bind_fracs]})")
+            print(
+                f"{scenario}: cod imax-binding fraction across seeds = "
+                f"{mean_bind * 100:.1f}% (per-seed: {[f'{x * 100:.1f}%' for x in bind_fracs]})"
+            )
             if mean_bind < 0.30:
-                print(f"  WARNING: imax-binding < 30% — FIE signal will be drift-dominated. "
-                      f"imax trait is structurally not the limiting constraint in this config. "
-                      f"Possible cause: declining cod growth potential in the eastern Baltic "
-                      f"since the 1990s (Svedäng et al. 2024, "
-                      f"https://doi.org/10.1002/ece3.70382, report L50 halving from 40 to 20cm "
-                      f"attributed to deteriorating growth potential — NOTE the paper "
-                      f"explicitly excludes simple prey-density / forage-fish mechanisms as "
-                      f"the sole driver). FIE-direction test (Task 11) is unlikely to produce "
-                      f"a meaningful result without first calibrating bioen params.")
+                print(
+                    "  WARNING: imax-binding < 30% — FIE signal will be drift-dominated. "
+                    "imax trait is structurally not the limiting constraint in this config. "
+                    "Possible cause: declining cod growth potential in the eastern Baltic "
+                    "since the 1990s (Svedäng et al. 2024, "
+                    "https://doi.org/10.1002/ece3.70382, report L50 halving from 40 to 20cm "
+                    "attributed to deteriorating growth potential — NOTE the paper "
+                    "explicitly excludes simple prey-density / forage-fish mechanisms as "
+                    "the sole driver). FIE-direction test (Task 11) is unlikely to produce "
+                    "a meaningful result without first calibrating bioen params."
+                )
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 # scripts/build_baltic_fine_grid.py
 from __future__ import annotations
+
 import io
 import time
 from pathlib import Path

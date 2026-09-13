@@ -1,15 +1,29 @@
 """Run the wired Benguela config over long horizons and report per-species stability + seeding
 diagnostics, to pin a safe simulation.time.nyear. Diagnostics attribute instability (seeding
 re-injection vs food-web) per the spec."""
+
 from __future__ import annotations
+
 import sys
 from pathlib import Path
+
 import numpy as np
+
 from osmose.config.reader import OsmoseConfigReader
 from osmose.engine import PythonEngine
 
-SEED = {0: 3129213, 1: 3888750, 2: 3029155, 3: 1286364, 4: 1138339,
-        5: 1439984, 6: 198865, 7: 81054, 8: 575361, 9: 591907}
+SEED = {
+    0: 3129213,
+    1: 3888750,
+    2: 3029155,
+    3: 1286364,
+    4: 1138339,
+    5: 1439984,
+    6: 198865,
+    7: 81054,
+    8: 575361,
+    9: 591907,
+}
 
 
 def run(master: Path, nyear: int):
@@ -44,7 +58,9 @@ if __name__ == "__main__":
     for ny in sweep:
         cols, bio, ssb = run(master, ny)
         v = bounded(cols, bio)
-        print(f"nyear={ny}: bounded={sum(v.values())}/{len(v)}  fails={[k for k, ok in v.items() if not ok]}")
+        print(
+            f"nyear={ny}: bounded={sum(v.values())}/{len(v)}  fails={[k for k, ok in v.items() if not ok]}"
+        )
         # attribution: for each species, first step natural SSB exceeds its seed (seeding no longer needed)
         for i, c in enumerate(cols):
             if c in ssb:

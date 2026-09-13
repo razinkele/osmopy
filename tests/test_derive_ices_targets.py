@@ -30,9 +30,11 @@ def test_sprat_catch_matches_snapshot_mean(tmp_path):
     # mean of that stock's catches (falling back to landings where catches are empty) over
     # 2018-2022 — the same catches-preferred field the derivation code reads.
     import json
+
     import numpy as np
 
-    recs = json.load(open(SNAP / "spr.27.22-32.assessment.json"))
+    with open(SNAP / "spr.27.22-32.assessment.json") as _f:
+        recs = json.load(_f)
     catches = [
         float(r["catches"] or r["landings"])
         for r in recs

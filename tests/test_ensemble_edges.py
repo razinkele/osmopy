@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from osmose.ensemble import aggregate_replicates, ENSEMBLE_OUTPUT_TYPES
+from osmose.ensemble import ENSEMBLE_OUTPUT_TYPES, aggregate_replicates
 
 
 def test_empty_replicate_list_returns_empty():

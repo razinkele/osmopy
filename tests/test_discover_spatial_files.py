@@ -4,7 +4,6 @@ import pathlib
 
 import pytest
 
-
 _EEC_FULL_DIR = pathlib.Path(__file__).parent.parent / "data" / "eec_full"
 _EEC_FULL_AVAILABLE = (_EEC_FULL_DIR / "eec_all-parameters.csv").exists()
 

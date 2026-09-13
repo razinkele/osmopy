@@ -6,7 +6,7 @@ import logging
 import os
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 _log = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ class OsmoseConfigWriter:
     # Each entry: (tuple_of_prefixes, sub_filename, config_key_suffix).
     # Order matters: more-specific prefixes must appear before their
     # less-specific parents (e.g. "species.bioen." before "species.").
-    ROUTING: list[tuple[tuple[str, ...], str, str]] = [
+    ROUTING: ClassVar[list[tuple[tuple[str, ...], str, str]]] = [
         (
             ("temperature.", "species.bioen.", "species.beta.", "oxygen."),
             "osm_param-bioenergetics.csv",

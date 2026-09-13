@@ -9,9 +9,7 @@ from osmose.engine.physical_data import PhysicalData
 from osmose.engine.processes.oxygen_function import f_o2 as _f_o2_fn
 from osmose.engine.simulate import _bioen_step
 from osmose.engine.state import SchoolState
-
 from tests.test_engine_bioen_integration import _make_bioen_config
-
 
 # ---------------------------------------------------------------------------
 # Helpers

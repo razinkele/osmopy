@@ -7,10 +7,10 @@ _SCRIPTS = _PROJECT_ROOT / "scripts"
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 
-import baltic_bistability_chunk0 as c0  # noqa: E402
+import baltic_bistability_chunk0 as c0
 
 Tgt = namedtuple("Tgt", "species target lower upper weight", defaults=(1.0,))
-COD = dict(target=120000.0, lower=60000.0, upper=250000.0)
+COD = {"target": 120000.0, "lower": 60000.0, "upper": 250000.0}
 
 
 # ---------------------------------------------------------------- Task 1
@@ -102,7 +102,12 @@ def test_seed_split_species_withholds_accessibility_verdict():
 
 def test_low_weight_species_does_not_gate():
     targets = _targets() + [Tgt("perch", 20000, 8000, 50000, 0.2)]
-    base = {"cod_east": "in_range", "sprat": "overshoot", "herring": "overshoot", "perch": "overshoot"}
+    base = {
+        "cod_east": "in_range",
+        "sprat": "overshoot",
+        "herring": "overshoot",
+        "perch": "overshoot",
+    }
     low = {"cod_east": "in_range", "sprat": "in_range", "herring": "in_range", "perch": "low"}
     t = c0.accessibility_transition(base, low, targets)
     assert t["gated_species"] == 3
@@ -122,8 +127,18 @@ def test_collapsed_stock_in_lowered_arm_blocks_real_lever():
 
 def test_medium_weight_collapse_blocks_real_lever():
     targets = _targets() + [Tgt("flounder", 50000, 20000, 100000, 0.5)]
-    base = {"cod_east": "in_range", "sprat": "overshoot", "herring": "overshoot", "flounder": "in_range"}
-    low = {"cod_east": "in_range", "sprat": "in_range", "herring": "in_range", "flounder": "collapsed"}
+    base = {
+        "cod_east": "in_range",
+        "sprat": "overshoot",
+        "herring": "overshoot",
+        "flounder": "in_range",
+    }
+    low = {
+        "cod_east": "in_range",
+        "sprat": "in_range",
+        "herring": "in_range",
+        "flounder": "collapsed",
+    }
     t = c0.accessibility_transition(base, low, targets)
     assert t["collapsed_lowered"] >= 1
     assert c0.accessibility_verdict(t)[0] is False
@@ -293,7 +308,7 @@ def test_clupeid_axis_valid_and_sum():
 def test_clupeid_axis_nonstationary_is_invalid():
     drifting = _stats(herring=1_500_000, sprat=2_500_000)
     drifting["herring_cv"] = 0.9  # non-stationary -> herring 'undetermined'
-    biomass, valid = c0.clupeid_axis([drifting, drifting], _clup_targets())
+    _biomass, valid = c0.clupeid_axis([drifting, drifting], _clup_targets())
     assert valid is False
 
 
@@ -507,7 +522,7 @@ def test_cli_warmstart_writes_both_contrasts(tmp_path, monkeypatch):
         Tgt("herring", 1_500_000, 800_000, 3_000_000),
         Tgt("sprat", 1_500_000, 800_000, 2_500_000),
     ]
-    monkeypatch.setattr(c0, "read_base_config", lambda: {})
+    monkeypatch.setattr(c0, "read_base_config", dict)
     monkeypatch.setattr(c0, "read_base_larva_rates", lambda cfg, n_focal=8: {0: 15.0})
     monkeypatch.setattr(c0, "_load_targets", lambda: tgts)
     monkeypatch.setattr(c0, "_default_runner", _runner_regime)
@@ -519,7 +534,7 @@ def test_cli_warmstart_writes_both_contrasts(tmp_path, monkeypatch):
 
 
 def test_cli_preflight(tmp_path, monkeypatch):
-    monkeypatch.setattr(c0, "read_base_config", lambda: {})
+    monkeypatch.setattr(c0, "read_base_config", dict)
     monkeypatch.setattr(c0, "read_base_larva_rates", lambda cfg, n_focal=8: {0: 15.0})
     monkeypatch.setattr(c0, "_load_targets", lambda: [Tgt("cod_east", 120_000, 60_000, 250_000)])
     monkeypatch.setattr(c0, "_default_runner", _runner_regime)

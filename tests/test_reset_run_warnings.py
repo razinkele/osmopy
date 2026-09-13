@@ -30,9 +30,9 @@ def _isolate_engine_warning_state():
 
 
 def test_reset_run_warnings_clears_all_three_dedup_sets():
-    from osmose.engine import reset_run_warnings
     from osmose.engine import config as cfg_mod
     from osmose.engine import config_validation as cv
+    from osmose.engine import reset_run_warnings
 
     cv._WARNED_JAVA_ONLY_KEYS.add("fingerprint-a")
     cfg_mod._WARNED_UNSUPPORTED_RESTART.add("restart-msg")

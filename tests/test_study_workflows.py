@@ -102,7 +102,7 @@ class TestScenarioWorkflows:
 
     def test_compare_baseline_vs_modified(self, study_config, tmp_path):
         """Compare two variants of a study config."""
-        name, config, _ = study_config
+        _name, config, _ = study_config
         manager = ScenarioManager(tmp_path / "scenarios")
 
         # Baseline
@@ -229,7 +229,7 @@ class TestFileReferenceContent:
 
     def test_movement_map_files_are_valid_grids(self, study_config):
         """Movement map CSV files should be valid 2D grids."""
-        name, config, config_file = study_config
+        name, _config, config_file = study_config
         config_dir = config_file.parent
         # eec_full stores maps in a maps/ directory; check it directly
         maps_dir = config_dir / "maps"
@@ -313,7 +313,7 @@ class TestConfigManipulation:
 
     def test_config_roundtrip_after_modification(self, study_config):
         """Modified config survives write -> read roundtrip."""
-        name, config, _ = study_config
+        _name, config, _ = study_config
         modified = dict(config)
         modified["simulation.time.nyear"] = "3"
 
@@ -498,7 +498,7 @@ class TestObjectiveFunctions:
         return name, species, sim, obs
 
     def test_biomass_rmse_is_finite(self, study_timeseries):
-        name, species, sim, obs = study_timeseries
+        name, _species, sim, obs = study_timeseries
         rmse = biomass_rmse(sim, obs)
         assert np.isfinite(rmse), f"{name}: biomass RMSE is not finite"
         assert rmse >= 0
@@ -511,13 +511,13 @@ class TestObjectiveFunctions:
             assert rmse >= 0
 
     def test_yield_rmse_is_finite(self, study_timeseries):
-        name, _, sim, obs = study_timeseries
+        _name, _, sim, obs = study_timeseries
         rmse = yield_rmse(sim, obs)
         assert np.isfinite(rmse)
         assert rmse >= 0
 
     def test_normalized_rmse(self, study_timeseries):
-        name, _, sim, obs = study_timeseries
+        _name, _, sim, obs = study_timeseries
         sim_arr = sim["biomass"].values
         obs_arr = obs["biomass"].values
         nrmse = normalized_rmse(sim_arr, obs_arr)
@@ -525,7 +525,7 @@ class TestObjectiveFunctions:
         assert nrmse >= 0
 
     def test_weighted_multi_objective(self, study_timeseries):
-        name, _, sim, obs = study_timeseries
+        _name, _, sim, obs = study_timeseries
         obj1 = biomass_rmse(sim, obs)
         obj2 = yield_rmse(sim, obs)
         weighted = weighted_multi_objective([obj1, obj2], [0.7, 0.3])
@@ -533,7 +533,7 @@ class TestObjectiveFunctions:
         assert weighted >= 0
 
     def test_diet_distance_with_matching_matrices(self, study_timeseries):
-        name, species, _, _ = study_timeseries
+        _name, species, _, _ = study_timeseries
         rng = np.random.default_rng(99)
         n = len(species)
         sim_diet = pd.DataFrame(
@@ -549,7 +549,7 @@ class TestObjectiveFunctions:
         assert dist >= 0
 
     def test_diet_distance_identical_is_zero(self, study_timeseries):
-        name, species, _, _ = study_timeseries
+        _name, species, _, _ = study_timeseries
         rng = np.random.default_rng(99)
         n = len(species)
         diet = pd.DataFrame(
@@ -759,9 +759,7 @@ class TestResourceConfig:
             pytest.skip(f"{name}: no resources")
         # Resource species are indexed after focal species in some configs
         # Check if resource names exist
-        resource_names = [
-            k for k in config if k.startswith("species.name.") or k.startswith("resource.name.")
-        ]
+        resource_names = [k for k in config if k.startswith(("species.name.", "resource.name."))]
         assert len(resource_names) >= nspecies, (
             f"{name}: expected at least {nspecies} species names, got {len(resource_names)}"
         )

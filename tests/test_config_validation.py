@@ -183,6 +183,7 @@ def test_ast_extracts_cfg_get_literals_from_fixture():
 def test_ast_extracts_from_real_config_py_canary():
     """Canary: the walker finds known-present sentinels in the real config.py."""
     import ast as _ast
+
     from osmose.engine.config_validation import _read_config_source
 
     tree = _ast.parse(_read_config_source())

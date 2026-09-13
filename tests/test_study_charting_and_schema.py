@@ -170,38 +170,38 @@ class TestStudyCharts:
     """Generate all chart types using data shaped to each study's species."""
 
     def test_stacked_area_per_study(self, mock_study_output):
-        name, sp_names, data = mock_study_output
+        name, _sp_names, data = mock_study_output
         fig = make_stacked_area(data["byage"], f"Biomass by Age — {name}")
         assert isinstance(fig, go.Figure)
         assert len(fig.data) > 0
 
     def test_stacked_area_per_species(self, mock_study_output):
-        name, sp_names, data = mock_study_output
+        _name, sp_names, data = mock_study_output
         for sp in sp_names[:2]:  # Test first 2 for speed
             fig = make_stacked_area(data["byage"], f"ByAge {sp}", species=sp)
             assert isinstance(fig, go.Figure)
             assert len(fig.data) > 0
 
     def test_mortality_breakdown_per_study(self, mock_study_output):
-        name, _, data = mock_study_output
+        _name, _, data = mock_study_output
         fig = make_mortality_breakdown(data["mortality"])
         assert isinstance(fig, go.Figure)
         assert len(fig.data) == 4  # predation, starvation, fishing, natural
 
     def test_mortality_breakdown_per_species(self, mock_study_output):
-        name, sp_names, data = mock_study_output
+        _name, sp_names, data = mock_study_output
         fig = make_mortality_breakdown(data["mortality"], species=sp_names[0])
         assert isinstance(fig, go.Figure)
         assert len(fig.data) == 4
 
     def test_size_spectrum_per_study(self, mock_study_output):
-        name, _, data = mock_study_output
+        _name, _, data = mock_study_output
         fig = make_size_spectrum_plot(data["spectrum"])
         assert isinstance(fig, go.Figure)
         assert len(fig.data) >= 2  # scatter + regression
 
     def test_size_spectrum_has_slope_annotation(self, mock_study_output):
-        name, _, data = mock_study_output
+        _name, _, data = mock_study_output
         fig = make_size_spectrum_plot(data["spectrum"])
         annotations = [a for a in fig.layout.annotations if "slope" in a.text.lower()]
         assert len(annotations) >= 1
@@ -222,14 +222,14 @@ class TestStudyCharts:
         assert len(fig.data) >= 2
 
     def test_species_dashboard_per_study(self, mock_study_output):
-        name, sp_names, data = mock_study_output
+        _name, sp_names, data = mock_study_output
         fig = make_species_dashboard(data["biomass"], data["yield"])
         assert isinstance(fig, go.Figure)
         # Should have traces for each species (biomass + yield per species)
         assert len(fig.data) >= len(sp_names)
 
     def test_growth_curves_from_study_params(self, study_species):
-        name, species = study_species
+        _name, species = study_species
         fig = make_growth_curves(species)
         assert isinstance(fig, go.Figure)
         assert len(fig.data) == len(species)
@@ -240,7 +240,7 @@ class TestStudyCharts:
 
     def test_growth_curves_values_are_reasonable(self, study_species):
         """L(t) at max age should approach linf."""
-        name, species = study_species
+        _name, species = study_species
         fig = make_growth_curves(species)
         for i, sp in enumerate(species):
             y_vals = fig.data[i].y
@@ -484,7 +484,7 @@ class TestRunHistoryWithStudies:
     """Save, load, and compare run records using real study configs."""
 
     def test_save_and_load_study_run(self, study_config, tmp_path):
-        name, config, _ = study_config
+        _name, config, _ = study_config
         history = RunHistory(tmp_path / "history")
         record = RunRecord(
             config_snapshot=config,
@@ -501,7 +501,7 @@ class TestRunHistoryWithStudies:
         assert loaded[0].summary["total_biomass"] == 500000
 
     def test_compare_baseline_vs_modified_runs(self, study_config, tmp_path):
-        name, config, _ = study_config
+        _name, config, _ = study_config
         history = RunHistory(tmp_path / "history")
 
         # Baseline run
@@ -611,7 +611,7 @@ class TestEnsembleCICharting:
     """Generate CI timeseries charts from ensemble-like study data."""
 
     def test_ci_chart_from_replicate_biomass(self, mock_study_output):
-        name, sp_names, data = mock_study_output
+        name, _sp_names, data = mock_study_output
         rng = np.random.default_rng(77)
 
         # Simulate 3 replicates with slightly different biomass

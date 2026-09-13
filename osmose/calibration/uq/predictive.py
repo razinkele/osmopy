@@ -18,6 +18,7 @@ import numpy as np
 from scipy.stats import norm  # type: ignore[import-untyped]
 
 from osmose.calibration.targets import BiomassTarget
+from osmose.calibration.uq.emulator import SupportsPredict
 from osmose.calibration.uq.keying import target_to_output_key
 from osmose.calibration.uq.sampler import SamplerResult
 
@@ -42,7 +43,7 @@ class EmulatorPredictiveRanges:
 
 def posterior_predictive(
     sampler_result: SamplerResult,
-    emulators: Mapping[str, object],
+    emulators: Mapping[str, SupportsPredict],
     target_keys: Sequence[str],
     sigma_seed_sq_by_key: Mapping[str, float],
     *,
@@ -109,7 +110,7 @@ def marginal_coverage(
 
 
 def emulator_holdout_coverage(
-    emulators: Mapping[str, object],
+    emulators: Mapping[str, SupportsPredict],
     holdout_X: np.ndarray,
     holdout_Y: Mapping[str, np.ndarray],
     holdout_alpha: Mapping[str, np.ndarray],

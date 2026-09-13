@@ -1,5 +1,6 @@
 # tests/test_schema.py
 import pytest
+
 from osmose.schema.base import OsmoseField, ParamType
 
 

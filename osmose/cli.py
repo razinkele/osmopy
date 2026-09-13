@@ -45,6 +45,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
 def cmd_run(args: argparse.Namespace) -> int:
     """Run an OSMOSE simulation."""
     import asyncio
+
     from osmose.runner import OsmoseRunner
 
     config_path = Path(args.config)
@@ -88,8 +89,8 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 def cmd_report(args: argparse.Namespace) -> int:
     """Generate an HTML report from OSMOSE output."""
-    from osmose.results import OsmoseResults
     from osmose.reporting import generate_report
+    from osmose.results import OsmoseResults
 
     output_dir = Path(args.output_dir)
     if not output_dir.is_dir():

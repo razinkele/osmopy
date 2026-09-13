@@ -1,12 +1,12 @@
 """Tests for loading demo scenarios into the UI state."""
 
-import pytest
 from pathlib import Path
 
+import pytest
 from shiny import reactive
 
 from osmose.config.reader import OsmoseConfigReader
-from osmose.demo import list_demos, osmose_demo, migrate_config
+from osmose.demo import list_demos, migrate_config, osmose_demo
 from tests.helpers import make_catch_all_input
 from ui.state import AppState
 
@@ -30,7 +30,7 @@ def _load_scenario_into_state(scenario: str, tmp_path: Path) -> tuple[AppState, 
 @pytest.mark.parametrize("scenario", list_demos())
 def test_load_scenario_populates_config(tmp_path, scenario):
     """Each demo scenario should produce a non-empty config dict."""
-    state, cfg = _load_scenario_into_state(scenario, tmp_path)
+    state, _cfg = _load_scenario_into_state(scenario, tmp_path)
     with reactive.isolate():
         loaded = state.config.get()
     assert len(loaded) > 0

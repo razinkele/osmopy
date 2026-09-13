@@ -11,6 +11,7 @@ Usage:
         [--window-years 10] [--lfi-threshold-cm 40] [--min-size-cm N] \\
         [--report out.md] [--json out.json] [--plot out_prefix]
 """
+
 from __future__ import annotations
 
 import argparse

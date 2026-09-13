@@ -24,7 +24,7 @@ ICES_MCP_PATH = Path("/home/razinka/ices-mcp-server")
 if str(ICES_MCP_PATH) not in sys.path:
     sys.path.insert(0, str(ICES_MCP_PATH))
 
-from ices.datras import get_cpue_length, get_hauls  # noqa: E402
+from ices.datras import get_cpue_length, get_hauls
 
 GRID_NC = Path("data/baltic/baltic_grid.nc")
 MAPS_DIR = Path("data/baltic/maps")
@@ -45,7 +45,9 @@ def load_grid() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     return ds.latitude.values, ds.longitude.values, ds.mask.values > 0
 
 
-def haul_cell(lat: float, lon: float, grid_lat: np.ndarray, grid_lon: np.ndarray) -> tuple[int, int] | None:
+def haul_cell(
+    lat: float, lon: float, grid_lat: np.ndarray, grid_lon: np.ndarray
+) -> tuple[int, int] | None:
     lat_step = abs(grid_lat[1] - grid_lat[0])
     lon_step = abs(grid_lon[1] - grid_lon[0])
     top_edge = grid_lat[0] + lat_step / 2
@@ -81,8 +83,12 @@ async def fetch_species_cpue(species: str, aphia_id: int) -> pd.DataFrame:
             for q in QUARTERS:
                 try:
                     data = await get_cpue_length(
-                        client, survey="BITS", year=year, quarter=q,
-                        mode="raw", aphia_id=aphia_id,
+                        client,
+                        survey="BITS",
+                        year=year,
+                        quarter=q,
+                        mode="raw",
+                        aphia_id=aphia_id,
                     )
                 except Exception as exc:
                     print(f"  ! CPUE {species} {year}Q{q}: {exc}")
@@ -94,8 +100,9 @@ async def fetch_species_cpue(species: str, aphia_id: int) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def validate_hauls(hauls: pd.DataFrame, mask: np.ndarray,
-                   grid_lat: np.ndarray, grid_lon: np.ndarray) -> None:
+def validate_hauls(
+    hauls: pd.DataFrame, mask: np.ndarray, grid_lat: np.ndarray, grid_lon: np.ndarray
+) -> None:
     print("\n=== Haul-position validation ===")
     print(f"Total hauls:              {len(hauls)}")
 
@@ -114,7 +121,7 @@ def validate_hauls(hauls: pd.DataFrame, mask: np.ndarray,
     n_in_land = int((~in_mask).sum())
 
     print(f"  outside grid bbox:      {outside}")
-    print(f"  inside grid, in ocean:  {n_in_ocean}  ({100*n_in_ocean/len(hauls):.1f}%)")
+    print(f"  inside grid, in ocean:  {n_in_ocean}  ({100 * n_in_ocean / len(hauls):.1f}%)")
     print(f"  inside grid, on LAND:   {n_in_land}   ← mask misses real fishing ground")
 
     if n_in_land > 0:
@@ -127,13 +134,16 @@ def validate_hauls(hauls: pd.DataFrame, mask: np.ndarray,
     haul_cells = set(map(tuple, rows_cols[in_mask]))
     mask_cells = {(r, c) for r in range(mask.shape[0]) for c in range(mask.shape[1]) if mask[r, c]}
     unvisited = mask_cells - haul_cells
-    print(f"  ocean cells with hauls: {len(haul_cells)} / {len(mask_cells)} "
-          f"({100*len(haul_cells)/len(mask_cells):.1f}%)")
+    print(
+        f"  ocean cells with hauls: {len(haul_cells)} / {len(mask_cells)} "
+        f"({100 * len(haul_cells) / len(mask_cells):.1f}%)"
+    )
     print(f"  ocean cells never sampled by BITS: {len(unvisited)} (mostly shallow/coastal)")
 
 
-def validate_species(name: str, cpue: pd.DataFrame, mask: np.ndarray,
-                     grid_lat: np.ndarray, grid_lon: np.ndarray) -> None:
+def validate_species(
+    name: str, cpue: pd.DataFrame, mask: np.ndarray, grid_lat: np.ndarray, grid_lon: np.ndarray
+) -> None:
     print(f"\n=== Species footprint: {name} ===")
     if cpue.empty:
         print("  (no data)")
@@ -164,14 +174,18 @@ def validate_species(name: str, cpue: pd.DataFrame, mask: np.ndarray,
     both = int((ices_footprint & model_cells).sum())
     ices_only = int((ices_footprint & ~model_cells).sum())
     model_only = int((model_cells & ~ices_footprint).sum())
-    print(f"  overlap: {both}, BITS-only (model missing): {ices_only}, "
-          f"model-only (BITS absent): {model_only}")
+    print(
+        f"  overlap: {both}, BITS-only (model missing): {ices_only}, "
+        f"model-only (BITS absent): {model_only}"
+    )
 
 
 async def main() -> None:
     grid_lat, grid_lon, mask = load_grid()
     print(f"Grid: {mask.shape}, {int(mask.sum())} ocean cells")
-    print(f"Grid bbox: lat {grid_lat[-1]:.2f}–{grid_lat[0]:.2f}, lon {grid_lon[0]:.2f}–{grid_lon[-1]:.2f}")
+    print(
+        f"Grid bbox: lat {grid_lat[-1]:.2f}–{grid_lat[0]:.2f}, lon {grid_lon[0]:.2f}–{grid_lon[-1]:.2f}"
+    )
 
     print("\nFetching BITS hauls…")
     hauls = await fetch_all_hauls()

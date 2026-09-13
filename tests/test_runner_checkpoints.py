@@ -56,6 +56,7 @@ def test_de_existing_test_callsite_still_works(tmp_path):
     """Regression pin: 14 existing _make_checkpoint_callback callers in
     tests/test_calibrate_baltic_parallelism.py pass only (path, every_n, param_keys, bounds)."""
     from types import SimpleNamespace
+
     from scripts.calibrate_baltic import _make_checkpoint_callback
 
     checkpoint_path = tmp_path / "phase_legacy_checkpoint.json"

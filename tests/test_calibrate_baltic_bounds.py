@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path("scripts").resolve()))
-from calibrate_baltic import get_phase13_shepherd_params  # noqa: E402
+from calibrate_baltic import get_phase13_shepherd_params
 
 
 def test_shepherd_beta_bounds_forbid_undercompensation_and_overcrush():

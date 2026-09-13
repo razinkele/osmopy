@@ -4,6 +4,7 @@ from shiny import render, ui
 
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.pages._helpers import format_timing_pairs
+from ui.state import AppState
 from ui.styles import STYLE_EMPTY
 
 
@@ -51,7 +52,7 @@ def diagnostics_ui():
     )
 
 
-def diagnostics_server(input, output, session, state):
+def diagnostics_server(input, output, session, state: AppState):
     @render.ui
     def diag_timing():
         if state.engine_mode.get() != "python":

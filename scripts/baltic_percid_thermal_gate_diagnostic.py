@@ -57,7 +57,7 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    cfg_path = sorted((Path("data") / "baltic").glob("*all-parameters*.csv"))[0]
+    cfg_path = min((Path("data") / "baltic").glob("*all-parameters*.csv"))
     base = dict(OsmoseConfigReader().read(str(cfg_path)))
     if args.nyear is not None:
         base["simulation.time.nyear"] = str(args.nyear)

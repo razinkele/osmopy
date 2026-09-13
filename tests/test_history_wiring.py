@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 def test_save_run_called_on_de_completion(tmp_path, monkeypatch):
@@ -18,7 +18,7 @@ def test_save_run_called_on_de_completion(tmp_path, monkeypatch):
     monkeypatch.setattr(hist_mod, "HISTORY_DIR", tmp_path / "calibration_history")
 
     payload = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "algorithm": "de",
         "phase": "test",
         "parameters": ["k_a", "k_b"],
@@ -51,7 +51,7 @@ def test_save_run_fallback_writes_to_tempfile_with_restrictive_mode(tmp_path, mo
 
     logger = logging.getLogger("test")
     payload = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "algorithm": "de",
         "phase": "test",
         "parameters": ["k_a"],

@@ -19,7 +19,9 @@ class _T:
 
 
 def _wide(series: dict, n: int = 50) -> pd.DataFrame:
-    return pd.DataFrame({"Time": np.arange(n), **{k: np.asarray(v, float) for k, v in series.items()}})
+    return pd.DataFrame(
+        {"Time": np.arange(n), **{k: np.asarray(v, float) for k, v in series.items()}}
+    )
 
 
 TGT = [_T("cod", 60000, 250000, 1.0)]

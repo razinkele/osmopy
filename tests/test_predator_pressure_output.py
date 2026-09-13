@@ -45,8 +45,11 @@ def test_multiple_times_stack_as_rows(tmp_path):
     m2 = np.array([[0.0, 2.0]])
     path = tmp_path / "p.csv"
     write_predator_pressure_csv(
-        path=path, step_diet_matrices=[m1, m2], step_times=[1.0, 2.0],
-        predator_names=["cod"], prey_names=["sprat", "smelt"],
+        path=path,
+        step_diet_matrices=[m1, m2],
+        step_times=[1.0, 2.0],
+        predator_names=["cod"],
+        prey_names=["sprat", "smelt"],
     )
     df = pd.read_csv(path)
     assert len(df) == 4 and sorted(df["Time"].unique().tolist()) == [1.0, 2.0]
@@ -80,8 +83,12 @@ def test_values_are_per_step_means_over_the_recording_window(tmp_path):
     mat = np.array([[24.0, 48.0]])  # biomass summed over a 24-step window
     path = tmp_path / "p.csv"
     write_predator_pressure_csv(
-        path=path, step_diet_matrices=[mat], step_times=[1.0],
-        predator_names=["cod"], prey_names=["sprat", "smelt"], steps_per_record=24,
+        path=path,
+        step_diet_matrices=[mat],
+        step_times=[1.0],
+        predator_names=["cod"],
+        prey_names=["sprat", "smelt"],
+        steps_per_record=24,
     )
     df = pd.read_csv(path)
     assert df[df["Prey"] == "sprat"].iloc[0]["cod"] == 1.0

@@ -7,7 +7,6 @@ from osmose.engine.config import EngineConfig
 from osmose.engine.grid import Grid
 from osmose.engine.simulate import simulate
 
-
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 
@@ -421,9 +420,10 @@ class TestBioenOutput:
 
     def test_enet_csv_written(self, tmp_path):
         """meanEnet CSV is written for each species with expected columns."""
+        import pandas as pd
+
         from osmose.engine.grid import Grid
         from osmose.engine.output import write_outputs
-        import pandas as pd
 
         cfg = EngineConfig.from_dict(_make_bioen_sim_config())
         grid = Grid.from_dimensions(ny=3, nx=3)

@@ -4,8 +4,7 @@ import logging
 
 import pytest
 
-from osmose.engine.config import _WARNED_UNSUPPORTED_RESTART
-from osmose.engine.config import EngineConfig
+from osmose.engine.config import _WARNED_UNSUPPORTED_RESTART, EngineConfig
 
 
 @pytest.fixture(autouse=True)

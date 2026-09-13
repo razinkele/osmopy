@@ -27,7 +27,7 @@ import pytest
 
 def java_nclass(mn: float, mx: float, incr: float) -> int:
     """Direct port of Java's OutputDistribution.initialize line."""
-    return int(math.ceil((mx - mn) / incr)) + 1
+    return math.ceil((mx - mn) / incr) + 1
 
 
 def python_n_bins(mn: float, mx: float, incr: float) -> int:

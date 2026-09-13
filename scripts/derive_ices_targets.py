@@ -6,12 +6,23 @@ catches (falling back to landings where catches are unreported) over 2018-2022, 
 `catch` target rows (band = mean +/- 1.5*std, floored at the window min). Writes
 biomass_targets.csv in place, preserving comment/provenance lines.
 
-Run: .venv/bin/python scripts/derive_ices_targets.py
+DESTRUCTIVE: rewrites the tracked data/baltic/reference/biomass_targets.csv in
+place. It therefore requires an explicit --write; any other argv (including
+--help, and including no argv at all) prints what it would do and exits without
+touching the file. That guard exists because the script previously rewrote the
+CSV unconditionally on import-and-run: a `--help` probe during a 2026-09-12
+tooling sweep silently reverted the file's version header and collapsed the
+cod_east/cod_west disaggregation back to an aggregate `cod` row, which only
+surfaced three test failures later. A script that overwrites committed
+scientific data must not do so as its default action.
+
+Run: .venv/bin/python scripts/derive_ices_targets.py --write
 """
 
 from __future__ import annotations
 
 import json
+import sys
 from datetime import date
 from pathlib import Path
 
@@ -33,7 +44,8 @@ def _stock_catch(snapshot_dir: Path, stock: str) -> dict[int, float]:
     total-fished-biomass `yield`); falls back to `landings` for years/stocks where
     `catches` is unreported (empty string or missing).
     """
-    recs = json.load(open(snapshot_dir / f"{stock}.assessment.json"))
+    with open(snapshot_dir / f"{stock}.assessment.json") as _f:
+        recs = json.load(_f)
     out: dict[int, float] = {}
     for r in recs:
         y = r.get("year")
@@ -45,7 +57,8 @@ def _stock_catch(snapshot_dir: Path, stock: str) -> dict[int, float]:
 
 def derive_catch_targets(snapshot_dir: Path) -> list[dict]:
     """One catch-target row dict per assessed species (catches summed across its stocks)."""
-    index = json.load(open(snapshot_dir / "index.json"))
+    with open(snapshot_dir / "index.json") as _f:
+        index = json.load(_f)
     mapping = index["model_species_to_ices_stocks"]
     lo_y, hi_y = WINDOW
     rows: list[dict] = []
@@ -96,7 +109,7 @@ def _rewrite_csv(catch_rows: list[dict]) -> None:
     data_rows = [ln for ln in text[header_idx + 1 :] if ln.strip()]
     # Drop any pre-existing catch rows (idempotent re-run).
     data_rows = [ln for ln in data_rows if ",catch," not in f",{ln},"]
-    today = date.today().isoformat()
+    today = date.today().isoformat()  # noqa: DTZ011 - local report date stamp, not an instant
     comments = [
         (
             f"#! last_updated: {today}"
@@ -119,8 +132,20 @@ def _rewrite_csv(catch_rows: list[dict]) -> None:
     TARGETS_CSV.write_text("\n".join([*comments, header, *data_rows, *new_rows]) + "\n")
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    argv = sys.argv[1:] if argv is None else argv
     rows = derive_catch_targets(SNAPSHOT_DIR)
+    if "--write" not in argv:
+        print(
+            f"DRY RUN — would rewrite {len(rows)} catch rows in {TARGETS_CSV}.\n"
+            "Pass --write to actually modify the tracked file."
+        )
+        for r in rows:
+            print(
+                f"  {r['species']:9} catch target={r['target_tonnes']} "
+                f"[{r['lower_tonnes']}, {r['upper_tonnes']}] t"
+            )
+        return
     _rewrite_csv(rows)
     print(f"Wrote {len(rows)} catch rows to {TARGETS_CSV}")
     for r in rows:

@@ -16,6 +16,7 @@ import re
 import tempfile
 import time
 from dataclasses import dataclass
+from datetime import UTC
 from pathlib import Path
 from typing import Final, Literal
 
@@ -466,8 +467,8 @@ def _write_progress_checkpoint(
     PCG64 state from evaluator.seed on every run, so the re-eval is
     deterministic. See spec §6.5.1.
     """
-    from datetime import datetime, timezone
     import time as _time
+    from datetime import datetime
 
     proxy_source: Literal["banded_loss", "objective_disabled", "not_implemented"]
     residuals: list[tuple[str, float, float]] | None
@@ -492,7 +493,7 @@ def _write_progress_checkpoint(
                 proxy_source = "not_implemented"
             else:
                 proxy_source = "banded_loss"
-        except Exception as e:  # noqa: BLE001 — bounded log+continue (§6.5.1)
+        except Exception as e:
             logger.warning(
                 "checkpoint re-eval failed at gen %d "
                 "(proxy_source=not_implemented; cause=reeval_raised): %s (%s)",
@@ -519,7 +520,7 @@ def _write_progress_checkpoint(
         bounds_log10={k: (float(lo), float(hi)) for k, (lo, hi) in zip(param_keys, bounds)},
         gens_since_improvement=state["gens_since_improvement"],
         elapsed_seconds=_time.time() - state["start_time"],
-        timestamp_iso=datetime.now(timezone.utc).isoformat(),
+        timestamp_iso=datetime.now(UTC).isoformat(),
         banded_targets=banded_targets,
         proxy_source=proxy_source,
     )

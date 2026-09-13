@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+
 from osmose.engine.config import _load_depensation_gate
 from osmose.engine.processes.depensation_gate import depensation_factor
 from osmose.results import total_cod
@@ -100,7 +101,7 @@ def test_loader_failfast_global_on_no_species():
 
 # --- Task 3: wiring into reproduction() ---
 
-import os  # noqa: E402
+import os
 
 
 def _repro_cfg_dict():
@@ -213,7 +214,7 @@ def test_gate_on_changes_cod_recruitment():
 
 # --- Task 4: Java-engine guard ---
 
-from osmose.runner import java_engine_block_reason  # noqa: E402
+from osmose.runner import java_engine_block_reason
 
 
 def test_java_engine_blocked_for_depensation_gate():

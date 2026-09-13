@@ -45,7 +45,7 @@ def build_feedback_record(
         raise ValueError("Feedback message is empty")
     return {
         "id": uuid.uuid4().hex,
-        "ts": datetime.now().isoformat(),
+        "ts": datetime.now().isoformat(),  # noqa: DTZ005 - naive local ISO by design; run history sorts these as STRINGS (history.py:58), so emitting +00:00 would misorder new vs existing records. Migrating to tz-aware needs a record migration, not a lint fix.
         "type": type,
         "message": msg[:_MAX_MESSAGE],
         "contact": (contact or "").strip(),
@@ -81,7 +81,7 @@ def read_feedback(*, path: Path | None = None) -> list[dict]:
             continue
         try:
             out.append(json.loads(raw))
-        except Exception:  # noqa: BLE001 — skip a corrupt line, don't fail the read
+        except Exception:
             _log.warning("Skipping corrupt feedback line")
             continue
     out.reverse()

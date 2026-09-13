@@ -36,7 +36,7 @@ def test_all_osmose_modules_import():
     for mod in walker:
         try:
             importlib.import_module(mod.name)
-        except Exception as exc:  # noqa: BLE001 - collect all, not just the first
+        except Exception as exc:
             failures.append(f"{mod.name}: {type(exc).__name__}: {exc}")
     assert not failures, "osmose modules failed to import:\n" + "\n".join(failures)
 

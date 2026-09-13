@@ -568,7 +568,7 @@ def results_server(input, output, session, state: AppState):
 
         try:
             runs = default_run_history().list_runs()
-        except Exception:  # noqa: BLE001 — never crash the page on a history-read error
+        except Exception:
             return
         choices = _compare_run_choices(runs)
         with reactive.isolate():
@@ -856,7 +856,7 @@ def results_server(input, output, session, state: AppState):
         history = default_run_history()
         try:
             records = [history.load_run(ts) for ts in selected]
-        except Exception:  # noqa: BLE001 — stale/missing run file: degrade, don't crash the render
+        except Exception:
             return go.Figure().update_layout(title="No run history found", template=tmpl)
         metric = input.compare_metric()
         fig = make_run_comparison(records, metrics=[metric])
@@ -874,7 +874,7 @@ def results_server(input, output, session, state: AppState):
         history = default_run_history()
         try:
             diffs = history.compare_runs_multi(list(selected))
-        except Exception:  # noqa: BLE001 — stale/missing run file: degrade, don't crash the render
+        except Exception:
             return ui.div("No run history found.")
 
         if not diffs:
@@ -914,7 +914,7 @@ def results_server(input, output, session, state: AppState):
         try:
             records = [default_run_history().load_run(ts) for ts in selected]
             deltas = _delta_for_selected(records, metric, int(input.compare_window_years()))
-        except Exception as e:  # noqa: BLE001 — UI guard: degrade to an error title, never crash the page
+        except Exception as e:
             return go.Figure().update_layout(title=f"Could not compute delta: {e}", template=tmpl)
         fig = make_run_delta_chart(deltas, metric=metric)
         fig.update_layout(template=tmpl)
@@ -929,15 +929,15 @@ def results_server(input, output, session, state: AppState):
                 "(1st = baseline, 2nd = variant). The config diff above supports more than 2.",
                 style=STYLE_EMPTY,
             )
-        from osmose.history import default_run_history
         from osmose.analysis import format_delta_report
+        from osmose.history import default_run_history
 
         metric = input.compare_metric()
         try:
             records = [default_run_history().load_run(ts) for ts in selected]
             window_years = int(input.compare_window_years())
             deltas = _delta_for_selected(records, metric, window_years)
-        except Exception as e:  # noqa: BLE001 — UI guard: degrade to an error div, never crash the page
+        except Exception as e:
             return ui.div(f"Could not load run outputs: {e}")
         return ui.markdown(format_delta_report(deltas, metric=metric, window_years=window_years))
 
@@ -949,8 +949,9 @@ def results_server(input, output, session, state: AppState):
         )
     )
     def download_results_csv():
-        from osmose.results import OsmoseResults
         import tempfile
+
+        from osmose.results import OsmoseResults
 
         out_dir = _safe_output_dir(input.output_dir())
         if out_dir is None:

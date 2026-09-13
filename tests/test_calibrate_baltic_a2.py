@@ -7,7 +7,7 @@ _SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 
-import calibrate_baltic as cb  # noqa: E402
+import calibrate_baltic as cb
 
 
 def test_expand_param_overrides_passthrough_and_logspace():

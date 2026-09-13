@@ -115,8 +115,9 @@ _temp_builder = _load_module(
     "build_baltic_temperature_forcing", "scripts/build_baltic_temperature_forcing.py"
 )
 
-from osmose.calibration.bioen_offline import BioenFixed, g_net as _g_net  # noqa: E402
-from osmose.engine.processes.temp_function import phi_t as _phi_t  # noqa: E402
+from osmose.calibration.bioen_offline import BioenFixed
+from osmose.calibration.bioen_offline import g_net as _g_net
+from osmose.engine.processes.temp_function import phi_t as _phi_t
 
 SEEDS = (42, 123, 7, 999, 2024)
 N_YEAR = 50
@@ -170,26 +171,44 @@ ENVELOPE = _certify.ENVELOPE
 # spec Sec.4 REPORTED labels, restated verbatim.
 REPORT_LABELS = [
     "Single optimum per species (cod's is size-dependent, Bjornsson & Steinarsson 2002).",
-    "Herring optimum (15 C) is PROVISIONAL -- no herring growth optimum was retrieved in three "
-    "literature searches.",
-    "Secondary-source optima for flounder (19 C, via Kusakabe et al. 2016 quoting Fonds et al. "
-    "1992) and smelt (15 C, via Krause 2008 quoting Vinni et al. 2004).",
-    "Maintenance share m anchored on juvenile herring trials at 16 C (Bernreuther et al. 2012), "
-    "transplanted to every species.",
-    "No upper thermal limit at e_D = 1.5 -- phi_t(T) never turns back down at high T in this "
-    "parameterisation.",
-    "Perch and pikeperch are lagoon species fitted against the open-coast surface field -- "
-    "phiT peaks at 0.7-0.8 in their actual lagoon habitat, inflating the fitted Imax.",
-    "Ingestion is capped at Imax*w^beta BEFORE phiT (Java form) -- consumption inflation for "
-    "cold-habitat species, decision 17.",
-    "Food-unlimited offline fit vs a food-limited engine -- the in-engine A/B measures the "
-    "emergent departure from the fitted curve, not a re-run of the fit.",
+    (
+        "Herring optimum (15 C) is PROVISIONAL -- no herring growth optimum was retrieved in three "
+        "literature searches."
+    ),
+    (
+        "Secondary-source optima for flounder (19 C, via Kusakabe et al. 2016 quoting Fonds et al. "
+        "1992) and smelt (15 C, via Krause 2008 quoting Vinni et al. 2004)."
+    ),
+    (
+        "Maintenance share m anchored on juvenile herring trials at 16 C (Bernreuther et al. 2012), "
+        "transplanted to every species."
+    ),
+    (
+        "No upper thermal limit at e_D = 1.5 -- phi_t(T) never turns back down at high T in this "
+        "parameterisation."
+    ),
+    (
+        "Perch and pikeperch are lagoon species fitted against the open-coast surface field -- "
+        "phiT peaks at 0.7-0.8 in their actual lagoon habitat, inflating the fitted Imax."
+    ),
+    (
+        "Ingestion is capped at Imax*w^beta BEFORE phiT (Java form) -- consumption inflation for "
+        "cold-habitat species, decision 17."
+    ),
+    (
+        "Food-unlimited offline fit vs a food-limited engine -- the in-engine A/B measures the "
+        "emergent departure from the fitted curve, not a re-run of the fit."
+    ),
     "Larval phase (age < 1 yr) is unfitted -- decision 10, reported not fitted.",
-    "Two-layer temperature is a proxy (surface nan-mean of 5 CMEMS depth levels; bottom = "
-    "CMEMS bottomT), a climatology (1993-2021 monthly means, not a hindcast), and fo2 is off "
-    "in Stage 1 (decision 19).",
-    "Reproduction under bioen keeps the certified Python-side stock-recruitment regulation "
-    "(decision 5) -- this A/B changes growth structure, not recruitment structure.",
+    (
+        "Two-layer temperature is a proxy (surface nan-mean of 5 CMEMS depth levels; bottom = "
+        "CMEMS bottomT), a climatology (1993-2021 monthly means, not a hindcast), and fo2 is off "
+        "in Stage 1 (decision 19)."
+    ),
+    (
+        "Reproduction under bioen keeps the certified Python-side stock-recruitment regulation "
+        "(decision 5) -- this A/B changes growth structure, not recruitment structure."
+    ),
 ]
 
 
@@ -590,12 +609,12 @@ def gate_f_direction(
     fitted Baltic species (T-bar sits 1.7-5.3 C below t_opt, README.md).
     """
     out: dict[str, bool] = {}
-    for name in t_bar:
-        want_increase = t_opt[name] > t_bar[name]
+    for name, t_bar_v in t_bar.items():
+        want_increase = t_opt[name] > t_bar_v
         got_increase = g_plus2[name] > g_base[name]
         if got_increase != want_increase:
             raise AssertionError(
-                f"Gate F BLOCKED (direction): {name}: t_opt={t_opt[name]} t_bar={t_bar[name]} "
+                f"Gate F BLOCKED (direction): {name}: t_opt={t_opt[name]} t_bar={t_bar_v} "
                 f"g_base={g_base[name]} g_plus2={g_plus2[name]} -- direction mismatch, "
                 "wiring bug."
             )
@@ -963,7 +982,7 @@ def run_c3(
     nx = int(raw_base["grid.nlon"])
     wet = Grid.from_netcdf(DEFAULT_GRID_PATH).ocean_mask
 
-    targets, sp_index2, t24_by_name = _fit._species_targets_from_baltic(
+    _targets, sp_index2, t24_by_name = _fit._species_targets_from_baltic(
         raw_base, base_config, config_dir, DEFAULT_TEMP_NC
     )
     assert sp_index2 == sp_index
@@ -1092,8 +1111,7 @@ def run_c3(
 
     # --- realized ration / e-bar/g-hat (decision 7) ---
     ration: dict[str, dict] = {}
-    for name in sp_index:
-        sp = sp_index[name]
+    for name, sp in sp_index.items():
         seed_vals = [
             _final_window_mean(results_by_arm_seed["bioen"][seed], "meanEnetFaced", name)
             for seed in seeds

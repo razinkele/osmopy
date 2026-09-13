@@ -72,7 +72,12 @@ _BACKGROUND_SP = tuple(FR_PREDATOR_SP[-_N_BACKGROUND:])  # (GreySeal, Cormorant)
 _SP_TO_SLOT = {sp: sp for sp in FR_PREDATOR_SP if sp < _N_FOCAL}
 _SP_TO_SLOT.update({sp: _N_FOCAL + i for i, sp in enumerate(_BACKGROUND_SP)})
 PREDATOR_SLOTS = {sp: _SP_TO_SLOT[sp] for sp in FR_PREDATOR_SP}
-_SP_NAME = {0: "cod_west", 5: "pikeperch", _BACKGROUND_SP[0]: "GreySeal", _BACKGROUND_SP[1]: "Cormorant"}
+_SP_NAME = {
+    0: "cod_west",
+    5: "pikeperch",
+    _BACKGROUND_SP[0]: "GreySeal",
+    _BACKGROUND_SP[1]: "Cormorant",
+}
 PREDATOR_LABEL = {_SP_TO_SLOT[sp]: f"{_SP_NAME[sp]}(sp{sp})" for sp in FR_PREDATOR_SP}
 
 
@@ -212,9 +217,11 @@ def _run_with_diet(cfg: dict[str, str], n_years: int, seed: int):
             return result[:, :prod_width]
         return result
 
-    with mock.patch.object(_pred, "enable_diet_tracking", _wide_enable):
-        with mock.patch.object(_output, "aggregate_diet_by_species", _capturing_agg):
-            results = PythonEngine().run_in_memory(cfg, seed=seed)
+    with (
+        mock.patch.object(_pred, "enable_diet_tracking", _wide_enable),
+        mock.patch.object(_output, "aggregate_diet_by_species", _capturing_agg),
+    ):
+        results = PythonEngine().run_in_memory(cfg, seed=seed)
 
     if not step_aggs:
         raise RuntimeError("diet aggregation hook was never invoked (no diet captured)")

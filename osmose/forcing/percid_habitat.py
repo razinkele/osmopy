@@ -5,6 +5,7 @@ unambiguously by the engine's map semantics. Salinity gate on spawning; relaxed
 ceiling on adult/juvenile. Land -> -99."""
 
 from __future__ import annotations
+
 import numpy as np
 
 

@@ -7,7 +7,7 @@ import io
 import re
 from collections.abc import Hashable
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, ClassVar, Self, cast
 
 import numpy as np
 import pandas as pd
@@ -307,12 +307,12 @@ def _build_dataframes_from_outputs(
     from osmose.engine.output import (
         _build_bioen_dataframes,
         _build_diet_dataframe,
-        _build_predator_pressure_dataframe,
         _build_distrib_bysize_community_dataframes,
         _build_distribution_dataframes,
         _build_meansize_dataframe,
         _build_meantl_dataframe,
         _build_mortality_dataframes,
+        _build_predator_pressure_dataframe,
         _build_species_dataframes,
         _build_ssb_dataframe,
         _build_yield_dataframes,
@@ -398,7 +398,7 @@ class OsmoseResults:
         obj._in_memory = True
         return obj
 
-    def __enter__(self) -> OsmoseResults:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
@@ -815,7 +815,7 @@ class OsmoseResults:
         return combined  # type: ignore[return-value]
 
     # Type-to-method mapping for export_dataframe
-    _EXPORT_MAP: dict[str, tuple[str, str]] = {
+    _EXPORT_MAP: ClassVar[dict[str, tuple[str, str]]] = {
         # 1D types: (internal_output_type, method_type)
         "biomass": ("biomass", "1d"),
         "abundance": ("abundance", "1d"),
@@ -890,7 +890,7 @@ class OsmoseResults:
         self.close_cache()
 
 
-def read_genetic_trait_means(output_dir: Path, prefix: str = "osm") -> "xr.Dataset":
+def read_genetic_trait_means(output_dir: Path, prefix: str = "osm") -> xr.Dataset:
     """Read per-step genetic trait statistics into an xarray Dataset.
 
     Indexed by (Time, species_id, trait_name). Returns an empty dataset if the

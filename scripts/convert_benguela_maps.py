@@ -7,11 +7,15 @@ CSV format: semicolon-delimited, -99=land, ocean value = slice value. The grid i
 because _load_csv_grid reverses rows on load (mirrors osmose/maps/builder.py::to_csv_text). Pass the
 external source clone dir as argv[1].
 """
+
 from __future__ import annotations
+
 import sys
 from pathlib import Path
+
 import numpy as np
 import xarray as xr
+
 from osmose.config.reader import OsmoseConfigReader
 
 
@@ -32,7 +36,9 @@ def convert_maps(src_dir: Path, maps_out: Path, keys_out: Path) -> list[dict]:
     maps_out.mkdir(parents=True, exist_ok=True)
     raw = dict(OsmoseConfigReader().read(str(src_dir / "osmose-ben.R")))
     ocean = _grid_ocean(src_dir)
-    src_idxs = sorted({int(k.split(".map")[1]) for k in raw if k.startswith("movement.species.map")})
+    src_idxs = sorted(
+        {int(k.split(".map")[1]) for k in raw if k.startswith("movement.species.map")}
+    )
     out_rows: list[dict] = []
     seen: dict[bytes, str] = {}
     out_n = 0
@@ -87,6 +93,7 @@ def convert_maps(src_dir: Path, maps_out: Path, keys_out: Path) -> list[dict]:
 if __name__ == "__main__":
     root = Path(__file__).resolve().parents[1]
     src = Path(sys.argv[1])
-    convert_maps(src, root / "data" / "benguela" / "maps",
-                 root / "data" / "benguela" / "_movement_keys.txt")
+    convert_maps(
+        src, root / "data" / "benguela" / "maps", root / "data" / "benguela" / "_movement_keys.txt"
+    )
     print("maps converted")

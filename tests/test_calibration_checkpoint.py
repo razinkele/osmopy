@@ -10,10 +10,10 @@ import numpy as np
 import pytest
 
 from osmose.calibration.checkpoint import (
+    MAX_CHECKPOINT_BYTES,
     CalibrationCheckpoint,
     CheckpointReadResult,
     LiveSnapshot,
-    MAX_CHECKPOINT_BYTES,
     default_results_dir,
     is_live,
     liveness_state,
@@ -52,25 +52,25 @@ def test_max_checkpoint_bytes_is_1mib():
 
 def _valid_checkpoint_kwargs() -> dict:
     """Build a CalibrationCheckpoint kwargs dict that satisfies all 14 invariants."""
-    return dict(
-        optimizer="de",
-        phase="12",
-        generation=10,
-        generation_budget=200,
-        best_fun=3.14,
-        per_species_residuals=(0.0, 0.42),
-        per_species_sim_biomass=(1.0, 2.4),
-        species_labels=("sp_a", "sp_b"),
-        best_x_log10=(-0.3, 0.8),
-        best_parameters={"k_a": 0.5, "k_b": 6.3},
-        param_keys=("k_a", "k_b"),
-        bounds_log10={"k_a": (-1.0, 0.0), "k_b": (0.0, 1.0)},
-        gens_since_improvement=3,
-        elapsed_seconds=42.0,
-        timestamp_iso="2026-05-12T10:30:00+00:00",
-        banded_targets={"sp_a": (0.5, 1.5), "sp_b": (1.5, 2.5)},
-        proxy_source="banded_loss",
-    )
+    return {
+        "optimizer": "de",
+        "phase": "12",
+        "generation": 10,
+        "generation_budget": 200,
+        "best_fun": 3.14,
+        "per_species_residuals": (0.0, 0.42),
+        "per_species_sim_biomass": (1.0, 2.4),
+        "species_labels": ("sp_a", "sp_b"),
+        "best_x_log10": (-0.3, 0.8),
+        "best_parameters": {"k_a": 0.5, "k_b": 6.3},
+        "param_keys": ("k_a", "k_b"),
+        "bounds_log10": {"k_a": (-1.0, 0.0), "k_b": (0.0, 1.0)},
+        "gens_since_improvement": 3,
+        "elapsed_seconds": 42.0,
+        "timestamp_iso": "2026-05-12T10:30:00+00:00",
+        "banded_targets": {"sp_a": (0.5, 1.5), "sp_b": (1.5, 2.5)},
+        "proxy_source": "banded_loss",
+    }
 
 
 def test_valid_checkpoint_constructs():
@@ -414,10 +414,18 @@ def test_probe_writable_does_not_leak_sentinel(tmp_path):
 
 
 def test_probe_writable_raises_on_readonly_dir(tmp_path):
+    import os
     import sys
 
     if sys.platform.startswith("win"):
         pytest.skip("chmod 0o555 semantics differ on Windows")
+    if os.getuid() == 0:
+        # root satisfies CAP_DAC_OVERRIDE, so the write succeeds and
+        # probe_writable correctly does not raise. Verified 2026-09-05 in a
+        # root container: os.access(d, W_OK) is True at mode 0o500 and the
+        # write goes through. Same class of environment fragility as the
+        # username-dependent assertion fixed in test_config_reader_errors.py.
+        pytest.skip("running as root bypasses the directory write permission bit")
     tmp_path.chmod(0o555)
     try:
         with pytest.raises(OSError):

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import threading  # noqa: F401  (cancel_token type annotation; runtime use only)
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -94,7 +94,7 @@ class PythonEngine:
         output_dir: Path,
         seed: int = 0,
         *,
-        cancel_token: "threading.Event | None" = None,
+        cancel_token: threading.Event | None = None,
         step_observer=None,
     ) -> RunResult:
         from osmose.engine.output import write_outputs
@@ -125,7 +125,7 @@ class PythonEngine:
         config: dict[str, str],
         seed: int = 0,
         *,
-        cancel_token: "threading.Event | None" = None,
+        cancel_token: threading.Event | None = None,
     ) -> OsmoseResults:
         """Run the Python engine and return results as an in-memory OsmoseResults.
 

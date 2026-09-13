@@ -74,8 +74,8 @@ def _step(step, ssb=None, n_sp=1):
 
 
 def test_ssb_csv_and_reader_roundtrip(tmp_path):
-    from osmose.engine.output import write_outputs
     from osmose.engine.grid import Grid
+    from osmose.engine.output import write_outputs
     from osmose.results import OsmoseResults, _build_dataframes_from_outputs
 
     cfg = EngineConfig.from_dict({**_base_cfg(), "output.ssb.enabled": "true"})

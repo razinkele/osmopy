@@ -1,5 +1,6 @@
 import tempfile
 from pathlib import Path
+
 from osmose.config.reader import OsmoseConfigReader
 
 FIXTURES = Path(__file__).parent / "fixtures"

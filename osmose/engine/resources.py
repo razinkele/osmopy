@@ -239,7 +239,7 @@ class ResourceState:
         path = resolve_data_path(nc_file, config_dir=config_dir)
         if path is not None:
             self._forcing_data = open_dataset_safe(path)
-            first_var = list(self._forcing_data.data_vars)[0]
+            first_var = next(iter(self._forcing_data.data_vars))
             self._n_forcing_steps = self._forcing_data[first_var].shape[0]
 
     def update(self, step: int) -> None:

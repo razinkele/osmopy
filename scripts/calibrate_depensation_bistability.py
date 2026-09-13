@@ -25,7 +25,7 @@ import numpy as np
 _SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(_SCRIPTS))
 
-from baltic_bistability_chunk0 import (  # noqa: E402
+from baltic_bistability_chunk0 import (
     cod_poor_seeding,
     cod_rich_seeding,
     is_stationary,

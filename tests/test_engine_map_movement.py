@@ -14,7 +14,6 @@ from osmose.engine.processes.movement import _map_move_school, movement
 from osmose.engine.simulate import simulate
 from osmose.engine.state import SchoolState
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -23,8 +22,7 @@ from osmose.engine.state import SchoolState
 def _write_csv_map(path, data):
     """Write a 2D list as a semicolon-delimited CSV (no header)."""
     with open(path, "w") as f:
-        for row in data:
-            f.write(";".join(str(v) for v in row) + "\n")
+        f.writelines(";".join(str(v) for v in row) + "\n" for row in data)
 
 
 def _base_config(tmp_path, map_file="map0.csv"):
@@ -747,7 +745,7 @@ class TestMapMoveSchool:
         assert len(pos_ys) == 1
         gy, gx = int(pos_ys[0]), int(pos_xs[0])
         # Located at that cell, step=1 (same map) -> random walk, only accessible cell is self
-        x, y, out = _map_move_school(10, gx, gy, 5, 5, grid.ocean_mask, ms, 1, 1, rng)
+        x, y, _out = _map_move_school(10, gx, gy, 5, 5, grid.ocean_mask, ms, 1, 1, rng)
         assert x == gx and y == gy  # stays in place
 
     def test_presence_absence_uniform(self, tmp_path):

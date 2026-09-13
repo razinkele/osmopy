@@ -164,7 +164,7 @@ def test_age_distribution_uses_year_bins(minimal_config):
 
 def test_average_step_outputs_preserves_distributions():
     """Distribution dicts must not be silently dropped during averaging."""
-    from osmose.engine.simulate import _average_step_outputs, StepOutput
+    from osmose.engine.simulate import StepOutput, _average_step_outputs
 
     dist = {0: np.array([1.0, 2.0, 3.0])}
     so = StepOutput(
@@ -298,9 +298,9 @@ def test_step_output_distribution_pairs_travel_together():
     """biomass_by_age and abundance_by_age must be co-populated by any code path.
     Deep review v3 M-13.
     """
-    from osmose.engine.simulate import simulate
     from osmose.engine.config import EngineConfig
     from osmose.engine.grid import Grid
+    from osmose.engine.simulate import simulate
 
     cfg_dict = {
         "simulation.time.ndtperyear": "12",

@@ -18,7 +18,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from osmose.config.reader import OsmoseConfigReader
 
-
 SEPARATOR_RE = re.compile(r"\s*[=;,:\t]\s*")
 
 

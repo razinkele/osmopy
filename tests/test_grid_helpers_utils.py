@@ -65,5 +65,5 @@ def test_half_extents_single_cell():
 def test_half_extents_zero_step_fallback():
     lat = np.array([[48.0, 48.0], [48.0, 48.0]])
     lon = np.array([[1.0, 2.0], [1.0, 2.0]])
-    hlat, hlon = _compute_half_extents(lat, lon)
+    hlat, _hlon = _compute_half_extents(lat, lon)
     assert np.all(hlat > 0), "Zero-step dlat should fall back to lon_step"

@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import shutil
 import tempfile
 import zipfile
-import dataclasses
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -44,7 +44,7 @@ class Scenario:
             )
         ):
             raise ValueError(f"Scenario name contains invalid characters: {self.name!r}")
-        now = datetime.now().isoformat()
+        now = datetime.now().isoformat()  # noqa: DTZ005 - naive local ISO by design; run history sorts these as STRINGS (history.py:58), so emitting +00:00 would misorder new vs existing records. Migrating to tz-aware needs a record migration, not a lint fix.
         if not self.created_at:
             self.created_at = now
         if not self.modified_at:
@@ -83,7 +83,7 @@ class ScenarioManager:
     def save(self, scenario: Scenario, preserve_modified_at: bool = False) -> Path:
         """Save a scenario to disk using atomic write pattern."""
         if not preserve_modified_at:
-            scenario.modified_at = datetime.now().isoformat()
+            scenario.modified_at = datetime.now().isoformat()  # noqa: DTZ005 - naive local ISO by design; run history sorts these as STRINGS (history.py:58), so emitting +00:00 would misorder new vs existing records. Migrating to tz-aware needs a record migration, not a lint fix.
         target = self._validate_path(scenario.name)
 
         tmp_dir = Path(tempfile.mkdtemp(dir=self.storage_dir))

@@ -57,7 +57,7 @@ def test_legacy_mode_override():
         "mortality.fishing.rate.sp0": "0.2",
     }
     cfg = EngineConfig.from_dict(dict(raw))
-    key, base = fishing_override(raw, cfg, 0)
+    key, _base = fishing_override(raw, cfg, 0)
     assert key == "mortality.fishing.rate.sp0"
     bumped = dict(raw)
     bumped[key] = "0.9"

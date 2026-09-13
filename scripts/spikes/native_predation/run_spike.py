@@ -19,6 +19,7 @@ Pipeline:
     7. Write artifact docs/perf/2026-06-24-native-predation-kernel-spike.md
     8. Print portable weighted_ratio + PASS/STOP verdict
 """
+
 from __future__ import annotations
 
 import argparse
@@ -32,7 +33,7 @@ import numpy as np
 # Paths
 # ---------------------------------------------------------------------------
 WORKTREE_ROOT = Path(__file__).resolve().parents[3]  # .../feat+native-predation-kernel-spike
-FIXTURE_PATH  = Path(__file__).resolve().parent / "_fixtures" / "cellloop.npz"
+FIXTURE_PATH = Path(__file__).resolve().parent / "_fixtures" / "cellloop.npz"
 ARTIFACT_PATH = WORKTREE_ROOT / "docs" / "perf" / "2026-06-24-native-predation-kernel-spike.md"
 
 GATE_RATIO = 1.3
@@ -40,8 +41,10 @@ GATE_RATIO = 1.3
 
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Native-predation-kernel spike orchestrator")
-    p.add_argument("--n-iter",    type=int, default=100_000, help="iterations per bench sample (default 100000)")
-    p.add_argument("--n-samples", type=int, default=30,      help="number of A/B samples (default 30)")
+    p.add_argument(
+        "--n-iter", type=int, default=100_000, help="iterations per bench sample (default 100000)"
+    )
+    p.add_argument("--n-samples", type=int, default=30, help="number of A/B samples (default 30)")
     return p.parse_args()
 
 
@@ -51,7 +54,7 @@ def _fmt_ns(v: float) -> str:
 
 def main() -> None:
     args = _parse_args()
-    n_iter    = args.n_iter
+    n_iter = args.n_iter
     n_samples = args.n_samples
 
     print(f"[run_spike] n_iter={n_iter}, n_samples={n_samples}")
@@ -62,6 +65,7 @@ def main() -> None:
     # -----------------------------------------------------------------
     print("\n[1/7] Asserting provenance ...")
     from scripts.spikes.native_predation.provenance import assert_provenance, capture_flag_config
+
     prov = assert_provenance(WORKTREE_ROOT)
     print(f"      mortality.__file__ = {prov['mortality_file']}")
     print(f"      _HAS_NUMBA         = {prov['has_numba']}")
@@ -71,8 +75,9 @@ def main() -> None:
     # Step 2: Build both variants (skip if .so present)
     # -----------------------------------------------------------------
     print("\n[2/7] Building C variants ...")
-    from scripts.spikes.native_predation import build_ffi
     import importlib
+
+    from scripts.spikes.native_predation import build_ffi
 
     so_dir = Path(build_ffi.__file__).resolve().parent
     built_variants: dict[str, str] = {}
@@ -101,8 +106,10 @@ def main() -> None:
 
     arrays, meta = load_capture(FIXTURE_PATH)
     flags = meta.get("flags", {})
-    print(f"      flag config: diet_enabled={flags.get('diet_enabled')}, "
-          f"tl_tracking={flags.get('tl_tracking')}")
+    print(
+        f"      flag config: diet_enabled={flags.get('diet_enabled')}, "
+        f"tl_tracking={flags.get('tl_tracking')}"
+    )
     # Capture the use_stage_access and has_access from scalars for the report
     scalars = meta.get("scalars", {})
     flag_cfg = capture_flag_config(
@@ -118,8 +125,10 @@ def main() -> None:
     n_local_all = (boundaries[1:] - boundaries[:-1]).astype(np.int64)
     nonempty_counts = n_local_all[n_local_all > 0]
     print(f"      cells total: {len(n_local_all)}, non-empty: {nonempty_counts.size}")
-    print(f"      n_local range: {int(nonempty_counts.min())}..{int(nonempty_counts.max())}, "
-          f"median: {int(np.median(nonempty_counts))}")
+    print(
+        f"      n_local range: {int(nonempty_counts.min())}..{int(nonempty_counts.max())}, "
+        f"median: {int(np.median(nonempty_counts))}"
+    )
 
     sel = select_cells(arrays)
     print(f"      selected cells: {sel}")
@@ -131,15 +140,17 @@ def main() -> None:
     # Step 4: PARITY GATE
     # -----------------------------------------------------------------
     print("\n[4/7] Parity gate (portable C vs Numba, bar=1e-12) ...")
-    from scripts.spikes.native_predation.parity import parity_for_cell, assert_parity
+    from scripts.spikes.native_predation.parity import assert_parity, parity_for_cell
 
     parity_reports: dict[str, dict] = {}
     for label, cell in sel.items():
         report = parity_for_cell(arrays, meta, cell)
         parity_reports[label] = report
         max_rel = max(report.values())
-        print(f"      {label} (cell {cell}): max_rel_diff = {max_rel:.2e}  — "
-              + ("PASS" if max_rel <= 1e-12 else "FAIL"))
+        print(
+            f"      {label} (cell {cell}): max_rel_diff = {max_rel:.2e}  — "
+            + ("PASS" if max_rel <= 1e-12 else "FAIL")
+        )
 
     # Aggregate and assert — if any cell fails, we abort before reporting any ratio
     all_ok = True
@@ -163,27 +174,33 @@ def main() -> None:
 
     bench_results: dict[str, dict] = {}
     for variant in ("portable", "native"):
-        print(f"\n[5/7] Benchmarking variant='{variant}' "
-              f"(n_iter={n_iter}, n_samples={n_samples}) ...")
-        r = run_all(arrays, meta, sel, variant=variant,
-                    n_iter=n_iter, n_samples=n_samples)
+        print(
+            f"\n[5/7] Benchmarking variant='{variant}' (n_iter={n_iter}, n_samples={n_samples}) ..."
+        )
+        r = run_all(arrays, meta, sel, variant=variant, n_iter=n_iter, n_samples=n_samples)
         bench_results[variant] = r
         for label in ("small", "p10", "p50", "p95"):
             cr = r[label]
-            print(f"      {label}: numba {cr['numba_med']:.1f} ns | "
-                  f"C {cr['c_med']:.1f} ns | ratio {cr['ratio']:.2f}x")
+            print(
+                f"      {label}: numba {cr['numba_med']:.1f} ns | "
+                f"C {cr['c_med']:.1f} ns | ratio {cr['ratio']:.2f}x"
+            )
         print(f"      weighted_ratio = {r['weighted_ratio']:.2f}x")
         bp = r["boundary"]
-        print(f"      boundary: noop {bp['noop_med_ns']:.0f} ns, "
-              f"numba-empty {bp['numba_empty_med_ns']:.0f} ns")
+        print(
+            f"      boundary: noop {bp['noop_med_ns']:.0f} ns, "
+            f"numba-empty {bp['numba_empty_med_ns']:.0f} ns"
+        )
 
     # -----------------------------------------------------------------
     # Step 6: Compute gate on portable call-weighted ratio
     # -----------------------------------------------------------------
     portable_ratio = bench_results["portable"]["weighted_ratio"]
     verdict = "PASS" if portable_ratio >= GATE_RATIO else "STOP"
-    print(f"\n[6/7] Gate: portable weighted_ratio = {portable_ratio:.2f}x "
-          f"(threshold {GATE_RATIO}x) => {verdict}")
+    print(
+        f"\n[6/7] Gate: portable weighted_ratio = {portable_ratio:.2f}x "
+        f"(threshold {GATE_RATIO}x) => {verdict}"
+    )
 
     # -----------------------------------------------------------------
     # Step 7: Write artifact
@@ -192,29 +209,34 @@ def main() -> None:
     ARTIFACT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     # Build n_local summary stats
-    nl_hist_min  = int(nonempty_counts.min())
-    nl_hist_max  = int(nonempty_counts.max())
-    nl_hist_med  = int(np.median(nonempty_counts))
-    nl_hist_p95  = int(np.percentile(nonempty_counts, 95))
-    n_cells_total   = int(len(n_local_all))
+    nl_hist_min = int(nonempty_counts.min())
+    nl_hist_max = int(nonempty_counts.max())
+    nl_hist_med = int(np.median(nonempty_counts))
+    nl_hist_p95 = int(np.percentile(nonempty_counts, 95))
+    n_cells_total = len(n_local_all)
     n_cells_nonempty = int(nonempty_counts.size)
 
     # Cell details
     cell_rows = []
     for label in ("small", "p10", "p50", "p95"):
         cell = sel[label]
-        nl   = int(n_local_all[cell])
+        nl = int(n_local_all[cell])
         from scripts.spikes.native_predation.leaf_args import build_leaf_args
+
         _, p_idx = build_leaf_args(arrays, meta, cell)
         cell_rows.append((label, cell, nl, p_idx))
 
     # Format per-cell bench tables
     def _cell_table(variant_r: dict) -> str:
         lines = []
-        lines.append("| cell | label | n_local | numba_med (ns) | numba_iqr (ns) | "
-                     "C_med (ns) | C_iqr (ns) | ratio |")
-        lines.append("|------|-------|---------|---------------|---------------|"
-                     "-----------|------------|-------|")
+        lines.append(
+            "| cell | label | n_local | numba_med (ns) | numba_iqr (ns) | "
+            "C_med (ns) | C_iqr (ns) | ratio |"
+        )
+        lines.append(
+            "|------|-------|---------|---------------|---------------|"
+            "-----------|------------|-------|"
+        )
         for label, cell, nl, _ in cell_rows:
             r = variant_r[label]
             lines.append(
@@ -226,18 +248,26 @@ def main() -> None:
         return "\n".join(lines)
 
     portable_r = bench_results["portable"]
-    native_r   = bench_results["native"]
+    native_r = bench_results["native"]
     bp_portable = portable_r["boundary"]
-    bp_native   = native_r["boundary"]
+    bp_native = native_r["boundary"]
 
     # Parity detail table
     def _parity_table() -> str:
-        arrays_list = ["inst_abd", "n_dead", "pred_success_rate", "preyed_biomass",
-                       "rsc_biomass", "tl_weighted_sum", "diet_matrix"]
-        lines = ["| array | small | p10 | p50 | p95 |",
-                 "|-------|-------|-----|-----|-----|"]
+        arrays_list = [
+            "inst_abd",
+            "n_dead",
+            "pred_success_rate",
+            "preyed_biomass",
+            "rsc_biomass",
+            "tl_weighted_sum",
+            "diet_matrix",
+        ]
+        lines = ["| array | small | p10 | p50 | p95 |", "|-------|-------|-----|-----|-----|"]
         for arr in arrays_list:
-            vals = [f"{parity_reports[lbl].get(arr, 0.0):.0e}" for lbl in ("small","p10","p50","p95")]
+            vals = [
+                f"{parity_reports[lbl].get(arr, 0.0):.0e}" for lbl in ("small", "p10", "p50", "p95")
+            ]
             lines.append(f"| {arr} | {' | '.join(vals)} |")
         return "\n".join(lines)
 
@@ -252,15 +282,17 @@ def main() -> None:
                 "memcpy dominates the tiny leaf at this n_local). This cell's ratio is "
                 "unreliable but does not change the order-of-magnitude verdict."
             )
-    negative_block = ("\n\n> **Negative C median note:**\n" + "\n".join(negative_notes)
-                      if negative_notes else "")
+    negative_block = (
+        "\n\n> **Negative C median note:**\n" + "\n".join(negative_notes) if negative_notes else ""
+    )
 
     artifact_text = textwrap.dedent(f"""\
     # Native Predation Kernel — Feasibility Spike Artifact of Record
 
     **Date:** 2026-06-24
     **Branch:** `feat/native-predation-kernel-spike`
-    **Verdict:** {verdict} — portable call-weighted ratio = **{portable_ratio:.2f}×** (threshold 1.3×)
+    **Verdict:** {verdict} — portable call-weighted ratio = **{
+        portable_ratio:.2f}×** (threshold 1.3×)
 
     > **Read the headline with care.** The {portable_ratio:.2f}× call-weighted figure is
     > inflated by the p50 cell's noise-floor artifact (C_med 13.8 ns at C_IQR 1868 ns — the
@@ -274,18 +306,18 @@ def main() -> None:
 
     | Field | Value |
     |-------|-------|
-    | `mortality.__file__` | `{prov['mortality_file']}` |
-    | `_HAS_NUMBA` | `{prov['has_numba']}` |
-    | numba version | `{prov['numba_version']}` |
+    | `mortality.__file__` | `{prov["mortality_file"]}` |
+    | `_HAS_NUMBA` | `{prov["has_numba"]}` |
+    | numba version | `{prov["numba_version"]}` |
 
     **Captured flag config** (from fixture meta.json):
 
     | Flag | Value |
     |------|-------|
-    | `diet_enabled` | `{flag_cfg['diet_enabled']}` |
-    | `tl_tracking` | `{flag_cfg['tl_tracking']}` |
-    | `use_stage_access` | `{flag_cfg['use_stage_access']}` |
-    | `has_access` | `{flag_cfg['has_access']}` |
+    | `diet_enabled` | `{flag_cfg["diet_enabled"]}` |
+    | `tl_tracking` | `{flag_cfg["tl_tracking"]}` |
+    | `use_stage_access` | `{flag_cfg["use_stage_access"]}` |
+    | `has_access` | `{flag_cfg["has_access"]}` |
 
     The provenance guard confirmed the worktree `osmose` (not site-packages) is loaded, and
     `_HAS_NUMBA=True` so the Numba batch path — not the dead-code per-cell Python fallback — was
@@ -308,8 +340,11 @@ def main() -> None:
 
     | label | cell_idx | n_local | p_idx (first live feeder) |
     |-------|----------|---------|--------------------------|
-    {"".join(f"| {lbl} | {cell} | {nl} | {p_idx} |" + chr(10)
-             for lbl, cell, nl, p_idx in cell_rows)}
+    {
+        "".join(
+            f"| {lbl} | {cell} | {nl} | {p_idx} |" + chr(10) for lbl, cell, nl, p_idx in cell_rows
+        )
+    }
     ---
 
     ## 3. Parity Gate
@@ -344,9 +379,9 @@ def main() -> None:
 
     {_cell_table(portable_r)}
 
-    **Call-weighted ratio (portable):** {portable_r['weighted_ratio']:.2f}×
+    **Call-weighted ratio (portable):** {portable_r["weighted_ratio"]:.2f}×
 
-    > **Note on the call-weighted figure:** {portable_r['weighted_ratio']:.2f}× is inflated by
+    > **Note on the call-weighted figure:** {portable_r["weighted_ratio"]:.2f}× is inflated by
     > the p50 cell (C_med 13.8 ns, C_IQR 1868 ns — a noise-floor artifact: 13.8 ns is
     > physically implausible for a leaf over 12 schools + 10 resources when p10/4-schools
     > measures 78 ns and p95/24-schools measures 180 ns). The three cleanly-measured
@@ -357,17 +392,20 @@ def main() -> None:
 
     {_cell_table(native_r)}
 
-    **Call-weighted ratio (native):** {native_r['weighted_ratio']:.2f}×
+    **Call-weighted ratio (native):** {native_r["weighted_ratio"]:.2f}×
 
     ### 4c. Boundary-cost Probes
 
     | Probe | portable med (ns) | portable IQR (ns) | native med (ns) | native IQR (ns) |
     |-------|------------------|-------------------|-----------------|-----------------|
-    | cffi noop (Python→C ABI) | {bp_portable['noop_med_ns']:.0f} | {bp_portable['noop_iqr_ns']:.0f} | {bp_native['noop_med_ns']:.0f} | {bp_native['noop_iqr_ns']:.0f} |
-    | Numba empty dispatch | {bp_portable['numba_empty_med_ns']:.0f} | {bp_portable['numba_empty_iqr_ns']:.0f} | — | — |
+    | cffi noop (Python→C ABI) | {bp_portable["noop_med_ns"]:.0f} | {
+        bp_portable["noop_iqr_ns"]:.0f} | {bp_native["noop_med_ns"]:.0f} | {
+        bp_native["noop_iqr_ns"]:.0f} |
+    | Numba empty dispatch | {bp_portable["numba_empty_med_ns"]:.0f} | {
+        bp_portable["numba_empty_iqr_ns"]:.0f} | — | — |
 
-    **Why this matters:** The cffi ABI boundary (~{bp_portable['noop_med_ns']:.0f} ns) and
-    Numba's Python dispatch overhead (~{bp_portable['numba_empty_med_ns']:.0f} ns) both
+    **Why this matters:** The cffi ABI boundary (~{bp_portable["noop_med_ns"]:.0f} ns) and
+    Numba's Python dispatch overhead (~{bp_portable["numba_empty_med_ns"]:.0f} ns) both
     DWARF the measured leaf math (few hundred ns per call). A per-leaf call from Python
     to C would LOSE against Numba's njit→njit inlined production path.
 
@@ -392,12 +430,15 @@ def main() -> None:
 
     ## 5. Go/No-Go Verdict
 
-    **Portable call-weighted ratio: {portable_r['weighted_ratio']:.2f}× ≥ 1.3× threshold → {verdict}**
+    **Portable call-weighted ratio: {portable_r["weighted_ratio"]:.2f}× ≥ 1.3× threshold → {
+        verdict
+    }**
 
-    A {verdict} verdict at the 1.3× gate. Note the headline {portable_r['weighted_ratio']:.2f}×
+    A {verdict} verdict at the 1.3× gate. Note the headline {portable_r["weighted_ratio"]:.2f}×
     is inflated by the p50 noise-floor artifact (see §4a/§4c); the robust, cleanly-measured
     advantage is ~10–17×. Either way the gate is cleared by a wide margin — but a reader
-    funding the integration spike should anchor on ~10–17×, not on {portable_r['weighted_ratio']:.2f}×.
+    funding the integration spike should anchor on ~10–17×, not on {
+        portable_r["weighted_ratio"]:.2f}×.
 
     ### What a PASS authorizes
 
@@ -405,8 +446,8 @@ def main() -> None:
     **necessary-not-sufficient** condition for a production port:
 
     1. **ABI boundary dominates any per-leaf call from Python.**
-       The cffi noop (Python→C) costs ~{bp_portable['noop_med_ns']:.0f} ns and Numba's
-       Python dispatch costs ~{bp_portable['numba_empty_med_ns']:.0f} ns. The Numba
+       The cffi noop (Python→C) costs ~{bp_portable["noop_med_ns"]:.0f} ns and Numba's
+       Python dispatch costs ~{bp_portable["numba_empty_med_ns"]:.0f} ns. The Numba
        production path calls the leaf njit→njit with ZERO boundary overhead. A design
        that calls C for each predator from Python would ADD these penalties, erasing the
        leaf win. The leaf math win materializes in production ONLY if the ENTIRE
@@ -452,19 +493,19 @@ def main() -> None:
     # Strip 4-space indent from dedent template (mixed indentation from f-string
     # interpolation means textwrap.dedent sees 0 common prefix; strip manually).
     lines = artifact_text.split("\n")
-    stripped = "\n".join(line[4:] if line.startswith("    ") else line for line in lines)
+    stripped = "\n".join(line.removeprefix("    ") for line in lines)
     ARTIFACT_PATH.write_text(stripped)
     print(f"      Artifact written: {ARTIFACT_PATH}")
 
     # -----------------------------------------------------------------
     # Summary print
     # -----------------------------------------------------------------
-    print("\n" + "="*72)
+    print("\n" + "=" * 72)
     print(f"  SPIKE RESULT: portable weighted_ratio = {portable_ratio:.2f}x  =>  {verdict}")
     print(f"  native  weighted_ratio = {native_r['weighted_ratio']:.2f}x")
-    print(f"  Parity: bit-exact (max_rel_diff = 0.0) on all 4 cells / 7 arrays")
+    print("  Parity: bit-exact (max_rel_diff = 0.0) on all 4 cells / 7 arrays")
     print(f"  Artifact: {ARTIFACT_PATH}")
-    print("="*72)
+    print("=" * 72)
 
 
 if __name__ == "__main__":

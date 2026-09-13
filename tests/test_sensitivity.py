@@ -1,4 +1,5 @@
 import numpy as np
+
 from osmose.calibration.sensitivity import SensitivityAnalyzer
 
 

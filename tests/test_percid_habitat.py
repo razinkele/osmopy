@@ -1,4 +1,5 @@
 import numpy as np
+
 from osmose.forcing.percid_habitat import percid_stage_map, vacuity_ok
 
 

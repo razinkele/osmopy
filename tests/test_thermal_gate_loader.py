@@ -1,6 +1,7 @@
+from pathlib import Path
+
 import numpy as np
 import pytest
-from pathlib import Path
 
 from osmose.engine.config import _load_thermal_gate
 
@@ -25,7 +26,7 @@ def test_off_returns_none():
 
 
 def test_thermal_cap_shapes_and_enabled_mask():
-    f, e, o = _load_thermal_gate(_cfg(), n_species=6, n_dt_per_year=24, n_year=4)
+    f, e, _o = _load_thermal_gate(_cfg(), n_species=6, n_dt_per_year=24, n_year=4)
     assert f.shape == (4, 6)
     assert list(np.where(e)[0]) == [4, 5]
     assert np.allclose(f[:, 0], 1.0)  # disabled species column stays 1.0
@@ -34,7 +35,7 @@ def test_thermal_cap_shapes_and_enabled_mask():
 
 
 def test_mean_preserving_unit_mean():
-    f, e, o = _load_thermal_gate(
+    f, _e, _o = _load_thermal_gate(
         _cfg(**{"reproduction.thermal.gate.mode": "mean_preserving"}), 6, 24, 4
     )
     assert np.mean(f[:, 4]) == pytest.approx(1.0)
@@ -139,11 +140,12 @@ class TestExponentialResponse:
     def test_factor_is_exactly_one_at_tref(self, tmp_path):
         from osmose.engine.config import _load_thermal_gate
 
-        factor, enabled, offset = _load_thermal_gate(self._cfg(tmp_path, [7.0] * 5), 1, 4, 5)
+        factor, _enabled, _offset = _load_thermal_gate(self._cfg(tmp_path, [7.0] * 5), 1, 4, 5)
         assert (factor[:, 0] == 1.0).all()  # exp(0) == 1.0 exactly — bit-identity rests on this
 
     def test_exponential_scaling(self, tmp_path):
         import numpy as np
+
         from osmose.engine.config import _load_thermal_gate
 
         factor, _, _ = _load_thermal_gate(self._cfg(tmp_path, [9.0] * 3), 1, 4, 3)
@@ -151,6 +153,7 @@ class TestExponentialResponse:
 
     def test_missing_beta_raises(self, tmp_path):
         import pytest
+
         from osmose.engine.config import _load_thermal_gate
 
         cfg = self._cfg(tmp_path, [7.0] * 3)
@@ -161,6 +164,7 @@ class TestExponentialResponse:
     def test_missing_tref_raises_not_defaults(self, tmp_path):
         """The key has a silent 20.0 thermal_cap default the exponential path must refuse."""
         import pytest
+
         from osmose.engine.config import _load_thermal_gate
 
         cfg = self._cfg(tmp_path, [7.0] * 3)
@@ -170,6 +174,7 @@ class TestExponentialResponse:
 
     def test_mode_matrix(self, tmp_path):
         import pytest
+
         from osmose.engine.config import _load_thermal_gate
 
         for bad in ("thermal_cap", "mean_preserving"):
@@ -189,6 +194,7 @@ class TestExponentialResponse:
 
     def test_negative_offset_raises(self, tmp_path):
         import pytest
+
         from osmose.engine.config import _load_thermal_gate
 
         cfg = self._cfg(tmp_path, [7.0] * 3)

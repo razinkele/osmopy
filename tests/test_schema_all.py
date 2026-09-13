@@ -78,7 +78,7 @@ def test_output_enable_flags_match_engine_reads():
     unreachable dead read. Fixed in C3 Task 2: both now use lowercase
     `species.bioen.mobilized.tp` / `species.bioen.mobilized.e.d`.)
     """
-    from osmose.schema.output import OUTPUT_FIELDS, _OUTPUT_ENABLE_FLAGS
+    from osmose.schema.output import _OUTPUT_ENABLE_FLAGS, OUTPUT_FIELDS
 
     # The schema's output enable flags are stored both as a list of strings
     # (`_OUTPUT_ENABLE_FLAGS` at module scope) and as `OsmoseField` entries

@@ -86,12 +86,13 @@ def accumulate_climatology(so_files):
 
 
 def build(config_dir: str, out_path: str) -> Path:
+    import xarray as xr
+
     from osmose.config.reader import OsmoseConfigReader
     from osmose.forcing.grid import load_ocean_mask, regrid, resample_to_24, target_coords
     from osmose.maps.builder import GridSpec
-    import xarray as xr
 
-    cfg = OsmoseConfigReader().read(sorted(Path(config_dir).glob("*all-parameters*.csv"))[0])
+    cfg = OsmoseConfigReader().read(min(Path(config_dir).glob("*all-parameters*.csv")))
     grid = GridSpec.from_config(cfg)
     so_files = sorted(
         glob.glob(

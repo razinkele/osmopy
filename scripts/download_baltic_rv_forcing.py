@@ -35,9 +35,12 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = ROOT / "data" / "cmems_cache" / "cmems_downloads"
 
 # Baltic OSMOSE bounding box (matches mcp_servers/copernicus/server.py).
-BBOX = dict(
-    minimum_longitude=9.5, maximum_longitude=30.5, minimum_latitude=53.5, maximum_latitude=66.5
-)
+BBOX = {
+    "minimum_longitude": 9.5,
+    "maximum_longitude": 30.5,
+    "minimum_latitude": 53.5,
+    "maximum_latitude": 66.5,
+}
 
 FIELDS = {
     "so": {"dataset_id": "cmems_mod_bal_phy_my_P1M-m", "tag": "phy_monthly_reanalysis"},
@@ -128,7 +131,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[{var} {year}] ...")
             try:
                 written.append(_download_year(cm, var, year, args.depth_min, args.depth_max))
-            except Exception as exc:  # noqa: BLE001 — report and continue to next year
+            except Exception as exc:
                 print(f"  !! failed {var} {year}: {exc}")
 
     print("\n=== downloaded files ===")

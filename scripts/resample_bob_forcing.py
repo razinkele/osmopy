@@ -6,8 +6,11 @@ Writes roms_n2p2z2d2_biscay_24step.nc next to the original (original kept).
 
   PYTHONPATH=. .venv/bin/python scripts/resample_bob_forcing.py
 """
+
 from __future__ import annotations
+
 from pathlib import Path
+
 import numpy as np
 import xarray as xr
 
@@ -15,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "data" / "examples" / "ltl" / "roms_n2p2z2d2_biscay.nc"
 DST = ROOT / "data" / "examples" / "ltl" / "roms_n2p2z2d2_biscay_24step.nc"
 NSTEPS = 24
+
 
 def resample_to_24_steps(ds: xr.Dataset) -> xr.Dataset:
     n_in = ds.sizes["time"]
@@ -24,14 +28,16 @@ def resample_to_24_steps(ds: xr.Dataset) -> xr.Dataset:
     out = out.assign_coords(time=np.arange(NSTEPS))
     return out[list(ds.data_vars)]  # preserve var order
 
+
 def main() -> None:
     ds = xr.open_dataset(SRC, decode_times=False)
     out = resample_to_24_steps(ds)
-    for v in out.data_vars:              # carry attrs
+    for v in out.data_vars:  # carry attrs
         out[v].attrs = ds[v].attrs
     out.attrs = ds.attrs
     out.to_netcdf(DST)
     print(f"wrote {DST} (time={out.sizes['time']}, vars={list(out.data_vars)})")
+
 
 if __name__ == "__main__":
     main()

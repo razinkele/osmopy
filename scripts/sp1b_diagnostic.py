@@ -50,13 +50,17 @@ def main() -> int:
             "# SP1b recalibration diagnostic",
             "",
             f"RECAL_RATE = {RECAL_RATE:.4f}  (cod larval mortality, resolved per-cohort; d0=15.0)",
-            f"mean cod: off={baseline:.1f}  on_recal={mean_on:.1f}  "
-            f"rel_err={abs(mean_on / baseline - 1):.3f}  (target <= 0.02)",
+            (
+                f"mean cod: off={baseline:.1f}  on_recal={mean_on:.1f}  "
+                f"rel_err={abs(mean_on / baseline - 1):.3f}  (target <= 0.02)"
+            ),
             "",
             "## Overshoot (max/mean over years 3-14) — measured, NOT gated",
-            f"off={over_off:.2f}  on_recal={over_on:.2f}  "
-            f"ratio={over_on / over_off:.2f}  "
-            f"({'damps' if over_on < over_off else 'does not damp'} the boom/bust)",
+            (
+                f"off={over_off:.2f}  on_recal={over_on:.2f}  "
+                f"ratio={over_on / over_off:.2f}  "
+                f"({'damps' if over_on < over_off else 'does not damp'} the boom/bust)"
+            ),
         ]
     print("\n".join(lines))
     out = ROOT / "docs" / "diagnostics" / "sp1b_recalibration.md"

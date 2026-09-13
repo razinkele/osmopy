@@ -22,11 +22,16 @@ jobs:
       - name: Install dependencies
         run: pip install -e ".[dev]"
 
+      # scripts/ joined the lint scope on 2026-09-12. It had never been linted:
+      # 377 findings and 52 unformatted files were sitting there unseen, including
+      # a dead `sys.exit(0 if run_hindcast() else 0)` and three leaked file
+      # handles. app.py is listed explicitly because it is a top-level module,
+      # not inside any of the packages above.
       - name: Ruff check
-        run: ruff check osmose/ ui/ tests/
+        run: ruff check osmose/ ui/ tests/ scripts/ app.py
 
       - name: Ruff format check
-        run: ruff format --check osmose/ ui/ tests/
+        run: ruff format --check osmose/ ui/ tests/ scripts/ app.py
 
   type-check:
     # Matrixed across the supported Python range. pyrightconfig.json pins
