@@ -340,3 +340,155 @@ def test_assert_baltic_pins_fires_on_each_violation():
     # here.
     with pytest.raises(AssertionError, match="argmax"):
         fit._assert_baltic_pins(replace(ok, t_p=tp + 5.0), FX)
+
+
+def _demo_target():
+    """A small, self-contained SpeciesTargets -- no config, no engine, no network."""
+    import numpy as np
+
+    from osmose.calibration.bioen_offline import SpeciesTargets
+
+    return SpeciesTargets(
+        name="demo",
+        linf=110.0,
+        k=0.15,
+        t0=-0.20,
+        cf=0.0087,
+        b=3.05,
+        egg_weight_g=0.001,
+        m0=38.0,
+        m1=0.0,
+        lifespan_years=20.0,
+        t_opt=10.0,
+        t24=np.full(24, 8.69),
+    )
+
+
+def test_simulate_growth_default_is_bit_identical_without_boost():
+    """The juvenile-boost parameters must be a no-op by default.
+
+    The committed C3 overlay (`data/baltic/scenarios/c3_bioen/`) was produced by this function,
+    and the published A/B describes those exact numbers. If the defaults ever stopped being a
+    no-op the artifact would silently cease to be reproducible from its own generator, so this
+    is pinned bit-for-bit rather than approximately.
+    """
+    import numpy as np
+
+    from osmose.calibration.bioen_offline import (
+        BioenFixed,
+        c_m_from_share,
+        simulate_growth,
+        solve_tp,
+    )
+
+    fx = BioenFixed()
+    tg = _demo_target()
+    t_p = solve_tp(tg.t_opt, fx)
+    args = (
+        13.9,
+        1.16,
+        t_p,
+        c_m_from_share(13.9, t_p, fx),
+        tg.t24,
+        tg.egg_weight_g,
+        24 * 8,
+        24,
+        tg.cf,
+        tg.b,
+        tg.m0,
+        tg.m1,
+        fx,
+    )
+
+    base = simulate_growth(*args)
+    # explicit defaults, and a multiplier with a zero-width window: both must change nothing
+    np.testing.assert_array_equal(base, simulate_growth(*args, 1.0, 0))
+    np.testing.assert_array_equal(base, simulate_growth(*args, 5.0, 0))
+    # and the boost must actually DO something when its window is open, or the test above is
+    # vacuous -- a no-op that is no-op in every configuration proves nothing
+    boosted = simulate_growth(*args, 5.0, 24)
+    assert boosted[24 * 8] > base[24 * 8] * 1.05
+
+
+def test_juvenile_boost_fixes_age_one_without_costing_rms():
+    """The boost lets the fit BEND the curve, not just slide it.
+
+    Without it the forward model has one allometry `imax*w^beta` for every age, so improving
+    year one necessarily distorts the adult curve (measured: age-weighting alone moved cod_west
+    to 0.77 at age 1 but pushed RMS 8.33% -> 18.49%). With it, both improve together.
+    """
+    import numpy as np
+
+    from osmose.calibration.bioen_offline import BioenFixed, fit_species, simulate_growth
+
+    fx = BioenFixed()
+    tg = _demo_target()
+
+    def age1_ratio(res):
+        w = simulate_growth(
+            res.imax,
+            res.r,
+            res.t_p,
+            res.c_m,
+            tg.t24,
+            tg.egg_weight_g,
+            24 * 8,
+            24,
+            tg.cf,
+            tg.b,
+            tg.m0,
+            tg.m1,
+            fx,
+            res.juvenile_boost,
+            res.boost_thres_dt,
+        )
+        target = tg.linf * (1.0 - np.exp(-tg.k * (1.0 - tg.t0)))
+        return ((w[24] / tg.cf) ** (1.0 / tg.b)) / target
+
+    plain = fit_species(tg, fx)
+    boosted = fit_species(tg, fx, juvenile_boost=True)
+
+    assert plain.juvenile_boost == 1.0 and plain.boost_thres_dt == 0
+    assert boosted.juvenile_boost > 1.0 and boosted.boost_thres_dt == 24
+    # year one goes from badly short to on target ...
+    assert age1_ratio(plain) < 0.75
+    assert 0.9 < age1_ratio(boosted) < 1.25
+    # ... and the overall fit gets BETTER at the same time, not worse
+    assert boosted.rms_len_pct < plain.rms_len_pct
+
+
+def test_juvenile_boost_maps_onto_the_engine_cap_form():
+    """`j` must be expressible in the engine's own `imax + (theta-1)*c_rate` form."""
+    from osmose.engine.processes.bioen_predation import per_fish_ingestion_cap
+    import numpy as np
+
+    imax, j = 7.46, 2.88
+    # the documented mapping: c_rate := imax, theta := j
+    i_max_all = np.array([imax])
+    cap_juv = per_fish_ingestion_cap(
+        np.array([1e-5]),
+        np.array([0], dtype=np.int32),
+        np.array([5], dtype=np.int32),
+        i_max_all,
+        np.array([0.8]),
+        np.array([24], dtype=np.int32),
+        np.array([j]),
+        np.array([imax]),
+        1,
+        24,
+        1,
+    )
+    cap_adult = per_fish_ingestion_cap(
+        np.array([1e-5]),
+        np.array([0], dtype=np.int32),
+        np.array([30], dtype=np.int32),
+        i_max_all,
+        np.array([0.8]),
+        np.array([24], dtype=np.int32),
+        np.array([j]),
+        np.array([imax]),
+        1,
+        24,
+        1,
+    )
+    assert float(cap_juv[0] / cap_adult[0]) == pytest.approx(j, rel=1e-12)

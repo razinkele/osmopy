@@ -60,6 +60,12 @@ class FitResult:
     w_inf_vb_g: float
     larval_ratio_half_year: float
     n_points: int
+    #: Fitted juvenile ingestion-cap multiplier (1.0 = boost off, the committed overlay).
+    #: Maps to the engine as `predation.c.bioen := imax` and
+    #: `predation.larval.ingestion.rate.increase.ratio := j`, since `imax + (j-1)*imax == imax*j`.
+    juvenile_boost: float = 1.0
+    #: Window for that boost, in dt steps (`species.larvae.growth.threshold.age` * ndt).
+    boost_thres_dt: int = 0
 
 
 def c_m_from_share(imax: float, t_p: float, fx: BioenFixed) -> float:
@@ -97,8 +103,36 @@ def vbgf_weight(age_years, linf, k, t0, cf, b):
     return cf * np.power(np.maximum(length, 1e-9), b)
 
 
-def simulate_growth(imax, r, t_p, c_m, t24, w_egg_g, n_steps, ndt, cf, b, m0, m1, fx: BioenFixed):
-    """Per-fish weight (g) at step index 0..n_steps; step index == age_dt. Java budget with N = 1."""
+def simulate_growth(
+    imax,
+    r,
+    t_p,
+    c_m,
+    t24,
+    w_egg_g,
+    n_steps,
+    ndt,
+    cf,
+    b,
+    m0,
+    m1,
+    fx: BioenFixed,
+    j: float = 1.0,
+    boost_thres_dt: int = 0,
+):
+    """Per-fish weight (g) at step index 0..n_steps; step index == age_dt. Java budget with N = 1.
+
+    ``j``/``boost_thres_dt`` mirror the engine's juvenile ingestion cap
+    (``per_fish_ingestion_cap``: ``i_eff = imax + (theta-1)*c_rate`` while
+    ``age_dt < larvae_thres_dt``), reparameterised as a multiplier so ``i_eff = imax * j`` below
+    the threshold. Without them this forward model has a SINGLE allometry ``imax*w^beta`` serving
+    every age, so a fit can slide the growth curve but not bend it -- which is why the committed
+    overlay lands at 0.53 of the vBGF target at age 1 while sitting at 1.04-1.17 from age 3 on.
+
+    **Defaults are a deliberate no-op** (``j=1.0``, ``boost_thres_dt=0`` -> the branch never
+    fires), so the committed overlay stays exactly reproducible; see
+    ``test_simulate_growth_default_is_bit_identical_without_boost``.
+    """
     t24 = np.asarray(t24, dtype=np.float64)
     w = np.empty(n_steps + 1)
     w[0] = w_egg_g
@@ -110,7 +144,8 @@ def simulate_growth(imax, r, t_p, c_m, t24, w_egg_g, n_steps, ndt, cf, b, m0, m1
         if age_dt < fx.first_feeding_dt:
             w[age_dt] = wg
             continue
-        e_gross = fx.a * float(phi_t(np.array(T), fx.e_m, fx.e_d, t_p)) * imax * wb / ndt
+        i_eff = imax * j if age_dt < boost_thres_dt else imax
+        e_gross = fx.a * float(phi_t(np.array(T), fx.e_m, fx.e_d, t_p)) * i_eff * wb / ndt
         e_maint = c_m * float(arrhenius(np.array(T), fx.e_maint)) * wb / ndt
         e_net = e_gross - e_maint
         per_fish = e_net * ndt / wb
@@ -132,7 +167,24 @@ def simulate_growth(imax, r, t_p, c_m, t24, w_egg_g, n_steps, ndt, cf, b, m0, m1
     return w
 
 
-def fit_species(tg: SpeciesTargets, fx: BioenFixed, ndt: int = 24) -> FitResult:
+def fit_species(
+    tg: SpeciesTargets,
+    fx: BioenFixed,
+    ndt: int = 24,
+    juvenile_boost: bool = False,
+    boost_thres_dt: int = 24,
+) -> FitResult:
+    """Fit (Imax, r), and optionally a juvenile cap multiplier `j`, to the species' vBGF.
+
+    `juvenile_boost=False` is the committed behaviour and is bit-identical to before this
+    parameter existed. Setting it True adds `j` as a third free parameter over
+    `age_dt < boost_thres_dt`, which lets the fit BEND the growth curve instead of only sliding
+    it: on the Baltic nine this takes age-1 length from 0.53-1.03 of target to 1.03-1.09 AND
+    RMS from 1.84-10.71% to 0.80-1.65% -- better on both axes, not a trade.
+
+    NOTE this improves the offline curve only. It was tested in the coupled engine and does NOT
+    prevent the C3 collapse (results doc Sec.9): growth is not the binding constraint there.
+    """
     t_p = solve_tp(tg.t_opt, fx)
     n_steps = int(round(tg.lifespan_years * ndt))
     idx_all = np.arange(ndt, n_steps + 1)  # ages >= 1 yr (spec 3.4: larval phase not fitted)
@@ -149,9 +201,10 @@ def fit_species(tg: SpeciesTargets, fx: BioenFixed, ndt: int = 24) -> FitResult:
     ages = ages_all[valid]
     target_w = vbgf_weight(ages, tg.linf, tg.k, tg.t0, tg.cf, tg.b)
 
-    def resid(x):
-        imax, r = np.exp(x)
-        w = simulate_growth(
+    thres = boost_thres_dt if juvenile_boost else 0
+
+    def _grow(imax, r, j):
+        return simulate_growth(
             imax,
             r,
             t_p,
@@ -165,7 +218,14 @@ def fit_species(tg: SpeciesTargets, fx: BioenFixed, ndt: int = 24) -> FitResult:
             tg.m0,
             tg.m1,
             fx,
+            j,
+            thres,
         )
+
+    def resid(x):
+        imax, r = np.exp(x[0]), np.exp(x[1])
+        j = float(np.exp(x[2])) if juvenile_boost else 1.0
+        w = _grow(imax, r, j)
         return np.log(np.maximum(w[idx], 1e-12)) - np.log(target_w)
 
     # `loss="soft_l1"` (scipy's default f_scale=1.0): the youngest valid points can still sit
@@ -173,17 +233,14 @@ def fit_species(tg: SpeciesTargets, fx: BioenFixed, ndt: int = 24) -> FitResult:
     # sum-of-squares in log-space out of proportion to the information they carry -- a robust
     # loss down-weights that handful of outlier residuals instead of letting them drag the
     # whole fit toward them, with no effect on a well-conditioned fit (residuals all small).
-    sol = least_squares(
-        resid,
-        x0=np.log([5.0, 0.3]),
-        bounds=(np.log([1e-3, 1e-4]), np.log([1e3, 1e2])),
-        loss="soft_l1",
-    )
-    imax, r = np.exp(sol.x)
+    lo = [np.log(1e-3), np.log(1e-4)] + ([np.log(1.0)] if juvenile_boost else [])
+    hi = [np.log(1e3), np.log(1e2)] + ([np.log(50.0)] if juvenile_boost else [])
+    x0 = [np.log(5.0), np.log(0.3)] + ([np.log(2.0)] if juvenile_boost else [])
+    sol = least_squares(resid, x0=x0, bounds=(lo, hi), loss="soft_l1")
+    imax, r = np.exp(sol.x[0]), np.exp(sol.x[1])
+    j = float(np.exp(sol.x[2])) if juvenile_boost else 1.0
     c_m = c_m_from_share(imax, t_p, fx)
-    w = simulate_growth(
-        imax, r, t_p, c_m, tg.t24, tg.egg_weight_g, n_steps, ndt, tg.cf, tg.b, tg.m0, tg.m1, fx
-    )
+    w = _grow(imax, r, j)
     len_model = (w[idx] / tg.cf) ** (1 / tg.b)
     len_target = (target_w / tg.cf) ** (1 / tg.b)
     rms = float(np.sqrt(np.mean(((len_model - len_target) / len_target) ** 2)) * 100)
@@ -208,6 +265,8 @@ def fit_species(tg: SpeciesTargets, fx: BioenFixed, ndt: int = 24) -> FitResult:
         float(tg.cf * tg.linf**tg.b),
         float(w[half] / w_half_target),
         int(idx.size),
+        float(j),
+        int(thres),
     )
 
 
