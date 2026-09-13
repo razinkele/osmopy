@@ -817,6 +817,45 @@ before this branch.
     juvenile stages of one collapsing stock and ask whether **SSB becomes non-zero** — SSB, not
     biomass, is the instrument, because SSB is the quantity shown here to be identically zero.
 
+  - > ## 🚨 THE PREDATION VERDICT BELOW IS VOID — the `accALL` arm never removed predation
+    >
+    > Found 2026-09-13 by an adversarial trace, verified in source before this note was written.
+    > **GreySeal (sp15) has no predator COLUMN in `predation-accessibility.csv`** — the header runs
+    > `cod_west … Benthos, Cormorant` and stops. `AccessibilityMatrix.resolve_name("GreySeal")`
+    > returns `None`, so `pred_access_idx == -1` for every seal school. And the production kernel
+    > (`mortality.py:1172-1180`) reads:
+    >
+    > ```
+    > access_coeff = 1.0
+    > if has_access:
+    >     if use_stage_access:
+    >         p_acc = pred_access_idx[p_idx]; q_acc = prey_access_idx[q_idx]
+    >         if p_acc >= 0 and q_acc >= 0:        # <-- -1 SKIPS THE WHOLE BLOCK
+    >             ...
+    >             if access_coeff <= 0: continue   # <-- including this test
+    > ```
+    >
+    > **A `-1` does not mean "inaccessible". It means the default `access_coeff = 1.0` survives —
+    > FULL accessibility.** So in every arm below, including `accALL`, GreySeal ate cod_west at
+    > coefficient **1.0**, twenty times the 0.05 that every *listed* predator was capped at, and
+    > zeroing cod_west's prey row could not touch it because there is no column to zero.
+    >
+    > GreySeal's prey window seals the case: ratio 3–12 on 110 cm and 170 cm bodies gives
+    > **9.2–36.7 cm** and **14.2–56.7 cm** — covering the entire 10–20 cm band where cod_west
+    > disappears, and on past the 38 cm maturity length.
+    >
+    > Consequences: (a) "predation does not prevent cod_west from maturing" is **unsupported** — the
+    > intervention removed four predators at 0.05 and left the biggest one at 1.0; (b) the
+    > "killer not yet enumerated" of the attrition correction is very probably **the seal**; and
+    > (c) because every other cod_west predator IS a column, GreySeal is the only species with
+    > `pred_access_idx == -1`, so **any cod_west predation death in the `accALL` arm is GreySeal by
+    > construction** — one instrumented run settles it.
+    >
+    > This is also a **latent engine/config defect independent of C3**: a background predator
+    > declared in the config but absent from the accessibility matrix is silently granted full
+    > accessibility rather than none, and nothing warns. Everything below is retained as the record
+    > of what was run and concluded; read it knowing the arms were not what they claimed.
+
   - **PREDATION TESTED BY INTERVENTION 2026-09-13 — and the answer is a SIZE CEILING.**
     `scripts/c3_predation_intervention.py`, pre-registered at `cd7eea5` before the run. Config-only
     and surgical: `predation.accessibility.stage.structure = age` and the CSV takes `"name < T"`
