@@ -855,6 +855,48 @@ before this branch.
     > declared in the config but absent from the accessibility matrix is silently granted full
     > accessibility rather than none, and nothing warns. Everything below is retained as the record
     > of what was run and concluded; read it knowing the arms were not what they claimed.
+    >
+    > ### ✅ RESOLVED — SEALGATE, same day. The ceiling was the seal.
+    >
+    > `scripts/c3_sealgate_intervention.py`, pre-registered at `a21eeac` before running. The
+    > intervention adds the missing GreySeal COLUMN and sets **exactly one cell**: `[cod_west prey,
+    > GreySeal predator]`. Nothing else moves.
+    >
+    > | arm | GreySeal column | cod_west real SSB | **max occupied size bin** |
+    > |---|---|---:|---:|
+    > | baseline (bioen off) | absent | 129 265.5 | 110 cm |
+    > | bioen | absent (⇒ coeff 1.0) | 0.0 | 15 cm |
+    > | **sham** | **1.0 for every prey** | **0.0** | **15 cm** |
+    > | **treat** | 1.0 except cod_west = **0.0** | 1.0 | **75 cm** |
+    >
+    > **The sham is the load-bearing control and it passed exactly.** Writing 1.0 into a column that
+    > did not exist reproduced `bioen` to the digit on every species — sprat 239 248.8, pikeperch
+    > 285 387.4, smelt 416 821.5, stickleback 57 556.1, herring 1.2 — which is only possible if the
+    > `-1` path already yields 1.0. The defect is not inferred; it is demonstrated by a no-op that
+    > is bit-identical to the production behaviour it replaces.
+    >
+    > **With the seal unable to eat cod_west, the size ceiling goes 15 cm → 75 cm** — straight past
+    > the 38 cm maturity length it had never once reached in any previous arm. The "survival edge"
+    > of the attrition correction, the "killer not yet enumerated", was GreySeal eating cod_west at
+    > an accessibility of 1.0 that no one ever wrote down.
+    >
+    > **What this does NOT show, stated plainly.** cod_west is not restored. Real SSB reaches 1.0 t
+    > against the control's 129 265.5 t, and final biomass is still 0.0 t (below the 0.5 yr output
+    > cutoff) though abundance is now non-zero. **The verdict fired on the size criterion, not the
+    > SSB criterion** — and that exposes a weakness in my own pre-registration: the floor was
+    > disjunctive (`SSB > 1 %` **OR** `size ≥ 38 cm`), so an OR makes a floor far weaker than it
+    > looks. SSB missed its floor by four orders of magnitude. Removing the seal is **necessary to
+    > let cod_west reach maturity at all, and not sufficient to restore the stock.**
+    >
+    > **Scope, untested but strongly implied.** Only cod_west's cell was changed. flounder, perch
+    > and cod_east remain extinct in `treat` — and they are exposed to the identical defect, since
+    > the seal reaches every prey row at 1.0. A realistic GreySeal column (the Cormorant's 0.05
+    > would be the obvious comparator) applied to all prey is the next test, and it is a config
+    > change, not a code change.
+    >
+    > **The headline stands: a large part of the C3 "bioenergetics collapse" is a CONFIG/ENGINE
+    > DEFECT** — one missing matrix column silently promoting a top predator to twenty times the
+    > accessibility of every predator that was written down.
 
   - **PREDATION TESTED BY INTERVENTION 2026-09-13 — and the answer is a SIZE CEILING.**
     `scripts/c3_predation_intervention.py`, pre-registered at `cd7eea5` before the run. Config-only
