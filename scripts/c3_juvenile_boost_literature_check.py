@@ -15,14 +15,23 @@ predicted multiplier at juvenile mass ``w`` of
 
     j_implied = (w_ref / w_juv) ** (beta - 0.75)
 
-Two things are checked, and the second is the load-bearing one:
+Two things are checked, and the FIRST is the load-bearing one:
 
-  MAGNITUDE  -- is ``j_implied`` the size of the fitted ``j``?
-  RANK ORDER -- does ``j`` track ``j_implied`` across species? This is invariant to the choice of
-                anchor mass (any monotone rescaling of the mass ratio leaves ranks untouched), so
-                unlike the magnitude it does not rest on where ``w_juv`` is taken from.
+  SPREAD     -- fitted ``j`` spans 3.24x; ``j_implied`` spans only 1.19-1.23x. A predictor with
+                1.2x of dynamic range cannot generate a 3.24x spread under any anchoring (you would
+                need beta_emp ~ 0.53 to get herring's 4.64). Deterministic, no statistics, barely
+                anchor-dependent. This is the finding.
+  RANK ORDER -- does ``j`` track ``j_implied`` across species? Corroborating only. At n=9 the
+                critical |rho| for p<0.05 is 0.667, so a null result against a predictor with 1.2x
+                of range is weak evidence of absence. It is also structurally uninformative: the
+                fit's residuals start at ``age_dt = ndt = 24`` while the boost applies at
+                ``age_dt < 24``, so ``j`` acts ENTIRELY BELOW the first residual point -- it is a
+                knob on entry weight into the fitted window, not a ration multiplier, and would not
+                rank with a static allometric ratio even if the biology were exactly the beta gap.
 
-Both anchorings of ``w_juv`` are reported because the magnitude claim is soft to the choice:
+Both anchorings of ``w_juv`` are reported because the median fitted/implied is soft to the choice
+(2.12 vs 1.92); the spread comparison is not. Note the two anchorings give materially different
+rho (-0.05 vs +0.28) -- "robust across both tried", NOT invariant:
 
   vbgf -- the vBGF target curve extrapolated below age 1, where it is NOT valid (cod_west's
           first-year geometric-mean mass reads 9.76 g against a ~1e-3 g egg). Shown for continuity
@@ -171,10 +180,12 @@ def main() -> int:
         )
 
     print(
-        "\nVerdict: the beta gap accounts for at most ~1.5x and does NOT reproduce the "
-        "between-species\npattern of the fitted j (no rank correlation, either anchoring). "
-        "Per-species j is absorbing\nsomething other than a size-scaling correction. See the "
-        "validation doc for the two independent\nquantitative anchors that do bracket the median "
+        "\nVerdict: the beta-gap predictor has ~1.2x of dynamic range against a 3.24x spread in "
+        "the\nfitted j, so it CANNOT be what generates them (herring's 4.64 would need "
+        "beta_emp ~ 0.53).\nThat spread argument is the finding; the absent rank correlation only "
+        "corroborates it, and\ncarries little weight at n=9 (critical |rho| = 0.667). "
+        "Per-species j is absorbing something\nother than a size-scaling correction. See the "
+        "validation doc for the two independent anchors\nthat do bracket the median "
         "(2.21x Wuenschel & Werner 2004; 2.5x Kaufmann 1990)."
     )
     return 0

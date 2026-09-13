@@ -15,7 +15,9 @@ defensible.
 | Direction (early stages have higher mass-specific max ingestion) | ✅ **Verified** — two independent lines |
 | Bioen-OSMOSE documents such a parameter | ⚠️ **Partially supported** — assumption stated, magnitude never published in retrievable text |
 | The specific 1.44–4.64× magnitude | ❔ **Not verified** — no source gives a larva:adult ingestion ratio for any study species |
-| β-gap as the *mechanism* behind the fitted values | ❌ **Contradicted** — explains ≤1.5× and does not reproduce the between-species pattern |
+Separately, and **not a citation finding** — no paper contradicts anything here — my own hypothesis
+that the β gap *generates* the fitted values did not survive the arithmetic: it has ≤1.5× of
+dynamic range against a 3.24× spread. See the next section.
 
 **No editorial notices** (retraction/correction/expression of concern) on any paper cited here.
 
@@ -37,16 +39,34 @@ fitted boost were compensating for that 0.05 exponent gap, its size would be
 | smelt | 1.89 | 1.19 / 1.33 |
 | stickleback | 1.44 | 1.15 / 1.22 |
 
-- **Magnitude:** fitted values are ~2× the β-gap prediction (median ratio 2.12 vBGF / 1.92
-  trajectory). Fitted spread is 3.24×; implied spread only 1.19–1.23×.
-- **Rank order:** Spearman ρ = −0.05 (p = 0.90) vBGF anchor, ρ = +0.28 (p = 0.46) trajectory
-  anchor. **No correlation.** Herring has the *smallest* implied need and the *largest* fitted `j`.
-  This test is invariant to the anchor-mass choice, so it is the load-bearing negative result.
+**The load-bearing argument is the spread, and it needs no statistics.** Fitted `j` spans **3.24×**
+(1.44–4.64). The β-gap predictor spans **1.19×** (vBGF anchor) or **1.23×** (trajectory anchor). A
+predictor with 1.2× of dynamic range cannot generate a 3.24× spread, under any anchoring — to get
+herring's 4.64 out of an exponent gap you would need β_emp ≈ 0.53, nowhere near the measured 0.75.
+This is deterministic and it is the finding.
+
+**Corroborating, but weak on its own:** the rank order does not track either. Spearman ρ = −0.05
+(p = 0.90) vBGF anchor, ρ = +0.28 (p = 0.46) trajectory anchor — robust across both anchorings
+tried, though *not* invariant to the choice (the two ρ differ materially; what is invariant is the
+0.05 exponent, since ranks of `x^0.05` are ranks of `x`). Treat this as corroboration only: **at
+n = 9 the critical |ρ| for p < 0.05 is 0.667**, so failing to detect a correlation against a
+predictor with 1.2× of range is weak evidence of absence, not proof of it. The same lesson recorded
+after the growth-account refutation applies here in reverse — nine species cannot reject a mechanism
+any more than they can establish one.
+
+**And the rank test was structurally uninformative from the start.** Residuals begin at
+`age_dt = ndt = 24` (`fit_species`: *"ages >= 1 yr (spec 3.4: larval phase not fitted)"*) while the
+boost applies at `age_dt < 24`. So `j` acts **entirely below the first residual point**: its fitted
+value is whatever makes `w[24]` reach the age-1 target after 23 steps of nonlinear integration from
+egg weight, given `Imax`, `c_m` and the temperature path. `j` is a knob on **entry weight into the
+fitted window**, not a ration multiplier — there is no reason it would rank with a static allometric
+ratio even if the underlying biology were exactly the β gap.
 
 **Caveat on the anchoring.** The vBGF column extrapolates the growth curve below age 1, where it is
 not valid (cod_west's first-year geometric-mean mass reads 9.76 g against a ~1e-3 g egg). The
-trajectory column uses the fitted model's own egg→age-1 weight path instead. Both are reported
-because the magnitude claim is soft to this choice; the rank result is not.
+trajectory column uses the fitted model's own egg→age-1 weight path instead. The genuinely soft
+number is the **median fitted/implied** (2.12 vBGF vs 1.92 trajectory); the spread comparison is
+barely anchor-dependent.
 
 **What this does NOT show.** Kiørboe & Hirst is an *interspecific* law, and the paper says so
 itself: *"There may be significant deviations in mass scaling, both during ontogeny within a
@@ -133,9 +153,10 @@ value (2.88) sits between the two independent quantitative anchors I could retri
 2.5×). But:
 
 1. No retrieved source supports **4.64×** (herring) — that exceeds every anchor found.
-2. The **between-species pattern is unjustified**: fitted `j` spans 3.24× while the only mechanism
-   I can quantify spans 1.2×, and the two are uncorrelated (p ≈ 0.5–0.9). Per-species `j` is
-   absorbing something other than a size-scaling correction.
+2. The **between-species spread is unjustified**: fitted `j` spans 3.24× while the only mechanism
+   I can quantify spans 1.2×. A 1.2× predictor cannot produce a 3.24× spread, so per-species `j` is
+   absorbing something other than a size-scaling correction. (The absent rank correlation points
+   the same way but carries little weight at n = 9.)
 3. `theta`/`c_rate` remain at their disabled defaults in the committed overlay
    (`c3_bioen_arm.json`: `theta = 1.0`, `c_rate = 0.0`). **Nothing shipped depends on these values.**
 
