@@ -735,7 +735,87 @@ before this branch.
     Reproduce all of the above with `scripts/c3_growth_deficit_diagnosis.py`. The boost re-fit has
     since been committed as an opt-in path (`fit_species(..., juvenile_boost=True)`,
     `osmose/calibration/bioen_offline.py`, `374bc26`, default-off and bit-identical when off); the
-    egg count remains a scratch experiment.
+    egg count was a scratch experiment at the time and has since been **reproduced 9/9** by the
+    committed harness below.
+
+  - **TESTED BY INTERVENTION 2026-09-13 — the hypothesis is ILL-POSED for four of the five stocks,
+    not refuted.** `scripts/c3_recruitment_intervention.py`, committed with its reading
+    pre-registered (`413bce8`) *before* the run. It wraps `regulate_recruitment` — the single
+    shared choke point for both reproduction paths (classic `reproduction.py:344`, bioen
+    `simulate.py:885`) — so it is instrument and intervention at once, with no engine edit. On the
+    bioen arms it swaps the gonad-derived egg count for the baseline path's own
+    `sex_ratio · relative_fecundity · SSB · season · 1e6 · K`, skipping seeded steps (which already
+    use that formula). Growth, maintenance, starvation, the TPC, the Shepherd curve, the RV gate
+    and egg-school creation are all untouched. Four arms at the growth refutation's exact stress
+    (8 yr, `seeding.year.max = 1`, seed 42), so the two tests are directly comparable. **Two runs
+    byte-identical** — deterministic.
+
+    | species | baseline | bioen | bioen_rec (K=1) | bioen_rec10 (K=10) | R = rec10/bioen eggs |
+    |---|---:|---:|---:|---:|---:|
+    | cod_west | 1 454.5 | **0.0 ✗** | **0.0 ✗** | **0.0 ✗** | 1.00 |
+    | cod_east | 108 826.0 | **0.0 ✗** | **0.0 ✗** | **0.0 ✗** | 1.00 |
+    | flounder | 35 684.8 | **0.0 ✗** | **0.0 ✗** | **0.0 ✗** | 1.00 |
+    | perch | 56 511.2 | **0.0 ✗** | 0.0 | **0.0 ✗** | 1.00 |
+    | herring | 2 458 398.6 | 1.2 | 0.7 | **2 026.7** | 2.40 |
+    | sprat | 922 205.4 | 239 248.8 | 424 233.3 | **1 611 006.0** | 11.52 |
+    | pikeperch | 1 545 341.8 | 285 387.4 | 287 005.4 | 371 836.2 | 17.36 |
+    | smelt | 668 519.6 | 416 821.5 | 433 905.9 | 861 009.8 | 9.51 |
+    | stickleback | 91 392.1 | 57 556.1 | 57 392.3 | 153 847.2 | 7.63 |
+
+    Final-year biomass (t); ✗ = zero abundance. The pre-registered rule needed `R ≥ 5` to read a
+    verdict at all, and **no collapsing stock reached it**, so the registered outcome is
+    `INCONCLUSIVE` across the board. That is recorded as-is. But *why* it is inconclusive is the
+    finding, and it is decisive.
+
+    **There is no recruitment to boost.** Decomposing run-total SSB against the year-1 seeding
+    contribution (`24 × population.seeding.biomass`):
+
+    | species | SSB total | seeded part | REAL spawning stock, 168 post-seeding steps |
+    |---|---:|---:|---:|
+    | cod_west | 1 200 000.0 | 1 200 000.0 | **exactly 0.0 t** |
+    | cod_east | 2 400 000.0 | 2 400 000.0 | **exactly 0.0 t** |
+    | flounder | 1 920 168.8 | 1 920 000.0 | 168.8 t (0.0088 %) |
+    | perch | 720 004.4 | 720 000.0 | 4.4 t (0.0006 %) |
+
+    cod_west and cod_east produce **not one gonad-derived egg** in years 2–8; flounder and perch
+    produce a rounding error. The intervention multiplied zero by ten and got zero — `R = 1.00`
+    exactly, on every arm. Confirmed independently by the arithmetic: cod_west's entire bioen egg
+    output is `0.087 × 1.250e13`, and **0.0870 is precisely the Shepherd factor at SSB = 50 000**
+    with `ssb_half = 15 000`, `β = 1.9520` — i.e. 100 % year-1 bootstrap passed through the curve.
+    And by a third, independent field: the seeding-event count. Seeding fires only when SSB == 0,
+    and on bioen **all nine species seed all 24 steps of year 1**, while on baseline herring/sprat/
+    smelt/stickleback/cod_east seed only 16/16/15/18/21 — baseline stocks acquire a spawning stock
+    partway through year 1; bioen stocks never do.
+
+    **The knob is potent — it simply has nothing to turn.** Built-in positive control: where a
+    spawning stock exists the intervention delivered 7.6–17.4× and moved biomass hard (sprat
+    239 k → 1 611 k, *above* its own baseline; smelt 417 k → 861 k; stickleback 58 k → 154 k). So
+    "the wrapper is broken" is excluded by the same run that returns `R = 1.00` elsewhere.
+
+    **Herring is the one genuine partial engagement, and the script's binary mis-sorted it.**
+    `collapsed = abundance ≤ 0` classified herring "not part of the test" because it holds a
+    remnant, but §9 lists it among the collapsing stocks and it is the only one with a real
+    spawning stock that is neither zero nor healthy: 1 355 233 t against baseline's 71 446 734 t,
+    a **52.7× gap**. There `R = 2.40` — below the pre-registered bar, so still formally
+    inconclusive — yet biomass moved **1.2 → 2 026.7 t**. Recruitment is causally potent for
+    herring and still leaves it ~1 200× below baseline, so it is not sufficient on its own either.
+
+    **What this establishes, stated positively.** The earlier 11–48 % egg ratios were **right** —
+    all nine reproduce to two decimals (cod_west 0.478 vs 0.48, herring 0.198 vs 0.20, sprat 0.789
+    vs 0.79, flounder 0.110 vs 0.11, perch 0.124 vs 0.12, pikeperch 0.455 vs 0.45, smelt 1.115 vs
+    1.11, stickleback 1.129 vs 1.13, cod_east 0.171 vs 0.17), which also confirms the recording
+    wrapper is inert. It was the *interpretation* that was wrong, exactly as with the growth
+    account: a shortfall measured against baseline is not evidence of a causal pathway when the
+    pathway carries **zero flux**. A hypothesis about gonad-derived egg production being too weak
+    cannot be tested where that production is identically zero, and cannot have *caused* a collapse
+    that had already removed every spawner. **Recruitment is downstream** of whatever eliminates
+    the pre-maturity cohort. Do not write "refuted" — write ill-posed, with the causal direction
+    now fixed.
+
+    **The next test, named not run.** Growth is refuted by intervention; recruitment is downstream.
+    What remains is Task 13's measured predation wipeout. The test: suppress predation on the
+    juvenile stages of one collapsing stock and ask whether **SSB becomes non-zero** — SSB, not
+    biomass, is the instrument, because SSB is the quantity shown here to be identically zero.
 
   - **The boost's fitted VALUES were checked against the literature** —
     `docs/validation/juvenile_ingestion_boost_literature_2026-09-13.md` (reproducer:

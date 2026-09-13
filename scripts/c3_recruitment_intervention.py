@@ -89,6 +89,9 @@ from osmose.engine import PythonEngine  # noqa: E402
 
 N_YEAR = 8
 SEED = 42
+# The stocks §9 records as collapsing under this stress. Fixed list rather than a live
+# `abundance <= 0` test -- see the POST-RUN FIX note at the verdict block.
+COLLAPSING = frozenset({"cod_west", "cod_east", "herring", "flounder", "perch"})
 OVERLAY = ROOT / "data" / "baltic" / "scenarios" / "c3_bioen" / "c3_bioen_arm.json"
 _ORIGINAL = repro_mod.regulate_recruitment
 
@@ -229,7 +232,14 @@ def main() -> int:
     for i, s in enumerate(focal):
         e_b = out["bioen"]["rec"]["eggs"][i]
         e_10 = out["bioen_rec10"]["rec"]["eggs"][i]
-        collapsed = out["bioen"]["final"][s][1] <= 0
+        # Membership in the test comes from §9's recorded collapse set, NOT from a live
+        # `abundance <= 0` check. POST-RUN FIX (2026-09-13, after the results below were in
+        # hand): the abundance test mis-sorted HERRING as a survivor because it ends holding a
+        # 1.2 t remnant, when §9 lists it among the collapsing stocks and it is the only case
+        # where the intervention partially engaged (real SSB 1.36e6 t vs baseline 7.14e7 t, a
+        # 52.7x gap; R = 2.40; biomass 1.2 -> 2026.7 t). This changes no measured quantity and
+        # does not touch the pre-registered rule -- only which rows the rule is applied to.
+        collapsed = s in COLLAPSING
         persists = out["bioen_rec10"]["final"][s][1] > 0
         r = e_10 / e_b if e_b > 0 else float("inf") if e_10 > 0 else float("nan")
         if not collapsed:
