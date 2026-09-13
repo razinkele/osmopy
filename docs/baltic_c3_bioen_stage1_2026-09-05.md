@@ -673,6 +673,67 @@ before this branch.
     already reproduces well. Note the pikeperch caveat from §8 still stands: at 0.47 fit/vBGF at
     age 1 it is among the worst early-growth cases yet survives, so early growth is not the whole
     story for every species.
+
+  - **REFUTED BY INTERVENTION, same day.** The growth account above is **wrong as a cause of the
+    collapse**, and it was overturned by doing the thing it implied rather than by further
+    argument. Recorded in full because every step of it was individually sound and it still failed
+    — which is the point.
+
+    The engine already implements a juvenile cap boost that the committed overlay switches off
+    (`theta = 1.0`, `c_rate = 0.0`; `per_fish_ingestion_cap` computes
+    `i_eff = imax + (theta−1)·c_rate` while `age_dt < larvae_thres_dt`), and the fit's forward
+    model does not implement it at all. Activating it as a **third fitted parameter** with a
+    one-year window does exactly what the diagnosis predicted it would:
+
+    | | committed | with juvenile boost |
+    |---|---|---|
+    | cod_west age-1 fit/vBGF | 0.53 | **1.05** |
+    | cod_west RMS | 8.33 % | **0.86 %** |
+    | all nine species, age 1 | 0.53–1.03 | **1.03–1.09** |
+    | all nine species, RMS | 1.84–10.71 % | **0.80–1.65 %** |
+
+    Strictly better on both axes — the whole curve on target, ages 2/3/5/8 at 0.98–1.03. Then the
+    engine test, 8 yr, `population.seeding.year.max = 1`, seed 42, three arms:
+
+    **the same five stocks collapse.** cod_west, cod_east, flounder extinct; perch and herring at
+    zero biomass; herring marginally *worse* than committed. The bioen-off control sustains all
+    nine, as before.
+
+    Two checks confirm this is a real null and not a switched-off knob or a starved one: the
+    mechanism engages (`larvae_thres_dt = 24`, larval `i_eff` ≈ 2× adult, read back from
+    `EngineConfig.from_dict`), and the extra food is genuinely **eaten** — juvenile ingestion/cap
+    on the boost arm is 0.94–0.98 for every collapsing stock, so raising the cap did not merely
+    expose a prey ceiling.
+
+    **Growth is therefore not the binding constraint.** Fix it completely and nothing changes.
+
+  - **The surviving candidate is RECRUITMENT, and it correlates almost perfectly.** Total eggs
+    produced over the same 8 yr stress run, bioen ÷ baseline:
+
+    | survives | ratio | | collapses | ratio |
+    |---|---:|---|---|---:|
+    | stickleback | 1.13 | | cod_west | 0.48 |
+    | smelt | 1.11 | | herring | 0.20 |
+    | sprat | 0.79 | | cod_east | 0.17 |
+    | pikeperch | 0.45 | | perch | 0.12 |
+    | | | | flounder | 0.11 |
+
+    Bioen produces **11–48 %** of baseline egg output for every collapsing stock — a 2–9×
+    recruitment shortfall — while every survivor except pikeperch sits at 0.79–1.13. Under bioen
+    eggs come from gonad energy (`rho`, `e_net`); under classic growth they come from a prescribed
+    relationship. A population that is not replaced cannot persist once seeding stops, and
+    predation then shows up as the *proximate* cause while recruitment is the *ultimate* one —
+    which is exactly the predation-not-starvation signature Task 13 measured, now with a mechanism
+    behind it.
+
+    **Held to the same standard that just cost the growth account:** this is a strong correlation
+    across nine species with one exception (pikeperch, 0.45 and surviving — the same species that
+    breaks the `m0` ordering and has the lowest ingestion/cap). **It has not been tested by
+    intervention.** The growth story had comparable correlational support and failed. Do not treat
+    recruitment as established until someone raises bioen egg output and shows the stocks persist.
+
+    Reproduce all of the above with `scripts/c3_growth_deficit_diagnosis.py`; the boost re-fit and
+    the egg count are scratch experiments, not committed.
 - **Length-at-age `NaN` for 8/9 species (§5) — root-caused and fixed in code, not re-run.**
   Cause: `pd.concat` over per-species by-age frames of different widths (`osmose/results.py:351`,
   widths from `osmose/engine/output.py:_build_distribution_dataframes`) NaN-pads every species
