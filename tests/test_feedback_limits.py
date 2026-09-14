@@ -1,6 +1,26 @@
 import logging
 
+import pytest
+
 from osmose.feedback_limits import MAX_KEYS, RateLimiter
+
+
+def test_rejects_invalid_configuration():
+    """A limiter that cannot work must not be constructible.
+
+    max_per_window=0 refuses every request AND stores an empty-list slot for each
+    refused key, so a misconfiguration leaks slots against MAX_KEYS instead of failing
+    loudly. window_s=0 makes every hit instantly stale. Both are caught in __init__,
+    and the message names the offending value so the log says which knob is wrong.
+    """
+    with pytest.raises(ValueError, match="max_per_window must be >= 1, got 0"):
+        RateLimiter(max_per_window=0, window_s=60)
+    with pytest.raises(ValueError, match="max_per_window must be >= 1, got -1"):
+        RateLimiter(max_per_window=-1, window_s=60)
+    with pytest.raises(ValueError, match="window_s must be > 0, got 0"):
+        RateLimiter(max_per_window=1, window_s=0)
+    with pytest.raises(ValueError, match="window_s must be > 0, got -60"):
+        RateLimiter(max_per_window=1, window_s=-60)
 
 
 def test_allows_up_to_the_cap_then_blocks():
@@ -22,13 +42,18 @@ def test_keys_are_independent():
     assert rl.allow("b", now=0.0) is True
 
 
-def test_pruning_bounds_memory():
+def test_key_table_bounded_under_churn():
     """The key table stays bounded when more distinct keys arrive than it can hold.
+
+    Named for what it actually gates. What bounds memory here is the MAX_KEYS refusal,
+    not pruning -- pruning is gated by test_sweep_reclaims_expired_keys. It was called
+    test_pruning_bounds_memory through Round 5; the report carries the history.
 
     The traffic is the load-bearing part. 15_000 distinct keys -- strictly more than
     MAX_KEYS -- arrive inside a single 10 s window, so the stale sweep (which does fire
-    repeatedly here: the clock crosses the 1 s _sweep_interval three times) has nothing
-    to reclaim, and the MAX_KEYS refusal is the only thing bounding the table. Delete
+    three times here: once on the opening -inf gate, then on two 1 s _sweep_interval
+    crossings) has nothing to reclaim, and the MAX_KEYS refusal is the only thing
+    bounding the table. Delete
     that branch and the table reaches 15_000 and the assertion fails on a real number.
 
     Before Round 5 this drove only 5_000 keys, so `max_keys <= 10_000` restated a
@@ -50,10 +75,10 @@ def test_pruning_bounds_memory():
 def test_burst_same_timestamp_exceeds_limit():
     """Attack: N distinct keys all at the same timestamp must not exceed MAX_KEYS."""
     rl = RateLimiter(max_per_window=1, window_s=60)
-    for i in range(50_000):
+    for i in range(5 * MAX_KEYS):
         rl.allow(f"ip{i}", now=0.0)
     # Without proper eviction, _hits grows unbounded; with it, capped at MAX_KEYS
-    assert len(rl._hits) <= 10_000
+    assert len(rl._hits) <= MAX_KEYS
 
 
 def test_attacker_self_reset_via_eviction():
@@ -87,7 +112,7 @@ def test_attacker_self_reset_via_eviction():
     assert rl.allow("attacker", now=0.0) is False
     # Attacker floods with throwaway keys to fill the table, one second later so that
     # the attacker's own key is strictly the oldest-by-last-hit.
-    for i in range(12_000):
+    for i in range(MAX_KEYS + 2_000):
         rl.allow(f"throwaway_{i}", now=1.0)
     assert len(rl._hits) == MAX_KEYS
     # Past _sweep_interval: a sweep now runs against a full table. With eviction in
@@ -107,7 +132,7 @@ def test_existing_key_works_when_table_full():
     # Existing user makes 1 request (stays within budget)
     assert rl.allow("existing_user", now=0.0) is True
     # Fill the table with other keys
-    for i in range(12_000):
+    for i in range(MAX_KEYS + 2_000):
         rl.allow(f"new_ip_{i}", now=0.0)
     # Existing user should still be able to make another request (second of 2)
     assert rl.allow("existing_user", now=0.0) is True
@@ -164,10 +189,10 @@ def test_at_capacity_property():
     """FIX 2b: at_capacity property exposes table fullness for caller."""
     rl = RateLimiter(max_per_window=1, window_s=60)
     assert rl.at_capacity is False
-    for i in range(10_000):
+    for i in range(MAX_KEYS):
         rl.allow(f"ip{i}", now=0.0)
     assert rl.at_capacity is True
-    assert len(rl._hits) == 10_000
+    assert len(rl._hits) == MAX_KEYS
 
 
 def test_saturation_warning_logged_once(caplog):
@@ -175,7 +200,13 @@ def test_saturation_warning_logged_once(caplog):
 
     Asserts on real log records, not on the private ``_logged_saturation`` flag:
     the flag is bookkeeping, the WARNING is the feature. Deleting the
-    ``_logger.warning(...)`` call while keeping the flag must turn this red.
+    ``_log.warning(...)`` call while keeping the flag must turn this red.
+
+    "Once" holds across a sweep that reclaims nothing, too. The re-arm added in Round 6
+    is guarded on the table having actually drained below MAX_KEYS; drop that guard and
+    a still-full limiter re-warns on every sweep interval, turning warn-once-per-episode
+    into warn-once-per-six-seconds-while-saturated. The tail of this test exercises
+    exactly that path.
     """
     logger_name = "osmose.feedback_limits"
     rl = RateLimiter(max_per_window=1, window_s=60)
@@ -187,10 +218,52 @@ def test_saturation_warning_logged_once(caplog):
         for i in range(20):
             assert rl.allow(f"newcomer{i}", now=0.0) is False
 
+        # Now force a sweep that reclaims NOTHING: t=10.0 is past the 6 s interval but
+        # the cutoff is -50, so every hit is still live and the table stays full. An
+        # existing key keeps the table size unchanged (and is refused by its own cap).
+        assert rl.allow("ip0", now=10.0) is False
+        assert rl.at_capacity is True
+        # The next first-time refusal must still be silent: the table never drained, so
+        # the warning must not re-arm.
+        assert rl.allow("late_newcomer", now=10.0) is False
+
     warnings = [r for r in caplog.records if r.name == logger_name and r.levelno == logging.WARNING]
     assert len(warnings) == 1
     message = warnings[0].getMessage()
     assert str(MAX_KEYS) in message, message
+
+
+def test_second_saturation_episode_warns_again(caplog):
+    """The warn-once flag must re-arm once the table drains.
+
+    What an operator needs to see is that saturation RECURS. A flag set once and never
+    cleared makes every episode after the first completely silent, so a service
+    saturating daily looks identical in the log to one that saturated once at launch.
+    _sweep_stale clears it when the table drops back below MAX_KEYS.
+
+    Two episodes separated by a drain; the assertion is 2 WARNING records, not 1.
+    """
+    logger_name = "osmose.feedback_limits"
+    rl = RateLimiter(max_per_window=1, window_s=60)
+    with caplog.at_level(logging.WARNING, logger=logger_name):
+        # Episode 1: fill, then get refused once.
+        for i in range(MAX_KEYS):
+            assert rl.allow(f"first{i}", now=0.0) is True
+        assert rl.allow("refused_in_episode_1", now=0.0) is False
+
+        # Drain: t=1000 is past both the 6 s sweep interval and the 60 s window, so the
+        # sweep reclaims every episode-1 key and the table is no longer at capacity.
+        assert rl.allow("drain", now=1_000.0) is True
+        assert rl.at_capacity is False
+
+        # Episode 2: fill again and get refused again.
+        for i in range(MAX_KEYS - 1):
+            assert rl.allow(f"second{i}", now=1_000.0) is True
+        assert rl.at_capacity is True
+        assert rl.allow("refused_in_episode_2", now=1_000.0) is False
+
+    warnings = [r for r in caplog.records if r.name == logger_name and r.levelno == logging.WARNING]
+    assert len(warnings) == 2
 
 
 def test_sweep_reclaims_expired_keys():
