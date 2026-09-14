@@ -9,17 +9,34 @@ sequences, because eventually one will.
 PRIVACY: a record carries ``has_contact`` (a boolean) and never the address itself; the address
 lives only in the contacts side-store behind ``osmose.feedback.lookup_contact``. This module
 renders the flag and never calls that lookup — the page is designed to be safe to screenshot.
+Each card also carries a one-click "promote to a GitHub issue" link built by ``github_issue_url``.
+That URL is the one place a record's content leaves this page for a PUBLIC destination, so it is
+assembled from an explicit allowlist of fields (message, version, nav tab, id, has_contact flag)
+rather than by serialising the record — a legacy v1 line that still carries a literal ``contact``
+key therefore cannot leak an address into a filed issue.
 """
 
 from __future__ import annotations
 
 import html
+from urllib.parse import urlencode, urlsplit
 
 # Badge classes are whitelisted rather than derived from the record: `type` is attacker-supplied
 # on a hand-written store line, and user data must not reach a CSS class name even escaped.
 _TYPE_CLASSES = {"bug": "fb-bug", "suggestion": "fb-suggestion", "other": "fb-other"}
 _DEFAULT_TYPE_CLASS = "fb-unknown"
 _EMPTY = "&mdash;"
+
+# GitHub label per feedback type. Whitelisted for the same reason as the badge class above:
+# `type` is attacker-supplied on a hand-written store line and must not reach the issue URL raw.
+_LABEL = {"bug": "bug", "suggestion": "enhancement", "other": "question"}
+_DEFAULT_LABEL = "question"
+# Only these two schemes may reach an href. `html.escape` does NOT neutralise `javascript:` or
+# `data:` — escaping an attribute value cannot make its scheme safe, so the scheme is validated
+# rather than escaped (R17).
+_ALLOWED_SCHEMES = frozenset({"http", "https"})
+_TITLE_CHARS = 60  # first line of the message, truncated, as the issue title
+_NO_MESSAGE_TITLE = "(no message)"
 
 _STYLE = """
 :root { color-scheme: light dark; }
@@ -43,6 +60,7 @@ h1 { font-size: 1.25rem; margin: 0 0 .25rem; }
           background: #0f1b24; border-radius: 4px; padding: .6rem; }
 .fb-meta { color: #8fa9b8; font-size: .8rem; display: flex; flex-wrap: wrap; gap: 1rem; }
 .fb-empty { color: #8fa9b8; }
+.fb-promote { font-weight: 600; }
 """
 
 
@@ -64,7 +82,63 @@ def _or_dash(value: object) -> str:
     return esc if esc.strip() else _EMPTY
 
 
-def _render_card(record: dict) -> str:
+def github_issue_url(record: dict, repo_url: str) -> str:
+    """Prefilled ``issues/new`` link for one record. NEVER includes contact details (D2).
+
+    A prefilled URL rather than the REST API (D4): no token, no bot account, nothing to rotate or
+    leak, and the maintainer reviews the issue before it is filed — the gate that makes a public
+    submission channel safe.
+
+    PRIVACY: the body is assembled from a fixed allowlist — message, version, nav tab, id, and the
+    ``has_contact`` flag. The record is never serialised wholesale, so a legacy v1 line that still
+    carries a literal ``contact`` key cannot carry an address into a public issue. As on the card,
+    ``has_contact`` is tested with ``is True``: ``bool("false")`` is True and a hand-written string
+    flag would otherwise be reported as "yes".
+
+    SECURITY: the return value lands in an ``href``. ``html.escape`` does not neutralise a
+    ``javascript:`` or ``data:`` scheme, so ``repo_url``'s scheme is *validated* here — only http
+    and https are accepted, and anything else (including a scheme-relative ``//host``, which parses
+    to an empty scheme) raises ``ValueError``. Raising rather than emitting a scheme-less link is
+    deliberate: ``repo_url`` is an operator-controlled constant, never attacker data, so a bad one
+    is a deployment bug that should be loud rather than a link silently dropped from every card.
+
+    AVAILABILITY: the store is a plain JSONL file that ``read_feedback`` does not validate
+    field-by-field, so a hand-written or legacy line can carry an empty, whitespace-only, missing
+    or non-string ``message``/``type``. All of those must still produce a usable URL — this
+    function is called once per card, so one bad line raising would blank the whole review page.
+    """
+    scheme = urlsplit(repo_url).scheme.lower()
+    if scheme not in _ALLOWED_SCHEMES:
+        raise ValueError(
+            f"repo_url must use http or https (got scheme {scheme!r} from {repo_url!r}) — "
+            "an issue link is rendered into an href and escaping cannot make a scheme safe"
+        )
+    # str() coercion mirrors _esc/_TYPE_CLASSES above: a non-string field from a hand-written line
+    # must not raise (`.strip()` on a list, an unhashable dict key) part-way through the page.
+    kind = str(record.get("type") or "other")
+    message = str(record.get("message") or "")
+    # `"".splitlines()` is `[]`, so indexing [0] unguarded raises IndexError on an empty or
+    # whitespace-only message and takes the page down with it.
+    lines = message.strip().splitlines()
+    title_text = lines[0][:_TITLE_CHARS] if lines else _NO_MESSAGE_TITLE
+    body = (
+        f"{message}\n\n---\n"
+        f"- app version: `{record.get('version', '?')}`\n"
+        f"- tab: `{record.get('nav_tab', '?')}`\n"
+        f"- feedback id: `{record.get('id', '?')}`\n"
+        f"- reporter left contact details: {'yes' if record.get('has_contact') is True else 'no'}\n"
+    )
+    query = urlencode(
+        {
+            "title": f"[{kind}] {title_text}",
+            "body": body,
+            "labels": _LABEL.get(kind, _DEFAULT_LABEL),
+        }
+    )
+    return f"{repo_url.rstrip('/')}/issues/new?{query}"
+
+
+def _render_card(record: dict, repo_url: str) -> str:
     """One feedback record as a card. Every interpolation goes through ``_esc``."""
     raw_type = record.get("type")
     badge_class = _TYPE_CLASSES.get(str(raw_type), _DEFAULT_TYPE_CLASS)
@@ -72,6 +146,9 @@ def _render_card(record: dict) -> str:
     # `is True`, not truthiness: a hand-written `"has_contact": "false"` is a non-empty string
     # and would otherwise be reported as "yes". Only a real JSON boolean reads as yes.
     has_contact = "yes" if record.get("has_contact") is True else "no"
+    # Escaped as well as scheme-validated: the query string is already percent-encoded, but
+    # urlencode's `&` separators must become `&amp;` to be a well-formed attribute value.
+    issue_href = _esc(github_issue_url(record, repo_url))
     return (
         f'<article class="fb-card" data-has-contact="{has_contact}">'
         f'<div class="fb-card-head">'
@@ -84,6 +161,8 @@ def _render_card(record: dict) -> str:
         f"<span>id {_or_dash(record.get('id'))}</span>"
         f"<span>version {_or_dash(record.get('version'))}</span>"
         f"<span>tab {_or_dash(record.get('nav_tab'))}</span>"
+        f'<a class="fb-promote" href="{issue_href}" rel="noopener noreferrer" '
+        f'target="_blank">promote to a GitHub issue</a>'
         f"</div>"
         f"</article>"
     )
@@ -92,9 +171,12 @@ def _render_card(record: dict) -> str:
 def render_review_html(records: list[dict], repo_url: str) -> str:
     """Full HTML page listing ``records`` (newest first, as ``read_feedback`` returns them).
 
-    ``repo_url`` is rendered once in the page header as a link back to the project repository.
+    ``repo_url`` is rendered once in the page header as a link back to the project repository,
+    and once per card as the target of that record's prefilled ``issues/new`` promotion link
+    (``github_issue_url``). It must be an http/https URL; anything else raises ``ValueError``
+    rather than emitting an unsafe href.
     """
-    cards = "".join(_render_card(rec) for rec in records)
+    cards = "".join(_render_card(rec, repo_url) for rec in records)
     body = cards or '<p class="fb-empty">No feedback has been submitted yet.</p>'
     count = len(records)
     plural = "" if count == 1 else "s"
