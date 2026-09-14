@@ -1146,8 +1146,38 @@ before this branch.
     > What pikeperch uniquely combines is **a large juvenile pool × a very low drain rate × predators
     > that die first**.
     >
-    > **Status: the timing correlation is strong; the causal claim is NOT yet tested by
-    > intervention.** Given how often that distinction has mattered here, it is labelled rather than
+    > > **⚠️ TESTED 2026-09-14 — THE RELEASE STORY IS REFUTED.**
+    > > `scripts/c3_pikeperch_release_test.py` zeroed the `cod_west` and `cod_east` cells of
+    > > pikeperch's prey row (E1: exactly those two cells differ, nothing else). Over **years 0–3,
+    > > while the cods are alive**, `nocod/ref` pikeperch `N_total` = **0.998**. Removing cod
+    > > predation entirely changes nothing. Specificity check passed (years 8–19 ratio 0.897, cods
+    > > extinct on both arms; E2 passed).
+    > >
+    > > **The cods could never have mattered, and it is obvious in hindsight:** pikeperch numbers
+    > > 1.39e12 at year 0 against the two cod stocks' combined 2.18e9 — **630× fewer predators than
+    > > prey**, at accessibility 0.10/0.05. They cannot make a dent. The year-4 takeoff is
+    > > **growth-timed** (vBGF `t(m0)` = 2.97 yr) and the cod-extinction coincidence was exactly a
+    > > coincidence. **Fifth time in this investigation that a compelling correlation was not causal
+    > > — and the first where the named intervention was actually run instead of the correlation
+    > > being left to stand.**
+    > >
+    > > **What actually explains pikeperch is arithmetic:** mature stock = pool × mature fraction.
+    > >
+    > > | species | pool yr0 | frac_mature | → mature | fate |
+    > > |---|---:|---:|---:|---|
+    > > | pikeperch | **1.39e12** | 0.0028 | **3.9e9** | survives |
+    > > | sprat | 1.27e12 | 0.4486 | 5.7e11 | survives |
+    > > | flounder | 2.37e9 | 0.0039 | 9.2e6 | dies |
+    > > | cod_east | 1.83e9 | 0.0013 | 2.4e6 | dies |
+    > > | cod_west | 3.46e8 | 0.0000 | **0** | dies |
+    > >
+    > > pikeperch suffers the *same* maturation bottleneck — but a tiny fraction of an enormous pool
+    > > is still ~4e9 spawners, and it drains that pool at only 0.0137 yr⁻¹ (92× below cod_west).
+    > > cod_west has a zero fraction of a pool three orders of magnitude smaller. **Same mechanism,
+    > > different starting stock.** No predation release required, and none present.
+    >
+    > **Status (superseded above): the timing correlation is strong; the causal claim is NOT yet
+    > tested by intervention.** Given how often that distinction has mattered here, it is labelled rather than
     > asserted. The test: suppress cod predation on pikeperch from year 0 and ask whether its mature
     > stock rises *earlier* than year 4; or hold the cods alive and ask whether pikeperch still
     > recovers.
