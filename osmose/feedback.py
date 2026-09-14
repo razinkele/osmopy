@@ -21,7 +21,9 @@ _log = setup_logging("osmose.feedback")
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]  # osmose/feedback.py -> repo root
 FEEDBACK_FILE = _PROJECT_ROOT / "data" / "feedback" / "feedback.jsonl"  # default
+CONTACTS_FILE = _PROJECT_ROOT / "data" / "feedback" / "contacts.jsonl"  # default; PII, gitignored
 _FILE_ENV = "OSMOSE_FEEDBACK_FILE"
+_CONTACTS_ENV = "OSMOSE_CONTACTS_FILE"
 _TOKEN_ENV = "OSMOSE_FEEDBACK_TOKEN"
 _VALID_TYPES = {"bug", "suggestion", "other"}
 _MAX_MESSAGE = 5000
@@ -38,6 +40,14 @@ def _resolve(path: Path | None) -> Path:
     return Path(env) if env else FEEDBACK_FILE
 
 
+def _resolve_contacts(path: Path | None) -> Path:
+    """Resolve the contacts side-store path: explicit arg > OSMOSE_CONTACTS_FILE > default."""
+    if path is not None:
+        return Path(path)
+    env = os.environ.get(_CONTACTS_ENV)
+    return Path(env) if env else CONTACTS_FILE
+
+
 def looks_like_email(s: str) -> bool:
     """Shape check only — deliberately NOT an RFC validator and NOT a deliverability check."""
     return bool(_EMAIL_RE.match((s or "").strip()))
@@ -52,7 +62,14 @@ def build_feedback_record(
     nav_tab: str = "",
     honeypot: str = "",
 ) -> dict:
-    """Validated feedback record. Raises ValueError on unknown type / empty message; truncates."""
+    """Validated feedback record. Raises ValueError on unknown type / empty message; truncates.
+
+    ``contact`` is used only to set the boolean ``has_contact`` flag on the returned record --
+    the address itself never lands here. Callers that want the address stored must separately
+    call ``save_contact(record["id"], contact)``, which writes it to the private side-store.
+    This is a deliberate structural split: the record is designed to be copied into a public
+    GitHub issue, so the address must never be reachable through it.
+    """
     if (honeypot or "").strip():
         raise ValueError("honeypot field was filled — rejecting as automated submission")
     if type not in _VALID_TYPES:
@@ -65,7 +82,7 @@ def build_feedback_record(
         "ts": datetime.now().isoformat(),
         "type": type,
         "message": msg[:_MAX_MESSAGE],
-        "contact": (contact or "").strip()[:MAX_CONTACT],
+        "has_contact": bool((contact or "").strip()),
         "version": version,
         "nav_tab": nav_tab,
     }
@@ -88,8 +105,44 @@ def append_feedback(record: dict, *, path: Path | None = None) -> None:
         f.write(line)
 
 
+def save_contact(feedback_id: str, email: str, *, path: Path | None = None) -> None:
+    """Store an address OUT OF BAND, keyed by feedback id. Never goes in the main record.
+
+    Lives in ``CONTACTS_FILE`` (default ``data/feedback/contacts.jsonl``, gitignored — it holds
+    PII), a file structurally separate from the public-facing feedback record. A no-op for an
+    empty address. Truncates to ``MAX_CONTACT``, same cap as the (now-removed) record field.
+    """
+    email = (email or "").strip()[:MAX_CONTACT]
+    if not email:
+        return
+    p = _resolve_contacts(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "a", encoding="utf-8") as f:
+        f.write(json.dumps({"id": feedback_id, "email": email}) + "\n")
+
+
+def lookup_contact(feedback_id: str, *, path: Path | None = None) -> str | None:
+    """Look up the address stored for ``feedback_id``, or None if missing/never saved."""
+    p = _resolve_contacts(path)
+    if not p.is_file():
+        return None
+    for raw in p.read_text(encoding="utf-8").splitlines():
+        try:
+            rec = json.loads(raw)
+        except Exception:  # noqa: BLE001 — skip a corrupt line, don't fail the lookup
+            continue
+        if rec.get("id") == feedback_id:
+            return rec.get("email")
+    return None
+
+
 def read_feedback(*, path: Path | None = None) -> list[dict]:
-    """All records newest-first; missing file -> []; corrupt lines skipped (path resolved lazily)."""
+    """All records newest-first; missing file -> []; corrupt lines skipped (path resolved lazily).
+
+    Normalises v1 records that still carry a literal ``contact`` key (D6 backwards
+    compatibility): the address is dropped and folded into the boolean ``has_contact`` flag, so
+    callers never see an address here regardless of which code version wrote the line.
+    """
     p = _resolve(path)
     if not p.is_file():
         return []
@@ -99,10 +152,12 @@ def read_feedback(*, path: Path | None = None) -> list[dict]:
         if not raw:
             continue
         try:
-            out.append(json.loads(raw))
+            rec = json.loads(raw)
         except Exception:  # noqa: BLE001 — skip a corrupt line, don't fail the read
             _log.warning("Skipping corrupt feedback line")
             continue
+        rec.setdefault("has_contact", bool(rec.pop("contact", "")))
+        out.append(rec)
     out.reverse()
     return out
 

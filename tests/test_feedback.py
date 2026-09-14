@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from osmose.feedback import (
@@ -11,7 +13,9 @@ from osmose.feedback import (
     build_feedback_record,
     check_feedback_token,
     looks_like_email,
+    lookup_contact,
     read_feedback,
+    save_contact,
 )
 
 
@@ -20,8 +24,16 @@ def test_build_record_fields():
         "bug", "  it broke  ", contact="me@x.io", version="0.13.0", nav_tab="run"
     )
     assert r["type"] == "bug" and r["message"] == "it broke"  # stripped
-    assert r["contact"] == "me@x.io" and r["version"] == "0.13.0" and r["nav_tab"] == "run"
+    assert r["has_contact"] is True and r["version"] == "0.13.0" and r["nav_tab"] == "run"
     assert r["id"] and r["ts"]
+    assert "contact" not in r  # address never lives on the record, only the boolean flag
+    assert "me@x.io" not in json.dumps(r)
+
+
+def test_build_record_no_contact_has_contact_false():
+    r = build_feedback_record("bug", "m")
+    assert r["has_contact"] is False
+    assert "contact" not in r
 
 
 def test_build_record_unknown_type_raises():
@@ -84,9 +96,53 @@ def test_env_override_path(tmp_path, monkeypatch):
     assert [r["message"] for r in read_feedback()] == ["via env"]
 
 
-def test_contact_is_capped():
+def test_contact_is_capped(tmp_path, monkeypatch):
+    # Task 2 moved the address out of the record; the record only ever carries a boolean.
+    # The cap is still a real requirement -- it now applies where the address is actually
+    # stored, i.e. the contacts side-store reached via save_contact/lookup_contact.
+    monkeypatch.setenv("OSMOSE_CONTACTS_FILE", str(tmp_path / "c.jsonl"))
     r = build_feedback_record("bug", "m", contact="c" * 5000)
-    assert len(r["contact"]) == MAX_CONTACT
+    assert r["has_contact"] is True
+    save_contact(r["id"], "c" * 5000)
+    stored = lookup_contact(r["id"])
+    assert stored is not None
+    assert len(stored) == MAX_CONTACT
+
+
+def test_contact_is_not_in_the_main_record(tmp_path, monkeypatch):
+    monkeypatch.setenv("OSMOSE_FEEDBACK_FILE", str(tmp_path / "f.jsonl"))
+    monkeypatch.setenv("OSMOSE_CONTACTS_FILE", str(tmp_path / "c.jsonl"))
+    rec = build_feedback_record("bug", "m", contact="user@example.org")
+    append_feedback(rec)
+    save_contact(rec["id"], "user@example.org")
+    stored = read_feedback()[0]
+    assert stored["has_contact"] is True
+    assert "user@example.org" not in json.dumps(stored)
+    assert lookup_contact(rec["id"]) == "user@example.org"
+    assert lookup_contact("nope") is None
+
+
+def test_legacy_contact_record_is_normalised_on_read(tmp_path):
+    # D6 backwards compatibility: data/feedback/feedback.jsonl may already hold records
+    # written by the OLD code, which carry a literal "contact" key with a real email in it.
+    # After normalisation, read_feedback() must NEVER return an address, even for these.
+    p = tmp_path / "legacy.jsonl"
+    legacy = {
+        "id": "legacy-id-1",
+        "ts": "2026-01-01T00:00:00",
+        "type": "bug",
+        "message": "old-style record",
+        "contact": "old@example.org",
+        "version": "0.1.0",
+        "nav_tab": "run",
+    }
+    p.write_text(json.dumps(legacy) + "\n", encoding="utf-8")
+    out = read_feedback(path=p)
+    assert len(out) == 1
+    rec = out[0]
+    assert rec["has_contact"] is True
+    assert "contact" not in rec
+    assert "old@example.org" not in json.dumps(rec)
 
 
 def test_honeypot_non_empty_is_rejected():
