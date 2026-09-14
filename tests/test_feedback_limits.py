@@ -1,4 +1,6 @@
-from osmose.feedback_limits import RateLimiter
+import logging
+
+from osmose.feedback_limits import MAX_KEYS, RateLimiter
 
 
 def test_allows_up_to_the_cap_then_blocks():
@@ -84,19 +86,48 @@ def test_existing_key_works_when_table_full():
 
 
 def test_backward_clock_step_reenables_sweep():
-    """FIX 1: Backward wall-clock step must not stall the sweep permanently.
+    """FIX 1: a backward wall-clock step must not stall the sweep permanently.
 
-    If now moves backward (NTP step, VM restore, manual clock change), the sweep
-    gate can stay false forever. This test verifies the clock re-anchors.
+    The sweep gate is ``now - self._last_sweep >= self._sweep_interval``. If the
+    clock steps backward (NTP correction, VM restore, manual set), that difference
+    turns negative and never recovers until the clock catches up. Since the limiter
+    never evicts, the sweep is the ONLY path by which a full table becomes non-full,
+    so the table stays saturated and every first-time key is refused.
+
+    The discriminator is that user-visible refusal, not a bound: the ``<= MAX_KEYS``
+    ceiling holds either way because refusal at capacity is fail-closed.
+
+    Four beats, and all four are needed:
+      1. a call at a large ``now`` anchors ``_last_sweep`` high;
+      2. the clock steps BACKWARD and the table is filled to capacity -- the FIX-1
+         guard only RE-ARMS the gate here (delta becomes 0), it does not sweep, so
+         guarded and unguarded behave identically through this beat;
+      3. time advances by more than ``_sweep_interval`` past the backward point
+         while staying below the old forward anchor;
+      4. only the guarded limiter sweeps at beat 3/4 and accepts a newcomer.
+
+    The expected final size is 2, not 1: the beat-1 anchor was recorded under the
+    pre-step clock, so its timestamp sits in the future of every backward-clock
+    cutoff and can never go stale. What is reclaimed is the 9_999 flood keys.
     """
     rl = RateLimiter(max_per_window=1, window_s=60)
-    for i in range(9_950):
-        rl.allow(f"ip{i}", now=0.0)
-    assert len(rl._hits) == 9_950
-    rl.allow("forward_ip", now=1_000_000.0)
-    for i in range(5_000):
-        rl.allow(f"backward_ip_{i}", now=999_000.0)
-    assert len(rl._hits) <= 10_000
+    assert rl._sweep_interval == 6.0
+
+    # Beat 1: anchor _last_sweep at a large forward time.
+    assert rl.allow("anchor", now=1_000_000.0) is True
+
+    # Beat 2: clock steps backward; fill the table to exactly MAX_KEYS.
+    for i in range(MAX_KEYS - 1):
+        rl.allow(f"flood{i}", now=100.0)
+    assert len(rl._hits) == MAX_KEYS
+
+    # Beats 3-4: >= _sweep_interval past the backward point, still far below the
+    # forward anchor, and past the 60 s window so every flood key is stale.
+    # Guarded: sweep reclaims the floods and the newcomer is accepted.
+    # Unguarded: 200.0 - 1_000_000.0 is negative, no sweep ever runs again, the
+    # table is still full, and the newcomer is refused.
+    assert rl.allow("newcomer", now=200.0) is True
+    assert len(rl._hits) == 2
 
 
 def test_at_capacity_property():
@@ -109,17 +140,27 @@ def test_at_capacity_property():
     assert len(rl._hits) == 10_000
 
 
-def test_saturation_warning_logged_once():
-    """FIX 2c: WARNING logged exactly once when table saturates."""
+def test_saturation_warning_logged_once(caplog):
+    """FIX 2c: exactly one operator-visible WARNING when the table saturates.
+
+    Asserts on real log records, not on the private ``_logged_saturation`` flag:
+    the flag is bookkeeping, the WARNING is the feature. Deleting the
+    ``_logger.warning(...)`` call while keeping the flag must turn this red.
+    """
+    logger_name = "osmose.feedback_limits"
     rl = RateLimiter(max_per_window=1, window_s=60)
-    for i in range(10_000):
-        rl.allow(f"ip{i}", now=0.0)
-    assert rl._logged_saturation is False
-    rl.allow("new_key_1", now=0.0)
-    assert rl._logged_saturation is True
-    for i in range(10):
-        rl.allow(f"new_key_retry_{i}", now=0.0)
-    assert rl._logged_saturation is True
+    with caplog.at_level(logging.WARNING, logger=logger_name):
+        for i in range(MAX_KEYS):
+            assert rl.allow(f"ip{i}", now=0.0) is True
+        # Filling to exactly MAX_KEYS refuses nobody, so nothing is logged yet.
+        caplog.clear()
+        for i in range(20):
+            assert rl.allow(f"newcomer{i}", now=0.0) is False
+
+    warnings = [r for r in caplog.records if r.name == logger_name and r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    message = warnings[0].getMessage()
+    assert str(MAX_KEYS) in message, message
 
 
 def test_sweep_reclaims_expired_keys():
