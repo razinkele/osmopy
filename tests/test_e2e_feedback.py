@@ -34,18 +34,38 @@ def clean_e2e_file():
     _E2E_FILE.unlink(missing_ok=True)
 
 
+def _dismiss_modal(page: Page, selector: str) -> None:
+    """Close a Bootstrap modal, retrying through its fade-in.
+
+    Bootstrap ignores ``hide()`` while a show transition is still running, and ``to_be_visible``
+    is satisfied the instant the element becomes visible — which is DURING that transition. A
+    dismiss click landing in that window is swallowed, the modal stays open, and its backdrop
+    then intercepts every later click. Measured here at 1 failure in 24 runs before this retry
+    (and 2 in 6 in tests/test_e2e_feedback_modal.py, which loads the page twice per run). A
+    fixed sleep would paper over it; retrying until the modal is actually gone does not.
+    """
+    modal = page.locator(selector)
+    for _ in range(10):
+        if not modal.is_visible():
+            return
+        modal.locator("[data-bs-dismiss='modal']").click()
+        try:
+            expect(modal).not_to_be_visible(timeout=1_500)
+            return
+        except AssertionError:
+            continue
+    expect(modal).not_to_be_visible(timeout=_LOAD_TIMEOUT)  # final attempt, real failure text
+
+
 def test_feedback_submit_writes_record(page: Page, app: ShinyAppProc, clean_e2e_file):
     page.goto(app.url)
     page.wait_for_selector(".nav-pills", timeout=_LOAD_TIMEOUT)
 
-    # A startup changelog modal overlays the header — wait for it to finish fading in, then
-    # dismiss it via its close button (focus-independent) before clicking the header Feedback
-    # link. A one-shot is_visible() check races the fade-in: the modal can still be invisible
-    # at check time and then animate in to intercept the Feedback click, so wait for it first.
+    # A startup changelog modal overlays the header and must go before the Feedback link is
+    # clickable.
     changelog = page.locator("#changelogModal")
     expect(changelog).to_be_visible(timeout=_LOAD_TIMEOUT)
-    changelog.locator("[data-bs-dismiss='modal']").click()
-    expect(changelog).not_to_be_visible(timeout=_LOAD_TIMEOUT)
+    _dismiss_modal(page, "#changelogModal")
 
     page.get_by_role("link", name="Feedback").click()
     expect(page.locator("#feedbackModal")).to_be_visible(timeout=_LOAD_TIMEOUT)

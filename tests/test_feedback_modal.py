@@ -30,6 +30,19 @@ def test_modal_offers_bug_and_feature_and_other():
         assert label in html
 
 
+def test_message_field_label_says_it_is_required():
+    """The brief's UX list asks for a required-message hint (R10).
+
+    Scoped to the label bound to ``feedback_message`` rather than the whole modal, so the word
+    appearing anywhere else on the page cannot satisfy it.
+    """
+    html = str(feedback_modal())
+    m = re.search(r'<label[^>]*for="feedback_message"[^>]*>(.*?)</label>', html, re.S)
+    assert m is not None, "no <label> bound to feedback_message in the modal"
+    label = m.group(1)
+    assert "(required)" in label, f"message label carries no required hint: {label!r}"
+
+
 def test_honeypot_input_is_hidden_from_autofill_and_the_tab_order():
     """Scoped to the honeypot ``<input>`` itself, not the whole modal.
 
@@ -143,11 +156,20 @@ def test_client_key_never_falls_back_to_the_session_id(monkeypatch, caplog):
 
 
 def test_client_key_survives_a_session_with_no_http_conn(monkeypatch):
-    """Never raise out of the key derivation -- a crash here kills the whole submission."""
+    """Never raise out of the key derivation -- a crash here kills the whole submission.
+
+    The raise is converted to an AssertionError deliberately: an escaping AttributeError would
+    red this test as an ERROR with no statement of what was expected, and "red for the wrong
+    reason" is exactly what this suite is trying not to accept.
+    """
     key_fn = getattr(fm, "_client_key", None)
     assert key_fn is not None, "_client_key is not implemented"
     _reset_warn_flags(monkeypatch)
-    assert isinstance(key_fn(SimpleNamespace()), str)
+    try:
+        key = key_fn(SimpleNamespace())
+    except Exception as exc:  # noqa: BLE001 — any raise at all is the failure under test
+        raise AssertionError(f"_client_key raised {exc!r} on a session with no http_conn") from exc
+    assert isinstance(key, str)
 
 
 # ── _rate_limit_notice ───────────────────────────────────────────────────────────

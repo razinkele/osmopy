@@ -83,7 +83,7 @@ def feedback_modal():
         ),
         ui.input_text_area(
             "feedback_message",
-            "Tell us what happened, or what you'd like to see",
+            "Tell us what happened, or what you'd like to see (required)",
             rows=6,
             placeholder="For a bug: what you did, what you expected, what happened instead.",
             width="100%",
