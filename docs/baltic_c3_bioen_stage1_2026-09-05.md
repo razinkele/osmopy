@@ -1196,6 +1196,41 @@ before this branch.
     > parameterised cannot carry these stocks past their maturity lengths. The lever is the growth
     > trajectory against `m0` — either the bioen parameters that set size-at-age, or `m0` itself — and
     > that is a calibration question with a named target, not an open search.
+    >
+    > > **⚠️ THE m0 HALF OF THAT LEVER IS REFUTED — TESTED 2026-09-14.**
+    > > `scripts/c3_m0_lever_test.py` lowered `species.maturity.m0` on the four collapsing stocks
+    > > only, as a dose ladder (×1.00 / ×0.50 / ×0.25), leaving the four survivors untouched as an
+    > > internal control. **E1** read the thresholds back per arm, **E2** confirmed the survivors
+    > > unmoved (sprat 0.357/0.353/0.358; pikeperch 0.0020/0.0020/0.0019), **E3** confirmed the knob
+    > > engaged hard — cod_east `frac_mature` **0.0009 → 0.1960 → 0.6700**, a 744× rise.
+    > >
+    > > **0 of 4 recover. Final-decade biomass is 0.0 t at every dose.** Crossing `m0` is
+    > > **NECESSARY BUT NOT SUFFICIENT** — the last link of the chain is not causal on its own.
+    > >
+    > > **Worse, the response is non-monotone, and for the cods lowering m0 is actively HARMFUL:**
+    > >
+    > > | arm | cod_west yr3 | cod_west yr5 | flounder yr11 |
+    > > |---|---:|---:|---:|
+    > > | m0 ×1.00 | 6.7e7 | 3.4e1 | 3.8e-16 |
+    > > | m0 ×0.50 | 7.1e5 | 5.7e-1 | 1.3e2 |
+    > > | m0 ×0.25 | **1.8e3** | **3.0e-2** | **2.6e4** |
+    > >
+    > > flounder decays 20 orders of magnitude more slowly; **both cods collapse FASTER.**
+    > >
+    > > **The mechanism is in the source and is a genuine model trade-off**: `rho` is 0 for immature
+    > > fish and positive once mature (`energy_budget.py:313`), and `dw = (1−rho)·E_net/N` against
+    > > `dg = rho·E_net/N`. **Maturity taxes somatic growth.** Lowering `m0` makes fish mature
+    > > smaller and then grow more slowly — which is exactly the wrong medicine for a stock whose
+    > > problem is already size-at-age.
+    > >
+    > > **So the Stage-2 lever is size-at-age, NOT m0.** Growth raises maturation *and* weight
+    > > together; lowering the threshold buys maturation by taxing the growth that was short in the
+    > > first place. The "or `m0` itself" half of the sentence above is dead.
+    > >
+    > > **And one link still unexplained:** cod_east reaches **67 % maturation** at ×0.25 and still
+    > > reads 0.0 t. With eggs tracking SSB at 1.02–1.24×, more spawners should mean more eggs. That
+    > > they do not translate into biomass points at egg→recruit survival, which no test here has
+    > > yet isolated.
     > 90–100 % of cap, `m_share` below target), not size (the seal explained that and fixing it
     > changes no biomass), not recruitment as originally framed (there were never spawners to begin
     > with), and not the listed predators. Something removes the numbers while leaving the energetics
