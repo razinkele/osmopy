@@ -25,7 +25,8 @@ from urllib.parse import urlencode, urlsplit
 # on a hand-written store line, and user data must not reach a CSS class name even escaped.
 _TYPE_CLASSES = {"bug": "fb-bug", "suggestion": "fb-suggestion", "other": "fb-other"}
 _DEFAULT_TYPE_CLASS = "fb-unknown"
-_EMPTY = "&mdash;"
+_EMPTY = "&mdash;"  # HTML form, for the card
+_EMPTY_TEXT = "—"  # plain-text form, for the issue body — same glyph, same meaning
 
 # GitHub label per feedback type. Whitelisted for the same reason as the badge class above:
 # `type` is attacker-supplied on a hand-written store line and must not reach the issue URL raw.
@@ -76,10 +77,34 @@ def _esc(value: object) -> str:
     return html.escape(str(value), quote=True)
 
 
+def _text(value: object) -> str:
+    """``str(value)``, with ``None`` as the empty string. No escaping — plain text."""
+    return "" if value is None else str(value)
+
+
+def _blank(value: object) -> bool:
+    """The card's em-dash condition: missing, null or whitespace-only.
+
+    Note what this is NOT: a truthiness test. ``0``, ``False`` and ``[]`` are falsy but are real
+    values a hand-written store line can carry, and the card renders them (``0``, ``False``,
+    ``[]``). ``x or default`` would swallow all three.
+    """
+    return not _text(value).strip()
+
+
 def _or_dash(value: object) -> str:
     """Escaped value, or an em dash when the field is missing/blank."""
-    esc = _esc(value)
-    return esc if esc.strip() else _EMPTY
+    return _EMPTY if _blank(value) else _esc(value)
+
+
+def _or_dash_text(value: object) -> str:
+    """Plain-text twin of ``_or_dash``, for the issue body.
+
+    The card and the issue it promotes to must not disagree about the same record: a maintainer
+    reading an em dash on the page and the literal word ``None`` in the filed issue has no way to
+    tell which one is the record.
+    """
+    return _EMPTY_TEXT if _blank(value) else _text(value)
 
 
 def github_issue_url(record: dict, repo_url: str) -> str:
@@ -95,12 +120,27 @@ def github_issue_url(record: dict, repo_url: str) -> str:
     ``has_contact`` is tested with ``is True``: ``bool("false")`` is True and a hand-written string
     flag would otherwise be reported as "yes".
 
+    TWO of those fields are reporter-controlled free text, not one. ``message`` is the obvious one.
+    ``nav_tab`` is the other: it comes from ``_safe_nav`` (``ui/components/feedback_modal.py``),
+    which reads ``input.main_nav()`` — a client-settable Shiny input with no whitelist — so a
+    crafted client can put arbitrary text in it and that text lands in the public issue body. This
+    is self-disclosure by the submitter, not a leak of anyone else's data, and the maintainer's
+    review before filing (D4) is the gate. But do not read ``nav_tab`` as machine-generated and
+    safe to paste unread: treat it exactly as you treat ``message``.
+
     SECURITY: the return value lands in an ``href``. ``html.escape`` does not neutralise a
     ``javascript:`` or ``data:`` scheme, so ``repo_url``'s scheme is *validated* here — only http
     and https are accepted, and anything else (including a scheme-relative ``//host``, which parses
-    to an empty scheme) raises ``ValueError``. Raising rather than emitting a scheme-less link is
-    deliberate: ``repo_url`` is an operator-controlled constant, never attacker data, so a bad one
-    is a deployment bug that should be loud rather than a link silently dropped from every card.
+    to an empty scheme) raises ``ValueError``. ``repo_url`` is an operator-controlled constant
+    (``app.py:_REPO_URL``), never attacker data, so a bad one is a deployment bug rather than an
+    availability risk.
+
+    Know what that costs, though: the raise propagates through ``render_review_html`` and
+    ``app.py``'s route catches it, so a bad ``repo_url`` loses the ENTIRE page — every card, a bare
+    ``500 internal``. An earlier version of this docstring called that "loud". It was not; measured
+    2026-09-14, the route logged nothing at all. It is loud now only because that route logs the
+    traceback server-side (``app.py:_log.exception``) while still disclosing nothing to the caller.
+    If that logging is ever removed, this becomes a silent total failure again.
 
     AVAILABILITY: the store is a plain JSONL file that ``read_feedback`` does not validate
     field-by-field, so a hand-written or legacy line can carry an empty, whitespace-only, missing
@@ -113,24 +153,28 @@ def github_issue_url(record: dict, repo_url: str) -> str:
             f"repo_url must use http or https (got scheme {scheme!r} from {repo_url!r}) — "
             "an issue link is rendered into an href and escaping cannot make a scheme safe"
         )
-    # str() coercion mirrors _esc/_TYPE_CLASSES above: a non-string field from a hand-written line
-    # must not raise (`.strip()` on a list, an unhashable dict key) part-way through the page.
-    kind = str(record.get("type") or "other")
-    message = str(record.get("message") or "")
+    # `_text`/`_or_dash_text`, not `x or default`: every field below is rendered on the card too,
+    # and the two must agree about the same record. `.get(k, "?")` does NOT default on an explicit
+    # null (the key is present), and `x or ""` swallows the falsy-but-real values `0`, `False` and
+    # `[]` that the card happily renders. The str() coercion also mirrors _esc/_TYPE_CLASSES: a
+    # non-string field must not raise part-way through the page.
+    raw_type = record.get("type")
+    kind = _text(raw_type)  # label lookup key; the whitelist below is what actually reaches GitHub
+    message = _text(record.get("message"))
     # `"".splitlines()` is `[]`, so indexing [0] unguarded raises IndexError on an empty or
     # whitespace-only message and takes the page down with it.
     lines = message.strip().splitlines()
     title_text = lines[0][:_TITLE_CHARS] if lines else _NO_MESSAGE_TITLE
     body = (
         f"{message}\n\n---\n"
-        f"- app version: `{record.get('version', '?')}`\n"
-        f"- tab: `{record.get('nav_tab', '?')}`\n"
-        f"- feedback id: `{record.get('id', '?')}`\n"
+        f"- app version: `{_or_dash_text(record.get('version'))}`\n"
+        f"- tab: `{_or_dash_text(record.get('nav_tab'))}`\n"
+        f"- feedback id: `{_or_dash_text(record.get('id'))}`\n"
         f"- reporter left contact details: {'yes' if record.get('has_contact') is True else 'no'}\n"
     )
     query = urlencode(
         {
-            "title": f"[{kind}] {title_text}",
+            "title": f"[{_or_dash_text(raw_type)}] {title_text}",
             "body": body,
             "labels": _LABEL.get(kind, _DEFAULT_LABEL),
         }

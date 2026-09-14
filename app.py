@@ -42,6 +42,7 @@ from starlette.routing import Route
 
 from osmose.feedback import check_feedback_token, read_feedback
 from osmose.feedback_review import render_review_html
+from osmose.logging import setup_logging
 from ui.components.feedback_modal import feedback_modal, feedback_server
 
 # Project repository — same URL the About modal links to (ui/components/help_modal.py).
@@ -698,12 +699,20 @@ def server(input, output, session):
 app = App(app_ui, server, static_assets=_WWW)
 
 
+# Both feedback routes answer an unauthenticated caller, so neither may disclose why it
+# failed -- Task 5 measured a mutation that let exception text through and found the TOKEN in
+# the response. The detail goes to the server log instead: a 500 that logs nothing is a total,
+# SILENT failure (the whole review page, every card) with no way to find out what broke.
+_log = setup_logging("osmose.app")
+
+
 async def _feedback_endpoint(request):
     try:
         if not check_feedback_token(request.headers.get("x-feedback-token")):
             return JSONResponse({"error": "forbidden"}, status_code=403)
         return JSONResponse(read_feedback())
     except Exception:  # noqa: BLE001 — never leak a traceback to an unauth caller
+        _log.exception("feedback API failed; returning 500 with no detail to the caller")
         return JSONResponse({"error": "internal"}, status_code=500)
 
 
@@ -719,6 +728,9 @@ async def _feedback_review(request):
             headers={"Cache-Control": "no-store"},
         )
     except Exception:  # noqa: BLE001 — never leak a traceback to an unauth caller
+        # The response stays bare; the traceback goes to the log. Without this the page is
+        # lost in full and nothing anywhere records why -- silent, not loud.
+        _log.exception("feedback review page failed; returning 500 with no detail to the caller")
         return PlainTextResponse("internal", status_code=500)
 
 

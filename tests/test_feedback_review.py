@@ -15,6 +15,7 @@ paired with a positive control naming a benign substring of that record's own me
 from __future__ import annotations
 
 import html
+import logging
 import re
 from urllib.parse import parse_qs, urlsplit
 
@@ -433,12 +434,18 @@ def test_review_card_promotes_each_record_to_a_prefilled_issue(client):
 
     hrefs = [html.unescape(h) for h in _promote_hrefs(body)]
     assert len(hrefs) == 2, f"expected one promotion link per record, got {len(hrefs)}"
-    # Literal controls, independent of `github_issue_url`: comparing only against the function's
-    # own output would agree with itself under a mutation that empties it.
-    assert "WIRE_MARK_B" in hrefs[0] and _param(hrefs[0], "labels") == "enhancement"
-    assert "WIRE_MARK_A" in hrefs[1] and _param(hrefs[1], "labels") == "bug"
-    # ... and then the exact wiring: each card's href IS that record's issue URL, newest first.
-    assert hrefs == [github_issue_url(rec_b, _REPO_URL), github_issue_url(rec_a, _REPO_URL)]
+    # Every assertion here is a LITERAL. An `assert hrefs == [github_issue_url(rec_b, ...), ...]`
+    # stood here and was deleted: it compares the page against the same function the page called,
+    # so a cross-wire mutation (card A given record B's URL) makes both sides move together and it
+    # passes. It read like the summary of the test while carrying no evidence at all.
+    assert _param(hrefs[0], "title") == "[suggestion] WIRE_MARK_B nicer charts"
+    assert _param(hrefs[0], "labels") == "enhancement"
+    assert "`wire-b`" in _param(hrefs[0], "body")
+    assert "wire-a" not in hrefs[0]  # ... and NOT the other record's link
+    assert _param(hrefs[1], "title") == "[bug] WIRE_MARK_A crash on run"
+    assert _param(hrefs[1], "labels") == "bug"
+    assert "`wire-a`" in _param(hrefs[1], "body")
+    assert "wire-b" not in hrefs[1]
     # The header link from Task 5 is untouched.
     assert f'href="{_REPO_URL}"' in body
 
@@ -476,3 +483,152 @@ def test_review_promotion_href_is_escaped_as_well_as_scheme_validated(client):
     # discriminate between an escaped and an unescaped href.
     assert "&amp;body=" in href and "&amp;labels=" in href
     assert "&body=" not in href and "&labels=" not in href
+
+
+# ---------------------------------------------------------------------------------------------
+# Fix round 1: the card and the issue it promotes to must not disagree about the same record, and
+# a 500 that loses the whole page must not also be silent.
+# ---------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("case", "rec"),
+    [
+        (
+            "explicit nulls",
+            {
+                "id": None,
+                "ts": "2026-09-14T12:00:00",
+                "type": "bug",
+                "message": "AGREE_MARK null metadata",
+                "has_contact": False,
+                "version": None,
+                "nav_tab": None,
+            },
+        ),
+        (
+            "missing keys",
+            {
+                "ts": "2026-09-14T12:00:00",
+                "type": "bug",
+                "message": "AGREE_MARK absent metadata",
+                "has_contact": False,
+            },
+        ),
+        (
+            "whitespace only",
+            {
+                "id": "  ",
+                "ts": "2026-09-14T12:00:00",
+                "type": "bug",
+                "message": "AGREE_MARK blank metadata",
+                "has_contact": False,
+                "version": "   ",
+                "nav_tab": "\t",
+            },
+        ),
+    ],
+)
+def test_card_and_issue_body_agree_on_a_missing_field(client, case, rec):
+    """`.get(k, "?")` does NOT default on an explicit null -- the key is present, the value is None.
+
+    The card renders an em dash for a missing, null or blank field. If the issue body says `None`
+    (or `?`) for the same record, a maintainer has two different answers for one record and no way
+    to tell which one is the store. The card's rendering is the authoritative one.
+    """
+    append_feedback(rec)
+    page = _get(client).text
+
+    assert "AGREE_MARK" in page, f"{case}: the record never rendered"  # positive control
+    # id / version / tab all dash on the card -- the thing the issue body has to agree with.
+    assert page.count("&mdash;") == 3, f"{case}: expected three em dashes on the card"
+
+    href = html.unescape(_promote_hrefs(page)[0])
+    issue = _param(href, "body")
+    assert "AGREE_MARK" in issue, f"{case}: the link does not carry this record"  # positive control
+    assert "- app version: `—`\n" in issue
+    assert "- tab: `—`\n" in issue
+    assert "- feedback id: `—`\n" in issue
+    assert "`None`" not in issue  # the literal word a bare .get() default would have filed
+    assert "`?`" not in issue  # ... and the placeholder the brief's version would have filed
+
+
+@pytest.mark.parametrize(("raw", "shown"), [(0, "0"), (False, "False"), ([], "[]"), (0.0, "0.0")])
+def test_card_and_issue_body_agree_on_a_falsy_message(client, raw, shown):
+    """The other direction of the same divergence: `x or ""` swallows 0, False and [].
+
+    All three are falsy, all three are real values a hand-written store line can carry, and the
+    card renders every one of them. A message that is visible on the page but absent from the
+    issue it promotes to is the same defect as `None` appearing where the page shows a dash.
+    """
+    append_feedback(
+        {
+            "id": "falsyprobe",
+            "ts": "2026-09-14T12:00:00",
+            "type": "bug",
+            "message": raw,
+            "has_contact": False,
+            "version": "1.0",
+            "nav_tab": "Run",
+        }
+    )
+    page = _get(client).text
+    assert _pre_blocks(page) == [shown], f"the card should render the message as {shown!r}"
+
+    href = html.unescape(_promote_hrefs(page)[0])
+    assert _param(href, "body").startswith(shown)  # the issue shows what the card shows...
+    assert (
+        _param(href, "title") == f"[bug] {shown}"
+    )  # ... and is titled with it, not "(no message)"
+
+
+def test_review_error_path_logs_server_side(client, monkeypatch, caplog):
+    """The 500 loses the ENTIRE page -- every card. It must not also be silent.
+
+    The response body deliberately stays bare: Task 5 measured a mutation that let exception text
+    through and found the TOKEN in the response. So the detail has to go somewhere else, and
+    "somewhere else" has to be ASSERTED. Before this, `github_issue_url`'s docstring justified
+    failing the whole page on the grounds that it would be "loud"; measured, the route logged
+    nothing at all. A test that only checked the 500 would have repeated that mistake.
+    """
+    import app as app_module
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("store exploded while holding token secret")
+
+    monkeypatch.setattr(app_module, "read_feedback", _boom)
+    with caplog.at_level(logging.ERROR, logger="osmose.app"):
+        resp = _get(client)
+
+    assert resp.status_code == 500  # positive control: we really took the failure path
+    logged = [r for r in caplog.records if r.name == "osmose.app"]
+    assert logged, "the 500 path logged NOTHING -- a total page loss with no server-side record"
+    assert any(r.levelno >= logging.ERROR and r.exc_info for r in logged), (
+        "the log line must carry the traceback (`_log.exception`), or it records that something "
+        "failed without recording what"
+    )
+    assert any("review" in r.getMessage() for r in logged), "which route failed must be in the log"
+
+    # ... and none of it reaches the caller, who is unauthenticated by this point.
+    assert resp.text.strip() == "internal"
+    assert "store exploded" not in resp.text
+    assert "secret" not in resp.text
+
+
+def test_issue_body_carries_the_nav_tab_verbatim():
+    """`nav_tab` is reporter-controlled free text, not machine-generated metadata.
+
+    It comes from `_safe_nav` = `input.main_nav()` (`ui/components/feedback_modal.py`), a
+    client-settable Shiny input with no whitelist, so a crafted client can put anything there.
+    This pins the consequence the docstring documents -- whatever it holds lands VERBATIM in the
+    public issue body, exactly like the message. Self-disclosure by the submitter, not a leak of
+    the store; the maintainer's review before filing is the gate. Without this test the docstring
+    would be an unverified claim about a pipeline three files away.
+    """
+    crafted = "NAVTAB_MARK <not-a-real-tab> disregard the section above"
+    url = github_issue_url(
+        {"type": "bug", "message": "NAVMSG_MARK", "nav_tab": crafted, "id": "nav1"}, _REPO_URL
+    )
+    body = _param(url, "body")
+    assert "NAVMSG_MARK" in body  # positive control: the URL was really built
+    assert f"- tab: `{crafted}`\n" in body
